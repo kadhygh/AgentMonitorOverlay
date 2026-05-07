@@ -1,0 +1,20 @@
+[package]
+name = "agent-monitor-overlay"
+version = "0.1.0"
+description = "Windows desktop overlay prototype for monitoring local agent sessions."
+authors = ["Agent Monitor Overlay"]
+license = ""
+repository = ""
+edition = "2021"
+
+[lib]
+name = "agent_monitor_overlay_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2.4.1", features = [] }
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+tauri = { version = "2.8.5", features = [] }
+windows-sys = { version = "0.59", features = ["Win32_Foundation", "Win32_UI_WindowsAndMessaging", "Win32_System_Threading"] }

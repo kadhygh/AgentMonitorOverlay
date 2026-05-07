@@ -1,0 +1,17 @@
+{
+  "tool": "claude",
+  "sessionId": "claude-demo-001",
+  "cwd": "G:\\PROJECT\\Mecho",
+  "title": "Claude - Mecho",
+  "event": "PreToolUsePermission",
+  "message": "Waiting for permission to run a shell command",
+  "windowHint": {
+    "process": "WindowsTerminal.exe",
+    "title": "Claude - Mecho",
+    "titleToken": "[AMO:claude:mecho:permission]",
+    "titleContains": ["Mecho", "Claude"],
+    "project": "Mecho",
+    "cwd": "G:\\PROJECT\\Mecho",
+    "tool": "claude"
+  }
+}

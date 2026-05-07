@@ -1,0 +1,121 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear|compact",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Notification": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "StopFailure": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "SessionEnd": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "CwdChanged": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"$env:AGENT_MONITOR_OVERLAY_HOME\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool claude",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

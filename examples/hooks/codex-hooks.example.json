@@ -1,0 +1,75 @@
+{
+  "description": "Example Codex hooks for Agent Monitor Overlay. Copy into a disposable project's .codex/hooks.json only after setting AGENT_MONITOR_OVERLAY_HOME.",
+  "hooks": {
+    "SessionStart": [
+      {
+        "matcher": "startup|resume|clear",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%AGENT_MONITOR_OVERLAY_HOME%\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%AGENT_MONITOR_OVERLAY_HOME%\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%AGENT_MONITOR_OVERLAY_HOME%\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PermissionRequest": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%AGENT_MONITOR_OVERLAY_HOME%\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%AGENT_MONITOR_OVERLAY_HOME%\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File \"%AGENT_MONITOR_OVERLAY_HOME%\\scripts\\adapters\\Send-AgentMonitorEvent.ps1\" -Tool codex",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

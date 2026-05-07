@@ -1,0 +1,17 @@
+{
+  "tool": "codex",
+  "sessionId": "codex-demo-001",
+  "cwd": "G:\\PROJECT\\AgentMonitorOverlay",
+  "title": "Codex - AgentMonitorOverlay",
+  "event": "PostToolUse",
+  "message": "Edited broker/server.js",
+  "windowHint": {
+    "process": "WindowsTerminal.exe",
+    "title": "Codex - AgentMonitorOverlay",
+    "titleToken": "[AMO:codex:agent-monitor-overlay:broker]",
+    "titleContains": ["AgentMonitorOverlay", "Codex"],
+    "project": "AgentMonitorOverlay",
+    "cwd": "G:\\PROJECT\\AgentMonitorOverlay",
+    "tool": "codex"
+  }
+}

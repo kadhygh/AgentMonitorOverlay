@@ -277,7 +277,8 @@ git diff --cached --name-only
 
 - `partial`
 - 市场和官方接入点已经完成初步调查。
-- 还需要用户确认具体 vibe 和第一版 UI 行为。
+- 第一轮主管推进已经创建阶段分支和任务卡。
+- 还需要第一轮 spike 产出后进入可验证节点。
 
 ### Phase 1: Windows 工作流低代码验证
 
@@ -612,10 +613,18 @@ Execution role: supervisor agent manages workers
 
 下一步建议：
 
-1. 用户确认 MVP 优先级是否正确。
-2. 主管 agent 创建 Task A-D 的具体任务卡。
-3. worker agent 并行做窗口路由、broker、overlay、hook spike。
-4. 主管 agent 汇总后给用户一个可运行验证版本。
+1. 主管 agent 收敛 Task A-D 的第一轮 spike 输出。
+2. 本地验证 broker API、overlay 启动、窗口路由方案和 hook payload。
+3. 汇总后给用户一个可运行版本或明确的手工验证节点。
+4. 用户只负责验证体验、vibe 和需求取舍。
+
+当前主管状态：
+
+- 稳定分支：`master`
+- 当前阶段分支：`phase/1-2-spikes`
+- 任务卡目录：`docs/tasks/`
+- 主管状态板：`docs/supervisor-status.md`
+- 第一轮 spike：Task A-D 已完成并由主管本地复验
 
 ## 10. 给下一位主管 Agent 的启动提示
 

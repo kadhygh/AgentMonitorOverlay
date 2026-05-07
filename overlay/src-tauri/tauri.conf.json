@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "Agent Monitor Overlay",
+  "version": "0.1.0",
+  "identifier": "local.agent-monitor.overlay",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "security": {
+      "csp": null
+    },
+    "windows": [
+      {
+        "label": "main",
+        "title": "Agent Monitor Overlay",
+        "width": 380,
+        "height": 520,
+        "minWidth": 264,
+        "minHeight": 86,
+        "resizable": false,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "transparent": true,
+        "shadow": true,
+        "skipTaskbar": false,
+        "center": false,
+        "x": 1520,
+        "y": 120
+      }
+    ]
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "icon": []
+  }
+}
