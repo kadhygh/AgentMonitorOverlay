@@ -1,0 +1,35 @@
+# Dependencies and build output
+node_modules/
+dist/
+build/
+target/
+out/
+.next/
+.vite/
+
+# Logs and local runtime state
+*.log
+logs/
+tmp/
+temp/
+.tmp/
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Editor and OS files
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini
+
+# Local app state
+*.sqlite
+*.sqlite3
+*.db
+local-state/
+
