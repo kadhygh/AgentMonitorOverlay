@@ -35,14 +35,14 @@ Status: build verified locally; native window vibe still needs user validation
 
 ## Phase 4 Spike: Tool Adapters
 
-Status: adapter dry-run and broker POST verified; live CLI smoke blocked by local auth state
+Status: adapter dry-run and broker POST verified; Claude live hook smoke passed; Codex hook loading still pending
 
 - Confirm Codex event payload can map to broker session model.
 - Confirm Claude event payload can map to broker session model.
 - Confirm Kiro route is either tested or explicitly marked as mock/manual for MVP.
 - Confirm no global user tool configuration is changed without approval.
-- Re-run Codex live smoke only after Codex CLI auth is valid.
-- Re-run Claude live smoke only after Claude CLI is logged in.
+- Re-run Codex live smoke after choosing a safe hook loading route for the current Codex CLI.
+- Claude live smoke is verified with disposable `--settings`.
 
 ## Vibe Checks
 

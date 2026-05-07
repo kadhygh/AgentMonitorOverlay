@@ -61,12 +61,13 @@ Updated: 2026-05-07
 
 ## Live Hook Smoke Results
 
-- Codex live smoke reached `codex exec` session startup, but the local Codex CLI failed with OpenAI API authentication `401 Unauthorized`. No hook event reached broker before the auth failure.
-- Claude live smoke reached CLI startup with disposable `--settings`, but local Claude CLI is not logged in. No complete live hook session could run.
-- These are environment/authentication blockers, not broker or adapter contract failures.
+- Claude live smoke passed with disposable `--settings`; broker received real `UserPromptSubmit` and `Stop` events.
+- Codex live smoke can run the prompt successfully with the user's normal provider configuration, but the disposable project-local hook file did not load, and a minimal temporary `CODEX_HOME` is not sufficient for this Codex install.
+- Codex remains a hook-loading validation gap, not an adapter/broker contract failure.
 
 ## Next Supervisor Checkpoint
 
 - Keep adapter contract verification as the automated gate.
-- Re-run Codex / Claude live hook smoke after CLI auth is available, or perform it manually in the user's authenticated session.
+- Keep Claude live smoke as a verified real-hook gate.
+- Decide the Codex hook validation route: supported per-process hook injection, or temporary install/restore of a user-layer hook in the real Codex home.
 - Start a follow-up task for real window-title injection and click-to-window validation with `[AMO:...]` titles.

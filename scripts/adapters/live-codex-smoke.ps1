@@ -13,6 +13,9 @@ $serverPath = Join-Path $repoRoot "broker\server.js"
 $baseUrl = "http://${HostName}:${Port}"
 
 New-Item -ItemType Directory -Force -Path $codexDir | Out-Null
+if (-not (Test-Path -LiteralPath (Join-Path $testRoot ".git"))) {
+    git -C $testRoot init | Out-Null
+}
 
 @"
 [features]
@@ -61,10 +64,9 @@ try {
     $codexArgs = @(
         "exec",
         "--cd", $testRoot,
-        "--skip-git-repo-check",
         "--ephemeral",
-        "--ignore-user-config",
         "--enable", "codex_hooks",
+        "-c", "projects.`"$testRoot`".trust_level=`"trusted`"",
         "--sandbox", "read-only",
         "--output-last-message", $outputFile,
         $prompt
@@ -80,10 +82,8 @@ try {
     finally {
         $ErrorActionPreference = $previousErrorActionPreference
     }
-    if ($codexOutput) {
-        $codexOutput | ForEach-Object { Write-Host $_ }
-    }
     if ($codexExit -ne 0) {
+        Write-Warning "codex exec failed. Re-run manually for full provider output if needed."
         throw "codex exec failed with exit code $codexExit"
     }
 
@@ -91,11 +91,14 @@ try {
     $sessions = Invoke-BrokerJson -Path "/api/sessions"
     $codexSessions = @($sessions.sessions | Where-Object { $_.tool -eq "codex" })
     if ($codexSessions.Count -eq 0) {
-        throw "No Codex sessions reached broker. Hook may not have loaded."
+        throw "No Codex sessions reached broker. The prompt can run with the current provider, but the disposable project-local hook did not load."
     }
 
     Write-Host "Codex live hook smoke OK:"
     $codexSessions | Select-Object tool, sessionId, state, lastEvent, needsAttention | Format-Table -AutoSize
+    if (Test-Path -LiteralPath $outputFile) {
+        Write-Host "Codex output file: $outputFile"
+    }
 }
 finally {
     if ($broker -and -not $broker.HasExited) {

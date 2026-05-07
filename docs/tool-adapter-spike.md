@@ -336,8 +336,8 @@ Not performed:
 
 Follow-up live smoke:
 
-- Codex: disposable project-local hook smoke reached `codex exec`, but local authentication failed with API `401 Unauthorized`, so no complete live hook event reached broker.
-- Claude: disposable explicit-settings smoke reached CLI startup, but local CLI was not logged in, so no complete live hook event reached broker.
+- Claude: disposable explicit-settings smoke completed and delivered real `UserPromptSubmit` / `Stop` hook events into broker.
+- Codex: current provider configuration works when inherited from the real Codex environment, but project-local `.codex/hooks.json` did not load in the disposable smoke test. A temporary `CODEX_HOME` with only copied `config.toml` / `auth.json` is insufficient for this Codex install. Codex live hook verification still needs either a supported per-process hook injection route or a carefully installed/restored real `CODEX_HOME` user-layer hook.
 
 ## Live Verification Steps For Supervisor
 

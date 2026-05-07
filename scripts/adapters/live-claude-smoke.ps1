@@ -55,7 +55,6 @@ try {
     try {
         $claudeOutput = & claude -p "Reply with exactly: amo-claude-hook-smoke" `
             --settings $settingsPath `
-            --setting-sources local `
             --output-format text `
             --permission-mode dontAsk 2>&1
         $claudeExit = $LASTEXITCODE
@@ -64,10 +63,8 @@ try {
         Pop-Location
     }
 
-    if ($claudeOutput) {
-        $claudeOutput | ForEach-Object { Write-Host $_ }
-    }
     if ($claudeExit -ne 0) {
+        Write-Warning "claude -p failed. Re-run manually for full provider output if needed."
         throw "claude -p failed with exit code $claudeExit"
     }
 
