@@ -70,4 +70,4 @@ Updated: 2026-05-07
 - Keep adapter contract verification as the automated gate.
 - Keep Claude live smoke as a verified real-hook gate.
 - Decide the Codex hook validation route: supported per-process hook injection, or temporary install/restore of a user-layer hook in the real Codex home.
-- Start a follow-up task for real window-title injection and click-to-window validation with `[AMO:...]` titles.
+- Use `npm run demo:claude-routing` as the next user-facing validation point for broker-backed overlay refresh and `[AMO:...]` click-to-window routing.

@@ -8,7 +8,9 @@
     "broker:verify": "powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1",
     "adapters:verify": "powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1",
     "adapters:live-codex": "powershell -ExecutionPolicy Bypass -File scripts/adapters/live-codex-smoke.ps1",
-    "adapters:live-claude": "powershell -ExecutionPolicy Bypass -File scripts/adapters/live-claude-smoke.ps1"
+    "adapters:live-claude": "powershell -ExecutionPolicy Bypass -File scripts/adapters/live-claude-smoke.ps1",
+    "demo:claude-routing": "powershell -ExecutionPolicy Bypass -File scripts/demo/start-claude-routing-demo.ps1",
+    "routing:verify": "powershell -ExecutionPolicy Bypass -File scripts/window-routing/verify-amo-routing.ps1"
   },
   "engines": {
     "node": ">=18"

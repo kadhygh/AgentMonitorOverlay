@@ -10,6 +10,7 @@ Status: ready for supervisor/user manual validation
 - Verify clicking a monitored session activates the intended window.
 - Verify failure behavior when a target window is missing or ambiguous.
 - Verify the proposed Codex / Claude / Kiro title naming convention fits the user's real workflow.
+- Run `npm run demo:claude-routing`, then click the Claude live demo row in the overlay and confirm it routes to the PowerShell window with the `[AMO:claude:agent-monitor-overlay:live-demo]` title.
 
 ## Phase 2: Broker MVP
 
@@ -28,6 +29,7 @@ Status: build verified locally; native window vibe still needs user validation
 
 - Start overlay locally.
 - Confirm window is always on top.
+- Confirm broker-backed sessions refresh automatically every few seconds.
 - Confirm window can be dragged without disrupting the main workspace.
 - Confirm 3-8 sessions remain readable.
 - Confirm `waiting_user` and `waiting_permission` states are visible without feeling noisy.

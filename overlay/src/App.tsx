@@ -6,6 +6,7 @@ import { mockSessions } from "./mockSessions";
 import type { ActivationResult, AgentSession, SessionState } from "./types";
 
 const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
+const REFRESH_INTERVAL_MS = 3000;
 
 const stateLabel: Record<SessionState, string> = {
   starting: "Starting",
@@ -62,6 +63,7 @@ export default function App() {
   const [source, setSource] = useState<"mock" | "broker">("mock");
   const [feedback, setFeedback] = useState("Mock data ready. Window activation is placeholder.");
   const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
 
   const attentionCount = useMemo(
     () => sessions.filter((session) => session.needsAttention).length,
@@ -83,10 +85,12 @@ export default function App() {
 
       setSessions(nextSessions.slice(0, 8));
       setSource("broker");
+      setLastRefreshAt(new Date().toISOString());
       setFeedback(`Broker sessions loaded: ${nextSessions.length}`);
     } catch (error) {
       setSessions(mockSessions);
       setSource("mock");
+      setLastRefreshAt(new Date().toISOString());
       setFeedback(`Using mock sessions: ${(error as Error).message}`);
     }
   }
@@ -129,6 +133,11 @@ export default function App() {
 
   useEffect(() => {
     void refreshSessions();
+    const interval = window.setInterval(() => {
+      void refreshSessions();
+    }, REFRESH_INTERVAL_MS);
+
+    return () => window.clearInterval(interval);
   }, []);
 
   return (
@@ -148,7 +157,10 @@ export default function App() {
           <GripHorizontal size={16} aria-hidden="true" />
           <div data-tauri-drag-region>
             <strong>Agents</strong>
-            <span>{source === "broker" ? "broker live" : "mock mode"}</span>
+            <span>
+              {source === "broker" ? "broker live" : "mock mode"}
+              {lastRefreshAt ? ` · ${formatAgo(lastRefreshAt)} ago` : ""}
+            </span>
           </div>
         </div>
         <div className="header-actions">
