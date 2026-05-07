@@ -325,6 +325,7 @@ Performed in this task:
 - Checked official docs listed above.
 - Checked local `codex --help`, `codex hooks --help`, `codex debug --help`, `codex features list`, and `codex app-server --help` without changing config. In this environment `codex_hooks` is listed as `stable true`; `codex hooks --help` falls through to general help, so hook behavior was not live-executed.
 - Added a local PowerShell adapter script that can be syntax-checked and dry-run with sample stdin.
+- Supervisor added `scripts/adapters/verify.ps1`, which posts representative Codex / Claude / Kiro hook payloads through the adapter script into broker and asserts expected session states.
 
 Not performed:
 
@@ -332,6 +333,11 @@ Not performed:
 - No real transcript or log files were read.
 - No real hook was installed or fired in a live agent session.
 - No Kiro CLI/IDE was launched.
+
+Follow-up live smoke:
+
+- Codex: disposable project-local hook smoke reached `codex exec`, but local authentication failed with API `401 Unauthorized`, so no complete live hook event reached broker.
+- Claude: disposable explicit-settings smoke reached CLI startup, but local CLI was not logged in, so no complete live hook event reached broker.
 
 ## Live Verification Steps For Supervisor
 

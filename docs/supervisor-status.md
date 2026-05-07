@@ -45,6 +45,7 @@ Updated: 2026-05-07
 - Overlay reads `GET http://127.0.0.1:17654/api/sessions`.
 - `windowHint.titleToken` follows `[AMO:<tool>:<project-slug>:<session-slug>]` and is the primary routing key when available.
 - Overlay external activation uses native Win32 enumeration/focus on Windows, with ambiguity and blocked-focus feedback.
+- User accepted the first overlay vibe checkpoint. Small UI details can be tuned later.
 
 ## Verified This Round
 
@@ -56,9 +57,16 @@ Updated: 2026-05-07
 - `npm install` in `overlay/`
 - `npm run build` in `overlay/`
 - `cargo check` in `overlay/src-tauri/`
+- `npm run adapters:verify`
+
+## Live Hook Smoke Results
+
+- Codex live smoke reached `codex exec` session startup, but the local Codex CLI failed with OpenAI API authentication `401 Unauthorized`. No hook event reached broker before the auth failure.
+- Claude live smoke reached CLI startup with disposable `--settings`, but local Claude CLI is not logged in. No complete live hook session could run.
+- These are environment/authentication blockers, not broker or adapter contract failures.
 
 ## Next Supervisor Checkpoint
 
-- Start broker and overlay together.
-- Hand the user a focused vibe and routing validation checklist.
-- If user accepts MVP feel, move to live hook verification in a disposable repo.
+- Keep adapter contract verification as the automated gate.
+- Re-run Codex / Claude live hook smoke after CLI auth is available, or perform it manually in the user's authenticated session.
+- Start a follow-up task for real window-title injection and click-to-window validation with `[AMO:...]` titles.

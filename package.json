@@ -5,7 +5,10 @@
   "description": "Local Agent Monitor Overlay workspace.",
   "scripts": {
     "broker": "node broker/server.js",
-    "broker:verify": "powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1"
+    "broker:verify": "powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1",
+    "adapters:verify": "powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1",
+    "adapters:live-codex": "powershell -ExecutionPolicy Bypass -File scripts/adapters/live-codex-smoke.ps1",
+    "adapters:live-claude": "powershell -ExecutionPolicy Bypass -File scripts/adapters/live-claude-smoke.ps1"
   },
   "engines": {
     "node": ">=18"

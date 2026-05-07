@@ -35,16 +35,18 @@ Status: build verified locally; native window vibe still needs user validation
 
 ## Phase 4 Spike: Tool Adapters
 
-Status: adapter dry-run and broker POST verified; real hooks still need disposable live validation
+Status: adapter dry-run and broker POST verified; live CLI smoke blocked by local auth state
 
 - Confirm Codex event payload can map to broker session model.
 - Confirm Claude event payload can map to broker session model.
 - Confirm Kiro route is either tested or explicitly marked as mock/manual for MVP.
 - Confirm no global user tool configuration is changed without approval.
+- Re-run Codex live smoke only after Codex CLI auth is valid.
+- Re-run Claude live smoke only after Claude CLI is logged in.
 
 ## Vibe Checks
 
-Status: ready once overlay is launched
+Status: passed by user on 2026-05-07; minor details deferred
 
 - The overlay should feel like a compact workbench, not a dashboard page.
 - Waiting states should be noticeable but not attention-stealing.

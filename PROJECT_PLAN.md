@@ -625,6 +625,8 @@ Execution role: supervisor agent manages workers
 - 任务卡目录：`docs/tasks/`
 - 主管状态板：`docs/supervisor-status.md`
 - 第一轮 spike：Task A-D 已完成并由主管本地复验
+- 第一轮 vibe：用户已确认通过，小细节后续再调
+- 真实 hook live smoke：Codex / Claude 目前被本机认证状态阻塞，adapter->broker 合同验证已通过
 
 ## 10. 给下一位主管 Agent 的启动提示
 
