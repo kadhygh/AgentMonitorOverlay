@@ -14,18 +14,34 @@ $overlayPath = Join-Path $repoRoot "overlay"
 $demoTitleToken = "[AMO:claude:agent-monitor-overlay:live-demo]"
 $demoWindowTitle = "$demoTitleToken Claude - AgentMonitorOverlay - Live demo"
 
-function Start-Broker {
-    $existing = Get-CimInstance Win32_Process |
-        Where-Object {
-            $_.CommandLine -like "*AgentMonitorOverlay*broker*server.js*" -or
-            $_.CommandLine -like "*broker/server.js*" -or
-            $_.CommandLine -like "*broker\\server.js*"
+function Test-BrokerHealthy {
+    try {
+        $health = Invoke-RestMethod -Method GET -Uri "$baseUrl/api/health" -TimeoutSec 2
+        return [bool]($health.ok -and $health.service -eq "agent-monitor-broker")
+    } catch {
+        return $false
+    }
+}
+
+function Stop-BrokerOnPort {
+    $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    foreach ($listener in $listeners) {
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction SilentlyContinue
+        if (-not $process) {
+            continue
         }
 
-    if ($existing) {
-        Write-Host "Broker appears to already be running."
-        return $null
+        if ($process.Name -ieq "node.exe" -or $process.CommandLine -like "*broker/server.js*" -or $process.CommandLine -like "*broker\server.js*") {
+            Stop-Process -Id $process.ProcessId -Force
+        } else {
+            throw "Port $Port is already used by PID $($process.ProcessId): $($process.Name)."
+        }
     }
+}
+
+function Start-Broker {
+    Stop-BrokerOnPort
+    Start-Sleep -Milliseconds 300
 
     $env:AGENT_MONITOR_HOST = $HostName
     $env:AGENT_MONITOR_PORT = [string]$Port
@@ -41,14 +57,11 @@ function Start-Broker {
 function Wait-Broker {
     $deadline = (Get-Date).AddSeconds(10)
     while ((Get-Date) -lt $deadline) {
-        try {
-            $health = Invoke-RestMethod -Method GET -Uri "$baseUrl/api/health"
-            if ($health.ok) {
-                return
-            }
-        } catch {
-            Start-Sleep -Milliseconds 250
+        if (Test-BrokerHealthy) {
+            return
         }
+
+        Start-Sleep -Milliseconds 250
     }
 
     throw "Broker did not become healthy at $baseUrl."
@@ -123,12 +136,14 @@ function Start-Overlay {
         return $null
     }
 
-    Start-Process -FilePath "npm" `
-        -ArgumentList @("run", "tauri:dev") `
+    Start-Process -FilePath "cmd.exe" `
+        -ArgumentList @("/c", "npm", "run", "tauri:dev") `
         -WorkingDirectory $overlayPath `
+        -WindowStyle Hidden `
         -PassThru
 }
 
+Remove-Item -LiteralPath $brokerData -Force -ErrorAction SilentlyContinue
 $brokerProcess = Start-Broker
 Wait-Broker
 Publish-DemoEvents
