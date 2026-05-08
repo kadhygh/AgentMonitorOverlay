@@ -11,6 +11,36 @@ $adapterPath = Join-Path $repoRoot "scripts\adapters\Send-AgentMonitorEvent.ps1"
 $dataFile = Join-Path $repoRoot "broker\data\adapter-verify-sessions.json"
 $baseUrl = "http://${HostName}:${Port}"
 
+function Assert-PortAvailable {
+    $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    if ($listeners.Count -eq 0) {
+        return
+    }
+
+    $owners = foreach ($listener in $listeners) {
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction SilentlyContinue
+        if ($process) {
+            "$($process.Name) pid=$($process.ProcessId)"
+        } else {
+            "pid=$($listener.OwningProcess)"
+        }
+    }
+
+    throw "Port $Port is already in use ($($owners -join '; ')). Stop that process or run this script with -Port <free port>."
+}
+
+function Clear-VerificationData {
+    $dataDir = Split-Path -Parent $dataFile
+    $dataName = Split-Path -Leaf $dataFile
+
+    Remove-Item -LiteralPath $dataFile -Force -ErrorAction SilentlyContinue
+
+    if (Test-Path -LiteralPath $dataDir) {
+        Get-ChildItem -LiteralPath $dataDir -Filter "$dataName.*.tmp" -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Invoke-BrokerJson {
     param(
         [Parameter(Mandatory = $true)][string]$Method,
@@ -86,6 +116,8 @@ function Assert-SessionState {
 }
 
 Write-Host "Starting broker at $baseUrl for adapter verification."
+Assert-PortAvailable
+Clear-VerificationData
 $broker = Start-Broker
 
 try {
@@ -116,6 +148,10 @@ try {
     }
 
     $sessions = Invoke-BrokerJson -Method GET -Path "/api/sessions"
+    if ($sessions.count -ne 3) {
+        throw "Expected exactly 3 adapter verification sessions, got $($sessions.count)."
+    }
+
     Assert-SessionState -Sessions $sessions -SessionId "verify-codex-permission" -ExpectedState "waiting_permission" -ExpectedNeedsAttention $true
     Assert-SessionState -Sessions $sessions -SessionId "verify-claude-idle" -ExpectedState "waiting_user" -ExpectedNeedsAttention $true
     Assert-SessionState -Sessions $sessions -SessionId "verify-kiro-agent" -ExpectedState "starting" -ExpectedNeedsAttention $false

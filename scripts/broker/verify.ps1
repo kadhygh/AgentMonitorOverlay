@@ -10,6 +10,36 @@ $serverPath = Join-Path $repoRoot "broker\server.js"
 $dataFile = Join-Path $repoRoot "broker\data\sessions.json"
 $baseUrl = "http://${HostName}:${Port}"
 
+function Assert-PortAvailable {
+    $listeners = @(Get-NetTCPConnection -LocalPort $Port -State Listen -ErrorAction SilentlyContinue)
+    if ($listeners.Count -eq 0) {
+        return
+    }
+
+    $owners = foreach ($listener in $listeners) {
+        $process = Get-CimInstance Win32_Process -Filter "ProcessId = $($listener.OwningProcess)" -ErrorAction SilentlyContinue
+        if ($process) {
+            "$($process.Name) pid=$($process.ProcessId)"
+        } else {
+            "pid=$($listener.OwningProcess)"
+        }
+    }
+
+    throw "Port $Port is already in use ($($owners -join '; ')). Stop that process or run this script with -Port <free port>."
+}
+
+function Clear-VerificationData {
+    $dataDir = Split-Path -Parent $dataFile
+    $dataName = Split-Path -Leaf $dataFile
+
+    Remove-Item -LiteralPath $dataFile -Force -ErrorAction SilentlyContinue
+
+    if (Test-Path -LiteralPath $dataDir) {
+        Get-ChildItem -LiteralPath $dataDir -Filter "$dataName.*.tmp" -File -ErrorAction SilentlyContinue |
+            Remove-Item -Force -ErrorAction SilentlyContinue
+    }
+}
+
 function Invoke-BrokerJson {
     param(
         [Parameter(Mandatory = $true)][string]$Method,
@@ -61,6 +91,8 @@ function Start-Broker {
 }
 
 Write-Host "Starting broker at $baseUrl"
+Assert-PortAvailable
+Clear-VerificationData
 $broker = Start-Broker
 
 try {
@@ -87,8 +119,8 @@ try {
     Write-Host "Heartbeat OK -> $($heartbeat.session.sessionId) at $($heartbeat.session.heartbeatAt)"
 
     $sessions = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessions.count -lt 3) {
-        throw "Expected at least 3 sessions, got $($sessions.count)."
+    if ($sessions.count -ne 3) {
+        throw "Expected exactly 3 sessions, got $($sessions.count)."
     }
 
     $tools = @($sessions.sessions | ForEach-Object { $_.tool })
@@ -114,8 +146,8 @@ $broker = Start-Broker
 try {
     Wait-Broker | Out-Null
     $sessionsAfterRestart = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessionsAfterRestart.count -lt 3) {
-        throw "Persistence check failed. Expected at least 3 sessions after restart, got $($sessionsAfterRestart.count)."
+    if ($sessionsAfterRestart.count -ne 3) {
+        throw "Persistence check failed. Expected exactly 3 sessions after restart, got $($sessionsAfterRestart.count)."
     }
 
     Write-Host "Persistence OK. Sessions after restart: $($sessionsAfterRestart.count)"

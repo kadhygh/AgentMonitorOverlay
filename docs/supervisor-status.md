@@ -1,6 +1,6 @@
 # Supervisor Status
 
-Updated: 2026-05-07
+Updated: 2026-05-08
 
 ## Current Git
 
@@ -46,18 +46,20 @@ Updated: 2026-05-07
 - `windowHint.titleToken` follows `[AMO:<tool>:<project-slug>:<session-slug>]` and is the primary routing key when available.
 - Overlay external activation uses native Win32 enumeration/focus on Windows, with ambiguity and blocked-focus feedback.
 - User accepted the first overlay vibe checkpoint. Small UI details can be tuned later.
+- Broker and adapter verification scripts clear their own data files before running, assert exact session counts, and fail fast if the target port is already occupied.
 
 ## Verified This Round
 
 - `node --check broker\server.js`
-- `powershell -ExecutionPolicy Bypass -File .\scripts\broker\verify.ps1`
+- `npm run broker:verify` with isolated broker data; exact 3-session API and persistence checks pass
 - `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\adapters\Send-AgentMonitorEvent.ps1 -Tool codex -DryRun`
 - Adapter POST into a live broker created `adapter-demo-001` with `waiting_permission`.
 - `powershell -ExecutionPolicy Bypass -File .\scripts\window-routing\Get-WindowCandidates.ps1 -TitleContains AgentMonitorOverlay`
 - `npm install` in `overlay/`
 - `npm run build` in `overlay/`
 - `cargo check` in `overlay/src-tauri/`
-- `npm run adapters:verify`
+- `npm run adapters:verify` with isolated adapter data; exact Codex / Claude / Kiro contract checks pass
+- `git diff --check`
 
 ## Live Hook Smoke Results
 

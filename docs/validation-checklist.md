@@ -14,7 +14,7 @@ Status: ready for supervisor/user manual validation
 
 ## Phase 2: Broker MVP
 
-Status: verified locally by supervisor
+Status: verified locally by supervisor; isolated verification script passes on 2026-05-08
 
 - Start broker locally.
 - POST mock Codex event.
@@ -37,7 +37,7 @@ Status: build verified locally; native window vibe still needs user validation
 
 ## Phase 4 Spike: Tool Adapters
 
-Status: adapter dry-run and broker POST verified; Claude live hook smoke passed; Codex hook loading still pending
+Status: isolated adapter contract verification passes on 2026-05-08; Claude live hook smoke passed; Codex hook loading still pending
 
 - Confirm Codex event payload can map to broker session model.
 - Confirm Claude event payload can map to broker session model.
