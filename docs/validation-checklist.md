@@ -11,6 +11,7 @@ Status: ready for supervisor/user manual validation
 - Verify failure behavior when a target window is missing or ambiguous.
 - Verify the proposed Codex / Claude / Kiro title naming convention fits the user's real workflow.
 - Run `npm run demo:claude-routing`, then click the Claude live demo row in the overlay and confirm it routes to the PowerShell window with the `[AMO:claude:agent-monitor-overlay:live-demo]` title.
+- Confirm the Claude demo row routes using the published `conhost.exe` PID when direct console HWND is unavailable.
 
 ## Phase 2: Broker MVP
 
@@ -33,6 +34,8 @@ Status: build verified locally; native window vibe still needs user validation
 - Confirm window can be dragged without disrupting the main workspace.
 - Confirm 3-8 sessions remain readable.
 - Confirm `waiting_user` and `waiting_permission` states are visible without feeling noisy.
+- Confirm each row is easier to identify with the tool icon before the project/title.
+- Confirm dragging from the row handle moves the overlay without triggering session activation.
 - Click a session and confirm routing behavior or clear failure feedback.
 
 ## Phase 4 Spike: Tool Adapters

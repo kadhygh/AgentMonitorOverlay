@@ -11,6 +11,8 @@ $baseUrl = "http://${HostName}:${Port}"
 $brokerData = Join-Path $repoRoot "broker\data\demo-sessions.json"
 $serverPath = Join-Path $repoRoot "broker\server.js"
 $overlayPath = Join-Path $repoRoot "overlay"
+$overlayStdout = Join-Path $repoRoot "tmp\overlay-demo.out.log"
+$overlayStderr = Join-Path $repoRoot "tmp\overlay-demo.err.log"
 $demoTitleToken = "[AMO:claude:agent-monitor-overlay:live-demo]"
 $demoWindowTitle = "$demoTitleToken Claude - AgentMonitorOverlay - Live demo"
 
@@ -35,6 +37,26 @@ function Stop-BrokerOnPort {
             Stop-Process -Id $process.ProcessId -Force
         } else {
             throw "Port $Port is already used by PID $($process.ProcessId): $($process.Name)."
+        }
+    }
+}
+
+function Stop-OverlayDevProcesses {
+    $targets = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            ($_.CommandLine -like "*AgentMonitorOverlay\overlay*" -and $_.CommandLine -like "*vite\bin\vite.js*") -or
+            ($_.CommandLine -like "*AgentMonitorOverlay\overlay*" -and $_.CommandLine -like "*@tauri-apps\cli\tauri.js* dev*") -or
+            ($_.CommandLine -like "*AgentMonitorOverlay\overlay*" -and $_.CommandLine -like "*npm run dev*") -or
+            ($_.CommandLine -like "*AgentMonitorOverlay\overlay*" -and $_.CommandLine -like "*npm run tauri:dev*") -or
+            ($_.CommandLine -like "*AgentMonitorOverlay\overlay\src-tauri*" -and $_.CommandLine -like "*cargo* run*") -or
+            ($_.CommandLine -like "*target\debug\agent-monitor-overlay.exe*")
+        }
+
+    foreach ($target in $targets) {
+        try {
+            Stop-Process -Id $target.ProcessId -Force -ErrorAction Stop
+        } catch {
+            Write-Warning "Failed to stop overlay dev process $($target.ProcessId): $($_.Exception.Message)"
         }
     }
 }
@@ -68,6 +90,12 @@ function Wait-Broker {
 }
 
 function Publish-DemoEvents {
+    param(
+        [Parameter(Mandatory = $true)][string]$RouteProcessName,
+        [Parameter(Mandatory = $true)][int]$RoutePid,
+        [object]$DemoHwnd = $null
+    )
+
     $events = @(
         [ordered]@{
             tool = "claude"
@@ -79,13 +107,15 @@ function Publish-DemoEvents {
             message = "Claude live hook smoke reached broker; click this row to route to the demo window."
             needsAttention = $false
             windowHint = [ordered]@{
-                process = "WindowsTerminal.exe"
+                process = $RouteProcessName
                 title = $demoWindowTitle
                 titleToken = $demoTitleToken
                 titleContains = @("Claude", "AgentMonitorOverlay", "Live demo")
                 project = "AgentMonitorOverlay"
                 cwd = "G:\PROJECT\AgentMonitorOverlay"
                 tool = "claude"
+                pid = $RoutePid
+                hwnd = $DemoHwnd
             }
         },
         [ordered]@{
@@ -98,13 +128,15 @@ function Publish-DemoEvents {
             message = "Demo waiting-permission state for overlay attention styling."
             needsAttention = $true
             windowHint = [ordered]@{
-                process = "WindowsTerminal.exe"
+                process = $RouteProcessName
                 title = $demoWindowTitle
                 titleToken = $demoTitleToken
                 titleContains = @("Claude", "AgentMonitorOverlay", "Live demo")
                 project = "AgentMonitorOverlay"
                 cwd = "G:\PROJECT\AgentMonitorOverlay"
                 tool = "claude"
+                pid = $RoutePid
+                hwnd = $DemoHwnd
             }
         }
     )
@@ -112,6 +144,42 @@ function Publish-DemoEvents {
     foreach ($event in $events) {
         $json = $event | ConvertTo-Json -Depth 12
         Invoke-RestMethod -Method POST -Uri "$baseUrl/api/events" -ContentType "application/json" -Body $json | Out-Null
+    }
+}
+
+function Get-DemoRouteTarget {
+    param(
+        [Parameter(Mandatory = $true)][System.Diagnostics.Process]$Process
+    )
+
+    $deadline = (Get-Date).AddSeconds(10)
+    while ((Get-Date) -lt $deadline) {
+        $consoleHost = Get-CimInstance Win32_Process -Filter "ParentProcessId = $($Process.Id)" -ErrorAction SilentlyContinue |
+            Where-Object { $_.Name -ieq "conhost.exe" } |
+            Select-Object -First 1
+
+        if ($consoleHost) {
+            return [pscustomobject]@{
+                ProcessName = "conhost.exe"
+                Pid = [int]$consoleHost.ProcessId
+                Hwnd = $null
+            }
+        }
+
+        Start-Sleep -Milliseconds 200
+    }
+
+    $Process.Refresh()
+    $hwnd = if ($Process.MainWindowHandle -ne [IntPtr]::Zero) {
+        $Process.MainWindowHandle.ToInt64()
+    } else {
+        $null
+    }
+
+    return [pscustomobject]@{
+        ProcessName = "powershell.exe"
+        Pid = [int]$Process.Id
+        Hwnd = $hwnd
     }
 }
 
@@ -136,9 +204,17 @@ function Start-Overlay {
         return $null
     }
 
+    Stop-OverlayDevProcesses
+    Start-Sleep -Milliseconds 300
+
+    New-Item -ItemType Directory -Force -Path (Split-Path -Parent $overlayStdout) | Out-Null
+    Remove-Item -LiteralPath $overlayStdout, $overlayStderr -Force -ErrorAction SilentlyContinue
+
     Start-Process -FilePath "cmd.exe" `
         -ArgumentList @("/c", "npm", "run", "tauri:dev") `
         -WorkingDirectory $overlayPath `
+        -RedirectStandardOutput $overlayStdout `
+        -RedirectStandardError $overlayStderr `
         -WindowStyle Hidden `
         -PassThru
 }
@@ -146,16 +222,23 @@ function Start-Overlay {
 Remove-Item -LiteralPath $brokerData -Force -ErrorAction SilentlyContinue
 $brokerProcess = Start-Broker
 Wait-Broker
-Publish-DemoEvents
 $demoWindow = Start-DemoWindow
+$routeTarget = Get-DemoRouteTarget -Process $demoWindow
+Publish-DemoEvents -RouteProcessName $routeTarget.ProcessName -RoutePid $routeTarget.Pid -DemoHwnd $routeTarget.Hwnd
 $overlayProcess = Start-Overlay
 
 Write-Host "Demo is ready."
 Write-Host "Broker: $baseUrl"
 Write-Host "Demo title token: $demoTitleToken"
 Write-Host "Demo window process id: $($demoWindow.Id)"
+Write-Host "Demo route process: $($routeTarget.ProcessName) pid=$($routeTarget.Pid)"
+if ($routeTarget.Hwnd) {
+    Write-Host ("Demo window handle: 0x{0:X}" -f $routeTarget.Hwnd)
+}
 if ($overlayProcess) {
     Write-Host "Overlay dev process id: $($overlayProcess.Id)"
+    Write-Host "Overlay stdout log: $overlayStdout"
+    Write-Host "Overlay stderr log: $overlayStderr"
 }
 if ($brokerProcess) {
     Write-Host "Broker process id: $($brokerProcess.Id)"

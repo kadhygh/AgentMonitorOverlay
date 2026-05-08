@@ -128,12 +128,12 @@ button {
 
 .session-row {
   display: grid;
-  grid-template-columns: 10px minmax(0, 1fr) 22px;
+  grid-template-columns: 14px 28px minmax(0, 1fr) 22px;
   align-items: center;
-  gap: 9px;
+  gap: 8px;
   width: 100%;
   min-height: 64px;
-  padding: 8px 8px;
+  padding: 8px 8px 8px 6px;
   color: #eef6f2;
   text-align: left;
   background: rgba(255, 255, 255, 0.055);
@@ -152,9 +152,63 @@ button {
   border-color: rgba(255, 182, 79, 0.35);
 }
 
+.row-drag-handle {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  height: 44px;
+  color: rgba(220, 232, 227, 0.52);
+  border-radius: 5px;
+  cursor: grab;
+}
+
+.row-drag-handle:hover {
+  color: #eef6f2;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.row-drag-handle:active {
+  cursor: grabbing;
+}
+
+.tool-mark {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: #eaf7f2;
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 7px;
+}
+
+.tool-codex {
+  color: #6fe0be;
+  background: rgba(45, 139, 112, 0.16);
+}
+
+.tool-claude {
+  color: #ffc06e;
+  background: rgba(170, 103, 42, 0.18);
+}
+
+.tool-kiro {
+  color: #8fc4ff;
+  background: rgba(65, 117, 178, 0.18);
+}
+
+.tool-other {
+  color: #c8d7d2;
+}
+
 .state-dot {
+  position: absolute;
+  right: -2px;
+  bottom: -2px;
   width: 9px;
   height: 9px;
+  border: 1px solid rgba(18, 25, 29, 0.92);
   border-radius: 50%;
   box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.06);
 }

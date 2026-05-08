@@ -1,9 +1,21 @@
 import { useEffect, useMemo, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { ChevronDown, ChevronUp, ExternalLink, GripHorizontal, Minimize2, RefreshCcw } from "lucide-react";
+import {
+  Blocks,
+  Bot,
+  BrainCircuit,
+  ChevronDown,
+  ChevronUp,
+  ExternalLink,
+  GripHorizontal,
+  GripVertical,
+  Minimize2,
+  RefreshCcw,
+  SquareTerminal,
+} from "lucide-react";
 import { mockSessions } from "./mockSessions";
-import type { ActivationResult, AgentSession, SessionState } from "./types";
+import type { ActivationResult, AgentSession, AgentTool, SessionState } from "./types";
 
 const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
 const REFRESH_INTERVAL_MS = 3000;
@@ -19,6 +31,20 @@ const stateLabel: Record<SessionState, string> = {
   cancelled: "Cancelled",
   unknown: "Unknown",
 };
+
+const toolLabel: Record<AgentTool, string> = {
+  codex: "Codex",
+  claude: "Claude",
+  kiro: "Kiro",
+  other: "Agent",
+};
+
+const toolIcon = {
+  codex: SquareTerminal,
+  claude: BrainCircuit,
+  kiro: Blocks,
+  other: Bot,
+} satisfies Record<AgentTool, typeof SquareTerminal>;
 
 function projectName(cwd: string) {
   const parts = cwd.split(/[\\/]/).filter(Boolean);
@@ -55,6 +81,17 @@ function normalizeSessions(value: unknown): AgentSession[] | null {
   }
 
   return null;
+}
+
+function ToolMark({ tool, state }: { tool: AgentTool; state: SessionState }) {
+  const Icon = toolIcon[tool] ?? toolIcon.other;
+
+  return (
+    <span className={`tool-mark tool-${tool}`} title={toolLabel[tool] ?? toolLabel.other}>
+      <Icon size={16} strokeWidth={2.2} aria-hidden="true" />
+      <span className="state-dot" aria-label={stateLabel[state]} />
+    </span>
+  );
 }
 
 export default function App() {
@@ -121,6 +158,7 @@ export default function App() {
         titleContains: session.windowHint?.titleContains ?? [],
         project: session.windowHint?.project ?? projectName(session.cwd),
         cwd: session.windowHint?.cwd ?? session.cwd,
+        pid: session.windowHint?.pid ?? null,
         hwnd: session.windowHint?.hwnd ?? null,
       });
       setFeedback(result.message);
@@ -202,7 +240,23 @@ export default function App() {
                 className={`session-row state-${session.state} ${session.needsAttention ? "needs-attention" : ""}`}
                 onClick={() => void activateSession(session)}
               >
-                <span className="state-dot" aria-label={stateLabel[session.state]} />
+                <span
+                  className="row-drag-handle"
+                  title="Drag overlay"
+                  data-tauri-drag-region
+                  onPointerDown={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    void getCurrentWindow().startDragging().catch(() => undefined);
+                  }}
+                  onClick={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                  }}
+                >
+                  <GripVertical size={15} aria-hidden="true" />
+                </span>
+                <ToolMark tool={session.tool} state={session.state} />
                 <span className="session-main">
                   <span className="session-line">
                     <strong>{projectName(session.cwd)}</strong>

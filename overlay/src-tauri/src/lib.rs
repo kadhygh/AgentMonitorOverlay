@@ -23,6 +23,7 @@ fn activate_session_window(
     title_contains: Vec<String>,
     project: String,
     cwd: String,
+    pid: Option<u32>,
     hwnd: Option<i64>,
 ) -> ActivationResult {
     activate_external_window(
@@ -34,6 +35,7 @@ fn activate_session_window(
             title_contains,
             project,
             cwd,
+            pid,
             hwnd,
         },
     )
@@ -47,6 +49,7 @@ struct WindowHintInput {
     title_contains: Vec<String>,
     project: String,
     cwd: String,
+    pid: Option<u32>,
     hwnd: Option<i64>,
 }
 
@@ -96,13 +99,11 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
     unsafe {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            FlashWindowEx, SetForegroundWindow, ShowWindow, FLASHWINFO, FLASHW_TRAY,
-            FLASHW_TIMERNOFG, SW_RESTORE,
+            FlashWindowEx, FLASHWINFO, FLASHW_TRAY, FLASHW_TIMERNOFG,
         };
 
         let target_hwnd = selected.hwnd as HWND;
-        ShowWindow(target_hwnd, SW_RESTORE);
-        let activated = SetForegroundWindow(target_hwnd) != 0;
+        let activated = focus_window(target_hwnd);
 
         if activated {
             ActivationResult {
@@ -131,6 +132,52 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
 }
 
 #[cfg(windows)]
+unsafe fn focus_window(target_hwnd: windows_sys::Win32::Foundation::HWND) -> bool {
+    use windows_sys::Win32::Foundation::HWND;
+    use windows_sys::Win32::System::Threading::{AttachThreadInput, GetCurrentThreadId};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        BringWindowToTop, GetForegroundWindow, GetWindowThreadProcessId, SetForegroundWindow,
+        ShowWindow, SW_RESTORE,
+    };
+
+    ShowWindow(target_hwnd, SW_RESTORE);
+
+    let current_thread = GetCurrentThreadId();
+    let mut target_pid = 0u32;
+    let target_thread = GetWindowThreadProcessId(target_hwnd, &mut target_pid);
+
+    let foreground_hwnd: HWND = GetForegroundWindow();
+    let mut foreground_pid = 0u32;
+    let foreground_thread = if foreground_hwnd.is_null() {
+        0
+    } else {
+        GetWindowThreadProcessId(foreground_hwnd, &mut foreground_pid)
+    };
+
+    let attach_target = target_thread != 0 && target_thread != current_thread;
+    let attach_foreground = foreground_thread != 0 && foreground_thread != current_thread;
+
+    if attach_target {
+        AttachThreadInput(current_thread, target_thread, 1);
+    }
+    if attach_foreground {
+        AttachThreadInput(current_thread, foreground_thread, 1);
+    }
+
+    BringWindowToTop(target_hwnd);
+    let activated = SetForegroundWindow(target_hwnd) != 0;
+
+    if attach_foreground {
+        AttachThreadInput(current_thread, foreground_thread, 0);
+    }
+    if attach_target {
+        AttachThreadInput(current_thread, target_thread, 0);
+    }
+
+    activated
+}
+
+#[cfg(windows)]
 enum ResolveResult {
     Matched(WindowCandidate),
     Ambiguous(Vec<WindowCandidate>),
@@ -142,7 +189,7 @@ fn resolve_candidate(candidates: &[WindowCandidate], hint: &WindowHintInput) -> 
     if let Some(hwnd) = hint.hwnd {
         let hwnd_matches = candidates
             .iter()
-            .filter(|candidate| candidate.hwnd == hwnd as isize && candidate_matches_hint(candidate, hint))
+            .filter(|candidate| candidate.hwnd == hwnd as isize && candidate_matches_explicit_hwnd(candidate, hint))
             .cloned()
             .collect::<Vec<_>>();
         if let Some(candidate) = hwnd_matches.into_iter().next() {
@@ -151,6 +198,7 @@ fn resolve_candidate(candidates: &[WindowCandidate], hint: &WindowHintInput) -> 
     }
 
     for matches in [
+        matches_by_pid(candidates, hint),
         matches_by_title_token(candidates, hint),
         matches_by_process_and_title(candidates, hint),
         matches_by_process_and_title_contains(candidates, hint),
@@ -164,6 +212,19 @@ fn resolve_candidate(candidates: &[WindowCandidate], hint: &WindowHintInput) -> 
     }
 
     ResolveResult::NoMatch
+}
+
+#[cfg(windows)]
+fn matches_by_pid(candidates: &[WindowCandidate], hint: &WindowHintInput) -> Vec<WindowCandidate> {
+    let Some(pid) = hint.pid else {
+        return Vec::new();
+    };
+
+    candidates
+        .iter()
+        .filter(|candidate| candidate.process_id == pid)
+        .cloned()
+        .collect()
 }
 
 #[cfg(windows)]
@@ -242,10 +303,6 @@ fn matches_by_project_or_cwd(candidates: &[WindowCandidate], hint: &WindowHintIn
 
 #[cfg(windows)]
 fn candidate_matches_hint(candidate: &WindowCandidate, hint: &WindowHintInput) -> bool {
-    if !hint.process_name.trim().is_empty() && !process_matches(candidate, &hint.process_name) {
-        return false;
-    }
-
     let title = normalized(&candidate.title);
     let token = normalized(&hint.title_token);
     if !token.is_empty() && title.contains(&token) {
@@ -259,6 +316,26 @@ fn candidate_matches_hint(candidate: &WindowCandidate, hint: &WindowHintInput) -
 
     let project = normalized(&hint.project);
     !project.is_empty() && title.contains(&project)
+}
+
+#[cfg(windows)]
+fn candidate_matches_explicit_hwnd(candidate: &WindowCandidate, hint: &WindowHintInput) -> bool {
+    if let Some(pid) = hint.pid {
+        return candidate.process_id == pid;
+    }
+
+    if !hint.process_name.trim().is_empty() && process_matches(candidate, &hint.process_name) {
+        return true;
+    }
+
+    if candidate_matches_hint(candidate, hint) {
+        return true;
+    }
+
+    hint.process_name.trim().is_empty()
+        && hint.title_token.trim().is_empty()
+        && hint.title.trim().is_empty()
+        && hint.project.trim().is_empty()
 }
 
 #[cfg(windows)]
@@ -293,12 +370,13 @@ fn cwd_basename(cwd: &str) -> Option<&str> {
 #[cfg(windows)]
 fn format_candidate(candidate: &WindowCandidate) -> String {
     format!(
-        "{}:{} '{}'",
+        "{}:{} hwnd=0x{:X} '{}'",
         candidate
             .process_name
             .as_deref()
             .unwrap_or("unknown-process"),
         candidate.process_id,
+        candidate.hwnd,
         candidate.title
     )
 }

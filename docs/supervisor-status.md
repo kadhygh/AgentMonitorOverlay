@@ -47,6 +47,10 @@ Updated: 2026-05-08
 - Overlay external activation uses native Win32 enumeration/focus on Windows, with ambiguity and blocked-focus feedback.
 - User accepted the first overlay vibe checkpoint. Small UI details can be tuned later.
 - Broker and adapter verification scripts clear their own data files before running, assert exact session counts, and fail fast if the target port is already occupied.
+- User feedback on 2026-05-08: overlay appears and broker data is correct, but session rows need stronger tool recognition and click-to-window did not route.
+- Overlay session rows now include a per-tool icon and a row-level drag handle; click target remains the full row.
+- Window activation now accepts `windowHint.pid` as a first-class exact match and uses a stronger foreground-focus path on Windows.
+- Claude routing demo now publishes the console host PID for the demo window and clears stale overlay dev/Vite processes before starting Tauri.
 
 ## Verified This Round
 
@@ -60,6 +64,9 @@ Updated: 2026-05-08
 - `cargo check` in `overlay/src-tauri/`
 - `npm run adapters:verify` with isolated adapter data; exact Codex / Claude / Kiro contract checks pass
 - `git diff --check`
+- `npm run build` in `overlay/` after tool-icon and drag-handle UI updates
+- `cargo check` in `overlay/src-tauri/` after PID routing and focus-path updates
+- `npm run demo:claude-routing` starts broker, demo PowerShell target, Vite, and `agent-monitor-overlay.exe`; broker sessions include `windowHint.process=conhost.exe` and a concrete PID
 
 ## Live Hook Smoke Results
 
@@ -72,4 +79,5 @@ Updated: 2026-05-08
 - Keep adapter contract verification as the automated gate.
 - Keep Claude live smoke as a verified real-hook gate.
 - Decide the Codex hook validation route: supported per-process hook injection, or temporary install/restore of a user-layer hook in the real Codex home.
-- Use `npm run demo:claude-routing` as the next user-facing validation point for broker-backed overlay refresh and `[AMO:...]` click-to-window routing.
+- Ask the user to re-check the visible overlay: tool icons, row drag handle, and clicking a Claude demo row to route to the PowerShell demo window.
+- If PID routing still does not focus the demo window, collect the overlay footer feedback and add a user-visible candidate/debug panel before continuing Codex hook work.
