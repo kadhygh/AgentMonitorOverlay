@@ -83,6 +83,26 @@ function normalizeSessions(value: unknown): AgentSession[] | null {
   return null;
 }
 
+function mergeSessionOrder(previousOrder: string[], nextSessions: AgentSession[]) {
+  const nextIds = nextSessions.map((session) => session.sessionId);
+  const keptIds = previousOrder.filter((sessionId) => nextIds.includes(sessionId));
+  const addedIds = nextIds.filter((sessionId) => !keptIds.includes(sessionId));
+  return [...keptIds, ...addedIds];
+}
+
+function applySessionOrder(sessions: AgentSession[], order: string[]) {
+  const indexed = new Map(order.map((sessionId, index) => [sessionId, index]));
+  return [...sessions].sort((a, b) => {
+    const aIndex = indexed.get(a.sessionId) ?? Number.MAX_SAFE_INTEGER;
+    const bIndex = indexed.get(b.sessionId) ?? Number.MAX_SAFE_INTEGER;
+    if (aIndex !== bIndex) {
+      return aIndex - bIndex;
+    }
+
+    return `${b.updatedAt}`.localeCompare(`${a.updatedAt}`);
+  });
+}
+
 function ToolMark({ tool, state }: { tool: AgentTool; state: SessionState }) {
   const Icon = toolIcon[tool] ?? toolIcon.other;
 
@@ -96,11 +116,21 @@ function ToolMark({ tool, state }: { tool: AgentTool; state: SessionState }) {
 
 export default function App() {
   const [sessions, setSessions] = useState<AgentSession[]>(mockSessions);
+  const [sessionOrder, setSessionOrder] = useState<string[]>(() =>
+    mockSessions.map((session) => session.sessionId),
+  );
   const [collapsed, setCollapsed] = useState(false);
   const [source, setSource] = useState<"mock" | "broker">("mock");
   const [feedback, setFeedback] = useState("Mock data ready. Window activation is placeholder.");
   const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
+  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+
+  const orderedSessions = useMemo(
+    () => applySessionOrder(sessions, sessionOrder).slice(0, 8),
+    [sessions, sessionOrder],
+  );
 
   const attentionCount = useMemo(
     () => sessions.filter((session) => session.needsAttention).length,
@@ -120,12 +150,15 @@ export default function App() {
         throw new Error("broker response has no sessions");
       }
 
-      setSessions(nextSessions.slice(0, 8));
+      const visibleSessions = nextSessions.slice(0, 8);
+      setSessions(visibleSessions);
+      setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, visibleSessions));
       setSource("broker");
       setLastRefreshAt(new Date().toISOString());
       setFeedback(`Broker sessions loaded: ${nextSessions.length}`);
     } catch (error) {
       setSessions(mockSessions);
+      setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, mockSessions));
       setSource("mock");
       setLastRefreshAt(new Date().toISOString());
       setFeedback(`Using mock sessions: ${(error as Error).message}`);
@@ -167,6 +200,33 @@ export default function App() {
     } finally {
       setActivatingId(null);
     }
+  }
+
+  function moveSessionBefore(targetSession: AgentSession) {
+    if (!draggingSessionId || draggingSessionId === targetSession.sessionId) {
+      return;
+    }
+
+    const draggedSession = sessions.find((session) => session.sessionId === draggingSessionId);
+
+    setSessionOrder((previousOrder) => {
+      const baseOrder = mergeSessionOrder(previousOrder, sessions);
+      const fromIndex = baseOrder.indexOf(draggingSessionId);
+      const toIndex = baseOrder.indexOf(targetSession.sessionId);
+      if (fromIndex < 0 || toIndex < 0) {
+        return baseOrder;
+      }
+
+      const nextOrder = [...baseOrder];
+      const [movedId] = nextOrder.splice(fromIndex, 1);
+      const insertIndex = nextOrder.indexOf(targetSession.sessionId);
+      nextOrder.splice(insertIndex, 0, movedId);
+      return nextOrder;
+    });
+
+    setFeedback(
+      `Moved ${draggedSession?.title ?? draggingSessionId} before ${targetSession.title}.`,
+    );
   }
 
   useEffect(() => {
@@ -233,21 +293,58 @@ export default function App() {
           </section>
 
           <section className="session-list" aria-label="Agent sessions">
-            {sessions.slice(0, 8).map((session) => (
-              <button
-                type="button"
+            {orderedSessions.map((session) => (
+              <div
+                role="button"
+                tabIndex={0}
                 key={session.sessionId}
-                className={`session-row state-${session.state} ${session.needsAttention ? "needs-attention" : ""}`}
+                className={`session-row state-${session.state} ${session.needsAttention ? "needs-attention" : ""} ${
+                  draggingSessionId === session.sessionId ? "is-dragging" : ""
+                } ${dropTargetId === session.sessionId ? "is-drop-target" : ""}`}
                 onClick={() => void activateSession(session)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter" || event.key === " ") {
+                    event.preventDefault();
+                    void activateSession(session);
+                  }
+                }}
+                onDragOver={(event) => {
+                  if (!draggingSessionId || draggingSessionId === session.sessionId) {
+                    return;
+                  }
+
+                  event.preventDefault();
+                  event.dataTransfer.dropEffect = "move";
+                  setDropTargetId(session.sessionId);
+                }}
+                onDragLeave={() => {
+                  if (dropTargetId === session.sessionId) {
+                    setDropTargetId(null);
+                  }
+                }}
+                onDrop={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  moveSessionBefore(session);
+                  setDraggingSessionId(null);
+                  setDropTargetId(null);
+                }}
               >
                 <span
                   className="row-drag-handle"
-                  title="Drag overlay"
-                  data-tauri-drag-region
-                  onPointerDown={(event) => {
-                    event.preventDefault();
+                  title="Drag card"
+                  draggable
+                  onDragStart={(event) => {
                     event.stopPropagation();
-                    void getCurrentWindow().startDragging().catch(() => undefined);
+                    event.dataTransfer.effectAllowed = "move";
+                    event.dataTransfer.setData("text/plain", session.sessionId);
+                    setDraggingSessionId(session.sessionId);
+                    setDropTargetId(null);
+                    setFeedback(`Dragging ${session.title}.`);
+                  }}
+                  onDragEnd={() => {
+                    setDraggingSessionId(null);
+                    setDropTargetId(null);
                   }}
                   onClick={(event) => {
                     event.preventDefault();
@@ -271,7 +368,7 @@ export default function App() {
                 <span className="row-action" aria-hidden="true">
                   {activatingId === session.sessionId ? "..." : <ExternalLink size={15} />}
                 </span>
-              </button>
+              </div>
             ))}
           </section>
 

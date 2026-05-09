@@ -51,6 +51,9 @@ Updated: 2026-05-08
 - Overlay session rows now include a per-tool icon and a row-level drag handle; click target remains the full row.
 - Window activation now accepts `windowHint.pid` as a first-class exact match and uses a stronger foreground-focus path on Windows.
 - Claude routing demo now publishes the console host PID for the demo window and clears stale overlay dev/Vite processes before starting Tauri.
+- User clarified on 2026-05-08 that the row handle should drag task cards, not the whole overlay.
+- Broker now returns local CORS headers so the Tauri WebView can fetch `127.0.0.1:17654` from the Vite/WebView origin instead of falling back to mock sessions.
+- Session row handles now reorder visible cards locally; the overlay header remains the drag target for moving the whole window.
 
 ## Verified This Round
 
@@ -67,6 +70,9 @@ Updated: 2026-05-08
 - `npm run build` in `overlay/` after tool-icon and drag-handle UI updates
 - `cargo check` in `overlay/src-tauri/` after PID routing and focus-path updates
 - `npm run demo:claude-routing` starts broker, demo PowerShell target, Vite, and `agent-monitor-overlay.exe`; broker sessions include `windowHint.process=conhost.exe` and a concrete PID
+- `npm run broker:verify -- -Port 17655` after broker CORS update
+- CORS smoke on port `17657`: `GET /api/sessions` returns `Access-Control-Allow-Origin: *`; `OPTIONS /api/sessions` returns `204` and allowed methods
+- `npm run build` in `overlay/` after changing row drag handle from overlay-drag to card reorder
 
 ## Live Hook Smoke Results
 
@@ -80,4 +86,5 @@ Updated: 2026-05-08
 - Keep Claude live smoke as a verified real-hook gate.
 - Decide the Codex hook validation route: supported per-process hook injection, or temporary install/restore of a user-layer hook in the real Codex home.
 - Ask the user to re-check the visible overlay: tool icons, row drag handle, and clicking a Claude demo row to route to the PowerShell demo window.
-- If PID routing still does not focus the demo window, collect the overlay footer feedback and add a user-visible candidate/debug panel before continuing Codex hook work.
+- Ask the user to confirm the header says `broker live` and no mock `NoHeartbeat` card is visible.
+- If Claude routing still does not focus the demo window while broker live is active, collect the overlay footer feedback and add a user-visible candidate/debug panel before continuing Codex hook work.

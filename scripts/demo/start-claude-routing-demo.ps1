@@ -61,6 +61,23 @@ function Stop-OverlayDevProcesses {
     }
 }
 
+function Stop-DemoWindows {
+    $targets = Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -ieq "powershell.exe" -and
+            ($_.CommandLine -like "*agent-monitor-overlay:live-demo*" -or
+                $_.CommandLine -like "*Agent Monitor Overlay routing demo*")
+        }
+
+    foreach ($target in $targets) {
+        try {
+            Stop-Process -Id $target.ProcessId -Force -ErrorAction Stop
+        } catch {
+            Write-Warning "Failed to stop demo window process $($target.ProcessId): $($_.Exception.Message)"
+        }
+    }
+}
+
 function Start-Broker {
     Stop-BrokerOnPort
     Start-Sleep -Milliseconds 300
@@ -219,6 +236,7 @@ function Start-Overlay {
         -PassThru
 }
 
+Stop-DemoWindows
 Remove-Item -LiteralPath $brokerData -Force -ErrorAction SilentlyContinue
 $brokerProcess = Start-Broker
 Wait-Broker

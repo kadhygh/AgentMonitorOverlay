@@ -31,11 +31,13 @@ Status: build verified locally; native window vibe still needs user validation
 - Start overlay locally.
 - Confirm window is always on top.
 - Confirm broker-backed sessions refresh automatically every few seconds.
+- Confirm the header says `broker live` when the broker is running; mock `NoHeartbeat` fallback should not appear in the demo.
 - Confirm window can be dragged without disrupting the main workspace.
 - Confirm 3-8 sessions remain readable.
 - Confirm `waiting_user` and `waiting_permission` states are visible without feeling noisy.
 - Confirm each row is easier to identify with the tool icon before the project/title.
-- Confirm dragging from the row handle moves the overlay without triggering session activation.
+- Confirm dragging from the row handle reorders task cards without triggering session activation.
+- Confirm dragging from the overlay header moves the overlay window.
 - Click a session and confirm routing behavior or clear failure feedback.
 
 ## Phase 4 Spike: Tool Adapters

@@ -8,6 +8,11 @@ const DATA_FILE =
   process.env.AGENT_MONITOR_DATA_FILE ||
   path.join(__dirname, "data", "sessions.json");
 const MAX_BODY_BYTES = 1024 * 1024;
+const CORS_HEADERS = {
+  "access-control-allow-origin": "*",
+  "access-control-allow-methods": "GET, POST, OPTIONS",
+  "access-control-allow-headers": "content-type",
+};
 
 const VALID_STATES = new Set([
   "starting",
@@ -27,6 +32,10 @@ loadSnapshot();
 
 const server = http.createServer(async (req, res) => {
   try {
+    if (req.method === "OPTIONS") {
+      return sendEmpty(res, 204);
+    }
+
     const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
 
     if (req.method === "GET" && url.pathname === "/api/health") {
@@ -356,11 +365,21 @@ function readJsonBody(req, options = {}) {
 function sendJson(res, statusCode, payload) {
   const body = `${JSON.stringify(payload, null, 2)}\n`;
   res.writeHead(statusCode, {
+    ...CORS_HEADERS,
     "content-type": "application/json; charset=utf-8",
     "cache-control": "no-store",
     "content-length": Buffer.byteLength(body),
   });
   res.end(body);
+}
+
+function sendEmpty(res, statusCode) {
+  res.writeHead(statusCode, {
+    ...CORS_HEADERS,
+    "cache-control": "no-store",
+    "content-length": "0",
+  });
+  res.end();
 }
 
 function httpError(statusCode, code, message) {
