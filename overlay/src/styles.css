@@ -159,8 +159,8 @@ button {
   border-color: rgba(255, 182, 79, 0.35);
 }
 
-.session-row.is-dragging {
-  opacity: 0.48;
+.session-row.is-drag-placeholder {
+  opacity: 0.34;
 }
 
 .session-row.is-drop-target {
@@ -185,6 +185,20 @@ button {
 
 .row-drag-handle:active {
   cursor: grabbing;
+}
+
+.row-drag-handle.is-preview {
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef6f2;
+}
+
+.drag-preview {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0.97;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.38);
+  transform: rotate(0.3deg);
 }
 
 .tool-mark {

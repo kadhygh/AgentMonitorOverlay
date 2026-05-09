@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
@@ -103,6 +103,15 @@ function applySessionOrder(sessions: AgentSession[], order: string[]) {
   });
 }
 
+interface CardDragState {
+  sessionId: string;
+  pointerY: number;
+  offsetY: number;
+  left: number;
+  width: number;
+  height: number;
+}
+
 function ToolMark({ tool, state }: { tool: AgentTool; state: SessionState }) {
   const Icon = toolIcon[tool] ?? toolIcon.other;
 
@@ -111,6 +120,34 @@ function ToolMark({ tool, state }: { tool: AgentTool; state: SessionState }) {
       <Icon size={16} strokeWidth={2.2} aria-hidden="true" />
       <span className="state-dot" aria-label={stateLabel[state]} />
     </span>
+  );
+}
+
+function SessionRowContent({
+  session,
+  activating,
+}: {
+  session: AgentSession;
+  activating: boolean;
+}) {
+  return (
+    <>
+      <ToolMark tool={session.tool} state={session.state} />
+      <span className="session-main">
+        <span className="session-line">
+          <strong>{projectName(session.cwd)}</strong>
+          <span>{session.tool}</span>
+          <em>{formatAgo(session.updatedAt)}</em>
+        </span>
+        <span className="message-line">{session.lastMessage}</span>
+        <span className="event-line">
+          {stateLabel[session.state]} · {session.lastEvent}
+        </span>
+      </span>
+      <span className="row-action" aria-hidden="true">
+        {activating ? "..." : <ExternalLink size={15} />}
+      </span>
+    </>
   );
 }
 
@@ -123,9 +160,14 @@ export default function App() {
   const [source, setSource] = useState<"mock" | "broker">("mock");
   const [feedback, setFeedback] = useState("Mock data ready. Window activation is placeholder.");
   const [activatingId, setActivatingId] = useState<string | null>(null);
-  const [draggingSessionId, setDraggingSessionId] = useState<string | null>(null);
+  const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+  const rowRefs = useRef(new Map<string, HTMLDivElement>());
+  const sessionsRef = useRef(sessions);
+  const orderedSessionsRef = useRef<AgentSession[]>([]);
+  const cardDragRef = useRef<CardDragState | null>(null);
+  const suppressNextClickRef = useRef(false);
 
   const orderedSessions = useMemo(
     () => applySessionOrder(sessions, sessionOrder).slice(0, 8),
@@ -136,6 +178,14 @@ export default function App() {
     () => sessions.filter((session) => session.needsAttention).length,
     [sessions],
   );
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    orderedSessionsRef.current = orderedSessions;
+  }, [orderedSessions]);
 
   async function refreshSessions() {
     try {
@@ -202,31 +252,122 @@ export default function App() {
     }
   }
 
-  function moveSessionBefore(targetSession: AgentSession) {
-    if (!draggingSessionId || draggingSessionId === targetSession.sessionId) {
+  function moveDraggedSessionToIndex(draggingSessionId: string, targetIndex: number) {
+    setSessionOrder((previousOrder) => {
+      const currentSessions = sessionsRef.current;
+      const orderedVisibleIds = orderedSessionsRef.current.map((session) => session.sessionId);
+      const visibleWithoutDragged = orderedVisibleIds.filter((sessionId) => sessionId !== draggingSessionId);
+      const baseOrder = mergeSessionOrder(previousOrder, currentSessions).filter(
+        (sessionId) => sessionId !== draggingSessionId,
+      );
+
+      const beforeId = visibleWithoutDragged[targetIndex] ?? null;
+      const afterId = targetIndex > 0 ? visibleWithoutDragged[targetIndex - 1] : null;
+      const insertIndex = beforeId
+        ? baseOrder.indexOf(beforeId)
+        : afterId
+          ? baseOrder.indexOf(afterId) + 1
+          : baseOrder.length;
+
+      const safeIndex = Math.max(0, Math.min(insertIndex, baseOrder.length));
+      const nextOrder = [...baseOrder];
+      nextOrder.splice(safeIndex, 0, draggingSessionId);
+
+      if (nextOrder.join("\u0000") === mergeSessionOrder(previousOrder, currentSessions).join("\u0000")) {
+        return previousOrder;
+      }
+
+      return nextOrder;
+    });
+  }
+
+  function updateCardDrag(pointerY: number) {
+    const activeDrag = cardDragRef.current;
+    if (!activeDrag) {
       return;
     }
 
-    const draggedSession = sessions.find((session) => session.sessionId === draggingSessionId);
+    const visibleTargets = orderedSessionsRef.current.filter(
+      (session) => session.sessionId !== activeDrag.sessionId,
+    );
+    let targetIndex = visibleTargets.length;
+    let nextDropTargetId: string | null = null;
 
-    setSessionOrder((previousOrder) => {
-      const baseOrder = mergeSessionOrder(previousOrder, sessions);
-      const fromIndex = baseOrder.indexOf(draggingSessionId);
-      const toIndex = baseOrder.indexOf(targetSession.sessionId);
-      if (fromIndex < 0 || toIndex < 0) {
-        return baseOrder;
+    for (let index = 0; index < visibleTargets.length; index += 1) {
+      const targetSession = visibleTargets[index];
+      const targetElement = rowRefs.current.get(targetSession.sessionId);
+      if (!targetElement) {
+        continue;
       }
 
-      const nextOrder = [...baseOrder];
-      const [movedId] = nextOrder.splice(fromIndex, 1);
-      const insertIndex = nextOrder.indexOf(targetSession.sessionId);
-      nextOrder.splice(insertIndex, 0, movedId);
-      return nextOrder;
-    });
+      const rect = targetElement.getBoundingClientRect();
+      if (pointerY < rect.top + rect.height / 2) {
+        targetIndex = index;
+        nextDropTargetId = targetSession.sessionId;
+        break;
+      }
 
-    setFeedback(
-      `Moved ${draggedSession?.title ?? draggingSessionId} before ${targetSession.title}.`,
-    );
+      nextDropTargetId = targetSession.sessionId;
+    }
+
+    setDropTargetId(nextDropTargetId);
+    moveDraggedSessionToIndex(activeDrag.sessionId, targetIndex);
+  }
+
+  function startCardDrag(session: AgentSession, event: PointerEvent<HTMLElement>) {
+    const row = rowRefs.current.get(session.sessionId);
+    if (!row) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.currentTarget.setPointerCapture(event.pointerId);
+
+    const rect = row.getBoundingClientRect();
+    const nextDrag = {
+      sessionId: session.sessionId,
+      pointerY: event.clientY,
+      offsetY: event.clientY - rect.top,
+      left: rect.left,
+      width: rect.width,
+      height: rect.height,
+    };
+    cardDragRef.current = nextDrag;
+    suppressNextClickRef.current = true;
+    setCardDrag(nextDrag);
+    setDropTargetId(null);
+    setFeedback(`Dragging ${session.title}.`);
+  }
+
+  function continueCardDrag(event: PointerEvent<HTMLElement>) {
+    const activeDrag = cardDragRef.current;
+    if (!activeDrag) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    const nextDrag = {
+      ...activeDrag,
+      pointerY: event.clientY,
+    };
+    cardDragRef.current = nextDrag;
+    setCardDrag(nextDrag);
+    updateCardDrag(event.clientY);
+  }
+
+  function endCardDrag(event: PointerEvent<HTMLElement>) {
+    if (!cardDragRef.current) {
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    cardDragRef.current = null;
+    setCardDrag(null);
+    setDropTargetId(null);
   }
 
   useEffect(() => {
@@ -298,54 +439,38 @@ export default function App() {
                 role="button"
                 tabIndex={0}
                 key={session.sessionId}
+                ref={(element) => {
+                  if (element) {
+                    rowRefs.current.set(session.sessionId, element);
+                  } else {
+                    rowRefs.current.delete(session.sessionId);
+                  }
+                }}
                 className={`session-row state-${session.state} ${session.needsAttention ? "needs-attention" : ""} ${
-                  draggingSessionId === session.sessionId ? "is-dragging" : ""
+                  cardDrag?.sessionId === session.sessionId ? "is-drag-placeholder" : ""
                 } ${dropTargetId === session.sessionId ? "is-drop-target" : ""}`}
-                onClick={() => void activateSession(session)}
+                onClick={() => {
+                  if (suppressNextClickRef.current) {
+                    suppressNextClickRef.current = false;
+                    return;
+                  }
+
+                  void activateSession(session);
+                }}
                 onKeyDown={(event) => {
                   if (event.key === "Enter" || event.key === " ") {
                     event.preventDefault();
                     void activateSession(session);
                   }
                 }}
-                onDragOver={(event) => {
-                  if (!draggingSessionId || draggingSessionId === session.sessionId) {
-                    return;
-                  }
-
-                  event.preventDefault();
-                  event.dataTransfer.dropEffect = "move";
-                  setDropTargetId(session.sessionId);
-                }}
-                onDragLeave={() => {
-                  if (dropTargetId === session.sessionId) {
-                    setDropTargetId(null);
-                  }
-                }}
-                onDrop={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  moveSessionBefore(session);
-                  setDraggingSessionId(null);
-                  setDropTargetId(null);
-                }}
               >
                 <span
                   className="row-drag-handle"
                   title="Drag card"
-                  draggable
-                  onDragStart={(event) => {
-                    event.stopPropagation();
-                    event.dataTransfer.effectAllowed = "move";
-                    event.dataTransfer.setData("text/plain", session.sessionId);
-                    setDraggingSessionId(session.sessionId);
-                    setDropTargetId(null);
-                    setFeedback(`Dragging ${session.title}.`);
-                  }}
-                  onDragEnd={() => {
-                    setDraggingSessionId(null);
-                    setDropTargetId(null);
-                  }}
+                  onPointerDown={(event) => startCardDrag(session, event)}
+                  onPointerMove={continueCardDrag}
+                  onPointerUp={endCardDrag}
+                  onPointerCancel={endCardDrag}
                   onClick={(event) => {
                     event.preventDefault();
                     event.stopPropagation();
@@ -353,24 +478,32 @@ export default function App() {
                 >
                   <GripVertical size={15} aria-hidden="true" />
                 </span>
-                <ToolMark tool={session.tool} state={session.state} />
-                <span className="session-main">
-                  <span className="session-line">
-                    <strong>{projectName(session.cwd)}</strong>
-                    <span>{session.tool}</span>
-                    <em>{formatAgo(session.updatedAt)}</em>
-                  </span>
-                  <span className="message-line">{session.lastMessage}</span>
-                  <span className="event-line">
-                    {stateLabel[session.state]} · {session.lastEvent}
-                  </span>
-                </span>
-                <span className="row-action" aria-hidden="true">
-                  {activatingId === session.sessionId ? "..." : <ExternalLink size={15} />}
-                </span>
+                <SessionRowContent session={session} activating={activatingId === session.sessionId} />
               </div>
             ))}
           </section>
+
+          {cardDrag ? (
+            <div
+              className="session-row drag-preview"
+              style={{
+                left: cardDrag.left,
+                top: cardDrag.pointerY - cardDrag.offsetY,
+                width: cardDrag.width,
+                minHeight: cardDrag.height,
+              }}
+            >
+              <span className="row-drag-handle is-preview" aria-hidden="true">
+                <GripVertical size={15} />
+              </span>
+              {(() => {
+                const session = sessions.find((item) => item.sessionId === cardDrag.sessionId);
+                return session ? (
+                  <SessionRowContent session={session} activating={activatingId === session.sessionId} />
+                ) : null;
+              })()}
+            </div>
+          ) : null}
 
           <footer className="feedback-line" title={feedback}>
             {feedback}

@@ -76,6 +76,80 @@ function Stop-DemoWindows {
             Write-Warning "Failed to stop demo window process $($target.ProcessId): $($_.Exception.Message)"
         }
     }
+
+    Stop-DemoWindowsByTitle
+}
+
+function Stop-DemoWindowsByTitle {
+    if (-not ("AgentMonitorDemoWindowCleanupNative" -as [type])) {
+        $signature = @"
+using System;
+using System.Text;
+using System.Runtime.InteropServices;
+
+public static class AgentMonitorDemoWindowCleanupNative
+{
+    public delegate bool EnumWindowsProc(IntPtr hWnd, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool EnumWindows(EnumWindowsProc lpEnumFunc, IntPtr lParam);
+
+    [DllImport("user32.dll")]
+    public static extern bool IsWindowVisible(IntPtr hWnd);
+
+    [DllImport("user32.dll", CharSet=CharSet.Unicode)]
+    public static extern int GetWindowTextW(IntPtr hWnd, StringBuilder lpString, int nMaxCount);
+
+    [DllImport("user32.dll")]
+    public static extern uint GetWindowThreadProcessId(IntPtr hWnd, out uint processId);
+}
+"@
+        Add-Type -TypeDefinition $signature
+    }
+
+    $windowOwners = New-Object System.Collections.Generic.HashSet[int]
+    [AgentMonitorDemoWindowCleanupNative+EnumWindowsProc]$callback = {
+        param([IntPtr]$hWnd, [IntPtr]$lParam)
+
+        if (-not [AgentMonitorDemoWindowCleanupNative]::IsWindowVisible($hWnd)) {
+            return $true
+        }
+
+        $builder = New-Object System.Text.StringBuilder 1024
+        [void][AgentMonitorDemoWindowCleanupNative]::GetWindowTextW($hWnd, $builder, $builder.Capacity)
+        $title = $builder.ToString()
+        if ($title.IndexOf($demoTitleToken, [System.StringComparison]::OrdinalIgnoreCase) -lt 0) {
+            return $true
+        }
+
+        [uint32]$processIdValue = 0
+        [void][AgentMonitorDemoWindowCleanupNative]::GetWindowThreadProcessId($hWnd, [ref]$processIdValue)
+        if ($processIdValue -gt 0) {
+            [void]$windowOwners.Add([int]$processIdValue)
+        }
+
+        return $true
+    }
+
+    [void][AgentMonitorDemoWindowCleanupNative]::EnumWindows($callback, [IntPtr]::Zero)
+
+    foreach ($processId in $windowOwners) {
+        $process = Get-Process -Id $processId -ErrorAction SilentlyContinue
+        if (-not $process) {
+            continue
+        }
+
+        if ($process.ProcessName -notin @("powershell", "pwsh", "conhost", "OpenConsole")) {
+            Write-Warning "Skipping demo-title window owned by $($process.ProcessName) pid=$processId."
+            continue
+        }
+
+        try {
+            Stop-Process -Id $processId -Force -ErrorAction Stop
+        } catch {
+            Write-Warning "Failed to stop demo-title window process ${processId}: $($_.Exception.Message)"
+        }
+    }
 }
 
 function Start-Broker {
