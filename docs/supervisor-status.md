@@ -1,20 +1,21 @@
 # Supervisor Status
 
-Updated: 2026-05-08
+Updated: 2026-05-10
 
 ## Current Git
 
-- Stable branch: `master`
-- Current phase branch: `phase/1-2-spikes`
-- Latest stable baseline: `e1eb74e docs: establish agent monitor project plan`
-- Push policy: local only until user explicitly confirms remote/push
+- Stable/default handoff branch: `master`
+- Phase checkpoint branch: `phase/1-2-spikes`
+- Latest stable baseline: current `master`, merged from `phase/1-2-spikes` on 2026-05-10
+- Remote: `origin https://github.com/kadhygh/AgentMonitorOverlay.git`
+- Push policy: push only on explicit user request. User requested merge to `master` and push on 2026-05-10.
 
 ## Current Stage
 
-- Phase 0: partial, documentation baseline established
+- Phase 0: done, documentation baseline established
 - Phase 1: spike done, window routing strategy documented and Win32 enumeration script added
 - Phase 2: MVP skeleton done, broker API verified locally
-- Phase 3: prototype done, overlay UI builds and native Rust code compiles
+- Phase 3: prototype done, overlay UI builds, native Rust code compiles, and user smoke validation has run
 - Phase 4: spike done, Codex / Claude / Kiro adapter routes documented with example hooks
 
 ## Active Tasks
@@ -37,7 +38,7 @@ Updated: 2026-05-08
 
 ## Supervisor Decisions
 
-- First implementation round runs on `phase/1-2-spikes`.
+- First implementation round ran on `phase/1-2-spikes`; the branch is now a checkpoint and `master` is the handoff branch.
 - MVP remains read-only monitoring plus click-to-window routing.
 - User will not be asked to approve routine branch/task-card/checkpoint mechanics.
 - User validation is reserved for real workflow or vibe checkpoints.
@@ -54,6 +55,9 @@ Updated: 2026-05-08
 - User clarified on 2026-05-08 that the row handle should drag task cards, not the whole overlay.
 - Broker now returns local CORS headers so the Tauri WebView can fetch `127.0.0.1:17654` from the Vite/WebView origin instead of falling back to mock sessions.
 - Session row handles now reorder visible cards locally; the overlay header remains the drag target for moving the whole window.
+- User validation by 2026-05-10: overlay appears, `broker live` is active, mock `NoHeartbeat` fallback is gone, tool icons are acceptable, header drag moves the overlay, Codex/Mecho routing works, and Claude demo routing works after duplicate matching demo windows are closed.
+- Duplicate matching Claude demo windows are treated as ambiguous; activation refusal is expected until a candidate/debug panel is added.
+- Latest card drag implementation uses pointer-driven drag preview and live reordering, but still needs user revalidation because the prior build triggered drag without visually moving the card reliably.
 
 ## Verified This Round
 
@@ -73,6 +77,10 @@ Updated: 2026-05-08
 - `npm run broker:verify -- -Port 17655` after broker CORS update
 - CORS smoke on port `17657`: `GET /api/sessions` returns `Access-Control-Allow-Origin: *`; `OPTIONS /api/sessions` returns `204` and allowed methods
 - `npm run build` in `overlay/` after changing row drag handle from overlay-drag to card reorder
+- `npm run build` in `overlay/` after pointer-driven card drag preview changes
+- `cargo check` in `overlay/src-tauri/` after pointer-driven card drag preview changes
+- `node --check broker\server.js` after pointer-driven card drag preview changes
+- User smoke validation: native overlay appears, broker-backed sessions load, header drag works, Codex/Mecho jump works, and Claude demo jump works when the target is not ambiguous.
 
 ## Live Hook Smoke Results
 
@@ -82,9 +90,9 @@ Updated: 2026-05-08
 
 ## Next Supervisor Checkpoint
 
+- Keep `master` as the default new-device handoff branch.
+- Revalidate pointer-driven card dragging with two-card and multi-card lists.
+- Add a user-visible candidate/debug panel for ambiguous routing, especially duplicate Claude demo windows.
 - Keep adapter contract verification as the automated gate.
 - Keep Claude live smoke as a verified real-hook gate.
 - Decide the Codex hook validation route: supported per-process hook injection, or temporary install/restore of a user-layer hook in the real Codex home.
-- Ask the user to re-check the visible overlay: tool icons, row drag handle, and clicking a Claude demo row to route to the PowerShell demo window.
-- Ask the user to confirm the header says `broker live` and no mock `NoHeartbeat` card is visible.
-- If Claude routing still does not focus the demo window while broker live is active, collect the overlay footer feedback and add a user-visible candidate/debug panel before continuing Codex hook work.

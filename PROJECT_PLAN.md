@@ -597,9 +597,10 @@ Owner:
 ```text
 Project: Agent Monitor Overlay
 Location: G:\PROJECT\AgentMonitorOverlay
-Current phase: Phase 0
-Status: partial
+Current phase: Phase 3/4 MVP validation
+Status: runnable MVP prototype, partial
 Created: 2026-05-07
+Updated: 2026-05-10
 Owner role: user validates vibe and requirements only
 Execution role: supervisor agent manages workers
 ```
@@ -610,22 +611,49 @@ Execution role: supervisor agent manages workers
 - 官方接入能力初步判断
 - 项目协作模式定义
 - 阶段路线定义
+- Task A-D 第一轮 spike 已完成并由主管本地复验
+- broker MVP 已实现并通过隔离验证
+- Tauri overlay 原型已实现，React build 和 Rust cargo check 已通过
+- broker CORS 已修正，Tauri/WebView 能读取 live broker 数据
+- 工具图标、attention 排序、header 拖拽、窗口激活反馈已进入 overlay
+- Claude live hook smoke 已通过；Codex / Claude / Kiro adapter 合同验证已通过
+- GitHub remote 已配置，阶段分支和 `master` 交接分支已推送
+
+当前已由用户 smoke 验证：
+
+- 原生悬浮窗可以出现
+- header 显示 `broker live`，mock `NoHeartbeat` fallback 不再出现
+- 工具图标识别基本可接受
+- header 拖动会移动悬浮窗
+- Codex/Mecho 窗口跳转可用
+- Claude demo 在只有一个匹配目标窗口时可跳转
+- 两个重复 Claude demo 窗口会被判定为 ambiguous，这个拒绝跳转是当前预期行为
+
+仍未完成/缺口：
+
+- row handle 触发的卡片拖拽已经改成 pointer-driven preview + live reorder，但还需要用户复验，尤其是只有 2 个 card 的情况
+- 重复窗口/ambiguous routing 需要候选/debug 面板，不应该只给一条含糊错误
+- Codex live hook loading 路径仍待验证；adapter/broker 合同本身已经通过
+- Kiro 仍处在 mock/hook-spike 级别
+- 卡片顺序和 overlay 位置目前是本地 UI 状态，尚未决定是否持久化
 
 下一步建议：
 
-1. 主管 agent 收敛 Task A-D 的第一轮 spike 输出。
-2. 本地验证 broker API、overlay 启动、窗口路由方案和 hook payload。
-3. 汇总后给用户一个可运行版本或明确的手工验证节点。
-4. 用户只负责验证体验、vibe 和需求取舍。
+1. 在新设备上从 `master` 开始，复验 pointer-driven 卡片拖拽，覆盖 2-card 和多-card 列表。
+2. 增加窗口候选/debug 面板，解决重复 Claude/demo 窗口时的可解释性。
+3. 继续验证 Codex live hook loading 路线。
+4. 决定是否持久化卡片顺序和 overlay 位置。
 
 当前主管状态：
 
-- 稳定分支：`master`
-- 当前阶段分支：`phase/1-2-spikes`
+- 稳定/交接分支：`master`
+- 阶段 checkpoint 分支：`phase/1-2-spikes`
+- remote：`origin https://github.com/kadhygh/AgentMonitorOverlay.git`
 - 任务卡目录：`docs/tasks/`
 - 主管状态板：`docs/supervisor-status.md`
 - 第一轮 spike：Task A-D 已完成并由主管本地复验
 - 第一轮 vibe：用户已确认通过，小细节后续再调
+- 悬浮窗 smoke：用户已确认 overlay 出现、broker live、无 mock fallback、header drag、Codex/Mecho 跳转、Claude 单目标跳转
 - 真实 hook live smoke：Claude 已通过；Codex provider 可运行，但 hook 加载路径仍待验证；adapter->broker 合同验证已通过
 
 ## 10. 给下一位主管 Agent 的启动提示
@@ -637,6 +665,8 @@ Execution role: supervisor agent manages workers
 G:\PROJECT\AgentMonitorOverlay
 
 先阅读：
+DEVELOPMENT.md
+docs/supervisor-status.md
 PROJECT_PLAN.md
 
 用户角色：
@@ -646,14 +676,14 @@ PROJECT_PLAN.md
 你是唯一对用户汇报的角色。你需要拆分任务、调度 worker agent、汇总结果、维护计划状态，并在每个阶段给用户清晰的验证项和需要确认的问题。
 
 当前阶段：
-Phase 0 -> Phase 1/2 准备。
+Phase 3/4 MVP validation。
 
 优先任务：
-1. 创建 Task A-D 的具体任务卡。
-2. 并行验证窗口路由、本地 broker、Tauri overlay、Codex/Claude/Kiro hook 接入。
-3. 不要一开始做完整 control plane。
-4. MVP 只做只读监控 + 点击切窗口。
-5. 自动审批、shell 执行、远程控制全部推迟。
+1. 从 `master` 开始，不要退回旧的 Phase 0 结论。
+2. 复验 row handle 卡片拖拽：card 应该跟随鼠标，并且 2-card 列表也要能稳定换位。
+3. 增加 ambiguous routing 的候选/debug 面板，优先覆盖重复 Claude demo 窗口。
+4. 继续 Codex live hook loading 验证；不要把 adapter/broker 合同问题和 hook 加载问题混在一起。
+5. MVP 仍只做只读监控 + 点击切窗口；自动审批、shell 执行、远程控制全部推迟。
 
 汇报格式：
 当前阶段：

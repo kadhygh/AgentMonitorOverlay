@@ -7,13 +7,13 @@ This document is for continuing Agent Monitor Overlay development on a new machi
 ```powershell
 git clone https://github.com/kadhygh/AgentMonitorOverlay.git
 cd AgentMonitorOverlay
-git checkout phase/1-2-spikes
+git switch master
 ```
 
 Branches:
 
-- `master`: stable documentation baseline.
-- `phase/1-2-spikes`: current active development branch.
+- `master`: current stable/default handoff branch. New machines should start here.
+- `phase/1-2-spikes`: phase checkpoint branch retained for history; its current work is merged into `master` for handoff.
 
 Remote:
 
@@ -243,4 +243,3 @@ Do not commit:
 3. Make `npm run demo:claude-routing` produce a target window that is easy to identify and clean up.
 4. Continue Codex live hook loading validation.
 5. Decide whether local card order should persist across refresh/restart.
-

@@ -32,6 +32,8 @@ node .\broker\server.js
 
 ## API
 
+All API responses include local CORS headers so the Tauri/Vite WebView can fetch the broker from `http://127.0.0.1:17654`.
+
 ### `GET /api/health`
 
 Returns broker status, uptime, session count, and storage path.

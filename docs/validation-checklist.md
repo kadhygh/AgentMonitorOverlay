@@ -4,7 +4,7 @@ This checklist is maintained by the supervisor agent. It should only be handed t
 
 ## Phase 1: Window Routing
 
-Status: ready for supervisor/user manual validation
+Status: supervisor/user smoke validated for Codex/Mecho and Claude demo routing; ambiguity diagnostics still need polish
 
 - Verify at least three different windows can be identified by title, process name, or explicit handle.
 - Verify clicking a monitored session activates the intended window.
@@ -26,7 +26,7 @@ Status: verified locally by supervisor; isolated verification script passes on 2
 
 ## Phase 3: Overlay MVP
 
-Status: build verified locally; native window vibe still needs user validation
+Status: build verified locally; native overlay appeared in user smoke validation; card drag still needs revalidation
 
 - Start overlay locally.
 - Confirm window is always on top.
@@ -53,7 +53,7 @@ Status: isolated adapter contract verification passes on 2026-05-08; Claude live
 
 ## Vibe Checks
 
-Status: passed by user on 2026-05-07; minor details deferred
+Status: passed by user on 2026-05-07 and refreshed during 2026-05-08 to 2026-05-10 overlay smoke checks; minor details deferred
 
 - The overlay should feel like a compact workbench, not a dashboard page.
 - Waiting states should be noticeable but not attention-stealing.
