@@ -441,6 +441,7 @@ Kiro adapter:
 - 点击切换窗口
 - 一键复制 session 路径/项目路径
 - 打开 transcript/log
+- 打开关联 note，例如 `Open in Obsidian`
 - 取消当前任务
 - 追加 prompt
 - 权限审批
@@ -459,6 +460,26 @@ Kiro adapter:
 - 用户明确确认哪些控制能力进入下一版。
 - 每个控制能力都有失败兜底和超时策略。
 
+### Phase 5A: External Note Jump
+
+目标：
+
+- 在不破坏 MVP 边界的前提下，为受监控 session 提供显式的外部 note 跳转入口。
+- 验证用户是否真的需要把 agent session 和外部整理 note 绑定使用。
+
+范围：
+
+- 从 overlay 打开关联 note。
+- 支持 `Open in Obsidian` 或等效的外部 note 打开动作。
+- 优先显式 `session -> note` 绑定，不依赖脆弱猜测。
+
+不做：
+
+- 不在当前阶段自动创建 note。
+- 不做 canvas 写入。
+- 不做注释汇总。
+- 不做自动回写 CLI。
+
 ### Phase 6: 长期增强
 
 长期增强方向：
@@ -476,6 +497,26 @@ Kiro adapter:
 - 手机/局域网只读查看
 - 任务摘要和日报
 - 与 Mecho/Ruflo/agent workflow 文档系统联动
+
+#### Future Obsidian Workflow Integration
+
+这个方向是未来工作流 sidecar，不属于当前 MVP 主线。
+
+阶段建议：
+
+- Phase 6.x.1: session-note linking
+- Phase 6.x.2: final output note generation
+- Phase 6.x.3: structured annotation capture
+- Phase 6.x.4: single-direction canvas attachment
+- Phase 6.x.5: explicit sync-back to agent session
+
+边界要求：
+
+- Agent Monitor Overlay 负责 session 聚合、窗口跳转、显式用户动作和安全门。
+- Obsidian 插件负责 vault-native note/canvas 变更、注释模型和汇总。
+- 本地 bridge/helper 负责把注释摘要路由回正确的 agent session 或 CLI 窗口。
+- 第一版 sync-back 应优先 `copy + focus target session`，不要直接自动发送。
+- 不要把 Obsidian/canvas 变成当前项目的主数据模型；它们是 sidecar enhancement。
 
 长期不优先：
 
@@ -631,17 +672,17 @@ Execution role: supervisor agent manages workers
 
 仍未完成/缺口：
 
-- row handle 触发的卡片拖拽已经改成 pointer-driven preview + live reorder，但还需要用户复验，尤其是只有 2 个 card 的情况
-- 重复窗口/ambiguous routing 需要候选/debug 面板，不应该只给一条含糊错误
+- row handle 目前只保留为视觉占位，卡片拖拽已经临时停用，不再作为当前 Phase 3/4 closeout gate
+- 重复窗口/ambiguous routing 已经有候选/debug 面板，但还需要在真实 session 上继续验证 exact-route 与回退解释性
 - Codex live hook loading 路径仍待验证；adapter/broker 合同本身已经通过
 - Kiro 仍处在 mock/hook-spike 级别
 - 卡片顺序和 overlay 位置目前是本地 UI 状态，尚未决定是否持久化
 
 下一步建议：
 
-1. 在新设备上从 `master` 开始，复验 pointer-driven 卡片拖拽，覆盖 2-card 和多-card 列表。
-2. 增加窗口候选/debug 面板，解决重复 Claude/demo 窗口时的可解释性。
-3. 继续验证 Codex live hook loading 路线。
+1. 在真实工作流上继续复验 exact-route identity，优先观察 `pid/hwnd` 行、candidate/debug 面板以及 token/fallback 回退路径。
+2. 继续验证 Codex live hook loading 路线。
+3. 决定卡片拖拽是否作为后续非关键增强重新启用。
 4. 决定是否持久化卡片顺序和 overlay 位置。
 
 当前主管状态：
@@ -655,6 +696,7 @@ Execution role: supervisor agent manages workers
 - 第一轮 vibe：用户已确认通过，小细节后续再调
 - 悬浮窗 smoke：用户已确认 overlay 出现、broker live、无 mock fallback、header drag、Codex/Mecho 跳转、Claude 单目标跳转
 - 真实 hook live smoke：Claude 已通过；Codex provider 可运行，但 hook 加载路径仍待验证；adapter->broker 合同验证已通过
+- 新增未来方向：Obsidian workflow integration 已被接受为后续规划，但明确不并入当前 Phase 3/4 MVP validation 主线
 
 ## 10. 给下一位主管 Agent 的启动提示
 
@@ -680,10 +722,10 @@ Phase 3/4 MVP validation。
 
 优先任务：
 1. 从 `master` 开始，不要退回旧的 Phase 0 结论。
-2. 复验 row handle 卡片拖拽：card 应该跟随鼠标，并且 2-card 列表也要能稳定换位。
-3. 增加 ambiguous routing 的候选/debug 面板，优先覆盖重复 Claude demo 窗口。
-4. 继续 Codex live hook loading 验证；不要把 adapter/broker 合同问题和 hook 加载问题混在一起。
-5. MVP 仍只做只读监控 + 点击切窗口；自动审批、shell 执行、远程控制全部推迟。
+2. 继续收敛精确窗口路由，优先让真实 session 默认走 `pid/hwnd` 精确命中。
+3. 继续 Codex live hook loading 验证；不要把 adapter/broker 合同问题和 hook 加载问题混在一起。
+4. 保持 MVP 仍只做只读监控 + 点击切窗口；自动审批、shell 执行、远程控制全部推迟。
+5. Obsidian 相关能力只作为未来阶段规划记录，不要拉进当前 MVP 主线。
 
 汇报格式：
 当前阶段：

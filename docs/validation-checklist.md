@@ -26,7 +26,7 @@ Status: verified locally by supervisor; isolated verification script passes on 2
 
 ## Phase 3: Overlay MVP
 
-Status: build verified locally; native overlay appeared in user smoke validation; card drag still needs revalidation
+Status: build verified locally; native overlay appeared in user smoke validation; current closeout priority is exact-route clarity, not card reorder
 
 - Start overlay locally.
 - Confirm window is always on top.
@@ -36,9 +36,14 @@ Status: build verified locally; native overlay appeared in user smoke validation
 - Confirm 3-8 sessions remain readable.
 - Confirm `waiting_user` and `waiting_permission` states are visible without feeling noisy.
 - Confirm each row is easier to identify with the tool icon before the project/title.
-- Confirm dragging from the row handle reorders task cards without triggering session activation.
+- Confirm the row handle does not interfere with session activation; card reorder is intentionally disabled in the current Phase 3/4 closeout path.
 - Confirm dragging from the overlay header moves the overlay window.
-- Click a session and confirm routing behavior or clear failure feedback.
+- Click a real exact-route session and confirm routing behavior or clear failure feedback.
+- Confirm each session row shows a clear exact/token/fallback route hint.
+- When multiple matching windows exist, confirm the candidate/debug panel appears instead of a vague failure message.
+- When multiple matching windows exist, confirm clicking the intended candidate in the debug panel routes to the correct window.
+- Dismiss a live session card and confirm it disappears without deleting broker state.
+- Trigger another real hook event for the same dismissed session and confirm the card returns automatically.
 
 ## Phase 4 Spike: Tool Adapters
 
@@ -49,6 +54,10 @@ Status: isolated adapter contract verification passes on 2026-05-08; Claude live
 - Confirm Kiro route is either tested or explicitly marked as mock/manual for MVP.
 - Confirm no global user tool configuration is changed without approval.
 - Re-run Codex live smoke after choosing a safe hook loading route for the current Codex CLI.
+- Prefer the first interactive smoke in a disposable test project or sibling repo so `/hooks` review state does not have to land in the main worktree first.
+- Distinguish two outcomes during Codex smoke:
+  - broker received the event
+  - Codex hook runner completed without `hook failed` / timeout noise
 - Claude live smoke is verified with disposable `--settings`.
 
 ## Vibe Checks

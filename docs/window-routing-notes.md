@@ -38,9 +38,9 @@ The verification script uses `EnumWindows`, not only `Get-Process.MainWindowHand
 
 | Scheme | Match keys | Strengths | Failure modes | Fit for MVP |
 | --- | --- | --- | --- | --- |
-| A. Exact or prefix title token | `MainWindowTitle` contains a managed token such as `[AMO:codex:mecho:task-a]` | Simple, explainable, works across Windows Terminal, WezTerm, PowerShell, Kiro titles, and most IDE windows. It does not require invasive hooks. | Breaks when a terminal/app overwrites the title, when users rename tabs manually, or when the title token is not unique. | Best default. Make title token the primary route key. |
+| A. Exact or prefix title token | `MainWindowTitle` contains a managed token such as `[AMO:codex:mecho:task-a]` | Simple, explainable, works across Windows Terminal, WezTerm, PowerShell, Kiro titles, and most IDE windows. It does not require invasive hooks. | Breaks when a terminal/app overwrites the title, when users rename tabs manually, or when the title token is not unique. | Best portable default. Keep title token as the fallback/default contract when exact handles are unavailable or stale. |
 | B. Process + project/title fallback | `ProcessName` + normalized project name in title, for example `Kiro` + `project_mining` | Handles Kiro/IDE windows where the app controls the title. Useful when exact session token cannot be injected. | Project-level only. If there are multiple Kiro windows or multiple terminals under the same project, it may choose the wrong window. | Good fallback, especially for Kiro and IDE windows. |
-| C. PID/HWND captured at session start | Stored `processId` and `hwnd` from adapter or launcher | Most precise while the window stays alive. Good for sessions started by a controlled launcher or broker-managed terminal. | `HWND` can become stale after app restart, tab detach, window recreation, or terminal process reuse. PID can point to the terminal host rather than the CLI child. | Useful as a fast path only after validation. Do not make it the only key. |
+| C. PID/HWND captured at session start | Stored `processId` and `hwnd` from adapter or launcher | Most precise while the window stays alive. Good for sessions started by a controlled launcher or broker-managed terminal. | `HWND` can become stale after app restart, tab detach, window recreation, or terminal process reuse. PID can point to the terminal host rather than the CLI child. | Preferred exact route when present and still valid, but not the only key. |
 | D. Shell AppUserModelID / executable path | App identity, executable path, installed app metadata | Helps distinguish Windows Terminal, Kiro, Rider, Unity, Edge, etc. | Not session-specific and needs more Windows-specific plumbing. | Secondary diagnostic field, not primary routing. |
 | E. External launcher/search tool fallback | Fluent Search, PowerToys Workspaces, manual Windows search | Useful when native activation fails or user wants a familiar fallback. | Not automatable enough for core product behavior. | Manual fallback only. |
 
@@ -70,6 +70,12 @@ Resolver order:
 5. Match known IDE/app fallback for the project, for example `Kiro` + `project_mining`.
 6. If multiple candidates remain, show a small disambiguation list in overlay instead of silently choosing.
 7. If no candidate is found, expose fallback actions: copy session cwd, open project folder, or show the last known title/process.
+
+Phase 3/4 implementation note:
+
+- When the adapter can provide validated `pid` or `hwnd`, prefer that exact route first.
+- If the exact handle is missing, stale, or still ambiguous, continue through token/title/project fallback instead of silently giving up.
+- The overlay should surface candidate/debug UI rather than guessing when ambiguity remains.
 
 Important detail: title matching should be case-insensitive and normalize whitespace, full-width separators, and common path separators. It should not depend on localized app suffixes such as `文件资源管理器`.
 
@@ -226,7 +232,7 @@ Supervisor/user should confirm whether the visible title-token convention is acc
 [AMO:<tool>:<project-slug>:<session-slug>] <Tool> - <Project> - <Short task>
 ```
 
-If accepted, Task B/C can treat `windowHint.titleToken` as the primary route key and only use process/project matching as fallback.
+If accepted, Task B/C can treat `windowHint.titleToken` as the default portable route contract, while validated `pid/hwnd` hints remain the preferred exact fast path.
 
 ## References
 

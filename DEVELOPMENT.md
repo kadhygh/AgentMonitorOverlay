@@ -155,10 +155,13 @@ Implemented:
 - Tauri overlay UI
 - broker-backed session refresh
 - tool icons per session row
-- row drag handle for visible card ordering
+- route hints for exact/token/fallback routing
+- row drag handle placeholder, currently disabled while routing validation continues
 - header drag region for moving the overlay window
 - Windows native window activation using HWND, PID, title token, process/title, and project fallbacks
 - Claude routing demo
+- candidate/debug panel for ambiguous routing
+- local dismiss action per session row, intended to hide the current snapshot until a later real hook event refreshes it
 
 ## Current Validation Notes
 
@@ -174,25 +177,70 @@ User validation so far:
 
 Recent UX issue:
 
-- Row drag can trigger, but should feel like the card follows the pointer and should reorder reliably even with only two cards. The latest implementation uses pointer-driven drag preview and live reordering; it still needs user revalidation on the new machine.
+- Card drag proved disruptive during validation. The handle is currently left visible as a placeholder, but card reordering is temporarily disabled until the routing and exact-session identity work is stable.
 
 Known routing behavior:
 
 - If two matching Claude demo windows are open, activation intentionally refuses because the target is ambiguous.
-- Closing the duplicate window made both Claude demo rows route correctly.
-- Next improvement should make duplicate-candidate feedback more actionable, for example by showing a small candidate/debug panel.
+- Closing the duplicate window makes exact-route demo rows route correctly.
+- The overlay now shows a candidate/debug panel for ambiguous rows, and exact/token/fallback route hints per session row.
+
+Current unverified but implemented behavior:
+
+- Session rows now include a dismiss button.
+- Dismiss is overlay-local only. It hides the current card snapshot without deleting the broker session.
+- Dismissed session ids are stored in browser/WebView storage under `amo.dismissed.sessions.v1`.
+- A dismissed session should reappear automatically when the same session later arrives with a newer `eventCount` or `updatedAt`.
+- If every visible session is dismissed, the overlay should show an empty state instead of falling back to mock data.
 
 ## Known Open Gaps
 
 - Codex live hook loading is not fully validated.
   - The adapter/broker contract passes.
   - Codex can run with the user's normal provider configuration.
-  - Disposable project-local hook loading did not work in the previous smoke test.
-  - Next route: find a safe per-process hook injection method or carefully install/restore a user-layer Codex hook.
+  - Repo-local hooks are now wired in `.codex/`, but Codex still needs `/hooks` review and live smoke in a real interactive session.
+  - Current smoke evidence is mixed: broker can receive real hook events while Codex still reports hook failure/timeout noise.
+  - Next route: isolate the hook-runner failure cause without regressing event delivery, preferably through a disposable project-local review/smoke path first.
 - Claude live hook smoke passed with disposable `--settings`.
 - Kiro is still mock/hook-spike level for MVP.
-- Window routing still needs better visible diagnostics for ambiguity and blocked focus transfer.
-- Card reorder is local UI state only; it is not persisted yet.
+- Window routing still needs clearer blocked-focus feedback and stronger exact-route identity for real sessions.
+- Card reorder is temporarily disabled and should stay out of the critical path until routing work is stable.
+
+## Repo-Local Hook Smoke Route
+
+Current repo-local hook files:
+
+- `.codex/config.toml`
+- `.codex/hooks.json`
+- `.codex/hooks/codex-lifecycle-hook.ps1`
+
+Recommended first smoke path:
+
+- Use a disposable sibling repo or test project for the first `codex` trust + `/hooks` review round.
+- Confirm that real `SessionStart` / `UserPromptSubmit` events reach the broker before relying on the main repo.
+- Treat "broker received events" and "Codex hook runner exits cleanly" as two separate checks.
+
+Current local example from the active machine:
+
+- `D:\Projects\CommonProject\AgentMonitorOverlayTestproject`
+
+That disposable test project is not part of this repo. Recreate it locally if needed rather than assuming it exists on another machine.
+
+## Deferred Future Integration
+
+Obsidian workflow integration is accepted as a future direction, but it is intentionally deferred beyond the current MVP phase.
+
+Planned shape:
+
+- Phase 5A: `Open in Obsidian` / open related note from a monitored session
+- Phase 6.x: session-note linking, final output note generation, structured annotations, single-direction canvas attachment, and explicit sync-back to the target agent session
+
+Guardrails:
+
+- Keep Obsidian as a sidecar workflow, not the primary data model for current MVP
+- Let an Obsidian plugin own vault-native note/canvas mutation
+- Let a local bridge/helper own any route-back to the correct CLI session or window
+- Prefer `copy + focus target session` before any auto-send behavior
 
 ## Useful Documents
 
@@ -203,9 +251,11 @@ Read in this order when taking over:
 3. `docs/validation-checklist.md`
 4. `docs/window-routing-notes.md`
 5. `docs/tool-adapter-spike.md`
-6. `broker/README.md`
-7. `overlay/README.md`
-8. `USER_SESSION_MANUAL.md`
+6. `docs/worktree-checkpoint-guide.md`
+7. `docs/session-handoffs/2026-05-11-phase-3-4-checkpoint.md`
+8. `broker/README.md`
+9. `overlay/README.md`
+10. `USER_SESSION_MANUAL.md`
 
 ## Development Workflow
 
@@ -228,6 +278,12 @@ git push
 
 Do not use `git add .` for broad commits when generated files or unrelated local state may exist.
 
+For multi-worktree or multi-session continuation, use:
+
+- `docs/worktree-checkpoint-guide.md`
+
+That checklist is the current supervisor-side rule for collecting branch, scoped files, validation, commit, push, and repo-local handoff notes before changing machines.
+
 Do not commit:
 
 - `broker/data/`
@@ -238,8 +294,9 @@ Do not commit:
 
 ## Recommended Next Tasks
 
-1. Revalidate pointer-driven card dragging on the new machine.
-2. Add a window candidate/debug panel for ambiguous routing.
-3. Make `npm run demo:claude-routing` produce a target window that is easy to identify and clean up.
-4. Continue Codex live hook loading validation.
-5. Decide whether local card order should persist across refresh/restart.
+1. Continue tightening exact route identity so real sessions prefer `pid/hwnd` over token/fallback matching.
+2. Continue Codex live hook loading validation.
+3. Make the ambiguous routing/debug experience clearer without expanding into broader control features.
+4. Validate the new dismiss flow against a real hook-emitting session, especially "dismiss -> next event -> card reappears".
+5. Decide whether local card order should return later as a stable, non-intrusive enhancement.
+6. Keep Obsidian workflow integration as a future tracked direction, not part of the current MVP closeout.

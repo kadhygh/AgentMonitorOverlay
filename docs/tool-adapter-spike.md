@@ -14,6 +14,23 @@ Recommended MVP path:
 2. Use Claude Code hooks for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `Notification`, `Stop`, `StopFailure`, `CwdChanged`, and `SessionEnd`.
 3. Use Kiro CLI hooks for basic CLI monitoring first. Use Kiro ACP only when Agent Monitor Overlay later becomes a controlled session host. Treat Kiro IDE hooks as useful but less machine-verified until tested inside the IDE UI.
 
+## Current Adapter Implementation Notes
+
+As of 2026-05-10, `scripts/adapters/Send-AgentMonitorEvent.ps1` supports optional routing overrides through these environment variables:
+
+- `AMO_WINDOW_PROCESS`
+- `AMO_WINDOW_TITLE`
+- `AMO_WINDOW_TITLE_TOKEN`
+- `AMO_WINDOW_PID`
+- `AMO_WINDOW_HWND`
+- `AMO_WINDOW_TITLE_CONTAINS`
+
+Implementation guardrails:
+
+- If any `AMO_WINDOW_*` override is provided, the adapter does not mix in ancestor-process autodetection.
+- If `AMO_WINDOW_PID` or `AMO_WINDOW_HWND` is provided, exact-handle routing should not be polluted by an auto-generated process or title token unless the caller explicitly supplies those fields too.
+- `titleToken` remains the portable default contract when no explicit exact-handle override is supplied.
+
 The adapter should not parse terminal screen text. It should receive hook JSON, normalize it, and POST a small event to:
 
 ```text
@@ -339,6 +356,28 @@ Follow-up live smoke:
 - Claude: disposable explicit-settings smoke completed and delivered real `UserPromptSubmit` / `Stop` hook events into broker.
 - Codex: current provider configuration works when inherited from the real Codex environment, but project-local `.codex/hooks.json` did not load in the disposable smoke test. A temporary `CODEX_HOME` with only copied `config.toml` / `auth.json` is insufficient for this Codex install. Codex live hook verification still needs either a supported per-process hook injection route or a carefully installed/restored real `CODEX_HOME` user-layer hook.
 
+## Current Repo-Local Hook Smoke Status
+
+As of 2026-05-11, the active workspace has moved beyond the earlier "hooks do not load at all" assumption.
+
+Current state:
+
+- the main repo now contains `.codex/config.toml`, `.codex/hooks.json`, and `.codex/hooks/codex-lifecycle-hook.ps1`
+- the current wrapper performs a direct POST to the broker and exits `0`
+- broker has received at least some real Codex events in disposable smoke attempts, including `SessionStart` and `UserPromptSubmit`
+- Codex can still report hook failure or timeout noise in the interactive session even when broker delivery succeeds
+
+Interpretation:
+
+- repo-local hook discovery is no longer the main open question
+- adapter -> broker contract failure is no longer the main open question
+- the remaining issue is the hook runner path itself: timing, stdout/stderr cleanliness, wrapper latency, or some interactive-session-specific condition
+
+Practical recommendation:
+
+- keep the first `/hooks` review and smoke round in a disposable sibling repo or test project before treating the main repo as the primary validation target
+- treat "broker received the event" and "Codex hook runner completed cleanly" as separate acceptance checks
+
 ## Live Verification Steps For Supervisor
 
 Codex:
@@ -351,6 +390,7 @@ Codex:
 6. Run Codex in the disposable repo and submit a small prompt.
 7. Confirm broker receives `SessionStart`, `UserPromptSubmit`, tool events, and `Stop`.
 8. Trigger a permission request and confirm `waiting_permission`.
+9. Record separately whether Codex still prints hook failure or timeout noise even if broker delivery succeeds.
 
 Claude:
 
