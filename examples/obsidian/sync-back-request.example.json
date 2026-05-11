@@ -1,0 +1,46 @@
+{
+  "kind": "amo.syncBack.request",
+  "version": 1,
+  "requestId": "sync-back-20260511-0001",
+  "requestedAt": "2026-05-11T01:23:45.000Z",
+  "source": {
+    "app": "obsidian",
+    "vault": "obsidian-sync-back-vault",
+    "notePath": "Notes/codex-task-h-test.md",
+    "subpath": null,
+    "annotationIds": [
+      "ann-20260511-001",
+      "ann-20260511-002",
+      "ann-20260511-003",
+      "ann-20260511-004"
+    ]
+  },
+  "target": {
+    "sessionId": "codex-agent-monitor-overlay-task-h",
+    "expectedTool": "codex",
+    "cwd": "D:\\Projects\\CommonProject\\AgentMonitorOverlay",
+    "project": "AgentMonitorOverlay",
+    "windowHint": {
+      "titleToken": "[AMO:codex:agent-monitor-overlay:task-h]",
+      "process": "WindowsTerminal.exe",
+      "titleContains": [
+        "Codex",
+        "AgentMonitorOverlay"
+      ],
+      "pid": null,
+      "hwnd": null
+    }
+  },
+  "payload": {
+    "format": "markdown",
+    "summary": "# AMO Annotation Summary\n\nSource note: Notes/codex-task-h-test.md\nTarget session: codex-agent-monitor-overlay-task-h\nExpected tool: codex\nProject: AgentMonitorOverlay\nCWD: D:\\Projects\\CommonProject\\AgentMonitorOverlay\n\n## Stats\n\n- Total annotations: 4\n- By kind:\n  - question: 1\n  - todo: 1\n  - risk: 1\n  - decision: 1\n\n## Items\n\n### ann-20260511-001 · question · high\n\nNeed the bridge to send a concise summary back to the task-h Codex window instead of the raw notes.\n",
+    "annotationCount": 4,
+    "previewNotePath": "AMO/SyncBackPreviews/codex-task-h-test-sync-back.md"
+  },
+  "requestedAction": "copy_focus_manual_send",
+  "safety": {
+    "requiresUserConfirmation": true,
+    "manualSendRequired": true,
+    "allowAutoSend": false
+  }
+}

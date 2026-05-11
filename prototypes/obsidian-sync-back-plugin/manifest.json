@@ -1,0 +1,10 @@
+{
+  "id": "amo-sync-back-test",
+  "name": "AMO Sync Back Test",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Disposable Obsidian plugin spike for AMO annotation summary and safe sync-back bridge.",
+  "author": "OpenAI Codex",
+  "authorUrl": "https://openai.com",
+  "isDesktopOnly": true
+}
