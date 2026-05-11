@@ -4,8 +4,8 @@
   "version": "0.1.0",
   "identifier": "local.agent-monitor.overlay",
   "build": {
-    "beforeDevCommand": "npm run dev",
-    "devUrl": "http://127.0.0.1:1420",
+    "beforeDevCommand": "npm run dev -- --port 1430 --strictPort",
+    "devUrl": "http://127.0.0.1:1430",
     "beforeBuildCommand": "npm run build",
     "frontendDist": "../dist"
   },

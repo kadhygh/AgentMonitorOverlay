@@ -40,3 +40,10 @@ export interface ActivationResult {
   ok: boolean;
   message: string;
 }
+
+export interface ObsidianWindowTarget {
+  hwnd: number;
+  processId: number;
+  processName: string;
+  title: string;
+}

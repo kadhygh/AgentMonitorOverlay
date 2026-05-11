@@ -4,6 +4,7 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
   Blocks,
   Bot,
+  BookOpen,
   BrainCircuit,
   ChevronDown,
   ChevronUp,
@@ -15,10 +16,18 @@ import {
   SquareTerminal,
 } from "lucide-react";
 import { mockSessions } from "./mockSessions";
-import type { ActivationResult, AgentSession, AgentTool, SessionState } from "./types";
+import type {
+  ActivationResult,
+  AgentSession,
+  AgentTool,
+  ObsidianWindowTarget,
+  SessionState,
+} from "./types";
 
 const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
+const OBSIDIAN_TEST_VAULT_PATH = "D:\\Projects\\commonproject\\AgentMonitorOverlay-obsidian-test-vault";
 const REFRESH_INTERVAL_MS = 3000;
+const OBSIDIAN_TARGET_STORAGE_KEY = "amo.obsidianTargetHwnd";
 
 const stateLabel: Record<SessionState, string> = {
   starting: "Starting",
@@ -126,9 +135,13 @@ function ToolMark({ tool, state }: { tool: AgentTool; state: SessionState }) {
 function SessionRowContent({
   session,
   activating,
+  openingNote,
+  onOpenNote,
 }: {
   session: AgentSession;
   activating: boolean;
+  openingNote: boolean;
+  onOpenNote: () => void;
 }) {
   return (
     <>
@@ -144,8 +157,23 @@ function SessionRowContent({
           {stateLabel[session.state]} · {session.lastEvent}
         </span>
       </span>
-      <span className="row-action" aria-hidden="true">
-        {activating ? "..." : <ExternalLink size={15} />}
+      <span className="row-actions">
+        <button
+          type="button"
+          className="row-icon-button"
+          title="Create/open linked Obsidian note"
+          disabled={openingNote}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenNote();
+          }}
+        >
+          {openingNote ? "..." : <BookOpen size={14} aria-hidden="true" />}
+        </button>
+        <span className="row-action" aria-hidden="true" title="Activate session window">
+          {activating ? "..." : <ExternalLink size={15} />}
+        </span>
       </span>
     </>
   );
@@ -160,6 +188,23 @@ export default function App() {
   const [source, setSource] = useState<"mock" | "broker">("mock");
   const [feedback, setFeedback] = useState("Mock data ready. Window activation is placeholder.");
   const [activatingId, setActivatingId] = useState<string | null>(null);
+  const [openingNoteId, setOpeningNoteId] = useState<string | null>(null);
+  const [obsidianTargets, setObsidianTargets] = useState<ObsidianWindowTarget[]>([]);
+  const [obsidianPickerOpen, setObsidianPickerOpen] = useState(false);
+  const [loadingObsidianTargets, setLoadingObsidianTargets] = useState(false);
+  const [selectedObsidianHwnd, setSelectedObsidianHwnd] = useState<number | null>(() => {
+    if (typeof window === "undefined") {
+      return null;
+    }
+
+    const raw = window.localStorage.getItem(OBSIDIAN_TARGET_STORAGE_KEY);
+    if (!raw) {
+      return null;
+    }
+
+    const parsed = Number(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  });
   const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
@@ -172,6 +217,10 @@ export default function App() {
   const orderedSessions = useMemo(
     () => applySessionOrder(sessions, sessionOrder).slice(0, 8),
     [sessions, sessionOrder],
+  );
+  const selectedObsidianTarget = useMemo(
+    () => obsidianTargets.find((target) => target.hwnd === selectedObsidianHwnd) ?? null,
+    [obsidianTargets, selectedObsidianHwnd],
   );
 
   const attentionCount = useMemo(
@@ -228,6 +277,38 @@ export default function App() {
     }
   }
 
+  function selectObsidianTarget(target: ObsidianWindowTarget) {
+    setSelectedObsidianHwnd(target.hwnd);
+    window.localStorage.setItem(OBSIDIAN_TARGET_STORAGE_KEY, String(target.hwnd));
+    setObsidianPickerOpen(false);
+    setFeedback(`Bound Obsidian target: ${target.title}`);
+  }
+
+  async function loadObsidianTargets() {
+    setLoadingObsidianTargets(true);
+
+    try {
+      const targets = await invoke<ObsidianWindowTarget[]>("list_obsidian_windows");
+      setObsidianTargets(targets);
+      setObsidianPickerOpen(true);
+
+      if (selectedObsidianHwnd && !targets.some((target) => target.hwnd === selectedObsidianHwnd)) {
+        setSelectedObsidianHwnd(null);
+        window.localStorage.removeItem(OBSIDIAN_TARGET_STORAGE_KEY);
+      }
+
+      setFeedback(
+        targets.length > 0
+          ? `Found ${targets.length} Obsidian window target(s).`
+          : "No visible Obsidian windows found. Open the target vault first.",
+      );
+    } catch (error) {
+      setFeedback(`Listing Obsidian windows failed: ${(error as Error).message}`);
+    } finally {
+      setLoadingObsidianTargets(false);
+    }
+  }
+
   async function activateSession(session: AgentSession) {
     setActivatingId(session.sessionId);
     setFeedback(`Activating ${session.title}...`);
@@ -249,6 +330,39 @@ export default function App() {
       setFeedback(`Activation command failed: ${(error as Error).message}`);
     } finally {
       setActivatingId(null);
+    }
+  }
+
+  async function openObsidianNote(session: AgentSession) {
+    setOpeningNoteId(session.sessionId);
+    setFeedback(`Creating Obsidian note for ${session.title}...`);
+
+    try {
+      const result = await invoke<ActivationResult>("create_or_open_obsidian_note", {
+        vaultPath: OBSIDIAN_TEST_VAULT_PATH,
+        sessionId: session.sessionId,
+        tool: session.tool,
+        cwd: session.cwd,
+        project: session.windowHint?.project ?? projectName(session.cwd),
+        title: session.title,
+        state: session.state,
+        lastEvent: session.lastEvent,
+        lastMessage: session.lastMessage,
+        updatedAt: session.updatedAt,
+        windowTitle: session.windowHint?.title ?? session.title,
+        windowProcess: session.windowHint?.process ?? "",
+        windowPid: session.windowHint?.pid ?? null,
+        windowHwnd: session.windowHint?.hwnd ?? null,
+        obsidianTitle: selectedObsidianTarget?.title ?? "",
+        obsidianProcess: selectedObsidianTarget?.processName ?? "",
+        obsidianPid: selectedObsidianTarget?.processId ?? null,
+        obsidianHwnd: selectedObsidianTarget?.hwnd ?? null,
+      });
+      setFeedback(result.message);
+    } catch (error) {
+      setFeedback(`Obsidian note command failed: ${(error as Error).message}`);
+    } finally {
+      setOpeningNoteId(null);
     }
   }
 
@@ -403,6 +517,15 @@ export default function App() {
           </div>
         </div>
         <div className="header-actions">
+          <button
+            type="button"
+            className="chip-button"
+            title="Select Obsidian target window"
+            onClick={() => void loadObsidianTargets()}
+          >
+            <BookOpen size={14} aria-hidden="true" />
+            <span>{loadingObsidianTargets ? "Scanning" : "Obsidian"}</span>
+          </button>
           <button type="button" className="icon-button" title="Refresh sessions" onClick={refreshSessions}>
             <RefreshCcw size={15} aria-hidden="true" />
           </button>
@@ -431,6 +554,36 @@ export default function App() {
           <section className="summary-strip" aria-label="Session summary">
             <span>{sessions.length} active lines</span>
             <strong>{attentionCount} need attention</strong>
+          </section>
+
+          <section className="obsidian-strip" aria-label="Obsidian target binding">
+            <div className="obsidian-strip-line">
+              <strong>Obsidian target</strong>
+              <span>{selectedObsidianTarget ? selectedObsidianTarget.title : "Not selected"}</span>
+            </div>
+            {obsidianPickerOpen ? (
+              <div className="obsidian-picker">
+                {obsidianTargets.length === 0 ? (
+                  <span className="obsidian-empty">No visible Obsidian windows</span>
+                ) : (
+                  obsidianTargets.map((target) => (
+                    <button
+                      key={target.hwnd}
+                      type="button"
+                      className={`obsidian-target-button ${
+                        selectedObsidianTarget?.hwnd === target.hwnd ? "is-selected" : ""
+                      }`}
+                      onClick={() => selectObsidianTarget(target)}
+                    >
+                      <strong>{target.title || "(untitled Obsidian window)"}</strong>
+                      <span>
+                        pid {target.processId} · hwnd 0x{target.hwnd.toString(16).toUpperCase()}
+                      </span>
+                    </button>
+                  ))
+                )}
+              </div>
+            ) : null}
           </section>
 
           <section className="session-list" aria-label="Agent sessions">
@@ -478,7 +631,12 @@ export default function App() {
                 >
                   <GripVertical size={15} aria-hidden="true" />
                 </span>
-                <SessionRowContent session={session} activating={activatingId === session.sessionId} />
+                <SessionRowContent
+                  session={session}
+                  activating={activatingId === session.sessionId}
+                  openingNote={openingNoteId === session.sessionId}
+                  onOpenNote={() => void openObsidianNote(session)}
+                />
               </div>
             ))}
           </section>
@@ -499,7 +657,12 @@ export default function App() {
               {(() => {
                 const session = sessions.find((item) => item.sessionId === cardDrag.sessionId);
                 return session ? (
-                  <SessionRowContent session={session} activating={activatingId === session.sessionId} />
+                  <SessionRowContent
+                    session={session}
+                    activating={activatingId === session.sessionId}
+                    openingNote={openingNoteId === session.sessionId}
+                    onOpenNote={() => undefined}
+                  />
                 ) : null;
               })()}
             </div>

@@ -1,9 +1,22 @@
 use serde::Serialize;
+use serde_json::json;
+use std::fs;
+use std::path::PathBuf;
+use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Serialize)]
 struct ActivationResult {
     ok: bool,
     message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ObsidianWindowTarget {
+    hwnd: i64,
+    process_id: u32,
+    process_name: String,
+    title: String,
 }
 
 #[derive(Clone, Debug)]
@@ -41,6 +54,160 @@ fn activate_session_window(
     )
 }
 
+#[tauri::command]
+fn list_obsidian_windows() -> Vec<ObsidianWindowTarget> {
+    find_obsidian_windows()
+}
+
+#[tauri::command]
+fn create_or_open_obsidian_note(
+    vault_path: String,
+    session_id: String,
+    tool: String,
+    cwd: String,
+    project: String,
+    title: String,
+    state: String,
+    last_event: String,
+    last_message: String,
+    updated_at: String,
+    window_title: String,
+    window_process: String,
+    window_pid: Option<u32>,
+    window_hwnd: Option<i64>,
+    obsidian_title: String,
+    obsidian_process: String,
+    obsidian_pid: Option<u32>,
+    obsidian_hwnd: Option<i64>,
+) -> ActivationResult {
+    match write_obsidian_note_request(ObsidianNoteRequestInput {
+        vault_path,
+        session_id,
+        tool,
+        cwd,
+        project,
+        title,
+        state,
+        last_event,
+        last_message,
+        updated_at,
+        window_title,
+        window_process,
+        window_pid,
+        window_hwnd,
+        obsidian_title,
+        obsidian_process,
+        obsidian_pid,
+        obsidian_hwnd,
+    }) {
+        Ok(result) => result,
+        Err(message) => ActivationResult { ok: false, message },
+    }
+}
+
+struct ObsidianNoteRequestInput {
+    vault_path: String,
+    session_id: String,
+    tool: String,
+    cwd: String,
+    project: String,
+    title: String,
+    state: String,
+    last_event: String,
+    last_message: String,
+    updated_at: String,
+    window_title: String,
+    window_process: String,
+    window_pid: Option<u32>,
+    window_hwnd: Option<i64>,
+    obsidian_title: String,
+    obsidian_process: String,
+    obsidian_pid: Option<u32>,
+    obsidian_hwnd: Option<i64>,
+}
+
+fn write_obsidian_note_request(input: ObsidianNoteRequestInput) -> Result<ActivationResult, String> {
+    let vault_path = PathBuf::from(input.vault_path.trim());
+    if !vault_path.exists() {
+        return Err(format!(
+            "Obsidian vault path does not exist: {}",
+            vault_path.display()
+        ));
+    }
+    if input.session_id.trim().is_empty() {
+        return Err("Session id is required to create a linked note.".to_string());
+    }
+
+    let inbox_dir = vault_path.join(".amo").join("inbox");
+    fs::create_dir_all(&inbox_dir)
+        .map_err(|error| format!("Failed to create Obsidian inbox: {error}"))?;
+
+    let project = if input.project.trim().is_empty() {
+        cwd_basename(&input.cwd).unwrap_or("unknown-project").to_string()
+    } else {
+        input.project.clone()
+    };
+    let note_relative_path = format!(
+        "AMO/Sessions/{}/{}-{}.md",
+        safe_segment(&project),
+        safe_segment(&input.tool),
+        safe_segment(&input.session_id)
+    );
+    let request_id = format!("{}-{}", safe_segment(&input.session_id), unix_millis());
+    let requested_at = iso_like_now();
+    let request = json!({
+        "schemaVersion": 1,
+        "action": "create-linked-note",
+        "requestId": request_id,
+        "requestedAt": requested_at,
+        "source": "agent-monitor-overlay",
+        "session": {
+            "sessionId": input.session_id,
+            "tool": input.tool,
+            "cwd": input.cwd,
+            "project": project,
+            "title": input.title,
+            "state": input.state,
+            "lastEvent": input.last_event,
+            "lastMessage": input.last_message,
+            "updatedAt": input.updated_at,
+            "windowHint": {
+                "title": input.window_title,
+                "process": input.window_process,
+                "pid": input.window_pid,
+                "hwnd": input.window_hwnd
+            }
+        }
+    });
+
+    let request_path = inbox_dir.join(format!("create-linked-note-{request_id}.json"));
+    let request_json = serde_json::to_string_pretty(&request)
+        .map_err(|error| format!("Failed to serialize Obsidian request: {error}"))?;
+    fs::write(&request_path, format!("{request_json}\n"))
+        .map_err(|error| format!("Failed to write Obsidian request: {error}"))?;
+
+    let focus_message = if let Some(target_hint) = obsidian_focus_hint(&input) {
+        let result = activate_external_window("obsidian-target", target_hint);
+        if result.ok {
+            result.message
+        } else {
+            format!("Request queued, but Obsidian focus failed: {}", result.message)
+        }
+    } else {
+        "Request queued. No Obsidian target selected yet.".to_string()
+    };
+
+    Ok(ActivationResult {
+        ok: true,
+        message: format!(
+            "Queued Obsidian note request for {}. {} Request JSON: {}",
+            note_relative_path,
+            focus_message,
+            request_path.display()
+        ),
+    })
+}
+
 #[derive(Debug)]
 struct WindowHintInput {
     title: String,
@@ -51,6 +218,83 @@ struct WindowHintInput {
     cwd: String,
     pid: Option<u32>,
     hwnd: Option<i64>,
+}
+
+fn unix_millis() -> u128 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|duration| duration.as_millis())
+        .unwrap_or(0)
+}
+
+fn iso_like_now() -> String {
+    format!("unix-ms:{}", unix_millis())
+}
+
+fn safe_segment(value: &str) -> String {
+    let mut output = String::new();
+    for ch in value.trim().chars() {
+        if ch.is_ascii_alphanumeric() || ch == '-' || ch == '_' {
+            output.push(ch);
+        } else {
+            output.push('-');
+        }
+    }
+    let collapsed = output
+        .split('-')
+        .filter(|part| !part.is_empty())
+        .collect::<Vec<_>>()
+        .join("-");
+    if collapsed.is_empty() {
+        "unknown".to_string()
+    } else {
+        collapsed
+    }
+}
+
+fn obsidian_focus_hint(input: &ObsidianNoteRequestInput) -> Option<WindowHintInput> {
+    if input.obsidian_hwnd.is_none()
+        && input.obsidian_pid.is_none()
+        && input.obsidian_title.trim().is_empty()
+        && input.obsidian_process.trim().is_empty()
+    {
+        return None;
+    }
+
+    Some(WindowHintInput {
+        title: input.obsidian_title.clone(),
+        process_name: input.obsidian_process.clone(),
+        title_token: String::new(),
+        title_contains: Vec::new(),
+        project: String::new(),
+        cwd: String::new(),
+        pid: input.obsidian_pid,
+        hwnd: input.obsidian_hwnd,
+    })
+}
+
+#[cfg(not(windows))]
+fn find_obsidian_windows() -> Vec<ObsidianWindowTarget> {
+    Vec::new()
+}
+
+#[cfg(windows)]
+fn find_obsidian_windows() -> Vec<ObsidianWindowTarget> {
+    let mut targets = enumerate_windows()
+        .into_iter()
+        .filter(|candidate| process_matches(candidate, "Obsidian.exe"))
+        .map(|candidate| ObsidianWindowTarget {
+            hwnd: candidate.hwnd as i64,
+            process_id: candidate.process_id,
+            process_name: candidate
+                .process_name
+                .unwrap_or_else(|| "Obsidian.exe".to_string()),
+            title: candidate.title,
+        })
+        .collect::<Vec<_>>();
+
+    targets.sort_by(|left, right| left.title.to_lowercase().cmp(&right.title.to_lowercase()));
+    targets
 }
 
 #[cfg(not(windows))]
@@ -469,7 +713,11 @@ fn process_name_for_pid(process_id: u32) -> Option<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![activate_session_window])
+        .invoke_handler(tauri::generate_handler![
+            activate_session_window,
+            create_or_open_obsidian_note,
+            list_obsidian_windows
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Agent Monitor Overlay");
 }

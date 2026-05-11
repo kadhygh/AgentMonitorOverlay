@@ -1,0 +1,9 @@
+{
+  "id": "agent-monitor-overlay",
+  "name": "Agent Monitor Overlay",
+  "version": "0.1.0",
+  "minAppVersion": "1.5.0",
+  "description": "Spike plugin that creates and opens AMO linked notes from agent session requests.",
+  "author": "Agent Monitor Overlay",
+  "isDesktopOnly": true
+}
