@@ -429,56 +429,42 @@ Kiro adapter:
 - Kiro 至少能通过 hook 或手动模拟进入统一状态表。
 - 用户能在真实开发工作流中看到状态变化。
 
-### Phase 5: 控制能力和安全边界
+### Phase 5: Hook-to-Obsidian Bridge MVP
 
 目标：
 
-- 在只读监控稳定后，加入有限控制能力。
-- 所有控制能力必须带安全边界。
+- 让 overlay 保留悬浮状态监控和窗口跳转，同时拉起一个本地 bridge server 作为 hooks、Obsidian vault、canvas flow 和 CLI sync-back 的中转。
+- 使用已验证的 Codex `Stop` hook MVP，把 `last_assistant_message` 缓存并转发给 AMO bridge。
+- 使用已验证的 Obsidian `[!anno]...[/anno]` 插件 MVP，在 Markdown 中批注长回复并一键提取批注。
+- 第一版闭环是：hook 捕获回复 -> bridge 写 Obsidian note/canvas -> 用户在 Obsidian 批注 -> plugin 发送批注到 bridge -> overlay 复制 prompt 并聚焦目标 CLI。
 
-候选能力：
+核心能力：
 
 - 点击切换窗口
-- 一键复制 session 路径/项目路径
-- 打开 transcript/log
-- 打开关联 note，例如 `Open in Obsidian`
-- 取消当前任务
-- 追加 prompt
-- 权限审批
-- 打开详情面板
+- hook-only 状态标记
+- Codex reply note 生成
+- append-only Obsidian canvas flow
+- `Open Note` / `Open Canvas`
+- `Copy Pending Prompt + Focus CLI`
+- Obsidian annotation extraction bridge
 
 安全规则：
 
 - MVP 不做自动审批。
-- 权限审批必须用户显式点击。
+- MVP 不自动粘贴、不自动按 Enter、不自动发送 prompt。
 - shell 执行能力默认关闭。
 - 所有高风险操作必须在 UI 中标记。
-- adapter 不应静默扩大权限。
+- hook 必须短、快、stdout 协议干净；失败时不能阻塞 Codex。
+- vault 写入必须限制在配置的 vault root 内。
 
 验收标准：
 
-- 用户明确确认哪些控制能力进入下一版。
-- 每个控制能力都有失败兜底和超时策略。
-
-### Phase 5A: External Note Jump
-
-目标：
-
-- 在不破坏 MVP 边界的前提下，为受监控 session 提供显式的外部 note 跳转入口。
-- 验证用户是否真的需要把 agent session 和外部整理 note 绑定使用。
-
-范围：
-
-- 从 overlay 打开关联 note。
-- 支持 `Open in Obsidian` 或等效的外部 note 打开动作。
-- 优先显式 `session -> note` 绑定，不依赖脆弱猜测。
-
-不做：
-
-- 不在当前阶段自动创建 note。
-- 不做 canvas 写入。
-- 不做注释汇总。
-- 不做自动回写 CLI。
+- overlay 启动或确认 bridge server 可用。
+- Codex `Stop` hook 能同时写 `.codex/cache/` 兜底并 POST `/api/replies`。
+- bridge 能在测试 vault 中创建 reply note，并在 canvas 中追加 file node。
+- overlay session 卡片能打开关联 note/canvas。
+- Obsidian 插件能提取 `[!anno]...[/anno]` 并 POST 到 bridge。
+- overlay 能显示 pending continuation，并完成 `copy + focus target CLI`。
 
 ### Phase 6: 长期增强
 
@@ -498,23 +484,15 @@ Kiro adapter:
 - 任务摘要和日报
 - 与 Mecho/Ruflo/agent workflow 文档系统联动
 
-#### Future Obsidian Workflow Integration
+#### Obsidian Workflow Boundary
 
-这个方向是未来工作流 sidecar，不属于当前 MVP 主线。
-
-阶段建议：
-
-- Phase 6.x.1: session-note linking
-- Phase 6.x.2: final output note generation
-- Phase 6.x.3: structured annotation capture
-- Phase 6.x.4: single-direction canvas attachment
-- Phase 6.x.5: explicit sync-back to agent session
+这个方向现在进入 Phase 5 bridge MVP，但仍然是 sidecar workflow，不是 AMO 的主数据模型。
 
 边界要求：
 
 - Agent Monitor Overlay 负责 session 聚合、窗口跳转、显式用户动作和安全门。
 - Obsidian 插件负责 vault-native note/canvas 变更、注释模型和汇总。
-- 本地 bridge/helper 负责把注释摘要路由回正确的 agent session 或 CLI 窗口。
+- 本地 bridge server 负责把 hooks、reply notes、canvas flow、annotation payload 和 overlay session state 接在一起。
 - 第一版 sync-back 应优先 `copy + focus target session`，不要直接自动发送。
 - 不要把 Obsidian/canvas 变成当前项目的主数据模型；它们是 sidecar enhancement。
 
@@ -637,11 +615,11 @@ Owner:
 
 ```text
 Project: Agent Monitor Overlay
-Location: G:\PROJECT\AgentMonitorOverlay
-Current phase: Phase 3/4 MVP validation
-Status: runnable MVP prototype, partial
+Location: D:\Projects\commonproject\agentmonitoroverlay
+Current phase: Phase 5 Hook-to-Obsidian Bridge planning
+Status: runnable overlay/broker prototype plus validated external hook and Obsidian annotation MVP inputs
 Created: 2026-05-07
-Updated: 2026-05-10
+Updated: 2026-05-13
 Owner role: user validates vibe and requirements only
 Execution role: supervisor agent manages workers
 ```
@@ -659,6 +637,10 @@ Execution role: supervisor agent manages workers
 - 工具图标、attention 排序、header 拖拽、窗口激活反馈已进入 overlay
 - Claude live hook smoke 已通过；Codex / Claude / Kiro adapter 合同验证已通过
 - GitHub remote 已配置，阶段分支和 `master` 交接分支已推送
+- 用户在 `D:\Projects\CommonProject\obsidianplugintest` 跑通了两个可对接 MVP：
+  - Codex `Stop` hook 读取 `last_assistant_message` 并缓存为 Markdown/JSON note。
+  - Obsidian `Markdown Annotation Tools` 插件支持 `[!anno]...[/anno]` 渲染、包裹选区、追加批注和复制批注。
+- Phase 5 bridge 设计已整理到 `docs/amo-obsidian-bridge-mvp.md`。
 
 当前已由用户 smoke 验证：
 
@@ -674,16 +656,18 @@ Execution role: supervisor agent manages workers
 
 - row handle 目前只保留为视觉占位，卡片拖拽已经临时停用，不再作为当前 Phase 3/4 closeout gate
 - 重复窗口/ambiguous routing 已经有候选/debug 面板，但还需要在真实 session 上继续验证 exact-route 与回退解释性
-- Codex live hook loading 路径仍待验证；adapter/broker 合同本身已经通过
+- Codex live hook 路线已从“是否能加载”推进到“如何把 Stop reply capture 接入 AMO bridge”；仍需在本仓实现并验证 bridge POST。
 - Kiro 仍处在 mock/hook-spike 级别
 - 卡片顺序和 overlay 位置目前是本地 UI 状态，尚未决定是否持久化
+- AMO bridge `/api/replies`、vault note 写入、canvas append、Obsidian plugin -> bridge annotation POST 尚未在本仓实现。
 
 下一步建议：
 
-1. 在真实工作流上继续复验 exact-route identity，优先观察 `pid/hwnd` 行、candidate/debug 面板以及 token/fallback 回退路径。
-2. 继续验证 Codex live hook loading 路线。
-3. 决定卡片拖拽是否作为后续非关键增强重新启用。
-4. 决定是否持久化卡片顺序和 overlay 位置。
+1. 按 `docs/amo-obsidian-bridge-mvp.md` 先实现 bridge contract 文档中的最小 `/api/replies`。
+2. 把 Codex Stop hook MVP 从 `obsidianplugintest` 迁入一个 disposable hooked project，保持 `.codex/cache/` 兜底并 POST 到 AMO bridge。
+3. 在测试 vault 中生成 reply note 和 append-only canvas file node。
+4. 给 overlay session 卡片增加 `Open Note` / `Open Canvas` / `Copy Pending Prompt + Focus CLI`。
+5. 给 Obsidian 插件新增显式 `Send current note annotations to AMO` 命令。
 
 当前主管状态：
 
@@ -696,7 +680,7 @@ Execution role: supervisor agent manages workers
 - 第一轮 vibe：用户已确认通过，小细节后续再调
 - 悬浮窗 smoke：用户已确认 overlay 出现、broker live、无 mock fallback、header drag、Codex/Mecho 跳转、Claude 单目标跳转
 - 真实 hook live smoke：Claude 已通过；Codex provider 可运行，但 hook 加载路径仍待验证；adapter->broker 合同验证已通过
-- 新增未来方向：Obsidian workflow integration 已被接受为后续规划，但明确不并入当前 Phase 3/4 MVP validation 主线
+- 新阶段方向：Obsidian workflow integration 已由两个外部 MVP 证明可进入 Phase 5 bridge 主线，但仍保持 sidecar 边界。
 
 ## 10. 给下一位主管 Agent 的启动提示
 
@@ -704,12 +688,16 @@ Execution role: supervisor agent manages workers
 你现在是 Agent Monitor Overlay 项目的主管 agent。
 
 项目路径：
-G:\PROJECT\AgentMonitorOverlay
+D:\Projects\commonproject\agentmonitoroverlay
 
 先阅读：
 DEVELOPMENT.md
 docs/supervisor-status.md
 PROJECT_PLAN.md
+docs/amo-obsidian-bridge-mvp.md
+外部 MVP 文档：
+D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md
+D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md
 
 用户角色：
 用户只负责验证、vibe 判断、需求细节确认。不要让用户承担任务拆分、worker 协调、实现审查、冲突合并。
@@ -718,14 +706,15 @@ PROJECT_PLAN.md
 你是唯一对用户汇报的角色。你需要拆分任务、调度 worker agent、汇总结果、维护计划状态，并在每个阶段给用户清晰的验证项和需要确认的问题。
 
 当前阶段：
-Phase 3/4 MVP validation。
+Phase 5 Hook-to-Obsidian Bridge planning / implementation prep。
 
 优先任务：
 1. 从 `master` 开始，不要退回旧的 Phase 0 结论。
-2. 继续收敛精确窗口路由，优先让真实 session 默认走 `pid/hwnd` 精确命中。
-3. 继续 Codex live hook loading 验证；不要把 adapter/broker 合同问题和 hook 加载问题混在一起。
-4. 保持 MVP 仍只做只读监控 + 点击切窗口；自动审批、shell 执行、远程控制全部推迟。
-5. Obsidian 相关能力只作为未来阶段规划记录，不要拉进当前 MVP 主线。
+2. 保留 overlay 悬浮窗、broker session 状态和 CLI window focus 能力。
+3. 复用现有 Node broker，把它升级为 AMO bridge；第一步实现 `/api/replies`。
+4. 使用外部 Codex Stop hook MVP 的 `last_assistant_message` capture 思路，保持 hook stdout 只输出 `{"continue":true}`，并保留 `.codex/cache/` 兜底。
+5. 使用外部 Obsidian plugin MVP 的 `[!anno]...[/anno]` 语法；第一版只做显式提取和发送，不做复杂 anchored comments。
+6. Sync-back 第一版只做 `copy + focus target CLI`，不要自动粘贴、自动回车或自动审批。
 
 汇报格式：
 当前阶段：

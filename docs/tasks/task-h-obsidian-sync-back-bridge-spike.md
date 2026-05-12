@@ -1,8 +1,10 @@
 # Task: Obsidian Sync-Back Bridge Spike
 
 Owner: worker-obsidian-sync-back
-Stage: Future parallel spike from Phase 6.x planning
-Status: todo
+Stage: Promoted into Phase 5 AMO Obsidian Bridge MVP
+Status: promoted
+
+This bridge/sync-back work is now core Phase 5 scope. Continue from `docs/amo-obsidian-bridge-mvp.md` and `docs/tasks/task-i-amo-obsidian-bridge-mvp.md`. The first accepted sync-back path is explicit `copy pending prompt + focus target CLI`; do not implement auto-paste, auto-submit, or auto-approval in the first bridge MVP.
 
 ## Goal
 

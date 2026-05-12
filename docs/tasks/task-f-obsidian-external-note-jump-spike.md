@@ -1,8 +1,10 @@
 # Task: Obsidian External Note Jump Spike
 
 Owner: worker-obsidian-entry
-Stage: Future parallel spike from Phase 5A / Phase 6 planning
-Status: todo
+Stage: Superseded by Phase 5 AMO Obsidian Bridge MVP
+Status: superseded
+
+This standalone spike has been folded into `docs/amo-obsidian-bridge-mvp.md` and `docs/tasks/task-i-amo-obsidian-bridge-mvp.md`. The useful part that remains is the explicit `session -> note/canvas` opening contract; it should now be implemented through the AMO bridge and overlay card actions.
 
 ## Goal
 

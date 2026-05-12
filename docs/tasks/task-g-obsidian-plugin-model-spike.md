@@ -1,8 +1,10 @@
 # Task: Obsidian Plugin Model Spike
 
 Owner: worker-obsidian-plugin
-Stage: Future parallel spike from Phase 6.x planning
-Status: todo
+Stage: Externally spiked; consumed by Phase 5 AMO Obsidian Bridge MVP
+Status: externally spiked
+
+The Obsidian plugin model has a working external MVP in `D:\Projects\CommonProject\obsidianplugintest`. Continue from `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md` rather than restarting this as a greenfield spike. The AMO-side contract is now tracked in `docs/amo-obsidian-bridge-mvp.md` and `docs/tasks/task-i-amo-obsidian-bridge-mvp.md`.
 
 ## Goal
 

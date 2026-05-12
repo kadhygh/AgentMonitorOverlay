@@ -140,7 +140,9 @@ npm run tauri:dev
 
 ## Current Behavior
 
-Current MVP scope is read-only monitoring plus click-to-window routing.
+Current working direction is Phase 5 Hook-to-Obsidian Bridge MVP.
+
+The existing overlay/broker MVP remains the base:
 
 Implemented:
 
@@ -162,6 +164,17 @@ Implemented:
 - Claude routing demo
 - candidate/debug panel for ambiguous routing
 - local dismiss action per session row, intended to hide the current snapshot until a later real hook event refreshes it
+
+New Phase 5 direction:
+
+- overlay should keep the floating status surface and click-to-window routing
+- overlay should launch or verify a small local bridge server
+- the existing Node broker should evolve into that bridge first
+- hooks can be the primary source for status and completed assistant replies
+- Codex `Stop` hook reply capture should POST to the bridge and keep local `.codex/cache/` fallback
+- bridge should create Obsidian reply notes and append file nodes to an Obsidian canvas
+- Obsidian plugin should own vault-native annotation extraction using `[!anno]...[/anno]`
+- sync-back should start as explicit `copy pending prompt + focus target CLI`
 
 ## Current Validation Notes
 
@@ -195,16 +208,17 @@ Current unverified but implemented behavior:
 
 ## Known Open Gaps
 
-- Codex live hook loading is not fully validated.
-  - The adapter/broker contract passes.
-  - Codex can run with the user's normal provider configuration.
-  - Repo-local hooks are now wired in `.codex/`, but Codex still needs `/hooks` review and live smoke in a real interactive session.
-  - Current smoke evidence is mixed: broker can receive real hook events while Codex still reports hook failure/timeout noise.
-  - Next route: isolate the hook-runner failure cause without regressing event delivery, preferably through a disposable project-local review/smoke path first.
+- Codex hook status has changed:
+  - The old adapter/broker contract passes.
+  - A separate MVP in `D:\Projects\CommonProject\obsidianplugintest` proves `Stop` can read `last_assistant_message` and cache it as Markdown/JSON.
+  - AMO still needs implementation work to receive this as `POST /api/replies` and link it to overlay session state.
 - Claude live hook smoke passed with disposable `--settings`.
 - Kiro is still mock/hook-spike level for MVP.
 - Window routing still needs clearer blocked-focus feedback and stronger exact-route identity for real sessions.
 - Card reorder is temporarily disabled and should stay out of the critical path until routing work is stable.
+- Bridge server launch from the Tauri overlay is not implemented yet.
+- Obsidian vault note writing and canvas append are not implemented in this repo yet.
+- Obsidian plugin annotation POST back to AMO is not implemented yet.
 
 ## Repo-Local Hook Smoke Route
 
@@ -226,21 +240,35 @@ Current local example from the active machine:
 
 That disposable test project is not part of this repo. Recreate it locally if needed rather than assuming it exists on another machine.
 
-## Deferred Future Integration
+## Phase 5 Bridge Inputs
 
-Obsidian workflow integration is accepted as a future direction, but it is intentionally deferred beyond the current MVP phase.
+Useful external MVP documents:
 
-Planned shape:
+- `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+- `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
 
-- Phase 5A: `Open in Obsidian` / open related note from a monitored session
-- Phase 6.x: session-note linking, final output note generation, structured annotations, single-direction canvas attachment, and explicit sync-back to the target agent session
+Useful Codex reply hook facts:
+
+- Trigger: Codex `Stop`
+- Content field: `last_assistant_message`
+- Hook stdout should stay protocol-clean and return `{"continue":true}`
+- Keep `.codex/cache/latest-assistant-message.md`, `.codex/cache/latest-assistant-message.json`, and `.codex/cache/assistant-turns/` as fallback
+- Useful record fields: `capturedAt`, `sessionId`, `turnId`, `model`, `hookEventName`, `cwd`, `transcriptPath`, `stopHookActive`, `message`
+
+Useful Obsidian plugin facts:
+
+- Plugin id: `md-anno-tools`
+- Annotation syntax: `[!anno]...[/anno]`
+- Current plugin supports reading-mode rendering, editor selection wrapping, appending an annotation, and copying current note annotations
+- Phase 5 should add a new explicit command to send annotations to AMO; do not replace the existing clipboard command
 
 Guardrails:
 
-- Keep Obsidian as a sidecar workflow, not the primary data model for current MVP
-- Let an Obsidian plugin own vault-native note/canvas mutation
-- Let a local bridge/helper own any route-back to the correct CLI session or window
+- Keep Obsidian as a sidecar workflow, not the primary AMO data model
+- Let the Obsidian plugin own vault-native note/canvas behavior and annotation UX
+- Let the AMO bridge own session linkage, reply note routing, pending prompts, and overlay-visible state
 - Prefer `copy + focus target session` before any auto-send behavior
+- Do not auto-paste, auto-enter, or auto-approve in Phase 5
 
 ## Useful Documents
 
@@ -248,14 +276,17 @@ Read in this order when taking over:
 
 1. `PROJECT_PLAN.md`
 2. `docs/supervisor-status.md`
-3. `docs/validation-checklist.md`
-4. `docs/window-routing-notes.md`
-5. `docs/tool-adapter-spike.md`
-6. `docs/worktree-checkpoint-guide.md`
-7. `docs/session-handoffs/2026-05-11-phase-3-4-checkpoint.md`
-8. `broker/README.md`
-9. `overlay/README.md`
-10. `USER_SESSION_MANUAL.md`
+3. `docs/amo-obsidian-bridge-mvp.md`
+4. `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+5. `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+6. `docs/validation-checklist.md`
+7. `docs/window-routing-notes.md`
+8. `docs/tool-adapter-spike.md`
+9. `docs/worktree-checkpoint-guide.md`
+10. `docs/session-handoffs/2026-05-13-amo-obsidian-bridge-pivot.md`
+11. `broker/README.md`
+12. `overlay/README.md`
+13. `USER_SESSION_MANUAL.md`
 
 ## Development Workflow
 
@@ -294,9 +325,10 @@ Do not commit:
 
 ## Recommended Next Tasks
 
-1. Continue tightening exact route identity so real sessions prefer `pid/hwnd` over token/fallback matching.
-2. Continue Codex live hook loading validation.
-3. Make the ambiguous routing/debug experience clearer without expanding into broader control features.
-4. Validate the new dismiss flow against a real hook-emitting session, especially "dismiss -> next event -> card reappears".
-5. Decide whether local card order should return later as a stable, non-intrusive enhancement.
-6. Keep Obsidian workflow integration as a future tracked direction, not part of the current MVP closeout.
+1. Implement the smallest bridge `/api/replies` endpoint in the existing Node broker.
+2. Add bridge config for a test Obsidian vault root, reply note folder, and canvas path.
+3. Adapt the proven Codex `Stop` hook script so it keeps `.codex/cache/` fallback and best-effort POSTs to AMO bridge.
+4. Generate a reply note and append-only canvas file node in the test vault.
+5. Add overlay actions for `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI`.
+6. Add an Obsidian plugin command that sends extracted `[!anno]...[/anno]` annotations to AMO.
+7. Run a manual end-to-end smoke before expanding automation.

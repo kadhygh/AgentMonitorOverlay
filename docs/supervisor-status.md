@@ -1,6 +1,6 @@
 # Supervisor Status
 
-Updated: 2026-05-11
+Updated: 2026-05-13
 
 ## Current Git
 
@@ -17,6 +17,7 @@ Updated: 2026-05-11
 - Phase 2: MVP skeleton done, broker API verified locally
 - Phase 3: prototype done, overlay UI builds, native Rust code compiles, and user smoke validation has run
 - Phase 4: spike done, Codex / Claude / Kiro adapter routes documented with example hooks
+- Phase 5: Hook-to-Obsidian Bridge MVP planning accepted after two external MVPs proved Codex reply capture and Obsidian annotation extraction
 
 ## Active Tasks
 
@@ -27,9 +28,10 @@ Updated: 2026-05-11
 | Task C: Overlay UI Prototype | worker-overlay-ui | done | `overlay/` |
 | Task D: Codex Claude Kiro Hook Spike | worker-tool-adapters | done | `docs/tool-adapter-spike.md`, `examples/hooks/`, `scripts/adapters/` |
 | Task E: Supervisor Integration | supervisor-agent | done | project plan, status docs, integration and checkpoint |
-| Task F: Obsidian External Note Jump Spike | worker-obsidian-entry | todo | `docs/tasks/task-f-obsidian-external-note-jump-spike.md`, related Obsidian entry docs/prototypes |
-| Task G: Obsidian Plugin Model Spike | worker-obsidian-plugin | todo | `docs/tasks/task-g-obsidian-plugin-model-spike.md`, related Obsidian model docs/prototypes |
-| Task H: Obsidian Sync-Back Bridge Spike | worker-obsidian-sync-back | todo | `docs/tasks/task-h-obsidian-sync-back-bridge-spike.md`, related bridge docs/prototypes |
+| Task F: Obsidian External Note Jump Spike | worker-obsidian-entry | superseded | Folded into Phase 5 bridge MVP; see `docs/amo-obsidian-bridge-mvp.md` |
+| Task G: Obsidian Plugin Model Spike | worker-obsidian-plugin | externally spiked | Useful MVP exists in `D:\Projects\CommonProject\obsidianplugintest`; AMO should consume the contract |
+| Task H: Obsidian Sync-Back Bridge Spike | worker-obsidian-sync-back | promoted | Bridge/sync-back is now Phase 5 core, initially `copy + focus target CLI` |
+| Task I: AMO Obsidian Bridge MVP | supervisor-agent | planned | `docs/amo-obsidian-bridge-mvp.md`, `broker/`, `overlay/`, external Obsidian plugin MVP |
 
 ## Environment Snapshot
 
@@ -42,7 +44,8 @@ Updated: 2026-05-11
 ## Supervisor Decisions
 
 - First implementation round ran on `phase/1-2-spikes`; the branch is now a checkpoint and `master` is the handoff branch.
-- MVP remains read-only monitoring plus click-to-window routing.
+- Phase 3/4 MVP remains read-only monitoring plus click-to-window routing.
+- Phase 5 should reuse the overlay and broker as a local bridge between hooks and Obsidian sidecar workflow.
 - User will not be asked to approve routine branch/task-card/checkpoint mechanics.
 - User validation is reserved for real workflow or vibe checkpoints.
 - Broker default port is `17654`.
@@ -65,8 +68,10 @@ Updated: 2026-05-11
 - Dismiss is intentionally overlay-local for now; the broker contract is unchanged.
 - Repo-local Codex hook files now exist under `.codex/`, but the interactive `/hooks` review + smoke path is still in progress rather than closed.
 - A disposable sibling test repo/project is the preferred first smoke path for Codex repo-local hooks so trust/review state does not have to land in the main worktree first.
-- Future direction accepted: Obsidian workflow integration should be tracked as a later phase, with `Open in Obsidian` as a Phase 5A control and the broader note/canvas/annotation loop deferred beyond the current MVP phase.
-- Future prep has now been split into three parallel task cards so new sessions can explore `overlay -> Obsidian`, `Obsidian internal model`, and `Obsidian -> sync-back bridge` independently without pulling them into the current MVP closeout.
+- Obsidian workflow integration is now promoted from future planning to Phase 5 bridge MVP because the user independently validated:
+  - Codex `Stop` hook can capture `last_assistant_message` and cache reply Markdown/JSON.
+  - Obsidian `md-anno-tools` can render and extract `[!anno]...[/anno]` annotations.
+- The bridge must keep Obsidian as a sidecar workflow. AMO owns session state, bridge contracts, overlay actions, and safe sync-back.
 
 ## Verified This Round
 
@@ -101,13 +106,24 @@ Updated: 2026-05-11
 - Codex live smoke can run the prompt successfully with the user's normal provider configuration, and broker has received at least some real events from repo-local smoke attempts.
 - Codex still remains a hook-loading and hook-runner validation gap because the interactive session can report hook failure/timeout noise even when broker delivery partially succeeds.
 - Codex remains a hook-loading validation gap, not an adapter/broker contract failure.
+- External Codex reply-note MVP in `obsidianplugintest` proves the important Phase 5 content path: `Stop` hook -> `last_assistant_message` -> Markdown/JSON note cache.
+
+## Phase 5 Bridge Inputs
+
+- Main AMO bridge design: `docs/amo-obsidian-bridge-mvp.md`
+- Codex reply hook handoff: `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+- Obsidian annotation plugin handoff: `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+- Useful Codex fields: `capturedAt`, `sessionId`, `turnId`, `model`, `hookEventName`, `cwd`, `transcriptPath`, `stopHookActive`, `message`.
+- Useful Obsidian syntax: `[!anno]...[/anno]`.
+- First bridge sync-back rule: prepare prompt, copy to clipboard, focus target CLI, let the user paste/submit.
 
 ## Next Supervisor Checkpoint
 
 - Keep `master` as the default new-device handoff branch.
-- Continue tightening exact route identity so real sessions default to `pid/hwnd` where possible.
-- Keep adapter contract verification as the automated gate.
-- Keep Claude live smoke as a verified real-hook gate.
-- Decide the Codex hook validation route: supported per-process hook injection, or temporary install/restore of a user-layer hook in the real Codex home.
-- Validate the new dismiss flow against a real hook-emitting session before calling it closed.
-- Keep Obsidian workflow integration recorded as a future plan; do not pull it into the current Phase 3/4 MVP closeout.
+- Keep existing overlay routing and hook status work as the base.
+- Implement the smallest bridge endpoint first: `POST /api/replies`.
+- Preserve hook file-cache fallback and protocol-clean stdout.
+- Add test-vault reply note generation before broader Obsidian integration.
+- Add append-only canvas file node creation after note generation is stable.
+- Add overlay `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI` only after bridge session fields exist.
+- Add Obsidian plugin `Send current note annotations to AMO` as an explicit user action; do not replace the current copy-to-clipboard command.
