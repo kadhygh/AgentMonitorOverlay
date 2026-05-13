@@ -17,6 +17,7 @@ Read these documents before implementation:
 
 - `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
 - `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+- Repo-local snapshot: `docs/reference-mvps/obsidianplugintest/`
 
 Useful confirmed facts from the Codex hook MVP:
 

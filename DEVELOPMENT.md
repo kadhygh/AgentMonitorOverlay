@@ -247,6 +247,13 @@ Useful external MVP documents:
 - `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
 - `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
 
+Repo-local reference snapshot for cross-device handoff:
+
+- `docs/reference-mvps/obsidianplugintest/README.md`
+- `docs/reference-mvps/obsidianplugintest/handoff/`
+- `docs/reference-mvps/obsidianplugintest/codex-hook/`
+- `docs/reference-mvps/obsidianplugintest/plugin/`
+
 Useful Codex reply hook facts:
 
 - Trigger: Codex `Stop`
@@ -277,16 +284,17 @@ Read in this order when taking over:
 1. `PROJECT_PLAN.md`
 2. `docs/supervisor-status.md`
 3. `docs/amo-obsidian-bridge-mvp.md`
-4. `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
-5. `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
-6. `docs/validation-checklist.md`
-7. `docs/window-routing-notes.md`
-8. `docs/tool-adapter-spike.md`
-9. `docs/worktree-checkpoint-guide.md`
-10. `docs/session-handoffs/2026-05-13-amo-obsidian-bridge-pivot.md`
-11. `broker/README.md`
-12. `overlay/README.md`
-13. `USER_SESSION_MANUAL.md`
+4. `docs/reference-mvps/obsidianplugintest/README.md`
+5. `docs/reference-mvps/obsidianplugintest/handoff/CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+6. `docs/reference-mvps/obsidianplugintest/handoff/OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+7. `docs/validation-checklist.md`
+8. `docs/window-routing-notes.md`
+9. `docs/tool-adapter-spike.md`
+10. `docs/worktree-checkpoint-guide.md`
+11. `docs/session-handoffs/2026-05-13-amo-obsidian-bridge-pivot.md`
+12. `broker/README.md`
+13. `overlay/README.md`
+14. `USER_SESSION_MANUAL.md`
 
 ## Development Workflow
 

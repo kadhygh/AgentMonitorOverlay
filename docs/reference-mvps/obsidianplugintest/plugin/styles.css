@@ -1,0 +1,54 @@
+.anno-token {
+	display: inline-flex;
+	align-items: flex-start;
+	gap: 0.5rem;
+	max-width: 100%;
+	margin: 0 0.2rem;
+	padding: 0.2rem 0.6rem;
+	border: 1px solid var(--background-modifier-border);
+	border-radius: 8px;
+	background: var(--background-secondary);
+	vertical-align: baseline;
+}
+
+.anno-token-block {
+	display: flex;
+	margin: 0.5rem 0;
+	padding: 0.65rem 0.8rem;
+}
+
+.anno-token-badge {
+	flex: 0 0 auto;
+	padding: 0.08rem 0.45rem;
+	border-radius: 999px;
+	background: var(--interactive-accent);
+	color: var(--text-on-accent);
+	font-size: 0.72em;
+	font-weight: 600;
+	line-height: 1.6;
+}
+
+.anno-token-content {
+	min-width: 0;
+	color: var(--text-normal);
+	white-space: pre-wrap;
+	overflow-wrap: anywhere;
+}
+
+.anno-modal .modal-content p {
+	margin-top: 0;
+	color: var(--text-muted);
+}
+
+.anno-modal-input {
+	width: 100%;
+	min-height: 140px;
+	resize: vertical;
+}
+
+.anno-modal-actions {
+	display: flex;
+	justify-content: flex-end;
+	gap: 0.75rem;
+	margin-top: 1rem;
+}

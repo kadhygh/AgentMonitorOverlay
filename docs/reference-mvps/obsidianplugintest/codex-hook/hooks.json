@@ -1,0 +1,16 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"D:\\Projects\\commonproject\\obsidianplugintest\\.codex\\hooks\\cache-stop-message.mjs\"",
+            "timeout": 10,
+            "statusMessage": "Caching assistant reply"
+          }
+        ]
+      }
+    ]
+  }
+}

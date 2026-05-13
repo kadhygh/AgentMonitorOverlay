@@ -113,6 +113,7 @@ Updated: 2026-05-13
 - Main AMO bridge design: `docs/amo-obsidian-bridge-mvp.md`
 - Codex reply hook handoff: `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
 - Obsidian annotation plugin handoff: `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+- Repo-local MVP snapshot for cross-device continuation: `docs/reference-mvps/obsidianplugintest/`
 - Useful Codex fields: `capturedAt`, `sessionId`, `turnId`, `model`, `hookEventName`, `cwd`, `transcriptPath`, `stopHookActive`, `message`.
 - Useful Obsidian syntax: `[!anno]...[/anno]`.
 - First bridge sync-back rule: prepare prompt, copy to clipboard, focus target CLI, let the user paste/submit.

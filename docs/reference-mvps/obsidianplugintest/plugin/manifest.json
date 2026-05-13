@@ -1,0 +1,10 @@
+{
+	"id": "md-anno-tools",
+	"name": "Markdown Annotation Tools",
+	"version": "1.0.0",
+	"minAppVersion": "1.1.0",
+	"description": "Render [!anno]...[/anno] annotations in reading mode and copy extracted annotation text from the current note.",
+	"author": "OpenAI Codex",
+	"authorUrl": "https://openai.com",
+	"isDesktopOnly": false
+}

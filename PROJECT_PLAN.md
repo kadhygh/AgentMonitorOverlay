@@ -695,6 +695,7 @@ DEVELOPMENT.md
 docs/supervisor-status.md
 PROJECT_PLAN.md
 docs/amo-obsidian-bridge-mvp.md
+docs/reference-mvps/obsidianplugintest/README.md
 外部 MVP 文档：
 D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md
 D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md

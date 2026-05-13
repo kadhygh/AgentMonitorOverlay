@@ -24,6 +24,13 @@ The Obsidian workflow is no longer only a distant future idea. Two local MVPs ha
 - `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
 - `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
 
+The useful parts of that external MVP have also been copied into this repo for cross-device handoff:
+
+- `docs/reference-mvps/obsidianplugintest/README.md`
+- `docs/reference-mvps/obsidianplugintest/handoff/`
+- `docs/reference-mvps/obsidianplugintest/codex-hook/`
+- `docs/reference-mvps/obsidianplugintest/plugin/`
+
 ## Source MVP Findings
 
 ### Codex Reply Note Hook
@@ -411,8 +418,11 @@ When continuing this work, read these files first:
 2. `docs/supervisor-status.md`
 3. `PROJECT_PLAN.md`
 4. `docs/amo-obsidian-bridge-mvp.md`
-5. `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
-6. `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+5. `docs/reference-mvps/obsidianplugintest/README.md`
+6. `docs/reference-mvps/obsidianplugintest/handoff/CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+7. `docs/reference-mvps/obsidianplugintest/handoff/OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+8. Optional live source, if present on the current machine: `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+9. Optional live source, if present on the current machine: `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
 
 Current instruction:
 
