@@ -170,7 +170,9 @@ New Phase 5 direction:
 - overlay should keep the floating status surface and click-to-window routing
 - overlay should launch or verify a small local bridge server
 - the existing Node broker should evolve into that bridge first
-- hooks can be the primary source for status and completed assistant replies
+- hook/adapter deployment should be manual and workspace-scoped, not global
+- user selects a project folder, then AMO inspects the folder and chooses or suggests the local adapter path
+- workspace-local hooks can be the primary source for status and completed assistant replies
 - Codex `Stop` hook reply capture should POST to the bridge and keep local `.codex/cache/` fallback
 - bridge should create Obsidian reply notes and append file nodes to an Obsidian canvas
 - Obsidian plugin should own vault-native annotation extraction using `[!anno]...[/anno]`
@@ -217,12 +219,22 @@ Current unverified but implemented behavior:
 - Window routing still needs clearer blocked-focus feedback and stronger exact-route identity for real sessions.
 - Card reorder is temporarily disabled and should stay out of the critical path until routing work is stable.
 - Bridge server launch from the Tauri overlay is not implemented yet.
+- Manual workspace inspect/enroll is not implemented yet.
 - Obsidian vault note writing and canvas append are not implemented in this repo yet.
 - Obsidian plugin annotation POST back to AMO is not implemented yet.
 
-## Repo-Local Hook Smoke Route
+## Manual Workspace Hook Enrollment
 
-Current repo-local hook files:
+Do not treat global hook deployment as the Phase 5 default. The current product direction is:
+
+- User selects a target project folder.
+- AMO inspects folder contents and local tool configuration.
+- AMO identifies the likely CLI/TUI adapter path, such as Codex project-local `Stop` hook, Claude disposable settings, Kiro hook/mock, or a future transcript/wrapper adapter.
+- AMO shows the files it would write before writing them.
+- AMO writes only project-local hook/adapter files after explicit confirmation.
+- AMO records the workspace enrollment and keeps it reversible.
+
+Current repo-local hook files remain useful as implementation examples:
 
 - `.codex/config.toml`
 - `.codex/hooks.json`
@@ -272,6 +284,9 @@ Useful Obsidian plugin facts:
 Guardrails:
 
 - Keep Obsidian as a sidecar workflow, not the primary AMO data model
+- Do not install global hooks in Phase 5
+- Start adapter deployment from a user-selected project folder
+- Choose adapter behavior from folder contents and local CLI/TUI capabilities
 - Let the Obsidian plugin own vault-native note/canvas behavior and annotation UX
 - Let the AMO bridge own session linkage, reply note routing, pending prompts, and overlay-visible state
 - Prefer `copy + focus target session` before any auto-send behavior
@@ -333,10 +348,11 @@ Do not commit:
 
 ## Recommended Next Tasks
 
-1. Implement the smallest bridge `/api/replies` endpoint in the existing Node broker.
-2. Add bridge config for a test Obsidian vault root, reply note folder, and canvas path.
-3. Adapt the proven Codex `Stop` hook script so it keeps `.codex/cache/` fallback and best-effort POSTs to AMO bridge.
-4. Generate a reply note and append-only canvas file node in the test vault.
-5. Add overlay actions for `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI`.
-6. Add an Obsidian plugin command that sends extracted `[!anno]...[/anno]` annotations to AMO.
-7. Run a manual end-to-end smoke before expanding automation.
+1. Implement manual workspace inspect/enroll in the existing Node broker, starting from a user-selected project folder.
+2. Implement the smallest bridge `/api/replies` endpoint.
+3. Add bridge config for a test Obsidian vault root, reply note folder, and canvas path.
+4. Adapt the proven Codex `Stop` hook script as a project-local enrolled adapter so it keeps `.codex/cache/` fallback and best-effort POSTs to AMO bridge.
+5. Generate a reply note and append-only canvas file node in the test vault.
+6. Add overlay actions for `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI`.
+7. Add an Obsidian plugin command that sends extracted `[!anno]...[/anno]` annotations to AMO.
+8. Run a manual end-to-end smoke before expanding automation.

@@ -9,7 +9,8 @@ This document is the current control design for moving Agent Monitor Overlay fro
 The next product shape is:
 
 ```text
-Codex / Claude / Kiro hooks
+Selected project folder
+  -> workspace-local Codex / Claude / Kiro adapter or hook
   -> AMO local bridge server
   -> overlay session status and window focus
   -> Obsidian vault notes and canvas flow
@@ -17,7 +18,18 @@ Codex / Claude / Kiro hooks
   -> copy + focus back to the target CLI session
 ```
 
-The overlay should remain the visible status and jump surface. It should also launch or supervise a small local bridge server. The bridge server is the handoff point between short-lived hooks, vault file writes, Obsidian plugin actions, and overlay UI state.
+The overlay should remain the visible status and jump surface. It should also launch or supervise a small local bridge server. The bridge server is the handoff point between short-lived workspace-local hooks or adapters, vault file writes, Obsidian plugin actions, and overlay UI state.
+
+AMO should not deploy global hooks in Phase 5. The safer default is manual workspace enrollment:
+
+- User selects a target project folder.
+- AMO inspects that folder and any obvious local tool configuration.
+- AMO chooses or suggests a folder-scoped adapter path for the detected CLI/TUI.
+- AMO writes only project-local hook/adapter files after explicit user confirmation.
+- AMO records the workspace enrollment so the overlay can show which folders are bridged.
+- AMO can disable or remove its project-local hook/adapter files for a selected folder.
+
+This keeps the bridge compatible with future CLI/TUI providers. Codex, Claude, Kiro, Gemini CLI, OpenCode, Aider, Cursor, or other tools may expose different hook, transcript, statusline, or wrapper surfaces, so the first AMO decision point should be "which folder and which local adapter fits this folder?" rather than "install one global hook for every tool."
 
 The Obsidian workflow is no longer only a distant future idea. Two local MVPs have made the Phase 5 direction concrete:
 
@@ -62,6 +74,7 @@ Verified useful pieces:
 
 Design implication:
 
+- Treat this as a project-local enrollment pattern, not a global Codex setup.
 - Keep the Stop hook short and safe.
 - Keep file cache as a fallback.
 - Add a best-effort POST to the AMO bridge server.
@@ -123,6 +136,11 @@ Agent hook scripts
   - cache locally
   - POST to AMO bridge if available
 
+Workspace enrollment
+  - starts from a user-selected project folder
+  - detects local tool configuration and likely CLI/TUI adapter options
+  - installs, updates, disables, or removes only folder-scoped AMO hook files
+
 AMO bridge server
   - receives hook events and replies
   - maintains latest session state
@@ -161,6 +179,9 @@ POST /api/sessions/:id/heartbeat
 Phase 5 bridge API adds:
 
 ```text
+POST /api/workspaces/inspect
+POST /api/workspaces/enroll
+POST /api/workspaces/:id/disable
 POST /api/replies
 POST /api/obsidian/annotations
 POST /api/obsidian/open-note
@@ -173,6 +194,8 @@ POST /api/config
 The smallest useful first implementation can start with only:
 
 ```text
+POST /api/workspaces/inspect
+POST /api/workspaces/enroll
 POST /api/replies
 POST /api/obsidian/annotations
 GET  /api/sessions
@@ -180,6 +203,65 @@ POST /api/events
 ```
 
 ## Contracts
+
+### Workspace Enrollment
+
+The bridge should model hook installation as an explicit project-folder operation.
+
+Inspect request:
+
+```json
+{
+  "schemaVersion": 1,
+  "workspacePath": "D:\\Projects\\SomeProject"
+}
+```
+
+Inspect response:
+
+```json
+{
+  "ok": true,
+  "workspacePath": "D:\\Projects\\SomeProject",
+  "detected": [
+    {
+      "tool": "codex",
+      "confidence": "high",
+      "reason": "folder has .codex or Codex transcript/config hints",
+      "adapter": "codex-stop-hook",
+      "scope": "project-local",
+      "filesToWrite": [
+        ".codex/hooks.json",
+        ".codex/hooks/cache-stop-message.mjs"
+      ],
+      "risks": [
+        "Codex hook runner behavior still needs local smoke validation"
+      ]
+    }
+  ]
+}
+```
+
+Enrollment must be explicit. A future overlay flow can show the detected adapter plan and require the user to confirm before writing project-local files.
+
+Enrollment response:
+
+```json
+{
+  "ok": true,
+  "workspaceId": "workspace-id",
+  "workspacePath": "D:\\Projects\\SomeProject",
+  "tool": "codex",
+  "adapter": "codex-stop-hook",
+  "scope": "project-local",
+  "installedFiles": [
+    ".codex/hooks.json",
+    ".codex/hooks/cache-stop-message.mjs"
+  ]
+}
+```
+
+The bridge should reject global hook installation requests by default.
 
 ### Reply Capture
 
@@ -336,6 +418,11 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 
 - Listen only on `127.0.0.1`.
 - Never bind to `0.0.0.0` by default.
+- Do not install global hooks in Phase 5.
+- Hook and adapter deployment must start from a user-selected workspace folder.
+- Write only project-local hook/adapter files after explicit confirmation.
+- Inspect folder contents before choosing an adapter path.
+- Keep per-workspace enrollment state visible and reversible.
 - Restrict vault writes to configured `vaultRoot`.
 - Reject paths that escape `vaultRoot`.
 - Set a body size limit for reply payloads.
@@ -356,6 +443,8 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 
 ### Phase 5.1: Bridge Reply Endpoint
 
+- Add manual workspace inspection/enrollment for a selected folder.
+- Reject global hook deployment by default.
 - Add `POST /api/replies` to the existing broker.
 - Persist reply notes into a configured vault.
 - Update session snapshot with `lastReplyNote`, `canvasPath`, and `lastReplyAt`.
@@ -387,22 +476,27 @@ Manual acceptance path:
 
 1. Start overlay.
 2. Overlay starts or verifies bridge server.
-3. Start Codex in a hooked project.
-4. Ask a prompt.
-5. Stop hook caches and POSTs the assistant reply.
-6. Bridge creates a reply note in the test vault.
-7. Bridge appends the reply note to the canvas.
-8. Overlay card shows `Open Note` / `Open Canvas`.
-9. User adds `[!anno]...[/anno]` in Obsidian.
-10. Obsidian plugin sends annotations to AMO.
-11. Overlay shows pending continuation.
-12. User clicks `Copy + Focus CLI`.
-13. Target CLI receives focus and the prompt is in clipboard.
+3. User selects a project folder to enroll.
+4. AMO inspects the folder and shows the detected local adapter plan.
+5. User confirms project-local hook/adapter installation.
+6. Start Codex or another supported CLI/TUI in the enrolled project.
+7. Ask a prompt.
+8. Stop hook or equivalent local adapter caches and POSTs the assistant reply.
+9. Bridge creates a reply note in the test vault.
+10. Bridge appends the reply note to the canvas.
+11. Overlay card shows `Open Note` / `Open Canvas`.
+12. User adds `[!anno]...[/anno]` in Obsidian.
+13. Obsidian plugin sends annotations to AMO.
+14. Overlay shows pending continuation.
+15. User clicks `Copy + Focus CLI`.
+16. Target CLI receives focus and the prompt is in clipboard.
 
 ## Out Of Scope For The First Bridge MVP
 
 - Automatic paste or Enter into CLI.
 - Automatic permission approval.
+- Global hook deployment.
+- Silent hook/adapter installation without selecting a workspace folder.
 - Full historical event database.
 - Rich anchored comments mapped to exact Markdown source ranges.
 - Multi-vault routing.
@@ -428,6 +522,7 @@ Current instruction:
 
 - Treat Phase 5 as Hook-to-Obsidian Bridge MVP.
 - Reuse the existing broker as the bridge server first.
+- Treat hook deployment as manual workspace enrollment, not global installation.
 - Keep hooks short and protocol-clean.
 - Keep Obsidian mutation vault-native and explicit.
 - Keep sync-back to `copy + focus target CLI` until the user explicitly accepts stronger automation.

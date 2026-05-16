@@ -68,6 +68,7 @@ Updated: 2026-05-13
 - Dismiss is intentionally overlay-local for now; the broker contract is unchanged.
 - Repo-local Codex hook files now exist under `.codex/`, but the interactive `/hooks` review + smoke path is still in progress rather than closed.
 - A disposable sibling test repo/project is the preferred first smoke path for Codex repo-local hooks so trust/review state does not have to land in the main worktree first.
+- User clarified on 2026-05-13 that global hook deployment is too risky for the current product. Phase 5 hook/adapter setup must be manual and workspace-scoped: user selects a folder, AMO inspects the folder, then AMO installs only project-local hook/adapter files after explicit confirmation.
 - Obsidian workflow integration is now promoted from future planning to Phase 5 bridge MVP because the user independently validated:
   - Codex `Stop` hook can capture `last_assistant_message` and cache reply Markdown/JSON.
   - Obsidian `md-anno-tools` can render and extract `[!anno]...[/anno]` annotations.
@@ -117,11 +118,13 @@ Updated: 2026-05-13
 - Useful Codex fields: `capturedAt`, `sessionId`, `turnId`, `model`, `hookEventName`, `cwd`, `transcriptPath`, `stopHookActive`, `message`.
 - Useful Obsidian syntax: `[!anno]...[/anno]`.
 - First bridge sync-back rule: prepare prompt, copy to clipboard, focus target CLI, let the user paste/submit.
+- First bridge enrollment rule: no global hooks; install only per selected workspace folder, based on detected folder/tool capabilities.
 
 ## Next Supervisor Checkpoint
 
 - Keep `master` as the default new-device handoff branch.
 - Keep existing overlay routing and hook status work as the base.
+- Add manual workspace inspect/enroll before treating any hook deployment as a product path.
 - Implement the smallest bridge endpoint first: `POST /api/replies`.
 - Preserve hook file-cache fallback and protocol-clean stdout.
 - Add test-vault reply note generation before broader Obsidian integration.

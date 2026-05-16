@@ -82,21 +82,28 @@ POST /api/config
 
 1. Start overlay.
 2. Overlay verifies or launches bridge server.
-3. Start Codex in a project with the reply-note Stop hook.
-4. User asks Codex a prompt.
-5. Stop hook caches `last_assistant_message` and POSTs it to AMO bridge.
-6. Bridge writes a Markdown reply note into a configured Obsidian test vault.
-7. Bridge appends a file node to an Obsidian canvas.
-8. Overlay session card exposes `Open Note` and `Open Canvas`.
-9. User adds `[!anno]...[/anno]` in Obsidian.
-10. Obsidian plugin sends extracted annotations to AMO.
-11. Bridge creates a pending continuation prompt.
-12. Overlay copies the prompt and focuses the target CLI.
-13. User manually pastes/submits.
+3. User selects a project folder to enroll.
+4. AMO inspects the folder and shows the detected project-local adapter/hook plan.
+5. User confirms enrollment; AMO writes only project-local hook/adapter files.
+6. Start Codex or another supported CLI/TUI in the enrolled project.
+7. User asks a prompt.
+8. Stop hook or equivalent workspace-local adapter caches the reply and POSTs it to AMO bridge.
+9. Bridge writes a Markdown reply note into a configured Obsidian test vault.
+10. Bridge appends a file node to an Obsidian canvas.
+11. Overlay session card exposes `Open Note` and `Open Canvas`.
+12. User adds `[!anno]...[/anno]` in Obsidian.
+13. Obsidian plugin sends extracted annotations to AMO.
+14. Bridge creates a pending continuation prompt.
+15. Overlay copies the prompt and focuses the target CLI.
+16. User manually pastes/submits.
 
 ## Guardrails
 
 - Keep Obsidian as a sidecar workflow, not the primary AMO data model.
+- Do not deploy global hooks in Phase 5.
+- Hook/adapter setup starts from a user-selected project folder.
+- AMO should inspect folder contents and local tool configuration before choosing an adapter path.
+- Enrollment writes only project-local files and must be reversible.
 - Hook failures must not block Codex turns.
 - Hook stdout must not include debug text.
 - Keep `.codex/cache/` as fallback.
@@ -118,13 +125,15 @@ POST /api/config
 Recommended first implementation task:
 
 ```text
-Add POST /api/replies to broker/server.js, backed by a simple bridge config for test vault output.
+Add manual workspace inspect/enroll plus POST /api/replies to broker/server.js, backed by a simple bridge config for test vault output.
 ```
 
 Acceptance for that slice:
 
 - `node --check broker\server.js`
 - `npm run broker:verify` still passes
+- selected-folder inspect reports a project-local adapter plan
+- enrollment does not write global hook config
 - manual POST to `/api/replies` writes a reply note under the configured test vault
 - `GET /api/sessions` includes `lastReplyNote`, `lastReplyAt`, and `canvasPath` for the session
 
