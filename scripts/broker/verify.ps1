@@ -231,6 +231,9 @@ try {
     if (-not $replySession.lastReplyNote -or -not $replySession.canvasPath) {
         throw "Reply session is missing lastReplyNote or canvasPath."
     }
+    if (-not $replySession.lastReplyNoteAbsolutePath -or -not $replySession.canvasAbsolutePath) {
+        throw "Reply session is missing absolute note/canvas paths for overlay open actions."
+    }
     Write-Host "Reply bridge OK -> $($reply.notePath)"
 }
 finally {

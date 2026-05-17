@@ -1,7 +1,26 @@
 use serde::Serialize;
+use std::path::PathBuf;
 
 #[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 struct ActivationResult {
+    ok: bool,
+    message: String,
+    candidates: Vec<ActivationCandidate>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct ActivationCandidate {
+    hwnd: i64,
+    process_id: u32,
+    process_name: Option<String>,
+    title: String,
+    label: String,
+}
+
+#[derive(Serialize)]
+struct OpenPathResult {
     ok: bool,
     message: String,
 }
@@ -41,6 +60,102 @@ fn activate_session_window(
     )
 }
 
+#[tauri::command]
+fn open_path(path: String) -> OpenPathResult {
+    open_local_path(path)
+}
+
+#[tauri::command]
+fn open_uri(uri: String) -> OpenPathResult {
+    if !uri.starts_with("obsidian://") {
+        return OpenPathResult {
+            ok: false,
+            message: "Only obsidian:// URIs are supported.".to_string(),
+        };
+    }
+
+    open_external_target(&uri, "Opened Obsidian URI")
+}
+
+fn open_local_path(path: String) -> OpenPathResult {
+    let path = PathBuf::from(path);
+    if !path.exists() {
+        return OpenPathResult {
+            ok: false,
+            message: format!("Path does not exist: {}", path.display()),
+        };
+    }
+
+    let Ok(canonical_path) = path.canonicalize() else {
+        return OpenPathResult {
+            ok: false,
+            message: format!("Could not resolve path: {}", path.display()),
+        };
+    };
+
+    open_existing_path(&canonical_path)
+}
+
+#[cfg(windows)]
+fn open_existing_path(path: &std::path::Path) -> OpenPathResult {
+    open_external_target(&path.display().to_string(), "Opened")
+}
+
+#[cfg(windows)]
+fn open_external_target(target: &str, success_prefix: &str) -> OpenPathResult {
+    use windows_sys::Win32::UI::Shell::ShellExecuteW;
+    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
+
+    let operation = wide_null("open");
+    let file = wide_null(target);
+    let result = unsafe {
+        ShellExecuteW(
+            std::ptr::null_mut(),
+            operation.as_ptr(),
+            file.as_ptr(),
+            std::ptr::null(),
+            std::ptr::null(),
+            SW_SHOWNORMAL,
+        )
+    } as isize;
+
+    if result > 32 {
+        OpenPathResult {
+            ok: true,
+            message: format!("{success_prefix} {target}"),
+        }
+    } else {
+        OpenPathResult {
+            ok: false,
+            message: format!("Windows could not open {target} (ShellExecuteW code {result})."),
+        }
+    }
+}
+
+#[cfg(windows)]
+fn wide_null(value: &str) -> Vec<u16> {
+    value.encode_utf16().chain([0]).collect()
+}
+
+#[cfg(not(windows))]
+fn open_existing_path(path: &std::path::Path) -> OpenPathResult {
+    OpenPathResult {
+        ok: false,
+        message: format!(
+            "Opening local files is only implemented on Windows for {}.",
+            path.display()
+        ),
+    }
+}
+
+#[cfg(not(windows))]
+fn open_external_target(target: &str, _success_prefix: &str) -> OpenPathResult {
+    OpenPathResult {
+        ok: false,
+        message: format!("Opening external targets is only implemented on Windows for {target}."),
+    }
+}
+
 #[derive(Debug)]
 struct WindowHintInput {
     title: String,
@@ -58,6 +173,7 @@ fn activate_external_window(session_id: &str, _hint: WindowHintInput) -> Activat
     ActivationResult {
         ok: false,
         message: format!("Window activation is only implemented on Windows for {session_id}."),
+        candidates: Vec::new(),
     }
 }
 
@@ -68,6 +184,7 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
         return ActivationResult {
             ok: false,
             message: "No visible top-level windows were found.".to_string(),
+            candidates: Vec::new(),
         };
     }
 
@@ -77,6 +194,7 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
             return ActivationResult {
                 ok: false,
                 message: format!("No matching window found for {session_id}."),
+                candidates: Vec::new(),
             }
         }
         ResolveResult::Ambiguous(matches) => {
@@ -92,6 +210,7 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
                     "{} matching windows for {session_id}; choose manually. {labels}",
                     matches.len()
                 ),
+                candidates: matches.iter().map(activation_candidate).collect(),
             };
         }
     };
@@ -99,7 +218,7 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
     unsafe {
         use windows_sys::Win32::Foundation::HWND;
         use windows_sys::Win32::UI::WindowsAndMessaging::{
-            FlashWindowEx, FLASHWINFO, FLASHW_TRAY, FLASHW_TIMERNOFG,
+            FlashWindowEx, FLASHWINFO, FLASHW_TIMERNOFG, FLASHW_TRAY,
         };
 
         let target_hwnd = selected.hwnd as HWND;
@@ -109,6 +228,7 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
             ActivationResult {
                 ok: true,
                 message: format!("Activated {}", format_candidate(&selected)),
+                candidates: Vec::new(),
             }
         } else {
             let mut flash = FLASHWINFO {
@@ -126,6 +246,7 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
                     "Window found but Windows blocked focus transfer: {}",
                     format_candidate(&selected)
                 ),
+                candidates: Vec::new(),
             }
         }
     }
@@ -189,7 +310,9 @@ fn resolve_candidate(candidates: &[WindowCandidate], hint: &WindowHintInput) -> 
     if let Some(hwnd) = hint.hwnd {
         let hwnd_matches = candidates
             .iter()
-            .filter(|candidate| candidate.hwnd == hwnd as isize && candidate_matches_explicit_hwnd(candidate, hint))
+            .filter(|candidate| {
+                candidate.hwnd == hwnd as isize && candidate_matches_explicit_hwnd(candidate, hint)
+            })
             .cloned()
             .collect::<Vec<_>>();
         if let Some(candidate) = hwnd_matches.into_iter().next() {
@@ -228,7 +351,10 @@ fn matches_by_pid(candidates: &[WindowCandidate], hint: &WindowHintInput) -> Vec
 }
 
 #[cfg(windows)]
-fn matches_by_title_token(candidates: &[WindowCandidate], hint: &WindowHintInput) -> Vec<WindowCandidate> {
+fn matches_by_title_token(
+    candidates: &[WindowCandidate],
+    hint: &WindowHintInput,
+) -> Vec<WindowCandidate> {
     let token = normalized(&hint.title_token);
     if token.is_empty() {
         return Vec::new();
@@ -242,7 +368,10 @@ fn matches_by_title_token(candidates: &[WindowCandidate], hint: &WindowHintInput
 }
 
 #[cfg(windows)]
-fn matches_by_process_and_title(candidates: &[WindowCandidate], hint: &WindowHintInput) -> Vec<WindowCandidate> {
+fn matches_by_process_and_title(
+    candidates: &[WindowCandidate],
+    hint: &WindowHintInput,
+) -> Vec<WindowCandidate> {
     let title = normalized(&hint.title);
     if title.is_empty() {
         return Vec::new();
@@ -283,10 +412,17 @@ fn matches_by_process_and_title_contains(
 }
 
 #[cfg(windows)]
-fn matches_by_project_or_cwd(candidates: &[WindowCandidate], hint: &WindowHintInput) -> Vec<WindowCandidate> {
+fn matches_by_project_or_cwd(
+    candidates: &[WindowCandidate],
+    hint: &WindowHintInput,
+) -> Vec<WindowCandidate> {
     let project = normalized(&hint.project);
     let cwd_basename = normalized(cwd_basename(&hint.cwd).unwrap_or_default());
-    let target = if !project.is_empty() { project } else { cwd_basename };
+    let target = if !project.is_empty() {
+        project
+    } else {
+        cwd_basename
+    };
     if target.is_empty() {
         return Vec::new();
     }
@@ -348,7 +484,11 @@ fn process_matches(candidate: &WindowCandidate, expected: &str) -> bool {
     candidate
         .process_name
         .as_deref()
-        .map(|actual| actual.trim_end_matches(".exe").eq_ignore_ascii_case(expected))
+        .map(|actual| {
+            actual
+                .trim_end_matches(".exe")
+                .eq_ignore_ascii_case(expected)
+        })
         .unwrap_or(false)
 }
 
@@ -469,7 +609,22 @@ fn process_name_for_pid(process_id: u32) -> Option<String> {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
-        .invoke_handler(tauri::generate_handler![activate_session_window])
+        .invoke_handler(tauri::generate_handler![
+            activate_session_window,
+            open_path,
+            open_uri
+        ])
         .run(tauri::generate_context!())
         .expect("error while running Agent Monitor Overlay");
+}
+
+#[cfg(windows)]
+fn activation_candidate(candidate: &WindowCandidate) -> ActivationCandidate {
+    ActivationCandidate {
+        hwnd: candidate.hwnd as i64,
+        process_id: candidate.process_id,
+        process_name: candidate.process_name.clone(),
+        title: candidate.title.clone(),
+        label: format_candidate(candidate),
+    }
 }

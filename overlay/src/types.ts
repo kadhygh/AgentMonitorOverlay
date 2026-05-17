@@ -33,10 +33,30 @@ export interface AgentSession {
   lastMessage: string;
   needsAttention: boolean;
   windowHint?: WindowHint;
+  workspaceId?: string;
+  workspacePath?: string;
+  vaultRoot?: string;
+  lastReplyAt?: string;
+  lastReplyNote?: string;
+  lastReplyNoteAbsolutePath?: string;
+  canvasPath?: string;
+  canvasAbsolutePath?: string;
+  canvasNodeId?: string;
   updatedAt: string;
+}
+
+export interface ActivationCandidate {
+  hwnd: number;
+  processId: number;
+  processName?: string | null;
+  title: string;
+  label: string;
 }
 
 export interface ActivationResult {
   ok: boolean;
   message: string;
+  candidates?: ActivationCandidate[];
 }
+
+export type OpenPathResult = ActivationResult;

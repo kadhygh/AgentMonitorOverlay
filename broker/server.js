@@ -455,9 +455,13 @@ function handleReply(payload) {
     heartbeatAt: existing?.heartbeatAt || null,
     eventCount: (existing?.eventCount || 0) + 1,
     workspaceId: workspace.workspaceId,
+    workspacePath: workspaceRoot,
+    vaultRoot,
     lastReplyAt: capturedAt,
     lastReplyNote: note.notePath,
+    lastReplyNoteAbsolutePath: note.noteAbsolutePath,
     canvasPath: canvas.canvasPath,
+    canvasAbsolutePath: canvas.canvasAbsolutePath,
     canvasNodeId: canvas.canvasNodeId,
   };
   sessions.set(sessionId, session);
@@ -471,6 +475,7 @@ function handleReply(payload) {
     notePath: note.notePath,
     noteAbsolutePath: note.noteAbsolutePath,
     canvasPath: canvas.canvasPath,
+    canvasAbsolutePath: canvas.canvasAbsolutePath,
     canvasNodeId: canvas.canvasNodeId,
     session,
   };
@@ -882,7 +887,7 @@ function appendReplyToCanvas(amoRoot, vaultRoot, record, note) {
   writeJsonFile(canvasAbsolutePath, canvas);
   writeJsonFile(bindingsPath, bindings);
 
-  return { canvasPath, canvasNodeId };
+  return { canvasPath, canvasAbsolutePath, canvasNodeId };
 }
 
 function uniquePath(dir, stem, ext) {

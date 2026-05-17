@@ -545,6 +545,8 @@ The overlay should keep the existing session cards and add small actions when br
 - `Open Canvas`
 - `Copy Pending Prompt`
 
+For the interim overlay-only path, `Open Note` and `Open Canvas` may use `obsidian://open` with `paneType=tab` so opening a canvas does not replace the currently active note. This is only a fallback. Precise behavior for "if the target note/canvas is already open, focus that existing tab; otherwise open a new tab" belongs in the Obsidian plugin because the external URI layer cannot reliably inspect or control Obsidian workspace leaves.
+
 Card state can show:
 
 - linked note path
@@ -621,6 +623,9 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 
 ### Phase 5.4: Obsidian Plugin Bridge Command
 
+- Own AMO note/canvas open behavior inside Obsidian instead of relying on `obsidian://open`.
+- Reuse an existing leaf when the target note or canvas is already open.
+- Open the target in a new tab only when no existing leaf is found.
 - Add command: `Send current note annotations to AMO`.
 - Extract `[!anno]...[/anno]` from the active note.
 - Read AMO frontmatter if present.

@@ -356,5 +356,5 @@ Do not commit:
 5. Adapt the proven Codex `Stop` hook script as a project-local enrolled adapter so it keeps `.codex/cache/` fallback and best-effort POSTs to AMO bridge.
 6. Generate a reply note and append-only canvas file node in the project-local vault.
 7. Add overlay actions for `Focus CLI`, `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI`.
-8. Add an Obsidian plugin command that sends extracted `[!anno]...[/anno]` annotations to AMO.
+8. Add an Obsidian plugin command that owns note/canvas opening with tab reuse and sends extracted `[!anno]...[/anno]` annotations to AMO.
 9. Run a manual end-to-end smoke before expanding to Codex App, Claude CLI, Kiro IDE, or multi-CLI canvas shortcuts.

@@ -521,6 +521,8 @@ Kiro adapter:
 8. Obsidian 插件发送批注，bridge 生成 pending prompt。
 9. 用户点击 `Copy + Focus CLI`，然后手动粘贴/发送。
 
+Note/canvas tab 复用规则归 Obsidian 插件阶段处理：如果目标 note/canvas 已打开则聚焦既有 tab，未打开才新建 tab。Overlay 的 `obsidian://open` 只作为当前 fallback，不继续在 URI 层堆精确 tab 控制。
+
 当前 MVP 暂不做：
 
 - Codex App 直接接入。
@@ -787,7 +789,8 @@ Phase 5 Hook-to-Obsidian Bridge planning / implementation prep。
 5. 当前 MVP 只支持 `codex-cli`，创建项目本地 `.amo/` 和 `.amo/obsidian-vault/AgentFlow.canvas`。
 6. 使用外部 Codex Stop hook MVP 的 `last_assistant_message` capture 思路，保持 hook stdout 只输出 `{"continue":true}`，并保留 `.codex/cache/` 兜底。
 7. 使用外部 Obsidian plugin MVP 的 `[!anno]...[/anno]` 语法；第一版只做显式提取和发送，不做复杂 anchored comments。
-8. Sync-back 第一版只做 `copy + focus target CLI`，不要自动粘贴、自动回车或自动审批。
+8. Obsidian 插件阶段接管 note/canvas 打开与 tab 复用：已打开则聚焦，未打开才新建 tab。
+9. Sync-back 第一版只做 `copy + focus target CLI`，不要自动粘贴、自动回车或自动审批。
 
 汇报格式：
 当前阶段：
