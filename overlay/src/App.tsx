@@ -10,6 +10,7 @@ import {
   ClipboardCheck,
   ExternalLink,
   FileText,
+  FolderPlus,
   GripHorizontal,
   GripVertical,
   Map as MapIcon,
@@ -26,10 +27,14 @@ import type {
   AgentTool,
   OpenPathResult,
   SessionState,
+  WorkspaceEnrollment,
+  WorkspaceInspection,
 } from "./types";
 
 const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
 const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
+const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
+const BROKER_WORKSPACE_ENROLL_URL = "http://127.0.0.1:17654/api/workspaces/enroll";
 const REFRESH_INTERVAL_MS = 3000;
 
 const stateLabel: Record<SessionState, string> = {
@@ -302,6 +307,11 @@ export default function App() {
   const [copyingPromptId, setCopyingPromptId] = useState<string | null>(null);
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
   const [isResizing, setIsResizing] = useState(false);
+  const [deployOpen, setDeployOpen] = useState(false);
+  const [workspacePath, setWorkspacePath] = useState("");
+  const [workspaceInspection, setWorkspaceInspection] = useState<WorkspaceInspection | null>(null);
+  const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
+  const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | null>(null);
   const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
@@ -360,6 +370,72 @@ export default function App() {
       setSource("mock");
       setLastRefreshAt(new Date().toISOString());
       setFeedback(`Using mock sessions: ${(error as Error).message}`);
+    }
+  }
+
+  async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
+    const response = await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(body),
+    });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) {
+      throw new Error(payload?.message ?? `broker returned ${response.status}`);
+    }
+
+    return payload as T;
+  }
+
+  async function inspectWorkspace() {
+    const targetPath = workspacePath.trim();
+    if (!targetPath) {
+      setFeedback("Workspace path is required.");
+      return;
+    }
+
+    setDeployBusy("inspect");
+    setWorkspaceEnrollment(null);
+    setFeedback("Inspecting workspace...");
+
+    try {
+      const result = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
+        workspacePath: targetPath,
+      });
+      setWorkspaceInspection(result);
+      setWorkspacePath(result.workspacePath);
+      const codexPlan = result.supportedAdapters.find((adapter) => adapter.id === "codex-cli");
+      setFeedback(`${result.projectName}: ${codexPlan?.status ?? "no adapter"} for codex-cli.`);
+    } catch (error) {
+      setWorkspaceInspection(null);
+      setFeedback(`Inspect failed: ${(error as Error).message}`);
+    } finally {
+      setDeployBusy(null);
+    }
+  }
+
+  async function enrollWorkspace() {
+    const targetPath = workspaceInspection?.workspacePath ?? workspacePath.trim();
+    if (!targetPath) {
+      setFeedback("Workspace path is required.");
+      return;
+    }
+
+    setDeployBusy("enroll");
+    setFeedback("Deploying workspace adapter...");
+
+    try {
+      const result = await postBrokerJson<WorkspaceEnrollment>(BROKER_WORKSPACE_ENROLL_URL, {
+        workspacePath: targetPath,
+        adapters: ["codex-cli"],
+      });
+      setWorkspaceEnrollment(result);
+      setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}.`);
+      void refreshSessions();
+    } catch (error) {
+      setFeedback(`Deploy failed: ${(error as Error).message}`);
+    } finally {
+      setDeployBusy(null);
     }
   }
 
@@ -760,6 +836,14 @@ export default function App() {
           <button type="button" className="icon-button" title="Refresh sessions" onClick={refreshSessions}>
             <RefreshCcw size={15} aria-hidden="true" />
           </button>
+          <button
+            type="button"
+            className={`icon-button ${deployOpen ? "is-active" : ""}`}
+            title="Workspace deploy"
+            onClick={() => setDeployOpen((value) => !value)}
+          >
+            <FolderPlus size={15} aria-hidden="true" />
+          </button>
           <button type="button" className="icon-button" title="Collapse overlay" onClick={toggleCollapsed}>
             {collapsed ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronUp size={16} aria-hidden="true" />}
           </button>
@@ -786,6 +870,59 @@ export default function App() {
             <span>{sessions.length} active lines</span>
             <strong>{attentionCount} need attention</strong>
           </section>
+
+          {deployOpen ? (
+            <section className="deploy-panel" aria-label="Workspace deployment">
+              <form
+                className="deploy-form"
+                onSubmit={(event) => {
+                  event.preventDefault();
+                  void inspectWorkspace();
+                }}
+              >
+                <input
+                  value={workspacePath}
+                  onChange={(event) => {
+                    setWorkspacePath(event.target.value);
+                    setWorkspaceInspection(null);
+                    setWorkspaceEnrollment(null);
+                  }}
+                  placeholder="G:\\PROJECT\\YourWorkspace"
+                  spellCheck={false}
+                />
+                <button type="submit" disabled={deployBusy !== null}>
+                  {deployBusy === "inspect" ? "..." : "Inspect"}
+                </button>
+                <button
+                  type="button"
+                  disabled={!workspaceInspection || deployBusy !== null}
+                  onClick={() => void enrollWorkspace()}
+                >
+                  {deployBusy === "enroll" ? "..." : "Deploy"}
+                </button>
+              </form>
+              {workspaceInspection ? (
+                <div className="deploy-plan">
+                  {workspaceInspection.supportedAdapters.map((adapter) => (
+                    <span className={`deploy-pill status-${adapter.status}`} key={adapter.id} title={adapter.reason}>
+                      <strong>{adapter.label}</strong>
+                      <em>{adapter.status}</em>
+                      {adapter.confidence ? <small>{adapter.confidence}</small> : null}
+                    </span>
+                  ))}
+                  <span title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</span>
+                  {workspaceInspection.existingEnrollment ? <strong>enrolled</strong> : null}
+                </div>
+              ) : null}
+              {workspaceEnrollment ? (
+                <div className="deploy-result" title={workspaceEnrollment.vaultRoot}>
+                  <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
+                  <span>{workspaceEnrollment.installedFiles.length} files</span>
+                  <span>{workspaceEnrollment.mergedFiles.length} merged</span>
+                </div>
+              ) : null}
+            </section>
+          ) : null}
 
           <section className="session-list" aria-label="Agent sessions">
             {orderedSessions.map((session) => (

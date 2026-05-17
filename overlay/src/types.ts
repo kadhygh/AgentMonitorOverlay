@@ -71,3 +71,43 @@ export interface ActivationResult {
 }
 
 export type OpenPathResult = ActivationResult;
+
+export interface WorkspaceAdapterPlan {
+  id: string;
+  label: string;
+  status: string;
+  confidence?: string;
+  scope?: string;
+  reason?: string;
+  evidence?: string[];
+  directoriesToCreate?: string[];
+  filesToWrite?: string[];
+  filesToMerge?: string[];
+  risks?: string[];
+}
+
+export interface WorkspaceInspection {
+  schemaVersion: number;
+  workspaceId: string;
+  workspacePath: string;
+  projectName: string;
+  existingEnrollment?: boolean;
+  deploymentRoot?: string;
+  supportedAdapters: WorkspaceAdapterPlan[];
+  deferredAdapters?: WorkspaceAdapterPlan[];
+}
+
+export interface WorkspaceEnrollment {
+  ok: boolean;
+  schemaVersion: number;
+  workspaceId: string;
+  workspacePath: string;
+  deploymentRoot: string;
+  installedAdapters: string[];
+  installedFiles: string[];
+  mergedFiles: string[];
+  backups: string[];
+  vaultRoot: string;
+  canvasPath: string;
+  deferredAdapters?: WorkspaceAdapterPlan[];
+}
