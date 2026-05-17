@@ -164,6 +164,7 @@ function applySessionOrder(sessions: AgentSession[], order: string[]) {
 
 interface CardDragState {
   sessionId: string;
+  pointerId: number;
   pointerY: number;
   offsetY: number;
   left: number;
@@ -308,6 +309,7 @@ export default function App() {
   const sessionsRef = useRef(sessions);
   const orderedSessionsRef = useRef<AgentSession[]>([]);
   const cardDragRef = useRef<CardDragState | null>(null);
+  const cardDragCleanupRef = useRef<(() => void) | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
   const suppressNextClickRef = useRef(false);
 
@@ -328,6 +330,10 @@ export default function App() {
   useEffect(() => {
     orderedSessionsRef.current = orderedSessions;
   }, [orderedSessions]);
+
+  useEffect(() => {
+    return () => removeCardDragListeners();
+  }, []);
 
   async function refreshSessions() {
     try {
@@ -564,11 +570,16 @@ export default function App() {
 
     event.preventDefault();
     event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture can fail if the handle is remounted during a reorder.
+    }
 
     const rect = row.getBoundingClientRect();
     const nextDrag = {
       sessionId: session.sessionId,
+      pointerId: event.pointerId,
       pointerY: event.clientY,
       offsetY: event.clientY - rect.top,
       left: rect.left,
@@ -580,24 +591,69 @@ export default function App() {
     setCardDrag(nextDrag);
     setDropTargetId(null);
     setFeedback(`Dragging ${session.title}.`);
+    attachCardDragListeners(event.pointerId);
   }
 
-  function continueCardDrag(event: PointerEvent<HTMLElement>) {
+  function attachCardDragListeners(pointerId: number) {
+    removeCardDragListeners();
+
+    const handleMove = (event: globalThis.PointerEvent) => {
+      if (event.pointerId !== pointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      continueCardDragAt(event.clientY);
+    };
+
+    const handleEnd = (event: globalThis.PointerEvent) => {
+      if (event.pointerId !== pointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      finishCardDrag();
+    };
+
+    window.addEventListener("pointermove", handleMove, { passive: false });
+    window.addEventListener("pointerup", handleEnd, { passive: false });
+    window.addEventListener("pointercancel", handleEnd, { passive: false });
+    cardDragCleanupRef.current = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+  }
+
+  function removeCardDragListeners() {
+    cardDragCleanupRef.current?.();
+    cardDragCleanupRef.current = null;
+  }
+
+  function continueCardDragAt(pointerY: number) {
     const activeDrag = cardDragRef.current;
     if (!activeDrag) {
       return;
     }
 
-    event.preventDefault();
-    event.stopPropagation();
-
     const nextDrag = {
       ...activeDrag,
-      pointerY: event.clientY,
+      pointerY,
     };
     cardDragRef.current = nextDrag;
     setCardDrag(nextDrag);
-    updateCardDrag(event.clientY);
+    updateCardDrag(pointerY);
+  }
+
+  function finishCardDrag() {
+    if (!cardDragRef.current) {
+      return;
+    }
+
+    removeCardDragListeners();
+    cardDragRef.current = null;
+    setCardDrag(null);
+    setDropTargetId(null);
   }
 
   function endCardDrag(event: PointerEvent<HTMLElement>) {
@@ -607,9 +663,7 @@ export default function App() {
 
     event.preventDefault();
     event.stopPropagation();
-    cardDragRef.current = null;
-    setCardDrag(null);
-    setDropTargetId(null);
+    finishCardDrag();
   }
 
   async function startWindowResize(event: PointerEvent<HTMLElement>, mode: ResizeState["mode"]) {
@@ -768,7 +822,6 @@ export default function App() {
                   className="row-drag-handle"
                   title="Drag card"
                   onPointerDown={(event) => startCardDrag(session, event)}
-                  onPointerMove={continueCardDrag}
                   onPointerUp={endCardDrag}
                   onPointerCancel={endCardDrag}
                   onClick={(event) => {

@@ -217,7 +217,8 @@ Current unverified but implemented behavior:
 - Claude live hook smoke passed with disposable `--settings`.
 - Kiro is still mock/hook-spike level for MVP.
 - Window routing still needs clearer blocked-focus feedback and stronger exact-route identity for real sessions.
-- Card reorder is temporarily disabled and should stay out of the critical path until routing work is stable.
+- Card reorder is enabled again after switching drag handling to window-level pointer listeners; user confirmed the interaction feels smooth.
+- Future overlay setting: gate window resizing behind a settings toggle. When disabled, hide resize edge/corner indicators and ignore resize gestures; when enabled, show the resize handles and allow size changes.
 - Bridge server launch from the Tauri overlay is not implemented yet.
 - Manual workspace inspect/enroll is implemented in the broker, but still needs a production UI entry.
 - Obsidian vault note writing and canvas append are implemented for the project-local `.amo/obsidian-vault/`.

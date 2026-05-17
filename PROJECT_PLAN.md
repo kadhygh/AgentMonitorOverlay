@@ -747,6 +747,8 @@ Execution role: supervisor agent manages workers
 - 第一轮 spike：Task A-D 已完成并由主管本地复验
 - 第一轮 vibe：用户已确认通过，小细节后续再调
 - 悬浮窗 smoke：用户已确认 overlay 出现、broker live、无 mock fallback、header drag、Codex/Mecho 跳转、Claude 单目标跳转
+- Overlay 交互优化：card 拖拽排序已改为 window 级 pointer 监听，用户确认拖拽丝滑；列表过长时改为内部滚动，resize handle 保持可达。
+- 后续设置项：把窗口 resize 能力做成 settings toggle。默认隐藏 resize 边界指示器且不允许改 size；只有 toggle 激活后才显示底边/右边/右下角 resize handle 并允许调整窗口大小。
 - 真实 hook live smoke：Claude 已通过；Codex provider 可运行，但 hook 加载路径仍待验证；adapter->broker 合同验证已通过
 - 新阶段方向：Obsidian workflow integration 已由两个外部 MVP 证明可进入 Phase 5 bridge 主线，但仍保持 sidecar 边界。
 
