@@ -1,6 +1,6 @@
 # AMO Obsidian Bridge MVP
 
-Updated: 2026-05-13
+Updated: 2026-05-16
 
 This document is the current control design for moving Agent Monitor Overlay from a pure session monitor into a small local bridge between agent hooks, the overlay, and an Obsidian reading/canvas workflow.
 
@@ -30,6 +30,160 @@ AMO should not deploy global hooks in Phase 5. The safer default is manual works
 - AMO can disable or remove its project-local hook/adapter files for a selected folder.
 
 This keeps the bridge compatible with future CLI/TUI providers. Codex, Claude, Kiro, Gemini CLI, OpenCode, Aider, Cursor, or other tools may expose different hook, transcript, statusline, or wrapper surfaces, so the first AMO decision point should be "which folder and which local adapter fits this folder?" rather than "install one global hook for every tool."
+
+## Target Workflow
+
+The long-term product flow is:
+
+1. User starts the monitor.
+2. User clicks deploy and selects a project folder.
+3. AMO inspects the folder without LLM involvement.
+4. AMO shows supported adapter options for that folder, initially targeting:
+   - Codex CLI
+   - Codex App
+   - Claude CLI
+   - Kiro IDE
+5. User selects which adapters/hooks to deploy.
+6. AMO creates a project-local `.amo/` folder with workspace config, adapter config, state, logs, and a dedicated Obsidian vault.
+7. AMO installs only project-local hook/adapter files.
+8. User starts a CLI/TUI from the monitor or starts it manually.
+9. When the agent finishes a reply, the workspace-local hook/adapter sends the final reply to the AMO bridge.
+10. The monitor shows or updates the matching task card.
+11. User can focus the CLI directly from the task card.
+12. User can open Obsidian/canvas from the task card.
+13. If the CLI session is not bound to a work canvas, the Obsidian plugin lets the user create or choose one.
+14. The bridge records the binding and inserts the reply note into the work canvas.
+15. One work canvas can be associated with multiple CLI/TUI sessions.
+16. User adds `[!anno]...[/anno]` annotations in the canvas-linked note.
+17. The Obsidian plugin summarizes/sends annotations to AMO.
+18. AMO creates a pending continuation prompt, copies it, and focuses the selected CLI.
+19. User manually pastes/submits the prompt.
+
+This target flow keeps the monitor as the session/window bridge and keeps Obsidian as the long-form reading and annotation workspace.
+
+### Identity Model
+
+Do not use window PID/HWND as the long-term identity. They are routing hints and can become stale.
+
+Use these durable IDs:
+
+- `workspaceId`: selected project folder and its `.amo/` state.
+- `agentInstanceId`: one CLI/TUI process or window instance known to AMO.
+- `sessionId`: provider session id from Codex, Claude, Kiro, or another adapter.
+- `workCanvasId`: Obsidian work canvas bound to one or more agent instances.
+- `replyNoteId`: one assistant reply note.
+- `pendingPromptId`: one annotation summary waiting to return to a CLI/TUI.
+
+Use these volatile routing hints:
+
+- `windowHint.hwnd`
+- `windowHint.pid`
+- `windowHint.titleToken`
+- `windowHint.titleContains`
+- `windowHint.cwd`
+
+`windowHint.pid` must mean a validated visible-window owner process id, not a hook runner pid.
+
+### Project Local `.amo/` Shape
+
+Recommended first shape:
+
+```text
+project/
+  .amo/
+    workspace.json
+    enrollment.json
+    adapters/
+      codex-cli.json
+      codex-app.json
+      claude-cli.json
+      kiro-ide.json
+    hooks/
+      codex-stop-message.mjs
+    state/
+      sessions.json
+      bindings.json
+      pending-replies.json
+    obsidian-vault/
+      AgentFlow.canvas
+      Replies/
+      .obsidian/
+        plugins/
+          amo-bridge/
+    logs/
+      hook-errors.log
+      bridge-events.log
+```
+
+AMO should add `.amo/state/`, `.amo/logs/`, and large generated vault artifacts to ignore rules where practical. The first MVP can keep this disposable and local, but the design should avoid accidentally committing live session state, logs, or generated reply content.
+
+### Deployment Contract
+
+Deployment should be script-driven and deterministic:
+
+```text
+inspect selected folder
+  -> produce deployment plan
+  -> show detected adapters, files to write, risks, and unsupported tools
+  -> apply after user confirmation
+  -> run health checks
+```
+
+The deployment system must support:
+
+- repair/redeploy
+- disable one adapter
+- uninstall AMO-owned files
+- backup before changing user-owned config
+- merge rather than overwrite existing hook config
+- report partial success and exact remediation steps
+
+The deployment maintenance guide lives in `docs/adapter-deployment-guide.md`.
+
+## Current MVP Workflow
+
+The current MVP should intentionally narrow the target flow:
+
+```text
+Codex CLI
+  -> one manually selected project folder
+  -> project-local `.amo/`
+  -> `.amo/obsidian-vault/`
+  -> one `AgentFlow.canvas`
+  -> reply notes
+  -> `[!anno]...[/anno]`
+  -> copy pending prompt + focus CLI
+```
+
+MVP acceptance flow:
+
+1. Start monitor and bridge.
+2. Select one project folder.
+3. AMO inspects the folder and offers only the `codex-cli` adapter if supported.
+4. AMO creates `.amo/` and the dedicated `.amo/obsidian-vault/`.
+5. AMO installs or updates project-local Codex hook files after confirmation.
+6. User starts Codex CLI manually or from the monitor.
+7. Codex `Stop` hook sends `last_assistant_message` to `POST /api/replies`.
+8. Bridge records the reply and updates the task card.
+9. Bridge writes a reply note under `.amo/obsidian-vault/Replies/`.
+10. Bridge creates or appends a file node in `.amo/obsidian-vault/AgentFlow.canvas`.
+11. Task card exposes `Focus CLI`, `Open Canvas`, and `Open Note`.
+12. User annotates the note with `[!anno]...[/anno]`.
+13. Obsidian plugin sends annotations to AMO.
+14. AMO creates a pending prompt.
+15. User clicks `Copy + Focus CLI`.
+16. User manually pastes/submits.
+
+MVP defers:
+
+- Codex App direct integration.
+- Claude CLI reply capture.
+- Kiro IDE deployment.
+- Multiple CLI quick-jump controls inside one canvas.
+- Permission approval from task cards.
+- Automatic paste, Enter, or approval.
+- Integration with the user's existing long-lived Obsidian vault.
+- Complex canvas layout or re-layout.
 
 The Obsidian workflow is no longer only a distant future idea. Two local MVPs have made the Phase 5 direction concrete:
 
@@ -444,9 +598,12 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 ### Phase 5.1: Bridge Reply Endpoint
 
 - Add manual workspace inspection/enrollment for a selected folder.
+- Follow the deterministic deployment contract in `docs/adapter-deployment-guide.md`.
+- Support only `codex-cli` for the first MVP.
+- Create project-local `.amo/` and `.amo/obsidian-vault/`.
 - Reject global hook deployment by default.
 - Add `POST /api/replies` to the existing broker.
-- Persist reply notes into a configured vault.
+- Persist reply notes into `.amo/obsidian-vault/Replies/`.
 - Update session snapshot with `lastReplyNote`, `canvasPath`, and `lastReplyAt`.
 - Keep `.codex/cache/` fallback in the hook script.
 
@@ -512,17 +669,19 @@ When continuing this work, read these files first:
 2. `docs/supervisor-status.md`
 3. `PROJECT_PLAN.md`
 4. `docs/amo-obsidian-bridge-mvp.md`
-5. `docs/reference-mvps/obsidianplugintest/README.md`
-6. `docs/reference-mvps/obsidianplugintest/handoff/CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
-7. `docs/reference-mvps/obsidianplugintest/handoff/OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
-8. Optional live source, if present on the current machine: `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
-9. Optional live source, if present on the current machine: `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+5. `docs/adapter-deployment-guide.md`
+6. `docs/reference-mvps/obsidianplugintest/README.md`
+7. `docs/reference-mvps/obsidianplugintest/handoff/CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+8. `docs/reference-mvps/obsidianplugintest/handoff/OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+9. Optional live source, if present on the current machine: `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+10. Optional live source, if present on the current machine: `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
 
 Current instruction:
 
 - Treat Phase 5 as Hook-to-Obsidian Bridge MVP.
 - Reuse the existing broker as the bridge server first.
 - Treat hook deployment as manual workspace enrollment, not global installation.
+- Current MVP is Codex CLI only, one selected project folder, project-local `.amo/obsidian-vault/`, one `AgentFlow.canvas`, and explicit `Copy + Focus CLI`.
 - Keep hooks short and protocol-clean.
 - Keep Obsidian mutation vault-native and explicit.
 - Keep sync-back to `copy + focus target CLI` until the user explicitly accepts stronger automation.

@@ -84,18 +84,19 @@ POST /api/config
 2. Overlay verifies or launches bridge server.
 3. User selects a project folder to enroll.
 4. AMO inspects the folder and shows the detected project-local adapter/hook plan.
-5. User confirms enrollment; AMO writes only project-local hook/adapter files.
-6. Start Codex or another supported CLI/TUI in the enrolled project.
-7. User asks a prompt.
-8. Stop hook or equivalent workspace-local adapter caches the reply and POSTs it to AMO bridge.
-9. Bridge writes a Markdown reply note into a configured Obsidian test vault.
-10. Bridge appends a file node to an Obsidian canvas.
-11. Overlay session card exposes `Open Note` and `Open Canvas`.
-12. User adds `[!anno]...[/anno]` in Obsidian.
-13. Obsidian plugin sends extracted annotations to AMO.
-14. Bridge creates a pending continuation prompt.
-15. Overlay copies the prompt and focuses the target CLI.
-16. User manually pastes/submits.
+5. For the first MVP, AMO offers only `codex-cli` when supported and marks Codex App, Claude CLI, and Kiro IDE as deferred/unsupported.
+6. User confirms enrollment; AMO creates `.amo/`, `.amo/obsidian-vault/`, and only project-local hook/adapter files.
+7. Start Codex CLI in the enrolled project.
+8. User asks a prompt.
+9. Stop hook caches the reply and POSTs it to AMO bridge.
+10. Bridge writes a Markdown reply note into `.amo/obsidian-vault/Replies/`.
+11. Bridge appends a file node to `.amo/obsidian-vault/AgentFlow.canvas`.
+12. Overlay session card exposes `Focus CLI`, `Open Note`, and `Open Canvas`.
+13. User adds `[!anno]...[/anno]` in Obsidian.
+14. Obsidian plugin sends extracted annotations to AMO.
+15. Bridge creates a pending continuation prompt.
+16. Overlay copies the prompt and focuses the target CLI.
+17. User manually pastes/submits.
 
 ## Guardrails
 
@@ -104,6 +105,8 @@ POST /api/config
 - Hook/adapter setup starts from a user-selected project folder.
 - AMO should inspect folder contents and local tool configuration before choosing an adapter path.
 - Enrollment writes only project-local files and must be reversible.
+- Normal deployment should follow `docs/adapter-deployment-guide.md` and should not require LLM decisions.
+- First MVP writes to the project-local `.amo/obsidian-vault/`, not a user's existing long-lived vault.
 - Hook failures must not block Codex turns.
 - Hook stdout must not include debug text.
 - Keep `.codex/cache/` as fallback.
@@ -118,6 +121,7 @@ POST /api/config
 - `DEVELOPMENT.md`
 - `docs/supervisor-status.md`
 - `docs/amo-obsidian-bridge-mvp.md`
+- `docs/adapter-deployment-guide.md`
 - `docs/session-handoffs/2026-05-13-amo-obsidian-bridge-pivot.md`
 
 ## Next Implementation Slice
@@ -125,16 +129,17 @@ POST /api/config
 Recommended first implementation task:
 
 ```text
-Add manual workspace inspect/enroll plus POST /api/replies to broker/server.js, backed by a simple bridge config for test vault output.
+Add script-driven codex-cli workspace inspect/enroll plus POST /api/replies to broker/server.js, backed by project-local .amo vault output.
 ```
 
 Acceptance for that slice:
 
 - `node --check broker\server.js`
 - `npm run broker:verify` still passes
-- selected-folder inspect reports a project-local adapter plan
+- selected-folder inspect reports a `codex-cli` project-local adapter plan and marks deferred adapters clearly
 - enrollment does not write global hook config
-- manual POST to `/api/replies` writes a reply note under the configured test vault
+- enrollment creates `.amo/` and `.amo/obsidian-vault/`
+- manual POST to `/api/replies` writes a reply note under `.amo/obsidian-vault/Replies/`
 - `GET /api/sessions` includes `lastReplyNote`, `lastReplyAt`, and `canvasPath` for the session
 
 Only after that should canvas append, overlay buttons, and Obsidian plugin POST be added.

@@ -8,6 +8,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $serverPath = Join-Path $repoRoot "broker\server.js"
 $dataFile = Join-Path $repoRoot "broker\data\sessions.json"
+$workspaceRoot = Join-Path $repoRoot "tmp\broker-verify-workspace"
 $baseUrl = "http://${HostName}:${Port}"
 
 function Assert-PortAvailable {
@@ -38,6 +39,23 @@ function Clear-VerificationData {
         Get-ChildItem -LiteralPath $dataDir -Filter "$dataName.*.tmp" -File -ErrorAction SilentlyContinue |
             Remove-Item -Force -ErrorAction SilentlyContinue
     }
+}
+
+function Reset-VerificationWorkspace {
+    $tmpRoot = Join-Path $repoRoot "tmp"
+    New-Item -ItemType Directory -Path $tmpRoot -Force | Out-Null
+
+    if (Test-Path -LiteralPath $workspaceRoot) {
+        $resolvedTmp = (Resolve-Path -LiteralPath $tmpRoot).Path
+        $resolvedWorkspace = (Resolve-Path -LiteralPath $workspaceRoot).Path
+        if (-not $resolvedWorkspace.StartsWith($resolvedTmp, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Refusing to remove workspace outside tmp: $resolvedWorkspace"
+        }
+        Remove-Item -LiteralPath $resolvedWorkspace -Recurse -Force
+    }
+
+    New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
+    Set-Content -Path (Join-Path $workspaceRoot "package.json") -Value "{}" -Encoding UTF8
 }
 
 function Invoke-BrokerJson {
@@ -93,6 +111,7 @@ function Start-Broker {
 Write-Host "Starting broker at $baseUrl"
 Assert-PortAvailable
 Clear-VerificationData
+Reset-VerificationWorkspace
 $broker = Start-Broker
 
 try {
@@ -132,6 +151,87 @@ try {
 
     Write-Host "Session list OK:"
     $sessions.sessions | Select-Object tool, sessionId, state, lastEvent, needsAttention, updatedAt | Format-Table -AutoSize
+
+    $inspect = Invoke-BrokerJson -Method POST -Path "/api/workspaces/inspect" -Body @{
+        workspacePath = $workspaceRoot
+    }
+    if (-not $inspect.ok) {
+        throw "Workspace inspect failed."
+    }
+    if (Test-Path -LiteralPath (Join-Path $workspaceRoot ".amo")) {
+        throw "Workspace inspect should not write .amo."
+    }
+    $codexPlan = @($inspect.supportedAdapters | Where-Object { $_.id -eq "codex-cli" })[0]
+    if (-not $codexPlan -or $codexPlan.status -ne "available") {
+        throw "Expected codex-cli inspect plan to be available."
+    }
+    Write-Host "Workspace inspect OK -> $($inspect.workspacePath)"
+
+    $enroll = Invoke-BrokerJson -Method POST -Path "/api/workspaces/enroll" -Body @{
+        workspacePath = $workspaceRoot
+        adapters = @("codex-cli")
+    }
+    if (-not $enroll.ok) {
+        throw "Workspace enroll failed."
+    }
+
+    foreach ($relativePath in @(
+            ".amo\workspace.json",
+            ".amo\enrollment.json",
+            ".amo\adapters\codex-cli.json",
+            ".amo\hooks\codex-stop-message.mjs",
+            ".amo\obsidian-vault\AgentFlow.canvas",
+            ".codex\hooks.json"
+        )) {
+        $targetPath = Join-Path $workspaceRoot $relativePath
+        if (-not (Test-Path -LiteralPath $targetPath)) {
+            throw "Expected enrolled file missing: $relativePath"
+        }
+    }
+
+    $codexHooksText = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".codex\hooks.json")
+    if ($codexHooksText -notmatch "codex-stop-message\.mjs") {
+        throw "Codex hooks config does not reference AMO hook script."
+    }
+    Write-Host "Workspace enroll OK -> $($enroll.workspaceId)"
+
+    $reply = Invoke-BrokerJson -Method POST -Path "/api/replies" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        source = "codex-stop-hook"
+        sessionId = "codex-reply-verify"
+        turnId = "turn-reply-verify"
+        cwd = $workspaceRoot
+        model = "verify-model"
+        hookEventName = "Stop"
+        capturedAt = "2026-05-16T00:00:00.000Z"
+        message = "Verification assistant reply."
+    }
+    if (-not $reply.ok) {
+        throw "Reply endpoint failed."
+    }
+
+    $vaultRoot = Join-Path $workspaceRoot ".amo\obsidian-vault"
+    $noteRelative = $reply.notePath -replace "/", [System.IO.Path]::DirectorySeparatorChar
+    $notePath = Join-Path $vaultRoot $noteRelative
+    if (-not (Test-Path -LiteralPath $notePath)) {
+        throw "Reply note was not created: $notePath"
+    }
+    $canvasPath = Join-Path $vaultRoot "AgentFlow.canvas"
+    $canvas = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
+    if (@($canvas.nodes).Count -lt 1) {
+        throw "Canvas did not receive a reply file node."
+    }
+
+    $sessionsAfterReply = Invoke-BrokerJson -Method GET -Path "/api/sessions"
+    if ($sessionsAfterReply.count -ne 4) {
+        throw "Expected 4 sessions after reply, got $($sessionsAfterReply.count)."
+    }
+    $replySession = @($sessionsAfterReply.sessions | Where-Object { $_.sessionId -eq "codex-reply-verify" })[0]
+    if (-not $replySession.lastReplyNote -or -not $replySession.canvasPath) {
+        throw "Reply session is missing lastReplyNote or canvasPath."
+    }
+    Write-Host "Reply bridge OK -> $($reply.notePath)"
 }
 finally {
     if ($broker -and -not $broker.HasExited) {
@@ -146,8 +246,8 @@ $broker = Start-Broker
 try {
     Wait-Broker | Out-Null
     $sessionsAfterRestart = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessionsAfterRestart.count -ne 3) {
-        throw "Persistence check failed. Expected exactly 3 sessions after restart, got $($sessionsAfterRestart.count)."
+    if ($sessionsAfterRestart.count -ne 4) {
+        throw "Persistence check failed. Expected exactly 4 sessions after restart, got $($sessionsAfterRestart.count)."
     }
 
     Write-Host "Persistence OK. Sessions after restart: $($sessionsAfterRestart.count)"

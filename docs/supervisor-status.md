@@ -1,6 +1,6 @@
 # Supervisor Status
 
-Updated: 2026-05-13
+Updated: 2026-05-16
 
 ## Current Git
 
@@ -69,6 +69,8 @@ Updated: 2026-05-13
 - Repo-local Codex hook files now exist under `.codex/`, but the interactive `/hooks` review + smoke path is still in progress rather than closed.
 - A disposable sibling test repo/project is the preferred first smoke path for Codex repo-local hooks so trust/review state does not have to land in the main worktree first.
 - User clarified on 2026-05-13 that global hook deployment is too risky for the current product. Phase 5 hook/adapter setup must be manual and workspace-scoped: user selects a folder, AMO inspects the folder, then AMO installs only project-local hook/adapter files after explicit confirmation.
+- User clarified on 2026-05-16 the full target workflow: monitor deploys adapters into a selected project folder, creates `.amo/` plus a dedicated Obsidian vault, shows task cards from hook replies, binds CLI sessions to work canvases, lets Obsidian annotations generate a continuation prompt, then copies and focuses back to the selected CLI.
+- Current MVP is narrowed to Codex CLI, one selected project folder, project-local `.amo/obsidian-vault/`, one `AgentFlow.canvas`, reply notes, Obsidian annotation send, and `Copy + Focus CLI`.
 - Obsidian workflow integration is now promoted from future planning to Phase 5 bridge MVP because the user independently validated:
   - Codex `Stop` hook can capture `last_assistant_message` and cache reply Markdown/JSON.
   - Obsidian `md-anno-tools` can render and extract `[!anno]...[/anno]` annotations.
@@ -119,15 +121,18 @@ Updated: 2026-05-13
 - Useful Obsidian syntax: `[!anno]...[/anno]`.
 - First bridge sync-back rule: prepare prompt, copy to clipboard, focus target CLI, let the user paste/submit.
 - First bridge enrollment rule: no global hooks; install only per selected workspace folder, based on detected folder/tool capabilities.
+- Deployment maintenance guide: `docs/adapter-deployment-guide.md`.
 
 ## Next Supervisor Checkpoint
 
 - Keep `master` as the default new-device handoff branch.
 - Keep existing overlay routing and hook status work as the base.
-- Add manual workspace inspect/enroll before treating any hook deployment as a product path.
+- Add script-driven workspace inspect/enroll before treating any hook deployment as a product path.
+- Create project-local `.amo/` and `.amo/obsidian-vault/` for the first MVP.
+- Support `codex-cli` first; mark Codex App, Claude CLI, and Kiro IDE as deferred in inspect output until implemented.
 - Implement the smallest bridge endpoint first: `POST /api/replies`.
 - Preserve hook file-cache fallback and protocol-clean stdout.
-- Add test-vault reply note generation before broader Obsidian integration.
+- Add project-local vault reply note generation before broader Obsidian integration.
 - Add append-only canvas file node creation after note generation is stable.
 - Add overlay `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI` only after bridge session fields exist.
 - Add Obsidian plugin `Send current note annotations to AMO` as an explicit user action; do not replace the current copy-to-clipboard command.

@@ -8,9 +8,19 @@ Status: planned
 
 Implement the first AMO bridge slice that connects manually enrolled workspace-local adapters/hooks, overlay session state, Obsidian reply notes, canvas flow, annotation extraction, and safe CLI sync-back.
 
+Current MVP target:
+
+- Codex CLI only.
+- One selected project folder.
+- Project-local `.amo/`.
+- Dedicated `.amo/obsidian-vault/`.
+- One default `.amo/obsidian-vault/AgentFlow.canvas`.
+- Reply notes under `.amo/obsidian-vault/Replies/`.
+
 ## Inputs
 
 - `docs/amo-obsidian-bridge-mvp.md`
+- `docs/adapter-deployment-guide.md`
 - `docs/session-handoffs/2026-05-13-amo-obsidian-bridge-pivot.md`
 - `D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
 - `D:\Projects\CommonProject\obsidianplugintest\docs\OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
@@ -20,11 +30,14 @@ Implement the first AMO bridge slice that connects manually enrolled workspace-l
 First implementation slice:
 
 - Extend existing `broker/server.js` into an AMO bridge without replacing existing session APIs.
-- Add manual workspace inspect/enroll for a user-selected project folder.
+- Add script-driven workspace inspect/enroll for a user-selected project folder.
 - Detect likely CLI/TUI adapter options from folder contents and local tool configuration.
+- Produce an inspect/deployment plan before writing files.
+- Support only `codex-cli` in the first MVP.
+- Create `.amo/`, `.amo/enrollment.json`, `.amo/hooks/`, `.amo/state/`, and `.amo/obsidian-vault/`.
 - Reject global hook deployment by default.
 - Add `POST /api/replies`.
-- Write reply notes into a configured disposable/test Obsidian vault.
+- Write reply notes into the project-local `.amo/obsidian-vault/Replies/`.
 - Update session snapshots with reply note metadata.
 - Keep hook cache fallback and protocol-clean stdout when integrating project-local hook scripts.
 
@@ -34,6 +47,7 @@ Follow-up slices:
 - Add overlay card actions for `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI`.
 - Add Obsidian plugin command to send `[!anno]...[/anno]` annotations to AMO.
 - Add `POST /api/obsidian/annotations` and pending continuation prompt state.
+- Add Codex App, Claude CLI, Kiro IDE, and multi-CLI canvas shortcuts after the Codex CLI loop is proven.
 
 ## Non-Goals
 
@@ -41,20 +55,24 @@ Follow-up slices:
 - Do not implement auto approval.
 - Do not install global hooks.
 - Do not silently install hooks or adapters without a user-selected workspace folder.
+- Do not rely on an LLM to decide deployment file writes during normal operation.
+- Do not treat `windowHint.pid` as valid unless it is a verified visible-window owner pid.
 - Do not rewrite the bridge in Rust before the Node bridge workflow is proven.
 - Do not make Obsidian/canvas the primary AMO data model.
 - Do not implement rich anchored annotation comments yet.
-- Do not mutate real user vault files without an explicit configured test vault or user confirmation.
+- Do not mutate a user's existing Obsidian vault in the first MVP; use the project-local `.amo/obsidian-vault/`.
 
 ## Acceptance
 
 The first slice is complete when:
 
 - `POST /api/workspaces/inspect` or equivalent local function can inspect a selected folder and report candidate adapter plans.
+- Inspect reports `codex-cli` availability and clearly marks Codex App, Claude CLI, and Kiro IDE as deferred or unsupported when not implemented.
 - Enrollment writes only project-local hook/adapter files after explicit confirmation.
+- Enrollment creates `.amo/` and `.amo/obsidian-vault/`.
 - Global hook deployment is rejected or absent from the product path.
 - `POST /api/replies` accepts a Codex Stop-hook-like payload.
-- Bridge writes a Markdown note with AMO frontmatter into the configured vault.
+- Bridge writes a Markdown note with AMO frontmatter into `.amo/obsidian-vault/Replies/`.
 - `GET /api/sessions` exposes `lastReplyNote`, `lastReplyAt`, and `canvasPath` when available.
 - Existing broker event/session behavior still passes its verification script.
 - Hook failure remains non-blocking and hook stdout remains protocol-clean.
@@ -62,7 +80,7 @@ The first slice is complete when:
 End-to-end Phase 5 acceptance:
 
 - User selects and enrolls a project folder.
-- Codex or another supported workspace-local adapter captures a reply and creates a note.
+- Codex CLI workspace-local adapter captures a reply and creates a note.
 - Canvas gets a linked file node.
 - Overlay opens the note/canvas.
 - Obsidian plugin extracts annotations and sends them to AMO.

@@ -435,6 +435,8 @@ Kiro adapter:
 
 - 让 overlay 保留悬浮状态监控和窗口跳转，同时拉起一个本地 bridge server 作为 hooks、Obsidian vault、canvas flow 和 CLI sync-back 的中转。
 - hook/adapter 部署改为手动 workspace enrollment：用户先选定项目文件夹，AMO 根据文件夹内容识别可用 CLI/TUI 接入方式，再写入项目本地配置。
+- 部署流程必须尽量脚本化和确定性，不依赖 LLM 临场判断；扩展新 CLI/TUI 时通过 adapter deployment registry 和维护文档完成。
+- 每个已部署工程文件夹创建项目本地 `.amo/`，用于保存 workspace 配置、adapter 配置、本地状态、日志和专属 Obsidian vault。
 - 使用已验证的 Codex `Stop` hook MVP，把 `last_assistant_message` 缓存并转发给 AMO bridge。
 - 使用已验证的 Obsidian `[!anno]...[/anno]` 插件 MVP，在 Markdown 中批注长回复并一键提取批注。
 - 第一版闭环是：用户选定工作区 -> AMO 检测并安装项目本地 adapter/hook -> adapter 捕获回复 -> bridge 写 Obsidian note/canvas -> 用户在 Obsidian 批注 -> plugin 发送批注到 bridge -> overlay 复制 prompt 并聚焦目标 CLI。
@@ -444,11 +446,43 @@ Kiro adapter:
 - 点击切换窗口
 - hook-only 状态标记
 - 手动 workspace inspect/enroll
+- 部署计划 inspect / apply / repair / uninstall
+- `.amo/` workspace state 和专属 Obsidian vault
 - Codex reply note 生成
 - append-only Obsidian canvas flow
 - `Open Note` / `Open Canvas`
 - `Copy Pending Prompt + Focus CLI`
 - Obsidian annotation extraction bridge
+
+完整目标工作流：
+
+1. 用户开启 monitor。
+2. 用户点击一键部署并选择工程文件夹。
+3. AMO 通过脚本 inspect 文件夹状态，展示可部署 adapter、将写入的文件、风险和缺口。
+4. 用户勾选 adapter，目标支持 Codex CLI、Codex App、Claude CLI、Kiro IDE。
+5. AMO 创建 `.amo/` 和专属 Obsidian vault，安装项目本地 hook/adapter。
+6. 用户从 monitor 拉起 CLI/TUI，或手动启动。
+7. CLI/TUI 完成一轮回复后触发 hook/adapter。
+8. hook/adapter 向 bridge 提供最后回复、session/cwd/turn metadata 和可选 window hint。
+9. monitor task card 显示窗口绑定、任务状态、CLI 类型和操作按钮。
+10. 用户可直接跳回 CLI 处理继续输入或权限请求。
+11. 用户可跳到 Obsidian work canvas；若未绑定，则创建或选择 work canvas 并绑定。
+12. Bridge 创建 reply note，并把 note 作为 file node 插入 work canvas。
+13. 单个 work canvas 可关联多个 CLI/TUI 窗口。
+14. 用户通过 Obsidian 插件添加 `[!anno]...[/anno]` 批注。
+15. 插件汇总批注并发送给 bridge。
+16. Bridge 生成 pending prompt，复制并聚焦目标 CLI。
+17. 如果 work canvas 关联多个 CLI/TUI，插件或 monitor 提供多 CLI 快捷跳转。
+
+身份模型：
+
+- `workspaceId`：选定工程文件夹和 `.amo/` 状态。
+- `agentInstanceId`：一个 CLI/TUI 进程或窗口实例。
+- `sessionId`：工具自身会话 id。
+- `workCanvasId`：Obsidian canvas 绑定 id。
+- `replyNoteId`：一次 assistant 回复生成的 note。
+- `pendingPromptId`：一次批注汇总后的回传 prompt。
+- `windowHint.pid/hwnd/titleToken`：只做窗口路由 hint，不做长期主键。
 
 安全规则：
 
@@ -459,6 +493,8 @@ Kiro adapter:
 - Phase 5 不做全局 hook 部署。
 - hook/adapter 安装必须从用户选定的项目文件夹开始，并且默认只写入该文件夹下的项目本地配置。
 - AMO 必须根据文件夹内容选择或建议 adapter；不要假设所有 CLI/TUI 都有同一种 hook 机制。
+- 部署必须先生成计划再 apply，且要支持修复、禁用、卸载和配置备份。
+- 不能把 hook runner pid 当成窗口 owner pid；PID/HWND 必须作为经过验证的 window hint 使用。
 - hook 必须短、快、stdout 协议干净；失败时不能阻塞 Codex。
 - vault 写入必须限制在配置的 vault root 内。
 
@@ -466,11 +502,35 @@ Kiro adapter:
 
 - overlay 启动或确认 bridge server 可用。
 - 用户能手动选择一个项目文件夹，AMO 能展示检测到的本地 adapter/hook 方案。
+- AMO 能创建 `.amo/` 和专属 `.amo/obsidian-vault/`。
 - Codex `Stop` hook 或等价项目本地 adapter 能同时写本地 cache 兜底并 POST `/api/replies`。
 - bridge 能在测试 vault 中创建 reply note，并在 canvas 中追加 file node。
 - overlay session 卡片能打开关联 note/canvas。
 - Obsidian 插件能提取 `[!anno]...[/anno]` 并 POST 到 bridge。
 - overlay 能显示 pending continuation，并完成 `copy + focus target CLI`。
+
+当前 MVP 工作流：
+
+1. 只支持 Codex CLI adapter。
+2. 只支持一个手动选择的工程文件夹。
+3. `.amo/obsidian-vault/AgentFlow.canvas` 是唯一默认 work canvas。
+4. Codex `Stop` hook 捕获最后回复并 POST `/api/replies`。
+5. Bridge 写 `.amo/obsidian-vault/Replies/` 下的 reply note。
+6. Bridge 把 reply note 追加到 `AgentFlow.canvas`。
+7. Overlay task card 提供 `Focus CLI`、`Open Canvas`、`Open Note`。
+8. Obsidian 插件发送批注，bridge 生成 pending prompt。
+9. 用户点击 `Copy + Focus CLI`，然后手动粘贴/发送。
+
+当前 MVP 暂不做：
+
+- Codex App 直接接入。
+- Claude CLI reply capture。
+- Kiro IDE 部署。
+- 多 CLI canvas 快捷跳转。
+- 权限请求 task card 托管。
+- 自动粘贴、自动发送或自动审批。
+- 用户既有 Obsidian vault 的深度集成。
+- 复杂 canvas 布局和重排。
 
 ### Phase 6: 长期增强
 
@@ -669,12 +729,14 @@ Execution role: supervisor agent manages workers
 
 下一步建议：
 
-1. 按 `docs/amo-obsidian-bridge-mvp.md` 先定义并实现最小 workspace inspect/enroll，入口是用户选定的项目文件夹。
-2. 实现 bridge contract 文档中的最小 `/api/replies`。
-3. 把 Codex Stop hook MVP 从 `obsidianplugintest` 迁入一个 disposable enrolled project，保持 `.codex/cache/` 兜底并 POST 到 AMO bridge。
-4. 在测试 vault 中生成 reply note 和 append-only canvas file node。
-5. 给 overlay session 卡片增加 `Open Note` / `Open Canvas` / `Copy Pending Prompt + Focus CLI`。
-6. 给 Obsidian 插件新增显式 `Send current note annotations to AMO` 命令。
+1. 按 `docs/adapter-deployment-guide.md` 和 `docs/amo-obsidian-bridge-mvp.md` 实现脚本化 workspace inspect/enroll，入口是用户选定的项目文件夹。
+2. 第一版只支持 `codex-cli` adapter，inspect 输出中把 Codex App、Claude CLI、Kiro IDE 标记为 deferred/unsupported。
+3. 创建项目本地 `.amo/`、`.amo/enrollment.json`、`.amo/hooks/`、`.amo/state/` 和 `.amo/obsidian-vault/`。
+4. 实现 bridge contract 文档中的最小 `/api/replies`。
+5. 把 Codex Stop hook MVP 从 `obsidianplugintest` 迁入 enrolled project，保持 `.codex/cache/` 兜底并 POST 到 AMO bridge。
+6. 在 `.amo/obsidian-vault/Replies/` 生成 reply note，并追加到 `.amo/obsidian-vault/AgentFlow.canvas`。
+7. 给 overlay session 卡片增加 `Focus CLI` / `Open Note` / `Open Canvas` / `Copy Pending Prompt + Focus CLI`。
+8. 给 Obsidian 插件新增显式 `Send current note annotations to AMO` 命令。
 
 当前主管状态：
 
@@ -702,6 +764,7 @@ DEVELOPMENT.md
 docs/supervisor-status.md
 PROJECT_PLAN.md
 docs/amo-obsidian-bridge-mvp.md
+docs/adapter-deployment-guide.md
 docs/reference-mvps/obsidianplugintest/README.md
 外部 MVP 文档：
 D:\Projects\CommonProject\obsidianplugintest\docs\CODEX_REPLY_NOTE_HOOK_INTEGRATION.md
@@ -720,10 +783,11 @@ Phase 5 Hook-to-Obsidian Bridge planning / implementation prep。
 1. 从 `master` 开始，不要退回旧的 Phase 0 结论。
 2. 保留 overlay 悬浮窗、broker session 状态和 CLI window focus 能力。
 3. 不做全局 hook 部署；接入从用户手动选择项目文件夹开始，根据文件夹内容选择项目本地 adapter/hook。
-4. 复用现有 Node broker，把它升级为 AMO bridge；第一步实现 workspace inspect/enroll 和 `/api/replies`。
-5. 使用外部 Codex Stop hook MVP 的 `last_assistant_message` capture 思路，保持 hook stdout 只输出 `{"continue":true}`，并保留 `.codex/cache/` 兜底。
-6. 使用外部 Obsidian plugin MVP 的 `[!anno]...[/anno]` 语法；第一版只做显式提取和发送，不做复杂 anchored comments。
-7. Sync-back 第一版只做 `copy + focus target CLI`，不要自动粘贴、自动回车或自动审批。
+4. 复用现有 Node broker，把它升级为 AMO bridge；第一步实现脚本化 workspace inspect/enroll 和 `/api/replies`。
+5. 当前 MVP 只支持 `codex-cli`，创建项目本地 `.amo/` 和 `.amo/obsidian-vault/AgentFlow.canvas`。
+6. 使用外部 Codex Stop hook MVP 的 `last_assistant_message` capture 思路，保持 hook stdout 只输出 `{"continue":true}`，并保留 `.codex/cache/` 兜底。
+7. 使用外部 Obsidian plugin MVP 的 `[!anno]...[/anno]` 语法；第一版只做显式提取和发送，不做复杂 anchored comments。
+8. Sync-back 第一版只做 `copy + focus target CLI`，不要自动粘贴、自动回车或自动审批。
 
 汇报格式：
 当前阶段：
