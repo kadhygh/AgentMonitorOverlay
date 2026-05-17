@@ -860,8 +860,8 @@ export default function App() {
           <button
             type="button"
             className={`icon-button ${deployOpen ? "is-active" : ""}`}
-            title="Choose workspace folder"
-            onClick={() => void chooseWorkspaceDirectory()}
+            title={deployOpen ? "Close deploy panel" : "Open deploy panel"}
+            onClick={() => setDeployOpen((value) => !value)}
           >
             <FolderPlus size={15} aria-hidden="true" />
           </button>
