@@ -7,6 +7,7 @@ import {
   BrainCircuit,
   ChevronDown,
   ChevronUp,
+  ClipboardCheck,
   ExternalLink,
   FileText,
   GripHorizontal,
@@ -28,6 +29,7 @@ import type {
 } from "./types";
 
 const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
+const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 const REFRESH_INTERVAL_MS = 3000;
 
 const stateLabel: Record<SessionState, string> = {
@@ -199,17 +201,22 @@ function SessionRowContent({
   session,
   activating,
   openingTarget,
+  copyingPrompt,
   onOpenNote,
   onOpenCanvas,
+  onCopyPrompt,
 }: {
   session: AgentSession;
   activating: boolean;
   openingTarget: "note" | "canvas" | null;
+  copyingPrompt: boolean;
   onOpenNote: () => void;
   onOpenCanvas: () => void;
+  onCopyPrompt: () => void;
 }) {
   const notePath = notePathForOpen(session);
   const canvasPath = canvasPathForOpen(session);
+  const pendingPromptLabel = session.pendingAnnotationCount ? `Sync ${session.pendingAnnotationCount}` : "Sync";
 
   return (
     <>
@@ -224,7 +231,7 @@ function SessionRowContent({
         <span className="event-line">
           {stateLabel[session.state]} · {session.lastEvent}
         </span>
-        {notePath || canvasPath ? (
+        {notePath || canvasPath || session.pendingPrompt ? (
           <span className="bridge-actions" aria-label="Bridge actions">
             {notePath ? (
               <button
@@ -256,6 +263,21 @@ function SessionRowContent({
                 <span>{openingTarget === "canvas" ? "..." : shortPathLabel(session.canvasPath) || "Canvas"}</span>
               </button>
             ) : null}
+            {session.pendingPrompt ? (
+              <button
+                type="button"
+                className={`row-tool-button sync-button ${session.pendingPromptCopiedAt ? "was-copied" : ""}`}
+                title="Copy pending prompt and focus CLI"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onCopyPrompt();
+                }}
+              >
+                <ClipboardCheck size={13} aria-hidden="true" />
+                <span>{copyingPrompt ? "..." : pendingPromptLabel}</span>
+              </button>
+            ) : null}
           </span>
         ) : null}
       </span>
@@ -276,6 +298,7 @@ export default function App() {
   const [feedback, setFeedback] = useState("Mock data ready. Window activation is placeholder.");
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<{ sessionId: string; target: "note" | "canvas" } | null>(null);
+  const [copyingPromptId, setCopyingPromptId] = useState<string | null>(null);
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
@@ -402,6 +425,45 @@ export default function App() {
       setFeedback(`Open ${target} failed: ${(error as Error).message}`);
     } finally {
       setOpeningPath(null);
+    }
+  }
+
+  async function copyPendingPrompt(session: AgentSession) {
+    if (!session.pendingPrompt) {
+      setFeedback(`No pending prompt is linked for ${session.title}.`);
+      return;
+    }
+
+    setCopyingPromptId(session.sessionId);
+    setFeedback(`Copying pending prompt for ${session.title}...`);
+
+    try {
+      const result = await invoke<OpenPathResult>("write_clipboard_text", { text: session.pendingPrompt });
+      if (!result.ok) {
+        setFeedback(result.message);
+        return;
+      }
+
+      const response = await fetch(BROKER_SYNC_BACK_URL, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({
+          sessionId: session.sessionId,
+          pendingPromptId: session.pendingPromptId ?? null,
+          action: "copy-focus",
+        }),
+      });
+      if (!response.ok) {
+        throw new Error(`broker returned ${response.status}`);
+      }
+
+      setFeedback("Pending prompt copied. Focusing target CLI...");
+      void refreshSessions();
+      await activateSession(session);
+    } catch (error) {
+      setFeedback(`Copy + focus failed: ${(error as Error).message}`);
+    } finally {
+      setCopyingPromptId(null);
     }
   }
 
@@ -720,8 +782,10 @@ export default function App() {
                   session={session}
                   activating={activatingId === session.sessionId}
                   openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
+                  copyingPrompt={copyingPromptId === session.sessionId}
                   onOpenNote={() => void openBridgePath(session, "note")}
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
+                  onCopyPrompt={() => void copyPendingPrompt(session)}
                 />
               </div>
             ))}
@@ -781,8 +845,10 @@ export default function App() {
                     session={session}
                     activating={activatingId === session.sessionId}
                     openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
+                    copyingPrompt={copyingPromptId === session.sessionId}
                     onOpenNote={() => undefined}
                     onOpenCanvas={() => undefined}
+                    onCopyPrompt={() => undefined}
                   />
                 ) : null;
               })()}

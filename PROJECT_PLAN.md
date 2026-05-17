@@ -724,21 +724,18 @@ Execution role: supervisor agent manages workers
 
 - row handle 目前只保留为视觉占位，卡片拖拽已经临时停用，不再作为当前 Phase 3/4 closeout gate
 - 重复窗口/ambiguous routing 已经有候选/debug 面板，但还需要在真实 session 上继续验证 exact-route 与回退解释性
-- Codex live hook 路线已从“是否能加载”推进到“如何把 Stop reply capture 接入 AMO bridge”；仍需在本仓实现并验证 bridge POST。
+- Codex live hook 路线已实现项目本地 enroll、Stop reply capture adapter、bridge `/api/replies`、reply note 和 canvas append；仍需用真实 Codex CLI session 做端到端 smoke。
 - Kiro 仍处在 mock/hook-spike 级别
 - 卡片顺序和 overlay 位置目前是本地 UI 状态，尚未决定是否持久化
-- AMO bridge `/api/replies`、vault note 写入、canvas append、Obsidian plugin -> bridge annotation POST 尚未在本仓实现。
+- AMO bridge 已实现 `/api/replies`、vault note 写入、canvas append、`/api/obsidian/annotations` pending prompt 和 `/api/sync-back` 标记；Obsidian 插件本体和插件侧 note/canvas tab 复用仍未实现。
 
 下一步建议：
 
-1. 按 `docs/adapter-deployment-guide.md` 和 `docs/amo-obsidian-bridge-mvp.md` 实现脚本化 workspace inspect/enroll，入口是用户选定的项目文件夹。
-2. 第一版只支持 `codex-cli` adapter，inspect 输出中把 Codex App、Claude CLI、Kiro IDE 标记为 deferred/unsupported。
-3. 创建项目本地 `.amo/`、`.amo/enrollment.json`、`.amo/hooks/`、`.amo/state/` 和 `.amo/obsidian-vault/`。
-4. 实现 bridge contract 文档中的最小 `/api/replies`。
-5. 把 Codex Stop hook MVP 从 `obsidianplugintest` 迁入 enrolled project，保持 `.codex/cache/` 兜底并 POST 到 AMO bridge。
-6. 在 `.amo/obsidian-vault/Replies/` 生成 reply note，并追加到 `.amo/obsidian-vault/AgentFlow.canvas`。
-7. 给 overlay session 卡片增加 `Focus CLI` / `Open Note` / `Open Canvas` / `Copy Pending Prompt + Focus CLI`。
-8. 给 Obsidian 插件新增显式 `Send current note annotations to AMO` 命令。
+1. 用真实 Codex CLI session 验证 project-local Stop hook -> `/api/replies` -> overlay task card。
+2. 验证 `Open Note` / `Open Canvas` URI fallback 的可用边界；精确 tab 复用留到 Obsidian 插件阶段。
+3. 给 Obsidian 插件新增显式 `Open AMO note/canvas with tab reuse` 和 `Send current note annotations to AMO` 命令。
+4. 将插件部署纳入 workspace enroll，安装到 `.amo/obsidian-vault/.obsidian/plugins/`。
+5. 做端到端 smoke：reply note -> canvas -> annotation -> pending prompt -> `Copy + Focus CLI`。
 
 当前主管状态：
 

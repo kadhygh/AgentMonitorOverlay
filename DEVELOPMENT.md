@@ -213,15 +213,15 @@ Current unverified but implemented behavior:
 - Codex hook status has changed:
   - The old adapter/broker contract passes.
   - A separate MVP in `D:\Projects\CommonProject\obsidianplugintest` proves `Stop` can read `last_assistant_message` and cache it as Markdown/JSON.
-  - AMO still needs implementation work to receive this as `POST /api/replies` and link it to overlay session state.
+  - AMO now receives this as `POST /api/replies`, writes reply notes, appends canvas nodes, and links the result to overlay session state.
 - Claude live hook smoke passed with disposable `--settings`.
 - Kiro is still mock/hook-spike level for MVP.
 - Window routing still needs clearer blocked-focus feedback and stronger exact-route identity for real sessions.
 - Card reorder is temporarily disabled and should stay out of the critical path until routing work is stable.
 - Bridge server launch from the Tauri overlay is not implemented yet.
-- Manual workspace inspect/enroll is not implemented yet.
-- Obsidian vault note writing and canvas append are not implemented in this repo yet.
-- Obsidian plugin annotation POST back to AMO is not implemented yet.
+- Manual workspace inspect/enroll is implemented in the broker, but still needs a production UI entry.
+- Obsidian vault note writing and canvas append are implemented for the project-local `.amo/obsidian-vault/`.
+- Broker-side `/api/obsidian/annotations` and `/api/sync-back` are implemented; the Obsidian plugin command itself is not implemented yet.
 
 ## Manual Workspace Hook Enrollment
 

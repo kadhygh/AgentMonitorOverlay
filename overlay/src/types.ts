@@ -42,6 +42,17 @@ export interface AgentSession {
   canvasPath?: string;
   canvasAbsolutePath?: string;
   canvasNodeId?: string;
+  pendingPromptId?: string;
+  pendingPrompt?: string;
+  pendingPromptCreatedAt?: string;
+  pendingPromptCopiedAt?: string | null;
+  pendingAnnotationCount?: number;
+  pendingAnnotationSource?: {
+    source?: string | null;
+    vaultRoot?: string | null;
+    notePath?: string | null;
+    turnId?: string | null;
+  };
   updatedAt: string;
 }
 

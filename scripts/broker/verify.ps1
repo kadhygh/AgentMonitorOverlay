@@ -235,6 +235,34 @@ try {
         throw "Reply session is missing absolute note/canvas paths for overlay open actions."
     }
     Write-Host "Reply bridge OK -> $($reply.notePath)"
+
+    $annotationResult = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
+        schemaVersion = 1
+        source = "verify-obsidian-plugin"
+        vaultRoot = $vaultRoot
+        notePath = $reply.notePath
+        sessionId = "codex-reply-verify"
+        turnId = "turn-reply-verify"
+        annotations = @(
+            @{
+                index = 1
+                content = "Please continue from this verification note."
+            }
+        )
+    }
+    if (-not $annotationResult.ok -or -not $annotationResult.pendingPromptId -or -not $annotationResult.prompt) {
+        throw "Annotation endpoint did not return a pending prompt."
+    }
+
+    $syncBack = Invoke-BrokerJson -Method POST -Path "/api/sync-back" -Body @{
+        sessionId = "codex-reply-verify"
+        pendingPromptId = $annotationResult.pendingPromptId
+        action = "copy-focus"
+    }
+    if (-not $syncBack.ok -or -not $syncBack.copiedAt) {
+        throw "Sync-back endpoint did not mark the prompt as copied."
+    }
+    Write-Host "Annotation sync-back OK -> $($annotationResult.pendingPromptId)"
 }
 finally {
     if ($broker -and -not $broker.HasExited) {

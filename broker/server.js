@@ -89,6 +89,20 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, reply);
     }
 
+    if (req.method === "POST" && url.pathname === "/api/obsidian/annotations") {
+      const payload = await readJsonBody(req);
+      const result = handleObsidianAnnotations(payload);
+      persistSnapshot();
+      return sendJson(res, 200, result);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/sync-back") {
+      const payload = await readJsonBody(req);
+      const result = handleSyncBack(payload);
+      persistSnapshot();
+      return sendJson(res, 200, result);
+    }
+
     const heartbeatMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/heartbeat$/);
     if (req.method === "POST" && heartbeatMatch) {
       const sessionId = decodeURIComponent(heartbeatMatch[1]);
@@ -477,6 +491,114 @@ function handleReply(payload) {
     canvasPath: canvas.canvasPath,
     canvasAbsolutePath: canvas.canvasAbsolutePath,
     canvasNodeId: canvas.canvasNodeId,
+    session,
+  };
+}
+
+function handleObsidianAnnotations(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Annotation payload must be a JSON object");
+  }
+
+  const sessionId = normalizeText(payload.sessionId || payload.session_id);
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Annotation payload must include sessionId");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for annotation payload: ${sessionId}`);
+  }
+
+  const annotations = normalizeAnnotations(payload.annotations);
+  const summary = normalizeText(payload.summary);
+  if (annotations.length === 0 && !summary) {
+    throw httpError(400, "missing_annotations", "Annotation payload must include annotations or summary");
+  }
+
+  const now = new Date().toISOString();
+  const pendingPromptId =
+    normalizeText(payload.pendingPromptId || payload.pending_prompt_id) || `prompt-${crypto.randomUUID()}`;
+  const prompt = normalizeText(payload.prompt) || renderPendingPrompt({ ...payload, sessionId }, annotations, summary);
+  const annotationCount = annotations.length || 1;
+  const notePath = normalizeText(payload.notePath || payload.note_path);
+  const vaultRoot = normalizeText(payload.vaultRoot || payload.vault_root);
+  const turnId = normalizeText(payload.turnId || payload.turn_id);
+  const source = normalizeText(payload.source) || "obsidian-plugin";
+
+  const session = {
+    ...existing,
+    state: "waiting_user",
+    lastEvent: "ObsidianAnnotations",
+    lastMessage: `${annotationCount} annotation${annotationCount === 1 ? "" : "s"} ready for sync-back`,
+    needsAttention: true,
+    updatedAt: now,
+    eventCount: (existing.eventCount || 0) + 1,
+    pendingPromptId,
+    pendingPrompt: prompt,
+    pendingPromptCreatedAt: now,
+    pendingPromptCopiedAt: null,
+    pendingAnnotationCount: annotationCount,
+    pendingAnnotationSource: {
+      source,
+      vaultRoot: vaultRoot || null,
+      notePath: notePath || null,
+      turnId: turnId || null,
+    },
+  };
+
+  sessions.set(sessionId, session);
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    pendingPromptId,
+    prompt,
+    annotationCount,
+    session,
+  };
+}
+
+function handleSyncBack(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Sync-back payload must be a JSON object");
+  }
+
+  const sessionId = normalizeText(payload.sessionId || payload.session_id);
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Sync-back payload must include sessionId");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for sync-back payload: ${sessionId}`);
+  }
+
+  const pendingPromptId = normalizeText(payload.pendingPromptId || payload.pending_prompt_id);
+  if (pendingPromptId && existing.pendingPromptId && pendingPromptId !== existing.pendingPromptId) {
+    throw httpError(409, "pending_prompt_mismatch", "Sync-back pendingPromptId does not match current session");
+  }
+
+  const now = new Date().toISOString();
+  const session = {
+    ...existing,
+    lastEvent: "SyncBackCopied",
+    lastMessage: "Pending prompt copied; paste it manually into the target CLI",
+    needsAttention: false,
+    updatedAt: now,
+    eventCount: (existing.eventCount || 0) + 1,
+    pendingPromptCopiedAt: now,
+  };
+
+  sessions.set(sessionId, session);
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    pendingPromptId: session.pendingPromptId || null,
+    copiedAt: now,
     session,
   };
 }
@@ -1018,6 +1140,65 @@ function normalizeWindowHint(value) {
     pid,
     hwnd,
   };
+}
+
+function normalizeAnnotations(value) {
+  if (!Array.isArray(value)) {
+    return [];
+  }
+
+  return value
+    .map((item, index) => {
+      if (typeof item === "string") {
+        const content = normalizeText(item);
+        return content ? { index: index + 1, content } : null;
+      }
+
+      if (!item || typeof item !== "object" || Array.isArray(item)) {
+        return null;
+      }
+
+      const content = normalizeText(item.content || item.text || item.body || item.annotation);
+      if (!content) {
+        return null;
+      }
+
+      return {
+        index: normalizeInteger(item.index) || index + 1,
+        content,
+      };
+    })
+    .filter(Boolean);
+}
+
+function renderPendingPrompt(payload, annotations, summary) {
+  const notePath = normalizeText(payload.notePath || payload.note_path);
+  const turnId = normalizeText(payload.turnId || payload.turn_id);
+  const sourceLines = [];
+  if (notePath) sourceLines.push(`- note: ${notePath}`);
+  if (turnId) sourceLines.push(`- turn: ${turnId}`);
+
+  const lines = [
+    "请基于下面 Obsidian 批注继续推进当前任务。",
+    "请优先处理批注里的要求；如果批注和当前上下文冲突，请先说明判断，再继续执行。",
+  ];
+
+  if (sourceLines.length > 0) {
+    lines.push("", "来源：", ...sourceLines);
+  }
+
+  if (summary) {
+    lines.push("", "汇总：", summary);
+  }
+
+  if (annotations.length > 0) {
+    lines.push("", "批注：");
+    for (const annotation of annotations) {
+      lines.push(`${annotation.index}. ${annotation.content}`);
+    }
+  }
+
+  return `${lines.join("\n")}\n`;
 }
 
 function listSessions() {
