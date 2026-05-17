@@ -25,6 +25,7 @@ import type {
   ActivationResult,
   AgentSession,
   AgentTool,
+  FolderPickResult,
   OpenPathResult,
   SessionState,
   WorkspaceEnrollment,
@@ -387,8 +388,8 @@ export default function App() {
     return payload as T;
   }
 
-  async function inspectWorkspace() {
-    const targetPath = workspacePath.trim();
+  async function inspectWorkspace(pathOverride?: string) {
+    const targetPath = (pathOverride ?? workspacePath).trim();
     if (!targetPath) {
       setFeedback("Workspace path is required.");
       return;
@@ -396,7 +397,7 @@ export default function App() {
 
     setDeployBusy("inspect");
     setWorkspaceEnrollment(null);
-    setFeedback("Inspecting workspace...");
+    setFeedback("Checking workspace...");
 
     try {
       const result = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
@@ -408,9 +409,29 @@ export default function App() {
       setFeedback(`${result.projectName}: ${codexPlan?.status ?? "no adapter"} for codex-cli.`);
     } catch (error) {
       setWorkspaceInspection(null);
-      setFeedback(`Inspect failed: ${(error as Error).message}`);
+      setFeedback(`Check failed: ${(error as Error).message}`);
     } finally {
       setDeployBusy(null);
+    }
+  }
+
+  async function chooseWorkspaceDirectory() {
+    setFeedback("Choose a workspace folder...");
+
+    try {
+      const result = await invoke<FolderPickResult>("select_workspace_directory");
+      if (!result.ok || !result.path) {
+        setFeedback(result.message);
+        return;
+      }
+
+      setDeployOpen(true);
+      setWorkspacePath(result.path);
+      setWorkspaceInspection(null);
+      setWorkspaceEnrollment(null);
+      await inspectWorkspace(result.path);
+    } catch (error) {
+      setFeedback(`Folder selection failed: ${(error as Error).message}`);
     }
   }
 
@@ -839,8 +860,8 @@ export default function App() {
           <button
             type="button"
             className={`icon-button ${deployOpen ? "is-active" : ""}`}
-            title="Workspace deploy"
-            onClick={() => setDeployOpen((value) => !value)}
+            title="Choose workspace folder"
+            onClick={() => void chooseWorkspaceDirectory()}
           >
             <FolderPlus size={15} aria-hidden="true" />
           </button>
@@ -873,25 +894,20 @@ export default function App() {
 
           {deployOpen ? (
             <section className="deploy-panel" aria-label="Workspace deployment">
-              <form
-                className="deploy-form"
-                onSubmit={(event) => {
-                  event.preventDefault();
-                  void inspectWorkspace();
-                }}
-              >
-                <input
-                  value={workspacePath}
-                  onChange={(event) => {
-                    setWorkspacePath(event.target.value);
-                    setWorkspaceInspection(null);
-                    setWorkspaceEnrollment(null);
-                  }}
-                  placeholder="G:\\PROJECT\\YourWorkspace"
-                  spellCheck={false}
-                />
-                <button type="submit" disabled={deployBusy !== null}>
-                  {deployBusy === "inspect" ? "..." : "Inspect"}
+              <div className="deploy-path-row">
+                <span className="deploy-path" title={workspacePath || "No workspace selected"}>
+                  {workspacePath ? shortPathLabel(workspacePath) || workspacePath : "No workspace selected"}
+                </span>
+                <button type="button" disabled={deployBusy !== null} onClick={() => void chooseWorkspaceDirectory()}>
+                  Choose
+                </button>
+                <button
+                  type="button"
+                  title="Check folder before deploying; this does not write files."
+                  disabled={!workspacePath || deployBusy !== null}
+                  onClick={() => void inspectWorkspace()}
+                >
+                  {deployBusy === "inspect" ? "..." : "Check"}
                 </button>
                 <button
                   type="button"
@@ -900,7 +916,15 @@ export default function App() {
                 >
                   {deployBusy === "enroll" ? "..." : "Deploy"}
                 </button>
-              </form>
+                <button
+                  type="button"
+                  className="deploy-close"
+                  title="Close deploy panel"
+                  onClick={() => setDeployOpen(false)}
+                >
+                  <X size={13} aria-hidden="true" />
+                </button>
+              </div>
               {workspaceInspection ? (
                 <div className="deploy-plan">
                   {workspaceInspection.supportedAdapters.map((adapter) => (

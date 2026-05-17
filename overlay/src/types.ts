@@ -72,6 +72,13 @@ export interface ActivationResult {
 
 export type OpenPathResult = ActivationResult;
 
+export interface FolderPickResult {
+  ok: boolean;
+  cancelled: boolean;
+  path?: string | null;
+  message: string;
+}
+
 export interface WorkspaceAdapterPlan {
   id: string;
   label: string;

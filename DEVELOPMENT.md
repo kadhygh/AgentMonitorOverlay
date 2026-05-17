@@ -220,7 +220,8 @@ Current unverified but implemented behavior:
 - Card reorder is enabled again after switching drag handling to window-level pointer listeners; user confirmed the interaction feels smooth.
 - Future overlay setting: gate window resizing behind a settings toggle. When disabled, hide resize edge/corner indicators and ignore resize gestures; when enabled, show the resize handles and allow size changes.
 - Bridge server launch from the Tauri overlay is not implemented yet.
-- Manual workspace inspect/enroll is implemented in the broker and exposed through a compact overlay deploy panel; folder picker polish is still pending.
+- Manual workspace inspect/enroll is implemented in the broker and exposed through a compact overlay deploy panel backed by a Windows folder picker.
+- Future deploy UX should become a clearer step-by-step settings surface: `Check` is read-only folder inspection, `Deploy` writes project-local files, and later repair/disable/uninstall/history should be visible.
 - Obsidian vault note writing and canvas append are implemented for the project-local `.amo/obsidian-vault/`.
 - Broker-side `/api/obsidian/annotations` and `/api/sync-back` are implemented; the Obsidian plugin command itself is not implemented yet.
 

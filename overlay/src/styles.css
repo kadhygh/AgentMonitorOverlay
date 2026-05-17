@@ -141,13 +141,16 @@ button {
   border-radius: 7px;
 }
 
-.deploy-form {
+.deploy-path-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content 28px;
+  align-items: center;
   gap: 5px;
 }
 
-.deploy-form input {
+.deploy-path {
+  display: inline-flex;
+  align-items: center;
   min-width: 0;
   height: 28px;
   padding: 0 8px;
@@ -155,15 +158,12 @@ button {
   background: rgba(0, 0, 0, 0.18);
   border: 1px solid rgba(255, 255, 255, 0.085);
   border-radius: 6px;
-  outline: none;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.deploy-form input:focus {
-  border-color: rgba(143, 196, 255, 0.52);
-  box-shadow: 0 0 0 2px rgba(143, 196, 255, 0.11);
-}
-
-.deploy-form button {
+.deploy-path-row button {
   height: 28px;
   padding: 0 8px;
   color: #dcece7;
@@ -173,15 +173,22 @@ button {
   cursor: pointer;
 }
 
-.deploy-form button:hover:not(:disabled) {
+.deploy-path-row button:hover:not(:disabled) {
   color: #f7fffb;
   background: rgba(111, 224, 190, 0.14);
   border-color: rgba(111, 224, 190, 0.28);
 }
 
-.deploy-form button:disabled {
+.deploy-path-row button:disabled {
   color: rgba(220, 232, 227, 0.36);
   cursor: not-allowed;
+}
+
+.deploy-path-row .deploy-close {
+  display: inline-grid;
+  place-items: center;
+  width: 28px;
+  padding: 0;
 }
 
 .deploy-plan,

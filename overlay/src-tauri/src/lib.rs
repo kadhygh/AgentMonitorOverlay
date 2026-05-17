@@ -25,6 +25,15 @@ struct OpenPathResult {
     message: String,
 }
 
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct FolderPickResult {
+    ok: bool,
+    cancelled: bool,
+    path: Option<String>,
+    message: String,
+}
+
 #[derive(Clone, Debug)]
 struct WindowCandidate {
     hwnd: isize,
@@ -82,6 +91,11 @@ fn write_clipboard_text(text: String) -> OpenPathResult {
     write_text_to_clipboard(&text)
 }
 
+#[tauri::command]
+fn select_workspace_directory() -> FolderPickResult {
+    pick_workspace_directory()
+}
+
 fn open_local_path(path: String) -> OpenPathResult {
     let path = PathBuf::from(path);
     if !path.exists() {
@@ -99,6 +113,82 @@ fn open_local_path(path: String) -> OpenPathResult {
     };
 
     open_existing_path(&canonical_path)
+}
+
+#[cfg(windows)]
+fn pick_workspace_directory() -> FolderPickResult {
+    use windows_sys::Win32::System::Com::CoTaskMemFree;
+    use windows_sys::Win32::UI::Shell::{
+        SHBrowseForFolderW, SHGetPathFromIDListEx, BIF_NEWDIALOGSTYLE, BIF_RETURNONLYFSDIRS,
+        BROWSEINFOW, GPFIDL_DEFAULT,
+    };
+
+    let title = wide_null("Select workspace folder");
+    let mut display_name = vec![0u16; 260];
+    let browse_info = BROWSEINFOW {
+        hwndOwner: std::ptr::null_mut(),
+        pidlRoot: std::ptr::null_mut(),
+        pszDisplayName: display_name.as_mut_ptr(),
+        lpszTitle: title.as_ptr(),
+        ulFlags: BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE,
+        lpfn: None,
+        lParam: 0,
+        iImage: 0,
+    };
+
+    unsafe {
+        let pidl = SHBrowseForFolderW(&browse_info);
+        if pidl.is_null() {
+            return FolderPickResult {
+                ok: false,
+                cancelled: true,
+                path: None,
+                message: "Workspace folder selection cancelled.".to_string(),
+            };
+        }
+
+        let mut path_buffer = vec![0u16; 32768];
+        let ok = SHGetPathFromIDListEx(
+            pidl,
+            path_buffer.as_mut_ptr(),
+            path_buffer.len() as u32,
+            GPFIDL_DEFAULT,
+        ) != 0;
+        CoTaskMemFree(pidl as *const core::ffi::c_void);
+
+        if !ok {
+            return FolderPickResult {
+                ok: false,
+                cancelled: false,
+                path: None,
+                message: "Could not resolve selected workspace folder.".to_string(),
+            };
+        }
+
+        let end = path_buffer
+            .iter()
+            .position(|character| *character == 0)
+            .unwrap_or(path_buffer.len());
+        path_buffer.truncate(end);
+        let path = String::from_utf16_lossy(&path_buffer);
+
+        FolderPickResult {
+            ok: true,
+            cancelled: false,
+            path: Some(path.clone()),
+            message: format!("Selected workspace folder: {path}"),
+        }
+    }
+}
+
+#[cfg(not(windows))]
+fn pick_workspace_directory() -> FolderPickResult {
+    FolderPickResult {
+        ok: false,
+        cancelled: false,
+        path: None,
+        message: "Folder selection is only implemented on Windows.".to_string(),
+    }
 }
 
 #[cfg(windows)]
@@ -696,6 +786,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             activate_session_window,
             open_path,
+            select_workspace_directory,
             open_uri,
             write_clipboard_text
         ])
