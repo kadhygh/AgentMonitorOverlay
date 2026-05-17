@@ -25,6 +25,7 @@ import type {
   ActivationResult,
   AgentSession,
   AgentTool,
+  BrokerEnsureResult,
   FolderPickResult,
   OpenPathResult,
   SessionState,
@@ -372,6 +373,17 @@ export default function App() {
       setLastRefreshAt(new Date().toISOString());
       setFeedback(`Using mock sessions: ${(error as Error).message}`);
     }
+  }
+
+  async function ensureBrokerThenRefresh() {
+    try {
+      const result = await invoke<BrokerEnsureResult>("ensure_broker");
+      setFeedback(result.message);
+    } catch (error) {
+      setFeedback(`Broker auto-start unavailable: ${(error as Error).message}`);
+    }
+
+    await refreshSessions();
   }
 
   async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
@@ -822,7 +834,7 @@ export default function App() {
   }
 
   useEffect(() => {
-    void refreshSessions();
+    void ensureBrokerThenRefresh();
     const interval = window.setInterval(() => {
       void refreshSessions();
     }, REFRESH_INTERVAL_MS);

@@ -751,6 +751,7 @@ Execution role: supervisor agent manages workers
 - 后续设置项：把窗口 resize 能力做成 settings toggle。默认隐藏 resize 边界指示器且不允许改 size；只有 toggle 激活后才显示底边/右边/右下角 resize handle 并允许调整窗口大小。
 - 部署入口：overlay 已有紧凑 deploy panel，点击部署图标会打开 Windows 文件夹选择器，选定 workspace 后执行 inspect/enroll；后续要增加 settings 入口。
 - 后续部署 UX 优化：把 deploy panel 做成更清晰的分步流程，明确 `Check` 是只读检测、`Deploy` 才会写入文件，并补充部署历史、repair/disable/uninstall、adapter 选择和风险预览。
+- Broker 启动：overlay 启动时会检查 `127.0.0.1:17654/api/health`，如果 AMO broker 不在则尝试从本仓 `broker/server.js` 拉起本地 Node broker。
 - 真实 hook live smoke：Claude 已通过；Codex provider 可运行，但 hook 加载路径仍待验证；adapter->broker 合同验证已通过
 - 新阶段方向：Obsidian workflow integration 已由两个外部 MVP 证明可进入 Phase 5 bridge 主线，但仍保持 sidecar 边界。
 

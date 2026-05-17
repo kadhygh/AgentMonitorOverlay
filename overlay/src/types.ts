@@ -79,6 +79,13 @@ export interface FolderPickResult {
   message: string;
 }
 
+export interface BrokerEnsureResult {
+  ok: boolean;
+  started: boolean;
+  pid?: number | null;
+  message: string;
+}
+
 export interface WorkspaceAdapterPlan {
   id: string;
   label: string;
