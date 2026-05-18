@@ -756,7 +756,7 @@ Execution role: supervisor agent manages workers
 - Broker 启动：overlay 启动时会检查 `127.0.0.1:17654/api/health`，如果 AMO broker 不在则尝试从本仓 `broker/server.js` 拉起本地 Node broker。
 - 后续启动体验优化：overlay 冷启动或等待 broker 自动拉起时不应短暂白屏；增加初始化占位、基础状态文案（如“初始化中”“broker 启动中”）或轻量 loading 指示。
 - Obsidian 打开：真实 Codex CLI smoke 暴露了未注册 `.amo/obsidian-vault/` 时 `obsidian://open?path=...` 会报 `Vault not found`；overlay 现在在打开 note/canvas 前调用 broker 注册 vault，并改用 vault id + relative file URI。
-- 后续 vault/plugin health：card 出现后，AMO server/overlay 应检查关联 vault 的 `md-anno-tools` 插件版本、启用状态和 `data.json` bridge URL 是否匹配当前 broker；不匹配时在 card 或 deploy/check 面板提示 repair/redeploy。
+- Vault/plugin health：card 出现后，AMO server 会检查关联 vault 的 `md-anno-tools` 插件版本、启用状态、`main.js` 和 `data.json` bridge URL 是否匹配当前 broker；overlay 以紧凑 pill 显示结果。后续需要在 card 或 deploy/check 面板补 repair/redeploy。
 - 真实 hook live smoke：Claude 已通过；Codex provider 可运行，但 hook 加载路径仍待验证；adapter->broker 合同验证已通过
 - 新阶段方向：Obsidian workflow integration 已由两个外部 MVP 证明可进入 Phase 5 bridge 主线，但仍保持 sidecar 边界。
 

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
+  AlertTriangle,
   Blocks,
   Bot,
   BrainCircuit,
@@ -16,6 +17,7 @@ import {
   Map as MapIcon,
   Minimize2,
   RefreshCcw,
+  CircleCheck,
   SquareTerminal,
   Unlink2,
   X,
@@ -28,6 +30,7 @@ import type {
   AgentTool,
   BrokerEnsureResult,
   FolderPickResult,
+  ObsidianPluginHealth,
   ObsidianVaultRegistrationResult,
   OpenPathResult,
   SessionState,
@@ -190,6 +193,21 @@ function shortPathLabel(value: string | undefined) {
   return parts.slice(-2).join("/");
 }
 
+function pluginHealthTitle(health: ObsidianPluginHealth) {
+  const lines = [
+    `${health.pluginId}: ${health.status}`,
+    health.installedVersion ? `version ${health.installedVersion}` : "version missing",
+    health.expectedVersion ? `expected ${health.expectedVersion}` : "",
+    health.dataBridgeUrl ? `bridge ${health.dataBridgeUrl}` : "",
+  ].filter(Boolean);
+
+  if (health.issues && health.issues.length > 0) {
+    lines.push(...health.issues);
+  }
+
+  return lines.join("\n");
+}
+
 function menuPosition(x?: number, y?: number) {
   const fallbackX = Math.max(12, window.innerWidth - 326);
   const fallbackY = 96;
@@ -296,6 +314,8 @@ function SessionRowContent({
   const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
   const noteOpening = openingTarget === "note";
   const canvasOpening = openingTarget === "canvas";
+  const pluginHealth = session.obsidianPluginHealth;
+  const PluginHealthIcon = pluginHealth?.ok ? CircleCheck : AlertTriangle;
 
   return (
     <>
@@ -310,7 +330,7 @@ function SessionRowContent({
         <span className="event-line">
           {stateLabel[session.state]} · {session.lastEvent}
         </span>
-        {notePath || canvasPath || session.pendingPrompt || windowBound ? (
+        {notePath || canvasPath || session.pendingPrompt || windowBound || pluginHealth ? (
           <span className="bridge-actions" aria-label="Bridge actions">
             {notePath ? (
               <button
@@ -377,6 +397,15 @@ function SessionRowContent({
                 <Unlink2 size={13} aria-hidden="true" />
                 <span>Bound</span>
               </button>
+            ) : null}
+            {pluginHealth ? (
+              <span
+                className={`bridge-health-pill health-${pluginHealth.status}`}
+                title={pluginHealthTitle(pluginHealth)}
+              >
+                <PluginHealthIcon size={13} aria-hidden="true" />
+                <span>Plugin</span>
+              </span>
             ) : null}
           </span>
         ) : null}

@@ -567,6 +567,41 @@ button {
   white-space: nowrap;
 }
 
+.bridge-health-pill {
+  display: inline-grid;
+  grid-template-columns: 13px minmax(0, 1fr);
+  align-items: center;
+  gap: 4px;
+  max-width: 88px;
+  min-height: 23px;
+  padding: 3px 6px;
+  color: #cfe8dc;
+  background: rgba(111, 224, 190, 0.1);
+  border: 1px solid rgba(111, 224, 190, 0.22);
+  border-radius: 6px;
+}
+
+.bridge-health-pill.health-warning {
+  color: #f8e2ae;
+  background: rgba(230, 180, 92, 0.13);
+  border-color: rgba(230, 180, 92, 0.28);
+}
+
+.bridge-health-pill.health-missing,
+.bridge-health-pill.health-unknown {
+  color: #ffd0d5;
+  background: rgba(255, 92, 104, 0.12);
+  border-color: rgba(255, 92, 104, 0.27);
+}
+
+.bridge-health-pill span {
+  overflow: hidden;
+  font-size: 10px;
+  line-height: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 @keyframes row-tool-busy {
   from {
     opacity: 0.55;

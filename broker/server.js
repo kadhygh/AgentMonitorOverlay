@@ -1533,9 +1533,86 @@ function renderPendingPrompt(_payload, annotations, summary) {
 }
 
 function listSessions() {
-  return Array.from(sessions.values()).sort((a, b) => {
+  const healthCache = new Map();
+  return Array.from(sessions.values()).map((session) => {
+    return attachObsidianPluginHealth(session, healthCache);
+  }).sort((a, b) => {
     return `${b.updatedAt}`.localeCompare(`${a.updatedAt}`);
   });
+}
+
+function attachObsidianPluginHealth(session, healthCache) {
+  const vaultRoot = normalizeText(session.vaultRoot || session.pendingAnnotationSource?.vaultRoot);
+  if (!vaultRoot) {
+    return session;
+  }
+
+  const cacheKey = normalizeComparablePath(vaultRoot);
+  if (!healthCache.has(cacheKey)) {
+    healthCache.set(cacheKey, inspectObsidianPluginHealth(vaultRoot));
+  }
+
+  return {
+    ...session,
+    obsidianPluginHealth: healthCache.get(cacheKey),
+  };
+}
+
+function inspectObsidianPluginHealth(vaultRoot) {
+  const checkedAt = new Date().toISOString();
+  const expectedBridgeUrl = baseUrl();
+  const expectedVersion = expectedObsidianPluginVersion();
+  const pluginDir = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID);
+  const manifestPath = path.join(pluginDir, "manifest.json");
+  const mainPath = path.join(pluginDir, "main.js");
+  const dataPath = path.join(pluginDir, "data.json");
+  const communityPluginsPath = path.join(vaultRoot, ".obsidian", "community-plugins.json");
+  const issues = [];
+
+  const vaultExists = fs.existsSync(vaultRoot);
+  const installed = fs.existsSync(pluginDir);
+  const manifest = readJsonFile(manifestPath, null);
+  const installedVersion = normalizeText(manifest?.version);
+  const communityPlugins = readJsonFile(communityPluginsPath, null);
+  const enabled = Array.isArray(communityPlugins) && communityPlugins.includes(OBSIDIAN_PLUGIN_ID);
+  const pluginData = readJsonFile(dataPath, null);
+  const dataBridgeUrl = normalizeText(pluginData?.bridgeUrl);
+  const mainJsExists = fs.existsSync(mainPath);
+
+  if (!vaultExists) issues.push("vault root is missing");
+  if (!installed) issues.push("plugin directory is missing");
+  if (!manifest) issues.push("manifest.json is missing or invalid");
+  if (expectedVersion && installedVersion !== expectedVersion) {
+    issues.push(`plugin version is ${installedVersion || "missing"}, expected ${expectedVersion}`);
+  }
+  if (!enabled) issues.push("plugin is not enabled in community-plugins.json");
+  if (!mainJsExists) issues.push("main.js is missing");
+  if (dataBridgeUrl !== expectedBridgeUrl) {
+    issues.push(`bridge URL is ${dataBridgeUrl || "missing"}, expected ${expectedBridgeUrl}`);
+  }
+
+  const ok = issues.length === 0;
+  const status = ok ? "ok" : installed ? "warning" : "missing";
+  return {
+    ok,
+    status,
+    pluginId: OBSIDIAN_PLUGIN_ID,
+    vaultRoot,
+    installed,
+    enabled,
+    expectedVersion: expectedVersion || null,
+    installedVersion: installedVersion || null,
+    expectedBridgeUrl,
+    dataBridgeUrl: dataBridgeUrl || null,
+    mainJsExists,
+    issues,
+    checkedAt,
+  };
+}
+
+function expectedObsidianPluginVersion() {
+  const manifest = readJsonFile(path.join(__dirname, "assets", "obsidian", OBSIDIAN_PLUGIN_ID, "manifest.json"), {});
+  return normalizeText(manifest.version);
 }
 
 function loadSnapshot() {

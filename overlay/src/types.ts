@@ -26,6 +26,24 @@ export interface WindowHint {
   boundLabel?: string | null;
 }
 
+export type ObsidianPluginHealthStatus = "ok" | "warning" | "missing" | "unknown";
+
+export interface ObsidianPluginHealth {
+  ok: boolean;
+  status: ObsidianPluginHealthStatus;
+  pluginId: string;
+  vaultRoot?: string | null;
+  installed?: boolean;
+  enabled?: boolean;
+  expectedVersion?: string | null;
+  installedVersion?: string | null;
+  expectedBridgeUrl?: string | null;
+  dataBridgeUrl?: string | null;
+  mainJsExists?: boolean;
+  issues?: string[];
+  checkedAt?: string;
+}
+
 export interface AgentSession {
   tool: AgentTool;
   sessionId: string;
@@ -56,6 +74,7 @@ export interface AgentSession {
     notePath?: string | null;
     turnId?: string | null;
   };
+  obsidianPluginHealth?: ObsidianPluginHealth;
   updatedAt: string;
 }
 

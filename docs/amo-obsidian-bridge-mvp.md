@@ -644,7 +644,7 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 
 Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `.amo/obsidian-vault/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, adds `Send current note annotations to AMO`, and registers `obsidian://amo-open` so overlay note/canvas buttons can ask the plugin to reuse an existing tab before opening a new one. The custom `amo-open` URI intentionally passes only a vault-relative `path` and `kind`, not `vault=...`, because Obsidian resolves the `vault` parameter before the plugin protocol handler can run. Obsidian may still require a vault reload/restart before a newly deployed plugin is loaded; removing that first-load friction is part of the plugin-side opening/reload UX follow-up.
 
-Follow-up health check: once a task card links to a vault, AMO should verify the installed `md-anno-tools` version, whether the plugin is enabled in `community-plugins.json`, and whether plugin `data.json` points to the current broker URL. Mismatches should surface as repair/redeploy guidance in the card or deploy/check panel.
+Current health check: once a task card links to a vault, broker decorates the session with `obsidianPluginHealth`, including installed `md-anno-tools` version, enabled state, `main.js` presence, and plugin `data.json` bridge URL. Overlay surfaces the result as a compact plugin status pill on the card. Follow-up repair flow: mismatches should offer repair/redeploy from the card or deploy/check panel.
 
 ### Phase 5.5: End-To-End Smoke
 

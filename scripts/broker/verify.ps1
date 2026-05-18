@@ -255,6 +255,10 @@ try {
     if (-not $replySession.lastReplyNoteAbsolutePath -or -not $replySession.canvasAbsolutePath) {
         throw "Reply session is missing absolute note/canvas paths for overlay open actions."
     }
+    if (-not $replySession.obsidianPluginHealth -or -not $replySession.obsidianPluginHealth.ok) {
+        $issues = @($replySession.obsidianPluginHealth.issues) -join "; "
+        throw "Reply session Obsidian plugin health is not OK: $issues"
+    }
     Write-Host "Reply bridge OK -> $($reply.notePath)"
 
     $annotationResult = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
