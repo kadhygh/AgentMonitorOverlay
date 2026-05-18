@@ -337,6 +337,7 @@ POST /api/workspaces/inspect
 POST /api/workspaces/enroll
 POST /api/workspaces/:id/disable
 POST /api/replies
+POST /api/obsidian/register-vault
 POST /api/obsidian/annotations
 POST /api/obsidian/open-note
 POST /api/obsidian/open-canvas
@@ -547,6 +548,8 @@ The overlay should keep the existing session cards and add small actions when br
 
 For the interim overlay-only path, `Open Note` and `Open Canvas` may use `obsidian://open` with `paneType=tab` so opening a canvas does not replace the currently active note. This is only a fallback. Precise behavior for "if the target note/canvas is already open, focus that existing tab; otherwise open a new tab" belongs in the Obsidian plugin because the external URI layer cannot reliably inspect or control Obsidian workspace leaves.
 
+The current fallback registers the project-local `.amo/obsidian-vault/` in Obsidian's vault registry before opening by vault id and vault-relative file path. This fixes `Vault not found` after the vault is known to Obsidian, but if Obsidian is already running when a brand-new AMO vault is registered, the user may still need to restart Obsidian once before the external URI layer sees that vault. That restart requirement is an MVP limitation only. The Obsidian plugin stage should remove it by owning AMO note/canvas opening inside Obsidian itself instead of relying on registry writes plus external URI reload behavior.
+
 Card state can show:
 
 - linked note path
@@ -626,6 +629,7 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 - Own AMO note/canvas open behavior inside Obsidian instead of relying on `obsidian://open`.
 - Reuse an existing leaf when the target note or canvas is already open.
 - Open the target in a new tab only when no existing leaf is found.
+- Remove the first-open restart requirement for newly enrolled AMO vaults; plugin-side opening should work without asking the user to restart Obsidian after deployment.
 - Add command: `Send current note annotations to AMO`.
 - Extract `[!anno]...[/anno]` from the active note.
 - Read AMO frontmatter if present.

@@ -27,6 +27,7 @@ import type {
   AgentTool,
   BrokerEnsureResult,
   FolderPickResult,
+  ObsidianVaultRegistrationResult,
   OpenPathResult,
   SessionState,
   WorkspaceEnrollment,
@@ -34,6 +35,7 @@ import type {
 } from "./types";
 
 const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
+const BROKER_OBSIDIAN_REGISTER_VAULT_URL = "http://127.0.0.1:17654/api/obsidian/register-vault";
 const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
 const BROKER_WORKSPACE_ENROLL_URL = "http://127.0.0.1:17654/api/workspaces/enroll";
@@ -114,8 +116,42 @@ function canvasPathForOpen(session: AgentSession) {
   );
 }
 
-function obsidianOpenUri(path: string) {
-  return `obsidian://open?path=${encodeURIComponent(path)}&paneType=tab`;
+function obsidianOpenUri(targetPath: string, vaultId?: string, vaultRoot?: string) {
+  const params = new URLSearchParams();
+  const filePath = vaultRelativeFilePath(targetPath, vaultRoot);
+
+  if (vaultId && filePath) {
+    params.set("vault", vaultId);
+    params.set("file", filePath);
+  } else {
+    params.set("path", targetPath);
+  }
+
+  params.set("paneType", "tab");
+  return `obsidian://open?${params.toString()}`;
+}
+
+function vaultRelativeFilePath(targetPath: string, vaultRoot: string | undefined) {
+  if (!vaultRoot) {
+    return null;
+  }
+
+  const normalizedRoot = normalizeWindowsPath(vaultRoot).replace(/\\+$/, "");
+  const normalizedTarget = normalizeWindowsPath(targetPath);
+  const rootPrefix = `${normalizedRoot}\\`;
+
+  if (
+    normalizedTarget.toLowerCase() !== normalizedRoot.toLowerCase() &&
+    !normalizedTarget.toLowerCase().startsWith(rootPrefix.toLowerCase())
+  ) {
+    return null;
+  }
+
+  return normalizedTarget.slice(rootPrefix.length).replace(/\\/g, "/");
+}
+
+function normalizeWindowsPath(value: string) {
+  return value.replace(/\//g, "\\");
 }
 
 function shortPathLabel(value: string | undefined) {
@@ -530,7 +566,18 @@ export default function App() {
     setFeedback(`Opening ${target} for ${session.title}...`);
 
     try {
-      const result = await invoke<OpenPathResult>("open_uri", { uri: obsidianOpenUri(targetPath) });
+      let vaultId: string | undefined;
+      if (session.vaultRoot) {
+        const registration = await postBrokerJson<ObsidianVaultRegistrationResult>(
+          BROKER_OBSIDIAN_REGISTER_VAULT_URL,
+          { vaultRoot: session.vaultRoot }
+        );
+        vaultId = registration.vaultId;
+      }
+
+      const result = await invoke<OpenPathResult>("open_uri", {
+        uri: obsidianOpenUri(targetPath, vaultId, session.vaultRoot),
+      });
       if (result.ok) {
         setFeedback(`${target === "note" ? "Note" : "Canvas"} opened in Obsidian.`);
       } else {

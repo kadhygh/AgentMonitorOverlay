@@ -222,7 +222,9 @@ Current unverified but implemented behavior:
 - Tauri overlay now checks `127.0.0.1:17654/api/health` on startup and can start the local Node broker from `broker/server.js` when it is not already running.
 - Manual workspace inspect/enroll is implemented in the broker and exposed through a compact overlay deploy panel backed by a Windows folder picker.
 - Future deploy UX should become a clearer step-by-step settings surface: `Check` is read-only folder inspection, `Deploy` writes project-local files, and later repair/disable/uninstall/history should be visible.
+- Future startup UX should avoid the brief white overlay flash while the app initializes or auto-starts the broker; add a lightweight loading state with text such as `Initializing` / `Starting broker`.
 - Obsidian vault note writing and canvas append are implemented for the project-local `.amo/obsidian-vault/`.
+- Before opening note/canvas links, the overlay asks the broker to register the project-local `.amo/obsidian-vault/` in Obsidian's vault registry, then opens by vault id + vault-relative file path. This avoids `Vault not found` from absolute `obsidian://open?path=...` links when the vault has not been opened manually yet.
 - Broker-side `/api/obsidian/annotations` and `/api/sync-back` are implemented; the Obsidian plugin command itself is not implemented yet.
 
 ## Manual Workspace Hook Enrollment

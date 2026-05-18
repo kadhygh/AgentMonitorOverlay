@@ -96,6 +96,11 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    if (req.method === "POST" && url.pathname === "/api/obsidian/register-vault") {
+      const payload = await readJsonBody(req);
+      return sendJson(res, 200, handleRegisterObsidianVault(payload));
+    }
+
     if (req.method === "POST" && url.pathname === "/api/sync-back") {
       const payload = await readJsonBody(req);
       const result = handleSyncBack(payload);
@@ -558,6 +563,110 @@ function handleObsidianAnnotations(payload) {
     annotationCount,
     session,
   };
+}
+
+function handleRegisterObsidianVault(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Vault registration payload must be a JSON object");
+  }
+
+  const rawVaultRoot = normalizeText(payload.vaultRoot || payload.vault_root);
+  if (!rawVaultRoot) {
+    throw httpError(400, "missing_vault_root", "Vault registration requires vaultRoot");
+  }
+
+  const vaultRoot = path.resolve(rawVaultRoot);
+  let stat;
+  try {
+    stat = fs.statSync(vaultRoot);
+  } catch {
+    throw httpError(404, "vault_not_found", `Obsidian vault root does not exist: ${vaultRoot}`);
+  }
+
+  if (!stat.isDirectory()) {
+    throw httpError(400, "vault_not_directory", `Obsidian vault root must be a directory: ${vaultRoot}`);
+  }
+
+  fs.mkdirSync(path.join(vaultRoot, ".obsidian"), { recursive: true });
+  return registerObsidianVault(vaultRoot);
+}
+
+function registerObsidianVault(vaultRoot) {
+  const registryPath = obsidianRegistryPath();
+  if (!registryPath) {
+    throw httpError(409, "obsidian_registry_unavailable", "Could not locate the Obsidian registry path for this OS");
+  }
+
+  const existingRegistry = fs.existsSync(registryPath) ? readJsonFileStrict(registryPath) : {};
+  if (
+    typeof existingRegistry !== "object" ||
+    Array.isArray(existingRegistry) ||
+    (existingRegistry.vaults && typeof existingRegistry.vaults !== "object")
+  ) {
+    throw httpError(409, "invalid_obsidian_registry", `${registryPath} is not a supported Obsidian registry file`);
+  }
+
+  const vaults = existingRegistry.vaults || {};
+  const normalizedVaultRoot = normalizeComparablePath(vaultRoot);
+  let vaultId = Object.keys(vaults).find((id) => normalizeComparablePath(vaults[id]?.path) === normalizedVaultRoot);
+  const alreadyRegistered = Boolean(vaultId);
+
+  if (!vaultId) {
+    vaultId = obsidianVaultIdForPath(vaultRoot);
+    while (vaults[vaultId] && normalizeComparablePath(vaults[vaultId]?.path) !== normalizedVaultRoot) {
+      vaultId = crypto.randomBytes(8).toString("hex");
+    }
+  }
+
+  vaults[vaultId] = {
+    ...(vaults[vaultId] || {}),
+    path: vaultRoot,
+    ts: Date.now(),
+    open: true,
+  };
+
+  writeJsonFile(registryPath, {
+    ...existingRegistry,
+    vaults,
+  });
+
+  return {
+    ok: true,
+    vaultRoot,
+    vaultId,
+    registryPath,
+    alreadyRegistered,
+    changed: !alreadyRegistered,
+  };
+}
+
+function obsidianRegistryPath() {
+  if (process.platform === "win32") {
+    return process.env.APPDATA ? path.join(process.env.APPDATA, "obsidian", "obsidian.json") : null;
+  }
+
+  if (process.platform === "darwin") {
+    return process.env.HOME
+      ? path.join(process.env.HOME, "Library", "Application Support", "obsidian", "obsidian.json")
+      : null;
+  }
+
+  const configRoot =
+    process.env.XDG_CONFIG_HOME || (process.env.HOME ? path.join(process.env.HOME, ".config") : null);
+  return configRoot ? path.join(configRoot, "obsidian", "obsidian.json") : null;
+}
+
+function obsidianVaultIdForPath(vaultRoot) {
+  return crypto.createHash("sha256").update(normalizeComparablePath(vaultRoot)).digest("hex").slice(0, 16);
+}
+
+function normalizeComparablePath(value) {
+  if (!value || typeof value !== "string") {
+    return "";
+  }
+
+  const resolved = path.resolve(value);
+  return process.platform === "win32" ? resolved.toLowerCase() : resolved;
 }
 
 function handleSyncBack(payload) {

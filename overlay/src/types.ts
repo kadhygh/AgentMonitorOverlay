@@ -72,6 +72,15 @@ export interface ActivationResult {
 
 export type OpenPathResult = ActivationResult;
 
+export interface ObsidianVaultRegistrationResult {
+  ok: boolean;
+  vaultRoot: string;
+  vaultId: string;
+  registryPath: string;
+  alreadyRegistered: boolean;
+  changed: boolean;
+}
+
 export interface FolderPickResult {
   ok: boolean;
   cancelled: boolean;
