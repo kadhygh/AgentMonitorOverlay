@@ -294,6 +294,8 @@ function SessionRowContent({
   const canvasPath = canvasPathForOpen(session);
   const pendingPromptLabel = session.pendingAnnotationCount ? `Sync ${session.pendingAnnotationCount}` : "Sync";
   const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
+  const noteOpening = openingTarget === "note";
+  const canvasOpening = openingTarget === "canvas";
 
   return (
     <>
@@ -313,7 +315,8 @@ function SessionRowContent({
             {notePath ? (
               <button
                 type="button"
-                className="row-tool-button"
+                className={`row-tool-button ${noteOpening ? "is-busy" : ""}`}
+                aria-busy={noteOpening}
                 title={`Open note: ${session.lastReplyNote ?? notePath}`}
                 onClick={(event) => {
                   event.preventDefault();
@@ -322,13 +325,14 @@ function SessionRowContent({
                 }}
               >
                 <FileText size={13} aria-hidden="true" />
-                <span>{openingTarget === "note" ? "..." : shortPathLabel(session.lastReplyNote) || "Note"}</span>
+                <span>{shortPathLabel(session.lastReplyNote) || "Note"}</span>
               </button>
             ) : null}
             {canvasPath ? (
               <button
                 type="button"
-                className="row-tool-button"
+                className={`row-tool-button ${canvasOpening ? "is-busy" : ""}`}
+                aria-busy={canvasOpening}
                 title={`Open canvas: ${session.canvasPath ?? canvasPath}`}
                 onClick={(event) => {
                   event.preventDefault();
@@ -337,13 +341,16 @@ function SessionRowContent({
                 }}
               >
                 <MapIcon size={13} aria-hidden="true" />
-                <span>{openingTarget === "canvas" ? "..." : shortPathLabel(session.canvasPath) || "Canvas"}</span>
+                <span>{shortPathLabel(session.canvasPath) || "Canvas"}</span>
               </button>
             ) : null}
             {session.pendingPrompt ? (
               <button
                 type="button"
-                className={`row-tool-button sync-button ${session.pendingPromptCopiedAt ? "was-copied" : ""}`}
+                className={`row-tool-button sync-button ${session.pendingPromptCopiedAt ? "was-copied" : ""} ${
+                  copyingPrompt ? "is-busy" : ""
+                }`}
+                aria-busy={copyingPrompt}
                 title="Copy pending prompt and focus CLI"
                 onClick={(event) => {
                   event.preventDefault();
@@ -352,13 +359,14 @@ function SessionRowContent({
                 }}
               >
                 <ClipboardCheck size={13} aria-hidden="true" />
-                <span>{copyingPrompt ? "..." : pendingPromptLabel}</span>
+                <span>{pendingPromptLabel}</span>
               </button>
             ) : null}
             {windowBound ? (
               <button
                 type="button"
-                className="row-tool-button binding-button"
+                className={`row-tool-button binding-button ${unbindingWindow ? "is-busy" : ""}`}
+                aria-busy={unbindingWindow}
                 title={`Unbind window: ${session.windowHint?.boundLabel ?? session.windowHint?.title ?? session.title}`}
                 onClick={(event) => {
                   event.preventDefault();
@@ -367,7 +375,7 @@ function SessionRowContent({
                 }}
               >
                 <Unlink2 size={13} aria-hidden="true" />
-                <span>{unbindingWindow ? "..." : "Bound"}</span>
+                <span>Bound</span>
               </button>
             ) : null}
           </span>
