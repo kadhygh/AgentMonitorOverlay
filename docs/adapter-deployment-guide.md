@@ -92,6 +92,7 @@ Apply should:
 - back up user-owned files before modification
 - record installed adapter metadata in `.amo/enrollment.json`
 - create the dedicated `.amo/obsidian-vault/`
+- install the AMO-owned Obsidian plugin into the project-local vault
 - never write global hook config unless a future explicit advanced mode allows it
 
 ### Health Check
@@ -102,6 +103,7 @@ Health checks should report:
 - tool hook config points to AMO-owned adapter files
 - AMO bridge URL is configured
 - `.amo/obsidian-vault/` is present
+- `.amo/obsidian-vault/.obsidian/plugins/md-anno-tools/` is present and configured
 - a dry-run payload can be produced
 - known local limitations
 
@@ -138,8 +140,13 @@ Recommended shape:
     AgentFlow.canvas
     Replies/
     .obsidian/
+      community-plugins.json
       plugins/
-        amo-bridge/
+        md-anno-tools/
+          manifest.json
+          main.js
+          styles.css
+          data.json
   logs/
     hook-errors.log
     bridge-events.log

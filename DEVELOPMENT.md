@@ -225,7 +225,8 @@ Current unverified but implemented behavior:
 - Future startup UX should avoid the brief white overlay flash while the app initializes or auto-starts the broker; add a lightweight loading state with text such as `Initializing` / `Starting broker`.
 - Obsidian vault note writing and canvas append are implemented for the project-local `.amo/obsidian-vault/`.
 - Before opening note/canvas links, the overlay asks the broker to register the project-local `.amo/obsidian-vault/` in Obsidian's vault registry, then opens by vault id + vault-relative file path. This avoids `Vault not found` from absolute `obsidian://open?path=...` links when the vault has not been opened manually yet.
-- Broker-side `/api/obsidian/annotations` and `/api/sync-back` are implemented; the Obsidian plugin command itself is not implemented yet.
+- Broker-side `/api/obsidian/annotations` and `/api/sync-back` are implemented.
+- Workspace enroll installs and enables a vault-local `md-anno-tools` Obsidian plugin with an explicit `Send current note annotations to AMO` command. First-load behavior still depends on Obsidian loading/reloading the project-local vault and community plugin state.
 
 ## Manual Workspace Hook Enrollment
 
@@ -283,7 +284,7 @@ Useful Obsidian plugin facts:
 - Plugin id: `md-anno-tools`
 - Annotation syntax: `[!anno]...[/anno]`
 - Current plugin supports reading-mode rendering, editor selection wrapping, appending an annotation, and copying current note annotations
-- Phase 5 should add a new explicit command to send annotations to AMO; do not replace the existing clipboard command
+- The enrolled AMO plugin also adds `Send current note annotations to AMO`, which reads AMO frontmatter from reply notes and POSTs extracted annotations to the bridge without replacing the existing clipboard command
 
 Guardrails:
 

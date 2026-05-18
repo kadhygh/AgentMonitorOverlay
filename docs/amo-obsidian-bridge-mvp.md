@@ -636,6 +636,8 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 - POST annotations to the bridge.
 - Preserve the existing "copy annotations to clipboard" command.
 
+Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `.amo/obsidian-vault/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, and adds `Send current note annotations to AMO`. Obsidian may still require a vault reload/restart before a newly deployed plugin is loaded; removing that first-load friction is part of the plugin-side opening/reload UX follow-up.
+
 ### Phase 5.5: End-To-End Smoke
 
 Manual acceptance path:

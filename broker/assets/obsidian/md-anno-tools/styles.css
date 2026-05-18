@@ -1,0 +1,37 @@
+.anno-token {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.35em;
+  border-radius: 4px;
+  background: rgba(255, 208, 92, 0.28);
+  color: var(--text-normal);
+  padding: 0.05em 0.35em;
+}
+
+.anno-token-block {
+  display: flex;
+  margin: 0.6em 0;
+  padding: 0.55em 0.7em;
+}
+
+.anno-token-badge {
+  color: var(--text-muted);
+  font-size: 0.75em;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.anno-token-content {
+  white-space: pre-wrap;
+}
+
+.anno-modal-input {
+  width: 100%;
+}
+
+.anno-modal-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 12px;
+}

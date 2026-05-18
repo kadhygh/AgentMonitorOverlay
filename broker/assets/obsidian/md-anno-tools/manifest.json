@@ -1,0 +1,9 @@
+{
+  "id": "md-anno-tools",
+  "name": "AMO Markdown Annotation Tools",
+  "version": "1.1.0",
+  "minAppVersion": "1.1.0",
+  "description": "Render [!anno] annotations and send current note annotations to Agent Monitor Overlay.",
+  "author": "Agent Monitor Overlay",
+  "isDesktopOnly": false
+}

@@ -11,6 +11,7 @@ const DATA_FILE =
 const MAX_BODY_BYTES = 1024 * 1024;
 const AMO_DIR = ".amo";
 const AMO_SCHEMA_VERSION = 1;
+const OBSIDIAN_PLUGIN_ID = "md-anno-tools";
 const REPLY_NODE_WIDTH = 520;
 const REPLY_NODE_HEIGHT = 360;
 const REPLY_NODE_GAP_X = 620;
@@ -280,6 +281,9 @@ function inspectWorkspace(payload) {
           ".amo/backups",
           ".amo/obsidian-vault",
           ".amo/obsidian-vault/Replies",
+          ".amo/obsidian-vault/.obsidian",
+          ".amo/obsidian-vault/.obsidian/plugins",
+          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}`,
         ],
         filesToWrite: [
           ".amo/workspace.json",
@@ -287,6 +291,11 @@ function inspectWorkspace(payload) {
           ".amo/adapters/codex-cli.json",
           ".amo/hooks/codex-stop-message.mjs",
           ".amo/obsidian-vault/AgentFlow.canvas",
+          ".amo/obsidian-vault/.obsidian/community-plugins.json",
+          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/manifest.json`,
+          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`,
+          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/styles.css`,
+          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/data.json`,
           ".amo/.gitignore",
         ],
         filesToMerge: [".codex/hooks.json"],
@@ -367,6 +376,9 @@ function enrollWorkspace(payload) {
 
   ensureCanvas(path.join(vaultRoot, "AgentFlow.canvas"));
   installedFiles.push(".amo/obsidian-vault/AgentFlow.canvas");
+
+  const pluginInstall = installObsidianPlugin(vaultRoot);
+  installedFiles.push(...pluginInstall.installedFiles);
 
   const mergeResult = mergeCodexHooks(workspacePath, hookScriptPath, amoRoot);
   if (mergeResult.changed) {
@@ -806,6 +818,56 @@ function ensureCanvas(canvasPath) {
     return;
   }
   writeJsonFile(canvasPath, { nodes: [], edges: [] });
+}
+
+function installObsidianPlugin(vaultRoot) {
+  const pluginDir = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID);
+  fs.mkdirSync(pluginDir, { recursive: true });
+
+  copyObsidianPluginAsset("manifest.json", pluginDir);
+  copyObsidianPluginAsset("main.js", pluginDir);
+  copyObsidianPluginAsset("styles.css", pluginDir);
+  writeJsonFile(path.join(pluginDir, "data.json"), {
+    bridgeUrl: baseUrl(),
+  });
+
+  enableObsidianPlugin(vaultRoot, OBSIDIAN_PLUGIN_ID);
+
+  return {
+    installedFiles: [
+      ".amo/obsidian-vault/.obsidian/community-plugins.json",
+      `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/manifest.json`,
+      `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`,
+      `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/styles.css`,
+      `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/data.json`,
+    ],
+  };
+}
+
+function copyObsidianPluginAsset(fileName, pluginDir) {
+  const sourcePath = path.join(__dirname, "assets", "obsidian", OBSIDIAN_PLUGIN_ID, fileName);
+  if (!fs.existsSync(sourcePath)) {
+    throw httpError(500, "missing_obsidian_plugin_asset", `Missing Obsidian plugin asset: ${sourcePath}`);
+  }
+
+  fs.copyFileSync(sourcePath, path.join(pluginDir, fileName));
+}
+
+function enableObsidianPlugin(vaultRoot, pluginId) {
+  const communityPluginsPath = path.join(vaultRoot, ".obsidian", "community-plugins.json");
+  let enabledPlugins = [];
+  if (fs.existsSync(communityPluginsPath)) {
+    enabledPlugins = readJsonFileStrict(communityPluginsPath);
+    if (!Array.isArray(enabledPlugins)) {
+      throw httpError(409, "invalid_obsidian_plugin_config", `${communityPluginsPath} must be a JSON array`);
+    }
+  }
+
+  if (!enabledPlugins.includes(pluginId)) {
+    enabledPlugins.push(pluginId);
+  }
+
+  writeJsonFile(communityPluginsPath, enabledPlugins);
 }
 
 function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {

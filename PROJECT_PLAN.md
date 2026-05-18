@@ -727,14 +727,14 @@ Execution role: supervisor agent manages workers
 - Codex live hook 路线已实现项目本地 enroll、Stop reply capture adapter、bridge `/api/replies`、reply note 和 canvas append；仍需用真实 Codex CLI session 做端到端 smoke。
 - Kiro 仍处在 mock/hook-spike 级别
 - 卡片顺序和 overlay 位置目前是本地 UI 状态，尚未决定是否持久化
-- AMO bridge 已实现 `/api/replies`、vault note 写入、canvas append、`/api/obsidian/annotations` pending prompt 和 `/api/sync-back` 标记；Obsidian 插件本体和插件侧 note/canvas tab 复用仍未实现。
+- AMO bridge 已实现 `/api/replies`、vault note 写入、canvas append、`/api/obsidian/annotations` pending prompt 和 `/api/sync-back` 标记；workspace enroll 已安装 vault-local `md-anno-tools` 插件并提供 `Send current note annotations to AMO` 命令；插件侧 note/canvas tab 复用仍未实现。
 
 下一步建议：
 
 1. 用真实 Codex CLI session 验证 project-local Stop hook -> `/api/replies` -> overlay task card。
 2. 验证 `Open Note` / `Open Canvas` URI fallback 的可用边界；精确 tab 复用留到 Obsidian 插件阶段。
-3. 给 Obsidian 插件新增显式 `Open AMO note/canvas with tab reuse` 和 `Send current note annotations to AMO` 命令。
-4. 将插件部署纳入 workspace enroll，安装到 `.amo/obsidian-vault/.obsidian/plugins/`。
+3. 验证 Obsidian 插件命令 `Send current note annotations to AMO` 能从当前 reply note POST 批注到 bridge，并让 overlay card 出现 `Sync N`。
+4. 给 Obsidian 插件新增显式 `Open AMO note/canvas with tab reuse` 命令。
 5. 做端到端 smoke：reply note -> canvas -> annotation -> pending prompt -> `Copy + Focus CLI`。
 
 当前主管状态：

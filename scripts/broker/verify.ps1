@@ -181,6 +181,11 @@ try {
             ".amo\adapters\codex-cli.json",
             ".amo\hooks\codex-stop-message.mjs",
             ".amo\obsidian-vault\AgentFlow.canvas",
+            ".amo\obsidian-vault\.obsidian\community-plugins.json",
+            ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\manifest.json",
+            ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\main.js",
+            ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\styles.css",
+            ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\data.json",
             ".codex\hooks.json"
         )) {
         $targetPath = Join-Path $workspaceRoot $relativePath
@@ -192,6 +197,19 @@ try {
     $codexHooksText = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".codex\hooks.json")
     if ($codexHooksText -notmatch "codex-stop-message\.mjs") {
         throw "Codex hooks config does not reference AMO hook script."
+    }
+
+    $pluginList = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\community-plugins.json") | ConvertFrom-Json
+    if (@($pluginList) -notcontains "md-anno-tools") {
+        throw "Obsidian community plugin list does not enable md-anno-tools."
+    }
+    $pluginData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\data.json") | ConvertFrom-Json
+    if ($pluginData.bridgeUrl -ne $baseUrl) {
+        throw "Obsidian plugin bridgeUrl mismatch. Expected $baseUrl, got $($pluginData.bridgeUrl)."
+    }
+    $pluginMain = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\main.js")
+    if ($pluginMain -notmatch "/api/obsidian/annotations") {
+        throw "Obsidian plugin main.js does not reference the AMO annotation endpoint."
     }
     Write-Host "Workspace enroll OK -> $($enroll.workspaceId)"
 
