@@ -537,6 +537,10 @@ Copy pending prompt -> focus target CLI window -> user pastes or presses Enter m
 
 Do not auto-send, auto-approve, or auto-press Enter in the first implementation.
 
+Pending prompt text rule: the bridge should not inject task instructions, source-note metadata, turn ids, or policy text into the CLI prompt. The default generated prompt should contain only user-authored annotation content, plus an optional user-authored summary when the plugin explicitly sends one. If the user wants extra context or instructions, they should write that into the annotation itself.
+
+Window binding follow-up: when `Copy + Focus CLI` or card activation finds multiple candidate windows, the candidate menu should include a default-on `Bind this window` option. Selecting a candidate with binding enabled records the validated `hwnd`/`processId` on the session window hint, so later sync/open actions can route directly. The task card must also expose an explicit unbind/rebind path for mistakes or stale windows. If the bound window disappears or validation fails, AMO should fall back to the candidate menu instead of guessing.
+
 ## Overlay Changes
 
 The overlay should keep the existing session cards and add small actions when bridge metadata exists:
@@ -545,6 +549,7 @@ The overlay should keep the existing session cards and add small actions when br
 - `Open Note`
 - `Open Canvas`
 - `Copy Pending Prompt`
+- `Bind/Unbind Window` when routing is ambiguous or a manual binding exists
 
 For the interim overlay-only path, `Open Note` and `Open Canvas` may use `obsidian://open` with `paneType=tab` so opening a canvas does not replace the currently active note. This is only a fallback. Precise behavior for "if the target note/canvas is already open, focus that existing tab; otherwise open a new tab" belongs in the Obsidian plugin because the external URI layer cannot reliably inspect or control Obsidian workspace leaves.
 
@@ -557,6 +562,7 @@ Card state can show:
 - pending annotation count
 - last reply age
 - whether sync-back prompt is waiting
+- whether a manual or exact window binding exists
 
 ## Bridge Launch Behavior
 
@@ -637,6 +643,8 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 - Preserve the existing "copy annotations to clipboard" command.
 
 Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `.amo/obsidian-vault/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, and adds `Send current note annotations to AMO`. Obsidian may still require a vault reload/restart before a newly deployed plugin is loaded; removing that first-load friction is part of the plugin-side opening/reload UX follow-up.
+
+Follow-up health check: once a task card links to a vault, AMO should verify the installed `md-anno-tools` version, whether the plugin is enabled in `community-plugins.json`, and whether plugin `data.json` points to the current broker URL. Mismatches should surface as repair/redeploy guidance in the card or deploy/check panel.
 
 ### Phase 5.5: End-To-End Smoke
 

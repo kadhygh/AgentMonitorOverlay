@@ -21,6 +21,9 @@ export interface WindowHint {
   tool?: AgentTool;
   pid?: number | null;
   hwnd?: number | null;
+  boundAt?: string | null;
+  boundBy?: string | null;
+  boundLabel?: string | null;
 }
 
 export interface AgentSession {

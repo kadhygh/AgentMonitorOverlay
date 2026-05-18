@@ -76,6 +76,7 @@ Phase 3/4 implementation note:
 - When the adapter can provide validated `pid` or `hwnd`, prefer that exact route first.
 - If the exact handle is missing, stale, or still ambiguous, continue through token/title/project fallback instead of silently giving up.
 - The overlay should surface candidate/debug UI rather than guessing when ambiguity remains.
+- The disambiguation list should support user-assisted binding: show a default-on `Bind this window` checkbox, persist the selected `hwnd`/`processId` into the session `windowHint`, and expose `Unbind` on the card. Binding is a routing hint, not a permanent identity; stale handles must fall back to normal candidate selection.
 
 Important detail: title matching should be case-insensitive and normalize whitespace, full-width separators, and common path separators. It should not depend on localized app suffixes such as `文件资源管理器`.
 

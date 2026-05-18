@@ -7,7 +7,7 @@ $ErrorActionPreference = "Stop"
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $serverPath = Join-Path $repoRoot "broker\server.js"
-$dataFile = Join-Path $repoRoot "broker\data\sessions.json"
+$dataFile = Join-Path $repoRoot "tmp\broker-verify-data\sessions-$Port.json"
 $workspaceRoot = Join-Path $repoRoot "tmp\broker-verify-workspace"
 $baseUrl = "http://${HostName}:${Port}"
 
@@ -271,6 +271,10 @@ try {
     if (-not $annotationResult.ok -or -not $annotationResult.pendingPromptId -or -not $annotationResult.prompt) {
         throw "Annotation endpoint did not return a pending prompt."
     }
+    $expectedPrompt = "1. Please continue from this verification note.`n"
+    if ($annotationResult.prompt -ne $expectedPrompt) {
+        throw "Annotation prompt included unexpected broker-added text. Expected '$expectedPrompt', got '$($annotationResult.prompt)'."
+    }
 
     $syncBack = Invoke-BrokerJson -Method POST -Path "/api/sync-back" -Body @{
         sessionId = "codex-reply-verify"
@@ -281,6 +285,42 @@ try {
         throw "Sync-back endpoint did not mark the prompt as copied."
     }
     Write-Host "Annotation sync-back OK -> $($annotationResult.pendingPromptId)"
+
+    $windowBinding = Invoke-BrokerJson -Method POST -Path "/api/sessions/codex-reply-verify/window-binding" -Body @{
+        hwnd = 123456
+        processId = 654321
+        processName = "WindowsTerminal"
+        title = "Verify Codex"
+        label = "WindowsTerminal - Verify Codex"
+    }
+    if (-not $windowBinding.ok -or $windowBinding.session.windowHint.hwnd -ne 123456 -or $windowBinding.session.windowHint.pid -ne 654321) {
+        throw "Window binding endpoint did not persist hwnd/processId."
+    }
+
+    $windowUnbind = Invoke-BrokerJson -Method POST -Path "/api/sessions/codex-reply-verify/window-binding/clear" -Body @{}
+    if (-not $windowUnbind.ok -or $null -ne $windowUnbind.session.windowHint.hwnd -or $null -ne $windowUnbind.session.windowHint.pid) {
+        throw "Window binding clear endpoint did not remove exact hwnd/processId hints."
+    }
+    Write-Host "Window binding OK -> bind/clear"
+
+    $recoveredAnnotation = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
+        schemaVersion = 1
+        source = "verify-obsidian-plugin"
+        vaultRoot = $vaultRoot
+        notePath = $reply.notePath
+        sessionId = "codex-recovered-from-note-verify"
+        turnId = "turn-recovered-from-note"
+        annotations = @(
+            @{
+                index = 1
+                content = "Recover a missing broker session from the AMO note metadata."
+            }
+        )
+    }
+    if (-not $recoveredAnnotation.ok -or -not $recoveredAnnotation.session -or -not $recoveredAnnotation.session.lastReplyNote) {
+        throw "Annotation endpoint did not recover a missing session from note metadata."
+    }
+    Write-Host "Recovered annotation session OK -> $($recoveredAnnotation.sessionId)"
 }
 finally {
     if ($broker -and -not $broker.HasExited) {
@@ -295,8 +335,8 @@ $broker = Start-Broker
 try {
     Wait-Broker | Out-Null
     $sessionsAfterRestart = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessionsAfterRestart.count -ne 4) {
-        throw "Persistence check failed. Expected exactly 4 sessions after restart, got $($sessionsAfterRestart.count)."
+    if ($sessionsAfterRestart.count -ne 5) {
+        throw "Persistence check failed. Expected exactly 5 sessions after restart, got $($sessionsAfterRestart.count)."
     }
 
     Write-Host "Persistence OK. Sessions after restart: $($sessionsAfterRestart.count)"

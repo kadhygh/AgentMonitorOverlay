@@ -556,6 +556,8 @@ Note/canvas tab 复用规则归 Obsidian 插件阶段处理：如果目标 note/
 
 这个方向现在进入 Phase 5 bridge MVP，但仍然是 sidecar workflow，不是 AMO 的主数据模型。
 
+未来畅想（非当前 MVP）：如果 Obsidian 插件路线验证顺利，Obsidian 可以从 sidecar 升级为更偏“人类主控台”的工作入口。用户在 canvas 上组织一个 group 或问题分支，在不同 note 上拉起 CLI flow，需要分叉时从 canvas/note 的具体位置新开问题 branch，再绑定不同 CLI/TUI 推进。AMO 仍负责本地 session、窗口、hook、broker 和安全门，Obsidian 负责知识库、可视流程和人的批注/决策层。这个方向先记录，不影响当前 MVP 继续保持 `copy + focus` 和显式动作。
+
 边界要求：
 
 - Agent Monitor Overlay 负责 session 聚合、窗口跳转、显式用户动作和安全门。
@@ -754,6 +756,7 @@ Execution role: supervisor agent manages workers
 - Broker 启动：overlay 启动时会检查 `127.0.0.1:17654/api/health`，如果 AMO broker 不在则尝试从本仓 `broker/server.js` 拉起本地 Node broker。
 - 后续启动体验优化：overlay 冷启动或等待 broker 自动拉起时不应短暂白屏；增加初始化占位、基础状态文案（如“初始化中”“broker 启动中”）或轻量 loading 指示。
 - Obsidian 打开：真实 Codex CLI smoke 暴露了未注册 `.amo/obsidian-vault/` 时 `obsidian://open?path=...` 会报 `Vault not found`；overlay 现在在打开 note/canvas 前调用 broker 注册 vault，并改用 vault id + relative file URI。
+- 后续 vault/plugin health：card 出现后，AMO server/overlay 应检查关联 vault 的 `md-anno-tools` 插件版本、启用状态和 `data.json` bridge URL 是否匹配当前 broker；不匹配时在 card 或 deploy/check 面板提示 repair/redeploy。
 - 真实 hook live smoke：Claude 已通过；Codex provider 可运行，但 hook 加载路径仍待验证；adapter->broker 合同验证已通过
 - 新阶段方向：Obsidian workflow integration 已由两个外部 MVP 证明可进入 Phase 5 bridge 主线，但仍保持 sidecar 边界。
 

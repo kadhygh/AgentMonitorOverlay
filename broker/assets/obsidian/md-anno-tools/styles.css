@@ -35,3 +35,85 @@
   gap: 8px;
   margin-top: 12px;
 }
+
+.amo-panel {
+  padding: 12px;
+}
+
+.amo-panel h3 {
+  margin: 0 0 12px;
+}
+
+.amo-panel h4 {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.amo-panel-section {
+  border-top: 1px solid var(--background-modifier-border);
+  padding-top: 12px;
+  margin-top: 12px;
+}
+
+.amo-panel-status {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: var(--background-secondary);
+}
+
+.amo-panel-status span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.amo-panel-status-success {
+  border-left: 3px solid var(--interactive-accent);
+}
+
+.amo-panel-status-error {
+  border-left: 3px solid var(--text-error);
+}
+
+.amo-panel-muted,
+.amo-panel-error {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.amo-panel-error {
+  color: var(--text-error);
+}
+
+.amo-panel-info-row {
+  display: grid;
+  grid-template-columns: 78px minmax(0, 1fr);
+  gap: 8px;
+  align-items: baseline;
+  margin: 6px 0;
+}
+
+.amo-panel-info-row span {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.amo-panel-info-row code {
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.amo-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.amo-panel-actions button {
+  width: 100%;
+}

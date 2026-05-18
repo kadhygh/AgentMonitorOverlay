@@ -1,5 +1,6 @@
 const {
   ButtonComponent,
+  ItemView,
   MarkdownView,
   Modal,
   Notice,
@@ -14,11 +15,28 @@ const EMPTY_ANNO_TEXT = "(empty annotation)";
 const DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
 };
+const AMO_PANEL_VIEW_TYPE = "amo-annotation-panel";
+const AMO_SEND_ACTION_CLASS = "amo-send-note-action";
+const AMO_PANEL_ACTION_CLASS = "amo-open-panel-action";
 const SKIPPED_TAGS = new Set(["A", "BUTTON", "CODE", "INPUT", "PRE", "SCRIPT", "STYLE", "TEXTAREA"]);
 
 class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) || {});
+    this.operationStatus = {
+      tone: "neutral",
+      message: "Ready.",
+      at: new Date().toISOString(),
+    };
+    this.lastMarkdownView = null;
+    this.lastMarkdownLeaf = null;
+    this.lastMarkdownFilePath = null;
+
+    this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
+
+    this.addRibbonIcon("panel-right", "Open AMO annotation panel", () => {
+      void this.activatePanel();
+    });
 
     this.addRibbonIcon("send", "Send annotations to AMO", () => {
       void this.sendAnnotationsFromActiveFile();
@@ -40,6 +58,14 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     });
 
     this.addCommand({
+      id: "open-amo-annotation-panel",
+      name: "Open AMO annotation panel",
+      callback: () => {
+        void this.activatePanel();
+      },
+    });
+
+    this.addCommand({
       id: "copy-annotations-from-current-note",
       name: "Copy current note annotations",
       checkCallback: (checking) => {
@@ -52,7 +78,7 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     this.addCommand({
       id: "wrap-selection-with-annotation-tag",
-      name: "Wrap selection with [!anno] tags",
+      name: "Insert or wrap [!anno] annotation",
       editorCallback: (editor) => {
         this.wrapSelectionWithAnnotation(editor);
       },
@@ -76,11 +102,202 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.registerMarkdownPostProcessor((el) => {
       this.renderAnnotations(el);
     });
+
+    this.registerEvent(
+      this.app.workspace.on("editor-menu", (menu, editor) => {
+        const hasSelection = editor.getSelection().trim().length > 0;
+        menu.addItem((item) => {
+          item
+            .setTitle(hasSelection ? "Wrap selection with [!anno]" : "Insert [!anno] at cursor")
+            .setIcon("message-square-plus")
+            .onClick(() => {
+              this.wrapSelectionWithAnnotation(editor);
+            });
+        });
+      })
+    );
+
+    this.app.workspace.onLayoutReady(() => {
+      this.rememberCurrentMarkdownView();
+      this.syncMarkdownViewActions();
+      this.refreshPanels();
+    });
+
+    this.registerEvent(
+      this.app.workspace.on("active-leaf-change", (leaf) => {
+        this.rememberMarkdownLeaf(leaf);
+        this.syncMarkdownViewActions();
+        if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function" || leaf.view.getViewType() !== AMO_PANEL_VIEW_TYPE) {
+          this.refreshPanels();
+        }
+      })
+    );
+
+    this.registerEvent(
+      this.app.workspace.on("file-open", () => {
+        this.rememberCurrentMarkdownView();
+        this.syncMarkdownViewActions();
+        this.refreshPanels();
+      })
+    );
+
+    this.registerEvent(
+      this.app.workspace.on("layout-change", () => {
+        this.rememberCurrentMarkdownView();
+        this.syncMarkdownViewActions();
+        this.refreshPanels();
+      })
+    );
+  }
+
+  onunload() {
+    document.querySelectorAll("." + AMO_SEND_ACTION_CLASS + ", ." + AMO_PANEL_ACTION_CLASS).forEach((el) => el.remove());
+  }
+
+  async activatePanel() {
+    let leaf = this.app.workspace.getLeavesOfType(AMO_PANEL_VIEW_TYPE)[0];
+    if (!leaf) {
+      leaf = this.app.workspace.getRightLeaf(false);
+      await leaf.setViewState({ type: AMO_PANEL_VIEW_TYPE, active: true });
+    }
+
+    this.app.workspace.revealLeaf(leaf);
+    this.refreshPanels();
+  }
+
+  refreshPanels() {
+    for (const leaf of this.app.workspace.getLeavesOfType(AMO_PANEL_VIEW_TYPE)) {
+      if (leaf.view && typeof leaf.view.render === "function") {
+        leaf.view.render();
+      }
+    }
+  }
+
+  syncMarkdownViewActions() {
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      if (!(leaf.view instanceof MarkdownView)) continue;
+      const view = leaf.view;
+      this.rememberMarkdownView(view, leaf);
+
+      if (!view.containerEl.querySelector("." + AMO_SEND_ACTION_CLASS)) {
+        const sendAction = view.addAction("send", "Send annotations to AMO", () => {
+          if (!view.file) {
+            new Notice("No active Markdown note.");
+            return;
+          }
+          void this.sendAnnotationsFromFile(view.file);
+        });
+        sendAction.addClass(AMO_SEND_ACTION_CLASS);
+      }
+
+      if (!view.containerEl.querySelector("." + AMO_PANEL_ACTION_CLASS)) {
+        const panelAction = view.addAction("panel-right", "Open AMO panel", () => {
+          void this.activatePanel();
+        });
+        panelAction.addClass(AMO_PANEL_ACTION_CLASS);
+      }
+    }
+  }
+
+  setOperationStatus(message, tone) {
+    this.operationStatus = {
+      tone: tone || "neutral",
+      message,
+      at: new Date().toISOString(),
+    };
+    this.refreshPanels();
+  }
+
+  rememberCurrentMarkdownView() {
+    this.rememberMarkdownLeaf(this.app.workspace.activeLeaf);
+
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (view) {
+      this.rememberMarkdownView(view, this.findLeafForView(view));
+    }
+  }
+
+  rememberMarkdownLeaf(leaf) {
+    if (!leaf || !(leaf.view instanceof MarkdownView)) return;
+    this.rememberMarkdownView(leaf.view, leaf);
+  }
+
+  rememberMarkdownView(view, leaf) {
+    if (!view || !(view instanceof MarkdownView) || !view.file) return;
+    this.lastMarkdownView = view;
+    this.lastMarkdownLeaf = leaf || this.findLeafForView(view);
+    this.lastMarkdownFilePath = view.file.path;
+  }
+
+  findLeafForView(view) {
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      if (leaf.view === view) return leaf;
+    }
+    return null;
+  }
+
+  findMarkdownLeafForFilePath(filePath) {
+    if (!filePath) return null;
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      if (leaf.view instanceof MarkdownView && leaf.view.file && leaf.view.file.path === filePath) {
+        return leaf;
+      }
+    }
+    return null;
+  }
+
+  getActiveMarkdownView() {
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (activeView && activeView.file) {
+      this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
+      return activeView;
+    }
+
+    if (this.lastMarkdownView && this.lastMarkdownView.file) {
+      return this.lastMarkdownView;
+    }
+
+    const rememberedLeaf = this.findMarkdownLeafForFilePath(this.lastMarkdownFilePath);
+    if (rememberedLeaf && rememberedLeaf.view instanceof MarkdownView) {
+      this.rememberMarkdownLeaf(rememberedLeaf);
+      return rememberedLeaf.view;
+    }
+
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      if (leaf.view instanceof MarkdownView && leaf.view.file) {
+        this.rememberMarkdownLeaf(leaf);
+        return leaf.view;
+      }
+    }
+
+    return null;
   }
 
   getActiveMarkdownFile() {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    return view ? view.file : null;
+    const view = this.getActiveMarkdownView();
+    if (view && view.file) return view.file;
+
+    if (this.lastMarkdownFilePath) {
+      const file = this.app.vault.getAbstractFileByPath(this.lastMarkdownFilePath);
+      if (file && typeof file.path === "string") return file;
+    }
+
+    return null;
+  }
+
+  insertAnnotationAtActiveEditor() {
+    const view = this.getActiveMarkdownView();
+    if (!view || !view.editor) {
+      new Notice("No active Markdown editor.");
+      return;
+    }
+
+    const leaf = this.findLeafForView(view) || this.lastMarkdownLeaf;
+    if (leaf) {
+      this.app.workspace.setActiveLeaf(leaf, { focus: true });
+    }
+    this.wrapSelectionWithAnnotation(view.editor);
+    this.setOperationStatus("Inserted annotation marker.", "success");
   }
 
   wrapSelectionWithAnnotation(editor) {
@@ -117,6 +334,7 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       : markdown.replace(/\s*$/u, "") + "\n\n" + block + "\n";
 
     await this.app.vault.modify(file, nextContent);
+    this.setOperationStatus("Annotation appended to " + file.path + ".", "success");
     new Notice("Annotation appended.");
   }
 
@@ -140,9 +358,11 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     try {
       await writeTextToClipboard(formatAnnotationsForClipboard(annotations));
+      this.setOperationStatus("Copied " + annotations.length + " annotation(s) from " + file.path + ".", "success");
       new Notice("Copied " + annotations.length + " annotation(s).");
     } catch (error) {
       console.error("Failed to copy annotations:", error);
+      this.setOperationStatus("Copy failed: " + messageFromError(error), "error");
       new Notice("Copy failed: " + messageFromError(error));
     }
   }
@@ -186,6 +406,10 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     try {
       const result = await postJson(joinUrl(this.settings.bridgeUrl, "/api/obsidian/annotations"), payload);
+      this.setOperationStatus(
+        "Sent " + annotations.length + " annotation(s) from " + file.path + " to AMO.",
+        "success"
+      );
       new Notice(
         "Sent " +
           annotations.length +
@@ -194,8 +418,41 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       );
     } catch (error) {
       console.error("Failed to send annotations to AMO:", error);
+      this.setOperationStatus("AMO sync failed: " + messageFromError(error), "error");
       new Notice("AMO sync failed: " + messageFromError(error));
     }
+  }
+
+  async checkBridgeHealth() {
+    try {
+      const result = await fetchJson(joinUrl(this.settings.bridgeUrl, "/api/health"));
+      this.setOperationStatus(
+        "Bridge online: " + (result.service || "AMO") + " on port " + (result.port || "unknown") + ".",
+        "success"
+      );
+      new Notice("AMO bridge is online.");
+    } catch (error) {
+      this.setOperationStatus("Bridge check failed: " + messageFromError(error), "error");
+      new Notice("AMO bridge check failed: " + messageFromError(error));
+    }
+  }
+
+  async getActiveNoteInfo() {
+    const file = this.getActiveMarkdownFile();
+    if (!file) {
+      return {
+        file: null,
+        annotations: [],
+        amo: {},
+      };
+    }
+
+    const markdown = await this.app.vault.cachedRead(file);
+    return {
+      file,
+      annotations: extractAnnotationContents(markdown),
+      amo: parseAmoFrontmatter(markdown),
+    };
   }
 
   renderAnnotations(root) {
@@ -298,6 +555,100 @@ class AnnotationInputModal extends Modal {
   }
 }
 
+class AmoAnnotationPanelView extends ItemView {
+  constructor(leaf, plugin) {
+    super(leaf);
+    this.plugin = plugin;
+  }
+
+  getViewType() {
+    return AMO_PANEL_VIEW_TYPE;
+  }
+
+  getDisplayText() {
+    return "AMO";
+  }
+
+  getIcon() {
+    return "panel-right";
+  }
+
+  async onOpen() {
+    this.render();
+  }
+
+  render() {
+    void this.renderAsync();
+  }
+
+  async renderAsync() {
+    const root = this.contentEl;
+    root.empty();
+    root.addClass("amo-panel");
+
+    root.createEl("h3", { text: "AMO" });
+
+    const status = this.plugin.operationStatus || { tone: "neutral", message: "Ready.", at: null };
+    const statusEl = root.createDiv({ cls: "amo-panel-status amo-panel-status-" + status.tone });
+    statusEl.createEl("strong", { text: status.message });
+    if (status.at) statusEl.createEl("span", { text: formatTime(status.at) });
+
+    let info;
+    try {
+      info = await this.plugin.getActiveNoteInfo();
+    } catch (error) {
+      root.createDiv({
+        cls: "amo-panel-error",
+        text: "Could not read active note: " + messageFromError(error),
+      });
+      return;
+    }
+
+    const summary = root.createDiv({ cls: "amo-panel-section" });
+    summary.createEl("h4", { text: "Current note" });
+    if (info.file) {
+      createInfoRow(summary, "File", info.file.path);
+      createInfoRow(summary, "Session", info.amo.sessionId || "Missing AMO metadata");
+      createInfoRow(summary, "Turn", info.amo.turnId || "-");
+      createInfoRow(summary, "Annotations", String(info.annotations.length));
+    } else {
+      summary.createDiv({ cls: "amo-panel-muted", text: "No active Markdown note." });
+    }
+
+    const actions = root.createDiv({ cls: "amo-panel-section amo-panel-actions" });
+    actions.createEl("h4", { text: "Actions" });
+    this.addButton(actions, "Send to AMO", () => this.plugin.sendAnnotationsFromActiveFile(), Boolean(info.file));
+    this.addButton(actions, "Copy annotations", () => this.plugin.copyAnnotationsFromActiveFile(), Boolean(info.file));
+    this.addButton(actions, "Append annotation", () => {
+      if (!info.file) return;
+      new AnnotationInputModal(this.app, async (value) => {
+        await this.plugin.appendAnnotationToFile(info.file, value);
+      }).open();
+    }, Boolean(info.file));
+    this.addButton(actions, "Insert marker", () => this.plugin.insertAnnotationAtActiveEditor(), Boolean(info.file));
+    this.addButton(actions, "Check bridge", () => this.plugin.checkBridgeHealth(), true);
+    this.addButton(actions, "Refresh", () => this.render(), true);
+
+    const bridge = root.createDiv({ cls: "amo-panel-section" });
+    bridge.createEl("h4", { text: "Bridge" });
+    createInfoRow(bridge, "URL", this.plugin.settings.bridgeUrl);
+  }
+
+  addButton(container, label, onClick, enabled) {
+    const button = new ButtonComponent(container);
+    button.setButtonText(label);
+    button.setDisabled(!enabled);
+    button.buttonEl.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    button.onClick(() => {
+      void onClick();
+    });
+    return button;
+  }
+}
+
 function buildAnnotationMarkup(content) {
   return ANNO_TAG_PREFIX + content + ANNO_TAG_SUFFIX;
 }
@@ -379,6 +730,23 @@ function joinUrl(root, path) {
   return String(root || DEFAULT_SETTINGS.bridgeUrl).replace(/\/+$/u, "") + path;
 }
 
+async function fetchJson(url) {
+  if (typeof fetch !== "function") throw new Error("fetch is unavailable in this Obsidian runtime");
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 5000);
+  try {
+    const response = await fetch(url, { signal: controller.signal });
+    const body = await response.json().catch(() => null);
+    if (!response.ok || !body || body.ok === false) {
+      throw new Error((body && body.message) || "AMO bridge returned " + response.status);
+    }
+    return body;
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 async function postJson(url, payload) {
   if (typeof fetch !== "function") throw new Error("fetch is unavailable in this Obsidian runtime");
 
@@ -410,6 +778,21 @@ async function writeTextToClipboard(value) {
 
 function messageFromError(error) {
   return error instanceof Error ? error.message : String(error);
+}
+
+function createInfoRow(container, label, value) {
+  const row = container.createDiv({ cls: "amo-panel-info-row" });
+  row.createEl("span", { text: label });
+  row.createEl("code", { text: value || "-" });
+  return row;
+}
+
+function formatTime(value) {
+  try {
+    return new Date(value).toLocaleTimeString();
+  } catch {
+    return "";
+  }
 }
 
 module.exports = AmoMarkdownAnnotationToolsPlugin;

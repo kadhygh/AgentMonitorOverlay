@@ -537,6 +537,18 @@ button {
   border-color: rgba(143, 196, 255, 0.2);
 }
 
+.row-tool-button.binding-button {
+  color: #d7e6ff;
+  background: rgba(143, 196, 255, 0.11);
+  border-color: rgba(143, 196, 255, 0.24);
+}
+
+.row-tool-button.binding-button:hover {
+  color: #f3f8ff;
+  background: rgba(143, 196, 255, 0.18);
+  border-color: rgba(143, 196, 255, 0.38);
+}
+
 .row-tool-button span {
   overflow: hidden;
   font-size: 10px;
@@ -593,6 +605,24 @@ button {
   text-overflow: ellipsis;
   text-transform: uppercase;
   white-space: nowrap;
+}
+
+.candidate-bind-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 3px 4px 1px;
+  color: #c6d7d1;
+  font-size: 10px;
+  line-height: 12px;
+  cursor: pointer;
+}
+
+.candidate-bind-toggle input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #8fc4ff;
 }
 
 .candidate-close {

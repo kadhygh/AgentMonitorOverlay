@@ -109,6 +109,23 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    const windowBindingMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/window-binding$/);
+    if (req.method === "POST" && windowBindingMatch) {
+      const sessionId = decodeURIComponent(windowBindingMatch[1]);
+      const payload = await readJsonBody(req);
+      const result = bindSessionWindow(sessionId, payload);
+      persistSnapshot();
+      return sendJson(res, 200, result);
+    }
+
+    const clearWindowBindingMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/window-binding\/clear$/);
+    if (req.method === "POST" && clearWindowBindingMatch) {
+      const sessionId = decodeURIComponent(clearWindowBindingMatch[1]);
+      const result = clearSessionWindowBinding(sessionId);
+      persistSnapshot();
+      return sendJson(res, 200, result);
+    }
+
     const heartbeatMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/heartbeat$/);
     if (req.method === "POST" && heartbeatMatch) {
       const sessionId = decodeURIComponent(heartbeatMatch[1]);
@@ -522,7 +539,7 @@ function handleObsidianAnnotations(payload) {
     throw httpError(400, "missing_session_id", "Annotation payload must include sessionId");
   }
 
-  const existing = sessions.get(sessionId);
+  const existing = sessions.get(sessionId) || recoverSessionFromAnnotationPayload(payload, sessionId);
   if (!existing) {
     throw httpError(404, "session_not_found", `Session not found for annotation payload: ${sessionId}`);
   }
@@ -574,6 +591,58 @@ function handleObsidianAnnotations(payload) {
     prompt,
     annotationCount,
     session,
+  };
+}
+
+function recoverSessionFromAnnotationPayload(payload, sessionId) {
+  const vaultRootText = normalizeText(payload.vaultRoot || payload.vault_root);
+  if (!vaultRootText) {
+    return null;
+  }
+
+  const vaultRoot = path.resolve(vaultRootText);
+  const amoRoot = path.dirname(vaultRoot);
+  const workspaceRoot = path.dirname(amoRoot);
+  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
+  if (!workspace || !workspace.workspaceId || !fs.existsSync(vaultRoot)) {
+    return null;
+  }
+
+  const notePath = normalizeText(payload.notePath || payload.note_path);
+  const now = new Date().toISOString();
+  const workspacePath = normalizeText(workspace.workspacePath) || workspaceRoot;
+  const projectName = normalizeText(workspace.projectName) || path.basename(workspacePath);
+
+  return {
+    tool: "codex",
+    sessionId,
+    cwd: workspacePath,
+    title: defaultTitle("codex", sessionId),
+    state: "idle",
+    lastEvent: "RecoveredFromObsidianNote",
+    lastMessage: notePath ? `Recovered from Obsidian note: ${notePath}` : "Recovered from Obsidian note",
+    needsAttention: false,
+    windowHint: {
+      titleContains: [projectName, "Codex"],
+      project: projectName,
+      cwd: workspacePath,
+      tool: "codex",
+      pid: null,
+      hwnd: null,
+    },
+    updatedAt: now,
+    createdAt: now,
+    heartbeatAt: null,
+    eventCount: 0,
+    workspaceId: workspace.workspaceId,
+    workspacePath,
+    vaultRoot,
+    lastReplyAt: null,
+    lastReplyNote: notePath || null,
+    lastReplyNoteAbsolutePath: notePath ? path.join(vaultRoot, notePath.replace(/[\\/]+/g, path.sep)) : null,
+    canvasPath: "AgentFlow.canvas",
+    canvasAbsolutePath: path.join(vaultRoot, "AgentFlow.canvas"),
+    canvasNodeId: null,
   };
 }
 
@@ -720,6 +789,113 @@ function handleSyncBack(payload) {
     sessionId,
     pendingPromptId: session.pendingPromptId || null,
     copiedAt: now,
+    session,
+  };
+}
+
+function bindSessionWindow(sessionId, payload) {
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Window binding URL must include session id");
+  }
+
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Window binding payload must be a JSON object");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for window binding: ${sessionId}`);
+  }
+
+  const hwnd = normalizeInteger(payload.hwnd || payload.windowHandle || payload.window_handle);
+  const pid = normalizeInteger(payload.pid || payload.processId || payload.process_id);
+  if (hwnd === null && pid === null) {
+    throw httpError(400, "missing_window_identity", "Window binding payload must include hwnd or processId");
+  }
+
+  const processName = normalizeText(payload.processName || payload.process_name || payload.process);
+  const title = normalizeText(payload.title);
+  const label = normalizeText(payload.label);
+  const now = new Date().toISOString();
+  const baseHint = existing.windowHint || {};
+  const windowHint = {
+    process: processName || baseHint.process || null,
+    title: title || baseHint.title || existing.title || null,
+    titleToken: baseHint.titleToken || null,
+    titleContains: Array.isArray(baseHint.titleContains) ? baseHint.titleContains : [],
+    project: baseHint.project || path.basename(existing.cwd || "") || null,
+    cwd: baseHint.cwd || existing.cwd || null,
+    tool: baseHint.tool || existing.tool || null,
+    pid,
+    hwnd,
+    boundAt: now,
+    boundBy: "overlay-candidate-menu",
+    boundLabel: label || title || processName || null,
+  };
+  const session = {
+    ...existing,
+    windowHint,
+    lastEvent: "WindowBound",
+    lastMessage: `Window bound to ${windowHint.boundLabel || "selected window"}`,
+    needsAttention: false,
+    updatedAt: now,
+    eventCount: (existing.eventCount || 0) + 1,
+  };
+
+  sessions.set(sessionId, session);
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    windowHint,
+    session,
+  };
+}
+
+function clearSessionWindowBinding(sessionId) {
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Window binding URL must include session id");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for window binding: ${sessionId}`);
+  }
+
+  const currentHint = existing.windowHint || {};
+  const resetHint =
+    currentHint.boundBy === "overlay-candidate-menu"
+      ? {
+          titleToken: currentHint.titleToken || null,
+          titleContains: Array.isArray(currentHint.titleContains) ? currentHint.titleContains : [],
+          project: currentHint.project || path.basename(existing.cwd || "") || null,
+          cwd: currentHint.cwd || existing.cwd || null,
+          tool: currentHint.tool || existing.tool || null,
+          pid: null,
+          hwnd: null,
+        }
+      : {
+          ...currentHint,
+          pid: null,
+          hwnd: null,
+        };
+  const nextHint = normalizeWindowHint(resetHint);
+  const now = new Date().toISOString();
+  const session = {
+    ...existing,
+    windowHint: nextHint,
+    lastEvent: "WindowUnbound",
+    lastMessage: "Window binding cleared; AMO will ask again if routing is ambiguous",
+    updatedAt: now,
+    eventCount: (existing.eventCount || 0) + 1,
+  };
+
+  sessions.set(sessionId, session);
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    windowHint: nextHint,
     session,
   };
 }
@@ -1342,31 +1518,15 @@ function normalizeAnnotations(value) {
     .filter(Boolean);
 }
 
-function renderPendingPrompt(payload, annotations, summary) {
-  const notePath = normalizeText(payload.notePath || payload.note_path);
-  const turnId = normalizeText(payload.turnId || payload.turn_id);
-  const sourceLines = [];
-  if (notePath) sourceLines.push(`- note: ${notePath}`);
-  if (turnId) sourceLines.push(`- turn: ${turnId}`);
-
-  const lines = [
-    "请基于下面 Obsidian 批注继续推进当前任务。",
-    "请优先处理批注里的要求；如果批注和当前上下文冲突，请先说明判断，再继续执行。",
-  ];
-
-  if (sourceLines.length > 0) {
-    lines.push("", "来源：", ...sourceLines);
+function renderPendingPrompt(_payload, annotations, summary) {
+  const lines = [];
+  const cleanSummary = normalizeText(summary);
+  if (cleanSummary) {
+    lines.push(cleanSummary);
   }
 
-  if (summary) {
-    lines.push("", "汇总：", summary);
-  }
-
-  if (annotations.length > 0) {
-    lines.push("", "批注：");
-    for (const annotation of annotations) {
-      lines.push(`${annotation.index}. ${annotation.content}`);
-    }
+  for (const annotation of annotations) {
+    lines.push(`${annotation.index}. ${annotation.content}`);
   }
 
   return `${lines.join("\n")}\n`;

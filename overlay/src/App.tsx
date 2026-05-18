@@ -17,6 +17,7 @@ import {
   Minimize2,
   RefreshCcw,
   SquareTerminal,
+  Unlink2,
   X,
 } from "lucide-react";
 import { mockSessions } from "./mockSessions";
@@ -40,6 +41,14 @@ const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
 const BROKER_WORKSPACE_ENROLL_URL = "http://127.0.0.1:17654/api/workspaces/enroll";
 const REFRESH_INTERVAL_MS = 3000;
+
+function brokerSessionWindowBindingUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/window-binding`;
+}
+
+function brokerSessionWindowBindingClearUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/window-binding/clear`;
+}
 
 const stateLabel: Record<SessionState, string> = {
   starting: "Starting",
@@ -220,6 +229,7 @@ interface CandidateMenuState {
   candidates: ActivationCandidate[];
   x: number;
   y: number;
+  bindOnSelect: boolean;
 }
 
 interface ResizeState {
@@ -246,21 +256,26 @@ function SessionRowContent({
   activating,
   openingTarget,
   copyingPrompt,
+  unbindingWindow,
   onOpenNote,
   onOpenCanvas,
   onCopyPrompt,
+  onUnbindWindow,
 }: {
   session: AgentSession;
   activating: boolean;
   openingTarget: "note" | "canvas" | null;
   copyingPrompt: boolean;
+  unbindingWindow: boolean;
   onOpenNote: () => void;
   onOpenCanvas: () => void;
   onCopyPrompt: () => void;
+  onUnbindWindow: () => void;
 }) {
   const notePath = notePathForOpen(session);
   const canvasPath = canvasPathForOpen(session);
   const pendingPromptLabel = session.pendingAnnotationCount ? `Sync ${session.pendingAnnotationCount}` : "Sync";
+  const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
 
   return (
     <>
@@ -275,7 +290,7 @@ function SessionRowContent({
         <span className="event-line">
           {stateLabel[session.state]} · {session.lastEvent}
         </span>
-        {notePath || canvasPath || session.pendingPrompt ? (
+        {notePath || canvasPath || session.pendingPrompt || windowBound ? (
           <span className="bridge-actions" aria-label="Bridge actions">
             {notePath ? (
               <button
@@ -322,6 +337,21 @@ function SessionRowContent({
                 <span>{copyingPrompt ? "..." : pendingPromptLabel}</span>
               </button>
             ) : null}
+            {windowBound ? (
+              <button
+                type="button"
+                className="row-tool-button binding-button"
+                title={`Unbind window: ${session.windowHint?.boundLabel ?? session.windowHint?.title ?? session.title}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onUnbindWindow();
+                }}
+              >
+                <Unlink2 size={13} aria-hidden="true" />
+                <span>{unbindingWindow ? "..." : "Bound"}</span>
+              </button>
+            ) : null}
           </span>
         ) : null}
       </span>
@@ -343,6 +373,7 @@ export default function App() {
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<{ sessionId: string; target: "note" | "canvas" } | null>(null);
   const [copyingPromptId, setCopyingPromptId] = useState<string | null>(null);
+  const [unbindingWindowId, setUnbindingWindowId] = useState<string | null>(null);
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);
@@ -545,6 +576,7 @@ export default function App() {
           candidates: result.candidates,
           x: position.x,
           y: position.y,
+          bindOnSelect: true,
         });
       }
       setFeedback(result.message);
@@ -629,7 +661,7 @@ export default function App() {
     }
   }
 
-  async function activateCandidate(session: AgentSession, candidate: ActivationCandidate) {
+  async function activateCandidate(session: AgentSession, candidate: ActivationCandidate, bindWindow: boolean) {
     setActivatingId(session.sessionId);
     setFeedback(`Activating ${candidate.processName ?? "window"}...`);
 
@@ -647,12 +679,49 @@ export default function App() {
       });
       setFeedback(result.message);
       if (result.ok) {
+        if (bindWindow) {
+          const binding = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+            brokerSessionWindowBindingUrl(session.sessionId),
+            {
+              hwnd: candidate.hwnd,
+              processId: candidate.processId,
+              processName: candidate.processName ?? null,
+              title: candidate.title,
+              label: candidate.label,
+            },
+          );
+          setSessions((previous) =>
+            previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
+          );
+          setFeedback(`Bound and activated ${candidate.processName ?? "window"}.`);
+        }
         setCandidateMenu(null);
       }
     } catch (error) {
       setFeedback(`Candidate activation failed: ${(error as Error).message}`);
     } finally {
       setActivatingId(null);
+    }
+  }
+
+  async function clearWindowBinding(session: AgentSession) {
+    setUnbindingWindowId(session.sessionId);
+    setFeedback(`Clearing window binding for ${session.title}...`);
+
+    try {
+      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+        brokerSessionWindowBindingClearUrl(session.sessionId),
+        {},
+      );
+      setSessions((previous) =>
+        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
+      );
+      setFeedback("Window binding cleared.");
+      void refreshSessions();
+    } catch (error) {
+      setFeedback(`Unbind failed: ${(error as Error).message}`);
+    } finally {
+      setUnbindingWindowId(null);
     }
   }
 
@@ -1056,9 +1125,11 @@ export default function App() {
                   activating={activatingId === session.sessionId}
                   openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
                   copyingPrompt={copyingPromptId === session.sessionId}
+                  unbindingWindow={unbindingWindowId === session.sessionId}
                   onOpenNote={() => void openBridgePath(session, "note")}
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
                   onCopyPrompt={() => void copyPendingPrompt(session)}
+                  onUnbindWindow={() => void clearWindowBinding(session)}
                 />
               </div>
             ))}
@@ -1081,6 +1152,19 @@ export default function App() {
                   <X size={13} aria-hidden="true" />
                 </button>
               </div>
+              <label className="candidate-bind-toggle">
+                <input
+                  type="checkbox"
+                  checked={candidateMenu.bindOnSelect}
+                  onChange={(event) => {
+                    const checked = event.currentTarget.checked;
+                    setCandidateMenu((current) =>
+                      current ? { ...current, bindOnSelect: checked } : current,
+                    );
+                  }}
+                />
+                <span>Bind this window</span>
+              </label>
               <div className="candidate-list">
                 {candidateMenu.candidates.map((candidate) => (
                   <button
@@ -1088,7 +1172,9 @@ export default function App() {
                     className="candidate-item"
                     key={`${candidate.hwnd}-${candidate.processId}`}
                     title={candidate.label}
-                    onClick={() => void activateCandidate(candidateMenu.session, candidate)}
+                    onClick={() =>
+                      void activateCandidate(candidateMenu.session, candidate, candidateMenu.bindOnSelect)
+                    }
                   >
                     <strong>{candidate.processName ?? "Window"}</strong>
                     <span>{candidate.title}</span>
@@ -1119,9 +1205,11 @@ export default function App() {
                     activating={activatingId === session.sessionId}
                     openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
                     copyingPrompt={copyingPromptId === session.sessionId}
+                    unbindingWindow={unbindingWindowId === session.sessionId}
                     onOpenNote={() => undefined}
                     onOpenCanvas={() => undefined}
                     onCopyPrompt={() => undefined}
+                    onUnbindWindow={() => undefined}
                   />
                 ) : null;
               })()}
