@@ -140,6 +140,24 @@ function obsidianOpenUri(targetPath: string, vaultId?: string, vaultRoot?: strin
   return `obsidian://open?${params.toString()}`;
 }
 
+function obsidianAmoOpenUri(
+  targetPath: string,
+  target: "note" | "canvas",
+  vaultId?: string,
+  vaultRoot?: string,
+) {
+  const filePath = vaultRelativeFilePath(targetPath, vaultRoot);
+  if (!filePath) {
+    return obsidianOpenUri(targetPath, vaultId, vaultRoot);
+  }
+
+  const params = new URLSearchParams();
+  params.set("path", targetPath);
+  params.set("relativePath", filePath);
+  params.set("kind", target);
+  return `obsidian://amo-open?${params.toString()}`;
+}
+
 function vaultRelativeFilePath(targetPath: string, vaultRoot: string | undefined) {
   if (!vaultRoot) {
     return null;
@@ -608,7 +626,7 @@ export default function App() {
       }
 
       const result = await invoke<OpenPathResult>("open_uri", {
-        uri: obsidianOpenUri(targetPath, vaultId, session.vaultRoot),
+        uri: obsidianAmoOpenUri(targetPath, target, vaultId, session.vaultRoot),
       });
       if (result.ok) {
         setFeedback(`${target === "note" ? "Note" : "Canvas"} opened in Obsidian.`);

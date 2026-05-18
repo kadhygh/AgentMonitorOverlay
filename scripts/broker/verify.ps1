@@ -211,6 +211,9 @@ try {
     if ($pluginMain -notmatch "/api/obsidian/annotations") {
         throw "Obsidian plugin main.js does not reference the AMO annotation endpoint."
     }
+    if ($pluginMain -notmatch "registerObsidianProtocolHandler" -or $pluginMain -notmatch "amo-open") {
+        throw "Obsidian plugin main.js does not register the AMO tab-reuse open protocol."
+    }
     Write-Host "Workspace enroll OK -> $($enroll.workspaceId)"
 
     $reply = Invoke-BrokerJson -Method POST -Path "/api/replies" -Body @{

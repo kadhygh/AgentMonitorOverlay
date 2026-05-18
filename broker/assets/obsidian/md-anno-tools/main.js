@@ -16,8 +16,10 @@ const DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
 };
 const AMO_PANEL_VIEW_TYPE = "amo-annotation-panel";
+const AMO_OPEN_PROTOCOL = "amo-open";
 const AMO_SEND_ACTION_CLASS = "amo-send-note-action";
 const AMO_PANEL_ACTION_CLASS = "amo-open-panel-action";
+const DEFAULT_CANVAS_PATH = "AgentFlow.canvas";
 const SKIPPED_TAGS = new Set(["A", "BUTTON", "CODE", "INPUT", "PRE", "SCRIPT", "STYLE", "TEXTAREA"]);
 
 class AmoMarkdownAnnotationToolsPlugin extends Plugin {
@@ -33,6 +35,12 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.lastMarkdownFilePath = null;
 
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
+
+    if (typeof this.registerObsidianProtocolHandler === "function") {
+      this.registerObsidianProtocolHandler(AMO_OPEN_PROTOCOL, (params) => {
+        void this.handleAmoOpenProtocol(params);
+      });
+    }
 
     this.addRibbonIcon("panel-right", "Open AMO annotation panel", () => {
       void this.activatePanel();
@@ -62,6 +70,25 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       name: "Open AMO annotation panel",
       callback: () => {
         void this.activatePanel();
+      },
+    });
+
+    this.addCommand({
+      id: "open-current-note-with-amo-tab-reuse",
+      name: "Open current note with AMO tab reuse",
+      checkCallback: (checking) => {
+        const file = this.getActiveMarkdownFile();
+        if (!file) return false;
+        if (!checking) void this.openVaultPath(file.path, "note");
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "open-amo-work-canvas",
+      name: "Open AMO work canvas",
+      callback: () => {
+        void this.openVaultPath(DEFAULT_CANVAS_PATH, "canvas");
       },
     });
 
@@ -171,6 +198,95 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         leaf.view.render();
       }
     }
+  }
+
+  async handleAmoOpenProtocol(params) {
+    const targetPath = this.resolveProtocolTargetPath(params);
+    if (!targetPath) {
+      new Notice("AMO open URL is missing a vault-relative path.");
+      return;
+    }
+
+    await this.openVaultPath(targetPath, normalizeOpenKind(params && (params.kind || params.target), targetPath));
+  }
+
+  resolveProtocolTargetPath(params) {
+    const rawPath =
+      params &&
+      (params.relativePath ||
+        params.relative_path ||
+        params.file ||
+        params.notePath ||
+        params.note_path ||
+        params.canvasPath ||
+        params.canvas_path ||
+        params.path);
+    return normalizeVaultFilePath(toVaultRelativeProtocolPath(rawPath, getVaultRoot(this.app)));
+  }
+
+  async openVaultPath(filePath, kind) {
+    const targetPath = normalizeVaultFilePath(filePath);
+    if (!targetPath) {
+      new Notice("AMO target path is empty.");
+      return false;
+    }
+
+    const file = this.app.vault.getAbstractFileByPath(targetPath);
+    if (!file || typeof file.path !== "string") {
+      const message = "AMO target not found: " + targetPath;
+      this.setOperationStatus(message, "error");
+      new Notice(message);
+      return false;
+    }
+
+    const existingLeaf = this.findLeafForFilePath(file.path, kind);
+    if (existingLeaf) {
+      this.app.workspace.revealLeaf(existingLeaf);
+      this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+      this.rememberMarkdownLeaf(existingLeaf);
+      this.setOperationStatus("Focused open " + kind + ": " + file.path + ".", "success");
+      return true;
+    }
+
+    const leaf = this.createTabLeaf();
+    await leaf.openFile(file, { active: true });
+    this.app.workspace.revealLeaf(leaf);
+    this.rememberMarkdownLeaf(leaf);
+    this.setOperationStatus("Opened " + kind + ": " + file.path + ".", "success");
+    return true;
+  }
+
+  createTabLeaf() {
+    try {
+      return this.app.workspace.getLeaf("tab");
+    } catch {
+      return this.app.workspace.getLeaf(true);
+    }
+  }
+
+  findLeafForFilePath(filePath, kind) {
+    const primaryTypes = kind === "canvas" ? ["canvas"] : ["markdown"];
+    for (const viewType of primaryTypes) {
+      const leaf = this.findLeafForFilePathInViewType(filePath, viewType);
+      if (leaf) return leaf;
+    }
+
+    for (const viewType of ["markdown", "canvas"]) {
+      if (primaryTypes.includes(viewType)) continue;
+      const leaf = this.findLeafForFilePathInViewType(filePath, viewType);
+      if (leaf) return leaf;
+    }
+
+    return null;
+  }
+
+  findLeafForFilePathInViewType(filePath, viewType) {
+    for (const leaf of this.app.workspace.getLeavesOfType(viewType)) {
+      if (leaf.view && leaf.view.file && leaf.view.file.path === filePath) {
+        return leaf;
+      }
+    }
+    return null;
   }
 
   syncMarkdownViewActions() {
@@ -661,6 +777,36 @@ function extractAnnotationContents(markdown) {
 
 function normalizeAnnotationContent(value) {
   return String(value || "").replace(/\r\n?/gu, "\n").trim();
+}
+
+function normalizeVaultFilePath(value) {
+  return String(value || "")
+    .replace(/\\/gu, "/")
+    .replace(/^\/+/u, "")
+    .trim();
+}
+
+function toVaultRelativeProtocolPath(value, vaultRoot) {
+  const rawPath = String(value || "").trim();
+  if (!rawPath) return "";
+
+  const normalizedPath = rawPath.replace(/\\/gu, "/");
+  if (!vaultRoot) return normalizedPath;
+
+  const normalizedRoot = String(vaultRoot || "").replace(/\\/gu, "/").replace(/\/+$/u, "");
+  const rootPrefix = normalizedRoot + "/";
+  if (normalizedPath.toLowerCase() === normalizedRoot.toLowerCase()) return "";
+  if (normalizedPath.toLowerCase().startsWith(rootPrefix.toLowerCase())) {
+    return normalizedPath.slice(rootPrefix.length);
+  }
+
+  return normalizedPath;
+}
+
+function normalizeOpenKind(value, filePath) {
+  const kind = String(value || "").trim().toLowerCase();
+  if (kind === "canvas" || kind === "note") return kind;
+  return String(filePath || "").toLowerCase().endsWith(".canvas") ? "canvas" : "note";
 }
 
 function formatAnnotationsForClipboard(annotations) {
