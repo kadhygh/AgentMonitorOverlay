@@ -138,6 +138,8 @@ The deployment system must support:
 - merge rather than overwrite existing hook config
 - report partial success and exact remediation steps
 
+Deployment UI follow-up: keep the main overlay focused on monitoring, task cards, and window jumps. The deploy entry should open a separate popup/tool window instead of taking over the overlay card area; that window can grow into the full deployment workbench for directory selection, read-only checks, deploy confirmation, repair, history, adapter choices, risk preview, and settings.
+
 The deployment maintenance guide lives in `docs/adapter-deployment-guide.md`.
 
 ## Current MVP Workflow
@@ -268,7 +270,7 @@ Current plugin abilities:
 
 - Render `[!anno]...[/anno]` in Obsidian reading mode.
 - Copy annotations from the current note to the clipboard.
-- Wrap selected editor text in `[!anno]...[/anno]` from the editor context menu.
+- Quote selected editor text into a new `[!anno]...[/anno]` block from the editor context menu, leaving the original text in place and using Markdown quote markers as the reply context.
 - Insert an empty annotation block from the command palette.
 - Append an annotation to the end of the current note.
 
@@ -642,7 +644,18 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 - POST annotations to the bridge.
 - Preserve the existing "copy annotations to clipboard" command.
 
-Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `.amo/obsidian-vault/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, adds `Send current note annotations to AMO`, and registers `obsidian://amo-open` so overlay note/canvas buttons can ask the plugin to reuse an existing tab before opening a new one. The custom `amo-open` URI intentionally passes only a vault-relative `path` and `kind`, not `vault=...`, because Obsidian resolves the `vault` parameter before the plugin protocol handler can run. Obsidian may still require a vault reload/restart before a newly deployed plugin is loaded; removing that first-load friction is part of the plugin-side opening/reload UX follow-up.
+Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `.amo/obsidian-vault/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, adds `Send current note annotations to AMO`, and registers `obsidian://amo-open` so overlay note/canvas buttons can ask the plugin to reuse an existing tab before opening a new one. The plugin can also target a Markdown note selected as a file node on `AgentFlow.canvas` for panel/copy/send/append actions; canvas targeting now prefers the current canvas selection and only falls back to the last clicked file node if no selection can be read, so actions should not silently drift to a previous node. The AMO panel keeps canvas target context even while the panel itself is the active leaf, and panel Copy/Send buttons operate on the note currently displayed in the panel rather than re-resolving Obsidian's active Markdown view at click time. If Obsidian's canvas selection cannot be read reliably, the plugin should ask the user to choose one of the Markdown file nodes from the canvas instead of silently using a stale target. Editor selection insertion now creates a quoted annotation block instead of wrapping the selected source text, so a selected question title becomes quoted context and the user's answer can be written underneath. If the user is in reading mode, the plugin can append the current DOM text selection as a referenced annotation block because there is no editable cursor location. Annotation rendering supports both inline `[!anno]...[/anno]` and multi-block annotations whose quoted Markdown has already been rendered into separate blockquote/paragraph DOM nodes by Obsidian; because Obsidian may call markdown postprocessors per section or re-render after mode switches, the plugin schedules whole-preview-container passes and workspace rescans to catch cross-section annotation blocks after edit/read transitions. The custom `amo-open` URI intentionally passes only a vault-relative `path` and `kind`, not `vault=...`, because Obsidian resolves the `vault` parameter before the plugin protocol handler can run. Obsidian may still require a vault reload/restart before a newly deployed plugin is loaded; removing that first-load friction is part of the plugin-side opening/reload UX follow-up.
+
+### Debug Logging
+
+The MVP now has a shared debug channel for this exact class of "works once, then drifts" bugs:
+
+- Broker owns the runtime switch and in-memory log buffer with `GET /api/debug`, `POST /api/debug`, `POST /api/debug/logs`, and `POST /api/debug/clear`.
+- Overlay exposes the switch in the header. When enabled, it logs open-note/open-canvas, copy/sync-back, window activation, window binding, workspace inspect, and workspace enroll actions.
+- The Obsidian plugin posts best-effort debug events to the broker for plugin load, canvas target tracking, canvas Send/Panel actions, annotation extraction/frontmatter/send, and annotation render/rescan passes.
+- The broker also logs the server-side half of replies, annotation payloads, sync-back, vault registration, workspace enroll, and window binding while debug is enabled.
+
+Debug logging is intentionally temporary and local: it is not persisted to the session snapshot, and the overlay toggle should stay off during normal use. For reproduction, enable debug in overlay, run the exact failing Obsidian operation, then inspect `GET /api/debug?limit=200`.
 
 Current health check: once a task card links to a vault, broker decorates the session with `obsidianPluginHealth`, including installed `md-anno-tools` version, enabled state, `main.js` presence, and plugin `data.json` bridge URL. Overlay surfaces the result as a compact plugin status pill on the card. Follow-up repair flow: mismatches should offer repair/redeploy from the card or deploy/check panel.
 

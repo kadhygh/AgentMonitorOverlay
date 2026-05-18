@@ -6,6 +6,7 @@ import {
   Blocks,
   Bot,
   BrainCircuit,
+  Bug,
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
@@ -28,6 +29,7 @@ import type {
   ActivationResult,
   AgentSession,
   AgentTool,
+  BrokerDebugStatus,
   BrokerEnsureResult,
   FolderPickResult,
   ObsidianPluginHealth,
@@ -43,6 +45,8 @@ const BROKER_OBSIDIAN_REGISTER_VAULT_URL = "http://127.0.0.1:17654/api/obsidian/
 const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
 const BROKER_WORKSPACE_ENROLL_URL = "http://127.0.0.1:17654/api/workspaces/enroll";
+const BROKER_DEBUG_URL = "http://127.0.0.1:17654/api/debug";
+const BROKER_DEBUG_LOGS_URL = "http://127.0.0.1:17654/api/debug/logs";
 const REFRESH_INTERVAL_MS = 3000;
 
 function brokerSessionWindowBindingUrl(sessionId: string) {
@@ -439,6 +443,9 @@ export default function App() {
   const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+  const [debugEnabled, setDebugEnabled] = useState(false);
+  const [debugCount, setDebugCount] = useState(0);
+  const [debugBusy, setDebugBusy] = useState(false);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const sessionsRef = useRef(sessions);
   const orderedSessionsRef = useRef<AgentSession[]>([]);
@@ -522,6 +529,55 @@ export default function App() {
     return payload as T;
   }
 
+  async function refreshDebugStatus() {
+    try {
+      const response = await fetch(BROKER_DEBUG_URL, { cache: "no-store" });
+      if (!response.ok) {
+        throw new Error(`broker returned ${response.status}`);
+      }
+
+      const result = (await response.json()) as BrokerDebugStatus;
+      setDebugEnabled(Boolean(result.enabled));
+      setDebugCount(result.count ?? 0);
+    } catch {
+      setDebugEnabled(false);
+      setDebugCount(0);
+    }
+  }
+
+  async function toggleDebugLogging() {
+    const nextEnabled = !debugEnabled;
+    setDebugBusy(true);
+
+    try {
+      const result = await postBrokerJson<BrokerDebugStatus>(BROKER_DEBUG_URL, {
+        enabled: nextEnabled,
+      });
+      setDebugEnabled(Boolean(result.enabled));
+      setDebugCount(result.count ?? 0);
+      setFeedback(result.enabled ? "Debug logging enabled." : "Debug logging disabled.");
+    } catch (error) {
+      setFeedback(`Debug toggle failed: ${(error as Error).message}`);
+    } finally {
+      setDebugBusy(false);
+    }
+  }
+
+  async function postDebugLog(event: string, data?: unknown) {
+    if (!debugEnabled) return;
+
+    try {
+      const result = await postBrokerJson<{ ok: boolean; count: number }>(BROKER_DEBUG_LOGS_URL, {
+        source: "overlay",
+        event,
+        data: data ?? {},
+      });
+      setDebugCount(result.count ?? debugCount);
+    } catch {
+      // Debug logging must never block the overlay action being debugged.
+    }
+  }
+
   async function inspectWorkspace(pathOverride?: string) {
     const targetPath = (pathOverride ?? workspacePath).trim();
     if (!targetPath) {
@@ -537,11 +593,24 @@ export default function App() {
       const result = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
         workspacePath: targetPath,
       });
+      void postDebugLog("workspace.inspect.ok", {
+        workspacePath: result.workspacePath,
+        projectName: result.projectName,
+        adapters: result.supportedAdapters.map((adapter) => ({
+          id: adapter.id,
+          status: adapter.status,
+          confidence: adapter.confidence,
+        })),
+      });
       setWorkspaceInspection(result);
       setWorkspacePath(result.workspacePath);
       const codexPlan = result.supportedAdapters.find((adapter) => adapter.id === "codex-cli");
       setFeedback(`${result.projectName}: ${codexPlan?.status ?? "no adapter"} for codex-cli.`);
     } catch (error) {
+      void postDebugLog("workspace.inspect.error", {
+        workspacePath: targetPath,
+        message: (error as Error).message,
+      });
       setWorkspaceInspection(null);
       setFeedback(`Check failed: ${(error as Error).message}`);
     } finally {
@@ -584,10 +653,19 @@ export default function App() {
         workspacePath: targetPath,
         adapters: ["codex-cli"],
       });
+      void postDebugLog("workspace.enroll.ok", {
+        workspacePath: result.workspacePath,
+        vaultRoot: result.vaultRoot,
+        installedAdapters: result.installedAdapters,
+      });
       setWorkspaceEnrollment(result);
       setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}.`);
       void refreshSessions();
     } catch (error) {
+      void postDebugLog("workspace.enroll.error", {
+        workspacePath: targetPath,
+        message: (error as Error).message,
+      });
       setFeedback(`Deploy failed: ${(error as Error).message}`);
     } finally {
       setDeployBusy(null);
@@ -611,6 +689,13 @@ export default function App() {
     setActivatingId(session.sessionId);
     setCandidateMenu(null);
     setFeedback(`Activating ${session.title}...`);
+    void postDebugLog("window.activate.start", {
+      sessionId: session.sessionId,
+      title: session.title,
+      hwnd: session.windowHint?.hwnd ?? null,
+      pid: session.windowHint?.pid ?? null,
+      cwd: session.cwd,
+    });
 
     try {
       const result = await invoke<ActivationResult>("activate_session_window", {
@@ -634,8 +719,18 @@ export default function App() {
           bindOnSelect: true,
         });
       }
+      void postDebugLog("window.activate.result", {
+        sessionId: session.sessionId,
+        ok: result.ok,
+        message: result.message,
+        candidateCount: result.candidates?.length ?? 0,
+      });
       setFeedback(result.message);
     } catch (error) {
+      void postDebugLog("window.activate.error", {
+        sessionId: session.sessionId,
+        message: (error as Error).message,
+      });
       setFeedback(`Activation command failed: ${(error as Error).message}`);
     } finally {
       setActivatingId(null);
@@ -651,6 +746,13 @@ export default function App() {
 
     setOpeningPath({ sessionId: session.sessionId, target });
     setFeedback(`Opening ${target} for ${session.title}...`);
+    void postDebugLog("obsidian.open.start", {
+      sessionId: session.sessionId,
+      target,
+      targetPath,
+      vaultRoot: session.vaultRoot ?? null,
+      vaultId: null,
+    });
 
     try {
       let vaultId: string | undefined;
@@ -660,10 +762,23 @@ export default function App() {
           { vaultRoot: session.vaultRoot }
         );
         vaultId = registration.vaultId;
+        void postDebugLog("obsidian.open.vault_registered", {
+          sessionId: session.sessionId,
+          target,
+          vaultRoot: session.vaultRoot,
+          vaultId,
+          changed: registration.changed,
+        });
       }
 
       const result = await invoke<OpenPathResult>("open_uri", {
         uri: obsidianAmoOpenUri(targetPath, target, vaultId, session.vaultRoot),
+      });
+      void postDebugLog("obsidian.open.result", {
+        sessionId: session.sessionId,
+        target,
+        ok: result.ok,
+        message: result.message,
       });
       if (result.ok) {
         setFeedback(`${target === "note" ? "Note" : "Canvas"} opened in Obsidian.`);
@@ -671,6 +786,12 @@ export default function App() {
         setFeedback(result.message);
       }
     } catch (error) {
+      void postDebugLog("obsidian.open.error", {
+        sessionId: session.sessionId,
+        target,
+        targetPath,
+        message: (error as Error).message,
+      });
       setFeedback(`Open ${target} failed: ${(error as Error).message}`);
     } finally {
       setOpeningPath(null);
@@ -685,13 +806,27 @@ export default function App() {
 
     setCopyingPromptId(session.sessionId);
     setFeedback(`Copying pending prompt for ${session.title}...`);
+    void postDebugLog("sync.copy.start", {
+      sessionId: session.sessionId,
+      pendingPromptId: session.pendingPromptId ?? null,
+      promptLength: session.pendingPrompt.length,
+      hasWindowBinding: Boolean(session.windowHint?.hwnd || session.windowHint?.pid),
+    });
 
     try {
       const result = await invoke<OpenPathResult>("write_clipboard_text", { text: session.pendingPrompt });
       if (!result.ok) {
+        void postDebugLog("sync.copy.clipboard_failed", {
+          sessionId: session.sessionId,
+          message: result.message,
+        });
         setFeedback(result.message);
         return;
       }
+      void postDebugLog("sync.copy.clipboard_ok", {
+        sessionId: session.sessionId,
+        pendingPromptId: session.pendingPromptId ?? null,
+      });
 
       const response = await fetch(BROKER_SYNC_BACK_URL, {
         method: "POST",
@@ -706,10 +841,19 @@ export default function App() {
         throw new Error(`broker returned ${response.status}`);
       }
 
+      void postDebugLog("sync.copy.broker_ok", {
+        sessionId: session.sessionId,
+        pendingPromptId: session.pendingPromptId ?? null,
+      });
       setFeedback("Pending prompt copied. Focusing target CLI...");
       void refreshSessions();
       await activateSession(session);
     } catch (error) {
+      void postDebugLog("sync.copy.error", {
+        sessionId: session.sessionId,
+        pendingPromptId: session.pendingPromptId ?? null,
+        message: (error as Error).message,
+      });
       setFeedback(`Copy + focus failed: ${(error as Error).message}`);
     } finally {
       setCopyingPromptId(null);
@@ -719,6 +863,13 @@ export default function App() {
   async function activateCandidate(session: AgentSession, candidate: ActivationCandidate, bindWindow: boolean) {
     setActivatingId(session.sessionId);
     setFeedback(`Activating ${candidate.processName ?? "window"}...`);
+    void postDebugLog("window.candidate.activate.start", {
+      sessionId: session.sessionId,
+      hwnd: candidate.hwnd,
+      processId: candidate.processId,
+      processName: candidate.processName ?? null,
+      bindWindow,
+    });
 
     try {
       const result = await invoke<ActivationResult>("activate_session_window", {
@@ -733,6 +884,12 @@ export default function App() {
         hwnd: candidate.hwnd,
       });
       setFeedback(result.message);
+      void postDebugLog("window.candidate.activate.result", {
+        sessionId: session.sessionId,
+        ok: result.ok,
+        message: result.message,
+        bindWindow,
+      });
       if (result.ok) {
         if (bindWindow) {
           const binding = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
@@ -745,6 +902,12 @@ export default function App() {
               label: candidate.label,
             },
           );
+          void postDebugLog("window.candidate.bound", {
+            sessionId: session.sessionId,
+            hwnd: candidate.hwnd,
+            processId: candidate.processId,
+            processName: candidate.processName ?? null,
+          });
           setSessions((previous) =>
             previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
           );
@@ -753,6 +916,12 @@ export default function App() {
         setCandidateMenu(null);
       }
     } catch (error) {
+      void postDebugLog("window.candidate.activate.error", {
+        sessionId: session.sessionId,
+        hwnd: candidate.hwnd,
+        processId: candidate.processId,
+        message: (error as Error).message,
+      });
       setFeedback(`Candidate activation failed: ${(error as Error).message}`);
     } finally {
       setActivatingId(null);
@@ -762,6 +931,11 @@ export default function App() {
   async function clearWindowBinding(session: AgentSession) {
     setUnbindingWindowId(session.sessionId);
     setFeedback(`Clearing window binding for ${session.title}...`);
+    void postDebugLog("window.unbind.start", {
+      sessionId: session.sessionId,
+      hwnd: session.windowHint?.hwnd ?? null,
+      pid: session.windowHint?.pid ?? null,
+    });
 
     try {
       const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
@@ -771,9 +945,16 @@ export default function App() {
       setSessions((previous) =>
         previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
       );
+      void postDebugLog("window.unbind.ok", {
+        sessionId: session.sessionId,
+      });
       setFeedback("Window binding cleared.");
       void refreshSessions();
     } catch (error) {
+      void postDebugLog("window.unbind.error", {
+        sessionId: session.sessionId,
+        message: (error as Error).message,
+      });
       setFeedback(`Unbind failed: ${(error as Error).message}`);
     } finally {
       setUnbindingWindowId(null);
@@ -1005,7 +1186,9 @@ export default function App() {
   }
 
   useEffect(() => {
-    void ensureBrokerThenRefresh();
+    void ensureBrokerThenRefresh().finally(() => {
+      void refreshDebugStatus();
+    });
     const interval = window.setInterval(() => {
       void refreshSessions();
     }, REFRESH_INTERVAL_MS);
@@ -1033,10 +1216,20 @@ export default function App() {
             <span>
               {source === "broker" ? "broker live" : "mock mode"}
               {lastRefreshAt ? ` · ${formatAgo(lastRefreshAt)} ago` : ""}
+              {debugEnabled ? ` · debug ${debugCount}` : ""}
             </span>
           </div>
         </div>
         <div className="header-actions">
+          <button
+            type="button"
+            className={`icon-button debug-button ${debugEnabled ? "is-active" : ""}`}
+            title={debugEnabled ? "Disable debug logging" : "Enable debug logging"}
+            disabled={debugBusy}
+            onClick={() => void toggleDebugLogging()}
+          >
+            <Bug size={15} aria-hidden="true" />
+          </button>
           <button type="button" className="icon-button" title="Refresh sessions" onClick={refreshSessions}>
             <RefreshCcw size={15} aria-hidden="true" />
           </button>

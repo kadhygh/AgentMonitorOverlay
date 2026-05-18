@@ -117,6 +117,23 @@ export interface BrokerEnsureResult {
   message: string;
 }
 
+export interface BrokerDebugEntry {
+  id: string;
+  at: string;
+  source: string;
+  event: string;
+  message?: string | null;
+  data?: unknown;
+}
+
+export interface BrokerDebugStatus {
+  ok: boolean;
+  enabled: boolean;
+  maxEntries: number;
+  count: number;
+  entries?: BrokerDebugEntry[];
+}
+
 export interface WorkspaceAdapterPlan {
   id: string;
   label: string;

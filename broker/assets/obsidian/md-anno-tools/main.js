@@ -12,6 +12,7 @@ const ANNO_REGEX = /\[!anno\]([\s\S]*?)\[\/anno\]/gi;
 const ANNO_TAG_PREFIX = "[!anno]";
 const ANNO_TAG_SUFFIX = "[/anno]";
 const EMPTY_ANNO_TEXT = "(empty annotation)";
+const PLUGIN_VERSION = "1.3.9";
 const DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
 };
@@ -19,6 +20,8 @@ const AMO_PANEL_VIEW_TYPE = "amo-annotation-panel";
 const AMO_OPEN_PROTOCOL = "amo-open";
 const AMO_SEND_ACTION_CLASS = "amo-send-note-action";
 const AMO_PANEL_ACTION_CLASS = "amo-open-panel-action";
+const AMO_CANVAS_SEND_ACTION_CLASS = "amo-send-canvas-note-action";
+const AMO_CANVAS_PANEL_ACTION_CLASS = "amo-open-canvas-panel-action";
 const DEFAULT_CANVAS_PATH = "AgentFlow.canvas";
 const SKIPPED_TAGS = new Set(["A", "BUTTON", "CODE", "INPUT", "PRE", "SCRIPT", "STYLE", "TEXTAREA"]);
 
@@ -33,8 +36,20 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.lastMarkdownView = null;
     this.lastMarkdownLeaf = null;
     this.lastMarkdownFilePath = null;
+    this.lastMarkdownTargetSource = null;
+    this.lastCanvasView = null;
+    this.canvasViewsWithTargetTracking = new WeakSet();
+    this.canvasTargetFilePathByView = new WeakMap();
+    this.annotationRenderContainers = new WeakSet();
+    this.annotationRescanTimer = null;
+    this.panelRefreshTimer = null;
 
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
+    this.debugLog("plugin.loaded", {
+      version: PLUGIN_VERSION,
+      bridgeUrl: this.settings.bridgeUrl,
+      vaultRoot: getVaultRoot(this.app),
+    });
 
     if (typeof this.registerObsidianProtocolHandler === "function") {
       this.registerObsidianProtocolHandler(AMO_OPEN_PROTOCOL, (params) => {
@@ -105,9 +120,21 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     this.addCommand({
       id: "wrap-selection-with-annotation-tag",
-      name: "Insert or wrap [!anno] annotation",
+      name: "Insert referenced [!anno] annotation",
       editorCallback: (editor) => {
         this.wrapSelectionWithAnnotation(editor);
+      },
+    });
+
+    this.addCommand({
+      id: "insert-referenced-annotation-from-selection",
+      name: "Insert referenced annotation from selection",
+      checkCallback: (checking) => {
+        const hasEditor = this.canInsertAnnotationAtActiveEditor();
+        const hasDomSelection = getWindowSelectionText().length > 0 && Boolean(this.getActiveMarkdownFile());
+        if (!hasEditor && !hasDomSelection) return false;
+        if (!checking) void this.insertAnnotationFromCurrentSelection();
+        return true;
       },
     });
 
@@ -135,7 +162,7 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         const hasSelection = editor.getSelection().trim().length > 0;
         menu.addItem((item) => {
           item
-            .setTitle(hasSelection ? "Wrap selection with [!anno]" : "Insert [!anno] at cursor")
+            .setTitle(hasSelection ? "Quote selection into [!anno]" : "Insert [!anno] at cursor")
             .setIcon("message-square-plus")
             .onClick(() => {
               this.wrapSelectionWithAnnotation(editor);
@@ -147,16 +174,20 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.app.workspace.onLayoutReady(() => {
       this.rememberCurrentMarkdownView();
       this.syncMarkdownViewActions();
+      this.syncCanvasViewActions();
       this.refreshPanels();
+      this.scheduleAnnotationRescan("layout-ready");
     });
 
     this.registerEvent(
       this.app.workspace.on("active-leaf-change", (leaf) => {
         this.rememberMarkdownLeaf(leaf);
         this.syncMarkdownViewActions();
+        this.syncCanvasViewActions();
         if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function" || leaf.view.getViewType() !== AMO_PANEL_VIEW_TYPE) {
           this.refreshPanels();
         }
+        this.scheduleAnnotationRescan("active-leaf-change");
       })
     );
 
@@ -164,7 +195,9 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       this.app.workspace.on("file-open", () => {
         this.rememberCurrentMarkdownView();
         this.syncMarkdownViewActions();
+        this.syncCanvasViewActions();
         this.refreshPanels();
+        this.scheduleAnnotationRescan("file-open");
       })
     );
 
@@ -172,13 +205,34 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       this.app.workspace.on("layout-change", () => {
         this.rememberCurrentMarkdownView();
         this.syncMarkdownViewActions();
+        this.syncCanvasViewActions();
         this.refreshPanels();
+        this.scheduleAnnotationRescan("layout-change");
       })
     );
   }
 
   onunload() {
-    document.querySelectorAll("." + AMO_SEND_ACTION_CLASS + ", ." + AMO_PANEL_ACTION_CLASS).forEach((el) => el.remove());
+    if (this.annotationRescanTimer) {
+      window.clearTimeout(this.annotationRescanTimer);
+      this.annotationRescanTimer = null;
+    }
+    if (this.panelRefreshTimer) {
+      window.clearTimeout(this.panelRefreshTimer);
+      this.panelRefreshTimer = null;
+    }
+    document
+      .querySelectorAll(
+        "." +
+          AMO_SEND_ACTION_CLASS +
+          ", ." +
+          AMO_PANEL_ACTION_CLASS +
+          ", ." +
+          AMO_CANVAS_SEND_ACTION_CLASS +
+          ", ." +
+          AMO_CANVAS_PANEL_ACTION_CLASS
+      )
+      .forEach((el) => el.remove());
   }
 
   async activatePanel() {
@@ -198,6 +252,34 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         leaf.view.render();
       }
     }
+  }
+
+  schedulePanelRefresh(reason) {
+    if (this.panelRefreshTimer) {
+      window.clearTimeout(this.panelRefreshTimer);
+    }
+
+    this.panelRefreshTimer = window.setTimeout(() => {
+      this.panelRefreshTimer = null;
+      this.debugLog("panel.refresh", {
+        reason: reason || "unknown",
+      });
+      this.refreshPanels();
+    }, 80);
+  }
+
+  debugLog(event, data) {
+    void postDebugLog(joinUrl(this.settings.bridgeUrl, "/api/debug/logs"), {
+      source: "obsidian-plugin",
+      event,
+      data: Object.assign(
+        {
+          version: PLUGIN_VERSION,
+          vaultRoot: getVaultRoot(this.app),
+        },
+        data || {}
+      ),
+    });
   }
 
   async handleAmoOpenProtocol(params) {
@@ -315,6 +397,125 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     }
   }
 
+  syncCanvasViewActions() {
+    for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
+      const view = leaf.view;
+      if (!view || !view.containerEl || typeof view.addAction !== "function") continue;
+      this.ensureCanvasTargetTracking(view);
+
+      if (!view.containerEl.querySelector("." + AMO_CANVAS_SEND_ACTION_CLASS)) {
+        const sendAction = view.addAction("send", "Send selected note annotations to AMO", () => {
+          void this.sendAnnotationsFromCanvas(view);
+        });
+        sendAction.addClass(AMO_CANVAS_SEND_ACTION_CLASS);
+        this.debugLog("canvas.action.added", {
+          action: "send",
+          canvasPath: view.file && view.file.path,
+        });
+      }
+
+      if (!view.containerEl.querySelector("." + AMO_CANVAS_PANEL_ACTION_CLASS)) {
+        const panelAction = view.addAction("panel-right", "Open AMO panel", () => {
+          void this.openPanelFromCanvas(view);
+        });
+        panelAction.addClass(AMO_CANVAS_PANEL_ACTION_CLASS);
+        this.debugLog("canvas.action.added", {
+          action: "panel",
+          canvasPath: view.file && view.file.path,
+        });
+      }
+    }
+  }
+
+  async sendAnnotationsFromCanvas(view) {
+    const rememberedBefore = this.getRememberedCanvasMarkdownFileTarget(view);
+    const selectedCount = collectCanvasSelectedNodes(view && view.canvas).length;
+    const file = this.getCanvasMarkdownFileForAction(view);
+    this.debugLog("canvas.send.clicked", {
+      canvasPath: view && view.file && view.file.path,
+      targetPath: file && file.path,
+      targetSource: file ? this.lastMarkdownTargetSource : null,
+      rememberedPathBefore: rememberedBefore && rememberedBefore.file && rememberedBefore.file.path,
+      selectedCount,
+    });
+    if (file) {
+      await this.sendAnnotationsFromFile(file);
+      return;
+    }
+
+    this.debugLog("canvas.send.choose_target", {
+      canvasPath: view && view.file && view.file.path,
+    });
+    await this.chooseCanvasMarkdownFile(view, "Send", async (selectedFile) => {
+      await this.sendAnnotationsFromFile(selectedFile);
+    });
+  }
+
+  async openPanelFromCanvas(view) {
+    const rememberedBefore = this.getRememberedCanvasMarkdownFileTarget(view);
+    const selectedCount = collectCanvasSelectedNodes(view && view.canvas).length;
+    const file = this.getCanvasMarkdownFileForAction(view);
+    this.debugLog("canvas.panel.clicked", {
+      canvasPath: view && view.file && view.file.path,
+      targetPath: file && file.path,
+      targetSource: file ? this.lastMarkdownTargetSource : null,
+      rememberedPathBefore: rememberedBefore && rememberedBefore.file && rememberedBefore.file.path,
+      selectedCount,
+    });
+    if (file) {
+      this.rememberCanvasMarkdownFile(view, file.path);
+      await this.activatePanel();
+      return;
+    }
+
+    await this.chooseCanvasMarkdownFile(view, "Use", async (selectedFile) => {
+      this.rememberCanvasMarkdownFile(view, selectedFile.path);
+      await this.activatePanel();
+    });
+  }
+
+  ensureCanvasTargetTracking(view) {
+    if (this.canvasViewsWithTargetTracking.has(view)) return;
+    this.canvasViewsWithTargetTracking.add(view);
+
+    this.registerDomEvent(view.containerEl, "pointerdown", (event) => {
+      this.rememberCanvasTargetFromEvent(view, event);
+    });
+  }
+
+  rememberCanvasTargetFromEvent(view, event) {
+    const target = event && event.target;
+    const element = target instanceof Element ? target : null;
+    if (element && element.closest(".view-action, .clickable-icon, button")) {
+      this.debugLog("canvas.pointer.ignored_action", {
+        canvasPath: view && view.file && view.file.path,
+        target: describeElement(element),
+      });
+      return;
+    }
+
+    this.canvasTargetFilePathByView.delete(view);
+
+    const filePath = canvasFilePathFromEventTarget(view.canvas, target);
+    if (filePath && filePath.toLowerCase().endsWith(".md")) {
+      const file = this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(filePath));
+      if (file && typeof file.path === "string") {
+        this.rememberCanvasMarkdownFile(view, file.path);
+        this.debugLog("canvas.pointer.remembered", {
+          canvasPath: view && view.file && view.file.path,
+          notePath: file.path,
+          target: element ? describeElement(element) : null,
+        });
+      }
+      return;
+    }
+
+    this.debugLog("canvas.pointer.cleared", {
+      canvasPath: view && view.file && view.file.path,
+      target: element ? describeElement(element) : null,
+    });
+  }
+
   setOperationStatus(message, tone) {
     this.operationStatus = {
       tone: tone || "neutral",
@@ -343,6 +544,7 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.lastMarkdownView = view;
     this.lastMarkdownLeaf = leaf || this.findLeafForView(view);
     this.lastMarkdownFilePath = view.file.path;
+    this.lastMarkdownTargetSource = "last-note";
   }
 
   findLeafForView(view) {
@@ -390,19 +592,260 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   getActiveMarkdownFile() {
-    const view = this.getActiveMarkdownView();
-    if (view && view.file) return view.file;
+    const target = this.getActiveMarkdownFileTarget();
+    return target ? target.file : null;
+  }
 
-    if (this.lastMarkdownFilePath) {
-      const file = this.app.vault.getAbstractFileByPath(this.lastMarkdownFilePath);
-      if (file && typeof file.path === "string") return file;
+  getActiveMarkdownFileTarget() {
+    const shouldPreferCanvasTarget =
+      this.isActiveLeafCanvas() ||
+      this.isActiveLeafAmoPanel() ||
+      this.lastMarkdownTargetSource === "canvas-selection";
+    if (shouldPreferCanvasTarget) {
+      const canvasView = this.getActiveCanvasView() || this.lastCanvasView;
+      const selectedCanvasTarget = this.getSelectedCanvasMarkdownFileTarget(canvasView, {
+        allowRemembered: false,
+        refreshPanels: false,
+      });
+      if (selectedCanvasTarget) return selectedCanvasTarget;
+
+      const rememberedCanvasTarget = canvasView ? this.getRememberedCanvasMarkdownFileTarget(canvasView) : null;
+      if (rememberedCanvasTarget) return rememberedCanvasTarget;
+
+      if (this.isActiveLeafCanvas()) {
+        return null;
+      }
+    }
+
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (activeView && activeView.file) {
+      this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
+      return {
+        file: activeView.file,
+        source: "active-note",
+      };
+    }
+
+    const selectedCanvasTarget = this.getSelectedCanvasMarkdownFileTarget();
+    if (selectedCanvasTarget) return selectedCanvasTarget;
+
+    if (this.isActiveLeafCanvas()) {
+      return null;
+    }
+
+    if (this.lastMarkdownTargetSource === "canvas-selection") {
+      const rememberedCanvasTarget = this.getRememberedMarkdownFileTarget();
+      if (rememberedCanvasTarget) return rememberedCanvasTarget;
+    }
+
+    const view = this.getActiveMarkdownView();
+    if (view && view.file) {
+      return {
+        file: view.file,
+        source: this.lastMarkdownTargetSource || "last-note",
+      };
+    }
+
+    const rememberedTarget = this.getRememberedMarkdownFileTarget();
+    if (rememberedTarget) return rememberedTarget;
+
+    return null;
+  }
+
+  getRememberedMarkdownFileTarget() {
+    if (!this.lastMarkdownFilePath) return null;
+    const file = this.app.vault.getAbstractFileByPath(this.lastMarkdownFilePath);
+    if (!file || typeof file.path !== "string") return null;
+    return {
+      file,
+      source: this.lastMarkdownTargetSource || "last-note",
+    };
+  }
+
+  getSelectedCanvasMarkdownFile(view) {
+    const target = this.getSelectedCanvasMarkdownFileTarget(view);
+    return target ? target.file : null;
+  }
+
+  getCanvasMarkdownFileForAction(view) {
+    const target =
+      this.getSelectedCanvasMarkdownFileTarget(view, { allowRemembered: false }) ||
+      this.getRememberedCanvasMarkdownFileTarget(view);
+    return target ? target.file : null;
+  }
+
+  getSelectedCanvasMarkdownFileTarget(view, options) {
+    const canvasView = view || this.getActiveCanvasView();
+    if (!canvasView) return null;
+
+    const allowRemembered = !options || options.allowRemembered !== false;
+    if (allowRemembered) {
+      const rememberedCanvasTarget = this.getRememberedCanvasMarkdownFileTarget(canvasView);
+      if (rememberedCanvasTarget) return rememberedCanvasTarget;
+    }
+
+    const selectedNodes = collectCanvasSelectedNodes(canvasView.canvas);
+    for (const node of selectedNodes) {
+      const filePath = canvasNodeFilePath(canvasView.canvas, node);
+      if (!filePath || !filePath.toLowerCase().endsWith(".md")) continue;
+      const file = this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(filePath));
+      if (file && typeof file.path === "string") {
+        const changed = this.rememberCanvasMarkdownFile(canvasView, file.path, {
+          refreshPanels: options ? options.refreshPanels : undefined,
+        });
+        if (changed) {
+          this.debugLog("canvas.selection.remembered", {
+            canvasPath: canvasView.file && canvasView.file.path,
+            notePath: file.path,
+            selectedCount: selectedNodes.length,
+          });
+        }
+        return {
+          file,
+          source: "canvas-selection",
+        };
+      }
     }
 
     return null;
   }
 
+  rememberCanvasMarkdownFile(view, filePath, options) {
+    const previousPath = this.canvasTargetFilePathByView.get(view);
+    const changed =
+      previousPath !== filePath ||
+      this.lastMarkdownFilePath !== filePath ||
+      this.lastMarkdownTargetSource !== "canvas-selection";
+
+    this.lastCanvasView = view;
+    this.canvasTargetFilePathByView.set(view, filePath);
+    this.lastMarkdownView = null;
+    this.lastMarkdownLeaf = null;
+    this.lastMarkdownFilePath = filePath;
+    this.lastMarkdownTargetSource = "canvas-selection";
+    if (changed && (!options || options.refreshPanels !== false)) {
+      this.schedulePanelRefresh("canvas-target-changed");
+    }
+    return changed;
+  }
+
+  getRememberedCanvasMarkdownFileTarget(view) {
+    const filePath = this.canvasTargetFilePathByView.get(view);
+    if (!filePath) return null;
+    const file = this.app.vault.getAbstractFileByPath(filePath);
+    if (!file || typeof file.path !== "string") return null;
+    return {
+      file,
+      source: "canvas-selection",
+    };
+  }
+
+  rememberSelectedCanvasMarkdownFile(view) {
+    return this.getSelectedCanvasMarkdownFileTarget(view);
+  }
+
+  async chooseCanvasMarkdownFile(view, actionLabel, onSelect) {
+    const targets = await this.listCanvasMarkdownFileTargets(view);
+    this.debugLog("canvas.target_modal.open", {
+      actionLabel,
+      canvasPath: view && view.file && view.file.path,
+      targetCount: targets.length,
+      targets: targets.slice(0, 12).map((target) => target.file.path),
+    });
+    if (targets.length === 0) {
+      new Notice("No Markdown note nodes found on this canvas.");
+      return;
+    }
+
+    new CanvasNoteTargetModal(this.app, targets, actionLabel, async (target) => {
+      this.rememberCanvasMarkdownFile(view, target.file.path);
+      this.debugLog("canvas.target_modal.selected", {
+        actionLabel,
+        canvasPath: view && view.file && view.file.path,
+        notePath: target.file.path,
+      });
+      await onSelect(target.file);
+    }).open();
+  }
+
+  async listCanvasMarkdownFileTargets(view) {
+    const targets = [];
+    const seen = new Set();
+
+    for (const node of collectCanvasNodes(view && view.canvas)) {
+      const filePath = canvasNodeFilePath(view.canvas, node);
+      this.addCanvasFileTarget(targets, seen, filePath, node.x || (node.data && node.data.x), node.y || (node.data && node.data.y));
+    }
+
+    if (view && view.file) {
+      try {
+        const raw = await this.app.vault.cachedRead(view.file);
+        const canvas = JSON.parse(raw);
+        for (const node of Array.isArray(canvas.nodes) ? canvas.nodes : []) {
+          this.addCanvasFileTarget(targets, seen, node.file, node.x, node.y);
+        }
+      } catch {
+        // Ignore malformed or unavailable canvas file data; live canvas nodes above may still be enough.
+      }
+    }
+
+    const sorted = targets.sort((a, b) => {
+      if (a.y !== b.y) return a.y - b.y;
+      return a.x - b.x;
+    });
+    this.debugLog("canvas.targets.listed", {
+      canvasPath: view && view.file && view.file.path,
+      count: sorted.length,
+      targets: sorted.slice(0, 12).map((target) => target.file.path),
+    });
+    return sorted;
+  }
+
+  addCanvasFileTarget(targets, seen, filePath, x, y) {
+    const normalizedPath = normalizeVaultFilePath(filePath);
+    if (!normalizedPath || !normalizedPath.toLowerCase().endsWith(".md") || seen.has(normalizedPath)) return;
+
+    const file = this.app.vault.getAbstractFileByPath(normalizedPath);
+    if (!file || typeof file.path !== "string") return;
+
+    seen.add(normalizedPath);
+    targets.push({
+      file,
+      x: Number.isFinite(Number(x)) ? Number(x) : 0,
+      y: Number.isFinite(Number(y)) ? Number(y) : 0,
+    });
+  }
+
+  getActiveCanvasView() {
+    const leaf = this.app.workspace.activeLeaf;
+    if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function") return null;
+    return leaf.view.getViewType() === "canvas" ? leaf.view : null;
+  }
+
+  isActiveLeafCanvas() {
+    return Boolean(this.getActiveCanvasView());
+  }
+
+  isActiveLeafAmoPanel() {
+    const leaf = this.app.workspace.activeLeaf;
+    if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function") return false;
+    return leaf.view.getViewType() === AMO_PANEL_VIEW_TYPE;
+  }
+
+  activeLeafType() {
+    const leaf = this.app.workspace.activeLeaf;
+    if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function") return "none";
+    return leaf.view.getViewType();
+  }
+
+  canInsertAnnotationAtActiveEditor() {
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (activeView && activeView.editor) return true;
+    return Boolean(!this.isActiveLeafCanvas() && this.lastMarkdownView && this.lastMarkdownView.editor);
+  }
+
   insertAnnotationAtActiveEditor() {
-    const view = this.getActiveMarkdownView();
+    const view = this.app.workspace.getActiveViewOfType(MarkdownView) || this.getActiveMarkdownView();
     if (!view || !view.editor) {
       new Notice("No active Markdown editor.");
       return;
@@ -416,10 +859,28 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.setOperationStatus("Inserted annotation marker.", "success");
   }
 
+  async insertAnnotationFromCurrentSelection() {
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
+    if (activeView && activeView.editor) {
+      this.wrapSelectionWithAnnotation(activeView.editor);
+      this.setOperationStatus("Inserted annotation marker.", "success");
+      return;
+    }
+
+    const selectedText = getWindowSelectionText();
+    const file = this.getActiveMarkdownFile();
+    if (selectedText && file) {
+      await this.appendReferencedAnnotationToFile(file, selectedText);
+      return;
+    }
+
+    this.insertAnnotationAtActiveEditor();
+  }
+
   wrapSelectionWithAnnotation(editor) {
     const selection = editor.getSelection();
-    if (selection.length > 0) {
-      editor.replaceSelection(buildAnnotationMarkup(selection));
+    if (selection.trim().length > 0) {
+      insertReferencedAnnotation(editor, selection);
       return;
     }
 
@@ -429,6 +890,18 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       line: cursor.line,
       ch: cursor.ch + ANNO_TAG_PREFIX.length,
     });
+  }
+
+  async appendReferencedAnnotationToFile(file, reference) {
+    const content = normalizeAnnotationContent(reference);
+    if (!content) {
+      new Notice("No selected text to quote.");
+      return;
+    }
+
+    await this.appendAnnotationBlockToFile(file, buildReferencedAnnotationMarkup(content));
+    this.setOperationStatus("Referenced annotation appended to " + file.path + ".", "success");
+    new Notice("Referenced annotation appended.");
   }
 
   async appendAnnotationToFile(file, rawContent) {
@@ -443,19 +916,29 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       return;
     }
 
-    const markdown = await this.app.vault.cachedRead(file);
     const block = buildAnnotationMarkup(content);
+    await this.appendAnnotationBlockToFile(file, block);
+    this.setOperationStatus("Annotation appended to " + file.path + ".", "success");
+    new Notice("Annotation appended.");
+  }
+
+  async appendAnnotationBlockToFile(file, block) {
+    const markdown = await this.app.vault.cachedRead(file);
     const nextContent = markdown.trim().length === 0
       ? block + "\n"
       : markdown.replace(/\s*$/u, "") + "\n\n" + block + "\n";
 
     await this.app.vault.modify(file, nextContent);
-    this.setOperationStatus("Annotation appended to " + file.path + ".", "success");
-    new Notice("Annotation appended.");
   }
 
   async copyAnnotationsFromActiveFile() {
-    const file = this.getActiveMarkdownFile();
+    const target = this.getActiveMarkdownFileTarget();
+    const file = target ? target.file : null;
+    this.debugLog("annotations.copy.resolve", {
+      notePath: file && file.path,
+      source: target && target.source,
+      activeLeafType: this.activeLeafType(),
+    });
     if (!file) {
       new Notice("No active Markdown note.");
       return;
@@ -467,6 +950,12 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   async copyAnnotationsFromFile(file) {
     const markdown = await this.app.vault.cachedRead(file);
     const annotations = extractAnnotationContents(markdown);
+    this.debugLog("annotations.copy.extract", {
+      notePath: file.path,
+      annotationCount: annotations.length,
+      annotationPreviews: annotations.slice(0, 5).map((annotation) => previewText(annotation)),
+      activeLeafType: this.activeLeafType(),
+    });
     if (annotations.length === 0) {
       new Notice("No annotations found in the current note.");
       return;
@@ -474,10 +963,18 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     try {
       await writeTextToClipboard(formatAnnotationsForClipboard(annotations));
+      this.debugLog("annotations.copy.ok", {
+        notePath: file.path,
+        annotationCount: annotations.length,
+      });
       this.setOperationStatus("Copied " + annotations.length + " annotation(s) from " + file.path + ".", "success");
       new Notice("Copied " + annotations.length + " annotation(s).");
     } catch (error) {
       console.error("Failed to copy annotations:", error);
+      this.debugLog("annotations.copy.error", {
+        notePath: file.path,
+        message: messageFromError(error),
+      });
       this.setOperationStatus("Copy failed: " + messageFromError(error), "error");
       new Notice("Copy failed: " + messageFromError(error));
     }
@@ -496,12 +993,24 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   async sendAnnotationsFromFile(file) {
     const markdown = await this.app.vault.cachedRead(file);
     const annotations = extractAnnotationContents(markdown);
+    this.debugLog("annotations.extract", {
+      notePath: file.path,
+      annotationCount: annotations.length,
+      annotationPreviews: annotations.slice(0, 5).map((annotation) => previewText(annotation)),
+      markdownHasAnnoOpen: markdown.includes(ANNO_TAG_PREFIX),
+      markdownHasAnnoClose: markdown.includes(ANNO_TAG_SUFFIX),
+    });
     if (annotations.length === 0) {
       new Notice("No annotations found in the current note.");
       return;
     }
 
     const amo = parseAmoFrontmatter(markdown);
+    this.debugLog("annotations.frontmatter", {
+      notePath: file.path,
+      sessionId: amo.sessionId || null,
+      turnId: amo.turnId || null,
+    });
     if (!amo.sessionId) {
       new Notice("This note is missing AMO session metadata.");
       return;
@@ -521,7 +1030,19 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     };
 
     try {
+      this.debugLog("annotations.send.start", {
+        notePath: file.path,
+        sessionId: payload.sessionId,
+        turnId: payload.turnId,
+        annotationCount: payload.annotations.length,
+      });
       const result = await postJson(joinUrl(this.settings.bridgeUrl, "/api/obsidian/annotations"), payload);
+      this.debugLog("annotations.send.ok", {
+        notePath: file.path,
+        sessionId: payload.sessionId,
+        pendingPromptId: result.pendingPromptId || null,
+        annotationCount: payload.annotations.length,
+      });
       this.setOperationStatus(
         "Sent " + annotations.length + " annotation(s) from " + file.path + " to AMO.",
         "success"
@@ -534,6 +1055,11 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       );
     } catch (error) {
       console.error("Failed to send annotations to AMO:", error);
+      this.debugLog("annotations.send.error", {
+        notePath: file.path,
+        sessionId: payload.sessionId,
+        message: messageFromError(error),
+      });
       this.setOperationStatus("AMO sync failed: " + messageFromError(error), "error");
       new Notice("AMO sync failed: " + messageFromError(error));
     }
@@ -554,24 +1080,98 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async getActiveNoteInfo() {
-    const file = this.getActiveMarkdownFile();
-    if (!file) {
+    const target = this.getActiveMarkdownFileTarget();
+    if (!target || !target.file) {
       return {
         file: null,
+        source: this.isActiveLeafCanvas() ? "canvas-selection-missing" : "none",
         annotations: [],
         amo: {},
       };
     }
 
+    const file = target.file;
     const markdown = await this.app.vault.cachedRead(file);
     return {
       file,
+      source: target.source,
       annotations: extractAnnotationContents(markdown),
       amo: parseAmoFrontmatter(markdown),
     };
   }
 
   renderAnnotations(root) {
+    if (rootContainsAnnotationMarkers(root)) {
+      this.debugLog("render.postprocessor", {
+        root: describeElement(root),
+        preview: previewText(root.textContent || ""),
+      });
+    }
+
+    this.replaceAnnotationBlockRanges(root, "postprocessor");
+    this.scheduleAnnotationContainerRender(root);
+    this.replaceInlineAnnotations(root);
+  }
+
+  scheduleAnnotationContainerRender(root) {
+    const container = getAnnotationRenderContainer(root);
+    if (!container || this.annotationRenderContainers.has(container)) return;
+    this.annotationRenderContainers.add(container);
+
+    [0, 80, 260].forEach((delay, index, delays) => {
+      window.setTimeout(() => {
+        if (index === delays.length - 1) {
+          this.annotationRenderContainers.delete(container);
+        }
+        if (!document.body.contains(container)) return;
+        if (rootContainsAnnotationMarkers(container)) {
+          this.debugLog("render.container_pass", {
+            delay,
+            container: describeElement(container),
+            preview: previewText(container.textContent || ""),
+          });
+        }
+        this.replaceAnnotationBlockRanges(container, "container-pass-" + delay);
+        this.replaceInlineAnnotations(container);
+      }, delay);
+    });
+  }
+
+  scheduleAnnotationRescan(reason) {
+    if (this.annotationRescanTimer) {
+      window.clearTimeout(this.annotationRescanTimer);
+    }
+
+    this.annotationRescanTimer = window.setTimeout(() => {
+      this.annotationRescanTimer = null;
+      this.rescanAnnotationContainers(reason);
+    }, 120);
+  }
+
+  rescanAnnotationContainers(reason) {
+    const containers = Array.from(
+      new Set(
+        Array.from(
+          document.querySelectorAll(
+            ".markdown-preview-view, .markdown-reading-view, .markdown-rendered, .markdown-preview-sizer"
+          )
+        )
+      )
+    );
+
+    for (const container of containers) {
+      if (!rootContainsAnnotationMarkers(container)) continue;
+      this.debugLog("render.rescan", {
+        reason,
+        container: describeElement(container),
+        preview: previewText(container.textContent || ""),
+      });
+      this.replaceAnnotationBlockRanges(container, "rescan-" + reason);
+      this.replaceInlineAnnotations(container);
+    }
+  }
+
+  replaceInlineAnnotations(root) {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
       acceptNode: (node) => {
         if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
@@ -583,6 +1183,27 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     const targets = [];
     while (walker.nextNode()) targets.push(walker.currentNode);
     for (const textNode of targets) this.replaceAnnotationsInTextNode(textNode);
+  }
+
+  replaceAnnotationBlockRanges(root, reason) {
+    let guard = 0;
+    while (guard < 20) {
+      guard += 1;
+      const range = findAnnotationBlockRange(root);
+      if (!range) return;
+
+      const fragment = range.extractContents();
+      stripAnnotationMarkers(fragment);
+      removeEmptyAnnotationBlocks(fragment);
+      const replacementPreview = previewText(fragment.textContent || "");
+      range.insertNode(createAnnotationRichElement(fragment));
+      this.debugLog("render.block_replaced", {
+        reason: reason || "unknown",
+        root: describeElement(root),
+        replacementIndex: guard,
+        preview: replacementPreview,
+      });
+    }
   }
 
   shouldProcessTextNode(textNode) {
@@ -671,6 +1292,58 @@ class AnnotationInputModal extends Modal {
   }
 }
 
+class CanvasNoteTargetModal extends Modal {
+  constructor(app, targets, actionLabel, onSelect) {
+    super(app);
+    this.targets = targets;
+    this.actionLabel = actionLabel || "Use";
+    this.onSelect = onSelect;
+  }
+
+  onOpen() {
+    this.modalEl.addClass("anno-modal");
+    this.titleEl.setText("Choose Canvas Note");
+    this.contentEl.createEl("p", {
+      text: "AMO could not read the current canvas selection reliably. Choose the note to use.",
+    });
+
+    const list = this.contentEl.createDiv({ cls: "amo-canvas-note-list" });
+    for (const target of this.targets) {
+      const row = list.createDiv({ cls: "amo-canvas-note-row" });
+      row.createDiv({
+        cls: "amo-canvas-note-name",
+        text: canvasTargetDisplayName(target.file.path),
+      });
+      row.createDiv({
+        cls: "amo-canvas-note-path",
+        text: target.file.path,
+      });
+      new ButtonComponent(row)
+        .setButtonText(this.actionLabel)
+        .setCta()
+        .onClick(async () => {
+          await this.submit(target);
+        });
+    }
+
+    const actions = this.contentEl.createDiv({ cls: "anno-modal-actions" });
+    new ButtonComponent(actions)
+      .setButtonText("Cancel")
+      .onClick(() => {
+        this.close();
+      });
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+
+  async submit(target) {
+    await this.onSelect(target);
+    this.close();
+  }
+}
+
 class AmoAnnotationPanelView extends ItemView {
   constructor(leaf, plugin) {
     super(leaf);
@@ -724,24 +1397,66 @@ class AmoAnnotationPanelView extends ItemView {
     summary.createEl("h4", { text: "Current note" });
     if (info.file) {
       createInfoRow(summary, "File", info.file.path);
+      createInfoRow(summary, "Source", formatNoteTargetSource(info.source));
       createInfoRow(summary, "Session", info.amo.sessionId || "Missing AMO metadata");
       createInfoRow(summary, "Turn", info.amo.turnId || "-");
       createInfoRow(summary, "Annotations", String(info.annotations.length));
+      this.plugin.debugLog("panel.render.note", {
+        notePath: info.file.path,
+        source: info.source,
+        annotationCount: info.annotations.length,
+        activeLeafType: this.plugin.activeLeafType(),
+      });
     } else {
-      summary.createDiv({ cls: "amo-panel-muted", text: "No active Markdown note." });
+      summary.createDiv({
+        cls: "amo-panel-muted",
+        text:
+          info.source === "canvas-selection-missing"
+            ? "Select a Markdown note node on the canvas."
+            : "No active Markdown note.",
+      });
     }
 
     const actions = root.createDiv({ cls: "amo-panel-section amo-panel-actions" });
     actions.createEl("h4", { text: "Actions" });
-    this.addButton(actions, "Send to AMO", () => this.plugin.sendAnnotationsFromActiveFile(), Boolean(info.file));
-    this.addButton(actions, "Copy annotations", () => this.plugin.copyAnnotationsFromActiveFile(), Boolean(info.file));
+    this.addButton(
+      actions,
+      "Send to AMO",
+      () => {
+        if (!info.file) return;
+        this.plugin.debugLog("panel.send.clicked", {
+          notePath: info.file.path,
+          source: info.source,
+        });
+        void this.plugin.sendAnnotationsFromFile(info.file);
+      },
+      Boolean(info.file)
+    );
+    this.addButton(
+      actions,
+      "Copy annotations",
+      () => {
+        if (!info.file) return;
+        this.plugin.debugLog("panel.copy.clicked", {
+          notePath: info.file.path,
+          source: info.source,
+        });
+        void this.plugin.copyAnnotationsFromFile(info.file);
+      },
+      Boolean(info.file)
+    );
     this.addButton(actions, "Append annotation", () => {
       if (!info.file) return;
       new AnnotationInputModal(this.app, async (value) => {
         await this.plugin.appendAnnotationToFile(info.file, value);
       }).open();
     }, Boolean(info.file));
-    this.addButton(actions, "Insert marker", () => this.plugin.insertAnnotationAtActiveEditor(), Boolean(info.file));
+    this.addButton(
+      actions,
+      "Insert marker",
+      () => this.plugin.insertAnnotationFromCurrentSelection(),
+      this.plugin.canInsertAnnotationAtActiveEditor() || getWindowSelectionText().length > 0
+    );
     this.addButton(actions, "Check bridge", () => this.plugin.checkBridgeHealth(), true);
     this.addButton(actions, "Refresh", () => this.render(), true);
 
@@ -766,7 +1481,53 @@ class AmoAnnotationPanelView extends ItemView {
 }
 
 function buildAnnotationMarkup(content) {
-  return ANNO_TAG_PREFIX + content + ANNO_TAG_SUFFIX;
+  return ANNO_TAG_PREFIX + sanitizeAnnotationContent(content) + ANNO_TAG_SUFFIX;
+}
+
+function buildReferencedAnnotationMarkup(reference) {
+  return ANNO_TAG_PREFIX + "\n" + formatMarkdownQuote(reference) + "\n\n" + ANNO_TAG_SUFFIX;
+}
+
+function insertReferencedAnnotation(editor, selection) {
+  const reference = normalizeAnnotationContent(selection);
+  if (!reference) {
+    const cursor = editor.getCursor();
+    editor.replaceSelection(ANNO_TAG_PREFIX + ANNO_TAG_SUFFIX);
+    editor.setCursor({
+      line: cursor.line,
+      ch: cursor.ch + ANNO_TAG_PREFIX.length,
+    });
+    return;
+  }
+
+  const to = editor.getCursor("to") || editor.getCursor();
+  const targetLine = Number.isSafeInteger(to.line) ? to.line : editor.getCursor().line;
+  const lineText = typeof editor.getLine === "function" ? editor.getLine(targetLine) || "" : "";
+  const insertAt = {
+    line: targetLine,
+    ch: lineText.length,
+  };
+  const leading = lineText.trim().length > 0 ? "\n\n" : "";
+  const quote = formatMarkdownQuote(reference);
+  const block = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n\n" + ANNO_TAG_SUFFIX;
+  const beforeAnswer = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n";
+
+  editor.replaceRange(block, insertAt);
+  editor.setCursor({
+    line: insertAt.line + beforeAnswer.split("\n").length - 1,
+    ch: 0,
+  });
+}
+
+function formatMarkdownQuote(content) {
+  return sanitizeAnnotationContent(content)
+    .split("\n")
+    .map((line) => (line.length > 0 ? "> " + line : ">"))
+    .join("\n");
+}
+
+function sanitizeAnnotationContent(content) {
+  return normalizeAnnotationContent(content).replaceAll(ANNO_TAG_SUFFIX, "[/ anno]");
 }
 
 function extractAnnotationContents(markdown) {
@@ -809,8 +1570,321 @@ function normalizeOpenKind(value, filePath) {
   return String(filePath || "").toLowerCase().endsWith(".canvas") ? "canvas" : "note";
 }
 
+function collectCanvasSelectedNodes(canvas) {
+  if (!canvas) return [];
+
+  const selectedItems = [];
+  for (const source of [canvas.selectedNodes, canvas.selectedItems, canvas.selected]) {
+    selectedItems.push(...selectedCollectionValues(source));
+  }
+
+  const selection = canvas.selection;
+  selectedItems.push(...selectedCollectionValues(selection));
+  if (selection && typeof selection === "object") {
+    for (const key of ["selected", "selectedNodes", "selectedItems", "nodes", "items", "_selected"]) {
+      selectedItems.push(...selectedCollectionValues(selection[key]));
+    }
+  }
+
+  const allNodes = collectCanvasNodes(canvas);
+  const nodes = [];
+  const seen = new Set();
+
+  for (const item of selectedItems) {
+    const node = resolveCanvasSelectionItem(canvas, allNodes, item);
+    if (!node || seen.has(node)) continue;
+    seen.add(node);
+    nodes.push(node);
+  }
+
+  if (nodes.length > 0) return nodes;
+
+  for (const node of allNodes) {
+    if (!node || seen.has(node)) continue;
+    if (node.selected || node.isSelected || (node.data && node.data.selected)) {
+      seen.add(node);
+      nodes.push(node);
+    }
+  }
+
+  return nodes;
+}
+
+function selectedCollectionValues(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (value instanceof Set) return Array.from(value);
+  if (value instanceof Map) return Array.from(value.values());
+  if (typeof value.values === "function" && typeof value !== "string") {
+    try {
+      return Array.from(value.values());
+    } catch {
+      return [];
+    }
+  }
+  return [];
+}
+
+function collectCanvasNodes(canvas) {
+  const nodes = [];
+  for (const source of [canvas.nodes, canvas.nodeMap, canvas.nodesById]) {
+    nodes.push(...collectionValues(source));
+  }
+  return nodes;
+}
+
+function canvasFilePathFromEventTarget(canvas, target) {
+  const element = target instanceof Element ? target : null;
+  if (!element) return "";
+
+  const nodeEl = element.closest(".canvas-node") || element.closest("[data-node-id], [data-path], [data-file]");
+  if (!nodeEl) return "";
+
+  const datasetPath = firstNonEmpty(
+    nodeEl.dataset && nodeEl.dataset.path,
+    nodeEl.dataset && nodeEl.dataset.file,
+    datasetValueFromDescendant(nodeEl, "path"),
+    datasetValueFromDescendant(nodeEl, "file")
+  );
+  if (datasetPath) return normalizeVaultFilePath(datasetPath);
+
+  const nodeId = firstNonEmpty(
+    nodeEl.dataset && nodeEl.dataset.nodeId,
+    nodeEl.dataset && nodeEl.dataset.id,
+    nodeEl.getAttribute("data-node-id"),
+    nodeEl.id
+  );
+  if (nodeId) {
+    const node = collectCanvasNodes(canvas).find((candidate) => {
+      return candidate && (candidate.id === nodeId || (candidate.data && candidate.data.id === nodeId));
+    });
+    const filePath = node ? canvasNodeFilePath(canvas, node) : "";
+    if (filePath) return filePath;
+  }
+
+  const visibleText = normalizeAnnotationContent(nodeEl.textContent || "");
+  if (!visibleText) return "";
+
+  const fileNodes = collectCanvasNodes(canvas)
+    .map((node) => canvasNodeFilePath(canvas, node))
+    .filter((filePath) => filePath && filePath.toLowerCase().endsWith(".md"));
+  const exact = fileNodes.find((filePath) => visibleText.includes(filePath));
+  if (exact) return exact;
+
+  return (
+    fileNodes.find((filePath) => {
+      const basename = filePath.split("/").pop() || "";
+      const stem = basename.replace(/\.md$/iu, "");
+      return Boolean(stem && visibleText.includes(stem));
+    }) || ""
+  );
+}
+
+function firstNonEmpty(...values) {
+  for (const value of values) {
+    const text = String(value || "").trim();
+    if (text) return text;
+  }
+  return "";
+}
+
+function datasetValueFromDescendant(root, key) {
+  const el = root.querySelector("[data-" + key + "]");
+  return el && el.dataset ? el.dataset[key] : "";
+}
+
+function collectionValues(value) {
+  if (!value) return [];
+  if (Array.isArray(value)) return value;
+  if (value instanceof Set) return Array.from(value);
+  if (value instanceof Map) return Array.from(value.values());
+  if (typeof value.values === "function" && typeof value !== "string") {
+    try {
+      return Array.from(value.values());
+    } catch {
+      return [];
+    }
+  }
+  if (typeof value === "object") return Object.values(value);
+  return [];
+}
+
+function resolveCanvasSelectionItem(canvas, allNodes, item) {
+  if (!item) return null;
+  if (typeof item === "string") {
+    return allNodes.find((node) => node && (node.id === item || (node.data && node.data.id === item))) || null;
+  }
+  if (item.node) return item.node;
+  if (item.item) return item.item;
+  if (item.value) return item.value;
+  if (item.id || item.file || item.filePath || item.path || item.data) return item;
+  return null;
+}
+
+function canvasNodeFilePath(canvas, node) {
+  const data = safeCall(() => (typeof node.getData === "function" ? node.getData() : null));
+  const file = safeCall(() => (typeof node.getFile === "function" ? node.getFile() : null));
+  const candidates = [
+    file,
+    node.file,
+    node.filePath,
+    node.path,
+    node.data && node.data.file,
+    node.data && node.data.path,
+    data && data.file,
+    data && data.path,
+  ];
+
+  for (const candidate of candidates) {
+    const filePath = normalizeCanvasFilePathCandidate(candidate);
+    if (filePath) return filePath;
+  }
+
+  const nodeId = node.id || (node.data && node.data.id);
+  if (!nodeId) return "";
+  const match = collectCanvasNodes(canvas).find((candidate) => candidate && candidate.id === nodeId && candidate !== node);
+  return match ? canvasNodeFilePath(canvas, match) : "";
+}
+
+function normalizeCanvasFilePathCandidate(candidate) {
+  if (!candidate) return "";
+  if (typeof candidate === "string") return normalizeVaultFilePath(candidate);
+  if (typeof candidate.path === "string") return normalizeVaultFilePath(candidate.path);
+  if (typeof candidate.file === "string") return normalizeVaultFilePath(candidate.file);
+  if (candidate.file && typeof candidate.file.path === "string") return normalizeVaultFilePath(candidate.file.path);
+  return "";
+}
+
+function safeCall(callback) {
+  try {
+    return callback();
+  } catch {
+    return null;
+  }
+}
+
 function formatAnnotationsForClipboard(annotations) {
   return annotations.join("\n\n");
+}
+
+function canvasTargetDisplayName(filePath) {
+  const name = String(filePath || "").split(/[\\/]/u).pop() || String(filePath || "");
+  return name.replace(/\.md$/iu, "");
+}
+
+function getAnnotationRenderContainer(root) {
+  if (!(root instanceof Element)) return null;
+  return (
+    root.closest(".markdown-preview-view") ||
+    root.closest(".markdown-reading-view") ||
+    root.closest(".markdown-rendered") ||
+    root.closest(".markdown-preview-sizer") ||
+    root
+  );
+}
+
+function findAnnotationBlockRange(root) {
+  const textNodes = collectAnnotationTextNodes(root);
+  for (let startIndex = 0; startIndex < textNodes.length; startIndex += 1) {
+    const startText = textNodes[startIndex];
+    const startSource = startText.nodeValue || "";
+    const markerIndex = startSource.indexOf(ANNO_TAG_PREFIX);
+    if (markerIndex < 0) continue;
+
+    const sameNodeEnd = startSource.indexOf(ANNO_TAG_SUFFIX, markerIndex + ANNO_TAG_PREFIX.length);
+    if (sameNodeEnd >= 0) continue;
+
+    for (let endIndex = startIndex + 1; endIndex < textNodes.length; endIndex += 1) {
+      const endText = textNodes[endIndex];
+      if (!(endText.nodeValue || "").includes(ANNO_TAG_SUFFIX)) continue;
+
+      const startBoundary = annotationRangeBoundaryNode(startText, root);
+      const endBoundary = annotationRangeBoundaryNode(endText, root);
+      if (!startBoundary || !endBoundary) return null;
+
+      const range = document.createRange();
+      range.setStartBefore(startBoundary);
+      range.setEndAfter(endBoundary);
+      return range;
+    }
+  }
+
+  return null;
+}
+
+function collectAnnotationTextNodes(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => {
+      if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
+      if (!shouldProcessAnnotationBoundaryNode(node)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  return nodes;
+}
+
+function shouldProcessAnnotationBoundaryNode(textNode) {
+  const text = textNode.nodeValue || "";
+  if (!text.includes(ANNO_TAG_PREFIX) && !text.includes(ANNO_TAG_SUFFIX)) return false;
+  const parent = textNode.parentElement;
+  if (!parent || parent.closest(".anno-token")) return false;
+
+  for (let current = parent; current; current = current.parentElement) {
+    if (SKIPPED_TAGS.has(current.tagName)) return false;
+  }
+  return true;
+}
+
+function annotationRangeBoundaryNode(textNode, root) {
+  let current = textNode.parentElement;
+  if (!current) return textNode;
+
+  while (current && current !== root && root.contains(current)) {
+    if (isAnnotationBlockBoundary(current)) return current;
+    current = current.parentElement;
+  }
+
+  return textNode.parentElement || textNode;
+}
+
+function isAnnotationBlockBoundary(element) {
+  const tag = element.tagName;
+  if (/^H[1-6]$/u.test(tag)) return true;
+  if (["P", "BLOCKQUOTE", "LI", "PRE", "TABLE", "UL", "OL"].includes(tag)) return true;
+  if (tag !== "DIV") return false;
+
+  return !(
+    element.classList.contains("markdown-preview-view") ||
+    element.classList.contains("markdown-reading-view") ||
+    element.classList.contains("markdown-rendered") ||
+    element.classList.contains("markdown-preview-sizer") ||
+    element.classList.contains("markdown-preview-section")
+  );
+}
+
+function stripAnnotationMarkers(root) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+  const nodes = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode);
+  for (const node of nodes) {
+    node.nodeValue = String(node.nodeValue || "")
+      .replaceAll(ANNO_TAG_PREFIX, "")
+      .replaceAll(ANNO_TAG_SUFFIX, "");
+  }
+}
+
+function removeEmptyAnnotationBlocks(root) {
+  const elements = root.querySelectorAll ? Array.from(root.querySelectorAll("p, div")) : [];
+  elements.reverse();
+  for (const element of elements) {
+    if (element.children.length > 0) continue;
+    if (normalizeAnnotationContent(element.textContent || "").length === 0) {
+      element.remove();
+    }
+  }
 }
 
 function createAnnotationElement(content, isStandalone) {
@@ -826,6 +1900,27 @@ function createAnnotationElement(content, isStandalone) {
   const body = document.createElement("span");
   body.classList.add("anno-token-content");
   body.textContent = content || EMPTY_ANNO_TEXT;
+  wrapper.appendChild(body);
+
+  return wrapper;
+}
+
+function createAnnotationRichElement(fragment) {
+  const wrapper = document.createElement("div");
+  wrapper.classList.add("anno-token", "anno-token-block", "anno-token-rich");
+
+  const badge = document.createElement("span");
+  badge.classList.add("anno-token-badge");
+  badge.textContent = "anno";
+  wrapper.appendChild(badge);
+
+  const body = document.createElement("div");
+  body.classList.add("anno-token-content");
+  if (normalizeAnnotationContent(fragment.textContent || "").length > 0 || fragment.childNodes.length > 0) {
+    body.appendChild(fragment);
+  } else {
+    body.textContent = EMPTY_ANNO_TEXT;
+  }
   wrapper.appendChild(body);
 
   return wrapper;
@@ -864,6 +1959,32 @@ function parseYamlScalar(value) {
   }
   if (trimmed.startsWith("'") && trimmed.endsWith("'")) return trimmed.slice(1, -1);
   return trimmed;
+}
+
+function rootContainsAnnotationMarkers(root) {
+  return Boolean(
+    root &&
+      typeof root.textContent === "string" &&
+      (root.textContent.includes(ANNO_TAG_PREFIX) || root.textContent.includes(ANNO_TAG_SUFFIX))
+  );
+}
+
+function previewText(value, limit) {
+  const normalized = normalizeAnnotationContent(value || "");
+  const maxLength = Number.isFinite(Number(limit)) ? Number(limit) : 180;
+  return normalized.length > maxLength ? normalized.slice(0, maxLength) + "..." : normalized;
+}
+
+function describeElement(element) {
+  if (!(element instanceof Element)) return "";
+  const tag = element.tagName.toLowerCase();
+  const id = element.id ? "#" + element.id : "";
+  const classes = Array.from(element.classList || [])
+    .slice(0, 6)
+    .map((className) => "." + className)
+    .join("");
+  const path = element.getAttribute("data-path") || element.getAttribute("data-file") || "";
+  return tag + id + classes + (path ? "[path=" + path + "]" : "");
 }
 
 function getVaultRoot(app) {
@@ -915,11 +2036,39 @@ async function postJson(url, payload) {
   }
 }
 
+async function postDebugLog(url, payload) {
+  if (typeof fetch !== "function") return;
+
+  const controller = new AbortController();
+  const timeout = window.setTimeout(() => controller.abort(), 1800);
+  try {
+    await fetch(url, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify(payload),
+      signal: controller.signal,
+    });
+  } catch {
+    // Debug logging is best-effort and must never break Obsidian actions.
+  } finally {
+    window.clearTimeout(timeout);
+  }
+}
+
 async function writeTextToClipboard(value) {
   if (!navigator.clipboard || !navigator.clipboard.writeText) {
     throw new Error("Clipboard API is unavailable");
   }
   await navigator.clipboard.writeText(value);
+}
+
+function getWindowSelectionText() {
+  try {
+    const selection = window.getSelection && window.getSelection();
+    return normalizeAnnotationContent(selection ? selection.toString() : "");
+  } catch {
+    return "";
+  }
 }
 
 function messageFromError(error) {
@@ -931,6 +2080,13 @@ function createInfoRow(container, label, value) {
   row.createEl("span", { text: label });
   row.createEl("code", { text: value || "-" });
   return row;
+}
+
+function formatNoteTargetSource(source) {
+  if (source === "active-note") return "Active note";
+  if (source === "canvas-selection") return "Canvas selection";
+  if (source === "last-note") return "Last note";
+  return "Unknown";
 }
 
 function formatTime(value) {

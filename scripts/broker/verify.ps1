@@ -118,6 +118,40 @@ try {
     $health = Wait-Broker
     Write-Host "Health OK. Storage: $($health.storage)"
 
+    $debugInitial = Invoke-BrokerJson -Method GET -Path "/api/debug"
+    if (-not $debugInitial.ok -or $debugInitial.enabled) {
+        throw "Debug endpoint should start disabled by default."
+    }
+    $debugOn = Invoke-BrokerJson -Method POST -Path "/api/debug" -Body @{
+        enabled = $true
+    }
+    if (-not $debugOn.enabled) {
+        throw "Debug endpoint did not enable logging."
+    }
+    $debugLog = Invoke-BrokerJson -Method POST -Path "/api/debug/logs" -Body @{
+        source = "verify"
+        event = "debug-smoke"
+        data = @{
+            workspaceRoot = $workspaceRoot
+        }
+    }
+    if (-not $debugLog.recorded) {
+        throw "Debug log endpoint did not record while enabled."
+    }
+    $debugAfterLog = Invoke-BrokerJson -Method GET -Path "/api/debug?limit=5"
+    $verifyEntry = @($debugAfterLog.entries | Where-Object { $_.source -eq "verify" -and $_.event -eq "debug-smoke" })[0]
+    if (-not $verifyEntry) {
+        throw "Debug log endpoint did not return the verify entry."
+    }
+    Invoke-BrokerJson -Method POST -Path "/api/debug/clear" -Body @{} | Out-Null
+    $debugOff = Invoke-BrokerJson -Method POST -Path "/api/debug" -Body @{
+        enabled = $false
+    }
+    if ($debugOff.enabled) {
+        throw "Debug endpoint did not disable logging."
+    }
+    Write-Host "Debug endpoint OK"
+
     $eventFiles = @(
         "examples\events\codex-post-tool-use.json",
         "examples\events\claude-permission.json",
@@ -211,8 +245,45 @@ try {
     if ($pluginMain -notmatch "/api/obsidian/annotations") {
         throw "Obsidian plugin main.js does not reference the AMO annotation endpoint."
     }
+    if ($pluginMain -notmatch "/api/debug/logs" -or $pluginMain -notmatch "debugLog") {
+        throw "Obsidian plugin main.js does not include AMO debug logging."
+    }
     if ($pluginMain -notmatch "registerObsidianProtocolHandler" -or $pluginMain -notmatch "amo-open") {
         throw "Obsidian plugin main.js does not register the AMO tab-reuse open protocol."
+    }
+    if ($pluginMain -notmatch "Quote selection into \[!anno\]" -or $pluginMain -notmatch "formatMarkdownQuote") {
+        throw "Obsidian plugin main.js does not include quote-style annotation insertion."
+    }
+    if ($pluginMain -notmatch "getSelectedCanvasMarkdownFile" -or $pluginMain -notmatch "Canvas selection") {
+        throw "Obsidian plugin main.js does not include canvas-selected note targeting."
+    }
+    if ($pluginMain -notmatch "ensureCanvasTargetTracking" -or $pluginMain -notmatch "canvasFilePathFromEventTarget") {
+        throw "Obsidian plugin main.js does not include canvas click target tracking."
+    }
+    if ($pluginMain -notmatch "replaceAnnotationBlockRanges" -or $pluginMain -notmatch "createAnnotationRichElement") {
+        throw "Obsidian plugin main.js does not include rich block annotation rendering."
+    }
+    if ($pluginMain -notmatch "scheduleAnnotationContainerRender" -or $pluginMain -notmatch "getAnnotationRenderContainer") {
+        throw "Obsidian plugin main.js does not include delayed whole-container annotation rendering."
+    }
+    if ($pluginMain -notmatch "CanvasNoteTargetModal" -or $pluginMain -notmatch "chooseCanvasMarkdownFile") {
+        throw "Obsidian plugin main.js does not include explicit canvas note fallback selection."
+    }
+    if ($pluginMain -notmatch "allowRemembered: false") {
+        throw "Obsidian plugin main.js does not prefer current canvas selection before remembered targets."
+    }
+    if ($pluginMain -notmatch "lastCanvasView" -or $pluginMain -notmatch "isActiveLeafAmoPanel") {
+        throw "Obsidian plugin main.js does not preserve canvas target context while the AMO panel is active."
+    }
+    if ($pluginMain -notmatch "panel.copy.clicked" -or $pluginMain -notmatch "copyAnnotationsFromFile\(info\.file\)") {
+        throw "Obsidian plugin panel copy action does not use the currently displayed note."
+    }
+    if ($pluginMain -notmatch "schedulePanelRefresh" -or $pluginMain -notmatch "refreshPanels: false") {
+        throw "Obsidian plugin panel refresh is not guarded against canvas-selection render recursion."
+    }
+    $pluginStyles = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\styles.css")
+    if ($pluginStyles -notmatch "anno-token-rich" -or $pluginStyles -notmatch "amo-canvas-note-list") {
+        throw "Obsidian plugin styles.css does not include rich annotation block styles."
     }
     Write-Host "Workspace enroll OK -> $($enroll.workspaceId)"
 
@@ -243,6 +314,51 @@ try {
     if (@($canvas.nodes).Count -lt 1) {
         throw "Canvas did not receive a reply file node."
     }
+    $firstCanvasNode = @($canvas.nodes | Where-Object { $_.id -eq $reply.canvasNodeId })[0]
+    if (-not $firstCanvasNode) {
+        throw "Canvas is missing the first reply node id: $($reply.canvasNodeId)"
+    }
+    if (@($canvas.edges).Count -ne 0) {
+        throw "First reply should not create a canvas edge."
+    }
+
+    $reply2 = Invoke-BrokerJson -Method POST -Path "/api/replies" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        source = "codex-stop-hook"
+        sessionId = "codex-reply-verify"
+        turnId = "turn-reply-verify-2"
+        cwd = $workspaceRoot
+        model = "verify-model"
+        hookEventName = "Stop"
+        capturedAt = "2026-05-16T00:01:00.000Z"
+        message = "Second verification assistant reply."
+    }
+    if (-not $reply2.ok) {
+        throw "Second reply endpoint failed."
+    }
+
+    $canvasAfterSecondReply = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
+    if (@($canvasAfterSecondReply.nodes).Count -ne 2) {
+        throw "Expected exactly 2 canvas nodes after two replies, got $(@($canvasAfterSecondReply.nodes).Count)."
+    }
+    $secondCanvasNode = @($canvasAfterSecondReply.nodes | Where-Object { $_.id -eq $reply2.canvasNodeId })[0]
+    if (-not $secondCanvasNode) {
+        throw "Canvas is missing the second reply node id: $($reply2.canvasNodeId)"
+    }
+    if ([int]$secondCanvasNode.y -ne [int]$firstCanvasNode.y -or [int]$secondCanvasNode.x -le [int]$firstCanvasNode.x) {
+        throw "Second reply node should be placed to the right on the same session row."
+    }
+    $chainEdge = @($canvasAfterSecondReply.edges | Where-Object { $_.fromNode -eq $reply.canvasNodeId -and $_.toNode -eq $reply2.canvasNodeId })[0]
+    if (-not $chainEdge) {
+        throw "Canvas did not create an edge from first reply node to second reply node."
+    }
+    $bindings = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\state\bindings.json") | ConvertFrom-Json
+    $replyBinding = $bindings.sessions.PSObject.Properties["codex-reply-verify"].Value
+    if (-not $replyBinding -or $replyBinding.lastCanvasNodeId -ne $reply2.canvasNodeId -or [int]$replyBinding.nodeCount -ne 2) {
+        throw "Session canvas binding was not updated to the second reply node."
+    }
+    Write-Host "Reply canvas chain OK -> $($reply.canvasNodeId) -> $($reply2.canvasNodeId)"
 
     $sessionsAfterReply = Invoke-BrokerJson -Method GET -Path "/api/sessions"
     if ($sessionsAfterReply.count -ne 4) {
@@ -265,9 +381,9 @@ try {
         schemaVersion = 1
         source = "verify-obsidian-plugin"
         vaultRoot = $vaultRoot
-        notePath = $reply.notePath
+        notePath = $reply2.notePath
         sessionId = "codex-reply-verify"
-        turnId = "turn-reply-verify"
+        turnId = "turn-reply-verify-2"
         annotations = @(
             @{
                 index = 1

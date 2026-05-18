@@ -9,6 +9,7 @@ const DATA_FILE =
   process.env.AGENT_MONITOR_DATA_FILE ||
   path.join(__dirname, "data", "sessions.json");
 const MAX_BODY_BYTES = 1024 * 1024;
+const DEBUG_MAX_LOG_ENTRIES = 800;
 const AMO_DIR = ".amo";
 const AMO_SCHEMA_VERSION = 1;
 const OBSIDIAN_PLUGIN_ID = "md-anno-tools";
@@ -35,6 +36,11 @@ const VALID_STATES = new Set([
 
 const sessions = new Map();
 const startedAt = new Date();
+const debugState = {
+  enabled: /^(1|true|yes|on)$/iu.test(process.env.AGENT_MONITOR_DEBUG || ""),
+  maxEntries: DEBUG_MAX_LOG_ENTRIES,
+  entries: [],
+};
 
 loadSnapshot();
 
@@ -57,6 +63,26 @@ const server = http.createServer(async (req, res) => {
         sessionCount: sessions.size,
         storage: DATA_FILE,
       });
+    }
+
+    if (req.method === "GET" && url.pathname === "/api/debug") {
+      return sendJson(res, 200, debugStatus(url.searchParams));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/debug") {
+      const payload = await readJsonBody(req);
+      return sendJson(res, 200, updateDebugConfig(payload));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/debug/logs") {
+      const payload = await readJsonBody(req);
+      return sendJson(res, 200, handleDebugLog(payload));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/debug/clear") {
+      debugState.entries = [];
+      recordDebugLog("broker", "debug.clear", {}, { force: true });
+      return sendJson(res, 200, debugStatus());
     }
 
     if (req.method === "GET" && url.pathname === "/api/sessions") {
@@ -142,6 +168,13 @@ const server = http.createServer(async (req, res) => {
     });
   } catch (error) {
     const status = error.statusCode || 500;
+    recordDebugLog("broker", "request.error", {
+      method: req.method,
+      url: req.url,
+      status,
+      code: error.code || "internal_error",
+      message: error.message || "Unexpected broker error",
+    });
     return sendJson(res, status, {
       ok: false,
       error: error.code || "internal_error",
@@ -154,6 +187,140 @@ server.listen(PORT, HOST, () => {
   console.log(`agent-monitor-broker listening at http://${HOST}:${PORT}`);
   console.log(`session snapshot: ${DATA_FILE}`);
 });
+
+function debugStatus(searchParams) {
+  const limit = searchParams ? normalizeInteger(searchParams.get("limit")) : null;
+  const normalizedLimit = limit && limit > 0 ? Math.min(limit, debugState.maxEntries) : debugState.entries.length;
+  const entries =
+    normalizedLimit >= debugState.entries.length
+      ? debugState.entries
+      : debugState.entries.slice(debugState.entries.length - normalizedLimit);
+
+  return {
+    ok: true,
+    enabled: debugState.enabled,
+    maxEntries: debugState.maxEntries,
+    count: debugState.entries.length,
+    entries,
+  };
+}
+
+function updateDebugConfig(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Debug config payload must be a JSON object");
+  }
+
+  const previousEnabled = debugState.enabled;
+  if (typeof payload.enabled === "boolean") {
+    debugState.enabled = payload.enabled;
+  }
+
+  const maxEntries = normalizeInteger(payload.maxEntries || payload.max_entries);
+  if (maxEntries && maxEntries >= 50 && maxEntries <= 5000) {
+    debugState.maxEntries = maxEntries;
+    trimDebugEntries();
+  }
+
+  recordDebugLog(
+    "broker",
+    "debug.config",
+    {
+      previousEnabled,
+      enabled: debugState.enabled,
+      maxEntries: debugState.maxEntries,
+    },
+    { force: true }
+  );
+  return debugStatus();
+}
+
+function handleDebugLog(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Debug log payload must be a JSON object");
+  }
+
+  const source = normalizeText(payload.source) || "unknown";
+  const event = normalizeText(payload.event || payload.name || payload.message) || "log";
+  const entry = recordDebugLog(source, event, payload.data || {}, {
+    message: normalizeText(payload.message),
+  });
+
+  return {
+    ok: true,
+    enabled: debugState.enabled,
+    recorded: Boolean(entry),
+    count: debugState.entries.length,
+    entry: entry || null,
+  };
+}
+
+function recordDebugLog(source, event, data, options = {}) {
+  if (!debugState.enabled && !options.force) {
+    return null;
+  }
+
+  const entry = {
+    id: crypto.randomUUID(),
+    at: new Date().toISOString(),
+    source: normalizeText(source) || "unknown",
+    event: normalizeText(event) || "log",
+    message: options.message || null,
+    data: sanitizeDebugData(data),
+  };
+
+  debugState.entries.push(entry);
+  trimDebugEntries();
+  return entry;
+}
+
+function trimDebugEntries() {
+  if (debugState.entries.length <= debugState.maxEntries) {
+    return;
+  }
+
+  debugState.entries.splice(0, debugState.entries.length - debugState.maxEntries);
+}
+
+function sanitizeDebugData(value, depth = 0) {
+  if (value == null) {
+    return value;
+  }
+
+  if (typeof value === "string") {
+    return value.length > 2000 ? `${value.slice(0, 2000)}...` : value;
+  }
+
+  if (typeof value === "number" || typeof value === "boolean") {
+    return value;
+  }
+
+  if (depth >= 5) {
+    return "[max-depth]";
+  }
+
+  if (Array.isArray(value)) {
+    return value.slice(0, 40).map((item) => sanitizeDebugData(item, depth + 1));
+  }
+
+  if (typeof value === "object") {
+    const result = {};
+    for (const key of Object.keys(value).slice(0, 60)) {
+      result[key] = sanitizeDebugData(value[key], depth + 1);
+    }
+    return result;
+  }
+
+  return String(value);
+}
+
+function debugPreview(value, limit = 240) {
+  const text = normalizeText(typeof value === "string" ? value : JSON.stringify(value || ""));
+  if (!text) {
+    return "";
+  }
+
+  return text.length > limit ? `${text.slice(0, limit)}...` : text;
+}
 
 function upsertSessionFromEvent(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
@@ -421,6 +588,14 @@ function enrollWorkspace(payload) {
   });
   installedFiles.push(".amo/enrollment.json");
 
+  recordDebugLog("broker", "workspace.enrolled", {
+    workspaceId: inspection.workspaceId,
+    workspacePath,
+    vaultRoot,
+    installedFiles: installedFiles.length,
+    mergedFiles,
+  });
+
   return {
     ok: true,
     schemaVersion: AMO_SCHEMA_VERSION,
@@ -514,6 +689,17 @@ function handleReply(payload) {
   };
   sessions.set(sessionId, session);
 
+  recordDebugLog("broker", "reply.created", {
+    sessionId,
+    turnId,
+    source,
+    cwd,
+    notePath: note.notePath,
+    canvasPath: canvas.canvasPath,
+    canvasNodeId: canvas.canvasNodeId,
+    messagePreview: debugPreview(message),
+  });
+
   return {
     ok: true,
     schemaVersion: AMO_SCHEMA_VERSION,
@@ -539,8 +725,23 @@ function handleObsidianAnnotations(payload) {
     throw httpError(400, "missing_session_id", "Annotation payload must include sessionId");
   }
 
+  recordDebugLog("broker", "obsidian.annotations.received", {
+    sessionId,
+    source: normalizeText(payload.source) || "unknown",
+    vaultRoot: normalizeText(payload.vaultRoot || payload.vault_root),
+    notePath: normalizeText(payload.notePath || payload.note_path),
+    turnId: normalizeText(payload.turnId || payload.turn_id),
+    annotationCount: Array.isArray(payload.annotations) ? payload.annotations.length : 0,
+    promptPreview: debugPreview(payload.prompt),
+  });
+
   const existing = sessions.get(sessionId) || recoverSessionFromAnnotationPayload(payload, sessionId);
   if (!existing) {
+    recordDebugLog("broker", "obsidian.annotations.session_missing", {
+      sessionId,
+      vaultRoot: normalizeText(payload.vaultRoot || payload.vault_root),
+      notePath: normalizeText(payload.notePath || payload.note_path),
+    });
     throw httpError(404, "session_not_found", `Session not found for annotation payload: ${sessionId}`);
   }
 
@@ -582,6 +783,16 @@ function handleObsidianAnnotations(payload) {
   };
 
   sessions.set(sessionId, session);
+
+  recordDebugLog("broker", "obsidian.annotations.accepted", {
+    sessionId,
+    pendingPromptId,
+    annotationCount,
+    source,
+    notePath,
+    turnId,
+    promptPreview: debugPreview(prompt),
+  });
 
   return {
     ok: true,
@@ -669,7 +880,13 @@ function handleRegisterObsidianVault(payload) {
   }
 
   fs.mkdirSync(path.join(vaultRoot, ".obsidian"), { recursive: true });
-  return registerObsidianVault(vaultRoot);
+  const result = registerObsidianVault(vaultRoot);
+  recordDebugLog("broker", "obsidian.vault.registered", {
+    vaultRoot,
+    vaultId: result.vaultId,
+    changed: result.changed,
+  });
+  return result;
 }
 
 function registerObsidianVault(vaultRoot) {
@@ -760,8 +977,15 @@ function handleSyncBack(payload) {
     throw httpError(400, "missing_session_id", "Sync-back payload must include sessionId");
   }
 
+  recordDebugLog("broker", "sync_back.received", {
+    sessionId,
+    pendingPromptId: normalizeText(payload.pendingPromptId || payload.pending_prompt_id),
+    action: normalizeText(payload.action),
+  });
+
   const existing = sessions.get(sessionId);
   if (!existing) {
+    recordDebugLog("broker", "sync_back.session_missing", { sessionId });
     throw httpError(404, "session_not_found", `Session not found for sync-back payload: ${sessionId}`);
   }
 
@@ -782,6 +1006,12 @@ function handleSyncBack(payload) {
   };
 
   sessions.set(sessionId, session);
+
+  recordDebugLog("broker", "sync_back.accepted", {
+    sessionId,
+    pendingPromptId: session.pendingPromptId || null,
+    copiedAt: now,
+  });
 
   return {
     ok: true,
@@ -843,6 +1073,14 @@ function bindSessionWindow(sessionId, payload) {
   };
 
   sessions.set(sessionId, session);
+  recordDebugLog("broker", "window.bind", {
+    sessionId,
+    hwnd,
+    pid,
+    processName,
+    title,
+    label: windowHint.boundLabel,
+  });
   return {
     ok: true,
     schemaVersion: AMO_SCHEMA_VERSION,
@@ -891,6 +1129,11 @@ function clearSessionWindowBinding(sessionId) {
   };
 
   sessions.set(sessionId, session);
+  recordDebugLog("broker", "window.unbind", {
+    sessionId,
+    previousHwnd: currentHint.hwnd || null,
+    previousPid: currentHint.pid || null,
+  });
   return {
     ok: true,
     schemaVersion: AMO_SCHEMA_VERSION,

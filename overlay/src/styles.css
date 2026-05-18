@@ -109,10 +109,21 @@ button {
   background: rgba(255, 255, 255, 0.13);
 }
 
+.icon-button:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
 .icon-button.is-active {
   color: #f6fbf9;
   background: rgba(111, 224, 190, 0.16);
   border-color: rgba(111, 224, 190, 0.3);
+}
+
+.debug-button.is-active {
+  color: #ffecc2;
+  background: rgba(230, 180, 92, 0.2);
+  border-color: rgba(230, 180, 92, 0.36);
 }
 
 .summary-strip {

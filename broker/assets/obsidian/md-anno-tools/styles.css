@@ -25,6 +25,31 @@
   white-space: pre-wrap;
 }
 
+.anno-token-rich {
+  display: block;
+}
+
+.anno-token-rich .anno-token-badge {
+  display: inline-block;
+  margin-bottom: 0.35em;
+}
+
+.anno-token-rich .anno-token-content {
+  display: block;
+}
+
+.anno-token-rich .anno-token-content > :first-child {
+  margin-top: 0;
+}
+
+.anno-token-rich .anno-token-content > :last-child {
+  margin-bottom: 0;
+}
+
+.anno-token-rich blockquote {
+  margin: 0.25em 0 0.5em;
+}
+
 .anno-modal-input {
   width: 100%;
 }
@@ -34,6 +59,43 @@
   justify-content: flex-end;
   gap: 8px;
   margin-top: 12px;
+}
+
+.amo-canvas-note-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 360px;
+  overflow: auto;
+}
+
+.amo-canvas-note-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.amo-canvas-note-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amo-canvas-note-path {
+  grid-column: 1;
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.amo-canvas-note-row button {
+  grid-column: 2;
+  grid-row: 1 / span 2;
 }
 
 .amo-panel {

@@ -709,7 +709,7 @@ Execution role: supervisor agent manages workers
 - GitHub remote 已配置，阶段分支和 `master` 交接分支已推送
 - 用户在 `D:\Projects\CommonProject\obsidianplugintest` 跑通了两个可对接 MVP：
   - Codex `Stop` hook 读取 `last_assistant_message` 并缓存为 Markdown/JSON note。
-  - Obsidian `Markdown Annotation Tools` 插件支持 `[!anno]...[/anno]` 渲染、包裹选区、追加批注和复制批注。
+  - Obsidian `Markdown Annotation Tools` 插件支持 `[!anno]...[/anno]` 渲染、引用式选区批注、追加批注和复制批注。
 - Phase 5 bridge 设计已整理到 `docs/amo-obsidian-bridge-mvp.md`。
 
 当前已由用户 smoke 验证：
@@ -729,7 +729,7 @@ Execution role: supervisor agent manages workers
 - Codex live hook 路线已实现项目本地 enroll、Stop reply capture adapter、bridge `/api/replies`、reply note 和 canvas append；仍需用真实 Codex CLI session 做端到端 smoke。
 - Kiro 仍处在 mock/hook-spike 级别
 - 卡片顺序和 overlay 位置目前是本地 UI 状态，尚未决定是否持久化
-- AMO bridge 已实现 `/api/replies`、vault note 写入、canvas append、`/api/obsidian/annotations` pending prompt 和 `/api/sync-back` 标记；workspace enroll 已安装 vault-local `md-anno-tools` 插件并提供 `Send current note annotations to AMO` 命令；插件侧 note/canvas tab 复用仍未实现。
+- AMO bridge 已实现 `/api/replies`、vault note 写入、canvas append、`/api/obsidian/annotations` pending prompt 和 `/api/sync-back` 标记；workspace enroll 已安装 vault-local `md-anno-tools` 插件并提供 `Send current note annotations to AMO` 命令；插件侧已支持 note/canvas tab 复用、canvas 选中 note 作为操作目标，以及把编辑器选区复制为引用式 annotation block。
 
 下一步建议：
 
@@ -752,11 +752,13 @@ Execution role: supervisor agent manages workers
 - Overlay 交互优化：card 拖拽排序已改为 window 级 pointer 监听，用户确认拖拽丝滑；列表过长时改为内部滚动，resize handle 保持可达。
 - 后续设置项：把窗口 resize 能力做成 settings toggle。默认隐藏 resize 边界指示器且不允许改 size；只有 toggle 激活后才显示底边/右边/右下角 resize handle 并允许调整窗口大小。
 - 部署入口：overlay 已有紧凑 deploy panel，点击部署图标会 toggle 面板；面板内 `Choose` 打开 Windows 文件夹选择器，选定 workspace 后可执行 inspect/enroll；后续要增加 settings 入口。
-- 后续部署 UX 优化：把 deploy panel 做成更清晰的分步流程，明确 `Check` 是只读检测、`Deploy` 才会写入文件，并补充部署历史、repair/disable/uninstall、adapter 选择和风险预览。
+- 后续部署 UX 优化：deploy 不应继续占用主 overlay 任务卡区域。部署图标应打开独立弹窗/工具窗口，由该窗口承载目录选择、`Check` 只读检测、`Deploy` 写入确认、部署历史、repair/disable/uninstall、adapter 选择、风险预览和 settings；主 overlay 保持为轻量监控与跳转面板。
 - Broker 启动：overlay 启动时会检查 `127.0.0.1:17654/api/health`，如果 AMO broker 不在则尝试从本仓 `broker/server.js` 拉起本地 Node broker。
 - 后续启动体验优化：overlay 冷启动或等待 broker 自动拉起时不应短暂白屏；增加初始化占位、基础状态文案（如“初始化中”“broker 启动中”）或轻量 loading 指示。
 - Obsidian 打开：真实 Codex CLI smoke 暴露了未注册 `.amo/obsidian-vault/` 时 `obsidian://open?path=...` 会报 `Vault not found`；overlay 现在在打开 note/canvas 前调用 broker 注册 vault，并改用 vault id + relative file URI。
 - Vault/plugin health：card 出现后，AMO server 会检查关联 vault 的 `md-anno-tools` 插件版本、启用状态、`main.js` 和 `data.json` bridge URL 是否匹配当前 broker；overlay 以紧凑 pill 显示结果。后续需要在 card 或 deploy/check 面板补 repair/redeploy。
+- Debug 基础设施：broker 新增运行时 debug 开关和内存日志，overlay header 提供开关，Obsidian 插件、overlay、broker 都能把 canvas send、annotation send/render、sync-back、窗口绑定等关键路径打点到 `GET /api/debug?limit=200`；正常使用默认关闭，复现问题时打开。
+- Obsidian AMO panel：Copy/Send 操作必须以 panel 当前显示的 note 为准；canvas 选择变更后刷新 panel，并在 panel active 时保留上一个 canvas target context，避免重新取 Obsidian active Markdown view 导致复制旧 card 内容。
 - 真实 hook live smoke：Claude 已通过；Codex provider 可运行，但 hook 加载路径仍待验证；adapter->broker 合同验证已通过
 - 新阶段方向：Obsidian workflow integration 已由两个外部 MVP 证明可进入 Phase 5 bridge 主线，但仍保持 sidecar 边界。
 
