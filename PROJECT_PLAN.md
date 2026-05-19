@@ -161,6 +161,23 @@ Worker agent 禁止：
 - 把未验证的结论当成最终结论
 - 自行执行全局 git 操作，例如 `git add .`、跨任务 commit、branch rename、reset、rebase、push
 
+### 5.2.1 用户交互和子 agent 委派规则
+
+用户只需要和主管 agent 对话，不需要自己开启或管理额外 session。
+
+主管 agent 负责判断某个任务是否值得拉起专门 agent，例如 Obsidian 插件 agent、代码探索 agent、验证 agent。是否拉起由主管 agent 根据任务复杂度、上下文复用价值、并行价值和风险边界决定；小任务可以由主管 agent 直接完成，不为了形式而委派。
+
+无论是否拉起子 agent，所有面向用户的交互都由主管 agent 负责：
+
+- 主管 agent 向用户收集需求和验证反馈。
+- 主管 agent 给子 agent 分配边界清晰的任务。
+- 子 agent 读取对应职责文档和 backlog 后执行局部工作。
+- 子 agent 不直接向用户改变产品方向、请求决策或输出未经整理的长分析。
+- 主管 agent 收敛子 agent 结果，负责集成、验证、风险判断、提交边界和最终汇报。
+- 跨 broker、overlay、hook、Obsidian 插件的接口合同变化必须回到主管 agent 决策。
+
+Obsidian 插件相关任务的默认候选委派对象是 `docs/agnets/obsidian-plugin-agent.md` 定义的 Obsidian Plugin Agent；但最终是否委派仍由主管 agent 判断。
+
 ### 5.3 任务卡模板
 
 ```markdown
@@ -759,6 +776,7 @@ Execution role: supervisor agent manages workers
 - Vault/plugin health：card 出现后，AMO server 会检查关联 vault 的 `md-anno-tools` 插件版本、启用状态、`main.js` 和 `data.json` bridge URL 是否匹配当前 broker；overlay 以紧凑 pill 显示结果。后续需要在 card 或 deploy/check 面板补 repair/redeploy。
 - Debug 基础设施：broker 新增运行时 debug 开关和内存日志，overlay header 提供开关，Obsidian 插件、overlay、broker 都能把 canvas send、annotation send/render、sync-back、窗口绑定等关键路径打点到 `GET /api/debug?limit=200`；正常使用默认关闭，复现问题时打开。
 - Obsidian AMO panel：Copy/Send 操作必须以 panel 当前显示的 note 为准；canvas 选择变更后刷新 panel，并在 panel active 时保留上一个 canvas target context，避免重新取 Obsidian active Markdown view 导致复制旧 card 内容。
+- Obsidian anno 渲染：针对 canvas/reading mode 的局部重绘，插件改为 source-backed `MarkdownPostProcessorContext` + `MarkdownRenderChild` 路径；通过 `sourcePath` 和 `getSectionInfo` 将 rendered section 映射回源文件行号，只在 annotation 的 owner section 渲染一个 `.anno-token-rich` 外壳，其余 annotation section 由 render child 托管隐藏，避免高亮壳或正文被 Obsidian 二次渲染打掉后重复出现或只剩引用内容。
 - 真实 hook live smoke：Claude 已通过；Codex provider 可运行，但 hook 加载路径仍待验证；adapter->broker 合同验证已通过
 - 新阶段方向：Obsidian workflow integration 已由两个外部 MVP 证明可进入 Phase 5 bridge 主线，但仍保持 sidecar 边界。
 
