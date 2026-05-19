@@ -26,7 +26,11 @@ The canonical project-wide rule is recorded in `PROJECT_PLAN.md` under "用户�
 
 Primary implementation scope:
 
-- `broker/assets/obsidian/md-anno-tools/main.js`
+- `broker/assets/obsidian/md-anno-tools/src/**/*.ts`
+- `broker/assets/obsidian/md-anno-tools/package.json`
+- `broker/assets/obsidian/md-anno-tools/tsconfig.json`
+- `broker/assets/obsidian/md-anno-tools/esbuild.config.mjs`
+- `broker/assets/obsidian/md-anno-tools/main.js` as a generated runtime bundle
 - `broker/assets/obsidian/md-anno-tools/styles.css`
 - `broker/assets/obsidian/md-anno-tools/manifest.json`
 
@@ -41,6 +45,27 @@ Shared verification scope:
 - `scripts/broker/verify.ps1`
 
 The plugin agent may propose broker or overlay changes, but should not implement cross-component API changes without supervisor approval.
+
+## Source Layout And Build
+
+The plugin is maintained as TypeScript source and bundled to the Obsidian runtime entry file.
+
+Source layout:
+
+- `src/plugin.ts`: plugin lifecycle, Obsidian commands, panel/canvas coordination, broker calls.
+- `src/annotations/`: annotation syntax parsing and Markdown rendering helpers.
+- `src/canvas/`: Canvas selected-note discovery and display helpers.
+- `src/core/`: constants, paths, metadata, API calls, shared UI utilities.
+- `src/ui/`: AMO panel view and modal components.
+- `src/main.ts`: default export wrapper for Obsidian.
+
+Build rules:
+
+- Edit `src/**/*.ts` first; do not manually edit generated runtime code in `main.js` unless diagnosing an emergency.
+- Run `npm install` inside `broker/assets/obsidian/md-anno-tools` before the first build.
+- Run `npm run build` inside `broker/assets/obsidian/md-anno-tools` after source changes.
+- `main.js` is intentionally committed because the broker deploys plugin assets directly from `broker/assets/obsidian/md-anno-tools`.
+- Obsidian's `obsidian` package is a type-definition/runtime external. The bundle should keep `require("obsidian")`; the module is supplied by Obsidian at plugin runtime.
 
 ## Product Boundary
 

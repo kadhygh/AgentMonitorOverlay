@@ -44,6 +44,7 @@ This backlog is the working queue for the AMO Obsidian Plugin Agent. Items here 
 
 ## Done Recently
 
+- Migrated `md-anno-tools` from a single hand-maintained `main.js` into TypeScript source modules bundled by esbuild.
 - Added broker/overlay/plugin debug logging controlled by overlay debug toggle.
 - Fixed AMO panel Copy/Send using stale active Markdown view.
 - Added debounce and non-reentrant panel refresh for canvas target changes.

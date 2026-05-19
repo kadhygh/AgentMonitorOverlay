@@ -1,0 +1,19 @@
+{
+  "name": "amo-md-anno-tools",
+  "version": "1.4.5",
+  "private": true,
+  "description": "AMO Obsidian plugin for annotation rendering, panel actions, and bridge sync.",
+  "main": "main.js",
+  "scripts": {
+    "build": "tsc --noEmit && node esbuild.config.mjs production",
+    "dev": "node esbuild.config.mjs"
+  },
+  "dependencies": {
+    "obsidian": "1.12.3"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.21",
+    "esbuild": "^0.25.5",
+    "typescript": "^5.8.3"
+  }
+}
