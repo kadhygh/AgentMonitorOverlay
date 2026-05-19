@@ -260,11 +260,11 @@ try {
     if ($pluginMain -notmatch "ensureCanvasTargetTracking" -or $pluginMain -notmatch "canvasFilePathFromEventTarget") {
         throw "Obsidian plugin main.js does not include canvas click target tracking."
     }
-    if ($pluginMain -notmatch "replaceAnnotationBlockRanges" -or $pluginMain -notmatch "createAnnotationRichElement") {
-        throw "Obsidian plugin main.js does not include rich block annotation rendering."
+    if ($pluginMain -notmatch "MarkdownRenderChild" -or $pluginMain -notmatch "renderNestedMarkdown" -or $pluginMain -notmatch "getSectionInfo") {
+        throw "Obsidian plugin annotation rendering does not use Obsidian-managed markdown render children."
     }
-    if ($pluginMain -notmatch "scheduleAnnotationContainerRender" -or $pluginMain -notmatch "getAnnotationRenderContainer") {
-        throw "Obsidian plugin main.js does not include delayed whole-container annotation rendering."
+    if ($pluginMain -notmatch "render\.legacy_section" -or $pluginMain -notmatch "parseLegacyAnnotationBlocks" -or $pluginMain -notmatch "LegacyAnnotationHiddenSectionRenderChild") {
+        throw "Obsidian plugin annotation rendering does not include source-backed legacy annotation section rendering."
     }
     if ($pluginMain -notmatch "CanvasNoteTargetModal" -or $pluginMain -notmatch "chooseCanvasMarkdownFile") {
         throw "Obsidian plugin main.js does not include explicit canvas note fallback selection."
@@ -280,6 +280,9 @@ try {
     }
     if ($pluginMain -notmatch "schedulePanelRefresh" -or $pluginMain -notmatch "refreshPanels: false") {
         throw "Obsidian plugin panel refresh is not guarded against canvas-selection render recursion."
+    }
+    if ($pluginMain -notmatch "data-amo-annotation" -or $pluginMain -notmatch "createAnnotationRichShell") {
+        throw "Obsidian plugin annotation rendering does not create plugin-owned rich annotation shells."
     }
     $pluginStyles = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\styles.css")
     if ($pluginStyles -notmatch "anno-token-rich" -or $pluginStyles -notmatch "amo-canvas-note-list") {

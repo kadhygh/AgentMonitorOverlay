@@ -1,6 +1,8 @@
 const {
   ButtonComponent,
   ItemView,
+  MarkdownRenderChild,
+  MarkdownRenderer,
   MarkdownView,
   Modal,
   Notice,
@@ -12,7 +14,8 @@ const ANNO_REGEX = /\[!anno\]([\s\S]*?)\[\/anno\]/gi;
 const ANNO_TAG_PREFIX = "[!anno]";
 const ANNO_TAG_SUFFIX = "[/anno]";
 const EMPTY_ANNO_TEXT = "(empty annotation)";
-const PLUGIN_VERSION = "1.3.9";
+const ANNOTATION_DEFAULT_LABEL = "批注";
+const PLUGIN_VERSION = "1.4.5";
 const DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
 };
@@ -40,8 +43,6 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.lastCanvasView = null;
     this.canvasViewsWithTargetTracking = new WeakSet();
     this.canvasTargetFilePathByView = new WeakMap();
-    this.annotationRenderContainers = new WeakSet();
-    this.annotationRescanTimer = null;
     this.panelRefreshTimer = null;
 
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
@@ -153,9 +154,7 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       },
     });
 
-    this.registerMarkdownPostProcessor((el) => {
-      this.renderAnnotations(el);
-    });
+    this.registerMarkdownPostProcessor((el, ctx) => this.renderAnnotations(el, ctx), 1000);
 
     this.registerEvent(
       this.app.workspace.on("editor-menu", (menu, editor) => {
@@ -176,7 +175,6 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       this.syncMarkdownViewActions();
       this.syncCanvasViewActions();
       this.refreshPanels();
-      this.scheduleAnnotationRescan("layout-ready");
     });
 
     this.registerEvent(
@@ -187,7 +185,6 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function" || leaf.view.getViewType() !== AMO_PANEL_VIEW_TYPE) {
           this.refreshPanels();
         }
-        this.scheduleAnnotationRescan("active-leaf-change");
       })
     );
 
@@ -197,7 +194,6 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         this.syncMarkdownViewActions();
         this.syncCanvasViewActions();
         this.refreshPanels();
-        this.scheduleAnnotationRescan("file-open");
       })
     );
 
@@ -207,16 +203,11 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         this.syncMarkdownViewActions();
         this.syncCanvasViewActions();
         this.refreshPanels();
-        this.scheduleAnnotationRescan("layout-change");
       })
     );
   }
 
   onunload() {
-    if (this.annotationRescanTimer) {
-      window.clearTimeout(this.annotationRescanTimer);
-      this.annotationRescanTimer = null;
-    }
     if (this.panelRefreshTimer) {
       window.clearTimeout(this.panelRefreshTimer);
       this.panelRefreshTimer = null;
@@ -1100,7 +1091,9 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     };
   }
 
-  renderAnnotations(root) {
+  async renderAnnotations(root, context) {
+    if (await this.renderLegacyAnnotationSection(root, context)) return;
+
     if (rootContainsAnnotationMarkers(root)) {
       this.debugLog("render.postprocessor", {
         root: describeElement(root),
@@ -1108,67 +1101,59 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       });
     }
 
-    this.replaceAnnotationBlockRanges(root, "postprocessor");
-    this.scheduleAnnotationContainerRender(root);
     this.replaceInlineAnnotations(root);
   }
 
-  scheduleAnnotationContainerRender(root) {
-    const container = getAnnotationRenderContainer(root);
-    if (!container || this.annotationRenderContainers.has(container)) return;
-    this.annotationRenderContainers.add(container);
+  async renderLegacyAnnotationSection(root, context) {
+    if (!(root instanceof HTMLElement) || !context || typeof context.getSectionInfo !== "function") return false;
 
-    [0, 80, 260].forEach((delay, index, delays) => {
-      window.setTimeout(() => {
-        if (index === delays.length - 1) {
-          this.annotationRenderContainers.delete(container);
-        }
-        if (!document.body.contains(container)) return;
-        if (rootContainsAnnotationMarkers(container)) {
-          this.debugLog("render.container_pass", {
-            delay,
-            container: describeElement(container),
-            preview: previewText(container.textContent || ""),
-          });
-        }
-        this.replaceAnnotationBlockRanges(container, "container-pass-" + delay);
-        this.replaceInlineAnnotations(container);
-      }, delay);
-    });
-  }
+    const section = context.getSectionInfo(root);
+    if (!section || typeof section.text !== "string") return false;
 
-  scheduleAnnotationRescan(reason) {
-    if (this.annotationRescanTimer) {
-      window.clearTimeout(this.annotationRescanTimer);
-    }
+    const block = await this.findLegacyAnnotationBlockForSection(context.sourcePath, section);
+    if (!block) return false;
+    if (!root.isConnected) return true;
 
-    this.annotationRescanTimer = window.setTimeout(() => {
-      this.annotationRescanTimer = null;
-      this.rescanAnnotationContainers(reason);
-    }, 120);
-  }
-
-  rescanAnnotationContainers(reason) {
-    const containers = Array.from(
-      new Set(
-        Array.from(
-          document.querySelectorAll(
-            ".markdown-preview-view, .markdown-reading-view, .markdown-rendered, .markdown-preview-sizer"
-          )
-        )
-      )
-    );
-
-    for (const container of containers) {
-      if (!rootContainsAnnotationMarkers(container)) continue;
-      this.debugLog("render.rescan", {
-        reason,
-        container: describeElement(container),
-        preview: previewText(container.textContent || ""),
+    if (block.role === "start") {
+      this.debugLog("render.legacy_section", {
+        role: "start",
+        sourcePath: context.sourcePath,
+        lineStart: section.lineStart,
+        lineEnd: section.lineEnd,
+        annotationStart: block.startLine,
+        annotationEnd: block.endLine,
+        ownerLine: block.ownerLine,
+        preview: previewText(block.content),
       });
-      this.replaceAnnotationBlockRanges(container, "rescan-" + reason);
-      this.replaceInlineAnnotations(container);
+      context.addChild(new LegacyAnnotationBlockRenderChild(root, this, block.content, context.sourcePath));
+      return true;
     }
+
+    this.debugLog("render.legacy_section", {
+      role: "hidden",
+      sourcePath: context.sourcePath,
+      lineStart: section.lineStart,
+      lineEnd: section.lineEnd,
+      annotationStart: block.startLine,
+      annotationEnd: block.endLine,
+      ownerLine: block.ownerLine,
+    });
+    context.addChild(new LegacyAnnotationHiddenSectionRenderChild(root));
+    return true;
+  }
+
+  async findLegacyAnnotationBlockForSection(sourcePath, section) {
+    const file = sourcePath ? this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(sourcePath)) : null;
+    if (!file || typeof file.path !== "string") return null;
+
+    let markdown = "";
+    try {
+      markdown = await this.app.vault.cachedRead(file);
+    } catch {
+      return null;
+    }
+
+    return findLegacyAnnotationBlockForSection(parseLegacyAnnotationBlocks(markdown), section);
   }
 
   replaceInlineAnnotations(root) {
@@ -1183,27 +1168,6 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     const targets = [];
     while (walker.nextNode()) targets.push(walker.currentNode);
     for (const textNode of targets) this.replaceAnnotationsInTextNode(textNode);
-  }
-
-  replaceAnnotationBlockRanges(root, reason) {
-    let guard = 0;
-    while (guard < 20) {
-      guard += 1;
-      const range = findAnnotationBlockRange(root);
-      if (!range) return;
-
-      const fragment = range.extractContents();
-      stripAnnotationMarkers(fragment);
-      removeEmptyAnnotationBlocks(fragment);
-      const replacementPreview = previewText(fragment.textContent || "");
-      range.insertNode(createAnnotationRichElement(fragment));
-      this.debugLog("render.block_replaced", {
-        reason: reason || "unknown",
-        root: describeElement(root),
-        replacementIndex: guard,
-        preview: replacementPreview,
-      });
-    }
   }
 
   shouldProcessTextNode(textNode) {
@@ -1240,6 +1204,53 @@ class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     if (currentIndex < source.length) fragment.append(source.slice(currentIndex));
     textNode.replaceWith(fragment);
+  }
+}
+
+class LegacyAnnotationBlockRenderChild extends MarkdownRenderChild {
+  constructor(containerEl, plugin, content, sourcePath) {
+    super(containerEl);
+    this.plugin = plugin;
+    this.content = content;
+    this.sourcePath = sourcePath || "";
+  }
+
+  onload() {
+    this.containerEl.empty();
+    this.containerEl.addClass("amo-legacy-annotation-section");
+
+    const wrapper = createAnnotationRichShell();
+    const body = wrapper.querySelector(".anno-token-content");
+    this.containerEl.appendChild(wrapper);
+
+    if (!body) return;
+    if (normalizeAnnotationContent(this.content).length === 0) {
+      body.textContent = EMPTY_ANNO_TEXT;
+      return;
+    }
+
+    void renderNestedMarkdown(this.plugin.app, this.content, body, this.sourcePath, this).catch((error) => {
+      body.textContent = normalizeAnnotationContent(this.content) || EMPTY_ANNO_TEXT;
+      this.plugin.debugLog("render.legacy_render_error", {
+        sourcePath: this.sourcePath,
+        message: messageFromError(error),
+      });
+    });
+  }
+
+  onunload() {
+    this.containerEl.removeClass("amo-legacy-annotation-section");
+  }
+}
+
+class LegacyAnnotationHiddenSectionRenderChild extends MarkdownRenderChild {
+  onload() {
+    this.containerEl.empty();
+    this.containerEl.addClass("amo-legacy-annotation-hidden-section");
+  }
+
+  onunload() {
+    this.containerEl.removeClass("amo-legacy-annotation-hidden-section");
   }
 }
 
@@ -1772,121 +1783,6 @@ function canvasTargetDisplayName(filePath) {
   return name.replace(/\.md$/iu, "");
 }
 
-function getAnnotationRenderContainer(root) {
-  if (!(root instanceof Element)) return null;
-  return (
-    root.closest(".markdown-preview-view") ||
-    root.closest(".markdown-reading-view") ||
-    root.closest(".markdown-rendered") ||
-    root.closest(".markdown-preview-sizer") ||
-    root
-  );
-}
-
-function findAnnotationBlockRange(root) {
-  const textNodes = collectAnnotationTextNodes(root);
-  for (let startIndex = 0; startIndex < textNodes.length; startIndex += 1) {
-    const startText = textNodes[startIndex];
-    const startSource = startText.nodeValue || "";
-    const markerIndex = startSource.indexOf(ANNO_TAG_PREFIX);
-    if (markerIndex < 0) continue;
-
-    const sameNodeEnd = startSource.indexOf(ANNO_TAG_SUFFIX, markerIndex + ANNO_TAG_PREFIX.length);
-    if (sameNodeEnd >= 0) continue;
-
-    for (let endIndex = startIndex + 1; endIndex < textNodes.length; endIndex += 1) {
-      const endText = textNodes[endIndex];
-      if (!(endText.nodeValue || "").includes(ANNO_TAG_SUFFIX)) continue;
-
-      const startBoundary = annotationRangeBoundaryNode(startText, root);
-      const endBoundary = annotationRangeBoundaryNode(endText, root);
-      if (!startBoundary || !endBoundary) return null;
-
-      const range = document.createRange();
-      range.setStartBefore(startBoundary);
-      range.setEndAfter(endBoundary);
-      return range;
-    }
-  }
-
-  return null;
-}
-
-function collectAnnotationTextNodes(root) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-    acceptNode: (node) => {
-      if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
-      if (!shouldProcessAnnotationBoundaryNode(node)) return NodeFilter.FILTER_REJECT;
-      return NodeFilter.FILTER_ACCEPT;
-    },
-  });
-
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  return nodes;
-}
-
-function shouldProcessAnnotationBoundaryNode(textNode) {
-  const text = textNode.nodeValue || "";
-  if (!text.includes(ANNO_TAG_PREFIX) && !text.includes(ANNO_TAG_SUFFIX)) return false;
-  const parent = textNode.parentElement;
-  if (!parent || parent.closest(".anno-token")) return false;
-
-  for (let current = parent; current; current = current.parentElement) {
-    if (SKIPPED_TAGS.has(current.tagName)) return false;
-  }
-  return true;
-}
-
-function annotationRangeBoundaryNode(textNode, root) {
-  let current = textNode.parentElement;
-  if (!current) return textNode;
-
-  while (current && current !== root && root.contains(current)) {
-    if (isAnnotationBlockBoundary(current)) return current;
-    current = current.parentElement;
-  }
-
-  return textNode.parentElement || textNode;
-}
-
-function isAnnotationBlockBoundary(element) {
-  const tag = element.tagName;
-  if (/^H[1-6]$/u.test(tag)) return true;
-  if (["P", "BLOCKQUOTE", "LI", "PRE", "TABLE", "UL", "OL"].includes(tag)) return true;
-  if (tag !== "DIV") return false;
-
-  return !(
-    element.classList.contains("markdown-preview-view") ||
-    element.classList.contains("markdown-reading-view") ||
-    element.classList.contains("markdown-rendered") ||
-    element.classList.contains("markdown-preview-sizer") ||
-    element.classList.contains("markdown-preview-section")
-  );
-}
-
-function stripAnnotationMarkers(root) {
-  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
-  const nodes = [];
-  while (walker.nextNode()) nodes.push(walker.currentNode);
-  for (const node of nodes) {
-    node.nodeValue = String(node.nodeValue || "")
-      .replaceAll(ANNO_TAG_PREFIX, "")
-      .replaceAll(ANNO_TAG_SUFFIX, "");
-  }
-}
-
-function removeEmptyAnnotationBlocks(root) {
-  const elements = root.querySelectorAll ? Array.from(root.querySelectorAll("p, div")) : [];
-  elements.reverse();
-  for (const element of elements) {
-    if (element.children.length > 0) continue;
-    if (normalizeAnnotationContent(element.textContent || "").length === 0) {
-      element.remove();
-    }
-  }
-}
-
 function createAnnotationElement(content, isStandalone) {
   const wrapper = document.createElement("span");
   wrapper.classList.add("anno-token");
@@ -1894,7 +1790,7 @@ function createAnnotationElement(content, isStandalone) {
 
   const badge = document.createElement("span");
   badge.classList.add("anno-token-badge");
-  badge.textContent = "anno";
+  badge.textContent = ANNOTATION_DEFAULT_LABEL;
   wrapper.appendChild(badge);
 
   const body = document.createElement("span");
@@ -1905,25 +1801,142 @@ function createAnnotationElement(content, isStandalone) {
   return wrapper;
 }
 
-function createAnnotationRichElement(fragment) {
+function createAnnotationRichShell() {
   const wrapper = document.createElement("div");
   wrapper.classList.add("anno-token", "anno-token-block", "anno-token-rich");
+  wrapper.setAttribute("data-amo-annotation", "rich");
 
   const badge = document.createElement("span");
   badge.classList.add("anno-token-badge");
-  badge.textContent = "anno";
+  badge.textContent = ANNOTATION_DEFAULT_LABEL;
   wrapper.appendChild(badge);
 
   const body = document.createElement("div");
   body.classList.add("anno-token-content");
-  if (normalizeAnnotationContent(fragment.textContent || "").length > 0 || fragment.childNodes.length > 0) {
-    body.appendChild(fragment);
-  } else {
-    body.textContent = EMPTY_ANNO_TEXT;
-  }
   wrapper.appendChild(body);
 
   return wrapper;
+}
+
+function parseLegacyAnnotationBlocks(markdown) {
+  const lines = String(markdown || "").replace(/\r\n?/gu, "\n").split("\n");
+  const blocks = [];
+  let lineIndex = 0;
+
+  while (lineIndex < lines.length) {
+    const line = lines[lineIndex] || "";
+    const startIndex = line.indexOf(ANNO_TAG_PREFIX);
+    if (startIndex < 0 || line.slice(0, startIndex).trim().length > 0) {
+      lineIndex += 1;
+      continue;
+    }
+
+    const contentLines = [];
+    const afterStart = line.slice(startIndex + ANNO_TAG_PREFIX.length);
+    const sameLineEnd = afterStart.indexOf(ANNO_TAG_SUFFIX);
+    if (sameLineEnd >= 0) {
+      if (afterStart.slice(sameLineEnd + ANNO_TAG_SUFFIX.length).trim().length > 0) {
+        lineIndex += 1;
+        continue;
+      }
+      contentLines.push(afterStart.slice(0, sameLineEnd));
+      blocks.push({
+        startLine: lineIndex,
+        endLine: lineIndex,
+        ownerLine: lineIndex,
+        content: normalizeLegacyAnnotationBody(contentLines),
+      });
+      lineIndex += 1;
+      continue;
+    }
+
+    contentLines.push(afterStart);
+    let endLine = -1;
+    for (let cursor = lineIndex + 1; cursor < lines.length; cursor += 1) {
+      const endIndex = lines[cursor].indexOf(ANNO_TAG_SUFFIX);
+      if (endIndex < 0) {
+        contentLines.push(lines[cursor]);
+        continue;
+      }
+
+      if (lines[cursor].slice(endIndex + ANNO_TAG_SUFFIX.length).trim().length > 0) {
+        break;
+      }
+      contentLines.push(lines[cursor].slice(0, endIndex));
+      endLine = cursor;
+      break;
+    }
+
+    if (endLine >= 0) {
+      blocks.push({
+        startLine: lineIndex,
+        endLine,
+        ownerLine: findLegacyAnnotationOwnerLine(lines, lineIndex, endLine, afterStart),
+        content: normalizeLegacyAnnotationBody(contentLines),
+      });
+      lineIndex = endLine + 1;
+      continue;
+    }
+
+    lineIndex += 1;
+  }
+
+  return blocks;
+}
+
+function normalizeLegacyAnnotationBody(lines) {
+  return String(Array.isArray(lines) ? lines.join("\n") : lines || "")
+    .replace(/^\n+/u, "")
+    .replace(/\n+$/u, "");
+}
+
+function findLegacyAnnotationOwnerLine(lines, startLine, endLine, afterStart) {
+  if (normalizeAnnotationContent(afterStart).length > 0) return startLine;
+
+  for (let lineIndex = startLine + 1; lineIndex <= endLine; lineIndex += 1) {
+    const rawLine = String(lines[lineIndex] || "");
+    const suffixIndex = rawLine.indexOf(ANNO_TAG_SUFFIX);
+    const content = suffixIndex >= 0 ? rawLine.slice(0, suffixIndex) : rawLine;
+    if (normalizeAnnotationContent(content).length > 0) return lineIndex;
+  }
+
+  return startLine;
+}
+
+function findLegacyAnnotationBlockForSection(blocks, section) {
+  const lineStart = Number(section && section.lineStart);
+  const lineEnd = Number(section && section.lineEnd);
+  if (!Number.isFinite(lineStart) || !Number.isFinite(lineEnd)) return null;
+
+  for (const block of blocks || []) {
+    if (!lineRangesOverlap(lineStart, lineEnd, block.startLine, block.endLine)) continue;
+    return Object.assign(
+      {
+        role: lineRangesOverlap(lineStart, lineEnd, block.ownerLine, block.ownerLine) ? "start" : "hidden",
+      },
+      block
+    );
+  }
+
+  return null;
+}
+
+function lineRangesOverlap(aStart, aEnd, bStart, bEnd) {
+  return aStart <= bEnd && bStart <= aEnd;
+}
+
+async function renderNestedMarkdown(app, markdown, element, sourcePath, component) {
+  if (MarkdownRenderer && typeof MarkdownRenderer.render === "function") {
+    await MarkdownRenderer.render(app, markdown, element, sourcePath, component);
+    return;
+  }
+
+  if (MarkdownRenderer && typeof MarkdownRenderer.renderMarkdown === "function") {
+    await MarkdownRenderer.renderMarkdown(markdown, element, sourcePath, component);
+    return;
+  }
+
+  element.textContent = normalizeAnnotationContent(markdown) || EMPTY_ANNO_TEXT;
 }
 
 function parseAmoFrontmatter(markdown) {
