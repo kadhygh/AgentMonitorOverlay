@@ -40,6 +40,7 @@ import type {
 } from "./types";
 
 const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
+const BROKER_SESSION_EVENTS_URL = "http://127.0.0.1:17654/api/session-events";
 const BROKER_OBSIDIAN_REGISTER_VAULT_URL = "http://127.0.0.1:17654/api/obsidian/register-vault";
 const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
@@ -299,6 +300,17 @@ function applySessionOrder(sessions: AgentSession[], order: string[]) {
   });
 }
 
+function mergeChangedSession(previousSessions: AgentSession[], changedSession: AgentSession) {
+  const index = previousSessions.findIndex((session) => session.sessionId === changedSession.sessionId);
+  if (index >= 0) {
+    const nextSessions = [...previousSessions];
+    nextSessions[index] = changedSession;
+    return nextSessions;
+  }
+
+  return [changedSession, ...previousSessions];
+}
+
 interface CardDragState {
   sessionId: string;
   pointerId: number;
@@ -517,6 +529,8 @@ export default function App() {
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const sessionsRef = useRef(sessions);
   const orderedSessionsRef = useRef<AgentSession[]>([]);
+  const debugEnabledRef = useRef(debugEnabled);
+  const debugCountRef = useRef(debugCount);
   const cardDragRef = useRef<CardDragState | null>(null);
   const cardDragCleanupRef = useRef<(() => void) | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
@@ -541,10 +555,26 @@ export default function App() {
   }, [orderedSessions]);
 
   useEffect(() => {
+    debugEnabledRef.current = debugEnabled;
+  }, [debugEnabled]);
+
+  useEffect(() => {
+    debugCountRef.current = debugCount;
+  }, [debugCount]);
+
+  useEffect(() => {
     return () => removeCardDragListeners();
   }, []);
 
-  async function refreshSessions() {
+  async function refreshSessions(reason = "manual") {
+    const startedAt = performance.now();
+    const shouldLog = reason !== "interval";
+    if (shouldLog) {
+      void postDebugLog("sessions.refresh.start", {
+        reason,
+      });
+    }
+
     try {
       const response = await fetch(BROKER_SESSIONS_URL, { cache: "no-store" });
       if (!response.ok) {
@@ -563,12 +593,27 @@ export default function App() {
       setSource("broker");
       setLastRefreshAt(new Date().toISOString());
       setFeedback(`Broker sessions loaded: ${nextSessions.length}`);
+      if (shouldLog) {
+        void postDebugLog("sessions.refresh.ok", {
+          reason,
+          durationMs: Math.round(performance.now() - startedAt),
+          sessionCount: nextSessions.length,
+          visibleSessionCount: visibleSessions.length,
+        });
+      }
     } catch (error) {
       setSessions(mockSessions);
       setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, mockSessions));
       setSource("mock");
       setLastRefreshAt(new Date().toISOString());
       setFeedback(`Using mock sessions: ${(error as Error).message}`);
+      if (shouldLog) {
+        void postDebugLog("sessions.refresh.error", {
+          reason,
+          durationMs: Math.round(performance.now() - startedAt),
+          message: (error as Error).message,
+        });
+      }
     }
   }
 
@@ -580,7 +625,7 @@ export default function App() {
       setFeedback(`Broker auto-start unavailable: ${(error as Error).message}`);
     }
 
-    await refreshSessions();
+    await refreshSessions("startup");
   }
 
   async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
@@ -605,9 +650,15 @@ export default function App() {
       }
 
       const result = (await response.json()) as BrokerDebugStatus;
-      setDebugEnabled(Boolean(result.enabled));
-      setDebugCount(result.count ?? 0);
+      const nextEnabled = Boolean(result.enabled);
+      const nextCount = result.count ?? 0;
+      debugEnabledRef.current = nextEnabled;
+      debugCountRef.current = nextCount;
+      setDebugEnabled(nextEnabled);
+      setDebugCount(nextCount);
     } catch {
+      debugEnabledRef.current = false;
+      debugCountRef.current = 0;
       setDebugEnabled(false);
       setDebugCount(0);
     }
@@ -621,8 +672,12 @@ export default function App() {
       const result = await postBrokerJson<BrokerDebugStatus>(BROKER_DEBUG_URL, {
         enabled: nextEnabled,
       });
-      setDebugEnabled(Boolean(result.enabled));
-      setDebugCount(result.count ?? 0);
+      const resultEnabled = Boolean(result.enabled);
+      const resultCount = result.count ?? 0;
+      debugEnabledRef.current = resultEnabled;
+      debugCountRef.current = resultCount;
+      setDebugEnabled(resultEnabled);
+      setDebugCount(resultCount);
       setFeedback(result.enabled ? "Debug logging enabled." : "Debug logging disabled.");
     } catch (error) {
       setFeedback(`Debug toggle failed: ${(error as Error).message}`);
@@ -632,7 +687,7 @@ export default function App() {
   }
 
   async function postDebugLog(event: string, data?: unknown) {
-    if (!debugEnabled) return;
+    if (!debugEnabledRef.current) return;
 
     try {
       const result = await postBrokerJson<{ ok: boolean; count: number }>(BROKER_DEBUG_LOGS_URL, {
@@ -640,7 +695,7 @@ export default function App() {
         event,
         data: data ?? {},
       });
-      setDebugCount(result.count ?? debugCount);
+      setDebugCount(result.count ?? debugCountRef.current);
     } catch {
       // Debug logging must never block the overlay action being debugged.
     }
@@ -728,7 +783,7 @@ export default function App() {
       });
       setWorkspaceEnrollment(result);
       setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}.`);
-      void refreshSessions();
+      void refreshSessions("workspace-enroll");
     } catch (error) {
       void postDebugLog("workspace.enroll.error", {
         workspacePath: targetPath,
@@ -920,7 +975,7 @@ export default function App() {
         promptCanvasNodeId: syncResult.promptCanvasNodeId ?? null,
       });
       setFeedback("Pending prompt copied. Focusing target CLI...");
-      void refreshSessions();
+      void refreshSessions("sync-copy");
       await activateSession(session);
     } catch (error) {
       void postDebugLog("sync.copy.error", {
@@ -1023,7 +1078,7 @@ export default function App() {
         sessionId: session.sessionId,
       });
       setFeedback("Window binding cleared.");
-      void refreshSessions();
+      void refreshSessions("window-unbind");
     } catch (error) {
       void postDebugLog("window.unbind.error", {
         sessionId: session.sessionId,
@@ -1263,11 +1318,119 @@ export default function App() {
     void ensureBrokerThenRefresh().finally(() => {
       void refreshDebugStatus();
     });
+
+    let eventSource: EventSource | null = null;
+    let eventRefreshTimer: number | null = null;
+    const scheduleEventRefresh = (eventReason = "unknown", sessionId: string | null = null) => {
+      if (eventRefreshTimer !== null) {
+        void postDebugLog("session_event.reconcile_skip", {
+          reason: eventReason,
+          sessionId,
+        });
+        return;
+      }
+
+      void postDebugLog("session_event.reconcile_scheduled", {
+        reason: eventReason,
+        sessionId,
+        delayMs: 650,
+      });
+      eventRefreshTimer = window.setTimeout(() => {
+        eventRefreshTimer = null;
+        void refreshSessions("sse-reconcile");
+      }, 650);
+    };
+    const handleSessionChanged = (event: MessageEvent) => {
+      const receivedAtMs = Date.now();
+      const applyStartedAt = performance.now();
+      let eventReason = "unknown";
+      let eventSessionId: string | null = null;
+      try {
+        const payload = JSON.parse(event.data) as {
+          brokerPublishedAtMs?: number;
+          reason?: string;
+          sequence?: number;
+          session?: AgentSession;
+          sessionId?: string | null;
+        };
+        const changedSession = payload.session;
+        eventReason = payload.reason ?? "unknown";
+        eventSessionId = payload.sessionId ?? changedSession?.sessionId ?? null;
+        void postDebugLog("session_event.received", {
+          sequence: payload.sequence ?? null,
+          reason: eventReason,
+          sessionId: eventSessionId,
+          hasSession: Boolean(changedSession),
+          sessionState: changedSession?.state ?? null,
+          pendingPromptId: changedSession?.pendingPromptId ?? null,
+          brokerToOverlayMs:
+            typeof payload.brokerPublishedAtMs === "number" ? receivedAtMs - payload.brokerPublishedAtMs : null,
+        });
+        if (changedSession?.sessionId) {
+          setSessions((previousSessions) => {
+            const nextSessions = mergeChangedSession(previousSessions, changedSession);
+            sessionsRef.current = nextSessions;
+            return nextSessions;
+          });
+          setSessionOrder((previousOrder) =>
+            previousOrder.includes(changedSession.sessionId)
+              ? previousOrder
+              : [...previousOrder, changedSession.sessionId],
+          );
+          setSource("broker");
+          setLastRefreshAt(new Date().toISOString());
+          void postDebugLog("session_event.optimistic_applied", {
+            sequence: payload.sequence ?? null,
+            reason: eventReason,
+            sessionId: changedSession.sessionId,
+            durationMs: Math.round(performance.now() - applyStartedAt),
+          });
+        }
+      } catch (error) {
+        void postDebugLog("session_event.parse_error", {
+          message: (error as Error).message,
+        });
+        // Fall through to the full refresh below; event payloads are an optimization.
+      }
+
+      scheduleEventRefresh(eventReason, eventSessionId);
+    };
+
+    if (typeof EventSource !== "undefined") {
+      try {
+        eventSource = new EventSource(BROKER_SESSION_EVENTS_URL);
+        eventSource.onopen = () => {
+          void postDebugLog("session_event.stream_open", {
+            url: BROKER_SESSION_EVENTS_URL,
+          });
+        };
+        eventSource.onerror = () => {
+          void postDebugLog("session_event.stream_error", {
+            readyState: eventSource?.readyState ?? null,
+          });
+        };
+        eventSource.addEventListener("sessions.changed", handleSessionChanged);
+      } catch {
+        void postDebugLog("session_event.stream_create_error", {
+          url: BROKER_SESSION_EVENTS_URL,
+        });
+        eventSource = null;
+      }
+    } else {
+      void postDebugLog("session_event.unsupported", {});
+    }
+
     const interval = window.setInterval(() => {
-      void refreshSessions();
+      void refreshSessions("interval");
     }, REFRESH_INTERVAL_MS);
 
-    return () => window.clearInterval(interval);
+    return () => {
+      window.clearInterval(interval);
+      if (eventRefreshTimer !== null) {
+        window.clearTimeout(eventRefreshTimer);
+      }
+      eventSource?.close();
+    };
   }, []);
 
   return (
@@ -1304,7 +1467,7 @@ export default function App() {
           >
             <Bug size={15} aria-hidden="true" />
           </button>
-          <button type="button" className="icon-button" title="Refresh sessions" onClick={refreshSessions}>
+          <button type="button" className="icon-button" title="Refresh sessions" onClick={() => void refreshSessions("manual")}>
             <RefreshCcw size={15} aria-hidden="true" />
           </button>
           <button

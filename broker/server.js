@@ -41,6 +41,8 @@ const VALID_STATES = new Set([
 
 const sessions = new Map();
 const startedAt = new Date();
+const eventClients = new Set();
+let eventSequence = 0;
 const debugState = {
   enabled: /^(1|true|yes|on)$/iu.test(process.env.AGENT_MONITOR_DEBUG || ""),
   maxEntries: DEBUG_MAX_LOG_ENTRIES,
@@ -97,6 +99,10 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "GET" && url.pathname === "/api/session-events") {
+      return openSessionEventStream(req, res);
+    }
+
     if (req.method === "POST" && url.pathname === "/api/workspaces/inspect") {
       const payload = await readJsonBody(req);
       return sendJson(res, 200, inspectWorkspace(payload));
@@ -111,6 +117,7 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req);
       const session = upsertSessionFromEvent(payload);
       persistSnapshot();
+      publishSessionChanged("event", session);
       return sendJson(res, 200, { ok: true, session });
     }
 
@@ -118,6 +125,7 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req);
       const reply = handleReply(payload);
       persistSnapshot();
+      publishSessionChanged("reply", reply.session);
       return sendJson(res, 200, reply);
     }
 
@@ -125,6 +133,7 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req);
       const prompt = handlePrompt(payload);
       persistSnapshot();
+      publishSessionChanged("prompt", prompt.session);
       return sendJson(res, 200, prompt);
     }
 
@@ -132,6 +141,7 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req);
       const result = handleObsidianAnnotations(payload);
       persistSnapshot();
+      publishSessionChanged("obsidian-annotations", result.session);
       return sendJson(res, 200, result);
     }
 
@@ -144,6 +154,7 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req);
       const result = handleSyncBack(payload);
       persistSnapshot();
+      publishSessionChanged("sync-back", result.session);
       return sendJson(res, 200, result);
     }
 
@@ -153,6 +164,7 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req);
       const result = bindSessionWindow(sessionId, payload);
       persistSnapshot();
+      publishSessionChanged("window-bind", result.session);
       return sendJson(res, 200, result);
     }
 
@@ -161,6 +173,7 @@ const server = http.createServer(async (req, res) => {
       const sessionId = decodeURIComponent(clearWindowBindingMatch[1]);
       const result = clearSessionWindowBinding(sessionId);
       persistSnapshot();
+      publishSessionChanged("window-unbind", result.session);
       return sendJson(res, 200, result);
     }
 
@@ -170,6 +183,7 @@ const server = http.createServer(async (req, res) => {
       const payload = await readJsonBody(req, { allowEmpty: true });
       const session = updateHeartbeat(sessionId, payload || {});
       persistSnapshot();
+      publishSessionChanged("heartbeat", session);
       return sendJson(res, 200, { ok: true, session });
     }
 
@@ -199,6 +213,88 @@ server.listen(PORT, HOST, () => {
   console.log(`agent-monitor-broker listening at http://${HOST}:${PORT}`);
   console.log(`session snapshot: ${DATA_FILE}`);
 });
+
+function openSessionEventStream(req, res) {
+  res.writeHead(200, {
+    ...CORS_HEADERS,
+    "content-type": "text/event-stream; charset=utf-8",
+    "cache-control": "no-cache, no-transform",
+    connection: "keep-alive",
+    "x-accel-buffering": "no",
+  });
+  res.write(`event: broker.ready\ndata: ${JSON.stringify({ ok: true, startedAt: startedAt.toISOString() })}\n\n`);
+
+  const client = { res };
+  eventClients.add(client);
+  recordDebugLog("broker", "session_event.client_open", {
+    clientCount: eventClients.size,
+  });
+  const heartbeat = setInterval(() => {
+    try {
+      res.write(`: heartbeat ${Date.now()}\n\n`);
+    } catch {
+      clearInterval(heartbeat);
+      eventClients.delete(client);
+    }
+  }, 25000);
+
+  req.on("close", () => {
+    clearInterval(heartbeat);
+    eventClients.delete(client);
+    recordDebugLog("broker", "session_event.client_close", {
+      clientCount: eventClients.size,
+    });
+  });
+}
+
+function publishSessionChanged(reason, session) {
+  if (eventClients.size === 0) {
+    recordDebugLog("broker", "session_event.no_clients", {
+      reason,
+      sessionId: session?.sessionId || null,
+    });
+    return;
+  }
+
+  const sequence = ++eventSequence;
+  const publishStartedAtMs = Date.now();
+  const decoratedSession = session ? attachObsidianPluginHealth(session, new Map()) : null;
+  const payload = JSON.stringify({
+    ok: true,
+    sequence,
+    event: "sessions.changed",
+    reason,
+    sessionId: session?.sessionId || null,
+    session: decoratedSession,
+    brokerPublishedAtMs: publishStartedAtMs,
+    updatedAt: new Date().toISOString(),
+  });
+  const chunk = `id: ${sequence}\nevent: sessions.changed\ndata: ${payload}\n\n`;
+
+  let deliveredCount = 0;
+  let failedCount = 0;
+  for (const client of Array.from(eventClients)) {
+    try {
+      client.res.write(chunk);
+      deliveredCount += 1;
+    } catch {
+      failedCount += 1;
+      eventClients.delete(client);
+    }
+  }
+
+  recordDebugLog("broker", "session_event.published", {
+    reason,
+    sequence,
+    sessionId: session?.sessionId || null,
+    sessionState: session?.state || null,
+    pendingPromptId: session?.pendingPromptId || null,
+    clientCount: eventClients.size,
+    deliveredCount,
+    failedCount,
+    durationMs: Date.now() - publishStartedAtMs,
+  });
+}
 
 function debugStatus(searchParams) {
   const limit = searchParams ? normalizeInteger(searchParams.get("limit")) : null;

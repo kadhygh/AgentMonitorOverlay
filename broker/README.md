@@ -75,6 +75,19 @@ Returns the unified session list:
 }
 ```
 
+### `GET /api/session-events`
+
+Opens a local Server-Sent Events stream for low-latency overlay refreshes.
+
+The stream sends `sessions.changed` whenever a broker route mutates a session, including events, replies, prompts, Obsidian annotations, sync-back, window binding, and heartbeat updates. The event includes the changed session so the overlay can update the affected card immediately; interval polling still runs as a fallback and reconciliation path.
+
+Example event:
+
+```text
+event: sessions.changed
+data: {"ok":true,"sequence":1,"event":"sessions.changed","reason":"obsidian-annotations","sessionId":"codex-demo-001","session":{"sessionId":"codex-demo-001","state":"waiting_user"},"updatedAt":"2026-05-20T07:30:40.149Z"}
+```
+
 ### `POST /api/events`
 
 Accepts a JSON payload from mock adapters. Minimum useful fields:

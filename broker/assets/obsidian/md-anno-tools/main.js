@@ -1649,14 +1649,26 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     await this.sendAnnotationsFromFile(file);
   }
   async sendAnnotationsFromFile(file) {
+    const sendStartedAtMs = Date.now();
+    this.debugLog("annotations.send.prepare_start", {
+      notePath: file.path,
+      startedAtMs: sendStartedAtMs
+    });
+    const readStartedAtMs = Date.now();
     const markdown = await this.app.vault.cachedRead(file);
+    const readDurationMs = Date.now() - readStartedAtMs;
+    const extractStartedAtMs = Date.now();
     const annotations = extractAnnotationContents(markdown);
+    const extractDurationMs = Date.now() - extractStartedAtMs;
     this.debugLog("annotations.extract", {
       notePath: file.path,
       annotationCount: annotations.length,
       annotationPreviews: annotations.slice(0, 5).map((annotation) => previewText(annotation)),
       markdownHasAnnoOpen: markdown.includes(ANNO_TAG_PREFIX),
-      markdownHasAnnoClose: markdown.includes(ANNO_TAG_SUFFIX)
+      markdownHasAnnoClose: markdown.includes(ANNO_TAG_SUFFIX),
+      readDurationMs,
+      extractDurationMs,
+      elapsedMs: Date.now() - sendStartedAtMs
     });
     if (annotations.length === 0) {
       new import_obsidian5.Notice("No annotations found in the current note.");
@@ -1688,18 +1700,22 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       }))
     };
     try {
+      const postStartedAtMs = Date.now();
       this.debugLog("annotations.send.start", {
         notePath: file.path,
         sessionId: payload.sessionId,
         turnId: payload.turnId,
-        annotationCount: payload.annotations.length
+        annotationCount: payload.annotations.length,
+        elapsedMs: postStartedAtMs - sendStartedAtMs
       });
       const result = await postJson(joinUrl(this.settings.bridgeUrl, "/api/obsidian/annotations"), payload);
       this.debugLog("annotations.send.ok", {
         notePath: file.path,
         sessionId: payload.sessionId,
         pendingPromptId: result.pendingPromptId || null,
-        annotationCount: payload.annotations.length
+        annotationCount: payload.annotations.length,
+        postDurationMs: Date.now() - postStartedAtMs,
+        totalDurationMs: Date.now() - sendStartedAtMs
       });
       this.setOperationStatus(
         "Sent " + annotations.length + " annotation(s) from " + file.path + " to AMO.",
