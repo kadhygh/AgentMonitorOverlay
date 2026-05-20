@@ -12,6 +12,9 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const DEBUG_MAX_LOG_ENTRIES = 800;
 const AMO_DIR = ".amo";
 const AMO_SCHEMA_VERSION = 1;
+const AMO_CANVAS_PATH = "AgentFlow.canvas";
+const AMO_CANVAS_TYPE = "agent-flow";
+const AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 const OBSIDIAN_PLUGIN_ID = "md-anno-tools";
 const REPLY_NODE_WIDTH = 520;
 const REPLY_NODE_HEIGHT = 360;
@@ -111,6 +114,18 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/api/workspaces/enroll") {
       const payload = await readJsonBody(req);
       return sendJson(res, 200, enrollWorkspace(payload));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/workspaces/status") {
+      const payload = await readJsonBody(req);
+      return sendJson(res, 200, inspectWorkspaceMaintenance(payload));
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/workspaces/clean-vault") {
+      const payload = await readJsonBody(req);
+      const result = cleanWorkspaceVault(payload);
+      persistSnapshot();
+      return sendJson(res, 200, result);
     }
 
     if (req.method === "POST" && url.pathname === "/api/events") {
@@ -597,6 +612,7 @@ function inspectWorkspace(payload) {
           ".amo/backups",
           ".amo/obsidian-vault",
           ".amo/obsidian-vault/Replies",
+          ".amo/obsidian-vault/Prompts",
           ".amo/obsidian-vault/.obsidian",
           ".amo/obsidian-vault/.obsidian/plugins",
           `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}`,
@@ -606,7 +622,7 @@ function inspectWorkspace(payload) {
           ".amo/enrollment.json",
           ".amo/adapters/codex-cli.json",
           ".amo/hooks/codex-stop-message.mjs",
-          ".amo/obsidian-vault/AgentFlow.canvas",
+          `.amo/obsidian-vault/${AMO_CANVAS_PATH}`,
           ".amo/obsidian-vault/.obsidian/community-plugins.json",
           `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/manifest.json`,
           `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`,
@@ -665,8 +681,9 @@ function enrollWorkspace(payload) {
     updatedAt: now,
     amoRoot,
     vaultRoot,
-    defaultCanvasPath: "AgentFlow.canvas",
+    defaultCanvasPath: AMO_CANVAS_PATH,
     repliesPath: "Replies",
+    promptsPath: "Prompts",
   });
   installedFiles.push(".amo/workspace.json");
 
@@ -692,8 +709,14 @@ function enrollWorkspace(payload) {
   writeTextFile(path.join(amoRoot, ".gitignore"), amoGitignore());
   installedFiles.push(".amo/.gitignore");
 
-  ensureCanvas(path.join(vaultRoot, "AgentFlow.canvas"));
-  installedFiles.push(".amo/obsidian-vault/AgentFlow.canvas");
+  ensureCanvas(path.join(vaultRoot, AMO_CANVAS_PATH), {
+    workspaceId: inspection.workspaceId,
+    workspacePath,
+    projectName: inspection.projectName,
+    createdAt: existingWorkspace?.createdAt || now,
+    updatedAt: now,
+  });
+  installedFiles.push(`.amo/obsidian-vault/${AMO_CANVAS_PATH}`);
 
   const pluginInstall = installObsidianPlugin(vaultRoot);
   installedFiles.push(...pluginInstall.installedFiles);
@@ -741,9 +764,272 @@ function enrollWorkspace(payload) {
     mergedFiles,
     backups,
     vaultRoot,
-    canvasPath: "AgentFlow.canvas",
+    canvasPath: AMO_CANVAS_PATH,
     deferredAdapters: inspection.deferredAdapters,
   };
+}
+
+function inspectWorkspaceMaintenance(payload) {
+  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
+  const status = workspaceMaintenanceSnapshot(workspacePath);
+  recordDebugLog("broker", "workspace.maintenance.status", {
+    workspacePath,
+    issueCount: status.issues.length,
+    replyNotes: status.counts.replyNotes,
+    promptNotes: status.counts.promptNotes,
+  });
+  return status;
+}
+
+function cleanWorkspaceVault(payload) {
+  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
+  const statusBefore = workspaceMaintenanceSnapshot(workspacePath);
+  const workspace = readJsonFile(path.join(workspacePath, AMO_DIR, "workspace.json"), null);
+  if (!workspace || !workspace.workspaceId) {
+    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
+  }
+
+  const amoRoot = path.join(workspacePath, AMO_DIR);
+  const vaultRoot = path.join(workspacePath, AMO_DIR, "obsidian-vault");
+  const repliesPath = path.join(vaultRoot, "Replies");
+  const promptsPath = path.join(vaultRoot, "Prompts");
+  const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
+  ensureInsideDirectory(vaultRoot, repliesPath);
+  ensureInsideDirectory(vaultRoot, promptsPath);
+  ensureInsideDirectory(vaultRoot, canvasPath);
+
+  fs.rmSync(repliesPath, { recursive: true, force: true });
+  fs.rmSync(promptsPath, { recursive: true, force: true });
+  fs.mkdirSync(repliesPath, { recursive: true });
+  fs.mkdirSync(promptsPath, { recursive: true });
+  ensureCanvas(canvasPath, {
+    workspaceId: workspace.workspaceId,
+    workspacePath,
+    projectName: workspace.projectName || path.basename(workspacePath),
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    reset: true,
+  });
+  resetWorkspaceCanvasBindings(amoRoot);
+
+  const clearedSessions = clearWorkspaceBridgeState(workspacePath, vaultRoot);
+  const statusAfter = workspaceMaintenanceSnapshot(workspacePath);
+  recordDebugLog("broker", "workspace.maintenance.cleaned", {
+    workspacePath,
+    clearedSessions,
+    before: statusBefore.counts,
+    after: statusAfter.counts,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    workspacePath,
+    vaultRoot,
+    clearedSessions,
+    before: statusBefore,
+    after: statusAfter,
+  };
+}
+
+function workspaceMaintenanceSnapshot(workspacePath) {
+  const amoRoot = path.join(workspacePath, AMO_DIR);
+  const workspaceFile = path.join(amoRoot, "workspace.json");
+  const workspace = readJsonFile(workspaceFile, null);
+  if (!workspace || !workspace.workspaceId) {
+    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
+  }
+
+  const vaultRoot = normalizeText(workspace.vaultRoot) || path.join(amoRoot, "obsidian-vault");
+  const repliesPath = path.join(vaultRoot, "Replies");
+  const promptsPath = path.join(vaultRoot, "Prompts");
+  const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
+  const pluginDir = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID);
+  const canvasInfo = inspectCanvasFile(canvasPath);
+  const pluginHealth = inspectObsidianPluginHealth(vaultRoot);
+  const issues = [];
+
+  if (!fs.existsSync(amoRoot)) issues.push(".amo directory is missing");
+  if (!fs.existsSync(workspaceFile)) issues.push(".amo/workspace.json is missing");
+  if (!fs.existsSync(vaultRoot)) issues.push("obsidian vault is missing");
+  if (!fs.existsSync(repliesPath)) issues.push("Replies folder is missing");
+  if (!fs.existsSync(promptsPath)) issues.push("Prompts folder is missing");
+  if (!canvasInfo.exists) {
+    issues.push("AgentFlow.canvas is missing");
+  } else if (!canvasInfo.readable) {
+    issues.push("AgentFlow.canvas is not valid JSON");
+  } else if (!canvasInfo.amoManaged) {
+    issues.push("AgentFlow.canvas is missing AMO managed marker");
+  }
+  if (pluginHealth.issues?.length) {
+    issues.push(...pluginHealth.issues);
+  }
+
+  return {
+    ok: issues.length === 0,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    workspaceId: workspace.workspaceId,
+    workspacePath,
+    projectName: normalizeText(workspace.projectName) || path.basename(workspacePath),
+    amoRoot,
+    vaultRoot,
+    paths: {
+      workspace: workspacePath,
+      amoRoot,
+      vaultRoot,
+      replies: repliesPath,
+      prompts: promptsPath,
+      canvas: canvasPath,
+      plugin: pluginDir,
+    },
+    exists: {
+      amoRoot: fs.existsSync(amoRoot),
+      workspaceJson: fs.existsSync(workspaceFile),
+      vaultRoot: fs.existsSync(vaultRoot),
+      replies: fs.existsSync(repliesPath),
+      prompts: fs.existsSync(promptsPath),
+      canvas: canvasInfo.exists,
+      plugin: fs.existsSync(pluginDir),
+    },
+    counts: {
+      replyNotes: countFilesByExtension(repliesPath, ".md"),
+      promptNotes: countFilesByExtension(promptsPath, ".md"),
+      canvasNodes: canvasInfo.nodeCount,
+      canvasEdges: canvasInfo.edgeCount,
+    },
+    canvas: canvasInfo,
+    pluginHealth,
+    issues,
+    checkedAt: new Date().toISOString(),
+  };
+}
+
+function inspectCanvasFile(canvasPath) {
+  if (!fs.existsSync(canvasPath)) {
+    return {
+      exists: false,
+      readable: false,
+      amoManaged: false,
+      nodeCount: 0,
+      edgeCount: 0,
+      marker: null,
+    };
+  }
+
+  const canvas = readJsonFile(canvasPath, null);
+  if (!canvas || typeof canvas !== "object" || Array.isArray(canvas)) {
+    return {
+      exists: true,
+      readable: false,
+      amoManaged: false,
+      nodeCount: 0,
+      edgeCount: 0,
+      marker: null,
+    };
+  }
+
+  const marker = canvas.amo && typeof canvas.amo === "object" && !Array.isArray(canvas.amo) ? canvas.amo : null;
+  return {
+    exists: true,
+    readable: true,
+    amoManaged: Boolean(marker && marker.managedBy === AMO_CANVAS_MANAGER && marker.canvasType === AMO_CANVAS_TYPE),
+    nodeCount: Array.isArray(canvas.nodes) ? canvas.nodes.length : 0,
+    edgeCount: Array.isArray(canvas.edges) ? canvas.edges.length : 0,
+    marker: marker
+      ? {
+          schemaVersion: marker.schemaVersion ?? null,
+          canvasType: normalizeText(marker.canvasType),
+          managedBy: normalizeText(marker.managedBy),
+          workspaceId: normalizeText(marker.workspaceId),
+          labelMode: normalizeText(marker.display?.labelMode),
+          hidePropertiesByDefault:
+            typeof marker.display?.hidePropertiesByDefault === "boolean"
+              ? marker.display.hidePropertiesByDefault
+              : null,
+        }
+      : null,
+  };
+}
+
+function countFilesByExtension(root, extension) {
+  if (!fs.existsSync(root)) return 0;
+  let count = 0;
+  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
+    const entryPath = path.join(root, entry.name);
+    if (entry.isDirectory()) {
+      count += countFilesByExtension(entryPath, extension);
+    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(extension.toLowerCase())) {
+      count += 1;
+    }
+  }
+  return count;
+}
+
+function ensureInsideDirectory(root, target) {
+  const normalizedRoot = path.resolve(root);
+  const normalizedTarget = path.resolve(target);
+  const rootWithSeparator = normalizedRoot.endsWith(path.sep) ? normalizedRoot : `${normalizedRoot}${path.sep}`;
+  if (normalizedTarget !== normalizedRoot && !normalizedTarget.startsWith(rootWithSeparator)) {
+    throw httpError(400, "unsafe_path", `Refusing to clean path outside vault: ${normalizedTarget}`);
+  }
+}
+
+function clearWorkspaceBridgeState(workspacePath, vaultRoot) {
+  const workspaceKey = normalizeComparablePath(workspacePath);
+  const vaultKey = normalizeComparablePath(vaultRoot);
+  let cleared = 0;
+  const now = new Date().toISOString();
+
+  for (const [sessionId, session] of sessions.entries()) {
+    const sessionWorkspaceKey = normalizeComparablePath(session.workspacePath || session.cwd);
+    const sessionVaultKey = normalizeComparablePath(session.vaultRoot);
+    if (sessionWorkspaceKey !== workspaceKey && sessionVaultKey !== vaultKey) {
+      continue;
+    }
+
+    const nextSession = {
+      ...session,
+      lastReplyAt: null,
+      lastReplyNote: null,
+      lastReplyNoteAbsolutePath: null,
+      lastPromptAt: null,
+      lastPromptNote: null,
+      lastPromptNoteAbsolutePath: null,
+      lastPromptCanvasNodeId: null,
+      lastPromptHash: null,
+      lastPromptPendingPromptId: null,
+      lastPromptSource: null,
+      sentPromptId: null,
+      sentPromptNote: null,
+      sentPromptNoteAbsolutePath: null,
+      sentPromptCanvasNodeId: null,
+      sentPromptRecordedAt: null,
+      canvasPath: AMO_CANVAS_PATH,
+      canvasAbsolutePath: path.join(vaultRoot, AMO_CANVAS_PATH),
+      canvasNodeId: null,
+      pendingPromptId: null,
+      pendingPrompt: null,
+      pendingPromptCreatedAt: null,
+      pendingPromptCopiedAt: null,
+      pendingAnnotationCount: null,
+      pendingAnnotationSource: null,
+      updatedAt: now,
+    };
+    sessions.set(sessionId, nextSession);
+    publishSessionChanged("workspace-clean", nextSession);
+    cleared += 1;
+  }
+
+  return cleared;
+}
+
+function resetWorkspaceCanvasBindings(amoRoot) {
+  const bindingsPath = path.join(amoRoot, "state", "bindings.json");
+  fs.mkdirSync(path.dirname(bindingsPath), { recursive: true });
+  writeJsonFile(bindingsPath, {
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessions: {},
+  });
 }
 
 function handleReply(payload) {
@@ -1131,8 +1417,8 @@ function recoverSessionFromAnnotationPayload(payload, sessionId) {
     lastReplyAt: null,
     lastReplyNote: notePath || null,
     lastReplyNoteAbsolutePath: notePath ? path.join(vaultRoot, notePath.replace(/[\\/]+/g, path.sep)) : null,
-    canvasPath: "AgentFlow.canvas",
-    canvasAbsolutePath: path.join(vaultRoot, "AgentFlow.canvas"),
+    canvasPath: AMO_CANVAS_PATH,
+    canvasAbsolutePath: path.join(vaultRoot, AMO_CANVAS_PATH),
     canvasNodeId: null,
   };
 }
@@ -1544,11 +1830,59 @@ function writeTextFile(filePath, content) {
   fs.renameSync(tmpFile, filePath);
 }
 
-function ensureCanvas(canvasPath) {
-  if (fs.existsSync(canvasPath)) {
-    return;
+function ensureCanvas(canvasPath, metadata = {}) {
+  const existingCanvas = fs.existsSync(canvasPath) ? readJsonFile(canvasPath, null) : null;
+  const canvas =
+    existingCanvas && typeof existingCanvas === "object" && !Array.isArray(existingCanvas)
+      ? existingCanvas
+      : { nodes: [], edges: [] };
+
+  if (!Array.isArray(canvas.nodes)) canvas.nodes = [];
+  if (!Array.isArray(canvas.edges)) canvas.edges = [];
+  if (metadata.reset) {
+    canvas.nodes = [];
+    canvas.edges = [];
   }
-  writeJsonFile(canvasPath, { nodes: [], edges: [] });
+  applyAmoCanvasMetadata(canvas, metadata);
+  normalizeCanvasEdges(canvas);
+  writeJsonFile(canvasPath, canvas);
+}
+
+function applyAmoCanvasMetadata(canvas, metadata = {}) {
+  const existingAmo = canvas.amo && typeof canvas.amo === "object" && !Array.isArray(canvas.amo) ? canvas.amo : {};
+  const existingDisplay =
+    existingAmo.display && typeof existingAmo.display === "object" && !Array.isArray(existingAmo.display)
+      ? existingAmo.display
+      : {};
+  const now = new Date().toISOString();
+
+  canvas.amo = {
+    ...existingAmo,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    canvasType: AMO_CANVAS_TYPE,
+    managedBy: AMO_CANVAS_MANAGER,
+    workspaceId: normalizeText(metadata.workspaceId || existingAmo.workspaceId),
+    workspacePath: normalizeText(metadata.workspacePath || existingAmo.workspacePath),
+    projectName: normalizeText(metadata.projectName || existingAmo.projectName),
+    createdAt: normalizeText(existingAmo.createdAt || metadata.createdAt || now),
+    updatedAt: normalizeText(metadata.updatedAt || now),
+    display: {
+      ...existingDisplay,
+      labelMode: "short",
+      hidePropertiesByDefault:
+        typeof existingDisplay.hidePropertiesByDefault === "boolean" ? existingDisplay.hidePropertiesByDefault : true,
+    },
+  };
+}
+
+function normalizeCanvasEdges(canvas) {
+  if (!canvas || !Array.isArray(canvas.edges)) return;
+
+  for (const edge of canvas.edges) {
+    if (!edge || typeof edge !== "object") continue;
+    if (!edge.fromEnd) edge.fromEnd = "none";
+    if (!edge.toEnd) edge.toEnd = "arrow";
+  }
 }
 
 function installObsidianPlugin(vaultRoot) {
@@ -1888,19 +2222,18 @@ function resolvePromptWorkspace(payload, existing) {
 }
 
 function writeReplyNote(vaultRoot, record) {
-  const month = record.capturedAt.slice(0, 7) || "unknown-month";
-  const replyDir = path.join(vaultRoot, "Replies", month);
-  fs.mkdirSync(replyDir, { recursive: true });
-
-  const stem = `${fileSafeTimestamp(record.capturedAt)}_${sanitizeFilePart(record.tool)}_${sanitizeFilePart(record.turnId)}_reply`;
-  const noteAbsolutePath = uniquePath(replyDir, stem, ".md");
-  const notePath = toVaultRelativePath(vaultRoot, noteAbsolutePath);
+  const noteIdentity = nextConversationNoteIdentity(vaultRoot, "reply");
+  const notePath = toVaultRelativePath(vaultRoot, noteIdentity.noteAbsolutePath);
   const body = [
     "---",
     "amo:",
     `  schemaVersion: ${AMO_SCHEMA_VERSION}`,
     `  workspaceId: ${yamlString(record.workspaceId)}`,
     `  tool: ${yamlString(record.tool)}`,
+    `  role: ${yamlString("assistant")}`,
+    `  kind: ${yamlString("reply")}`,
+    `  sequence: ${noteIdentity.sequence}`,
+    `  displayName: ${yamlString(noteIdentity.displayName)}`,
     `  sessionId: ${yamlString(record.sessionId)}`,
     `  turnId: ${yamlString(record.turnId)}`,
     `  cwd: ${yamlString(record.cwd)}`,
@@ -1909,7 +2242,7 @@ function writeReplyNote(vaultRoot, record) {
     record.transcriptPath ? `  transcriptPath: ${yamlString(record.transcriptPath)}` : null,
     "---",
     "",
-    `# ${record.tool} Reply`,
+    `# ${noteIdentity.displayName}`,
     "",
     record.message,
     "",
@@ -1917,18 +2250,13 @@ function writeReplyNote(vaultRoot, record) {
     .filter((line) => line !== null)
     .join("\n");
 
-  writeTextFile(noteAbsolutePath, body);
-  return { notePath, noteAbsolutePath };
+  writeTextFile(noteIdentity.noteAbsolutePath, body);
+  return { ...noteIdentity, notePath };
 }
 
 function writePromptNote(vaultRoot, record) {
-  const month = record.capturedAt.slice(0, 7) || "unknown-month";
-  const promptDir = path.join(vaultRoot, "Prompts", month);
-  fs.mkdirSync(promptDir, { recursive: true });
-
-  const stem = `${fileSafeTimestamp(record.capturedAt)}_${sanitizeFilePart(record.tool)}_${sanitizeFilePart(record.turnId)}_prompt`;
-  const noteAbsolutePath = uniquePath(promptDir, stem, ".md");
-  const notePath = toVaultRelativePath(vaultRoot, noteAbsolutePath);
+  const noteIdentity = nextConversationNoteIdentity(vaultRoot, "prompt");
+  const notePath = toVaultRelativePath(vaultRoot, noteIdentity.noteAbsolutePath);
   const body = [
     "---",
     "amo:",
@@ -1936,6 +2264,9 @@ function writePromptNote(vaultRoot, record) {
     `  workspaceId: ${yamlString(record.workspaceId)}`,
     `  tool: ${yamlString(record.tool)}`,
     `  role: ${yamlString("user")}`,
+    `  kind: ${yamlString("prompt")}`,
+    `  sequence: ${noteIdentity.sequence}`,
+    `  displayName: ${yamlString(noteIdentity.displayName)}`,
     `  sessionId: ${yamlString(record.sessionId)}`,
     `  turnId: ${yamlString(record.turnId)}`,
     `  cwd: ${yamlString(record.cwd)}`,
@@ -1945,7 +2276,7 @@ function writePromptNote(vaultRoot, record) {
     record.transcriptPath ? `  transcriptPath: ${yamlString(record.transcriptPath)}` : null,
     "---",
     "",
-    `# ${record.tool} Prompt`,
+    `# ${noteIdentity.displayName}`,
     "",
     record.message,
     "",
@@ -1953,18 +2284,70 @@ function writePromptNote(vaultRoot, record) {
     .filter((line) => line !== null)
     .join("\n");
 
-  writeTextFile(noteAbsolutePath, body);
-  return { notePath, noteAbsolutePath };
+  writeTextFile(noteIdentity.noteAbsolutePath, body);
+  return { ...noteIdentity, notePath };
+}
+
+function nextConversationNoteIdentity(vaultRoot, kind) {
+  const noteKind = kind === "prompt" ? "prompt" : "reply";
+  const directoryName = noteKind === "prompt" ? "Prompts" : "Replies";
+  const noteDir = path.join(vaultRoot, directoryName);
+  fs.mkdirSync(noteDir, { recursive: true });
+
+  const sequence = nextConversationNoteSequence(noteDir, noteKind);
+  const displayName = `${noteKind} ${formatConversationNoteSequence(sequence)}`;
+  const noteAbsolutePath = path.join(noteDir, `${displayName}.md`);
+  return {
+    kind: noteKind,
+    role: noteKind === "prompt" ? "user" : "assistant",
+    sequence,
+    displayName,
+    noteAbsolutePath,
+  };
+}
+
+function nextConversationNoteSequence(noteDir, kind) {
+  const escapedKind = kind.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const noteNamePattern = new RegExp(`^${escapedKind} (\\d+)\\.md$`, "iu");
+  let maxSequence = 0;
+
+  for (const entry of fs.readdirSync(noteDir, { withFileTypes: true })) {
+    if (!entry.isFile()) continue;
+    const match = entry.name.match(noteNamePattern);
+    if (!match) continue;
+    const sequence = Number.parseInt(match[1], 10);
+    if (Number.isSafeInteger(sequence) && sequence > maxSequence) {
+      maxSequence = sequence;
+    }
+  }
+
+  let nextSequence = maxSequence + 1;
+  while (fs.existsSync(path.join(noteDir, `${kind} ${formatConversationNoteSequence(nextSequence)}.md`))) {
+    nextSequence += 1;
+  }
+  return nextSequence;
+}
+
+function formatConversationNoteSequence(sequence) {
+  return String(sequence).padStart(2, "0");
 }
 
 function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {
-  const canvasPath = "AgentFlow.canvas";
+  const canvasPath = AMO_CANVAS_PATH;
   const canvasAbsolutePath = path.join(vaultRoot, canvasPath);
   const bindingsPath = path.join(amoRoot, "state", "bindings.json");
   const appendDirection = readCanvasAppendDirection(vaultRoot);
-  const canvas = readJsonFile(canvasAbsolutePath, { nodes: [], edges: [] });
+  const canvas = fs.existsSync(canvasAbsolutePath)
+    ? readJsonFileStrict(canvasAbsolutePath)
+    : { nodes: [], edges: [] };
   if (!Array.isArray(canvas.nodes)) canvas.nodes = [];
   if (!Array.isArray(canvas.edges)) canvas.edges = [];
+  applyAmoCanvasMetadata(canvas, {
+    workspaceId: record.workspaceId,
+    workspacePath: record.cwd,
+    updatedAt: record.capturedAt,
+  });
+  normalizeCanvasEdges(canvas);
 
   const bindings = readJsonFile(bindingsPath, { schemaVersion: AMO_SCHEMA_VERSION, sessions: {} });
   if (!bindings.sessions || typeof bindings.sessions !== "object" || Array.isArray(bindings.sessions)) {
@@ -1972,11 +2355,18 @@ function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {
   }
 
   const existingBinding = bindings.sessions[record.sessionId] || {};
+  const sessionNodes = canvas.nodes.filter((node) => {
+    return node && node.amo && normalizeText(node.amo.sessionId) === record.sessionId;
+  });
+  const canvasSessionIds = new Set(
+    canvas.nodes
+      .map((node) => normalizeText(node && node.amo && node.amo.sessionId))
+      .filter(Boolean)
+  );
   const sessionIndex =
-    Number.isSafeInteger(existingBinding.sessionIndex)
+    Number.isSafeInteger(existingBinding.sessionIndex) && sessionNodes.length > 0
       ? existingBinding.sessionIndex
-      : Object.keys(bindings.sessions).length;
-  const nodeCount = Number.isSafeInteger(existingBinding.nodeCount) ? existingBinding.nodeCount : 0;
+      : canvasSessionIds.size;
   let canvasNodeId = `amo-${crypto
     .createHash("sha1")
     .update(`${record.sessionId}:${record.turnId}:${record.capturedAt}`)
@@ -1988,9 +2378,22 @@ function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {
     canvasNodeId = `${canvasNodeId}-${suffix}`;
   }
 
-  const previousNode = existingBinding.lastCanvasNodeId
-    ? canvas.nodes.find((node) => node && node.id === existingBinding.lastCanvasNodeId)
+  const boundPreviousNode = existingBinding.lastCanvasNodeId
+    ? canvas.nodes.find((node) => {
+        return (
+          node &&
+          node.id === existingBinding.lastCanvasNodeId &&
+          node.amo &&
+          normalizeText(node.amo.sessionId) === record.sessionId
+        );
+      })
     : null;
+  const previousNode = boundPreviousNode || sessionNodes[sessionNodes.length - 1] || null;
+  const nodeCount = previousNode
+    ? boundPreviousNode && Number.isSafeInteger(existingBinding.nodeCount)
+      ? existingBinding.nodeCount
+      : sessionNodes.length
+    : sessionNodes.length;
   const nodePosition = nextConversationCanvasNodePosition({
     previousNode,
     direction: appendDirection,
@@ -2006,16 +2409,31 @@ function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {
     y: nodePosition.y,
     width: REPLY_NODE_WIDTH,
     height: REPLY_NODE_HEIGHT,
+    amo: {
+      schemaVersion: AMO_SCHEMA_VERSION,
+      kind: note.kind || (record.source === "obsidian-annotations" ? "prompt" : "reply"),
+      role: note.role || null,
+      sequence: Number.isSafeInteger(note.sequence) ? note.sequence : null,
+      displayName: note.displayName || null,
+      workspaceId: record.workspaceId,
+      tool: record.tool,
+      sessionId: record.sessionId,
+      turnId: record.turnId,
+      source: record.source,
+      capturedAt: record.capturedAt,
+    },
   });
 
-  if (existingBinding.lastCanvasNodeId && previousNode) {
+  if (previousNode) {
     const edgeSides = canvasEdgeSidesForDirection(appendDirection);
     canvas.edges.push({
-      id: `edge-${existingBinding.lastCanvasNodeId}-${canvasNodeId}`,
-      fromNode: existingBinding.lastCanvasNodeId,
+      id: `edge-${previousNode.id}-${canvasNodeId}`,
+      fromNode: previousNode.id,
       fromSide: edgeSides.fromSide,
+      fromEnd: "none",
       toNode: canvasNodeId,
       toSide: edgeSides.toSide,
+      toEnd: "arrow",
     });
   }
 

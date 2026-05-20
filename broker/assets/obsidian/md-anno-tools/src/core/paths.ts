@@ -6,7 +6,7 @@ export function normalizeVaultFilePath(value) {
 }
 
 export function toVaultRelativeProtocolPath(value, vaultRoot = "") {
-  const rawPath = String(value || "").trim();
+  const rawPath = decodeProtocolPathValue(value);
   if (!rawPath) return "";
 
   const normalizedPath = rawPath.replace(/\\/gu, "/");
@@ -20,6 +20,18 @@ export function toVaultRelativeProtocolPath(value, vaultRoot = "") {
   }
 
   return normalizedPath;
+}
+
+function decodeProtocolPathValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+
+  const plusDecoded = raw.replace(/\+/gu, " ");
+  try {
+    return decodeURIComponent(plusDecoded);
+  } catch {
+    return plusDecoded;
+  }
 }
 
 export function normalizeOpenKind(value, filePath = "") {

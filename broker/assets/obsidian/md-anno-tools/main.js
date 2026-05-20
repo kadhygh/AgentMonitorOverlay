@@ -37,7 +37,9 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.11";
+var PLUGIN_VERSION = "1.4.17";
+var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
+var AMO_CANVAS_TYPE = "agent-flow";
 var DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
   numberAnnotationsInPrompt: false,
@@ -119,7 +121,7 @@ function normalizeVaultFilePath(value) {
   return String(value || "").replace(/\\/gu, "/").replace(/^\/+/u, "").trim();
 }
 function toVaultRelativeProtocolPath(value, vaultRoot = "") {
-  const rawPath = String(value || "").trim();
+  const rawPath = decodeProtocolPathValue(value);
   if (!rawPath) return "";
   const normalizedPath = rawPath.replace(/\\/gu, "/");
   if (!vaultRoot) return normalizedPath;
@@ -130,6 +132,16 @@ function toVaultRelativeProtocolPath(value, vaultRoot = "") {
     return normalizedPath.slice(rootPrefix.length);
   }
   return normalizedPath;
+}
+function decodeProtocolPathValue(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "";
+  const plusDecoded = raw.replace(/\+/gu, " ");
+  try {
+    return decodeURIComponent(plusDecoded);
+  } catch (e) {
+    return plusDecoded;
+  }
 }
 function normalizeOpenKind(value, filePath = "") {
   const kind = String(value || "").trim().toLowerCase();
@@ -972,6 +984,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       this.rememberCurrentMarkdownView();
       this.syncMarkdownViewActions();
       this.syncCanvasViewActions();
+      void this.syncAmoCanvasRendering();
       this.refreshPanels();
     });
     this.registerEvent(
@@ -979,6 +992,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
         this.rememberMarkdownLeaf(leaf);
         this.syncMarkdownViewActions();
         this.syncCanvasViewActions();
+        void this.syncAmoCanvasRendering();
         if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function" || leaf.view.getViewType() !== AMO_PANEL_VIEW_TYPE) {
           this.refreshPanels();
         }
@@ -989,6 +1003,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
         this.rememberCurrentMarkdownView();
         this.syncMarkdownViewActions();
         this.syncCanvasViewActions();
+        void this.syncAmoCanvasRendering();
         this.refreshPanels();
       })
     );
@@ -997,6 +1012,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
         this.rememberCurrentMarkdownView();
         this.syncMarkdownViewActions();
         this.syncCanvasViewActions();
+        void this.syncAmoCanvasRendering();
         this.refreshPanels();
       })
     );
@@ -1066,7 +1082,9 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     const opened = await this.openVaultPath(targetPath, kind);
     if (opened && kind === "canvas" && focusNotePath) {
       window.setTimeout(() => {
-        void this.focusCanvasNoteNode(targetPath, focusNotePath);
+        void this.refreshCanvasForExplicitOpen(targetPath).finally(() => {
+          void this.focusCanvasNoteNode(targetPath, focusNotePath);
+        });
       }, 120);
     }
   }
@@ -1114,13 +1132,17 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       const view = this.getCanvasViewForFilePath(normalizedCanvasPath);
       const node = view ? this.findCanvasNodeForFilePath(view, normalizedNotePath) : null;
       if (view && node) {
-        this.selectCanvasNode(view, node, normalizedNotePath);
+        const managedCanvas = await this.isAmoManagedCanvasView(view);
+        if (managedCanvas) {
+          this.selectCanvasNode(view, node, normalizedNotePath);
+        }
         const centered = this.centerCanvasNode(view, node);
         this.rememberCanvasMarkdownFile(view, normalizedNotePath);
         this.debugLog("canvas.focus_note.ok", {
           canvasPath: normalizedCanvasPath,
           notePath: normalizedNotePath,
           attempt,
+          managedCanvas,
           centered
         });
         return true;
@@ -1133,6 +1155,28 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     });
     return false;
   }
+  async refreshCanvasForExplicitOpen(canvasPath) {
+    const normalizedCanvasPath = normalizeVaultFilePath(canvasPath);
+    if (!normalizedCanvasPath) return false;
+    const file = this.app.vault.getAbstractFileByPath(normalizedCanvasPath);
+    if (!file || typeof file.path !== "string") return false;
+    const view = this.getCanvasViewForFilePath(normalizedCanvasPath);
+    const leaf = view ? this.findLeafForView(view) : null;
+    if (!view || !leaf || !await this.isAmoManagedCanvasView(view)) return false;
+    try {
+      await leaf.openFile(file, { active: true });
+      this.debugLog("canvas.explicit_refresh.ok", {
+        canvasPath: normalizedCanvasPath
+      });
+      return true;
+    } catch (error) {
+      this.debugLog("canvas.explicit_refresh.error", {
+        canvasPath: normalizedCanvasPath,
+        message: messageFromError(error)
+      });
+      return false;
+    }
+  }
   getCanvasViewForFilePath(canvasPath) {
     const normalizedCanvasPath = normalizeVaultFilePath(canvasPath);
     for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
@@ -1143,6 +1187,47 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     }
     return null;
   }
+  async isAmoManagedCanvasView(view) {
+    const file = view && view.file;
+    if (!file) return false;
+    try {
+      const raw = await this.app.vault.read(file);
+      const parsed = JSON.parse(raw);
+      const amo = parsed && typeof parsed === "object" ? parsed.amo : null;
+      const managedCanvas = Boolean(amo) && amo.managedBy === AMO_CANVAS_MANAGER && amo.canvasType === AMO_CANVAS_TYPE;
+      if (view.containerEl) {
+        view.containerEl.classList.toggle("amo-managed-canvas", managedCanvas);
+      }
+      this.debugLog("canvas.amo_marker.checked", {
+        canvasPath: file.path,
+        managedCanvas
+      });
+      return managedCanvas;
+    } catch (error) {
+      if (view.containerEl) {
+        view.containerEl.classList.remove("amo-managed-canvas");
+      }
+      this.debugLog("canvas.amo_marker.error", {
+        canvasPath: file.path,
+        message: messageFromError(error)
+      });
+      return false;
+    }
+  }
+  async syncAmoCanvasRendering() {
+    for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
+      const view = leaf.view;
+      if (!view) continue;
+      const managedCanvas = await this.isAmoManagedCanvasView(view);
+      if (!managedCanvas) {
+        this.clearAmoCanvasRendering(view);
+      }
+    }
+  }
+  clearAmoCanvasRendering(view) {
+    if (!view || !view.containerEl) return;
+    view.containerEl.classList.remove("amo-managed-canvas");
+  }
   findCanvasNodeForFilePath(view, notePath) {
     const normalizedNotePath = normalizeVaultFilePath(notePath);
     return collectCanvasNodes(view && view.canvas).find((node) => {
@@ -1151,14 +1236,12 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
   }
   selectCanvasNode(view, node, notePath) {
     const canvas = view && view.canvas;
-    const cleaned = this.clearCanvasSelectionArtifact(view, node);
     const marked = this.markCanvasLatestNote(view, node);
     this.safeCanvasCall(canvas, "requestFrame");
     this.debugLog("canvas.focus_note.selected", {
       canvasPath: view && view.file && view.file.path,
       notePath,
       nodeId: node && (node.id || node.data && node.data.id),
-      cleaned,
       marked
     });
   }
@@ -1173,14 +1256,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
   clearCanvasLatestNoteMarkers(view) {
     if (!view || !view.containerEl) return;
     const markedElements = Array.from(view.containerEl.querySelectorAll(".amo-canvas-latest-note"));
-    for (const node of collectCanvasNodes(view.canvas)) {
-      const element = this.canvasNodeElement(view, node);
-      if (element && markedElements.includes(element)) {
-        this.clearCanvasSelectionArtifact(view, node);
-      }
-    }
     for (const element of markedElements) {
-      element.classList.remove("is-selected", "mod-selected", "selected");
       element.classList.remove("amo-canvas-latest-note");
       element.removeAttribute("data-amo-latest-note");
     }
@@ -1273,7 +1349,6 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     };
     if (this.safeCanvasCall(canvas, "zoomToBbox", bbox)) return true;
     if (this.safeCanvasCall(canvas, "zoomToBBox", bbox)) return true;
-    if (this.safeCanvasCall(canvas, "zoomToSelection")) return true;
     const centerX = bounds.x + bounds.width / 2;
     const centerY = bounds.y + bounds.height / 2;
     if (this.safeCanvasCall(canvas, "panTo", centerX, centerY)) return true;

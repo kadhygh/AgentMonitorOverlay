@@ -9,6 +9,7 @@ import {
   ChevronUp,
   ClipboardCheck,
   FileText,
+  FolderOpen,
   FolderPlus,
   GripHorizontal,
   GripVertical,
@@ -16,6 +17,8 @@ import {
   Minimize2,
   RefreshCcw,
   CircleCheck,
+  Settings2,
+  Trash2,
   Unlink2,
   X,
 } from "lucide-react";
@@ -35,8 +38,10 @@ import type {
   ObsidianVaultRegistrationResult,
   OpenPathResult,
   SessionState,
+  WorkspaceCleanResult,
   WorkspaceEnrollment,
   WorkspaceInspection,
+  WorkspaceMaintenanceStatus,
 } from "./types";
 
 const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
@@ -45,6 +50,8 @@ const BROKER_OBSIDIAN_REGISTER_VAULT_URL = "http://127.0.0.1:17654/api/obsidian/
 const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
 const BROKER_WORKSPACE_ENROLL_URL = "http://127.0.0.1:17654/api/workspaces/enroll";
+const BROKER_WORKSPACE_STATUS_URL = "http://127.0.0.1:17654/api/workspaces/status";
+const BROKER_WORKSPACE_CLEAN_VAULT_URL = "http://127.0.0.1:17654/api/workspaces/clean-vault";
 const BROKER_DEBUG_URL = "http://127.0.0.1:17654/api/debug";
 const BROKER_DEBUG_LOGS_URL = "http://127.0.0.1:17654/api/debug/logs";
 const REFRESH_INTERVAL_MS = 3000;
@@ -178,6 +185,10 @@ function canvasPathForOpen(session: AgentSession) {
   );
 }
 
+function workspacePathForSession(session: AgentSession) {
+  return session.workspacePath ?? session.windowHint?.cwd ?? session.cwd;
+}
+
 function latestCanvasNotePathForFocus(session: AgentSession) {
   const candidates = [
     {
@@ -220,18 +231,18 @@ function timestampValue(value?: string | null) {
 }
 
 function obsidianOpenUri(targetPath: string, vaultId?: string, vaultRoot?: string) {
-  const params = new URLSearchParams();
+  const params: Record<string, string> = {};
   const filePath = vaultRelativeFilePath(targetPath, vaultRoot);
 
   if (vaultId && filePath) {
-    params.set("vault", vaultId);
-    params.set("file", filePath);
+    params.vault = vaultId;
+    params.file = filePath;
   } else {
-    params.set("path", targetPath);
+    params.path = targetPath;
   }
 
-  params.set("paneType", "tab");
-  return `obsidian://open?${params.toString()}`;
+  params.paneType = "tab";
+  return `obsidian://open?${uriQuery(params)}`;
 }
 
 function obsidianAmoOpenUri(
@@ -246,15 +257,22 @@ function obsidianAmoOpenUri(
     return obsidianOpenUri(targetPath, vaultId, vaultRoot);
   }
 
-  const params = new URLSearchParams();
-  params.set("path", targetPath);
-  params.set("relativePath", filePath);
-  params.set("kind", target);
+  const params: Record<string, string> = {
+    path: targetPath,
+    relativePath: filePath,
+    kind: target,
+  };
   if (options?.focusNotePath) {
     const focusNotePath = vaultRelativeFilePath(options.focusNotePath, vaultRoot) ?? options.focusNotePath;
-    params.set("focusNotePath", focusNotePath);
+    params.focusNotePath = focusNotePath;
   }
-  return `obsidian://amo-open?${params.toString()}`;
+  return `obsidian://amo-open?${uriQuery(params)}`;
+}
+
+function uriQuery(params: Record<string, string>) {
+  return Object.entries(params)
+    .map(([key, value]) => `${encodeURIComponent(key)}=${encodeURIComponent(value)}`)
+    .join("&");
 }
 
 function vaultRelativeFilePath(targetPath: string, vaultRoot: string | undefined) {
@@ -304,12 +322,54 @@ function pluginHealthTitle(health: ObsidianPluginHealth) {
   return lines.join("\n");
 }
 
+type MaintenanceTone = "ok" | "warning" | "error" | "unknown";
+
+function maintenanceToneForSession(session: AgentSession, status?: WorkspaceMaintenanceStatus | null): MaintenanceTone {
+  const pluginHealth = status?.pluginHealth ?? session.obsidianPluginHealth;
+  if (status && !status.ok) {
+    if (!status.exists.vaultRoot || !status.exists.canvas || !status.canvas.readable || pluginHealth?.status === "missing") {
+      return "error";
+    }
+    return "warning";
+  }
+  if (pluginHealth && !pluginHealth.ok) {
+    return pluginHealth.status === "missing" ? "error" : "warning";
+  }
+  if (!session.workspacePath && !session.vaultRoot) {
+    return "unknown";
+  }
+  return "ok";
+}
+
+function maintenanceTitleForSession(session: AgentSession) {
+  const tone = maintenanceToneForSession(session);
+  const health = session.obsidianPluginHealth;
+  const lines = ["Workspace tools"];
+  if (tone === "warning" || tone === "error") {
+    lines.push("Needs review");
+  }
+  if (health?.issues?.length) {
+    lines.push(...health.issues);
+  }
+  return lines.join("\n");
+}
+
 function menuPosition(x?: number, y?: number) {
   const fallbackX = Math.max(12, window.innerWidth - 326);
   const fallbackY = 96;
   return {
     x: Math.max(10, Math.min(x ?? fallbackX, window.innerWidth - 326)),
     y: Math.max(54, Math.min(y ?? fallbackY, window.innerHeight - 220)),
+  };
+}
+
+function workspacePanelPosition(x?: number, y?: number) {
+  const width = 356;
+  const fallbackX = Math.max(12, window.innerWidth - width - 8);
+  const fallbackY = 92;
+  return {
+    x: Math.max(10, Math.min(x ?? fallbackX, window.innerWidth - width - 10)),
+    y: Math.max(54, Math.min(y ?? fallbackY, window.innerHeight - 360)),
   };
 }
 
@@ -375,6 +435,23 @@ interface CandidateMenuState {
   bindOnSelect: boolean;
 }
 
+interface WorkspacePanelState {
+  session: AgentSession;
+  x: number;
+  y: number;
+  status: WorkspaceMaintenanceStatus | null;
+  busy: "status" | "clean" | "open" | null;
+  error: string | null;
+}
+
+interface CleanConfirmState {
+  session: AgentSession;
+  workspacePath: string;
+  replyNotes: number;
+  promptNotes: number;
+  canvasNodes: number;
+}
+
 interface ResizeState {
   mode: "vertical" | "horizontal" | "both";
   startScreenX: number;
@@ -405,6 +482,7 @@ function SessionRowContent({
   onOpenCanvas,
   onCopyPrompt,
   onUnbindWindow,
+  onOpenWorkspacePanel,
 }: {
   session: AgentSession;
   activating: boolean;
@@ -415,6 +493,7 @@ function SessionRowContent({
   onOpenCanvas: () => void;
   onCopyPrompt: () => void;
   onUnbindWindow: () => void;
+  onOpenWorkspacePanel: (x: number, y: number) => void;
 }) {
   const notePath = notePathForOpen(session);
   const canvasPath = canvasPathForOpen(session);
@@ -422,14 +501,25 @@ function SessionRowContent({
   const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
   const noteOpening = openingTarget === "note";
   const canvasOpening = openingTarget === "canvas";
-  const pluginHealth = session.obsidianPluginHealth;
-  const PluginHealthIcon = pluginHealth?.ok ? CircleCheck : AlertTriangle;
   const waitingForPermission = session.state === "waiting_permission";
   const display = toolDisplayForSession(session);
   const statusLabel = activating ? "Opening" : stateLabel[session.state];
+  const maintenanceTone = maintenanceToneForSession(session);
 
   return (
     <span className="session-main">
+      <button
+        type="button"
+        className={`card-maintenance-button tone-${maintenanceTone}`}
+        title={maintenanceTitleForSession(session)}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onOpenWorkspacePanel(event.clientX, event.clientY);
+        }}
+      >
+        <Settings2 size={13} aria-hidden="true" />
+      </button>
       <span className="session-head">
         <ToolMark session={session} />
         <span className="session-title">
@@ -458,15 +548,9 @@ function SessionRowContent({
                 Window bound
               </span>
             ) : null}
-            {pluginHealth ? (
-              <span className={`session-tag plugin-tag health-${pluginHealth.status}`} title={pluginHealthTitle(pluginHealth)}>
-                <PluginHealthIcon size={11} aria-hidden="true" />
-                Plugin
-              </span>
-            ) : null}
           </span>
         </span>
-        {notePath || canvasPath || session.pendingPrompt || windowBound || pluginHealth || waitingForPermission ? (
+        {notePath || canvasPath || session.pendingPrompt || windowBound || waitingForPermission ? (
           <span className="bridge-actions" aria-label="Bridge actions">
             {waitingForPermission ? (
               <span className="permission-pill" title="点击卡片切回 CLI，手动处理权限请求">
@@ -560,6 +644,8 @@ export default function App() {
   const [copyingPromptId, setCopyingPromptId] = useState<string | null>(null);
   const [unbindingWindowId, setUnbindingWindowId] = useState<string | null>(null);
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
+  const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
+  const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);
   const [workspacePath, setWorkspacePath] = useState("");
@@ -838,6 +924,154 @@ export default function App() {
       setFeedback(`Deploy failed: ${(error as Error).message}`);
     } finally {
       setDeployBusy(null);
+    }
+  }
+
+  async function openWorkspacePanel(session: AgentSession, x?: number, y?: number) {
+    const position = workspacePanelPosition(x, y);
+    setCandidateMenu(null);
+    setWorkspacePanel({
+      session,
+      x: position.x,
+      y: position.y,
+      status: null,
+      busy: "status",
+      error: null,
+    });
+    await loadWorkspaceStatus(session);
+  }
+
+  async function loadWorkspaceStatus(session: AgentSession) {
+    const workspacePath = workspacePathForSession(session);
+    if (!workspacePath) {
+      setWorkspacePanel((current) =>
+        current ? { ...current, busy: null, error: "No workspace path is linked to this card." } : current,
+      );
+      return;
+    }
+
+    setWorkspacePanel((current) => (current ? { ...current, busy: "status", error: null } : current));
+    try {
+      const status = await postBrokerJson<WorkspaceMaintenanceStatus>(BROKER_WORKSPACE_STATUS_URL, {
+        workspacePath,
+      });
+      setWorkspacePanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? {
+              ...current,
+              status,
+              busy: null,
+              error: null,
+            }
+          : current,
+      );
+      void postDebugLog("workspace.maintenance.status.ok", {
+        sessionId: session.sessionId,
+        workspacePath,
+        issueCount: status.issues.length,
+      });
+    } catch (error) {
+      const message = (error as Error).message;
+      setWorkspacePanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? { ...current, busy: null, error: message }
+          : current,
+      );
+      void postDebugLog("workspace.maintenance.status.error", {
+        sessionId: session.sessionId,
+        workspacePath,
+        message,
+      });
+    }
+  }
+
+  async function cleanWorkspaceVaultFromPanel() {
+    if (!workspacePanel) return;
+    const session = workspacePanel.session;
+    const workspacePath = workspacePathForSession(session);
+    if (!workspacePath) {
+      setWorkspacePanel((current) =>
+        current ? { ...current, error: "No workspace path is linked to this card." } : current,
+      );
+      return;
+    }
+
+    setCleanConfirm(null);
+    setWorkspacePanel((current) => (current ? { ...current, busy: "clean", error: null } : current));
+    setFeedback(`Cleaning AMO notes for ${projectName(workspacePath)}...`);
+    try {
+      const result = await postBrokerJson<WorkspaceCleanResult>(BROKER_WORKSPACE_CLEAN_VAULT_URL, {
+        workspacePath,
+      });
+      setWorkspacePanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? {
+              ...current,
+              status: result.after,
+              busy: null,
+              error: null,
+            }
+          : current,
+      );
+      setFeedback(
+        `Cleaned ${result.before.counts.replyNotes + result.before.counts.promptNotes} notes and reset ${result.before.counts.canvasNodes} canvas nodes.`,
+      );
+      void postDebugLog("workspace.maintenance.clean.ok", {
+        sessionId: session.sessionId,
+        workspacePath,
+        clearedSessions: result.clearedSessions,
+      });
+      void refreshSessions("workspace-clean");
+    } catch (error) {
+      const message = (error as Error).message;
+      setWorkspacePanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? { ...current, busy: null, error: message }
+          : current,
+      );
+      setFeedback(`Clean failed: ${message}`);
+      void postDebugLog("workspace.maintenance.clean.error", {
+        sessionId: session.sessionId,
+        workspacePath,
+        message,
+      });
+    }
+  }
+
+  function requestCleanWorkspaceVault() {
+    if (!workspacePanel) return;
+    const workspacePath = workspacePathForSession(workspacePanel.session);
+    if (!workspacePath) {
+      setWorkspacePanel((current) =>
+        current ? { ...current, error: "No workspace path is linked to this card." } : current,
+      );
+      return;
+    }
+
+    setCleanConfirm({
+      session: workspacePanel.session,
+      workspacePath,
+      replyNotes: workspacePanel.status?.counts.replyNotes ?? 0,
+      promptNotes: workspacePanel.status?.counts.promptNotes ?? 0,
+      canvasNodes: workspacePanel.status?.counts.canvasNodes ?? 0,
+    });
+  }
+
+  async function openMaintenancePath(path: string | undefined, label: string) {
+    if (!path) return;
+    setWorkspacePanel((current) => (current ? { ...current, busy: "open", error: null } : current));
+    try {
+      const result = await invoke<OpenPathResult>("open_path", { path });
+      setFeedback(result.ok ? `Opened ${label}.` : result.message);
+      if (!result.ok) {
+        setWorkspacePanel((current) => (current ? { ...current, error: result.message } : current));
+      }
+    } catch (error) {
+      const message = (error as Error).message;
+      setFeedback(`Open ${label} failed: ${message}`);
+      setWorkspacePanel((current) => (current ? { ...current, error: message } : current));
+    } finally {
+      setWorkspacePanel((current) => (current ? { ...current, busy: null } : current));
     }
   }
 
@@ -1664,6 +1898,7 @@ export default function App() {
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
                   onCopyPrompt={() => void copyPendingPrompt(session)}
                   onUnbindWindow={() => void clearWindowBinding(session)}
+                  onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
                 />
               </div>
             ))}
@@ -1718,6 +1953,209 @@ export default function App() {
             </section>
           ) : null}
 
+          {workspacePanel ? (
+            <section
+              className={`workspace-panel tone-${maintenanceToneForSession(workspacePanel.session, workspacePanel.status)}`}
+              style={{ left: workspacePanel.x, top: workspacePanel.y }}
+              aria-label="Workspace maintenance"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="workspace-panel-header">
+                <div>
+                  <strong>{projectName(workspacePathForSession(workspacePanel.session))}</strong>
+                  <span>{workspacePanel.status ? (workspacePanel.status.ok ? "Ready" : "Needs review") : "Checking"}</span>
+                </div>
+                <button
+                  type="button"
+                  className="candidate-close"
+                  title="Close"
+                  onClick={() => setWorkspacePanel(null)}
+                >
+                  <X size={13} aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="workspace-panel-actions">
+                <button
+                  type="button"
+                  disabled={workspacePanel.busy !== null}
+                  onClick={() => void loadWorkspaceStatus(workspacePanel.session)}
+                >
+                  <RefreshCcw size={12} aria-hidden="true" />
+                  <span>{workspacePanel.busy === "status" ? "Checking" : "Check"}</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={workspacePanel.busy !== null}
+                  onClick={() =>
+                    void openMaintenancePath(
+                      workspacePanel.status?.paths.workspace ?? workspacePathForSession(workspacePanel.session),
+                      "workspace",
+                    )
+                  }
+                >
+                  <FolderOpen size={12} aria-hidden="true" />
+                  <span>Project</span>
+                </button>
+                <button
+                  type="button"
+                  disabled={workspacePanel.busy !== null}
+                  onClick={() =>
+                    void openMaintenancePath(
+                      workspacePanel.status?.paths.vaultRoot ?? workspacePanel.session.vaultRoot,
+                      "vault",
+                    )
+                  }
+                >
+                  <FolderOpen size={12} aria-hidden="true" />
+                  <span>Vault</span>
+                </button>
+                <button
+                  type="button"
+                  className="danger-action"
+                  disabled={workspacePanel.busy !== null}
+                  onClick={() => requestCleanWorkspaceVault()}
+                >
+                  <Trash2 size={12} aria-hidden="true" />
+                  <span>{workspacePanel.busy === "clean" ? "Cleaning" : "Clean"}</span>
+                </button>
+              </div>
+
+              {workspacePanel.error ? <p className="workspace-panel-error">{workspacePanel.error}</p> : null}
+
+              {workspacePanel.status ? (
+                <div className="workspace-panel-content">
+                  <div className="workspace-stats">
+                    <span>
+                      <strong>{workspacePanel.status.counts.replyNotes}</strong>
+                      Replies
+                    </span>
+                    <span>
+                      <strong>{workspacePanel.status.counts.promptNotes}</strong>
+                      Prompts
+                    </span>
+                    <span>
+                      <strong>{workspacePanel.status.counts.canvasNodes}</strong>
+                      Nodes
+                    </span>
+                  </div>
+
+                  <div className="workspace-section">
+                    <strong>Folders</strong>
+                    <div className="workspace-path-grid">
+                      <span className={workspacePanel.status.exists.amoRoot ? "is-ok" : "is-bad"}>.amo</span>
+                      <code title={workspacePanel.status.paths.amoRoot}>{shortPathLabel(workspacePanel.status.paths.amoRoot)}</code>
+                      <span className={workspacePanel.status.exists.vaultRoot ? "is-ok" : "is-bad"}>vault</span>
+                      <code title={workspacePanel.status.paths.vaultRoot}>{shortPathLabel(workspacePanel.status.paths.vaultRoot)}</code>
+                      <span className={workspacePanel.status.exists.replies ? "is-ok" : "is-bad"}>Replies</span>
+                      <code title={workspacePanel.status.paths.replies}>{shortPathLabel(workspacePanel.status.paths.replies)}</code>
+                      <span className={workspacePanel.status.exists.prompts ? "is-ok" : "is-bad"}>Prompts</span>
+                      <code title={workspacePanel.status.paths.prompts}>{shortPathLabel(workspacePanel.status.paths.prompts)}</code>
+                    </div>
+                  </div>
+
+                  <div className="workspace-section">
+                    <strong>Canvas</strong>
+                    <span className={`workspace-health-line ${workspacePanel.status.canvas.amoManaged ? "is-ok" : "is-bad"}`}>
+                      {workspacePanel.status.canvas.amoManaged ? <CircleCheck size={12} /> : <AlertTriangle size={12} />}
+                      {workspacePanel.status.canvas.amoManaged ? "AMO managed" : "AMO marker missing"}
+                    </span>
+                    {workspacePanel.status.canvas.marker ? (
+                      <code className="workspace-code-line">
+                        {workspacePanel.status.canvas.marker.managedBy} / {workspacePanel.status.canvas.marker.canvasType}
+                      </code>
+                    ) : null}
+                  </div>
+
+                  <div className="workspace-section">
+                    <strong>Plugin</strong>
+                    <span
+                      className={`workspace-health-line ${
+                        workspacePanel.status.pluginHealth?.ok ? "is-ok" : "is-warning"
+                      }`}
+                      title={workspacePanel.status.pluginHealth ? pluginHealthTitle(workspacePanel.status.pluginHealth) : undefined}
+                    >
+                      {workspacePanel.status.pluginHealth?.ok ? <CircleCheck size={12} /> : <AlertTriangle size={12} />}
+                      {workspacePanel.status.pluginHealth?.installedVersion ?? "missing"} / expected{" "}
+                      {workspacePanel.status.pluginHealth?.expectedVersion ?? "unknown"}
+                    </span>
+                  </div>
+
+                  {workspacePanel.status.issues.length > 0 ? (
+                    <div className="workspace-section">
+                      <strong>Issues</strong>
+                      <div className="workspace-issues">
+                        {workspacePanel.status.issues.slice(0, 5).map((issue) => (
+                          <span key={issue}>{issue}</span>
+                        ))}
+                      </div>
+                    </div>
+                  ) : null}
+                </div>
+              ) : (
+                <div className="workspace-panel-loading">Checking workspace folders...</div>
+              )}
+            </section>
+          ) : null}
+
+          {cleanConfirm ? (
+            <div
+              className="confirm-backdrop"
+              role="presentation"
+              onClick={() => setCleanConfirm(null)}
+            >
+              <section
+                className="confirm-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Confirm AMO vault cleanup"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="confirm-dialog-header">
+                  <strong>Clean AMO Vault?</strong>
+                  <button
+                    type="button"
+                    className="candidate-close"
+                    title="Cancel"
+                    onClick={() => setCleanConfirm(null)}
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </div>
+                <p>
+                  This will clear generated notes and reset the canvas for{" "}
+                  <strong>{projectName(cleanConfirm.workspacePath)}</strong>.
+                </p>
+                <div className="confirm-counts">
+                  <span>
+                    <strong>{cleanConfirm.replyNotes}</strong>
+                    replies
+                  </span>
+                  <span>
+                    <strong>{cleanConfirm.promptNotes}</strong>
+                    prompts
+                  </span>
+                  <span>
+                    <strong>{cleanConfirm.canvasNodes}</strong>
+                    nodes
+                  </span>
+                </div>
+                <div className="confirm-dialog-actions">
+                  <button type="button" onClick={() => setCleanConfirm(null)}>
+                    Cancel
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-action"
+                    onClick={() => void cleanWorkspaceVaultFromPanel()}
+                  >
+                    Confirm Clean
+                  </button>
+                </div>
+              </section>
+            </div>
+          ) : null}
+
           {cardDrag ? (
             <div
               className="session-row drag-preview"
@@ -1744,6 +2182,7 @@ export default function App() {
                     onOpenCanvas={() => undefined}
                     onCopyPrompt={() => undefined}
                     onUnbindWindow={() => undefined}
+                    onOpenWorkspacePanel={() => undefined}
                   />
                 ) : null;
               })()}

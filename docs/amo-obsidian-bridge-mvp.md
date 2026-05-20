@@ -483,19 +483,84 @@ Recommended vault shape:
 ```text
 Vault/
   AgentFlow.canvas
-  Codex Replies/
-    2026-05/
-      2026-05-13_001_codex_reply.md
+  Replies/
+    reply 01.md
+    reply 02.md
+  Prompts/
+    prompt 01.md
+    prompt 02.md
 ```
 
 The first layout can be simple append-only placement:
 
 - Add each reply as a file node.
+- Add each outgoing user prompt as a file node.
 - Link it from the previous node for the same session when available.
 - Place the next node from the previous session node's actual canvas position and size, using the configured append direction.
 - The default append direction is down (`bottom -> top` edges); users can switch to right (`right -> left` edges) in the Obsidian plugin settings.
+- Canvas edges should write explicit endpoint data (`fromEnd: none`, `toEnd: arrow`) in addition to `fromNode`, `toNode`, `fromSide`, and `toSide`, so Obsidian does not need to rely on renderer defaults.
 - Avoid editing or re-layouting unrelated user canvas content.
 - Automatic layout/re-layout is a later Obsidian-plugin optimization, not part of the current append-only MVP.
+
+### AMO-Managed Canvas Data
+
+`AgentFlow.canvas` should declare that it is an AMO-managed work canvas instead of asking the plugin to infer that from path names or node shape. The canvas file should keep normal Obsidian `nodes` and `edges`, plus an AMO metadata block:
+
+```json
+{
+  "nodes": [],
+  "edges": [],
+  "amo": {
+    "schemaVersion": 1,
+    "canvasType": "agent-flow",
+    "managedBy": "agent-monitor-overlay",
+    "workspaceId": "ws_xxx",
+    "display": {
+      "labelMode": "short",
+      "hidePropertiesByDefault": true
+    }
+  }
+}
+```
+
+The Obsidian plugin should only apply AMO-specific canvas behavior when this metadata identifies the canvas as AMO-managed. Short-term MVP behavior must stay conservative: AMO may write JSON Canvas file nodes/edges and add a lightweight latest-note visual hint, but it must not override `.canvas-node` layout CSS, inject controls into canvas node DOM, hide native node properties, or rewrite Obsidian Canvas selection state. Non-AMO canvases should keep native Obsidian behavior.
+
+### Reply And Prompt Note Identity
+
+For the current test-project phase, AMO can use simple physical file names instead of timestamp-heavy file names. No migration support is required for older test canvases.
+
+New generated notes should use per-kind sequence names:
+
+- `Replies/reply 01.md`, `Replies/reply 02.md`, ...
+- `Prompts/prompt 01.md`, `Prompts/prompt 02.md`, ...
+
+The note frontmatter remains the durable identity layer:
+
+```yaml
+amo:
+  schemaVersion: 1
+  workspaceId: "ws_xxx"
+  tool: "codex"
+  role: "assistant"
+  kind: "reply"
+  sequence: 1
+  displayName: "reply 01"
+  sessionId: "session-id"
+  turnId: "turn-id"
+  cwd: "D:\\Projects\\SomeProject"
+  source: "codex-stop-hook"
+  capturedAt: "2026-05-13T00:00:00.000Z"
+```
+
+Future card remarks should become an optional user-authored display layer:
+
+```yaml
+amo:
+  displayName: "reply 01"
+  userLabel: "Permission request smoke"
+```
+
+Display priority should be `userLabel` first, then `displayName`, then the physical file name. This keeps canvas readable while preserving session/turn/source data for AMO and the plugin.
 
 ### Annotation Extraction
 
@@ -556,6 +621,17 @@ The overlay should keep the existing session cards and add small actions when br
 - `Open Canvas`
 - `Copy Pending Prompt`
 - `Bind/Unbind Window` when routing is ambiguous or a manual binding exists
+- Per-card workspace maintenance settings for project/vault status, folder opening, plugin health, and AMO vault cleanup.
+
+Deployment, folder, plugin-version, and vault-health information should not compete with task-progress actions on the card face. The card should expose a compact settings button in the top-right corner. The button can show a small status dot:
+
+- green for healthy workspace/vault/plugin state
+- yellow for repairable warnings such as plugin version or bridge URL mismatch
+- red for missing vault/canvas/plugin state
+
+Clicking the button opens a maintenance panel for that card's workspace. The panel should show AMO folder existence, reply/prompt note counts, canvas node/edge counts, AMO canvas marker state, plugin version/bridge health, and issues. It should include one-click folder open actions and a safe cleanup action that only clears generated vault content: `Replies/`, `Prompts/`, `AgentFlow.canvas` nodes/edges, and canvas binding state. It must not remove `.amo/workspace.json`, adapters, hooks, or `.codex/hooks.json`.
+
+Canvas rendering safety decision: the MVP should treat Canvas JSON as the integration boundary and Markdown notes as the annotation rendering/editing boundary. AMO should not mutate Obsidian Canvas internals such as node DOM structure, `.canvas-node` positioning, native selection state, zoom/pan fields, or live view data. If an already-open canvas does not immediately display broker-appended nodes, the safe MVP fallback is to reopen/refresh the canvas manually; automatic live Canvas reload requires a separate design pass with explicit Obsidian Canvas API validation.
 
 For the interim overlay-only path, `Open Note` and `Open Canvas` may use `obsidian://open` with `paneType=tab` so opening a canvas does not replace the currently active note. This is only a fallback. Precise behavior for "if the target note/canvas is already open, focus that existing tab; otherwise open a new tab" belongs in the Obsidian plugin because the external URI layer cannot reliably inspect or control Obsidian workspace leaves.
 
@@ -648,7 +724,9 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 - POST annotations to the bridge.
 - Preserve the existing "copy annotations to clipboard" command.
 
-Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `.amo/obsidian-vault/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, adds `Send current note annotations to AMO`, and registers `obsidian://amo-open` so overlay note/canvas buttons can ask the plugin to reuse an existing tab before opening a new one. The plugin can also target a Markdown note selected as a file node on `AgentFlow.canvas` for panel/copy/send/append actions; canvas targeting now prefers the current canvas selection and only falls back to the last clicked file node if no selection can be read, so actions should not silently drift to a previous node. The AMO panel keeps canvas target context even while the panel itself is the active leaf, and panel Copy/Send buttons operate on the note currently displayed in the panel rather than re-resolving Obsidian's active Markdown view at click time. If Obsidian's canvas selection cannot be read reliably, the plugin should ask the user to choose one of the Markdown file nodes from the canvas instead of silently using a stale target. Editor selection insertion now creates a quoted annotation block instead of wrapping the selected source text, so a selected question title becomes quoted context and the user's answer can be written underneath. If the user is in reading mode, the plugin can append the current DOM text selection as a referenced annotation block because there is no editable cursor location. Annotation rendering supports both inline `[!anno]...[/anno]` and multi-block annotations. The stable path is now source-backed and lifecycle-managed: the Markdown postprocessor uses `sourcePath` and `getSectionInfo` to map each rendered section back to the source file, renders one plugin-owned `MarkdownRenderChild` for the annotation start section, and hides the remaining annotation sections. This avoids treating cross-section DOM ranges as durable state in note read/edit/read and canvas embedded previews. The plugin setting `Number annotations in sync prompt` defaults off; when off, pending prompts use raw annotation content without broker-added numbering. The plugin setting `Canvas note append direction` defaults to down and can switch to right; broker reads that vault-local setting when adding new reply/prompt file nodes and writes explicit canvas edge sides. The previous delayed DOM repair helpers were removed from the primary plugin path because they hid symptoms while still fighting Obsidian's renderer ownership. The custom `amo-open` URI intentionally passes only a vault-relative `path` and `kind`, not `vault=...`, because Obsidian resolves the `vault` parameter before the plugin protocol handler can run. Obsidian may still require a vault reload/restart before a newly deployed plugin is loaded; removing that first-load friction is part of the plugin-side opening/reload UX follow-up.
+Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `.amo/obsidian-vault/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, adds `Send current note annotations to AMO`, and registers `obsidian://amo-open` so overlay note/canvas buttons can ask the plugin to reuse an existing tab before opening a new one. The plugin can also target a Markdown note selected as a file node on `AgentFlow.canvas` for panel/copy/send/append actions; canvas targeting now prefers the current canvas selection and only falls back to the last clicked file node if no selection can be read, so actions should not silently drift to a previous node. The AMO panel keeps canvas target context even while the panel itself is the active leaf, and panel Copy/Send buttons operate on the note currently displayed in the panel rather than re-resolving Obsidian's active Markdown view at click time. If Obsidian's canvas selection cannot be read reliably, the plugin should ask the user to choose one of the Markdown file nodes from the canvas instead of silently using a stale target. Editor selection insertion now creates a quoted annotation block instead of wrapping the selected source text, so a selected question title becomes quoted context and the user's answer can be written underneath. If the user is in reading mode, the plugin can append the current DOM text selection as a referenced annotation block because there is no editable cursor location. Annotation rendering supports both inline `[!anno]...[/anno]` and multi-block annotations. The stable path is now source-backed and lifecycle-managed: the Markdown postprocessor uses `sourcePath` and `getSectionInfo` to map each rendered section back to the source file, renders one plugin-owned `MarkdownRenderChild` for the annotation start section, and hides the remaining annotation sections. This avoids treating cross-section DOM ranges as durable state in note read/edit/read and canvas embedded previews. The plugin setting `Number annotations in sync prompt` defaults off; when off, pending prompts use raw annotation content without broker-added numbering. The plugin setting `Canvas note append direction` defaults to down and can switch to right; broker reads that vault-local setting when adding new reply/prompt file nodes and writes explicit canvas edge sides and endpoint shapes. Canvas DOM rendering enhancements were deliberately rolled back from MVP scope after zoom/pan regressions: the plugin no longer injects node-level property buttons, hides node metadata via CSS, mutates Obsidian Canvas selection state, or force-reloads live Canvas views on vault file changes. The previous delayed DOM repair helpers were removed from the primary plugin path because they hid symptoms while still fighting Obsidian's renderer ownership. The custom `amo-open` URI intentionally passes only a vault-relative `path` and `kind`, not `vault=...`, because Obsidian resolves the `vault` parameter before the plugin protocol handler can run. Obsidian may still require a vault reload/restart before a newly deployed plugin is loaded; removing that first-load friction is part of the plugin-side opening/reload UX follow-up.
+
+Current AMO canvas/note direction: new test-project deployments can use short physical note names directly because no production migration compatibility is required yet. Broker writes `AgentFlow.canvas` with AMO metadata, writes new notes as `Replies/reply 01.md` / `Prompts/prompt 01.md`, and keeps durable identity in frontmatter. The Obsidian plugin checks the canvas AMO marker before applying AMO-specific canvas rendering such as latest-note focus styling and canvas-node properties hiding.
 
 ### Debug Logging
 

@@ -70,6 +70,16 @@ Status: user smoke validated for the current Codex CLI MVP loop on 2026-05-20; p
 - Confirm direct Codex `UserPromptSubmit` payloads can enter the same prompt-note/canvas chain when available.
 - Confirm PermissionRequest events make the overlay card show the compact permission state and route the user back to the CLI for manual approval.
 - Confirm opening a canvas from an overlay card focuses the latest note node when present and falls back to a plain canvas jump when it is absent.
+- Confirm broker appends prompt/reply nodes to `AgentFlow.canvas` without corrupting the open canvas; if the canvas is already open, manual reopen/refresh is acceptable in the current safe MVP.
+- Confirm prompt/reply canvas edges visibly connect the source and target nodes and include explicit `fromEnd: none` / `toEnd: arrow` endpoint data.
+- Confirm newly enrolled AMO canvases include `amo.managedBy = agent-monitor-overlay` and `amo.canvasType = agent-flow`.
+- Confirm new generated notes use short physical names such as `Replies/reply 01.md` and `Prompts/prompt 01.md`.
+- Confirm new reply/prompt note frontmatter includes `amo.kind`, `amo.role`, `amo.sequence`, and `amo.displayName`.
+- Confirm AMO does not inject controls into canvas node DOM or override `.canvas-node` positioning; node property hiding is deferred until a safe canvas rendering design exists.
+- Confirm each overlay card has a top-right workspace maintenance button whose status dot reflects plugin/vault health.
+- Confirm the card maintenance panel shows folder existence, reply/prompt note counts, canvas counts, AMO canvas marker state, and plugin health.
+- Confirm the maintenance panel can open the project/vault folders from the card.
+- Confirm the maintenance panel cleanup action clears generated `Replies/`, `Prompts/`, `AgentFlow.canvas` nodes, and canvas bindings without removing hooks or workspace enrollment metadata.
 
 ## Vibe Checks
 

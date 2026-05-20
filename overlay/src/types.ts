@@ -182,3 +182,65 @@ export interface WorkspaceEnrollment {
   canvasPath: string;
   deferredAdapters?: WorkspaceAdapterPlan[];
 }
+
+export interface WorkspaceMaintenanceStatus {
+  ok: boolean;
+  schemaVersion: number;
+  workspaceId: string;
+  workspacePath: string;
+  projectName: string;
+  amoRoot: string;
+  vaultRoot: string;
+  paths: {
+    workspace: string;
+    amoRoot: string;
+    vaultRoot: string;
+    replies: string;
+    prompts: string;
+    canvas: string;
+    plugin: string;
+  };
+  exists: {
+    amoRoot: boolean;
+    workspaceJson: boolean;
+    vaultRoot: boolean;
+    replies: boolean;
+    prompts: boolean;
+    canvas: boolean;
+    plugin: boolean;
+  };
+  counts: {
+    replyNotes: number;
+    promptNotes: number;
+    canvasNodes: number;
+    canvasEdges: number;
+  };
+  canvas: {
+    exists: boolean;
+    readable: boolean;
+    amoManaged: boolean;
+    nodeCount: number;
+    edgeCount: number;
+    marker?: {
+      schemaVersion?: number | null;
+      canvasType?: string | null;
+      managedBy?: string | null;
+      workspaceId?: string | null;
+      labelMode?: string | null;
+      hidePropertiesByDefault?: boolean | null;
+    } | null;
+  };
+  pluginHealth?: ObsidianPluginHealth;
+  issues: string[];
+  checkedAt: string;
+}
+
+export interface WorkspaceCleanResult {
+  ok: boolean;
+  schemaVersion: number;
+  workspacePath: string;
+  vaultRoot: string;
+  clearedSessions: number;
+  before: WorkspaceMaintenanceStatus;
+  after: WorkspaceMaintenanceStatus;
+}
