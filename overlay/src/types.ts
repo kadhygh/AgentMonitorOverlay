@@ -9,7 +9,7 @@ export type SessionState =
   | "cancelled"
   | "unknown";
 
-export type AgentTool = "codex" | "claude" | "kiro" | "other";
+export type AgentTool = "codex" | "codex-cli" | "codex-app" | "claude" | "claude-cli" | "kiro" | "kiro-ide" | "other";
 
 export interface WindowHint {
   process?: string;
@@ -60,6 +60,15 @@ export interface AgentSession {
   lastReplyAt?: string;
   lastReplyNote?: string;
   lastReplyNoteAbsolutePath?: string;
+  lastPromptAt?: string;
+  lastPromptNote?: string;
+  lastPromptNoteAbsolutePath?: string;
+  lastPromptCanvasNodeId?: string;
+  sentPromptId?: string | null;
+  sentPromptNote?: string | null;
+  sentPromptNoteAbsolutePath?: string | null;
+  sentPromptCanvasNodeId?: string | null;
+  sentPromptRecordedAt?: string | null;
   canvasPath?: string;
   canvasAbsolutePath?: string;
   canvasNodeId?: string;

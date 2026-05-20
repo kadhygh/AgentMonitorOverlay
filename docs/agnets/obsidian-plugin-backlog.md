@@ -18,6 +18,7 @@ This backlog is the working queue for the AMO Obsidian Plugin Agent. Items here 
 - Add plugin-side open note/canvas behavior that avoids the first-open Obsidian restart limitation.
 - Add explicit work canvas binding UI.
 - Add multi-CLI quick jump buttons when one canvas is associated with several CLI/TUI sessions.
+- Add plugin-side automatic canvas layout commands, such as arranging AMO-owned nodes, selected chains, or selected groups without touching unrelated user canvas content.
 
 ## Later
 
@@ -44,6 +45,8 @@ This backlog is the working queue for the AMO Obsidian Plugin Agent. Items here 
 
 ## Done Recently
 
+- Added an Obsidian plugin setting for annotation numbering in sync prompts; numbering defaults off.
+- Added broker-side outgoing prompt notes so sync-back/user prompt content can chain onto `AgentFlow.canvas`.
 - Migrated `md-anno-tools` from a single hand-maintained `main.js` into TypeScript source modules bundled by esbuild.
 - Added broker/overlay/plugin debug logging controlled by overlay debug toggle.
 - Fixed AMO panel Copy/Send using stale active Markdown view.

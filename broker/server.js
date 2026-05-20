@@ -17,6 +17,11 @@ const REPLY_NODE_WIDTH = 520;
 const REPLY_NODE_HEIGHT = 360;
 const REPLY_NODE_GAP_X = 620;
 const REPLY_NODE_GAP_Y = 420;
+const CANVAS_NODE_MARGIN_X = Math.max(80, REPLY_NODE_GAP_X - REPLY_NODE_WIDTH);
+const CANVAS_NODE_MARGIN_Y = Math.max(60, REPLY_NODE_GAP_Y - REPLY_NODE_HEIGHT);
+const DEFAULT_CANVAS_APPEND_DIRECTION = "down";
+const CANVAS_APPEND_DIRECTIONS = new Set(["down", "right"]);
+const PROMPT_DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
   "access-control-allow-methods": "GET, POST, OPTIONS",
@@ -114,6 +119,13 @@ const server = http.createServer(async (req, res) => {
       const reply = handleReply(payload);
       persistSnapshot();
       return sendJson(res, 200, reply);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/prompts") {
+      const payload = await readJsonBody(req);
+      const prompt = handlePrompt(payload);
+      persistSnapshot();
+      return sendJson(res, 200, prompt);
     }
 
     if (req.method === "POST" && url.pathname === "/api/obsidian/annotations") {
@@ -378,7 +390,31 @@ function upsertSessionFromEvent(payload) {
   };
 
   sessions.set(sessionId, session);
-  return session;
+  const promptMessage = promptMessageFromEvent(payload, eventName, message);
+  if (promptMessage) {
+    try {
+      const promptResult = handlePrompt({
+        ...payload,
+        tool,
+        source: normalizeText(payload.source) === "hook" ? `${tool}-user-prompt-hook` : normalizeText(payload.source),
+        sessionId,
+        cwd: session.cwd,
+        workspacePath: session.workspacePath,
+        message: promptMessage,
+        hookEventName: eventName || "UserPromptSubmit",
+        capturedAt: normalizeText(payload.timestamp || payload.updatedAt || payload.updated_at || payload.observedAt || payload.observed_at),
+      });
+      return promptResult.session || sessions.get(sessionId) || session;
+    } catch (error) {
+      recordDebugLog("broker", "prompt.event_record_failed", {
+        sessionId,
+        eventName,
+        message: error.message || String(error),
+      });
+    }
+  }
+
+  return sessions.get(sessionId) || session;
 }
 
 function updateHeartbeat(sessionId, payload) {
@@ -546,7 +582,9 @@ function enrollWorkspace(payload) {
     label: "Codex CLI",
     status: "installed",
     installedAt: now,
+    bridgeEventsUrl: `${baseUrl()}/api/events`,
     bridgeRepliesUrl: `${baseUrl()}/api/replies`,
+    bridgePromptsUrl: `${baseUrl()}/api/prompts`,
     hookScriptPath,
     cacheFallbackPath: path.join(workspacePath, ".codex", "cache"),
   });
@@ -660,7 +698,7 @@ function handleReply(payload) {
 
   const vaultRoot = path.join(amoRoot, "obsidian-vault");
   const note = writeReplyNote(vaultRoot, record);
-  const canvas = appendReplyToCanvas(amoRoot, vaultRoot, record, note);
+  const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
 
   const existing = sessions.get(sessionId);
   const session = {
@@ -694,6 +732,152 @@ function handleReply(payload) {
     turnId,
     source,
     cwd,
+    notePath: note.notePath,
+    canvasPath: canvas.canvasPath,
+    canvasNodeId: canvas.canvasNodeId,
+    messagePreview: debugPreview(message),
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    workspaceId: workspace.workspaceId,
+    sessionId,
+    turnId,
+    notePath: note.notePath,
+    noteAbsolutePath: note.noteAbsolutePath,
+    canvasPath: canvas.canvasPath,
+    canvasAbsolutePath: canvas.canvasAbsolutePath,
+    canvasNodeId: canvas.canvasNodeId,
+    session,
+  };
+}
+
+function handlePrompt(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Prompt payload must be a JSON object");
+  }
+
+  const message = normalizeText(payload.message || payload.prompt || payload.userPrompt || payload.user_prompt);
+  if (!message) {
+    throw httpError(400, "missing_message", "Prompt payload must include message or prompt");
+  }
+
+  const sessionId = normalizeText(payload.sessionId || payload.session_id);
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Prompt payload must include sessionId");
+  }
+
+  const existing = sessions.get(sessionId);
+  const workspaceRoot = resolvePromptWorkspace(payload, existing);
+  const amoRoot = path.join(workspaceRoot, AMO_DIR);
+  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
+  if (!workspace || !workspace.workspaceId) {
+    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
+  }
+
+  const tool = normalizeText(payload.tool) || existing?.tool || "codex";
+  const now = new Date().toISOString();
+  const capturedAt = normalizeText(payload.capturedAt || payload.captured_at || payload.timestamp) || now;
+  const pendingPromptId = normalizeText(payload.pendingPromptId || payload.pending_prompt_id);
+  const turnId =
+    normalizeText(payload.turnId || payload.turn_id) ||
+    pendingPromptId ||
+    `prompt-${crypto.createHash("sha1").update(`${sessionId}:${capturedAt}:${message}`).digest("hex").slice(0, 12)}`;
+  const source = normalizeText(payload.source) || "user-prompt";
+  const hookEventName = normalizeText(payload.hookEventName || payload.hook_event_name) || "UserPromptSubmit";
+  const cwd = normalizeText(payload.cwd) || existing?.cwd || workspaceRoot;
+  const promptHash = promptContentHash(message);
+  const duplicate = findDuplicatePrompt(existing, {
+    message,
+    promptHash,
+    pendingPromptId,
+    source,
+    capturedAt,
+  });
+  if (duplicate) {
+    recordDebugLog("broker", "prompt.duplicate_skipped", {
+      sessionId,
+      pendingPromptId: pendingPromptId || null,
+      source,
+      notePath: duplicate.notePath || null,
+      messagePreview: debugPreview(message),
+    });
+    return {
+      ok: true,
+      schemaVersion: AMO_SCHEMA_VERSION,
+      workspaceId: workspace.workspaceId,
+      sessionId,
+      turnId,
+      duplicate: true,
+      notePath: duplicate.notePath || null,
+      noteAbsolutePath: duplicate.noteAbsolutePath || null,
+      canvasPath: existing?.canvasPath || null,
+      canvasAbsolutePath: existing?.canvasAbsolutePath || null,
+      canvasNodeId: duplicate.canvasNodeId || null,
+      session: existing,
+    };
+  }
+
+  const record = {
+    schemaVersion: AMO_SCHEMA_VERSION,
+    workspaceId: workspace.workspaceId,
+    workspacePath: workspaceRoot,
+    role: "user",
+    tool,
+    source,
+    sessionId,
+    turnId,
+    cwd,
+    model: normalizeText(payload.model),
+    hookEventName,
+    transcriptPath: normalizeText(payload.transcriptPath || payload.transcript_path),
+    capturedAt,
+    pendingPromptId: pendingPromptId || null,
+    message,
+  };
+
+  const vaultRoot = path.join(amoRoot, "obsidian-vault");
+  const note = writePromptNote(vaultRoot, record);
+  const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
+
+  const session = {
+    ...(existing || {}),
+    tool,
+    sessionId,
+    cwd,
+    title: existing?.title || defaultTitle(tool, sessionId),
+    state: normalizeState(payload.state) || "running",
+    lastEvent: hookEventName,
+    lastMessage: trimMessage(`User: ${message}`, 240),
+    needsAttention: false,
+    windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null,
+    updatedAt: capturedAt,
+    createdAt: existing?.createdAt || now,
+    heartbeatAt: existing?.heartbeatAt || null,
+    eventCount: (existing?.eventCount || 0) + 1,
+    workspaceId: workspace.workspaceId,
+    workspacePath: workspaceRoot,
+    vaultRoot,
+    lastPromptAt: capturedAt,
+    lastPromptNote: note.notePath,
+    lastPromptNoteAbsolutePath: note.noteAbsolutePath,
+    lastPromptCanvasNodeId: canvas.canvasNodeId,
+    lastPromptHash: promptHash,
+    lastPromptPendingPromptId: pendingPromptId || null,
+    lastPromptSource: source,
+    canvasPath: canvas.canvasPath,
+    canvasAbsolutePath: canvas.canvasAbsolutePath,
+    canvasNodeId: canvas.canvasNodeId,
+  };
+  sessions.set(sessionId, session);
+
+  recordDebugLog("broker", "prompt.created", {
+    sessionId,
+    turnId,
+    source,
+    cwd,
+    pendingPromptId: pendingPromptId || null,
     notePath: note.notePath,
     canvasPath: canvas.canvasPath,
     canvasNodeId: canvas.canvasNodeId,
@@ -995,14 +1179,38 @@ function handleSyncBack(payload) {
   }
 
   const now = new Date().toISOString();
+  let promptRecord = null;
+  let promptSessionBase = existing;
+  if (existing.pendingPrompt) {
+    promptRecord = handlePrompt({
+      schemaVersion: AMO_SCHEMA_VERSION,
+      tool: existing.tool,
+      source: "amo-sync-back",
+      sessionId,
+      cwd: existing.cwd || existing.workspacePath,
+      workspacePath: existing.workspacePath,
+      message: existing.pendingPrompt,
+      pendingPromptId: existing.pendingPromptId || pendingPromptId || null,
+      turnId: existing.pendingPromptId || pendingPromptId || null,
+      hookEventName: "AmoSyncBack",
+      capturedAt: now,
+    });
+    promptSessionBase = promptRecord.session || existing;
+  }
+
   const session = {
-    ...existing,
+    ...promptSessionBase,
     lastEvent: "SyncBackCopied",
     lastMessage: "Pending prompt copied; paste it manually into the target CLI",
     needsAttention: false,
     updatedAt: now,
-    eventCount: (existing.eventCount || 0) + 1,
+    eventCount: (promptSessionBase.eventCount || 0) + 1,
     pendingPromptCopiedAt: now,
+    sentPromptId: promptRecord?.turnId || promptSessionBase.sentPromptId || null,
+    sentPromptNote: promptRecord?.notePath || promptSessionBase.sentPromptNote || null,
+    sentPromptNoteAbsolutePath: promptRecord?.noteAbsolutePath || promptSessionBase.sentPromptNoteAbsolutePath || null,
+    sentPromptCanvasNodeId: promptRecord?.canvasNodeId || promptSessionBase.sentPromptCanvasNodeId || null,
+    sentPromptRecordedAt: promptRecord ? now : promptSessionBase.sentPromptRecordedAt || null,
   };
 
   sessions.set(sessionId, session);
@@ -1011,6 +1219,8 @@ function handleSyncBack(payload) {
     sessionId,
     pendingPromptId: session.pendingPromptId || null,
     copiedAt: now,
+    promptNotePath: promptRecord?.notePath || null,
+    promptCanvasNodeId: promptRecord?.canvasNodeId || null,
   });
 
   return {
@@ -1019,6 +1229,8 @@ function handleSyncBack(payload) {
     sessionId,
     pendingPromptId: session.pendingPromptId || null,
     copiedAt: now,
+    promptNotePath: promptRecord?.notePath || null,
+    promptCanvasNodeId: promptRecord?.canvasNodeId || null,
     session,
   };
 }
@@ -1207,7 +1419,7 @@ function readJsonFile(filePath, fallback) {
   }
 
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return JSON.parse(readJsonTextFile(filePath));
   } catch {
     return fallback;
   }
@@ -1215,10 +1427,14 @@ function readJsonFile(filePath, fallback) {
 
 function readJsonFileStrict(filePath) {
   try {
-    return JSON.parse(fs.readFileSync(filePath, "utf8"));
+    return JSON.parse(readJsonTextFile(filePath));
   } catch (error) {
     throw httpError(409, "invalid_existing_json", `${filePath} is not valid JSON: ${error.message}`);
   }
+}
+
+function readJsonTextFile(filePath) {
+  return fs.readFileSync(filePath, "utf8").replace(/^\uFEFF/u, "");
 }
 
 function writeJsonFile(filePath, payload) {
@@ -1246,8 +1462,13 @@ function installObsidianPlugin(vaultRoot) {
   copyObsidianPluginAsset("manifest.json", pluginDir);
   copyObsidianPluginAsset("main.js", pluginDir);
   copyObsidianPluginAsset("styles.css", pluginDir);
+  const pluginDataPath = path.join(pluginDir, "data.json");
+  const existingPluginData = readJsonFile(pluginDataPath, {});
   writeJsonFile(path.join(pluginDir, "data.json"), {
+    ...existingPluginData,
     bridgeUrl: baseUrl(),
+    numberAnnotationsInPrompt: Boolean(existingPluginData.numberAnnotationsInPrompt),
+    canvasAppendDirection: normalizeCanvasAppendDirection(existingPluginData.canvasAppendDirection),
   });
 
   enableObsidianPlugin(vaultRoot, OBSIDIAN_PLUGIN_ID);
@@ -1299,7 +1520,7 @@ function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
         type: "command",
         command,
         timeout: 10,
-        statusMessage: "AMO capture Codex reply",
+        statusMessage: "AMO capture Codex prompt/reply",
       },
     ],
   };
@@ -1319,10 +1540,24 @@ function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
   if (!Array.isArray(config.hooks.Stop)) {
     config.hooks.Stop = [];
   }
+  if (!Array.isArray(config.hooks.UserPromptSubmit)) {
+    config.hooks.UserPromptSubmit = [];
+  }
+  if (!Array.isArray(config.hooks.PermissionRequest)) {
+    config.hooks.PermissionRequest = [];
+  }
 
   const alreadyInstalled = JSON.stringify(config.hooks.Stop).includes("codex-stop-message.mjs");
   if (!alreadyInstalled) {
     config.hooks.Stop.push(hookEntry);
+  }
+  const promptAlreadyInstalled = JSON.stringify(config.hooks.UserPromptSubmit).includes("codex-stop-message.mjs");
+  if (!promptAlreadyInstalled) {
+    config.hooks.UserPromptSubmit.push(hookEntry);
+  }
+  const permissionAlreadyInstalled = JSON.stringify(config.hooks.PermissionRequest).includes("codex-stop-message.mjs");
+  if (!permissionAlreadyInstalled) {
+    config.hooks.PermissionRequest.push(hookEntry);
   }
 
   const nextRaw = `${JSON.stringify(config, null, 2)}\n`;
@@ -1355,42 +1590,62 @@ function codexReplyHookScript() {
     "const projectRoot = path.resolve(amoRoot, '..');",
     "const adapterConfigFile = path.join(amoRoot, 'adapters', 'codex-cli.json');",
     "const cacheRoot = path.join(projectRoot, '.codex', 'cache');",
-    "const archiveRoot = path.join(cacheRoot, 'assistant-turns');",
-    "const latestFile = path.join(cacheRoot, 'latest-assistant-message.md');",
-    "const latestJsonFile = path.join(cacheRoot, 'latest-assistant-message.json');",
+    "const assistantArchiveRoot = path.join(cacheRoot, 'assistant-turns');",
+    "const userArchiveRoot = path.join(cacheRoot, 'user-prompts');",
+    "const latestAssistantFile = path.join(cacheRoot, 'latest-assistant-message.md');",
+    "const latestAssistantJsonFile = path.join(cacheRoot, 'latest-assistant-message.json');",
+    "const latestUserPromptFile = path.join(cacheRoot, 'latest-user-prompt.md');",
+    "const latestUserPromptJsonFile = path.join(cacheRoot, 'latest-user-prompt.json');",
     "const errorLogFile = path.join(cacheRoot, 'assistant-turn-errors.log');",
     "",
     "try {",
     "  const rawInput = await readStdin();",
     "  const payload = rawInput.trim().length > 0 ? JSON.parse(rawInput) : {};",
-    "  const message = normalizeMessage(payload.last_assistant_message);",
+    "  const eventName = typeof payload.hook_event_name === 'string' ? payload.hook_event_name : 'unknown';",
+    "  const lowerEventName = eventName.toLowerCase();",
+    "  const isPromptEvent = lowerEventName === 'userpromptsubmit';",
+    "  const isReplyEvent = lowerEventName === 'stop';",
+    "  const isEventOnly = !isPromptEvent && !isReplyEvent;",
+    "  const message = normalizeMessage(",
+    "    isPromptEvent",
+    "      ? payload.prompt ?? payload.message",
+    "      : isReplyEvent",
+    "        ? payload.last_assistant_message",
+    "        : payload.message ?? payload.reason ?? payload.title ?? payload.error ?? payload.tool_name ?? eventName",
+    "  );",
     "",
-    "  if (message) {",
-    "    await fs.mkdir(archiveRoot, { recursive: true });",
+    "  if (message || isEventOnly) {",
     "    const capturedAt = new Date().toISOString();",
     "    const record = {",
     "      schemaVersion: 1,",
     "      tool: 'codex',",
-    "      source: 'codex-stop-hook',",
+    "      role: isPromptEvent ? 'user' : isReplyEvent ? 'assistant' : 'event',",
+    "      source: isPromptEvent ? 'codex-user-prompt-hook' : isReplyEvent ? 'codex-stop-hook' : 'codex-event-hook',",
     "      capturedAt,",
     "      sessionId: typeof payload.session_id === 'string' ? payload.session_id : 'unknown-session',",
     "      turnId: typeof payload.turn_id === 'string' ? payload.turn_id : 'unknown-turn',",
     "      model: typeof payload.model === 'string' ? payload.model : null,",
-    "      hookEventName: payload.hook_event_name ?? 'Stop',",
+    "      hookEventName: eventName,",
     "      cwd: typeof payload.cwd === 'string' ? payload.cwd : projectRoot,",
     "      transcriptPath: typeof payload.transcript_path === 'string' ? payload.transcript_path : null,",
     "      stopHookActive: Boolean(payload.stop_hook_active),",
     "      message,",
     "    };",
     "",
-    "    const archiveStem = `${fileSafeTimestamp(capturedAt)}-${sanitizeFilePart(record.turnId)}`;",
-    "    await Promise.all([",
-    "      fs.writeFile(path.join(archiveRoot, `${archiveStem}.md`), renderMarkdown(record), 'utf8'),",
-    "      fs.writeFile(path.join(archiveRoot, `${archiveStem}.json`), `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
-    "      fs.writeFile(latestFile, renderMarkdown(record), 'utf8'),",
-    "      fs.writeFile(latestJsonFile, `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
-    "    ]);",
-    "    await postToBridge(record);",
+    "    if (!isEventOnly) {",
+    "      const archiveRoot = isPromptEvent ? userArchiveRoot : assistantArchiveRoot;",
+    "      const latestFile = isPromptEvent ? latestUserPromptFile : latestAssistantFile;",
+    "      const latestJsonFile = isPromptEvent ? latestUserPromptJsonFile : latestAssistantJsonFile;",
+    "      const archiveStem = `${fileSafeTimestamp(capturedAt)}-${sanitizeFilePart(record.turnId)}`;",
+    "      await fs.mkdir(archiveRoot, { recursive: true });",
+    "      await Promise.all([",
+    "        fs.writeFile(path.join(archiveRoot, `${archiveStem}.md`), renderMarkdown(record), 'utf8'),",
+    "        fs.writeFile(path.join(archiveRoot, `${archiveStem}.json`), `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
+    "        fs.writeFile(latestFile, renderMarkdown(record), 'utf8'),",
+    "        fs.writeFile(latestJsonFile, `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
+    "      ]);",
+    "    }",
+    "    await postToBridge(record, isPromptEvent, isEventOnly);",
     "  }",
     "",
     "  process.stdout.write('{\"continue\":true}\\n');",
@@ -1411,10 +1666,15 @@ function codexReplyHookScript() {
     "  });",
     "}",
     "",
-    "async function postToBridge(record) {",
+    "async function postToBridge(record, isPromptEvent, isEventOnly) {",
     "  try {",
     "    const config = JSON.parse(await fs.readFile(adapterConfigFile, 'utf8'));",
-    "    const url = typeof config.bridgeRepliesUrl === 'string' ? config.bridgeRepliesUrl : null;",
+    "    let url = null;",
+    "    if (isEventOnly && typeof config.bridgeEventsUrl === 'string') url = config.bridgeEventsUrl;",
+    "    if (!url && isPromptEvent && typeof config.bridgePromptsUrl === 'string') url = config.bridgePromptsUrl;",
+    "    if (!url && !isPromptEvent && !isEventOnly && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl;",
+    "    if (!url && isPromptEvent && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl.replace(/\\/api\\/replies$/u, '/api/prompts');",
+    "    if (!url && isEventOnly && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl.replace(/\\/api\\/replies$/u, '/api/events');",
     "    if (!url || typeof fetch !== 'function') return;",
     "    const controller = new AbortController();",
     "    const timeout = setTimeout(() => controller.abort(), 2000);",
@@ -1447,13 +1707,14 @@ function codexReplyHookScript() {
     "",
     "function renderMarkdown(record) {",
     "  const lines = [",
-    "    '# Cached Codex Reply',",
+    "    record.role === 'user' ? '# Cached Codex Prompt' : '# Cached Codex Reply',",
     "    '',",
     "    `- captured_at: ${record.capturedAt}`,",
     "    `- session_id: ${record.sessionId}`,",
     "    `- turn_id: ${record.turnId}`,",
     "    `- model: ${record.model ?? 'unknown-model'}`,",
     "    `- hook_event_name: ${record.hookEventName}`,",
+    "    `- role: ${record.role}`,",
     "    `- stop_hook_active: ${record.stopHookActive}`,",
     "  ];",
     "  if (record.cwd) lines.push(`- cwd: ${record.cwd}`);",
@@ -1470,6 +1731,7 @@ function amoGitignore() {
     "state/",
     "logs/",
     "obsidian-vault/Replies/",
+    "obsidian-vault/Prompts/",
     "obsidian-vault/AgentFlow.canvas",
     "obsidian-vault/.obsidian/workspace*.json",
     "",
@@ -1502,6 +1764,31 @@ function findEnrolledWorkspace(value) {
     }
     current = parent;
   }
+}
+
+function resolvePromptWorkspace(payload, existing) {
+  const directPath = normalizeText(
+    payload.workspacePath || payload.workspace_path || payload.cwd || existing?.workspacePath || existing?.cwd
+  );
+  if (directPath) {
+    return findEnrolledWorkspace(directPath);
+  }
+
+  const vaultRoot = normalizeText(payload.vaultRoot || payload.vault_root || existing?.vaultRoot);
+  if (vaultRoot) {
+    const resolvedVault = path.resolve(vaultRoot);
+    const amoRoot = path.dirname(resolvedVault);
+    const workspaceRoot = path.dirname(amoRoot);
+    if (fs.existsSync(path.join(workspaceRoot, AMO_DIR, "workspace.json"))) {
+      return fs.realpathSync(workspaceRoot);
+    }
+  }
+
+  throw httpError(
+    400,
+    "workspace_not_enrolled",
+    "Prompt payload must include cwd, workspacePath, or a session with workspace metadata"
+  );
 }
 
 function writeReplyNote(vaultRoot, record) {
@@ -1538,10 +1825,47 @@ function writeReplyNote(vaultRoot, record) {
   return { notePath, noteAbsolutePath };
 }
 
-function appendReplyToCanvas(amoRoot, vaultRoot, record, note) {
+function writePromptNote(vaultRoot, record) {
+  const month = record.capturedAt.slice(0, 7) || "unknown-month";
+  const promptDir = path.join(vaultRoot, "Prompts", month);
+  fs.mkdirSync(promptDir, { recursive: true });
+
+  const stem = `${fileSafeTimestamp(record.capturedAt)}_${sanitizeFilePart(record.tool)}_${sanitizeFilePart(record.turnId)}_prompt`;
+  const noteAbsolutePath = uniquePath(promptDir, stem, ".md");
+  const notePath = toVaultRelativePath(vaultRoot, noteAbsolutePath);
+  const body = [
+    "---",
+    "amo:",
+    `  schemaVersion: ${AMO_SCHEMA_VERSION}`,
+    `  workspaceId: ${yamlString(record.workspaceId)}`,
+    `  tool: ${yamlString(record.tool)}`,
+    `  role: ${yamlString("user")}`,
+    `  sessionId: ${yamlString(record.sessionId)}`,
+    `  turnId: ${yamlString(record.turnId)}`,
+    `  cwd: ${yamlString(record.cwd)}`,
+    `  source: ${yamlString(record.source)}`,
+    `  capturedAt: ${yamlString(record.capturedAt)}`,
+    record.pendingPromptId ? `  pendingPromptId: ${yamlString(record.pendingPromptId)}` : null,
+    record.transcriptPath ? `  transcriptPath: ${yamlString(record.transcriptPath)}` : null,
+    "---",
+    "",
+    `# ${record.tool} Prompt`,
+    "",
+    record.message,
+    "",
+  ]
+    .filter((line) => line !== null)
+    .join("\n");
+
+  writeTextFile(noteAbsolutePath, body);
+  return { notePath, noteAbsolutePath };
+}
+
+function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {
   const canvasPath = "AgentFlow.canvas";
   const canvasAbsolutePath = path.join(vaultRoot, canvasPath);
   const bindingsPath = path.join(amoRoot, "state", "bindings.json");
+  const appendDirection = readCanvasAppendDirection(vaultRoot);
   const canvas = readJsonFile(canvasAbsolutePath, { nodes: [], edges: [] });
   if (!Array.isArray(canvas.nodes)) canvas.nodes = [];
   if (!Array.isArray(canvas.edges)) canvas.edges = [];
@@ -1568,21 +1892,34 @@ function appendReplyToCanvas(amoRoot, vaultRoot, record, note) {
     canvasNodeId = `${canvasNodeId}-${suffix}`;
   }
 
+  const previousNode = existingBinding.lastCanvasNodeId
+    ? canvas.nodes.find((node) => node && node.id === existingBinding.lastCanvasNodeId)
+    : null;
+  const nodePosition = nextConversationCanvasNodePosition({
+    previousNode,
+    direction: appendDirection,
+    nodeCount,
+    sessionIndex,
+  });
+
   canvas.nodes.push({
     id: canvasNodeId,
     type: "file",
     file: note.notePath,
-    x: nodeCount * REPLY_NODE_GAP_X,
-    y: sessionIndex * REPLY_NODE_GAP_Y,
+    x: nodePosition.x,
+    y: nodePosition.y,
     width: REPLY_NODE_WIDTH,
     height: REPLY_NODE_HEIGHT,
   });
 
-  if (existingBinding.lastCanvasNodeId) {
+  if (existingBinding.lastCanvasNodeId && previousNode) {
+    const edgeSides = canvasEdgeSidesForDirection(appendDirection);
     canvas.edges.push({
       id: `edge-${existingBinding.lastCanvasNodeId}-${canvasNodeId}`,
       fromNode: existingBinding.lastCanvasNodeId,
+      fromSide: edgeSides.fromSide,
       toNode: canvasNodeId,
+      toSide: edgeSides.toSide,
     });
   }
 
@@ -1593,6 +1930,7 @@ function appendReplyToCanvas(amoRoot, vaultRoot, record, note) {
     lastCanvasNodeId: canvasNodeId,
     nodeCount: nodeCount + 1,
     sessionIndex,
+    canvasAppendDirection: appendDirection,
     updatedAt: record.capturedAt,
   };
 
@@ -1600,6 +1938,72 @@ function appendReplyToCanvas(amoRoot, vaultRoot, record, note) {
   writeJsonFile(bindingsPath, bindings);
 
   return { canvasPath, canvasAbsolutePath, canvasNodeId };
+}
+
+function readCanvasAppendDirection(vaultRoot) {
+  const pluginDataPath = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID, "data.json");
+  const pluginData = readJsonFile(pluginDataPath, {});
+  return normalizeCanvasAppendDirection(pluginData?.canvasAppendDirection);
+}
+
+function normalizeCanvasAppendDirection(value) {
+  const direction = normalizeText(value);
+  if (!direction) {
+    return DEFAULT_CANVAS_APPEND_DIRECTION;
+  }
+  const normalized = direction.toLowerCase();
+  return CANVAS_APPEND_DIRECTIONS.has(normalized) ? normalized : DEFAULT_CANVAS_APPEND_DIRECTION;
+}
+
+function nextConversationCanvasNodePosition({ previousNode, direction, nodeCount, sessionIndex }) {
+  const fallback = initialConversationCanvasNodePosition(direction, nodeCount, sessionIndex);
+  if (!previousNode) {
+    return fallback;
+  }
+
+  const x = finiteCanvasNumber(previousNode.x, fallback.x);
+  const y = finiteCanvasNumber(previousNode.y, fallback.y);
+  const width = finiteCanvasNumber(previousNode.width, REPLY_NODE_WIDTH);
+  const height = finiteCanvasNumber(previousNode.height, REPLY_NODE_HEIGHT);
+
+  if (direction === "right") {
+    return {
+      x: x + width + CANVAS_NODE_MARGIN_X,
+      y,
+    };
+  }
+
+  return {
+    x,
+    y: y + height + CANVAS_NODE_MARGIN_Y,
+  };
+}
+
+function initialConversationCanvasNodePosition(direction, nodeCount, sessionIndex) {
+  if (direction === "right") {
+    return {
+      x: nodeCount * REPLY_NODE_GAP_X,
+      y: sessionIndex * REPLY_NODE_GAP_Y,
+    };
+  }
+
+  return {
+    x: sessionIndex * REPLY_NODE_GAP_X,
+    y: nodeCount * REPLY_NODE_GAP_Y,
+  };
+}
+
+function canvasEdgeSidesForDirection(direction) {
+  if (direction === "right") {
+    return { fromSide: "right", toSide: "left" };
+  }
+
+  return { fromSide: "bottom", toSide: "top" };
+}
+
+function finiteCanvasNumber(value, fallback) {
+  const number = Number(value);
+  return Number.isFinite(number) ? number : fallback;
 }
 
 function uniquePath(dir, stem, ext) {
@@ -1670,6 +2074,23 @@ function inferState(tool, eventName, payload) {
   }
 
   return "running";
+}
+
+function promptMessageFromEvent(payload, eventName, fallbackMessage) {
+  if (`${eventName || ""}`.toLowerCase() !== "userpromptsubmit") {
+    return "";
+  }
+
+  return normalizeText(
+    payload.prompt ||
+      payload.userPrompt ||
+      payload.user_prompt ||
+      payload.message ||
+      payload.summary ||
+      payload.lastMessage ||
+      payload.last_message ||
+      fallbackMessage
+  );
 }
 
 function normalizeState(value) {
@@ -1761,18 +2182,68 @@ function normalizeAnnotations(value) {
     .filter(Boolean);
 }
 
-function renderPendingPrompt(_payload, annotations, summary) {
+function renderPendingPrompt(payload, annotations, summary) {
   const lines = [];
   const cleanSummary = normalizeText(summary);
   if (cleanSummary) {
     lines.push(cleanSummary);
   }
 
+  const numberAnnotations = shouldNumberAnnotations(payload);
   for (const annotation of annotations) {
-    lines.push(`${annotation.index}. ${annotation.content}`);
+    lines.push(numberAnnotations ? `${annotation.index}. ${annotation.content}` : annotation.content);
   }
 
-  return `${lines.join("\n")}\n`;
+  return `${lines.join("\n\n")}\n`;
+}
+
+function shouldNumberAnnotations(payload) {
+  const options = payload && typeof payload.promptOptions === "object" ? payload.promptOptions : {};
+  if (typeof options.numberAnnotations === "boolean") return options.numberAnnotations;
+  if (typeof options.number_annotations === "boolean") return options.number_annotations;
+  if (typeof payload?.numberAnnotations === "boolean") return payload.numberAnnotations;
+  if (typeof payload?.number_annotations === "boolean") return payload.number_annotations;
+  if (typeof payload?.includeAnnotationNumbers === "boolean") return payload.includeAnnotationNumbers;
+  if (typeof payload?.include_annotation_numbers === "boolean") return payload.include_annotation_numbers;
+  return false;
+}
+
+function promptContentHash(value) {
+  return crypto.createHash("sha1").update(normalizeText(value)).digest("hex");
+}
+
+function findDuplicatePrompt(existing, record) {
+  if (!existing || existing.lastPromptHash !== record.promptHash) {
+    return null;
+  }
+
+  if (
+    record.pendingPromptId &&
+    existing.lastPromptPendingPromptId &&
+    record.pendingPromptId === existing.lastPromptPendingPromptId
+  ) {
+    return {
+      notePath: existing.lastPromptNote,
+      noteAbsolutePath: existing.lastPromptNoteAbsolutePath,
+      canvasNodeId: existing.lastPromptCanvasNodeId,
+    };
+  }
+
+  const existingAt = Date.parse(existing.lastPromptAt || "");
+  const nextAt = Date.parse(record.capturedAt || "");
+  const closeEnough =
+    Number.isFinite(existingAt) &&
+    Number.isFinite(nextAt) &&
+    Math.abs(nextAt - existingAt) <= PROMPT_DUPLICATE_WINDOW_MS;
+  if (closeEnough && existing.lastPromptSource === "amo-sync-back" && record.source !== "amo-sync-back") {
+    return {
+      notePath: existing.lastPromptNote,
+      noteAbsolutePath: existing.lastPromptNoteAbsolutePath,
+      canvasNodeId: existing.lastPromptCanvasNodeId,
+    };
+  }
+
+  return null;
 }
 
 function listSessions() {

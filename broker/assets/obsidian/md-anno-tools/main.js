@@ -29,7 +29,7 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 
 // src/plugin.ts
-var import_obsidian4 = require("obsidian");
+var import_obsidian5 = require("obsidian");
 
 // src/core/constants.ts
 var ANNO_REGEX = /\[!anno\]([\s\S]*?)\[\/anno\]/gi;
@@ -37,9 +37,11 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.5";
+var PLUGIN_VERSION = "1.4.8";
 var DEFAULT_SETTINGS = {
-  bridgeUrl: "http://127.0.0.1:17654"
+  bridgeUrl: "http://127.0.0.1:17654",
+  numberAnnotationsInPrompt: false,
+  canvasAppendDirection: "down"
 };
 var AMO_PANEL_VIEW_TYPE = "amo-annotation-panel";
 var AMO_OPEN_PROTOCOL = "amo-open";
@@ -661,9 +663,34 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
   }
 };
 
-// src/annotations/render.ts
+// src/ui/settings-tab.ts
 var import_obsidian3 = require("obsidian");
-var LegacyAnnotationBlockRenderChild = class extends import_obsidian3.MarkdownRenderChild {
+var AmoAnnotationSettingTab = class extends import_obsidian3.PluginSettingTab {
+  constructor(app, plugin) {
+    super(app, plugin);
+    this.plugin = plugin;
+  }
+  display() {
+    const { containerEl } = this;
+    containerEl.empty();
+    new import_obsidian3.Setting(containerEl).setName("\u540C\u6B65\u5185\u5BB9\u6DFB\u52A0\u7F16\u53F7").setDesc("\u53D1\u9001\u6279\u6CE8\u56DE CLI session \u65F6\uFF0C\u4E3A\u6BCF\u6761\u6279\u6CE8\u6DFB\u52A0 1.\u30012.\u30013. \u524D\u7F00\u3002\u9ED8\u8BA4\u5173\u95ED\u3002").addToggle((toggle) => {
+      toggle.setValue(Boolean(this.plugin.settings.numberAnnotationsInPrompt)).onChange(async (value) => {
+        this.plugin.settings.numberAnnotationsInPrompt = value;
+        await this.plugin.saveSettings();
+      });
+    });
+    new import_obsidian3.Setting(containerEl).setName("Canvas \u65B0 note \u8FFD\u52A0\u65B9\u5411").setDesc("\u63A7\u5236 AMO \u5728 AgentFlow.canvas \u4E2D\u521B\u5EFA\u65B0 reply/prompt note \u7684\u9ED8\u8BA4\u4F4D\u7F6E\u3002\u9ED8\u8BA4\u5411\u4E0B\u3002").addDropdown((dropdown) => {
+      dropdown.addOption("down", "\u5411\u4E0B").addOption("right", "\u5411\u53F3").setValue(this.plugin.settings.canvasAppendDirection === "right" ? "right" : "down").onChange(async (value) => {
+        this.plugin.settings.canvasAppendDirection = value === "right" ? "right" : "down";
+        await this.plugin.saveSettings();
+      });
+    });
+  }
+};
+
+// src/annotations/render.ts
+var import_obsidian4 = require("obsidian");
+var LegacyAnnotationBlockRenderChild = class extends import_obsidian4.MarkdownRenderChild {
   constructor(containerEl, plugin, content, sourcePath) {
     super(containerEl);
     this.plugin = plugin;
@@ -693,7 +720,7 @@ var LegacyAnnotationBlockRenderChild = class extends import_obsidian3.MarkdownRe
     this.containerEl.removeClass("amo-legacy-annotation-section");
   }
 };
-var LegacyAnnotationHiddenSectionRenderChild = class extends import_obsidian3.MarkdownRenderChild {
+var LegacyAnnotationHiddenSectionRenderChild = class extends import_obsidian4.MarkdownRenderChild {
   onload() {
     this.containerEl.empty();
     this.containerEl.addClass("amo-legacy-annotation-hidden-section");
@@ -805,19 +832,19 @@ function lineRangesOverlap(aStart, aEnd, bStart, bEnd) {
   return aStart <= bEnd && bStart <= aEnd;
 }
 async function renderNestedMarkdown(app, markdown, element, sourcePath, component) {
-  if (import_obsidian3.MarkdownRenderer && typeof import_obsidian3.MarkdownRenderer.render === "function") {
-    await import_obsidian3.MarkdownRenderer.render(app, markdown, element, sourcePath, component);
+  if (import_obsidian4.MarkdownRenderer && typeof import_obsidian4.MarkdownRenderer.render === "function") {
+    await import_obsidian4.MarkdownRenderer.render(app, markdown, element, sourcePath, component);
     return;
   }
-  if (import_obsidian3.MarkdownRenderer && typeof import_obsidian3.MarkdownRenderer.renderMarkdown === "function") {
-    await import_obsidian3.MarkdownRenderer.renderMarkdown(markdown, element, sourcePath, component);
+  if (import_obsidian4.MarkdownRenderer && typeof import_obsidian4.MarkdownRenderer.renderMarkdown === "function") {
+    await import_obsidian4.MarkdownRenderer.renderMarkdown(markdown, element, sourcePath, component);
     return;
   }
   element.textContent = normalizeAnnotationContent(markdown) || EMPTY_ANNO_TEXT;
 }
 
 // src/plugin.ts
-var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
+var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() || {});
     this.operationStatus = {
@@ -834,6 +861,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
     this.canvasTargetFilePathByView = /* @__PURE__ */ new WeakMap();
     this.panelRefreshTimer = null;
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
+    this.addSettingTab(new AmoAnnotationSettingTab(this.app, this));
     this.debugLog("plugin.loaded", {
       version: PLUGIN_VERSION,
       bridgeUrl: this.settings.bridgeUrl,
@@ -982,6 +1010,9 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
       "." + AMO_SEND_ACTION_CLASS + ", ." + AMO_PANEL_ACTION_CLASS + ", ." + AMO_CANVAS_SEND_ACTION_CLASS + ", ." + AMO_CANVAS_PANEL_ACTION_CLASS
     ).forEach((el) => el.remove());
   }
+  async saveSettings() {
+    await this.saveData(this.settings);
+  }
   async activatePanel() {
     let leaf = this.app.workspace.getLeavesOfType(AMO_PANEL_VIEW_TYPE)[0];
     if (!leaf) {
@@ -1027,7 +1058,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
   async handleAmoOpenProtocol(params) {
     const targetPath = this.resolveProtocolTargetPath(params);
     if (!targetPath) {
-      new import_obsidian4.Notice("AMO open URL is missing a vault-relative path.");
+      new import_obsidian5.Notice("AMO open URL is missing a vault-relative path.");
       return;
     }
     await this.openVaultPath(targetPath, normalizeOpenKind(params && (params.kind || params.target), targetPath));
@@ -1039,14 +1070,14 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
   async openVaultPath(filePath, kind) {
     const targetPath = normalizeVaultFilePath(filePath);
     if (!targetPath) {
-      new import_obsidian4.Notice("AMO target path is empty.");
+      new import_obsidian5.Notice("AMO target path is empty.");
       return false;
     }
     const file = this.app.vault.getAbstractFileByPath(targetPath);
     if (!file || typeof file.path !== "string") {
       const message = "AMO target not found: " + targetPath;
       this.setOperationStatus(message, "error");
-      new import_obsidian4.Notice(message);
+      new import_obsidian5.Notice(message);
       return false;
     }
     const existingLeaf = this.findLeafForFilePath(file.path, kind);
@@ -1095,13 +1126,13 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
   }
   syncMarkdownViewActions() {
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (!(leaf.view instanceof import_obsidian4.MarkdownView)) continue;
+      if (!(leaf.view instanceof import_obsidian5.MarkdownView)) continue;
       const view = leaf.view;
       this.rememberMarkdownView(view, leaf);
       if (!view.containerEl.querySelector("." + AMO_SEND_ACTION_CLASS)) {
         const sendAction = view.addAction("send", "Send annotations to AMO", () => {
           if (!view.file) {
-            new import_obsidian4.Notice("No active Markdown note.");
+            new import_obsidian5.Notice("No active Markdown note.");
             return;
           }
           void this.sendAnnotationsFromFile(view.file);
@@ -1232,17 +1263,17 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
   }
   rememberCurrentMarkdownView() {
     this.rememberMarkdownLeaf(this.app.workspace.activeLeaf);
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
     if (view) {
       this.rememberMarkdownView(view, this.findLeafForView(view));
     }
   }
   rememberMarkdownLeaf(leaf) {
-    if (!leaf || !(leaf.view instanceof import_obsidian4.MarkdownView)) return;
+    if (!leaf || !(leaf.view instanceof import_obsidian5.MarkdownView)) return;
     this.rememberMarkdownView(leaf.view, leaf);
   }
   rememberMarkdownView(view, leaf = null) {
-    if (!view || !(view instanceof import_obsidian4.MarkdownView) || !view.file) return;
+    if (!view || !(view instanceof import_obsidian5.MarkdownView) || !view.file) return;
     this.lastMarkdownView = view;
     this.lastMarkdownLeaf = leaf || this.findLeafForView(view);
     this.lastMarkdownFilePath = view.file.path;
@@ -1257,14 +1288,14 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
   findMarkdownLeafForFilePath(filePath) {
     if (!filePath) return null;
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (leaf.view instanceof import_obsidian4.MarkdownView && leaf.view.file && leaf.view.file.path === filePath) {
+      if (leaf.view instanceof import_obsidian5.MarkdownView && leaf.view.file && leaf.view.file.path === filePath) {
         return leaf;
       }
     }
     return null;
   }
   getActiveMarkdownView() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
     if (activeView && activeView.file) {
       this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
       return activeView;
@@ -1273,12 +1304,12 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
       return this.lastMarkdownView;
     }
     const rememberedLeaf = this.findMarkdownLeafForFilePath(this.lastMarkdownFilePath);
-    if (rememberedLeaf && rememberedLeaf.view instanceof import_obsidian4.MarkdownView) {
+    if (rememberedLeaf && rememberedLeaf.view instanceof import_obsidian5.MarkdownView) {
       this.rememberMarkdownLeaf(rememberedLeaf);
       return rememberedLeaf.view;
     }
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (leaf.view instanceof import_obsidian4.MarkdownView && leaf.view.file) {
+      if (leaf.view instanceof import_obsidian5.MarkdownView && leaf.view.file) {
         this.rememberMarkdownLeaf(leaf);
         return leaf.view;
       }
@@ -1304,7 +1335,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
         return null;
       }
     }
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
     if (activeView && activeView.file) {
       this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
       return {
@@ -1417,7 +1448,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
       targets: targets.slice(0, 12).map((target) => target.file.path)
     });
     if (targets.length === 0) {
-      new import_obsidian4.Notice("No Markdown note nodes found on this canvas.");
+      new import_obsidian5.Notice("No Markdown note nodes found on this canvas.");
       return;
     }
     new CanvasNoteTargetModal(this.app, targets, actionLabel, async (target) => {
@@ -1489,14 +1520,14 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
     return leaf.view.getViewType();
   }
   canInsertAnnotationAtActiveEditor() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
     if (activeView && activeView.editor) return true;
     return Boolean(!this.isActiveLeafCanvas() && this.lastMarkdownView && this.lastMarkdownView.editor);
   }
   insertAnnotationAtActiveEditor() {
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView) || this.getActiveMarkdownView();
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView) || this.getActiveMarkdownView();
     if (!view || !view.editor) {
-      new import_obsidian4.Notice("No active Markdown editor.");
+      new import_obsidian5.Notice("No active Markdown editor.");
       return;
     }
     const leaf = this.findLeafForView(view) || this.lastMarkdownLeaf;
@@ -1507,7 +1538,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
     this.setOperationStatus("Inserted annotation marker.", "success");
   }
   async insertAnnotationFromCurrentSelection() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian4.MarkdownView);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView);
     if (activeView && activeView.editor) {
       this.wrapSelectionWithAnnotation(activeView.editor);
       this.setOperationStatus("Inserted annotation marker.", "success");
@@ -1537,27 +1568,27 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
   async appendReferencedAnnotationToFile(file, reference) {
     const content = normalizeAnnotationContent(reference);
     if (!content) {
-      new import_obsidian4.Notice("No selected text to quote.");
+      new import_obsidian5.Notice("No selected text to quote.");
       return;
     }
     await this.appendAnnotationBlockToFile(file, buildReferencedAnnotationMarkup(content));
     this.setOperationStatus("Referenced annotation appended to " + file.path + ".", "success");
-    new import_obsidian4.Notice("Referenced annotation appended.");
+    new import_obsidian5.Notice("Referenced annotation appended.");
   }
   async appendAnnotationToFile(file, rawContent) {
     const content = normalizeAnnotationContent(rawContent);
     if (!content) {
-      new import_obsidian4.Notice("Annotation content cannot be empty.");
+      new import_obsidian5.Notice("Annotation content cannot be empty.");
       return;
     }
     if (content.includes(ANNO_TAG_SUFFIX)) {
-      new import_obsidian4.Notice("Annotation content cannot include " + ANNO_TAG_SUFFIX + ".");
+      new import_obsidian5.Notice("Annotation content cannot include " + ANNO_TAG_SUFFIX + ".");
       return;
     }
     const block = buildAnnotationMarkup(content);
     await this.appendAnnotationBlockToFile(file, block);
     this.setOperationStatus("Annotation appended to " + file.path + ".", "success");
-    new import_obsidian4.Notice("Annotation appended.");
+    new import_obsidian5.Notice("Annotation appended.");
   }
   async appendAnnotationBlockToFile(file, block) {
     const markdown = await this.app.vault.cachedRead(file);
@@ -1573,7 +1604,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
       activeLeafType: this.activeLeafType()
     });
     if (!file) {
-      new import_obsidian4.Notice("No active Markdown note.");
+      new import_obsidian5.Notice("No active Markdown note.");
       return;
     }
     await this.copyAnnotationsFromFile(file);
@@ -1588,7 +1619,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
       activeLeafType: this.activeLeafType()
     });
     if (annotations.length === 0) {
-      new import_obsidian4.Notice("No annotations found in the current note.");
+      new import_obsidian5.Notice("No annotations found in the current note.");
       return;
     }
     try {
@@ -1598,7 +1629,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
         annotationCount: annotations.length
       });
       this.setOperationStatus("Copied " + annotations.length + " annotation(s) from " + file.path + ".", "success");
-      new import_obsidian4.Notice("Copied " + annotations.length + " annotation(s).");
+      new import_obsidian5.Notice("Copied " + annotations.length + " annotation(s).");
     } catch (error) {
       console.error("Failed to copy annotations:", error);
       this.debugLog("annotations.copy.error", {
@@ -1606,13 +1637,13 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
         message: messageFromError(error)
       });
       this.setOperationStatus("Copy failed: " + messageFromError(error), "error");
-      new import_obsidian4.Notice("Copy failed: " + messageFromError(error));
+      new import_obsidian5.Notice("Copy failed: " + messageFromError(error));
     }
   }
   async sendAnnotationsFromActiveFile() {
     const file = this.getActiveMarkdownFile();
     if (!file) {
-      new import_obsidian4.Notice("No active Markdown note.");
+      new import_obsidian5.Notice("No active Markdown note.");
       return;
     }
     await this.sendAnnotationsFromFile(file);
@@ -1628,7 +1659,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
       markdownHasAnnoClose: markdown.includes(ANNO_TAG_SUFFIX)
     });
     if (annotations.length === 0) {
-      new import_obsidian4.Notice("No annotations found in the current note.");
+      new import_obsidian5.Notice("No annotations found in the current note.");
       return;
     }
     const amo = parseAmoFrontmatter(markdown);
@@ -1638,7 +1669,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
       turnId: amo.turnId || null
     });
     if (!amo.sessionId) {
-      new import_obsidian4.Notice("This note is missing AMO session metadata.");
+      new import_obsidian5.Notice("This note is missing AMO session metadata.");
       return;
     }
     const payload = {
@@ -1648,6 +1679,9 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
       notePath: file.path,
       sessionId: amo.sessionId,
       turnId: amo.turnId || null,
+      promptOptions: {
+        numberAnnotations: Boolean(this.settings.numberAnnotationsInPrompt)
+      },
       annotations: annotations.map((content, index) => ({
         index: index + 1,
         content
@@ -1671,7 +1705,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
         "Sent " + annotations.length + " annotation(s) from " + file.path + " to AMO.",
         "success"
       );
-      new import_obsidian4.Notice(
+      new import_obsidian5.Notice(
         "Sent " + annotations.length + " annotation(s) to AMO" + (result.pendingPromptId ? ": " + result.pendingPromptId : ".")
       );
     } catch (error) {
@@ -1682,7 +1716,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
         message: messageFromError(error)
       });
       this.setOperationStatus("AMO sync failed: " + messageFromError(error), "error");
-      new import_obsidian4.Notice("AMO sync failed: " + messageFromError(error));
+      new import_obsidian5.Notice("AMO sync failed: " + messageFromError(error));
     }
   }
   async checkBridgeHealth() {
@@ -1692,10 +1726,10 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian4.Plugin {
         "Bridge online: " + (result.service || "AMO") + " on port " + (result.port || "unknown") + ".",
         "success"
       );
-      new import_obsidian4.Notice("AMO bridge is online.");
+      new import_obsidian5.Notice("AMO bridge is online.");
     } catch (error) {
       this.setOperationStatus("Bridge check failed: " + messageFromError(error), "error");
-      new import_obsidian4.Notice("AMO bridge check failed: " + messageFromError(error));
+      new import_obsidian5.Notice("AMO bridge check failed: " + messageFromError(error));
     }
   }
   async getActiveNoteInfo() {

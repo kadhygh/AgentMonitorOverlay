@@ -20,6 +20,7 @@ import { parseAmoFrontmatter } from "./core/metadata";
 import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, rootContainsAnnotationMarkers, describeElement } from "./core/ui-utils";
 import { AmoAnnotationPanelView } from "./ui/panel-view";
 import { AnnotationInputModal, CanvasNoteTargetModal } from "./ui/modals";
+import { AmoAnnotationSettingTab } from "./ui/settings-tab";
 import {
   buildAnnotationMarkup,
   buildReferencedAnnotationMarkup,
@@ -68,6 +69,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.panelRefreshTimer = null;
 
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
+    this.addSettingTab(new AmoAnnotationSettingTab(this.app, this));
     this.debugLog("plugin.loaded", {
       version: PLUGIN_VERSION,
       bridgeUrl: this.settings.bridgeUrl,
@@ -246,6 +248,10 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
           AMO_CANVAS_PANEL_ACTION_CLASS
       )
       .forEach((el) => el.remove());
+  }
+
+  async saveSettings() {
+    await this.saveData(this.settings);
   }
 
   async activatePanel() {
@@ -1038,6 +1044,9 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       notePath: file.path,
       sessionId: amo.sessionId,
       turnId: amo.turnId || null,
+      promptOptions: {
+        numberAnnotations: Boolean(this.settings.numberAnnotationsInPrompt),
+      },
       annotations: annotations.map((content, index) => ({
         index: index + 1,
         content,

@@ -3,14 +3,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
   AlertTriangle,
-  Blocks,
   Bot,
-  BrainCircuit,
   Bug,
   ChevronDown,
   ChevronUp,
   ClipboardCheck,
-  ExternalLink,
   FileText,
   FolderPlus,
   GripHorizontal,
@@ -19,16 +16,18 @@ import {
   Minimize2,
   RefreshCcw,
   CircleCheck,
-  SquareTerminal,
   Unlink2,
   X,
 } from "lucide-react";
+import claudeCliIcon from "./assets/tool-icons/claude-cli.png";
+import codexAppIcon from "./assets/tool-icons/codex-app.png";
+import codexCliIcon from "./assets/tool-icons/codex-cli.png";
+import kiroIdeIcon from "./assets/tool-icons/kiro-ide.png";
 import { mockSessions } from "./mockSessions";
 import type {
   ActivationCandidate,
   ActivationResult,
   AgentSession,
-  AgentTool,
   BrokerDebugStatus,
   BrokerEnsureResult,
   FolderPickResult,
@@ -69,19 +68,65 @@ const stateLabel: Record<SessionState, string> = {
   unknown: "Unknown",
 };
 
-const toolLabel: Record<AgentTool, string> = {
-  codex: "Codex",
-  claude: "Claude",
-  kiro: "Kiro",
-  other: "Agent",
+type ToolDisplayId = "codex-cli" | "codex-app" | "claude-cli" | "kiro-ide" | "other";
+type ToolDisplay = { label: string; icon: string | null; badge?: string };
+
+const toolDisplay: Record<ToolDisplayId, ToolDisplay> = {
+  "codex-cli": {
+    label: "Codex CLI",
+    icon: codexCliIcon,
+    badge: "CLI",
+  },
+  "codex-app": {
+    label: "Codex App",
+    icon: codexAppIcon,
+  },
+  "claude-cli": {
+    label: "Claude CLI",
+    icon: claudeCliIcon,
+    badge: "CLI",
+  },
+  "kiro-ide": {
+    label: "Kiro IDE",
+    icon: kiroIdeIcon,
+  },
+  other: {
+    label: "Agent",
+    icon: null,
+  },
 };
 
-const toolIcon = {
-  codex: SquareTerminal,
-  claude: BrainCircuit,
-  kiro: Blocks,
-  other: Bot,
-} satisfies Record<AgentTool, typeof SquareTerminal>;
+function toolDisplayIdForSession(session: AgentSession): ToolDisplayId {
+  const rawTool = String(session.tool || "").toLowerCase();
+  const windowText = [
+    session.windowHint?.process,
+    session.windowHint?.title,
+    session.windowHint?.boundLabel,
+    session.title,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (rawTool.includes("codex-app") || windowText.includes("codex app")) {
+    return "codex-app";
+  }
+  if (rawTool.includes("codex")) {
+    return "codex-cli";
+  }
+  if (rawTool.includes("claude")) {
+    return "claude-cli";
+  }
+  if (rawTool.includes("kiro")) {
+    return "kiro-ide";
+  }
+
+  return "other";
+}
+
+function toolDisplayForSession(session: AgentSession) {
+  return toolDisplay[toolDisplayIdForSession(session)];
+}
 
 function projectName(cwd: string) {
   const parts = cwd.split(/[\\/]/).filter(Boolean);
@@ -280,13 +325,14 @@ interface ResizeState {
   startHeight: number;
 }
 
-function ToolMark({ tool, state }: { tool: AgentTool; state: SessionState }) {
-  const Icon = toolIcon[tool] ?? toolIcon.other;
+function ToolMark({ session }: { session: AgentSession }) {
+  const displayId = toolDisplayIdForSession(session);
+  const display = toolDisplay[displayId];
 
   return (
-    <span className={`tool-mark tool-${tool}`} title={toolLabel[tool] ?? toolLabel.other}>
-      <Icon size={16} strokeWidth={2.2} aria-hidden="true" />
-      <span className="state-dot" aria-label={stateLabel[state]} />
+    <span className={`tool-mark tool-${displayId}`} title={display.label}>
+      {display.icon ? <img src={display.icon} alt="" aria-hidden="true" /> : <Bot size={18} strokeWidth={2.1} aria-hidden="true" />}
+      {display.badge ? <span className="tool-badge">{display.badge}</span> : null}
     </span>
   );
 }
@@ -320,22 +366,56 @@ function SessionRowContent({
   const canvasOpening = openingTarget === "canvas";
   const pluginHealth = session.obsidianPluginHealth;
   const PluginHealthIcon = pluginHealth?.ok ? CircleCheck : AlertTriangle;
+  const waitingForPermission = session.state === "waiting_permission";
+  const display = toolDisplayForSession(session);
+  const statusLabel = activating ? "Opening" : stateLabel[session.state];
 
   return (
-    <>
-      <ToolMark tool={session.tool} state={session.state} />
-      <span className="session-main">
-        <span className="session-line">
+    <span className="session-main">
+      <span className="session-head">
+        <ToolMark session={session} />
+        <span className="session-title">
           <strong>{projectName(session.cwd)}</strong>
-          <span>{session.tool}</span>
-          <em>{formatAgo(session.updatedAt)}</em>
+          <span>
+            {display.label} · {formatAgo(session.updatedAt)}
+          </span>
         </span>
+        <span className="state-pill">
+          <span className="state-dot" aria-hidden="true" />
+          <span>{statusLabel}</span>
+        </span>
+      </span>
+      <span className="session-body">
         <span className="message-line">{session.lastMessage}</span>
-        <span className="event-line">
-          {stateLabel[session.state]} · {session.lastEvent}
+        <span className="session-meta">
+          <span className="event-line">{session.lastEvent}</span>
+          <span className="session-tags">
+            {waitingForPermission ? (
+              <span className="session-tag tag-attention" title="点击卡片切回 CLI，手动处理权限请求">
+                Needs attention
+              </span>
+            ) : null}
+            {windowBound ? (
+              <span className="session-tag" title={session.windowHint?.boundLabel ?? session.windowHint?.title ?? session.title}>
+                Window bound
+              </span>
+            ) : null}
+            {pluginHealth ? (
+              <span className={`session-tag plugin-tag health-${pluginHealth.status}`} title={pluginHealthTitle(pluginHealth)}>
+                <PluginHealthIcon size={11} aria-hidden="true" />
+                Plugin
+              </span>
+            ) : null}
+          </span>
         </span>
-        {notePath || canvasPath || session.pendingPrompt || windowBound || pluginHealth ? (
+        {notePath || canvasPath || session.pendingPrompt || windowBound || pluginHealth || waitingForPermission ? (
           <span className="bridge-actions" aria-label="Bridge actions">
+            {waitingForPermission ? (
+              <span className="permission-pill" title="点击卡片切回 CLI，手动处理权限请求">
+                <AlertTriangle size={13} aria-hidden="true" />
+                <span>需要权限</span>
+              </span>
+            ) : null}
             {notePath ? (
               <button
                 type="button"
@@ -349,7 +429,7 @@ function SessionRowContent({
                 }}
               >
                 <FileText size={13} aria-hidden="true" />
-                <span>{shortPathLabel(session.lastReplyNote) || "Note"}</span>
+                <span>Note</span>
               </button>
             ) : null}
             {canvasPath ? (
@@ -365,7 +445,7 @@ function SessionRowContent({
                 }}
               >
                 <MapIcon size={13} aria-hidden="true" />
-                <span>{shortPathLabel(session.canvasPath) || "Canvas"}</span>
+                <span>Canvas</span>
               </button>
             ) : null}
             {session.pendingPrompt ? (
@@ -399,25 +479,13 @@ function SessionRowContent({
                 }}
               >
                 <Unlink2 size={13} aria-hidden="true" />
-                <span>Bound</span>
+                <span>Unbind</span>
               </button>
-            ) : null}
-            {pluginHealth ? (
-              <span
-                className={`bridge-health-pill health-${pluginHealth.status}`}
-                title={pluginHealthTitle(pluginHealth)}
-              >
-                <PluginHealthIcon size={13} aria-hidden="true" />
-                <span>Plugin</span>
-              </span>
             ) : null}
           </span>
         ) : null}
       </span>
-      <span className="row-action" aria-hidden="true">
-        {activating ? "..." : <ExternalLink size={15} />}
-      </span>
-    </>
+    </span>
   );
 }
 
@@ -840,10 +908,16 @@ export default function App() {
       if (!response.ok) {
         throw new Error(`broker returned ${response.status}`);
       }
+      const syncResult = (await response.json()) as {
+        promptNotePath?: string | null;
+        promptCanvasNodeId?: string | null;
+      };
 
       void postDebugLog("sync.copy.broker_ok", {
         sessionId: session.sessionId,
         pendingPromptId: session.pendingPromptId ?? null,
+        promptNotePath: syncResult.promptNotePath ?? null,
+        promptCanvasNodeId: syncResult.promptCanvasNodeId ?? null,
       });
       setFeedback("Pending prompt copied. Focusing target CLI...");
       void refreshSessions();

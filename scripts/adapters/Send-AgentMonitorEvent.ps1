@@ -75,7 +75,7 @@ function Get-LastMessage {
         [object]$InputObject
     )
 
-    foreach ($name in @("message", "title", "error", "reason", "last_assistant_message")) {
+    foreach ($name in @("prompt", "message", "title", "error", "reason", "last_assistant_message")) {
         if (($InputObject.PSObject.Properties.Name -contains $name) -and $InputObject.$name) {
             $value = [string]$InputObject.$name
             if ($value.Length -gt 240) {
@@ -185,6 +185,7 @@ $payload = [ordered]@{
     logPath = if ($inputObject.PSObject.Properties.Name -contains "log_path") { $inputObject.log_path } else { $null }
     turnId = if ($inputObject.PSObject.Properties.Name -contains "turn_id") { $inputObject.turn_id } else { $null }
     toolName = if ($inputObject.PSObject.Properties.Name -contains "tool_name") { $inputObject.tool_name } else { $null }
+    prompt = if ($eventName -eq "UserPromptSubmit" -and ($inputObject.PSObject.Properties.Name -contains "prompt")) { $inputObject.prompt } else { $null }
     lastMessage = Get-LastMessage -State $state -InputObject $inputObject
     windowHint = Get-WindowHint -ToolName $Tool -Cwd $cwd
     raw = [ordered]@{

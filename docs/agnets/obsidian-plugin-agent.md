@@ -93,9 +93,10 @@ The plugin agent is responsible for:
 
 ## Current Contracts
 
-Broker endpoints used by the plugin:
+Broker endpoints used by the plugin and deployed AMO hooks:
 
 - `POST /api/obsidian/annotations`
+- `POST /api/prompts`
 - `GET /api/health`
 - `POST /api/debug/logs`
 
@@ -103,6 +104,8 @@ Plugin data contract:
 
 - `.obsidian/plugins/md-anno-tools/data.json`
 - `bridgeUrl` points to the local AMO broker, normally `http://127.0.0.1:17654`
+- `numberAnnotationsInPrompt` defaults to `false`; when false, sync prompts contain raw annotation content without broker-added `1.`, `2.`, `3.` prefixes.
+- `canvasAppendDirection` defaults to `down`; broker uses it when appending new AMO reply/prompt file nodes to `AgentFlow.canvas`. Supported values are `down` and `right`.
 
 Open protocol contract:
 

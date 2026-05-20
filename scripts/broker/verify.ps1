@@ -232,6 +232,13 @@ try {
     if ($codexHooksText -notmatch "codex-stop-message\.mjs") {
         throw "Codex hooks config does not reference AMO hook script."
     }
+    if ($codexHooksText -notmatch "UserPromptSubmit" -or $codexHooksText -notmatch "Stop" -or $codexHooksText -notmatch "PermissionRequest") {
+        throw "Codex hooks config does not include prompt, reply, and permission hooks."
+    }
+    $codexAdapterData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\adapters\codex-cli.json") | ConvertFrom-Json
+    if (-not $codexAdapterData.bridgeEventsUrl -or $codexAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
+        throw "Codex adapter config does not include bridgeEventsUrl."
+    }
 
     $pluginList = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\community-plugins.json") | ConvertFrom-Json
     if (@($pluginList) -notcontains "md-anno-tools") {
@@ -240,6 +247,12 @@ try {
     $pluginData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\data.json") | ConvertFrom-Json
     if ($pluginData.bridgeUrl -ne $baseUrl) {
         throw "Obsidian plugin bridgeUrl mismatch. Expected $baseUrl, got $($pluginData.bridgeUrl)."
+    }
+    if ([bool]$pluginData.numberAnnotationsInPrompt) {
+        throw "Obsidian plugin should default annotation numbering off."
+    }
+    if ($pluginData.canvasAppendDirection -ne "down") {
+        throw "Obsidian plugin should default canvas append direction to down."
     }
     $pluginMain = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\main.js")
     if ($pluginMain -notmatch "/api/obsidian/annotations") {
@@ -283,6 +296,12 @@ try {
     }
     if ($pluginMain -notmatch "data-amo-annotation" -or $pluginMain -notmatch "createAnnotationRichShell") {
         throw "Obsidian plugin annotation rendering does not create plugin-owned rich annotation shells."
+    }
+    if ($pluginMain -notmatch "numberAnnotationsInPrompt" -or $pluginMain -notmatch "\\u540C\\u6B65\\u5185\\u5BB9\\u6DFB\\u52A0\\u7F16\\u53F7") {
+        throw "Obsidian plugin does not expose the annotation numbering setting."
+    }
+    if ($pluginMain -notmatch "canvasAppendDirection") {
+        throw "Obsidian plugin does not expose the canvas append direction setting."
     }
     $pluginStyles = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\styles.css")
     if ($pluginStyles -notmatch "anno-token-rich" -or $pluginStyles -notmatch "amo-canvas-note-list") {
@@ -349,12 +368,15 @@ try {
     if (-not $secondCanvasNode) {
         throw "Canvas is missing the second reply node id: $($reply2.canvasNodeId)"
     }
-    if ([int]$secondCanvasNode.y -ne [int]$firstCanvasNode.y -or [int]$secondCanvasNode.x -le [int]$firstCanvasNode.x) {
-        throw "Second reply node should be placed to the right on the same session row."
+    if ([int]$secondCanvasNode.x -ne [int]$firstCanvasNode.x -or [int]$secondCanvasNode.y -le [int]$firstCanvasNode.y) {
+        throw "Second reply node should be placed below the first reply node by default."
     }
     $chainEdge = @($canvasAfterSecondReply.edges | Where-Object { $_.fromNode -eq $reply.canvasNodeId -and $_.toNode -eq $reply2.canvasNodeId })[0]
     if (-not $chainEdge) {
         throw "Canvas did not create an edge from first reply node to second reply node."
+    }
+    if ($chainEdge.fromSide -ne "bottom" -or $chainEdge.toSide -ne "top") {
+        throw "Default canvas append edge should use bottom -> top sides."
     }
     $bindings = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\state\bindings.json") | ConvertFrom-Json
     $replyBinding = $bindings.sessions.PSObject.Properties["codex-reply-verify"].Value
@@ -380,6 +402,20 @@ try {
     }
     Write-Host "Reply bridge OK -> $($reply.notePath)"
 
+    $permissionEvent = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        source = "codex-event-hook"
+        sessionId = "codex-reply-verify"
+        cwd = $workspaceRoot
+        hookEventName = "PermissionRequest"
+        message = "Codex is waiting for permission"
+    }
+    if (-not $permissionEvent.ok -or $permissionEvent.session.state -ne "waiting_permission" -or -not $permissionEvent.session.needsAttention) {
+        throw "Permission event did not mark the session as waiting_permission."
+    }
+    Write-Host "Permission hook event OK -> $($permissionEvent.session.state)"
+
     $annotationResult = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
         schemaVersion = 1
         source = "verify-obsidian-plugin"
@@ -397,20 +433,71 @@ try {
     if (-not $annotationResult.ok -or -not $annotationResult.pendingPromptId -or -not $annotationResult.prompt) {
         throw "Annotation endpoint did not return a pending prompt."
     }
-    $expectedPrompt = "1. Please continue from this verification note.`n"
+    $expectedPrompt = "Please continue from this verification note.`n"
     if ($annotationResult.prompt -ne $expectedPrompt) {
         throw "Annotation prompt included unexpected broker-added text. Expected '$expectedPrompt', got '$($annotationResult.prompt)'."
     }
 
+    $numberedAnnotationResult = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
+        schemaVersion = 1
+        source = "verify-obsidian-plugin"
+        vaultRoot = $vaultRoot
+        notePath = $reply2.notePath
+        sessionId = "codex-reply-verify"
+        turnId = "turn-reply-verify-2"
+        promptOptions = @{
+            numberAnnotations = $true
+        }
+        annotations = @(
+            @{
+                index = 1
+                content = "Numbered verification note."
+            }
+        )
+    }
+    $expectedNumberedPrompt = "1. Numbered verification note.`n"
+    if ($numberedAnnotationResult.prompt -ne $expectedNumberedPrompt) {
+        throw "Annotation numbering option did not preserve numbered output. Expected '$expectedNumberedPrompt', got '$($numberedAnnotationResult.prompt)'."
+    }
+
+    $pluginDataPath = Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\data.json"
+    $pluginDataForRightAppend = Get-Content -Raw -Encoding UTF8 $pluginDataPath | ConvertFrom-Json
+    $pluginDataForRightAppend | Add-Member -NotePropertyName "canvasAppendDirection" -NotePropertyValue "right" -Force
+    [System.IO.File]::WriteAllText(
+        $pluginDataPath,
+        (($pluginDataForRightAppend | ConvertTo-Json -Depth 8) + "`n"),
+        (New-Object System.Text.UTF8Encoding($false))
+    )
+
     $syncBack = Invoke-BrokerJson -Method POST -Path "/api/sync-back" -Body @{
         sessionId = "codex-reply-verify"
-        pendingPromptId = $annotationResult.pendingPromptId
+        pendingPromptId = $numberedAnnotationResult.pendingPromptId
         action = "copy-focus"
     }
     if (-not $syncBack.ok -or -not $syncBack.copiedAt) {
         throw "Sync-back endpoint did not mark the prompt as copied."
     }
-    Write-Host "Annotation sync-back OK -> $($annotationResult.pendingPromptId)"
+    if (-not $syncBack.promptNotePath -or -not $syncBack.promptCanvasNodeId) {
+        throw "Sync-back endpoint did not record the sent prompt note/canvas node."
+    }
+    $canvasAfterSyncBack = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
+    $promptCanvasNode = @($canvasAfterSyncBack.nodes | Where-Object { $_.id -eq $syncBack.promptCanvasNodeId })[0]
+    if (-not $promptCanvasNode -or $promptCanvasNode.file -ne $syncBack.promptNotePath) {
+        throw "Canvas is missing the sync-back prompt node: $($syncBack.promptCanvasNodeId)"
+    }
+    if ([int]$promptCanvasNode.y -ne [int]$secondCanvasNode.y -or [int]$promptCanvasNode.x -le [int]$secondCanvasNode.x) {
+        throw "Right canvas append direction should place sync-back prompt to the right of the latest reply node."
+    }
+    $promptChainEdge = @($canvasAfterSyncBack.edges | Where-Object {
+            $_.fromNode -eq $reply2.canvasNodeId -and $_.toNode -eq $syncBack.promptCanvasNodeId
+        })[0]
+    if (-not $promptChainEdge) {
+        throw "Canvas did not chain the latest reply node to the sent prompt node."
+    }
+    if ($promptChainEdge.fromSide -ne "right" -or $promptChainEdge.toSide -ne "left") {
+        throw "Right canvas append edge should use right -> left sides."
+    }
+    Write-Host "Annotation sync-back OK -> $($numberedAnnotationResult.pendingPromptId)"
 
     $windowBinding = Invoke-BrokerJson -Method POST -Path "/api/sessions/codex-reply-verify/window-binding" -Body @{
         hwnd = 123456
