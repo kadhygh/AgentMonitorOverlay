@@ -178,6 +178,47 @@ function canvasPathForOpen(session: AgentSession) {
   );
 }
 
+function latestCanvasNotePathForFocus(session: AgentSession) {
+  const candidates = [
+    {
+      path:
+        session.pendingAnnotationSource?.notePath && session.vaultRoot
+          ? joinWindowsPath(session.vaultRoot, session.pendingAnnotationSource.notePath)
+          : session.pendingAnnotationSource?.notePath,
+      at: session.pendingPromptCreatedAt,
+    },
+    {
+      path:
+        session.sentPromptNoteAbsolutePath ??
+        joinWindowsPath(session.vaultRoot, session.sentPromptNote ?? undefined) ??
+        joinWindowsPath(session.workspacePath, session.sentPromptNote ?? undefined),
+      at: session.sentPromptRecordedAt,
+    },
+    {
+      path:
+        session.lastPromptNoteAbsolutePath ??
+        joinWindowsPath(session.vaultRoot, session.lastPromptNote) ??
+        joinWindowsPath(session.workspacePath, session.lastPromptNote),
+      at: session.lastPromptAt,
+    },
+    {
+      path: notePathForOpen(session),
+      at: session.lastReplyAt,
+    },
+  ].filter((candidate): candidate is { path: string; at: string | null | undefined } => Boolean(candidate.path));
+
+  if (candidates.length === 0) {
+    return null;
+  }
+
+  return candidates.sort((a, b) => timestampValue(b.at) - timestampValue(a.at))[0].path;
+}
+
+function timestampValue(value?: string | null) {
+  const timestamp = value ? Date.parse(value) : Number.NaN;
+  return Number.isFinite(timestamp) ? timestamp : 0;
+}
+
 function obsidianOpenUri(targetPath: string, vaultId?: string, vaultRoot?: string) {
   const params = new URLSearchParams();
   const filePath = vaultRelativeFilePath(targetPath, vaultRoot);
@@ -198,6 +239,7 @@ function obsidianAmoOpenUri(
   target: "note" | "canvas",
   vaultId?: string,
   vaultRoot?: string,
+  options?: { focusNotePath?: string | null },
 ) {
   const filePath = vaultRelativeFilePath(targetPath, vaultRoot);
   if (!filePath) {
@@ -208,6 +250,10 @@ function obsidianAmoOpenUri(
   params.set("path", targetPath);
   params.set("relativePath", filePath);
   params.set("kind", target);
+  if (options?.focusNotePath) {
+    const focusNotePath = vaultRelativeFilePath(options.focusNotePath, vaultRoot) ?? options.focusNotePath;
+    params.set("focusNotePath", focusNotePath);
+  }
   return `obsidian://amo-open?${params.toString()}`;
 }
 
@@ -862,6 +908,7 @@ export default function App() {
 
   async function openBridgePath(session: AgentSession, target: "note" | "canvas") {
     const targetPath = target === "note" ? notePathForOpen(session) : canvasPathForOpen(session);
+    const focusNotePath = target === "canvas" ? latestCanvasNotePathForFocus(session) : null;
     if (!targetPath) {
       setFeedback(`No ${target} path is linked for ${session.title}.`);
       return;
@@ -873,6 +920,7 @@ export default function App() {
       sessionId: session.sessionId,
       target,
       targetPath,
+      focusNotePath,
       vaultRoot: session.vaultRoot ?? null,
       vaultId: null,
     });
@@ -895,11 +943,12 @@ export default function App() {
       }
 
       const result = await invoke<OpenPathResult>("open_uri", {
-        uri: obsidianAmoOpenUri(targetPath, target, vaultId, session.vaultRoot),
+        uri: obsidianAmoOpenUri(targetPath, target, vaultId, session.vaultRoot, { focusNotePath }),
       });
       void postDebugLog("obsidian.open.result", {
         sessionId: session.sessionId,
         target,
+        focusNotePath,
         ok: result.ok,
         message: result.message,
       });

@@ -37,7 +37,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.8";
+var PLUGIN_VERSION = "1.4.9";
 var DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
   numberAnnotationsInPrompt: false,
@@ -1061,10 +1061,21 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       new import_obsidian5.Notice("AMO open URL is missing a vault-relative path.");
       return;
     }
-    await this.openVaultPath(targetPath, normalizeOpenKind(params && (params.kind || params.target), targetPath));
+    const kind = normalizeOpenKind(params && (params.kind || params.target), targetPath);
+    const focusNotePath = this.resolveProtocolFocusNotePath(params);
+    const opened = await this.openVaultPath(targetPath, kind);
+    if (opened && kind === "canvas" && focusNotePath) {
+      window.setTimeout(() => {
+        void this.focusCanvasNoteNode(targetPath, focusNotePath);
+      }, 120);
+    }
   }
   resolveProtocolTargetPath(params) {
     const rawPath = params && (params.relativePath || params.relative_path || params.file || params.notePath || params.note_path || params.canvasPath || params.canvas_path || params.path);
+    return normalizeVaultFilePath(toVaultRelativeProtocolPath(rawPath, getVaultRoot(this.app)));
+  }
+  resolveProtocolFocusNotePath(params) {
+    const rawPath = params && (params.focusNotePath || params.focus_note_path || params.latestNotePath || params.latest_note_path || params.selectedNotePath || params.selected_note_path);
     return normalizeVaultFilePath(toVaultRelativeProtocolPath(rawPath, getVaultRoot(this.app)));
   }
   async openVaultPath(filePath, kind) {
@@ -1094,6 +1105,169 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     this.rememberMarkdownLeaf(leaf);
     this.setOperationStatus("Opened " + kind + ": " + file.path + ".", "success");
     return true;
+  }
+  async focusCanvasNoteNode(canvasPath, notePath) {
+    const normalizedCanvasPath = normalizeVaultFilePath(canvasPath);
+    const normalizedNotePath = normalizeVaultFilePath(notePath);
+    if (!normalizedCanvasPath || !normalizedNotePath) return false;
+    for (let attempt = 0; attempt < 8; attempt += 1) {
+      const view = this.getCanvasViewForFilePath(normalizedCanvasPath);
+      const node = view ? this.findCanvasNodeForFilePath(view, normalizedNotePath) : null;
+      if (view && node) {
+        this.selectCanvasNode(view, node, normalizedNotePath);
+        const centered = this.centerCanvasNode(view, node);
+        this.rememberCanvasMarkdownFile(view, normalizedNotePath);
+        this.debugLog("canvas.focus_note.ok", {
+          canvasPath: normalizedCanvasPath,
+          notePath: normalizedNotePath,
+          attempt,
+          centered
+        });
+        return true;
+      }
+      await this.delay(80);
+    }
+    this.debugLog("canvas.focus_note.not_found", {
+      canvasPath: normalizedCanvasPath,
+      notePath: normalizedNotePath
+    });
+    return false;
+  }
+  getCanvasViewForFilePath(canvasPath) {
+    const normalizedCanvasPath = normalizeVaultFilePath(canvasPath);
+    for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
+      const view = leaf.view;
+      if (view && view.file && normalizeVaultFilePath(view.file.path) === normalizedCanvasPath) {
+        return view;
+      }
+    }
+    return null;
+  }
+  findCanvasNodeForFilePath(view, notePath) {
+    const normalizedNotePath = normalizeVaultFilePath(notePath);
+    return collectCanvasNodes(view && view.canvas).find((node) => {
+      return normalizeVaultFilePath(canvasNodeFilePath(view.canvas, node)) === normalizedNotePath;
+    }) || null;
+  }
+  selectCanvasNode(view, node, notePath) {
+    const canvas = view && view.canvas;
+    this.clearCanvasSelection(canvas);
+    this.safeCanvasCall(node, "select");
+    this.safeCanvasCall(canvas, "select", node);
+    this.safeCanvasCall(canvas, "selectNode", node);
+    this.addCanvasSelectionValue(canvas && canvas.selection, node);
+    this.addCanvasSelectionValue(canvas && canvas.selectedNodes, node);
+    this.addCanvasSelectionValue(canvas && canvas.selectedItems, node);
+    node.selected = true;
+    node.isSelected = true;
+    const element = this.canvasNodeElement(view, node);
+    if (element) {
+      element.addClass("is-selected");
+      element.addClass("mod-selected");
+      element.addClass("selected");
+    }
+    this.safeCanvasCall(node, "render");
+    this.safeCanvasCall(canvas, "requestFrame");
+    this.safeCanvasCall(canvas, "requestSave");
+    this.debugLog("canvas.focus_note.selected", {
+      canvasPath: view && view.file && view.file.path,
+      notePath,
+      nodeId: node && (node.id || node.data && node.data.id)
+    });
+  }
+  clearCanvasSelection(canvas) {
+    this.safeCanvasCall(canvas, "deselectAll");
+    this.safeCanvasCall(canvas, "clearSelection");
+    for (const collection of [canvas && canvas.selection, canvas && canvas.selectedNodes, canvas && canvas.selectedItems, canvas && canvas.selected]) {
+      if (collection && typeof collection.clear === "function") {
+        this.safeCanvasCall(collection, "clear");
+      }
+    }
+    for (const node of collectCanvasNodes(canvas)) {
+      if (!node) continue;
+      node.selected = false;
+      node.isSelected = false;
+    }
+  }
+  addCanvasSelectionValue(collection, node) {
+    if (!collection || !node) return;
+    if (typeof collection.add === "function") {
+      this.safeCanvasCall(collection, "add", node);
+      return;
+    }
+    if (typeof collection.set === "function") {
+      const nodeId = node.id || node.data && node.data.id;
+      this.safeCanvasCall(collection, "set", nodeId || node, node);
+    }
+  }
+  centerCanvasNode(view, node) {
+    const canvas = view && view.canvas;
+    const bounds = this.canvasNodeBounds(node);
+    if (!bounds) return false;
+    const bbox = {
+      minX: bounds.x,
+      minY: bounds.y,
+      maxX: bounds.x + bounds.width,
+      maxY: bounds.y + bounds.height
+    };
+    if (this.safeCanvasCall(canvas, "zoomToBbox", bbox)) return true;
+    if (this.safeCanvasCall(canvas, "zoomToBBox", bbox)) return true;
+    if (this.safeCanvasCall(canvas, "zoomToSelection")) return true;
+    const centerX = bounds.x + bounds.width / 2;
+    const centerY = bounds.y + bounds.height / 2;
+    if (this.safeCanvasCall(canvas, "panTo", centerX, centerY)) return true;
+    if (this.safeCanvasCall(canvas, "setViewport", centerX, centerY, this.canvasZoom(canvas))) return true;
+    const element = this.canvasNodeElement(view, node);
+    if (element && typeof element.scrollIntoView === "function") {
+      element.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
+      return true;
+    }
+    return false;
+  }
+  canvasNodeBounds(node) {
+    const data = node && typeof node.getData === "function" ? node.getData() : node && node.data;
+    const x = this.numberValue(node && node.x, data && data.x);
+    const y = this.numberValue(node && node.y, data && data.y);
+    const width = this.numberValue(node && node.width, node && node.w, data && data.width, data && data.w, 520);
+    const height = this.numberValue(node && node.height, node && node.h, data && data.height, data && data.h, 360);
+    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+    return { x, y, width, height };
+  }
+  numberValue(...values) {
+    for (const value of values) {
+      const numeric = Number(value);
+      if (Number.isFinite(numeric)) return numeric;
+    }
+    return 0;
+  }
+  canvasZoom(canvas) {
+    return this.numberValue(canvas && canvas.zoom, canvas && canvas.scale, canvas && canvas.tZoom, 1) || 1;
+  }
+  canvasNodeElement(view, node) {
+    for (const candidate of [node && node.nodeEl, node && node.el, node && node.containerEl, node && node.contentEl]) {
+      if (candidate instanceof HTMLElement) return candidate;
+    }
+    const nodeId = node && (node.id || node.data && node.data.id);
+    if (!nodeId || !view || !view.containerEl) return null;
+    const escaped = String(nodeId).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
+    return view.containerEl.querySelector('[data-node-id="' + escaped + '"]') || view.containerEl.querySelector('[data-id="' + escaped + '"]') || view.containerEl.querySelector("#" + String(nodeId).replace(/[^a-zA-Z0-9_-]/g, "\\$&"));
+  }
+  safeCanvasCall(target, method, ...args) {
+    try {
+      if (target && typeof target[method] === "function") {
+        target[method](...args);
+        return true;
+      }
+    } catch (error) {
+      this.debugLog("canvas.focus_note.call_error", {
+        method,
+        message: messageFromError(error)
+      });
+    }
+    return false;
+  }
+  delay(ms) {
+    return new Promise((resolve) => window.setTimeout(resolve, ms));
   }
   createTabLeaf() {
     try {
