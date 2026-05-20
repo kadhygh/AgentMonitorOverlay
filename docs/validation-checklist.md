@@ -60,6 +60,17 @@ Status: isolated adapter contract verification passes on 2026-05-08; Claude live
   - Codex hook runner completed without `hook failed` / timeout noise
 - Claude live smoke is verified with disposable `--settings`.
 
+## Phase 5: Obsidian Bridge MVP
+
+Status: user smoke validated for the current Codex CLI MVP loop on 2026-05-20; prompt chaining and PermissionRequest behavior are confirmed working.
+
+- Confirm Codex CLI reply hooks create reply notes and append them to `AgentFlow.canvas`.
+- Confirm Obsidian annotations create pending prompts without broker-added numbering by default.
+- Confirm `Copy + Focus CLI` records outgoing prompt notes under `Prompts/` and chains them after the latest canvas node.
+- Confirm direct Codex `UserPromptSubmit` payloads can enter the same prompt-note/canvas chain when available.
+- Confirm PermissionRequest events make the overlay card show the compact permission state and route the user back to the CLI for manual approval.
+- Confirm opening a canvas from an overlay card focuses the latest note node when present and falls back to a plain canvas jump when it is absent.
+
 ## Vibe Checks
 
 Status: passed by user on 2026-05-07 and refreshed during 2026-05-08 to 2026-05-10 overlay smoke checks; minor details deferred

@@ -108,6 +108,15 @@
   grid-row: 1 / span 2;
 }
 
+.canvas-node.amo-canvas-latest-note,
+.amo-canvas-latest-note {
+  --amo-canvas-latest-ring-rgb: 111 224 190;
+  --amo-canvas-latest-ring-opacity: 0.42;
+  outline: 1px solid rgb(var(--amo-canvas-latest-ring-rgb) / var(--amo-canvas-latest-ring-opacity));
+  outline-offset: 5px;
+  transition: outline-color 120ms ease, outline-offset 120ms ease;
+}
+
 .amo-panel {
   padding: 12px;
 }

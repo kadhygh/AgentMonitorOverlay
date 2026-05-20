@@ -37,7 +37,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.9";
+var PLUGIN_VERSION = "1.4.11";
 var DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
   numberAnnotationsInPrompt: false,
@@ -1151,29 +1151,62 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
   }
   selectCanvasNode(view, node, notePath) {
     const canvas = view && view.canvas;
-    this.clearCanvasSelection(canvas);
-    this.safeCanvasCall(node, "select");
-    this.safeCanvasCall(canvas, "select", node);
-    this.safeCanvasCall(canvas, "selectNode", node);
-    this.addCanvasSelectionValue(canvas && canvas.selection, node);
-    this.addCanvasSelectionValue(canvas && canvas.selectedNodes, node);
-    this.addCanvasSelectionValue(canvas && canvas.selectedItems, node);
-    node.selected = true;
-    node.isSelected = true;
-    const element = this.canvasNodeElement(view, node);
-    if (element) {
-      element.addClass("is-selected");
-      element.addClass("mod-selected");
-      element.addClass("selected");
-    }
-    this.safeCanvasCall(node, "render");
+    const cleaned = this.clearCanvasSelectionArtifact(view, node);
+    const marked = this.markCanvasLatestNote(view, node);
     this.safeCanvasCall(canvas, "requestFrame");
-    this.safeCanvasCall(canvas, "requestSave");
     this.debugLog("canvas.focus_note.selected", {
       canvasPath: view && view.file && view.file.path,
       notePath,
-      nodeId: node && (node.id || node.data && node.data.id)
+      nodeId: node && (node.id || node.data && node.data.id),
+      cleaned,
+      marked
     });
+  }
+  markCanvasLatestNote(view, node) {
+    this.clearCanvasLatestNoteMarkers(view);
+    const element = this.canvasNodeElement(view, node);
+    if (!element) return false;
+    element.classList.add("amo-canvas-latest-note");
+    element.setAttribute("data-amo-latest-note", "true");
+    return true;
+  }
+  clearCanvasLatestNoteMarkers(view) {
+    if (!view || !view.containerEl) return;
+    const markedElements = Array.from(view.containerEl.querySelectorAll(".amo-canvas-latest-note"));
+    for (const node of collectCanvasNodes(view.canvas)) {
+      const element = this.canvasNodeElement(view, node);
+      if (element && markedElements.includes(element)) {
+        this.clearCanvasSelectionArtifact(view, node);
+      }
+    }
+    for (const element of markedElements) {
+      element.classList.remove("is-selected", "mod-selected", "selected");
+      element.classList.remove("amo-canvas-latest-note");
+      element.removeAttribute("data-amo-latest-note");
+    }
+  }
+  clearCanvasSelectionArtifact(view, node) {
+    const canvas = view && view.canvas;
+    const nodeId = node && (node.id || node.data && node.data.id);
+    let cleaned = false;
+    if (node) {
+      if (node.selected || node.isSelected) cleaned = true;
+      node.selected = false;
+      node.isSelected = false;
+    }
+    for (const collection of [canvas && canvas.selection, canvas && canvas.selectedNodes, canvas && canvas.selectedItems, canvas && canvas.selected]) {
+      if (this.removeCanvasSelectionValue(collection, node, nodeId)) {
+        cleaned = true;
+      }
+    }
+    const element = this.canvasNodeElement(view, node);
+    if (element) {
+      for (const className of ["is-selected", "mod-selected", "selected"]) {
+        if (element.classList.contains(className)) cleaned = true;
+        element.classList.remove(className);
+      }
+    }
+    return cleaned;
   }
   clearCanvasSelection(canvas) {
     this.safeCanvasCall(canvas, "deselectAll");
@@ -1188,6 +1221,34 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       node.selected = false;
       node.isSelected = false;
     }
+  }
+  removeCanvasSelectionValue(collection, node, nodeId) {
+    if (!collection) return false;
+    let removed = false;
+    if (Array.isArray(collection)) {
+      for (const value of [node, nodeId]) {
+        const index = value ? collection.indexOf(value) : -1;
+        if (index >= 0) {
+          collection.splice(index, 1);
+          removed = true;
+        }
+      }
+    }
+    if (typeof collection.delete === "function") {
+      if (node && collection.delete(node)) removed = true;
+      if (nodeId && collection.delete(nodeId)) removed = true;
+    }
+    if (typeof collection.has === "function" && typeof collection.remove === "function") {
+      if (node && collection.has(node)) {
+        this.safeCanvasCall(collection, "remove", node);
+        removed = true;
+      }
+      if (nodeId && collection.has(nodeId)) {
+        this.safeCanvasCall(collection, "remove", nodeId);
+        removed = true;
+      }
+    }
+    return removed;
   }
   addCanvasSelectionValue(collection, node) {
     if (!collection || !node) return;
