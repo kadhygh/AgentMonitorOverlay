@@ -5,6 +5,7 @@ import {
   AMO_CANVAS_SEND_ACTION_CLASS,
   AMO_CANVAS_TYPE,
   AMO_OPEN_PROTOCOL,
+  AMO_NOTE_PROPERTIES_ACTION_CLASS,
   AMO_PANEL_ACTION_CLASS,
   AMO_PANEL_VIEW_TYPE,
   AMO_SEND_ACTION_CLASS,
@@ -18,7 +19,7 @@ import {
 } from "./core/constants";
 import { fetchJson, joinUrl, postDebugLog, postJson, writeTextToClipboard } from "./core/api";
 import { normalizeOpenKind, normalizeVaultFilePath, toVaultRelativeProtocolPath } from "./core/paths";
-import { parseAmoFrontmatter } from "./core/metadata";
+import { extractFirstMarkdownHeading, normalizeMarkdownTitle, parseAmoMetadata, upsertAmoMarker, upsertFirstMarkdownHeading } from "./core/metadata";
 import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, rootContainsAnnotationMarkers, describeElement } from "./core/ui-utils";
 import { AmoAnnotationPanelView } from "./ui/panel-view";
 import { AnnotationInputModal, CanvasNoteTargetModal } from "./ui/modals";
@@ -28,11 +29,15 @@ import {
   buildReferencedAnnotationMarkup,
   createAnnotationElement,
   extractAnnotationContents,
+  extractAnnotationItems,
   formatAnnotationsForClipboard,
+  findAnnotationItemAtOffset,
   insertReferencedAnnotation,
   normalizeAnnotationContent,
+  removeAnnotationByIndex,
 } from "./annotations/syntax";
 import { findLegacyAnnotationBlockForSection, parseLegacyAnnotationBlocks, LegacyAnnotationBlockRenderChild, LegacyAnnotationHiddenSectionRenderChild } from "./annotations/render";
+import { amoMarkerHiderExtension } from "./editor/amo-marker-hider";
 import {
   canvasFilePathFromEventTarget,
   canvasNodeFilePath,
@@ -52,6 +57,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   lastCanvasView: any;
   canvasViewsWithTargetTracking: WeakSet<any>;
   canvasTargetFilePathByView: WeakMap<any, string>;
+  amoNotePropertiesExpandedPaths: Set<string>;
   panelRefreshTimer: number | null;
 
   async onload() {
@@ -68,9 +74,11 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.lastCanvasView = null;
     this.canvasViewsWithTargetTracking = new WeakSet();
     this.canvasTargetFilePathByView = new WeakMap();
+    this.amoNotePropertiesExpandedPaths = new Set();
     this.panelRefreshTimer = null;
 
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
+    this.registerEditorExtension(amoMarkerHiderExtension);
     this.addSettingTab(new AmoAnnotationSettingTab(this.app, this));
     this.debugLog("plugin.loaded", {
       version: PLUGIN_VERSION,
@@ -180,11 +188,30 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       },
     });
 
+    this.addCommand({
+      id: "delete-current-annotation",
+      name: "Delete current AMO annotation",
+      editorCallback: (editor) => {
+        this.deleteAnnotationAtEditor(editor);
+      },
+    });
+
     this.registerMarkdownPostProcessor((el, ctx) => this.renderAnnotations(el, ctx), 1000);
 
     this.registerEvent(
       this.app.workspace.on("editor-menu", (menu, editor) => {
         const hasSelection = editor.getSelection().trim().length > 0;
+        const currentAnnotation = this.annotationItemAtEditorCursor(editor);
+        if (currentAnnotation) {
+          menu.addItem((item) => {
+            item
+              .setTitle("Delete current AMO annotation")
+              .setIcon("trash")
+              .onClick(() => {
+                this.deleteAnnotationAtEditor(editor);
+              });
+          });
+        }
         menu.addItem((item) => {
           item
             .setTitle(hasSelection ? "Quote selection into [!anno]" : "Insert [!anno] at cursor")
@@ -201,6 +228,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       this.syncMarkdownViewActions();
       this.syncCanvasViewActions();
       void this.syncAmoCanvasRendering();
+      void this.syncAmoNotePropertyViews();
       this.refreshPanels();
     });
 
@@ -210,6 +238,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         this.syncMarkdownViewActions();
         this.syncCanvasViewActions();
         void this.syncAmoCanvasRendering();
+        void this.syncAmoNotePropertyViews();
         if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function" || leaf.view.getViewType() !== AMO_PANEL_VIEW_TYPE) {
           this.refreshPanels();
         }
@@ -222,6 +251,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         this.syncMarkdownViewActions();
         this.syncCanvasViewActions();
         void this.syncAmoCanvasRendering();
+        void this.syncAmoNotePropertyViews();
         this.refreshPanels();
       })
     );
@@ -232,6 +262,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         this.syncMarkdownViewActions();
         this.syncCanvasViewActions();
         void this.syncAmoCanvasRendering();
+        void this.syncAmoNotePropertyViews();
         this.refreshPanels();
       })
     );
@@ -250,15 +281,19 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
           ", ." +
           AMO_PANEL_ACTION_CLASS +
           ", ." +
+          AMO_NOTE_PROPERTIES_ACTION_CLASS +
+          ", ." +
           AMO_CANVAS_SEND_ACTION_CLASS +
           ", ." +
           AMO_CANVAS_PANEL_ACTION_CLASS
       )
       .forEach((el) => el.remove());
+    this.clearAmoNotePropertyViewClasses();
   }
 
   async saveSettings() {
     await this.saveData(this.settings);
+    void this.syncAmoNotePropertyViews();
   }
 
   async activatePanel() {
@@ -775,6 +810,13 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         });
         panelAction.addClass(AMO_PANEL_ACTION_CLASS);
       }
+
+      if (!view.containerEl.querySelector("." + AMO_NOTE_PROPERTIES_ACTION_CLASS)) {
+        const propertiesAction = view.addAction("list-collapse", "Show/hide AMO note properties", () => {
+          void this.toggleAmoNotePropertiesForView(view);
+        });
+        propertiesAction.addClass(AMO_NOTE_PROPERTIES_ACTION_CLASS);
+      }
     }
   }
 
@@ -943,6 +985,75 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       }
     }
     return null;
+  }
+
+  async syncAmoNotePropertyViews() {
+    const leaves = this.app.workspace.getLeavesOfType("markdown");
+    for (const leaf of leaves) {
+      if (!(leaf.view instanceof MarkdownView)) continue;
+      const view = leaf.view;
+      await this.syncAmoNotePropertyView(view);
+    }
+  }
+
+  async syncAmoNotePropertyView(view) {
+    if (!(view instanceof MarkdownView) || !view.file || !view.containerEl) return;
+
+    const filePath = view.file.path;
+    const isAmoNote = await this.isAmoMarkdownFile(view.file);
+    if (!view.file || view.file.path !== filePath || !view.containerEl) return;
+
+    view.containerEl.classList.toggle("amo-note-view", isAmoNote);
+    const shouldHide =
+      isAmoNote &&
+      Boolean(this.settings.hideAmoNoteProperties) &&
+      !this.amoNotePropertiesExpandedPaths.has(filePath);
+    view.containerEl.classList.toggle("amo-hide-note-properties", shouldHide);
+    view.containerEl.classList.toggle("amo-show-note-properties", isAmoNote && !shouldHide);
+  }
+
+  async isAmoMarkdownFile(file) {
+    if (!file || typeof file.path !== "string") return false;
+
+    try {
+      const markdown = await this.app.vault.cachedRead(file as any);
+      const amo = parseAmoMetadata(markdown);
+      return Boolean(amo.schemaVersion || amo.sessionId || amo.turnId || amo.kind || amo.role);
+    } catch {
+      return false;
+    }
+  }
+
+  async toggleAmoNotePropertiesForView(view) {
+    if (!(view instanceof MarkdownView) || !view.file) {
+      new Notice("No active Markdown note.");
+      return;
+    }
+
+    const isAmoNote = await this.isAmoMarkdownFile(view.file);
+    if (!isAmoNote) {
+      new Notice("Current note is not an AMO note.");
+      return;
+    }
+
+    const filePath = view.file.path;
+    if (this.amoNotePropertiesExpandedPaths.has(filePath)) {
+      this.amoNotePropertiesExpandedPaths.delete(filePath);
+      new Notice("AMO note properties hidden.");
+    } else {
+      this.amoNotePropertiesExpandedPaths.add(filePath);
+      new Notice("AMO note properties shown.");
+    }
+
+    await this.syncAmoNotePropertyViews();
+  }
+
+  clearAmoNotePropertyViewClasses() {
+    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
+      const view: any = leaf.view;
+      if (!view || !view.containerEl) continue;
+      view.containerEl.classList.remove("amo-note-view", "amo-hide-note-properties", "amo-show-note-properties");
+    }
   }
 
   getActiveMarkdownView() {
@@ -1312,6 +1423,163 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     await this.app.vault.modify(file, nextContent);
   }
 
+  async deleteAnnotationFromFile(file, annotationIndex) {
+    if (!file || !Number.isSafeInteger(annotationIndex)) {
+      new Notice("No annotation selected.");
+      return false;
+    }
+
+    const markdown = await this.app.vault.cachedRead(file as any);
+    const result = removeAnnotationByIndex(markdown, annotationIndex);
+    if (!result.removed) {
+      new Notice("Annotation not found.");
+      return false;
+    }
+
+    await this.app.vault.modify(file, result.markdown);
+    this.debugLog("annotations.delete.ok", {
+      notePath: file.path,
+      annotationIndex,
+      annotationPreview: previewText(result.item && result.item.content),
+    });
+    this.setOperationStatus("Deleted annotation " + annotationIndex + " from " + file.path + ".", "success");
+    new Notice("Annotation deleted.");
+    this.refreshPanels();
+    return true;
+  }
+
+  async deleteRenderedAnnotation(sourcePath, block) {
+    const file = sourcePath ? this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(sourcePath)) : null;
+    if (!file || typeof file.path !== "string") {
+      new Notice("Could not resolve annotation source note.");
+      return false;
+    }
+
+    const markdown = await this.app.vault.cachedRead(file as any);
+    const items = extractAnnotationItems(markdown);
+    const target =
+      items.find((item) => item.startLine === block.startLine && item.endLine === block.endLine) ||
+      items.find((item) => normalizeAnnotationContent(item.content) === normalizeAnnotationContent(block.content));
+    if (!target) {
+      new Notice("Annotation not found.");
+      return false;
+    }
+
+    return this.deleteAnnotationFromFile(file, target.index);
+  }
+
+  annotationItemAtEditorCursor(editor) {
+    if (!editor || typeof editor.getValue !== "function" || typeof editor.getCursor !== "function") return null;
+    const markdown = editor.getValue();
+    const cursor = editor.getCursor();
+    const offset = this.editorPositionToOffset(markdown, cursor);
+    return findAnnotationItemAtOffset(markdown, offset);
+  }
+
+  deleteAnnotationAtEditor(editor) {
+    const item = this.annotationItemAtEditorCursor(editor);
+    if (!item) {
+      new Notice("Cursor is not inside an AMO annotation.");
+      return false;
+    }
+
+    const markdown = editor.getValue();
+    const result = removeAnnotationByIndex(markdown, item.index);
+    if (!result.removed || !result.range) {
+      new Notice("Annotation not found.");
+      return false;
+    }
+
+    editor.replaceRange(
+      "",
+      this.editorOffsetToPosition(markdown, result.range.startOffset),
+      this.editorOffsetToPosition(markdown, result.range.endOffset)
+    );
+    this.setOperationStatus("Deleted current annotation.", "success");
+    new Notice("Annotation deleted.");
+    this.refreshPanels();
+    return true;
+  }
+
+  editorPositionToOffset(markdown, position) {
+    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
+    const targetLine = Math.max(0, Number(position && position.line) || 0);
+    const targetCh = Math.max(0, Number(position && position.ch) || 0);
+    let offset = 0;
+    const lines = source.split("\n");
+    for (let line = 0; line < Math.min(targetLine, lines.length); line += 1) {
+      offset += lines[line].length + 1;
+    }
+    return Math.min(source.length, offset + targetCh);
+  }
+
+  editorOffsetToPosition(markdown, offset) {
+    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
+    const safeOffset = Math.max(0, Math.min(source.length, Number(offset) || 0));
+    let line = 0;
+    let lastLineStart = 0;
+    for (let index = 0; index < safeOffset; index += 1) {
+      if (source.charCodeAt(index) === 10) {
+        line += 1;
+        lastLineStart = index + 1;
+      }
+    }
+    return {
+      line,
+      ch: safeOffset - lastLineStart,
+    };
+  }
+
+  async updateAmoNoteTitle(file, rawTitle) {
+    if (!file) {
+      new Notice("No active Markdown note.");
+      return false;
+    }
+
+    const displayTitle = normalizeMarkdownTitle(rawTitle);
+    if (!displayTitle) {
+      new Notice("Title cannot be empty.");
+      return false;
+    }
+
+    const markdown = await this.app.vault.cachedRead(file as any);
+    const amo = parseAmoMetadata(markdown);
+    if (!amo.schemaVersion && !amo.sessionId && !amo.noteId && !amo.kind) {
+      new Notice("Current note is not an AMO note.");
+      return false;
+    }
+
+    const metadata = {
+      ...amo,
+      schemaVersion: amo.schemaVersion || 1,
+      displayTitle,
+    };
+    const withMarker = upsertAmoMarker(markdown, metadata);
+    const nextMarkdown = upsertFirstMarkdownHeading(withMarker, displayTitle);
+    await this.app.vault.modify(file, nextMarkdown);
+
+    try {
+      await postJson(joinUrl(this.settings.bridgeUrl, "/api/obsidian/note-title"), {
+        schemaVersion: 1,
+        source: "obsidian-md-anno-tools",
+        vaultRoot: getVaultRoot(this.app),
+        notePath: file.path,
+        noteId: amo.noteId || null,
+        displayTitle,
+      });
+    } catch (error) {
+      this.debugLog("note.title.sync_error", {
+        notePath: file.path,
+        message: messageFromError(error),
+      });
+    }
+
+    this.setOperationStatus("Updated note title: " + displayTitle, "success");
+    new Notice("AMO note title updated.");
+    this.refreshPanels();
+    return true;
+  }
+
   async copyAnnotationsFromActiveFile() {
     const target = this.getActiveMarkdownFileTarget();
     const file = target ? target.file : null;
@@ -1398,8 +1666,8 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       return;
     }
 
-    const amo = parseAmoFrontmatter(markdown);
-    this.debugLog("annotations.frontmatter", {
+    const amo = parseAmoMetadata(markdown);
+    this.debugLog("annotations.metadata", {
       notePath: file.path,
       sessionId: amo.sessionId || null,
       turnId: amo.turnId || null,
@@ -1486,18 +1754,29 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         file: null,
         source: this.isActiveLeafCanvas() ? "canvas-selection-missing" : "none",
         annotations: [],
+        annotationItems: [],
         amo: {},
+        displayTitle: "",
       };
     }
 
     const file = target.file;
     const markdown = await this.app.vault.cachedRead(file as any);
+    const amo = parseAmoMetadata(markdown);
+    const annotationItems = extractAnnotationItems(markdown);
     return {
       file,
       source: target.source,
-      annotations: extractAnnotationContents(markdown),
-      amo: parseAmoFrontmatter(markdown),
+      annotations: annotationItems.map((item) => item.content).filter((content) => content.length > 0),
+      annotationItems,
+      amo,
+      displayTitle: amo.displayTitle || extractFirstMarkdownHeading(markdown) || amo.displayName || this.displayNameForFile(file) || "",
     };
+  }
+
+  displayNameForFile(file) {
+    const name = String((file && file.path) || "").split(/[\\/]/u).pop() || "";
+    return name.replace(/\.md$/iu, "");
   }
 
   async renderAnnotations(root, context) {
@@ -1534,7 +1813,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         ownerLine: block.ownerLine,
         preview: previewText(block.content),
       });
-      context.addChild(new LegacyAnnotationBlockRenderChild(root, this, block.content, context.sourcePath));
+      context.addChild(new LegacyAnnotationBlockRenderChild(root, this, block, context.sourcePath));
       return true;
     }
 

@@ -1,6 +1,6 @@
 # Obsidian Plugin Agent
 
-Updated: 2026-05-19
+Updated: 2026-05-20
 
 This document defines the working charter for a dedicated Obsidian Plugin Agent inside the AMO project. The directory name follows the current project request, `docs/agnets/`; if the project later standardizes on `docs/agents/`, move this file without changing the contract.
 
@@ -38,6 +38,7 @@ Primary documentation scope:
 
 - `docs/agnets/obsidian-plugin-agent.md`
 - `docs/agnets/obsidian-plugin-backlog.md`
+- `docs/agnets/obsidian-canvas-development-guidelines.md`
 - Obsidian-specific sections in `docs/amo-obsidian-bridge-mvp.md`
 
 Shared verification scope:
@@ -148,6 +149,8 @@ For plugin changes, verify the relevant subset:
 
 - Panel actions must operate on the panel-displayed file, not re-resolve Obsidian's active Markdown view at click time.
 - Canvas selection changes must not synchronously refresh the panel during panel render, or Obsidian can freeze from recursive refresh.
+- Canvas rendering must follow `docs/agnets/obsidian-canvas-development-guidelines.md`: JSON Canvas is the data boundary, Markdown note views are the display customization boundary, and Canvas node DOM is not owned by AMO.
+- AMO note property hiding intentionally applies only to opened Markdown note views. Canvas file-node previews may still show native properties until a separate safe Canvas design exists.
 - Obsidian may call Markdown postprocessors per rendered section, so cross-block `[!anno]...[/anno]` rendering needs delayed whole-container passes.
 - Edit/read transitions and canvas embedded previews may mutate the rendered DOM after the first render pass.
 - Some Obsidian mode switches can temporarily lose plugin-owned wrapper DOM while keeping only the inner rendered Markdown. The plugin should watch workspace rebuilds and may trigger a bounded, source-backed rerender when source annotations exist but rich wrappers and raw markers are both absent.

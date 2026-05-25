@@ -74,7 +74,14 @@ Status: user smoke validated for the current Codex CLI MVP loop on 2026-05-20; p
 - Confirm prompt/reply canvas edges visibly connect the source and target nodes and include explicit `fromEnd: none` / `toEnd: arrow` endpoint data.
 - Confirm newly enrolled AMO canvases include `amo.managedBy = agent-monitor-overlay` and `amo.canvasType = agent-flow`.
 - Confirm new generated notes use short physical names such as `Replies/reply 01.md` and `Prompts/prompt 01.md`.
-- Confirm new reply/prompt note frontmatter includes `amo.kind`, `amo.role`, `amo.sequence`, and `amo.displayName`.
+- Confirm new reply/prompt notes use a hidden `<!-- amo: {...} -->` marker instead of visible YAML frontmatter.
+- Confirm AMO note edit/source mode hides the hidden marker line while keeping it in the source file.
+- Confirm broker `.amo/state/note-index.json` records the full metadata for new reply/prompt notes.
+- Confirm new reply/prompt notes render a first H1 display title and the AMO panel can update that title.
+- Confirm AMO Markdown note views hide properties by default and can temporarily show them from the note action button.
+- Confirm Canvas file-node previews may still show native properties in the current MVP, and the note-view property hiding does not affect Canvas zoom/drag/edge behavior.
+- Confirm newly generated Canvas file-node previews no longer show AMO technical properties because new notes do not use visible frontmatter.
+- Confirm annotations can be deleted from the AMO panel, from the note editor context menu/command when the cursor is inside `[!anno]...[/anno]`, and from the rendered annotation shell in note/canvas reading previews.
 - Confirm AMO does not inject controls into canvas node DOM or override `.canvas-node` positioning; node property hiding is deferred until a safe canvas rendering design exists.
 - Confirm each overlay card has a top-right workspace maintenance button whose status dot reflects plugin/vault health.
 - Confirm the card maintenance panel shows folder existence, reply/prompt note counts, canvas counts, AMO canvas marker state, and plugin health.

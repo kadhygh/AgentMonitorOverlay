@@ -15,6 +15,7 @@ const AMO_SCHEMA_VERSION = 1;
 const AMO_CANVAS_PATH = "AgentFlow.canvas";
 const AMO_CANVAS_TYPE = "agent-flow";
 const AMO_CANVAS_MANAGER = "agent-monitor-overlay";
+const AMO_NOTE_INDEX_PATH = path.join("state", "note-index.json");
 const OBSIDIAN_PLUGIN_ID = "md-anno-tools";
 const REPLY_NODE_WIDTH = 520;
 const REPLY_NODE_HEIGHT = 360;
@@ -157,6 +158,12 @@ const server = http.createServer(async (req, res) => {
       const result = handleObsidianAnnotations(payload);
       persistSnapshot();
       publishSessionChanged("obsidian-annotations", result.session);
+      return sendJson(res, 200, result);
+    }
+
+    if (req.method === "POST" && url.pathname === "/api/obsidian/note-title") {
+      const payload = await readJsonBody(req);
+      const result = handleObsidianNoteTitle(payload);
       return sendJson(res, 200, result);
     }
 
@@ -811,6 +818,7 @@ function cleanWorkspaceVault(payload) {
     reset: true,
   });
   resetWorkspaceCanvasBindings(amoRoot);
+  resetWorkspaceNoteIndex(amoRoot);
 
   const clearedSessions = clearWorkspaceBridgeState(workspacePath, vaultRoot);
   const statusAfter = workspaceMaintenanceSnapshot(workspacePath);
@@ -1032,6 +1040,16 @@ function resetWorkspaceCanvasBindings(amoRoot) {
   });
 }
 
+function resetWorkspaceNoteIndex(amoRoot) {
+  const noteIndexPath = path.join(amoRoot, AMO_NOTE_INDEX_PATH);
+  fs.mkdirSync(path.dirname(noteIndexPath), { recursive: true });
+  writeJsonFile(noteIndexPath, {
+    schemaVersion: AMO_SCHEMA_VERSION,
+    notes: {},
+    byPath: {},
+  });
+}
+
 function handleReply(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw httpError(400, "invalid_json", "Reply payload must be a JSON object");
@@ -1079,7 +1097,7 @@ function handleReply(payload) {
   };
 
   const vaultRoot = path.join(amoRoot, "obsidian-vault");
-  const note = writeReplyNote(vaultRoot, record);
+  const note = writeReplyNote(amoRoot, vaultRoot, record);
   const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
 
   const existing = sessions.get(sessionId);
@@ -1220,7 +1238,7 @@ function handlePrompt(payload) {
   };
 
   const vaultRoot = path.join(amoRoot, "obsidian-vault");
-  const note = writePromptNote(vaultRoot, record);
+  const note = writePromptNote(amoRoot, vaultRoot, record);
   const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
 
   const session = {
@@ -1368,6 +1386,76 @@ function handleObsidianAnnotations(payload) {
     prompt,
     annotationCount,
     session,
+  };
+}
+
+function handleObsidianNoteTitle(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Note title payload must be a JSON object");
+  }
+
+  const vaultRootText = normalizeText(payload.vaultRoot || payload.vault_root);
+  const notePath = normalizeText(payload.notePath || payload.note_path);
+  const displayTitle = normalizeNoteDisplayTitle(payload.displayTitle || payload.display_title || payload.title);
+  if (!vaultRootText) {
+    throw httpError(400, "missing_vault_root", "Note title payload must include vaultRoot");
+  }
+  if (!notePath) {
+    throw httpError(400, "missing_note_path", "Note title payload must include notePath");
+  }
+  if (!displayTitle) {
+    throw httpError(400, "missing_display_title", "Note title payload must include displayTitle");
+  }
+
+  const vaultRoot = path.resolve(vaultRootText);
+  const amoRoot = path.dirname(vaultRoot);
+  const workspaceRoot = path.dirname(amoRoot);
+  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
+  if (!workspace || !workspace.workspaceId || !fs.existsSync(vaultRoot)) {
+    throw httpError(400, "workspace_not_enrolled", "Vault root does not belong to an enrolled AMO workspace");
+  }
+
+  const noteId = normalizeText(payload.noteId || payload.note_id);
+  const updatedAt = new Date().toISOString();
+  const noteIndex = readConversationNoteIndex(amoRoot);
+  const existingNoteId = noteId || noteIndex.byPath?.[notePath] || "";
+  const existingRecord = existingNoteId ? noteIndex.notes?.[existingNoteId] : null;
+  const effectiveNoteId =
+    existingNoteId ||
+    `note_${crypto.createHash("sha1").update(`${workspace.workspaceId}:${notePath}`).digest("hex").slice(0, 16)}`;
+
+  upsertConversationNoteIndex(amoRoot, {
+    ...(existingRecord || {}),
+    schemaVersion: AMO_SCHEMA_VERSION,
+    noteId: effectiveNoteId,
+    workspaceId: workspace.workspaceId,
+    workspacePath: normalizeText(workspace.workspacePath) || workspaceRoot,
+    notePath,
+    displayTitle,
+    updatedAt,
+  });
+
+  updateCanvasNoteDisplayTitle(vaultRoot, {
+    noteId: effectiveNoteId,
+    notePath,
+    displayTitle,
+    updatedAt,
+  });
+
+  recordDebugLog("broker", "obsidian.note_title.updated", {
+    workspaceId: workspace.workspaceId,
+    notePath,
+    noteId: effectiveNoteId,
+    displayTitle,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    workspaceId: workspace.workspaceId,
+    noteId: effectiveNoteId,
+    notePath,
+    displayTitle,
   };
 }
 
@@ -1899,6 +1987,7 @@ function installObsidianPlugin(vaultRoot) {
     bridgeUrl: baseUrl(),
     numberAnnotationsInPrompt: Boolean(existingPluginData.numberAnnotationsInPrompt),
     canvasAppendDirection: normalizeCanvasAppendDirection(existingPluginData.canvasAppendDirection),
+    hideAmoNoteProperties: existingPluginData.hideAmoNoteProperties !== false,
   });
 
   enableObsidianPlugin(vaultRoot, OBSIDIAN_PLUGIN_ID);
@@ -2221,28 +2310,20 @@ function resolvePromptWorkspace(payload, existing) {
   );
 }
 
-function writeReplyNote(vaultRoot, record) {
+function writeReplyNote(amoRoot, vaultRoot, record) {
   const noteIdentity = nextConversationNoteIdentity(vaultRoot, "reply");
   const notePath = toVaultRelativePath(vaultRoot, noteIdentity.noteAbsolutePath);
+  const noteMetadata = conversationNoteMetadata({
+    record,
+    noteIdentity,
+    notePath,
+    role: "assistant",
+    kind: "reply",
+  });
   const body = [
-    "---",
-    "amo:",
-    `  schemaVersion: ${AMO_SCHEMA_VERSION}`,
-    `  workspaceId: ${yamlString(record.workspaceId)}`,
-    `  tool: ${yamlString(record.tool)}`,
-    `  role: ${yamlString("assistant")}`,
-    `  kind: ${yamlString("reply")}`,
-    `  sequence: ${noteIdentity.sequence}`,
-    `  displayName: ${yamlString(noteIdentity.displayName)}`,
-    `  sessionId: ${yamlString(record.sessionId)}`,
-    `  turnId: ${yamlString(record.turnId)}`,
-    `  cwd: ${yamlString(record.cwd)}`,
-    `  source: ${yamlString(record.source)}`,
-    `  capturedAt: ${yamlString(record.capturedAt)}`,
-    record.transcriptPath ? `  transcriptPath: ${yamlString(record.transcriptPath)}` : null,
-    "---",
+    renderAmoNoteMarker(noteMetadata),
     "",
-    `# ${noteIdentity.displayName}`,
+    `# ${markdownHeadingText(noteMetadata.displayTitle)}`,
     "",
     record.message,
     "",
@@ -2251,32 +2332,24 @@ function writeReplyNote(vaultRoot, record) {
     .join("\n");
 
   writeTextFile(noteIdentity.noteAbsolutePath, body);
-  return { ...noteIdentity, notePath };
+  upsertConversationNoteIndex(amoRoot, noteMetadata);
+  return { ...noteIdentity, ...noteMetadata, notePath };
 }
 
-function writePromptNote(vaultRoot, record) {
+function writePromptNote(amoRoot, vaultRoot, record) {
   const noteIdentity = nextConversationNoteIdentity(vaultRoot, "prompt");
   const notePath = toVaultRelativePath(vaultRoot, noteIdentity.noteAbsolutePath);
+  const noteMetadata = conversationNoteMetadata({
+    record,
+    noteIdentity,
+    notePath,
+    role: "user",
+    kind: "prompt",
+  });
   const body = [
-    "---",
-    "amo:",
-    `  schemaVersion: ${AMO_SCHEMA_VERSION}`,
-    `  workspaceId: ${yamlString(record.workspaceId)}`,
-    `  tool: ${yamlString(record.tool)}`,
-    `  role: ${yamlString("user")}`,
-    `  kind: ${yamlString("prompt")}`,
-    `  sequence: ${noteIdentity.sequence}`,
-    `  displayName: ${yamlString(noteIdentity.displayName)}`,
-    `  sessionId: ${yamlString(record.sessionId)}`,
-    `  turnId: ${yamlString(record.turnId)}`,
-    `  cwd: ${yamlString(record.cwd)}`,
-    `  source: ${yamlString(record.source)}`,
-    `  capturedAt: ${yamlString(record.capturedAt)}`,
-    record.pendingPromptId ? `  pendingPromptId: ${yamlString(record.pendingPromptId)}` : null,
-    record.transcriptPath ? `  transcriptPath: ${yamlString(record.transcriptPath)}` : null,
-    "---",
+    renderAmoNoteMarker(noteMetadata),
     "",
-    `# ${noteIdentity.displayName}`,
+    `# ${markdownHeadingText(noteMetadata.displayTitle)}`,
     "",
     record.message,
     "",
@@ -2285,7 +2358,128 @@ function writePromptNote(vaultRoot, record) {
     .join("\n");
 
   writeTextFile(noteIdentity.noteAbsolutePath, body);
-  return { ...noteIdentity, notePath };
+  upsertConversationNoteIndex(amoRoot, noteMetadata);
+  return { ...noteIdentity, ...noteMetadata, notePath };
+}
+
+function conversationNoteMetadata({ record, noteIdentity, notePath, role, kind }) {
+  const displayTitle = normalizeNoteDisplayTitle(record.displayTitle || record.display_title || noteIdentity.displayName);
+  const noteId = `note_${crypto
+    .createHash("sha1")
+    .update(`${record.workspaceId}:${record.sessionId}:${record.turnId}:${kind}:${noteIdentity.sequence}:${record.capturedAt}`)
+    .digest("hex")
+    .slice(0, 16)}`;
+
+  return {
+    schemaVersion: AMO_SCHEMA_VERSION,
+    noteId,
+    workspaceId: record.workspaceId,
+    workspacePath: record.workspacePath,
+    notePath,
+    tool: record.tool,
+    role,
+    kind,
+    sequence: noteIdentity.sequence,
+    displayName: noteIdentity.displayName,
+    displayTitle,
+    sessionId: record.sessionId,
+    turnId: record.turnId,
+    cwd: record.cwd,
+    source: record.source,
+    capturedAt: record.capturedAt,
+    pendingPromptId: record.pendingPromptId || null,
+    transcriptPath: record.transcriptPath || null,
+    model: record.model || null,
+    updatedAt: record.capturedAt,
+  };
+}
+
+function renderAmoNoteMarker(metadata) {
+  const marker = {
+    schemaVersion: AMO_SCHEMA_VERSION,
+    noteId: metadata.noteId,
+    workspaceId: metadata.workspaceId,
+    kind: metadata.kind,
+    role: metadata.role,
+    sequence: metadata.sequence,
+    displayName: metadata.displayName,
+    displayTitle: metadata.displayTitle,
+    sessionId: metadata.sessionId,
+    turnId: metadata.turnId,
+    tool: metadata.tool,
+  };
+  const json = JSON.stringify(compactObject(marker)).replace(/--/g, "-\\u002d");
+  return `<!-- amo: ${json} -->`;
+}
+
+function readConversationNoteIndex(amoRoot) {
+  const indexPath = path.join(amoRoot, AMO_NOTE_INDEX_PATH);
+  const index = readJsonFile(indexPath, null);
+  if (!index || typeof index !== "object" || Array.isArray(index)) {
+    return { schemaVersion: AMO_SCHEMA_VERSION, notes: {}, byPath: {} };
+  }
+  if (!index.notes || typeof index.notes !== "object" || Array.isArray(index.notes)) {
+    index.notes = {};
+  }
+  if (!index.byPath || typeof index.byPath !== "object" || Array.isArray(index.byPath)) {
+    index.byPath = {};
+  }
+  index.schemaVersion = index.schemaVersion || AMO_SCHEMA_VERSION;
+  return index;
+}
+
+function upsertConversationNoteIndex(amoRoot, metadata) {
+  const noteId = normalizeText(metadata.noteId);
+  const notePath = normalizeText(metadata.notePath);
+  if (!noteId || !notePath) return null;
+
+  const index = readConversationNoteIndex(amoRoot);
+  const previous = index.notes[noteId] || {};
+  const nextRecord = compactObject({
+    ...previous,
+    ...metadata,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    noteId,
+    notePath,
+    updatedAt: normalizeText(metadata.updatedAt) || new Date().toISOString(),
+  });
+  index.notes[noteId] = nextRecord;
+  index.byPath[notePath] = noteId;
+  writeJsonFile(path.join(amoRoot, AMO_NOTE_INDEX_PATH), index);
+  return nextRecord;
+}
+
+function updateCanvasNoteDisplayTitle(vaultRoot, { noteId, notePath, displayTitle, updatedAt }) {
+  const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
+  if (!fs.existsSync(canvasPath)) return false;
+
+  const canvas = readJsonFile(canvasPath, null);
+  if (!canvas || !Array.isArray(canvas.nodes)) return false;
+
+  let changed = false;
+  for (const node of canvas.nodes) {
+    if (!node || node.type !== "file") continue;
+    const nodeFile = normalizeText(node.file);
+    const nodeNoteId = normalizeText(node.amo && node.amo.noteId);
+    if (nodeFile !== notePath && (!noteId || nodeNoteId !== noteId)) continue;
+    if (!node.amo || typeof node.amo !== "object" || Array.isArray(node.amo)) node.amo = {};
+    node.amo.noteId = noteId || node.amo.noteId || null;
+    node.amo.displayTitle = displayTitle;
+    node.amo.updatedAt = updatedAt;
+    changed = true;
+  }
+
+  if (changed) writeJsonFile(canvasPath, canvas);
+  return changed;
+}
+
+function compactObject(value) {
+  const result = {};
+  for (const [key, item] of Object.entries(value || {})) {
+    if (item === null || item === undefined || item === "") continue;
+    result[key] = item;
+  }
+  return result;
 }
 
 function nextConversationNoteIdentity(vaultRoot, kind) {
@@ -2411,10 +2605,12 @@ function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {
     height: REPLY_NODE_HEIGHT,
     amo: {
       schemaVersion: AMO_SCHEMA_VERSION,
+      noteId: note.noteId || null,
       kind: note.kind || (record.source === "obsidian-annotations" ? "prompt" : "reply"),
       role: note.role || null,
       sequence: Number.isSafeInteger(note.sequence) ? note.sequence : null,
       displayName: note.displayName || null,
+      displayTitle: note.displayTitle || note.displayName || null,
       workspaceId: record.workspaceId,
       tool: record.tool,
       sessionId: record.sessionId,
@@ -2536,6 +2732,18 @@ function toVaultRelativePath(vaultRoot, absolutePath) {
 
 function yamlString(value) {
   return JSON.stringify(value == null ? "" : String(value));
+}
+
+function normalizeNoteDisplayTitle(value) {
+  return normalizeText(value)
+    .replace(/\s+/g, " ")
+    .replace(/^#+\s*/u, "")
+    .trim()
+    .slice(0, 120);
+}
+
+function markdownHeadingText(value) {
+  return normalizeNoteDisplayTitle(value) || "AMO note";
 }
 
 function sanitizeFilePart(value) {

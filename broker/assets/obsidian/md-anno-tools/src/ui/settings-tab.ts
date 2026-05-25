@@ -26,6 +26,18 @@ export class AmoAnnotationSettingTab extends PluginSettingTab {
       });
 
     new Setting(containerEl)
+      .setName("隐藏 AMO note 属性")
+      .setDesc("默认隐藏 AMO 生成 note 顶部的 properties。只作用于 Markdown note，不作用于 Canvas 节点。")
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.hideAmoNoteProperties !== false)
+          .onChange(async (value) => {
+            this.plugin.settings.hideAmoNoteProperties = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
       .setName("Canvas 新 note 追加方向")
       .setDesc("控制 AMO 在 AgentFlow.canvas 中创建新 reply/prompt note 的默认位置。默认向下。")
       .addDropdown((dropdown) => {

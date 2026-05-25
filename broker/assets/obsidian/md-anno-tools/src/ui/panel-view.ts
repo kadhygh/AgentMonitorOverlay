@@ -1,6 +1,6 @@
 import { ButtonComponent, ItemView } from "obsidian";
 import { AMO_PANEL_VIEW_TYPE } from "../core/constants";
-import { getWindowSelectionText, messageFromError, createInfoRow, formatNoteTargetSource, formatTime } from "../core/ui-utils";
+import { getWindowSelectionText, messageFromError, createInfoRow, formatNoteTargetSource, formatTime, previewText } from "../core/ui-utils";
 import { AnnotationInputModal } from "./modals";
 import type { AmoMarkdownAnnotationToolsPlugin } from "../plugin";
 
@@ -63,6 +63,7 @@ export class AmoAnnotationPanelView extends ItemView {
       createInfoRow(summary, "Session", info.amo.sessionId || "Missing AMO metadata");
       createInfoRow(summary, "Turn", info.amo.turnId || "-");
       createInfoRow(summary, "Annotations", String(info.annotations.length));
+      createInfoRow(summary, "Title", info.displayTitle || "-");
       this.plugin.debugLog("panel.render.note", {
         notePath: info.file.path,
         source: info.source,
@@ -76,6 +77,55 @@ export class AmoAnnotationPanelView extends ItemView {
           info.source === "canvas-selection-missing"
             ? "Select a Markdown note node on the canvas."
             : "No active Markdown note.",
+      });
+    }
+
+    const titleSection = root.createDiv({ cls: "amo-panel-section" });
+    titleSection.createEl("h4", { text: "Title" });
+    const titleEditor = titleSection.createDiv({ cls: "amo-panel-title-editor" });
+    const titleInput = document.createElement("input");
+    titleInput.type = "text";
+    titleInput.value = info.displayTitle || "";
+    titleInput.placeholder = "AMO note title";
+    titleEditor.appendChild(titleInput);
+    titleInput.disabled = !info.file;
+    this.addButton(
+      titleEditor,
+      "Save title",
+      async () => {
+        if (!info.file) return;
+        await this.plugin.updateAmoNoteTitle(info.file, titleInput.value);
+        this.render();
+      },
+      Boolean(info.file)
+    );
+
+    const annotationSection = root.createDiv({ cls: "amo-panel-section" });
+    annotationSection.createEl("h4", { text: "Annotations" });
+    const annotationItems = info.annotationItems || [];
+    if (info.file && annotationItems.length > 0) {
+      const list = annotationSection.createDiv({ cls: "amo-panel-annotation-list" });
+      for (const item of annotationItems) {
+        const row = list.createDiv({ cls: "amo-panel-annotation-row" });
+        row.createDiv({
+          cls: "amo-panel-annotation-preview",
+          text: previewText(item.content || "(empty annotation)", 160),
+        });
+        this.addButton(
+          row,
+          "Delete",
+          async () => {
+            if (!info.file) return;
+            await this.plugin.deleteAnnotationFromFile(info.file, item.index);
+            this.render();
+          },
+          true
+        );
+      }
+    } else {
+      annotationSection.createDiv({
+        cls: "amo-panel-muted",
+        text: info.file ? "No annotations found." : "No active Markdown note.",
       });
     }
 

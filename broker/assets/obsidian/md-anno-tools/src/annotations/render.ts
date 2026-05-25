@@ -5,13 +5,15 @@ import { normalizeAnnotationContent } from "./syntax";
 
 export class LegacyAnnotationBlockRenderChild extends MarkdownRenderChild {
   plugin: any;
+  block: any;
   content: string;
   sourcePath: string;
 
-  constructor(containerEl: HTMLElement, plugin: any, content: string, sourcePath?: string) {
+  constructor(containerEl: HTMLElement, plugin: any, block: any, sourcePath?: string) {
     super(containerEl);
     this.plugin = plugin;
-    this.content = content;
+    this.block = block || {};
+    this.content = this.block.content || "";
     this.sourcePath = sourcePath || "";
   }
 
@@ -19,7 +21,9 @@ export class LegacyAnnotationBlockRenderChild extends MarkdownRenderChild {
     this.containerEl.empty();
     this.containerEl.addClass("amo-legacy-annotation-section");
 
-    const wrapper = createAnnotationRichShell();
+    const wrapper = createAnnotationRichShell(() => {
+      void this.plugin.deleteRenderedAnnotation(this.sourcePath, this.block);
+    });
     const body = wrapper.querySelector(".anno-token-content") as HTMLElement | null;
     this.containerEl.appendChild(wrapper);
 
@@ -54,10 +58,28 @@ export class LegacyAnnotationHiddenSectionRenderChild extends MarkdownRenderChil
   }
 }
 
-export function createAnnotationRichShell(): HTMLElement {
+export function createAnnotationRichShell(onDelete?: () => void): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.classList.add("anno-token", "anno-token-block", "anno-token-rich");
   wrapper.setAttribute("data-amo-annotation", "rich");
+
+  if (onDelete) {
+    const deleteButton = document.createElement("button");
+    deleteButton.type = "button";
+    deleteButton.classList.add("anno-token-delete");
+    deleteButton.textContent = "Delete";
+    deleteButton.setAttribute("aria-label", "Delete annotation");
+    deleteButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    deleteButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onDelete();
+    });
+    wrapper.appendChild(deleteButton);
+  }
 
   const badge = document.createElement("span");
   badge.classList.add("anno-token-badge");
