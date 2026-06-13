@@ -37,7 +37,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.20";
+var PLUGIN_VERSION = "1.4.22";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow";
 var DEFAULT_SETTINGS = {
@@ -50,9 +50,11 @@ var AMO_PANEL_VIEW_TYPE = "amo-annotation-panel";
 var AMO_OPEN_PROTOCOL = "amo-open";
 var AMO_SEND_ACTION_CLASS = "amo-send-note-action";
 var AMO_PANEL_ACTION_CLASS = "amo-open-panel-action";
+var AMO_TITLE_ACTION_CLASS = "amo-edit-note-title-action";
 var AMO_NOTE_PROPERTIES_ACTION_CLASS = "amo-toggle-note-properties-action";
 var AMO_CANVAS_SEND_ACTION_CLASS = "amo-send-canvas-note-action";
 var AMO_CANVAS_PANEL_ACTION_CLASS = "amo-open-canvas-panel-action";
+var AMO_CANVAS_TITLE_ACTION_CLASS = "amo-edit-canvas-note-title-action";
 var DEFAULT_CANVAS_PATH = "AgentFlow.canvas";
 var SKIPPED_TAGS = /* @__PURE__ */ new Set(["A", "BUTTON", "CODE", "INPUT", "PRE", "SCRIPT", "STYLE", "TEXTAREA"]);
 
@@ -211,44 +213,24 @@ function renderAmoMarker(metadata) {
   const json = JSON.stringify(marker).replace(/--/gu, "-\\u002d");
   return "<!-- amo: " + json + " -->";
 }
-function extractFirstMarkdownHeading(markdown) {
+function removeAmoDisplayHeading(markdown, title, fallbackTitle = "") {
+  var _a;
   const source = String(markdown || "").replace(/\r\n?/gu, "\n");
-  const frontmatter = source.match(/^---\n[\s\S]*?\n---\n*/u);
-  const body = frontmatter ? source.slice(frontmatter[0].length) : source;
-  const lines = body.split("\n");
-  for (const line of lines) {
-    const match = line.match(/^#\s+(.+)$/u);
-    if (match) return normalizeMarkdownTitle(match[1]);
-    if (line.trim() && !line.startsWith("<!--")) break;
-  }
-  return "";
-}
-function upsertFirstMarkdownHeading(markdown, title) {
-  const cleanTitle = normalizeMarkdownTitle(title) || "AMO note";
-  const source = String(markdown || "").replace(/\r\n?/gu, "\n");
+  const candidates = new Set(
+    [normalizeMarkdownTitle(title), normalizeMarkdownTitle(fallbackTitle)].filter((value) => value.length > 0)
+  );
+  if (candidates.size === 0) return source;
   const frontmatter = source.match(/^---\n[\s\S]*?\n---\n*/u);
   const prefix = frontmatter ? frontmatter[0] : "";
   const body = source.slice(prefix.length);
-  return prefix + upsertFirstMarkdownHeadingInBody(body, cleanTitle);
-}
-function upsertFirstMarkdownHeadingInBody(body, cleanTitle) {
-  const lines = String(body || "").split("\n");
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (/^#\s+.+/u.test(line)) {
-      lines[index] = "# " + cleanTitle;
-      return lines.join("\n");
-    }
-    if (line.trim() && !line.trim().startsWith("<!--") && line.trim() !== "---") {
-      break;
-    }
-  }
-  const source = String(body || "");
-  const marker = source.match(/^<!--\s*amo:\s*\{[\s\S]*?\}\s*-->\n*/u);
-  if (marker) {
-    return marker[0].replace(/\n*$/u, "\n\n") + "# " + cleanTitle + "\n\n" + source.slice(marker[0].length).replace(/^\n*/u, "");
-  }
-  return "# " + cleanTitle + "\n\n" + source.replace(/^\n*/u, "");
+  const marker = body.match(/^<!--\s*amo:\s*\{[\s\S]*?\}\s*-->\n*/u);
+  const markerText = marker ? marker[0] : "";
+  const afterMarker = body.slice(markerText.length);
+  const leadingBlank = ((_a = afterMarker.match(/^\n*/u)) == null ? void 0 : _a[0]) || "";
+  const rest = afterMarker.slice(leadingBlank.length);
+  const heading = rest.match(/^#\s+(.+)\n*/u);
+  if (!heading || !candidates.has(normalizeMarkdownTitle(heading[1]))) return source;
+  return prefix + markerText.replace(/\n*$/u, "\n\n") + rest.slice(heading[0].length).replace(/^\n*/u, "");
 }
 function normalizeMarkdownTitle(value) {
   return String(value || "").replace(/\r?\n/gu, " ").replace(/\s+/gu, " ").replace(/^#+\s*/u, "").trim().slice(0, 120);
@@ -718,6 +700,47 @@ var CanvasNoteTargetModal = class extends import_obsidian.Modal {
   }
   async submit(target) {
     await this.onSelect(target);
+    this.close();
+  }
+};
+var NoteTitleModal = class extends import_obsidian.Modal {
+  constructor(app, currentTitle, notePath, onSubmit) {
+    super(app);
+    this.currentTitle = currentTitle || "";
+    this.notePath = notePath || "";
+    this.onSubmit = onSubmit;
+  }
+  onOpen() {
+    this.modalEl.addClass("anno-modal");
+    this.titleEl.setText("Edit AMO Title");
+    this.contentEl.createEl("p", {
+      text: this.notePath ? "This changes the rendered AMO title, not the note file name. Leave it empty to hide the AMO title: " + this.notePath : "This changes the rendered AMO title, not the note file name. Leave it empty to hide the AMO title."
+    });
+    this.inputComponent = new import_obsidian.TextComponent(this.contentEl);
+    this.inputComponent.setPlaceholder("Display title");
+    this.inputComponent.setValue(this.currentTitle);
+    this.inputComponent.inputEl.addClass("anno-modal-input");
+    const actions = this.contentEl.createDiv({ cls: "anno-modal-actions" });
+    new import_obsidian.ButtonComponent(actions).setButtonText("Save").setCta().onClick(async () => {
+      await this.submit();
+    });
+    new import_obsidian.ButtonComponent(actions).setButtonText("Cancel").onClick(() => {
+      this.close();
+    });
+    this.scope.register([], "Enter", () => {
+      void this.submit();
+      return false;
+    });
+    window.setTimeout(() => {
+      this.inputComponent.inputEl.focus();
+      this.inputComponent.inputEl.select();
+    }, 0);
+  }
+  onClose() {
+    this.contentEl.empty();
+  }
+  async submit() {
+    await this.onSubmit(this.inputComponent.getValue());
     this.close();
   }
 };
@@ -1324,7 +1347,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       this.panelRefreshTimer = null;
     }
     document.querySelectorAll(
-      "." + AMO_SEND_ACTION_CLASS + ", ." + AMO_PANEL_ACTION_CLASS + ", ." + AMO_NOTE_PROPERTIES_ACTION_CLASS + ", ." + AMO_CANVAS_SEND_ACTION_CLASS + ", ." + AMO_CANVAS_PANEL_ACTION_CLASS
+      "." + AMO_SEND_ACTION_CLASS + ", ." + AMO_PANEL_ACTION_CLASS + ", ." + AMO_TITLE_ACTION_CLASS + ", ." + AMO_NOTE_PROPERTIES_ACTION_CLASS + ", ." + AMO_CANVAS_SEND_ACTION_CLASS + ", ." + AMO_CANVAS_PANEL_ACTION_CLASS + ", ." + AMO_CANVAS_TITLE_ACTION_CLASS
     ).forEach((el) => el.remove());
     this.clearAmoNotePropertyViewClasses();
   }
@@ -1758,6 +1781,16 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
         });
         panelAction.addClass(AMO_PANEL_ACTION_CLASS);
       }
+      if (!view.containerEl.querySelector("." + AMO_TITLE_ACTION_CLASS)) {
+        const titleAction = view.addAction("pencil", "Edit AMO note title", () => {
+          if (!view.file) {
+            new import_obsidian5.Notice("No active Markdown note.");
+            return;
+          }
+          void this.editAmoNoteTitle(view.file);
+        });
+        titleAction.addClass(AMO_TITLE_ACTION_CLASS);
+      }
       if (!view.containerEl.querySelector("." + AMO_NOTE_PROPERTIES_ACTION_CLASS)) {
         const propertiesAction = view.addAction("list-collapse", "Show/hide AMO note properties", () => {
           void this.toggleAmoNotePropertiesForView(view);
@@ -1791,7 +1824,36 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
           canvasPath: view.file && view.file.path
         });
       }
+      if (!view.containerEl.querySelector("." + AMO_CANVAS_TITLE_ACTION_CLASS)) {
+        const titleAction = view.addAction("pencil", "Edit selected note title", () => {
+          void this.editTitleFromCanvas(view);
+        });
+        titleAction.addClass(AMO_CANVAS_TITLE_ACTION_CLASS);
+        this.debugLog("canvas.action.added", {
+          action: "title",
+          canvasPath: view.file && view.file.path
+        });
+      }
     }
+  }
+  async editTitleFromCanvas(view) {
+    const rememberedBefore = this.getRememberedCanvasMarkdownFileTarget(view);
+    const selectedCount = collectCanvasSelectedNodes(view && view.canvas).length;
+    const file = this.getCanvasMarkdownFileForAction(view);
+    this.debugLog("canvas.title.clicked", {
+      canvasPath: view && view.file && view.file.path,
+      targetPath: file && file.path,
+      rememberedPathBefore: rememberedBefore && rememberedBefore.file && rememberedBefore.file.path,
+      selectedCount
+    });
+    if (file) {
+      await this.editAmoNoteTitle(file);
+      return;
+    }
+    await this.chooseCanvasMarkdownFile(view, "Edit title", async (selectedFile) => {
+      this.rememberCanvasMarkdownFile(view, selectedFile.path);
+      await this.editAmoNoteTitle(selectedFile);
+    });
   }
   async sendAnnotationsFromCanvas(view) {
     const rememberedBefore = this.getRememberedCanvasMarkdownFileTarget(view);
@@ -2368,10 +2430,6 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       return false;
     }
     const displayTitle = normalizeMarkdownTitle(rawTitle);
-    if (!displayTitle) {
-      new import_obsidian5.Notice("Title cannot be empty.");
-      return false;
-    }
     const markdown = await this.app.vault.cachedRead(file);
     const amo = parseAmoMetadata(markdown);
     if (!amo.schemaVersion && !amo.sessionId && !amo.noteId && !amo.kind) {
@@ -2384,7 +2442,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       displayTitle
     };
     const withMarker = upsertAmoMarker(markdown, metadata);
-    const nextMarkdown = upsertFirstMarkdownHeading(withMarker, displayTitle);
+    const nextMarkdown = removeAmoDisplayHeading(withMarker, amo.displayTitle, amo.displayName || this.displayNameForFile(file));
     await this.app.vault.modify(file, nextMarkdown);
     try {
       await postJson(joinUrl(this.settings.bridgeUrl, "/api/obsidian/note-title"), {
@@ -2401,10 +2459,28 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
         message: messageFromError(error)
       });
     }
-    this.setOperationStatus("Updated note title: " + displayTitle, "success");
-    new import_obsidian5.Notice("AMO note title updated.");
+    this.setOperationStatus(displayTitle ? "Updated note title: " + displayTitle : "Cleared AMO note title.", "success");
+    new import_obsidian5.Notice(displayTitle ? "AMO note title updated." : "AMO note title cleared.");
     this.refreshPanels();
     return true;
+  }
+  async editAmoNoteTitle(file) {
+    if (!file) {
+      new import_obsidian5.Notice("No active Markdown note.");
+      return;
+    }
+    let markdown = "";
+    try {
+      markdown = await this.app.vault.cachedRead(file);
+    } catch (error) {
+      new import_obsidian5.Notice("Could not read note: " + messageFromError(error));
+      return;
+    }
+    const amo = parseAmoMetadata(markdown);
+    const currentTitle = amo.displayTitle || "";
+    new NoteTitleModal(this.app, currentTitle, file.path, async (value) => {
+      await this.updateAmoNoteTitle(file, value);
+    }).open();
   }
   async copyAnnotationsFromActiveFile() {
     const target = this.getActiveMarkdownFileTarget();
@@ -2581,7 +2657,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       annotations: annotationItems.map((item) => item.content).filter((content) => content.length > 0),
       annotationItems,
       amo,
-      displayTitle: amo.displayTitle || extractFirstMarkdownHeading(markdown) || amo.displayName || this.displayNameForFile(file) || ""
+      displayTitle: amo.displayTitle || ""
     };
   }
   displayNameForFile(file) {
@@ -2589,6 +2665,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     return name.replace(/\.md$/iu, "");
   }
   async renderAnnotations(root, context) {
+    await this.renderAmoNoteDisplayHeader(root, context);
     if (await this.renderLegacyAnnotationSection(root, context)) return;
     if (rootContainsAnnotationMarkers(root)) {
       this.debugLog("render.postprocessor", {
@@ -2597,6 +2674,59 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       });
     }
     this.replaceInlineAnnotations(root);
+  }
+  async renderAmoNoteDisplayHeader(root, context) {
+    if (!(root instanceof HTMLElement) || !context || typeof context.getSectionInfo !== "function") return false;
+    if (root.querySelector(".amo-note-display-header")) return true;
+    const section = context.getSectionInfo(root);
+    if (!section || typeof section.text !== "string") return false;
+    const file = context.sourcePath ? this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(context.sourcePath)) : null;
+    if (!file || typeof file.path !== "string") return false;
+    let markdown = "";
+    try {
+      markdown = await this.app.vault.cachedRead(file);
+    } catch (e) {
+      return false;
+    }
+    const amo = parseAmoMetadata(markdown);
+    const displayTitle = normalizeMarkdownTitle(amo.displayTitle);
+    if (!displayTitle) return false;
+    const firstContentLine = this.firstAmoNoteContentLine(markdown);
+    if (firstContentLine < 0) return false;
+    const lineStart = Number(section.lineStart);
+    const lineEnd = Number(section.lineEnd);
+    if (!Number.isFinite(lineStart) || !Number.isFinite(lineEnd)) return false;
+    if (!(lineStart <= firstContentLine && firstContentLine <= lineEnd)) return false;
+    const header = document.createElement("div");
+    header.classList.add("amo-note-display-header");
+    header.setAttribute("data-amo-note-title", "true");
+    const title = header.createDiv({ cls: "amo-note-display-title" });
+    title.setText(displayTitle);
+    const originalName = amo.displayName || this.displayNameForFile(file);
+    if (originalName) {
+      const subtitle = header.createDiv({ cls: "amo-note-display-subtitle" });
+      subtitle.setText(originalName);
+    }
+    root.prepend(header);
+    return true;
+  }
+  firstAmoNoteContentLine(markdown) {
+    const lines = String(markdown || "").replace(/\r\n?/gu, "\n").split("\n");
+    let index = 0;
+    if (lines[index] === "---") {
+      index += 1;
+      while (index < lines.length && lines[index] !== "---") index += 1;
+      if (index < lines.length) index += 1;
+    }
+    while (index < lines.length) {
+      const trimmed = String(lines[index] || "").trim();
+      if (!trimmed || /^<!--\s*amo:\s*\{[\s\S]*\}\s*-->$/u.test(trimmed)) {
+        index += 1;
+        continue;
+      }
+      return index;
+    }
+    return -1;
   }
   async renderLegacyAnnotationSection(root, context) {
     if (!(root instanceof HTMLElement) || !context || typeof context.getSectionInfo !== "function") return false;

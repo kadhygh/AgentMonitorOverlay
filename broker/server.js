@@ -577,6 +577,9 @@ function inspectWorkspace(payload) {
   const hasAmo = fs.existsSync(path.join(amoRoot, "workspace.json"));
   const hasCodexDir = fs.existsSync(path.join(workspacePath, ".codex"));
   const hasCodexHooks = fs.existsSync(path.join(workspacePath, ".codex", "hooks.json"));
+  const hasClaudeDir = fs.existsSync(path.join(workspacePath, ".claude"));
+  const hasClaudeLocalSettings = fs.existsSync(path.join(workspacePath, ".claude", "settings.local.json"));
+  const hasClaudeProjectSettings = fs.existsSync(path.join(workspacePath, ".claude", "settings.json"));
   const rootIndicators = [".git", "package.json", "pyproject.toml", "Cargo.toml"].filter((name) => {
     return fs.existsSync(path.join(workspacePath, name));
   });
@@ -585,11 +588,42 @@ function inspectWorkspace(payload) {
   if (hasAmo) evidence.push("existing .amo workspace metadata found");
   if (hasCodexDir) evidence.push("existing .codex directory found");
   if (hasCodexHooks) evidence.push("existing .codex/hooks.json found and will be merged");
+  if (hasClaudeDir) evidence.push("existing .claude directory found");
+  if (hasClaudeLocalSettings) evidence.push("existing .claude/settings.local.json found and will be merged");
+  if (hasClaudeProjectSettings) evidence.push("existing .claude/settings.json found");
   if (rootIndicators.length > 0) evidence.push(`project indicators: ${rootIndicators.join(", ")}`);
   if (writable) evidence.push("workspace is writable");
 
   const codexStatus = writable ? "available" : "blocked";
-  const confidence = hasCodexDir || hasCodexHooks ? "high" : rootIndicators.length > 0 ? "medium" : "low";
+  const claudeStatus = writable ? "available" : "blocked";
+  const codexConfidence = hasCodexDir || hasCodexHooks ? "high" : rootIndicators.length > 0 ? "medium" : "low";
+  const claudeConfidence =
+    hasClaudeDir || hasClaudeLocalSettings || hasClaudeProjectSettings ? "high" : rootIndicators.length > 0 ? "medium" : "low";
+  const commonDirectoriesToCreate = [
+    ".amo",
+    ".amo/adapters",
+    ".amo/hooks",
+    ".amo/state",
+    ".amo/logs",
+    ".amo/backups",
+    ".amo/obsidian-vault",
+    ".amo/obsidian-vault/Replies",
+    ".amo/obsidian-vault/Prompts",
+    ".amo/obsidian-vault/.obsidian",
+    ".amo/obsidian-vault/.obsidian/plugins",
+    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}`,
+  ];
+  const commonFilesToWrite = [
+    ".amo/workspace.json",
+    ".amo/enrollment.json",
+    `.amo/obsidian-vault/${AMO_CANVAS_PATH}`,
+    ".amo/obsidian-vault/.obsidian/community-plugins.json",
+    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/manifest.json`,
+    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`,
+    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/styles.css`,
+    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/data.json`,
+    ".amo/.gitignore",
+  ];
 
   return {
     ok: true,
@@ -604,38 +638,17 @@ function inspectWorkspace(payload) {
         id: "codex-cli",
         label: "Codex CLI",
         status: codexStatus,
-        confidence,
+        confidence: codexConfidence,
         scope: "project-local",
         reason: writable
           ? "Codex CLI can use a project-local Stop hook adapter in this workspace."
           : "Workspace is not writable.",
         evidence,
-        directoriesToCreate: [
-          ".amo",
-          ".amo/adapters",
-          ".amo/hooks",
-          ".amo/state",
-          ".amo/logs",
-          ".amo/backups",
-          ".amo/obsidian-vault",
-          ".amo/obsidian-vault/Replies",
-          ".amo/obsidian-vault/Prompts",
-          ".amo/obsidian-vault/.obsidian",
-          ".amo/obsidian-vault/.obsidian/plugins",
-          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}`,
-        ],
+        directoriesToCreate: [...commonDirectoriesToCreate, ".codex"],
         filesToWrite: [
-          ".amo/workspace.json",
-          ".amo/enrollment.json",
           ".amo/adapters/codex-cli.json",
           ".amo/hooks/codex-stop-message.mjs",
-          `.amo/obsidian-vault/${AMO_CANVAS_PATH}`,
-          ".amo/obsidian-vault/.obsidian/community-plugins.json",
-          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/manifest.json`,
-          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`,
-          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/styles.css`,
-          `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/data.json`,
-          ".amo/.gitignore",
+          ...commonFilesToWrite,
         ],
         filesToMerge: [".codex/hooks.json"],
         risks: [
@@ -643,10 +656,32 @@ function inspectWorkspace(payload) {
           "Codex hook payloads do not provide native HWND/PID; window routing should use title/project hints unless separately bound.",
         ],
       },
+      {
+        id: "claude-cli",
+        label: "Claude CLI",
+        status: claudeStatus,
+        confidence: claudeConfidence,
+        scope: "project-local",
+        reason: writable
+          ? "Claude CLI can use project-local .claude/settings.local.json hooks for prompt/reply capture."
+          : "Workspace is not writable.",
+        evidence,
+        directoriesToCreate: [...commonDirectoriesToCreate, ".claude"],
+        filesToWrite: [
+          ".amo/adapters/claude-cli.json",
+          ".amo/hooks/claude-message.mjs",
+          ...commonFilesToWrite,
+        ],
+        filesToMerge: [".claude/settings.local.json"],
+        risks: [
+          "Claude Code may require reviewing hooks with /hooks before first use.",
+          "Claude hook payloads do not provide native HWND/PID; window routing should use title/project hints unless separately bound.",
+          "AMO writes only .claude/settings.local.json so the hook stays local to this machine.",
+        ],
+      },
     ],
     deferredAdapters: [
       deferredAdapter("codex-app", "Codex App", "Direct Codex App integration is deferred until its local control surface is defined."),
-      deferredAdapter("claude-cli", "Claude CLI", "Claude CLI reply capture is deferred; status hooks have been smoke-tested separately."),
       deferredAdapter("kiro-ide", "Kiro IDE", "Kiro IDE hook install target and payload shape still need local verification."),
     ],
   };
@@ -654,15 +689,21 @@ function inspectWorkspace(payload) {
 
 function enrollWorkspace(payload) {
   const requestedAdapters = normalizeAdapterIds(payload?.adapters || payload?.adapterIds || payload?.adapter_ids);
-  const unsupported = requestedAdapters.filter((id) => id !== "codex-cli");
+  const supportedAdapterIds = new Set(["codex-cli", "claude-cli"]);
+  const unsupported = requestedAdapters.filter((id) => !supportedAdapterIds.has(id));
   if (unsupported.length > 0) {
     throw httpError(400, "unsupported_adapter", `Unsupported MVP adapter(s): ${unsupported.join(", ")}`);
   }
 
   const inspection = inspectWorkspace(payload);
-  const codexPlan = inspection.supportedAdapters.find((adapter) => adapter.id === "codex-cli");
-  if (!codexPlan || codexPlan.status !== "available") {
-    throw httpError(400, "workspace_not_writable", "Workspace cannot be enrolled because it is not writable.");
+  const requestedPlans = requestedAdapters.map((id) => inspection.supportedAdapters.find((adapter) => adapter.id === id));
+  const unavailablePlan = requestedPlans.find((plan) => !plan || plan.status !== "available");
+  if (unavailablePlan) {
+    throw httpError(
+      400,
+      "workspace_not_writable",
+      `Workspace cannot be enrolled for ${unavailablePlan?.id || "requested adapter"} because it is not available.`
+    );
   }
 
   const workspacePath = inspection.workspacePath;
@@ -672,8 +713,16 @@ function enrollWorkspace(payload) {
   const installedFiles = [];
   const mergedFiles = [];
   const backups = [];
+  const installedAdapters = [];
+  const enrollmentAdapters = [];
 
-  for (const dir of codexPlan.directoriesToCreate) {
+  const directoriesToCreate = new Set();
+  for (const plan of requestedPlans) {
+    for (const dir of plan?.directoriesToCreate || []) {
+      directoriesToCreate.add(dir);
+    }
+  }
+  for (const dir of directoriesToCreate) {
     fs.mkdirSync(path.join(workspacePath, dir), { recursive: true });
   }
 
@@ -694,24 +743,75 @@ function enrollWorkspace(payload) {
   });
   installedFiles.push(".amo/workspace.json");
 
-  const adapterFile = path.join(amoRoot, "adapters", "codex-cli.json");
-  const hookScriptPath = path.join(amoRoot, "hooks", "codex-stop-message.mjs");
-  writeJsonFile(adapterFile, {
-    schemaVersion: AMO_SCHEMA_VERSION,
-    id: "codex-cli",
-    label: "Codex CLI",
-    status: "installed",
-    installedAt: now,
-    bridgeEventsUrl: `${baseUrl()}/api/events`,
-    bridgeRepliesUrl: `${baseUrl()}/api/replies`,
-    bridgePromptsUrl: `${baseUrl()}/api/prompts`,
-    hookScriptPath,
-    cacheFallbackPath: path.join(workspacePath, ".codex", "cache"),
-  });
-  installedFiles.push(".amo/adapters/codex-cli.json");
+  if (requestedAdapters.includes("codex-cli")) {
+    const adapterFile = path.join(amoRoot, "adapters", "codex-cli.json");
+    const hookScriptPath = path.join(amoRoot, "hooks", "codex-stop-message.mjs");
+    writeJsonFile(adapterFile, {
+      schemaVersion: AMO_SCHEMA_VERSION,
+      id: "codex-cli",
+      label: "Codex CLI",
+      status: "installed",
+      installedAt: now,
+      bridgeEventsUrl: `${baseUrl()}/api/events`,
+      bridgeRepliesUrl: `${baseUrl()}/api/replies`,
+      bridgePromptsUrl: `${baseUrl()}/api/prompts`,
+      hookScriptPath,
+      cacheFallbackPath: path.join(workspacePath, ".codex", "cache"),
+    });
+    installedFiles.push(".amo/adapters/codex-cli.json");
 
-  writeTextFile(hookScriptPath, codexReplyHookScript());
-  installedFiles.push(".amo/hooks/codex-stop-message.mjs");
+    writeTextFile(hookScriptPath, codexReplyHookScript());
+    installedFiles.push(".amo/hooks/codex-stop-message.mjs");
+
+    const mergeResult = mergeCodexHooks(workspacePath, hookScriptPath, amoRoot);
+    if (mergeResult.changed) {
+      mergedFiles.push(".codex/hooks.json");
+    }
+    backups.push(...mergeResult.backups);
+    installedAdapters.push("codex-cli");
+    enrollmentAdapters.push({
+      id: "codex-cli",
+      status: "installed",
+      installedAt: now,
+      hookScriptPath,
+      mergedFiles: [".codex/hooks.json"],
+    });
+  }
+
+  if (requestedAdapters.includes("claude-cli")) {
+    const adapterFile = path.join(amoRoot, "adapters", "claude-cli.json");
+    const hookScriptPath = path.join(amoRoot, "hooks", "claude-message.mjs");
+    writeJsonFile(adapterFile, {
+      schemaVersion: AMO_SCHEMA_VERSION,
+      id: "claude-cli",
+      label: "Claude CLI",
+      status: "installed",
+      installedAt: now,
+      bridgeEventsUrl: `${baseUrl()}/api/events`,
+      bridgeRepliesUrl: `${baseUrl()}/api/replies`,
+      bridgePromptsUrl: `${baseUrl()}/api/prompts`,
+      hookScriptPath,
+      cacheFallbackPath: path.join(amoRoot, "logs", "claude-cache"),
+    });
+    installedFiles.push(".amo/adapters/claude-cli.json");
+
+    writeTextFile(hookScriptPath, claudeMessageHookScript());
+    installedFiles.push(".amo/hooks/claude-message.mjs");
+
+    const mergeResult = mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot);
+    if (mergeResult.changed) {
+      mergedFiles.push(".claude/settings.local.json");
+    }
+    backups.push(...mergeResult.backups);
+    installedAdapters.push("claude-cli");
+    enrollmentAdapters.push({
+      id: "claude-cli",
+      status: "installed",
+      installedAt: now,
+      hookScriptPath,
+      mergedFiles: [".claude/settings.local.json"],
+    });
+  }
 
   writeTextFile(path.join(amoRoot, ".gitignore"), amoGitignore());
   installedFiles.push(".amo/.gitignore");
@@ -728,26 +828,12 @@ function enrollWorkspace(payload) {
   const pluginInstall = installObsidianPlugin(vaultRoot);
   installedFiles.push(...pluginInstall.installedFiles);
 
-  const mergeResult = mergeCodexHooks(workspacePath, hookScriptPath, amoRoot);
-  if (mergeResult.changed) {
-    mergedFiles.push(".codex/hooks.json");
-  }
-  backups.push(...mergeResult.backups);
-
   writeJsonFile(path.join(amoRoot, "enrollment.json"), {
     schemaVersion: AMO_SCHEMA_VERSION,
     workspaceId: inspection.workspaceId,
     workspacePath,
     updatedAt: now,
-    adapters: [
-      {
-        id: "codex-cli",
-        status: "installed",
-        installedAt: now,
-        hookScriptPath,
-        mergedFiles,
-      },
-    ],
+    adapters: enrollmentAdapters,
     deferredAdapters: inspection.deferredAdapters,
   });
   installedFiles.push(".amo/enrollment.json");
@@ -766,7 +852,7 @@ function enrollWorkspace(payload) {
     workspaceId: inspection.workspaceId,
     workspacePath,
     deploymentRoot: AMO_DIR,
-    installedAdapters: ["codex-cli"],
+    installedAdapters,
     installedFiles,
     mergedFiles,
     backups,
@@ -1121,6 +1207,13 @@ function handleReply(payload) {
     lastReplyAt: capturedAt,
     lastReplyNote: note.notePath,
     lastReplyNoteAbsolutePath: note.noteAbsolutePath,
+    lastPromptAt: existing?.lastPromptAt || null,
+    lastPromptNote: existing?.lastPromptNote || null,
+    lastPromptNoteAbsolutePath: existing?.lastPromptNoteAbsolutePath || null,
+    lastPromptCanvasNodeId: existing?.lastPromptCanvasNodeId || null,
+    lastPromptHash: existing?.lastPromptHash || null,
+    lastPromptPendingPromptId: existing?.lastPromptPendingPromptId || null,
+    lastPromptSource: existing?.lastPromptSource || null,
     canvasPath: canvas.canvasPath,
     canvasAbsolutePath: canvas.canvasAbsolutePath,
     canvasNodeId: canvas.canvasNodeId,
@@ -1403,10 +1496,6 @@ function handleObsidianNoteTitle(payload) {
   if (!notePath) {
     throw httpError(400, "missing_note_path", "Note title payload must include notePath");
   }
-  if (!displayTitle) {
-    throw httpError(400, "missing_display_title", "Note title payload must include displayTitle");
-  }
-
   const vaultRoot = path.resolve(vaultRootText);
   const amoRoot = path.dirname(vaultRoot);
   const workspaceRoot = path.dirname(amoRoot);
@@ -2097,6 +2186,70 @@ function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
   return { changed: true, backups };
 }
 
+function mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot) {
+  const claudeDir = path.join(workspacePath, ".claude");
+  const settingsPath = path.join(claudeDir, "settings.local.json");
+  const command = `node "${hookScriptPath}"`;
+  const hookEntry = {
+    hooks: [
+      {
+        type: "command",
+        command,
+        timeout: 10,
+      },
+    ],
+  };
+  const permissionHookEntry = {
+    matcher: "*",
+    hooks: hookEntry.hooks,
+  };
+
+  fs.mkdirSync(claudeDir, { recursive: true });
+
+  const existed = fs.existsSync(settingsPath);
+  const rawBefore = existed ? fs.readFileSync(settingsPath, "utf8") : "";
+  const config = existed ? readJsonFileStrict(settingsPath) : {};
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw httpError(409, "invalid_claude_settings", ".claude/settings.local.json must be a JSON object");
+  }
+
+  if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) {
+    config.hooks = {};
+  }
+  for (const eventName of ["UserPromptSubmit", "Stop", "PermissionRequest"]) {
+    if (!Array.isArray(config.hooks[eventName])) {
+      config.hooks[eventName] = [];
+    }
+  }
+
+  if (!JSON.stringify(config.hooks.UserPromptSubmit).includes("claude-message.mjs")) {
+    config.hooks.UserPromptSubmit.push(hookEntry);
+  }
+  if (!JSON.stringify(config.hooks.Stop).includes("claude-message.mjs")) {
+    config.hooks.Stop.push(hookEntry);
+  }
+  if (!JSON.stringify(config.hooks.PermissionRequest).includes("claude-message.mjs")) {
+    config.hooks.PermissionRequest.push(permissionHookEntry);
+  }
+
+  const nextRaw = `${JSON.stringify(config, null, 2)}\n`;
+  if (rawBefore === nextRaw) {
+    return { changed: false, backups: [] };
+  }
+
+  const backups = [];
+  if (existed) {
+    const backupName = `claude-settings-local-${fileSafeTimestamp(new Date().toISOString())}.json`;
+    const backupPath = path.join(amoRoot, "backups", backupName);
+    fs.mkdirSync(path.dirname(backupPath), { recursive: true });
+    fs.copyFileSync(settingsPath, backupPath);
+    backups.push(path.join(".amo", "backups", backupName));
+  }
+
+  writeTextFile(settingsPath, nextRaw);
+  return { changed: true, backups };
+}
+
 function codexReplyHookScript() {
   return [
     "import fs from 'node:fs/promises';",
@@ -2119,7 +2272,8 @@ function codexReplyHookScript() {
     "",
     "try {",
     "  const rawInput = await readStdin();",
-    "  const payload = rawInput.trim().length > 0 ? JSON.parse(rawInput) : {};",
+    "  const inputText = rawInput.replace(/^\\uFEFF/u, '');",
+    "  const payload = inputText.trim().length > 0 ? JSON.parse(inputText) : {};",
     "  const eventName = typeof payload.hook_event_name === 'string' ? payload.hook_event_name : 'unknown';",
     "  const lowerEventName = eventName.toLowerCase();",
     "  const isPromptEvent = lowerEventName === 'userpromptsubmit';",
@@ -2224,10 +2378,188 @@ function codexReplyHookScript() {
     "  return String(value || 'turn').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'turn';",
     "}",
     "",
+  "function renderMarkdown(record) {",
+  "  const lines = [",
+  "    `- captured_at: ${record.capturedAt}`,",
+    "    `- session_id: ${record.sessionId}`,",
+    "    `- turn_id: ${record.turnId}`,",
+    "    `- model: ${record.model ?? 'unknown-model'}`,",
+    "    `- hook_event_name: ${record.hookEventName}`,",
+    "    `- role: ${record.role}`,",
+    "    `- stop_hook_active: ${record.stopHookActive}`,",
+    "  ];",
+    "  if (record.cwd) lines.push(`- cwd: ${record.cwd}`);",
+    "  if (record.transcriptPath) lines.push(`- transcript_path: ${record.transcriptPath}`);",
+    "  lines.push('', '---', '', record.message, '');",
+    "  return lines.join('\\n');",
+    "}",
+    "",
+  ].join("\n");
+}
+
+function claudeMessageHookScript() {
+  return [
+    "import fs from 'node:fs/promises';",
+    "import path from 'node:path';",
+    "import { fileURLToPath } from 'node:url';",
+    "",
+    "const __filename = fileURLToPath(import.meta.url);",
+    "const __dirname = path.dirname(__filename);",
+    "const amoRoot = path.resolve(__dirname, '..');",
+    "const projectRoot = path.resolve(amoRoot, '..');",
+    "const adapterConfigFile = path.join(amoRoot, 'adapters', 'claude-cli.json');",
+    "const cacheRoot = path.join(amoRoot, 'logs', 'claude-cache');",
+    "const assistantArchiveRoot = path.join(cacheRoot, 'assistant-turns');",
+    "const userArchiveRoot = path.join(cacheRoot, 'user-prompts');",
+    "const latestAssistantFile = path.join(cacheRoot, 'latest-assistant-message.md');",
+    "const latestAssistantJsonFile = path.join(cacheRoot, 'latest-assistant-message.json');",
+    "const latestUserPromptFile = path.join(cacheRoot, 'latest-user-prompt.md');",
+    "const latestUserPromptJsonFile = path.join(cacheRoot, 'latest-user-prompt.json');",
+    "const errorLogFile = path.join(cacheRoot, 'claude-hook-errors.log');",
+    "",
+    "try {",
+    "  const rawInput = await readStdin();",
+    "  const inputText = rawInput.replace(/^\\uFEFF/u, '');",
+    "  const payload = inputText.trim().length > 0 ? JSON.parse(inputText) : {};",
+    "  const eventName = typeof payload.hook_event_name === 'string' ? payload.hook_event_name : 'unknown';",
+    "  const lowerEventName = eventName.toLowerCase();",
+    "  const isPromptEvent = lowerEventName === 'userpromptsubmit';",
+    "  const isReplyEvent = lowerEventName === 'stop';",
+    "  const isEventOnly = !isPromptEvent && !isReplyEvent;",
+    "  const message = normalizeMessage(",
+    "    isPromptEvent",
+    "      ? payload.prompt ?? payload.message",
+    "      : isReplyEvent",
+    "        ? payload.last_assistant_message",
+    "        : fallbackEventMessage(payload, eventName)",
+    "  );",
+    "",
+    "  if (message || isEventOnly) {",
+    "    const capturedAt = new Date().toISOString();",
+    "    const cwd = typeof payload.cwd === 'string' && payload.cwd ? payload.cwd : projectRoot;",
+    "    const turnId = typeof payload.turn_id === 'string' && payload.turn_id",
+    "      ? payload.turn_id",
+    "      : `${lowerEventName || 'event'}-${fileSafeTimestamp(capturedAt)}`;",
+    "    const record = {",
+    "      schemaVersion: 1,",
+    "      tool: 'claude',",
+    "      role: isPromptEvent ? 'user' : isReplyEvent ? 'assistant' : 'event',",
+    "      source: isPromptEvent ? 'claude-user-prompt-hook' : isReplyEvent ? 'claude-stop-hook' : 'claude-event-hook',",
+    "      capturedAt,",
+    "      sessionId: typeof payload.session_id === 'string' ? payload.session_id : 'unknown-session',",
+    "      turnId,",
+    "      model: typeof payload.model === 'string' ? payload.model : null,",
+    "      hookEventName: eventName,",
+    "      cwd,",
+    "      transcriptPath: typeof payload.transcript_path === 'string' ? payload.transcript_path : null,",
+    "      permissionMode: typeof payload.permission_mode === 'string' ? payload.permission_mode : null,",
+    "      stopHookActive: Boolean(payload.stop_hook_active),",
+    "      message,",
+    "      windowHint: buildWindowHint(cwd, turnId),",
+    "    };",
+    "",
+    "    if (!isEventOnly) {",
+    "      const archiveRoot = isPromptEvent ? userArchiveRoot : assistantArchiveRoot;",
+    "      const latestFile = isPromptEvent ? latestUserPromptFile : latestAssistantFile;",
+    "      const latestJsonFile = isPromptEvent ? latestUserPromptJsonFile : latestAssistantJsonFile;",
+    "      const archiveStem = `${fileSafeTimestamp(capturedAt)}-${sanitizeFilePart(record.turnId)}`;",
+    "      await fs.mkdir(archiveRoot, { recursive: true });",
+    "      await Promise.all([",
+    "        fs.writeFile(path.join(archiveRoot, `${archiveStem}.md`), renderMarkdown(record), 'utf8'),",
+    "        fs.writeFile(path.join(archiveRoot, `${archiveStem}.json`), `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
+    "        fs.writeFile(latestFile, renderMarkdown(record), 'utf8'),",
+    "        fs.writeFile(latestJsonFile, `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
+    "      ]);",
+    "    }",
+    "    await postToBridge(record, isPromptEvent, isEventOnly);",
+    "  }",
+    "",
+    "  process.stdout.write('{\"continue\":true,\"suppressOutput\":true}\\n');",
+    "} catch (error) {",
+    "  await fs.mkdir(cacheRoot, { recursive: true });",
+    "  const errorText = error instanceof Error ? `${error.stack ?? error.message}` : String(error);",
+    "  await fs.appendFile(errorLogFile, `[${new Date().toISOString()}] ${errorText}\\n`, 'utf8');",
+    "  process.stdout.write('{\"continue\":true,\"suppressOutput\":true}\\n');",
+    "}",
+    "",
+    "function readStdin() {",
+    "  return new Promise((resolve, reject) => {",
+    "    let data = '';",
+    "    process.stdin.setEncoding('utf8');",
+    "    process.stdin.on('data', (chunk) => { data += chunk; });",
+    "    process.stdin.on('end', () => resolve(data));",
+    "    process.stdin.on('error', reject);",
+    "  });",
+    "}",
+    "",
+    "async function postToBridge(record, isPromptEvent, isEventOnly) {",
+    "  try {",
+    "    const config = JSON.parse(await fs.readFile(adapterConfigFile, 'utf8'));",
+    "    let url = null;",
+    "    if (isEventOnly && typeof config.bridgeEventsUrl === 'string') url = config.bridgeEventsUrl;",
+    "    if (!url && isPromptEvent && typeof config.bridgePromptsUrl === 'string') url = config.bridgePromptsUrl;",
+    "    if (!url && !isPromptEvent && !isEventOnly && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl;",
+    "    if (!url && isPromptEvent && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl.replace(/\\/api\\/replies$/u, '/api/prompts');",
+    "    if (!url && isEventOnly && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl.replace(/\\/api\\/replies$/u, '/api/events');",
+    "    if (!url || typeof fetch !== 'function') return;",
+    "    const controller = new AbortController();",
+    "    const timeout = setTimeout(() => controller.abort(), 2000);",
+    "    try {",
+    "      await fetch(url, {",
+    "        method: 'POST',",
+    "        headers: { 'content-type': 'application/json' },",
+    "        body: JSON.stringify(record),",
+    "        signal: controller.signal,",
+    "      });",
+    "    } finally {",
+    "      clearTimeout(timeout);",
+    "    }",
+    "  } catch {",
+    "    // Bridge delivery is best-effort; the local cache above is the fallback.",
+    "  }",
+    "}",
+    "",
+    "function fallbackEventMessage(payload, eventName) {",
+    "  if (typeof payload.message === 'string') return payload.message;",
+    "  if (typeof payload.title === 'string') return payload.title;",
+    "  if (typeof payload.error === 'string') return payload.error;",
+    "  if (typeof payload.reason === 'string') return payload.reason;",
+    "  if (typeof payload.tool_name === 'string') {",
+    "    const description = payload.tool_input && typeof payload.tool_input.description === 'string' ? payload.tool_input.description : '';",
+    "    return description ? `${payload.tool_name}: ${description}` : payload.tool_name;",
+    "  }",
+    "  if (typeof payload.notification_type === 'string') return payload.notification_type;",
+    "  return eventName;",
+    "}",
+    "",
+    "function buildWindowHint(cwd, turnId) {",
+    "  const projectName = path.basename(cwd || projectRoot);",
+    "  const projectSlug = sanitizeFilePart(projectName).toLowerCase();",
+    "  const sessionSlug = sanitizeFilePart(turnId).toLowerCase();",
+    "  return {",
+    "    process: 'WindowsTerminal.exe',",
+    "    titleToken: `[AMO:claude:${projectSlug}:${sessionSlug}]`,",
+    "    titleContains: ['Claude', projectName],",
+    "    project: projectName,",
+    "    cwd,",
+    "    tool: 'claude',",
+    "  };",
+    "}",
+    "",
+    "function normalizeMessage(value) {",
+    "  return typeof value === 'string' ? value.replace(/\\r\\n?/g, '\\n').trim() : '';",
+    "}",
+    "",
+    "function fileSafeTimestamp(value) {",
+    "  return String(value || new Date().toISOString()).replace(/[:.]/g, '-');",
+    "}",
+    "",
+    "function sanitizeFilePart(value) {",
+    "  return String(value || 'turn').replace(/[^a-zA-Z0-9._-]+/g, '_').replace(/^_+|_+$/g, '') || 'turn';",
+    "}",
+    "",
     "function renderMarkdown(record) {",
     "  const lines = [",
-    "    record.role === 'user' ? '# Cached Codex Prompt' : '# Cached Codex Reply',",
-    "    '',",
     "    `- captured_at: ${record.capturedAt}`,",
     "    `- session_id: ${record.sessionId}`,",
     "    `- turn_id: ${record.turnId}`,",
@@ -2323,8 +2655,6 @@ function writeReplyNote(amoRoot, vaultRoot, record) {
   const body = [
     renderAmoNoteMarker(noteMetadata),
     "",
-    `# ${markdownHeadingText(noteMetadata.displayTitle)}`,
-    "",
     record.message,
     "",
   ]
@@ -2349,8 +2679,6 @@ function writePromptNote(amoRoot, vaultRoot, record) {
   const body = [
     renderAmoNoteMarker(noteMetadata),
     "",
-    `# ${markdownHeadingText(noteMetadata.displayTitle)}`,
-    "",
     record.message,
     "",
   ]
@@ -2363,7 +2691,7 @@ function writePromptNote(amoRoot, vaultRoot, record) {
 }
 
 function conversationNoteMetadata({ record, noteIdentity, notePath, role, kind }) {
-  const displayTitle = normalizeNoteDisplayTitle(record.displayTitle || record.display_title || noteIdentity.displayName);
+  const displayTitle = normalizeNoteDisplayTitle(record.displayTitle || record.display_title);
   const noteId = `note_${crypto
     .createHash("sha1")
     .update(`${record.workspaceId}:${record.sessionId}:${record.turnId}:${kind}:${noteIdentity.sequence}:${record.capturedAt}`)
@@ -2464,7 +2792,11 @@ function updateCanvasNoteDisplayTitle(vaultRoot, { noteId, notePath, displayTitl
     if (nodeFile !== notePath && (!noteId || nodeNoteId !== noteId)) continue;
     if (!node.amo || typeof node.amo !== "object" || Array.isArray(node.amo)) node.amo = {};
     node.amo.noteId = noteId || node.amo.noteId || null;
-    node.amo.displayTitle = displayTitle;
+    if (displayTitle) {
+      node.amo.displayTitle = displayTitle;
+    } else {
+      delete node.amo.displayTitle;
+    }
     node.amo.updatedAt = updatedAt;
     changed = true;
   }
@@ -2610,7 +2942,7 @@ function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {
       role: note.role || null,
       sequence: Number.isSafeInteger(note.sequence) ? note.sequence : null,
       displayName: note.displayName || null,
-      displayTitle: note.displayTitle || note.displayName || null,
+      displayTitle: note.displayTitle || null,
       workspaceId: record.workspaceId,
       tool: record.tool,
       sessionId: record.sessionId,
@@ -2735,15 +3067,11 @@ function yamlString(value) {
 }
 
 function normalizeNoteDisplayTitle(value) {
-  return normalizeText(value)
+  return String(normalizeText(value) || "")
     .replace(/\s+/g, " ")
     .replace(/^#+\s*/u, "")
     .trim()
     .slice(0, 120);
-}
-
-function markdownHeadingText(value) {
-  return normalizeNoteDisplayTitle(value) || "AMO note";
 }
 
 function sanitizeFilePart(value) {

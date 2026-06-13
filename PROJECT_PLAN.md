@@ -543,7 +543,6 @@ Note/canvas tab 复用规则归 Obsidian 插件阶段处理：如果目标 note/
 当前 MVP 暂不做：
 
 - Codex App 直接接入。
-- Claude CLI reply capture。
 - Kiro IDE 部署。
 - 多 CLI canvas 快捷跳转。
 - 权限请求 task card 托管。

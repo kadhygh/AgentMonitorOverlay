@@ -179,13 +179,14 @@ MVP acceptance flow:
 MVP defers:
 
 - Codex App direct integration.
-- Claude CLI reply capture.
 - Kiro IDE deployment.
 - Multiple CLI quick-jump controls inside one canvas.
 - Permission approval from task cards.
 - Automatic paste, Enter, or approval.
 - Integration with the user's existing long-lived Obsidian vault.
 - Complex canvas layout or re-layout.
+
+Claude CLI hook MVP update: workspace enrollment can now install a local `.claude/settings.local.json` hook set plus `.amo/hooks/claude-message.mjs`. Claude `UserPromptSubmit` records prompt notes, `Stop` records reply notes using `last_assistant_message`, and `PermissionRequest` marks the overlay card as waiting for permission. The hook prints only JSON so Claude does not receive AMO status text as prompt context.
 
 The Obsidian workflow is no longer only a distant future idea. Two local MVPs have made the Phase 5 direction concrete:
 
@@ -730,7 +731,7 @@ Current implementation status: workspace enroll writes a vault-local `md-anno-to
 
 Current AMO canvas/note direction: new test-project deployments can use short physical note names directly because no production migration compatibility is required yet. Broker writes `AgentFlow.canvas` with AMO metadata, writes new notes as `Replies/reply 01.md` / `Prompts/prompt 01.md`, and keeps durable identity in frontmatter. The Obsidian plugin checks the canvas AMO marker before applying AMO-specific canvas behavior such as latest-note focus styling, and it intentionally avoids canvas-node property hiding.
 
-Current AMO note display direction: newly generated AMO Markdown notes avoid visible YAML frontmatter. They start with a compact hidden AMO marker, render the human-facing display title as the first H1, and store full technical provenance in broker `state/note-index.json`. The Obsidian plugin hides the AMO marker line in edit/source mode with a narrow CodeMirror editor extension while keeping the marker in the source file. The Obsidian plugin can update that display title from the AMO panel by syncing the note marker, H1, and note index. The Markdown-view property hiding setting remains as compatibility for older frontmatter-based notes. Canvas notecard property hiding is still recorded as a deferred design item; new notes should look cleaner because there are no visible AMO properties for Canvas to preview, not because AMO mutates Canvas node DOM.
+Current AMO note display direction: newly generated AMO Markdown notes avoid visible YAML frontmatter and do not write a default `# reply xx` / `# prompt xx` H1. They start with a compact hidden AMO marker and store full technical provenance in broker `state/note-index.json`. The Obsidian plugin hides the AMO marker line in edit/source mode with a narrow CodeMirror editor extension while keeping the marker in the source file. When the user sets a display title from the AMO panel, note view title action, or canvas selected-note title action, the title is stored in hidden metadata and rendered at the top of the note as an AMO header in read/preview surfaces: custom title large, original document name small. These title edits must not rename the physical note file. Clearing the display title removes that rendered AMO header. Editor-mode AMO title rendering is deferred after the initial CodeMirror widget approach caused file-open regressions. The Markdown-view property hiding setting remains as compatibility for older frontmatter-based notes. Canvas notecard property hiding is still recorded as a deferred design item; new notes should look cleaner because there are no visible AMO properties for Canvas to preview, not because AMO mutates Canvas node DOM.
 
 Annotation deletion direction: the plugin should delete `[!anno]...[/anno]` blocks by editing the source Markdown note, not by removing rendered DOM. Supported MVP entry points are the AMO panel annotation list, the note editor context menu/command when the cursor is inside an annotation, and the plugin-owned rendered annotation shell used in note reading mode and Canvas embedded previews.
 

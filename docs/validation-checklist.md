@@ -68,6 +68,9 @@ Status: user smoke validated for the current Codex CLI MVP loop on 2026-05-20; p
 - Confirm Obsidian annotations create pending prompts without broker-added numbering by default.
 - Confirm `Copy + Focus CLI` records outgoing prompt notes under `Prompts/` and chains them after the latest canvas node.
 - Confirm direct Codex `UserPromptSubmit` payloads can enter the same prompt-note/canvas chain when available.
+- Confirm Claude CLI deployment writes `.amo/hooks/claude-message.mjs`, `.amo/adapters/claude-cli.json`, and merges `.claude/settings.local.json`.
+- Confirm Claude CLI `UserPromptSubmit` and `Stop` hooks create prompt/reply notes and append them to `AgentFlow.canvas` without generated H1 headings.
+- Confirm Claude CLI `PermissionRequest` events make the overlay card show the compact permission state and route the user back to the CLI for manual approval.
 - Confirm PermissionRequest events make the overlay card show the compact permission state and route the user back to the CLI for manual approval.
 - Confirm opening a canvas from an overlay card focuses the latest note node when present and falls back to a plain canvas jump when it is absent.
 - Confirm broker appends prompt/reply nodes to `AgentFlow.canvas` without corrupting the open canvas; if the canvas is already open, manual reopen/refresh is acceptable in the current safe MVP.
@@ -77,7 +80,11 @@ Status: user smoke validated for the current Codex CLI MVP loop on 2026-05-20; p
 - Confirm new reply/prompt notes use a hidden `<!-- amo: {...} -->` marker instead of visible YAML frontmatter.
 - Confirm AMO note edit/source mode hides the hidden marker line while keeping it in the source file.
 - Confirm broker `.amo/state/note-index.json` records the full metadata for new reply/prompt notes.
-- Confirm new reply/prompt notes render a first H1 display title and the AMO panel can update that title.
+- Confirm new reply/prompt notes do not write a default `# reply xx` / `# prompt xx` H1.
+- Confirm custom AMO display titles are stored in hidden metadata and rendered as an AMO header: custom title large, original document name small.
+- Confirm note edit/source mode hides the marker line without preventing files from opening; editor-mode AMO title rendering is deferred until a safer CodeMirror approach is validated.
+- Confirm the note view title action can update an AMO display title without renaming the note file.
+- Confirm the canvas view title action can update the selected note's AMO display title without renaming the note file.
 - Confirm AMO Markdown note views hide properties by default and can temporarily show them from the note action button.
 - Confirm Canvas file-node previews may still show native properties in the current MVP, and the note-view property hiding does not affect Canvas zoom/drag/edge behavior.
 - Confirm newly generated Canvas file-node previews no longer show AMO technical properties because new notes do not use visible frontmatter.

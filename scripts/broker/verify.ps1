@@ -199,11 +199,15 @@ try {
     if (-not $codexPlan -or $codexPlan.status -ne "available") {
         throw "Expected codex-cli inspect plan to be available."
     }
+    $claudePlan = @($inspect.supportedAdapters | Where-Object { $_.id -eq "claude-cli" })[0]
+    if (-not $claudePlan -or $claudePlan.status -ne "available") {
+        throw "Expected claude-cli inspect plan to be available."
+    }
     Write-Host "Workspace inspect OK -> $($inspect.workspacePath)"
 
     $enroll = Invoke-BrokerJson -Method POST -Path "/api/workspaces/enroll" -Body @{
         workspacePath = $workspaceRoot
-        adapters = @("codex-cli")
+        adapters = @("codex-cli", "claude-cli")
     }
     if (-not $enroll.ok) {
         throw "Workspace enroll failed."
@@ -213,13 +217,16 @@ try {
             ".amo\workspace.json",
             ".amo\enrollment.json",
             ".amo\adapters\codex-cli.json",
+            ".amo\adapters\claude-cli.json",
             ".amo\hooks\codex-stop-message.mjs",
+            ".amo\hooks\claude-message.mjs",
             ".amo\obsidian-vault\AgentFlow.canvas",
             ".amo\obsidian-vault\.obsidian\community-plugins.json",
             ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\manifest.json",
             ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\main.js",
             ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\styles.css",
             ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\data.json",
+            ".claude\settings.local.json",
             ".codex\hooks.json"
         )) {
         $targetPath = Join-Path $workspaceRoot $relativePath
@@ -238,6 +245,17 @@ try {
     $codexAdapterData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\adapters\codex-cli.json") | ConvertFrom-Json
     if (-not $codexAdapterData.bridgeEventsUrl -or $codexAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Codex adapter config does not include bridgeEventsUrl."
+    }
+    $claudeSettingsText = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".claude\settings.local.json")
+    if ($claudeSettingsText -notmatch "claude-message\.mjs") {
+        throw "Claude settings config does not reference AMO hook script."
+    }
+    if ($claudeSettingsText -notmatch "UserPromptSubmit" -or $claudeSettingsText -notmatch "Stop" -or $claudeSettingsText -notmatch "PermissionRequest") {
+        throw "Claude settings config does not include prompt, reply, and permission hooks."
+    }
+    $claudeAdapterData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\adapters\claude-cli.json") | ConvertFrom-Json
+    if (-not $claudeAdapterData.bridgeEventsUrl -or $claudeAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
+        throw "Claude adapter config does not include bridgeEventsUrl."
     }
 
     $pluginList = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\community-plugins.json") | ConvertFrom-Json
@@ -516,6 +534,51 @@ try {
     }
     Write-Host "Window binding OK -> bind/clear"
 
+    $claudeHookPath = Join-Path $workspaceRoot ".amo\hooks\claude-message.mjs"
+    $claudePromptInput = @{
+        session_id = "claude-hook-verify"
+        transcript_path = (Join-Path $workspaceRoot ".claude\projects\verify.jsonl")
+        cwd = $workspaceRoot
+        permission_mode = "default"
+        hook_event_name = "UserPromptSubmit"
+        prompt = "Claude verification prompt."
+    } | ConvertTo-Json -Depth 8 -Compress
+    $claudePromptOutput = $claudePromptInput | node $claudeHookPath
+    if ($LASTEXITCODE -ne 0 -or $claudePromptOutput -notmatch '"continue"\s*:\s*true') {
+        throw "Claude UserPromptSubmit hook did not return a non-blocking JSON response."
+    }
+
+    $claudeStopInput = @{
+        session_id = "claude-hook-verify"
+        transcript_path = (Join-Path $workspaceRoot ".claude\projects\verify.jsonl")
+        cwd = $workspaceRoot
+        permission_mode = "default"
+        hook_event_name = "Stop"
+        stop_hook_active = $false
+        last_assistant_message = "Claude verification reply."
+        background_tasks = @()
+        session_crons = @()
+    } | ConvertTo-Json -Depth 8 -Compress
+    $claudeStopOutput = $claudeStopInput | node $claudeHookPath
+    if ($LASTEXITCODE -ne 0 -or $claudeStopOutput -notmatch '"continue"\s*:\s*true') {
+        throw "Claude Stop hook did not return a non-blocking JSON response."
+    }
+
+    Start-Sleep -Milliseconds 300
+    $sessionsAfterClaudeHook = Invoke-BrokerJson -Method GET -Path "/api/sessions"
+    $claudeSession = @($sessionsAfterClaudeHook.sessions | Where-Object { $_.sessionId -eq "claude-hook-verify" })[0]
+    if (-not $claudeSession -or $claudeSession.tool -ne "claude" -or -not $claudeSession.lastPromptNote -or -not $claudeSession.lastReplyNote) {
+        throw "Claude generated hook did not create prompt/reply notes on one session."
+    }
+    $claudePromptNotePath = Join-Path $vaultRoot ($claudeSession.lastPromptNote -replace "/", [System.IO.Path]::DirectorySeparatorChar)
+    $claudeReplyNotePath = Join-Path $vaultRoot ($claudeSession.lastReplyNote -replace "/", [System.IO.Path]::DirectorySeparatorChar)
+    $claudePromptNoteText = Get-Content -Raw -Encoding UTF8 $claudePromptNotePath
+    $claudeReplyNoteText = Get-Content -Raw -Encoding UTF8 $claudeReplyNotePath
+    if ($claudePromptNoteText -match "(?m)^#\s+prompt" -or $claudeReplyNoteText -match "(?m)^#\s+reply") {
+        throw "Claude hook-generated notes should not include generated H1 headings."
+    }
+    Write-Host "Claude generated hook OK -> $($claudeSession.lastPromptNote) / $($claudeSession.lastReplyNote)"
+
     $recoveredAnnotation = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
         schemaVersion = 1
         source = "verify-obsidian-plugin"
@@ -548,8 +611,8 @@ $broker = Start-Broker
 try {
     Wait-Broker | Out-Null
     $sessionsAfterRestart = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessionsAfterRestart.count -ne 5) {
-        throw "Persistence check failed. Expected exactly 5 sessions after restart, got $($sessionsAfterRestart.count)."
+    if ($sessionsAfterRestart.count -ne 6) {
+        throw "Persistence check failed. Expected exactly 6 sessions after restart, got $($sessionsAfterRestart.count)."
     }
 
     Write-Host "Persistence OK. Sessions after restart: $($sessionsAfterRestart.count)"

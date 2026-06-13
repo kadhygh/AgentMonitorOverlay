@@ -136,6 +136,25 @@
   display: none !important;
 }
 
+.amo-note-display-header {
+  margin: 0 0 1rem;
+  padding: 0 0 0.75rem;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.amo-note-display-title {
+  color: var(--text-normal);
+  font-size: 1.55em;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.amo-note-display-subtitle {
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.82em;
+}
+
 .canvas-node.amo-canvas-latest-note,
 .amo-canvas-latest-note {
   --amo-canvas-latest-ring-rgb: 111 224 190;

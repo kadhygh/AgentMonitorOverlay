@@ -651,6 +651,7 @@ export default function App() {
   const [workspacePath, setWorkspacePath] = useState("");
   const [workspaceInspection, setWorkspaceInspection] = useState<WorkspaceInspection | null>(null);
   const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
+  const [selectedDeployAdapters, setSelectedDeployAdapters] = useState<string[]>([]);
   const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | null>(null);
   const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
@@ -859,8 +860,11 @@ export default function App() {
       });
       setWorkspaceInspection(result);
       setWorkspacePath(result.workspacePath);
-      const codexPlan = result.supportedAdapters.find((adapter) => adapter.id === "codex-cli");
-      setFeedback(`${result.projectName}: ${codexPlan?.status ?? "no adapter"} for codex-cli.`);
+      const availableAdapters = result.supportedAdapters
+        .filter((adapter) => adapter.status === "available")
+        .map((adapter) => adapter.id);
+      setSelectedDeployAdapters(availableAdapters);
+      setFeedback(`${result.projectName}: ${availableAdapters.length} adapter(s) available.`);
     } catch (error) {
       void postDebugLog("workspace.inspect.error", {
         workspacePath: targetPath,
@@ -887,6 +891,7 @@ export default function App() {
       setWorkspacePath(result.path);
       setWorkspaceInspection(null);
       setWorkspaceEnrollment(null);
+      setSelectedDeployAdapters([]);
       await inspectWorkspace(result.path);
     } catch (error) {
       setFeedback(`Folder selection failed: ${(error as Error).message}`);
@@ -904,9 +909,19 @@ export default function App() {
     setFeedback("Deploying workspace adapter...");
 
     try {
+      const adapters =
+        selectedDeployAdapters.length > 0
+          ? selectedDeployAdapters
+          : (workspaceInspection?.supportedAdapters || [])
+              .filter((adapter) => adapter.status === "available")
+              .map((adapter) => adapter.id);
+      if (adapters.length === 0) {
+        setFeedback("No available adapter selected.");
+        return;
+      }
       const result = await postBrokerJson<WorkspaceEnrollment>(BROKER_WORKSPACE_ENROLL_URL, {
         workspacePath: targetPath,
-        adapters: ["codex-cli"],
+        adapters,
       });
       void postDebugLog("workspace.enroll.ok", {
         workspacePath: result.workspacePath,
@@ -1807,7 +1822,7 @@ export default function App() {
                 </button>
                 <button
                   type="button"
-                  disabled={!workspaceInspection || deployBusy !== null}
+                  disabled={!workspaceInspection || selectedDeployAdapters.length === 0 || deployBusy !== null}
                   onClick={() => void enrollWorkspace()}
                 >
                   {deployBusy === "enroll" ? "..." : "Deploy"}
@@ -1823,13 +1838,34 @@ export default function App() {
               </div>
               {workspaceInspection ? (
                 <div className="deploy-plan">
-                  {workspaceInspection.supportedAdapters.map((adapter) => (
-                    <span className={`deploy-pill status-${adapter.status}`} key={adapter.id} title={adapter.reason}>
-                      <strong>{adapter.label}</strong>
-                      <em>{adapter.status}</em>
-                      {adapter.confidence ? <small>{adapter.confidence}</small> : null}
-                    </span>
-                  ))}
+                  {workspaceInspection.supportedAdapters.map((adapter) => {
+                    const selectable = adapter.status === "available";
+                    const selected = selectedDeployAdapters.includes(adapter.id);
+                    return (
+                      <label
+                        className={`deploy-pill status-${adapter.status} ${selected ? "is-selected" : ""}`}
+                        key={adapter.id}
+                        title={adapter.reason}
+                      >
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={!selectable || deployBusy !== null}
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked;
+                            setSelectedDeployAdapters((current) =>
+                              checked
+                                ? Array.from(new Set([...current, adapter.id]))
+                                : current.filter((id) => id !== adapter.id),
+                            );
+                          }}
+                        />
+                        <strong>{adapter.label}</strong>
+                        <em>{adapter.status}</em>
+                        {adapter.confidence ? <small>{adapter.confidence}</small> : null}
+                      </label>
+                    );
+                  })}
                   <span title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</span>
                   {workspaceInspection.existingEnrollment ? <strong>enrolled</strong> : null}
                 </div>

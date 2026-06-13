@@ -69,48 +69,25 @@ export function renderAmoMarker(metadata): string {
   return "<!-- amo: " + json + " -->";
 }
 
-export function extractFirstMarkdownHeading(markdown): string {
+export function removeAmoDisplayHeading(markdown, title, fallbackTitle = ""): string {
   const source = String(markdown || "").replace(/\r\n?/gu, "\n");
-  const frontmatter = source.match(/^---\n[\s\S]*?\n---\n*/u);
-  const body = frontmatter ? source.slice(frontmatter[0].length) : source;
-  const lines = body.split("\n");
-  for (const line of lines) {
-    const match = line.match(/^#\s+(.+)$/u);
-    if (match) return normalizeMarkdownTitle(match[1]);
-    if (line.trim() && !line.startsWith("<!--")) break;
-  }
-  return "";
-}
+  const candidates = new Set(
+    [normalizeMarkdownTitle(title), normalizeMarkdownTitle(fallbackTitle)].filter((value) => value.length > 0)
+  );
+  if (candidates.size === 0) return source;
 
-export function upsertFirstMarkdownHeading(markdown, title): string {
-  const cleanTitle = normalizeMarkdownTitle(title) || "AMO note";
-  const source = String(markdown || "").replace(/\r\n?/gu, "\n");
   const frontmatter = source.match(/^---\n[\s\S]*?\n---\n*/u);
   const prefix = frontmatter ? frontmatter[0] : "";
   const body = source.slice(prefix.length);
-  return prefix + upsertFirstMarkdownHeadingInBody(body, cleanTitle);
-}
+  const marker = body.match(/^<!--\s*amo:\s*\{[\s\S]*?\}\s*-->\n*/u);
+  const markerText = marker ? marker[0] : "";
+  const afterMarker = body.slice(markerText.length);
+  const leadingBlank = afterMarker.match(/^\n*/u)?.[0] || "";
+  const rest = afterMarker.slice(leadingBlank.length);
+  const heading = rest.match(/^#\s+(.+)\n*/u);
+  if (!heading || !candidates.has(normalizeMarkdownTitle(heading[1]))) return source;
 
-function upsertFirstMarkdownHeadingInBody(body, cleanTitle): string {
-  const lines = String(body || "").split("\n");
-  for (let index = 0; index < lines.length; index += 1) {
-    const line = lines[index];
-    if (/^#\s+.+/u.test(line)) {
-      lines[index] = "# " + cleanTitle;
-      return lines.join("\n");
-    }
-    if (line.trim() && !line.trim().startsWith("<!--") && line.trim() !== "---") {
-      break;
-    }
-  }
-
-  const source = String(body || "");
-  const marker = source.match(/^<!--\s*amo:\s*\{[\s\S]*?\}\s*-->\n*/u);
-  if (marker) {
-    return marker[0].replace(/\n*$/u, "\n\n") + "# " + cleanTitle + "\n\n" + source.slice(marker[0].length).replace(/^\n*/u, "");
-  }
-
-  return "# " + cleanTitle + "\n\n" + source.replace(/^\n*/u, "");
+  return prefix + markerText.replace(/\n*$/u, "\n\n") + rest.slice(heading[0].length).replace(/^\n*/u, "");
 }
 
 export function normalizeMarkdownTitle(value): string {

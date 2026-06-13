@@ -1,4 +1,4 @@
-import { ButtonComponent, Modal, TextAreaComponent } from "obsidian";
+import { ButtonComponent, Modal, TextAreaComponent, TextComponent } from "obsidian";
 import { canvasTargetDisplayName } from "../canvas/target";
 
 export class AnnotationInputModal extends Modal {
@@ -105,6 +105,68 @@ export class CanvasNoteTargetModal extends Modal {
 
   async submit(target: any) {
     await this.onSelect(target);
+    this.close();
+  }
+}
+
+export class NoteTitleModal extends Modal {
+  currentTitle: string;
+  notePath: string;
+  onSubmit: (value: string) => void | Promise<void>;
+  inputComponent: TextComponent;
+
+  constructor(app: any, currentTitle: string, notePath: string, onSubmit: (value: string) => void | Promise<void>) {
+    super(app);
+    this.currentTitle = currentTitle || "";
+    this.notePath = notePath || "";
+    this.onSubmit = onSubmit;
+  }
+
+  onOpen() {
+    this.modalEl.addClass("anno-modal");
+    this.titleEl.setText("Edit AMO Title");
+    this.contentEl.createEl("p", {
+      text: this.notePath
+        ? "This changes the rendered AMO title, not the note file name. Leave it empty to hide the AMO title: " + this.notePath
+        : "This changes the rendered AMO title, not the note file name. Leave it empty to hide the AMO title.",
+    });
+
+    this.inputComponent = new TextComponent(this.contentEl);
+    this.inputComponent.setPlaceholder("Display title");
+    this.inputComponent.setValue(this.currentTitle);
+    this.inputComponent.inputEl.addClass("anno-modal-input");
+
+    const actions = this.contentEl.createDiv({ cls: "anno-modal-actions" });
+    new ButtonComponent(actions)
+      .setButtonText("Save")
+      .setCta()
+      .onClick(async () => {
+        await this.submit();
+      });
+
+    new ButtonComponent(actions)
+      .setButtonText("Cancel")
+      .onClick(() => {
+        this.close();
+      });
+
+    this.scope.register([], "Enter", () => {
+      void this.submit();
+      return false;
+    });
+
+    window.setTimeout(() => {
+      this.inputComponent.inputEl.focus();
+      this.inputComponent.inputEl.select();
+    }, 0);
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+
+  async submit() {
+    await this.onSubmit(this.inputComponent.getValue());
     this.close();
   }
 }

@@ -200,13 +200,24 @@ Expected future route:
 
 ### `claude-cli`
 
-MVP status: deferred for reply capture, previously useful for live status smoke.
+MVP status: implemented for workspace-local prompt/reply/permission hook capture.
 
-Expected future route:
+Expected deployment:
 
-- support workspace-local or disposable settings where possible
-- merge settings safely
-- capture lifecycle/status first, then reply content if available
+- create `.amo/hooks/claude-message.mjs`
+- create `.amo/adapters/claude-cli.json`
+- merge `.claude/settings.local.json`
+- keep fallback cache under `.amo/logs/claude-cache/`
+- POST `prompt` from `UserPromptSubmit` to `POST /api/prompts`
+- POST `last_assistant_message` from `Stop` to `POST /api/replies`
+- POST `PermissionRequest` as event-only payload to `POST /api/events`
+- keep hook stdout protocol-clean with JSON only, so `UserPromptSubmit` does not inject AMO text into Claude context
+
+Known risks:
+
+- Claude Code may require `/hooks` review before first use in a workspace.
+- Hook payload does not provide a native window handle.
+- `.claude/settings.local.json` is local machine configuration and should not be committed.
 
 ### `kiro-ide`
 
