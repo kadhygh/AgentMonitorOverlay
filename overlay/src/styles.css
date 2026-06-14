@@ -49,6 +49,135 @@ button {
   padding: 8px;
 }
 
+.scratchpad-shell {
+  display: grid;
+  grid-template-rows: 34px minmax(0, 1fr) 38px;
+  width: 100vw;
+  height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(20, 25, 28, 0.98), rgba(23, 30, 33, 0.96)),
+    #151d20;
+  border: 1px solid rgba(208, 231, 222, 0.22);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+}
+
+.scratchpad-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0 8px 0 10px;
+  user-select: none;
+}
+
+.scratchpad-header > div {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  color: #edf8f4;
+}
+
+.scratchpad-header strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scratchpad-header button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: #aebeb8;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.scratchpad-header button:hover {
+  color: #f7fffb;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.scratchpad-input {
+  width: calc(100% - 16px);
+  height: 100%;
+  min-height: 0;
+  margin: 0 8px;
+  padding: 9px 10px;
+  resize: none;
+  color: #f1fbf7;
+  caret-color: #6fe0be;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+  outline: none;
+  font: 13px/1.5 "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+.scratchpad-input:focus {
+  border-color: rgba(111, 224, 190, 0.42);
+  box-shadow: 0 0 0 1px rgba(111, 224, 190, 0.12);
+}
+
+.scratchpad-input::placeholder {
+  color: rgba(220, 232, 227, 0.42);
+}
+
+.scratchpad-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 8px;
+}
+
+.scratchpad-footer span {
+  min-width: 0;
+  overflow: hidden;
+  color: #91a29c;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scratchpad-footer div {
+  display: inline-flex;
+  gap: 6px;
+}
+
+.scratchpad-footer button {
+  height: 24px;
+  padding: 0 9px;
+  color: #dcece7;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.scratchpad-footer button:hover {
+  color: #f7fffb;
+  background: rgba(111, 224, 190, 0.14);
+  border-color: rgba(111, 224, 190, 0.28);
+}
+
+.scratchpad-footer button.danger:hover {
+  background: rgba(255, 116, 116, 0.12);
+  border-color: rgba(255, 116, 116, 0.3);
+  color: #ffd7d7;
+}
+
 .overlay-header {
   flex: 0 0 auto;
   display: flex;
@@ -156,20 +285,66 @@ button {
   flex: 1 1 auto;
 }
 
-.deploy-panel {
-  flex: 0 0 auto;
+.deploy-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 36;
   display: grid;
-  gap: 6px;
-  margin-bottom: 8px;
-  padding: 7px;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.075);
-  border-radius: 7px;
+  place-items: center;
+  padding: 12px;
+  background: rgba(5, 8, 10, 0.34);
+}
+
+.deploy-panel {
+  display: grid;
+  gap: 9px;
+  width: min(456px, calc(100vw - 24px));
+  max-height: min(430px, calc(100vh - 24px));
+  padding: 10px;
+  overflow: auto;
+  color: #eef6f2;
+  background: rgba(18, 26, 30, 0.985);
+  border: 1px solid rgba(111, 224, 190, 0.24);
+  border-radius: 8px;
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.48);
+}
+
+.deploy-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+}
+
+.deploy-dialog-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.deploy-dialog-header strong,
+.deploy-dialog-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deploy-dialog-header strong {
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.deploy-dialog-header span {
+  color: #9fb0aa;
+  font-size: 10px;
+  line-height: 12px;
+  text-transform: uppercase;
 }
 
 .deploy-path-row {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) max-content max-content max-content 28px;
+  grid-template-columns: minmax(0, 1fr) max-content max-content max-content;
   align-items: center;
   gap: 5px;
 }
@@ -210,24 +385,17 @@ button {
   cursor: not-allowed;
 }
 
-.deploy-path-row .deploy-close {
-  display: inline-grid;
-  place-items: center;
-  width: 28px;
-  padding: 0;
-}
-
 .deploy-plan,
 .deploy-result {
   display: flex;
   align-items: center;
+  flex-wrap: wrap;
   gap: 5px;
   min-width: 0;
-  overflow: hidden;
+  overflow: auto;
   color: #9fafaa;
   font-size: 10px;
   line-height: 12px;
-  white-space: nowrap;
 }
 
 .deploy-plan > span,
@@ -986,6 +1154,194 @@ button {
   color: #aabbb5;
   font-size: 10px;
   line-height: 12px;
+}
+
+.settings-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 38;
+  display: grid;
+  place-items: center;
+  padding: 12px;
+  background: rgba(5, 8, 10, 0.34);
+}
+
+.settings-dialog {
+  display: grid;
+  grid-template-columns: 120px minmax(0, 1fr);
+  width: min(420px, calc(100vw - 24px));
+  max-height: min(360px, calc(100vh - 24px));
+  overflow: hidden;
+  color: #eef6f2;
+  background: rgba(18, 26, 30, 0.985);
+  border: 1px solid rgba(143, 196, 255, 0.24);
+  border-radius: 8px;
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.48);
+}
+
+.settings-sidebar {
+  display: grid;
+  align-content: start;
+  gap: 7px;
+  min-width: 0;
+  padding: 10px 8px;
+  background: rgba(0, 0, 0, 0.16);
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+}
+
+.settings-sidebar > strong {
+  padding: 0 4px;
+  overflow: hidden;
+  color: #9fafaa;
+  font-size: 10px;
+  line-height: 12px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.settings-nav-button {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  min-height: 28px;
+  padding: 0 7px;
+  color: #cbdcd6;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.settings-nav-button:hover {
+  color: #f7fffb;
+  background: rgba(255, 255, 255, 0.07);
+}
+
+.settings-nav-button.is-active {
+  color: #f6fbf9;
+  background: rgba(111, 224, 190, 0.14);
+  border-color: rgba(111, 224, 190, 0.25);
+}
+
+.settings-nav-button span {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 11px;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-detail {
+  display: grid;
+  grid-template-rows: max-content minmax(0, 1fr);
+  min-width: 0;
+  min-height: 0;
+  padding: 10px;
+}
+
+.settings-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  min-width: 0;
+  padding-bottom: 9px;
+}
+
+.settings-detail-header > div {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.settings-detail-header strong,
+.settings-detail-header span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-detail-header strong {
+  font-size: 13px;
+  line-height: 16px;
+}
+
+.settings-detail-header span {
+  color: #9fb0aa;
+  font-size: 10px;
+  line-height: 12px;
+  text-transform: uppercase;
+}
+
+.settings-section-body {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+  overflow: auto;
+}
+
+.settings-toggle,
+.settings-field {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-toggle {
+  grid-template-columns: max-content minmax(0, 1fr);
+  align-items: center;
+}
+
+.settings-toggle input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #6fe0be;
+}
+
+.settings-toggle span,
+.settings-field > span {
+  overflow: hidden;
+  color: #c7d8d2;
+  font-size: 11px;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-field select,
+.settings-primary-action {
+  min-height: 30px;
+  color: #dcece7;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+}
+
+.settings-field select {
+  width: 100%;
+  padding: 0 8px;
+}
+
+.settings-field select:disabled {
+  color: rgba(220, 232, 227, 0.42);
+}
+
+.settings-primary-action {
+  justify-self: start;
+  padding: 0 10px;
+  cursor: pointer;
+}
+
+.settings-primary-action:hover {
+  color: #f7fffb;
+  background: rgba(111, 224, 190, 0.14);
+  border-color: rgba(111, 224, 190, 0.28);
 }
 
 .workspace-panel {

@@ -30,6 +30,22 @@
         "center": false,
         "x": 1520,
         "y": 120
+      },
+      {
+        "label": "scratchpad",
+        "title": "AMO Scratchpad",
+        "width": 480,
+        "height": 320,
+        "minWidth": 340,
+        "minHeight": 220,
+        "resizable": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "transparent": true,
+        "shadow": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "center": false
       }
     ]
   },

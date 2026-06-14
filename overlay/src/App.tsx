@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
   Bot,
@@ -18,6 +19,7 @@ import {
   RefreshCcw,
   CircleCheck,
   Settings2,
+  StickyNote,
   Trash2,
   Unlink2,
   X,
@@ -55,6 +57,25 @@ const BROKER_WORKSPACE_CLEAN_VAULT_URL = "http://127.0.0.1:17654/api/workspaces/
 const BROKER_DEBUG_URL = "http://127.0.0.1:17654/api/debug";
 const BROKER_DEBUG_LOGS_URL = "http://127.0.0.1:17654/api/debug/logs";
 const REFRESH_INTERVAL_MS = 3000;
+const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
+const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
+const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
+
+type ScratchpadShortcutButton = "mouse4" | "mouse5";
+
+interface ScratchpadShortcutState {
+  enabled: boolean;
+  button: ScratchpadShortcutButton;
+}
+
+type SettingsSection = "scratchpad";
+
+interface ScratchpadShortcutResult {
+  ok: boolean;
+  enabled: boolean;
+  button: ScratchpadShortcutButton;
+  message: string;
+}
 
 function brokerSessionWindowBindingUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/window-binding`;
@@ -62,6 +83,28 @@ function brokerSessionWindowBindingUrl(sessionId: string) {
 
 function brokerSessionWindowBindingClearUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/window-binding/clear`;
+}
+
+function loadScratchpadShortcutState(): ScratchpadShortcutState {
+  try {
+    const raw = localStorage.getItem(SCRATCHPAD_SHORTCUT_STORAGE_KEY);
+    if (!raw) return { enabled: true, button: "mouse4" };
+    const parsed = JSON.parse(raw) as Partial<ScratchpadShortcutState>;
+    return {
+      enabled: parsed.enabled !== false,
+      button: parsed.button === "mouse5" ? "mouse5" : "mouse4",
+    };
+  } catch {
+    return { enabled: true, button: "mouse4" };
+  }
+}
+
+function saveScratchpadShortcutState(next: ScratchpadShortcutState) {
+  localStorage.setItem(SCRATCHPAD_SHORTCUT_STORAGE_KEY, JSON.stringify(next));
+}
+
+async function applyScratchpadShortcutState(next: ScratchpadShortcutState) {
+  return invoke<ScratchpadShortcutResult>("set_scratchpad_shortcut_config", { config: next });
 }
 
 const stateLabel: Record<SessionState, string> = {
@@ -631,7 +674,118 @@ function SessionRowContent({
   );
 }
 
+function ScratchpadApp() {
+  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [textLength, setTextLength] = useState(0);
+  const [status, setStatus] = useState("Ready");
+
+  useEffect(() => {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    const savedText = localStorage.getItem(SCRATCHPAD_TEXT_STORAGE_KEY) || "";
+    textarea.value = savedText;
+    setTextLength(savedText.length);
+    window.setTimeout(() => textarea.focus(), 30);
+  }, []);
+
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key !== "Escape" || event.isComposing) return;
+      event.preventDefault();
+      void getCurrentWindow().hide();
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, []);
+
+  function persistCurrentText() {
+    const text = textareaRef.current?.value || "";
+    localStorage.setItem(SCRATCHPAD_TEXT_STORAGE_KEY, text);
+    setTextLength(text.length);
+    return text;
+  }
+
+  async function copyText() {
+    const text = persistCurrentText();
+    if (!text.trim()) {
+      setStatus("Nothing to copy");
+      textareaRef.current?.focus();
+      return;
+    }
+
+    try {
+      const result = await invoke<OpenPathResult>("write_clipboard_text", { text });
+      setStatus(result.ok ? "Copied" : result.message);
+      if (result.ok) {
+        await getCurrentWindow().hide();
+      }
+    } catch (error) {
+      setStatus(`Copy failed: ${(error as Error).message}`);
+    } finally {
+      textareaRef.current?.focus();
+    }
+  }
+
+  function clearText() {
+    const textarea = textareaRef.current;
+    if (!textarea) return;
+
+    textarea.focus();
+    textarea.select();
+    const deleted = document.execCommand("delete");
+    if (!deleted) {
+      textarea.value = "";
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+    }
+    persistCurrentText();
+    setStatus("Cleared · Ctrl+Z can restore while focused");
+  }
+
+  return (
+    <main className="scratchpad-shell">
+      <header className="scratchpad-header" data-tauri-drag-region>
+        <div data-tauri-drag-region>
+          <StickyNote size={15} aria-hidden="true" />
+          <strong>AMO Scratchpad</strong>
+        </div>
+        <button type="button" title="Close" onClick={() => void getCurrentWindow().hide()}>
+          <X size={14} aria-hidden="true" />
+        </button>
+      </header>
+      <textarea
+        ref={textareaRef}
+        className="scratchpad-input"
+        spellCheck={false}
+        placeholder="Write the reply points you want to keep while reading..."
+        onInput={() => {
+          persistCurrentText();
+          setStatus("Saved");
+        }}
+      />
+      <footer className="scratchpad-footer">
+        <span title={status}>
+          {textLength} chars · {status}
+        </span>
+        <div>
+          <button type="button" onClick={() => void copyText()}>
+            Copy
+          </button>
+          <button type="button" className="danger" onClick={clearText}>
+            Clear
+          </button>
+        </div>
+      </footer>
+    </main>
+  );
+}
+
 export default function App() {
+  if (CURRENT_WINDOW_LABEL === "scratchpad") {
+    return <ScratchpadApp />;
+  }
+
   const [sessions, setSessions] = useState<AgentSession[]>(mockSessions);
   const [sessionOrder, setSessionOrder] = useState<string[]>(() =>
     mockSessions.map((session) => session.sessionId),
@@ -653,6 +807,11 @@ export default function App() {
   const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
   const [selectedDeployAdapters, setSelectedDeployAdapters] = useState<string[]>([]);
   const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | null>(null);
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("scratchpad");
+  const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
+    loadScratchpadShortcutState(),
+  );
   const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
@@ -694,6 +853,12 @@ export default function App() {
   useEffect(() => {
     debugCountRef.current = debugCount;
   }, [debugCount]);
+
+  useEffect(() => {
+    void applyScratchpadShortcutState(scratchpadShortcut).catch((error) => {
+      setFeedback(`Scratchpad shortcut setup failed: ${(error as Error).message}`);
+    });
+  }, []);
 
   useEffect(() => {
     return () => removeCardDragListeners();
@@ -831,6 +996,27 @@ export default function App() {
       setDebugCount(result.count ?? debugCountRef.current);
     } catch {
       // Debug logging must never block the overlay action being debugged.
+    }
+  }
+
+  async function updateScratchpadShortcut(next: ScratchpadShortcutState) {
+    setScratchpadShortcut(next);
+    saveScratchpadShortcutState(next);
+
+    try {
+      const result = await applyScratchpadShortcutState(next);
+      setFeedback(result.message);
+    } catch (error) {
+      setFeedback(`Scratchpad shortcut update failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function openScratchpadNow() {
+    try {
+      const result = await invoke<OpenPathResult>("show_scratchpad_at_cursor");
+      setFeedback(result.message);
+    } catch (error) {
+      setFeedback(`Scratchpad open failed: ${(error as Error).message}`);
     }
   }
 
@@ -1758,6 +1944,17 @@ export default function App() {
         <div className="header-actions">
           <button
             type="button"
+            className={`icon-button ${settingsOpen ? "is-active" : ""}`}
+            title="Open settings"
+            onClick={() => {
+              setSettingsSection("scratchpad");
+              setSettingsOpen(true);
+            }}
+          >
+            <Settings2 size={15} aria-hidden="true" />
+          </button>
+          <button
+            type="button"
             className={`icon-button debug-button ${debugEnabled ? "is-active" : ""}`}
             title={debugEnabled ? "Disable debug logging" : "Enable debug logging"}
             disabled={debugBusy}
@@ -1802,83 +1999,6 @@ export default function App() {
             <span>{sessions.length} active lines</span>
             <strong>{attentionCount} need attention</strong>
           </section>
-
-          {deployOpen ? (
-            <section className="deploy-panel" aria-label="Workspace deployment">
-              <div className="deploy-path-row">
-                <span className="deploy-path" title={workspacePath || "No workspace selected"}>
-                  {workspacePath ? shortPathLabel(workspacePath) || workspacePath : "No workspace selected"}
-                </span>
-                <button type="button" disabled={deployBusy !== null} onClick={() => void chooseWorkspaceDirectory()}>
-                  Choose
-                </button>
-                <button
-                  type="button"
-                  title="Check folder before deploying; this does not write files."
-                  disabled={!workspacePath || deployBusy !== null}
-                  onClick={() => void inspectWorkspace()}
-                >
-                  {deployBusy === "inspect" ? "..." : "Check"}
-                </button>
-                <button
-                  type="button"
-                  disabled={!workspaceInspection || selectedDeployAdapters.length === 0 || deployBusy !== null}
-                  onClick={() => void enrollWorkspace()}
-                >
-                  {deployBusy === "enroll" ? "..." : "Deploy"}
-                </button>
-                <button
-                  type="button"
-                  className="deploy-close"
-                  title="Close deploy panel"
-                  onClick={() => setDeployOpen(false)}
-                >
-                  <X size={13} aria-hidden="true" />
-                </button>
-              </div>
-              {workspaceInspection ? (
-                <div className="deploy-plan">
-                  {workspaceInspection.supportedAdapters.map((adapter) => {
-                    const selectable = adapter.status === "available";
-                    const selected = selectedDeployAdapters.includes(adapter.id);
-                    return (
-                      <label
-                        className={`deploy-pill status-${adapter.status} ${selected ? "is-selected" : ""}`}
-                        key={adapter.id}
-                        title={adapter.reason}
-                      >
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          disabled={!selectable || deployBusy !== null}
-                          onChange={(event) => {
-                            const checked = event.currentTarget.checked;
-                            setSelectedDeployAdapters((current) =>
-                              checked
-                                ? Array.from(new Set([...current, adapter.id]))
-                                : current.filter((id) => id !== adapter.id),
-                            );
-                          }}
-                        />
-                        <strong>{adapter.label}</strong>
-                        <em>{adapter.status}</em>
-                        {adapter.confidence ? <small>{adapter.confidence}</small> : null}
-                      </label>
-                    );
-                  })}
-                  <span title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</span>
-                  {workspaceInspection.existingEnrollment ? <strong>enrolled</strong> : null}
-                </div>
-              ) : null}
-              {workspaceEnrollment ? (
-                <div className="deploy-result" title={workspaceEnrollment.vaultRoot}>
-                  <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
-                  <span>{workspaceEnrollment.installedFiles.length} files</span>
-                  <span>{workspaceEnrollment.mergedFiles.length} merged</span>
-                </div>
-              ) : null}
-            </section>
-          ) : null}
 
           <section className="session-list" aria-label="Agent sessions">
             {orderedSessions.map((session) => (
@@ -2134,6 +2254,94 @@ export default function App() {
             </section>
           ) : null}
 
+          {settingsOpen ? (
+            <div
+              className="settings-backdrop"
+              role="presentation"
+              onClick={() => setSettingsOpen(false)}
+            >
+              <section
+                className="settings-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="AMO settings"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <aside className="settings-sidebar" aria-label="Settings sections">
+                  <strong>Settings</strong>
+                  <button
+                    type="button"
+                    className={`settings-nav-button ${settingsSection === "scratchpad" ? "is-active" : ""}`}
+                    onClick={() => setSettingsSection("scratchpad")}
+                  >
+                    <StickyNote size={13} aria-hidden="true" />
+                    <span>Scratchpad</span>
+                  </button>
+                </aside>
+
+                <div className="settings-detail">
+                  <header className="settings-detail-header">
+                    <div>
+                      <strong>Scratchpad</strong>
+                      <span>
+                        {scratchpadShortcut.enabled
+                          ? `Ctrl + ${scratchpadShortcut.button === "mouse5" ? "Mouse5" : "Mouse4"}`
+                          : "Disabled"}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="candidate-close"
+                      title="Close settings"
+                      onClick={() => setSettingsOpen(false)}
+                    >
+                      <X size={13} aria-hidden="true" />
+                    </button>
+                  </header>
+
+                  {settingsSection === "scratchpad" ? (
+                    <div className="settings-section-body">
+                      <label className="settings-toggle">
+                        <input
+                          type="checkbox"
+                          checked={scratchpadShortcut.enabled}
+                          onChange={(event) =>
+                            void updateScratchpadShortcut({
+                              ...scratchpadShortcut,
+                              enabled: event.currentTarget.checked,
+                            })
+                          }
+                        />
+                        <span>Enable global shortcut</span>
+                      </label>
+
+                      <label className="settings-field">
+                        <span>Shortcut</span>
+                        <select
+                          value={scratchpadShortcut.button}
+                          disabled={!scratchpadShortcut.enabled}
+                          onChange={(event) =>
+                            void updateScratchpadShortcut({
+                              ...scratchpadShortcut,
+                              button: event.currentTarget.value === "mouse5" ? "mouse5" : "mouse4",
+                            })
+                          }
+                        >
+                          <option value="mouse4">Ctrl + Mouse4</option>
+                          <option value="mouse5">Ctrl + Mouse5</option>
+                        </select>
+                      </label>
+
+                      <button type="button" className="settings-primary-action" onClick={() => void openScratchpadNow()}>
+                        Open scratchpad now
+                      </button>
+                    </div>
+                  ) : null}
+                </div>
+              </section>
+            </div>
+          ) : null}
+
           {cleanConfirm ? (
             <div
               className="confirm-backdrop"
@@ -2255,6 +2463,100 @@ export default function App() {
           />
         </>
       )}
+
+      {deployOpen ? (
+        <div className="deploy-backdrop" role="presentation" onClick={() => setDeployOpen(false)}>
+          <section
+            className="deploy-panel"
+            role="dialog"
+            aria-modal="true"
+            aria-label="Workspace deployment"
+            onClick={(event) => event.stopPropagation()}
+          >
+            <header className="deploy-dialog-header">
+              <div>
+                <strong>Deploy Workspace</strong>
+                <span>Workspace-local hooks and AMO vault</span>
+              </div>
+              <button
+                type="button"
+                className="candidate-close"
+                title="Close deploy"
+                onClick={() => setDeployOpen(false)}
+              >
+                <X size={13} aria-hidden="true" />
+              </button>
+            </header>
+
+            <div className="deploy-path-row">
+              <span className="deploy-path" title={workspacePath || "No workspace selected"}>
+                {workspacePath ? shortPathLabel(workspacePath) || workspacePath : "No workspace selected"}
+              </span>
+              <button type="button" disabled={deployBusy !== null} onClick={() => void chooseWorkspaceDirectory()}>
+                Choose
+              </button>
+              <button
+                type="button"
+                title="Check folder before deploying; this does not write files."
+                disabled={!workspacePath || deployBusy !== null}
+                onClick={() => void inspectWorkspace()}
+              >
+                {deployBusy === "inspect" ? "..." : "Check"}
+              </button>
+              <button
+                type="button"
+                disabled={!workspaceInspection || selectedDeployAdapters.length === 0 || deployBusy !== null}
+                onClick={() => void enrollWorkspace()}
+              >
+                {deployBusy === "enroll" ? "..." : "Deploy"}
+              </button>
+            </div>
+
+            {workspaceInspection ? (
+              <div className="deploy-plan">
+                {workspaceInspection.supportedAdapters.map((adapter) => {
+                  const selectable = adapter.status === "available";
+                  const selected = selectedDeployAdapters.includes(adapter.id);
+                  return (
+                    <label
+                      className={`deploy-pill status-${adapter.status} ${selected ? "is-selected" : ""}`}
+                      key={adapter.id}
+                      title={adapter.reason}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={!selectable || deployBusy !== null}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+                          setSelectedDeployAdapters((current) =>
+                            checked
+                              ? Array.from(new Set([...current, adapter.id]))
+                              : current.filter((id) => id !== adapter.id),
+                          );
+                        }}
+                      />
+                      <strong>{adapter.label}</strong>
+                      <em>{adapter.status}</em>
+                      {adapter.confidence ? <small>{adapter.confidence}</small> : null}
+                    </label>
+                  );
+                })}
+                <span title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</span>
+                {workspaceInspection.existingEnrollment ? <strong>enrolled</strong> : null}
+              </div>
+            ) : null}
+
+            {workspaceEnrollment ? (
+              <div className="deploy-result" title={workspaceEnrollment.vaultRoot}>
+                <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
+                <span>{workspaceEnrollment.installedFiles.length} files</span>
+                <span>{workspaceEnrollment.mergedFiles.length} merged</span>
+              </div>
+            ) : null}
+          </section>
+        </div>
+      ) : null}
     </main>
   );
 }
