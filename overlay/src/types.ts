@@ -26,6 +26,21 @@ export interface WindowHint {
   boundLabel?: string | null;
 }
 
+export type TargetBindingType = "window" | "codex-app-thread";
+
+export interface TargetBinding {
+  type: TargetBindingType;
+  label?: string | null;
+  boundAt?: string | null;
+  boundBy?: string | null;
+  hwnd?: number | null;
+  processId?: number | null;
+  processName?: string | null;
+  title?: string | null;
+  threadId?: string | null;
+  uri?: string | null;
+}
+
 export type ObsidianPluginHealthStatus = "ok" | "warning" | "missing" | "unknown";
 
 export interface ObsidianPluginHealth {
@@ -54,6 +69,7 @@ export interface AgentSession {
   lastMessage: string;
   needsAttention: boolean;
   windowHint?: WindowHint;
+  targetBinding?: TargetBinding | null;
   workspaceId?: string;
   workspacePath?: string;
   vaultRoot?: string;
@@ -147,6 +163,10 @@ export interface WorkspaceAdapterPlan {
   id: string;
   label: string;
   status: string;
+  deploymentStatus?: string;
+  workspaceState?: string;
+  deployable?: boolean;
+  recommended?: boolean;
   confidence?: string;
   scope?: string;
   reason?: string;
@@ -181,6 +201,20 @@ export interface WorkspaceEnrollment {
   vaultRoot: string;
   canvasPath: string;
   deferredAdapters?: WorkspaceAdapterPlan[];
+}
+
+export interface WorkspaceLaunchResult {
+  ok: boolean;
+  schemaVersion: number;
+  workspaceId: string;
+  workspacePath: string;
+  adapterId: string;
+  projectName: string;
+  launchedAt: string;
+  pid?: number | null;
+  command?: string;
+  args?: string[];
+  message: string;
 }
 
 export interface WorkspaceMaintenanceStatus {

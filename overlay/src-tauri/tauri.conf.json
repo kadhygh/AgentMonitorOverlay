@@ -46,6 +46,38 @@
         "skipTaskbar": true,
         "visible": false,
         "center": false
+      },
+      {
+        "label": "deploy",
+        "title": "Deploy Workspace",
+        "width": 760,
+        "height": 600,
+        "minWidth": 620,
+        "minHeight": 460,
+        "resizable": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "transparent": true,
+        "shadow": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "center": true
+      },
+      {
+        "label": "settings",
+        "title": "AMO Settings",
+        "width": 660,
+        "height": 500,
+        "minWidth": 540,
+        "minHeight": 400,
+        "resizable": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "transparent": true,
+        "shadow": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "center": true
       }
     ]
   },

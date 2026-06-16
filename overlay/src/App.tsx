@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
-import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
   Bot,
@@ -19,6 +19,7 @@ import {
   RefreshCcw,
   CircleCheck,
   Settings2,
+  SquareTerminal,
   StickyNote,
   Trash2,
   Unlink2,
@@ -40,9 +41,12 @@ import type {
   ObsidianVaultRegistrationResult,
   OpenPathResult,
   SessionState,
+  TargetBinding,
   WorkspaceCleanResult,
+  WorkspaceAdapterPlan,
   WorkspaceEnrollment,
   WorkspaceInspection,
+  WorkspaceLaunchResult,
   WorkspaceMaintenanceStatus,
 } from "./types";
 
@@ -52,20 +56,33 @@ const BROKER_OBSIDIAN_REGISTER_VAULT_URL = "http://127.0.0.1:17654/api/obsidian/
 const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
 const BROKER_WORKSPACE_ENROLL_URL = "http://127.0.0.1:17654/api/workspaces/enroll";
+const BROKER_WORKSPACE_LAUNCH_URL = "http://127.0.0.1:17654/api/workspaces/launch";
 const BROKER_WORKSPACE_STATUS_URL = "http://127.0.0.1:17654/api/workspaces/status";
 const BROKER_WORKSPACE_CLEAN_VAULT_URL = "http://127.0.0.1:17654/api/workspaces/clean-vault";
 const BROKER_DEBUG_URL = "http://127.0.0.1:17654/api/debug";
 const BROKER_DEBUG_LOGS_URL = "http://127.0.0.1:17654/api/debug/logs";
 const REFRESH_INTERVAL_MS = 3000;
+const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
+const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 86 };
+const DIALOG_SIZES = {
+  deploy: { width: 760, height: 600 },
+  settings: { width: 660, height: 500 },
+};
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
 const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
 const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
 
 type ScratchpadShortcutButton = "mouse4" | "mouse5";
+type UtilityWindowKind = "deploy" | "settings";
 
 interface ScratchpadShortcutState {
   enabled: boolean;
   button: ScratchpadShortcutButton;
+}
+
+interface UtilityWindowStateEvent {
+  label: UtilityWindowKind;
+  open: boolean;
 }
 
 type SettingsSection = "scratchpad";
@@ -77,12 +94,71 @@ interface ScratchpadShortcutResult {
   message: string;
 }
 
-function brokerSessionWindowBindingUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/window-binding`;
+function brokerSessionTargetBindingUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/target-binding`;
 }
 
-function brokerSessionWindowBindingClearUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/window-binding/clear`;
+function brokerSessionTargetBindingClearUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/target-binding/clear`;
+}
+
+async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
+  const response = await fetch(url, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => null);
+  if (!response.ok) {
+    throw new Error(payload?.message ?? `broker returned ${response.status}`);
+  }
+
+  return payload as T;
+}
+
+function startUtilityWindowDrag(event: PointerEvent<HTMLElement>) {
+  if ((event.target as HTMLElement).closest("button, input, select, textarea, label")) {
+    return;
+  }
+
+  void getCurrentWindow().startDragging().catch(() => undefined);
+}
+
+async function closeUtilityWindow(label: UtilityWindowKind) {
+  const payload = { label, open: false } satisfies UtilityWindowStateEvent;
+  await getCurrentWindow().emitTo("main", "amo-utility-window-state", payload).catch(() => undefined);
+  await getCurrentWindow().hide().catch(() => undefined);
+  await getCurrentWindow().emitTo("main", "amo-utility-window-state", payload).catch(() => undefined);
+}
+
+function useUtilityWindowLifecycle(label: UtilityWindowKind) {
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    void getCurrentWindow()
+      .onCloseRequested((event) => {
+        event.preventDefault();
+        void closeUtilityWindow(label);
+      })
+      .then((handler) => {
+        unlisten = handler;
+      });
+
+    return () => {
+      unlisten?.();
+    };
+  }, [label]);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        void closeUtilityWindow(label);
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [label]);
 }
 
 function loadScratchpadShortcutState(): ScratchpadShortcutState {
@@ -179,9 +255,68 @@ function toolDisplayForSession(session: AgentSession) {
   return toolDisplay[toolDisplayIdForSession(session)];
 }
 
+function isCodexSession(session: AgentSession) {
+  const rawTool = String(session.tool || "").toLowerCase();
+  return rawTool.includes("codex") || toolDisplayIdForSession(session).startsWith("codex");
+}
+
+function codexAppThreadUri(threadId: string) {
+  return `codex://threads/${encodeURIComponent(threadId)}`;
+}
+
+function codexAppTargetForSession(session: AgentSession): TargetBinding {
+  return {
+    type: "codex-app-thread",
+    label: "Codex App",
+    threadId: session.sessionId,
+    uri: codexAppThreadUri(session.sessionId),
+  };
+}
+
+function windowTargetForSession(session: AgentSession): TargetBinding | null {
+  const hint = session.windowHint;
+  if (!hint || (!hint.hwnd && !hint.pid)) {
+    return null;
+  }
+
+  return {
+    type: "window",
+    label: hint.boundLabel ?? hint.title ?? hint.process ?? "Window",
+    hwnd: hint.hwnd ?? null,
+    processId: hint.pid ?? null,
+    processName: hint.process ?? null,
+    title: hint.title ?? null,
+    boundAt: hint.boundAt ?? null,
+    boundBy: hint.boundBy ?? null,
+  };
+}
+
+function targetBindingForSession(session: AgentSession): TargetBinding | null {
+  return session.targetBinding ?? windowTargetForSession(session);
+}
+
+function targetLabelForSession(session: AgentSession) {
+  const target = targetBindingForSession(session);
+  if (!target) return "Auto";
+  if (target.type === "codex-app-thread") return "Codex App";
+  return target.label ?? target.title ?? target.processName ?? "Window";
+}
+
 function projectName(cwd: string) {
   const parts = cwd.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? cwd;
+}
+
+function isDeployableWorkspaceAdapter(adapter: WorkspaceAdapterPlan) {
+  return typeof adapter.deployable === "boolean" ? adapter.deployable : adapter.status === "available";
+}
+
+function adapterStateLabel(adapter: WorkspaceAdapterPlan) {
+  return adapter.deploymentStatus ?? adapter.status;
+}
+
+function adapterContextLabel(adapter: WorkspaceAdapterPlan) {
+  return adapter.workspaceState ?? adapter.confidence;
 }
 
 function formatAgo(updatedAt: string) {
@@ -476,6 +611,7 @@ interface CandidateMenuState {
   x: number;
   y: number;
   bindOnSelect: boolean;
+  codexAppAvailable: boolean;
 }
 
 interface WorkspacePanelState {
@@ -525,6 +661,7 @@ function SessionRowContent({
   onOpenCanvas,
   onCopyPrompt,
   onUnbindWindow,
+  onOpenCodexAppTarget,
   onOpenWorkspacePanel,
 }: {
   session: AgentSession;
@@ -536,12 +673,16 @@ function SessionRowContent({
   onOpenCanvas: () => void;
   onCopyPrompt: () => void;
   onUnbindWindow: () => void;
+  onOpenCodexAppTarget: () => void;
   onOpenWorkspacePanel: (x: number, y: number) => void;
 }) {
   const notePath = notePathForOpen(session);
   const canvasPath = canvasPathForOpen(session);
   const pendingPromptLabel = session.pendingAnnotationCount ? `Sync ${session.pendingAnnotationCount}` : "Sync";
   const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
+  const targetBinding = targetBindingForSession(session);
+  const targetBound = Boolean(targetBinding);
+  const codexAppAvailable = isCodexSession(session);
   const noteOpening = openingTarget === "note";
   const canvasOpening = openingTarget === "canvas";
   const waitingForPermission = session.state === "waiting_permission";
@@ -586,14 +727,19 @@ function SessionRowContent({
                 Needs attention
               </span>
             ) : null}
-            {windowBound ? (
+            {windowBound && !targetBound ? (
               <span className="session-tag" title={session.windowHint?.boundLabel ?? session.windowHint?.title ?? session.title}>
                 Window bound
               </span>
             ) : null}
+            {targetBound ? (
+              <span className="session-tag target-tag" title={targetBinding?.label ?? targetLabelForSession(session)}>
+                Target: {targetLabelForSession(session)}
+              </span>
+            ) : null}
           </span>
         </span>
-        {notePath || canvasPath || session.pendingPrompt || windowBound || waitingForPermission ? (
+        {notePath || canvasPath || session.pendingPrompt || targetBound || waitingForPermission || codexAppAvailable ? (
           <span className="bridge-actions" aria-label="Bridge actions">
             {waitingForPermission ? (
               <span className="permission-pill" title="点击卡片切回 CLI，手动处理权限请求">
@@ -640,7 +786,7 @@ function SessionRowContent({
                   copyingPrompt ? "is-busy" : ""
                 }`}
                 aria-busy={copyingPrompt}
-                title="Copy pending prompt and focus CLI"
+                title="Copy pending prompt and focus target"
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -651,12 +797,30 @@ function SessionRowContent({
                 <span>{pendingPromptLabel}</span>
               </button>
             ) : null}
-            {windowBound ? (
+            {codexAppAvailable ? (
+              <button
+                type="button"
+                className={`row-tool-button codex-app-target-button ${
+                  targetBinding?.type === "codex-app-thread" ? "is-target" : ""
+                } ${activating ? "is-busy" : ""}`}
+                aria-busy={activating}
+                title="Open and bind this card to Codex App"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOpenCodexAppTarget();
+                }}
+              >
+                <Bot size={13} aria-hidden="true" />
+                <span>App</span>
+              </button>
+            ) : null}
+            {targetBound ? (
               <button
                 type="button"
                 className={`row-tool-button binding-button ${unbindingWindow ? "is-busy" : ""}`}
                 aria-busy={unbindingWindow}
-                title={`Unbind window: ${session.windowHint?.boundLabel ?? session.windowHint?.title ?? session.title}`}
+                title={`Unbind target: ${targetLabelForSession(session)}`}
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -781,9 +945,514 @@ function ScratchpadApp() {
   );
 }
 
+function DeployWorkspaceApp() {
+  useUtilityWindowLifecycle("deploy");
+
+  const [workspacePath, setWorkspacePath] = useState("");
+  const [workspaceInspection, setWorkspaceInspection] = useState<WorkspaceInspection | null>(null);
+  const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
+  const [selectedDeployAdapters, setSelectedDeployAdapters] = useState<string[]>([]);
+  const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | null>(null);
+  const [launchBusy, setLaunchBusy] = useState<string | null>(null);
+  const [feedback, setFeedback] = useState("Choose or paste a workspace path.");
+
+  async function postUtilityDebugLog(event: string, data?: unknown) {
+    try {
+      await postBrokerJson<{ ok: boolean; count: number }>(BROKER_DEBUG_LOGS_URL, {
+        source: "deploy-window",
+        event,
+        data: data ?? {},
+      });
+    } catch {
+      // Debug logging should never block deployment actions.
+    }
+  }
+
+  async function inspectWorkspace(pathOverride?: string) {
+    const targetPath = (pathOverride ?? workspacePath).trim();
+    if (!targetPath) {
+      setFeedback("Workspace path is required.");
+      return;
+    }
+
+    setDeployBusy("inspect");
+    setWorkspaceEnrollment(null);
+    setFeedback("Checking workspace...");
+
+    try {
+      const result = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
+        workspacePath: targetPath,
+      });
+      void postUtilityDebugLog("workspace.inspect.ok", {
+        workspacePath: result.workspacePath,
+        projectName: result.projectName,
+        adapters: result.supportedAdapters.map((adapter) => ({
+          id: adapter.id,
+          status: adapter.status,
+          deploymentStatus: adapter.deploymentStatus,
+          workspaceState: adapter.workspaceState,
+          deployable: adapter.deployable,
+          recommended: adapter.recommended,
+        })),
+      });
+      setWorkspaceInspection(result);
+      setWorkspacePath(result.workspacePath);
+      const selectedAdapters = result.supportedAdapters
+        .filter((adapter) => isDeployableWorkspaceAdapter(adapter) && adapter.recommended !== false)
+        .map((adapter) => adapter.id);
+      setSelectedDeployAdapters(selectedAdapters);
+      const deployableCount = result.supportedAdapters.filter(isDeployableWorkspaceAdapter).length;
+      setFeedback(`${result.projectName}: ${deployableCount} deployable adapter(s), ${selectedAdapters.length} selected.`);
+    } catch (error) {
+      void postUtilityDebugLog("workspace.inspect.error", {
+        workspacePath: targetPath,
+        message: (error as Error).message,
+      });
+      setWorkspaceInspection(null);
+      setFeedback(`Check failed: ${(error as Error).message}`);
+    } finally {
+      setDeployBusy(null);
+    }
+  }
+
+  async function chooseWorkspaceDirectory() {
+    setFeedback("Choose a workspace folder...");
+
+    try {
+      const result = await invoke<FolderPickResult>("select_workspace_directory");
+      if (!result.ok || !result.path) {
+        setFeedback(result.message);
+        return;
+      }
+
+      setWorkspacePath(result.path);
+      setWorkspaceInspection(null);
+      setWorkspaceEnrollment(null);
+      setSelectedDeployAdapters([]);
+      await inspectWorkspace(result.path);
+    } catch (error) {
+      setFeedback(`Folder selection failed: ${(error as Error).message}`);
+    }
+  }
+
+  function updateWorkspacePathInput(value: string) {
+    setWorkspacePath(value);
+    if (workspaceInspection && value.trim() !== workspaceInspection.workspacePath) {
+      setWorkspaceInspection(null);
+      setWorkspaceEnrollment(null);
+      setSelectedDeployAdapters([]);
+    }
+  }
+
+  async function enrollWorkspace() {
+    const targetPath = workspaceInspection?.workspacePath ?? workspacePath.trim();
+    if (!targetPath) {
+      setFeedback("Workspace path is required.");
+      return;
+    }
+
+    setDeployBusy("enroll");
+    setFeedback("Deploying workspace adapter...");
+
+    try {
+      const adapters =
+        selectedDeployAdapters.length > 0
+          ? selectedDeployAdapters
+          : (workspaceInspection?.supportedAdapters || [])
+              .filter(isDeployableWorkspaceAdapter)
+              .map((adapter) => adapter.id);
+      if (adapters.length === 0) {
+        setFeedback("No deployable adapter selected.");
+        return;
+      }
+
+      const result = await postBrokerJson<WorkspaceEnrollment>(BROKER_WORKSPACE_ENROLL_URL, {
+        workspacePath: targetPath,
+        adapters,
+      });
+      void postUtilityDebugLog("workspace.enroll.ok", {
+        workspacePath: result.workspacePath,
+        vaultRoot: result.vaultRoot,
+        installedAdapters: result.installedAdapters,
+      });
+      setWorkspaceEnrollment(result);
+      setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}.`);
+    } catch (error) {
+      void postUtilityDebugLog("workspace.enroll.error", {
+        workspacePath: targetPath,
+        message: (error as Error).message,
+      });
+      setFeedback(`Deploy failed: ${(error as Error).message}`);
+    } finally {
+      setDeployBusy(null);
+    }
+  }
+
+  async function launchWorkspace(adapterId: string) {
+    const targetPath = workspaceEnrollment?.workspacePath ?? workspaceInspection?.workspacePath ?? workspacePath.trim();
+    if (!targetPath) {
+      setFeedback("Workspace path is required.");
+      return;
+    }
+
+    setLaunchBusy(adapterId);
+    const label =
+      adapterId === "codex-cli" ? "Codex CLI" : adapterId === "claude-cli" ? "Claude CLI" : "Codex App";
+    setFeedback(`Launching ${label}...`);
+
+    try {
+      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
+        workspacePath: targetPath,
+        adapterId,
+      });
+      void postUtilityDebugLog("workspace.launch.ok", {
+        workspacePath: result.workspacePath,
+        adapterId: result.adapterId,
+        pid: result.pid ?? null,
+      });
+      setFeedback(result.message);
+    } catch (error) {
+      void postUtilityDebugLog("workspace.launch.error", {
+        workspacePath: targetPath,
+        adapterId,
+        message: (error as Error).message,
+      });
+      setFeedback(`Launch failed: ${(error as Error).message}`);
+    } finally {
+      setLaunchBusy(null);
+    }
+  }
+
+  async function openDeploymentPath(path: string | undefined, label: string) {
+    if (!path) return;
+    try {
+      const result = await invoke<OpenPathResult>("open_path", { path });
+      setFeedback(result.ok ? `Opened ${label}.` : result.message);
+    } catch (error) {
+      setFeedback(`Open ${label} failed: ${(error as Error).message}`);
+    }
+  }
+
+  return (
+    <main className="utility-window-shell deploy-window-shell">
+      <section className="app-dialog deploy-panel" role="dialog" aria-label="Workspace deployment">
+        <header className="app-dialog-titlebar">
+          <div className="app-dialog-title" onPointerDown={startUtilityWindowDrag}>
+            <FolderPlus size={16} aria-hidden="true" />
+            <div>
+              <strong>Deploy Workspace</strong>
+              <span>Project-local hooks and AMO vault</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="candidate-close"
+            title="Close deploy"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              void closeUtilityWindow("deploy");
+            }}
+          >
+            <X size={13} aria-hidden="true" />
+          </button>
+        </header>
+
+        <div className="deploy-dialog-body">
+          <section className="dialog-section deploy-workspace-section">
+            <div className="dialog-section-heading">
+              <strong>Workspace</strong>
+              <span>{workspaceInspection ? projectName(workspaceInspection.workspacePath) : "Not checked"}</span>
+            </div>
+            <input
+              className="deploy-path-input"
+              type="text"
+              spellCheck={false}
+              value={workspacePath}
+              placeholder="Paste or choose a workspace path"
+              title={workspacePath || "No workspace selected"}
+              disabled={deployBusy !== null || launchBusy !== null}
+              onChange={(event) => updateWorkspacePathInput(event.currentTarget.value)}
+              onKeyDown={(event) => {
+                if (event.key === "Enter") {
+                  event.preventDefault();
+                  void inspectWorkspace();
+                }
+              }}
+            />
+            <div className="deploy-action-row">
+              <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void chooseWorkspaceDirectory()}>
+                Choose
+              </button>
+              <button
+                type="button"
+                title="Check folder before deploying; this does not write files."
+                disabled={!workspacePath.trim() || deployBusy !== null || launchBusy !== null}
+                onClick={() => void inspectWorkspace()}
+              >
+                {deployBusy === "inspect" ? "Checking" : "Check"}
+              </button>
+              <button
+                type="button"
+                className="primary"
+                disabled={!workspaceInspection || selectedDeployAdapters.length === 0 || deployBusy !== null || launchBusy !== null}
+                onClick={() => void enrollWorkspace()}
+              >
+                {deployBusy === "enroll" ? "Deploying" : "Deploy"}
+              </button>
+            </div>
+
+            {workspaceInspection ? (
+              <dl className="deploy-status-grid">
+                <div>
+                  <dt>Path</dt>
+                  <dd title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</dd>
+                </div>
+                <div>
+                  <dt>State</dt>
+                  <dd>{workspaceInspection.existingEnrollment ? "enrolled" : "not enrolled"}</dd>
+                </div>
+                <div>
+                  <dt>Selected</dt>
+                  <dd>{selectedDeployAdapters.length}</dd>
+                </div>
+              </dl>
+            ) : (
+              <div className="deploy-placeholder">Check a workspace to review deployment status.</div>
+            )}
+          </section>
+
+          <section className="dialog-section deploy-adapters-section">
+            <div className="dialog-section-heading">
+              <strong>Adapters</strong>
+              <span>{workspaceInspection ? `${workspaceInspection.supportedAdapters.length} available targets` : "Awaiting check"}</span>
+            </div>
+            {workspaceInspection ? (
+              <div className="deploy-adapter-list">
+                {workspaceInspection.supportedAdapters.map((adapter) => {
+                  const selectable = isDeployableWorkspaceAdapter(adapter);
+                  const selected = selectedDeployAdapters.includes(adapter.id);
+                  const stateLabel = adapterStateLabel(adapter);
+                  const contextLabel = adapterContextLabel(adapter);
+                  return (
+                    <label
+                      className={`deploy-adapter-card status-${adapter.status} state-${stateLabel} ${
+                        selected ? "is-selected" : ""
+                      }`}
+                      key={adapter.id}
+                      title={adapter.reason}
+                    >
+                      <input
+                        type="checkbox"
+                        checked={selected}
+                        disabled={!selectable || deployBusy !== null}
+                        onChange={(event) => {
+                          const checked = event.currentTarget.checked;
+                          setSelectedDeployAdapters((current) =>
+                            checked ? Array.from(new Set([...current, adapter.id])) : current.filter((id) => id !== adapter.id),
+                          );
+                        }}
+                      />
+                      <span className="deploy-adapter-copy">
+                        <strong>{adapter.label}</strong>
+                        <span>{adapter.reason}</span>
+                      </span>
+                      <span className="deploy-adapter-badges">
+                        <em>{stateLabel}</em>
+                        {contextLabel ? <small>{contextLabel}</small> : null}
+                      </span>
+                    </label>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="deploy-placeholder">Adapter details appear after Check.</div>
+            )}
+          </section>
+        </div>
+
+        <footer className="app-dialog-footer">
+          {workspaceEnrollment ? (
+            <div className="deploy-result" title={workspaceEnrollment.vaultRoot}>
+              <div className="deploy-result-summary">
+                <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
+                <span>{workspaceEnrollment.installedFiles.length} files</span>
+                <span>{workspaceEnrollment.mergedFiles.length} merged</span>
+              </div>
+              <div className="deploy-launch-actions" aria-label="Launch workspace tools">
+                {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
+                  <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void launchWorkspace("codex-cli")}>
+                    <SquareTerminal size={12} aria-hidden="true" />
+                    <span>{launchBusy === "codex-cli" ? "Starting" : "Run Codex"}</span>
+                  </button>
+                ) : null}
+                {workspaceEnrollment.installedAdapters.includes("claude-cli") ? (
+                  <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void launchWorkspace("claude-cli")}>
+                    <SquareTerminal size={12} aria-hidden="true" />
+                    <span>{launchBusy === "claude-cli" ? "Starting" : "Run Claude"}</span>
+                  </button>
+                ) : null}
+                {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
+                  <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void launchWorkspace("codex-app")}>
+                    <Bot size={12} aria-hidden="true" />
+                    <span>{launchBusy === "codex-app" ? "Opening" : "Open App"}</span>
+                  </button>
+                ) : null}
+                <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void openDeploymentPath(workspaceEnrollment.workspacePath, "workspace")}>
+                  <FolderOpen size={12} aria-hidden="true" />
+                  <span>Project</span>
+                </button>
+                <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void openDeploymentPath(workspaceEnrollment.vaultRoot, "vault")}>
+                  <FolderOpen size={12} aria-hidden="true" />
+                  <span>Vault</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <span title={feedback}>{feedback}</span>
+          )}
+        </footer>
+      </section>
+    </main>
+  );
+}
+
+function SettingsWindowApp() {
+  useUtilityWindowLifecycle("settings");
+
+  const [settingsSection, setSettingsSection] = useState<SettingsSection>("scratchpad");
+  const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
+    loadScratchpadShortcutState(),
+  );
+  const [feedback, setFeedback] = useState("Settings ready.");
+
+  async function updateScratchpadShortcut(next: ScratchpadShortcutState) {
+    setScratchpadShortcut(next);
+    saveScratchpadShortcutState(next);
+
+    try {
+      const result = await applyScratchpadShortcutState(next);
+      setFeedback(result.message);
+    } catch (error) {
+      setFeedback(`Scratchpad shortcut update failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function openScratchpadNow() {
+    try {
+      const result = await invoke<OpenPathResult>("show_scratchpad_at_cursor");
+      setFeedback(result.message);
+    } catch (error) {
+      setFeedback(`Scratchpad open failed: ${(error as Error).message}`);
+    }
+  }
+
+  return (
+    <main className="utility-window-shell settings-window-shell">
+      <section className="app-dialog settings-dialog" role="dialog" aria-label="AMO settings">
+        <header className="app-dialog-titlebar">
+          <div className="app-dialog-title" onPointerDown={startUtilityWindowDrag}>
+            <Settings2 size={16} aria-hidden="true" />
+            <div>
+              <strong>Settings</strong>
+              <span>AMO workspace and utility preferences</span>
+            </div>
+          </div>
+          <button
+            type="button"
+            className="candidate-close"
+            title="Close settings"
+            onPointerDown={(event) => event.stopPropagation()}
+            onClick={(event) => {
+              event.stopPropagation();
+              void closeUtilityWindow("settings");
+            }}
+          >
+            <X size={13} aria-hidden="true" />
+          </button>
+        </header>
+
+        <aside className="settings-sidebar" aria-label="Settings sections">
+          <strong>Sections</strong>
+          <button
+            type="button"
+            className={`settings-nav-button ${settingsSection === "scratchpad" ? "is-active" : ""}`}
+            onClick={() => setSettingsSection("scratchpad")}
+          >
+            <StickyNote size={13} aria-hidden="true" />
+            <span>Scratchpad</span>
+          </button>
+        </aside>
+
+        <div className="settings-detail">
+          <header className="settings-detail-header">
+            <div>
+              <strong>Scratchpad</strong>
+              <span>
+                {scratchpadShortcut.enabled
+                  ? `Ctrl + ${scratchpadShortcut.button === "mouse5" ? "Mouse5" : "Mouse4"}`
+                  : "Disabled"}
+              </span>
+            </div>
+          </header>
+
+          {settingsSection === "scratchpad" ? (
+            <div className="settings-section-body">
+              <label className="settings-toggle">
+                <input
+                  type="checkbox"
+                  checked={scratchpadShortcut.enabled}
+                  onChange={(event) =>
+                    void updateScratchpadShortcut({
+                      ...scratchpadShortcut,
+                      enabled: event.currentTarget.checked,
+                    })
+                  }
+                />
+                <span>Enable global shortcut</span>
+              </label>
+
+              <label className="settings-field">
+                <span>Shortcut</span>
+                <select
+                  value={scratchpadShortcut.button}
+                  disabled={!scratchpadShortcut.enabled}
+                  onChange={(event) =>
+                    void updateScratchpadShortcut({
+                      ...scratchpadShortcut,
+                      button: event.currentTarget.value === "mouse5" ? "mouse5" : "mouse4",
+                    })
+                  }
+                >
+                  <option value="mouse4">Ctrl + Mouse4</option>
+                  <option value="mouse5">Ctrl + Mouse5</option>
+                </select>
+              </label>
+
+              <button type="button" className="settings-primary-action" onClick={() => void openScratchpadNow()}>
+                Open scratchpad now
+              </button>
+            </div>
+          ) : null}
+        </div>
+
+        <footer className="app-dialog-footer">
+          <span title={feedback}>{feedback}</span>
+        </footer>
+      </section>
+    </main>
+  );
+}
+
 export default function App() {
   if (CURRENT_WINDOW_LABEL === "scratchpad") {
     return <ScratchpadApp />;
+  }
+  if (CURRENT_WINDOW_LABEL === "deploy") {
+    return <DeployWorkspaceApp />;
+  }
+  if (CURRENT_WINDOW_LABEL === "settings") {
+    return <SettingsWindowApp />;
   }
 
   const [sessions, setSessions] = useState<AgentSession[]>(mockSessions);
@@ -807,6 +1476,7 @@ export default function App() {
   const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
   const [selectedDeployAdapters, setSelectedDeployAdapters] = useState<string[]>([]);
   const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | null>(null);
+  const [launchBusy, setLaunchBusy] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("scratchpad");
   const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
@@ -818,6 +1488,7 @@ export default function App() {
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [debugCount, setDebugCount] = useState(0);
   const [debugBusy, setDebugBusy] = useState(false);
+  const [activeUtilityWindow, setActiveUtilityWindow] = useState<UtilityWindowKind | null>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const sessionsRef = useRef(sessions);
   const orderedSessionsRef = useRef<AgentSession[]>([]);
@@ -826,6 +1497,7 @@ export default function App() {
   const cardDragRef = useRef<CardDragState | null>(null);
   const cardDragCleanupRef = useRef<(() => void) | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
+  const dialogRestoreSizeRef = useRef<{ width: number; height: number } | null>(null);
   const suppressNextClickRef = useRef(false);
 
   const orderedSessions = useMemo(
@@ -862,6 +1534,28 @@ export default function App() {
 
   useEffect(() => {
     return () => removeCardDragListeners();
+  }, []);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    void getCurrentWindow()
+      .listen<UtilityWindowStateEvent>("amo-utility-window-state", (event) => {
+        const payload = event.payload;
+        if (!payload?.label) return;
+        setActiveUtilityWindow((current) => {
+          if (payload.open) {
+            return payload.label;
+          }
+          return current === payload.label ? null : current;
+        });
+      })
+      .then((handler) => {
+        unlisten = handler;
+      });
+
+    return () => {
+      unlisten?.();
+    };
   }, []);
 
   async function refreshSessions(reason = "manual") {
@@ -924,20 +1618,6 @@ export default function App() {
     }
 
     await refreshSessions("startup");
-  }
-
-  async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
-    const response = await fetch(url, {
-      method: "POST",
-      headers: { "content-type": "application/json" },
-      body: JSON.stringify(body),
-    });
-    const payload = await response.json().catch(() => null);
-    if (!response.ok) {
-      throw new Error(payload?.message ?? `broker returned ${response.status}`);
-    }
-
-    return payload as T;
   }
 
   async function refreshDebugStatus() {
@@ -1020,6 +1700,52 @@ export default function App() {
     }
   }
 
+  async function openCodexAppTarget(session: AgentSession, bindTarget: boolean) {
+    const target = codexAppTargetForSession(session);
+    const uri = target.uri ?? codexAppThreadUri(session.sessionId);
+    setActivatingId(session.sessionId);
+    setCandidateMenu(null);
+    setFeedback(`${bindTarget ? "Binding and opening" : "Opening"} Codex App for ${projectName(session.cwd)}...`);
+    void postDebugLog("codex_app.target_open.start", {
+      sessionId: session.sessionId,
+      bindTarget,
+      uri,
+    });
+
+    try {
+      if (bindTarget) {
+        const binding = await postBrokerJson<{ ok: boolean; session: AgentSession; targetBinding: TargetBinding }>(
+          brokerSessionTargetBindingUrl(session.sessionId),
+          target,
+        );
+        setSessions((previous) =>
+          previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
+        );
+        void postDebugLog("codex_app.target_bound", {
+          sessionId: session.sessionId,
+          uri,
+        });
+      }
+
+      const result = await invoke<OpenPathResult>("open_uri", { uri });
+      void postDebugLog("codex_app.target_open.result", {
+        sessionId: session.sessionId,
+        ok: result.ok,
+        message: result.message,
+      });
+      setFeedback(result.ok ? "Codex App thread opened." : result.message);
+    } catch (error) {
+      void postDebugLog("codex_app.target_open.error", {
+        sessionId: session.sessionId,
+        bindTarget,
+        message: (error as Error).message,
+      });
+      setFeedback(`Open Codex App target failed: ${(error as Error).message}`);
+    } finally {
+      setActivatingId(null);
+    }
+  }
+
   async function inspectWorkspace(pathOverride?: string) {
     const targetPath = (pathOverride ?? workspacePath).trim();
     if (!targetPath) {
@@ -1041,16 +1767,21 @@ export default function App() {
         adapters: result.supportedAdapters.map((adapter) => ({
           id: adapter.id,
           status: adapter.status,
+          deploymentStatus: adapter.deploymentStatus,
+          workspaceState: adapter.workspaceState,
+          deployable: adapter.deployable,
+          recommended: adapter.recommended,
           confidence: adapter.confidence,
         })),
       });
       setWorkspaceInspection(result);
       setWorkspacePath(result.workspacePath);
       const availableAdapters = result.supportedAdapters
-        .filter((adapter) => adapter.status === "available")
+        .filter((adapter) => isDeployableWorkspaceAdapter(adapter) && adapter.recommended !== false)
         .map((adapter) => adapter.id);
       setSelectedDeployAdapters(availableAdapters);
-      setFeedback(`${result.projectName}: ${availableAdapters.length} adapter(s) available.`);
+      const deployableCount = result.supportedAdapters.filter(isDeployableWorkspaceAdapter).length;
+      setFeedback(`${result.projectName}: ${deployableCount} deployable adapter(s), ${availableAdapters.length} selected.`);
     } catch (error) {
       void postDebugLog("workspace.inspect.error", {
         workspacePath: targetPath,
@@ -1073,7 +1804,7 @@ export default function App() {
         return;
       }
 
-      setDeployOpen(true);
+      await openDeployDialog();
       setWorkspacePath(result.path);
       setWorkspaceInspection(null);
       setWorkspaceEnrollment(null);
@@ -1081,6 +1812,15 @@ export default function App() {
       await inspectWorkspace(result.path);
     } catch (error) {
       setFeedback(`Folder selection failed: ${(error as Error).message}`);
+    }
+  }
+
+  function updateWorkspacePathInput(value: string) {
+    setWorkspacePath(value);
+    if (workspaceInspection && value.trim() !== workspaceInspection.workspacePath) {
+      setWorkspaceInspection(null);
+      setWorkspaceEnrollment(null);
+      setSelectedDeployAdapters([]);
     }
   }
 
@@ -1099,10 +1839,10 @@ export default function App() {
         selectedDeployAdapters.length > 0
           ? selectedDeployAdapters
           : (workspaceInspection?.supportedAdapters || [])
-              .filter((adapter) => adapter.status === "available")
+              .filter(isDeployableWorkspaceAdapter)
               .map((adapter) => adapter.id);
       if (adapters.length === 0) {
-        setFeedback("No available adapter selected.");
+        setFeedback("No deployable adapter selected.");
         return;
       }
       const result = await postBrokerJson<WorkspaceEnrollment>(BROKER_WORKSPACE_ENROLL_URL, {
@@ -1125,6 +1865,45 @@ export default function App() {
       setFeedback(`Deploy failed: ${(error as Error).message}`);
     } finally {
       setDeployBusy(null);
+    }
+  }
+
+  async function launchWorkspace(adapterId: string) {
+    const targetPath = workspaceEnrollment?.workspacePath ?? workspaceInspection?.workspacePath ?? workspacePath.trim();
+    if (!targetPath) {
+      setFeedback("Workspace path is required.");
+      return;
+    }
+
+    setLaunchBusy(adapterId);
+    const label =
+      adapterId === "codex-cli" ? "Codex CLI" : adapterId === "claude-cli" ? "Claude CLI" : "Codex App";
+    setFeedback(`Launching ${label}...`);
+    void postDebugLog("workspace.launch.start", {
+      workspacePath: targetPath,
+      adapterId,
+    });
+
+    try {
+      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
+        workspacePath: targetPath,
+        adapterId,
+      });
+      void postDebugLog("workspace.launch.ok", {
+        workspacePath: result.workspacePath,
+        adapterId: result.adapterId,
+        pid: result.pid ?? null,
+      });
+      setFeedback(result.message);
+    } catch (error) {
+      void postDebugLog("workspace.launch.error", {
+        workspacePath: targetPath,
+        adapterId,
+        message: (error as Error).message,
+      });
+      setFeedback(`Launch failed: ${(error as Error).message}`);
+    } finally {
+      setLaunchBusy(null);
     }
   }
 
@@ -1282,20 +2061,132 @@ export default function App() {
 
     try {
       await getCurrentWindow().setSize(
-        nextCollapsed ? new LogicalSize(264, 86) : new LogicalSize(380, 520),
+        nextCollapsed
+          ? new LogicalSize(COLLAPSED_OVERLAY_SIZE.width, COLLAPSED_OVERLAY_SIZE.height)
+          : new LogicalSize(DEFAULT_OVERLAY_SIZE.width, DEFAULT_OVERLAY_SIZE.height),
       );
     } catch {
       // Browser preview cannot resize a native window.
     }
   }
 
+  function startDialogDrag(event: PointerEvent<HTMLElement>) {
+    if ((event.target as HTMLElement).closest("button, input, select, textarea, label")) {
+      return;
+    }
+
+    void getCurrentWindow().startDragging().catch(() => undefined);
+  }
+
+  async function expandForDialog(kind: keyof typeof DIALOG_SIZES) {
+    if (!dialogRestoreSizeRef.current) {
+      try {
+        const size = await getCurrentWindow().innerSize();
+        dialogRestoreSizeRef.current = collapsed
+          ? { ...DEFAULT_OVERLAY_SIZE }
+          : { width: Math.max(size.width, DEFAULT_OVERLAY_SIZE.width), height: Math.max(size.height, DEFAULT_OVERLAY_SIZE.height) };
+      } catch {
+        dialogRestoreSizeRef.current = { ...DEFAULT_OVERLAY_SIZE };
+      }
+    }
+
+    setCollapsed(false);
+    const nextSize = DIALOG_SIZES[kind];
+    try {
+      await getCurrentWindow().setSize(new LogicalSize(nextSize.width, nextSize.height));
+    } catch {
+      // Browser preview cannot resize a native window.
+    }
+  }
+
+  async function restoreAfterDialogClose() {
+    const restoreSize = dialogRestoreSizeRef.current;
+    dialogRestoreSizeRef.current = null;
+    if (!restoreSize) return;
+
+    try {
+      await getCurrentWindow().setSize(new LogicalSize(restoreSize.width, restoreSize.height));
+    } catch {
+      // Browser preview cannot resize a native window.
+    }
+  }
+
+  async function openDeployDialog() {
+    await openUtilityWindow("deploy");
+  }
+
+  async function closeDeployDialog() {
+    await hideUtilityWindow("deploy");
+  }
+
+  async function openSettingsDialog(section: SettingsSection = "scratchpad") {
+    setSettingsSection(section);
+    await openUtilityWindow("settings");
+  }
+
+  async function closeSettingsDialog() {
+    await hideUtilityWindow("settings");
+  }
+
+  async function openUtilityWindow(label: UtilityWindowKind) {
+    setDeployOpen(false);
+    setSettingsOpen(false);
+    setActiveUtilityWindow(label);
+
+    try {
+      const otherLabel: UtilityWindowKind = label === "deploy" ? "settings" : "deploy";
+      const otherWindow = await WebviewWindow.getByLabel(otherLabel);
+      await otherWindow?.hide();
+
+      const targetWindow = await WebviewWindow.getByLabel(label);
+      if (!targetWindow) {
+        throw new Error(`${label} window is not registered`);
+      }
+      await targetWindow.show();
+      await targetWindow.setFocus();
+      setFeedback(`${label === "deploy" ? "Deploy Workspace" : "Settings"} opened.`);
+    } catch (error) {
+      setActiveUtilityWindow(null);
+      setFeedback(`Open ${label} window failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function hideUtilityWindow(label: UtilityWindowKind) {
+    try {
+      const targetWindow = await WebviewWindow.getByLabel(label);
+      await targetWindow?.hide();
+    } catch {
+      // A missing utility window should still unblock the main window.
+    } finally {
+      setActiveUtilityWindow((current) => (current === label ? null : current));
+    }
+  }
+
+  async function focusUtilityWindow(label: UtilityWindowKind) {
+    try {
+      const targetWindow = await WebviewWindow.getByLabel(label);
+      await targetWindow?.show();
+      await targetWindow?.setFocus();
+    } catch (error) {
+      setActiveUtilityWindow(null);
+      setFeedback(`Focus ${label} window failed: ${(error as Error).message}`);
+    }
+  }
+
   async function activateSession(session: AgentSession, menuX?: number, menuY?: number) {
+    const targetBinding = targetBindingForSession(session);
+    if (targetBinding?.type === "codex-app-thread") {
+      await openCodexAppTarget(session, false);
+      return;
+    }
+
     setActivatingId(session.sessionId);
     setCandidateMenu(null);
-    setFeedback(`Activating ${session.title}...`);
+    setFeedback(`Activating ${targetBinding?.label ?? session.title}...`);
     void postDebugLog("window.activate.start", {
       sessionId: session.sessionId,
       title: session.title,
+      targetType: targetBinding?.type ?? "auto",
       hwnd: session.windowHint?.hwnd ?? null,
       pid: session.windowHint?.pid ?? null,
       cwd: session.cwd,
@@ -1304,23 +2195,27 @@ export default function App() {
     try {
       const result = await invoke<ActivationResult>("activate_session_window", {
         sessionId: session.sessionId,
-        title: session.windowHint?.title ?? session.title,
-        processName: session.windowHint?.process ?? "",
+        title: targetBinding?.type === "window" ? targetBinding.title ?? session.windowHint?.title ?? session.title : session.windowHint?.title ?? session.title,
+        processName:
+          targetBinding?.type === "window"
+            ? targetBinding.processName ?? session.windowHint?.process ?? ""
+            : session.windowHint?.process ?? "",
         titleToken: session.windowHint?.titleToken ?? "",
         titleContains: session.windowHint?.titleContains ?? [],
         project: session.windowHint?.project ?? projectName(session.cwd),
         cwd: session.windowHint?.cwd ?? session.cwd,
-        pid: session.windowHint?.pid ?? null,
-        hwnd: session.windowHint?.hwnd ?? null,
+        pid: targetBinding?.type === "window" ? targetBinding.processId ?? session.windowHint?.pid ?? null : session.windowHint?.pid ?? null,
+        hwnd: targetBinding?.type === "window" ? targetBinding.hwnd ?? session.windowHint?.hwnd ?? null : session.windowHint?.hwnd ?? null,
       });
-      if (!result.ok && result.candidates && result.candidates.length > 1) {
+      if (!result.ok && ((result.candidates && result.candidates.length > 1) || isCodexSession(session))) {
         const position = menuPosition(menuX, menuY);
         setCandidateMenu({
           session,
-          candidates: result.candidates,
+          candidates: result.candidates ?? [],
           x: position.x,
           y: position.y,
           bindOnSelect: true,
+          codexAppAvailable: isCodexSession(session),
         });
       }
       void postDebugLog("window.activate.result", {
@@ -1418,6 +2313,7 @@ export default function App() {
       pendingPromptId: session.pendingPromptId ?? null,
       promptLength: session.pendingPrompt.length,
       hasWindowBinding: Boolean(session.windowHint?.hwnd || session.windowHint?.pid),
+      targetType: targetBindingForSession(session)?.type ?? "auto",
     });
 
     try {
@@ -1458,7 +2354,7 @@ export default function App() {
         promptNotePath: syncResult.promptNotePath ?? null,
         promptCanvasNodeId: syncResult.promptCanvasNodeId ?? null,
       });
-      setFeedback("Pending prompt copied. Focusing target CLI...");
+      setFeedback("Pending prompt copied. Focusing target...");
       void refreshSessions("sync-copy");
       await activateSession(session);
     } catch (error) {
@@ -1506,8 +2402,9 @@ export default function App() {
       if (result.ok) {
         if (bindWindow) {
           const binding = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
-            brokerSessionWindowBindingUrl(session.sessionId),
+            brokerSessionTargetBindingUrl(session.sessionId),
             {
+              type: "window",
               hwnd: candidate.hwnd,
               processId: candidate.processId,
               processName: candidate.processName ?? null,
@@ -1543,16 +2440,17 @@ export default function App() {
 
   async function clearWindowBinding(session: AgentSession) {
     setUnbindingWindowId(session.sessionId);
-    setFeedback(`Clearing window binding for ${session.title}...`);
+    setFeedback(`Clearing target binding for ${session.title}...`);
     void postDebugLog("window.unbind.start", {
       sessionId: session.sessionId,
+      targetType: targetBindingForSession(session)?.type ?? "auto",
       hwnd: session.windowHint?.hwnd ?? null,
       pid: session.windowHint?.pid ?? null,
     });
 
     try {
       const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
-        brokerSessionWindowBindingClearUrl(session.sessionId),
+        brokerSessionTargetBindingClearUrl(session.sessionId),
         {},
       );
       setSessions((previous) =>
@@ -1561,8 +2459,8 @@ export default function App() {
       void postDebugLog("window.unbind.ok", {
         sessionId: session.sessionId,
       });
-      setFeedback("Window binding cleared.");
-      void refreshSessions("window-unbind");
+      setFeedback("Target binding cleared.");
+      void refreshSessions("target-unbind");
     } catch (error) {
       void postDebugLog("window.unbind.error", {
         sessionId: session.sessionId,
@@ -1944,11 +2842,10 @@ export default function App() {
         <div className="header-actions">
           <button
             type="button"
-            className={`icon-button ${settingsOpen ? "is-active" : ""}`}
+            className={`icon-button ${activeUtilityWindow === "settings" ? "is-active" : ""}`}
             title="Open settings"
             onClick={() => {
-              setSettingsSection("scratchpad");
-              setSettingsOpen(true);
+              void openSettingsDialog("scratchpad");
             }}
           >
             <Settings2 size={15} aria-hidden="true" />
@@ -1967,9 +2864,11 @@ export default function App() {
           </button>
           <button
             type="button"
-            className={`icon-button ${deployOpen ? "is-active" : ""}`}
-            title={deployOpen ? "Close deploy panel" : "Open deploy panel"}
-            onClick={() => setDeployOpen((value) => !value)}
+            className={`icon-button ${activeUtilityWindow === "deploy" ? "is-active" : ""}`}
+            title="Open deploy window"
+            onClick={() => {
+              void openDeployDialog();
+            }}
           >
             <FolderPlus size={15} aria-hidden="true" />
           </button>
@@ -2054,6 +2953,7 @@ export default function App() {
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
                   onCopyPrompt={() => void copyPendingPrompt(session)}
                   onUnbindWindow={() => void clearWindowBinding(session)}
+                  onOpenCodexAppTarget={() => void openCodexAppTarget(session, true)}
                   onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
                 />
               </div>
@@ -2064,10 +2964,10 @@ export default function App() {
             <section
               className="candidate-menu"
               style={{ left: candidateMenu.x, top: candidateMenu.y }}
-              aria-label="Window candidates"
+              aria-label="Target candidates"
             >
               <div className="candidate-menu-header">
-                <strong>Choose Window</strong>
+                <strong>Choose Target</strong>
                 <button
                   type="button"
                   className="candidate-close"
@@ -2088,9 +2988,22 @@ export default function App() {
                     );
                   }}
                 />
-                <span>Bind this window</span>
+                <span>Remember target</span>
               </label>
               <div className="candidate-list">
+                {candidateMenu.codexAppAvailable ? (
+                  <button
+                    type="button"
+                    className="candidate-item codex-app-candidate"
+                    title={codexAppThreadUri(candidateMenu.session.sessionId)}
+                    onClick={() =>
+                      void openCodexAppTarget(candidateMenu.session, candidateMenu.bindOnSelect)
+                    }
+                  >
+                    <strong>Codex App</strong>
+                    <span>Open thread {candidateMenu.session.sessionId}</span>
+                  </button>
+                ) : null}
                 {candidateMenu.candidates.map((candidate) => (
                   <button
                     type="button"
@@ -2256,19 +3169,37 @@ export default function App() {
 
           {settingsOpen ? (
             <div
-              className="settings-backdrop"
+              className="dialog-backdrop settings-backdrop"
               role="presentation"
-              onClick={() => setSettingsOpen(false)}
+              onClick={() => void closeSettingsDialog()}
             >
               <section
-                className="settings-dialog"
+                className="app-dialog settings-dialog"
                 role="dialog"
                 aria-modal="true"
                 aria-label="AMO settings"
                 onClick={(event) => event.stopPropagation()}
               >
+                <header className="app-dialog-titlebar" data-tauri-drag-region onPointerDown={startDialogDrag}>
+                  <div className="app-dialog-title" data-tauri-drag-region>
+                    <Settings2 size={16} aria-hidden="true" />
+                    <div data-tauri-drag-region>
+                      <strong>Settings</strong>
+                      <span>AMO workspace and utility preferences</span>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    className="candidate-close"
+                    title="Close settings"
+                    onClick={() => void closeSettingsDialog()}
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </header>
+
                 <aside className="settings-sidebar" aria-label="Settings sections">
-                  <strong>Settings</strong>
+                  <strong>Sections</strong>
                   <button
                     type="button"
                     className={`settings-nav-button ${settingsSection === "scratchpad" ? "is-active" : ""}`}
@@ -2289,14 +3220,6 @@ export default function App() {
                           : "Disabled"}
                       </span>
                     </div>
-                    <button
-                      type="button"
-                      className="candidate-close"
-                      title="Close settings"
-                      onClick={() => setSettingsOpen(false)}
-                    >
-                      <X size={13} aria-hidden="true" />
-                    </button>
                   </header>
 
                   {settingsSection === "scratchpad" ? (
@@ -2426,6 +3349,7 @@ export default function App() {
                     onOpenCanvas={() => undefined}
                     onCopyPrompt={() => undefined}
                     onUnbindWindow={() => undefined}
+                    onOpenCodexAppTarget={() => undefined}
                     onOpenWorkspacePanel={() => undefined}
                   />
                 ) : null;
@@ -2461,99 +3385,223 @@ export default function App() {
             onPointerUp={endWindowResize}
             onPointerCancel={endWindowResize}
           />
+
+          {activeUtilityWindow ? (
+            <button
+              type="button"
+              className="main-window-blocker"
+              title={`Focus ${activeUtilityWindow === "deploy" ? "Deploy Workspace" : "Settings"}`}
+              onClick={() => void focusUtilityWindow(activeUtilityWindow)}
+            >
+              <span>{activeUtilityWindow === "deploy" ? "Deploy Workspace" : "Settings"} is open</span>
+            </button>
+          ) : null}
         </>
       )}
 
       {deployOpen ? (
-        <div className="deploy-backdrop" role="presentation" onClick={() => setDeployOpen(false)}>
+        <div className="dialog-backdrop deploy-backdrop" role="presentation" onClick={() => void closeDeployDialog()}>
           <section
-            className="deploy-panel"
+            className="app-dialog deploy-panel"
             role="dialog"
             aria-modal="true"
             aria-label="Workspace deployment"
             onClick={(event) => event.stopPropagation()}
           >
-            <header className="deploy-dialog-header">
-              <div>
-                <strong>Deploy Workspace</strong>
-                <span>Workspace-local hooks and AMO vault</span>
+            <header className="app-dialog-titlebar" data-tauri-drag-region onPointerDown={startDialogDrag}>
+              <div className="app-dialog-title" data-tauri-drag-region>
+                <FolderPlus size={16} aria-hidden="true" />
+                <div data-tauri-drag-region>
+                  <strong>Deploy Workspace</strong>
+                  <span>Project-local hooks and AMO vault</span>
+                </div>
               </div>
               <button
                 type="button"
                 className="candidate-close"
                 title="Close deploy"
-                onClick={() => setDeployOpen(false)}
+                onClick={() => void closeDeployDialog()}
               >
                 <X size={13} aria-hidden="true" />
               </button>
             </header>
 
-            <div className="deploy-path-row">
-              <span className="deploy-path" title={workspacePath || "No workspace selected"}>
-                {workspacePath ? shortPathLabel(workspacePath) || workspacePath : "No workspace selected"}
-              </span>
-              <button type="button" disabled={deployBusy !== null} onClick={() => void chooseWorkspaceDirectory()}>
-                Choose
-              </button>
-              <button
-                type="button"
-                title="Check folder before deploying; this does not write files."
-                disabled={!workspacePath || deployBusy !== null}
-                onClick={() => void inspectWorkspace()}
-              >
-                {deployBusy === "inspect" ? "..." : "Check"}
-              </button>
-              <button
-                type="button"
-                disabled={!workspaceInspection || selectedDeployAdapters.length === 0 || deployBusy !== null}
-                onClick={() => void enrollWorkspace()}
-              >
-                {deployBusy === "enroll" ? "..." : "Deploy"}
-              </button>
+            <div className="deploy-dialog-body">
+              <section className="dialog-section deploy-workspace-section">
+                <div className="dialog-section-heading">
+                  <strong>Workspace</strong>
+                  <span>{workspaceInspection ? projectName(workspaceInspection.workspacePath) : "Not checked"}</span>
+                </div>
+                <input
+                  className="deploy-path-input"
+                  type="text"
+                  spellCheck={false}
+                  value={workspacePath}
+                  placeholder="Paste or choose a workspace path"
+                  title={workspacePath || "No workspace selected"}
+                  disabled={deployBusy !== null || launchBusy !== null}
+                  onChange={(event) => updateWorkspacePathInput(event.currentTarget.value)}
+                  onKeyDown={(event) => {
+                    if (event.key === "Enter") {
+                      event.preventDefault();
+                      void inspectWorkspace();
+                    }
+                  }}
+                />
+                <div className="deploy-action-row">
+                  <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void chooseWorkspaceDirectory()}>
+                    Choose
+                  </button>
+                  <button
+                    type="button"
+                    title="Check folder before deploying; this does not write files."
+                    disabled={!workspacePath.trim() || deployBusy !== null || launchBusy !== null}
+                    onClick={() => void inspectWorkspace()}
+                  >
+                    {deployBusy === "inspect" ? "Checking" : "Check"}
+                  </button>
+                  <button
+                    type="button"
+                    className="primary"
+                    disabled={!workspaceInspection || selectedDeployAdapters.length === 0 || deployBusy !== null || launchBusy !== null}
+                    onClick={() => void enrollWorkspace()}
+                  >
+                    {deployBusy === "enroll" ? "Deploying" : "Deploy"}
+                  </button>
+                </div>
+
+                {workspaceInspection ? (
+                  <dl className="deploy-status-grid">
+                    <div>
+                      <dt>Path</dt>
+                      <dd title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</dd>
+                    </div>
+                    <div>
+                      <dt>State</dt>
+                      <dd>{workspaceInspection.existingEnrollment ? "enrolled" : "not enrolled"}</dd>
+                    </div>
+                    <div>
+                      <dt>Selected</dt>
+                      <dd>{selectedDeployAdapters.length}</dd>
+                    </div>
+                  </dl>
+                ) : (
+                  <div className="deploy-placeholder">Check a workspace to review deployment status.</div>
+                )}
+              </section>
+
+              <section className="dialog-section deploy-adapters-section">
+                <div className="dialog-section-heading">
+                  <strong>Adapters</strong>
+                  <span>{workspaceInspection ? `${workspaceInspection.supportedAdapters.length} available targets` : "Awaiting check"}</span>
+                </div>
+                {workspaceInspection ? (
+                  <div className="deploy-adapter-list">
+                    {workspaceInspection.supportedAdapters.map((adapter) => {
+                      const selectable = isDeployableWorkspaceAdapter(adapter);
+                      const selected = selectedDeployAdapters.includes(adapter.id);
+                      const stateLabel = adapterStateLabel(adapter);
+                      const contextLabel = adapterContextLabel(adapter);
+                      return (
+                        <label
+                          className={`deploy-adapter-card status-${adapter.status} state-${stateLabel} ${
+                            selected ? "is-selected" : ""
+                          }`}
+                          key={adapter.id}
+                          title={adapter.reason}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            disabled={!selectable || deployBusy !== null}
+                            onChange={(event) => {
+                              const checked = event.currentTarget.checked;
+                              setSelectedDeployAdapters((current) =>
+                                checked
+                                  ? Array.from(new Set([...current, adapter.id]))
+                                  : current.filter((id) => id !== adapter.id),
+                              );
+                            }}
+                          />
+                          <span className="deploy-adapter-copy">
+                            <strong>{adapter.label}</strong>
+                            <span>{adapter.reason}</span>
+                          </span>
+                          <span className="deploy-adapter-badges">
+                            <em>{stateLabel}</em>
+                            {contextLabel ? <small>{contextLabel}</small> : null}
+                          </span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="deploy-placeholder">Adapter details appear after Check.</div>
+                )}
+              </section>
             </div>
 
-            {workspaceInspection ? (
-              <div className="deploy-plan">
-                {workspaceInspection.supportedAdapters.map((adapter) => {
-                  const selectable = adapter.status === "available";
-                  const selected = selectedDeployAdapters.includes(adapter.id);
-                  return (
-                    <label
-                      className={`deploy-pill status-${adapter.status} ${selected ? "is-selected" : ""}`}
-                      key={adapter.id}
-                      title={adapter.reason}
+            <footer className="app-dialog-footer">
+              {workspaceEnrollment ? (
+                <div className="deploy-result" title={workspaceEnrollment.vaultRoot}>
+                  <div className="deploy-result-summary">
+                    <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
+                    <span>{workspaceEnrollment.installedFiles.length} files</span>
+                    <span>{workspaceEnrollment.mergedFiles.length} merged</span>
+                  </div>
+                  <div className="deploy-launch-actions" aria-label="Launch workspace tools">
+                    {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
+                      <button
+                        type="button"
+                        disabled={deployBusy !== null || launchBusy !== null}
+                        onClick={() => void launchWorkspace("codex-cli")}
+                      >
+                        <SquareTerminal size={12} aria-hidden="true" />
+                        <span>{launchBusy === "codex-cli" ? "Starting" : "Run Codex"}</span>
+                      </button>
+                    ) : null}
+                    {workspaceEnrollment.installedAdapters.includes("claude-cli") ? (
+                      <button
+                        type="button"
+                        disabled={deployBusy !== null || launchBusy !== null}
+                        onClick={() => void launchWorkspace("claude-cli")}
+                      >
+                        <SquareTerminal size={12} aria-hidden="true" />
+                        <span>{launchBusy === "claude-cli" ? "Starting" : "Run Claude"}</span>
+                      </button>
+                    ) : null}
+                    {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
+                      <button
+                        type="button"
+                        disabled={deployBusy !== null || launchBusy !== null}
+                        onClick={() => void launchWorkspace("codex-app")}
+                      >
+                        <Bot size={12} aria-hidden="true" />
+                        <span>{launchBusy === "codex-app" ? "Opening" : "Open App"}</span>
+                      </button>
+                    ) : null}
+                    <button
+                      type="button"
+                      disabled={deployBusy !== null || launchBusy !== null}
+                      onClick={() => void openMaintenancePath(workspaceEnrollment.workspacePath, "workspace")}
                     >
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        disabled={!selectable || deployBusy !== null}
-                        onChange={(event) => {
-                          const checked = event.currentTarget.checked;
-                          setSelectedDeployAdapters((current) =>
-                            checked
-                              ? Array.from(new Set([...current, adapter.id]))
-                              : current.filter((id) => id !== adapter.id),
-                          );
-                        }}
-                      />
-                      <strong>{adapter.label}</strong>
-                      <em>{adapter.status}</em>
-                      {adapter.confidence ? <small>{adapter.confidence}</small> : null}
-                    </label>
-                  );
-                })}
-                <span title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</span>
-                {workspaceInspection.existingEnrollment ? <strong>enrolled</strong> : null}
-              </div>
-            ) : null}
-
-            {workspaceEnrollment ? (
-              <div className="deploy-result" title={workspaceEnrollment.vaultRoot}>
-                <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
-                <span>{workspaceEnrollment.installedFiles.length} files</span>
-                <span>{workspaceEnrollment.mergedFiles.length} merged</span>
-              </div>
-            ) : null}
+                      <FolderOpen size={12} aria-hidden="true" />
+                      <span>Project</span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={deployBusy !== null || launchBusy !== null}
+                      onClick={() => void openMaintenancePath(workspaceEnrollment.vaultRoot, "vault")}
+                    >
+                      <FolderOpen size={12} aria-hidden="true" />
+                      <span>Vault</span>
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <span title={feedback}>{feedback}</span>
+              )}
+            </footer>
           </section>
         </div>
       ) : null}

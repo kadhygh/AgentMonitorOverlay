@@ -126,14 +126,14 @@ fn open_path(path: String) -> OpenPathResult {
 
 #[tauri::command]
 fn open_uri(uri: String) -> OpenPathResult {
-    if !uri.starts_with("obsidian://") {
+    if !uri.starts_with("obsidian://") && !uri.starts_with("codex://") {
         return OpenPathResult {
             ok: false,
-            message: "Only obsidian:// URIs are supported.".to_string(),
+            message: "Only obsidian:// and codex:// URIs are supported.".to_string(),
         };
     }
 
-    open_external_target(&uri, "Opened Obsidian URI")
+    open_external_target(&uri, "Opened URI")
 }
 
 #[tauri::command]
@@ -502,66 +502,77 @@ fn find_broker_script() -> Option<(PathBuf, PathBuf)> {
 
 #[cfg(windows)]
 fn pick_workspace_directory() -> FolderPickResult {
-    use windows_sys::Win32::System::Com::CoTaskMemFree;
-    use windows_sys::Win32::UI::Shell::{
-        SHBrowseForFolderW, SHGetPathFromIDListEx, BIF_NEWDIALOGSTYLE, BIF_RETURNONLYFSDIRS,
-        BROWSEINFOW, GPFIDL_DEFAULT,
+    use windows::core::HRESULT;
+    use windows::Win32::Foundation::{ERROR_CANCELLED, RPC_E_CHANGED_MODE};
+    use windows::Win32::System::Com::{
+        CoCreateInstance, CoInitializeEx, CoTaskMemFree, CoUninitialize, CLSCTX_INPROC_SERVER,
+        COINIT_APARTMENTTHREADED,
+    };
+    use windows::Win32::UI::Shell::{
+        FileOpenDialog, IFileOpenDialog, FOS_FORCEFILESYSTEM, FOS_NOCHANGEDIR, FOS_PATHMUSTEXIST,
+        FOS_PICKFOLDERS, SIGDN_FILESYSPATH,
     };
 
-    let title = wide_null("Select workspace folder");
-    let mut display_name = vec![0u16; 260];
-    let browse_info = BROWSEINFOW {
-        hwndOwner: std::ptr::null_mut(),
-        pidlRoot: std::ptr::null_mut(),
-        pszDisplayName: display_name.as_mut_ptr(),
-        lpszTitle: title.as_ptr(),
-        ulFlags: BIF_RETURNONLYFSDIRS | BIF_NEWDIALOGSTYLE,
-        lpfn: None,
-        lParam: 0,
-        iImage: 0,
-    };
+    let cancelled_hresult = HRESULT::from_win32(ERROR_CANCELLED.0);
 
     unsafe {
-        let pidl = SHBrowseForFolderW(&browse_info);
-        if pidl.is_null() {
-            return FolderPickResult {
-                ok: false,
-                cancelled: true,
-                path: None,
-                message: "Workspace folder selection cancelled.".to_string(),
-            };
-        }
-
-        let mut path_buffer = vec![0u16; 32768];
-        let ok = SHGetPathFromIDListEx(
-            pidl,
-            path_buffer.as_mut_ptr(),
-            path_buffer.len() as u32,
-            GPFIDL_DEFAULT,
-        ) != 0;
-        CoTaskMemFree(pidl as *const core::ffi::c_void);
-
-        if !ok {
+        let init_result = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
+        let should_uninitialize = if init_result.is_ok() {
+            true
+        } else if init_result == RPC_E_CHANGED_MODE {
+            false
+        } else {
             return FolderPickResult {
                 ok: false,
                 cancelled: false,
                 path: None,
-                message: "Could not resolve selected workspace folder.".to_string(),
+                message: format!(
+                    "Could not initialize Windows folder picker ({:?}).",
+                    init_result
+                ),
             };
+        };
+
+        let result = (|| -> windows::core::Result<String> {
+            let dialog: IFileOpenDialog =
+                CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)?;
+            dialog.SetTitle(windows::core::w!("Select workspace folder"))?;
+            dialog.SetOkButtonLabel(windows::core::w!("Choose"))?;
+            dialog.SetOptions(
+                FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR,
+            )?;
+            dialog.Show(None)?;
+
+            let item = dialog.GetResult()?;
+            let path_ptr = item.GetDisplayName(SIGDN_FILESYSPATH)?;
+            let path = String::from_utf16_lossy(path_ptr.as_wide());
+            CoTaskMemFree(Some(path_ptr.0 as *const core::ffi::c_void));
+            Ok(path)
+        })();
+
+        if should_uninitialize {
+            CoUninitialize();
         }
 
-        let end = path_buffer
-            .iter()
-            .position(|character| *character == 0)
-            .unwrap_or(path_buffer.len());
-        path_buffer.truncate(end);
-        let path = String::from_utf16_lossy(&path_buffer);
-
-        FolderPickResult {
-            ok: true,
-            cancelled: false,
-            path: Some(path.clone()),
-            message: format!("Selected workspace folder: {path}"),
+        match result {
+            Ok(path) => FolderPickResult {
+                ok: true,
+                cancelled: false,
+                path: Some(path.clone()),
+                message: format!("Selected workspace folder: {path}"),
+            },
+            Err(error) if error.code() == cancelled_hresult => FolderPickResult {
+                ok: false,
+                cancelled: true,
+                path: None,
+                message: "Workspace folder selection cancelled.".to_string(),
+            },
+            Err(error) => FolderPickResult {
+                ok: false,
+                cancelled: false,
+                path: None,
+                message: format!("Could not select workspace folder: {error:?}"),
+            },
         }
     }
 }

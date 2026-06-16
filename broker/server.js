@@ -2,6 +2,7 @@ const http = require("http");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const { spawn } = require("child_process");
 
 const HOST = process.env.AGENT_MONITOR_HOST || "127.0.0.1";
 const PORT = Number.parseInt(process.env.AGENT_MONITOR_PORT || "17654", 10);
@@ -117,6 +118,12 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, enrollWorkspace(payload));
     }
 
+    if (req.method === "POST" && url.pathname === "/api/workspaces/launch") {
+      const payload = await readJsonBody(req);
+      const result = await launchWorkspace(payload);
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === "POST" && url.pathname === "/api/workspaces/status") {
       const payload = await readJsonBody(req);
       return sendJson(res, 200, inspectWorkspaceMaintenance(payload));
@@ -196,6 +203,25 @@ const server = http.createServer(async (req, res) => {
       const result = clearSessionWindowBinding(sessionId);
       persistSnapshot();
       publishSessionChanged("window-unbind", result.session);
+      return sendJson(res, 200, result);
+    }
+
+    const targetBindingMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/target-binding$/);
+    if (req.method === "POST" && targetBindingMatch) {
+      const sessionId = decodeURIComponent(targetBindingMatch[1]);
+      const payload = await readJsonBody(req);
+      const result = bindSessionTarget(sessionId, payload);
+      persistSnapshot();
+      publishSessionChanged("target-bind", result.session);
+      return sendJson(res, 200, result);
+    }
+
+    const clearTargetBindingMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/target-binding\/clear$/);
+    if (req.method === "POST" && clearTargetBindingMatch) {
+      const sessionId = decodeURIComponent(clearTargetBindingMatch[1]);
+      const result = clearSessionTargetBinding(sessionId);
+      persistSnapshot();
+      publishSessionChanged("target-unbind", result.session);
       return sendJson(res, 200, result);
     }
 
@@ -501,6 +527,10 @@ function upsertSessionFromEvent(payload) {
         ? payload.needsAttention
         : state === "waiting_permission" || state === "waiting_user",
     windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null,
+    targetBinding:
+      normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
+      existing?.targetBinding ||
+      null,
     updatedAt: normalizeText(payload.timestamp || payload.updatedAt || payload.updated_at) || now,
     createdAt: existing?.createdAt || now,
     heartbeatAt: existing?.heartbeatAt || null,
@@ -560,6 +590,10 @@ function updateHeartbeat(sessionId, payload) {
         ? payload.needsAttention
         : nextState === "waiting_permission" || nextState === "waiting_user",
     windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing.windowHint,
+    targetBinding:
+      normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
+      existing.targetBinding ||
+      null,
     heartbeatAt: now,
     updatedAt: now,
   };
@@ -580,25 +614,36 @@ function inspectWorkspace(payload) {
   const hasClaudeDir = fs.existsSync(path.join(workspacePath, ".claude"));
   const hasClaudeLocalSettings = fs.existsSync(path.join(workspacePath, ".claude", "settings.local.json"));
   const hasClaudeProjectSettings = fs.existsSync(path.join(workspacePath, ".claude", "settings.json"));
+  const hasCodexAdapter = fs.existsSync(path.join(amoRoot, "adapters", "codex-cli.json"));
+  const hasClaudeAdapter = fs.existsSync(path.join(amoRoot, "adapters", "claude-cli.json"));
   const rootIndicators = [".git", "package.json", "pyproject.toml", "Cargo.toml"].filter((name) => {
     return fs.existsSync(path.join(workspacePath, name));
   });
+  const workspaceEntries = readDirectoryNames(workspacePath);
+  const isEmptyWorkspace = workspaceEntries.length === 0;
+  const workspaceState = isEmptyWorkspace ? "empty" : rootIndicators.length > 0 ? "project" : "folder";
 
   const evidence = [];
   if (hasAmo) evidence.push("existing .amo workspace metadata found");
+  if (hasCodexAdapter) evidence.push("existing Codex CLI adapter metadata found");
+  if (hasClaudeAdapter) evidence.push("existing Claude CLI adapter metadata found");
   if (hasCodexDir) evidence.push("existing .codex directory found");
   if (hasCodexHooks) evidence.push("existing .codex/hooks.json found and will be merged");
   if (hasClaudeDir) evidence.push("existing .claude directory found");
   if (hasClaudeLocalSettings) evidence.push("existing .claude/settings.local.json found and will be merged");
   if (hasClaudeProjectSettings) evidence.push("existing .claude/settings.json found");
   if (rootIndicators.length > 0) evidence.push(`project indicators: ${rootIndicators.join(", ")}`);
+  if (isEmptyWorkspace) evidence.push("workspace folder is empty");
   if (writable) evidence.push("workspace is writable");
 
   const codexStatus = writable ? "available" : "blocked";
   const claudeStatus = writable ? "available" : "blocked";
-  const codexConfidence = hasCodexDir || hasCodexHooks ? "high" : rootIndicators.length > 0 ? "medium" : "low";
+  const codexConfidence = hasCodexDir || hasCodexHooks ? "configured" : rootIndicators.length > 0 ? "project" : workspaceState;
   const claudeConfidence =
-    hasClaudeDir || hasClaudeLocalSettings || hasClaudeProjectSettings ? "high" : rootIndicators.length > 0 ? "medium" : "low";
+    hasClaudeDir || hasClaudeLocalSettings || hasClaudeProjectSettings ? "configured" : rootIndicators.length > 0 ? "project" : workspaceState;
+  const codexDeploymentStatus = hasCodexAdapter ? "deployed" : "undeployed";
+  const claudeDeploymentStatus = hasClaudeAdapter ? "deployed" : "undeployed";
+  const recommended = !isEmptyWorkspace;
   const commonDirectoriesToCreate = [
     ".amo",
     ".amo/adapters",
@@ -638,11 +683,19 @@ function inspectWorkspace(payload) {
         id: "codex-cli",
         label: "Codex CLI",
         status: codexStatus,
+        deploymentStatus: codexDeploymentStatus,
+        workspaceState,
+        deployable: writable,
+        recommended,
         confidence: codexConfidence,
         scope: "project-local",
-        reason: writable
-          ? "Codex CLI can use a project-local Stop hook adapter in this workspace."
-          : "Workspace is not writable.",
+        reason: adapterDeploymentReason({
+          writable,
+          installed: hasCodexAdapter,
+          empty: isEmptyWorkspace,
+          label: "Codex CLI",
+          hookDescription: "project-local Stop hook adapter",
+        }),
         evidence,
         directoriesToCreate: [...commonDirectoriesToCreate, ".codex"],
         filesToWrite: [
@@ -660,11 +713,19 @@ function inspectWorkspace(payload) {
         id: "claude-cli",
         label: "Claude CLI",
         status: claudeStatus,
+        deploymentStatus: claudeDeploymentStatus,
+        workspaceState,
+        deployable: writable,
+        recommended,
         confidence: claudeConfidence,
         scope: "project-local",
-        reason: writable
-          ? "Claude CLI can use project-local .claude/settings.local.json hooks for prompt/reply capture."
-          : "Workspace is not writable.",
+        reason: adapterDeploymentReason({
+          writable,
+          installed: hasClaudeAdapter,
+          empty: isEmptyWorkspace,
+          label: "Claude CLI",
+          hookDescription: ".claude/settings.local.json hooks for prompt/reply capture",
+        }),
         evidence,
         directoriesToCreate: [...commonDirectoriesToCreate, ".claude"],
         filesToWrite: [
@@ -697,12 +758,12 @@ function enrollWorkspace(payload) {
 
   const inspection = inspectWorkspace(payload);
   const requestedPlans = requestedAdapters.map((id) => inspection.supportedAdapters.find((adapter) => adapter.id === id));
-  const unavailablePlan = requestedPlans.find((plan) => !plan || plan.status !== "available");
+  const unavailablePlan = requestedPlans.find((plan) => !plan || !isDeployableAdapterPlan(plan));
   if (unavailablePlan) {
     throw httpError(
       400,
       "workspace_not_writable",
-      `Workspace cannot be enrolled for ${unavailablePlan?.id || "requested adapter"} because it is not available.`
+      `Workspace cannot be enrolled for ${unavailablePlan?.id || "requested adapter"} because it is not deployable.`
     );
   }
 
@@ -860,6 +921,160 @@ function enrollWorkspace(payload) {
     canvasPath: AMO_CANVAS_PATH,
     deferredAdapters: inspection.deferredAdapters,
   };
+}
+
+async function launchWorkspace(payload) {
+  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
+  const adapterId = normalizeText(payload?.adapterId || payload?.adapter_id || payload?.adapter);
+  const supportedLaunchIds = new Set(["codex-cli", "claude-cli", "codex-app"]);
+  if (!supportedLaunchIds.has(adapterId)) {
+    throw httpError(400, "unsupported_launch_adapter", `Unsupported launch adapter: ${adapterId || "missing"}`);
+  }
+
+  const amoRoot = path.join(workspacePath, AMO_DIR);
+  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
+  if (!workspace || !workspace.workspaceId) {
+    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
+  }
+
+  if (adapterId !== "codex-app") {
+    const enrollment = readJsonFile(path.join(amoRoot, "enrollment.json"), null);
+    const installedAdapters = Array.isArray(enrollment?.adapters) ? enrollment.adapters : [];
+    const installed = installedAdapters.some((adapter) => normalizeText(adapter?.id) === adapterId);
+    if (!installed) {
+      throw httpError(400, "adapter_not_installed", `${adapterId} is not deployed in this workspace`);
+    }
+  }
+
+  const projectName = path.basename(workspacePath);
+  const startedAt = new Date().toISOString();
+  let launch;
+  if (adapterId === "codex-cli") {
+    launch = await launchCliInTerminal({
+      workspacePath,
+      title: `AMO Codex CLI - ${projectName}`,
+      command: "codex",
+    });
+  } else if (adapterId === "claude-cli") {
+    launch = await launchCliInTerminal({
+      workspacePath,
+      title: `AMO Claude CLI - ${projectName}`,
+      command: "claude",
+    });
+  } else {
+    launch = await spawnDetached("codex", ["app", workspacePath], workspacePath);
+  }
+
+  recordDebugLog("broker", "workspace.launch", {
+    workspacePath,
+    adapterId,
+    projectName,
+    pid: launch.pid || null,
+    command: launch.command,
+    args: launch.args,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    workspaceId: workspace.workspaceId,
+    workspacePath,
+    adapterId,
+    projectName,
+    launchedAt: startedAt,
+    pid: launch.pid || null,
+    command: launch.command,
+    args: launch.args,
+    message:
+      adapterId === "codex-app"
+        ? `Opened Codex App for ${projectName}.`
+        : `Launched ${adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI"} for ${projectName}.`,
+  };
+}
+
+async function launchCliInTerminal({ workspacePath, title, command }) {
+  const commandLine = `$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)}; & ${command}`;
+  const powershellArgs = powershellNoExitEncodedArgs(commandLine);
+  if (process.platform === "win32") {
+    const wtArgs = [
+      "-w",
+      "0",
+      "new-tab",
+      "--title",
+      title,
+      "-d",
+      workspacePath,
+      "powershell.exe",
+      ...powershellArgs,
+    ];
+    try {
+      return await spawnDetached("wt.exe", wtArgs, workspacePath);
+    } catch (error) {
+      recordDebugLog("broker", "workspace.launch.wt_failed", {
+        workspacePath,
+        title,
+        message: error.message || String(error),
+      });
+    }
+
+    return spawnDetached(
+      "powershell.exe",
+      powershellArgs,
+      workspacePath
+    );
+  }
+
+  return spawnDetached(command, [], workspacePath);
+}
+
+function powershellSingleQuoted(value) {
+  return `'${String(value).replace(/'/g, "''")}'`;
+}
+
+function powershellNoExitEncodedArgs(commandLine) {
+  return [
+    "-NoExit",
+    "-ExecutionPolicy",
+    "Bypass",
+    "-EncodedCommand",
+    Buffer.from(commandLine, "utf16le").toString("base64"),
+  ];
+}
+
+function spawnDetached(command, args, cwd) {
+  return new Promise((resolve, reject) => {
+    let settled = false;
+    let child;
+    try {
+      child = spawn(command, args, {
+        cwd,
+        detached: true,
+        stdio: "ignore",
+        windowsHide: false,
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+
+    const finish = (fn, value) => {
+      if (settled) return;
+      settled = true;
+      fn(value);
+    };
+
+    child.once("error", (error) => {
+      finish(reject, error);
+    });
+    child.once("spawn", () => {
+      child.unref();
+      finish(resolve, {
+        pid: child.pid || null,
+        command,
+        args,
+      });
+    });
+  });
 }
 
 function inspectWorkspaceMaintenance(payload) {
@@ -1197,6 +1412,10 @@ function handleReply(payload) {
     lastMessage: trimMessage(message, 240),
     needsAttention: false,
     windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null,
+    targetBinding:
+      normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
+      existing?.targetBinding ||
+      null,
     updatedAt: capturedAt,
     createdAt: existing?.createdAt || now,
     heartbeatAt: existing?.heartbeatAt || null,
@@ -1345,6 +1564,10 @@ function handlePrompt(payload) {
     lastMessage: trimMessage(`User: ${message}`, 240),
     needsAttention: false,
     windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null,
+    targetBinding:
+      normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
+      existing?.targetBinding ||
+      null,
     updatedAt: capturedAt,
     createdAt: existing?.createdAt || now,
     heartbeatAt: existing?.heartbeatAt || null,
@@ -1760,7 +1983,7 @@ function handleSyncBack(payload) {
   const session = {
     ...promptSessionBase,
     lastEvent: "SyncBackCopied",
-    lastMessage: "Pending prompt copied; paste it manually into the target CLI",
+    lastMessage: "Pending prompt copied; paste it manually into the target",
     needsAttention: false,
     updatedAt: now,
     eventCount: (promptSessionBase.eventCount || 0) + 1,
@@ -1833,11 +2056,13 @@ function bindSessionWindow(sessionId, payload) {
     boundBy: "overlay-candidate-menu",
     boundLabel: label || title || processName || null,
   };
+  const targetBinding = targetBindingFromWindowHint(windowHint, now);
   const session = {
     ...existing,
     windowHint,
+    targetBinding,
     lastEvent: "WindowBound",
-    lastMessage: `Window bound to ${windowHint.boundLabel || "selected window"}`,
+    lastMessage: `Target bound to ${targetBinding.label || "selected window"}`,
     needsAttention: false,
     updatedAt: now,
     eventCount: (existing.eventCount || 0) + 1,
@@ -1850,12 +2075,69 @@ function bindSessionWindow(sessionId, payload) {
     pid,
     processName,
     title,
-    label: windowHint.boundLabel,
+    label: targetBinding.label,
   });
   return {
     ok: true,
     schemaVersion: AMO_SCHEMA_VERSION,
     sessionId,
+    windowHint,
+    targetBinding,
+    session,
+  };
+}
+
+function bindSessionTarget(sessionId, payload) {
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Target binding URL must include session id");
+  }
+
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Target binding payload must be a JSON object");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for target binding: ${sessionId}`);
+  }
+
+  const now = new Date().toISOString();
+  const targetBinding = normalizeTargetBinding(payload.targetBinding || payload.target_binding || payload, sessionId, now);
+  if (!targetBinding) {
+    throw httpError(400, "invalid_target_binding", "Target binding payload must include a supported target type");
+  }
+
+  let windowHint = existing.windowHint || null;
+  if (targetBinding.type === "window") {
+    windowHint = windowHintFromWindowTarget(existing, targetBinding);
+  }
+
+  const session = {
+    ...existing,
+    windowHint,
+    targetBinding,
+    lastEvent: "TargetBound",
+    lastMessage: `Target bound to ${targetBinding.label || targetBinding.type}`,
+    needsAttention: false,
+    updatedAt: now,
+    eventCount: (existing.eventCount || 0) + 1,
+  };
+
+  sessions.set(sessionId, session);
+  recordDebugLog("broker", "target.bind", {
+    sessionId,
+    type: targetBinding.type,
+    label: targetBinding.label || null,
+    threadId: targetBinding.threadId || null,
+    hwnd: targetBinding.hwnd || null,
+    processId: targetBinding.processId || null,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    targetBinding,
     windowHint,
     session,
   };
@@ -1893,6 +2175,7 @@ function clearSessionWindowBinding(sessionId) {
   const session = {
     ...existing,
     windowHint: nextHint,
+    targetBinding: existing.targetBinding?.type === "window" ? null : existing.targetBinding || null,
     lastEvent: "WindowUnbound",
     lastMessage: "Window binding cleared; AMO will ask again if routing is ambiguous",
     updatedAt: now,
@@ -1910,8 +2193,77 @@ function clearSessionWindowBinding(sessionId) {
     schemaVersion: AMO_SCHEMA_VERSION,
     sessionId,
     windowHint: nextHint,
+    targetBinding: session.targetBinding,
     session,
   };
+}
+
+function clearSessionTargetBinding(sessionId) {
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Target binding URL must include session id");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for target binding: ${sessionId}`);
+  }
+
+  const currentTarget = existing.targetBinding || null;
+  const overlayBoundWindow =
+    existing.windowHint?.boundBy === "overlay-candidate-menu" ||
+    existing.windowHint?.boundBy === "overlay-target-menu";
+  const shouldClearWindow =
+    currentTarget?.type === "window" ||
+    overlayBoundWindow ||
+    (!currentTarget && Boolean(existing.windowHint?.hwnd || existing.windowHint?.pid));
+  const nextHint = shouldClearWindow ? clearWindowIdentity(existing.windowHint || {}, existing) : existing.windowHint || null;
+  const now = new Date().toISOString();
+  const session = {
+    ...existing,
+    windowHint: nextHint,
+    targetBinding: null,
+    lastEvent: "TargetUnbound",
+    lastMessage: "Target binding cleared; AMO will ask again if routing is ambiguous",
+    updatedAt: now,
+    eventCount: (existing.eventCount || 0) + 1,
+  };
+
+  sessions.set(sessionId, session);
+  recordDebugLog("broker", "target.unbind", {
+    sessionId,
+    previousType: currentTarget?.type || null,
+    previousLabel: currentTarget?.label || null,
+    clearedWindow: shouldClearWindow,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    targetBinding: null,
+    windowHint: nextHint,
+    session,
+  };
+}
+
+function clearWindowIdentity(currentHint, existing) {
+  const resetHint =
+    currentHint.boundBy === "overlay-candidate-menu" || currentHint.boundBy === "overlay-target-menu"
+      ? {
+          titleToken: currentHint.titleToken || null,
+          titleContains: Array.isArray(currentHint.titleContains) ? currentHint.titleContains : [],
+          project: currentHint.project || path.basename(existing.cwd || "") || null,
+          cwd: currentHint.cwd || existing.cwd || null,
+          tool: currentHint.tool || existing.tool || null,
+          pid: null,
+          hwnd: null,
+        }
+      : {
+          ...currentHint,
+          pid: null,
+          hwnd: null,
+        };
+  return normalizeWindowHint(resetHint);
 }
 
 function deferredAdapter(id, label, reason) {
@@ -1921,6 +2273,26 @@ function deferredAdapter(id, label, reason) {
     status: "deferred",
     reason,
   };
+}
+
+function adapterDeploymentReason({ writable, installed, empty, label, hookDescription }) {
+  if (!writable) {
+    return "Workspace is not writable.";
+  }
+  if (installed) {
+    return `${label} adapter is already deployed in this workspace.`;
+  }
+  if (empty) {
+    return `Workspace folder is empty; ${label} adapter has not been deployed here yet.`;
+  }
+  return `${label} can deploy ${hookDescription} in this workspace.`;
+}
+
+function isDeployableAdapterPlan(plan) {
+  if (typeof plan?.deployable === "boolean") {
+    return plan.deployable;
+  }
+  return plan?.status === "available";
 }
 
 function normalizeAdapterIds(value) {
@@ -1960,6 +2332,14 @@ function isWritableDirectory(dirPath) {
     return true;
   } catch {
     return false;
+  }
+}
+
+function readDirectoryNames(dirPath) {
+  try {
+    return fs.readdirSync(dirPath);
+  } catch {
+    return [];
   }
 }
 
@@ -3159,6 +3539,104 @@ function normalizeState(value) {
   );
 }
 
+function codexAppThreadUri(threadId) {
+  return `codex://threads/${encodeURIComponent(threadId)}`;
+}
+
+function normalizeTargetBinding(value, sessionId, boundAt) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return null;
+  }
+
+  const rawType = normalizeText(value.type || value.targetType || value.target_type);
+  if (!rawType) {
+    return null;
+  }
+
+  const type = rawType.toLowerCase().replace(/[\s_]+/g, "-");
+  const now = boundAt || normalizeText(value.boundAt || value.bound_at) || new Date().toISOString();
+
+  if (type === "codex-app" || type === "codex-app-thread") {
+    const threadId = normalizeText(value.threadId || value.thread_id || value.sessionId || value.session_id) || sessionId;
+    if (!threadId) {
+      return null;
+    }
+
+    const uri = normalizeText(value.uri) || codexAppThreadUri(threadId);
+    if (!uri.startsWith("codex://threads/")) {
+      throw httpError(400, "invalid_codex_app_uri", "Codex App target URI must start with codex://threads/");
+    }
+
+    return {
+      type: "codex-app-thread",
+      label: normalizeText(value.label) || "Codex App",
+      threadId,
+      uri,
+      boundAt: now,
+      boundBy: normalizeText(value.boundBy || value.bound_by) || "overlay-target-menu",
+    };
+  }
+
+  if (type === "window" || type === "cli-window") {
+    const hwnd = normalizeInteger(value.hwnd || value.hWnd || value.windowHandle || value.window_handle);
+    const processId = normalizeInteger(value.processId || value.process_id || value.pid);
+    if (hwnd === null && processId === null) {
+      throw httpError(400, "missing_window_identity", "Window target must include hwnd or processId");
+    }
+
+    const processName = normalizeText(value.processName || value.process_name || value.process);
+    const title = normalizeText(value.title || value.windowTitle || value.window_title);
+    const label = normalizeText(value.label) || title || processName || "Window";
+    return {
+      type: "window",
+      label,
+      hwnd,
+      processId,
+      processName: processName || null,
+      title: title || null,
+      boundAt: now,
+      boundBy: normalizeText(value.boundBy || value.bound_by) || "overlay-target-menu",
+    };
+  }
+
+  throw httpError(400, "unsupported_target_type", `Target type '${rawType}' is not supported`);
+}
+
+function targetBindingFromWindowHint(windowHint, boundAt) {
+  if (!windowHint || (windowHint.hwnd === null && windowHint.pid === null)) {
+    return null;
+  }
+
+  return {
+    type: "window",
+    label: windowHint.boundLabel || windowHint.title || windowHint.process || "Window",
+    hwnd: windowHint.hwnd ?? null,
+    processId: windowHint.pid ?? null,
+    processName: windowHint.process || null,
+    title: windowHint.title || null,
+    boundAt: boundAt || windowHint.boundAt || new Date().toISOString(),
+    boundBy: windowHint.boundBy || "overlay-candidate-menu",
+  };
+}
+
+function windowHintFromWindowTarget(existing, targetBinding) {
+  const baseHint = existing.windowHint || {};
+  return {
+    process: targetBinding.processName || baseHint.process || null,
+    title: targetBinding.title || baseHint.title || existing.title || null,
+    titleToken: baseHint.titleToken || null,
+    titleContains: Array.isArray(baseHint.titleContains) ? baseHint.titleContains : [],
+    project: baseHint.project || path.basename(existing.cwd || "") || null,
+    cwd: baseHint.cwd || existing.cwd || null,
+    tool: baseHint.tool || existing.tool || null,
+    pid: targetBinding.processId ?? null,
+    hwnd: targetBinding.hwnd ?? null,
+    boundAt: targetBinding.boundAt || new Date().toISOString(),
+    boundBy: targetBinding.boundBy || "overlay-target-menu",
+    boundLabel: targetBinding.label || targetBinding.title || targetBinding.processName || null,
+  };
+}
+
 function normalizeWindowHint(value) {
   if (!value || typeof value !== "object" || Array.isArray(value)) {
     return null;
@@ -3175,6 +3653,9 @@ function normalizeWindowHint(value) {
   );
   const pid = normalizeInteger(value.pid || value.processId || value.process_id);
   const hwnd = normalizeInteger(value.hwnd || value.hWnd || value.windowHandle || value.window_handle);
+  const boundAt = normalizeText(value.boundAt || value.bound_at);
+  const boundBy = normalizeText(value.boundBy || value.bound_by);
+  const boundLabel = normalizeText(value.boundLabel || value.bound_label || value.label);
 
   if (
     !processName &&
@@ -3185,7 +3666,10 @@ function normalizeWindowHint(value) {
     !cwd &&
     !tool &&
     pid === null &&
-    hwnd === null
+    hwnd === null &&
+    !boundAt &&
+    !boundBy &&
+    !boundLabel
   ) {
     return null;
   }
@@ -3200,6 +3684,9 @@ function normalizeWindowHint(value) {
     tool: tool || null,
     pid,
     hwnd,
+    boundAt: boundAt || null,
+    boundBy: boundBy || null,
+    boundLabel: boundLabel || null,
   };
 }
 
