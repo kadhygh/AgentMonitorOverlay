@@ -511,7 +511,8 @@ button {
 }
 
 .deploy-action-row,
-.deploy-launch-actions {
+.deploy-launch-actions,
+.deploy-adapter-actions {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
@@ -520,7 +521,8 @@ button {
 }
 
 .deploy-action-row button,
-.deploy-launch-actions button {
+.deploy-launch-actions button,
+.deploy-adapter-actions button {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -533,7 +535,8 @@ button {
   cursor: pointer;
 }
 
-.deploy-action-row button.primary {
+.deploy-action-row button.primary,
+.deploy-adapter-actions button.primary {
   color: #06130f;
   background: #69d8b6;
   border-color: rgba(126, 239, 205, 0.84);
@@ -542,24 +545,28 @@ button {
 }
 
 .deploy-action-row button:hover:not(:disabled),
-.deploy-launch-actions button:hover:not(:disabled) {
+.deploy-launch-actions button:hover:not(:disabled),
+.deploy-adapter-actions button:hover:not(:disabled) {
   color: #f7fffb;
   background: rgba(111, 224, 190, 0.14);
   border-color: rgba(111, 224, 190, 0.28);
 }
 
-.deploy-action-row button.primary:hover:not(:disabled) {
+.deploy-action-row button.primary:hover:not(:disabled),
+.deploy-adapter-actions button.primary:hover:not(:disabled) {
   color: #071410;
   background: #8debd0;
 }
 
 .deploy-action-row button:disabled,
-.deploy-launch-actions button:disabled {
+.deploy-launch-actions button:disabled,
+.deploy-adapter-actions button:disabled {
   color: rgba(220, 232, 227, 0.36);
   cursor: not-allowed;
 }
 
-.deploy-action-row button.primary:disabled {
+.deploy-action-row button.primary:disabled,
+.deploy-adapter-actions button.primary:disabled {
   color: rgba(220, 232, 227, 0.42);
   background: rgba(255, 255, 255, 0.075);
   border-color: rgba(255, 255, 255, 0.09);
@@ -620,6 +627,17 @@ button {
   text-align: center;
 }
 
+.deploy-state-note {
+  min-width: 0;
+  padding: 9px 10px;
+  color: #dcece7;
+  background: rgba(143, 196, 255, 0.09);
+  border: 1px solid rgba(143, 196, 255, 0.16);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 15px;
+}
+
 .deploy-adapter-list {
   display: grid;
   gap: 8px;
@@ -628,7 +646,7 @@ button {
 
 .deploy-adapter-card {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
   align-items: center;
   gap: 9px;
   min-width: 0;
@@ -638,6 +656,14 @@ button {
   background: rgba(255, 255, 255, 0.055);
   border: 1px solid rgba(255, 255, 255, 0.07);
   border-radius: 7px;
+  cursor: default;
+}
+
+.deploy-adapter-select {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 30px;
   cursor: pointer;
 }
 
@@ -710,6 +736,17 @@ button {
   min-width: 74px;
 }
 
+.deploy-adapter-actions {
+  justify-content: flex-end;
+  min-width: 132px;
+}
+
+.deploy-adapter-actions button {
+  min-height: 27px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
 .deploy-adapter-badges em,
 .deploy-adapter-badges small {
   max-width: 94px;
@@ -743,6 +780,20 @@ button {
   flex-wrap: wrap;
   gap: 5px;
   min-width: 0;
+}
+
+.deploy-result-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.deploy-result-feedback {
+  min-width: 0;
+  overflow: hidden;
+  color: #9fafaa;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .deploy-result-summary > span,
@@ -2007,6 +2058,80 @@ button {
 
 .confirm-dialog-actions .danger-action:hover {
   background: rgba(255, 92, 104, 0.28);
+}
+
+.vault-recovery-dialog {
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 36px));
+  padding: 10px;
+  color: #eef6f2;
+  background: rgba(18, 26, 30, 0.99);
+  border: 1px solid rgba(242, 190, 92, 0.38);
+  border-radius: 8px;
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.48);
+}
+
+.vault-recovery-dialog p {
+  margin: 0;
+  color: #c9d8d3;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.vault-recovery-path {
+  overflow: hidden;
+  padding: 7px 8px;
+  color: #f7faf9;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-recovery-manual {
+  color: #b9cbc5;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.vault-recovery-manual span {
+  color: #f0f7f4;
+  font-weight: 700;
+}
+
+.vault-recovery-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.vault-recovery-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 8px;
+  color: #dceae5;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.vault-recovery-actions button:hover:not(:disabled) {
+  color: #f6fbf9;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.vault-recovery-actions button:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .resize-edge {

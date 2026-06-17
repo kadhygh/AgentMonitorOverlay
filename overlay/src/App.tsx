@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize, Window as TauriWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
@@ -68,12 +68,16 @@ const DIALOG_SIZES = {
   deploy: { width: 760, height: 600 },
   settings: { width: 660, height: 500 },
 };
+const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
 const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
 const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
 
 type ScratchpadShortcutButton = "mouse4" | "mouse5";
 type UtilityWindowKind = "deploy" | "settings";
+type AmoWindowLabel = "main" | "scratchpad" | "deploy" | "settings";
+
+const AMO_ALWAYS_ON_TOP_WINDOWS: AmoWindowLabel[] = ["main", "scratchpad", "deploy", "settings"];
 
 interface ScratchpadShortcutState {
   enabled: boolean;
@@ -159,6 +163,31 @@ function useUtilityWindowLifecycle(label: UtilityWindowKind) {
     window.addEventListener("keydown", handleKeyDown);
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, [label]);
+}
+
+async function setAmoWindowsAlwaysOnTop(alwaysOnTop: boolean) {
+  await Promise.all(
+    AMO_ALWAYS_ON_TOP_WINDOWS.map(async (label) => {
+      const target = label === CURRENT_WINDOW_LABEL ? getCurrentWindow() : await TauriWindow.getByLabel(label);
+      await target?.setAlwaysOnTop(alwaysOnTop).catch(() => undefined);
+    }),
+  );
+}
+
+async function runWithNativeDialogLayer<T>(operation: () => Promise<T>): Promise<T> {
+  await setAmoWindowsAlwaysOnTop(false);
+  await sleep(40);
+
+  try {
+    return await operation();
+  } finally {
+    await setAmoWindowsAlwaysOnTop(true);
+    await getCurrentWindow().setFocus().catch(() => undefined);
+  }
+}
+
+function sleep(ms: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
 function loadScratchpadShortcutState(): ScratchpadShortcutState {
@@ -317,6 +346,44 @@ function adapterStateLabel(adapter: WorkspaceAdapterPlan) {
 
 function adapterContextLabel(adapter: WorkspaceAdapterPlan) {
   return adapter.workspaceState ?? adapter.confidence;
+}
+
+function isWorkspaceAdapterDeployed(adapter: WorkspaceAdapterPlan) {
+  return adapter.deploymentStatus === "deployed";
+}
+
+function selectedWorkspaceAdapterIds(inspection: WorkspaceInspection) {
+  return inspection.supportedAdapters
+    .filter((adapter) => isDeployableWorkspaceAdapter(adapter) && adapter.recommended !== false && !isWorkspaceAdapterDeployed(adapter))
+    .map((adapter) => adapter.id);
+}
+
+function workspaceDeploymentSummary(inspection: WorkspaceInspection) {
+  const deployedCount = inspection.supportedAdapters.filter(isWorkspaceAdapterDeployed).length;
+  const deployableCount = inspection.supportedAdapters.filter(isDeployableWorkspaceAdapter).length;
+  const empty = inspection.supportedAdapters.some((adapter) => adapter.workspaceState === "empty");
+
+  if (empty && deployedCount === 0) {
+    return "Empty folder, no AMO hooks deployed.";
+  }
+
+  if (deployedCount === 0) {
+    return `No AMO hooks deployed. ${deployableCount} adapter(s) can be installed.`;
+  }
+
+  const pendingCount = Math.max(0, deployableCount - deployedCount);
+  if (pendingCount > 0) {
+    return `${deployedCount} deployed, ${pendingCount} available to deploy.`;
+  }
+
+  return `${deployedCount} adapter(s) deployed.`;
+}
+
+function workspaceDeploymentStateLabel(inspection: WorkspaceInspection) {
+  const deployedCount = inspection.supportedAdapters.filter(isWorkspaceAdapterDeployed).length;
+  const empty = inspection.supportedAdapters.some((adapter) => adapter.workspaceState === "empty");
+  if (deployedCount > 0) return "deployed";
+  return empty ? "empty" : "not deployed";
 }
 
 function formatAgo(updatedAt: string) {
@@ -629,6 +696,18 @@ interface CleanConfirmState {
   replyNotes: number;
   promptNotes: number;
   canvasNodes: number;
+}
+
+interface ObsidianVaultRecoveryState {
+  session: AgentSession;
+  target: "note" | "canvas";
+  targetPath: string;
+  focusNotePath?: string | null;
+  vaultRoot: string;
+  vaultId: string;
+  runtimeConfigPath?: string | null;
+  obsidianProcessCount?: number | null;
+  busy: "explorer" | "copy" | null;
 }
 
 interface ResizeState {
@@ -997,12 +1076,9 @@ function DeployWorkspaceApp() {
       });
       setWorkspaceInspection(result);
       setWorkspacePath(result.workspacePath);
-      const selectedAdapters = result.supportedAdapters
-        .filter((adapter) => isDeployableWorkspaceAdapter(adapter) && adapter.recommended !== false)
-        .map((adapter) => adapter.id);
+      const selectedAdapters = selectedWorkspaceAdapterIds(result);
       setSelectedDeployAdapters(selectedAdapters);
-      const deployableCount = result.supportedAdapters.filter(isDeployableWorkspaceAdapter).length;
-      setFeedback(`${result.projectName}: ${deployableCount} deployable adapter(s), ${selectedAdapters.length} selected.`);
+      setFeedback(`${result.projectName}: ${workspaceDeploymentSummary(result)}`);
     } catch (error) {
       void postUtilityDebugLog("workspace.inspect.error", {
         workspacePath: targetPath,
@@ -1019,7 +1095,7 @@ function DeployWorkspaceApp() {
     setFeedback("Choose a workspace folder...");
 
     try {
-      const result = await invoke<FolderPickResult>("select_workspace_directory");
+      const result = await runWithNativeDialogLayer(() => invoke<FolderPickResult>("select_workspace_directory"));
       if (!result.ok || !result.path) {
         setFeedback(result.message);
         return;
@@ -1044,7 +1120,7 @@ function DeployWorkspaceApp() {
     }
   }
 
-  async function enrollWorkspace() {
+  async function enrollWorkspace(adapterIds?: string[]) {
     const targetPath = workspaceInspection?.workspacePath ?? workspacePath.trim();
     if (!targetPath) {
       setFeedback("Workspace path is required.");
@@ -1056,10 +1132,12 @@ function DeployWorkspaceApp() {
 
     try {
       const adapters =
-        selectedDeployAdapters.length > 0
+        adapterIds && adapterIds.length > 0
+          ? adapterIds
+          : selectedDeployAdapters.length > 0
           ? selectedDeployAdapters
           : (workspaceInspection?.supportedAdapters || [])
-              .filter(isDeployableWorkspaceAdapter)
+              .filter((adapter) => isDeployableWorkspaceAdapter(adapter) && !isWorkspaceAdapterDeployed(adapter))
               .map((adapter) => adapter.id);
       if (adapters.length === 0) {
         setFeedback("No deployable adapter selected.");
@@ -1076,6 +1154,11 @@ function DeployWorkspaceApp() {
         installedAdapters: result.installedAdapters,
       });
       setWorkspaceEnrollment(result);
+      const refreshed = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
+        workspacePath: result.workspacePath,
+      });
+      setWorkspaceInspection(refreshed);
+      setSelectedDeployAdapters(selectedWorkspaceAdapterIds(refreshed));
       setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}.`);
     } catch (error) {
       void postUtilityDebugLog("workspace.enroll.error", {
@@ -1089,7 +1172,7 @@ function DeployWorkspaceApp() {
   }
 
   async function launchWorkspace(adapterId: string) {
-    const targetPath = workspaceEnrollment?.workspacePath ?? workspaceInspection?.workspacePath ?? workspacePath.trim();
+    const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
     if (!targetPath) {
       setFeedback("Workspace path is required.");
       return;
@@ -1198,25 +1281,28 @@ function DeployWorkspaceApp() {
                 disabled={!workspaceInspection || selectedDeployAdapters.length === 0 || deployBusy !== null || launchBusy !== null}
                 onClick={() => void enrollWorkspace()}
               >
-                {deployBusy === "enroll" ? "Deploying" : "Deploy"}
+                {deployBusy === "enroll" ? "Deploying" : "Deploy Selected"}
               </button>
             </div>
 
             {workspaceInspection ? (
-              <dl className="deploy-status-grid">
-                <div>
-                  <dt>Path</dt>
-                  <dd title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</dd>
-                </div>
-                <div>
-                  <dt>State</dt>
-                  <dd>{workspaceInspection.existingEnrollment ? "enrolled" : "not enrolled"}</dd>
-                </div>
-                <div>
-                  <dt>Selected</dt>
-                  <dd>{selectedDeployAdapters.length}</dd>
-                </div>
-              </dl>
+              <>
+                <dl className="deploy-status-grid">
+                  <div>
+                    <dt>Path</dt>
+                    <dd title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</dd>
+                  </div>
+                  <div>
+                    <dt>State</dt>
+                    <dd>{workspaceDeploymentStateLabel(workspaceInspection)}</dd>
+                  </div>
+                  <div>
+                    <dt>Selected</dt>
+                    <dd>{selectedDeployAdapters.length}</dd>
+                  </div>
+                </dl>
+                <div className="deploy-state-note">{workspaceDeploymentSummary(workspaceInspection)}</div>
+              </>
             ) : (
               <div className="deploy-placeholder">Check a workspace to review deployment status.</div>
             )}
@@ -1232,27 +1318,30 @@ function DeployWorkspaceApp() {
                 {workspaceInspection.supportedAdapters.map((adapter) => {
                   const selectable = isDeployableWorkspaceAdapter(adapter);
                   const selected = selectedDeployAdapters.includes(adapter.id);
+                  const deployed = isWorkspaceAdapterDeployed(adapter);
                   const stateLabel = adapterStateLabel(adapter);
                   const contextLabel = adapterContextLabel(adapter);
                   return (
-                    <label
+                    <article
                       className={`deploy-adapter-card status-${adapter.status} state-${stateLabel} ${
                         selected ? "is-selected" : ""
                       }`}
                       key={adapter.id}
                       title={adapter.reason}
                     >
-                      <input
-                        type="checkbox"
-                        checked={selected}
-                        disabled={!selectable || deployBusy !== null}
-                        onChange={(event) => {
-                          const checked = event.currentTarget.checked;
-                          setSelectedDeployAdapters((current) =>
-                            checked ? Array.from(new Set([...current, adapter.id])) : current.filter((id) => id !== adapter.id),
-                          );
-                        }}
-                      />
+                      <label className="deploy-adapter-select" title={selectable ? "Include in Deploy Selected" : "Adapter unavailable"}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={!selectable || deployBusy !== null}
+                          onChange={(event) => {
+                            const checked = event.currentTarget.checked;
+                            setSelectedDeployAdapters((current) =>
+                              checked ? Array.from(new Set([...current, adapter.id])) : current.filter((id) => id !== adapter.id),
+                            );
+                          }}
+                        />
+                      </label>
                       <span className="deploy-adapter-copy">
                         <strong>{adapter.label}</strong>
                         <span>{adapter.reason}</span>
@@ -1261,7 +1350,48 @@ function DeployWorkspaceApp() {
                         <em>{stateLabel}</em>
                         {contextLabel ? <small>{contextLabel}</small> : null}
                       </span>
-                    </label>
+                      <span className="deploy-adapter-actions">
+                        {deployed ? (
+                          <>
+                            <button
+                              type="button"
+                              disabled={deployBusy !== null || launchBusy !== null}
+                              onClick={() => void launchWorkspace(adapter.id)}
+                            >
+                              <SquareTerminal size={12} aria-hidden="true" />
+                              <span>{launchBusy === adapter.id ? "Starting" : "Run"}</span>
+                            </button>
+                            {adapter.id === "codex-cli" ? (
+                              <button
+                                type="button"
+                                disabled={deployBusy !== null || launchBusy !== null}
+                                onClick={() => void launchWorkspace("codex-app")}
+                              >
+                                <Bot size={12} aria-hidden="true" />
+                                <span>{launchBusy === "codex-app" ? "Opening" : "App"}</span>
+                              </button>
+                            ) : null}
+                            <button
+                              type="button"
+                              disabled={!selectable || deployBusy !== null || launchBusy !== null}
+                              onClick={() => void enrollWorkspace([adapter.id])}
+                            >
+                              <RefreshCcw size={12} aria-hidden="true" />
+                              <span>Update</span>
+                            </button>
+                          </>
+                        ) : (
+                          <button
+                            type="button"
+                            className="primary"
+                            disabled={!selectable || deployBusy !== null || launchBusy !== null}
+                            onClick={() => void enrollWorkspace([adapter.id])}
+                          >
+                            <span>{deployBusy === "enroll" ? "Deploying" : "Deploy"}</span>
+                          </button>
+                        )}
+                      </span>
+                    </article>
                   );
                 })}
               </div>
@@ -1274,10 +1404,15 @@ function DeployWorkspaceApp() {
         <footer className="app-dialog-footer">
           {workspaceEnrollment ? (
             <div className="deploy-result" title={workspaceEnrollment.vaultRoot}>
-              <div className="deploy-result-summary">
-                <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
-                <span>{workspaceEnrollment.installedFiles.length} files</span>
-                <span>{workspaceEnrollment.mergedFiles.length} merged</span>
+              <div className="deploy-result-copy">
+                <div className="deploy-result-summary">
+                  <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
+                  <span>{workspaceEnrollment.installedFiles.length} files</span>
+                  <span>{workspaceEnrollment.mergedFiles.length} merged</span>
+                </div>
+                <span className="deploy-result-feedback" title={feedback}>
+                  {feedback}
+                </span>
               </div>
               <div className="deploy-launch-actions" aria-label="Launch workspace tools">
                 {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
@@ -1469,6 +1604,7 @@ export default function App() {
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
+  const [obsidianVaultRecovery, setObsidianVaultRecovery] = useState<ObsidianVaultRecoveryState | null>(null);
   const [isResizing, setIsResizing] = useState(false);
   const [deployOpen, setDeployOpen] = useState(false);
   const [workspacePath, setWorkspacePath] = useState("");
@@ -1869,7 +2005,7 @@ export default function App() {
   }
 
   async function launchWorkspace(adapterId: string) {
-    const targetPath = workspaceEnrollment?.workspacePath ?? workspaceInspection?.workspacePath ?? workspacePath.trim();
+    const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
     if (!targetPath) {
       setFeedback("Workspace path is required.");
       return;
@@ -2236,6 +2372,58 @@ export default function App() {
     }
   }
 
+  function showObsidianVaultRecovery(
+    session: AgentSession,
+    target: "note" | "canvas",
+    targetPath: string,
+    focusNotePath: string | null,
+    registration: ObsidianVaultRegistrationResult,
+    message: string,
+  ) {
+    setObsidianVaultRecovery({
+      session,
+      target,
+      targetPath,
+      focusNotePath,
+      vaultRoot: registration.vaultRoot,
+      vaultId: registration.vaultId,
+      runtimeConfigPath: registration.runtimeConfigPath ?? null,
+      obsidianProcessCount: registration.obsidianProcessCount ?? null,
+      busy: null,
+    });
+    setFeedback(message);
+  }
+
+  async function openRecoveryVaultFolder() {
+    if (!obsidianVaultRecovery) return;
+    setObsidianVaultRecovery((current) => (current ? { ...current, busy: "explorer" } : current));
+
+    try {
+      const result = await invoke<OpenPathResult>("open_path", { path: obsidianVaultRecovery.vaultRoot });
+      setFeedback(result.ok ? "Opened AMO vault folder." : result.message);
+    } catch (error) {
+      setFeedback(`Open AMO vault folder failed: ${(error as Error).message}`);
+    } finally {
+      setObsidianVaultRecovery((current) => (current ? { ...current, busy: null } : current));
+    }
+  }
+
+  async function copyRecoveryVaultPath() {
+    if (!obsidianVaultRecovery) return;
+    setObsidianVaultRecovery((current) => (current ? { ...current, busy: "copy" } : current));
+
+    try {
+      const result = await invoke<OpenPathResult>("write_clipboard_text", {
+        text: obsidianVaultRecovery.vaultRoot,
+      });
+      setFeedback(result.ok ? "Copied AMO vault path." : result.message);
+    } catch (error) {
+      setFeedback(`Copy AMO vault path failed: ${(error as Error).message}`);
+    } finally {
+      setObsidianVaultRecovery((current) => (current ? { ...current, busy: null } : current));
+    }
+  }
+
   async function openBridgePath(session: AgentSession, target: "note" | "canvas") {
     const targetPath = target === "note" ? notePathForOpen(session) : canvasPathForOpen(session);
     const focusNotePath = target === "canvas" ? latestCanvasNotePathForFocus(session) : null;
@@ -2257,8 +2445,9 @@ export default function App() {
 
     try {
       let vaultId: string | undefined;
+      let registration: ObsidianVaultRegistrationResult | null = null;
       if (session.vaultRoot) {
-        const registration = await postBrokerJson<ObsidianVaultRegistrationResult>(
+        registration = await postBrokerJson<ObsidianVaultRegistrationResult>(
           BROKER_OBSIDIAN_REGISTER_VAULT_URL,
           { vaultRoot: session.vaultRoot }
         );
@@ -2269,18 +2458,103 @@ export default function App() {
           vaultRoot: session.vaultRoot,
           vaultId,
           changed: registration.changed,
+          runtimeConfigExists: registration.runtimeConfigExists ?? null,
+          runtimeConfigPath: registration.runtimeConfigPath ?? null,
+          obsidianProcessCount: registration.obsidianProcessCount ?? null,
         });
       }
 
-      const result = await invoke<OpenPathResult>("open_uri", {
-        uri: obsidianAmoOpenUri(targetPath, target, vaultId, session.vaultRoot, { focusNotePath }),
+      const bootstrapUri = vaultId ? obsidianOpenUri(targetPath, vaultId, session.vaultRoot) : null;
+      let bootstrapResult: OpenPathResult | null = null;
+      const needsRuntimeBootstrap = Boolean(registration && !registration.runtimeConfigExists);
+      if (registration && needsRuntimeBootstrap && (registration.obsidianProcessCount ?? 0) > 0) {
+        const message =
+          "Obsidian has not loaded this AMO vault yet. Open this folder as a vault in Obsidian once, then try again.";
+        void postDebugLog("obsidian.open.runtime_missing", {
+          sessionId: session.sessionId,
+          target,
+          vaultRoot: session.vaultRoot,
+          vaultId: registration.vaultId,
+          runtimeConfigPath: registration.runtimeConfigPath ?? null,
+          obsidianProcessCount: registration.obsidianProcessCount ?? null,
+          skippedBootstrap: true,
+        });
+        showObsidianVaultRecovery(session, target, targetPath, focusNotePath, registration, message);
+        setFeedback(message);
+        return;
+      }
+
+      if (bootstrapUri && needsRuntimeBootstrap) {
+        void postDebugLog("obsidian.open.bootstrap_uri", {
+          sessionId: session.sessionId,
+          target,
+          uri: bootstrapUri,
+          vaultId,
+        });
+        bootstrapResult = await invoke<OpenPathResult>("open_uri", { uri: bootstrapUri });
+        void postDebugLog("obsidian.open.bootstrap_result", {
+          sessionId: session.sessionId,
+          target,
+          ok: bootstrapResult.ok,
+          message: bootstrapResult.message,
+        });
+        if (!bootstrapResult.ok) {
+          setFeedback(bootstrapResult.message);
+          return;
+        }
+
+        await sleep(OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS);
+        if (registration && needsRuntimeBootstrap && session.vaultRoot) {
+          registration = await postBrokerJson<ObsidianVaultRegistrationResult>(
+            BROKER_OBSIDIAN_REGISTER_VAULT_URL,
+            { vaultRoot: session.vaultRoot }
+          );
+          void postDebugLog("obsidian.open.runtime_check", {
+            sessionId: session.sessionId,
+            target,
+            vaultRoot: session.vaultRoot,
+            vaultId: registration.vaultId,
+            runtimeConfigExists: registration.runtimeConfigExists ?? null,
+            runtimeConfigPath: registration.runtimeConfigPath ?? null,
+            obsidianProcessCount: registration.obsidianProcessCount ?? null,
+          });
+          if (!registration.runtimeConfigExists) {
+            const message =
+              "Obsidian accepted the open request, but this AMO vault is still not loaded. Open this folder as a vault in Obsidian once, then try again.";
+            void postDebugLog("obsidian.open.runtime_missing", {
+              sessionId: session.sessionId,
+              target,
+              vaultRoot: session.vaultRoot,
+              vaultId: registration.vaultId,
+              runtimeConfigPath: registration.runtimeConfigPath ?? null,
+              obsidianProcessCount: registration.obsidianProcessCount ?? null,
+              skippedBootstrap: false,
+            });
+            showObsidianVaultRecovery(session, target, targetPath, focusNotePath, registration, message);
+            setFeedback(message);
+            return;
+          }
+        }
+      }
+
+      const uri = obsidianAmoOpenUri(targetPath, target, vaultId, session.vaultRoot, { focusNotePath });
+      void postDebugLog("obsidian.open.uri", {
+        sessionId: session.sessionId,
+        target,
+        uri,
+        vaultId: vaultId ?? null,
+        bootstrapUsed: Boolean(bootstrapResult),
+        pluginOpenSkipped: false,
       });
+      const result = await invoke<OpenPathResult>("open_uri", { uri });
       void postDebugLog("obsidian.open.result", {
         sessionId: session.sessionId,
         target,
         focusNotePath,
         ok: result.ok,
         message: result.message,
+        bootstrapUsed: Boolean(bootstrapResult),
+        pluginOpenSkipped: false,
       });
       if (result.ok) {
         setFeedback(`${target === "note" ? "Note" : "Canvas"} opened in Obsidian.`);
@@ -3260,6 +3534,64 @@ export default function App() {
                       </button>
                     </div>
                   ) : null}
+                </div>
+              </section>
+            </div>
+          ) : null}
+
+          {obsidianVaultRecovery ? (
+            <div
+              className="confirm-backdrop"
+              role="presentation"
+              onClick={() => setObsidianVaultRecovery(null)}
+            >
+              <section
+                className="vault-recovery-dialog"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Open AMO vault in Obsidian"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <div className="confirm-dialog-header">
+                  <strong>Obsidian Vault Not Loaded</strong>
+                  <button
+                    type="button"
+                    className="candidate-close"
+                    title="Close"
+                    onClick={() => setObsidianVaultRecovery(null)}
+                  >
+                    <X size={13} aria-hidden="true" />
+                  </button>
+                </div>
+                <p>
+                  Obsidian is running, but this AMO vault has not been loaded by the current Obsidian session.
+                  Open this folder as a vault in Obsidian once, then click the{" "}
+                  {obsidianVaultRecovery.target === "note" ? "Note" : "Canvas"} button again.
+                </p>
+                <div className="vault-recovery-path" title={obsidianVaultRecovery.vaultRoot}>
+                  {obsidianVaultRecovery.vaultRoot}
+                </div>
+                <div className="vault-recovery-manual">
+                  In Obsidian, use <span>Open folder as vault</span> and choose this path. AMO will use the plugin
+                  bridge after the vault is loaded.
+                </div>
+                <div className="vault-recovery-actions">
+                  <button
+                    type="button"
+                    onClick={() => void openRecoveryVaultFolder()}
+                    disabled={obsidianVaultRecovery.busy !== null}
+                  >
+                    <FolderOpen size={13} aria-hidden="true" />
+                    <span>{obsidianVaultRecovery.busy === "explorer" ? "Opening" : "Open Folder"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => void copyRecoveryVaultPath()}
+                    disabled={obsidianVaultRecovery.busy !== null}
+                  >
+                    <ClipboardCheck size={13} aria-hidden="true" />
+                    <span>{obsidianVaultRecovery.busy === "copy" ? "Copying" : "Copy Path"}</span>
+                  </button>
                 </div>
               </section>
             </div>

@@ -124,6 +124,9 @@ export interface ObsidianVaultRegistrationResult {
   vaultRoot: string;
   vaultId: string;
   registryPath: string;
+  runtimeConfigPath?: string | null;
+  runtimeConfigExists?: boolean;
+  obsidianProcessCount?: number | null;
   alreadyRegistered: boolean;
   changed: boolean;
 }
