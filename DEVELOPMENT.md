@@ -212,6 +212,7 @@ Current implemented behavior:
 - Dismiss is broker-owned: it removes the session from the active broker snapshot and persists the updated `broker/data/sessions.json`.
 - A dismissed session can reappear when a hook later posts a fresh event for the same `sessionId`.
 - If every visible session is dismissed, the overlay shows an empty broker state instead of falling back to mock data.
+- Reply stop events create a green pending-review card state. Pressing `Seen`, opening Note/Canvas, or activating the target window marks the reply reviewed; a later prompt/running event clears stale review state.
 
 ## Known Open Gaps
 

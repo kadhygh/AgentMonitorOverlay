@@ -104,6 +104,19 @@ Optional payload:
 
 Clears the active broker session list and persists an empty snapshot. This is intended for local cleanup of stale smoke/test cards.
 
+### `POST /api/sessions/:id/reviewed`
+
+Marks the latest reply review prompt as viewed. Reply creation through `POST /api/replies` sets `reviewRequired: true` / `reviewStatus: "pending"` so the overlay can highlight cards that need human review. Opening the note/canvas, activating the target window, or pressing the overlay `Seen` button can call this endpoint.
+
+Optional payload:
+
+```json
+{
+  "action": "open-note",
+  "by": "overlay"
+}
+```
+
 ### `POST /api/events`
 
 Accepts a JSON payload from mock adapters. Minimum useful fields:

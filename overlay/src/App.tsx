@@ -106,6 +106,10 @@ function brokerSessionTargetBindingClearUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/target-binding/clear`;
 }
 
+function brokerSessionReviewedUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/reviewed`;
+}
+
 function brokerSessionDismissUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/dismiss`;
 }
@@ -666,6 +670,10 @@ function mergeChangedSession(previousSessions: AgentSession[], changedSession: A
   return [changedSession, ...previousSessions];
 }
 
+function sessionNeedsReview(session: AgentSession) {
+  return Boolean(session.reviewRequired && session.reviewStatus !== "reviewed" && !session.reviewedAt);
+}
+
 interface CardDragState {
   sessionId: string;
   pointerId: number;
@@ -740,9 +748,11 @@ function SessionRowContent({
   openingTarget,
   copyingPrompt,
   unbindingWindow,
+  reviewing,
   dismissing,
   onOpenNote,
   onOpenCanvas,
+  onMarkReviewed,
   onCopyPrompt,
   onUnbindWindow,
   onDismiss,
@@ -754,9 +764,11 @@ function SessionRowContent({
   openingTarget: "note" | "canvas" | null;
   copyingPrompt: boolean;
   unbindingWindow: boolean;
+  reviewing: boolean;
   dismissing: boolean;
   onOpenNote: () => void;
   onOpenCanvas: () => void;
+  onMarkReviewed: () => void;
   onCopyPrompt: () => void;
   onUnbindWindow: () => void;
   onDismiss: () => void;
@@ -773,8 +785,9 @@ function SessionRowContent({
   const noteOpening = openingTarget === "note";
   const canvasOpening = openingTarget === "canvas";
   const waitingForPermission = session.state === "waiting_permission";
+  const reviewPending = sessionNeedsReview(session);
   const display = toolDisplayForSession(session);
-  const statusLabel = activating ? "Opening" : stateLabel[session.state];
+  const statusLabel = activating ? "Opening" : reviewPending ? "Review" : stateLabel[session.state];
   const maintenanceTone = maintenanceToneForSession(session);
 
   return (
@@ -828,6 +841,11 @@ function SessionRowContent({
                 Needs attention
               </span>
             ) : null}
+            {reviewPending ? (
+              <span className="session-tag tag-review" title="New reply is ready to review">
+                Review
+              </span>
+            ) : null}
             {windowBound && !targetBound ? (
               <span className="session-tag" title={session.windowHint?.boundLabel ?? session.windowHint?.title ?? session.title}>
                 Window bound
@@ -840,13 +858,29 @@ function SessionRowContent({
             ) : null}
           </span>
         </span>
-        {notePath || canvasPath || session.pendingPrompt || targetBound || waitingForPermission || codexAppAvailable ? (
+        {reviewPending || notePath || canvasPath || session.pendingPrompt || targetBound || waitingForPermission || codexAppAvailable ? (
           <span className="bridge-actions" aria-label="Bridge actions">
             {waitingForPermission ? (
               <span className="permission-pill" title="点击卡片切回 CLI，手动处理权限请求">
                 <AlertTriangle size={13} aria-hidden="true" />
                 <span>需要权限</span>
               </span>
+            ) : null}
+            {reviewPending ? (
+              <button
+                type="button"
+                className={`row-tool-button review-button ${reviewing ? "is-busy" : ""}`}
+                aria-busy={reviewing}
+                title="Mark this reply as reviewed"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onMarkReviewed();
+                }}
+              >
+                <CircleCheck size={13} aria-hidden="true" />
+                <span>Seen</span>
+              </button>
             ) : null}
             {notePath ? (
               <button
@@ -1623,6 +1657,7 @@ export default function App() {
   const [openingPath, setOpeningPath] = useState<{ sessionId: string; target: "note" | "canvas" } | null>(null);
   const [copyingPromptId, setCopyingPromptId] = useState<string | null>(null);
   const [unbindingWindowId, setUnbindingWindowId] = useState<string | null>(null);
+  const [reviewingSessionId, setReviewingSessionId] = useState<string | null>(null);
   const [dismissingSessionId, setDismissingSessionId] = useState<string | null>(null);
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
@@ -1666,6 +1701,11 @@ export default function App() {
 
   const attentionCount = useMemo(
     () => sessions.filter((session) => session.needsAttention).length,
+    [sessions],
+  );
+
+  const reviewCount = useMemo(
+    () => sessions.filter(sessionNeedsReview).length,
     [sessions],
   );
 
@@ -1893,6 +1933,9 @@ export default function App() {
         message: result.message,
       });
       setFeedback(result.ok ? "Codex App thread opened." : result.message);
+      if (result.ok) {
+        void markSessionReviewed(session, "open-codex-app", { quiet: true });
+      }
     } catch (error) {
       void postDebugLog("codex_app.target_open.error", {
         sessionId: session.sessionId,
@@ -2581,6 +2624,7 @@ export default function App() {
       });
       if (result.ok) {
         setFeedback(`${target === "note" ? "Note" : "Canvas"} opened in Obsidian.`);
+        void markSessionReviewed(session, `open-${target}`, { quiet: true });
       } else {
         setFeedback(result.message);
       }
@@ -2721,6 +2765,7 @@ export default function App() {
           setFeedback(`Bound and activated ${candidate.processName ?? "window"}.`);
         }
         setCandidateMenu(null);
+        void markSessionReviewed(session, "activate-candidate", { quiet: true });
       }
     } catch (error) {
       void postDebugLog("window.candidate.activate.error", {
@@ -2766,6 +2811,55 @@ export default function App() {
       setFeedback(`Unbind failed: ${(error as Error).message}`);
     } finally {
       setUnbindingWindowId(null);
+    }
+  }
+
+  async function markSessionReviewed(
+    session: AgentSession,
+    action = "manual",
+    options: { quiet?: boolean } = {},
+  ) {
+    if (!sessionNeedsReview(session)) {
+      return;
+    }
+
+    setReviewingSessionId(session.sessionId);
+    if (!options.quiet) {
+      setFeedback(`Marking ${session.title} as reviewed...`);
+    }
+    void postDebugLog("session.review.start", {
+      sessionId: session.sessionId,
+      action,
+      reviewTurnId: session.reviewTurnId ?? null,
+    });
+
+    try {
+      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+        brokerSessionReviewedUrl(session.sessionId),
+        { action, by: "overlay" },
+      );
+      setSessions((previous) =>
+        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
+      );
+      if (!options.quiet) {
+        setFeedback("Marked as reviewed.");
+      }
+      void postDebugLog("session.review.ok", {
+        sessionId: result.session.sessionId,
+        action,
+      });
+    } catch (error) {
+      const message = (error as Error).message;
+      if (!options.quiet) {
+        setFeedback(`Review mark failed: ${message}`);
+      }
+      void postDebugLog("session.review.error", {
+        sessionId: session.sessionId,
+        action,
+        message,
+      });
+    } finally {
+      setReviewingSessionId(null);
     }
   }
 
@@ -3255,15 +3349,16 @@ export default function App() {
 
       {collapsed ? (
         <button className="collapsed-summary" type="button" onClick={toggleCollapsed}>
-          <span className={attentionCount > 0 ? "pulse-dot" : "quiet-dot"} />
+          <span className={attentionCount > 0 ? "pulse-dot" : reviewCount > 0 ? "review-dot" : "quiet-dot"} />
           <span>{sessions.length} sessions</span>
-          <strong>{attentionCount} need attention</strong>
+          <strong>{attentionCount} attention{reviewCount > 0 ? ` · ${reviewCount} review` : ""}</strong>
         </button>
       ) : (
         <>
           <section className="summary-strip" aria-label="Session summary">
             <span>{sessions.length} active lines</span>
             <strong>{attentionCount} need attention</strong>
+            {reviewCount > 0 ? <strong className="summary-review">{reviewCount} review</strong> : null}
           </section>
 
           <section className="session-list" aria-label="Agent sessions">
@@ -3280,6 +3375,8 @@ export default function App() {
                   }
                 }}
                 className={`session-row state-${session.state} ${session.needsAttention ? "needs-attention" : ""} ${
+                  sessionNeedsReview(session) ? "needs-review" : ""
+                } ${
                   cardDrag?.sessionId === session.sessionId ? "is-drag-placeholder" : ""
                 } ${dropTargetId === session.sessionId ? "is-drop-target" : ""}`}
                 onClick={(event) => {
@@ -3316,9 +3413,11 @@ export default function App() {
                   openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
                   copyingPrompt={copyingPromptId === session.sessionId}
                   unbindingWindow={unbindingWindowId === session.sessionId}
+                  reviewing={reviewingSessionId === session.sessionId}
                   dismissing={dismissingSessionId === session.sessionId}
                   onOpenNote={() => void openBridgePath(session, "note")}
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
+                  onMarkReviewed={() => void markSessionReviewed(session, "manual")}
                   onCopyPrompt={() => void copyPendingPrompt(session)}
                   onUnbindWindow={() => void clearWindowBinding(session)}
                   onDismiss={() => void dismissSession(session)}
@@ -3772,9 +3871,11 @@ export default function App() {
                     openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
                     copyingPrompt={copyingPromptId === session.sessionId}
                     unbindingWindow={unbindingWindowId === session.sessionId}
+                    reviewing={reviewingSessionId === session.sessionId}
                     dismissing={dismissingSessionId === session.sessionId}
                     onOpenNote={() => undefined}
                     onOpenCanvas={() => undefined}
+                    onMarkReviewed={() => undefined}
                     onCopyPrompt={() => undefined}
                     onUnbindWindow={() => undefined}
                     onDismiss={() => undefined}

@@ -100,6 +100,15 @@ export interface AgentSession {
     turnId?: string | null;
   };
   obsidianPluginHealth?: ObsidianPluginHealth;
+  reviewRequired?: boolean;
+  reviewStatus?: "pending" | "reviewed" | string | null;
+  reviewRequestedAt?: string | null;
+  reviewedAt?: string | null;
+  reviewedBy?: string | null;
+  reviewAction?: string | null;
+  reviewTurnId?: string | null;
+  reviewNote?: string | null;
+  reviewCanvasNodeId?: string | null;
   dismissedAt?: string | null;
   dismissReason?: string | null;
   updatedAt: string;

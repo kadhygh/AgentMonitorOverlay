@@ -66,6 +66,7 @@ Updated: 2026-05-16
 - Session rows now show route hints so exact `pid/hwnd` paths can be distinguished from token/fallback routing.
 - Session rows now expose a broker-backed dismiss action that removes the current card from the active session snapshot until later hook activity recreates it.
 - Broker supports `POST /api/sessions/:id/dismiss` and `POST /api/sessions/dismiss-all` for stale smoke/test card cleanup.
+- Reply stop events mark cards as pending review; the overlay shows a green review cue and can clear it via `POST /api/sessions/:id/reviewed`.
 - Repo-local Codex hook files now exist under `.codex/`, but the interactive `/hooks` review + smoke path is still in progress rather than closed.
 - A disposable sibling test repo/project is the preferred first smoke path for Codex repo-local hooks so trust/review state does not have to land in the main worktree first.
 - User clarified on 2026-05-13 that global hook deployment is too risky for the current product. Phase 5 hook/adapter setup must be manual and workspace-scoped: user selects a folder, AMO inspects the folder, then AMO installs only project-local hook/adapter files after explicit confirmation.

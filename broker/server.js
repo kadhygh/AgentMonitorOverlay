@@ -234,6 +234,16 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    const reviewMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/reviewed$/);
+    if (req.method === "POST" && reviewMatch) {
+      const sessionId = decodeURIComponent(reviewMatch[1]);
+      const payload = await readJsonBody(req, { allowEmpty: true });
+      const result = markSessionReviewed(sessionId, payload || {});
+      persistSnapshot();
+      publishSessionChanged("reviewed", result.session);
+      return sendJson(res, 200, result);
+    }
+
     const dismissMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/dismiss$/);
     if (req.method === "POST" && dismissMatch) {
       const sessionId = decodeURIComponent(dismissMatch[1]);
@@ -596,6 +606,7 @@ function updateHeartbeat(sessionId, payload) {
   }
 
   const nextState = normalizeState(payload.state) || existing.state;
+  const shouldClearReview = nextState === "running" || nextState === "waiting_permission" || nextState === "waiting_user";
   const session = {
     ...existing,
     cwd: normalizeText(payload.cwd) || existing.cwd,
@@ -613,6 +624,15 @@ function updateHeartbeat(sessionId, payload) {
       normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
       existing.targetBinding ||
       null,
+    reviewRequired: shouldClearReview ? false : existing.reviewRequired || false,
+    reviewStatus: shouldClearReview ? null : existing.reviewStatus || null,
+    reviewRequestedAt: shouldClearReview ? null : existing.reviewRequestedAt || null,
+    reviewedAt: shouldClearReview ? null : existing.reviewedAt || null,
+    reviewedBy: shouldClearReview ? null : existing.reviewedBy || null,
+    reviewAction: shouldClearReview ? null : existing.reviewAction || null,
+    reviewTurnId: shouldClearReview ? null : existing.reviewTurnId || null,
+    reviewNote: shouldClearReview ? null : existing.reviewNote || null,
+    reviewCanvasNodeId: shouldClearReview ? null : existing.reviewCanvasNodeId || null,
     heartbeatAt: now,
     updatedAt: now,
   };
@@ -1477,6 +1497,15 @@ function handleReply(payload) {
     lastReplyAt: capturedAt,
     lastReplyNote: note.notePath,
     lastReplyNoteAbsolutePath: note.noteAbsolutePath,
+    reviewRequired: true,
+    reviewStatus: "pending",
+    reviewRequestedAt: capturedAt,
+    reviewedAt: null,
+    reviewedBy: null,
+    reviewAction: null,
+    reviewTurnId: turnId,
+    reviewNote: note.notePath,
+    reviewCanvasNodeId: canvas.canvasNodeId,
     lastPromptAt: existing?.lastPromptAt || null,
     lastPromptNote: existing?.lastPromptNote || null,
     lastPromptNoteAbsolutePath: existing?.lastPromptNoteAbsolutePath || null,
@@ -1626,6 +1655,15 @@ function handlePrompt(payload) {
     workspaceId: workspace.workspaceId,
     workspacePath: workspaceRoot,
     vaultRoot,
+    reviewRequired: false,
+    reviewStatus: null,
+    reviewRequestedAt: null,
+    reviewedAt: null,
+    reviewedBy: null,
+    reviewAction: null,
+    reviewTurnId: null,
+    reviewNote: null,
+    reviewCanvasNodeId: null,
     lastPromptAt: capturedAt,
     lastPromptNote: note.notePath,
     lastPromptNoteAbsolutePath: note.noteAbsolutePath,
@@ -2321,6 +2359,44 @@ function clearSessionTargetBinding(sessionId) {
     sessionId,
     targetBinding: null,
     windowHint: nextHint,
+    session,
+  };
+}
+
+function markSessionReviewed(sessionId, payload = {}) {
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Reviewed URL must include session id");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for review: ${sessionId}`);
+  }
+
+  const now = new Date().toISOString();
+  const action = normalizeText(payload.action) || "manual";
+  const session = {
+    ...existing,
+    reviewRequired: false,
+    reviewStatus: "reviewed",
+    reviewedAt: now,
+    reviewedBy: normalizeText(payload.by) || "overlay",
+    reviewAction: action,
+  };
+
+  sessions.set(sessionId, session);
+  recordDebugLog("broker", "session.reviewed", {
+    sessionId,
+    action,
+    reviewTurnId: existing.reviewTurnId || null,
+    reviewNote: existing.reviewNote || existing.lastReplyNote || null,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    reviewedAt: now,
     session,
   };
 }

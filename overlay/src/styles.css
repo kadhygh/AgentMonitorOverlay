@@ -807,6 +807,10 @@ button {
   font-size: 11px;
 }
 
+.summary-strip .summary-review {
+  color: #8cf0c9;
+}
+
 .session-list {
   flex: 1 1 auto;
   display: grid;
@@ -874,6 +878,38 @@ button {
 .session-row.needs-attention {
   background: rgba(38, 31, 21, 0.94);
   border-color: rgba(255, 182, 79, 0.35);
+}
+
+.session-row.needs-review {
+  border-color: rgba(57, 208, 165, 0.42);
+  box-shadow: 0 0 0 1px rgba(57, 208, 165, 0.12), 0 12px 28px rgba(0, 0, 0, 0.2);
+  animation: review-card-breathe 1.9s ease-in-out infinite;
+}
+
+.session-row.needs-review::after {
+  content: "";
+  position: absolute;
+  top: 10px;
+  left: 24px;
+  width: 7px;
+  height: 7px;
+  background: #39d0a5;
+  border-radius: 50%;
+  box-shadow: 0 0 0 3px rgba(57, 208, 165, 0.12);
+  pointer-events: none;
+}
+
+@keyframes review-card-breathe {
+  0%,
+  100% {
+    border-color: rgba(57, 208, 165, 0.34);
+    box-shadow: 0 0 0 1px rgba(57, 208, 165, 0.08), 0 12px 28px rgba(0, 0, 0, 0.2);
+  }
+
+  50% {
+    border-color: rgba(57, 208, 165, 0.7);
+    box-shadow: 0 0 0 1px rgba(57, 208, 165, 0.18), 0 0 16px rgba(57, 208, 165, 0.22), 0 12px 28px rgba(0, 0, 0, 0.22);
+  }
 }
 
 .session-row.is-drag-placeholder {
@@ -989,6 +1025,10 @@ button {
 }
 
 .state-running .state-dot {
+  background: #39d0a5;
+}
+
+.session-row.needs-review .state-dot {
   background: #39d0a5;
 }
 
@@ -1271,6 +1311,12 @@ button {
   border-color: rgba(255, 152, 87, 0.25);
 }
 
+.session-tag.tag-review {
+  color: #baf7df;
+  background: rgba(57, 208, 165, 0.12);
+  border-color: rgba(57, 208, 165, 0.26);
+}
+
 .session-tag.health-warning {
   color: #f8e2ae;
   background: rgba(230, 180, 92, 0.12);
@@ -1345,6 +1391,18 @@ button {
   color: #cfe8dc;
   background: rgba(143, 196, 255, 0.1);
   border-color: rgba(143, 196, 255, 0.2);
+}
+
+.row-tool-button.review-button {
+  color: #d5f8ea;
+  background: rgba(57, 208, 165, 0.13);
+  border-color: rgba(57, 208, 165, 0.25);
+}
+
+.row-tool-button.review-button:hover {
+  color: #f4fff9;
+  background: rgba(57, 208, 165, 0.2);
+  border-color: rgba(57, 208, 165, 0.38);
 }
 
 .row-tool-button.codex-app-target-button {
@@ -2259,7 +2317,7 @@ button {
   white-space: nowrap;
 }
 
-.collapsed-summary span:not(.pulse-dot):not(.quiet-dot) {
+.collapsed-summary span:not(.pulse-dot):not(.review-dot):not(.quiet-dot) {
   font-size: 12px;
   line-height: 15px;
 }
@@ -2272,6 +2330,7 @@ button {
 }
 
 .pulse-dot,
+.review-dot,
 .quiet-dot {
   grid-row: 1 / span 2;
   width: 9px;
@@ -2284,7 +2343,26 @@ button {
   box-shadow: 0 0 0 4px rgba(255, 152, 87, 0.14);
 }
 
-.quiet-dot {
+.review-dot {
   background: #39d0a5;
-  box-shadow: 0 0 0 4px rgba(57, 208, 165, 0.12);
+  box-shadow: 0 0 0 3px rgba(57, 208, 165, 0.12);
+  animation: review-dot-pulse 1.7s ease-in-out infinite;
+}
+
+.quiet-dot {
+  background: #3f4b50;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+}
+
+@keyframes review-dot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(57, 208, 165, 0.1);
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow: 0 0 0 5px rgba(57, 208, 165, 0.18);
+    transform: scale(1.06);
+  }
 }

@@ -44,6 +44,9 @@ Status: build verified locally; native overlay appeared in user smoke validation
 - When multiple matching windows exist, confirm clicking the intended candidate in the debug panel routes to the correct window.
 - Dismiss a live session card and confirm it disappears from the overlay and the persisted broker snapshot.
 - Trigger another real hook event for the same dismissed session and confirm the card returns automatically.
+- After a Claude/Codex reply stop hook, confirm the card shows a green review prompt.
+- Click `Seen`, `Note`, or `Canvas` and confirm the green review prompt clears.
+- Trigger another user prompt/running hook and confirm any stale review prompt clears.
 
 ## Phase 4 Spike: Tool Adapters
 
