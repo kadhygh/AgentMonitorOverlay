@@ -223,8 +223,9 @@ Current unverified but implemented behavior:
 - Manual workspace inspect/enroll is implemented in the broker and exposed through a compact overlay deploy panel backed by a Windows folder picker.
 - Future deploy UX should become a clearer step-by-step settings surface: `Check` is read-only folder inspection, `Deploy` writes project-local files, and later repair/disable/uninstall/history should be visible.
 - Future startup UX should avoid the brief white overlay flash while the app initializes or auto-starts the broker; add a lightweight loading state with text such as `Initializing` / `Starting broker`.
-- Obsidian vault note writing and canvas append are implemented for the project-local `.amo/obsidian-vault/`.
-- Before opening note/canvas links, the overlay asks the broker to register the project-local `.amo/obsidian-vault/` in Obsidian's vault registry, then opens by vault id + vault-relative file path. This avoids `Vault not found` from absolute `obsidian://open?path=...` links when the vault has not been opened manually yet.
+- Obsidian vault note writing and canvas append are implemented for the project-local `workspace.vaultRoot`.
+- Deployments create a friendly vault folder named `.amo/AMO - <project>/` so Obsidian's vault list is distinguishable. Test workspaces can be redeployed instead of migrated.
+- Before opening note/canvas links, the overlay asks the broker to register `workspace.vaultRoot` in Obsidian's vault registry and checks whether Obsidian has a per-vault runtime config for that vault. If Obsidian is already running but has not loaded a brand-new AMO vault, overlay reports the manual open-vault requirement instead of firing a URI that produces `Vault not found`. Once loaded, the plugin-owned `amo-open` URI uses only vault-relative `path/kind`.
 - Broker-side `/api/obsidian/annotations` and `/api/sync-back` are implemented.
 - Workspace enroll installs and enables a vault-local `md-anno-tools` Obsidian plugin with an explicit `Send current note annotations to AMO` command. First-load behavior still depends on Obsidian loading/reloading the project-local vault and community plugin state.
 
@@ -355,9 +356,9 @@ Do not commit:
 ## Recommended Next Tasks
 
 1. Implement script-driven workspace inspect/enroll in the existing Node broker, starting from a user-selected project folder and following `docs/adapter-deployment-guide.md`.
-2. For the first MVP, support only the `codex-cli` adapter and create project-local `.amo/` plus `.amo/obsidian-vault/`.
+2. For the first MVP, support only the `codex-cli` adapter and create project-local `.amo/` plus `workspace.vaultRoot`.
 3. Implement the smallest bridge `/api/replies` endpoint.
-4. Add bridge config for the project-local `.amo/obsidian-vault/`, reply note folder, and `AgentFlow.canvas`.
+4. Add bridge config for the project-local `workspace.vaultRoot`, reply note folder, and `AgentFlow.canvas`.
 5. Adapt the proven Codex `Stop` hook script as a project-local enrolled adapter so it keeps `.codex/cache/` fallback and best-effort POSTs to AMO bridge.
 6. Generate a reply note and append-only canvas file node in the project-local vault.
 7. Add overlay actions for `Focus CLI`, `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI`.

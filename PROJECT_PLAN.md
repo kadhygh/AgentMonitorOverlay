@@ -519,7 +519,7 @@ Kiro adapter:
 
 - overlay 启动或确认 bridge server 可用。
 - 用户能手动选择一个项目文件夹，AMO 能展示检测到的本地 adapter/hook 方案。
-- AMO 能创建 `.amo/` 和专属 `.amo/obsidian-vault/`。
+- AMO 能创建 `.amo/` 和专属 AMO vault。新部署统一使用 `.amo/AMO - <project>/`。
 - Codex `Stop` hook 或等价项目本地 adapter 能同时写本地 cache 兜底并 POST `/api/replies`。
 - bridge 能在测试 vault 中创建 reply note，并在 canvas 中追加 file node。
 - overlay session 卡片能打开关联 note/canvas。
@@ -530,15 +530,15 @@ Kiro adapter:
 
 1. 只支持 Codex CLI adapter。
 2. 只支持一个手动选择的工程文件夹。
-3. `.amo/obsidian-vault/AgentFlow.canvas` 是唯一默认 work canvas。
+3. `workspace.vaultRoot/AgentFlow.canvas` 是唯一默认 work canvas。
 4. Codex `Stop` hook 捕获最后回复并 POST `/api/replies`。
-5. Bridge 写 `.amo/obsidian-vault/Replies/` 下的 reply note。
+5. Bridge 写 `workspace.vaultRoot/Replies/` 下的 reply note。
 6. Bridge 把 reply note 追加到 `AgentFlow.canvas`。
 7. Overlay task card 提供 `Focus CLI`、`Open Canvas`、`Open Note`。
 8. Obsidian 插件发送批注，bridge 生成 pending prompt。
 9. 用户点击 `Copy + Focus CLI`，然后手动粘贴/发送。
 
-Note/canvas tab 复用规则归 Obsidian 插件阶段处理：如果目标 note/canvas 已打开则聚焦既有 tab，未打开才新建 tab。Overlay 的 `obsidian://open` 只作为当前 fallback，不继续在 URI 层堆精确 tab 控制。由于 Obsidian 的 absolute `path` 打开方式要求目标路径属于已注册 vault，overlay 打开前会先通过 broker 把项目本地 `.amo/obsidian-vault/` 注册到 Obsidian vault registry，再用 vault id + vault-relative file 打开 note/canvas。
+Note/canvas tab 复用规则归 Obsidian 插件处理：如果目标 note/canvas 已打开则聚焦既有 tab，未打开才新建 tab。由于 Obsidian 的 absolute `path` 打开方式要求目标路径属于当前运行态可识别的 vault，overlay 打开前会先通过 broker 把项目本地 `workspace.vaultRoot` 注册到 Obsidian vault registry，并检查运行态配置是否已经存在。运行态尚未加载该 vault 时，overlay 弹出手动打开 vault 的提示；运行态已加载后，overlay 发送 `obsidian://amo-open` 插件协议，由 Obsidian 插件执行 tab 复用和最新 note 聚焦。Obsidian CLI 恢复路径暂时停用。
 
 当前 MVP 暂不做：
 
@@ -771,7 +771,8 @@ Execution role: supervisor agent manages workers
 - 后续部署 UX 优化：deploy 不应继续占用主 overlay 任务卡区域。部署图标应打开独立弹窗/工具窗口，由该窗口承载目录选择、`Check` 只读检测、`Deploy` 写入确认、部署历史、repair/disable/uninstall、adapter 选择、风险预览和 settings；主 overlay 保持为轻量监控与跳转面板。
 - Broker 启动：overlay 启动时会检查 `127.0.0.1:17654/api/health`，如果 AMO broker 不在则尝试从本仓 `broker/server.js` 拉起本地 Node broker。
 - 后续启动体验优化：overlay 冷启动或等待 broker 自动拉起时不应短暂白屏；增加初始化占位、基础状态文案（如“初始化中”“broker 启动中”）或轻量 loading 指示。
-- Obsidian 打开：真实 Codex CLI smoke 暴露了未注册 `.amo/obsidian-vault/` 时 `obsidian://open?path=...` 会报 `Vault not found`；overlay 现在在打开 note/canvas 前调用 broker 注册 vault，并改用 vault id + relative file URI。
+- Obsidian 打开：真实 Codex/Claude smoke 暴露了未注册或未被当前 Obsidian 运行态加载的 AMO vault 会报 `Vault not found`。overlay 在打开 note/canvas 前调用 broker 注册 `workspace.vaultRoot`，并区分 registry 写入成功与 `<vaultId>.json` 运行态配置是否存在；如果 Obsidian 正在运行但尚未加载这个新 AMO vault，则不继续发会弹错的 URI，而是提示用户用 Obsidian 手动打开该 vault 一次。vault 已加载后，overlay 继续走 AMO 插件协议 `obsidian://amo-open`，由插件复用已有 tab 并聚焦 canvas 最新 note。
+- 未加载 vault 恢复：除了 footer 小字提示，overlay 会弹出恢复弹窗，提供 Explorer 打开 AMO vault 文件夹和复制 vault 路径。Obsidian CLI 兜底已停用；当前策略是让用户在 Obsidian 中选择 `Open folder as vault`，打开 `workspace.vaultRoot` 后再回 overlay 点击 Note/Canvas。新部署的 vault 文件夹名为 `AMO - <project>`，避免 Obsidian vault 列表里全都显示为 `obsidian-vault`。
 - Vault/plugin health：card 出现后，AMO server 会检查关联 vault 的 `md-anno-tools` 插件版本、启用状态、`main.js` 和 `data.json` bridge URL 是否匹配当前 broker；overlay 以紧凑 pill 显示结果。后续需要在 card 或 deploy/check 面板补 repair/redeploy。
 - Debug 基础设施：broker 新增运行时 debug 开关和内存日志，overlay header 提供开关，Obsidian 插件、overlay、broker 都能把 canvas send、annotation send/render、sync-back、窗口绑定等关键路径打点到 `GET /api/debug?limit=200`；正常使用默认关闭，复现问题时打开。
 - Obsidian AMO panel：Copy/Send 操作必须以 panel 当前显示的 note 为准；canvas 选择变更后刷新 panel，并在 panel active 时保留上一个 canvas target context，避免重新取 Obsidian active Markdown view 导致复制旧 card 内容。
@@ -812,7 +813,7 @@ Phase 5 Hook-to-Obsidian Bridge planning / implementation prep。
 2. 保留 overlay 悬浮窗、broker session 状态和 CLI window focus 能力。
 3. 不做全局 hook 部署；接入从用户手动选择项目文件夹开始，根据文件夹内容选择项目本地 adapter/hook。
 4. 复用现有 Node broker，把它升级为 AMO bridge；第一步实现脚本化 workspace inspect/enroll 和 `/api/replies`。
-5. 当前 MVP 只支持 `codex-cli`，创建项目本地 `.amo/` 和 `.amo/obsidian-vault/AgentFlow.canvas`。
+5. 当前 MVP 只支持 `codex-cli`，创建项目本地 `.amo/` 和 `workspace.vaultRoot/AgentFlow.canvas`。
 6. 使用外部 Codex Stop hook MVP 的 `last_assistant_message` capture 思路，保持 hook stdout 只输出 `{"continue":true}`，并保留 `.codex/cache/` 兜底。
 7. 使用外部 Obsidian plugin MVP 的 `[!anno]...[/anno]` 语法；第一版只做显式提取和发送，不做复杂 anchored comments。
 8. Obsidian 插件阶段接管 note/canvas 打开与 tab 复用：已打开则聚焦，未打开才新建 tab。

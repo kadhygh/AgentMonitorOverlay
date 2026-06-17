@@ -104,7 +104,7 @@ project/
       sessions.json
       bindings.json
       pending-replies.json
-    obsidian-vault/
+    AMO - <project>/
       AgentFlow.canvas
       Replies/
       .obsidian/
@@ -150,7 +150,7 @@ The current MVP should intentionally narrow the target flow:
 Codex CLI
   -> one manually selected project folder
   -> project-local `.amo/`
-  -> `.amo/obsidian-vault/`
+  -> workspace-local AMO vault (`.amo/AMO - <project>/` for new deployments)
   -> one `AgentFlow.canvas`
   -> reply notes
   -> `[!anno]...[/anno]`
@@ -162,13 +162,13 @@ MVP acceptance flow:
 1. Start monitor and bridge.
 2. Select one project folder.
 3. AMO inspects the folder and offers only the `codex-cli` adapter if supported.
-4. AMO creates `.amo/` and the dedicated `.amo/obsidian-vault/`.
+4. AMO creates `.amo/` and the dedicated `workspace.vaultRoot`.
 5. AMO installs or updates project-local Codex hook files after confirmation.
 6. User starts Codex CLI manually or from the monitor.
 7. Codex `Stop` hook sends `last_assistant_message` to `POST /api/replies`.
 8. Bridge records the reply and updates the task card.
-9. Bridge writes a reply note under `.amo/obsidian-vault/Replies/`.
-10. Bridge creates or appends a file node in `.amo/obsidian-vault/AgentFlow.canvas`.
+9. Bridge writes a reply note under `workspace.vaultRoot/Replies/`.
+10. Bridge creates or appends a file node in `workspace.vaultRoot/AgentFlow.canvas`.
 11. Task card exposes `Focus CLI`, `Open Canvas`, and `Open Note`.
 12. User annotates the note with `[!anno]...[/anno]`.
 13. Obsidian plugin sends annotations to AMO.
@@ -638,7 +638,9 @@ AMO note property hiding is allowed only inside Markdown note views. The plugin 
 
 For the interim overlay-only path, `Open Note` and `Open Canvas` may use `obsidian://open` with `paneType=tab` so opening a canvas does not replace the currently active note. This is only a fallback. Precise behavior for "if the target note/canvas is already open, focus that existing tab; otherwise open a new tab" belongs in the Obsidian plugin because the external URI layer cannot reliably inspect or control Obsidian workspace leaves.
 
-The current fallback registers the project-local `.amo/obsidian-vault/` in Obsidian's vault registry before opening by vault id and vault-relative file path. This fixes `Vault not found` after the vault is known to Obsidian, but user smoke confirmed that if Obsidian is already running when a brand-new AMO vault is registered, Obsidian must be restarted once before the external URI layer sees that vault. That restart requirement is an MVP limitation only. The Obsidian plugin stage should remove it by owning AMO note/canvas opening inside Obsidian itself instead of relying on registry writes plus external URI reload behavior.
+The current fallback registers the project-local `workspace.vaultRoot` in Obsidian's vault registry before opening. Broker also reports whether Obsidian has created the per-vault runtime config file (`<vaultId>.json` beside `obsidian.json`); registry presence alone is not enough to prove the running Obsidian process can resolve the vault. User smoke confirmed that if Obsidian is already running when a brand-new AMO vault is registered, Obsidian may require a restart or a manual vault open before the external URI layer sees that vault. Overlay should detect that state and show a clear manual-open prompt instead of firing a URI that produces `Vault not found`. Once the vault is loaded, overlay uses the AMO plugin-owned `obsidian://amo-open...` route so the plugin can reuse existing workspace leaves and focus the latest canvas note.
+
+If the vault is not loaded, overlay should show a recovery dialog in addition to the footer feedback. The dialog offers opening the AMO vault folder in Explorer and copying the vault path. Obsidian CLI recovery is disabled for now because smoke testing showed it is not reliable enough for this MVP. The supported recovery path is: open Obsidian, choose **Open folder as vault**, select `workspace.vaultRoot`, then click the Note/Canvas button in overlay again. Deployments name this folder `.amo/AMO - <project>/` so Obsidian's vault switcher is readable.
 
 Card state can show:
 
@@ -696,10 +698,10 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 - Add manual workspace inspection/enrollment for a selected folder.
 - Follow the deterministic deployment contract in `docs/adapter-deployment-guide.md`.
 - Support only `codex-cli` for the first MVP.
-- Create project-local `.amo/` and `.amo/obsidian-vault/`.
+- Create project-local `.amo/` and `workspace.vaultRoot`.
 - Reject global hook deployment by default.
 - Add `POST /api/replies` to the existing broker.
-- Persist reply notes into `.amo/obsidian-vault/Replies/`.
+- Persist reply notes into `workspace.vaultRoot/Replies/`.
 - Update session snapshot with `lastReplyNote`, `canvasPath`, and `lastReplyAt`.
 - Keep `.codex/cache/` fallback in the hook script.
 
@@ -727,7 +729,7 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 - POST annotations to the bridge.
 - Preserve the existing "copy annotations to clipboard" command.
 
-Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `.amo/obsidian-vault/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, adds `Send current note annotations to AMO`, and registers `obsidian://amo-open` so overlay note/canvas buttons can ask the plugin to reuse an existing tab before opening a new one. The plugin can also target a Markdown note selected as a file node on `AgentFlow.canvas` for panel/copy/send/append actions; canvas targeting now prefers the current canvas selection and only falls back to the last clicked file node if no selection can be read, so actions should not silently drift to a previous node. The AMO panel keeps canvas target context even while the panel itself is the active leaf, and panel Copy/Send buttons operate on the note currently displayed in the panel rather than re-resolving Obsidian's active Markdown view at click time. If Obsidian's canvas selection cannot be read reliably, the plugin should ask the user to choose one of the Markdown file nodes from the canvas instead of silently using a stale target. Editor selection insertion now creates a quoted annotation block instead of wrapping the selected source text, so a selected question title becomes quoted context and the user's answer can be written underneath. If the user is in reading mode, the plugin can append the current DOM text selection as a referenced annotation block because there is no editable cursor location. Annotation rendering supports both inline `[!anno]...[/anno]` and multi-block annotations. The stable path is now source-backed and lifecycle-managed: the Markdown postprocessor uses `sourcePath` and `getSectionInfo` to map each rendered section back to the source file, renders one plugin-owned `MarkdownRenderChild` for the annotation start section, and hides the remaining annotation sections. This avoids treating cross-section DOM ranges as durable state in note read/edit/read and canvas embedded previews. The plugin setting `Number annotations in sync prompt` defaults off; when off, pending prompts use raw annotation content without broker-added numbering. The plugin setting `Canvas note append direction` defaults to down and can switch to right; broker reads that vault-local setting when adding new reply/prompt file nodes and writes explicit canvas edge sides and endpoint shapes. Canvas DOM rendering enhancements were deliberately rolled back from MVP scope after zoom/pan regressions: the plugin no longer injects node-level property buttons, hides node metadata via CSS, mutates Obsidian Canvas selection state, or force-reloads live Canvas views on vault file changes. The previous delayed DOM repair helpers were removed from the primary plugin path because they hid symptoms while still fighting Obsidian's renderer ownership. The custom `amo-open` URI intentionally passes only a vault-relative `path` and `kind`, not `vault=...`, because Obsidian resolves the `vault` parameter before the plugin protocol handler can run. Obsidian may still require a vault reload/restart before a newly deployed plugin is loaded; removing that first-load friction is part of the plugin-side opening/reload UX follow-up.
+Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `workspace.vaultRoot/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, adds `Send current note annotations to AMO`, and registers `obsidian://amo-open` inside the plugin. Deployments set `workspace.vaultRoot` to `.amo/AMO - <project>/`; test workspaces should be redeployed instead of migrated. Overlay checks that the AMO vault is registered and loaded before opening. If the running Obsidian session has not loaded that vault yet, overlay shows the manual-open recovery dialog instead of firing a URL that can produce `Vault not found`. Once the vault is loaded, overlay sends `obsidian://amo-open` so the plugin can reuse existing note/canvas tabs and focus the latest canvas note. The plugin can target a Markdown note selected as a file node on `AgentFlow.canvas` for panel/copy/send/append actions; canvas targeting now prefers the current canvas selection and only falls back to the last clicked file node if no selection can be read, so actions should not silently drift to a previous node. The AMO panel keeps canvas target context even while the panel itself is the active leaf, and panel Copy/Send buttons operate on the note currently displayed in the panel rather than re-resolving Obsidian's active Markdown view at click time. If Obsidian's canvas selection cannot be read reliably, the plugin should ask the user to choose one of the Markdown file nodes from the canvas instead of silently using a stale target. Editor selection insertion now creates a quoted annotation block instead of wrapping the selected source text, so a selected question title becomes quoted context and the user's answer can be written underneath. If the user is in reading mode, the plugin can append the current DOM text selection as a referenced annotation block because there is no editable cursor location. Annotation rendering supports both inline `[!anno]...[/anno]` and multi-block annotations. The stable path is now source-backed and lifecycle-managed: the Markdown postprocessor uses `sourcePath` and `getSectionInfo` to map each rendered section back to the source file, renders one plugin-owned `MarkdownRenderChild` for the annotation start section, and hides the remaining annotation sections. This avoids treating cross-section DOM ranges as durable state in note read/edit/read and canvas embedded previews. The plugin setting `Number annotations in sync prompt` defaults off; when off, pending prompts use raw annotation content without broker-added numbering. The plugin setting `Canvas note append direction` defaults to down and can switch to right; broker reads that vault-local setting when adding new reply/prompt file nodes and writes explicit canvas edge sides and endpoint shapes. Canvas DOM rendering enhancements were deliberately rolled back from MVP scope after zoom/pan regressions: the plugin no longer injects node-level property buttons, hides node metadata via CSS, mutates Obsidian Canvas selection state, or force-reloads live Canvas views on vault file changes. The previous delayed DOM repair helpers were removed from the primary plugin path because they hid symptoms while still fighting Obsidian's renderer ownership.
 
 Current AMO canvas/note direction: new test-project deployments can use short physical note names directly because no production migration compatibility is required yet. Broker writes `AgentFlow.canvas` with AMO metadata, writes new notes as `Replies/reply 01.md` / `Prompts/prompt 01.md`, and keeps durable identity in frontmatter. The Obsidian plugin checks the canvas AMO marker before applying AMO-specific canvas behavior such as latest-note focus styling, and it intentionally avoids canvas-node property hiding.
 
@@ -746,7 +748,7 @@ The MVP now has a shared debug channel for this exact class of "works once, then
 
 Debug logging is intentionally temporary and local: it is not persisted to the session snapshot, and the overlay toggle should stay off during normal use. For reproduction, enable debug in overlay, run the exact failing Obsidian operation, then inspect `GET /api/debug?limit=200`.
 
-Current health check: once a task card links to a vault, broker decorates the session with `obsidianPluginHealth`, including installed `md-anno-tools` version, enabled state, `main.js` presence, and plugin `data.json` bridge URL. Overlay surfaces the result as a compact plugin status pill on the card. Follow-up repair flow: mismatches should offer repair/redeploy from the card or deploy/check panel.
+Current health check: once a task card links to a vault, broker decorates the session with `obsidianPluginHealth`, including installed `md-anno-tools` version, enabled state, `main.js` presence, and plugin `data.json` bridge URL. Vault registration also exposes runtime-load evidence (`runtimeConfigExists`) for note/canvas opening. Overlay surfaces plugin result as a compact plugin status pill on the card. Follow-up repair flow: mismatches should offer repair/redeploy from the card or deploy/check panel.
 
 ### Phase 5.5: End-To-End Smoke
 
@@ -806,7 +808,7 @@ Current instruction:
 - Treat Phase 5 as Hook-to-Obsidian Bridge MVP.
 - Reuse the existing broker as the bridge server first.
 - Treat hook deployment as manual workspace enrollment, not global installation.
-- Current MVP is Codex CLI only, one selected project folder, project-local `.amo/obsidian-vault/`, one `AgentFlow.canvas`, and explicit `Copy + Focus CLI`.
+- Current MVP is Codex CLI only, one selected project folder, project-local `workspace.vaultRoot`, one `AgentFlow.canvas`, and explicit `Copy + Focus CLI`.
 - Keep hooks short and protocol-clean.
 - Keep Obsidian mutation vault-native and explicit.
 - Keep sync-back to `copy + focus target CLI` until the user explicitly accepts stronger automation.

@@ -91,7 +91,7 @@ Apply should:
 - merge tool hook config instead of overwriting user-owned config
 - back up user-owned files before modification
 - record installed adapter metadata in `.amo/enrollment.json`
-- create the dedicated `.amo/obsidian-vault/`
+- create the dedicated AMO vault folder (`.amo/AMO - <project>/` for new deployments)
 - install the AMO-owned Obsidian plugin into the project-local vault
 - never write global hook config unless a future explicit advanced mode allows it
 
@@ -102,8 +102,8 @@ Health checks should report:
 - adapter files exist
 - tool hook config points to AMO-owned adapter files
 - AMO bridge URL is configured
-- `.amo/obsidian-vault/` is present
-- `.amo/obsidian-vault/.obsidian/plugins/md-anno-tools/` is present and configured
+- `workspace.vaultRoot` is present
+- `workspace.vaultRoot/.obsidian/plugins/md-anno-tools/` is present and configured
 - a dry-run payload can be produced
 - known local limitations
 
@@ -136,7 +136,7 @@ Recommended shape:
     sessions.json
     bindings.json
     pending-replies.json
-  obsidian-vault/
+  AMO - <project>/
     AgentFlow.canvas
     Replies/
     .obsidian/
