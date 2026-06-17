@@ -8,16 +8,19 @@ import {
   Bug,
   ChevronDown,
   ChevronUp,
+  Clock,
   ClipboardCheck,
   FileText,
   FolderOpen,
   FolderPlus,
   GripHorizontal,
   GripVertical,
+  ListFilter,
   Map as MapIcon,
   Minimize2,
   RefreshCcw,
   CircleCheck,
+  Search,
   Settings2,
   SquareTerminal,
   StickyNote,
@@ -90,6 +93,13 @@ interface UtilityWindowStateEvent {
 }
 
 type SettingsSection = "scratchpad";
+type SessionFilter = "all" | "attention" | "idle";
+
+const sessionFilterLabels: Record<SessionFilter, string> = {
+  all: "All",
+  attention: "Attention",
+  idle: "Idle",
+};
 
 interface ScratchpadShortcutResult {
   ok: boolean;
@@ -672,6 +682,53 @@ function mergeChangedSession(previousSessions: AgentSession[], changedSession: A
 
 function sessionNeedsReview(session: AgentSession) {
   return Boolean(session.reviewRequired && session.reviewStatus !== "reviewed" && !session.reviewedAt);
+}
+
+function sessionMatchesFilter(session: AgentSession, filter: SessionFilter) {
+  if (filter === "attention") {
+    return Boolean(session.needsAttention || sessionNeedsReview(session));
+  }
+  if (filter === "idle") {
+    return session.state === "idle";
+  }
+  return true;
+}
+
+function sessionMatchesSearch(session: AgentSession, query: string) {
+  const normalizedQuery = query.trim().toLowerCase();
+  if (!normalizedQuery) {
+    return true;
+  }
+
+  const target = targetBindingForSession(session);
+  const haystack = [
+    session.sessionId,
+    session.title,
+    projectName(session.cwd || ""),
+    session.cwd,
+    session.workspacePath,
+    session.vaultRoot,
+    session.tool,
+    toolDisplayForSession(session).label,
+    session.state,
+    session.lastEvent,
+    session.lastMessage,
+    session.lastReplyNote,
+    session.lastPromptNote,
+    session.pendingPrompt,
+    session.windowHint?.process,
+    session.windowHint?.title,
+    session.windowHint?.boundLabel,
+    target?.label,
+    target?.title,
+    target?.processName,
+    target?.threadId,
+  ]
+    .filter(Boolean)
+    .join("\n")
+    .toLowerCase();
+
+  return haystack.includes(normalizedQuery);
 }
 
 interface CardDragState {
@@ -1659,6 +1716,8 @@ export default function App() {
   const [unbindingWindowId, setUnbindingWindowId] = useState<string | null>(null);
   const [reviewingSessionId, setReviewingSessionId] = useState<string | null>(null);
   const [dismissingSessionId, setDismissingSessionId] = useState<string | null>(null);
+  const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
+  const [sessionSearch, setSessionSearch] = useState("");
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
@@ -1694,9 +1753,17 @@ export default function App() {
   const dialogRestoreSizeRef = useRef<{ width: number; height: number } | null>(null);
   const suppressNextClickRef = useRef(false);
 
+  const filteredSessions = useMemo(
+    () =>
+      applySessionOrder(sessions, sessionOrder).filter(
+        (session) => sessionMatchesFilter(session, sessionFilter) && sessionMatchesSearch(session, sessionSearch),
+      ),
+    [sessions, sessionOrder, sessionFilter, sessionSearch],
+  );
+
   const orderedSessions = useMemo(
-    () => applySessionOrder(sessions, sessionOrder).slice(0, 8),
-    [sessions, sessionOrder],
+    () => filteredSessions.slice(0, 8),
+    [filteredSessions],
   );
 
   const attentionCount = useMemo(
@@ -3356,13 +3423,42 @@ export default function App() {
       ) : (
         <>
           <section className="summary-strip" aria-label="Session summary">
-            <span>{sessions.length} active lines</span>
-            <strong>{attentionCount} need attention</strong>
-            {reviewCount > 0 ? <strong className="summary-review">{reviewCount} review</strong> : null}
+            <div className="summary-info">
+              <span>{sessions.length} active lines</span>
+              <strong>{attentionCount} need attention</strong>
+              {reviewCount > 0 ? <strong className="summary-review">{reviewCount} review</strong> : null}
+              {sessionFilter !== "all" || sessionSearch.trim() ? <em>{filteredSessions.length} shown</em> : null}
+            </div>
+            <div className="summary-controls" aria-label="Session filters">
+              {(["all", "attention", "idle"] as SessionFilter[]).map((filter) => (
+                <button
+                  key={filter}
+                  type="button"
+                  className={`summary-filter-button ${sessionFilter === filter ? "is-active" : ""}`}
+                  title={sessionFilterLabels[filter]}
+                  aria-label={`Show ${sessionFilterLabels[filter]} cards`}
+                  onClick={() => setSessionFilter(filter)}
+                >
+                  {filter === "all" ? <ListFilter size={12} aria-hidden="true" /> : null}
+                  {filter === "attention" ? <AlertTriangle size={12} aria-hidden="true" /> : null}
+                  {filter === "idle" ? <Clock size={12} aria-hidden="true" /> : null}
+                </button>
+              ))}
+              <label className="summary-search" title="Search cards">
+                <Search size={11} aria-hidden="true" />
+                <input
+                  type="search"
+                  aria-label="Search cards"
+                  placeholder="Search"
+                  value={sessionSearch}
+                  onChange={(event) => setSessionSearch(event.currentTarget.value)}
+                />
+              </label>
+            </div>
           </section>
 
           <section className="session-list" aria-label="Agent sessions">
-            {orderedSessions.map((session) => (
+            {orderedSessions.length > 0 ? orderedSessions.map((session) => (
               <div
                 role="button"
                 tabIndex={0}
@@ -3425,7 +3521,11 @@ export default function App() {
                   onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
                 />
               </div>
-            ))}
+            )) : (
+              <div className="session-empty-state">
+                No matching cards.
+              </div>
+            )}
           </section>
 
           {candidateMenu ? (
