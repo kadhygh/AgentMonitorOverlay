@@ -213,25 +213,32 @@ try {
         throw "Workspace enroll failed."
     }
 
-    foreach ($relativePath in @(
-            ".amo\workspace.json",
-            ".amo\enrollment.json",
-            ".amo\adapters\codex-cli.json",
-            ".amo\adapters\claude-cli.json",
-            ".amo\hooks\codex-stop-message.mjs",
-            ".amo\hooks\claude-message.mjs",
-            ".amo\obsidian-vault\AgentFlow.canvas",
-            ".amo\obsidian-vault\.obsidian\community-plugins.json",
-            ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\manifest.json",
-            ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\main.js",
-            ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\styles.css",
-            ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\data.json",
-            ".claude\settings.local.json",
-            ".codex\hooks.json"
+    $vaultRoot = [string]$enroll.vaultRoot
+    $vaultName = Split-Path -Leaf $vaultRoot
+    $expectedVaultName = "AMO - $(Split-Path -Leaf $workspaceRoot)"
+    if ($vaultName -ne $expectedVaultName) {
+        throw "Expected friendly AMO vault folder '$expectedVaultName', got '$vaultName'."
+    }
+    $pluginRoot = Join-Path $vaultRoot ".obsidian\plugins\md-anno-tools"
+
+    foreach ($targetPath in @(
+            (Join-Path $workspaceRoot ".amo\workspace.json"),
+            (Join-Path $workspaceRoot ".amo\enrollment.json"),
+            (Join-Path $workspaceRoot ".amo\adapters\codex-cli.json"),
+            (Join-Path $workspaceRoot ".amo\adapters\claude-cli.json"),
+            (Join-Path $workspaceRoot ".amo\hooks\codex-stop-message.mjs"),
+            (Join-Path $workspaceRoot ".amo\hooks\claude-message.mjs"),
+            (Join-Path $vaultRoot "AgentFlow.canvas"),
+            (Join-Path $vaultRoot ".obsidian\community-plugins.json"),
+            (Join-Path $pluginRoot "manifest.json"),
+            (Join-Path $pluginRoot "main.js"),
+            (Join-Path $pluginRoot "styles.css"),
+            (Join-Path $pluginRoot "data.json"),
+            (Join-Path $workspaceRoot ".claude\settings.local.json"),
+            (Join-Path $workspaceRoot ".codex\hooks.json")
         )) {
-        $targetPath = Join-Path $workspaceRoot $relativePath
         if (-not (Test-Path -LiteralPath $targetPath)) {
-            throw "Expected enrolled file missing: $relativePath"
+            throw "Expected enrolled file missing: $targetPath"
         }
     }
 
@@ -258,11 +265,11 @@ try {
         throw "Claude adapter config does not include bridgeEventsUrl."
     }
 
-    $pluginList = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\community-plugins.json") | ConvertFrom-Json
+    $pluginList = Get-Content -Raw -Encoding UTF8 (Join-Path $vaultRoot ".obsidian\community-plugins.json") | ConvertFrom-Json
     if (@($pluginList) -notcontains "md-anno-tools") {
         throw "Obsidian community plugin list does not enable md-anno-tools."
     }
-    $pluginData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\data.json") | ConvertFrom-Json
+    $pluginData = Get-Content -Raw -Encoding UTF8 (Join-Path $pluginRoot "data.json") | ConvertFrom-Json
     if ($pluginData.bridgeUrl -ne $baseUrl) {
         throw "Obsidian plugin bridgeUrl mismatch. Expected $baseUrl, got $($pluginData.bridgeUrl)."
     }
@@ -272,7 +279,7 @@ try {
     if ($pluginData.canvasAppendDirection -ne "down") {
         throw "Obsidian plugin should default canvas append direction to down."
     }
-    $pluginMain = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\main.js")
+    $pluginMain = Get-Content -Raw -Encoding UTF8 (Join-Path $pluginRoot "main.js")
     if ($pluginMain -notmatch "/api/obsidian/annotations") {
         throw "Obsidian plugin main.js does not reference the AMO annotation endpoint."
     }
@@ -321,7 +328,7 @@ try {
     if ($pluginMain -notmatch "canvasAppendDirection") {
         throw "Obsidian plugin does not expose the canvas append direction setting."
     }
-    $pluginStyles = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\styles.css")
+    $pluginStyles = Get-Content -Raw -Encoding UTF8 (Join-Path $pluginRoot "styles.css")
     if ($pluginStyles -notmatch "anno-token-rich" -or $pluginStyles -notmatch "amo-canvas-note-list") {
         throw "Obsidian plugin styles.css does not include rich annotation block styles."
     }
@@ -343,7 +350,6 @@ try {
         throw "Reply endpoint failed."
     }
 
-    $vaultRoot = Join-Path $workspaceRoot ".amo\obsidian-vault"
     $noteRelative = $reply.notePath -replace "/", [System.IO.Path]::DirectorySeparatorChar
     $notePath = Join-Path $vaultRoot $noteRelative
     if (-not (Test-Path -LiteralPath $notePath)) {
@@ -478,7 +484,7 @@ try {
         throw "Annotation numbering option did not preserve numbered output. Expected '$expectedNumberedPrompt', got '$($numberedAnnotationResult.prompt)'."
     }
 
-    $pluginDataPath = Join-Path $workspaceRoot ".amo\obsidian-vault\.obsidian\plugins\md-anno-tools\data.json"
+    $pluginDataPath = Join-Path $pluginRoot "data.json"
     $pluginDataForRightAppend = Get-Content -Raw -Encoding UTF8 $pluginDataPath | ConvertFrom-Json
     $pluginDataForRightAppend | Add-Member -NotePropertyName "canvasAppendDirection" -NotePropertyValue "right" -Force
     [System.IO.File]::WriteAllText(

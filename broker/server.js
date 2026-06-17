@@ -2,7 +2,7 @@ const http = require("http");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 
 const HOST = process.env.AGENT_MONITOR_HOST || "127.0.0.1";
 const PORT = Number.parseInt(process.env.AGENT_MONITOR_PORT || "17654", 10);
@@ -17,6 +17,7 @@ const AMO_CANVAS_PATH = "AgentFlow.canvas";
 const AMO_CANVAS_TYPE = "agent-flow";
 const AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 const AMO_NOTE_INDEX_PATH = path.join("state", "note-index.json");
+const AMO_VAULT_NAME_PREFIX = "AMO - ";
 const OBSIDIAN_PLUGIN_ID = "md-anno-tools";
 const REPLY_NODE_WIDTH = 520;
 const REPLY_NODE_HEIGHT = 360;
@@ -602,13 +603,45 @@ function updateHeartbeat(sessionId, payload) {
   return session;
 }
 
+function amoVaultDirectoryName(projectName) {
+  const cleaned = (normalizeText(projectName) || "workspace")
+    .replace(/[<>:"/\\|?*\u0000-\u001F]/gu, " ")
+    .replace(/\s+/gu, " ")
+    .trim()
+    .replace(/[. ]+$/u, "");
+  const safeName = cleaned || "workspace";
+  const maxProjectNameLength = 54;
+  return `${AMO_VAULT_NAME_PREFIX}${safeName.slice(0, maxProjectNameLength)}`;
+}
+
+function defaultWorkspaceVaultRoot(amoRoot, projectName) {
+  return path.join(amoRoot, amoVaultDirectoryName(projectName));
+}
+
+function resolveWorkspaceVaultRoot(amoRoot, workspace, projectName) {
+  const configured = normalizeText(workspace?.vaultRoot || workspace?.vault_root);
+  if (configured) {
+    return path.isAbsolute(configured) ? path.resolve(configured) : path.resolve(amoRoot, configured);
+  }
+
+  return defaultWorkspaceVaultRoot(amoRoot, normalizeText(workspace?.projectName) || projectName);
+}
+
+function workspaceRelativePath(workspacePath, targetPath) {
+  return path.relative(workspacePath, targetPath).split(path.sep).join("/");
+}
+
 function inspectWorkspace(payload) {
   const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
   const writable = isWritableDirectory(workspacePath);
   const workspaceId = workspaceIdFor(workspacePath);
   const projectName = path.basename(workspacePath);
   const amoRoot = path.join(workspacePath, AMO_DIR);
-  const hasAmo = fs.existsSync(path.join(amoRoot, "workspace.json"));
+  const workspaceFile = path.join(amoRoot, "workspace.json");
+  const existingWorkspace = readJsonFile(workspaceFile, null);
+  const hasAmo = fs.existsSync(workspaceFile);
+  const plannedVaultRoot = resolveWorkspaceVaultRoot(amoRoot, existingWorkspace, projectName);
+  const plannedVaultRelativePath = workspaceRelativePath(workspacePath, plannedVaultRoot);
   const hasCodexDir = fs.existsSync(path.join(workspacePath, ".codex"));
   const hasCodexHooks = fs.existsSync(path.join(workspacePath, ".codex", "hooks.json"));
   const hasClaudeDir = fs.existsSync(path.join(workspacePath, ".claude"));
@@ -651,22 +684,22 @@ function inspectWorkspace(payload) {
     ".amo/state",
     ".amo/logs",
     ".amo/backups",
-    ".amo/obsidian-vault",
-    ".amo/obsidian-vault/Replies",
-    ".amo/obsidian-vault/Prompts",
-    ".amo/obsidian-vault/.obsidian",
-    ".amo/obsidian-vault/.obsidian/plugins",
-    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}`,
+    plannedVaultRelativePath,
+    `${plannedVaultRelativePath}/Replies`,
+    `${plannedVaultRelativePath}/Prompts`,
+    `${plannedVaultRelativePath}/.obsidian`,
+    `${plannedVaultRelativePath}/.obsidian/plugins`,
+    `${plannedVaultRelativePath}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}`,
   ];
   const commonFilesToWrite = [
     ".amo/workspace.json",
     ".amo/enrollment.json",
-    `.amo/obsidian-vault/${AMO_CANVAS_PATH}`,
-    ".amo/obsidian-vault/.obsidian/community-plugins.json",
-    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/manifest.json`,
-    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`,
-    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/styles.css`,
-    `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/data.json`,
+    `${plannedVaultRelativePath}/${AMO_CANVAS_PATH}`,
+    `${plannedVaultRelativePath}/.obsidian/community-plugins.json`,
+    `${plannedVaultRelativePath}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/manifest.json`,
+    `${plannedVaultRelativePath}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`,
+    `${plannedVaultRelativePath}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/styles.css`,
+    `${plannedVaultRelativePath}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/data.json`,
     ".amo/.gitignore",
   ];
 
@@ -770,7 +803,6 @@ function enrollWorkspace(payload) {
   const workspacePath = inspection.workspacePath;
   const now = new Date().toISOString();
   const amoRoot = path.join(workspacePath, AMO_DIR);
-  const vaultRoot = path.join(amoRoot, "obsidian-vault");
   const installedFiles = [];
   const mergedFiles = [];
   const backups = [];
@@ -789,6 +821,7 @@ function enrollWorkspace(payload) {
 
   const workspaceFile = path.join(amoRoot, "workspace.json");
   const existingWorkspace = readJsonFile(workspaceFile, null);
+  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, existingWorkspace, inspection.projectName);
   writeJsonFile(workspaceFile, {
     schemaVersion: AMO_SCHEMA_VERSION,
     workspaceId: inspection.workspaceId,
@@ -884,9 +917,9 @@ function enrollWorkspace(payload) {
     createdAt: existingWorkspace?.createdAt || now,
     updatedAt: now,
   });
-  installedFiles.push(`.amo/obsidian-vault/${AMO_CANVAS_PATH}`);
+  installedFiles.push(workspaceRelativePath(workspacePath, path.join(vaultRoot, AMO_CANVAS_PATH)));
 
-  const pluginInstall = installObsidianPlugin(vaultRoot);
+  const pluginInstall = installObsidianPlugin(vaultRoot, workspacePath);
   installedFiles.push(...pluginInstall.installedFiles);
 
   writeJsonFile(path.join(amoRoot, "enrollment.json"), {
@@ -998,7 +1031,7 @@ async function launchCliInTerminal({ workspacePath, title, command }) {
   if (process.platform === "win32") {
     const wtArgs = [
       "-w",
-      "0",
+      "new",
       "new-tab",
       "--title",
       title,
@@ -1041,7 +1074,7 @@ function powershellNoExitEncodedArgs(commandLine) {
   ];
 }
 
-function spawnDetached(command, args, cwd) {
+function spawnDetached(command, args, cwd, options = {}) {
   return new Promise((resolve, reject) => {
     let settled = false;
     let child;
@@ -1050,7 +1083,7 @@ function spawnDetached(command, args, cwd) {
         cwd,
         detached: true,
         stdio: "ignore",
-        windowsHide: false,
+        windowsHide: options.windowsHide ?? false,
       });
     } catch (error) {
       reject(error);
@@ -1098,7 +1131,7 @@ function cleanWorkspaceVault(payload) {
   }
 
   const amoRoot = path.join(workspacePath, AMO_DIR);
-  const vaultRoot = path.join(workspacePath, AMO_DIR, "obsidian-vault");
+  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, workspace.projectName || path.basename(workspacePath));
   const repliesPath = path.join(vaultRoot, "Replies");
   const promptsPath = path.join(vaultRoot, "Prompts");
   const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
@@ -1149,7 +1182,7 @@ function workspaceMaintenanceSnapshot(workspacePath) {
     throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
   }
 
-  const vaultRoot = normalizeText(workspace.vaultRoot) || path.join(amoRoot, "obsidian-vault");
+  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, path.basename(workspacePath));
   const repliesPath = path.join(vaultRoot, "Replies");
   const promptsPath = path.join(vaultRoot, "Prompts");
   const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
@@ -1397,7 +1430,7 @@ function handleReply(payload) {
     message,
   };
 
-  const vaultRoot = path.join(amoRoot, "obsidian-vault");
+  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, path.basename(workspaceRoot));
   const note = writeReplyNote(amoRoot, vaultRoot, record);
   const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
 
@@ -1549,7 +1582,7 @@ function handlePrompt(payload) {
     message,
   };
 
-  const vaultRoot = path.join(amoRoot, "obsidian-vault");
+  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, path.basename(workspaceRoot));
   const note = writePromptNote(amoRoot, vaultRoot, record);
   const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
 
@@ -1894,14 +1927,42 @@ function registerObsidianVault(vaultRoot) {
     vaults,
   });
 
+  const runtimeConfigPath = path.join(path.dirname(registryPath), `${vaultId}.json`);
+
   return {
     ok: true,
     vaultRoot,
     vaultId,
     registryPath,
+    runtimeConfigPath,
+    runtimeConfigExists: fs.existsSync(runtimeConfigPath),
+    obsidianProcessCount: countObsidianProcesses(),
     alreadyRegistered,
     changed: !alreadyRegistered,
   };
+}
+
+function countObsidianProcesses() {
+  if (process.platform !== "win32") {
+    return null;
+  }
+
+  try {
+    const result = spawnSync("tasklist.exe", ["/FI", "IMAGENAME eq Obsidian.exe", "/FO", "CSV", "/NH"], {
+      encoding: "utf8",
+      windowsHide: true,
+    });
+    if (result.error || result.status !== 0) {
+      return null;
+    }
+
+    return result.stdout
+      .split(/\r?\n/u)
+      .filter((line) => /^"Obsidian\.exe"/iu.test(line.trim()))
+      .length;
+  } catch {
+    return null;
+  }
 }
 
 function obsidianRegistryPath() {
@@ -2442,7 +2503,7 @@ function normalizeCanvasEdges(canvas) {
   }
 }
 
-function installObsidianPlugin(vaultRoot) {
+function installObsidianPlugin(vaultRoot, workspacePath) {
   const pluginDir = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID);
   fs.mkdirSync(pluginDir, { recursive: true });
 
@@ -2463,11 +2524,11 @@ function installObsidianPlugin(vaultRoot) {
 
   return {
     installedFiles: [
-      ".amo/obsidian-vault/.obsidian/community-plugins.json",
-      `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/manifest.json`,
-      `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/main.js`,
-      `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/styles.css`,
-      `.amo/obsidian-vault/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}/data.json`,
+      workspaceRelativePath(workspacePath, path.join(vaultRoot, ".obsidian", "community-plugins.json")),
+      workspaceRelativePath(workspacePath, path.join(pluginDir, "manifest.json")),
+      workspaceRelativePath(workspacePath, path.join(pluginDir, "main.js")),
+      workspaceRelativePath(workspacePath, path.join(pluginDir, "styles.css")),
+      workspaceRelativePath(workspacePath, path.join(pluginDir, "data.json")),
     ],
   };
 }
@@ -2961,10 +3022,10 @@ function amoGitignore() {
   return [
     "state/",
     "logs/",
-    "obsidian-vault/Replies/",
-    "obsidian-vault/Prompts/",
-    "obsidian-vault/AgentFlow.canvas",
-    "obsidian-vault/.obsidian/workspace*.json",
+    "AMO - */Replies/",
+    "AMO - */Prompts/",
+    "AMO - */AgentFlow.canvas",
+    "AMO - */.obsidian/workspace*.json",
     "",
   ].join("\n");
 }
