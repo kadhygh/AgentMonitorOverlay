@@ -106,6 +106,10 @@ function brokerSessionTargetBindingClearUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/target-binding/clear`;
 }
 
+function brokerSessionDismissUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/dismiss`;
+}
+
 async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
@@ -736,10 +740,12 @@ function SessionRowContent({
   openingTarget,
   copyingPrompt,
   unbindingWindow,
+  dismissing,
   onOpenNote,
   onOpenCanvas,
   onCopyPrompt,
   onUnbindWindow,
+  onDismiss,
   onOpenCodexAppTarget,
   onOpenWorkspacePanel,
 }: {
@@ -748,10 +754,12 @@ function SessionRowContent({
   openingTarget: "note" | "canvas" | null;
   copyingPrompt: boolean;
   unbindingWindow: boolean;
+  dismissing: boolean;
   onOpenNote: () => void;
   onOpenCanvas: () => void;
   onCopyPrompt: () => void;
   onUnbindWindow: () => void;
+  onDismiss: () => void;
   onOpenCodexAppTarget: () => void;
   onOpenWorkspacePanel: (x: number, y: number) => void;
 }) {
@@ -782,6 +790,20 @@ function SessionRowContent({
         }}
       >
         <Settings2 size={13} aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        className={`card-dismiss-button ${dismissing ? "is-busy" : ""}`}
+        title="Dismiss this card"
+        aria-label={`Dismiss ${session.title}`}
+        aria-busy={dismissing}
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onDismiss();
+        }}
+      >
+        <X size={12} aria-hidden="true" />
       </button>
       <span className="session-head">
         <ToolMark session={session} />
@@ -1601,6 +1623,7 @@ export default function App() {
   const [openingPath, setOpeningPath] = useState<{ sessionId: string; target: "note" | "canvas" } | null>(null);
   const [copyingPromptId, setCopyingPromptId] = useState<string | null>(null);
   const [unbindingWindowId, setUnbindingWindowId] = useState<string | null>(null);
+  const [dismissingSessionId, setDismissingSessionId] = useState<string | null>(null);
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
@@ -1711,7 +1734,7 @@ export default function App() {
 
       const payload = await response.json();
       const nextSessions = normalizeSessions(payload);
-      if (!nextSessions || nextSessions.length === 0) {
+      if (!nextSessions) {
         throw new Error("broker response has no sessions");
       }
 
@@ -1720,7 +1743,7 @@ export default function App() {
       setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, visibleSessions));
       setSource("broker");
       setLastRefreshAt(new Date().toISOString());
-      setFeedback(`Broker sessions loaded: ${nextSessions.length}`);
+      setFeedback(nextSessions.length > 0 ? `Broker sessions loaded: ${nextSessions.length}` : "No active broker sessions.");
       if (shouldLog) {
         void postDebugLog("sessions.refresh.ok", {
           reason,
@@ -2746,6 +2769,44 @@ export default function App() {
     }
   }
 
+  async function dismissSession(session: AgentSession) {
+    setDismissingSessionId(session.sessionId);
+    setFeedback(`Dismissing ${session.title}...`);
+    void postDebugLog("session.dismiss.start", {
+      sessionId: session.sessionId,
+      title: session.title,
+    });
+
+    try {
+      const result = await postBrokerJson<{ ok: boolean; sessionId: string }>(
+        brokerSessionDismissUrl(session.sessionId),
+        { reason: "user" },
+      );
+      const dismissedSessionId = result.sessionId || session.sessionId;
+      setSessions((previous) => previous.filter((item) => item.sessionId !== dismissedSessionId));
+      setSessionOrder((previousOrder) => previousOrder.filter((sessionId) => sessionId !== dismissedSessionId));
+      setCandidateMenu((current) =>
+        current?.session.sessionId === dismissedSessionId ? null : current,
+      );
+      setWorkspacePanel((current) =>
+        current?.session.sessionId === dismissedSessionId ? null : current,
+      );
+      setFeedback(`Dismissed ${session.title}.`);
+      void postDebugLog("session.dismiss.ok", {
+        sessionId: dismissedSessionId,
+      });
+    } catch (error) {
+      const message = (error as Error).message;
+      setFeedback(`Dismiss failed: ${message}`);
+      void postDebugLog("session.dismiss.error", {
+        sessionId: session.sessionId,
+        message,
+      });
+    } finally {
+      setDismissingSessionId(null);
+    }
+  }
+
   function moveDraggedSessionToIndex(draggingSessionId: string, targetIndex: number) {
     setSessionOrder((previousOrder) => {
       const currentSessions = sessionsRef.current;
@@ -3022,7 +3083,39 @@ export default function App() {
           brokerToOverlayMs:
             typeof payload.brokerPublishedAtMs === "number" ? receivedAtMs - payload.brokerPublishedAtMs : null,
         });
-        if (changedSession?.sessionId) {
+        if (eventReason === "dismiss-all") {
+          setSessions([]);
+          setSessionOrder([]);
+          setCandidateMenu(null);
+          setWorkspacePanel(null);
+          setSource("broker");
+          setLastRefreshAt(new Date().toISOString());
+          void postDebugLog("session_event.dismiss_all_applied", {
+            sequence: payload.sequence ?? null,
+            durationMs: Math.round(performance.now() - applyStartedAt),
+          });
+        } else if (changedSession?.sessionId && changedSession.dismissedAt) {
+          setSessions((previousSessions) => {
+            const nextSessions = previousSessions.filter((session) => session.sessionId !== changedSession.sessionId);
+            sessionsRef.current = nextSessions;
+            return nextSessions;
+          });
+          setSessionOrder((previousOrder) => previousOrder.filter((sessionId) => sessionId !== changedSession.sessionId));
+          setCandidateMenu((current) =>
+            current?.session.sessionId === changedSession.sessionId ? null : current,
+          );
+          setWorkspacePanel((current) =>
+            current?.session.sessionId === changedSession.sessionId ? null : current,
+          );
+          setSource("broker");
+          setLastRefreshAt(new Date().toISOString());
+          void postDebugLog("session_event.dismiss_applied", {
+            sequence: payload.sequence ?? null,
+            reason: eventReason,
+            sessionId: changedSession.sessionId,
+            durationMs: Math.round(performance.now() - applyStartedAt),
+          });
+        } else if (changedSession?.sessionId) {
           setSessions((previousSessions) => {
             const nextSessions = mergeChangedSession(previousSessions, changedSession);
             sessionsRef.current = nextSessions;
@@ -3223,10 +3316,12 @@ export default function App() {
                   openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
                   copyingPrompt={copyingPromptId === session.sessionId}
                   unbindingWindow={unbindingWindowId === session.sessionId}
+                  dismissing={dismissingSessionId === session.sessionId}
                   onOpenNote={() => void openBridgePath(session, "note")}
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
                   onCopyPrompt={() => void copyPendingPrompt(session)}
                   onUnbindWindow={() => void clearWindowBinding(session)}
+                  onDismiss={() => void dismissSession(session)}
                   onOpenCodexAppTarget={() => void openCodexAppTarget(session, true)}
                   onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
                 />
@@ -3677,10 +3772,12 @@ export default function App() {
                     openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
                     copyingPrompt={copyingPromptId === session.sessionId}
                     unbindingWindow={unbindingWindowId === session.sessionId}
+                    dismissing={dismissingSessionId === session.sessionId}
                     onOpenNote={() => undefined}
                     onOpenCanvas={() => undefined}
                     onCopyPrompt={() => undefined}
                     onUnbindWindow={() => undefined}
+                    onDismiss={() => undefined}
                     onOpenCodexAppTarget={() => undefined}
                     onOpenWorkspacePanel={() => undefined}
                   />

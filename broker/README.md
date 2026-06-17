@@ -88,6 +88,22 @@ event: sessions.changed
 data: {"ok":true,"sequence":1,"event":"sessions.changed","reason":"obsidian-annotations","sessionId":"codex-demo-001","session":{"sessionId":"codex-demo-001","state":"waiting_user"},"updatedAt":"2026-05-20T07:30:40.149Z"}
 ```
 
+### `POST /api/sessions/:id/dismiss`
+
+Dismisses a session card from the broker's active session list and persists the updated snapshot. The dismissed card stays hidden after overlay or broker restart because the session is removed from `broker/data/sessions.json`. A later hook event for the same `sessionId` can recreate the session and make it visible again.
+
+Optional payload:
+
+```json
+{
+  "reason": "user"
+}
+```
+
+### `POST /api/sessions/dismiss-all`
+
+Clears the active broker session list and persists an empty snapshot. This is intended for local cleanup of stale smoke/test cards.
+
 ### `POST /api/events`
 
 Accepts a JSON payload from mock adapters. Minimum useful fields:

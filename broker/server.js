@@ -105,6 +105,14 @@ const server = http.createServer(async (req, res) => {
       });
     }
 
+    if (req.method === "POST" && url.pathname === "/api/sessions/dismiss-all") {
+      const payload = await readJsonBody(req, { allowEmpty: true });
+      const result = dismissAllSessions(payload || {});
+      persistSnapshot();
+      publishSessionChanged("dismiss-all", null);
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === "GET" && url.pathname === "/api/session-events") {
       return openSessionEventStream(req, res);
     }
@@ -223,6 +231,16 @@ const server = http.createServer(async (req, res) => {
       const result = clearSessionTargetBinding(sessionId);
       persistSnapshot();
       publishSessionChanged("target-unbind", result.session);
+      return sendJson(res, 200, result);
+    }
+
+    const dismissMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/dismiss$/);
+    if (req.method === "POST" && dismissMatch) {
+      const sessionId = decodeURIComponent(dismissMatch[1]);
+      const payload = await readJsonBody(req, { allowEmpty: true });
+      const result = dismissSession(sessionId, payload || {});
+      persistSnapshot();
+      publishSessionChanged("dismiss", result.session);
       return sendJson(res, 200, result);
     }
 
@@ -2304,6 +2322,60 @@ function clearSessionTargetBinding(sessionId) {
     targetBinding: null,
     windowHint: nextHint,
     session,
+  };
+}
+
+function dismissSession(sessionId, payload = {}) {
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Dismiss URL must include session id");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for dismiss: ${sessionId}`);
+  }
+
+  const now = new Date().toISOString();
+  const reason = normalizeText(payload.reason) || "user";
+  const session = {
+    ...existing,
+    dismissedAt: now,
+    dismissReason: reason,
+    updatedAt: now,
+  };
+
+  sessions.delete(sessionId);
+  recordDebugLog("broker", "session.dismissed", {
+    sessionId,
+    reason,
+    remainingSessionCount: sessions.size,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    dismissedAt: now,
+    session,
+  };
+}
+
+function dismissAllSessions(payload = {}) {
+  const now = new Date().toISOString();
+  const reason = normalizeText(payload.reason) || "user-clear";
+  const count = sessions.size;
+  sessions.clear();
+  recordDebugLog("broker", "session.dismissed_all", {
+    count,
+    reason,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    dismissedAt: now,
+    reason,
+    count,
   };
 }
 

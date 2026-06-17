@@ -4,7 +4,8 @@
   "private": true,
   "description": "Local Agent Monitor Overlay workspace.",
   "scripts": {
-    "broker": "node broker/server.js",
+    "broker": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1",
+    "broker:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1 -DebugMode",
     "broker:verify": "powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1",
     "adapters:verify": "powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1",
     "adapters:live-codex": "powershell -ExecutionPolicy Bypass -File scripts/adapters/live-codex-smoke.ps1",

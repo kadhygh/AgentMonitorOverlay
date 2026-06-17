@@ -100,6 +100,8 @@ export interface AgentSession {
     turnId?: string | null;
   };
   obsidianPluginHealth?: ObsidianPluginHealth;
+  dismissedAt?: string | null;
+  dismissReason?: string | null;
   updatedAt: string;
 }
 

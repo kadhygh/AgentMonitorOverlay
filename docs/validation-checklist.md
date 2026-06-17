@@ -42,7 +42,7 @@ Status: build verified locally; native overlay appeared in user smoke validation
 - Confirm each session row shows a clear exact/token/fallback route hint.
 - When multiple matching windows exist, confirm the candidate/debug panel appears instead of a vague failure message.
 - When multiple matching windows exist, confirm clicking the intended candidate in the debug panel routes to the correct window.
-- Dismiss a live session card and confirm it disappears without deleting broker state.
+- Dismiss a live session card and confirm it disappears from the overlay and the persisted broker snapshot.
 - Trigger another real hook event for the same dismissed session and confirm the card returns automatically.
 
 ## Phase 4 Spike: Tool Adapters

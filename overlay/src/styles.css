@@ -849,7 +849,7 @@ button {
   gap: 9px;
   width: 100%;
   min-height: 116px;
-  padding: 9px 34px 9px 6px;
+  padding: 9px 62px 9px 6px;
   font: inherit;
   color: #eef6f2;
   text-align: left;
@@ -1025,10 +1025,10 @@ button {
   gap: 9px;
 }
 
-.card-maintenance-button {
+.card-maintenance-button,
+.card-dismiss-button {
   position: absolute;
   top: -1px;
-  right: -25px;
   display: inline-grid;
   place-items: center;
   width: 24px;
@@ -1043,7 +1043,19 @@ button {
   isolation: isolate;
 }
 
-.card-maintenance-button svg {
+.card-maintenance-button {
+  right: -25px;
+}
+
+.card-dismiss-button {
+  right: -53px;
+  color: #9eada8;
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.055);
+}
+
+.card-maintenance-button svg,
+.card-dismiss-button svg {
   position: relative;
   z-index: 1;
 }
@@ -1053,6 +1065,18 @@ button {
   color: #f4fbf8;
   background: rgba(111, 224, 190, 0.13);
   border-color: rgba(111, 224, 190, 0.28);
+}
+
+.card-dismiss-button:hover,
+.card-dismiss-button:focus-visible {
+  color: #fff5f5;
+  background: rgba(255, 92, 104, 0.14);
+  border-color: rgba(255, 92, 104, 0.28);
+}
+
+.card-dismiss-button.is-busy {
+  opacity: 0.65;
+  cursor: progress;
 }
 
 .card-maintenance-button.tone-ok {

@@ -359,6 +359,12 @@ fn show_scratchpad_at(app: &tauri::AppHandle, cursor_x: i32, cursor_y: i32) -> R
     Ok(())
 }
 
+fn env_flag(name: &str) -> bool {
+    std::env::var(name)
+        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+}
+
 fn ensure_local_broker() -> BrokerEnsureResult {
     match broker_health() {
         BrokerHealth::Healthy => {
@@ -389,20 +395,27 @@ fn ensure_local_broker() -> BrokerEnsureResult {
         };
     };
 
+    let show_broker_window = env_flag("AGENT_MONITOR_DEBUG") || env_flag("AGENT_MONITOR_BROKER_DEBUG_WINDOW");
     let mut command = Command::new("node");
     command
         .arg(&broker_script)
         .current_dir(repo_root)
         .env("AGENT_MONITOR_HOST", "127.0.0.1")
-        .env("AGENT_MONITOR_PORT", "17654")
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null());
+        .env("AGENT_MONITOR_PORT", "17654");
+
+    if !show_broker_window {
+        command
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null());
+    }
 
     #[cfg(windows)]
     {
         use std::os::windows::process::CommandExt;
-        command.creation_flags(0x08000000);
+        if !show_broker_window {
+            command.creation_flags(0x08000000);
+        }
     }
 
     let child = match command.spawn() {

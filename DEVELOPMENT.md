@@ -105,6 +105,12 @@ Start only the broker:
 npm run broker
 ```
 
+This starts the broker hidden in the background. Use a visible broker console only while debugging:
+
+```powershell
+npm run broker:debug
+```
+
 Start the current user-facing Claude routing demo:
 
 ```powershell
@@ -163,7 +169,7 @@ Implemented:
 - Windows native window activation using HWND, PID, title token, process/title, and project fallbacks
 - Claude routing demo
 - candidate/debug panel for ambiguous routing
-- local dismiss action per session row, intended to hide the current snapshot until a later real hook event refreshes it
+- broker-backed dismiss action per session row, intended to remove the current active snapshot until a later real hook event recreates it
 
 New Phase 5 direction:
 
@@ -200,13 +206,12 @@ Known routing behavior:
 - Closing the duplicate window makes exact-route demo rows route correctly.
 - The overlay now shows a candidate/debug panel for ambiguous rows, and exact/token/fallback route hints per session row.
 
-Current unverified but implemented behavior:
+Current implemented behavior:
 
-- Session rows now include a dismiss button.
-- Dismiss is overlay-local only. It hides the current card snapshot without deleting the broker session.
-- Dismissed session ids are stored in browser/WebView storage under `amo.dismissed.sessions.v1`.
-- A dismissed session should reappear automatically when the same session later arrives with a newer `eventCount` or `updatedAt`.
-- If every visible session is dismissed, the overlay should show an empty state instead of falling back to mock data.
+- Session rows include a dismiss button.
+- Dismiss is broker-owned: it removes the session from the active broker snapshot and persists the updated `broker/data/sessions.json`.
+- A dismissed session can reappear when a hook later posts a fresh event for the same `sessionId`.
+- If every visible session is dismissed, the overlay shows an empty broker state instead of falling back to mock data.
 
 ## Known Open Gaps
 
