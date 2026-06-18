@@ -846,6 +846,9 @@ function SessionRowContent({
   const display = toolDisplayForSession(session);
   const statusLabel = activating ? "Opening" : reviewPending ? "Review" : stateLabel[session.state];
   const maintenanceTone = maintenanceToneForSession(session);
+  const sessionProjectName = projectName(session.cwd);
+  const conversationTitle = session.title?.trim() || sessionProjectName;
+  const subtitleLabel = `${sessionProjectName} · ${statusLabel} · ${display.label} · ${formatAgo(session.updatedAt)}`;
 
   return (
     <span className="session-main">
@@ -878,14 +881,20 @@ function SessionRowContent({
       <span className="session-head">
         <ToolMark session={session} />
         <span className="session-title">
-          <strong>{projectName(session.cwd)}</strong>
-          <span>
-            {display.label} · {formatAgo(session.updatedAt)}
-          </span>
+          <strong title={conversationTitle}>{conversationTitle}</strong>
         </span>
-        <span className="state-pill">
-          <span className="state-dot" aria-hidden="true" />
-          <span>{statusLabel}</span>
+        <span className="session-chip-row" title={subtitleLabel}>
+          <span className="state-pill">
+            <span className="state-dot" aria-hidden="true" />
+            <span>{statusLabel}</span>
+          </span>
+          <span className="session-inline-meta">
+            <span className="session-info-project">{sessionProjectName}</span>
+            <span className="session-meta-separator">·</span>
+            <span>
+              {display.label} · {formatAgo(session.updatedAt)}
+            </span>
+          </span>
         </span>
       </span>
       <span className="session-body">

@@ -1287,13 +1287,12 @@ button {
   grid-template-columns: 36px minmax(0, 1fr);
   align-items: center;
   column-gap: 9px;
-  row-gap: 5px;
+  row-gap: 6px;
   min-width: 0;
 }
 
 .session-title {
   display: grid;
-  gap: 2px;
   min-width: 0;
 }
 
@@ -1307,21 +1306,49 @@ button {
   white-space: nowrap;
 }
 
-.session-title span {
+.session-chip-row {
+  display: flex;
+  grid-column: 1 / -1;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+}
+
+.session-inline-meta {
+  display: inline-flex;
+  flex: 1 1 auto;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 5px;
+  min-width: 0;
   overflow: hidden;
   color: #a9bbb5;
   font-size: 10px;
   font-weight: 650;
   line-height: 12px;
-  text-overflow: ellipsis;
   white-space: nowrap;
-  text-transform: uppercase;
+}
+
+.session-inline-meta span {
+  flex: 0 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.session-inline-meta span:last-child {
+  flex: 0 0 auto;
+}
+
+.session-meta-separator {
+  color: rgba(214, 230, 224, 0.45);
 }
 
 .state-pill {
   display: inline-flex;
-  grid-column: 2;
-  justify-self: start;
+  flex: 0 0 auto;
   align-items: center;
   gap: 5px;
   min-height: 21px;
@@ -1339,6 +1366,11 @@ button {
 .state-pill span:last-child {
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.session-info-project {
+  flex: 1 1 auto;
+  max-width: 180px;
 }
 
 .session-body {
