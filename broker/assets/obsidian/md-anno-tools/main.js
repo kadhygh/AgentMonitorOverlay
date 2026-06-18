@@ -37,14 +37,18 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.25";
+var PLUGIN_VERSION = "1.4.27";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow";
 var DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
   numberAnnotationsInPrompt: false,
   canvasAppendDirection: "down",
-  hideAmoNoteProperties: true
+  hideAmoNoteProperties: true,
+  interceptLocalCodeLinks: true,
+  localCodeLinkEditor: "vscode",
+  localCodeLinkUrlTemplate: "vscode://file/{path}:{line}",
+  zedCommand: "zed"
 };
 var AMO_PANEL_VIEW_TYPE = "amo-annotation-panel";
 var AMO_OPEN_PROTOCOL = "amo-open";
@@ -956,6 +960,30 @@ var AmoAnnotationSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
+    new import_obsidian3.Setting(containerEl).setName("\u63A5\u7BA1\u672C\u5730\u4EE3\u7801\u94FE\u63A5\u8DF3\u8F6C").setDesc("\u62E6\u622A G:/path/file.cs:286 \u8FD9\u7C7B\u94FE\u63A5\uFF0C\u907F\u514D Windows \u628A\u884C\u53F7\u5F53\u4F5C\u6587\u4EF6\u540D\u3002").addToggle((toggle) => {
+      toggle.setValue(this.plugin.settings.interceptLocalCodeLinks !== false).onChange(async (value) => {
+        this.plugin.settings.interceptLocalCodeLinks = value;
+        await this.plugin.saveSettings();
+      });
+    });
+    new import_obsidian3.Setting(containerEl).setName("\u4EE3\u7801\u94FE\u63A5\u6253\u5F00\u65B9\u5F0F").setDesc("VS Code \u4F7F\u7528 URL \u534F\u8BAE\uFF1BZed \u4F7F\u7528\u5B98\u65B9 CLI \u65B9\u5F0F\u6253\u5F00\u5230\u6307\u5B9A\u884C\u3002").addDropdown((dropdown) => {
+      dropdown.addOption("vscode", "VS Code").addOption("zed", "Zed").addOption("custom-url", "\u81EA\u5B9A\u4E49 URL").setValue(this.plugin.settings.localCodeLinkEditor === "zed" || this.plugin.settings.localCodeLinkEditor === "custom-url" ? this.plugin.settings.localCodeLinkEditor : "vscode").onChange(async (value) => {
+        this.plugin.settings.localCodeLinkEditor = value;
+        await this.plugin.saveSettings();
+      });
+    });
+    new import_obsidian3.Setting(containerEl).setName("\u4EE3\u7801\u94FE\u63A5\u6253\u5F00\u6A21\u677F").setDesc("\u7528\u4E8E VS Code \u6216\u81EA\u5B9A\u4E49 URL\u3002\u652F\u6301 {path}\u3001{rawPath}\u3001{line}\u3001{column}\u3002").addText((text) => {
+      text.setPlaceholder("vscode://file/{path}:{line}").setValue(String(this.plugin.settings.localCodeLinkUrlTemplate || "")).onChange(async (value) => {
+        this.plugin.settings.localCodeLinkUrlTemplate = value.trim();
+        await this.plugin.saveSettings();
+      });
+    });
+    new import_obsidian3.Setting(containerEl).setName("Zed CLI \u547D\u4EE4").setDesc("\u9009\u62E9 Zed \u6253\u5F00\u65B9\u5F0F\u65F6\u4F7F\u7528\u3002\u9ED8\u8BA4 zed\uFF1B\u5982\u679C PATH \u672A\u914D\u7F6E\uFF0C\u53EF\u586B\u5B8C\u6574 zed.exe \u8DEF\u5F84\u3002").addText((text) => {
+      text.setPlaceholder("zed").setValue(String(this.plugin.settings.zedCommand || "zed")).onChange(async (value) => {
+        this.plugin.settings.zedCommand = value.trim() || "zed";
+        await this.plugin.saveSettings();
+      });
+    });
   }
 };
 
@@ -1296,6 +1324,14 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       }
     });
     this.registerMarkdownPostProcessor((el, ctx) => this.renderAnnotations(el, ctx), 1e3);
+    this.registerDomEvent(
+      document,
+      "click",
+      (event) => {
+        this.handleLocalCodeLinkClick(event);
+      },
+      { capture: true }
+    );
     this.registerEvent(
       this.app.workspace.on("editor-menu", (menu, editor) => {
         const hasSelection = editor.getSelection().trim().length > 0;
@@ -1410,6 +1446,51 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
         data || {}
       )
     });
+  }
+  handleLocalCodeLinkClick(event) {
+    if (event.defaultPrevented || event.button !== 0 || this.settings.interceptLocalCodeLinks === false) return;
+    const target = event.target instanceof Element ? event.target : null;
+    const anchor = target && target.closest("a[href]");
+    if (!(anchor instanceof HTMLAnchorElement)) return;
+    const rawHref = anchor.getAttribute("href") || anchor.href || "";
+    const link = parseLocalCodeLink(rawHref, anchor.href);
+    if (!link || !link.line) return;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    void this.openLocalCodeLink(link, rawHref);
+  }
+  async openLocalCodeLink(link, rawHref) {
+    const editor = normalizeLocalCodeLinkEditor(this.settings.localCodeLinkEditor);
+    const target = editor === "zed" ? formatZedCodeLinkTarget(link) : formatLocalCodeLinkUrl(link, this.settings.localCodeLinkUrlTemplate);
+    this.debugLog("code_link.open", {
+      rawHref,
+      editor,
+      filePath: link.filePath,
+      line: link.line,
+      column: link.column,
+      target
+    });
+    try {
+      if (editor === "zed") {
+        await openZedCodeLink(link, this.settings.zedCommand);
+      } else {
+        await openExternalCodeUrl(target);
+      }
+      this.setOperationStatus("Opened code link: " + link.filePath + ":" + link.line, "success");
+    } catch (error) {
+      console.error("Failed to open code link:", error);
+      this.debugLog("code_link.open_error", {
+        rawHref,
+        editor,
+        filePath: link.filePath,
+        line: link.line,
+        column: link.column,
+        target,
+        message: messageFromError(error)
+      });
+      new import_obsidian5.Notice("Could not open code link: " + messageFromError(error));
+    }
   }
   async handleAmoOpenProtocol(params) {
     const targetPath = this.resolveProtocolTargetPath(params);
@@ -3073,6 +3154,123 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     textNode.replaceWith(fragment);
   }
 };
+function parseLocalCodeLink(rawHref, absoluteHref) {
+  const candidates = [rawHref, absoluteHref].filter((value) => typeof value === "string" && value.trim().length > 0);
+  for (const candidate of candidates) {
+    const value = normalizeLocalCodeLinkHref(candidate);
+    const match = value.match(/^([A-Za-z]:[\\/][\s\S]*?)(?::(\d+)(?::(\d+))?)?(?:[?#].*)?$/u);
+    if (!match) continue;
+    const line = match[2] ? Number.parseInt(match[2], 10) : null;
+    if (!Number.isSafeInteger(line) || line <= 0) continue;
+    const column = match[3] ? Number.parseInt(match[3], 10) : null;
+    return {
+      filePath: match[1],
+      line,
+      column: Number.isSafeInteger(column) && column > 0 ? column : null
+    };
+  }
+  return null;
+}
+function normalizeLocalCodeLinkHref(value) {
+  let text = safeDecodeUri(String(value || "").trim());
+  if (text.startsWith("<") && text.endsWith(">")) text = text.slice(1, -1).trim();
+  if (/^file:\/\//iu.test(text)) {
+    try {
+      const url = new URL(text);
+      text = safeDecodeUri(url.pathname);
+    } catch (e) {
+      text = text.replace(/^file:\/+/iu, "");
+    }
+  }
+  text = text.replace(/^\/([A-Za-z]:[\\/])/u, "$1");
+  return text;
+}
+function safeDecodeUri(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch (e) {
+    try {
+      return decodeURI(value);
+    } catch (e2) {
+      return value;
+    }
+  }
+}
+function normalizeLocalCodeLinkEditor(value) {
+  if (value === "zed" || value === "custom-url") return value;
+  return "vscode";
+}
+function formatLocalCodeLinkUrl(link, template) {
+  const pathForUrl = encodeCodeLinkPath(link.filePath);
+  const rawPath = String(link.filePath || "").replace(/\\/gu, "/");
+  const line = String(link.line || 1);
+  const column = String(link.column || 1);
+  const sourceTemplate = String(template || DEFAULT_SETTINGS.localCodeLinkUrlTemplate || "").trim();
+  const resolvedTemplate = sourceTemplate || DEFAULT_SETTINGS.localCodeLinkUrlTemplate;
+  return resolvedTemplate.replace(/\{rawPath\}/gu, rawPath).replace(/\{path\}/gu, pathForUrl).replace(/\{line\}/gu, line).replace(/\{column\}/gu, column);
+}
+function formatZedCodeLinkTarget(link) {
+  const path = String(link.filePath || "");
+  const line = Number.isSafeInteger(link.line) && link.line > 0 ? link.line : 1;
+  const column = Number.isSafeInteger(link.column) && link.column > 0 ? link.column : null;
+  return path + ":" + line + (column ? ":" + column : "");
+}
+function encodeCodeLinkPath(filePath) {
+  return encodeURI(String(filePath || "").replace(/\\/gu, "/")).replace(/#/gu, "%23").replace(/\?/gu, "%3F");
+}
+async function openZedCodeLink(link, command) {
+  const electronRequire = window.require || globalThis.require;
+  if (typeof electronRequire !== "function") {
+    throw new Error("Zed CLI launch is unavailable in this Obsidian runtime");
+  }
+  const childProcess = electronRequire("child_process");
+  const spawn = childProcess && childProcess.spawn;
+  if (typeof spawn !== "function") {
+    throw new Error("Zed CLI launch is unavailable in this Obsidian runtime");
+  }
+  const executable = normalizeExecutableCommand(command) || DEFAULT_SETTINGS.zedCommand;
+  const target = formatZedCodeLinkTarget(link);
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    let child;
+    try {
+      child = spawn(executable, [target], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const settle = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
+    child.once("error", (error) => settle(reject, error));
+    child.once("spawn", () => {
+      if (typeof child.unref === "function") child.unref();
+      settle(resolve);
+    });
+  });
+}
+function normalizeExecutableCommand(value) {
+  return String(value || "").trim().replace(/^"([\s\S]+)"$/u, "$1").replace(/^'([\s\S]+)'$/u, "$1");
+}
+async function openExternalCodeUrl(url) {
+  var _a;
+  const electronRequire = window.require || globalThis.require;
+  const shell = typeof electronRequire === "function" ? (_a = electronRequire("electron")) == null ? void 0 : _a.shell : null;
+  if (shell && typeof shell.openExternal === "function") {
+    await shell.openExternal(url);
+    return;
+  }
+  const opened = window.open(url, "_blank");
+  if (!opened) {
+    throw new Error("No external URL opener is available in this Obsidian runtime");
+  }
+}
 var plugin_default = AmoMarkdownAnnotationToolsPlugin;
 
 // src/main.ts

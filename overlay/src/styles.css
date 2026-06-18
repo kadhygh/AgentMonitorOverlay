@@ -294,19 +294,49 @@ button {
   backdrop-filter: grayscale(0.45) brightness(0.78);
 }
 
-.main-window-blocker span {
+.main-window-blocker-card {
+  display: grid;
+  gap: 8px;
   max-width: calc(100vw - 28px);
   padding: 8px 10px;
-  overflow: hidden;
   color: #dcece7;
-  background: rgba(16, 22, 26, 0.82);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+  background: rgba(16, 22, 26, 0.9);
+  border: 1px solid rgba(255, 255, 255, 0.11);
   border-radius: 7px;
   box-shadow: 0 12px 26px rgba(0, 0, 0, 0.28);
+}
+
+.main-window-blocker-card span {
+  overflow: hidden;
+  color: #dcece7;
   font-size: 11px;
   line-height: 14px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.main-window-blocker-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.main-window-blocker-actions button {
+  min-width: 54px;
+  height: 26px;
+  padding: 0 10px;
+  color: #dcece7;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 24px;
+}
+
+.main-window-blocker-actions button:hover {
+  color: #f7fffc;
+  background: rgba(111, 224, 190, 0.16);
+  border-color: rgba(111, 224, 190, 0.28);
 }
 
 .summary-strip {

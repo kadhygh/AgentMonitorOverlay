@@ -95,6 +95,7 @@ struct WindowCandidate {
 #[tauri::command]
 fn activate_session_window(
     session_id: String,
+    tool: String,
     title: String,
     process_name: String,
     title_token: String,
@@ -107,6 +108,7 @@ fn activate_session_window(
     activate_external_window(
         &session_id,
         WindowHintInput {
+            tool,
             title,
             process_name,
             title_token,
@@ -760,6 +762,7 @@ fn open_external_target(target: &str, _success_prefix: &str) -> OpenPathResult {
 
 #[derive(Debug)]
 struct WindowHintInput {
+    tool: String,
     title: String,
     process_name: String,
     title_token: String,
@@ -981,7 +984,7 @@ fn matches_by_process_and_title(
 
     candidates
         .iter()
-        .filter(|candidate| process_matches(candidate, &hint.process_name))
+        .filter(|candidate| candidate_process_matches_hint(candidate, hint))
         .filter(|candidate| normalized(&candidate.title).contains(&title))
         .cloned()
         .collect()
@@ -1004,7 +1007,7 @@ fn matches_by_process_and_title_contains(
 
     candidates
         .iter()
-        .filter(|candidate| process_matches(candidate, &hint.process_name))
+        .filter(|candidate| candidate_process_matches_hint(candidate, hint))
         .filter(|candidate| {
             let title = normalized(&candidate.title);
             parts.iter().all(|part| title.contains(part))
@@ -1031,9 +1034,7 @@ fn matches_by_project_or_cwd(
 
     candidates
         .iter()
-        .filter(|candidate| {
-            hint.process_name.trim().is_empty() || process_matches(candidate, &hint.process_name)
-        })
+        .filter(|candidate| candidate_process_matches_hint(candidate, hint))
         .filter(|candidate| normalized(&candidate.title).contains(&target))
         .cloned()
         .collect()
@@ -1092,6 +1093,45 @@ fn process_matches(candidate: &WindowCandidate, expected: &str) -> bool {
                 .eq_ignore_ascii_case(expected)
         })
         .unwrap_or(false)
+}
+
+#[cfg(windows)]
+fn candidate_process_matches_hint(candidate: &WindowCandidate, hint: &WindowHintInput) -> bool {
+    if !hint.process_name.trim().is_empty() {
+        return process_matches(candidate, &hint.process_name);
+    }
+
+    tool_process_matches(candidate, &hint.tool)
+}
+
+#[cfg(windows)]
+fn tool_process_matches(candidate: &WindowCandidate, tool: &str) -> bool {
+    let tool = normalized(tool);
+    if tool.is_empty() {
+        return true;
+    }
+
+    let Some(actual) = candidate.process_name.as_deref() else {
+        return false;
+    };
+    let process = actual.trim_end_matches(".exe").to_lowercase();
+
+    match tool.as_str() {
+        value if value.starts_with("codex") => {
+            matches!(
+                process.as_str(),
+                "windowsterminal" | "powershell" | "pwsh" | "cmd" | "conhost" | "codex"
+            )
+        }
+        value if value.starts_with("claude") => {
+            matches!(
+                process.as_str(),
+                "windowsterminal" | "powershell" | "pwsh" | "cmd" | "conhost" | "claude"
+            )
+        }
+        value if value.starts_with("kiro") => process == "kiro",
+        _ => true,
+    }
 }
 
 #[cfg(windows)]

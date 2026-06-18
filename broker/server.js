@@ -3080,6 +3080,11 @@ function installObsidianPlugin(vaultRoot, workspacePath) {
     numberAnnotationsInPrompt: Boolean(existingPluginData.numberAnnotationsInPrompt),
     canvasAppendDirection: normalizeCanvasAppendDirection(existingPluginData.canvasAppendDirection),
     hideAmoNoteProperties: existingPluginData.hideAmoNoteProperties !== false,
+    interceptLocalCodeLinks: existingPluginData.interceptLocalCodeLinks !== false,
+    localCodeLinkEditor: normalizeLocalCodeLinkEditor(existingPluginData.localCodeLinkEditor),
+    localCodeLinkUrlTemplate:
+      normalizeText(existingPluginData.localCodeLinkUrlTemplate) || "vscode://file/{path}:{line}",
+    zedCommand: normalizeText(existingPluginData.zedCommand) || "zed",
   });
 
   enableObsidianPlugin(vaultRoot, OBSIDIAN_PLUGIN_ID);
@@ -4134,6 +4139,11 @@ function normalizeCanvasAppendDirection(value) {
   }
   const normalized = direction.toLowerCase();
   return CANVAS_APPEND_DIRECTIONS.has(normalized) ? normalized : DEFAULT_CANVAS_APPEND_DIRECTION;
+}
+
+function normalizeLocalCodeLinkEditor(value) {
+  const editor = normalizeText(value);
+  return editor === "zed" || editor === "custom-url" ? editor : "vscode";
 }
 
 function nextConversationCanvasNodePosition({ previousNode, direction, nodeCount, sessionIndex }) {

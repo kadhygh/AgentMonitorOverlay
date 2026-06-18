@@ -3,7 +3,7 @@ export const ANNO_TAG_PREFIX = "[!anno]";
 export const ANNO_TAG_SUFFIX = "[/anno]";
 export const EMPTY_ANNO_TEXT = "(empty annotation)";
 export const ANNOTATION_DEFAULT_LABEL = "批注";
-export const PLUGIN_VERSION = "1.4.25";
+export const PLUGIN_VERSION = "1.4.27";
 export const AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 export const AMO_CANVAS_TYPE = "agent-flow";
 export const DEFAULT_SETTINGS = {
@@ -11,6 +11,10 @@ export const DEFAULT_SETTINGS = {
   numberAnnotationsInPrompt: false,
   canvasAppendDirection: "down",
   hideAmoNoteProperties: true,
+  interceptLocalCodeLinks: true,
+  localCodeLinkEditor: "vscode",
+  localCodeLinkUrlTemplate: "vscode://file/{path}:{line}",
+  zedCommand: "zed",
 };
 export const AMO_PANEL_VIEW_TYPE = "amo-annotation-panel";
 export const AMO_OPEN_PROTOCOL = "amo-open";

@@ -74,6 +74,7 @@ const DIALOG_SIZES = {
   settings: { width: 660, height: 500 },
 };
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
+const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
 const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
 const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
@@ -1431,7 +1432,7 @@ function DeployWorkspaceApp() {
       setGitRootPath(refreshed.gitExclude?.gitRootPath || gitRootPath);
       setGitExcludeResult(null);
       setSelectedDeployAdapters(selectedWorkspaceAdapterIds(refreshed));
-      setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}.`);
+      setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}. ${OBSIDIAN_PLUGIN_RELOAD_HINT}`);
     } catch (error) {
       void postUtilityDebugLog("workspace.enroll.error", {
         workspacePath: targetPath,
@@ -2070,6 +2071,21 @@ export default function App() {
     };
   }, []);
 
+  useEffect(() => {
+    if (!activeUtilityWindow) return undefined;
+
+    const label = activeUtilityWindow;
+    const sync = () => void syncUtilityWindowState(label);
+    const intervalId = window.setInterval(sync, 1200);
+    window.addEventListener("focus", sync);
+    void syncUtilityWindowState(label);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener("focus", sync);
+    };
+  }, [activeUtilityWindow]);
+
   async function refreshSessions(reason = "manual") {
     const startedAt = performance.now();
     const shouldLog = reason !== "interval";
@@ -2370,7 +2386,7 @@ export default function App() {
         installedAdapters: result.installedAdapters,
       });
       setWorkspaceEnrollment(result);
-      setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}.`);
+      setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}. ${OBSIDIAN_PLUGIN_RELOAD_HINT}`);
       void refreshSessions("workspace-enroll");
     } catch (error) {
       void postDebugLog("workspace.enroll.error", {
@@ -2733,6 +2749,20 @@ export default function App() {
     }
   }
 
+  async function syncUtilityWindowState(label: UtilityWindowKind) {
+    try {
+      const targetWindow = await WebviewWindow.getByLabel(label);
+      const visible = targetWindow ? await targetWindow.isVisible() : false;
+      if (!visible) {
+        setActiveUtilityWindow((current) => (current === label ? null : current));
+        await setAmoWindowAlwaysOnTop("main", true);
+      }
+    } catch {
+      setActiveUtilityWindow((current) => (current === label ? null : current));
+      await setAmoWindowAlwaysOnTop("main", true);
+    }
+  }
+
   async function activateSession(session: AgentSession, menuX?: number, menuY?: number) {
     const targetBinding = targetBindingForSession(session);
     if (targetBinding?.type === "codex-app-thread") {
@@ -2755,6 +2785,7 @@ export default function App() {
     try {
       const result = await invoke<ActivationResult>("activate_session_window", {
         sessionId: session.sessionId,
+        tool: session.tool,
         title: targetBinding?.type === "window" ? targetBinding.title ?? session.windowHint?.title ?? session.title : session.windowHint?.title ?? session.title,
         processName:
           targetBinding?.type === "window"
@@ -3090,6 +3121,7 @@ export default function App() {
     try {
       const result = await invoke<ActivationResult>("activate_session_window", {
         sessionId: session.sessionId,
+        tool: session.tool,
         title: candidate.title,
         processName: candidate.processName ?? "",
         titleToken: "",
@@ -4354,14 +4386,29 @@ export default function App() {
           />
 
           {activeUtilityWindow ? (
-            <button
-              type="button"
+            <div
               className="main-window-blocker"
+              role="presentation"
               title={`Focus ${activeUtilityWindow === "deploy" ? "Deploy Workspace" : "Settings"}`}
               onClick={() => void focusUtilityWindow(activeUtilityWindow)}
             >
-              <span>{activeUtilityWindow === "deploy" ? "Deploy Workspace" : "Settings"} is open</span>
-            </button>
+              <div
+                className="main-window-blocker-card"
+                role="dialog"
+                aria-label="Utility window active"
+                onClick={(event) => event.stopPropagation()}
+              >
+                <span>{activeUtilityWindow === "deploy" ? "Deploy Workspace" : "Settings"} is open</span>
+                <div className="main-window-blocker-actions">
+                  <button type="button" onClick={() => void focusUtilityWindow(activeUtilityWindow)}>
+                    Focus
+                  </button>
+                  <button type="button" onClick={() => void hideUtilityWindow(activeUtilityWindow)}>
+                    Close
+                  </button>
+                </div>
+              </div>
+            </div>
           ) : null}
         </>
       )}

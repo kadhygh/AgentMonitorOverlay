@@ -285,6 +285,9 @@ try {
     if ($pluginData.canvasAppendDirection -ne "down") {
         throw "Obsidian plugin should default canvas append direction to down."
     }
+    if ($pluginData.interceptLocalCodeLinks -ne $true -or $pluginData.localCodeLinkEditor -ne "vscode" -or -not $pluginData.zedCommand) {
+        throw "Obsidian plugin data does not include local code link defaults."
+    }
     $pluginMain = Get-Content -Raw -Encoding UTF8 (Join-Path $pluginRoot "main.js")
     if ($pluginMain -notmatch "/api/obsidian/annotations") {
         throw "Obsidian plugin main.js does not reference the AMO annotation endpoint."
@@ -333,6 +336,12 @@ try {
     }
     if ($pluginMain -notmatch "canvasAppendDirection") {
         throw "Obsidian plugin does not expose the canvas append direction setting."
+    }
+    if ($pluginMain -notmatch "interceptLocalCodeLinks" -or $pluginMain -notmatch "code_link.open") {
+        throw "Obsidian plugin does not intercept local code file links with line numbers."
+    }
+    if ($pluginMain -notmatch "localCodeLinkEditor" -or $pluginMain -notmatch "zedCommand") {
+        throw "Obsidian plugin does not expose VS Code/Zed code link presets."
     }
     $pluginStyles = Get-Content -Raw -Encoding UTF8 (Join-Path $pluginRoot "styles.css")
     if ($pluginStyles -notmatch "anno-token-rich" -or $pluginStyles -notmatch "amo-canvas-note-list") {
