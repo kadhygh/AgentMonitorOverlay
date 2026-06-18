@@ -64,6 +64,7 @@ export interface AgentSession {
   sessionId: string;
   cwd: string;
   title: string;
+  taskTitle?: string | null;
   state: SessionState;
   lastEvent: string;
   lastMessage: string;

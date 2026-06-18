@@ -1293,6 +1293,7 @@ button {
 
 .session-title {
   display: grid;
+  gap: 2px;
   min-width: 0;
 }
 
@@ -1302,6 +1303,16 @@ button {
   font-size: 13px;
   font-weight: 680;
   line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.session-title span {
+  overflow: hidden;
+  color: #9fb0aa;
+  font-size: 10px;
+  font-weight: 620;
+  line-height: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -1993,6 +2004,69 @@ button {
   font-size: 10px;
   line-height: 12px;
   text-transform: uppercase;
+}
+
+.workspace-task-title-editor {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: end;
+  gap: 5px;
+  padding: 7px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+}
+
+.workspace-task-title-editor label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.workspace-task-title-editor label span {
+  color: #9fb0aa;
+  font-size: 10px;
+  font-weight: 650;
+  line-height: 12px;
+}
+
+.workspace-task-title-editor input {
+  min-width: 0;
+  height: 26px;
+  padding: 4px 7px;
+  color: #f6fbf9;
+  background: rgba(7, 12, 14, 0.62);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  font-size: 11px;
+  outline: none;
+}
+
+.workspace-task-title-editor input:focus {
+  border-color: rgba(111, 224, 190, 0.48);
+  box-shadow: 0 0 0 2px rgba(111, 224, 190, 0.1);
+}
+
+.workspace-task-title-editor button {
+  min-height: 26px;
+  padding: 4px 8px;
+  color: #dbe9e4;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.workspace-task-title-editor button:hover:not(:disabled) {
+  color: #f6fbf9;
+  background: rgba(111, 224, 190, 0.14);
+  border-color: rgba(111, 224, 190, 0.28);
+}
+
+.workspace-task-title-editor button:disabled {
+  cursor: default;
+  opacity: 0.52;
 }
 
 .workspace-panel-actions {

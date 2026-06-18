@@ -124,6 +124,10 @@ function brokerSessionDismissUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/dismiss`;
 }
 
+function brokerSessionTaskTitleUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/task-title`;
+}
+
 async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: "POST",
@@ -703,6 +707,7 @@ function sessionMatchesSearch(session: AgentSession, query: string) {
   const target = targetBindingForSession(session);
   const haystack = [
     session.sessionId,
+    session.taskTitle,
     session.title,
     projectName(session.cwd || ""),
     session.cwd,
@@ -755,8 +760,9 @@ interface WorkspacePanelState {
   x: number;
   y: number;
   status: WorkspaceMaintenanceStatus | null;
-  busy: "status" | "clean" | "open" | null;
+  busy: "status" | "clean" | "open" | "task-title" | null;
   error: string | null;
+  taskTitleDraft: string;
 }
 
 interface CleanConfirmState {
@@ -847,7 +853,9 @@ function SessionRowContent({
   const statusLabel = activating ? "Opening" : reviewPending ? "Review" : stateLabel[session.state];
   const maintenanceTone = maintenanceToneForSession(session);
   const sessionProjectName = projectName(session.cwd);
-  const conversationTitle = session.title?.trim() || sessionProjectName;
+  const threadTitle = session.title?.trim() || sessionProjectName;
+  const taskTitle = session.taskTitle?.trim() || "";
+  const conversationTitle = taskTitle || threadTitle;
   const subtitleLabel = `${sessionProjectName} · ${statusLabel} · ${display.label} · ${formatAgo(session.updatedAt)}`;
 
   return (
@@ -882,6 +890,7 @@ function SessionRowContent({
         <ToolMark session={session} />
         <span className="session-title">
           <strong title={conversationTitle}>{conversationTitle}</strong>
+          {taskTitle ? <span title={threadTitle}>{threadTitle}</span> : null}
         </span>
         <span className="session-chip-row" title={subtitleLabel}>
           <span className="state-pill">
@@ -2195,6 +2204,7 @@ export default function App() {
       status: null,
       busy: "status",
       error: null,
+      taskTitleDraft: session.taskTitle ?? "",
     });
     await loadWorkspaceStatus(session);
   }
@@ -2330,6 +2340,50 @@ export default function App() {
       setWorkspacePanel((current) => (current ? { ...current, error: message } : current));
     } finally {
       setWorkspacePanel((current) => (current ? { ...current, busy: null } : current));
+    }
+  }
+
+  async function saveWorkspacePanelTaskTitle(overrideTaskTitle?: string) {
+    if (!workspacePanel) return;
+
+    const sessionId = workspacePanel.session.sessionId;
+    const nextTaskTitle = (overrideTaskTitle ?? workspacePanel.taskTitleDraft).trim();
+    setWorkspacePanel((current) => (current ? { ...current, busy: "task-title", error: null } : current));
+    setFeedback(nextTaskTitle ? `Saving task name: ${nextTaskTitle}` : "Clearing task name...");
+    try {
+      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+        brokerSessionTaskTitleUrl(sessionId),
+        { taskTitle: nextTaskTitle },
+      );
+      setSessions((previous) =>
+        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
+      );
+      setWorkspacePanel((current) =>
+        current && current.session.sessionId === result.session.sessionId
+          ? {
+              ...current,
+              session: result.session,
+              taskTitleDraft: result.session.taskTitle ?? "",
+              busy: null,
+              error: null,
+            }
+          : current,
+      );
+      setFeedback(nextTaskTitle ? "Task name saved." : "Task name cleared.");
+      void postDebugLog("session.task_title.save.ok", {
+        sessionId,
+        hasTaskTitle: Boolean(nextTaskTitle),
+      });
+    } catch (error) {
+      const message = (error as Error).message;
+      setWorkspacePanel((current) =>
+        current && current.session.sessionId === sessionId ? { ...current, busy: null, error: message } : current,
+      );
+      setFeedback(`Task name save failed: ${message}`);
+      void postDebugLog("session.task_title.save.error", {
+        sessionId,
+        message,
+      });
     }
   }
 
@@ -3626,6 +3680,44 @@ export default function App() {
                   onClick={() => setWorkspacePanel(null)}
                 >
                   <X size={13} aria-hidden="true" />
+                </button>
+              </div>
+
+              <div className="workspace-task-title-editor">
+                <label>
+                  <span>任务名</span>
+                  <input
+                    type="text"
+                    value={workspacePanel.taskTitleDraft}
+                    placeholder={workspacePanel.session.title}
+                    disabled={workspacePanel.busy !== null}
+                    onChange={(event) => {
+                      const nextTaskTitleDraft = event.currentTarget.value;
+                      setWorkspacePanel((current) =>
+                        current ? { ...current, taskTitleDraft: nextTaskTitleDraft } : current,
+                      );
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Enter") {
+                        event.preventDefault();
+                        void saveWorkspacePanelTaskTitle();
+                      }
+                    }}
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={workspacePanel.busy !== null}
+                  onClick={() => void saveWorkspacePanelTaskTitle()}
+                >
+                  Save
+                </button>
+                <button
+                  type="button"
+                  disabled={workspacePanel.busy !== null || !workspacePanel.session.taskTitle}
+                  onClick={() => void saveWorkspacePanelTaskTitle("")}
+                >
+                  Clear
                 </button>
               </div>
 

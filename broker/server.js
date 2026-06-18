@@ -1,6 +1,7 @@
 const http = require("http");
 const crypto = require("crypto");
 const fs = require("fs");
+const os = require("os");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
 
@@ -53,6 +54,11 @@ const debugState = {
   enabled: /^(1|true|yes|on)$/iu.test(process.env.AGENT_MONITOR_DEBUG || ""),
   maxEntries: DEBUG_MAX_LOG_ENTRIES,
   entries: [],
+};
+const codexThreadNameCache = {
+  indexPath: null,
+  mtimeMs: null,
+  names: new Map(),
 };
 
 loadSnapshot();
@@ -231,6 +237,16 @@ const server = http.createServer(async (req, res) => {
       const result = clearSessionTargetBinding(sessionId);
       persistSnapshot();
       publishSessionChanged("target-unbind", result.session);
+      return sendJson(res, 200, result);
+    }
+
+    const taskTitleMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/task-title$/);
+    if (req.method === "POST" && taskTitleMatch) {
+      const sessionId = decodeURIComponent(taskTitleMatch[1]);
+      const payload = await readJsonBody(req, { allowEmpty: true });
+      const result = updateSessionTaskTitle(sessionId, payload || {});
+      persistSnapshot();
+      publishSessionChanged("task-title", result.session);
       return sendJson(res, 200, result);
     }
 
@@ -547,7 +563,8 @@ function upsertSessionFromEvent(payload) {
     tool,
     sessionId,
     cwd: normalizeText(payload.cwd || payload.projectPath || payload.project_path) || existing?.cwd || null,
-    title: normalizeText(payload.title) || existing?.title || defaultTitle(tool, sessionId),
+    title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title),
+    taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null,
     state,
     lastEvent: eventName || existing?.lastEvent || null,
     lastMessage: message || existing?.lastMessage || null,
@@ -610,7 +627,8 @@ function updateHeartbeat(sessionId, payload) {
   const session = {
     ...existing,
     cwd: normalizeText(payload.cwd) || existing.cwd,
-    title: normalizeText(payload.title) || existing.title,
+    title: resolveSessionTitle(existing.tool || payload.tool, sessionId, payload.title, existing.title),
+    taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing.taskTitle || null,
     state: nextState,
     lastMessage:
       normalizeText(payload.message || payload.lastMessage || payload.last_message) ||
@@ -1477,7 +1495,8 @@ function handleReply(payload) {
     tool,
     sessionId,
     cwd,
-    title: existing?.title || defaultTitle(tool, sessionId),
+    title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title),
+    taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null,
     state: "idle",
     lastEvent: hookEventName,
     lastMessage: trimMessage(message, 240),
@@ -1638,7 +1657,8 @@ function handlePrompt(payload) {
     tool,
     sessionId,
     cwd,
-    title: existing?.title || defaultTitle(tool, sessionId),
+    title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title),
+    taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null,
     state: normalizeState(payload.state) || "running",
     lastEvent: hookEventName,
     lastMessage: trimMessage(`User: ${message}`, 240),
@@ -1883,7 +1903,8 @@ function recoverSessionFromAnnotationPayload(payload, sessionId) {
     tool: "codex",
     sessionId,
     cwd: workspacePath,
-    title: defaultTitle("codex", sessionId),
+    title: resolveSessionTitle("codex", sessionId, payload.title, null),
+    taskTitle: normalizeText(payload.taskTitle || payload.task_title) || null,
     state: "idle",
     lastEvent: "RecoveredFromObsidianNote",
     lastMessage: notePath ? `Recovered from Obsidian note: ${notePath}` : "Recovered from Obsidian note",
@@ -2434,6 +2455,39 @@ function markSessionReviewed(sessionId, payload = {}) {
     schemaVersion: AMO_SCHEMA_VERSION,
     sessionId,
     reviewedAt: now,
+    session,
+  };
+}
+
+function updateSessionTaskTitle(sessionId, payload = {}) {
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Task title URL must include session id");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for task title: ${sessionId}`);
+  }
+
+  const taskTitle = normalizeText(payload.taskTitle || payload.task_title || payload.title);
+  const now = new Date().toISOString();
+  const session = {
+    ...existing,
+    taskTitle: taskTitle || null,
+    updatedAt: now,
+  };
+
+  sessions.set(sessionId, session);
+  recordDebugLog("broker", "session.task_title.updated", {
+    sessionId,
+    hasTaskTitle: Boolean(taskTitle),
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    taskTitle: session.taskTitle,
     session,
   };
 }
@@ -4032,7 +4086,11 @@ function findDuplicatePrompt(existing, record) {
 function listSessions() {
   const healthCache = new Map();
   return Array.from(sessions.values()).map((session) => {
-    return attachObsidianPluginHealth(session, healthCache);
+    const refreshedSession = refreshCodexSessionTitle(session);
+    if (refreshedSession !== session) {
+      sessions.set(refreshedSession.sessionId, refreshedSession);
+    }
+    return attachObsidianPluginHealth(refreshedSession, healthCache);
   }).sort((a, b) => {
     return `${b.updatedAt}`.localeCompare(`${a.updatedAt}`);
   });
@@ -4126,7 +4184,7 @@ function loadSnapshot() {
 
     for (const session of snapshot.sessions) {
       if (session && session.sessionId) {
-        sessions.set(session.sessionId, session);
+        sessions.set(session.sessionId, refreshCodexSessionTitle(session));
       }
     }
   } catch (error) {
@@ -4239,6 +4297,97 @@ function normalizeInteger(value) {
   }
 
   return null;
+}
+
+function resolveSessionTitle(tool, sessionId, explicitTitle, existingTitle) {
+  const payloadTitle = normalizeText(explicitTitle);
+  if (payloadTitle) {
+    return payloadTitle;
+  }
+
+  const codexThreadName = lookupCodexThreadName(tool, sessionId);
+  if (codexThreadName) {
+    return codexThreadName;
+  }
+
+  return normalizeText(existingTitle) || defaultTitle(tool, sessionId);
+}
+
+function refreshCodexSessionTitle(session) {
+  if (!session || !session.sessionId) {
+    return session;
+  }
+
+  const title = resolveSessionTitle(session.tool, session.sessionId, null, session.title);
+  return title && title !== session.title ? { ...session, title } : session;
+}
+
+function lookupCodexThreadName(tool, sessionId) {
+  const normalizedTool = normalizeText(tool);
+  if (!normalizedTool || !normalizedTool.toLowerCase().startsWith("codex")) {
+    return null;
+  }
+
+  const normalizedSessionId = normalizeText(sessionId);
+  if (!normalizedSessionId) {
+    return null;
+  }
+
+  return loadCodexThreadNameIndex().get(normalizedSessionId) || null;
+}
+
+function loadCodexThreadNameIndex() {
+  const indexPath = path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "session_index.jsonl");
+  let stat;
+  try {
+    stat = fs.statSync(indexPath);
+  } catch {
+    codexThreadNameCache.indexPath = indexPath;
+    codexThreadNameCache.mtimeMs = null;
+    codexThreadNameCache.names = new Map();
+    return codexThreadNameCache.names;
+  }
+
+  if (codexThreadNameCache.indexPath === indexPath && codexThreadNameCache.mtimeMs === stat.mtimeMs) {
+    return codexThreadNameCache.names;
+  }
+
+  const names = new Map();
+  const updatedAtById = new Map();
+  const lines = fs.readFileSync(indexPath, "utf8").replace(/^\uFEFF/u, "").split(/\r?\n/u);
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      continue;
+    }
+
+    let record;
+    try {
+      record = JSON.parse(trimmed);
+    } catch {
+      continue;
+    }
+
+    const id = normalizeText(record.id || record.sessionId || record.session_id);
+    const threadName = normalizeText(record.thread_name || record.threadName || record.title || record.name);
+    if (!id || !threadName) {
+      continue;
+    }
+
+    const updatedAtText = normalizeText(record.updated_at || record.updatedAt);
+    const updatedAt = updatedAtText ? Date.parse(updatedAtText) : 0;
+    const previousUpdatedAt = updatedAtById.get(id) ?? -1;
+    if (!names.has(id) || updatedAt >= previousUpdatedAt) {
+      names.set(id, threadName);
+      updatedAtById.set(id, Number.isNaN(updatedAt) ? 0 : updatedAt);
+    }
+  }
+
+  codexThreadNameCache.indexPath = indexPath;
+  codexThreadNameCache.mtimeMs = stat.mtimeMs;
+  codexThreadNameCache.names = names;
+  return names;
 }
 
 function defaultTitle(tool, sessionId) {
