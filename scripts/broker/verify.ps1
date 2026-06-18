@@ -55,6 +55,12 @@ function Reset-VerificationWorkspace {
     }
 
     New-Item -ItemType Directory -Path $workspaceRoot -Force | Out-Null
+    git -C $workspaceRoot init -q
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to initialize verification Git repository."
+    }
+    New-Item -ItemType Directory -Path (Join-Path $workspaceRoot ".git\info") -Force | Out-Null
+    Set-Content -Path (Join-Path $workspaceRoot ".git\info\exclude") -Value "# local excludes" -Encoding UTF8
     Set-Content -Path (Join-Path $workspaceRoot "package.json") -Value "{}" -Encoding UTF8
 }
 
@@ -332,6 +338,57 @@ try {
     if ($pluginStyles -notmatch "anno-token-rich" -or $pluginStyles -notmatch "amo-canvas-note-list") {
         throw "Obsidian plugin styles.css does not include rich annotation block styles."
     }
+
+    git -C $workspaceRoot add -f ".claude/settings.local.json"
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to stage Claude local settings for tracked Git exclude verification."
+    }
+
+    $gitExclude = Invoke-BrokerJson -Method POST -Path "/api/workspaces/git-exclude" -Body @{
+        workspacePath = $workspaceRoot
+        gitRootPath = $workspaceRoot
+    }
+    if (-not $gitExclude.ok) {
+        throw "Workspace git exclude update failed."
+    }
+    $excludeText = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".git\info\exclude")
+    foreach ($pattern in @("/.amo/", "/.codex/cache/", "/.codex/hooks.json")) {
+        if ($excludeText -notmatch [regex]::Escape($pattern)) {
+            throw "Git exclude is missing AMO pattern: $pattern"
+        }
+    }
+    if ($excludeText -match [regex]::Escape("/.claude/settings.local.json")) {
+        throw "Git exclude should not include Claude local settings unless explicitly requested."
+    }
+
+    $gitExcludeWithClaude = Invoke-BrokerJson -Method POST -Path "/api/workspaces/git-exclude" -Body @{
+        workspacePath = $workspaceRoot
+        gitRootPath = $workspaceRoot
+        includeClaudeSettingsLocal = $true
+    }
+    if (-not $gitExcludeWithClaude.ok) {
+        throw "Workspace git exclude update with Claude local settings failed."
+    }
+    $claudeAddedEntries = @($gitExcludeWithClaude.addedEntries | Where-Object { $_.pattern -eq "/.claude/settings.local.json" })
+    if ($claudeAddedEntries.Count -ne 1) {
+        throw "Git exclude should add optional Claude local settings after default AMO patterns are already covered."
+    }
+    if (@($gitExcludeWithClaude.addedEntries).Count -ne 1) {
+        throw "Git exclude should add only the newly requested Claude local settings pattern on the second update."
+    }
+    $excludeText = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".git\info\exclude")
+    if ($excludeText -notmatch [regex]::Escape("/.claude/settings.local.json")) {
+        throw "Git exclude is missing optional Claude local settings pattern."
+    }
+    if ($gitExcludeWithClaude.status.status -ne "tracked") {
+        throw "Git exclude status should warn when optional Claude local settings is already tracked."
+    }
+    $trackedClaudeEntries = @($gitExcludeWithClaude.status.trackedEntries | Where-Object { $_.pattern -eq "/.claude/settings.local.json" })
+    if ($trackedClaudeEntries.Count -ne 1) {
+        throw "Git exclude status should identify tracked optional Claude local settings."
+    }
+    Write-Host "Workspace git exclude OK -> $($gitExclude.excludeFilePath)"
+
     Write-Host "Workspace enroll OK -> $($enroll.workspaceId)"
 
     $reply = Invoke-BrokerJson -Method POST -Path "/api/replies" -Body @{
@@ -568,6 +625,39 @@ try {
     $claudeStopOutput = $claudeStopInput | node $claudeHookPath
     if ($LASTEXITCODE -ne 0 -or $claudeStopOutput -notmatch '"continue"\s*:\s*true') {
         throw "Claude Stop hook did not return a non-blocking JSON response."
+    }
+
+    $claudeCacheRoot = Join-Path $workspaceRoot ".amo\logs\claude-cache"
+    foreach ($cacheFolder in @("user-prompts", "assistant-turns")) {
+        $cachePath = Join-Path $claudeCacheRoot $cacheFolder
+        if (Test-Path -LiteralPath $cachePath) {
+            $cacheFiles = @(Get-ChildItem -LiteralPath $cachePath -Filter "*.json" -File -ErrorAction SilentlyContinue)
+            if ($cacheFiles.Count -gt 0) {
+                throw "Claude hook should not keep success cache while debug is disabled: $cachePath"
+            }
+        }
+    }
+
+    Invoke-BrokerJson -Method POST -Path "/api/debug" -Body @{ enabled = $true } | Out-Null
+    $claudeDebugPromptInput = @{
+        session_id = "claude-hook-verify"
+        turn_id = "debug-cache-turn"
+        transcript_path = (Join-Path $workspaceRoot ".claude\projects\verify.jsonl")
+        cwd = $workspaceRoot
+        permission_mode = "default"
+        hook_event_name = "UserPromptSubmit"
+        prompt = "Claude debug cache verification prompt."
+    } | ConvertTo-Json -Depth 8 -Compress
+    $claudeDebugPromptOutput = $claudeDebugPromptInput | node $claudeHookPath
+    if ($LASTEXITCODE -ne 0 -or $claudeDebugPromptOutput -notmatch '"continue"\s*:\s*true') {
+        throw "Claude debug UserPromptSubmit hook did not return a non-blocking JSON response."
+    }
+    Invoke-BrokerJson -Method POST -Path "/api/debug" -Body @{ enabled = $false } | Out-Null
+    $debugPromptCache = @(
+        Get-ChildItem -LiteralPath (Join-Path $claudeCacheRoot "user-prompts") -Filter "*debug-cache-turn*.json" -File -ErrorAction SilentlyContinue
+    )
+    if ($debugPromptCache.Count -eq 0) {
+        throw "Claude hook should keep success cache while debug is enabled."
     }
 
     Start-Sleep -Milliseconds 300

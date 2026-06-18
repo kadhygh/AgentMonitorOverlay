@@ -210,6 +210,7 @@ export interface WorkspaceInspection {
   projectName: string;
   existingEnrollment?: boolean;
   deploymentRoot?: string;
+  gitExclude?: WorkspaceGitExcludeStatus;
   supportedAdapters: WorkspaceAdapterPlan[];
   deferredAdapters?: WorkspaceAdapterPlan[];
 }
@@ -241,6 +242,44 @@ export interface WorkspaceLaunchResult {
   command?: string;
   args?: string[];
   message: string;
+}
+
+export interface WorkspaceGitExcludeEntry {
+  pattern: string;
+  reason?: string;
+  trackedPath?: string;
+  trackedPaths?: string[];
+}
+
+export interface WorkspaceGitExcludeStatus {
+  ok: boolean;
+  status: string;
+  includeClaudeSettingsLocal?: boolean;
+  gitRootPath: string;
+  gitDirPath: string;
+  excludeFilePath: string;
+  workspaceRelativePath: string;
+  entries: WorkspaceGitExcludeEntry[];
+  missingEntries: WorkspaceGitExcludeEntry[];
+  existingEntries: WorkspaceGitExcludeEntry[];
+  trackedEntries: WorkspaceGitExcludeEntry[];
+  message: string;
+}
+
+export interface WorkspaceGitExcludeResult {
+  ok: boolean;
+  schemaVersion: number;
+  changed: boolean;
+  includeClaudeSettingsLocal?: boolean;
+  workspacePath: string;
+  gitRootPath: string;
+  gitDirPath: string;
+  excludeFilePath: string;
+  workspaceRelativePath: string;
+  entries: WorkspaceGitExcludeEntry[];
+  addedEntries: WorkspaceGitExcludeEntry[];
+  existingEntries: WorkspaceGitExcludeEntry[];
+  status: WorkspaceGitExcludeStatus;
 }
 
 export interface WorkspaceMaintenanceStatus {

@@ -133,6 +133,11 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, enrollWorkspace(payload));
     }
 
+    if (req.method === "POST" && url.pathname === "/api/workspaces/git-exclude") {
+      const payload = await readJsonBody(req);
+      return sendJson(res, 200, updateWorkspaceGitExclude(payload));
+    }
+
     if (req.method === "POST" && url.pathname === "/api/workspaces/launch") {
       const payload = await readJsonBody(req);
       const result = await launchWorkspace(payload);
@@ -705,6 +710,11 @@ function inspectWorkspace(payload) {
   const hasClaudeProjectSettings = fs.existsSync(path.join(workspacePath, ".claude", "settings.json"));
   const hasCodexAdapter = fs.existsSync(path.join(amoRoot, "adapters", "codex-cli.json"));
   const hasClaudeAdapter = fs.existsSync(path.join(amoRoot, "adapters", "claude-cli.json"));
+  const gitExclude = inspectWorkspaceGitExclude(
+    workspacePath,
+    payload?.gitRootPath || payload?.git_root_path,
+    Boolean(payload?.includeClaudeSettingsLocal || payload?.include_claude_settings_local)
+  );
   const rootIndicators = [".git", "package.json", "pyproject.toml", "Cargo.toml"].filter((name) => {
     return fs.existsSync(path.join(workspacePath, name));
   });
@@ -767,6 +777,7 @@ function inspectWorkspace(payload) {
     projectName,
     existingEnrollment: hasAmo,
     deploymentRoot: AMO_DIR,
+    gitExclude,
     supportedAdapters: [
       {
         id: "codex-cli",
@@ -1009,6 +1020,71 @@ function enrollWorkspace(payload) {
     vaultRoot,
     canvasPath: AMO_CANVAS_PATH,
     deferredAdapters: inspection.deferredAdapters,
+  };
+}
+
+function updateWorkspaceGitExclude(payload) {
+  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
+  const includeClaudeSettingsLocal = Boolean(payload?.includeClaudeSettingsLocal || payload?.include_claude_settings_local);
+  const plan = resolveWorkspaceGitExcludePlan(workspacePath, payload?.gitRootPath || payload?.git_root_path, {
+    includeClaudeSettingsLocal,
+  });
+  const excludeFile = plan.excludeFilePath;
+  const rawBefore = fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile, "utf8") : "";
+  const lineSet = new Set(
+    rawBefore
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+  );
+
+  const addedEntries = [];
+  const existingEntries = [];
+  for (const entry of plan.entries) {
+    if (lineSet.has(entry.pattern)) {
+      existingEntries.push(entry);
+    } else {
+      addedEntries.push(entry);
+    }
+  }
+
+  if (addedEntries.length > 0) {
+    const needsSeparator = rawBefore.length > 0 && !rawBefore.endsWith("\n");
+    const lines = [];
+    if (needsSeparator) lines.push("");
+    if (!rawBefore.includes("# AMO local deployment artifacts")) {
+      lines.push("# AMO local deployment artifacts");
+    }
+    for (const entry of addedEntries) {
+      lines.push(entry.pattern);
+    }
+    fs.mkdirSync(path.dirname(excludeFile), { recursive: true });
+    fs.appendFileSync(excludeFile, `${lines.join("\n")}\n`, "utf8");
+  }
+
+  const status = inspectWorkspaceGitExclude(workspacePath, plan.gitRootPath, includeClaudeSettingsLocal);
+  recordDebugLog("broker", "workspace.git_exclude.updated", {
+    workspacePath,
+    gitRootPath: plan.gitRootPath,
+    excludeFilePath: excludeFile,
+    addedEntries: addedEntries.map((entry) => entry.pattern),
+    existingEntries: existingEntries.map((entry) => entry.pattern),
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    changed: addedEntries.length > 0,
+    workspacePath,
+    gitRootPath: plan.gitRootPath,
+    gitDirPath: plan.gitDirPath,
+    excludeFilePath: excludeFile,
+    workspaceRelativePath: plan.workspaceRelativePath,
+    entries: plan.entries,
+    addedEntries,
+    existingEntries,
+    includeClaudeSettingsLocal,
+    status,
   };
 }
 
@@ -2626,6 +2702,253 @@ function resolveWorkspacePath(value) {
   return fs.realpathSync(workspacePath);
 }
 
+function resolveDirectoryPath(value, label, code) {
+  const rawPath = normalizeText(value);
+  if (!rawPath) {
+    throw httpError(400, `missing_${code}`, `Payload must include ${label}`);
+  }
+
+  const targetPath = path.resolve(rawPath);
+  let stat;
+  try {
+    stat = fs.statSync(targetPath);
+  } catch {
+    throw httpError(404, `${code}_not_found`, `${label} does not exist: ${targetPath}`);
+  }
+
+  if (!stat.isDirectory()) {
+    throw httpError(400, `${code}_not_directory`, `${label} must be a directory: ${targetPath}`);
+  }
+
+  return fs.realpathSync(targetPath);
+}
+
+function inspectWorkspaceGitExclude(workspacePath, requestedGitRootPath = "", includeClaudeSettingsLocal = false) {
+  try {
+    const plan = resolveWorkspaceGitExcludePlan(workspacePath, requestedGitRootPath, {
+      allowMissing: true,
+      includeClaudeSettingsLocal,
+    });
+    if (!plan.gitRootPath) {
+      return {
+        ok: false,
+        status: "not-found",
+        gitRootPath: "",
+        gitDirPath: "",
+        excludeFilePath: "",
+        workspaceRelativePath: "",
+        entries: defaultWorkspaceGitExcludeEntries("", includeClaudeSettingsLocal),
+        missingEntries: [],
+        existingEntries: [],
+        trackedEntries: [],
+        message: "No parent Git repository was detected for this workspace.",
+      };
+    }
+
+    const excludeText = fs.existsSync(plan.excludeFilePath) ? fs.readFileSync(plan.excludeFilePath, "utf8") : "";
+    const lineSet = new Set(
+      excludeText
+        .split(/\r?\n/u)
+        .map((line) => line.trim())
+        .filter((line) => line && !line.startsWith("#"))
+    );
+    const existingEntries = plan.entries.filter((entry) => lineSet.has(entry.pattern));
+    const missingEntries = plan.entries.filter((entry) => !lineSet.has(entry.pattern));
+    const trackedEntries = trackedWorkspaceGitExcludeEntries(plan);
+    const status = missingEntries.length > 0 ? "missing" : trackedEntries.length > 0 ? "tracked" : "covered";
+    return {
+      ok: true,
+      status,
+      gitRootPath: plan.gitRootPath,
+      gitDirPath: plan.gitDirPath,
+      excludeFilePath: plan.excludeFilePath,
+      workspaceRelativePath: plan.workspaceRelativePath,
+      entries: plan.entries,
+      missingEntries,
+      existingEntries,
+      trackedEntries,
+      includeClaudeSettingsLocal,
+      message:
+        missingEntries.length > 0
+          ? `${missingEntries.length} AMO Git exclude pattern(s) can be added.`
+          : trackedEntries.length > 0
+          ? `${trackedEntries.length} covered pattern(s) still match tracked Git files. Remove them from the index if they should disappear from status.`
+          : "AMO local artifacts are already covered by Git exclude.",
+    };
+  } catch (error) {
+    return {
+      ok: false,
+      status: "error",
+      gitRootPath: normalizeText(requestedGitRootPath) || "",
+      gitDirPath: "",
+      excludeFilePath: "",
+      workspaceRelativePath: "",
+      entries: [],
+      missingEntries: [],
+      existingEntries: [],
+      trackedEntries: [],
+      includeClaudeSettingsLocal,
+      message: error?.message || "Could not inspect Git exclude.",
+    };
+  }
+}
+
+function resolveWorkspaceGitExcludePlan(workspacePath, requestedGitRootPath = "", options = {}) {
+  const explicitRoot = normalizeText(requestedGitRootPath);
+  const gitRootPath = explicitRoot
+    ? resolveDirectoryPath(explicitRoot, "gitRootPath", "git_root_path")
+    : findNearestGitRoot(workspacePath);
+
+  if (!gitRootPath) {
+    if (options.allowMissing) {
+      return {
+        gitRootPath: "",
+        gitDirPath: "",
+        excludeFilePath: "",
+        workspaceRelativePath: "",
+        entries: [],
+      };
+    }
+    throw httpError(404, "git_root_not_found", "No parent Git repository was detected for this workspace.");
+  }
+
+  const gitDirPath = resolveGitDirectoryPath(gitRootPath);
+  if (!gitDirPath) {
+    throw httpError(400, "not_git_root", `Selected Git root does not contain a .git directory or gitdir file: ${gitRootPath}`);
+  }
+
+  if (!isSameOrDescendantPath(gitRootPath, workspacePath)) {
+    throw httpError(
+      400,
+      "workspace_outside_git_root",
+      `Workspace path must be inside the selected Git root. Git root: ${gitRootPath}; workspace: ${workspacePath}`
+    );
+  }
+
+  const workspaceRelativePath = path.relative(gitRootPath, workspacePath).split(path.sep).join("/");
+  return {
+    gitRootPath,
+    gitDirPath,
+    excludeFilePath: path.join(gitDirPath, "info", "exclude"),
+    workspaceRelativePath,
+    entries: defaultWorkspaceGitExcludeEntries(workspaceRelativePath, Boolean(options.includeClaudeSettingsLocal)),
+  };
+}
+
+function findNearestGitRoot(startPath) {
+  let current = path.resolve(startPath);
+  while (true) {
+    if (resolveGitDirectoryPath(current)) {
+      return fs.realpathSync(current);
+    }
+    const parent = path.dirname(current);
+    if (parent === current) return "";
+    current = parent;
+  }
+}
+
+function resolveGitDirectoryPath(gitRootPath) {
+  const dotGitPath = path.join(gitRootPath, ".git");
+  if (!fs.existsSync(dotGitPath)) return "";
+
+  try {
+    const stat = fs.statSync(dotGitPath);
+    if (stat.isDirectory()) return fs.realpathSync(dotGitPath);
+    if (!stat.isFile()) return "";
+
+    const text = fs.readFileSync(dotGitPath, "utf8");
+    const match = text.match(/^gitdir:\s*(.+)\s*$/imu);
+    if (!match) return "";
+
+    const gitDirCandidate = path.isAbsolute(match[1]) ? match[1] : path.resolve(gitRootPath, match[1]);
+    const gitDirStat = fs.statSync(gitDirCandidate);
+    return gitDirStat.isDirectory() ? fs.realpathSync(gitDirCandidate) : "";
+  } catch {
+    return "";
+  }
+}
+
+function isSameOrDescendantPath(parentPath, childPath) {
+  const relative = path.relative(parentPath, childPath);
+  return relative === "" || (!relative.startsWith("..") && !path.isAbsolute(relative));
+}
+
+function defaultWorkspaceGitExcludeEntries(workspaceRelativePath, includeClaudeSettingsLocal = false) {
+  const prefix = normalizeGitExcludePrefix(workspaceRelativePath);
+  const entries = [
+    {
+      pattern: gitExcludePattern(prefix, ".amo/"),
+      reason: "AMO workspace metadata, vault, hooks, logs, and generated notes",
+    },
+    {
+      pattern: gitExcludePattern(prefix, ".codex/cache/"),
+      reason: "Codex hook fallback cache for prompts, replies, and hook errors",
+    },
+    {
+      pattern: gitExcludePattern(prefix, ".codex/hooks.json"),
+      reason: "project-local AMO Codex hook registration",
+    },
+  ];
+
+  if (includeClaudeSettingsLocal) {
+    entries.push({
+      pattern: gitExcludePattern(prefix, ".claude/settings.local.json"),
+      reason: "machine-local Claude hook registration",
+    });
+  }
+
+  return entries;
+}
+
+function normalizeGitExcludePrefix(value) {
+  return (normalizeText(value) || "")
+    .replace(/\\/gu, "/")
+    .replace(/^\/+/u, "")
+    .replace(/\/+$/u, "");
+}
+
+function gitExcludePattern(prefix, relativePath) {
+  const directoryPattern = /[\\/]$/u.test(String(relativePath || ""));
+  const normalizedRelativePath = normalizeGitExcludePrefix(relativePath);
+  const body = [prefix, normalizedRelativePath].filter(Boolean).join("/");
+  return `/${body}${directoryPattern ? "/" : ""}`;
+}
+
+function trackedWorkspaceGitExcludeEntries(plan) {
+  if (!plan?.gitRootPath || !Array.isArray(plan.entries) || plan.entries.length === 0) return [];
+
+  const trackedEntries = [];
+  for (const entry of plan.entries) {
+    const repoRelativePath = gitExcludePatternToRepoPath(entry.pattern);
+    if (!repoRelativePath) continue;
+
+    const result = spawnSync("git", ["-C", plan.gitRootPath, "ls-files", "--", repoRelativePath], {
+      encoding: "utf8",
+      timeout: 2500,
+      windowsHide: true,
+    });
+    if (result.error || result.status !== 0) continue;
+
+    const trackedPaths = (normalizeText(result.stdout) || "")
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter(Boolean);
+    if (trackedPaths.length === 0) continue;
+
+    trackedEntries.push({
+      ...entry,
+      trackedPath: trackedPaths[0],
+      trackedPaths,
+    });
+  }
+
+  return trackedEntries;
+}
+
+function gitExcludePatternToRepoPath(pattern) {
+  return normalizeGitExcludePrefix(pattern);
+}
+
 function isWritableDirectory(dirPath) {
   try {
     fs.accessSync(dirPath, fs.constants.W_OK);
@@ -2985,20 +3308,14 @@ function codexReplyHookScript() {
     "      message,",
     "    };",
     "",
+    "    const bridgeResult = await postToBridge(record, isPromptEvent, isEventOnly);",
     "    if (!isEventOnly) {",
-    "      const archiveRoot = isPromptEvent ? userArchiveRoot : assistantArchiveRoot;",
-    "      const latestFile = isPromptEvent ? latestUserPromptFile : latestAssistantFile;",
-    "      const latestJsonFile = isPromptEvent ? latestUserPromptJsonFile : latestAssistantJsonFile;",
-    "      const archiveStem = `${fileSafeTimestamp(capturedAt)}-${sanitizeFilePart(record.turnId)}`;",
-    "      await fs.mkdir(archiveRoot, { recursive: true });",
-    "      await Promise.all([",
-    "        fs.writeFile(path.join(archiveRoot, `${archiveStem}.md`), renderMarkdown(record), 'utf8'),",
-    "        fs.writeFile(path.join(archiveRoot, `${archiveStem}.json`), `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
-    "        fs.writeFile(latestFile, renderMarkdown(record), 'utf8'),",
-    "        fs.writeFile(latestJsonFile, `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
-    "      ]);",
+    "      if (bridgeResult.debugEnabled || !bridgeResult.ok) {",
+    "        await writeCacheRecord(record, isPromptEvent);",
+    "      } else {",
+    "        await cleanupCacheRecord(record, isPromptEvent);",
+    "      }",
     "    }",
-    "    await postToBridge(record, isPromptEvent, isEventOnly);",
     "  }",
     "",
     "  process.stdout.write('{\"continue\":true}\\n');",
@@ -3019,7 +3336,50 @@ function codexReplyHookScript() {
     "  });",
     "}",
     "",
+    "function cachePathsFor(record, isPromptEvent) {",
+    "  const archiveRoot = isPromptEvent ? userArchiveRoot : assistantArchiveRoot;",
+    "  const latestFile = isPromptEvent ? latestUserPromptFile : latestAssistantFile;",
+    "  const latestJsonFile = isPromptEvent ? latestUserPromptJsonFile : latestAssistantJsonFile;",
+    "  const archiveStem = `${fileSafeTimestamp(record.capturedAt)}-${sanitizeFilePart(record.turnId)}`;",
+    "  return {",
+    "    archiveRoot,",
+    "    latestFile,",
+    "    latestJsonFile,",
+    "    archiveMarkdownFile: path.join(archiveRoot, `${archiveStem}.md`),",
+    "    archiveJsonFile: path.join(archiveRoot, `${archiveStem}.json`),",
+    "  };",
+    "}",
+    "",
+    "async function writeCacheRecord(record, isPromptEvent) {",
+    "  const cache = cachePathsFor(record, isPromptEvent);",
+    "  await fs.mkdir(cache.archiveRoot, { recursive: true });",
+    "  await Promise.all([",
+    "    fs.writeFile(cache.archiveMarkdownFile, renderMarkdown(record), 'utf8'),",
+    "    fs.writeFile(cache.archiveJsonFile, `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
+    "    fs.writeFile(cache.latestFile, renderMarkdown(record), 'utf8'),",
+    "    fs.writeFile(cache.latestJsonFile, `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
+    "  ]);",
+    "}",
+    "",
+    "async function cleanupCacheRecord(record, isPromptEvent) {",
+    "  const cache = cachePathsFor(record, isPromptEvent);",
+    "  await Promise.allSettled([fs.unlink(cache.archiveMarkdownFile), fs.unlink(cache.archiveJsonFile)]);",
+    "  const latest = await readJsonFile(cache.latestJsonFile);",
+    "  if (latest && latest.sessionId === record.sessionId && latest.turnId === record.turnId && latest.role === record.role) {",
+    "    await Promise.allSettled([fs.unlink(cache.latestFile), fs.unlink(cache.latestJsonFile)]);",
+    "  }",
+    "}",
+    "",
+    "async function readJsonFile(filePath) {",
+    "  try {",
+    "    return JSON.parse(await fs.readFile(filePath, 'utf8'));",
+    "  } catch {",
+    "    return null;",
+    "  }",
+    "}",
+    "",
     "async function postToBridge(record, isPromptEvent, isEventOnly) {",
+    "  let debugEnabled = false;",
     "  try {",
     "    const config = JSON.parse(await fs.readFile(adapterConfigFile, 'utf8'));",
     "    let url = null;",
@@ -3028,21 +3388,52 @@ function codexReplyHookScript() {
     "    if (!url && !isPromptEvent && !isEventOnly && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl;",
     "    if (!url && isPromptEvent && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl.replace(/\\/api\\/replies$/u, '/api/prompts');",
     "    if (!url && isEventOnly && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl.replace(/\\/api\\/replies$/u, '/api/events');",
-    "    if (!url || typeof fetch !== 'function') return;",
-    "    const controller = new AbortController();",
-    "    const timeout = setTimeout(() => controller.abort(), 2000);",
-    "    try {",
-    "      await fetch(url, {",
+    "    debugEnabled = await readBridgeDebugEnabled(config, url);",
+    "    if (!url || typeof fetch !== 'function') return { ok: false, debugEnabled };",
+    "    const response = await fetchWithTimeout(url, {",
     "        method: 'POST',",
     "        headers: { 'content-type': 'application/json' },",
     "        body: JSON.stringify(record),",
-    "        signal: controller.signal,",
-    "      });",
-    "    } finally {",
-    "      clearTimeout(timeout);",
-    "    }",
+    "      }, 2000);",
+    "    return { ok: response.ok, debugEnabled };",
     "  } catch {",
-    "    // Bridge delivery is best-effort; the local cache above is the fallback.",
+    "    return { ok: false, debugEnabled };",
+    "  }",
+    "}",
+    "",
+    "async function readBridgeDebugEnabled(config, fallbackUrl) {",
+    "  const candidates = [",
+    "    config && config.bridgeDebugUrl,",
+    "    fallbackUrl,",
+    "    config && config.bridgeEventsUrl,",
+    "    config && config.bridgeRepliesUrl,",
+    "    config && config.bridgePromptsUrl,",
+    "  ];",
+    "  for (const candidate of candidates) {",
+    "    if (typeof candidate !== 'string' || !candidate) continue;",
+    "    try {",
+    "      const debugUrl = new URL(candidate);",
+    "      debugUrl.pathname = '/api/debug';",
+    "      debugUrl.search = '';",
+    "      const response = await fetchWithTimeout(debugUrl.toString(), { method: 'GET' }, 1200);",
+    "      if (!response.ok) return false;",
+    "      const body = await response.json();",
+    "      return Boolean(body && body.enabled);",
+    "    } catch {",
+    "      return false;",
+    "    }",
+    "  }",
+    "  return false;",
+    "}",
+    "",
+    "async function fetchWithTimeout(url, options, timeoutMs) {",
+    "  if (typeof fetch !== 'function') throw new Error('fetch is not available in this Node.js runtime');",
+    "  const controller = new AbortController();",
+    "  const timeout = setTimeout(() => controller.abort(), timeoutMs);",
+    "  try {",
+    "    return await fetch(url, { ...options, signal: controller.signal });",
+    "  } finally {",
+    "    clearTimeout(timeout);",
     "  }",
     "}",
     "",
@@ -3138,20 +3529,14 @@ function claudeMessageHookScript() {
     "      windowHint: buildWindowHint(cwd, turnId),",
     "    };",
     "",
+    "    const bridgeResult = await postToBridge(record, isPromptEvent, isEventOnly);",
     "    if (!isEventOnly) {",
-    "      const archiveRoot = isPromptEvent ? userArchiveRoot : assistantArchiveRoot;",
-    "      const latestFile = isPromptEvent ? latestUserPromptFile : latestAssistantFile;",
-    "      const latestJsonFile = isPromptEvent ? latestUserPromptJsonFile : latestAssistantJsonFile;",
-    "      const archiveStem = `${fileSafeTimestamp(capturedAt)}-${sanitizeFilePart(record.turnId)}`;",
-    "      await fs.mkdir(archiveRoot, { recursive: true });",
-    "      await Promise.all([",
-    "        fs.writeFile(path.join(archiveRoot, `${archiveStem}.md`), renderMarkdown(record), 'utf8'),",
-    "        fs.writeFile(path.join(archiveRoot, `${archiveStem}.json`), `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
-    "        fs.writeFile(latestFile, renderMarkdown(record), 'utf8'),",
-    "        fs.writeFile(latestJsonFile, `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
-    "      ]);",
+    "      if (bridgeResult.debugEnabled || !bridgeResult.ok) {",
+    "        await writeCacheRecord(record, isPromptEvent);",
+    "      } else {",
+    "        await cleanupCacheRecord(record, isPromptEvent);",
+    "      }",
     "    }",
-    "    await postToBridge(record, isPromptEvent, isEventOnly);",
     "  }",
     "",
     "  process.stdout.write('{\"continue\":true,\"suppressOutput\":true}\\n');",
@@ -3172,7 +3557,50 @@ function claudeMessageHookScript() {
     "  });",
     "}",
     "",
+    "function cachePathsFor(record, isPromptEvent) {",
+    "  const archiveRoot = isPromptEvent ? userArchiveRoot : assistantArchiveRoot;",
+    "  const latestFile = isPromptEvent ? latestUserPromptFile : latestAssistantFile;",
+    "  const latestJsonFile = isPromptEvent ? latestUserPromptJsonFile : latestAssistantJsonFile;",
+    "  const archiveStem = `${fileSafeTimestamp(record.capturedAt)}-${sanitizeFilePart(record.turnId)}`;",
+    "  return {",
+    "    archiveRoot,",
+    "    latestFile,",
+    "    latestJsonFile,",
+    "    archiveMarkdownFile: path.join(archiveRoot, `${archiveStem}.md`),",
+    "    archiveJsonFile: path.join(archiveRoot, `${archiveStem}.json`),",
+    "  };",
+    "}",
+    "",
+    "async function writeCacheRecord(record, isPromptEvent) {",
+    "  const cache = cachePathsFor(record, isPromptEvent);",
+    "  await fs.mkdir(cache.archiveRoot, { recursive: true });",
+    "  await Promise.all([",
+    "    fs.writeFile(cache.archiveMarkdownFile, renderMarkdown(record), 'utf8'),",
+    "    fs.writeFile(cache.archiveJsonFile, `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
+    "    fs.writeFile(cache.latestFile, renderMarkdown(record), 'utf8'),",
+    "    fs.writeFile(cache.latestJsonFile, `${JSON.stringify(record, null, 2)}\\n`, 'utf8'),",
+    "  ]);",
+    "}",
+    "",
+    "async function cleanupCacheRecord(record, isPromptEvent) {",
+    "  const cache = cachePathsFor(record, isPromptEvent);",
+    "  await Promise.allSettled([fs.unlink(cache.archiveMarkdownFile), fs.unlink(cache.archiveJsonFile)]);",
+    "  const latest = await readJsonFile(cache.latestJsonFile);",
+    "  if (latest && latest.sessionId === record.sessionId && latest.turnId === record.turnId && latest.role === record.role) {",
+    "    await Promise.allSettled([fs.unlink(cache.latestFile), fs.unlink(cache.latestJsonFile)]);",
+    "  }",
+    "}",
+    "",
+    "async function readJsonFile(filePath) {",
+    "  try {",
+    "    return JSON.parse(await fs.readFile(filePath, 'utf8'));",
+    "  } catch {",
+    "    return null;",
+    "  }",
+    "}",
+    "",
     "async function postToBridge(record, isPromptEvent, isEventOnly) {",
+    "  let debugEnabled = false;",
     "  try {",
     "    const config = JSON.parse(await fs.readFile(adapterConfigFile, 'utf8'));",
     "    let url = null;",
@@ -3181,21 +3609,52 @@ function claudeMessageHookScript() {
     "    if (!url && !isPromptEvent && !isEventOnly && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl;",
     "    if (!url && isPromptEvent && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl.replace(/\\/api\\/replies$/u, '/api/prompts');",
     "    if (!url && isEventOnly && typeof config.bridgeRepliesUrl === 'string') url = config.bridgeRepliesUrl.replace(/\\/api\\/replies$/u, '/api/events');",
-    "    if (!url || typeof fetch !== 'function') return;",
-    "    const controller = new AbortController();",
-    "    const timeout = setTimeout(() => controller.abort(), 2000);",
-    "    try {",
-    "      await fetch(url, {",
+    "    debugEnabled = await readBridgeDebugEnabled(config, url);",
+    "    if (!url || typeof fetch !== 'function') return { ok: false, debugEnabled };",
+    "    const response = await fetchWithTimeout(url, {",
     "        method: 'POST',",
     "        headers: { 'content-type': 'application/json' },",
     "        body: JSON.stringify(record),",
-    "        signal: controller.signal,",
-    "      });",
-    "    } finally {",
-    "      clearTimeout(timeout);",
-    "    }",
+    "      }, 2000);",
+    "    return { ok: response.ok, debugEnabled };",
     "  } catch {",
-    "    // Bridge delivery is best-effort; the local cache above is the fallback.",
+    "    return { ok: false, debugEnabled };",
+    "  }",
+    "}",
+    "",
+    "async function readBridgeDebugEnabled(config, fallbackUrl) {",
+    "  const candidates = [",
+    "    config && config.bridgeDebugUrl,",
+    "    fallbackUrl,",
+    "    config && config.bridgeEventsUrl,",
+    "    config && config.bridgeRepliesUrl,",
+    "    config && config.bridgePromptsUrl,",
+    "  ];",
+    "  for (const candidate of candidates) {",
+    "    if (typeof candidate !== 'string' || !candidate) continue;",
+    "    try {",
+    "      const debugUrl = new URL(candidate);",
+    "      debugUrl.pathname = '/api/debug';",
+    "      debugUrl.search = '';",
+    "      const response = await fetchWithTimeout(debugUrl.toString(), { method: 'GET' }, 1200);",
+    "      if (!response.ok) return false;",
+    "      const body = await response.json();",
+    "      return Boolean(body && body.enabled);",
+    "    } catch {",
+    "      return false;",
+    "    }",
+    "  }",
+    "  return false;",
+    "}",
+    "",
+    "async function fetchWithTimeout(url, options, timeoutMs) {",
+    "  if (typeof fetch !== 'function') throw new Error('fetch is not available in this Node.js runtime');",
+    "  const controller = new AbortController();",
+    "  const timeout = setTimeout(() => controller.abort(), timeoutMs);",
+    "  try {",
+    "    return await fetch(url, { ...options, signal: controller.signal });",
+    "  } finally {",
+    "    clearTimeout(timeout);",
     "  }",
     "}",
     "",

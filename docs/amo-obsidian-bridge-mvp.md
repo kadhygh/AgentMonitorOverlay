@@ -233,7 +233,7 @@ Design implication:
 
 - Treat this as a project-local enrollment pattern, not a global Codex setup.
 - Keep the Stop hook short and safe.
-- Keep file cache as a fallback.
+- Keep file cache only when broker debug is enabled or bridge/hook delivery fails.
 - Add a best-effort POST to the AMO bridge server.
 - Never let bridge or vault failure block the Codex turn.
 
@@ -290,7 +290,7 @@ Design implication:
 Agent hook scripts
   - observe lifecycle events
   - capture assistant replies on Stop
-  - cache locally
+  - cache locally only when debug is enabled or bridge delivery fails
   - POST to AMO bridge if available
 
 Workspace enrollment
@@ -682,6 +682,7 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 - Keep hook stdout protocol-clean.
 - Keep hook POST failures non-blocking.
 - Keep `.codex/cache/`, `broker/data/`, `tmp/`, logs, and build output out of commits.
+- Deploy UI should offer a local `.git/info/exclude` update for AMO-generated artifacts instead of writing shared `.gitignore`: `.amo/`, `.codex/cache/`, and `.codex/hooks.json`. `.claude/settings.local.json` is a separate opt-in checkbox so a remote/shared `.claude` setup is not hidden by default.
 - Obsidian plugin actions that send annotations to AMO should be explicit user commands.
 - Do not make Obsidian/canvas the primary AMO data model; keep them as a sidecar workflow.
 
@@ -703,7 +704,7 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 - Add `POST /api/replies` to the existing broker.
 - Persist reply notes into `workspace.vaultRoot/Replies/`.
 - Update session snapshot with `lastReplyNote`, `canvasPath`, and `lastReplyAt`.
-- Keep `.codex/cache/` fallback in the hook script.
+- Keep `.codex/cache/` only for debug/failure fallback in the hook script.
 
 ### Phase 5.2: Canvas Append
 
@@ -761,7 +762,7 @@ Manual acceptance path:
 5. User confirms project-local hook/adapter installation.
 6. Start Codex or another supported CLI/TUI in the enrolled project.
 7. Ask a prompt.
-8. Stop hook or equivalent local adapter caches and POSTs the assistant reply.
+8. Stop hook or equivalent local adapter POSTs the assistant reply, caching locally only for debug/failure fallback.
 9. Bridge creates a reply note in the test vault.
 10. Bridge appends the reply note to the canvas.
 11. Overlay card shows `Open Note` / `Open Canvas`.

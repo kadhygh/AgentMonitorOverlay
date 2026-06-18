@@ -179,7 +179,7 @@ New Phase 5 direction:
 - hook/adapter deployment should be manual and workspace-scoped, not global
 - user selects a project folder, then AMO inspects the folder and chooses or suggests the local adapter path
 - workspace-local hooks can be the primary source for status and completed assistant replies
-- Codex `Stop` hook reply capture should POST to the bridge and keep local `.codex/cache/` fallback
+- Codex `Stop` hook reply capture should POST to the bridge and keep local `.codex/cache/` only for debug mode or bridge/hook failure fallback
 - bridge should create Obsidian reply notes and append file nodes to an Obsidian canvas
 - Obsidian plugin should own vault-native annotation extraction using `[!anno]...[/anno]`
 - sync-back should start as explicit `copy pending prompt + focus target CLI`
@@ -283,7 +283,7 @@ Useful Codex reply hook facts:
 - Trigger: Codex `Stop`
 - Content field: `last_assistant_message`
 - Hook stdout should stay protocol-clean and return `{"continue":true}`
-- Keep `.codex/cache/latest-assistant-message.md`, `.codex/cache/latest-assistant-message.json`, and `.codex/cache/assistant-turns/` as fallback
+- Keep `.codex/cache/latest-assistant-message.md`, `.codex/cache/latest-assistant-message.json`, and `.codex/cache/assistant-turns/` only when broker debug is enabled or bridge delivery fails
 - Useful record fields: `capturedAt`, `sessionId`, `turnId`, `model`, `hookEventName`, `cwd`, `transcriptPath`, `stopHookActive`, `message`
 
 Useful Obsidian plugin facts:
@@ -365,7 +365,7 @@ Do not commit:
 2. For the first MVP, support only the `codex-cli` adapter and create project-local `.amo/` plus `workspace.vaultRoot`.
 3. Implement the smallest bridge `/api/replies` endpoint.
 4. Add bridge config for the project-local `workspace.vaultRoot`, reply note folder, and `AgentFlow.canvas`.
-5. Adapt the proven Codex `Stop` hook script as a project-local enrolled adapter so it keeps `.codex/cache/` fallback and best-effort POSTs to AMO bridge.
+5. Adapt the proven Codex `Stop` hook script as a project-local enrolled adapter so it keeps `.codex/cache/` only for debug/failure fallback and best-effort POSTs to AMO bridge.
 6. Generate a reply note and append-only canvas file node in the project-local vault.
 7. Add overlay actions for `Focus CLI`, `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI`.
 8. Add an Obsidian plugin command that owns note/canvas opening with tab reuse and sends extracted `[!anno]...[/anno]` annotations to AMO.

@@ -179,7 +179,8 @@ Expected deployment:
 
 - create `.amo/hooks/codex-stop-message.mjs`
 - merge `.codex/hooks.json`
-- keep `.codex/cache/` fallback
+- keep `.codex/cache/` only when broker debug is enabled or bridge delivery fails
+- offer a local `.git/info/exclude` update for `.amo/`, `.codex/cache/`, and `.codex/hooks.json`
 - POST `last_assistant_message` to `POST /api/replies`
 - keep hook stdout protocol-clean with `{"continue":true}`
 
@@ -207,7 +208,8 @@ Expected deployment:
 - create `.amo/hooks/claude-message.mjs`
 - create `.amo/adapters/claude-cli.json`
 - merge `.claude/settings.local.json`
-- keep fallback cache under `.amo/logs/claude-cache/`
+- keep fallback cache under `.amo/logs/claude-cache/` only when broker debug is enabled or bridge delivery fails
+- offer a local `.git/info/exclude` update for `.amo/`; `.claude/settings.local.json` is opt-in because teams may intentionally version other `.claude` files
 - POST `prompt` from `UserPromptSubmit` to `POST /api/prompts`
 - POST `last_assistant_message` from `Stop` to `POST /api/replies`
 - POST `PermissionRequest` as event-only payload to `POST /api/events`

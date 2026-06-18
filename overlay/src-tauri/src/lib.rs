@@ -515,6 +515,17 @@ fn find_broker_script() -> Option<(PathBuf, PathBuf)> {
 
 #[cfg(windows)]
 fn pick_workspace_directory() -> FolderPickResult {
+    pick_windows_directory(DirectoryPickerKind::Workspace)
+}
+
+#[cfg(windows)]
+#[derive(Clone, Copy)]
+enum DirectoryPickerKind {
+    Workspace,
+}
+
+#[cfg(windows)]
+fn pick_windows_directory(kind: DirectoryPickerKind) -> FolderPickResult {
     use windows::core::HRESULT;
     use windows::Win32::Foundation::{ERROR_CANCELLED, RPC_E_CHANGED_MODE};
     use windows::Win32::System::Com::{
@@ -549,7 +560,9 @@ fn pick_workspace_directory() -> FolderPickResult {
         let result = (|| -> windows::core::Result<String> {
             let dialog: IFileOpenDialog =
                 CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)?;
-            dialog.SetTitle(windows::core::w!("Select workspace folder"))?;
+            match kind {
+                DirectoryPickerKind::Workspace => dialog.SetTitle(windows::core::w!("Select workspace folder"))?,
+            };
             dialog.SetOkButtonLabel(windows::core::w!("Choose"))?;
             dialog.SetOptions(
                 FOS_PICKFOLDERS | FOS_FORCEFILESYSTEM | FOS_PATHMUSTEXIST | FOS_NOCHANGEDIR,
@@ -572,19 +585,25 @@ fn pick_workspace_directory() -> FolderPickResult {
                 ok: true,
                 cancelled: false,
                 path: Some(path.clone()),
-                message: format!("Selected workspace folder: {path}"),
+                message: match kind {
+                    DirectoryPickerKind::Workspace => format!("Selected workspace folder: {path}"),
+                },
             },
             Err(error) if error.code() == cancelled_hresult => FolderPickResult {
                 ok: false,
                 cancelled: true,
                 path: None,
-                message: "Workspace folder selection cancelled.".to_string(),
+                message: match kind {
+                    DirectoryPickerKind::Workspace => "Workspace folder selection cancelled.".to_string(),
+                },
             },
             Err(error) => FolderPickResult {
                 ok: false,
                 cancelled: false,
                 path: None,
-                message: format!("Could not select workspace folder: {error:?}"),
+                message: match kind {
+                    DirectoryPickerKind::Workspace => format!("Could not select workspace folder: {error:?}"),
+                },
             },
         }
     }

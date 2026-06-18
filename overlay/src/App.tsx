@@ -48,6 +48,7 @@ import type {
   WorkspaceCleanResult,
   WorkspaceAdapterPlan,
   WorkspaceEnrollment,
+  WorkspaceGitExcludeResult,
   WorkspaceInspection,
   WorkspaceLaunchResult,
   WorkspaceMaintenanceStatus,
@@ -59,6 +60,7 @@ const BROKER_OBSIDIAN_REGISTER_VAULT_URL = "http://127.0.0.1:17654/api/obsidian/
 const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
 const BROKER_WORKSPACE_ENROLL_URL = "http://127.0.0.1:17654/api/workspaces/enroll";
+const BROKER_WORKSPACE_GIT_EXCLUDE_URL = "http://127.0.0.1:17654/api/workspaces/git-exclude";
 const BROKER_WORKSPACE_LAUNCH_URL = "http://127.0.0.1:17654/api/workspaces/launch";
 const BROKER_WORKSPACE_STATUS_URL = "http://127.0.0.1:17654/api/workspaces/status";
 const BROKER_WORKSPACE_CLEAN_VAULT_URL = "http://127.0.0.1:17654/api/workspaces/clean-vault";
@@ -80,7 +82,9 @@ type ScratchpadShortcutButton = "mouse4" | "mouse5";
 type UtilityWindowKind = "deploy" | "settings";
 type AmoWindowLabel = "main" | "scratchpad" | "deploy" | "settings";
 
-const AMO_ALWAYS_ON_TOP_WINDOWS: AmoWindowLabel[] = ["main", "scratchpad", "deploy", "settings"];
+const AMO_FLOATING_WINDOWS: AmoWindowLabel[] = ["main", "scratchpad"];
+const AMO_UTILITY_WINDOWS: UtilityWindowKind[] = ["deploy", "settings"];
+const AMO_WINDOW_LABELS: AmoWindowLabel[] = [...AMO_FLOATING_WINDOWS, ...AMO_UTILITY_WINDOWS];
 
 interface ScratchpadShortcutState {
   enabled: boolean;
@@ -154,6 +158,8 @@ async function closeUtilityWindow(label: UtilityWindowKind) {
   const payload = { label, open: false } satisfies UtilityWindowStateEvent;
   await getCurrentWindow().emitTo("main", "amo-utility-window-state", payload).catch(() => undefined);
   await getCurrentWindow().hide().catch(() => undefined);
+  await setAmoWindowAlwaysOnTop(label, false);
+  await setAmoWindowAlwaysOnTop("main", true);
   await getCurrentWindow().emitTo("main", "amo-utility-window-state", payload).catch(() => undefined);
 }
 
@@ -187,13 +193,46 @@ function useUtilityWindowLifecycle(label: UtilityWindowKind) {
   }, [label]);
 }
 
+function isUtilityWindowLabel(label: string): label is UtilityWindowKind {
+  return label === "deploy" || label === "settings";
+}
+
+async function getAmoWindow(label: AmoWindowLabel) {
+  return label === CURRENT_WINDOW_LABEL ? getCurrentWindow() : await TauriWindow.getByLabel(label);
+}
+
+async function setAmoWindowAlwaysOnTop(label: AmoWindowLabel, alwaysOnTop: boolean) {
+  const target = await getAmoWindow(label);
+  await target?.setAlwaysOnTop(alwaysOnTop).catch(() => undefined);
+}
+
 async function setAmoWindowsAlwaysOnTop(alwaysOnTop: boolean) {
+  await Promise.all(AMO_WINDOW_LABELS.map((label) => setAmoWindowAlwaysOnTop(label, alwaysOnTop)));
+}
+
+async function bringUtilityWindowToFront(label: UtilityWindowKind) {
+  const target = await getAmoWindow(label);
+  await setAmoWindowAlwaysOnTop("main", false);
   await Promise.all(
-    AMO_ALWAYS_ON_TOP_WINDOWS.map(async (label) => {
-      const target = label === CURRENT_WINDOW_LABEL ? getCurrentWindow() : await TauriWindow.getByLabel(label);
-      await target?.setAlwaysOnTop(alwaysOnTop).catch(() => undefined);
-    }),
+    AMO_UTILITY_WINDOWS.filter((utilityLabel) => utilityLabel !== label).map((utilityLabel) =>
+      setAmoWindowAlwaysOnTop(utilityLabel, false),
+    ),
   );
+  await setAmoWindowAlwaysOnTop(label, true);
+  await target?.show().catch(() => undefined);
+  await target?.setFocus().catch(() => undefined);
+}
+
+async function restoreAmoWindowLayerAfterNativeDialog() {
+  await Promise.all(AMO_FLOATING_WINDOWS.map((label) => setAmoWindowAlwaysOnTop(label, true)));
+
+  if (isUtilityWindowLabel(CURRENT_WINDOW_LABEL)) {
+    await bringUtilityWindowToFront(CURRENT_WINDOW_LABEL);
+    return;
+  }
+
+  await Promise.all(AMO_UTILITY_WINDOWS.map((label) => setAmoWindowAlwaysOnTop(label, false)));
+  await getCurrentWindow().setFocus().catch(() => undefined);
 }
 
 async function runWithNativeDialogLayer<T>(operation: () => Promise<T>): Promise<T> {
@@ -203,8 +242,7 @@ async function runWithNativeDialogLayer<T>(operation: () => Promise<T>): Promise
   try {
     return await operation();
   } finally {
-    await setAmoWindowsAlwaysOnTop(true);
-    await getCurrentWindow().setFocus().catch(() => undefined);
+    await restoreAmoWindowLayerAfterNativeDialog();
   }
 }
 
@@ -1163,7 +1201,12 @@ function DeployWorkspaceApp() {
   const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
   const [selectedDeployAdapters, setSelectedDeployAdapters] = useState<string[]>([]);
   const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | null>(null);
+  const [gitExcludeBusy, setGitExcludeBusy] = useState(false);
   const [launchBusy, setLaunchBusy] = useState<string | null>(null);
+  const [gitRootPath, setGitRootPath] = useState("");
+  const [gitExcludeResult, setGitExcludeResult] = useState<WorkspaceGitExcludeResult | null>(null);
+  const [includeClaudeSettingsExclude, setIncludeClaudeSettingsExclude] = useState(false);
+  const includeClaudeSettingsExcludeRef = useRef(false);
   const [feedback, setFeedback] = useState("Choose or paste a workspace path.");
 
   async function postUtilityDebugLog(event: string, data?: unknown) {
@@ -1192,6 +1235,7 @@ function DeployWorkspaceApp() {
     try {
       const result = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
         workspacePath: targetPath,
+        includeClaudeSettingsLocal: includeClaudeSettingsExcludeRef.current,
       });
       void postUtilityDebugLog("workspace.inspect.ok", {
         workspacePath: result.workspacePath,
@@ -1207,6 +1251,8 @@ function DeployWorkspaceApp() {
       });
       setWorkspaceInspection(result);
       setWorkspacePath(result.workspacePath);
+      setGitRootPath(result.gitExclude?.gitRootPath || "");
+      setGitExcludeResult(null);
       const selectedAdapters = selectedWorkspaceAdapterIds(result);
       setSelectedDeployAdapters(selectedAdapters);
       setFeedback(`${result.projectName}: ${workspaceDeploymentSummary(result)}`);
@@ -1235,6 +1281,10 @@ function DeployWorkspaceApp() {
       setWorkspacePath(result.path);
       setWorkspaceInspection(null);
       setWorkspaceEnrollment(null);
+      setGitRootPath("");
+      setGitExcludeResult(null);
+      includeClaudeSettingsExcludeRef.current = false;
+      setIncludeClaudeSettingsExclude(false);
       setSelectedDeployAdapters([]);
       await inspectWorkspace(result.path);
     } catch (error) {
@@ -1247,7 +1297,94 @@ function DeployWorkspaceApp() {
     if (workspaceInspection && value.trim() !== workspaceInspection.workspacePath) {
       setWorkspaceInspection(null);
       setWorkspaceEnrollment(null);
+      setGitExcludeResult(null);
       setSelectedDeployAdapters([]);
+    }
+  }
+
+  function updateGitRootPathInput(value: string) {
+    setGitRootPath(value);
+    setGitExcludeResult(null);
+  }
+
+  function updateClaudeSettingsExclude(checked: boolean) {
+    includeClaudeSettingsExcludeRef.current = checked;
+    setIncludeClaudeSettingsExclude(checked);
+    setGitExcludeResult(null);
+  }
+
+  async function chooseGitDirectory() {
+    setFeedback("Choose a Git repository folder...");
+
+    try {
+      const result = await runWithNativeDialogLayer(() => invoke<FolderPickResult>("select_workspace_directory"));
+      if (!result.ok || !result.path) {
+        setFeedback(result.message);
+        return;
+      }
+
+      setGitRootPath(result.path);
+      setGitExcludeResult(null);
+      setFeedback("Git folder selected. Click Add exclude to write local rules.");
+    } catch (error) {
+      setFeedback(`Git folder selection failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function applyGitExclude() {
+    const targetPath = workspaceInspection?.workspacePath ?? workspacePath.trim();
+    const targetGitRoot = gitRootPath.trim();
+    if (!targetPath) {
+      setFeedback("Workspace path is required.");
+      return;
+    }
+
+    setGitExcludeBusy(true);
+    setFeedback("Updating Git exclude...");
+
+    try {
+      const includeClaudeSettingsLocal = includeClaudeSettingsExcludeRef.current;
+      const result = await postBrokerJson<WorkspaceGitExcludeResult>(BROKER_WORKSPACE_GIT_EXCLUDE_URL, {
+        workspacePath: targetPath,
+        gitRootPath: targetGitRoot || undefined,
+        includeClaudeSettingsLocal,
+      });
+      void postUtilityDebugLog("workspace.git_exclude.ok", {
+        workspacePath: result.workspacePath,
+        gitRootPath: result.gitRootPath,
+        excludeFilePath: result.excludeFilePath,
+        addedEntries: result.addedEntries.map((entry) => entry.pattern),
+        includeClaudeSettingsLocal,
+      });
+      setGitRootPath(result.gitRootPath);
+      setGitExcludeResult(result);
+      const refreshed = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
+        workspacePath: result.workspacePath,
+        gitRootPath: result.gitRootPath,
+        includeClaudeSettingsLocal,
+      });
+      setWorkspaceInspection(refreshed);
+      const addedPatterns = result.addedEntries.map((entry) => entry.pattern).join(", ");
+      const trackedCount = result.status.trackedEntries.length;
+      setFeedback(
+        result.changed
+          ? `Added ${result.addedEntries.length} Git exclude pattern(s): ${addedPatterns}`
+          : trackedCount > 0
+          ? `Git exclude covers selected patterns, but ${trackedCount} tracked file(s) still appear in Git.`
+          : includeClaudeSettingsLocal
+          ? "Git exclude already covers selected AMO and Claude local artifacts."
+          : "Git exclude already covers selected AMO local artifacts.",
+      );
+    } catch (error) {
+      void postUtilityDebugLog("workspace.git_exclude.error", {
+        workspacePath: targetPath,
+        gitRootPath: targetGitRoot,
+        includeClaudeSettingsLocal: includeClaudeSettingsExcludeRef.current,
+        message: (error as Error).message,
+      });
+      setFeedback(`Git exclude failed: ${(error as Error).message}`);
+    } finally {
+      setGitExcludeBusy(false);
     }
   }
 
@@ -1287,8 +1424,12 @@ function DeployWorkspaceApp() {
       setWorkspaceEnrollment(result);
       const refreshed = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
         workspacePath: result.workspacePath,
+        gitRootPath: gitRootPath.trim() || undefined,
+        includeClaudeSettingsLocal: includeClaudeSettingsExcludeRef.current,
       });
       setWorkspaceInspection(refreshed);
+      setGitRootPath(refreshed.gitExclude?.gitRootPath || gitRootPath);
+      setGitExcludeResult(null);
       setSelectedDeployAdapters(selectedWorkspaceAdapterIds(refreshed));
       setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}.`);
     } catch (error) {
@@ -1346,6 +1487,15 @@ function DeployWorkspaceApp() {
       setFeedback(`Open ${label} failed: ${(error as Error).message}`);
     }
   }
+
+  const rawGitExcludeStatus = gitExcludeResult?.status ?? workspaceInspection?.gitExclude ?? null;
+  const gitExcludeStatus =
+    rawGitExcludeStatus && Boolean(rawGitExcludeStatus.includeClaudeSettingsLocal) === includeClaudeSettingsExclude
+      ? rawGitExcludeStatus
+      : null;
+  const gitExcludeMissingPatterns = new Set(gitExcludeStatus?.missingEntries.map((entry) => entry.pattern) ?? []);
+  const gitExcludeTrackedPatterns = new Set(gitExcludeStatus?.trackedEntries.map((entry) => entry.pattern) ?? []);
+  const gitExcludeBlocked = deployBusy !== null || launchBusy !== null || gitExcludeBusy;
 
   return (
     <main className="utility-window-shell deploy-window-shell">
@@ -1437,6 +1587,84 @@ function DeployWorkspaceApp() {
             ) : (
               <div className="deploy-placeholder">Check a workspace to review deployment status.</div>
             )}
+
+            <div className="deploy-subsection">
+              <div className="dialog-section-heading">
+                <strong>Git exclude</strong>
+                <span>{gitExcludeStatus ? gitExcludeStatus.status : "Optional"}</span>
+              </div>
+              <input
+                className="deploy-path-input"
+                type="text"
+                spellCheck={false}
+                value={gitRootPath}
+                placeholder="Git repository root, optional"
+                title={gitRootPath || "No Git root selected"}
+                disabled={gitExcludeBlocked}
+                onChange={(event) => updateGitRootPathInput(event.currentTarget.value)}
+                onKeyDown={(event) => {
+                  if (event.key === "Enter") {
+                    event.preventDefault();
+                    void applyGitExclude();
+                  }
+                }}
+              />
+              <div className="deploy-action-row">
+                <button type="button" disabled={gitExcludeBlocked} onClick={() => void chooseGitDirectory()}>
+                  Choose Git
+                </button>
+                <button
+                  type="button"
+                  className="primary"
+                  disabled={!workspacePath.trim() || gitExcludeBlocked}
+                  onClick={() => void applyGitExclude()}
+                >
+                  {gitExcludeBusy ? "Adding" : "Add exclude"}
+                </button>
+              </div>
+              <label className="deploy-option-row">
+                <input
+                  type="checkbox"
+                  checked={includeClaudeSettingsExclude}
+                  disabled={gitExcludeBlocked}
+                  onChange={(event) => updateClaudeSettingsExclude(event.currentTarget.checked)}
+                />
+                <span>Also exclude `.claude\\settings.local.json`</span>
+              </label>
+              {gitExcludeStatus ? (
+                <>
+                  <div className={`deploy-git-exclude-note status-${gitExcludeStatus.status}`}>
+                    <span title={gitExcludeStatus.excludeFilePath || gitExcludeStatus.message}>{gitExcludeStatus.message}</span>
+                    {gitExcludeStatus.missingEntries.length > 0 ? (
+                      <small>{gitExcludeStatus.missingEntries.map((entry) => entry.pattern).join(", ")}</small>
+                    ) : gitExcludeStatus.excludeFilePath ? (
+                      <small title={gitExcludeStatus.excludeFilePath}>{shortPathLabel(gitExcludeStatus.excludeFilePath)}</small>
+                    ) : null}
+                  </div>
+                  {gitExcludeStatus.entries.length > 0 ? (
+                    <ul className="deploy-git-exclude-list" aria-label="Git exclude pattern status">
+                      {gitExcludeStatus.entries.map((entry) => {
+                        const missing = gitExcludeMissingPatterns.has(entry.pattern);
+                        const tracked = gitExcludeTrackedPatterns.has(entry.pattern);
+                        const itemState = missing ? "missing" : tracked ? "tracked" : "covered";
+                        return (
+                          <li className={`is-${itemState}`} key={entry.pattern}>
+                            <em>{itemState}</em>
+                            <span title={tracked ? "This path is already tracked by Git, so exclude cannot hide it." : entry.reason || entry.pattern}>
+                              {entry.pattern}
+                            </span>
+                          </li>
+                        );
+                      })}
+                    </ul>
+                  ) : null}
+                </>
+              ) : (
+                <div className="deploy-git-exclude-note">
+                  <span>Exclude options changed. Click Add exclude to check and write missing patterns.</span>
+                </div>
+              )}
+            </div>
           </section>
 
           <section className="dialog-section deploy-adapters-section">
@@ -2469,13 +2697,13 @@ export default function App() {
       const otherLabel: UtilityWindowKind = label === "deploy" ? "settings" : "deploy";
       const otherWindow = await WebviewWindow.getByLabel(otherLabel);
       await otherWindow?.hide();
+      await setAmoWindowAlwaysOnTop(otherLabel, false);
 
       const targetWindow = await WebviewWindow.getByLabel(label);
       if (!targetWindow) {
         throw new Error(`${label} window is not registered`);
       }
-      await targetWindow.show();
-      await targetWindow.setFocus();
+      await bringUtilityWindowToFront(label);
       setFeedback(`${label === "deploy" ? "Deploy Workspace" : "Settings"} opened.`);
     } catch (error) {
       setActiveUtilityWindow(null);
@@ -2487,6 +2715,8 @@ export default function App() {
     try {
       const targetWindow = await WebviewWindow.getByLabel(label);
       await targetWindow?.hide();
+      await setAmoWindowAlwaysOnTop(label, false);
+      await setAmoWindowAlwaysOnTop("main", true);
     } catch {
       // A missing utility window should still unblock the main window.
     } finally {
@@ -2496,9 +2726,7 @@ export default function App() {
 
   async function focusUtilityWindow(label: UtilityWindowKind) {
     try {
-      const targetWindow = await WebviewWindow.getByLabel(label);
-      await targetWindow?.show();
-      await targetWindow?.setFocus();
+      await bringUtilityWindowToFront(label);
     } catch (error) {
       setActiveUtilityWindow(null);
       setFeedback(`Focus ${label} window failed: ${(error as Error).message}`);
