@@ -30,6 +30,7 @@ module.exports = __toCommonJS(main_exports);
 
 // src/plugin.ts
 var import_obsidian5 = require("obsidian");
+var import_view2 = require("@codemirror/view");
 
 // src/core/constants.ts
 var ANNO_REGEX = /\[!anno\]([\s\S]*?)\[\/anno\]/gi;
@@ -37,7 +38,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.27";
+var PLUGIN_VERSION = "1.4.30";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow";
 var DEFAULT_SETTINGS = {
@@ -1218,12 +1219,22 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     this.canvasTargetFilePathByView = /* @__PURE__ */ new WeakMap();
     this.amoNotePropertiesExpandedPaths = /* @__PURE__ */ new Set();
     this.panelRefreshTimer = null;
+    this.codeLinkSuppressUntilMs = 0;
+    this.codeLinkSuppressTarget = "";
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
     this.registerEditorExtension(amoMarkerHiderExtension);
+    this.registerEditorExtension(
+      import_view2.EditorView.domEventHandlers({
+        mousedown: (event, view) => this.handleEditorLocalCodeLinkEvent(event, view, "mousedown"),
+        click: (event, view) => this.handleEditorLocalCodeLinkEvent(event, view, "click")
+      })
+    );
     this.addSettingTab(new AmoAnnotationSettingTab(this.app, this));
     this.debugLog("plugin.loaded", {
       version: PLUGIN_VERSION,
       bridgeUrl: this.settings.bridgeUrl,
+      localCodeLinkEditor: this.settings.localCodeLinkEditor,
+      zedCommand: this.settings.zedCommand,
       vaultRoot: getVaultRoot(this.app)
     });
     if (typeof this.registerObsidianProtocolHandler === "function") {
@@ -1448,19 +1459,82 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     });
   }
   handleLocalCodeLinkClick(event) {
-    if (event.defaultPrevented || event.button !== 0 || this.settings.interceptLocalCodeLinks === false) return;
+    if (event.button !== 0 || this.settings.interceptLocalCodeLinks === false) return;
     const target = event.target instanceof Element ? event.target : null;
-    const anchor = target && target.closest("a[href]");
-    if (!(anchor instanceof HTMLAnchorElement)) return;
-    const rawHref = anchor.getAttribute("href") || anchor.href || "";
-    const link = parseLocalCodeLink(rawHref, anchor.href);
-    if (!link || !link.line) return;
+    const anchor = target && target.closest("a[href], a[data-href], a[data-amo-code-link]");
+    if (!(anchor instanceof HTMLElement)) return;
+    const rawHref = anchor.getAttribute("data-amo-code-link") || anchor.getAttribute("data-href") || anchor.getAttribute("href") || (anchor instanceof HTMLAnchorElement ? anchor.href : "") || "";
+    const absoluteHref = anchor instanceof HTMLAnchorElement ? anchor.href : rawHref;
+    const link = parseLocalCodeLink(rawHref, absoluteHref);
+    if (this.suppressLocalCodeLinkFollowup(rawHref, event, "document-click")) return;
+    if (!link || !link.line) {
+      if (looksLikeLocalCodeLinkCandidate(rawHref)) {
+        this.debugLog("code_link.parse_miss", {
+          rawHref,
+          absoluteHref
+        });
+      }
+      return;
+    }
     event.preventDefault();
     event.stopPropagation();
     event.stopImmediatePropagation();
+    this.markLocalCodeLinkHandled(rawHref);
     void this.openLocalCodeLink(link, rawHref);
   }
+  handleEditorLocalCodeLinkEvent(event, view, phase) {
+    if (event.button !== 0 || this.settings.interceptLocalCodeLinks === false) return false;
+    const linkTarget = this.localCodeLinkTargetFromEditorEvent(event, view);
+    if (!linkTarget) return false;
+    if (this.suppressLocalCodeLinkFollowup(linkTarget, event, phase)) return true;
+    const link = parseLocalCodeLink(linkTarget, linkTarget);
+    if (!link || !link.line) {
+      this.debugLog("code_link.editor_parse_miss", {
+        phase,
+        linkTarget,
+        target: event.target instanceof Element ? describeElement(event.target) : ""
+      });
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    this.markLocalCodeLinkHandled(linkTarget);
+    void this.openLocalCodeLink(link, linkTarget);
+    return true;
+  }
+  markLocalCodeLinkHandled(linkTarget) {
+    this.codeLinkSuppressUntilMs = Date.now() + 1500;
+    this.codeLinkSuppressTarget = normalizeLocalCodeLinkHref(linkTarget || "");
+  }
+  suppressLocalCodeLinkFollowup(linkTarget, event, phase) {
+    if (!this.codeLinkSuppressUntilMs || Date.now() > this.codeLinkSuppressUntilMs) return false;
+    const normalized = normalizeLocalCodeLinkHref(linkTarget || "");
+    if (this.codeLinkSuppressTarget && normalized && normalized !== this.codeLinkSuppressTarget) return false;
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    this.debugLog("code_link.followup_suppressed", {
+      phase,
+      linkTarget
+    });
+    return true;
+  }
+  localCodeLinkTargetFromEditorEvent(event, view) {
+    const target = event.target instanceof Element ? event.target : null;
+    const anchor = target && target.closest("a[href], a[data-href], a[data-amo-code-link]");
+    if (anchor instanceof HTMLElement) {
+      const rawHref = anchor.getAttribute("data-amo-code-link") || anchor.getAttribute("data-href") || anchor.getAttribute("href") || (anchor instanceof HTMLAnchorElement ? anchor.href : "") || "";
+      if (looksLikeLocalCodeLinkCandidate(rawHref)) return rawHref;
+    }
+    const pos = view.posAtCoords({ x: event.clientX, y: event.clientY });
+    if (pos == null) return "";
+    const line = view.state.doc.lineAt(pos);
+    const offset = pos - line.from;
+    return findLocalCodeLinkTargetInLine(line.text, offset);
+  }
   async openLocalCodeLink(link, rawHref) {
+    await this.refreshCodeLinkSettingsFromDisk();
     const editor = normalizeLocalCodeLinkEditor(this.settings.localCodeLinkEditor);
     const target = editor === "zed" ? formatZedCodeLinkTarget(link) : formatLocalCodeLinkUrl(link, this.settings.localCodeLinkUrlTemplate);
     this.debugLog("code_link.open", {
@@ -1490,6 +1564,20 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
         message: messageFromError(error)
       });
       new import_obsidian5.Notice("Could not open code link: " + messageFromError(error));
+    }
+  }
+  async refreshCodeLinkSettingsFromDisk() {
+    try {
+      const data = await this.loadData() || {};
+      if (!data || typeof data !== "object") return;
+      if (typeof data.interceptLocalCodeLinks === "boolean") this.settings.interceptLocalCodeLinks = data.interceptLocalCodeLinks;
+      if (typeof data.localCodeLinkEditor === "string") this.settings.localCodeLinkEditor = data.localCodeLinkEditor;
+      if (typeof data.localCodeLinkUrlTemplate === "string") this.settings.localCodeLinkUrlTemplate = data.localCodeLinkUrlTemplate;
+      if (typeof data.zedCommand === "string") this.settings.zedCommand = data.zedCommand;
+    } catch (error) {
+      this.debugLog("code_link.settings_reload_error", {
+        message: messageFromError(error)
+      });
     }
   }
   async handleAmoOpenProtocol(params) {
@@ -3014,6 +3102,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       });
     }
     this.replaceInlineAnnotations(root);
+    this.linkifyLocalCodeLinks(root);
   }
   async renderAmoNoteDisplayHeader(root, context) {
     if (!(root instanceof HTMLElement) || !context || typeof context.getSectionInfo !== "function") return false;
@@ -3124,11 +3213,37 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     while (walker.nextNode()) targets.push(walker.currentNode);
     for (const textNode of targets) this.replaceAnnotationsInTextNode(textNode);
   }
+  linkifyLocalCodeLinks(root) {
+    if (this.settings.interceptLocalCodeLinks === false) return;
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => {
+        if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
+        if (!this.shouldProcessLocalCodeLinkTextNode(node)) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      }
+    });
+    const targets = [];
+    while (walker.nextNode()) targets.push(walker.currentNode);
+    for (const textNode of targets) this.replaceLocalCodeLinksInTextNode(textNode);
+  }
   shouldProcessTextNode(textNode) {
     const text = textNode.nodeValue || "";
     if (!text.includes(ANNO_TAG_PREFIX) || !text.includes(ANNO_TAG_SUFFIX)) return false;
     const parent = textNode.parentElement;
     if (!parent || parent.closest(".anno-token")) return false;
+    for (let current = parent; current; current = current.parentElement) {
+      if (SKIPPED_TAGS.has(current.tagName)) return false;
+    }
+    return true;
+  }
+  shouldProcessLocalCodeLinkTextNode(textNode) {
+    const text = textNode.nodeValue || "";
+    LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+    const hasLink = LOCAL_CODE_LINK_TEXT_REGEX.test(text);
+    LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+    if (!hasLink) return false;
+    const parent = textNode.parentElement;
+    if (!parent || parent.closest(".amo-local-code-link")) return false;
     for (let current = parent; current; current = current.parentElement) {
       if (SKIPPED_TAGS.has(current.tagName)) return false;
     }
@@ -3153,7 +3268,56 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     if (currentIndex < source.length) fragment.append(source.slice(currentIndex));
     textNode.replaceWith(fragment);
   }
+  replaceLocalCodeLinksInTextNode(textNode) {
+    const source = textNode.nodeValue || "";
+    const matches = Array.from(source.matchAll(LOCAL_CODE_LINK_TEXT_REGEX));
+    if (matches.length === 0) return;
+    const fragment = document.createDocumentFragment();
+    let currentIndex = 0;
+    for (const match of matches) {
+      const rawTarget = match[0] || "";
+      const matchIndex = match.index || 0;
+      const parsed = parseLocalCodeLink(rawTarget, rawTarget);
+      if (!parsed || !parsed.line) continue;
+      if (matchIndex > currentIndex) fragment.append(source.slice(currentIndex, matchIndex));
+      fragment.append(createLocalCodeLinkElement(rawTarget));
+      currentIndex = matchIndex + rawTarget.length;
+    }
+    if (currentIndex === 0) return;
+    if (currentIndex < source.length) fragment.append(source.slice(currentIndex));
+    textNode.replaceWith(fragment);
+  }
 };
+var LOCAL_CODE_LINK_TEXT_REGEX = /\b[A-Za-z]:[\\/][^\s<>"'`]+?:\d+(?::\d+)?/gu;
+var MARKDOWN_LINK_WITH_TARGET_REGEX = /!?\[[^\]]*?\]\((<[^>]+>|[^\s)]+)(?:\s+["'][^"']*["'])?\)/gu;
+function findLocalCodeLinkTargetInLine(lineText, offset) {
+  const text = String(lineText || "");
+  const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.min(text.length, offset)) : 0;
+  MARKDOWN_LINK_WITH_TARGET_REGEX.lastIndex = 0;
+  for (const match of text.matchAll(MARKDOWN_LINK_WITH_TARGET_REGEX)) {
+    const fullMatch = match[0] || "";
+    const linkTarget = match[1] || "";
+    const start = match.index || 0;
+    const end = start + fullMatch.length;
+    if (start <= safeOffset && safeOffset <= end && parseLocalCodeLink(linkTarget, linkTarget)) {
+      MARKDOWN_LINK_WITH_TARGET_REGEX.lastIndex = 0;
+      return linkTarget;
+    }
+  }
+  MARKDOWN_LINK_WITH_TARGET_REGEX.lastIndex = 0;
+  LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+  for (const match of text.matchAll(LOCAL_CODE_LINK_TEXT_REGEX)) {
+    const linkTarget = match[0] || "";
+    const start = match.index || 0;
+    const end = start + linkTarget.length;
+    if (start <= safeOffset && safeOffset <= end && parseLocalCodeLink(linkTarget, linkTarget)) {
+      LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+      return linkTarget;
+    }
+  }
+  LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+  return "";
+}
 function parseLocalCodeLink(rawHref, absoluteHref) {
   const candidates = [rawHref, absoluteHref].filter((value) => typeof value === "string" && value.trim().length > 0);
   for (const candidate of candidates) {
@@ -3174,6 +3338,14 @@ function parseLocalCodeLink(rawHref, absoluteHref) {
 function normalizeLocalCodeLinkHref(value) {
   let text = safeDecodeUri(String(value || "").trim());
   if (text.startsWith("<") && text.endsWith(">")) text = text.slice(1, -1).trim();
+  if (/^app:\/\/obsidian\.md\//iu.test(text)) {
+    try {
+      const url = new URL(text);
+      text = safeDecodeUri(url.pathname);
+    } catch (e) {
+      text = text.replace(/^app:\/\/obsidian\.md\/+/iu, "");
+    }
+  }
   if (/^file:\/\//iu.test(text)) {
     try {
       const url = new URL(text);
@@ -3184,6 +3356,9 @@ function normalizeLocalCodeLinkHref(value) {
   }
   text = text.replace(/^\/([A-Za-z]:[\\/])/u, "$1");
   return text;
+}
+function looksLikeLocalCodeLinkCandidate(value) {
+  return /^[A-Za-z]:[\\/]/u.test(normalizeLocalCodeLinkHref(value || ""));
 }
 function safeDecodeUri(value) {
   try {
@@ -3210,10 +3385,22 @@ function formatLocalCodeLinkUrl(link, template) {
   return resolvedTemplate.replace(/\{rawPath\}/gu, rawPath).replace(/\{path\}/gu, pathForUrl).replace(/\{line\}/gu, line).replace(/\{column\}/gu, column);
 }
 function formatZedCodeLinkTarget(link) {
-  const path = String(link.filePath || "");
+  const path = normalizeWindowsCodePath(String(link.filePath || ""));
   const line = Number.isSafeInteger(link.line) && link.line > 0 ? link.line : 1;
   const column = Number.isSafeInteger(link.column) && link.column > 0 ? link.column : null;
   return path + ":" + line + (column ? ":" + column : "");
+}
+function normalizeWindowsCodePath(filePath) {
+  return /^[A-Za-z]:\//u.test(filePath) ? filePath.replace(/\//gu, "\\") : filePath;
+}
+function createLocalCodeLinkElement(target) {
+  const anchor = document.createElement("a");
+  anchor.classList.add("amo-local-code-link");
+  anchor.setAttribute("href", target);
+  anchor.setAttribute("data-amo-code-link", target);
+  anchor.setAttribute("title", "Open in configured code editor");
+  anchor.textContent = target;
+  return anchor;
 }
 function encodeCodeLinkPath(filePath) {
   return encodeURI(String(filePath || "").replace(/\\/gu, "/")).replace(/#/gu, "%23").replace(/\?/gu, "%3F");
