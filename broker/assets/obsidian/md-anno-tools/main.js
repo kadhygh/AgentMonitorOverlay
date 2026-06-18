@@ -37,7 +37,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.22";
+var PLUGIN_VERSION = "1.4.25";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow";
 var DEFAULT_SETTINGS = {
@@ -55,6 +55,7 @@ var AMO_NOTE_PROPERTIES_ACTION_CLASS = "amo-toggle-note-properties-action";
 var AMO_CANVAS_SEND_ACTION_CLASS = "amo-send-canvas-note-action";
 var AMO_CANVAS_PANEL_ACTION_CLASS = "amo-open-canvas-panel-action";
 var AMO_CANVAS_TITLE_ACTION_CLASS = "amo-edit-canvas-note-title-action";
+var AMO_CANVAS_OPEN_NOTE_ACTION_CLASS = "amo-open-canvas-note-action";
 var DEFAULT_CANVAS_PATH = "AgentFlow.canvas";
 var SKIPPED_TAGS = /* @__PURE__ */ new Set(["A", "BUTTON", "CODE", "INPUT", "PRE", "SCRIPT", "STYLE", "TEXTAREA"]);
 
@@ -857,6 +858,19 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     actions.createEl("h4", { text: "Actions" });
     this.addButton(
       actions,
+      "Open note",
+      () => {
+        if (!info.file) return;
+        this.plugin.debugLog("panel.open_note.clicked", {
+          notePath: info.file.path,
+          source: info.source
+        });
+        void this.plugin.openVaultPath(info.file.path, "note");
+      },
+      Boolean(info.file)
+    );
+    this.addButton(
+      actions,
       "Send to AMO",
       () => {
         if (!info.file) return;
@@ -1347,7 +1361,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       this.panelRefreshTimer = null;
     }
     document.querySelectorAll(
-      "." + AMO_SEND_ACTION_CLASS + ", ." + AMO_PANEL_ACTION_CLASS + ", ." + AMO_TITLE_ACTION_CLASS + ", ." + AMO_NOTE_PROPERTIES_ACTION_CLASS + ", ." + AMO_CANVAS_SEND_ACTION_CLASS + ", ." + AMO_CANVAS_PANEL_ACTION_CLASS + ", ." + AMO_CANVAS_TITLE_ACTION_CLASS
+      "." + AMO_SEND_ACTION_CLASS + ", ." + AMO_PANEL_ACTION_CLASS + ", ." + AMO_TITLE_ACTION_CLASS + ", ." + AMO_NOTE_PROPERTIES_ACTION_CLASS + ", ." + AMO_CANVAS_SEND_ACTION_CLASS + ", ." + AMO_CANVAS_PANEL_ACTION_CLASS + ", ." + AMO_CANVAS_TITLE_ACTION_CLASS + ", ." + AMO_CANVAS_OPEN_NOTE_ACTION_CLASS
     ).forEach((el) => el.remove());
     this.clearAmoNotePropertyViewClasses();
   }
@@ -1547,12 +1561,166 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       const managedCanvas = await this.isAmoManagedCanvasView(view);
       if (!managedCanvas) {
         this.clearAmoCanvasRendering(view);
+        continue;
       }
+      await this.syncAmoCanvasNodeLabels(view);
+      this.syncCanvasOpenNoteToolbarButtons(view);
     }
   }
   clearAmoCanvasRendering(view) {
     if (!view || !view.containerEl) return;
     view.containerEl.classList.remove("amo-managed-canvas");
+    this.clearAmoCanvasNodeLabels(view);
+    this.clearCanvasOpenNoteToolbarButtons(view);
+  }
+  async syncAmoCanvasNodeLabels(view) {
+    if (!view || !view.containerEl || !view.canvas) return;
+    const titleByPath = /* @__PURE__ */ new Map();
+    for (const node of collectCanvasNodes(view.canvas)) {
+      const nodeFilePath = normalizeVaultFilePath(canvasNodeFilePath(view.canvas, node));
+      if (!nodeFilePath || !nodeFilePath.toLowerCase().endsWith(".md")) continue;
+      const nodeElement = this.canvasNodeElement(view, node);
+      const labelElement = this.canvasNodeLabelElement(nodeElement);
+      if (!labelElement) continue;
+      let displayTitle = titleByPath.get(nodeFilePath);
+      if (displayTitle === void 0) {
+        displayTitle = await this.amoDisplayTitleForPath(nodeFilePath);
+        titleByPath.set(nodeFilePath, displayTitle);
+      }
+      this.applyCanvasNodeDisplayTitle(labelElement, displayTitle);
+    }
+  }
+  async amoDisplayTitleForPath(filePath) {
+    const normalizedPath = normalizeVaultFilePath(filePath);
+    const file = this.app.vault.getAbstractFileByPath(normalizedPath);
+    if (!file) return "";
+    try {
+      const markdown = await this.app.vault.cachedRead(file);
+      const amo = parseAmoMetadata(markdown);
+      return normalizeMarkdownTitle(amo.displayTitle);
+    } catch (error) {
+      this.debugLog("canvas.label.read_error", {
+        notePath: normalizedPath,
+        message: messageFromError(error)
+      });
+      return "";
+    }
+  }
+  canvasNodeLabelElement(nodeElement) {
+    if (!(nodeElement instanceof HTMLElement)) return null;
+    for (const selector of [
+      ":scope > .canvas-node-label",
+      ".canvas-node-label",
+      ".canvas-node-title",
+      "[data-amo-canvas-node-label]"
+    ]) {
+      const candidate = nodeElement.querySelector(selector);
+      if (candidate instanceof HTMLElement) return candidate;
+    }
+    return null;
+  }
+  applyCanvasNodeDisplayTitle(labelElement, displayTitle) {
+    if (!(labelElement instanceof HTMLElement)) return;
+    if (!labelElement.dataset.amoOriginalLabel) {
+      labelElement.dataset.amoOriginalLabel = labelElement.textContent || "";
+    }
+    const normalizedTitle = normalizeMarkdownTitle(displayTitle);
+    if (normalizedTitle) {
+      labelElement.textContent = normalizedTitle;
+      labelElement.title = normalizedTitle;
+      labelElement.classList.add("amo-canvas-display-title-label");
+      return;
+    }
+    this.restoreCanvasNodeLabel(labelElement);
+  }
+  clearAmoCanvasNodeLabels(view) {
+    if (!view || !view.containerEl) return;
+    for (const labelElement of Array.from(view.containerEl.querySelectorAll("[data-amo-original-label]"))) {
+      this.restoreCanvasNodeLabel(labelElement);
+    }
+  }
+  restoreCanvasNodeLabel(labelElement) {
+    if (!(labelElement instanceof HTMLElement)) return;
+    const originalLabel = labelElement.dataset.amoOriginalLabel || "";
+    if (originalLabel) {
+      labelElement.textContent = originalLabel;
+    }
+    labelElement.removeAttribute("title");
+    labelElement.classList.remove("amo-canvas-display-title-label");
+    delete labelElement.dataset.amoOriginalLabel;
+  }
+  syncCanvasOpenNoteToolbarButtons(view) {
+    if (!view || !view.containerEl || !view.canvas) return;
+    const notePath = this.selectedCanvasMarkdownNotePath(view);
+    const toolbars = this.canvasNodeToolbarElements(view);
+    if (!notePath || toolbars.length === 0) {
+      this.clearCanvasOpenNoteToolbarButtons(view);
+      return;
+    }
+    for (const toolbar of toolbars) {
+      let button = toolbar.querySelector("." + AMO_CANVAS_OPEN_NOTE_ACTION_CLASS);
+      if (!button) {
+        button = document.createElement("button");
+        button.type = "button";
+        button.className = "clickable-icon " + AMO_CANVAS_OPEN_NOTE_ACTION_CLASS;
+        button.setAttribute("aria-label", "Open note");
+        button.setAttribute("title", "Open note");
+        (0, import_obsidian5.setIcon)(button, "file-text");
+        button.addEventListener("mousedown", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+        });
+        button.addEventListener("click", (event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          const targetPath = (button == null ? void 0 : button.dataset.amoNotePath) || "";
+          void this.openCanvasToolbarNote(view, targetPath);
+        });
+        toolbar.appendChild(button);
+      }
+      button.dataset.amoNotePath = notePath;
+      button.disabled = false;
+    }
+  }
+  clearCanvasOpenNoteToolbarButtons(view) {
+    if (!view || !view.containerEl) return;
+    for (const button of Array.from(view.containerEl.querySelectorAll("." + AMO_CANVAS_OPEN_NOTE_ACTION_CLASS))) {
+      if (button instanceof HTMLElement) button.remove();
+    }
+  }
+  canvasNodeToolbarElements(view) {
+    if (!view || !view.containerEl) return [];
+    return Array.from(
+      view.containerEl.querySelectorAll(
+        ".canvas-node-menu, .canvas-node-toolbar, .canvas-node-controls, .canvas-node-actions"
+      )
+    ).filter((element) => element instanceof HTMLElement);
+  }
+  selectedCanvasMarkdownNotePath(view) {
+    if (!view || !view.canvas) return "";
+    for (const node of collectCanvasSelectedNodes(view.canvas)) {
+      const notePath = normalizeVaultFilePath(canvasNodeFilePath(view.canvas, node));
+      if (notePath && notePath.toLowerCase().endsWith(".md")) {
+        const file = this.app.vault.getAbstractFileByPath(notePath);
+        if (file && typeof file.path === "string") return file.path;
+      }
+    }
+    return "";
+  }
+  async openCanvasToolbarNote(view, notePath) {
+    const normalizedPath = normalizeVaultFilePath(notePath);
+    if (!normalizedPath) return;
+    const file = this.app.vault.getAbstractFileByPath(normalizedPath);
+    if (!file || typeof file.path !== "string") {
+      new import_obsidian5.Notice("AMO target not found: " + normalizedPath);
+      return;
+    }
+    this.rememberCanvasMarkdownFile(view, file.path);
+    this.debugLog("canvas.toolbar.open_note.clicked", {
+      canvasPath: view && view.file && view.file.path,
+      notePath: file.path
+    });
+    await this.openVaultPath(file.path, "note");
   }
   findCanvasNodeForFilePath(view, notePath) {
     const normalizedNotePath = normalizeVaultFilePath(notePath);
@@ -1804,6 +1972,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       const view = leaf.view;
       if (!view || !view.containerEl || typeof view.addAction !== "function") continue;
       this.ensureCanvasTargetTracking(view);
+      this.syncCanvasOpenNoteToolbarButtons(view);
       if (!view.containerEl.querySelector("." + AMO_CANVAS_SEND_ACTION_CLASS)) {
         const sendAction = view.addAction("send", "Send selected note annotations to AMO", () => {
           void this.sendAnnotationsFromCanvas(view);
@@ -1903,7 +2072,12 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     this.canvasViewsWithTargetTracking.add(view);
     this.registerDomEvent(view.containerEl, "pointerdown", (event) => {
       this.rememberCanvasTargetFromEvent(view, event);
+      this.scheduleCanvasToolbarSync(view);
     });
+  }
+  scheduleCanvasToolbarSync(view) {
+    window.setTimeout(() => this.syncCanvasOpenNoteToolbarButtons(view), 0);
+    window.setTimeout(() => this.syncCanvasOpenNoteToolbarButtons(view), 120);
   }
   rememberCanvasTargetFromEvent(view, event) {
     const target = event && event.target;
@@ -1986,22 +2160,98 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
   async syncAmoNotePropertyView(view) {
     if (!(view instanceof import_obsidian5.MarkdownView) || !view.file || !view.containerEl) return;
     const filePath = view.file.path;
-    const isAmoNote = await this.isAmoMarkdownFile(view.file);
+    const amo = await this.readAmoMetadataForFile(view.file);
+    const isAmoNote = this.isAmoMetadata(amo);
     if (!view.file || view.file.path !== filePath || !view.containerEl) return;
     view.containerEl.classList.toggle("amo-note-view", isAmoNote);
     const shouldHide = isAmoNote && Boolean(this.settings.hideAmoNoteProperties) && !this.amoNotePropertiesExpandedPaths.has(filePath);
     view.containerEl.classList.toggle("amo-hide-note-properties", shouldHide);
     view.containerEl.classList.toggle("amo-show-note-properties", isAmoNote && !shouldHide);
+    this.syncAmoNoteDisplayTitleView(view, isAmoNote ? amo : {});
   }
   async isAmoMarkdownFile(file) {
     if (!file || typeof file.path !== "string") return false;
+    const amo = await this.readAmoMetadataForFile(file);
+    return this.isAmoMetadata(amo);
+  }
+  async readAmoMetadataForFile(file) {
+    if (!file || typeof file.path !== "string") return {};
     try {
       const markdown = await this.app.vault.cachedRead(file);
-      const amo = parseAmoMetadata(markdown);
-      return Boolean(amo.schemaVersion || amo.sessionId || amo.turnId || amo.kind || amo.role);
+      return parseAmoMetadata(markdown);
     } catch (e) {
-      return false;
+      return {};
     }
+  }
+  isAmoMetadata(amo) {
+    return Boolean(amo && (amo.schemaVersion || amo.sessionId || amo.turnId || amo.noteId || amo.kind || amo.role));
+  }
+  syncAmoNoteDisplayTitleView(view, amo = {}) {
+    if (!(view instanceof import_obsidian5.MarkdownView) || !view.file || !view.containerEl) return;
+    const displayTitle = normalizeMarkdownTitle(amo.displayTitle);
+    const hasDisplayTitle = Boolean(displayTitle);
+    view.containerEl.classList.toggle("amo-note-has-display-title", hasDisplayTitle);
+    const sourceHeader = this.amoNoteSourceTitleHeader(view);
+    const mode = this.markdownViewMode(view);
+    const shouldRenderSourceHeader = hasDisplayTitle && mode === "source";
+    if (!shouldRenderSourceHeader) {
+      if (sourceHeader) sourceHeader.remove();
+      return;
+    }
+    const host = this.amoNoteSourceTitleHost(view);
+    if (!host) {
+      if (sourceHeader) sourceHeader.remove();
+      return;
+    }
+    const header = sourceHeader || document.createElement("div");
+    header.className = "amo-note-source-title-header";
+    header.setAttribute("data-amo-note-source-title", "true");
+    let title = header.querySelector(".amo-note-source-title");
+    if (!(title instanceof HTMLElement)) {
+      header.empty();
+      title = header.createDiv({ cls: "amo-note-source-title" });
+      header.createDiv({ cls: "amo-note-source-subtitle" });
+    }
+    title.setText(displayTitle);
+    const subtitle = header.querySelector(".amo-note-source-subtitle");
+    if (subtitle instanceof HTMLElement) {
+      const originalName = normalizeMarkdownTitle(amo.displayName) || this.displayNameForFile(view.file);
+      subtitle.setText(originalName);
+      subtitle.hidden = !originalName;
+    }
+    if (header.parentElement !== host) {
+      host.insertBefore(header, host.firstChild);
+    } else if (host.firstChild !== header) {
+      host.insertBefore(header, host.firstChild);
+    }
+  }
+  markdownViewMode(view) {
+    if (view && typeof view.getMode === "function") {
+      try {
+        return view.getMode();
+      } catch (e) {
+        return "";
+      }
+    }
+    if (view && view.containerEl && view.containerEl.querySelector(".markdown-source-view")) return "source";
+    if (view && view.containerEl && view.containerEl.querySelector(".markdown-reading-view")) return "preview";
+    return "";
+  }
+  amoNoteSourceTitleHost(view) {
+    if (!view || !view.containerEl) return null;
+    for (const selector of [".markdown-source-view", ".markdown-source-view.mod-cm6"]) {
+      const host = view.containerEl.querySelector(selector);
+      if (host instanceof HTMLElement) return host;
+    }
+    const content = view.contentEl;
+    if (content instanceof HTMLElement) return content;
+    const fallback = view.containerEl.querySelector(".view-content");
+    return fallback instanceof HTMLElement ? fallback : null;
+  }
+  amoNoteSourceTitleHeader(view) {
+    if (!view || !view.containerEl) return null;
+    const header = view.containerEl.querySelector(".amo-note-source-title-header");
+    return header instanceof HTMLElement ? header : null;
   }
   async toggleAmoNotePropertiesForView(view) {
     if (!(view instanceof import_obsidian5.MarkdownView) || !view.file) {
@@ -2027,7 +2277,14 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       const view = leaf.view;
       if (!view || !view.containerEl) continue;
-      view.containerEl.classList.remove("amo-note-view", "amo-hide-note-properties", "amo-show-note-properties");
+      view.containerEl.classList.remove(
+        "amo-note-view",
+        "amo-hide-note-properties",
+        "amo-show-note-properties",
+        "amo-note-has-display-title"
+      );
+      const sourceHeader = this.amoNoteSourceTitleHeader(view);
+      if (sourceHeader) sourceHeader.remove();
     }
   }
   getActiveMarkdownView() {
@@ -2461,6 +2718,8 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     }
     this.setOperationStatus(displayTitle ? "Updated note title: " + displayTitle : "Cleared AMO note title.", "success");
     new import_obsidian5.Notice(displayTitle ? "AMO note title updated." : "AMO note title cleared.");
+    void this.syncAmoNotePropertyViews();
+    void this.syncAmoCanvasRendering();
     this.refreshPanels();
     return true;
   }

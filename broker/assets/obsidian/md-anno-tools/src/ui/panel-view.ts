@@ -133,6 +133,19 @@ export class AmoAnnotationPanelView extends ItemView {
     actions.createEl("h4", { text: "Actions" });
     this.addButton(
       actions,
+      "Open note",
+      () => {
+        if (!info.file) return;
+        this.plugin.debugLog("panel.open_note.clicked", {
+          notePath: info.file.path,
+          source: info.source,
+        });
+        void this.plugin.openVaultPath(info.file.path, "note");
+      },
+      Boolean(info.file)
+    );
+    this.addButton(
+      actions,
       "Send to AMO",
       () => {
         if (!info.file) return;

@@ -136,6 +136,10 @@
   display: none !important;
 }
 
+.amo-note-view.amo-note-has-display-title .inline-title {
+  display: none !important;
+}
+
 .amo-note-display-header {
   margin: 0 0 1rem;
   padding: 0 0 0.75rem;
@@ -155,6 +159,28 @@
   font-size: 0.82em;
 }
 
+.amo-note-source-title-header {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: var(--file-line-width);
+  margin: 0 auto;
+  padding: 18px var(--file-margins, 32px) 10px;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+
+.amo-note-source-title {
+  color: var(--text-normal);
+  font-size: 1.55em;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.amo-note-source-subtitle {
+  margin-top: 0.25rem;
+  color: var(--text-muted);
+  font-size: 0.82em;
+}
+
 .canvas-node.amo-canvas-latest-note,
 .amo-canvas-latest-note {
   --amo-canvas-latest-ring-rgb: 111 224 190;
@@ -162,6 +188,18 @@
   outline: 1px solid rgb(var(--amo-canvas-latest-ring-rgb) / var(--amo-canvas-latest-ring-opacity));
   outline-offset: 5px;
   transition: outline-color 120ms ease, outline-offset 120ms ease;
+}
+
+.amo-managed-canvas .amo-canvas-display-title-label {
+  color: var(--text-normal);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amo-open-canvas-note-action:hover {
+  color: var(--interactive-accent);
 }
 
 .amo-panel {
