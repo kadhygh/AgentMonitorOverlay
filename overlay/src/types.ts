@@ -137,6 +137,17 @@ export interface ObsidianVaultRegistrationResult {
   registryPath: string;
   runtimeConfigPath?: string | null;
   runtimeConfigExists?: boolean;
+  runtimeConfigFileExists?: boolean;
+  vaultRuntimeState?: {
+    loaded?: boolean;
+    evidence?: Array<{
+      fileName?: string;
+      path?: string;
+      exists?: boolean;
+      size?: number | null;
+      mtime?: string | null;
+    }>;
+  };
   obsidianProcessCount?: number | null;
   alreadyRegistered: boolean;
   changed: boolean;

@@ -117,6 +117,10 @@ Optional payload:
 }
 ```
 
+### `POST /api/obsidian/register-vault`
+
+Registers a project-local AMO vault in Obsidian's `obsidian.json` vault registry and reports whether the vault appears loaded enough for plugin-owned `obsidian://amo-open` links. The loaded check accepts either Obsidian's global runtime config file (`runtimeConfigFileExists`) or vault-local evidence (`vaultRuntimeState.loaded`) such as `.obsidian/workspace.json`, `.obsidian/app.json`, or `.obsidian/core-plugins.json`.
+
 ### `POST /api/events`
 
 Accepts a JSON payload from mock adapters. Minimum useful fields:

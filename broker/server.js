@@ -1984,6 +1984,8 @@ function registerObsidianVault(vaultRoot) {
   });
 
   const runtimeConfigPath = path.join(path.dirname(registryPath), `${vaultId}.json`);
+  const runtimeConfigExists = fs.existsSync(runtimeConfigPath);
+  const vaultRuntimeState = inspectObsidianVaultRuntimeState(vaultRoot);
 
   return {
     ok: true,
@@ -1991,10 +1993,45 @@ function registerObsidianVault(vaultRoot) {
     vaultId,
     registryPath,
     runtimeConfigPath,
-    runtimeConfigExists: fs.existsSync(runtimeConfigPath),
+    runtimeConfigExists: runtimeConfigExists || vaultRuntimeState.loaded,
+    runtimeConfigFileExists: runtimeConfigExists,
+    vaultRuntimeState,
     obsidianProcessCount: countObsidianProcesses(),
     alreadyRegistered,
     changed: !alreadyRegistered,
+  };
+}
+
+function inspectObsidianVaultRuntimeState(vaultRoot) {
+  const obsidianDir = path.join(vaultRoot, ".obsidian");
+  const evidenceFiles = ["workspace.json", "app.json", "core-plugins.json"];
+  const evidence = evidenceFiles.map((fileName) => {
+    const filePath = path.join(obsidianDir, fileName);
+    let stat = null;
+    try {
+      stat = fs.statSync(filePath);
+    } catch {
+      return {
+        fileName,
+        path: filePath,
+        exists: false,
+        size: null,
+        mtime: null,
+      };
+    }
+
+    return {
+      fileName,
+      path: filePath,
+      exists: stat.isFile(),
+      size: stat.size,
+      mtime: stat.mtime.toISOString(),
+    };
+  });
+
+  return {
+    loaded: evidence.some((item) => item.exists),
+    evidence,
   };
 }
 

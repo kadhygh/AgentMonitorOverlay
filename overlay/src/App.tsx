@@ -2592,6 +2592,8 @@ export default function App() {
           vaultId,
           changed: registration.changed,
           runtimeConfigExists: registration.runtimeConfigExists ?? null,
+          runtimeConfigFileExists: registration.runtimeConfigFileExists ?? null,
+          vaultRuntimeLoaded: registration.vaultRuntimeState?.loaded ?? null,
           runtimeConfigPath: registration.runtimeConfigPath ?? null,
           obsidianProcessCount: registration.obsidianProcessCount ?? null,
         });
@@ -2609,6 +2611,8 @@ export default function App() {
           vaultRoot: session.vaultRoot,
           vaultId: registration.vaultId,
           runtimeConfigPath: registration.runtimeConfigPath ?? null,
+          runtimeConfigFileExists: registration.runtimeConfigFileExists ?? null,
+          vaultRuntimeLoaded: registration.vaultRuntimeState?.loaded ?? null,
           obsidianProcessCount: registration.obsidianProcessCount ?? null,
           skippedBootstrap: true,
         });
@@ -2648,6 +2652,8 @@ export default function App() {
             vaultRoot: session.vaultRoot,
             vaultId: registration.vaultId,
             runtimeConfigExists: registration.runtimeConfigExists ?? null,
+            runtimeConfigFileExists: registration.runtimeConfigFileExists ?? null,
+            vaultRuntimeLoaded: registration.vaultRuntimeState?.loaded ?? null,
             runtimeConfigPath: registration.runtimeConfigPath ?? null,
             obsidianProcessCount: registration.obsidianProcessCount ?? null,
           });
@@ -2660,6 +2666,8 @@ export default function App() {
               vaultRoot: session.vaultRoot,
               vaultId: registration.vaultId,
               runtimeConfigPath: registration.runtimeConfigPath ?? null,
+              runtimeConfigFileExists: registration.runtimeConfigFileExists ?? null,
+              vaultRuntimeLoaded: registration.vaultRuntimeState?.loaded ?? null,
               obsidianProcessCount: registration.obsidianProcessCount ?? null,
               skippedBootstrap: false,
             });
