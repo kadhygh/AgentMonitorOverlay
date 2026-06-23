@@ -1937,24 +1937,6 @@ button {
   animation: row-tool-busy 0.7s ease-in-out infinite alternate;
 }
 
-.row-tool-button.sync-button {
-  color: #f3efe0;
-  background: rgba(230, 180, 92, 0.13);
-  border-color: rgba(230, 180, 92, 0.24);
-}
-
-.row-tool-button.sync-button:hover {
-  color: #fff8e5;
-  background: rgba(230, 180, 92, 0.2);
-  border-color: rgba(230, 180, 92, 0.36);
-}
-
-.row-tool-button.sync-button.was-copied {
-  color: #cfe8dc;
-  background: rgba(143, 196, 255, 0.1);
-  border-color: rgba(143, 196, 255, 0.2);
-}
-
 .row-tool-button.review-button {
   color: #d5f8ea;
   background: rgba(57, 208, 165, 0.13);
@@ -3612,12 +3594,6 @@ button {
 :root[data-amo-theme="light"] .workspace-path-grid .is-bad,
 :root[data-amo-theme="light"] .deploy-git-exclude-list li.is-tracked em {
   color: #a33d33;
-}
-
-:root[data-amo-theme="light"] .row-tool-button.sync-button {
-  color: #674707;
-  background: rgba(226, 168, 68, 0.13);
-  border-color: rgba(179, 122, 26, 0.24);
 }
 
 :root[data-amo-theme="light"] .row-tool-button.review-button,

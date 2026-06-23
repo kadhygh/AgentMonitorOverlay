@@ -1000,7 +1000,6 @@ function SessionRowContent({
   session,
   activating,
   openingTarget,
-  copyingPrompt,
   unbindingWindow,
   reviewing,
   dismissing,
@@ -1009,7 +1008,6 @@ function SessionRowContent({
   onOpenNote,
   onOpenCanvas,
   onMarkReviewed,
-  onCopyPrompt,
   onUnbindWindow,
   onDismiss,
   onOpenCodexAppTarget,
@@ -1019,7 +1017,6 @@ function SessionRowContent({
   session: AgentSession;
   activating: boolean;
   openingTarget: "note" | "canvas" | null;
-  copyingPrompt: boolean;
   unbindingWindow: boolean;
   reviewing: boolean;
   dismissing: boolean;
@@ -1028,7 +1025,6 @@ function SessionRowContent({
   onOpenNote: () => void;
   onOpenCanvas: () => void;
   onMarkReviewed: () => void;
-  onCopyPrompt: () => void;
   onUnbindWindow: () => void;
   onDismiss: () => void;
   onOpenCodexAppTarget: () => void;
@@ -1037,7 +1033,6 @@ function SessionRowContent({
 }) {
   const notePath = notePathForOpen(session);
   const canvasPath = canvasPathForOpen(session);
-  const pendingPromptLabel = session.pendingAnnotationCount ? `Sync ${session.pendingAnnotationCount}` : "Sync";
   const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
   const targetBinding = targetBindingForSession(session);
   const targetBound = Boolean(targetBinding);
@@ -1145,7 +1140,6 @@ function SessionRowContent({
         {reviewPending ||
         notePath ||
         canvasPath ||
-        session.pendingPrompt ||
         targetBound ||
         waitingForPermission ||
         failed ||
@@ -1215,24 +1209,6 @@ function SessionRowContent({
               >
                 <MapIcon size={13} aria-hidden="true" />
                 <span>Canvas</span>
-              </button>
-            ) : null}
-            {session.pendingPrompt ? (
-              <button
-                type="button"
-                className={`row-tool-button sync-button ${session.pendingPromptCopiedAt ? "was-copied" : ""} ${
-                  copyingPrompt ? "is-busy" : ""
-                }`}
-                aria-busy={copyingPrompt}
-                title="Copy pending prompt and focus target"
-                onClick={(event) => {
-                  event.preventDefault();
-                  event.stopPropagation();
-                  onCopyPrompt();
-                }}
-              >
-                <ClipboardCheck size={13} aria-hidden="true" />
-                <span>{pendingPromptLabel}</span>
               </button>
             ) : null}
             {codexAppAvailable ? (
@@ -2318,7 +2294,7 @@ export default function App() {
   const [feedback, setFeedback] = useState("Checking AMO broker...");
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<{ sessionId: string; target: "note" | "canvas" } | null>(null);
-  const [copyingPromptId, setCopyingPromptId] = useState<string | null>(null);
+  const [, setCopyingPromptId] = useState<string | null>(null);
   const [unbindingWindowId, setUnbindingWindowId] = useState<string | null>(null);
   const [reviewingSessionId, setReviewingSessionId] = useState<string | null>(null);
   const [dismissingSessionId, setDismissingSessionId] = useState<string | null>(null);
@@ -2358,6 +2334,7 @@ export default function App() {
   const resizeRef = useRef<ResizeState | null>(null);
   const dialogRestoreSizeRef = useRef<{ width: number; height: number } | null>(null);
   const suppressNextClickRef = useRef(false);
+  const autoSyncPromptIdsRef = useRef(new Set<string>());
 
   const filteredSessions = useMemo(
     () =>
@@ -3549,6 +3526,33 @@ export default function App() {
     }
   }
 
+  function autoCopyAndFocusPendingPrompt(session: AgentSession, reason: string) {
+    if (!session.pendingPrompt) {
+      return;
+    }
+
+    const autoSyncKey =
+      session.pendingPromptId ||
+      `${session.sessionId}:${session.pendingPromptCreatedAt || session.updatedAt || session.pendingPrompt.slice(0, 48)}`;
+    if (autoSyncPromptIdsRef.current.has(autoSyncKey)) {
+      void postDebugLog("sync.auto_copy.skip_duplicate", {
+        sessionId: session.sessionId,
+        pendingPromptId: session.pendingPromptId ?? null,
+        reason,
+      });
+      return;
+    }
+
+    autoSyncPromptIdsRef.current.add(autoSyncKey);
+    void postDebugLog("sync.auto_copy.start", {
+      sessionId: session.sessionId,
+      pendingPromptId: session.pendingPromptId ?? null,
+      reason,
+      promptLength: session.pendingPrompt.length,
+    });
+    void copyPendingPrompt(session);
+  }
+
   async function activateCandidate(session: AgentSession, candidate: ActivationCandidate, bindWindow: boolean) {
     markSessionVisuallySeen(session);
     setActivatingId(session.sessionId);
@@ -4067,6 +4071,9 @@ export default function App() {
             sessionId: changedSession.sessionId,
             durationMs: Math.round(performance.now() - applyStartedAt),
           });
+          if (eventReason === "obsidian-annotations") {
+            window.setTimeout(() => autoCopyAndFocusPendingPrompt(changedSession, eventReason), 0);
+          }
         }
       } catch (error) {
         void postDebugLog("session_event.parse_error", {
@@ -4314,7 +4321,6 @@ export default function App() {
                   session={session}
                   activating={activatingId === session.sessionId}
                   openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
-                  copyingPrompt={copyingPromptId === session.sessionId}
                   unbindingWindow={unbindingWindowId === session.sessionId}
                   reviewing={reviewingSessionId === session.sessionId}
                   dismissing={dismissingSessionId === session.sessionId}
@@ -4323,7 +4329,6 @@ export default function App() {
                   onOpenNote={() => void openBridgePath(session, "note")}
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
                   onMarkReviewed={() => void markSessionReviewed(session, "manual")}
-                  onCopyPrompt={() => void copyPendingPrompt(session)}
                   onUnbindWindow={() => void clearWindowBinding(session)}
                   onDismiss={() => void dismissSession(session)}
                   onOpenCodexAppTarget={() => void openCodexAppTarget(session, true)}
@@ -4764,7 +4769,6 @@ export default function App() {
                     session={session}
                     activating={activatingId === session.sessionId}
                     openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
-                    copyingPrompt={copyingPromptId === session.sessionId}
                     unbindingWindow={unbindingWindowId === session.sessionId}
                     reviewing={reviewingSessionId === session.sessionId}
                     dismissing={dismissingSessionId === session.sessionId}
@@ -4773,7 +4777,6 @@ export default function App() {
                     onOpenNote={() => undefined}
                     onOpenCanvas={() => undefined}
                     onMarkReviewed={() => undefined}
-                    onCopyPrompt={() => undefined}
                     onUnbindWindow={() => undefined}
                     onDismiss={() => undefined}
                     onOpenCodexAppTarget={() => undefined}
