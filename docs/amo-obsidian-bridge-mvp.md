@@ -117,6 +117,18 @@ project/
 
 AMO should add `.amo/state/`, `.amo/logs/`, and large generated vault artifacts to ignore rules where practical. The first MVP can keep this disposable and local, but the design should avoid accidentally committing live session state, logs, or generated reply content.
 
+Session layout v2 supersedes the flat `Replies/`, `Prompts/`, and root `AgentFlow.canvas` direction for new storage work. The target is documented in `docs/session-layout-v2.md`:
+
+```text
+AMO - <project>/
+  Sessions/<session-id>/turns/generated/
+  Sessions/<session-id>/canvases/
+  Canvases/AgentFlow.base.canvas
+  Canvases/Work/
+```
+
+Use the current flat shape only as compatibility for existing test workspaces. New implementation should move generated prompt/reply notes under the session folder first, then add base/work canvas promotion as an explicit user action.
+
 ### Deployment Contract
 
 Deployment should be script-driven and deterministic:

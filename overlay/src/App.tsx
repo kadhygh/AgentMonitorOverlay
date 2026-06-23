@@ -18,6 +18,7 @@ import {
   ListFilter,
   Map as MapIcon,
   Minimize2,
+  Palette,
   RefreshCcw,
   CircleCheck,
   Search,
@@ -32,7 +33,6 @@ import claudeCliIcon from "./assets/tool-icons/claude-cli.png";
 import codexAppIcon from "./assets/tool-icons/codex-app.png";
 import codexCliIcon from "./assets/tool-icons/codex-cli.png";
 import kiroIdeIcon from "./assets/tool-icons/kiro-ide.png";
-import { mockSessions } from "./mockSessions";
 import type {
   ActivationCandidate,
   ActivationResult,
@@ -77,11 +77,13 @@ const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
 const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
+const AMO_THEME_STORAGE_KEY = "amo.theme";
 const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
 
 type ScratchpadShortcutButton = "mouse4" | "mouse5";
 type UtilityWindowKind = "deploy" | "settings";
 type AmoWindowLabel = "main" | "scratchpad" | "deploy" | "settings";
+type AmoTheme = "dark" | "light";
 
 const AMO_FLOATING_WINDOWS: AmoWindowLabel[] = ["main", "scratchpad"];
 const AMO_UTILITY_WINDOWS: UtilityWindowKind[] = ["deploy", "settings"];
@@ -97,13 +99,31 @@ interface UtilityWindowStateEvent {
   open: boolean;
 }
 
-type SettingsSection = "scratchpad";
+interface AmoThemeChangedEvent {
+  theme: AmoTheme;
+}
+
+type SettingsSection = "scratchpad" | "theme";
 type SessionFilter = "all" | "attention" | "idle";
+type BrokerReadinessState = "checking" | "starting" | "ready" | "error";
+
+interface BrokerReadiness {
+  state: BrokerReadinessState;
+  message: string;
+  detail?: string | null;
+}
 
 const sessionFilterLabels: Record<SessionFilter, string> = {
   all: "All",
   attention: "Attention",
   idle: "Idle",
+};
+
+const brokerReadinessLabels: Record<BrokerReadinessState, string> = {
+  checking: "broker checking",
+  starting: "broker starting",
+  ready: "broker live",
+  error: "broker offline",
 };
 
 interface ScratchpadShortcutResult {
@@ -272,6 +292,86 @@ function saveScratchpadShortcutState(next: ScratchpadShortcutState) {
 async function applyScratchpadShortcutState(next: ScratchpadShortcutState) {
   return invoke<ScratchpadShortcutResult>("set_scratchpad_shortcut_config", { config: next });
 }
+
+function normalizeAmoTheme(value: unknown): AmoTheme {
+  return value === "light" ? "light" : "dark";
+}
+
+function loadAmoTheme(): AmoTheme {
+  try {
+    return normalizeAmoTheme(localStorage.getItem(AMO_THEME_STORAGE_KEY));
+  } catch {
+    return "dark";
+  }
+}
+
+function applyAmoTheme(theme: AmoTheme) {
+  document.documentElement.dataset.amoTheme = theme;
+}
+
+function saveAmoTheme(theme: AmoTheme) {
+  try {
+    localStorage.setItem(AMO_THEME_STORAGE_KEY, theme);
+  } catch {
+    // The visual preference still applies to the current window even if storage is unavailable.
+  }
+  applyAmoTheme(theme);
+}
+
+async function broadcastAmoTheme(theme: AmoTheme) {
+  const payload = { theme } satisfies AmoThemeChangedEvent;
+  await Promise.all(
+    AMO_WINDOW_LABELS.map((label) =>
+      getCurrentWindow()
+        .emitTo(label, "amo-theme-changed", payload)
+        .catch(() => undefined),
+    ),
+  );
+}
+
+function useAmoThemeRuntime(): [AmoTheme, (next: AmoTheme) => Promise<void>] {
+  const [theme, setTheme] = useState<AmoTheme>(() => loadAmoTheme());
+
+  useEffect(() => {
+    applyAmoTheme(theme);
+  }, [theme]);
+
+  useEffect(() => {
+    let unlisten: (() => void) | null = null;
+    void getCurrentWindow()
+      .listen<AmoThemeChangedEvent>("amo-theme-changed", (event) => {
+        const nextTheme = normalizeAmoTheme(event.payload?.theme);
+        setTheme(nextTheme);
+        saveAmoTheme(nextTheme);
+      })
+      .then((handler) => {
+        unlisten = handler;
+      });
+
+    function handleStorage(event: StorageEvent) {
+      if (event.key !== AMO_THEME_STORAGE_KEY) return;
+      const nextTheme = normalizeAmoTheme(event.newValue);
+      setTheme(nextTheme);
+      applyAmoTheme(nextTheme);
+    }
+
+    window.addEventListener("storage", handleStorage);
+    return () => {
+      unlisten?.();
+      window.removeEventListener("storage", handleStorage);
+    };
+  }, []);
+
+  async function updateTheme(next: AmoTheme) {
+    setTheme(next);
+    saveAmoTheme(next);
+    await broadcastAmoTheme(next);
+  }
+
+  return [theme, updateTheme];
+}
+
+applyAmoTheme(loadAmoTheme());
 
 const stateLabel: Record<SessionState, string> = {
   starting: "Starting",
@@ -1088,6 +1188,8 @@ function SessionRowContent({
 }
 
 function ScratchpadApp() {
+  useAmoThemeRuntime();
+
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [textLength, setTextLength] = useState(0);
   const [status, setStatus] = useState("Ready");
@@ -1196,6 +1298,7 @@ function ScratchpadApp() {
 
 function DeployWorkspaceApp() {
   useUtilityWindowLifecycle("deploy");
+  useAmoThemeRuntime();
 
   const [workspacePath, setWorkspacePath] = useState("");
   const [workspaceInspection, setWorkspaceInspection] = useState<WorkspaceInspection | null>(null);
@@ -1812,8 +1915,218 @@ function DeployWorkspaceApp() {
   );
 }
 
+interface SettingsSidebarProps {
+  settingsSection: SettingsSection;
+  onSettingsSectionChange: (section: SettingsSection) => void;
+}
+
+function SettingsSidebar({ settingsSection, onSettingsSectionChange }: SettingsSidebarProps) {
+  return (
+    <aside className="settings-sidebar" aria-label="Settings sections">
+      <strong>Sections</strong>
+      <button
+        type="button"
+        className={`settings-nav-button ${settingsSection === "scratchpad" ? "is-active" : ""}`}
+        onClick={() => onSettingsSectionChange("scratchpad")}
+      >
+        <StickyNote size={13} aria-hidden="true" />
+        <span>Scratchpad</span>
+      </button>
+      <button
+        type="button"
+        className={`settings-nav-button ${settingsSection === "theme" ? "is-active" : ""}`}
+        onClick={() => onSettingsSectionChange("theme")}
+      >
+        <Palette size={13} aria-hidden="true" />
+        <span>Theme</span>
+      </button>
+    </aside>
+  );
+}
+
+interface SettingsDetailHeaderProps {
+  settingsSection: SettingsSection;
+  scratchpadShortcut: ScratchpadShortcutState;
+  amoTheme: AmoTheme;
+}
+
+function SettingsDetailHeader({ settingsSection, scratchpadShortcut, amoTheme }: SettingsDetailHeaderProps) {
+  const title = settingsSection === "theme" ? "Theme" : "Scratchpad";
+  const status =
+    settingsSection === "theme"
+      ? amoTheme === "light"
+        ? "Light"
+        : "Dark"
+      : scratchpadShortcut.enabled
+        ? `Ctrl + ${scratchpadShortcut.button === "mouse5" ? "Mouse5" : "Mouse4"}`
+        : "Disabled";
+
+  return (
+    <header className="settings-detail-header">
+      <div>
+        <strong>{title}</strong>
+        <span>{status}</span>
+      </div>
+    </header>
+  );
+}
+
+interface ScratchpadSettingsBodyProps {
+  scratchpadShortcut: ScratchpadShortcutState;
+  onScratchpadShortcutChange: (next: ScratchpadShortcutState) => void;
+  onOpenScratchpadNow: () => void;
+}
+
+function ScratchpadSettingsBody({
+  scratchpadShortcut,
+  onScratchpadShortcutChange,
+  onOpenScratchpadNow,
+}: ScratchpadSettingsBodyProps) {
+  return (
+    <div className="settings-section-body">
+      <label className="settings-toggle">
+        <input
+          type="checkbox"
+          checked={scratchpadShortcut.enabled}
+          onChange={(event) =>
+            onScratchpadShortcutChange({
+              ...scratchpadShortcut,
+              enabled: event.currentTarget.checked,
+            })
+          }
+        />
+        <span>Enable global shortcut</span>
+      </label>
+
+      <label className="settings-field">
+        <span>Shortcut</span>
+        <select
+          value={scratchpadShortcut.button}
+          disabled={!scratchpadShortcut.enabled}
+          onChange={(event) =>
+            onScratchpadShortcutChange({
+              ...scratchpadShortcut,
+              button: event.currentTarget.value === "mouse5" ? "mouse5" : "mouse4",
+            })
+          }
+        >
+          <option value="mouse4">Ctrl + Mouse4</option>
+          <option value="mouse5">Ctrl + Mouse5</option>
+        </select>
+      </label>
+
+      <button type="button" className="settings-primary-action" onClick={onOpenScratchpadNow}>
+        Open scratchpad now
+      </button>
+    </div>
+  );
+}
+
+interface ThemeSettingsBodyProps {
+  amoTheme: AmoTheme;
+  onAmoThemeChange: (theme: AmoTheme) => void;
+}
+
+function ThemeSettingsBody({ amoTheme, onAmoThemeChange }: ThemeSettingsBodyProps) {
+  return (
+    <div className="settings-section-body">
+      <div className="theme-choice-grid">
+        <button
+          type="button"
+          className={`theme-choice ${amoTheme === "dark" ? "is-active" : ""}`}
+          onClick={() => onAmoThemeChange("dark")}
+        >
+          <span className="theme-swatch theme-swatch-dark" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          <strong>Dark</strong>
+          <span>Night workspace</span>
+        </button>
+
+        <button
+          type="button"
+          className={`theme-choice ${amoTheme === "light" ? "is-active" : ""}`}
+          onClick={() => onAmoThemeChange("light")}
+        >
+          <span className="theme-swatch theme-swatch-light" aria-hidden="true">
+            <span />
+            <span />
+            <span />
+          </span>
+          <strong>Light</strong>
+          <span>Day workspace</span>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+interface SettingsDetailProps {
+  settingsSection: SettingsSection;
+  scratchpadShortcut: ScratchpadShortcutState;
+  amoTheme: AmoTheme;
+  onScratchpadShortcutChange: (next: ScratchpadShortcutState) => void;
+  onOpenScratchpadNow: () => void;
+  onAmoThemeChange: (theme: AmoTheme) => void;
+}
+
+function SettingsDetail({
+  settingsSection,
+  scratchpadShortcut,
+  amoTheme,
+  onScratchpadShortcutChange,
+  onOpenScratchpadNow,
+  onAmoThemeChange,
+}: SettingsDetailProps) {
+  return (
+    <div className="settings-detail">
+      <SettingsDetailHeader
+        settingsSection={settingsSection}
+        scratchpadShortcut={scratchpadShortcut}
+        amoTheme={amoTheme}
+      />
+
+      {settingsSection === "scratchpad" ? (
+        <ScratchpadSettingsBody
+          scratchpadShortcut={scratchpadShortcut}
+          onScratchpadShortcutChange={onScratchpadShortcutChange}
+          onOpenScratchpadNow={onOpenScratchpadNow}
+        />
+      ) : (
+        <ThemeSettingsBody amoTheme={amoTheme} onAmoThemeChange={onAmoThemeChange} />
+      )}
+    </div>
+  );
+}
+
+interface BrokerReadinessPanelProps {
+  readiness: BrokerReadiness;
+  onRetry: () => void;
+}
+
+function BrokerReadinessPanel({ readiness, onRetry }: BrokerReadinessPanelProps) {
+  const isError = readiness.state === "error";
+  return (
+    <div className={`broker-readiness-panel state-${readiness.state}`} role="status">
+      <span className="broker-readiness-mark" aria-hidden="true">
+        {isError ? <AlertTriangle size={16} /> : <RefreshCcw size={16} />}
+      </span>
+      <div>
+        <strong>{readiness.message}</strong>
+        {readiness.detail ? <span>{readiness.detail}</span> : null}
+      </div>
+      <button type="button" className="broker-retry-button" onClick={onRetry}>
+        Retry
+      </button>
+    </div>
+  );
+}
+
 function SettingsWindowApp() {
   useUtilityWindowLifecycle("settings");
+  const [amoTheme, setAmoThemePreference] = useAmoThemeRuntime();
 
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("scratchpad");
   const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
@@ -1842,6 +2155,11 @@ function SettingsWindowApp() {
     }
   }
 
+  async function updateAmoTheme(next: AmoTheme) {
+    await setAmoThemePreference(next);
+    setFeedback(`Theme set to ${next === "light" ? "Light" : "Dark"}.`);
+  }
+
   return (
     <main className="utility-window-shell settings-window-shell">
       <section className="app-dialog settings-dialog" role="dialog" aria-label="AMO settings">
@@ -1867,69 +2185,16 @@ function SettingsWindowApp() {
           </button>
         </header>
 
-        <aside className="settings-sidebar" aria-label="Settings sections">
-          <strong>Sections</strong>
-          <button
-            type="button"
-            className={`settings-nav-button ${settingsSection === "scratchpad" ? "is-active" : ""}`}
-            onClick={() => setSettingsSection("scratchpad")}
-          >
-            <StickyNote size={13} aria-hidden="true" />
-            <span>Scratchpad</span>
-          </button>
-        </aside>
+        <SettingsSidebar settingsSection={settingsSection} onSettingsSectionChange={setSettingsSection} />
 
-        <div className="settings-detail">
-          <header className="settings-detail-header">
-            <div>
-              <strong>Scratchpad</strong>
-              <span>
-                {scratchpadShortcut.enabled
-                  ? `Ctrl + ${scratchpadShortcut.button === "mouse5" ? "Mouse5" : "Mouse4"}`
-                  : "Disabled"}
-              </span>
-            </div>
-          </header>
-
-          {settingsSection === "scratchpad" ? (
-            <div className="settings-section-body">
-              <label className="settings-toggle">
-                <input
-                  type="checkbox"
-                  checked={scratchpadShortcut.enabled}
-                  onChange={(event) =>
-                    void updateScratchpadShortcut({
-                      ...scratchpadShortcut,
-                      enabled: event.currentTarget.checked,
-                    })
-                  }
-                />
-                <span>Enable global shortcut</span>
-              </label>
-
-              <label className="settings-field">
-                <span>Shortcut</span>
-                <select
-                  value={scratchpadShortcut.button}
-                  disabled={!scratchpadShortcut.enabled}
-                  onChange={(event) =>
-                    void updateScratchpadShortcut({
-                      ...scratchpadShortcut,
-                      button: event.currentTarget.value === "mouse5" ? "mouse5" : "mouse4",
-                    })
-                  }
-                >
-                  <option value="mouse4">Ctrl + Mouse4</option>
-                  <option value="mouse5">Ctrl + Mouse5</option>
-                </select>
-              </label>
-
-              <button type="button" className="settings-primary-action" onClick={() => void openScratchpadNow()}>
-                Open scratchpad now
-              </button>
-            </div>
-          ) : null}
-        </div>
+        <SettingsDetail
+          settingsSection={settingsSection}
+          scratchpadShortcut={scratchpadShortcut}
+          amoTheme={amoTheme}
+          onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
+          onOpenScratchpadNow={() => void openScratchpadNow()}
+          onAmoThemeChange={(next) => void updateAmoTheme(next)}
+        />
 
         <footer className="app-dialog-footer">
           <span title={feedback}>{feedback}</span>
@@ -1950,13 +2215,16 @@ export default function App() {
     return <SettingsWindowApp />;
   }
 
-  const [sessions, setSessions] = useState<AgentSession[]>(mockSessions);
-  const [sessionOrder, setSessionOrder] = useState<string[]>(() =>
-    mockSessions.map((session) => session.sessionId),
-  );
+  const [amoTheme, setAmoThemePreference] = useAmoThemeRuntime();
+  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const [sessionOrder, setSessionOrder] = useState<string[]>([]);
   const [collapsed, setCollapsed] = useState(false);
-  const [source, setSource] = useState<"mock" | "broker">("mock");
-  const [feedback, setFeedback] = useState("Mock data ready. Window activation is placeholder.");
+  const [brokerReadiness, setBrokerReadiness] = useState<BrokerReadiness>({
+    state: "checking",
+    message: "Checking AMO broker",
+    detail: "127.0.0.1:17654",
+  });
+  const [feedback, setFeedback] = useState("Checking AMO broker...");
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<{ sessionId: string; target: "note" | "canvas" } | null>(null);
   const [copyingPromptId, setCopyingPromptId] = useState<string | null>(null);
@@ -2022,6 +2290,7 @@ export default function App() {
     () => sessions.filter(sessionNeedsReview).length,
     [sessions],
   );
+  const brokerReady = brokerReadiness.state === "ready";
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -2110,7 +2379,11 @@ export default function App() {
       const visibleSessions = nextSessions.slice(0, 8);
       setSessions(visibleSessions);
       setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, visibleSessions));
-      setSource("broker");
+      setBrokerReadiness({
+        state: "ready",
+        message: "Broker ready",
+        detail: `${nextSessions.length} session${nextSessions.length === 1 ? "" : "s"} loaded`,
+      });
       setLastRefreshAt(new Date().toISOString());
       setFeedback(nextSessions.length > 0 ? `Broker sessions loaded: ${nextSessions.length}` : "No active broker sessions.");
       if (shouldLog) {
@@ -2122,11 +2395,13 @@ export default function App() {
         });
       }
     } catch (error) {
-      setSessions(mockSessions);
-      setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, mockSessions));
-      setSource("mock");
+      setBrokerReadiness({
+        state: "error",
+        message: "Broker is not ready",
+        detail: (error as Error).message,
+      });
       setLastRefreshAt(new Date().toISOString());
-      setFeedback(`Using mock sessions: ${(error as Error).message}`);
+      setFeedback(`Broker unavailable: ${(error as Error).message}`);
       if (shouldLog) {
         void postDebugLog("sessions.refresh.error", {
           reason,
@@ -2138,10 +2413,25 @@ export default function App() {
   }
 
   async function ensureBrokerThenRefresh() {
+    setBrokerReadiness({
+      state: "checking",
+      message: "Checking AMO broker",
+      detail: "127.0.0.1:17654",
+    });
     try {
       const result = await invoke<BrokerEnsureResult>("ensure_broker");
+      setBrokerReadiness({
+        state: result.ok ? (result.started ? "starting" : "checking") : "error",
+        message: result.ok ? (result.started ? "Starting AMO broker" : "AMO broker found") : "Broker startup failed",
+        detail: result.message,
+      });
       setFeedback(result.message);
     } catch (error) {
+      setBrokerReadiness({
+        state: "error",
+        message: "Broker auto-start failed",
+        detail: (error as Error).message,
+      });
       setFeedback(`Broker auto-start unavailable: ${(error as Error).message}`);
     }
 
@@ -2226,6 +2516,11 @@ export default function App() {
     } catch (error) {
       setFeedback(`Scratchpad open failed: ${(error as Error).message}`);
     }
+  }
+
+  async function updateAmoTheme(next: AmoTheme) {
+    await setAmoThemePreference(next);
+    setFeedback(`Theme set to ${next === "light" ? "Light" : "Dark"}.`);
   }
 
   async function openCodexAppTarget(session: AgentSession, bindTarget: boolean) {
@@ -3580,7 +3875,6 @@ export default function App() {
           setSessionOrder([]);
           setCandidateMenu(null);
           setWorkspacePanel(null);
-          setSource("broker");
           setLastRefreshAt(new Date().toISOString());
           void postDebugLog("session_event.dismiss_all_applied", {
             sequence: payload.sequence ?? null,
@@ -3599,7 +3893,6 @@ export default function App() {
           setWorkspacePanel((current) =>
             current?.session.sessionId === changedSession.sessionId ? null : current,
           );
-          setSource("broker");
           setLastRefreshAt(new Date().toISOString());
           void postDebugLog("session_event.dismiss_applied", {
             sequence: payload.sequence ?? null,
@@ -3618,7 +3911,6 @@ export default function App() {
               ? previousOrder
               : [...previousOrder, changedSession.sessionId],
           );
-          setSource("broker");
           setLastRefreshAt(new Date().toISOString());
           void postDebugLog("session_event.optimistic_applied", {
             sequence: payload.sequence ?? null,
@@ -3641,6 +3933,15 @@ export default function App() {
       try {
         eventSource = new EventSource(BROKER_SESSION_EVENTS_URL);
         eventSource.onopen = () => {
+          setBrokerReadiness((current) =>
+            current.state === "ready"
+              ? current
+              : {
+                  state: "ready",
+                  message: "Broker ready",
+                  detail: "Event stream connected",
+                },
+          );
           void postDebugLog("session_event.stream_open", {
             url: BROKER_SESSION_EVENTS_URL,
           });
@@ -3692,7 +3993,7 @@ export default function App() {
           <div data-tauri-drag-region>
             <strong>Agents</strong>
             <span>
-              {source === "broker" ? "broker live" : "mock mode"}
+              {brokerReadinessLabels[brokerReadiness.state]}
               {lastRefreshAt ? ` · ${formatAgo(lastRefreshAt)} ago` : ""}
               {debugEnabled ? ` · debug ${debugCount}` : ""}
             </span>
@@ -3747,49 +4048,73 @@ export default function App() {
 
       {collapsed ? (
         <button className="collapsed-summary" type="button" onClick={toggleCollapsed}>
-          <span className={attentionCount > 0 ? "pulse-dot" : reviewCount > 0 ? "review-dot" : "quiet-dot"} />
-          <span>{sessions.length} sessions</span>
-          <strong>{attentionCount} attention{reviewCount > 0 ? ` · ${reviewCount} review` : ""}</strong>
+          <span className={brokerReady && attentionCount > 0 ? "pulse-dot" : brokerReady && reviewCount > 0 ? "review-dot" : "quiet-dot"} />
+          <span>{brokerReady ? `${sessions.length} sessions` : brokerReadinessLabels[brokerReadiness.state]}</span>
+          <strong>
+            {brokerReady
+              ? `${attentionCount} attention${reviewCount > 0 ? ` · ${reviewCount} review` : ""}`
+              : brokerReadiness.message}
+          </strong>
         </button>
       ) : (
         <>
           <section className="summary-strip" aria-label="Session summary">
             <div className="summary-info">
-              <span>{sessions.length} active lines</span>
-              <strong>{attentionCount} need attention</strong>
-              {reviewCount > 0 ? <strong className="summary-review">{reviewCount} review</strong> : null}
-              {sessionFilter !== "all" || sessionSearch.trim() ? <em>{filteredSessions.length} shown</em> : null}
+              {brokerReady ? (
+                <>
+                  <span>{sessions.length} active lines</span>
+                  <strong>{attentionCount} need attention</strong>
+                  {reviewCount > 0 ? <strong className="summary-review">{reviewCount} review</strong> : null}
+                  {sessionFilter !== "all" || sessionSearch.trim() ? <em>{filteredSessions.length} shown</em> : null}
+                </>
+              ) : (
+                <>
+                  <span>{brokerReadinessLabels[brokerReadiness.state]}</span>
+                  <strong>{brokerReadiness.message}</strong>
+                </>
+              )}
             </div>
-            <div className="summary-controls" aria-label="Session filters">
-              {(["all", "attention", "idle"] as SessionFilter[]).map((filter) => (
-                <button
-                  key={filter}
-                  type="button"
-                  className={`summary-filter-button ${sessionFilter === filter ? "is-active" : ""}`}
-                  title={sessionFilterLabels[filter]}
-                  aria-label={`Show ${sessionFilterLabels[filter]} cards`}
-                  onClick={() => setSessionFilter(filter)}
-                >
-                  {filter === "all" ? <ListFilter size={12} aria-hidden="true" /> : null}
-                  {filter === "attention" ? <AlertTriangle size={12} aria-hidden="true" /> : null}
-                  {filter === "idle" ? <Clock size={12} aria-hidden="true" /> : null}
-                </button>
-              ))}
-              <label className="summary-search" title="Search cards">
-                <Search size={11} aria-hidden="true" />
-                <input
-                  type="search"
-                  aria-label="Search cards"
-                  placeholder="Search"
-                  value={sessionSearch}
-                  onChange={(event) => setSessionSearch(event.currentTarget.value)}
-                />
-              </label>
-            </div>
+            {brokerReady ? (
+              <div className="summary-controls" aria-label="Session filters">
+                {(["all", "attention", "idle"] as SessionFilter[]).map((filter) => (
+                  <button
+                    key={filter}
+                    type="button"
+                    className={`summary-filter-button ${sessionFilter === filter ? "is-active" : ""}`}
+                    title={sessionFilterLabels[filter]}
+                    aria-label={`Show ${sessionFilterLabels[filter]} cards`}
+                    onClick={() => setSessionFilter(filter)}
+                  >
+                    {filter === "all" ? <ListFilter size={12} aria-hidden="true" /> : null}
+                    {filter === "attention" ? <AlertTriangle size={12} aria-hidden="true" /> : null}
+                    {filter === "idle" ? <Clock size={12} aria-hidden="true" /> : null}
+                  </button>
+                ))}
+                <label className="summary-search" title="Search cards">
+                  <Search size={11} aria-hidden="true" />
+                  <input
+                    type="search"
+                    aria-label="Search cards"
+                    placeholder="Search"
+                    value={sessionSearch}
+                    onChange={(event) => setSessionSearch(event.currentTarget.value)}
+                  />
+                </label>
+              </div>
+            ) : (
+              <button type="button" className="summary-retry-button" onClick={() => void ensureBrokerThenRefresh()}>
+                Retry
+              </button>
+            )}
           </section>
 
           <section className="session-list" aria-label="Agent sessions">
-            {orderedSessions.length > 0 ? orderedSessions.map((session) => (
+            {!brokerReady ? (
+              <BrokerReadinessPanel
+                readiness={brokerReadiness}
+                onRetry={() => void ensureBrokerThenRefresh()}
+              />
+            ) : orderedSessions.length > 0 ? orderedSessions.map((session) => (
               <div
                 role="button"
                 tabIndex={0}
@@ -4135,69 +4460,16 @@ export default function App() {
                   </button>
                 </header>
 
-                <aside className="settings-sidebar" aria-label="Settings sections">
-                  <strong>Sections</strong>
-                  <button
-                    type="button"
-                    className={`settings-nav-button ${settingsSection === "scratchpad" ? "is-active" : ""}`}
-                    onClick={() => setSettingsSection("scratchpad")}
-                  >
-                    <StickyNote size={13} aria-hidden="true" />
-                    <span>Scratchpad</span>
-                  </button>
-                </aside>
+                <SettingsSidebar settingsSection={settingsSection} onSettingsSectionChange={setSettingsSection} />
 
-                <div className="settings-detail">
-                  <header className="settings-detail-header">
-                    <div>
-                      <strong>Scratchpad</strong>
-                      <span>
-                        {scratchpadShortcut.enabled
-                          ? `Ctrl + ${scratchpadShortcut.button === "mouse5" ? "Mouse5" : "Mouse4"}`
-                          : "Disabled"}
-                      </span>
-                    </div>
-                  </header>
-
-                  {settingsSection === "scratchpad" ? (
-                    <div className="settings-section-body">
-                      <label className="settings-toggle">
-                        <input
-                          type="checkbox"
-                          checked={scratchpadShortcut.enabled}
-                          onChange={(event) =>
-                            void updateScratchpadShortcut({
-                              ...scratchpadShortcut,
-                              enabled: event.currentTarget.checked,
-                            })
-                          }
-                        />
-                        <span>Enable global shortcut</span>
-                      </label>
-
-                      <label className="settings-field">
-                        <span>Shortcut</span>
-                        <select
-                          value={scratchpadShortcut.button}
-                          disabled={!scratchpadShortcut.enabled}
-                          onChange={(event) =>
-                            void updateScratchpadShortcut({
-                              ...scratchpadShortcut,
-                              button: event.currentTarget.value === "mouse5" ? "mouse5" : "mouse4",
-                            })
-                          }
-                        >
-                          <option value="mouse4">Ctrl + Mouse4</option>
-                          <option value="mouse5">Ctrl + Mouse5</option>
-                        </select>
-                      </label>
-
-                      <button type="button" className="settings-primary-action" onClick={() => void openScratchpadNow()}>
-                        Open scratchpad now
-                      </button>
-                    </div>
-                  ) : null}
-                </div>
+                <SettingsDetail
+                  settingsSection={settingsSection}
+                  scratchpadShortcut={scratchpadShortcut}
+                  amoTheme={amoTheme}
+                  onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
+                  onOpenScratchpadNow={() => void openScratchpadNow()}
+                  onAmoThemeChange={(next) => void updateAmoTheme(next)}
+                />
               </section>
             </div>
           ) : null}

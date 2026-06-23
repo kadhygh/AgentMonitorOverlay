@@ -154,6 +154,8 @@ Recommended shape:
 
 Generated state, logs, and vault content should not be committed accidentally. AMO should add or suggest ignore rules for `.amo/state/`, `.amo/logs/`, and generated reply content.
 
+Session layout v2 is the next target for generated vault content. New storage work should follow `docs/session-layout-v2.md`, with generated notes under `AMO - <project>/Sessions/<session-id>/turns/generated/` and workspace canvases under `AMO - <project>/Canvases/`. The flat `Replies/`, `Prompts/`, and root `AgentFlow.canvas` shape is compatibility for existing test deployments only.
+
 ## Adapter Contract
 
 Each adapter definition should provide:

@@ -459,6 +459,105 @@ button {
   color: rgba(190, 206, 200, 0.55);
 }
 
+.summary-retry-button {
+  justify-self: end;
+  min-height: 24px;
+  padding: 0 9px;
+  color: #dcece7;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.summary-retry-button:hover {
+  color: #f7fffb;
+  background: rgba(111, 224, 190, 0.14);
+  border-color: rgba(111, 224, 190, 0.28);
+}
+
+.broker-readiness-panel {
+  display: grid;
+  grid-template-columns: 30px minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 9px;
+  min-height: 86px;
+  padding: 12px;
+  color: #dcece7;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 8px;
+}
+
+.broker-readiness-panel.state-error {
+  background: rgba(255, 152, 87, 0.09);
+  border-color: rgba(255, 152, 87, 0.22);
+}
+
+.broker-readiness-mark {
+  display: inline-grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  color: #bdeede;
+  background: rgba(111, 224, 190, 0.12);
+  border: 1px solid rgba(111, 224, 190, 0.22);
+  border-radius: 8px;
+}
+
+.broker-readiness-panel.state-checking .broker-readiness-mark svg,
+.broker-readiness-panel.state-starting .broker-readiness-mark svg {
+  animation: row-tool-busy 0.8s ease-in-out infinite alternate;
+}
+
+.broker-readiness-panel.state-error .broker-readiness-mark {
+  color: #ffe1c8;
+  background: rgba(255, 152, 87, 0.14);
+  border-color: rgba(255, 152, 87, 0.3);
+}
+
+.broker-readiness-panel div {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.broker-readiness-panel strong,
+.broker-readiness-panel span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.broker-readiness-panel strong {
+  color: #f3fbf8;
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.broker-readiness-panel span {
+  color: #9fb0aa;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.broker-retry-button {
+  min-height: 28px;
+  padding: 0 10px;
+  color: #dcece7;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.broker-retry-button:hover {
+  color: #f7fffb;
+  background: rgba(111, 224, 190, 0.14);
+  border-color: rgba(111, 224, 190, 0.28);
+}
+
 .dialog-backdrop {
   position: fixed;
   inset: 0;
@@ -2127,6 +2226,109 @@ button {
   border-color: rgba(111, 224, 190, 0.28);
 }
 
+.theme-choice-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  min-width: 0;
+}
+
+.theme-choice {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr);
+  align-items: center;
+  gap: 2px 10px;
+  min-width: 0;
+  min-height: 82px;
+  padding: 10px;
+  color: #dcece7;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.theme-choice:hover {
+  color: #f7fffb;
+  background: rgba(143, 196, 255, 0.11);
+  border-color: rgba(143, 196, 255, 0.28);
+}
+
+.theme-choice.is-active {
+  color: #f6fbf9;
+  background: rgba(111, 224, 190, 0.15);
+  border-color: rgba(111, 224, 190, 0.34);
+}
+
+.theme-choice strong,
+.theme-choice > span:not(.theme-swatch) {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.theme-choice strong {
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.theme-choice > span:not(.theme-swatch) {
+  color: #9fb0aa;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.theme-swatch {
+  grid-row: 1 / span 2;
+  display: grid;
+  grid-template-rows: 18px 7px 7px;
+  gap: 4px;
+  width: 42px;
+  height: 42px;
+  padding: 5px;
+  border-radius: 8px;
+}
+
+.theme-swatch span {
+  border-radius: 999px;
+}
+
+.theme-swatch-dark {
+  background: linear-gradient(145deg, #151d20, #202b30);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.theme-swatch-dark span:first-child {
+  background: #5fd4b2;
+}
+
+.theme-swatch-dark span:nth-child(2) {
+  background: rgba(238, 246, 242, 0.56);
+}
+
+.theme-swatch-dark span:nth-child(3) {
+  background: rgba(143, 196, 255, 0.7);
+}
+
+.theme-swatch-light {
+  background: linear-gradient(145deg, #ffffff, #e9f2ef);
+  border: 1px solid rgba(42, 74, 64, 0.18);
+}
+
+.theme-swatch-light span:first-child {
+  background: #128769;
+}
+
+.theme-swatch-light span:nth-child(2) {
+  background: rgba(39, 63, 56, 0.42);
+}
+
+.theme-swatch-light span:nth-child(3) {
+  background: rgba(52, 111, 145, 0.55);
+}
+
 .workspace-panel {
   position: fixed;
   z-index: 32;
@@ -2750,4 +2952,515 @@ button {
     box-shadow: 0 0 0 5px rgba(57, 208, 165, 0.18);
     transform: scale(1.06);
   }
+}
+
+:root[data-amo-theme="light"] {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .overlay-shell,
+:root[data-amo-theme="light"] .scratchpad-shell,
+:root[data-amo-theme="light"] .utility-window-shell {
+  color: #17211f;
+  background:
+    linear-gradient(145deg, rgba(249, 252, 250, 0.98), rgba(234, 243, 239, 0.96)),
+    #f6faf8;
+  border-color: rgba(42, 74, 64, 0.22);
+  box-shadow: 0 16px 36px rgba(20, 42, 36, 0.2);
+}
+
+:root[data-amo-theme="light"] .header-title,
+:root[data-amo-theme="light"] .scratchpad-header > div,
+:root[data-amo-theme="light"] .app-dialog-title,
+:root[data-amo-theme="light"] .dialog-section-heading strong,
+:root[data-amo-theme="light"] .session-title strong,
+:root[data-amo-theme="light"] .workspace-panel-header strong,
+:root[data-amo-theme="light"] .workspace-stats strong,
+:root[data-amo-theme="light"] .workspace-section > strong,
+:root[data-amo-theme="light"] .confirm-dialog p strong,
+:root[data-amo-theme="light"] .vault-recovery-manual span,
+:root[data-amo-theme="light"] .collapsed-summary,
+:root[data-amo-theme="light"] .deploy-adapter-copy strong,
+:root[data-amo-theme="light"] .settings-detail-header strong {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .header-title span,
+:root[data-amo-theme="light"] .summary-strip,
+:root[data-amo-theme="light"] .summary-info em,
+:root[data-amo-theme="light"] .scratchpad-footer span,
+:root[data-amo-theme="light"] .app-dialog-title span,
+:root[data-amo-theme="light"] .app-dialog-footer,
+:root[data-amo-theme="light"] .dialog-section-heading span,
+:root[data-amo-theme="light"] .deploy-result,
+:root[data-amo-theme="light"] .deploy-result-feedback,
+:root[data-amo-theme="light"] .deploy-option-row,
+:root[data-amo-theme="light"] .deploy-adapter-copy span,
+:root[data-amo-theme="light"] .deploy-adapter-badges em,
+:root[data-amo-theme="light"] .deploy-adapter-badges small,
+:root[data-amo-theme="light"] .session-title span,
+:root[data-amo-theme="light"] .session-inline-meta,
+:root[data-amo-theme="light"] .event-line,
+:root[data-amo-theme="light"] .session-tag,
+:root[data-amo-theme="light"] .settings-sidebar > strong,
+:root[data-amo-theme="light"] .settings-detail-header span,
+:root[data-amo-theme="light"] .settings-toggle span,
+:root[data-amo-theme="light"] .settings-field > span,
+:root[data-amo-theme="light"] .theme-choice > span:not(.theme-swatch),
+:root[data-amo-theme="light"] .workspace-panel-header span,
+:root[data-amo-theme="light"] .workspace-task-title-editor label span,
+:root[data-amo-theme="light"] .workspace-stats span,
+:root[data-amo-theme="light"] .workspace-path-grid span,
+:root[data-amo-theme="light"] .workspace-path-grid code,
+:root[data-amo-theme="light"] .workspace-code-line,
+:root[data-amo-theme="light"] .workspace-health-line,
+:root[data-amo-theme="light"] .vault-recovery-manual {
+  color: #5d6f69;
+}
+
+:root[data-amo-theme="light"] .dialog-backdrop {
+  background: rgba(34, 51, 46, 0.2);
+}
+
+:root[data-amo-theme="light"] .main-window-blocker {
+  color: #17211f;
+  background: rgba(229, 238, 234, 0.62);
+  backdrop-filter: grayscale(0.15) brightness(0.98);
+}
+
+:root[data-amo-theme="light"] .main-window-blocker-card,
+:root[data-amo-theme="light"] .app-dialog,
+:root[data-amo-theme="light"] .workspace-panel,
+:root[data-amo-theme="light"] .confirm-dialog,
+:root[data-amo-theme="light"] .vault-recovery-dialog {
+  color: #17211f;
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(42, 74, 64, 0.18);
+  box-shadow: 0 18px 38px rgba(22, 45, 38, 0.2);
+}
+
+:root[data-amo-theme="light"] .app-dialog-titlebar,
+:root[data-amo-theme="light"] .app-dialog-footer,
+:root[data-amo-theme="light"] .session-body,
+:root[data-amo-theme="light"] .deploy-subsection,
+:root[data-amo-theme="light"] .workspace-section {
+  border-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .dialog-section,
+:root[data-amo-theme="light"] .summary-strip,
+:root[data-amo-theme="light"] .broker-readiness-panel,
+:root[data-amo-theme="light"] .session-empty-state,
+:root[data-amo-theme="light"] .settings-toggle,
+:root[data-amo-theme="light"] .settings-field,
+:root[data-amo-theme="light"] .theme-choice,
+:root[data-amo-theme="light"] .workspace-task-title-editor,
+:root[data-amo-theme="light"] .workspace-stats span,
+:root[data-amo-theme="light"] .workspace-panel-loading,
+:root[data-amo-theme="light"] .deploy-placeholder,
+:root[data-amo-theme="light"] .deploy-git-exclude-note,
+:root[data-amo-theme="light"] .deploy-git-exclude-list li,
+:root[data-amo-theme="light"] .deploy-adapter-card,
+:root[data-amo-theme="light"] .deploy-adapter-badges em,
+:root[data-amo-theme="light"] .deploy-adapter-badges small,
+:root[data-amo-theme="light"] .confirm-counts span,
+:root[data-amo-theme="light"] .vault-recovery-path,
+:root[data-amo-theme="light"] .collapsed-summary {
+  color: #24342f;
+  background: rgba(244, 249, 247, 0.9);
+  border-color: rgba(42, 74, 64, 0.13);
+}
+
+:root[data-amo-theme="light"] .settings-sidebar {
+  background: rgba(237, 245, 241, 0.78);
+  border-right-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .settings-nav-button {
+  color: #465b54;
+}
+
+:root[data-amo-theme="light"] .settings-nav-button:hover,
+:root[data-amo-theme="light"] .theme-choice:hover {
+  color: #17211f;
+  background: rgba(50, 112, 145, 0.09);
+  border-color: rgba(50, 112, 145, 0.22);
+}
+
+:root[data-amo-theme="light"] .settings-nav-button.is-active,
+:root[data-amo-theme="light"] .theme-choice.is-active {
+  color: #10251f;
+  background: rgba(18, 135, 105, 0.1);
+  border-color: rgba(18, 135, 105, 0.28);
+}
+
+:root[data-amo-theme="light"] .broker-readiness-panel.state-error {
+  color: #7d4217;
+  background: rgba(255, 249, 238, 0.96);
+  border-color: rgba(201, 135, 38, 0.26);
+}
+
+:root[data-amo-theme="light"] .broker-readiness-panel strong {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .broker-readiness-panel span {
+  color: #5d6f69;
+}
+
+:root[data-amo-theme="light"] .broker-readiness-mark {
+  color: #0d755b;
+  background: rgba(18, 135, 105, 0.1);
+  border-color: rgba(18, 135, 105, 0.22);
+}
+
+:root[data-amo-theme="light"] .broker-readiness-panel.state-error .broker-readiness-mark {
+  color: #8c5a08;
+  background: rgba(226, 168, 68, 0.12);
+  border-color: rgba(179, 122, 26, 0.24);
+}
+
+:root[data-amo-theme="light"] .icon-button,
+:root[data-amo-theme="light"] .scratchpad-header button,
+:root[data-amo-theme="light"] .scratchpad-footer button,
+:root[data-amo-theme="light"] .summary-filter-button,
+:root[data-amo-theme="light"] .settings-field select,
+:root[data-amo-theme="light"] .settings-primary-action,
+:root[data-amo-theme="light"] .summary-retry-button,
+:root[data-amo-theme="light"] .broker-retry-button,
+:root[data-amo-theme="light"] .deploy-action-row button,
+:root[data-amo-theme="light"] .deploy-launch-actions button,
+:root[data-amo-theme="light"] .deploy-adapter-actions button,
+:root[data-amo-theme="light"] .row-tool-button,
+:root[data-amo-theme="light"] .workspace-panel-actions button,
+:root[data-amo-theme="light"] .workspace-task-title-editor button,
+:root[data-amo-theme="light"] .main-window-blocker-actions button,
+:root[data-amo-theme="light"] .confirm-dialog-actions button,
+:root[data-amo-theme="light"] .vault-recovery-actions button {
+  color: #23342f;
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(42, 74, 64, 0.16);
+}
+
+:root[data-amo-theme="light"] .icon-button:hover,
+:root[data-amo-theme="light"] .scratchpad-header button:hover,
+:root[data-amo-theme="light"] .scratchpad-footer button:hover,
+:root[data-amo-theme="light"] .summary-filter-button:hover,
+:root[data-amo-theme="light"] .summary-filter-button:focus-visible,
+:root[data-amo-theme="light"] .settings-primary-action:hover,
+:root[data-amo-theme="light"] .summary-retry-button:hover,
+:root[data-amo-theme="light"] .broker-retry-button:hover,
+:root[data-amo-theme="light"] .deploy-action-row button:hover:not(:disabled),
+:root[data-amo-theme="light"] .deploy-launch-actions button:hover:not(:disabled),
+:root[data-amo-theme="light"] .deploy-adapter-actions button:hover:not(:disabled),
+:root[data-amo-theme="light"] .row-tool-button:hover,
+:root[data-amo-theme="light"] .workspace-panel-actions button:hover:not(:disabled),
+:root[data-amo-theme="light"] .workspace-task-title-editor button:hover:not(:disabled),
+:root[data-amo-theme="light"] .main-window-blocker-actions button:hover,
+:root[data-amo-theme="light"] .confirm-dialog-actions button:hover,
+:root[data-amo-theme="light"] .vault-recovery-actions button:hover:not(:disabled) {
+  color: #0f251f;
+  background: rgba(18, 135, 105, 0.11);
+  border-color: rgba(18, 135, 105, 0.25);
+}
+
+:root[data-amo-theme="light"] .icon-button.is-active,
+:root[data-amo-theme="light"] .summary-filter-button.is-active {
+  color: #0b2b22;
+  background: rgba(18, 135, 105, 0.14);
+  border-color: rgba(18, 135, 105, 0.32);
+}
+
+:root[data-amo-theme="light"] .debug-button.is-active {
+  color: #5c3d05;
+  background: rgba(226, 168, 68, 0.16);
+  border-color: rgba(179, 122, 26, 0.26);
+}
+
+:root[data-amo-theme="light"] .scratchpad-input,
+:root[data-amo-theme="light"] .deploy-path-input,
+:root[data-amo-theme="light"] .summary-search,
+:root[data-amo-theme="light"] .workspace-task-title-editor input {
+  color: #17211f;
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(42, 74, 64, 0.17);
+}
+
+:root[data-amo-theme="light"] .summary-search input {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .scratchpad-input::placeholder,
+:root[data-amo-theme="light"] .summary-search input::placeholder {
+  color: rgba(80, 101, 94, 0.55);
+}
+
+:root[data-amo-theme="light"] .scratchpad-input:focus,
+:root[data-amo-theme="light"] .deploy-path-input:focus,
+:root[data-amo-theme="light"] .summary-search:focus-within,
+:root[data-amo-theme="light"] .workspace-task-title-editor input:focus {
+  border-color: rgba(18, 135, 105, 0.42);
+  box-shadow: 0 0 0 2px rgba(18, 135, 105, 0.1);
+}
+
+:root[data-amo-theme="light"] .session-list {
+  scrollbar-color: rgba(52, 111, 145, 0.34) rgba(42, 74, 64, 0.06);
+}
+
+:root[data-amo-theme="light"] .session-list::-webkit-scrollbar-track {
+  background: rgba(42, 74, 64, 0.06);
+}
+
+:root[data-amo-theme="light"] .session-list::-webkit-scrollbar-thumb {
+  background: rgba(52, 111, 145, 0.28);
+  border-color: rgba(246, 250, 248, 0.95);
+}
+
+:root[data-amo-theme="light"] .session-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(52, 111, 145, 0.45);
+}
+
+:root[data-amo-theme="light"] .session-row {
+  color: #17211f;
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(42, 74, 64, 0.15);
+  box-shadow: 0 10px 24px rgba(30, 54, 47, 0.12);
+}
+
+:root[data-amo-theme="light"] .session-row:hover {
+  background: #ffffff;
+  border-color: rgba(18, 135, 105, 0.24);
+}
+
+:root[data-amo-theme="light"] .session-row.needs-attention {
+  background: rgba(255, 249, 238, 0.96);
+  border-color: rgba(201, 135, 38, 0.3);
+}
+
+:root[data-amo-theme="light"] .session-row.needs-review {
+  border-color: rgba(18, 135, 105, 0.36);
+  box-shadow: 0 0 0 1px rgba(18, 135, 105, 0.1), 0 12px 26px rgba(30, 54, 47, 0.14);
+}
+
+:root[data-amo-theme="light"] .row-drag-handle {
+  color: rgba(82, 103, 96, 0.58);
+}
+
+:root[data-amo-theme="light"] .row-drag-handle:hover,
+:root[data-amo-theme="light"] .row-drag-handle.is-preview {
+  color: #17211f;
+  background: rgba(42, 74, 64, 0.08);
+}
+
+:root[data-amo-theme="light"] .tool-mark {
+  color: #edf8f4;
+  background: linear-gradient(145deg, #17211f, #25352f);
+  border-color: rgba(15, 37, 31, 0.42);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08), 0 7px 14px rgba(26, 48, 42, 0.14);
+}
+
+:root[data-amo-theme="light"] .tool-codex-cli,
+:root[data-amo-theme="light"] .tool-codex-app {
+  background: linear-gradient(145deg, #102a24, #173b31);
+  border-color: rgba(18, 135, 105, 0.48);
+}
+
+:root[data-amo-theme="light"] .tool-claude-cli {
+  background: linear-gradient(145deg, #2c2115, #44311e);
+  border-color: rgba(201, 135, 38, 0.46);
+}
+
+:root[data-amo-theme="light"] .tool-kiro-ide {
+  background: linear-gradient(145deg, #172536, #223956);
+  border-color: rgba(52, 111, 145, 0.46);
+}
+
+:root[data-amo-theme="light"] .state-pill {
+  color: #edf8f4;
+  background: linear-gradient(145deg, #19231f, #283831);
+  border-color: rgba(15, 37, 31, 0.38);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+:root[data-amo-theme="light"] .session-tag {
+  color: #334640;
+  background: rgba(237, 245, 241, 0.92);
+  border-color: rgba(42, 74, 64, 0.14);
+}
+
+:root[data-amo-theme="light"] .state-pill .state-dot {
+  border-color: rgba(8, 17, 14, 0.82);
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.08);
+}
+
+:root[data-amo-theme="light"] .message-line {
+  color: #24342f;
+}
+
+:root[data-amo-theme="light"] .session-meta-separator {
+  color: rgba(82, 103, 96, 0.46);
+}
+
+:root[data-amo-theme="light"] .summary-info strong,
+:root[data-amo-theme="light"] .collapsed-summary strong {
+  color: #9a6200;
+}
+
+:root[data-amo-theme="light"] .summary-info .summary-review,
+:root[data-amo-theme="light"] .session-tag.tag-review,
+:root[data-amo-theme="light"] .session-tag.target-tag,
+:root[data-amo-theme="light"] .workspace-path-grid .is-ok,
+:root[data-amo-theme="light"] .workspace-health-line.is-ok,
+:root[data-amo-theme="light"] .deploy-git-exclude-list li.is-covered em {
+  color: #0d755b;
+}
+
+:root[data-amo-theme="light"] .session-tag.tag-attention,
+:root[data-amo-theme="light"] .session-tag.health-warning,
+:root[data-amo-theme="light"] .workspace-health-line.is-warning,
+:root[data-amo-theme="light"] .workspace-health-line.is-bad,
+:root[data-amo-theme="light"] .deploy-git-exclude-list li.is-missing em {
+  color: #8c5a08;
+}
+
+:root[data-amo-theme="light"] .session-tag.health-missing,
+:root[data-amo-theme="light"] .session-tag.health-unknown,
+:root[data-amo-theme="light"] .workspace-path-grid .is-bad,
+:root[data-amo-theme="light"] .deploy-git-exclude-list li.is-tracked em {
+  color: #a33d33;
+}
+
+:root[data-amo-theme="light"] .row-tool-button.sync-button {
+  color: #674707;
+  background: rgba(226, 168, 68, 0.13);
+  border-color: rgba(179, 122, 26, 0.24);
+}
+
+:root[data-amo-theme="light"] .row-tool-button.review-button,
+:root[data-amo-theme="light"] .row-tool-button.codex-app-target-button {
+  color: #0d654f;
+  background: rgba(18, 135, 105, 0.1);
+  border-color: rgba(18, 135, 105, 0.22);
+}
+
+:root[data-amo-theme="light"] .row-tool-button.binding-button {
+  color: #265f82;
+  background: rgba(52, 111, 145, 0.1);
+  border-color: rgba(52, 111, 145, 0.22);
+}
+
+:root[data-amo-theme="light"] .permission-pill {
+  color: #8a4211;
+  background: rgba(255, 152, 87, 0.13);
+  border-color: rgba(202, 97, 38, 0.28);
+}
+
+:root[data-amo-theme="light"] .deploy-action-row button.primary,
+:root[data-amo-theme="light"] .deploy-adapter-actions button.primary {
+  color: #06251e;
+  background: #75d8bb;
+  border-color: rgba(18, 135, 105, 0.34);
+}
+
+:root[data-amo-theme="light"] .deploy-action-row button.primary:hover:not(:disabled),
+:root[data-amo-theme="light"] .deploy-adapter-actions button.primary:hover:not(:disabled) {
+  color: #06251e;
+  background: #8de5ca;
+}
+
+:root[data-amo-theme="light"] .deploy-action-row button:disabled,
+:root[data-amo-theme="light"] .deploy-launch-actions button:disabled,
+:root[data-amo-theme="light"] .deploy-adapter-actions button:disabled,
+:root[data-amo-theme="light"] .settings-field select:disabled {
+  color: rgba(77, 96, 90, 0.5);
+  background: rgba(231, 238, 235, 0.75);
+  border-color: rgba(42, 74, 64, 0.1);
+}
+
+:root[data-amo-theme="light"] .deploy-state-note {
+  color: #244d67;
+  background: rgba(52, 111, 145, 0.08);
+  border-color: rgba(52, 111, 145, 0.16);
+}
+
+:root[data-amo-theme="light"] .deploy-git-exclude-note.status-covered,
+:root[data-amo-theme="light"] .deploy-adapter-card.state-deployed {
+  color: #0d755b;
+  background: rgba(18, 135, 105, 0.09);
+  border-color: rgba(18, 135, 105, 0.22);
+}
+
+:root[data-amo-theme="light"] .deploy-git-exclude-note.status-missing,
+:root[data-amo-theme="light"] .deploy-adapter-card.state-undeployed,
+:root[data-amo-theme="light"] .workspace-issues span {
+  color: #8c5a08;
+  background: rgba(226, 168, 68, 0.1);
+  border-color: rgba(179, 122, 26, 0.2);
+}
+
+:root[data-amo-theme="light"] .deploy-git-exclude-note.status-tracked,
+:root[data-amo-theme="light"] .deploy-git-exclude-note.status-error,
+:root[data-amo-theme="light"] .deploy-git-exclude-note.status-not-found,
+:root[data-amo-theme="light"] .deploy-adapter-card.status-blocked,
+:root[data-amo-theme="light"] .workspace-panel-error {
+  color: #9b332e;
+  background: rgba(208, 77, 67, 0.09);
+  border-color: rgba(208, 77, 67, 0.18);
+}
+
+:root[data-amo-theme="light"] .deploy-adapter-card.is-selected {
+  background: rgba(18, 135, 105, 0.14);
+  border-color: rgba(18, 135, 105, 0.32);
+}
+
+:root[data-amo-theme="light"] .deploy-status-grid > div {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .deploy-status-grid dt {
+  color: #6b7f78;
+}
+
+:root[data-amo-theme="light"] .deploy-status-grid dd,
+:root[data-amo-theme="light"] .deploy-git-exclude-list span {
+  color: #24342f;
+}
+
+:root[data-amo-theme="light"] .workspace-panel.tone-warning {
+  border-color: rgba(179, 122, 26, 0.28);
+}
+
+:root[data-amo-theme="light"] .workspace-panel.tone-error,
+:root[data-amo-theme="light"] .confirm-dialog {
+  border-color: rgba(208, 77, 67, 0.24);
+}
+
+:root[data-amo-theme="light"] .workspace-panel-actions .danger-action,
+:root[data-amo-theme="light"] .confirm-dialog-actions .danger-action {
+  color: #9b332e;
+  background: rgba(208, 77, 67, 0.1);
+  border-color: rgba(208, 77, 67, 0.22);
+}
+
+:root[data-amo-theme="light"] .vault-recovery-dialog {
+  border-color: rgba(179, 122, 26, 0.24);
+}
+
+:root[data-amo-theme="light"] .vault-recovery-path {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .resize-side::before,
+:root[data-amo-theme="light"] .resize-edge::before {
+  background: rgba(42, 74, 64, 0.22);
+}
+
+:root[data-amo-theme="light"] .resize-corner::before {
+  border-color: rgba(42, 74, 64, 0.22);
+}
+
+:root[data-amo-theme="light"] .quiet-dot {
+  background: #9aa8a3;
+  box-shadow: 0 0 0 4px rgba(42, 74, 64, 0.06);
 }

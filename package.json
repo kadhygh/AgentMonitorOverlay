@@ -4,6 +4,8 @@
   "private": true,
   "description": "Local Agent Monitor Overlay workspace.",
   "scripts": {
+    "amo": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/amo/start.ps1",
+    "amo:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/amo/start.ps1 -DebugMode",
     "broker": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1",
     "broker:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1 -DebugMode",
     "broker:verify": "powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1",

@@ -4,6 +4,15 @@ Tauri + React prototype for the Windows desktop overlay in Task C.
 
 ## Run
 
+Preferred full local AMO startup from the repository root:
+
+```powershell
+cd G:\PROJECT\AgentMonitorOverlay
+npm run amo
+```
+
+That starts the broker on `17654` before launching the Tauri overlay dev app, then lets Tauri start Vite on `1420`.
+
 ```powershell
 cd G:\PROJECT\AgentMonitorOverlay\overlay
 npm install

@@ -99,6 +99,18 @@ npm run adapters:verify -- -Port 17655
 
 ## Running Locally
 
+Start the normal local AMO dev stack:
+
+```powershell
+npm run amo
+```
+
+This starts the broker first, waits for `http://127.0.0.1:17654/api/health`, clears stale AMO overlay dev processes that would block Vite port `1420`, and then starts the Tauri overlay dev process. Use a visible broker/overlay console only while debugging:
+
+```powershell
+npm run amo:debug
+```
+
 Start only the broker:
 
 ```powershell
