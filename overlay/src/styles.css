@@ -3242,6 +3242,52 @@ button {
   box-shadow: 0 0 0 1px rgba(18, 135, 105, 0.1), 0 12px 26px rgba(30, 54, 47, 0.14);
 }
 
+:root[data-amo-theme="light"] .card-maintenance-button {
+  color: #f4fffb;
+  background: linear-gradient(145deg, #16352e, #1d4a3f);
+  border-color: rgba(18, 72, 60, 0.48);
+  box-shadow: 0 7px 16px rgba(25, 55, 47, 0.18), inset 0 1px 0 rgba(255, 255, 255, 0.12);
+}
+
+:root[data-amo-theme="light"] .card-maintenance-button:hover,
+:root[data-amo-theme="light"] .card-maintenance-button:focus-visible {
+  color: #ffffff;
+  background: linear-gradient(145deg, #0f4638, #17624f);
+  border-color: rgba(18, 135, 105, 0.55);
+  box-shadow: 0 8px 18px rgba(25, 55, 47, 0.22), 0 0 0 2px rgba(18, 135, 105, 0.12);
+}
+
+:root[data-amo-theme="light"] .card-maintenance-button.tone-ok {
+  color: #f4fffb;
+  background: linear-gradient(145deg, #133e34, #17644f);
+  border-color: rgba(18, 135, 105, 0.5);
+}
+
+:root[data-amo-theme="light"] .card-maintenance-button.tone-warning {
+  color: #fff8e9;
+  background: linear-gradient(145deg, #6f4c0b, #9a6200);
+  border-color: rgba(154, 98, 0, 0.48);
+}
+
+:root[data-amo-theme="light"] .card-maintenance-button.tone-error {
+  color: #fff4f2;
+  background: linear-gradient(145deg, #7d2d28, #a33d33);
+  border-color: rgba(163, 61, 51, 0.5);
+}
+
+:root[data-amo-theme="light"] .card-dismiss-button {
+  color: #526760;
+  background: rgba(255, 255, 255, 0.88);
+  border-color: rgba(42, 74, 64, 0.18);
+}
+
+:root[data-amo-theme="light"] .card-dismiss-button:hover,
+:root[data-amo-theme="light"] .card-dismiss-button:focus-visible {
+  color: #9b332e;
+  background: rgba(255, 244, 242, 0.95);
+  border-color: rgba(208, 77, 67, 0.26);
+}
+
 :root[data-amo-theme="light"] .row-drag-handle {
   color: rgba(82, 103, 96, 0.58);
 }
@@ -3280,6 +3326,15 @@ button {
   background: linear-gradient(145deg, #19231f, #283831);
   border-color: rgba(15, 37, 31, 0.38);
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.08);
+}
+
+:root[data-amo-theme="light"] .state-idle .state-pill,
+:root[data-amo-theme="light"] .state-cancelled .state-pill,
+:root[data-amo-theme="light"] .state-unknown .state-pill {
+  color: #334640;
+  background: rgba(239, 246, 243, 0.96);
+  border-color: rgba(42, 74, 64, 0.18);
+  box-shadow: none;
 }
 
 :root[data-amo-theme="light"] .session-tag {
@@ -3353,6 +3408,14 @@ button {
   color: #8a4211;
   background: rgba(255, 152, 87, 0.13);
   border-color: rgba(202, 97, 38, 0.28);
+}
+
+:root[data-amo-theme="light"] .feedback-line {
+  color: #24342f;
+  background: rgba(255, 255, 255, 0.82);
+  border: 1px solid rgba(42, 74, 64, 0.15);
+  box-shadow: 0 6px 16px rgba(30, 54, 47, 0.08);
+  font-weight: 620;
 }
 
 :root[data-amo-theme="light"] .deploy-action-row button.primary,
