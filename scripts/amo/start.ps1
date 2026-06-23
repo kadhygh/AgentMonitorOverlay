@@ -89,13 +89,19 @@ function Stop-OverlayDevProcesses {
     $targets = @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue |
         Where-Object {
             $commandLine = [string]$_.CommandLine
-            $commandLine -like "*AgentMonitorOverlay*overlay*" -and (
+            $executablePath = [string]$_.ExecutablePath
+            $isOverlayProcess =
+                $commandLine -like "*AgentMonitorOverlay*overlay*" -or
+                ($executablePath -and $executablePath.StartsWith($overlayPath, [System.StringComparison]::OrdinalIgnoreCase))
+
+            $isOverlayProcess -and (
                 $commandLine -like "*vite\bin\vite.js*" -or
                 $commandLine -like "*@tauri-apps\cli\tauri.js*dev*" -or
                 $commandLine -like "*npm run dev*" -or
                 $commandLine -like "*npm run tauri:dev*" -or
                 $commandLine -like "*cargo*run*" -or
-                $commandLine -like "*target\debug\agent-monitor-overlay.exe*"
+                $commandLine -like "*target\debug\agent-monitor-overlay.exe*" -or
+                $_.Name -ieq "agent-monitor-overlay.exe"
             )
         })
 
@@ -186,6 +192,10 @@ function Start-AmoOverlay {
         return $null
     }
 
+    if (-not $KeepExistingOverlay) {
+        Stop-OverlayDevProcesses
+        Start-Sleep -Milliseconds 500
+    }
     Assert-OverlayPortReady
     New-Item -ItemType Directory -Force -Path $tmpRoot | Out-Null
     Remove-Item -LiteralPath $overlayStdout, $overlayStderr -Force -ErrorAction SilentlyContinue

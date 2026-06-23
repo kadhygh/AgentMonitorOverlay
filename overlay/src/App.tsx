@@ -73,6 +73,7 @@ const DIALOG_SIZES = {
   deploy: { width: 760, height: 600 },
   settings: { width: 660, height: 500 },
 };
+const ATTENTION_VISUAL_ACTIVE_MS = 10_000;
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
@@ -827,9 +828,60 @@ function sessionNeedsReview(session: AgentSession) {
   return Boolean(session.reviewRequired && session.reviewStatus !== "reviewed" && !session.reviewedAt);
 }
 
+function sessionHasAttentionSignal(session: AgentSession) {
+  return Boolean(session.needsAttention || sessionNeedsReview(session));
+}
+
+function sessionAttentionKey(session: AgentSession) {
+  return [
+    session.sessionId,
+    session.updatedAt,
+    session.state,
+    session.lastEvent,
+    session.lastMessage,
+    session.needsAttention ? "attention" : "quiet",
+    session.lastReplyAt ?? "",
+    session.lastPromptAt ?? "",
+    session.pendingPromptId ?? "",
+    session.reviewStatus ?? "",
+    session.reviewRequestedAt ?? "",
+    session.reviewedAt ?? "",
+  ].join("|");
+}
+
+function sessionAttentionTime(session: AgentSession) {
+  const timestamp =
+    session.reviewRequestedAt ||
+    session.updatedAt ||
+    session.lastReplyAt ||
+    session.lastPromptAt ||
+    session.pendingPromptCreatedAt ||
+    session.sentPromptRecordedAt;
+  if (!timestamp) {
+    return null;
+  }
+
+  const parsed = Date.parse(timestamp);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function sessionAttentionVisualActive(session: AgentSession, visuallySeen: boolean, now: number) {
+  if (!sessionHasAttentionSignal(session) || visuallySeen) {
+    return false;
+  }
+
+  const timestamp = sessionAttentionTime(session);
+  if (timestamp === null) {
+    return true;
+  }
+
+  const age = now - timestamp;
+  return age <= ATTENTION_VISUAL_ACTIVE_MS && age >= -ATTENTION_VISUAL_ACTIVE_MS;
+}
+
 function sessionMatchesFilter(session: AgentSession, filter: SessionFilter) {
   if (filter === "attention") {
-    return Boolean(session.needsAttention || sessionNeedsReview(session));
+    return sessionHasAttentionSignal(session);
   }
   if (filter === "idle") {
     return session.state === "idle";
@@ -952,6 +1004,8 @@ function SessionRowContent({
   unbindingWindow,
   reviewing,
   dismissing,
+  attentionSignal,
+  attentionVisualActive,
   onOpenNote,
   onOpenCanvas,
   onMarkReviewed,
@@ -959,6 +1013,7 @@ function SessionRowContent({
   onUnbindWindow,
   onDismiss,
   onOpenCodexAppTarget,
+  onActivateSession,
   onOpenWorkspacePanel,
 }: {
   session: AgentSession;
@@ -968,6 +1023,8 @@ function SessionRowContent({
   unbindingWindow: boolean;
   reviewing: boolean;
   dismissing: boolean;
+  attentionSignal: boolean;
+  attentionVisualActive: boolean;
   onOpenNote: () => void;
   onOpenCanvas: () => void;
   onMarkReviewed: () => void;
@@ -975,6 +1032,7 @@ function SessionRowContent({
   onUnbindWindow: () => void;
   onDismiss: () => void;
   onOpenCodexAppTarget: () => void;
+  onActivateSession: () => void;
   onOpenWorkspacePanel: (x: number, y: number) => void;
 }) {
   const notePath = notePathForOpen(session);
@@ -987,7 +1045,9 @@ function SessionRowContent({
   const noteOpening = openingTarget === "note";
   const canvasOpening = openingTarget === "canvas";
   const waitingForPermission = session.state === "waiting_permission";
+  const failed = session.state === "failed";
   const reviewPending = sessionNeedsReview(session);
+  const attentionTone = reviewPending ? "review" : waitingForPermission ? "permission" : failed ? "failed" : "attention";
   const display = toolDisplayForSession(session);
   const statusLabel = activating ? "Opening" : reviewPending ? "Review" : stateLabel[session.state];
   const maintenanceTone = maintenanceToneForSession(session);
@@ -1028,8 +1088,18 @@ function SessionRowContent({
       <span className="session-head">
         <ToolMark session={session} />
         <span className="session-title">
-          <strong title={conversationTitle}>{conversationTitle}</strong>
-          {taskTitle ? <span title={threadTitle}>{threadTitle}</span> : null}
+          <span className="session-title-primary">
+            {attentionSignal ? (
+              <span
+                className={`title-attention-beacon tone-${attentionTone} ${
+                  attentionVisualActive ? "is-active" : "is-static"
+                }`}
+                aria-hidden="true"
+              />
+            ) : null}
+            <strong title={conversationTitle}>{conversationTitle}</strong>
+          </span>
+          {taskTitle ? <span className="session-title-subtitle" title={threadTitle}>{threadTitle}</span> : null}
         </span>
         <span className="session-chip-row" title={subtitleLabel}>
           <span className="state-pill">
@@ -1072,14 +1142,15 @@ function SessionRowContent({
             ) : null}
           </span>
         </span>
-        {reviewPending || notePath || canvasPath || session.pendingPrompt || targetBound || waitingForPermission || codexAppAvailable ? (
+        {reviewPending ||
+        notePath ||
+        canvasPath ||
+        session.pendingPrompt ||
+        targetBound ||
+        waitingForPermission ||
+        failed ||
+        codexAppAvailable ? (
           <span className="bridge-actions" aria-label="Bridge actions">
-            {waitingForPermission ? (
-              <span className="permission-pill" title="点击卡片切回 CLI，手动处理权限请求">
-                <AlertTriangle size={13} aria-hidden="true" />
-                <span>需要权限</span>
-              </span>
-            ) : null}
             {reviewPending ? (
               <button
                 type="button"
@@ -1094,6 +1165,24 @@ function SessionRowContent({
               >
                 <CircleCheck size={13} aria-hidden="true" />
                 <span>Seen</span>
+              </button>
+            ) : null}
+            {waitingForPermission || failed ? (
+              <button
+                type="button"
+                className={`row-tool-button attention-action-button tone-${failed ? "failed" : "permission"} ${
+                  activating ? "is-busy" : ""
+                }`}
+                aria-busy={activating}
+                title={failed ? "Open target to inspect this failed run" : "Open target to handle the permission request"}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onActivateSession();
+                }}
+              >
+                {failed ? <AlertTriangle size={13} aria-hidden="true" /> : <SquareTerminal size={13} aria-hidden="true" />}
+                <span>{failed ? "Inspect" : "Handle"}</span>
               </button>
             ) : null}
             {notePath ? (
@@ -2218,6 +2307,8 @@ export default function App() {
   const [amoTheme, setAmoThemePreference] = useAmoThemeRuntime();
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionOrder, setSessionOrder] = useState<string[]>([]);
+  const [attentionVisualSeen, setAttentionVisualSeen] = useState<Record<string, string>>({});
+  const [attentionClock, setAttentionClock] = useState(() => Date.now());
   const [collapsed, setCollapsed] = useState(false);
   const [brokerReadiness, setBrokerReadiness] = useState<BrokerReadiness>({
     state: "checking",
@@ -2290,7 +2381,40 @@ export default function App() {
     () => sessions.filter(sessionNeedsReview).length,
     [sessions],
   );
+  const hasAttentionSignal = useMemo(
+    () => sessions.some(sessionHasAttentionSignal),
+    [sessions],
+  );
   const brokerReady = brokerReadiness.state === "ready";
+
+  useEffect(() => {
+    if (!hasAttentionSignal) {
+      return undefined;
+    }
+
+    setAttentionClock(Date.now());
+    const intervalId = window.setInterval(() => setAttentionClock(Date.now()), 1000);
+    return () => window.clearInterval(intervalId);
+  }, [hasAttentionSignal]);
+
+  useEffect(() => {
+    setAttentionVisualSeen((previous) => {
+      const sessionIds = new Set(sessions.map((session) => session.sessionId));
+      let changed = false;
+      const next: Record<string, string> = {};
+
+      Object.entries(previous).forEach(([sessionId, attentionKey]) => {
+        const session = sessions.find((item) => item.sessionId === sessionId);
+        if (sessionIds.has(sessionId) && session && sessionHasAttentionSignal(session) && attentionKey === sessionAttentionKey(session)) {
+          next[sessionId] = attentionKey;
+        } else {
+          changed = true;
+        }
+      });
+
+      return changed ? next : previous;
+    });
+  }, [sessions]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -2497,6 +2621,26 @@ export default function App() {
     }
   }
 
+  function markSessionVisuallySeen(session: AgentSession) {
+    if (!sessionHasAttentionSignal(session)) {
+      return;
+    }
+
+    const attentionKey = sessionAttentionKey(session);
+    setAttentionVisualSeen((previous) =>
+      previous[session.sessionId] === attentionKey ? previous : { ...previous, [session.sessionId]: attentionKey },
+    );
+    setAttentionClock(Date.now());
+  }
+
+  function isSessionVisuallySeen(session: AgentSession) {
+    return attentionVisualSeen[session.sessionId] === sessionAttentionKey(session);
+  }
+
+  function isSessionVisualAttentionActive(session: AgentSession) {
+    return sessionAttentionVisualActive(session, isSessionVisuallySeen(session), attentionClock);
+  }
+
   async function updateScratchpadShortcut(next: ScratchpadShortcutState) {
     setScratchpadShortcut(next);
     saveScratchpadShortcutState(next);
@@ -2526,6 +2670,7 @@ export default function App() {
   async function openCodexAppTarget(session: AgentSession, bindTarget: boolean) {
     const target = codexAppTargetForSession(session);
     const uri = target.uri ?? codexAppThreadUri(session.sessionId);
+    markSessionVisuallySeen(session);
     setActivatingId(session.sessionId);
     setCandidateMenu(null);
     setFeedback(`${bindTarget ? "Binding and opening" : "Opening"} Codex App for ${projectName(session.cwd)}...`);
@@ -3059,6 +3204,7 @@ export default function App() {
   }
 
   async function activateSession(session: AgentSession, menuX?: number, menuY?: number) {
+    markSessionVisuallySeen(session);
     const targetBinding = targetBindingForSession(session);
     if (targetBinding?.type === "codex-app-thread") {
       await openCodexAppTarget(session, false);
@@ -3182,6 +3328,7 @@ export default function App() {
       return;
     }
 
+    markSessionVisuallySeen(session);
     setOpeningPath({ sessionId: session.sessionId, target });
     setFeedback(`Opening ${target} for ${session.title}...`);
     void postDebugLog("obsidian.open.start", {
@@ -3403,6 +3550,7 @@ export default function App() {
   }
 
   async function activateCandidate(session: AgentSession, candidate: ActivationCandidate, bindWindow: boolean) {
+    markSessionVisuallySeen(session);
     setActivatingId(session.sessionId);
     setFeedback(`Activating ${candidate.processName ?? "window"}...`);
     void postDebugLog("window.candidate.activate.start", {
@@ -3512,6 +3660,7 @@ export default function App() {
     action = "manual",
     options: { quiet?: boolean } = {},
   ) {
+    markSessionVisuallySeen(session);
     if (!sessionNeedsReview(session)) {
       return;
     }
@@ -4128,7 +4277,9 @@ export default function App() {
                 }}
                 className={`session-row state-${session.state} ${session.needsAttention ? "needs-attention" : ""} ${
                   sessionNeedsReview(session) ? "needs-review" : ""
-                } ${
+                } ${sessionHasAttentionSignal(session) ? "has-attention-signal" : ""} ${
+                  isSessionVisualAttentionActive(session) ? "is-attention-animating" : ""
+                } ${isSessionVisuallySeen(session) ? "is-attention-seen" : ""} ${
                   cardDrag?.sessionId === session.sessionId ? "is-drag-placeholder" : ""
                 } ${dropTargetId === session.sessionId ? "is-drop-target" : ""}`}
                 onClick={(event) => {
@@ -4167,6 +4318,8 @@ export default function App() {
                   unbindingWindow={unbindingWindowId === session.sessionId}
                   reviewing={reviewingSessionId === session.sessionId}
                   dismissing={dismissingSessionId === session.sessionId}
+                  attentionSignal={sessionHasAttentionSignal(session)}
+                  attentionVisualActive={isSessionVisualAttentionActive(session)}
                   onOpenNote={() => void openBridgePath(session, "note")}
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
                   onMarkReviewed={() => void markSessionReviewed(session, "manual")}
@@ -4174,6 +4327,7 @@ export default function App() {
                   onUnbindWindow={() => void clearWindowBinding(session)}
                   onDismiss={() => void dismissSession(session)}
                   onOpenCodexAppTarget={() => void openCodexAppTarget(session, true)}
+                  onActivateSession={() => void activateSession(session)}
                   onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
                 />
               </div>
@@ -4614,6 +4768,8 @@ export default function App() {
                     unbindingWindow={unbindingWindowId === session.sessionId}
                     reviewing={reviewingSessionId === session.sessionId}
                     dismissing={dismissingSessionId === session.sessionId}
+                    attentionSignal={sessionHasAttentionSignal(session)}
+                    attentionVisualActive={isSessionVisualAttentionActive(session)}
                     onOpenNote={() => undefined}
                     onOpenCanvas={() => undefined}
                     onMarkReviewed={() => undefined}
@@ -4621,6 +4777,7 @@ export default function App() {
                     onUnbindWindow={() => undefined}
                     onDismiss={() => undefined}
                     onOpenCodexAppTarget={() => undefined}
+                    onActivateSession={() => undefined}
                     onOpenWorkspacePanel={() => undefined}
                   />
                 ) : null;
