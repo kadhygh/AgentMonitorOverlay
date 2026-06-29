@@ -13,9 +13,9 @@ Current MVP target:
 - Codex CLI only.
 - One selected project folder.
 - Project-local `.amo/`.
-- Dedicated `.amo/obsidian-vault/`.
-- One default `.amo/obsidian-vault/AgentFlow.canvas`.
-- Reply notes under `.amo/obsidian-vault/Replies/`.
+- Dedicated `.amo/AMO - <project>/` vault.
+- One default `.amo/AMO - <project>/Canvases/AgentFlow.base.canvas`.
+- Prompt/reply notes under `.amo/AMO - <project>/Sessions/<session-id>/turns/generated/`.
 
 ## Inputs
 
@@ -34,24 +34,24 @@ First implementation slice:
 - Detect likely CLI/TUI adapter options from folder contents and local tool configuration.
 - Produce an inspect/deployment plan before writing files.
 - Support only `codex-cli` in the first MVP.
-- Create `.amo/`, `.amo/enrollment.json`, `.amo/hooks/`, `.amo/state/`, and `.amo/obsidian-vault/`.
+- Create `.amo/`, `.amo/enrollment.json`, `.amo/hooks/`, `.amo/state/`, and `.amo/AMO - <project>/`.
 - Reject global hook deployment by default.
 - Add `POST /api/replies`.
-- Write reply notes into the project-local `.amo/obsidian-vault/Replies/`.
+- Write reply notes into the project-local `.amo/AMO - <project>/Sessions/<session-id>/turns/generated/`.
 - Update session snapshots with reply note metadata.
 - Keep hook cache fallback and protocol-clean stdout when integrating project-local hook scripts.
 
 Follow-up slices:
 
-- Append reply notes as file nodes into an Obsidian `.canvas`.
-- Add overlay card actions for `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI`.
+- Append reply notes as file nodes into `Canvases/AgentFlow.base.canvas`.
+- Add overlay card actions for `Open Note` and `Open Canvas`.
 - Add Obsidian plugin command to send `[!anno]...[/anno]` annotations to AMO.
-- Add `POST /api/obsidian/annotations` and pending continuation prompt state.
+- Add `POST /api/obsidian/annotations`, pending continuation prompt state, and overlay automatic copy+focus after Obsidian `Send to AMO`.
 - Add Codex App, Claude CLI, Kiro IDE, and multi-CLI canvas shortcuts after the Codex CLI loop is proven.
 
 ## Non-Goals
 
-- Do not auto-paste or auto-submit into the CLI.
+- Do not auto-paste or auto-submit into the CLI/App. Automatic clipboard copy and window focus after `Send to AMO` are allowed.
 - Do not implement auto approval.
 - Do not install global hooks.
 - Do not silently install hooks or adapters without a user-selected workspace folder.
@@ -69,10 +69,10 @@ The first slice is complete when:
 - `POST /api/workspaces/inspect` or equivalent local function can inspect a selected folder and report candidate adapter plans.
 - Inspect reports `codex-cli` availability and clearly marks Codex App, Claude CLI, and Kiro IDE as deferred or unsupported when not implemented.
 - Enrollment writes only project-local hook/adapter files after explicit confirmation.
-- Enrollment creates `.amo/` and `.amo/obsidian-vault/`.
+- Enrollment creates `.amo/` and `.amo/AMO - <project>/`.
 - Global hook deployment is rejected or absent from the product path.
 - `POST /api/replies` accepts a Codex Stop-hook-like payload.
-- Bridge writes a Markdown note with AMO frontmatter into `.amo/obsidian-vault/Replies/`.
+- Bridge writes a Markdown note with a hidden AMO marker into `.amo/AMO - <project>/Sessions/<session-id>/turns/generated/`.
 - `GET /api/sessions` exposes `lastReplyNote`, `lastReplyAt`, and `canvasPath` when available.
 - Existing broker event/session behavior still passes its verification script.
 - Hook failure remains non-blocking and hook stdout remains protocol-clean.
@@ -84,4 +84,5 @@ End-to-end Phase 5 acceptance:
 - Canvas gets a linked file node.
 - Overlay opens the note/canvas.
 - Obsidian plugin extracts annotations and sends them to AMO.
-- Overlay copies a pending continuation prompt and focuses the target CLI.
+- Overlay automatically copies a pending continuation prompt and focuses the target CLI/App.
+- User manually pastes/submits; AMO does not auto-paste, press Enter, or approve prompts.

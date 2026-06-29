@@ -40,7 +40,7 @@ var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
 var PLUGIN_VERSION = "1.4.30";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
-var AMO_CANVAS_TYPE = "agent-flow";
+var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
   numberAnnotationsInPrompt: false,
@@ -61,7 +61,7 @@ var AMO_CANVAS_SEND_ACTION_CLASS = "amo-send-canvas-note-action";
 var AMO_CANVAS_PANEL_ACTION_CLASS = "amo-open-canvas-panel-action";
 var AMO_CANVAS_TITLE_ACTION_CLASS = "amo-edit-canvas-note-title-action";
 var AMO_CANVAS_OPEN_NOTE_ACTION_CLASS = "amo-open-canvas-note-action";
-var DEFAULT_CANVAS_PATH = "AgentFlow.canvas";
+var DEFAULT_CANVAS_PATH = "Canvases/AgentFlow.base.canvas";
 var SKIPPED_TAGS = /* @__PURE__ */ new Set(["A", "BUTTON", "CODE", "INPUT", "PRE", "SCRIPT", "STYLE", "TEXTAREA"]);
 
 // src/core/api.ts
@@ -955,7 +955,7 @@ var AmoAnnotationSettingTab = class extends import_obsidian3.PluginSettingTab {
         await this.plugin.saveSettings();
       });
     });
-    new import_obsidian3.Setting(containerEl).setName("Canvas \u65B0 note \u8FFD\u52A0\u65B9\u5411").setDesc("\u63A7\u5236 AMO \u5728 AgentFlow.canvas \u4E2D\u521B\u5EFA\u65B0 reply/prompt note \u7684\u9ED8\u8BA4\u4F4D\u7F6E\u3002\u9ED8\u8BA4\u5411\u4E0B\u3002").addDropdown((dropdown) => {
+    new import_obsidian3.Setting(containerEl).setName("Canvas \u65B0 note \u8FFD\u52A0\u65B9\u5411").setDesc("\u63A7\u5236 AMO \u5728 AgentFlow.base.canvas \u4E2D\u521B\u5EFA\u65B0 reply/prompt note \u7684\u9ED8\u8BA4\u4F4D\u7F6E\u3002\u9ED8\u8BA4\u5411\u4E0B\u3002").addDropdown((dropdown) => {
       dropdown.addOption("down", "\u5411\u4E0B").addOption("right", "\u5411\u53F3").setValue(this.plugin.settings.canvasAppendDirection === "right" ? "right" : "down").onChange(async (value) => {
         this.plugin.settings.canvasAppendDirection = value === "right" ? "right" : "down";
         await this.plugin.saveSettings();

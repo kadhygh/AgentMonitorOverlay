@@ -194,7 +194,7 @@ New Phase 5 direction:
 - Codex `Stop` hook reply capture should POST to the bridge and keep local `.codex/cache/` only for debug mode or bridge/hook failure fallback
 - bridge should create Obsidian reply notes and append file nodes to an Obsidian canvas
 - Obsidian plugin should own vault-native annotation extraction using `[!anno]...[/anno]`
-- sync-back should start as explicit `copy pending prompt + focus target CLI`
+- sync-back now runs from Obsidian `Send to AMO` as automatic clipboard copy plus target CLI/App focus; the user still manually pastes/submits
 
 ## Current Validation Notes
 
@@ -313,8 +313,8 @@ Guardrails:
 - Choose adapter behavior from folder contents and local CLI/TUI capabilities
 - Let the Obsidian plugin own vault-native note/canvas behavior and annotation UX
 - Let the AMO bridge own session linkage, reply note routing, pending prompts, and overlay-visible state
-- Prefer `copy + focus target session` before any auto-send behavior
-- Do not auto-paste, auto-enter, or auto-approve in Phase 5
+- `Send to AMO` may automatically copy the pending prompt and focus the target session
+- Do not auto-paste, auto-enter, auto-submit, or auto-approve in Phase 5
 
 ## Useful Documents
 
@@ -376,9 +376,9 @@ Do not commit:
 1. Implement script-driven workspace inspect/enroll in the existing Node broker, starting from a user-selected project folder and following `docs/adapter-deployment-guide.md`.
 2. For the first MVP, support only the `codex-cli` adapter and create project-local `.amo/` plus `workspace.vaultRoot`.
 3. Implement the smallest bridge `/api/replies` endpoint.
-4. Add bridge config for the project-local `workspace.vaultRoot`, reply note folder, and `AgentFlow.canvas`.
+4. Add bridge config for the project-local `workspace.vaultRoot`, session generated-note folder, and `Canvases/AgentFlow.base.canvas`.
 5. Adapt the proven Codex `Stop` hook script as a project-local enrolled adapter so it keeps `.codex/cache/` only for debug/failure fallback and best-effort POSTs to AMO bridge.
 6. Generate a reply note and append-only canvas file node in the project-local vault.
-7. Add overlay actions for `Focus CLI`, `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI`.
+7. Add overlay actions for `Focus CLI`, `Open Note`, and `Open Canvas`; Obsidian `Send to AMO` should trigger automatic copy+focus instead of a card-face Sync button.
 8. Add an Obsidian plugin command that owns note/canvas opening with tab reuse and sends extracted `[!anno]...[/anno]` annotations to AMO.
 9. Run a manual end-to-end smoke before expanding to Codex App, Claude CLI, Kiro IDE, or multi-CLI canvas shortcuts.

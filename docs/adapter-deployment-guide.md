@@ -137,8 +137,14 @@ Recommended shape:
     bindings.json
     pending-replies.json
   AMO - <project>/
-    AgentFlow.canvas
-    Replies/
+    Sessions/
+      <session-id>/
+        session.json
+        turns/
+          generated/
+    Canvases/
+      AgentFlow.base.canvas
+      Work/
     .obsidian/
       community-plugins.json
       plugins/
@@ -152,9 +158,9 @@ Recommended shape:
     bridge-events.log
 ```
 
-Generated state, logs, and vault content should not be committed accidentally. AMO should add or suggest ignore rules for `.amo/state/`, `.amo/logs/`, and generated reply content.
+Generated state, logs, and vault content should not be committed accidentally. AMO should add or suggest ignore rules for `.amo/state/`, `.amo/logs/`, generated session notes, and the base canvas.
 
-Session layout v2 is the next target for generated vault content. New storage work should follow `docs/session-layout-v2.md`, with generated notes under `AMO - <project>/Sessions/<session-id>/turns/generated/` and workspace canvases under `AMO - <project>/Canvases/`. The flat `Replies/`, `Prompts/`, and root `AgentFlow.canvas` shape is compatibility for existing test deployments only.
+Session layout v2 is the active target for generated vault content. New generated notes go under `AMO - <project>/Sessions/<session-id>/turns/generated/`, the base raw flow lives at `AMO - <project>/Canvases/AgentFlow.base.canvas`, and future human-organized work canvases live under `AMO - <project>/Canvases/Work/`. The flat `Replies/`, `Prompts/`, and root `AgentFlow.canvas` shape is compatibility cleanup for old test deployments only.
 
 ## Adapter Contract
 

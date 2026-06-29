@@ -226,6 +226,7 @@ try {
         throw "Expected friendly AMO vault folder '$expectedVaultName', got '$vaultName'."
     }
     $pluginRoot = Join-Path $vaultRoot ".obsidian\plugins\md-anno-tools"
+    $baseCanvasPath = Join-Path $vaultRoot "Canvases\AgentFlow.base.canvas"
 
     foreach ($targetPath in @(
             (Join-Path $workspaceRoot ".amo\workspace.json"),
@@ -234,7 +235,7 @@ try {
             (Join-Path $workspaceRoot ".amo\adapters\claude-cli.json"),
             (Join-Path $workspaceRoot ".amo\hooks\codex-stop-message.mjs"),
             (Join-Path $workspaceRoot ".amo\hooks\claude-message.mjs"),
-            (Join-Path $vaultRoot "AgentFlow.canvas"),
+            $baseCanvasPath,
             (Join-Path $vaultRoot ".obsidian\community-plugins.json"),
             (Join-Path $pluginRoot "manifest.json"),
             (Join-Path $pluginRoot "main.js"),
@@ -421,7 +422,7 @@ try {
     if (-not (Test-Path -LiteralPath $notePath)) {
         throw "Reply note was not created: $notePath"
     }
-    $canvasPath = Join-Path $vaultRoot "AgentFlow.canvas"
+    $canvasPath = $baseCanvasPath
     $canvas = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
     if (@($canvas.nodes).Count -lt 1) {
         throw "Canvas did not receive a reply file node."
@@ -506,6 +507,15 @@ try {
     }
     Write-Host "Permission hook event OK -> $($permissionEvent.session.state)"
 
+    $autoClearHeartbeat = Invoke-BrokerJson `
+        -Method POST `
+        -Path "/api/sessions/codex-reply-verify/heartbeat" `
+        -Body @{ message = "User continued in the CLI after attention"; state = "running" }
+    if ($autoClearHeartbeat.session.state -ne "running" -or $autoClearHeartbeat.session.needsAttention -or $autoClearHeartbeat.session.reviewRequired -or $autoClearHeartbeat.session.reviewStatus) {
+        throw "Running heartbeat should auto-clear stale attention/review state."
+    }
+    Write-Host "Attention auto-clear heartbeat OK -> $($autoClearHeartbeat.session.state)"
+
     $annotationResult = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
         schemaVersion = 1
         source = "verify-obsidian-plugin"
@@ -588,6 +598,32 @@ try {
         throw "Right canvas append edge should use right -> left sides."
     }
     Write-Host "Annotation sync-back OK -> $($numberedAnnotationResult.pendingPromptId)"
+
+    $duplicateAttention = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        source = "codex-event-hook"
+        sessionId = "codex-reply-verify"
+        cwd = $workspaceRoot
+        hookEventName = "PermissionRequest"
+        message = "Codex is waiting for another permission before duplicate prompt replay."
+    }
+    if (-not $duplicateAttention.session.needsAttention) {
+        throw "Duplicate prompt precondition did not mark the session as needing attention."
+    }
+    $duplicatePrompt = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        source = "codex-event-hook"
+        sessionId = "codex-reply-verify"
+        cwd = $workspaceRoot
+        hookEventName = "UserPromptSubmit"
+        prompt = $numberedAnnotationResult.prompt
+    }
+    if ($duplicatePrompt.session.state -ne "running" -or $duplicatePrompt.session.needsAttention -or $duplicatePrompt.session.reviewRequired -or $duplicatePrompt.session.reviewStatus) {
+        throw "Duplicate UserPromptSubmit should auto-clear stale attention/review state."
+    }
+    Write-Host "Attention auto-clear duplicate prompt OK -> $($duplicatePrompt.session.state)"
 
     $windowBinding = Invoke-BrokerJson -Method POST -Path "/api/sessions/codex-reply-verify/window-binding" -Body @{
         hwnd = 123456

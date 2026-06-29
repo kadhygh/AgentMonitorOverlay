@@ -39,7 +39,7 @@ export class AmoAnnotationSettingTab extends PluginSettingTab {
 
     new Setting(containerEl)
       .setName("Canvas 新 note 追加方向")
-      .setDesc("控制 AMO 在 AgentFlow.canvas 中创建新 reply/prompt note 的默认位置。默认向下。")
+      .setDesc("控制 AMO 在 AgentFlow.base.canvas 中创建新 reply/prompt note 的默认位置。默认向下。")
       .addDropdown((dropdown) => {
         dropdown
           .addOption("down", "向下")

@@ -14,8 +14,13 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const DEBUG_MAX_LOG_ENTRIES = 800;
 const AMO_DIR = ".amo";
 const AMO_SCHEMA_VERSION = 1;
-const AMO_CANVAS_PATH = "AgentFlow.canvas";
-const AMO_CANVAS_TYPE = "agent-flow";
+const AMO_LAYOUT_VERSION = 2;
+const AMO_SESSIONS_PATH = "Sessions";
+const AMO_SESSION_GENERATED_PATH = "turns/generated";
+const AMO_CANVASES_PATH = "Canvases";
+const AMO_WORK_CANVASES_PATH = "Canvases/Work";
+const AMO_CANVAS_PATH = "Canvases/AgentFlow.base.canvas";
+const AMO_CANVAS_TYPE = "agent-flow-base";
 const AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 const AMO_NOTE_INDEX_PATH = path.join("state", "note-index.json");
 const AMO_VAULT_NAME_PREFIX = "AMO - ";
@@ -528,6 +533,41 @@ function debugPreview(value, limit = 240) {
   return text.length > limit ? `${text.slice(0, limit)}...` : text;
 }
 
+function sessionHasAttentionState(session) {
+  return Boolean(
+    session?.needsAttention ||
+      session?.reviewRequired ||
+      session?.reviewStatus ||
+      session?.reviewRequestedAt ||
+      session?.reviewedAt
+  );
+}
+
+function shouldClearAttentionForActivity({ eventName, state, promptMessage }) {
+  const normalizedEvent = (normalizeText(eventName) || "").toLowerCase();
+  if (promptMessage || normalizedEvent === "userpromptsubmit") {
+    return true;
+  }
+
+  return state === "running";
+}
+
+function clearSessionAttentionFields(session, action = "auto-cleared-by-activity") {
+  return {
+    ...session,
+    needsAttention: false,
+    reviewRequired: false,
+    reviewStatus: null,
+    reviewRequestedAt: null,
+    reviewedAt: null,
+    reviewedBy: null,
+    reviewAction: action,
+    reviewTurnId: null,
+    reviewNote: null,
+    reviewCanvasNodeId: null,
+  };
+}
+
 function upsertSessionFromEvent(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw httpError(400, "invalid_json", "Event payload must be a JSON object");
@@ -563,8 +603,15 @@ function upsertSessionFromEvent(payload) {
   const message = normalizeText(
     payload.message || payload.summary || payload.lastMessage || payload.last_message
   );
+  const promptMessage = promptMessageFromEvent(payload, eventName, message);
+  const shouldClearAttention = shouldClearAttentionForActivity({
+    eventName,
+    state,
+    promptMessage,
+  });
 
-  const session = {
+  let session = {
+    ...(existing || {}),
     tool,
     sessionId,
     cwd: normalizeText(payload.cwd || payload.projectPath || payload.project_path) || existing?.cwd || null,
@@ -574,7 +621,9 @@ function upsertSessionFromEvent(payload) {
     lastEvent: eventName || existing?.lastEvent || null,
     lastMessage: message || existing?.lastMessage || null,
     needsAttention:
-      typeof payload.needsAttention === "boolean"
+      shouldClearAttention
+        ? false
+        : typeof payload.needsAttention === "boolean"
         ? payload.needsAttention
         : state === "waiting_permission" || state === "waiting_user",
     windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null,
@@ -587,9 +636,20 @@ function upsertSessionFromEvent(payload) {
     heartbeatAt: existing?.heartbeatAt || null,
     eventCount: (existing?.eventCount || 0) + 1,
   };
+  if (shouldClearAttention) {
+    const hadAttention = sessionHasAttentionState(existing) || Boolean(payload.needsAttention);
+    session = clearSessionAttentionFields(session);
+    if (hadAttention) {
+      recordDebugLog("broker", "session.attention_auto_cleared", {
+        sessionId,
+        reason: promptMessage ? "prompt" : "activity",
+        eventName: eventName || null,
+        state,
+      });
+    }
+  }
 
   sessions.set(sessionId, session);
-  const promptMessage = promptMessageFromEvent(payload, eventName, message);
   if (promptMessage) {
     try {
       const promptResult = handlePrompt({
@@ -628,8 +688,13 @@ function updateHeartbeat(sessionId, payload) {
   }
 
   const nextState = normalizeState(payload.state) || existing.state;
-  const shouldClearReview = nextState === "running" || nextState === "waiting_permission" || nextState === "waiting_user";
-  const session = {
+  const eventName = normalizeText(payload.event || payload.eventName || payload.hookEventName || payload.hook_event_name || payload.type);
+  const shouldClearAttention = shouldClearAttentionForActivity({
+    eventName,
+    state: nextState,
+    promptMessage: "",
+  });
+  let session = {
     ...existing,
     cwd: normalizeText(payload.cwd) || existing.cwd,
     title: resolveSessionTitle(existing.tool || payload.tool, sessionId, payload.title, existing.title),
@@ -639,7 +704,9 @@ function updateHeartbeat(sessionId, payload) {
       normalizeText(payload.message || payload.lastMessage || payload.last_message) ||
       existing.lastMessage,
     needsAttention:
-      typeof payload.needsAttention === "boolean"
+      shouldClearAttention
+        ? false
+        : typeof payload.needsAttention === "boolean"
         ? payload.needsAttention
         : nextState === "waiting_permission" || nextState === "waiting_user",
     windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing.windowHint,
@@ -647,18 +714,30 @@ function updateHeartbeat(sessionId, payload) {
       normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
       existing.targetBinding ||
       null,
-    reviewRequired: shouldClearReview ? false : existing.reviewRequired || false,
-    reviewStatus: shouldClearReview ? null : existing.reviewStatus || null,
-    reviewRequestedAt: shouldClearReview ? null : existing.reviewRequestedAt || null,
-    reviewedAt: shouldClearReview ? null : existing.reviewedAt || null,
-    reviewedBy: shouldClearReview ? null : existing.reviewedBy || null,
-    reviewAction: shouldClearReview ? null : existing.reviewAction || null,
-    reviewTurnId: shouldClearReview ? null : existing.reviewTurnId || null,
-    reviewNote: shouldClearReview ? null : existing.reviewNote || null,
-    reviewCanvasNodeId: shouldClearReview ? null : existing.reviewCanvasNodeId || null,
+    reviewRequired: existing.reviewRequired || false,
+    reviewStatus: existing.reviewStatus || null,
+    reviewRequestedAt: existing.reviewRequestedAt || null,
+    reviewedAt: existing.reviewedAt || null,
+    reviewedBy: existing.reviewedBy || null,
+    reviewAction: existing.reviewAction || null,
+    reviewTurnId: existing.reviewTurnId || null,
+    reviewNote: existing.reviewNote || null,
+    reviewCanvasNodeId: existing.reviewCanvasNodeId || null,
     heartbeatAt: now,
     updatedAt: now,
   };
+  if (shouldClearAttention) {
+    const hadAttention = sessionHasAttentionState(existing) || Boolean(payload.needsAttention);
+    session = clearSessionAttentionFields(session);
+    if (hadAttention) {
+      recordDebugLog("broker", "session.attention_auto_cleared", {
+        sessionId,
+        reason: "heartbeat",
+        eventName: eventName || null,
+        state: nextState,
+      });
+    }
+  }
 
   sessions.set(sessionId, session);
   return session;
@@ -751,8 +830,9 @@ function inspectWorkspace(payload) {
     ".amo/logs",
     ".amo/backups",
     plannedVaultRelativePath,
-    `${plannedVaultRelativePath}/Replies`,
-    `${plannedVaultRelativePath}/Prompts`,
+    `${plannedVaultRelativePath}/${AMO_SESSIONS_PATH}`,
+    `${plannedVaultRelativePath}/${AMO_CANVASES_PATH}`,
+    `${plannedVaultRelativePath}/${AMO_WORK_CANVASES_PATH}`,
     `${plannedVaultRelativePath}/.obsidian`,
     `${plannedVaultRelativePath}/.obsidian/plugins`,
     `${plannedVaultRelativePath}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}`,
@@ -896,11 +976,14 @@ function enrollWorkspace(payload) {
     projectName: inspection.projectName,
     createdAt: existingWorkspace?.createdAt || now,
     updatedAt: now,
+    layoutVersion: AMO_LAYOUT_VERSION,
     amoRoot,
     vaultRoot,
     defaultCanvasPath: AMO_CANVAS_PATH,
-    repliesPath: "Replies",
-    promptsPath: "Prompts",
+    sessionsPath: AMO_SESSIONS_PATH,
+    generatedTurnsPath: `${AMO_SESSIONS_PATH}/<session-id>/${AMO_SESSION_GENERATED_PATH}`,
+    canvasesPath: AMO_CANVASES_PATH,
+    workCanvasesPath: AMO_WORK_CANVASES_PATH,
   });
   installedFiles.push(".amo/workspace.json");
 
@@ -1264,17 +1347,25 @@ function cleanWorkspaceVault(payload) {
 
   const amoRoot = path.join(workspacePath, AMO_DIR);
   const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, workspace.projectName || path.basename(workspacePath));
-  const repliesPath = path.join(vaultRoot, "Replies");
-  const promptsPath = path.join(vaultRoot, "Prompts");
+  const sessionsPath = path.join(vaultRoot, AMO_SESSIONS_PATH);
+  const canvasesPath = path.join(vaultRoot, AMO_CANVASES_PATH);
   const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
-  ensureInsideDirectory(vaultRoot, repliesPath);
-  ensureInsideDirectory(vaultRoot, promptsPath);
+  const legacyRepliesPath = path.join(vaultRoot, "Replies");
+  const legacyPromptsPath = path.join(vaultRoot, "Prompts");
+  const legacyCanvasPath = path.join(vaultRoot, "AgentFlow.canvas");
+  ensureInsideDirectory(vaultRoot, sessionsPath);
+  ensureInsideDirectory(vaultRoot, canvasesPath);
   ensureInsideDirectory(vaultRoot, canvasPath);
+  ensureInsideDirectory(vaultRoot, legacyRepliesPath);
+  ensureInsideDirectory(vaultRoot, legacyPromptsPath);
+  ensureInsideDirectory(vaultRoot, legacyCanvasPath);
 
-  fs.rmSync(repliesPath, { recursive: true, force: true });
-  fs.rmSync(promptsPath, { recursive: true, force: true });
-  fs.mkdirSync(repliesPath, { recursive: true });
-  fs.mkdirSync(promptsPath, { recursive: true });
+  fs.rmSync(sessionsPath, { recursive: true, force: true });
+  fs.rmSync(legacyRepliesPath, { recursive: true, force: true });
+  fs.rmSync(legacyPromptsPath, { recursive: true, force: true });
+  fs.rmSync(legacyCanvasPath, { force: true });
+  fs.mkdirSync(sessionsPath, { recursive: true });
+  fs.mkdirSync(path.join(vaultRoot, AMO_WORK_CANVASES_PATH), { recursive: true });
   ensureCanvas(canvasPath, {
     workspaceId: workspace.workspaceId,
     workspacePath,
@@ -1315,25 +1406,27 @@ function workspaceMaintenanceSnapshot(workspacePath) {
   }
 
   const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, path.basename(workspacePath));
-  const repliesPath = path.join(vaultRoot, "Replies");
-  const promptsPath = path.join(vaultRoot, "Prompts");
+  const sessionsPath = path.join(vaultRoot, AMO_SESSIONS_PATH);
+  const generatedPath = path.join(sessionsPath, "*", ...AMO_SESSION_GENERATED_PATH.split("/"));
+  const workCanvasesPath = path.join(vaultRoot, AMO_WORK_CANVASES_PATH);
   const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
   const pluginDir = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID);
   const canvasInfo = inspectCanvasFile(canvasPath);
   const pluginHealth = inspectObsidianPluginHealth(vaultRoot);
+  const generatedCounts = countConversationGeneratedNotes(sessionsPath);
   const issues = [];
 
   if (!fs.existsSync(amoRoot)) issues.push(".amo directory is missing");
   if (!fs.existsSync(workspaceFile)) issues.push(".amo/workspace.json is missing");
   if (!fs.existsSync(vaultRoot)) issues.push("obsidian vault is missing");
-  if (!fs.existsSync(repliesPath)) issues.push("Replies folder is missing");
-  if (!fs.existsSync(promptsPath)) issues.push("Prompts folder is missing");
+  if (!fs.existsSync(sessionsPath)) issues.push("Sessions folder is missing");
+  if (!fs.existsSync(path.dirname(canvasPath))) issues.push("Canvases folder is missing");
   if (!canvasInfo.exists) {
-    issues.push("AgentFlow.canvas is missing");
+    issues.push("AgentFlow.base.canvas is missing");
   } else if (!canvasInfo.readable) {
-    issues.push("AgentFlow.canvas is not valid JSON");
+    issues.push("AgentFlow.base.canvas is not valid JSON");
   } else if (!canvasInfo.amoManaged) {
-    issues.push("AgentFlow.canvas is missing AMO managed marker");
+    issues.push("AgentFlow.base.canvas is missing AMO managed marker");
   }
   if (pluginHealth.issues?.length) {
     issues.push(...pluginHealth.issues);
@@ -1351,23 +1444,31 @@ function workspaceMaintenanceSnapshot(workspacePath) {
       workspace: workspacePath,
       amoRoot,
       vaultRoot,
-      replies: repliesPath,
-      prompts: promptsPath,
+      sessions: sessionsPath,
+      generated: generatedPath,
+      workCanvases: workCanvasesPath,
       canvas: canvasPath,
+      replies: path.join(vaultRoot, "Replies"),
+      prompts: path.join(vaultRoot, "Prompts"),
       plugin: pluginDir,
     },
     exists: {
       amoRoot: fs.existsSync(amoRoot),
       workspaceJson: fs.existsSync(workspaceFile),
       vaultRoot: fs.existsSync(vaultRoot),
-      replies: fs.existsSync(repliesPath),
-      prompts: fs.existsSync(promptsPath),
+      sessions: fs.existsSync(sessionsPath),
+      generated: fs.existsSync(sessionsPath),
+      workCanvases: fs.existsSync(workCanvasesPath),
       canvas: canvasInfo.exists,
+      replies: fs.existsSync(path.join(vaultRoot, "Replies")),
+      prompts: fs.existsSync(path.join(vaultRoot, "Prompts")),
       plugin: fs.existsSync(pluginDir),
     },
     counts: {
-      replyNotes: countFilesByExtension(repliesPath, ".md"),
-      promptNotes: countFilesByExtension(promptsPath, ".md"),
+      replyNotes: generatedCounts.replyNotes,
+      promptNotes: generatedCounts.promptNotes,
+      generatedNotes: generatedCounts.totalNotes,
+      sessionFolders: generatedCounts.sessionFolders,
       canvasNodes: canvasInfo.nodeCount,
       canvasEdges: canvasInfo.edgeCount,
     },
@@ -1437,6 +1538,34 @@ function countFilesByExtension(root, extension) {
     }
   }
   return count;
+}
+
+function countConversationGeneratedNotes(sessionsPath) {
+  const result = {
+    replyNotes: 0,
+    promptNotes: 0,
+    totalNotes: 0,
+    sessionFolders: 0,
+  };
+  if (!fs.existsSync(sessionsPath)) return result;
+
+  for (const sessionEntry of fs.readdirSync(sessionsPath, { withFileTypes: true })) {
+    if (!sessionEntry.isDirectory()) continue;
+    result.sessionFolders += 1;
+    const generatedDir = path.join(sessionsPath, sessionEntry.name, ...AMO_SESSION_GENERATED_PATH.split("/"));
+    if (!fs.existsSync(generatedDir)) continue;
+    for (const entry of fs.readdirSync(generatedDir, { withFileTypes: true })) {
+      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
+      result.totalNotes += 1;
+      if (/^reply \d+\.md$/iu.test(entry.name)) {
+        result.replyNotes += 1;
+      } else if (/^prompt \d+\.md$/iu.test(entry.name)) {
+        result.promptNotes += 1;
+      }
+    }
+  }
+
+  return result;
 }
 
 function ensureInsideDirectory(root, target) {
@@ -1683,6 +1812,35 @@ function handlePrompt(payload) {
     capturedAt,
   });
   if (duplicate) {
+    const duplicateSession = clearSessionAttentionFields(
+      {
+        ...(existing || {}),
+        tool,
+        sessionId,
+        cwd,
+        title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title),
+        taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null,
+        state: normalizeState(payload.state) || "running",
+        lastEvent: hookEventName,
+        lastMessage: trimMessage(`User: ${message}`, 240),
+        updatedAt: capturedAt,
+        createdAt: existing?.createdAt || now,
+        heartbeatAt: existing?.heartbeatAt || null,
+        eventCount: (existing?.eventCount || 0) + 1,
+        workspaceId: existing?.workspaceId || workspace.workspaceId,
+        workspacePath: existing?.workspacePath || workspaceRoot,
+      },
+      "auto-cleared-by-duplicate-prompt"
+    );
+    sessions.set(sessionId, duplicateSession);
+    if (sessionHasAttentionState(existing)) {
+      recordDebugLog("broker", "session.attention_auto_cleared", {
+        sessionId,
+        reason: "duplicate-prompt",
+        eventName: hookEventName,
+        state: duplicateSession.state,
+      });
+    }
     recordDebugLog("broker", "prompt.duplicate_skipped", {
       sessionId,
       pendingPromptId: pendingPromptId || null,
@@ -1702,7 +1860,7 @@ function handlePrompt(payload) {
       canvasPath: existing?.canvasPath || null,
       canvasAbsolutePath: existing?.canvasAbsolutePath || null,
       canvasNodeId: duplicate.canvasNodeId || null,
-      session: existing,
+      session: duplicateSession,
     };
   }
 
@@ -3039,7 +3197,9 @@ function applyAmoCanvasMetadata(canvas, metadata = {}) {
   canvas.amo = {
     ...existingAmo,
     schemaVersion: AMO_SCHEMA_VERSION,
+    layoutVersion: AMO_LAYOUT_VERSION,
     canvasType: AMO_CANVAS_TYPE,
+    canvasRole: "base-flow",
     managedBy: AMO_CANVAS_MANAGER,
     workspaceId: normalizeText(metadata.workspaceId || existingAmo.workspaceId),
     workspacePath: normalizeText(metadata.workspacePath || existingAmo.workspacePath),
@@ -3725,6 +3885,8 @@ function amoGitignore() {
   return [
     "state/",
     "logs/",
+    "AMO - */Sessions/",
+    "AMO - */Canvases/AgentFlow.base.canvas",
     "AMO - */Replies/",
     "AMO - */Prompts/",
     "AMO - */AgentFlow.canvas",
@@ -3787,7 +3949,7 @@ function resolvePromptWorkspace(payload, existing) {
 }
 
 function writeReplyNote(amoRoot, vaultRoot, record) {
-  const noteIdentity = nextConversationNoteIdentity(vaultRoot, "reply");
+  const noteIdentity = nextConversationNoteIdentity(vaultRoot, record, "reply");
   const notePath = toVaultRelativePath(vaultRoot, noteIdentity.noteAbsolutePath);
   const noteMetadata = conversationNoteMetadata({
     record,
@@ -3807,11 +3969,12 @@ function writeReplyNote(amoRoot, vaultRoot, record) {
 
   writeTextFile(noteIdentity.noteAbsolutePath, body);
   upsertConversationNoteIndex(amoRoot, noteMetadata);
+  writeConversationSessionManifest(vaultRoot, record, noteMetadata);
   return { ...noteIdentity, ...noteMetadata, notePath };
 }
 
 function writePromptNote(amoRoot, vaultRoot, record) {
-  const noteIdentity = nextConversationNoteIdentity(vaultRoot, "prompt");
+  const noteIdentity = nextConversationNoteIdentity(vaultRoot, record, "prompt");
   const notePath = toVaultRelativePath(vaultRoot, noteIdentity.noteAbsolutePath);
   const noteMetadata = conversationNoteMetadata({
     record,
@@ -3831,6 +3994,7 @@ function writePromptNote(amoRoot, vaultRoot, record) {
 
   writeTextFile(noteIdentity.noteAbsolutePath, body);
   upsertConversationNoteIndex(amoRoot, noteMetadata);
+  writeConversationSessionManifest(vaultRoot, record, noteMetadata);
   return { ...noteIdentity, ...noteMetadata, notePath };
 }
 
@@ -3958,10 +4122,67 @@ function compactObject(value) {
   return result;
 }
 
-function nextConversationNoteIdentity(vaultRoot, kind) {
+function vaultRelativePath(...parts) {
+  return parts
+    .flatMap((part) => String(part || "").split(/[\\/]+/u))
+    .filter(Boolean)
+    .join("/");
+}
+
+function vaultRelativeToAbsolutePath(vaultRoot, relativePath) {
+  return path.join(vaultRoot, ...String(relativePath || "").split(/[\\/]+/u).filter(Boolean));
+}
+
+function conversationSessionFolderName(record) {
+  return sanitizeFilePart(record?.sessionId || "unknown-session");
+}
+
+function conversationSessionRootPath(record) {
+  return vaultRelativePath(AMO_SESSIONS_PATH, conversationSessionFolderName(record));
+}
+
+function conversationGeneratedNotesPath(record) {
+  return vaultRelativePath(conversationSessionRootPath(record), AMO_SESSION_GENERATED_PATH);
+}
+
+function writeConversationSessionManifest(vaultRoot, record, noteMetadata) {
+  const sessionRoot = conversationSessionRootPath(record);
+  const manifestPath = vaultRelativePath(sessionRoot, "session.json");
+  const manifestAbsolutePath = vaultRelativeToAbsolutePath(vaultRoot, manifestPath);
+  const existing = readJsonFile(manifestAbsolutePath, null);
+  const existingNotes = Array.isArray(existing?.notes) ? existing.notes : [];
+  const nextNotes = existingNotes.filter((item) => normalizeText(item?.noteId) !== noteMetadata.noteId);
+  nextNotes.push({
+    noteId: noteMetadata.noteId,
+    notePath: noteMetadata.notePath,
+    kind: noteMetadata.kind,
+    role: noteMetadata.role,
+    sequence: noteMetadata.sequence,
+    displayName: noteMetadata.displayName,
+    turnId: noteMetadata.turnId,
+    source: noteMetadata.source,
+    capturedAt: noteMetadata.capturedAt,
+  });
+
+  writeJsonFile(manifestAbsolutePath, {
+    schemaVersion: AMO_SCHEMA_VERSION,
+    layoutVersion: AMO_LAYOUT_VERSION,
+    workspaceId: record.workspaceId,
+    workspacePath: record.workspacePath,
+    sessionId: record.sessionId,
+    tool: record.tool,
+    cwd: record.cwd,
+    generatedPath: conversationGeneratedNotesPath(record),
+    baseCanvasPath: AMO_CANVAS_PATH,
+    createdAt: normalizeText(existing?.createdAt) || record.capturedAt || new Date().toISOString(),
+    updatedAt: record.capturedAt || new Date().toISOString(),
+    notes: nextNotes,
+  });
+}
+
+function nextConversationNoteIdentity(vaultRoot, record, kind) {
   const noteKind = kind === "prompt" ? "prompt" : "reply";
-  const directoryName = noteKind === "prompt" ? "Prompts" : "Replies";
-  const noteDir = path.join(vaultRoot, directoryName);
+  const noteDir = vaultRelativeToAbsolutePath(vaultRoot, conversationGeneratedNotesPath(record));
   fs.mkdirSync(noteDir, { recursive: true });
 
   const sequence = nextConversationNoteSequence(noteDir, noteKind);
@@ -4014,7 +4235,7 @@ function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {
   if (!Array.isArray(canvas.edges)) canvas.edges = [];
   applyAmoCanvasMetadata(canvas, {
     workspaceId: record.workspaceId,
-    workspacePath: record.cwd,
+    workspacePath: record.workspacePath || record.cwd,
     updatedAt: record.capturedAt,
   });
   normalizeCanvasEdges(canvas);
@@ -4111,7 +4332,8 @@ function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {
 
   bindings.sessions[record.sessionId] = {
     sessionId: record.sessionId,
-    workCanvasId: "default",
+    workCanvasId: "base",
+    canvasRole: "base-flow",
     canvasPath,
     lastCanvasNodeId: canvasNodeId,
     nodeCount: nodeCount + 1,

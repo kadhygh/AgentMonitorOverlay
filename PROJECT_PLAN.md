@@ -456,7 +456,7 @@ Kiro adapter:
 - 每个已部署工程文件夹创建项目本地 `.amo/`，用于保存 workspace 配置、adapter 配置、本地状态、日志和专属 Obsidian vault。
 - 使用已验证的 Codex `Stop` hook MVP，把 `last_assistant_message` 缓存并转发给 AMO bridge。
 - 使用已验证的 Obsidian `[!anno]...[/anno]` 插件 MVP，在 Markdown 中批注长回复并一键提取批注。
-- 第一版闭环是：用户选定工作区 -> AMO 检测并安装项目本地 adapter/hook -> adapter 捕获回复 -> bridge 写 Obsidian note/canvas -> 用户在 Obsidian 批注 -> plugin 发送批注到 bridge -> overlay 复制 prompt 并聚焦目标 CLI。
+- 第一版闭环是：用户选定工作区 -> AMO 检测并安装项目本地 adapter/hook -> adapter 捕获回复 -> bridge 写 Obsidian note/canvas -> 用户在 Obsidian 批注 -> plugin 发送批注到 bridge -> overlay 自动复制 prompt 并聚焦目标 CLI/App -> 用户手动粘贴/发送。
 
 核心能力：
 
@@ -468,7 +468,7 @@ Kiro adapter:
 - Codex reply note 生成
 - append-only Obsidian canvas flow
 - `Open Note` / `Open Canvas`
-- `Copy Pending Prompt + Focus CLI`
+- Obsidian `Send to AMO` 后自动 `Copy Pending Prompt + Focus Target`
 - Obsidian annotation extraction bridge
 
 完整目标工作流：
@@ -488,7 +488,7 @@ Kiro adapter:
 13. 单个 work canvas 可关联多个 CLI/TUI 窗口。
 14. 用户通过 Obsidian 插件添加 `[!anno]...[/anno]` 批注。
 15. 插件汇总批注并发送给 bridge。
-16. Bridge 生成 pending prompt，复制并聚焦目标 CLI。
+16. Bridge 生成 pending prompt，overlay 自动复制并聚焦目标 CLI/App。
 17. 如果 work canvas 关联多个 CLI/TUI，插件或 monitor 提供多 CLI 快捷跳转。
 
 身份模型：
@@ -504,7 +504,7 @@ Kiro adapter:
 安全规则：
 
 - MVP 不做自动审批。
-- MVP 不自动粘贴、不自动按 Enter、不自动发送 prompt。
+- MVP 不自动粘贴、不自动按 Enter、不自动发送 prompt；自动化只允许做到复制 pending prompt 并切回目标窗口。
 - shell 执行能力默认关闭。
 - 所有高风险操作必须在 UI 中标记。
 - Phase 5 不做全局 hook 部署。
@@ -524,19 +524,19 @@ Kiro adapter:
 - bridge 能在测试 vault 中创建 reply note，并在 canvas 中追加 file node。
 - overlay session 卡片能打开关联 note/canvas。
 - Obsidian 插件能提取 `[!anno]...[/anno]` 并 POST 到 bridge。
-- overlay 能显示 pending continuation，并完成 `copy + focus target CLI`。
+- overlay 能在 Obsidian `Send to AMO` 后自动复制 pending continuation，并聚焦目标 CLI/App。
 
 当前 MVP 工作流：
 
 1. 只支持 Codex CLI adapter。
 2. 只支持一个手动选择的工程文件夹。
-3. `workspace.vaultRoot/AgentFlow.canvas` 是唯一默认 work canvas。
+3. `workspace.vaultRoot/Canvases/AgentFlow.base.canvas` 是默认 base canvas。
 4. Codex `Stop` hook 捕获最后回复并 POST `/api/replies`。
-5. Bridge 写 `workspace.vaultRoot/Replies/` 下的 reply note。
-6. Bridge 把 reply note 追加到 `AgentFlow.canvas`。
+5. Bridge 写 `workspace.vaultRoot/Sessions/<session-id>/turns/generated/` 下的 reply/prompt note。
+6. Bridge 把 reply/prompt note 追加到 `Canvases/AgentFlow.base.canvas`。
 7. Overlay task card 提供 `Focus CLI`、`Open Canvas`、`Open Note`。
 8. Obsidian 插件发送批注，bridge 生成 pending prompt。
-9. 用户点击 `Copy + Focus CLI`，然后手动粘贴/发送。
+9. Overlay 自动复制 pending prompt 并切回目标 CLI/App，用户手动粘贴/发送。
 
 Note/canvas tab 复用规则归 Obsidian 插件处理：如果目标 note/canvas 已打开则聚焦既有 tab，未打开才新建 tab。由于 Obsidian 的 absolute `path` 打开方式要求目标路径属于当前运行态可识别的 vault，overlay 打开前会先通过 broker 把项目本地 `workspace.vaultRoot` 注册到 Obsidian vault registry，并检查运行态配置是否已经存在。运行态尚未加载该 vault 时，overlay 弹出手动打开 vault 的提示；运行态已加载后，overlay 发送 `obsidian://amo-open` 插件协议，由 Obsidian 插件执行 tab 复用和最新 note 聚焦。Obsidian CLI 恢复路径暂时停用。
 
@@ -572,14 +572,14 @@ Note/canvas tab 复用规则归 Obsidian 插件处理：如果目标 note/canvas
 
 这个方向现在进入 Phase 5 bridge MVP，但仍然是 sidecar workflow，不是 AMO 的主数据模型。
 
-未来畅想（非当前 MVP）：如果 Obsidian 插件路线验证顺利，Obsidian 可以从 sidecar 升级为更偏“人类主控台”的工作入口。用户在 canvas 上组织一个 group 或问题分支，在不同 note 上拉起 CLI flow，需要分叉时从 canvas/note 的具体位置新开问题 branch，再绑定不同 CLI/TUI 推进。AMO 仍负责本地 session、窗口、hook、broker 和安全门，Obsidian 负责知识库、可视流程和人的批注/决策层。这个方向先记录，不影响当前 MVP 继续保持 `copy + focus` 和显式动作。
+未来畅想（非当前 MVP）：如果 Obsidian 插件路线验证顺利，Obsidian 可以从 sidecar 升级为更偏“人类主控台”的工作入口。用户在 canvas 上组织一个 group 或问题分支，在不同 note 上拉起 CLI flow，需要分叉时从 canvas/note 的具体位置新开问题 branch，再绑定不同 CLI/TUI 推进。AMO 仍负责本地 session、窗口、hook、broker 和安全门，Obsidian 负责知识库、可视流程和人的批注/决策层。这个方向先记录，不影响当前 MVP 继续保持自动 `copy + focus` 与用户手动粘贴/提交的安全边界。
 
 边界要求：
 
 - Agent Monitor Overlay 负责 session 聚合、窗口跳转、显式用户动作和安全门。
 - Obsidian 插件负责 vault-native note/canvas 变更、注释模型和汇总。
 - 本地 bridge server 负责把 hooks、reply notes、canvas flow、annotation payload 和 overlay session state 接在一起。
-- 第一版 sync-back 应优先 `copy + focus target session`，不要直接自动发送。
+- 第一版 sync-back 已升级为 Obsidian `Send to AMO` 后自动 `copy + focus target session`，但不要自动粘贴、自动回车或直接发送。
 - 不要把 Obsidian/canvas 变成当前项目的主数据模型；它们是 sidecar enhancement。
 
 长期不优先：
@@ -745,15 +745,15 @@ Execution role: supervisor agent manages workers
 - Codex live hook 路线已实现项目本地 enroll、Stop reply capture adapter、bridge `/api/replies`、reply note 和 canvas append；仍需用真实 Codex CLI session 做端到端 smoke。
 - Kiro 仍处在 mock/hook-spike 级别
 - 卡片顺序和 overlay 位置目前是本地 UI 状态，尚未决定是否持久化
-- AMO bridge 已实现 `/api/replies`、vault note 写入、canvas append、`/api/obsidian/annotations` pending prompt 和 `/api/sync-back` 标记；workspace enroll 已安装 vault-local `md-anno-tools` 插件并提供 `Send current note annotations to AMO` 命令；插件侧已支持 note/canvas tab 复用、canvas 选中 note 作为操作目标，以及把编辑器选区复制为引用式 annotation block。
+- AMO bridge 已实现 `/api/replies`、vault note 写入、canvas append、`/api/obsidian/annotations` pending prompt 和 `/api/sync-back` 标记；workspace enroll 已安装 vault-local `md-anno-tools` 插件并提供 `Send current note annotations to AMO` 命令；overlay 收到 Obsidian annotation 事件后会自动复制 pending prompt 并聚焦目标 CLI/App，用户仍手动粘贴/发送；插件侧已支持 note/canvas tab 复用、canvas 选中 note 作为操作目标，以及把编辑器选区复制为引用式 annotation block。
 
 下一步建议：
 
 1. 用真实 Codex CLI session 验证 project-local Stop hook -> `/api/replies` -> overlay task card。
 2. 验证 `Open Note` / `Open Canvas` URI fallback 的可用边界；精确 tab 复用留到 Obsidian 插件阶段。
-3. 验证 Obsidian 插件命令 `Send current note annotations to AMO` 能从当前 reply note POST 批注到 bridge，并让 overlay card 出现 `Sync N`。
+3. 验证 Obsidian 插件命令 `Send current note annotations to AMO` 能从当前 reply note POST 批注到 bridge，并让 overlay 自动复制 pending prompt、聚焦目标 CLI/App。
 4. 给 Obsidian 插件新增显式 `Open AMO note/canvas with tab reuse` 命令。
-5. 做端到端 smoke：reply note -> canvas -> annotation -> pending prompt -> `Copy + Focus CLI`。
+5. 做端到端 smoke：reply note -> canvas -> annotation -> `Send to AMO` -> 自动 copy+focus -> 手动 Ctrl+V/发送。
 
 当前主管状态：
 
@@ -813,11 +813,11 @@ Phase 5 Hook-to-Obsidian Bridge planning / implementation prep。
 2. 保留 overlay 悬浮窗、broker session 状态和 CLI window focus 能力。
 3. 不做全局 hook 部署；接入从用户手动选择项目文件夹开始，根据文件夹内容选择项目本地 adapter/hook。
 4. 复用现有 Node broker，把它升级为 AMO bridge；第一步实现脚本化 workspace inspect/enroll 和 `/api/replies`。
-5. 当前 MVP 只支持 `codex-cli`，创建项目本地 `.amo/` 和 `workspace.vaultRoot/AgentFlow.canvas`。
+5. 当前 MVP 支持 `codex-cli` 和已验证的 `claude-cli`，创建项目本地 `.amo/`、`workspace.vaultRoot/Sessions/` 和 `workspace.vaultRoot/Canvases/AgentFlow.base.canvas`。
 6. 使用外部 Codex Stop hook MVP 的 `last_assistant_message` capture 思路，保持 hook stdout 只输出 `{"continue":true}`，并保留 `.codex/cache/` 兜底。
 7. 使用外部 Obsidian plugin MVP 的 `[!anno]...[/anno]` 语法；第一版只做显式提取和发送，不做复杂 anchored comments。
 8. Obsidian 插件阶段接管 note/canvas 打开与 tab 复用：已打开则聚焦，未打开才新建 tab。
-9. Sync-back 第一版只做 `copy + focus target CLI`，不要自动粘贴、自动回车或自动审批。
+9. Sync-back 第一版为 `Send to AMO` 触发自动 `copy + focus target CLI/App`；不要自动粘贴、自动回车或自动审批。
 
 汇报格式：
 当前阶段：

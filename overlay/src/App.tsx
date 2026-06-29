@@ -548,6 +548,24 @@ function workspaceDeploymentStateLabel(inspection: WorkspaceInspection) {
   return empty ? "empty" : "not deployed";
 }
 
+function workspaceGeneratedNoteCount(status: WorkspaceMaintenanceStatus | null | undefined) {
+  if (!status) return 0;
+  return status.counts.generatedNotes ?? status.counts.replyNotes + status.counts.promptNotes;
+}
+
+function workspaceUsesSessionLayoutV2(status: WorkspaceMaintenanceStatus | null | undefined) {
+  const canvasPath = status?.paths?.canvas?.replace(/\\/g, "/") ?? "";
+  return canvasPath.endsWith("Canvases/AgentFlow.base.canvas") && status?.canvas?.marker?.canvasType === "agent-flow-base";
+}
+
+function workspaceCleanFeedback(result: WorkspaceCleanResult) {
+  const summary = `Cleared ${workspaceGeneratedNoteCount(result.before)} generated note(s) and reset ${result.before.counts.canvasNodes} canvas node(s).`;
+  if (!workspaceUsesSessionLayoutV2(result.after)) {
+    return `${summary} Legacy layout still detected; restart AMO/broker, then run Deploy/Update to switch this workspace to session layout v2.`;
+  }
+  return `${summary} New turns will use session layout v2.`;
+}
+
 function formatAgo(updatedAt: string) {
   const then = new Date(updatedAt).getTime();
   if (Number.isNaN(then)) {
@@ -1330,9 +1348,14 @@ function ScratchpadApp() {
           <StickyNote size={15} aria-hidden="true" />
           <strong>AMO Scratchpad</strong>
         </div>
-        <button type="button" title="Close" onClick={() => void getCurrentWindow().hide()}>
-          <X size={14} aria-hidden="true" />
-        </button>
+        <span className="scratchpad-header-actions">
+          <button type="button" className="scratchpad-clear-button" title="Clear scratchpad" aria-label="Clear scratchpad" onClick={clearText}>
+            <Trash2 size={13} aria-hidden="true" />
+          </button>
+          <button type="button" title="Close" aria-label="Close scratchpad" onClick={() => void getCurrentWindow().hide()}>
+            <X size={14} aria-hidden="true" />
+          </button>
+        </span>
       </header>
       <textarea
         ref={textareaRef}
@@ -1352,9 +1375,6 @@ function ScratchpadApp() {
           <button type="button" onClick={() => void copyText()}>
             Copy
           </button>
-          <button type="button" className="danger" onClick={clearText}>
-            Clear
-          </button>
         </div>
       </footer>
     </main>
@@ -1369,7 +1389,7 @@ function DeployWorkspaceApp() {
   const [workspaceInspection, setWorkspaceInspection] = useState<WorkspaceInspection | null>(null);
   const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
   const [selectedDeployAdapters, setSelectedDeployAdapters] = useState<string[]>([]);
-  const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | null>(null);
+  const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | "clean" | null>(null);
   const [gitExcludeBusy, setGitExcludeBusy] = useState(false);
   const [launchBusy, setLaunchBusy] = useState<string | null>(null);
   const [gitRootPath, setGitRootPath] = useState("");
@@ -1612,6 +1632,58 @@ function DeployWorkspaceApp() {
     }
   }
 
+  async function clearWorkspaceGenerated() {
+    const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
+    if (!targetPath) {
+      setFeedback("Workspace path is required.");
+      return;
+    }
+
+    if (!workspaceInspection?.existingEnrollment) {
+      setFeedback("Check an enrolled AMO workspace before clearing generated content.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Clear generated AMO notes and reset the base canvas for ${projectName(targetPath)}?\n\nHooks, deployment metadata, and work canvas folders will be kept.`,
+    );
+    if (!confirmed) return;
+
+    setDeployBusy("clean");
+    setFeedback(`Clearing generated AMO content for ${projectName(targetPath)}...`);
+
+    try {
+      const result = await postBrokerJson<WorkspaceCleanResult>(BROKER_WORKSPACE_CLEAN_VAULT_URL, {
+        workspacePath: targetPath,
+      });
+      void postUtilityDebugLog("workspace.deploy.clean.ok", {
+        workspacePath: result.workspacePath,
+        generatedNotes: workspaceGeneratedNoteCount(result.before),
+        canvasNodes: result.before.counts.canvasNodes,
+        clearedSessions: result.clearedSessions,
+      });
+      const refreshed = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
+        workspacePath: result.workspacePath,
+        gitRootPath: gitRootPath.trim() || undefined,
+        includeClaudeSettingsLocal: includeClaudeSettingsExcludeRef.current,
+      });
+      setWorkspaceInspection(refreshed);
+      setWorkspacePath(refreshed.workspacePath);
+      setSelectedDeployAdapters(selectedWorkspaceAdapterIds(refreshed));
+      setGitRootPath(refreshed.gitExclude?.gitRootPath || gitRootPath);
+      setGitExcludeResult(null);
+      setFeedback(workspaceCleanFeedback(result));
+    } catch (error) {
+      void postUtilityDebugLog("workspace.deploy.clean.error", {
+        workspacePath: targetPath,
+        message: (error as Error).message,
+      });
+      setFeedback(`Clear failed: ${(error as Error).message}`);
+    } finally {
+      setDeployBusy(null);
+    }
+  }
+
   async function launchWorkspace(adapterId: string) {
     const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
     if (!targetPath) {
@@ -1732,6 +1804,16 @@ function DeployWorkspaceApp() {
                 onClick={() => void enrollWorkspace()}
               >
                 {deployBusy === "enroll" ? "Deploying" : "Deploy Selected"}
+              </button>
+              <button
+                type="button"
+                className="danger-action"
+                title="Clear generated session notes and reset the base canvas without removing hooks."
+                disabled={!workspaceInspection?.existingEnrollment || deployBusy !== null || launchBusy !== null}
+                onClick={() => void clearWorkspaceGenerated()}
+              >
+                <Trash2 size={12} aria-hidden="true" />
+                <span>{deployBusy === "clean" ? "Clearing" : "Clear Generated"}</span>
               </button>
             </div>
 
@@ -2310,7 +2392,7 @@ export default function App() {
   const [workspaceInspection, setWorkspaceInspection] = useState<WorkspaceInspection | null>(null);
   const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
   const [selectedDeployAdapters, setSelectedDeployAdapters] = useState<string[]>([]);
-  const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | null>(null);
+  const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | "clean" | null>(null);
   const [launchBusy, setLaunchBusy] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("scratchpad");
@@ -2816,6 +2898,55 @@ export default function App() {
     }
   }
 
+  async function clearWorkspaceGeneratedFromDeploy() {
+    const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
+    if (!targetPath) {
+      setFeedback("Workspace path is required.");
+      return;
+    }
+
+    if (!workspaceInspection?.existingEnrollment) {
+      setFeedback("Check an enrolled AMO workspace before clearing generated content.");
+      return;
+    }
+
+    const confirmed = window.confirm(
+      `Clear generated AMO notes and reset the base canvas for ${projectName(targetPath)}?\n\nHooks, deployment metadata, and work canvas folders will be kept.`,
+    );
+    if (!confirmed) return;
+
+    setDeployBusy("clean");
+    setFeedback(`Clearing generated AMO content for ${projectName(targetPath)}...`);
+
+    try {
+      const result = await postBrokerJson<WorkspaceCleanResult>(BROKER_WORKSPACE_CLEAN_VAULT_URL, {
+        workspacePath: targetPath,
+      });
+      void postDebugLog("workspace.deploy.clean.ok", {
+        workspacePath: result.workspacePath,
+        generatedNotes: workspaceGeneratedNoteCount(result.before),
+        canvasNodes: result.before.counts.canvasNodes,
+        clearedSessions: result.clearedSessions,
+      });
+      const refreshed = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
+        workspacePath: result.workspacePath,
+      });
+      setWorkspaceInspection(refreshed);
+      setWorkspacePath(refreshed.workspacePath);
+      setSelectedDeployAdapters(selectedWorkspaceAdapterIds(refreshed));
+      setFeedback(workspaceCleanFeedback(result));
+      void refreshSessions("workspace-clean");
+    } catch (error) {
+      void postDebugLog("workspace.deploy.clean.error", {
+        workspacePath: targetPath,
+        message: (error as Error).message,
+      });
+      setFeedback(`Clear failed: ${(error as Error).message}`);
+    } finally {
+      setDeployBusy(null);
+    }
+  }
+
   async function launchWorkspace(adapterId: string) {
     const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
     if (!targetPath) {
@@ -2942,9 +3073,7 @@ export default function App() {
             }
           : current,
       );
-      setFeedback(
-        `Cleaned ${result.before.counts.replyNotes + result.before.counts.promptNotes} notes and reset ${result.before.counts.canvasNodes} canvas nodes.`,
-      );
+      setFeedback(workspaceCleanFeedback(result));
       void postDebugLog("workspace.maintenance.clean.ok", {
         sessionId: session.sessionId,
         workspacePath,
@@ -4517,6 +4646,10 @@ export default function App() {
                 <div className="workspace-panel-content">
                   <div className="workspace-stats">
                     <span>
+                      <strong>{workspacePanel.status.counts.sessionFolders ?? 0}</strong>
+                      Sessions
+                    </span>
+                    <span>
                       <strong>{workspacePanel.status.counts.replyNotes}</strong>
                       Replies
                     </span>
@@ -4537,10 +4670,14 @@ export default function App() {
                       <code title={workspacePanel.status.paths.amoRoot}>{shortPathLabel(workspacePanel.status.paths.amoRoot)}</code>
                       <span className={workspacePanel.status.exists.vaultRoot ? "is-ok" : "is-bad"}>vault</span>
                       <code title={workspacePanel.status.paths.vaultRoot}>{shortPathLabel(workspacePanel.status.paths.vaultRoot)}</code>
-                      <span className={workspacePanel.status.exists.replies ? "is-ok" : "is-bad"}>Replies</span>
-                      <code title={workspacePanel.status.paths.replies}>{shortPathLabel(workspacePanel.status.paths.replies)}</code>
-                      <span className={workspacePanel.status.exists.prompts ? "is-ok" : "is-bad"}>Prompts</span>
-                      <code title={workspacePanel.status.paths.prompts}>{shortPathLabel(workspacePanel.status.paths.prompts)}</code>
+                      <span className={workspacePanel.status.exists.sessions ? "is-ok" : "is-bad"}>Sessions</span>
+                      <code title={workspacePanel.status.paths.sessions}>{shortPathLabel(workspacePanel.status.paths.sessions)}</code>
+                      <span className={workspacePanel.status.exists.generated ? "is-ok" : "is-bad"}>Generated</span>
+                      <code title={workspacePanel.status.paths.generated}>{shortPathLabel(workspacePanel.status.paths.generated)}</code>
+                      <span className={workspacePanel.status.exists.workCanvases ? "is-ok" : "is-bad"}>Work</span>
+                      <code title={workspacePanel.status.paths.workCanvases}>
+                        {shortPathLabel(workspacePanel.status.paths.workCanvases)}
+                      </code>
                     </div>
                   </div>
 
@@ -4913,6 +5050,16 @@ export default function App() {
                     onClick={() => void enrollWorkspace()}
                   >
                     {deployBusy === "enroll" ? "Deploying" : "Deploy"}
+                  </button>
+                  <button
+                    type="button"
+                    className="danger-action"
+                    title="Clear generated session notes and reset the base canvas without removing hooks."
+                    disabled={!workspaceInspection?.existingEnrollment || deployBusy !== null || launchBusy !== null}
+                    onClick={() => void clearWorkspaceGeneratedFromDeploy()}
+                  >
+                    <Trash2 size={12} aria-hidden="true" />
+                    <span>{deployBusy === "clean" ? "Clearing" : "Clear Generated"}</span>
                   </button>
                 </div>
 

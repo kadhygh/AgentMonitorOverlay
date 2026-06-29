@@ -5,7 +5,7 @@ export const EMPTY_ANNO_TEXT = "(empty annotation)";
 export const ANNOTATION_DEFAULT_LABEL = "批注";
 export const PLUGIN_VERSION = "1.4.30";
 export const AMO_CANVAS_MANAGER = "agent-monitor-overlay";
-export const AMO_CANVAS_TYPE = "agent-flow";
+export const AMO_CANVAS_TYPE = "agent-flow-base";
 export const DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
   numberAnnotationsInPrompt: false,
@@ -26,5 +26,5 @@ export const AMO_CANVAS_SEND_ACTION_CLASS = "amo-send-canvas-note-action";
 export const AMO_CANVAS_PANEL_ACTION_CLASS = "amo-open-canvas-panel-action";
 export const AMO_CANVAS_TITLE_ACTION_CLASS = "amo-edit-canvas-note-title-action";
 export const AMO_CANVAS_OPEN_NOTE_ACTION_CLASS = "amo-open-canvas-note-action";
-export const DEFAULT_CANVAS_PATH = "AgentFlow.canvas";
+export const DEFAULT_CANVAS_PATH = "Canvases/AgentFlow.base.canvas";
 export const SKIPPED_TAGS = new Set(["A", "BUTTON", "CODE", "INPUT", "PRE", "SCRIPT", "STYLE", "TEXTAREA"]);

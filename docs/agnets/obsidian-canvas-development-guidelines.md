@@ -46,7 +46,7 @@ The practical takeaway is: AMO may shape Canvas data and Markdown note content, 
 
 Allowed without a new architecture spike:
 
-- Append AMO-owned file nodes and edges to `AgentFlow.canvas`.
+- Append AMO-owned file nodes and edges to `Canvases/AgentFlow.base.canvas`.
 - Preserve unrelated user nodes, edges, groups, positions, and styles.
 - Write normal JSON Canvas fields plus the top-level AMO metadata block.
 - Read the active canvas selection best-effort to find a Markdown file node.
@@ -92,10 +92,10 @@ Use the Canvas file as data, not as a live view patch target.
 
 For AMO-owned canvas data:
 
-- Write `AgentFlow.canvas` atomically where practical.
+- Write `Canvases/AgentFlow.base.canvas` atomically where practical.
 - Keep `nodes` and `edges` valid JSON Canvas data.
-- Add `amo.managedBy = "agent-monitor-overlay"` and `amo.canvasType = "agent-flow"` for AMO-managed canvases.
-- Use short file-node paths such as `Replies/reply 01.md` and `Prompts/prompt 01.md`.
+- Add `amo.managedBy = "agent-monitor-overlay"` and `amo.canvasType = "agent-flow-base"` for the AMO-managed base flow canvas.
+- Use short file-node paths under `Sessions/<session-id>/turns/generated/`, such as `reply 01.md` and `prompt 01.md`.
 - Store durable AMO identity outside fragile canvas labels. New note-format work should prefer a compact hidden AMO marker or sidecar index over large visible frontmatter.
 - Use explicit edge endpoint fields (`fromEnd: "none"`, `toEnd: "arrow"`) plus sides.
 - Chain nodes only within the same session unless a user action explicitly creates a cross-session relation.
@@ -129,7 +129,7 @@ Until that design exists, the product rule is: hide properties in opened note vi
 Current near-term direction:
 
 - Move AMO technical metadata out of visible YAML frontmatter for new generated notes.
-- Keep generated note files stable and short, such as `Replies/reply 01.md`.
+- Keep generated note files stable and short, such as `Sessions/<session-id>/turns/generated/reply 01.md`.
 - Put the human-facing title in the note body as the first H1. Canvas file-node previews can then show a meaningful title without AMO changing the node renderer.
 - Keep full technical provenance in broker state or an AMO sidecar index keyed by a stable note id.
 - Keep the current Markdown-view property hiding as compatibility for older notes that still use frontmatter.
@@ -165,7 +165,7 @@ Business logic should call the adapter rather than touching `(leaf.view as any).
 
 The safe MVP refresh model is explicit:
 
-- Broker may append to `AgentFlow.canvas`.
+- Broker may append to `Canvases/AgentFlow.base.canvas`.
 - Overlay or plugin may open/focus the canvas when the user clicks an AMO action.
 - If an already-open canvas does not immediately show a newly appended node, manual reopen/refresh is acceptable.
 - Automatic live Canvas refresh is a future task and must use a validated Obsidian API path.
@@ -181,7 +181,7 @@ The latest-note visual hint must not replace native selection:
 
 Run the relevant subset after any Canvas change:
 
-- Open `AgentFlow.canvas` without freeze or crash.
+- Open `Canvases/AgentFlow.base.canvas` without freeze or crash.
 - Zoom in and out; node content, latest hint, and edges stay aligned.
 - Pan the canvas; node content and edges stay aligned.
 - Drag a node; edge endpoints remain connected.

@@ -67,19 +67,20 @@ Status: isolated adapter contract verification passes on 2026-05-08; Claude live
 
 Status: user smoke validated for the current Codex CLI MVP loop on 2026-05-20; prompt chaining and PermissionRequest behavior are confirmed working.
 
-- Confirm Codex CLI reply hooks create reply notes and append them to `AgentFlow.canvas`.
+- Confirm Codex CLI reply hooks create reply notes under `Sessions/<session-id>/turns/generated/` and append them to `Canvases/AgentFlow.base.canvas`.
 - Confirm Obsidian annotations create pending prompts without broker-added numbering by default.
-- Confirm `Copy + Focus CLI` records outgoing prompt notes under `Prompts/` and chains them after the latest canvas node.
+- Confirm Obsidian `Send to AMO` automatically copies the pending prompt, focuses the target CLI/App, records outgoing prompt notes under the same session `turns/generated/` folder, and chains them after the latest canvas node.
+- Confirm the target input is not auto-pasted or auto-submitted; the user still manually presses `Ctrl+V` and submits.
 - Confirm direct Codex `UserPromptSubmit` payloads can enter the same prompt-note/canvas chain when available.
 - Confirm Claude CLI deployment writes `.amo/hooks/claude-message.mjs`, `.amo/adapters/claude-cli.json`, and merges `.claude/settings.local.json`.
-- Confirm Claude CLI `UserPromptSubmit` and `Stop` hooks create prompt/reply notes and append them to `AgentFlow.canvas` without generated H1 headings.
+- Confirm Claude CLI `UserPromptSubmit` and `Stop` hooks create prompt/reply notes and append them to `Canvases/AgentFlow.base.canvas` without generated H1 headings.
 - Confirm Claude CLI `PermissionRequest` events make the overlay card show the compact permission state and route the user back to the CLI for manual approval.
 - Confirm PermissionRequest events make the overlay card show the compact permission state and route the user back to the CLI for manual approval.
 - Confirm opening a canvas from an overlay card focuses the latest note node when present and falls back to a plain canvas jump when it is absent.
-- Confirm broker appends prompt/reply nodes to `AgentFlow.canvas` without corrupting the open canvas; if the canvas is already open, manual reopen/refresh is acceptable in the current safe MVP.
+- Confirm broker appends prompt/reply nodes to `Canvases/AgentFlow.base.canvas` without corrupting the open canvas; if the canvas is already open, manual reopen/refresh is acceptable in the current safe MVP.
 - Confirm prompt/reply canvas edges visibly connect the source and target nodes and include explicit `fromEnd: none` / `toEnd: arrow` endpoint data.
-- Confirm newly enrolled AMO canvases include `amo.managedBy = agent-monitor-overlay` and `amo.canvasType = agent-flow`.
-- Confirm new generated notes use short physical names such as `Replies/reply 01.md` and `Prompts/prompt 01.md`.
+- Confirm newly enrolled AMO canvases include `amo.managedBy = agent-monitor-overlay` and `amo.canvasType = agent-flow-base`.
+- Confirm new generated notes use short physical names such as `Sessions/<session-id>/turns/generated/reply 01.md` and `Sessions/<session-id>/turns/generated/prompt 01.md`.
 - Confirm new reply/prompt notes use a hidden `<!-- amo: {...} -->` marker instead of visible YAML frontmatter.
 - Confirm AMO note edit/source mode hides the hidden marker line while keeping it in the source file.
 - Confirm broker `.amo/state/note-index.json` records the full metadata for new reply/prompt notes.
@@ -94,9 +95,10 @@ Status: user smoke validated for the current Codex CLI MVP loop on 2026-05-20; p
 - Confirm annotations can be deleted from the AMO panel, from the note editor context menu/command when the cursor is inside `[!anno]...[/anno]`, and from the rendered annotation shell in note/canvas reading previews.
 - Confirm AMO does not inject controls into canvas node DOM or override `.canvas-node` positioning; node property hiding is deferred until a safe canvas rendering design exists.
 - Confirm each overlay card has a top-right workspace maintenance button whose status dot reflects plugin/vault health.
-- Confirm the card maintenance panel shows folder existence, reply/prompt note counts, canvas counts, AMO canvas marker state, and plugin health.
+- Confirm the card maintenance panel shows `Sessions`, generated note counts, canvas counts, AMO canvas marker state, and plugin health.
 - Confirm the maintenance panel can open the project/vault folders from the card.
-- Confirm the maintenance panel cleanup action clears generated `Replies/`, `Prompts/`, `AgentFlow.canvas` nodes, and canvas bindings without removing hooks or workspace enrollment metadata.
+- Confirm the maintenance panel cleanup action clears generated `Sessions/` note content, resets `Canvases/AgentFlow.base.canvas`, and clears canvas bindings without removing hooks, workspace enrollment metadata, or future work canvas folders.
+- Confirm the deploy panel `Clear Generated` action performs the same generated-content cleanup for an enrolled workspace after a confirmation prompt, then leaves adapters/hooks deployed.
 
 ## Vibe Checks
 

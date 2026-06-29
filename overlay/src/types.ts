@@ -294,6 +294,9 @@ export interface WorkspaceMaintenanceStatus {
     workspace: string;
     amoRoot: string;
     vaultRoot: string;
+    sessions: string;
+    generated: string;
+    workCanvases: string;
     replies: string;
     prompts: string;
     canvas: string;
@@ -303,6 +306,9 @@ export interface WorkspaceMaintenanceStatus {
     amoRoot: boolean;
     workspaceJson: boolean;
     vaultRoot: boolean;
+    sessions: boolean;
+    generated: boolean;
+    workCanvases: boolean;
     replies: boolean;
     prompts: boolean;
     canvas: boolean;
@@ -311,6 +317,8 @@ export interface WorkspaceMaintenanceStatus {
   counts: {
     replyNotes: number;
     promptNotes: number;
+    generatedNotes?: number;
+    sessionFolders?: number;
     canvasNodes: number;
     canvasEdges: number;
   };
