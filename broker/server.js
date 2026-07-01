@@ -65,6 +65,11 @@ const codexThreadNameCache = {
   mtimeMs: null,
   names: new Map(),
 };
+const claudeSessionNameCache = {
+  sessionsSignature: null,
+  projectIndexesSignature: null,
+  names: new Map(),
+};
 
 loadSnapshot();
 
@@ -1174,6 +1179,7 @@ function updateWorkspaceGitExclude(payload) {
 async function launchWorkspace(payload) {
   const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
   const adapterId = normalizeText(payload?.adapterId || payload?.adapter_id || payload?.adapter);
+  const resumeSessionId = normalizeText(payload?.sessionId || payload?.session_id || payload?.resumeSessionId || payload?.resume_session_id);
   const supportedLaunchIds = new Set(["codex-cli", "claude-cli", "codex-app"]);
   if (!supportedLaunchIds.has(adapterId)) {
     throw httpError(400, "unsupported_launch_adapter", `Unsupported launch adapter: ${adapterId || "missing"}`);
@@ -1202,12 +1208,14 @@ async function launchWorkspace(payload) {
       workspacePath,
       title: `AMO Codex CLI - ${projectName}`,
       command: "codex",
+      args: resumeSessionId ? ["resume", resumeSessionId] : [],
     });
   } else if (adapterId === "claude-cli") {
     launch = await launchCliInTerminal({
       workspacePath,
       title: `AMO Claude CLI - ${projectName}`,
       command: "claude",
+      args: [],
     });
   } else {
     launch = await spawnDetached("codex", ["app", workspacePath], workspacePath);
@@ -1220,6 +1228,7 @@ async function launchWorkspace(payload) {
     pid: launch.pid || null,
     command: launch.command,
     args: launch.args,
+    resumeSessionId: resumeSessionId || null,
   });
 
   return {
@@ -1236,12 +1245,15 @@ async function launchWorkspace(payload) {
     message:
       adapterId === "codex-app"
         ? `Opened Codex App for ${projectName}.`
+        : resumeSessionId && adapterId === "codex-cli"
+        ? `Launched Codex CLI resume for ${projectName}.`
         : `Launched ${adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI"} for ${projectName}.`,
   };
 }
 
-async function launchCliInTerminal({ workspacePath, title, command }) {
-  const commandLine = `$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)}; & ${command}`;
+async function launchCliInTerminal({ workspacePath, title, command, args = [] }) {
+  const cliArgs = args.map(powershellSingleQuoted).join(" ");
+  const commandLine = `$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)}; & ${command}${cliArgs ? ` ${cliArgs}` : ""}`;
   const powershellArgs = powershellNoExitEncodedArgs(commandLine);
   if (process.platform === "win32") {
     const wtArgs = [
@@ -3445,14 +3457,16 @@ function codexReplyHookScript() {
     "  const eventName = typeof payload.hook_event_name === 'string' ? payload.hook_event_name : 'unknown';",
     "  const lowerEventName = eventName.toLowerCase();",
     "  const isPromptEvent = lowerEventName === 'userpromptsubmit';",
-    "  const isReplyEvent = lowerEventName === 'stop';",
+    "  const isStopEvent = lowerEventName === 'stop';",
+    "  const assistantMessage = normalizeMessage(payload.last_assistant_message);",
+    "  const isReplyEvent = isStopEvent && Boolean(assistantMessage);",
     "  const isEventOnly = !isPromptEvent && !isReplyEvent;",
     "  const message = normalizeMessage(",
     "    isPromptEvent",
     "      ? payload.prompt ?? payload.message",
     "      : isReplyEvent",
-    "        ? payload.last_assistant_message",
-    "        : payload.message ?? payload.reason ?? payload.title ?? payload.error ?? payload.tool_name ?? eventName",
+    "        ? assistantMessage",
+    "        : fallbackEventMessage(payload, eventName)",
     "  );",
     "",
     "  if (message || isEventOnly) {",
@@ -3470,6 +3484,7 @@ function codexReplyHookScript() {
     "      cwd: typeof payload.cwd === 'string' ? payload.cwd : projectRoot,",
     "      transcriptPath: typeof payload.transcript_path === 'string' ? payload.transcript_path : null,",
     "      stopHookActive: Boolean(payload.stop_hook_active),",
+    "      state: inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent),",
     "      message,",
     "    };",
     "",
@@ -3606,6 +3621,30 @@ function codexReplyHookScript() {
     "  return typeof value === 'string' ? value.replace(/\\r\\n?/g, '\\n').trim() : '';",
     "}",
     "",
+    "function fallbackEventMessage(payload, eventName) {",
+    "  if (typeof payload.message === 'string') return payload.message;",
+    "  if (typeof payload.reason === 'string') return payload.reason;",
+    "  if (typeof payload.title === 'string') return payload.title;",
+    "  if (typeof payload.error === 'string') return payload.error;",
+    "  if (typeof payload.status === 'string') return payload.status;",
+    "  if (typeof payload.tool_name === 'string') return payload.tool_name;",
+    "  return eventName;",
+    "}",
+    "",
+    "function inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent) {",
+    "  if (isPromptEvent) return 'running';",
+    "  if (isReplyEvent) return 'idle';",
+    "  const combined = [eventName, payload.message, payload.reason, payload.title, payload.error, payload.status]",
+    "    .filter((item) => typeof item === 'string')",
+    "    .join(' ')",
+    "    .toLowerCase();",
+    "  if (combined.includes('permission') || combined.includes('approval')) return 'waiting_permission';",
+    "  if (combined.includes('interrupt') || combined.includes('cancel') || combined.includes('abort')) return 'cancelled';",
+    "  if (combined.includes('fail') || combined.includes('error')) return 'failed';",
+    "  if (isStopEvent) return 'idle';",
+    "  return null;",
+    "}",
+    "",
     "function fileSafeTimestamp(value) {",
     "  return value.replace(/[:.]/g, '-');",
     "}",
@@ -3660,13 +3699,15 @@ function claudeMessageHookScript() {
     "  const eventName = typeof payload.hook_event_name === 'string' ? payload.hook_event_name : 'unknown';",
     "  const lowerEventName = eventName.toLowerCase();",
     "  const isPromptEvent = lowerEventName === 'userpromptsubmit';",
-    "  const isReplyEvent = lowerEventName === 'stop';",
+    "  const isStopEvent = lowerEventName === 'stop';",
+    "  const assistantMessage = normalizeMessage(payload.last_assistant_message);",
+    "  const isReplyEvent = isStopEvent && Boolean(assistantMessage);",
     "  const isEventOnly = !isPromptEvent && !isReplyEvent;",
     "  const message = normalizeMessage(",
     "    isPromptEvent",
     "      ? payload.prompt ?? payload.message",
     "      : isReplyEvent",
-    "        ? payload.last_assistant_message",
+    "        ? assistantMessage",
     "        : fallbackEventMessage(payload, eventName)",
     "  );",
     "",
@@ -3690,6 +3731,7 @@ function claudeMessageHookScript() {
     "      transcriptPath: typeof payload.transcript_path === 'string' ? payload.transcript_path : null,",
     "      permissionMode: typeof payload.permission_mode === 'string' ? payload.permission_mode : null,",
     "      stopHookActive: Boolean(payload.stop_hook_active),",
+    "      state: inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent),",
     "      message,",
     "      windowHint: buildWindowHint(cwd, turnId),",
     "    };",
@@ -3834,6 +3876,20 @@ function claudeMessageHookScript() {
     "  }",
     "  if (typeof payload.notification_type === 'string') return payload.notification_type;",
     "  return eventName;",
+    "}",
+    "",
+    "function inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent) {",
+    "  if (isPromptEvent) return 'running';",
+    "  if (isReplyEvent) return 'idle';",
+    "  const combined = [eventName, payload.message, payload.reason, payload.title, payload.error, payload.status, payload.notification_type]",
+    "    .filter((item) => typeof item === 'string')",
+    "    .join(' ')",
+    "    .toLowerCase();",
+    "  if (combined.includes('permission') || combined.includes('approval')) return 'waiting_permission';",
+    "  if (combined.includes('interrupt') || combined.includes('cancel') || combined.includes('abort')) return 'cancelled';",
+    "  if (combined.includes('stopfailure') || combined.includes('fail') || combined.includes('error')) return 'failed';",
+    "  if (isStopEvent) return 'idle';",
+    "  return null;",
     "}",
     "",
     "function buildWindowHint(cwd, turnId) {",
@@ -4474,7 +4530,7 @@ function inferState(tool, eventName, payload) {
   if (combined.includes("fail") || combined.includes("error")) {
     return "failed";
   }
-  if (combined.includes("cancel")) {
+  if (combined.includes("cancel") || combined.includes("interrupt") || combined.includes("abort")) {
     return "cancelled";
   }
   if (combined.includes("complete") || combined.includes("stop") || combined.includes("done")) {
@@ -4563,6 +4619,22 @@ function normalizeTargetBinding(value, sessionId, boundAt) {
       label: normalizeText(value.label) || "Codex App",
       threadId,
       uri,
+      boundAt: now,
+      boundBy: normalizeText(value.boundBy || value.bound_by) || "overlay-target-menu",
+    };
+  }
+
+  if (type === "codex-cli" || type === "codex-cli-session") {
+    const targetSessionId = normalizeText(value.sessionId || value.session_id || value.threadId || value.thread_id) || sessionId;
+    if (!targetSessionId) {
+      return null;
+    }
+
+    return {
+      type: "codex-cli-session",
+      label: normalizeText(value.label) || "Codex CLI",
+      sessionId: targetSessionId,
+      workspacePath: normalizeText(value.workspacePath || value.workspace_path || value.cwd) || null,
       boundAt: now,
       boundBy: normalizeText(value.boundBy || value.bound_by) || "overlay-target-menu",
     };
@@ -4777,7 +4849,7 @@ function findDuplicatePrompt(existing, record) {
 function listSessions() {
   const healthCache = new Map();
   return Array.from(sessions.values()).map((session) => {
-    const refreshedSession = refreshCodexSessionTitle(session);
+    const refreshedSession = refreshSessionTitle(session);
     if (refreshedSession !== session) {
       sessions.set(refreshedSession.sessionId, refreshedSession);
     }
@@ -4875,7 +4947,7 @@ function loadSnapshot() {
 
     for (const session of snapshot.sessions) {
       if (session && session.sessionId) {
-        sessions.set(session.sessionId, refreshCodexSessionTitle(session));
+        sessions.set(session.sessionId, refreshSessionTitle(session));
       }
     }
   } catch (error) {
@@ -4996,21 +5068,25 @@ function resolveSessionTitle(tool, sessionId, explicitTitle, existingTitle) {
     return payloadTitle;
   }
 
-  const codexThreadName = lookupCodexThreadName(tool, sessionId);
-  if (codexThreadName) {
-    return codexThreadName;
+  const sessionDisplayName = lookupSessionDisplayName(tool, sessionId);
+  if (sessionDisplayName) {
+    return sessionDisplayName;
   }
 
   return normalizeText(existingTitle) || defaultTitle(tool, sessionId);
 }
 
-function refreshCodexSessionTitle(session) {
+function refreshSessionTitle(session) {
   if (!session || !session.sessionId) {
     return session;
   }
 
   const title = resolveSessionTitle(session.tool, session.sessionId, null, session.title);
   return title && title !== session.title ? { ...session, title } : session;
+}
+
+function lookupSessionDisplayName(tool, sessionId) {
+  return lookupCodexThreadName(tool, sessionId) || lookupClaudeSessionName(tool, sessionId);
 }
 
 function lookupCodexThreadName(tool, sessionId) {
@@ -5079,6 +5155,187 @@ function loadCodexThreadNameIndex() {
   codexThreadNameCache.mtimeMs = stat.mtimeMs;
   codexThreadNameCache.names = names;
   return names;
+}
+
+function lookupClaudeSessionName(tool, sessionId) {
+  const normalizedTool = normalizeText(tool);
+  if (!normalizedTool || !normalizedTool.toLowerCase().startsWith("claude")) {
+    return null;
+  }
+
+  const normalizedSessionId = normalizeText(sessionId);
+  if (!normalizedSessionId) {
+    return null;
+  }
+
+  return loadClaudeSessionNameIndex().get(normalizedSessionId) || null;
+}
+
+function loadClaudeSessionNameIndex() {
+  const claudeRoot = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
+  const sessionsDir = path.join(claudeRoot, "sessions");
+  const projectsDir = path.join(claudeRoot, "projects");
+  const sessionsSignature = claudeSessionFilesSignature(sessionsDir);
+  const projectIndexesSignature = claudeProjectIndexesSignature(projectsDir);
+
+  if (
+    claudeSessionNameCache.sessionsSignature === sessionsSignature &&
+    claudeSessionNameCache.projectIndexesSignature === projectIndexesSignature
+  ) {
+    return claudeSessionNameCache.names;
+  }
+
+  const names = new Map();
+  const updatedAtById = new Map();
+  const priorityById = new Map();
+
+  for (const filePath of listClaudeSessionFiles(sessionsDir)) {
+    const stat = statFileSafe(filePath);
+    const record = readJsonFile(filePath, null);
+    if (!record || typeof record !== "object" || Array.isArray(record)) {
+      continue;
+    }
+
+    const id = normalizeText(record.sessionId || record.session_id);
+    const title = normalizeClaudeSessionDisplayName(
+      record.name || record.displayName || record.display_name || record.title
+    );
+    if (!id || !title) {
+      continue;
+    }
+
+    addSessionDisplayName(names, updatedAtById, priorityById, {
+      id,
+      title,
+      updatedAt: timestampMs(
+        record.updatedAt || record.updated_at || record.statusUpdatedAt || record.status_updated_at,
+        stat?.mtimeMs
+      ),
+      priority: 2,
+    });
+  }
+
+  for (const filePath of listClaudeProjectIndexFiles(projectsDir)) {
+    const index = readJsonFile(filePath, null);
+    const entries = Array.isArray(index?.entries) ? index.entries : [];
+    for (const entry of entries) {
+      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
+        continue;
+      }
+
+      const id = normalizeText(entry.sessionId || entry.session_id || entry.id);
+      const title = normalizeClaudeSessionDisplayName(
+        entry.name || entry.displayName || entry.display_name || entry.title || entry.summary
+      );
+      if (!id || !title) {
+        continue;
+      }
+
+      addSessionDisplayName(names, updatedAtById, priorityById, {
+        id,
+        title,
+        updatedAt: timestampMs(
+          entry.modified || entry.updatedAt || entry.updated_at || entry.fileMtime || entry.created
+        ),
+        priority: 1,
+      });
+    }
+  }
+
+  claudeSessionNameCache.sessionsSignature = sessionsSignature;
+  claudeSessionNameCache.projectIndexesSignature = projectIndexesSignature;
+  claudeSessionNameCache.names = names;
+  return names;
+}
+
+function addSessionDisplayName(names, updatedAtById, priorityById, { id, title, updatedAt, priority }) {
+  const previousPriority = priorityById.get(id) ?? -1;
+  const previousUpdatedAt = updatedAtById.get(id) ?? -1;
+  if (
+    !names.has(id) ||
+    priority > previousPriority ||
+    (priority === previousPriority && updatedAt >= previousUpdatedAt)
+  ) {
+    names.set(id, title);
+    updatedAtById.set(id, updatedAt);
+    priorityById.set(id, priority);
+  }
+}
+
+function normalizeClaudeSessionDisplayName(value) {
+  const title = normalizeText(value);
+  if (!title) {
+    return null;
+  }
+
+  const normalized = title.toLowerCase();
+  if (normalized === "new conversation" || normalized === "untitled") {
+    return null;
+  }
+
+  return title;
+}
+
+function listClaudeSessionFiles(sessionsDir) {
+  try {
+    return fs
+      .readdirSync(sessionsDir, { withFileTypes: true })
+      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
+      .map((entry) => path.join(sessionsDir, entry.name))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function listClaudeProjectIndexFiles(projectsDir) {
+  try {
+    return fs
+      .readdirSync(projectsDir, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => path.join(projectsDir, entry.name, "sessions-index.json"))
+      .filter((filePath) => fs.existsSync(filePath))
+      .sort();
+  } catch {
+    return [];
+  }
+}
+
+function claudeSessionFilesSignature(sessionsDir) {
+  return listClaudeSessionFiles(sessionsDir).map(fileSignature).join("|");
+}
+
+function claudeProjectIndexesSignature(projectsDir) {
+  return listClaudeProjectIndexFiles(projectsDir).map(fileSignature).join("|");
+}
+
+function fileSignature(filePath) {
+  const stat = statFileSafe(filePath);
+  return stat ? `${filePath}:${stat.size}:${stat.mtimeMs}` : `${filePath}:missing`;
+}
+
+function statFileSafe(filePath) {
+  try {
+    return fs.statSync(filePath);
+  } catch {
+    return null;
+  }
+}
+
+function timestampMs(value, fallback = 0) {
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+
+  const text = normalizeText(value);
+  if (text) {
+    const parsed = Date.parse(text);
+    if (Number.isFinite(parsed)) {
+      return parsed;
+    }
+  }
+
+  return Number.isFinite(fallback) ? fallback : 0;
 }
 
 function defaultTitle(tool, sessionId) {

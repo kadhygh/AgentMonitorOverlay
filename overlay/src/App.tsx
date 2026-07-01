@@ -464,6 +464,15 @@ function codexAppTargetForSession(session: AgentSession): TargetBinding {
   };
 }
 
+function codexCliTargetForSession(session: AgentSession): TargetBinding {
+  return {
+    type: "codex-cli-session",
+    label: "Codex CLI",
+    sessionId: session.sessionId,
+    workspacePath: workspacePathForSession(session),
+  };
+}
+
 function windowTargetForSession(session: AgentSession): TargetBinding | null {
   const hint = session.windowHint;
   if (!hint || (!hint.hwnd && !hint.pid)) {
@@ -483,14 +492,43 @@ function windowTargetForSession(session: AgentSession): TargetBinding | null {
 }
 
 function targetBindingForSession(session: AgentSession): TargetBinding | null {
-  return session.targetBinding ?? windowTargetForSession(session);
+  return session.targetBinding ?? null;
+}
+
+function activationTargetForSession(session: AgentSession): TargetBinding | null {
+  return targetBindingForSession(session) ?? windowTargetForSession(session);
+}
+
+function activationCandidateFromWindowTarget(target: TargetBinding | null): ActivationCandidate | null {
+  if (!target || target.type !== "window" || (!target.hwnd && !target.processId)) {
+    return null;
+  }
+
+  return {
+    hwnd: target.hwnd ?? 0,
+    processId: target.processId ?? 0,
+    processName: target.processName ?? null,
+    title: target.title ?? target.label ?? "Window",
+    label: target.label ?? target.title ?? target.processName ?? "Window",
+  };
 }
 
 function targetLabelForSession(session: AgentSession) {
   const target = targetBindingForSession(session);
-  if (!target) return "Auto";
+  if (!target) return "Choose target";
   if (target.type === "codex-app-thread") return "Codex App";
+  if (target.type === "codex-cli-session") return "Codex CLI";
   return target.label ?? target.title ?? target.processName ?? "Window";
+}
+
+function clipboardPromptForSession(session: AgentSession) {
+  const prompt = session.pendingPrompt ?? "";
+  const target = targetBindingForSession(session);
+  if (target?.type === "codex-app-thread") {
+    return prompt;
+  }
+
+  return prompt.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trimEnd()).join("\\n");
 }
 
 function projectName(cwd: string) {
@@ -962,6 +1000,7 @@ interface CandidateMenuState {
   y: number;
   bindOnSelect: boolean;
   codexAppAvailable: boolean;
+  codexCliResumeAvailable: boolean;
 }
 
 interface WorkspacePanelState {
@@ -1055,6 +1094,7 @@ function SessionRowContent({
   const targetBinding = targetBindingForSession(session);
   const targetBound = Boolean(targetBinding);
   const codexAppAvailable = isCodexSession(session);
+  const needsTargetChoice = codexAppAvailable && !targetBound;
   const noteOpening = openingTarget === "note";
   const canvasOpening = openingTarget === "canvas";
   const waitingForPermission = session.state === "waiting_permission";
@@ -1145,7 +1185,7 @@ function SessionRowContent({
             ) : null}
             {windowBound && !targetBound ? (
               <span className="session-tag" title={session.windowHint?.boundLabel ?? session.windowHint?.title ?? session.title}>
-                Window bound
+                Window hint
               </span>
             ) : null}
             {targetBound ? (
@@ -1229,7 +1269,23 @@ function SessionRowContent({
                 <span>Canvas</span>
               </button>
             ) : null}
-            {codexAppAvailable ? (
+            {needsTargetChoice ? (
+              <button
+                type="button"
+                className={`row-tool-button target-choice-button ${activating ? "is-busy" : ""}`}
+                aria-busy={activating}
+                title="Choose Codex CLI or Codex App for this card"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onActivateSession();
+                }}
+              >
+                <ListFilter size={13} aria-hidden="true" />
+                <span>Target</span>
+              </button>
+            ) : null}
+            {targetBinding?.type === "codex-app-thread" ? (
               <button
                 type="button"
                 className={`row-tool-button codex-app-target-button ${
@@ -1245,6 +1301,22 @@ function SessionRowContent({
               >
                 <Bot size={13} aria-hidden="true" />
                 <span>App</span>
+              </button>
+            ) : null}
+            {targetBinding?.type === "codex-cli-session" ? (
+              <button
+                type="button"
+                className={`row-tool-button codex-cli-target-button is-target ${activating ? "is-busy" : ""}`}
+                aria-busy={activating}
+                title="Resume this session in Codex CLI"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onActivateSession();
+                }}
+              >
+                <SquareTerminal size={13} aria-hidden="true" />
+                <span>CLI</span>
               </button>
             ) : null}
             {targetBound ? (
@@ -2776,6 +2848,82 @@ export default function App() {
     }
   }
 
+  async function openCodexCliTarget(session: AgentSession, bindTarget: boolean) {
+    const workspacePath = workspacePathForSession(session);
+    if (!workspacePath) {
+      setFeedback("No workspace path is linked to this card.");
+      return;
+    }
+
+    const target = codexCliTargetForSession(session);
+    markSessionVisuallySeen(session);
+    setActivatingId(session.sessionId);
+    setCandidateMenu(null);
+    setFeedback(`${bindTarget ? "Binding and launching" : "Launching"} Codex CLI resume for ${projectName(workspacePath)}...`);
+    void postDebugLog("codex_cli.target_open.start", {
+      sessionId: session.sessionId,
+      bindTarget,
+      workspacePath,
+    });
+
+    try {
+      if (bindTarget) {
+        const binding = await postBrokerJson<{ ok: boolean; session: AgentSession; targetBinding: TargetBinding }>(
+          brokerSessionTargetBindingUrl(session.sessionId),
+          target,
+        );
+        setSessions((previous) =>
+          previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
+        );
+        void postDebugLog("codex_cli.target_bound", {
+          sessionId: session.sessionId,
+          workspacePath,
+        });
+      }
+
+      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
+        workspacePath,
+        adapterId: "codex-cli",
+        sessionId: session.sessionId,
+      });
+      void postDebugLog("codex_cli.target_open.result", {
+        sessionId: session.sessionId,
+        ok: result.ok,
+        pid: result.pid ?? null,
+      });
+      setFeedback(result.message);
+    } catch (error) {
+      void postDebugLog("codex_cli.target_open.error", {
+        sessionId: session.sessionId,
+        bindTarget,
+        workspacePath,
+        message: (error as Error).message,
+      });
+      setFeedback(`Open Codex CLI target failed: ${(error as Error).message}`);
+    } finally {
+      setActivatingId(null);
+    }
+  }
+
+  function openCodexTargetMenu(session: AgentSession, menuX?: number, menuY?: number, candidates?: ActivationCandidate[]) {
+    const position = menuPosition(menuX, menuY);
+    const hintCandidate = activationCandidateFromWindowTarget(windowTargetForSession(session));
+    const mergedCandidates = [...(candidates ?? [])];
+    if (hintCandidate && !mergedCandidates.some((candidate) => candidate.hwnd === hintCandidate.hwnd && candidate.processId === hintCandidate.processId)) {
+      mergedCandidates.unshift(hintCandidate);
+    }
+
+    setCandidateMenu({
+      session,
+      candidates: mergedCandidates,
+      x: position.x,
+      y: position.y,
+      bindOnSelect: true,
+      codexAppAvailable: true,
+      codexCliResumeAvailable: Boolean(workspacePathForSession(session)),
+    });
+  }
+
   async function inspectWorkspace(pathOverride?: string) {
     const targetPath = (pathOverride ?? workspacePath).trim();
     if (!targetPath) {
@@ -3312,18 +3460,28 @@ export default function App() {
   async function activateSession(session: AgentSession, menuX?: number, menuY?: number) {
     markSessionVisuallySeen(session);
     const targetBinding = targetBindingForSession(session);
+    if (!targetBinding && isCodexSession(session)) {
+      openCodexTargetMenu(session, menuX, menuY);
+      return;
+    }
+
     if (targetBinding?.type === "codex-app-thread") {
       await openCodexAppTarget(session, false);
       return;
     }
+    if (targetBinding?.type === "codex-cli-session") {
+      await openCodexCliTarget(session, false);
+      return;
+    }
 
+    const activationTarget = activationTargetForSession(session);
     setActivatingId(session.sessionId);
     setCandidateMenu(null);
-    setFeedback(`Activating ${targetBinding?.label ?? session.title}...`);
+    setFeedback(`Activating ${activationTarget?.label ?? session.title}...`);
     void postDebugLog("window.activate.start", {
       sessionId: session.sessionId,
       title: session.title,
-      targetType: targetBinding?.type ?? "auto",
+      targetType: activationTarget?.type ?? "auto",
       hwnd: session.windowHint?.hwnd ?? null,
       pid: session.windowHint?.pid ?? null,
       cwd: session.cwd,
@@ -3333,28 +3491,33 @@ export default function App() {
       const result = await invoke<ActivationResult>("activate_session_window", {
         sessionId: session.sessionId,
         tool: session.tool,
-        title: targetBinding?.type === "window" ? targetBinding.title ?? session.windowHint?.title ?? session.title : session.windowHint?.title ?? session.title,
+        title: activationTarget?.type === "window" ? activationTarget.title ?? session.windowHint?.title ?? session.title : session.windowHint?.title ?? session.title,
         processName:
-          targetBinding?.type === "window"
-            ? targetBinding.processName ?? session.windowHint?.process ?? ""
+          activationTarget?.type === "window"
+            ? activationTarget.processName ?? session.windowHint?.process ?? ""
             : session.windowHint?.process ?? "",
         titleToken: session.windowHint?.titleToken ?? "",
         titleContains: session.windowHint?.titleContains ?? [],
         project: session.windowHint?.project ?? projectName(session.cwd),
         cwd: session.windowHint?.cwd ?? session.cwd,
-        pid: targetBinding?.type === "window" ? targetBinding.processId ?? session.windowHint?.pid ?? null : session.windowHint?.pid ?? null,
-        hwnd: targetBinding?.type === "window" ? targetBinding.hwnd ?? session.windowHint?.hwnd ?? null : session.windowHint?.hwnd ?? null,
+        pid: activationTarget?.type === "window" ? activationTarget.processId ?? session.windowHint?.pid ?? null : session.windowHint?.pid ?? null,
+        hwnd: activationTarget?.type === "window" ? activationTarget.hwnd ?? session.windowHint?.hwnd ?? null : session.windowHint?.hwnd ?? null,
       });
-      if (!result.ok && ((result.candidates && result.candidates.length > 1) || isCodexSession(session))) {
-        const position = menuPosition(menuX, menuY);
-        setCandidateMenu({
-          session,
-          candidates: result.candidates ?? [],
-          x: position.x,
-          y: position.y,
-          bindOnSelect: true,
-          codexAppAvailable: isCodexSession(session),
-        });
+      if (!result.ok && ((result.candidates?.length ?? 0) > 0 || isCodexSession(session))) {
+        if (isCodexSession(session)) {
+          openCodexTargetMenu(session, menuX, menuY, result.candidates ?? []);
+        } else {
+          const position = menuPosition(menuX, menuY);
+          setCandidateMenu({
+            session,
+            candidates: result.candidates ?? [],
+            x: position.x,
+            y: position.y,
+            bindOnSelect: true,
+            codexAppAvailable: false,
+            codexCliResumeAvailable: false,
+          });
+        }
       }
       void postDebugLog("window.activate.result", {
         sessionId: session.sessionId,
@@ -3594,16 +3757,20 @@ export default function App() {
 
     setCopyingPromptId(session.sessionId);
     setFeedback(`Copying pending prompt for ${session.title}...`);
+    const clipboardPrompt = clipboardPromptForSession(session);
+    const clipboardMode = targetBindingForSession(session)?.type === "codex-app-thread" ? "raw" : "cli-safe";
     void postDebugLog("sync.copy.start", {
       sessionId: session.sessionId,
       pendingPromptId: session.pendingPromptId ?? null,
       promptLength: session.pendingPrompt.length,
+      clipboardLength: clipboardPrompt.length,
+      clipboardMode,
       hasWindowBinding: Boolean(session.windowHint?.hwnd || session.windowHint?.pid),
       targetType: targetBindingForSession(session)?.type ?? "auto",
     });
 
     try {
-      const result = await invoke<OpenPathResult>("write_clipboard_text", { text: session.pendingPrompt });
+      const result = await invoke<OpenPathResult>("write_clipboard_text", { text: clipboardPrompt });
       if (!result.ok) {
         void postDebugLog("sync.copy.clipboard_failed", {
           sessionId: session.sessionId,
@@ -4503,6 +4670,19 @@ export default function App() {
                 <span>Remember target</span>
               </label>
               <div className="candidate-list">
+                {candidateMenu.codexCliResumeAvailable ? (
+                  <button
+                    type="button"
+                    className="candidate-item codex-cli-candidate"
+                    title={`codex resume ${candidateMenu.session.sessionId}`}
+                    onClick={() =>
+                      void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect)
+                    }
+                  >
+                    <strong>Codex CLI</strong>
+                    <span>Resume session in project terminal</span>
+                  </button>
+                ) : null}
                 {candidateMenu.codexAppAvailable ? (
                   <button
                     type="button"

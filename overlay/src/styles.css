@@ -2010,6 +2010,21 @@ button {
   border-color: rgba(111, 224, 190, 0.36);
 }
 
+.row-tool-button.target-choice-button,
+.row-tool-button.codex-cli-target-button {
+  color: #d9efe8;
+  background: rgba(255, 255, 255, 0.06);
+  border-color: rgba(214, 231, 224, 0.14);
+}
+
+.row-tool-button.target-choice-button:hover,
+.row-tool-button.codex-cli-target-button:hover,
+.row-tool-button.codex-cli-target-button.is-target {
+  color: #f5fffb;
+  background: rgba(111, 224, 190, 0.12);
+  border-color: rgba(111, 224, 190, 0.28);
+}
+
 .row-tool-button.binding-button {
   color: #d7e6ff;
   background: rgba(143, 196, 255, 0.11);
@@ -2196,6 +2211,14 @@ button {
 .candidate-item.codex-app-candidate:hover {
   background: rgba(111, 224, 190, 0.17);
   border-color: rgba(111, 224, 190, 0.36);
+}
+
+.candidate-item.codex-cli-candidate {
+  border-color: rgba(185, 214, 205, 0.22);
+}
+
+.candidate-item.codex-cli-candidate:hover {
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .candidate-item strong,
@@ -3628,6 +3651,13 @@ button {
   border-color: rgba(18, 135, 105, 0.22);
 }
 
+:root[data-amo-theme="light"] .row-tool-button.target-choice-button,
+:root[data-amo-theme="light"] .row-tool-button.codex-cli-target-button {
+  color: #24423a;
+  background: rgba(42, 74, 64, 0.07);
+  border-color: rgba(42, 74, 64, 0.16);
+}
+
 :root[data-amo-theme="light"] .row-tool-button.attention-action-button {
   color: #5b4d36;
   background: rgba(143, 117, 72, 0.11);
@@ -3644,6 +3674,15 @@ button {
   color: #265f82;
   background: rgba(52, 111, 145, 0.1);
   border-color: rgba(52, 111, 145, 0.22);
+}
+
+:root[data-amo-theme="light"] .candidate-item.codex-cli-candidate {
+  background: rgba(42, 74, 64, 0.045);
+  border-color: rgba(42, 74, 64, 0.18);
+}
+
+:root[data-amo-theme="light"] .candidate-item.codex-cli-candidate:hover {
+  background: rgba(42, 74, 64, 0.08);
 }
 
 :root[data-amo-theme="light"] .permission-pill {

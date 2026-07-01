@@ -625,6 +625,26 @@ try {
     }
     Write-Host "Attention auto-clear duplicate prompt OK -> $($duplicatePrompt.session.state)"
 
+    $codexHookPath = Join-Path $workspaceRoot ".amo\hooks\codex-stop-message.mjs"
+    $codexInterruptInput = @{
+        session_id = "codex-reply-verify"
+        turn_id = "turn-interrupt-verify"
+        cwd = $workspaceRoot
+        hook_event_name = "Stop"
+        stop_hook_active = $false
+        reason = "Interrupted by user"
+    } | ConvertTo-Json -Depth 8 -Compress
+    $codexInterruptOutput = $codexInterruptInput | node $codexHookPath
+    if ($LASTEXITCODE -ne 0 -or $codexInterruptOutput -notmatch '"continue"\s*:\s*true') {
+        throw "Codex interrupted Stop hook did not return a non-blocking JSON response."
+    }
+    $sessionsAfterInterrupt = Invoke-BrokerJson -Method GET -Path "/api/sessions"
+    $interruptedSession = @($sessionsAfterInterrupt.sessions | Where-Object { $_.sessionId -eq "codex-reply-verify" })[0]
+    if (-not $interruptedSession -or $interruptedSession.state -ne "cancelled") {
+        throw "Codex interrupted Stop hook should mark the session as cancelled."
+    }
+    Write-Host "Codex interrupted Stop hook OK -> $($interruptedSession.state)"
+
     $windowBinding = Invoke-BrokerJson -Method POST -Path "/api/sessions/codex-reply-verify/window-binding" -Body @{
         hwnd = 123456
         processId = 654321
@@ -641,6 +661,21 @@ try {
         throw "Window binding clear endpoint did not remove exact hwnd/processId hints."
     }
     Write-Host "Window binding OK -> bind/clear"
+
+    $codexCliTargetBinding = Invoke-BrokerJson -Method POST -Path "/api/sessions/codex-reply-verify/target-binding" -Body @{
+        type = "codex-cli-session"
+        sessionId = "codex-reply-verify"
+        workspacePath = $workspaceRoot
+        label = "Codex CLI"
+    }
+    if (-not $codexCliTargetBinding.ok -or $codexCliTargetBinding.session.targetBinding.type -ne "codex-cli-session") {
+        throw "Codex CLI session target binding did not persist."
+    }
+    $codexCliTargetClear = Invoke-BrokerJson -Method POST -Path "/api/sessions/codex-reply-verify/target-binding/clear" -Body @{}
+    if (-not $codexCliTargetClear.ok -or $null -ne $codexCliTargetClear.session.targetBinding) {
+        throw "Codex CLI session target binding did not clear."
+    }
+    Write-Host "Codex CLI target binding OK -> bind/clear"
 
     $claudeHookPath = Join-Path $workspaceRoot ".amo\hooks\claude-message.mjs"
     $claudePromptInput = @{

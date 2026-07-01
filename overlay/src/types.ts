@@ -26,7 +26,7 @@ export interface WindowHint {
   boundLabel?: string | null;
 }
 
-export type TargetBindingType = "window" | "codex-app-thread";
+export type TargetBindingType = "window" | "codex-app-thread" | "codex-cli-session";
 
 export interface TargetBinding {
   type: TargetBindingType;
@@ -38,6 +38,8 @@ export interface TargetBinding {
   processName?: string | null;
   title?: string | null;
   threadId?: string | null;
+  sessionId?: string | null;
+  workspacePath?: string | null;
   uri?: string | null;
 }
 

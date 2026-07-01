@@ -796,10 +796,11 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
     let selected = match resolve_candidate(&candidates, &hint) {
         ResolveResult::Matched(candidate) => candidate,
         ResolveResult::NoMatch => {
+            let fallback_candidates = fallback_activation_candidates(&candidates, &hint);
             return ActivationResult {
                 ok: false,
                 message: format!("No matching window found for {session_id}."),
-                candidates: Vec::new(),
+                candidates: fallback_candidates,
             }
         }
         ResolveResult::Ambiguous(matches) => {
@@ -931,6 +932,7 @@ fn resolve_candidate(candidates: &[WindowCandidate], hint: &WindowHintInput) -> 
         matches_by_process_and_title(candidates, hint),
         matches_by_process_and_title_contains(candidates, hint),
         matches_by_project_or_cwd(candidates, hint),
+        matches_by_tool_title(candidates, hint),
     ] {
         match matches.len() {
             0 => {}
@@ -1037,6 +1039,63 @@ fn matches_by_project_or_cwd(
         .filter(|candidate| candidate_process_matches_hint(candidate, hint))
         .filter(|candidate| normalized(&candidate.title).contains(&target))
         .cloned()
+        .collect()
+}
+
+#[cfg(windows)]
+fn matches_by_tool_title(
+    candidates: &[WindowCandidate],
+    hint: &WindowHintInput,
+) -> Vec<WindowCandidate> {
+    let tokens = fallback_tool_title_tokens(&hint.tool);
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+
+    candidates
+        .iter()
+        .filter(|candidate| {
+            tool_process_matches(candidate, &hint.tool) || candidate.process_name.is_none()
+        })
+        .filter(|candidate| {
+            let title = normalized(&candidate.title);
+            tokens.iter().any(|token| title.contains(token))
+        })
+        .cloned()
+        .collect()
+}
+
+#[cfg(windows)]
+fn fallback_tool_title_tokens(tool: &str) -> Vec<String> {
+    let tool = normalized(tool);
+    if tool.starts_with("claude") {
+        return vec!["claude".to_string()];
+    }
+    if tool.starts_with("codex") {
+        return vec!["codex".to_string()];
+    }
+    Vec::new()
+}
+
+#[cfg(windows)]
+fn fallback_activation_candidates(
+    candidates: &[WindowCandidate],
+    hint: &WindowHintInput,
+) -> Vec<ActivationCandidate> {
+    let title_matches = matches_by_tool_title(candidates, hint);
+    if !title_matches.is_empty() {
+        return title_matches.iter().map(activation_candidate).collect();
+    }
+
+    candidates
+        .iter()
+        .filter(|candidate| {
+            candidate_process_matches_hint(candidate, hint)
+                || tool_process_matches(candidate, &hint.tool)
+                || candidate.process_name.is_none()
+        })
+        .take(8)
+        .map(activation_candidate)
         .collect()
 }
 
