@@ -522,6 +522,14 @@ function targetLabelForSession(session: AgentSession) {
   return target.label ?? target.title ?? target.processName ?? "Window";
 }
 
+function shouldShowCodexCliResumeOption(
+  session: AgentSession,
+  candidates: ActivationCandidate[],
+  allowWithCandidates: boolean,
+) {
+  return Boolean(workspacePathForSession(session)) && (allowWithCandidates || candidates.length === 0);
+}
+
 function toCliSafeClipboardText(text: string) {
   return text.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trimEnd()).join("\\n");
 }
@@ -2926,7 +2934,13 @@ export default function App() {
     }
   }
 
-  function openCodexTargetMenu(session: AgentSession, menuX?: number, menuY?: number, candidates?: ActivationCandidate[]) {
+  function openCodexTargetMenu(
+    session: AgentSession,
+    menuX?: number,
+    menuY?: number,
+    candidates?: ActivationCandidate[],
+    options: { allowCodexCliResumeWithCandidates?: boolean } = {},
+  ) {
     const position = menuPosition(menuX, menuY);
     const hintCandidate = activationCandidateFromWindowTarget(windowTargetForSession(session));
     const mergedCandidates = [...(candidates ?? [])];
@@ -2941,7 +2955,11 @@ export default function App() {
       y: position.y,
       bindOnSelect: true,
       codexAppAvailable: true,
-      codexCliResumeAvailable: Boolean(workspacePathForSession(session)),
+      codexCliResumeAvailable: shouldShowCodexCliResumeOption(
+        session,
+        mergedCandidates,
+        options.allowCodexCliResumeWithCandidates ?? true,
+      ),
     });
   }
 
@@ -3481,11 +3499,6 @@ export default function App() {
   async function activateSession(session: AgentSession, menuX?: number, menuY?: number) {
     markSessionVisuallySeen(session);
     const targetBinding = targetBindingForSession(session);
-    if (!targetBinding && isCodexSession(session)) {
-      openCodexTargetMenu(session, menuX, menuY);
-      return;
-    }
-
     if (targetBinding?.type === "codex-app-thread") {
       await openCodexAppTarget(session, false);
       return;
@@ -3522,7 +3535,12 @@ export default function App() {
       });
       if (!result.ok && ((result.candidates?.length ?? 0) > 0 || isCodexSession(session))) {
         if (isCodexSession(session)) {
-          openCodexTargetMenu(session, menuX, menuY, result.candidates ?? []);
+          const candidatesAreAmbiguousMatches =
+            (result.candidates?.length ?? 0) > 0 &&
+            !result.message.startsWith("No matching window found");
+          openCodexTargetMenu(session, menuX, menuY, result.candidates ?? [], {
+            allowCodexCliResumeWithCandidates: !candidatesAreAmbiguousMatches,
+          });
         } else {
           const position = menuPosition(menuX, menuY);
           setCandidateMenu({
@@ -4691,13 +4709,13 @@ export default function App() {
                   <button
                     type="button"
                     className="candidate-item codex-cli-candidate"
-                    title={`codex resume ${candidateMenu.session.sessionId}`}
+                    title={`Start a new terminal: codex resume ${candidateMenu.session.sessionId}`}
                     onClick={() =>
                       void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect)
                     }
                   >
-                    <strong>Codex CLI</strong>
-                    <span>Resume session in project terminal</span>
+                    <strong>Codex CLI Resume</strong>
+                    <span>Start a new terminal for this session</span>
                   </button>
                 ) : null}
                 {candidateMenu.codexAppAvailable ? (
