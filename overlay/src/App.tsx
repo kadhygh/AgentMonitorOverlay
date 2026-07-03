@@ -1313,7 +1313,7 @@ function SessionRowContent({
                 type="button"
                 className={`row-tool-button codex-cli-target-button is-target ${activating ? "is-busy" : ""}`}
                 aria-busy={activating}
-                title="Resume this session in Codex CLI"
+                title="Focus this card's Codex CLI target"
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -3488,10 +3488,6 @@ export default function App() {
 
     if (targetBinding?.type === "codex-app-thread") {
       await openCodexAppTarget(session, false);
-      return;
-    }
-    if (targetBinding?.type === "codex-cli-session") {
-      await openCodexCliTarget(session, false);
       return;
     }
 
