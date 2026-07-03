@@ -187,9 +187,43 @@ button {
   white-space: nowrap;
 }
 
-.scratchpad-footer div {
+.scratchpad-copy-actions {
   display: inline-flex;
+  align-items: center;
   gap: 6px;
+}
+
+.scratchpad-safe-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 7px;
+  color: #aebeb8;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.scratchpad-safe-copy:hover {
+  color: #f7fffb;
+  background: rgba(111, 224, 190, 0.1);
+  border-color: rgba(111, 224, 190, 0.24);
+}
+
+.scratchpad-safe-copy input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #6fe0be;
+}
+
+.scratchpad-safe-copy span {
+  color: inherit;
+  font-size: 10px;
+  line-height: 12px;
 }
 
 .scratchpad-footer button {
@@ -3330,6 +3364,7 @@ button {
 :root[data-amo-theme="light"] .icon-button,
 :root[data-amo-theme="light"] .scratchpad-header button,
 :root[data-amo-theme="light"] .scratchpad-footer button,
+:root[data-amo-theme="light"] .scratchpad-safe-copy,
 :root[data-amo-theme="light"] .summary-filter-button,
 :root[data-amo-theme="light"] .settings-field select,
 :root[data-amo-theme="light"] .settings-primary-action,
@@ -3352,6 +3387,7 @@ button {
 :root[data-amo-theme="light"] .icon-button:hover,
 :root[data-amo-theme="light"] .scratchpad-header button:hover,
 :root[data-amo-theme="light"] .scratchpad-footer button:hover,
+:root[data-amo-theme="light"] .scratchpad-safe-copy:hover,
 :root[data-amo-theme="light"] .summary-filter-button:hover,
 :root[data-amo-theme="light"] .summary-filter-button:focus-visible,
 :root[data-amo-theme="light"] .settings-primary-action:hover,
@@ -3369,6 +3405,10 @@ button {
   color: #0f251f;
   background: rgba(18, 135, 105, 0.11);
   border-color: rgba(18, 135, 105, 0.25);
+}
+
+:root[data-amo-theme="light"] .scratchpad-safe-copy span {
+  color: inherit;
 }
 
 :root[data-amo-theme="light"] .scratchpad-header button.scratchpad-clear-button:hover {

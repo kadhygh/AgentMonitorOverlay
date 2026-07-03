@@ -77,6 +77,7 @@ const ATTENTION_VISUAL_ACTIVE_MS = 10_000;
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
+const SCRATCHPAD_SAFE_COPY_STORAGE_KEY = "amo.scratchpad.safeCopy";
 const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
 const AMO_THEME_STORAGE_KEY = "amo.theme";
 const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
@@ -521,6 +522,10 @@ function targetLabelForSession(session: AgentSession) {
   return target.label ?? target.title ?? target.processName ?? "Window";
 }
 
+function toCliSafeClipboardText(text: string) {
+  return text.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trimEnd()).join("\\n");
+}
+
 function clipboardPromptForSession(session: AgentSession) {
   const prompt = session.pendingPrompt ?? "";
   const target = targetBindingForSession(session);
@@ -528,7 +533,7 @@ function clipboardPromptForSession(session: AgentSession) {
     return prompt;
   }
 
-  return prompt.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trimEnd()).join("\\n");
+  return toCliSafeClipboardText(prompt);
 }
 
 function projectName(cwd: string) {
@@ -1348,6 +1353,7 @@ function ScratchpadApp() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [textLength, setTextLength] = useState(0);
   const [status, setStatus] = useState("Ready");
+  const [safeCopy, setSafeCopy] = useState(() => localStorage.getItem(SCRATCHPAD_SAFE_COPY_STORAGE_KEY) !== "false");
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -1377,6 +1383,12 @@ function ScratchpadApp() {
     return text;
   }
 
+  function updateSafeCopy(next: boolean) {
+    setSafeCopy(next);
+    localStorage.setItem(SCRATCHPAD_SAFE_COPY_STORAGE_KEY, next ? "true" : "false");
+    setStatus(next ? "Safe copy on" : "Raw copy on");
+  }
+
   async function copyText() {
     const text = persistCurrentText();
     if (!text.trim()) {
@@ -1386,8 +1398,9 @@ function ScratchpadApp() {
     }
 
     try {
-      const result = await invoke<OpenPathResult>("write_clipboard_text", { text });
-      setStatus(result.ok ? "Copied" : result.message);
+      const clipboardText = safeCopy ? toCliSafeClipboardText(text) : text;
+      const result = await invoke<OpenPathResult>("write_clipboard_text", { text: clipboardText });
+      setStatus(result.ok ? (safeCopy ? "Copied safe" : "Copied raw") : result.message);
       if (result.ok) {
         await getCurrentWindow().hide();
       }
@@ -1443,7 +1456,15 @@ function ScratchpadApp() {
         <span title={status}>
           {textLength} chars · {status}
         </span>
-        <div>
+        <div className="scratchpad-copy-actions">
+          <label className="scratchpad-safe-copy" title="Copy with newlines escaped for Codex CLI">
+            <input
+              type="checkbox"
+              checked={safeCopy}
+              onChange={(event) => updateSafeCopy(event.currentTarget.checked)}
+            />
+            <span>Safe</span>
+          </label>
           <button type="button" onClick={() => void copyText()}>
             Copy
           </button>
