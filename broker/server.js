@@ -1569,9 +1569,9 @@ function countConversationGeneratedNotes(sessionsPath) {
     for (const entry of fs.readdirSync(generatedDir, { withFileTypes: true })) {
       if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
       result.totalNotes += 1;
-      if (/^reply \d+\.md$/iu.test(entry.name)) {
+      if (/^(?:\d+ reply|reply \d+)\.md$/iu.test(entry.name)) {
         result.replyNotes += 1;
-      } else if (/^prompt \d+\.md$/iu.test(entry.name)) {
+      } else if (/^(?:\d+ prompt|prompt \d+)\.md$/iu.test(entry.name)) {
         result.promptNotes += 1;
       }
     }
@@ -4241,8 +4241,8 @@ function nextConversationNoteIdentity(vaultRoot, record, kind) {
   const noteDir = vaultRelativeToAbsolutePath(vaultRoot, conversationGeneratedNotesPath(record));
   fs.mkdirSync(noteDir, { recursive: true });
 
-  const sequence = nextConversationNoteSequence(noteDir, noteKind);
-  const displayName = `${noteKind} ${formatConversationNoteSequence(sequence)}`;
+  const sequence = nextConversationNoteSequence(noteDir);
+  const displayName = `${formatConversationNoteSequence(sequence)} ${noteKind}`;
   const noteAbsolutePath = path.join(noteDir, `${displayName}.md`);
   return {
     kind: noteKind,
@@ -4253,30 +4253,37 @@ function nextConversationNoteIdentity(vaultRoot, record, kind) {
   };
 }
 
-function nextConversationNoteSequence(noteDir, kind) {
-  const escapedKind = kind.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const noteNamePattern = new RegExp(`^${escapedKind} (\\d+)\\.md$`, "iu");
+function nextConversationNoteSequence(noteDir) {
+  const orderedNoteNamePattern = /^(\d+) (prompt|reply)\.md$/iu;
+  const legacyNoteNamePattern = /^(prompt|reply) (\d+)\.md$/iu;
   let maxSequence = 0;
+  let generatedNoteCount = 0;
 
   for (const entry of fs.readdirSync(noteDir, { withFileTypes: true })) {
     if (!entry.isFile()) continue;
-    const match = entry.name.match(noteNamePattern);
-    if (!match) continue;
-    const sequence = Number.parseInt(match[1], 10);
+    const orderedMatch = entry.name.match(orderedNoteNamePattern);
+    const legacyMatch = entry.name.match(legacyNoteNamePattern);
+    if (!orderedMatch && !legacyMatch) continue;
+
+    generatedNoteCount += 1;
+    const sequence = Number.parseInt(orderedMatch?.[1] || legacyMatch?.[2] || "", 10);
     if (Number.isSafeInteger(sequence) && sequence > maxSequence) {
       maxSequence = sequence;
     }
   }
 
-  let nextSequence = maxSequence + 1;
-  while (fs.existsSync(path.join(noteDir, `${kind} ${formatConversationNoteSequence(nextSequence)}.md`))) {
+  let nextSequence = Math.max(maxSequence, generatedNoteCount) + 1;
+  while (
+    fs.existsSync(path.join(noteDir, `${formatConversationNoteSequence(nextSequence)} prompt.md`)) ||
+    fs.existsSync(path.join(noteDir, `${formatConversationNoteSequence(nextSequence)} reply.md`))
+  ) {
     nextSequence += 1;
   }
   return nextSequence;
 }
 
 function formatConversationNoteSequence(sequence) {
-  return String(sequence).padStart(2, "0");
+  return String(sequence).padStart(3, "0");
 }
 
 function appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note) {

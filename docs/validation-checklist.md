@@ -80,7 +80,7 @@ Status: user smoke validated for the current Codex CLI MVP loop on 2026-05-20; p
 - Confirm broker appends prompt/reply nodes to `Canvases/AgentFlow.base.canvas` without corrupting the open canvas; if the canvas is already open, manual reopen/refresh is acceptable in the current safe MVP.
 - Confirm prompt/reply canvas edges visibly connect the source and target nodes and include explicit `fromEnd: none` / `toEnd: arrow` endpoint data.
 - Confirm newly enrolled AMO canvases include `amo.managedBy = agent-monitor-overlay` and `amo.canvasType = agent-flow-base`.
-- Confirm new generated notes use short physical names such as `Sessions/<session-id>/turns/generated/reply 01.md` and `Sessions/<session-id>/turns/generated/prompt 01.md`.
+- Confirm new generated notes use chronological physical names such as `Sessions/<session-id>/turns/generated/001 prompt.md` and `Sessions/<session-id>/turns/generated/002 reply.md`.
 - Confirm new reply/prompt notes use a hidden `<!-- amo: {...} -->` marker instead of visible YAML frontmatter.
 - Confirm AMO note edit/source mode hides the hidden marker line while keeping it in the source file.
 - Confirm broker `.amo/state/note-index.json` records the full metadata for new reply/prompt notes.

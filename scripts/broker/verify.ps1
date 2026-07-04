@@ -422,6 +422,9 @@ try {
     if (-not (Test-Path -LiteralPath $notePath)) {
         throw "Reply note was not created: $notePath"
     }
+    if ($reply.notePath -notmatch "/001 reply\.md$") {
+        throw "First reply note should use chronological generated name '001 reply.md', got $($reply.notePath)."
+    }
     $canvasPath = $baseCanvasPath
     $canvas = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
     if (@($canvas.nodes).Count -lt 1) {
@@ -449,6 +452,9 @@ try {
     }
     if (-not $reply2.ok) {
         throw "Second reply endpoint failed."
+    }
+    if ($reply2.notePath -notmatch "/002 reply\.md$") {
+        throw "Second reply note should use chronological generated name '002 reply.md', got $($reply2.notePath)."
     }
 
     $canvasAfterSecondReply = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
@@ -579,6 +585,9 @@ try {
     }
     if (-not $syncBack.promptNotePath -or -not $syncBack.promptCanvasNodeId) {
         throw "Sync-back endpoint did not record the sent prompt note/canvas node."
+    }
+    if ($syncBack.promptNotePath -notmatch "/003 prompt\.md$") {
+        throw "Sync-back prompt note should use chronological generated name '003 prompt.md', got $($syncBack.promptNotePath)."
     }
     $canvasAfterSyncBack = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
     $promptCanvasNode = @($canvasAfterSyncBack.nodes | Where-Object { $_.id -eq $syncBack.promptCanvasNodeId })[0]

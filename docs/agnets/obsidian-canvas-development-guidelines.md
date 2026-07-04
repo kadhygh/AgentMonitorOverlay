@@ -95,7 +95,7 @@ For AMO-owned canvas data:
 - Write `Canvases/AgentFlow.base.canvas` atomically where practical.
 - Keep `nodes` and `edges` valid JSON Canvas data.
 - Add `amo.managedBy = "agent-monitor-overlay"` and `amo.canvasType = "agent-flow-base"` for the AMO-managed base flow canvas.
-- Use short file-node paths under `Sessions/<session-id>/turns/generated/`, such as `reply 01.md` and `prompt 01.md`.
+- Use short chronological file-node paths under `Sessions/<session-id>/turns/generated/`, such as `001 prompt.md` and `002 reply.md`.
 - Store durable AMO identity outside fragile canvas labels. New note-format work should prefer a compact hidden AMO marker or sidecar index over large visible frontmatter.
 - Use explicit edge endpoint fields (`fromEnd: "none"`, `toEnd: "arrow"`) plus sides.
 - Chain nodes only within the same session unless a user action explicitly creates a cross-session relation.
@@ -129,7 +129,7 @@ Until that design exists, the product rule is: hide properties in opened note vi
 Current near-term direction:
 
 - Move AMO technical metadata out of visible YAML frontmatter for new generated notes.
-- Keep generated note files stable and short, such as `Sessions/<session-id>/turns/generated/reply 01.md`.
+- Keep generated note files stable and short, such as `Sessions/<session-id>/turns/generated/002 reply.md`.
 - Put the human-facing title in the note body as the first H1. Canvas file-node previews can then show a meaningful title without AMO changing the node renderer.
 - Keep full technical provenance in broker state or an AMO sidecar index keyed by a stable note id.
 - Keep the current Markdown-view property hiding as compatibility for older notes that still use frontmatter.

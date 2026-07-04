@@ -469,7 +469,7 @@ Bridge response:
 {
   "ok": true,
   "sessionId": "session-id",
-  "notePath": "Sessions/session-id/turns/generated/reply 01.md",
+  "notePath": "Sessions/session-id/turns/generated/002 reply.md",
   "canvasPath": "Canvases/AgentFlow.base.canvas",
   "canvasNodeId": "amo-node-..."
 }
@@ -510,8 +510,8 @@ Vault/
       session.json
       turns/
         generated/
-          prompt 01.md
-          reply 01.md
+          001 prompt.md
+          002 reply.md
   Canvases/
     AgentFlow.base.canvas
     Work/
@@ -557,22 +557,26 @@ The Obsidian plugin should only apply AMO-specific canvas behavior when this met
 
 For the current test-project phase, AMO can use simple physical file names instead of timestamp-heavy file names. No migration support is required for older test canvases.
 
-New generated notes should use per-kind sequence names inside one session folder:
+New generated notes should use one chronological sequence across prompt and reply notes inside one session folder:
 
-- `Sessions/<session-id>/turns/generated/reply 01.md`, `reply 02.md`, ...
-- `Sessions/<session-id>/turns/generated/prompt 01.md`, `prompt 02.md`, ...
+- `Sessions/<session-id>/turns/generated/001 prompt.md`
+- `Sessions/<session-id>/turns/generated/002 reply.md`
+- `Sessions/<session-id>/turns/generated/003 prompt.md`
+- `Sessions/<session-id>/turns/generated/004 reply.md`
+
+The numeric prefix is session-wide so Obsidian's file list sorts generated notes in conversation order. The kind suffix keeps the file type readable.
 
 The compact hidden AMO marker plus `.amo/state/note-index.json` remain the durable identity layer:
 
 ```markdown
-<!-- amo: {"schemaVersion":1,"noteId":"note_xxx","workspaceId":"ws_xxx","kind":"reply","role":"assistant","sequence":1,"displayName":"reply 01","sessionId":"session-id","turnId":"turn-id","tool":"codex"} -->
+<!-- amo: {"schemaVersion":1,"noteId":"note_xxx","workspaceId":"ws_xxx","kind":"reply","role":"assistant","sequence":2,"displayName":"002 reply","sessionId":"session-id","turnId":"turn-id","tool":"codex"} -->
 ```
 
 Future card remarks should become an optional user-authored display layer:
 
 ```yaml
 amo:
-  displayName: "reply 01"
+  displayName: "002 reply"
   userLabel: "Permission request smoke"
 ```
 
@@ -587,7 +591,7 @@ Obsidian plugin to bridge:
   "schemaVersion": 1,
   "source": "obsidian-md-anno-tools",
   "vaultRoot": "D:\\Projects\\CommonProject\\obsidianplugintestvault",
-  "notePath": "Sessions/session-id/turns/generated/reply 01.md",
+  "notePath": "Sessions/session-id/turns/generated/002 reply.md",
   "sessionId": "session-id",
   "turnId": "turn-id",
   "annotations": [
@@ -748,7 +752,7 @@ Later, after the workflow is stable, the bridge can become a bundled Tauri sidec
 
 Current implementation status: workspace enroll writes a vault-local `md-anno-tools` plugin under `workspace.vaultRoot/.obsidian/plugins/`, enables it in `community-plugins.json`, stores the bridge URL in plugin `data.json`, adds `Send current note annotations to AMO`, and registers `obsidian://amo-open` inside the plugin. Deployments set `workspace.vaultRoot` to `.amo/AMO - <project>/`; test workspaces should be redeployed instead of migrated. Overlay checks that the AMO vault is registered and loaded before opening. If the running Obsidian session has not loaded that vault yet, overlay shows the manual-open recovery dialog instead of firing a URL that can produce `Vault not found`. The loaded check accepts either Obsidian's global per-vault runtime config file or vault-local load evidence such as `.obsidian/workspace.json`, `.obsidian/app.json`, or `.obsidian/core-plugins.json`, so opening the vault manually once should let a later Note/Canvas click continue without a stale recovery dialog. Once the vault is loaded, overlay sends `obsidian://amo-open` so the plugin can reuse existing note/canvas tabs and focus the latest canvas note. The plugin can target a Markdown note selected as a file node on `Canvases/AgentFlow.base.canvas` for panel/copy/send/append actions; canvas targeting now prefers the current canvas selection and only falls back to the last clicked file node if no selection can be read, so actions should not silently drift to a previous node. The AMO panel keeps canvas target context even while the panel itself is the active leaf, and panel Copy/Send buttons operate on the note currently displayed in the panel rather than re-resolving Obsidian's active Markdown view at click time. If Obsidian's canvas selection cannot be read reliably, the plugin should ask the user to choose one of the Markdown file nodes from the canvas instead of silently using a stale target. Editor selection insertion now creates a quoted annotation block instead of wrapping the selected source text, so a selected question title becomes quoted context and the user's answer can be written underneath. If the user is in reading mode, the plugin can append the current DOM text selection as a referenced annotation block because there is no editable cursor location. Annotation rendering supports both inline `[!anno]...[/anno]` and multi-block annotations. The stable path is now source-backed and lifecycle-managed: the Markdown postprocessor uses `sourcePath` and `getSectionInfo` to map each rendered section back to the source file, renders one plugin-owned `MarkdownRenderChild` for the annotation start section, and hides the remaining annotation sections. This avoids treating cross-section DOM ranges as durable state in note read/edit/read and canvas embedded previews. The plugin setting `Number annotations in sync prompt` defaults off; when off, pending prompts use raw annotation content without broker-added numbering. The plugin setting `Canvas note append direction` defaults to down and can switch to right; broker reads that vault-local setting when adding new reply/prompt file nodes and writes explicit canvas edge sides and endpoint shapes. Canvas DOM rendering enhancements were deliberately rolled back from MVP scope after zoom/pan regressions: the plugin no longer injects node-level property buttons, hides node metadata via CSS, mutates Obsidian Canvas selection state, or force-reloads live Canvas views on vault file changes. The previous delayed DOM repair helpers were removed from the primary plugin path because they hid symptoms while still fighting Obsidian's renderer ownership.
 
-Current AMO canvas/note direction: new test-project deployments use session layout v2. Broker writes the raw base flow to `Canvases/AgentFlow.base.canvas` with AMO metadata (`canvasType: agent-flow-base`), writes new notes as `Sessions/<session-id>/turns/generated/reply 01.md` / `prompt 01.md`, and keeps durable identity in the hidden AMO marker plus `.amo/state/note-index.json`. The Obsidian plugin checks the canvas AMO marker before applying AMO-specific canvas behavior such as latest-note focus styling, and it intentionally avoids canvas-node property hiding.
+Current AMO canvas/note direction: new test-project deployments use session layout v2. Broker writes the raw base flow to `Canvases/AgentFlow.base.canvas` with AMO metadata (`canvasType: agent-flow-base`), writes new notes as `Sessions/<session-id>/turns/generated/001 prompt.md` / `002 reply.md` with a session-wide chronological prefix, and keeps durable identity in the hidden AMO marker plus `.amo/state/note-index.json`. The Obsidian plugin checks the canvas AMO marker before applying AMO-specific canvas behavior such as latest-note focus styling, and it intentionally avoids canvas-node property hiding.
 
 Current AMO note display direction: newly generated AMO Markdown notes avoid visible YAML frontmatter and do not write a default `# reply xx` / `# prompt xx` H1. They start with a compact hidden AMO marker and store full technical provenance in broker `state/note-index.json`. The Obsidian plugin hides the AMO marker line in edit/source mode with a narrow CodeMirror editor extension while keeping the marker in the source file. When the user sets a display title from the AMO panel, note view title action, or canvas selected-note title action, the title is stored in hidden metadata and rendered at the top of the note as an AMO header in read/preview surfaces: custom title large, original document name small. These title edits must not rename the physical note file. Clearing the display title removes that rendered AMO header. Editor-mode AMO title rendering is deferred after the initial CodeMirror widget approach caused file-open regressions. The Markdown-view property hiding setting remains as compatibility for older frontmatter-based notes. Canvas notecard property hiding is still recorded as a deferred design item; new notes should look cleaner because there are no visible AMO properties for Canvas to preview, not because AMO mutates Canvas node DOM.
 

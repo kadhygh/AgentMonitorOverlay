@@ -31,10 +31,10 @@ New deployments should converge on this shape:
         session.json
         turns/
           generated/
-            prompt 01.md
-            reply 01.md
-            prompt 02.md
-            reply 02.md
+            001 prompt.md
+            002 reply.md
+            003 prompt.md
+            004 reply.md
         canvases/
           AgentFlow.base.canvas
     Canvases/
@@ -69,16 +69,18 @@ This is the durable folder for one Codex, Claude, Kiro, or future adapter sessio
 This folder stores AMO-generated Markdown notes from hook or bridge events. It intentionally does not split `Replies/` and `Prompts/` into separate folders because the user's reading flow is chronological:
 
 ```text
-prompt 01.md
-reply 01.md
-prompt 02.md
-reply 02.md
+001 prompt.md
+002 reply.md
+003 prompt.md
+004 reply.md
 ```
+
+Generated note filenames use one session-wide numeric prefix so Obsidian's file list sorts prompt and reply notes in conversation order. The suffix remains `prompt` or `reply` for quick scanning.
 
 The note marker remains the durable identity layer:
 
 ```md
-<!-- amo: {"schemaVersion":1,"noteId":"note_xxx","workspaceId":"ws_xxx","sessionId":"019e...","kind":"reply","role":"assistant","sequence":1,"displayName":"reply 01","turnId":"019e...","tool":"codex"} -->
+<!-- amo: {"schemaVersion":1,"noteId":"note_xxx","workspaceId":"ws_xxx","sessionId":"019e...","kind":"reply","role":"assistant","sequence":2,"displayName":"002 reply","turnId":"019e...","tool":"codex"} -->
 ```
 
 The note index should map both `noteId -> notePath` and `notePath -> noteId` so future renames, display titles, and canvas promotion do not depend on physical filenames.
