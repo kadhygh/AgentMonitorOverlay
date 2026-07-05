@@ -632,7 +632,8 @@ fn write_text_to_clipboard(text: &str) -> OpenPathResult {
     };
     use windows_sys::Win32::System::Ole::CF_UNICODETEXT;
 
-    let mut wide_text = text.encode_utf16().collect::<Vec<u16>>();
+    let clipboard_text = text.replace("\r\n", "\n").replace('\r', "\n").replace('\n', "\r\n");
+    let mut wide_text = clipboard_text.encode_utf16().collect::<Vec<u16>>();
     wide_text.push(0);
     let byte_len = wide_text.len() * std::mem::size_of::<u16>();
 

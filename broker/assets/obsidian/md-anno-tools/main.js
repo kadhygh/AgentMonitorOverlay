@@ -384,8 +384,15 @@ function cleanupAnnotationRemovalWhitespace(markdown) {
 function normalizeAnnotationContent(value) {
   return String(value || "").replace(/\r\n?/gu, "\n").trim();
 }
+function formatTextForCliPaste(value) {
+  const normalized = String(value || "").replace(/\r\n?/gu, "\n").split("\n").map((line) => line.trimEnd()).join("\n").replace(/\n+$/u, "");
+  return isWindowsRuntime() ? normalized.replace(/\n/gu, "\r\n") : normalized;
+}
 function formatAnnotationsForClipboard(annotations) {
-  return annotations.join("\n\n");
+  return formatTextForCliPaste(annotations.join("\n\n"));
+}
+function isWindowsRuntime() {
+  return typeof navigator !== "undefined" && /win/iu.test(navigator.platform || "");
 }
 function createAnnotationElement(content, isStandalone) {
   const wrapper = document.createElement("span");

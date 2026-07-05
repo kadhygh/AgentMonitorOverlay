@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalSize, Window as TauriWindow } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize, UserAttentionType, Window as TauriWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
@@ -77,7 +77,6 @@ const ATTENTION_VISUAL_ACTIVE_MS = 10_000;
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
-const SCRATCHPAD_SAFE_COPY_STORAGE_KEY = "amo.scratchpad.safeCopy";
 const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
 const AMO_THEME_STORAGE_KEY = "amo.theme";
 const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
@@ -530,8 +529,30 @@ function shouldShowCodexCliResumeOption(
   return Boolean(workspacePathForSession(session)) && (allowWithCandidates || candidates.length === 0);
 }
 
-function toCliSafeClipboardText(text: string) {
-  return text.replace(/\r\n?/g, "\n").split("\n").map((line) => line.trimEnd()).join("\\n");
+function toCliPasteClipboardText(text: string) {
+  return text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n+$/g, "")
+    .replace(/\n/g, "\r\n");
+}
+
+async function writeClipboardText(text: string): Promise<OpenPathResult> {
+  if (navigator.clipboard?.writeText) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return {
+        ok: true,
+        message: "Copied text to clipboard.",
+      };
+    } catch {
+      // Fall back to the native clipboard path below.
+    }
+  }
+
+  return invoke<OpenPathResult>("write_clipboard_text", { text });
 }
 
 function clipboardPromptForSession(session: AgentSession) {
@@ -541,7 +562,7 @@ function clipboardPromptForSession(session: AgentSession) {
     return prompt;
   }
 
-  return toCliSafeClipboardText(prompt);
+  return toCliPasteClipboardText(prompt);
 }
 
 function projectName(cwd: string) {
@@ -1361,7 +1382,6 @@ function ScratchpadApp() {
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
   const [textLength, setTextLength] = useState(0);
   const [status, setStatus] = useState("Ready");
-  const [safeCopy, setSafeCopy] = useState(() => localStorage.getItem(SCRATCHPAD_SAFE_COPY_STORAGE_KEY) !== "false");
 
   useEffect(() => {
     const textarea = textareaRef.current;
@@ -1391,12 +1411,6 @@ function ScratchpadApp() {
     return text;
   }
 
-  function updateSafeCopy(next: boolean) {
-    setSafeCopy(next);
-    localStorage.setItem(SCRATCHPAD_SAFE_COPY_STORAGE_KEY, next ? "true" : "false");
-    setStatus(next ? "Safe copy on" : "Raw copy on");
-  }
-
   async function copyText() {
     const text = persistCurrentText();
     if (!text.trim()) {
@@ -1406,9 +1420,9 @@ function ScratchpadApp() {
     }
 
     try {
-      const clipboardText = safeCopy ? toCliSafeClipboardText(text) : text;
-      const result = await invoke<OpenPathResult>("write_clipboard_text", { text: clipboardText });
-      setStatus(result.ok ? (safeCopy ? "Copied safe" : "Copied raw") : result.message);
+      const clipboardText = toCliPasteClipboardText(text);
+      const result = await writeClipboardText(clipboardText);
+      setStatus(result.ok ? "Copied" : result.message);
       if (result.ok) {
         await getCurrentWindow().hide();
       }
@@ -1465,14 +1479,6 @@ function ScratchpadApp() {
           {textLength} chars · {status}
         </span>
         <div className="scratchpad-copy-actions">
-          <label className="scratchpad-safe-copy" title="Copy with newlines escaped for Codex CLI">
-            <input
-              type="checkbox"
-              checked={safeCopy}
-              onChange={(event) => updateSafeCopy(event.currentTarget.checked)}
-            />
-            <span>Safe</span>
-          </label>
           <button type="button" onClick={() => void copyText()}>
             Copy
           </button>
@@ -2518,6 +2524,7 @@ export default function App() {
   const dialogRestoreSizeRef = useRef<{ width: number; height: number } | null>(null);
   const suppressNextClickRef = useRef(false);
   const autoSyncPromptIdsRef = useRef(new Set<string>());
+  const reviewTaskbarAttentionActiveRef = useRef(false);
 
   const filteredSessions = useMemo(
     () =>
@@ -2575,6 +2582,86 @@ export default function App() {
       return changed ? next : previous;
     });
   }, [sessions]);
+
+  useEffect(() => {
+    const appWindow = getCurrentWindow();
+    const hasPendingReview = brokerReady && reviewCount > 0;
+    let disposed = false;
+
+    async function requestReviewTaskbarAttention(reason: string) {
+      try {
+        const focused = await appWindow.isFocused();
+        if (disposed || focused) {
+          return;
+        }
+
+        await appWindow.requestUserAttention(UserAttentionType.Informational);
+        reviewTaskbarAttentionActiveRef.current = true;
+        void postDebugLog("taskbar.review_attention.requested", {
+          reason,
+          reviewCount,
+        });
+      } catch (error) {
+        void postDebugLog("taskbar.review_attention.error", {
+          reason,
+          reviewCount,
+          message: (error as Error).message,
+        });
+      }
+    }
+
+    async function clearReviewTaskbarAttention(reason: string) {
+      if (!reviewTaskbarAttentionActiveRef.current) {
+        return;
+      }
+
+      try {
+        await appWindow.requestUserAttention(null);
+        reviewTaskbarAttentionActiveRef.current = false;
+        void postDebugLog("taskbar.review_attention.cleared", {
+          reason,
+        });
+      } catch (error) {
+        void postDebugLog("taskbar.review_attention.clear_error", {
+          reason,
+          message: (error as Error).message,
+        });
+      }
+    }
+
+    if (hasPendingReview) {
+      void requestReviewTaskbarAttention("review-count");
+    } else {
+      void clearReviewTaskbarAttention("review-cleared");
+    }
+
+    let unlistenFocus: (() => void) | null = null;
+    void appWindow
+      .onFocusChanged(({ payload: focused }) => {
+        if (focused) {
+          void clearReviewTaskbarAttention("window-focused");
+        } else if (hasPendingReview) {
+          void requestReviewTaskbarAttention("window-blurred");
+        }
+      })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          unlistenFocus = unlisten;
+        }
+      })
+      .catch((error) => {
+        void postDebugLog("taskbar.review_attention.focus_listener_error", {
+          message: (error as Error).message,
+        });
+      });
+
+    return () => {
+      disposed = true;
+      unlistenFocus?.();
+    };
+  }, [brokerReady, reviewCount]);
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -3613,9 +3700,7 @@ export default function App() {
     setObsidianVaultRecovery((current) => (current ? { ...current, busy: "copy" } : current));
 
     try {
-      const result = await invoke<OpenPathResult>("write_clipboard_text", {
-        text: obsidianVaultRecovery.vaultRoot,
-      });
+      const result = await writeClipboardText(obsidianVaultRecovery.vaultRoot);
       setFeedback(result.ok ? "Copied AMO vault path." : result.message);
     } catch (error) {
       setFeedback(`Copy AMO vault path failed: ${(error as Error).message}`);
@@ -3793,7 +3878,7 @@ export default function App() {
     setCopyingPromptId(session.sessionId);
     setFeedback(`Copying pending prompt for ${session.title}...`);
     const clipboardPrompt = clipboardPromptForSession(session);
-    const clipboardMode = targetBindingForSession(session)?.type === "codex-app-thread" ? "raw" : "cli-safe";
+    const clipboardMode = targetBindingForSession(session)?.type === "codex-app-thread" ? "raw" : "cli-paste";
     void postDebugLog("sync.copy.start", {
       sessionId: session.sessionId,
       pendingPromptId: session.pendingPromptId ?? null,
@@ -3805,7 +3890,7 @@ export default function App() {
     });
 
     try {
-      const result = await invoke<OpenPathResult>("write_clipboard_text", { text: clipboardPrompt });
+      const result = await writeClipboardText(clipboardPrompt);
       if (!result.ok) {
         void postDebugLog("sync.copy.clipboard_failed", {
           sessionId: session.sessionId,

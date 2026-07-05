@@ -136,9 +136,25 @@ export function normalizeAnnotationContent(value) {
   return String(value || "").replace(/\r\n?/gu, "\n").trim();
 }
 
-export function formatAnnotationsForClipboard(annotations) {
-  return annotations.join("\n\n");
+export function formatTextForCliPaste(value) {
+  const normalized = String(value || "")
+    .replace(/\r\n?/gu, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n+$/u, "");
+
+  return isWindowsRuntime() ? normalized.replace(/\n/gu, "\r\n") : normalized;
 }
+
+export function formatAnnotationsForClipboard(annotations) {
+  return formatTextForCliPaste(annotations.join("\n\n"));
+}
+
+function isWindowsRuntime() {
+  return typeof navigator !== "undefined" && /win/iu.test(navigator.platform || "");
+}
+
 
 export function createAnnotationElement(content, isStandalone) {
   const wrapper = document.createElement("span");
