@@ -6,7 +6,7 @@ use std::process::Command;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, OnceLock};
 use std::time::Duration;
-use tauri::{Manager, PhysicalPosition};
+use tauri::{Emitter, Manager, PhysicalPosition};
 
 const SCRATCHPAD_WINDOW_LABEL: &str = "scratchpad";
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -122,6 +122,35 @@ fn activate_session_window(
 }
 
 #[tauri::command]
+fn list_session_window_candidates(
+    session_id: String,
+    tool: String,
+    title: String,
+    process_name: String,
+    title_token: String,
+    title_contains: Vec<String>,
+    project: String,
+    cwd: String,
+    pid: Option<u32>,
+    hwnd: Option<i64>,
+) -> ActivationResult {
+    list_external_window_candidates(
+        &session_id,
+        WindowHintInput {
+            tool,
+            title,
+            process_name,
+            title_token,
+            title_contains,
+            project,
+            cwd,
+            pid,
+            hwnd,
+        },
+    )
+}
+
+#[tauri::command]
 fn open_path(path: String) -> OpenPathResult {
     open_local_path(path)
 }
@@ -155,7 +184,8 @@ fn ensure_broker() -> BrokerEnsureResult {
 
 #[tauri::command]
 fn set_scratchpad_shortcut_config(config: ScratchpadShortcutConfig) -> ScratchpadShortcutResult {
-    let button = normalize_scratchpad_button(&config.button).unwrap_or(SCRATCHPAD_BUTTON_MOUSE4);
+    let _ = normalize_scratchpad_button(&config.button);
+    let button = SCRATCHPAD_BUTTON_MOUSE4;
     SCRATCHPAD_ENABLED.store(config.enabled, Ordering::SeqCst);
     SCRATCHPAD_BUTTON.store(button, Ordering::SeqCst);
 
@@ -220,6 +250,15 @@ fn install_scratchpad_mouse_hook(app: tauri::AppHandle) {
 
     std::thread::spawn(move || {
         while let Ok(trigger) = receiver.recv() {
+            if is_scratchpad_focused(&app) {
+                if let Some(window) = app.get_webview_window(SCRATCHPAD_WINDOW_LABEL) {
+                    if let Err(error) = window.emit("scratchpad-copy-request", ()) {
+                        eprintln!("Could not request scratchpad copy: {error}");
+                    }
+                }
+                continue;
+            }
+
             if let Err(message) = show_scratchpad_at(&app, trigger.x, trigger.y) {
                 eprintln!("Could not show scratchpad: {message}");
             }
@@ -249,6 +288,13 @@ fn install_scratchpad_mouse_hook(app: tauri::AppHandle) {
 
 #[cfg(not(windows))]
 fn install_scratchpad_mouse_hook(_app: tauri::AppHandle) {}
+
+#[cfg(windows)]
+fn is_scratchpad_focused(app: &tauri::AppHandle) -> bool {
+    app.get_webview_window(SCRATCHPAD_WINDOW_LABEL)
+        .and_then(|window| window.is_focused().ok())
+        .unwrap_or(false)
+}
 
 #[cfg(windows)]
 unsafe extern "system" fn scratchpad_mouse_proc(
@@ -783,6 +829,15 @@ fn activate_external_window(session_id: &str, _hint: WindowHintInput) -> Activat
     }
 }
 
+#[cfg(not(windows))]
+fn list_external_window_candidates(session_id: &str, _hint: WindowHintInput) -> ActivationResult {
+    ActivationResult {
+        ok: false,
+        message: format!("Window candidate listing is only implemented on Windows for {session_id}."),
+        candidates: Vec::new(),
+    }
+}
+
 #[cfg(windows)]
 fn activate_external_window(session_id: &str, hint: WindowHintInput) -> ActivationResult {
     let candidates = enumerate_windows();
@@ -856,6 +911,34 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
                 candidates: Vec::new(),
             }
         }
+    }
+}
+
+#[cfg(windows)]
+fn list_external_window_candidates(session_id: &str, hint: WindowHintInput) -> ActivationResult {
+    let candidates = enumerate_windows();
+    if candidates.is_empty() {
+        return ActivationResult {
+            ok: false,
+            message: "No visible top-level windows were found.".to_string(),
+            candidates: Vec::new(),
+        };
+    }
+
+    let matches = match resolve_candidate(&candidates, &hint) {
+        ResolveResult::Matched(candidate) => vec![activation_candidate(&candidate)],
+        ResolveResult::Ambiguous(matches) => matches.iter().map(activation_candidate).collect(),
+        ResolveResult::NoMatch => fallback_activation_candidates(&candidates, &hint),
+    };
+
+    ActivationResult {
+        ok: !matches.is_empty(),
+        message: if matches.is_empty() {
+            format!("No candidate windows found for {session_id}.")
+        } else {
+            format!("{} candidate window(s) found for {session_id}.", matches.len())
+        },
+        candidates: matches,
     }
 }
 
@@ -1318,6 +1401,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             activate_session_window,
             ensure_broker,
+            list_session_window_candidates,
             open_path,
             select_workspace_directory,
             set_scratchpad_shortcut_config,

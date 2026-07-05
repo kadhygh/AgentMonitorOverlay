@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, UserAttentionType, Window as TauriWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -279,7 +280,7 @@ function loadScratchpadShortcutState(): ScratchpadShortcutState {
     const parsed = JSON.parse(raw) as Partial<ScratchpadShortcutState>;
     return {
       enabled: parsed.enabled !== false,
-      button: parsed.button === "mouse5" ? "mouse5" : "mouse4",
+      button: "mouse4",
     };
   } catch {
     return { enabled: true, button: "mouse4" };
@@ -513,6 +514,15 @@ function activationCandidateFromWindowTarget(target: TargetBinding | null): Acti
   };
 }
 
+function activationCandidateKey(candidate: ActivationCandidate) {
+  return `${candidate.hwnd}:${candidate.processId}`;
+}
+
+function activationCandidateMeta(candidate: ActivationCandidate) {
+  const process = candidate.processName ?? "unknown";
+  return `${process} · PID ${candidate.processId} · HWND ${candidate.hwnd}`;
+}
+
 function targetLabelForSession(session: AgentSession) {
   const target = targetBindingForSession(session);
   if (!target) return "Choose target";
@@ -527,6 +537,31 @@ function shouldShowCodexCliResumeOption(
   allowWithCandidates: boolean,
 ) {
   return Boolean(workspacePathForSession(session)) && (allowWithCandidates || candidates.length === 0);
+}
+
+function hasExplicitWindowTarget(target: TargetBinding | null) {
+  return Boolean(target?.type === "window" && (target.hwnd || target.processId));
+}
+
+function activationWindowRequest(
+  session: AgentSession,
+  activationTarget: TargetBinding | null,
+  options: { includeWindowHintIdentity?: boolean } = {},
+) {
+  const includeWindowHintIdentity = options.includeWindowHintIdentity !== false;
+  const windowTarget = activationTarget?.type === "window" ? activationTarget : null;
+  return {
+    sessionId: session.sessionId,
+    tool: session.tool,
+    title: windowTarget?.title ?? session.windowHint?.title ?? session.title,
+    processName: windowTarget?.processName ?? session.windowHint?.process ?? "",
+    titleToken: session.windowHint?.titleToken ?? "",
+    titleContains: session.windowHint?.titleContains ?? [],
+    project: session.windowHint?.project ?? projectName(session.cwd),
+    cwd: session.windowHint?.cwd ?? session.cwd,
+    pid: windowTarget?.processId ?? (includeWindowHintIdentity ? session.windowHint?.pid ?? null : null),
+    hwnd: windowTarget?.hwnd ?? (includeWindowHintIdentity ? session.windowHint?.hwnd ?? null : null),
+  };
 }
 
 function toCliPasteClipboardText(text: string) {
@@ -568,6 +603,12 @@ function clipboardPromptForSession(session: AgentSession) {
 function projectName(cwd: string) {
   const parts = cwd.split(/[\\/]/).filter(Boolean);
   return parts[parts.length - 1] ?? cwd;
+}
+
+function candidateMenuContextLabel(session: AgentSession) {
+  const conversationName = (session.taskTitle || session.title || session.sessionId || "Session").trim();
+  const project = projectName(workspacePathForSession(session) || session.cwd || "") || "Project";
+  return `${conversationName} - ${project}`;
 }
 
 function isDeployableWorkspaceAdapter(adapter: WorkspaceAdapterPlan) {
@@ -1033,6 +1074,7 @@ interface CandidateMenuState {
   x: number;
   y: number;
   bindOnSelect: boolean;
+  selectedCandidateKey: string | null;
   codexAppAvailable: boolean;
   codexCliResumeAvailable: boolean;
 }
@@ -1432,6 +1474,35 @@ function ScratchpadApp() {
       textareaRef.current?.focus();
     }
   }
+
+  useEffect(() => {
+    let disposed = false;
+    let unlistenCopyRequest: (() => void) | null = null;
+
+    void listen("scratchpad-copy-request", () => {
+      if (document.activeElement !== textareaRef.current) {
+        textareaRef.current?.focus();
+        return;
+      }
+
+      void copyText();
+    })
+      .then((unlisten) => {
+        if (disposed) {
+          unlisten();
+        } else {
+          unlistenCopyRequest = unlisten;
+        }
+      })
+      .catch((error) => {
+        setStatus(`Shortcut listener failed: ${(error as Error).message}`);
+      });
+
+    return () => {
+      disposed = true;
+      unlistenCopyRequest?.();
+    };
+  }, []);
 
   function clearText() {
     const textarea = textareaRef.current;
@@ -2212,7 +2283,7 @@ function SettingsDetailHeader({ settingsSection, scratchpadShortcut, amoTheme }:
         ? "Light"
         : "Dark"
       : scratchpadShortcut.enabled
-        ? `Ctrl + ${scratchpadShortcut.button === "mouse5" ? "Mouse5" : "Mouse4"}`
+        ? "Ctrl + Mouse4"
         : "Disabled";
 
   return (
@@ -2255,17 +2326,16 @@ function ScratchpadSettingsBody({
       <label className="settings-field">
         <span>Shortcut</span>
         <select
-          value={scratchpadShortcut.button}
-          disabled={!scratchpadShortcut.enabled}
+          value="mouse4"
+          disabled
           onChange={(event) =>
             onScratchpadShortcutChange({
               ...scratchpadShortcut,
-              button: event.currentTarget.value === "mouse5" ? "mouse5" : "mouse4",
+              button: "mouse4",
             })
           }
         >
           <option value="mouse4">Ctrl + Mouse4</option>
-          <option value="mouse5">Ctrl + Mouse5</option>
         </select>
       </label>
 
@@ -3041,6 +3111,7 @@ export default function App() {
       x: position.x,
       y: position.y,
       bindOnSelect: true,
+      selectedCandidateKey: null,
       codexAppAvailable: true,
       codexCliResumeAvailable: shouldShowCodexCliResumeOption(
         session,
@@ -3048,6 +3119,45 @@ export default function App() {
         options.allowCodexCliResumeWithCandidates ?? true,
       ),
     });
+  }
+
+  async function openCodexTargetMenuFromWindowList(session: AgentSession, menuX?: number, menuY?: number) {
+    setActivatingId(session.sessionId);
+    setFeedback(`Finding target windows for ${session.title}...`);
+    void postDebugLog("window.candidate.list.start", {
+      sessionId: session.sessionId,
+      title: session.title,
+      cwd: session.cwd,
+    });
+
+    try {
+      const result = await invoke<ActivationResult>(
+        "list_session_window_candidates",
+        activationWindowRequest(session, null, { includeWindowHintIdentity: false }),
+      );
+      const candidates = result.candidates ?? [];
+      void postDebugLog("window.candidate.list.result", {
+        sessionId: session.sessionId,
+        ok: result.ok,
+        message: result.message,
+        candidateCount: candidates.length,
+      });
+      openCodexTargetMenu(session, menuX, menuY, candidates, {
+        allowCodexCliResumeWithCandidates: candidates.length === 0,
+      });
+      setFeedback(candidates.length > 0 ? "Choose a target window, then Focus or Confirm." : result.message);
+    } catch (error) {
+      void postDebugLog("window.candidate.list.error", {
+        sessionId: session.sessionId,
+        message: (error as Error).message,
+      });
+      openCodexTargetMenu(session, menuX, menuY, [], {
+        allowCodexCliResumeWithCandidates: true,
+      });
+      setFeedback(`Target listing failed: ${(error as Error).message}`);
+    } finally {
+      setActivatingId(null);
+    }
   }
 
   async function inspectWorkspace(pathOverride?: string) {
@@ -3592,6 +3702,11 @@ export default function App() {
     }
 
     const activationTarget = activationTargetForSession(session);
+    if (isCodexSession(session) && !hasExplicitWindowTarget(activationTarget)) {
+      await openCodexTargetMenuFromWindowList(session, menuX, menuY);
+      return;
+    }
+
     setActivatingId(session.sessionId);
     setCandidateMenu(null);
     setFeedback(`Activating ${activationTarget?.label ?? session.title}...`);
@@ -3605,21 +3720,10 @@ export default function App() {
     });
 
     try {
-      const result = await invoke<ActivationResult>("activate_session_window", {
-        sessionId: session.sessionId,
-        tool: session.tool,
-        title: activationTarget?.type === "window" ? activationTarget.title ?? session.windowHint?.title ?? session.title : session.windowHint?.title ?? session.title,
-        processName:
-          activationTarget?.type === "window"
-            ? activationTarget.processName ?? session.windowHint?.process ?? ""
-            : session.windowHint?.process ?? "",
-        titleToken: session.windowHint?.titleToken ?? "",
-        titleContains: session.windowHint?.titleContains ?? [],
-        project: session.windowHint?.project ?? projectName(session.cwd),
-        cwd: session.windowHint?.cwd ?? session.cwd,
-        pid: activationTarget?.type === "window" ? activationTarget.processId ?? session.windowHint?.pid ?? null : session.windowHint?.pid ?? null,
-        hwnd: activationTarget?.type === "window" ? activationTarget.hwnd ?? session.windowHint?.hwnd ?? null : session.windowHint?.hwnd ?? null,
-      });
+      const result = await invoke<ActivationResult>(
+        "activate_session_window",
+        activationWindowRequest(session, activationTarget),
+      );
       if (!result.ok && ((result.candidates?.length ?? 0) > 0 || isCodexSession(session))) {
         if (isCodexSession(session)) {
           const candidatesAreAmbiguousMatches =
@@ -3636,6 +3740,7 @@ export default function App() {
             x: position.x,
             y: position.y,
             bindOnSelect: true,
+            selectedCandidateKey: null,
             codexAppAvailable: false,
             codexCliResumeAvailable: false,
           });
@@ -3969,7 +4074,14 @@ export default function App() {
     void copyPendingPrompt(session);
   }
 
-  async function activateCandidate(session: AgentSession, candidate: ActivationCandidate, bindWindow: boolean) {
+  async function activateCandidate(
+    session: AgentSession,
+    candidate: ActivationCandidate,
+    bindWindow: boolean,
+    options: { closeOnSuccess?: boolean; markReviewedOnSuccess?: boolean } = {},
+  ) {
+    const closeOnSuccess = options.closeOnSuccess ?? true;
+    const markReviewedOnSuccess = options.markReviewedOnSuccess ?? true;
     markSessionVisuallySeen(session);
     setActivatingId(session.sessionId);
     setFeedback(`Activating ${candidate.processName ?? "window"}...`);
@@ -4025,8 +4137,12 @@ export default function App() {
           );
           setFeedback(`Bound and activated ${candidate.processName ?? "window"}.`);
         }
-        setCandidateMenu(null);
-        void markSessionReviewed(session, "activate-candidate", { quiet: true });
+        if (closeOnSuccess) {
+          setCandidateMenu(null);
+        }
+        if (markReviewedOnSuccess) {
+          void markSessionReviewed(session, "activate-candidate", { quiet: true });
+        }
       }
     } catch (error) {
       void postDebugLog("window.candidate.activate.error", {
@@ -4547,6 +4663,12 @@ export default function App() {
     };
   }, []);
 
+  const selectedCandidate = candidateMenu
+    ? candidateMenu.candidates.find(
+        (candidate) => activationCandidateKey(candidate) === candidateMenu.selectedCandidateKey,
+      ) ?? null
+    : null;
+
   return (
     <main className={`overlay-shell ${collapsed ? "is-collapsed" : ""}`}>
       <header
@@ -4760,78 +4882,133 @@ export default function App() {
           </section>
 
           {candidateMenu ? (
-            <section
-              className="candidate-menu"
-              style={{ left: candidateMenu.x, top: candidateMenu.y }}
-              aria-label="Target candidates"
+            <div
+              className="candidate-modal-backdrop"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setCandidateMenu(null);
+                }
+              }}
             >
-              <div className="candidate-menu-header">
-                <strong>Choose Target</strong>
-                <button
-                  type="button"
-                  className="candidate-close"
-                  title="Close"
-                  onClick={() => setCandidateMenu(null)}
-                >
-                  <X size={13} aria-hidden="true" />
-                </button>
-              </div>
-              <label className="candidate-bind-toggle">
-                <input
-                  type="checkbox"
-                  checked={candidateMenu.bindOnSelect}
-                  onChange={(event) => {
-                    const checked = event.currentTarget.checked;
-                    setCandidateMenu((current) =>
-                      current ? { ...current, bindOnSelect: checked } : current,
-                    );
-                  }}
-                />
-                <span>Remember target</span>
-              </label>
-              <div className="candidate-list">
-                {candidateMenu.codexCliResumeAvailable ? (
+              <section
+                className="candidate-menu"
+                role="dialog"
+                aria-modal="true"
+                aria-label="Target candidates"
+                onMouseDown={(event) => event.stopPropagation()}
+              >
+                <div className="candidate-menu-header">
+                  <div>
+                    <strong>Choose Target</strong>
+                    <span title={candidateMenuContextLabel(candidateMenu.session)}>
+                      {candidateMenuContextLabel(candidateMenu.session)} · {candidateMenu.candidates.length} window(s)
+                    </span>
+                  </div>
                   <button
                     type="button"
-                    className="candidate-item codex-cli-candidate"
-                    title={`Start a new terminal: codex resume ${candidateMenu.session.sessionId}`}
-                    onClick={() =>
-                      void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect)
-                    }
+                    className="candidate-close"
+                    title="Close"
+                    onClick={() => setCandidateMenu(null)}
                   >
-                    <strong>Codex CLI Resume</strong>
-                    <span>Start a new terminal for this session</span>
+                    <X size={13} aria-hidden="true" />
                   </button>
-                ) : null}
-                {candidateMenu.codexAppAvailable ? (
+                </div>
+                <label className="candidate-bind-toggle">
+                  <input
+                    type="checkbox"
+                    checked={candidateMenu.bindOnSelect}
+                    onChange={(event) => {
+                      const checked = event.currentTarget.checked;
+                      setCandidateMenu((current) =>
+                        current ? { ...current, bindOnSelect: checked } : current,
+                      );
+                    }}
+                  />
+                  <span>Remember target after Confirm</span>
+                </label>
+                <div className="candidate-list">
+                  {candidateMenu.codexCliResumeAvailable ? (
+                    <button
+                      type="button"
+                      className="candidate-item codex-cli-candidate"
+                      title={`Start a new terminal: codex resume ${candidateMenu.session.sessionId}`}
+                      onClick={() =>
+                        void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect)
+                      }
+                    >
+                      <strong>Codex CLI Resume</strong>
+                      <span>Start a new terminal for this session</span>
+                    </button>
+                  ) : null}
+                  {candidateMenu.codexAppAvailable ? (
+                    <button
+                      type="button"
+                      className="candidate-item codex-app-candidate"
+                      title={codexAppThreadUri(candidateMenu.session.sessionId)}
+                      onClick={() =>
+                        void openCodexAppTarget(candidateMenu.session, candidateMenu.bindOnSelect)
+                      }
+                    >
+                      <strong>Codex App</strong>
+                      <span>Open thread {candidateMenu.session.sessionId}</span>
+                    </button>
+                  ) : null}
+                  {candidateMenu.candidates.map((candidate) => (
+                    <button
+                      type="button"
+                      className={`candidate-item ${
+                        activationCandidateKey(candidate) === candidateMenu.selectedCandidateKey ? "is-selected" : ""
+                      }`}
+                      key={`${candidate.hwnd}-${candidate.processId}`}
+                      title={candidate.label}
+                      aria-pressed={activationCandidateKey(candidate) === candidateMenu.selectedCandidateKey}
+                      onClick={() => {
+                        const selectedCandidateKey = activationCandidateKey(candidate);
+                        setCandidateMenu((current) =>
+                          current ? { ...current, selectedCandidateKey } : current,
+                        );
+                      }}
+                    >
+                      <strong>{candidate.processName ?? "Window"}</strong>
+                      <span>{candidate.title}</span>
+                      <small>{activationCandidateMeta(candidate)}</small>
+                    </button>
+                  ))}
+                </div>
+                <div className="candidate-actions">
                   <button
                     type="button"
-                    className="candidate-item codex-app-candidate"
-                    title={codexAppThreadUri(candidateMenu.session.sessionId)}
-                    onClick={() =>
-                      void openCodexAppTarget(candidateMenu.session, candidateMenu.bindOnSelect)
-                    }
+                    className="candidate-secondary-action"
+                    disabled={!selectedCandidate || activatingId === candidateMenu.session.sessionId}
+                    onClick={() => {
+                      if (!selectedCandidate) return;
+                      void activateCandidate(candidateMenu.session, selectedCandidate, false, {
+                        closeOnSuccess: false,
+                        markReviewedOnSuccess: false,
+                      });
+                    }}
                   >
-                    <strong>Codex App</strong>
-                    <span>Open thread {candidateMenu.session.sessionId}</span>
+                    Focus
                   </button>
-                ) : null}
-                {candidateMenu.candidates.map((candidate) => (
                   <button
                     type="button"
-                    className="candidate-item"
-                    key={`${candidate.hwnd}-${candidate.processId}`}
-                    title={candidate.label}
-                    onClick={() =>
-                      void activateCandidate(candidateMenu.session, candidate, candidateMenu.bindOnSelect)
-                    }
+                    className="candidate-confirm-action"
+                    disabled={!selectedCandidate || activatingId === candidateMenu.session.sessionId}
+                    onClick={() => {
+                      if (!selectedCandidate) return;
+                      void activateCandidate(
+                        candidateMenu.session,
+                        selectedCandidate,
+                        candidateMenu.bindOnSelect,
+                      );
+                    }}
                   >
-                    <strong>{candidate.processName ?? "Window"}</strong>
-                    <span>{candidate.title}</span>
+                    <CircleCheck size={13} aria-hidden="true" />
+                    <span>Confirm</span>
                   </button>
-                ))}
-              </div>
-            </section>
+                </div>
+              </section>
+            </div>
           ) : null}
 
           {workspacePanel ? (

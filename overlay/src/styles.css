@@ -2144,19 +2144,30 @@ button {
   line-height: 12px;
 }
 
-.candidate-menu {
+.candidate-modal-backdrop {
   position: fixed;
-  z-index: 30;
+  inset: 0;
+  z-index: 40;
   display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(3, 8, 10, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.candidate-menu {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
   gap: 6px;
-  width: min(316px, calc(100vw - 20px));
-  max-height: min(260px, calc(100vh - 64px));
-  padding: 7px;
+  width: min(560px, calc(100vw - 28px));
+  max-height: min(620px, calc(100vh - 28px));
+  min-height: 0;
+  padding: 10px;
   color: #eef6f2;
   background: rgba(19, 27, 31, 0.98);
   border: 1px solid rgba(143, 196, 255, 0.32);
-  border-radius: 7px;
-  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.42);
+  border-radius: 8px;
+  box-shadow: 0 22px 56px rgba(0, 0, 0, 0.5);
 }
 
 .candidate-menu-header {
@@ -2164,15 +2175,31 @@ button {
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  min-height: 22px;
+  min-height: 28px;
+}
+
+.candidate-menu-header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
 }
 
 .candidate-menu-header strong {
   overflow: hidden;
-  font-size: 11px;
-  line-height: 13px;
+  color: #f4fbf8;
+  font-size: 12px;
+  line-height: 14px;
   text-overflow: ellipsis;
   text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.candidate-menu-header span {
+  overflow: hidden;
+  color: #93aaa2;
+  font-size: 10px;
+  line-height: 12px;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -2180,7 +2207,7 @@ button {
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 3px 4px 1px;
+  padding: 6px 4px 4px;
   color: #c6d7d1;
   font-size: 10px;
   line-height: 12px;
@@ -2215,13 +2242,18 @@ button {
 .candidate-list {
   display: grid;
   gap: 5px;
-  overflow: auto;
+  min-height: 0;
+  max-height: min(430px, calc(100vh - 170px));
+  padding-right: 3px;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-gutter: stable;
 }
 
 .candidate-item {
   display: grid;
   gap: 2px;
-  min-height: 42px;
+  min-height: 50px;
   padding: 7px;
   color: #ddece7;
   text-align: left;
@@ -2235,6 +2267,13 @@ button {
   color: #f7fffb;
   background: rgba(143, 196, 255, 0.14);
   border-color: rgba(143, 196, 255, 0.3);
+}
+
+.candidate-item.is-selected {
+  color: #f7fffb;
+  background: rgba(143, 196, 255, 0.2);
+  border-color: rgba(143, 196, 255, 0.55);
+  box-shadow: inset 0 0 0 1px rgba(143, 196, 255, 0.22);
 }
 
 .candidate-item.codex-app-candidate {
@@ -2256,7 +2295,8 @@ button {
 }
 
 .candidate-item strong,
-.candidate-item span {
+.candidate-item span,
+.candidate-item small {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -2271,6 +2311,59 @@ button {
   color: #aabbb5;
   font-size: 10px;
   line-height: 12px;
+}
+
+.candidate-item small {
+  color: #8fa19b;
+  font-size: 9px;
+  line-height: 11px;
+}
+
+.candidate-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 6px;
+  padding-top: 4px;
+}
+
+.candidate-secondary-action,
+.candidate-confirm-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-width: 0;
+  min-height: 32px;
+  padding: 0 10px;
+  color: #dcece7;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.candidate-confirm-action {
+  color: #071916;
+  background: #6fe0be;
+  border-color: rgba(111, 224, 190, 0.66);
+  font-weight: 700;
+}
+
+.candidate-secondary-action:hover:not(:disabled) {
+  color: #f7fffb;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.candidate-confirm-action:hover:not(:disabled) {
+  background: #8af0ce;
+}
+
+.candidate-secondary-action:disabled,
+.candidate-confirm-action:disabled {
+  color: rgba(220, 236, 231, 0.38);
+  background: rgba(255, 255, 255, 0.045);
+  border-color: rgba(255, 255, 255, 0.06);
+  cursor: not-allowed;
 }
 
 .settings-dialog {
@@ -3716,6 +3809,64 @@ button {
   border-color: rgba(52, 111, 145, 0.22);
 }
 
+:root[data-amo-theme="light"] .candidate-modal-backdrop {
+  background: rgba(222, 232, 228, 0.62);
+}
+
+:root[data-amo-theme="light"] .candidate-menu {
+  color: #24342f;
+  background: rgba(252, 254, 252, 0.98);
+  border-color: rgba(52, 111, 145, 0.24);
+  box-shadow: 0 22px 52px rgba(58, 78, 72, 0.22);
+}
+
+:root[data-amo-theme="light"] .candidate-menu-header strong {
+  color: #14231f;
+}
+
+:root[data-amo-theme="light"] .candidate-menu-header span,
+:root[data-amo-theme="light"] .candidate-bind-toggle {
+  color: #63766f;
+}
+
+:root[data-amo-theme="light"] .candidate-close {
+  color: #465a53;
+  background: rgba(33, 58, 51, 0.06);
+  border-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .candidate-close:hover {
+  color: #14231f;
+  background: rgba(33, 58, 51, 0.11);
+}
+
+:root[data-amo-theme="light"] .candidate-item {
+  color: #24342f;
+  background: rgba(42, 74, 64, 0.035);
+  border-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .candidate-item:hover {
+  color: #14231f;
+  background: rgba(52, 111, 145, 0.1);
+  border-color: rgba(52, 111, 145, 0.22);
+}
+
+:root[data-amo-theme="light"] .candidate-item.is-selected {
+  color: #14231f;
+  background: rgba(52, 111, 145, 0.15);
+  border-color: rgba(52, 111, 145, 0.42);
+  box-shadow: inset 0 0 0 1px rgba(52, 111, 145, 0.16);
+}
+
+:root[data-amo-theme="light"] .candidate-item span {
+  color: #526760;
+}
+
+:root[data-amo-theme="light"] .candidate-item small {
+  color: #72857e;
+}
+
 :root[data-amo-theme="light"] .candidate-item.codex-cli-candidate {
   background: rgba(42, 74, 64, 0.045);
   border-color: rgba(42, 74, 64, 0.18);
@@ -3723,6 +3874,34 @@ button {
 
 :root[data-amo-theme="light"] .candidate-item.codex-cli-candidate:hover {
   background: rgba(42, 74, 64, 0.08);
+}
+
+:root[data-amo-theme="light"] .candidate-secondary-action {
+  color: #344c45;
+  background: rgba(42, 74, 64, 0.06);
+  border-color: rgba(42, 74, 64, 0.14);
+}
+
+:root[data-amo-theme="light"] .candidate-secondary-action:hover:not(:disabled) {
+  color: #14231f;
+  background: rgba(42, 74, 64, 0.1);
+}
+
+:root[data-amo-theme="light"] .candidate-confirm-action {
+  color: #ffffff;
+  background: #177c64;
+  border-color: rgba(23, 124, 100, 0.48);
+}
+
+:root[data-amo-theme="light"] .candidate-confirm-action:hover:not(:disabled) {
+  background: #209675;
+}
+
+:root[data-amo-theme="light"] .candidate-secondary-action:disabled,
+:root[data-amo-theme="light"] .candidate-confirm-action:disabled {
+  color: rgba(52, 76, 69, 0.38);
+  background: rgba(42, 74, 64, 0.035);
+  border-color: rgba(42, 74, 64, 0.08);
 }
 
 :root[data-amo-theme="light"] .permission-pill {
