@@ -65,6 +65,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   panelRefreshTimer: number | null;
   codeLinkSuppressUntilMs: number;
   codeLinkSuppressTarget: string;
+  sendToAmoShortcutSuppressUntilMs: number;
 
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) || {});
@@ -84,12 +85,16 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.panelRefreshTimer = null;
     this.codeLinkSuppressUntilMs = 0;
     this.codeLinkSuppressTarget = "";
+    this.sendToAmoShortcutSuppressUntilMs = 0;
 
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
     this.registerEditorExtension(amoMarkerHiderExtension);
     this.registerEditorExtension(
       EditorView.domEventHandlers({
-        mousedown: (event, view) => this.handleEditorLocalCodeLinkEvent(event, view, "mousedown"),
+        mousedown: (event, view) =>
+          this.handleEditorAnnotationMouseShortcut(event, view, "mousedown") ||
+          this.handleEditorLocalCodeLinkEvent(event, view, "mousedown"),
+        auxclick: (event, view) => this.handleEditorAnnotationMouseShortcut(event, view, "auxclick"),
         click: (event, view) => this.handleEditorLocalCodeLinkEvent(event, view, "click"),
       })
     );
@@ -218,6 +223,22 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       "click",
       (event) => {
         this.handleLocalCodeLinkClick(event);
+      },
+      { capture: true }
+    );
+    this.registerDomEvent(
+      document,
+      "mousedown",
+      (event) => {
+        this.handleSendToAmoMouseShortcut(event);
+      },
+      { capture: true }
+    );
+    this.registerDomEvent(
+      document,
+      "auxclick",
+      (event) => {
+        this.handleSendToAmoMouseShortcut(event);
       },
       { capture: true }
     );
@@ -405,6 +426,61 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     event.stopImmediatePropagation();
     this.markLocalCodeLinkHandled(rawHref);
     void this.openLocalCodeLink(link, rawHref);
+  }
+
+  handleEditorAnnotationMouseShortcut(event: MouseEvent, view: EditorView, phase: string) {
+    if (!event.ctrlKey || event.button !== 4) return false;
+
+    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView) || this.getActiveMarkdownView();
+    if (!activeView || !activeView.editor) {
+      this.debugLog("annotations.editor_mouse_shortcut.no_editor", {
+        phase,
+        target: event.target instanceof Element ? describeElement(event.target) : "",
+        editorViewClass: view.dom?.className || "",
+      });
+      return false;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
+    this.wrapSelectionWithAnnotation(activeView.editor);
+    this.debugLog("annotations.editor_mouse_shortcut.handled", {
+      phase,
+      hasSelection: activeView.editor.getSelection().trim().length > 0,
+      notePath: activeView.file?.path || "",
+    });
+    return true;
+  }
+
+  handleSendToAmoMouseShortcut(event: MouseEvent) {
+    if (!event.ctrlKey || event.button !== 4) return false;
+    if (event.target instanceof Element && event.target.closest(".cm-editor")) return false;
+
+    const now = Date.now();
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    if (now < this.sendToAmoShortcutSuppressUntilMs) return true;
+    this.sendToAmoShortcutSuppressUntilMs = now + 700;
+
+    const file = this.getActiveMarkdownFile();
+    if (!file) {
+      this.debugLog("annotations.send.mouse5.no_file", {
+        type: event.type,
+        target: event.target instanceof Element ? describeElement(event.target) : "",
+      });
+      new Notice("No active Markdown note.");
+      return true;
+    }
+
+    this.debugLog("annotations.send.mouse5", {
+      notePath: file.path,
+      type: event.type,
+    });
+    void this.sendAnnotationsFromFile(file);
+    return true;
   }
 
   handleEditorLocalCodeLinkEvent(event: MouseEvent, view: EditorView, phase: string) {

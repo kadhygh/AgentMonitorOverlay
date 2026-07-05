@@ -29,8 +29,8 @@ export function insertReferencedAnnotation(editor, selection) {
   };
   const leading = lineText.trim().length > 0 ? "\n\n" : "";
   const quote = formatMarkdownQuote(reference);
-  const block = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n\n" + ANNO_TAG_SUFFIX;
-  const beforeAnswer = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n";
+  const block = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n\n\n" + ANNO_TAG_SUFFIX;
+  const beforeAnswer = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n\n";
 
   editor.replaceRange(block, insertAt);
   editor.setCursor({

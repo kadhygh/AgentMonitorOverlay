@@ -38,7 +38,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.30";
+var PLUGIN_VERSION = "1.4.32";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -299,8 +299,8 @@ function insertReferencedAnnotation(editor, selection) {
   };
   const leading = lineText.trim().length > 0 ? "\n\n" : "";
   const quote = formatMarkdownQuote(reference);
-  const block = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n\n" + ANNO_TAG_SUFFIX;
-  const beforeAnswer = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n";
+  const block = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n\n\n" + ANNO_TAG_SUFFIX;
+  const beforeAnswer = leading + ANNO_TAG_PREFIX + "\n" + quote + "\n\n";
   editor.replaceRange(block, insertAt);
   editor.setCursor({
     line: insertAt.line + beforeAnswer.split("\n").length - 1,
@@ -1228,11 +1228,13 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     this.panelRefreshTimer = null;
     this.codeLinkSuppressUntilMs = 0;
     this.codeLinkSuppressTarget = "";
+    this.sendToAmoShortcutSuppressUntilMs = 0;
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
     this.registerEditorExtension(amoMarkerHiderExtension);
     this.registerEditorExtension(
       import_view2.EditorView.domEventHandlers({
-        mousedown: (event, view) => this.handleEditorLocalCodeLinkEvent(event, view, "mousedown"),
+        mousedown: (event, view) => this.handleEditorAnnotationMouseShortcut(event, view, "mousedown") || this.handleEditorLocalCodeLinkEvent(event, view, "mousedown"),
+        auxclick: (event, view) => this.handleEditorAnnotationMouseShortcut(event, view, "auxclick"),
         click: (event, view) => this.handleEditorLocalCodeLinkEvent(event, view, "click")
       })
     );
@@ -1347,6 +1349,22 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
       "click",
       (event) => {
         this.handleLocalCodeLinkClick(event);
+      },
+      { capture: true }
+    );
+    this.registerDomEvent(
+      document,
+      "mousedown",
+      (event) => {
+        this.handleSendToAmoMouseShortcut(event);
+      },
+      { capture: true }
+    );
+    this.registerDomEvent(
+      document,
+      "auxclick",
+      (event) => {
+        this.handleSendToAmoMouseShortcut(event);
       },
       { capture: true }
     );
@@ -1488,6 +1506,55 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     event.stopImmediatePropagation();
     this.markLocalCodeLinkHandled(rawHref);
     void this.openLocalCodeLink(link, rawHref);
+  }
+  handleEditorAnnotationMouseShortcut(event, view, phase) {
+    var _a, _b;
+    if (!event.ctrlKey || event.button !== 4) return false;
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian5.MarkdownView) || this.getActiveMarkdownView();
+    if (!activeView || !activeView.editor) {
+      this.debugLog("annotations.editor_mouse_shortcut.no_editor", {
+        phase,
+        target: event.target instanceof Element ? describeElement(event.target) : "",
+        editorViewClass: ((_a = view.dom) == null ? void 0 : _a.className) || ""
+      });
+      return false;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
+    this.wrapSelectionWithAnnotation(activeView.editor);
+    this.debugLog("annotations.editor_mouse_shortcut.handled", {
+      phase,
+      hasSelection: activeView.editor.getSelection().trim().length > 0,
+      notePath: ((_b = activeView.file) == null ? void 0 : _b.path) || ""
+    });
+    return true;
+  }
+  handleSendToAmoMouseShortcut(event) {
+    if (!event.ctrlKey || event.button !== 4) return false;
+    if (event.target instanceof Element && event.target.closest(".cm-editor")) return false;
+    const now = Date.now();
+    event.preventDefault();
+    event.stopPropagation();
+    event.stopImmediatePropagation();
+    if (now < this.sendToAmoShortcutSuppressUntilMs) return true;
+    this.sendToAmoShortcutSuppressUntilMs = now + 700;
+    const file = this.getActiveMarkdownFile();
+    if (!file) {
+      this.debugLog("annotations.send.mouse5.no_file", {
+        type: event.type,
+        target: event.target instanceof Element ? describeElement(event.target) : ""
+      });
+      new import_obsidian5.Notice("No active Markdown note.");
+      return true;
+    }
+    this.debugLog("annotations.send.mouse5", {
+      notePath: file.path,
+      type: event.type
+    });
+    void this.sendAnnotationsFromFile(file);
+    return true;
   }
   handleEditorLocalCodeLinkEvent(event, view, phase) {
     if (event.button !== 0 || this.settings.interceptLocalCodeLinks === false) return false;
