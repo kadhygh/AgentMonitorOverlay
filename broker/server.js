@@ -1687,6 +1687,9 @@ function handleReply(payload) {
   const hookEventName = normalizeText(payload.hookEventName || payload.hook_event_name) || "Stop";
   const cwd = normalizeText(payload.cwd) || workspaceRoot;
   const transcriptPath = normalizeText(payload.transcriptPath || payload.transcript_path);
+  const existing = sessions.get(sessionId);
+  const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title);
+  const taskTitle = normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null;
   const record = {
     schemaVersion: AMO_SCHEMA_VERSION,
     workspaceId: workspace.workspaceId,
@@ -1696,6 +1699,8 @@ function handleReply(payload) {
     sessionId,
     turnId,
     cwd,
+    title,
+    taskTitle,
     model: normalizeText(payload.model),
     hookEventName,
     transcriptPath,
@@ -1707,13 +1712,12 @@ function handleReply(payload) {
   const note = writeReplyNote(amoRoot, vaultRoot, record);
   const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
 
-  const existing = sessions.get(sessionId);
   const session = {
     tool,
     sessionId,
     cwd,
-    title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title),
-    taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null,
+    title,
+    taskTitle,
     state: "idle",
     lastEvent: hookEventName,
     lastMessage: trimMessage(message, 240),
@@ -1815,6 +1819,8 @@ function handlePrompt(payload) {
   const source = normalizeText(payload.source) || "user-prompt";
   const hookEventName = normalizeText(payload.hookEventName || payload.hook_event_name) || "UserPromptSubmit";
   const cwd = normalizeText(payload.cwd) || existing?.cwd || workspaceRoot;
+  const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title);
+  const taskTitle = normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null;
   const promptHash = promptContentHash(message);
   const duplicate = findDuplicatePrompt(existing, {
     message,
@@ -1830,8 +1836,8 @@ function handlePrompt(payload) {
         tool,
         sessionId,
         cwd,
-        title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title),
-        taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null,
+        title,
+        taskTitle,
         state: normalizeState(payload.state) || "running",
         lastEvent: hookEventName,
         lastMessage: trimMessage(`User: ${message}`, 240),
@@ -1886,6 +1892,8 @@ function handlePrompt(payload) {
     sessionId,
     turnId,
     cwd,
+    title,
+    taskTitle,
     model: normalizeText(payload.model),
     hookEventName,
     transcriptPath: normalizeText(payload.transcriptPath || payload.transcript_path),
@@ -1903,8 +1911,8 @@ function handlePrompt(payload) {
     tool,
     sessionId,
     cwd,
-    title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title),
-    taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null,
+    title,
+    taskTitle,
     state: normalizeState(payload.state) || "running",
     lastEvent: hookEventName,
     lastMessage: trimMessage(`User: ${message}`, 240),
@@ -4242,7 +4250,7 @@ function nextConversationNoteIdentity(vaultRoot, record, kind) {
   fs.mkdirSync(noteDir, { recursive: true });
 
   const sequence = nextConversationNoteSequence(noteDir);
-  const displayName = `${formatConversationNoteSequence(sequence)} ${noteKind}`;
+  const displayName = conversationNoteDisplayName(sequence, noteKind, record);
   const noteAbsolutePath = path.join(noteDir, `${displayName}.md`);
   return {
     kind: noteKind,
@@ -4253,9 +4261,21 @@ function nextConversationNoteIdentity(vaultRoot, record, kind) {
   };
 }
 
+function conversationNoteDisplayName(sequence, noteKind, record) {
+  const baseName = `${formatConversationNoteSequence(sequence)} ${noteKind}`;
+  const titleSuffix = conversationNoteTitleSuffix(record);
+  return titleSuffix ? `${baseName} - ${titleSuffix}` : baseName;
+}
+
+function conversationNoteTitleSuffix(record) {
+  const title = normalizeNoteDisplayTitle(record?.taskTitle || record?.displayTitle || record?.title);
+  if (!title) return "";
+  return sanitizeObsidianFileNamePart(title).slice(0, 60).trim();
+}
+
 function nextConversationNoteSequence(noteDir) {
-  const orderedNoteNamePattern = /^(\d+) (prompt|reply)\.md$/iu;
-  const legacyNoteNamePattern = /^(prompt|reply) (\d+)\.md$/iu;
+  const orderedNoteNamePattern = /^(\d+) (prompt|reply)(?: - .+)?\.md$/iu;
+  const legacyNoteNamePattern = /^(prompt|reply) (\d+)(?: - .+)?\.md$/iu;
   let maxSequence = 0;
   let generatedNoteCount = 0;
 
@@ -4512,6 +4532,14 @@ function sanitizeFilePart(value) {
   return String(value || "unknown")
     .replace(/[^a-zA-Z0-9._-]+/g, "_")
     .replace(/^_+|_+$/g, "") || "unknown";
+}
+
+function sanitizeObsidianFileNamePart(value) {
+  return String(value || "")
+    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ")
+    .replace(/\s+/g, " ")
+    .replace(/[. ]+$/g, "")
+    .trim();
 }
 
 function fileSafeTimestamp(value) {
