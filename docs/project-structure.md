@@ -108,7 +108,15 @@ Manual smoke is required when a refactor touches:
 
 ## Current Transition State
 
-The repository is at the start of the refactor. The largest files are still the historical roots:
+The repository is in the early overlay extraction stage. These boundaries have already moved out of `overlay/src/App.tsx`:
+
+- broker client constants/helpers: `overlay/src/api/brokerClient.ts`
+- session ordering/filtering/attention helpers: `overlay/src/domain/sessionModel.ts`
+- AMO theme runtime: `overlay/src/theme/amoTheme.ts`
+- shared clipboard helpers: `overlay/src/native/clipboard.ts`
+- scratchpad utility window: `overlay/src/windows/ScratchpadApp.tsx`
+
+The largest files are still the historical roots:
 
 - `overlay/src/App.tsx`
 - `broker/server.js`

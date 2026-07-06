@@ -1,6 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow, LogicalSize, UserAttentionType, Window as TauriWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
@@ -75,6 +74,9 @@ import {
   sessionNeedsReview,
   type SessionFilter,
 } from "./domain/sessionModel";
+import { toCliPasteClipboardText, writeClipboardText } from "./native/clipboard";
+import { type AmoTheme, useAmoThemeRuntime } from "./theme/amoTheme";
+import { ScratchpadApp } from "./windows/ScratchpadApp";
 import type {
   ActivationCandidate,
   ActivationResult,
@@ -106,15 +108,12 @@ const DIALOG_SIZES = {
 };
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
-const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
 const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
-const AMO_THEME_STORAGE_KEY = "amo.theme";
 const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
 
 type ScratchpadShortcutButton = "mouse4" | "mouse5";
 type UtilityWindowKind = "deploy" | "settings";
 type AmoWindowLabel = "main" | "scratchpad" | "deploy" | "settings";
-type AmoTheme = "dark" | "light";
 
 const AMO_FLOATING_WINDOWS: AmoWindowLabel[] = ["main", "scratchpad"];
 const AMO_UTILITY_WINDOWS: UtilityWindowKind[] = ["deploy", "settings"];
@@ -128,10 +127,6 @@ interface ScratchpadShortcutState {
 interface UtilityWindowStateEvent {
   label: UtilityWindowKind;
   open: boolean;
-}
-
-interface AmoThemeChangedEvent {
-  theme: AmoTheme;
 }
 
 type SettingsSection = "scratchpad" | "theme";
@@ -282,86 +277,6 @@ function saveScratchpadShortcutState(next: ScratchpadShortcutState) {
 async function applyScratchpadShortcutState(next: ScratchpadShortcutState) {
   return invoke<ScratchpadShortcutResult>("set_scratchpad_shortcut_config", { config: next });
 }
-
-function normalizeAmoTheme(value: unknown): AmoTheme {
-  return value === "light" ? "light" : "dark";
-}
-
-function loadAmoTheme(): AmoTheme {
-  try {
-    return normalizeAmoTheme(localStorage.getItem(AMO_THEME_STORAGE_KEY));
-  } catch {
-    return "dark";
-  }
-}
-
-function applyAmoTheme(theme: AmoTheme) {
-  document.documentElement.dataset.amoTheme = theme;
-}
-
-function saveAmoTheme(theme: AmoTheme) {
-  try {
-    localStorage.setItem(AMO_THEME_STORAGE_KEY, theme);
-  } catch {
-    // The visual preference still applies to the current window even if storage is unavailable.
-  }
-  applyAmoTheme(theme);
-}
-
-async function broadcastAmoTheme(theme: AmoTheme) {
-  const payload = { theme } satisfies AmoThemeChangedEvent;
-  await Promise.all(
-    AMO_WINDOW_LABELS.map((label) =>
-      getCurrentWindow()
-        .emitTo(label, "amo-theme-changed", payload)
-        .catch(() => undefined),
-    ),
-  );
-}
-
-function useAmoThemeRuntime(): [AmoTheme, (next: AmoTheme) => Promise<void>] {
-  const [theme, setTheme] = useState<AmoTheme>(() => loadAmoTheme());
-
-  useEffect(() => {
-    applyAmoTheme(theme);
-  }, [theme]);
-
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    void getCurrentWindow()
-      .listen<AmoThemeChangedEvent>("amo-theme-changed", (event) => {
-        const nextTheme = normalizeAmoTheme(event.payload?.theme);
-        setTheme(nextTheme);
-        saveAmoTheme(nextTheme);
-      })
-      .then((handler) => {
-        unlisten = handler;
-      });
-
-    function handleStorage(event: StorageEvent) {
-      if (event.key !== AMO_THEME_STORAGE_KEY) return;
-      const nextTheme = normalizeAmoTheme(event.newValue);
-      setTheme(nextTheme);
-      applyAmoTheme(nextTheme);
-    }
-
-    window.addEventListener("storage", handleStorage);
-    return () => {
-      unlisten?.();
-      window.removeEventListener("storage", handleStorage);
-    };
-  }, []);
-
-  async function updateTheme(next: AmoTheme) {
-    setTheme(next);
-    saveAmoTheme(next);
-    await broadcastAmoTheme(next);
-  }
-
-  return [theme, updateTheme];
-}
-
-applyAmoTheme(loadAmoTheme());
 
 const stateLabel: Record<SessionState, string> = {
   starting: "Starting",
@@ -569,32 +484,6 @@ function shouldProbeCodexActionRequired(session: AgentSession) {
 
 function actionRequiredCandidate(candidates: ActivationCandidate[]) {
   return candidates.find((candidate) => CODEX_ACTION_REQUIRED_TITLE_PATTERN.test(candidate.title));
-}
-
-function toCliPasteClipboardText(text: string) {
-  return text
-    .replace(/\r\n?/g, "\n")
-    .split("\n")
-    .map((line) => line.trimEnd())
-    .join("\n")
-    .replace(/\n+$/g, "")
-    .replace(/\n/g, "\r\n");
-}
-
-async function writeClipboardText(text: string): Promise<OpenPathResult> {
-  if (navigator.clipboard?.writeText) {
-    try {
-      await navigator.clipboard.writeText(text);
-      return {
-        ok: true,
-        message: "Copied text to clipboard.",
-      };
-    } catch {
-      // Fall back to the native clipboard path below.
-    }
-  }
-
-  return invoke<OpenPathResult>("write_clipboard_text", { text });
 }
 
 function clipboardPromptForSession(session: AgentSession) {
@@ -1458,147 +1347,6 @@ function SessionRowContent({
         ) : null}
       </span>
     </span>
-  );
-}
-
-function ScratchpadApp() {
-  useAmoThemeRuntime();
-
-  const textareaRef = useRef<HTMLTextAreaElement | null>(null);
-  const [textLength, setTextLength] = useState(0);
-  const [status, setStatus] = useState("Ready");
-
-  useEffect(() => {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    const savedText = localStorage.getItem(SCRATCHPAD_TEXT_STORAGE_KEY) || "";
-    textarea.value = savedText;
-    setTextLength(savedText.length);
-    window.setTimeout(() => textarea.focus(), 30);
-  }, []);
-
-  useEffect(() => {
-    function handleKeyDown(event: KeyboardEvent) {
-      if (event.key !== "Escape" || event.isComposing) return;
-      event.preventDefault();
-      void getCurrentWindow().hide();
-    }
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, []);
-
-  function persistCurrentText() {
-    const text = textareaRef.current?.value || "";
-    localStorage.setItem(SCRATCHPAD_TEXT_STORAGE_KEY, text);
-    setTextLength(text.length);
-    return text;
-  }
-
-  async function copyText() {
-    const text = persistCurrentText();
-    if (!text.trim()) {
-      setStatus("Nothing to copy");
-      textareaRef.current?.focus();
-      return;
-    }
-
-    try {
-      const clipboardText = toCliPasteClipboardText(text);
-      const result = await writeClipboardText(clipboardText);
-      setStatus(result.ok ? "Copied" : result.message);
-      if (result.ok) {
-        await getCurrentWindow().hide();
-      }
-    } catch (error) {
-      setStatus(`Copy failed: ${(error as Error).message}`);
-    } finally {
-      textareaRef.current?.focus();
-    }
-  }
-
-  useEffect(() => {
-    let disposed = false;
-    let unlistenCopyRequest: (() => void) | null = null;
-
-    void listen("scratchpad-copy-request", () => {
-      if (document.activeElement !== textareaRef.current) {
-        textareaRef.current?.focus();
-        return;
-      }
-
-      void copyText();
-    })
-      .then((unlisten) => {
-        if (disposed) {
-          unlisten();
-        } else {
-          unlistenCopyRequest = unlisten;
-        }
-      })
-      .catch((error) => {
-        setStatus(`Shortcut listener failed: ${(error as Error).message}`);
-      });
-
-    return () => {
-      disposed = true;
-      unlistenCopyRequest?.();
-    };
-  }, []);
-
-  function clearText() {
-    const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    textarea.focus();
-    textarea.select();
-    const deleted = document.execCommand("delete");
-    if (!deleted) {
-      textarea.value = "";
-      textarea.dispatchEvent(new Event("input", { bubbles: true }));
-    }
-    persistCurrentText();
-    setStatus("Cleared · Ctrl+Z can restore while focused");
-  }
-
-  return (
-    <main className="scratchpad-shell">
-      <header className="scratchpad-header" data-tauri-drag-region>
-        <div data-tauri-drag-region>
-          <StickyNote size={15} aria-hidden="true" />
-          <strong>AMO Scratchpad</strong>
-        </div>
-        <span className="scratchpad-header-actions">
-          <button type="button" className="scratchpad-clear-button" title="Clear scratchpad" aria-label="Clear scratchpad" onClick={clearText}>
-            <Trash2 size={13} aria-hidden="true" />
-          </button>
-          <button type="button" title="Close" aria-label="Close scratchpad" onClick={() => void getCurrentWindow().hide()}>
-            <X size={14} aria-hidden="true" />
-          </button>
-        </span>
-      </header>
-      <textarea
-        ref={textareaRef}
-        className="scratchpad-input"
-        spellCheck={false}
-        placeholder="Write the reply points you want to keep while reading..."
-        onInput={() => {
-          persistCurrentText();
-          setStatus("Saved");
-        }}
-      />
-      <footer className="scratchpad-footer">
-        <span title={status}>
-          {textLength} chars · {status}
-        </span>
-        <div className="scratchpad-copy-actions">
-          <button type="button" onClick={() => void copyText()}>
-            Copy
-          </button>
-        </div>
-      </footer>
-    </main>
   );
 }
 

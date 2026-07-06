@@ -51,7 +51,7 @@ overlay/src/
     SettingsWindowApp.tsx
     ScratchpadApp.tsx
   theme/
-    theme.ts
+    amoTheme.ts
   App.tsx
   types.ts
 ```
@@ -313,6 +313,18 @@ Manual smoke:
 - Added `overlay/src/api/brokerClient.ts` for broker URL constants, session endpoint helpers, and `postBrokerJson`.
 - Added `overlay/src/domain/sessionModel.ts` for session ordering, archive/review/attention, and filter logic.
 - Kept `sessionMatchesSearch` in `App.tsx` for now because it still depends on UI-specific target/tool label helpers.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`
+
+### 2026-07-07: Phase 2 Started
+
+- Added `overlay/src/theme/amoTheme.ts` for AMO theme persistence, window broadcast, and runtime subscription.
+- Added `overlay/src/native/clipboard.ts` for shared clipboard writing and CLI paste normalization.
+- Added `overlay/src/windows/ScratchpadApp.tsx` and removed the scratchpad implementation from `App.tsx`.
+- Kept utility-window lifecycle helpers in `App.tsx` for now because deploy/settings windows still share them.
 - Validation passed:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
