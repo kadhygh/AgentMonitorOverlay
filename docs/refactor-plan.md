@@ -425,3 +425,13 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Candidate Menu Extracted
+
+- Added `overlay/src/components/CandidateMenu.tsx` for target-window selection UI and candidate display helpers.
+- Kept activation, binding, Codex App, and Codex CLI resume side effects in `App.tsx` as callbacks.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`

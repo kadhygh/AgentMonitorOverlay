@@ -64,7 +64,6 @@ import {
 } from "./domain/sessionModel";
 import {
   activationCandidateFromWindowTarget,
-  activationCandidateKey,
   activationTargetForSession,
   activationWindowRequest,
   canvasPathForOpen,
@@ -101,6 +100,7 @@ import {
   type LaunchPanelAdapterId,
 } from "./domain/workspaceModel";
 import { LaunchToolMark, SessionRowContent, toolDisplayForSession } from "./components/SessionCard";
+import { CandidateMenu, type CandidateMenuState } from "./components/CandidateMenu";
 import { toCliPasteClipboardText, writeClipboardText } from "./native/clipboard";
 import {
   applyScratchpadShortcutState,
@@ -165,11 +165,6 @@ function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
 }
 
-function activationCandidateMeta(candidate: ActivationCandidate) {
-  const process = candidate.processName ?? "unknown";
-  return `${process} · PID ${candidate.processId} · HWND ${candidate.hwnd}`;
-}
-
 function shouldProbeCodexActionRequired(session: AgentSession) {
   if (!isCodexSession(session)) return false;
   if (session.state === "waiting_permission" || session.state === "waiting_user") return false;
@@ -189,12 +184,6 @@ function clipboardPromptForSession(session: AgentSession) {
   }
 
   return toCliPasteClipboardText(prompt);
-}
-
-function candidateMenuContextLabel(session: AgentSession) {
-  const conversationName = (session.taskTitle || session.title || session.sessionId || "Session").trim();
-  const project = projectName(workspacePathForSession(session) || session.cwd || "") || "Project";
-  return `${conversationName} - ${project}`;
 }
 
 function menuPosition(x?: number, y?: number) {
@@ -279,18 +268,6 @@ interface WindowBindDragState {
   pointerId: number;
   pointerX: number;
   pointerY: number;
-}
-
-interface CandidateMenuState {
-  session: AgentSession;
-  candidates: ActivationCandidate[];
-  x: number;
-  y: number;
-  bindOnSelect: boolean;
-  clearAttentionOnConfirm: boolean;
-  selectedCandidateKey: string | null;
-  codexAppAvailable: boolean;
-  codexCliResumeAvailable: boolean;
 }
 
 interface WorkspacePanelState {
@@ -2713,12 +2690,6 @@ export default function App() {
     };
   }, []);
 
-  const selectedCandidate = candidateMenu
-    ? candidateMenu.candidates.find(
-        (candidate) => activationCandidateKey(candidate) === candidateMenu.selectedCandidateKey,
-      ) ?? null
-    : null;
-
   return (
     <main className={`overlay-shell ${collapsed ? "is-collapsed" : ""}`}>
       <header
@@ -2940,144 +2911,40 @@ export default function App() {
           </section>
 
           {candidateMenu ? (
-            <div
-              className="candidate-modal-backdrop"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) {
-                  setCandidateMenu(null);
-                }
-              }}
-            >
-              <section
-                className="candidate-menu"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Target candidates"
-                onMouseDown={(event) => event.stopPropagation()}
-              >
-                <div className="candidate-menu-header">
-                  <div>
-                    <strong>Choose Target</strong>
-                    <span title={candidateMenuContextLabel(candidateMenu.session)}>
-                      {candidateMenuContextLabel(candidateMenu.session)} · {candidateMenu.candidates.length} window(s)
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    className="candidate-close"
-                    title="Close"
-                    onClick={() => setCandidateMenu(null)}
-                  >
-                    <X size={13} aria-hidden="true" />
-                  </button>
-                </div>
-                <label className="candidate-bind-toggle">
-                  <input
-                    type="checkbox"
-                    checked={candidateMenu.bindOnSelect}
-                    onChange={(event) => {
-                      const checked = event.currentTarget.checked;
-                      setCandidateMenu((current) =>
-                        current ? { ...current, bindOnSelect: checked } : current,
-                      );
-                    }}
-                  />
-                  <span>Remember target after Confirm</span>
-                </label>
-                <div className="candidate-list">
-                  {candidateMenu.codexAppAvailable ? (
-                    <button
-                      type="button"
-                      className="candidate-item codex-app-candidate"
-                      title={codexAppThreadUri(candidateMenu.session.sessionId)}
-                      onClick={() =>
-                        void openCodexAppTarget(candidateMenu.session, candidateMenu.bindOnSelect, {
-                          clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
-                        })
-                      }
-                    >
-                      <strong>Codex App</strong>
-                      <span>Open thread {candidateMenu.session.sessionId}</span>
-                    </button>
-                  ) : null}
-                  {candidateMenu.candidates.map((candidate) => (
-                    <button
-                      type="button"
-                      className={`candidate-item ${
-                        activationCandidateKey(candidate) === candidateMenu.selectedCandidateKey ? "is-selected" : ""
-                      }`}
-                      key={`${candidate.hwnd}-${candidate.processId}`}
-                      title={candidate.label}
-                      aria-pressed={activationCandidateKey(candidate) === candidateMenu.selectedCandidateKey}
-                      onClick={() => {
-                        const selectedCandidateKey = activationCandidateKey(candidate);
-                        setCandidateMenu((current) =>
-                          current ? { ...current, selectedCandidateKey } : current,
-                        );
-                      }}
-                    >
-                      <strong>{candidate.processName ?? "Window"}</strong>
-                      <span>{candidate.title}</span>
-                      <small>{activationCandidateMeta(candidate)}</small>
-                    </button>
-                  ))}
-                </div>
-                <div className={`candidate-actions ${candidateMenu.codexCliResumeAvailable ? "has-launch-action" : ""}`}>
-                  {candidateMenu.codexCliResumeAvailable ? (
-                    <button
-                      type="button"
-                      className="candidate-launch-action"
-                      title={`Start a new terminal: codex resume ${candidateMenu.session.sessionId}`}
-                      disabled={activatingId === candidateMenu.session.sessionId}
-                      onClick={() =>
-                        void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect, {
-                          clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
-                        })
-                      }
-                    >
-                      <SquareTerminal size={13} aria-hidden="true" />
-                      <span>New CLI</span>
-                    </button>
-                  ) : null}
-                  <button
-                    type="button"
-                    className="candidate-secondary-action"
-                    disabled={!selectedCandidate || activatingId === candidateMenu.session.sessionId}
-                    onClick={() => {
-                      if (!selectedCandidate) return;
-                      void activateCandidate(candidateMenu.session, selectedCandidate, false, {
-                        closeOnSuccess: false,
-                        clearAttentionOnSuccess: false,
-                        markReviewedOnSuccess: false,
-                      });
-                    }}
-                  >
-                    Focus
-                  </button>
-                  <button
-                    type="button"
-                    className="candidate-confirm-action"
-                    disabled={!selectedCandidate || activatingId === candidateMenu.session.sessionId}
-                    onClick={() => {
-                      if (!selectedCandidate) return;
-                      void activateCandidate(
-                        candidateMenu.session,
-                        selectedCandidate,
-                        candidateMenu.bindOnSelect,
-                        {
-                          clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
-                        },
-                      );
-                    }}
-                  >
-                    <CircleCheck size={13} aria-hidden="true" />
-                    <span>Confirm</span>
-                  </button>
-                </div>
-              </section>
-            </div>
+            <CandidateMenu
+              state={candidateMenu}
+              activating={activatingId === candidateMenu.session.sessionId}
+              onClose={() => setCandidateMenu(null)}
+              onBindOnSelectChange={(checked) =>
+                setCandidateMenu((current) => (current ? { ...current, bindOnSelect: checked } : current))
+              }
+              onSelectCandidate={(selectedCandidateKey) =>
+                setCandidateMenu((current) => (current ? { ...current, selectedCandidateKey } : current))
+              }
+              onOpenCodexAppTarget={() =>
+                void openCodexAppTarget(candidateMenu.session, candidateMenu.bindOnSelect, {
+                  clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
+                })
+              }
+              onOpenCodexCliTarget={() =>
+                void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect, {
+                  clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
+                })
+              }
+              onFocusCandidate={(candidate) =>
+                void activateCandidate(candidateMenu.session, candidate, false, {
+                  closeOnSuccess: false,
+                  clearAttentionOnSuccess: false,
+                  markReviewedOnSuccess: false,
+                })
+              }
+              onConfirmCandidate={(candidate) =>
+                void activateCandidate(candidateMenu.session, candidate, candidateMenu.bindOnSelect, {
+                  clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
+                })
+              }
+            />
           ) : null}
-
           {launchPanel ? (
             <section
               className="launch-panel"
