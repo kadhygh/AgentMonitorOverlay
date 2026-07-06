@@ -39,6 +39,7 @@ Expected ownership after refactor:
 - `lib/normalize.js`: shared payload normalization helpers.
 - `lib/obsidian-vault.js`: Obsidian vault registry, plugin install/health, runtime-state, and comparable path helpers.
 - `lib/target-binding.js`: window, Codex CLI, and Codex App target binding normalization.
+- `lib/terminal-launch.js`: detached terminal/process launch helpers.
 - `lib/workspace-git-exclude.js`: project-local Git exclude inspection and update planning.
 - `lib/workspace-*.js`: workspace inspection, deployment, maintenance, git exclude, and launch.
 - `lib/obsidian-vault.js`: vault registry, runtime state, plugin install/health.
@@ -140,6 +141,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 - shared text, integer, array, and version normalization helpers: `broker/lib/normalize.js`
 - Obsidian vault registry, plugin install/health, runtime-state, and comparable path helpers: `broker/lib/obsidian-vault.js`
 - window, Codex CLI, and Codex App target binding helpers: `broker/lib/target-binding.js`
+- detached terminal/process launch helpers: `broker/lib/terminal-launch.js`
 - project-local Git exclude inspection and update planning: `broker/lib/workspace-git-exclude.js`
 - workspace path, Git root, JSON read/write, and safety helpers: `broker/lib/filesystem.js`
 - Codex/Claude hook event lists, generated hook script text, and CLI config merge helpers: `broker/hooks/codex.js`, `broker/hooks/claude.js`
