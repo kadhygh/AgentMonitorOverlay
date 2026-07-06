@@ -72,6 +72,7 @@ Expected ownership after refactor:
 - `lib.rs`: Tauri builder and command registration.
 - `models.rs`: serializable command payloads and shared native helper structs.
 - `broker.rs`: local broker health check, broker script discovery, and hidden/visible broker process launch.
+- `dialogs.rs`: native folder picker commands and Windows COM dialog handling.
 - `windows.rs`: external window enumeration, activation, and cursor window picking.
 - `scratchpad.rs`: global mouse hook and scratchpad window placement.
 - `clipboard.rs`: native clipboard fallback.

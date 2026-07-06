@@ -837,3 +837,12 @@ Manual smoke:
 - Validation passed:
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 5 Tauri Dialogs Extracted
+
+- Added `overlay/src-tauri/src/dialogs.rs` for the workspace folder picker and Windows COM folder dialog implementation.
+- Kept the Tauri `select_workspace_directory` command wrapper in `lib.rs`.
+- Reduced `lib.rs` from 1281 lines to 1171 lines while keeping `dialogs.rs` at 113 lines.
+- Validation passed:
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
