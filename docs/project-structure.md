@@ -134,7 +134,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 - bounded debug log, debug status, and debug preview helpers: `broker/lib/debug.js`
 - Codex/Claude session display-name cache: `broker/lib/display-names.js`
 - workspace path, Git root, JSON read/write, and safety helpers: `broker/lib/filesystem.js`
-- Codex/Claude hook event lists and generated hook script text: `broker/hooks/codex.js`, `broker/hooks/claude.js`
+- Codex/Claude hook event lists, generated hook script text, and CLI config merge helpers: `broker/hooks/codex.js`, `broker/hooks/claude.js`
 
 The largest files are still the historical roots:
 

@@ -21,8 +21,8 @@ const {
   writeJsonFile,
   writeTextFile,
 } = require("./lib/filesystem");
-const { CODEX_HOOK_EVENTS, codexReplyHookScript } = require("./hooks/codex");
-const { CLAUDE_HOOK_EVENTS, claudeMessageHookScript } = require("./hooks/claude");
+const { CODEX_HOOK_EVENTS, codexReplyHookScript, mergeCodexHooks } = require("./hooks/codex");
+const { CLAUDE_HOOK_EVENTS, claudeMessageHookScript, mergeClaudeSettings } = require("./hooks/claude");
 
 const HOST = process.env.AGENT_MONITOR_HOST || "127.0.0.1";
 const PORT = Number.parseInt(process.env.AGENT_MONITOR_PORT || "17654", 10);
@@ -3457,129 +3457,6 @@ function enableObsidianPlugin(vaultRoot, pluginId) {
   }
 
   writeJsonFile(communityPluginsPath, enabledPlugins);
-}
-
-function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
-  const codexDir = path.join(workspacePath, ".codex");
-  const hookConfigPath = path.join(codexDir, "hooks.json");
-  const command = `node "${hookScriptPath}"`;
-  const hookEntry = {
-    hooks: [
-      {
-        type: "command",
-        command,
-        timeout: 10,
-        statusMessage: "AMO capture Codex lifecycle",
-      },
-    ],
-  };
-
-  fs.mkdirSync(codexDir, { recursive: true });
-
-  const existed = fs.existsSync(hookConfigPath);
-  const rawBefore = existed ? fs.readFileSync(hookConfigPath, "utf8") : "";
-  const config = existed ? readJsonFileStrict(hookConfigPath) : {};
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    throw httpError(409, "invalid_codex_hooks", ".codex/hooks.json must be a JSON object");
-  }
-
-  if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) {
-    config.hooks = {};
-  }
-  for (const eventName of CODEX_HOOK_EVENTS) {
-    if (!Array.isArray(config.hooks[eventName])) {
-      config.hooks[eventName] = [];
-    }
-    if (!JSON.stringify(config.hooks[eventName]).includes("codex-stop-message.mjs")) {
-      config.hooks[eventName].push(hookEntry);
-    }
-  }
-
-  const nextRaw = `${JSON.stringify(config, null, 2)}\n`;
-  if (rawBefore === nextRaw) {
-    return { changed: false, backups: [] };
-  }
-
-  const backups = [];
-  if (existed) {
-    const backupName = `codex-hooks-${fileSafeTimestamp(new Date().toISOString())}.json`;
-    const backupPath = path.join(amoRoot, "backups", backupName);
-    fs.mkdirSync(path.dirname(backupPath), { recursive: true });
-    fs.copyFileSync(hookConfigPath, backupPath);
-    backups.push(path.join(".amo", "backups", backupName));
-  }
-
-  writeTextFile(hookConfigPath, nextRaw);
-  return { changed: true, backups };
-}
-
-function mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot) {
-  const claudeDir = path.join(workspacePath, ".claude");
-  const settingsPath = path.join(claudeDir, "settings.local.json");
-  const command = `node "${hookScriptPath}"`;
-  const hookEntry = {
-    hooks: [
-      {
-        type: "command",
-        command,
-        timeout: 10,
-      },
-    ],
-  };
-  const permissionHookEntry = {
-    matcher: "*",
-    hooks: hookEntry.hooks,
-  };
-
-  fs.mkdirSync(claudeDir, { recursive: true });
-
-  const existed = fs.existsSync(settingsPath);
-  const rawBefore = existed ? fs.readFileSync(settingsPath, "utf8") : "";
-  const config = existed ? readJsonFileStrict(settingsPath) : {};
-  if (!config || typeof config !== "object" || Array.isArray(config)) {
-    throw httpError(409, "invalid_claude_settings", ".claude/settings.local.json must be a JSON object");
-  }
-
-  if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) {
-    config.hooks = {};
-  }
-  for (const eventName of CLAUDE_HOOK_EVENTS) {
-    if (!Array.isArray(config.hooks[eventName])) {
-      config.hooks[eventName] = [];
-    }
-  }
-
-  if (!JSON.stringify(config.hooks.UserPromptSubmit).includes("claude-message.mjs")) {
-    config.hooks.UserPromptSubmit.push(hookEntry);
-  }
-  if (!JSON.stringify(config.hooks.Stop).includes("claude-message.mjs")) {
-    config.hooks.Stop.push(hookEntry);
-  }
-  if (!JSON.stringify(config.hooks.PermissionRequest).includes("claude-message.mjs")) {
-    config.hooks.PermissionRequest.push(permissionHookEntry);
-  }
-  for (const eventName of ["PreToolUse", "PostToolUse", "PostToolUseFailure"]) {
-    if (!JSON.stringify(config.hooks[eventName]).includes("claude-message.mjs")) {
-      config.hooks[eventName].push(permissionHookEntry);
-    }
-  }
-
-  const nextRaw = `${JSON.stringify(config, null, 2)}\n`;
-  if (rawBefore === nextRaw) {
-    return { changed: false, backups: [] };
-  }
-
-  const backups = [];
-  if (existed) {
-    const backupName = `claude-settings-local-${fileSafeTimestamp(new Date().toISOString())}.json`;
-    const backupPath = path.join(amoRoot, "backups", backupName);
-    fs.mkdirSync(path.dirname(backupPath), { recursive: true });
-    fs.copyFileSync(settingsPath, backupPath);
-    backups.push(path.join(".amo", "backups", backupName));
-  }
-
-  writeTextFile(settingsPath, nextRaw);
-  return { changed: true, backups };
 }
 
 function amoGitignore() {

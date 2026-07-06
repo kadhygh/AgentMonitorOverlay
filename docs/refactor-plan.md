@@ -509,3 +509,20 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17669`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17670`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Broker Hook Config Merge Extracted
+
+- Moved Codex `.codex/hooks.json` merge logic into `broker/hooks/codex.js`.
+- Moved Claude `.claude/settings.local.json` merge logic into `broker/hooks/claude.js`.
+- Kept workspace enrollment orchestration in `broker/server.js`; hook modules now own adapter-specific script generation and config merge behavior.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/http.js`
+  - `node --check broker/lib/debug.js`
+  - `node --check broker/lib/display-names.js`
+  - `node --check broker/lib/filesystem.js`
+  - `node --check broker/hooks/codex.js`
+  - `node --check broker/hooks/claude.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17671`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17672`
+  - `git diff --check`

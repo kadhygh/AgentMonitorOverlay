@@ -1,3 +1,8 @@
+const fs = require("fs");
+const path = require("path");
+const { httpError } = require("../lib/http");
+const { readJsonFileStrict, writeTextFile } = require("../lib/filesystem");
+
 const CODEX_HOOK_EVENTS = Object.freeze([
   "Stop",
   "UserPromptSubmit",
@@ -257,7 +262,67 @@ function codexReplyHookScript(options = {}) {
     "",
   ].join("\n");
 }
+
+function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
+  const codexDir = path.join(workspacePath, ".codex");
+  const hookConfigPath = path.join(codexDir, "hooks.json");
+  const command = `node "${hookScriptPath}"`;
+  const hookEntry = {
+    hooks: [
+      {
+        type: "command",
+        command,
+        timeout: 10,
+        statusMessage: "AMO capture Codex lifecycle",
+      },
+    ],
+  };
+
+  fs.mkdirSync(codexDir, { recursive: true });
+
+  const existed = fs.existsSync(hookConfigPath);
+  const rawBefore = existed ? fs.readFileSync(hookConfigPath, "utf8") : "";
+  const config = existed ? readJsonFileStrict(hookConfigPath) : {};
+  if (!config || typeof config !== "object" || Array.isArray(config)) {
+    throw httpError(409, "invalid_codex_hooks", ".codex/hooks.json must be a JSON object");
+  }
+
+  if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) {
+    config.hooks = {};
+  }
+  for (const eventName of CODEX_HOOK_EVENTS) {
+    if (!Array.isArray(config.hooks[eventName])) {
+      config.hooks[eventName] = [];
+    }
+    if (!JSON.stringify(config.hooks[eventName]).includes("codex-stop-message.mjs")) {
+      config.hooks[eventName].push(hookEntry);
+    }
+  }
+
+  const nextRaw = `${JSON.stringify(config, null, 2)}\n`;
+  if (rawBefore === nextRaw) {
+    return { changed: false, backups: [] };
+  }
+
+  const backups = [];
+  if (existed) {
+    const backupName = `codex-hooks-${fileSafeTimestamp(new Date().toISOString())}.json`;
+    const backupPath = path.join(amoRoot, "backups", backupName);
+    fs.mkdirSync(path.dirname(backupPath), { recursive: true });
+    fs.copyFileSync(hookConfigPath, backupPath);
+    backups.push(path.join(".amo", "backups", backupName));
+  }
+
+  writeTextFile(hookConfigPath, nextRaw);
+  return { changed: true, backups };
+}
+
+function fileSafeTimestamp(value) {
+  return String(value || new Date().toISOString()).replace(/[:.]/g, "-");
+}
+
 module.exports = {
   CODEX_HOOK_EVENTS,
   codexReplyHookScript,
+  mergeCodexHooks,
 };
