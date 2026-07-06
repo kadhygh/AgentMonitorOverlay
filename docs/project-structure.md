@@ -143,6 +143,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 - Codex/Claude session display-name cache: `broker/lib/display-names.js`
 - shared text, integer, array, and version normalization helpers: `broker/lib/normalize.js`
 - Obsidian vault registry, plugin install/health, runtime-state, and comparable path helpers: `broker/lib/obsidian-vault.js`
+- JSON Canvas create/append, metadata, edge, and note title sync helpers: `broker/lib/canvas-writer.js`
 - window, Codex CLI, and Codex App target binding helpers: `broker/lib/target-binding.js`
 - detached terminal/process launch helpers: `broker/lib/terminal-launch.js`
 - shared note title, filename, and preview text formatting helpers: `broker/lib/text-format.js`

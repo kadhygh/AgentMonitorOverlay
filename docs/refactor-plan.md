@@ -688,3 +688,27 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17687`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17688`
   - `git diff --check`
+
+### 2026-07-07: Phase 4 Canvas Writer Extracted
+
+- Added `broker/lib/canvas-writer.js` for AgentFlow base canvas creation, AMO canvas metadata, edge normalization, conversation-node append, append direction, and canvas note-title sync.
+- Kept prompt/reply route orchestration and note/index/manifest writing in `broker/server.js` for the next conversation-artifact extraction.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/amo-constants.js`
+  - `node --check broker/lib/canvas-writer.js`
+  - `node --check broker/lib/http.js`
+  - `node --check broker/lib/debug.js`
+  - `node --check broker/lib/display-names.js`
+  - `node --check broker/lib/filesystem.js`
+  - `node --check broker/lib/normalize.js`
+  - `node --check broker/lib/obsidian-vault.js`
+  - `node --check broker/lib/target-binding.js`
+  - `node --check broker/lib/terminal-launch.js`
+  - `node --check broker/lib/text-format.js`
+  - `node --check broker/lib/workspace-git-exclude.js`
+  - `node --check broker/hooks/codex.js`
+  - `node --check broker/hooks/claude.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17689`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17690`
+  - `git diff --check`
