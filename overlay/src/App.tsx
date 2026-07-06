@@ -20,6 +20,7 @@ import {
   Map as MapIcon,
   Minimize2,
   Palette,
+  Plus,
   RefreshCcw,
   CircleCheck,
   Search,
@@ -451,6 +452,10 @@ function toolDisplayForSession(session: AgentSession) {
   return toolDisplay[toolDisplayIdForSession(session)];
 }
 
+function toolDisplayIdForLaunchAdapter(adapterId: LaunchPanelAdapterId): ToolDisplayId {
+  return adapterId;
+}
+
 function isCodexSession(session: AgentSession) {
   const rawTool = String(session.tool || "").toLowerCase();
   return rawTool.includes("codex") || toolDisplayIdForSession(session).startsWith("codex");
@@ -633,6 +638,31 @@ function isWorkspaceAdapterUpToDate(adapter: WorkspaceAdapterPlan) {
 
 function isWorkspaceAdapterInstalled(adapter: WorkspaceAdapterPlan) {
   return adapter.deploymentStatus === "deployed" || adapter.deploymentStatus === "needs-update";
+}
+
+function cliLaunchLabel(adapterId: LaunchPanelAdapterId) {
+  return adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI";
+}
+
+function workspaceAdapterPlan(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {
+  const allAdapters = [...(inspection?.supportedAdapters ?? []), ...(inspection?.deferredAdapters ?? [])];
+  return allAdapters.find((adapter) => adapter.id === adapterId) ?? null;
+}
+
+function workspaceAdapterLaunchable(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {
+  const adapter = workspaceAdapterPlan(inspection, adapterId);
+  return Boolean(adapter && isWorkspaceAdapterInstalled(adapter));
+}
+
+function workspaceAdapterLaunchDetail(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {
+  const adapter = workspaceAdapterPlan(inspection, adapterId);
+  if (!adapter) {
+    return "not detected";
+  }
+  if (isWorkspaceAdapterInstalled(adapter)) {
+    return adapter.deploymentStatus === "needs-update" ? "deployed, update available" : "deployed";
+  }
+  return adapter.deploymentStatus ?? adapter.status;
 }
 
 function isWorkspaceAdapterNeedsUpdate(adapter: WorkspaceAdapterPlan) {
@@ -943,6 +973,16 @@ function workspacePanelPosition(x?: number, y?: number) {
   };
 }
 
+function launchPanelPosition(x?: number, y?: number) {
+  const width = 336;
+  const fallbackX = Math.max(12, window.innerWidth - width - 8);
+  const fallbackY = 92;
+  return {
+    x: Math.max(10, Math.min(x ?? fallbackX, window.innerWidth - width - 10)),
+    y: Math.max(54, Math.min(y ?? fallbackY, window.innerHeight - 260)),
+  };
+}
+
 function normalizeSessions(value: unknown): AgentSession[] | null {
   if (Array.isArray(value)) {
     return value as AgentSession[];
@@ -1130,6 +1170,17 @@ interface WorkspacePanelState {
   taskTitleDraft: string;
 }
 
+type LaunchPanelAdapterId = "codex-cli" | "claude-cli";
+
+interface LaunchPanelState {
+  session: AgentSession;
+  x: number;
+  y: number;
+  inspection: WorkspaceInspection | null;
+  busy: "inspect" | LaunchPanelAdapterId | null;
+  error: string | null;
+}
+
 interface CleanConfirmState {
   session: AgentSession;
   workspacePath: string;
@@ -1170,6 +1221,18 @@ function ToolMark({ session }: { session: AgentSession }) {
   );
 }
 
+function LaunchToolMark({ adapterId }: { adapterId: LaunchPanelAdapterId }) {
+  const displayId = toolDisplayIdForLaunchAdapter(adapterId);
+  const display = toolDisplay[displayId];
+
+  return (
+    <span className={`launch-tool-mark tool-${displayId}`} title={display.label}>
+      {display.icon ? <img src={display.icon} alt="" aria-hidden="true" /> : <Bot size={18} strokeWidth={2.1} aria-hidden="true" />}
+      {display.badge ? <span className="tool-badge">{display.badge}</span> : null}
+    </span>
+  );
+}
+
 function SessionRowContent({
   session,
   activating,
@@ -1187,6 +1250,7 @@ function SessionRowContent({
   onOpenCodexAppTarget,
   onActivateSession,
   onHandleAttention,
+  onOpenLaunchPanel,
   onOpenWorkspacePanel,
 }: {
   session: AgentSession;
@@ -1205,6 +1269,7 @@ function SessionRowContent({
   onOpenCodexAppTarget: () => void;
   onActivateSession: () => void;
   onHandleAttention: () => void;
+  onOpenLaunchPanel: (x: number, y: number) => void;
   onOpenWorkspacePanel: (x: number, y: number) => void;
 }) {
   const notePath = notePathForOpen(session);
@@ -1231,6 +1296,18 @@ function SessionRowContent({
 
   return (
     <span className="session-main">
+      <button
+        type="button"
+        className="card-launch-button"
+        title="Launch a new CLI for this project"
+        onClick={(event) => {
+          event.preventDefault();
+          event.stopPropagation();
+          onOpenLaunchPanel(event.clientX, event.clientY);
+        }}
+      >
+        <Plus size={13} aria-hidden="true" />
+      </button>
       <button
         type="button"
         className={`card-maintenance-button tone-${maintenanceTone}`}
@@ -2608,6 +2685,7 @@ export default function App() {
   const [sessionSearch, setSessionSearch] = useState("");
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
+  const [launchPanel, setLaunchPanel] = useState<LaunchPanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
   const [obsidianVaultRecovery, setObsidianVaultRecovery] = useState<ObsidianVaultRecoveryState | null>(null);
   const [isResizing, setIsResizing] = useState(false);
@@ -3450,6 +3528,7 @@ export default function App() {
   async function openWorkspacePanel(session: AgentSession, x?: number, y?: number) {
     const position = workspacePanelPosition(x, y);
     setCandidateMenu(null);
+    setLaunchPanel(null);
     setWorkspacePanel({
       session,
       x: position.x,
@@ -3460,6 +3539,113 @@ export default function App() {
       taskTitleDraft: session.taskTitle ?? "",
     });
     await loadWorkspaceStatus(session);
+  }
+
+  async function openLaunchPanel(session: AgentSession, x?: number, y?: number) {
+    const position = launchPanelPosition(x, y);
+    setCandidateMenu(null);
+    setWorkspacePanel(null);
+    setLaunchPanel({
+      session,
+      x: position.x,
+      y: position.y,
+      inspection: null,
+      busy: "inspect",
+      error: null,
+    });
+    await loadLaunchPanelInspection(session);
+  }
+
+  async function loadLaunchPanelInspection(session: AgentSession) {
+    const workspacePath = workspacePathForSession(session);
+    if (!workspacePath) {
+      setLaunchPanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? { ...current, busy: null, error: "No workspace path is linked to this card." }
+          : current,
+      );
+      return;
+    }
+
+    setLaunchPanel((current) =>
+      current && current.session.sessionId === session.sessionId ? { ...current, busy: "inspect", error: null } : current,
+    );
+
+    try {
+      const inspection = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
+        workspacePath,
+      });
+      setLaunchPanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? { ...current, inspection, busy: null, error: null }
+          : current,
+      );
+      void postDebugLog("workspace.launch_panel.inspect.ok", {
+        sessionId: session.sessionId,
+        workspacePath: inspection.workspacePath,
+      });
+    } catch (error) {
+      const message = (error as Error).message;
+      setLaunchPanel((current) =>
+        current && current.session.sessionId === session.sessionId ? { ...current, busy: null, error: message } : current,
+      );
+      void postDebugLog("workspace.launch_panel.inspect.error", {
+        sessionId: session.sessionId,
+        workspacePath,
+        message,
+      });
+    }
+  }
+
+  async function launchProjectCliFromPanel(adapterId: LaunchPanelAdapterId) {
+    if (!launchPanel) return;
+
+    const session = launchPanel.session;
+    const workspacePath = launchPanel.inspection?.workspacePath ?? workspacePathForSession(session);
+    if (!workspacePath) {
+      setLaunchPanel((current) => (current ? { ...current, error: "No workspace path is linked to this card." } : current));
+      return;
+    }
+
+    if (!workspaceAdapterLaunchable(launchPanel.inspection, adapterId)) {
+      setLaunchPanel((current) =>
+        current ? { ...current, error: `${cliLaunchLabel(adapterId)} is not deployed in this workspace.` } : current,
+      );
+      return;
+    }
+
+    setLaunchPanel((current) => (current ? { ...current, busy: adapterId, error: null } : current));
+    setFeedback(`Launching new ${cliLaunchLabel(adapterId)} for ${projectName(workspacePath)}...`);
+    void postDebugLog("workspace.launch_panel.launch.start", {
+      sessionId: session.sessionId,
+      workspacePath,
+      adapterId,
+    });
+
+    try {
+      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
+        workspacePath,
+        adapterId,
+      });
+      void postDebugLog("workspace.launch_panel.launch.ok", {
+        sessionId: session.sessionId,
+        workspacePath: result.workspacePath,
+        adapterId: result.adapterId,
+        pid: result.pid ?? null,
+      });
+      setFeedback(result.message);
+      setLaunchPanel(null);
+    } catch (error) {
+      const message = (error as Error).message;
+      void postDebugLog("workspace.launch_panel.launch.error", {
+        sessionId: session.sessionId,
+        workspacePath,
+        adapterId,
+        message,
+      });
+      setLaunchPanel((current) => (current ? { ...current, busy: null, error: message } : current));
+      setFeedback(`Launch failed: ${message}`);
+    }
   }
 
   async function loadWorkspaceStatus(session: AgentSession) {
@@ -3777,6 +3963,7 @@ export default function App() {
     options: { clearAttentionOnSuccess?: boolean } = {},
   ) {
     markSessionVisuallySeen(session);
+    setLaunchPanel(null);
     const targetBinding = targetBindingForSession(session);
     if (targetBinding?.type === "codex-app-thread") {
       await openCodexAppTarget(session, false, {
@@ -4403,6 +4590,9 @@ export default function App() {
       setWorkspacePanel((current) =>
         current?.session.sessionId === dismissedSessionId ? null : current,
       );
+      setLaunchPanel((current) =>
+        current?.session.sessionId === dismissedSessionId ? null : current,
+      );
       setFeedback(`Dismissed ${session.title}.`);
       void postDebugLog("session.dismiss.ok", {
         sessionId: dismissedSessionId,
@@ -4700,6 +4890,7 @@ export default function App() {
           setSessionOrder([]);
           setCandidateMenu(null);
           setWorkspacePanel(null);
+          setLaunchPanel(null);
           setLastRefreshAt(new Date().toISOString());
           void postDebugLog("session_event.dismiss_all_applied", {
             sequence: payload.sequence ?? null,
@@ -4716,6 +4907,9 @@ export default function App() {
             current?.session.sessionId === changedSession.sessionId ? null : current,
           );
           setWorkspacePanel((current) =>
+            current?.session.sessionId === changedSession.sessionId ? null : current,
+          );
+          setLaunchPanel((current) =>
             current?.session.sessionId === changedSession.sessionId ? null : current,
           );
           setLastRefreshAt(new Date().toISOString());
@@ -5012,6 +5206,7 @@ export default function App() {
                   onOpenCodexAppTarget={() => void openCodexAppTarget(session, true)}
                   onActivateSession={() => void activateSession(session)}
                   onHandleAttention={() => void handleSessionAttention(session)}
+                  onOpenLaunchPanel={(x, y) => void openLaunchPanel(session, x, y)}
                   onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
                 />
               </div>
@@ -5159,6 +5354,68 @@ export default function App() {
                 </div>
               </section>
             </div>
+          ) : null}
+
+          {launchPanel ? (
+            <section
+              className="launch-panel"
+              style={{ left: launchPanel.x, top: launchPanel.y }}
+              aria-label="Project launch"
+              onClick={(event) => event.stopPropagation()}
+            >
+              <div className="launch-panel-header">
+                <div>
+                  <strong>{projectName(launchPanel.inspection?.workspacePath ?? workspacePathForSession(launchPanel.session))}</strong>
+                  <span>{launchPanel.busy === "inspect" ? "Checking deploy status" : "New CLI"}</span>
+                </div>
+                <button
+                  type="button"
+                  className="candidate-close"
+                  title="Close"
+                  onClick={() => setLaunchPanel(null)}
+                >
+                  <X size={13} aria-hidden="true" />
+                </button>
+              </div>
+
+              <code
+                className="launch-panel-path"
+                title={launchPanel.inspection?.workspacePath ?? workspacePathForSession(launchPanel.session)}
+              >
+                {shortPathLabel(launchPanel.inspection?.workspacePath ?? workspacePathForSession(launchPanel.session))}
+              </code>
+
+              {launchPanel.error ? <p className="launch-panel-error">{launchPanel.error}</p> : null}
+
+              <div className="launch-panel-actions">
+                {(["codex-cli", "claude-cli"] as LaunchPanelAdapterId[]).map((adapterId) => {
+                  const launchable = workspaceAdapterLaunchable(launchPanel.inspection, adapterId);
+                  const checking = launchPanel.busy === "inspect";
+                  const busy = launchPanel.busy === adapterId;
+                  const panelBusy = launchPanel.busy !== null;
+                  return (
+                    <button
+                      type="button"
+                      key={adapterId}
+                      disabled={panelBusy || !launchable}
+                      onClick={() => void launchProjectCliFromPanel(adapterId)}
+                    >
+                      <LaunchToolMark adapterId={adapterId} />
+                      <span>
+                        <strong>{busy ? "Starting" : `New ${cliLaunchLabel(adapterId)}`}</strong>
+                        <small>{checking ? "checking" : workspaceAdapterLaunchDetail(launchPanel.inspection, adapterId)}</small>
+                      </span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {launchPanel.inspection ? (
+                <span className="launch-panel-note">New CLI starts in the project directory and waits for its own hook-created card.</span>
+              ) : (
+                <span className="launch-panel-note">Inspecting deployment before enabling launch actions.</span>
+              )}
+            </section>
           ) : null}
 
           {workspacePanel ? (
@@ -5546,6 +5803,7 @@ export default function App() {
                     onOpenCodexAppTarget={() => undefined}
                     onActivateSession={() => undefined}
                     onHandleAttention={() => undefined}
+                    onOpenLaunchPanel={() => undefined}
                     onOpenWorkspacePanel={() => undefined}
                   />
                 ) : null;
