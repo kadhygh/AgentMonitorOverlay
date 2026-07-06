@@ -828,3 +828,12 @@ Manual smoke:
 - Validation passed:
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 5 Tauri Broker Startup Extracted
+
+- Added `overlay/src-tauri/src/broker.rs` for broker health probing, `broker/server.js` discovery, Node process launch, and debug-window visibility handling.
+- Kept the Tauri `ensure_broker` command wrapper in `lib.rs`.
+- Reduced `lib.rs` from 1443 lines to 1281 lines while keeping `broker.rs` at 166 lines.
+- Validation passed:
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
