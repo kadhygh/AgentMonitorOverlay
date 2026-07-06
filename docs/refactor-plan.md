@@ -382,3 +382,14 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Settings Window Extracted
+
+- Added `overlay/src/windows/SettingsWindowApp.tsx` for the standalone settings utility window.
+- Exported `SettingsSidebar`, `SettingsDetail`, and `SettingsSection` from the same file so the main overlay can reuse the same settings panel without duplicating UI.
+- Removed the settings sidebar/detail/window implementations from `App.tsx`.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`

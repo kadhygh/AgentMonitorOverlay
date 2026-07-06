@@ -119,6 +119,7 @@ The repository is in the early overlay extraction stage. These boundaries have a
 - shared clipboard helpers: `overlay/src/native/clipboard.ts`
 - scratchpad shortcut persistence/native command helper: `overlay/src/native/scratchpadShortcut.ts`
 - scratchpad utility window: `overlay/src/windows/ScratchpadApp.tsx`
+- settings utility window and shared settings panels: `overlay/src/windows/SettingsWindowApp.tsx`
 - shared utility window lifecycle/layering helpers: `overlay/src/windows/utilityWindow.ts`
 
 The largest files are still the historical roots:
