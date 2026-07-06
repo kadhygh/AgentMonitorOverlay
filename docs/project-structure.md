@@ -116,6 +116,7 @@ The repository is in the early overlay extraction stage. These boundaries have a
 - workspace deployment/maintenance state helpers: `overlay/src/domain/workspaceModel.ts`
 - target candidate menu presentation: `overlay/src/components/CandidateMenu.tsx`
 - project CLI launch panel presentation: `overlay/src/components/LaunchPanel.tsx`
+- workspace maintenance panel presentation: `overlay/src/components/WorkspacePanel.tsx`
 - task card presentation: `overlay/src/components/SessionCard.tsx`
 - AMO theme runtime: `overlay/src/theme/amoTheme.ts`
 - shared clipboard helpers: `overlay/src/native/clipboard.ts`

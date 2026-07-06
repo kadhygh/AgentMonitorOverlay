@@ -17,11 +17,9 @@ import {
   ListFilter,
   Minimize2,
   RefreshCcw,
-  CircleCheck,
   Search,
   Settings2,
   SquareTerminal,
-  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -77,7 +75,6 @@ import {
   notePathForOpen,
   obsidianAmoOpenUri,
   obsidianOpenUri,
-  pluginHealthTitle,
   projectName,
   shouldShowCodexCliResumeOption,
   shortPathLabel,
@@ -92,7 +89,6 @@ import {
   isDeployableWorkspaceAdapter,
   isWorkspaceAdapterDeployed,
   isWorkspaceAdapterInstalled,
-  maintenanceToneForSession,
   workspaceAdapterLaunchable,
   workspaceCleanFeedback,
   workspaceGeneratedNoteCount,
@@ -101,6 +97,7 @@ import {
 import { SessionRowContent, toolDisplayForSession } from "./components/SessionCard";
 import { CandidateMenu, type CandidateMenuState } from "./components/CandidateMenu";
 import { LaunchPanel, type LaunchPanelState } from "./components/LaunchPanel";
+import { WorkspacePanel, type WorkspacePanelState } from "./components/WorkspacePanel";
 import { toCliPasteClipboardText, writeClipboardText } from "./native/clipboard";
 import {
   applyScratchpadShortcutState,
@@ -268,16 +265,6 @@ interface WindowBindDragState {
   pointerId: number;
   pointerX: number;
   pointerY: number;
-}
-
-interface WorkspacePanelState {
-  session: AgentSession;
-  x: number;
-  y: number;
-  status: WorkspaceMaintenanceStatus | null;
-  busy: "status" | "clean" | "open" | "task-title" | null;
-  error: string | null;
-  taskTitleDraft: string;
 }
 
 interface CleanConfirmState {
@@ -2944,196 +2931,18 @@ export default function App() {
             />
           ) : null}
           {workspacePanel ? (
-            <section
-              className={`workspace-panel tone-${maintenanceToneForSession(workspacePanel.session, workspacePanel.status)}`}
-              style={{ left: workspacePanel.x, top: workspacePanel.y }}
-              aria-label="Workspace maintenance"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="workspace-panel-header">
-                <div>
-                  <strong>{projectName(workspacePathForSession(workspacePanel.session))}</strong>
-                  <span>{workspacePanel.status ? (workspacePanel.status.ok ? "Ready" : "Needs review") : "Checking"}</span>
-                </div>
-                <button
-                  type="button"
-                  className="candidate-close"
-                  title="Close"
-                  onClick={() => setWorkspacePanel(null)}
-                >
-                  <X size={13} aria-hidden="true" />
-                </button>
-              </div>
-
-              <div className="workspace-task-title-editor">
-                <label>
-                  <span>任务名</span>
-                  <input
-                    type="text"
-                    value={workspacePanel.taskTitleDraft}
-                    placeholder={workspacePanel.session.title}
-                    disabled={workspacePanel.busy !== null}
-                    onChange={(event) => {
-                      const nextTaskTitleDraft = event.currentTarget.value;
-                      setWorkspacePanel((current) =>
-                        current ? { ...current, taskTitleDraft: nextTaskTitleDraft } : current,
-                      );
-                    }}
-                    onKeyDown={(event) => {
-                      if (event.key === "Enter") {
-                        event.preventDefault();
-                        void saveWorkspacePanelTaskTitle();
-                      }
-                    }}
-                  />
-                </label>
-                <button
-                  type="button"
-                  disabled={workspacePanel.busy !== null}
-                  onClick={() => void saveWorkspacePanelTaskTitle()}
-                >
-                  Save
-                </button>
-                <button
-                  type="button"
-                  disabled={workspacePanel.busy !== null || !workspacePanel.session.taskTitle}
-                  onClick={() => void saveWorkspacePanelTaskTitle("")}
-                >
-                  Clear
-                </button>
-              </div>
-
-              <div className="workspace-panel-actions">
-                <button
-                  type="button"
-                  disabled={workspacePanel.busy !== null}
-                  onClick={() => void loadWorkspaceStatus(workspacePanel.session)}
-                >
-                  <RefreshCcw size={12} aria-hidden="true" />
-                  <span>{workspacePanel.busy === "status" ? "Checking" : "Check"}</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={workspacePanel.busy !== null}
-                  onClick={() =>
-                    void openMaintenancePath(
-                      workspacePanel.status?.paths.workspace ?? workspacePathForSession(workspacePanel.session),
-                      "workspace",
-                    )
-                  }
-                >
-                  <FolderOpen size={12} aria-hidden="true" />
-                  <span>Project</span>
-                </button>
-                <button
-                  type="button"
-                  disabled={workspacePanel.busy !== null}
-                  onClick={() =>
-                    void openMaintenancePath(
-                      workspacePanel.status?.paths.vaultRoot ?? workspacePanel.session.vaultRoot,
-                      "vault",
-                    )
-                  }
-                >
-                  <FolderOpen size={12} aria-hidden="true" />
-                  <span>Vault</span>
-                </button>
-                <button
-                  type="button"
-                  className="danger-action"
-                  disabled={workspacePanel.busy !== null}
-                  onClick={() => requestCleanWorkspaceVault()}
-                >
-                  <Trash2 size={12} aria-hidden="true" />
-                  <span>{workspacePanel.busy === "clean" ? "Cleaning" : "Clean"}</span>
-                </button>
-              </div>
-
-              {workspacePanel.error ? <p className="workspace-panel-error">{workspacePanel.error}</p> : null}
-
-              {workspacePanel.status ? (
-                <div className="workspace-panel-content">
-                  <div className="workspace-stats">
-                    <span>
-                      <strong>{workspacePanel.status.counts.sessionFolders ?? 0}</strong>
-                      Sessions
-                    </span>
-                    <span>
-                      <strong>{workspacePanel.status.counts.replyNotes}</strong>
-                      Replies
-                    </span>
-                    <span>
-                      <strong>{workspacePanel.status.counts.promptNotes}</strong>
-                      Prompts
-                    </span>
-                    <span>
-                      <strong>{workspacePanel.status.counts.canvasNodes}</strong>
-                      Nodes
-                    </span>
-                  </div>
-
-                  <div className="workspace-section">
-                    <strong>Folders</strong>
-                    <div className="workspace-path-grid">
-                      <span className={workspacePanel.status.exists.amoRoot ? "is-ok" : "is-bad"}>.amo</span>
-                      <code title={workspacePanel.status.paths.amoRoot}>{shortPathLabel(workspacePanel.status.paths.amoRoot)}</code>
-                      <span className={workspacePanel.status.exists.vaultRoot ? "is-ok" : "is-bad"}>vault</span>
-                      <code title={workspacePanel.status.paths.vaultRoot}>{shortPathLabel(workspacePanel.status.paths.vaultRoot)}</code>
-                      <span className={workspacePanel.status.exists.sessions ? "is-ok" : "is-bad"}>Sessions</span>
-                      <code title={workspacePanel.status.paths.sessions}>{shortPathLabel(workspacePanel.status.paths.sessions)}</code>
-                      <span className={workspacePanel.status.exists.generated ? "is-ok" : "is-bad"}>Generated</span>
-                      <code title={workspacePanel.status.paths.generated}>{shortPathLabel(workspacePanel.status.paths.generated)}</code>
-                      <span className={workspacePanel.status.exists.workCanvases ? "is-ok" : "is-bad"}>Work</span>
-                      <code title={workspacePanel.status.paths.workCanvases}>
-                        {shortPathLabel(workspacePanel.status.paths.workCanvases)}
-                      </code>
-                    </div>
-                  </div>
-
-                  <div className="workspace-section">
-                    <strong>Canvas</strong>
-                    <span className={`workspace-health-line ${workspacePanel.status.canvas.amoManaged ? "is-ok" : "is-bad"}`}>
-                      {workspacePanel.status.canvas.amoManaged ? <CircleCheck size={12} /> : <AlertTriangle size={12} />}
-                      {workspacePanel.status.canvas.amoManaged ? "AMO managed" : "AMO marker missing"}
-                    </span>
-                    {workspacePanel.status.canvas.marker ? (
-                      <code className="workspace-code-line">
-                        {workspacePanel.status.canvas.marker.managedBy} / {workspacePanel.status.canvas.marker.canvasType}
-                      </code>
-                    ) : null}
-                  </div>
-
-                  <div className="workspace-section">
-                    <strong>Plugin</strong>
-                    <span
-                      className={`workspace-health-line ${
-                        workspacePanel.status.pluginHealth?.ok ? "is-ok" : "is-warning"
-                      }`}
-                      title={workspacePanel.status.pluginHealth ? pluginHealthTitle(workspacePanel.status.pluginHealth) : undefined}
-                    >
-                      {workspacePanel.status.pluginHealth?.ok ? <CircleCheck size={12} /> : <AlertTriangle size={12} />}
-                      {workspacePanel.status.pluginHealth?.installedVersion ?? "missing"} / expected{" "}
-                      {workspacePanel.status.pluginHealth?.expectedVersion ?? "unknown"}
-                    </span>
-                  </div>
-
-                  {workspacePanel.status.issues.length > 0 ? (
-                    <div className="workspace-section">
-                      <strong>Issues</strong>
-                      <div className="workspace-issues">
-                        {workspacePanel.status.issues.slice(0, 5).map((issue) => (
-                          <span key={issue}>{issue}</span>
-                        ))}
-                      </div>
-                    </div>
-                  ) : null}
-                </div>
-              ) : (
-                <div className="workspace-panel-loading">Checking workspace folders...</div>
-              )}
-            </section>
+            <WorkspacePanel
+              state={workspacePanel}
+              onClose={() => setWorkspacePanel(null)}
+              onTaskTitleDraftChange={(taskTitleDraft) =>
+                setWorkspacePanel((current) => (current ? { ...current, taskTitleDraft } : current))
+              }
+              onSaveTaskTitle={(overrideTaskTitle) => void saveWorkspacePanelTaskTitle(overrideTaskTitle)}
+              onLoadStatus={() => void loadWorkspaceStatus(workspacePanel.session)}
+              onOpenPath={(path, label) => void openMaintenancePath(path, label)}
+              onRequestClean={() => requestCleanWorkspaceVault()}
+            />
           ) : null}
-
           {obsidianVaultRecovery ? (
             <div
               className="confirm-backdrop"

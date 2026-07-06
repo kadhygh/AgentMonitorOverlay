@@ -445,3 +445,13 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Workspace Panel Extracted
+
+- Added `overlay/src/components/WorkspacePanel.tsx` for task-card workspace maintenance UI.
+- Kept broker maintenance calls, title save, cleanup confirmation, and path-opening side effects in `App.tsx`.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`
