@@ -75,15 +75,31 @@ import {
   type SessionFilter,
 } from "./domain/sessionModel";
 import {
+  activationCandidateFromWindowTarget,
+  activationCandidateKey,
+  activationTargetForSession,
+  activationWindowRequest,
   canvasPathForOpen,
+  codexAppThreadUri,
+  codexAppTargetForSession,
+  codexCliTargetForSession,
+  hasExplicitWindowTarget,
+  hasStrongWindowRoutingHint,
+  isCodexSession,
   latestCanvasNotePathForFocus,
   notePathForOpen,
   obsidianAmoOpenUri,
   obsidianOpenUri,
   pluginHealthTitle,
   projectName,
+  shouldShowCodexCliResumeOption,
   shortPathLabel,
+  targetBindingForSession,
+  targetLabelForSession,
+  toolDisplayIdForSession,
+  windowTargetForSession,
   workspacePathForSession,
+  type ToolDisplayId,
 } from "./domain/routingModel";
 import {
   adapterContextLabel,
@@ -317,7 +333,6 @@ const stateLabel: Record<SessionState, string> = {
   unknown: "Unknown",
 };
 
-type ToolDisplayId = "codex-cli" | "codex-app" | "claude-cli" | "kiro-ide" | "other";
 type ToolDisplay = { label: string; icon: string | null; badge?: string };
 
 const toolDisplay: Record<ToolDisplayId, ToolDisplay> = {
@@ -345,34 +360,6 @@ const toolDisplay: Record<ToolDisplayId, ToolDisplay> = {
   },
 };
 
-function toolDisplayIdForSession(session: AgentSession): ToolDisplayId {
-  const rawTool = String(session.tool || "").toLowerCase();
-  const windowText = [
-    session.windowHint?.process,
-    session.windowHint?.title,
-    session.windowHint?.boundLabel,
-    session.title,
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
-
-  if (rawTool.includes("codex-app") || windowText.includes("codex app")) {
-    return "codex-app";
-  }
-  if (rawTool.includes("codex")) {
-    return "codex-cli";
-  }
-  if (rawTool.includes("claude")) {
-    return "claude-cli";
-  }
-  if (rawTool.includes("kiro")) {
-    return "kiro-ide";
-  }
-
-  return "other";
-}
-
 function toolDisplayForSession(session: AgentSession) {
   return toolDisplay[toolDisplayIdForSession(session)];
 }
@@ -381,125 +368,9 @@ function toolDisplayIdForLaunchAdapter(adapterId: LaunchPanelAdapterId): ToolDis
   return adapterId;
 }
 
-function isCodexSession(session: AgentSession) {
-  const rawTool = String(session.tool || "").toLowerCase();
-  return rawTool.includes("codex") || toolDisplayIdForSession(session).startsWith("codex");
-}
-
-function codexAppThreadUri(threadId: string) {
-  return `codex://threads/${encodeURIComponent(threadId)}`;
-}
-
-function codexAppTargetForSession(session: AgentSession): TargetBinding {
-  return {
-    type: "codex-app-thread",
-    label: "Codex App",
-    threadId: session.sessionId,
-    uri: codexAppThreadUri(session.sessionId),
-  };
-}
-
-function codexCliTargetForSession(session: AgentSession): TargetBinding {
-  return {
-    type: "codex-cli-session",
-    label: "Codex CLI",
-    sessionId: session.sessionId,
-    workspacePath: workspacePathForSession(session),
-  };
-}
-
-function windowTargetForSession(session: AgentSession): TargetBinding | null {
-  const hint = session.windowHint;
-  if (!hint || (!hint.hwnd && !hint.pid)) {
-    return null;
-  }
-
-  return {
-    type: "window",
-    label: hint.boundLabel ?? hint.title ?? hint.process ?? "Window",
-    hwnd: hint.hwnd ?? null,
-    processId: hint.pid ?? null,
-    processName: hint.process ?? null,
-    title: hint.title ?? null,
-    boundAt: hint.boundAt ?? null,
-    boundBy: hint.boundBy ?? null,
-  };
-}
-
-function targetBindingForSession(session: AgentSession): TargetBinding | null {
-  return session.targetBinding ?? null;
-}
-
-function activationTargetForSession(session: AgentSession): TargetBinding | null {
-  return targetBindingForSession(session) ?? windowTargetForSession(session);
-}
-
-function activationCandidateFromWindowTarget(target: TargetBinding | null): ActivationCandidate | null {
-  if (!target || target.type !== "window" || (!target.hwnd && !target.processId)) {
-    return null;
-  }
-
-  return {
-    hwnd: target.hwnd ?? 0,
-    processId: target.processId ?? 0,
-    processName: target.processName ?? null,
-    title: target.title ?? target.label ?? "Window",
-    label: target.label ?? target.title ?? target.processName ?? "Window",
-  };
-}
-
-function activationCandidateKey(candidate: ActivationCandidate) {
-  return `${candidate.hwnd}:${candidate.processId}`;
-}
-
 function activationCandidateMeta(candidate: ActivationCandidate) {
   const process = candidate.processName ?? "unknown";
   return `${process} · PID ${candidate.processId} · HWND ${candidate.hwnd}`;
-}
-
-function targetLabelForSession(session: AgentSession) {
-  const target = targetBindingForSession(session);
-  if (!target) return "Choose target";
-  if (target.type === "codex-app-thread") return "Codex App";
-  if (target.type === "codex-cli-session") return "Codex CLI";
-  return target.label ?? target.title ?? target.processName ?? "Window";
-}
-
-function shouldShowCodexCliResumeOption(
-  session: AgentSession,
-  candidates: ActivationCandidate[],
-  allowWithCandidates: boolean,
-) {
-  return Boolean(workspacePathForSession(session)) && (allowWithCandidates || candidates.length === 0);
-}
-
-function hasExplicitWindowTarget(target: TargetBinding | null) {
-  return Boolean(target?.type === "window" && (target.hwnd || target.processId));
-}
-
-function hasStrongWindowRoutingHint(session: AgentSession) {
-  return Boolean(session.windowHint?.titleToken);
-}
-
-function activationWindowRequest(
-  session: AgentSession,
-  activationTarget: TargetBinding | null,
-  options: { includeWindowHintIdentity?: boolean } = {},
-) {
-  const includeWindowHintIdentity = options.includeWindowHintIdentity !== false;
-  const windowTarget = activationTarget?.type === "window" ? activationTarget : null;
-  return {
-    sessionId: session.sessionId,
-    tool: session.tool,
-    title: windowTarget?.title ?? session.windowHint?.title ?? session.title,
-    processName: windowTarget?.processName ?? session.windowHint?.process ?? "",
-    titleToken: session.windowHint?.titleToken ?? "",
-    titleContains: session.windowHint?.titleContains ?? [],
-    project: session.windowHint?.project ?? projectName(session.cwd),
-    cwd: session.windowHint?.cwd ?? session.cwd,
-    pid: windowTarget?.processId ?? (includeWindowHintIdentity ? session.windowHint?.pid ?? null : null),
-    hwnd: windowTarget?.hwnd ?? (includeWindowHintIdentity ? session.windowHint?.hwnd ?? null : null),
-  };
 }
 
 function shouldProbeCodexActionRequired(session: AgentSession) {

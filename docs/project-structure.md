@@ -112,7 +112,7 @@ The repository is in the early overlay extraction stage. These boundaries have a
 
 - broker client constants/helpers: `overlay/src/api/brokerClient.ts`
 - session ordering/filtering/attention helpers: `overlay/src/domain/sessionModel.ts`
-- session path and Obsidian URI helpers: `overlay/src/domain/routingModel.ts`
+- session target, path, and Obsidian URI helpers: `overlay/src/domain/routingModel.ts`
 - workspace deployment/maintenance state helpers: `overlay/src/domain/workspaceModel.ts`
 - AMO theme runtime: `overlay/src/theme/amoTheme.ts`
 - shared clipboard helpers: `overlay/src/native/clipboard.ts`

@@ -350,3 +350,13 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Target Routing Added
+
+- Extended `overlay/src/domain/routingModel.ts` with tool ID detection, Codex App/CLI target construction, window target extraction, activation target selection, candidate keys, and target labels.
+- Kept visual tool metadata and candidate menu copy in `App.tsx` because those still depend on UI assets and menu presentation.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`

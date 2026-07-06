@@ -1,4 +1,150 @@
-import type { AgentSession, ObsidianPluginHealth } from "../types";
+import type { ActivationCandidate, AgentSession, ObsidianPluginHealth, TargetBinding } from "../types";
+
+export type ToolDisplayId = "codex-cli" | "codex-app" | "claude-cli" | "kiro-ide" | "other";
+
+export function toolDisplayIdForSession(session: AgentSession): ToolDisplayId {
+  const rawTool = String(session.tool || "").toLowerCase();
+  const windowText = [
+    session.windowHint?.process,
+    session.windowHint?.title,
+    session.windowHint?.boundLabel,
+    session.title,
+  ]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+
+  if (rawTool.includes("codex-app") || windowText.includes("codex app")) {
+    return "codex-app";
+  }
+  if (rawTool.includes("codex")) {
+    return "codex-cli";
+  }
+  if (rawTool.includes("claude")) {
+    return "claude-cli";
+  }
+  if (rawTool.includes("kiro")) {
+    return "kiro-ide";
+  }
+
+  return "other";
+}
+
+export function isCodexSession(session: AgentSession) {
+  const rawTool = String(session.tool || "").toLowerCase();
+  return rawTool.includes("codex") || toolDisplayIdForSession(session).startsWith("codex");
+}
+
+export function codexAppThreadUri(threadId: string) {
+  return `codex://threads/${encodeURIComponent(threadId)}`;
+}
+
+export function codexAppTargetForSession(session: AgentSession): TargetBinding {
+  return {
+    type: "codex-app-thread",
+    label: "Codex App",
+    threadId: session.sessionId,
+    uri: codexAppThreadUri(session.sessionId),
+  };
+}
+
+export function codexCliTargetForSession(session: AgentSession): TargetBinding {
+  return {
+    type: "codex-cli-session",
+    label: "Codex CLI",
+    sessionId: session.sessionId,
+    workspacePath: workspacePathForSession(session),
+  };
+}
+
+export function windowTargetForSession(session: AgentSession): TargetBinding | null {
+  const hint = session.windowHint;
+  if (!hint || (!hint.hwnd && !hint.pid)) {
+    return null;
+  }
+
+  return {
+    type: "window",
+    label: hint.boundLabel ?? hint.title ?? hint.process ?? "Window",
+    hwnd: hint.hwnd ?? null,
+    processId: hint.pid ?? null,
+    processName: hint.process ?? null,
+    title: hint.title ?? null,
+    boundAt: hint.boundAt ?? null,
+    boundBy: hint.boundBy ?? null,
+  };
+}
+
+export function targetBindingForSession(session: AgentSession): TargetBinding | null {
+  return session.targetBinding ?? null;
+}
+
+export function activationTargetForSession(session: AgentSession): TargetBinding | null {
+  return targetBindingForSession(session) ?? windowTargetForSession(session);
+}
+
+export function activationCandidateFromWindowTarget(target: TargetBinding | null): ActivationCandidate | null {
+  if (!target || target.type !== "window" || (!target.hwnd && !target.processId)) {
+    return null;
+  }
+
+  return {
+    hwnd: target.hwnd ?? 0,
+    processId: target.processId ?? 0,
+    processName: target.processName ?? null,
+    title: target.title ?? target.label ?? "Window",
+    label: target.label ?? target.title ?? target.processName ?? "Window",
+  };
+}
+
+export function activationCandidateKey(candidate: ActivationCandidate) {
+  return `${candidate.hwnd}:${candidate.processId}`;
+}
+
+export function targetLabelForSession(session: AgentSession) {
+  const target = targetBindingForSession(session);
+  if (!target) return "Choose target";
+  if (target.type === "codex-app-thread") return "Codex App";
+  if (target.type === "codex-cli-session") return "Codex CLI";
+  return target.label ?? target.title ?? target.processName ?? "Window";
+}
+
+export function shouldShowCodexCliResumeOption(
+  session: AgentSession,
+  candidates: ActivationCandidate[],
+  allowWithCandidates: boolean,
+) {
+  return Boolean(workspacePathForSession(session)) && (allowWithCandidates || candidates.length === 0);
+}
+
+export function hasExplicitWindowTarget(target: TargetBinding | null) {
+  return Boolean(target?.type === "window" && (target.hwnd || target.processId));
+}
+
+export function hasStrongWindowRoutingHint(session: AgentSession) {
+  return Boolean(session.windowHint?.titleToken);
+}
+
+export function activationWindowRequest(
+  session: AgentSession,
+  activationTarget: TargetBinding | null,
+  options: { includeWindowHintIdentity?: boolean } = {},
+) {
+  const includeWindowHintIdentity = options.includeWindowHintIdentity !== false;
+  const windowTarget = activationTarget?.type === "window" ? activationTarget : null;
+  return {
+    sessionId: session.sessionId,
+    tool: session.tool,
+    title: windowTarget?.title ?? session.windowHint?.title ?? session.title,
+    processName: windowTarget?.processName ?? session.windowHint?.process ?? "",
+    titleToken: session.windowHint?.titleToken ?? "",
+    titleContains: session.windowHint?.titleContains ?? [],
+    project: session.windowHint?.project ?? projectName(session.cwd),
+    cwd: session.windowHint?.cwd ?? session.cwd,
+    pid: windowTarget?.processId ?? (includeWindowHintIdentity ? session.windowHint?.pid ?? null : null),
+    hwnd: windowTarget?.hwnd ?? (includeWindowHintIdentity ? session.windowHint?.hwnd ?? null : null),
+  };
+}
 
 export function projectName(cwd: string) {
   const parts = cwd.split(/[\\/]/).filter(Boolean);
