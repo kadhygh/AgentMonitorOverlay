@@ -360,3 +360,14 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Session Card Extracted
+
+- Added `overlay/src/components/SessionCard.tsx` for task card rendering, tool badges, launch tool marks, card actions, and card-local status labels.
+- Moved `formatAgo` into `overlay/src/domain/sessionModel.ts` so the card and overlay header share the same time label helper.
+- Removed the old `SessionRowContent`, tool icon map, and card-local JSX from `App.tsx`.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`
