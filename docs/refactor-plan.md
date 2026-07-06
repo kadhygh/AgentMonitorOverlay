@@ -783,3 +783,12 @@ Manual smoke:
 - Validation passed:
   - `cd broker/assets/obsidian/md-anno-tools; npm run build`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Obsidian Inline Render Helpers Extracted
+
+- Moved inline annotation token replacement and local-code-link linkification into `broker/assets/obsidian/md-anno-tools/src/annotations/render.ts` alongside legacy annotation section rendering.
+- Kept postprocessor orchestration, debug logging, file reads, and plugin settings checks in `plugin.ts`.
+- Reduced `plugin.ts` from 2534 lines to 2434 lines while keeping `annotations/render.ts` at 322 lines; rebuilt the tracked Obsidian `main.js` bundle.
+- Validation passed:
+  - `cd broker/assets/obsidian/md-anno-tools; npm run build`
+  - `git diff --check`

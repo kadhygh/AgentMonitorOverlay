@@ -1,7 +1,12 @@
 import { MarkdownRenderChild, MarkdownRenderer } from "obsidian";
-import { ANNO_TAG_PREFIX, ANNO_TAG_SUFFIX, ANNOTATION_DEFAULT_LABEL, EMPTY_ANNO_TEXT } from "../core/constants";
+import { ANNO_REGEX, ANNO_TAG_PREFIX, ANNO_TAG_SUFFIX, ANNOTATION_DEFAULT_LABEL, EMPTY_ANNO_TEXT, SKIPPED_TAGS } from "../core/constants";
 import { messageFromError } from "../core/ui-utils";
-import { normalizeAnnotationContent } from "./syntax";
+import {
+  LOCAL_CODE_LINK_TEXT_REGEX,
+  createLocalCodeLinkElement,
+  parseLocalCodeLink,
+} from "../editor/local-code-links";
+import { createAnnotationElement, normalizeAnnotationContent } from "./syntax";
 
 export class LegacyAnnotationBlockRenderChild extends MarkdownRenderChild {
   plugin: any;
@@ -212,4 +217,106 @@ export async function renderNestedMarkdown(app: any, markdown: string, element: 
   }
 
   element.textContent = normalizeAnnotationContent(markdown) || EMPTY_ANNO_TEXT;
+}
+
+export function replaceInlineAnnotations(root: HTMLElement) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => {
+      if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
+      if (!shouldProcessAnnotationTextNode(node)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const targets = [];
+  while (walker.nextNode()) targets.push(walker.currentNode);
+  for (const textNode of targets) replaceAnnotationsInTextNode(textNode);
+}
+
+export function linkifyLocalCodeLinks(root: HTMLElement) {
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode: (node) => {
+      if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
+      if (!shouldProcessLocalCodeLinkTextNode(node)) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const targets = [];
+  while (walker.nextNode()) targets.push(walker.currentNode);
+  for (const textNode of targets) replaceLocalCodeLinksInTextNode(textNode);
+}
+
+function shouldProcessAnnotationTextNode(textNode) {
+  const text = textNode.nodeValue || "";
+  if (!text.includes(ANNO_TAG_PREFIX) || !text.includes(ANNO_TAG_SUFFIX)) return false;
+  const parent = textNode.parentElement;
+  if (!parent || parent.closest(".anno-token")) return false;
+
+  for (let current = parent; current; current = current.parentElement) {
+    if (SKIPPED_TAGS.has(current.tagName)) return false;
+  }
+  return true;
+}
+
+function shouldProcessLocalCodeLinkTextNode(textNode) {
+  const text = textNode.nodeValue || "";
+  LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+  const hasLink = LOCAL_CODE_LINK_TEXT_REGEX.test(text);
+  LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+  if (!hasLink) return false;
+  const parent = textNode.parentElement;
+  if (!parent || parent.closest(".amo-local-code-link")) return false;
+
+  for (let current = parent; current; current = current.parentElement) {
+    if (SKIPPED_TAGS.has(current.tagName)) return false;
+  }
+  return true;
+}
+
+function replaceAnnotationsInTextNode(textNode) {
+  const source = textNode.nodeValue || "";
+  const matches = Array.from(source.matchAll(ANNO_REGEX)) as RegExpMatchArray[];
+  if (matches.length === 0) return;
+
+  const fragment = document.createDocumentFragment();
+  let currentIndex = 0;
+  const firstMatch = matches[0];
+  const isStandalone = matches.length === 1 && firstMatch && source.trim() === firstMatch[0].trim();
+
+  for (const match of matches) {
+    const fullMatch = match[0];
+    const content = normalizeAnnotationContent(match[1] || "");
+    const matchIndex = match.index || 0;
+
+    if (matchIndex > currentIndex) fragment.append(source.slice(currentIndex, matchIndex));
+    fragment.append(createAnnotationElement(content, isStandalone));
+    currentIndex = matchIndex + fullMatch.length;
+  }
+
+  if (currentIndex < source.length) fragment.append(source.slice(currentIndex));
+  textNode.replaceWith(fragment);
+}
+
+function replaceLocalCodeLinksInTextNode(textNode) {
+  const source = textNode.nodeValue || "";
+  const matches = Array.from(source.matchAll(LOCAL_CODE_LINK_TEXT_REGEX)) as RegExpMatchArray[];
+  if (matches.length === 0) return;
+
+  const fragment = document.createDocumentFragment();
+  let currentIndex = 0;
+  for (const match of matches) {
+    const rawTarget = match[0] || "";
+    const matchIndex = match.index || 0;
+    const parsed = parseLocalCodeLink(rawTarget, rawTarget);
+    if (!parsed || !parsed.line) continue;
+
+    if (matchIndex > currentIndex) fragment.append(source.slice(currentIndex, matchIndex));
+    fragment.append(createLocalCodeLinkElement(rawTarget));
+    currentIndex = matchIndex + rawTarget.length;
+  }
+
+  if (currentIndex === 0) return;
+  if (currentIndex < source.length) fragment.append(source.slice(currentIndex));
+  textNode.replaceWith(fragment);
 }

@@ -13,13 +13,11 @@ import {
   AMO_PANEL_VIEW_TYPE,
   AMO_SEND_ACTION_CLASS,
   AMO_TITLE_ACTION_CLASS,
-  ANNO_REGEX,
   ANNO_TAG_PREFIX,
   ANNO_TAG_SUFFIX,
   DEFAULT_CANVAS_PATH,
   DEFAULT_SETTINGS,
   PLUGIN_VERSION,
-  SKIPPED_TAGS,
 } from "./core/constants";
 import { fetchJson, joinUrl, postDebugLog, postJson, writeTextToClipboard } from "./core/api";
 import { normalizeOpenKind, normalizeVaultFilePath, toVaultRelativeProtocolPath } from "./core/paths";
@@ -31,7 +29,6 @@ import { AmoAnnotationSettingTab } from "./ui/settings-tab";
 import {
   buildAnnotationMarkup,
   buildReferencedAnnotationMarkup,
-  createAnnotationElement,
   extractAnnotationContents,
   extractAnnotationItems,
   formatAnnotationsForClipboard,
@@ -40,11 +37,16 @@ import {
   normalizeAnnotationContent,
   removeAnnotationByIndex,
 } from "./annotations/syntax";
-import { findLegacyAnnotationBlockForSection, parseLegacyAnnotationBlocks, LegacyAnnotationBlockRenderChild, LegacyAnnotationHiddenSectionRenderChild } from "./annotations/render";
+import {
+  findLegacyAnnotationBlockForSection,
+  linkifyLocalCodeLinks,
+  parseLegacyAnnotationBlocks,
+  replaceInlineAnnotations,
+  LegacyAnnotationBlockRenderChild,
+  LegacyAnnotationHiddenSectionRenderChild,
+} from "./annotations/render";
 import { amoMarkerHiderExtension } from "./editor/amo-marker-hider";
 import {
-  LOCAL_CODE_LINK_TEXT_REGEX,
-  createLocalCodeLinkElement,
   findLocalCodeLinkTargetInLine,
   formatLocalCodeLinkUrl,
   formatZedCodeLinkTarget,
@@ -2325,8 +2327,8 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       });
     }
 
-    this.replaceInlineAnnotations(root);
-    this.linkifyLocalCodeLinks(root);
+    replaceInlineAnnotations(root);
+    if (this.settings.interceptLocalCodeLinks !== false) linkifyLocalCodeLinks(root);
   }
 
   async renderAmoNoteDisplayHeader(root, context) {
@@ -2427,108 +2429,6 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     return findLegacyAnnotationBlockForSection(parseLegacyAnnotationBlocks(markdown), section);
   }
 
-  replaceInlineAnnotations(root) {
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: (node) => {
-        if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
-        if (!this.shouldProcessTextNode(node)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-
-    const targets = [];
-    while (walker.nextNode()) targets.push(walker.currentNode);
-    for (const textNode of targets) this.replaceAnnotationsInTextNode(textNode);
-  }
-
-  linkifyLocalCodeLinks(root) {
-    if (this.settings.interceptLocalCodeLinks === false) return;
-    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
-      acceptNode: (node) => {
-        if (!(node instanceof Text)) return NodeFilter.FILTER_REJECT;
-        if (!this.shouldProcessLocalCodeLinkTextNode(node)) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-
-    const targets = [];
-    while (walker.nextNode()) targets.push(walker.currentNode);
-    for (const textNode of targets) this.replaceLocalCodeLinksInTextNode(textNode);
-  }
-
-  shouldProcessTextNode(textNode) {
-    const text = textNode.nodeValue || "";
-    if (!text.includes(ANNO_TAG_PREFIX) || !text.includes(ANNO_TAG_SUFFIX)) return false;
-    const parent = textNode.parentElement;
-    if (!parent || parent.closest(".anno-token")) return false;
-
-    for (let current = parent; current; current = current.parentElement) {
-      if (SKIPPED_TAGS.has(current.tagName)) return false;
-    }
-    return true;
-  }
-
-  shouldProcessLocalCodeLinkTextNode(textNode) {
-    const text = textNode.nodeValue || "";
-    LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
-    const hasLink = LOCAL_CODE_LINK_TEXT_REGEX.test(text);
-    LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
-    if (!hasLink) return false;
-    const parent = textNode.parentElement;
-    if (!parent || parent.closest(".amo-local-code-link")) return false;
-
-    for (let current = parent; current; current = current.parentElement) {
-      if (SKIPPED_TAGS.has(current.tagName)) return false;
-    }
-    return true;
-  }
-
-  replaceAnnotationsInTextNode(textNode) {
-    const source = textNode.nodeValue || "";
-    const matches = Array.from(source.matchAll(ANNO_REGEX)) as RegExpMatchArray[];
-    if (matches.length === 0) return;
-
-    const fragment = document.createDocumentFragment();
-    let currentIndex = 0;
-    const firstMatch = matches[0];
-    const isStandalone = matches.length === 1 && firstMatch && source.trim() === firstMatch[0].trim();
-
-    for (const match of matches) {
-      const fullMatch = match[0];
-      const content = normalizeAnnotationContent(match[1] || "");
-      const matchIndex = match.index || 0;
-
-      if (matchIndex > currentIndex) fragment.append(source.slice(currentIndex, matchIndex));
-      fragment.append(createAnnotationElement(content, isStandalone));
-      currentIndex = matchIndex + fullMatch.length;
-    }
-
-    if (currentIndex < source.length) fragment.append(source.slice(currentIndex));
-    textNode.replaceWith(fragment);
-  }
-
-  replaceLocalCodeLinksInTextNode(textNode) {
-    const source = textNode.nodeValue || "";
-    const matches = Array.from(source.matchAll(LOCAL_CODE_LINK_TEXT_REGEX)) as RegExpMatchArray[];
-    if (matches.length === 0) return;
-
-    const fragment = document.createDocumentFragment();
-    let currentIndex = 0;
-    for (const match of matches) {
-      const rawTarget = match[0] || "";
-      const matchIndex = match.index || 0;
-      const parsed = parseLocalCodeLink(rawTarget, rawTarget);
-      if (!parsed || !parsed.line) continue;
-
-      if (matchIndex > currentIndex) fragment.append(source.slice(currentIndex, matchIndex));
-      fragment.append(createLocalCodeLinkElement(rawTarget));
-      currentIndex = matchIndex + rawTarget.length;
-    }
-
-    if (currentIndex === 0) return;
-    if (currentIndex < source.length) fragment.append(source.slice(currentIndex));
-    textNode.replaceWith(fragment);
-  }
 }
 
 export default AmoMarkdownAnnotationToolsPlugin;

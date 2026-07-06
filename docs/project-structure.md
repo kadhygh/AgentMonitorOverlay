@@ -147,6 +147,8 @@ live in `broker/assets/obsidian/md-anno-tools/src/editor/local-code-links.ts`; `
 event wiring, click suppression timing, debug logs, and operation status updates.
 AMO note metadata checks, display names, source-mode display-title header DOM, and first-content-line detection live in
 `broker/assets/obsidian/md-anno-tools/src/note/title.ts`; `plugin.ts` still owns file reads/writes and bridge sync.
+Inline annotation token replacement and local-code-link linkification now live with legacy annotation section rendering in
+`broker/assets/obsidian/md-anno-tools/src/annotations/render.ts`; `plugin.ts` only decides when postprocessing runs.
 
 The broker extraction has started. These boundaries have already moved out of `broker/server.js`:
 
