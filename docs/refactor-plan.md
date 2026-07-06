@@ -873,3 +873,12 @@ Manual smoke:
 - Validation passed:
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 5 Tauri Window Activation Extracted
+
+- Added `overlay/src-tauri/src/windows.rs` for external window enumeration, activation, cursor picking, target hint matching, and fallback candidate selection.
+- Kept the Tauri `activate_session_window`, `list_session_window_candidates`, and `window_candidate_at_cursor` command wrappers in `lib.rs`.
+- Reduced `lib.rs` from 801 lines to 144 lines while keeping `windows.rs` at 673 lines.
+- Validation passed:
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
