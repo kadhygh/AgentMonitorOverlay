@@ -108,7 +108,7 @@ Manual smoke is required when a refactor touches:
 
 ## Current Transition State
 
-The repository is in the early overlay extraction stage. These boundaries have already moved out of `overlay/src/App.tsx`:
+The repository has completed the first overlay extraction pass. These boundaries have already moved out of `overlay/src/App.tsx`:
 
 - broker client constants/helpers: `overlay/src/api/brokerClient.ts`
 - session ordering/filtering/attention helpers: `overlay/src/domain/sessionModel.ts`
@@ -127,6 +127,12 @@ The repository is in the early overlay extraction stage. These boundaries have a
 - settings utility window and shared settings panels: `overlay/src/windows/SettingsWindowApp.tsx`
 - standalone deploy utility window: `overlay/src/windows/DeployWorkspaceApp.tsx`
 - shared utility window lifecycle/layering helpers: `overlay/src/windows/utilityWindow.ts`
+
+The broker extraction has started. These boundaries have already moved out of `broker/server.js`:
+
+- HTTP response/body/error helpers: `broker/lib/http.js`
+- bounded debug log, debug status, and debug preview helpers: `broker/lib/debug.js`
+- Codex/Claude session display-name cache: `broker/lib/display-names.js`
 
 The largest files are still the historical roots:
 

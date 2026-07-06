@@ -466,3 +466,18 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Broker Support Modules Started
+
+- Added `broker/lib/http.js` for JSON body parsing, CORS response helpers, and HTTP errors.
+- Added `broker/lib/debug.js` for bounded debug logs, debug config/status, remote debug logs, and compact message previews.
+- Added `broker/lib/display-names.js` for Codex/Claude session display-name cache lookup.
+- Kept route ownership, session mutation, workspace/artifact writes, hook generation, and Obsidian/Canvas behavior in `broker/server.js`.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/http.js`
+  - `node --check broker/lib/debug.js`
+  - `node --check broker/lib/display-names.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17665`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17666`
+  - `git diff --check`

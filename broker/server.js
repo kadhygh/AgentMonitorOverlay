@@ -1,16 +1,17 @@
 const http = require("http");
 const crypto = require("crypto");
 const fs = require("fs");
-const os = require("os");
 const path = require("path");
 const { spawn, spawnSync } = require("child_process");
+const { CORS_HEADERS, httpError, readJsonBody, sendEmpty, sendJson } = require("./lib/http");
+const { createDebugLogStore } = require("./lib/debug");
+const { refreshSessionTitle, resolveSessionTitle } = require("./lib/display-names");
 
 const HOST = process.env.AGENT_MONITOR_HOST || "127.0.0.1";
 const PORT = Number.parseInt(process.env.AGENT_MONITOR_PORT || "17654", 10);
 const DATA_FILE =
   process.env.AGENT_MONITOR_DATA_FILE ||
   path.join(__dirname, "data", "sessions.json");
-const MAX_BODY_BYTES = 1024 * 1024;
 const DEBUG_MAX_LOG_ENTRIES = 800;
 const AMO_DIR = ".amo";
 const AMO_SCHEMA_VERSION = 1;
@@ -52,12 +53,6 @@ const CLAUDE_HOOK_EVENTS = Object.freeze([
   "PostToolUseFailure",
 ]);
 const PROMPT_DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
-const CORS_HEADERS = {
-  "access-control-allow-origin": "*",
-  "access-control-allow-methods": "GET, POST, OPTIONS",
-  "access-control-allow-headers": "content-type",
-};
-
 const VALID_STATES = new Set([
   "starting",
   "running",
@@ -73,22 +68,15 @@ const sessions = new Map();
 const startedAt = new Date();
 const eventClients = new Set();
 let eventSequence = 0;
-const debugState = {
+const debugLogStore = createDebugLogStore({
   enabled: /^(1|true|yes|on)$/iu.test(process.env.AGENT_MONITOR_DEBUG || ""),
   maxEntries: DEBUG_MAX_LOG_ENTRIES,
-  entries: [],
-};
-const codexThreadNameCache = {
-  indexPath: null,
-  mtimeMs: null,
-  names: new Map(),
-};
-const claudeSessionNameCache = {
-  sessionsSignature: null,
-  projectIndexesSignature: null,
-  names: new Map(),
-};
-
+});
+const debugStatus = debugLogStore.status;
+const updateDebugConfig = debugLogStore.updateConfig;
+const handleDebugLog = debugLogStore.handleLog;
+const recordDebugLog = debugLogStore.record;
+const debugPreview = debugLogStore.preview;
 loadSnapshot();
 
 const server = http.createServer(async (req, res) => {
@@ -127,7 +115,7 @@ const server = http.createServer(async (req, res) => {
     }
 
     if (req.method === "POST" && url.pathname === "/api/debug/clear") {
-      debugState.entries = [];
+      debugLogStore.clear();
       recordDebugLog("broker", "debug.clear", {}, { force: true });
       return sendJson(res, 200, debugStatus());
     }
@@ -440,140 +428,6 @@ function publishSessionChanged(reason, session) {
     failedCount,
     durationMs: Date.now() - publishStartedAtMs,
   });
-}
-
-function debugStatus(searchParams) {
-  const limit = searchParams ? normalizeInteger(searchParams.get("limit")) : null;
-  const normalizedLimit = limit && limit > 0 ? Math.min(limit, debugState.maxEntries) : debugState.entries.length;
-  const entries =
-    normalizedLimit >= debugState.entries.length
-      ? debugState.entries
-      : debugState.entries.slice(debugState.entries.length - normalizedLimit);
-
-  return {
-    ok: true,
-    enabled: debugState.enabled,
-    maxEntries: debugState.maxEntries,
-    count: debugState.entries.length,
-    entries,
-  };
-}
-
-function updateDebugConfig(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw httpError(400, "invalid_json", "Debug config payload must be a JSON object");
-  }
-
-  const previousEnabled = debugState.enabled;
-  if (typeof payload.enabled === "boolean") {
-    debugState.enabled = payload.enabled;
-  }
-
-  const maxEntries = normalizeInteger(payload.maxEntries || payload.max_entries);
-  if (maxEntries && maxEntries >= 50 && maxEntries <= 5000) {
-    debugState.maxEntries = maxEntries;
-    trimDebugEntries();
-  }
-
-  recordDebugLog(
-    "broker",
-    "debug.config",
-    {
-      previousEnabled,
-      enabled: debugState.enabled,
-      maxEntries: debugState.maxEntries,
-    },
-    { force: true }
-  );
-  return debugStatus();
-}
-
-function handleDebugLog(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw httpError(400, "invalid_json", "Debug log payload must be a JSON object");
-  }
-
-  const source = normalizeText(payload.source) || "unknown";
-  const event = normalizeText(payload.event || payload.name || payload.message) || "log";
-  const entry = recordDebugLog(source, event, payload.data || {}, {
-    message: normalizeText(payload.message),
-  });
-
-  return {
-    ok: true,
-    enabled: debugState.enabled,
-    recorded: Boolean(entry),
-    count: debugState.entries.length,
-    entry: entry || null,
-  };
-}
-
-function recordDebugLog(source, event, data, options = {}) {
-  if (!debugState.enabled && !options.force) {
-    return null;
-  }
-
-  const entry = {
-    id: crypto.randomUUID(),
-    at: new Date().toISOString(),
-    source: normalizeText(source) || "unknown",
-    event: normalizeText(event) || "log",
-    message: options.message || null,
-    data: sanitizeDebugData(data),
-  };
-
-  debugState.entries.push(entry);
-  trimDebugEntries();
-  return entry;
-}
-
-function trimDebugEntries() {
-  if (debugState.entries.length <= debugState.maxEntries) {
-    return;
-  }
-
-  debugState.entries.splice(0, debugState.entries.length - debugState.maxEntries);
-}
-
-function sanitizeDebugData(value, depth = 0) {
-  if (value == null) {
-    return value;
-  }
-
-  if (typeof value === "string") {
-    return value.length > 2000 ? `${value.slice(0, 2000)}...` : value;
-  }
-
-  if (typeof value === "number" || typeof value === "boolean") {
-    return value;
-  }
-
-  if (depth >= 5) {
-    return "[max-depth]";
-  }
-
-  if (Array.isArray(value)) {
-    return value.slice(0, 40).map((item) => sanitizeDebugData(item, depth + 1));
-  }
-
-  if (typeof value === "object") {
-    const result = {};
-    for (const key of Object.keys(value).slice(0, 60)) {
-      result[key] = sanitizeDebugData(value[key], depth + 1);
-    }
-    return result;
-  }
-
-  return String(value);
-}
-
-function debugPreview(value, limit = 240) {
-  const text = normalizeText(typeof value === "string" ? value : JSON.stringify(value || ""));
-  if (!text) {
-    return "";
-  }
-
-  return text.length > limit ? `${text.slice(0, limit)}...` : text;
 }
 
 function sessionHasAttentionState(session) {
@@ -5505,70 +5359,6 @@ function persistSnapshot() {
   fs.renameSync(tmpFile, DATA_FILE);
 }
 
-function readJsonBody(req, options = {}) {
-  return new Promise((resolve, reject) => {
-    let total = 0;
-    const chunks = [];
-
-    req.on("data", (chunk) => {
-      total += chunk.length;
-      if (total > MAX_BODY_BYTES) {
-        req.destroy();
-        reject(httpError(413, "body_too_large", "Request body is too large"));
-        return;
-      }
-      chunks.push(chunk);
-    });
-
-    req.on("end", () => {
-      const raw = Buffer.concat(chunks).toString("utf8").trim();
-      if (!raw && options.allowEmpty) {
-        resolve({});
-        return;
-      }
-      if (!raw) {
-        reject(httpError(400, "empty_body", "Request body must be JSON"));
-        return;
-      }
-
-      try {
-        resolve(JSON.parse(raw));
-      } catch (error) {
-        reject(httpError(400, "invalid_json", `Invalid JSON: ${error.message}`));
-      }
-    });
-
-    req.on("error", reject);
-  });
-}
-
-function sendJson(res, statusCode, payload) {
-  const body = `${JSON.stringify(payload, null, 2)}\n`;
-  res.writeHead(statusCode, {
-    ...CORS_HEADERS,
-    "content-type": "application/json; charset=utf-8",
-    "cache-control": "no-store",
-    "content-length": Buffer.byteLength(body),
-  });
-  res.end(body);
-}
-
-function sendEmpty(res, statusCode) {
-  res.writeHead(statusCode, {
-    ...CORS_HEADERS,
-    "cache-control": "no-store",
-    "content-length": "0",
-  });
-  res.end();
-}
-
-function httpError(statusCode, code, message) {
-  const error = new Error(message);
-  error.statusCode = statusCode;
-  error.code = code;
-  return error;
-}
-
 function normalizeText(value) {
   if (typeof value !== "string") {
     return null;
@@ -5596,284 +5386,4 @@ function normalizeInteger(value) {
   }
 
   return null;
-}
-
-function resolveSessionTitle(tool, sessionId, explicitTitle, existingTitle) {
-  const payloadTitle = normalizeText(explicitTitle);
-  if (payloadTitle) {
-    return payloadTitle;
-  }
-
-  const sessionDisplayName = lookupSessionDisplayName(tool, sessionId);
-  if (sessionDisplayName) {
-    return sessionDisplayName;
-  }
-
-  return normalizeText(existingTitle) || defaultTitle(tool, sessionId);
-}
-
-function refreshSessionTitle(session) {
-  if (!session || !session.sessionId) {
-    return session;
-  }
-
-  const title = resolveSessionTitle(session.tool, session.sessionId, null, session.title);
-  return title && title !== session.title ? { ...session, title } : session;
-}
-
-function lookupSessionDisplayName(tool, sessionId) {
-  return lookupCodexThreadName(tool, sessionId) || lookupClaudeSessionName(tool, sessionId);
-}
-
-function lookupCodexThreadName(tool, sessionId) {
-  const normalizedTool = normalizeText(tool);
-  if (!normalizedTool || !normalizedTool.toLowerCase().startsWith("codex")) {
-    return null;
-  }
-
-  const normalizedSessionId = normalizeText(sessionId);
-  if (!normalizedSessionId) {
-    return null;
-  }
-
-  return loadCodexThreadNameIndex().get(normalizedSessionId) || null;
-}
-
-function loadCodexThreadNameIndex() {
-  const indexPath = path.join(process.env.CODEX_HOME || path.join(os.homedir(), ".codex"), "session_index.jsonl");
-  let stat;
-  try {
-    stat = fs.statSync(indexPath);
-  } catch {
-    codexThreadNameCache.indexPath = indexPath;
-    codexThreadNameCache.mtimeMs = null;
-    codexThreadNameCache.names = new Map();
-    return codexThreadNameCache.names;
-  }
-
-  if (codexThreadNameCache.indexPath === indexPath && codexThreadNameCache.mtimeMs === stat.mtimeMs) {
-    return codexThreadNameCache.names;
-  }
-
-  const names = new Map();
-  const updatedAtById = new Map();
-  const lines = fs.readFileSync(indexPath, "utf8").replace(/^\uFEFF/u, "").split(/\r?\n/u);
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (!trimmed) {
-      continue;
-    }
-
-    let record;
-    try {
-      record = JSON.parse(trimmed);
-    } catch {
-      continue;
-    }
-
-    const id = normalizeText(record.id || record.sessionId || record.session_id);
-    const threadName = normalizeText(record.thread_name || record.threadName || record.title || record.name);
-    if (!id || !threadName) {
-      continue;
-    }
-
-    const updatedAtText = normalizeText(record.updated_at || record.updatedAt);
-    const updatedAt = updatedAtText ? Date.parse(updatedAtText) : 0;
-    const previousUpdatedAt = updatedAtById.get(id) ?? -1;
-    if (!names.has(id) || updatedAt >= previousUpdatedAt) {
-      names.set(id, threadName);
-      updatedAtById.set(id, Number.isNaN(updatedAt) ? 0 : updatedAt);
-    }
-  }
-
-  codexThreadNameCache.indexPath = indexPath;
-  codexThreadNameCache.mtimeMs = stat.mtimeMs;
-  codexThreadNameCache.names = names;
-  return names;
-}
-
-function lookupClaudeSessionName(tool, sessionId) {
-  const normalizedTool = normalizeText(tool);
-  if (!normalizedTool || !normalizedTool.toLowerCase().startsWith("claude")) {
-    return null;
-  }
-
-  const normalizedSessionId = normalizeText(sessionId);
-  if (!normalizedSessionId) {
-    return null;
-  }
-
-  return loadClaudeSessionNameIndex().get(normalizedSessionId) || null;
-}
-
-function loadClaudeSessionNameIndex() {
-  const claudeRoot = process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), ".claude");
-  const sessionsDir = path.join(claudeRoot, "sessions");
-  const projectsDir = path.join(claudeRoot, "projects");
-  const sessionsSignature = claudeSessionFilesSignature(sessionsDir);
-  const projectIndexesSignature = claudeProjectIndexesSignature(projectsDir);
-
-  if (
-    claudeSessionNameCache.sessionsSignature === sessionsSignature &&
-    claudeSessionNameCache.projectIndexesSignature === projectIndexesSignature
-  ) {
-    return claudeSessionNameCache.names;
-  }
-
-  const names = new Map();
-  const updatedAtById = new Map();
-  const priorityById = new Map();
-
-  for (const filePath of listClaudeSessionFiles(sessionsDir)) {
-    const stat = statFileSafe(filePath);
-    const record = readJsonFile(filePath, null);
-    if (!record || typeof record !== "object" || Array.isArray(record)) {
-      continue;
-    }
-
-    const id = normalizeText(record.sessionId || record.session_id);
-    const title = normalizeClaudeSessionDisplayName(
-      record.name || record.displayName || record.display_name || record.title
-    );
-    if (!id || !title) {
-      continue;
-    }
-
-    addSessionDisplayName(names, updatedAtById, priorityById, {
-      id,
-      title,
-      updatedAt: timestampMs(
-        record.updatedAt || record.updated_at || record.statusUpdatedAt || record.status_updated_at,
-        stat?.mtimeMs
-      ),
-      priority: 2,
-    });
-  }
-
-  for (const filePath of listClaudeProjectIndexFiles(projectsDir)) {
-    const index = readJsonFile(filePath, null);
-    const entries = Array.isArray(index?.entries) ? index.entries : [];
-    for (const entry of entries) {
-      if (!entry || typeof entry !== "object" || Array.isArray(entry)) {
-        continue;
-      }
-
-      const id = normalizeText(entry.sessionId || entry.session_id || entry.id);
-      const title = normalizeClaudeSessionDisplayName(
-        entry.name || entry.displayName || entry.display_name || entry.title || entry.summary
-      );
-      if (!id || !title) {
-        continue;
-      }
-
-      addSessionDisplayName(names, updatedAtById, priorityById, {
-        id,
-        title,
-        updatedAt: timestampMs(
-          entry.modified || entry.updatedAt || entry.updated_at || entry.fileMtime || entry.created
-        ),
-        priority: 1,
-      });
-    }
-  }
-
-  claudeSessionNameCache.sessionsSignature = sessionsSignature;
-  claudeSessionNameCache.projectIndexesSignature = projectIndexesSignature;
-  claudeSessionNameCache.names = names;
-  return names;
-}
-
-function addSessionDisplayName(names, updatedAtById, priorityById, { id, title, updatedAt, priority }) {
-  const previousPriority = priorityById.get(id) ?? -1;
-  const previousUpdatedAt = updatedAtById.get(id) ?? -1;
-  if (
-    !names.has(id) ||
-    priority > previousPriority ||
-    (priority === previousPriority && updatedAt >= previousUpdatedAt)
-  ) {
-    names.set(id, title);
-    updatedAtById.set(id, updatedAt);
-    priorityById.set(id, priority);
-  }
-}
-
-function normalizeClaudeSessionDisplayName(value) {
-  const title = normalizeText(value);
-  if (!title) {
-    return null;
-  }
-
-  const normalized = title.toLowerCase();
-  if (normalized === "new conversation" || normalized === "untitled") {
-    return null;
-  }
-
-  return title;
-}
-
-function listClaudeSessionFiles(sessionsDir) {
-  try {
-    return fs
-      .readdirSync(sessionsDir, { withFileTypes: true })
-      .filter((entry) => entry.isFile() && entry.name.toLowerCase().endsWith(".json"))
-      .map((entry) => path.join(sessionsDir, entry.name))
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-function listClaudeProjectIndexFiles(projectsDir) {
-  try {
-    return fs
-      .readdirSync(projectsDir, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => path.join(projectsDir, entry.name, "sessions-index.json"))
-      .filter((filePath) => fs.existsSync(filePath))
-      .sort();
-  } catch {
-    return [];
-  }
-}
-
-function claudeSessionFilesSignature(sessionsDir) {
-  return listClaudeSessionFiles(sessionsDir).map(fileSignature).join("|");
-}
-
-function claudeProjectIndexesSignature(projectsDir) {
-  return listClaudeProjectIndexFiles(projectsDir).map(fileSignature).join("|");
-}
-
-function fileSignature(filePath) {
-  const stat = statFileSafe(filePath);
-  return stat ? `${filePath}:${stat.size}:${stat.mtimeMs}` : `${filePath}:missing`;
-}
-
-function statFileSafe(filePath) {
-  try {
-    return fs.statSync(filePath);
-  } catch {
-    return null;
-  }
-}
-
-function timestampMs(value, fallback = 0) {
-  if (typeof value === "number" && Number.isFinite(value)) {
-    return value;
-  }
-
-  const text = normalizeText(value);
-  if (text) {
-    const parsed = Date.parse(text);
-    if (Number.isFinite(parsed)) {
-      return parsed;
-    }
-  }
-
-  return Number.isFinite(fallback) ? fallback : 0;
-}
-
-function defaultTitle(tool, sessionId) {
-  return `${tool} - ${sessionId}`;
 }
