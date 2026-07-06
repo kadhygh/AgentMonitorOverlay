@@ -393,3 +393,14 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Standalone Deploy Window Extracted
+
+- Added `overlay/src/windows/DeployWorkspaceApp.tsx` for the standalone deploy utility window.
+- Kept the main overlay inline deploy panel in `App.tsx` for now; it will be reconciled with the standalone deploy surface in a separate checkpoint.
+- Preserved deploy behavior: workspace folder selection, inspect/enroll, Git exclude, clear generated content, and launch actions still call the same broker endpoints.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`

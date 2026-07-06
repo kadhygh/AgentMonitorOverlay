@@ -120,6 +120,7 @@ The repository is in the early overlay extraction stage. These boundaries have a
 - scratchpad shortcut persistence/native command helper: `overlay/src/native/scratchpadShortcut.ts`
 - scratchpad utility window: `overlay/src/windows/ScratchpadApp.tsx`
 - settings utility window and shared settings panels: `overlay/src/windows/SettingsWindowApp.tsx`
+- standalone deploy utility window: `overlay/src/windows/DeployWorkspaceApp.tsx`
 - shared utility window lifecycle/layering helpers: `overlay/src/windows/utilityWindow.ts`
 
 The largest files are still the historical roots:
@@ -131,3 +132,5 @@ The largest files are still the historical roots:
 - `overlay/src-tauri/src/lib.rs`
 
 Use `docs/refactor-plan.md` for phase order and checkpoints.
+
+The main overlay still contains its inline deploy panel during transition. Treat the standalone deploy window and inline deploy panel as behavior siblings until the deploy UI is reconciled behind shared components.
