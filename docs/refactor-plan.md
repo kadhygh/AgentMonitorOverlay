@@ -526,3 +526,20 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17671`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17672`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Broker Normalize Helpers Extracted
+
+- Added `broker/lib/normalize.js` for shared text, text-array, integer, and version normalization.
+- Removed the duplicated utility definitions from `broker/server.js` while preserving the existing `null`-for-empty text semantics.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/http.js`
+  - `node --check broker/lib/debug.js`
+  - `node --check broker/lib/display-names.js`
+  - `node --check broker/lib/filesystem.js`
+  - `node --check broker/lib/normalize.js`
+  - `node --check broker/hooks/codex.js`
+  - `node --check broker/hooks/claude.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17673`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17674`
+  - `git diff --check`

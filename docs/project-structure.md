@@ -36,6 +36,7 @@ Expected ownership after refactor:
 - `lib/http.js`: request/response helpers.
 - `lib/debug.js`: bounded debug log and debug status.
 - `lib/session-store.js`: session map, snapshot load/persist, archive/dismiss/review/attention, list sessions.
+- `lib/normalize.js`: shared payload normalization helpers.
 - `lib/workspace-*.js`: workspace inspection, deployment, maintenance, git exclude, and launch.
 - `lib/obsidian-vault.js`: vault registry, runtime state, plugin install/health.
 - `lib/conversation-artifacts.js`: prompt/reply notes, note index, session layout v2 files.
@@ -133,6 +134,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 - HTTP response/body/error helpers: `broker/lib/http.js`
 - bounded debug log, debug status, and debug preview helpers: `broker/lib/debug.js`
 - Codex/Claude session display-name cache: `broker/lib/display-names.js`
+- shared text, integer, array, and version normalization helpers: `broker/lib/normalize.js`
 - workspace path, Git root, JSON read/write, and safety helpers: `broker/lib/filesystem.js`
 - Codex/Claude hook event lists, generated hook script text, and CLI config merge helpers: `broker/hooks/codex.js`, `broker/hooks/claude.js`
 

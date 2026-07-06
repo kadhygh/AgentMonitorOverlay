@@ -6,6 +6,7 @@ const { spawn, spawnSync } = require("child_process");
 const { CORS_HEADERS, httpError, readJsonBody, sendEmpty, sendJson } = require("./lib/http");
 const { createDebugLogStore } = require("./lib/debug");
 const { refreshSessionTitle, resolveSessionTitle } = require("./lib/display-names");
+const { normalizeInteger, normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./lib/normalize");
 const {
   ensureInsideDirectory,
   findNearestGitRoot,
@@ -707,12 +708,6 @@ function resolveWorkspaceVaultRoot(amoRoot, workspace, projectName) {
 
 function workspaceRelativePath(workspacePath, targetPath) {
   return path.relative(workspacePath, targetPath).split(path.sep).join("/");
-}
-
-function normalizeVersionNumber(value) {
-  if (Number.isInteger(value)) return value;
-  const parsed = Number.parseInt(normalizeText(value), 10);
-  return Number.isFinite(parsed) ? parsed : null;
 }
 
 function adapterConfigPath(amoRoot, adapterId) {
@@ -4583,33 +4578,4 @@ function persistSnapshot() {
   const tmpFile = `${DATA_FILE}.${process.pid}.tmp`;
   fs.writeFileSync(tmpFile, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
   fs.renameSync(tmpFile, DATA_FILE);
-}
-
-function normalizeText(value) {
-  if (typeof value !== "string") {
-    return null;
-  }
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : null;
-}
-
-function normalizeTextArray(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value.map(normalizeText).filter(Boolean);
-}
-
-function normalizeInteger(value) {
-  if (typeof value === "number" && Number.isSafeInteger(value)) {
-    return value;
-  }
-
-  if (typeof value === "string" && value.trim().length > 0) {
-    const parsed = Number.parseInt(value.trim(), 10);
-    return Number.isSafeInteger(parsed) ? parsed : null;
-  }
-
-  return null;
 }
