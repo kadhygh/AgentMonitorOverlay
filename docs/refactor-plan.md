@@ -755,3 +755,13 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Deploy Workspace Panels Extracted
+
+- Added `overlay/src/components/DeployWorkspaceSections.tsx` for the deploy window's workspace, Git exclude, adapter, and deployment-result panels.
+- Kept broker calls, busy states, native folder picking, debug logging, and feedback ownership in `overlay/src/windows/DeployWorkspaceApp.tsx`.
+- Reduced `DeployWorkspaceApp.tsx` from 724 lines to 479 lines while keeping the new panel file at 400 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

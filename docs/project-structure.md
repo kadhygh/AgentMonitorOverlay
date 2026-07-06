@@ -129,6 +129,7 @@ The repository has completed the first overlay extraction pass. These boundaries
 - Obsidian vault recovery dialog: `overlay/src/components/ObsidianVaultRecoveryDialog.tsx`
 - workspace cleanup confirmation dialog: `overlay/src/components/CleanConfirmDialog.tsx`
 - task card presentation: `overlay/src/components/SessionCard.tsx`
+- deploy workspace panel presentation: `overlay/src/components/DeployWorkspaceSections.tsx`
 - AMO theme runtime: `overlay/src/theme/amoTheme.ts`
 - shared clipboard helpers: `overlay/src/native/clipboard.ts`
 - scratchpad shortcut persistence/native command helper: `overlay/src/native/scratchpadShortcut.ts`
@@ -136,6 +137,10 @@ The repository has completed the first overlay extraction pass. These boundaries
 - settings utility window and shared settings panels: `overlay/src/windows/SettingsWindowApp.tsx`
 - standalone deploy utility window: `overlay/src/windows/DeployWorkspaceApp.tsx`
 - shared utility window lifecycle/layering helpers: `overlay/src/windows/utilityWindow.ts`
+
+`DeployWorkspaceApp.tsx` remains the deploy workflow owner: broker requests, native folder dialogs, debug logging,
+busy states, and feedback messages stay there. `DeployWorkspaceSections.tsx` owns only the visible workspace,
+Git exclude, adapter, and deployment-result panels.
 
 The broker extraction has started. These boundaries have already moved out of `broker/server.js`:
 

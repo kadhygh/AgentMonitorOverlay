@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bot, FolderOpen, FolderPlus, RefreshCcw, SquareTerminal, Trash2, X } from "lucide-react";
+import { FolderPlus, X } from "lucide-react";
 import {
   BROKER_DEBUG_LOGS_URL,
   BROKER_WORKSPACE_CLEAN_VAULT_URL,
@@ -10,16 +10,17 @@ import {
   BROKER_WORKSPACE_LAUNCH_URL,
   postBrokerJson,
 } from "../api/brokerClient";
-import { projectName, shortPathLabel } from "../domain/routingModel";
 import {
-  adapterContextLabel,
-  adapterStateLabel,
+  DeployAdaptersSection,
+  DeployResultFooter,
+  DeployWorkspaceSection,
+} from "../components/DeployWorkspaceSections";
+import { projectName } from "../domain/routingModel";
+import {
   isDeployableWorkspaceAdapter,
   isWorkspaceAdapterDeployed,
-  isWorkspaceAdapterInstalled,
   selectedWorkspaceAdapterIds,
   workspaceCleanFeedback,
-  workspaceDeploymentStateLabel,
   workspaceDeploymentSummary,
   workspaceGeneratedNoteCount,
 } from "../domain/workspaceModel";
@@ -425,298 +426,53 @@ export function DeployWorkspaceApp() {
         </header>
 
         <div className="deploy-dialog-body">
-          <section className="dialog-section deploy-workspace-section">
-            <div className="dialog-section-heading">
-              <strong>Workspace</strong>
-              <span>{workspaceInspection ? projectName(workspaceInspection.workspacePath) : "Not checked"}</span>
-            </div>
-            <input
-              className="deploy-path-input"
-              type="text"
-              spellCheck={false}
-              value={workspacePath}
-              placeholder="Paste or choose a workspace path"
-              title={workspacePath || "No workspace selected"}
-              disabled={deployBusy !== null || launchBusy !== null}
-              onChange={(event) => updateWorkspacePathInput(event.currentTarget.value)}
-              onKeyDown={(event) => {
-                if (event.key === "Enter") {
-                  event.preventDefault();
-                  void inspectWorkspace();
-                }
-              }}
-            />
-            <div className="deploy-action-row">
-              <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void chooseWorkspaceDirectory()}>
-                Choose
-              </button>
-              <button
-                type="button"
-                title="Check folder before deploying; this does not write files."
-                disabled={!workspacePath.trim() || deployBusy !== null || launchBusy !== null}
-                onClick={() => void inspectWorkspace()}
-              >
-                {deployBusy === "inspect" ? "Checking" : "Check"}
-              </button>
-              <button
-                type="button"
-                className="primary"
-                disabled={!workspaceInspection || selectedDeployAdapters.length === 0 || deployBusy !== null || launchBusy !== null}
-                onClick={() => void enrollWorkspace()}
-              >
-                {deployBusy === "enroll" ? "Deploying" : "Deploy Selected"}
-              </button>
-              <button
-                type="button"
-                className="danger-action"
-                title="Clear generated session notes and reset the base canvas without removing hooks."
-                disabled={!workspaceInspection?.existingEnrollment || deployBusy !== null || launchBusy !== null}
-                onClick={() => void clearWorkspaceGenerated()}
-              >
-                <Trash2 size={12} aria-hidden="true" />
-                <span>{deployBusy === "clean" ? "Clearing" : "Clear Generated"}</span>
-              </button>
-            </div>
-
-            {workspaceInspection ? (
-              <>
-                <dl className="deploy-status-grid">
-                  <div>
-                    <dt>Path</dt>
-                    <dd title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</dd>
-                  </div>
-                  <div>
-                    <dt>State</dt>
-                    <dd>{workspaceDeploymentStateLabel(workspaceInspection)}</dd>
-                  </div>
-                  <div>
-                    <dt>Selected</dt>
-                    <dd>{selectedDeployAdapters.length}</dd>
-                  </div>
-                </dl>
-                <div className="deploy-state-note">{workspaceDeploymentSummary(workspaceInspection)}</div>
-              </>
-            ) : (
-              <div className="deploy-placeholder">Check a workspace to review deployment status.</div>
-            )}
-
-            <div className="deploy-subsection">
-              <div className="dialog-section-heading">
-                <strong>Git exclude</strong>
-                <span>{gitExcludeStatus ? gitExcludeStatus.status : "Optional"}</span>
-              </div>
-              <input
-                className="deploy-path-input"
-                type="text"
-                spellCheck={false}
-                value={gitRootPath}
-                placeholder="Git repository root, optional"
-                title={gitRootPath || "No Git root selected"}
-                disabled={gitExcludeBlocked}
-                onChange={(event) => updateGitRootPathInput(event.currentTarget.value)}
-                onKeyDown={(event) => {
-                  if (event.key === "Enter") {
-                    event.preventDefault();
-                    void applyGitExclude();
-                  }
-                }}
-              />
-              <div className="deploy-action-row">
-                <button type="button" disabled={gitExcludeBlocked} onClick={() => void chooseGitDirectory()}>
-                  Choose Git
-                </button>
-                <button
-                  type="button"
-                  className="primary"
-                  disabled={!workspacePath.trim() || gitExcludeBlocked}
-                  onClick={() => void applyGitExclude()}
-                >
-                  {gitExcludeBusy ? "Adding" : "Add exclude"}
-                </button>
-              </div>
-              <label className="deploy-option-row">
-                <input
-                  type="checkbox"
-                  checked={includeClaudeSettingsExclude}
-                  disabled={gitExcludeBlocked}
-                  onChange={(event) => updateClaudeSettingsExclude(event.currentTarget.checked)}
-                />
-                <span>Also exclude `.claude\\settings.local.json`</span>
-              </label>
-              {gitExcludeStatus ? (
-                <>
-                  <div className={`deploy-git-exclude-note status-${gitExcludeStatus.status}`}>
-                    <span title={gitExcludeStatus.excludeFilePath || gitExcludeStatus.message}>{gitExcludeStatus.message}</span>
-                    {gitExcludeStatus.missingEntries.length > 0 ? (
-                      <small>{gitExcludeStatus.missingEntries.map((entry) => entry.pattern).join(", ")}</small>
-                    ) : gitExcludeStatus.excludeFilePath ? (
-                      <small title={gitExcludeStatus.excludeFilePath}>{shortPathLabel(gitExcludeStatus.excludeFilePath)}</small>
-                    ) : null}
-                  </div>
-                  {gitExcludeStatus.entries.length > 0 ? (
-                    <ul className="deploy-git-exclude-list" aria-label="Git exclude pattern status">
-                      {gitExcludeStatus.entries.map((entry) => {
-                        const missing = gitExcludeMissingPatterns.has(entry.pattern);
-                        const tracked = gitExcludeTrackedPatterns.has(entry.pattern);
-                        const itemState = missing ? "missing" : tracked ? "tracked" : "covered";
-                        return (
-                          <li className={`is-${itemState}`} key={entry.pattern}>
-                            <em>{itemState}</em>
-                            <span title={tracked ? "This path is already tracked by Git, so exclude cannot hide it." : entry.reason || entry.pattern}>
-                              {entry.pattern}
-                            </span>
-                          </li>
-                        );
-                      })}
-                    </ul>
-                  ) : null}
-                </>
-              ) : (
-                <div className="deploy-git-exclude-note">
-                  <span>Exclude options changed. Click Add exclude to check and write missing patterns.</span>
-                </div>
-              )}
-            </div>
-          </section>
-
-          <section className="dialog-section deploy-adapters-section">
-            <div className="dialog-section-heading">
-              <strong>Adapters</strong>
-              <span>{workspaceInspection ? `${workspaceInspection.supportedAdapters.length} available targets` : "Awaiting check"}</span>
-            </div>
-            {workspaceInspection ? (
-              <div className="deploy-adapter-list">
-                {workspaceInspection.supportedAdapters.map((adapter) => {
-                  const selectable = isDeployableWorkspaceAdapter(adapter);
-                  const selected = selectedDeployAdapters.includes(adapter.id);
-                  const installed = isWorkspaceAdapterInstalled(adapter);
-                  const stateLabel = adapterStateLabel(adapter);
-                  const contextLabel = adapterContextLabel(adapter);
-                  return (
-                    <article
-                      className={`deploy-adapter-card status-${adapter.status} state-${stateLabel} ${
-                        selected ? "is-selected" : ""
-                      }`}
-                      key={adapter.id}
-                      title={adapter.reason}
-                    >
-                      <label className="deploy-adapter-select" title={selectable ? "Include in Deploy Selected" : "Adapter unavailable"}>
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          disabled={!selectable || deployBusy !== null}
-                          onChange={(event) => {
-                            const checked = event.currentTarget.checked;
-                            setSelectedDeployAdapters((current) =>
-                              checked ? Array.from(new Set([...current, adapter.id])) : current.filter((id) => id !== adapter.id),
-                            );
-                          }}
-                        />
-                      </label>
-                      <span className="deploy-adapter-copy">
-                        <strong>{adapter.label}</strong>
-                        <span>{adapter.reason}</span>
-                      </span>
-                      <span className="deploy-adapter-badges">
-                        <em>{stateLabel}</em>
-                        {contextLabel ? <small>{contextLabel}</small> : null}
-                      </span>
-                      <span className="deploy-adapter-actions">
-                        {installed ? (
-                          <>
-                            <button
-                              type="button"
-                              disabled={deployBusy !== null || launchBusy !== null}
-                              onClick={() => void launchWorkspace(adapter.id)}
-                            >
-                              <SquareTerminal size={12} aria-hidden="true" />
-                              <span>{launchBusy === adapter.id ? "Starting" : "Run"}</span>
-                            </button>
-                            {adapter.id === "codex-cli" ? (
-                              <button
-                                type="button"
-                                disabled={deployBusy !== null || launchBusy !== null}
-                                onClick={() => void launchWorkspace("codex-app")}
-                              >
-                                <Bot size={12} aria-hidden="true" />
-                                <span>{launchBusy === "codex-app" ? "Opening" : "App"}</span>
-                              </button>
-                            ) : null}
-                            <button
-                              type="button"
-                              disabled={!selectable || deployBusy !== null || launchBusy !== null}
-                              onClick={() => void enrollWorkspace([adapter.id])}
-                            >
-                              <RefreshCcw size={12} aria-hidden="true" />
-                              <span>Update</span>
-                            </button>
-                          </>
-                        ) : (
-                          <button
-                            type="button"
-                            className="primary"
-                            disabled={!selectable || deployBusy !== null || launchBusy !== null}
-                            onClick={() => void enrollWorkspace([adapter.id])}
-                          >
-                            <span>{deployBusy === "enroll" ? "Deploying" : "Deploy"}</span>
-                          </button>
-                        )}
-                      </span>
-                    </article>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="deploy-placeholder">Adapter details appear after Check.</div>
-            )}
-          </section>
+          <DeployWorkspaceSection
+            workspacePath={workspacePath}
+            workspaceInspection={workspaceInspection}
+            selectedDeployAdapters={selectedDeployAdapters}
+            deployBusy={deployBusy}
+            launchBusy={launchBusy}
+            gitRootPath={gitRootPath}
+            gitExcludeStatus={gitExcludeStatus}
+            gitExcludeMissingPatterns={gitExcludeMissingPatterns}
+            gitExcludeTrackedPatterns={gitExcludeTrackedPatterns}
+            gitExcludeBlocked={gitExcludeBlocked}
+            gitExcludeBusy={gitExcludeBusy}
+            includeClaudeSettingsExclude={includeClaudeSettingsExclude}
+            onWorkspacePathChange={updateWorkspacePathInput}
+            onInspectWorkspace={() => void inspectWorkspace()}
+            onChooseWorkspace={() => void chooseWorkspaceDirectory()}
+            onDeploySelected={() => void enrollWorkspace()}
+            onClearGenerated={() => void clearWorkspaceGenerated()}
+            onGitRootPathChange={updateGitRootPathInput}
+            onApplyGitExclude={() => void applyGitExclude()}
+            onChooseGit={() => void chooseGitDirectory()}
+            onClaudeSettingsExcludeChange={updateClaudeSettingsExclude}
+          />
+          <DeployAdaptersSection
+            workspaceInspection={workspaceInspection}
+            selectedDeployAdapters={selectedDeployAdapters}
+            deployBusy={deployBusy}
+            launchBusy={launchBusy}
+            onAdapterSelectedChange={(adapterId, selected) => {
+              setSelectedDeployAdapters((current) =>
+                selected ? Array.from(new Set([...current, adapterId])) : current.filter((id) => id !== adapterId),
+              );
+            }}
+            onDeployAdapter={(adapterId) => void enrollWorkspace([adapterId])}
+            onLaunchWorkspace={(adapterId) => void launchWorkspace(adapterId)}
+          />
         </div>
 
         <footer className="app-dialog-footer">
-          {workspaceEnrollment ? (
-            <div className="deploy-result" title={workspaceEnrollment.vaultRoot}>
-              <div className="deploy-result-copy">
-                <div className="deploy-result-summary">
-                  <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
-                  <span>{workspaceEnrollment.installedFiles.length} files</span>
-                  <span>{workspaceEnrollment.mergedFiles.length} merged</span>
-                </div>
-                <span className="deploy-result-feedback" title={feedback}>
-                  {feedback}
-                </span>
-              </div>
-              <div className="deploy-launch-actions" aria-label="Launch workspace tools">
-                {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
-                  <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void launchWorkspace("codex-cli")}>
-                    <SquareTerminal size={12} aria-hidden="true" />
-                    <span>{launchBusy === "codex-cli" ? "Starting" : "Run Codex"}</span>
-                  </button>
-                ) : null}
-                {workspaceEnrollment.installedAdapters.includes("claude-cli") ? (
-                  <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void launchWorkspace("claude-cli")}>
-                    <SquareTerminal size={12} aria-hidden="true" />
-                    <span>{launchBusy === "claude-cli" ? "Starting" : "Run Claude"}</span>
-                  </button>
-                ) : null}
-                {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
-                  <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void launchWorkspace("codex-app")}>
-                    <Bot size={12} aria-hidden="true" />
-                    <span>{launchBusy === "codex-app" ? "Opening" : "Open App"}</span>
-                  </button>
-                ) : null}
-                <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void openDeploymentPath(workspaceEnrollment.workspacePath, "workspace")}>
-                  <FolderOpen size={12} aria-hidden="true" />
-                  <span>Project</span>
-                </button>
-                <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void openDeploymentPath(workspaceEnrollment.vaultRoot, "vault")}>
-                  <FolderOpen size={12} aria-hidden="true" />
-                  <span>Vault</span>
-                </button>
-              </div>
-            </div>
-          ) : (
-            <span title={feedback}>{feedback}</span>
-          )}
+          <DeployResultFooter
+            workspaceEnrollment={workspaceEnrollment}
+            feedback={feedback}
+            deployBusy={deployBusy}
+            launchBusy={launchBusy}
+            onLaunchWorkspace={(adapterId) => void launchWorkspace(adapterId)}
+            onOpenDeploymentPath={(path, label) => void openDeploymentPath(path, label)}
+          />
         </footer>
       </section>
     </main>
