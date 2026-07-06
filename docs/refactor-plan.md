@@ -846,3 +846,12 @@ Manual smoke:
 - Validation passed:
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 5 Tauri Clipboard Extracted
+
+- Added `overlay/src-tauri/src/clipboard.rs` for native clipboard writing and CRLF normalization.
+- Kept the Tauri `write_clipboard_text` command wrapper in `lib.rs`.
+- Reduced `lib.rs` from 1171 lines to 1090 lines while keeping `clipboard.rs` at 84 lines.
+- Validation passed:
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
