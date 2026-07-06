@@ -340,3 +340,13 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Routing Model Extracted
+
+- Added `overlay/src/domain/routingModel.ts` for project names, workspace/session paths, note/canvas open paths, Obsidian URI construction, short path labels, and plugin health titles.
+- Kept activation candidate UI copy and window operations in `App.tsx`; those still depend on the current menu/window implementation.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`
