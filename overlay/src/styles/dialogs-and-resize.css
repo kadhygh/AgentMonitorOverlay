@@ -1,0 +1,330 @@
+.confirm-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.42);
+}
+
+.confirm-dialog {
+  display: grid;
+  gap: 10px;
+  width: min(336px, calc(100vw - 36px));
+  padding: 10px;
+  color: #eef6f2;
+  background: rgba(18, 26, 30, 0.99);
+  border: 1px solid rgba(255, 92, 104, 0.34);
+  border-radius: 8px;
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.48);
+}
+
+.confirm-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.confirm-dialog-header strong {
+  overflow: hidden;
+  font-size: 12px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.confirm-dialog p {
+  margin: 0;
+  color: #c9d8d3;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.confirm-dialog p strong {
+  color: #f6fbf9;
+}
+
+.confirm-counts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 5px;
+}
+
+.confirm-counts span {
+  display: grid;
+  gap: 1px;
+  padding: 6px;
+  color: #aebfba;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  font-size: 9px;
+  line-height: 11px;
+  text-transform: uppercase;
+}
+
+.confirm-counts strong {
+  color: #fff0f2;
+  font-size: 14px;
+  line-height: 16px;
+}
+
+.confirm-dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 6px;
+}
+
+.confirm-dialog-actions button {
+  min-height: 28px;
+  padding: 4px 9px;
+  color: #dceae5;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.confirm-dialog-actions button:hover {
+  color: #f6fbf9;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.confirm-dialog-actions .danger-action {
+  color: #ffd7da;
+  background: rgba(255, 92, 104, 0.18);
+  border-color: rgba(255, 92, 104, 0.32);
+}
+
+.confirm-dialog-actions .danger-action:hover {
+  background: rgba(255, 92, 104, 0.28);
+}
+
+.vault-recovery-dialog {
+  display: grid;
+  gap: 10px;
+  width: min(360px, calc(100vw - 36px));
+  padding: 10px;
+  color: #eef6f2;
+  background: rgba(18, 26, 30, 0.99);
+  border: 1px solid rgba(242, 190, 92, 0.38);
+  border-radius: 8px;
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.48);
+}
+
+.vault-recovery-dialog p {
+  margin: 0;
+  color: #c9d8d3;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.vault-recovery-path {
+  overflow: hidden;
+  padding: 7px 8px;
+  color: #f7faf9;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  font-family: ui-monospace, SFMono-Regular, Consolas, "Liberation Mono", monospace;
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vault-recovery-manual {
+  color: #b9cbc5;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.vault-recovery-manual span {
+  color: #f0f7f4;
+  font-weight: 700;
+}
+
+.vault-recovery-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.vault-recovery-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 5px 8px;
+  color: #dceae5;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.vault-recovery-actions button:hover:not(:disabled) {
+  color: #f6fbf9;
+  background: rgba(255, 255, 255, 0.11);
+}
+
+.vault-recovery-actions button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.resize-edge {
+  position: absolute;
+  z-index: 45;
+  right: 22px;
+  bottom: 2px;
+  left: 22px;
+  height: 10px;
+  border-radius: 5px;
+  cursor: ns-resize;
+}
+
+.resize-side {
+  position: absolute;
+  z-index: 45;
+  top: 54px;
+  right: 2px;
+  bottom: 22px;
+  width: 10px;
+  border-radius: 5px;
+  cursor: ew-resize;
+}
+
+.resize-side::before {
+  position: absolute;
+  top: 38%;
+  bottom: 38%;
+  left: 4px;
+  width: 2px;
+  content: "";
+  background: rgba(220, 232, 227, 0.18);
+  border-radius: 999px;
+}
+
+.resize-corner {
+  position: absolute;
+  z-index: 46;
+  right: 2px;
+  bottom: 2px;
+  width: 20px;
+  height: 20px;
+  border-radius: 6px;
+  cursor: nwse-resize;
+}
+
+.resize-corner::before {
+  position: absolute;
+  right: 5px;
+  bottom: 5px;
+  width: 8px;
+  height: 8px;
+  content: "";
+  border-right: 2px solid rgba(220, 232, 227, 0.22);
+  border-bottom: 2px solid rgba(220, 232, 227, 0.22);
+}
+
+.resize-edge::before {
+  position: absolute;
+  top: 4px;
+  right: 38%;
+  left: 38%;
+  height: 2px;
+  content: "";
+  background: rgba(220, 232, 227, 0.26);
+  border-radius: 999px;
+}
+
+.resize-edge:hover::before,
+.resize-edge.is-resizing::before,
+.resize-side:hover::before,
+.resize-side.is-resizing::before {
+  background: rgba(143, 196, 255, 0.78);
+}
+
+.resize-corner:hover::before,
+.resize-corner.is-resizing::before {
+  border-color: rgba(143, 196, 255, 0.78);
+}
+
+.collapsed-summary {
+  display: grid;
+  grid-template-columns: 11px 1fr;
+  align-items: center;
+  column-gap: 7px;
+  width: 100%;
+  margin-top: 7px;
+  padding: 7px;
+  color: #eef6f2;
+  text-align: left;
+  background: rgba(255, 255, 255, 0.065);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 7px;
+  cursor: pointer;
+}
+
+.collapsed-summary span,
+.collapsed-summary strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.collapsed-summary span:not(.pulse-dot):not(.review-dot):not(.quiet-dot) {
+  font-size: 12px;
+  line-height: 15px;
+}
+
+.collapsed-summary strong {
+  grid-column: 2;
+  color: #ffca72;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.pulse-dot,
+.review-dot,
+.quiet-dot {
+  grid-row: 1 / span 2;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+}
+
+.pulse-dot {
+  background: #ff9857;
+  box-shadow: 0 0 0 4px rgba(255, 152, 87, 0.14);
+}
+
+.review-dot {
+  background: #39d0a5;
+  box-shadow: 0 0 0 3px rgba(57, 208, 165, 0.12);
+  animation: review-dot-pulse 1.7s ease-in-out infinite;
+}
+
+.quiet-dot {
+  background: #3f4b50;
+  box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.04);
+}
+
+@keyframes review-dot-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(57, 208, 165, 0.1);
+    transform: scale(1);
+  }
+
+  50% {
+    box-shadow: 0 0 0 5px rgba(57, 208, 165, 0.18);
+    transform: scale(1.06);
+  }
+}
+

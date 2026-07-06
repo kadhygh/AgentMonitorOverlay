@@ -26,6 +26,8 @@ Expected ownership after refactor:
 - `components/`: reusable presentational UI. Components receive props and callbacks; they do not fetch broker state directly.
 - `windows/`: top-level Tauri webview apps such as main overlay, deploy, settings, and scratchpad.
 - `theme/`: theme persistence and broadcast helpers.
+- `styles/`: feature-scoped CSS slices imported by `styles.css`; keep visual-order imports stable unless intentionally changing cascade.
+- `styles.css`: CSS entrypoint only. It should stay import-only after the split.
 - `types.ts`: shared TypeScript contracts that mirror broker/plugin payloads.
 
 ### `broker`

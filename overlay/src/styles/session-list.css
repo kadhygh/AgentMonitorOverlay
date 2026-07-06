@@ -1,0 +1,249 @@
+.session-list {
+  flex: 1 1 auto;
+  display: grid;
+  align-content: start;
+  gap: 6px;
+  grid-auto-rows: max-content;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  padding-right: 4px;
+  padding-bottom: 4px;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(143, 196, 255, 0.32) rgba(255, 255, 255, 0.035);
+}
+
+.session-list::-webkit-scrollbar {
+  width: 7px;
+}
+
+.session-list::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.035);
+  border-radius: 999px;
+}
+
+.session-list::-webkit-scrollbar-thumb {
+  background: rgba(143, 196, 255, 0.28);
+  border: 2px solid rgba(19, 27, 31, 0.95);
+  border-radius: 999px;
+}
+
+.session-list::-webkit-scrollbar-thumb:hover {
+  background: rgba(143, 196, 255, 0.5);
+}
+
+.session-empty-state {
+  display: grid;
+  place-items: center;
+  min-height: 84px;
+  color: #91a39d;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px dashed rgba(255, 255, 255, 0.09);
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.session-row {
+  position: relative;
+  display: grid;
+  grid-template-columns: 14px minmax(0, 1fr);
+  align-items: stretch;
+  gap: 9px;
+  width: 100%;
+  min-height: 116px;
+  padding: 9px 62px 9px 6px;
+  font: inherit;
+  color: #eef6f2;
+  text-align: left;
+  background: rgba(22, 29, 28, 0.93);
+  border: 1px solid rgba(226, 238, 232, 0.1);
+  border-radius: 8px;
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.18);
+  cursor: pointer;
+  user-select: none;
+}
+
+.session-row:hover {
+  background: rgba(27, 36, 35, 0.95);
+  border-color: rgba(177, 218, 206, 0.24);
+}
+
+.session-row:focus-visible {
+  outline: 2px solid rgba(143, 196, 255, 0.85);
+  outline-offset: 2px;
+}
+
+.session-row.needs-attention {
+  border-color: rgba(176, 143, 94, 0.26);
+}
+
+.session-row.needs-attention::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(190px, 44%);
+  content: "";
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50px 42px, rgba(226, 208, 174, 0.28), rgba(176, 143, 94, 0.12) 34%, transparent 78%),
+    linear-gradient(90deg, rgba(176, 143, 94, 0.16), rgba(176, 143, 94, 0.06) 46%, transparent 90%);
+  background-size: 142% 100%;
+  border-radius: 8px 0 0 8px;
+  opacity: 0.28;
+  transform: scaleX(0.54);
+  transform-origin: left center;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 24%, rgba(0, 0, 0, 0.62) 50%, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0%, #000 24%, rgba(0, 0, 0, 0.62) 50%, transparent 100%);
+  will-change: opacity, transform, filter;
+}
+
+.session-row.needs-attention.is-attention-animating::before {
+  animation: attention-rail-breathe 1.18s ease-in-out infinite;
+}
+
+.session-row.state-waiting_permission.needs-attention {
+  border-color: rgba(184, 151, 94, 0.28);
+}
+
+.session-row.state-waiting_permission.needs-attention::before {
+  background:
+    radial-gradient(circle at 50px 42px, rgba(232, 213, 178, 0.3), rgba(184, 151, 94, 0.12) 34%, transparent 78%),
+    linear-gradient(90deg, rgba(184, 151, 94, 0.16), rgba(184, 151, 94, 0.06) 46%, transparent 90%);
+}
+
+.session-row.state-failed.needs-attention {
+  border-color: rgba(151, 118, 109, 0.28);
+}
+
+.session-row.state-failed.needs-attention::before {
+  background:
+    radial-gradient(circle at 50px 42px, rgba(216, 190, 184, 0.28), rgba(151, 118, 109, 0.11) 34%, transparent 78%),
+    linear-gradient(90deg, rgba(151, 118, 109, 0.15), rgba(151, 118, 109, 0.05) 46%, transparent 90%);
+}
+
+.session-row.needs-review {
+  border-color: rgba(57, 208, 165, 0.42);
+  box-shadow: 0 0 0 1px rgba(57, 208, 165, 0.12), 0 12px 28px rgba(0, 0, 0, 0.2);
+}
+
+.session-row.needs-review::before {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  width: min(190px, 44%);
+  content: "";
+  pointer-events: none;
+  background:
+    radial-gradient(circle at 50px 42px, rgba(170, 252, 223, 0.3), rgba(57, 208, 165, 0.12) 34%, transparent 78%),
+    linear-gradient(90deg, rgba(57, 208, 165, 0.16), rgba(57, 208, 165, 0.06) 46%, transparent 90%);
+  background-size: 142% 100%;
+  border-radius: 8px 0 0 8px;
+  opacity: 0.28;
+  transform: scaleX(0.54);
+  transform-origin: left center;
+  z-index: 0;
+  -webkit-mask-image: linear-gradient(90deg, #000 0%, #000 24%, rgba(0, 0, 0, 0.62) 50%, transparent 100%);
+  mask-image: linear-gradient(90deg, #000 0%, #000 24%, rgba(0, 0, 0, 0.62) 50%, transparent 100%);
+  will-change: opacity, transform, filter;
+}
+
+.session-row.needs-review.is-attention-animating::before {
+  animation: review-rail-breathe 1.18s ease-in-out infinite;
+}
+
+.session-row.is-drag-placeholder {
+  opacity: 0.34;
+}
+
+.session-row.is-drop-target {
+  border-color: rgba(143, 196, 255, 0.72);
+  box-shadow: inset 3px 0 0 rgba(143, 196, 255, 0.78);
+}
+
+.row-drag-handle {
+  display: inline-grid;
+  place-items: center;
+  width: 14px;
+  min-height: 96px;
+  height: 100%;
+  color: rgba(220, 232, 227, 0.52);
+  border-radius: 5px;
+  cursor: grab;
+}
+
+.row-drag-handle:hover {
+  color: #eef6f2;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.row-drag-handle:active {
+  cursor: grabbing;
+}
+
+.row-drag-handle.is-preview {
+  background: rgba(255, 255, 255, 0.08);
+  color: #eef6f2;
+}
+
+.session-row.needs-attention .row-drag-handle,
+.session-row.needs-review .row-drag-handle,
+.session-row.needs-attention .session-main,
+.session-row.needs-review .session-main {
+  position: relative;
+  z-index: 1;
+}
+
+@keyframes attention-rail-breathe {
+  0%,
+  100% {
+    opacity: 0.24;
+    filter: brightness(0.9);
+    transform: scaleX(0.48);
+  }
+
+  50% {
+    opacity: 0.52;
+    filter: brightness(1.14);
+    transform: scaleX(0.74);
+  }
+}
+
+@keyframes review-rail-breathe {
+  0%,
+  100% {
+    opacity: 0.24;
+    filter: brightness(0.9);
+    transform: scaleX(0.48);
+  }
+
+  50% {
+    opacity: 0.52;
+    filter: brightness(1.14);
+    transform: scaleX(0.74);
+  }
+}
+
+.drag-preview {
+  position: fixed;
+  z-index: 20;
+  pointer-events: none;
+  opacity: 0.97;
+  box-shadow: 0 16px 34px rgba(0, 0, 0, 0.38);
+  transform: rotate(0.3deg);
+}
+
+.tool-mark {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: #eaf7f2;
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+

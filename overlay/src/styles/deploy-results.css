@@ -1,0 +1,314 @@
+.deploy-state-note {
+  min-width: 0;
+  padding: 9px 10px;
+  color: #dcece7;
+  background: rgba(143, 196, 255, 0.09);
+  border: 1px solid rgba(143, 196, 255, 0.16);
+  border-radius: 6px;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.deploy-subsection {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+  margin-top: 2px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.deploy-git-exclude-note {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+  padding: 8px 9px;
+  color: #aebeb8;
+  background: rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.deploy-git-exclude-note.status-covered {
+  color: #dff7ee;
+  background: rgba(45, 139, 112, 0.13);
+  border-color: rgba(111, 224, 190, 0.24);
+}
+
+.deploy-git-exclude-note.status-missing {
+  color: #f3dfba;
+  background: rgba(178, 128, 56, 0.13);
+  border-color: rgba(255, 199, 115, 0.28);
+}
+
+.deploy-git-exclude-note.status-tracked {
+  color: #f1d4c6;
+  background: rgba(190, 106, 60, 0.14);
+  border-color: rgba(255, 168, 116, 0.3);
+}
+
+.deploy-git-exclude-note.status-error,
+.deploy-git-exclude-note.status-not-found {
+  color: #f4c4bd;
+  background: rgba(190, 68, 60, 0.14);
+  border-color: rgba(255, 132, 116, 0.28);
+}
+
+.deploy-git-exclude-note span,
+.deploy-git-exclude-note small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deploy-git-exclude-note small {
+  color: rgba(220, 232, 227, 0.72);
+}
+
+.deploy-git-exclude-list {
+  display: grid;
+  gap: 5px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.deploy-git-exclude-list li {
+  display: grid;
+  grid-template-columns: 56px minmax(0, 1fr);
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 6px 8px;
+  color: #c9d9d4;
+  background: rgba(0, 0, 0, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 6px;
+}
+
+.deploy-git-exclude-list li.is-covered {
+  border-color: rgba(111, 224, 190, 0.16);
+}
+
+.deploy-git-exclude-list li.is-missing {
+  border-color: rgba(255, 199, 115, 0.22);
+}
+
+.deploy-git-exclude-list li.is-tracked {
+  border-color: rgba(255, 168, 116, 0.24);
+}
+
+.deploy-git-exclude-list em {
+  color: #90a19b;
+  font-size: 9px;
+  font-style: normal;
+  font-weight: 700;
+  line-height: 12px;
+  text-transform: uppercase;
+}
+
+.deploy-git-exclude-list li.is-covered em {
+  color: #9be8cf;
+}
+
+.deploy-git-exclude-list li.is-missing em {
+  color: #f0c878;
+}
+
+.deploy-git-exclude-list li.is-tracked em {
+  color: #ffad82;
+}
+
+.deploy-git-exclude-list span {
+  min-width: 0;
+  overflow: hidden;
+  color: #dbe9e4;
+  font-size: 10px;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deploy-adapter-list {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.deploy-adapter-card {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+  min-height: 54px;
+  padding: 8px;
+  color: #dcece7;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 7px;
+  cursor: default;
+}
+
+.deploy-adapter-select {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 30px;
+  cursor: pointer;
+}
+
+.deploy-adapter-card.status-available {
+  color: #dff7ee;
+}
+
+.deploy-adapter-card.state-deployed {
+  background: rgba(45, 139, 112, 0.13);
+  border-color: rgba(111, 224, 190, 0.24);
+}
+
+.deploy-adapter-card.state-undeployed {
+  color: #f3dfba;
+  background: rgba(178, 128, 56, 0.13);
+  border-color: rgba(255, 199, 115, 0.28);
+}
+
+.deploy-adapter-card.state-needs-update {
+  color: #fff0ca;
+  background: rgba(171, 119, 45, 0.17);
+  border-color: rgba(255, 196, 99, 0.4);
+}
+
+.deploy-adapter-card.status-blocked {
+  color: #f4c4bd;
+  background: rgba(190, 68, 60, 0.14);
+  border-color: rgba(255, 132, 116, 0.28);
+  cursor: not-allowed;
+}
+
+.deploy-adapter-card.is-selected {
+  background: rgba(111, 224, 190, 0.22);
+  border-color: rgba(111, 224, 190, 0.5);
+}
+
+.deploy-adapter-card input {
+  width: 14px;
+  height: 14px;
+  margin: 0;
+  accent-color: #6fe0be;
+}
+
+.deploy-adapter-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.deploy-adapter-copy strong,
+.deploy-adapter-copy span,
+.deploy-adapter-badges em,
+.deploy-adapter-badges small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deploy-adapter-copy strong {
+  color: #f0faf6;
+  font-size: 12px;
+  line-height: 15px;
+  font-weight: 650;
+}
+
+.deploy-adapter-copy span {
+  color: #aebeb8;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.deploy-adapter-badges {
+  display: grid;
+  justify-items: end;
+  gap: 3px;
+  min-width: 74px;
+}
+
+.deploy-adapter-actions {
+  justify-content: flex-end;
+  min-width: 132px;
+}
+
+.deploy-adapter-actions button {
+  min-height: 27px;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+.deploy-adapter-badges em,
+.deploy-adapter-badges small {
+  max-width: 94px;
+  padding: 2px 6px;
+  color: #aebeb8;
+  background: rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 999px;
+  font-size: 9px;
+  line-height: 11px;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.deploy-result {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-width: 0;
+  color: #9fafaa;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.deploy-result-summary,
+.deploy-launch-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+  min-width: 0;
+}
+
+.deploy-result-copy {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.deploy-result-feedback {
+  min-width: 0;
+  overflow: hidden;
+  color: #9fafaa;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deploy-result-summary > span,
+.deploy-result-summary > strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.summary-info strong {
+  color: #ffcc7a;
+  font-size: 11px;
+}
+
+.summary-info .summary-review {
+  color: #8cf0c9;
+}
+

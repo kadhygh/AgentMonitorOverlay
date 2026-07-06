@@ -1,0 +1,316 @@
+.launch-tool-mark {
+  position: relative;
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  color: #eaf7f2;
+  background: rgba(255, 255, 255, 0.075);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 8px;
+}
+
+.tool-mark img {
+  width: 24px;
+  height: 24px;
+  object-fit: contain;
+}
+
+.launch-tool-mark img {
+  width: 22px;
+  height: 22px;
+  object-fit: contain;
+}
+
+.tool-codex-app img,
+.tool-claude-cli img,
+.tool-kiro-ide img {
+  width: 28px;
+  height: 28px;
+}
+
+.launch-tool-mark.tool-claude-cli img {
+  width: 25px;
+  height: 25px;
+}
+
+.launch-tool-mark .tool-badge {
+  right: -5px;
+  bottom: -5px;
+  min-width: 17px;
+  font-size: 5.5px;
+}
+
+.tool-codex-cli,
+.tool-codex-app {
+  background: rgba(111, 224, 190, 0.1);
+  border-color: rgba(111, 224, 190, 0.18);
+}
+
+.tool-claude-cli {
+  background: rgba(255, 192, 110, 0.12);
+  border-color: rgba(255, 192, 110, 0.2);
+}
+
+.tool-kiro-ide {
+  background: rgba(143, 196, 255, 0.12);
+  border-color: rgba(143, 196, 255, 0.2);
+}
+
+.tool-other {
+  color: #c8d7d2;
+}
+
+.tool-badge {
+  position: absolute;
+  right: -4px;
+  bottom: -4px;
+  min-width: 18px;
+  padding: 1px 3px;
+  color: #09110f;
+  background: #cfe9df;
+  border: 1px solid rgba(9, 17, 15, 0.32);
+  border-radius: 4px;
+  font-size: 6px;
+  font-weight: 760;
+  line-height: 8px;
+  text-align: center;
+}
+
+.state-dot {
+  width: 7px;
+  height: 7px;
+  border: 1px solid rgba(18, 25, 29, 0.88);
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(255, 255, 255, 0.045);
+}
+
+.state-running .state-dot {
+  background: #39d0a5;
+}
+
+.session-row.needs-review .state-dot {
+  background: #39d0a5;
+}
+
+.state-waiting_user .state-dot {
+  background: #f1d263;
+}
+
+.state-waiting_permission .state-dot {
+  background: #ff9857;
+}
+
+.state-completed .state-dot {
+  background: #82a596;
+}
+
+.state-failed .state-dot {
+  background: #ff5c68;
+}
+
+.state-starting .state-dot {
+  background: #7bb7ff;
+}
+
+.state-idle .state-dot,
+.state-cancelled .state-dot,
+.state-unknown .state-dot {
+  background: #707b80;
+}
+
+.session-main {
+  position: relative;
+  display: grid;
+  min-width: 0;
+  gap: 9px;
+}
+
+.card-launch-button,
+.card-bind-drag-button,
+.card-maintenance-button,
+.card-archive-button,
+.card-dismiss-button {
+  position: absolute;
+  top: -1px;
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  overflow: visible;
+  color: #bacac5;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 6px;
+  cursor: pointer;
+  isolation: isolate;
+}
+
+.card-launch-button {
+  right: 3px;
+  color: #c8f8e7;
+  background: rgba(111, 224, 190, 0.09);
+  border-color: rgba(111, 224, 190, 0.18);
+}
+
+.card-bind-drag-button {
+  right: 31px;
+  color: #c5eafa;
+  background: rgba(90, 178, 220, 0.09);
+  border-color: rgba(90, 178, 220, 0.18);
+  cursor: grab;
+}
+
+.card-bind-drag-button.is-dragging {
+  color: #ecfbff;
+  background: rgba(90, 178, 220, 0.2);
+  border-color: rgba(90, 178, 220, 0.34);
+  box-shadow: 0 0 12px rgba(90, 178, 220, 0.2);
+  cursor: grabbing;
+}
+
+.card-maintenance-button {
+  right: -25px;
+}
+
+.card-dismiss-button {
+  right: -53px;
+  color: #9eada8;
+  background: rgba(255, 255, 255, 0.035);
+  border-color: rgba(255, 255, 255, 0.055);
+}
+
+.card-archive-button {
+  right: -53px;
+  color: #ffd3d8;
+  background: rgba(255, 92, 104, 0.09);
+  border-color: rgba(255, 92, 104, 0.2);
+}
+
+.card-archive-button span {
+  position: relative;
+  z-index: 1;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.card-archive-button.is-final-hide {
+  color: #fff0f2;
+  background: rgba(255, 92, 104, 0.15);
+  border-color: rgba(255, 92, 104, 0.3);
+}
+
+.card-launch-button svg,
+.card-bind-drag-button svg,
+.card-maintenance-button svg,
+.card-archive-button svg,
+.card-dismiss-button svg {
+  position: relative;
+  z-index: 1;
+}
+
+.card-launch-button:hover,
+.card-launch-button:focus-visible,
+.card-bind-drag-button:hover,
+.card-bind-drag-button:focus-visible,
+.card-maintenance-button:hover,
+.card-maintenance-button:focus-visible {
+  color: #f4fbf8;
+  background: rgba(111, 224, 190, 0.13);
+  border-color: rgba(111, 224, 190, 0.28);
+}
+
+.card-dismiss-button:hover,
+.card-dismiss-button:focus-visible,
+.card-archive-button:hover,
+.card-archive-button:focus-visible {
+  color: #fff5f5;
+  background: rgba(255, 92, 104, 0.14);
+  border-color: rgba(255, 92, 104, 0.28);
+}
+
+.card-dismiss-button.is-busy,
+.card-archive-button.is-busy {
+  opacity: 0.65;
+  cursor: progress;
+}
+
+.window-bind-drag-chip {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
+  padding: 5px 8px;
+  color: #dff8ff;
+  background: rgba(10, 20, 24, 0.88);
+  border: 1px solid rgba(90, 178, 220, 0.36);
+  border-radius: 7px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.card-maintenance-button.tone-ok {
+  color: #c9f7e5;
+  background: rgba(57, 208, 165, 0.12);
+  border-color: rgba(57, 208, 165, 0.26);
+}
+
+.card-maintenance-button.tone-warning {
+  color: #f7d99b;
+  background: rgba(230, 180, 92, 0.16);
+  border-color: rgba(230, 180, 92, 0.26);
+  animation: maintenance-warning-pulse 1.35s ease-in-out infinite;
+}
+
+.card-maintenance-button.tone-error {
+  color: #ffd0d5;
+  background: rgba(255, 92, 104, 0.16);
+  border-color: rgba(255, 92, 104, 0.28);
+  animation: maintenance-error-pulse 1.15s ease-in-out infinite;
+}
+
+@keyframes maintenance-warning-pulse {
+  0%,
+  100% {
+    color: #f7d99b;
+    background: rgba(230, 180, 92, 0.16);
+    border-color: rgba(230, 180, 92, 0.26);
+    box-shadow: 0 0 0 rgba(230, 180, 92, 0);
+    filter: brightness(1);
+    transform: scale(1);
+  }
+
+  50% {
+    color: #ffe6aa;
+    background: rgba(230, 180, 92, 0.34);
+    border-color: rgba(230, 180, 92, 0.52);
+    box-shadow: 0 0 9px rgba(230, 180, 92, 0.26);
+    filter: brightness(1.08);
+    transform: scale(1.025);
+  }
+}
+
+@keyframes maintenance-error-pulse {
+  0%,
+  100% {
+    color: #ffd0d5;
+    background: rgba(255, 92, 104, 0.16);
+    border-color: rgba(255, 92, 104, 0.28);
+    box-shadow: 0 0 0 rgba(255, 92, 104, 0);
+    filter: brightness(1);
+    transform: scale(1);
+  }
+
+  50% {
+    color: #ffe1e4;
+    background: rgba(255, 92, 104, 0.38);
+    border-color: rgba(255, 92, 104, 0.58);
+    box-shadow: 0 0 10px rgba(255, 92, 104, 0.3);
+    filter: brightness(1.1);
+    transform: scale(1.03);
+  }
+}
+

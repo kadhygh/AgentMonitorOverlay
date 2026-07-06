@@ -882,3 +882,11 @@ Manual smoke:
 - Validation passed:
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 6 Overlay CSS Split
+
+- Split `overlay/src/styles.css` into feature-scoped files under `overlay/src/styles/`, preserving the original cascade order through import-only `styles.css`.
+- Kept each CSS slice between 167 and 450 lines: shell, overlay header, deploy, session list/card, candidate menu, settings, workspace panels, dialogs/resize, and light-theme slices.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `git diff --check`

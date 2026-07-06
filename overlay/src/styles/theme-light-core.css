@@ -1,0 +1,271 @@
+:root[data-amo-theme="light"] {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .overlay-shell,
+:root[data-amo-theme="light"] .scratchpad-shell,
+:root[data-amo-theme="light"] .utility-window-shell {
+  color: #17211f;
+  background:
+    linear-gradient(145deg, rgba(249, 252, 250, 0.98), rgba(234, 243, 239, 0.96)),
+    #f6faf8;
+  border-color: rgba(42, 74, 64, 0.22);
+  box-shadow: 0 16px 36px rgba(20, 42, 36, 0.2);
+}
+
+:root[data-amo-theme="light"] .header-title,
+:root[data-amo-theme="light"] .scratchpad-header > div,
+:root[data-amo-theme="light"] .app-dialog-title,
+:root[data-amo-theme="light"] .dialog-section-heading strong,
+:root[data-amo-theme="light"] .session-title strong,
+:root[data-amo-theme="light"] .launch-panel-header strong,
+:root[data-amo-theme="light"] .workspace-panel-header strong,
+:root[data-amo-theme="light"] .workspace-stats strong,
+:root[data-amo-theme="light"] .workspace-section > strong,
+:root[data-amo-theme="light"] .confirm-dialog p strong,
+:root[data-amo-theme="light"] .vault-recovery-manual span,
+:root[data-amo-theme="light"] .collapsed-summary,
+:root[data-amo-theme="light"] .deploy-adapter-copy strong,
+:root[data-amo-theme="light"] .settings-detail-header strong {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .header-title span,
+:root[data-amo-theme="light"] .summary-strip,
+:root[data-amo-theme="light"] .summary-info em,
+:root[data-amo-theme="light"] .scratchpad-footer span,
+:root[data-amo-theme="light"] .app-dialog-title span,
+:root[data-amo-theme="light"] .app-dialog-footer,
+:root[data-amo-theme="light"] .dialog-section-heading span,
+:root[data-amo-theme="light"] .deploy-result,
+:root[data-amo-theme="light"] .deploy-result-feedback,
+:root[data-amo-theme="light"] .deploy-option-row,
+:root[data-amo-theme="light"] .deploy-adapter-copy span,
+:root[data-amo-theme="light"] .deploy-adapter-badges em,
+:root[data-amo-theme="light"] .deploy-adapter-badges small,
+:root[data-amo-theme="light"] .session-title-subtitle,
+:root[data-amo-theme="light"] .session-inline-meta,
+:root[data-amo-theme="light"] .event-line,
+:root[data-amo-theme="light"] .session-tag,
+:root[data-amo-theme="light"] .settings-sidebar > strong,
+:root[data-amo-theme="light"] .settings-detail-header span,
+:root[data-amo-theme="light"] .settings-toggle span,
+:root[data-amo-theme="light"] .settings-field > span,
+:root[data-amo-theme="light"] .theme-choice > span:not(.theme-swatch),
+:root[data-amo-theme="light"] .launch-panel-header span,
+:root[data-amo-theme="light"] .launch-panel-path,
+:root[data-amo-theme="light"] .launch-panel-note,
+:root[data-amo-theme="light"] .launch-panel-actions small,
+:root[data-amo-theme="light"] .workspace-panel-header span,
+:root[data-amo-theme="light"] .workspace-task-title-editor label span,
+:root[data-amo-theme="light"] .workspace-stats span,
+:root[data-amo-theme="light"] .workspace-path-grid span,
+:root[data-amo-theme="light"] .workspace-path-grid code,
+:root[data-amo-theme="light"] .workspace-code-line,
+:root[data-amo-theme="light"] .workspace-health-line,
+:root[data-amo-theme="light"] .vault-recovery-manual {
+  color: #5d6f69;
+}
+
+:root[data-amo-theme="light"] .dialog-backdrop {
+  background: rgba(34, 51, 46, 0.2);
+}
+
+:root[data-amo-theme="light"] .main-window-blocker {
+  color: #17211f;
+  background: rgba(229, 238, 234, 0.62);
+  backdrop-filter: grayscale(0.15) brightness(0.98);
+}
+
+:root[data-amo-theme="light"] .main-window-blocker-card,
+:root[data-amo-theme="light"] .app-dialog,
+:root[data-amo-theme="light"] .launch-panel,
+:root[data-amo-theme="light"] .workspace-panel,
+:root[data-amo-theme="light"] .confirm-dialog,
+:root[data-amo-theme="light"] .vault-recovery-dialog {
+  color: #17211f;
+  background: rgba(255, 255, 255, 0.98);
+  border-color: rgba(42, 74, 64, 0.18);
+  box-shadow: 0 18px 38px rgba(22, 45, 38, 0.2);
+}
+
+:root[data-amo-theme="light"] .app-dialog-titlebar,
+:root[data-amo-theme="light"] .app-dialog-footer,
+:root[data-amo-theme="light"] .session-body,
+:root[data-amo-theme="light"] .deploy-subsection,
+:root[data-amo-theme="light"] .workspace-section {
+  border-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .dialog-section,
+:root[data-amo-theme="light"] .summary-strip,
+:root[data-amo-theme="light"] .broker-readiness-panel,
+:root[data-amo-theme="light"] .session-empty-state,
+:root[data-amo-theme="light"] .settings-toggle,
+:root[data-amo-theme="light"] .settings-field,
+:root[data-amo-theme="light"] .theme-choice,
+:root[data-amo-theme="light"] .launch-panel-path,
+:root[data-amo-theme="light"] .launch-panel-note,
+:root[data-amo-theme="light"] .workspace-task-title-editor,
+:root[data-amo-theme="light"] .workspace-stats span,
+:root[data-amo-theme="light"] .workspace-panel-loading,
+:root[data-amo-theme="light"] .deploy-placeholder,
+:root[data-amo-theme="light"] .deploy-git-exclude-note,
+:root[data-amo-theme="light"] .deploy-git-exclude-list li,
+:root[data-amo-theme="light"] .deploy-adapter-card,
+:root[data-amo-theme="light"] .deploy-adapter-badges em,
+:root[data-amo-theme="light"] .deploy-adapter-badges small,
+:root[data-amo-theme="light"] .confirm-counts span,
+:root[data-amo-theme="light"] .vault-recovery-path,
+:root[data-amo-theme="light"] .collapsed-summary {
+  color: #24342f;
+  background: rgba(244, 249, 247, 0.9);
+  border-color: rgba(42, 74, 64, 0.13);
+}
+
+:root[data-amo-theme="light"] .settings-sidebar {
+  background: rgba(237, 245, 241, 0.78);
+  border-right-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .settings-nav-button {
+  color: #465b54;
+}
+
+:root[data-amo-theme="light"] .settings-nav-button:hover,
+:root[data-amo-theme="light"] .theme-choice:hover {
+  color: #17211f;
+  background: rgba(50, 112, 145, 0.09);
+  border-color: rgba(50, 112, 145, 0.22);
+}
+
+:root[data-amo-theme="light"] .settings-nav-button.is-active,
+:root[data-amo-theme="light"] .theme-choice.is-active {
+  color: #10251f;
+  background: rgba(18, 135, 105, 0.1);
+  border-color: rgba(18, 135, 105, 0.28);
+}
+
+:root[data-amo-theme="light"] .broker-readiness-panel.state-error {
+  color: #7d4217;
+  background: rgba(255, 249, 238, 0.96);
+  border-color: rgba(201, 135, 38, 0.26);
+}
+
+:root[data-amo-theme="light"] .broker-readiness-panel strong {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .broker-readiness-panel span {
+  color: #5d6f69;
+}
+
+:root[data-amo-theme="light"] .broker-readiness-mark {
+  color: #0d755b;
+  background: rgba(18, 135, 105, 0.1);
+  border-color: rgba(18, 135, 105, 0.22);
+}
+
+:root[data-amo-theme="light"] .broker-readiness-panel.state-error .broker-readiness-mark {
+  color: #8c5a08;
+  background: rgba(226, 168, 68, 0.12);
+  border-color: rgba(179, 122, 26, 0.24);
+}
+
+:root[data-amo-theme="light"] .icon-button,
+:root[data-amo-theme="light"] .scratchpad-header button,
+:root[data-amo-theme="light"] .scratchpad-footer button,
+:root[data-amo-theme="light"] .scratchpad-safe-copy,
+:root[data-amo-theme="light"] .summary-filter-button,
+:root[data-amo-theme="light"] .settings-field select,
+:root[data-amo-theme="light"] .settings-primary-action,
+:root[data-amo-theme="light"] .summary-retry-button,
+:root[data-amo-theme="light"] .broker-retry-button,
+:root[data-amo-theme="light"] .deploy-action-row button,
+:root[data-amo-theme="light"] .deploy-launch-actions button,
+:root[data-amo-theme="light"] .deploy-adapter-actions button,
+:root[data-amo-theme="light"] .row-tool-button,
+:root[data-amo-theme="light"] .launch-panel-actions button,
+:root[data-amo-theme="light"] .workspace-panel-actions button,
+:root[data-amo-theme="light"] .workspace-task-title-editor button,
+:root[data-amo-theme="light"] .main-window-blocker-actions button,
+:root[data-amo-theme="light"] .confirm-dialog-actions button,
+:root[data-amo-theme="light"] .vault-recovery-actions button {
+  color: #23342f;
+  background: rgba(255, 255, 255, 0.78);
+  border-color: rgba(42, 74, 64, 0.16);
+}
+
+:root[data-amo-theme="light"] .icon-button:hover,
+:root[data-amo-theme="light"] .scratchpad-header button:hover,
+:root[data-amo-theme="light"] .scratchpad-footer button:hover,
+:root[data-amo-theme="light"] .scratchpad-safe-copy:hover,
+:root[data-amo-theme="light"] .summary-filter-button:hover,
+:root[data-amo-theme="light"] .summary-filter-button:focus-visible,
+:root[data-amo-theme="light"] .settings-primary-action:hover,
+:root[data-amo-theme="light"] .summary-retry-button:hover,
+:root[data-amo-theme="light"] .broker-retry-button:hover,
+:root[data-amo-theme="light"] .deploy-action-row button:hover:not(:disabled),
+:root[data-amo-theme="light"] .deploy-launch-actions button:hover:not(:disabled),
+:root[data-amo-theme="light"] .deploy-adapter-actions button:hover:not(:disabled),
+:root[data-amo-theme="light"] .row-tool-button:hover,
+:root[data-amo-theme="light"] .launch-panel-actions button:hover:not(:disabled),
+:root[data-amo-theme="light"] .workspace-panel-actions button:hover:not(:disabled),
+:root[data-amo-theme="light"] .workspace-task-title-editor button:hover:not(:disabled),
+:root[data-amo-theme="light"] .main-window-blocker-actions button:hover,
+:root[data-amo-theme="light"] .confirm-dialog-actions button:hover,
+:root[data-amo-theme="light"] .vault-recovery-actions button:hover:not(:disabled) {
+  color: #0f251f;
+  background: rgba(18, 135, 105, 0.11);
+  border-color: rgba(18, 135, 105, 0.25);
+}
+
+:root[data-amo-theme="light"] .scratchpad-safe-copy span {
+  color: inherit;
+}
+
+:root[data-amo-theme="light"] .scratchpad-header button.scratchpad-clear-button:hover {
+  color: #7f1d1d;
+  background: rgba(254, 226, 226, 0.92);
+  border-color: rgba(185, 28, 28, 0.22);
+}
+
+:root[data-amo-theme="light"] .icon-button.is-active,
+:root[data-amo-theme="light"] .summary-filter-button.is-active {
+  color: #0b2b22;
+  background: rgba(18, 135, 105, 0.14);
+  border-color: rgba(18, 135, 105, 0.32);
+}
+
+:root[data-amo-theme="light"] .debug-button.is-active {
+  color: #5c3d05;
+  background: rgba(226, 168, 68, 0.16);
+  border-color: rgba(179, 122, 26, 0.26);
+}
+
+:root[data-amo-theme="light"] .scratchpad-input,
+:root[data-amo-theme="light"] .deploy-path-input,
+:root[data-amo-theme="light"] .summary-search,
+:root[data-amo-theme="light"] .workspace-task-title-editor input {
+  color: #17211f;
+  background: rgba(255, 255, 255, 0.86);
+  border-color: rgba(42, 74, 64, 0.17);
+}
+
+:root[data-amo-theme="light"] .summary-search input {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .scratchpad-input::placeholder,
+:root[data-amo-theme="light"] .summary-search input::placeholder {
+  color: rgba(80, 101, 94, 0.55);
+}
+
+:root[data-amo-theme="light"] .scratchpad-input:focus,
+:root[data-amo-theme="light"] .deploy-path-input:focus,
+:root[data-amo-theme="light"] .summary-search:focus-within,
+:root[data-amo-theme="light"] .workspace-task-title-editor input:focus {
+  border-color: rgba(18, 135, 105, 0.42);
+  box-shadow: 0 0 0 2px rgba(18, 135, 105, 0.1);
+}
+

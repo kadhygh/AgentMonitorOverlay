@@ -1,0 +1,244 @@
+:root {
+  font-family:
+    Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  color: #eef6f2;
+  background: transparent;
+  font-synthesis: none;
+  text-rendering: geometricPrecision;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  width: 100%;
+  min-width: 100%;
+  height: 100%;
+  min-height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+button {
+  font: inherit;
+}
+
+.overlay-shell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100vw;
+  height: 100vh;
+  min-height: 0;
+  padding: 10px 10px 14px;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(16, 22, 26, 0.97), rgba(20, 27, 31, 0.94)),
+    #12191d;
+  border: 1px solid rgba(208, 231, 222, 0.2);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.36);
+}
+
+.overlay-shell.is-collapsed {
+  padding: 8px;
+}
+
+.scratchpad-shell {
+  display: grid;
+  grid-template-rows: 34px minmax(0, 1fr) 38px;
+  width: 100vw;
+  height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(20, 25, 28, 0.98), rgba(23, 30, 33, 0.96)),
+    #151d20;
+  border: 1px solid rgba(208, 231, 222, 0.22);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+}
+
+.utility-window-shell {
+  display: grid;
+  width: 100vw;
+  height: 100vh;
+  min-width: 0;
+  min-height: 0;
+  overflow: hidden;
+  background:
+    linear-gradient(145deg, rgba(18, 24, 28, 0.98), rgba(21, 28, 32, 0.96)),
+    #12191d;
+  border: 1px solid rgba(208, 231, 222, 0.2);
+  border-radius: 8px;
+  box-shadow: 0 18px 42px rgba(0, 0, 0, 0.42);
+}
+
+.utility-window-shell .app-dialog {
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 8px;
+  box-shadow: none;
+}
+
+.scratchpad-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0 8px 0 10px;
+  user-select: none;
+}
+
+.scratchpad-header > div {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: 7px;
+  color: #edf8f4;
+}
+
+.scratchpad-header strong {
+  overflow: hidden;
+  font-size: 12px;
+  font-weight: 680;
+  line-height: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scratchpad-header-actions {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 6px;
+}
+
+.scratchpad-header button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  color: #aebeb8;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.scratchpad-header button:hover {
+  color: #f7fffb;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.scratchpad-header button.scratchpad-clear-button:hover {
+  color: #ffd7d7;
+  background: rgba(255, 116, 116, 0.12);
+  border-color: rgba(255, 116, 116, 0.3);
+}
+
+.scratchpad-input {
+  width: calc(100% - 16px);
+  height: 100%;
+  min-height: 0;
+  margin: 0 8px;
+  padding: 9px 10px;
+  resize: none;
+  color: #f1fbf7;
+  caret-color: #6fe0be;
+  background: rgba(0, 0, 0, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+  outline: none;
+  font: 13px/1.5 "Segoe UI", ui-sans-serif, system-ui, sans-serif;
+}
+
+.scratchpad-input:focus {
+  border-color: rgba(111, 224, 190, 0.42);
+  box-shadow: 0 0 0 1px rgba(111, 224, 190, 0.12);
+}
+
+.scratchpad-input::placeholder {
+  color: rgba(220, 232, 227, 0.42);
+}
+
+.scratchpad-footer {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px 8px;
+}
+
+.scratchpad-footer span {
+  min-width: 0;
+  overflow: hidden;
+  color: #91a29c;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scratchpad-copy-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.scratchpad-safe-copy {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 24px;
+  padding: 0 7px;
+  color: #aebeb8;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.scratchpad-safe-copy:hover {
+  color: #f7fffb;
+  background: rgba(111, 224, 190, 0.1);
+  border-color: rgba(111, 224, 190, 0.24);
+}
+
+.scratchpad-safe-copy input {
+  width: 13px;
+  height: 13px;
+  margin: 0;
+  accent-color: #6fe0be;
+}
+
+.scratchpad-safe-copy span {
+  color: inherit;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.scratchpad-footer button {
+  height: 24px;
+  padding: 0 9px;
+  color: #dcece7;
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.scratchpad-footer button:hover {
+  color: #f7fffb;
+  background: rgba(111, 224, 190, 0.14);
+  border-color: rgba(111, 224, 190, 0.28);
+}
+
