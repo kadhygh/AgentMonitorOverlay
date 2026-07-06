@@ -581,3 +581,23 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17677`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17678`
   - `git diff --check`
+
+### 2026-07-07: Phase 4 Obsidian Vault Helpers Extracted
+
+- Added `broker/lib/obsidian-vault.js` for Obsidian vault registry writes, runtime-state evidence, process counting, vault IDs, and comparable paths.
+- Kept HTTP payload validation and debug logging for `/api/obsidian/register-vault` in `broker/server.js`.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/http.js`
+  - `node --check broker/lib/debug.js`
+  - `node --check broker/lib/display-names.js`
+  - `node --check broker/lib/filesystem.js`
+  - `node --check broker/lib/normalize.js`
+  - `node --check broker/lib/obsidian-vault.js`
+  - `node --check broker/lib/target-binding.js`
+  - `node --check broker/lib/workspace-git-exclude.js`
+  - `node --check broker/hooks/codex.js`
+  - `node --check broker/hooks/claude.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17679`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17680`
+  - `git diff --check`
