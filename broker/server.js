@@ -23,6 +23,7 @@ const {
   windowHintFromWindowTarget,
 } = require("./lib/target-binding");
 const { launchCliInTerminal, spawnDetached } = require("./lib/terminal-launch");
+const { normalizeNoteDisplayTitle, sanitizeFilePart, sanitizeObsidianFileNamePart, trimMessage } = require("./lib/text-format");
 const { inspectWorkspaceGitExclude, resolveWorkspaceGitExcludePlan } = require("./lib/workspace-git-exclude");
 const {
   ensureInsideDirectory,
@@ -3514,53 +3515,8 @@ function finiteCanvasNumber(value, fallback) {
   return Number.isFinite(number) ? number : fallback;
 }
 
-function uniquePath(dir, stem, ext) {
-  let candidate = path.join(dir, `${stem}${ext}`);
-  let index = 2;
-  while (fs.existsSync(candidate)) {
-    candidate = path.join(dir, `${stem}-${index}${ext}`);
-    index += 1;
-  }
-  return candidate;
-}
-
 function toVaultRelativePath(vaultRoot, absolutePath) {
   return path.relative(vaultRoot, absolutePath).split(path.sep).join("/");
-}
-
-function yamlString(value) {
-  return JSON.stringify(value == null ? "" : String(value));
-}
-
-function normalizeNoteDisplayTitle(value) {
-  return String(normalizeText(value) || "")
-    .replace(/\s+/g, " ")
-    .replace(/^#+\s*/u, "")
-    .trim()
-    .slice(0, 120);
-}
-
-function sanitizeFilePart(value) {
-  return String(value || "unknown")
-    .replace(/[^a-zA-Z0-9._-]+/g, "_")
-    .replace(/^_+|_+$/g, "") || "unknown";
-}
-
-function sanitizeObsidianFileNamePart(value) {
-  return String(value || "")
-    .replace(/[<>:"/\\|?*\u0000-\u001f]+/g, " ")
-    .replace(/\s+/g, " ")
-    .replace(/[. ]+$/g, "")
-    .trim();
-}
-
-function fileSafeTimestamp(value) {
-  return String(value || new Date().toISOString()).replace(/[:.]/g, "-");
-}
-
-function trimMessage(value, maxLength) {
-  const text = String(value || "");
-  return text.length > maxLength ? text.slice(0, maxLength) : text;
 }
 
 function inferState(tool, eventName, payload) {
