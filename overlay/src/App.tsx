@@ -3206,7 +3206,7 @@ export default function App() {
         candidateCount: candidates.length,
       });
       openCodexTargetMenu(session, menuX, menuY, candidates, {
-        allowCodexCliResumeWithCandidates: candidates.length === 0,
+        allowCodexCliResumeWithCandidates: true,
         clearAttentionOnConfirm: options.clearAttentionOnConfirm ?? false,
       });
       setFeedback(candidates.length > 0 ? "Choose a target window, then Focus or Confirm." : result.message);
@@ -3800,11 +3800,8 @@ export default function App() {
       );
       if (!result.ok && ((result.candidates?.length ?? 0) > 0 || isCodexSession(session))) {
         if (isCodexSession(session)) {
-          const candidatesAreAmbiguousMatches =
-            (result.candidates?.length ?? 0) > 0 &&
-            !result.message.startsWith("No matching window found");
           openCodexTargetMenu(session, menuX, menuY, result.candidates ?? [], {
-            allowCodexCliResumeWithCandidates: !candidatesAreAmbiguousMatches,
+            allowCodexCliResumeWithCandidates: true,
             clearAttentionOnConfirm: options.clearAttentionOnSuccess ?? false,
           });
         } else {
@@ -5058,21 +5055,6 @@ export default function App() {
                   <span>Remember target after Confirm</span>
                 </label>
                 <div className="candidate-list">
-                  {candidateMenu.codexCliResumeAvailable ? (
-                    <button
-                      type="button"
-                      className="candidate-item codex-cli-candidate"
-                      title={`Start a new terminal: codex resume ${candidateMenu.session.sessionId}`}
-                      onClick={() =>
-                        void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect, {
-                          clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
-                        })
-                      }
-                    >
-                      <strong>Codex CLI Resume</strong>
-                      <span>Start a new terminal for this session</span>
-                    </button>
-                  ) : null}
                   {candidateMenu.codexAppAvailable ? (
                     <button
                       type="button"
@@ -5110,7 +5092,23 @@ export default function App() {
                     </button>
                   ))}
                 </div>
-                <div className="candidate-actions">
+                <div className={`candidate-actions ${candidateMenu.codexCliResumeAvailable ? "has-launch-action" : ""}`}>
+                  {candidateMenu.codexCliResumeAvailable ? (
+                    <button
+                      type="button"
+                      className="candidate-launch-action"
+                      title={`Start a new terminal: codex resume ${candidateMenu.session.sessionId}`}
+                      disabled={activatingId === candidateMenu.session.sessionId}
+                      onClick={() =>
+                        void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect, {
+                          clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
+                        })
+                      }
+                    >
+                      <SquareTerminal size={13} aria-hidden="true" />
+                      <span>New CLI</span>
+                    </button>
+                  ) : null}
                   <button
                     type="button"
                     className="candidate-secondary-action"

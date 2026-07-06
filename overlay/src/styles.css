@@ -2292,14 +2292,6 @@ button {
   border-color: rgba(111, 224, 190, 0.36);
 }
 
-.candidate-item.codex-cli-candidate {
-  border-color: rgba(185, 214, 205, 0.22);
-}
-
-.candidate-item.codex-cli-candidate:hover {
-  background: rgba(255, 255, 255, 0.08);
-}
-
 .candidate-item strong,
 .candidate-item span,
 .candidate-item small {
@@ -2332,6 +2324,11 @@ button {
   padding-top: 4px;
 }
 
+.candidate-actions.has-launch-action {
+  grid-template-columns: minmax(0, 0.95fr) minmax(0, 0.85fr) minmax(0, 1fr);
+}
+
+.candidate-launch-action,
 .candidate-secondary-action,
 .candidate-confirm-action {
   display: inline-flex;
@@ -2348,11 +2345,23 @@ button {
   cursor: pointer;
 }
 
+.candidate-launch-action {
+  color: #def0ff;
+  background: rgba(143, 196, 255, 0.12);
+  border-color: rgba(143, 196, 255, 0.28);
+}
+
 .candidate-confirm-action {
   color: #071916;
   background: #6fe0be;
   border-color: rgba(111, 224, 190, 0.66);
   font-weight: 700;
+}
+
+.candidate-launch-action:hover:not(:disabled) {
+  color: #f7fbff;
+  background: rgba(143, 196, 255, 0.2);
+  border-color: rgba(143, 196, 255, 0.42);
 }
 
 .candidate-secondary-action:hover:not(:disabled) {
@@ -2364,6 +2373,7 @@ button {
   background: #8af0ce;
 }
 
+.candidate-launch-action:disabled,
 .candidate-secondary-action:disabled,
 .candidate-confirm-action:disabled {
   color: rgba(220, 236, 231, 0.38);
@@ -3873,13 +3883,16 @@ button {
   color: #72857e;
 }
 
-:root[data-amo-theme="light"] .candidate-item.codex-cli-candidate {
-  background: rgba(42, 74, 64, 0.045);
-  border-color: rgba(42, 74, 64, 0.18);
+:root[data-amo-theme="light"] .candidate-launch-action {
+  color: #1e526e;
+  background: rgba(52, 111, 145, 0.08);
+  border-color: rgba(52, 111, 145, 0.2);
 }
 
-:root[data-amo-theme="light"] .candidate-item.codex-cli-candidate:hover {
-  background: rgba(42, 74, 64, 0.08);
+:root[data-amo-theme="light"] .candidate-launch-action:hover:not(:disabled) {
+  color: #12364c;
+  background: rgba(52, 111, 145, 0.14);
+  border-color: rgba(52, 111, 145, 0.3);
 }
 
 :root[data-amo-theme="light"] .candidate-secondary-action {
@@ -3903,6 +3916,7 @@ button {
   background: #209675;
 }
 
+:root[data-amo-theme="light"] .candidate-launch-action:disabled,
 :root[data-amo-theme="light"] .candidate-secondary-action:disabled,
 :root[data-amo-theme="light"] .candidate-confirm-action:disabled {
   color: rgba(52, 76, 69, 0.38);
