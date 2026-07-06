@@ -5,6 +5,7 @@ import { getCurrentWindow, LogicalSize, UserAttentionType, Window as TauriWindow
 import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
+  Archive,
   Bot,
   Bug,
   ChevronDown,
@@ -109,7 +110,7 @@ interface AmoThemeChangedEvent {
 }
 
 type SettingsSection = "scratchpad" | "theme";
-type SessionFilter = "all" | "attention" | "idle";
+type SessionFilter = "all" | "attention" | "idle" | "archive";
 type BrokerReadinessState = "checking" | "starting" | "ready" | "error";
 
 interface BrokerReadiness {
@@ -122,6 +123,7 @@ const sessionFilterLabels: Record<SessionFilter, string> = {
   all: "All",
   attention: "Attention",
   idle: "Idle",
+  archive: "Archive",
 };
 
 const brokerReadinessLabels: Record<BrokerReadinessState, string> = {
@@ -160,6 +162,10 @@ function brokerSessionHeartbeatUrl(sessionId: string) {
 
 function brokerSessionDismissUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/dismiss`;
+}
+
+function brokerSessionArchiveUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/archive`;
 }
 
 function brokerSessionTaskTitleUrl(sessionId: string) {
@@ -1060,6 +1066,10 @@ function sessionHasAttentionSignal(session: AgentSession) {
   return Boolean(session.needsAttention || sessionNeedsReview(session));
 }
 
+function sessionArchived(session: AgentSession) {
+  return Boolean(session.archivedAt);
+}
+
 function sessionAttentionKey(session: AgentSession) {
   return [
     session.sessionId,
@@ -1108,6 +1118,13 @@ function sessionAttentionVisualActive(session: AgentSession, visuallySeen: boole
 }
 
 function sessionMatchesFilter(session: AgentSession, filter: SessionFilter) {
+  const archived = sessionArchived(session);
+  if (filter === "archive") {
+    return archived;
+  }
+  if (archived) {
+    return false;
+  }
   if (filter === "attention") {
     return sessionHasAttentionSignal(session);
   }
@@ -1262,6 +1279,7 @@ function SessionRowContent({
   activating,
   openingTarget,
   unbindingWindow,
+  archiving,
   reviewing,
   dismissing,
   attentionSignal,
@@ -1270,6 +1288,7 @@ function SessionRowContent({
   onOpenCanvas,
   onMarkReviewed,
   onUnbindWindow,
+  onArchive,
   onDismiss,
   onOpenCodexAppTarget,
   onActivateSession,
@@ -1283,6 +1302,7 @@ function SessionRowContent({
   activating: boolean;
   openingTarget: "note" | "canvas" | null;
   unbindingWindow: boolean;
+  archiving: boolean;
   reviewing: boolean;
   dismissing: boolean;
   attentionSignal: boolean;
@@ -1291,6 +1311,7 @@ function SessionRowContent({
   onOpenCanvas: () => void;
   onMarkReviewed: () => void;
   onUnbindWindow: () => void;
+  onArchive: () => void;
   onDismiss: () => void;
   onOpenCodexAppTarget: () => void;
   onActivateSession: () => void;
@@ -1305,6 +1326,8 @@ function SessionRowContent({
   const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
   const targetBinding = targetBindingForSession(session);
   const targetBound = Boolean(targetBinding);
+  const archived = sessionArchived(session);
+  const archiveActionBusy = archiving || dismissing;
   const codexAppAvailable = isCodexSession(session);
   const needsTargetChoice = codexAppAvailable && !targetBound;
   const noteOpening = openingTarget === "note";
@@ -1370,17 +1393,22 @@ function SessionRowContent({
       </button>
       <button
         type="button"
-        className={`card-dismiss-button ${dismissing ? "is-busy" : ""}`}
-        title="Dismiss this card"
-        aria-label={`Dismiss ${session.title}`}
-        aria-busy={dismissing}
+        className={`card-archive-button ${archiveActionBusy ? "is-busy" : ""} ${archived ? "is-final-hide" : ""}`}
+        title={archived ? "Hide this archived card" : "Archive this card"}
+        aria-label={archived ? `Hide archived ${session.title}` : `Archive ${session.title}`}
+        aria-busy={archiveActionBusy}
+        disabled={archiveActionBusy}
         onClick={(event) => {
           event.preventDefault();
           event.stopPropagation();
-          onDismiss();
+          if (archived) {
+            onDismiss();
+          } else {
+            onArchive();
+          }
         }}
       >
-        <X size={12} aria-hidden="true" />
+        <span aria-hidden="true">A</span>
       </button>
       <span className="session-head">
         <ToolMark session={session} />
@@ -2751,6 +2779,7 @@ export default function App() {
   );
   const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
   const [windowBindDrag, setWindowBindDrag] = useState<WindowBindDragState | null>(null);
+  const [archivingSessionId, setArchivingSessionId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
@@ -2786,17 +2815,27 @@ export default function App() {
     [filteredSessions],
   );
 
+  const activeSessionCount = useMemo(
+    () => sessions.filter((session) => !sessionArchived(session)).length,
+    [sessions],
+  );
+
+  const archiveCount = useMemo(
+    () => sessions.filter(sessionArchived).length,
+    [sessions],
+  );
+
   const attentionCount = useMemo(
-    () => sessions.filter((session) => session.needsAttention).length,
+    () => sessions.filter((session) => !sessionArchived(session) && session.needsAttention).length,
     [sessions],
   );
 
   const reviewCount = useMemo(
-    () => sessions.filter(sessionNeedsReview).length,
+    () => sessions.filter((session) => !sessionArchived(session) && sessionNeedsReview(session)).length,
     [sessions],
   );
   const hasAttentionSignal = useMemo(
-    () => sessions.some(sessionHasAttentionSignal),
+    () => sessions.some((session) => !sessionArchived(session) && sessionHasAttentionSignal(session)),
     [sessions],
   );
   const brokerReady = brokerReadiness.state === "ready";
@@ -4841,9 +4880,50 @@ export default function App() {
     await activateSession(clearedSession ?? session);
   }
 
+  async function archiveSession(session: AgentSession) {
+    setArchivingSessionId(session.sessionId);
+    setFeedback(`Archiving ${session.title}...`);
+    void postDebugLog("session.archive.start", {
+      sessionId: session.sessionId,
+      title: session.title,
+    });
+
+    try {
+      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+        brokerSessionArchiveUrl(session.sessionId),
+        { reason: "user" },
+      );
+      setSessions((previous) =>
+        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
+      );
+      setCandidateMenu((current) =>
+        current?.session.sessionId === result.session.sessionId ? null : current,
+      );
+      setWorkspacePanel((current) =>
+        current?.session.sessionId === result.session.sessionId ? null : current,
+      );
+      setLaunchPanel((current) =>
+        current?.session.sessionId === result.session.sessionId ? null : current,
+      );
+      setFeedback(`Archived ${session.title}.`);
+      void postDebugLog("session.archive.ok", {
+        sessionId: result.session.sessionId,
+      });
+    } catch (error) {
+      const message = (error as Error).message;
+      setFeedback(`Archive failed: ${message}`);
+      void postDebugLog("session.archive.error", {
+        sessionId: session.sessionId,
+        message,
+      });
+    } finally {
+      setArchivingSessionId(null);
+    }
+  }
+
   async function dismissSession(session: AgentSession) {
     setDismissingSessionId(session.sessionId);
-    setFeedback(`Dismissing ${session.title}...`);
+    setFeedback(`Hiding ${session.title}...`);
     void postDebugLog("session.dismiss.start", {
       sessionId: session.sessionId,
       title: session.title,
@@ -4866,7 +4946,7 @@ export default function App() {
       setLaunchPanel((current) =>
         current?.session.sessionId === dismissedSessionId ? null : current,
       );
-      setFeedback(`Dismissed ${session.title}.`);
+      setFeedback(`Hidden ${session.title}.`);
       void postDebugLog("session.dismiss.ok", {
         sessionId: dismissedSessionId,
       });
@@ -5350,7 +5430,7 @@ export default function App() {
       {collapsed ? (
         <button className="collapsed-summary" type="button" onClick={toggleCollapsed}>
           <span className={brokerReady && attentionCount > 0 ? "pulse-dot" : brokerReady && reviewCount > 0 ? "review-dot" : "quiet-dot"} />
-          <span>{brokerReady ? `${sessions.length} sessions` : brokerReadinessLabels[brokerReadiness.state]}</span>
+          <span>{brokerReady ? `${activeSessionCount} sessions` : brokerReadinessLabels[brokerReadiness.state]}</span>
           <strong>
             {brokerReady
               ? `${attentionCount} attention${reviewCount > 0 ? ` · ${reviewCount} review` : ""}`
@@ -5363,9 +5443,10 @@ export default function App() {
             <div className="summary-info">
               {brokerReady ? (
                 <>
-                  <span>{sessions.length} active lines</span>
+                  <span>{activeSessionCount} active lines</span>
                   <strong>{attentionCount} need attention</strong>
                   {reviewCount > 0 ? <strong className="summary-review">{reviewCount} review</strong> : null}
+                  {archiveCount > 0 ? <em>{archiveCount} archive</em> : null}
                   {sessionFilter !== "all" || sessionSearch.trim() ? <em>{filteredSessions.length} shown</em> : null}
                 </>
               ) : (
@@ -5377,7 +5458,7 @@ export default function App() {
             </div>
             {brokerReady ? (
               <div className="summary-controls" aria-label="Session filters">
-                {(["all", "attention", "idle"] as SessionFilter[]).map((filter) => (
+                {(["all", "attention", "idle", "archive"] as SessionFilter[]).map((filter) => (
                   <button
                     key={filter}
                     type="button"
@@ -5389,6 +5470,7 @@ export default function App() {
                     {filter === "all" ? <ListFilter size={12} aria-hidden="true" /> : null}
                     {filter === "attention" ? <AlertTriangle size={12} aria-hidden="true" /> : null}
                     {filter === "idle" ? <Clock size={12} aria-hidden="true" /> : null}
+                    {filter === "archive" ? <Archive size={12} aria-hidden="true" /> : null}
                   </button>
                 ))}
                 <label className="summary-search" title="Search cards">
@@ -5467,6 +5549,7 @@ export default function App() {
                   activating={activatingId === session.sessionId}
                   openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
                   unbindingWindow={unbindingWindowId === session.sessionId}
+                  archiving={archivingSessionId === session.sessionId}
                   reviewing={reviewingSessionId === session.sessionId}
                   dismissing={dismissingSessionId === session.sessionId}
                   attentionSignal={sessionHasAttentionSignal(session)}
@@ -5475,6 +5558,7 @@ export default function App() {
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
                   onMarkReviewed={() => void markSessionReviewed(session, "manual")}
                   onUnbindWindow={() => void clearWindowBinding(session)}
+                  onArchive={() => void archiveSession(session)}
                   onDismiss={() => void dismissSession(session)}
                   onOpenCodexAppTarget={() => void openCodexAppTarget(session, true)}
                   onActivateSession={() => void activateSession(session)}
@@ -6066,6 +6150,7 @@ export default function App() {
                     activating={activatingId === session.sessionId}
                     openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
                     unbindingWindow={unbindingWindowId === session.sessionId}
+                    archiving={false}
                     reviewing={reviewingSessionId === session.sessionId}
                     dismissing={dismissingSessionId === session.sessionId}
                     attentionSignal={sessionHasAttentionSignal(session)}
@@ -6074,6 +6159,7 @@ export default function App() {
                     onOpenCanvas={() => undefined}
                     onMarkReviewed={() => undefined}
                     onUnbindWindow={() => undefined}
+                    onArchive={() => undefined}
                     onDismiss={() => undefined}
                     onOpenCodexAppTarget={() => undefined}
                     onActivateSession={() => undefined}

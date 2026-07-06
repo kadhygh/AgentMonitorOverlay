@@ -313,6 +313,16 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    const archiveMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/archive$/);
+    if (req.method === "POST" && archiveMatch) {
+      const sessionId = decodeURIComponent(archiveMatch[1]);
+      const payload = await readJsonBody(req, { allowEmpty: true });
+      const result = archiveSession(sessionId, payload || {});
+      persistSnapshot();
+      publishSessionChanged("archive", result.session);
+      return sendJson(res, 200, result);
+    }
+
     const heartbeatMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/heartbeat$/);
     if (req.method === "POST" && heartbeatMatch) {
       const sessionId = decodeURIComponent(heartbeatMatch[1]);
@@ -601,6 +611,24 @@ function clearSessionAttentionFields(session, action = "auto-cleared-by-activity
   };
 }
 
+function reviveArchivedSession(session, reason, existing = session) {
+  if (!existing?.archivedAt && !session?.archivedAt) {
+    return session;
+  }
+
+  recordDebugLog("broker", "session.archive_auto_cleared", {
+    sessionId: session.sessionId || existing?.sessionId || null,
+    reason,
+    archivedAt: existing?.archivedAt || session.archivedAt || null,
+  });
+
+  return {
+    ...session,
+    archivedAt: null,
+    archiveReason: null,
+  };
+}
+
 function upsertSessionFromEvent(payload) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw httpError(400, "invalid_json", "Event payload must be a JSON object");
@@ -691,6 +719,7 @@ function upsertSessionFromEvent(payload) {
       });
     }
   }
+  session = reviveArchivedSession(session, "event", existing);
 
   sessions.set(sessionId, session);
   if (promptMessage) {
@@ -788,6 +817,9 @@ function updateHeartbeat(sessionId, payload) {
         state: nextState,
       });
     }
+  }
+  if (eventName) {
+    session = reviveArchivedSession(session, "heartbeat-event", existing);
   }
 
   sessions.set(sessionId, session);
@@ -2021,7 +2053,7 @@ function handleReply(payload) {
   const note = writeReplyNote(amoRoot, vaultRoot, record);
   const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
 
-  const session = {
+  const session = reviveArchivedSession({
     tool,
     sessionId,
     cwd,
@@ -2062,7 +2094,7 @@ function handleReply(payload) {
     canvasPath: canvas.canvasPath,
     canvasAbsolutePath: canvas.canvasAbsolutePath,
     canvasNodeId: canvas.canvasNodeId,
-  };
+  }, "reply", existing);
   sessions.set(sessionId, session);
 
   recordDebugLog("broker", "reply.created", {
@@ -2138,7 +2170,7 @@ function handlePrompt(payload) {
     capturedAt,
   });
   if (duplicate) {
-    const duplicateSession = clearSessionAttentionFields(
+    const duplicateSession = reviveArchivedSession(clearSessionAttentionFields(
       {
         ...(existing || {}),
         tool,
@@ -2159,7 +2191,7 @@ function handlePrompt(payload) {
         targetBinding,
       },
       "auto-cleared-by-duplicate-prompt"
-    );
+    ), "duplicate-prompt", existing);
     sessions.set(sessionId, duplicateSession);
     if (sessionHasAttentionState(existing)) {
       recordDebugLog("broker", "session.attention_auto_cleared", {
@@ -2216,7 +2248,7 @@ function handlePrompt(payload) {
   const note = writePromptNote(amoRoot, vaultRoot, record);
   const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
 
-  const session = {
+  const session = reviveArchivedSession({
     ...(existing || {}),
     tool,
     sessionId,
@@ -2255,7 +2287,7 @@ function handlePrompt(payload) {
     canvasPath: canvas.canvasPath,
     canvasAbsolutePath: canvas.canvasAbsolutePath,
     canvasNodeId: canvas.canvasNodeId,
-  };
+  }, "prompt", existing);
   sessions.set(sessionId, session);
 
   recordDebugLog("broker", "prompt.created", {
@@ -3099,6 +3131,40 @@ function updateSessionTaskTitle(sessionId, payload = {}) {
     schemaVersion: AMO_SCHEMA_VERSION,
     sessionId,
     taskTitle: session.taskTitle,
+    session,
+  };
+}
+
+function archiveSession(sessionId, payload = {}) {
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Archive URL must include session id");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for archive: ${sessionId}`);
+  }
+
+  const now = new Date().toISOString();
+  const reason = normalizeText(payload.reason) || "user";
+  const session = {
+    ...existing,
+    archivedAt: now,
+    archiveReason: reason,
+    updatedAt: now,
+  };
+
+  sessions.set(sessionId, session);
+  recordDebugLog("broker", "session.archived", {
+    sessionId,
+    reason,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    archivedAt: now,
     session,
   };
 }

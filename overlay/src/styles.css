@@ -1617,6 +1617,7 @@ button {
 .card-launch-button,
 .card-bind-drag-button,
 .card-maintenance-button,
+.card-archive-button,
 .card-dismiss-button {
   position: absolute;
   top: -1px;
@@ -1668,9 +1669,31 @@ button {
   border-color: rgba(255, 255, 255, 0.055);
 }
 
+.card-archive-button {
+  right: -53px;
+  color: #ffd3d8;
+  background: rgba(255, 92, 104, 0.09);
+  border-color: rgba(255, 92, 104, 0.2);
+}
+
+.card-archive-button span {
+  position: relative;
+  z-index: 1;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+}
+
+.card-archive-button.is-final-hide {
+  color: #fff0f2;
+  background: rgba(255, 92, 104, 0.15);
+  border-color: rgba(255, 92, 104, 0.3);
+}
+
 .card-launch-button svg,
 .card-bind-drag-button svg,
 .card-maintenance-button svg,
+.card-archive-button svg,
 .card-dismiss-button svg {
   position: relative;
   z-index: 1;
@@ -1688,13 +1711,16 @@ button {
 }
 
 .card-dismiss-button:hover,
-.card-dismiss-button:focus-visible {
+.card-dismiss-button:focus-visible,
+.card-archive-button:hover,
+.card-archive-button:focus-visible {
   color: #fff5f5;
   background: rgba(255, 92, 104, 0.14);
   border-color: rgba(255, 92, 104, 0.28);
 }
 
-.card-dismiss-button.is-busy {
+.card-dismiss-button.is-busy,
+.card-archive-button.is-busy {
   opacity: 0.65;
   cursor: progress;
 }
@@ -3934,8 +3960,23 @@ button {
   box-shadow: 0 6px 14px rgba(70, 38, 34, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
+:root[data-amo-theme="light"] .card-archive-button {
+  color: #9b332e;
+  background: linear-gradient(145deg, #fff7f6, #f6e3df);
+  border-color: rgba(208, 77, 67, 0.3);
+  box-shadow: 0 6px 14px rgba(70, 38, 34, 0.08), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+:root[data-amo-theme="light"] .card-archive-button.is-final-hide {
+  color: #7f2520;
+  background: linear-gradient(145deg, #fff1ef, #efd1cc);
+  border-color: rgba(208, 77, 67, 0.4);
+}
+
 :root[data-amo-theme="light"] .card-dismiss-button:hover,
-:root[data-amo-theme="light"] .card-dismiss-button:focus-visible {
+:root[data-amo-theme="light"] .card-dismiss-button:focus-visible,
+:root[data-amo-theme="light"] .card-archive-button:hover,
+:root[data-amo-theme="light"] .card-archive-button:focus-visible {
   color: #7f2520;
   background: linear-gradient(145deg, #fff4f2, #f2d7d3);
   border-color: rgba(208, 77, 67, 0.38);

@@ -112,6 +112,8 @@ export interface AgentSession {
   reviewTurnId?: string | null;
   reviewNote?: string | null;
   reviewCanvasNodeId?: string | null;
+  archivedAt?: string | null;
+  archiveReason?: string | null;
   dismissedAt?: string | null;
   dismissReason?: string | null;
   updatedAt: string;
