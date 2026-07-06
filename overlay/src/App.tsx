@@ -92,6 +92,13 @@ import {
   workspaceGeneratedNoteCount,
   type LaunchPanelAdapterId,
 } from "./domain/workspaceModel";
+import {
+  actionRequiredCandidate,
+  launchPanelPosition,
+  menuPosition,
+  shouldProbeCodexActionRequired,
+  workspacePanelPosition,
+} from "./domain/overlaySessionUi";
 import { SessionRowContent, toolDisplayForSession } from "./components/SessionCard";
 import {
   BrokerReadinessPanel,
@@ -145,7 +152,6 @@ import type {
 } from "./types";
 
 const REFRESH_INTERVAL_MS = 3000;
-const CODEX_ACTION_REQUIRED_TITLE_PATTERN = /\[\s*!\s*\]\s*Action Required/i;
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 86 };
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
@@ -153,17 +159,6 @@ const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin i
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function shouldProbeCodexActionRequired(session: AgentSession) {
-  if (!isCodexSession(session)) return false;
-  if (session.state === "waiting_permission" || session.state === "waiting_user") return false;
-  if (session.state !== "running" && session.state !== "starting") return false;
-  return Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
-}
-
-function actionRequiredCandidate(candidates: ActivationCandidate[]) {
-  return candidates.find((candidate) => CODEX_ACTION_REQUIRED_TITLE_PATTERN.test(candidate.title));
 }
 
 function clipboardPromptForSession(session: AgentSession) {
@@ -174,35 +169,6 @@ function clipboardPromptForSession(session: AgentSession) {
   }
 
   return toCliPasteClipboardText(prompt);
-}
-
-function menuPosition(x?: number, y?: number) {
-  const fallbackX = Math.max(12, window.innerWidth - 326);
-  const fallbackY = 96;
-  return {
-    x: Math.max(10, Math.min(x ?? fallbackX, window.innerWidth - 326)),
-    y: Math.max(54, Math.min(y ?? fallbackY, window.innerHeight - 220)),
-  };
-}
-
-function workspacePanelPosition(x?: number, y?: number) {
-  const width = 356;
-  const fallbackX = Math.max(12, window.innerWidth - width - 8);
-  const fallbackY = 92;
-  return {
-    x: Math.max(10, Math.min(x ?? fallbackX, window.innerWidth - width - 10)),
-    y: Math.max(54, Math.min(y ?? fallbackY, window.innerHeight - 360)),
-  };
-}
-
-function launchPanelPosition(x?: number, y?: number) {
-  const width = 336;
-  const fallbackX = Math.max(12, window.innerWidth - width - 8);
-  const fallbackY = 92;
-  return {
-    x: Math.max(10, Math.min(x ?? fallbackX, window.innerWidth - width - 10)),
-    y: Math.max(54, Math.min(y ?? fallbackY, window.innerHeight - 260)),
-  };
 }
 
 function sessionMatchesSearch(session: AgentSession, query: string) {

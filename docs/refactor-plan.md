@@ -746,3 +746,12 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Overlay Session UI Helpers Extracted
+
+- Added `overlay/src/domain/overlaySessionUi.ts` for Codex action-required probing and floating menu/panel positioning.
+- Kept activation, binding, and panel state transitions in `overlay/src/App.tsx`.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

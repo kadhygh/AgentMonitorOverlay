@@ -120,6 +120,7 @@ The repository has completed the first overlay extraction pass. These boundaries
 - broker client constants/helpers: `overlay/src/api/brokerClient.ts`
 - session ordering/filtering/attention helpers: `overlay/src/domain/sessionModel.ts`
 - session target, path, and Obsidian URI helpers: `overlay/src/domain/routingModel.ts`
+- overlay session UI positioning and Codex action-required helpers: `overlay/src/domain/overlaySessionUi.ts`
 - workspace deployment/maintenance state helpers: `overlay/src/domain/workspaceModel.ts`
 - target candidate menu presentation: `overlay/src/components/CandidateMenu.tsx`
 - broker readiness presentation: `overlay/src/components/BrokerReadinessPanel.tsx`
