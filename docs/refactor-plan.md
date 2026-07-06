@@ -404,3 +404,14 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Legacy Inline Deploy Removed
+
+- Removed the unreachable legacy inline deploy dialog from `App.tsx`; the deploy toolbar action now has a single owner, the standalone utility window.
+- Removed the inline-only deploy state and actions for inspect/enroll/clear/launch from `App.tsx`.
+- Kept workspace maintenance and launch-panel behavior in the main overlay because those are active task-card workflows, not deploy-window behavior.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`

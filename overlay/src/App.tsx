@@ -5,7 +5,6 @@ import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
   Archive,
-  Bot,
   Bug,
   ChevronDown,
   ChevronUp,
@@ -33,7 +32,6 @@ import {
   BROKER_SESSIONS_URL,
   BROKER_SYNC_BACK_URL,
   BROKER_WORKSPACE_CLEAN_VAULT_URL,
-  BROKER_WORKSPACE_ENROLL_URL,
   BROKER_WORKSPACE_GIT_EXCLUDE_URL,
   BROKER_WORKSPACE_INSPECT_URL,
   BROKER_WORKSPACE_LAUNCH_URL,
@@ -96,12 +94,9 @@ import {
   isWorkspaceAdapterDeployed,
   isWorkspaceAdapterInstalled,
   maintenanceToneForSession,
-  selectedWorkspaceAdapterIds,
   workspaceAdapterLaunchDetail,
   workspaceAdapterLaunchable,
   workspaceCleanFeedback,
-  workspaceDeploymentStateLabel,
-  workspaceDeploymentSummary,
   workspaceGeneratedNoteCount,
   type LaunchPanelAdapterId,
 } from "./domain/workspaceModel";
@@ -139,12 +134,10 @@ import type {
   AgentSession,
   BrokerDebugStatus,
   BrokerEnsureResult,
-  FolderPickResult,
   ObsidianVaultRegistrationResult,
   OpenPathResult,
   TargetBinding,
   WorkspaceCleanResult,
-  WorkspaceEnrollment,
   WorkspaceGitExcludeResult,
   WorkspaceInspection,
   WorkspaceLaunchResult,
@@ -416,13 +409,6 @@ export default function App() {
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
   const [obsidianVaultRecovery, setObsidianVaultRecovery] = useState<ObsidianVaultRecoveryState | null>(null);
   const [isResizing, setIsResizing] = useState(false);
-  const [deployOpen, setDeployOpen] = useState(false);
-  const [workspacePath, setWorkspacePath] = useState("");
-  const [workspaceInspection, setWorkspaceInspection] = useState<WorkspaceInspection | null>(null);
-  const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
-  const [selectedDeployAdapters, setSelectedDeployAdapters] = useState<string[]>([]);
-  const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | "clean" | null>(null);
-  const [launchBusy, setLaunchBusy] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("scratchpad");
   const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
@@ -1132,216 +1118,6 @@ export default function App() {
     }
   }
 
-  async function inspectWorkspace(pathOverride?: string) {
-    const targetPath = (pathOverride ?? workspacePath).trim();
-    if (!targetPath) {
-      setFeedback("Workspace path is required.");
-      return;
-    }
-
-    setDeployBusy("inspect");
-    setWorkspaceEnrollment(null);
-    setFeedback("Checking workspace...");
-
-    try {
-      const result = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
-        workspacePath: targetPath,
-      });
-      void postDebugLog("workspace.inspect.ok", {
-        workspacePath: result.workspacePath,
-        projectName: result.projectName,
-        adapters: result.supportedAdapters.map((adapter) => ({
-          id: adapter.id,
-          status: adapter.status,
-          deploymentStatus: adapter.deploymentStatus,
-          workspaceState: adapter.workspaceState,
-          deployable: adapter.deployable,
-          recommended: adapter.recommended,
-          confidence: adapter.confidence,
-        })),
-      });
-      setWorkspaceInspection(result);
-      setWorkspacePath(result.workspacePath);
-      const availableAdapters = result.supportedAdapters
-        .filter((adapter) => isDeployableWorkspaceAdapter(adapter) && adapter.recommended !== false)
-        .map((adapter) => adapter.id);
-      setSelectedDeployAdapters(availableAdapters);
-      const deployableCount = result.supportedAdapters.filter(isDeployableWorkspaceAdapter).length;
-      setFeedback(`${result.projectName}: ${deployableCount} deployable adapter(s), ${availableAdapters.length} selected.`);
-    } catch (error) {
-      void postDebugLog("workspace.inspect.error", {
-        workspacePath: targetPath,
-        message: (error as Error).message,
-      });
-      setWorkspaceInspection(null);
-      setFeedback(`Check failed: ${(error as Error).message}`);
-    } finally {
-      setDeployBusy(null);
-    }
-  }
-
-  async function chooseWorkspaceDirectory() {
-    setFeedback("Choose a workspace folder...");
-
-    try {
-      const result = await invoke<FolderPickResult>("select_workspace_directory");
-      if (!result.ok || !result.path) {
-        setFeedback(result.message);
-        return;
-      }
-
-      await openDeployDialog();
-      setWorkspacePath(result.path);
-      setWorkspaceInspection(null);
-      setWorkspaceEnrollment(null);
-      setSelectedDeployAdapters([]);
-      await inspectWorkspace(result.path);
-    } catch (error) {
-      setFeedback(`Folder selection failed: ${(error as Error).message}`);
-    }
-  }
-
-  function updateWorkspacePathInput(value: string) {
-    setWorkspacePath(value);
-    if (workspaceInspection && value.trim() !== workspaceInspection.workspacePath) {
-      setWorkspaceInspection(null);
-      setWorkspaceEnrollment(null);
-      setSelectedDeployAdapters([]);
-    }
-  }
-
-  async function enrollWorkspace() {
-    const targetPath = workspaceInspection?.workspacePath ?? workspacePath.trim();
-    if (!targetPath) {
-      setFeedback("Workspace path is required.");
-      return;
-    }
-
-    setDeployBusy("enroll");
-    setFeedback("Deploying workspace adapter...");
-
-    try {
-      const adapters =
-        selectedDeployAdapters.length > 0
-          ? selectedDeployAdapters
-          : (workspaceInspection?.supportedAdapters || [])
-              .filter(isDeployableWorkspaceAdapter)
-              .map((adapter) => adapter.id);
-      if (adapters.length === 0) {
-        setFeedback("No deployable adapter selected.");
-        return;
-      }
-      const result = await postBrokerJson<WorkspaceEnrollment>(BROKER_WORKSPACE_ENROLL_URL, {
-        workspacePath: targetPath,
-        adapters,
-      });
-      void postDebugLog("workspace.enroll.ok", {
-        workspacePath: result.workspacePath,
-        vaultRoot: result.vaultRoot,
-        installedAdapters: result.installedAdapters,
-      });
-      setWorkspaceEnrollment(result);
-      setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}. ${OBSIDIAN_PLUGIN_RELOAD_HINT}`);
-      void refreshSessions("workspace-enroll");
-    } catch (error) {
-      void postDebugLog("workspace.enroll.error", {
-        workspacePath: targetPath,
-        message: (error as Error).message,
-      });
-      setFeedback(`Deploy failed: ${(error as Error).message}`);
-    } finally {
-      setDeployBusy(null);
-    }
-  }
-
-  async function clearWorkspaceGeneratedFromDeploy() {
-    const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
-    if (!targetPath) {
-      setFeedback("Workspace path is required.");
-      return;
-    }
-
-    if (!workspaceInspection?.existingEnrollment) {
-      setFeedback("Check an enrolled AMO workspace before clearing generated content.");
-      return;
-    }
-
-    const confirmed = window.confirm(
-      `Clear generated AMO notes and reset the base canvas for ${projectName(targetPath)}?\n\nHooks, deployment metadata, and work canvas folders will be kept.`,
-    );
-    if (!confirmed) return;
-
-    setDeployBusy("clean");
-    setFeedback(`Clearing generated AMO content for ${projectName(targetPath)}...`);
-
-    try {
-      const result = await postBrokerJson<WorkspaceCleanResult>(BROKER_WORKSPACE_CLEAN_VAULT_URL, {
-        workspacePath: targetPath,
-      });
-      void postDebugLog("workspace.deploy.clean.ok", {
-        workspacePath: result.workspacePath,
-        generatedNotes: workspaceGeneratedNoteCount(result.before),
-        canvasNodes: result.before.counts.canvasNodes,
-        clearedSessions: result.clearedSessions,
-      });
-      const refreshed = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
-        workspacePath: result.workspacePath,
-      });
-      setWorkspaceInspection(refreshed);
-      setWorkspacePath(refreshed.workspacePath);
-      setSelectedDeployAdapters(selectedWorkspaceAdapterIds(refreshed));
-      setFeedback(workspaceCleanFeedback(result));
-      void refreshSessions("workspace-clean");
-    } catch (error) {
-      void postDebugLog("workspace.deploy.clean.error", {
-        workspacePath: targetPath,
-        message: (error as Error).message,
-      });
-      setFeedback(`Clear failed: ${(error as Error).message}`);
-    } finally {
-      setDeployBusy(null);
-    }
-  }
-
-  async function launchWorkspace(adapterId: string) {
-    const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
-    if (!targetPath) {
-      setFeedback("Workspace path is required.");
-      return;
-    }
-
-    setLaunchBusy(adapterId);
-    const label =
-      adapterId === "codex-cli" ? "Codex CLI" : adapterId === "claude-cli" ? "Claude CLI" : "Codex App";
-    setFeedback(`Launching ${label}...`);
-    void postDebugLog("workspace.launch.start", {
-      workspacePath: targetPath,
-      adapterId,
-    });
-
-    try {
-      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
-        workspacePath: targetPath,
-        adapterId,
-      });
-      void postDebugLog("workspace.launch.ok", {
-        workspacePath: result.workspacePath,
-        adapterId: result.adapterId,
-        pid: result.pid ?? null,
-      });
-      setFeedback(result.message);
-    } catch (error) {
-      void postDebugLog("workspace.launch.error", {
-        workspacePath: targetPath,
-        adapterId,
-        message: (error as Error).message,
-      });
-      setFeedback(`Launch failed: ${(error as Error).message}`);
-    } finally {
-      setLaunchBusy(null);
-    }
-  }
-
   async function openWorkspacePanel(session: AgentSession, x?: number, y?: number) {
     const position = workspacePanelPosition(x, y);
     setCandidateMenu(null);
@@ -1701,10 +1477,6 @@ export default function App() {
     await openUtilityWindow("deploy");
   }
 
-  async function closeDeployDialog() {
-    await hideUtilityWindow("deploy");
-  }
-
   async function openSettingsDialog(section: SettingsSection = "scratchpad") {
     setSettingsSection(section);
     await openUtilityWindow("settings");
@@ -1715,7 +1487,6 @@ export default function App() {
   }
 
   async function openUtilityWindow(label: UtilityWindowKind) {
-    setDeployOpen(false);
     setSettingsOpen(false);
     setActiveUtilityWindow(label);
 
@@ -3894,222 +3665,6 @@ export default function App() {
         </>
       )}
 
-      {deployOpen ? (
-        <div className="dialog-backdrop deploy-backdrop" role="presentation" onClick={() => void closeDeployDialog()}>
-          <section
-            className="app-dialog deploy-panel"
-            role="dialog"
-            aria-modal="true"
-            aria-label="Workspace deployment"
-            onClick={(event) => event.stopPropagation()}
-          >
-            <header className="app-dialog-titlebar" data-tauri-drag-region onPointerDown={startDialogDrag}>
-              <div className="app-dialog-title" data-tauri-drag-region>
-                <FolderPlus size={16} aria-hidden="true" />
-                <div data-tauri-drag-region>
-                  <strong>Deploy Workspace</strong>
-                  <span>Project-local hooks and AMO vault</span>
-                </div>
-              </div>
-              <button
-                type="button"
-                className="candidate-close"
-                title="Close deploy"
-                onClick={() => void closeDeployDialog()}
-              >
-                <X size={13} aria-hidden="true" />
-              </button>
-            </header>
-
-            <div className="deploy-dialog-body">
-              <section className="dialog-section deploy-workspace-section">
-                <div className="dialog-section-heading">
-                  <strong>Workspace</strong>
-                  <span>{workspaceInspection ? projectName(workspaceInspection.workspacePath) : "Not checked"}</span>
-                </div>
-                <input
-                  className="deploy-path-input"
-                  type="text"
-                  spellCheck={false}
-                  value={workspacePath}
-                  placeholder="Paste or choose a workspace path"
-                  title={workspacePath || "No workspace selected"}
-                  disabled={deployBusy !== null || launchBusy !== null}
-                  onChange={(event) => updateWorkspacePathInput(event.currentTarget.value)}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") {
-                      event.preventDefault();
-                      void inspectWorkspace();
-                    }
-                  }}
-                />
-                <div className="deploy-action-row">
-                  <button type="button" disabled={deployBusy !== null || launchBusy !== null} onClick={() => void chooseWorkspaceDirectory()}>
-                    Choose
-                  </button>
-                  <button
-                    type="button"
-                    title="Check folder before deploying; this does not write files."
-                    disabled={!workspacePath.trim() || deployBusy !== null || launchBusy !== null}
-                    onClick={() => void inspectWorkspace()}
-                  >
-                    {deployBusy === "inspect" ? "Checking" : "Check"}
-                  </button>
-                  <button
-                    type="button"
-                    className="primary"
-                    disabled={!workspaceInspection || selectedDeployAdapters.length === 0 || deployBusy !== null || launchBusy !== null}
-                    onClick={() => void enrollWorkspace()}
-                  >
-                    {deployBusy === "enroll" ? "Deploying" : "Deploy"}
-                  </button>
-                  <button
-                    type="button"
-                    className="danger-action"
-                    title="Clear generated session notes and reset the base canvas without removing hooks."
-                    disabled={!workspaceInspection?.existingEnrollment || deployBusy !== null || launchBusy !== null}
-                    onClick={() => void clearWorkspaceGeneratedFromDeploy()}
-                  >
-                    <Trash2 size={12} aria-hidden="true" />
-                    <span>{deployBusy === "clean" ? "Clearing" : "Clear Generated"}</span>
-                  </button>
-                </div>
-
-                {workspaceInspection ? (
-                  <dl className="deploy-status-grid">
-                    <div>
-                      <dt>Path</dt>
-                      <dd title={workspaceInspection.workspacePath}>{shortPathLabel(workspaceInspection.workspacePath)}</dd>
-                    </div>
-                    <div>
-                      <dt>State</dt>
-                      <dd>{workspaceInspection.existingEnrollment ? "enrolled" : "not enrolled"}</dd>
-                    </div>
-                    <div>
-                      <dt>Selected</dt>
-                      <dd>{selectedDeployAdapters.length}</dd>
-                    </div>
-                  </dl>
-                ) : (
-                  <div className="deploy-placeholder">Check a workspace to review deployment status.</div>
-                )}
-              </section>
-
-              <section className="dialog-section deploy-adapters-section">
-                <div className="dialog-section-heading">
-                  <strong>Adapters</strong>
-                  <span>{workspaceInspection ? `${workspaceInspection.supportedAdapters.length} available targets` : "Awaiting check"}</span>
-                </div>
-                {workspaceInspection ? (
-                  <div className="deploy-adapter-list">
-                    {workspaceInspection.supportedAdapters.map((adapter) => {
-                      const selectable = isDeployableWorkspaceAdapter(adapter);
-                      const selected = selectedDeployAdapters.includes(adapter.id);
-                      const stateLabel = adapterStateLabel(adapter);
-                      const contextLabel = adapterContextLabel(adapter);
-                      return (
-                        <label
-                          className={`deploy-adapter-card status-${adapter.status} state-${stateLabel} ${
-                            selected ? "is-selected" : ""
-                          }`}
-                          key={adapter.id}
-                          title={adapter.reason}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={selected}
-                            disabled={!selectable || deployBusy !== null}
-                            onChange={(event) => {
-                              const checked = event.currentTarget.checked;
-                              setSelectedDeployAdapters((current) =>
-                                checked
-                                  ? Array.from(new Set([...current, adapter.id]))
-                                  : current.filter((id) => id !== adapter.id),
-                              );
-                            }}
-                          />
-                          <span className="deploy-adapter-copy">
-                            <strong>{adapter.label}</strong>
-                            <span>{adapter.reason}</span>
-                          </span>
-                          <span className="deploy-adapter-badges">
-                            <em>{stateLabel}</em>
-                            {contextLabel ? <small>{contextLabel}</small> : null}
-                          </span>
-                        </label>
-                      );
-                    })}
-                  </div>
-                ) : (
-                  <div className="deploy-placeholder">Adapter details appear after Check.</div>
-                )}
-              </section>
-            </div>
-
-            <footer className="app-dialog-footer">
-              {workspaceEnrollment ? (
-                <div className="deploy-result" title={workspaceEnrollment.vaultRoot}>
-                  <div className="deploy-result-summary">
-                    <strong>{workspaceEnrollment.installedAdapters.join(", ")}</strong>
-                    <span>{workspaceEnrollment.installedFiles.length} files</span>
-                    <span>{workspaceEnrollment.mergedFiles.length} merged</span>
-                  </div>
-                  <div className="deploy-launch-actions" aria-label="Launch workspace tools">
-                    {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
-                      <button
-                        type="button"
-                        disabled={deployBusy !== null || launchBusy !== null}
-                        onClick={() => void launchWorkspace("codex-cli")}
-                      >
-                        <SquareTerminal size={12} aria-hidden="true" />
-                        <span>{launchBusy === "codex-cli" ? "Starting" : "Run Codex"}</span>
-                      </button>
-                    ) : null}
-                    {workspaceEnrollment.installedAdapters.includes("claude-cli") ? (
-                      <button
-                        type="button"
-                        disabled={deployBusy !== null || launchBusy !== null}
-                        onClick={() => void launchWorkspace("claude-cli")}
-                      >
-                        <SquareTerminal size={12} aria-hidden="true" />
-                        <span>{launchBusy === "claude-cli" ? "Starting" : "Run Claude"}</span>
-                      </button>
-                    ) : null}
-                    {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
-                      <button
-                        type="button"
-                        disabled={deployBusy !== null || launchBusy !== null}
-                        onClick={() => void launchWorkspace("codex-app")}
-                      >
-                        <Bot size={12} aria-hidden="true" />
-                        <span>{launchBusy === "codex-app" ? "Opening" : "Open App"}</span>
-                      </button>
-                    ) : null}
-                    <button
-                      type="button"
-                      disabled={deployBusy !== null || launchBusy !== null}
-                      onClick={() => void openMaintenancePath(workspaceEnrollment.workspacePath, "workspace")}
-                    >
-                      <FolderOpen size={12} aria-hidden="true" />
-                      <span>Project</span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={deployBusy !== null || launchBusy !== null}
-                      onClick={() => void openMaintenancePath(workspaceEnrollment.vaultRoot, "vault")}
-                    >
-                      <FolderOpen size={12} aria-hidden="true" />
-                      <span>Vault</span>
-                    </button>
-                  </div>
-                </div>
-              ) : (
-                <span title={feedback}>{feedback}</span>
-              )}
-            </footer>
-          </section>
-        </div>
-      ) : null}
     </main>
   );
 }

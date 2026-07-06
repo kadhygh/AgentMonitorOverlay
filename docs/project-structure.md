@@ -133,4 +133,4 @@ The largest files are still the historical roots:
 
 Use `docs/refactor-plan.md` for phase order and checkpoints.
 
-The main overlay still contains its inline deploy panel during transition. Treat the standalone deploy window and inline deploy panel as behavior siblings until the deploy UI is reconciled behind shared components.
+The legacy inline deploy panel has been removed. Deploy UI ownership is now the standalone deploy utility window; task-card workspace maintenance remains in the main overlay.
