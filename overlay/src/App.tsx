@@ -69,6 +69,7 @@ const BROKER_WORKSPACE_CLEAN_VAULT_URL = "http://127.0.0.1:17654/api/workspaces/
 const BROKER_DEBUG_URL = "http://127.0.0.1:17654/api/debug";
 const BROKER_DEBUG_LOGS_URL = "http://127.0.0.1:17654/api/debug/logs";
 const REFRESH_INTERVAL_MS = 3000;
+const CODEX_ACTION_REQUIRED_TITLE_PATTERN = /\[\s*!\s*\]\s*Action Required/i;
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 86 };
 const DIALOG_SIZES = {
@@ -150,6 +151,10 @@ function brokerSessionReviewedUrl(sessionId: string) {
 
 function brokerSessionAttentionClearedUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/attention-cleared`;
+}
+
+function brokerSessionHeartbeatUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/heartbeat`;
 }
 
 function brokerSessionDismissUrl(sessionId: string) {
@@ -575,6 +580,17 @@ function activationWindowRequest(
     pid: windowTarget?.processId ?? (includeWindowHintIdentity ? session.windowHint?.pid ?? null : null),
     hwnd: windowTarget?.hwnd ?? (includeWindowHintIdentity ? session.windowHint?.hwnd ?? null : null),
   };
+}
+
+function shouldProbeCodexActionRequired(session: AgentSession) {
+  if (!isCodexSession(session)) return false;
+  if (session.state === "waiting_permission" || session.state === "waiting_user") return false;
+  if (session.state !== "running" && session.state !== "starting") return false;
+  return Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
+}
+
+function actionRequiredCandidate(candidates: ActivationCandidate[]) {
+  return candidates.find((candidate) => CODEX_ACTION_REQUIRED_TITLE_PATTERN.test(candidate.title));
 }
 
 function toCliPasteClipboardText(text: string) {
@@ -2717,6 +2733,7 @@ export default function App() {
   const cardDragCleanupRef = useRef<(() => void) | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
   const dialogRestoreSizeRef = useRef<{ width: number; height: number } | null>(null);
+  const actionRequiredProbeRef = useRef<Record<string, string>>({});
   const suppressNextClickRef = useRef(false);
   const autoSyncPromptIdsRef = useRef(new Set<string>());
   const reviewTaskbarAttentionActiveRef = useRef(false);
@@ -2952,6 +2969,7 @@ export default function App() {
       });
       setLastRefreshAt(new Date().toISOString());
       setFeedback(nextSessions.length > 0 ? `Broker sessions loaded: ${nextSessions.length}` : "No active broker sessions.");
+      void reconcileCodexActionRequired(visibleSessions, reason);
       if (shouldLog) {
         void postDebugLog("sessions.refresh.ok", {
           reason,
@@ -2976,6 +2994,76 @@ export default function App() {
         });
       }
     }
+  }
+
+  async function reconcileCodexActionRequired(candidateSessions: AgentSession[], reason: string) {
+    const probeSessions = candidateSessions.filter(shouldProbeCodexActionRequired);
+    const probeIds = new Set(probeSessions.map((session) => session.sessionId));
+    for (const sessionId of Object.keys(actionRequiredProbeRef.current)) {
+      if (!probeIds.has(sessionId)) {
+        delete actionRequiredProbeRef.current[sessionId];
+      }
+    }
+
+    await Promise.all(
+      probeSessions.map(async (session) => {
+        try {
+          const result = await invoke<ActivationResult>(
+            "list_session_window_candidates",
+            activationWindowRequest(session, windowTargetForSession(session), { includeWindowHintIdentity: true }),
+          );
+          const candidate = actionRequiredCandidate(result.candidates ?? []);
+          if (!candidate) {
+            delete actionRequiredProbeRef.current[session.sessionId];
+            return;
+          }
+
+          const probeKey = `${candidate.hwnd}:${candidate.processId}:${candidate.title}`;
+          if (actionRequiredProbeRef.current[session.sessionId] === probeKey) {
+            return;
+          }
+          actionRequiredProbeRef.current[session.sessionId] = probeKey;
+
+          void postDebugLog("codex.action_required.detected", {
+            reason,
+            sessionId: session.sessionId,
+            title: candidate.title,
+            hwnd: candidate.hwnd,
+            processId: candidate.processId,
+          });
+
+          const resultSession = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+            brokerSessionHeartbeatUrl(session.sessionId),
+            {
+              state: "waiting_permission",
+              eventName: "WindowActionRequired",
+              message: "Codex CLI is waiting for a local action.",
+              needsAttention: true,
+              windowHint: {
+                process: candidate.processName,
+                title: candidate.title,
+                project: session.windowHint?.project ?? projectName(session.cwd),
+                cwd: session.windowHint?.cwd ?? session.cwd,
+                tool: session.windowHint?.tool ?? session.tool,
+                pid: candidate.processId,
+                hwnd: candidate.hwnd,
+                boundAt: session.windowHint?.boundAt ?? null,
+                boundBy: session.windowHint?.boundBy ?? "overlay-action-required",
+                boundLabel: candidate.label,
+              },
+            },
+          );
+
+          setSessions((previousSessions) => mergeChangedSession(previousSessions, resultSession.session));
+        } catch (error) {
+          void postDebugLog("codex.action_required.probe_error", {
+            reason,
+            sessionId: session.sessionId,
+            message: (error as Error).message,
+          });
+        }
+      }),
+    );
   }
 
   async function ensureBrokerThenRefresh() {

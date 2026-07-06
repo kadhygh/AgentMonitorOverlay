@@ -745,6 +745,7 @@ function updateHeartbeat(sessionId, payload) {
     title: resolveSessionTitle(existing.tool || payload.tool, sessionId, payload.title, existing.title),
     taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing.taskTitle || null,
     state: nextState,
+    lastEvent: eventName || existing.lastEvent,
     lastMessage:
       normalizeText(payload.message || payload.lastMessage || payload.last_message) ||
       existing.lastMessage,
