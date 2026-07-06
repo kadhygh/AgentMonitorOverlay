@@ -2,6 +2,29 @@ const http = require("http");
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
+const {
+  AMO_CANVAS_MANAGER,
+  AMO_CANVAS_PATH,
+  AMO_CANVAS_TYPE,
+  AMO_CANVASES_PATH,
+  AMO_DEPLOYMENT_VERSION,
+  AMO_DIR,
+  AMO_HOOK_PROTOCOL_VERSION,
+  AMO_LAYOUT_VERSION,
+  AMO_NOTE_INDEX_PATH,
+  AMO_SCHEMA_VERSION,
+  AMO_SESSION_GENERATED_PATH,
+  AMO_SESSIONS_PATH,
+  AMO_VAULT_NAME_PREFIX,
+  AMO_WORK_CANVASES_PATH,
+  CANVAS_NODE_MARGIN_X,
+  CANVAS_NODE_MARGIN_Y,
+  OBSIDIAN_PLUGIN_ID,
+  REPLY_NODE_GAP_X,
+  REPLY_NODE_GAP_Y,
+  REPLY_NODE_HEIGHT,
+  REPLY_NODE_WIDTH,
+} = require("./lib/amo-constants");
 const { CORS_HEADERS, httpError, readJsonBody, sendEmpty, sendJson } = require("./lib/http");
 const { createDebugLogStore } = require("./lib/debug");
 const { refreshSessionTitle, resolveSessionTitle } = require("./lib/display-names");
@@ -45,27 +68,6 @@ const DATA_FILE =
   process.env.AGENT_MONITOR_DATA_FILE ||
   path.join(__dirname, "data", "sessions.json");
 const DEBUG_MAX_LOG_ENTRIES = 800;
-const AMO_DIR = ".amo";
-const AMO_SCHEMA_VERSION = 1;
-const AMO_DEPLOYMENT_VERSION = 2;
-const AMO_LAYOUT_VERSION = 2;
-const AMO_HOOK_PROTOCOL_VERSION = 2;
-const AMO_SESSIONS_PATH = "Sessions";
-const AMO_SESSION_GENERATED_PATH = "turns/generated";
-const AMO_CANVASES_PATH = "Canvases";
-const AMO_WORK_CANVASES_PATH = "Canvases/Work";
-const AMO_CANVAS_PATH = "Canvases/AgentFlow.base.canvas";
-const AMO_CANVAS_TYPE = "agent-flow-base";
-const AMO_CANVAS_MANAGER = "agent-monitor-overlay";
-const AMO_NOTE_INDEX_PATH = path.join("state", "note-index.json");
-const AMO_VAULT_NAME_PREFIX = "AMO - ";
-const OBSIDIAN_PLUGIN_ID = "md-anno-tools";
-const REPLY_NODE_WIDTH = 520;
-const REPLY_NODE_HEIGHT = 360;
-const REPLY_NODE_GAP_X = 620;
-const REPLY_NODE_GAP_Y = 420;
-const CANVAS_NODE_MARGIN_X = Math.max(80, REPLY_NODE_GAP_X - REPLY_NODE_WIDTH);
-const CANVAS_NODE_MARGIN_Y = Math.max(60, REPLY_NODE_GAP_Y - REPLY_NODE_HEIGHT);
 const PROMPT_DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
 const VALID_STATES = new Set([
   "starting",

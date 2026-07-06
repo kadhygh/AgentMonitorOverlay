@@ -33,6 +33,7 @@ Expected ownership after refactor:
 Expected ownership after refactor:
 
 - `server.js`: native HTTP server bootstrap and route table.
+- `lib/amo-constants.js`: shared AMO layout, version, canvas, and plugin constants.
 - `lib/http.js`: request/response helpers.
 - `lib/debug.js`: bounded debug log and debug status.
 - `lib/session-store.js`: session map, snapshot load/persist, archive/dismiss/review/attention, list sessions.
@@ -136,6 +137,7 @@ The repository has completed the first overlay extraction pass. These boundaries
 
 The broker extraction has started. These boundaries have already moved out of `broker/server.js`:
 
+- shared AMO layout, version, canvas, and plugin constants: `broker/lib/amo-constants.js`
 - HTTP response/body/error helpers: `broker/lib/http.js`
 - bounded debug log, debug status, and debug preview helpers: `broker/lib/debug.js`
 - Codex/Claude session display-name cache: `broker/lib/display-names.js`

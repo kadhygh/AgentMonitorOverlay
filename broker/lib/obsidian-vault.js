@@ -2,11 +2,11 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { OBSIDIAN_PLUGIN_ID } = require("./amo-constants");
 const { httpError } = require("./http");
 const { readJsonFile, readJsonFileStrict, writeJsonFile } = require("./filesystem");
 const { normalizeText } = require("./normalize");
 
-const OBSIDIAN_PLUGIN_ID = "md-anno-tools";
 const DEFAULT_CANVAS_APPEND_DIRECTION = "down";
 const CANVAS_APPEND_DIRECTIONS = new Set(["down", "right"]);
 
