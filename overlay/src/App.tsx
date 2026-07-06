@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalSize, UserAttentionType, Window as TauriWindow } from "@tauri-apps/api/window";
-import { getCurrentWebviewWindow, WebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { getCurrentWindow, LogicalSize, UserAttentionType } from "@tauri-apps/api/window";
+import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
   Archive,
@@ -109,8 +109,25 @@ import {
 } from "./domain/workspaceModel";
 import { LaunchToolMark, SessionRowContent, toolDisplayForSession } from "./components/SessionCard";
 import { toCliPasteClipboardText, writeClipboardText } from "./native/clipboard";
+import {
+  applyScratchpadShortcutState,
+  loadScratchpadShortcutState,
+  saveScratchpadShortcutState,
+  type ScratchpadShortcutState,
+} from "./native/scratchpadShortcut";
 import { type AmoTheme, useAmoThemeRuntime } from "./theme/amoTheme";
 import { ScratchpadApp } from "./windows/ScratchpadApp";
+import {
+  bringUtilityWindowToFront,
+  closeUtilityWindow,
+  CURRENT_WINDOW_LABEL,
+  runWithNativeDialogLayer,
+  setAmoWindowAlwaysOnTop,
+  startUtilityWindowDrag,
+  useUtilityWindowLifecycle,
+  type UtilityWindowKind,
+  type UtilityWindowStateEvent,
+} from "./windows/utilityWindow";
 import type {
   ActivationCandidate,
   ActivationResult,
@@ -139,26 +156,6 @@ const DIALOG_SIZES = {
 };
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
-const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
-const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
-
-type ScratchpadShortcutButton = "mouse4" | "mouse5";
-type UtilityWindowKind = "deploy" | "settings";
-type AmoWindowLabel = "main" | "scratchpad" | "deploy" | "settings";
-
-const AMO_FLOATING_WINDOWS: AmoWindowLabel[] = ["main", "scratchpad"];
-const AMO_UTILITY_WINDOWS: UtilityWindowKind[] = ["deploy", "settings"];
-const AMO_WINDOW_LABELS: AmoWindowLabel[] = [...AMO_FLOATING_WINDOWS, ...AMO_UTILITY_WINDOWS];
-
-interface ScratchpadShortcutState {
-  enabled: boolean;
-  button: ScratchpadShortcutButton;
-}
-
-interface UtilityWindowStateEvent {
-  label: UtilityWindowKind;
-  open: boolean;
-}
 
 type SettingsSection = "scratchpad" | "theme";
 type BrokerReadinessState = "checking" | "starting" | "ready" | "error";
@@ -176,137 +173,8 @@ const brokerReadinessLabels: Record<BrokerReadinessState, string> = {
   error: "broker offline",
 };
 
-interface ScratchpadShortcutResult {
-  ok: boolean;
-  enabled: boolean;
-  button: ScratchpadShortcutButton;
-  message: string;
-}
-
-function startUtilityWindowDrag(event: PointerEvent<HTMLElement>) {
-  if ((event.target as HTMLElement).closest("button, input, select, textarea, label")) {
-    return;
-  }
-
-  void getCurrentWindow().startDragging().catch(() => undefined);
-}
-
-async function closeUtilityWindow(label: UtilityWindowKind) {
-  const payload = { label, open: false } satisfies UtilityWindowStateEvent;
-  await getCurrentWindow().emitTo("main", "amo-utility-window-state", payload).catch(() => undefined);
-  await getCurrentWindow().hide().catch(() => undefined);
-  await setAmoWindowAlwaysOnTop(label, false);
-  await setAmoWindowAlwaysOnTop("main", true);
-  await getCurrentWindow().emitTo("main", "amo-utility-window-state", payload).catch(() => undefined);
-}
-
-function useUtilityWindowLifecycle(label: UtilityWindowKind) {
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    void getCurrentWindow()
-      .onCloseRequested((event) => {
-        event.preventDefault();
-        void closeUtilityWindow(label);
-      })
-      .then((handler) => {
-        unlisten = handler;
-      });
-
-    return () => {
-      unlisten?.();
-    };
-  }, [label]);
-
-  useEffect(() => {
-    const handleKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") {
-        event.preventDefault();
-        void closeUtilityWindow(label);
-      }
-    };
-
-    window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [label]);
-}
-
-function isUtilityWindowLabel(label: string): label is UtilityWindowKind {
-  return label === "deploy" || label === "settings";
-}
-
-async function getAmoWindow(label: AmoWindowLabel) {
-  return label === CURRENT_WINDOW_LABEL ? getCurrentWindow() : await TauriWindow.getByLabel(label);
-}
-
-async function setAmoWindowAlwaysOnTop(label: AmoWindowLabel, alwaysOnTop: boolean) {
-  const target = await getAmoWindow(label);
-  await target?.setAlwaysOnTop(alwaysOnTop).catch(() => undefined);
-}
-
-async function setAmoWindowsAlwaysOnTop(alwaysOnTop: boolean) {
-  await Promise.all(AMO_WINDOW_LABELS.map((label) => setAmoWindowAlwaysOnTop(label, alwaysOnTop)));
-}
-
-async function bringUtilityWindowToFront(label: UtilityWindowKind) {
-  const target = await getAmoWindow(label);
-  await setAmoWindowAlwaysOnTop("main", false);
-  await Promise.all(
-    AMO_UTILITY_WINDOWS.filter((utilityLabel) => utilityLabel !== label).map((utilityLabel) =>
-      setAmoWindowAlwaysOnTop(utilityLabel, false),
-    ),
-  );
-  await setAmoWindowAlwaysOnTop(label, true);
-  await target?.show().catch(() => undefined);
-  await target?.setFocus().catch(() => undefined);
-}
-
-async function restoreAmoWindowLayerAfterNativeDialog() {
-  await Promise.all(AMO_FLOATING_WINDOWS.map((label) => setAmoWindowAlwaysOnTop(label, true)));
-
-  if (isUtilityWindowLabel(CURRENT_WINDOW_LABEL)) {
-    await bringUtilityWindowToFront(CURRENT_WINDOW_LABEL);
-    return;
-  }
-
-  await Promise.all(AMO_UTILITY_WINDOWS.map((label) => setAmoWindowAlwaysOnTop(label, false)));
-  await getCurrentWindow().setFocus().catch(() => undefined);
-}
-
-async function runWithNativeDialogLayer<T>(operation: () => Promise<T>): Promise<T> {
-  await setAmoWindowsAlwaysOnTop(false);
-  await sleep(40);
-
-  try {
-    return await operation();
-  } finally {
-    await restoreAmoWindowLayerAfterNativeDialog();
-  }
-}
-
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
-}
-
-function loadScratchpadShortcutState(): ScratchpadShortcutState {
-  try {
-    const raw = localStorage.getItem(SCRATCHPAD_SHORTCUT_STORAGE_KEY);
-    if (!raw) return { enabled: true, button: "mouse4" };
-    const parsed = JSON.parse(raw) as Partial<ScratchpadShortcutState>;
-    return {
-      enabled: parsed.enabled !== false,
-      button: "mouse4",
-    };
-  } catch {
-    return { enabled: true, button: "mouse4" };
-  }
-}
-
-function saveScratchpadShortcutState(next: ScratchpadShortcutState) {
-  localStorage.setItem(SCRATCHPAD_SHORTCUT_STORAGE_KEY, JSON.stringify(next));
-}
-
-async function applyScratchpadShortcutState(next: ScratchpadShortcutState) {
-  return invoke<ScratchpadShortcutResult>("set_scratchpad_shortcut_config", { config: next });
 }
 
 function activationCandidateMeta(candidate: ActivationCandidate) {

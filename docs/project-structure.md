@@ -117,7 +117,9 @@ The repository is in the early overlay extraction stage. These boundaries have a
 - task card presentation: `overlay/src/components/SessionCard.tsx`
 - AMO theme runtime: `overlay/src/theme/amoTheme.ts`
 - shared clipboard helpers: `overlay/src/native/clipboard.ts`
+- scratchpad shortcut persistence/native command helper: `overlay/src/native/scratchpadShortcut.ts`
 - scratchpad utility window: `overlay/src/windows/ScratchpadApp.tsx`
+- shared utility window lifecycle/layering helpers: `overlay/src/windows/utilityWindow.ts`
 
 The largest files are still the historical roots:
 

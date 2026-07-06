@@ -371,3 +371,14 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Utility Boundaries Extracted
+
+- Added `overlay/src/native/scratchpadShortcut.ts` for shortcut persistence and the native shortcut command.
+- Added `overlay/src/windows/utilityWindow.ts` for utility window lifecycle, close behavior, always-on-top layering, and native-dialog layering.
+- Updated `App.tsx` to consume these helpers so Settings and Deploy window extraction can share the same boundary.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`
