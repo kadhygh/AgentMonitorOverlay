@@ -543,3 +543,22 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17673`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17674`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Broker Target Binding Extracted
+
+- Added `broker/lib/target-binding.js` for window, Codex CLI session, and Codex App thread target binding rules.
+- Moved default hook target binding, window-hint normalization, and candidate-menu window identity clearing out of `broker/server.js`.
+- Kept route handlers and session mutation in `broker/server.js`.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/http.js`
+  - `node --check broker/lib/debug.js`
+  - `node --check broker/lib/display-names.js`
+  - `node --check broker/lib/filesystem.js`
+  - `node --check broker/lib/normalize.js`
+  - `node --check broker/lib/target-binding.js`
+  - `node --check broker/hooks/codex.js`
+  - `node --check broker/hooks/claude.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17675`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17676`
+  - `git diff --check`
