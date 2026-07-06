@@ -864,3 +864,12 @@ Manual smoke:
 - Validation passed:
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 5 Tauri Scratchpad Extracted
+
+- Added `overlay/src-tauri/src/scratchpad.rs` for the global mouse hook, scratchpad shortcut state, copy-request event, and cursor-relative scratchpad placement.
+- Kept the Tauri `set_scratchpad_shortcut_config` and `show_scratchpad_at_cursor` command wrappers in `lib.rs`.
+- Reduced `lib.rs` from 1012 lines to 801 lines while keeping `scratchpad.rs` at 222 lines.
+- Validation passed:
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

@@ -76,10 +76,7 @@ Expected ownership after refactor:
 - `dialogs.rs`: native folder picker commands and Windows COM dialog handling.
 - `opener.rs`: local file/folder opening, external URI launch, and ShellExecute helpers.
 - `windows.rs`: external window enumeration, activation, and cursor window picking.
-- `scratchpad.rs`: global mouse hook and scratchpad window placement.
-- `clipboard.rs`: native clipboard fallback.
-- `dialogs.rs`: native folder picker.
-- `broker.rs`: broker startup/health helpers.
+- `scratchpad.rs`: global mouse hook, shortcut state, scratchpad copy-request events, and cursor-relative window placement.
 
 ## Size Policy
 
