@@ -1102,6 +1102,12 @@ button {
   border-color: rgba(255, 199, 115, 0.28);
 }
 
+.deploy-adapter-card.state-needs-update {
+  color: #fff0ca;
+  background: rgba(171, 119, 45, 0.17);
+  border-color: rgba(255, 196, 99, 0.4);
+}
+
 .deploy-adapter-card.status-blocked {
   color: #f4c4bd;
   background: rgba(190, 68, 60, 0.14);
@@ -3967,6 +3973,7 @@ button {
 
 :root[data-amo-theme="light"] .deploy-git-exclude-note.status-missing,
 :root[data-amo-theme="light"] .deploy-adapter-card.state-undeployed,
+:root[data-amo-theme="light"] .deploy-adapter-card.state-needs-update,
 :root[data-amo-theme="light"] .workspace-issues span {
   color: #8c5a08;
   background: rgba(226, 168, 68, 0.1);

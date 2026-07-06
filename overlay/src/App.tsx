@@ -623,24 +623,46 @@ function adapterStateLabel(adapter: WorkspaceAdapterPlan) {
   return adapter.deploymentStatus ?? adapter.status;
 }
 
+function isWorkspaceAdapterUpToDate(adapter: WorkspaceAdapterPlan) {
+  return adapter.deploymentStatus === "deployed";
+}
+
+function isWorkspaceAdapterInstalled(adapter: WorkspaceAdapterPlan) {
+  return adapter.deploymentStatus === "deployed" || adapter.deploymentStatus === "needs-update";
+}
+
+function isWorkspaceAdapterNeedsUpdate(adapter: WorkspaceAdapterPlan) {
+  return adapter.deploymentStatus === "needs-update";
+}
+
 function adapterContextLabel(adapter: WorkspaceAdapterPlan) {
+  if (isWorkspaceAdapterNeedsUpdate(adapter)) {
+    const installed = adapter.installedHookProtocolVersion ?? "old";
+    const expected = adapter.expectedHookProtocolVersion ?? "?";
+    return `hook ${installed} -> ${expected}`;
+  }
   return adapter.workspaceState ?? adapter.confidence;
 }
 
 function isWorkspaceAdapterDeployed(adapter: WorkspaceAdapterPlan) {
-  return adapter.deploymentStatus === "deployed";
+  return isWorkspaceAdapterUpToDate(adapter);
 }
 
 function selectedWorkspaceAdapterIds(inspection: WorkspaceInspection) {
   return inspection.supportedAdapters
-    .filter((adapter) => isDeployableWorkspaceAdapter(adapter) && adapter.recommended !== false && !isWorkspaceAdapterDeployed(adapter))
+    .filter((adapter) => isDeployableWorkspaceAdapter(adapter) && adapter.recommended !== false && !isWorkspaceAdapterUpToDate(adapter))
     .map((adapter) => adapter.id);
 }
 
 function workspaceDeploymentSummary(inspection: WorkspaceInspection) {
-  const deployedCount = inspection.supportedAdapters.filter(isWorkspaceAdapterDeployed).length;
+  const deployedCount = inspection.supportedAdapters.filter(isWorkspaceAdapterUpToDate).length;
+  const updateCount = inspection.supportedAdapters.filter(isWorkspaceAdapterNeedsUpdate).length;
   const deployableCount = inspection.supportedAdapters.filter(isDeployableWorkspaceAdapter).length;
   const empty = inspection.supportedAdapters.some((adapter) => adapter.workspaceState === "empty");
+
+  if (updateCount > 0) {
+    return `${updateCount} adapter(s) need hook update. Deploy Selected will refresh them.`;
+  }
 
   if (empty && deployedCount === 0) {
     return "Empty folder, no AMO hooks deployed.";
@@ -659,8 +681,10 @@ function workspaceDeploymentSummary(inspection: WorkspaceInspection) {
 }
 
 function workspaceDeploymentStateLabel(inspection: WorkspaceInspection) {
-  const deployedCount = inspection.supportedAdapters.filter(isWorkspaceAdapterDeployed).length;
+  const updateCount = inspection.supportedAdapters.filter(isWorkspaceAdapterNeedsUpdate).length;
+  const deployedCount = inspection.supportedAdapters.filter(isWorkspaceAdapterUpToDate).length;
   const empty = inspection.supportedAdapters.some((adapter) => adapter.workspaceState === "empty");
+  if (updateCount > 0) return "needs update";
   if (deployedCount > 0) return "deployed";
   return empty ? "empty" : "not deployed";
 }
@@ -2125,7 +2149,7 @@ function DeployWorkspaceApp() {
                 {workspaceInspection.supportedAdapters.map((adapter) => {
                   const selectable = isDeployableWorkspaceAdapter(adapter);
                   const selected = selectedDeployAdapters.includes(adapter.id);
-                  const deployed = isWorkspaceAdapterDeployed(adapter);
+                  const installed = isWorkspaceAdapterInstalled(adapter);
                   const stateLabel = adapterStateLabel(adapter);
                   const contextLabel = adapterContextLabel(adapter);
                   return (
@@ -2158,7 +2182,7 @@ function DeployWorkspaceApp() {
                         {contextLabel ? <small>{contextLabel}</small> : null}
                       </span>
                       <span className="deploy-adapter-actions">
-                        {deployed ? (
+                        {installed ? (
                           <>
                             <button
                               type="button"

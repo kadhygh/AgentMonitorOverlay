@@ -244,33 +244,87 @@ try {
             (Join-Path $workspaceRoot ".claude\settings.local.json"),
             (Join-Path $workspaceRoot ".codex\hooks.json")
         )) {
-        if (-not (Test-Path -LiteralPath $targetPath)) {
+    if (-not (Test-Path -LiteralPath $targetPath)) {
             throw "Expected enrolled file missing: $targetPath"
         }
+    }
+
+    $workspaceData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\workspace.json") | ConvertFrom-Json
+    $enrollmentData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\enrollment.json") | ConvertFrom-Json
+    if ($workspaceData.deploymentVersion -ne 2 -or $workspaceData.hookProtocolVersion -ne 2) {
+        throw "Workspace metadata does not include expected deployment/hook protocol versions."
+    }
+    if ($enrollmentData.deploymentVersion -ne 2 -or $enrollmentData.hookProtocolVersion -ne 2) {
+        throw "Enrollment metadata does not include expected deployment/hook protocol versions."
     }
 
     $codexHooksText = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".codex\hooks.json")
     if ($codexHooksText -notmatch "codex-stop-message\.mjs") {
         throw "Codex hooks config does not reference AMO hook script."
     }
-    if ($codexHooksText -notmatch "UserPromptSubmit" -or $codexHooksText -notmatch "Stop" -or $codexHooksText -notmatch "PermissionRequest") {
-        throw "Codex hooks config does not include prompt, reply, and permission hooks."
+    if ($codexHooksText -notmatch "UserPromptSubmit" -or $codexHooksText -notmatch "Stop" -or $codexHooksText -notmatch "PermissionRequest" -or $codexHooksText -notmatch "PreToolUse" -or $codexHooksText -notmatch "PostToolUse") {
+        throw "Codex hooks config does not include prompt, reply, permission, and tool lifecycle hooks."
     }
     $codexAdapterData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\adapters\codex-cli.json") | ConvertFrom-Json
     if (-not $codexAdapterData.bridgeEventsUrl -or $codexAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Codex adapter config does not include bridgeEventsUrl."
     }
+    if ($codexAdapterData.deploymentVersion -ne 2 -or $codexAdapterData.hookProtocolVersion -ne 2) {
+        throw "Codex adapter config does not include expected deployment/hook protocol versions."
+    }
+    if (@($codexAdapterData.hookEvents) -notcontains "PreToolUse" -or @($codexAdapterData.hookEvents) -notcontains "PostToolUse") {
+        throw "Codex adapter config does not include lifecycle hook event metadata."
+    }
     $claudeSettingsText = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".claude\settings.local.json")
     if ($claudeSettingsText -notmatch "claude-message\.mjs") {
         throw "Claude settings config does not reference AMO hook script."
     }
-    if ($claudeSettingsText -notmatch "UserPromptSubmit" -or $claudeSettingsText -notmatch "Stop" -or $claudeSettingsText -notmatch "PermissionRequest") {
-        throw "Claude settings config does not include prompt, reply, and permission hooks."
+    if ($claudeSettingsText -notmatch "UserPromptSubmit" -or $claudeSettingsText -notmatch "Stop" -or $claudeSettingsText -notmatch "PermissionRequest" -or $claudeSettingsText -notmatch "PreToolUse" -or $claudeSettingsText -notmatch "PostToolUse") {
+        throw "Claude settings config does not include prompt, reply, permission, and tool lifecycle hooks."
     }
     $claudeAdapterData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\adapters\claude-cli.json") | ConvertFrom-Json
     if (-not $claudeAdapterData.bridgeEventsUrl -or $claudeAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Claude adapter config does not include bridgeEventsUrl."
     }
+    if ($claudeAdapterData.deploymentVersion -ne 2 -or $claudeAdapterData.hookProtocolVersion -ne 2) {
+        throw "Claude adapter config does not include expected deployment/hook protocol versions."
+    }
+    if (@($claudeAdapterData.hookEvents) -notcontains "PreToolUse" -or @($claudeAdapterData.hookEvents) -notcontains "PostToolUse") {
+        throw "Claude adapter config does not include lifecycle hook event metadata."
+    }
+
+    $codexAdapterPath = Join-Path $workspaceRoot ".amo\adapters\codex-cli.json"
+    $staleCodexAdapterData = Get-Content -Raw -Encoding UTF8 $codexAdapterPath | ConvertFrom-Json
+    $staleCodexAdapterData.PSObject.Properties.Remove("hookProtocolVersion")
+    $staleCodexAdapterData.PSObject.Properties.Remove("hookEvents")
+    $staleCodexAdapterData | ConvertTo-Json -Depth 20 | Set-Content -LiteralPath $codexAdapterPath -Encoding UTF8
+    $staleInspect = Invoke-BrokerJson -Method POST -Path "/api/workspaces/inspect" -Body @{
+        workspacePath = $workspaceRoot
+    }
+    $staleCodexPlan = @($staleInspect.supportedAdapters | Where-Object { $_.id -eq "codex-cli" })[0]
+    if ($staleCodexPlan.deploymentStatus -ne "needs-update" -or @($staleCodexPlan.deploymentIssues).Count -eq 0) {
+        throw "Stale Codex adapter metadata should inspect as needs-update."
+    }
+    $repairCodex = Invoke-BrokerJson -Method POST -Path "/api/workspaces/enroll" -Body @{
+        workspacePath = $workspaceRoot
+        adapters = @("codex-cli")
+    }
+    if (-not $repairCodex.ok) {
+        throw "Codex adapter repair deploy failed."
+    }
+    $repairedInspect = Invoke-BrokerJson -Method POST -Path "/api/workspaces/inspect" -Body @{
+        workspacePath = $workspaceRoot
+    }
+    $repairedCodexPlan = @($repairedInspect.supportedAdapters | Where-Object { $_.id -eq "codex-cli" })[0]
+    if ($repairedCodexPlan.deploymentStatus -ne "deployed") {
+        throw "Codex adapter repair should restore deployed status."
+    }
+    $repairedEnrollmentData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\enrollment.json") | ConvertFrom-Json
+    $repairedEnrollmentIds = @($repairedEnrollmentData.adapters | ForEach-Object { $_.id })
+    if ($repairedEnrollmentIds -notcontains "codex-cli" -or $repairedEnrollmentIds -notcontains "claude-cli") {
+        throw "Single-adapter repair should preserve other enrollment adapter metadata."
+    }
+    Write-Host "Deployment version inspection OK -> needs-update/repair"
 
     $pluginList = Get-Content -Raw -Encoding UTF8 (Join-Path $vaultRoot ".obsidian\community-plugins.json") | ConvertFrom-Json
     if (@($pluginList) -notcontains "md-anno-tools") {
@@ -422,8 +476,8 @@ try {
     if (-not (Test-Path -LiteralPath $notePath)) {
         throw "Reply note was not created: $notePath"
     }
-    if ($reply.notePath -notmatch "/001 reply\.md$") {
-        throw "First reply note should use chronological generated name '001 reply.md', got $($reply.notePath)."
+    if ($reply.notePath -notmatch "/001 reply(?: - .+)?\.md$") {
+        throw "First reply note should use chronological generated name prefix '001 reply', got $($reply.notePath)."
     }
     $canvasPath = $baseCanvasPath
     $canvas = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
@@ -453,8 +507,8 @@ try {
     if (-not $reply2.ok) {
         throw "Second reply endpoint failed."
     }
-    if ($reply2.notePath -notmatch "/002 reply\.md$") {
-        throw "Second reply note should use chronological generated name '002 reply.md', got $($reply2.notePath)."
+    if ($reply2.notePath -notmatch "/002 reply(?: - .+)?\.md$") {
+        throw "Second reply note should use chronological generated name prefix '002 reply', got $($reply2.notePath)."
     }
 
     $canvasAfterSecondReply = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
@@ -522,6 +576,32 @@ try {
     }
     Write-Host "Attention auto-clear heartbeat OK -> $($autoClearHeartbeat.session.state)"
 
+    $permissionBeforeToolLifecycle = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        source = "codex-event-hook"
+        sessionId = "codex-reply-verify"
+        cwd = $workspaceRoot
+        hookEventName = "PermissionRequest"
+        message = "Codex is waiting for permission before tool execution"
+    }
+    if (-not $permissionBeforeToolLifecycle.session.needsAttention) {
+        throw "Permission precondition before PreToolUse did not mark the session as needing attention."
+    }
+    $preToolUseEvent = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        source = "codex-event-hook"
+        sessionId = "codex-reply-verify"
+        cwd = $workspaceRoot
+        hookEventName = "PreToolUse"
+        message = "Bash: verification command"
+    }
+    if ($preToolUseEvent.session.state -ne "running" -or $preToolUseEvent.session.needsAttention -or $preToolUseEvent.session.reviewRequired -or $preToolUseEvent.session.reviewStatus) {
+        throw "PreToolUse should auto-clear stale permission attention and mark the session running."
+    }
+    Write-Host "Attention auto-clear PreToolUse OK -> $($preToolUseEvent.session.state)"
+
     $annotationResult = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
         schemaVersion = 1
         source = "verify-obsidian-plugin"
@@ -586,8 +666,8 @@ try {
     if (-not $syncBack.promptNotePath -or -not $syncBack.promptCanvasNodeId) {
         throw "Sync-back endpoint did not record the sent prompt note/canvas node."
     }
-    if ($syncBack.promptNotePath -notmatch "/003 prompt\.md$") {
-        throw "Sync-back prompt note should use chronological generated name '003 prompt.md', got $($syncBack.promptNotePath)."
+    if ($syncBack.promptNotePath -notmatch "/003 prompt(?: - .+)?\.md$") {
+        throw "Sync-back prompt note should use chronological generated name prefix '003 prompt', got $($syncBack.promptNotePath)."
     }
     $canvasAfterSyncBack = Get-Content -Raw -Encoding UTF8 $canvasPath | ConvertFrom-Json
     $promptCanvasNode = @($canvasAfterSyncBack.nodes | Where-Object { $_.id -eq $syncBack.promptCanvasNodeId })[0]

@@ -100,6 +100,9 @@ Apply should:
 Health checks should report:
 
 - adapter files exist
+- adapter deployment metadata reports the expected `deploymentVersion`
+- adapter hook metadata reports the expected `hookProtocolVersion`
+- tool hook config contains every expected AMO lifecycle event for that adapter
 - tool hook config points to AMO-owned adapter files
 - AMO bridge URL is configured
 - `workspace.vaultRoot` is present
@@ -108,6 +111,20 @@ Health checks should report:
 - known local limitations
 
 The first MVP can use a dry-run rather than starting Codex automatically.
+
+### Deployment And Hook Versions
+
+AMO tracks deployment state separately from the Obsidian plugin version. The vault-local `md-anno-tools` version only describes the Obsidian-side note/canvas/panel behavior. CLI/TUI hook freshness is tracked by AMO deployment metadata.
+
+Current deployment metadata:
+
+- `deploymentVersion: 2`: the current workspace adapter deployment package version.
+- `hookProtocolVersion: 2`: the current hook-to-broker event protocol.
+- `hookEvents`: the lifecycle events the deployed adapter is expected to send.
+
+Workspace deploy writes these fields to `.amo/workspace.json`, `.amo/enrollment.json`, and each `.amo/adapters/<adapter-id>.json`. Workspace inspect also checks the actual merged hook file (`.codex/hooks.json` or `.claude/settings.local.json`) for all expected AMO events. If adapter metadata is missing, stale, or the merged hook config lacks a required event such as `PreToolUse`, the adapter should inspect as `needs-update` rather than `deployed`.
+
+`Deploy Selected` is allowed to repair a `needs-update` adapter. Up-to-date adapters are not selected by default, but their individual `Update` action can still force a redeploy of that adapter.
 
 ### Repair, Disable, Uninstall
 
@@ -181,7 +198,7 @@ Each adapter definition should provide:
 
 ### `codex-cli`
 
-MVP status: first implementation target.
+MVP status: implemented for workspace-local prompt/reply/permission/tool lifecycle hook capture.
 
 Expected deployment:
 
@@ -189,7 +206,10 @@ Expected deployment:
 - merge `.codex/hooks.json`
 - keep `.codex/cache/` only when broker debug is enabled or bridge delivery fails
 - offer a local `.git/info/exclude` update for `.amo/`, `.codex/cache/`, and `.codex/hooks.json`
-- POST `last_assistant_message` to `POST /api/replies`
+- POST `prompt` from `UserPromptSubmit` to `POST /api/prompts`
+- POST `last_assistant_message` from `Stop` to `POST /api/replies`
+- POST `PermissionRequest`, `PreToolUse`, `PostToolUse`, and `PostToolUseFailure` as event-only payloads to `POST /api/events`
+- use `PreToolUse` / `PostToolUse` events to clear stale permission attention and mark the card `running` after a user handles a request
 - keep hook stdout protocol-clean with `{"continue":true}`
 
 Known risks:
@@ -209,7 +229,7 @@ Expected future route:
 
 ### `claude-cli`
 
-MVP status: implemented for workspace-local prompt/reply/permission hook capture.
+MVP status: implemented for workspace-local prompt/reply/permission/tool lifecycle hook capture.
 
 Expected deployment:
 
@@ -220,7 +240,8 @@ Expected deployment:
 - offer a local `.git/info/exclude` update for `.amo/`; `.claude/settings.local.json` is opt-in because teams may intentionally version other `.claude` files
 - POST `prompt` from `UserPromptSubmit` to `POST /api/prompts`
 - POST `last_assistant_message` from `Stop` to `POST /api/replies`
-- POST `PermissionRequest` as event-only payload to `POST /api/events`
+- POST `PermissionRequest`, `PreToolUse`, `PostToolUse`, and `PostToolUseFailure` as event-only payloads to `POST /api/events`
+- use `PreToolUse` / `PostToolUse` events to clear stale permission attention and mark the card `running` after a user handles a request
 - keep hook stdout protocol-clean with JSON only, so `UserPromptSubmit` does not inject AMO text into Claude context
 
 Known risks:

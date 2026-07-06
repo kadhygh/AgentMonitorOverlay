@@ -197,6 +197,14 @@ export interface WorkspaceAdapterPlan {
   recommended?: boolean;
   confidence?: string;
   scope?: string;
+  installedDeploymentVersion?: number | null;
+  expectedDeploymentVersion?: number;
+  installedHookProtocolVersion?: number | null;
+  expectedHookProtocolVersion?: number;
+  expectedHookEvents?: string[];
+  configuredHookEvents?: string[];
+  missingHookEvents?: string[];
+  deploymentIssues?: string[];
   reason?: string;
   evidence?: string[];
   directoriesToCreate?: string[];
@@ -207,6 +215,8 @@ export interface WorkspaceAdapterPlan {
 
 export interface WorkspaceInspection {
   schemaVersion: number;
+  deploymentVersion?: number;
+  hookProtocolVersion?: number;
   workspaceId: string;
   workspacePath: string;
   projectName: string;
@@ -220,6 +230,8 @@ export interface WorkspaceInspection {
 export interface WorkspaceEnrollment {
   ok: boolean;
   schemaVersion: number;
+  deploymentVersion?: number;
+  hookProtocolVersion?: number;
   workspaceId: string;
   workspacePath: string;
   deploymentRoot: string;

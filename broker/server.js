@@ -14,7 +14,9 @@ const MAX_BODY_BYTES = 1024 * 1024;
 const DEBUG_MAX_LOG_ENTRIES = 800;
 const AMO_DIR = ".amo";
 const AMO_SCHEMA_VERSION = 1;
+const AMO_DEPLOYMENT_VERSION = 2;
 const AMO_LAYOUT_VERSION = 2;
+const AMO_HOOK_PROTOCOL_VERSION = 2;
 const AMO_SESSIONS_PATH = "Sessions";
 const AMO_SESSION_GENERATED_PATH = "turns/generated";
 const AMO_CANVASES_PATH = "Canvases";
@@ -33,6 +35,22 @@ const CANVAS_NODE_MARGIN_X = Math.max(80, REPLY_NODE_GAP_X - REPLY_NODE_WIDTH);
 const CANVAS_NODE_MARGIN_Y = Math.max(60, REPLY_NODE_GAP_Y - REPLY_NODE_HEIGHT);
 const DEFAULT_CANVAS_APPEND_DIRECTION = "down";
 const CANVAS_APPEND_DIRECTIONS = new Set(["down", "right"]);
+const CODEX_HOOK_EVENTS = Object.freeze([
+  "Stop",
+  "UserPromptSubmit",
+  "PermissionRequest",
+  "PreToolUse",
+  "PostToolUse",
+  "PostToolUseFailure",
+]);
+const CLAUDE_HOOK_EVENTS = Object.freeze([
+  "UserPromptSubmit",
+  "Stop",
+  "PermissionRequest",
+  "PreToolUse",
+  "PostToolUse",
+  "PostToolUseFailure",
+]);
 const PROMPT_DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
 const CORS_HEADERS = {
   "access-control-allow-origin": "*",
@@ -650,6 +668,17 @@ function upsertSessionFromEvent(payload) {
     createdAt: existing?.createdAt || now,
     heartbeatAt: existing?.heartbeatAt || null,
     eventCount: (existing?.eventCount || 0) + 1,
+    deploymentVersion:
+      normalizeVersionNumber(payload.amoDeploymentVersion || payload.deploymentVersion || payload.deployment_version) ||
+      existing?.deploymentVersion ||
+      null,
+    hookProtocolVersion:
+      normalizeVersionNumber(payload.amoHookProtocolVersion || payload.hookProtocolVersion || payload.hook_protocol_version) ||
+      existing?.hookProtocolVersion ||
+      null,
+    hookEvents: normalizeTextArray(payload.amoHookEvents || payload.hookEvents || payload.hook_events).length
+      ? normalizeTextArray(payload.amoHookEvents || payload.hookEvents || payload.hook_events)
+      : existing?.hookEvents || [],
   };
   if (shouldClearAttention) {
     const hadAttention = sessionHasAttentionState(existing) || Boolean(payload.needsAttention);
@@ -786,6 +815,106 @@ function workspaceRelativePath(workspacePath, targetPath) {
   return path.relative(workspacePath, targetPath).split(path.sep).join("/");
 }
 
+function normalizeVersionNumber(value) {
+  if (Number.isInteger(value)) return value;
+  const parsed = Number.parseInt(normalizeText(value), 10);
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function adapterConfigPath(amoRoot, adapterId) {
+  return path.join(amoRoot, "adapters", `${adapterId}.json`);
+}
+
+function inspectHookConfigCoverage(workspacePath, relativePath, expectedEvents, hookMarker) {
+  const configPath = path.join(workspacePath, relativePath);
+  if (!fs.existsSync(configPath)) {
+    return {
+      hookConfigPath: relativePath,
+      configuredHookEvents: [],
+      missingHookEvents: [...expectedEvents],
+      issues: [`${relativePath} is missing`],
+    };
+  }
+
+  const config = readJsonFile(configPath, null);
+  if (!config || typeof config !== "object" || Array.isArray(config) || !config.hooks || typeof config.hooks !== "object") {
+    return {
+      hookConfigPath: relativePath,
+      configuredHookEvents: [],
+      missingHookEvents: [...expectedEvents],
+      issues: [`${relativePath} does not contain a valid hooks object`],
+    };
+  }
+
+  const configuredHookEvents = [];
+  const missingHookEvents = [];
+  for (const eventName of expectedEvents) {
+    const hooksForEvent = config.hooks[eventName];
+    if (Array.isArray(hooksForEvent) && JSON.stringify(hooksForEvent).includes(hookMarker)) {
+      configuredHookEvents.push(eventName);
+    } else {
+      missingHookEvents.push(eventName);
+    }
+  }
+
+  return {
+    hookConfigPath: relativePath,
+    configuredHookEvents,
+    missingHookEvents,
+    issues: missingHookEvents.length > 0 ? [`${relativePath} is missing AMO hook event(s): ${missingHookEvents.join(", ")}`] : [],
+  };
+}
+
+function inspectAdapterDeployment(workspacePath, amoRoot, options) {
+  const { adapterId, hookConfigPath, hookMarker, expectedHookEvents } = options;
+  const config = readJsonFile(adapterConfigPath(amoRoot, adapterId), null);
+  if (!config) {
+    return {
+      installed: false,
+      deploymentStatus: "undeployed",
+      expectedDeploymentVersion: AMO_DEPLOYMENT_VERSION,
+      expectedHookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
+      expectedHookEvents: [...expectedHookEvents],
+      installedDeploymentVersion: null,
+      installedHookProtocolVersion: null,
+      configuredHookEvents: [],
+      missingHookEvents: [],
+      deploymentIssues: [],
+    };
+  }
+
+  const installedDeploymentVersion = normalizeVersionNumber(config.deploymentVersion);
+  const installedHookProtocolVersion = normalizeVersionNumber(config.hookProtocolVersion);
+  const metadataHookEvents = normalizeTextArray(config.hookEvents);
+  const metadataMissingHookEvents = expectedHookEvents.filter((eventName) => !metadataHookEvents.includes(eventName));
+  const coverage = inspectHookConfigCoverage(workspacePath, hookConfigPath, expectedHookEvents, hookMarker);
+  const issues = [];
+
+  if (installedDeploymentVersion !== AMO_DEPLOYMENT_VERSION) {
+    issues.push(`deployment version is ${installedDeploymentVersion ?? "missing"}, expected ${AMO_DEPLOYMENT_VERSION}`);
+  }
+  if (installedHookProtocolVersion !== AMO_HOOK_PROTOCOL_VERSION) {
+    issues.push(`hook protocol is ${installedHookProtocolVersion ?? "missing"}, expected ${AMO_HOOK_PROTOCOL_VERSION}`);
+  }
+  if (metadataMissingHookEvents.length > 0) {
+    issues.push(`adapter metadata is missing hook event(s): ${metadataMissingHookEvents.join(", ")}`);
+  }
+  issues.push(...coverage.issues);
+
+  return {
+    installed: true,
+    deploymentStatus: issues.length > 0 ? "needs-update" : "deployed",
+    expectedDeploymentVersion: AMO_DEPLOYMENT_VERSION,
+    expectedHookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
+    expectedHookEvents: [...expectedHookEvents],
+    installedDeploymentVersion,
+    installedHookProtocolVersion,
+    configuredHookEvents: coverage.configuredHookEvents,
+    missingHookEvents: Array.from(new Set([...metadataMissingHookEvents, ...coverage.missingHookEvents])),
+    deploymentIssues: issues,
+  };
+}
+
 function inspectWorkspace(payload) {
   const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
   const writable = isWritableDirectory(workspacePath);
@@ -802,8 +931,20 @@ function inspectWorkspace(payload) {
   const hasClaudeDir = fs.existsSync(path.join(workspacePath, ".claude"));
   const hasClaudeLocalSettings = fs.existsSync(path.join(workspacePath, ".claude", "settings.local.json"));
   const hasClaudeProjectSettings = fs.existsSync(path.join(workspacePath, ".claude", "settings.json"));
-  const hasCodexAdapter = fs.existsSync(path.join(amoRoot, "adapters", "codex-cli.json"));
-  const hasClaudeAdapter = fs.existsSync(path.join(amoRoot, "adapters", "claude-cli.json"));
+  const codexDeployment = inspectAdapterDeployment(workspacePath, amoRoot, {
+    adapterId: "codex-cli",
+    hookConfigPath: ".codex/hooks.json",
+    hookMarker: "codex-stop-message.mjs",
+    expectedHookEvents: CODEX_HOOK_EVENTS,
+  });
+  const claudeDeployment = inspectAdapterDeployment(workspacePath, amoRoot, {
+    adapterId: "claude-cli",
+    hookConfigPath: ".claude/settings.local.json",
+    hookMarker: "claude-message.mjs",
+    expectedHookEvents: CLAUDE_HOOK_EVENTS,
+  });
+  const hasCodexAdapter = codexDeployment.installed;
+  const hasClaudeAdapter = claudeDeployment.installed;
   const gitExclude = inspectWorkspaceGitExclude(
     workspacePath,
     payload?.gitRootPath || payload?.git_root_path,
@@ -834,8 +975,8 @@ function inspectWorkspace(payload) {
   const codexConfidence = hasCodexDir || hasCodexHooks ? "configured" : rootIndicators.length > 0 ? "project" : workspaceState;
   const claudeConfidence =
     hasClaudeDir || hasClaudeLocalSettings || hasClaudeProjectSettings ? "configured" : rootIndicators.length > 0 ? "project" : workspaceState;
-  const codexDeploymentStatus = hasCodexAdapter ? "deployed" : "undeployed";
-  const claudeDeploymentStatus = hasClaudeAdapter ? "deployed" : "undeployed";
+  const codexDeploymentStatus = codexDeployment.deploymentStatus;
+  const claudeDeploymentStatus = claudeDeployment.deploymentStatus;
   const recommended = !isEmptyWorkspace;
   const commonDirectoriesToCreate = [
     ".amo",
@@ -867,6 +1008,8 @@ function inspectWorkspace(payload) {
   return {
     ok: true,
     schemaVersion: AMO_SCHEMA_VERSION,
+    deploymentVersion: AMO_DEPLOYMENT_VERSION,
+    hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
     workspaceId,
     workspacePath,
     projectName,
@@ -884,12 +1027,22 @@ function inspectWorkspace(payload) {
         recommended,
         confidence: codexConfidence,
         scope: "project-local",
+        installedDeploymentVersion: codexDeployment.installedDeploymentVersion,
+        expectedDeploymentVersion: codexDeployment.expectedDeploymentVersion,
+        installedHookProtocolVersion: codexDeployment.installedHookProtocolVersion,
+        expectedHookProtocolVersion: codexDeployment.expectedHookProtocolVersion,
+        expectedHookEvents: codexDeployment.expectedHookEvents,
+        configuredHookEvents: codexDeployment.configuredHookEvents,
+        missingHookEvents: codexDeployment.missingHookEvents,
+        deploymentIssues: codexDeployment.deploymentIssues,
         reason: adapterDeploymentReason({
           writable,
           installed: hasCodexAdapter,
+          deploymentStatus: codexDeploymentStatus,
+          deploymentIssues: codexDeployment.deploymentIssues,
           empty: isEmptyWorkspace,
           label: "Codex CLI",
-          hookDescription: "project-local Stop hook adapter",
+          hookDescription: "project-local lifecycle hook adapter",
         }),
         evidence,
         directoriesToCreate: [...commonDirectoriesToCreate, ".codex"],
@@ -914,9 +1067,19 @@ function inspectWorkspace(payload) {
         recommended,
         confidence: claudeConfidence,
         scope: "project-local",
+        installedDeploymentVersion: claudeDeployment.installedDeploymentVersion,
+        expectedDeploymentVersion: claudeDeployment.expectedDeploymentVersion,
+        installedHookProtocolVersion: claudeDeployment.installedHookProtocolVersion,
+        expectedHookProtocolVersion: claudeDeployment.expectedHookProtocolVersion,
+        expectedHookEvents: claudeDeployment.expectedHookEvents,
+        configuredHookEvents: claudeDeployment.configuredHookEvents,
+        missingHookEvents: claudeDeployment.missingHookEvents,
+        deploymentIssues: claudeDeployment.deploymentIssues,
         reason: adapterDeploymentReason({
           writable,
           installed: hasClaudeAdapter,
+          deploymentStatus: claudeDeploymentStatus,
+          deploymentIssues: claudeDeployment.deploymentIssues,
           empty: isEmptyWorkspace,
           label: "Claude CLI",
           hookDescription: ".claude/settings.local.json hooks for prompt/reply capture",
@@ -982,10 +1145,14 @@ function enrollWorkspace(payload) {
   }
 
   const workspaceFile = path.join(amoRoot, "workspace.json");
+  const enrollmentFile = path.join(amoRoot, "enrollment.json");
   const existingWorkspace = readJsonFile(workspaceFile, null);
+  const existingEnrollment = readJsonFile(enrollmentFile, null);
   const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, existingWorkspace, inspection.projectName);
   writeJsonFile(workspaceFile, {
     schemaVersion: AMO_SCHEMA_VERSION,
+    deploymentVersion: AMO_DEPLOYMENT_VERSION,
+    hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
     workspaceId: inspection.workspaceId,
     workspacePath,
     projectName: inspection.projectName,
@@ -1010,6 +1177,9 @@ function enrollWorkspace(payload) {
       id: "codex-cli",
       label: "Codex CLI",
       status: "installed",
+      deploymentVersion: AMO_DEPLOYMENT_VERSION,
+      hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
+      hookEvents: CODEX_HOOK_EVENTS,
       installedAt: now,
       bridgeEventsUrl: `${baseUrl()}/api/events`,
       bridgeRepliesUrl: `${baseUrl()}/api/replies`,
@@ -1031,6 +1201,9 @@ function enrollWorkspace(payload) {
     enrollmentAdapters.push({
       id: "codex-cli",
       status: "installed",
+      deploymentVersion: AMO_DEPLOYMENT_VERSION,
+      hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
+      hookEvents: CODEX_HOOK_EVENTS,
       installedAt: now,
       hookScriptPath,
       mergedFiles: [".codex/hooks.json"],
@@ -1045,6 +1218,9 @@ function enrollWorkspace(payload) {
       id: "claude-cli",
       label: "Claude CLI",
       status: "installed",
+      deploymentVersion: AMO_DEPLOYMENT_VERSION,
+      hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
+      hookEvents: CLAUDE_HOOK_EVENTS,
       installedAt: now,
       bridgeEventsUrl: `${baseUrl()}/api/events`,
       bridgeRepliesUrl: `${baseUrl()}/api/replies`,
@@ -1066,6 +1242,9 @@ function enrollWorkspace(payload) {
     enrollmentAdapters.push({
       id: "claude-cli",
       status: "installed",
+      deploymentVersion: AMO_DEPLOYMENT_VERSION,
+      hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
+      hookEvents: CLAUDE_HOOK_EVENTS,
       installedAt: now,
       hookScriptPath,
       mergedFiles: [".claude/settings.local.json"],
@@ -1087,12 +1266,19 @@ function enrollWorkspace(payload) {
   const pluginInstall = installObsidianPlugin(vaultRoot, workspacePath);
   installedFiles.push(...pluginInstall.installedFiles);
 
-  writeJsonFile(path.join(amoRoot, "enrollment.json"), {
+  const requestedAdapterIds = new Set(requestedAdapters);
+  const preservedEnrollmentAdapters = Array.isArray(existingEnrollment?.adapters)
+    ? existingEnrollment.adapters.filter((adapter) => !requestedAdapterIds.has(normalizeText(adapter?.id)))
+    : [];
+
+  writeJsonFile(enrollmentFile, {
     schemaVersion: AMO_SCHEMA_VERSION,
+    deploymentVersion: AMO_DEPLOYMENT_VERSION,
+    hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
     workspaceId: inspection.workspaceId,
     workspacePath,
     updatedAt: now,
-    adapters: enrollmentAdapters,
+    adapters: [...preservedEnrollmentAdapters, ...enrollmentAdapters],
     deferredAdapters: inspection.deferredAdapters,
   });
   installedFiles.push(".amo/enrollment.json");
@@ -1108,6 +1294,8 @@ function enrollWorkspace(payload) {
   return {
     ok: true,
     schemaVersion: AMO_SCHEMA_VERSION,
+    deploymentVersion: AMO_DEPLOYMENT_VERSION,
+    hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
     workspaceId: inspection.workspaceId,
     workspacePath,
     deploymentRoot: AMO_DIR,
@@ -2889,9 +3077,13 @@ function deferredAdapter(id, label, reason) {
   };
 }
 
-function adapterDeploymentReason({ writable, installed, empty, label, hookDescription }) {
+function adapterDeploymentReason({ writable, installed, deploymentStatus, deploymentIssues = [], empty, label, hookDescription }) {
   if (!writable) {
     return "Workspace is not writable.";
+  }
+  if (installed && deploymentStatus === "needs-update") {
+    const issue = deploymentIssues[0] ? ` ${deploymentIssues[0]}.` : "";
+    return `${label} adapter is installed but needs hook update.${issue}`;
   }
   if (installed) {
     return `${label} adapter is already deployed in this workspace.`;
@@ -3376,7 +3568,7 @@ function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
         type: "command",
         command,
         timeout: 10,
-        statusMessage: "AMO capture Codex prompt/reply",
+        statusMessage: "AMO capture Codex lifecycle",
       },
     ],
   };
@@ -3393,27 +3585,13 @@ function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
   if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) {
     config.hooks = {};
   }
-  if (!Array.isArray(config.hooks.Stop)) {
-    config.hooks.Stop = [];
-  }
-  if (!Array.isArray(config.hooks.UserPromptSubmit)) {
-    config.hooks.UserPromptSubmit = [];
-  }
-  if (!Array.isArray(config.hooks.PermissionRequest)) {
-    config.hooks.PermissionRequest = [];
-  }
-
-  const alreadyInstalled = JSON.stringify(config.hooks.Stop).includes("codex-stop-message.mjs");
-  if (!alreadyInstalled) {
-    config.hooks.Stop.push(hookEntry);
-  }
-  const promptAlreadyInstalled = JSON.stringify(config.hooks.UserPromptSubmit).includes("codex-stop-message.mjs");
-  if (!promptAlreadyInstalled) {
-    config.hooks.UserPromptSubmit.push(hookEntry);
-  }
-  const permissionAlreadyInstalled = JSON.stringify(config.hooks.PermissionRequest).includes("codex-stop-message.mjs");
-  if (!permissionAlreadyInstalled) {
-    config.hooks.PermissionRequest.push(hookEntry);
+  for (const eventName of CODEX_HOOK_EVENTS) {
+    if (!Array.isArray(config.hooks[eventName])) {
+      config.hooks[eventName] = [];
+    }
+    if (!JSON.stringify(config.hooks[eventName]).includes("codex-stop-message.mjs")) {
+      config.hooks[eventName].push(hookEntry);
+    }
   }
 
   const nextRaw = `${JSON.stringify(config, null, 2)}\n`;
@@ -3464,7 +3642,7 @@ function mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot) {
   if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) {
     config.hooks = {};
   }
-  for (const eventName of ["UserPromptSubmit", "Stop", "PermissionRequest"]) {
+  for (const eventName of CLAUDE_HOOK_EVENTS) {
     if (!Array.isArray(config.hooks[eventName])) {
       config.hooks[eventName] = [];
     }
@@ -3478,6 +3656,11 @@ function mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot) {
   }
   if (!JSON.stringify(config.hooks.PermissionRequest).includes("claude-message.mjs")) {
     config.hooks.PermissionRequest.push(permissionHookEntry);
+  }
+  for (const eventName of ["PreToolUse", "PostToolUse", "PostToolUseFailure"]) {
+    if (!JSON.stringify(config.hooks[eventName]).includes("claude-message.mjs")) {
+      config.hooks[eventName].push(permissionHookEntry);
+    }
   }
 
   const nextRaw = `${JSON.stringify(config, null, 2)}\n`;
@@ -3517,6 +3700,9 @@ function codexReplyHookScript() {
     "const latestUserPromptFile = path.join(cacheRoot, 'latest-user-prompt.md');",
     "const latestUserPromptJsonFile = path.join(cacheRoot, 'latest-user-prompt.json');",
     "const errorLogFile = path.join(cacheRoot, 'assistant-turn-errors.log');",
+    `const amoDeploymentVersion = ${JSON.stringify(AMO_DEPLOYMENT_VERSION)};`,
+    `const amoHookProtocolVersion = ${JSON.stringify(AMO_HOOK_PROTOCOL_VERSION)};`,
+    `const amoHookEvents = ${JSON.stringify(CODEX_HOOK_EVENTS)};`,
     "",
     "try {",
     "  const rawInput = await readStdin();",
@@ -3541,6 +3727,9 @@ function codexReplyHookScript() {
     "    const capturedAt = new Date().toISOString();",
     "    const record = {",
     "      schemaVersion: 1,",
+    "      amoDeploymentVersion,",
+    "      amoHookProtocolVersion,",
+    "      amoHookEvents,",
     "      tool: 'codex',",
     "      role: isPromptEvent ? 'user' : isReplyEvent ? 'assistant' : 'event',",
     "      source: isPromptEvent ? 'codex-user-prompt-hook' : isReplyEvent ? 'codex-stop-hook' : 'codex-event-hook',",
@@ -3702,6 +3891,8 @@ function codexReplyHookScript() {
     "function inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent) {",
     "  if (isPromptEvent) return 'running';",
     "  if (isReplyEvent) return 'idle';",
+    "  const lowerEventName = String(eventName || '').toLowerCase();",
+    "  if (lowerEventName === 'pretooluse' || lowerEventName === 'posttooluse' || lowerEventName === 'posttoolusefailure') return 'running';",
     "  const combined = [eventName, payload.message, payload.reason, payload.title, payload.error, payload.status]",
     "    .filter((item) => typeof item === 'string')",
     "    .join(' ')",
@@ -3759,6 +3950,9 @@ function claudeMessageHookScript() {
     "const latestUserPromptFile = path.join(cacheRoot, 'latest-user-prompt.md');",
     "const latestUserPromptJsonFile = path.join(cacheRoot, 'latest-user-prompt.json');",
     "const errorLogFile = path.join(cacheRoot, 'claude-hook-errors.log');",
+    `const amoDeploymentVersion = ${JSON.stringify(AMO_DEPLOYMENT_VERSION)};`,
+    `const amoHookProtocolVersion = ${JSON.stringify(AMO_HOOK_PROTOCOL_VERSION)};`,
+    `const amoHookEvents = ${JSON.stringify(CLAUDE_HOOK_EVENTS)};`,
     "",
     "try {",
     "  const rawInput = await readStdin();",
@@ -3787,6 +3981,9 @@ function claudeMessageHookScript() {
     "      : `${lowerEventName || 'event'}-${fileSafeTimestamp(capturedAt)}`;",
     "    const record = {",
     "      schemaVersion: 1,",
+    "      amoDeploymentVersion,",
+    "      amoHookProtocolVersion,",
+    "      amoHookEvents,",
     "      tool: 'claude',",
     "      role: isPromptEvent ? 'user' : isReplyEvent ? 'assistant' : 'event',",
     "      source: isPromptEvent ? 'claude-user-prompt-hook' : isReplyEvent ? 'claude-stop-hook' : 'claude-event-hook',",
@@ -3949,6 +4146,8 @@ function claudeMessageHookScript() {
     "function inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent) {",
     "  if (isPromptEvent) return 'running';",
     "  if (isReplyEvent) return 'idle';",
+    "  const lowerEventName = String(eventName || '').toLowerCase();",
+    "  if (lowerEventName === 'pretooluse' || lowerEventName === 'posttooluse' || lowerEventName === 'posttoolusefailure') return 'running';",
     "  const combined = [eventName, payload.message, payload.reason, payload.title, payload.error, payload.status, payload.notification_type]",
     "    .filter((item) => typeof item === 'string')",
     "    .join(' ')",
@@ -4616,6 +4815,9 @@ function inferState(tool, eventName, payload) {
   const lowerMessage = `${payload.message || payload.summary || ""}`.toLowerCase();
   const combined = `${lowerEvent} ${lowerMessage}`;
 
+  if (lowerEvent === "pretooluse" || lowerEvent === "posttooluse" || lowerEvent === "posttoolusefailure") {
+    return "running";
+  }
   if (combined.includes("permission") || combined.includes("approval")) {
     return "waiting_permission";
   }

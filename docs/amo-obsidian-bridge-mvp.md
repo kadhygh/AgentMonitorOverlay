@@ -769,7 +769,7 @@ The MVP now has a shared debug channel for this exact class of "works once, then
 
 Debug logging is intentionally temporary and local: it is not persisted to the session snapshot, and the overlay toggle should stay off during normal use. For reproduction, enable debug in overlay, run the exact failing Obsidian operation, then inspect `GET /api/debug?limit=200`.
 
-Current health check: once a task card links to a vault, broker decorates the session with `obsidianPluginHealth`, including installed `md-anno-tools` version, enabled state, `main.js` presence, and plugin `data.json` bridge URL. Vault registration also exposes runtime-load evidence (`runtimeConfigExists`) for note/canvas opening. Overlay surfaces plugin result as a compact plugin status pill on the card. Follow-up repair flow: mismatches should offer repair/redeploy from the card or deploy/check panel.
+Current health check: once a task card links to a vault, broker decorates the session with `obsidianPluginHealth`, including installed `md-anno-tools` version, enabled state, `main.js` presence, and plugin `data.json` bridge URL. Vault registration also exposes runtime-load evidence (`runtimeConfigExists`) for note/canvas opening. Overlay surfaces plugin result as a compact plugin status pill on the card. Hook freshness is tracked separately through workspace deployment metadata: `deploymentVersion`, `hookProtocolVersion`, and adapter `hookEvents` in `.amo/workspace.json`, `.amo/enrollment.json`, and `.amo/adapters/<adapter-id>.json`. Deploy/check should report stale hook metadata or missing lifecycle events as `needs-update`; this is independent of the Obsidian plugin version. Follow-up repair flow: mismatches should offer repair/redeploy from the card or deploy/check panel.
 
 ### Phase 5.5: End-To-End Smoke
 
@@ -794,7 +794,7 @@ Manual acceptance path:
 17. User manually pastes/submits.
 18. Codex `UserPromptSubmit` can also record directly typed CLI prompts into the same chain.
 
-Permission request MVP behavior: project-local Codex deployment also registers `PermissionRequest`. The hook posts an event-only payload to the broker; the broker marks the task card `waiting_permission` / `needsAttention`; overlay shows a compact permission prompt on the card. The user should click the card to return to the CLI/TUI and manually approve or deny the request there. AMO does not auto-approve permissions in this MVP.
+Permission request MVP behavior: project-local Codex deployment registers `PermissionRequest` plus tool lifecycle events such as `PreToolUse` and `PostToolUse`. `PermissionRequest` posts an event-only payload to the broker; the broker marks the task card `waiting_permission` / `needsAttention`; overlay shows a compact permission prompt on the card. The user should click the card to return to the CLI/TUI and manually approve or deny the request there. Once the CLI proceeds into tool execution, a tool lifecycle hook should post a running event so the broker can clear stale permission attention and refresh the card to running. AMO does not auto-approve permissions in this MVP.
 
 ## Out Of Scope For The First Bridge MVP
 
