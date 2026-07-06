@@ -330,3 +330,13 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Workspace Model Extracted
+
+- Added `overlay/src/domain/workspaceModel.ts` for deploy adapter state, launch availability, workspace cleanup feedback, and maintenance tone/title logic.
+- Kept window positioning, fetch calls, and React state in `App.tsx`; those still belong to UI/window extraction work.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`

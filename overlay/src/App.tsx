@@ -74,6 +74,24 @@ import {
   sessionNeedsReview,
   type SessionFilter,
 } from "./domain/sessionModel";
+import {
+  adapterContextLabel,
+  adapterStateLabel,
+  cliLaunchLabel,
+  isDeployableWorkspaceAdapter,
+  isWorkspaceAdapterDeployed,
+  isWorkspaceAdapterInstalled,
+  maintenanceTitleForSession,
+  maintenanceToneForSession,
+  selectedWorkspaceAdapterIds,
+  workspaceAdapterLaunchDetail,
+  workspaceAdapterLaunchable,
+  workspaceCleanFeedback,
+  workspaceDeploymentStateLabel,
+  workspaceDeploymentSummary,
+  workspaceGeneratedNoteCount,
+  type LaunchPanelAdapterId,
+} from "./domain/workspaceModel";
 import { toCliPasteClipboardText, writeClipboardText } from "./native/clipboard";
 import { type AmoTheme, useAmoThemeRuntime } from "./theme/amoTheme";
 import { ScratchpadApp } from "./windows/ScratchpadApp";
@@ -90,7 +108,6 @@ import type {
   SessionState,
   TargetBinding,
   WorkspaceCleanResult,
-  WorkspaceAdapterPlan,
   WorkspaceEnrollment,
   WorkspaceGitExcludeResult,
   WorkspaceInspection,
@@ -507,123 +524,6 @@ function candidateMenuContextLabel(session: AgentSession) {
   return `${conversationName} - ${project}`;
 }
 
-function isDeployableWorkspaceAdapter(adapter: WorkspaceAdapterPlan) {
-  return typeof adapter.deployable === "boolean" ? adapter.deployable : adapter.status === "available";
-}
-
-function adapterStateLabel(adapter: WorkspaceAdapterPlan) {
-  return adapter.deploymentStatus ?? adapter.status;
-}
-
-function isWorkspaceAdapterUpToDate(adapter: WorkspaceAdapterPlan) {
-  return adapter.deploymentStatus === "deployed";
-}
-
-function isWorkspaceAdapterInstalled(adapter: WorkspaceAdapterPlan) {
-  return adapter.deploymentStatus === "deployed" || adapter.deploymentStatus === "needs-update";
-}
-
-function cliLaunchLabel(adapterId: LaunchPanelAdapterId) {
-  return adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI";
-}
-
-function workspaceAdapterPlan(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {
-  const allAdapters = [...(inspection?.supportedAdapters ?? []), ...(inspection?.deferredAdapters ?? [])];
-  return allAdapters.find((adapter) => adapter.id === adapterId) ?? null;
-}
-
-function workspaceAdapterLaunchable(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {
-  const adapter = workspaceAdapterPlan(inspection, adapterId);
-  return Boolean(adapter && isWorkspaceAdapterInstalled(adapter));
-}
-
-function workspaceAdapterLaunchDetail(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {
-  const adapter = workspaceAdapterPlan(inspection, adapterId);
-  if (!adapter) {
-    return "not detected";
-  }
-  if (isWorkspaceAdapterInstalled(adapter)) {
-    return adapter.deploymentStatus === "needs-update" ? "deployed, update available" : "deployed";
-  }
-  return adapter.deploymentStatus ?? adapter.status;
-}
-
-function isWorkspaceAdapterNeedsUpdate(adapter: WorkspaceAdapterPlan) {
-  return adapter.deploymentStatus === "needs-update";
-}
-
-function adapterContextLabel(adapter: WorkspaceAdapterPlan) {
-  if (isWorkspaceAdapterNeedsUpdate(adapter)) {
-    const installed = adapter.installedHookProtocolVersion ?? "old";
-    const expected = adapter.expectedHookProtocolVersion ?? "?";
-    return `hook ${installed} -> ${expected}`;
-  }
-  return adapter.workspaceState ?? adapter.confidence;
-}
-
-function isWorkspaceAdapterDeployed(adapter: WorkspaceAdapterPlan) {
-  return isWorkspaceAdapterUpToDate(adapter);
-}
-
-function selectedWorkspaceAdapterIds(inspection: WorkspaceInspection) {
-  return inspection.supportedAdapters
-    .filter((adapter) => isDeployableWorkspaceAdapter(adapter) && adapter.recommended !== false && !isWorkspaceAdapterUpToDate(adapter))
-    .map((adapter) => adapter.id);
-}
-
-function workspaceDeploymentSummary(inspection: WorkspaceInspection) {
-  const deployedCount = inspection.supportedAdapters.filter(isWorkspaceAdapterUpToDate).length;
-  const updateCount = inspection.supportedAdapters.filter(isWorkspaceAdapterNeedsUpdate).length;
-  const deployableCount = inspection.supportedAdapters.filter(isDeployableWorkspaceAdapter).length;
-  const empty = inspection.supportedAdapters.some((adapter) => adapter.workspaceState === "empty");
-
-  if (updateCount > 0) {
-    return `${updateCount} adapter(s) need hook update. Deploy Selected will refresh them.`;
-  }
-
-  if (empty && deployedCount === 0) {
-    return "Empty folder, no AMO hooks deployed.";
-  }
-
-  if (deployedCount === 0) {
-    return `No AMO hooks deployed. ${deployableCount} adapter(s) can be installed.`;
-  }
-
-  const pendingCount = Math.max(0, deployableCount - deployedCount);
-  if (pendingCount > 0) {
-    return `${deployedCount} deployed, ${pendingCount} available to deploy.`;
-  }
-
-  return `${deployedCount} adapter(s) deployed.`;
-}
-
-function workspaceDeploymentStateLabel(inspection: WorkspaceInspection) {
-  const updateCount = inspection.supportedAdapters.filter(isWorkspaceAdapterNeedsUpdate).length;
-  const deployedCount = inspection.supportedAdapters.filter(isWorkspaceAdapterUpToDate).length;
-  const empty = inspection.supportedAdapters.some((adapter) => adapter.workspaceState === "empty");
-  if (updateCount > 0) return "needs update";
-  if (deployedCount > 0) return "deployed";
-  return empty ? "empty" : "not deployed";
-}
-
-function workspaceGeneratedNoteCount(status: WorkspaceMaintenanceStatus | null | undefined) {
-  if (!status) return 0;
-  return status.counts.generatedNotes ?? status.counts.replyNotes + status.counts.promptNotes;
-}
-
-function workspaceUsesSessionLayoutV2(status: WorkspaceMaintenanceStatus | null | undefined) {
-  const canvasPath = status?.paths?.canvas?.replace(/\\/g, "/") ?? "";
-  return canvasPath.endsWith("Canvases/AgentFlow.base.canvas") && status?.canvas?.marker?.canvasType === "agent-flow-base";
-}
-
-function workspaceCleanFeedback(result: WorkspaceCleanResult) {
-  const summary = `Cleared ${workspaceGeneratedNoteCount(result.before)} generated note(s) and reset ${result.before.counts.canvasNodes} canvas node(s).`;
-  if (!workspaceUsesSessionLayoutV2(result.after)) {
-    return `${summary} Legacy layout still detected; restart AMO/broker, then run Deploy/Update to switch this workspace to session layout v2.`;
-  }
-  return `${summary} New turns will use session layout v2.`;
-}
-
 function formatAgo(updatedAt: string) {
   const then = new Date(updatedAt).getTime();
   if (Number.isNaN(then)) {
@@ -805,38 +705,6 @@ function pluginHealthTitle(health: ObsidianPluginHealth) {
   return lines.join("\n");
 }
 
-type MaintenanceTone = "ok" | "warning" | "error" | "unknown";
-
-function maintenanceToneForSession(session: AgentSession, status?: WorkspaceMaintenanceStatus | null): MaintenanceTone {
-  const pluginHealth = status?.pluginHealth ?? session.obsidianPluginHealth;
-  if (status && !status.ok) {
-    if (!status.exists.vaultRoot || !status.exists.canvas || !status.canvas.readable || pluginHealth?.status === "missing") {
-      return "error";
-    }
-    return "warning";
-  }
-  if (pluginHealth && !pluginHealth.ok) {
-    return pluginHealth.status === "missing" ? "error" : "warning";
-  }
-  if (!session.workspacePath && !session.vaultRoot) {
-    return "unknown";
-  }
-  return "ok";
-}
-
-function maintenanceTitleForSession(session: AgentSession) {
-  const tone = maintenanceToneForSession(session);
-  const health = session.obsidianPluginHealth;
-  const lines = ["Workspace tools"];
-  if (tone === "warning" || tone === "error") {
-    lines.push("Needs review");
-  }
-  if (health?.issues?.length) {
-    lines.push(...health.issues);
-  }
-  return lines.join("\n");
-}
-
 function menuPosition(x?: number, y?: number) {
   const fallbackX = Math.max(12, window.innerWidth - 326);
   const fallbackY = 96;
@@ -942,8 +810,6 @@ interface WorkspacePanelState {
   error: string | null;
   taskTitleDraft: string;
 }
-
-type LaunchPanelAdapterId = "codex-cli" | "claude-cli";
 
 interface LaunchPanelState {
   session: AgentSession;
