@@ -810,3 +810,12 @@ Manual smoke:
 - Validation passed:
   - `cd broker/assets/obsidian/md-anno-tools; npm run build`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Obsidian AMO Open Protocol Extracted
+
+- Added `broker/assets/obsidian/md-anno-tools/src/protocol/amo-open.ts` for `obsidian://amo-open` path resolution, tab reuse, new-tab opening, and canvas focus-note follow-up.
+- Kept `plugin.openVaultPath()` as a public wrapper for panel/command callers and kept Canvas focus implementation in `plugin.ts`.
+- Reduced `plugin.ts` from 2113 lines to 1996 lines; rebuilt the tracked Obsidian `main.js` bundle.
+- Validation passed:
+  - `cd broker/assets/obsidian/md-anno-tools; npm run build`
+  - `git diff --check`

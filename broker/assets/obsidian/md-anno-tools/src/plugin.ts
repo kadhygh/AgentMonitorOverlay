@@ -20,7 +20,7 @@ import {
   PLUGIN_VERSION,
 } from "./core/constants";
 import { fetchJson, joinUrl, postDebugLog, postJson, writeTextToClipboard } from "./core/api";
-import { normalizeOpenKind, normalizeVaultFilePath, toVaultRelativeProtocolPath } from "./core/paths";
+import { normalizeVaultFilePath } from "./core/paths";
 import { normalizeMarkdownTitle, parseAmoMetadata, removeAmoDisplayHeading, upsertAmoMarker } from "./core/metadata";
 import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, rootContainsAnnotationMarkers, describeElement } from "./core/ui-utils";
 import { AmoAnnotationPanelView } from "./ui/panel-view";
@@ -62,6 +62,7 @@ import {
   isAmoMetadata,
   syncAmoNoteDisplayTitleView,
 } from "./note/title";
+import { handleAmoOpenProtocol, openVaultPath as openAmoVaultPath } from "./protocol/amo-open";
 
 
 export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
@@ -122,7 +123,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     if (typeof this.registerObsidianProtocolHandler === "function") {
       this.registerObsidianProtocolHandler(AMO_OPEN_PROTOCOL, (params) => {
-        void this.handleAmoOpenProtocol(params);
+        void handleAmoOpenProtocol(this, params);
       });
     }
 
@@ -463,81 +464,8 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     return true;
   }
 
-  async handleAmoOpenProtocol(params) {
-    const targetPath = this.resolveProtocolTargetPath(params);
-    if (!targetPath) {
-      new Notice("AMO open URL is missing a vault-relative path.");
-      return;
-    }
-
-    const kind = normalizeOpenKind(params && (params.kind || params.target), targetPath);
-    const focusNotePath = this.resolveProtocolFocusNotePath(params);
-    const opened = await this.openVaultPath(targetPath, kind);
-    if (opened && kind === "canvas" && focusNotePath) {
-      window.setTimeout(() => {
-        void this.refreshCanvasForExplicitOpen(targetPath).finally(() => {
-          void this.focusCanvasNoteNode(targetPath, focusNotePath);
-        });
-      }, 120);
-    }
-  }
-
-  resolveProtocolTargetPath(params) {
-    const rawPath =
-      params &&
-      (params.relativePath ||
-        params.relative_path ||
-        params.file ||
-        params.notePath ||
-        params.note_path ||
-        params.canvasPath ||
-        params.canvas_path ||
-        params.path);
-    return normalizeVaultFilePath(toVaultRelativeProtocolPath(rawPath, getVaultRoot(this.app)));
-  }
-
-  resolveProtocolFocusNotePath(params) {
-    const rawPath =
-      params &&
-      (params.focusNotePath ||
-        params.focus_note_path ||
-        params.latestNotePath ||
-        params.latest_note_path ||
-        params.selectedNotePath ||
-        params.selected_note_path);
-    return normalizeVaultFilePath(toVaultRelativeProtocolPath(rawPath, getVaultRoot(this.app)));
-  }
-
   async openVaultPath(filePath, kind) {
-    const targetPath = normalizeVaultFilePath(filePath);
-    if (!targetPath) {
-      new Notice("AMO target path is empty.");
-      return false;
-    }
-
-    const file = this.app.vault.getAbstractFileByPath(targetPath);
-    if (!file || typeof file.path !== "string") {
-      const message = "AMO target not found: " + targetPath;
-      this.setOperationStatus(message, "error");
-      new Notice(message);
-      return false;
-    }
-
-    const existingLeaf = this.findLeafForFilePath(file.path, kind);
-    if (existingLeaf) {
-      this.app.workspace.revealLeaf(existingLeaf);
-      this.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
-      this.rememberMarkdownLeaf(existingLeaf);
-      this.setOperationStatus("Focused open " + kind + ": " + file.path + ".", "success");
-      return true;
-    }
-
-    const leaf = this.createTabLeaf();
-    await leaf.openFile(file as any, { active: true });
-    this.app.workspace.revealLeaf(leaf);
-    this.rememberMarkdownLeaf(leaf);
-    this.setOperationStatus("Opened " + kind + ": " + file.path + ".", "success");
-    return true;
+    return openAmoVaultPath(this, filePath, kind);
   }
 
   async focusCanvasNoteNode(canvasPath, notePath) {
@@ -876,40 +804,6 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
   delay(ms) {
     return new Promise((resolve) => window.setTimeout(resolve, ms));
-  }
-
-  createTabLeaf() {
-    try {
-      return this.app.workspace.getLeaf("tab");
-    } catch {
-      return this.app.workspace.getLeaf(true);
-    }
-  }
-
-  findLeafForFilePath(filePath, kind) {
-    const primaryTypes = kind === "canvas" ? ["canvas"] : ["markdown"];
-    for (const viewType of primaryTypes) {
-      const leaf = this.findLeafForFilePathInViewType(filePath, viewType);
-      if (leaf) return leaf;
-    }
-
-    for (const viewType of ["markdown", "canvas"]) {
-      if (primaryTypes.includes(viewType)) continue;
-      const leaf = this.findLeafForFilePathInViewType(filePath, viewType);
-      if (leaf) return leaf;
-    }
-
-    return null;
-  }
-
-  findLeafForFilePathInViewType(filePath, viewType) {
-    for (const leaf of this.app.workspace.getLeavesOfType(viewType)) {
-      const view: any = leaf.view;
-      if (view && view.file && view.file.path === filePath) {
-        return leaf;
-      }
-    }
-    return null;
   }
 
   syncMarkdownViewActions() {

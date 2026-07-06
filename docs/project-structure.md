@@ -152,6 +152,9 @@ Inline annotation token replacement and local-code-link linkification now live w
 `broker/assets/obsidian/md-anno-tools/src/annotations/render.ts`; `plugin.ts` only decides when postprocessing runs.
 Canvas latest-note marking, centering, node element lookup, bounds, zoom, and selection collection helpers live in
 `broker/assets/obsidian/md-anno-tools/src/canvas/navigation.ts`; `plugin.ts` keeps the debug-aware `safeCanvasCall` wrapper.
+`obsidian://amo-open` path resolution, tab reuse, new-tab opening, and focus-note follow-up live in
+`broker/assets/obsidian/md-anno-tools/src/protocol/amo-open.ts`; `plugin.ts` keeps `openVaultPath()` as a public wrapper
+for panel and command callers.
 
 The broker extraction has started. These boundaries have already moved out of `broker/server.js`:
 
