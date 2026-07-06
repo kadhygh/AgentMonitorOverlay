@@ -143,8 +143,9 @@ busy states, and feedback messages stay there. `DeployWorkspaceSections.tsx` own
 Git exclude, adapter, and deployment-result panels.
 
 The Obsidian plugin extraction has started. Local code link parsing, rendering, URL formatting, and Zed/URL opening
-live in `broker/assets/obsidian/md-anno-tools/src/editor/local-code-links.ts`; `plugin.ts` still owns the Obsidian
-event wiring, click suppression timing, debug logs, and operation status updates.
+live in `broker/assets/obsidian/md-anno-tools/src/editor/local-code-links.ts`. Local code link document/editor event
+handling, follow-up suppression, settings refresh, and open-result status live in
+`broker/assets/obsidian/md-anno-tools/src/editor/local-code-link-controller.ts`; `plugin.ts` only wires those handlers.
 AMO note metadata checks, display names, source-mode display-title header DOM, and first-content-line detection live in
 `broker/assets/obsidian/md-anno-tools/src/note/title.ts`; `plugin.ts` still owns file reads/writes and bridge sync.
 Inline annotation token replacement and local-code-link linkification now live with legacy annotation section rendering in

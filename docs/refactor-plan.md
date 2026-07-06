@@ -801,3 +801,12 @@ Manual smoke:
 - Validation passed:
   - `cd broker/assets/obsidian/md-anno-tools; npm run build`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Obsidian Local Code Link Controller Extracted
+
+- Added `broker/assets/obsidian/md-anno-tools/src/editor/local-code-link-controller.ts` for document/editor link events, follow-up suppression, settings refresh, and open-result status.
+- Kept plugin load-time event registration in `plugin.ts`, with parsing/open primitives still in `editor/local-code-links.ts`.
+- Reduced `plugin.ts` from 2262 lines to 2113 lines; rebuilt the tracked Obsidian `main.js` bundle.
+- Validation passed:
+  - `cd broker/assets/obsidian/md-anno-tools; npm run build`
+  - `git diff --check`
