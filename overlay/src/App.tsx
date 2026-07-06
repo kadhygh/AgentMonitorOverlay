@@ -37,6 +37,44 @@ import claudeCliIcon from "./assets/tool-icons/claude-cli.png";
 import codexAppIcon from "./assets/tool-icons/codex-app.png";
 import codexCliIcon from "./assets/tool-icons/codex-cli.png";
 import kiroIdeIcon from "./assets/tool-icons/kiro-ide.png";
+import {
+  BROKER_DEBUG_LOGS_URL,
+  BROKER_DEBUG_URL,
+  BROKER_OBSIDIAN_REGISTER_VAULT_URL,
+  BROKER_SESSION_EVENTS_URL,
+  BROKER_SESSIONS_URL,
+  BROKER_SYNC_BACK_URL,
+  BROKER_WORKSPACE_CLEAN_VAULT_URL,
+  BROKER_WORKSPACE_ENROLL_URL,
+  BROKER_WORKSPACE_GIT_EXCLUDE_URL,
+  BROKER_WORKSPACE_INSPECT_URL,
+  BROKER_WORKSPACE_LAUNCH_URL,
+  BROKER_WORKSPACE_STATUS_URL,
+  brokerSessionArchiveUrl,
+  brokerSessionAttentionClearedUrl,
+  brokerSessionDismissUrl,
+  brokerSessionHeartbeatUrl,
+  brokerSessionReviewedUrl,
+  brokerSessionTargetBindingClearUrl,
+  brokerSessionTargetBindingUrl,
+  brokerSessionTaskTitleUrl,
+  postBrokerJson,
+} from "./api/brokerClient";
+import {
+  applySessionOrder,
+  mergeChangedSession,
+  mergeSessionOrder,
+  normalizeSessions,
+  sessionArchived,
+  sessionAttentionKey,
+  sessionAttentionVisualActive,
+  sessionFilterLabels,
+  sessionHasAttentionSignal,
+  sessionMatchesFilter,
+  sessionNeedsManualAttentionClear,
+  sessionNeedsReview,
+  type SessionFilter,
+} from "./domain/sessionModel";
 import type {
   ActivationCandidate,
   ActivationResult,
@@ -58,18 +96,6 @@ import type {
   WorkspaceMaintenanceStatus,
 } from "./types";
 
-const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
-const BROKER_SESSION_EVENTS_URL = "http://127.0.0.1:17654/api/session-events";
-const BROKER_OBSIDIAN_REGISTER_VAULT_URL = "http://127.0.0.1:17654/api/obsidian/register-vault";
-const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
-const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
-const BROKER_WORKSPACE_ENROLL_URL = "http://127.0.0.1:17654/api/workspaces/enroll";
-const BROKER_WORKSPACE_GIT_EXCLUDE_URL = "http://127.0.0.1:17654/api/workspaces/git-exclude";
-const BROKER_WORKSPACE_LAUNCH_URL = "http://127.0.0.1:17654/api/workspaces/launch";
-const BROKER_WORKSPACE_STATUS_URL = "http://127.0.0.1:17654/api/workspaces/status";
-const BROKER_WORKSPACE_CLEAN_VAULT_URL = "http://127.0.0.1:17654/api/workspaces/clean-vault";
-const BROKER_DEBUG_URL = "http://127.0.0.1:17654/api/debug";
-const BROKER_DEBUG_LOGS_URL = "http://127.0.0.1:17654/api/debug/logs";
 const REFRESH_INTERVAL_MS = 3000;
 const CODEX_ACTION_REQUIRED_TITLE_PATTERN = /\[\s*!\s*\]\s*Action Required/i;
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
@@ -78,7 +104,6 @@ const DIALOG_SIZES = {
   deploy: { width: 760, height: 600 },
   settings: { width: 660, height: 500 },
 };
-const ATTENTION_VISUAL_ACTIVE_MS = 10_000;
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
@@ -110,7 +135,6 @@ interface AmoThemeChangedEvent {
 }
 
 type SettingsSection = "scratchpad" | "theme";
-type SessionFilter = "all" | "attention" | "idle" | "archive";
 type BrokerReadinessState = "checking" | "starting" | "ready" | "error";
 
 interface BrokerReadiness {
@@ -118,13 +142,6 @@ interface BrokerReadiness {
   message: string;
   detail?: string | null;
 }
-
-const sessionFilterLabels: Record<SessionFilter, string> = {
-  all: "All",
-  attention: "Attention",
-  idle: "Idle",
-  archive: "Archive",
-};
 
 const brokerReadinessLabels: Record<BrokerReadinessState, string> = {
   checking: "broker checking",
@@ -138,52 +155,6 @@ interface ScratchpadShortcutResult {
   enabled: boolean;
   button: ScratchpadShortcutButton;
   message: string;
-}
-
-function brokerSessionTargetBindingUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/target-binding`;
-}
-
-function brokerSessionTargetBindingClearUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/target-binding/clear`;
-}
-
-function brokerSessionReviewedUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/reviewed`;
-}
-
-function brokerSessionAttentionClearedUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/attention-cleared`;
-}
-
-function brokerSessionHeartbeatUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/heartbeat`;
-}
-
-function brokerSessionDismissUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/dismiss`;
-}
-
-function brokerSessionArchiveUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/archive`;
-}
-
-function brokerSessionTaskTitleUrl(sessionId: string) {
-  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/task-title`;
-}
-
-async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
-    method: "POST",
-    headers: { "content-type": "application/json" },
-    body: JSON.stringify(body),
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.message ?? `broker returned ${response.status}`);
-  }
-
-  return payload as T;
 }
 
 function startUtilityWindowDrag(event: PointerEvent<HTMLElement>) {
@@ -1004,134 +975,6 @@ function launchPanelPosition(x?: number, y?: number) {
     x: Math.max(10, Math.min(x ?? fallbackX, window.innerWidth - width - 10)),
     y: Math.max(54, Math.min(y ?? fallbackY, window.innerHeight - 260)),
   };
-}
-
-function normalizeSessions(value: unknown): AgentSession[] | null {
-  if (Array.isArray(value)) {
-    return value as AgentSession[];
-  }
-
-  if (value && typeof value === "object" && "sessions" in value) {
-    const sessions = (value as { sessions?: unknown }).sessions;
-    return Array.isArray(sessions) ? (sessions as AgentSession[]) : null;
-  }
-
-  return null;
-}
-
-function mergeSessionOrder(previousOrder: string[], nextSessions: AgentSession[]) {
-  const nextIds = nextSessions.map((session) => session.sessionId);
-  const keptIds = previousOrder.filter((sessionId) => nextIds.includes(sessionId));
-  const addedIds = nextIds.filter((sessionId) => !keptIds.includes(sessionId));
-  return [...keptIds, ...addedIds];
-}
-
-function applySessionOrder(sessions: AgentSession[], order: string[]) {
-  const indexed = new Map(order.map((sessionId, index) => [sessionId, index]));
-  return [...sessions].sort((a, b) => {
-    const aIndex = indexed.get(a.sessionId) ?? Number.MAX_SAFE_INTEGER;
-    const bIndex = indexed.get(b.sessionId) ?? Number.MAX_SAFE_INTEGER;
-    if (aIndex !== bIndex) {
-      return aIndex - bIndex;
-    }
-
-    return `${b.updatedAt}`.localeCompare(`${a.updatedAt}`);
-  });
-}
-
-function mergeChangedSession(previousSessions: AgentSession[], changedSession: AgentSession) {
-  const index = previousSessions.findIndex((session) => session.sessionId === changedSession.sessionId);
-  if (index >= 0) {
-    const nextSessions = [...previousSessions];
-    nextSessions[index] = changedSession;
-    return nextSessions;
-  }
-
-  return [changedSession, ...previousSessions];
-}
-
-function sessionNeedsReview(session: AgentSession) {
-  return Boolean(session.reviewRequired && session.reviewStatus !== "reviewed" && !session.reviewedAt);
-}
-
-function sessionNeedsManualAttentionClear(session: AgentSession) {
-  return Boolean(
-    !sessionNeedsReview(session) &&
-      session.needsAttention &&
-      (session.state === "waiting_permission" || session.state === "waiting_user"),
-  );
-}
-
-function sessionHasAttentionSignal(session: AgentSession) {
-  return Boolean(session.needsAttention || sessionNeedsReview(session));
-}
-
-function sessionArchived(session: AgentSession) {
-  return Boolean(session.archivedAt);
-}
-
-function sessionAttentionKey(session: AgentSession) {
-  return [
-    session.sessionId,
-    session.updatedAt,
-    session.state,
-    session.lastEvent,
-    session.lastMessage,
-    session.needsAttention ? "attention" : "quiet",
-    session.lastReplyAt ?? "",
-    session.lastPromptAt ?? "",
-    session.pendingPromptId ?? "",
-    session.reviewStatus ?? "",
-    session.reviewRequestedAt ?? "",
-    session.reviewedAt ?? "",
-  ].join("|");
-}
-
-function sessionAttentionTime(session: AgentSession) {
-  const timestamp =
-    session.reviewRequestedAt ||
-    session.updatedAt ||
-    session.lastReplyAt ||
-    session.lastPromptAt ||
-    session.pendingPromptCreatedAt ||
-    session.sentPromptRecordedAt;
-  if (!timestamp) {
-    return null;
-  }
-
-  const parsed = Date.parse(timestamp);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-function sessionAttentionVisualActive(session: AgentSession, visuallySeen: boolean, now: number) {
-  if (!sessionHasAttentionSignal(session) || visuallySeen) {
-    return false;
-  }
-
-  const timestamp = sessionAttentionTime(session);
-  if (timestamp === null) {
-    return true;
-  }
-
-  const age = now - timestamp;
-  return age <= ATTENTION_VISUAL_ACTIVE_MS && age >= -ATTENTION_VISUAL_ACTIVE_MS;
-}
-
-function sessionMatchesFilter(session: AgentSession, filter: SessionFilter) {
-  const archived = sessionArchived(session);
-  if (filter === "archive") {
-    return archived;
-  }
-  if (archived) {
-    return false;
-  }
-  if (filter === "attention") {
-    return sessionHasAttentionSignal(session);
-  }
-  if (filter === "idle") {
-    return session.state === "idle";
-  }
-  return true;
 }
 
 function sessionMatchesSearch(session: AgentSession, query: string) {

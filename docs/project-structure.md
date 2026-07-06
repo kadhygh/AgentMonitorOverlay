@@ -1,0 +1,119 @@
+# AMO Project Structure
+
+Updated: 2026-07-07
+
+This document records the intended ownership boundaries for the Agent Monitor Overlay repository. Keep it updated when code moves.
+
+## Product Boundaries
+
+AMO has four runtime surfaces:
+
+- Overlay: the lightweight monitor, task card surface, deployment entry, settings UI, scratchpad, and window jump surface.
+- Broker: the local HTTP bridge and durable state owner for hooks, sessions, workspace enrollment, generated notes, canvas writes, and sync-back.
+- Obsidian plugin: the vault-native reading, annotation, note/canvas tab reuse, selected-note actions, and future human workflow surface.
+- Tauri shell: Windows integration for native windows, clipboard, directory picker, scratchpad shortcut, and broker startup.
+
+The broker is the source of truth for AMO workspace/session state. Obsidian and Canvas are workflow surfaces, not the primary state model.
+
+## Source Ownership
+
+### `overlay/src`
+
+Expected ownership after refactor:
+
+- `api/`: broker HTTP client constants and helpers. No React state.
+- `domain/`: pure UI-domain logic such as session filtering, ordering, attention, workspace status, and routing labels. No Tauri calls and no DOM calls.
+- `components/`: reusable presentational UI. Components receive props and callbacks; they do not fetch broker state directly.
+- `windows/`: top-level Tauri webview apps such as main overlay, deploy, settings, and scratchpad.
+- `theme/`: theme persistence and broadcast helpers.
+- `types.ts`: shared TypeScript contracts that mirror broker/plugin payloads.
+
+### `broker`
+
+Expected ownership after refactor:
+
+- `server.js`: native HTTP server bootstrap and route table.
+- `lib/http.js`: request/response helpers.
+- `lib/debug.js`: bounded debug log and debug status.
+- `lib/session-store.js`: session map, snapshot load/persist, archive/dismiss/review/attention, list sessions.
+- `lib/workspace-*.js`: workspace inspection, deployment, maintenance, git exclude, and launch.
+- `lib/obsidian-vault.js`: vault registry, runtime state, plugin install/health.
+- `lib/conversation-artifacts.js`: prompt/reply notes, note index, session layout v2 files.
+- `lib/canvas-writer.js`: JSON Canvas append and metadata. Must not depend on Obsidian live DOM.
+- `hooks/*.js`: generated hook script text and hook metadata.
+
+### `broker/assets/obsidian/md-anno-tools/src`
+
+Expected ownership after refactor:
+
+- `plugin.ts`: lifecycle, commands, event registration, module wiring.
+- `protocol/`: `obsidian://amo-open` and related protocol handling.
+- `bridge/`: broker calls and send/copy/check actions.
+- `canvas/`: selected-note discovery, latest-note visual hint, focus/center adapters.
+- `editor/`: editor commands, mouse shortcuts, local code link handling.
+- `note/`: AMO note title/header/property behavior.
+- `annotations/`: annotation syntax and Markdown rendering.
+- `ui/`: panel, settings tab, and modals.
+- `core/`: constants, metadata, paths, API primitives, UI helpers.
+
+Canvas work must follow `docs/agnets/obsidian-canvas-development-guidelines.md`.
+
+### `overlay/src-tauri/src`
+
+Expected ownership after refactor:
+
+- `lib.rs`: Tauri builder and command registration.
+- `windows.rs`: external window enumeration, activation, and cursor window picking.
+- `scratchpad.rs`: global mouse hook and scratchpad window placement.
+- `clipboard.rs`: native clipboard fallback.
+- `dialogs.rs`: native folder picker.
+- `broker.rs`: broker startup/health helpers.
+
+## Size Policy
+
+Preferred hand-written file size:
+
+- 300-500 lines for feature files.
+- 100-250 lines for focused utility/domain modules.
+- Up to ~800 lines for orchestration roots during transition.
+
+Allowed exceptions:
+
+- generated bundles such as Obsidian `main.js`
+- lockfiles
+- generated schemas
+- temporary transition roots with an active refactor phase
+
+Avoid files below ~40 lines unless they are clear public entrypoints, type barrels, or generated shims.
+
+## Validation Policy
+
+Use the narrowest relevant checkpoint after each move:
+
+- Overlay TypeScript/UI: `cd overlay; npm run build`
+- Tauri/Rust: `cd overlay/src-tauri; cargo check`
+- Broker syntax: `node --check broker/server.js`
+- Broker behavior: `npm run broker:verify`
+- Adapter contracts: `npm run adapters:verify`
+- Window routing: `npm run routing:verify`
+- Obsidian plugin: `cd broker/assets/obsidian/md-anno-tools; npm run build`
+
+Manual smoke is required when a refactor touches:
+
+- Tauri windows or native commands
+- Obsidian plugin behavior
+- broker hook script generation
+- deployment/enrollment
+- note/canvas writing
+
+## Current Transition State
+
+The repository is at the start of the refactor. The largest files are still the historical roots:
+
+- `overlay/src/App.tsx`
+- `broker/server.js`
+- `overlay/src/styles.css`
+- `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
+- `overlay/src-tauri/src/lib.rs`
+
+Use `docs/refactor-plan.md` for phase order and checkpoints.
