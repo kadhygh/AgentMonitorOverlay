@@ -11,6 +11,7 @@ import {
   ChevronUp,
   Clock,
   ClipboardCheck,
+  Crosshair,
   FileText,
   FolderOpen,
   FolderPlus,
@@ -1164,6 +1165,13 @@ interface CardDragState {
   height: number;
 }
 
+interface WindowBindDragState {
+  sessionId: string;
+  pointerId: number;
+  pointerX: number;
+  pointerY: number;
+}
+
 interface CandidateMenuState {
   session: AgentSession;
   candidates: ActivationCandidate[];
@@ -1268,6 +1276,8 @@ function SessionRowContent({
   onHandleAttention,
   onOpenLaunchPanel,
   onOpenWorkspacePanel,
+  onStartWindowBindDrag,
+  windowBindDragging,
 }: {
   session: AgentSession;
   activating: boolean;
@@ -1287,6 +1297,8 @@ function SessionRowContent({
   onHandleAttention: () => void;
   onOpenLaunchPanel: (x: number, y: number) => void;
   onOpenWorkspacePanel: (x: number, y: number) => void;
+  onStartWindowBindDrag: (event: PointerEvent<HTMLButtonElement>) => void;
+  windowBindDragging: boolean;
 }) {
   const notePath = notePathForOpen(session);
   const canvasPath = canvasPathForOpen(session);
@@ -1324,6 +1336,26 @@ function SessionRowContent({
       >
         <Plus size={13} aria-hidden="true" />
       </button>
+      {!targetBound ? (
+        <button
+          type="button"
+          className={`card-bind-drag-button ${windowBindDragging ? "is-dragging" : ""}`}
+          title="Drag to a CLI or app window to bind this card"
+          aria-label={`Drag ${session.title} to a target window`}
+          aria-pressed={windowBindDragging}
+          onPointerDown={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onStartWindowBindDrag(event);
+          }}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+          }}
+        >
+          <Crosshair size={13} aria-hidden="true" />
+        </button>
+      ) : null}
       <button
         type="button"
         className={`card-maintenance-button tone-${maintenanceTone}`}
@@ -2718,6 +2750,7 @@ export default function App() {
     loadScratchpadShortcutState(),
   );
   const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
+  const [windowBindDrag, setWindowBindDrag] = useState<WindowBindDragState | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
@@ -2731,6 +2764,8 @@ export default function App() {
   const debugCountRef = useRef(debugCount);
   const cardDragRef = useRef<CardDragState | null>(null);
   const cardDragCleanupRef = useRef<(() => void) | null>(null);
+  const windowBindDragRef = useRef<WindowBindDragState | null>(null);
+  const windowBindDragCleanupRef = useRef<(() => void) | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
   const dialogRestoreSizeRef = useRef<{ width: number; height: number } | null>(null);
   const actionRequiredProbeRef = useRef<Record<string, string>>({});
@@ -2899,6 +2934,10 @@ export default function App() {
 
   useEffect(() => {
     return () => removeCardDragListeners();
+  }, []);
+
+  useEffect(() => {
+    return () => removeWindowBindDragListeners();
   }, []);
 
   useEffect(() => {
@@ -4438,6 +4477,171 @@ export default function App() {
     void copyPendingPrompt(session);
   }
 
+  async function bindWindowCandidate(session: AgentSession, candidate: ActivationCandidate, action: string) {
+    void postDebugLog("window.candidate.bind.start", {
+      sessionId: session.sessionId,
+      action,
+      hwnd: candidate.hwnd,
+      processId: candidate.processId,
+      processName: candidate.processName ?? null,
+      title: candidate.title,
+    });
+
+    const binding = await postBrokerJson<{ ok: boolean; session: AgentSession; targetBinding: TargetBinding }>(
+      brokerSessionTargetBindingUrl(session.sessionId),
+      {
+        type: "window",
+        hwnd: candidate.hwnd,
+        processId: candidate.processId,
+        processName: candidate.processName ?? null,
+        title: candidate.title,
+        label: candidate.label,
+      },
+    );
+
+    setSessions((previous) =>
+      previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
+    );
+    void postDebugLog("window.candidate.bound", {
+      sessionId: session.sessionId,
+      action,
+      hwnd: candidate.hwnd,
+      processId: candidate.processId,
+      processName: candidate.processName ?? null,
+    });
+  }
+
+  function startWindowBindDrag(session: AgentSession, event: PointerEvent<HTMLElement>) {
+    if (targetBindingForSession(session)) {
+      setFeedback("This card already has a target. Unbind it before dragging to a different window.");
+      return;
+    }
+
+    event.preventDefault();
+    event.stopPropagation();
+    try {
+      event.currentTarget.setPointerCapture(event.pointerId);
+    } catch {
+      // Pointer capture can fail if the button is remounted while the card updates.
+    }
+
+    const nextDrag = {
+      sessionId: session.sessionId,
+      pointerId: event.pointerId,
+      pointerX: event.clientX,
+      pointerY: event.clientY,
+    };
+    windowBindDragRef.current = nextDrag;
+    suppressNextClickRef.current = true;
+    setWindowBindDrag(nextDrag);
+    setFeedback(`Drag to the target CLI/app window and release to bind ${session.title}.`);
+    attachWindowBindDragListeners(event.pointerId);
+  }
+
+  function attachWindowBindDragListeners(pointerId: number) {
+    removeWindowBindDragListeners();
+
+    const handleMove = (event: globalThis.PointerEvent) => {
+      if (event.pointerId !== pointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      continueWindowBindDragAt(event.clientX, event.clientY);
+    };
+
+    const handleEnd = (event: globalThis.PointerEvent) => {
+      if (event.pointerId !== pointerId) {
+        return;
+      }
+
+      event.preventDefault();
+      void finishWindowBindDrag();
+    };
+
+    window.addEventListener("pointermove", handleMove, { passive: false });
+    window.addEventListener("pointerup", handleEnd, { passive: false });
+    window.addEventListener("pointercancel", handleEnd, { passive: false });
+    windowBindDragCleanupRef.current = () => {
+      window.removeEventListener("pointermove", handleMove);
+      window.removeEventListener("pointerup", handleEnd);
+      window.removeEventListener("pointercancel", handleEnd);
+    };
+  }
+
+  function removeWindowBindDragListeners() {
+    windowBindDragCleanupRef.current?.();
+    windowBindDragCleanupRef.current = null;
+  }
+
+  function continueWindowBindDragAt(pointerX: number, pointerY: number) {
+    const activeDrag = windowBindDragRef.current;
+    if (!activeDrag) {
+      return;
+    }
+
+    const nextDrag = {
+      ...activeDrag,
+      pointerX,
+      pointerY,
+    };
+    windowBindDragRef.current = nextDrag;
+    setWindowBindDrag(nextDrag);
+  }
+
+  async function finishWindowBindDrag() {
+    const activeDrag = windowBindDragRef.current;
+    if (!activeDrag) {
+      return;
+    }
+
+    removeWindowBindDragListeners();
+    windowBindDragRef.current = null;
+    setWindowBindDrag(null);
+
+    const session = sessionsRef.current.find((item) => item.sessionId === activeDrag.sessionId);
+    if (!session) {
+      setFeedback("The card is no longer available.");
+      return;
+    }
+
+    if (targetBindingForSession(session)) {
+      setFeedback("This card already has a target binding.");
+      return;
+    }
+
+    setActivatingId(session.sessionId);
+    setFeedback("Reading the window under cursor...");
+
+    try {
+      const result = await invoke<ActivationResult>("window_candidate_at_cursor");
+      const candidates = result.candidates ?? [];
+      void postDebugLog("window.cursor_candidate.result", {
+        sessionId: session.sessionId,
+        ok: result.ok,
+        message: result.message,
+        candidates: candidates.length,
+      });
+      if (!result.ok || candidates.length === 0) {
+        setFeedback(result.message || "No window found under cursor.");
+        return;
+      }
+
+      const candidate = candidates[0];
+      await bindWindowCandidate(session, candidate, "drag-to-window");
+      setFeedback(`Bound to ${candidate.processName ?? "window"}: ${candidate.title}`);
+      void refreshSessions("window-drag-bind");
+    } catch (error) {
+      void postDebugLog("window.cursor_candidate.error", {
+        sessionId: session.sessionId,
+        message: (error as Error).message,
+      });
+      setFeedback(`Drag bind failed: ${(error as Error).message}`);
+    } finally {
+      setActivatingId(null);
+    }
+  }
+
   async function activateCandidate(
     session: AgentSession,
     candidate: ActivationCandidate,
@@ -4480,26 +4684,7 @@ export default function App() {
       });
       if (result.ok) {
         if (bindWindow) {
-          const binding = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
-            brokerSessionTargetBindingUrl(session.sessionId),
-            {
-              type: "window",
-              hwnd: candidate.hwnd,
-              processId: candidate.processId,
-              processName: candidate.processName ?? null,
-              title: candidate.title,
-              label: candidate.label,
-            },
-          );
-          void postDebugLog("window.candidate.bound", {
-            sessionId: session.sessionId,
-            hwnd: candidate.hwnd,
-            processId: candidate.processId,
-            processName: candidate.processName ?? null,
-          });
-          setSessions((previous) =>
-            previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
-          );
+          await bindWindowCandidate(session, candidate, "activate-candidate");
           setFeedback(`Bound and activated ${candidate.processName ?? "window"}.`);
         }
         if (closeOnSuccess) {
@@ -5296,6 +5481,8 @@ export default function App() {
                   onHandleAttention={() => void handleSessionAttention(session)}
                   onOpenLaunchPanel={(x, y) => void openLaunchPanel(session, x, y)}
                   onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
+                  onStartWindowBindDrag={(event) => startWindowBindDrag(session, event)}
+                  windowBindDragging={windowBindDrag?.sessionId === session.sessionId}
                 />
               </div>
             )) : (
@@ -5893,9 +6080,23 @@ export default function App() {
                     onHandleAttention={() => undefined}
                     onOpenLaunchPanel={() => undefined}
                     onOpenWorkspacePanel={() => undefined}
+                    onStartWindowBindDrag={() => undefined}
+                    windowBindDragging={false}
                   />
                 ) : null;
               })()}
+            </div>
+          ) : null}
+
+          {windowBindDrag ? (
+            <div
+              className="window-bind-drag-chip"
+              style={{
+                left: windowBindDrag.pointerX + 12,
+                top: windowBindDrag.pointerY + 12,
+              }}
+            >
+              Drop on target window
             </div>
           ) : null}
 

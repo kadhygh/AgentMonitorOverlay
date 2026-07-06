@@ -1615,6 +1615,7 @@ button {
 }
 
 .card-launch-button,
+.card-bind-drag-button,
 .card-maintenance-button,
 .card-dismiss-button {
   position: absolute;
@@ -1640,6 +1641,22 @@ button {
   border-color: rgba(111, 224, 190, 0.18);
 }
 
+.card-bind-drag-button {
+  right: 31px;
+  color: #c5eafa;
+  background: rgba(90, 178, 220, 0.09);
+  border-color: rgba(90, 178, 220, 0.18);
+  cursor: grab;
+}
+
+.card-bind-drag-button.is-dragging {
+  color: #ecfbff;
+  background: rgba(90, 178, 220, 0.2);
+  border-color: rgba(90, 178, 220, 0.34);
+  box-shadow: 0 0 12px rgba(90, 178, 220, 0.2);
+  cursor: grabbing;
+}
+
 .card-maintenance-button {
   right: -25px;
 }
@@ -1652,6 +1669,7 @@ button {
 }
 
 .card-launch-button svg,
+.card-bind-drag-button svg,
 .card-maintenance-button svg,
 .card-dismiss-button svg {
   position: relative;
@@ -1660,6 +1678,8 @@ button {
 
 .card-launch-button:hover,
 .card-launch-button:focus-visible,
+.card-bind-drag-button:hover,
+.card-bind-drag-button:focus-visible,
 .card-maintenance-button:hover,
 .card-maintenance-button:focus-visible {
   color: #f4fbf8;
@@ -1677,6 +1697,21 @@ button {
 .card-dismiss-button.is-busy {
   opacity: 0.65;
   cursor: progress;
+}
+
+.window-bind-drag-chip {
+  position: fixed;
+  z-index: 80;
+  pointer-events: none;
+  padding: 5px 8px;
+  color: #dff8ff;
+  background: rgba(10, 20, 24, 0.88);
+  border: 1px solid rgba(90, 178, 220, 0.36);
+  border-radius: 7px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.22);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
 }
 
 .card-maintenance-button.tone-ok {
@@ -3841,6 +3876,22 @@ button {
   box-shadow: 0 7px 16px rgba(42, 74, 64, 0.14), 0 0 0 2px rgba(18, 135, 105, 0.1);
 }
 
+:root[data-amo-theme="light"] .card-bind-drag-button {
+  color: #1b5d72;
+  background: linear-gradient(145deg, #f3fbfd, #dceff5);
+  border-color: rgba(44, 124, 150, 0.3);
+  box-shadow: 0 6px 14px rgba(42, 74, 64, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+:root[data-amo-theme="light"] .card-bind-drag-button:hover,
+:root[data-amo-theme="light"] .card-bind-drag-button:focus-visible,
+:root[data-amo-theme="light"] .card-bind-drag-button.is-dragging {
+  color: #0d4456;
+  background: linear-gradient(145deg, #eaf8fb, #cbeaf2);
+  border-color: rgba(44, 124, 150, 0.42);
+  box-shadow: 0 7px 16px rgba(42, 74, 64, 0.13), 0 0 0 2px rgba(44, 124, 150, 0.1);
+}
+
 :root[data-amo-theme="light"] .card-maintenance-button {
   color: #2d5f52;
   background: linear-gradient(145deg, #f8fbfa, #e8f1ed);
@@ -3889,6 +3940,13 @@ button {
   background: linear-gradient(145deg, #fff4f2, #f2d7d3);
   border-color: rgba(208, 77, 67, 0.38);
   box-shadow: 0 7px 16px rgba(70, 38, 34, 0.12), 0 0 0 2px rgba(208, 77, 67, 0.08);
+}
+
+:root[data-amo-theme="light"] .window-bind-drag-chip {
+  color: #123e4a;
+  background: rgba(247, 252, 251, 0.92);
+  border-color: rgba(44, 124, 150, 0.28);
+  box-shadow: 0 8px 22px rgba(42, 74, 64, 0.14);
 }
 
 @keyframes maintenance-warning-light-pulse {

@@ -151,6 +151,11 @@ fn list_session_window_candidates(
 }
 
 #[tauri::command]
+fn window_candidate_at_cursor() -> ActivationResult {
+    external_window_candidate_at_cursor()
+}
+
+#[tauri::command]
 fn open_path(path: String) -> OpenPathResult {
     open_local_path(path)
 }
@@ -409,7 +414,12 @@ fn show_scratchpad_at(app: &tauri::AppHandle, cursor_x: i32, cursor_y: i32) -> R
 
 fn env_flag(name: &str) -> bool {
     std::env::var(name)
-        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -443,7 +453,8 @@ fn ensure_local_broker() -> BrokerEnsureResult {
         };
     };
 
-    let show_broker_window = env_flag("AGENT_MONITOR_DEBUG") || env_flag("AGENT_MONITOR_BROKER_DEBUG_WINDOW");
+    let show_broker_window =
+        env_flag("AGENT_MONITOR_DEBUG") || env_flag("AGENT_MONITOR_BROKER_DEBUG_WINDOW");
     let mut command = Command::new("node");
     command
         .arg(&broker_script)
@@ -609,7 +620,9 @@ fn pick_windows_directory(kind: DirectoryPickerKind) -> FolderPickResult {
             let dialog: IFileOpenDialog =
                 CoCreateInstance(&FileOpenDialog, None, CLSCTX_INPROC_SERVER)?;
             match kind {
-                DirectoryPickerKind::Workspace => dialog.SetTitle(windows::core::w!("Select workspace folder"))?,
+                DirectoryPickerKind::Workspace => {
+                    dialog.SetTitle(windows::core::w!("Select workspace folder"))?
+                }
             };
             dialog.SetOkButtonLabel(windows::core::w!("Choose"))?;
             dialog.SetOptions(
@@ -642,7 +655,9 @@ fn pick_windows_directory(kind: DirectoryPickerKind) -> FolderPickResult {
                 cancelled: true,
                 path: None,
                 message: match kind {
-                    DirectoryPickerKind::Workspace => "Workspace folder selection cancelled.".to_string(),
+                    DirectoryPickerKind::Workspace => {
+                        "Workspace folder selection cancelled.".to_string()
+                    }
                 },
             },
             Err(error) => FolderPickResult {
@@ -650,7 +665,9 @@ fn pick_windows_directory(kind: DirectoryPickerKind) -> FolderPickResult {
                 cancelled: false,
                 path: None,
                 message: match kind {
-                    DirectoryPickerKind::Workspace => format!("Could not select workspace folder: {error:?}"),
+                    DirectoryPickerKind::Workspace => {
+                        format!("Could not select workspace folder: {error:?}")
+                    }
                 },
             },
         }
@@ -678,7 +695,10 @@ fn write_text_to_clipboard(text: &str) -> OpenPathResult {
     };
     use windows_sys::Win32::System::Ole::CF_UNICODETEXT;
 
-    let clipboard_text = text.replace("\r\n", "\n").replace('\r', "\n").replace('\n', "\r\n");
+    let clipboard_text = text
+        .replace("\r\n", "\n")
+        .replace('\r', "\n")
+        .replace('\n', "\r\n");
     let mut wide_text = clipboard_text.encode_utf16().collect::<Vec<u16>>();
     wide_text.push(0);
     let byte_len = wide_text.len() * std::mem::size_of::<u16>();
@@ -833,7 +853,18 @@ fn activate_external_window(session_id: &str, _hint: WindowHintInput) -> Activat
 fn list_external_window_candidates(session_id: &str, _hint: WindowHintInput) -> ActivationResult {
     ActivationResult {
         ok: false,
-        message: format!("Window candidate listing is only implemented on Windows for {session_id}."),
+        message: format!(
+            "Window candidate listing is only implemented on Windows for {session_id}."
+        ),
+        candidates: Vec::new(),
+    }
+}
+
+#[cfg(not(windows))]
+fn external_window_candidate_at_cursor() -> ActivationResult {
+    ActivationResult {
+        ok: false,
+        message: "Picking a window from the cursor is only implemented on Windows.".to_string(),
         candidates: Vec::new(),
     }
 }
@@ -857,7 +888,7 @@ fn activate_external_window(session_id: &str, hint: WindowHintInput) -> Activati
                 ok: false,
                 message: format!("No matching window found for {session_id}."),
                 candidates: fallback_candidates,
-            }
+            };
         }
         ResolveResult::Ambiguous(matches) => {
             let labels = matches
@@ -936,9 +967,51 @@ fn list_external_window_candidates(session_id: &str, hint: WindowHintInput) -> A
         message: if matches.is_empty() {
             format!("No candidate windows found for {session_id}.")
         } else {
-            format!("{} candidate window(s) found for {session_id}.", matches.len())
+            format!(
+                "{} candidate window(s) found for {session_id}.",
+                matches.len()
+            )
         },
         candidates: matches,
+    }
+}
+
+#[cfg(windows)]
+fn external_window_candidate_at_cursor() -> ActivationResult {
+    use windows_sys::Win32::Foundation::POINT;
+    use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, WindowFromPoint};
+
+    let mut point = POINT { x: 0, y: 0 };
+    let ok = unsafe { GetCursorPos(&mut point) } != 0;
+    if !ok {
+        return ActivationResult {
+            ok: false,
+            message: "Could not read cursor position.".to_string(),
+            candidates: Vec::new(),
+        };
+    }
+
+    let hwnd = unsafe { WindowFromPoint(point) };
+    let Some(candidate) = window_candidate_from_hwnd(hwnd) else {
+        return ActivationResult {
+            ok: false,
+            message: "No visible window found under cursor.".to_string(),
+            candidates: Vec::new(),
+        };
+    };
+
+    if candidate.process_id == std::process::id() {
+        return ActivationResult {
+            ok: false,
+            message: "Release over an external CLI or app window, not AMO.".to_string(),
+            candidates: Vec::new(),
+        };
+    }
+
+    ActivationResult {
+        ok: true,
+        message: format!("Selected {}", format_candidate(&candidate)),
+        candidates: vec![activation_candidate(&candidate)],
     }
 }
 
@@ -1309,43 +1382,14 @@ fn format_candidate(candidate: &WindowCandidate) -> String {
 #[cfg(windows)]
 fn enumerate_windows() -> Vec<WindowCandidate> {
     use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        EnumWindows, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-        IsWindowVisible,
-    };
+    use windows_sys::Win32::UI::WindowsAndMessaging::EnumWindows;
 
     unsafe extern "system" fn enum_proc(hwnd: HWND, lparam: LPARAM) -> BOOL {
         unsafe {
-            if IsWindowVisible(hwnd) == 0 {
-                return 1;
+            if let Some(candidate) = window_candidate_from_hwnd(hwnd) {
+                let candidates = &mut *(lparam as *mut Vec<WindowCandidate>);
+                candidates.push(candidate);
             }
-
-            let title_len = GetWindowTextLengthW(hwnd);
-            if title_len <= 0 {
-                return 1;
-            }
-
-            let mut title_buffer = vec![0u16; title_len as usize + 1];
-            let copied = GetWindowTextW(hwnd, title_buffer.as_mut_ptr(), title_buffer.len() as i32);
-            if copied <= 0 {
-                return 1;
-            }
-            title_buffer.truncate(copied as usize);
-            let title = String::from_utf16_lossy(&title_buffer);
-            if title.trim().is_empty() {
-                return 1;
-            }
-
-            let mut process_id = 0u32;
-            GetWindowThreadProcessId(hwnd, &mut process_id);
-
-            let candidates = &mut *(lparam as *mut Vec<WindowCandidate>);
-            candidates.push(WindowCandidate {
-                hwnd: hwnd as isize,
-                process_id,
-                process_name: process_name_for_pid(process_id),
-                title,
-            });
 
             1
         }
@@ -1356,6 +1400,60 @@ fn enumerate_windows() -> Vec<WindowCandidate> {
         EnumWindows(Some(enum_proc), &mut candidates as *mut _ as LPARAM);
     }
     candidates
+}
+
+#[cfg(windows)]
+fn window_candidate_from_hwnd(
+    hwnd: windows_sys::Win32::Foundation::HWND,
+) -> Option<WindowCandidate> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetAncestor, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
+        IsWindowVisible, GA_ROOT,
+    };
+
+    unsafe {
+        if hwnd.is_null() {
+            return None;
+        }
+
+        let root = GetAncestor(hwnd, GA_ROOT);
+        let target_hwnd = if root.is_null() { hwnd } else { root };
+
+        if IsWindowVisible(target_hwnd) == 0 {
+            return None;
+        }
+
+        let title_len = GetWindowTextLengthW(target_hwnd);
+        if title_len <= 0 {
+            return None;
+        }
+
+        let mut title_buffer = vec![0u16; title_len as usize + 1];
+        let copied = GetWindowTextW(
+            target_hwnd,
+            title_buffer.as_mut_ptr(),
+            title_buffer.len() as i32,
+        );
+        if copied <= 0 {
+            return None;
+        }
+
+        title_buffer.truncate(copied as usize);
+        let title = String::from_utf16_lossy(&title_buffer);
+        if title.trim().is_empty() {
+            return None;
+        }
+
+        let mut process_id = 0u32;
+        GetWindowThreadProcessId(target_hwnd, &mut process_id);
+
+        Some(WindowCandidate {
+            hwnd: target_hwnd as isize,
+            process_id,
+            process_name: process_name_for_pid(process_id),
+            title,
+        })
+    }
 }
 
 #[cfg(windows)]
@@ -1402,6 +1500,7 @@ pub fn run() {
             activate_session_window,
             ensure_broker,
             list_session_window_candidates,
+            window_candidate_at_cursor,
             open_path,
             select_workspace_directory,
             set_scratchpad_shortcut_config,
