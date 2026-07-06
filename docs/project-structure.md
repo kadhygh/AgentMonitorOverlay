@@ -145,6 +145,8 @@ Git exclude, adapter, and deployment-result panels.
 The Obsidian plugin extraction has started. Local code link parsing, rendering, URL formatting, and Zed/URL opening
 live in `broker/assets/obsidian/md-anno-tools/src/editor/local-code-links.ts`; `plugin.ts` still owns the Obsidian
 event wiring, click suppression timing, debug logs, and operation status updates.
+AMO note metadata checks, display names, source-mode display-title header DOM, and first-content-line detection live in
+`broker/assets/obsidian/md-anno-tools/src/note/title.ts`; `plugin.ts` still owns file reads/writes and bridge sync.
 
 The broker extraction has started. These boundaries have already moved out of `broker/server.js`:
 

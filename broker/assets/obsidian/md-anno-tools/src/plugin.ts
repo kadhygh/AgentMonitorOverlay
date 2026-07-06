@@ -62,6 +62,13 @@ import {
   collectCanvasSelectedNodes,
   normalizeCanvasFilePathCandidate,
 } from "./canvas/target";
+import {
+  amoNoteSourceTitleHeader,
+  displayNameForFile,
+  firstAmoNoteContentLine,
+  isAmoMetadata,
+  syncAmoNoteDisplayTitleView,
+} from "./note/title";
 
 
 export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
@@ -1499,7 +1506,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     const filePath = view.file.path;
     const amo = await this.readAmoMetadataForFile(view.file);
-    const isAmoNote = this.isAmoMetadata(amo);
+    const isAmoNote = isAmoMetadata(amo);
     if (!view.file || view.file.path !== filePath || !view.containerEl) return;
 
     view.containerEl.classList.toggle("amo-note-view", isAmoNote);
@@ -1509,14 +1516,14 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       !this.amoNotePropertiesExpandedPaths.has(filePath);
     view.containerEl.classList.toggle("amo-hide-note-properties", shouldHide);
     view.containerEl.classList.toggle("amo-show-note-properties", isAmoNote && !shouldHide);
-    this.syncAmoNoteDisplayTitleView(view, isAmoNote ? amo : {});
+    syncAmoNoteDisplayTitleView(view, isAmoNote ? amo : {});
   }
 
   async isAmoMarkdownFile(file) {
     if (!file || typeof file.path !== "string") return false;
 
     const amo = await this.readAmoMetadataForFile(file);
-    return this.isAmoMetadata(amo);
+    return isAmoMetadata(amo);
   }
 
   async readAmoMetadataForFile(file) {
@@ -1528,88 +1535,6 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     } catch {
       return {};
     }
-  }
-
-  isAmoMetadata(amo) {
-    return Boolean(amo && (amo.schemaVersion || amo.sessionId || amo.turnId || amo.noteId || amo.kind || amo.role));
-  }
-
-  syncAmoNoteDisplayTitleView(view, amo: any = {}) {
-    if (!(view instanceof MarkdownView) || !view.file || !view.containerEl) return;
-
-    const displayTitle = normalizeMarkdownTitle(amo.displayTitle);
-    const hasDisplayTitle = Boolean(displayTitle);
-    view.containerEl.classList.toggle("amo-note-has-display-title", hasDisplayTitle);
-
-    const sourceHeader = this.amoNoteSourceTitleHeader(view);
-    const mode = this.markdownViewMode(view);
-    const shouldRenderSourceHeader = hasDisplayTitle && mode === "source";
-    if (!shouldRenderSourceHeader) {
-      if (sourceHeader) sourceHeader.remove();
-      return;
-    }
-
-    const host = this.amoNoteSourceTitleHost(view);
-    if (!host) {
-      if (sourceHeader) sourceHeader.remove();
-      return;
-    }
-
-    const header = sourceHeader || document.createElement("div");
-    header.className = "amo-note-source-title-header";
-    header.setAttribute("data-amo-note-source-title", "true");
-
-    let title = header.querySelector(".amo-note-source-title");
-    if (!(title instanceof HTMLElement)) {
-      header.empty();
-      title = header.createDiv({ cls: "amo-note-source-title" });
-      header.createDiv({ cls: "amo-note-source-subtitle" });
-    }
-    title.setText(displayTitle);
-
-    const subtitle = header.querySelector(".amo-note-source-subtitle");
-    if (subtitle instanceof HTMLElement) {
-      const originalName = normalizeMarkdownTitle(amo.displayName) || this.displayNameForFile(view.file);
-      subtitle.setText(originalName);
-      subtitle.hidden = !originalName;
-    }
-
-    if (header.parentElement !== host) {
-      host.insertBefore(header, host.firstChild);
-    } else if (host.firstChild !== header) {
-      host.insertBefore(header, host.firstChild);
-    }
-  }
-
-  markdownViewMode(view) {
-    if (view && typeof (view as any).getMode === "function") {
-      try {
-        return (view as any).getMode();
-      } catch {
-        return "";
-      }
-    }
-    if (view && view.containerEl && view.containerEl.querySelector(".markdown-source-view")) return "source";
-    if (view && view.containerEl && view.containerEl.querySelector(".markdown-reading-view")) return "preview";
-    return "";
-  }
-
-  amoNoteSourceTitleHost(view) {
-    if (!view || !view.containerEl) return null;
-    for (const selector of [".markdown-source-view", ".markdown-source-view.mod-cm6"]) {
-      const host = view.containerEl.querySelector(selector);
-      if (host instanceof HTMLElement) return host;
-    }
-    const content = (view as any).contentEl;
-    if (content instanceof HTMLElement) return content;
-    const fallback = view.containerEl.querySelector(".view-content");
-    return fallback instanceof HTMLElement ? fallback : null;
-  }
-
-  amoNoteSourceTitleHeader(view) {
-    if (!view || !view.containerEl) return null;
-    const header = view.containerEl.querySelector(".amo-note-source-title-header");
-    return header instanceof HTMLElement ? header : null;
   }
 
   async toggleAmoNotePropertiesForView(view) {
@@ -1646,7 +1571,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         "amo-show-note-properties",
         "amo-note-has-display-title"
       );
-      const sourceHeader = this.amoNoteSourceTitleHeader(view);
+      const sourceHeader = amoNoteSourceTitleHeader(view);
       if (sourceHeader) sourceHeader.remove();
     }
   }
@@ -2146,7 +2071,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       displayTitle,
     };
     const withMarker = upsertAmoMarker(markdown, metadata);
-    const nextMarkdown = removeAmoDisplayHeading(withMarker, amo.displayTitle, amo.displayName || this.displayNameForFile(file));
+    const nextMarkdown = removeAmoDisplayHeading(withMarker, amo.displayTitle, amo.displayName || displayNameForFile(file));
     await this.app.vault.modify(file, nextMarkdown);
 
     try {
@@ -2388,11 +2313,6 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     };
   }
 
-  displayNameForFile(file) {
-    const name = String((file && file.path) || "").split(/[\\/]/u).pop() || "";
-    return name.replace(/\.md$/iu, "");
-  }
-
   async renderAnnotations(root, context) {
     await this.renderAmoNoteDisplayHeader(root, context);
 
@@ -2430,7 +2350,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     const displayTitle = normalizeMarkdownTitle(amo.displayTitle);
     if (!displayTitle) return false;
 
-    const firstContentLine = this.firstAmoNoteContentLine(markdown);
+    const firstContentLine = firstAmoNoteContentLine(markdown);
     if (firstContentLine < 0) return false;
 
     const lineStart = Number(section.lineStart);
@@ -2445,7 +2365,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     const title = header.createDiv({ cls: "amo-note-display-title" });
     title.setText(displayTitle);
 
-    const originalName = amo.displayName || this.displayNameForFile(file);
+    const originalName = amo.displayName || displayNameForFile(file);
     if (originalName) {
       const subtitle = header.createDiv({ cls: "amo-note-display-subtitle" });
       subtitle.setText(originalName);
@@ -2453,27 +2373,6 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     root.prepend(header);
     return true;
-  }
-
-  firstAmoNoteContentLine(markdown) {
-    const lines = String(markdown || "").replace(/\r\n?/gu, "\n").split("\n");
-    let index = 0;
-    if (lines[index] === "---") {
-      index += 1;
-      while (index < lines.length && lines[index] !== "---") index += 1;
-      if (index < lines.length) index += 1;
-    }
-
-    while (index < lines.length) {
-      const trimmed = String(lines[index] || "").trim();
-      if (!trimmed || /^<!--\s*amo:\s*\{[\s\S]*\}\s*-->$/u.test(trimmed)) {
-        index += 1;
-        continue;
-      }
-      return index;
-    }
-
-    return -1;
   }
 
   async renderLegacyAnnotationSection(root, context) {

@@ -774,3 +774,12 @@ Manual smoke:
 - Validation passed:
   - `cd broker/assets/obsidian/md-anno-tools; npm run build`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Obsidian Note Title Helpers Extracted
+
+- Added `broker/assets/obsidian/md-anno-tools/src/note/title.ts` for AMO metadata checks, note display names, source-mode title header DOM, and first content line detection.
+- Kept note file reads/writes, bridge title sync, property class toggles, and panel refresh ownership in `plugin.ts`.
+- Reduced `plugin.ts` from 2635 lines to 2534 lines; rebuilt the tracked Obsidian `main.js` bundle.
+- Validation passed:
+  - `cd broker/assets/obsidian/md-anno-tools; npm run build`
+  - `git diff --check`
