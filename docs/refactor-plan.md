@@ -855,3 +855,12 @@ Manual smoke:
 - Validation passed:
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 5 Tauri Opener Extracted
+
+- Added `overlay/src-tauri/src/opener.rs` for local path opening, external target launch, and Windows `ShellExecuteW` helpers.
+- Kept the Tauri `open_path` and `open_uri` command wrappers in `lib.rs`.
+- Reduced `lib.rs` from 1090 lines to 1012 lines while keeping `opener.rs` at 81 lines.
+- Validation passed:
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

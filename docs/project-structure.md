@@ -74,6 +74,7 @@ Expected ownership after refactor:
 - `broker.rs`: local broker health check, broker script discovery, and hidden/visible broker process launch.
 - `clipboard.rs`: native clipboard writing and newline normalization.
 - `dialogs.rs`: native folder picker commands and Windows COM dialog handling.
+- `opener.rs`: local file/folder opening, external URI launch, and ShellExecute helpers.
 - `windows.rs`: external window enumeration, activation, and cursor window picking.
 - `scratchpad.rs`: global mouse hook and scratchpad window placement.
 - `clipboard.rs`: native clipboard fallback.

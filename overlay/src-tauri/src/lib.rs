@@ -1,4 +1,3 @@
-use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, OnceLock};
 use tauri::{Emitter, Manager, PhysicalPosition};
@@ -7,11 +6,13 @@ mod broker;
 mod clipboard;
 mod dialogs;
 mod models;
+mod opener;
 
 use broker::ensure_local_broker;
 use clipboard::write_text_to_clipboard;
 use dialogs::pick_workspace_directory;
 use models::*;
+use opener::{open_external_target, open_local_path};
 
 const SCRATCHPAD_WINDOW_LABEL: &str = "scratchpad";
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -145,25 +146,6 @@ fn set_scratchpad_shortcut_config(config: ScratchpadShortcutConfig) -> Scratchpa
 #[tauri::command]
 fn show_scratchpad_at_cursor(app: tauri::AppHandle) -> OpenPathResult {
     show_scratchpad_at_current_cursor(&app)
-}
-
-fn open_local_path(path: String) -> OpenPathResult {
-    let path = PathBuf::from(path);
-    if !path.exists() {
-        return OpenPathResult {
-            ok: false,
-            message: format!("Path does not exist: {}", path.display()),
-        };
-    }
-
-    let Ok(canonical_path) = path.canonicalize() else {
-        return OpenPathResult {
-            ok: false,
-            message: format!("Could not resolve path: {}", path.display()),
-        };
-    };
-
-    open_existing_path(&canonical_path)
 }
 
 fn normalize_scratchpad_button(value: &str) -> Option<u32> {
@@ -343,66 +325,6 @@ fn show_scratchpad_at(app: &tauri::AppHandle, cursor_x: i32, cursor_y: i32) -> R
         .set_focus()
         .map_err(|error| format!("Could not focus scratchpad: {error}"))?;
     Ok(())
-}
-
-#[cfg(windows)]
-fn open_existing_path(path: &std::path::Path) -> OpenPathResult {
-    open_external_target(&path.display().to_string(), "Opened")
-}
-
-#[cfg(windows)]
-fn open_external_target(target: &str, success_prefix: &str) -> OpenPathResult {
-    use windows_sys::Win32::UI::Shell::ShellExecuteW;
-    use windows_sys::Win32::UI::WindowsAndMessaging::SW_SHOWNORMAL;
-
-    let operation = wide_null("open");
-    let file = wide_null(target);
-    let result = unsafe {
-        ShellExecuteW(
-            std::ptr::null_mut(),
-            operation.as_ptr(),
-            file.as_ptr(),
-            std::ptr::null(),
-            std::ptr::null(),
-            SW_SHOWNORMAL,
-        )
-    } as isize;
-
-    if result > 32 {
-        OpenPathResult {
-            ok: true,
-            message: format!("{success_prefix} {target}"),
-        }
-    } else {
-        OpenPathResult {
-            ok: false,
-            message: format!("Windows could not open {target} (ShellExecuteW code {result})."),
-        }
-    }
-}
-
-#[cfg(windows)]
-fn wide_null(value: &str) -> Vec<u16> {
-    value.encode_utf16().chain([0]).collect()
-}
-
-#[cfg(not(windows))]
-fn open_existing_path(path: &std::path::Path) -> OpenPathResult {
-    OpenPathResult {
-        ok: false,
-        message: format!(
-            "Opening local files is only implemented on Windows for {}.",
-            path.display()
-        ),
-    }
-}
-
-#[cfg(not(windows))]
-fn open_external_target(target: &str, _success_prefix: &str) -> OpenPathResult {
-    OpenPathResult {
-        ok: false,
-        message: format!("Opening external targets is only implemented on Windows for {target}."),
-    }
 }
 
 #[derive(Debug)]
