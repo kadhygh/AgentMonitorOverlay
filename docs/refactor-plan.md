@@ -792,3 +792,12 @@ Manual smoke:
 - Validation passed:
   - `cd broker/assets/obsidian/md-anno-tools; npm run build`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Obsidian Canvas Navigation Helpers Extracted
+
+- Added `broker/assets/obsidian/md-anno-tools/src/canvas/navigation.ts` for Canvas latest-note marking, node element lookup, selection cleanup helpers, centering, bounds, and zoom helpers.
+- Kept Canvas focus orchestration, AMO marker checks, toolbar wiring, and debug-aware `safeCanvasCall` ownership in `plugin.ts`.
+- Reduced `plugin.ts` from 2434 lines to 2262 lines while keeping `canvas/navigation.ts` at 176 lines; rebuilt the tracked Obsidian `main.js` bundle.
+- Validation passed:
+  - `cd broker/assets/obsidian/md-anno-tools; npm run build`
+  - `git diff --check`

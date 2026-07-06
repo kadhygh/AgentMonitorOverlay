@@ -64,6 +64,7 @@ import {
   collectCanvasSelectedNodes,
   normalizeCanvasFilePathCandidate,
 } from "./canvas/target";
+import { canvasNodeElement, centerCanvasNode, markCanvasLatestNote } from "./canvas/navigation";
 import {
   amoNoteSourceTitleHeader,
   displayNameForFile,
@@ -712,7 +713,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         if (managedCanvas) {
           this.selectCanvasNode(view, node, normalizedNotePath);
         }
-        const centered = this.centerCanvasNode(view, node);
+        const centered = centerCanvasNode(view, node, (target, method, ...args) => this.safeCanvasCall(target, method, ...args));
         this.rememberCanvasMarkdownFile(view, normalizedNotePath);
         this.debugLog("canvas.focus_note.ok", {
           canvasPath: normalizedCanvasPath,
@@ -830,7 +831,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       const nodeFilePath = normalizeVaultFilePath(canvasNodeFilePath(view.canvas, node));
       if (!nodeFilePath || !nodeFilePath.toLowerCase().endsWith(".md")) continue;
 
-      const nodeElement = this.canvasNodeElement(view, node);
+      const nodeElement = canvasNodeElement(view, node);
       const labelElement = this.canvasNodeLabelElement(nodeElement);
       if (!labelElement) continue;
 
@@ -1007,7 +1008,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
   selectCanvasNode(view, node, notePath) {
     const canvas = view && view.canvas;
-    const marked = this.markCanvasLatestNote(view, node);
+    const marked = markCanvasLatestNote(view, node);
 
     this.safeCanvasCall(canvas, "requestFrame");
     this.debugLog("canvas.focus_note.selected", {
@@ -1016,179 +1017,6 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       nodeId: node && (node.id || (node.data && node.data.id)),
       marked,
     });
-  }
-
-  markCanvasLatestNote(view, node) {
-    this.clearCanvasLatestNoteMarkers(view);
-    const element = this.canvasNodeElement(view, node);
-    if (!element) return false;
-    element.classList.add("amo-canvas-latest-note");
-    element.setAttribute("data-amo-latest-note", "true");
-    return true;
-  }
-
-  clearCanvasLatestNoteMarkers(view) {
-    if (!view || !view.containerEl) return;
-    const markedElements = Array.from(view.containerEl.querySelectorAll(".amo-canvas-latest-note")) as HTMLElement[];
-    for (const element of markedElements) {
-      element.classList.remove("amo-canvas-latest-note");
-      element.removeAttribute("data-amo-latest-note");
-    }
-  }
-
-  clearCanvasSelectionArtifact(view, node) {
-    const canvas = view && view.canvas;
-    const nodeId = node && (node.id || (node.data && node.data.id));
-    let cleaned = false;
-
-    if (node) {
-      if (node.selected || node.isSelected) cleaned = true;
-      node.selected = false;
-      node.isSelected = false;
-    }
-
-    for (const collection of [canvas && canvas.selection, canvas && canvas.selectedNodes, canvas && canvas.selectedItems, canvas && canvas.selected]) {
-      if (this.removeCanvasSelectionValue(collection, node, nodeId)) {
-        cleaned = true;
-      }
-    }
-
-    const element = this.canvasNodeElement(view, node);
-    if (element) {
-      for (const className of ["is-selected", "mod-selected", "selected"]) {
-        if (element.classList.contains(className)) cleaned = true;
-        element.classList.remove(className);
-      }
-    }
-
-    return cleaned;
-  }
-
-  clearCanvasSelection(canvas) {
-    this.safeCanvasCall(canvas, "deselectAll");
-    this.safeCanvasCall(canvas, "clearSelection");
-    for (const collection of [canvas && canvas.selection, canvas && canvas.selectedNodes, canvas && canvas.selectedItems, canvas && canvas.selected]) {
-      if (collection && typeof collection.clear === "function") {
-        this.safeCanvasCall(collection, "clear");
-      }
-    }
-
-    for (const node of collectCanvasNodes(canvas)) {
-      if (!node) continue;
-      node.selected = false;
-      node.isSelected = false;
-    }
-  }
-
-  removeCanvasSelectionValue(collection, node, nodeId) {
-    if (!collection) return false;
-    let removed = false;
-
-    if (Array.isArray(collection)) {
-      for (const value of [node, nodeId]) {
-        const index = value ? collection.indexOf(value) : -1;
-        if (index >= 0) {
-          collection.splice(index, 1);
-          removed = true;
-        }
-      }
-    }
-
-    if (typeof collection.delete === "function") {
-      if (node && collection.delete(node)) removed = true;
-      if (nodeId && collection.delete(nodeId)) removed = true;
-    }
-
-    if (typeof collection.has === "function" && typeof collection.remove === "function") {
-      if (node && collection.has(node)) {
-        this.safeCanvasCall(collection, "remove", node);
-        removed = true;
-      }
-      if (nodeId && collection.has(nodeId)) {
-        this.safeCanvasCall(collection, "remove", nodeId);
-        removed = true;
-      }
-    }
-
-    return removed;
-  }
-
-  addCanvasSelectionValue(collection, node) {
-    if (!collection || !node) return;
-    if (typeof collection.add === "function") {
-      this.safeCanvasCall(collection, "add", node);
-      return;
-    }
-    if (typeof collection.set === "function") {
-      const nodeId = node.id || (node.data && node.data.id);
-      this.safeCanvasCall(collection, "set", nodeId || node, node);
-    }
-  }
-
-  centerCanvasNode(view, node) {
-    const canvas = view && view.canvas;
-    const bounds = this.canvasNodeBounds(node);
-    if (!bounds) return false;
-
-    const bbox = {
-      minX: bounds.x,
-      minY: bounds.y,
-      maxX: bounds.x + bounds.width,
-      maxY: bounds.y + bounds.height,
-    };
-
-    if (this.safeCanvasCall(canvas, "zoomToBbox", bbox)) return true;
-    if (this.safeCanvasCall(canvas, "zoomToBBox", bbox)) return true;
-
-    const centerX = bounds.x + bounds.width / 2;
-    const centerY = bounds.y + bounds.height / 2;
-    if (this.safeCanvasCall(canvas, "panTo", centerX, centerY)) return true;
-    if (this.safeCanvasCall(canvas, "setViewport", centerX, centerY, this.canvasZoom(canvas))) return true;
-
-    const element = this.canvasNodeElement(view, node);
-    if (element && typeof element.scrollIntoView === "function") {
-      element.scrollIntoView({ block: "center", inline: "center", behavior: "smooth" });
-      return true;
-    }
-
-    return false;
-  }
-
-  canvasNodeBounds(node) {
-    const data = node && typeof node.getData === "function" ? node.getData() : node && node.data;
-    const x = this.numberValue(node && node.x, data && data.x);
-    const y = this.numberValue(node && node.y, data && data.y);
-    const width = this.numberValue(node && node.width, node && node.w, data && data.width, data && data.w, 520);
-    const height = this.numberValue(node && node.height, node && node.h, data && data.height, data && data.h, 360);
-    if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-    return { x, y, width, height };
-  }
-
-  numberValue(...values) {
-    for (const value of values) {
-      const numeric = Number(value);
-      if (Number.isFinite(numeric)) return numeric;
-    }
-    return 0;
-  }
-
-  canvasZoom(canvas) {
-    return this.numberValue(canvas && canvas.zoom, canvas && canvas.scale, canvas && canvas.tZoom, 1) || 1;
-  }
-
-  canvasNodeElement(view, node) {
-    for (const candidate of [node && node.nodeEl, node && node.el, node && node.containerEl, node && node.contentEl]) {
-      if (candidate instanceof HTMLElement) return candidate;
-    }
-
-    const nodeId = node && (node.id || (node.data && node.data.id));
-    if (!nodeId || !view || !view.containerEl) return null;
-    const escaped = String(nodeId).replace(/\\/g, "\\\\").replace(/"/g, '\\"');
-    return (
-      view.containerEl.querySelector('[data-node-id="' + escaped + '"]') ||
-      view.containerEl.querySelector('[data-id="' + escaped + '"]') ||
-      view.containerEl.querySelector("#" + String(nodeId).replace(/[^a-zA-Z0-9_-]/g, "\\$&"))
-    );
   }
 
   safeCanvasCall(target, method, ...args) {

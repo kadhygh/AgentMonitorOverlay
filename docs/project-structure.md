@@ -149,6 +149,8 @@ AMO note metadata checks, display names, source-mode display-title header DOM, a
 `broker/assets/obsidian/md-anno-tools/src/note/title.ts`; `plugin.ts` still owns file reads/writes and bridge sync.
 Inline annotation token replacement and local-code-link linkification now live with legacy annotation section rendering in
 `broker/assets/obsidian/md-anno-tools/src/annotations/render.ts`; `plugin.ts` only decides when postprocessing runs.
+Canvas latest-note marking, centering, node element lookup, bounds, zoom, and selection collection helpers live in
+`broker/assets/obsidian/md-anno-tools/src/canvas/navigation.ts`; `plugin.ts` keeps the debug-aware `safeCanvasCall` wrapper.
 
 The broker extraction has started. These boundaries have already moved out of `broker/server.js`:
 
