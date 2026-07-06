@@ -93,14 +93,14 @@ import {
   isWorkspaceAdapterDeployed,
   isWorkspaceAdapterInstalled,
   maintenanceToneForSession,
-  workspaceAdapterLaunchDetail,
   workspaceAdapterLaunchable,
   workspaceCleanFeedback,
   workspaceGeneratedNoteCount,
   type LaunchPanelAdapterId,
 } from "./domain/workspaceModel";
-import { LaunchToolMark, SessionRowContent, toolDisplayForSession } from "./components/SessionCard";
+import { SessionRowContent, toolDisplayForSession } from "./components/SessionCard";
 import { CandidateMenu, type CandidateMenuState } from "./components/CandidateMenu";
+import { LaunchPanel, type LaunchPanelState } from "./components/LaunchPanel";
 import { toCliPasteClipboardText, writeClipboardText } from "./native/clipboard";
 import {
   applyScratchpadShortcutState,
@@ -278,15 +278,6 @@ interface WorkspacePanelState {
   busy: "status" | "clean" | "open" | "task-title" | null;
   error: string | null;
   taskTitleDraft: string;
-}
-
-interface LaunchPanelState {
-  session: AgentSession;
-  x: number;
-  y: number;
-  inspection: WorkspaceInspection | null;
-  busy: "inspect" | LaunchPanelAdapterId | null;
-  error: string | null;
 }
 
 interface CleanConfirmState {
@@ -2946,67 +2937,12 @@ export default function App() {
             />
           ) : null}
           {launchPanel ? (
-            <section
-              className="launch-panel"
-              style={{ left: launchPanel.x, top: launchPanel.y }}
-              aria-label="Project launch"
-              onClick={(event) => event.stopPropagation()}
-            >
-              <div className="launch-panel-header">
-                <div>
-                  <strong>{projectName(launchPanel.inspection?.workspacePath ?? workspacePathForSession(launchPanel.session))}</strong>
-                  <span>{launchPanel.busy === "inspect" ? "Checking deploy status" : "New CLI"}</span>
-                </div>
-                <button
-                  type="button"
-                  className="candidate-close"
-                  title="Close"
-                  onClick={() => setLaunchPanel(null)}
-                >
-                  <X size={13} aria-hidden="true" />
-                </button>
-              </div>
-
-              <code
-                className="launch-panel-path"
-                title={launchPanel.inspection?.workspacePath ?? workspacePathForSession(launchPanel.session)}
-              >
-                {shortPathLabel(launchPanel.inspection?.workspacePath ?? workspacePathForSession(launchPanel.session))}
-              </code>
-
-              {launchPanel.error ? <p className="launch-panel-error">{launchPanel.error}</p> : null}
-
-              <div className="launch-panel-actions">
-                {(["codex-cli", "claude-cli"] as LaunchPanelAdapterId[]).map((adapterId) => {
-                  const launchable = workspaceAdapterLaunchable(launchPanel.inspection, adapterId);
-                  const checking = launchPanel.busy === "inspect";
-                  const busy = launchPanel.busy === adapterId;
-                  const panelBusy = launchPanel.busy !== null;
-                  return (
-                    <button
-                      type="button"
-                      key={adapterId}
-                      disabled={panelBusy || !launchable}
-                      onClick={() => void launchProjectCliFromPanel(adapterId)}
-                    >
-                      <LaunchToolMark adapterId={adapterId} />
-                      <span>
-                        <strong>{busy ? "Starting" : `New ${cliLaunchLabel(adapterId)}`}</strong>
-                        <small>{checking ? "checking" : workspaceAdapterLaunchDetail(launchPanel.inspection, adapterId)}</small>
-                      </span>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {launchPanel.inspection ? (
-                <span className="launch-panel-note">New CLI starts in the project directory and waits for its own hook-created card.</span>
-              ) : (
-                <span className="launch-panel-note">Inspecting deployment before enabling launch actions.</span>
-              )}
-            </section>
+            <LaunchPanel
+              state={launchPanel}
+              onClose={() => setLaunchPanel(null)}
+              onLaunch={(adapterId) => void launchProjectCliFromPanel(adapterId)}
+            />
           ) : null}
-
           {workspacePanel ? (
             <section
               className={`workspace-panel tone-${maintenanceToneForSession(workspacePanel.session, workspacePanel.status)}`}

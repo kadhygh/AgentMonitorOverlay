@@ -435,3 +435,13 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Launch Panel Extracted
+
+- Added `overlay/src/components/LaunchPanel.tsx` for task-card project CLI launch UI.
+- Kept broker launch calls and launch-panel state updates in `App.tsx`.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`
