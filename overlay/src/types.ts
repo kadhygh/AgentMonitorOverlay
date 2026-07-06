@@ -255,6 +255,9 @@ export interface WorkspaceLaunchResult {
   pid?: number | null;
   command?: string;
   args?: string[];
+  windowHint?: WindowHint | null;
+  targetBinding?: TargetBinding | null;
+  session?: AgentSession | null;
   message: string;
 }
 

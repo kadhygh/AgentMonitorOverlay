@@ -547,6 +547,10 @@ function hasExplicitWindowTarget(target: TargetBinding | null) {
   return Boolean(target?.type === "window" && (target.hwnd || target.processId));
 }
 
+function hasStrongWindowRoutingHint(session: AgentSession) {
+  return Boolean(session.windowHint?.titleToken);
+}
+
 function activationWindowRequest(
   session: AgentSession,
   activationTarget: TargetBinding | null,
@@ -3130,7 +3134,15 @@ export default function App() {
         sessionId: session.sessionId,
         ok: result.ok,
         pid: result.pid ?? null,
+        targetType: result.targetBinding?.type ?? null,
+        hasWindowHint: Boolean(result.windowHint),
       });
+      const launchedSession = result.session;
+      if (launchedSession) {
+        setSessions((previous) =>
+          previous.map((item) => (item.sessionId === launchedSession.sessionId ? launchedSession : item)),
+        );
+      }
       setFeedback(result.message);
       if (result.ok && options.clearAttentionOnSuccess) {
         void clearSessionAttentionAfterActivation(session, "open-codex-cli");
@@ -3772,9 +3784,10 @@ export default function App() {
       });
       return;
     }
-
-    const activationTarget = activationTargetForSession(session);
-    if (isCodexSession(session) && !hasExplicitWindowTarget(activationTarget)) {
+    const activationTarget =
+      targetBinding?.type === "codex-cli-session" ? windowTargetForSession(session) : activationTargetForSession(session);
+    const canRouteCodexCliByHint = targetBinding?.type === "codex-cli-session" && hasStrongWindowRoutingHint(session);
+    if (isCodexSession(session) && !hasExplicitWindowTarget(activationTarget) && !canRouteCodexCliByHint) {
       await openCodexTargetMenuFromWindowList(session, menuX, menuY, {
         clearAttentionOnConfirm: options.clearAttentionOnSuccess ?? false,
       });

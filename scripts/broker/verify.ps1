@@ -74,6 +74,7 @@ function Invoke-BrokerJson {
     $params = @{
         Method = $Method
         Uri = "$baseUrl$Path"
+        TimeoutSec = 30
     }
 
     if ($null -ne $Body) {
@@ -191,6 +192,20 @@ try {
 
     Write-Host "Session list OK:"
     $sessions.sessions | Select-Object tool, sessionId, state, lastEvent, needsAttention, updatedAt | Format-Table -AutoSize
+
+    $codexHookTarget = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
+        tool = "codex"
+        sessionId = "codex-demo-001"
+        cwd = $repoRoot.Path
+        source = "codex-event-hook"
+        hookEventName = "PostToolUse"
+        message = "Verification hook event"
+        state = "running"
+    }
+    if ($codexHookTarget.session.targetBinding.type -ne "codex-cli-session") {
+        throw "Codex hook events should default-bind the session to a Codex CLI target."
+    }
+    Write-Host "Codex hook default target OK -> $($codexHookTarget.session.targetBinding.type)"
 
     $inspect = Invoke-BrokerJson -Method POST -Path "/api/workspaces/inspect" -Body @{
         workspacePath = $workspaceRoot

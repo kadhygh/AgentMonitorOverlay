@@ -637,6 +637,8 @@ function upsertSessionFromEvent(payload) {
     payload.message || payload.summary || payload.lastMessage || payload.last_message
   );
   const promptMessage = promptMessageFromEvent(payload, eventName, message);
+  const cwd = normalizeText(payload.cwd || payload.projectPath || payload.project_path) || existing?.cwd || null;
+  const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null;
   const shouldClearAttention = shouldClearAttentionForActivity({
     eventName,
     state,
@@ -647,7 +649,7 @@ function upsertSessionFromEvent(payload) {
     ...(existing || {}),
     tool,
     sessionId,
-    cwd: normalizeText(payload.cwd || payload.projectPath || payload.project_path) || existing?.cwd || null,
+    cwd,
     title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title),
     taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null,
     state,
@@ -659,11 +661,8 @@ function upsertSessionFromEvent(payload) {
         : typeof payload.needsAttention === "boolean"
         ? payload.needsAttention
         : state === "waiting_permission" || state === "waiting_user",
-    windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null,
-    targetBinding:
-      normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
-      existing?.targetBinding ||
-      null,
+    windowHint,
+    targetBinding: resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: now, windowHint }),
     updatedAt: normalizeText(payload.timestamp || payload.updatedAt || payload.updated_at) || now,
     createdAt: existing?.createdAt || now,
     heartbeatAt: existing?.heartbeatAt || null,
@@ -733,6 +732,8 @@ function updateHeartbeat(sessionId, payload) {
 
   const nextState = normalizeState(payload.state) || existing.state;
   const eventName = normalizeText(payload.event || payload.eventName || payload.hookEventName || payload.hook_event_name || payload.type);
+  const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing.windowHint || null;
+  const cwd = normalizeText(payload.cwd) || existing.cwd;
   const shouldClearAttention = shouldClearAttentionForActivity({
     eventName,
     state: nextState,
@@ -740,7 +741,7 @@ function updateHeartbeat(sessionId, payload) {
   });
   let session = {
     ...existing,
-    cwd: normalizeText(payload.cwd) || existing.cwd,
+    cwd,
     title: resolveSessionTitle(existing.tool || payload.tool, sessionId, payload.title, existing.title),
     taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing.taskTitle || null,
     state: nextState,
@@ -753,11 +754,16 @@ function updateHeartbeat(sessionId, payload) {
         : typeof payload.needsAttention === "boolean"
         ? payload.needsAttention
         : nextState === "waiting_permission" || nextState === "waiting_user",
-    windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing.windowHint,
-    targetBinding:
-      normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
-      existing.targetBinding ||
-      null,
+    windowHint,
+    targetBinding: resolveSessionTargetBinding({
+      payload,
+      existing,
+      sessionId,
+      tool: existing.tool || payload.tool,
+      cwd,
+      boundAt: now,
+      windowHint,
+    }),
     reviewRequired: existing.reviewRequired || false,
     reviewStatus: existing.reviewStatus || null,
     reviewRequestedAt: existing.reviewRequestedAt || null,
@@ -1400,11 +1406,15 @@ async function launchWorkspace(payload) {
 
   const projectName = path.basename(workspacePath);
   const startedAt = new Date().toISOString();
+  const codexLaunchRoute =
+    adapterId === "codex-cli" && resumeSessionId
+      ? codexCliLaunchRoute({ workspacePath, projectName, sessionId: resumeSessionId })
+      : null;
   let launch;
   if (adapterId === "codex-cli") {
     launch = await launchCliInTerminal({
       workspacePath,
-      title: `AMO Codex CLI - ${projectName}`,
+      title: codexLaunchRoute?.title || `AMO Codex CLI - ${projectName}`,
       command: "codex",
       args: resumeSessionId ? ["resume", resumeSessionId] : [],
     });
@@ -1427,7 +1437,20 @@ async function launchWorkspace(payload) {
     command: launch.command,
     args: launch.args,
     resumeSessionId: resumeSessionId || null,
+    titleToken: codexLaunchRoute?.windowHint.titleToken || null,
   });
+
+  const launchedSession =
+    codexLaunchRoute
+      ? bindLaunchedCodexCliTarget({
+          sessionId: resumeSessionId,
+          workspacePath,
+          projectName,
+          windowHint: codexLaunchRoute.windowHint,
+          launchedAt: startedAt,
+          launch,
+        })
+      : null;
 
   return {
     ok: true,
@@ -1440,6 +1463,9 @@ async function launchWorkspace(payload) {
     pid: launch.pid || null,
     command: launch.command,
     args: launch.args,
+    windowHint: launchedSession?.windowHint || codexLaunchRoute?.windowHint || null,
+    targetBinding: launchedSession?.targetBinding || null,
+    session: launchedSession,
     message:
       adapterId === "codex-app"
         ? `Opened Codex App for ${projectName}.`
@@ -1447,6 +1473,88 @@ async function launchWorkspace(payload) {
         ? `Launched Codex CLI resume for ${projectName}.`
         : `Launched ${adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI"} for ${projectName}.`,
   };
+}
+
+function codexCliLaunchRoute({ workspacePath, projectName, sessionId }) {
+  const projectSlug = sanitizeFilePart(projectName).toLowerCase();
+  const sessionSlug = crypto.createHash("sha1").update(sessionId).digest("hex").slice(0, 10);
+  const titleToken = `[AMO:codex:${projectSlug}:${sessionSlug}]`;
+  const title = `${titleToken} Codex CLI - ${projectName}`;
+
+  return {
+    title,
+    windowHint: {
+      process: null,
+      title,
+      titleToken,
+      titleContains: ["Codex", projectName, sessionId],
+      project: projectName,
+      cwd: workspacePath,
+      tool: "codex",
+      pid: null,
+      hwnd: null,
+      boundAt: null,
+      boundBy: "workspace-launch",
+      boundLabel: title,
+    },
+  };
+}
+
+function bindLaunchedCodexCliTarget({ sessionId, workspacePath, projectName, windowHint, launchedAt, launch }) {
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    return null;
+  }
+
+  const boundHint = {
+    ...(existing.windowHint || {}),
+    ...windowHint,
+    pid: null,
+    hwnd: null,
+    boundAt: launchedAt,
+    boundBy: "workspace-launch",
+    boundLabel: windowHint.boundLabel || windowHint.title || `Codex CLI - ${projectName}`,
+  };
+  const targetBinding = normalizeTargetBinding(
+    {
+      type: "codex-cli-session",
+      label: "Codex CLI",
+      sessionId,
+      workspacePath,
+      boundAt: launchedAt,
+      boundBy: "workspace-launch",
+    },
+    sessionId,
+    launchedAt
+  );
+  const session = {
+    ...existing,
+    cwd: existing.cwd || workspacePath,
+    workspacePath: existing.workspacePath || workspacePath,
+    windowHint: boundHint,
+    targetBinding,
+    lastEvent: "TargetLaunched",
+    lastMessage: `Launched Codex CLI target for ${projectName}.`,
+    updatedAt: launchedAt,
+    eventCount: (existing.eventCount || 0) + 1,
+    processInfo: {
+      ...(existing.processInfo || {}),
+      launchedPid: launch?.pid || null,
+      launchedCommand: launch?.command || null,
+      launchedArgs: Array.isArray(launch?.args) ? launch.args : [],
+      launchedAt,
+    },
+  };
+
+  sessions.set(sessionId, session);
+  recordDebugLog("broker", "workspace.launch.target_bound", {
+    sessionId,
+    workspacePath,
+    titleToken: boundHint.titleToken || null,
+    launchedPid: launch?.pid || null,
+  });
+
+  return session;
 }
 
 async function launchCliInTerminal({ workspacePath, title, command, args = [] }) {
@@ -1888,6 +1996,8 @@ function handleReply(payload) {
   const existing = sessions.get(sessionId);
   const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title);
   const taskTitle = normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null;
+  const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null;
+  const targetBinding = resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: capturedAt, windowHint });
   const record = {
     schemaVersion: AMO_SCHEMA_VERSION,
     workspaceId: workspace.workspaceId,
@@ -1920,11 +2030,8 @@ function handleReply(payload) {
     lastEvent: hookEventName,
     lastMessage: trimMessage(message, 240),
     needsAttention: false,
-    windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null,
-    targetBinding:
-      normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
-      existing?.targetBinding ||
-      null,
+    windowHint,
+    targetBinding,
     updatedAt: capturedAt,
     createdAt: existing?.createdAt || now,
     heartbeatAt: existing?.heartbeatAt || null,
@@ -2019,6 +2126,8 @@ function handlePrompt(payload) {
   const cwd = normalizeText(payload.cwd) || existing?.cwd || workspaceRoot;
   const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title);
   const taskTitle = normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null;
+  const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null;
+  const targetBinding = resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: capturedAt, windowHint });
   const promptHash = promptContentHash(message);
   const duplicate = findDuplicatePrompt(existing, {
     message,
@@ -2045,6 +2154,8 @@ function handlePrompt(payload) {
         eventCount: (existing?.eventCount || 0) + 1,
         workspaceId: existing?.workspaceId || workspace.workspaceId,
         workspacePath: existing?.workspacePath || workspaceRoot,
+        windowHint,
+        targetBinding,
       },
       "auto-cleared-by-duplicate-prompt"
     );
@@ -2115,11 +2226,8 @@ function handlePrompt(payload) {
     lastEvent: hookEventName,
     lastMessage: trimMessage(`User: ${message}`, 240),
     needsAttention: false,
-    windowHint: normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null,
-    targetBinding:
-      normalizeTargetBinding(payload.targetBinding || payload.target_binding, sessionId) ||
-      existing?.targetBinding ||
-      null,
+    windowHint,
+    targetBinding,
     updatedAt: capturedAt,
     createdAt: existing?.createdAt || now,
     heartbeatAt: existing?.heartbeatAt || null,
@@ -4885,6 +4993,70 @@ function normalizeState(value) {
 
 function codexAppThreadUri(threadId) {
   return `codex://threads/${encodeURIComponent(threadId)}`;
+}
+
+function resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt, windowHint }) {
+  const explicitTarget = normalizeTargetBinding(payload?.targetBinding || payload?.target_binding, sessionId, boundAt);
+  if (explicitTarget) {
+    return explicitTarget;
+  }
+
+  if (existing?.targetBinding) {
+    return existing.targetBinding;
+  }
+
+  const windowTarget = targetBindingFromWindowHint(windowHint, boundAt);
+  if (windowTarget) {
+    return windowTarget;
+  }
+
+  return defaultHookTargetBinding({ payload, sessionId, tool, cwd, boundAt });
+}
+
+function defaultHookTargetBinding({ payload, sessionId, tool, cwd, boundAt }) {
+  if (!sessionId || !isHookPayload(payload)) {
+    return null;
+  }
+
+  const normalizedTool = (normalizeText(tool) || "").toLowerCase();
+  if (normalizedTool.includes("codex")) {
+    return normalizeTargetBinding(
+      {
+        type: "codex-cli-session",
+        label: "Codex CLI",
+        sessionId,
+        workspacePath: normalizeText(payload.workspacePath || payload.workspace_path || payload.cwd) || cwd || null,
+        boundAt,
+        boundBy: "hook-default-target",
+      },
+      sessionId,
+      boundAt
+    );
+  }
+
+  return null;
+}
+
+function isHookPayload(payload) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+
+  const source = (normalizeText(payload.source) || "").toLowerCase();
+  if (source.includes("hook")) {
+    return true;
+  }
+
+  const hookEventName = (normalizeText(payload.hookEventName || payload.hook_event_name) || "").toLowerCase();
+  return [
+    "stop",
+    "userpromptsubmit",
+    "permissionrequest",
+    "pretooluse",
+    "posttooluse",
+    "posttoolusefailure",
+    "notification",
+  ].includes(hookEventName);
 }
 
 function normalizeTargetBinding(value, sessionId, boundAt) {
