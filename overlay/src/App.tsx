@@ -147,6 +147,10 @@ function brokerSessionReviewedUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/reviewed`;
 }
 
+function brokerSessionAttentionClearedUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/attention-cleared`;
+}
+
 function brokerSessionDismissUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/dismiss`;
 }
@@ -959,6 +963,14 @@ function sessionNeedsReview(session: AgentSession) {
   return Boolean(session.reviewRequired && session.reviewStatus !== "reviewed" && !session.reviewedAt);
 }
 
+function sessionNeedsManualAttentionClear(session: AgentSession) {
+  return Boolean(
+    !sessionNeedsReview(session) &&
+      session.needsAttention &&
+      (session.state === "waiting_permission" || session.state === "waiting_user"),
+  );
+}
+
 function sessionHasAttentionSignal(session: AgentSession) {
   return Boolean(session.needsAttention || sessionNeedsReview(session));
 }
@@ -1074,6 +1086,7 @@ interface CandidateMenuState {
   x: number;
   y: number;
   bindOnSelect: boolean;
+  clearAttentionOnConfirm: boolean;
   selectedCandidateKey: string | null;
   codexAppAvailable: boolean;
   codexCliResumeAvailable: boolean;
@@ -1145,6 +1158,7 @@ function SessionRowContent({
   onDismiss,
   onOpenCodexAppTarget,
   onActivateSession,
+  onHandleAttention,
   onOpenWorkspacePanel,
 }: {
   session: AgentSession;
@@ -1162,6 +1176,7 @@ function SessionRowContent({
   onDismiss: () => void;
   onOpenCodexAppTarget: () => void;
   onActivateSession: () => void;
+  onHandleAttention: () => void;
   onOpenWorkspacePanel: (x: number, y: number) => void;
 }) {
   const notePath = notePathForOpen(session);
@@ -1306,7 +1321,11 @@ function SessionRowContent({
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
-                  onActivateSession();
+                  if (waitingForPermission) {
+                    onHandleAttention();
+                  } else {
+                    onActivateSession();
+                  }
                 }}
               >
                 {failed ? <AlertTriangle size={13} aria-hidden="true" /> : <SquareTerminal size={13} aria-hidden="true" />}
@@ -2984,7 +3003,11 @@ export default function App() {
     setFeedback(`Theme set to ${next === "light" ? "Light" : "Dark"}.`);
   }
 
-  async function openCodexAppTarget(session: AgentSession, bindTarget: boolean) {
+  async function openCodexAppTarget(
+    session: AgentSession,
+    bindTarget: boolean,
+    options: { clearAttentionOnSuccess?: boolean } = {},
+  ) {
     const target = codexAppTargetForSession(session);
     const uri = target.uri ?? codexAppThreadUri(session.sessionId);
     markSessionVisuallySeen(session);
@@ -3019,6 +3042,9 @@ export default function App() {
         message: result.message,
       });
       setFeedback(result.ok ? "Codex App thread opened." : result.message);
+      if (result.ok && options.clearAttentionOnSuccess) {
+        void clearSessionAttentionAfterActivation(session, "open-codex-app");
+      }
       if (result.ok) {
         void markSessionReviewed(session, "open-codex-app", { quiet: true });
       }
@@ -3034,7 +3060,11 @@ export default function App() {
     }
   }
 
-  async function openCodexCliTarget(session: AgentSession, bindTarget: boolean) {
+  async function openCodexCliTarget(
+    session: AgentSession,
+    bindTarget: boolean,
+    options: { clearAttentionOnSuccess?: boolean } = {},
+  ) {
     const workspacePath = workspacePathForSession(session);
     if (!workspacePath) {
       setFeedback("No workspace path is linked to this card.");
@@ -3078,6 +3108,9 @@ export default function App() {
         pid: result.pid ?? null,
       });
       setFeedback(result.message);
+      if (result.ok && options.clearAttentionOnSuccess) {
+        void clearSessionAttentionAfterActivation(session, "open-codex-cli");
+      }
     } catch (error) {
       void postDebugLog("codex_cli.target_open.error", {
         sessionId: session.sessionId,
@@ -3096,7 +3129,7 @@ export default function App() {
     menuX?: number,
     menuY?: number,
     candidates?: ActivationCandidate[],
-    options: { allowCodexCliResumeWithCandidates?: boolean } = {},
+    options: { allowCodexCliResumeWithCandidates?: boolean; clearAttentionOnConfirm?: boolean } = {},
   ) {
     const position = menuPosition(menuX, menuY);
     const hintCandidate = activationCandidateFromWindowTarget(windowTargetForSession(session));
@@ -3111,6 +3144,7 @@ export default function App() {
       x: position.x,
       y: position.y,
       bindOnSelect: true,
+      clearAttentionOnConfirm: options.clearAttentionOnConfirm ?? false,
       selectedCandidateKey: null,
       codexAppAvailable: true,
       codexCliResumeAvailable: shouldShowCodexCliResumeOption(
@@ -3121,7 +3155,12 @@ export default function App() {
     });
   }
 
-  async function openCodexTargetMenuFromWindowList(session: AgentSession, menuX?: number, menuY?: number) {
+  async function openCodexTargetMenuFromWindowList(
+    session: AgentSession,
+    menuX?: number,
+    menuY?: number,
+    options: { clearAttentionOnConfirm?: boolean } = {},
+  ) {
     setActivatingId(session.sessionId);
     setFeedback(`Finding target windows for ${session.title}...`);
     void postDebugLog("window.candidate.list.start", {
@@ -3144,6 +3183,7 @@ export default function App() {
       });
       openCodexTargetMenu(session, menuX, menuY, candidates, {
         allowCodexCliResumeWithCandidates: candidates.length === 0,
+        clearAttentionOnConfirm: options.clearAttentionOnConfirm ?? false,
       });
       setFeedback(candidates.length > 0 ? "Choose a target window, then Focus or Confirm." : result.message);
     } catch (error) {
@@ -3153,6 +3193,7 @@ export default function App() {
       });
       openCodexTargetMenu(session, menuX, menuY, [], {
         allowCodexCliResumeWithCandidates: true,
+        clearAttentionOnConfirm: options.clearAttentionOnConfirm ?? false,
       });
       setFeedback(`Target listing failed: ${(error as Error).message}`);
     } finally {
@@ -3693,17 +3734,26 @@ export default function App() {
     }
   }
 
-  async function activateSession(session: AgentSession, menuX?: number, menuY?: number) {
+  async function activateSession(
+    session: AgentSession,
+    menuX?: number,
+    menuY?: number,
+    options: { clearAttentionOnSuccess?: boolean } = {},
+  ) {
     markSessionVisuallySeen(session);
     const targetBinding = targetBindingForSession(session);
     if (targetBinding?.type === "codex-app-thread") {
-      await openCodexAppTarget(session, false);
+      await openCodexAppTarget(session, false, {
+        clearAttentionOnSuccess: options.clearAttentionOnSuccess ?? false,
+      });
       return;
     }
 
     const activationTarget = activationTargetForSession(session);
     if (isCodexSession(session) && !hasExplicitWindowTarget(activationTarget)) {
-      await openCodexTargetMenuFromWindowList(session, menuX, menuY);
+      await openCodexTargetMenuFromWindowList(session, menuX, menuY, {
+        clearAttentionOnConfirm: options.clearAttentionOnSuccess ?? false,
+      });
       return;
     }
 
@@ -3731,6 +3781,7 @@ export default function App() {
             !result.message.startsWith("No matching window found");
           openCodexTargetMenu(session, menuX, menuY, result.candidates ?? [], {
             allowCodexCliResumeWithCandidates: !candidatesAreAmbiguousMatches,
+            clearAttentionOnConfirm: options.clearAttentionOnSuccess ?? false,
           });
         } else {
           const position = menuPosition(menuX, menuY);
@@ -3740,6 +3791,7 @@ export default function App() {
             x: position.x,
             y: position.y,
             bindOnSelect: true,
+            clearAttentionOnConfirm: options.clearAttentionOnSuccess ?? false,
             selectedCandidateKey: null,
             codexAppAvailable: false,
             codexCliResumeAvailable: false,
@@ -3753,6 +3805,9 @@ export default function App() {
         candidateCount: result.candidates?.length ?? 0,
       });
       setFeedback(result.message);
+      if (result.ok && options.clearAttentionOnSuccess) {
+        void clearSessionAttentionAfterActivation(session, "activate-target");
+      }
     } catch (error) {
       void postDebugLog("window.activate.error", {
         sessionId: session.sessionId,
@@ -4078,10 +4133,11 @@ export default function App() {
     session: AgentSession,
     candidate: ActivationCandidate,
     bindWindow: boolean,
-    options: { closeOnSuccess?: boolean; markReviewedOnSuccess?: boolean } = {},
+    options: { closeOnSuccess?: boolean; markReviewedOnSuccess?: boolean; clearAttentionOnSuccess?: boolean } = {},
   ) {
     const closeOnSuccess = options.closeOnSuccess ?? true;
     const markReviewedOnSuccess = options.markReviewedOnSuccess ?? true;
+    const clearAttentionOnSuccess = options.clearAttentionOnSuccess ?? false;
     markSessionVisuallySeen(session);
     setActivatingId(session.sessionId);
     setFeedback(`Activating ${candidate.processName ?? "window"}...`);
@@ -4139,6 +4195,9 @@ export default function App() {
         }
         if (closeOnSuccess) {
           setCandidateMenu(null);
+        }
+        if (clearAttentionOnSuccess) {
+          void clearSessionAttentionAfterActivation(session, "activate-candidate");
         }
         if (markReviewedOnSuccess) {
           void markSessionReviewed(session, "activate-candidate", { quiet: true });
@@ -4239,6 +4298,53 @@ export default function App() {
     } finally {
       setReviewingSessionId(null);
     }
+  }
+
+  async function clearSessionAttentionAfterActivation(session: AgentSession, action = "activate-target") {
+    if (!sessionNeedsManualAttentionClear(session)) {
+      return null;
+    }
+
+    void postDebugLog("session.attention_clear.start", {
+      sessionId: session.sessionId,
+      action,
+      state: session.state,
+    });
+
+    try {
+      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+        brokerSessionAttentionClearedUrl(session.sessionId),
+        {
+          action,
+          by: "overlay",
+          state: "running",
+        },
+      );
+      setSessions((previous) =>
+        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
+      );
+      setFeedback("Permission attention cleared.");
+      void postDebugLog("session.attention_clear.ok", {
+        sessionId: result.session.sessionId,
+        action,
+        state: result.session.state,
+      });
+      return result.session;
+    } catch (error) {
+      const message = (error as Error).message;
+      setFeedback(`Attention clear failed: ${message}`);
+      void postDebugLog("session.attention_clear.error", {
+        sessionId: session.sessionId,
+        action,
+        message,
+      });
+      return null;
+    }
+  }
+
+  async function handleSessionAttention(session: AgentSession) {
+    const clearedSession = await clearSessionAttentionAfterActivation(session, "manual-handle");
+    await activateSession(clearedSession ?? session);
   }
 
   async function dismissSession(session: AgentSession) {
@@ -4871,6 +4977,7 @@ export default function App() {
                   onDismiss={() => void dismissSession(session)}
                   onOpenCodexAppTarget={() => void openCodexAppTarget(session, true)}
                   onActivateSession={() => void activateSession(session)}
+                  onHandleAttention={() => void handleSessionAttention(session)}
                   onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
                 />
               </div>
@@ -4933,7 +5040,9 @@ export default function App() {
                       className="candidate-item codex-cli-candidate"
                       title={`Start a new terminal: codex resume ${candidateMenu.session.sessionId}`}
                       onClick={() =>
-                        void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect)
+                        void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect, {
+                          clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
+                        })
                       }
                     >
                       <strong>Codex CLI Resume</strong>
@@ -4946,7 +5055,9 @@ export default function App() {
                       className="candidate-item codex-app-candidate"
                       title={codexAppThreadUri(candidateMenu.session.sessionId)}
                       onClick={() =>
-                        void openCodexAppTarget(candidateMenu.session, candidateMenu.bindOnSelect)
+                        void openCodexAppTarget(candidateMenu.session, candidateMenu.bindOnSelect, {
+                          clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
+                        })
                       }
                     >
                       <strong>Codex App</strong>
@@ -4984,6 +5095,7 @@ export default function App() {
                       if (!selectedCandidate) return;
                       void activateCandidate(candidateMenu.session, selectedCandidate, false, {
                         closeOnSuccess: false,
+                        clearAttentionOnSuccess: false,
                         markReviewedOnSuccess: false,
                       });
                     }}
@@ -5000,6 +5112,9 @@ export default function App() {
                         candidateMenu.session,
                         selectedCandidate,
                         candidateMenu.bindOnSelect,
+                        {
+                          clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
+                        },
                       );
                     }}
                   >
@@ -5395,6 +5510,7 @@ export default function App() {
                     onDismiss={() => undefined}
                     onOpenCodexAppTarget={() => undefined}
                     onActivateSession={() => undefined}
+                    onHandleAttention={() => undefined}
                     onOpenWorkspacePanel={() => undefined}
                   />
                 ) : null;

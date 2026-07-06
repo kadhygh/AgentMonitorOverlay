@@ -117,6 +117,20 @@ Optional payload:
 }
 ```
 
+### `POST /api/sessions/:id/attention-cleared`
+
+Clears a stale non-review attention state after the user returns to the target tool and handles it there. This is primarily for permission/user-wait cards where the CLI does not emit a follow-up hook after the user approves or rejects the prompt. If the session is still in `waiting_permission` or `waiting_user`, the endpoint moves it back to `running` unless a valid `state` is supplied.
+
+Optional payload:
+
+```json
+{
+  "action": "activate-target",
+  "state": "running",
+  "by": "overlay"
+}
+```
+
 ### `POST /api/obsidian/register-vault`
 
 Registers a project-local AMO vault in Obsidian's `obsidian.json` vault registry and reports whether the vault appears loaded enough for plugin-owned `obsidian://amo-open` links. The loaded check accepts either Obsidian's global runtime config file (`runtimeConfigFileExists`) or vault-local evidence (`vaultRuntimeState.loaded`) such as `.obsidian/workspace.json`, `.obsidian/app.json`, or `.obsidian/core-plugins.json`.

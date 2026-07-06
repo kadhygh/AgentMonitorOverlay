@@ -275,6 +275,16 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    const attentionClearMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/attention-cleared$/);
+    if (req.method === "POST" && attentionClearMatch) {
+      const sessionId = decodeURIComponent(attentionClearMatch[1]);
+      const payload = await readJsonBody(req, { allowEmpty: true });
+      const result = clearSessionAttention(sessionId, payload || {});
+      persistSnapshot();
+      publishSessionChanged("attention-cleared", result.session);
+      return sendJson(res, 200, result);
+    }
+
     const dismissMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/dismiss$/);
     if (req.method === "POST" && dismissMatch) {
       const sessionId = decodeURIComponent(dismissMatch[1]);
@@ -2709,6 +2719,56 @@ function markSessionReviewed(sessionId, payload = {}) {
     schemaVersion: AMO_SCHEMA_VERSION,
     sessionId,
     reviewedAt: now,
+    session,
+  };
+}
+
+function clearSessionAttention(sessionId, payload = {}) {
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Attention clear URL must include session id");
+  }
+
+  const existing = sessions.get(sessionId);
+  if (!existing) {
+    throw httpError(404, "session_not_found", `Session not found for attention clear: ${sessionId}`);
+  }
+
+  const now = new Date().toISOString();
+  const action = normalizeText(payload.action) || "manual";
+  const requestedState = normalizeState(payload.state);
+  const shouldResumeState = existing.state === "waiting_permission" || existing.state === "waiting_user";
+  const nextState = requestedState || (shouldResumeState ? "running" : existing.state);
+  const message =
+    normalizeText(payload.message) ||
+    (shouldResumeState
+      ? "Attention cleared after returning to target"
+      : existing.lastMessage);
+  const session = {
+    ...existing,
+    state: nextState,
+    needsAttention: false,
+    lastEvent: normalizeText(payload.eventName || payload.event || payload.hookEventName || payload.hook_event_name) || "AttentionCleared",
+    lastMessage: message,
+    attentionClearedAt: now,
+    attentionClearAction: action,
+    updatedAt: now,
+    eventCount: (existing.eventCount || 0) + 1,
+  };
+
+  sessions.set(sessionId, session);
+  recordDebugLog("broker", "session.attention_cleared", {
+    sessionId,
+    action,
+    previousState: existing.state || null,
+    nextState,
+    previousNeedsAttention: Boolean(existing.needsAttention),
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    attentionClearedAt: now,
     session,
   };
 }
