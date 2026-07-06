@@ -1,4 +1,3 @@
-use serde::{Deserialize, Serialize};
 use std::io::{Read, Write};
 use std::net::TcpStream;
 use std::path::PathBuf;
@@ -7,6 +6,10 @@ use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::{mpsc, OnceLock};
 use std::time::Duration;
 use tauri::{Emitter, Manager, PhysicalPosition};
+
+mod models;
+
+use models::*;
 
 const SCRATCHPAD_WINDOW_LABEL: &str = "scratchpad";
 const MAIN_WINDOW_LABEL: &str = "main";
@@ -19,78 +22,6 @@ const SCRATCHPAD_BUTTON_MOUSE5: u32 = 2;
 static SCRATCHPAD_ENABLED: AtomicBool = AtomicBool::new(true);
 static SCRATCHPAD_BUTTON: AtomicU32 = AtomicU32::new(SCRATCHPAD_BUTTON_MOUSE4);
 static SCRATCHPAD_TRIGGER_SENDER: OnceLock<mpsc::Sender<ScratchpadTrigger>> = OnceLock::new();
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ActivationResult {
-    ok: bool,
-    message: String,
-    candidates: Vec<ActivationCandidate>,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ActivationCandidate {
-    hwnd: i64,
-    process_id: u32,
-    process_name: Option<String>,
-    title: String,
-    label: String,
-}
-
-#[derive(Serialize)]
-struct OpenPathResult {
-    ok: bool,
-    message: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct FolderPickResult {
-    ok: bool,
-    cancelled: bool,
-    path: Option<String>,
-    message: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct BrokerEnsureResult {
-    ok: bool,
-    started: bool,
-    pid: Option<u32>,
-    message: String,
-}
-
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ScratchpadShortcutResult {
-    ok: bool,
-    enabled: bool,
-    button: String,
-    message: String,
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ScratchpadShortcutConfig {
-    enabled: bool,
-    button: String,
-}
-
-#[derive(Clone, Copy, Debug)]
-struct ScratchpadTrigger {
-    x: i32,
-    y: i32,
-}
-
-#[derive(Clone, Debug)]
-struct WindowCandidate {
-    hwnd: isize,
-    process_id: u32,
-    process_name: Option<String>,
-    title: String,
-}
 
 #[tauri::command]
 fn activate_session_window(
@@ -828,18 +759,6 @@ fn open_external_target(target: &str, _success_prefix: &str) -> OpenPathResult {
 }
 
 #[derive(Debug)]
-struct WindowHintInput {
-    tool: String,
-    title: String,
-    process_name: String,
-    title_token: String,
-    title_contains: Vec<String>,
-    project: String,
-    cwd: String,
-    pid: Option<u32>,
-    hwnd: Option<i64>,
-}
-
 #[cfg(not(windows))]
 fn activate_external_window(session_id: &str, _hint: WindowHintInput) -> ActivationResult {
     ActivationResult {

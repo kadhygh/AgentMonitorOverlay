@@ -819,3 +819,12 @@ Manual smoke:
 - Validation passed:
   - `cd broker/assets/obsidian/md-anno-tools; npm run build`
   - `git diff --check`
+
+### 2026-07-07: Phase 5 Tauri Models Extracted
+
+- Added `overlay/src-tauri/src/models.rs` for serializable command responses, scratchpad shortcut config, scratchpad trigger data, window candidates, and activation hints.
+- Kept Tauri command functions and native platform implementations in `lib.rs`.
+- Reduced `lib.rs` from 1524 lines to 1443 lines while keeping `models.rs` at 85 lines.
+- Validation passed:
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
