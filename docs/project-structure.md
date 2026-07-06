@@ -142,6 +142,10 @@ The repository has completed the first overlay extraction pass. These boundaries
 busy states, and feedback messages stay there. `DeployWorkspaceSections.tsx` owns only the visible workspace,
 Git exclude, adapter, and deployment-result panels.
 
+The Obsidian plugin extraction has started. Local code link parsing, rendering, URL formatting, and Zed/URL opening
+live in `broker/assets/obsidian/md-anno-tools/src/editor/local-code-links.ts`; `plugin.ts` still owns the Obsidian
+event wiring, click suppression timing, debug logs, and operation status updates.
+
 The broker extraction has started. These boundaries have already moved out of `broker/server.js`:
 
 - shared AMO layout, version, canvas, and plugin constants: `broker/lib/amo-constants.js`

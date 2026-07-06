@@ -765,3 +765,12 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Obsidian Local Code Links Extracted
+
+- Added `broker/assets/obsidian/md-anno-tools/src/editor/local-code-links.ts` for Windows path detection, Markdown link hit-testing, VS Code/custom URL formatting, Zed CLI launch, and rendered local-code-link anchors.
+- Kept Obsidian event wiring, suppression timing, debug logging, and operation status in `plugin.ts`.
+- Reduced `plugin.ts` from 2828 lines to 2635 lines; rebuilt the tracked Obsidian `main.js` bundle.
+- Validation passed:
+  - `cd broker/assets/obsidian/md-anno-tools; npm run build`
+  - `git diff --check`

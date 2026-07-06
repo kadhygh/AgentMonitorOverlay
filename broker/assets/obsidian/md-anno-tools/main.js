@@ -1208,6 +1208,178 @@ function buildAmoMarkerDecorations(view) {
   return builder.finish();
 }
 
+// src/editor/local-code-links.ts
+var LOCAL_CODE_LINK_TEXT_REGEX = /\b[A-Za-z]:[\\/][^\s<>"'`]+?:\d+(?::\d+)?/gu;
+var MARKDOWN_LINK_WITH_TARGET_REGEX = /!?\[[^\]]*?\]\((<[^>]+>|[^\s)]+)(?:\s+["'][^"']*["'])?\)/gu;
+function findLocalCodeLinkTargetInLine(lineText, offset) {
+  const text = String(lineText || "");
+  const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.min(text.length, offset)) : 0;
+  MARKDOWN_LINK_WITH_TARGET_REGEX.lastIndex = 0;
+  for (const match of text.matchAll(MARKDOWN_LINK_WITH_TARGET_REGEX)) {
+    const fullMatch = match[0] || "";
+    const linkTarget = match[1] || "";
+    const start = match.index || 0;
+    const end = start + fullMatch.length;
+    if (start <= safeOffset && safeOffset <= end && parseLocalCodeLink(linkTarget, linkTarget)) {
+      MARKDOWN_LINK_WITH_TARGET_REGEX.lastIndex = 0;
+      return linkTarget;
+    }
+  }
+  MARKDOWN_LINK_WITH_TARGET_REGEX.lastIndex = 0;
+  LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+  for (const match of text.matchAll(LOCAL_CODE_LINK_TEXT_REGEX)) {
+    const linkTarget = match[0] || "";
+    const start = match.index || 0;
+    const end = start + linkTarget.length;
+    if (start <= safeOffset && safeOffset <= end && parseLocalCodeLink(linkTarget, linkTarget)) {
+      LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+      return linkTarget;
+    }
+  }
+  LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
+  return "";
+}
+function parseLocalCodeLink(rawHref, absoluteHref) {
+  const candidates = [rawHref, absoluteHref].filter((value) => typeof value === "string" && value.trim().length > 0);
+  for (const candidate of candidates) {
+    const value = normalizeLocalCodeLinkHref(candidate);
+    const match = value.match(/^([A-Za-z]:[\\/][\s\S]*?)(?::(\d+)(?::(\d+))?)?(?:[?#].*)?$/u);
+    if (!match) continue;
+    const line = match[2] ? Number.parseInt(match[2], 10) : null;
+    if (!Number.isSafeInteger(line) || line <= 0) continue;
+    const column = match[3] ? Number.parseInt(match[3], 10) : null;
+    return {
+      filePath: match[1],
+      line,
+      column: Number.isSafeInteger(column) && column > 0 ? column : null
+    };
+  }
+  return null;
+}
+function normalizeLocalCodeLinkHref(value) {
+  let text = safeDecodeUri(String(value || "").trim());
+  if (text.startsWith("<") && text.endsWith(">")) text = text.slice(1, -1).trim();
+  if (/^app:\/\/obsidian\.md\//iu.test(text)) {
+    try {
+      const url = new URL(text);
+      text = safeDecodeUri(url.pathname);
+    } catch (e) {
+      text = text.replace(/^app:\/\/obsidian\.md\/+/iu, "");
+    }
+  }
+  if (/^file:\/\//iu.test(text)) {
+    try {
+      const url = new URL(text);
+      text = safeDecodeUri(url.pathname);
+    } catch (e) {
+      text = text.replace(/^file:\/+/iu, "");
+    }
+  }
+  text = text.replace(/^\/([A-Za-z]:[\\/])/u, "$1");
+  return text;
+}
+function looksLikeLocalCodeLinkCandidate(value) {
+  return /^[A-Za-z]:[\\/]/u.test(normalizeLocalCodeLinkHref(value || ""));
+}
+function safeDecodeUri(value) {
+  try {
+    return decodeURIComponent(value);
+  } catch (e) {
+    try {
+      return decodeURI(value);
+    } catch (e2) {
+      return value;
+    }
+  }
+}
+function normalizeLocalCodeLinkEditor(value) {
+  if (value === "zed" || value === "custom-url") return value;
+  return "vscode";
+}
+function formatLocalCodeLinkUrl(link, template) {
+  const pathForUrl = encodeCodeLinkPath(link.filePath);
+  const rawPath = String(link.filePath || "").replace(/\\/gu, "/");
+  const line = String(link.line || 1);
+  const column = String(link.column || 1);
+  const sourceTemplate = String(template || DEFAULT_SETTINGS.localCodeLinkUrlTemplate || "").trim();
+  const resolvedTemplate = sourceTemplate || DEFAULT_SETTINGS.localCodeLinkUrlTemplate;
+  return resolvedTemplate.replace(/\{rawPath\}/gu, rawPath).replace(/\{path\}/gu, pathForUrl).replace(/\{line\}/gu, line).replace(/\{column\}/gu, column);
+}
+function formatZedCodeLinkTarget(link) {
+  const path = normalizeWindowsCodePath(String(link.filePath || ""));
+  const line = Number.isSafeInteger(link.line) && link.line > 0 ? link.line : 1;
+  const column = Number.isSafeInteger(link.column) && link.column > 0 ? link.column : null;
+  return path + ":" + line + (column ? ":" + column : "");
+}
+function normalizeWindowsCodePath(filePath) {
+  return /^[A-Za-z]:\//u.test(filePath) ? filePath.replace(/\//gu, "\\") : filePath;
+}
+function createLocalCodeLinkElement(target) {
+  const anchor = document.createElement("a");
+  anchor.classList.add("amo-local-code-link");
+  anchor.setAttribute("href", target);
+  anchor.setAttribute("data-amo-code-link", target);
+  anchor.setAttribute("title", "Open in configured code editor");
+  anchor.textContent = target;
+  return anchor;
+}
+function encodeCodeLinkPath(filePath) {
+  return encodeURI(String(filePath || "").replace(/\\/gu, "/")).replace(/#/gu, "%23").replace(/\?/gu, "%3F");
+}
+async function openZedCodeLink(link, command) {
+  const electronRequire = window.require || globalThis.require;
+  if (typeof electronRequire !== "function") {
+    throw new Error("Zed CLI launch is unavailable in this Obsidian runtime");
+  }
+  const childProcess = electronRequire("child_process");
+  const spawn = childProcess && childProcess.spawn;
+  if (typeof spawn !== "function") {
+    throw new Error("Zed CLI launch is unavailable in this Obsidian runtime");
+  }
+  const executable = normalizeExecutableCommand(command) || DEFAULT_SETTINGS.zedCommand;
+  const target = formatZedCodeLinkTarget(link);
+  await new Promise((resolve, reject) => {
+    let settled = false;
+    let child;
+    try {
+      child = spawn(executable, [target], {
+        detached: true,
+        stdio: "ignore",
+        windowsHide: true
+      });
+    } catch (error) {
+      reject(error);
+      return;
+    }
+    const settle = (callback, value) => {
+      if (settled) return;
+      settled = true;
+      callback(value);
+    };
+    child.once("error", (error) => settle(reject, error));
+    child.once("spawn", () => {
+      if (typeof child.unref === "function") child.unref();
+      settle(resolve);
+    });
+  });
+}
+function normalizeExecutableCommand(value) {
+  return String(value || "").trim().replace(/^"([\s\S]+)"$/u, "$1").replace(/^'([\s\S]+)'$/u, "$1");
+}
+async function openExternalCodeUrl(url) {
+  var _a;
+  const electronRequire = window.require || globalThis.require;
+  const shell = typeof electronRequire === "function" ? (_a = electronRequire("electron")) == null ? void 0 : _a.shell : null;
+  if (shell && typeof shell.openExternal === "function") {
+    await shell.openExternal(url);
+    return;
+  }
+  const opened = window.open(url, "_blank");
+  if (!opened) {
+    throw new Error("No external URL opener is available in this Obsidian runtime");
+  }
+}
+
 // src/plugin.ts
 var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
   async onload() {
@@ -3362,176 +3534,6 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian5.Plugin {
     textNode.replaceWith(fragment);
   }
 };
-var LOCAL_CODE_LINK_TEXT_REGEX = /\b[A-Za-z]:[\\/][^\s<>"'`]+?:\d+(?::\d+)?/gu;
-var MARKDOWN_LINK_WITH_TARGET_REGEX = /!?\[[^\]]*?\]\((<[^>]+>|[^\s)]+)(?:\s+["'][^"']*["'])?\)/gu;
-function findLocalCodeLinkTargetInLine(lineText, offset) {
-  const text = String(lineText || "");
-  const safeOffset = Number.isFinite(offset) ? Math.max(0, Math.min(text.length, offset)) : 0;
-  MARKDOWN_LINK_WITH_TARGET_REGEX.lastIndex = 0;
-  for (const match of text.matchAll(MARKDOWN_LINK_WITH_TARGET_REGEX)) {
-    const fullMatch = match[0] || "";
-    const linkTarget = match[1] || "";
-    const start = match.index || 0;
-    const end = start + fullMatch.length;
-    if (start <= safeOffset && safeOffset <= end && parseLocalCodeLink(linkTarget, linkTarget)) {
-      MARKDOWN_LINK_WITH_TARGET_REGEX.lastIndex = 0;
-      return linkTarget;
-    }
-  }
-  MARKDOWN_LINK_WITH_TARGET_REGEX.lastIndex = 0;
-  LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
-  for (const match of text.matchAll(LOCAL_CODE_LINK_TEXT_REGEX)) {
-    const linkTarget = match[0] || "";
-    const start = match.index || 0;
-    const end = start + linkTarget.length;
-    if (start <= safeOffset && safeOffset <= end && parseLocalCodeLink(linkTarget, linkTarget)) {
-      LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
-      return linkTarget;
-    }
-  }
-  LOCAL_CODE_LINK_TEXT_REGEX.lastIndex = 0;
-  return "";
-}
-function parseLocalCodeLink(rawHref, absoluteHref) {
-  const candidates = [rawHref, absoluteHref].filter((value) => typeof value === "string" && value.trim().length > 0);
-  for (const candidate of candidates) {
-    const value = normalizeLocalCodeLinkHref(candidate);
-    const match = value.match(/^([A-Za-z]:[\\/][\s\S]*?)(?::(\d+)(?::(\d+))?)?(?:[?#].*)?$/u);
-    if (!match) continue;
-    const line = match[2] ? Number.parseInt(match[2], 10) : null;
-    if (!Number.isSafeInteger(line) || line <= 0) continue;
-    const column = match[3] ? Number.parseInt(match[3], 10) : null;
-    return {
-      filePath: match[1],
-      line,
-      column: Number.isSafeInteger(column) && column > 0 ? column : null
-    };
-  }
-  return null;
-}
-function normalizeLocalCodeLinkHref(value) {
-  let text = safeDecodeUri(String(value || "").trim());
-  if (text.startsWith("<") && text.endsWith(">")) text = text.slice(1, -1).trim();
-  if (/^app:\/\/obsidian\.md\//iu.test(text)) {
-    try {
-      const url = new URL(text);
-      text = safeDecodeUri(url.pathname);
-    } catch (e) {
-      text = text.replace(/^app:\/\/obsidian\.md\/+/iu, "");
-    }
-  }
-  if (/^file:\/\//iu.test(text)) {
-    try {
-      const url = new URL(text);
-      text = safeDecodeUri(url.pathname);
-    } catch (e) {
-      text = text.replace(/^file:\/+/iu, "");
-    }
-  }
-  text = text.replace(/^\/([A-Za-z]:[\\/])/u, "$1");
-  return text;
-}
-function looksLikeLocalCodeLinkCandidate(value) {
-  return /^[A-Za-z]:[\\/]/u.test(normalizeLocalCodeLinkHref(value || ""));
-}
-function safeDecodeUri(value) {
-  try {
-    return decodeURIComponent(value);
-  } catch (e) {
-    try {
-      return decodeURI(value);
-    } catch (e2) {
-      return value;
-    }
-  }
-}
-function normalizeLocalCodeLinkEditor(value) {
-  if (value === "zed" || value === "custom-url") return value;
-  return "vscode";
-}
-function formatLocalCodeLinkUrl(link, template) {
-  const pathForUrl = encodeCodeLinkPath(link.filePath);
-  const rawPath = String(link.filePath || "").replace(/\\/gu, "/");
-  const line = String(link.line || 1);
-  const column = String(link.column || 1);
-  const sourceTemplate = String(template || DEFAULT_SETTINGS.localCodeLinkUrlTemplate || "").trim();
-  const resolvedTemplate = sourceTemplate || DEFAULT_SETTINGS.localCodeLinkUrlTemplate;
-  return resolvedTemplate.replace(/\{rawPath\}/gu, rawPath).replace(/\{path\}/gu, pathForUrl).replace(/\{line\}/gu, line).replace(/\{column\}/gu, column);
-}
-function formatZedCodeLinkTarget(link) {
-  const path = normalizeWindowsCodePath(String(link.filePath || ""));
-  const line = Number.isSafeInteger(link.line) && link.line > 0 ? link.line : 1;
-  const column = Number.isSafeInteger(link.column) && link.column > 0 ? link.column : null;
-  return path + ":" + line + (column ? ":" + column : "");
-}
-function normalizeWindowsCodePath(filePath) {
-  return /^[A-Za-z]:\//u.test(filePath) ? filePath.replace(/\//gu, "\\") : filePath;
-}
-function createLocalCodeLinkElement(target) {
-  const anchor = document.createElement("a");
-  anchor.classList.add("amo-local-code-link");
-  anchor.setAttribute("href", target);
-  anchor.setAttribute("data-amo-code-link", target);
-  anchor.setAttribute("title", "Open in configured code editor");
-  anchor.textContent = target;
-  return anchor;
-}
-function encodeCodeLinkPath(filePath) {
-  return encodeURI(String(filePath || "").replace(/\\/gu, "/")).replace(/#/gu, "%23").replace(/\?/gu, "%3F");
-}
-async function openZedCodeLink(link, command) {
-  const electronRequire = window.require || globalThis.require;
-  if (typeof electronRequire !== "function") {
-    throw new Error("Zed CLI launch is unavailable in this Obsidian runtime");
-  }
-  const childProcess = electronRequire("child_process");
-  const spawn = childProcess && childProcess.spawn;
-  if (typeof spawn !== "function") {
-    throw new Error("Zed CLI launch is unavailable in this Obsidian runtime");
-  }
-  const executable = normalizeExecutableCommand(command) || DEFAULT_SETTINGS.zedCommand;
-  const target = formatZedCodeLinkTarget(link);
-  await new Promise((resolve, reject) => {
-    let settled = false;
-    let child;
-    try {
-      child = spawn(executable, [target], {
-        detached: true,
-        stdio: "ignore",
-        windowsHide: true
-      });
-    } catch (error) {
-      reject(error);
-      return;
-    }
-    const settle = (callback, value) => {
-      if (settled) return;
-      settled = true;
-      callback(value);
-    };
-    child.once("error", (error) => settle(reject, error));
-    child.once("spawn", () => {
-      if (typeof child.unref === "function") child.unref();
-      settle(resolve);
-    });
-  });
-}
-function normalizeExecutableCommand(value) {
-  return String(value || "").trim().replace(/^"([\s\S]+)"$/u, "$1").replace(/^'([\s\S]+)'$/u, "$1");
-}
-async function openExternalCodeUrl(url) {
-  var _a;
-  const electronRequire = window.require || globalThis.require;
-  const shell = typeof electronRequire === "function" ? (_a = electronRequire("electron")) == null ? void 0 : _a.shell : null;
-  if (shell && typeof shell.openExternal === "function") {
-    await shell.openExternal(url);
-    return;
-  }
-  const opened = window.open(url, "_blank");
-  if (!opened) {
-    throw new Error("No external URL opener is available in this Obsidian runtime");
-  }
-}
 var plugin_default = AmoMarkdownAnnotationToolsPlugin;
 
 // src/main.ts
