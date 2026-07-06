@@ -601,3 +601,24 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17679`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17680`
   - `git diff --check`
+
+### 2026-07-07: Phase 4 Obsidian Plugin Install And Health Extracted
+
+- Moved Obsidian plugin asset copy, community-plugin enabling, plugin data defaults, plugin health checks, and session health decoration into `broker/lib/obsidian-vault.js`.
+- `broker/server.js` now passes the active broker bridge URL into install/health helpers explicitly.
+- Kept workspace enrollment, workspace status, and session list orchestration in `broker/server.js`.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/http.js`
+  - `node --check broker/lib/debug.js`
+  - `node --check broker/lib/display-names.js`
+  - `node --check broker/lib/filesystem.js`
+  - `node --check broker/lib/normalize.js`
+  - `node --check broker/lib/obsidian-vault.js`
+  - `node --check broker/lib/target-binding.js`
+  - `node --check broker/lib/workspace-git-exclude.js`
+  - `node --check broker/hooks/codex.js`
+  - `node --check broker/hooks/claude.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17681`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17682`
+  - `git diff --check`

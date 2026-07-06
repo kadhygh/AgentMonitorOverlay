@@ -7,7 +7,14 @@ const { CORS_HEADERS, httpError, readJsonBody, sendEmpty, sendJson } = require("
 const { createDebugLogStore } = require("./lib/debug");
 const { refreshSessionTitle, resolveSessionTitle } = require("./lib/display-names");
 const { normalizeInteger, normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./lib/normalize");
-const { normalizeComparablePath, registerObsidianVault } = require("./lib/obsidian-vault");
+const {
+  attachObsidianPluginHealth,
+  installObsidianPlugin,
+  inspectObsidianPluginHealth,
+  normalizeCanvasAppendDirection,
+  normalizeComparablePath,
+  registerObsidianVault,
+} = require("./lib/obsidian-vault");
 const {
   clearWindowIdentity,
   normalizeTargetBinding,
@@ -58,8 +65,6 @@ const REPLY_NODE_GAP_X = 620;
 const REPLY_NODE_GAP_Y = 420;
 const CANVAS_NODE_MARGIN_X = Math.max(80, REPLY_NODE_GAP_X - REPLY_NODE_WIDTH);
 const CANVAS_NODE_MARGIN_Y = Math.max(60, REPLY_NODE_GAP_Y - REPLY_NODE_HEIGHT);
-const DEFAULT_CANVAS_APPEND_DIRECTION = "down";
-const CANVAS_APPEND_DIRECTIONS = new Set(["down", "right"]);
 const PROMPT_DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
 const VALID_STATES = new Set([
   "starting",
@@ -400,7 +405,9 @@ function publishSessionChanged(reason, session) {
 
   const sequence = ++eventSequence;
   const publishStartedAtMs = Date.now();
-  const decoratedSession = session ? attachObsidianPluginHealth(session, new Map()) : null;
+  const decoratedSession = session
+    ? attachObsidianPluginHealth(session, new Map(), { expectedBridgeUrl: baseUrl() })
+    : null;
   const payload = JSON.stringify({
     ok: true,
     sequence,
@@ -1170,7 +1177,7 @@ function enrollWorkspace(payload) {
   });
   installedFiles.push(workspaceRelativePath(workspacePath, path.join(vaultRoot, AMO_CANVAS_PATH)));
 
-  const pluginInstall = installObsidianPlugin(vaultRoot, workspacePath);
+  const pluginInstall = installObsidianPlugin(vaultRoot, workspacePath, { bridgeUrl: baseUrl() });
   installedFiles.push(...pluginInstall.installedFiles);
 
   const requestedAdapterIds = new Set(requestedAdapters);
@@ -1631,7 +1638,7 @@ function workspaceMaintenanceSnapshot(workspacePath) {
   const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
   const pluginDir = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID);
   const canvasInfo = inspectCanvasFile(canvasPath);
-  const pluginHealth = inspectObsidianPluginHealth(vaultRoot);
+  const pluginHealth = inspectObsidianPluginHealth(vaultRoot, { expectedBridgeUrl: baseUrl() });
   const generatedCounts = countConversationGeneratedNotes(sessionsPath);
   const issues = [];
 
@@ -3048,67 +3055,6 @@ function normalizeCanvasEdges(canvas) {
   }
 }
 
-function installObsidianPlugin(vaultRoot, workspacePath) {
-  const pluginDir = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID);
-  fs.mkdirSync(pluginDir, { recursive: true });
-
-  copyObsidianPluginAsset("manifest.json", pluginDir);
-  copyObsidianPluginAsset("main.js", pluginDir);
-  copyObsidianPluginAsset("styles.css", pluginDir);
-  const pluginDataPath = path.join(pluginDir, "data.json");
-  const existingPluginData = readJsonFile(pluginDataPath, {});
-  writeJsonFile(path.join(pluginDir, "data.json"), {
-    ...existingPluginData,
-    bridgeUrl: baseUrl(),
-    numberAnnotationsInPrompt: Boolean(existingPluginData.numberAnnotationsInPrompt),
-    canvasAppendDirection: normalizeCanvasAppendDirection(existingPluginData.canvasAppendDirection),
-    hideAmoNoteProperties: existingPluginData.hideAmoNoteProperties !== false,
-    interceptLocalCodeLinks: existingPluginData.interceptLocalCodeLinks !== false,
-    localCodeLinkEditor: normalizeLocalCodeLinkEditor(existingPluginData.localCodeLinkEditor),
-    localCodeLinkUrlTemplate:
-      normalizeText(existingPluginData.localCodeLinkUrlTemplate) || "vscode://file/{path}:{line}",
-    zedCommand: normalizeText(existingPluginData.zedCommand) || "zed",
-  });
-
-  enableObsidianPlugin(vaultRoot, OBSIDIAN_PLUGIN_ID);
-
-  return {
-    installedFiles: [
-      workspaceRelativePath(workspacePath, path.join(vaultRoot, ".obsidian", "community-plugins.json")),
-      workspaceRelativePath(workspacePath, path.join(pluginDir, "manifest.json")),
-      workspaceRelativePath(workspacePath, path.join(pluginDir, "main.js")),
-      workspaceRelativePath(workspacePath, path.join(pluginDir, "styles.css")),
-      workspaceRelativePath(workspacePath, path.join(pluginDir, "data.json")),
-    ],
-  };
-}
-
-function copyObsidianPluginAsset(fileName, pluginDir) {
-  const sourcePath = path.join(__dirname, "assets", "obsidian", OBSIDIAN_PLUGIN_ID, fileName);
-  if (!fs.existsSync(sourcePath)) {
-    throw httpError(500, "missing_obsidian_plugin_asset", `Missing Obsidian plugin asset: ${sourcePath}`);
-  }
-
-  fs.copyFileSync(sourcePath, path.join(pluginDir, fileName));
-}
-
-function enableObsidianPlugin(vaultRoot, pluginId) {
-  const communityPluginsPath = path.join(vaultRoot, ".obsidian", "community-plugins.json");
-  let enabledPlugins = [];
-  if (fs.existsSync(communityPluginsPath)) {
-    enabledPlugins = readJsonFileStrict(communityPluginsPath);
-    if (!Array.isArray(enabledPlugins)) {
-      throw httpError(409, "invalid_obsidian_plugin_config", `${communityPluginsPath} must be a JSON array`);
-    }
-  }
-
-  if (!enabledPlugins.includes(pluginId)) {
-    enabledPlugins.push(pluginId);
-  }
-
-  writeJsonFile(communityPluginsPath, enabledPlugins);
-}
-
 function amoGitignore() {
   return [
     "state/",
@@ -3601,20 +3547,6 @@ function readCanvasAppendDirection(vaultRoot) {
   return normalizeCanvasAppendDirection(pluginData?.canvasAppendDirection);
 }
 
-function normalizeCanvasAppendDirection(value) {
-  const direction = normalizeText(value);
-  if (!direction) {
-    return DEFAULT_CANVAS_APPEND_DIRECTION;
-  }
-  const normalized = direction.toLowerCase();
-  return CANVAS_APPEND_DIRECTIONS.has(normalized) ? normalized : DEFAULT_CANVAS_APPEND_DIRECTION;
-}
-
-function normalizeLocalCodeLinkEditor(value) {
-  const editor = normalizeText(value);
-  return editor === "zed" || editor === "custom-url" ? editor : "vscode";
-}
-
 function nextConversationCanvasNodePosition({ previousNode, direction, nodeCount, sessionIndex }) {
   const fallback = initialConversationCanvasNodePosition(direction, nodeCount, sessionIndex);
   if (!previousNode) {
@@ -3888,84 +3820,10 @@ function listSessions() {
     if (refreshedSession !== session) {
       sessions.set(refreshedSession.sessionId, refreshedSession);
     }
-    return attachObsidianPluginHealth(refreshedSession, healthCache);
+    return attachObsidianPluginHealth(refreshedSession, healthCache, { expectedBridgeUrl: baseUrl() });
   }).sort((a, b) => {
     return `${b.updatedAt}`.localeCompare(`${a.updatedAt}`);
   });
-}
-
-function attachObsidianPluginHealth(session, healthCache) {
-  const vaultRoot = normalizeText(session.vaultRoot || session.pendingAnnotationSource?.vaultRoot);
-  if (!vaultRoot) {
-    return session;
-  }
-
-  const cacheKey = normalizeComparablePath(vaultRoot);
-  if (!healthCache.has(cacheKey)) {
-    healthCache.set(cacheKey, inspectObsidianPluginHealth(vaultRoot));
-  }
-
-  return {
-    ...session,
-    obsidianPluginHealth: healthCache.get(cacheKey),
-  };
-}
-
-function inspectObsidianPluginHealth(vaultRoot) {
-  const checkedAt = new Date().toISOString();
-  const expectedBridgeUrl = baseUrl();
-  const expectedVersion = expectedObsidianPluginVersion();
-  const pluginDir = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID);
-  const manifestPath = path.join(pluginDir, "manifest.json");
-  const mainPath = path.join(pluginDir, "main.js");
-  const dataPath = path.join(pluginDir, "data.json");
-  const communityPluginsPath = path.join(vaultRoot, ".obsidian", "community-plugins.json");
-  const issues = [];
-
-  const vaultExists = fs.existsSync(vaultRoot);
-  const installed = fs.existsSync(pluginDir);
-  const manifest = readJsonFile(manifestPath, null);
-  const installedVersion = normalizeText(manifest?.version);
-  const communityPlugins = readJsonFile(communityPluginsPath, null);
-  const enabled = Array.isArray(communityPlugins) && communityPlugins.includes(OBSIDIAN_PLUGIN_ID);
-  const pluginData = readJsonFile(dataPath, null);
-  const dataBridgeUrl = normalizeText(pluginData?.bridgeUrl);
-  const mainJsExists = fs.existsSync(mainPath);
-
-  if (!vaultExists) issues.push("vault root is missing");
-  if (!installed) issues.push("plugin directory is missing");
-  if (!manifest) issues.push("manifest.json is missing or invalid");
-  if (expectedVersion && installedVersion !== expectedVersion) {
-    issues.push(`plugin version is ${installedVersion || "missing"}, expected ${expectedVersion}`);
-  }
-  if (!enabled) issues.push("plugin is not enabled in community-plugins.json");
-  if (!mainJsExists) issues.push("main.js is missing");
-  if (dataBridgeUrl !== expectedBridgeUrl) {
-    issues.push(`bridge URL is ${dataBridgeUrl || "missing"}, expected ${expectedBridgeUrl}`);
-  }
-
-  const ok = issues.length === 0;
-  const status = ok ? "ok" : installed ? "warning" : "missing";
-  return {
-    ok,
-    status,
-    pluginId: OBSIDIAN_PLUGIN_ID,
-    vaultRoot,
-    installed,
-    enabled,
-    expectedVersion: expectedVersion || null,
-    installedVersion: installedVersion || null,
-    expectedBridgeUrl,
-    dataBridgeUrl: dataBridgeUrl || null,
-    mainJsExists,
-    issues,
-    checkedAt,
-  };
-}
-
-function expectedObsidianPluginVersion() {
-  const manifest = readJsonFile(path.join(__dirname, "assets", "obsidian", OBSIDIAN_PLUGIN_ID, "manifest.json"), {});
-  return normalizeText(manifest.version);
 }
 
 function loadSnapshot() {

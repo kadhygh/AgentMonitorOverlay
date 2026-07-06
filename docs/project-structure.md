@@ -37,7 +37,7 @@ Expected ownership after refactor:
 - `lib/debug.js`: bounded debug log and debug status.
 - `lib/session-store.js`: session map, snapshot load/persist, archive/dismiss/review/attention, list sessions.
 - `lib/normalize.js`: shared payload normalization helpers.
-- `lib/obsidian-vault.js`: Obsidian vault registry, runtime-state, and comparable path helpers.
+- `lib/obsidian-vault.js`: Obsidian vault registry, plugin install/health, runtime-state, and comparable path helpers.
 - `lib/target-binding.js`: window, Codex CLI, and Codex App target binding normalization.
 - `lib/workspace-git-exclude.js`: project-local Git exclude inspection and update planning.
 - `lib/workspace-*.js`: workspace inspection, deployment, maintenance, git exclude, and launch.
@@ -138,7 +138,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 - bounded debug log, debug status, and debug preview helpers: `broker/lib/debug.js`
 - Codex/Claude session display-name cache: `broker/lib/display-names.js`
 - shared text, integer, array, and version normalization helpers: `broker/lib/normalize.js`
-- Obsidian vault registry, runtime-state, and comparable path helpers: `broker/lib/obsidian-vault.js`
+- Obsidian vault registry, plugin install/health, runtime-state, and comparable path helpers: `broker/lib/obsidian-vault.js`
 - window, Codex CLI, and Codex App target binding helpers: `broker/lib/target-binding.js`
 - project-local Git exclude inspection and update planning: `broker/lib/workspace-git-exclude.js`
 - workspace path, Git root, JSON read/write, and safety helpers: `broker/lib/filesystem.js`
