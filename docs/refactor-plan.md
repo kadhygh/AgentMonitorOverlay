@@ -455,3 +455,14 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Overlay Dialogs Extracted
+
+- Added `overlay/src/components/ObsidianVaultRecoveryDialog.tsx` for vault-not-loaded recovery UI.
+- Added `overlay/src/components/CleanConfirmDialog.tsx` for generated-vault cleanup confirmation UI.
+- Kept path opening, clipboard writing, and cleanup broker calls in `App.tsx`.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`

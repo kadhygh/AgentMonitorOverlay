@@ -117,6 +117,8 @@ The repository is in the early overlay extraction stage. These boundaries have a
 - target candidate menu presentation: `overlay/src/components/CandidateMenu.tsx`
 - project CLI launch panel presentation: `overlay/src/components/LaunchPanel.tsx`
 - workspace maintenance panel presentation: `overlay/src/components/WorkspacePanel.tsx`
+- Obsidian vault recovery dialog: `overlay/src/components/ObsidianVaultRecoveryDialog.tsx`
+- workspace cleanup confirmation dialog: `overlay/src/components/CleanConfirmDialog.tsx`
 - task card presentation: `overlay/src/components/SessionCard.tsx`
 - AMO theme runtime: `overlay/src/theme/amoTheme.ts`
 - shared clipboard helpers: `overlay/src/native/clipboard.ts`

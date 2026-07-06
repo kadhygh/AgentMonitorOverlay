@@ -9,8 +9,6 @@ import {
   ChevronDown,
   ChevronUp,
   Clock,
-  ClipboardCheck,
-  FolderOpen,
   FolderPlus,
   GripHorizontal,
   GripVertical,
@@ -96,7 +94,12 @@ import {
 } from "./domain/workspaceModel";
 import { SessionRowContent, toolDisplayForSession } from "./components/SessionCard";
 import { CandidateMenu, type CandidateMenuState } from "./components/CandidateMenu";
+import { CleanConfirmDialog, type CleanConfirmState } from "./components/CleanConfirmDialog";
 import { LaunchPanel, type LaunchPanelState } from "./components/LaunchPanel";
+import {
+  ObsidianVaultRecoveryDialog,
+  type ObsidianVaultRecoveryState,
+} from "./components/ObsidianVaultRecoveryDialog";
 import { WorkspacePanel, type WorkspacePanelState } from "./components/WorkspacePanel";
 import { toCliPasteClipboardText, writeClipboardText } from "./native/clipboard";
 import {
@@ -265,26 +268,6 @@ interface WindowBindDragState {
   pointerId: number;
   pointerX: number;
   pointerY: number;
-}
-
-interface CleanConfirmState {
-  session: AgentSession;
-  workspacePath: string;
-  replyNotes: number;
-  promptNotes: number;
-  canvasNodes: number;
-}
-
-interface ObsidianVaultRecoveryState {
-  session: AgentSession;
-  target: "note" | "canvas";
-  targetPath: string;
-  focusNotePath?: string | null;
-  vaultRoot: string;
-  vaultId: string;
-  runtimeConfigPath?: string | null;
-  obsidianProcessCount?: number | null;
-  busy: "explorer" | "copy" | null;
 }
 
 interface ResizeState {
@@ -2944,121 +2927,21 @@ export default function App() {
             />
           ) : null}
           {obsidianVaultRecovery ? (
-            <div
-              className="confirm-backdrop"
-              role="presentation"
-              onClick={() => setObsidianVaultRecovery(null)}
-            >
-              <section
-                className="vault-recovery-dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Open AMO vault in Obsidian"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="confirm-dialog-header">
-                  <strong>Obsidian Vault Not Loaded</strong>
-                  <button
-                    type="button"
-                    className="candidate-close"
-                    title="Close"
-                    onClick={() => setObsidianVaultRecovery(null)}
-                  >
-                    <X size={13} aria-hidden="true" />
-                  </button>
-                </div>
-                <p>
-                  Obsidian is running, but this AMO vault has not been loaded by the current Obsidian session.
-                  Open this folder as a vault in Obsidian once, then click the{" "}
-                  {obsidianVaultRecovery.target === "note" ? "Note" : "Canvas"} button again.
-                </p>
-                <div className="vault-recovery-path" title={obsidianVaultRecovery.vaultRoot}>
-                  {obsidianVaultRecovery.vaultRoot}
-                </div>
-                <div className="vault-recovery-manual">
-                  In Obsidian, use <span>Open folder as vault</span> and choose this path. AMO will use the plugin
-                  bridge after the vault is loaded.
-                </div>
-                <div className="vault-recovery-actions">
-                  <button
-                    type="button"
-                    onClick={() => void openRecoveryVaultFolder()}
-                    disabled={obsidianVaultRecovery.busy !== null}
-                  >
-                    <FolderOpen size={13} aria-hidden="true" />
-                    <span>{obsidianVaultRecovery.busy === "explorer" ? "Opening" : "Open Folder"}</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => void copyRecoveryVaultPath()}
-                    disabled={obsidianVaultRecovery.busy !== null}
-                  >
-                    <ClipboardCheck size={13} aria-hidden="true" />
-                    <span>{obsidianVaultRecovery.busy === "copy" ? "Copying" : "Copy Path"}</span>
-                  </button>
-                </div>
-              </section>
-            </div>
+            <ObsidianVaultRecoveryDialog
+              state={obsidianVaultRecovery}
+              onClose={() => setObsidianVaultRecovery(null)}
+              onOpenFolder={() => void openRecoveryVaultFolder()}
+              onCopyPath={() => void copyRecoveryVaultPath()}
+            />
           ) : null}
 
           {cleanConfirm ? (
-            <div
-              className="confirm-backdrop"
-              role="presentation"
-              onClick={() => setCleanConfirm(null)}
-            >
-              <section
-                className="confirm-dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-label="Confirm AMO vault cleanup"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <div className="confirm-dialog-header">
-                  <strong>Clean AMO Vault?</strong>
-                  <button
-                    type="button"
-                    className="candidate-close"
-                    title="Cancel"
-                    onClick={() => setCleanConfirm(null)}
-                  >
-                    <X size={13} aria-hidden="true" />
-                  </button>
-                </div>
-                <p>
-                  This will clear generated notes and reset the canvas for{" "}
-                  <strong>{projectName(cleanConfirm.workspacePath)}</strong>.
-                </p>
-                <div className="confirm-counts">
-                  <span>
-                    <strong>{cleanConfirm.replyNotes}</strong>
-                    replies
-                  </span>
-                  <span>
-                    <strong>{cleanConfirm.promptNotes}</strong>
-                    prompts
-                  </span>
-                  <span>
-                    <strong>{cleanConfirm.canvasNodes}</strong>
-                    nodes
-                  </span>
-                </div>
-                <div className="confirm-dialog-actions">
-                  <button type="button" onClick={() => setCleanConfirm(null)}>
-                    Cancel
-                  </button>
-                  <button
-                    type="button"
-                    className="danger-action"
-                    onClick={() => void cleanWorkspaceVaultFromPanel()}
-                  >
-                    Confirm Clean
-                  </button>
-                </div>
-              </section>
-            </div>
+            <CleanConfirmDialog
+              state={cleanConfirm}
+              onClose={() => setCleanConfirm(null)}
+              onConfirm={() => void cleanWorkspaceVaultFromPanel()}
+            />
           ) : null}
-
           {cardDrag ? (
             <div
               className="session-row drag-preview"
