@@ -93,6 +93,11 @@ import {
   type LaunchPanelAdapterId,
 } from "./domain/workspaceModel";
 import { SessionRowContent, toolDisplayForSession } from "./components/SessionCard";
+import {
+  BrokerReadinessPanel,
+  brokerReadinessLabels,
+  type BrokerReadiness,
+} from "./components/BrokerReadinessPanel";
 import { CandidateMenu, type CandidateMenuState } from "./components/CandidateMenu";
 import { CleanConfirmDialog, type CleanConfirmState } from "./components/CleanConfirmDialog";
 import { LaunchPanel, type LaunchPanelState } from "./components/LaunchPanel";
@@ -145,21 +150,6 @@ const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 86 };
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
-
-type BrokerReadinessState = "checking" | "starting" | "ready" | "error";
-
-interface BrokerReadiness {
-  state: BrokerReadinessState;
-  message: string;
-  detail?: string | null;
-}
-
-const brokerReadinessLabels: Record<BrokerReadinessState, string> = {
-  checking: "broker checking",
-  starting: "broker starting",
-  ready: "broker live",
-  error: "broker offline",
-};
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -276,29 +266,6 @@ interface ResizeState {
   startScreenY: number;
   startWidth: number;
   startHeight: number;
-}
-
-interface BrokerReadinessPanelProps {
-  readiness: BrokerReadiness;
-  onRetry: () => void;
-}
-
-function BrokerReadinessPanel({ readiness, onRetry }: BrokerReadinessPanelProps) {
-  const isError = readiness.state === "error";
-  return (
-    <div className={`broker-readiness-panel state-${readiness.state}`} role="status">
-      <span className="broker-readiness-mark" aria-hidden="true">
-        {isError ? <AlertTriangle size={16} /> : <RefreshCcw size={16} />}
-      </span>
-      <div>
-        <strong>{readiness.message}</strong>
-        {readiness.detail ? <span>{readiness.detail}</span> : null}
-      </div>
-      <button type="button" className="broker-retry-button" onClick={onRetry}>
-        Retry
-      </button>
-    </div>
-  );
 }
 
 export default function App() {

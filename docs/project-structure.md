@@ -122,6 +122,7 @@ The repository has completed the first overlay extraction pass. These boundaries
 - session target, path, and Obsidian URI helpers: `overlay/src/domain/routingModel.ts`
 - workspace deployment/maintenance state helpers: `overlay/src/domain/workspaceModel.ts`
 - target candidate menu presentation: `overlay/src/components/CandidateMenu.tsx`
+- broker readiness presentation: `overlay/src/components/BrokerReadinessPanel.tsx`
 - project CLI launch panel presentation: `overlay/src/components/LaunchPanel.tsx`
 - workspace maintenance panel presentation: `overlay/src/components/WorkspacePanel.tsx`
 - Obsidian vault recovery dialog: `overlay/src/components/ObsidianVaultRecoveryDialog.tsx`

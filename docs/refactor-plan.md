@@ -737,3 +737,12 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17691`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17692`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Broker Readiness Panel Extracted
+
+- Added `overlay/src/components/BrokerReadinessPanel.tsx` for broker readiness state labels and retry UI.
+- Kept broker readiness probing and state updates in `overlay/src/App.tsx`.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
