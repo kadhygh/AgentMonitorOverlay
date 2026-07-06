@@ -492,3 +492,20 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17667`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17668`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Broker Hook Generators Extracted
+
+- Added `broker/hooks/codex.js` and `broker/hooks/claude.js` for adapter event lists and generated hook script text.
+- Kept hook deployment, settings merge, workspace enrollment, and route ownership in `broker/server.js`.
+- `broker/server.js` now passes deployment/protocol versions into the hook generators explicitly.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/http.js`
+  - `node --check broker/lib/debug.js`
+  - `node --check broker/lib/display-names.js`
+  - `node --check broker/lib/filesystem.js`
+  - `node --check broker/hooks/codex.js`
+  - `node --check broker/hooks/claude.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17669`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17670`
+  - `git diff --check`
