@@ -415,3 +415,13 @@ Manual smoke:
   - `cd overlay/src-tauri; cargo check`
   - `node --check broker/server.js`
   - `git diff --check`
+
+### 2026-07-07: Phase 2 Legacy Inline Settings Removed
+
+- Removed the unreachable legacy inline settings dialog from `App.tsx`; settings UI ownership is now the standalone settings utility window.
+- Removed the old inline settings state, imported settings panel components, and modal resize helpers that only served legacy inline dialogs.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `node --check broker/server.js`
+  - `git diff --check`

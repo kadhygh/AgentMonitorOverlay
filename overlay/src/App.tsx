@@ -109,12 +109,7 @@ import {
   type ScratchpadShortcutState,
 } from "./native/scratchpadShortcut";
 import { type AmoTheme, useAmoThemeRuntime } from "./theme/amoTheme";
-import {
-  SettingsDetail,
-  SettingsSidebar,
-  SettingsWindowApp,
-  type SettingsSection,
-} from "./windows/SettingsWindowApp";
+import { SettingsWindowApp } from "./windows/SettingsWindowApp";
 import { ScratchpadApp } from "./windows/ScratchpadApp";
 import { DeployWorkspaceApp } from "./windows/DeployWorkspaceApp";
 import {
@@ -148,10 +143,6 @@ const REFRESH_INTERVAL_MS = 3000;
 const CODEX_ACTION_REQUIRED_TITLE_PATTERN = /\[\s*!\s*\]\s*Action Required/i;
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 86 };
-const DIALOG_SIZES = {
-  deploy: { width: 760, height: 600 },
-  settings: { width: 660, height: 500 },
-};
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
 const OBSIDIAN_PLUGIN_RELOAD_HINT = "Restart Obsidian or reload the AMO plugin if this vault is already open.";
 
@@ -409,8 +400,6 @@ export default function App() {
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
   const [obsidianVaultRecovery, setObsidianVaultRecovery] = useState<ObsidianVaultRecoveryState | null>(null);
   const [isResizing, setIsResizing] = useState(false);
-  const [settingsOpen, setSettingsOpen] = useState(false);
-  const [settingsSection, setSettingsSection] = useState<SettingsSection>("scratchpad");
   const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
     loadScratchpadShortcutState(),
   );
@@ -433,7 +422,6 @@ export default function App() {
   const windowBindDragRef = useRef<WindowBindDragState | null>(null);
   const windowBindDragCleanupRef = useRef<(() => void) | null>(null);
   const resizeRef = useRef<ResizeState | null>(null);
-  const dialogRestoreSizeRef = useRef<{ width: number; height: number } | null>(null);
   const actionRequiredProbeRef = useRef<Record<string, string>>({});
   const suppressNextClickRef = useRef(false);
   const autoSyncPromptIdsRef = useRef(new Set<string>());
@@ -1432,62 +1420,15 @@ export default function App() {
     }
   }
 
-  function startDialogDrag(event: PointerEvent<HTMLElement>) {
-    if ((event.target as HTMLElement).closest("button, input, select, textarea, label")) {
-      return;
-    }
-
-    void getCurrentWindow().startDragging().catch(() => undefined);
-  }
-
-  async function expandForDialog(kind: keyof typeof DIALOG_SIZES) {
-    if (!dialogRestoreSizeRef.current) {
-      try {
-        const size = await getCurrentWindow().innerSize();
-        dialogRestoreSizeRef.current = collapsed
-          ? { ...DEFAULT_OVERLAY_SIZE }
-          : { width: Math.max(size.width, DEFAULT_OVERLAY_SIZE.width), height: Math.max(size.height, DEFAULT_OVERLAY_SIZE.height) };
-      } catch {
-        dialogRestoreSizeRef.current = { ...DEFAULT_OVERLAY_SIZE };
-      }
-    }
-
-    setCollapsed(false);
-    const nextSize = DIALOG_SIZES[kind];
-    try {
-      await getCurrentWindow().setSize(new LogicalSize(nextSize.width, nextSize.height));
-    } catch {
-      // Browser preview cannot resize a native window.
-    }
-  }
-
-  async function restoreAfterDialogClose() {
-    const restoreSize = dialogRestoreSizeRef.current;
-    dialogRestoreSizeRef.current = null;
-    if (!restoreSize) return;
-
-    try {
-      await getCurrentWindow().setSize(new LogicalSize(restoreSize.width, restoreSize.height));
-    } catch {
-      // Browser preview cannot resize a native window.
-    }
-  }
-
   async function openDeployDialog() {
     await openUtilityWindow("deploy");
   }
 
-  async function openSettingsDialog(section: SettingsSection = "scratchpad") {
-    setSettingsSection(section);
+  async function openSettingsDialog() {
     await openUtilityWindow("settings");
   }
 
-  async function closeSettingsDialog() {
-    await hideUtilityWindow("settings");
-  }
-
   async function openUtilityWindow(label: UtilityWindowKind) {
-    setSettingsOpen(false);
     setActiveUtilityWindow(label);
 
     try {
@@ -2808,7 +2749,7 @@ export default function App() {
             className={`icon-button ${activeUtilityWindow === "settings" ? "is-active" : ""}`}
             title="Open settings"
             onClick={() => {
-              void openSettingsDialog("scratchpad");
+              void openSettingsDialog();
             }}
           >
             <Settings2 size={15} aria-hidden="true" />
@@ -3388,51 +3329,6 @@ export default function App() {
                 <div className="workspace-panel-loading">Checking workspace folders...</div>
               )}
             </section>
-          ) : null}
-
-          {settingsOpen ? (
-            <div
-              className="dialog-backdrop settings-backdrop"
-              role="presentation"
-              onClick={() => void closeSettingsDialog()}
-            >
-              <section
-                className="app-dialog settings-dialog"
-                role="dialog"
-                aria-modal="true"
-                aria-label="AMO settings"
-                onClick={(event) => event.stopPropagation()}
-              >
-                <header className="app-dialog-titlebar" data-tauri-drag-region onPointerDown={startDialogDrag}>
-                  <div className="app-dialog-title" data-tauri-drag-region>
-                    <Settings2 size={16} aria-hidden="true" />
-                    <div data-tauri-drag-region>
-                      <strong>Settings</strong>
-                      <span>AMO workspace and utility preferences</span>
-                    </div>
-                  </div>
-                  <button
-                    type="button"
-                    className="candidate-close"
-                    title="Close settings"
-                    onClick={() => void closeSettingsDialog()}
-                  >
-                    <X size={13} aria-hidden="true" />
-                  </button>
-                </header>
-
-                <SettingsSidebar settingsSection={settingsSection} onSettingsSectionChange={setSettingsSection} />
-
-                <SettingsDetail
-                  settingsSection={settingsSection}
-                  scratchpadShortcut={scratchpadShortcut}
-                  amoTheme={amoTheme}
-                  onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
-                  onOpenScratchpadNow={() => void openScratchpadNow()}
-                  onAmoThemeChange={(next) => void updateAmoTheme(next)}
-                />
-              </section>
-            </div>
           ) : null}
 
           {obsidianVaultRecovery ? (

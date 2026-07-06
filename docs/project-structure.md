@@ -133,4 +133,4 @@ The largest files are still the historical roots:
 
 Use `docs/refactor-plan.md` for phase order and checkpoints.
 
-The legacy inline deploy panel has been removed. Deploy UI ownership is now the standalone deploy utility window; task-card workspace maintenance remains in the main overlay.
+The legacy inline deploy and settings panels have been removed. Deploy/settings UI ownership now lives in standalone utility windows; task-card workspace maintenance remains in the main overlay.
