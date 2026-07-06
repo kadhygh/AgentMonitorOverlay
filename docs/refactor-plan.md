@@ -481,3 +481,14 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17665`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17666`
   - `git diff --check`
+
+### 2026-07-07: Phase 3 Broker Filesystem Helpers Extracted
+
+- Added `broker/lib/filesystem.js` for workspace path resolution, directory checks, Git root detection, safe path bounds, JSON/text file IO, and atomic writes.
+- Kept workspace/git-exclude planning, deployment, artifact writes, and Canvas behavior in `broker/server.js`.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/filesystem.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17667`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17668`
+  - `git diff --check`
