@@ -163,6 +163,8 @@ export function SessionRowContent({
   const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
   const targetBinding = targetBindingForSession(session);
   const targetBound = Boolean(targetBinding);
+  const canUnbindTarget = Boolean(targetBinding && targetBinding.type !== "codex-cli-session");
+  const canBindWindow = !targetBinding || targetBinding.type === "codex-cli-session";
   const archived = sessionArchived(session);
   const archiveActionBusy = archiving || dismissing;
   const codexAppAvailable = isCodexSession(session);
@@ -196,7 +198,7 @@ export function SessionRowContent({
       >
         <Plus size={13} aria-hidden="true" />
       </button>
-      {!targetBound ? (
+      {canBindWindow ? (
         <button
           type="button"
           className={`card-bind-drag-button ${windowBindDragging ? "is-dragging" : ""}`}
@@ -430,7 +432,7 @@ export function SessionRowContent({
                 <span>CLI</span>
               </button>
             ) : null}
-            {targetBound ? (
+            {canUnbindTarget ? (
               <button
                 type="button"
                 className={`row-tool-button binding-button ${unbindingWindow ? "is-busy" : ""}`}

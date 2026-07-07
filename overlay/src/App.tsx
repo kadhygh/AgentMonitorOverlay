@@ -1785,7 +1785,8 @@ export default function App() {
   }
 
   function startWindowBindDrag(session: AgentSession, event: PointerEvent<HTMLElement>) {
-    if (targetBindingForSession(session)) {
+    const currentTarget = targetBindingForSession(session);
+    if (currentTarget && currentTarget.type !== "codex-cli-session") {
       setFeedback("This card already has a target. Unbind it before dragging to a different window.");
       return;
     }
@@ -1878,7 +1879,8 @@ export default function App() {
       return;
     }
 
-    if (targetBindingForSession(session)) {
+    const currentTarget = targetBindingForSession(session);
+    if (currentTarget && currentTarget.type !== "codex-cli-session") {
       setFeedback("This card already has a target binding.");
       return;
     }

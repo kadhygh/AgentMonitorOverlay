@@ -202,10 +202,10 @@ try {
         message = "Verification hook event"
         state = "running"
     }
-    if ($codexHookTarget.session.targetBinding.type -ne "codex-cli-session") {
-        throw "Codex hook events should default-bind the session to a Codex CLI target."
+    if ($null -ne $codexHookTarget.session.targetBinding) {
+        throw "Codex hook events should not default-bind a target without an explicit app/window choice."
     }
-    Write-Host "Codex hook default target OK -> $($codexHookTarget.session.targetBinding.type)"
+    Write-Host "Codex hook default target OK -> manual target required"
 
     $inspect = Invoke-BrokerJson -Method POST -Path "/api/workspaces/inspect" -Body @{
         workspacePath = $workspaceRoot

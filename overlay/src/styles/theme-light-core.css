@@ -230,6 +230,28 @@
   border-color: rgba(185, 28, 28, 0.22);
 }
 
+:root[data-amo-theme="light"] .scratchpad-pages {
+  background: rgba(42, 74, 64, 0.055);
+  border-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .scratchpad-pages .scratchpad-page-button {
+  color: #46635a;
+  background: transparent;
+  border: 0;
+}
+
+:root[data-amo-theme="light"] .scratchpad-pages .scratchpad-page-button:hover {
+  color: #0f251f;
+  background: rgba(18, 135, 105, 0.1);
+}
+
+:root[data-amo-theme="light"] .scratchpad-pages .scratchpad-page-button.is-active {
+  color: #f7fffb;
+  background: #0d755b;
+  box-shadow: 0 0 0 1px rgba(13, 117, 91, 0.2);
+}
+
 :root[data-amo-theme="light"] .icon-button.is-active,
 :root[data-amo-theme="light"] .summary-filter-button.is-active {
   color: #0b2b22;

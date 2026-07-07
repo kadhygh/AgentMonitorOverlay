@@ -44,50 +44,8 @@ function resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, 
   return defaultHookTargetBinding({ payload, sessionId, tool, cwd, boundAt });
 }
 
-function defaultHookTargetBinding({ payload, sessionId, tool, cwd, boundAt }) {
-  if (!sessionId || !isHookPayload(payload)) {
-    return null;
-  }
-
-  const normalizedTool = (normalizeText(tool) || "").toLowerCase();
-  if (normalizedTool.includes("codex")) {
-    return normalizeTargetBinding(
-      {
-        type: "codex-cli-session",
-        label: "Codex CLI",
-        sessionId,
-        workspacePath: normalizeText(payload.workspacePath || payload.workspace_path || payload.cwd) || cwd || null,
-        boundAt,
-        boundBy: "hook-default-target",
-      },
-      sessionId,
-      boundAt
-    );
-  }
-
+function defaultHookTargetBinding() {
   return null;
-}
-
-function isHookPayload(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    return false;
-  }
-
-  const source = (normalizeText(payload.source) || "").toLowerCase();
-  if (source.includes("hook")) {
-    return true;
-  }
-
-  const hookEventName = (normalizeText(payload.hookEventName || payload.hook_event_name) || "").toLowerCase();
-  return [
-    "stop",
-    "userpromptsubmit",
-    "permissionrequest",
-    "pretooluse",
-    "posttooluse",
-    "posttoolusefailure",
-    "notification",
-  ].includes(hookEventName);
 }
 
 function normalizeTargetBinding(value, sessionId, boundAt) {
@@ -257,7 +215,6 @@ module.exports = {
   clearWindowIdentity,
   codexAppThreadUri,
   defaultHookTargetBinding,
-  isHookPayload,
   normalizeTargetBinding,
   normalizeWindowHint,
   resolveSessionTargetBinding,

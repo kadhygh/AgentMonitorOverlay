@@ -6,11 +6,41 @@ import { toCliPasteClipboardText, writeClipboardText } from "../native/clipboard
 import { useAmoThemeRuntime } from "../theme/amoTheme";
 
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
+const SCRATCHPAD_ACTIVE_PAGE_STORAGE_KEY = "amo.scratchpad.activePage";
+const SCRATCHPAD_PAGE_COUNT = 3;
+
+function scratchpadPageStorageKey(pageIndex: number) {
+  return `${SCRATCHPAD_TEXT_STORAGE_KEY}.${pageIndex + 1}`;
+}
+
+function normalizeScratchpadPage(value: string | null) {
+  const page = Number(value);
+  return Number.isInteger(page) && page >= 0 && page < SCRATCHPAD_PAGE_COUNT ? page : 0;
+}
+
+function loadScratchpadPageText(pageIndex: number) {
+  const pageText = localStorage.getItem(scratchpadPageStorageKey(pageIndex));
+  if (pageText !== null) {
+    return pageText;
+  }
+
+  return pageIndex === 0 ? localStorage.getItem(SCRATCHPAD_TEXT_STORAGE_KEY) || "" : "";
+}
+
+function saveScratchpadPageText(pageIndex: number, text: string) {
+  localStorage.setItem(scratchpadPageStorageKey(pageIndex), text);
+  if (pageIndex === 0) {
+    localStorage.setItem(SCRATCHPAD_TEXT_STORAGE_KEY, text);
+  }
+}
 
 export function ScratchpadApp() {
   useAmoThemeRuntime();
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const [activePage, setActivePage] = useState(() =>
+    normalizeScratchpadPage(localStorage.getItem(SCRATCHPAD_ACTIVE_PAGE_STORAGE_KEY)),
+  );
   const [textLength, setTextLength] = useState(0);
   const [status, setStatus] = useState("Ready");
 
@@ -18,11 +48,13 @@ export function ScratchpadApp() {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const savedText = localStorage.getItem(SCRATCHPAD_TEXT_STORAGE_KEY) || "";
+    const savedText = loadScratchpadPageText(activePage);
     textarea.value = savedText;
     setTextLength(savedText.length);
+    localStorage.setItem(SCRATCHPAD_ACTIVE_PAGE_STORAGE_KEY, String(activePage));
+    setStatus(`Page ${activePage + 1} ready`);
     window.setTimeout(() => textarea.focus(), 30);
-  }, []);
+  }, [activePage]);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -37,9 +69,19 @@ export function ScratchpadApp() {
 
   function persistCurrentText() {
     const text = textareaRef.current?.value || "";
-    localStorage.setItem(SCRATCHPAD_TEXT_STORAGE_KEY, text);
+    saveScratchpadPageText(activePage, text);
     setTextLength(text.length);
     return text;
+  }
+
+  function switchPage(nextPage: number) {
+    if (nextPage === activePage) {
+      textareaRef.current?.focus();
+      return;
+    }
+
+    persistCurrentText();
+    setActivePage(nextPage);
   }
 
   async function copyText() {
@@ -91,7 +133,7 @@ export function ScratchpadApp() {
       disposed = true;
       unlistenCopyRequest?.();
     };
-  }, []);
+  }, [activePage]);
 
   function clearText() {
     const textarea = textareaRef.current;
@@ -115,6 +157,21 @@ export function ScratchpadApp() {
           <StickyNote size={15} aria-hidden="true" />
           <strong>AMO Scratchpad</strong>
         </div>
+        <nav className="scratchpad-pages" aria-label="Scratchpad pages">
+          {Array.from({ length: SCRATCHPAD_PAGE_COUNT }, (_, index) => (
+            <button
+              type="button"
+              key={index}
+              className={`scratchpad-page-button ${index === activePage ? "is-active" : ""}`}
+              title={`Scratchpad page ${index + 1}`}
+              aria-label={`Scratchpad page ${index + 1}`}
+              aria-pressed={index === activePage}
+              onClick={() => switchPage(index)}
+            >
+              {index + 1}
+            </button>
+          ))}
+        </nav>
         <span className="scratchpad-header-actions">
           <button
             type="button"

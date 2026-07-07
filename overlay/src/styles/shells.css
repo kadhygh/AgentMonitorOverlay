@@ -114,6 +114,45 @@ button {
   white-space: nowrap;
 }
 
+.scratchpad-pages {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  margin: 0 auto 0 10px;
+  padding: 2px;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 7px;
+}
+
+.scratchpad-pages .scratchpad-page-button {
+  display: inline-grid;
+  place-items: center;
+  width: 22px;
+  height: 20px;
+  padding: 0;
+  color: #aebeb8;
+  background: transparent;
+  border: 0;
+  border-radius: 5px;
+  cursor: pointer;
+  font-size: 10px;
+  font-weight: 760;
+  line-height: 1;
+}
+
+.scratchpad-pages .scratchpad-page-button:hover {
+  color: #f7fffb;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.scratchpad-pages .scratchpad-page-button.is-active {
+  color: #08110f;
+  background: #7ce2c4;
+  box-shadow: 0 0 0 1px rgba(124, 226, 196, 0.22);
+}
+
 .scratchpad-header-actions {
   display: inline-flex;
   flex: 0 0 auto;
