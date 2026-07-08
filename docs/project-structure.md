@@ -177,6 +177,8 @@ handling, follow-up suppression, settings refresh, and open-result status live i
 AMO note metadata checks, display names, source-mode display-title header DOM, and first-content-line detection live in
 `broker/assets/obsidian/md-anno-tools/src/note/title.ts`. Note title writes, title-edit modal launch, broker title sync,
 and reading-mode display header rendering live in `broker/assets/obsidian/md-anno-tools/src/note/title-actions.ts`.
+Active Markdown note resolution, last-note memory, active leaf classification, and Canvas-selected note preference rules
+live in `broker/assets/obsidian/md-anno-tools/src/note/active-target.ts`.
 AMO note property visibility, metadata reads for open Markdown views, and property/header class cleanup live in
 `broker/assets/obsidian/md-anno-tools/src/note/properties.ts`.
 Annotation copy/send and bridge health actions live in

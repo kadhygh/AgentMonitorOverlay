@@ -45,6 +45,7 @@ import { centerCanvasNode } from "./canvas/navigation";
 import * as canvasRendering from "./canvas/rendering";
 import * as workCanvasActions from "./canvas/work-canvas";
 import * as noteTitleActions from "./note/title-actions";
+import * as activeTarget from "./note/active-target";
 import * as noteProperties from "./note/properties";
 import { handleAmoOpenProtocol, openVaultPath as openAmoVaultPath } from "./protocol/amo-open";
 
@@ -696,42 +697,23 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   rememberCurrentMarkdownView() {
-    this.rememberMarkdownLeaf(this.app.workspace.activeLeaf);
-
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (view) {
-      this.rememberMarkdownView(view, this.findLeafForView(view));
-    }
+    return activeTarget.rememberCurrentMarkdownView(this);
   }
 
   rememberMarkdownLeaf(leaf) {
-    if (!leaf || !(leaf.view instanceof MarkdownView)) return;
-    this.rememberMarkdownView(leaf.view, leaf);
+    return activeTarget.rememberMarkdownLeaf(this, leaf);
   }
 
   rememberMarkdownView(view, leaf = null) {
-    if (!view || !(view instanceof MarkdownView) || !view.file) return;
-    this.lastMarkdownView = view;
-    this.lastMarkdownLeaf = leaf || this.findLeafForView(view);
-    this.lastMarkdownFilePath = view.file.path;
-    this.lastMarkdownTargetSource = "last-note";
+    return activeTarget.rememberMarkdownView(this, view, leaf);
   }
 
   findLeafForView(view) {
-    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (leaf.view === view) return leaf;
-    }
-    return null;
+    return activeTarget.findLeafForView(this, view);
   }
 
   findMarkdownLeafForFilePath(filePath) {
-    if (!filePath) return null;
-    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (leaf.view instanceof MarkdownView && leaf.view.file && leaf.view.file.path === filePath) {
-        return leaf;
-      }
-    }
-    return null;
+    return activeTarget.findMarkdownLeafForFilePath(this, filePath);
   }
 
   async syncAmoNotePropertyViews() {
@@ -759,101 +741,19 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   getActiveMarkdownView() {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (activeView && activeView.file) {
-      this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
-      return activeView;
-    }
-
-    if (this.lastMarkdownView && this.lastMarkdownView.file) {
-      return this.lastMarkdownView;
-    }
-
-    const rememberedLeaf = this.findMarkdownLeafForFilePath(this.lastMarkdownFilePath);
-    if (rememberedLeaf && rememberedLeaf.view instanceof MarkdownView) {
-      this.rememberMarkdownLeaf(rememberedLeaf);
-      return rememberedLeaf.view;
-    }
-
-    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (leaf.view instanceof MarkdownView && leaf.view.file) {
-        this.rememberMarkdownLeaf(leaf);
-        return leaf.view;
-      }
-    }
-
-    return null;
+    return activeTarget.getActiveMarkdownView(this);
   }
 
   getActiveMarkdownFile() {
-    const target = this.getActiveMarkdownFileTarget();
-    return target ? target.file : null;
+    return activeTarget.getActiveMarkdownFile(this);
   }
 
   getActiveMarkdownFileTarget() {
-    const shouldPreferCanvasTarget =
-      this.isActiveLeafCanvas() ||
-      this.isActiveLeafAmoPanel() ||
-      this.lastMarkdownTargetSource === "canvas-selection";
-    if (shouldPreferCanvasTarget) {
-      const canvasView = this.getActiveCanvasView() || this.lastCanvasView;
-      const selectedCanvasTarget = this.getSelectedCanvasMarkdownFileTarget(canvasView, {
-        allowRemembered: false,
-        refreshPanels: false,
-      });
-      if (selectedCanvasTarget) return selectedCanvasTarget;
-
-      const rememberedCanvasTarget = canvasView ? this.getRememberedCanvasMarkdownFileTarget(canvasView) : null;
-      if (rememberedCanvasTarget) return rememberedCanvasTarget;
-
-      if (this.isActiveLeafCanvas()) {
-        return null;
-      }
-    }
-
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (activeView && activeView.file) {
-      this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
-      return {
-        file: activeView.file,
-        source: "active-note",
-      };
-    }
-
-    const selectedCanvasTarget = this.getSelectedCanvasMarkdownFileTarget();
-    if (selectedCanvasTarget) return selectedCanvasTarget;
-
-    if (this.isActiveLeafCanvas()) {
-      return null;
-    }
-
-    if (this.lastMarkdownTargetSource === "canvas-selection") {
-      const rememberedCanvasTarget = this.getRememberedMarkdownFileTarget();
-      if (rememberedCanvasTarget) return rememberedCanvasTarget;
-    }
-
-    const view = this.getActiveMarkdownView();
-    if (view && view.file) {
-      return {
-        file: view.file,
-        source: this.lastMarkdownTargetSource || "last-note",
-      };
-    }
-
-    const rememberedTarget = this.getRememberedMarkdownFileTarget();
-    if (rememberedTarget) return rememberedTarget;
-
-    return null;
+    return activeTarget.getActiveMarkdownFileTarget(this);
   }
 
   getRememberedMarkdownFileTarget() {
-    if (!this.lastMarkdownFilePath) return null;
-    const file = this.app.vault.getAbstractFileByPath(this.lastMarkdownFilePath);
-    if (!file || typeof file.path !== "string") return null;
-    return {
-      file,
-      source: this.lastMarkdownTargetSource || "last-note",
-    };
+    return activeTarget.getRememberedMarkdownFileTarget(this);
   }
 
   getSelectedCanvasMarkdownFile(view) {
@@ -901,15 +801,11 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   isActiveLeafAmoPanel() {
-    const leaf = this.app.workspace.activeLeaf;
-    if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function") return false;
-    return leaf.view.getViewType() === AMO_PANEL_VIEW_TYPE;
+    return activeTarget.isActiveLeafAmoPanel(this);
   }
 
   activeLeafType() {
-    const leaf = this.app.workspace.activeLeaf;
-    if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function") return "none";
-    return leaf.view.getViewType();
+    return activeTarget.activeLeafType(this);
   }
 
   canInsertAnnotationAtActiveEditor() {

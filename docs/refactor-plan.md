@@ -109,6 +109,7 @@ broker/assets/obsidian/md-anno-tools/src/
     annotation-commands.ts
     local-code-links.ts
   note/
+    active-target.ts
     title-actions.ts
     title.ts
   annotations/
