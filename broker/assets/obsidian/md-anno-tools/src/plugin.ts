@@ -50,9 +50,8 @@ import {
   amoNoteSourceTitleHeader,
   displayNameForFile,
   firstAmoNoteContentLine,
-  isAmoMetadata,
-  syncAmoNoteDisplayTitleView,
 } from "./note/title";
+import * as noteProperties from "./note/properties";
 import { handleAmoOpenProtocol, openVaultPath as openAmoVaultPath } from "./protocol/amo-open";
 
 
@@ -742,87 +741,27 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async syncAmoNotePropertyViews() {
-    const leaves = this.app.workspace.getLeavesOfType("markdown");
-    for (const leaf of leaves) {
-      if (!(leaf.view instanceof MarkdownView)) continue;
-      const view = leaf.view;
-      await this.syncAmoNotePropertyView(view);
-    }
+    return noteProperties.syncAmoNotePropertyViews(this);
   }
 
   async syncAmoNotePropertyView(view) {
-    if (!(view instanceof MarkdownView) || !view.file || !view.containerEl) return;
-
-    const filePath = view.file.path;
-    const amo = await this.readAmoMetadataForFile(view.file);
-    const isAmoNote = isAmoMetadata(amo);
-    if (!view.file || view.file.path !== filePath || !view.containerEl) return;
-
-    view.containerEl.classList.toggle("amo-note-view", isAmoNote);
-    const shouldHide =
-      isAmoNote &&
-      Boolean(this.settings.hideAmoNoteProperties) &&
-      !this.amoNotePropertiesExpandedPaths.has(filePath);
-    view.containerEl.classList.toggle("amo-hide-note-properties", shouldHide);
-    view.containerEl.classList.toggle("amo-show-note-properties", isAmoNote && !shouldHide);
-    syncAmoNoteDisplayTitleView(view, isAmoNote ? amo : {});
+    return noteProperties.syncAmoNotePropertyView(this, view);
   }
 
   async isAmoMarkdownFile(file) {
-    if (!file || typeof file.path !== "string") return false;
-
-    const amo = await this.readAmoMetadataForFile(file);
-    return isAmoMetadata(amo);
+    return noteProperties.isAmoMarkdownFile(this, file);
   }
 
   async readAmoMetadataForFile(file) {
-    if (!file || typeof file.path !== "string") return {};
-
-    try {
-      const markdown = await this.app.vault.cachedRead(file as any);
-      return parseAmoMetadata(markdown);
-    } catch {
-      return {};
-    }
+    return noteProperties.readAmoMetadataForFile(this, file);
   }
 
   async toggleAmoNotePropertiesForView(view) {
-    if (!(view instanceof MarkdownView) || !view.file) {
-      new Notice("No active Markdown note.");
-      return;
-    }
-
-    const isAmoNote = await this.isAmoMarkdownFile(view.file);
-    if (!isAmoNote) {
-      new Notice("Current note is not an AMO note.");
-      return;
-    }
-
-    const filePath = view.file.path;
-    if (this.amoNotePropertiesExpandedPaths.has(filePath)) {
-      this.amoNotePropertiesExpandedPaths.delete(filePath);
-      new Notice("AMO note properties hidden.");
-    } else {
-      this.amoNotePropertiesExpandedPaths.add(filePath);
-      new Notice("AMO note properties shown.");
-    }
-
-    await this.syncAmoNotePropertyViews();
+    return noteProperties.toggleAmoNotePropertiesForView(this, view);
   }
 
   clearAmoNotePropertyViewClasses() {
-    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      const view: any = leaf.view;
-      if (!view || !view.containerEl) continue;
-      view.containerEl.classList.remove(
-        "amo-note-view",
-        "amo-hide-note-properties",
-        "amo-show-note-properties",
-        "amo-note-has-display-title"
-      );
-      const sourceHeader = amoNoteSourceTitleHeader(view);
-      if (sourceHeader) sourceHeader.remove();
-    }
+    return noteProperties.clearAmoNotePropertyViewClasses(this);
   }
 
   getActiveMarkdownView() {

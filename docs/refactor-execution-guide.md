@@ -793,6 +793,9 @@ Manual smoke:
 
 ### Plugin Subphase P4: Note Title And Properties
 
+Status: started. AMO note property visibility, metadata reads for open Markdown views, and property/header class cleanup
+now live in `src/note/properties.ts`.
+
 Create:
 
 ```text

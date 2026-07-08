@@ -29,7 +29,7 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 
 // src/plugin.ts
-var import_obsidian13 = require("obsidian");
+var import_obsidian14 = require("obsidian");
 var import_view2 = require("@codemirror/view");
 
 // src/core/constants.ts
@@ -3322,12 +3322,83 @@ function safeVaultFileName(value) {
   return safeVaultPathSegment(value).replace(/\.canvas$/iu, "");
 }
 
-// src/protocol/amo-open.ts
+// src/note/properties.ts
 var import_obsidian12 = require("obsidian");
+async function syncAmoNotePropertyViews(plugin) {
+  const leaves = plugin.app.workspace.getLeavesOfType("markdown");
+  for (const leaf of leaves) {
+    if (!(leaf.view instanceof import_obsidian12.MarkdownView)) continue;
+    const view = leaf.view;
+    await syncAmoNotePropertyView(plugin, view);
+  }
+}
+async function syncAmoNotePropertyView(plugin, view) {
+  if (!(view instanceof import_obsidian12.MarkdownView) || !view.file || !view.containerEl) return;
+  const filePath = view.file.path;
+  const amo = await readAmoMetadataForFile(plugin, view.file);
+  const isAmoNote = isAmoMetadata(amo);
+  if (!view.file || view.file.path !== filePath || !view.containerEl) return;
+  view.containerEl.classList.toggle("amo-note-view", isAmoNote);
+  const shouldHide = isAmoNote && Boolean(plugin.settings.hideAmoNoteProperties) && !plugin.amoNotePropertiesExpandedPaths.has(filePath);
+  view.containerEl.classList.toggle("amo-hide-note-properties", shouldHide);
+  view.containerEl.classList.toggle("amo-show-note-properties", isAmoNote && !shouldHide);
+  syncAmoNoteDisplayTitleView(view, isAmoNote ? amo : {});
+}
+async function isAmoMarkdownFile(plugin, file) {
+  if (!file || typeof file.path !== "string") return false;
+  const amo = await readAmoMetadataForFile(plugin, file);
+  return isAmoMetadata(amo);
+}
+async function readAmoMetadataForFile(plugin, file) {
+  if (!file || typeof file.path !== "string") return {};
+  try {
+    const markdown = await plugin.app.vault.cachedRead(file);
+    return parseAmoMetadata(markdown);
+  } catch (e) {
+    return {};
+  }
+}
+async function toggleAmoNotePropertiesForView(plugin, view) {
+  if (!(view instanceof import_obsidian12.MarkdownView) || !view.file) {
+    new import_obsidian12.Notice("No active Markdown note.");
+    return;
+  }
+  const isAmoNote = await isAmoMarkdownFile(plugin, view.file);
+  if (!isAmoNote) {
+    new import_obsidian12.Notice("Current note is not an AMO note.");
+    return;
+  }
+  const filePath = view.file.path;
+  if (plugin.amoNotePropertiesExpandedPaths.has(filePath)) {
+    plugin.amoNotePropertiesExpandedPaths.delete(filePath);
+    new import_obsidian12.Notice("AMO note properties hidden.");
+  } else {
+    plugin.amoNotePropertiesExpandedPaths.add(filePath);
+    new import_obsidian12.Notice("AMO note properties shown.");
+  }
+  await syncAmoNotePropertyViews(plugin);
+}
+function clearAmoNotePropertyViewClasses(plugin) {
+  for (const leaf of plugin.app.workspace.getLeavesOfType("markdown")) {
+    const view = leaf.view;
+    if (!view || !view.containerEl) continue;
+    view.containerEl.classList.remove(
+      "amo-note-view",
+      "amo-hide-note-properties",
+      "amo-show-note-properties",
+      "amo-note-has-display-title"
+    );
+    const sourceHeader = amoNoteSourceTitleHeader(view);
+    if (sourceHeader) sourceHeader.remove();
+  }
+}
+
+// src/protocol/amo-open.ts
+var import_obsidian13 = require("obsidian");
 async function handleAmoOpenProtocol(plugin, params) {
   const targetPath = resolveProtocolTargetPath(plugin, params);
   if (!targetPath) {
-    new import_obsidian12.Notice("AMO open URL is missing a vault-relative path.");
+    new import_obsidian13.Notice("AMO open URL is missing a vault-relative path.");
     return;
   }
   const kind = normalizeOpenKind(params && (params.kind || params.target), targetPath);
@@ -3352,14 +3423,14 @@ function resolveProtocolFocusNotePath(plugin, params) {
 async function openVaultPath(plugin, filePath, kind) {
   const targetPath = normalizeVaultFilePath(filePath);
   if (!targetPath) {
-    new import_obsidian12.Notice("AMO target path is empty.");
+    new import_obsidian13.Notice("AMO target path is empty.");
     return false;
   }
   const file = plugin.app.vault.getAbstractFileByPath(targetPath);
   if (!file || typeof file.path !== "string") {
     const message = "AMO target not found: " + targetPath;
     plugin.setOperationStatus(message, "error");
-    new import_obsidian12.Notice(message);
+    new import_obsidian13.Notice(message);
     return false;
   }
   const existingLeaf = findLeafForFilePath(plugin.app, file.path, kind);
@@ -3408,7 +3479,7 @@ function findLeafForFilePathInViewType(app, filePath, viewType) {
 }
 
 // src/plugin.ts
-var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
+var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian14.Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() || {});
     this.operationStatus = {
@@ -3685,7 +3756,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
   handleEditorAnnotationMouseShortcut(event, view, phase) {
     var _a, _b;
     if (!event.ctrlKey || event.button !== 4) return false;
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian13.MarkdownView) || this.getActiveMarkdownView();
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian14.MarkdownView) || this.getActiveMarkdownView();
     if (!activeView || !activeView.editor) {
       this.debugLog("annotations.editor_mouse_shortcut.no_editor", {
         phase,
@@ -3721,7 +3792,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
         type: event.type,
         target: event.target instanceof Element ? describeElement(event.target) : ""
       });
-      new import_obsidian13.Notice("No active Markdown note.");
+      new import_obsidian14.Notice("No active Markdown note.");
       return true;
     }
     this.debugLog("annotations.send.mouse5", {
@@ -3868,13 +3939,13 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
   }
   syncMarkdownViewActions() {
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (!(leaf.view instanceof import_obsidian13.MarkdownView)) continue;
+      if (!(leaf.view instanceof import_obsidian14.MarkdownView)) continue;
       const view = leaf.view;
       this.rememberMarkdownView(view, leaf);
       if (!view.containerEl.querySelector("." + AMO_SEND_ACTION_CLASS)) {
         const sendAction = view.addAction("send", "Send annotations to AMO", () => {
           if (!view.file) {
-            new import_obsidian13.Notice("No active Markdown note.");
+            new import_obsidian14.Notice("No active Markdown note.");
             return;
           }
           void this.sendAnnotationsFromFile(view.file);
@@ -3890,7 +3961,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
       if (!view.containerEl.querySelector("." + AMO_TITLE_ACTION_CLASS)) {
         const titleAction = view.addAction("pencil", "Edit AMO note title", () => {
           if (!view.file) {
-            new import_obsidian13.Notice("No active Markdown note.");
+            new import_obsidian14.Notice("No active Markdown note.");
             return;
           }
           void this.editAmoNoteTitle(view.file);
@@ -3936,17 +4007,17 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
   }
   rememberCurrentMarkdownView() {
     this.rememberMarkdownLeaf(this.app.workspace.activeLeaf);
-    const view = this.app.workspace.getActiveViewOfType(import_obsidian13.MarkdownView);
+    const view = this.app.workspace.getActiveViewOfType(import_obsidian14.MarkdownView);
     if (view) {
       this.rememberMarkdownView(view, this.findLeafForView(view));
     }
   }
   rememberMarkdownLeaf(leaf) {
-    if (!leaf || !(leaf.view instanceof import_obsidian13.MarkdownView)) return;
+    if (!leaf || !(leaf.view instanceof import_obsidian14.MarkdownView)) return;
     this.rememberMarkdownView(leaf.view, leaf);
   }
   rememberMarkdownView(view, leaf = null) {
-    if (!view || !(view instanceof import_obsidian13.MarkdownView) || !view.file) return;
+    if (!view || !(view instanceof import_obsidian14.MarkdownView) || !view.file) return;
     this.lastMarkdownView = view;
     this.lastMarkdownLeaf = leaf || this.findLeafForView(view);
     this.lastMarkdownFilePath = view.file.path;
@@ -3961,82 +4032,32 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
   findMarkdownLeafForFilePath(filePath) {
     if (!filePath) return null;
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (leaf.view instanceof import_obsidian13.MarkdownView && leaf.view.file && leaf.view.file.path === filePath) {
+      if (leaf.view instanceof import_obsidian14.MarkdownView && leaf.view.file && leaf.view.file.path === filePath) {
         return leaf;
       }
     }
     return null;
   }
   async syncAmoNotePropertyViews() {
-    const leaves = this.app.workspace.getLeavesOfType("markdown");
-    for (const leaf of leaves) {
-      if (!(leaf.view instanceof import_obsidian13.MarkdownView)) continue;
-      const view = leaf.view;
-      await this.syncAmoNotePropertyView(view);
-    }
+    return syncAmoNotePropertyViews(this);
   }
   async syncAmoNotePropertyView(view) {
-    if (!(view instanceof import_obsidian13.MarkdownView) || !view.file || !view.containerEl) return;
-    const filePath = view.file.path;
-    const amo = await this.readAmoMetadataForFile(view.file);
-    const isAmoNote = isAmoMetadata(amo);
-    if (!view.file || view.file.path !== filePath || !view.containerEl) return;
-    view.containerEl.classList.toggle("amo-note-view", isAmoNote);
-    const shouldHide = isAmoNote && Boolean(this.settings.hideAmoNoteProperties) && !this.amoNotePropertiesExpandedPaths.has(filePath);
-    view.containerEl.classList.toggle("amo-hide-note-properties", shouldHide);
-    view.containerEl.classList.toggle("amo-show-note-properties", isAmoNote && !shouldHide);
-    syncAmoNoteDisplayTitleView(view, isAmoNote ? amo : {});
+    return syncAmoNotePropertyView(this, view);
   }
   async isAmoMarkdownFile(file) {
-    if (!file || typeof file.path !== "string") return false;
-    const amo = await this.readAmoMetadataForFile(file);
-    return isAmoMetadata(amo);
+    return isAmoMarkdownFile(this, file);
   }
   async readAmoMetadataForFile(file) {
-    if (!file || typeof file.path !== "string") return {};
-    try {
-      const markdown = await this.app.vault.cachedRead(file);
-      return parseAmoMetadata(markdown);
-    } catch (e) {
-      return {};
-    }
+    return readAmoMetadataForFile(this, file);
   }
   async toggleAmoNotePropertiesForView(view) {
-    if (!(view instanceof import_obsidian13.MarkdownView) || !view.file) {
-      new import_obsidian13.Notice("No active Markdown note.");
-      return;
-    }
-    const isAmoNote = await this.isAmoMarkdownFile(view.file);
-    if (!isAmoNote) {
-      new import_obsidian13.Notice("Current note is not an AMO note.");
-      return;
-    }
-    const filePath = view.file.path;
-    if (this.amoNotePropertiesExpandedPaths.has(filePath)) {
-      this.amoNotePropertiesExpandedPaths.delete(filePath);
-      new import_obsidian13.Notice("AMO note properties hidden.");
-    } else {
-      this.amoNotePropertiesExpandedPaths.add(filePath);
-      new import_obsidian13.Notice("AMO note properties shown.");
-    }
-    await this.syncAmoNotePropertyViews();
+    return toggleAmoNotePropertiesForView(this, view);
   }
   clearAmoNotePropertyViewClasses() {
-    for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      const view = leaf.view;
-      if (!view || !view.containerEl) continue;
-      view.containerEl.classList.remove(
-        "amo-note-view",
-        "amo-hide-note-properties",
-        "amo-show-note-properties",
-        "amo-note-has-display-title"
-      );
-      const sourceHeader = amoNoteSourceTitleHeader(view);
-      if (sourceHeader) sourceHeader.remove();
-    }
+    return clearAmoNotePropertyViewClasses(this);
   }
   getActiveMarkdownView() {
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian13.MarkdownView);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian14.MarkdownView);
     if (activeView && activeView.file) {
       this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
       return activeView;
@@ -4045,12 +4066,12 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
       return this.lastMarkdownView;
     }
     const rememberedLeaf = this.findMarkdownLeafForFilePath(this.lastMarkdownFilePath);
-    if (rememberedLeaf && rememberedLeaf.view instanceof import_obsidian13.MarkdownView) {
+    if (rememberedLeaf && rememberedLeaf.view instanceof import_obsidian14.MarkdownView) {
       this.rememberMarkdownLeaf(rememberedLeaf);
       return rememberedLeaf.view;
     }
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (leaf.view instanceof import_obsidian13.MarkdownView && leaf.view.file) {
+      if (leaf.view instanceof import_obsidian14.MarkdownView && leaf.view.file) {
         this.rememberMarkdownLeaf(leaf);
         return leaf.view;
       }
@@ -4076,7 +4097,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
         return null;
       }
     }
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian13.MarkdownView);
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian14.MarkdownView);
     if (activeView && activeView.file) {
       this.rememberMarkdownView(activeView, this.findLeafForView(activeView));
       return {
@@ -4203,14 +4224,14 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
   }
   async updateAmoNoteTitle(file, rawTitle) {
     if (!file) {
-      new import_obsidian13.Notice("No active Markdown note.");
+      new import_obsidian14.Notice("No active Markdown note.");
       return false;
     }
     const displayTitle = normalizeMarkdownTitle(rawTitle);
     const markdown = await this.app.vault.cachedRead(file);
     const amo = parseAmoMetadata(markdown);
     if (!amo.schemaVersion && !amo.sessionId && !amo.noteId && !amo.kind) {
-      new import_obsidian13.Notice("Current note is not an AMO note.");
+      new import_obsidian14.Notice("Current note is not an AMO note.");
       return false;
     }
     const metadata = {
@@ -4237,7 +4258,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
       });
     }
     this.setOperationStatus(displayTitle ? "Updated note title: " + displayTitle : "Cleared AMO note title.", "success");
-    new import_obsidian13.Notice(displayTitle ? "AMO note title updated." : "AMO note title cleared.");
+    new import_obsidian14.Notice(displayTitle ? "AMO note title updated." : "AMO note title cleared.");
     void this.syncAmoNotePropertyViews();
     void this.syncAmoCanvasRendering();
     this.refreshPanels();
@@ -4245,14 +4266,14 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
   }
   async editAmoNoteTitle(file) {
     if (!file) {
-      new import_obsidian13.Notice("No active Markdown note.");
+      new import_obsidian14.Notice("No active Markdown note.");
       return;
     }
     let markdown = "";
     try {
       markdown = await this.app.vault.cachedRead(file);
     } catch (error) {
-      new import_obsidian13.Notice("Could not read note: " + messageFromError(error));
+      new import_obsidian14.Notice("Could not read note: " + messageFromError(error));
       return;
     }
     const amo = parseAmoMetadata(markdown);
@@ -4270,7 +4291,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
       activeLeafType: this.activeLeafType()
     });
     if (!file) {
-      new import_obsidian13.Notice("No active Markdown note.");
+      new import_obsidian14.Notice("No active Markdown note.");
       return;
     }
     await this.copyAnnotationsFromFile(file);
@@ -4281,7 +4302,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
   async sendAnnotationsFromActiveFile() {
     const file = this.getActiveMarkdownFile();
     if (!file) {
-      new import_obsidian13.Notice("No active Markdown note.");
+      new import_obsidian14.Notice("No active Markdown note.");
       return;
     }
     await this.sendAnnotationsFromFile(file);
@@ -4329,7 +4350,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
   async revealFileInExplorer(fileOrPath) {
     const file = typeof fileOrPath === "string" ? this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(fileOrPath)) : fileOrPath;
     if (!file || typeof file.path !== "string") {
-      new import_obsidian13.Notice("No file to reveal.");
+      new import_obsidian14.Notice("No file to reveal.");
       return false;
     }
     let leaves = this.app.workspace.getLeavesOfType("file-explorer");
@@ -4351,30 +4372,30 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian13.Plugin {
       }
     }
     this.setOperationStatus("Could not reveal file in Obsidian explorer: " + file.path + ".", "error");
-    new import_obsidian13.Notice("Could not reveal file in Obsidian explorer.");
+    new import_obsidian14.Notice("Could not reveal file in Obsidian explorer.");
     return false;
   }
   async copyAnnotationItemFromFile(file, annotationIndex) {
     const markdown = await this.app.vault.cachedRead(file);
     const item = extractAnnotationItems(markdown).find((candidate) => candidate.index === annotationIndex);
     if (!item) {
-      new import_obsidian13.Notice("Annotation not found.");
+      new import_obsidian14.Notice("Annotation not found.");
       return false;
     }
     await writeTextToClipboard(formatAnnotationsForClipboard([item.content]));
     this.setOperationStatus("Copied annotation " + annotationIndex + " from " + file.path + ".", "success");
-    new import_obsidian13.Notice("Annotation copied.");
+    new import_obsidian14.Notice("Annotation copied.");
     return true;
   }
   async focusAnnotationItemInFile(file, item) {
     if (!file || !item) {
-      new import_obsidian13.Notice("Annotation not found.");
+      new import_obsidian14.Notice("Annotation not found.");
       return false;
     }
     await this.openVaultPath(file.path, "note");
     await this.delay(80);
     const leaf = this.findMarkdownLeafForFilePath(file.path);
-    const view = leaf && leaf.view instanceof import_obsidian13.MarkdownView ? leaf.view : null;
+    const view = leaf && leaf.view instanceof import_obsidian14.MarkdownView ? leaf.view : null;
     if (leaf) {
       this.app.workspace.setActiveLeaf(leaf, { focus: true });
     }
