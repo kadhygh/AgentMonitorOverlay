@@ -19,7 +19,7 @@ The active long-task execution guide is `docs/refactor-execution-guide.md`. Use 
 
 | File | Current Size | Problem |
 | --- | ---: | --- |
-| `broker/server.js` | ~1891 lines | HTTP routing, workspace maintenance/launch, Obsidian bridge flows, and route handlers are still coupled after session-store and workspace inspect/deploy extraction. |
+| `broker/server.js` | ~1339 lines | HTTP routing, Obsidian bridge flows, prompt/reply artifact orchestration, and route handlers are still coupled after workspace maintenance/launch extraction. |
 | `overlay/src/App.tsx` | ~2830 lines | Main overlay session polling, target activation, Obsidian open/recovery, workspace panel actions, card drag, window bind drag, and resize logic still live in one root. |
 | `broker/assets/obsidian/md-anno-tools/src/plugin.ts` | ~2165 lines | Plugin lifecycle, Canvas actions, annotation source edits, bridge actions, note title/property behavior, and work-canvas helpers remain concentrated. |
 | `overlay/src-tauri/src/windows.rs` | ~592 lines | Native window enumeration/activation is the only Tauri file above 500 lines; it is not urgent because `lib.rs` is already thin. |
@@ -918,4 +918,20 @@ Manual smoke:
   - `node --check broker/lib/workspace-deploy.js`
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17697`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17698`
+  - `git diff --check`
+
+### 2026-07-09: Broker Workspace Maintenance/Launch Extracted
+
+- Completed `broker/lib/workspace-git-exclude.js` by moving the Git exclude update/write route logic next to the existing inspect/plan helpers.
+- Added `broker/lib/workspace-launch.js` for workspace CLI/App launch, Codex CLI resume title routing, and launch-time Codex CLI target binding.
+- Added `broker/lib/workspace-maintenance.js` for maintenance snapshots, vault cleanup, plugin update, Canvas inspection, generated note counts, and workspace cleanup bridge-state resets.
+- Kept route parsing, persistence calls, publish calls, prompt/reply artifact orchestration, and Obsidian bridge routes in `broker/server.js`.
+- Reduced `broker/server.js` from about 1891 lines to about 1339 lines while keeping the new workspace modules between about 184 and 361 lines.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/workspace-git-exclude.js`
+  - `node --check broker/lib/workspace-launch.js`
+  - `node --check broker/lib/workspace-maintenance.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17699`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17700`
   - `git diff --check`

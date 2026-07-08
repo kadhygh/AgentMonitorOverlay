@@ -40,11 +40,12 @@ Previous refactor progress already paid off:
 - Many broker helpers already live in `broker/lib/`.
 - Broker session state now lives in `broker/lib/session-store.js`.
 - Broker workspace inspect/deploy now lives in `broker/lib/workspace-inspect.js` and `broker/lib/workspace-deploy.js`.
+- Broker workspace Git exclude writes, launch, and maintenance now live in `broker/lib/workspace-git-exclude.js`, `broker/lib/workspace-launch.js`, and `broker/lib/workspace-maintenance.js`.
 - Several Obsidian plugin helper families already live under `src/editor`, `src/canvas`, `src/annotations`, `src/note`, and `src/protocol`.
 
 Remaining hotspots are historical orchestration roots:
 
-- `broker/server.js` (about 1891 lines after B1/B2 extraction)
+- `broker/server.js` (about 1339 lines after B1/B2/B3 extraction)
 - `overlay/src/App.tsx`
 - `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
 

@@ -1,14 +1,82 @@
 const fs = require("fs");
 const path = require("path");
 const { spawnSync } = require("child_process");
+const { AMO_SCHEMA_VERSION } = require("./amo-constants");
 const { httpError } = require("./http");
 const {
   findNearestGitRoot,
   isSameOrDescendantPath,
   resolveDirectoryPath,
   resolveGitDirectoryPath,
+  resolveWorkspacePath,
 } = require("./filesystem");
 const { normalizeText } = require("./normalize");
+
+function updateWorkspaceGitExclude(payload, options = {}) {
+  const recordDebugLog = typeof options.recordDebugLog === "function" ? options.recordDebugLog : () => {};
+  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
+  const includeClaudeSettingsLocal = Boolean(payload?.includeClaudeSettingsLocal || payload?.include_claude_settings_local);
+  const plan = resolveWorkspaceGitExcludePlan(workspacePath, payload?.gitRootPath || payload?.git_root_path, {
+    includeClaudeSettingsLocal,
+  });
+  const excludeFile = plan.excludeFilePath;
+  const rawBefore = fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile, "utf8") : "";
+  const lineSet = new Set(
+    rawBefore
+      .split(/\r?\n/u)
+      .map((line) => line.trim())
+      .filter((line) => line && !line.startsWith("#"))
+  );
+
+  const addedEntries = [];
+  const existingEntries = [];
+  for (const entry of plan.entries) {
+    if (lineSet.has(entry.pattern)) {
+      existingEntries.push(entry);
+    } else {
+      addedEntries.push(entry);
+    }
+  }
+
+  if (addedEntries.length > 0) {
+    const needsSeparator = rawBefore.length > 0 && !rawBefore.endsWith("\n");
+    const lines = [];
+    if (needsSeparator) lines.push("");
+    if (!rawBefore.includes("# AMO local deployment artifacts")) {
+      lines.push("# AMO local deployment artifacts");
+    }
+    for (const entry of addedEntries) {
+      lines.push(entry.pattern);
+    }
+    fs.mkdirSync(path.dirname(excludeFile), { recursive: true });
+    fs.appendFileSync(excludeFile, `${lines.join("\n")}\n`, "utf8");
+  }
+
+  const status = inspectWorkspaceGitExclude(workspacePath, plan.gitRootPath, includeClaudeSettingsLocal);
+  recordDebugLog("broker", "workspace.git_exclude.updated", {
+    workspacePath,
+    gitRootPath: plan.gitRootPath,
+    excludeFilePath: excludeFile,
+    addedEntries: addedEntries.map((entry) => entry.pattern),
+    existingEntries: existingEntries.map((entry) => entry.pattern),
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    changed: addedEntries.length > 0,
+    workspacePath,
+    gitRootPath: plan.gitRootPath,
+    gitDirPath: plan.gitDirPath,
+    excludeFilePath: excludeFile,
+    workspaceRelativePath: plan.workspaceRelativePath,
+    entries: plan.entries,
+    addedEntries,
+    existingEntries,
+    includeClaudeSettingsLocal,
+    status,
+  };
+}
 
 function inspectWorkspaceGitExclude(workspacePath, requestedGitRootPath = "", includeClaudeSettingsLocal = false) {
   try {
@@ -201,4 +269,5 @@ function gitExcludePatternToRepoPath(pattern) {
 module.exports = {
   inspectWorkspaceGitExclude,
   resolveWorkspaceGitExcludePlan,
+  updateWorkspaceGitExclude,
 };

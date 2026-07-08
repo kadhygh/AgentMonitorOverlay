@@ -3,25 +3,18 @@ const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
 const {
-  AMO_CANVAS_MANAGER,
   AMO_CANVAS_PATH,
-  AMO_CANVAS_TYPE,
-  AMO_CANVASES_PATH,
   AMO_DIR,
-  AMO_NOTE_INDEX_PATH,
   AMO_SCHEMA_VERSION,
-  AMO_SESSION_GENERATED_PATH,
   AMO_SESSIONS_PATH,
-  AMO_WORK_CANVASES_PATH,
   CANVAS_NODE_MARGIN_X,
   CANVAS_NODE_MARGIN_Y,
-  OBSIDIAN_PLUGIN_ID,
   REPLY_NODE_GAP_X,
   REPLY_NODE_GAP_Y,
   REPLY_NODE_HEIGHT,
   REPLY_NODE_WIDTH,
 } = require("./lib/amo-constants");
-const { appendConversationNoteToCanvas, ensureCanvas, updateCanvasNoteDisplayTitle } = require("./lib/canvas-writer");
+const { appendConversationNoteToCanvas, updateCanvasNoteDisplayTitle } = require("./lib/canvas-writer");
 const { readConversationNoteIndex, upsertConversationNoteIndex, writePromptNote, writeReplyNote } = require("./lib/conversation-artifacts");
 const { CORS_HEADERS, httpError, readJsonBody, sendEmpty, sendJson } = require("./lib/http");
 const { createDebugLogStore } = require("./lib/debug");
@@ -30,10 +23,7 @@ const { normalizeInteger, normalizeText } = require("./lib/normalize");
 const { createSessionStore } = require("./lib/session-store");
 const {
   attachObsidianPluginHealth,
-  installObsidianPlugin,
-  inspectObsidianPluginHealth,
   normalizeCanvasAppendDirection,
-  normalizeComparablePath,
   registerObsidianVault,
 } = require("./lib/obsidian-vault");
 const {
@@ -44,13 +34,17 @@ const {
   targetBindingFromWindowHint,
   windowHintFromWindowTarget,
 } = require("./lib/target-binding");
-const { launchCliInTerminal, spawnDetached } = require("./lib/terminal-launch");
-const { normalizeNoteDisplayTitle, sanitizeFilePart, sanitizeObsidianFileNamePart, trimMessage } = require("./lib/text-format");
+const { normalizeNoteDisplayTitle, sanitizeObsidianFileNamePart, trimMessage } = require("./lib/text-format");
 const { enrollWorkspace } = require("./lib/workspace-deploy");
-const { inspectWorkspaceGitExclude, resolveWorkspaceGitExcludePlan } = require("./lib/workspace-git-exclude");
+const { updateWorkspaceGitExclude } = require("./lib/workspace-git-exclude");
 const { inspectWorkspace, resolveWorkspaceVaultRoot } = require("./lib/workspace-inspect");
+const { launchWorkspace } = require("./lib/workspace-launch");
 const {
-  ensureInsideDirectory,
+  cleanWorkspaceVault,
+  inspectWorkspaceMaintenance,
+  updateWorkspaceObsidianPlugin,
+} = require("./lib/workspace-maintenance");
+const {
   readJsonFile,
   readJsonFileStrict,
   readJsonTextFile,
@@ -176,30 +170,30 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/workspaces/git-exclude") {
       const payload = await readJsonBody(req);
-      return sendJson(res, 200, updateWorkspaceGitExclude(payload));
+      return sendJson(res, 200, updateWorkspaceGitExclude(payload, { recordDebugLog }));
     }
 
     if (req.method === "POST" && url.pathname === "/api/workspaces/launch") {
       const payload = await readJsonBody(req);
-      const result = await launchWorkspace(payload);
+      const result = await launchWorkspace(payload, { sessions, recordDebugLog });
       return sendJson(res, 200, result);
     }
 
     if (req.method === "POST" && url.pathname === "/api/workspaces/status") {
       const payload = await readJsonBody(req);
-      return sendJson(res, 200, inspectWorkspaceMaintenance(payload));
+      return sendJson(res, 200, inspectWorkspaceMaintenance(payload, { baseUrl, recordDebugLog }));
     }
 
     if (req.method === "POST" && url.pathname === "/api/workspaces/clean-vault") {
       const payload = await readJsonBody(req);
-      const result = cleanWorkspaceVault(payload);
+      const result = cleanWorkspaceVault(payload, { baseUrl, sessions, publishSessionChanged, recordDebugLog });
       persistSnapshot();
       return sendJson(res, 200, result);
     }
 
     if (req.method === "POST" && url.pathname === "/api/workspaces/update-obsidian-plugin") {
       const payload = await readJsonBody(req);
-      const result = updateWorkspaceObsidianPlugin(payload);
+      const result = updateWorkspaceObsidianPlugin(payload, { baseUrl, recordDebugLog });
       persistSnapshot();
       publishSessionChanged("obsidian-plugin-update", null);
       return sendJson(res, 200, result);
@@ -462,597 +456,6 @@ function publishSessionChanged(reason, session) {
     deliveredCount,
     failedCount,
     durationMs: Date.now() - publishStartedAtMs,
-  });
-}
-
-function updateWorkspaceGitExclude(payload) {
-  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
-  const includeClaudeSettingsLocal = Boolean(payload?.includeClaudeSettingsLocal || payload?.include_claude_settings_local);
-  const plan = resolveWorkspaceGitExcludePlan(workspacePath, payload?.gitRootPath || payload?.git_root_path, {
-    includeClaudeSettingsLocal,
-  });
-  const excludeFile = plan.excludeFilePath;
-  const rawBefore = fs.existsSync(excludeFile) ? fs.readFileSync(excludeFile, "utf8") : "";
-  const lineSet = new Set(
-    rawBefore
-      .split(/\r?\n/u)
-      .map((line) => line.trim())
-      .filter((line) => line && !line.startsWith("#"))
-  );
-
-  const addedEntries = [];
-  const existingEntries = [];
-  for (const entry of plan.entries) {
-    if (lineSet.has(entry.pattern)) {
-      existingEntries.push(entry);
-    } else {
-      addedEntries.push(entry);
-    }
-  }
-
-  if (addedEntries.length > 0) {
-    const needsSeparator = rawBefore.length > 0 && !rawBefore.endsWith("\n");
-    const lines = [];
-    if (needsSeparator) lines.push("");
-    if (!rawBefore.includes("# AMO local deployment artifacts")) {
-      lines.push("# AMO local deployment artifacts");
-    }
-    for (const entry of addedEntries) {
-      lines.push(entry.pattern);
-    }
-    fs.mkdirSync(path.dirname(excludeFile), { recursive: true });
-    fs.appendFileSync(excludeFile, `${lines.join("\n")}\n`, "utf8");
-  }
-
-  const status = inspectWorkspaceGitExclude(workspacePath, plan.gitRootPath, includeClaudeSettingsLocal);
-  recordDebugLog("broker", "workspace.git_exclude.updated", {
-    workspacePath,
-    gitRootPath: plan.gitRootPath,
-    excludeFilePath: excludeFile,
-    addedEntries: addedEntries.map((entry) => entry.pattern),
-    existingEntries: existingEntries.map((entry) => entry.pattern),
-  });
-
-  return {
-    ok: true,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    changed: addedEntries.length > 0,
-    workspacePath,
-    gitRootPath: plan.gitRootPath,
-    gitDirPath: plan.gitDirPath,
-    excludeFilePath: excludeFile,
-    workspaceRelativePath: plan.workspaceRelativePath,
-    entries: plan.entries,
-    addedEntries,
-    existingEntries,
-    includeClaudeSettingsLocal,
-    status,
-  };
-}
-
-async function launchWorkspace(payload) {
-  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
-  const adapterId = normalizeText(payload?.adapterId || payload?.adapter_id || payload?.adapter);
-  const resumeSessionId = normalizeText(payload?.sessionId || payload?.session_id || payload?.resumeSessionId || payload?.resume_session_id);
-  const supportedLaunchIds = new Set(["codex-cli", "claude-cli", "codex-app"]);
-  if (!supportedLaunchIds.has(adapterId)) {
-    throw httpError(400, "unsupported_launch_adapter", `Unsupported launch adapter: ${adapterId || "missing"}`);
-  }
-
-  const amoRoot = path.join(workspacePath, AMO_DIR);
-  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
-  if (!workspace || !workspace.workspaceId) {
-    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
-  }
-
-  if (adapterId !== "codex-app") {
-    const enrollment = readJsonFile(path.join(amoRoot, "enrollment.json"), null);
-    const installedAdapters = Array.isArray(enrollment?.adapters) ? enrollment.adapters : [];
-    const installed = installedAdapters.some((adapter) => normalizeText(adapter?.id) === adapterId);
-    if (!installed) {
-      throw httpError(400, "adapter_not_installed", `${adapterId} is not deployed in this workspace`);
-    }
-  }
-
-  const projectName = path.basename(workspacePath);
-  const startedAt = new Date().toISOString();
-  const codexLaunchRoute =
-    adapterId === "codex-cli" && resumeSessionId
-      ? codexCliLaunchRoute({ workspacePath, projectName, sessionId: resumeSessionId })
-      : null;
-  let launch;
-  if (adapterId === "codex-cli") {
-    launch = await launchCliInTerminal({
-      workspacePath,
-      title: codexLaunchRoute?.title || `AMO Codex CLI - ${projectName}`,
-      command: "codex",
-      args: resumeSessionId ? ["resume", resumeSessionId] : [],
-      recordDebugLog,
-    });
-  } else if (adapterId === "claude-cli") {
-    launch = await launchCliInTerminal({
-      workspacePath,
-      title: `AMO Claude CLI - ${projectName}`,
-      command: "claude",
-      args: [],
-      recordDebugLog,
-    });
-  } else {
-    launch = await spawnDetached("codex", ["app", workspacePath], workspacePath);
-  }
-
-  recordDebugLog("broker", "workspace.launch", {
-    workspacePath,
-    adapterId,
-    projectName,
-    pid: launch.pid || null,
-    command: launch.command,
-    args: launch.args,
-    resumeSessionId: resumeSessionId || null,
-    titleToken: codexLaunchRoute?.windowHint.titleToken || null,
-  });
-
-  const launchedSession =
-    codexLaunchRoute
-      ? bindLaunchedCodexCliTarget({
-          sessionId: resumeSessionId,
-          workspacePath,
-          projectName,
-          windowHint: codexLaunchRoute.windowHint,
-          launchedAt: startedAt,
-          launch,
-        })
-      : null;
-
-  return {
-    ok: true,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    workspaceId: workspace.workspaceId,
-    workspacePath,
-    adapterId,
-    projectName,
-    launchedAt: startedAt,
-    pid: launch.pid || null,
-    command: launch.command,
-    args: launch.args,
-    windowHint: launchedSession?.windowHint || codexLaunchRoute?.windowHint || null,
-    targetBinding: launchedSession?.targetBinding || null,
-    session: launchedSession,
-    message:
-      adapterId === "codex-app"
-        ? `Opened Codex App for ${projectName}.`
-        : resumeSessionId && adapterId === "codex-cli"
-        ? `Launched Codex CLI resume for ${projectName}.`
-        : `Launched ${adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI"} for ${projectName}.`,
-  };
-}
-
-function codexCliLaunchRoute({ workspacePath, projectName, sessionId }) {
-  const projectSlug = sanitizeFilePart(projectName).toLowerCase();
-  const sessionSlug = crypto.createHash("sha1").update(sessionId).digest("hex").slice(0, 10);
-  const titleToken = `[AMO:codex:${projectSlug}:${sessionSlug}]`;
-  const title = `${titleToken} Codex CLI - ${projectName}`;
-
-  return {
-    title,
-    windowHint: {
-      process: null,
-      title,
-      titleToken,
-      titleContains: ["Codex", projectName, sessionId],
-      project: projectName,
-      cwd: workspacePath,
-      tool: "codex",
-      pid: null,
-      hwnd: null,
-      boundAt: null,
-      boundBy: "workspace-launch",
-      boundLabel: title,
-    },
-  };
-}
-
-function bindLaunchedCodexCliTarget({ sessionId, workspacePath, projectName, windowHint, launchedAt, launch }) {
-  const existing = sessions.get(sessionId);
-  if (!existing) {
-    return null;
-  }
-
-  const boundHint = {
-    ...(existing.windowHint || {}),
-    ...windowHint,
-    pid: null,
-    hwnd: null,
-    boundAt: launchedAt,
-    boundBy: "workspace-launch",
-    boundLabel: windowHint.boundLabel || windowHint.title || `Codex CLI - ${projectName}`,
-  };
-  const targetBinding = normalizeTargetBinding(
-    {
-      type: "codex-cli-session",
-      label: "Codex CLI",
-      sessionId,
-      workspacePath,
-      boundAt: launchedAt,
-      boundBy: "workspace-launch",
-    },
-    sessionId,
-    launchedAt
-  );
-  const session = {
-    ...existing,
-    cwd: existing.cwd || workspacePath,
-    workspacePath: existing.workspacePath || workspacePath,
-    windowHint: boundHint,
-    targetBinding,
-    lastEvent: "TargetLaunched",
-    lastMessage: `Launched Codex CLI target for ${projectName}.`,
-    updatedAt: launchedAt,
-    eventCount: (existing.eventCount || 0) + 1,
-    processInfo: {
-      ...(existing.processInfo || {}),
-      launchedPid: launch?.pid || null,
-      launchedCommand: launch?.command || null,
-      launchedArgs: Array.isArray(launch?.args) ? launch.args : [],
-      launchedAt,
-    },
-  };
-
-  sessions.set(sessionId, session);
-  recordDebugLog("broker", "workspace.launch.target_bound", {
-    sessionId,
-    workspacePath,
-    titleToken: boundHint.titleToken || null,
-    launchedPid: launch?.pid || null,
-  });
-
-  return session;
-}
-
-function inspectWorkspaceMaintenance(payload) {
-  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
-  const status = workspaceMaintenanceSnapshot(workspacePath);
-  recordDebugLog("broker", "workspace.maintenance.status", {
-    workspacePath,
-    issueCount: status.issues.length,
-    replyNotes: status.counts.replyNotes,
-    promptNotes: status.counts.promptNotes,
-  });
-  return status;
-}
-
-function cleanWorkspaceVault(payload) {
-  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
-  const statusBefore = workspaceMaintenanceSnapshot(workspacePath);
-  const workspace = readJsonFile(path.join(workspacePath, AMO_DIR, "workspace.json"), null);
-  if (!workspace || !workspace.workspaceId) {
-    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
-  }
-
-  const amoRoot = path.join(workspacePath, AMO_DIR);
-  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, workspace.projectName || path.basename(workspacePath));
-  const sessionsPath = path.join(vaultRoot, AMO_SESSIONS_PATH);
-  const canvasesPath = path.join(vaultRoot, AMO_CANVASES_PATH);
-  const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
-  const legacyRepliesPath = path.join(vaultRoot, "Replies");
-  const legacyPromptsPath = path.join(vaultRoot, "Prompts");
-  const legacyCanvasPath = path.join(vaultRoot, "AgentFlow.canvas");
-  ensureInsideDirectory(vaultRoot, sessionsPath);
-  ensureInsideDirectory(vaultRoot, canvasesPath);
-  ensureInsideDirectory(vaultRoot, canvasPath);
-  ensureInsideDirectory(vaultRoot, legacyRepliesPath);
-  ensureInsideDirectory(vaultRoot, legacyPromptsPath);
-  ensureInsideDirectory(vaultRoot, legacyCanvasPath);
-
-  fs.rmSync(sessionsPath, { recursive: true, force: true });
-  fs.rmSync(legacyRepliesPath, { recursive: true, force: true });
-  fs.rmSync(legacyPromptsPath, { recursive: true, force: true });
-  fs.rmSync(legacyCanvasPath, { force: true });
-  fs.mkdirSync(sessionsPath, { recursive: true });
-  fs.mkdirSync(path.join(vaultRoot, AMO_WORK_CANVASES_PATH), { recursive: true });
-  ensureCanvas(canvasPath, {
-    workspaceId: workspace.workspaceId,
-    workspacePath,
-    projectName: workspace.projectName || path.basename(workspacePath),
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    reset: true,
-  });
-  resetWorkspaceCanvasBindings(amoRoot);
-  resetWorkspaceNoteIndex(amoRoot);
-
-  const clearedSessions = clearWorkspaceBridgeState(workspacePath, vaultRoot);
-  const statusAfter = workspaceMaintenanceSnapshot(workspacePath);
-  recordDebugLog("broker", "workspace.maintenance.cleaned", {
-    workspacePath,
-    clearedSessions,
-    before: statusBefore.counts,
-    after: statusAfter.counts,
-  });
-
-  return {
-    ok: true,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    workspacePath,
-    vaultRoot,
-    clearedSessions,
-    before: statusBefore,
-    after: statusAfter,
-  };
-}
-
-function updateWorkspaceObsidianPlugin(payload) {
-  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
-  const statusBefore = workspaceMaintenanceSnapshot(workspacePath);
-  const workspace = readJsonFile(path.join(workspacePath, AMO_DIR, "workspace.json"), null);
-  if (!workspace || !workspace.workspaceId) {
-    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
-  }
-
-  const amoRoot = path.join(workspacePath, AMO_DIR);
-  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, workspace.projectName || path.basename(workspacePath));
-  if (!fs.existsSync(vaultRoot)) {
-    throw httpError(409, "vault_missing", "AMO Obsidian vault is missing; redeploy the workspace to recreate it.");
-  }
-  ensureInsideDirectory(workspacePath, vaultRoot);
-
-  const pluginInstall = installObsidianPlugin(vaultRoot, workspacePath, { bridgeUrl: baseUrl() });
-  const statusAfter = workspaceMaintenanceSnapshot(workspacePath);
-  recordDebugLog("broker", "workspace.obsidian_plugin.updated", {
-    workspacePath,
-    vaultRoot,
-    before: statusBefore.pluginHealth,
-    after: statusAfter.pluginHealth,
-    installedFiles: pluginInstall.installedFiles,
-  });
-
-  return {
-    ok: true,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    workspacePath,
-    vaultRoot,
-    installedFiles: pluginInstall.installedFiles,
-    before: statusBefore,
-    after: statusAfter,
-  };
-}
-
-function workspaceMaintenanceSnapshot(workspacePath) {
-  const amoRoot = path.join(workspacePath, AMO_DIR);
-  const workspaceFile = path.join(amoRoot, "workspace.json");
-  const workspace = readJsonFile(workspaceFile, null);
-  if (!workspace || !workspace.workspaceId) {
-    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
-  }
-
-  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, path.basename(workspacePath));
-  const sessionsPath = path.join(vaultRoot, AMO_SESSIONS_PATH);
-  const generatedPath = path.join(sessionsPath, "*", ...AMO_SESSION_GENERATED_PATH.split("/"));
-  const workCanvasesPath = path.join(vaultRoot, AMO_WORK_CANVASES_PATH);
-  const canvasPath = path.join(vaultRoot, AMO_CANVAS_PATH);
-  const pluginDir = path.join(vaultRoot, ".obsidian", "plugins", OBSIDIAN_PLUGIN_ID);
-  const canvasInfo = inspectCanvasFile(canvasPath);
-  const pluginHealth = inspectObsidianPluginHealth(vaultRoot, { expectedBridgeUrl: baseUrl() });
-  const generatedCounts = countConversationGeneratedNotes(sessionsPath);
-  const issues = [];
-
-  if (!fs.existsSync(amoRoot)) issues.push(".amo directory is missing");
-  if (!fs.existsSync(workspaceFile)) issues.push(".amo/workspace.json is missing");
-  if (!fs.existsSync(vaultRoot)) issues.push("obsidian vault is missing");
-  if (!fs.existsSync(sessionsPath)) issues.push("Sessions folder is missing");
-  if (!fs.existsSync(path.dirname(canvasPath))) issues.push("Canvases folder is missing");
-  if (!canvasInfo.exists) {
-    issues.push("AgentFlow.base.canvas is missing");
-  } else if (!canvasInfo.readable) {
-    issues.push("AgentFlow.base.canvas is not valid JSON");
-  } else if (!canvasInfo.amoManaged) {
-    issues.push("AgentFlow.base.canvas is missing AMO managed marker");
-  }
-  if (pluginHealth.issues?.length) {
-    issues.push(...pluginHealth.issues);
-  }
-
-  return {
-    ok: issues.length === 0,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    workspaceId: workspace.workspaceId,
-    workspacePath,
-    projectName: normalizeText(workspace.projectName) || path.basename(workspacePath),
-    amoRoot,
-    vaultRoot,
-    paths: {
-      workspace: workspacePath,
-      amoRoot,
-      vaultRoot,
-      sessions: sessionsPath,
-      generated: generatedPath,
-      workCanvases: workCanvasesPath,
-      canvas: canvasPath,
-      replies: path.join(vaultRoot, "Replies"),
-      prompts: path.join(vaultRoot, "Prompts"),
-      plugin: pluginDir,
-    },
-    exists: {
-      amoRoot: fs.existsSync(amoRoot),
-      workspaceJson: fs.existsSync(workspaceFile),
-      vaultRoot: fs.existsSync(vaultRoot),
-      sessions: fs.existsSync(sessionsPath),
-      generated: fs.existsSync(sessionsPath),
-      workCanvases: fs.existsSync(workCanvasesPath),
-      canvas: canvasInfo.exists,
-      replies: fs.existsSync(path.join(vaultRoot, "Replies")),
-      prompts: fs.existsSync(path.join(vaultRoot, "Prompts")),
-      plugin: fs.existsSync(pluginDir),
-    },
-    counts: {
-      replyNotes: generatedCounts.replyNotes,
-      promptNotes: generatedCounts.promptNotes,
-      generatedNotes: generatedCounts.totalNotes,
-      sessionFolders: generatedCounts.sessionFolders,
-      canvasNodes: canvasInfo.nodeCount,
-      canvasEdges: canvasInfo.edgeCount,
-    },
-    canvas: canvasInfo,
-    pluginHealth,
-    issues,
-    checkedAt: new Date().toISOString(),
-  };
-}
-
-function inspectCanvasFile(canvasPath) {
-  if (!fs.existsSync(canvasPath)) {
-    return {
-      exists: false,
-      readable: false,
-      amoManaged: false,
-      nodeCount: 0,
-      edgeCount: 0,
-      marker: null,
-    };
-  }
-
-  const canvas = readJsonFile(canvasPath, null);
-  if (!canvas || typeof canvas !== "object" || Array.isArray(canvas)) {
-    return {
-      exists: true,
-      readable: false,
-      amoManaged: false,
-      nodeCount: 0,
-      edgeCount: 0,
-      marker: null,
-    };
-  }
-
-  const marker = canvas.amo && typeof canvas.amo === "object" && !Array.isArray(canvas.amo) ? canvas.amo : null;
-  return {
-    exists: true,
-    readable: true,
-    amoManaged: Boolean(marker && marker.managedBy === AMO_CANVAS_MANAGER && marker.canvasType === AMO_CANVAS_TYPE),
-    nodeCount: Array.isArray(canvas.nodes) ? canvas.nodes.length : 0,
-    edgeCount: Array.isArray(canvas.edges) ? canvas.edges.length : 0,
-    marker: marker
-      ? {
-          schemaVersion: marker.schemaVersion ?? null,
-          canvasType: normalizeText(marker.canvasType),
-          managedBy: normalizeText(marker.managedBy),
-          workspaceId: normalizeText(marker.workspaceId),
-          labelMode: normalizeText(marker.display?.labelMode),
-          hidePropertiesByDefault:
-            typeof marker.display?.hidePropertiesByDefault === "boolean"
-              ? marker.display.hidePropertiesByDefault
-              : null,
-        }
-      : null,
-  };
-}
-
-function countFilesByExtension(root, extension) {
-  if (!fs.existsSync(root)) return 0;
-  let count = 0;
-  for (const entry of fs.readdirSync(root, { withFileTypes: true })) {
-    const entryPath = path.join(root, entry.name);
-    if (entry.isDirectory()) {
-      count += countFilesByExtension(entryPath, extension);
-    } else if (entry.isFile() && entry.name.toLowerCase().endsWith(extension.toLowerCase())) {
-      count += 1;
-    }
-  }
-  return count;
-}
-
-function countConversationGeneratedNotes(sessionsPath) {
-  const result = {
-    replyNotes: 0,
-    promptNotes: 0,
-    totalNotes: 0,
-    sessionFolders: 0,
-  };
-  if (!fs.existsSync(sessionsPath)) return result;
-
-  for (const sessionEntry of fs.readdirSync(sessionsPath, { withFileTypes: true })) {
-    if (!sessionEntry.isDirectory()) continue;
-    result.sessionFolders += 1;
-    const generatedDir = path.join(sessionsPath, sessionEntry.name, ...AMO_SESSION_GENERATED_PATH.split("/"));
-    if (!fs.existsSync(generatedDir)) continue;
-    for (const entry of fs.readdirSync(generatedDir, { withFileTypes: true })) {
-      if (!entry.isFile() || !entry.name.toLowerCase().endsWith(".md")) continue;
-      result.totalNotes += 1;
-      if (/^(?:\d+ reply|reply \d+)\.md$/iu.test(entry.name)) {
-        result.replyNotes += 1;
-      } else if (/^(?:\d+ prompt|prompt \d+)\.md$/iu.test(entry.name)) {
-        result.promptNotes += 1;
-      }
-    }
-  }
-
-  return result;
-}
-
-function clearWorkspaceBridgeState(workspacePath, vaultRoot) {
-  const workspaceKey = normalizeComparablePath(workspacePath);
-  const vaultKey = normalizeComparablePath(vaultRoot);
-  let cleared = 0;
-  const now = new Date().toISOString();
-
-  for (const [sessionId, session] of sessions.entries()) {
-    const sessionWorkspaceKey = normalizeComparablePath(session.workspacePath || session.cwd);
-    const sessionVaultKey = normalizeComparablePath(session.vaultRoot);
-    if (sessionWorkspaceKey !== workspaceKey && sessionVaultKey !== vaultKey) {
-      continue;
-    }
-
-    const nextSession = {
-      ...session,
-      lastReplyAt: null,
-      lastReplyNote: null,
-      lastReplyNoteAbsolutePath: null,
-      lastPromptAt: null,
-      lastPromptNote: null,
-      lastPromptNoteAbsolutePath: null,
-      lastPromptCanvasNodeId: null,
-      lastPromptHash: null,
-      lastPromptPendingPromptId: null,
-      lastPromptSource: null,
-      sentPromptId: null,
-      sentPromptNote: null,
-      sentPromptNoteAbsolutePath: null,
-      sentPromptCanvasNodeId: null,
-      sentPromptRecordedAt: null,
-      canvasPath: AMO_CANVAS_PATH,
-      canvasAbsolutePath: path.join(vaultRoot, AMO_CANVAS_PATH),
-      canvasNodeId: null,
-      pendingPromptId: null,
-      pendingPrompt: null,
-      pendingPromptCreatedAt: null,
-      pendingPromptCopiedAt: null,
-      pendingAnnotationCount: null,
-      pendingAnnotationSource: null,
-      updatedAt: now,
-    };
-    sessions.set(sessionId, nextSession);
-    publishSessionChanged("workspace-clean", nextSession);
-    cleared += 1;
-  }
-
-  return cleared;
-}
-
-function resetWorkspaceCanvasBindings(amoRoot) {
-  const bindingsPath = path.join(amoRoot, "state", "bindings.json");
-  fs.mkdirSync(path.dirname(bindingsPath), { recursive: true });
-  writeJsonFile(bindingsPath, {
-    schemaVersion: AMO_SCHEMA_VERSION,
-    sessions: {},
-  });
-}
-
-function resetWorkspaceNoteIndex(amoRoot) {
-  const noteIndexPath = path.join(amoRoot, AMO_NOTE_INDEX_PATH);
-  fs.mkdirSync(path.dirname(noteIndexPath), { recursive: true });
-  writeJsonFile(noteIndexPath, {
-    schemaVersion: AMO_SCHEMA_VERSION,
-    notes: {},
-    byPath: {},
   });
 }
 
