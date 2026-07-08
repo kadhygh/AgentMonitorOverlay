@@ -19,7 +19,7 @@ The active long-task execution guide is `docs/refactor-execution-guide.md`. Use 
 
 | File | Current Size | Problem |
 | --- | ---: | --- |
-| `broker/server.js` | ~2950 lines | HTTP routing, session mutation, workspace deployment/maintenance/launch, Obsidian bridge flows, and route handlers are still coupled. |
+| `broker/server.js` | ~1891 lines | HTTP routing, workspace maintenance/launch, Obsidian bridge flows, and route handlers are still coupled after session-store and workspace inspect/deploy extraction. |
 | `overlay/src/App.tsx` | ~2830 lines | Main overlay session polling, target activation, Obsidian open/recovery, workspace panel actions, card drag, window bind drag, and resize logic still live in one root. |
 | `broker/assets/obsidian/md-anno-tools/src/plugin.ts` | ~2165 lines | Plugin lifecycle, Canvas actions, annotation source edits, bridge actions, note title/property behavior, and work-canvas helpers remain concentrated. |
 | `overlay/src-tauri/src/windows.rs` | ~592 lines | Native window enumeration/activation is the only Tauri file above 500 lines; it is not urgent because `lib.rs` is already thin. |
@@ -904,4 +904,18 @@ Manual smoke:
   - `node --check broker/lib/session-store.js`
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17695`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17696`
+  - `git diff --check`
+
+### 2026-07-09: Broker Workspace Inspect/Deploy Extracted
+
+- Added `broker/lib/workspace-inspect.js` for vault-root planning, workspace state detection, adapter deployment coverage, deployability plans, and workspace IDs.
+- Added `broker/lib/workspace-deploy.js` for workspace enrollment, adapter metadata writes, generated hook script install, Codex/Claude config merges, AMO vault creation, plugin install, and `.amo/.gitignore`.
+- Kept workspace maintenance, Git exclude update, launch, generated note/canvas workflows, and Obsidian bridge routes in `broker/server.js` for the next broker subphases.
+- Reduced `broker/server.js` from about 2445 lines to about 1891 lines while keeping `workspace-inspect.js` at about 372 lines and `workspace-deploy.js` at about 253 lines.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/workspace-inspect.js`
+  - `node --check broker/lib/workspace-deploy.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17697`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17698`
   - `git diff --check`

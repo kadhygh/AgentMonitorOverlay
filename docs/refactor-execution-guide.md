@@ -38,11 +38,13 @@ Previous refactor progress already paid off:
 - `overlay/src/styles.css` is now import-only.
 - `overlay/src-tauri/src/lib.rs` is now a small command-registration root.
 - Many broker helpers already live in `broker/lib/`.
+- Broker session state now lives in `broker/lib/session-store.js`.
+- Broker workspace inspect/deploy now lives in `broker/lib/workspace-inspect.js` and `broker/lib/workspace-deploy.js`.
 - Several Obsidian plugin helper families already live under `src/editor`, `src/canvas`, `src/annotations`, `src/note`, and `src/protocol`.
 
 Remaining hotspots are historical orchestration roots:
 
-- `broker/server.js`
+- `broker/server.js` (about 1891 lines after B1/B2 extraction)
 - `overlay/src/App.tsx`
 - `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
 

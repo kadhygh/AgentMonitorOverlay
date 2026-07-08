@@ -44,9 +44,10 @@ Expected ownership after refactor:
 - `lib/target-binding.js`: window, Codex CLI, and Codex App target binding normalization.
 - `lib/terminal-launch.js`: detached terminal/process launch helpers.
 - `lib/text-format.js`: shared note title, filename, and preview text formatting helpers.
+- `lib/workspace-inspect.js`: workspace status, vault-root planning, adapter deployment coverage, and deployability plans.
+- `lib/workspace-deploy.js`: workspace enrollment, adapter hook install/merge, AMO vault creation, plugin install, and `.amo/.gitignore`.
 - `lib/workspace-git-exclude.js`: project-local Git exclude inspection and update planning.
-- `lib/workspace-*.js`: workspace inspection, deployment, maintenance, git exclude, and launch.
-- `lib/obsidian-vault.js`: vault registry, runtime state, plugin install/health.
+- `lib/workspace-*.js`: workspace maintenance and launch boundaries as they continue to move out of `server.js`.
 - `lib/conversation-artifacts.js`: prompt/reply notes, note index, session layout v2 files.
 - `lib/canvas-writer.js`: JSON Canvas append and metadata. Must not depend on Obsidian live DOM.
 - `hooks/*.js`: generated hook script text and hook metadata.
@@ -175,12 +176,14 @@ The broker extraction has started. These boundaries have already moved out of `b
 - detached terminal/process launch helpers: `broker/lib/terminal-launch.js`
 - shared note title, filename, and preview text formatting helpers: `broker/lib/text-format.js`
 - project-local Git exclude inspection and update planning: `broker/lib/workspace-git-exclude.js`
+- workspace inspection, vault-root planning, adapter deployability, and adapter deployment coverage: `broker/lib/workspace-inspect.js`
+- workspace enrollment, hook install/merge, AMO vault creation, plugin install, and `.amo/.gitignore`: `broker/lib/workspace-deploy.js`
 - workspace path, Git root, JSON read/write, and safety helpers: `broker/lib/filesystem.js`
 - Codex/Claude hook event lists, generated hook script text, and CLI config merge helpers: `broker/hooks/codex.js`, `broker/hooks/claude.js`
 
 The remaining source hotspots are:
 
-- `broker/server.js` (about 2445 lines after session-store extraction)
+- `broker/server.js` (about 1891 lines after workspace inspect/deploy extraction)
 - `overlay/src/App.tsx`
 - `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
 - `overlay/src-tauri/src/windows.rs`
