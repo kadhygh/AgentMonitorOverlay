@@ -1450,7 +1450,8 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
   async insertAnnotationFromCurrentSelection() {
     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (activeView && activeView.editor) {
+    const editorSelection = activeView && activeView.editor ? activeView.editor.getSelection() : "";
+    if (activeView && activeView.editor && editorSelection.trim().length > 0) {
       this.wrapSelectionWithAnnotation(activeView.editor);
       this.setOperationStatus("Inserted annotation marker.", "success");
       return;
@@ -1459,7 +1460,13 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     const selectedText = getWindowSelectionText();
     const file = this.getActiveMarkdownFile();
     if (selectedText && file) {
-      await this.appendReferencedAnnotationToFile(file, selectedText);
+      await this.insertReferencedAnnotationNearTextInFile(file, selectedText);
+      return;
+    }
+
+    if (activeView && activeView.editor) {
+      this.wrapSelectionWithAnnotation(activeView.editor);
+      this.setOperationStatus("Inserted annotation marker.", "success");
       return;
     }
 
@@ -1491,6 +1498,135 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     await this.appendAnnotationBlockToFile(file, buildReferencedAnnotationMarkup(content));
     this.setOperationStatus("Referenced annotation appended to " + file.path + ".", "success");
     new Notice("Referenced annotation appended.");
+  }
+
+  async insertReferencedAnnotationNearTextInFile(file, reference) {
+    const content = normalizeAnnotationContent(reference);
+    if (!content) {
+      new Notice("No selected text to quote.");
+      return false;
+    }
+
+    const markdown = await this.app.vault.cachedRead(file as any);
+    const range = this.findUnannotatedMarkdownRange(markdown, content);
+    if (!range) {
+      this.setOperationStatus(
+        "Could not locate the selected text in " + file.path + ". Switch to editing mode and try again.",
+        "error"
+      );
+      new Notice("Could not locate selected text in this note. Switch to editing mode and try again.");
+      return false;
+    }
+
+    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
+    const insertAt = this.endOfLineOffset(source, range.end);
+    const lineStart = source.lastIndexOf("\n", Math.max(0, insertAt - 1)) + 1;
+    const lineText = source.slice(lineStart, insertAt);
+    const leading = lineText.trim().length > 0 ? "\n\n" : "";
+    const block = leading + buildReferencedAnnotationMarkup(content).replace(/\n\n\[\/anno\]$/u, "\n\n\n[/anno]");
+    const nextContent = source.slice(0, insertAt) + block + source.slice(insertAt);
+
+    await this.app.vault.modify(file, nextContent);
+    this.setOperationStatus("Inserted referenced annotation near selection in " + file.path + ".", "success");
+    new Notice("Referenced annotation inserted.");
+    this.refreshPanels();
+    return true;
+  }
+
+  findUnannotatedMarkdownRange(markdown, selectedText) {
+    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
+    const content = normalizeAnnotationContent(selectedText);
+    if (!source || !content) return null;
+
+    const exact = this.findUnannotatedExactRange(source, content);
+    if (exact) return exact;
+
+    return this.findUnannotatedWhitespaceRange(source, content);
+  }
+
+  findUnannotatedExactRange(source, content) {
+    let offset = 0;
+    while (offset <= source.length) {
+      const index = source.indexOf(content, offset);
+      if (index < 0) return null;
+      const range = { start: index, end: index + content.length };
+      if (!this.rangeIntersectsAnnotation(source, range)) return range;
+      offset = index + Math.max(1, content.length);
+    }
+    return null;
+  }
+
+  findUnannotatedWhitespaceRange(source, content) {
+    const haystack = this.normalizeTextWithOffsetMap(source);
+    const needle = this.normalizeSearchText(content);
+    if (!needle) return null;
+
+    let offset = 0;
+    while (offset <= haystack.text.length) {
+      const index = haystack.text.indexOf(needle, offset);
+      if (index < 0) return null;
+      const endIndex = index + needle.length - 1;
+      const range = {
+        start: haystack.startOffsets[index],
+        end: haystack.endOffsets[endIndex],
+      };
+      if (!this.rangeIntersectsAnnotation(source, range)) return range;
+      offset = index + Math.max(1, needle.length);
+    }
+    return null;
+  }
+
+  normalizeTextWithOffsetMap(value) {
+    const source = String(value || "").replace(/\r\n?/gu, "\n");
+    const chars = [];
+    const startOffsets = [];
+    const endOffsets = [];
+    let pendingWhitespaceStart = -1;
+    let pendingWhitespaceEnd = -1;
+
+    for (let index = 0; index < source.length; index += 1) {
+      const char = source[index];
+      if (/\s/u.test(char)) {
+        if (pendingWhitespaceStart < 0) pendingWhitespaceStart = index;
+        pendingWhitespaceEnd = index + 1;
+        continue;
+      }
+
+      if (pendingWhitespaceStart >= 0 && chars.length > 0) {
+        chars.push(" ");
+        startOffsets.push(pendingWhitespaceStart);
+        endOffsets.push(pendingWhitespaceEnd);
+      }
+      pendingWhitespaceStart = -1;
+      pendingWhitespaceEnd = -1;
+
+      chars.push(char);
+      startOffsets.push(index);
+      endOffsets.push(index + 1);
+    }
+
+    return {
+      text: chars.join(""),
+      startOffsets,
+      endOffsets,
+    };
+  }
+
+  normalizeSearchText(value) {
+    return normalizeAnnotationContent(value).replace(/\s+/gu, " ");
+  }
+
+  rangeIntersectsAnnotation(markdown, range) {
+    return extractAnnotationItems(markdown).some((item) => {
+      return range.start < item.endOffset && item.startOffset < range.end;
+    });
+  }
+
+  endOfLineOffset(markdown, offset) {
+    const source = String(markdown || "");
+    const safeOffset = Math.max(0, Math.min(source.length, Number(offset) || 0));
+    const nextLineBreak = source.indexOf("\n", safeOffset);
+    return nextLineBreak >= 0 ? nextLineBreak : source.length;
   }
 
   async appendAnnotationToFile(file, rawContent) {

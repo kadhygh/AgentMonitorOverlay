@@ -65,10 +65,10 @@ export class AmoAnnotationPanelView extends ItemView {
     const canvasFile = this.plugin.getPanelCanvasFile();
     const workspaceState = this.workspaceStateFor(info, canvasFile);
     this.renderHeader(root, workspaceState);
-    this.renderOperationStatus(root);
     this.renderCurrentNote(root, info);
     this.renderActions(root, info, canvasFile, workspaceState);
     this.renderAnnotations(root, info);
+    this.renderOperationStatus(root);
     this.renderDetails(root, info, canvasFile, workspaceState);
 
     this.plugin.debugLog("panel.render.note", {
@@ -104,7 +104,7 @@ export class AmoAnnotationPanelView extends ItemView {
   }
 
   renderCurrentNote(root: HTMLElement, info: any) {
-    const section = root.createDiv({ cls: "amo-panel-section amo-panel-current-note" });
+    const section = root.createDiv({ cls: "amo-panel-current-note-card" });
     section.createEl("h4", { text: "Opened note" });
 
     if (!info.file) {
@@ -127,22 +127,29 @@ export class AmoAnnotationPanelView extends ItemView {
       this.renderTitleEditor(section, info);
     } else {
       const titleRow = section.createDiv({ cls: "amo-panel-current-title-row" });
-      const titleEl = titleRow.createEl(info.isAmoNote ? "button" : "div", {
+      const titleEl = titleRow.createDiv({
         cls: "amo-panel-current-title" + (info.isAmoNote ? " is-editable" : ""),
         text: this.panelTitleForInfo(info),
         attr: info.isAmoNote
           ? {
-              type: "button",
+              role: "button",
+              tabindex: "0",
               title: "Click to edit AMO note title",
             }
           : {},
       });
-      if (titleEl instanceof HTMLButtonElement) {
+      if (info.isAmoNote) {
         titleEl.addEventListener("mousedown", (event) => {
           event.preventDefault();
           event.stopPropagation();
         });
         titleEl.addEventListener("click", () => {
+          this.startTitleEdit(info);
+        });
+        titleEl.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
           this.startTitleEdit(info);
         });
       }
@@ -175,18 +182,19 @@ export class AmoAnnotationPanelView extends ItemView {
 
   renderTitleEditor(container: HTMLElement, info: any) {
     const editor = container.createDiv({ cls: "amo-panel-title-edit" });
-    const input = editor.createEl("input", {
+    const row = editor.createDiv({ cls: "amo-panel-title-edit-row" });
+    const input = row.createEl("textarea", {
       attr: {
-        type: "text",
         placeholder: "AMO note title",
+        rows: "3",
       },
-    }) as HTMLInputElement;
+    }) as HTMLTextAreaElement;
     input.value = this.editingTitleValue;
     input.addEventListener("input", () => {
       this.editingTitleValue = input.value;
     });
     input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
+      if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
         void this.saveTitleEdit(info, input.value);
@@ -201,9 +209,49 @@ export class AmoAnnotationPanelView extends ItemView {
       this.editingTitleValue = input.value;
     });
 
+    const actions = row.createDiv({ cls: "amo-panel-title-edit-actions" });
+    const saveButton = actions.createEl("button", {
+      cls: "amo-panel-title-icon-button",
+      attr: {
+        type: "button",
+        title: "Save title",
+        "aria-label": "Save title",
+      },
+    }) as HTMLButtonElement;
+    setIcon(saveButton, "check");
+    saveButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    saveButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void this.saveTitleEdit(info, input.value);
+    });
+
+    const cancelButton = actions.createEl("button", {
+      cls: "amo-panel-title-icon-button",
+      attr: {
+        type: "button",
+        title: "Cancel title edit",
+        "aria-label": "Cancel title edit",
+      },
+    }) as HTMLButtonElement;
+    setIcon(cancelButton, "x");
+    cancelButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    cancelButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.resetTitleEdit();
+      this.render();
+    });
+
     editor.createDiv({
       cls: "amo-panel-title-edit-hint",
-      text: "Enter saves. Esc cancels. Blur does not save.",
+      text: "Enter saves. Shift+Enter adds a new line. Esc cancels.",
     });
     container.createDiv({
       cls: "amo-panel-current-original-title",
@@ -443,7 +491,13 @@ export class AmoAnnotationPanelView extends ItemView {
       return;
     }
 
-    if (this.plugin.canInsertAnnotationAtActiveEditor() || getWindowSelectionText().length > 0) {
+    const selectedText = getWindowSelectionText();
+    if (selectedText) {
+      await this.plugin.insertReferencedAnnotationNearTextInFile(info.file, selectedText);
+      return;
+    }
+
+    if (this.plugin.canInsertAnnotationAtActiveEditor()) {
       await this.plugin.insertAnnotationFromCurrentSelection();
       return;
     }

@@ -92,11 +92,13 @@ export function removeAmoDisplayHeading(markdown, title, fallbackTitle = ""): st
 
 export function normalizeMarkdownTitle(value): string {
   return String(value || "")
-    .replace(/\r?\n/gu, " ")
-    .replace(/\s+/gu, " ")
-    .replace(/^#+\s*/u, "")
+    .replace(/\r\n?/gu, "\n")
+    .split("\n")
+    .map((line) => line.replace(/\s+/gu, " ").replace(/^#+\s*/u, "").trim())
+    .join("\n")
+    .replace(/\n{3,}/gu, "\n\n")
     .trim()
-    .slice(0, 120);
+    .slice(0, 240);
 }
 
 function parseAmoFrontmatterOnly(markdown): Record<string, string> {

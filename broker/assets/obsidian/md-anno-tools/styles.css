@@ -151,6 +151,8 @@
   font-size: 1.55em;
   font-weight: 700;
   line-height: 1.2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .amo-note-display-subtitle {
@@ -173,6 +175,8 @@
   font-size: 1.55em;
   font-weight: 700;
   line-height: 1.2;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
 }
 
 .amo-note-source-subtitle {
@@ -277,6 +281,7 @@
   border-radius: 6px;
   padding: 8px 10px;
   background: var(--background-secondary);
+  margin-top: 12px;
 }
 
 .amo-panel-status span {
@@ -324,10 +329,18 @@
   white-space: pre-wrap;
 }
 
-.amo-panel-current-note {
+.amo-panel-current-note-card {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  border-left: 3px solid var(--interactive-accent);
+  border-radius: 6px;
+  padding: 8px 10px;
+  background: color-mix(in srgb, var(--interactive-accent) 7%, var(--background-secondary));
+}
+
+.amo-panel-current-note-card h4 {
+  margin-bottom: 2px;
 }
 
 .amo-panel-current-title-row {
@@ -349,14 +362,16 @@
   font-weight: 700;
   line-height: 1.35;
   overflow-wrap: anywhere;
+  white-space: pre-wrap;
   text-align: left;
+  user-select: text;
 }
 
-button.amo-panel-current-title.is-editable {
+.amo-panel-current-title.is-editable {
   cursor: text;
 }
 
-button.amo-panel-current-title.is-editable:hover {
+.amo-panel-current-title.is-editable:hover {
   color: var(--interactive-accent);
 }
 
@@ -389,9 +404,41 @@ button.amo-panel-current-title.is-editable:hover {
   gap: 5px;
 }
 
-.amo-panel-title-edit input {
+.amo-panel-title-edit-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 6px;
+  align-items: start;
+}
+
+.amo-panel-title-edit textarea {
   min-width: 0;
   width: 100%;
+  resize: vertical;
+}
+
+.amo-panel-title-edit-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.amo-panel-title-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 0;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+}
+
+.amo-panel-title-icon-button:hover {
+  border-color: var(--interactive-accent);
+  color: var(--text-normal);
+  background: var(--background-modifier-hover);
 }
 
 .amo-panel-title-edit-hint {

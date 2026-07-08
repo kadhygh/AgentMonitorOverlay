@@ -38,7 +38,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.33";
+var PLUGIN_VERSION = "1.4.34";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -240,7 +240,7 @@ function removeAmoDisplayHeading(markdown, title, fallbackTitle = "") {
   return prefix + markerText.replace(/\n*$/u, "\n\n") + rest.slice(heading[0].length).replace(/^\n*/u, "");
 }
 function normalizeMarkdownTitle(value) {
-  return String(value || "").replace(/\r?\n/gu, " ").replace(/\s+/gu, " ").replace(/^#+\s*/u, "").trim().slice(0, 120);
+  return String(value || "").replace(/\r\n?/gu, "\n").split("\n").map((line) => line.replace(/\s+/gu, " ").replace(/^#+\s*/u, "").trim()).join("\n").replace(/\n{3,}/gu, "\n\n").trim().slice(0, 240);
 }
 function parseAmoFrontmatterOnly(markdown) {
   const match = markdown.match(/^---\n([\s\S]*?)\n---/);
@@ -885,10 +885,10 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     const canvasFile = this.plugin.getPanelCanvasFile();
     const workspaceState = this.workspaceStateFor(info, canvasFile);
     this.renderHeader(root, workspaceState);
-    this.renderOperationStatus(root);
     this.renderCurrentNote(root, info);
     this.renderActions(root, info, canvasFile, workspaceState);
     this.renderAnnotations(root, info);
+    this.renderOperationStatus(root);
     this.renderDetails(root, info, canvasFile, workspaceState);
     this.plugin.debugLog("panel.render.note", {
       notePath: info.file && info.file.path,
@@ -919,7 +919,7 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     if (status.at) statusEl.createEl("span", { text: formatTime(status.at) });
   }
   renderCurrentNote(root, info) {
-    const section = root.createDiv({ cls: "amo-panel-section amo-panel-current-note" });
+    const section = root.createDiv({ cls: "amo-panel-current-note-card" });
     section.createEl("h4", { text: "Opened note" });
     if (!info.file) {
       section.createDiv({
@@ -936,20 +936,27 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       this.renderTitleEditor(section, info);
     } else {
       const titleRow = section.createDiv({ cls: "amo-panel-current-title-row" });
-      const titleEl = titleRow.createEl(info.isAmoNote ? "button" : "div", {
+      const titleEl = titleRow.createDiv({
         cls: "amo-panel-current-title" + (info.isAmoNote ? " is-editable" : ""),
         text: this.panelTitleForInfo(info),
         attr: info.isAmoNote ? {
-          type: "button",
+          role: "button",
+          tabindex: "0",
           title: "Click to edit AMO note title"
         } : {}
       });
-      if (titleEl instanceof HTMLButtonElement) {
+      if (info.isAmoNote) {
         titleEl.addEventListener("mousedown", (event) => {
           event.preventDefault();
           event.stopPropagation();
         });
         titleEl.addEventListener("click", () => {
+          this.startTitleEdit(info);
+        });
+        titleEl.addEventListener("keydown", (event) => {
+          if (event.key !== "Enter" && event.key !== " ") return;
+          event.preventDefault();
+          event.stopPropagation();
           this.startTitleEdit(info);
         });
       }
@@ -978,10 +985,11 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
   }
   renderTitleEditor(container, info) {
     const editor = container.createDiv({ cls: "amo-panel-title-edit" });
-    const input = editor.createEl("input", {
+    const row = editor.createDiv({ cls: "amo-panel-title-edit-row" });
+    const input = row.createEl("textarea", {
       attr: {
-        type: "text",
-        placeholder: "AMO note title"
+        placeholder: "AMO note title",
+        rows: "3"
       }
     });
     input.value = this.editingTitleValue;
@@ -989,7 +997,7 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       this.editingTitleValue = input.value;
     });
     input.addEventListener("keydown", (event) => {
-      if (event.key === "Enter") {
+      if (event.key === "Enter" && !event.shiftKey) {
         event.preventDefault();
         event.stopPropagation();
         void this.saveTitleEdit(info, input.value);
@@ -1003,9 +1011,47 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     input.addEventListener("blur", () => {
       this.editingTitleValue = input.value;
     });
+    const actions = row.createDiv({ cls: "amo-panel-title-edit-actions" });
+    const saveButton = actions.createEl("button", {
+      cls: "amo-panel-title-icon-button",
+      attr: {
+        type: "button",
+        title: "Save title",
+        "aria-label": "Save title"
+      }
+    });
+    (0, import_obsidian2.setIcon)(saveButton, "check");
+    saveButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    saveButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void this.saveTitleEdit(info, input.value);
+    });
+    const cancelButton = actions.createEl("button", {
+      cls: "amo-panel-title-icon-button",
+      attr: {
+        type: "button",
+        title: "Cancel title edit",
+        "aria-label": "Cancel title edit"
+      }
+    });
+    (0, import_obsidian2.setIcon)(cancelButton, "x");
+    cancelButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    cancelButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.resetTitleEdit();
+      this.render();
+    });
     editor.createDiv({
       cls: "amo-panel-title-edit-hint",
-      text: "Enter saves. Esc cancels. Blur does not save."
+      text: "Enter saves. Shift+Enter adds a new line. Esc cancels."
     });
     container.createDiv({
       cls: "amo-panel-current-original-title",
@@ -1214,9 +1260,9 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     if (!info.file) return;
     const activeLeafType = this.plugin.activeLeafType();
     if (activeLeafType === "canvas" || info.source === "canvas-selection") {
-      const selectedText = getWindowSelectionText();
-      if (selectedText) {
-        await this.plugin.appendReferencedAnnotationToFile(info.file, selectedText);
+      const selectedText2 = getWindowSelectionText();
+      if (selectedText2) {
+        await this.plugin.appendReferencedAnnotationToFile(info.file, selectedText2);
       } else {
         new AnnotationInputModal(this.app, async (value) => {
           await this.plugin.appendAnnotationToFile(info.file, value);
@@ -1224,7 +1270,12 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       }
       return;
     }
-    if (this.plugin.canInsertAnnotationAtActiveEditor() || getWindowSelectionText().length > 0) {
+    const selectedText = getWindowSelectionText();
+    if (selectedText) {
+      await this.plugin.insertReferencedAnnotationNearTextInFile(info.file, selectedText);
+      return;
+    }
+    if (this.plugin.canInsertAnnotationAtActiveEditor()) {
       await this.plugin.insertAnnotationFromCurrentSelection();
       return;
     }
@@ -3345,7 +3396,8 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian8.Plugin {
   }
   async insertAnnotationFromCurrentSelection() {
     const activeView = this.app.workspace.getActiveViewOfType(import_obsidian8.MarkdownView);
-    if (activeView && activeView.editor) {
+    const editorSelection = activeView && activeView.editor ? activeView.editor.getSelection() : "";
+    if (activeView && activeView.editor && editorSelection.trim().length > 0) {
       this.wrapSelectionWithAnnotation(activeView.editor);
       this.setOperationStatus("Inserted annotation marker.", "success");
       return;
@@ -3353,7 +3405,12 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian8.Plugin {
     const selectedText = getWindowSelectionText();
     const file = this.getActiveMarkdownFile();
     if (selectedText && file) {
-      await this.appendReferencedAnnotationToFile(file, selectedText);
+      await this.insertReferencedAnnotationNearTextInFile(file, selectedText);
+      return;
+    }
+    if (activeView && activeView.editor) {
+      this.wrapSelectionWithAnnotation(activeView.editor);
+      this.setOperationStatus("Inserted annotation marker.", "success");
       return;
     }
     this.insertAnnotationAtActiveEditor();
@@ -3380,6 +3437,117 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian8.Plugin {
     await this.appendAnnotationBlockToFile(file, buildReferencedAnnotationMarkup(content));
     this.setOperationStatus("Referenced annotation appended to " + file.path + ".", "success");
     new import_obsidian8.Notice("Referenced annotation appended.");
+  }
+  async insertReferencedAnnotationNearTextInFile(file, reference) {
+    const content = normalizeAnnotationContent(reference);
+    if (!content) {
+      new import_obsidian8.Notice("No selected text to quote.");
+      return false;
+    }
+    const markdown = await this.app.vault.cachedRead(file);
+    const range = this.findUnannotatedMarkdownRange(markdown, content);
+    if (!range) {
+      this.setOperationStatus(
+        "Could not locate the selected text in " + file.path + ". Switch to editing mode and try again.",
+        "error"
+      );
+      new import_obsidian8.Notice("Could not locate selected text in this note. Switch to editing mode and try again.");
+      return false;
+    }
+    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
+    const insertAt = this.endOfLineOffset(source, range.end);
+    const lineStart = source.lastIndexOf("\n", Math.max(0, insertAt - 1)) + 1;
+    const lineText = source.slice(lineStart, insertAt);
+    const leading = lineText.trim().length > 0 ? "\n\n" : "";
+    const block = leading + buildReferencedAnnotationMarkup(content).replace(/\n\n\[\/anno\]$/u, "\n\n\n[/anno]");
+    const nextContent = source.slice(0, insertAt) + block + source.slice(insertAt);
+    await this.app.vault.modify(file, nextContent);
+    this.setOperationStatus("Inserted referenced annotation near selection in " + file.path + ".", "success");
+    new import_obsidian8.Notice("Referenced annotation inserted.");
+    this.refreshPanels();
+    return true;
+  }
+  findUnannotatedMarkdownRange(markdown, selectedText) {
+    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
+    const content = normalizeAnnotationContent(selectedText);
+    if (!source || !content) return null;
+    const exact = this.findUnannotatedExactRange(source, content);
+    if (exact) return exact;
+    return this.findUnannotatedWhitespaceRange(source, content);
+  }
+  findUnannotatedExactRange(source, content) {
+    let offset = 0;
+    while (offset <= source.length) {
+      const index = source.indexOf(content, offset);
+      if (index < 0) return null;
+      const range = { start: index, end: index + content.length };
+      if (!this.rangeIntersectsAnnotation(source, range)) return range;
+      offset = index + Math.max(1, content.length);
+    }
+    return null;
+  }
+  findUnannotatedWhitespaceRange(source, content) {
+    const haystack = this.normalizeTextWithOffsetMap(source);
+    const needle = this.normalizeSearchText(content);
+    if (!needle) return null;
+    let offset = 0;
+    while (offset <= haystack.text.length) {
+      const index = haystack.text.indexOf(needle, offset);
+      if (index < 0) return null;
+      const endIndex = index + needle.length - 1;
+      const range = {
+        start: haystack.startOffsets[index],
+        end: haystack.endOffsets[endIndex]
+      };
+      if (!this.rangeIntersectsAnnotation(source, range)) return range;
+      offset = index + Math.max(1, needle.length);
+    }
+    return null;
+  }
+  normalizeTextWithOffsetMap(value) {
+    const source = String(value || "").replace(/\r\n?/gu, "\n");
+    const chars = [];
+    const startOffsets = [];
+    const endOffsets = [];
+    let pendingWhitespaceStart = -1;
+    let pendingWhitespaceEnd = -1;
+    for (let index = 0; index < source.length; index += 1) {
+      const char = source[index];
+      if (/\s/u.test(char)) {
+        if (pendingWhitespaceStart < 0) pendingWhitespaceStart = index;
+        pendingWhitespaceEnd = index + 1;
+        continue;
+      }
+      if (pendingWhitespaceStart >= 0 && chars.length > 0) {
+        chars.push(" ");
+        startOffsets.push(pendingWhitespaceStart);
+        endOffsets.push(pendingWhitespaceEnd);
+      }
+      pendingWhitespaceStart = -1;
+      pendingWhitespaceEnd = -1;
+      chars.push(char);
+      startOffsets.push(index);
+      endOffsets.push(index + 1);
+    }
+    return {
+      text: chars.join(""),
+      startOffsets,
+      endOffsets
+    };
+  }
+  normalizeSearchText(value) {
+    return normalizeAnnotationContent(value).replace(/\s+/gu, " ");
+  }
+  rangeIntersectsAnnotation(markdown, range) {
+    return extractAnnotationItems(markdown).some((item) => {
+      return range.start < item.endOffset && item.startOffset < range.end;
+    });
+  }
+  endOfLineOffset(markdown, offset) {
+    const source = String(markdown || "");
+    const safeOffset = Math.max(0, Math.min(source.length, Number(offset) || 0));
+    const nextLineBreak = source.indexOf("\n", safeOffset);
+    return nextLineBreak >= 0 ? nextLineBreak : source.length;
   }
   async appendAnnotationToFile(file, rawContent) {
     const content = normalizeAnnotationContent(rawContent);
