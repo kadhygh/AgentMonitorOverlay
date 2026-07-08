@@ -170,3 +170,106 @@ export class NoteTitleModal extends Modal {
     this.close();
   }
 }
+
+export class WorkCanvasPickerModal extends Modal {
+  options: any;
+  folderInput: TextComponent | null;
+  canvasInput: TextComponent | null;
+
+  constructor(app: any, options: any) {
+    super(app);
+    this.options = options || {};
+    this.folderInput = null;
+    this.canvasInput = null;
+  }
+
+  onOpen() {
+    this.modalEl.addClass("anno-modal");
+    this.titleEl.setText("Add Note to Work Canvas");
+
+    const folderPath = this.options.folderPath || "Canvases/work";
+    this.contentEl.createEl("p", {
+      text: "Choose a work canvas for " + (this.options.notePath || "the current note") + ".",
+    });
+
+    if (!this.options.folderExists) {
+      this.contentEl.createEl("p", {
+        cls: "amo-modal-muted",
+        text: "Work canvas folder does not exist yet.",
+      });
+      const folderRow = this.contentEl.createDiv({ cls: "amo-work-canvas-create-row" });
+      this.folderInput = new TextComponent(folderRow);
+      this.folderInput.setPlaceholder("work");
+      this.folderInput.setValue(folderPath.split("/").pop() || "work");
+      new ButtonComponent(folderRow)
+        .setButtonText("Create folder")
+        .setCta()
+        .onClick(async () => {
+          await this.options.onCreateFolder?.(this.folderInput?.getValue() || "work");
+          this.close();
+        });
+    } else {
+      const canvases = Array.isArray(this.options.canvases) ? this.options.canvases : [];
+      if (canvases.length > 0) {
+        const list = this.contentEl.createDiv({ cls: "amo-work-canvas-list" });
+        for (const canvas of canvases) {
+          const row = list.createDiv({
+            cls: "amo-work-canvas-row" + (canvas.containsNote ? " contains-note" : ""),
+          });
+          row.createDiv({
+            cls: "amo-work-canvas-name",
+            text: canvas.displayName || canvas.path,
+          });
+          row.createDiv({
+            cls: "amo-work-canvas-path",
+            text: canvas.path,
+          });
+          row.createDiv({
+            cls: "amo-work-canvas-badge",
+            text: canvas.containsNote ? "Already contains note" : "New target",
+          });
+          new ButtonComponent(row)
+            .setButtonText("Add")
+            .setCta()
+            .onClick(async () => {
+              await this.options.onSelectCanvas?.(canvas.path);
+              this.close();
+            });
+        }
+      } else {
+        this.contentEl.createEl("p", {
+          cls: "amo-modal-muted",
+          text: "No work canvas exists in " + folderPath + ". Create one below.",
+        });
+      }
+
+      const create = this.contentEl.createDiv({ cls: "amo-work-canvas-create" });
+      create.createEl("h4", { text: "Create new canvas" });
+      const createRow = create.createDiv({ cls: "amo-work-canvas-create-row" });
+      this.canvasInput = new TextComponent(createRow);
+      this.canvasInput.setPlaceholder("Work canvas name");
+      new ButtonComponent(createRow)
+        .setButtonText("Create and add")
+        .setCta()
+        .onClick(async () => {
+          await this.options.onCreateCanvas?.(this.canvasInput?.getValue() || "");
+          this.close();
+        });
+    }
+
+    const actions = this.contentEl.createDiv({ cls: "anno-modal-actions" });
+    new ButtonComponent(actions)
+      .setButtonText("Cancel")
+      .onClick(() => {
+        this.close();
+      });
+
+    window.setTimeout(() => {
+      (this.folderInput || this.canvasInput)?.inputEl.focus();
+    }, 0);
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}

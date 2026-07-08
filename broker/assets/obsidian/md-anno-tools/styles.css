@@ -206,8 +206,16 @@
   padding: 12px;
 }
 
+.amo-panel-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
 .amo-panel h3 {
-  margin: 0 0 12px;
+  margin: 0;
 }
 
 .amo-panel h4 {
@@ -216,6 +224,44 @@
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
+}
+
+.amo-panel-workspace-state {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 58%;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 999px;
+  padding: 3px 8px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.2;
+}
+
+.amo-panel-workspace-state-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.amo-panel-workspace-state-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amo-panel-workspace-state-canvas-note {
+  border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
+  color: var(--text-normal);
+}
+
+.amo-panel-workspace-state-canvas {
+  border-color: color-mix(in srgb, var(--color-blue, var(--interactive-accent)) 35%, var(--background-modifier-border));
+}
+
+.amo-panel-workspace-state-note {
+  border-color: color-mix(in srgb, var(--color-green, var(--interactive-accent)) 35%, var(--background-modifier-border));
 }
 
 .amo-panel-section {
@@ -246,6 +292,10 @@
   border-left: 3px solid var(--text-error);
 }
 
+.amo-panel-status-neutral {
+  border-left: 3px solid var(--background-modifier-border-hover);
+}
+
 .amo-panel-muted,
 .amo-panel-error {
   color: var(--text-muted);
@@ -274,22 +324,149 @@
   white-space: pre-wrap;
 }
 
+.amo-panel-current-note {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.amo-panel-current-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.amo-panel-current-title {
+  display: block;
+  min-width: 0;
+  width: 100%;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: var(--text-normal);
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  text-align: left;
+}
+
+button.amo-panel-current-title.is-editable {
+  cursor: text;
+}
+
+button.amo-panel-current-title.is-editable:hover {
+  color: var(--interactive-accent);
+}
+
+.amo-panel-current-original-title {
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.amo-panel-current-path {
+  color: var(--text-faint);
+  font-size: 11px;
+  line-height: 1.35;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.amo-panel-current-quick-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.amo-panel-title-edit {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.amo-panel-title-edit input {
+  min-width: 0;
+  width: 100%;
+}
+
+.amo-panel-title-edit-hint {
+  color: var(--text-faint);
+  font-size: 11px;
+}
+
 .amo-panel-actions {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.amo-panel-action-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
 }
 
-.amo-panel-title-editor {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 8px;
-  align-items: center;
+.amo-panel-action-group.is-disabled {
+  opacity: 0.48;
 }
 
-.amo-panel-title-editor input {
+.amo-panel-action-group-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.amo-panel-action-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.amo-panel-action-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
   min-width: 0;
   width: 100%;
+  min-height: 32px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: var(--background-secondary);
+  color: var(--text-normal);
+  font-size: 13px;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.amo-panel-action-button:hover:not(:disabled) {
+  border-color: var(--interactive-accent);
+  background: var(--background-modifier-hover);
+}
+
+.amo-panel-action-button:disabled {
+  cursor: not-allowed;
+  color: var(--text-faint);
+}
+
+.amo-panel-action-icon {
+  display: inline-flex;
+  flex: 0 0 auto;
+}
+
+.amo-panel-action-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .amo-panel-annotation-list {
@@ -299,10 +476,9 @@
 }
 
 .amo-panel-annotation-row {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
+  display: flex;
+  flex-direction: column;
   gap: 8px;
-  align-items: center;
   border: 1px solid var(--background-modifier-border);
   border-radius: 6px;
   padding: 8px;
@@ -314,7 +490,89 @@
   overflow-wrap: anywhere;
 }
 
-.amo-panel-actions button,
-.amo-panel-title-editor button {
-  width: 100%;
+.amo-panel-annotation-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.amo-panel-annotation-actions .amo-panel-action-button {
+  min-height: 28px;
+  padding: 3px 6px;
+  font-size: 12px;
+}
+
+.amo-panel-details {
+  color: var(--text-muted);
+}
+
+.amo-panel-details summary {
+  cursor: pointer;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.amo-work-canvas-list {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+.amo-work-canvas-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  align-items: center;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 6px;
+  padding: 8px;
+}
+
+.amo-work-canvas-row.contains-note {
+  border-color: color-mix(in srgb, var(--interactive-accent) 45%, var(--background-modifier-border));
+}
+
+.amo-work-canvas-name {
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.amo-work-canvas-path,
+.amo-work-canvas-badge,
+.amo-modal-muted {
+  color: var(--text-muted);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.amo-work-canvas-badge {
+  grid-column: 1;
+}
+
+.amo-work-canvas-row button {
+  grid-column: 2;
+  grid-row: 1 / span 3;
+}
+
+.amo-work-canvas-create {
+  border-top: 1px solid var(--background-modifier-border);
+  margin-top: 12px;
+  padding-top: 12px;
+}
+
+.amo-work-canvas-create-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: center;
+}
+
+.amo-work-canvas-create-row input {
+  min-width: 0;
 }
