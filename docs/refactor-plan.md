@@ -1019,3 +1019,13 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Workspace Panels Hook Extracted
+
+- Added `overlay/src/hooks/useWorkspacePanels.ts` for task-card workspace status, plugin update, generated-vault clean confirmation, task title save, maintenance path open, launch-panel inspect, and project CLI launch actions.
+- Kept the panel state itself in `MainOverlayApp.tsx` for now because `useBrokerSessions.ts` also clears those panels during session reconciliation; this avoids a refactor-only state ordering change.
+- Reduced `MainOverlayApp.tsx` from about 1990 lines to about 1629 lines while keeping `useWorkspacePanels.ts` at about 418 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

@@ -24,14 +24,7 @@ import {
   BROKER_DEBUG_LOGS_URL,
   BROKER_DEBUG_URL,
   BROKER_SYNC_BACK_URL,
-  BROKER_WORKSPACE_CLEAN_VAULT_URL,
-  BROKER_WORKSPACE_GIT_EXCLUDE_URL,
-  BROKER_WORKSPACE_INSPECT_URL,
-  BROKER_WORKSPACE_LAUNCH_URL,
-  BROKER_WORKSPACE_STATUS_URL,
-  BROKER_WORKSPACE_UPDATE_OBSIDIAN_PLUGIN_URL,
   brokerSessionHeartbeatUrl,
-  brokerSessionTaskTitleUrl,
   postBrokerJson,
 } from "../api/brokerClient";
 import {
@@ -51,33 +44,18 @@ import {
 import {
   activationWindowRequest,
   projectName,
-  shortPathLabel,
   targetBindingForSession,
   windowTargetForSession,
-  workspacePathForSession,
 } from "../domain/routingModel";
 import {
-  adapterContextLabel,
-  adapterStateLabel,
-  cliLaunchLabel,
-  isDeployableWorkspaceAdapter,
-  isWorkspaceAdapterDeployed,
-  isWorkspaceAdapterInstalled,
-  workspaceAdapterLaunchable,
-  workspaceCleanFeedback,
-  workspaceGeneratedNoteCount,
-  type LaunchPanelAdapterId,
-} from "../domain/workspaceModel";
-import {
   actionRequiredCandidate,
-  launchPanelPosition,
   shouldProbeCodexActionRequired,
-  workspacePanelPosition,
 } from "../domain/overlaySessionUi";
 import { useBrokerSessions } from "../hooks/useBrokerSessions";
 import { useObsidianOpen } from "../hooks/useObsidianOpen";
 import { useSessionActions } from "../hooks/useSessionActions";
 import { useTargetActivation } from "../hooks/useTargetActivation";
+import { useWorkspacePanels } from "../hooks/useWorkspacePanels";
 import { SessionRowContent, toolDisplayForSession } from "../components/SessionCard";
 import {
   BrokerReadinessPanel,
@@ -112,12 +90,6 @@ import type {
   AgentSession,
   BrokerDebugStatus,
   OpenPathResult,
-  WorkspaceCleanResult,
-  WorkspaceGitExcludeResult,
-  WorkspaceInspection,
-  WorkspaceLaunchResult,
-  WorkspaceMaintenanceStatus,
-  WorkspacePluginUpdateResult,
 } from "../types";
 
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
@@ -316,6 +288,29 @@ export function MainOverlayApp() {
     markSessionVisuallySeen,
     postDebugLog,
     setFeedback,
+  });
+
+  const {
+    cleanWorkspaceVaultFromPanel,
+    launchProjectCliFromPanel,
+    loadWorkspaceStatus,
+    openLaunchPanel,
+    openMaintenancePath,
+    openWorkspacePanel,
+    requestCleanWorkspaceVault,
+    saveWorkspacePanelTaskTitle,
+    updateWorkspaceObsidianPluginFromPanel,
+  } = useWorkspacePanels({
+    launchPanel,
+    postDebugLog,
+    refreshSessions,
+    setCandidateMenu,
+    setCleanConfirm,
+    setFeedback,
+    setLaunchPanel,
+    setSessions,
+    setWorkspacePanel,
+    workspacePanel,
   });
 
   const filteredSessions = useMemo(
@@ -705,362 +700,6 @@ export function MainOverlayApp() {
   async function updateAmoTheme(next: AmoTheme) {
     await setAmoThemePreference(next);
     setFeedback(`Theme set to ${next === "light" ? "Light" : "Dark"}.`);
-  }
-
-  async function openWorkspacePanel(session: AgentSession, x?: number, y?: number) {
-    const position = workspacePanelPosition(x, y);
-    setCandidateMenu(null);
-    setLaunchPanel(null);
-    setWorkspacePanel({
-      session,
-      x: position.x,
-      y: position.y,
-      status: null,
-      busy: "status",
-      error: null,
-      taskTitleDraft: session.taskTitle ?? "",
-    });
-    await loadWorkspaceStatus(session);
-  }
-
-  async function openLaunchPanel(session: AgentSession, x?: number, y?: number) {
-    const position = launchPanelPosition(x, y);
-    setCandidateMenu(null);
-    setWorkspacePanel(null);
-    setLaunchPanel({
-      session,
-      x: position.x,
-      y: position.y,
-      inspection: null,
-      busy: "inspect",
-      error: null,
-    });
-    await loadLaunchPanelInspection(session);
-  }
-
-  async function loadLaunchPanelInspection(session: AgentSession) {
-    const workspacePath = workspacePathForSession(session);
-    if (!workspacePath) {
-      setLaunchPanel((current) =>
-        current && current.session.sessionId === session.sessionId
-          ? { ...current, busy: null, error: "No workspace path is linked to this card." }
-          : current,
-      );
-      return;
-    }
-
-    setLaunchPanel((current) =>
-      current && current.session.sessionId === session.sessionId ? { ...current, busy: "inspect", error: null } : current,
-    );
-
-    try {
-      const inspection = await postBrokerJson<WorkspaceInspection>(BROKER_WORKSPACE_INSPECT_URL, {
-        workspacePath,
-      });
-      setLaunchPanel((current) =>
-        current && current.session.sessionId === session.sessionId
-          ? { ...current, inspection, busy: null, error: null }
-          : current,
-      );
-      void postDebugLog("workspace.launch_panel.inspect.ok", {
-        sessionId: session.sessionId,
-        workspacePath: inspection.workspacePath,
-      });
-    } catch (error) {
-      const message = (error as Error).message;
-      setLaunchPanel((current) =>
-        current && current.session.sessionId === session.sessionId ? { ...current, busy: null, error: message } : current,
-      );
-      void postDebugLog("workspace.launch_panel.inspect.error", {
-        sessionId: session.sessionId,
-        workspacePath,
-        message,
-      });
-    }
-  }
-
-  async function launchProjectCliFromPanel(adapterId: LaunchPanelAdapterId) {
-    if (!launchPanel) return;
-
-    const session = launchPanel.session;
-    const workspacePath = launchPanel.inspection?.workspacePath ?? workspacePathForSession(session);
-    if (!workspacePath) {
-      setLaunchPanel((current) => (current ? { ...current, error: "No workspace path is linked to this card." } : current));
-      return;
-    }
-
-    if (!workspaceAdapterLaunchable(launchPanel.inspection, adapterId)) {
-      setLaunchPanel((current) =>
-        current ? { ...current, error: `${cliLaunchLabel(adapterId)} is not deployed in this workspace.` } : current,
-      );
-      return;
-    }
-
-    setLaunchPanel((current) => (current ? { ...current, busy: adapterId, error: null } : current));
-    setFeedback(`Launching new ${cliLaunchLabel(adapterId)} for ${projectName(workspacePath)}...`);
-    void postDebugLog("workspace.launch_panel.launch.start", {
-      sessionId: session.sessionId,
-      workspacePath,
-      adapterId,
-    });
-
-    try {
-      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
-        workspacePath,
-        adapterId,
-      });
-      void postDebugLog("workspace.launch_panel.launch.ok", {
-        sessionId: session.sessionId,
-        workspacePath: result.workspacePath,
-        adapterId: result.adapterId,
-        pid: result.pid ?? null,
-      });
-      setFeedback(result.message);
-      setLaunchPanel(null);
-    } catch (error) {
-      const message = (error as Error).message;
-      void postDebugLog("workspace.launch_panel.launch.error", {
-        sessionId: session.sessionId,
-        workspacePath,
-        adapterId,
-        message,
-      });
-      setLaunchPanel((current) => (current ? { ...current, busy: null, error: message } : current));
-      setFeedback(`Launch failed: ${message}`);
-    }
-  }
-
-  async function loadWorkspaceStatus(session: AgentSession) {
-    const workspacePath = workspacePathForSession(session);
-    if (!workspacePath) {
-      setWorkspacePanel((current) =>
-        current ? { ...current, busy: null, error: "No workspace path is linked to this card." } : current,
-      );
-      return;
-    }
-
-    setWorkspacePanel((current) => (current ? { ...current, busy: "status", error: null } : current));
-    try {
-      const status = await postBrokerJson<WorkspaceMaintenanceStatus>(BROKER_WORKSPACE_STATUS_URL, {
-        workspacePath,
-      });
-      setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
-          ? {
-              ...current,
-              status,
-              busy: null,
-              error: null,
-            }
-          : current,
-      );
-      void postDebugLog("workspace.maintenance.status.ok", {
-        sessionId: session.sessionId,
-        workspacePath,
-        issueCount: status.issues.length,
-      });
-    } catch (error) {
-      const rawMessage = (error as Error).message;
-      const message = /update-obsidian-plugin.+not supported/iu.test(rawMessage)
-        ? "AMO broker is still running an older version. Restart AMO, then try Update plugin again."
-        : rawMessage;
-      setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
-          ? { ...current, busy: null, error: message }
-          : current,
-      );
-      void postDebugLog("workspace.maintenance.status.error", {
-        sessionId: session.sessionId,
-        workspacePath,
-        message,
-      });
-    }
-  }
-
-  async function cleanWorkspaceVaultFromPanel() {
-    if (!workspacePanel) return;
-    const session = workspacePanel.session;
-    const workspacePath = workspacePathForSession(session);
-    if (!workspacePath) {
-      setWorkspacePanel((current) =>
-        current ? { ...current, error: "No workspace path is linked to this card." } : current,
-      );
-      return;
-    }
-
-    setCleanConfirm(null);
-    setWorkspacePanel((current) => (current ? { ...current, busy: "clean", error: null } : current));
-    setFeedback(`Cleaning AMO notes for ${projectName(workspacePath)}...`);
-    try {
-      const result = await postBrokerJson<WorkspaceCleanResult>(BROKER_WORKSPACE_CLEAN_VAULT_URL, {
-        workspacePath,
-      });
-      setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
-          ? {
-              ...current,
-              status: result.after,
-              busy: null,
-              error: null,
-            }
-          : current,
-      );
-      setFeedback(workspaceCleanFeedback(result));
-      void postDebugLog("workspace.maintenance.clean.ok", {
-        sessionId: session.sessionId,
-        workspacePath,
-        clearedSessions: result.clearedSessions,
-      });
-      void refreshSessions("workspace-clean");
-    } catch (error) {
-      const message = (error as Error).message;
-      setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
-          ? { ...current, busy: null, error: message }
-          : current,
-      );
-      setFeedback(`Clean failed: ${message}`);
-      void postDebugLog("workspace.maintenance.clean.error", {
-        sessionId: session.sessionId,
-        workspacePath,
-        message,
-      });
-    }
-  }
-
-  async function updateWorkspaceObsidianPluginFromPanel() {
-    if (!workspacePanel) return;
-    const session = workspacePanel.session;
-    const workspacePath = workspacePathForSession(session);
-    if (!workspacePath) {
-      setWorkspacePanel((current) =>
-        current ? { ...current, error: "No workspace path is linked to this card." } : current,
-      );
-      return;
-    }
-
-    setWorkspacePanel((current) => (current ? { ...current, busy: "plugin-update", error: null } : current));
-    setFeedback(`Updating AMO Obsidian plugin for ${projectName(workspacePath)}...`);
-    try {
-      const result = await postBrokerJson<WorkspacePluginUpdateResult>(BROKER_WORKSPACE_UPDATE_OBSIDIAN_PLUGIN_URL, {
-        workspacePath,
-      });
-      setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
-          ? {
-              ...current,
-              status: result.after,
-              busy: null,
-              error: null,
-            }
-          : current,
-      );
-      setFeedback(
-        result.after.pluginHealth?.ok
-          ? `AMO Obsidian plugin updated to ${result.after.pluginHealth.expectedVersion ?? "expected version"}.`
-          : "AMO Obsidian plugin was updated, but the workspace still needs review.",
-      );
-      void postDebugLog("workspace.maintenance.plugin_update.ok", {
-        sessionId: session.sessionId,
-        workspacePath,
-        pluginHealth: result.after.pluginHealth,
-      });
-      void refreshSessions("workspace-plugin-update");
-    } catch (error) {
-      const message = (error as Error).message;
-      setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
-          ? { ...current, busy: null, error: message }
-          : current,
-      );
-      setFeedback(`Plugin update failed: ${message}`);
-      void postDebugLog("workspace.maintenance.plugin_update.error", {
-        sessionId: session.sessionId,
-        workspacePath,
-        message,
-      });
-    }
-  }
-
-  function requestCleanWorkspaceVault() {
-    if (!workspacePanel) return;
-    const workspacePath = workspacePathForSession(workspacePanel.session);
-    if (!workspacePath) {
-      setWorkspacePanel((current) =>
-        current ? { ...current, error: "No workspace path is linked to this card." } : current,
-      );
-      return;
-    }
-
-    setCleanConfirm({
-      session: workspacePanel.session,
-      workspacePath,
-      replyNotes: workspacePanel.status?.counts.replyNotes ?? 0,
-      promptNotes: workspacePanel.status?.counts.promptNotes ?? 0,
-      canvasNodes: workspacePanel.status?.counts.canvasNodes ?? 0,
-    });
-  }
-
-  async function openMaintenancePath(path: string | undefined, label: string) {
-    if (!path) return;
-    setWorkspacePanel((current) => (current ? { ...current, busy: "open", error: null } : current));
-    try {
-      const result = await invoke<OpenPathResult>("open_path", { path });
-      setFeedback(result.ok ? `Opened ${label}.` : result.message);
-      if (!result.ok) {
-        setWorkspacePanel((current) => (current ? { ...current, error: result.message } : current));
-      }
-    } catch (error) {
-      const message = (error as Error).message;
-      setFeedback(`Open ${label} failed: ${message}`);
-      setWorkspacePanel((current) => (current ? { ...current, error: message } : current));
-    } finally {
-      setWorkspacePanel((current) => (current ? { ...current, busy: null } : current));
-    }
-  }
-
-  async function saveWorkspacePanelTaskTitle(overrideTaskTitle?: string) {
-    if (!workspacePanel) return;
-
-    const sessionId = workspacePanel.session.sessionId;
-    const nextTaskTitle = (overrideTaskTitle ?? workspacePanel.taskTitleDraft).trim();
-    setWorkspacePanel((current) => (current ? { ...current, busy: "task-title", error: null } : current));
-    setFeedback(nextTaskTitle ? `Saving task name: ${nextTaskTitle}` : "Clearing task name...");
-    try {
-      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
-        brokerSessionTaskTitleUrl(sessionId),
-        { taskTitle: nextTaskTitle },
-      );
-      setSessions((previous) =>
-        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
-      );
-      setWorkspacePanel((current) =>
-        current && current.session.sessionId === result.session.sessionId
-          ? {
-              ...current,
-              session: result.session,
-              taskTitleDraft: result.session.taskTitle ?? "",
-              busy: null,
-              error: null,
-            }
-          : current,
-      );
-      setFeedback(nextTaskTitle ? "Task name saved." : "Task name cleared.");
-      void postDebugLog("session.task_title.save.ok", {
-        sessionId,
-        hasTaskTitle: Boolean(nextTaskTitle),
-      });
-    } catch (error) {
-      const message = (error as Error).message;
-      setWorkspacePanel((current) =>
-        current && current.session.sessionId === sessionId ? { ...current, busy: null, error: message } : current,
-      );
-      setFeedback(`Task name save failed: ${message}`);
-      void postDebugLog("session.task_title.save.error", {
-        sessionId,
-        message,
-      });
-    }
   }
 
   async function toggleCollapsed() {
