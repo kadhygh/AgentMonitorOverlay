@@ -358,6 +358,22 @@ try {
     if ($pluginData.interceptLocalCodeLinks -ne $true -or $pluginData.localCodeLinkEditor -ne "vscode" -or -not $pluginData.zedCommand) {
         throw "Obsidian plugin data does not include local code link defaults."
     }
+
+    $pluginManifestPath = Join-Path $pluginRoot "manifest.json"
+    $pluginManifest = Get-Content -Raw -Encoding UTF8 $pluginManifestPath | ConvertFrom-Json
+    $expectedPluginVersion = $pluginManifest.version
+    $pluginManifest.version = "0.0.0-stale"
+    Set-Content -Encoding UTF8 -Path $pluginManifestPath -Value (($pluginManifest | ConvertTo-Json -Depth 8) + "`n")
+    $pluginUpdateResult = Invoke-BrokerJson -Method POST -Path "/api/workspaces/update-obsidian-plugin" -Body @{
+        workspacePath = $workspaceRoot
+    }
+    if (-not $pluginUpdateResult.ok -or -not $pluginUpdateResult.after.pluginHealth.ok) {
+        throw "Workspace plugin update endpoint did not repair stale Obsidian plugin health."
+    }
+    if ($pluginUpdateResult.after.pluginHealth.installedVersion -ne $expectedPluginVersion) {
+        throw "Workspace plugin update endpoint installed version mismatch. Expected $expectedPluginVersion, got $($pluginUpdateResult.after.pluginHealth.installedVersion)."
+    }
+
     $pluginMain = Get-Content -Raw -Encoding UTF8 (Join-Path $pluginRoot "main.js")
     if ($pluginMain -notmatch "/api/obsidian/annotations") {
         throw "Obsidian plugin main.js does not reference the AMO annotation endpoint."

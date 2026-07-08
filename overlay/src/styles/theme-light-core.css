@@ -67,7 +67,8 @@
   color: #5d6f69;
 }
 
-:root[data-amo-theme="light"] .dialog-backdrop {
+:root[data-amo-theme="light"] .dialog-backdrop,
+:root[data-amo-theme="light"] .workspace-panel-backdrop {
   background: rgba(34, 51, 46, 0.2);
 }
 

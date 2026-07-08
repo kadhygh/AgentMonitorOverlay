@@ -407,6 +407,18 @@
   border-color: rgba(208, 77, 67, 0.22);
 }
 
+:root[data-amo-theme="light"] .workspace-inline-action {
+  color: #0d654f;
+  background: rgba(18, 135, 105, 0.1);
+  border-color: rgba(18, 135, 105, 0.22);
+}
+
+:root[data-amo-theme="light"] .workspace-inline-action:hover:not(:disabled) {
+  color: #063f33;
+  background: rgba(18, 135, 105, 0.16);
+  border-color: rgba(18, 135, 105, 0.34);
+}
+
 :root[data-amo-theme="light"] .vault-recovery-dialog {
   border-color: rgba(179, 122, 26, 0.24);
 }

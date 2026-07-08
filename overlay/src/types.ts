@@ -370,3 +370,13 @@ export interface WorkspaceCleanResult {
   before: WorkspaceMaintenanceStatus;
   after: WorkspaceMaintenanceStatus;
 }
+
+export interface WorkspacePluginUpdateResult {
+  ok: boolean;
+  schemaVersion: number;
+  workspacePath: string;
+  vaultRoot: string;
+  installedFiles: string[];
+  before: WorkspaceMaintenanceStatus;
+  after: WorkspaceMaintenanceStatus;
+}

@@ -190,6 +190,14 @@ const server = http.createServer(async (req, res) => {
       return sendJson(res, 200, result);
     }
 
+    if (req.method === "POST" && url.pathname === "/api/workspaces/update-obsidian-plugin") {
+      const payload = await readJsonBody(req);
+      const result = updateWorkspaceObsidianPlugin(payload);
+      persistSnapshot();
+      publishSessionChanged("obsidian-plugin-update", null);
+      return sendJson(res, 200, result);
+    }
+
     if (req.method === "POST" && url.pathname === "/api/events") {
       const payload = await readJsonBody(req);
       const session = upsertSessionFromEvent(payload);
@@ -1539,6 +1547,42 @@ function cleanWorkspaceVault(payload) {
     workspacePath,
     vaultRoot,
     clearedSessions,
+    before: statusBefore,
+    after: statusAfter,
+  };
+}
+
+function updateWorkspaceObsidianPlugin(payload) {
+  const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
+  const statusBefore = workspaceMaintenanceSnapshot(workspacePath);
+  const workspace = readJsonFile(path.join(workspacePath, AMO_DIR, "workspace.json"), null);
+  if (!workspace || !workspace.workspaceId) {
+    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
+  }
+
+  const amoRoot = path.join(workspacePath, AMO_DIR);
+  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, workspace.projectName || path.basename(workspacePath));
+  if (!fs.existsSync(vaultRoot)) {
+    throw httpError(409, "vault_missing", "AMO Obsidian vault is missing; redeploy the workspace to recreate it.");
+  }
+  ensureInsideDirectory(workspacePath, vaultRoot);
+
+  const pluginInstall = installObsidianPlugin(vaultRoot, workspacePath, { bridgeUrl: baseUrl() });
+  const statusAfter = workspaceMaintenanceSnapshot(workspacePath);
+  recordDebugLog("broker", "workspace.obsidian_plugin.updated", {
+    workspacePath,
+    vaultRoot,
+    before: statusBefore.pluginHealth,
+    after: statusAfter.pluginHealth,
+    installedFiles: pluginInstall.installedFiles,
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    workspacePath,
+    vaultRoot,
+    installedFiles: pluginInstall.installedFiles,
     before: statusBefore,
     after: statusAfter,
   };

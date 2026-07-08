@@ -32,6 +32,7 @@ import {
   BROKER_WORKSPACE_INSPECT_URL,
   BROKER_WORKSPACE_LAUNCH_URL,
   BROKER_WORKSPACE_STATUS_URL,
+  BROKER_WORKSPACE_UPDATE_OBSIDIAN_PLUGIN_URL,
   brokerSessionArchiveUrl,
   brokerSessionAttentionClearedUrl,
   brokerSessionDismissUrl,
@@ -149,6 +150,7 @@ import type {
   WorkspaceInspection,
   WorkspaceLaunchResult,
   WorkspaceMaintenanceStatus,
+  WorkspacePluginUpdateResult,
 } from "./types";
 
 const REFRESH_INTERVAL_MS = 3000;
@@ -1130,7 +1132,10 @@ export default function App() {
         issueCount: status.issues.length,
       });
     } catch (error) {
-      const message = (error as Error).message;
+      const rawMessage = (error as Error).message;
+      const message = /update-obsidian-plugin.+not supported/iu.test(rawMessage)
+        ? "AMO broker is still running an older version. Restart AMO, then try Update plugin again."
+        : rawMessage;
       setWorkspacePanel((current) =>
         current && current.session.sessionId === session.sessionId
           ? { ...current, busy: null, error: message }
@@ -1188,6 +1193,60 @@ export default function App() {
       );
       setFeedback(`Clean failed: ${message}`);
       void postDebugLog("workspace.maintenance.clean.error", {
+        sessionId: session.sessionId,
+        workspacePath,
+        message,
+      });
+    }
+  }
+
+  async function updateWorkspaceObsidianPluginFromPanel() {
+    if (!workspacePanel) return;
+    const session = workspacePanel.session;
+    const workspacePath = workspacePathForSession(session);
+    if (!workspacePath) {
+      setWorkspacePanel((current) =>
+        current ? { ...current, error: "No workspace path is linked to this card." } : current,
+      );
+      return;
+    }
+
+    setWorkspacePanel((current) => (current ? { ...current, busy: "plugin-update", error: null } : current));
+    setFeedback(`Updating AMO Obsidian plugin for ${projectName(workspacePath)}...`);
+    try {
+      const result = await postBrokerJson<WorkspacePluginUpdateResult>(BROKER_WORKSPACE_UPDATE_OBSIDIAN_PLUGIN_URL, {
+        workspacePath,
+      });
+      setWorkspacePanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? {
+              ...current,
+              status: result.after,
+              busy: null,
+              error: null,
+            }
+          : current,
+      );
+      setFeedback(
+        result.after.pluginHealth?.ok
+          ? `AMO Obsidian plugin updated to ${result.after.pluginHealth.expectedVersion ?? "expected version"}.`
+          : "AMO Obsidian plugin was updated, but the workspace still needs review.",
+      );
+      void postDebugLog("workspace.maintenance.plugin_update.ok", {
+        sessionId: session.sessionId,
+        workspacePath,
+        pluginHealth: result.after.pluginHealth,
+      });
+      void refreshSessions("workspace-plugin-update");
+    } catch (error) {
+      const message = (error as Error).message;
+      setWorkspacePanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? { ...current, busy: null, error: message }
+          : current,
+      );
+      setFeedback(`Plugin update failed: ${message}`);
+      void postDebugLog("workspace.maintenance.plugin_update.error", {
         sessionId: session.sessionId,
         workspacePath,
         message,
@@ -2859,6 +2918,7 @@ export default function App() {
               onLoadStatus={() => void loadWorkspaceStatus(workspacePanel.session)}
               onOpenPath={(path, label) => void openMaintenancePath(path, label)}
               onRequestClean={() => requestCleanWorkspaceVault()}
+              onUpdatePlugin={() => void updateWorkspaceObsidianPluginFromPanel()}
             />
           ) : null}
           {obsidianVaultRecovery ? (

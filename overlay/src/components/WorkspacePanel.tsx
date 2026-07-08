@@ -8,7 +8,7 @@ export interface WorkspacePanelState {
   x: number;
   y: number;
   status: WorkspaceMaintenanceStatus | null;
-  busy: "status" | "clean" | "open" | "task-title" | null;
+  busy: "status" | "clean" | "open" | "task-title" | "plugin-update" | null;
   error: string | null;
   taskTitleDraft: string;
 }
@@ -21,6 +21,7 @@ interface WorkspacePanelProps {
   onLoadStatus: () => void;
   onOpenPath: (path: string | undefined, label: string) => void;
   onRequestClean: () => void;
+  onUpdatePlugin: () => void;
 }
 
 export function WorkspacePanel({
@@ -31,14 +32,29 @@ export function WorkspacePanel({
   onLoadStatus,
   onOpenPath,
   onRequestClean,
+  onUpdatePlugin,
 }: WorkspacePanelProps) {
+  const pluginHealth = state.status?.pluginHealth;
+  const pluginNeedsUpdate = Boolean(
+    pluginHealth &&
+      !pluginHealth.ok &&
+      state.status?.exists.vaultRoot &&
+      (pluginHealth.installedVersion !== pluginHealth.expectedVersion ||
+        pluginHealth.status === "missing" ||
+        pluginHealth.mainJsExists === false ||
+        pluginHealth.enabled === false ||
+        pluginHealth.dataBridgeUrl !== pluginHealth.expectedBridgeUrl),
+  );
+
   return (
-    <section
-      className={`workspace-panel tone-${maintenanceToneForSession(state.session, state.status)}`}
-      style={{ left: state.x, top: state.y }}
-      aria-label="Workspace maintenance"
-      onClick={(event) => event.stopPropagation()}
-    >
+    <div className="workspace-panel-backdrop" role="presentation" onClick={onClose}>
+      <section
+        className={`workspace-panel tone-${maintenanceToneForSession(state.session, state.status)}`}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Workspace maintenance"
+        onClick={(event) => event.stopPropagation()}
+      >
       <div className="workspace-panel-header">
         <div>
           <strong>{projectName(workspacePathForSession(state.session))}</strong>
@@ -167,6 +183,18 @@ export function WorkspacePanel({
               {state.status.pluginHealth?.installedVersion ?? "missing"} / expected{" "}
               {state.status.pluginHealth?.expectedVersion ?? "unknown"}
             </span>
+            {pluginNeedsUpdate ? (
+              <button
+                type="button"
+                className="workspace-inline-action"
+                disabled={state.busy !== null}
+                onClick={onUpdatePlugin}
+                title="Copy the bundled AMO Obsidian plugin into this workspace vault without redeploying hooks."
+              >
+                <RefreshCcw size={12} aria-hidden="true" />
+                <span>{state.busy === "plugin-update" ? "Updating plugin" : "Update plugin"}</span>
+              </button>
+            ) : null}
           </div>
 
           {state.status.issues.length > 0 ? (
@@ -183,6 +211,7 @@ export function WorkspacePanel({
       ) : (
         <div className="workspace-panel-loading">Checking workspace folders...</div>
       )}
-    </section>
+      </section>
+    </div>
   );
 }

@@ -8,6 +8,8 @@ export const BROKER_WORKSPACE_GIT_EXCLUDE_URL = "http://127.0.0.1:17654/api/work
 export const BROKER_WORKSPACE_LAUNCH_URL = "http://127.0.0.1:17654/api/workspaces/launch";
 export const BROKER_WORKSPACE_STATUS_URL = "http://127.0.0.1:17654/api/workspaces/status";
 export const BROKER_WORKSPACE_CLEAN_VAULT_URL = "http://127.0.0.1:17654/api/workspaces/clean-vault";
+export const BROKER_WORKSPACE_UPDATE_OBSIDIAN_PLUGIN_URL =
+  "http://127.0.0.1:17654/api/workspaces/update-obsidian-plugin";
 export const BROKER_DEBUG_URL = "http://127.0.0.1:17654/api/debug";
 export const BROKER_DEBUG_LOGS_URL = "http://127.0.0.1:17654/api/debug/logs";
 

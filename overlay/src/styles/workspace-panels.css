@@ -137,14 +137,24 @@
   border: 1px solid rgba(255, 255, 255, 0.06);
 }
 
-.workspace-panel {
+.workspace-panel-backdrop {
   position: fixed;
-  z-index: 32;
+  inset: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  padding: 18px;
+  background: rgba(0, 0, 0, 0.38);
+  backdrop-filter: blur(2px);
+}
+
+.workspace-panel {
+  position: relative;
   display: grid;
   gap: 8px;
-  width: min(356px, calc(100vw - 20px));
-  max-height: min(520px, calc(100vh - 64px));
-  padding: 8px;
+  width: min(520px, calc(100vw - 36px));
+  max-height: min(620px, calc(100vh - 36px));
+  padding: 10px;
   overflow: auto;
   color: #eef6f2;
   background: rgba(18, 26, 30, 0.985);
@@ -328,7 +338,7 @@
 
 .workspace-stats {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 5px;
 }
 
@@ -415,6 +425,33 @@
 .workspace-health-line.is-warning,
 .workspace-health-line.is-bad {
   color: #f7d99b;
+}
+
+.workspace-inline-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 8px;
+  color: #b8f0dc;
+  background: rgba(111, 224, 190, 0.1);
+  border: 1px solid rgba(111, 224, 190, 0.24);
+  border-radius: 6px;
+  font-size: 10px;
+  line-height: 12px;
+  cursor: pointer;
+}
+
+.workspace-inline-action:hover:not(:disabled) {
+  color: #ecfff8;
+  background: rgba(111, 224, 190, 0.17);
+  border-color: rgba(111, 224, 190, 0.38);
+}
+
+.workspace-inline-action:disabled {
+  cursor: default;
+  opacity: 0.55;
 }
 
 .workspace-issues {
