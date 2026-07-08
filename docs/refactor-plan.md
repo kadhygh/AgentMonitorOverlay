@@ -999,3 +999,13 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Target Activation Hook Extracted
+
+- Added `overlay/src/hooks/useTargetActivation.ts` for Codex App target open, Codex CLI resume launch, candidate-window listing/activation, explicit target binding, and drag-to-window cursor binding.
+- Kept pointer drag lifecycle, pending-prompt copy, Obsidian open, workspace maintenance, card reorder, and resize behavior in `MainOverlayApp.tsx` for later subphases.
+- Reduced `MainOverlayApp.tsx` from about 2618 lines to about 2203 lines while keeping `useTargetActivation.ts` at about 502 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

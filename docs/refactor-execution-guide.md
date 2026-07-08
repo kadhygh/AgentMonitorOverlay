@@ -46,6 +46,7 @@ Previous refactor progress already paid off:
 - Overlay main monitor window now lives in `overlay/src/windows/MainOverlayApp.tsx`; `overlay/src/App.tsx` is a thin window switch root.
 - Overlay broker session polling/readiness/SSE state now lives in `overlay/src/hooks/useBrokerSessions.ts`.
 - Overlay session review, permission-attention clear, target unbind, archive, and dismiss actions now live in `overlay/src/hooks/useSessionActions.ts`.
+- Overlay Codex App/CLI target opening, candidate window listing/activation, and target binding now live in `overlay/src/hooks/useTargetActivation.ts`.
 - Several Obsidian plugin helper families already live under `src/editor`, `src/canvas`, `src/annotations`, `src/note`, and `src/protocol`.
 
 Remaining hotspots are historical orchestration roots:

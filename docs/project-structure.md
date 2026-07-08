@@ -154,6 +154,7 @@ The repository has completed the first overlay extraction pass. These boundaries
 - thin Tauri webview window switch root: `overlay/src/App.tsx`
 - broker session polling, readiness, SSE updates, and session list state: `overlay/src/hooks/useBrokerSessions.ts`
 - session review, attention clear, target unbind, archive/dismiss broker actions, and related busy state: `overlay/src/hooks/useSessionActions.ts`
+- Codex App/CLI target opening, candidate window listing/activation, target binding, and activation busy state: `overlay/src/hooks/useTargetActivation.ts`
 
 `DeployWorkspaceApp.tsx` remains the deploy workflow owner: broker requests, native folder dialogs, debug logging,
 busy states, and feedback messages stay there. `DeployWorkspaceSections.tsx` owns only the visible workspace,

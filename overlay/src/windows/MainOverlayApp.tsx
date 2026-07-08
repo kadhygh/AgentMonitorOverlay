@@ -32,7 +32,6 @@ import {
   BROKER_WORKSPACE_STATUS_URL,
   BROKER_WORKSPACE_UPDATE_OBSIDIAN_PLUGIN_URL,
   brokerSessionHeartbeatUrl,
-  brokerSessionTargetBindingUrl,
   brokerSessionTaskTitleUrl,
   postBrokerJson,
 } from "../api/brokerClient";
@@ -51,22 +50,13 @@ import {
   type SessionFilter,
 } from "../domain/sessionModel";
 import {
-  activationCandidateFromWindowTarget,
-  activationTargetForSession,
   activationWindowRequest,
   canvasPathForOpen,
-  codexAppThreadUri,
-  codexAppTargetForSession,
-  codexCliTargetForSession,
-  hasExplicitWindowTarget,
-  hasStrongWindowRoutingHint,
-  isCodexSession,
   latestCanvasNotePathForFocus,
   notePathForOpen,
   obsidianAmoOpenUri,
   obsidianOpenUri,
   projectName,
-  shouldShowCodexCliResumeOption,
   shortPathLabel,
   targetBindingForSession,
   windowTargetForSession,
@@ -87,12 +77,12 @@ import {
 import {
   actionRequiredCandidate,
   launchPanelPosition,
-  menuPosition,
   shouldProbeCodexActionRequired,
   workspacePanelPosition,
 } from "../domain/overlaySessionUi";
 import { useBrokerSessions } from "../hooks/useBrokerSessions";
 import { useSessionActions } from "../hooks/useSessionActions";
+import { useTargetActivation } from "../hooks/useTargetActivation";
 import { SessionRowContent, toolDisplayForSession } from "../components/SessionCard";
 import {
   BrokerReadinessPanel,
@@ -126,13 +116,11 @@ import {
   type UtilityWindowStateEvent,
 } from "./utilityWindow";
 import type {
-  ActivationCandidate,
   ActivationResult,
   AgentSession,
   BrokerDebugStatus,
   ObsidianVaultRegistrationResult,
   OpenPathResult,
-  TargetBinding,
   WorkspaceCleanResult,
   WorkspaceGitExcludeResult,
   WorkspaceInspection,
@@ -228,7 +216,6 @@ export function MainOverlayApp() {
   const [attentionVisualSeen, setAttentionVisualSeen] = useState<Record<string, string>>({});
   const [attentionClock, setAttentionClock] = useState(() => Date.now());
   const [collapsed, setCollapsed] = useState(false);
-  const [activatingId, setActivatingId] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<{ sessionId: string; target: "note" | "canvas" } | null>(null);
   const [, setCopyingPromptId] = useState<string | null>(null);
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
@@ -313,6 +300,25 @@ export function MainOverlayApp() {
     setSessionOrder,
     setSessions,
     setWorkspacePanel,
+  });
+
+  const {
+    activateCandidate,
+    activateSession,
+    activatingId,
+    bindWindowAtCursor,
+    openCodexAppTarget,
+    openCodexCliTarget,
+  } = useTargetActivation({
+    clearSessionAttentionAfterActivation,
+    markSessionReviewed,
+    markSessionVisuallySeen,
+    postDebugLog,
+    refreshSessions,
+    setCandidateMenu,
+    setFeedback,
+    setLaunchPanel,
+    setSessions,
   });
 
   const filteredSessions = useMemo(
@@ -702,212 +708,6 @@ export function MainOverlayApp() {
   async function updateAmoTheme(next: AmoTheme) {
     await setAmoThemePreference(next);
     setFeedback(`Theme set to ${next === "light" ? "Light" : "Dark"}.`);
-  }
-
-  async function openCodexAppTarget(
-    session: AgentSession,
-    bindTarget: boolean,
-    options: { clearAttentionOnSuccess?: boolean } = {},
-  ) {
-    const target = codexAppTargetForSession(session);
-    const uri = target.uri ?? codexAppThreadUri(session.sessionId);
-    markSessionVisuallySeen(session);
-    setActivatingId(session.sessionId);
-    setCandidateMenu(null);
-    setFeedback(`${bindTarget ? "Binding and opening" : "Opening"} Codex App for ${projectName(session.cwd)}...`);
-    void postDebugLog("codex_app.target_open.start", {
-      sessionId: session.sessionId,
-      bindTarget,
-      uri,
-    });
-
-    try {
-      if (bindTarget) {
-        const binding = await postBrokerJson<{ ok: boolean; session: AgentSession; targetBinding: TargetBinding }>(
-          brokerSessionTargetBindingUrl(session.sessionId),
-          target,
-        );
-        setSessions((previous) =>
-          previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
-        );
-        void postDebugLog("codex_app.target_bound", {
-          sessionId: session.sessionId,
-          uri,
-        });
-      }
-
-      const result = await invoke<OpenPathResult>("open_uri", { uri });
-      void postDebugLog("codex_app.target_open.result", {
-        sessionId: session.sessionId,
-        ok: result.ok,
-        message: result.message,
-      });
-      setFeedback(result.ok ? "Codex App thread opened." : result.message);
-      if (result.ok && options.clearAttentionOnSuccess) {
-        void clearSessionAttentionAfterActivation(session, "open-codex-app");
-      }
-      if (result.ok) {
-        void markSessionReviewed(session, "open-codex-app", { quiet: true });
-      }
-    } catch (error) {
-      void postDebugLog("codex_app.target_open.error", {
-        sessionId: session.sessionId,
-        bindTarget,
-        message: (error as Error).message,
-      });
-      setFeedback(`Open Codex App target failed: ${(error as Error).message}`);
-    } finally {
-      setActivatingId(null);
-    }
-  }
-
-  async function openCodexCliTarget(
-    session: AgentSession,
-    bindTarget: boolean,
-    options: { clearAttentionOnSuccess?: boolean } = {},
-  ) {
-    const workspacePath = workspacePathForSession(session);
-    if (!workspacePath) {
-      setFeedback("No workspace path is linked to this card.");
-      return;
-    }
-
-    const target = codexCliTargetForSession(session);
-    markSessionVisuallySeen(session);
-    setActivatingId(session.sessionId);
-    setCandidateMenu(null);
-    setFeedback(`${bindTarget ? "Binding and launching" : "Launching"} Codex CLI resume for ${projectName(workspacePath)}...`);
-    void postDebugLog("codex_cli.target_open.start", {
-      sessionId: session.sessionId,
-      bindTarget,
-      workspacePath,
-    });
-
-    try {
-      if (bindTarget) {
-        const binding = await postBrokerJson<{ ok: boolean; session: AgentSession; targetBinding: TargetBinding }>(
-          brokerSessionTargetBindingUrl(session.sessionId),
-          target,
-        );
-        setSessions((previous) =>
-          previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
-        );
-        void postDebugLog("codex_cli.target_bound", {
-          sessionId: session.sessionId,
-          workspacePath,
-        });
-      }
-
-      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
-        workspacePath,
-        adapterId: "codex-cli",
-        sessionId: session.sessionId,
-      });
-      void postDebugLog("codex_cli.target_open.result", {
-        sessionId: session.sessionId,
-        ok: result.ok,
-        pid: result.pid ?? null,
-        targetType: result.targetBinding?.type ?? null,
-        hasWindowHint: Boolean(result.windowHint),
-      });
-      const launchedSession = result.session;
-      if (launchedSession) {
-        setSessions((previous) =>
-          previous.map((item) => (item.sessionId === launchedSession.sessionId ? launchedSession : item)),
-        );
-      }
-      setFeedback(result.message);
-      if (result.ok && options.clearAttentionOnSuccess) {
-        void clearSessionAttentionAfterActivation(session, "open-codex-cli");
-      }
-    } catch (error) {
-      void postDebugLog("codex_cli.target_open.error", {
-        sessionId: session.sessionId,
-        bindTarget,
-        workspacePath,
-        message: (error as Error).message,
-      });
-      setFeedback(`Open Codex CLI target failed: ${(error as Error).message}`);
-    } finally {
-      setActivatingId(null);
-    }
-  }
-
-  function openCodexTargetMenu(
-    session: AgentSession,
-    menuX?: number,
-    menuY?: number,
-    candidates?: ActivationCandidate[],
-    options: { allowCodexCliResumeWithCandidates?: boolean; clearAttentionOnConfirm?: boolean } = {},
-  ) {
-    const position = menuPosition(menuX, menuY);
-    const hintCandidate = activationCandidateFromWindowTarget(windowTargetForSession(session));
-    const mergedCandidates = [...(candidates ?? [])];
-    if (hintCandidate && !mergedCandidates.some((candidate) => candidate.hwnd === hintCandidate.hwnd && candidate.processId === hintCandidate.processId)) {
-      mergedCandidates.unshift(hintCandidate);
-    }
-
-    setCandidateMenu({
-      session,
-      candidates: mergedCandidates,
-      x: position.x,
-      y: position.y,
-      bindOnSelect: true,
-      clearAttentionOnConfirm: options.clearAttentionOnConfirm ?? false,
-      selectedCandidateKey: null,
-      codexAppAvailable: true,
-      codexCliResumeAvailable: shouldShowCodexCliResumeOption(
-        session,
-        mergedCandidates,
-        options.allowCodexCliResumeWithCandidates ?? true,
-      ),
-    });
-  }
-
-  async function openCodexTargetMenuFromWindowList(
-    session: AgentSession,
-    menuX?: number,
-    menuY?: number,
-    options: { clearAttentionOnConfirm?: boolean } = {},
-  ) {
-    setActivatingId(session.sessionId);
-    setFeedback(`Finding target windows for ${session.title}...`);
-    void postDebugLog("window.candidate.list.start", {
-      sessionId: session.sessionId,
-      title: session.title,
-      cwd: session.cwd,
-    });
-
-    try {
-      const result = await invoke<ActivationResult>(
-        "list_session_window_candidates",
-        activationWindowRequest(session, null, { includeWindowHintIdentity: false }),
-      );
-      const candidates = result.candidates ?? [];
-      void postDebugLog("window.candidate.list.result", {
-        sessionId: session.sessionId,
-        ok: result.ok,
-        message: result.message,
-        candidateCount: candidates.length,
-      });
-      openCodexTargetMenu(session, menuX, menuY, candidates, {
-        allowCodexCliResumeWithCandidates: true,
-        clearAttentionOnConfirm: options.clearAttentionOnConfirm ?? false,
-      });
-      setFeedback(candidates.length > 0 ? "Choose a target window, then Focus or Confirm." : result.message);
-    } catch (error) {
-      void postDebugLog("window.candidate.list.error", {
-        sessionId: session.sessionId,
-        message: (error as Error).message,
-      });
-      openCodexTargetMenu(session, menuX, menuY, [], {
-        allowCodexCliResumeWithCandidates: true,
-        clearAttentionOnConfirm: options.clearAttentionOnConfirm ?? false,
-      });
-      setFeedback(`Target listing failed: ${(error as Error).message}`);
-    } finally {
-      setActivatingId(null);
-    }
   }
 
   async function openWorkspacePanel(session: AgentSession, x?: number, y?: number) {
@@ -1346,90 +1146,6 @@ export function MainOverlayApp() {
     }
   }
 
-  async function activateSession(
-    session: AgentSession,
-    menuX?: number,
-    menuY?: number,
-    options: { clearAttentionOnSuccess?: boolean } = {},
-  ) {
-    markSessionVisuallySeen(session);
-    setLaunchPanel(null);
-    const targetBinding = targetBindingForSession(session);
-    if (targetBinding?.type === "codex-app-thread") {
-      await openCodexAppTarget(session, false, {
-        clearAttentionOnSuccess: options.clearAttentionOnSuccess ?? false,
-      });
-      return;
-    }
-    const activationTarget =
-      targetBinding?.type === "codex-cli-session" ? windowTargetForSession(session) : activationTargetForSession(session);
-    const canRouteCodexCliByHint = targetBinding?.type === "codex-cli-session" && hasStrongWindowRoutingHint(session);
-    if (isCodexSession(session) && !hasExplicitWindowTarget(activationTarget) && !canRouteCodexCliByHint) {
-      await openCodexTargetMenuFromWindowList(session, menuX, menuY, {
-        clearAttentionOnConfirm: options.clearAttentionOnSuccess ?? false,
-      });
-      return;
-    }
-
-    setActivatingId(session.sessionId);
-    setCandidateMenu(null);
-    setFeedback(`Activating ${activationTarget?.label ?? session.title}...`);
-    void postDebugLog("window.activate.start", {
-      sessionId: session.sessionId,
-      title: session.title,
-      targetType: activationTarget?.type ?? "auto",
-      hwnd: session.windowHint?.hwnd ?? null,
-      pid: session.windowHint?.pid ?? null,
-      cwd: session.cwd,
-    });
-
-    try {
-      const result = await invoke<ActivationResult>(
-        "activate_session_window",
-        activationWindowRequest(session, activationTarget),
-      );
-      if (!result.ok && ((result.candidates?.length ?? 0) > 0 || isCodexSession(session))) {
-        if (isCodexSession(session)) {
-          openCodexTargetMenu(session, menuX, menuY, result.candidates ?? [], {
-            allowCodexCliResumeWithCandidates: true,
-            clearAttentionOnConfirm: options.clearAttentionOnSuccess ?? false,
-          });
-        } else {
-          const position = menuPosition(menuX, menuY);
-          setCandidateMenu({
-            session,
-            candidates: result.candidates ?? [],
-            x: position.x,
-            y: position.y,
-            bindOnSelect: true,
-            clearAttentionOnConfirm: options.clearAttentionOnSuccess ?? false,
-            selectedCandidateKey: null,
-            codexAppAvailable: false,
-            codexCliResumeAvailable: false,
-          });
-        }
-      }
-      void postDebugLog("window.activate.result", {
-        sessionId: session.sessionId,
-        ok: result.ok,
-        message: result.message,
-        candidateCount: result.candidates?.length ?? 0,
-      });
-      setFeedback(result.message);
-      if (result.ok && options.clearAttentionOnSuccess) {
-        void clearSessionAttentionAfterActivation(session, "activate-target");
-      }
-    } catch (error) {
-      void postDebugLog("window.activate.error", {
-        sessionId: session.sessionId,
-        message: (error as Error).message,
-      });
-      setFeedback(`Activation command failed: ${(error as Error).message}`);
-    } finally {
-      setActivatingId(null);
-    }
-  }
-
   function showObsidianVaultRecovery(
     session: AgentSession,
     target: "note" | "canvas",
@@ -1740,40 +1456,6 @@ export function MainOverlayApp() {
     void copyPendingPrompt(session);
   }
 
-  async function bindWindowCandidate(session: AgentSession, candidate: ActivationCandidate, action: string) {
-    void postDebugLog("window.candidate.bind.start", {
-      sessionId: session.sessionId,
-      action,
-      hwnd: candidate.hwnd,
-      processId: candidate.processId,
-      processName: candidate.processName ?? null,
-      title: candidate.title,
-    });
-
-    const binding = await postBrokerJson<{ ok: boolean; session: AgentSession; targetBinding: TargetBinding }>(
-      brokerSessionTargetBindingUrl(session.sessionId),
-      {
-        type: "window",
-        hwnd: candidate.hwnd,
-        processId: candidate.processId,
-        processName: candidate.processName ?? null,
-        title: candidate.title,
-        label: candidate.label,
-      },
-    );
-
-    setSessions((previous) =>
-      previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
-    );
-    void postDebugLog("window.candidate.bound", {
-      sessionId: session.sessionId,
-      action,
-      hwnd: candidate.hwnd,
-      processId: candidate.processId,
-      processName: candidate.processName ?? null,
-    });
-  }
-
   function startWindowBindDrag(session: AgentSession, event: PointerEvent<HTMLElement>) {
     const currentTarget = targetBindingForSession(session);
     if (currentTarget && currentTarget.type !== "codex-cli-session") {
@@ -1875,104 +1557,7 @@ export function MainOverlayApp() {
       return;
     }
 
-    setActivatingId(session.sessionId);
-    setFeedback("Reading the window under cursor...");
-
-    try {
-      const result = await invoke<ActivationResult>("window_candidate_at_cursor");
-      const candidates = result.candidates ?? [];
-      void postDebugLog("window.cursor_candidate.result", {
-        sessionId: session.sessionId,
-        ok: result.ok,
-        message: result.message,
-        candidates: candidates.length,
-      });
-      if (!result.ok || candidates.length === 0) {
-        setFeedback(result.message || "No window found under cursor.");
-        return;
-      }
-
-      const candidate = candidates[0];
-      await bindWindowCandidate(session, candidate, "drag-to-window");
-      setFeedback(`Bound to ${candidate.processName ?? "window"}: ${candidate.title}`);
-      void refreshSessions("window-drag-bind");
-    } catch (error) {
-      void postDebugLog("window.cursor_candidate.error", {
-        sessionId: session.sessionId,
-        message: (error as Error).message,
-      });
-      setFeedback(`Drag bind failed: ${(error as Error).message}`);
-    } finally {
-      setActivatingId(null);
-    }
-  }
-
-  async function activateCandidate(
-    session: AgentSession,
-    candidate: ActivationCandidate,
-    bindWindow: boolean,
-    options: { closeOnSuccess?: boolean; markReviewedOnSuccess?: boolean; clearAttentionOnSuccess?: boolean } = {},
-  ) {
-    const closeOnSuccess = options.closeOnSuccess ?? true;
-    const markReviewedOnSuccess = options.markReviewedOnSuccess ?? true;
-    const clearAttentionOnSuccess = options.clearAttentionOnSuccess ?? false;
-    markSessionVisuallySeen(session);
-    setActivatingId(session.sessionId);
-    setFeedback(`Activating ${candidate.processName ?? "window"}...`);
-    void postDebugLog("window.candidate.activate.start", {
-      sessionId: session.sessionId,
-      hwnd: candidate.hwnd,
-      processId: candidate.processId,
-      processName: candidate.processName ?? null,
-      bindWindow,
-    });
-
-    try {
-      const result = await invoke<ActivationResult>("activate_session_window", {
-        sessionId: session.sessionId,
-        tool: session.tool,
-        title: candidate.title,
-        processName: candidate.processName ?? "",
-        titleToken: "",
-        titleContains: [],
-        project: "",
-        cwd: session.cwd,
-        pid: candidate.processId,
-        hwnd: candidate.hwnd,
-      });
-      setFeedback(result.message);
-      void postDebugLog("window.candidate.activate.result", {
-        sessionId: session.sessionId,
-        ok: result.ok,
-        message: result.message,
-        bindWindow,
-      });
-      if (result.ok) {
-        if (bindWindow) {
-          await bindWindowCandidate(session, candidate, "activate-candidate");
-          setFeedback(`Bound and activated ${candidate.processName ?? "window"}.`);
-        }
-        if (closeOnSuccess) {
-          setCandidateMenu(null);
-        }
-        if (clearAttentionOnSuccess) {
-          void clearSessionAttentionAfterActivation(session, "activate-candidate");
-        }
-        if (markReviewedOnSuccess) {
-          void markSessionReviewed(session, "activate-candidate", { quiet: true });
-        }
-      }
-    } catch (error) {
-      void postDebugLog("window.candidate.activate.error", {
-        sessionId: session.sessionId,
-        hwnd: candidate.hwnd,
-        processId: candidate.processId,
-        message: (error as Error).message,
-      });
-      setFeedback(`Candidate activation failed: ${(error as Error).message}`);
-    } finally {
-      setActivatingId(null);
-    }
+    await bindWindowAtCursor(session);
   }
 
   async function handleSessionAttention(session: AgentSession) {
