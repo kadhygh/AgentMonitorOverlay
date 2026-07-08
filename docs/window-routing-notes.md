@@ -115,6 +115,22 @@ $Host.UI.RawUI.WindowTitle = "[AMO:codex:agent-monitor-overlay:window-routing] C
 
 For Windows Terminal, prefer setting the tab title through terminal UI/settings when persistent titles are needed. For ad hoc PowerShell sessions, `$Host.UI.RawUI.WindowTitle` is enough for a low-code spike.
 
+### Provider Session Names vs Window Titles
+
+The title standard is a routing convention, not a promise that every provider can create a native named session.
+
+Current capability boundary:
+
+| Provider | Native new-session name | AMO launch behavior |
+| --- | --- | --- |
+| Claude CLI | Supported by local `claude --help` through `--name <name>`. | A card launch flow may ask for a session name, pass it to Claude, and cache it as a pending AMO task title for the first matching hook-created session. |
+| Codex CLI | Not verified. Local `codex --help` does not expose a new-session naming option; `codex resume` can accept an existing session id/name. | Do not ask for or pass a Codex new-session name. Launch plain `codex` and let the hook-created card be renamed in AMO if the user wants a display label. |
+| Codex App | App-specific. | Do not reuse CLI naming assumptions. Keep explicit user target binding. |
+
+AMO may still set a terminal/window title for routing when it controls the launcher, but that title is only a window hint. It must not replace the provider session id, and it should not be treated as proof that the provider internally named the session.
+
+If AMO records a pending launch label before the first hook event, it should be short-lived, workspace/tool scoped, and consumed only when the matching hook-created session has no user-edited `taskTitle`. Multiple same-tool launches in the same workspace are ambiguous unless a future launch token can be proven from the hook payload or selected window binding.
+
 ## Tauri / Win32 Activation Path
 
 Phase 3 should implement activation as a Tauri command in Rust, not as frontend JavaScript only.

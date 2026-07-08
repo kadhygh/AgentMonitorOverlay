@@ -1,6 +1,6 @@
 # AMO Adapter Deployment Guide
 
-Updated: 2026-05-16
+Updated: 2026-07-08
 
 This guide defines how Agent Monitor Overlay deploys workspace-local adapters and hooks. Deployment should be deterministic, script-driven, and reversible. Do not rely on an LLM to decide which files to write during normal deployment.
 
@@ -21,7 +21,7 @@ inspect
   -> plan
   -> apply
   -> health check
-  -> repair / disable / uninstall
+  -> update / clean
 ```
 
 ### Inspect
@@ -37,7 +37,7 @@ Input:
 The inspect step should detect:
 
 - existing `.amo/`
-- existing `.codex/`, `.claude/`, `.kiro/`, or known tool config
+- existing `.codex/`, `.claude/`, or known tool config
 - project root indicators such as `.git/`, `package.json`, `pyproject.toml`, `Cargo.toml`
 - whether the workspace is writable
 - whether AMO-owned files already exist
@@ -74,7 +74,7 @@ Output:
   "unsupportedAdapters": [
     {
       "id": "kiro-ide",
-      "reason": "Kiro IDE hook payload and install target still need local verification."
+      "reason": "Kiro IDE adapter work is dropped from the active roadmap."
     }
   ]
 }
@@ -112,6 +112,36 @@ Health checks should report:
 
 The first MVP can use a dry-run rather than starting Codex automatically.
 
+### Workspace Launch Shortcuts
+
+Workspace launch is separate from deployment. Deploy/inspect tells AMO which adapters are installed and launchable; launching a CLI does not by itself create a task card, note, canvas node, or provider session. The hook-created provider session remains the source of truth.
+
+`POST /api/workspaces/launch` may accept:
+
+```json
+{
+  "workspacePath": "G:\\PROJECT\\SomeProject",
+  "adapterId": "claude-cli",
+  "sessionName": "Investigate thunder skill"
+}
+```
+
+Rules:
+
+- `workspacePath` is required and must be the enrolled project folder.
+- `adapterId` must be a supported launch id such as `codex-cli`, `claude-cli`, or `codex-app`.
+- `sessionName` is optional and only meaningful for adapters with a verified native display-name option.
+- If a provider does not support native new-session naming, ignore `sessionName` rather than passing guessed CLI arguments.
+- A launch result may report process/window diagnostics, but the first hook event still owns the durable provider `sessionId`.
+
+Current provider behavior:
+
+- `claude-cli`: local CLI help exposes `--name <name>`, so launch may pass `sessionName` as the Claude display name. AMO may also keep a short-lived pending display-name hint and apply it as card `taskTitle` when the first matching hook-created Claude session arrives.
+- `codex-cli`: local CLI help does not expose a verified new-session name option. Do not pass `--name` or similar guessed arguments. Launch plain `codex` in the project folder and let the user rename the AMO task card after the real session appears.
+- `codex-app`: launch/open behavior is app-specific and should not reuse CLI naming assumptions.
+
+Pending launch names are UI labels only. They must not become identity keys, must expire, and must not override an existing provider session title or user-edited AMO task title without explicit user action.
+
 ### Deployment And Hook Versions
 
 AMO tracks deployment state separately from the Obsidian plugin version. The vault-local `md-anno-tools` version only describes the Obsidian-side note/canvas/panel behavior. CLI/TUI hook freshness is tracked by AMO deployment metadata.
@@ -126,13 +156,13 @@ Workspace deploy writes these fields to `.amo/workspace.json`, `.amo/enrollment.
 
 `Deploy Selected` is allowed to repair a `needs-update` adapter. Up-to-date adapters are not selected by default, but their individual `Update` action can still force a redeploy of that adapter.
 
-### Repair, Disable, Uninstall
+### Update And Clean
 
-Repair should re-run inspect and apply only missing or stale AMO-owned pieces.
+Update should re-run inspect and apply only missing or stale AMO-owned pieces. It is the current repair path.
 
-Disable should leave files in place when possible but stop the adapter from firing.
+Clean should remove generated vault content and derived AMO state while preserving workspace enrollment, adapters, hooks, and user-owned configuration.
 
-Uninstall should remove AMO-owned files and remove AMO hook entries from merged user config, preserving backups and user-owned content.
+Full deployment history, disable, and uninstall flows are not planned for the current MVP. Reintroduce them only if real project usage shows that update and clean are not enough.
 
 ## `.amo/` Directory
 
@@ -144,9 +174,7 @@ Recommended shape:
   enrollment.json
   adapters/
     codex-cli.json
-    codex-app.json
     claude-cli.json
-    kiro-ide.json
   hooks/
     codex-stop-message.mjs
   state/
@@ -219,13 +247,13 @@ Known risks:
 
 ### `codex-app`
 
-MVP status: deferred.
+MVP status: accepted as the current app target provider.
 
-Expected future route:
+Current route:
 
-- inspect available local app/server integration points
-- avoid assuming Codex CLI hook files apply to Codex App
-- define its own payload contract
+- use explicit target binding/opening instead of assuming Codex CLI hook files apply to Codex App
+- keep Codex App as a launch/focus target for sessions where that workflow is more convenient than CLI
+- do not require Codex App to produce the same hook payloads as Codex CLI before treating it as useful
 
 ### `claude-cli`
 
@@ -252,13 +280,12 @@ Known risks:
 
 ### `kiro-ide`
 
-MVP status: deferred.
+MVP status: dropped from the active roadmap.
 
-Expected future route:
+Decision:
 
-- verify IDE hook install target and payload shape
-- prefer project-local or workspace-local configuration
-- use IDE window/title binding when native handles are unavailable
+- Do not spend current MVP time on a Kiro adapter.
+- Reconsider only if a real workflow needs Kiro-specific hook payloads or window routing.
 
 ## Window Binding Rule
 

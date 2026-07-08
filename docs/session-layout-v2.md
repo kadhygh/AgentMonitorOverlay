@@ -1,6 +1,6 @@
 # AMO Session Layout v2
 
-Updated: 2026-06-23
+Updated: 2026-07-08
 
 This document defines the next storage contract for AMO-generated Obsidian vault content. It is the migration target after the current flat `Replies/`, `Prompts/`, and root `AgentFlow.canvas` MVP.
 
@@ -8,8 +8,8 @@ This document defines the next storage contract for AMO-generated Obsidian vault
 
 - Put each provider session behind a clear `Sessions/<session-id>/` boundary.
 - Keep prompt and reply notes together in the same chronological turn stream.
-- Separate machine-generated conversation artifacts from user-authored work canvases.
-- Keep base canvas as a raw session flow and work canvas as the human organization surface.
+- Separate machine-generated conversation artifacts from optional user-authored work canvases.
+- Keep base canvas as a raw session flow and let users manually assemble work canvases when the task benefits from one.
 - Avoid relying on Obsidian file names as durable identity; AMO metadata remains the source of truth.
 
 ## Vault Shape
@@ -48,7 +48,7 @@ New deployments should converge on this shape:
 
 ### `Sessions/<session-id>/`
 
-This is the durable folder for one Codex, Claude, Kiro, or future adapter session. The physical folder name should be a sanitized form of the provider `sessionId`; the original session id remains in `session.json` and every generated note marker.
+This is the durable folder for one Codex, Claude, or future active adapter session. The physical folder name should be a sanitized form of the provider `sessionId`; the original session id remains in `session.json` and every generated note marker.
 
 `session.json` records session-scoped metadata that is useful outside the broker snapshot:
 
@@ -102,7 +102,7 @@ Canvases/
 
 `AgentFlow.base.canvas` is the append-only raw flow. It is allowed to be visually messy because its job is provenance and chronology.
 
-Work canvases are user-facing organization surfaces. They should contain promoted references to selected generated notes, user-created notes, groups, and manual relationships. They are not the primary log.
+Work canvases are user-facing organization surfaces. They may contain references to selected generated notes, user-created notes, groups, and manual relationships. They are not the primary log, and the current workflow prefers manual canvas assembly over advanced automated promotion.
 
 ## Base Canvas
 
@@ -128,21 +128,20 @@ Required metadata:
 }
 ```
 
-## Work Canvas Promote
+## Work Canvas Direction
 
-Promote is an explicit user action. It copies or links selected generated notes from the base flow into a work canvas so the user can organize planning, branch points, decisions, and follow-up tasks.
+Advanced promote automation is not part of the near-term MVP. Current usage shows that manually assembling a work canvas is clearer than asking AMO to infer grouping, ranges, branches, or layout strategy during active work.
 
-Initial promote action:
+Allowed light behavior:
 
 ```text
 selected generated note
   -> choose or create work canvas
   -> add file node reference
   -> preserve AMO note metadata
-  -> optionally copy selected base-canvas edges when both endpoints are promoted
 ```
 
-Deferred promote behaviors:
+Parked behaviors:
 
 - Promote a contiguous range from base canvas.
 - Promote a group plus its internal links.
@@ -178,7 +177,7 @@ Canvases/AgentFlow.base.canvas
 2. Write new generated notes into `Sessions/<session-id>/turns/generated/`.
 3. Write or mirror base canvas to `Canvases/AgentFlow.base.canvas`.
 4. Update overlay and plugin open paths to consume `notePath` and `canvasPath` from broker state only, not hardcoded old folders.
-5. Add work canvas promote as a separate explicit action.
+5. Keep work canvas support lightweight; do not add advanced promote/group/auto-layout behavior unless real usage calls for it.
 
 ## Guardrails
 

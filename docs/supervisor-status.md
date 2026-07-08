@@ -1,6 +1,6 @@
 # Supervisor Status
 
-Updated: 2026-05-16
+Updated: 2026-07-08
 
 ## Current Git
 
@@ -16,7 +16,7 @@ Updated: 2026-05-16
 - Phase 1: spike done, window routing strategy documented and Win32 enumeration script added
 - Phase 2: MVP skeleton done, broker API verified locally
 - Phase 3: prototype done, overlay UI builds, native Rust code compiles, and user smoke validation has run
-- Phase 4: spike done, Codex / Claude / Kiro adapter routes documented with example hooks
+- Phase 4: spike done, Codex / Claude routes documented with example hooks; Kiro remains historical research, not an active adapter target
 - Phase 5: Hook-to-Obsidian Bridge MVP planning accepted after two external MVPs proved Codex reply capture and Obsidian annotation extraction
 
 ## Active Tasks
@@ -71,7 +71,7 @@ Updated: 2026-05-16
 - A disposable sibling test repo/project is the preferred first smoke path for Codex repo-local hooks so trust/review state does not have to land in the main worktree first.
 - User clarified on 2026-05-13 that global hook deployment is too risky for the current product. Phase 5 hook/adapter setup must be manual and workspace-scoped: user selects a folder, AMO inspects the folder, then AMO installs only project-local hook/adapter files after explicit confirmation.
 - User clarified on 2026-05-16 the full target workflow: monitor deploys adapters into a selected project folder, creates `.amo/` plus a dedicated Obsidian vault, shows task cards from hook replies, binds CLI sessions to work canvases, lets Obsidian annotations generate a continuation prompt, then copies and focuses back to the selected CLI.
-- Current MVP is narrowed to Codex CLI, one selected project folder, project-local `workspace.vaultRoot`, one `AgentFlow.canvas`, reply notes, Obsidian annotation send, and `Copy + Focus CLI`.
+- Current MVP is narrowed to Codex CLI plus Claude CLI hook support, accepted Codex App target binding, one selected project folder, project-local `workspace.vaultRoot`, one base `Canvases/AgentFlow.base.canvas`, session-scoped generated notes, Obsidian annotation send, and automatic copy + focus back to the selected CLI/App target.
 - Obsidian workflow integration is now promoted from future planning to Phase 5 bridge MVP because the user independently validated:
   - Codex `Stop` hook can capture `last_assistant_message` and cache reply Markdown/JSON.
   - Obsidian `md-anno-tools` can render and extract `[!anno]...[/anno]` annotations.
@@ -130,10 +130,10 @@ Updated: 2026-05-16
 - Keep existing overlay routing and hook status work as the base.
 - Add script-driven workspace inspect/enroll before treating any hook deployment as a product path.
 - Create project-local `.amo/` and `workspace.vaultRoot` for the first MVP. Deployments name the vault folder `.amo/AMO - <project>/`; test workspaces should be redeployed rather than migrated.
-- Support `codex-cli` first; mark Codex App, Claude CLI, and Kiro IDE as deferred in inspect output until implemented.
+- Support `codex-cli` and `claude-cli` as active hook adapters. Treat Codex App as an accepted target-binding provider. Drop Kiro IDE adapter work from the active roadmap unless a future real workflow needs it.
 - Implement the smallest bridge endpoint first: `POST /api/replies`.
 - Preserve hook file-cache fallback and protocol-clean stdout.
 - Add project-local vault reply note generation before broader Obsidian integration.
 - Add append-only canvas file node creation after note generation is stable.
-- Add overlay `Open Note`, `Open Canvas`, and `Copy Pending Prompt + Focus CLI` only after bridge session fields exist.
+- Add overlay `Open Note`, `Open Canvas`, and automatic copy + focus only after bridge session fields exist.
 - Add Obsidian plugin `Send current note annotations to AMO` as an explicit user action; do not replace the current copy-to-clipboard command.

@@ -2,7 +2,7 @@
 
 Owner: supervisor-agent / future implementation worker
 Stage: Phase 5
-Status: planned
+Status: current MVP baseline
 
 ## Goal
 
@@ -10,7 +10,8 @@ Implement the first AMO bridge slice that connects manually enrolled workspace-l
 
 Current MVP target:
 
-- Codex CLI only.
+- Codex CLI plus Claude CLI workspace-local hooks.
+- Codex App as an accepted target-binding provider.
 - One selected project folder.
 - Project-local `.amo/`.
 - Dedicated `.amo/AMO - <project>/` vault.
@@ -33,7 +34,8 @@ First implementation slice:
 - Add script-driven workspace inspect/enroll for a user-selected project folder.
 - Detect likely CLI/TUI adapter options from folder contents and local tool configuration.
 - Produce an inspect/deployment plan before writing files.
-- Support only `codex-cli` in the first MVP.
+- Support `codex-cli` and `claude-cli` in the current MVP.
+- Keep Codex App as a target-binding/launch provider, not as a Codex CLI hook clone.
 - Create `.amo/`, `.amo/enrollment.json`, `.amo/hooks/`, `.amo/state/`, and `.amo/AMO - <project>/`.
 - Reject global hook deployment by default.
 - Add `POST /api/replies`.
@@ -47,7 +49,7 @@ Follow-up slices:
 - Add overlay card actions for `Open Note` and `Open Canvas`.
 - Add Obsidian plugin command to send `[!anno]...[/anno]` annotations to AMO.
 - Add `POST /api/obsidian/annotations`, pending continuation prompt state, and overlay automatic copy+focus after Obsidian `Send to AMO`.
-- Add Codex App, Claude CLI, Kiro IDE, and multi-CLI canvas shortcuts after the Codex CLI loop is proven.
+- Keep multi-CLI canvas shortcuts and advanced work-canvas promote behavior parked until real usage calls for them.
 
 ## Non-Goals
 
@@ -67,7 +69,7 @@ Follow-up slices:
 The first slice is complete when:
 
 - `POST /api/workspaces/inspect` or equivalent local function can inspect a selected folder and report candidate adapter plans.
-- Inspect reports `codex-cli` availability and clearly marks Codex App, Claude CLI, and Kiro IDE as deferred or unsupported when not implemented.
+- Inspect reports `codex-cli` and `claude-cli` availability. Codex App may appear as an app target provider. Kiro IDE should not be presented as an active roadmap item.
 - Enrollment writes only project-local hook/adapter files after explicit confirmation.
 - Enrollment creates `.amo/` and `.amo/AMO - <project>/`.
 - Global hook deployment is rejected or absent from the product path.
