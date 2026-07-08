@@ -2,7 +2,7 @@ const http = require("http");
 const path = require("path");
 const { AMO_SCHEMA_VERSION } = require("./lib/amo-constants");
 const { createConversationService } = require("./lib/conversation-service");
-const { CORS_HEADERS, httpError, readJsonBody, sendEmpty, sendJson } = require("./lib/http");
+const { CORS_HEADERS, httpError, sendEmpty, sendJson } = require("./lib/http");
 const { createDebugLogStore } = require("./lib/debug");
 const { normalizeInteger, normalizeText } = require("./lib/normalize");
 const { createObsidianBridge } = require("./lib/obsidian-bridge");
@@ -24,6 +24,10 @@ const {
   inspectWorkspaceMaintenance,
   updateWorkspaceObsidianPlugin,
 } = require("./lib/workspace-maintenance");
+const { handleConfigRoutes } = require("./routes/config");
+const { handleObsidianRoutes } = require("./routes/obsidian");
+const { handleSessionRoutes } = require("./routes/sessions");
+const { handleWorkspaceRoutes } = require("./routes/workspaces");
 
 const HOST = process.env.AGENT_MONITOR_HOST || "127.0.0.1";
 const PORT = Number.parseInt(process.env.AGENT_MONITOR_PORT || "17654", 10);
@@ -86,6 +90,45 @@ const obsidianBridge = createObsidianBridge({
 });
 loadSnapshot();
 
+const routeContext = {
+  host: HOST,
+  port: PORT,
+  dataFile: DATA_FILE,
+  startedAt,
+  sessions,
+  debugLogStore,
+  debugStatus,
+  updateDebugConfig,
+  handleDebugLog,
+  recordDebugLog,
+  listSessions,
+  dismissAllSessions,
+  persistSnapshot,
+  publishSessionChanged,
+  openSessionEventStream,
+  bindSessionWindow,
+  clearSessionWindowBinding,
+  bindSessionTarget,
+  clearSessionTargetBinding,
+  updateSessionTaskTitle,
+  markSessionReviewed,
+  clearSessionAttention,
+  dismissSession,
+  archiveSession,
+  updateHeartbeat,
+  inspectWorkspace,
+  enrollWorkspace,
+  updateWorkspaceGitExclude,
+  launchWorkspace,
+  inspectWorkspaceMaintenance,
+  cleanWorkspaceVault,
+  updateWorkspaceObsidianPlugin,
+  baseUrl,
+  upsertSessionFromEvent,
+  conversationService,
+  obsidianBridge,
+};
+
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "OPTIONS") {
@@ -94,248 +137,12 @@ const server = http.createServer(async (req, res) => {
 
     const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
 
-    if (req.method === "GET" && url.pathname === "/api/health") {
-      return sendJson(res, 200, {
-        ok: true,
-        service: "agent-monitor-broker",
-        host: HOST,
-        port: PORT,
-        startedAt: startedAt.toISOString(),
-        uptimeSeconds: Math.round(process.uptime()),
-        sessionCount: sessions.size,
-        storage: DATA_FILE,
-      });
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/debug") {
-      return sendJson(res, 200, debugStatus(url.searchParams));
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/debug") {
-      const payload = await readJsonBody(req);
-      return sendJson(res, 200, updateDebugConfig(payload));
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/debug/logs") {
-      const payload = await readJsonBody(req);
-      return sendJson(res, 200, handleDebugLog(payload));
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/debug/clear") {
-      debugLogStore.clear();
-      recordDebugLog("broker", "debug.clear", {}, { force: true });
-      return sendJson(res, 200, debugStatus());
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/sessions") {
-      return sendJson(res, 200, {
-        count: sessions.size,
-        sessions: listSessions(),
-      });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/sessions/dismiss-all") {
-      const payload = await readJsonBody(req, { allowEmpty: true });
-      const result = dismissAllSessions(payload || {});
-      persistSnapshot();
-      publishSessionChanged("dismiss-all", null);
-      return sendJson(res, 200, result);
-    }
-
-    if (req.method === "GET" && url.pathname === "/api/session-events") {
-      return openSessionEventStream(req, res);
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/workspaces/inspect") {
-      const payload = await readJsonBody(req);
-      return sendJson(res, 200, inspectWorkspace(payload));
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/workspaces/enroll") {
-      const payload = await readJsonBody(req);
-      return sendJson(res, 200, enrollWorkspace(payload, { baseUrl, recordDebugLog }));
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/workspaces/git-exclude") {
-      const payload = await readJsonBody(req);
-      return sendJson(res, 200, updateWorkspaceGitExclude(payload, { recordDebugLog }));
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/workspaces/launch") {
-      const payload = await readJsonBody(req);
-      const result = await launchWorkspace(payload, { sessions, recordDebugLog });
-      return sendJson(res, 200, result);
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/workspaces/status") {
-      const payload = await readJsonBody(req);
-      return sendJson(res, 200, inspectWorkspaceMaintenance(payload, { baseUrl, recordDebugLog }));
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/workspaces/clean-vault") {
-      const payload = await readJsonBody(req);
-      const result = cleanWorkspaceVault(payload, { baseUrl, sessions, publishSessionChanged, recordDebugLog });
-      persistSnapshot();
-      return sendJson(res, 200, result);
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/workspaces/update-obsidian-plugin") {
-      const payload = await readJsonBody(req);
-      const result = updateWorkspaceObsidianPlugin(payload, { baseUrl, recordDebugLog });
-      persistSnapshot();
-      publishSessionChanged("obsidian-plugin-update", null);
-      return sendJson(res, 200, result);
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/events") {
-      const payload = await readJsonBody(req);
-      const session = upsertSessionFromEvent(payload);
-      persistSnapshot();
-      publishSessionChanged("event", session);
-      return sendJson(res, 200, { ok: true, session });
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/replies") {
-      const payload = await readJsonBody(req);
-      const reply = conversationService.handleReply(payload);
-      persistSnapshot();
-      publishSessionChanged("reply", reply.session);
-      return sendJson(res, 200, reply);
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/prompts") {
-      const payload = await readJsonBody(req);
-      const prompt = conversationService.handlePrompt(payload);
-      persistSnapshot();
-      publishSessionChanged("prompt", prompt.session);
-      return sendJson(res, 200, prompt);
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/obsidian/annotations") {
-      const payload = await readJsonBody(req);
-      const result = obsidianBridge.handleObsidianAnnotations(payload);
-      persistSnapshot();
-      publishSessionChanged("obsidian-annotations", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/obsidian/note-title") {
-      const payload = await readJsonBody(req);
-      const result = obsidianBridge.handleObsidianNoteTitle(payload);
-      return sendJson(res, 200, result);
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/obsidian/register-vault") {
-      const payload = await readJsonBody(req);
-      return sendJson(res, 200, obsidianBridge.handleRegisterObsidianVault(payload));
-    }
-
-    if (req.method === "POST" && url.pathname === "/api/sync-back") {
-      const payload = await readJsonBody(req);
-      const result = obsidianBridge.handleSyncBack(payload);
-      persistSnapshot();
-      publishSessionChanged("sync-back", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const windowBindingMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/window-binding$/);
-    if (req.method === "POST" && windowBindingMatch) {
-      const sessionId = decodeURIComponent(windowBindingMatch[1]);
-      const payload = await readJsonBody(req);
-      const result = bindSessionWindow(sessionId, payload);
-      persistSnapshot();
-      publishSessionChanged("window-bind", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const clearWindowBindingMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/window-binding\/clear$/);
-    if (req.method === "POST" && clearWindowBindingMatch) {
-      const sessionId = decodeURIComponent(clearWindowBindingMatch[1]);
-      const result = clearSessionWindowBinding(sessionId);
-      persistSnapshot();
-      publishSessionChanged("window-unbind", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const targetBindingMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/target-binding$/);
-    if (req.method === "POST" && targetBindingMatch) {
-      const sessionId = decodeURIComponent(targetBindingMatch[1]);
-      const payload = await readJsonBody(req);
-      const result = bindSessionTarget(sessionId, payload);
-      persistSnapshot();
-      publishSessionChanged("target-bind", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const clearTargetBindingMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/target-binding\/clear$/);
-    if (req.method === "POST" && clearTargetBindingMatch) {
-      const sessionId = decodeURIComponent(clearTargetBindingMatch[1]);
-      const result = clearSessionTargetBinding(sessionId);
-      persistSnapshot();
-      publishSessionChanged("target-unbind", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const taskTitleMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/task-title$/);
-    if (req.method === "POST" && taskTitleMatch) {
-      const sessionId = decodeURIComponent(taskTitleMatch[1]);
-      const payload = await readJsonBody(req, { allowEmpty: true });
-      const result = updateSessionTaskTitle(sessionId, payload || {});
-      persistSnapshot();
-      publishSessionChanged("task-title", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const reviewMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/reviewed$/);
-    if (req.method === "POST" && reviewMatch) {
-      const sessionId = decodeURIComponent(reviewMatch[1]);
-      const payload = await readJsonBody(req, { allowEmpty: true });
-      const result = markSessionReviewed(sessionId, payload || {});
-      persistSnapshot();
-      publishSessionChanged("reviewed", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const attentionClearMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/attention-cleared$/);
-    if (req.method === "POST" && attentionClearMatch) {
-      const sessionId = decodeURIComponent(attentionClearMatch[1]);
-      const payload = await readJsonBody(req, { allowEmpty: true });
-      const result = clearSessionAttention(sessionId, payload || {});
-      persistSnapshot();
-      publishSessionChanged("attention-cleared", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const dismissMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/dismiss$/);
-    if (req.method === "POST" && dismissMatch) {
-      const sessionId = decodeURIComponent(dismissMatch[1]);
-      const payload = await readJsonBody(req, { allowEmpty: true });
-      const result = dismissSession(sessionId, payload || {});
-      persistSnapshot();
-      publishSessionChanged("dismiss", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const archiveMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/archive$/);
-    if (req.method === "POST" && archiveMatch) {
-      const sessionId = decodeURIComponent(archiveMatch[1]);
-      const payload = await readJsonBody(req, { allowEmpty: true });
-      const result = archiveSession(sessionId, payload || {});
-      persistSnapshot();
-      publishSessionChanged("archive", result.session);
-      return sendJson(res, 200, result);
-    }
-
-    const heartbeatMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/heartbeat$/);
-    if (req.method === "POST" && heartbeatMatch) {
-      const sessionId = decodeURIComponent(heartbeatMatch[1]);
-      const payload = await readJsonBody(req, { allowEmpty: true });
-      const session = updateHeartbeat(sessionId, payload || {});
-      persistSnapshot();
-      publishSessionChanged("heartbeat", session);
-      return sendJson(res, 200, { ok: true, session });
-    }
-
+    const handled =
+      (await handleConfigRoutes(req, res, url, routeContext)) ||
+      (await handleSessionRoutes(req, res, url, routeContext)) ||
+      (await handleWorkspaceRoutes(req, res, url, routeContext)) ||
+      (await handleObsidianRoutes(req, res, url, routeContext));
+    if (handled) return;
     return sendJson(res, 404, {
       ok: false,
       error: "not_found",

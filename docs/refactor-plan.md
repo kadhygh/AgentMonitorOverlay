@@ -19,7 +19,7 @@ The active long-task execution guide is `docs/refactor-execution-guide.md`. Use 
 
 | File | Current Size | Problem |
 | --- | ---: | --- |
-| `broker/server.js` | ~612 lines | HTTP routing and event-stream plumbing remain in the root; feature behavior has moved to service modules. |
+| `broker/server.js` | ~450 lines | Native HTTP bootstrap, route dispatch, SSE publishing, and session target/window binding helpers remain in the root; feature behavior and route groups have moved out. |
 | `overlay/src/App.tsx` | ~2830 lines | Main overlay session polling, target activation, Obsidian open/recovery, workspace panel actions, card drag, window bind drag, and resize logic still live in one root. |
 | `broker/assets/obsidian/md-anno-tools/src/plugin.ts` | ~2165 lines | Plugin lifecycle, Canvas actions, annotation source edits, bridge actions, note title/property behavior, and work-canvas helpers remain concentrated. |
 | `overlay/src-tauri/src/windows.rs` | ~592 lines | Native window enumeration/activation is the only Tauri file above 500 lines; it is not urgent because `lib.rs` is already thin. |
@@ -950,4 +950,22 @@ Manual smoke:
   - `node --check broker/lib/pending-prompts.js`
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17703`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17704`
+  - `git diff --check`
+
+### 2026-07-09: Broker Route Modules Extracted
+
+- Added `broker/routes/config.js` for health and debug routes.
+- Added `broker/routes/sessions.js` for session listing, SSE handoff, review/archive/dismiss/attention, heartbeat, and target/window binding routes.
+- Added `broker/routes/workspaces.js` for workspace inspect/enroll/git-exclude/launch/status/clean/plugin-update routes.
+- Added `broker/routes/obsidian.js` for hook event intake, prompt/reply routes, Obsidian annotation/title/vault/sync-back routes.
+- Kept native HTTP bootstrap, route dispatch, SSE publishing, and the remaining session target/window binding helper implementations in `broker/server.js`.
+- Reduced `broker/server.js` from about 612 lines to about 450 lines; route modules are between about 39 and 116 lines.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/routes/config.js`
+  - `node --check broker/routes/sessions.js`
+  - `node --check broker/routes/workspaces.js`
+  - `node --check broker/routes/obsidian.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17705`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17706`
   - `git diff --check`

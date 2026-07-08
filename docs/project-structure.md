@@ -35,6 +35,10 @@ Expected ownership after refactor:
 Expected ownership after refactor:
 
 - `server.js`: native HTTP server bootstrap and route table.
+- `routes/config.js`: health and debug routes.
+- `routes/sessions.js`: session listing, SSE handoff, review/archive/dismiss/attention, heartbeat, and target/window binding routes.
+- `routes/workspaces.js`: workspace inspect/enroll/git-exclude/launch/status/clean/plugin-update routes.
+- `routes/obsidian.js`: hook event intake, prompt/reply routes, Obsidian annotation/title/vault/sync-back routes.
 - `lib/amo-constants.js`: shared AMO layout, version, canvas, and plugin constants.
 - `lib/http.js`: request/response helpers.
 - `lib/debug.js`: bounded debug log and debug status.
@@ -174,6 +178,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 - prompt/reply artifact orchestration and duplicate prompt policy: `broker/lib/conversation-service.js`
 - Obsidian annotation sync-back, note title updates, vault registration, and recovered annotation sessions: `broker/lib/obsidian-bridge.js`
 - annotation normalization, annotation numbering, pending prompt rendering, and prompt duplicate hashes: `broker/lib/pending-prompts.js`
+- HTTP route grouping: `broker/routes/config.js`, `broker/routes/sessions.js`, `broker/routes/workspaces.js`, `broker/routes/obsidian.js`
 - Codex/Claude session display-name cache: `broker/lib/display-names.js`
 - shared text, integer, array, and version normalization helpers: `broker/lib/normalize.js`
 - Obsidian vault registry, plugin install/health, runtime-state, and comparable path helpers: `broker/lib/obsidian-vault.js`
@@ -191,7 +196,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 
 The remaining source hotspots are:
 
-- `broker/server.js` (about 612 lines after conversation/Obsidian bridge extraction)
+- `broker/server.js` (about 450 lines after route module extraction)
 - `overlay/src/App.tsx`
 - `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
 - `overlay/src-tauri/src/windows.rs`
