@@ -714,6 +714,8 @@ Manual smoke:
 ### Plugin Subphase P2: Annotation Source Commands
 
 Status: started. Source text range lookup and editor offset conversion now live in `src/annotations/source-ranges.ts`.
+Source editing command implementations for insert/append/delete now live in `src/annotations/commands.ts`; `plugin.ts`
+keeps public wrapper methods for existing Obsidian commands, panel actions, and render-child delete callbacks.
 
 Create:
 

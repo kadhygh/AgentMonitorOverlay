@@ -13,8 +13,6 @@ import {
   AMO_PANEL_VIEW_TYPE,
   AMO_SEND_ACTION_CLASS,
   AMO_TITLE_ACTION_CLASS,
-  ANNO_TAG_PREFIX,
-  ANNO_TAG_SUFFIX,
   DEFAULT_CANVAS_PATH,
   DEFAULT_SETTINGS,
   PLUGIN_VERSION,
@@ -27,15 +25,10 @@ import { AmoAnnotationPanelView } from "./ui/panel-view";
 import { AnnotationInputModal, CanvasNoteTargetModal, NoteTitleModal, WorkCanvasPickerModal } from "./ui/modals";
 import { AmoAnnotationSettingTab } from "./ui/settings-tab";
 import {
-  buildAnnotationMarkup,
-  buildReferencedAnnotationMarkup,
   extractAnnotationItems,
   formatAnnotationsForClipboard,
-  findAnnotationItemAtOffset,
-  insertReferencedAnnotation,
-  normalizeAnnotationContent,
-  removeAnnotationByIndex,
 } from "./annotations/syntax";
+import * as annotationCommands from "./annotations/commands";
 import {
   findLegacyAnnotationBlockForSection,
   linkifyLocalCodeLinks,
@@ -44,12 +37,6 @@ import {
   LegacyAnnotationBlockRenderChild,
   LegacyAnnotationHiddenSectionRenderChild,
 } from "./annotations/render";
-import {
-  editorOffsetToPosition,
-  editorPositionToOffset,
-  endOfLineOffset,
-  findUnannotatedMarkdownRange,
-} from "./annotations/source-ranges";
 import {
   checkBridgeHealthAction,
   copyAnnotationsFromFileAction,
@@ -1438,242 +1425,63 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   canInsertAnnotationAtActiveEditor() {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    if (activeView && activeView.editor) return true;
-    return Boolean(!this.isActiveLeafCanvas() && this.lastMarkdownView && this.lastMarkdownView.editor);
+    return annotationCommands.canInsertAnnotationAtActiveEditor(this);
   }
 
   canInsertAnnotationAtFileEditor(file) {
-    const view = this.getMarkdownViewForFile(file);
-    return Boolean(view && view.editor);
+    return annotationCommands.canInsertAnnotationAtFileEditor(this, file);
   }
 
   getMarkdownViewForFile(fileOrPath) {
-    const filePath = typeof fileOrPath === "string" ? fileOrPath : fileOrPath && fileOrPath.path;
-    const leaf = this.findMarkdownLeafForFilePath(filePath);
-    return leaf && leaf.view instanceof MarkdownView ? leaf.view : null;
+    return annotationCommands.getMarkdownViewForFile(this, fileOrPath);
   }
 
   insertAnnotationAtFileEditor(file) {
-    const view = this.getMarkdownViewForFile(file);
-    if (!view || !view.editor || !view.file) {
-      new Notice("Open this note in a Markdown tab before inserting an annotation marker.");
-      return false;
-    }
-
-    const leaf = this.findLeafForView(view);
-    if (leaf) {
-      this.app.workspace.setActiveLeaf(leaf, { focus: true });
-    }
-    this.rememberMarkdownView(view, leaf);
-    this.wrapSelectionWithAnnotation(view.editor);
-    this.setOperationStatus("Inserted annotation marker in " + view.file.path + ".", "success");
-    return true;
+    return annotationCommands.insertAnnotationAtFileEditor(this, file);
   }
 
   insertAnnotationAtActiveEditor() {
-    const view = this.app.workspace.getActiveViewOfType(MarkdownView) || this.getActiveMarkdownView();
-    if (!view || !view.editor) {
-      new Notice("No active Markdown editor.");
-      return;
-    }
-
-    const leaf = this.findLeafForView(view) || this.lastMarkdownLeaf;
-    if (leaf) {
-      this.app.workspace.setActiveLeaf(leaf, { focus: true });
-    }
-    this.wrapSelectionWithAnnotation(view.editor);
-    this.setOperationStatus("Inserted annotation marker.", "success");
+    return annotationCommands.insertAnnotationAtActiveEditor(this);
   }
 
   async insertAnnotationFromCurrentSelection() {
-    const activeView = this.app.workspace.getActiveViewOfType(MarkdownView);
-    const editorSelection = activeView && activeView.editor ? activeView.editor.getSelection() : "";
-    if (activeView && activeView.editor && editorSelection.trim().length > 0) {
-      this.wrapSelectionWithAnnotation(activeView.editor);
-      this.setOperationStatus("Inserted annotation marker.", "success");
-      return;
-    }
-
-    const selectedText = getWindowSelectionText();
-    const file = this.getActiveMarkdownFile();
-    if (selectedText && file) {
-      await this.insertReferencedAnnotationNearTextInFile(file, selectedText);
-      return;
-    }
-
-    if (activeView && activeView.editor) {
-      this.wrapSelectionWithAnnotation(activeView.editor);
-      this.setOperationStatus("Inserted annotation marker.", "success");
-      return;
-    }
-
-    this.insertAnnotationAtActiveEditor();
+    return annotationCommands.insertAnnotationFromCurrentSelection(this);
   }
 
   wrapSelectionWithAnnotation(editor) {
-    const selection = editor.getSelection();
-    if (selection.trim().length > 0) {
-      insertReferencedAnnotation(editor, selection);
-      return;
-    }
-
-    const cursor = editor.getCursor();
-    editor.replaceSelection(ANNO_TAG_PREFIX + ANNO_TAG_SUFFIX);
-    editor.setCursor({
-      line: cursor.line,
-      ch: cursor.ch + ANNO_TAG_PREFIX.length,
-    });
+    return annotationCommands.wrapSelectionWithAnnotation(this, editor);
   }
 
   async appendReferencedAnnotationToFile(file, reference) {
-    const content = normalizeAnnotationContent(reference);
-    if (!content) {
-      new Notice("No selected text to quote.");
-      return;
-    }
-
-    await this.appendAnnotationBlockToFile(file, buildReferencedAnnotationMarkup(content));
-    this.setOperationStatus("Referenced annotation appended to " + file.path + ".", "success");
-    new Notice("Referenced annotation appended.");
+    return annotationCommands.appendReferencedAnnotationToFile(this, file, reference);
   }
 
   async insertReferencedAnnotationNearTextInFile(file, reference) {
-    const content = normalizeAnnotationContent(reference);
-    if (!content) {
-      new Notice("No selected text to quote.");
-      return false;
-    }
-
-    const markdown = await this.app.vault.cachedRead(file as any);
-    const range = findUnannotatedMarkdownRange(markdown, content);
-    if (!range) {
-      this.setOperationStatus(
-        "Could not locate the selected text in " + file.path + ". Switch to editing mode and try again.",
-        "error"
-      );
-      new Notice("Could not locate selected text in this note. Switch to editing mode and try again.");
-      return false;
-    }
-
-    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
-    const insertAt = endOfLineOffset(source, range.end);
-    const lineStart = source.lastIndexOf("\n", Math.max(0, insertAt - 1)) + 1;
-    const lineText = source.slice(lineStart, insertAt);
-    const leading = lineText.trim().length > 0 ? "\n\n" : "";
-    const block = leading + buildReferencedAnnotationMarkup(content).replace(/\n\n\[\/anno\]$/u, "\n\n\n[/anno]");
-    const nextContent = source.slice(0, insertAt) + block + source.slice(insertAt);
-
-    await this.app.vault.modify(file, nextContent);
-    this.setOperationStatus("Inserted referenced annotation near selection in " + file.path + ".", "success");
-    new Notice("Referenced annotation inserted.");
-    this.refreshPanels();
-    return true;
+    return annotationCommands.insertReferencedAnnotationNearTextInFile(this, file, reference);
   }
 
   async appendAnnotationToFile(file, rawContent) {
-    const content = normalizeAnnotationContent(rawContent);
-    if (!content) {
-      new Notice("Annotation content cannot be empty.");
-      return;
-    }
-
-    if (content.includes(ANNO_TAG_SUFFIX)) {
-      new Notice("Annotation content cannot include " + ANNO_TAG_SUFFIX + ".");
-      return;
-    }
-
-    const block = buildAnnotationMarkup(content);
-    await this.appendAnnotationBlockToFile(file, block);
-    this.setOperationStatus("Annotation appended to " + file.path + ".", "success");
-    new Notice("Annotation appended.");
+    return annotationCommands.appendAnnotationToFile(this, file, rawContent);
   }
 
   async appendAnnotationBlockToFile(file, block) {
-    const markdown = await this.app.vault.cachedRead(file as any);
-    const nextContent = markdown.trim().length === 0
-      ? block + "\n"
-      : markdown.replace(/\s*$/u, "") + "\n\n" + block + "\n";
-
-    await this.app.vault.modify(file, nextContent);
+    return annotationCommands.appendAnnotationBlockToFile(this, file, block);
   }
 
   async deleteAnnotationFromFile(file, annotationIndex) {
-    if (!file || !Number.isSafeInteger(annotationIndex)) {
-      new Notice("No annotation selected.");
-      return false;
-    }
-
-    const markdown = await this.app.vault.cachedRead(file as any);
-    const result = removeAnnotationByIndex(markdown, annotationIndex);
-    if (!result.removed) {
-      new Notice("Annotation not found.");
-      return false;
-    }
-
-    await this.app.vault.modify(file, result.markdown);
-    this.debugLog("annotations.delete.ok", {
-      notePath: file.path,
-      annotationIndex,
-      annotationPreview: previewText(result.item && result.item.content),
-    });
-    this.setOperationStatus("Deleted annotation " + annotationIndex + " from " + file.path + ".", "success");
-    new Notice("Annotation deleted.");
-    this.refreshPanels();
-    return true;
+    return annotationCommands.deleteAnnotationFromFile(this, file, annotationIndex);
   }
 
   async deleteRenderedAnnotation(sourcePath, block) {
-    const file = sourcePath ? this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(sourcePath)) : null;
-    if (!file || typeof file.path !== "string") {
-      new Notice("Could not resolve annotation source note.");
-      return false;
-    }
-
-    const markdown = await this.app.vault.cachedRead(file as any);
-    const items = extractAnnotationItems(markdown);
-    const target =
-      items.find((item) => item.startLine === block.startLine && item.endLine === block.endLine) ||
-      items.find((item) => normalizeAnnotationContent(item.content) === normalizeAnnotationContent(block.content));
-    if (!target) {
-      new Notice("Annotation not found.");
-      return false;
-    }
-
-    return this.deleteAnnotationFromFile(file, target.index);
+    return annotationCommands.deleteRenderedAnnotation(this, sourcePath, block);
   }
 
   annotationItemAtEditorCursor(editor) {
-    if (!editor || typeof editor.getValue !== "function" || typeof editor.getCursor !== "function") return null;
-    const markdown = editor.getValue();
-    const cursor = editor.getCursor();
-    const offset = editorPositionToOffset(markdown, cursor);
-    return findAnnotationItemAtOffset(markdown, offset);
+    return annotationCommands.annotationItemAtEditorCursor(this, editor);
   }
 
   deleteAnnotationAtEditor(editor) {
-    const item = this.annotationItemAtEditorCursor(editor);
-    if (!item) {
-      new Notice("Cursor is not inside an AMO annotation.");
-      return false;
-    }
-
-    const markdown = editor.getValue();
-    const result = removeAnnotationByIndex(markdown, item.index);
-    if (!result.removed || !result.range) {
-      new Notice("Annotation not found.");
-      return false;
-    }
-
-    editor.replaceRange(
-      "",
-      editorOffsetToPosition(markdown, result.range.startOffset),
-      editorOffsetToPosition(markdown, result.range.endOffset)
-    );
-    this.setOperationStatus("Deleted current annotation.", "success");
-    new Notice("Annotation deleted.");
-    this.refreshPanels();
-    return true;
+    return annotationCommands.deleteAnnotationAtEditor(this, editor);
   }
 
   async updateAmoNoteTitle(file, rawTitle) {

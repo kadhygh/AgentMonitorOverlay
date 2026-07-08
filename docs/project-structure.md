@@ -181,8 +181,9 @@ Annotation copy/send and bridge health actions live in
 command, and shortcut callers.
 Inline annotation token replacement and local-code-link linkification now live with legacy annotation section rendering in
 `broker/assets/obsidian/md-anno-tools/src/annotations/render.ts`; source text range lookup and editor offset conversion live in
-`broker/assets/obsidian/md-anno-tools/src/annotations/source-ranges.ts`; `plugin.ts` only decides when postprocessing runs
-and when annotation commands execute.
+`broker/assets/obsidian/md-anno-tools/src/annotations/source-ranges.ts`; source editing commands for inserting, appending,
+and deleting annotations live in `broker/assets/obsidian/md-anno-tools/src/annotations/commands.ts`; `plugin.ts` only
+decides when postprocessing runs and exposes public wrapper methods for command/panel callers.
 Canvas latest-note marking, centering, node element lookup, bounds, zoom, and selection collection helpers live in
 `broker/assets/obsidian/md-anno-tools/src/canvas/navigation.ts`; `plugin.ts` keeps the debug-aware `safeCanvasCall` wrapper.
 `obsidian://amo-open` path resolution, tab reuse, new-tab opening, and focus-note follow-up live in
