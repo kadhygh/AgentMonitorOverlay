@@ -22,16 +22,16 @@ This guide is the execution contract for the next long AMO refactor task. The go
    - Each subphase should end with syntax/build validation and a narrow commit.
    - If a phase touches runtime behavior, run the relevant manual smoke before committing.
 
-## Current Baseline
+## Current Checkpoint
 
 Generated bundles and lockfiles are excluded from this baseline. In particular, `broker/assets/obsidian/md-anno-tools/main.js` is a tracked Obsidian plugin build output and should not be used as a source-size hotspot.
 
 | Area | Files | Source lines | Files >800 lines | Files >500 lines | Largest source file |
 | --- | ---: | ---: | ---: | ---: | --- |
-| Overlay | 40 | 10429 | 1 | 1 | `overlay/src/App.tsx` at about 2830 lines |
-| Broker | 18 | 6207 | 1 | 2 | `broker/server.js` at about 2950 lines |
-| Obsidian plugin source | 19 | 4669 | 1 | 2 | `broker/assets/obsidian/md-anno-tools/src/plugin.ts` at about 2165 lines |
-| Tauri | 10 | 1394 | 0 | 1 | `overlay/src-tauri/src/windows.rs` at about 592 lines |
+| Overlay | 54 | 10919 | 0 | 1 | `overlay/src/windows/MainOverlayApp.tsx` at about 756 lines |
+| Broker | 28 | 6032 | 0 | 1 | `broker/lib/session-store.js` at about 580 lines |
+| Obsidian plugin source | 30 | 5019 | 1 | 2 | `broker/assets/obsidian/md-anno-tools/src/plugin.ts` at about 846 lines |
+| Tauri | 9 | 1391 | 0 | 1 | `overlay/src-tauri/src/windows.rs` at about 592 lines |
 
 Previous refactor progress already paid off:
 
@@ -56,11 +56,11 @@ Previous refactor progress already paid off:
 - Overlay Codex action-required probing and debug logging now live in `overlay/src/hooks/useCodexActionRequiredProbe.ts` and `overlay/src/hooks/useDebugLogging.ts`.
 - Several Obsidian plugin helper families already live under `src/editor`, `src/canvas`, `src/annotations`, `src/note`, and `src/protocol`.
 
-Remaining hotspots are historical orchestration roots:
+Remaining watchlist files are acceptable transition roots for this phase:
 
-- `broker/server.js` (about 450 lines after B1-B5 extraction)
-- `overlay/src/windows/MainOverlayApp.tsx`
-- `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
+- `broker/assets/obsidian/md-anno-tools/src/plugin.ts` is still slightly above the preferred 800-line transition ceiling, but now mostly contains lifecycle, command registration, and wrapper methods.
+- `overlay/src/windows/MainOverlayApp.tsx` remains the main monitor orchestration root at about 756 lines.
+- `broker/lib/session-store.js`, `overlay/src-tauri/src/windows.rs`, `broker/assets/obsidian/md-anno-tools/src/ui/panel-view.ts`, and `broker/assets/obsidian/md-anno-tools/styles.css` are above 500 lines but cohesive enough to leave for later need-driven work.
 
 ## Recommended Order
 

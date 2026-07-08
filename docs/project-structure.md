@@ -232,14 +232,14 @@ The broker extraction has started. These boundaries have already moved out of `b
 - workspace path, Git root, JSON read/write, and safety helpers: `broker/lib/filesystem.js`
 - Codex/Claude hook event lists, generated hook script text, and CLI config merge helpers: `broker/hooks/codex.js`, `broker/hooks/claude.js`
 
-The remaining source hotspots are:
+The remaining watchlist files are:
 
-- `broker/server.js` (about 450 lines after route module extraction)
-- `overlay/src/App.tsx`
-- `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
-- `overlay/src-tauri/src/windows.rs`
-- `broker/assets/obsidian/md-anno-tools/src/ui/panel-view.ts`
-- `broker/assets/obsidian/md-anno-tools/styles.css`
+- `broker/assets/obsidian/md-anno-tools/src/plugin.ts` (about 846 lines, now mostly lifecycle/registration/wrappers)
+- `overlay/src/windows/MainOverlayApp.tsx` (about 756 lines, main monitor orchestration root)
+- `broker/lib/session-store.js` (about 580 lines, cohesive session state and mutation policy)
+- `overlay/src-tauri/src/windows.rs` (about 592 lines, native window enumeration/activation)
+- `broker/assets/obsidian/md-anno-tools/src/ui/panel-view.ts` (about 558 lines, cohesive panel rendering)
+- `broker/assets/obsidian/md-anno-tools/styles.css` (about 529 lines, plugin CSS)
 
 Use `docs/refactor-execution-guide.md` for the next long-task split order, guardrails, and validation matrix. Use `docs/refactor-plan.md` as the historical plan and progress log.
 

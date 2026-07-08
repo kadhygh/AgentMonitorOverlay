@@ -15,15 +15,15 @@ The active long-task execution guide is `docs/refactor-execution-guide.md`. Use 
 - Update architecture and structure documentation while code moves, so future work has a map.
 - Keep Obsidian Canvas behavior inside the existing safe boundary: broker writes JSON Canvas data, plugin may add explicit user actions, and AMO must not take over native Canvas rendering.
 
-## Current Hotspots
+## Post-Refactor Watchlist
 
 | File | Current Size | Problem |
 | --- | ---: | --- |
-| `broker/server.js` | ~450 lines | Native HTTP bootstrap, route dispatch, SSE publishing, and session target/window binding helpers remain in the root; feature behavior and route groups have moved out. |
-| `overlay/src/App.tsx` | ~2830 lines | Main overlay session polling, target activation, Obsidian open/recovery, workspace panel actions, card drag, window bind drag, and resize logic still live in one root. |
-| `broker/assets/obsidian/md-anno-tools/src/plugin.ts` | ~2165 lines | Plugin lifecycle, Canvas actions, annotation source edits, bridge actions, note title/property behavior, and work-canvas helpers remain concentrated. |
+| `broker/assets/obsidian/md-anno-tools/src/plugin.ts` | ~846 lines | Still slightly above the preferred transition ceiling, but now mostly lifecycle, registration, and wrapper methods. Split further only when a concrete behavior area grows. |
+| `overlay/src/windows/MainOverlayApp.tsx` | ~756 lines | Main monitor orchestration root. It is below the 800-line transition ceiling and now delegates broker, target, Obsidian, workspace, drag, resize, utility-window, attention, pending-prompt, probe, and debug behavior to hooks. |
+| `broker/lib/session-store.js` | ~580 lines | Session state and mutation policy are cohesive. Split later only if archive/review/attention/target-binding policy becomes hard to reason about. |
 | `overlay/src-tauri/src/windows.rs` | ~592 lines | Native window enumeration/activation is the only Tauri file above 500 lines; it is not urgent because `lib.rs` is already thin. |
-| `broker/assets/obsidian/md-anno-tools/src/ui/panel-view.ts` | ~558 lines | Panel view is large but cohesive and lower priority than `plugin.ts`. |
+| `broker/assets/obsidian/md-anno-tools/src/ui/panel-view.ts` | ~558 lines | Panel view is large but cohesive; `ui/panel-actions.ts` now owns panel-side behavior helpers. |
 | `broker/assets/obsidian/md-anno-tools/styles.css` | ~529 lines | Plugin CSS is slightly over target but less risky than behavior roots. |
 
 Generated files and lockfiles are excluded from the source-size target.
