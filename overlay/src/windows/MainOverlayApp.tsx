@@ -72,15 +72,12 @@ import { toCliPasteClipboardText, writeClipboardText } from "../native/clipboard
 import {
   applyScratchpadShortcutState,
   loadScratchpadShortcutState,
-  saveScratchpadShortcutState,
-  type ScratchpadShortcutState,
 } from "../native/scratchpadShortcut";
-import { type AmoTheme, useAmoThemeRuntime } from "../theme/amoTheme";
+import { useAmoThemeRuntime } from "../theme/amoTheme";
 import type {
   ActivationResult,
   AgentSession,
   BrokerDebugStatus,
-  OpenPathResult,
 } from "../types";
 
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
@@ -135,7 +132,7 @@ function sessionMatchesSearch(session: AgentSession, query: string) {
 }
 
 export function MainOverlayApp() {
-  const [amoTheme, setAmoThemePreference] = useAmoThemeRuntime();
+  useAmoThemeRuntime();
   const [collapsed, setCollapsed] = useState(false);
   const [, setCopyingPromptId] = useState<string | null>(null);
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
@@ -144,9 +141,6 @@ export function MainOverlayApp() {
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
   const [launchPanel, setLaunchPanel] = useState<LaunchPanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
-  const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
-    loadScratchpadShortcutState(),
-  );
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [debugCount, setDebugCount] = useState(0);
   const [debugBusy, setDebugBusy] = useState(false);
@@ -372,6 +366,7 @@ export function MainOverlayApp() {
   }, [debugCount]);
 
   useEffect(() => {
+    const scratchpadShortcut = loadScratchpadShortcutState();
     void applyScratchpadShortcutState(scratchpadShortcut).catch((error) => {
       setFeedback(`Scratchpad shortcut setup failed: ${(error as Error).message}`);
     });
@@ -504,32 +499,6 @@ export function MainOverlayApp() {
     } catch {
       // Debug logging must never block the overlay action being debugged.
     }
-  }
-
-  async function updateScratchpadShortcut(next: ScratchpadShortcutState) {
-    setScratchpadShortcut(next);
-    saveScratchpadShortcutState(next);
-
-    try {
-      const result = await applyScratchpadShortcutState(next);
-      setFeedback(result.message);
-    } catch (error) {
-      setFeedback(`Scratchpad shortcut update failed: ${(error as Error).message}`);
-    }
-  }
-
-  async function openScratchpadNow() {
-    try {
-      const result = await invoke<OpenPathResult>("show_scratchpad_at_cursor");
-      setFeedback(result.message);
-    } catch (error) {
-      setFeedback(`Scratchpad open failed: ${(error as Error).message}`);
-    }
-  }
-
-  async function updateAmoTheme(next: AmoTheme) {
-    await setAmoThemePreference(next);
-    setFeedback(`Theme set to ${next === "light" ? "Light" : "Dark"}.`);
   }
 
   async function toggleCollapsed() {

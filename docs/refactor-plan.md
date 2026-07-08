@@ -1055,7 +1055,8 @@ Manual smoke:
 
 - Added `overlay/src/hooks/useAttentionVisuals.ts` for attention seen-state, animation clock, visual activity checks, and taskbar review attention request/clear behavior.
 - Kept debug logging functions in `MainOverlayApp.tsx` because broker startup/session polling still depends on `postDebugLog` during hook initialization.
-- Reduced `MainOverlayApp.tsx` from about 1192 lines to about 1066 lines while keeping `useAttentionVisuals.ts` at about 160 lines.
+- Removed stale main-window inline settings helpers for scratchpad/theme updates; those settings are owned by `SettingsWindowApp.tsx`, while main still applies the saved scratchpad shortcut on startup.
+- Reduced `MainOverlayApp.tsx` from about 1192 lines to about 1035 lines while keeping `useAttentionVisuals.ts` at about 160 lines.
 - Validation passed:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
