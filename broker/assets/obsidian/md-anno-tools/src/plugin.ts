@@ -1433,6 +1433,34 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     return Boolean(!this.isActiveLeafCanvas() && this.lastMarkdownView && this.lastMarkdownView.editor);
   }
 
+  canInsertAnnotationAtFileEditor(file) {
+    const view = this.getMarkdownViewForFile(file);
+    return Boolean(view && view.editor);
+  }
+
+  getMarkdownViewForFile(fileOrPath) {
+    const filePath = typeof fileOrPath === "string" ? fileOrPath : fileOrPath && fileOrPath.path;
+    const leaf = this.findMarkdownLeafForFilePath(filePath);
+    return leaf && leaf.view instanceof MarkdownView ? leaf.view : null;
+  }
+
+  insertAnnotationAtFileEditor(file) {
+    const view = this.getMarkdownViewForFile(file);
+    if (!view || !view.editor || !view.file) {
+      new Notice("Open this note in a Markdown tab before inserting an annotation marker.");
+      return false;
+    }
+
+    const leaf = this.findLeafForView(view);
+    if (leaf) {
+      this.app.workspace.setActiveLeaf(leaf, { focus: true });
+    }
+    this.rememberMarkdownView(view, leaf);
+    this.wrapSelectionWithAnnotation(view.editor);
+    this.setOperationStatus("Inserted annotation marker in " + view.file.path + ".", "success");
+    return true;
+  }
+
   insertAnnotationAtActiveEditor() {
     const view = this.app.workspace.getActiveViewOfType(MarkdownView) || this.getActiveMarkdownView();
     if (!view || !view.editor) {

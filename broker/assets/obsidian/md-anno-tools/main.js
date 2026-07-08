@@ -38,7 +38,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.35";
+var PLUGIN_VERSION = "1.4.36";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -1268,6 +1268,7 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     };
   }
   async insertAnnotation(info) {
+    info = await this.currentInfoForAction(info, "insert-annotation");
     if (!info.file) return;
     const activeLeafType = this.plugin.activeLeafType();
     if (activeLeafType === "canvas" || info.source === "canvas-selection") {
@@ -1286,13 +1287,37 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       await this.plugin.insertReferencedAnnotationNearTextInFile(info.file, selectedText);
       return;
     }
-    if (this.plugin.canInsertAnnotationAtActiveEditor()) {
-      await this.plugin.insertAnnotationFromCurrentSelection();
+    if (this.plugin.canInsertAnnotationAtFileEditor(info.file)) {
+      this.plugin.insertAnnotationAtFileEditor(info.file);
       return;
     }
     new AnnotationInputModal(this.app, async (value) => {
       await this.plugin.appendAnnotationToFile(info.file, value);
     }).open();
+  }
+  async currentInfoForAction(fallbackInfo, action) {
+    try {
+      const liveInfo = await this.plugin.getActiveNoteInfo();
+      const fallbackPath = fallbackInfo && fallbackInfo.file && fallbackInfo.file.path;
+      const livePath = liveInfo && liveInfo.file && liveInfo.file.path;
+      if (livePath && livePath !== fallbackPath) {
+        this.plugin.debugLog("panel.action.live_note_changed", {
+          action,
+          fallbackPath,
+          livePath,
+          fallbackSource: fallbackInfo && fallbackInfo.source,
+          liveSource: liveInfo && liveInfo.source,
+          activeLeafType: this.plugin.activeLeafType()
+        });
+      }
+      return liveInfo && liveInfo.file ? liveInfo : fallbackInfo;
+    } catch (error) {
+      this.plugin.debugLog("panel.action.live_note_error", {
+        action,
+        message: messageFromError(error)
+      });
+      return fallbackInfo;
+    }
   }
   addActionButton(container, icon, label, onClick, enabled, title = "") {
     const button = container.createEl("button", {
@@ -3391,6 +3416,30 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian8.Plugin {
     const activeView = this.app.workspace.getActiveViewOfType(import_obsidian8.MarkdownView);
     if (activeView && activeView.editor) return true;
     return Boolean(!this.isActiveLeafCanvas() && this.lastMarkdownView && this.lastMarkdownView.editor);
+  }
+  canInsertAnnotationAtFileEditor(file) {
+    const view = this.getMarkdownViewForFile(file);
+    return Boolean(view && view.editor);
+  }
+  getMarkdownViewForFile(fileOrPath) {
+    const filePath = typeof fileOrPath === "string" ? fileOrPath : fileOrPath && fileOrPath.path;
+    const leaf = this.findMarkdownLeafForFilePath(filePath);
+    return leaf && leaf.view instanceof import_obsidian8.MarkdownView ? leaf.view : null;
+  }
+  insertAnnotationAtFileEditor(file) {
+    const view = this.getMarkdownViewForFile(file);
+    if (!view || !view.editor || !view.file) {
+      new import_obsidian8.Notice("Open this note in a Markdown tab before inserting an annotation marker.");
+      return false;
+    }
+    const leaf = this.findLeafForView(view);
+    if (leaf) {
+      this.app.workspace.setActiveLeaf(leaf, { focus: true });
+    }
+    this.rememberMarkdownView(view, leaf);
+    this.wrapSelectionWithAnnotation(view.editor);
+    this.setOperationStatus("Inserted annotation marker in " + view.file.path + ".", "success");
+    return true;
   }
   insertAnnotationAtActiveEditor() {
     const view = this.app.workspace.getActiveViewOfType(import_obsidian8.MarkdownView) || this.getActiveMarkdownView();

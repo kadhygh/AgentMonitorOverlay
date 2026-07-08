@@ -489,6 +489,7 @@ export class AmoAnnotationPanelView extends ItemView {
   }
 
   async insertAnnotation(info: any) {
+    info = await this.currentInfoForAction(info, "insert-annotation");
     if (!info.file) return;
 
     const activeLeafType = this.plugin.activeLeafType();
@@ -510,14 +511,39 @@ export class AmoAnnotationPanelView extends ItemView {
       return;
     }
 
-    if (this.plugin.canInsertAnnotationAtActiveEditor()) {
-      await this.plugin.insertAnnotationFromCurrentSelection();
+    if (this.plugin.canInsertAnnotationAtFileEditor(info.file)) {
+      this.plugin.insertAnnotationAtFileEditor(info.file);
       return;
     }
 
     new AnnotationInputModal(this.app, async (value) => {
       await this.plugin.appendAnnotationToFile(info.file, value);
     }).open();
+  }
+
+  async currentInfoForAction(fallbackInfo: any, action: string) {
+    try {
+      const liveInfo = await this.plugin.getActiveNoteInfo();
+      const fallbackPath = fallbackInfo && fallbackInfo.file && fallbackInfo.file.path;
+      const livePath = liveInfo && liveInfo.file && liveInfo.file.path;
+      if (livePath && livePath !== fallbackPath) {
+        this.plugin.debugLog("panel.action.live_note_changed", {
+          action,
+          fallbackPath,
+          livePath,
+          fallbackSource: fallbackInfo && fallbackInfo.source,
+          liveSource: liveInfo && liveInfo.source,
+          activeLeafType: this.plugin.activeLeafType(),
+        });
+      }
+      return liveInfo && liveInfo.file ? liveInfo : fallbackInfo;
+    } catch (error) {
+      this.plugin.debugLog("panel.action.live_note_error", {
+        action,
+        message: messageFromError(error),
+      });
+      return fallbackInfo;
+    }
   }
 
   addActionButton(
