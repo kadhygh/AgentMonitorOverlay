@@ -175,9 +175,10 @@ live in `broker/assets/obsidian/md-anno-tools/src/editor/local-code-links.ts`. L
 handling, follow-up suppression, settings refresh, and open-result status live in
 `broker/assets/obsidian/md-anno-tools/src/editor/local-code-link-controller.ts`; `plugin.ts` only wires those handlers.
 AMO note metadata checks, display names, source-mode display-title header DOM, and first-content-line detection live in
-`broker/assets/obsidian/md-anno-tools/src/note/title.ts`. AMO note property visibility, metadata reads for open Markdown
-views, and property/header class cleanup live in `broker/assets/obsidian/md-anno-tools/src/note/properties.ts`;
-`plugin.ts` still owns note title file writes and title bridge sync.
+`broker/assets/obsidian/md-anno-tools/src/note/title.ts`. Note title writes, title-edit modal launch, broker title sync,
+and reading-mode display header rendering live in `broker/assets/obsidian/md-anno-tools/src/note/title-actions.ts`.
+AMO note property visibility, metadata reads for open Markdown views, and property/header class cleanup live in
+`broker/assets/obsidian/md-anno-tools/src/note/properties.ts`.
 Annotation copy/send and bridge health actions live in
 `broker/assets/obsidian/md-anno-tools/src/bridge/annotation-sync.ts`; `plugin.ts` keeps public wrapper methods for panel,
 command, and shortcut callers.

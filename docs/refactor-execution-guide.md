@@ -650,6 +650,7 @@ broker/assets/obsidian/md-anno-tools/src/
     local-code-link-controller.ts
     local-code-links.ts
   note/
+    title-actions.ts
     title.ts
     properties.ts
   annotations/
@@ -793,8 +794,9 @@ Manual smoke:
 
 ### Plugin Subphase P4: Note Title And Properties
 
-Status: started. AMO note property visibility, metadata reads for open Markdown views, and property/header class cleanup
-now live in `src/note/properties.ts`.
+Status: started. Note title writes, title-edit modal launch, broker title sync, and reading-mode display header rendering
+now live in `src/note/title-actions.ts`. AMO note property visibility, metadata reads for open Markdown views, and
+property/header class cleanup now live in `src/note/properties.ts`.
 
 Create:
 

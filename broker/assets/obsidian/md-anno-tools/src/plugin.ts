@@ -15,12 +15,12 @@ import {
   DEFAULT_SETTINGS,
   PLUGIN_VERSION,
 } from "./core/constants";
-import { joinUrl, postDebugLog, postJson, writeTextToClipboard } from "./core/api";
+import { joinUrl, postDebugLog, writeTextToClipboard } from "./core/api";
 import { normalizeVaultFilePath } from "./core/paths";
-import { normalizeMarkdownTitle, parseAmoMetadata, removeAmoDisplayHeading, upsertAmoMarker } from "./core/metadata";
+import { parseAmoMetadata } from "./core/metadata";
 import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, rootContainsAnnotationMarkers, describeElement } from "./core/ui-utils";
 import { AmoAnnotationPanelView } from "./ui/panel-view";
-import { AnnotationInputModal, NoteTitleModal } from "./ui/modals";
+import { AnnotationInputModal } from "./ui/modals";
 import { AmoAnnotationSettingTab } from "./ui/settings-tab";
 import {
   extractAnnotationItems,
@@ -46,11 +46,7 @@ import * as canvasActions from "./canvas/actions";
 import { centerCanvasNode } from "./canvas/navigation";
 import * as canvasRendering from "./canvas/rendering";
 import * as workCanvasActions from "./canvas/work-canvas";
-import {
-  amoNoteSourceTitleHeader,
-  displayNameForFile,
-  firstAmoNoteContentLine,
-} from "./note/title";
+import * as noteTitleActions from "./note/title-actions";
 import * as noteProperties from "./note/properties";
 import { handleAmoOpenProtocol, openVaultPath as openAmoVaultPath } from "./protocol/amo-open";
 
@@ -979,72 +975,11 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async updateAmoNoteTitle(file, rawTitle) {
-    if (!file) {
-      new Notice("No active Markdown note.");
-      return false;
-    }
-
-    const displayTitle = normalizeMarkdownTitle(rawTitle);
-
-    const markdown = await this.app.vault.cachedRead(file as any);
-    const amo = parseAmoMetadata(markdown);
-    if (!amo.schemaVersion && !amo.sessionId && !amo.noteId && !amo.kind) {
-      new Notice("Current note is not an AMO note.");
-      return false;
-    }
-
-    const metadata = {
-      ...amo,
-      schemaVersion: amo.schemaVersion || 1,
-      displayTitle,
-    };
-    const withMarker = upsertAmoMarker(markdown, metadata);
-    const nextMarkdown = removeAmoDisplayHeading(withMarker, amo.displayTitle, amo.displayName || displayNameForFile(file));
-    await this.app.vault.modify(file, nextMarkdown);
-
-    try {
-      await postJson(joinUrl(this.settings.bridgeUrl, "/api/obsidian/note-title"), {
-        schemaVersion: 1,
-        source: "obsidian-md-anno-tools",
-        vaultRoot: getVaultRoot(this.app),
-        notePath: file.path,
-        noteId: amo.noteId || null,
-        displayTitle,
-      });
-    } catch (error) {
-      this.debugLog("note.title.sync_error", {
-        notePath: file.path,
-        message: messageFromError(error),
-      });
-    }
-
-    this.setOperationStatus(displayTitle ? "Updated note title: " + displayTitle : "Cleared AMO note title.", "success");
-    new Notice(displayTitle ? "AMO note title updated." : "AMO note title cleared.");
-    void this.syncAmoNotePropertyViews();
-    void this.syncAmoCanvasRendering();
-    this.refreshPanels();
-    return true;
+    return noteTitleActions.updateAmoNoteTitle(this, file, rawTitle);
   }
 
   async editAmoNoteTitle(file) {
-    if (!file) {
-      new Notice("No active Markdown note.");
-      return;
-    }
-
-    let markdown = "";
-    try {
-      markdown = await this.app.vault.cachedRead(file as any);
-    } catch (error) {
-      new Notice("Could not read note: " + messageFromError(error));
-      return;
-    }
-
-    const amo = parseAmoMetadata(markdown);
-    const currentTitle = amo.displayTitle || "";
-    new NoteTitleModal(this.app, currentTitle, file.path, async (value) => {
-      await this.updateAmoNoteTitle(file, value);
-    }).open();
+    return noteTitleActions.editAmoNoteTitle(this, file);
   }
 
   async copyAnnotationsFromActiveFile() {
@@ -1273,49 +1208,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async renderAmoNoteDisplayHeader(root, context) {
-    if (!(root instanceof HTMLElement) || !context || typeof context.getSectionInfo !== "function") return false;
-    if (root.querySelector(".amo-note-display-header")) return true;
-
-    const section = context.getSectionInfo(root);
-    if (!section || typeof section.text !== "string") return false;
-
-    const file = context.sourcePath ? this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(context.sourcePath)) : null;
-    if (!file || typeof file.path !== "string") return false;
-
-    let markdown = "";
-    try {
-      markdown = await this.app.vault.cachedRead(file as any);
-    } catch {
-      return false;
-    }
-
-    const amo = parseAmoMetadata(markdown);
-    const displayTitle = normalizeMarkdownTitle(amo.displayTitle);
-    if (!displayTitle) return false;
-
-    const firstContentLine = firstAmoNoteContentLine(markdown);
-    if (firstContentLine < 0) return false;
-
-    const lineStart = Number(section.lineStart);
-    const lineEnd = Number(section.lineEnd);
-    if (!Number.isFinite(lineStart) || !Number.isFinite(lineEnd)) return false;
-    if (!(lineStart <= firstContentLine && firstContentLine <= lineEnd)) return false;
-
-    const header = document.createElement("div");
-    header.classList.add("amo-note-display-header");
-    header.setAttribute("data-amo-note-title", "true");
-
-    const title = header.createDiv({ cls: "amo-note-display-title" });
-    title.setText(displayTitle);
-
-    const originalName = amo.displayName || displayNameForFile(file);
-    if (originalName) {
-      const subtitle = header.createDiv({ cls: "amo-note-display-subtitle" });
-      subtitle.setText(originalName);
-    }
-
-    root.prepend(header);
-    return true;
+    return noteTitleActions.renderAmoNoteDisplayHeader(this, root, context);
   }
 
   async renderLegacyAnnotationSection(root, context) {
