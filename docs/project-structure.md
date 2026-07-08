@@ -1,6 +1,6 @@
 # AMO Project Structure
 
-Updated: 2026-07-07
+Updated: 2026-07-09
 
 This document records the intended ownership boundaries for the Agent Monitor Overlay repository. Keep it updated when code moves.
 
@@ -177,14 +177,15 @@ The broker extraction has started. These boundaries have already moved out of `b
 - workspace path, Git root, JSON read/write, and safety helpers: `broker/lib/filesystem.js`
 - Codex/Claude hook event lists, generated hook script text, and CLI config merge helpers: `broker/hooks/codex.js`, `broker/hooks/claude.js`
 
-The largest files are still the historical roots:
+The remaining source hotspots are:
 
-- `overlay/src/App.tsx`
 - `broker/server.js`
-- `overlay/src/styles.css`
+- `overlay/src/App.tsx`
 - `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
-- `overlay/src-tauri/src/lib.rs`
+- `overlay/src-tauri/src/windows.rs`
+- `broker/assets/obsidian/md-anno-tools/src/ui/panel-view.ts`
+- `broker/assets/obsidian/md-anno-tools/styles.css`
 
-Use `docs/refactor-plan.md` for phase order and checkpoints.
+Use `docs/refactor-execution-guide.md` for the next long-task split order, guardrails, and validation matrix. Use `docs/refactor-plan.md` as the historical plan and progress log.
 
 The legacy inline deploy and settings panels have been removed. Deploy/settings UI ownership now lives in standalone utility windows; task-card workspace maintenance remains in the main overlay.

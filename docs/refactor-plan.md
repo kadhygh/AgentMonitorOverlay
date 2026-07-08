@@ -1,8 +1,10 @@
 # AMO Refactor Plan
 
-Updated: 2026-07-07
+Updated: 2026-07-09
 
 This plan turns the current working MVP into a maintainable project without changing product behavior as part of the refactor itself.
+
+The active long-task execution guide is `docs/refactor-execution-guide.md`. Use this file as the historical plan and progress log; use the execution guide for the next concrete split order, guardrails, validations, and stop conditions.
 
 ## Goals
 
@@ -17,11 +19,12 @@ This plan turns the current working MVP into a maintainable project without chan
 
 | File | Current Size | Problem |
 | --- | ---: | --- |
-| `overlay/src/App.tsx` | ~5900 lines | Main overlay, utility windows, broker API, session model, drag/drop, Obsidian opening, debug, deploy, settings, and card UI are in one closure. |
-| `broker/server.js` | ~5300 lines | HTTP routing, session state, workspace deployment, hook script generation, Obsidian vault/note/canvas writes, debug, launch, and title indexes are coupled. |
-| `overlay/src/styles.css` | ~3800 lines | Styling follows feature growth but no longer mirrors component boundaries. |
-| `broker/assets/obsidian/md-anno-tools/src/plugin.ts` | ~2500 lines | Plugin lifecycle, Canvas coordination, editor commands, annotation operations, title rendering, and local code links remain concentrated. |
-| `overlay/src-tauri/src/lib.rs` | ~1300 lines | Windows APIs, scratchpad, clipboard, broker launch, directory dialogs, and window activation are together. This is lower priority than the JS/TS files. |
+| `broker/server.js` | ~2950 lines | HTTP routing, session mutation, workspace deployment/maintenance/launch, Obsidian bridge flows, and route handlers are still coupled. |
+| `overlay/src/App.tsx` | ~2830 lines | Main overlay session polling, target activation, Obsidian open/recovery, workspace panel actions, card drag, window bind drag, and resize logic still live in one root. |
+| `broker/assets/obsidian/md-anno-tools/src/plugin.ts` | ~2165 lines | Plugin lifecycle, Canvas actions, annotation source edits, bridge actions, note title/property behavior, and work-canvas helpers remain concentrated. |
+| `overlay/src-tauri/src/windows.rs` | ~592 lines | Native window enumeration/activation is the only Tauri file above 500 lines; it is not urgent because `lib.rs` is already thin. |
+| `broker/assets/obsidian/md-anno-tools/src/ui/panel-view.ts` | ~558 lines | Panel view is large but cohesive and lower priority than `plugin.ts`. |
+| `broker/assets/obsidian/md-anno-tools/styles.css` | ~529 lines | Plugin CSS is slightly over target but less risky than behavior roots. |
 
 Generated files and lockfiles are excluded from the source-size target.
 
