@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
   AlertTriangle,
@@ -20,14 +19,7 @@ import {
   X,
 } from "lucide-react";
 import {
-  BROKER_DEBUG_LOGS_URL,
-  BROKER_DEBUG_URL,
-  brokerSessionHeartbeatUrl,
-  postBrokerJson,
-} from "../api/brokerClient";
-import {
   applySessionOrder,
-  mergeChangedSession,
   sessionArchived,
   sessionFilterLabels,
   formatAgo,
@@ -36,16 +28,9 @@ import {
   sessionNeedsReview,
   type SessionFilter,
 } from "../domain/sessionModel";
-import {
-  activationWindowRequest,
-  projectName,
-  targetBindingForSession,
-  windowTargetForSession,
-} from "../domain/routingModel";
-import {
-  actionRequiredCandidate,
-  shouldProbeCodexActionRequired,
-} from "../domain/overlaySessionUi";
+import { projectName, targetBindingForSession } from "../domain/routingModel";
+import { useCodexActionRequiredProbe } from "../hooks/useCodexActionRequiredProbe";
+import { useDebugLogging } from "../hooks/useDebugLogging";
 import { useBrokerSessions } from "../hooks/useBrokerSessions";
 import { useAttentionVisuals } from "../hooks/useAttentionVisuals";
 import { useCardDrag } from "../hooks/useCardDrag";
@@ -74,9 +59,7 @@ import {
 } from "../native/scratchpadShortcut";
 import { useAmoThemeRuntime } from "../theme/amoTheme";
 import type {
-  ActivationResult,
   AgentSession,
-  BrokerDebugStatus,
 } from "../types";
 
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
@@ -129,16 +112,20 @@ export function MainOverlayApp() {
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
   const [launchPanel, setLaunchPanel] = useState<LaunchPanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
-  const [debugEnabled, setDebugEnabled] = useState(false);
-  const [debugCount, setDebugCount] = useState(0);
-  const [debugBusy, setDebugBusy] = useState(false);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const orderedSessionsRef = useRef<AgentSession[]>([]);
-  const debugEnabledRef = useRef(debugEnabled);
-  const debugCountRef = useRef(debugCount);
-  const actionRequiredProbeRef = useRef<Record<string, string>>({});
+  const actionRequiredProbeHandlerRef = useRef<((candidateSessions: AgentSession[], reason: string) => Promise<void>) | null>(null);
   const suppressNextClickRef = useRef(false);
   const pendingPromptSyncRef = useRef<((session: AgentSession, reason: string) => void) | null>(null);
+  const {
+    attachFeedbackSetter,
+    debugBusy,
+    debugCount,
+    debugEnabled,
+    postDebugLog,
+    refreshDebugStatus,
+    toggleDebugLogging,
+  } = useDebugLogging();
   const {
     brokerReadiness,
     ensureBrokerThenRefresh,
@@ -169,6 +156,15 @@ export function MainOverlayApp() {
     postDebugLog,
     reconcileCodexActionRequired,
   });
+  attachFeedbackSetter(setFeedback);
+
+  const {
+    reconcileCodexActionRequired: handleCodexActionRequiredProbe,
+  } = useCodexActionRequiredProbe({
+    postDebugLog,
+    setSessions,
+  });
+  actionRequiredProbeHandlerRef.current = handleCodexActionRequiredProbe;
 
   const brokerReady = brokerReadiness.state === "ready";
   const reviewCount = useMemo(
@@ -356,14 +352,6 @@ export function MainOverlayApp() {
   }, [orderedSessions]);
 
   useEffect(() => {
-    debugEnabledRef.current = debugEnabled;
-  }, [debugEnabled]);
-
-  useEffect(() => {
-    debugCountRef.current = debugCount;
-  }, [debugCount]);
-
-  useEffect(() => {
     const scratchpadShortcut = loadScratchpadShortcutState();
     void applyScratchpadShortcutState(scratchpadShortcut).catch((error) => {
       setFeedback(`Scratchpad shortcut setup failed: ${(error as Error).message}`);
@@ -371,132 +359,7 @@ export function MainOverlayApp() {
   }, []);
 
   async function reconcileCodexActionRequired(candidateSessions: AgentSession[], reason: string) {
-    const probeSessions = candidateSessions.filter(shouldProbeCodexActionRequired);
-    const probeIds = new Set(probeSessions.map((session) => session.sessionId));
-    for (const sessionId of Object.keys(actionRequiredProbeRef.current)) {
-      if (!probeIds.has(sessionId)) {
-        delete actionRequiredProbeRef.current[sessionId];
-      }
-    }
-
-    await Promise.all(
-      probeSessions.map(async (session) => {
-        try {
-          const result = await invoke<ActivationResult>(
-            "list_session_window_candidates",
-            activationWindowRequest(session, windowTargetForSession(session), { includeWindowHintIdentity: true }),
-          );
-          const candidate = actionRequiredCandidate(result.candidates ?? []);
-          if (!candidate) {
-            delete actionRequiredProbeRef.current[session.sessionId];
-            return;
-          }
-
-          const probeKey = `${candidate.hwnd}:${candidate.processId}:${candidate.title}`;
-          if (actionRequiredProbeRef.current[session.sessionId] === probeKey) {
-            return;
-          }
-          actionRequiredProbeRef.current[session.sessionId] = probeKey;
-
-          void postDebugLog("codex.action_required.detected", {
-            reason,
-            sessionId: session.sessionId,
-            title: candidate.title,
-            hwnd: candidate.hwnd,
-            processId: candidate.processId,
-          });
-
-          const resultSession = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
-            brokerSessionHeartbeatUrl(session.sessionId),
-            {
-              state: "waiting_permission",
-              eventName: "WindowActionRequired",
-              message: "Codex CLI is waiting for a local action.",
-              needsAttention: true,
-              windowHint: {
-                process: candidate.processName,
-                title: candidate.title,
-                project: session.windowHint?.project ?? projectName(session.cwd),
-                cwd: session.windowHint?.cwd ?? session.cwd,
-                tool: session.windowHint?.tool ?? session.tool,
-                pid: candidate.processId,
-                hwnd: candidate.hwnd,
-                boundAt: session.windowHint?.boundAt ?? null,
-                boundBy: session.windowHint?.boundBy ?? "overlay-action-required",
-                boundLabel: candidate.label,
-              },
-            },
-          );
-
-          setSessions((previousSessions) => mergeChangedSession(previousSessions, resultSession.session));
-        } catch (error) {
-          void postDebugLog("codex.action_required.probe_error", {
-            reason,
-            sessionId: session.sessionId,
-            message: (error as Error).message,
-          });
-        }
-      }),
-    );
-  }
-
-  async function refreshDebugStatus() {
-    try {
-      const response = await fetch(BROKER_DEBUG_URL, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`broker returned ${response.status}`);
-      }
-
-      const result = (await response.json()) as BrokerDebugStatus;
-      const nextEnabled = Boolean(result.enabled);
-      const nextCount = result.count ?? 0;
-      debugEnabledRef.current = nextEnabled;
-      debugCountRef.current = nextCount;
-      setDebugEnabled(nextEnabled);
-      setDebugCount(nextCount);
-    } catch {
-      debugEnabledRef.current = false;
-      debugCountRef.current = 0;
-      setDebugEnabled(false);
-      setDebugCount(0);
-    }
-  }
-
-  async function toggleDebugLogging() {
-    const nextEnabled = !debugEnabled;
-    setDebugBusy(true);
-
-    try {
-      const result = await postBrokerJson<BrokerDebugStatus>(BROKER_DEBUG_URL, {
-        enabled: nextEnabled,
-      });
-      const resultEnabled = Boolean(result.enabled);
-      const resultCount = result.count ?? 0;
-      debugEnabledRef.current = resultEnabled;
-      debugCountRef.current = resultCount;
-      setDebugEnabled(resultEnabled);
-      setDebugCount(resultCount);
-      setFeedback(result.enabled ? "Debug logging enabled." : "Debug logging disabled.");
-    } catch (error) {
-      setFeedback(`Debug toggle failed: ${(error as Error).message}`);
-    } finally {
-      setDebugBusy(false);
-    }
-  }
-
-  async function postDebugLog(event: string, data?: unknown) {
-    if (!debugEnabledRef.current) return;
-
-    try {
-      const result = await postBrokerJson<{ ok: boolean; count: number }>(BROKER_DEBUG_LOGS_URL, {
-        source: "overlay",
-        event,
-        data: data ?? {},
-      });
-      setDebugCount(result.count ?? debugCountRef.current);
-    } catch {
-      // Debug logging must never block the overlay action being debugged.
-    }
+    await actionRequiredProbeHandlerRef.current?.(candidateSessions, reason);
   }
 
   async function toggleCollapsed() {

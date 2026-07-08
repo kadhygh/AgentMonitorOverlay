@@ -53,6 +53,7 @@ Previous refactor progress already paid off:
 - Overlay deploy/settings utility-window focus, hide, and blocking state now live in `overlay/src/hooks/useMainUtilityWindows.ts`.
 - Overlay attention visual seen state, animation timing, and taskbar review attention now live in `overlay/src/hooks/useAttentionVisuals.ts`.
 - Overlay pending prompt copy, sync-back acknowledgement, duplicate auto-sync guard, and target focus handoff now live in `overlay/src/hooks/usePendingPromptSync.ts`.
+- Overlay Codex action-required probing and debug logging now live in `overlay/src/hooks/useCodexActionRequiredProbe.ts` and `overlay/src/hooks/useDebugLogging.ts`.
 - Several Obsidian plugin helper families already live under `src/editor`, `src/canvas`, `src/annotations`, `src/note`, and `src/protocol`.
 
 Remaining hotspots are historical orchestration roots:

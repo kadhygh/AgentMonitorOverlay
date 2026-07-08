@@ -1071,3 +1071,14 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Probe And Debug Hooks Extracted
+
+- Added `overlay/src/hooks/useCodexActionRequiredProbe.ts` for Codex CLI action-required window probing and permission-attention heartbeat updates.
+- Added `overlay/src/hooks/useDebugLogging.ts` for debug status refresh, debug toggle, and non-blocking overlay debug log posting.
+- Kept thin forwarding callbacks in `MainOverlayApp.tsx` where `useBrokerSessions.ts` needs callbacks before later hooks are wired.
+- Reduced `MainOverlayApp.tsx` from about 937 lines to about 800 lines while keeping both new hooks at about 98 lines each.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
