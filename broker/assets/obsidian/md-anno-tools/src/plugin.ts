@@ -1,12 +1,10 @@
-import { MarkdownView, Notice, Plugin, setIcon } from "obsidian";
+import { MarkdownView, Notice, Plugin } from "obsidian";
 import { EditorView } from "@codemirror/view";
 import {
   AMO_CANVAS_OPEN_NOTE_ACTION_CLASS,
   AMO_CANVAS_PANEL_ACTION_CLASS,
-  AMO_CANVAS_MANAGER,
   AMO_CANVAS_SEND_ACTION_CLASS,
   AMO_CANVAS_TITLE_ACTION_CLASS,
-  AMO_CANVAS_TYPE,
   AMO_OPEN_PROTOCOL,
   AMO_NOTE_PROPERTIES_ACTION_CLASS,
   AMO_PANEL_ACTION_CLASS,
@@ -44,13 +42,9 @@ import {
 } from "./bridge/annotation-sync";
 import { amoMarkerHiderExtension } from "./editor/amo-marker-hider";
 import { handleEditorLocalCodeLinkEvent, handleLocalCodeLinkClick } from "./editor/local-code-link-controller";
-import {
-  canvasNodeFilePath,
-  collectCanvasNodes,
-  collectCanvasSelectedNodes,
-} from "./canvas/target";
 import * as canvasActions from "./canvas/actions";
-import { canvasNodeElement, centerCanvasNode, markCanvasLatestNote } from "./canvas/navigation";
+import { centerCanvasNode } from "./canvas/navigation";
+import * as canvasRendering from "./canvas/rendering";
 import * as workCanvasActions from "./canvas/work-canvas";
 import {
   amoNoteSourceTitleHeader,
@@ -541,260 +535,71 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async isAmoManagedCanvasView(view) {
-    const file = view && view.file;
-    if (!file) return false;
-
-    try {
-      const raw = await this.app.vault.read(file);
-      const parsed = JSON.parse(raw);
-      const amo = parsed && typeof parsed === "object" ? parsed.amo : null;
-      const managedCanvas =
-        Boolean(amo) && amo.managedBy === AMO_CANVAS_MANAGER && amo.canvasType === AMO_CANVAS_TYPE;
-      if (view.containerEl) {
-        view.containerEl.classList.toggle("amo-managed-canvas", managedCanvas);
-      }
-      this.debugLog("canvas.amo_marker.checked", {
-        canvasPath: file.path,
-        managedCanvas,
-      });
-      return managedCanvas;
-    } catch (error) {
-      if (view.containerEl) {
-        view.containerEl.classList.remove("amo-managed-canvas");
-      }
-      this.debugLog("canvas.amo_marker.error", {
-        canvasPath: file.path,
-        message: messageFromError(error),
-      });
-      return false;
-    }
+    return canvasRendering.isAmoManagedCanvasView(this, view);
   }
 
   async syncAmoCanvasRendering() {
-    for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
-      const view: any = leaf.view;
-      if (!view) continue;
-      const managedCanvas = await this.isAmoManagedCanvasView(view);
-      if (!managedCanvas) {
-        this.clearAmoCanvasRendering(view);
-        continue;
-      }
-      await this.syncAmoCanvasNodeLabels(view);
-      this.syncCanvasOpenNoteToolbarButtons(view);
-    }
+    return canvasRendering.syncAmoCanvasRendering(this);
   }
 
   clearAmoCanvasRendering(view) {
-    if (!view || !view.containerEl) return;
-    view.containerEl.classList.remove("amo-managed-canvas");
-    this.clearAmoCanvasNodeLabels(view);
-    this.clearCanvasOpenNoteToolbarButtons(view);
+    return canvasRendering.clearAmoCanvasRendering(this, view);
   }
 
   async syncAmoCanvasNodeLabels(view) {
-    if (!view || !view.containerEl || !view.canvas) return;
-
-    const titleByPath = new Map();
-    for (const node of collectCanvasNodes(view.canvas)) {
-      const nodeFilePath = normalizeVaultFilePath(canvasNodeFilePath(view.canvas, node));
-      if (!nodeFilePath || !nodeFilePath.toLowerCase().endsWith(".md")) continue;
-
-      const nodeElement = canvasNodeElement(view, node);
-      const labelElement = this.canvasNodeLabelElement(nodeElement);
-      if (!labelElement) continue;
-
-      let displayTitle = titleByPath.get(nodeFilePath);
-      if (displayTitle === undefined) {
-        displayTitle = await this.amoDisplayTitleForPath(nodeFilePath);
-        titleByPath.set(nodeFilePath, displayTitle);
-      }
-
-      this.applyCanvasNodeDisplayTitle(labelElement, displayTitle);
-    }
+    return canvasRendering.syncAmoCanvasNodeLabels(this, view);
   }
 
   async amoDisplayTitleForPath(filePath) {
-    const normalizedPath = normalizeVaultFilePath(filePath);
-    const file = this.app.vault.getAbstractFileByPath(normalizedPath);
-    if (!file) return "";
-
-    try {
-      const markdown = await this.app.vault.cachedRead(file as any);
-      const amo = parseAmoMetadata(markdown);
-      return normalizeMarkdownTitle(amo.displayTitle);
-    } catch (error) {
-      this.debugLog("canvas.label.read_error", {
-        notePath: normalizedPath,
-        message: messageFromError(error),
-      });
-      return "";
-    }
+    return canvasRendering.amoDisplayTitleForPath(this, filePath);
   }
 
   canvasNodeLabelElement(nodeElement) {
-    if (!(nodeElement instanceof HTMLElement)) return null;
-
-    for (const selector of [
-      ":scope > .canvas-node-label",
-      ".canvas-node-label",
-      ".canvas-node-title",
-      "[data-amo-canvas-node-label]",
-    ]) {
-      const candidate = nodeElement.querySelector(selector);
-      if (candidate instanceof HTMLElement) return candidate;
-    }
-
-    return null;
+    return canvasRendering.canvasNodeLabelElement(nodeElement);
   }
 
   applyCanvasNodeDisplayTitle(labelElement, displayTitle) {
-    if (!(labelElement instanceof HTMLElement)) return;
-    if (!labelElement.dataset.amoOriginalLabel) {
-      labelElement.dataset.amoOriginalLabel = labelElement.textContent || "";
-    }
-
-    const normalizedTitle = normalizeMarkdownTitle(displayTitle);
-    if (normalizedTitle) {
-      labelElement.textContent = normalizedTitle;
-      labelElement.title = normalizedTitle;
-      labelElement.classList.add("amo-canvas-display-title-label");
-      return;
-    }
-
-    this.restoreCanvasNodeLabel(labelElement);
+    return canvasRendering.applyCanvasNodeDisplayTitle(labelElement, displayTitle);
   }
 
   clearAmoCanvasNodeLabels(view) {
-    if (!view || !view.containerEl) return;
-    for (const labelElement of Array.from(view.containerEl.querySelectorAll("[data-amo-original-label]"))) {
-      this.restoreCanvasNodeLabel(labelElement);
-    }
+    return canvasRendering.clearAmoCanvasNodeLabels(this, view);
   }
 
   restoreCanvasNodeLabel(labelElement) {
-    if (!(labelElement instanceof HTMLElement)) return;
-    const originalLabel = labelElement.dataset.amoOriginalLabel || "";
-    if (originalLabel) {
-      labelElement.textContent = originalLabel;
-    }
-    labelElement.removeAttribute("title");
-    labelElement.classList.remove("amo-canvas-display-title-label");
-    delete labelElement.dataset.amoOriginalLabel;
+    return canvasRendering.restoreCanvasNodeLabel(labelElement);
   }
 
   syncCanvasOpenNoteToolbarButtons(view) {
-    if (!view || !view.containerEl || !view.canvas) return;
-
-    const notePath = this.selectedCanvasMarkdownNotePath(view);
-    const toolbars = this.canvasNodeToolbarElements(view);
-    if (!notePath || toolbars.length === 0) {
-      this.clearCanvasOpenNoteToolbarButtons(view);
-      return;
-    }
-
-    for (const toolbar of toolbars) {
-      let button = toolbar.querySelector("." + AMO_CANVAS_OPEN_NOTE_ACTION_CLASS) as HTMLButtonElement | null;
-      if (!button) {
-        button = document.createElement("button");
-        button.type = "button";
-        button.className = "clickable-icon " + AMO_CANVAS_OPEN_NOTE_ACTION_CLASS;
-        button.setAttribute("aria-label", "Open note");
-        button.setAttribute("title", "Open note");
-        setIcon(button, "file-text");
-        button.addEventListener("mousedown", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-        });
-        button.addEventListener("click", (event) => {
-          event.preventDefault();
-          event.stopPropagation();
-          const targetPath = button?.dataset.amoNotePath || "";
-          void this.openCanvasToolbarNote(view, targetPath);
-        });
-        toolbar.appendChild(button);
-      }
-
-      button.dataset.amoNotePath = notePath;
-      button.disabled = false;
-    }
+    return canvasRendering.syncCanvasOpenNoteToolbarButtons(this, view);
   }
 
   clearCanvasOpenNoteToolbarButtons(view) {
-    if (!view || !view.containerEl) return;
-    for (const button of Array.from(view.containerEl.querySelectorAll("." + AMO_CANVAS_OPEN_NOTE_ACTION_CLASS))) {
-      if (button instanceof HTMLElement) button.remove();
-    }
+    return canvasRendering.clearCanvasOpenNoteToolbarButtons(view);
   }
 
   canvasNodeToolbarElements(view) {
-    if (!view || !view.containerEl) return [];
-    return Array.from(
-      view.containerEl.querySelectorAll(
-        ".canvas-node-menu, .canvas-node-toolbar, .canvas-node-controls, .canvas-node-actions"
-      )
-    ).filter((element) => element instanceof HTMLElement) as HTMLElement[];
+    return canvasRendering.canvasNodeToolbarElements(view);
   }
 
   selectedCanvasMarkdownNotePath(view) {
-    if (!view || !view.canvas) return "";
-    for (const node of collectCanvasSelectedNodes(view.canvas)) {
-      const notePath = normalizeVaultFilePath(canvasNodeFilePath(view.canvas, node));
-      if (notePath && notePath.toLowerCase().endsWith(".md")) {
-        const file = this.app.vault.getAbstractFileByPath(notePath);
-        if (file && typeof file.path === "string") return file.path;
-      }
-    }
-    return "";
+    return canvasRendering.selectedCanvasMarkdownNotePath(this, view);
   }
 
   async openCanvasToolbarNote(view, notePath) {
-    const normalizedPath = normalizeVaultFilePath(notePath);
-    if (!normalizedPath) return;
-
-    const file = this.app.vault.getAbstractFileByPath(normalizedPath);
-    if (!file || typeof file.path !== "string") {
-      new Notice("AMO target not found: " + normalizedPath);
-      return;
-    }
-
-    this.rememberCanvasMarkdownFile(view, file.path);
-    this.debugLog("canvas.toolbar.open_note.clicked", {
-      canvasPath: view && view.file && view.file.path,
-      notePath: file.path,
-    });
-    await this.openVaultPath(file.path, "note");
+    return canvasRendering.openCanvasToolbarNote(this, view, notePath);
   }
 
   findCanvasNodeForFilePath(view, notePath) {
-    const normalizedNotePath = normalizeVaultFilePath(notePath);
-    return (
-      collectCanvasNodes(view && view.canvas).find((node) => {
-        return normalizeVaultFilePath(canvasNodeFilePath(view.canvas, node)) === normalizedNotePath;
-      }) || null
-    );
+    return canvasRendering.findCanvasNodeForFilePath(view, notePath);
   }
 
   findCanvasNodeForId(view, nodeId) {
-    const targetId = String(nodeId || "");
-    if (!targetId) return null;
-    return (
-      collectCanvasNodes(view && view.canvas).find((node) => {
-        return String((node && node.id) || (node && node.data && node.data.id) || "") === targetId;
-      }) || null
-    );
+    return canvasRendering.findCanvasNodeForId(view, nodeId);
   }
 
   selectCanvasNode(view, node, notePath) {
-    const canvas = view && view.canvas;
-    const marked = markCanvasLatestNote(view, node);
-
-    this.safeCanvasCall(canvas, "requestFrame");
-    this.debugLog("canvas.focus_note.selected", {
-      canvasPath: view && view.file && view.file.path,
-      notePath,
-      nodeId: node && (node.id || (node.data && node.data.id)),
-      marked,
-    });
+    return canvasRendering.selectCanvasNode(this, view, node, notePath);
   }
 
   safeCanvasCall(target, method, ...args) {

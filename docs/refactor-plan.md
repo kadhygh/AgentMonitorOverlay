@@ -103,6 +103,7 @@ broker/assets/obsidian/md-anno-tools/src/
     actions.ts
     target.ts
     controller.ts
+    rendering.ts
     work-canvas.ts
   editor/
     annotation-commands.ts

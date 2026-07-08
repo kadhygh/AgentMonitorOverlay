@@ -185,7 +185,9 @@ Inline annotation token replacement and local-code-link linkification now live w
 and deleting annotations live in `broker/assets/obsidian/md-anno-tools/src/annotations/commands.ts`; `plugin.ts` only
 decides when postprocessing runs and exposes public wrapper methods for command/panel callers.
 Canvas latest-note marking, centering, node element lookup, bounds, zoom, and selection collection helpers live in
-`broker/assets/obsidian/md-anno-tools/src/canvas/navigation.ts`; `plugin.ts` keeps the debug-aware `safeCanvasCall` wrapper.
+`broker/assets/obsidian/md-anno-tools/src/canvas/navigation.ts`; AMO managed-canvas checks, display-title label hints,
+toolbar open-note buttons, and selected-node marking live in
+`broker/assets/obsidian/md-anno-tools/src/canvas/rendering.ts`; `plugin.ts` keeps the debug-aware `safeCanvasCall` wrapper.
 Canvas tab action registration, selected-note target memory, fallback target picker, and selected-note send/panel/title
 actions live in `broker/assets/obsidian/md-anno-tools/src/canvas/actions.ts`; `plugin.ts` keeps public wrapper methods for
 existing callers.

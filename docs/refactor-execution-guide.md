@@ -643,6 +643,7 @@ broker/assets/obsidian/md-anno-tools/src/
     actions.ts
     target.ts
     navigation.ts
+    rendering.ts
     work-canvas.ts
   editor/
     annotation-commands.ts
@@ -752,7 +753,9 @@ Manual smoke:
 ### Plugin Subphase P3: Canvas Actions
 
 Status: started. Canvas tab action registration, selected-note target memory, and fallback target picker now live in
-`src/canvas/actions.ts`. Work Canvas folder/list/create/add-note behavior now lives in `src/canvas/work-canvas.ts`.
+`src/canvas/actions.ts`. AMO managed-canvas checks, display-title label hints, toolbar open-note buttons, and
+selected-node marking now live in `src/canvas/rendering.ts`. Work Canvas folder/list/create/add-note behavior now lives
+in `src/canvas/work-canvas.ts`.
 
 Create:
 
