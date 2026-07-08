@@ -45,12 +45,13 @@ Previous refactor progress already paid off:
 - Broker HTTP route groups now live in `broker/routes/config.js`, `broker/routes/sessions.js`, `broker/routes/workspaces.js`, and `broker/routes/obsidian.js`.
 - Overlay main monitor window now lives in `overlay/src/windows/MainOverlayApp.tsx`; `overlay/src/App.tsx` is a thin window switch root.
 - Overlay broker session polling/readiness/SSE state now lives in `overlay/src/hooks/useBrokerSessions.ts`.
+- Overlay session review, permission-attention clear, target unbind, archive, and dismiss actions now live in `overlay/src/hooks/useSessionActions.ts`.
 - Several Obsidian plugin helper families already live under `src/editor`, `src/canvas`, `src/annotations`, `src/note`, and `src/protocol`.
 
 Remaining hotspots are historical orchestration roots:
 
 - `broker/server.js` (about 450 lines after B1-B5 extraction)
-- `overlay/src/App.tsx`
+- `overlay/src/windows/MainOverlayApp.tsx`
 - `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
 
 ## Recommended Order

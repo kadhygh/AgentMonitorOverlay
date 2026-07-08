@@ -989,3 +989,13 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Session Actions Hook Extracted
+
+- Added `overlay/src/hooks/useSessionActions.ts` for review/seen, permission-attention clear, target unbind, archive, and dismiss broker actions.
+- Kept target activation, candidate selection, Obsidian open, workspace maintenance, drag, and resize behavior in `MainOverlayApp.tsx` for later subphases.
+- Reduced `MainOverlayApp.tsx` from about 2813 lines to about 2618 lines while keeping `useSessionActions.ts` at about 255 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

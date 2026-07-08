@@ -31,12 +31,7 @@ import {
   BROKER_WORKSPACE_LAUNCH_URL,
   BROKER_WORKSPACE_STATUS_URL,
   BROKER_WORKSPACE_UPDATE_OBSIDIAN_PLUGIN_URL,
-  brokerSessionArchiveUrl,
-  brokerSessionAttentionClearedUrl,
-  brokerSessionDismissUrl,
   brokerSessionHeartbeatUrl,
-  brokerSessionReviewedUrl,
-  brokerSessionTargetBindingClearUrl,
   brokerSessionTargetBindingUrl,
   brokerSessionTaskTitleUrl,
   postBrokerJson,
@@ -52,7 +47,6 @@ import {
   formatAgo,
   sessionHasAttentionSignal,
   sessionMatchesFilter,
-  sessionNeedsManualAttentionClear,
   sessionNeedsReview,
   type SessionFilter,
 } from "../domain/sessionModel";
@@ -98,6 +92,7 @@ import {
   workspacePanelPosition,
 } from "../domain/overlaySessionUi";
 import { useBrokerSessions } from "../hooks/useBrokerSessions";
+import { useSessionActions } from "../hooks/useSessionActions";
 import { SessionRowContent, toolDisplayForSession } from "../components/SessionCard";
 import {
   BrokerReadinessPanel,
@@ -236,9 +231,6 @@ export function MainOverlayApp() {
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<{ sessionId: string; target: "note" | "canvas" } | null>(null);
   const [, setCopyingPromptId] = useState<string | null>(null);
-  const [unbindingWindowId, setUnbindingWindowId] = useState<string | null>(null);
-  const [reviewingSessionId, setReviewingSessionId] = useState<string | null>(null);
-  const [dismissingSessionId, setDismissingSessionId] = useState<string | null>(null);
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
   const [sessionSearch, setSessionSearch] = useState("");
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
@@ -252,7 +244,6 @@ export function MainOverlayApp() {
   );
   const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
   const [windowBindDrag, setWindowBindDrag] = useState<WindowBindDragState | null>(null);
-  const [archivingSessionId, setArchivingSessionId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [debugCount, setDebugCount] = useState(0);
@@ -300,6 +291,28 @@ export function MainOverlayApp() {
     },
     postDebugLog,
     reconcileCodexActionRequired,
+  });
+
+  const {
+    archiveSession,
+    archivingSessionId,
+    clearSessionAttentionAfterActivation,
+    clearWindowBinding,
+    dismissingSessionId,
+    dismissSession,
+    markSessionReviewed,
+    reviewingSessionId,
+    unbindingWindowId,
+  } = useSessionActions({
+    markSessionVisuallySeen,
+    postDebugLog,
+    refreshSessions,
+    setCandidateMenu,
+    setFeedback,
+    setLaunchPanel,
+    setSessionOrder,
+    setSessions,
+    setWorkspacePanel,
   });
 
   const filteredSessions = useMemo(
@@ -1962,217 +1975,9 @@ export function MainOverlayApp() {
     }
   }
 
-  async function clearWindowBinding(session: AgentSession) {
-    setUnbindingWindowId(session.sessionId);
-    setFeedback(`Clearing target binding for ${session.title}...`);
-    void postDebugLog("window.unbind.start", {
-      sessionId: session.sessionId,
-      targetType: targetBindingForSession(session)?.type ?? "auto",
-      hwnd: session.windowHint?.hwnd ?? null,
-      pid: session.windowHint?.pid ?? null,
-    });
-
-    try {
-      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
-        brokerSessionTargetBindingClearUrl(session.sessionId),
-        {},
-      );
-      setSessions((previous) =>
-        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
-      );
-      void postDebugLog("window.unbind.ok", {
-        sessionId: session.sessionId,
-      });
-      setFeedback("Target binding cleared.");
-      void refreshSessions("target-unbind");
-    } catch (error) {
-      void postDebugLog("window.unbind.error", {
-        sessionId: session.sessionId,
-        message: (error as Error).message,
-      });
-      setFeedback(`Unbind failed: ${(error as Error).message}`);
-    } finally {
-      setUnbindingWindowId(null);
-    }
-  }
-
-  async function markSessionReviewed(
-    session: AgentSession,
-    action = "manual",
-    options: { quiet?: boolean } = {},
-  ) {
-    markSessionVisuallySeen(session);
-    if (!sessionNeedsReview(session)) {
-      return;
-    }
-
-    setReviewingSessionId(session.sessionId);
-    if (!options.quiet) {
-      setFeedback(`Marking ${session.title} as reviewed...`);
-    }
-    void postDebugLog("session.review.start", {
-      sessionId: session.sessionId,
-      action,
-      reviewTurnId: session.reviewTurnId ?? null,
-    });
-
-    try {
-      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
-        brokerSessionReviewedUrl(session.sessionId),
-        { action, by: "overlay" },
-      );
-      setSessions((previous) =>
-        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
-      );
-      if (!options.quiet) {
-        setFeedback("Marked as reviewed.");
-      }
-      void postDebugLog("session.review.ok", {
-        sessionId: result.session.sessionId,
-        action,
-      });
-    } catch (error) {
-      const message = (error as Error).message;
-      if (!options.quiet) {
-        setFeedback(`Review mark failed: ${message}`);
-      }
-      void postDebugLog("session.review.error", {
-        sessionId: session.sessionId,
-        action,
-        message,
-      });
-    } finally {
-      setReviewingSessionId(null);
-    }
-  }
-
-  async function clearSessionAttentionAfterActivation(session: AgentSession, action = "activate-target") {
-    if (!sessionNeedsManualAttentionClear(session)) {
-      return null;
-    }
-
-    void postDebugLog("session.attention_clear.start", {
-      sessionId: session.sessionId,
-      action,
-      state: session.state,
-    });
-
-    try {
-      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
-        brokerSessionAttentionClearedUrl(session.sessionId),
-        {
-          action,
-          by: "overlay",
-          state: "running",
-        },
-      );
-      setSessions((previous) =>
-        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
-      );
-      setFeedback("Permission attention cleared.");
-      void postDebugLog("session.attention_clear.ok", {
-        sessionId: result.session.sessionId,
-        action,
-        state: result.session.state,
-      });
-      return result.session;
-    } catch (error) {
-      const message = (error as Error).message;
-      setFeedback(`Attention clear failed: ${message}`);
-      void postDebugLog("session.attention_clear.error", {
-        sessionId: session.sessionId,
-        action,
-        message,
-      });
-      return null;
-    }
-  }
-
   async function handleSessionAttention(session: AgentSession) {
     const clearedSession = await clearSessionAttentionAfterActivation(session, "manual-handle");
     await activateSession(clearedSession ?? session);
-  }
-
-  async function archiveSession(session: AgentSession) {
-    setArchivingSessionId(session.sessionId);
-    setFeedback(`Archiving ${session.title}...`);
-    void postDebugLog("session.archive.start", {
-      sessionId: session.sessionId,
-      title: session.title,
-    });
-
-    try {
-      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
-        brokerSessionArchiveUrl(session.sessionId),
-        { reason: "user" },
-      );
-      setSessions((previous) =>
-        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
-      );
-      setCandidateMenu((current) =>
-        current?.session.sessionId === result.session.sessionId ? null : current,
-      );
-      setWorkspacePanel((current) =>
-        current?.session.sessionId === result.session.sessionId ? null : current,
-      );
-      setLaunchPanel((current) =>
-        current?.session.sessionId === result.session.sessionId ? null : current,
-      );
-      setFeedback(`Archived ${session.title}.`);
-      void postDebugLog("session.archive.ok", {
-        sessionId: result.session.sessionId,
-      });
-    } catch (error) {
-      const message = (error as Error).message;
-      setFeedback(`Archive failed: ${message}`);
-      void postDebugLog("session.archive.error", {
-        sessionId: session.sessionId,
-        message,
-      });
-    } finally {
-      setArchivingSessionId(null);
-    }
-  }
-
-  async function dismissSession(session: AgentSession) {
-    setDismissingSessionId(session.sessionId);
-    setFeedback(`Hiding ${session.title}...`);
-    void postDebugLog("session.dismiss.start", {
-      sessionId: session.sessionId,
-      title: session.title,
-    });
-
-    try {
-      const result = await postBrokerJson<{ ok: boolean; sessionId: string }>(
-        brokerSessionDismissUrl(session.sessionId),
-        { reason: "user" },
-      );
-      const dismissedSessionId = result.sessionId || session.sessionId;
-      setSessions((previous) => previous.filter((item) => item.sessionId !== dismissedSessionId));
-      setSessionOrder((previousOrder) => previousOrder.filter((sessionId) => sessionId !== dismissedSessionId));
-      setCandidateMenu((current) =>
-        current?.session.sessionId === dismissedSessionId ? null : current,
-      );
-      setWorkspacePanel((current) =>
-        current?.session.sessionId === dismissedSessionId ? null : current,
-      );
-      setLaunchPanel((current) =>
-        current?.session.sessionId === dismissedSessionId ? null : current,
-      );
-      setFeedback(`Hidden ${session.title}.`);
-      void postDebugLog("session.dismiss.ok", {
-        sessionId: dismissedSessionId,
-      });
-    } catch (error) {
-      const message = (error as Error).message;
-      setFeedback(`Dismiss failed: ${message}`);
-      void postDebugLog("session.dismiss.error", {
-        sessionId: session.sessionId,
-        message,
-      });
-    } finally {
-      setDismissingSessionId(null);
-    }
   }
 
   function moveDraggedSessionToIndex(draggingSessionId: string, targetIndex: number) {
