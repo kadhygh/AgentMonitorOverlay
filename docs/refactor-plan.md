@@ -969,3 +969,13 @@ Manual smoke:
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17705`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17706`
   - `git diff --check`
+
+### 2026-07-09: Overlay Main Window Extracted
+
+- Added `overlay/src/windows/MainOverlayApp.tsx` and moved the existing main overlay monitor branch there without changing its internal state/action structure.
+- Reduced `overlay/src/App.tsx` to a thin Tauri webview switch root for scratchpad, deploy, settings, and main overlay windows.
+- Kept the intentionally large `MainOverlayApp.tsx` as the next overlay owner for hook/controller extraction.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
