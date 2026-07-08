@@ -110,6 +110,7 @@ broker/assets/obsidian/md-anno-tools/src/
   annotations/
     syntax.ts
     render.ts
+    source-ranges.ts
   ui/
     panel-view.ts
     settings-tab.ts

@@ -653,6 +653,7 @@ broker/assets/obsidian/md-anno-tools/src/
   annotations/
     commands.ts
     render.ts
+    source-ranges.ts
     syntax.ts
   ui/
     panel-view.ts
@@ -711,6 +712,8 @@ Manual smoke:
 - Send annotations from note.
 
 ### Plugin Subphase P2: Annotation Source Commands
+
+Status: started. Source text range lookup and editor offset conversion now live in `src/annotations/source-ranges.ts`.
 
 Create:
 

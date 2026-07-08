@@ -45,6 +45,12 @@ import {
   LegacyAnnotationHiddenSectionRenderChild,
 } from "./annotations/render";
 import {
+  editorOffsetToPosition,
+  editorPositionToOffset,
+  endOfLineOffset,
+  findUnannotatedMarkdownRange,
+} from "./annotations/source-ranges";
+import {
   checkBridgeHealthAction,
   copyAnnotationsFromFileAction,
   sendAnnotationsFromFileAction,
@@ -1540,7 +1546,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     }
 
     const markdown = await this.app.vault.cachedRead(file as any);
-    const range = this.findUnannotatedMarkdownRange(markdown, content);
+    const range = findUnannotatedMarkdownRange(markdown, content);
     if (!range) {
       this.setOperationStatus(
         "Could not locate the selected text in " + file.path + ". Switch to editing mode and try again.",
@@ -1551,7 +1557,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     }
 
     const source = String(markdown || "").replace(/\r\n?/gu, "\n");
-    const insertAt = this.endOfLineOffset(source, range.end);
+    const insertAt = endOfLineOffset(source, range.end);
     const lineStart = source.lastIndexOf("\n", Math.max(0, insertAt - 1)) + 1;
     const lineText = source.slice(lineStart, insertAt);
     const leading = lineText.trim().length > 0 ? "\n\n" : "";
@@ -1563,102 +1569,6 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     new Notice("Referenced annotation inserted.");
     this.refreshPanels();
     return true;
-  }
-
-  findUnannotatedMarkdownRange(markdown, selectedText) {
-    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
-    const content = normalizeAnnotationContent(selectedText);
-    if (!source || !content) return null;
-
-    const exact = this.findUnannotatedExactRange(source, content);
-    if (exact) return exact;
-
-    return this.findUnannotatedWhitespaceRange(source, content);
-  }
-
-  findUnannotatedExactRange(source, content) {
-    let offset = 0;
-    while (offset <= source.length) {
-      const index = source.indexOf(content, offset);
-      if (index < 0) return null;
-      const range = { start: index, end: index + content.length };
-      if (!this.rangeIntersectsAnnotation(source, range)) return range;
-      offset = index + Math.max(1, content.length);
-    }
-    return null;
-  }
-
-  findUnannotatedWhitespaceRange(source, content) {
-    const haystack = this.normalizeTextWithOffsetMap(source);
-    const needle = this.normalizeSearchText(content);
-    if (!needle) return null;
-
-    let offset = 0;
-    while (offset <= haystack.text.length) {
-      const index = haystack.text.indexOf(needle, offset);
-      if (index < 0) return null;
-      const endIndex = index + needle.length - 1;
-      const range = {
-        start: haystack.startOffsets[index],
-        end: haystack.endOffsets[endIndex],
-      };
-      if (!this.rangeIntersectsAnnotation(source, range)) return range;
-      offset = index + Math.max(1, needle.length);
-    }
-    return null;
-  }
-
-  normalizeTextWithOffsetMap(value) {
-    const source = String(value || "").replace(/\r\n?/gu, "\n");
-    const chars = [];
-    const startOffsets = [];
-    const endOffsets = [];
-    let pendingWhitespaceStart = -1;
-    let pendingWhitespaceEnd = -1;
-
-    for (let index = 0; index < source.length; index += 1) {
-      const char = source[index];
-      if (/\s/u.test(char)) {
-        if (pendingWhitespaceStart < 0) pendingWhitespaceStart = index;
-        pendingWhitespaceEnd = index + 1;
-        continue;
-      }
-
-      if (pendingWhitespaceStart >= 0 && chars.length > 0) {
-        chars.push(" ");
-        startOffsets.push(pendingWhitespaceStart);
-        endOffsets.push(pendingWhitespaceEnd);
-      }
-      pendingWhitespaceStart = -1;
-      pendingWhitespaceEnd = -1;
-
-      chars.push(char);
-      startOffsets.push(index);
-      endOffsets.push(index + 1);
-    }
-
-    return {
-      text: chars.join(""),
-      startOffsets,
-      endOffsets,
-    };
-  }
-
-  normalizeSearchText(value) {
-    return normalizeAnnotationContent(value).replace(/\s+/gu, " ");
-  }
-
-  rangeIntersectsAnnotation(markdown, range) {
-    return extractAnnotationItems(markdown).some((item) => {
-      return range.start < item.endOffset && item.startOffset < range.end;
-    });
-  }
-
-  endOfLineOffset(markdown, offset) {
-    const source = String(markdown || "");
-    const safeOffset = Math.max(0, Math.min(source.length, Number(offset) || 0));
-    const nextLineBreak = source.indexOf("\n", safeOffset);
-    return nextLineBreak >= 0 ? nextLineBreak : source.length;
   }
 
   async appendAnnotationToFile(file, rawContent) {
@@ -1737,7 +1647,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     if (!editor || typeof editor.getValue !== "function" || typeof editor.getCursor !== "function") return null;
     const markdown = editor.getValue();
     const cursor = editor.getCursor();
-    const offset = this.editorPositionToOffset(markdown, cursor);
+    const offset = editorPositionToOffset(markdown, cursor);
     return findAnnotationItemAtOffset(markdown, offset);
   }
 
@@ -1757,42 +1667,13 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     editor.replaceRange(
       "",
-      this.editorOffsetToPosition(markdown, result.range.startOffset),
-      this.editorOffsetToPosition(markdown, result.range.endOffset)
+      editorOffsetToPosition(markdown, result.range.startOffset),
+      editorOffsetToPosition(markdown, result.range.endOffset)
     );
     this.setOperationStatus("Deleted current annotation.", "success");
     new Notice("Annotation deleted.");
     this.refreshPanels();
     return true;
-  }
-
-  editorPositionToOffset(markdown, position) {
-    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
-    const targetLine = Math.max(0, Number(position && position.line) || 0);
-    const targetCh = Math.max(0, Number(position && position.ch) || 0);
-    let offset = 0;
-    const lines = source.split("\n");
-    for (let line = 0; line < Math.min(targetLine, lines.length); line += 1) {
-      offset += lines[line].length + 1;
-    }
-    return Math.min(source.length, offset + targetCh);
-  }
-
-  editorOffsetToPosition(markdown, offset) {
-    const source = String(markdown || "").replace(/\r\n?/gu, "\n");
-    const safeOffset = Math.max(0, Math.min(source.length, Number(offset) || 0));
-    let line = 0;
-    let lastLineStart = 0;
-    for (let index = 0; index < safeOffset; index += 1) {
-      if (source.charCodeAt(index) === 10) {
-        line += 1;
-        lastLineStart = index + 1;
-      }
-    }
-    return {
-      line,
-      ch: safeOffset - lastLineStart,
-    };
   }
 
   async updateAmoNoteTitle(file, rawTitle) {
