@@ -2280,6 +2280,64 @@ function replaceLocalCodeLinksInTextNode(textNode) {
   textNode.replaceWith(fragment);
 }
 
+// src/annotations/postprocessor.ts
+async function renderAnnotations(plugin, root, context) {
+  await plugin.renderAmoNoteDisplayHeader(root, context);
+  if (await renderLegacyAnnotationSection(plugin, root, context)) return;
+  if (rootContainsAnnotationMarkers(root)) {
+    plugin.debugLog("render.postprocessor", {
+      root: describeElement(root),
+      preview: previewText(root.textContent || "")
+    });
+  }
+  replaceInlineAnnotations(root);
+  if (plugin.settings.interceptLocalCodeLinks !== false) linkifyLocalCodeLinks(root);
+}
+async function renderLegacyAnnotationSection(plugin, root, context) {
+  if (!(root instanceof HTMLElement) || !context || typeof context.getSectionInfo !== "function") return false;
+  const section = context.getSectionInfo(root);
+  if (!section || typeof section.text !== "string") return false;
+  const block = await findLegacyAnnotationBlockForSection2(plugin, context.sourcePath, section);
+  if (!block) return false;
+  if (!root.isConnected) return true;
+  if (block.role === "start") {
+    plugin.debugLog("render.legacy_section", {
+      role: "start",
+      sourcePath: context.sourcePath,
+      lineStart: section.lineStart,
+      lineEnd: section.lineEnd,
+      annotationStart: block.startLine,
+      annotationEnd: block.endLine,
+      ownerLine: block.ownerLine,
+      preview: previewText(block.content)
+    });
+    context.addChild(new LegacyAnnotationBlockRenderChild(root, plugin, block, context.sourcePath));
+    return true;
+  }
+  plugin.debugLog("render.legacy_section", {
+    role: "hidden",
+    sourcePath: context.sourcePath,
+    lineStart: section.lineStart,
+    lineEnd: section.lineEnd,
+    annotationStart: block.startLine,
+    annotationEnd: block.endLine,
+    ownerLine: block.ownerLine
+  });
+  context.addChild(new LegacyAnnotationHiddenSectionRenderChild(root));
+  return true;
+}
+async function findLegacyAnnotationBlockForSection2(plugin, sourcePath, section) {
+  const file = sourcePath ? plugin.app.vault.getAbstractFileByPath(normalizeVaultFilePath(sourcePath)) : null;
+  if (!file || typeof file.path !== "string") return null;
+  let markdown = "";
+  try {
+    markdown = await plugin.app.vault.cachedRead(file);
+  } catch (e) {
+    return null;
+  }
+  return findLegacyAnnotationBlockForSection(parseLegacyAnnotationBlocks(markdown), section);
+}
+
 // src/bridge/annotation-sync.ts
 var import_obsidian7 = require("obsidian");
 function bridgeUrl(context) {
@@ -4555,63 +4613,16 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
     return safeVaultFileName(value);
   }
   async renderAnnotations(root, context) {
-    await this.renderAmoNoteDisplayHeader(root, context);
-    if (await this.renderLegacyAnnotationSection(root, context)) return;
-    if (rootContainsAnnotationMarkers(root)) {
-      this.debugLog("render.postprocessor", {
-        root: describeElement(root),
-        preview: previewText(root.textContent || "")
-      });
-    }
-    replaceInlineAnnotations(root);
-    if (this.settings.interceptLocalCodeLinks !== false) linkifyLocalCodeLinks(root);
+    return renderAnnotations(this, root, context);
   }
   async renderAmoNoteDisplayHeader(root, context) {
     return renderAmoNoteDisplayHeader(this, root, context);
   }
   async renderLegacyAnnotationSection(root, context) {
-    if (!(root instanceof HTMLElement) || !context || typeof context.getSectionInfo !== "function") return false;
-    const section = context.getSectionInfo(root);
-    if (!section || typeof section.text !== "string") return false;
-    const block = await this.findLegacyAnnotationBlockForSection(context.sourcePath, section);
-    if (!block) return false;
-    if (!root.isConnected) return true;
-    if (block.role === "start") {
-      this.debugLog("render.legacy_section", {
-        role: "start",
-        sourcePath: context.sourcePath,
-        lineStart: section.lineStart,
-        lineEnd: section.lineEnd,
-        annotationStart: block.startLine,
-        annotationEnd: block.endLine,
-        ownerLine: block.ownerLine,
-        preview: previewText(block.content)
-      });
-      context.addChild(new LegacyAnnotationBlockRenderChild(root, this, block, context.sourcePath));
-      return true;
-    }
-    this.debugLog("render.legacy_section", {
-      role: "hidden",
-      sourcePath: context.sourcePath,
-      lineStart: section.lineStart,
-      lineEnd: section.lineEnd,
-      annotationStart: block.startLine,
-      annotationEnd: block.endLine,
-      ownerLine: block.ownerLine
-    });
-    context.addChild(new LegacyAnnotationHiddenSectionRenderChild(root));
-    return true;
+    return renderLegacyAnnotationSection(this, root, context);
   }
   async findLegacyAnnotationBlockForSection(sourcePath, section) {
-    const file = sourcePath ? this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(sourcePath)) : null;
-    if (!file || typeof file.path !== "string") return null;
-    let markdown = "";
-    try {
-      markdown = await this.app.vault.cachedRead(file);
-    } catch (e) {
-      return null;
-    }
-    return findLegacyAnnotationBlockForSection(parseLegacyAnnotationBlocks(markdown), section);
+    return findLegacyAnnotationBlockForSection2(this, sourcePath, section);
   }
 };
 var plugin_default = AmoMarkdownAnnotationToolsPlugin;

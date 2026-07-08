@@ -18,21 +18,14 @@ import {
 import { joinUrl, postDebugLog } from "./core/api";
 import { normalizeVaultFilePath } from "./core/paths";
 import { parseAmoMetadata } from "./core/metadata";
-import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, rootContainsAnnotationMarkers, describeElement } from "./core/ui-utils";
+import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, describeElement } from "./core/ui-utils";
 import { AmoAnnotationPanelView } from "./ui/panel-view";
 import { AnnotationInputModal } from "./ui/modals";
 import * as panelActions from "./ui/panel-actions";
 import { AmoAnnotationSettingTab } from "./ui/settings-tab";
 import { extractAnnotationItems } from "./annotations/syntax";
 import * as annotationCommands from "./annotations/commands";
-import {
-  findLegacyAnnotationBlockForSection,
-  linkifyLocalCodeLinks,
-  parseLegacyAnnotationBlocks,
-  replaceInlineAnnotations,
-  LegacyAnnotationBlockRenderChild,
-  LegacyAnnotationHiddenSectionRenderChild,
-} from "./annotations/render";
+import * as annotationPostprocessor from "./annotations/postprocessor";
 import {
   checkBridgeHealthAction,
   copyAnnotationsFromFileAction,
@@ -991,19 +984,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async renderAnnotations(root, context) {
-    await this.renderAmoNoteDisplayHeader(root, context);
-
-    if (await this.renderLegacyAnnotationSection(root, context)) return;
-
-    if (rootContainsAnnotationMarkers(root)) {
-      this.debugLog("render.postprocessor", {
-        root: describeElement(root),
-        preview: previewText(root.textContent || ""),
-      });
-    }
-
-    replaceInlineAnnotations(root);
-    if (this.settings.interceptLocalCodeLinks !== false) linkifyLocalCodeLinks(root);
+    return annotationPostprocessor.renderAnnotations(this, root, context);
   }
 
   async renderAmoNoteDisplayHeader(root, context) {
@@ -1011,55 +992,11 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async renderLegacyAnnotationSection(root, context) {
-    if (!(root instanceof HTMLElement) || !context || typeof context.getSectionInfo !== "function") return false;
-
-    const section = context.getSectionInfo(root);
-    if (!section || typeof section.text !== "string") return false;
-
-    const block = await this.findLegacyAnnotationBlockForSection(context.sourcePath, section);
-    if (!block) return false;
-    if (!root.isConnected) return true;
-
-    if (block.role === "start") {
-      this.debugLog("render.legacy_section", {
-        role: "start",
-        sourcePath: context.sourcePath,
-        lineStart: section.lineStart,
-        lineEnd: section.lineEnd,
-        annotationStart: block.startLine,
-        annotationEnd: block.endLine,
-        ownerLine: block.ownerLine,
-        preview: previewText(block.content),
-      });
-      context.addChild(new LegacyAnnotationBlockRenderChild(root, this, block, context.sourcePath));
-      return true;
-    }
-
-    this.debugLog("render.legacy_section", {
-      role: "hidden",
-      sourcePath: context.sourcePath,
-      lineStart: section.lineStart,
-      lineEnd: section.lineEnd,
-      annotationStart: block.startLine,
-      annotationEnd: block.endLine,
-      ownerLine: block.ownerLine,
-    });
-    context.addChild(new LegacyAnnotationHiddenSectionRenderChild(root));
-    return true;
+    return annotationPostprocessor.renderLegacyAnnotationSection(this, root, context);
   }
 
   async findLegacyAnnotationBlockForSection(sourcePath, section) {
-    const file = sourcePath ? this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(sourcePath)) : null;
-    if (!file || typeof file.path !== "string") return null;
-
-    let markdown = "";
-    try {
-      markdown = await this.app.vault.cachedRead(file as any);
-    } catch {
-      return null;
-    }
-
-    return findLegacyAnnotationBlockForSection(parseLegacyAnnotationBlocks(markdown), section);
+    return annotationPostprocessor.findLegacyAnnotationBlockForSection(this, sourcePath, section);
   }
 
 }

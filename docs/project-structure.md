@@ -190,7 +190,9 @@ Inline annotation token replacement and local-code-link linkification now live w
 `broker/assets/obsidian/md-anno-tools/src/annotations/render.ts`; source text range lookup and editor offset conversion live in
 `broker/assets/obsidian/md-anno-tools/src/annotations/source-ranges.ts`; source editing commands for inserting, appending,
 and deleting annotations live in `broker/assets/obsidian/md-anno-tools/src/annotations/commands.ts`; `plugin.ts` only
-decides when postprocessing runs and exposes public wrapper methods for command/panel callers.
+registers Markdown postprocessing and exposes public wrapper methods for command/panel callers. Markdown postprocessor
+orchestration for AMO note headers, legacy annotation sections, inline annotation rendering, and local code link
+linkification lives in `broker/assets/obsidian/md-anno-tools/src/annotations/postprocessor.ts`.
 Canvas latest-note marking, centering, node element lookup, bounds, zoom, and selection collection helpers live in
 `broker/assets/obsidian/md-anno-tools/src/canvas/navigation.ts`; AMO managed-canvas checks, display-title label hints,
 toolbar open-note buttons, and selected-node marking live in

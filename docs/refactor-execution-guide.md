@@ -656,6 +656,7 @@ broker/assets/obsidian/md-anno-tools/src/
     properties.ts
   annotations/
     commands.ts
+    postprocessor.ts
     render.ts
     source-ranges.ts
     syntax.ts
