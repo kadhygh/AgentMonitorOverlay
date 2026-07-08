@@ -1009,3 +1009,13 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Obsidian Open Hook Extracted
+
+- Added `overlay/src/hooks/useObsidianOpen.ts` for note/canvas open, AMO vault runtime bootstrap checks, vault-not-loaded recovery dialog state, recovery folder open, and recovery path copy.
+- Kept pending-prompt copy, workspace maintenance, pointer drag lifecycle, card reorder, and resize behavior in `MainOverlayApp.tsx` for later subphases.
+- Reduced `MainOverlayApp.tsx` from about 2203 lines to about 1990 lines while keeping `useObsidianOpen.ts` at about 266 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

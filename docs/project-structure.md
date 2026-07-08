@@ -155,6 +155,7 @@ The repository has completed the first overlay extraction pass. These boundaries
 - broker session polling, readiness, SSE updates, and session list state: `overlay/src/hooks/useBrokerSessions.ts`
 - session review, attention clear, target unbind, archive/dismiss broker actions, and related busy state: `overlay/src/hooks/useSessionActions.ts`
 - Codex App/CLI target opening, candidate window listing/activation, target binding, and activation busy state: `overlay/src/hooks/useTargetActivation.ts`
+- Obsidian note/canvas opening, AMO vault recovery dialog state, and recovery folder/path actions: `overlay/src/hooks/useObsidianOpen.ts`
 
 `DeployWorkspaceApp.tsx` remains the deploy workflow owner: broker requests, native folder dialogs, debug logging,
 busy states, and feedback messages stay there. `DeployWorkspaceSections.tsx` owns only the visible workspace,
