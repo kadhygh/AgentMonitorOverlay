@@ -659,6 +659,7 @@ broker/assets/obsidian/md-anno-tools/src/
     source-ranges.ts
     syntax.ts
   ui/
+    panel-actions.ts
     panel-view.ts
     modals.ts
     settings-tab.ts

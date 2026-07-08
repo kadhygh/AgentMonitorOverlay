@@ -71,7 +71,7 @@ Expected ownership after refactor:
 - `editor/`: editor commands, mouse shortcuts, local code link handling.
 - `note/`: AMO note title/header/property behavior.
 - `annotations/`: annotation syntax and Markdown rendering.
-- `ui/`: panel, settings tab, and modals.
+- `ui/`: panel, panel action adapters, settings tab, and modals.
 - `core/`: constants, metadata, paths, API primitives, UI helpers.
 
 Canvas work must follow `docs/agnets/obsidian-canvas-development-guidelines.md`.
@@ -182,6 +182,8 @@ AMO note property visibility, metadata reads for open Markdown views, and proper
 Annotation copy/send and bridge health actions live in
 `broker/assets/obsidian/md-anno-tools/src/bridge/annotation-sync.ts`; `plugin.ts` keeps public wrapper methods for panel,
 command, and shortcut callers.
+AMO panel support actions such as active note info, file explorer reveal, single-annotation copy, and focus annotation
+live in `broker/assets/obsidian/md-anno-tools/src/ui/panel-actions.ts`; `panel-view.ts` owns rendering and button layout.
 Inline annotation token replacement and local-code-link linkification now live with legacy annotation section rendering in
 `broker/assets/obsidian/md-anno-tools/src/annotations/render.ts`; source text range lookup and editor offset conversion live in
 `broker/assets/obsidian/md-anno-tools/src/annotations/source-ranges.ts`; source editing commands for inserting, appending,

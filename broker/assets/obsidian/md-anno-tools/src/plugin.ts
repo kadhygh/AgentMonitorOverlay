@@ -15,17 +15,15 @@ import {
   DEFAULT_SETTINGS,
   PLUGIN_VERSION,
 } from "./core/constants";
-import { joinUrl, postDebugLog, writeTextToClipboard } from "./core/api";
+import { joinUrl, postDebugLog } from "./core/api";
 import { normalizeVaultFilePath } from "./core/paths";
 import { parseAmoMetadata } from "./core/metadata";
 import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, rootContainsAnnotationMarkers, describeElement } from "./core/ui-utils";
 import { AmoAnnotationPanelView } from "./ui/panel-view";
 import { AnnotationInputModal } from "./ui/modals";
+import * as panelActions from "./ui/panel-actions";
 import { AmoAnnotationSettingTab } from "./ui/settings-tab";
-import {
-  extractAnnotationItems,
-  formatAnnotationsForClipboard,
-} from "./annotations/syntax";
+import { extractAnnotationItems } from "./annotations/syntax";
 import * as annotationCommands from "./annotations/commands";
 import {
   findLegacyAnnotationBlockForSection,
@@ -1021,118 +1019,23 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async getActiveNoteInfo() {
-    const target = this.getActiveMarkdownFileTarget();
-    if (!target || !target.file) {
-      return {
-        file: null,
-        source: this.isActiveLeafCanvas() ? "canvas-selection-missing" : "none",
-        annotations: [],
-        annotationItems: [],
-        amo: {},
-        displayTitle: "",
-        isAmoNote: false,
-        activeLeafType: this.activeLeafType(),
-      };
-    }
-
-    const file = target.file;
-    const markdown = await this.app.vault.cachedRead(file as any);
-    const amo = parseAmoMetadata(markdown);
-    const annotationItems = extractAnnotationItems(markdown);
-    const isAmoNote = Boolean(amo.schemaVersion || amo.sessionId || amo.noteId || amo.kind);
-    return {
-      file,
-      source: target.source,
-      annotations: annotationItems.map((item) => item.content).filter((content) => content.length > 0),
-      annotationItems,
-      amo,
-      displayTitle: amo.displayTitle || "",
-      isAmoNote,
-      activeLeafType: this.activeLeafType(),
-    };
+    return panelActions.getActiveNoteInfo(this);
   }
 
   getPanelCanvasFile() {
-    const view = this.getActiveCanvasView() || this.lastCanvasView;
-    return view && view.file && typeof view.file.path === "string" ? view.file : null;
+    return panelActions.getPanelCanvasFile(this);
   }
 
   async revealFileInExplorer(fileOrPath) {
-    const file =
-      typeof fileOrPath === "string"
-        ? this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(fileOrPath))
-        : fileOrPath;
-    if (!file || typeof file.path !== "string") {
-      new Notice("No file to reveal.");
-      return false;
-    }
-
-    let leaves = this.app.workspace.getLeavesOfType("file-explorer");
-    const commands = (this.app as any).commands;
-    if (leaves.length === 0 && commands && typeof commands.executeCommandById === "function") {
-      try {
-        await commands.executeCommandById("file-explorer:open");
-      } catch {
-        // The file explorer command may be unavailable in some Obsidian builds.
-      }
-      leaves = this.app.workspace.getLeavesOfType("file-explorer");
-    }
-
-    for (const leaf of leaves) {
-      const view = leaf && (leaf.view as any);
-      if (view && typeof view.revealInFolder === "function") {
-        this.app.workspace.revealLeaf(leaf);
-        await view.revealInFolder(file);
-        this.setOperationStatus("Revealed file: " + file.path + ".", "success");
-        return true;
-      }
-    }
-
-    this.setOperationStatus("Could not reveal file in Obsidian explorer: " + file.path + ".", "error");
-    new Notice("Could not reveal file in Obsidian explorer.");
-    return false;
+    return panelActions.revealFileInExplorer(this, fileOrPath);
   }
 
   async copyAnnotationItemFromFile(file, annotationIndex) {
-    const markdown = await this.app.vault.cachedRead(file as any);
-    const item = extractAnnotationItems(markdown).find((candidate) => candidate.index === annotationIndex);
-    if (!item) {
-      new Notice("Annotation not found.");
-      return false;
-    }
-
-    await writeTextToClipboard(formatAnnotationsForClipboard([item.content]));
-    this.setOperationStatus("Copied annotation " + annotationIndex + " from " + file.path + ".", "success");
-    new Notice("Annotation copied.");
-    return true;
+    return panelActions.copyAnnotationItemFromFile(this, file, annotationIndex);
   }
 
   async focusAnnotationItemInFile(file, item) {
-    if (!file || !item) {
-      new Notice("Annotation not found.");
-      return false;
-    }
-
-    await this.openVaultPath(file.path, "note");
-    await this.delay(80);
-    const leaf = this.findMarkdownLeafForFilePath(file.path);
-    const view = leaf && leaf.view instanceof MarkdownView ? leaf.view : null;
-    if (leaf) {
-      this.app.workspace.setActiveLeaf(leaf, { focus: true });
-    }
-    if (view && view.editor) {
-      const from = { line: Math.max(0, item.startLine || 0), ch: 0 };
-      const to = { line: Math.max(0, item.endLine || item.startLine || 0), ch: 0 };
-      view.editor.setCursor(from);
-      if (typeof view.editor.scrollIntoView === "function") {
-        view.editor.scrollIntoView({ from, to }, true);
-      }
-      this.setOperationStatus("Focused annotation " + item.index + " in " + file.path + ".", "success");
-      return true;
-    }
-
-    this.setOperationStatus("Opened note but could not focus annotation " + item.index + ".", "neutral");
-    return false;
+    return panelActions.focusAnnotationItemInFile(this, file, item);
   }
 
   async openAddNoteToWorkCanvasModal(file) {
