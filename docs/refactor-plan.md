@@ -98,7 +98,7 @@ broker/assets/obsidian/md-anno-tools/src/
   protocol/
     amo-open.ts
   bridge/
-    actions.ts
+    annotation-sync.ts
   canvas/
     target.ts
     controller.ts

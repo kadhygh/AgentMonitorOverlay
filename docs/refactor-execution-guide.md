@@ -638,8 +638,7 @@ Target:
 broker/assets/obsidian/md-anno-tools/src/
   plugin.ts
   bridge/
-    actions.ts
-    client.ts
+    annotation-sync.ts
   canvas/
     actions.ts
     target.ts
@@ -680,17 +679,19 @@ It should not keep:
 
 ### Plugin Subphase P1: Bridge Client And Actions
 
-Create:
+Status: started. Annotation copy/send and bridge health checks now live in `src/bridge/annotation-sync.ts`.
+
+Create or continue:
 
 ```text
+src/bridge/annotation-sync.ts
 src/bridge/client.ts
-src/bridge/actions.ts
 ```
 
 Move:
 
-- bridge health check.
-- copy/send annotations calls.
+- bridge health check. Done for the current plugin health action.
+- copy/send annotations calls. Done for note/panel annotation copy and return-to-AMO flows.
 - sync-back request shaping.
 - operation status text helpers.
 

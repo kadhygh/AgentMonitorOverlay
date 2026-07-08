@@ -19,7 +19,7 @@ import {
   DEFAULT_SETTINGS,
   PLUGIN_VERSION,
 } from "./core/constants";
-import { fetchJson, joinUrl, postDebugLog, postJson, writeTextToClipboard } from "./core/api";
+import { joinUrl, postDebugLog, postJson, writeTextToClipboard } from "./core/api";
 import { normalizeVaultFilePath } from "./core/paths";
 import { normalizeMarkdownTitle, parseAmoMetadata, removeAmoDisplayHeading, upsertAmoMarker } from "./core/metadata";
 import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, rootContainsAnnotationMarkers, describeElement } from "./core/ui-utils";
@@ -29,7 +29,6 @@ import { AmoAnnotationSettingTab } from "./ui/settings-tab";
 import {
   buildAnnotationMarkup,
   buildReferencedAnnotationMarkup,
-  extractAnnotationContents,
   extractAnnotationItems,
   formatAnnotationsForClipboard,
   findAnnotationItemAtOffset,
@@ -45,6 +44,11 @@ import {
   LegacyAnnotationBlockRenderChild,
   LegacyAnnotationHiddenSectionRenderChild,
 } from "./annotations/render";
+import {
+  checkBridgeHealthAction,
+  copyAnnotationsFromFileAction,
+  sendAnnotationsFromFileAction,
+} from "./bridge/annotation-sync";
 import { amoMarkerHiderExtension } from "./editor/amo-marker-hider";
 import { handleEditorLocalCodeLinkEvent, handleLocalCodeLinkClick } from "./editor/local-code-link-controller";
 import {
@@ -1877,36 +1881,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async copyAnnotationsFromFile(file) {
-    const markdown = await this.app.vault.cachedRead(file as any);
-    const annotations = extractAnnotationContents(markdown);
-    this.debugLog("annotations.copy.extract", {
-      notePath: file.path,
-      annotationCount: annotations.length,
-      annotationPreviews: annotations.slice(0, 5).map((annotation) => previewText(annotation)),
-      activeLeafType: this.activeLeafType(),
-    });
-    if (annotations.length === 0) {
-      new Notice("No annotations found in the current note.");
-      return;
-    }
-
-    try {
-      await writeTextToClipboard(formatAnnotationsForClipboard(annotations));
-      this.debugLog("annotations.copy.ok", {
-        notePath: file.path,
-        annotationCount: annotations.length,
-      });
-      this.setOperationStatus("Copied " + annotations.length + " annotation(s) from " + file.path + ".", "success");
-      new Notice("Copied " + annotations.length + " annotation(s).");
-    } catch (error) {
-      console.error("Failed to copy annotations:", error);
-      this.debugLog("annotations.copy.error", {
-        notePath: file.path,
-        message: messageFromError(error),
-      });
-      this.setOperationStatus("Copy failed: " + messageFromError(error), "error");
-      new Notice("Copy failed: " + messageFromError(error));
-    }
+    await copyAnnotationsFromFileAction(this, file);
   }
 
   async sendAnnotationsFromActiveFile() {
@@ -1920,111 +1895,11 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   async sendAnnotationsFromFile(file) {
-    const sendStartedAtMs = Date.now();
-    this.debugLog("annotations.send.prepare_start", {
-      notePath: file.path,
-      startedAtMs: sendStartedAtMs,
-    });
-    const readStartedAtMs = Date.now();
-    const markdown = await this.app.vault.cachedRead(file as any);
-    const readDurationMs = Date.now() - readStartedAtMs;
-    const extractStartedAtMs = Date.now();
-    const annotations = extractAnnotationContents(markdown);
-    const extractDurationMs = Date.now() - extractStartedAtMs;
-    this.debugLog("annotations.extract", {
-      notePath: file.path,
-      annotationCount: annotations.length,
-      annotationPreviews: annotations.slice(0, 5).map((annotation) => previewText(annotation)),
-      markdownHasAnnoOpen: markdown.includes(ANNO_TAG_PREFIX),
-      markdownHasAnnoClose: markdown.includes(ANNO_TAG_SUFFIX),
-      readDurationMs,
-      extractDurationMs,
-      elapsedMs: Date.now() - sendStartedAtMs,
-    });
-    if (annotations.length === 0) {
-      new Notice("No annotations found in the current note.");
-      return;
-    }
-
-    const amo = parseAmoMetadata(markdown);
-    this.debugLog("annotations.metadata", {
-      notePath: file.path,
-      sessionId: amo.sessionId || null,
-      turnId: amo.turnId || null,
-    });
-    if (!amo.sessionId) {
-      new Notice("This note is missing AMO session metadata.");
-      return;
-    }
-
-    const payload = {
-      schemaVersion: 1,
-      source: "obsidian-md-anno-tools",
-      vaultRoot: getVaultRoot(this.app),
-      notePath: file.path,
-      sessionId: amo.sessionId,
-      turnId: amo.turnId || null,
-      promptOptions: {
-        numberAnnotations: Boolean(this.settings.numberAnnotationsInPrompt),
-      },
-      annotations: annotations.map((content, index) => ({
-        index: index + 1,
-        content,
-      })),
-    };
-
-    try {
-      const postStartedAtMs = Date.now();
-      this.debugLog("annotations.send.start", {
-        notePath: file.path,
-        sessionId: payload.sessionId,
-        turnId: payload.turnId,
-        annotationCount: payload.annotations.length,
-        elapsedMs: postStartedAtMs - sendStartedAtMs,
-      });
-      const result = await postJson(joinUrl(this.settings.bridgeUrl, "/api/obsidian/annotations"), payload);
-      this.debugLog("annotations.send.ok", {
-        notePath: file.path,
-        sessionId: payload.sessionId,
-        pendingPromptId: result.pendingPromptId || null,
-        annotationCount: payload.annotations.length,
-        postDurationMs: Date.now() - postStartedAtMs,
-        totalDurationMs: Date.now() - sendStartedAtMs,
-      });
-      this.setOperationStatus(
-        "Sent " + annotations.length + " annotation(s) from " + file.path + " to AMO.",
-        "success"
-      );
-      new Notice(
-        "Sent " +
-          annotations.length +
-          " annotation(s) to AMO" +
-          (result.pendingPromptId ? ": " + result.pendingPromptId : ".")
-      );
-    } catch (error) {
-      console.error("Failed to send annotations to AMO:", error);
-      this.debugLog("annotations.send.error", {
-        notePath: file.path,
-        sessionId: payload.sessionId,
-        message: messageFromError(error),
-      });
-      this.setOperationStatus("AMO sync failed: " + messageFromError(error), "error");
-      new Notice("AMO sync failed: " + messageFromError(error));
-    }
+    await sendAnnotationsFromFileAction(this, file);
   }
 
   async checkBridgeHealth() {
-    try {
-      const result = await fetchJson(joinUrl(this.settings.bridgeUrl, "/api/health"));
-      this.setOperationStatus(
-        "Bridge online: " + (result.service || "AMO") + " on port " + (result.port || "unknown") + ".",
-        "success"
-      );
-      new Notice("AMO bridge is online.");
-    } catch (error) {
-      this.setOperationStatus("Bridge check failed: " + messageFromError(error), "error");
-      new Notice("AMO bridge check failed: " + messageFromError(error));
-    }
+    await checkBridgeHealthAction(this);
   }
 
   async getActiveNoteInfo() {
