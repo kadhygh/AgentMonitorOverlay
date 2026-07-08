@@ -1050,3 +1050,13 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Attention Visuals Hook Extracted
+
+- Added `overlay/src/hooks/useAttentionVisuals.ts` for attention seen-state, animation clock, visual activity checks, and taskbar review attention request/clear behavior.
+- Kept debug logging functions in `MainOverlayApp.tsx` because broker startup/session polling still depends on `postDebugLog` during hook initialization.
+- Reduced `MainOverlayApp.tsx` from about 1192 lines to about 1066 lines while keeping `useAttentionVisuals.ts` at about 160 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

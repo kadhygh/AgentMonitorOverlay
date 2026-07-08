@@ -161,6 +161,7 @@ The repository has completed the first overlay extraction pass. These boundaries
 - drag-to-window binding pointer lifecycle: `overlay/src/hooks/useWindowBindDrag.ts`
 - overlay resize pointer lifecycle: `overlay/src/hooks/useOverlayResize.ts`
 - deploy/settings utility window open, focus, hide, and main-window blocking state: `overlay/src/hooks/useMainUtilityWindows.ts`
+- attention visual seen state, attention animation clock, and taskbar review attention requests: `overlay/src/hooks/useAttentionVisuals.ts`
 
 `DeployWorkspaceApp.tsx` remains the deploy workflow owner: broker requests, native folder dialogs, debug logging,
 busy states, and feedback messages stay there. `DeployWorkspaceSections.tsx` owns only the visible workspace,

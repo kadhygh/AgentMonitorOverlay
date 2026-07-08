@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { getCurrentWindow, LogicalSize, UserAttentionType } from "@tauri-apps/api/window";
+import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
   AlertTriangle,
   Archive,
@@ -30,8 +30,6 @@ import {
   applySessionOrder,
   mergeChangedSession,
   sessionArchived,
-  sessionAttentionKey,
-  sessionAttentionVisualActive,
   sessionFilterLabels,
   formatAgo,
   sessionHasAttentionSignal,
@@ -50,6 +48,7 @@ import {
   shouldProbeCodexActionRequired,
 } from "../domain/overlaySessionUi";
 import { useBrokerSessions } from "../hooks/useBrokerSessions";
+import { useAttentionVisuals } from "../hooks/useAttentionVisuals";
 import { useCardDrag } from "../hooks/useCardDrag";
 import { useMainUtilityWindows } from "../hooks/useMainUtilityWindows";
 import { useObsidianOpen } from "../hooks/useObsidianOpen";
@@ -137,8 +136,6 @@ function sessionMatchesSearch(session: AgentSession, query: string) {
 
 export function MainOverlayApp() {
   const [amoTheme, setAmoThemePreference] = useAmoThemeRuntime();
-  const [attentionVisualSeen, setAttentionVisualSeen] = useState<Record<string, string>>({});
-  const [attentionClock, setAttentionClock] = useState(() => Date.now());
   const [collapsed, setCollapsed] = useState(false);
   const [, setCopyingPromptId] = useState<string | null>(null);
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
@@ -160,7 +157,6 @@ export function MainOverlayApp() {
   const actionRequiredProbeRef = useRef<Record<string, string>>({});
   const suppressNextClickRef = useRef(false);
   const autoSyncPromptIdsRef = useRef(new Set<string>());
-  const reviewTaskbarAttentionActiveRef = useRef(false);
   const {
     brokerReadiness,
     ensureBrokerThenRefresh,
@@ -190,6 +186,23 @@ export function MainOverlayApp() {
     },
     postDebugLog,
     reconcileCodexActionRequired,
+  });
+
+  const brokerReady = brokerReadiness.state === "ready";
+  const reviewCount = useMemo(
+    () => sessions.filter((session) => !sessionArchived(session) && sessionNeedsReview(session)).length,
+    [sessions],
+  );
+
+  const {
+    isSessionVisualAttentionActive,
+    isSessionVisuallySeen,
+    markSessionVisuallySeen,
+  } = useAttentionVisuals({
+    brokerReady,
+    postDebugLog,
+    reviewCount,
+    sessions,
   });
 
   const {
@@ -342,125 +355,6 @@ export function MainOverlayApp() {
     [sessions],
   );
 
-  const reviewCount = useMemo(
-    () => sessions.filter((session) => !sessionArchived(session) && sessionNeedsReview(session)).length,
-    [sessions],
-  );
-  const hasAttentionSignal = useMemo(
-    () => sessions.some((session) => !sessionArchived(session) && sessionHasAttentionSignal(session)),
-    [sessions],
-  );
-  const brokerReady = brokerReadiness.state === "ready";
-
-  useEffect(() => {
-    if (!hasAttentionSignal) {
-      return undefined;
-    }
-
-    setAttentionClock(Date.now());
-    const intervalId = window.setInterval(() => setAttentionClock(Date.now()), 1000);
-    return () => window.clearInterval(intervalId);
-  }, [hasAttentionSignal]);
-
-  useEffect(() => {
-    setAttentionVisualSeen((previous) => {
-      const sessionIds = new Set(sessions.map((session) => session.sessionId));
-      let changed = false;
-      const next: Record<string, string> = {};
-
-      Object.entries(previous).forEach(([sessionId, attentionKey]) => {
-        const session = sessions.find((item) => item.sessionId === sessionId);
-        if (sessionIds.has(sessionId) && session && sessionHasAttentionSignal(session) && attentionKey === sessionAttentionKey(session)) {
-          next[sessionId] = attentionKey;
-        } else {
-          changed = true;
-        }
-      });
-
-      return changed ? next : previous;
-    });
-  }, [sessions]);
-
-  useEffect(() => {
-    const appWindow = getCurrentWindow();
-    const hasPendingReview = brokerReady && reviewCount > 0;
-    let disposed = false;
-
-    async function requestReviewTaskbarAttention(reason: string) {
-      try {
-        const focused = await appWindow.isFocused();
-        if (disposed || focused) {
-          return;
-        }
-
-        await appWindow.requestUserAttention(UserAttentionType.Informational);
-        reviewTaskbarAttentionActiveRef.current = true;
-        void postDebugLog("taskbar.review_attention.requested", {
-          reason,
-          reviewCount,
-        });
-      } catch (error) {
-        void postDebugLog("taskbar.review_attention.error", {
-          reason,
-          reviewCount,
-          message: (error as Error).message,
-        });
-      }
-    }
-
-    async function clearReviewTaskbarAttention(reason: string) {
-      if (!reviewTaskbarAttentionActiveRef.current) {
-        return;
-      }
-
-      try {
-        await appWindow.requestUserAttention(null);
-        reviewTaskbarAttentionActiveRef.current = false;
-        void postDebugLog("taskbar.review_attention.cleared", {
-          reason,
-        });
-      } catch (error) {
-        void postDebugLog("taskbar.review_attention.clear_error", {
-          reason,
-          message: (error as Error).message,
-        });
-      }
-    }
-
-    if (hasPendingReview) {
-      void requestReviewTaskbarAttention("review-count");
-    } else {
-      void clearReviewTaskbarAttention("review-cleared");
-    }
-
-    let unlistenFocus: (() => void) | null = null;
-    void appWindow
-      .onFocusChanged(({ payload: focused }) => {
-        if (focused) {
-          void clearReviewTaskbarAttention("window-focused");
-        } else if (hasPendingReview) {
-          void requestReviewTaskbarAttention("window-blurred");
-        }
-      })
-      .then((unlisten) => {
-        if (disposed) {
-          unlisten();
-        } else {
-          unlistenFocus = unlisten;
-        }
-      })
-      .catch((error) => {
-        void postDebugLog("taskbar.review_attention.focus_listener_error", {
-          message: (error as Error).message,
-        });
-      });
-
-    return () => {
-      disposed = true;
-      unlistenFocus?.();
-    };
-  }, [brokerReady, reviewCount]);
-
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
@@ -610,26 +504,6 @@ export function MainOverlayApp() {
     } catch {
       // Debug logging must never block the overlay action being debugged.
     }
-  }
-
-  function markSessionVisuallySeen(session: AgentSession) {
-    if (!sessionHasAttentionSignal(session)) {
-      return;
-    }
-
-    const attentionKey = sessionAttentionKey(session);
-    setAttentionVisualSeen((previous) =>
-      previous[session.sessionId] === attentionKey ? previous : { ...previous, [session.sessionId]: attentionKey },
-    );
-    setAttentionClock(Date.now());
-  }
-
-  function isSessionVisuallySeen(session: AgentSession) {
-    return attentionVisualSeen[session.sessionId] === sessionAttentionKey(session);
-  }
-
-  function isSessionVisualAttentionActive(session: AgentSession) {
-    return sessionAttentionVisualActive(session, isSessionVisuallySeen(session), attentionClock);
   }
 
   async function updateScratchpadShortcut(next: ScratchpadShortcutState) {
