@@ -44,6 +44,7 @@ Previous refactor progress already paid off:
 - Broker prompt/reply workflows, Obsidian bridge workflows, and pending prompt helpers now live in `broker/lib/conversation-service.js`, `broker/lib/obsidian-bridge.js`, and `broker/lib/pending-prompts.js`.
 - Broker HTTP route groups now live in `broker/routes/config.js`, `broker/routes/sessions.js`, `broker/routes/workspaces.js`, and `broker/routes/obsidian.js`.
 - Overlay main monitor window now lives in `overlay/src/windows/MainOverlayApp.tsx`; `overlay/src/App.tsx` is a thin window switch root.
+- Overlay broker session polling/readiness/SSE state now lives in `overlay/src/hooks/useBrokerSessions.ts`.
 - Several Obsidian plugin helper families already live under `src/editor`, `src/canvas`, `src/annotations`, `src/note`, and `src/protocol`.
 
 Remaining hotspots are historical orchestration roots:

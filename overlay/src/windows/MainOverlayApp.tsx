@@ -24,8 +24,6 @@ import {
   BROKER_DEBUG_LOGS_URL,
   BROKER_DEBUG_URL,
   BROKER_OBSIDIAN_REGISTER_VAULT_URL,
-  BROKER_SESSION_EVENTS_URL,
-  BROKER_SESSIONS_URL,
   BROKER_SYNC_BACK_URL,
   BROKER_WORKSPACE_CLEAN_VAULT_URL,
   BROKER_WORKSPACE_GIT_EXCLUDE_URL,
@@ -47,7 +45,6 @@ import {
   applySessionOrder,
   mergeChangedSession,
   mergeSessionOrder,
-  normalizeSessions,
   sessionArchived,
   sessionAttentionKey,
   sessionAttentionVisualActive,
@@ -100,6 +97,7 @@ import {
   shouldProbeCodexActionRequired,
   workspacePanelPosition,
 } from "../domain/overlaySessionUi";
+import { useBrokerSessions } from "../hooks/useBrokerSessions";
 import { SessionRowContent, toolDisplayForSession } from "../components/SessionCard";
 import {
   BrokerReadinessPanel,
@@ -137,7 +135,6 @@ import type {
   ActivationResult,
   AgentSession,
   BrokerDebugStatus,
-  BrokerEnsureResult,
   ObsidianVaultRegistrationResult,
   OpenPathResult,
   TargetBinding,
@@ -149,7 +146,6 @@ import type {
   WorkspacePluginUpdateResult,
 } from "../types";
 
-const REFRESH_INTERVAL_MS = 3000;
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 86 };
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
@@ -234,17 +230,9 @@ interface ResizeState {
 
 export function MainOverlayApp() {
   const [amoTheme, setAmoThemePreference] = useAmoThemeRuntime();
-  const [sessions, setSessions] = useState<AgentSession[]>([]);
-  const [sessionOrder, setSessionOrder] = useState<string[]>([]);
   const [attentionVisualSeen, setAttentionVisualSeen] = useState<Record<string, string>>({});
   const [attentionClock, setAttentionClock] = useState(() => Date.now());
   const [collapsed, setCollapsed] = useState(false);
-  const [brokerReadiness, setBrokerReadiness] = useState<BrokerReadiness>({
-    state: "checking",
-    message: "Checking AMO broker",
-    detail: "127.0.0.1:17654",
-  });
-  const [feedback, setFeedback] = useState("Checking AMO broker...");
   const [activatingId, setActivatingId] = useState<string | null>(null);
   const [openingPath, setOpeningPath] = useState<{ sessionId: string; target: "note" | "canvas" } | null>(null);
   const [, setCopyingPromptId] = useState<string | null>(null);
@@ -266,13 +254,11 @@ export function MainOverlayApp() {
   const [windowBindDrag, setWindowBindDrag] = useState<WindowBindDragState | null>(null);
   const [archivingSessionId, setArchivingSessionId] = useState<string | null>(null);
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
-  const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [debugCount, setDebugCount] = useState(0);
   const [debugBusy, setDebugBusy] = useState(false);
   const [activeUtilityWindow, setActiveUtilityWindow] = useState<UtilityWindowKind | null>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
-  const sessionsRef = useRef(sessions);
   const orderedSessionsRef = useRef<AgentSession[]>([]);
   const debugEnabledRef = useRef(debugEnabled);
   const debugCountRef = useRef(debugCount);
@@ -285,6 +271,36 @@ export function MainOverlayApp() {
   const suppressNextClickRef = useRef(false);
   const autoSyncPromptIdsRef = useRef(new Set<string>());
   const reviewTaskbarAttentionActiveRef = useRef(false);
+  const {
+    brokerReadiness,
+    ensureBrokerThenRefresh,
+    feedback,
+    lastRefreshAt,
+    refreshSessions,
+    sessionOrder,
+    sessions,
+    sessionsRef,
+    setFeedback,
+    setLastRefreshAt,
+    setSessionOrder,
+    setSessions,
+  } = useBrokerSessions({
+    autoCopyAndFocusPendingPrompt,
+    clearLaunchPanelForSession: (sessionId) =>
+      setLaunchPanel((current) => (current?.session.sessionId === sessionId ? null : current)),
+    clearSessionMenus: () => {
+      setCandidateMenu(null);
+      setWorkspacePanel(null);
+      setLaunchPanel(null);
+    },
+    clearWorkspacePanelForSession: (sessionId) =>
+      setWorkspacePanel((current) => (current?.session.sessionId === sessionId ? null : current)),
+    onStartupRefreshSettled: () => {
+      void refreshDebugStatus();
+    },
+    postDebugLog,
+    reconcileCodexActionRequired,
+  });
 
   const filteredSessions = useMemo(
     () =>
@@ -500,64 +516,6 @@ export function MainOverlayApp() {
     };
   }, [activeUtilityWindow]);
 
-  async function refreshSessions(reason = "manual") {
-    const startedAt = performance.now();
-    const shouldLog = reason !== "interval";
-    if (shouldLog) {
-      void postDebugLog("sessions.refresh.start", {
-        reason,
-      });
-    }
-
-    try {
-      const response = await fetch(BROKER_SESSIONS_URL, { cache: "no-store" });
-      if (!response.ok) {
-        throw new Error(`broker returned ${response.status}`);
-      }
-
-      const payload = await response.json();
-      const nextSessions = normalizeSessions(payload);
-      if (!nextSessions) {
-        throw new Error("broker response has no sessions");
-      }
-
-      const visibleSessions = nextSessions.slice(0, 8);
-      setSessions(visibleSessions);
-      setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, visibleSessions));
-      setBrokerReadiness({
-        state: "ready",
-        message: "Broker ready",
-        detail: `${nextSessions.length} session${nextSessions.length === 1 ? "" : "s"} loaded`,
-      });
-      setLastRefreshAt(new Date().toISOString());
-      setFeedback(nextSessions.length > 0 ? `Broker sessions loaded: ${nextSessions.length}` : "No active broker sessions.");
-      void reconcileCodexActionRequired(visibleSessions, reason);
-      if (shouldLog) {
-        void postDebugLog("sessions.refresh.ok", {
-          reason,
-          durationMs: Math.round(performance.now() - startedAt),
-          sessionCount: nextSessions.length,
-          visibleSessionCount: visibleSessions.length,
-        });
-      }
-    } catch (error) {
-      setBrokerReadiness({
-        state: "error",
-        message: "Broker is not ready",
-        detail: (error as Error).message,
-      });
-      setLastRefreshAt(new Date().toISOString());
-      setFeedback(`Broker unavailable: ${(error as Error).message}`);
-      if (shouldLog) {
-        void postDebugLog("sessions.refresh.error", {
-          reason,
-          durationMs: Math.round(performance.now() - startedAt),
-          message: (error as Error).message,
-        });
-      }
-    }
-  }
-
   async function reconcileCodexActionRequired(candidateSessions: AgentSession[], reason: string) {
     const probeSessions = candidateSessions.filter(shouldProbeCodexActionRequired);
     const probeIds = new Set(probeSessions.map((session) => session.sessionId));
@@ -626,32 +584,6 @@ export function MainOverlayApp() {
         }
       }),
     );
-  }
-
-  async function ensureBrokerThenRefresh() {
-    setBrokerReadiness({
-      state: "checking",
-      message: "Checking AMO broker",
-      detail: "127.0.0.1:17654",
-    });
-    try {
-      const result = await invoke<BrokerEnsureResult>("ensure_broker");
-      setBrokerReadiness({
-        state: result.ok ? (result.started ? "starting" : "checking") : "error",
-        message: result.ok ? (result.started ? "Starting AMO broker" : "AMO broker found") : "Broker startup failed",
-        detail: result.message,
-      });
-      setFeedback(result.message);
-    } catch (error) {
-      setBrokerReadiness({
-        state: "error",
-        message: "Broker auto-start failed",
-        detail: (error as Error).message,
-      });
-      setFeedback(`Broker auto-start unavailable: ${(error as Error).message}`);
-    }
-
-    await refreshSessions("startup");
   }
 
   async function refreshDebugStatus() {
@@ -2467,170 +2399,6 @@ export function MainOverlayApp() {
     setIsResizing(false);
   }
 
-  useEffect(() => {
-    void ensureBrokerThenRefresh().finally(() => {
-      void refreshDebugStatus();
-    });
-
-    let eventSource: EventSource | null = null;
-    let eventRefreshTimer: number | null = null;
-    const scheduleEventRefresh = (eventReason = "unknown", sessionId: string | null = null) => {
-      if (eventRefreshTimer !== null) {
-        void postDebugLog("session_event.reconcile_skip", {
-          reason: eventReason,
-          sessionId,
-        });
-        return;
-      }
-
-      void postDebugLog("session_event.reconcile_scheduled", {
-        reason: eventReason,
-        sessionId,
-        delayMs: 650,
-      });
-      eventRefreshTimer = window.setTimeout(() => {
-        eventRefreshTimer = null;
-        void refreshSessions("sse-reconcile");
-      }, 650);
-    };
-    const handleSessionChanged = (event: MessageEvent) => {
-      const receivedAtMs = Date.now();
-      const applyStartedAt = performance.now();
-      let eventReason = "unknown";
-      let eventSessionId: string | null = null;
-      try {
-        const payload = JSON.parse(event.data) as {
-          brokerPublishedAtMs?: number;
-          reason?: string;
-          sequence?: number;
-          session?: AgentSession;
-          sessionId?: string | null;
-        };
-        const changedSession = payload.session;
-        eventReason = payload.reason ?? "unknown";
-        eventSessionId = payload.sessionId ?? changedSession?.sessionId ?? null;
-        void postDebugLog("session_event.received", {
-          sequence: payload.sequence ?? null,
-          reason: eventReason,
-          sessionId: eventSessionId,
-          hasSession: Boolean(changedSession),
-          sessionState: changedSession?.state ?? null,
-          pendingPromptId: changedSession?.pendingPromptId ?? null,
-          brokerToOverlayMs:
-            typeof payload.brokerPublishedAtMs === "number" ? receivedAtMs - payload.brokerPublishedAtMs : null,
-        });
-        if (eventReason === "dismiss-all") {
-          setSessions([]);
-          setSessionOrder([]);
-          setCandidateMenu(null);
-          setWorkspacePanel(null);
-          setLaunchPanel(null);
-          setLastRefreshAt(new Date().toISOString());
-          void postDebugLog("session_event.dismiss_all_applied", {
-            sequence: payload.sequence ?? null,
-            durationMs: Math.round(performance.now() - applyStartedAt),
-          });
-        } else if (changedSession?.sessionId && changedSession.dismissedAt) {
-          setSessions((previousSessions) => {
-            const nextSessions = previousSessions.filter((session) => session.sessionId !== changedSession.sessionId);
-            sessionsRef.current = nextSessions;
-            return nextSessions;
-          });
-          setSessionOrder((previousOrder) => previousOrder.filter((sessionId) => sessionId !== changedSession.sessionId));
-          setCandidateMenu((current) =>
-            current?.session.sessionId === changedSession.sessionId ? null : current,
-          );
-          setWorkspacePanel((current) =>
-            current?.session.sessionId === changedSession.sessionId ? null : current,
-          );
-          setLaunchPanel((current) =>
-            current?.session.sessionId === changedSession.sessionId ? null : current,
-          );
-          setLastRefreshAt(new Date().toISOString());
-          void postDebugLog("session_event.dismiss_applied", {
-            sequence: payload.sequence ?? null,
-            reason: eventReason,
-            sessionId: changedSession.sessionId,
-            durationMs: Math.round(performance.now() - applyStartedAt),
-          });
-        } else if (changedSession?.sessionId) {
-          setSessions((previousSessions) => {
-            const nextSessions = mergeChangedSession(previousSessions, changedSession);
-            sessionsRef.current = nextSessions;
-            return nextSessions;
-          });
-          setSessionOrder((previousOrder) =>
-            previousOrder.includes(changedSession.sessionId)
-              ? previousOrder
-              : [...previousOrder, changedSession.sessionId],
-          );
-          setLastRefreshAt(new Date().toISOString());
-          void postDebugLog("session_event.optimistic_applied", {
-            sequence: payload.sequence ?? null,
-            reason: eventReason,
-            sessionId: changedSession.sessionId,
-            durationMs: Math.round(performance.now() - applyStartedAt),
-          });
-          if (eventReason === "obsidian-annotations") {
-            window.setTimeout(() => autoCopyAndFocusPendingPrompt(changedSession, eventReason), 0);
-          }
-        }
-      } catch (error) {
-        void postDebugLog("session_event.parse_error", {
-          message: (error as Error).message,
-        });
-        // Fall through to the full refresh below; event payloads are an optimization.
-      }
-
-      scheduleEventRefresh(eventReason, eventSessionId);
-    };
-
-    if (typeof EventSource !== "undefined") {
-      try {
-        eventSource = new EventSource(BROKER_SESSION_EVENTS_URL);
-        eventSource.onopen = () => {
-          setBrokerReadiness((current) =>
-            current.state === "ready"
-              ? current
-              : {
-                  state: "ready",
-                  message: "Broker ready",
-                  detail: "Event stream connected",
-                },
-          );
-          void postDebugLog("session_event.stream_open", {
-            url: BROKER_SESSION_EVENTS_URL,
-          });
-        };
-        eventSource.onerror = () => {
-          void postDebugLog("session_event.stream_error", {
-            readyState: eventSource?.readyState ?? null,
-          });
-        };
-        eventSource.addEventListener("sessions.changed", handleSessionChanged);
-      } catch {
-        void postDebugLog("session_event.stream_create_error", {
-          url: BROKER_SESSION_EVENTS_URL,
-        });
-        eventSource = null;
-      }
-    } else {
-      void postDebugLog("session_event.unsupported", {});
-    }
-
-    const interval = window.setInterval(() => {
-      void refreshSessions("interval");
-    }, REFRESH_INTERVAL_MS);
-
-    return () => {
-      window.clearInterval(interval);
-      if (eventRefreshTimer !== null) {
-        window.clearTimeout(eventRefreshTimer);
-      }
-      eventSource?.close();
-    };
-  }, []);
-
   return (
     <main className={`overlay-shell ${collapsed ? "is-collapsed" : ""}`}>
       <header
@@ -2650,8 +2418,8 @@ export function MainOverlayApp() {
             <strong>Agents</strong>
             <span>
               {brokerReadinessLabels[brokerReadiness.state]}
-              {lastRefreshAt ? ` 路 ${formatAgo(lastRefreshAt)} ago` : ""}
-              {debugEnabled ? ` 路 debug ${debugCount}` : ""}
+              {lastRefreshAt ? ` 鐠?${formatAgo(lastRefreshAt)} ago` : ""}
+              {debugEnabled ? ` 鐠?debug ${debugCount}` : ""}
             </span>
           </div>
         </div>
@@ -2708,7 +2476,7 @@ export function MainOverlayApp() {
           <span>{brokerReady ? `${activeSessionCount} sessions` : brokerReadinessLabels[brokerReadiness.state]}</span>
           <strong>
             {brokerReady
-              ? `${attentionCount} attention${reviewCount > 0 ? ` 路 ${reviewCount} review` : ""}`
+              ? `${attentionCount} attention${reviewCount > 0 ? ` 鐠?${reviewCount} review` : ""}`
               : brokerReadiness.message}
           </strong>
         </button>

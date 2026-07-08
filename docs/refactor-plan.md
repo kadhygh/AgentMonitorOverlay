@@ -979,3 +979,13 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Broker Sessions Hook Extracted
+
+- Added `overlay/src/hooks/useBrokerSessions.ts` for broker startup refresh, session polling, SSE updates, broker readiness, feedback text, last-refresh time, and session/order state.
+- Kept Codex action-required probing and pending-prompt auto-copy behavior in `MainOverlayApp.tsx` as callbacks because they still depend on activation and target behavior.
+- Reduced `MainOverlayApp.tsx` from about 2818 lines to about 2599 lines while keeping `useBrokerSessions.ts` at about 273 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
