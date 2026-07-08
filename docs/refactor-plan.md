@@ -1029,3 +1029,14 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Pointer Hooks Extracted
+
+- Added `overlay/src/hooks/useCardDrag.ts` for task-card reorder state, drop target calculation, and card drag listener cleanup.
+- Added `overlay/src/hooks/useWindowBindDrag.ts` for drag-to-window binding state, cursor tracking, target-card lookup, and listener cleanup.
+- Added `overlay/src/hooks/useOverlayResize.ts` for overlay resize edge/corner pointer state and native window resizing.
+- Reduced `MainOverlayApp.tsx` from about 1629 lines to about 1295 lines while keeping the new pointer hooks between about 88 and 213 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

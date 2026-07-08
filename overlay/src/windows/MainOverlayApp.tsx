@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type PointerEvent } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize, UserAttentionType } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
@@ -30,7 +30,6 @@ import {
 import {
   applySessionOrder,
   mergeChangedSession,
-  mergeSessionOrder,
   sessionArchived,
   sessionAttentionKey,
   sessionAttentionVisualActive,
@@ -52,9 +51,12 @@ import {
   shouldProbeCodexActionRequired,
 } from "../domain/overlaySessionUi";
 import { useBrokerSessions } from "../hooks/useBrokerSessions";
+import { useCardDrag } from "../hooks/useCardDrag";
 import { useObsidianOpen } from "../hooks/useObsidianOpen";
+import { useOverlayResize } from "../hooks/useOverlayResize";
 import { useSessionActions } from "../hooks/useSessionActions";
 import { useTargetActivation } from "../hooks/useTargetActivation";
+import { useWindowBindDrag } from "../hooks/useWindowBindDrag";
 import { useWorkspacePanels } from "../hooks/useWorkspacePanels";
 import { SessionRowContent, toolDisplayForSession } from "../components/SessionCard";
 import {
@@ -143,31 +145,6 @@ function sessionMatchesSearch(session: AgentSession, query: string) {
   return haystack.includes(normalizedQuery);
 }
 
-interface CardDragState {
-  sessionId: string;
-  pointerId: number;
-  pointerY: number;
-  offsetY: number;
-  left: number;
-  width: number;
-  height: number;
-}
-
-interface WindowBindDragState {
-  sessionId: string;
-  pointerId: number;
-  pointerX: number;
-  pointerY: number;
-}
-
-interface ResizeState {
-  mode: "vertical" | "horizontal" | "both";
-  startScreenX: number;
-  startScreenY: number;
-  startWidth: number;
-  startHeight: number;
-}
-
 export function MainOverlayApp() {
   const [amoTheme, setAmoThemePreference] = useAmoThemeRuntime();
   const [attentionVisualSeen, setAttentionVisualSeen] = useState<Record<string, string>>({});
@@ -180,13 +157,9 @@ export function MainOverlayApp() {
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
   const [launchPanel, setLaunchPanel] = useState<LaunchPanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
-  const [isResizing, setIsResizing] = useState(false);
   const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
     loadScratchpadShortcutState(),
   );
-  const [cardDrag, setCardDrag] = useState<CardDragState | null>(null);
-  const [windowBindDrag, setWindowBindDrag] = useState<WindowBindDragState | null>(null);
-  const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [debugCount, setDebugCount] = useState(0);
   const [debugBusy, setDebugBusy] = useState(false);
@@ -195,11 +168,6 @@ export function MainOverlayApp() {
   const orderedSessionsRef = useRef<AgentSession[]>([]);
   const debugEnabledRef = useRef(debugEnabled);
   const debugCountRef = useRef(debugCount);
-  const cardDragRef = useRef<CardDragState | null>(null);
-  const cardDragCleanupRef = useRef<(() => void) | null>(null);
-  const windowBindDragRef = useRef<WindowBindDragState | null>(null);
-  const windowBindDragCleanupRef = useRef<(() => void) | null>(null);
-  const resizeRef = useRef<ResizeState | null>(null);
   const actionRequiredProbeRef = useRef<Record<string, string>>({});
   const suppressNextClickRef = useRef(false);
   const autoSyncPromptIdsRef = useRef(new Set<string>());
@@ -233,6 +201,30 @@ export function MainOverlayApp() {
     },
     postDebugLog,
     reconcileCodexActionRequired,
+  });
+
+  const {
+    cardDrag,
+    dropTargetId,
+    endCardDrag,
+    startCardDrag,
+  } = useCardDrag({
+    orderedSessionsRef,
+    rowRefs,
+    sessionsRef,
+    setFeedback,
+    setSessionOrder,
+    suppressNextClickRef,
+  });
+
+  const {
+    continueWindowResize,
+    endWindowResize,
+    isResizing,
+    startWindowResize,
+  } = useOverlayResize({
+    collapsed,
+    setFeedback,
   });
 
   const {
@@ -274,6 +266,16 @@ export function MainOverlayApp() {
     setFeedback,
     setLaunchPanel,
     setSessions,
+  });
+
+  const {
+    startWindowBindDrag,
+    windowBindDrag,
+  } = useWindowBindDrag({
+    bindWindowAtCursor,
+    sessionsRef,
+    setFeedback,
+    suppressNextClickRef,
   });
 
   const {
@@ -480,14 +482,6 @@ export function MainOverlayApp() {
     void applyScratchpadShortcutState(scratchpadShortcut).catch((error) => {
       setFeedback(`Scratchpad shortcut setup failed: ${(error as Error).message}`);
     });
-  }, []);
-
-  useEffect(() => {
-    return () => removeCardDragListeners();
-  }, []);
-
-  useEffect(() => {
-    return () => removeWindowBindDragListeners();
   }, []);
 
   useEffect(() => {
@@ -882,337 +876,9 @@ export function MainOverlayApp() {
     void copyPendingPrompt(session);
   }
 
-  function startWindowBindDrag(session: AgentSession, event: PointerEvent<HTMLElement>) {
-    const currentTarget = targetBindingForSession(session);
-    if (currentTarget && currentTarget.type !== "codex-cli-session") {
-      setFeedback("This card already has a target. Unbind it before dragging to a different window.");
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Pointer capture can fail if the button is remounted while the card updates.
-    }
-
-    const nextDrag = {
-      sessionId: session.sessionId,
-      pointerId: event.pointerId,
-      pointerX: event.clientX,
-      pointerY: event.clientY,
-    };
-    windowBindDragRef.current = nextDrag;
-    suppressNextClickRef.current = true;
-    setWindowBindDrag(nextDrag);
-    setFeedback(`Drag to the target CLI/app window and release to bind ${session.title}.`);
-    attachWindowBindDragListeners(event.pointerId);
-  }
-
-  function attachWindowBindDragListeners(pointerId: number) {
-    removeWindowBindDragListeners();
-
-    const handleMove = (event: globalThis.PointerEvent) => {
-      if (event.pointerId !== pointerId) {
-        return;
-      }
-
-      event.preventDefault();
-      continueWindowBindDragAt(event.clientX, event.clientY);
-    };
-
-    const handleEnd = (event: globalThis.PointerEvent) => {
-      if (event.pointerId !== pointerId) {
-        return;
-      }
-
-      event.preventDefault();
-      void finishWindowBindDrag();
-    };
-
-    window.addEventListener("pointermove", handleMove, { passive: false });
-    window.addEventListener("pointerup", handleEnd, { passive: false });
-    window.addEventListener("pointercancel", handleEnd, { passive: false });
-    windowBindDragCleanupRef.current = () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleEnd);
-      window.removeEventListener("pointercancel", handleEnd);
-    };
-  }
-
-  function removeWindowBindDragListeners() {
-    windowBindDragCleanupRef.current?.();
-    windowBindDragCleanupRef.current = null;
-  }
-
-  function continueWindowBindDragAt(pointerX: number, pointerY: number) {
-    const activeDrag = windowBindDragRef.current;
-    if (!activeDrag) {
-      return;
-    }
-
-    const nextDrag = {
-      ...activeDrag,
-      pointerX,
-      pointerY,
-    };
-    windowBindDragRef.current = nextDrag;
-    setWindowBindDrag(nextDrag);
-  }
-
-  async function finishWindowBindDrag() {
-    const activeDrag = windowBindDragRef.current;
-    if (!activeDrag) {
-      return;
-    }
-
-    removeWindowBindDragListeners();
-    windowBindDragRef.current = null;
-    setWindowBindDrag(null);
-
-    const session = sessionsRef.current.find((item) => item.sessionId === activeDrag.sessionId);
-    if (!session) {
-      setFeedback("The card is no longer available.");
-      return;
-    }
-
-    const currentTarget = targetBindingForSession(session);
-    if (currentTarget && currentTarget.type !== "codex-cli-session") {
-      setFeedback("This card already has a target binding.");
-      return;
-    }
-
-    await bindWindowAtCursor(session);
-  }
-
   async function handleSessionAttention(session: AgentSession) {
     const clearedSession = await clearSessionAttentionAfterActivation(session, "manual-handle");
     await activateSession(clearedSession ?? session);
-  }
-
-  function moveDraggedSessionToIndex(draggingSessionId: string, targetIndex: number) {
-    setSessionOrder((previousOrder) => {
-      const currentSessions = sessionsRef.current;
-      const orderedVisibleIds = orderedSessionsRef.current.map((session) => session.sessionId);
-      const visibleWithoutDragged = orderedVisibleIds.filter((sessionId) => sessionId !== draggingSessionId);
-      const baseOrder = mergeSessionOrder(previousOrder, currentSessions).filter(
-        (sessionId) => sessionId !== draggingSessionId,
-      );
-
-      const beforeId = visibleWithoutDragged[targetIndex] ?? null;
-      const afterId = targetIndex > 0 ? visibleWithoutDragged[targetIndex - 1] : null;
-      const insertIndex = beforeId
-        ? baseOrder.indexOf(beforeId)
-        : afterId
-          ? baseOrder.indexOf(afterId) + 1
-          : baseOrder.length;
-
-      const safeIndex = Math.max(0, Math.min(insertIndex, baseOrder.length));
-      const nextOrder = [...baseOrder];
-      nextOrder.splice(safeIndex, 0, draggingSessionId);
-
-      if (nextOrder.join("\u0000") === mergeSessionOrder(previousOrder, currentSessions).join("\u0000")) {
-        return previousOrder;
-      }
-
-      return nextOrder;
-    });
-  }
-
-  function updateCardDrag(pointerY: number) {
-    const activeDrag = cardDragRef.current;
-    if (!activeDrag) {
-      return;
-    }
-
-    const visibleTargets = orderedSessionsRef.current.filter(
-      (session) => session.sessionId !== activeDrag.sessionId,
-    );
-    let targetIndex = visibleTargets.length;
-    let nextDropTargetId: string | null = null;
-
-    for (let index = 0; index < visibleTargets.length; index += 1) {
-      const targetSession = visibleTargets[index];
-      const targetElement = rowRefs.current.get(targetSession.sessionId);
-      if (!targetElement) {
-        continue;
-      }
-
-      const rect = targetElement.getBoundingClientRect();
-      if (pointerY < rect.top + rect.height / 2) {
-        targetIndex = index;
-        nextDropTargetId = targetSession.sessionId;
-        break;
-      }
-
-      nextDropTargetId = targetSession.sessionId;
-    }
-
-    setDropTargetId(nextDropTargetId);
-    moveDraggedSessionToIndex(activeDrag.sessionId, targetIndex);
-  }
-
-  function startCardDrag(session: AgentSession, event: PointerEvent<HTMLElement>) {
-    const row = rowRefs.current.get(session.sessionId);
-    if (!row) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    try {
-      event.currentTarget.setPointerCapture(event.pointerId);
-    } catch {
-      // Pointer capture can fail if the handle is remounted during a reorder.
-    }
-
-    const rect = row.getBoundingClientRect();
-    const nextDrag = {
-      sessionId: session.sessionId,
-      pointerId: event.pointerId,
-      pointerY: event.clientY,
-      offsetY: event.clientY - rect.top,
-      left: rect.left,
-      width: rect.width,
-      height: rect.height,
-    };
-    cardDragRef.current = nextDrag;
-    suppressNextClickRef.current = true;
-    setCardDrag(nextDrag);
-    setDropTargetId(null);
-    setFeedback(`Dragging ${session.title}.`);
-    attachCardDragListeners(event.pointerId);
-  }
-
-  function attachCardDragListeners(pointerId: number) {
-    removeCardDragListeners();
-
-    const handleMove = (event: globalThis.PointerEvent) => {
-      if (event.pointerId !== pointerId) {
-        return;
-      }
-
-      event.preventDefault();
-      continueCardDragAt(event.clientY);
-    };
-
-    const handleEnd = (event: globalThis.PointerEvent) => {
-      if (event.pointerId !== pointerId) {
-        return;
-      }
-
-      event.preventDefault();
-      finishCardDrag();
-    };
-
-    window.addEventListener("pointermove", handleMove, { passive: false });
-    window.addEventListener("pointerup", handleEnd, { passive: false });
-    window.addEventListener("pointercancel", handleEnd, { passive: false });
-    cardDragCleanupRef.current = () => {
-      window.removeEventListener("pointermove", handleMove);
-      window.removeEventListener("pointerup", handleEnd);
-      window.removeEventListener("pointercancel", handleEnd);
-    };
-  }
-
-  function removeCardDragListeners() {
-    cardDragCleanupRef.current?.();
-    cardDragCleanupRef.current = null;
-  }
-
-  function continueCardDragAt(pointerY: number) {
-    const activeDrag = cardDragRef.current;
-    if (!activeDrag) {
-      return;
-    }
-
-    const nextDrag = {
-      ...activeDrag,
-      pointerY,
-    };
-    cardDragRef.current = nextDrag;
-    setCardDrag(nextDrag);
-    updateCardDrag(pointerY);
-  }
-
-  function finishCardDrag() {
-    if (!cardDragRef.current) {
-      return;
-    }
-
-    removeCardDragListeners();
-    cardDragRef.current = null;
-    setCardDrag(null);
-    setDropTargetId(null);
-  }
-
-  function endCardDrag(event: PointerEvent<HTMLElement>) {
-    if (!cardDragRef.current) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    finishCardDrag();
-  }
-
-  async function startWindowResize(event: PointerEvent<HTMLElement>, mode: ResizeState["mode"]) {
-    if (collapsed) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    event.currentTarget.setPointerCapture(event.pointerId);
-
-    try {
-      const size = await getCurrentWindow().innerSize();
-      resizeRef.current = {
-        mode,
-        startScreenX: event.screenX,
-        startScreenY: event.screenY,
-        startWidth: size.width,
-        startHeight: size.height,
-      };
-      setIsResizing(true);
-      setFeedback("Resizing overlay.");
-    } catch {
-      resizeRef.current = null;
-      setIsResizing(false);
-    }
-  }
-
-  function continueWindowResize(event: PointerEvent<HTMLElement>) {
-    const activeResize = resizeRef.current;
-    if (!activeResize) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-
-    const nextWidth =
-      activeResize.mode === "vertical"
-        ? activeResize.startWidth
-        : Math.max(320, Math.min(900, activeResize.startWidth + event.screenX - activeResize.startScreenX));
-    const nextHeight =
-      activeResize.mode === "horizontal"
-        ? activeResize.startHeight
-        : Math.max(280, Math.min(900, activeResize.startHeight + event.screenY - activeResize.startScreenY));
-
-    void getCurrentWindow().setSize(new LogicalSize(nextWidth, nextHeight)).catch(() => undefined);
-  }
-
-  function endWindowResize(event: PointerEvent<HTMLElement>) {
-    if (!resizeRef.current) {
-      return;
-    }
-
-    event.preventDefault();
-    event.stopPropagation();
-    resizeRef.current = null;
-    setIsResizing(false);
   }
 
   return (
