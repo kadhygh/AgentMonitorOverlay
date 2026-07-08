@@ -100,6 +100,7 @@ broker/assets/obsidian/md-anno-tools/src/
   bridge/
     annotation-sync.ts
   canvas/
+    actions.ts
     target.ts
     controller.ts
     work-canvas.ts

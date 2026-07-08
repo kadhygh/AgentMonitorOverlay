@@ -186,6 +186,9 @@ and deleting annotations live in `broker/assets/obsidian/md-anno-tools/src/annot
 decides when postprocessing runs and exposes public wrapper methods for command/panel callers.
 Canvas latest-note marking, centering, node element lookup, bounds, zoom, and selection collection helpers live in
 `broker/assets/obsidian/md-anno-tools/src/canvas/navigation.ts`; `plugin.ts` keeps the debug-aware `safeCanvasCall` wrapper.
+Canvas tab action registration, selected-note target memory, fallback target picker, and selected-note send/panel/title
+actions live in `broker/assets/obsidian/md-anno-tools/src/canvas/actions.ts`; `plugin.ts` keeps public wrapper methods for
+existing callers.
 Work Canvas folder management, canvas target listing, JSON node insertion, and add-note modal wiring live in
 `broker/assets/obsidian/md-anno-tools/src/canvas/work-canvas.ts`; this module writes Canvas files and invokes explicit
 open/focus actions, but it must not replace Obsidian's native Canvas renderer.

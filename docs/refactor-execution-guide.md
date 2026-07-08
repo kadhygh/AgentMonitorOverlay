@@ -751,7 +751,8 @@ Manual smoke:
 
 ### Plugin Subphase P3: Canvas Actions
 
-Status: started. Work Canvas folder/list/create/add-note behavior now lives in `src/canvas/work-canvas.ts`.
+Status: started. Canvas tab action registration, selected-note target memory, and fallback target picker now live in
+`src/canvas/actions.ts`. Work Canvas folder/list/create/add-note behavior now lives in `src/canvas/work-canvas.ts`.
 
 Create:
 

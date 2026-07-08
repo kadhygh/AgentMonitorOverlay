@@ -22,7 +22,7 @@ import { normalizeVaultFilePath } from "./core/paths";
 import { normalizeMarkdownTitle, parseAmoMetadata, removeAmoDisplayHeading, upsertAmoMarker } from "./core/metadata";
 import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, rootContainsAnnotationMarkers, describeElement } from "./core/ui-utils";
 import { AmoAnnotationPanelView } from "./ui/panel-view";
-import { AnnotationInputModal, CanvasNoteTargetModal, NoteTitleModal } from "./ui/modals";
+import { AnnotationInputModal, NoteTitleModal } from "./ui/modals";
 import { AmoAnnotationSettingTab } from "./ui/settings-tab";
 import {
   extractAnnotationItems,
@@ -45,12 +45,11 @@ import {
 import { amoMarkerHiderExtension } from "./editor/amo-marker-hider";
 import { handleEditorLocalCodeLinkEvent, handleLocalCodeLinkClick } from "./editor/local-code-link-controller";
 import {
-  canvasFilePathFromEventTarget,
   canvasNodeFilePath,
   collectCanvasNodes,
   collectCanvasSelectedNodes,
-  normalizeCanvasFilePathCandidate,
 } from "./canvas/target";
+import * as canvasActions from "./canvas/actions";
 import { canvasNodeElement, centerCanvasNode, markCanvasLatestNote } from "./canvas/navigation";
 import * as workCanvasActions from "./canvas/work-canvas";
 import {
@@ -862,161 +861,31 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   syncCanvasViewActions() {
-    for (const leaf of this.app.workspace.getLeavesOfType("canvas")) {
-      const view: any = leaf.view;
-      if (!view || !view.containerEl || typeof view.addAction !== "function") continue;
-      this.ensureCanvasTargetTracking(view);
-      this.syncCanvasOpenNoteToolbarButtons(view);
-
-      if (!view.containerEl.querySelector("." + AMO_CANVAS_SEND_ACTION_CLASS)) {
-        const sendAction = view.addAction("send", "Send selected note annotations to AMO", () => {
-          void this.sendAnnotationsFromCanvas(view);
-        });
-        sendAction.addClass(AMO_CANVAS_SEND_ACTION_CLASS);
-        this.debugLog("canvas.action.added", {
-          action: "send",
-          canvasPath: view.file && view.file.path,
-        });
-      }
-
-      if (!view.containerEl.querySelector("." + AMO_CANVAS_PANEL_ACTION_CLASS)) {
-        const panelAction = view.addAction("panel-right", "Open AMO panel", () => {
-          void this.openPanelFromCanvas(view);
-        });
-        panelAction.addClass(AMO_CANVAS_PANEL_ACTION_CLASS);
-        this.debugLog("canvas.action.added", {
-          action: "panel",
-          canvasPath: view.file && view.file.path,
-        });
-      }
-
-      if (!view.containerEl.querySelector("." + AMO_CANVAS_TITLE_ACTION_CLASS)) {
-        const titleAction = view.addAction("pencil", "Edit selected note title", () => {
-          void this.editTitleFromCanvas(view);
-        });
-        titleAction.addClass(AMO_CANVAS_TITLE_ACTION_CLASS);
-        this.debugLog("canvas.action.added", {
-          action: "title",
-          canvasPath: view.file && view.file.path,
-        });
-      }
-    }
+    return canvasActions.syncCanvasViewActions(this);
   }
 
   async editTitleFromCanvas(view) {
-    const rememberedBefore = this.getRememberedCanvasMarkdownFileTarget(view);
-    const selectedCount = collectCanvasSelectedNodes(view && view.canvas).length;
-    const file = this.getCanvasMarkdownFileForAction(view);
-    this.debugLog("canvas.title.clicked", {
-      canvasPath: view && view.file && view.file.path,
-      targetPath: file && file.path,
-      rememberedPathBefore: rememberedBefore && rememberedBefore.file && rememberedBefore.file.path,
-      selectedCount,
-    });
-    if (file) {
-      await this.editAmoNoteTitle(file);
-      return;
-    }
-
-    await this.chooseCanvasMarkdownFile(view, "Edit title", async (selectedFile) => {
-      this.rememberCanvasMarkdownFile(view, selectedFile.path);
-      await this.editAmoNoteTitle(selectedFile);
-    });
+    return canvasActions.editTitleFromCanvas(this, view);
   }
 
   async sendAnnotationsFromCanvas(view) {
-    const rememberedBefore = this.getRememberedCanvasMarkdownFileTarget(view);
-    const selectedCount = collectCanvasSelectedNodes(view && view.canvas).length;
-    const file = this.getCanvasMarkdownFileForAction(view);
-    this.debugLog("canvas.send.clicked", {
-      canvasPath: view && view.file && view.file.path,
-      targetPath: file && file.path,
-      targetSource: file ? this.lastMarkdownTargetSource : null,
-      rememberedPathBefore: rememberedBefore && rememberedBefore.file && rememberedBefore.file.path,
-      selectedCount,
-    });
-    if (file) {
-      await this.sendAnnotationsFromFile(file);
-      return;
-    }
-
-    this.debugLog("canvas.send.choose_target", {
-      canvasPath: view && view.file && view.file.path,
-    });
-    await this.chooseCanvasMarkdownFile(view, "Send", async (selectedFile) => {
-      await this.sendAnnotationsFromFile(selectedFile);
-    });
+    return canvasActions.sendAnnotationsFromCanvas(this, view);
   }
 
   async openPanelFromCanvas(view) {
-    const rememberedBefore = this.getRememberedCanvasMarkdownFileTarget(view);
-    const selectedCount = collectCanvasSelectedNodes(view && view.canvas).length;
-    const file = this.getCanvasMarkdownFileForAction(view);
-    this.debugLog("canvas.panel.clicked", {
-      canvasPath: view && view.file && view.file.path,
-      targetPath: file && file.path,
-      targetSource: file ? this.lastMarkdownTargetSource : null,
-      rememberedPathBefore: rememberedBefore && rememberedBefore.file && rememberedBefore.file.path,
-      selectedCount,
-    });
-    if (file) {
-      this.rememberCanvasMarkdownFile(view, file.path);
-      await this.activatePanel();
-      return;
-    }
-
-    await this.chooseCanvasMarkdownFile(view, "Use", async (selectedFile) => {
-      this.rememberCanvasMarkdownFile(view, selectedFile.path);
-      await this.activatePanel();
-    });
+    return canvasActions.openPanelFromCanvas(this, view);
   }
 
   ensureCanvasTargetTracking(view) {
-    if (this.canvasViewsWithTargetTracking.has(view)) return;
-    this.canvasViewsWithTargetTracking.add(view);
-
-    this.registerDomEvent(view.containerEl, "pointerdown", (event) => {
-      this.rememberCanvasTargetFromEvent(view, event);
-      this.scheduleCanvasToolbarSync(view);
-    });
+    return canvasActions.ensureCanvasTargetTracking(this, view);
   }
 
   scheduleCanvasToolbarSync(view) {
-    window.setTimeout(() => this.syncCanvasOpenNoteToolbarButtons(view), 0);
-    window.setTimeout(() => this.syncCanvasOpenNoteToolbarButtons(view), 120);
+    return canvasActions.scheduleCanvasToolbarSync(this, view);
   }
 
   rememberCanvasTargetFromEvent(view, event) {
-    const target = event && event.target;
-    const element = target instanceof Element ? target : null;
-    if (element && element.closest(".view-action, .clickable-icon, button")) {
-      this.debugLog("canvas.pointer.ignored_action", {
-        canvasPath: view && view.file && view.file.path,
-        target: describeElement(element),
-      });
-      return;
-    }
-
-    this.canvasTargetFilePathByView.delete(view);
-
-    const filePath = canvasFilePathFromEventTarget(view.canvas, target);
-    if (filePath && filePath.toLowerCase().endsWith(".md")) {
-      const file = this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(filePath));
-      if (file && typeof file.path === "string") {
-        this.rememberCanvasMarkdownFile(view, file.path);
-        this.debugLog("canvas.pointer.remembered", {
-          canvasPath: view && view.file && view.file.path,
-          notePath: file.path,
-          target: element ? describeElement(element) : null,
-        });
-      }
-      return;
-    }
-
-    this.debugLog("canvas.pointer.cleared", {
-      canvasPath: view && view.file && view.file.path,
-      target: element ? describeElement(element) : null,
-    });
+    return canvasActions.rememberCanvasTargetFromEvent(this, view, event);
   }
 
   setOperationStatus(message, tone = "neutral") {
@@ -1250,167 +1119,47 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   getSelectedCanvasMarkdownFile(view) {
-    const target = this.getSelectedCanvasMarkdownFileTarget(view);
-    return target ? target.file : null;
+    return canvasActions.getSelectedCanvasMarkdownFile(this, view);
   }
 
   getCanvasMarkdownFileForAction(view) {
-    const target =
-      this.getSelectedCanvasMarkdownFileTarget(view, { allowRemembered: false }) ||
-      this.getRememberedCanvasMarkdownFileTarget(view);
-    return target ? target.file : null;
+    return canvasActions.getCanvasMarkdownFileForAction(this, view);
   }
 
   getSelectedCanvasMarkdownFileTarget(view = null, options = null) {
-    const canvasView = view || this.getActiveCanvasView();
-    if (!canvasView) return null;
-
-    const allowRemembered = !options || options.allowRemembered !== false;
-    if (allowRemembered) {
-      const rememberedCanvasTarget = this.getRememberedCanvasMarkdownFileTarget(canvasView);
-      if (rememberedCanvasTarget) return rememberedCanvasTarget;
-    }
-
-    const selectedNodes = collectCanvasSelectedNodes(canvasView.canvas);
-    for (const node of selectedNodes) {
-      const filePath = canvasNodeFilePath(canvasView.canvas, node);
-      if (!filePath || !filePath.toLowerCase().endsWith(".md")) continue;
-      const file = this.app.vault.getAbstractFileByPath(normalizeVaultFilePath(filePath));
-      if (file && typeof file.path === "string") {
-        const changed = this.rememberCanvasMarkdownFile(canvasView, file.path, {
-          refreshPanels: options ? options.refreshPanels : undefined,
-        });
-        if (changed) {
-          this.debugLog("canvas.selection.remembered", {
-            canvasPath: canvasView.file && canvasView.file.path,
-            notePath: file.path,
-            selectedCount: selectedNodes.length,
-          });
-        }
-        return {
-          file,
-          source: "canvas-selection",
-        };
-      }
-    }
-
-    return null;
+    return canvasActions.getSelectedCanvasMarkdownFileTarget(this, view, options);
   }
 
   rememberCanvasMarkdownFile(view, filePath, options = null) {
-    const previousPath = this.canvasTargetFilePathByView.get(view);
-    const changed =
-      previousPath !== filePath ||
-      this.lastMarkdownFilePath !== filePath ||
-      this.lastMarkdownTargetSource !== "canvas-selection";
-
-    this.lastCanvasView = view;
-    this.canvasTargetFilePathByView.set(view, filePath);
-    this.lastMarkdownView = null;
-    this.lastMarkdownLeaf = null;
-    this.lastMarkdownFilePath = filePath;
-    this.lastMarkdownTargetSource = "canvas-selection";
-    if (changed && (!options || options.refreshPanels !== false)) {
-      this.schedulePanelRefresh("canvas-target-changed");
-    }
-    return changed;
+    return canvasActions.rememberCanvasMarkdownFile(this, view, filePath, options);
   }
 
   getRememberedCanvasMarkdownFileTarget(view) {
-    const filePath = this.canvasTargetFilePathByView.get(view);
-    if (!filePath) return null;
-    const file = this.app.vault.getAbstractFileByPath(filePath);
-    if (!file || typeof file.path !== "string") return null;
-    return {
-      file,
-      source: "canvas-selection",
-    };
+    return canvasActions.getRememberedCanvasMarkdownFileTarget(this, view);
   }
 
   rememberSelectedCanvasMarkdownFile(view) {
-    return this.getSelectedCanvasMarkdownFileTarget(view);
+    return canvasActions.rememberSelectedCanvasMarkdownFile(this, view);
   }
 
   async chooseCanvasMarkdownFile(view, actionLabel, onSelect) {
-    const targets = await this.listCanvasMarkdownFileTargets(view);
-    this.debugLog("canvas.target_modal.open", {
-      actionLabel,
-      canvasPath: view && view.file && view.file.path,
-      targetCount: targets.length,
-      targets: targets.slice(0, 12).map((target) => target.file.path),
-    });
-    if (targets.length === 0) {
-      new Notice("No Markdown note nodes found on this canvas.");
-      return;
-    }
-
-    new CanvasNoteTargetModal(this.app, targets, actionLabel, async (target) => {
-      this.rememberCanvasMarkdownFile(view, target.file.path);
-      this.debugLog("canvas.target_modal.selected", {
-        actionLabel,
-        canvasPath: view && view.file && view.file.path,
-        notePath: target.file.path,
-      });
-      await onSelect(target.file);
-    }).open();
+    return canvasActions.chooseCanvasMarkdownFile(this, view, actionLabel, onSelect);
   }
 
   async listCanvasMarkdownFileTargets(view) {
-    const targets = [];
-    const seen = new Set();
-
-    for (const node of collectCanvasNodes(view && view.canvas)) {
-      const filePath = canvasNodeFilePath(view.canvas, node);
-      this.addCanvasFileTarget(targets, seen, filePath, node.x || (node.data && node.data.x), node.y || (node.data && node.data.y));
-    }
-
-    if (view && view.file) {
-      try {
-        const raw = await this.app.vault.cachedRead(view.file as any);
-        const canvas = JSON.parse(raw);
-        for (const node of Array.isArray(canvas.nodes) ? canvas.nodes : []) {
-          this.addCanvasFileTarget(targets, seen, node.file, node.x, node.y);
-        }
-      } catch {
-        // Ignore malformed or unavailable canvas file data; live canvas nodes above may still be enough.
-      }
-    }
-
-    const sorted = targets.sort((a, b) => {
-      if (a.y !== b.y) return a.y - b.y;
-      return a.x - b.x;
-    });
-    this.debugLog("canvas.targets.listed", {
-      canvasPath: view && view.file && view.file.path,
-      count: sorted.length,
-      targets: sorted.slice(0, 12).map((target) => target.file.path),
-    });
-    return sorted;
+    return canvasActions.listCanvasMarkdownFileTargets(this, view);
   }
 
   addCanvasFileTarget(targets, seen, filePath, x, y) {
-    const normalizedPath = normalizeVaultFilePath(filePath);
-    if (!normalizedPath || !normalizedPath.toLowerCase().endsWith(".md") || seen.has(normalizedPath)) return;
-
-    const file = this.app.vault.getAbstractFileByPath(normalizedPath);
-    if (!file || typeof file.path !== "string") return;
-
-    seen.add(normalizedPath);
-    targets.push({
-      file,
-      x: Number.isFinite(Number(x)) ? Number(x) : 0,
-      y: Number.isFinite(Number(y)) ? Number(y) : 0,
-    });
+    return canvasActions.addCanvasFileTarget(this, targets, seen, filePath, x, y);
   }
 
   getActiveCanvasView() {
-    const leaf = this.app.workspace.activeLeaf;
-    if (!leaf || !leaf.view || typeof leaf.view.getViewType !== "function") return null;
-    return leaf.view.getViewType() === "canvas" ? leaf.view : null;
+    return canvasActions.getActiveCanvasView(this);
   }
 
   isActiveLeafCanvas() {
-    return Boolean(this.getActiveCanvasView());
+    return canvasActions.isActiveLeafCanvas(this);
   }
 
   isActiveLeafAmoPanel() {
