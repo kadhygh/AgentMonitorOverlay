@@ -268,6 +268,10 @@ export class AmoAnnotationPanelView extends ItemView {
     const section = root.createDiv({ cls: "amo-panel-section amo-panel-actions" });
     section.createEl("h4", { text: "Actions" });
 
+    const isCanvasNoteContext = workspaceState.key === "canvas-note" || info.source === "canvas-selection";
+    const canvasNoteEditDisabledTitle = isCanvasNoteContext
+      ? "Canvas selected-note mode only supports returning to the task window and revealing the note. Open the note tab for annotation edits."
+      : "";
     const noteGroup = section.createDiv({
       cls: "amo-panel-action-group" + (info.file ? "" : " is-disabled"),
     });
@@ -275,7 +279,14 @@ export class AmoAnnotationPanelView extends ItemView {
     setIcon(noteHeader.createSpan(), "file-text");
     noteHeader.createSpan({ text: "Note" });
     const noteButtons = noteGroup.createDiv({ cls: "amo-panel-action-grid" });
-    this.addActionButton(noteButtons, "highlighter", "批注", () => this.insertAnnotation(info), Boolean(info.file));
+    this.addActionButton(
+      noteButtons,
+      "highlighter",
+      "批注",
+      () => this.insertAnnotation(info),
+      Boolean(info.file && !isCanvasNoteContext),
+      canvasNoteEditDisabledTitle
+    );
     this.addActionButton(
       noteButtons,
       "send",
@@ -297,7 +308,8 @@ export class AmoAnnotationPanelView extends ItemView {
         });
         await this.plugin.copyAnnotationsFromFile(info.file);
       },
-      Boolean(info.file)
+      Boolean(info.file && !isCanvasNoteContext),
+      canvasNoteEditDisabledTitle
     );
     this.addActionButton(
       noteButtons,
@@ -315,7 +327,8 @@ export class AmoAnnotationPanelView extends ItemView {
       async () => {
         await this.plugin.openAddNoteToWorkCanvasModal(info.file);
       },
-      Boolean(info.file)
+      Boolean(info.file && !isCanvasNoteContext),
+      canvasNoteEditDisabledTitle
     );
 
     const canvasActionsEnabled = Boolean(canvasFile && (workspaceState.key === "canvas" || workspaceState.key === "canvas-note"));

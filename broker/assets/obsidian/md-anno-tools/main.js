@@ -38,7 +38,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.34";
+var PLUGIN_VERSION = "1.4.35";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -1065,6 +1065,8 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
   renderActions(root, info, canvasFile, workspaceState) {
     const section = root.createDiv({ cls: "amo-panel-section amo-panel-actions" });
     section.createEl("h4", { text: "Actions" });
+    const isCanvasNoteContext = workspaceState.key === "canvas-note" || info.source === "canvas-selection";
+    const canvasNoteEditDisabledTitle = isCanvasNoteContext ? "Canvas selected-note mode only supports returning to the task window and revealing the note. Open the note tab for annotation edits." : "";
     const noteGroup = section.createDiv({
       cls: "amo-panel-action-group" + (info.file ? "" : " is-disabled")
     });
@@ -1072,7 +1074,14 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     (0, import_obsidian2.setIcon)(noteHeader.createSpan(), "file-text");
     noteHeader.createSpan({ text: "Note" });
     const noteButtons = noteGroup.createDiv({ cls: "amo-panel-action-grid" });
-    this.addActionButton(noteButtons, "highlighter", "\u6279\u6CE8", () => this.insertAnnotation(info), Boolean(info.file));
+    this.addActionButton(
+      noteButtons,
+      "highlighter",
+      "\u6279\u6CE8",
+      () => this.insertAnnotation(info),
+      Boolean(info.file && !isCanvasNoteContext),
+      canvasNoteEditDisabledTitle
+    );
     this.addActionButton(
       noteButtons,
       "send",
@@ -1094,7 +1103,8 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
         });
         await this.plugin.copyAnnotationsFromFile(info.file);
       },
-      Boolean(info.file)
+      Boolean(info.file && !isCanvasNoteContext),
+      canvasNoteEditDisabledTitle
     );
     this.addActionButton(
       noteButtons,
@@ -1112,7 +1122,8 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       async () => {
         await this.plugin.openAddNoteToWorkCanvasModal(info.file);
       },
-      Boolean(info.file)
+      Boolean(info.file && !isCanvasNoteContext),
+      canvasNoteEditDisabledTitle
     );
     const canvasActionsEnabled = Boolean(canvasFile && (workspaceState.key === "canvas" || workspaceState.key === "canvas-note"));
     const canvasGroup = section.createDiv({
