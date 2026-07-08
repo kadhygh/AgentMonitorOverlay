@@ -39,6 +39,9 @@ Expected ownership after refactor:
 - `lib/http.js`: request/response helpers.
 - `lib/debug.js`: bounded debug log and debug status.
 - `lib/session-store.js`: session map, snapshot load/persist, archive/dismiss/review/attention, list sessions.
+- `lib/conversation-service.js`: prompt/reply note and canvas orchestration, duplicate prompt handling, and enrolled workspace resolution.
+- `lib/obsidian-bridge.js`: Obsidian annotation sync-back, note title updates, vault registration, and recovered session payloads.
+- `lib/pending-prompts.js`: annotation normalization, annotation numbering, prompt rendering, prompt hashes, and duplicate prompt checks.
 - `lib/normalize.js`: shared payload normalization helpers.
 - `lib/obsidian-vault.js`: Obsidian vault registry, plugin install/health, runtime-state, and comparable path helpers.
 - `lib/target-binding.js`: window, Codex CLI, and Codex App target binding normalization.
@@ -168,6 +171,9 @@ The broker extraction has started. These boundaries have already moved out of `b
 - HTTP response/body/error helpers: `broker/lib/http.js`
 - bounded debug log, debug status, and debug preview helpers: `broker/lib/debug.js`
 - session map, snapshot load/persist, event upsert, heartbeat, archive/dismiss/review/attention, and session listing: `broker/lib/session-store.js`
+- prompt/reply artifact orchestration and duplicate prompt policy: `broker/lib/conversation-service.js`
+- Obsidian annotation sync-back, note title updates, vault registration, and recovered annotation sessions: `broker/lib/obsidian-bridge.js`
+- annotation normalization, annotation numbering, pending prompt rendering, and prompt duplicate hashes: `broker/lib/pending-prompts.js`
 - Codex/Claude session display-name cache: `broker/lib/display-names.js`
 - shared text, integer, array, and version normalization helpers: `broker/lib/normalize.js`
 - Obsidian vault registry, plugin install/health, runtime-state, and comparable path helpers: `broker/lib/obsidian-vault.js`
@@ -185,7 +191,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 
 The remaining source hotspots are:
 
-- `broker/server.js` (about 1339 lines after workspace maintenance/launch extraction)
+- `broker/server.js` (about 612 lines after conversation/Obsidian bridge extraction)
 - `overlay/src/App.tsx`
 - `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
 - `overlay/src-tauri/src/windows.rs`

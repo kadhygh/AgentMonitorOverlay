@@ -1,56 +1,29 @@
 const http = require("http");
-const crypto = require("crypto");
-const fs = require("fs");
 const path = require("path");
-const {
-  AMO_CANVAS_PATH,
-  AMO_DIR,
-  AMO_SCHEMA_VERSION,
-  AMO_SESSIONS_PATH,
-  CANVAS_NODE_MARGIN_X,
-  CANVAS_NODE_MARGIN_Y,
-  REPLY_NODE_GAP_X,
-  REPLY_NODE_GAP_Y,
-  REPLY_NODE_HEIGHT,
-  REPLY_NODE_WIDTH,
-} = require("./lib/amo-constants");
-const { appendConversationNoteToCanvas, updateCanvasNoteDisplayTitle } = require("./lib/canvas-writer");
-const { readConversationNoteIndex, upsertConversationNoteIndex, writePromptNote, writeReplyNote } = require("./lib/conversation-artifacts");
+const { AMO_SCHEMA_VERSION } = require("./lib/amo-constants");
+const { createConversationService } = require("./lib/conversation-service");
 const { CORS_HEADERS, httpError, readJsonBody, sendEmpty, sendJson } = require("./lib/http");
 const { createDebugLogStore } = require("./lib/debug");
-const { resolveSessionTitle } = require("./lib/display-names");
 const { normalizeInteger, normalizeText } = require("./lib/normalize");
+const { createObsidianBridge } = require("./lib/obsidian-bridge");
 const { createSessionStore } = require("./lib/session-store");
-const {
-  attachObsidianPluginHealth,
-  normalizeCanvasAppendDirection,
-  registerObsidianVault,
-} = require("./lib/obsidian-vault");
+const { attachObsidianPluginHealth } = require("./lib/obsidian-vault");
 const {
   clearWindowIdentity,
   normalizeTargetBinding,
   normalizeWindowHint,
-  resolveSessionTargetBinding,
   targetBindingFromWindowHint,
   windowHintFromWindowTarget,
 } = require("./lib/target-binding");
-const { normalizeNoteDisplayTitle, sanitizeObsidianFileNamePart, trimMessage } = require("./lib/text-format");
 const { enrollWorkspace } = require("./lib/workspace-deploy");
 const { updateWorkspaceGitExclude } = require("./lib/workspace-git-exclude");
-const { inspectWorkspace, resolveWorkspaceVaultRoot } = require("./lib/workspace-inspect");
+const { inspectWorkspace } = require("./lib/workspace-inspect");
 const { launchWorkspace } = require("./lib/workspace-launch");
 const {
   cleanWorkspaceVault,
   inspectWorkspaceMaintenance,
   updateWorkspaceObsidianPlugin,
 } = require("./lib/workspace-maintenance");
-const {
-  readJsonFile,
-  readJsonFileStrict,
-  readJsonTextFile,
-  resolveWorkspacePath,
-  writeJsonFile,
-} = require("./lib/filesystem");
 
 const HOST = process.env.AGENT_MONITOR_HOST || "127.0.0.1";
 const PORT = Number.parseInt(process.env.AGENT_MONITOR_PORT || "17654", 10);
@@ -58,7 +31,6 @@ const DATA_FILE =
   process.env.AGENT_MONITOR_DATA_FILE ||
   path.join(__dirname, "data", "sessions.json");
 const DEBUG_MAX_LOG_ENTRIES = 800;
-const PROMPT_DUPLICATE_WINDOW_MS = 10 * 60 * 1000;
 
 const startedAt = new Date();
 const eventClients = new Set();
@@ -76,10 +48,10 @@ const sessionStore = createSessionStore({
   dataFile: DATA_FILE,
   expectedBridgeUrl: baseUrl,
   recordDebugLog,
-  promptEventHandler: (payload) => handlePrompt(payload),
 });
 const {
   sessions,
+  setPromptEventHandler,
   sessionHasAttentionState,
   clearSessionAttentionFields,
   reviveArchivedSession,
@@ -96,6 +68,22 @@ const {
   persistSnapshot,
   normalizeState,
 } = sessionStore;
+const conversationService = createConversationService({
+  sessions,
+  recordDebugLog,
+  debugPreview,
+  reviveArchivedSession,
+  clearSessionAttentionFields,
+  sessionHasAttentionState,
+  normalizeState,
+});
+setPromptEventHandler((payload) => conversationService.handlePrompt(payload));
+const obsidianBridge = createObsidianBridge({
+  sessions,
+  recordDebugLog,
+  debugPreview,
+  handlePrompt: (payload) => conversationService.handlePrompt(payload),
+});
 loadSnapshot();
 
 const server = http.createServer(async (req, res) => {
@@ -209,7 +197,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/replies") {
       const payload = await readJsonBody(req);
-      const reply = handleReply(payload);
+      const reply = conversationService.handleReply(payload);
       persistSnapshot();
       publishSessionChanged("reply", reply.session);
       return sendJson(res, 200, reply);
@@ -217,7 +205,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/prompts") {
       const payload = await readJsonBody(req);
-      const prompt = handlePrompt(payload);
+      const prompt = conversationService.handlePrompt(payload);
       persistSnapshot();
       publishSessionChanged("prompt", prompt.session);
       return sendJson(res, 200, prompt);
@@ -225,7 +213,7 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/obsidian/annotations") {
       const payload = await readJsonBody(req);
-      const result = handleObsidianAnnotations(payload);
+      const result = obsidianBridge.handleObsidianAnnotations(payload);
       persistSnapshot();
       publishSessionChanged("obsidian-annotations", result.session);
       return sendJson(res, 200, result);
@@ -233,18 +221,18 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/api/obsidian/note-title") {
       const payload = await readJsonBody(req);
-      const result = handleObsidianNoteTitle(payload);
+      const result = obsidianBridge.handleObsidianNoteTitle(payload);
       return sendJson(res, 200, result);
     }
 
     if (req.method === "POST" && url.pathname === "/api/obsidian/register-vault") {
       const payload = await readJsonBody(req);
-      return sendJson(res, 200, handleRegisterObsidianVault(payload));
+      return sendJson(res, 200, obsidianBridge.handleRegisterObsidianVault(payload));
     }
 
     if (req.method === "POST" && url.pathname === "/api/sync-back") {
       const payload = await readJsonBody(req);
-      const result = handleSyncBack(payload);
+      const result = obsidianBridge.handleSyncBack(payload);
       persistSnapshot();
       publishSessionChanged("sync-back", result.session);
       return sendJson(res, 200, result);
@@ -457,652 +445,6 @@ function publishSessionChanged(reason, session) {
     failedCount,
     durationMs: Date.now() - publishStartedAtMs,
   });
-}
-
-function handleReply(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw httpError(400, "invalid_json", "Reply payload must be a JSON object");
-  }
-
-  const message = normalizeText(payload.message || payload.last_assistant_message);
-  if (!message) {
-    throw httpError(400, "missing_message", "Reply payload must include message or last_assistant_message");
-  }
-
-  const sessionId = normalizeText(payload.sessionId || payload.session_id);
-  if (!sessionId) {
-    throw httpError(400, "missing_session_id", "Reply payload must include sessionId");
-  }
-
-  const workspaceRoot = findEnrolledWorkspace(payload.workspacePath || payload.workspace_path || payload.cwd);
-  const amoRoot = path.join(workspaceRoot, AMO_DIR);
-  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
-  if (!workspace || !workspace.workspaceId) {
-    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
-  }
-
-  const tool = normalizeText(payload.tool) || "codex";
-  const now = new Date().toISOString();
-  const capturedAt = normalizeText(payload.capturedAt || payload.captured_at || payload.timestamp) || now;
-  const turnId = normalizeText(payload.turnId || payload.turn_id) || "unknown-turn";
-  const source = normalizeText(payload.source) || "codex-stop-hook";
-  const hookEventName = normalizeText(payload.hookEventName || payload.hook_event_name) || "Stop";
-  const cwd = normalizeText(payload.cwd) || workspaceRoot;
-  const transcriptPath = normalizeText(payload.transcriptPath || payload.transcript_path);
-  const existing = sessions.get(sessionId);
-  const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title);
-  const taskTitle = normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null;
-  const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null;
-  const targetBinding = resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: capturedAt, windowHint });
-  const record = {
-    schemaVersion: AMO_SCHEMA_VERSION,
-    workspaceId: workspace.workspaceId,
-    workspacePath: workspaceRoot,
-    tool,
-    source,
-    sessionId,
-    turnId,
-    cwd,
-    title,
-    taskTitle,
-    model: normalizeText(payload.model),
-    hookEventName,
-    transcriptPath,
-    capturedAt,
-    message,
-  };
-
-  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, path.basename(workspaceRoot));
-  const note = writeReplyNote(amoRoot, vaultRoot, record);
-  const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
-
-  const session = reviveArchivedSession({
-    tool,
-    sessionId,
-    cwd,
-    title,
-    taskTitle,
-    state: "idle",
-    lastEvent: hookEventName,
-    lastMessage: trimMessage(message, 240),
-    needsAttention: false,
-    windowHint,
-    targetBinding,
-    updatedAt: capturedAt,
-    createdAt: existing?.createdAt || now,
-    heartbeatAt: existing?.heartbeatAt || null,
-    eventCount: (existing?.eventCount || 0) + 1,
-    workspaceId: workspace.workspaceId,
-    workspacePath: workspaceRoot,
-    vaultRoot,
-    lastReplyAt: capturedAt,
-    lastReplyNote: note.notePath,
-    lastReplyNoteAbsolutePath: note.noteAbsolutePath,
-    reviewRequired: true,
-    reviewStatus: "pending",
-    reviewRequestedAt: capturedAt,
-    reviewedAt: null,
-    reviewedBy: null,
-    reviewAction: null,
-    reviewTurnId: turnId,
-    reviewNote: note.notePath,
-    reviewCanvasNodeId: canvas.canvasNodeId,
-    lastPromptAt: existing?.lastPromptAt || null,
-    lastPromptNote: existing?.lastPromptNote || null,
-    lastPromptNoteAbsolutePath: existing?.lastPromptNoteAbsolutePath || null,
-    lastPromptCanvasNodeId: existing?.lastPromptCanvasNodeId || null,
-    lastPromptHash: existing?.lastPromptHash || null,
-    lastPromptPendingPromptId: existing?.lastPromptPendingPromptId || null,
-    lastPromptSource: existing?.lastPromptSource || null,
-    canvasPath: canvas.canvasPath,
-    canvasAbsolutePath: canvas.canvasAbsolutePath,
-    canvasNodeId: canvas.canvasNodeId,
-  }, "reply", existing);
-  sessions.set(sessionId, session);
-
-  recordDebugLog("broker", "reply.created", {
-    sessionId,
-    turnId,
-    source,
-    cwd,
-    notePath: note.notePath,
-    canvasPath: canvas.canvasPath,
-    canvasNodeId: canvas.canvasNodeId,
-    messagePreview: debugPreview(message),
-  });
-
-  return {
-    ok: true,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    workspaceId: workspace.workspaceId,
-    sessionId,
-    turnId,
-    notePath: note.notePath,
-    noteAbsolutePath: note.noteAbsolutePath,
-    canvasPath: canvas.canvasPath,
-    canvasAbsolutePath: canvas.canvasAbsolutePath,
-    canvasNodeId: canvas.canvasNodeId,
-    session,
-  };
-}
-
-function handlePrompt(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw httpError(400, "invalid_json", "Prompt payload must be a JSON object");
-  }
-
-  const message = normalizeText(payload.message || payload.prompt || payload.userPrompt || payload.user_prompt);
-  if (!message) {
-    throw httpError(400, "missing_message", "Prompt payload must include message or prompt");
-  }
-
-  const sessionId = normalizeText(payload.sessionId || payload.session_id);
-  if (!sessionId) {
-    throw httpError(400, "missing_session_id", "Prompt payload must include sessionId");
-  }
-
-  const existing = sessions.get(sessionId);
-  const workspaceRoot = resolvePromptWorkspace(payload, existing);
-  const amoRoot = path.join(workspaceRoot, AMO_DIR);
-  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
-  if (!workspace || !workspace.workspaceId) {
-    throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
-  }
-
-  const tool = normalizeText(payload.tool) || existing?.tool || "codex";
-  const now = new Date().toISOString();
-  const capturedAt = normalizeText(payload.capturedAt || payload.captured_at || payload.timestamp) || now;
-  const pendingPromptId = normalizeText(payload.pendingPromptId || payload.pending_prompt_id);
-  const turnId =
-    normalizeText(payload.turnId || payload.turn_id) ||
-    pendingPromptId ||
-    `prompt-${crypto.createHash("sha1").update(`${sessionId}:${capturedAt}:${message}`).digest("hex").slice(0, 12)}`;
-  const source = normalizeText(payload.source) || "user-prompt";
-  const hookEventName = normalizeText(payload.hookEventName || payload.hook_event_name) || "UserPromptSubmit";
-  const cwd = normalizeText(payload.cwd) || existing?.cwd || workspaceRoot;
-  const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title);
-  const taskTitle = normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null;
-  const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null;
-  const targetBinding = resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: capturedAt, windowHint });
-  const promptHash = promptContentHash(message);
-  const duplicate = findDuplicatePrompt(existing, {
-    message,
-    promptHash,
-    pendingPromptId,
-    source,
-    capturedAt,
-  });
-  if (duplicate) {
-    const duplicateSession = reviveArchivedSession(clearSessionAttentionFields(
-      {
-        ...(existing || {}),
-        tool,
-        sessionId,
-        cwd,
-        title,
-        taskTitle,
-        state: normalizeState(payload.state) || "running",
-        lastEvent: hookEventName,
-        lastMessage: trimMessage(`User: ${message}`, 240),
-        updatedAt: capturedAt,
-        createdAt: existing?.createdAt || now,
-        heartbeatAt: existing?.heartbeatAt || null,
-        eventCount: (existing?.eventCount || 0) + 1,
-        workspaceId: existing?.workspaceId || workspace.workspaceId,
-        workspacePath: existing?.workspacePath || workspaceRoot,
-        windowHint,
-        targetBinding,
-      },
-      "auto-cleared-by-duplicate-prompt"
-    ), "duplicate-prompt", existing);
-    sessions.set(sessionId, duplicateSession);
-    if (sessionHasAttentionState(existing)) {
-      recordDebugLog("broker", "session.attention_auto_cleared", {
-        sessionId,
-        reason: "duplicate-prompt",
-        eventName: hookEventName,
-        state: duplicateSession.state,
-      });
-    }
-    recordDebugLog("broker", "prompt.duplicate_skipped", {
-      sessionId,
-      pendingPromptId: pendingPromptId || null,
-      source,
-      notePath: duplicate.notePath || null,
-      messagePreview: debugPreview(message),
-    });
-    return {
-      ok: true,
-      schemaVersion: AMO_SCHEMA_VERSION,
-      workspaceId: workspace.workspaceId,
-      sessionId,
-      turnId,
-      duplicate: true,
-      notePath: duplicate.notePath || null,
-      noteAbsolutePath: duplicate.noteAbsolutePath || null,
-      canvasPath: existing?.canvasPath || null,
-      canvasAbsolutePath: existing?.canvasAbsolutePath || null,
-      canvasNodeId: duplicate.canvasNodeId || null,
-      session: duplicateSession,
-    };
-  }
-
-  const record = {
-    schemaVersion: AMO_SCHEMA_VERSION,
-    workspaceId: workspace.workspaceId,
-    workspacePath: workspaceRoot,
-    role: "user",
-    tool,
-    source,
-    sessionId,
-    turnId,
-    cwd,
-    title,
-    taskTitle,
-    model: normalizeText(payload.model),
-    hookEventName,
-    transcriptPath: normalizeText(payload.transcriptPath || payload.transcript_path),
-    capturedAt,
-    pendingPromptId: pendingPromptId || null,
-    message,
-  };
-
-  const vaultRoot = resolveWorkspaceVaultRoot(amoRoot, workspace, path.basename(workspaceRoot));
-  const note = writePromptNote(amoRoot, vaultRoot, record);
-  const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
-
-  const session = reviveArchivedSession({
-    ...(existing || {}),
-    tool,
-    sessionId,
-    cwd,
-    title,
-    taskTitle,
-    state: normalizeState(payload.state) || "running",
-    lastEvent: hookEventName,
-    lastMessage: trimMessage(`User: ${message}`, 240),
-    needsAttention: false,
-    windowHint,
-    targetBinding,
-    updatedAt: capturedAt,
-    createdAt: existing?.createdAt || now,
-    heartbeatAt: existing?.heartbeatAt || null,
-    eventCount: (existing?.eventCount || 0) + 1,
-    workspaceId: workspace.workspaceId,
-    workspacePath: workspaceRoot,
-    vaultRoot,
-    reviewRequired: false,
-    reviewStatus: null,
-    reviewRequestedAt: null,
-    reviewedAt: null,
-    reviewedBy: null,
-    reviewAction: null,
-    reviewTurnId: null,
-    reviewNote: null,
-    reviewCanvasNodeId: null,
-    lastPromptAt: capturedAt,
-    lastPromptNote: note.notePath,
-    lastPromptNoteAbsolutePath: note.noteAbsolutePath,
-    lastPromptCanvasNodeId: canvas.canvasNodeId,
-    lastPromptHash: promptHash,
-    lastPromptPendingPromptId: pendingPromptId || null,
-    lastPromptSource: source,
-    canvasPath: canvas.canvasPath,
-    canvasAbsolutePath: canvas.canvasAbsolutePath,
-    canvasNodeId: canvas.canvasNodeId,
-  }, "prompt", existing);
-  sessions.set(sessionId, session);
-
-  recordDebugLog("broker", "prompt.created", {
-    sessionId,
-    turnId,
-    source,
-    cwd,
-    pendingPromptId: pendingPromptId || null,
-    notePath: note.notePath,
-    canvasPath: canvas.canvasPath,
-    canvasNodeId: canvas.canvasNodeId,
-    messagePreview: debugPreview(message),
-  });
-
-  return {
-    ok: true,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    workspaceId: workspace.workspaceId,
-    sessionId,
-    turnId,
-    notePath: note.notePath,
-    noteAbsolutePath: note.noteAbsolutePath,
-    canvasPath: canvas.canvasPath,
-    canvasAbsolutePath: canvas.canvasAbsolutePath,
-    canvasNodeId: canvas.canvasNodeId,
-    session,
-  };
-}
-
-function handleObsidianAnnotations(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw httpError(400, "invalid_json", "Annotation payload must be a JSON object");
-  }
-
-  const sessionId = normalizeText(payload.sessionId || payload.session_id);
-  if (!sessionId) {
-    throw httpError(400, "missing_session_id", "Annotation payload must include sessionId");
-  }
-
-  recordDebugLog("broker", "obsidian.annotations.received", {
-    sessionId,
-    source: normalizeText(payload.source) || "unknown",
-    vaultRoot: normalizeText(payload.vaultRoot || payload.vault_root),
-    notePath: normalizeText(payload.notePath || payload.note_path),
-    turnId: normalizeText(payload.turnId || payload.turn_id),
-    annotationCount: Array.isArray(payload.annotations) ? payload.annotations.length : 0,
-    promptPreview: debugPreview(payload.prompt),
-  });
-
-  const existing = sessions.get(sessionId) || recoverSessionFromAnnotationPayload(payload, sessionId);
-  if (!existing) {
-    recordDebugLog("broker", "obsidian.annotations.session_missing", {
-      sessionId,
-      vaultRoot: normalizeText(payload.vaultRoot || payload.vault_root),
-      notePath: normalizeText(payload.notePath || payload.note_path),
-    });
-    throw httpError(404, "session_not_found", `Session not found for annotation payload: ${sessionId}`);
-  }
-
-  const annotations = normalizeAnnotations(payload.annotations);
-  const summary = normalizeText(payload.summary);
-  if (annotations.length === 0 && !summary) {
-    throw httpError(400, "missing_annotations", "Annotation payload must include annotations or summary");
-  }
-
-  const now = new Date().toISOString();
-  const pendingPromptId =
-    normalizeText(payload.pendingPromptId || payload.pending_prompt_id) || `prompt-${crypto.randomUUID()}`;
-  const prompt = normalizeText(payload.prompt) || renderPendingPrompt({ ...payload, sessionId }, annotations, summary);
-  const annotationCount = annotations.length || 1;
-  const notePath = normalizeText(payload.notePath || payload.note_path);
-  const vaultRoot = normalizeText(payload.vaultRoot || payload.vault_root);
-  const turnId = normalizeText(payload.turnId || payload.turn_id);
-  const source = normalizeText(payload.source) || "obsidian-plugin";
-
-  const session = {
-    ...existing,
-    state: "waiting_user",
-    lastEvent: "ObsidianAnnotations",
-    lastMessage: `${annotationCount} annotation${annotationCount === 1 ? "" : "s"} ready for sync-back`,
-    needsAttention: true,
-    updatedAt: now,
-    eventCount: (existing.eventCount || 0) + 1,
-    pendingPromptId,
-    pendingPrompt: prompt,
-    pendingPromptCreatedAt: now,
-    pendingPromptCopiedAt: null,
-    pendingAnnotationCount: annotationCount,
-    pendingAnnotationSource: {
-      source,
-      vaultRoot: vaultRoot || null,
-      notePath: notePath || null,
-      turnId: turnId || null,
-    },
-  };
-
-  sessions.set(sessionId, session);
-
-  recordDebugLog("broker", "obsidian.annotations.accepted", {
-    sessionId,
-    pendingPromptId,
-    annotationCount,
-    source,
-    notePath,
-    turnId,
-    promptPreview: debugPreview(prompt),
-  });
-
-  return {
-    ok: true,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    sessionId,
-    pendingPromptId,
-    prompt,
-    annotationCount,
-    session,
-  };
-}
-
-function handleObsidianNoteTitle(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw httpError(400, "invalid_json", "Note title payload must be a JSON object");
-  }
-
-  const vaultRootText = normalizeText(payload.vaultRoot || payload.vault_root);
-  const notePath = normalizeText(payload.notePath || payload.note_path);
-  const displayTitle = normalizeNoteDisplayTitle(payload.displayTitle || payload.display_title || payload.title);
-  if (!vaultRootText) {
-    throw httpError(400, "missing_vault_root", "Note title payload must include vaultRoot");
-  }
-  if (!notePath) {
-    throw httpError(400, "missing_note_path", "Note title payload must include notePath");
-  }
-  const vaultRoot = path.resolve(vaultRootText);
-  const amoRoot = path.dirname(vaultRoot);
-  const workspaceRoot = path.dirname(amoRoot);
-  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
-  if (!workspace || !workspace.workspaceId || !fs.existsSync(vaultRoot)) {
-    throw httpError(400, "workspace_not_enrolled", "Vault root does not belong to an enrolled AMO workspace");
-  }
-
-  const noteId = normalizeText(payload.noteId || payload.note_id);
-  const updatedAt = new Date().toISOString();
-  const noteIndex = readConversationNoteIndex(amoRoot);
-  const existingNoteId = noteId || noteIndex.byPath?.[notePath] || "";
-  const existingRecord = existingNoteId ? noteIndex.notes?.[existingNoteId] : null;
-  const effectiveNoteId =
-    existingNoteId ||
-    `note_${crypto.createHash("sha1").update(`${workspace.workspaceId}:${notePath}`).digest("hex").slice(0, 16)}`;
-
-  upsertConversationNoteIndex(amoRoot, {
-    ...(existingRecord || {}),
-    schemaVersion: AMO_SCHEMA_VERSION,
-    noteId: effectiveNoteId,
-    workspaceId: workspace.workspaceId,
-    workspacePath: normalizeText(workspace.workspacePath) || workspaceRoot,
-    notePath,
-    displayTitle,
-    updatedAt,
-  });
-
-  updateCanvasNoteDisplayTitle(vaultRoot, {
-    noteId: effectiveNoteId,
-    notePath,
-    displayTitle,
-    updatedAt,
-  });
-
-  recordDebugLog("broker", "obsidian.note_title.updated", {
-    workspaceId: workspace.workspaceId,
-    notePath,
-    noteId: effectiveNoteId,
-    displayTitle,
-  });
-
-  return {
-    ok: true,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    workspaceId: workspace.workspaceId,
-    noteId: effectiveNoteId,
-    notePath,
-    displayTitle,
-  };
-}
-
-function recoverSessionFromAnnotationPayload(payload, sessionId) {
-  const vaultRootText = normalizeText(payload.vaultRoot || payload.vault_root);
-  if (!vaultRootText) {
-    return null;
-  }
-
-  const vaultRoot = path.resolve(vaultRootText);
-  const amoRoot = path.dirname(vaultRoot);
-  const workspaceRoot = path.dirname(amoRoot);
-  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
-  if (!workspace || !workspace.workspaceId || !fs.existsSync(vaultRoot)) {
-    return null;
-  }
-
-  const notePath = normalizeText(payload.notePath || payload.note_path);
-  const now = new Date().toISOString();
-  const workspacePath = normalizeText(workspace.workspacePath) || workspaceRoot;
-  const projectName = normalizeText(workspace.projectName) || path.basename(workspacePath);
-
-  return {
-    tool: "codex",
-    sessionId,
-    cwd: workspacePath,
-    title: resolveSessionTitle("codex", sessionId, payload.title, null),
-    taskTitle: normalizeText(payload.taskTitle || payload.task_title) || null,
-    state: "idle",
-    lastEvent: "RecoveredFromObsidianNote",
-    lastMessage: notePath ? `Recovered from Obsidian note: ${notePath}` : "Recovered from Obsidian note",
-    needsAttention: false,
-    windowHint: {
-      titleContains: [projectName, "Codex"],
-      project: projectName,
-      cwd: workspacePath,
-      tool: "codex",
-      pid: null,
-      hwnd: null,
-    },
-    updatedAt: now,
-    createdAt: now,
-    heartbeatAt: null,
-    eventCount: 0,
-    workspaceId: workspace.workspaceId,
-    workspacePath,
-    vaultRoot,
-    lastReplyAt: null,
-    lastReplyNote: notePath || null,
-    lastReplyNoteAbsolutePath: notePath ? path.join(vaultRoot, notePath.replace(/[\\/]+/g, path.sep)) : null,
-    canvasPath: AMO_CANVAS_PATH,
-    canvasAbsolutePath: path.join(vaultRoot, AMO_CANVAS_PATH),
-    canvasNodeId: null,
-  };
-}
-
-function handleRegisterObsidianVault(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw httpError(400, "invalid_json", "Vault registration payload must be a JSON object");
-  }
-
-  const rawVaultRoot = normalizeText(payload.vaultRoot || payload.vault_root);
-  if (!rawVaultRoot) {
-    throw httpError(400, "missing_vault_root", "Vault registration requires vaultRoot");
-  }
-
-  const vaultRoot = path.resolve(rawVaultRoot);
-  let stat;
-  try {
-    stat = fs.statSync(vaultRoot);
-  } catch {
-    throw httpError(404, "vault_not_found", `Obsidian vault root does not exist: ${vaultRoot}`);
-  }
-
-  if (!stat.isDirectory()) {
-    throw httpError(400, "vault_not_directory", `Obsidian vault root must be a directory: ${vaultRoot}`);
-  }
-
-  fs.mkdirSync(path.join(vaultRoot, ".obsidian"), { recursive: true });
-  const result = registerObsidianVault(vaultRoot);
-  recordDebugLog("broker", "obsidian.vault.registered", {
-    vaultRoot,
-    vaultId: result.vaultId,
-    changed: result.changed,
-  });
-  return result;
-}
-
-function handleSyncBack(payload) {
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
-    throw httpError(400, "invalid_json", "Sync-back payload must be a JSON object");
-  }
-
-  const sessionId = normalizeText(payload.sessionId || payload.session_id);
-  if (!sessionId) {
-    throw httpError(400, "missing_session_id", "Sync-back payload must include sessionId");
-  }
-
-  recordDebugLog("broker", "sync_back.received", {
-    sessionId,
-    pendingPromptId: normalizeText(payload.pendingPromptId || payload.pending_prompt_id),
-    action: normalizeText(payload.action),
-  });
-
-  const existing = sessions.get(sessionId);
-  if (!existing) {
-    recordDebugLog("broker", "sync_back.session_missing", { sessionId });
-    throw httpError(404, "session_not_found", `Session not found for sync-back payload: ${sessionId}`);
-  }
-
-  const pendingPromptId = normalizeText(payload.pendingPromptId || payload.pending_prompt_id);
-  if (pendingPromptId && existing.pendingPromptId && pendingPromptId !== existing.pendingPromptId) {
-    throw httpError(409, "pending_prompt_mismatch", "Sync-back pendingPromptId does not match current session");
-  }
-
-  const now = new Date().toISOString();
-  let promptRecord = null;
-  let promptSessionBase = existing;
-  if (existing.pendingPrompt) {
-    promptRecord = handlePrompt({
-      schemaVersion: AMO_SCHEMA_VERSION,
-      tool: existing.tool,
-      source: "amo-sync-back",
-      sessionId,
-      cwd: existing.cwd || existing.workspacePath,
-      workspacePath: existing.workspacePath,
-      message: existing.pendingPrompt,
-      pendingPromptId: existing.pendingPromptId || pendingPromptId || null,
-      turnId: existing.pendingPromptId || pendingPromptId || null,
-      hookEventName: "AmoSyncBack",
-      capturedAt: now,
-    });
-    promptSessionBase = promptRecord.session || existing;
-  }
-
-  const session = {
-    ...promptSessionBase,
-    lastEvent: "SyncBackCopied",
-    lastMessage: "Pending prompt copied; paste it manually into the target",
-    needsAttention: false,
-    updatedAt: now,
-    eventCount: (promptSessionBase.eventCount || 0) + 1,
-    pendingPromptCopiedAt: now,
-    sentPromptId: promptRecord?.turnId || promptSessionBase.sentPromptId || null,
-    sentPromptNote: promptRecord?.notePath || promptSessionBase.sentPromptNote || null,
-    sentPromptNoteAbsolutePath: promptRecord?.noteAbsolutePath || promptSessionBase.sentPromptNoteAbsolutePath || null,
-    sentPromptCanvasNodeId: promptRecord?.canvasNodeId || promptSessionBase.sentPromptCanvasNodeId || null,
-    sentPromptRecordedAt: promptRecord ? now : promptSessionBase.sentPromptRecordedAt || null,
-  };
-
-  sessions.set(sessionId, session);
-
-  recordDebugLog("broker", "sync_back.accepted", {
-    sessionId,
-    pendingPromptId: session.pendingPromptId || null,
-    copiedAt: now,
-    promptNotePath: promptRecord?.notePath || null,
-    promptCanvasNodeId: promptRecord?.canvasNodeId || null,
-  });
-
-  return {
-    ok: true,
-    schemaVersion: AMO_SCHEMA_VERSION,
-    sessionId,
-    pendingPromptId: session.pendingPromptId || null,
-    copiedAt: now,
-    promptNotePath: promptRecord?.notePath || null,
-    promptCanvasNodeId: promptRecord?.canvasNodeId || null,
-    session,
-  };
 }
 
 function bindSessionWindow(sessionId, payload) {
@@ -1336,150 +678,4 @@ function clearSessionTargetBinding(sessionId) {
 
 function baseUrl() {
   return `http://${HOST}:${PORT}`;
-}
-
-function findEnrolledWorkspace(value) {
-  const rawPath = normalizeText(value);
-  if (!rawPath) {
-    throw httpError(400, "missing_workspace_path", "Reply payload must include cwd or workspacePath");
-  }
-
-  let current = path.resolve(rawPath);
-  if (!fs.existsSync(current)) {
-    throw httpError(404, "workspace_not_found", `Reply cwd/workspacePath does not exist: ${current}`);
-  }
-
-  if (!fs.statSync(current).isDirectory()) {
-    current = path.dirname(current);
-  }
-
-  while (true) {
-    if (fs.existsSync(path.join(current, AMO_DIR, "workspace.json"))) {
-      return fs.realpathSync(current);
-    }
-
-    const parent = path.dirname(current);
-    if (parent === current) {
-      throw httpError(400, "workspace_not_enrolled", "No .amo/workspace.json found for reply cwd/workspacePath");
-    }
-    current = parent;
-  }
-}
-
-function resolvePromptWorkspace(payload, existing) {
-  const directPath = normalizeText(
-    payload.workspacePath || payload.workspace_path || payload.cwd || existing?.workspacePath || existing?.cwd
-  );
-  if (directPath) {
-    return findEnrolledWorkspace(directPath);
-  }
-
-  const vaultRoot = normalizeText(payload.vaultRoot || payload.vault_root || existing?.vaultRoot);
-  if (vaultRoot) {
-    const resolvedVault = path.resolve(vaultRoot);
-    const amoRoot = path.dirname(resolvedVault);
-    const workspaceRoot = path.dirname(amoRoot);
-    if (fs.existsSync(path.join(workspaceRoot, AMO_DIR, "workspace.json"))) {
-      return fs.realpathSync(workspaceRoot);
-    }
-  }
-
-  throw httpError(
-    400,
-    "workspace_not_enrolled",
-    "Prompt payload must include cwd, workspacePath, or a session with workspace metadata"
-  );
-}
-
-function normalizeAnnotations(value) {
-  if (!Array.isArray(value)) {
-    return [];
-  }
-
-  return value
-    .map((item, index) => {
-      if (typeof item === "string") {
-        const content = normalizeText(item);
-        return content ? { index: index + 1, content } : null;
-      }
-
-      if (!item || typeof item !== "object" || Array.isArray(item)) {
-        return null;
-      }
-
-      const content = normalizeText(item.content || item.text || item.body || item.annotation);
-      if (!content) {
-        return null;
-      }
-
-      return {
-        index: normalizeInteger(item.index) || index + 1,
-        content,
-      };
-    })
-    .filter(Boolean);
-}
-
-function renderPendingPrompt(payload, annotations, summary) {
-  const lines = [];
-  const cleanSummary = normalizeText(summary);
-  if (cleanSummary) {
-    lines.push(cleanSummary);
-  }
-
-  const numberAnnotations = shouldNumberAnnotations(payload);
-  for (const annotation of annotations) {
-    lines.push(numberAnnotations ? `${annotation.index}. ${annotation.content}` : annotation.content);
-  }
-
-  return `${lines.join("\n\n")}\n`;
-}
-
-function shouldNumberAnnotations(payload) {
-  const options = payload && typeof payload.promptOptions === "object" ? payload.promptOptions : {};
-  if (typeof options.numberAnnotations === "boolean") return options.numberAnnotations;
-  if (typeof options.number_annotations === "boolean") return options.number_annotations;
-  if (typeof payload?.numberAnnotations === "boolean") return payload.numberAnnotations;
-  if (typeof payload?.number_annotations === "boolean") return payload.number_annotations;
-  if (typeof payload?.includeAnnotationNumbers === "boolean") return payload.includeAnnotationNumbers;
-  if (typeof payload?.include_annotation_numbers === "boolean") return payload.include_annotation_numbers;
-  return false;
-}
-
-function promptContentHash(value) {
-  return crypto.createHash("sha1").update(normalizeText(value)).digest("hex");
-}
-
-function findDuplicatePrompt(existing, record) {
-  if (!existing || existing.lastPromptHash !== record.promptHash) {
-    return null;
-  }
-
-  if (
-    record.pendingPromptId &&
-    existing.lastPromptPendingPromptId &&
-    record.pendingPromptId === existing.lastPromptPendingPromptId
-  ) {
-    return {
-      notePath: existing.lastPromptNote,
-      noteAbsolutePath: existing.lastPromptNoteAbsolutePath,
-      canvasNodeId: existing.lastPromptCanvasNodeId,
-    };
-  }
-
-  const existingAt = Date.parse(existing.lastPromptAt || "");
-  const nextAt = Date.parse(record.capturedAt || "");
-  const closeEnough =
-    Number.isFinite(existingAt) &&
-    Number.isFinite(nextAt) &&
-    Math.abs(nextAt - existingAt) <= PROMPT_DUPLICATE_WINDOW_MS;
-  if (closeEnough && existing.lastPromptSource === "amo-sync-back" && record.source !== "amo-sync-back") {
-    return {
-      notePath: existing.lastPromptNote,
-      noteAbsolutePath: existing.lastPromptNoteAbsolutePath,
-      canvasNodeId: existing.lastPromptCanvasNodeId,
-    };
-  }
-
-  return null;
 }

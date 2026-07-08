@@ -19,7 +19,7 @@ The active long-task execution guide is `docs/refactor-execution-guide.md`. Use 
 
 | File | Current Size | Problem |
 | --- | ---: | --- |
-| `broker/server.js` | ~1339 lines | HTTP routing, Obsidian bridge flows, prompt/reply artifact orchestration, and route handlers are still coupled after workspace maintenance/launch extraction. |
+| `broker/server.js` | ~612 lines | HTTP routing and event-stream plumbing remain in the root; feature behavior has moved to service modules. |
 | `overlay/src/App.tsx` | ~2830 lines | Main overlay session polling, target activation, Obsidian open/recovery, workspace panel actions, card drag, window bind drag, and resize logic still live in one root. |
 | `broker/assets/obsidian/md-anno-tools/src/plugin.ts` | ~2165 lines | Plugin lifecycle, Canvas actions, annotation source edits, bridge actions, note title/property behavior, and work-canvas helpers remain concentrated. |
 | `overlay/src-tauri/src/windows.rs` | ~592 lines | Native window enumeration/activation is the only Tauri file above 500 lines; it is not urgent because `lib.rs` is already thin. |
@@ -934,4 +934,20 @@ Manual smoke:
   - `node --check broker/lib/workspace-maintenance.js`
   - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17699`
   - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17700`
+  - `git diff --check`
+
+### 2026-07-09: Broker Conversation And Obsidian Bridge Extracted
+
+- Added `broker/lib/conversation-service.js` for prompt/reply note and canvas orchestration, enrolled workspace resolution, duplicate prompt handling, and session updates around prompt/reply records.
+- Added `broker/lib/obsidian-bridge.js` for Obsidian annotations, sync-back, note title updates, vault registration, and recovered annotation sessions.
+- Added `broker/lib/pending-prompts.js` for annotation normalization, annotation numbering, pending prompt rendering, prompt content hashes, and duplicate prompt detection.
+- Rewired `broker/lib/session-store.js` through `setPromptEventHandler()` so `UserPromptSubmit` still records prompt notes through the same conversation service.
+- Reduced `broker/server.js` from about 1339 lines to about 612 lines while keeping `conversation-service.js` at about 401 lines, `obsidian-bridge.js` at about 328 lines, and `pending-prompts.js` at about 90 lines.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/conversation-service.js`
+  - `node --check broker/lib/obsidian-bridge.js`
+  - `node --check broker/lib/pending-prompts.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17703`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17704`
   - `git diff --check`
