@@ -893,3 +893,15 @@ Manual smoke:
 - Validation passed:
   - `cd overlay; npm run build`
   - `git diff --check`
+
+### 2026-07-09: Broker Session Store Extracted
+
+- Added `broker/lib/session-store.js` for the session map, snapshot load/persist, event upsert, heartbeat updates, archive/dismiss/review/attention state mutations, session listing, and state normalization.
+- Kept HTTP routing and conversation artifact workflows in `broker/server.js`; the new store accepts a prompt-event handler so `UserPromptSubmit` still records prompt notes through the existing `handlePrompt` path.
+- Reduced `broker/server.js` from about 2952 lines to about 2445 lines while keeping `session-store.js` at about 580 lines.
+- Validation passed:
+  - `node --check broker/server.js`
+  - `node --check broker/lib/session-store.js`
+  - `powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1 -Port 17695`
+  - `powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1 -Port 17696`
+  - `git diff --check`

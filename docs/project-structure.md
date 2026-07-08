@@ -165,6 +165,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 - shared AMO layout, version, canvas, and plugin constants: `broker/lib/amo-constants.js`
 - HTTP response/body/error helpers: `broker/lib/http.js`
 - bounded debug log, debug status, and debug preview helpers: `broker/lib/debug.js`
+- session map, snapshot load/persist, event upsert, heartbeat, archive/dismiss/review/attention, and session listing: `broker/lib/session-store.js`
 - Codex/Claude session display-name cache: `broker/lib/display-names.js`
 - shared text, integer, array, and version normalization helpers: `broker/lib/normalize.js`
 - Obsidian vault registry, plugin install/health, runtime-state, and comparable path helpers: `broker/lib/obsidian-vault.js`
@@ -179,7 +180,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 
 The remaining source hotspots are:
 
-- `broker/server.js`
+- `broker/server.js` (about 2445 lines after session-store extraction)
 - `overlay/src/App.tsx`
 - `broker/assets/obsidian/md-anno-tools/src/plugin.ts`
 - `overlay/src-tauri/src/windows.rs`
