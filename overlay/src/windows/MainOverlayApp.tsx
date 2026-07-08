@@ -1,7 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize, UserAttentionType } from "@tauri-apps/api/window";
-import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   AlertTriangle,
   Archive,
@@ -52,6 +51,7 @@ import {
 } from "../domain/overlaySessionUi";
 import { useBrokerSessions } from "../hooks/useBrokerSessions";
 import { useCardDrag } from "../hooks/useCardDrag";
+import { useMainUtilityWindows } from "../hooks/useMainUtilityWindows";
 import { useObsidianOpen } from "../hooks/useObsidianOpen";
 import { useOverlayResize } from "../hooks/useOverlayResize";
 import { useSessionActions } from "../hooks/useSessionActions";
@@ -77,16 +77,6 @@ import {
   type ScratchpadShortcutState,
 } from "../native/scratchpadShortcut";
 import { type AmoTheme, useAmoThemeRuntime } from "../theme/amoTheme";
-import {
-  bringUtilityWindowToFront,
-  closeUtilityWindow,
-  runWithNativeDialogLayer,
-  setAmoWindowAlwaysOnTop,
-  startUtilityWindowDrag,
-  useUtilityWindowLifecycle,
-  type UtilityWindowKind,
-  type UtilityWindowStateEvent,
-} from "./utilityWindow";
 import type {
   ActivationResult,
   AgentSession,
@@ -163,7 +153,6 @@ export function MainOverlayApp() {
   const [debugEnabled, setDebugEnabled] = useState(false);
   const [debugCount, setDebugCount] = useState(0);
   const [debugBusy, setDebugBusy] = useState(false);
-  const [activeUtilityWindow, setActiveUtilityWindow] = useState<UtilityWindowKind | null>(null);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const orderedSessionsRef = useRef<AgentSession[]>([]);
   const debugEnabledRef = useRef(debugEnabled);
@@ -201,6 +190,16 @@ export function MainOverlayApp() {
     },
     postDebugLog,
     reconcileCodexActionRequired,
+  });
+
+  const {
+    activeUtilityWindow,
+    focusUtilityWindow,
+    hideUtilityWindow,
+    openDeployDialog,
+    openSettingsDialog,
+  } = useMainUtilityWindows({
+    setFeedback,
   });
 
   const {
@@ -484,43 +483,6 @@ export function MainOverlayApp() {
     });
   }, []);
 
-  useEffect(() => {
-    let unlisten: (() => void) | null = null;
-    void getCurrentWindow()
-      .listen<UtilityWindowStateEvent>("amo-utility-window-state", (event) => {
-        const payload = event.payload;
-        if (!payload?.label) return;
-        setActiveUtilityWindow((current) => {
-          if (payload.open) {
-            return payload.label;
-          }
-          return current === payload.label ? null : current;
-        });
-      })
-      .then((handler) => {
-        unlisten = handler;
-      });
-
-    return () => {
-      unlisten?.();
-    };
-  }, []);
-
-  useEffect(() => {
-    if (!activeUtilityWindow) return undefined;
-
-    const label = activeUtilityWindow;
-    const sync = () => void syncUtilityWindowState(label);
-    const intervalId = window.setInterval(sync, 1200);
-    window.addEventListener("focus", sync);
-    void syncUtilityWindowState(label);
-
-    return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", sync);
-    };
-  }, [activeUtilityWindow]);
-
   async function reconcileCodexActionRequired(candidateSessions: AgentSession[], reason: string) {
     const probeSessions = candidateSessions.filter(shouldProbeCodexActionRequired);
     const probeIds = new Set(probeSessions.map((session) => session.sessionId));
@@ -708,71 +670,6 @@ export function MainOverlayApp() {
       );
     } catch {
       // Browser preview cannot resize a native window.
-    }
-  }
-
-  async function openDeployDialog() {
-    await openUtilityWindow("deploy");
-  }
-
-  async function openSettingsDialog() {
-    await openUtilityWindow("settings");
-  }
-
-  async function openUtilityWindow(label: UtilityWindowKind) {
-    setActiveUtilityWindow(label);
-
-    try {
-      const otherLabel: UtilityWindowKind = label === "deploy" ? "settings" : "deploy";
-      const otherWindow = await WebviewWindow.getByLabel(otherLabel);
-      await otherWindow?.hide();
-      await setAmoWindowAlwaysOnTop(otherLabel, false);
-
-      const targetWindow = await WebviewWindow.getByLabel(label);
-      if (!targetWindow) {
-        throw new Error(`${label} window is not registered`);
-      }
-      await bringUtilityWindowToFront(label);
-      setFeedback(`${label === "deploy" ? "Deploy Workspace" : "Settings"} opened.`);
-    } catch (error) {
-      setActiveUtilityWindow(null);
-      setFeedback(`Open ${label} window failed: ${(error as Error).message}`);
-    }
-  }
-
-  async function hideUtilityWindow(label: UtilityWindowKind) {
-    try {
-      const targetWindow = await WebviewWindow.getByLabel(label);
-      await targetWindow?.hide();
-      await setAmoWindowAlwaysOnTop(label, false);
-      await setAmoWindowAlwaysOnTop("main", true);
-    } catch {
-      // A missing utility window should still unblock the main window.
-    } finally {
-      setActiveUtilityWindow((current) => (current === label ? null : current));
-    }
-  }
-
-  async function focusUtilityWindow(label: UtilityWindowKind) {
-    try {
-      await bringUtilityWindowToFront(label);
-    } catch (error) {
-      setActiveUtilityWindow(null);
-      setFeedback(`Focus ${label} window failed: ${(error as Error).message}`);
-    }
-  }
-
-  async function syncUtilityWindowState(label: UtilityWindowKind) {
-    try {
-      const targetWindow = await WebviewWindow.getByLabel(label);
-      const visible = targetWindow ? await targetWindow.isVisible() : false;
-      if (!visible) {
-        setActiveUtilityWindow((current) => (current === label ? null : current));
-        await setAmoWindowAlwaysOnTop("main", true);
-      }
-    } catch {
-      setActiveUtilityWindow((current) => (current === label ? null : current));
-      await setAmoWindowAlwaysOnTop("main", true);
     }
   }
 

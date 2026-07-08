@@ -1040,3 +1040,13 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Utility Window Hook Extracted
+
+- Added `overlay/src/hooks/useMainUtilityWindows.ts` for deploy/settings utility-window open, focus, hide, visibility sync, and main-window blocker state.
+- Kept scratchpad shortcut actions and collapse behavior in `MainOverlayApp.tsx` because those are main-window header controls rather than utility-window lifecycle.
+- Reduced `MainOverlayApp.tsx` from about 1295 lines to about 1192 lines while keeping `useMainUtilityWindows.ts` at about 128 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`

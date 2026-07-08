@@ -50,6 +50,7 @@ Previous refactor progress already paid off:
 - Overlay Obsidian note/canvas open and vault recovery state now live in `overlay/src/hooks/useObsidianOpen.ts`.
 - Overlay task-card workspace maintenance and project CLI launch panel actions now live in `overlay/src/hooks/useWorkspacePanels.ts`.
 - Overlay card reorder, drag-to-window binding, and resize pointer lifecycles now live in `overlay/src/hooks/useCardDrag.ts`, `overlay/src/hooks/useWindowBindDrag.ts`, and `overlay/src/hooks/useOverlayResize.ts`.
+- Overlay deploy/settings utility-window focus, hide, and blocking state now live in `overlay/src/hooks/useMainUtilityWindows.ts`.
 - Several Obsidian plugin helper families already live under `src/editor`, `src/canvas`, `src/annotations`, `src/note`, and `src/protocol`.
 
 Remaining hotspots are historical orchestration roots:
