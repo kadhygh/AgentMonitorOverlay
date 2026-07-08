@@ -22,7 +22,6 @@ import {
 import {
   BROKER_DEBUG_LOGS_URL,
   BROKER_DEBUG_URL,
-  BROKER_SYNC_BACK_URL,
   brokerSessionHeartbeatUrl,
   postBrokerJson,
 } from "../api/brokerClient";
@@ -53,6 +52,7 @@ import { useCardDrag } from "../hooks/useCardDrag";
 import { useMainUtilityWindows } from "../hooks/useMainUtilityWindows";
 import { useObsidianOpen } from "../hooks/useObsidianOpen";
 import { useOverlayResize } from "../hooks/useOverlayResize";
+import { usePendingPromptSync } from "../hooks/usePendingPromptSync";
 import { useSessionActions } from "../hooks/useSessionActions";
 import { useTargetActivation } from "../hooks/useTargetActivation";
 import { useWindowBindDrag } from "../hooks/useWindowBindDrag";
@@ -68,7 +68,6 @@ import { CleanConfirmDialog, type CleanConfirmState } from "../components/CleanC
 import { LaunchPanel, type LaunchPanelState } from "../components/LaunchPanel";
 import { ObsidianVaultRecoveryDialog } from "../components/ObsidianVaultRecoveryDialog";
 import { WorkspacePanel, type WorkspacePanelState } from "../components/WorkspacePanel";
-import { toCliPasteClipboardText, writeClipboardText } from "../native/clipboard";
 import {
   applyScratchpadShortcutState,
   loadScratchpadShortcutState,
@@ -82,16 +81,6 @@ import type {
 
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 86 };
-
-function clipboardPromptForSession(session: AgentSession) {
-  const prompt = session.pendingPrompt ?? "";
-  const target = targetBindingForSession(session);
-  if (target?.type === "codex-app-thread") {
-    return prompt;
-  }
-
-  return toCliPasteClipboardText(prompt);
-}
 
 function sessionMatchesSearch(session: AgentSession, query: string) {
   const normalizedQuery = query.trim().toLowerCase();
@@ -134,7 +123,6 @@ function sessionMatchesSearch(session: AgentSession, query: string) {
 export function MainOverlayApp() {
   useAmoThemeRuntime();
   const [collapsed, setCollapsed] = useState(false);
-  const [, setCopyingPromptId] = useState<string | null>(null);
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
   const [sessionSearch, setSessionSearch] = useState("");
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
@@ -150,7 +138,7 @@ export function MainOverlayApp() {
   const debugCountRef = useRef(debugCount);
   const actionRequiredProbeRef = useRef<Record<string, string>>({});
   const suppressNextClickRef = useRef(false);
-  const autoSyncPromptIdsRef = useRef(new Set<string>());
+  const pendingPromptSyncRef = useRef<((session: AgentSession, reason: string) => void) | null>(null);
   const {
     brokerReadiness,
     ensureBrokerThenRefresh,
@@ -273,6 +261,16 @@ export function MainOverlayApp() {
     setLaunchPanel,
     setSessions,
   });
+
+  const {
+    autoCopyAndFocusPendingPrompt: handleAutoCopyAndFocusPendingPrompt,
+  } = usePendingPromptSync({
+    activateSession,
+    postDebugLog,
+    refreshSessions,
+    setFeedback,
+  });
+  pendingPromptSyncRef.current = handleAutoCopyAndFocusPendingPrompt;
 
   const {
     startWindowBindDrag,
@@ -516,104 +514,8 @@ export function MainOverlayApp() {
     }
   }
 
-  async function copyPendingPrompt(session: AgentSession) {
-    if (!session.pendingPrompt) {
-      setFeedback(`No pending prompt is linked for ${session.title}.`);
-      return;
-    }
-
-    setCopyingPromptId(session.sessionId);
-    setFeedback(`Copying pending prompt for ${session.title}...`);
-    const clipboardPrompt = clipboardPromptForSession(session);
-    const clipboardMode = targetBindingForSession(session)?.type === "codex-app-thread" ? "raw" : "cli-paste";
-    void postDebugLog("sync.copy.start", {
-      sessionId: session.sessionId,
-      pendingPromptId: session.pendingPromptId ?? null,
-      promptLength: session.pendingPrompt.length,
-      clipboardLength: clipboardPrompt.length,
-      clipboardMode,
-      hasWindowBinding: Boolean(session.windowHint?.hwnd || session.windowHint?.pid),
-      targetType: targetBindingForSession(session)?.type ?? "auto",
-    });
-
-    try {
-      const result = await writeClipboardText(clipboardPrompt);
-      if (!result.ok) {
-        void postDebugLog("sync.copy.clipboard_failed", {
-          sessionId: session.sessionId,
-          message: result.message,
-        });
-        setFeedback(result.message);
-        return;
-      }
-      void postDebugLog("sync.copy.clipboard_ok", {
-        sessionId: session.sessionId,
-        pendingPromptId: session.pendingPromptId ?? null,
-      });
-
-      const response = await fetch(BROKER_SYNC_BACK_URL, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({
-          sessionId: session.sessionId,
-          pendingPromptId: session.pendingPromptId ?? null,
-          action: "copy-focus",
-        }),
-      });
-      if (!response.ok) {
-        throw new Error(`broker returned ${response.status}`);
-      }
-      const syncResult = (await response.json()) as {
-        promptNotePath?: string | null;
-        promptCanvasNodeId?: string | null;
-      };
-
-      void postDebugLog("sync.copy.broker_ok", {
-        sessionId: session.sessionId,
-        pendingPromptId: session.pendingPromptId ?? null,
-        promptNotePath: syncResult.promptNotePath ?? null,
-        promptCanvasNodeId: syncResult.promptCanvasNodeId ?? null,
-      });
-      setFeedback("Pending prompt copied. Focusing target...");
-      void refreshSessions("sync-copy");
-      await activateSession(session);
-    } catch (error) {
-      void postDebugLog("sync.copy.error", {
-        sessionId: session.sessionId,
-        pendingPromptId: session.pendingPromptId ?? null,
-        message: (error as Error).message,
-      });
-      setFeedback(`Copy + focus failed: ${(error as Error).message}`);
-    } finally {
-      setCopyingPromptId(null);
-    }
-  }
-
   function autoCopyAndFocusPendingPrompt(session: AgentSession, reason: string) {
-    if (!session.pendingPrompt) {
-      return;
-    }
-
-    const autoSyncKey =
-      session.pendingPromptId ||
-      `${session.sessionId}:${session.pendingPromptCreatedAt || session.updatedAt || session.pendingPrompt.slice(0, 48)}`;
-    if (autoSyncPromptIdsRef.current.has(autoSyncKey)) {
-      void postDebugLog("sync.auto_copy.skip_duplicate", {
-        sessionId: session.sessionId,
-        pendingPromptId: session.pendingPromptId ?? null,
-        reason,
-      });
-      return;
-    }
-
-    autoSyncPromptIdsRef.current.add(autoSyncKey);
-    void postDebugLog("sync.auto_copy.start", {
-      sessionId: session.sessionId,
-      pendingPromptId: session.pendingPromptId ?? null,
-      reason,
-      promptLength: session.pendingPrompt.length,
-    });
-    void copyPendingPrompt(session);
+    pendingPromptSyncRef.current?.(session, reason);
   }
 
   async function handleSessionAttention(session: AgentSession) {

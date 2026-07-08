@@ -1061,3 +1061,13 @@ Manual smoke:
   - `cd overlay; npm run build`
   - `cd overlay/src-tauri; cargo check`
   - `git diff --check`
+
+### 2026-07-09: Overlay Pending Prompt Sync Hook Extracted
+
+- Added `overlay/src/hooks/usePendingPromptSync.ts` for pending prompt clipboard normalization, broker sync-back acknowledgement, duplicate auto-sync guarding, and target focus handoff.
+- Kept a thin `autoCopyAndFocusPendingPrompt()` forwarding function in `MainOverlayApp.tsx` because `useBrokerSessions.ts` needs the callback before target activation is wired.
+- Reduced `MainOverlayApp.tsx` from about 1035 lines to about 937 lines while keeping `usePendingPromptSync.ts` at about 133 lines.
+- Validation passed:
+  - `cd overlay; npm run build`
+  - `cd overlay/src-tauri; cargo check`
+  - `git diff --check`
