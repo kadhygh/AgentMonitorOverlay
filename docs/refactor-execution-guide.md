@@ -643,6 +643,7 @@ broker/assets/obsidian/md-anno-tools/src/
     actions.ts
     target.ts
     navigation.ts
+    work-canvas.ts
   editor/
     annotation-commands.ts
     local-code-link-controller.ts
@@ -749,6 +750,8 @@ Manual smoke:
 - Copy single annotation.
 
 ### Plugin Subphase P3: Canvas Actions
+
+Status: started. Work Canvas folder/list/create/add-note behavior now lives in `src/canvas/work-canvas.ts`.
 
 Create:
 

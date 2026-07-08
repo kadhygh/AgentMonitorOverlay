@@ -102,6 +102,7 @@ broker/assets/obsidian/md-anno-tools/src/
   canvas/
     target.ts
     controller.ts
+    work-canvas.ts
   editor/
     annotation-commands.ts
     local-code-links.ts
