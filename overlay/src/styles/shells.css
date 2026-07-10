@@ -46,6 +46,7 @@ button {
 }
 
 .overlay-shell.is-collapsed {
+  justify-content: center;
   padding: 8px;
 }
 

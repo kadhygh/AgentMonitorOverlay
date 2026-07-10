@@ -3,7 +3,6 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
   AlertTriangle,
   Archive,
-  Bug,
   ChevronDown,
   ChevronUp,
   Clock,
@@ -11,8 +10,6 @@ import {
   GripHorizontal,
   GripVertical,
   ListFilter,
-  Minimize2,
-  RefreshCcw,
   Search,
   Settings2,
   SquareTerminal,
@@ -57,13 +54,14 @@ import {
   applyScratchpadShortcutState,
   loadScratchpadShortcutState,
 } from "../native/scratchpadShortcut";
+import { listenForTrayOpenRequests, setTrayAttentionState } from "../native/tray";
 import { useAmoThemeRuntime } from "../theme/amoTheme";
 import type {
   AgentSession,
 } from "../types";
 
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
-const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 86 };
+const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 52 };
 
 function sessionMatchesSearch(session: AgentSession, query: string) {
   const normalizedQuery = query.trim().toLowerCase();
@@ -117,14 +115,11 @@ export function MainOverlayApp() {
   const actionRequiredProbeHandlerRef = useRef<((candidateSessions: AgentSession[], reason: string) => Promise<void>) | null>(null);
   const suppressNextClickRef = useRef(false);
   const pendingPromptSyncRef = useRef<((session: AgentSession, reason: string) => void) | null>(null);
+  const collapsedRef = useRef(false);
   const {
     attachFeedbackSetter,
-    debugBusy,
-    debugCount,
-    debugEnabled,
     postDebugLog,
     refreshDebugStatus,
-    toggleDebugLogging,
   } = useDebugLogging();
   const {
     brokerReadiness,
@@ -343,6 +338,11 @@ export function MainOverlayApp() {
     [sessions],
   );
 
+  const attentionSignalCount = useMemo(
+    () => sessions.filter((session) => !sessionArchived(session) && sessionHasAttentionSignal(session)).length,
+    [sessions],
+  );
+
   useEffect(() => {
     sessionsRef.current = sessions;
   }, [sessions]);
@@ -350,6 +350,45 @@ export function MainOverlayApp() {
   useEffect(() => {
     orderedSessionsRef.current = orderedSessions;
   }, [orderedSessions]);
+
+  useEffect(() => {
+    collapsedRef.current = collapsed;
+  }, [collapsed]);
+
+  useEffect(() => {
+    void setTrayAttentionState(attentionSignalCount > 0).catch((error) => {
+      postDebugLog("tray.attention_state.error", {
+        attention: attentionSignalCount > 0,
+        message: (error as Error).message,
+      });
+    });
+  }, [attentionSignalCount]);
+
+  useEffect(() => {
+    let disposed = false;
+    let unlisten: (() => void) | null = null;
+
+    void listenForTrayOpenRequests((request) => {
+      if (request.expand && collapsedRef.current) {
+        void setOverlayCollapsed(false);
+      }
+      if (request.selectAttentionFilter) {
+        setSessionSearch("");
+        setSessionFilter("attention");
+      }
+    }).then((handler) => {
+      if (disposed) {
+        handler();
+      } else {
+        unlisten = handler;
+      }
+    });
+
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
+  }, []);
 
   useEffect(() => {
     const scratchpadShortcut = loadScratchpadShortcutState();
@@ -362,8 +401,8 @@ export function MainOverlayApp() {
     await actionRequiredProbeHandlerRef.current?.(candidateSessions, reason);
   }
 
-  async function toggleCollapsed() {
-    const nextCollapsed = !collapsed;
+  async function setOverlayCollapsed(nextCollapsed: boolean) {
+    collapsedRef.current = nextCollapsed;
     setCollapsed(nextCollapsed);
 
     try {
@@ -375,6 +414,10 @@ export function MainOverlayApp() {
     } catch {
       // Browser preview cannot resize a native window.
     }
+  }
+
+  function toggleCollapsed() {
+    void setOverlayCollapsed(!collapsedRef.current);
   }
 
   function autoCopyAndFocusPendingPrompt(session: AgentSession, reason: string) {
@@ -389,7 +432,7 @@ export function MainOverlayApp() {
   return (
     <main className={`overlay-shell ${collapsed ? "is-collapsed" : ""}`}>
       <header
-        className="overlay-header"
+        className={`overlay-header ${collapsed ? "is-collapsed" : ""}`}
         data-tauri-drag-region
         onPointerDown={(event) => {
           if ((event.target as HTMLElement).closest("button")) {
@@ -399,75 +442,62 @@ export function MainOverlayApp() {
           void getCurrentWindow().startDragging().catch(() => undefined);
         }}
       >
-        <div className="header-title" data-tauri-drag-region>
-          <GripHorizontal size={16} aria-hidden="true" />
-          <div data-tauri-drag-region>
-            <strong>Agents</strong>
-            <span>
-              {brokerReadinessLabels[brokerReadiness.state]}
-              {lastRefreshAt ? ` 鐠?${formatAgo(lastRefreshAt)} ago` : ""}
-              {debugEnabled ? ` 鐠?debug ${debugCount}` : ""}
-            </span>
-          </div>
-        </div>
-        <div className="header-actions">
-          <button
-            type="button"
-            className={`icon-button ${activeUtilityWindow === "settings" ? "is-active" : ""}`}
-            title="Open settings"
-            onClick={() => {
-              void openSettingsDialog();
-            }}
-          >
-            <Settings2 size={15} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className={`icon-button debug-button ${debugEnabled ? "is-active" : ""}`}
-            title={debugEnabled ? "Disable debug logging" : "Enable debug logging"}
-            disabled={debugBusy}
-            onClick={() => void toggleDebugLogging()}
-          >
-            <Bug size={15} aria-hidden="true" />
-          </button>
-          <button type="button" className="icon-button" title="Refresh sessions" onClick={() => void refreshSessions("manual")}>
-            <RefreshCcw size={15} aria-hidden="true" />
-          </button>
-          <button
-            type="button"
-            className={`icon-button ${activeUtilityWindow === "deploy" ? "is-active" : ""}`}
-            title="Open deploy window"
-            onClick={() => {
-              void openDeployDialog();
-            }}
-          >
-            <FolderPlus size={15} aria-hidden="true" />
-          </button>
-          <button type="button" className="icon-button" title="Collapse overlay" onClick={toggleCollapsed}>
-            {collapsed ? <ChevronDown size={16} aria-hidden="true" /> : <ChevronUp size={16} aria-hidden="true" />}
-          </button>
-          <button
-            type="button"
-            className="icon-button"
-            title="Minimize"
-            onClick={() => void getCurrentWindow().minimize().catch(() => undefined)}
-          >
-            <Minimize2 size={15} aria-hidden="true" />
-          </button>
-        </div>
+        {collapsed ? (
+          <>
+            <div className="collapsed-counts" data-tauri-drag-region aria-label="Collapsed session summary">
+              <span data-tauri-drag-region>
+                <strong>{activeSessionCount}</strong> active
+              </span>
+              <span className={attentionSignalCount > 0 ? "has-attention" : ""} data-tauri-drag-region>
+                <strong>{attentionSignalCount}</strong> need attention
+              </span>
+            </div>
+            <button type="button" className="icon-button" title="Expand overlay" aria-label="Expand overlay" onClick={toggleCollapsed}>
+              <ChevronDown size={16} aria-hidden="true" />
+            </button>
+          </>
+        ) : (
+          <>
+            <div className="header-title" data-tauri-drag-region>
+              <GripHorizontal size={16} aria-hidden="true" />
+              <div data-tauri-drag-region>
+                <strong>Agents</strong>
+                <span>
+                  {brokerReadinessLabels[brokerReadiness.state]}
+                  {lastRefreshAt ? ` | ${formatAgo(lastRefreshAt)} ago` : ""}
+                </span>
+              </div>
+            </div>
+            <div className="header-actions">
+              <button
+                type="button"
+                className={`icon-button ${activeUtilityWindow === "settings" ? "is-active" : ""}`}
+                title="Open settings"
+                onClick={() => {
+                  void openSettingsDialog();
+                }}
+              >
+                <Settings2 size={15} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                className={`icon-button ${activeUtilityWindow === "deploy" ? "is-active" : ""}`}
+                title="Open deploy window"
+                onClick={() => {
+                  void openDeployDialog();
+                }}
+              >
+                <FolderPlus size={15} aria-hidden="true" />
+              </button>
+              <button type="button" className="icon-button" title="Collapse overlay" aria-label="Collapse overlay" onClick={toggleCollapsed}>
+                <ChevronUp size={16} aria-hidden="true" />
+              </button>
+            </div>
+          </>
+        )}
       </header>
 
-      {collapsed ? (
-        <button className="collapsed-summary" type="button" onClick={toggleCollapsed}>
-          <span className={brokerReady && attentionCount > 0 ? "pulse-dot" : brokerReady && reviewCount > 0 ? "review-dot" : "quiet-dot"} />
-          <span>{brokerReady ? `${activeSessionCount} sessions` : brokerReadinessLabels[brokerReadiness.state]}</span>
-          <strong>
-            {brokerReady
-              ? `${attentionCount} attention${reviewCount > 0 ? ` 鐠?${reviewCount} review` : ""}`
-              : brokerReadiness.message}
-          </strong>
-        </button>
-      ) : (
+      {!collapsed ? (
         <>
           <section className="summary-strip" aria-label="Session summary">
             <div className="summary-info">
@@ -790,7 +820,7 @@ export function MainOverlayApp() {
             </div>
           ) : null}
         </>
-      )}
+      ) : null}
 
     </main>
   );

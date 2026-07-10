@@ -24,9 +24,10 @@
 :root[data-amo-theme="light"] .workspace-section > strong,
 :root[data-amo-theme="light"] .confirm-dialog p strong,
 :root[data-amo-theme="light"] .vault-recovery-manual span,
-:root[data-amo-theme="light"] .collapsed-summary,
+:root[data-amo-theme="light"] .collapsed-counts,
 :root[data-amo-theme="light"] .deploy-adapter-copy strong,
-:root[data-amo-theme="light"] .settings-detail-header strong {
+:root[data-amo-theme="light"] .settings-detail-header strong,
+:root[data-amo-theme="light"] .settings-debug-status strong {
   color: #17211f;
 }
 
@@ -52,6 +53,7 @@
 :root[data-amo-theme="light"] .settings-toggle span,
 :root[data-amo-theme="light"] .settings-help-copy,
 :root[data-amo-theme="light"] .settings-field > span,
+:root[data-amo-theme="light"] .settings-debug-status span,
 :root[data-amo-theme="light"] .theme-choice > span:not(.theme-swatch),
 :root[data-amo-theme="light"] .launch-panel-header span,
 :root[data-amo-theme="light"] .launch-panel-path,
@@ -118,8 +120,7 @@
 :root[data-amo-theme="light"] .deploy-adapter-badges em,
 :root[data-amo-theme="light"] .deploy-adapter-badges small,
 :root[data-amo-theme="light"] .confirm-counts span,
-:root[data-amo-theme="light"] .vault-recovery-path,
-:root[data-amo-theme="light"] .collapsed-summary {
+:root[data-amo-theme="light"] .vault-recovery-path {
   color: #24342f;
   background: rgba(244, 249, 247, 0.9);
   border-color: rgba(42, 74, 64, 0.13);
@@ -259,12 +260,6 @@
   color: #0b2b22;
   background: rgba(18, 135, 105, 0.14);
   border-color: rgba(18, 135, 105, 0.32);
-}
-
-:root[data-amo-theme="light"] .debug-button.is-active {
-  color: #5c3d05;
-  background: rgba(226, 168, 68, 0.16);
-  border-color: rgba(179, 122, 26, 0.26);
 }
 
 :root[data-amo-theme="light"] .scratchpad-input,

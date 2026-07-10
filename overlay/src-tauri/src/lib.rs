@@ -4,6 +4,7 @@ mod dialogs;
 mod models;
 mod opener;
 mod scratchpad;
+mod tray;
 mod windows;
 
 use broker::ensure_local_broker;
@@ -122,9 +123,10 @@ fn show_scratchpad_at_cursor(app: tauri::AppHandle) -> OpenPathResult {
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    tauri::Builder::default()
+    let app = tauri::Builder::default()
         .setup(|app| {
             scratchpad::install_scratchpad_mouse_hook(app.handle().clone());
+            tray::install(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -135,10 +137,17 @@ pub fn run() {
             open_path,
             select_workspace_directory,
             set_scratchpad_shortcut_config,
+            tray::set_tray_attention_state,
             show_scratchpad_at_cursor,
             open_uri,
             write_clipboard_text
         ])
-        .run(tauri::generate_context!())
-        .expect("error while running Agent Monitor Overlay");
+        .build(tauri::generate_context!())
+        .expect("error while building Agent Monitor Overlay");
+
+    app.run(|app_handle, event| {
+        if matches!(event, tauri::RunEvent::Exit) {
+            tray::stop_worker(app_handle);
+        }
+    });
 }

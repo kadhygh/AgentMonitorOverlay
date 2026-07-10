@@ -127,8 +127,13 @@
 }
 
 :root[data-amo-theme="light"] .summary-info strong,
-:root[data-amo-theme="light"] .collapsed-summary strong {
+:root[data-amo-theme="light"] .collapsed-counts .has-attention,
+:root[data-amo-theme="light"] .collapsed-counts .has-attention strong {
   color: #9a6200;
+}
+
+:root[data-amo-theme="light"] .collapsed-counts strong {
+  color: #17211f;
 }
 
 :root[data-amo-theme="light"] .summary-info .summary-review,
@@ -434,9 +439,4 @@
 
 :root[data-amo-theme="light"] .resize-corner::before {
   border-color: rgba(42, 74, 64, 0.22);
-}
-
-:root[data-amo-theme="light"] .quiet-dot {
-  background: #9aa8a3;
-  box-shadow: 0 0 0 4px rgba(42, 74, 64, 0.06);
 }

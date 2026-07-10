@@ -1,6 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { ClipboardPaste, Palette, Settings2, StickyNote, X } from "lucide-react";
+import { Bug, ClipboardPaste, Palette, Settings2, StickyNote, X } from "lucide-react";
+import { useDebugLogging } from "../hooks/useDebugLogging";
 import { loadCliSafePasteEnabled, saveCliSafePasteEnabled } from "../native/clipboard";
 import {
   applyScratchpadShortcutState,
@@ -16,7 +17,7 @@ import {
   useUtilityWindowLifecycle,
 } from "./utilityWindow";
 
-export type SettingsSection = "scratchpad" | "clipboard" | "theme";
+export type SettingsSection = "scratchpad" | "clipboard" | "theme" | "debug";
 
 interface SettingsSidebarProps {
   settingsSection: SettingsSection;
@@ -51,6 +52,14 @@ export function SettingsSidebar({ settingsSection, onSettingsSectionChange }: Se
         <Palette size={13} aria-hidden="true" />
         <span>Theme</span>
       </button>
+      <button
+        type="button"
+        className={`settings-nav-button ${settingsSection === "debug" ? "is-active" : ""}`}
+        onClick={() => onSettingsSectionChange("debug")}
+      >
+        <Bug size={13} aria-hidden="true" />
+        <span>Debug</span>
+      </button>
     </aside>
   );
 }
@@ -60,6 +69,8 @@ interface SettingsDetailHeaderProps {
   scratchpadShortcut: ScratchpadShortcutState;
   safePasteEnabled: boolean;
   amoTheme: AmoTheme;
+  debugEnabled: boolean;
+  debugCount: number;
 }
 
 function SettingsDetailHeader({
@@ -67,8 +78,17 @@ function SettingsDetailHeader({
   scratchpadShortcut,
   safePasteEnabled,
   amoTheme,
+  debugEnabled,
+  debugCount,
 }: SettingsDetailHeaderProps) {
-  const title = settingsSection === "theme" ? "Theme" : settingsSection === "clipboard" ? "Clipboard" : "Scratchpad";
+  const title =
+    settingsSection === "theme"
+      ? "Theme"
+      : settingsSection === "clipboard"
+        ? "Clipboard"
+        : settingsSection === "debug"
+          ? "Debug"
+          : "Scratchpad";
   const status =
     settingsSection === "theme"
       ? amoTheme === "light"
@@ -78,6 +98,10 @@ function SettingsDetailHeader({
         ? safePasteEnabled
           ? "Safe mode"
           : "Original formatting"
+        : settingsSection === "debug"
+          ? debugEnabled
+            ? `Enabled | ${debugCount} entries`
+            : "Disabled"
       : scratchpadShortcut.enabled
         ? "Ctrl + Mouse4"
         : "Disabled";
@@ -206,15 +230,51 @@ function ThemeSettingsBody({ amoTheme, onAmoThemeChange }: ThemeSettingsBodyProp
   );
 }
 
+interface DebugSettingsBodyProps {
+  debugBusy: boolean;
+  debugCount: number;
+  debugEnabled: boolean;
+  onToggleDebugLogging: () => void;
+}
+
+function DebugSettingsBody({
+  debugBusy,
+  debugCount,
+  debugEnabled,
+  onToggleDebugLogging,
+}: DebugSettingsBodyProps) {
+  return (
+    <div className="settings-section-body">
+      <label className="settings-toggle">
+        <input
+          type="checkbox"
+          checked={debugEnabled}
+          disabled={debugBusy}
+          onChange={onToggleDebugLogging}
+        />
+        <span>{debugBusy ? "Updating debug logging" : "Enable debug logging"}</span>
+      </label>
+      <div className="settings-debug-status" aria-live="polite">
+        <span>Status</span>
+        <strong>{debugEnabled ? `Enabled | ${debugCount} entries` : "Disabled"}</strong>
+      </div>
+    </div>
+  );
+}
+
 interface SettingsDetailProps {
   settingsSection: SettingsSection;
   scratchpadShortcut: ScratchpadShortcutState;
   safePasteEnabled: boolean;
   amoTheme: AmoTheme;
+  debugBusy: boolean;
+  debugCount: number;
+  debugEnabled: boolean;
   onScratchpadShortcutChange: (next: ScratchpadShortcutState) => void;
   onSafePasteEnabledChange: (enabled: boolean) => void;
   onOpenScratchpadNow: () => void;
   onAmoThemeChange: (theme: AmoTheme) => void;
+  onToggleDebugLogging: () => void;
 }
 
 export function SettingsDetail({
@@ -222,10 +282,14 @@ export function SettingsDetail({
   scratchpadShortcut,
   safePasteEnabled,
   amoTheme,
+  debugBusy,
+  debugCount,
+  debugEnabled,
   onScratchpadShortcutChange,
   onSafePasteEnabledChange,
   onOpenScratchpadNow,
   onAmoThemeChange,
+  onToggleDebugLogging,
 }: SettingsDetailProps) {
   return (
     <div className="settings-detail">
@@ -234,6 +298,8 @@ export function SettingsDetail({
         scratchpadShortcut={scratchpadShortcut}
         safePasteEnabled={safePasteEnabled}
         amoTheme={amoTheme}
+        debugEnabled={debugEnabled}
+        debugCount={debugCount}
       />
 
       {settingsSection === "scratchpad" ? (
@@ -247,8 +313,15 @@ export function SettingsDetail({
           safePasteEnabled={safePasteEnabled}
           onSafePasteEnabledChange={onSafePasteEnabledChange}
         />
-      ) : (
+      ) : settingsSection === "theme" ? (
         <ThemeSettingsBody amoTheme={amoTheme} onAmoThemeChange={onAmoThemeChange} />
+      ) : (
+        <DebugSettingsBody
+          debugBusy={debugBusy}
+          debugCount={debugCount}
+          debugEnabled={debugEnabled}
+          onToggleDebugLogging={onToggleDebugLogging}
+        />
       )}
     </div>
   );
@@ -264,6 +337,19 @@ export function SettingsWindowApp() {
   );
   const [safePasteEnabled, setSafePasteEnabled] = useState(() => loadCliSafePasteEnabled());
   const [feedback, setFeedback] = useState("Settings ready.");
+  const {
+    attachFeedbackSetter,
+    debugBusy,
+    debugCount,
+    debugEnabled,
+    refreshDebugStatus,
+    toggleDebugLogging,
+  } = useDebugLogging();
+  attachFeedbackSetter(setFeedback);
+
+  useEffect(() => {
+    void refreshDebugStatus();
+  }, []);
 
   async function updateScratchpadShortcut(next: ScratchpadShortcutState) {
     setScratchpadShortcut(next);
@@ -329,10 +415,14 @@ export function SettingsWindowApp() {
           scratchpadShortcut={scratchpadShortcut}
           safePasteEnabled={safePasteEnabled}
           amoTheme={amoTheme}
+          debugBusy={debugBusy}
+          debugCount={debugCount}
+          debugEnabled={debugEnabled}
           onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
           onSafePasteEnabledChange={updateSafePasteEnabled}
           onOpenScratchpadNow={() => void openScratchpadNow()}
           onAmoThemeChange={(next) => void updateAmoTheme(next)}
+          onToggleDebugLogging={() => void toggleDebugLogging()}
         />
 
         <footer className="app-dialog-footer">

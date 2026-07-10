@@ -169,6 +169,36 @@
   line-height: 15px;
 }
 
+.settings-debug-status {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  gap: 12px;
+  padding: 6px 2px;
+}
+
+.settings-debug-status span,
+.settings-debug-status strong {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-debug-status span {
+  color: #9fb0aa;
+  font-size: 10px;
+  line-height: 12px;
+  text-transform: uppercase;
+}
+
+.settings-debug-status strong {
+  color: #dcece7;
+  font-size: 11px;
+  line-height: 14px;
+}
+
 .settings-field select,
 .settings-primary-action {
   min-height: 34px;
