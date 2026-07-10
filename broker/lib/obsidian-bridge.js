@@ -28,6 +28,18 @@ function createObsidianBridge({ sessions = new Map(), recordDebugLog = () => {},
   };
 }
 
+function pendingPromptClipboardMode(payload) {
+  const options = payload && typeof payload.promptOptions === "object" ? payload.promptOptions : {};
+  const candidates = [
+    options.safeCliPaste,
+    options.safe_cli_paste,
+    payload?.safeCliPaste,
+    payload?.safe_cli_paste,
+  ];
+  const explicit = candidates.find((value) => typeof value === "boolean");
+  return typeof explicit === "boolean" ? (explicit ? "safe" : "raw") : null;
+}
+
 function handleObsidianAnnotations(payload, { sessions, recordDebugLog = () => {}, debugPreview = normalizeText } = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw httpError(400, "invalid_json", "Annotation payload must be a JSON object");
@@ -73,6 +85,7 @@ function handleObsidianAnnotations(payload, { sessions, recordDebugLog = () => {
   const vaultRoot = normalizeText(payload.vaultRoot || payload.vault_root);
   const turnId = normalizeText(payload.turnId || payload.turn_id);
   const source = normalizeText(payload.source) || "obsidian-plugin";
+  const clipboardMode = pendingPromptClipboardMode(payload);
 
   const session = {
     ...existing,
@@ -84,6 +97,7 @@ function handleObsidianAnnotations(payload, { sessions, recordDebugLog = () => {
     eventCount: (existing.eventCount || 0) + 1,
     pendingPromptId,
     pendingPrompt: prompt,
+    pendingPromptClipboardMode: clipboardMode,
     pendingPromptCreatedAt: now,
     pendingPromptCopiedAt: null,
     pendingAnnotationCount: annotationCount,
@@ -105,6 +119,7 @@ function handleObsidianAnnotations(payload, { sessions, recordDebugLog = () => {
     notePath,
     turnId,
     promptPreview: debugPreview(prompt),
+    clipboardMode,
   });
 
   return {

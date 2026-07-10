@@ -3,12 +3,13 @@ export const ANNO_TAG_PREFIX = "[!anno]";
 export const ANNO_TAG_SUFFIX = "[/anno]";
 export const EMPTY_ANNO_TEXT = "(empty annotation)";
 export const ANNOTATION_DEFAULT_LABEL = "批注";
-export const PLUGIN_VERSION = "1.4.36";
+export const PLUGIN_VERSION = "1.4.37";
 export const AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 export const AMO_CANVAS_TYPE = "agent-flow-base";
 export const DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
   numberAnnotationsInPrompt: false,
+  safeCliPaste: true,
   canvasAppendDirection: "down",
   hideAmoNoteProperties: true,
   interceptLocalCodeLinks: true,

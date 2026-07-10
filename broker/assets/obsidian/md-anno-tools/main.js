@@ -38,12 +38,13 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.36";
+var PLUGIN_VERSION = "1.4.37";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
   numberAnnotationsInPrompt: false,
+  safeCliPaste: true,
   canvasAppendDirection: "down",
   hideAmoNoteProperties: true,
   interceptLocalCodeLinks: true,
@@ -272,12 +273,15 @@ function cleanupAnnotationRemovalWhitespace(markdown) {
 function normalizeAnnotationContent(value) {
   return String(value || "").replace(/\r\n?/gu, "\n").trim();
 }
-function formatTextForCliPaste(value) {
+function formatTextForCliPaste(value, safePaste = true) {
   const normalized = String(value || "").replace(/\r\n?/gu, "\n").split("\n").map((line) => line.trimEnd()).join("\n").replace(/\n+$/u, "");
+  if (safePaste) {
+    return normalized.replace(/[ \t]*\n+[ \t]*/gu, " ");
+  }
   return isWindowsRuntime() ? normalized.replace(/\n/gu, "\r\n") : normalized;
 }
-function formatAnnotationsForClipboard(annotations) {
-  return formatTextForCliPaste(annotations.join("\n\n"));
+function formatAnnotationsForClipboard(annotations, safePaste = true) {
+  return formatTextForCliPaste(annotations.join("\n\n"), safePaste);
 }
 function isWindowsRuntime() {
   return typeof navigator !== "undefined" && /win/iu.test(navigator.platform || "");
@@ -1443,7 +1447,9 @@ async function copyAnnotationItemFromFile(plugin, file, annotationIndex) {
     new import_obsidian3.Notice("Annotation not found.");
     return false;
   }
-  await writeTextToClipboard(formatAnnotationsForClipboard([item.content]));
+  await writeTextToClipboard(
+    formatAnnotationsForClipboard([item.content], plugin.settings.safeCliPaste !== false)
+  );
   plugin.setOperationStatus("Copied annotation " + annotationIndex + " from " + file.path + ".", "success");
   new import_obsidian3.Notice("Annotation copied.");
   return true;
@@ -1484,6 +1490,12 @@ var AmoAnnotationSettingTab = class extends import_obsidian4.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
+    new import_obsidian4.Setting(containerEl).setName("CLI \u5B89\u5168\u590D\u5236").setDesc("\u590D\u5236\u6216\u8FD4\u56DE\u6279\u6CE8\u65F6\uFF0C\u5C06\u6362\u884C\u66FF\u6362\u4E3A\u7A7A\u683C\uFF0C\u907F\u514D\u7EC8\u7AEF CLI \u5728\u7C98\u8D34\u65F6\u63D0\u524D\u63D0\u4EA4\u3002\u9ED8\u8BA4\u5F00\u542F\u3002").addToggle((toggle) => {
+      toggle.setValue(this.plugin.settings.safeCliPaste !== false).onChange(async (value) => {
+        this.plugin.settings.safeCliPaste = value;
+        await this.plugin.saveSettings();
+      });
+    });
     new import_obsidian4.Setting(containerEl).setName("\u540C\u6B65\u5185\u5BB9\u6DFB\u52A0\u7F16\u53F7").setDesc("\u53D1\u9001\u6279\u6CE8\u56DE CLI session \u65F6\uFF0C\u4E3A\u6BCF\u6761\u6279\u6CE8\u6DFB\u52A0 1.\u30012.\u30013. \u524D\u7F00\u3002\u9ED8\u8BA4\u5173\u95ED\u3002").addToggle((toggle) => {
       toggle.setValue(Boolean(this.plugin.settings.numberAnnotationsInPrompt)).onChange(async (value) => {
         this.plugin.settings.numberAnnotationsInPrompt = value;
@@ -2346,6 +2358,9 @@ function bridgeUrl(context) {
 function shouldNumberAnnotations(context) {
   return Boolean(context && context.settings && context.settings.numberAnnotationsInPrompt);
 }
+function shouldUseSafeCliPaste(context) {
+  return !context || !context.settings || context.settings.safeCliPaste !== false;
+}
 async function copyAnnotationsFromFileAction(context, file) {
   const markdown = await context.app.vault.cachedRead(file);
   const annotations = extractAnnotationContents(markdown);
@@ -2360,7 +2375,7 @@ async function copyAnnotationsFromFileAction(context, file) {
     return;
   }
   try {
-    await writeTextToClipboard(formatAnnotationsForClipboard(annotations));
+    await writeTextToClipboard(formatAnnotationsForClipboard(annotations, shouldUseSafeCliPaste(context)));
     context.debugLog("annotations.copy.ok", {
       notePath: file.path,
       annotationCount: annotations.length
@@ -2421,7 +2436,8 @@ async function sendAnnotationsFromFileAction(context, file) {
     sessionId: amo.sessionId,
     turnId: amo.turnId || null,
     promptOptions: {
-      numberAnnotations: shouldNumberAnnotations(context)
+      numberAnnotations: shouldNumberAnnotations(context),
+      safeCliPaste: shouldUseSafeCliPaste(context)
     },
     annotations: annotations.map((content, index) => ({
       index: index + 1,

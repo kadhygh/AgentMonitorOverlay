@@ -339,6 +339,7 @@ function clearWorkspaceBridgeState(workspacePath, vaultRoot, options = {}) {
       canvasNodeId: null,
       pendingPromptId: null,
       pendingPrompt: null,
+      pendingPromptClipboardMode: null,
       pendingPromptCreatedAt: null,
       pendingPromptCopiedAt: null,
       pendingAnnotationCount: null,

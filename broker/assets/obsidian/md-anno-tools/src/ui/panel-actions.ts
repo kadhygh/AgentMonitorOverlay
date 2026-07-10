@@ -85,7 +85,9 @@ export async function copyAnnotationItemFromFile(plugin, file, annotationIndex) 
     return false;
   }
 
-  await writeTextToClipboard(formatAnnotationsForClipboard([item.content]));
+  await writeTextToClipboard(
+    formatAnnotationsForClipboard([item.content], plugin.settings.safeCliPaste !== false)
+  );
   plugin.setOperationStatus("Copied annotation " + annotationIndex + " from " + file.path + ".", "success");
   new Notice("Annotation copied.");
   return true;

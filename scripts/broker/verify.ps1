@@ -640,6 +640,9 @@ try {
         notePath = $reply2.notePath
         sessionId = "codex-reply-verify"
         turnId = "turn-reply-verify-2"
+        promptOptions = @{
+            safeCliPaste = $true
+        }
         annotations = @(
             @{
                 index = 1
@@ -654,6 +657,9 @@ try {
     if ($annotationResult.prompt -ne $expectedPrompt) {
         throw "Annotation prompt included unexpected broker-added text. Expected '$expectedPrompt', got '$($annotationResult.prompt)'."
     }
+    if ($annotationResult.session.pendingPromptClipboardMode -ne "safe") {
+        throw "Annotation safe paste option should be preserved as session clipboard mode 'safe'."
+    }
 
     $numberedAnnotationResult = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
         schemaVersion = 1
@@ -664,6 +670,7 @@ try {
         turnId = "turn-reply-verify-2"
         promptOptions = @{
             numberAnnotations = $true
+            safeCliPaste = $false
         }
         annotations = @(
             @{
@@ -675,6 +682,9 @@ try {
     $expectedNumberedPrompt = "1. Numbered verification note.`n"
     if ($numberedAnnotationResult.prompt -ne $expectedNumberedPrompt) {
         throw "Annotation numbering option did not preserve numbered output. Expected '$expectedNumberedPrompt', got '$($numberedAnnotationResult.prompt)'."
+    }
+    if ($numberedAnnotationResult.session.pendingPromptClipboardMode -ne "raw") {
+        throw "Annotation disabled safe paste option should be preserved as session clipboard mode 'raw'."
     }
 
     $pluginDataPath = Join-Path $pluginRoot "data.json"

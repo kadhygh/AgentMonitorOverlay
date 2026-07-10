@@ -14,6 +14,18 @@ export class AmoAnnotationSettingTab extends PluginSettingTab {
     containerEl.empty();
 
     new Setting(containerEl)
+      .setName("CLI 安全复制")
+      .setDesc("复制或返回批注时，将换行替换为空格，避免终端 CLI 在粘贴时提前提交。默认开启。")
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.safeCliPaste !== false)
+          .onChange(async (value) => {
+            this.plugin.settings.safeCliPaste = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
       .setName("同步内容添加编号")
       .setDesc("发送批注回 CLI session 时，为每条批注添加 1.、2.、3. 前缀。默认关闭。")
       .addToggle((toggle) => {

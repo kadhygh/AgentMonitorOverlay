@@ -50,6 +50,7 @@
 :root[data-amo-theme="light"] .settings-sidebar > strong,
 :root[data-amo-theme="light"] .settings-detail-header span,
 :root[data-amo-theme="light"] .settings-toggle span,
+:root[data-amo-theme="light"] .settings-help-copy,
 :root[data-amo-theme="light"] .settings-field > span,
 :root[data-amo-theme="light"] .theme-choice > span:not(.theme-swatch),
 :root[data-amo-theme="light"] .launch-panel-header span,

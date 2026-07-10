@@ -2,7 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { StickyNote, Trash2, X } from "lucide-react";
-import { toCliPasteClipboardText, writeClipboardText } from "../native/clipboard";
+import {
+  loadCliSafePasteEnabled,
+  toCliPasteClipboardText,
+  writeClipboardText,
+} from "../native/clipboard";
 import { useAmoThemeRuntime } from "../theme/amoTheme";
 
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
@@ -93,7 +97,7 @@ export function ScratchpadApp() {
     }
 
     try {
-      const clipboardText = toCliPasteClipboardText(text);
+      const clipboardText = toCliPasteClipboardText(text, loadCliSafePasteEnabled());
       const result = await writeClipboardText(clipboardText);
       setStatus(result.ok ? "Copied" : result.message);
       if (result.ok) {

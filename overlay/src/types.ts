@@ -93,6 +93,7 @@ export interface AgentSession {
   canvasNodeId?: string;
   pendingPromptId?: string;
   pendingPrompt?: string;
+  pendingPromptClipboardMode?: "safe" | "raw" | null;
   pendingPromptCreatedAt?: string;
   pendingPromptCopiedAt?: string | null;
   pendingAnnotationCount?: number;

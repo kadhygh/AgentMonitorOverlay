@@ -136,7 +136,7 @@ export function normalizeAnnotationContent(value) {
   return String(value || "").replace(/\r\n?/gu, "\n").trim();
 }
 
-export function formatTextForCliPaste(value) {
+export function formatTextForCliPaste(value, safePaste = true) {
   const normalized = String(value || "")
     .replace(/\r\n?/gu, "\n")
     .split("\n")
@@ -144,11 +144,15 @@ export function formatTextForCliPaste(value) {
     .join("\n")
     .replace(/\n+$/u, "");
 
+  if (safePaste) {
+    return normalized.replace(/[ \t]*\n+[ \t]*/gu, " ");
+  }
+
   return isWindowsRuntime() ? normalized.replace(/\n/gu, "\r\n") : normalized;
 }
 
-export function formatAnnotationsForClipboard(annotations) {
-  return formatTextForCliPaste(annotations.join("\n\n"));
+export function formatAnnotationsForClipboard(annotations, safePaste = true) {
+  return formatTextForCliPaste(annotations.join("\n\n"), safePaste);
 }
 
 function isWindowsRuntime() {

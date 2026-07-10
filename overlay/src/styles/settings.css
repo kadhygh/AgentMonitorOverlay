@@ -162,6 +162,13 @@
   white-space: nowrap;
 }
 
+.settings-help-copy {
+  margin: 0;
+  color: #9fb0aa;
+  font-size: 10px;
+  line-height: 15px;
+}
+
 .settings-field select,
 .settings-primary-action {
   min-height: 34px;

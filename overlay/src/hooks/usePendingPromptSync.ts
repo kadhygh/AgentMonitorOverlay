@@ -1,17 +1,22 @@
 import { useRef, useState, type Dispatch, type SetStateAction } from "react";
 import { BROKER_SYNC_BACK_URL } from "../api/brokerClient";
 import { targetBindingForSession } from "../domain/routingModel";
-import { toCliPasteClipboardText, writeClipboardText } from "../native/clipboard";
+import {
+  loadCliSafePasteEnabled,
+  toCliPasteClipboardText,
+  writeClipboardText,
+} from "../native/clipboard";
 import type { AgentSession } from "../types";
 
 function clipboardPromptForSession(session: AgentSession) {
   const prompt = session.pendingPrompt ?? "";
-  const target = targetBindingForSession(session);
-  if (target?.type === "codex-app-thread") {
-    return prompt;
-  }
-
-  return toCliPasteClipboardText(prompt);
+  const safePaste =
+    session.pendingPromptClipboardMode === "safe"
+      ? true
+      : session.pendingPromptClipboardMode === "raw"
+        ? false
+        : loadCliSafePasteEnabled();
+  return toCliPasteClipboardText(prompt, safePaste);
 }
 
 interface UsePendingPromptSyncOptions {
@@ -34,7 +39,8 @@ export function usePendingPromptSync(options: UsePendingPromptSyncOptions) {
     setCopyingPromptId(session.sessionId);
     options.setFeedback(`Copying pending prompt for ${session.title}...`);
     const clipboardPrompt = clipboardPromptForSession(session);
-    const clipboardMode = targetBindingForSession(session)?.type === "codex-app-thread" ? "raw" : "cli-paste";
+    const clipboardMode =
+      session.pendingPromptClipboardMode ?? (loadCliSafePasteEnabled() ? "safe" : "raw");
     options.postDebugLog("sync.copy.start", {
       sessionId: session.sessionId,
       pendingPromptId: session.pendingPromptId ?? null,

@@ -13,6 +13,10 @@ function shouldNumberAnnotations(context) {
   return Boolean(context && context.settings && context.settings.numberAnnotationsInPrompt);
 }
 
+function shouldUseSafeCliPaste(context) {
+  return !context || !context.settings || context.settings.safeCliPaste !== false;
+}
+
 export async function copyAnnotationsFromFileAction(context, file) {
   const markdown = await context.app.vault.cachedRead(file as any);
   const annotations = extractAnnotationContents(markdown);
@@ -28,7 +32,7 @@ export async function copyAnnotationsFromFileAction(context, file) {
   }
 
   try {
-    await writeTextToClipboard(formatAnnotationsForClipboard(annotations));
+    await writeTextToClipboard(formatAnnotationsForClipboard(annotations, shouldUseSafeCliPaste(context)));
     context.debugLog("annotations.copy.ok", {
       notePath: file.path,
       annotationCount: annotations.length,
@@ -93,6 +97,7 @@ export async function sendAnnotationsFromFileAction(context, file) {
     turnId: amo.turnId || null,
     promptOptions: {
       numberAnnotations: shouldNumberAnnotations(context),
+      safeCliPaste: shouldUseSafeCliPaste(context),
     },
     annotations: annotations.map((content, index) => ({
       index: index + 1,

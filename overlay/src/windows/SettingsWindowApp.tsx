@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Palette, Settings2, StickyNote, X } from "lucide-react";
+import { ClipboardPaste, Palette, Settings2, StickyNote, X } from "lucide-react";
+import { loadCliSafePasteEnabled, saveCliSafePasteEnabled } from "../native/clipboard";
 import {
   applyScratchpadShortcutState,
   loadScratchpadShortcutState,
@@ -15,7 +16,7 @@ import {
   useUtilityWindowLifecycle,
 } from "./utilityWindow";
 
-export type SettingsSection = "scratchpad" | "theme";
+export type SettingsSection = "scratchpad" | "clipboard" | "theme";
 
 interface SettingsSidebarProps {
   settingsSection: SettingsSection;
@@ -26,6 +27,14 @@ export function SettingsSidebar({ settingsSection, onSettingsSectionChange }: Se
   return (
     <aside className="settings-sidebar" aria-label="Settings sections">
       <strong>Sections</strong>
+      <button
+        type="button"
+        className={`settings-nav-button ${settingsSection === "clipboard" ? "is-active" : ""}`}
+        onClick={() => onSettingsSectionChange("clipboard")}
+      >
+        <ClipboardPaste size={13} aria-hidden="true" />
+        <span>Clipboard</span>
+      </button>
       <button
         type="button"
         className={`settings-nav-button ${settingsSection === "scratchpad" ? "is-active" : ""}`}
@@ -49,16 +58,26 @@ export function SettingsSidebar({ settingsSection, onSettingsSectionChange }: Se
 interface SettingsDetailHeaderProps {
   settingsSection: SettingsSection;
   scratchpadShortcut: ScratchpadShortcutState;
+  safePasteEnabled: boolean;
   amoTheme: AmoTheme;
 }
 
-function SettingsDetailHeader({ settingsSection, scratchpadShortcut, amoTheme }: SettingsDetailHeaderProps) {
-  const title = settingsSection === "theme" ? "Theme" : "Scratchpad";
+function SettingsDetailHeader({
+  settingsSection,
+  scratchpadShortcut,
+  safePasteEnabled,
+  amoTheme,
+}: SettingsDetailHeaderProps) {
+  const title = settingsSection === "theme" ? "Theme" : settingsSection === "clipboard" ? "Clipboard" : "Scratchpad";
   const status =
     settingsSection === "theme"
       ? amoTheme === "light"
         ? "Light"
         : "Dark"
+      : settingsSection === "clipboard"
+        ? safePasteEnabled
+          ? "Safe mode"
+          : "Original formatting"
       : scratchpadShortcut.enabled
         ? "Ctrl + Mouse4"
         : "Disabled";
@@ -70,6 +89,29 @@ function SettingsDetailHeader({ settingsSection, scratchpadShortcut, amoTheme }:
         <span>{status}</span>
       </div>
     </header>
+  );
+}
+
+interface ClipboardSettingsBodyProps {
+  safePasteEnabled: boolean;
+  onSafePasteEnabledChange: (enabled: boolean) => void;
+}
+
+function ClipboardSettingsBody({ safePasteEnabled, onSafePasteEnabledChange }: ClipboardSettingsBodyProps) {
+  return (
+    <div className="settings-section-body">
+      <label className="settings-toggle">
+        <input
+          type="checkbox"
+          checked={safePasteEnabled}
+          onChange={(event) => onSafePasteEnabledChange(event.currentTarget.checked)}
+        />
+        <span>Safe CLI copy</span>
+      </label>
+      <p className="settings-help-copy">
+        Replace copied line breaks with spaces so terminal CLIs cannot submit a partial prompt while pasting.
+      </p>
+    </div>
   );
 }
 
@@ -167,8 +209,10 @@ function ThemeSettingsBody({ amoTheme, onAmoThemeChange }: ThemeSettingsBodyProp
 interface SettingsDetailProps {
   settingsSection: SettingsSection;
   scratchpadShortcut: ScratchpadShortcutState;
+  safePasteEnabled: boolean;
   amoTheme: AmoTheme;
   onScratchpadShortcutChange: (next: ScratchpadShortcutState) => void;
+  onSafePasteEnabledChange: (enabled: boolean) => void;
   onOpenScratchpadNow: () => void;
   onAmoThemeChange: (theme: AmoTheme) => void;
 }
@@ -176,8 +220,10 @@ interface SettingsDetailProps {
 export function SettingsDetail({
   settingsSection,
   scratchpadShortcut,
+  safePasteEnabled,
   amoTheme,
   onScratchpadShortcutChange,
+  onSafePasteEnabledChange,
   onOpenScratchpadNow,
   onAmoThemeChange,
 }: SettingsDetailProps) {
@@ -186,6 +232,7 @@ export function SettingsDetail({
       <SettingsDetailHeader
         settingsSection={settingsSection}
         scratchpadShortcut={scratchpadShortcut}
+        safePasteEnabled={safePasteEnabled}
         amoTheme={amoTheme}
       />
 
@@ -194,6 +241,11 @@ export function SettingsDetail({
           scratchpadShortcut={scratchpadShortcut}
           onScratchpadShortcutChange={onScratchpadShortcutChange}
           onOpenScratchpadNow={onOpenScratchpadNow}
+        />
+      ) : settingsSection === "clipboard" ? (
+        <ClipboardSettingsBody
+          safePasteEnabled={safePasteEnabled}
+          onSafePasteEnabledChange={onSafePasteEnabledChange}
         />
       ) : (
         <ThemeSettingsBody amoTheme={amoTheme} onAmoThemeChange={onAmoThemeChange} />
@@ -210,6 +262,7 @@ export function SettingsWindowApp() {
   const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
     loadScratchpadShortcutState(),
   );
+  const [safePasteEnabled, setSafePasteEnabled] = useState(() => loadCliSafePasteEnabled());
   const [feedback, setFeedback] = useState("Settings ready.");
 
   async function updateScratchpadShortcut(next: ScratchpadShortcutState) {
@@ -236,6 +289,12 @@ export function SettingsWindowApp() {
   async function updateAmoTheme(next: AmoTheme) {
     await setAmoThemePreference(next);
     setFeedback(`Theme set to ${next === "light" ? "Light" : "Dark"}.`);
+  }
+
+  function updateSafePasteEnabled(enabled: boolean) {
+    setSafePasteEnabled(enabled);
+    saveCliSafePasteEnabled(enabled);
+    setFeedback(enabled ? "Safe CLI copy enabled." : "Original clipboard formatting enabled.");
   }
 
   return (
@@ -268,8 +327,10 @@ export function SettingsWindowApp() {
         <SettingsDetail
           settingsSection={settingsSection}
           scratchpadShortcut={scratchpadShortcut}
+          safePasteEnabled={safePasteEnabled}
           amoTheme={amoTheme}
           onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
+          onSafePasteEnabledChange={updateSafePasteEnabled}
           onOpenScratchpadNow={() => void openScratchpadNow()}
           onAmoThemeChange={(next) => void updateAmoTheme(next)}
         />
