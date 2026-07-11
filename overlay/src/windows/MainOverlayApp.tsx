@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
   AlertTriangle,
@@ -32,6 +33,7 @@ import { useBrokerSessions } from "../hooks/useBrokerSessions";
 import { useAttentionVisuals } from "../hooks/useAttentionVisuals";
 import { useCardDrag } from "../hooks/useCardDrag";
 import { useMainUtilityWindows } from "../hooks/useMainUtilityWindows";
+import { useManagedWindowLiveness } from "../hooks/useManagedWindowLiveness";
 import { useObsidianOpen } from "../hooks/useObsidianOpen";
 import { useOverlayResize } from "../hooks/useOverlayResize";
 import { usePendingPromptSync } from "../hooks/usePendingPromptSync";
@@ -155,6 +157,12 @@ export function MainOverlayApp() {
   });
   attachFeedbackSetter(setFeedback);
 
+  useEffect(() => {
+    void invoke("signal_frontend_ready").catch(() => {
+      // Browser preview does not expose the native smoke command.
+    });
+  }, []);
+
   const {
     reconcileCodexActionRequired: handleCodexActionRequiredProbe,
   } = useCodexActionRequiredProbe({
@@ -164,6 +172,12 @@ export function MainOverlayApp() {
   actionRequiredProbeHandlerRef.current = handleCodexActionRequiredProbe;
 
   const brokerReady = brokerReadiness.state === "ready";
+  useManagedWindowLiveness({
+    brokerReady,
+    postDebugLog,
+    sessions,
+    setSessions,
+  });
   const reviewCount = useMemo(
     () => sessions.filter((session) => !sessionArchived(session) && sessionNeedsReview(session)).length,
     [sessions],

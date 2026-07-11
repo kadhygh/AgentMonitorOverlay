@@ -11,6 +11,10 @@ edition = "2021"
 name = "agent_monitor_overlay_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+[features]
+default = ["custom-protocol"]
+custom-protocol = ["tauri/custom-protocol"]
+
 [build-dependencies]
 tauri-build = { version = "2.4.1", features = [] }
 

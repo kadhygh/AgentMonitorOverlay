@@ -120,6 +120,23 @@ async function handleSessionRoutes(req, res, url, context) {
   }
 
   const resumeMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/resume$/);
+
+  const managedOfflineMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/managed-launch\/offline$/);
+  if (req.method === "POST" && managedOfflineMatch) {
+    const sessionId = decodeURIComponent(managedOfflineMatch[1]);
+    const payload = await readJsonBody(req, { allowEmpty: true });
+    const session = context.launchStore.markSessionOffline(sessionId, context.sessions, payload || {});
+    if (!session) {
+      const error = new Error(`Session not found for managed launch update: ${sessionId}`);
+      error.statusCode = 404;
+      error.code = "session_not_found";
+      throw error;
+    }
+    context.persistSnapshot();
+    context.publishSessionChanged("managed-launch-offline", session);
+    return sendHandled(res, 200, { ok: true, session });
+  }
+
   if (req.method === "POST" && resumeMatch) {
     const sessionId = decodeURIComponent(resumeMatch[1]);
     const existing = context.sessions.get(sessionId);

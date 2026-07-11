@@ -170,9 +170,13 @@ export function SessionRowContent({
   const targetBinding = targetBindingForSession(session);
   const targetBound = Boolean(targetBinding);
   const rawTool = String(session.tool || "").toLowerCase();
+  const supportsManagedResume = rawTool.includes("codex") || rawTool.includes("claude");
   const canResumeAsManaged =
-    !session.launchId && !targetBound && !managedConnected && !managedLaunching &&
-    (rawTool.includes("codex") || rawTool.includes("claude"));
+    supportsManagedResume &&
+    !targetBound &&
+    !managedConnected &&
+    !managedLaunching &&
+    (managedOffline || !session.launchId);
   const canUnbindTarget = Boolean(targetBinding && targetBinding.type !== "codex-cli-session");
   const canBindWindow = (!targetBinding || targetBinding.type === "codex-cli-session") && !managedConnected;
   const archived = sessionArchived(session);

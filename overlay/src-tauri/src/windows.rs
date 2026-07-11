@@ -27,6 +27,15 @@ pub(crate) fn list_external_window_candidates(
 }
 
 #[cfg(not(windows))]
+pub(crate) fn probe_external_window(session_id: &str, _hint: WindowHintInput) -> ActivationResult {
+    ActivationResult {
+        ok: false,
+        message: format!("Window probing is only implemented on Windows for {session_id}."),
+        candidates: Vec::new(),
+    }
+}
+
+#[cfg(not(windows))]
 pub(crate) fn external_window_candidate_at_cursor() -> ActivationResult {
     ActivationResult {
         ok: false,
@@ -149,6 +158,26 @@ pub(crate) fn list_external_window_candidates(
 }
 
 #[cfg(windows)]
+pub(crate) fn probe_external_window(session_id: &str, hint: WindowHintInput) -> ActivationResult {
+    let candidates = enumerate_windows();
+    let matches = match resolve_candidate(&candidates, &hint) {
+        ResolveResult::Matched(candidate) => vec![activation_candidate(&candidate)],
+        ResolveResult::Ambiguous(matches) => matches.iter().map(activation_candidate).collect(),
+        ResolveResult::NoMatch => Vec::new(),
+    };
+
+    ActivationResult {
+        ok: !matches.is_empty(),
+        message: if matches.is_empty() {
+            format!("Managed window not found for {session_id}.")
+        } else {
+            format!("Managed window is alive for {session_id}.")
+        },
+        candidates: matches,
+    }
+}
+
+#[cfg(windows)]
 pub(crate) fn external_window_candidate_at_cursor() -> ActivationResult {
     use windows_sys::Win32::Foundation::POINT;
     use windows_sys::Win32::UI::WindowsAndMessaging::{GetCursorPos, WindowFromPoint};
@@ -255,9 +284,17 @@ fn resolve_candidate(candidates: &[WindowCandidate], hint: &WindowHintInput) -> 
         }
     }
 
+    if !hint.title_token.trim().is_empty() {
+        let matches = matches_by_title_token(candidates, hint);
+        return match matches.len() {
+            0 => ResolveResult::NoMatch,
+            1 => ResolveResult::Matched(matches[0].clone()),
+            _ => ResolveResult::Ambiguous(matches),
+        };
+    }
+
     for matches in [
         matches_by_pid(candidates, hint),
-        matches_by_title_token(candidates, hint),
         matches_by_process_and_title(candidates, hint),
         matches_by_process_and_title_contains(candidates, hint),
         matches_by_project_or_cwd(candidates, hint),

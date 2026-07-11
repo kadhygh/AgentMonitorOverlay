@@ -15,6 +15,7 @@ use opener::{open_external_target, open_local_path};
 use tauri_plugin_notification::NotificationExt;
 use windows::{
     activate_external_window, external_window_candidate_at_cursor, list_external_window_candidates,
+    probe_external_window,
 };
 
 #[tauri::command]
@@ -113,6 +114,56 @@ fn ensure_broker() -> BrokerEnsureResult {
 }
 
 #[tauri::command]
+fn probe_session_window(
+    session_id: String,
+    tool: String,
+    title: String,
+    process_name: String,
+    title_token: String,
+    title_contains: Vec<String>,
+    project: String,
+    cwd: String,
+    pid: Option<u32>,
+    hwnd: Option<i64>,
+) -> ActivationResult {
+    probe_external_window(
+        &session_id,
+        WindowHintInput {
+            tool,
+            title,
+            process_name,
+            title_token,
+            title_contains,
+            project,
+            cwd,
+            pid,
+            hwnd,
+        },
+    )
+}
+
+#[tauri::command]
+fn signal_frontend_ready() -> OpenPathResult {
+    let Ok(path) = std::env::var("AGENT_MONITOR_SMOKE_FRONTEND_READY_FILE") else {
+        return OpenPathResult {
+            ok: true,
+            message: "Frontend ready.".to_string(),
+        };
+    };
+
+    match std::fs::write(path, "ready\n") {
+        Ok(()) => OpenPathResult {
+            ok: true,
+            message: "Frontend smoke marker written.".to_string(),
+        },
+        Err(error) => OpenPathResult {
+            ok: false,
+            message: format!("Frontend smoke marker failed: {error}"),
+        },
+    }
+}
+
+#[tauri::command]
 fn show_windows_notification(app: tauri::AppHandle, title: String, body: String) -> OpenPathResult {
     match app.notification().builder().title(title).body(body).show() {
         Ok(()) => OpenPathResult {
@@ -154,10 +205,12 @@ pub fn run() {
             activate_session_window,
             ensure_broker,
             list_session_window_candidates,
+            probe_session_window,
             window_candidate_at_cursor,
             open_path,
             select_workspace_directory,
             set_scratchpad_shortcut_config,
+            signal_frontend_ready,
             show_windows_notification,
             tray::set_tray_attention_state,
             show_scratchpad_at_cursor,

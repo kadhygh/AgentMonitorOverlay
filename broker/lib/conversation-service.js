@@ -7,7 +7,7 @@ const { writePromptNote, writeReplyNote } = require("./conversation-artifacts");
 const { resolveSessionTitle } = require("./display-names");
 const { readJsonFile } = require("./filesystem");
 const { httpError } = require("./http");
-const { normalizeText } = require("./normalize");
+const { normalizeInteger, normalizeText } = require("./normalize");
 const {
   findDuplicatePrompt,
   promptContentHash,
@@ -114,6 +114,10 @@ function handleReply(payload, context) {
     eventCount: (existing?.eventCount || 0) + 1,
     workspaceId: workspace.workspaceId,
     workspacePath: workspaceRoot,
+    launchId: normalizeText(payload.launchId || payload.launch_id) || existing?.launchId || null,
+    launchState: normalizeText(payload.launchState || payload.launch_state) || existing?.launchState || null,
+    launchRevision:
+      normalizeInteger(payload.launchRevision || payload.launch_revision) ?? existing?.launchRevision ?? null,
     vaultRoot,
     lastReplyAt: capturedAt,
     lastReplyNote: note.notePath,
@@ -320,6 +324,10 @@ function handlePrompt(payload, context) {
     eventCount: (existing?.eventCount || 0) + 1,
     workspaceId: workspace.workspaceId,
     workspacePath: workspaceRoot,
+    launchId: normalizeText(payload.launchId || payload.launch_id) || existing?.launchId || null,
+    launchState: normalizeText(payload.launchState || payload.launch_state) || existing?.launchState || null,
+    launchRevision:
+      normalizeInteger(payload.launchRevision || payload.launch_revision) ?? existing?.launchRevision ?? null,
     vaultRoot,
     reviewRequired: false,
     reviewStatus: null,

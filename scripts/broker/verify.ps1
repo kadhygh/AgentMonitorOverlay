@@ -946,6 +946,53 @@ try {
         throw "Annotation endpoint did not recover a missing session from note metadata."
     }
     Write-Host "Recovered annotation session OK -> $($recoveredAnnotation.sessionId)"
+
+    $managedPrompt = Invoke-BrokerJson -Method POST -Path "/api/prompts" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        source = "codex-user-prompt-hook"
+        sessionId = "codex-managed-prompt-verify"
+        turnId = "turn-managed-prompt-verify"
+        cwd = $workspaceRoot
+        workspacePath = $workspaceRoot
+        hookEventName = "UserPromptSubmit"
+        capturedAt = "2026-05-16T00:00:01.000Z"
+        message = "Managed prompt verification."
+        launchId = "launch-prompt-verify"
+        launchState = "connected"
+        launchRevision = 2
+        windowHint = @{
+            title = "[AMO:codex:prompt] Codex CLI - broker-verify-workspace"
+            titleToken = "[AMO:codex:prompt]"
+            titleContains = @("[AMO:codex:prompt]")
+            cwd = $workspaceRoot
+            tool = "codex"
+            boundBy = "managed-launch"
+        }
+    }
+    if (
+        $managedPrompt.session.launchId -ne "launch-prompt-verify" -or
+        $managedPrompt.session.launchState -ne "connected" -or
+        $managedPrompt.session.launchRevision -ne 2 -or
+        $managedPrompt.session.windowHint.boundBy -ne "managed-launch"
+    ) {
+        throw "Direct prompt processing dropped the managed launch lease."
+    }
+    Write-Host "Managed lease preserved on direct prompt OK -> $($managedPrompt.session.launchId)"
+
+    $managedOffline = Invoke-BrokerJson -Method POST -Path "/api/sessions/codex-managed-prompt-verify/managed-launch/offline" -Body @{
+        launchId = "launch-prompt-verify"
+        reason = "broker-verify-window-closed"
+    }
+    if (
+        -not $managedOffline.ok -or
+        $managedOffline.session.launchId -ne "launch-prompt-verify" -or
+        $managedOffline.session.launchState -ne "offline" -or
+        $managedOffline.session.windowHint.titleToken -ne "[AMO:codex:prompt]"
+    ) {
+        throw "Managed launch offline transition did not preserve the resumable launch identity."
+    }
+    Write-Host "Managed window offline transition OK -> $($managedOffline.session.launchId)"
 }
 finally {
     if ($broker -and -not $broker.HasExited) {
@@ -960,8 +1007,8 @@ $broker = Start-Broker
 try {
     Wait-Broker | Out-Null
     $sessionsAfterRestart = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessionsAfterRestart.count -ne 6) {
-        throw "Persistence check failed. Expected exactly 6 sessions after restart, got $($sessionsAfterRestart.count)."
+    if ($sessionsAfterRestart.count -ne 7) {
+        throw "Persistence check failed. Expected exactly 7 sessions after restart, got $($sessionsAfterRestart.count)."
     }
 
     Write-Host "Persistence OK. Sessions after restart: $($sessionsAfterRestart.count)"

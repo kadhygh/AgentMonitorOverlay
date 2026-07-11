@@ -64,8 +64,8 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     const launchId = normalizeText(payload?.launchId || payload?.launch_id || payload?.amoLaunchId || payload?.amo_launch_id);
     if (!launchId) return null;
     const launch = launches.get(launchId);
-    if (!launch || !["spawning", "waiting_hook", "claimed", "connected"].includes(launch.state)) return null;
-    if (Date.parse(launch.expiresAt) < Date.now() && !["claimed", "connected"].includes(launch.state)) {
+    if (!launch || !["spawning", "waiting_hook", "claimed", "connected", "offline"].includes(launch.state)) return null;
+    if (Date.parse(launch.expiresAt) < Date.now() && !["claimed", "connected", "offline"].includes(launch.state)) {
       update(launchId, { state: "expired" });
       return null;
     }
@@ -76,6 +76,10 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     const expectedTool = launch.adapterId === "claude-cli" ? "claude" : "codex";
     if (!sessionId || workspaceId !== launch.workspaceId || tool !== expectedTool) {
       recordDebugLog("broker", "launch.claim_rejected", { launchId, sessionId, workspaceId, tool });
+      return null;
+    }
+    if (launch.state === "offline" && options.sessions?.get(sessionId)?.launchId !== launchId) {
+      recordDebugLog("broker", "launch.offline_claim_rejected", { launchId, sessionId });
       return null;
     }
     const previousSessionId = launch.currentSessionId || launch.claimedSessionId || null;
@@ -151,6 +155,45 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     ) || null;
   }
 
+  function markSessionOffline(sessionId, sessions, options = {}) {
+    if (!(sessions instanceof Map)) return null;
+    const existing = sessions.get(sessionId);
+    if (!existing?.launchId) return existing || null;
+
+    const expectedLaunchId = normalizeText(options.launchId);
+    if (expectedLaunchId && expectedLaunchId !== existing.launchId) return existing;
+
+    const now = new Date().toISOString();
+    const launch = launches.get(existing.launchId);
+    if (launch) {
+      const launchSessionId = launch.currentSessionId || launch.claimedSessionId || null;
+      if (!launchSessionId || launchSessionId === sessionId) {
+        update(existing.launchId, {
+          state: "offline",
+          offlineAt: now,
+          offlineReason: normalizeText(options.reason) || "window-not-found",
+        });
+      }
+    }
+
+    const session = {
+      ...existing,
+      launchState: "offline",
+      launchOfflineAt: now,
+      updatedAt: now,
+      windowHint: existing.windowHint
+        ? { ...existing.windowHint, pid: null, hwnd: null }
+        : existing.windowHint,
+    };
+    sessions.set(sessionId, session);
+    recordDebugLog("broker", "launch.window_offline", {
+      sessionId,
+      launchId: existing.launchId,
+      reason: normalizeText(options.reason) || "window-not-found",
+    });
+    return session;
+  }
+
   function prune() {
     const cutoff = Date.now() - RETAIN_LAUNCH_MS;
     let changed = false;
@@ -167,7 +210,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
   }
 
   load();
-  return { claim, create, findActiveResume, list, reconcileSessions, update };
+  return { claim, create, findActiveResume, list, markSessionOffline, reconcileSessions, update };
 }
 
 function releasePreviousSession(sessions, sessionId, launchId, titleToken, bindingRevision) {

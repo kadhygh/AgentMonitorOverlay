@@ -9,6 +9,7 @@ $appPath = Join-Path $root "AMO.exe"
 $expectedBrokerScript = Join-Path $root "app\broker\server.js"
 $expectedNode = Join-Path $root "runtime\node.exe"
 $expectedDataFile = Join-Path $root "data\sessions.json"
+$frontendReadyFile = Join-Path $root "data\smoke-frontend-ready"
 $baseUrl = "http://127.0.0.1:17654"
 $appProcess = $null
 $brokerProcess = $null
@@ -21,11 +22,14 @@ $listener = Get-NetTCPConnection -LocalPort 17654 -State Listen -ErrorAction Sil
 if ($listener) { throw "Portable cold smoke requires port 17654 to be free." }
 
 try {
-    $env:AGENT_MONITOR_SMOKE_EXIT_AFTER_MS = "7000"
+    Remove-Item -LiteralPath $frontendReadyFile -Force -ErrorAction SilentlyContinue
+    $env:AGENT_MONITOR_SMOKE_EXIT_AFTER_MS = "10000"
+    $env:AGENT_MONITOR_SMOKE_FRONTEND_READY_FILE = $frontendReadyFile
     try {
         $appProcess = Start-Process -FilePath $appPath -WorkingDirectory $root -PassThru
     } finally {
         Remove-Item Env:\AGENT_MONITOR_SMOKE_EXIT_AFTER_MS -ErrorAction SilentlyContinue
+        Remove-Item Env:\AGENT_MONITOR_SMOKE_FRONTEND_READY_FILE -ErrorAction SilentlyContinue
     }
     $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
     $health = $null
@@ -38,6 +42,13 @@ try {
         }
     }
     if (-not $health -or -not $health.ok) { throw "Portable Broker did not become healthy within $TimeoutSeconds seconds." }
+
+    while ((Get-Date) -lt $deadline -and -not (Test-Path -LiteralPath $frontendReadyFile)) {
+        Start-Sleep -Milliseconds 200
+    }
+    if (-not (Test-Path -LiteralPath $frontendReadyFile)) {
+        throw "Portable frontend did not mount within $TimeoutSeconds seconds. The release may still be using the development URL."
+    }
 
     $brokerProcess = Get-CimInstance Win32_Process | Where-Object {
         $_.Name -ieq "node.exe" -and
@@ -56,6 +67,7 @@ try {
         Ok = $true
         AppPid = $appProcess.Id
         BrokerPid = $brokerProcess.ProcessId
+        FrontendReady = $true
         Storage = $health.storage
         WorkspaceCount = $workspaceResult.count
     }
@@ -78,4 +90,5 @@ try {
         Stop-Process -Id $remainingBroker.ProcessId -Force -ErrorAction SilentlyContinue
         throw "Portable app exit left its owned Broker running (pid $($remainingBroker.ProcessId))."
     }
+    Remove-Item -LiteralPath $frontendReadyFile -Force -ErrorAction SilentlyContinue
 }

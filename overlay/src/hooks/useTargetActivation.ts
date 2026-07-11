@@ -2,6 +2,7 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   BROKER_WORKSPACE_LAUNCH_URL,
+  brokerSessionManagedOfflineUrl,
   brokerSessionResumeUrl,
   brokerSessionTargetBindingUrl,
   postBrokerJson,
@@ -52,6 +53,33 @@ interface UseTargetActivationOptions {
 
 export function useTargetActivation(options: UseTargetActivationOptions) {
   const [activatingId, setActivatingId] = useState<string | null>(null);
+
+  async function markManagedWindowOffline(session: AgentSession, reason: string) {
+    if (!session.launchId || session.launchState !== "connected") return session;
+    try {
+      const response = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+        brokerSessionManagedOfflineUrl(session.sessionId),
+        { launchId: session.launchId, reason },
+      );
+      options.setSessions((previous) =>
+        previous.map((item) => (item.sessionId === response.session.sessionId ? response.session : item)),
+      );
+      options.postDebugLog("managed_window.offline", {
+        sessionId: session.sessionId,
+        launchId: session.launchId,
+        reason,
+      });
+      return response.session;
+    } catch (error) {
+      options.postDebugLog("managed_window.offline_error", {
+        sessionId: session.sessionId,
+        launchId: session.launchId,
+        reason,
+        message: (error as Error).message,
+      });
+      return session;
+    }
+  }
 
   async function openCodexAppTarget(
     session: AgentSession,
@@ -317,6 +345,13 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
       return;
     }
 
+    if (session.launchId && session.launchState === "offline") {
+      await openCodexTargetMenuFromWindowList(session, menuX, menuY, {
+        clearAttentionOnConfirm: activateOptions.clearAttentionOnSuccess ?? false,
+      });
+      return;
+    }
+
     const activationTarget =
       targetBinding?.type === "codex-cli-session" ? windowTargetForSession(session) : activationTargetForSession(session);
     const canRouteCodexCliByHint =
@@ -346,16 +381,34 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
         "activate_session_window",
         activationWindowRequest(session, activationTarget),
       );
+      let menuSession = session;
+      if (!result.ok && session.launchId && session.launchState === "connected" && session.windowHint?.titleToken) {
+        try {
+          const probe = await invoke<ActivationResult>(
+            "probe_session_window",
+            activationWindowRequest(session, null, { includeWindowHintIdentity: true }),
+          );
+          if (!probe.ok) {
+            menuSession = await markManagedWindowOffline(session, "activation-window-not-found");
+          }
+        } catch (error) {
+          options.postDebugLog("managed_window.activation_probe_error", {
+            sessionId: session.sessionId,
+            launchId: session.launchId,
+            message: (error as Error).message,
+          });
+        }
+      }
       if (!result.ok && ((result.candidates?.length ?? 0) > 0 || isCodexSession(session))) {
         if (isCodexSession(session)) {
-          openCodexTargetMenu(session, menuX, menuY, result.candidates ?? [], {
+          openCodexTargetMenu(menuSession, menuX, menuY, result.candidates ?? [], {
             allowCodexCliResumeWithCandidates: true,
             clearAttentionOnConfirm: activateOptions.clearAttentionOnSuccess ?? false,
           });
         } else {
           const position = menuPosition(menuX, menuY);
           options.setCandidateMenu({
-            session,
+            session: menuSession,
             candidates: result.candidates ?? [],
             x: position.x,
             y: position.y,
