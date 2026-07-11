@@ -169,6 +169,10 @@ export function SessionRowContent({
   const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid || managedConnected);
   const targetBinding = targetBindingForSession(session);
   const targetBound = Boolean(targetBinding);
+  const rawTool = String(session.tool || "").toLowerCase();
+  const canResumeAsManaged =
+    !session.launchId && !targetBound && !managedConnected && !managedLaunching &&
+    (rawTool.includes("codex") || rawTool.includes("claude"));
   const canUnbindTarget = Boolean(targetBinding && targetBinding.type !== "codex-cli-session");
   const canBindWindow = (!targetBinding || targetBinding.type === "codex-cli-session") && !managedConnected;
   const archived = sessionArchived(session);
@@ -212,6 +216,23 @@ export function SessionRowContent({
       >
         <Plus size={13} aria-hidden="true" />
       </button>
+      {canResumeAsManaged ? (
+        <button
+          type="button"
+          className={`card-managed-launch-button ${activating ? "is-busy" : ""}`}
+          title="Resume this session in a new AMO-managed CLI"
+          aria-label={`Resume ${session.title} in a managed CLI`}
+          aria-busy={activating}
+          disabled={activating}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onResumeSession();
+          }}
+        >
+          <SquareTerminal size={13} aria-hidden="true" />
+        </button>
+      ) : null}
       {canBindWindow ? (
         <button
           type="button"

@@ -91,6 +91,21 @@
   box-shadow: 0 6px 14px rgba(42, 74, 64, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.72);
 }
 
+:root[data-amo-theme="light"] .card-managed-launch-button {
+  color: #3f6f24;
+  background: linear-gradient(145deg, #f7fcf3, #e3f3d8);
+  border-color: rgba(83, 139, 47, 0.3);
+  box-shadow: 0 6px 14px rgba(42, 74, 64, 0.09), inset 0 1px 0 rgba(255, 255, 255, 0.72);
+}
+
+:root[data-amo-theme="light"] .card-managed-launch-button:hover,
+:root[data-amo-theme="light"] .card-managed-launch-button:focus-visible {
+  color: #2d5517;
+  background: linear-gradient(145deg, #f1faeb, #d5ecc5);
+  border-color: rgba(83, 139, 47, 0.44);
+  box-shadow: 0 7px 16px rgba(42, 74, 64, 0.13), 0 0 0 2px rgba(83, 139, 47, 0.1);
+}
+
 :root[data-amo-theme="light"] .card-bind-drag-button:hover,
 :root[data-amo-theme="light"] .card-bind-drag-button:focus-visible,
 :root[data-amo-theme="light"] .card-bind-drag-button.is-dragging {

@@ -127,6 +127,7 @@
 }
 
 .card-launch-button,
+.card-managed-launch-button,
 .card-bind-drag-button,
 .card-maintenance-button,
 .card-archive-button,
@@ -160,6 +161,18 @@
   background: rgba(90, 178, 220, 0.09);
   border-color: rgba(90, 178, 220, 0.18);
   cursor: grab;
+}
+
+.card-managed-launch-button {
+  right: 59px;
+  color: #d8f5d3;
+  background: rgba(126, 205, 111, 0.09);
+  border-color: rgba(126, 205, 111, 0.2);
+}
+
+.card-managed-launch-button.is-busy {
+  cursor: wait;
+  opacity: 0.68;
 }
 
 .card-bind-drag-button.is-dragging {
@@ -203,6 +216,7 @@
 }
 
 .card-launch-button svg,
+.card-managed-launch-button svg,
 .card-bind-drag-button svg,
 .card-maintenance-button svg,
 .card-archive-button svg,
@@ -213,6 +227,8 @@
 
 .card-launch-button:hover,
 .card-launch-button:focus-visible,
+.card-managed-launch-button:hover,
+.card-managed-launch-button:focus-visible,
 .card-bind-drag-button:hover,
 .card-bind-drag-button:focus-visible,
 .card-maintenance-button:hover,
