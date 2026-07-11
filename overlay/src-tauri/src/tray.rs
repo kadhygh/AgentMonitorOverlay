@@ -198,6 +198,7 @@ pub(crate) fn install(app: &mut App) -> Result<(), Box<dyn Error>> {
             hide_main_window(app);
         } else if event.id() == QUIT_MENU_ID {
             app.state::<TrayState>().shutdown_and_restore();
+            crate::broker::stop_owned_broker();
             app.exit(0);
         }
     });

@@ -7,7 +7,7 @@ mod scratchpad;
 mod tray;
 mod windows;
 
-use broker::ensure_local_broker;
+use broker::{ensure_local_broker, stop_owned_broker};
 use clipboard::write_text_to_clipboard;
 use dialogs::pick_workspace_directory;
 use models::*;
@@ -141,8 +141,13 @@ pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
         .setup(|app| {
+            let broker = ensure_local_broker();
+            if !broker.ok {
+                eprintln!("AMO Broker startup failed: {}", broker.message);
+            }
             scratchpad::install_scratchpad_mouse_hook(app.handle().clone());
             tray::install(app)?;
+            schedule_smoke_exit(app.handle().clone());
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -164,7 +169,23 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            stop_owned_broker();
             tray::stop_worker(app_handle);
         }
+    });
+}
+
+fn schedule_smoke_exit(app: tauri::AppHandle) {
+    let delay_ms = std::env::var("AGENT_MONITOR_SMOKE_EXIT_AFTER_MS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|value| *value > 0);
+    let Some(delay_ms) = delay_ms else {
+        return;
+    };
+
+    std::thread::spawn(move || {
+        std::thread::sleep(std::time::Duration::from_millis(delay_ms));
+        app.exit(0);
     });
 }
