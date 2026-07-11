@@ -358,6 +358,7 @@ Codex Auto-review may emit `PermissionRequest` before the reviewer decides that 
 - Keep Claude permission behavior immediate until its lifecycle evidence proves the same delay is useful.
 - Keep provisional requests in memory only. A Broker restart may discard them because they are transient UI suppression state, not conversation history.
 - Record `permission.provisional_started`, `permission.auto_resolved`, and `permission.promoted_to_attention` in debug logs.
+- After Broker promotion, delay the Windows native permission notification for another 10 seconds. Cancel it if the same attention key resolves or changes first; review and failure notifications remain immediate.
 
 Acceptance:
 

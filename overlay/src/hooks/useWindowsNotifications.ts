@@ -20,6 +20,8 @@ interface UseWindowsNotificationsOptions {
   sessions: AgentSession[];
 }
 
+const PERMISSION_NOTIFICATION_DELAY_MS = 10_000;
+
 function attentionNotificationKey(session: AgentSession) {
   if (sessionNeedsReview(session)) {
     return `review|${session.reviewTurnId || session.reviewRequestedAt || session.lastReplyAt || session.updatedAt}`;
@@ -70,6 +72,27 @@ export function useWindowsNotifications({
 }: UseWindowsNotificationsOptions) {
   const [enabled, setEnabled] = useState(() => loadWindowsNotificationsEnabled());
   const previousAttentionKeysRef = useRef<Map<string, string> | null>(null);
+  const sessionsRef = useRef(sessions);
+  const enabledRef = useRef(enabled);
+  const pendingPermissionNotificationsRef = useRef<
+    Map<string, { key: string; timer: number }>
+  >(new Map());
+
+  useEffect(() => {
+    sessionsRef.current = sessions;
+  }, [sessions]);
+
+  useEffect(() => {
+    enabledRef.current = enabled;
+  }, [enabled]);
+
+  useEffect(() => {
+    const pending = pendingPermissionNotificationsRef.current;
+    return () => {
+      pending.forEach(({ timer }) => window.clearTimeout(timer));
+      pending.clear();
+    };
+  }, []);
 
   useEffect(() => {
     let unlisten: (() => void) | null = null;
@@ -108,6 +131,16 @@ export function useWindowsNotifications({
     const previousKeys = previousAttentionKeysRef.current;
     previousAttentionKeysRef.current = currentKeys;
 
+    for (const [sessionId, pending] of pendingPermissionNotificationsRef.current) {
+      if (currentKeys.get(sessionId) === pending.key && enabled) continue;
+      window.clearTimeout(pending.timer);
+      pendingPermissionNotificationsRef.current.delete(sessionId);
+      postDebugLog("windows_notification.permission_cancelled", {
+        sessionId,
+        reason: enabled ? "attention-cleared-or-changed" : "notifications-disabled",
+      });
+    }
+
     if (previousKeys === null) {
       postDebugLog("windows_notification.baseline", {
         attentionCount: attentionSessions.length,
@@ -123,17 +156,54 @@ export function useWindowsNotifications({
     }
 
     newlyAttention.forEach((session) => {
-      void showWindowsNotification(
-        attentionNotificationTitle(session),
-        attentionNotificationBody(session),
-      ).then((result) => {
-        postDebugLog(result.ok ? "windows_notification.sent" : "windows_notification.skipped", {
-          sessionId: session.sessionId,
-          message: result.message,
-        });
+      const key = currentKeys.get(session.sessionId);
+      if (!key) return;
+      if (session.state !== "waiting_permission") {
+        void sendNotification(session, key, postDebugLog);
+        return;
+      }
+
+      const timer = window.setTimeout(() => {
+        pendingPermissionNotificationsRef.current.delete(session.sessionId);
+        if (!enabledRef.current) return;
+        const currentSession = sessionsRef.current.find((item) => item.sessionId === session.sessionId);
+        if (
+          !currentSession ||
+          currentSession.state !== "waiting_permission" ||
+          !sessionHasAttentionSignal(currentSession) ||
+          attentionNotificationKey(currentSession) !== key
+        ) {
+          postDebugLog("windows_notification.permission_cancelled", {
+            sessionId: session.sessionId,
+            reason: "resolved-before-delay",
+          });
+          return;
+        }
+        void sendNotification(currentSession, key, postDebugLog);
+      }, PERMISSION_NOTIFICATION_DELAY_MS);
+      pendingPermissionNotificationsRef.current.set(session.sessionId, { key, timer });
+      postDebugLog("windows_notification.permission_scheduled", {
+        sessionId: session.sessionId,
+        delayMs: PERMISSION_NOTIFICATION_DELAY_MS,
       });
     });
   }, [brokerReady, enabled, sessions]);
 
   return { windowsNotificationsEnabled: enabled };
+}
+
+async function sendNotification(
+  session: AgentSession,
+  key: string,
+  postDebugLog: (event: string, data?: unknown) => void,
+) {
+  const result = await showWindowsNotification(
+    attentionNotificationTitle(session),
+    attentionNotificationBody(session),
+  );
+  postDebugLog(result.ok ? "windows_notification.sent" : "windows_notification.skipped", {
+    sessionId: session.sessionId,
+    attentionKey: key,
+    message: result.message,
+  });
 }
