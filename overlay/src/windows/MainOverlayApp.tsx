@@ -38,6 +38,7 @@ import { usePendingPromptSync } from "../hooks/usePendingPromptSync";
 import { useSessionActions } from "../hooks/useSessionActions";
 import { useTargetActivation } from "../hooks/useTargetActivation";
 import { useWindowBindDrag } from "../hooks/useWindowBindDrag";
+import { useWindowsNotifications } from "../hooks/useWindowsNotifications";
 import { useWorkspacePanels } from "../hooks/useWorkspacePanels";
 import { SessionRowContent, toolDisplayForSession } from "../components/SessionCard";
 import {
@@ -125,6 +126,7 @@ export function MainOverlayApp() {
     brokerReadiness,
     ensureBrokerThenRefresh,
     feedback,
+    hasLoadedSessionSnapshot,
     lastRefreshAt,
     refreshSessions,
     sessionOrder,
@@ -241,6 +243,7 @@ export function MainOverlayApp() {
     bindWindowAtCursor,
     openCodexAppTarget,
     openCodexCliTarget,
+    resumeManagedSession,
   } = useTargetActivation({
     clearSessionAttentionAfterActivation,
     markSessionReviewed,
@@ -342,6 +345,12 @@ export function MainOverlayApp() {
     () => sessions.filter((session) => !sessionArchived(session) && sessionHasAttentionSignal(session)).length,
     [sessions],
   );
+
+  useWindowsNotifications({
+    brokerReady: brokerReady && hasLoadedSessionSnapshot,
+    postDebugLog,
+    sessions,
+  });
 
   useEffect(() => {
     sessionsRef.current = sessions;
@@ -622,6 +631,7 @@ export function MainOverlayApp() {
                   onDismiss={() => void dismissSession(session)}
                   onOpenCodexAppTarget={() => void openCodexAppTarget(session, true)}
                   onActivateSession={() => void activateSession(session)}
+                  onResumeSession={() => void resumeManagedSession(session)}
                   onHandleAttention={() => void handleSessionAttention(session)}
                   onOpenLaunchPanel={(x, y) => void openLaunchPanel(session, x, y)}
                   onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
@@ -742,6 +752,7 @@ export function MainOverlayApp() {
                     onDismiss={() => undefined}
                     onOpenCodexAppTarget={() => undefined}
                     onActivateSession={() => undefined}
+                    onResumeSession={() => undefined}
                     onHandleAttention={() => undefined}
                     onOpenLaunchPanel={() => undefined}
                     onOpenWorkspacePanel={() => undefined}

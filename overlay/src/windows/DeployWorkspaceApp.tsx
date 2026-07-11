@@ -1,6 +1,6 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderPlus, X } from "lucide-react";
+import { FolderPlus, Plus, Trash2, X } from "lucide-react";
 import {
   BROKER_DEBUG_LOGS_URL,
   BROKER_WORKSPACE_CLEAN_VAULT_URL,
@@ -8,6 +8,9 @@ import {
   BROKER_WORKSPACE_GIT_EXCLUDE_URL,
   BROKER_WORKSPACE_INSPECT_URL,
   BROKER_WORKSPACE_LAUNCH_URL,
+  BROKER_WORKSPACE_FORGET_URL,
+  BROKER_WORKSPACES_URL,
+  getBrokerJson,
   postBrokerJson,
 } from "../api/brokerClient";
 import {
@@ -33,6 +36,8 @@ import type {
   WorkspaceGitExcludeResult,
   WorkspaceInspection,
   WorkspaceLaunchResult,
+  WorkspaceRegistryEntry,
+  WorkspaceRegistryResult,
 } from "../types";
 import {
   closeUtilityWindow,
@@ -59,6 +64,24 @@ export function DeployWorkspaceApp() {
   const [includeClaudeSettingsExclude, setIncludeClaudeSettingsExclude] = useState(false);
   const includeClaudeSettingsExcludeRef = useRef(false);
   const [feedback, setFeedback] = useState("Choose or paste a workspace path.");
+  const [registeredWorkspaces, setRegisteredWorkspaces] = useState<WorkspaceRegistryEntry[]>([]);
+  const [registryBusy, setRegistryBusy] = useState(false);
+
+  useEffect(() => {
+    void loadWorkspaceRegistry();
+  }, []);
+
+  async function loadWorkspaceRegistry() {
+    setRegistryBusy(true);
+    try {
+      const result = await getBrokerJson<WorkspaceRegistryResult>(BROKER_WORKSPACES_URL);
+      setRegisteredWorkspaces(result.workspaces);
+    } catch (error) {
+      setFeedback(`Workspace list failed: ${(error as Error).message}`);
+    } finally {
+      setRegistryBusy(false);
+    }
+  }
 
   async function postUtilityDebugLog(event: string, data?: unknown) {
     try {
@@ -107,6 +130,7 @@ export function DeployWorkspaceApp() {
       const selectedAdapters = selectedWorkspaceAdapterIds(result);
       setSelectedDeployAdapters(selectedAdapters);
       setFeedback(`${result.projectName}: ${workspaceDeploymentSummary(result)}`);
+      if (result.existingEnrollment) void loadWorkspaceRegistry();
     } catch (error) {
       void postUtilityDebugLog("workspace.inspect.error", {
         workspacePath: targetPath,
@@ -283,6 +307,7 @@ export function DeployWorkspaceApp() {
       setGitExcludeResult(null);
       setSelectedDeployAdapters(selectedWorkspaceAdapterIds(refreshed));
       setFeedback(`Deployed ${result.installedAdapters.join(", ")} for ${projectName(result.workspacePath)}. ${OBSIDIAN_PLUGIN_RELOAD_HINT}`);
+      void loadWorkspaceRegistry();
     } catch (error) {
       void postUtilityDebugLog("workspace.enroll.error", {
         workspacePath: targetPath,
@@ -381,6 +406,42 @@ export function DeployWorkspaceApp() {
     }
   }
 
+  async function selectRegisteredWorkspace(workspace: WorkspaceRegistryEntry) {
+    setWorkspacePath(workspace.workspacePath);
+    setWorkspaceInspection(null);
+    setWorkspaceEnrollment(null);
+    setSelectedDeployAdapters([]);
+    if (!workspace.available) {
+      setFeedback(`${workspace.projectName} is unavailable. Locate it with Choose or forget this registry entry.`);
+      return;
+    }
+    await inspectWorkspace(workspace.workspacePath);
+  }
+
+  async function forgetRegisteredWorkspace(workspace: WorkspaceRegistryEntry) {
+    try {
+      await postBrokerJson<{ ok: boolean }>(BROKER_WORKSPACE_FORGET_URL, { workspaceId: workspace.workspaceId });
+      if (workspacePath === workspace.workspacePath) {
+        setWorkspacePath("");
+        setWorkspaceInspection(null);
+        setWorkspaceEnrollment(null);
+      }
+      await loadWorkspaceRegistry();
+      setFeedback(`Forgot ${workspace.projectName}. Project files were not changed.`);
+    } catch (error) {
+      setFeedback(`Forget failed: ${(error as Error).message}`);
+    }
+  }
+
+  function prepareNewWorkspace() {
+    setWorkspacePath("");
+    setWorkspaceInspection(null);
+    setWorkspaceEnrollment(null);
+    setSelectedDeployAdapters([]);
+    setGitRootPath("");
+    setFeedback("Choose or paste a workspace path.");
+  }
+
   async function openDeploymentPath(path: string | undefined, label: string) {
     if (!path) return;
     try {
@@ -407,8 +468,8 @@ export function DeployWorkspaceApp() {
           <div className="app-dialog-title" onPointerDown={startUtilityWindowDrag}>
             <FolderPlus size={16} aria-hidden="true" />
             <div>
-              <strong>Deploy Workspace</strong>
-              <span>Project-local hooks and AMO vault</span>
+              <strong>Workspace Center</strong>
+              <span>Projects, adapters and managed launches</span>
             </div>
           </div>
           <button
@@ -426,6 +487,43 @@ export function DeployWorkspaceApp() {
         </header>
 
         <div className="deploy-dialog-body">
+          <aside className="workspace-registry" aria-label="Registered workspaces">
+            <div className="workspace-registry-heading">
+              <div>
+                <strong>Workspaces</strong>
+                <span>{registryBusy ? "Loading" : `${registeredWorkspaces.length} registered`}</span>
+              </div>
+              <button type="button" title="Add workspace" onClick={prepareNewWorkspace}>
+                <Plus size={14} aria-hidden="true" />
+              </button>
+            </div>
+            <div className="workspace-registry-list">
+              {registeredWorkspaces.length === 0 ? (
+                <p>No deployed workspaces yet.</p>
+              ) : registeredWorkspaces.map((workspace) => (
+                <div
+                  className={`workspace-registry-item${workspace.workspacePath === workspacePath ? " selected" : ""}`}
+                  key={workspace.workspaceId}
+                >
+                  <button type="button" className="workspace-registry-select" onClick={() => void selectRegisteredWorkspace(workspace)}>
+                    <span className={`workspace-status-dot ${workspace.status}`} aria-hidden="true" />
+                    <span>
+                      <strong>{workspace.projectName}</strong>
+                      <small>{workspace.adapterIds.join(" + ") || "No adapters"}</small>
+                    </span>
+                  </button>
+                  <button
+                    type="button"
+                    className="workspace-registry-forget"
+                    title="Forget workspace"
+                    onClick={() => void forgetRegisteredWorkspace(workspace)}
+                  >
+                    <Trash2 size={12} aria-hidden="true" />
+                  </button>
+                </div>
+              ))}
+            </div>
+          </aside>
           <DeployWorkspaceSection
             workspacePath={workspacePath}
             workspaceInspection={workspaceInspection}

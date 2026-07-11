@@ -119,6 +119,52 @@ async function handleSessionRoutes(req, res, url, context) {
     return sendHandled(res, 200, { ok: true, session });
   }
 
+  const resumeMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/resume$/);
+  if (req.method === "POST" && resumeMatch) {
+    const sessionId = decodeURIComponent(resumeMatch[1]);
+    const existing = context.sessions.get(sessionId);
+    if (!existing) {
+      const error = new Error(`Session not found for resume: ${sessionId}`);
+      error.statusCode = 404;
+      error.code = "session_not_found";
+      throw error;
+    }
+
+    const activeResume = context.launchStore.findActiveResume(sessionId);
+    if (activeResume) {
+      return sendHandled(res, 200, { ok: true, duplicate: true, launch: activeResume, session: existing });
+    }
+
+    const rawTool = String(existing.tool || "").toLowerCase();
+    const adapterId = rawTool.includes("claude") ? "claude-cli" : rawTool.includes("codex") ? "codex-cli" : null;
+    if (!adapterId) {
+      const error = new Error(`Session tool cannot be resumed as a managed CLI: ${existing.tool || "unknown"}`);
+      error.statusCode = 400;
+      error.code = "unsupported_resume_tool";
+      throw error;
+    }
+    const workspacePath = existing.workspacePath || existing.cwd;
+    const result = await context.launchWorkspace(
+      { workspacePath, adapterId, sessionId, sourceCardSessionId: sessionId },
+      { launchStore: context.launchStore, recordDebugLog: context.recordDebugLog }
+    );
+    const now = new Date().toISOString();
+    const session = {
+      ...existing,
+      launchId: result.launch?.launchId || null,
+      launchState: result.launch?.state || "waiting_hook",
+      launchRevision: (existing.launchRevision || 0) + 1,
+      windowHint: result.windowHint || null,
+      targetBinding: existing.targetBinding?.boundBy === "managed-launch" ? null : existing.targetBinding || null,
+      lastEvent: "ManagedLaunchResume",
+      updatedAt: now,
+    };
+    context.sessions.set(sessionId, session);
+    context.persistSnapshot();
+    context.publishSessionChanged("managed-launch-resume", session);
+    return sendHandled(res, 200, { ...result, session });
+  }
+
   return false;
 }
 

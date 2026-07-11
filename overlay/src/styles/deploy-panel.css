@@ -1,17 +1,83 @@
 .deploy-panel {
   grid-template-rows: max-content minmax(0, 1fr) max-content;
-  width: min(732px, calc(100vw - 28px));
+  width: min(980px, calc(100vw - 28px));
   height: min(572px, calc(100vh - 28px));
 }
 
 .deploy-dialog-body {
   display: grid;
-  grid-template-columns: minmax(280px, 0.9fr) minmax(300px, 1.1fr);
+  grid-template-columns: 190px minmax(280px, 0.9fr) minmax(300px, 1.1fr);
   gap: 10px;
   min-width: 0;
   min-height: 0;
   padding: 10px;
   overflow: hidden;
+}
+
+.workspace-registry {
+  display: grid;
+  grid-template-rows: max-content minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+  min-height: 0;
+  padding: 9px;
+  overflow: hidden;
+  background: rgba(0, 0, 0, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 7px;
+}
+
+.workspace-registry-heading,
+.workspace-registry-heading > div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+  min-width: 0;
+}
+
+.workspace-registry-heading > div {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.workspace-registry-heading strong { color: #edf8f4; font-size: 12px; }
+.workspace-registry-heading span { color: #879993; font-size: 9px; text-transform: uppercase; }
+.workspace-registry-heading button,
+.workspace-registry-forget {
+  display: grid;
+  place-items: center;
+  width: 27px;
+  height: 27px;
+  padding: 0;
+  color: #aebeb8;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.workspace-registry-list { display: grid; align-content: start; gap: 5px; min-height: 0; overflow: auto; }
+.workspace-registry-list > p { margin: 8px 4px; color: #879993; font-size: 10px; line-height: 14px; }
+.workspace-registry-item { display: grid; grid-template-columns: minmax(0, 1fr) max-content; align-items: center; gap: 3px; border: 1px solid transparent; border-radius: 6px; }
+.workspace-registry-item.selected { background: rgba(105, 216, 182, 0.09); border-color: rgba(105, 216, 182, 0.22); }
+.workspace-registry-select { display: grid; grid-template-columns: max-content minmax(0, 1fr); align-items: center; gap: 7px; min-width: 0; padding: 7px; color: inherit; background: transparent; border: 0; text-align: left; cursor: pointer; }
+.workspace-registry-select > span:last-child { display: grid; gap: 2px; min-width: 0; }
+.workspace-registry-select strong,
+.workspace-registry-select small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.workspace-registry-select strong { color: #dcece7; font-size: 11px; }
+.workspace-registry-select small { color: #879993; font-size: 9px; }
+.workspace-status-dot { width: 7px; height: 7px; background: #69d8b6; border-radius: 50%; }
+.workspace-status-dot.unavailable { background: #e58b79; }
+.workspace-status-dot.unenrolled { background: #d5b96e; }
+.workspace-registry-forget { width: 24px; height: 24px; margin-right: 3px; opacity: 0; }
+.workspace-registry-item:hover .workspace-registry-forget,
+.workspace-registry-item:focus-within .workspace-registry-forget { opacity: 1; }
+
+@media (max-width: 780px) {
+  .deploy-dialog-body { grid-template-columns: minmax(150px, 0.55fr) minmax(280px, 1fr); }
+  .deploy-dialog-body > .dialog-section:last-child { display: none; }
 }
 
 .dialog-section {

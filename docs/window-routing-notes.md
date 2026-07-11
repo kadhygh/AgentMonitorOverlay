@@ -4,6 +4,8 @@ Task: Task A Window Routing Spike
 Date: 2026-05-07
 Scope: Windows-first discovery and activation path for Codex / Claude / Kiro windows.
 
+Current managed-launch direction: `docs/workspace-managed-launch-plan.md`. That plan supersedes heuristic automatic binding for AMO-controlled CLI launches. This document remains the Win32 discovery, candidate selection, and activation reference for manual/unmanaged windows.
+
 ## Goal
 
 Phase 1 needs to prove that the overlay can map a broker session to an existing desktop window and activate it after the user clicks a session row. This note focuses on the routing contract, not on broker, adapter, or overlay implementation.
@@ -257,3 +259,5 @@ If accepted, Task B/C can treat `windowHint.titleToken` as the default portable 
   https://learn.microsoft.com/windows/win32/api/winuser/nf-winuser-setforegroundwindow
 - Tauri v2 window API documents Tauri-managed window focus/minimize operations; external app activation still needs native platform APIs.
   https://v2.tauri.app/reference/javascript/api/namespacewindow/
+- Windows Terminal supports `--suppressApplicationTitle`; managed launches use it so the exact AMO `launchId` title token survives CLI title updates and remains a reliable activation hint after hook claim.
+  https://learn.microsoft.com/en-us/windows/terminal/command-line-arguments#using-application-title

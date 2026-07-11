@@ -229,6 +229,11 @@
   border-color: rgba(111, 224, 190, 0.28);
 }
 
+.settings-primary-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
 .theme-choice-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));

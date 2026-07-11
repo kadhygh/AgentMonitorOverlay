@@ -96,6 +96,7 @@ function handleReply(payload, context) {
   const canvas = appendConversationNoteToCanvas(amoRoot, vaultRoot, record, note);
 
   const session = reviveArchivedSession({
+    ...(existing || {}),
     tool,
     sessionId,
     cwd,

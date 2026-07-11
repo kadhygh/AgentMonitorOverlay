@@ -1,6 +1,6 @@
 # Supervisor Status
 
-Updated: 2026-07-08
+Updated: 2026-07-11
 
 ## Current Git
 
@@ -18,6 +18,7 @@ Updated: 2026-07-08
 - Phase 3: prototype done, overlay UI builds, native Rust code compiles, and user smoke validation has run
 - Phase 4: spike done, Codex / Claude routes documented with example hooks; Kiro remains historical research, not an active adapter target
 - Phase 5: Hook-to-Obsidian Bridge MVP planning accepted after two external MVPs proved Codex reply capture and Obsidian annotation extraction
+- Phase 6: Workspace Center and managed CLI launch identity accepted for implementation planning; see `docs/workspace-managed-launch-plan.md`
 
 ## Active Tasks
 

@@ -2,9 +2,9 @@ const path = require("path");
 
 const AMO_DIR = ".amo";
 const AMO_SCHEMA_VERSION = 1;
-const AMO_DEPLOYMENT_VERSION = 2;
+const AMO_DEPLOYMENT_VERSION = 3;
 const AMO_LAYOUT_VERSION = 2;
-const AMO_HOOK_PROTOCOL_VERSION = 2;
+const AMO_HOOK_PROTOCOL_VERSION = 3;
 const AMO_SESSIONS_PATH = "Sessions";
 const AMO_SESSION_GENERATED_PATH = "turns/generated";
 const AMO_CANVASES_PATH = "Canvases";

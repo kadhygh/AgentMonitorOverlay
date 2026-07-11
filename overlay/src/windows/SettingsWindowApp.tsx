@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bug, ClipboardPaste, Palette, Settings2, StickyNote, X } from "lucide-react";
+import { Bell, Bug, ClipboardPaste, Palette, Settings2, StickyNote, X } from "lucide-react";
 import { useDebugLogging } from "../hooks/useDebugLogging";
 import { loadCliSafePasteEnabled, saveCliSafePasteEnabled } from "../native/clipboard";
 import {
@@ -9,6 +9,11 @@ import {
   saveScratchpadShortcutState,
   type ScratchpadShortcutState,
 } from "../native/scratchpadShortcut";
+import {
+  loadWindowsNotificationsEnabled,
+  saveWindowsNotificationsEnabled,
+  showWindowsNotification,
+} from "../native/windowsNotifications";
 import { type AmoTheme, useAmoThemeRuntime } from "../theme/amoTheme";
 import type { OpenPathResult } from "../types";
 import {
@@ -17,7 +22,7 @@ import {
   useUtilityWindowLifecycle,
 } from "./utilityWindow";
 
-export type SettingsSection = "scratchpad" | "clipboard" | "theme" | "debug";
+export type SettingsSection = "scratchpad" | "clipboard" | "theme" | "notifications" | "debug";
 
 interface SettingsSidebarProps {
   settingsSection: SettingsSection;
@@ -54,6 +59,14 @@ export function SettingsSidebar({ settingsSection, onSettingsSectionChange }: Se
       </button>
       <button
         type="button"
+        className={`settings-nav-button ${settingsSection === "notifications" ? "is-active" : ""}`}
+        onClick={() => onSettingsSectionChange("notifications")}
+      >
+        <Bell size={13} aria-hidden="true" />
+        <span>Notifications</span>
+      </button>
+      <button
+        type="button"
         className={`settings-nav-button ${settingsSection === "debug" ? "is-active" : ""}`}
         onClick={() => onSettingsSectionChange("debug")}
       >
@@ -71,6 +84,7 @@ interface SettingsDetailHeaderProps {
   amoTheme: AmoTheme;
   debugEnabled: boolean;
   debugCount: number;
+  windowsNotificationsEnabled: boolean;
 }
 
 function SettingsDetailHeader({
@@ -80,15 +94,18 @@ function SettingsDetailHeader({
   amoTheme,
   debugEnabled,
   debugCount,
+  windowsNotificationsEnabled,
 }: SettingsDetailHeaderProps) {
   const title =
     settingsSection === "theme"
       ? "Theme"
       : settingsSection === "clipboard"
         ? "Clipboard"
-        : settingsSection === "debug"
-          ? "Debug"
-          : "Scratchpad";
+        : settingsSection === "notifications"
+          ? "Notifications"
+          : settingsSection === "debug"
+            ? "Debug"
+            : "Scratchpad";
   const status =
     settingsSection === "theme"
       ? amoTheme === "light"
@@ -98,13 +115,17 @@ function SettingsDetailHeader({
         ? safePasteEnabled
           ? "Safe mode"
           : "Original formatting"
-        : settingsSection === "debug"
-          ? debugEnabled
-            ? `Enabled | ${debugCount} entries`
+        : settingsSection === "notifications"
+          ? windowsNotificationsEnabled
+            ? "Enabled"
             : "Disabled"
-      : scratchpadShortcut.enabled
-        ? "Ctrl + Mouse4"
-        : "Disabled";
+          : settingsSection === "debug"
+            ? debugEnabled
+              ? `Enabled | ${debugCount} entries`
+              : "Disabled"
+            : scratchpadShortcut.enabled
+              ? "Ctrl + Mouse4"
+              : "Disabled";
 
   return (
     <header className="settings-detail-header">
@@ -230,6 +251,42 @@ function ThemeSettingsBody({ amoTheme, onAmoThemeChange }: ThemeSettingsBodyProp
   );
 }
 
+interface NotificationSettingsBodyProps {
+  enabled: boolean;
+  onEnabledChange: (enabled: boolean) => void;
+  onSendTest: () => void;
+}
+
+function NotificationSettingsBody({
+  enabled,
+  onEnabledChange,
+  onSendTest,
+}: NotificationSettingsBodyProps) {
+  return (
+    <div className="settings-section-body">
+      <label className="settings-toggle">
+        <input
+          type="checkbox"
+          checked={enabled}
+          onChange={(event) => onEnabledChange(event.currentTarget.checked)}
+        />
+        <span>Enable Windows notifications</span>
+      </label>
+      <p className="settings-help-copy">
+        Notify once when a task newly needs review, permission, or error handling. Existing attention cards are quiet when AMO starts.
+      </p>
+      <button
+        type="button"
+        className="settings-primary-action"
+        disabled={!enabled}
+        onClick={onSendTest}
+      >
+        Send test notification
+      </button>
+    </div>
+  );
+}
+
 interface DebugSettingsBodyProps {
   debugBusy: boolean;
   debugCount: number;
@@ -270,11 +327,14 @@ interface SettingsDetailProps {
   debugBusy: boolean;
   debugCount: number;
   debugEnabled: boolean;
+  windowsNotificationsEnabled: boolean;
   onScratchpadShortcutChange: (next: ScratchpadShortcutState) => void;
   onSafePasteEnabledChange: (enabled: boolean) => void;
   onOpenScratchpadNow: () => void;
   onAmoThemeChange: (theme: AmoTheme) => void;
   onToggleDebugLogging: () => void;
+  onWindowsNotificationsEnabledChange: (enabled: boolean) => void;
+  onSendTestNotification: () => void;
 }
 
 export function SettingsDetail({
@@ -285,11 +345,14 @@ export function SettingsDetail({
   debugBusy,
   debugCount,
   debugEnabled,
+  windowsNotificationsEnabled,
   onScratchpadShortcutChange,
   onSafePasteEnabledChange,
   onOpenScratchpadNow,
   onAmoThemeChange,
   onToggleDebugLogging,
+  onWindowsNotificationsEnabledChange,
+  onSendTestNotification,
 }: SettingsDetailProps) {
   return (
     <div className="settings-detail">
@@ -300,6 +363,7 @@ export function SettingsDetail({
         amoTheme={amoTheme}
         debugEnabled={debugEnabled}
         debugCount={debugCount}
+        windowsNotificationsEnabled={windowsNotificationsEnabled}
       />
 
       {settingsSection === "scratchpad" ? (
@@ -315,6 +379,12 @@ export function SettingsDetail({
         />
       ) : settingsSection === "theme" ? (
         <ThemeSettingsBody amoTheme={amoTheme} onAmoThemeChange={onAmoThemeChange} />
+      ) : settingsSection === "notifications" ? (
+        <NotificationSettingsBody
+          enabled={windowsNotificationsEnabled}
+          onEnabledChange={onWindowsNotificationsEnabledChange}
+          onSendTest={onSendTestNotification}
+        />
       ) : (
         <DebugSettingsBody
           debugBusy={debugBusy}
@@ -336,6 +406,9 @@ export function SettingsWindowApp() {
     loadScratchpadShortcutState(),
   );
   const [safePasteEnabled, setSafePasteEnabled] = useState(() => loadCliSafePasteEnabled());
+  const [windowsNotificationsEnabled, setWindowsNotificationsEnabled] = useState(() =>
+    loadWindowsNotificationsEnabled(),
+  );
   const [feedback, setFeedback] = useState("Settings ready.");
   const {
     attachFeedbackSetter,
@@ -383,6 +456,20 @@ export function SettingsWindowApp() {
     setFeedback(enabled ? "Safe CLI copy enabled." : "Original clipboard formatting enabled.");
   }
 
+  async function updateWindowsNotificationsEnabled(enabled: boolean) {
+    setWindowsNotificationsEnabled(enabled);
+    await saveWindowsNotificationsEnabled(enabled);
+    setFeedback(enabled ? "Windows notifications enabled." : "Windows notifications disabled.");
+  }
+
+  async function sendTestNotification() {
+    const result = await showWindowsNotification(
+      "AMO: Test notification",
+      "Windows notifications are ready. New attention events will appear here.",
+    );
+    setFeedback(result.message);
+  }
+
   return (
     <main className="utility-window-shell settings-window-shell">
       <section className="app-dialog settings-dialog" role="dialog" aria-label="AMO settings">
@@ -418,11 +505,14 @@ export function SettingsWindowApp() {
           debugBusy={debugBusy}
           debugCount={debugCount}
           debugEnabled={debugEnabled}
+          windowsNotificationsEnabled={windowsNotificationsEnabled}
           onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
           onSafePasteEnabledChange={updateSafePasteEnabled}
           onOpenScratchpadNow={() => void openScratchpadNow()}
           onAmoThemeChange={(next) => void updateAmoTheme(next)}
           onToggleDebugLogging={() => void toggleDebugLogging()}
+          onWindowsNotificationsEnabledChange={(enabled) => void updateWindowsNotificationsEnabled(enabled)}
+          onSendTestNotification={() => void sendTestNotification()}
         />
 
         <footer className="app-dialog-footer">

@@ -2,6 +2,35 @@
   color: #17211f;
 }
 
+:root[data-amo-theme="light"] .workspace-registry {
+  color: #24342f;
+  background: rgba(237, 245, 241, 0.78);
+  border-color: rgba(42, 74, 64, 0.13);
+}
+
+:root[data-amo-theme="light"] .workspace-registry-heading strong,
+:root[data-amo-theme="light"] .workspace-registry-select strong {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .workspace-registry-heading span,
+:root[data-amo-theme="light"] .workspace-registry-select small,
+:root[data-amo-theme="light"] .workspace-registry-list > p {
+  color: #5d6f69;
+}
+
+:root[data-amo-theme="light"] .workspace-registry-heading button,
+:root[data-amo-theme="light"] .workspace-registry-forget {
+  color: #465b54;
+  background: rgba(255, 255, 255, 0.66);
+  border-color: rgba(42, 74, 64, 0.14);
+}
+
+:root[data-amo-theme="light"] .workspace-registry-item.selected {
+  background: rgba(18, 135, 105, 0.08);
+  border-color: rgba(18, 135, 105, 0.22);
+}
+
 :root[data-amo-theme="light"] .overlay-shell,
 :root[data-amo-theme="light"] .scratchpad-shell,
 :root[data-amo-theme="light"] .utility-window-shell {

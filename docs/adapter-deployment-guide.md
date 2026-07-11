@@ -4,6 +4,8 @@ Updated: 2026-07-08
 
 This guide defines how Agent Monitor Overlay deploys workspace-local adapters and hooks. Deployment should be deterministic, script-driven, and reversible. Do not rely on an LLM to decide which files to write during normal deployment.
 
+Workspace registry, managed launch identity, Hook Protocol v3, placeholder cards, and Card resume are planned in `docs/workspace-managed-launch-plan.md`. Project-local deployment metadata remains authoritative; the future broker Workspace Registry is only an index of explicitly enrolled projects.
+
 ## Goals
 
 - Start from a user-selected project folder.

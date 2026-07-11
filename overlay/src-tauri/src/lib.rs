@@ -12,6 +12,7 @@ use clipboard::write_text_to_clipboard;
 use dialogs::pick_workspace_directory;
 use models::*;
 use opener::{open_external_target, open_local_path};
+use tauri_plugin_notification::NotificationExt;
 use windows::{
     activate_external_window, external_window_candidate_at_cursor, list_external_window_candidates,
 };
@@ -112,6 +113,20 @@ fn ensure_broker() -> BrokerEnsureResult {
 }
 
 #[tauri::command]
+fn show_windows_notification(app: tauri::AppHandle, title: String, body: String) -> OpenPathResult {
+    match app.notification().builder().title(title).body(body).show() {
+        Ok(()) => OpenPathResult {
+            ok: true,
+            message: "Windows notification sent.".to_string(),
+        },
+        Err(error) => OpenPathResult {
+            ok: false,
+            message: format!("Windows notification failed: {error}"),
+        },
+    }
+}
+
+#[tauri::command]
 fn set_scratchpad_shortcut_config(config: ScratchpadShortcutConfig) -> ScratchpadShortcutResult {
     scratchpad::set_scratchpad_shortcut_config(config)
 }
@@ -124,6 +139,7 @@ fn show_scratchpad_at_cursor(app: tauri::AppHandle) -> OpenPathResult {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .plugin(tauri_plugin_notification::init())
         .setup(|app| {
             scratchpad::install_scratchpad_mouse_hook(app.handle().clone());
             tray::install(app)?;
@@ -137,6 +153,7 @@ pub fn run() {
             open_path,
             select_workspace_directory,
             set_scratchpad_shortcut_config,
+            show_windows_notification,
             tray::set_tray_attention_state,
             show_scratchpad_at_cursor,
             open_uri,

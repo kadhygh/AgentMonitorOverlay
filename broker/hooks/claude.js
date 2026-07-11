@@ -12,8 +12,8 @@ const CLAUDE_HOOK_EVENTS = Object.freeze([
   "PostToolUseFailure",
 ]);
 function claudeMessageHookScript(options = {}) {
-  const deploymentVersion = options.deploymentVersion ?? 2;
-  const hookProtocolVersion = options.hookProtocolVersion ?? 2;
+  const deploymentVersion = options.deploymentVersion ?? 3;
+  const hookProtocolVersion = options.hookProtocolVersion ?? 3;
   return [
     "import fs from 'node:fs/promises';",
     "import path from 'node:path';",
@@ -66,6 +66,10 @@ function claudeMessageHookScript(options = {}) {
     "      amoDeploymentVersion,",
     "      amoHookProtocolVersion,",
     "      amoHookEvents,",
+    "      launchId: normalizeEnv('AMO_LAUNCH_ID'),",
+    "      workspaceId: normalizeEnv('AMO_WORKSPACE_ID'),",
+    "      workspacePath: normalizeEnv('AMO_WORKSPACE_PATH'),",
+    "      requestedSessionId: normalizeEnv('AMO_REQUESTED_SESSION_ID'),",
     "      tool: 'claude',",
     "      role: isPromptEvent ? 'user' : isReplyEvent ? 'assistant' : 'event',",
     "      source: isPromptEvent ? 'claude-user-prompt-hook' : isReplyEvent ? 'claude-stop-hook' : 'claude-event-hook',",
@@ -257,6 +261,11 @@ function claudeMessageHookScript(options = {}) {
     "",
     "function normalizeMessage(value) {",
     "  return typeof value === 'string' ? value.replace(/\\r\\n?/g, '\\n').trim() : '';",
+    "}",
+    "",
+    "function normalizeEnv(name) {",
+    "  const value = process.env[name];",
+    "  return typeof value === 'string' && value.trim() ? value.trim() : null;",
     "}",
     "",
     "function fileSafeTimestamp(value) {",

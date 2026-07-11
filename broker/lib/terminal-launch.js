@@ -1,8 +1,12 @@
 const { spawn } = require("child_process");
 
-async function launchCliInTerminal({ workspacePath, title, command, args = [], recordDebugLog = null }) {
+async function launchCliInTerminal({ workspacePath, title, command, args = [], environment = {}, recordDebugLog = null }) {
   const cliArgs = args.map(powershellSingleQuoted).join(" ");
-  const commandLine = `$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)}; & ${command}${cliArgs ? ` ${cliArgs}` : ""}`;
+  const environmentAssignments = Object.entries(environment)
+    .filter(([, value]) => value !== null && value !== undefined && String(value).length > 0)
+    .map(([name, value]) => `$env:${name} = ${powershellSingleQuoted(value)}`)
+    .join("; ");
+  const commandLine = `${environmentAssignments ? `${environmentAssignments}; ` : ""}$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)}; & ${command}${cliArgs ? ` ${cliArgs}` : ""}`;
   const powershellArgs = powershellNoExitEncodedArgs(commandLine);
   if (process.platform === "win32") {
     const wtArgs = [
@@ -11,6 +15,7 @@ async function launchCliInTerminal({ workspacePath, title, command, args = [], r
       "new-tab",
       "--title",
       title,
+      "--suppressApplicationTitle",
       "-d",
       workspacePath,
       "powershell.exe",

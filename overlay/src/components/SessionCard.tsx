@@ -8,6 +8,7 @@ import {
   ListFilter,
   Map as MapIcon,
   Plus,
+  RotateCcw,
   Settings2,
   SquareTerminal,
   Unlink2,
@@ -127,6 +128,7 @@ interface SessionRowContentProps {
   onDismiss: () => void;
   onOpenCodexAppTarget: () => void;
   onActivateSession: () => void;
+  onResumeSession: () => void;
   onHandleAttention: () => void;
   onOpenLaunchPanel: (x: number, y: number) => void;
   onOpenWorkspacePanel: (x: number, y: number) => void;
@@ -152,6 +154,7 @@ export function SessionRowContent({
   onDismiss,
   onOpenCodexAppTarget,
   onActivateSession,
+  onResumeSession,
   onHandleAttention,
   onOpenLaunchPanel,
   onOpenWorkspacePanel,
@@ -160,15 +163,18 @@ export function SessionRowContent({
 }: SessionRowContentProps) {
   const notePath = notePathForOpen(session);
   const canvasPath = canvasPathForOpen(session);
-  const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid);
+  const managedConnected = Boolean(session.launchId && session.launchState === "connected" && session.windowHint?.titleToken);
+  const managedOffline = Boolean(session.launchId && session.launchState === "offline");
+  const managedLaunching = Boolean(session.launchId && ["created", "spawning", "waiting_hook", "launching"].includes(session.launchState || ""));
+  const windowBound = Boolean(session.windowHint?.hwnd || session.windowHint?.pid || managedConnected);
   const targetBinding = targetBindingForSession(session);
   const targetBound = Boolean(targetBinding);
   const canUnbindTarget = Boolean(targetBinding && targetBinding.type !== "codex-cli-session");
-  const canBindWindow = !targetBinding || targetBinding.type === "codex-cli-session";
+  const canBindWindow = (!targetBinding || targetBinding.type === "codex-cli-session") && !managedConnected;
   const archived = sessionArchived(session);
   const archiveActionBusy = archiving || dismissing;
   const codexAppAvailable = isCodexSession(session);
-  const needsTargetChoice = codexAppAvailable && !targetBound;
+  const needsTargetChoice = codexAppAvailable && !targetBound && !managedConnected && !managedOffline && !managedLaunching;
   const noteOpening = openingTarget === "note";
   const canvasOpening = openingTarget === "canvas";
   const waitingForPermission = session.state === "waiting_permission";
@@ -176,7 +182,15 @@ export function SessionRowContent({
   const reviewPending = sessionNeedsReview(session);
   const attentionTone = reviewPending ? "review" : waitingForPermission ? "permission" : failed ? "failed" : "attention";
   const display = toolDisplayForSession(session);
-  const statusLabel = activating ? "Opening" : reviewPending ? "Review" : stateLabel[session.state];
+  const statusLabel = activating
+    ? "Opening"
+    : managedLaunching
+    ? "Launching"
+    : managedOffline
+    ? "Offline"
+    : reviewPending
+    ? "Review"
+    : stateLabel[session.state];
   const maintenanceTone = maintenanceToneForSession(session);
   const sessionProjectName = projectName(session.cwd);
   const threadTitle = session.title?.trim() || sessionProjectName;
@@ -300,7 +314,7 @@ export function SessionRowContent({
             ) : null}
             {windowBound && !targetBound ? (
               <span className="session-tag" title={session.windowHint?.boundLabel ?? session.windowHint?.title ?? session.title}>
-                Window hint
+                {managedConnected ? "Managed CLI" : "Window hint"}
               </span>
             ) : null}
             {targetBound ? (
@@ -308,9 +322,14 @@ export function SessionRowContent({
                 Target: {targetLabelForSession(session)}
               </span>
             ) : null}
+            {managedOffline ? (
+              <span className="session-tag" title="This session is not the current session in its previous managed CLI">
+                Offline
+              </span>
+            ) : null}
           </span>
         </span>
-        {reviewPending || notePath || canvasPath || targetBound || waitingForPermission || failed || codexAppAvailable ? (
+        {reviewPending || notePath || canvasPath || targetBound || managedConnected || managedOffline || managedLaunching || waitingForPermission || failed || codexAppAvailable ? (
           <span className="bridge-actions" aria-label="Bridge actions">
             {reviewPending ? (
               <button
@@ -430,6 +449,39 @@ export function SessionRowContent({
               >
                 <SquareTerminal size={13} aria-hidden="true" />
                 <span>CLI</span>
+              </button>
+            ) : null}
+            {managedConnected && targetBinding?.type !== "codex-cli-session" ? (
+              <button
+                type="button"
+                className={`row-tool-button codex-cli-target-button is-target ${activating ? "is-busy" : ""}`}
+                aria-busy={activating}
+                title="Focus this AMO-managed CLI"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onActivateSession();
+                }}
+              >
+                <SquareTerminal size={13} aria-hidden="true" />
+                <span>CLI</span>
+              </button>
+            ) : null}
+            {managedOffline || managedLaunching ? (
+              <button
+                type="button"
+                className={`row-tool-button codex-cli-target-button ${activating || managedLaunching ? "is-busy" : ""}`}
+                aria-busy={activating || managedLaunching}
+                disabled={activating || managedLaunching}
+                title={managedLaunching ? "Waiting for the resumed CLI hook" : "Resume this session in a new managed CLI"}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onResumeSession();
+                }}
+              >
+                <RotateCcw size={13} aria-hidden="true" />
+                <span>{managedLaunching ? "Launching" : "Resume CLI"}</span>
               </button>
             ) : null}
             {canUnbindTarget ? (

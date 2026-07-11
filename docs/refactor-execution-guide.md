@@ -266,8 +266,8 @@ Move responsibilities:
 
 - `updateWorkspaceGitExclude`
 - `launchWorkspace`
-- `codexCliLaunchRoute`
-- `bindLaunchedCodexCliTarget`
+- managed launch intent creation and terminal environment injection
+- `launchId` claim is owned by `broker/lib/launch-store.js`, not by the launch process PID
 - `inspectWorkspaceMaintenance`
 - `cleanWorkspaceVault`
 - `updateWorkspaceObsidianPlugin`

@@ -34,6 +34,8 @@ function Clear-VerificationData {
     $dataName = Split-Path -Leaf $dataFile
 
     Remove-Item -LiteralPath $dataFile -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $dataDir "workspaces.json") -Force -ErrorAction SilentlyContinue
+    Remove-Item -LiteralPath (Join-Path $dataDir "launches.json") -Force -ErrorAction SilentlyContinue
 
     if (Test-Path -LiteralPath $dataDir) {
         Get-ChildItem -LiteralPath $dataDir -Filter "$dataName.*.tmp" -File -ErrorAction SilentlyContinue |
@@ -107,6 +109,7 @@ function Start-Broker {
     $env:AGENT_MONITOR_HOST = $HostName
     $env:AGENT_MONITOR_PORT = [string]$Port
     $env:AGENT_MONITOR_DATA_FILE = $dataFile
+    $env:AGENT_MONITOR_PERMISSION_GRACE_MS = "150"
 
     Start-Process -FilePath "node" `
         -ArgumentList @($serverPath) `
@@ -266,10 +269,10 @@ try {
 
     $workspaceData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\workspace.json") | ConvertFrom-Json
     $enrollmentData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\enrollment.json") | ConvertFrom-Json
-    if ($workspaceData.deploymentVersion -ne 2 -or $workspaceData.hookProtocolVersion -ne 2) {
+    if ($workspaceData.deploymentVersion -ne 3 -or $workspaceData.hookProtocolVersion -ne 3) {
         throw "Workspace metadata does not include expected deployment/hook protocol versions."
     }
-    if ($enrollmentData.deploymentVersion -ne 2 -or $enrollmentData.hookProtocolVersion -ne 2) {
+    if ($enrollmentData.deploymentVersion -ne 3 -or $enrollmentData.hookProtocolVersion -ne 3) {
         throw "Enrollment metadata does not include expected deployment/hook protocol versions."
     }
 
@@ -284,7 +287,7 @@ try {
     if (-not $codexAdapterData.bridgeEventsUrl -or $codexAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Codex adapter config does not include bridgeEventsUrl."
     }
-    if ($codexAdapterData.deploymentVersion -ne 2 -or $codexAdapterData.hookProtocolVersion -ne 2) {
+    if ($codexAdapterData.deploymentVersion -ne 3 -or $codexAdapterData.hookProtocolVersion -ne 3) {
         throw "Codex adapter config does not include expected deployment/hook protocol versions."
     }
     if (@($codexAdapterData.hookEvents) -notcontains "PreToolUse" -or @($codexAdapterData.hookEvents) -notcontains "PostToolUse") {
@@ -301,7 +304,7 @@ try {
     if (-not $claudeAdapterData.bridgeEventsUrl -or $claudeAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Claude adapter config does not include bridgeEventsUrl."
     }
-    if ($claudeAdapterData.deploymentVersion -ne 2 -or $claudeAdapterData.hookProtocolVersion -ne 2) {
+    if ($claudeAdapterData.deploymentVersion -ne 3 -or $claudeAdapterData.hookProtocolVersion -ne 3) {
         throw "Claude adapter config does not include expected deployment/hook protocol versions."
     }
     if (@($claudeAdapterData.hookEvents) -notcontains "PreToolUse" -or @($claudeAdapterData.hookEvents) -notcontains "PostToolUse") {
@@ -340,6 +343,13 @@ try {
         throw "Single-adapter repair should preserve other enrollment adapter metadata."
     }
     Write-Host "Deployment version inspection OK -> needs-update/repair"
+
+    $workspaceRegistry = Invoke-BrokerJson -Method GET -Path "/api/workspaces"
+    $registeredWorkspace = @($workspaceRegistry.workspaces | Where-Object { $_.workspaceId -eq $enroll.workspaceId })[0]
+    if (-not $registeredWorkspace -or -not $registeredWorkspace.available -or -not $registeredWorkspace.enrollmentPresent) {
+        throw "Workspace registry did not persist the enrolled verification workspace."
+    }
+    Write-Host "Workspace registry OK -> $($registeredWorkspace.projectName)"
 
     $pluginList = Get-Content -Raw -Encoding UTF8 (Join-Path $vaultRoot ".obsidian\community-plugins.json") | ConvertFrom-Json
     if (@($pluginList) -notcontains "md-anno-tools") {
@@ -486,6 +496,29 @@ try {
 
     Write-Host "Workspace enroll OK -> $($enroll.workspaceId)"
 
+    $managedRuntimeSeed = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        sessionId = "codex-reply-verify"
+        cwd = $workspaceRoot
+        hookEventName = "PreToolUse"
+        state = "running"
+        launchId = "launch-preserve-verify"
+        launchState = "connected"
+        launchRevision = 4
+        windowHint = @{
+            title = "[AMO:codex:preserve] Codex CLI - broker-verify-workspace"
+            titleToken = "[AMO:codex:preserve]"
+            titleContains = @("[AMO:codex:preserve]")
+            cwd = $workspaceRoot
+            tool = "codex"
+            boundBy = "managed-launch"
+        }
+    }
+    if ($managedRuntimeSeed.session.launchId -ne "launch-preserve-verify") {
+        throw "Managed runtime seed did not reach the session store."
+    }
+
     $reply = Invoke-BrokerJson -Method POST -Path "/api/replies" -Body @{
         schemaVersion = 1
         tool = "codex"
@@ -501,6 +534,10 @@ try {
     if (-not $reply.ok) {
         throw "Reply endpoint failed."
     }
+    if ($reply.session.launchId -ne "launch-preserve-verify" -or $reply.session.launchState -ne "connected" -or $reply.session.windowHint.boundBy -ne "managed-launch") {
+        throw "Reply processing dropped the managed launch lease."
+    }
+    Write-Host "Managed lease preserved across reply OK -> $($reply.session.launchId)"
 
     $noteRelative = $reply.notePath -replace "/", [System.IO.Path]::DirectorySeparatorChar
     $notePath = Join-Path $vaultRoot $noteRelative
@@ -593,10 +630,16 @@ try {
         hookEventName = "PermissionRequest"
         message = "Codex is waiting for permission"
     }
-    if (-not $permissionEvent.ok -or $permissionEvent.session.state -ne "waiting_permission" -or -not $permissionEvent.session.needsAttention) {
-        throw "Permission event did not mark the session as waiting_permission."
+    if (-not $permissionEvent.ok -or -not $permissionEvent.provisional) {
+        throw "Codex permission event was not held provisionally."
     }
-    Write-Host "Permission hook event OK -> $($permissionEvent.session.state)"
+    Start-Sleep -Milliseconds 250
+    $permissionSessions = Invoke-BrokerJson -Method GET -Path "/api/sessions"
+    $promotedPermissionSession = @($permissionSessions.sessions | Where-Object { $_.sessionId -eq "codex-reply-verify" })[0]
+    if ($promotedPermissionSession.state -ne "waiting_permission" -or -not $promotedPermissionSession.needsAttention) {
+        throw "Unresolved Codex permission was not promoted after the grace period."
+    }
+    Write-Host "Permission provisional promotion OK -> $($promotedPermissionSession.state)"
 
     $autoClearHeartbeat = Invoke-BrokerJson `
         -Method POST `
@@ -616,8 +659,8 @@ try {
         hookEventName = "PermissionRequest"
         message = "Codex is waiting for permission before tool execution"
     }
-    if (-not $permissionBeforeToolLifecycle.session.needsAttention) {
-        throw "Permission precondition before PreToolUse did not mark the session as needing attention."
+    if (-not $permissionBeforeToolLifecycle.provisional) {
+        throw "Permission precondition before PreToolUse was not held provisionally."
     }
     $preToolUseEvent = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
         schemaVersion = 1
@@ -738,8 +781,8 @@ try {
         hookEventName = "PermissionRequest"
         message = "Codex is waiting for another permission before duplicate prompt replay."
     }
-    if (-not $duplicateAttention.session.needsAttention) {
-        throw "Duplicate prompt precondition did not mark the session as needing attention."
+    if (-not $duplicateAttention.provisional) {
+        throw "Duplicate prompt permission precondition was not held provisionally."
     }
     $duplicatePrompt = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
         schemaVersion = 1

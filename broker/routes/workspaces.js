@@ -1,14 +1,35 @@
 const { readJsonBody, sendJson } = require("../lib/http");
 
 async function handleWorkspaceRoutes(req, res, url, context) {
+  if (req.method === "GET" && url.pathname === "/api/workspaces") {
+    const workspaces = context.workspaceRegistry.list();
+    return sendHandled(res, 200, { ok: true, count: workspaces.length, workspaces });
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/launches") {
+    const launches = context.launchStore.list();
+    return sendHandled(res, 200, { ok: true, count: launches.length, launches });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/workspaces/inspect") {
     const payload = await readJsonBody(req);
-    return sendHandled(res, 200, context.inspectWorkspace(payload));
+    const inspection = context.inspectWorkspace(payload);
+    context.workspaceRegistry.registerInspection(inspection);
+    return sendHandled(res, 200, inspection);
   }
 
   if (req.method === "POST" && url.pathname === "/api/workspaces/enroll") {
     const payload = await readJsonBody(req);
-    return sendHandled(res, 200, context.enrollWorkspace(payload, { baseUrl: context.baseUrl, recordDebugLog: context.recordDebugLog }));
+    const enrollment = context.enrollWorkspace(payload, { baseUrl: context.baseUrl, recordDebugLog: context.recordDebugLog });
+    context.workspaceRegistry.registerEnrollment(enrollment);
+    return sendHandled(res, 200, enrollment);
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/workspaces/forget") {
+    const payload = await readJsonBody(req);
+    const workspaceId = payload?.workspaceId || payload?.workspace_id;
+    const workspace = context.workspaceRegistry.forget(workspaceId);
+    return sendHandled(res, 200, { ok: true, workspaceId: workspace.workspaceId });
   }
 
   if (req.method === "POST" && url.pathname === "/api/workspaces/git-exclude") {
@@ -18,7 +39,11 @@ async function handleWorkspaceRoutes(req, res, url, context) {
 
   if (req.method === "POST" && url.pathname === "/api/workspaces/launch") {
     const payload = await readJsonBody(req);
-    const result = await context.launchWorkspace(payload, { sessions: context.sessions, recordDebugLog: context.recordDebugLog });
+    const result = await context.launchWorkspace(payload, {
+      sessions: context.sessions,
+      launchStore: context.launchStore,
+      recordDebugLog: context.recordDebugLog,
+    });
     return sendHandled(res, 200, result);
   }
 

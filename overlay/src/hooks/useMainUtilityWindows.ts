@@ -74,7 +74,7 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
         throw new Error(`${label} window is not registered`);
       }
       await bringUtilityWindowToFront(label);
-      options.setFeedback(`${label === "deploy" ? "Deploy Workspace" : "Settings"} opened.`);
+      options.setFeedback(`${label === "deploy" ? "Workspace Center" : "Settings"} opened.`);
     } catch (error) {
       setActiveUtilityWindow(null);
       options.setFeedback(`Open ${label} window failed: ${(error as Error).message}`);

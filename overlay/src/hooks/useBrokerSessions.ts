@@ -27,6 +27,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   });
   const [feedback, setFeedback] = useState("Checking AMO broker...");
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
+  const [hasLoadedSessionSnapshot, setHasLoadedSessionSnapshot] = useState(false);
   const sessionsRef = useRef(sessions);
 
   useEffect(() => {
@@ -64,6 +65,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         detail: `${nextSessions.length} session${nextSessions.length === 1 ? "" : "s"} loaded`,
       });
       setLastRefreshAt(new Date().toISOString());
+      setHasLoadedSessionSnapshot(true);
       setFeedback(nextSessions.length > 0 ? `Broker sessions loaded: ${nextSessions.length}` : "No active broker sessions.");
       void options.reconcileCodexActionRequired(visibleSessions, reason);
       if (shouldLog) {
@@ -277,6 +279,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
     brokerReadiness,
     ensureBrokerThenRefresh,
     feedback,
+    hasLoadedSessionSnapshot,
     lastRefreshAt,
     refreshSessions,
     sessionOrder,

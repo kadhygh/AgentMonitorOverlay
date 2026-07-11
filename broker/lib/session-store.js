@@ -4,7 +4,7 @@ const path = require("path");
 const { AMO_SCHEMA_VERSION } = require("./amo-constants");
 const { httpError } = require("./http");
 const { refreshSessionTitle, resolveSessionTitle } = require("./display-names");
-const { normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./normalize");
+const { normalizeInteger, normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./normalize");
 const { attachObsidianPluginHealth } = require("./obsidian-vault");
 const { normalizeWindowHint, resolveSessionTargetBinding } = require("./target-binding");
 
@@ -167,6 +167,12 @@ function createSessionStore({
       hookEvents: normalizeTextArray(payload.amoHookEvents || payload.hookEvents || payload.hook_events).length
         ? normalizeTextArray(payload.amoHookEvents || payload.hookEvents || payload.hook_events)
         : existing?.hookEvents || [],
+      workspaceId: normalizeText(payload.workspaceId || payload.workspace_id) || existing?.workspaceId || null,
+      workspacePath: normalizeText(payload.workspacePath || payload.workspace_path) || existing?.workspacePath || cwd,
+      launchId: normalizeText(payload.launchId || payload.launch_id) || existing?.launchId || null,
+      launchState: normalizeText(payload.launchState || payload.launch_state) || existing?.launchState || null,
+      launchRevision:
+        normalizeInteger(payload.launchRevision || payload.launch_revision) ?? existing?.launchRevision ?? null,
     };
     if (shouldClearAttention) {
       const hadAttention = sessionHasAttentionState(existing) || Boolean(payload.needsAttention);

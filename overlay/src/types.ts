@@ -75,6 +75,9 @@ export interface AgentSession {
   targetBinding?: TargetBinding | null;
   workspaceId?: string;
   workspacePath?: string;
+  launchId?: string | null;
+  launchState?: string | null;
+  launchRevision?: number | null;
   vaultRoot?: string;
   lastReplyAt?: string;
   lastReplyNote?: string;
@@ -261,7 +264,42 @@ export interface WorkspaceLaunchResult {
   windowHint?: WindowHint | null;
   targetBinding?: TargetBinding | null;
   session?: AgentSession | null;
+  launch?: ManagedLaunch | null;
   message: string;
+}
+
+export interface WorkspaceRegistryEntry {
+  workspaceId: string;
+  workspacePath: string;
+  projectName: string;
+  vaultRoot?: string | null;
+  adapterIds: string[];
+  deploymentVersion?: number | null;
+  hookProtocolVersion?: number | null;
+  status: "ready" | "unavailable" | "unenrolled" | string;
+  available: boolean;
+  enrollmentPresent: boolean;
+  registeredAt: string;
+  updatedAt: string;
+}
+
+export interface WorkspaceRegistryResult {
+  ok: boolean;
+  count: number;
+  workspaces: WorkspaceRegistryEntry[];
+}
+
+export interface ManagedLaunch {
+  launchId: string;
+  workspaceId: string;
+  workspacePath: string;
+  adapterId: string;
+  mode: "new" | "resume";
+  state: string;
+  titleToken: string;
+  createdAt: string;
+  expiresAt: string;
+  claimedSessionId?: string | null;
 }
 
 export interface WorkspaceGitExcludeEntry {

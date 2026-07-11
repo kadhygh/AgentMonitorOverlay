@@ -2,6 +2,7 @@ import { useState, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
   BROKER_WORKSPACE_LAUNCH_URL,
+  brokerSessionResumeUrl,
   brokerSessionTargetBindingUrl,
   postBrokerJson,
 } from "../api/brokerClient";
@@ -181,6 +182,43 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     }
   }
 
+  async function resumeManagedSession(session: AgentSession) {
+    setActivatingId(session.sessionId);
+    options.setCandidateMenu(null);
+    options.setFeedback(`Resuming ${session.title} in a new managed CLI...`);
+    options.postDebugLog("managed_launch.resume.start", {
+      sessionId: session.sessionId,
+      previousLaunchId: session.launchId ?? null,
+      workspacePath: workspacePathForSession(session),
+    });
+
+    try {
+      const result = await postBrokerJson<WorkspaceLaunchResult & { duplicate?: boolean }>(
+        brokerSessionResumeUrl(session.sessionId),
+        {},
+      );
+      if (result.session) {
+        options.setSessions((previous) =>
+          previous.map((item) => (item.sessionId === result.session?.sessionId ? result.session : item)),
+        );
+      }
+      options.setFeedback(result.duplicate ? "This session is already waiting for its resumed CLI hook." : result.message);
+      options.postDebugLog("managed_launch.resume.ok", {
+        sessionId: session.sessionId,
+        launchId: result.launch?.launchId ?? null,
+        duplicate: Boolean(result.duplicate),
+      });
+    } catch (error) {
+      options.setFeedback(`Resume CLI failed: ${(error as Error).message}`);
+      options.postDebugLog("managed_launch.resume.error", {
+        sessionId: session.sessionId,
+        message: (error as Error).message,
+      });
+    } finally {
+      setActivatingId(null);
+    }
+  }
+
   function openCodexTargetMenu(
     session: AgentSession,
     menuX?: number,
@@ -281,7 +319,9 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
 
     const activationTarget =
       targetBinding?.type === "codex-cli-session" ? windowTargetForSession(session) : activationTargetForSession(session);
-    const canRouteCodexCliByHint = targetBinding?.type === "codex-cli-session" && hasStrongWindowRoutingHint(session);
+    const canRouteCodexCliByHint =
+      hasStrongWindowRoutingHint(session) &&
+      (targetBinding?.type === "codex-cli-session" || session.windowHint?.boundBy === "managed-launch");
     if (isCodexSession(session) && !hasExplicitWindowTarget(activationTarget) && !canRouteCodexCliByHint) {
       await openCodexTargetMenuFromWindowList(session, menuX, menuY, {
         clearAttentionOnConfirm: activateOptions.clearAttentionOnSuccess ?? false,
@@ -497,5 +537,6 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     openCodexAppTarget,
     openCodexCliTarget,
     openCodexTargetMenuFromWindowList,
+    resumeManagedSession,
   };
 }

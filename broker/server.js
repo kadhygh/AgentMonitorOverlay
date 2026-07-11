@@ -6,6 +6,8 @@ const { CORS_HEADERS, httpError, sendEmpty, sendJson } = require("./lib/http");
 const { createDebugLogStore } = require("./lib/debug");
 const { normalizeInteger, normalizeText } = require("./lib/normalize");
 const { createObsidianBridge } = require("./lib/obsidian-bridge");
+const { createPermissionGate } = require("./lib/permission-gate");
+const { createLaunchStore } = require("./lib/launch-store");
 const { createSessionStore } = require("./lib/session-store");
 const { attachObsidianPluginHealth } = require("./lib/obsidian-vault");
 const {
@@ -19,6 +21,7 @@ const { enrollWorkspace } = require("./lib/workspace-deploy");
 const { updateWorkspaceGitExclude } = require("./lib/workspace-git-exclude");
 const { inspectWorkspace } = require("./lib/workspace-inspect");
 const { launchWorkspace } = require("./lib/workspace-launch");
+const { createWorkspaceRegistry } = require("./lib/workspace-registry");
 const {
   cleanWorkspaceVault,
   inspectWorkspaceMaintenance,
@@ -34,6 +37,12 @@ const PORT = Number.parseInt(process.env.AGENT_MONITOR_PORT || "17654", 10);
 const DATA_FILE =
   process.env.AGENT_MONITOR_DATA_FILE ||
   path.join(__dirname, "data", "sessions.json");
+const WORKSPACE_DATA_FILE =
+  process.env.AGENT_MONITOR_WORKSPACE_DATA_FILE ||
+  path.join(path.dirname(DATA_FILE), "workspaces.json");
+const LAUNCH_DATA_FILE =
+  process.env.AGENT_MONITOR_LAUNCH_DATA_FILE ||
+  path.join(path.dirname(DATA_FILE), "launches.json");
 const DEBUG_MAX_LOG_ENTRIES = 800;
 
 const startedAt = new Date();
@@ -48,6 +57,8 @@ const updateDebugConfig = debugLogStore.updateConfig;
 const handleDebugLog = debugLogStore.handleLog;
 const recordDebugLog = debugLogStore.record;
 const debugPreview = debugLogStore.preview;
+const workspaceRegistry = createWorkspaceRegistry({ dataFile: WORKSPACE_DATA_FILE, recordDebugLog });
+const launchStore = createLaunchStore({ dataFile: LAUNCH_DATA_FILE, recordDebugLog });
 const sessionStore = createSessionStore({
   dataFile: DATA_FILE,
   expectedBridgeUrl: baseUrl,
@@ -89,6 +100,16 @@ const obsidianBridge = createObsidianBridge({
   handlePrompt: (payload) => conversationService.handlePrompt(payload),
 });
 loadSnapshot();
+const reconciledManagedSessions = launchStore.reconcileSessions(sessions);
+if (reconciledManagedSessions.length > 0) persistSnapshot();
+const permissionGate = createPermissionGate({
+  sessions,
+  upsertSessionFromEvent,
+  persistSnapshot,
+  publishSessionChanged,
+  recordDebugLog,
+  graceMs: Number.parseInt(process.env.AGENT_MONITOR_PERMISSION_GRACE_MS || "6000", 10),
+});
 
 const routeContext = {
   host: HOST,
@@ -125,6 +146,9 @@ const routeContext = {
   updateWorkspaceObsidianPlugin,
   baseUrl,
   upsertSessionFromEvent,
+  permissionGate,
+  workspaceRegistry,
+  launchStore,
   conversationService,
   obsidianBridge,
 };
