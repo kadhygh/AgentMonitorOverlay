@@ -298,7 +298,7 @@ export interface ManagedLaunch {
   state: string;
   titleToken: string;
   createdAt: string;
-  expiresAt: string;
+  expiresAt?: string;
   claimedSessionId?: string | null;
 }
 

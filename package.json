@@ -15,6 +15,7 @@
     "amo:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Portable -SkipDependencyInstall",
     "broker": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1",
     "broker:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1 -DebugMode",
+    "broker:test": "node --test broker/lib/*.test.js",
     "broker:verify": "powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1",
     "adapters:verify": "powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1",
     "adapters:live-codex": "powershell -ExecutionPolicy Bypass -File scripts/adapters/live-codex-smoke.ps1",

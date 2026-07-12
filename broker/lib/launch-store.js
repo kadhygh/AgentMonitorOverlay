@@ -4,8 +4,9 @@ const { AMO_SCHEMA_VERSION } = require("./amo-constants");
 const { readJsonFile, writeJsonFile } = require("./filesystem");
 const { normalizeText } = require("./normalize");
 
-const ACTIVE_LAUNCH_TTL_MS = 2 * 60 * 1000;
 const RETAIN_LAUNCH_MS = 24 * 60 * 60 * 1000;
+const ACTIVE_LAUNCH_STATES = new Set(["created", "spawning", "waiting_hook", "claimed", "connected"]);
+const TERMINAL_LAUNCH_STATES = new Set(["failed", "offline"]);
 
 function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
   if (!dataFile) throw new Error("createLaunchStore requires dataFile");
@@ -13,10 +14,14 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
 
   function load() {
     const snapshot = readJsonFile(dataFile, { launches: [] });
+    let migrated = false;
     for (const launch of Array.isArray(snapshot?.launches) ? snapshot.launches : []) {
-      if (normalizeText(launch?.launchId)) launches.set(launch.launchId, launch);
+      if (!normalizeText(launch?.launchId)) continue;
+      const normalized = normalizePersistedLaunch(launch);
+      if (normalized !== launch) migrated = true;
+      launches.set(normalized.launchId, normalized);
     }
-    prune();
+    if (!prune() && migrated) persist();
   }
 
   function persist() {
@@ -40,7 +45,6 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       state: "created",
       createdAt: createdAt.toISOString(),
       updatedAt: createdAt.toISOString(),
-      expiresAt: new Date(createdAt.getTime() + ACTIVE_LAUNCH_TTL_MS).toISOString(),
       claimedSessionId: null,
       currentSessionId: null,
       bindingRevision: 0,
@@ -64,11 +68,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     const launchId = normalizeText(payload?.launchId || payload?.launch_id || payload?.amoLaunchId || payload?.amo_launch_id);
     if (!launchId) return null;
     const launch = launches.get(launchId);
-    if (!launch || !["spawning", "waiting_hook", "claimed", "connected", "offline"].includes(launch.state)) return null;
-    if (Date.parse(launch.expiresAt) < Date.now() && !["claimed", "connected", "offline"].includes(launch.state)) {
-      update(launchId, { state: "expired" });
-      return null;
-    }
+    if (!launch || (!ACTIVE_LAUNCH_STATES.has(launch.state) && launch.state !== "offline")) return null;
 
     const sessionId = eventSessionId(payload);
     const workspaceId = normalizeText(payload?.workspaceId || payload?.workspace_id || payload?.amoWorkspaceId || payload?.amo_workspace_id);
@@ -78,12 +78,26 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       recordDebugLog("broker", "launch.claim_rejected", { launchId, sessionId, workspaceId, tool });
       return null;
     }
+    const previousSessionId = launch.currentSessionId || launch.claimedSessionId || null;
+    if (
+      launch.mode === "resume" &&
+      !previousSessionId &&
+      normalizeText(launch.requestedSessionId) &&
+      sessionId !== launch.requestedSessionId
+    ) {
+      recordDebugLog("broker", "launch.resume_session_rejected", {
+        launchId,
+        sessionId,
+        requestedSessionId: launch.requestedSessionId,
+      });
+      return null;
+    }
     if (launch.state === "offline" && options.sessions?.get(sessionId)?.launchId !== launchId) {
       recordDebugLog("broker", "launch.offline_claim_rejected", { launchId, sessionId });
       return null;
     }
-    const previousSessionId = launch.currentSessionId || launch.claimedSessionId || null;
     const transferred = Boolean(previousSessionId && previousSessionId !== sessionId);
+    clearSupersededTargetBinding(options.sessions, sessionId, !previousSessionId);
     const claimedAt = new Date().toISOString();
     const bindingRevision = transferred || !previousSessionId
       ? (Number.isInteger(launch.bindingRevision) ? launch.bindingRevision : 0) + 1
@@ -150,8 +164,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       (launch) =>
         launch.mode === "resume" &&
         launch.requestedSessionId === sessionId &&
-        ["created", "spawning", "waiting_hook"].includes(launch.state) &&
-        Date.parse(launch.expiresAt) >= Date.now()
+        ["created", "spawning", "waiting_hook"].includes(launch.state)
     ) || null;
   }
 
@@ -198,15 +211,16 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     const cutoff = Date.now() - RETAIN_LAUNCH_MS;
     let changed = false;
     for (const [launchId, launch] of launches) {
-      if (Date.parse(launch.updatedAt || launch.createdAt) < cutoff) {
+      if (
+        TERMINAL_LAUNCH_STATES.has(launch.state) &&
+        Date.parse(launch.updatedAt || launch.createdAt) < cutoff
+      ) {
         launches.delete(launchId);
-        changed = true;
-      } else if (["created", "spawning", "waiting_hook"].includes(launch.state) && Date.parse(launch.expiresAt) < Date.now()) {
-        launches.set(launchId, { ...launch, state: "expired", updatedAt: new Date().toISOString() });
         changed = true;
       }
     }
     if (changed) persist();
+    return changed;
   }
 
   load();
@@ -238,6 +252,7 @@ function attachLaunchToSession(session, launch) {
     launchId: launch.launchId,
     launchState: launch.state,
     launchRevision: launch.bindingRevision || 1,
+    targetBinding: isRedundantManagedWindowTarget(session.targetBinding) ? null : session.targetBinding || null,
     windowHint: {
       ...(session.windowHint || {}),
       title: `${launch.titleToken} ${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} - ${path.basename(launch.workspacePath)}`,
@@ -258,4 +273,26 @@ function eventSessionId(payload) {
   return normalizeText(payload?.sessionId || payload?.session_id || payload?.threadId || payload?.thread_id);
 }
 
-module.exports = { ACTIVE_LAUNCH_TTL_MS, createLaunchStore };
+function normalizePersistedLaunch(launch) {
+  if (launch.state !== "expired" && !Object.prototype.hasOwnProperty.call(launch, "expiresAt")) {
+    return launch;
+  }
+
+  const { expiresAt: _legacyExpiresAt, ...normalized } = launch;
+  if (normalized.state === "expired") normalized.state = "waiting_hook";
+  return normalized;
+}
+
+function clearSupersededTargetBinding(sessions, sessionId, firstClaim) {
+  if (!(sessions instanceof Map)) return;
+  const session = sessions.get(sessionId);
+  if (!session) return;
+  if (!firstClaim && !isRedundantManagedWindowTarget(session.targetBinding)) return;
+  sessions.set(sessionId, { ...session, targetBinding: null });
+}
+
+function isRedundantManagedWindowTarget(targetBinding) {
+  return targetBinding?.type === "window" && targetBinding?.boundBy === "managed-launch";
+}
+
+module.exports = { createLaunchStore };
