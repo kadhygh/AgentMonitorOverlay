@@ -178,8 +178,11 @@ fn show_windows_notification(app: tauri::AppHandle, title: String, body: String)
 }
 
 #[tauri::command]
-fn set_scratchpad_shortcut_config(config: ScratchpadShortcutConfig) -> ScratchpadShortcutResult {
-    scratchpad::set_scratchpad_shortcut_config(config)
+fn set_scratchpad_shortcut_config(
+    app: tauri::AppHandle,
+    config: ScratchpadShortcutConfig,
+) -> ScratchpadShortcutResult {
+    scratchpad::set_scratchpad_shortcut_config(&app, config)
 }
 
 #[tauri::command]
@@ -191,6 +194,15 @@ fn show_scratchpad_at_cursor(app: tauri::AppHandle) -> OpenPathResult {
 pub fn run() {
     let app = tauri::Builder::default()
         .plugin(tauri_plugin_notification::init())
+        .plugin(
+            tauri_plugin_global_shortcut::Builder::new()
+                .with_handler(|app, _shortcut, event| {
+                    if event.state() == tauri_plugin_global_shortcut::ShortcutState::Pressed {
+                        let _ = scratchpad::show_scratchpad_at_current_cursor(app);
+                    }
+                })
+                .build(),
+        )
         .setup(|app| {
             let broker = ensure_local_broker();
             if !broker.ok {

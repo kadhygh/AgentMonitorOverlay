@@ -14,6 +14,7 @@ This file summarizes the principal components used by the current Windows applic
 | Lucide | <https://lucide.dev/> | ISC |
 | Rust `windows` / `windows-sys` crates | <https://github.com/microsoft/windows-rs> | Apache-2.0 OR MIT |
 | Tauri Notification plugin | <https://github.com/tauri-apps/plugins-workspace> | Apache-2.0 OR MIT |
+| Tauri Global Shortcut plugin | <https://github.com/tauri-apps/plugins-workspace> | Apache-2.0 OR MIT |
 
 The Portable package includes a pinned Node.js executable. Its complete upstream license is copied into the package as `runtime/NODE-LICENSE.txt` by the release build.
 

@@ -163,10 +163,21 @@ function installObsidianPlugin(vaultRoot, workspacePath, options = {}) {
   copyObsidianPluginAsset(pluginId, "styles.css", pluginDir);
   const pluginDataPath = path.join(pluginDir, "data.json");
   const existingPluginData = readJsonFile(pluginDataPath, {});
+  const personalShortcutProfile = normalizeText(process.env.AGENT_MONITOR_SHORTCUT_PROFILE) === "kadhygh";
   writeJsonFile(path.join(pluginDir, "data.json"), {
     ...existingPluginData,
     bridgeUrl: normalizeText(options.bridgeUrl) || "",
     numberAnnotationsInPrompt: Boolean(existingPluginData.numberAnnotationsInPrompt),
+    contextMouseShortcutEnabled:
+      typeof existingPluginData.contextMouseShortcutEnabled === "boolean"
+        ? existingPluginData.contextMouseShortcutEnabled
+        : personalShortcutProfile,
+    contextMouseShortcutButton:
+      existingPluginData.contextMouseShortcutButton === "mouse4" ? "mouse4" : "mouse5",
+    contextMouseShortcutRequireCtrl:
+      typeof existingPluginData.contextMouseShortcutRequireCtrl === "boolean"
+        ? existingPluginData.contextMouseShortcutRequireCtrl
+        : true,
     canvasAppendDirection: normalizeCanvasAppendDirection(existingPluginData.canvasAppendDirection),
     hideAmoNoteProperties: existingPluginData.hideAmoNoteProperties !== false,
     interceptLocalCodeLinks: existingPluginData.interceptLocalCodeLinks !== false,

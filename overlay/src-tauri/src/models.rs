@@ -47,7 +47,7 @@ pub(crate) struct BrokerEnsureResult {
 pub(crate) struct ScratchpadShortcutResult {
     pub(crate) ok: bool,
     pub(crate) enabled: bool,
-    pub(crate) button: String,
+    pub(crate) shortcut: String,
     pub(crate) message: String,
 }
 
@@ -55,7 +55,7 @@ pub(crate) struct ScratchpadShortcutResult {
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ScratchpadShortcutConfig {
     pub(crate) enabled: bool,
-    pub(crate) button: String,
+    pub(crate) shortcut: String,
 }
 
 #[derive(Clone, Copy, Debug)]

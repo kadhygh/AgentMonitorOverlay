@@ -7,6 +7,7 @@ import {
   applyScratchpadShortcutState,
   loadScratchpadShortcutState,
   saveScratchpadShortcutState,
+  scratchpadShortcutLabel,
   type ScratchpadShortcutState,
 } from "../native/scratchpadShortcut";
 import {
@@ -123,9 +124,7 @@ function SettingsDetailHeader({
             ? debugEnabled
               ? `Enabled | ${debugCount} entries`
               : "Disabled"
-            : scratchpadShortcut.enabled
-              ? "Ctrl + Mouse4"
-              : "Disabled";
+            : scratchpadShortcutLabel(scratchpadShortcut);
 
   return (
     <header className="settings-detail-header">
@@ -190,18 +189,26 @@ function ScratchpadSettingsBody({
       <label className="settings-field">
         <span>Shortcut</span>
         <select
-          value="mouse4"
-          disabled
+          value={scratchpadShortcut.shortcut}
+          disabled={!scratchpadShortcut.enabled}
           onChange={(event) =>
             onScratchpadShortcutChange({
               ...scratchpadShortcut,
-              button: "mouse4",
+              shortcut: event.currentTarget.value as ScratchpadShortcutState["shortcut"],
             })
           }
         >
-          <option value="mouse4">Ctrl + Mouse4</option>
+          <option value="ctrl+alt+space">Ctrl + Alt + Space</option>
+          <option value="ctrl+mouse4">Ctrl + Mouse4</option>
+          <option value="mouse4">Mouse4</option>
+          <option value="ctrl+mouse5">Ctrl + Mouse5</option>
+          <option value="mouse5">Mouse5</option>
         </select>
       </label>
+
+      <p className="settings-help-copy">
+        Keyboard shortcuts work without a side-button mouse. Plain Mouse4/Mouse5 are faster but may replace browser navigation.
+      </p>
 
       <button type="button" className="settings-primary-action" onClick={onOpenScratchpadNow}>
         Open scratchpad now
@@ -425,11 +432,14 @@ export function SettingsWindowApp() {
   }, []);
 
   async function updateScratchpadShortcut(next: ScratchpadShortcutState) {
-    setScratchpadShortcut(next);
-    saveScratchpadShortcutState(next);
-
     try {
       const result = await applyScratchpadShortcutState(next);
+      if (!result.ok) {
+        setFeedback(result.message);
+        return;
+      }
+      setScratchpadShortcut(next);
+      saveScratchpadShortcutState(next);
       setFeedback(result.message);
     } catch (error) {
       setFeedback(`Scratchpad shortcut update failed: ${(error as Error).message}`);

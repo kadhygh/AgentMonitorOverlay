@@ -8,6 +8,18 @@ param(
 $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path $PSScriptRoot).Path
 $overlayRoot = Join-Path $repoRoot "overlay"
+$localConfigPath = Join-Path $repoRoot "amo.local.json"
+
+Remove-Item Env:AGENT_MONITOR_SHORTCUT_PROFILE -ErrorAction SilentlyContinue
+Remove-Item Env:VITE_AMO_SHORTCUT_PROFILE -ErrorAction SilentlyContinue
+if (Test-Path -LiteralPath $localConfigPath) {
+    $localConfig = Get-Content -Raw -Encoding UTF8 $localConfigPath | ConvertFrom-Json
+    $shortcutProfile = [string]$localConfig.shortcutProfile
+    if ($shortcutProfile) {
+        $env:AGENT_MONITOR_SHORTCUT_PROFILE = $shortcutProfile
+        $env:VITE_AMO_SHORTCUT_PROFILE = $shortcutProfile
+    }
+}
 
 if ($Mode -eq "Source") {
     $portableRoot = Join-Path $repoRoot "dist\portable"

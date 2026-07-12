@@ -388,7 +388,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   handleEditorAnnotationMouseShortcut(event: MouseEvent, view: EditorView, phase: string) {
-    if (!event.ctrlKey || event.button !== 4) return false;
+    if (!this.matchesContextMouseShortcut(event)) return false;
 
     const activeView = this.app.workspace.getActiveViewOfType(MarkdownView) || this.getActiveMarkdownView();
     if (!activeView || !activeView.editor) {
@@ -414,7 +414,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   }
 
   handleSendToAmoMouseShortcut(event: MouseEvent) {
-    if (!event.ctrlKey || event.button !== 4) return false;
+    if (!this.matchesContextMouseShortcut(event)) return false;
     if (event.target instanceof Element && event.target.closest(".cm-editor")) return false;
 
     const now = Date.now();
@@ -440,6 +440,13 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     });
     void this.sendAnnotationsFromFile(file);
     return true;
+  }
+
+  matchesContextMouseShortcut(event: MouseEvent) {
+    if (!this.settings.contextMouseShortcutEnabled) return false;
+    const expectedButton = this.settings.contextMouseShortcutButton === "mouse4" ? 3 : 4;
+    if (event.button !== expectedButton) return false;
+    return this.settings.contextMouseShortcutRequireCtrl !== true || event.ctrlKey;
   }
 
   async openVaultPath(filePath, kind) {

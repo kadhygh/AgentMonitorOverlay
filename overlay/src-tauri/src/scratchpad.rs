@@ -1,7 +1,8 @@
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
-use std::sync::{mpsc, OnceLock};
+use std::sync::{mpsc, Mutex, OnceLock};
 
 use tauri::{Emitter, Manager, PhysicalPosition};
+use tauri_plugin_global_shortcut::GlobalShortcutExt;
 
 use crate::models::{
     OpenPathResult, ScratchpadShortcutConfig, ScratchpadShortcutResult, ScratchpadTrigger,
@@ -17,44 +18,115 @@ const SCRATCHPAD_BUTTON_MOUSE5: u32 = 2;
 
 static SCRATCHPAD_ENABLED: AtomicBool = AtomicBool::new(true);
 static SCRATCHPAD_BUTTON: AtomicU32 = AtomicU32::new(SCRATCHPAD_BUTTON_MOUSE4);
+static SCRATCHPAD_CTRL_REQUIRED: AtomicBool = AtomicBool::new(true);
 static SCRATCHPAD_TRIGGER_SENDER: OnceLock<mpsc::Sender<ScratchpadTrigger>> = OnceLock::new();
+static SCRATCHPAD_KEYBOARD_SHORTCUT: OnceLock<Mutex<Option<String>>> = OnceLock::new();
 
 pub(crate) fn set_scratchpad_shortcut_config(
+    app: &tauri::AppHandle,
     config: ScratchpadShortcutConfig,
 ) -> ScratchpadShortcutResult {
-    let _ = normalize_scratchpad_button(&config.button);
-    let button = SCRATCHPAD_BUTTON_MOUSE4;
-    SCRATCHPAD_ENABLED.store(config.enabled, Ordering::SeqCst);
-    SCRATCHPAD_BUTTON.store(button, Ordering::SeqCst);
+    let shortcut = normalize_scratchpad_shortcut(&config.shortcut);
+    let Some(shortcut) = shortcut else {
+        return ScratchpadShortcutResult {
+            ok: false,
+            enabled: false,
+            shortcut: config.shortcut,
+            message: "Unsupported scratchpad shortcut.".to_string(),
+        };
+    };
+
+    let keyboard_slot = SCRATCHPAD_KEYBOARD_SHORTCUT.get_or_init(|| Mutex::new(None));
+    let mut registered_keyboard = keyboard_slot.lock().unwrap_or_else(|error| error.into_inner());
+    if !config.enabled {
+        if let Some(previous) = registered_keyboard.take() {
+            let _ = app.global_shortcut().unregister(previous.as_str());
+        }
+        SCRATCHPAD_ENABLED.store(false, Ordering::SeqCst);
+    } else {
+        match shortcut {
+            NormalizedScratchpadShortcut::Mouse { button, ctrl_required } => {
+                if let Some(previous) = registered_keyboard.take() {
+                    let _ = app.global_shortcut().unregister(previous.as_str());
+                }
+                SCRATCHPAD_BUTTON.store(button, Ordering::SeqCst);
+                SCRATCHPAD_CTRL_REQUIRED.store(ctrl_required, Ordering::SeqCst);
+                SCRATCHPAD_ENABLED.store(true, Ordering::SeqCst);
+            }
+            NormalizedScratchpadShortcut::Keyboard(accelerator) => {
+                let already_registered = registered_keyboard.as_deref() == Some(accelerator);
+                if !already_registered {
+                    if let Err(error) = app.global_shortcut().register(accelerator) {
+                        return ScratchpadShortcutResult {
+                            ok: false,
+                            enabled: true,
+                            shortcut: config.shortcut,
+                            message: format!("Could not register {accelerator}: {error}. Previous shortcut remains active."),
+                        };
+                    }
+                    if let Some(previous) = registered_keyboard.replace(accelerator.to_string()) {
+                        let _ = app.global_shortcut().unregister(previous.as_str());
+                    }
+                }
+                SCRATCHPAD_ENABLED.store(false, Ordering::SeqCst);
+            }
+        }
+    }
 
     ScratchpadShortcutResult {
         ok: true,
         enabled: config.enabled,
-        button: scratchpad_button_label(button).to_string(),
+        shortcut: config.shortcut.clone(),
         message: if config.enabled {
-            format!(
-                "Scratchpad shortcut set to Ctrl+{}.",
-                scratchpad_button_label(button)
-            )
+            format!("Scratchpad shortcut set to {}.", shortcut_label(&config.shortcut))
         } else {
             "Scratchpad shortcut disabled.".to_string()
         },
     }
 }
 
-fn normalize_scratchpad_button(value: &str) -> Option<u32> {
+#[derive(Clone, Copy)]
+enum NormalizedScratchpadShortcut {
+    Mouse { button: u32, ctrl_required: bool },
+    Keyboard(&'static str),
+}
+
+fn normalize_scratchpad_shortcut(value: &str) -> Option<NormalizedScratchpadShortcut> {
     match value.trim().to_ascii_lowercase().as_str() {
-        "mouse4" | "xbutton1" | "button4" => Some(SCRATCHPAD_BUTTON_MOUSE4),
-        "mouse5" | "xbutton2" | "button5" => Some(SCRATCHPAD_BUTTON_MOUSE5),
+        "ctrl+mouse4" => Some(NormalizedScratchpadShortcut::Mouse {
+            button: SCRATCHPAD_BUTTON_MOUSE4,
+            ctrl_required: true,
+        }),
+        "mouse4" => Some(NormalizedScratchpadShortcut::Mouse {
+            button: SCRATCHPAD_BUTTON_MOUSE4,
+            ctrl_required: false,
+        }),
+        "ctrl+mouse5" => Some(NormalizedScratchpadShortcut::Mouse {
+            button: SCRATCHPAD_BUTTON_MOUSE5,
+            ctrl_required: true,
+        }),
+        "mouse5" => Some(NormalizedScratchpadShortcut::Mouse {
+            button: SCRATCHPAD_BUTTON_MOUSE5,
+            ctrl_required: false,
+        }),
+        "ctrl+alt+space" => Some(NormalizedScratchpadShortcut::Keyboard("Ctrl+Alt+Space")),
         _ => None,
     }
 }
 
-fn scratchpad_button_label(button: u32) -> &'static str {
-    match button {
-        SCRATCHPAD_BUTTON_MOUSE4 => "Mouse4",
-        _ => "Mouse5",
-    }
+fn shortcut_label(shortcut: &str) -> String {
+    shortcut
+        .split('+')
+        .map(|part| match part {
+            "ctrl" => "Ctrl",
+            "alt" => "Alt",
+            "space" => "Space",
+            "mouse4" => "Mouse4",
+            "mouse5" => "Mouse5",
+            other => other,
+        })
+        .collect::<Vec<_>>()
+        .join("+")
 }
 
 #[cfg(windows)]
@@ -124,11 +196,12 @@ unsafe extern "system" fn scratchpad_mouse_proc(
     if code >= 0
         && w_param as u32 == WM_XBUTTONDOWN
         && SCRATCHPAD_ENABLED.load(Ordering::SeqCst)
-        && (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0
     {
         let event = &*(l_param as *const MSLLHOOKSTRUCT);
         let button = (event.mouseData >> 16) & 0xffff;
-        if button == SCRATCHPAD_BUTTON.load(Ordering::SeqCst) {
+        let ctrl_pressed = (GetAsyncKeyState(0x11) as u16 & 0x8000) != 0;
+        let ctrl_matches = !SCRATCHPAD_CTRL_REQUIRED.load(Ordering::SeqCst) || ctrl_pressed;
+        if button == SCRATCHPAD_BUTTON.load(Ordering::SeqCst) && ctrl_matches {
             if let Some(sender) = SCRATCHPAD_TRIGGER_SENDER.get() {
                 let _ = sender.send(ScratchpadTrigger {
                     x: event.pt.x,

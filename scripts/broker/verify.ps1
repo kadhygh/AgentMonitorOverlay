@@ -361,12 +361,28 @@ try {
     if ([bool]$pluginData.numberAnnotationsInPrompt) {
         throw "Obsidian plugin should default annotation numbering off."
     }
+    if (
+        [bool]$pluginData.contextMouseShortcutEnabled -or
+        $pluginData.contextMouseShortcutButton -ne "mouse5" -or
+        $pluginData.contextMouseShortcutRequireCtrl -ne $true
+    ) {
+        throw "Public Obsidian plugin shortcut defaults should be disabled Mouse5 with Ctrl required."
+    }
     if ($pluginData.canvasAppendDirection -ne "down") {
         throw "Obsidian plugin should default canvas append direction to down."
     }
     if ($pluginData.interceptLocalCodeLinks -ne $true -or $pluginData.localCodeLinkEditor -ne "vscode" -or -not $pluginData.zedCommand) {
         throw "Obsidian plugin data does not include local code link defaults."
     }
+
+    $pluginData.contextMouseShortcutEnabled = $true
+    $pluginData.contextMouseShortcutButton = "mouse4"
+    $pluginData.contextMouseShortcutRequireCtrl = $false
+    [System.IO.File]::WriteAllText(
+        (Join-Path $pluginRoot "data.json"),
+        (($pluginData | ConvertTo-Json -Depth 8) + "`n"),
+        (New-Object System.Text.UTF8Encoding($false))
+    )
 
     $pluginManifestPath = Join-Path $pluginRoot "manifest.json"
     $pluginManifest = Get-Content -Raw -Encoding UTF8 $pluginManifestPath | ConvertFrom-Json
@@ -381,6 +397,14 @@ try {
     }
     if ($pluginUpdateResult.after.pluginHealth.installedVersion -ne $expectedPluginVersion) {
         throw "Workspace plugin update endpoint installed version mismatch. Expected $expectedPluginVersion, got $($pluginUpdateResult.after.pluginHealth.installedVersion)."
+    }
+    $pluginDataAfterUpdate = Get-Content -Raw -Encoding UTF8 (Join-Path $pluginRoot "data.json") | ConvertFrom-Json
+    if (
+        $pluginDataAfterUpdate.contextMouseShortcutEnabled -ne $true -or
+        $pluginDataAfterUpdate.contextMouseShortcutButton -ne "mouse4" -or
+        $pluginDataAfterUpdate.contextMouseShortcutRequireCtrl -ne $false
+    ) {
+        throw "Obsidian plugin update should preserve explicit shortcut settings."
     }
 
     $pluginMain = Get-Content -Raw -Encoding UTF8 (Join-Path $pluginRoot "main.js")

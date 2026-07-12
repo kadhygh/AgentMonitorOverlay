@@ -13,6 +13,51 @@ export class AmoAnnotationSettingTab extends PluginSettingTab {
     const { containerEl } = this;
     containerEl.empty();
 
+    containerEl.createEl("h3", { text: "快捷键" });
+
+    new Setting(containerEl)
+      .setName("启用上下文鼠标快捷键")
+      .setDesc("在 Markdown 编辑器中插入批注；在笔记其他区域返回批注。键盘快捷键请在 Obsidian 的快捷键页面绑定 AMO Commands。")
+      .addToggle((toggle) => {
+        toggle
+          .setValue(Boolean(this.plugin.settings.contextMouseShortcutEnabled))
+          .onChange(async (value) => {
+            this.plugin.settings.contextMouseShortcutEnabled = value;
+            await this.plugin.saveSettings();
+            this.display();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("鼠标侧键")
+      .setDesc("选择用于 AMO 上下文操作的鼠标侧键。")
+      .setDisabled(!this.plugin.settings.contextMouseShortcutEnabled)
+      .addDropdown((dropdown) => {
+        dropdown
+          .addOption("mouse4", "Mouse4")
+          .addOption("mouse5", "Mouse5")
+          .setValue(this.plugin.settings.contextMouseShortcutButton === "mouse4" ? "mouse4" : "mouse5")
+          .onChange(async (value) => {
+            this.plugin.settings.contextMouseShortcutButton = value === "mouse4" ? "mouse4" : "mouse5";
+            await this.plugin.saveSettings();
+          });
+      });
+
+    new Setting(containerEl)
+      .setName("需要 Ctrl")
+      .setDesc("关闭后只按鼠标侧键即可触发。为了减少与浏览器前进/后退冲突，建议保持开启。")
+      .setDisabled(!this.plugin.settings.contextMouseShortcutEnabled)
+      .addToggle((toggle) => {
+        toggle
+          .setValue(this.plugin.settings.contextMouseShortcutRequireCtrl !== false)
+          .onChange(async (value) => {
+            this.plugin.settings.contextMouseShortcutRequireCtrl = value;
+            await this.plugin.saveSettings();
+          });
+      });
+
+    containerEl.createEl("h3", { text: "内容与显示" });
+
     new Setting(containerEl)
       .setName("CLI 安全复制")
       .setDesc("复制或返回批注时，将换行替换为空格，避免终端 CLI 在粘贴时提前提交。默认开启。")

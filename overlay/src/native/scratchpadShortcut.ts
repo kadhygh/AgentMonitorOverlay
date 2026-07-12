@@ -1,33 +1,69 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ScratchpadShortcutButton = "mouse4" | "mouse5";
+export type ScratchpadShortcut =
+  | "ctrl+mouse4"
+  | "mouse4"
+  | "ctrl+mouse5"
+  | "mouse5"
+  | "ctrl+alt+space";
 
 export interface ScratchpadShortcutState {
   enabled: boolean;
-  button: ScratchpadShortcutButton;
+  shortcut: ScratchpadShortcut;
 }
 
 export interface ScratchpadShortcutResult {
   ok: boolean;
   enabled: boolean;
-  button: ScratchpadShortcutButton;
+  shortcut: ScratchpadShortcut;
   message: string;
 }
 
 const SCRATCHPAD_SHORTCUT_STORAGE_KEY = "amo.scratchpad.shortcut";
+const VALID_SHORTCUTS = new Set<ScratchpadShortcut>([
+  "ctrl+mouse4",
+  "mouse4",
+  "ctrl+mouse5",
+  "mouse5",
+  "ctrl+alt+space",
+]);
+
+function defaultScratchpadShortcutState(): ScratchpadShortcutState {
+  const personalProfile = import.meta.env.VITE_AMO_SHORTCUT_PROFILE === "kadhygh";
+  return {
+    enabled: personalProfile,
+    shortcut: personalProfile ? "ctrl+mouse4" : "ctrl+alt+space",
+  };
+}
 
 export function loadScratchpadShortcutState(): ScratchpadShortcutState {
   try {
     const raw = localStorage.getItem(SCRATCHPAD_SHORTCUT_STORAGE_KEY);
-    if (!raw) return { enabled: true, button: "mouse4" };
-    const parsed = JSON.parse(raw) as Partial<ScratchpadShortcutState>;
+    if (!raw) return defaultScratchpadShortcutState();
+    const parsed = JSON.parse(raw) as Partial<ScratchpadShortcutState> & { button?: string };
+    const migratedShortcut = parsed.button === "mouse5" ? "ctrl+mouse5" : "ctrl+mouse4";
+    const shortcut = VALID_SHORTCUTS.has(parsed.shortcut as ScratchpadShortcut)
+      ? (parsed.shortcut as ScratchpadShortcut)
+      : migratedShortcut;
     return {
       enabled: parsed.enabled !== false,
-      button: "mouse4",
+      shortcut,
     };
   } catch {
-    return { enabled: true, button: "mouse4" };
+    return defaultScratchpadShortcutState();
   }
+}
+
+export function scratchpadShortcutLabel(state: ScratchpadShortcutState) {
+  if (!state.enabled) return "Disabled";
+  const labels: Record<ScratchpadShortcut, string> = {
+    "ctrl+mouse4": "Ctrl + Mouse4",
+    mouse4: "Mouse4",
+    "ctrl+mouse5": "Ctrl + Mouse5",
+    mouse5: "Mouse5",
+    "ctrl+alt+space": "Ctrl + Alt + Space",
+  };
+  return labels[state.shortcut];
 }
 
 export function saveScratchpadShortcutState(next: ScratchpadShortcutState) {

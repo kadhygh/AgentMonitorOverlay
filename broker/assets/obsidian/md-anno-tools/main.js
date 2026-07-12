@@ -38,13 +38,16 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.37";
+var PLUGIN_VERSION = "1.4.38";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
   bridgeUrl: "http://127.0.0.1:17654",
   numberAnnotationsInPrompt: false,
   safeCliPaste: true,
+  contextMouseShortcutEnabled: false,
+  contextMouseShortcutButton: "mouse5",
+  contextMouseShortcutRequireCtrl: true,
   canvasAppendDirection: "down",
   hideAmoNoteProperties: true,
   interceptLocalCodeLinks: true,
@@ -1490,6 +1493,27 @@ var AmoAnnotationSettingTab = class extends import_obsidian4.PluginSettingTab {
   display() {
     const { containerEl } = this;
     containerEl.empty();
+    containerEl.createEl("h3", { text: "\u5FEB\u6377\u952E" });
+    new import_obsidian4.Setting(containerEl).setName("\u542F\u7528\u4E0A\u4E0B\u6587\u9F20\u6807\u5FEB\u6377\u952E").setDesc("\u5728 Markdown \u7F16\u8F91\u5668\u4E2D\u63D2\u5165\u6279\u6CE8\uFF1B\u5728\u7B14\u8BB0\u5176\u4ED6\u533A\u57DF\u8FD4\u56DE\u6279\u6CE8\u3002\u952E\u76D8\u5FEB\u6377\u952E\u8BF7\u5728 Obsidian \u7684\u5FEB\u6377\u952E\u9875\u9762\u7ED1\u5B9A AMO Commands\u3002").addToggle((toggle) => {
+      toggle.setValue(Boolean(this.plugin.settings.contextMouseShortcutEnabled)).onChange(async (value) => {
+        this.plugin.settings.contextMouseShortcutEnabled = value;
+        await this.plugin.saveSettings();
+        this.display();
+      });
+    });
+    new import_obsidian4.Setting(containerEl).setName("\u9F20\u6807\u4FA7\u952E").setDesc("\u9009\u62E9\u7528\u4E8E AMO \u4E0A\u4E0B\u6587\u64CD\u4F5C\u7684\u9F20\u6807\u4FA7\u952E\u3002").setDisabled(!this.plugin.settings.contextMouseShortcutEnabled).addDropdown((dropdown) => {
+      dropdown.addOption("mouse4", "Mouse4").addOption("mouse5", "Mouse5").setValue(this.plugin.settings.contextMouseShortcutButton === "mouse4" ? "mouse4" : "mouse5").onChange(async (value) => {
+        this.plugin.settings.contextMouseShortcutButton = value === "mouse4" ? "mouse4" : "mouse5";
+        await this.plugin.saveSettings();
+      });
+    });
+    new import_obsidian4.Setting(containerEl).setName("\u9700\u8981 Ctrl").setDesc("\u5173\u95ED\u540E\u53EA\u6309\u9F20\u6807\u4FA7\u952E\u5373\u53EF\u89E6\u53D1\u3002\u4E3A\u4E86\u51CF\u5C11\u4E0E\u6D4F\u89C8\u5668\u524D\u8FDB/\u540E\u9000\u51B2\u7A81\uFF0C\u5EFA\u8BAE\u4FDD\u6301\u5F00\u542F\u3002").setDisabled(!this.plugin.settings.contextMouseShortcutEnabled).addToggle((toggle) => {
+      toggle.setValue(this.plugin.settings.contextMouseShortcutRequireCtrl !== false).onChange(async (value) => {
+        this.plugin.settings.contextMouseShortcutRequireCtrl = value;
+        await this.plugin.saveSettings();
+      });
+    });
+    containerEl.createEl("h3", { text: "\u5185\u5BB9\u4E0E\u663E\u793A" });
     new import_obsidian4.Setting(containerEl).setName("CLI \u5B89\u5168\u590D\u5236").setDesc("\u590D\u5236\u6216\u8FD4\u56DE\u6279\u6CE8\u65F6\uFF0C\u5C06\u6362\u884C\u66FF\u6362\u4E3A\u7A7A\u683C\uFF0C\u907F\u514D\u7EC8\u7AEF CLI \u5728\u7C98\u8D34\u65F6\u63D0\u524D\u63D0\u4EA4\u3002\u9ED8\u8BA4\u5F00\u542F\u3002").addToggle((toggle) => {
       toggle.setValue(this.plugin.settings.safeCliPaste !== false).onChange(async (value) => {
         this.plugin.settings.safeCliPaste = value;
@@ -4155,7 +4179,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
   }
   handleEditorAnnotationMouseShortcut(event, view, phase) {
     var _a, _b;
-    if (!event.ctrlKey || event.button !== 4) return false;
+    if (!this.matchesContextMouseShortcut(event)) return false;
     const activeView = this.app.workspace.getActiveViewOfType(import_obsidian17.MarkdownView) || this.getActiveMarkdownView();
     if (!activeView || !activeView.editor) {
       this.debugLog("annotations.editor_mouse_shortcut.no_editor", {
@@ -4178,7 +4202,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
     return true;
   }
   handleSendToAmoMouseShortcut(event) {
-    if (!event.ctrlKey || event.button !== 4) return false;
+    if (!this.matchesContextMouseShortcut(event)) return false;
     if (event.target instanceof Element && event.target.closest(".cm-editor")) return false;
     const now = Date.now();
     event.preventDefault();
@@ -4201,6 +4225,12 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
     });
     void this.sendAnnotationsFromFile(file);
     return true;
+  }
+  matchesContextMouseShortcut(event) {
+    if (!this.settings.contextMouseShortcutEnabled) return false;
+    const expectedButton = this.settings.contextMouseShortcutButton === "mouse4" ? 3 : 4;
+    if (event.button !== expectedButton) return false;
+    return this.settings.contextMouseShortcutRequireCtrl !== true || event.ctrlKey;
   }
   async openVaultPath(filePath, kind) {
     return openVaultPath(this, filePath, kind);
