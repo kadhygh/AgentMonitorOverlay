@@ -56,6 +56,8 @@ Remove-Item -LiteralPath $zipPath, $checksumPath -Force -ErrorAction SilentlyCon
 New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
 
 Copy-Item -LiteralPath $releaseExe -Destination (Join-Path $stageRoot "AMO.exe")
+Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination (Join-Path $stageRoot "LICENSE.txt")
+Copy-Item -LiteralPath (Join-Path $repoRoot "THIRD_PARTY_NOTICES.md") -Destination (Join-Path $stageRoot "THIRD_PARTY_NOTICES.md")
 Copy-BrokerRuntime -RepoRoot $repoRoot -DestinationRoot (Join-Path $stageRoot "app\broker")
 Copy-NodeRuntime -Version $NodeVersion -ArchivePath $nodeArchive -ExtractRoot $nodeExtractRoot -DistributionRoot $nodeDistributionRoot -DestinationRoot (Join-Path $stageRoot "runtime")
 New-Item -ItemType Directory -Force -Path (Join-Path $stageRoot "data") | Out-Null
@@ -165,6 +167,8 @@ function Assert-PortableLayout {
     param([string]$Root)
     foreach ($relativePath in @(
         "AMO.exe",
+        "LICENSE.txt",
+        "THIRD_PARTY_NOTICES.md",
         "runtime\node.exe",
         "runtime\NODE-LICENSE.txt",
         "app\broker\server.js",
