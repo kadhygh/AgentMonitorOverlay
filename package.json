@@ -3,6 +3,12 @@
   "version": "0.1.1",
   "private": true,
   "description": "Local Agent Monitor Overlay workspace.",
+  "license": "MIT",
+  "author": "kadhygh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kadhygh/AgentMonitorOverlay.git"
+  },
   "scripts": {
     "amo": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source",
     "amo:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source -DebugMode",

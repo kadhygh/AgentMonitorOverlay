@@ -3,6 +3,12 @@
   "version": "1.4.37",
   "private": true,
   "description": "AMO Obsidian plugin for annotation rendering, panel actions, and bridge sync.",
+  "license": "MIT",
+  "author": "kadhygh",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/kadhygh/AgentMonitorOverlay.git"
+  },
   "main": "main.js",
   "scripts": {
     "build": "tsc --noEmit && node esbuild.config.mjs production",
