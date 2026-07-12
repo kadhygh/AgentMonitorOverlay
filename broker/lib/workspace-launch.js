@@ -15,6 +15,9 @@ async function launchWorkspace(payload, options = {}) {
   if (!supportedLaunchIds.has(adapterId)) {
     throw httpError(400, "unsupported_launch_adapter", `Unsupported launch adapter: ${adapterId || "missing"}`);
   }
+  if (adapterId !== "codex-app" && !launchStore) {
+    throw httpError(503, "managed_launch_unavailable", "AMO cannot launch a CLI without its managed launch store");
+  }
 
   const amoRoot = path.join(workspacePath, AMO_DIR);
   const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
@@ -33,7 +36,7 @@ async function launchWorkspace(payload, options = {}) {
 
   const projectName = path.basename(workspacePath);
   const startedAt = new Date().toISOString();
-  const managedLaunch = adapterId === "codex-app" || !launchStore
+  const managedLaunch = adapterId === "codex-app"
     ? null
     : launchStore.create({
         workspaceId: workspace.workspaceId,

@@ -256,7 +256,6 @@ export function MainOverlayApp() {
     activatingId,
     bindWindowAtCursor,
     openCodexAppTarget,
-    openCodexCliTarget,
     resumeManagedSession,
   } = useTargetActivation({
     clearSessionAttentionAfterActivation,
@@ -676,11 +675,7 @@ export function MainOverlayApp() {
                   clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
                 })
               }
-              onOpenCodexCliTarget={() =>
-                void openCodexCliTarget(candidateMenu.session, candidateMenu.bindOnSelect, {
-                  clearAttentionOnSuccess: candidateMenu.clearAttentionOnConfirm,
-                })
-              }
+              onResumeManagedCli={() => void resumeManagedSession(candidateMenu.session)}
               onFocusCandidate={(candidate) =>
                 void activateCandidate(candidateMenu.session, candidate, false, {
                   closeOnSuccess: false,

@@ -26,7 +26,7 @@ interface CandidateMenuProps {
   onBindOnSelectChange: (checked: boolean) => void;
   onSelectCandidate: (candidateKey: string) => void;
   onOpenCodexAppTarget: () => void;
-  onOpenCodexCliTarget: () => void;
+  onResumeManagedCli: () => void;
   onFocusCandidate: (candidate: ActivationCandidate) => void;
   onConfirmCandidate: (candidate: ActivationCandidate) => void;
 }
@@ -49,7 +49,7 @@ export function CandidateMenu({
   onBindOnSelectChange,
   onSelectCandidate,
   onOpenCodexAppTarget,
-  onOpenCodexCliTarget,
+  onResumeManagedCli,
   onFocusCandidate,
   onConfirmCandidate,
 }: CandidateMenuProps) {
@@ -130,12 +130,12 @@ export function CandidateMenu({
             <button
               type="button"
               className="candidate-launch-action"
-              title={`Start a new terminal: codex resume ${state.session.sessionId}`}
+              title={`Resume ${state.session.sessionId} in a new AMO-managed CLI`}
               disabled={activating}
-              onClick={onOpenCodexCliTarget}
+              onClick={onResumeManagedCli}
             >
               <SquareTerminal size={13} aria-hidden="true" />
-              <span>New CLI</span>
+              <span>Managed CLI</span>
             </button>
           ) : null}
           <button

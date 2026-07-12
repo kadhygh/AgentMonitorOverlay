@@ -172,7 +172,7 @@ async function handleSessionRoutes(req, res, url, context) {
       launchState: result.launch?.state || "waiting_hook",
       launchRevision: (existing.launchRevision || 0) + 1,
       windowHint: result.windowHint || null,
-      targetBinding: existing.targetBinding?.boundBy === "managed-launch" ? null : existing.targetBinding || null,
+      targetBinding: null,
       lastEvent: "ManagedLaunchResume",
       updatedAt: now,
     };

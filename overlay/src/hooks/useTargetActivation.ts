@@ -1,7 +1,6 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import {
-  BROKER_WORKSPACE_LAUNCH_URL,
   brokerSessionManagedOfflineUrl,
   brokerSessionResumeUrl,
   brokerSessionTargetBindingUrl,
@@ -14,7 +13,6 @@ import {
   activationWindowRequest,
   codexAppThreadUri,
   codexAppTargetForSession,
-  codexCliTargetForSession,
   hasExplicitWindowTarget,
   hasStrongWindowRoutingHint,
   isCodexSession,
@@ -133,78 +131,6 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
         message: (error as Error).message,
       });
       options.setFeedback(`Open Codex App target failed: ${(error as Error).message}`);
-    } finally {
-      setActivatingId(null);
-    }
-  }
-
-  async function openCodexCliTarget(
-    session: AgentSession,
-    bindTarget: boolean,
-    openOptions: { clearAttentionOnSuccess?: boolean } = {},
-  ) {
-    const workspacePath = workspacePathForSession(session);
-    if (!workspacePath) {
-      options.setFeedback("No workspace path is linked to this card.");
-      return;
-    }
-
-    const target = codexCliTargetForSession(session);
-    options.markSessionVisuallySeen(session);
-    setActivatingId(session.sessionId);
-    options.setCandidateMenu(null);
-    options.setFeedback(`${bindTarget ? "Binding and launching" : "Launching"} Codex CLI resume for ${projectName(workspacePath)}...`);
-    options.postDebugLog("codex_cli.target_open.start", {
-      sessionId: session.sessionId,
-      bindTarget,
-      workspacePath,
-    });
-
-    try {
-      if (bindTarget) {
-        const binding = await postBrokerJson<{ ok: boolean; session: AgentSession; targetBinding: TargetBinding }>(
-          brokerSessionTargetBindingUrl(session.sessionId),
-          target,
-        );
-        options.setSessions((previous) =>
-          previous.map((item) => (item.sessionId === binding.session.sessionId ? binding.session : item)),
-        );
-        options.postDebugLog("codex_cli.target_bound", {
-          sessionId: session.sessionId,
-          workspacePath,
-        });
-      }
-
-      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
-        workspacePath,
-        adapterId: "codex-cli",
-        sessionId: session.sessionId,
-      });
-      options.postDebugLog("codex_cli.target_open.result", {
-        sessionId: session.sessionId,
-        ok: result.ok,
-        pid: result.pid ?? null,
-        targetType: result.targetBinding?.type ?? null,
-        hasWindowHint: Boolean(result.windowHint),
-      });
-      const launchedSession = result.session;
-      if (launchedSession) {
-        options.setSessions((previous) =>
-          previous.map((item) => (item.sessionId === launchedSession.sessionId ? launchedSession : item)),
-        );
-      }
-      options.setFeedback(result.message);
-      if (result.ok && openOptions.clearAttentionOnSuccess) {
-        void options.clearSessionAttentionAfterActivation(session, "open-codex-cli");
-      }
-    } catch (error) {
-      options.postDebugLog("codex_cli.target_open.error", {
-        sessionId: session.sessionId,
-        bindTarget,
-        workspacePath,
-        message: (error as Error).message,
-      });
-      options.setFeedback(`Open Codex CLI target failed: ${(error as Error).message}`);
     } finally {
       setActivatingId(null);
     }
@@ -588,7 +514,6 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     activatingId,
     bindWindowAtCursor,
     openCodexAppTarget,
-    openCodexCliTarget,
     openCodexTargetMenuFromWindowList,
     resumeManagedSession,
   };

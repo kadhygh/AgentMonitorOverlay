@@ -148,6 +148,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
       const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
         workspacePath,
         adapterId,
+        sourceCardSessionId: session.sessionId,
       });
       options.postDebugLog("workspace.launch_panel.launch.ok", {
         sessionId: session.sessionId,
