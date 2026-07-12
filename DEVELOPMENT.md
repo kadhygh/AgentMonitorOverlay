@@ -99,17 +99,25 @@ npm run adapters:verify -- -Port 17655
 
 ## Running Locally
 
-Start the normal local AMO dev stack:
+Use the root entry point for both internal startup modes. Source mode runs a frontend production build first, then starts the Tauri development stack:
 
 ```powershell
-npm run amo
+.\amo.ps1 -Mode Source
 ```
 
 This starts the broker first, waits for `http://127.0.0.1:17654/api/health`, clears stale AMO overlay dev processes that would block Vite port `1420`, and then starts the Tauri overlay dev process. Use a visible broker/overlay console only while debugging:
 
 ```powershell
-npm run amo:debug
+.\amo.ps1 -Mode Source -DebugMode
 ```
+
+Portable mode stops repository-owned AMO processes, preserves the latest Portable `data/` directory, builds the current version, restores that data, and starts the resulting package:
+
+```powershell
+.\amo.ps1 -Mode Portable -SkipDependencyInstall
+```
+
+The npm aliases are `npm run amo`, `npm run amo:debug`, and `npm run amo:portable`.
 
 Start only the broker:
 

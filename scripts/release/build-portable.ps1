@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.0",
+    [string]$Version = "0.1.1",
     [string]$NodeVersion = "24.13.0",
     [switch]$SkipDependencyInstall
 )
@@ -9,6 +9,7 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $overlayRoot = Join-Path $repoRoot "overlay"
 $cargoManifest = Join-Path $overlayRoot "src-tauri\Cargo.toml"
+$sourceVersion = [string](Get-Content -Raw -Encoding UTF8 (Join-Path $overlayRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json).version
 $releaseExe = Join-Path $overlayRoot "src-tauri\target\release\agent-monitor-overlay.exe"
 $portableOutput = Join-Path $repoRoot "dist\portable"
 $packageName = "AMO-v$Version-win-x64"
@@ -22,6 +23,9 @@ $nodeDistributionRoot = Join-Path $nodeExtractRoot "node-v$NodeVersion-win-x64"
 
 function Invoke-PortableBuild {
 Assert-SemanticVersion $Version
+if ($Version -ne $sourceVersion) {
+    throw "Portable version $Version does not match source version $sourceVersion in overlay/src-tauri/tauri.conf.json"
+}
 Assert-SafeOutputPath $repoRoot $portableOutput
 
 if (-not $SkipDependencyInstall -and -not (Test-Path -LiteralPath (Join-Path $overlayRoot "node_modules"))) {

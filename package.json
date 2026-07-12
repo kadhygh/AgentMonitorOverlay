@@ -1,11 +1,12 @@
 {
   "name": "agent-monitor-overlay",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "private": true,
   "description": "Local Agent Monitor Overlay workspace.",
   "scripts": {
-    "amo": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/amo/start.ps1",
-    "amo:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/amo/start.ps1 -DebugMode",
+    "amo": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source",
+    "amo:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source -DebugMode",
+    "amo:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Portable -SkipDependencyInstall",
     "broker": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1",
     "broker:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1 -DebugMode",
     "broker:verify": "powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1",

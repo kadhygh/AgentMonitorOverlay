@@ -23,6 +23,7 @@ Before release, keep these values aligned:
 
 | Surface | Source |
 | --- | --- |
+| Workspace package version | `package.json` |
 | App/package version | `overlay/src-tauri/tauri.conf.json` and `overlay/src-tauri/Cargo.toml` |
 | Frontend version | `overlay/package.json` |
 | Deployment/hook protocol | `broker/lib/amo-constants.js` |
@@ -30,6 +31,8 @@ Before release, keep these values aligned:
 | Bundled Node | `scripts/release/build-portable.ps1` default |
 
 The release tag uses `v<major>.<minor>.<patch>`, for example `v0.1.0`. The ZIP uses `AMO-v0.1.0-win-x64.zip`.
+
+The Portable build fails when its `-Version` argument does not match the Tauri source version. This prevents a tag or ZIP name from disagreeing with the executable metadata.
 
 ## Local Build
 

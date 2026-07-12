@@ -164,16 +164,22 @@ function Start-AmoBroker {
         $env:AGENT_MONITOR_DEBUG = "1"
     }
 
-    $startParams = @{
-        FilePath = "node"
-        ArgumentList = @($serverPath)
-        WorkingDirectory = $repoRoot
-        PassThru = $true
-    }
-
     if ($DebugMode) {
-        Write-Host "Starting visible AMO broker..."
+        $debugCommand = "title AMO Broker Debug && node `"$serverPath`""
+        $startParams = @{
+            FilePath = "cmd.exe"
+            ArgumentList = @("/c", $debugCommand)
+            WorkingDirectory = $repoRoot
+            PassThru = $true
+        }
+        Write-Host "Starting AMO broker in a dedicated debug console..."
     } else {
+        $startParams = @{
+            FilePath = "node"
+            ArgumentList = @($serverPath)
+            WorkingDirectory = $repoRoot
+            PassThru = $true
+        }
         $startParams.WindowStyle = "Hidden"
         $startParams.RedirectStandardOutput = $brokerStdout
         $startParams.RedirectStandardError = $brokerStderr
