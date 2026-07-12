@@ -32,6 +32,7 @@ Obsidian itself is not bundled with AMO. Users install and operate it separately
 | Component | Project | License |
 | --- | --- | --- |
 | Vite | <https://vite.dev/> | MIT |
+| SWC and Vite React SWC plugin | <https://swc.rs/> | Apache-2.0 |
 | Tauri CLI | <https://tauri.app/> | Apache-2.0 OR MIT |
 
 Development-only dependencies are not necessarily distributed in the Portable package. They remain covered by the licenses recorded in the package lockfiles and upstream distributions.
