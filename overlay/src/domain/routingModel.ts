@@ -1,6 +1,6 @@
 import type { ActivationCandidate, AgentSession, ObsidianPluginHealth, TargetBinding } from "../types";
 
-export type ToolDisplayId = "codex-cli" | "codex-app" | "claude-cli" | "kiro-ide" | "other";
+export type ToolDisplayId = "codex-cli" | "codex-app" | "claude-cli" | "other";
 
 export function toolDisplayIdForSession(session: AgentSession): ToolDisplayId {
   const rawTool = String(session.tool || "").toLowerCase();
@@ -23,10 +23,6 @@ export function toolDisplayIdForSession(session: AgentSession): ToolDisplayId {
   if (rawTool.includes("claude")) {
     return "claude-cli";
   }
-  if (rawTool.includes("kiro")) {
-    return "kiro-ide";
-  }
-
   return "other";
 }
 

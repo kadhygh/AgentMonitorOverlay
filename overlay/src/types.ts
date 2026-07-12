@@ -9,7 +9,7 @@ export type SessionState =
   | "cancelled"
   | "unknown";
 
-export type AgentTool = "codex" | "codex-cli" | "codex-app" | "claude" | "claude-cli" | "kiro" | "kiro-ide" | "other";
+export type AgentTool = "codex" | "codex-cli" | "codex-app" | "claude" | "claude-cli" | "other";
 
 export interface WindowHint {
   process?: string;

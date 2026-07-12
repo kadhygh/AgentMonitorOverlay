@@ -72,11 +72,6 @@
   border-color: rgba(201, 135, 38, 0.46);
 }
 
-:root[data-amo-theme="light"] .tool-kiro-ide {
-  background: linear-gradient(145deg, #172536, #223956);
-  border-color: rgba(52, 111, 145, 0.46);
-}
-
 :root[data-amo-theme="light"] .state-pill {
   color: #edf8f4;
   background: linear-gradient(145deg, #19231f, #283831);

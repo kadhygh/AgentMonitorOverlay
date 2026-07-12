@@ -327,7 +327,6 @@ function inspectWorkspace(payload) {
     ],
     deferredAdapters: [
       deferredAdapter("codex-app", "Codex App", "Direct Codex App integration is deferred until its local control surface is defined."),
-      deferredAdapter("kiro-ide", "Kiro IDE", "Kiro IDE hook install target and payload shape still need local verification."),
     ],
   };
 }

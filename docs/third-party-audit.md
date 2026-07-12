@@ -27,17 +27,17 @@ The root MIT License answers only the first question.
 | `overlay/src/assets/tool-icons/codex-cli.png` | No provenance record in repository | **Unresolved: do not approve for public binary distribution** |
 | `overlay/src/assets/tool-icons/codex-app.png` | No provenance record in repository | **Unresolved: do not approve for public binary distribution** |
 | `overlay/src/assets/tool-icons/claude-cli.png` | No provenance record in repository | **Unresolved: do not approve for public binary distribution** |
-| `overlay/src/assets/tool-icons/kiro-ide.png` | Extracted from a locally downloaded Kiro installer during development | **Blocked: replace or remove before public release** |
 
 ## Provider Icon Resolution
 
 The preferred public-release resolution is:
 
-1. remove the abandoned Kiro integration and its extracted icon from shipped code and artifacts;
-2. locate official redistribution guidance for active provider artwork;
-3. where redistribution is not explicitly supportable, replace vendor artwork with original neutral AMO provider glyphs;
-4. record the source URL, retrieval date, license or brand-guideline URL, modifications, and file hash for every retained third-party image;
-5. keep the trademark disclaimer even when artwork is replaced, because product names remain visible.
+1. locate official redistribution guidance for active provider artwork;
+2. where redistribution is not explicitly supportable, replace vendor artwork with original neutral AMO provider glyphs;
+3. record the source URL, retrieval date, license or brand-guideline URL, modifications, and file hash for every retained third-party image;
+4. keep the trademark disclaimer even when artwork is replaced, because product names remain visible.
+
+The abandoned Kiro integration and its installer-extracted icon were removed from active source and release inputs on 2026-07-13.
 
 Do not treat a web-accessible logo, favicon, installed executable resource, or screenshot as automatically redistributable.
 
@@ -56,7 +56,6 @@ An automated scanner can assist this review, but it does not decide trademark, a
 
 ## Public Release Blockers
 
-- Replace or remove `kiro-ide.png` and any remaining abandoned Kiro UI path.
 - Resolve provenance and redistribution status for all active provider icons.
 - Generate and review npm and Cargo license inventories from the exact release lockfiles.
 - Resolve or explicitly assess the current Overlay development-tool audit findings before the public release.

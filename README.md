@@ -114,5 +114,4 @@ Development and release commands are documented in [Portable Release SOP](docs/p
 
 AMO source code and original assets are released under the [MIT License](LICENSE).
 
-Codex, Claude, Obsidian, Kiro, Zed, Windows, and other product names and marks belong to their respective owners. Their use describes optional interoperability and does not imply affiliation, endorsement, or sponsorship. See [Third-Party Notices](THIRD_PARTY_NOTICES.md) for dependency and asset status.
-
+Codex, Claude, Obsidian, Zed, Windows, and other product names and marks belong to their respective owners. Their use describes optional interoperability and does not imply affiliation, endorsement, or sponsorship. See [Third-Party Notices](THIRD_PARTY_NOTICES.md) for dependency and asset status.

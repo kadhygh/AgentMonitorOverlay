@@ -23,8 +23,7 @@
 }
 
 .tool-codex-app img,
-.tool-claude-cli img,
-.tool-kiro-ide img {
+.tool-claude-cli img {
   width: 28px;
   height: 28px;
 }
@@ -50,11 +49,6 @@
 .tool-claude-cli {
   background: rgba(255, 192, 110, 0.12);
   border-color: rgba(255, 192, 110, 0.2);
-}
-
-.tool-kiro-ide {
-  background: rgba(143, 196, 255, 0.12);
-  border-color: rgba(143, 196, 255, 0.2);
 }
 
 .tool-other {

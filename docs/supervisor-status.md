@@ -88,7 +88,7 @@ Updated: 2026-07-11
 - `npm install` in `overlay/`
 - `npm run build` in `overlay/`
 - `cargo check` in `overlay/src-tauri/`
-- `npm run adapters:verify` with isolated adapter data; exact Codex / Claude / Kiro contract checks pass
+- `npm run adapters:verify` with isolated adapter data; exact Codex / Claude contract checks pass
 - `git diff --check`
 - `npm run build` in `overlay/` after tool-icon and drag-handle UI updates
 - `cargo check` in `overlay/src-tauri/` after PID routing and focus-path updates

@@ -164,8 +164,7 @@ try {
 
     $eventFiles = @(
         "examples\events\codex-post-tool-use.json",
-        "examples\events\claude-permission.json",
-        "examples\events\kiro-agent-request.json"
+        "examples\events\claude-permission.json"
     )
 
     foreach ($relativePath in $eventFiles) {
@@ -182,12 +181,12 @@ try {
     Write-Host "Heartbeat OK -> $($heartbeat.session.sessionId) at $($heartbeat.session.heartbeatAt)"
 
     $sessions = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessions.count -ne 3) {
-        throw "Expected exactly 3 sessions, got $($sessions.count)."
+    if ($sessions.count -ne 2) {
+        throw "Expected exactly 2 sessions, got $($sessions.count)."
     }
 
     $tools = @($sessions.sessions | ForEach-Object { $_.tool })
-    foreach ($tool in @("codex", "claude", "kiro")) {
+    foreach ($tool in @("codex", "claude")) {
         if ($tools -notcontains $tool) {
             throw "Missing expected tool session: $tool"
         }
@@ -605,8 +604,8 @@ try {
     Write-Host "Reply canvas chain OK -> $($reply.canvasNodeId) -> $($reply2.canvasNodeId)"
 
     $sessionsAfterReply = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessionsAfterReply.count -ne 4) {
-        throw "Expected 4 sessions after reply, got $($sessionsAfterReply.count)."
+    if ($sessionsAfterReply.count -ne 3) {
+        throw "Expected 3 sessions after reply, got $($sessionsAfterReply.count)."
     }
     $replySession = @($sessionsAfterReply.sessions | Where-Object { $_.sessionId -eq "codex-reply-verify" })[0]
     if (-not $replySession.lastReplyNote -or -not $replySession.canvasPath) {
@@ -1007,8 +1006,8 @@ $broker = Start-Broker
 try {
     Wait-Broker | Out-Null
     $sessionsAfterRestart = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessionsAfterRestart.count -ne 7) {
-        throw "Persistence check failed. Expected exactly 7 sessions after restart, got $($sessionsAfterRestart.count)."
+    if ($sessionsAfterRestart.count -ne 6) {
+        throw "Persistence check failed. Expected exactly 6 sessions after restart, got $($sessionsAfterRestart.count)."
     }
 
     Write-Host "Persistence OK. Sessions after restart: $($sessionsAfterRestart.count)"

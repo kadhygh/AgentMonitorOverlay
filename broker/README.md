@@ -185,7 +185,7 @@ On restart, the broker loads this snapshot and returns the last known session st
 If the cache is deleted, the expected rebuild strategy is:
 
 1. keep the broker running,
-2. let Codex / Claude / Kiro hooks send their next event or heartbeat,
+2. let Codex / Claude hooks send their next event or heartbeat,
 3. rebuild the current session table from those fresh adapter updates.
 
 For MVP this is enough because the overlay only needs recent live status. Full history/search belongs to a later phase.

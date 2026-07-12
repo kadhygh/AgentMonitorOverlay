@@ -608,10 +608,6 @@ function inferState(tool, eventName, payload) {
   if (tool === "claude" && lowerEvent.includes("notification")) {
     return "waiting_user";
   }
-  if (tool === "kiro" && lowerEvent.includes("agent_request")) {
-    return "running";
-  }
-
   return "running";
 }
 

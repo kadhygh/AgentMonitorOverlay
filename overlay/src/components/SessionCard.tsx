@@ -16,7 +16,6 @@ import {
 import claudeCliIcon from "../assets/tool-icons/claude-cli.png";
 import codexAppIcon from "../assets/tool-icons/codex-app.png";
 import codexCliIcon from "../assets/tool-icons/codex-cli.png";
-import kiroIdeIcon from "../assets/tool-icons/kiro-ide.png";
 import {
   sessionArchived,
   sessionNeedsReview,
@@ -67,10 +66,6 @@ const toolDisplay: Record<ToolDisplayId, ToolDisplay> = {
     label: "Claude CLI",
     icon: claudeCliIcon,
     badge: "CLI",
-  },
-  "kiro-ide": {
-    label: "Kiro IDE",
-    icon: kiroIdeIcon,
   },
   other: {
     label: "Agent",

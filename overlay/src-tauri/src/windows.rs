@@ -554,7 +554,6 @@ fn tool_process_matches(candidate: &WindowCandidate, tool: &str) -> bool {
                 "windowsterminal" | "powershell" | "pwsh" | "cmd" | "conhost" | "claude"
             )
         }
-        value if value.starts_with("kiro") => process == "kiro",
         _ => true,
     }
 }

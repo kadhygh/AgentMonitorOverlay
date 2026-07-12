@@ -9,7 +9,7 @@ Status: supervisor/user smoke validated for Codex/Mecho and Claude demo routing;
 - Verify at least three different windows can be identified by title, process name, or explicit handle.
 - Verify clicking a monitored session activates the intended window.
 - Verify failure behavior when a target window is missing or ambiguous.
-- Verify the proposed Codex / Claude / Kiro title naming convention fits the user's real workflow.
+- Verify the proposed Codex / Claude title naming convention fits the user's real workflow.
 - Run `npm run demo:claude-routing`, then click the Claude live demo row in the overlay and confirm it routes to the PowerShell window with the `[AMO:claude:agent-monitor-overlay:live-demo]` title.
 - Confirm the Claude demo row routes using the published `conhost.exe` PID when direct console HWND is unavailable.
 
@@ -20,7 +20,6 @@ Status: verified locally by supervisor; isolated verification script passes on 2
 - Start broker locally.
 - POST mock Codex event.
 - POST mock Claude event.
-- POST mock Kiro event.
 - Confirm `GET /api/sessions` returns unified session models.
 - Restart broker and confirm persistence or documented rebuild behavior.
 
@@ -54,7 +53,7 @@ Status: isolated adapter contract verification passes on 2026-05-08; Claude live
 
 - Confirm Codex event payload can map to broker session model.
 - Confirm Claude event payload can map to broker session model.
-- Confirm Kiro route is either tested or explicitly marked as mock/manual for MVP.
+- Confirm abandoned Kiro adapter paths remain absent from active UI, deployment, and verification surfaces.
 - Confirm no global user tool configuration is changed without approval.
 - Re-run Codex live smoke after choosing a safe hook loading route for the current Codex CLI.
 - Prefer the first interactive smoke in a disposable test project or sibling repo so `/hooks` review state does not have to land in the main worktree first.

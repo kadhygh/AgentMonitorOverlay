@@ -38,7 +38,7 @@ Development-only dependencies are not necessarily distributed in the Portable pa
 
 ## Product Names And Trademarks
 
-Codex, Claude, Obsidian, Kiro, Zed, Windows, and other product names and marks belong to their respective owners. AMO uses these names only to describe optional interoperability. AMO is not affiliated with, endorsed by, or sponsored by those owners.
+Codex, Claude, Obsidian, Zed, Windows, and other product names and marks belong to their respective owners. AMO uses these names only to describe optional interoperability. AMO is not affiliated with, endorsed by, or sponsored by those owners.
 
 Third-party product artwork is not covered by AMO's MIT License. Provider artwork must pass the repository's redistribution audit before it can be included in a public release.
 
@@ -53,4 +53,3 @@ Before publishing a release, maintainers must:
 5. inspect the final Installer and Portable contents, not only the source tree.
 
 Report a missing or incorrect attribution through the repository issue tracker.
-

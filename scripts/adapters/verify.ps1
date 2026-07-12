@@ -115,6 +115,21 @@ function Assert-SessionState {
     }
 }
 
+function Wait-SessionCount {
+    param([int]$ExpectedCount, [int]$TimeoutSeconds = 10)
+
+    $deadline = (Get-Date).AddSeconds($TimeoutSeconds)
+    do {
+        $sessions = Invoke-BrokerJson -Method GET -Path "/api/sessions"
+        if ($sessions.count -eq $ExpectedCount) {
+            return $sessions
+        }
+        Start-Sleep -Milliseconds 250
+    } while ((Get-Date) -lt $deadline)
+
+    throw "Expected exactly $ExpectedCount adapter verification sessions, got $($sessions.count)."
+}
+
 Write-Host "Starting broker at $baseUrl for adapter verification."
 Assert-PortAvailable
 Clear-VerificationData
@@ -141,21 +156,11 @@ try {
         message = "Claude is waiting for user input"
     }
 
-    Send-HookEvent -Tool kiro -Payload @{
-        hook_event_name = "agentSpawn"
-        session_id = "verify-kiro-agent"
-        cwd = "G:\PROJECT\AgentMonitorOverlay"
-    }
-
-    $sessions = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    if ($sessions.count -ne 3) {
-        throw "Expected exactly 3 adapter verification sessions, got $($sessions.count)."
-    }
+    # Codex permission events use the production provisional-review grace period.
+    $sessions = Wait-SessionCount -ExpectedCount 2
 
     Assert-SessionState -Sessions $sessions -SessionId "verify-codex-permission" -ExpectedState "waiting_permission" -ExpectedNeedsAttention $true
     Assert-SessionState -Sessions $sessions -SessionId "verify-claude-idle" -ExpectedState "waiting_user" -ExpectedNeedsAttention $true
-    Assert-SessionState -Sessions $sessions -SessionId "verify-kiro-agent" -ExpectedState "starting" -ExpectedNeedsAttention $false
-
     Write-Host "Adapter verification OK:"
     $sessions.sessions |
         Select-Object tool, sessionId, state, needsAttention, lastEvent |

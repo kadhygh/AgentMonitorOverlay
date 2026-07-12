@@ -1,5 +1,5 @@
 param(
-    [ValidateSet("codex", "claude", "kiro")]
+    [ValidateSet("codex", "claude")]
     [string]$Tool,
 
     [string]$BrokerUrl = "http://127.0.0.1:17654/api/events",
@@ -113,7 +113,6 @@ function Get-WindowHint {
     $titlePrefix = switch ($ToolName) {
         "codex" { "Codex" }
         "claude" { "Claude" }
-        "kiro" { "Kiro" }
         default { $ToolName }
     }
 
@@ -129,7 +128,7 @@ function Get-WindowHint {
     }
 
     return [ordered]@{
-        process       = if ($ToolName -eq "kiro") { "Kiro.exe" } else { "WindowsTerminal.exe" }
+        process       = "WindowsTerminal.exe"
         titleToken    = "[AMO:${ToolName}:${projectSlug}:${sessionSlug}]"
         titleContains = if ($projectName) { @($titlePrefix, $projectName) } else { @($titlePrefix) }
         project       = $projectName
