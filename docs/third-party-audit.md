@@ -59,9 +59,16 @@ An automated scanner can assist this review, but it does not decide trademark, a
 - Replace or remove `kiro-ide.png` and any remaining abandoned Kiro UI path.
 - Resolve provenance and redistribution status for all active provider icons.
 - Generate and review npm and Cargo license inventories from the exact release lockfiles.
+- Resolve or explicitly assess the current Overlay development-tool audit findings before the public release.
 - Inspect bundled Tauri/WebView-related release artifacts for required notices.
 - Confirm the final ZIP and Installer include `LICENSE`, `THIRD_PARTY_NOTICES.md`, and the Node.js license.
 - Audit Git history and prior release assets for third-party files that are no longer present in the working tree.
+
+## Current Security Audit Snapshot
+
+On 2026-07-13, `npm audit` in `overlay/` reported three development-toolchain findings: one high, one moderate, and one low. The affected chain currently includes Vite, esbuild, and Babel tooling. The Obsidian plugin package reported zero findings in the same check.
+
+These packages are build or development dependencies rather than Broker runtime packages in the Portable ZIP. They still require review because contributors run the development server and GitHub Actions will build public releases from them. The suggested npm resolution currently crosses a Vite major version, so it must be handled as a tested dependency-upgrade task rather than an automatic `npm audit fix --force` change.
 
 ## Evidence Record Template
 
@@ -79,4 +86,3 @@ SHA-256:
 Reviewed by:
 Review date:
 ```
-
