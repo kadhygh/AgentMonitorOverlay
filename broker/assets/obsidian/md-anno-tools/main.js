@@ -38,7 +38,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.38";
+var PLUGIN_VERSION = "1.4.40";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -745,6 +745,7 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     this.editingTitle = false;
     this.editingTitleFilePath = "";
     this.editingTitleValue = "";
+    this.renderRevision = 0;
   }
   getViewType() {
     return AMO_PANEL_VIEW_TYPE;
@@ -759,23 +760,37 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     this.render();
   }
   render() {
-    void this.renderAsync();
+    const revision = ++this.renderRevision;
+    void this.renderAsync(revision);
   }
-  async renderAsync() {
-    const root = this.contentEl;
-    root.empty();
-    root.addClass("amo-panel");
+  async renderAsync(revision) {
     let info;
     try {
       info = await this.plugin.getActiveNoteInfo();
     } catch (error) {
-      this.renderHeader(root, this.workspaceStateFor(null, null));
-      root.createDiv({
+      if (revision !== this.renderRevision) return;
+      const root2 = this.contentEl;
+      root2.empty();
+      root2.addClass("amo-panel");
+      this.renderHeader(root2, this.workspaceStateFor(null, null));
+      root2.createDiv({
         cls: "amo-panel-error",
         text: "Could not read active note: " + messageFromError(error)
       });
       return;
     }
+    if (revision !== this.renderRevision) {
+      this.plugin.debugLog("panel.render.stale_result_ignored", {
+        revision,
+        currentRevision: this.renderRevision,
+        notePath: info.file && info.file.path,
+        source: info.source
+      });
+      return;
+    }
+    const root = this.contentEl;
+    root.empty();
+    root.addClass("amo-panel");
     const canvasFile = this.plugin.getPanelCanvasFile();
     const workspaceState = this.workspaceStateFor(info, canvasFile);
     this.renderHeader(root, workspaceState);
@@ -845,13 +860,13 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
           event.stopPropagation();
         });
         titleEl.addEventListener("click", () => {
-          this.startTitleEdit(info);
+          void this.startCurrentTitleEdit(info);
         });
         titleEl.addEventListener("keydown", (event) => {
           if (event.key !== "Enter" && event.key !== " ") return;
           event.preventDefault();
           event.stopPropagation();
-          this.startTitleEdit(info);
+          void this.startCurrentTitleEdit(info);
         });
       }
       if (info.displayTitle) {
@@ -871,7 +886,8 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       "folder-search",
       "\u5B9A\u4F4D",
       async () => {
-        await this.plugin.revealFileInExplorer(info.file);
+        const currentInfo = await this.requireCurrentInfo(info, "quick-reveal-note");
+        if (currentInfo) await this.plugin.revealFileInExplorer(currentInfo.file);
       },
       true,
       "Reveal the current note in the file explorer."
@@ -981,7 +997,21 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       "send",
       "\u8FD4\u56DE\u7A97\u53E3",
       async () => {
-        await this.plugin.sendAnnotationsFromFile(info.file);
+        const currentInfo = await this.requireCurrentInfo(info, "return-window");
+        if (!currentInfo) return;
+        this.plugin.debugLog("panel.return_window.resolve", {
+          renderedNotePath: info.file && info.file.path,
+          resolvedNotePath: currentInfo.file && currentInfo.file.path,
+          renderedSource: info.source,
+          resolvedSource: currentInfo.source,
+          activeLeafType: this.plugin.activeLeafType()
+        });
+        if (!currentInfo.isAmoNote) {
+          new import_obsidian2.Notice("Only AMO-created notes can return annotations to a task window.");
+          this.render();
+          return;
+        }
+        await this.plugin.sendAnnotationsFromFile(currentInfo.file);
       },
       Boolean(info.file && info.isAmoNote),
       info.file && !info.isAmoNote ? "Only AMO-created notes can return annotations to a task window." : ""
@@ -991,11 +1021,13 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       "copy",
       "\u590D\u5236\u6279\u6CE8",
       async () => {
+        const currentInfo = await this.requireCurrentInfo(info, "copy-annotations");
+        if (!currentInfo) return;
         this.plugin.debugLog("panel.copy.clicked", {
-          notePath: info.file && info.file.path,
-          source: info.source
+          notePath: currentInfo.file.path,
+          source: currentInfo.source
         });
-        await this.plugin.copyAnnotationsFromFile(info.file);
+        await this.plugin.copyAnnotationsFromFile(currentInfo.file);
       },
       Boolean(info.file && !isCanvasNoteContext),
       canvasNoteEditDisabledTitle
@@ -1005,7 +1037,8 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       "folder-search",
       "\u5B9A\u4F4D\u7B14\u8BB0",
       async () => {
-        await this.plugin.revealFileInExplorer(info.file);
+        const currentInfo = await this.requireCurrentInfo(info, "reveal-note");
+        if (currentInfo) await this.plugin.revealFileInExplorer(currentInfo.file);
       },
       Boolean(info.file)
     );
@@ -1014,7 +1047,8 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       "layout-template",
       "\u52A0\u5165\u5DE5\u4F5C\u753B\u5E03",
       async () => {
-        await this.plugin.openAddNoteToWorkCanvasModal(info.file);
+        const currentInfo = await this.requireCurrentInfo(info, "add-to-work-canvas");
+        if (currentInfo) await this.plugin.openAddNoteToWorkCanvasModal(currentInfo.file);
       },
       Boolean(info.file && !isCanvasNoteContext),
       canvasNoteEditDisabledTitle
@@ -1032,7 +1066,14 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       "file-input",
       "\u6253\u5F00\u7B14\u8BB0",
       async () => {
-        await this.plugin.openVaultPath(info.file.path, "note");
+        const currentInfo = await this.requireCurrentInfo(info, "open-canvas-note");
+        if (!currentInfo) return;
+        if (currentInfo.source !== "canvas-selection") {
+          new import_obsidian2.Notice("Canvas note selection changed. Select the note again.");
+          this.render();
+          return;
+        }
+        await this.plugin.openVaultPath(currentInfo.file.path, "note");
       },
       Boolean(canvasActionsEnabled && info.file),
       "Open the selected canvas note."
@@ -1042,7 +1083,20 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       "folder-search",
       "\u5B9A\u4F4D\u753B\u5E03",
       async () => {
-        await this.plugin.revealFileInExplorer(canvasFile);
+        const currentCanvas = this.plugin.getPanelCanvasFile();
+        if (!currentCanvas) {
+          new import_obsidian2.Notice("No active Canvas file.");
+          this.render();
+          return;
+        }
+        if (canvasFile && currentCanvas.path !== canvasFile.path) {
+          this.plugin.debugLog("panel.action.live_canvas_changed", {
+            action: "reveal-canvas",
+            fallbackPath: canvasFile.path,
+            livePath: currentCanvas.path
+          });
+        }
+        await this.plugin.revealFileInExplorer(currentCanvas);
       },
       canvasActionsEnabled,
       "Reveal the active canvas file in the file explorer."
@@ -1066,7 +1120,8 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
         "copy",
         "\u590D\u5236",
         async () => {
-          await this.plugin.copyAnnotationItemFromFile(info.file, item.index);
+          const currentInfo = await this.requireRenderedInfo(info, "copy-annotation-item");
+          if (currentInfo) await this.plugin.copyAnnotationItemFromFile(currentInfo.file, item.index);
         },
         true
       );
@@ -1075,7 +1130,8 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
         "locate-fixed",
         "\u8DF3\u8F6C",
         async () => {
-          await this.plugin.focusAnnotationItemInFile(info.file, item);
+          const currentInfo = await this.requireRenderedInfo(info, "focus-annotation-item");
+          if (currentInfo) await this.plugin.focusAnnotationItemInFile(currentInfo.file, item);
         },
         true
       );
@@ -1084,7 +1140,9 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
         "trash-2",
         "\u5220\u9664",
         async () => {
-          await this.plugin.deleteAnnotationFromFile(info.file, item.index);
+          const currentInfo = await this.requireRenderedInfo(info, "delete-annotation-item");
+          if (!currentInfo) return;
+          await this.plugin.deleteAnnotationFromFile(currentInfo.file, item.index);
           this.render();
         },
         true
@@ -1163,7 +1221,7 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
   }
   async insertAnnotation(info) {
     info = await this.currentInfoForAction(info, "insert-annotation");
-    if (!info.file) return;
+    if (!info || !info.file) return;
     const activeLeafType2 = this.plugin.activeLeafType();
     if (activeLeafType2 === "canvas" || info.source === "canvas-selection") {
       const selectedText2 = getWindowSelectionText();
@@ -1204,14 +1262,43 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
           activeLeafType: this.plugin.activeLeafType()
         });
       }
-      return liveInfo && liveInfo.file ? liveInfo : fallbackInfo;
+      return liveInfo;
     } catch (error) {
       this.plugin.debugLog("panel.action.live_note_error", {
         action,
         message: messageFromError(error)
       });
-      return fallbackInfo;
+      return null;
     }
+  }
+  async requireCurrentInfo(fallbackInfo, action) {
+    const currentInfo = await this.currentInfoForAction(fallbackInfo, action);
+    if (currentInfo && currentInfo.file) return currentInfo;
+    this.plugin.debugLog("panel.action.no_current_note", {
+      action,
+      fallbackPath: fallbackInfo && fallbackInfo.file && fallbackInfo.file.path,
+      fallbackSource: fallbackInfo && fallbackInfo.source,
+      activeLeafType: this.plugin.activeLeafType()
+    });
+    new import_obsidian2.Notice("No active Markdown note. The AMO panel has been refreshed.");
+    this.render();
+    return null;
+  }
+  async requireRenderedInfo(fallbackInfo, action) {
+    const currentInfo = await this.requireCurrentInfo(fallbackInfo, action);
+    if (!currentInfo) return null;
+    const renderedPath = fallbackInfo && fallbackInfo.file && fallbackInfo.file.path;
+    if (currentInfo.file.path === renderedPath) return currentInfo;
+    this.plugin.debugLog("panel.action.stale_rendered_item", {
+      action,
+      renderedPath,
+      currentPath: currentInfo.file.path,
+      renderedSource: fallbackInfo && fallbackInfo.source,
+      currentSource: currentInfo.source
+    });
+    new import_obsidian2.Notice("The active note changed. Choose the annotation again from the refreshed panel.");
+    this.render();
+    return null;
   }
   addActionButton(container, icon, label, onClick, enabled, title = "") {
     const button = container.createEl("button", {
@@ -1243,9 +1330,24 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     this.editingTitleValue = info.displayTitle || "";
     this.render();
   }
+  async startCurrentTitleEdit(info) {
+    const currentInfo = await this.requireCurrentInfo(info, "edit-title");
+    if (!currentInfo) return;
+    if (!currentInfo.isAmoNote) {
+      new import_obsidian2.Notice("Only AMO-created notes have an AMO title.");
+      this.render();
+      return;
+    }
+    this.startTitleEdit(currentInfo);
+  }
   async saveTitleEdit(info, value) {
-    if (!info.file) return;
-    const saved = await this.plugin.updateAmoNoteTitle(info.file, value);
+    const currentInfo = await this.requireRenderedInfo(info, "save-title");
+    if (!currentInfo || currentInfo.file.path !== this.editingTitleFilePath) {
+      this.resetTitleEdit();
+      this.render();
+      return;
+    }
+    const saved = await this.plugin.updateAmoNoteTitle(currentInfo.file, value);
     if (saved) {
       this.resetTitleEdit();
       this.render();
@@ -3684,14 +3786,15 @@ function getActiveMarkdownFile(plugin) {
   return target ? target.file : null;
 }
 function getActiveMarkdownFileTarget(plugin) {
-  const shouldPreferCanvasTarget = plugin.isActiveLeafCanvas() || isActiveLeafAmoPanel(plugin) || plugin.lastMarkdownTargetSource === "canvas-selection";
+  const activeLeafIsAmoPanel = isActiveLeafAmoPanel(plugin);
+  const shouldPreferCanvasTarget = plugin.isActiveLeafCanvas() || plugin.lastMarkdownTargetSource === "canvas-selection";
   if (shouldPreferCanvasTarget) {
     const canvasView = plugin.getActiveCanvasView() || plugin.lastCanvasView;
-    const selectedCanvasTarget2 = plugin.getSelectedCanvasMarkdownFileTarget(canvasView, {
+    const selectedCanvasTarget = plugin.getSelectedCanvasMarkdownFileTarget(canvasView, {
       allowRemembered: false,
       refreshPanels: false
     });
-    if (selectedCanvasTarget2) return selectedCanvasTarget2;
+    if (selectedCanvasTarget) return selectedCanvasTarget;
     const rememberedCanvasTarget = canvasView ? plugin.getRememberedCanvasMarkdownFileTarget(canvasView) : null;
     if (rememberedCanvasTarget) return rememberedCanvasTarget;
     if (plugin.isActiveLeafCanvas()) {
@@ -3706,8 +3809,10 @@ function getActiveMarkdownFileTarget(plugin) {
       source: "active-note"
     };
   }
-  const selectedCanvasTarget = plugin.getSelectedCanvasMarkdownFileTarget();
-  if (selectedCanvasTarget) return selectedCanvasTarget;
+  if (!activeLeafIsAmoPanel) {
+    const selectedCanvasTarget = plugin.getSelectedCanvasMarkdownFileTarget();
+    if (selectedCanvasTarget) return selectedCanvasTarget;
+  }
   if (plugin.isActiveLeafCanvas()) {
     return null;
   }
@@ -4210,7 +4315,8 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
     event.stopImmediatePropagation();
     if (now < this.sendToAmoShortcutSuppressUntilMs) return true;
     this.sendToAmoShortcutSuppressUntilMs = now + 700;
-    const file = this.getActiveMarkdownFile();
+    const target = this.getActiveMarkdownFileTarget();
+    const file = target ? target.file : null;
     if (!file) {
       this.debugLog("annotations.send.mouse5.no_file", {
         type: event.type,
@@ -4221,6 +4327,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
     }
     this.debugLog("annotations.send.mouse5", {
       notePath: file.path,
+      source: target && target.source,
       type: event.type
     });
     void this.sendAnnotationsFromFile(file);
@@ -4371,7 +4478,6 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       if (!(leaf.view instanceof import_obsidian17.MarkdownView)) continue;
       const view = leaf.view;
-      this.rememberMarkdownView(view, leaf);
       if (!view.containerEl.querySelector("." + AMO_SEND_ACTION_CLASS)) {
         const sendAction = view.addAction("send", "Send annotations to AMO", () => {
           if (!view.file) {

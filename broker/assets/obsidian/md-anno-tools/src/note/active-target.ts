@@ -73,9 +73,9 @@ export function getActiveMarkdownFile(plugin) {
 }
 
 export function getActiveMarkdownFileTarget(plugin) {
+  const activeLeafIsAmoPanel = isActiveLeafAmoPanel(plugin);
   const shouldPreferCanvasTarget =
     plugin.isActiveLeafCanvas() ||
-    isActiveLeafAmoPanel(plugin) ||
     plugin.lastMarkdownTargetSource === "canvas-selection";
   if (shouldPreferCanvasTarget) {
     const canvasView = plugin.getActiveCanvasView() || plugin.lastCanvasView;
@@ -102,8 +102,10 @@ export function getActiveMarkdownFileTarget(plugin) {
     };
   }
 
-  const selectedCanvasTarget = plugin.getSelectedCanvasMarkdownFileTarget();
-  if (selectedCanvasTarget) return selectedCanvasTarget;
+  if (!activeLeafIsAmoPanel) {
+    const selectedCanvasTarget = plugin.getSelectedCanvasMarkdownFileTarget();
+    if (selectedCanvasTarget) return selectedCanvasTarget;
+  }
 
   if (plugin.isActiveLeafCanvas()) {
     return null;

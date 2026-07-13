@@ -424,7 +424,8 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     if (now < this.sendToAmoShortcutSuppressUntilMs) return true;
     this.sendToAmoShortcutSuppressUntilMs = now + 700;
 
-    const file = this.getActiveMarkdownFile();
+    const target = this.getActiveMarkdownFileTarget();
+    const file = target ? target.file : null;
     if (!file) {
       this.debugLog("annotations.send.mouse5.no_file", {
         type: event.type,
@@ -436,6 +437,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     this.debugLog("annotations.send.mouse5", {
       notePath: file.path,
+      source: target && target.source,
       type: event.type,
     });
     void this.sendAnnotationsFromFile(file);
@@ -619,7 +621,6 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
       if (!(leaf.view instanceof MarkdownView)) continue;
       const view = leaf.view;
-      this.rememberMarkdownView(view, leaf);
 
       if (!view.containerEl.querySelector("." + AMO_SEND_ACTION_CLASS)) {
         const sendAction = view.addAction("send", "Send annotations to AMO", () => {
