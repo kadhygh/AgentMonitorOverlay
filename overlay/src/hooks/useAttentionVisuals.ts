@@ -1,27 +1,73 @@
 import { useEffect, useRef, useState } from "react";
-import { getCurrentWindow, UserAttentionType } from "@tauri-apps/api/window";
+import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
 import {
   sessionArchived,
   sessionAttentionKey,
   sessionAttentionVisualActive,
   sessionHasAttentionSignal,
+  sessionNeedsReview,
 } from "../domain/sessionModel";
 import type { AgentSession } from "../types";
 
 interface UseAttentionVisualsOptions {
   brokerReady: boolean;
   postDebugLog: (event: string, data?: unknown) => void;
-  reviewCount: number;
   sessions: AgentSession[];
+}
+
+type TaskbarAttentionLevel = "none" | "review" | "warning" | "error";
+
+const taskbarAttentionRank: Record<TaskbarAttentionLevel, number> = {
+  none: 0,
+  review: 1,
+  warning: 2,
+  error: 3,
+};
+
+const taskbarProgressStatus: Record<TaskbarAttentionLevel, ProgressBarStatus> = {
+  none: ProgressBarStatus.None,
+  review: ProgressBarStatus.Normal,
+  warning: ProgressBarStatus.Paused,
+  error: ProgressBarStatus.Error,
+};
+
+function sessionTaskbarAttentionLevel(session: AgentSession): TaskbarAttentionLevel {
+  if (sessionArchived(session) || !sessionHasAttentionSignal(session)) {
+    return "none";
+  }
+
+  if (session.state === "failed" || /error|fail/i.test(session.lastEvent)) {
+    return "error";
+  }
+
+  if (session.state === "waiting_permission" || session.state === "waiting_user") {
+    return "warning";
+  }
+
+  if (sessionNeedsReview(session)) {
+    return "review";
+  }
+
+  return "warning";
+}
+
+function highestTaskbarAttentionLevel(sessions: AgentSession[]): TaskbarAttentionLevel {
+  return sessions.reduce<TaskbarAttentionLevel>((highest, session) => {
+    const current = sessionTaskbarAttentionLevel(session);
+    return taskbarAttentionRank[current] > taskbarAttentionRank[highest] ? current : highest;
+  }, "none");
 }
 
 export function useAttentionVisuals(options: UseAttentionVisualsOptions) {
   const [attentionVisualSeen, setAttentionVisualSeen] = useState<Record<string, string>>({});
   const [attentionClock, setAttentionClock] = useState(() => Date.now());
-  const reviewTaskbarAttentionActiveRef = useRef(false);
+  const taskbarAttentionLevelRef = useRef<TaskbarAttentionLevel>("none");
   const hasAttentionSignal = options.sessions.some(
     (session) => !sessionArchived(session) && sessionHasAttentionSignal(session),
   );
+  const taskbarAttentionLevel = options.brokerReady
+    ? highestTaskbarAttentionLevel(options.sessions)
+    : "none";
 
   useEffect(() => {
     if (!hasAttentionSignal) {
@@ -54,63 +100,72 @@ export function useAttentionVisuals(options: UseAttentionVisualsOptions) {
 
   useEffect(() => {
     const appWindow = getCurrentWindow();
-    const hasPendingReview = options.brokerReady && options.reviewCount > 0;
     let disposed = false;
 
-    async function requestReviewTaskbarAttention(reason: string) {
+    async function showTaskbarAttention(reason: string) {
+      if (
+        taskbarAttentionLevel === "none" ||
+        taskbarAttentionLevelRef.current === taskbarAttentionLevel
+      ) {
+        return;
+      }
+
       try {
         const focused = await appWindow.isFocused();
         if (disposed || focused) {
           return;
         }
 
-        await appWindow.requestUserAttention(UserAttentionType.Informational);
-        reviewTaskbarAttentionActiveRef.current = true;
-        options.postDebugLog("taskbar.review_attention.requested", {
+        await appWindow.setProgressBar({
+          status: taskbarProgressStatus[taskbarAttentionLevel],
+          progress: 100,
+        });
+        taskbarAttentionLevelRef.current = taskbarAttentionLevel;
+        options.postDebugLog("taskbar.attention.shown", {
           reason,
-          reviewCount: options.reviewCount,
+          level: taskbarAttentionLevel,
         });
       } catch (error) {
-        options.postDebugLog("taskbar.review_attention.error", {
+        options.postDebugLog("taskbar.attention.error", {
           reason,
-          reviewCount: options.reviewCount,
+          level: taskbarAttentionLevel,
           message: (error as Error).message,
         });
       }
     }
 
-    async function clearReviewTaskbarAttention(reason: string) {
-      if (!reviewTaskbarAttentionActiveRef.current) {
+    async function clearTaskbarAttention(reason: string) {
+      if (taskbarAttentionLevelRef.current === "none") {
         return;
       }
 
       try {
-        await appWindow.requestUserAttention(null);
-        reviewTaskbarAttentionActiveRef.current = false;
-        options.postDebugLog("taskbar.review_attention.cleared", {
+        await appWindow.setProgressBar({ status: ProgressBarStatus.None });
+        taskbarAttentionLevelRef.current = "none";
+        options.postDebugLog("taskbar.attention.cleared", {
           reason,
         });
       } catch (error) {
-        options.postDebugLog("taskbar.review_attention.clear_error", {
+        options.postDebugLog("taskbar.attention.clear_error", {
           reason,
           message: (error as Error).message,
         });
       }
     }
 
-    if (hasPendingReview) {
-      void requestReviewTaskbarAttention("review-count");
+    if (taskbarAttentionLevel !== "none") {
+      void showTaskbarAttention("attention-level");
     } else {
-      void clearReviewTaskbarAttention("review-cleared");
+      void clearTaskbarAttention("attention-cleared");
     }
 
     let unlistenFocus: (() => void) | null = null;
     void appWindow
       .onFocusChanged(({ payload: focused }) => {
         if (focused) {
-          void clearReviewTaskbarAttention("window-focused");
-        } else if (hasPendingReview) {
-          void requestReviewTaskbarAttention("window-blurred");
+          void clearTaskbarAttention("window-focused");
+        } else if (taskbarAttentionLevel !== "none") {
+          void showTaskbarAttention("window-blurred");
         }
       })
       .then((unlisten) => {
@@ -130,7 +185,7 @@ export function useAttentionVisuals(options: UseAttentionVisualsOptions) {
       disposed = true;
       unlistenFocus?.();
     };
-  }, [options.brokerReady, options.postDebugLog, options.reviewCount]);
+  }, [options.postDebugLog, taskbarAttentionLevel]);
 
   function markSessionVisuallySeen(session: AgentSession) {
     if (!sessionHasAttentionSignal(session)) {

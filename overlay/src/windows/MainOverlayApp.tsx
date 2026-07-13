@@ -190,7 +190,6 @@ export function MainOverlayApp() {
   } = useAttentionVisuals({
     brokerReady,
     postDebugLog,
-    reviewCount,
     sessions,
   });
 
