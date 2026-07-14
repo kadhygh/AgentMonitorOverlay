@@ -615,8 +615,7 @@ fn window_candidate_from_hwnd(
     hwnd: windows_sys::Win32::Foundation::HWND,
 ) -> Option<WindowCandidate> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetAncestor, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId,
-        IsWindowVisible, GA_ROOT,
+        GetAncestor, GetWindowThreadProcessId, IsHungAppWindow, IsWindowVisible, GA_ROOT,
     };
 
     unsafe {
@@ -631,23 +630,11 @@ fn window_candidate_from_hwnd(
             return None;
         }
 
-        let title_len = GetWindowTextLengthW(target_hwnd);
-        if title_len <= 0 {
+        if IsHungAppWindow(target_hwnd) != 0 {
             return None;
         }
 
-        let mut title_buffer = vec![0u16; title_len as usize + 1];
-        let copied = GetWindowTextW(
-            target_hwnd,
-            title_buffer.as_mut_ptr(),
-            title_buffer.len() as i32,
-        );
-        if copied <= 0 {
-            return None;
-        }
-
-        title_buffer.truncate(copied as usize);
-        let title = String::from_utf16_lossy(&title_buffer);
+        let title = window_title_with_timeout(target_hwnd)?;
         if title.trim().is_empty() {
             return None;
         }
@@ -662,6 +649,34 @@ fn window_candidate_from_hwnd(
             title,
         })
     }
+}
+
+#[cfg(windows)]
+unsafe fn window_title_with_timeout(hwnd: windows_sys::Win32::Foundation::HWND) -> Option<String> {
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        SendMessageTimeoutW, SMTO_ABORTIFHUNG, SMTO_BLOCK, WM_GETTEXT,
+    };
+
+    const MAX_TITLE_CHARS: usize = 2048;
+    const TITLE_TIMEOUT_MS: u32 = 150;
+
+    let mut title_buffer = vec![0u16; MAX_TITLE_CHARS];
+    let mut copied = 0usize;
+    let completed = SendMessageTimeoutW(
+        hwnd,
+        WM_GETTEXT,
+        title_buffer.len(),
+        title_buffer.as_mut_ptr() as isize,
+        SMTO_ABORTIFHUNG | SMTO_BLOCK,
+        TITLE_TIMEOUT_MS,
+        &mut copied,
+    );
+    if completed == 0 || copied == 0 {
+        return None;
+    }
+
+    title_buffer.truncate(copied.min(title_buffer.len().saturating_sub(1)));
+    Some(String::from_utf16_lossy(&title_buffer))
 }
 
 #[cfg(windows)]
