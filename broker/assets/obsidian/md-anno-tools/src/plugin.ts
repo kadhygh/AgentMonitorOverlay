@@ -947,6 +947,14 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     return workCanvasActions.listWorkCanvasTargets(this, noteFile);
   }
 
+  async openWorkCanvasForNote(noteFile) {
+    return workCanvasActions.openWorkCanvasForNote(this, noteFile);
+  }
+
+  async openWorkCanvasTarget(noteFile, target) {
+    return workCanvasActions.openWorkCanvasTarget(this, noteFile, target);
+  }
+
   async canvasContainsNote(canvasFile, notePath) {
     return workCanvasActions.canvasContainsNote(this, canvasFile, notePath);
   }

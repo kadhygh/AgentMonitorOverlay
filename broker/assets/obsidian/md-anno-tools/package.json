@@ -1,6 +1,6 @@
 {
   "name": "amo-md-anno-tools",
-  "version": "1.4.41",
+  "version": "1.4.42",
   "private": true,
   "description": "AMO Obsidian plugin for annotation rendering, panel actions, and bridge sync.",
   "license": "MIT",

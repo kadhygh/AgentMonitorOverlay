@@ -1,7 +1,7 @@
 import { Notice } from "obsidian";
 import { normalizeVaultFilePath } from "../core/paths";
 import { displayNameForFile } from "../note/title";
-import { WorkCanvasPickerModal } from "../ui/modals";
+import { WorkCanvasNavigationModal, WorkCanvasPickerModal } from "../ui/modals";
 
 export async function openAddNoteToWorkCanvasModal(plugin, file) {
   if (!file || typeof file.path !== "string") {
@@ -27,6 +27,10 @@ export async function openAddNoteToWorkCanvasModal(plugin, file) {
     onSelectCanvas: async (canvasPath) => {
       await addNoteToWorkCanvas(plugin, file, canvasPath);
     },
+    onOpenCanvas: async (canvasPath) => {
+      const target = canvases.find((canvas) => canvas.path === canvasPath);
+      if (target) await openWorkCanvasTarget(plugin, file, target);
+    },
   }).open();
 }
 
@@ -37,34 +41,110 @@ export function workCanvasFolderPath(plugin) {
 export async function listWorkCanvasTargets(plugin, noteFile) {
   const folderPath = workCanvasFolderPath(plugin).replace(/\/+$/u, "");
   const prefix = folderPath + "/";
+  const normalizedPrefix = prefix.toLowerCase();
   const files = plugin.app.vault
     .getFiles()
-    .filter((file) => file.path.startsWith(prefix) && file.path.toLowerCase().endsWith(".canvas"))
+    .filter((file) => file.path.toLowerCase().startsWith(normalizedPrefix) && file.path.toLowerCase().endsWith(".canvas"))
     .sort((a, b) => a.path.localeCompare(b.path));
 
   const notePath = normalizeVaultFilePath(noteFile && noteFile.path);
   const targets = [];
   for (const file of files) {
+    const matchingNodeIds = await canvasNoteNodeIds(plugin, file, notePath);
     targets.push({
       path: file.path,
       displayName: displayNameForFile(file),
-      containsNote: await canvasContainsNote(plugin, file, notePath),
+      containsNote: matchingNodeIds.length > 0,
+      matchingNodeIds,
+      occurrenceCount: matchingNodeIds.length,
     });
   }
   return targets;
 }
 
 export async function canvasContainsNote(plugin, canvasFile, notePath) {
-  if (!canvasFile || !notePath) return false;
+  return (await canvasNoteNodeIds(plugin, canvasFile, notePath)).length > 0;
+}
+
+export async function canvasNoteNodeIds(plugin, canvasFile, notePath) {
+  const normalizedNotePath = normalizeVaultFilePath(notePath);
+  if (!canvasFile || !normalizedNotePath) return [];
+  const comparableNotePath = normalizedNotePath.toLowerCase();
   try {
     const raw = await plugin.app.vault.cachedRead(canvasFile as any);
     const canvas = JSON.parse(raw);
-    return (Array.isArray(canvas.nodes) ? canvas.nodes : []).some((node) => {
-      return normalizeVaultFilePath(node && node.file) === notePath;
-    });
+    return (Array.isArray(canvas.nodes) ? canvas.nodes : [])
+      .filter((node) => normalizeVaultFilePath(node && node.file).toLowerCase() === comparableNotePath)
+      .map((node) => String(node && node.id ? node.id : ""))
+      .filter(Boolean);
   } catch {
+    return [];
+  }
+}
+
+export async function openWorkCanvasForNote(plugin, noteFile) {
+  if (!noteFile || typeof noteFile.path !== "string") {
+    new Notice("No active Markdown note.");
     return false;
   }
+
+  const targets = await listWorkCanvasTargets(plugin, noteFile);
+  const linkedTargets = targets.filter((target) => target.containsNote);
+  if (linkedTargets.length === 1) {
+    return openWorkCanvasTarget(plugin, noteFile, linkedTargets[0]);
+  }
+  if (linkedTargets.length > 1) {
+    openWorkCanvasNavigationModal(plugin, noteFile, linkedTargets, true);
+    return true;
+  }
+
+  if (targets.length === 1) {
+    return openWorkCanvasTarget(plugin, noteFile, targets[0]);
+  }
+  if (targets.length > 1) {
+    openWorkCanvasNavigationModal(plugin, noteFile, targets, false);
+    return true;
+  }
+
+  new Notice("No work canvas exists in " + workCanvasFolderPath(plugin) + ".");
+  return false;
+}
+
+export function openWorkCanvasNavigationModal(plugin, noteFile, targets, linkedOnly) {
+  new WorkCanvasNavigationModal(plugin.app, {
+    notePath: noteFile.path,
+    targets,
+    linkedOnly,
+    onSelectCanvas: async (canvasPath) => {
+      const target = targets.find((candidate) => candidate.path === canvasPath);
+      if (target) await openWorkCanvasTarget(plugin, noteFile, target);
+    },
+  }).open();
+}
+
+export async function openWorkCanvasTarget(plugin, noteFile, target) {
+  const canvasPath = normalizeVaultFilePath(target && target.path);
+  if (!canvasPath) return false;
+
+  const opened = await plugin.openVaultPath(canvasPath, "canvas");
+  if (!opened) return false;
+
+  const matchingNodeIds = Array.isArray(target.matchingNodeIds) ? target.matchingNodeIds : [];
+  const nodeId = matchingNodeIds.length > 0 ? matchingNodeIds[matchingNodeIds.length - 1] : null;
+  const focused = target.containsNote
+    ? await plugin.focusCanvasNoteNode(canvasPath, noteFile.path, nodeId)
+    : false;
+  plugin.setOperationStatus("Opened work canvas: " + canvasPath + ".", "success");
+  plugin.debugLog("work_canvas.opened", {
+    canvasPath,
+    notePath: noteFile.path,
+    containsNote: Boolean(target.containsNote),
+    occurrenceCount: Number(target.occurrenceCount) || 0,
+    nodeId,
+    focused,
+  });
+  plugin.refreshPanels();
+  return true;
 }
 
 export async function createWorkCanvasFolder(plugin, rawName) {

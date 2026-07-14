@@ -226,10 +226,21 @@ export class WorkCanvasPickerModal extends Modal {
           });
           row.createDiv({
             cls: "amo-work-canvas-badge",
-            text: canvas.containsNote ? "Already contains note" : "New target",
+            text: canvas.containsNote
+              ? "Contains note" + (canvas.occurrenceCount > 1 ? " (" + canvas.occurrenceCount + " copies)" : "")
+              : "New target",
           });
-          new ButtonComponent(row)
-            .setButtonText("Add")
+          const rowActions = row.createDiv({ cls: "amo-work-canvas-row-actions" });
+          if (canvas.containsNote) {
+            new ButtonComponent(rowActions)
+              .setButtonText("Open")
+              .onClick(async () => {
+                await this.options.onOpenCanvas?.(canvas.path);
+                this.close();
+              });
+          }
+          new ButtonComponent(rowActions)
+            .setButtonText(canvas.containsNote ? "Add again" : "Add")
             .setCta()
             .onClick(async () => {
               await this.options.onSelectCanvas?.(canvas.path);
@@ -267,6 +278,63 @@ export class WorkCanvasPickerModal extends Modal {
     window.setTimeout(() => {
       (this.folderInput || this.canvasInput)?.inputEl.focus();
     }, 0);
+  }
+
+  onClose() {
+    this.contentEl.empty();
+  }
+}
+
+export class WorkCanvasNavigationModal extends Modal {
+  options: any;
+
+  constructor(app: any, options: any) {
+    super(app);
+    this.options = options || {};
+  }
+
+  onOpen() {
+    this.modalEl.addClass("anno-modal");
+    this.titleEl.setText("Go to Work Canvas");
+    this.contentEl.createEl("p", {
+      text: this.options.linkedOnly
+        ? "This note appears in more than one work canvas. Choose where to go."
+        : "This note has no work-canvas link yet. Choose a work canvas to open.",
+    });
+
+    const list = this.contentEl.createDiv({ cls: "amo-work-canvas-list" });
+    for (const canvas of Array.isArray(this.options.targets) ? this.options.targets : []) {
+      const row = list.createDiv({
+        cls: "amo-work-canvas-row" + (canvas.containsNote ? " contains-note" : ""),
+      });
+      row.createDiv({
+        cls: "amo-work-canvas-name",
+        text: canvas.displayName || canvas.path,
+      });
+      row.createDiv({
+        cls: "amo-work-canvas-path",
+        text: canvas.path,
+      });
+      row.createDiv({
+        cls: "amo-work-canvas-badge",
+        text: canvas.containsNote
+          ? "Contains note" + (canvas.occurrenceCount > 1 ? " (" + canvas.occurrenceCount + " copies)" : "")
+          : "No note link",
+      });
+      const rowActions = row.createDiv({ cls: "amo-work-canvas-row-actions" });
+      new ButtonComponent(rowActions)
+        .setButtonText("Open")
+        .setCta()
+        .onClick(async () => {
+          await this.options.onSelectCanvas?.(canvas.path);
+          this.close();
+        });
+    }
+
+    const actions = this.contentEl.createDiv({ cls: "anno-modal-actions" });
+    new ButtonComponent(actions)
+      .setButtonText("Cancel")
+      .onClick(() => this.close());
   }
 
   onClose() {
