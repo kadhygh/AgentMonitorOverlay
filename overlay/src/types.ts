@@ -261,6 +261,8 @@ export interface WorkspaceLaunchResult {
   pid?: number | null;
   command?: string;
   args?: string[];
+  shell?: string;
+  shellFallback?: boolean;
   windowHint?: WindowHint | null;
   targetBinding?: TargetBinding | null;
   session?: AgentSession | null;

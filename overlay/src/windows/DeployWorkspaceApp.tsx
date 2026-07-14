@@ -28,6 +28,7 @@ import {
   workspaceGeneratedNoteCount,
 } from "../domain/workspaceModel";
 import { useAmoThemeRuntime } from "../theme/amoTheme";
+import { cliLaunchPreferencePayload } from "../native/cliLaunch";
 import type {
   FolderPickResult,
   OpenPathResult,
@@ -387,6 +388,7 @@ export function DeployWorkspaceApp() {
       const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
         workspacePath: targetPath,
         adapterId,
+        ...cliLaunchPreferencePayload(),
       });
       void postUtilityDebugLog("workspace.launch.ok", {
         workspacePath: result.workspacePath,

@@ -1,7 +1,12 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bell, Bug, ClipboardPaste, Palette, Settings2, StickyNote, X } from "lucide-react";
+import { Bell, Bug, ClipboardPaste, Palette, Settings2, StickyNote, Terminal, X } from "lucide-react";
 import { useDebugLogging } from "../hooks/useDebugLogging";
+import {
+  loadCliShellPreference,
+  saveCliShellPreference,
+  type CliShellPreference,
+} from "../native/cliLaunch";
 import { loadCliSafePasteEnabled, saveCliSafePasteEnabled } from "../native/clipboard";
 import {
   applyScratchpadShortcutState,
@@ -23,7 +28,7 @@ import {
   useUtilityWindowLifecycle,
 } from "./utilityWindow";
 
-export type SettingsSection = "scratchpad" | "clipboard" | "theme" | "notifications" | "debug";
+export type SettingsSection = "cli" | "scratchpad" | "clipboard" | "theme" | "notifications" | "debug";
 
 interface SettingsSidebarProps {
   settingsSection: SettingsSection;
@@ -34,6 +39,14 @@ export function SettingsSidebar({ settingsSection, onSettingsSectionChange }: Se
   return (
     <aside className="settings-sidebar" aria-label="Settings sections">
       <strong>Sections</strong>
+      <button
+        type="button"
+        className={`settings-nav-button ${settingsSection === "cli" ? "is-active" : ""}`}
+        onClick={() => onSettingsSectionChange("cli")}
+      >
+        <Terminal size={13} aria-hidden="true" />
+        <span>CLI</span>
+      </button>
       <button
         type="button"
         className={`settings-nav-button ${settingsSection === "clipboard" ? "is-active" : ""}`}
@@ -86,6 +99,7 @@ interface SettingsDetailHeaderProps {
   debugEnabled: boolean;
   debugCount: number;
   windowsNotificationsEnabled: boolean;
+  cliShellPreference: CliShellPreference;
 }
 
 function SettingsDetailHeader({
@@ -96,9 +110,12 @@ function SettingsDetailHeader({
   debugEnabled,
   debugCount,
   windowsNotificationsEnabled,
+  cliShellPreference,
 }: SettingsDetailHeaderProps) {
   const title =
-    settingsSection === "theme"
+    settingsSection === "cli"
+      ? "CLI"
+      : settingsSection === "theme"
       ? "Theme"
       : settingsSection === "clipboard"
         ? "Clipboard"
@@ -108,7 +125,11 @@ function SettingsDetailHeader({
             ? "Debug"
             : "Scratchpad";
   const status =
-    settingsSection === "theme"
+    settingsSection === "cli"
+      ? cliShellPreference === "powershell7"
+        ? "PowerShell 7"
+        : "Windows PowerShell 5.1"
+      : settingsSection === "theme"
       ? amoTheme === "light"
         ? "Light"
         : "Dark"
@@ -133,6 +154,33 @@ function SettingsDetailHeader({
         <span>{status}</span>
       </div>
     </header>
+  );
+}
+
+interface CliSettingsBodyProps {
+  shellPreference: CliShellPreference;
+  onShellPreferenceChange: (preference: CliShellPreference) => void;
+}
+
+function CliSettingsBody({ shellPreference, onShellPreferenceChange }: CliSettingsBodyProps) {
+  const usePowerShell7 = shellPreference === "powershell7";
+
+  return (
+    <div className="settings-section-body">
+      <label className="settings-toggle">
+        <input
+          type="checkbox"
+          checked={usePowerShell7}
+          onChange={(event) =>
+            onShellPreferenceChange(event.currentTarget.checked ? "powershell7" : "windows-powershell")
+          }
+        />
+        <span>Use PowerShell 7 for managed CLI</span>
+      </label>
+      <p className="settings-help-copy">
+        Launch new and resumed Codex or Claude sessions with `pwsh.exe`. AMO falls back to Windows PowerShell 5.1 when PowerShell 7 is unavailable.
+      </p>
+    </div>
   );
 }
 
@@ -336,6 +384,7 @@ interface SettingsDetailProps {
   debugCount: number;
   debugEnabled: boolean;
   windowsNotificationsEnabled: boolean;
+  cliShellPreference: CliShellPreference;
   onScratchpadShortcutChange: (next: ScratchpadShortcutState) => void;
   onSafePasteEnabledChange: (enabled: boolean) => void;
   onOpenScratchpadNow: () => void;
@@ -343,6 +392,7 @@ interface SettingsDetailProps {
   onToggleDebugLogging: () => void;
   onWindowsNotificationsEnabledChange: (enabled: boolean) => void;
   onSendTestNotification: () => void;
+  onCliShellPreferenceChange: (preference: CliShellPreference) => void;
 }
 
 export function SettingsDetail({
@@ -354,6 +404,7 @@ export function SettingsDetail({
   debugCount,
   debugEnabled,
   windowsNotificationsEnabled,
+  cliShellPreference,
   onScratchpadShortcutChange,
   onSafePasteEnabledChange,
   onOpenScratchpadNow,
@@ -361,6 +412,7 @@ export function SettingsDetail({
   onToggleDebugLogging,
   onWindowsNotificationsEnabledChange,
   onSendTestNotification,
+  onCliShellPreferenceChange,
 }: SettingsDetailProps) {
   return (
     <div className="settings-detail">
@@ -372,9 +424,15 @@ export function SettingsDetail({
         debugEnabled={debugEnabled}
         debugCount={debugCount}
         windowsNotificationsEnabled={windowsNotificationsEnabled}
+        cliShellPreference={cliShellPreference}
       />
 
-      {settingsSection === "scratchpad" ? (
+      {settingsSection === "cli" ? (
+        <CliSettingsBody
+          shellPreference={cliShellPreference}
+          onShellPreferenceChange={onCliShellPreferenceChange}
+        />
+      ) : settingsSection === "scratchpad" ? (
         <ScratchpadSettingsBody
           scratchpadShortcut={scratchpadShortcut}
           onScratchpadShortcutChange={onScratchpadShortcutChange}
@@ -414,6 +472,9 @@ export function SettingsWindowApp() {
     loadScratchpadShortcutState(),
   );
   const [safePasteEnabled, setSafePasteEnabled] = useState(() => loadCliSafePasteEnabled());
+  const [cliShellPreference, setCliShellPreference] = useState<CliShellPreference>(() =>
+    loadCliShellPreference(),
+  );
   const [windowsNotificationsEnabled, setWindowsNotificationsEnabled] = useState(() =>
     loadWindowsNotificationsEnabled(),
   );
@@ -467,6 +528,16 @@ export function SettingsWindowApp() {
     setFeedback(enabled ? "Safe CLI copy enabled." : "Original clipboard formatting enabled.");
   }
 
+  function updateCliShellPreference(preference: CliShellPreference) {
+    setCliShellPreference(preference);
+    saveCliShellPreference(preference);
+    setFeedback(
+      preference === "powershell7"
+        ? "Managed CLI launches will use PowerShell 7."
+        : "Managed CLI launches will use Windows PowerShell 5.1.",
+    );
+  }
+
   async function updateWindowsNotificationsEnabled(enabled: boolean) {
     setWindowsNotificationsEnabled(enabled);
     await saveWindowsNotificationsEnabled(enabled);
@@ -517,6 +588,7 @@ export function SettingsWindowApp() {
           debugCount={debugCount}
           debugEnabled={debugEnabled}
           windowsNotificationsEnabled={windowsNotificationsEnabled}
+          cliShellPreference={cliShellPreference}
           onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
           onSafePasteEnabledChange={updateSafePasteEnabled}
           onOpenScratchpadNow={() => void openScratchpadNow()}
@@ -524,6 +596,7 @@ export function SettingsWindowApp() {
           onToggleDebugLogging={() => void toggleDebugLogging()}
           onWindowsNotificationsEnabledChange={(enabled) => void updateWindowsNotificationsEnabled(enabled)}
           onSendTestNotification={() => void sendTestNotification()}
+          onCliShellPreferenceChange={updateCliShellPreference}
         />
 
         <footer className="app-dialog-footer">

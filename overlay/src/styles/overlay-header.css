@@ -425,7 +425,11 @@
   min-width: 0;
   min-height: 42px;
   color: #f2fbf8;
-  cursor: move;
+  cursor: grab;
+}
+
+.app-dialog-title:active {
+  cursor: grabbing;
 }
 
 .app-dialog-title > div {

@@ -11,6 +11,9 @@ async function launchWorkspace(payload, options = {}) {
   const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
   const adapterId = normalizeText(payload?.adapterId || payload?.adapter_id || payload?.adapter);
   const resumeSessionId = normalizeText(payload?.sessionId || payload?.session_id || payload?.resumeSessionId || payload?.resume_session_id);
+  const shellPreference = normalizeText(payload?.shellPreference || payload?.shell_preference) === "powershell7"
+    ? "powershell7"
+    : "windows-powershell";
   const supportedLaunchIds = new Set(["codex-cli", "claude-cli", "codex-app"]);
   if (!supportedLaunchIds.has(adapterId)) {
     throw httpError(400, "unsupported_launch_adapter", `Unsupported launch adapter: ${adapterId || "missing"}`);
@@ -67,6 +70,7 @@ async function launchWorkspace(payload, options = {}) {
         command: "codex",
         args: resumeSessionId ? ["resume", resumeSessionId, "-C", workspacePath] : [],
         environment,
+        shellPreference,
         recordDebugLog,
       });
     } else if (adapterId === "claude-cli") {
@@ -76,6 +80,7 @@ async function launchWorkspace(payload, options = {}) {
         command: "claude",
         args: resumeSessionId ? ["--resume", resumeSessionId] : [],
         environment,
+        shellPreference,
         recordDebugLog,
       });
     } else {
@@ -97,6 +102,8 @@ async function launchWorkspace(payload, options = {}) {
     resumeSessionId: resumeSessionId || null,
     launchId: managedLaunch?.launchId || null,
     titleToken: managedLaunch?.titleToken || null,
+    shell: launch.shell || null,
+    shellFallback: Boolean(launch.shellFallback),
   });
 
   return {
@@ -110,6 +117,8 @@ async function launchWorkspace(payload, options = {}) {
     pid: launch.pid || null,
     command: launch.command,
     args: launch.args,
+    shell: launch.shell || null,
+    shellFallback: Boolean(launch.shellFallback),
     launch: managedLaunch ? launchStore.list().find((item) => item.launchId === managedLaunch.launchId) : null,
     windowHint: managedLaunch ? {
       title,

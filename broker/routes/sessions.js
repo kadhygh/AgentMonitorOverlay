@@ -139,6 +139,7 @@ async function handleSessionRoutes(req, res, url, context) {
 
   if (req.method === "POST" && resumeMatch) {
     const sessionId = decodeURIComponent(resumeMatch[1]);
+    const payload = await readJsonBody(req, { allowEmpty: true });
     const existing = context.sessions.get(sessionId);
     if (!existing) {
       const error = new Error(`Session not found for resume: ${sessionId}`);
@@ -162,7 +163,13 @@ async function handleSessionRoutes(req, res, url, context) {
     }
     const workspacePath = existing.workspacePath || existing.cwd;
     const result = await context.launchWorkspace(
-      { workspacePath, adapterId, sessionId, sourceCardSessionId: sessionId },
+      {
+        workspacePath,
+        adapterId,
+        sessionId,
+        sourceCardSessionId: sessionId,
+        shellPreference: payload?.shellPreference,
+      },
       { launchStore: context.launchStore, recordDebugLog: context.recordDebugLog }
     );
     const now = new Date().toISOString();

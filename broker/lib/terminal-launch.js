@@ -1,6 +1,14 @@
-const { spawn } = require("child_process");
+const { spawn, spawnSync } = require("child_process");
 
-async function launchCliInTerminal({ workspacePath, title, command, args = [], environment = {}, recordDebugLog = null }) {
+async function launchCliInTerminal({
+  workspacePath,
+  title,
+  command,
+  args = [],
+  environment = {},
+  shellPreference = "windows-powershell",
+  recordDebugLog = null,
+}) {
   const cliArgs = args.map(powershellSingleQuoted).join(" ");
   const environmentAssignments = Object.entries(environment)
     .filter(([, value]) => value !== null && value !== undefined && String(value).length > 0)
@@ -9,6 +17,14 @@ async function launchCliInTerminal({ workspacePath, title, command, args = [], e
   const commandLine = `${environmentAssignments ? `${environmentAssignments}; ` : ""}$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)}; & ${command}${cliArgs ? ` ${cliArgs}` : ""}`;
   const powershellArgs = powershellNoExitEncodedArgs(commandLine);
   if (process.platform === "win32") {
+    const { shell, shellFallback } = resolvePowerShell(shellPreference);
+    if (shellFallback && typeof recordDebugLog === "function") {
+      recordDebugLog("broker", "workspace.launch.pwsh_unavailable", {
+        workspacePath,
+        title,
+        fallback: shell,
+      });
+    }
     const wtArgs = [
       "-w",
       "new",
@@ -18,11 +34,12 @@ async function launchCliInTerminal({ workspacePath, title, command, args = [], e
       "--suppressApplicationTitle",
       "-d",
       workspacePath,
-      "powershell.exe",
+      shell,
       ...powershellArgs,
     ];
     try {
-      return await spawnDetached("wt.exe", wtArgs, workspacePath);
+      const result = await spawnDetached("wt.exe", wtArgs, workspacePath);
+      return { ...result, shell, shellFallback };
     } catch (error) {
       if (typeof recordDebugLog === "function") {
         recordDebugLog("broker", "workspace.launch.wt_failed", {
@@ -33,10 +50,29 @@ async function launchCliInTerminal({ workspacePath, title, command, args = [], e
       }
     }
 
-    return spawnDetached("powershell.exe", powershellArgs, workspacePath);
+    const result = await spawnDetached(shell, powershellArgs, workspacePath);
+    return { ...result, shell, shellFallback };
   }
 
-  return spawnDetached(command, [], workspacePath);
+  const result = await spawnDetached(command, [], workspacePath);
+  return { ...result, shell: null, shellFallback: false };
+}
+
+function executableAvailable(command) {
+  const result = spawnSync("where.exe", [command], {
+    windowsHide: true,
+    stdio: "ignore",
+  });
+  return !result.error && result.status === 0;
+}
+
+function resolvePowerShell(shellPreference, isAvailable = executableAvailable) {
+  const requestedPowerShell7 = shellPreference === "powershell7";
+  const powerShell7Available = requestedPowerShell7 && isAvailable("pwsh.exe");
+  return {
+    shell: powerShell7Available ? "pwsh.exe" : "powershell.exe",
+    shellFallback: requestedPowerShell7 && !powerShell7Available,
+  };
 }
 
 function powershellSingleQuoted(value) {
@@ -91,5 +127,6 @@ function spawnDetached(command, args, cwd, options = {}) {
 
 module.exports = {
   launchCliInTerminal,
+  resolvePowerShell,
   spawnDetached,
 };

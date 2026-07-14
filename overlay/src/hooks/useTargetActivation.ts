@@ -6,6 +6,7 @@ import {
   brokerSessionTargetBindingUrl,
   postBrokerJson,
 } from "../api/brokerClient";
+import { cliLaunchPreferencePayload } from "../native/cliLaunch";
 import { menuPosition } from "../domain/overlaySessionUi";
 import {
   activationCandidateFromWindowTarget,
@@ -149,7 +150,7 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     try {
       const result = await postBrokerJson<WorkspaceLaunchResult & { duplicate?: boolean }>(
         brokerSessionResumeUrl(session.sessionId),
-        {},
+        cliLaunchPreferencePayload(),
       );
       if (result.session) {
         options.setSessions((previous) =>

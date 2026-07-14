@@ -9,6 +9,7 @@ import {
   brokerSessionTaskTitleUrl,
   postBrokerJson,
 } from "../api/brokerClient";
+import { cliLaunchPreferencePayload } from "../native/cliLaunch";
 import { launchPanelPosition, workspacePanelPosition } from "../domain/overlaySessionUi";
 import { projectName, workspacePathForSession } from "../domain/routingModel";
 import {
@@ -149,6 +150,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         workspacePath,
         adapterId,
         sourceCardSessionId: session.sessionId,
+        ...cliLaunchPreferencePayload(),
       });
       options.postDebugLog("workspace.launch_panel.launch.ok", {
         sessionId: session.sessionId,
