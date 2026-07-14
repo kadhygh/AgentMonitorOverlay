@@ -105,6 +105,16 @@ export function usePendingPromptSync(options: UsePendingPromptSyncOptions) {
   }
 
   function autoCopyAndFocusPendingPrompt(session: AgentSession, reason: string) {
+    if (reason === "obsidian-return") {
+      options.postDebugLog("sync.return.focus", {
+        sessionId: session.sessionId,
+        reason,
+        targetType: targetBindingForSession(session)?.type ?? "auto",
+      });
+      void options.activateSession(session);
+      return;
+    }
+
     if (!session.pendingPrompt) {
       return;
     }

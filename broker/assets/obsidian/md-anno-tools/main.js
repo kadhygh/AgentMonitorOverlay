@@ -38,7 +38,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.40";
+var PLUGIN_VERSION = "1.4.41";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -2540,10 +2540,6 @@ async function sendAnnotationsFromFileAction(context, file) {
     extractDurationMs,
     elapsedMs: Date.now() - sendStartedAtMs
   });
-  if (annotations.length === 0) {
-    new import_obsidian7.Notice("No annotations found in the current note.");
-    return;
-  }
   const amo = parseAmoMetadata(markdown);
   context.debugLog("annotations.metadata", {
     notePath: file.path,
@@ -2552,6 +2548,32 @@ async function sendAnnotationsFromFileAction(context, file) {
   });
   if (!amo.sessionId) {
     new import_obsidian7.Notice("This note is missing AMO session metadata.");
+    return;
+  }
+  if (annotations.length === 0) {
+    try {
+      await postJson(joinUrl(bridgeUrl(context), "/api/obsidian/return"), {
+        schemaVersion: 1,
+        source: "obsidian-md-anno-tools",
+        vaultRoot: getVaultRoot(context.app),
+        notePath: file.path,
+        sessionId: amo.sessionId,
+        turnId: amo.turnId || null
+      });
+      context.debugLog("annotations.return.ok", {
+        notePath: file.path,
+        sessionId: amo.sessionId
+      });
+      context.setOperationStatus("Returning to the task window for " + file.path + ".", "success");
+    } catch (error) {
+      context.debugLog("annotations.return.error", {
+        notePath: file.path,
+        sessionId: amo.sessionId,
+        message: messageFromError(error)
+      });
+      context.setOperationStatus("Return failed: " + messageFromError(error), "error");
+      new import_obsidian7.Notice("Return to task window failed: " + messageFromError(error));
+    }
     return;
   }
   const payload = {

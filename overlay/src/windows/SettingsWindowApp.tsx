@@ -198,6 +198,7 @@ function ScratchpadSettingsBody({
             })
           }
         >
+          <option value="ctrl+alt+z">Ctrl + Alt + Z</option>
           <option value="ctrl+alt+space">Ctrl + Alt + Space</option>
           <option value="ctrl+mouse4">Ctrl + Mouse4</option>
           <option value="mouse4">Mouse4</option>

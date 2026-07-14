@@ -72,11 +72,6 @@ export async function sendAnnotationsFromFileAction(context, file) {
     extractDurationMs,
     elapsedMs: Date.now() - sendStartedAtMs,
   });
-  if (annotations.length === 0) {
-    new Notice("No annotations found in the current note.");
-    return;
-  }
-
   const amo = parseAmoMetadata(markdown);
   context.debugLog("annotations.metadata", {
     notePath: file.path,
@@ -85,6 +80,33 @@ export async function sendAnnotationsFromFileAction(context, file) {
   });
   if (!amo.sessionId) {
     new Notice("This note is missing AMO session metadata.");
+    return;
+  }
+
+  if (annotations.length === 0) {
+    try {
+      await postJson(joinUrl(bridgeUrl(context), "/api/obsidian/return"), {
+        schemaVersion: 1,
+        source: "obsidian-md-anno-tools",
+        vaultRoot: getVaultRoot(context.app),
+        notePath: file.path,
+        sessionId: amo.sessionId,
+        turnId: amo.turnId || null,
+      });
+      context.debugLog("annotations.return.ok", {
+        notePath: file.path,
+        sessionId: amo.sessionId,
+      });
+      context.setOperationStatus("Returning to the task window for " + file.path + ".", "success");
+    } catch (error) {
+      context.debugLog("annotations.return.error", {
+        notePath: file.path,
+        sessionId: amo.sessionId,
+        message: messageFromError(error),
+      });
+      context.setOperationStatus("Return failed: " + messageFromError(error), "error");
+      new Notice("Return to task window failed: " + messageFromError(error));
+    }
     return;
   }
 

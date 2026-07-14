@@ -109,6 +109,7 @@ fn normalize_scratchpad_shortcut(value: &str) -> Option<NormalizedScratchpadShor
             button: SCRATCHPAD_BUTTON_MOUSE5,
             ctrl_required: false,
         }),
+        "ctrl+alt+z" => Some(NormalizedScratchpadShortcut::Keyboard("Ctrl+Alt+Z")),
         "ctrl+alt+space" => Some(NormalizedScratchpadShortcut::Keyboard("Ctrl+Alt+Space")),
         _ => None,
     }
@@ -120,6 +121,7 @@ fn shortcut_label(shortcut: &str) -> String {
         .map(|part| match part {
             "ctrl" => "Ctrl",
             "alt" => "Alt",
+            "z" => "Z",
             "space" => "Space",
             "mouse4" => "Mouse4",
             "mouse5" => "Mouse5",

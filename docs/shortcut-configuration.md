@@ -15,7 +15,7 @@ These bindings are intentionally conservative on the author's machine to avoid c
 
 ## Public Behavior
 
-- Public builds support keyboard-only Scratchpad use through `Ctrl+Alt+Space`; new installations start the global shortcut disabled and let the user opt in.
+- Public builds support keyboard-only Scratchpad use through `Ctrl+Alt+Z` or `Ctrl+Alt+Space`; new installations start the global shortcut disabled and let the user opt in.
 - Scratchpad settings offer keyboard, mouse-side-button, and disabled choices.
 - Every global mouse shortcut must be individually enabled or disabled.
 - User overrides must survive application updates and Obsidian plugin redeployment.
@@ -33,7 +33,7 @@ The author's development profile seeds the two local bindings above from `amo.lo
 
 ## Current Boundaries
 
-- Scratchpad supports `Ctrl+Alt+Space`, Mouse4, Mouse5, and Ctrl-modified Mouse4/Mouse5.
+- Scratchpad supports `Ctrl+Alt+Z`, `Ctrl+Alt+Space`, Mouse4, Mouse5, and Ctrl-modified Mouse4/Mouse5.
 - The Obsidian plugin settings control its contextual Mouse4/Mouse5 action and optional Ctrl requirement.
 - Obsidian keyboard bindings remain in Obsidian's native Hotkeys page because the plugin already exposes normal AMO Commands.
 - Existing explicit settings win over profile defaults and survive plugin update/redeployment.

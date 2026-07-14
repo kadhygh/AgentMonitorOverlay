@@ -46,6 +46,14 @@ async function handleObsidianRoutes(req, res, url, context) {
     return sendHandled(res, 200, result);
   }
 
+  if (req.method === "POST" && url.pathname === "/api/obsidian/return") {
+    const payload = await readJsonBody(req);
+    const result = context.obsidianBridge.handleObsidianReturn(payload);
+    context.persistSnapshot();
+    context.publishSessionChanged("obsidian-return", result.session);
+    return sendHandled(res, 200, result);
+  }
+
   if (req.method === "POST" && url.pathname === "/api/obsidian/note-title") {
     const payload = await readJsonBody(req);
     const result = context.obsidianBridge.handleObsidianNoteTitle(payload);

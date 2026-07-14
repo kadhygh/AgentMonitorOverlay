@@ -447,6 +447,9 @@ try {
     if ($pluginMain -notmatch "panel.copy.clicked" -or $pluginMain -notmatch "copyAnnotationsFromFile\(currentInfo\.file\)") {
         throw "Obsidian plugin panel copy action does not use the currently displayed note."
     }
+    if ($pluginMain -notmatch "/api/obsidian/return" -or $pluginMain -notmatch "annotations\.return\.ok") {
+        throw "Obsidian plugin does not support returning to a task window without annotations."
+    }
     if ($pluginMain -notmatch "schedulePanelRefresh" -or $pluginMain -notmatch "refreshPanels: false") {
         throw "Obsidian plugin panel refresh is not guarded against canvas-selection render recursion."
     }
@@ -1041,6 +1044,19 @@ try {
         throw "Claude StopFailure should mark the task failed and require attention."
     }
     Write-Host "Claude lifecycle states OK -> elicitation/result/stop-failure"
+
+    $emptyAnnotationReturn = Invoke-BrokerJson -Method POST -Path "/api/obsidian/return" -Body @{
+        schemaVersion = 1
+        source = "verify-obsidian-plugin"
+        vaultRoot = $vaultRoot
+        notePath = $claudeSession.lastReplyNote
+        sessionId = "claude-hook-verify"
+        turnId = "empty-annotation-return"
+    }
+    if (-not $emptyAnnotationReturn.ok -or $emptyAnnotationReturn.session.lastEvent -ne "StopFailure" -or $emptyAnnotationReturn.session.state -ne "failed" -or $emptyAnnotationReturn.session.pendingPrompt) {
+        throw "Empty-annotation Obsidian return should preserve task state and avoid creating a pending prompt."
+    }
+    Write-Host "Obsidian empty-annotation return OK -> $($emptyAnnotationReturn.session.sessionId)"
 
     $recoveredAnnotation = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
         schemaVersion = 1

@@ -216,7 +216,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
             sessionId: changedSession.sessionId,
             durationMs: Math.round(performance.now() - applyStartedAt),
           });
-          if (eventReason === "obsidian-annotations") {
+          if (eventReason === "obsidian-annotations" || eventReason === "obsidian-return") {
             window.setTimeout(() => options.autoCopyAndFocusPendingPrompt(changedSession, eventReason), 0);
           }
         }

@@ -5,6 +5,7 @@ export type ScratchpadShortcut =
   | "mouse4"
   | "ctrl+mouse5"
   | "mouse5"
+  | "ctrl+alt+z"
   | "ctrl+alt+space";
 
 export interface ScratchpadShortcutState {
@@ -25,6 +26,7 @@ const VALID_SHORTCUTS = new Set<ScratchpadShortcut>([
   "mouse4",
   "ctrl+mouse5",
   "mouse5",
+  "ctrl+alt+z",
   "ctrl+alt+space",
 ]);
 
@@ -61,6 +63,7 @@ export function scratchpadShortcutLabel(state: ScratchpadShortcutState) {
     mouse4: "Mouse4",
     "ctrl+mouse5": "Ctrl + Mouse5",
     mouse5: "Mouse5",
+    "ctrl+alt+z": "Ctrl + Alt + Z",
     "ctrl+alt+space": "Ctrl + Alt + Space",
   };
   return labels[state.shortcut];

@@ -21,10 +21,43 @@ function createObsidianBridge({ sessions = new Map(), recordDebugLog = () => {},
   };
   return {
     handleObsidianAnnotations: (payload) => handleObsidianAnnotations(payload, context),
+    handleObsidianReturn: (payload) => handleObsidianReturn(payload, context),
     handleObsidianNoteTitle: (payload) => handleObsidianNoteTitle(payload, { recordDebugLog }),
     handleRegisterObsidianVault: (payload) => handleRegisterObsidianVault(payload, { recordDebugLog }),
     handleSyncBack: (payload) => handleSyncBack(payload, context),
     recoverSessionFromAnnotationPayload,
+  };
+}
+
+function handleObsidianReturn(payload, { sessions, recordDebugLog = () => {} } = {}) {
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    throw httpError(400, "invalid_json", "Obsidian return payload must be a JSON object");
+  }
+
+  const sessionId = normalizeText(payload.sessionId || payload.session_id);
+  if (!sessionId) {
+    throw httpError(400, "missing_session_id", "Obsidian return payload must include sessionId");
+  }
+
+  const existing = sessions.get(sessionId);
+  const recovered = existing ? null : recoverSessionFromAnnotationPayload(payload, sessionId);
+  const session = existing || recovered;
+  if (!session) {
+    throw httpError(404, "session_not_found", `Session not found for Obsidian return: ${sessionId}`);
+  }
+  if (recovered) sessions.set(sessionId, recovered);
+  recordDebugLog("broker", "obsidian.return.requested", {
+    sessionId,
+    notePath: normalizeText(payload.notePath || payload.note_path),
+    turnId: normalizeText(payload.turnId || payload.turn_id),
+    recovered: Boolean(recovered),
+  });
+
+  return {
+    ok: true,
+    schemaVersion: AMO_SCHEMA_VERSION,
+    sessionId,
+    session,
   };
 }
 
@@ -374,6 +407,7 @@ function handleRegisterObsidianVault(payload, { recordDebugLog = () => {} } = {}
 module.exports = {
   createObsidianBridge,
   handleObsidianAnnotations,
+  handleObsidianReturn,
   handleObsidianNoteTitle,
   handleRegisterObsidianVault,
   handleSyncBack,
