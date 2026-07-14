@@ -228,7 +228,7 @@ Each adapter definition should provide:
 
 ### `codex-cli`
 
-MVP status: implemented for workspace-local prompt/reply/permission/tool lifecycle hook capture.
+MVP status: implemented for workspace-local prompt/reply/permission/tool lifecycle hook capture, plus transcript-assisted interrupt detection.
 
 Expected deployment:
 
@@ -238,14 +238,17 @@ Expected deployment:
 - offer a local `.git/info/exclude` update for `.amo/`, `.codex/cache/`, and `.codex/hooks.json`
 - POST `prompt` from `UserPromptSubmit` to `POST /api/prompts`
 - POST `last_assistant_message` from `Stop` to `POST /api/replies`
-- POST `PermissionRequest`, `PreToolUse`, `PostToolUse`, and `PostToolUseFailure` as event-only payloads to `POST /api/events`
+- POST `SessionStart`, `PermissionRequest`, `PreToolUse`, and `PostToolUse` as event-only payloads to `POST /api/events`
 - use `PreToolUse` / `PostToolUse` events to clear stale permission attention and mark the card `running` after a user handles a request
+- while a Codex session is active, tail only newly appended transcript JSONL rows and map `event_msg.payload.type=turn_aborted` to card state `cancelled`
+- never use transcript content to create notes, prompts, replies, or Canvas nodes; transcript observation is a narrow status fallback because Codex does not emit `Stop` for an interrupted turn
 - keep hook stdout protocol-clean with `{"continue":true}`
 
 Known risks:
 
 - Codex project-local hook trust/review behavior needs local smoke validation per enrolled workspace.
 - Hook payload does not provide a native window handle.
+- `transcript_path` and its JSONL shape are not a stable public hook contract. AMO therefore token-filters for `turn_aborted`, validates the exact row shape, starts at EOF, and ignores unknown rows.
 
 ### `codex-app`
 
@@ -270,7 +273,8 @@ Expected deployment:
 - offer a local `.git/info/exclude` update for `.amo/`; `.claude/settings.local.json` is opt-in because teams may intentionally version other `.claude` files
 - POST `prompt` from `UserPromptSubmit` to `POST /api/prompts`
 - POST `last_assistant_message` from `Stop` to `POST /api/replies`
-- POST `PermissionRequest`, `PreToolUse`, `PostToolUse`, and `PostToolUseFailure` as event-only payloads to `POST /api/events`
+- POST `SessionStart`, `PermissionRequest`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure`, `StopFailure`, `SessionEnd`, `Elicitation`, and `ElicitationResult` as event-only payloads to `POST /api/events`
+- listen to `Notification` only for `permission_prompt`; normal idle/auth/background notifications are intentionally excluded because `Stop`, `StopFailure`, and explicit user-input hooks already own those card transitions
 - use `PreToolUse` / `PostToolUse` events to clear stale permission attention and mark the card `running` after a user handles a request
 - keep hook stdout protocol-clean with JSON only, so `UserPromptSubmit` does not inject AMO text into Claude context
 

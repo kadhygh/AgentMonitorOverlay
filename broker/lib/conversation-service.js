@@ -118,6 +118,8 @@ function handleReply(payload, context) {
     launchState: normalizeText(payload.launchState || payload.launch_state) || existing?.launchState || null,
     launchRevision:
       normalizeInteger(payload.launchRevision || payload.launch_revision) ?? existing?.launchRevision ?? null,
+    activeTurnId: turnId,
+    transcriptPath,
     vaultRoot,
     lastReplyAt: capturedAt,
     lastReplyNote: note.notePath,
@@ -214,6 +216,7 @@ function handlePrompt(payload, context) {
   const source = normalizeText(payload.source) || "user-prompt";
   const hookEventName = normalizeText(payload.hookEventName || payload.hook_event_name) || "UserPromptSubmit";
   const cwd = normalizeText(payload.cwd) || existing?.cwd || workspaceRoot;
+  const transcriptPath = normalizeText(payload.transcriptPath || payload.transcript_path);
   const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title);
   const taskTitle = normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null;
   const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null;
@@ -242,6 +245,8 @@ function handlePrompt(payload, context) {
         createdAt: existing?.createdAt || now,
         heartbeatAt: existing?.heartbeatAt || null,
         eventCount: (existing?.eventCount || 0) + 1,
+        activeTurnId: turnId,
+        transcriptPath: transcriptPath || existing?.transcriptPath || null,
         workspaceId: existing?.workspaceId || workspace.workspaceId,
         workspacePath: existing?.workspacePath || workspaceRoot,
         windowHint,
@@ -295,7 +300,7 @@ function handlePrompt(payload, context) {
     taskTitle,
     model: normalizeText(payload.model),
     hookEventName,
-    transcriptPath: normalizeText(payload.transcriptPath || payload.transcript_path),
+    transcriptPath,
     capturedAt,
     pendingPromptId: pendingPromptId || null,
     message,
@@ -328,6 +333,8 @@ function handlePrompt(payload, context) {
     launchState: normalizeText(payload.launchState || payload.launch_state) || existing?.launchState || null,
     launchRevision:
       normalizeInteger(payload.launchRevision || payload.launch_revision) ?? existing?.launchRevision ?? null,
+    activeTurnId: turnId,
+    transcriptPath: transcriptPath || existing?.transcriptPath || null,
     vaultRoot,
     reviewRequired: false,
     reviewStatus: null,

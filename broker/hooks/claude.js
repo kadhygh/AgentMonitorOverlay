@@ -4,16 +4,22 @@ const { httpError } = require("../lib/http");
 const { readJsonFileStrict, writeTextFile } = require("../lib/filesystem");
 
 const CLAUDE_HOOK_EVENTS = Object.freeze([
+  "SessionStart",
   "UserPromptSubmit",
   "Stop",
+  "StopFailure",
+  "SessionEnd",
   "PermissionRequest",
   "PreToolUse",
   "PostToolUse",
   "PostToolUseFailure",
+  "Notification",
+  "Elicitation",
+  "ElicitationResult",
 ]);
 function claudeMessageHookScript(options = {}) {
-  const deploymentVersion = options.deploymentVersion ?? 3;
-  const hookProtocolVersion = options.hookProtocolVersion ?? 3;
+  const deploymentVersion = options.deploymentVersion ?? 4;
+  const hookProtocolVersion = options.hookProtocolVersion ?? 4;
   return [
     "import fs from 'node:fs/promises';",
     "import path from 'node:path';",
@@ -44,8 +50,9 @@ function claudeMessageHookScript(options = {}) {
     "  const lowerEventName = eventName.toLowerCase();",
     "  const isPromptEvent = lowerEventName === 'userpromptsubmit';",
     "  const isStopEvent = lowerEventName === 'stop';",
+    "  const isInterruptedEvent = (isStopEvent || lowerEventName === 'stopfailure') && isInterruptedPayload(payload, eventName);",
     "  const assistantMessage = normalizeMessage(payload.last_assistant_message);",
-    "  const isReplyEvent = isStopEvent && Boolean(assistantMessage);",
+    "  const isReplyEvent = isStopEvent && !isInterruptedEvent && Boolean(assistantMessage);",
     "  const isEventOnly = !isPromptEvent && !isReplyEvent;",
     "  const message = normalizeMessage(",
     "    isPromptEvent",
@@ -82,7 +89,7 @@ function claudeMessageHookScript(options = {}) {
     "      transcriptPath: typeof payload.transcript_path === 'string' ? payload.transcript_path : null,",
     "      permissionMode: typeof payload.permission_mode === 'string' ? payload.permission_mode : null,",
     "      stopHookActive: Boolean(payload.stop_hook_active),",
-    "      state: inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent),",
+    "      state: inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent, isInterruptedEvent),",
     "      message,",
     "      windowHint: buildWindowHint(cwd, turnId),",
     "    };",
@@ -229,20 +236,38 @@ function claudeMessageHookScript(options = {}) {
     "  return eventName;",
     "}",
     "",
-    "function inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent) {",
+    "function inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent, isInterruptedEvent) {",
+    "  if (isInterruptedEvent) return 'cancelled';",
+    "  const lowerEventName = String(eventName || '').toLowerCase();",
+    "  if (lowerEventName === 'sessionstart') return 'starting';",
+    "  if (lowerEventName === 'stopfailure') return 'failed';",
+    "  if (lowerEventName === 'sessionend') return 'completed';",
+    "  if (lowerEventName === 'elicitation') return 'waiting_user';",
+    "  if (lowerEventName === 'elicitationresult') return 'running';",
+    "  if (lowerEventName === 'notification') {",
+    "    const notificationType = String(payload.notification_type || '').toLowerCase();",
+    "    if (notificationType.includes('permission')) return 'waiting_permission';",
+    "    return null;",
+    "  }",
     "  if (isPromptEvent) return 'running';",
     "  if (isReplyEvent) return 'idle';",
-    "  const lowerEventName = String(eventName || '').toLowerCase();",
     "  if (lowerEventName === 'pretooluse' || lowerEventName === 'posttooluse' || lowerEventName === 'posttoolusefailure') return 'running';",
     "  const combined = [eventName, payload.message, payload.reason, payload.title, payload.error, payload.status, payload.notification_type]",
     "    .filter((item) => typeof item === 'string')",
     "    .join(' ')",
     "    .toLowerCase();",
     "  if (combined.includes('permission') || combined.includes('approval')) return 'waiting_permission';",
-    "  if (combined.includes('interrupt') || combined.includes('cancel') || combined.includes('abort')) return 'cancelled';",
     "  if (combined.includes('stopfailure') || combined.includes('fail') || combined.includes('error')) return 'failed';",
     "  if (isStopEvent) return 'idle';",
     "  return null;",
+    "}",
+    "",
+    "function isInterruptedPayload(payload, eventName) {",
+    "  return [eventName, payload.message, payload.reason, payload.title, payload.error, payload.status, payload.notification_type]",
+    "    .filter((item) => typeof item === 'string')",
+    "    .join(' ')",
+    "    .toLowerCase()",
+    "    .match(/interrupt|cancel|abort/) !== null;",
     "}",
     "",
     "function buildWindowHint(cwd, turnId) {",
@@ -308,10 +333,6 @@ function mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot) {
       },
     ],
   };
-  const permissionHookEntry = {
-    matcher: "*",
-    hooks: hookEntry.hooks,
-  };
 
   fs.mkdirSync(claudeDir, { recursive: true });
 
@@ -325,25 +346,18 @@ function mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot) {
   if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) {
     config.hooks = {};
   }
+  for (const eventName of Object.keys(config.hooks)) {
+    if (!Array.isArray(config.hooks[eventName])) continue;
+    config.hooks[eventName] = removeManagedHookEntries(config.hooks[eventName], "claude-message.mjs");
+    if (config.hooks[eventName].length === 0 && !CLAUDE_HOOK_EVENTS.includes(eventName)) {
+      delete config.hooks[eventName];
+    }
+  }
   for (const eventName of CLAUDE_HOOK_EVENTS) {
     if (!Array.isArray(config.hooks[eventName])) {
       config.hooks[eventName] = [];
     }
-  }
-
-  if (!JSON.stringify(config.hooks.UserPromptSubmit).includes("claude-message.mjs")) {
-    config.hooks.UserPromptSubmit.push(hookEntry);
-  }
-  if (!JSON.stringify(config.hooks.Stop).includes("claude-message.mjs")) {
-    config.hooks.Stop.push(hookEntry);
-  }
-  if (!JSON.stringify(config.hooks.PermissionRequest).includes("claude-message.mjs")) {
-    config.hooks.PermissionRequest.push(permissionHookEntry);
-  }
-  for (const eventName of ["PreToolUse", "PostToolUse", "PostToolUseFailure"]) {
-    if (!JSON.stringify(config.hooks[eventName]).includes("claude-message.mjs")) {
-      config.hooks[eventName].push(permissionHookEntry);
-    }
+    config.hooks[eventName].push(claudeHookEntryForEvent(eventName, hookEntry));
   }
 
   const nextRaw = `${JSON.stringify(config, null, 2)}\n`;
@@ -362,6 +376,20 @@ function mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot) {
 
   writeTextFile(settingsPath, nextRaw);
   return { changed: true, backups };
+}
+
+function claudeHookEntryForEvent(eventName, hookEntry) {
+  if (["UserPromptSubmit", "Stop"].includes(eventName)) return hookEntry;
+  if (eventName === "Notification") return { matcher: "permission_prompt", hooks: hookEntry.hooks };
+  return { matcher: "*", hooks: hookEntry.hooks };
+}
+
+function removeManagedHookEntries(entries, scriptName) {
+  return entries.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || !Array.isArray(entry.hooks)) return [entry];
+    const hooks = entry.hooks.filter((hook) => !String(hook?.command || "").includes(scriptName));
+    return hooks.length > 0 ? [{ ...entry, hooks }] : [];
+  });
 }
 
 function fileSafeTimestamp(value) {

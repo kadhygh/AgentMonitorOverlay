@@ -4,16 +4,16 @@ const { httpError } = require("../lib/http");
 const { readJsonFileStrict, writeTextFile } = require("../lib/filesystem");
 
 const CODEX_HOOK_EVENTS = Object.freeze([
+  "SessionStart",
   "Stop",
   "UserPromptSubmit",
   "PermissionRequest",
   "PreToolUse",
   "PostToolUse",
-  "PostToolUseFailure",
 ]);
 function codexReplyHookScript(options = {}) {
-  const deploymentVersion = options.deploymentVersion ?? 3;
-  const hookProtocolVersion = options.hookProtocolVersion ?? 3;
+  const deploymentVersion = options.deploymentVersion ?? 4;
+  const hookProtocolVersion = options.hookProtocolVersion ?? 4;
   return [
     "import fs from 'node:fs/promises';",
     "import path from 'node:path';",
@@ -44,8 +44,9 @@ function codexReplyHookScript(options = {}) {
     "  const lowerEventName = eventName.toLowerCase();",
     "  const isPromptEvent = lowerEventName === 'userpromptsubmit';",
     "  const isStopEvent = lowerEventName === 'stop';",
+    "  const isInterruptedEvent = isStopEvent && isInterruptedPayload(payload, eventName);",
     "  const assistantMessage = normalizeMessage(payload.last_assistant_message);",
-    "  const isReplyEvent = isStopEvent && Boolean(assistantMessage);",
+    "  const isReplyEvent = isStopEvent && !isInterruptedEvent && Boolean(assistantMessage);",
     "  const isEventOnly = !isPromptEvent && !isReplyEvent;",
     "  const message = normalizeMessage(",
     "    isPromptEvent",
@@ -76,8 +77,9 @@ function codexReplyHookScript(options = {}) {
     "      hookEventName: eventName,",
     "      cwd: typeof payload.cwd === 'string' ? payload.cwd : projectRoot,",
     "      transcriptPath: typeof payload.transcript_path === 'string' ? payload.transcript_path : null,",
+    "      permissionMode: typeof payload.permission_mode === 'string' ? payload.permission_mode : null,",
     "      stopHookActive: Boolean(payload.stop_hook_active),",
-    "      state: inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent),",
+    "      state: inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent, isInterruptedEvent),",
     "      message,",
     "    };",
     "",
@@ -229,20 +231,29 @@ function codexReplyHookScript(options = {}) {
     "  return eventName;",
     "}",
     "",
-    "function inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent) {",
+    "function inferHookState(payload, eventName, isPromptEvent, isReplyEvent, isStopEvent, isInterruptedEvent) {",
+    "  if (isInterruptedEvent) return 'cancelled';",
+    "  const lowerEventName = String(eventName || '').toLowerCase();",
+    "  if (lowerEventName === 'sessionstart') return 'starting';",
     "  if (isPromptEvent) return 'running';",
     "  if (isReplyEvent) return 'idle';",
-    "  const lowerEventName = String(eventName || '').toLowerCase();",
-    "  if (lowerEventName === 'pretooluse' || lowerEventName === 'posttooluse' || lowerEventName === 'posttoolusefailure') return 'running';",
+    "  if (lowerEventName === 'pretooluse' || lowerEventName === 'posttooluse') return 'running';",
     "  const combined = [eventName, payload.message, payload.reason, payload.title, payload.error, payload.status]",
     "    .filter((item) => typeof item === 'string')",
     "    .join(' ')",
     "    .toLowerCase();",
     "  if (combined.includes('permission') || combined.includes('approval')) return 'waiting_permission';",
-    "  if (combined.includes('interrupt') || combined.includes('cancel') || combined.includes('abort')) return 'cancelled';",
     "  if (combined.includes('fail') || combined.includes('error')) return 'failed';",
     "  if (isStopEvent) return 'idle';",
     "  return null;",
+    "}",
+    "",
+    "function isInterruptedPayload(payload, eventName) {",
+    "  return [eventName, payload.message, payload.reason, payload.title, payload.error, payload.status]",
+    "    .filter((item) => typeof item === 'string')",
+    "    .join(' ')",
+    "    .toLowerCase()",
+    "    .match(/interrupt|cancel|abort/) !== null;",
     "}",
     "",
     "function fileSafeTimestamp(value) {",
@@ -299,6 +310,10 @@ function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
   if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) {
     config.hooks = {};
   }
+  if (Array.isArray(config.hooks.PostToolUseFailure)) {
+    config.hooks.PostToolUseFailure = removeManagedHookEntries(config.hooks.PostToolUseFailure, "codex-stop-message.mjs");
+    if (config.hooks.PostToolUseFailure.length === 0) delete config.hooks.PostToolUseFailure;
+  }
   for (const eventName of CODEX_HOOK_EVENTS) {
     if (!Array.isArray(config.hooks[eventName])) {
       config.hooks[eventName] = [];
@@ -324,6 +339,14 @@ function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
 
   writeTextFile(hookConfigPath, nextRaw);
   return { changed: true, backups };
+}
+
+function removeManagedHookEntries(entries, scriptName) {
+  return entries.flatMap((entry) => {
+    if (!entry || typeof entry !== "object" || !Array.isArray(entry.hooks)) return [entry];
+    const hooks = entry.hooks.filter((hook) => !String(hook?.command || "").includes(scriptName));
+    return hooks.length > 0 ? [{ ...entry, hooks }] : [];
+  });
 }
 
 function fileSafeTimestamp(value) {

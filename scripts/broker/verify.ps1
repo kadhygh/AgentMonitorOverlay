@@ -268,10 +268,10 @@ try {
 
     $workspaceData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\workspace.json") | ConvertFrom-Json
     $enrollmentData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\enrollment.json") | ConvertFrom-Json
-    if ($workspaceData.deploymentVersion -ne 3 -or $workspaceData.hookProtocolVersion -ne 3) {
+    if ($workspaceData.deploymentVersion -ne 4 -or $workspaceData.hookProtocolVersion -ne 4) {
         throw "Workspace metadata does not include expected deployment/hook protocol versions."
     }
-    if ($enrollmentData.deploymentVersion -ne 3 -or $enrollmentData.hookProtocolVersion -ne 3) {
+    if ($enrollmentData.deploymentVersion -ne 4 -or $enrollmentData.hookProtocolVersion -ne 4) {
         throw "Enrollment metadata does not include expected deployment/hook protocol versions."
     }
 
@@ -279,34 +279,37 @@ try {
     if ($codexHooksText -notmatch "codex-stop-message\.mjs") {
         throw "Codex hooks config does not reference AMO hook script."
     }
-    if ($codexHooksText -notmatch "UserPromptSubmit" -or $codexHooksText -notmatch "Stop" -or $codexHooksText -notmatch "PermissionRequest" -or $codexHooksText -notmatch "PreToolUse" -or $codexHooksText -notmatch "PostToolUse") {
+    if ($codexHooksText -notmatch "SessionStart" -or $codexHooksText -notmatch "UserPromptSubmit" -or $codexHooksText -notmatch "Stop" -or $codexHooksText -notmatch "PermissionRequest" -or $codexHooksText -notmatch "PreToolUse" -or $codexHooksText -notmatch "PostToolUse") {
         throw "Codex hooks config does not include prompt, reply, permission, and tool lifecycle hooks."
+    }
+    if ($codexHooksText -match "PostToolUseFailure") {
+        throw "Codex hooks config should not include unsupported PostToolUseFailure hooks."
     }
     $codexAdapterData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\adapters\codex-cli.json") | ConvertFrom-Json
     if (-not $codexAdapterData.bridgeEventsUrl -or $codexAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Codex adapter config does not include bridgeEventsUrl."
     }
-    if ($codexAdapterData.deploymentVersion -ne 3 -or $codexAdapterData.hookProtocolVersion -ne 3) {
+    if ($codexAdapterData.deploymentVersion -ne 4 -or $codexAdapterData.hookProtocolVersion -ne 4) {
         throw "Codex adapter config does not include expected deployment/hook protocol versions."
     }
-    if (@($codexAdapterData.hookEvents) -notcontains "PreToolUse" -or @($codexAdapterData.hookEvents) -notcontains "PostToolUse") {
+    if (@($codexAdapterData.hookEvents) -notcontains "SessionStart" -or @($codexAdapterData.hookEvents) -notcontains "PreToolUse" -or @($codexAdapterData.hookEvents) -notcontains "PostToolUse") {
         throw "Codex adapter config does not include lifecycle hook event metadata."
     }
     $claudeSettingsText = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".claude\settings.local.json")
     if ($claudeSettingsText -notmatch "claude-message\.mjs") {
         throw "Claude settings config does not reference AMO hook script."
     }
-    if ($claudeSettingsText -notmatch "UserPromptSubmit" -or $claudeSettingsText -notmatch "Stop" -or $claudeSettingsText -notmatch "PermissionRequest" -or $claudeSettingsText -notmatch "PreToolUse" -or $claudeSettingsText -notmatch "PostToolUse") {
+    if ($claudeSettingsText -notmatch "SessionStart" -or $claudeSettingsText -notmatch "UserPromptSubmit" -or $claudeSettingsText -notmatch "StopFailure" -or $claudeSettingsText -notmatch "SessionEnd" -or $claudeSettingsText -notmatch "PermissionRequest" -or $claudeSettingsText -notmatch "PreToolUse" -or $claudeSettingsText -notmatch "PostToolUse" -or $claudeSettingsText -notmatch "Notification" -or $claudeSettingsText -notmatch "ElicitationResult") {
         throw "Claude settings config does not include prompt, reply, permission, and tool lifecycle hooks."
     }
     $claudeAdapterData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\adapters\claude-cli.json") | ConvertFrom-Json
     if (-not $claudeAdapterData.bridgeEventsUrl -or $claudeAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Claude adapter config does not include bridgeEventsUrl."
     }
-    if ($claudeAdapterData.deploymentVersion -ne 3 -or $claudeAdapterData.hookProtocolVersion -ne 3) {
+    if ($claudeAdapterData.deploymentVersion -ne 4 -or $claudeAdapterData.hookProtocolVersion -ne 4) {
         throw "Claude adapter config does not include expected deployment/hook protocol versions."
     }
-    if (@($claudeAdapterData.hookEvents) -notcontains "PreToolUse" -or @($claudeAdapterData.hookEvents) -notcontains "PostToolUse") {
+    if (@($claudeAdapterData.hookEvents) -notcontains "SessionStart" -or @($claudeAdapterData.hookEvents) -notcontains "StopFailure" -or @($claudeAdapterData.hookEvents) -notcontains "SessionEnd" -or @($claudeAdapterData.hookEvents) -notcontains "ElicitationResult") {
         throw "Claude adapter config does not include lifecycle hook event metadata."
     }
 
@@ -441,7 +444,7 @@ try {
     if ($pluginMain -notmatch "lastCanvasView" -or $pluginMain -notmatch "isActiveLeafAmoPanel") {
         throw "Obsidian plugin main.js does not preserve canvas target context while the AMO panel is active."
     }
-    if ($pluginMain -notmatch "panel.copy.clicked" -or $pluginMain -notmatch "copyAnnotationsFromFile\(info\.file\)") {
+    if ($pluginMain -notmatch "panel.copy.clicked" -or $pluginMain -notmatch "copyAnnotationsFromFile\(currentInfo\.file\)") {
         throw "Obsidian plugin panel copy action does not use the currently displayed note."
     }
     if ($pluginMain -notmatch "schedulePanelRefresh" -or $pluginMain -notmatch "refreshPanels: false") {
@@ -821,6 +824,46 @@ try {
     }
     Write-Host "Attention auto-clear duplicate prompt OK -> $($duplicatePrompt.session.state)"
 
+    $codexTranscriptPath = Join-Path $workspaceRoot ".codex\transcript-interrupt-verify.jsonl"
+    $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
+    [System.IO.File]::WriteAllText($codexTranscriptPath, "{`"type`":`"event_msg`",`"payload`":{`"type`":`"token_count`"}}`n", $utf8NoBom)
+    $codexRunningForInterrupt = Invoke-BrokerJson -Method POST -Path "/api/events" -Body @{
+        schemaVersion = 1
+        tool = "codex"
+        source = "codex-event-hook"
+        sessionId = "codex-reply-verify"
+        turnId = "turn-interrupt-verify"
+        transcriptPath = $codexTranscriptPath
+        cwd = $workspaceRoot
+        hookEventName = "PreToolUse"
+        state = "running"
+        message = "Codex is working before transcript interruption."
+    }
+    if ($codexRunningForInterrupt.session.state -ne "running") {
+        throw "Codex transcript interruption precondition should be running."
+    }
+    $abortRow = @{
+        timestamp = (Get-Date).ToUniversalTime().ToString("o")
+        type = "event_msg"
+        payload = @{
+            type = "turn_aborted"
+            turn_id = "turn-interrupt-verify"
+            reason = "interrupted"
+        }
+    } | ConvertTo-Json -Depth 8 -Compress
+    [System.IO.File]::AppendAllText($codexTranscriptPath, "$abortRow`n", $utf8NoBom)
+
+    $interruptDeadline = (Get-Date).AddSeconds(4)
+    do {
+        Start-Sleep -Milliseconds 100
+        $sessionsAfterInterrupt = Invoke-BrokerJson -Method GET -Path "/api/sessions"
+        $interruptedSession = @($sessionsAfterInterrupt.sessions | Where-Object { $_.sessionId -eq "codex-reply-verify" })[0]
+    } while ($interruptedSession.state -ne "cancelled" -and (Get-Date) -lt $interruptDeadline)
+    if (-not $interruptedSession -or $interruptedSession.state -ne "cancelled" -or $interruptedSession.lastEvent -ne "TurnAborted") {
+        throw "Codex transcript turn_aborted should mark the active session as cancelled."
+    }
+    Write-Host "Codex transcript interruption OK -> $($interruptedSession.state)"
+
     $codexHookPath = Join-Path $workspaceRoot ".amo\hooks\codex-stop-message.mjs"
     $codexInterruptInput = @{
         session_id = "codex-reply-verify"
@@ -829,17 +872,18 @@ try {
         hook_event_name = "Stop"
         stop_hook_active = $false
         reason = "Interrupted by user"
+        last_assistant_message = "Partial response must not be recorded as a completed reply."
     } | ConvertTo-Json -Depth 8 -Compress
     $codexInterruptOutput = $codexInterruptInput | node $codexHookPath
     if ($LASTEXITCODE -ne 0 -or $codexInterruptOutput -notmatch '"continue"\s*:\s*true') {
         throw "Codex interrupted Stop hook did not return a non-blocking JSON response."
     }
-    $sessionsAfterInterrupt = Invoke-BrokerJson -Method GET -Path "/api/sessions"
-    $interruptedSession = @($sessionsAfterInterrupt.sessions | Where-Object { $_.sessionId -eq "codex-reply-verify" })[0]
-    if (-not $interruptedSession -or $interruptedSession.state -ne "cancelled") {
-        throw "Codex interrupted Stop hook should mark the session as cancelled."
+    $sessionsAfterDefensiveStop = Invoke-BrokerJson -Method GET -Path "/api/sessions"
+    $interruptedSession = @($sessionsAfterDefensiveStop.sessions | Where-Object { $_.sessionId -eq "codex-reply-verify" })[0]
+    if (-not $interruptedSession -or $interruptedSession.state -ne "cancelled" -or $interruptedSession.lastEvent -ne "Stop") {
+        throw "Defensive interrupted Stop handling should take precedence over partial reply capture."
     }
-    Write-Host "Codex interrupted Stop hook OK -> $($interruptedSession.state)"
+    Write-Host "Codex interrupted Stop precedence OK -> $($interruptedSession.state)"
 
     $windowBinding = Invoke-BrokerJson -Method POST -Path "/api/sessions/codex-reply-verify/window-binding" -Body @{
         hwnd = 123456
@@ -950,6 +994,53 @@ try {
         throw "Claude hook-generated notes should not include generated H1 headings."
     }
     Write-Host "Claude generated hook OK -> $($claudeSession.lastPromptNote) / $($claudeSession.lastReplyNote)"
+
+    $claudeElicitationInput = @{
+        session_id = "claude-hook-verify"
+        transcript_path = (Join-Path $workspaceRoot ".claude\projects\verify.jsonl")
+        cwd = $workspaceRoot
+        hook_event_name = "Elicitation"
+        mcp_server_name = "verify-mcp"
+        message = "Choose a verification value."
+    } | ConvertTo-Json -Depth 8 -Compress
+    $claudeElicitationInput | node $claudeHookPath | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Claude Elicitation hook failed." }
+    $elicitationSession = @((Invoke-BrokerJson -Method GET -Path "/api/sessions").sessions | Where-Object { $_.sessionId -eq "claude-hook-verify" })[0]
+    if ($elicitationSession.state -ne "waiting_user" -or -not $elicitationSession.needsAttention) {
+        throw "Claude Elicitation should require user attention."
+    }
+
+    $claudeElicitationResultInput = @{
+        session_id = "claude-hook-verify"
+        transcript_path = (Join-Path $workspaceRoot ".claude\projects\verify.jsonl")
+        cwd = $workspaceRoot
+        hook_event_name = "ElicitationResult"
+        mcp_server_name = "verify-mcp"
+        action = "accept"
+    } | ConvertTo-Json -Depth 8 -Compress
+    $claudeElicitationResultInput | node $claudeHookPath | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Claude ElicitationResult hook failed." }
+    $elicitationResultSession = @((Invoke-BrokerJson -Method GET -Path "/api/sessions").sessions | Where-Object { $_.sessionId -eq "claude-hook-verify" })[0]
+    if ($elicitationResultSession.state -ne "running" -or $elicitationResultSession.needsAttention) {
+        throw "Claude ElicitationResult should resume running and clear attention."
+    }
+
+    $claudeStopFailureInput = @{
+        session_id = "claude-hook-verify"
+        transcript_path = (Join-Path $workspaceRoot ".claude\projects\verify.jsonl")
+        cwd = $workspaceRoot
+        hook_event_name = "StopFailure"
+        error = "rate_limit"
+        error_details = "429 Too Many Requests"
+        last_assistant_message = "API Error: Rate limit reached"
+    } | ConvertTo-Json -Depth 8 -Compress
+    $claudeStopFailureInput | node $claudeHookPath | Out-Null
+    if ($LASTEXITCODE -ne 0) { throw "Claude StopFailure hook failed." }
+    $failedClaudeSession = @((Invoke-BrokerJson -Method GET -Path "/api/sessions").sessions | Where-Object { $_.sessionId -eq "claude-hook-verify" })[0]
+    if ($failedClaudeSession.state -ne "failed" -or -not $failedClaudeSession.needsAttention) {
+        throw "Claude StopFailure should mark the task failed and require attention."
+    }
+    Write-Host "Claude lifecycle states OK -> elicitation/result/stop-failure"
 
     $recoveredAnnotation = Invoke-BrokerJson -Method POST -Path "/api/obsidian/annotations" -Body @{
         schemaVersion = 1

@@ -148,12 +148,11 @@ try {
     }
 
     Send-HookEvent -Tool claude -Payload @{
-        hook_event_name = "Notification"
-        notification_type = "idle_prompt"
+        hook_event_name = "Elicitation"
         session_id = "verify-claude-idle"
         cwd = "G:\PROJECT\AgentMonitorOverlay"
         transcript_path = $null
-        message = "Claude is waiting for user input"
+        message = "Claude is waiting for MCP user input"
     }
 
     # Codex permission events use the production provisional-review grace period.

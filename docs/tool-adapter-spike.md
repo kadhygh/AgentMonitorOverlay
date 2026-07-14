@@ -11,8 +11,21 @@ This spike verifies the official hook or protocol surfaces that can feed the Pha
 Recommended MVP path:
 
 1. Use Codex lifecycle hooks for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, and `Stop`.
-2. Use Claude Code hooks for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `Notification`, `Stop`, `StopFailure`, `CwdChanged`, and `SessionEnd`.
-3. Use Kiro CLI hooks for basic CLI monitoring first. Use Kiro ACP only when Agent Monitor Overlay later becomes a controlled session host. Treat Kiro IDE hooks as useful but less machine-verified until tested inside the IDE UI.
+2. Use Claude Code hooks for `SessionStart`, `UserPromptSubmit`, `PreToolUse`, `PermissionRequest`, `PostToolUse`, `PostToolUseFailure`, permission notifications, `Elicitation`, `ElicitationResult`, `Stop`, `StopFailure`, and `SessionEnd`.
+3. Keep compaction, subagent, task, config, and cwd events out of the task-card state machine unless a future workflow gives them a concrete user-facing meaning.
+
+## 2026-07-13 Lifecycle Audit
+
+The deployed adapter set was rechecked against the current official Codex and Claude hook references and a real interrupted Codex transcript.
+
+- Codex has no `PostToolUseFailure` or conversation-interrupt hook. The AMO-owned stale `PostToolUseFailure` entry is removed on redeploy.
+- Codex does not dispatch `Stop` when a turn ends as `TurnAborted`. The Broker therefore follows the active `transcript_path` from normal hooks and watches only newly appended `turn_aborted` event rows.
+- Transcript observation changes card state only. It never produces a prompt/reply note or reads assistant/user content.
+- A transcript abort is accepted only for the active Codex turn while the card is `starting`, `running`, or `waiting_permission`; stale turns and already terminal cards are ignored.
+- Claude `PostToolUseFailure` remains `running` because Claude can recover and continue the agentic loop. `StopFailure` is the actual failed turn boundary.
+- Claude `Notification` is deployed only with matcher `permission_prompt`. `idle_prompt` duplicates `Stop`, while auth and background-agent notifications do not reliably represent the foreground task card.
+- Claude `Elicitation` maps to `waiting_user`; `ElicitationResult` maps back to `running`.
+- `PreCompact`, `PostCompact`, subagent events, task events, and `CwdChanged` are intentionally not card-state inputs. They are useful diagnostics but would make the primary session card flicker or change ownership without a user-facing transition.
 
 ## Current Adapter Implementation Notes
 
@@ -68,7 +81,7 @@ Codex lifecycle hooks are behind:
 
 ```toml
 [features]
-codex_hooks = true
+hooks = true
 ```
 
 Codex looks for hooks in config layers such as:
@@ -95,6 +108,7 @@ Useful Codex events:
 - `PermissionRequest`: Codex is about to ask for approval.
 - `PostToolUse`: after supported tool use.
 - `Stop`: turn stops and latest assistant message can be available.
+- Interrupted turns do not fire `Stop`; the transcript can append `event_msg.payload.type=turn_aborted` instead.
 
 Codex state mapping:
 
@@ -111,6 +125,7 @@ Codex gaps:
 
 - No native window handle or terminal window id in hook input.
 - `transcript_path` can be null.
+- The transcript format is explicitly not stable. AMO uses it only as a narrowly validated interrupt-status signal and starts observing at EOF.
 - Hooks are turn/tool lifecycle events, not a full process monitor.
 - Permission waiting can be seen at `PermissionRequest`, but generic "waiting for user text input" is best inferred from `Stop`/idle and elapsed time.
 

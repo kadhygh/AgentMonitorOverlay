@@ -9,6 +9,7 @@ const { createObsidianBridge } = require("./lib/obsidian-bridge");
 const { createPermissionGate } = require("./lib/permission-gate");
 const { createLaunchStore } = require("./lib/launch-store");
 const { createSessionStore } = require("./lib/session-store");
+const { createTranscriptMonitor } = require("./lib/transcript-monitor");
 const { attachObsidianPluginHealth } = require("./lib/obsidian-vault");
 const {
   clearWindowIdentity,
@@ -71,6 +72,7 @@ const {
   clearSessionAttentionFields,
   reviveArchivedSession,
   upsertSessionFromEvent,
+  markSessionCancelledFromTranscript,
   updateHeartbeat,
   markSessionReviewed,
   clearSessionAttention,
@@ -110,6 +112,17 @@ const permissionGate = createPermissionGate({
   recordDebugLog,
   graceMs: Number.parseInt(process.env.AGENT_MONITOR_PERMISSION_GRACE_MS || "6000", 10),
 });
+const transcriptMonitor = createTranscriptMonitor({
+  recordDebugLog,
+  onTurnAborted: (event) => {
+    permissionGate.resolveSession(event.sessionId, "turn_aborted");
+    const session = markSessionCancelledFromTranscript(event);
+    if (!session) return;
+    persistSnapshot();
+    publishSessionChanged("transcript-turn-aborted", session);
+  },
+});
+for (const session of sessions.values()) transcriptMonitor.track({}, session);
 
 const routeContext = {
   host: HOST,
@@ -147,6 +160,7 @@ const routeContext = {
   baseUrl,
   upsertSessionFromEvent,
   permissionGate,
+  transcriptMonitor,
   workspaceRegistry,
   launchStore,
   conversationService,
@@ -192,6 +206,10 @@ const server = http.createServer(async (req, res) => {
 server.listen(PORT, HOST, () => {
   console.log(`agent-monitor-broker listening at http://${HOST}:${PORT}`);
   console.log(`session snapshot: ${DATA_FILE}`);
+});
+server.on("close", () => {
+  permissionGate.dispose();
+  transcriptMonitor.dispose();
 });
 
 function openSessionEventStream(req, res) {

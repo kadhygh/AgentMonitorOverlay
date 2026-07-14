@@ -121,6 +121,8 @@ function createSessionStore({
         payload.hook_event_name ||
         payload.type
     );
+    const incomingTurnId = normalizeText(payload.turnId || payload.turn_id);
+    const transcriptPath = normalizeText(payload.transcriptPath || payload.transcript_path) || existing?.transcriptPath || null;
     const state = normalizeState(payload.state) || inferState(tool, eventName, payload);
     const message = normalizeText(
       payload.message || payload.summary || payload.lastMessage || payload.last_message
@@ -149,7 +151,7 @@ function createSessionStore({
           ? false
           : typeof payload.needsAttention === "boolean"
           ? payload.needsAttention
-          : state === "waiting_permission" || state === "waiting_user",
+          : state === "waiting_permission" || state === "waiting_user" || state === "failed",
       windowHint,
       targetBinding: resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: now, windowHint }),
       updatedAt: normalizeText(payload.timestamp || payload.updatedAt || payload.updated_at) || now,
@@ -173,6 +175,11 @@ function createSessionStore({
       launchState: normalizeText(payload.launchState || payload.launch_state) || existing?.launchState || null,
       launchRevision:
         normalizeInteger(payload.launchRevision || payload.launch_revision) ?? existing?.launchRevision ?? null,
+      activeTurnId:
+        `${eventName || ""}`.toLowerCase() === "sessionstart"
+          ? null
+          : incomingTurnId || existing?.activeTurnId || null,
+      transcriptPath,
     };
     if (shouldClearAttention) {
       const hadAttention = sessionHasAttentionState(existing) || Boolean(payload.needsAttention);
@@ -218,6 +225,48 @@ function createSessionStore({
     return sessions.get(sessionId) || session;
   }
 
+  function markSessionCancelledFromTranscript(payload) {
+    const sessionId = normalizeText(payload?.sessionId || payload?.session_id);
+    const existing = sessionId ? sessions.get(sessionId) : null;
+    if (!existing || !`${existing.tool || ""}`.toLowerCase().includes("codex")) return null;
+
+    const turnId = normalizeText(payload.turnId || payload.turn_id);
+    const transcriptPath = normalizeText(payload.transcriptPath || payload.transcript_path);
+    if (existing.activeTurnId && turnId && existing.activeTurnId !== turnId) {
+      recordDebugLog("broker", "transcript_monitor.turn_mismatch_ignored", {
+        sessionId,
+        activeTurnId: existing.activeTurnId,
+        abortedTurnId: turnId,
+      });
+      return null;
+    }
+
+    const cancellableStates = new Set(["starting", "running", "waiting_permission"]);
+    if (!cancellableStates.has(existing.state)) {
+      recordDebugLog("broker", "transcript_monitor.inactive_session_ignored", {
+        sessionId,
+        state: existing.state || null,
+        turnId: turnId || null,
+      });
+      return null;
+    }
+
+    const observedAt = normalizeText(payload.observedAt || payload.observed_at) || new Date().toISOString();
+    const session = clearSessionAttentionFields({
+      ...existing,
+      state: "cancelled",
+      lastEvent: "TurnAborted",
+      lastMessage: "Conversation interrupted by user.",
+      needsAttention: false,
+      updatedAt: observedAt,
+      eventCount: (existing.eventCount || 0) + 1,
+      activeTurnId: turnId || existing.activeTurnId || null,
+      transcriptPath: transcriptPath || existing.transcriptPath || null,
+    }, "auto-cleared-by-interrupt");
+    sessions.set(sessionId, session);
+    return session;
+  }
+
   function updateHeartbeat(sessionId, payload) {
     if (!sessionId) {
       throw httpError(400, "missing_session_id", "Heartbeat URL must include session id");
@@ -253,7 +302,7 @@ function createSessionStore({
           ? false
           : typeof payload.needsAttention === "boolean"
           ? payload.needsAttention
-          : nextState === "waiting_permission" || nextState === "waiting_user",
+          : nextState === "waiting_permission" || nextState === "waiting_user" || nextState === "failed",
       windowHint,
       targetBinding: resolveSessionTargetBinding({
         payload,
@@ -561,6 +610,7 @@ function createSessionStore({
     clearSessionAttentionFields,
     reviveArchivedSession,
     upsertSessionFromEvent,
+    markSessionCancelledFromTranscript,
     updateHeartbeat,
     markSessionReviewed,
     clearSessionAttention,

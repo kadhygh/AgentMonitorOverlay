@@ -6,6 +6,7 @@ async function handleObsidianRoutes(req, res, url, context) {
     const claim = context.launchStore.claim(payload, { sessions: context.sessions });
     publishReleasedSession(context, claim);
     const result = context.permissionGate.handleEvent(payload);
+    context.transcriptMonitor.track(payload, result.session);
     if (result.provisional) {
       return sendHandled(res, 200, { ok: true, provisional: true, launch: claim?.launch || null, session: result.session });
     }
@@ -20,6 +21,7 @@ async function handleObsidianRoutes(req, res, url, context) {
     const claim = context.launchStore.claim(payload, { sessions: context.sessions });
     publishReleasedSession(context, claim);
     const reply = context.conversationService.handleReply(payload);
+    context.transcriptMonitor.track(payload, reply.session);
     context.persistSnapshot();
     context.publishSessionChanged("reply", reply.session);
     return sendHandled(res, 200, reply);
@@ -30,6 +32,7 @@ async function handleObsidianRoutes(req, res, url, context) {
     const claim = context.launchStore.claim(payload, { sessions: context.sessions });
     publishReleasedSession(context, claim);
     const prompt = context.conversationService.handlePrompt(payload);
+    context.transcriptMonitor.track(payload, prompt.session);
     context.persistSnapshot();
     context.publishSessionChanged("prompt", prompt.session);
     return sendHandled(res, 200, prompt);

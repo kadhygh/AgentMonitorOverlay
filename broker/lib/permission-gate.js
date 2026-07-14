@@ -96,10 +96,15 @@ function createPermissionGate({
     pendingBySession.clear();
   }
 
+  function resolveSession(sessionId, eventName = "external") {
+    return resolveProvisional(sessionId, eventName);
+  }
+
   return {
     dispose,
     handleEvent,
     pendingCount: () => pendingBySession.size,
+    resolveSession,
   };
 }
 
