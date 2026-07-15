@@ -1,5 +1,4 @@
 import { useRef, type Dispatch, type SetStateAction } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { brokerSessionHeartbeatUrl, postBrokerJson } from "../api/brokerClient";
 import { mergeChangedSession } from "../domain/sessionModel";
 import {
@@ -11,7 +10,8 @@ import {
   actionRequiredCandidate,
   shouldProbeCodexActionRequired,
 } from "../domain/overlaySessionUi";
-import type { ActivationResult, AgentSession } from "../types";
+import { listSessionWindowCandidates } from "../platform/windowClient";
+import type { AgentSession } from "../types";
 
 interface UseCodexActionRequiredProbeOptions {
   postDebugLog: (event: string, data?: unknown) => void;
@@ -33,8 +33,7 @@ export function useCodexActionRequiredProbe(options: UseCodexActionRequiredProbe
     await Promise.all(
       probeSessions.map(async (session) => {
         try {
-          const result = await invoke<ActivationResult>(
-            "list_session_window_candidates",
+          const result = await listSessionWindowCandidates(
             activationWindowRequest(session, windowTargetForSession(session), { includeWindowHintIdentity: true }),
           );
           const candidate = actionRequiredCandidate(result.candidates ?? []);

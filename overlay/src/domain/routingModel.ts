@@ -1,4 +1,10 @@
-import type { ActivationCandidate, AgentSession, ObsidianPluginHealth, TargetBinding } from "../types";
+import type {
+  ActivationCandidate,
+  AgentSession,
+  ObsidianPluginHealth,
+  TargetBinding,
+  WindowActivationRequest,
+} from "../types";
 
 export type ToolDisplayId = "codex-cli" | "codex-app" | "claude-cli" | "other";
 
@@ -125,7 +131,7 @@ export function activationWindowRequest(
   session: AgentSession,
   activationTarget: TargetBinding | null,
   options: { includeWindowHintIdentity?: boolean } = {},
-) {
+): WindowActivationRequest {
   const includeWindowHintIdentity = options.includeWindowHintIdentity !== false;
   const windowTarget = activationTarget?.type === "window" ? activationTarget : null;
   return {

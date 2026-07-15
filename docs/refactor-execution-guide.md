@@ -1,8 +1,10 @@
 # AMO Refactor Execution Guide
 
-Updated: 2026-07-09
+Updated: 2026-07-15
 
 This guide is the execution contract for the next long AMO refactor task. The goal is not to make the code look clever. The goal is to make the existing MVP easier to maintain and extend while keeping behavior stable.
+
+The file-size and ownership extraction described here is largely complete. The active follow-up for runtime coordination is `docs/runtime-architecture-v2.md`; use that document for Overlay/Tauri monitoring and session-controller work.
 
 ## Core Principles
 
@@ -833,12 +835,12 @@ Manual smoke:
 
 ## Tauri Plan
 
-Tauri is not a priority. Current root is healthy:
+Tauri command registration remains healthy, but native window behavior is now an active runtime boundary. A production interaction stall showed that synchronous title probing could block window drag and button input when React-triggered liveness checks multiplied with connected card count.
 
 - `overlay/src-tauri/src/lib.rs` is about 131 lines.
 - `windows.rs` is about 592 lines.
 
-Only split `windows.rs` if native window behavior becomes hard to change.
+Follow `docs/runtime-architecture-v2.md` before further native window changes. Split `windows.rs` when doing so creates a testable snapshot/matcher boundary, not merely to reduce line count.
 
 Possible later split:
 

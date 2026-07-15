@@ -7,6 +7,12 @@ import {
   postBrokerJson,
 } from "../api/brokerClient";
 import { cliLaunchPreferencePayload } from "../native/cliLaunch";
+import {
+  activateSessionWindow,
+  listSessionWindowCandidates,
+  probeSessionWindow,
+  windowCandidateAtCursor,
+} from "../platform/windowClient";
 import { menuPosition } from "../domain/overlaySessionUi";
 import {
   activationCandidateFromWindowTarget,
@@ -27,7 +33,6 @@ import type { CandidateMenuState } from "../components/CandidateMenu";
 import type { LaunchPanelState } from "../components/LaunchPanel";
 import type {
   ActivationCandidate,
-  ActivationResult,
   AgentSession,
   OpenPathResult,
   TargetBinding,
@@ -225,8 +230,7 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     });
 
     try {
-      const result = await invoke<ActivationResult>(
-        "list_session_window_candidates",
+      const result = await listSessionWindowCandidates(
         activationWindowRequest(session, null, { includeWindowHintIdentity: false }),
       );
       const candidates = result.candidates ?? [];
@@ -304,15 +308,13 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     });
 
     try {
-      const result = await invoke<ActivationResult>(
-        "activate_session_window",
+      const result = await activateSessionWindow(
         activationWindowRequest(session, activationTarget),
       );
       let menuSession = session;
       if (!result.ok && session.launchId && session.launchState === "connected" && session.windowHint?.titleToken) {
         try {
-          const probe = await invoke<ActivationResult>(
-            "probe_session_window",
+          const probe = await probeSessionWindow(
             activationWindowRequest(session, null, { includeWindowHintIdentity: true }),
           );
           if (!probe.ok) {
@@ -413,7 +415,7 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     options.setFeedback("Reading the window under cursor...");
 
     try {
-      const result = await invoke<ActivationResult>("window_candidate_at_cursor");
+      const result = await windowCandidateAtCursor();
       const candidates = result.candidates ?? [];
       options.postDebugLog("window.cursor_candidate.result", {
         sessionId: session.sessionId,
@@ -462,7 +464,7 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     });
 
     try {
-      const result = await invoke<ActivationResult>("activate_session_window", {
+      const result = await activateSessionWindow({
         sessionId: session.sessionId,
         tool: session.tool,
         title: candidate.title,

@@ -8,6 +8,20 @@ pub(crate) struct ActivationResult {
     pub(crate) candidates: Vec<ActivationCandidate>,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WindowProbeRequest {
+    pub(crate) session_id: String,
+    pub(crate) hint: WindowHintInput,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct WindowProbeResult {
+    pub(crate) session_id: String,
+    pub(crate) result: ActivationResult,
+}
+
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct ActivationCandidate {
@@ -72,6 +86,8 @@ pub(crate) struct WindowCandidate {
     pub(crate) title: String,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct WindowHintInput {
     pub(crate) tool: String,
     pub(crate) title: String,

@@ -1,6 +1,6 @@
 # AMO Project Structure
 
-Updated: 2026-07-09
+Updated: 2026-07-15
 
 This document records the intended ownership boundaries for the Agent Monitor Overlay repository. Keep it updated when code moves.
 
@@ -23,6 +23,8 @@ Expected ownership after refactor:
 
 - `api/`: broker HTTP client constants and helpers. No React state.
 - `domain/`: pure UI-domain logic such as session filtering, ordering, attention, workspace status, and routing labels. No Tauri calls and no DOM calls.
+- `platform/`: typed adapters for Tauri/native capabilities. Runtime controllers and hooks use these ports instead of raw window command names.
+- `runtime/`: non-React runtime controllers for background scheduling, native monitoring, deduplication, and reconciliation policy.
 - `components/`: reusable presentational UI. Components receive props and callbacks; they do not fetch broker state directly.
 - `windows/`: top-level Tauri webview apps such as main overlay, deploy, settings, and scratchpad.
 - `theme/`: theme persistence and broadcast helpers.
@@ -165,6 +167,16 @@ The repository has completed the first overlay extraction pass. These boundaries
 - pending prompt copy, sync-back acknowledgement, duplicate auto-sync guard, and target focus handoff: `overlay/src/hooks/usePendingPromptSync.ts`
 - Codex CLI action-required window probing and permission-attention heartbeat update: `overlay/src/hooks/useCodexActionRequiredProbe.ts`
 - overlay debug status, debug toggle, and non-blocking debug log posting: `overlay/src/hooks/useDebugLogging.ts`
+- typed native window activation, candidate listing, cursor selection, and single/batch probe access: `overlay/src/platform/windowClient.ts`
+- managed-window probe scheduling, in-flight control, miss tracking, launch revision resets, and offline transitions: `overlay/src/runtime/managedWindowMonitor.ts`
+
+`useManagedWindowLiveness.ts` is now a thin React adapter around `ManagedWindowMonitor`: it derives monitor targets from
+the current session snapshot, forwards batch probe results, and applies Broker offline responses. Native window identity
+matching remains in Tauri. The `probe_session_windows` command enumerates visible windows once per monitor tick and
+resolves all managed targets against the same snapshot.
+
+The remaining runtime extraction is tracked in `docs/runtime-architecture-v2.md`. The next boundary is the session
+snapshot/reconciliation controller; do not continue splitting presentational files merely to reduce line counts.
 
 `DeployWorkspaceApp.tsx` remains the deploy workflow owner: broker requests, native folder dialogs, debug logging,
 busy states, and feedback messages stay there. `DeployWorkspaceSections.tsx` owns only the visible workspace,
@@ -244,3 +256,5 @@ The remaining watchlist files are:
 Use `docs/refactor-execution-guide.md` for the next long-task split order, guardrails, and validation matrix. Use `docs/refactor-plan.md` as the historical plan and progress log.
 
 The legacy inline deploy and settings panels have been removed. Deploy/settings UI ownership now lives in standalone utility windows; task-card workspace maintenance remains in the main overlay.
+
+The next active architecture phase is `docs/runtime-architecture-v2.md`. The earlier extraction created useful source folders, but managed-window monitoring and session reconciliation still run through React hooks. Runtime Architecture v2 adds `platform/` and `runtime/` boundaries so background native work cannot directly share the UX timing path.

@@ -1,4 +1,7 @@
-use crate::models::{ActivationCandidate, ActivationResult, WindowCandidate, WindowHintInput};
+use crate::models::{
+    ActivationCandidate, ActivationResult, WindowCandidate, WindowHintInput, WindowProbeRequest,
+    WindowProbeResult,
+};
 
 #[cfg(not(windows))]
 pub(crate) fn activate_external_window(
@@ -33,6 +36,17 @@ pub(crate) fn probe_external_window(session_id: &str, _hint: WindowHintInput) ->
         message: format!("Window probing is only implemented on Windows for {session_id}."),
         candidates: Vec::new(),
     }
+}
+
+#[cfg(not(windows))]
+pub(crate) fn probe_external_windows(requests: Vec<WindowProbeRequest>) -> Vec<WindowProbeResult> {
+    requests
+        .into_iter()
+        .map(|request| WindowProbeResult {
+            result: probe_external_window(&request.session_id, request.hint),
+            session_id: request.session_id,
+        })
+        .collect()
 }
 
 #[cfg(not(windows))]
@@ -160,7 +174,40 @@ pub(crate) fn list_external_window_candidates(
 #[cfg(windows)]
 pub(crate) fn probe_external_window(session_id: &str, hint: WindowHintInput) -> ActivationResult {
     let candidates = enumerate_windows();
-    let matches = match resolve_candidate(&candidates, &hint) {
+    probe_external_window_from_candidates(session_id, &hint, &candidates)
+}
+
+#[cfg(windows)]
+pub(crate) fn probe_external_windows(requests: Vec<WindowProbeRequest>) -> Vec<WindowProbeResult> {
+    let candidates = enumerate_windows();
+    probe_requests_against_candidates(requests, &candidates)
+}
+
+#[cfg(windows)]
+fn probe_requests_against_candidates(
+    requests: Vec<WindowProbeRequest>,
+    candidates: &[WindowCandidate],
+) -> Vec<WindowProbeResult> {
+    requests
+        .into_iter()
+        .map(|request| WindowProbeResult {
+            result: probe_external_window_from_candidates(
+                &request.session_id,
+                &request.hint,
+                candidates,
+            ),
+            session_id: request.session_id,
+        })
+        .collect()
+}
+
+#[cfg(windows)]
+fn probe_external_window_from_candidates(
+    session_id: &str,
+    hint: &WindowHintInput,
+    candidates: &[WindowCandidate],
+) -> ActivationResult {
+    let matches = match resolve_candidate(candidates, hint) {
         ResolveResult::Matched(candidate) => vec![activation_candidate(&candidate)],
         ResolveResult::Ambiguous(matches) => matches.iter().map(activation_candidate).collect(),
         ResolveResult::NoMatch => Vec::new(),
@@ -627,7 +674,8 @@ fn window_candidate_from_hwnd(
     hwnd: windows_sys::Win32::Foundation::HWND,
 ) -> Option<WindowCandidate> {
     use windows_sys::Win32::UI::WindowsAndMessaging::{
-        GetAncestor, GetWindowThreadProcessId, IsHungAppWindow, IsWindowVisible, GA_ROOT,
+        GetAncestor, GetWindowTextW, GetWindowThreadProcessId, IsHungAppWindow, IsWindowVisible,
+        GA_ROOT,
     };
 
     unsafe {
@@ -646,13 +694,28 @@ fn window_candidate_from_hwnd(
             return None;
         }
 
-        let title = window_title_with_timeout(target_hwnd)?;
-        if title.trim().is_empty() {
+        let mut process_id = 0u32;
+        GetWindowThreadProcessId(target_hwnd, &mut process_id);
+        if process_id == 0 || process_id == std::process::id() {
             return None;
         }
 
-        let mut process_id = 0u32;
-        GetWindowThreadProcessId(target_hwnd, &mut process_id);
+        const MAX_TITLE_CHARS: usize = 2048;
+        let mut title_buffer = vec![0u16; MAX_TITLE_CHARS];
+        let copied = GetWindowTextW(
+            target_hwnd,
+            title_buffer.as_mut_ptr(),
+            title_buffer.len() as i32,
+        );
+        if copied <= 0 {
+            return None;
+        }
+
+        title_buffer.truncate(copied as usize);
+        let title = String::from_utf16_lossy(&title_buffer);
+        if title.trim().is_empty() {
+            return None;
+        }
 
         Some(WindowCandidate {
             hwnd: target_hwnd as isize,
@@ -661,34 +724,6 @@ fn window_candidate_from_hwnd(
             title,
         })
     }
-}
-
-#[cfg(windows)]
-unsafe fn window_title_with_timeout(hwnd: windows_sys::Win32::Foundation::HWND) -> Option<String> {
-    use windows_sys::Win32::UI::WindowsAndMessaging::{
-        SendMessageTimeoutW, SMTO_ABORTIFHUNG, SMTO_BLOCK, WM_GETTEXT,
-    };
-
-    const MAX_TITLE_CHARS: usize = 2048;
-    const TITLE_TIMEOUT_MS: u32 = 150;
-
-    let mut title_buffer = vec![0u16; MAX_TITLE_CHARS];
-    let mut copied = 0usize;
-    let completed = SendMessageTimeoutW(
-        hwnd,
-        WM_GETTEXT,
-        title_buffer.len(),
-        title_buffer.as_mut_ptr() as isize,
-        SMTO_ABORTIFHUNG | SMTO_BLOCK,
-        TITLE_TIMEOUT_MS,
-        &mut copied,
-    );
-    if completed == 0 || copied == 0 {
-        return None;
-    }
-
-    title_buffer.truncate(copied.min(title_buffer.len().saturating_sub(1)));
-    Some(String::from_utf16_lossy(&title_buffer))
 }
 
 #[cfg(windows)]
@@ -732,5 +767,73 @@ fn activation_candidate(candidate: &WindowCandidate) -> ActivationCandidate {
         process_name: candidate.process_name.clone(),
         title: candidate.title.clone(),
         label: format_candidate(candidate),
+    }
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+
+    fn request(session_id: &str, token: &str) -> WindowProbeRequest {
+        WindowProbeRequest {
+            session_id: session_id.to_string(),
+            hint: WindowHintInput {
+                tool: "codex".to_string(),
+                title: format!("{token} Codex CLI - project_mining_dev"),
+                process_name: String::new(),
+                title_token: token.to_string(),
+                title_contains: vec![token.to_string()],
+                project: "project_mining_dev".to_string(),
+                cwd: "G:\\PROJECT\\project_mining_dev".to_string(),
+                pid: None,
+                hwnd: None,
+            },
+        }
+    }
+
+    fn candidate(hwnd: isize, token: &str) -> WindowCandidate {
+        WindowCandidate {
+            hwnd,
+            process_id: 100,
+            process_name: Some("WindowsTerminal.exe".to_string()),
+            title: format!("{token} Codex CLI - project_mining_dev"),
+        }
+    }
+
+    #[test]
+    fn batch_probe_resolves_multiple_requests_against_one_snapshot() {
+        let requests = vec![
+            request("session-a", "[AMO:codex:aaaaaaaa]"),
+            request("session-b", "[AMO:codex:bbbbbbbb]"),
+        ];
+        let candidates = vec![
+            candidate(10, "[AMO:codex:aaaaaaaa]"),
+            candidate(20, "[AMO:codex:bbbbbbbb]"),
+        ];
+
+        let results = probe_requests_against_candidates(requests, &candidates);
+
+        assert_eq!(results.len(), 2);
+        assert!(results[0].result.ok);
+        assert_eq!(results[0].result.candidates[0].hwnd, 10);
+        assert!(results[1].result.ok);
+        assert_eq!(results[1].result.candidates[0].hwnd, 20);
+    }
+
+    #[test]
+    fn strict_probe_does_not_fall_back_to_project_when_token_is_missing() {
+        let requests = vec![request("session-a", "[AMO:codex:missing]")];
+        let candidates = vec![WindowCandidate {
+            hwnd: 30,
+            process_id: 100,
+            process_name: Some("WindowsTerminal.exe".to_string()),
+            title: "project_mining_dev".to_string(),
+        }];
+
+        let results = probe_requests_against_candidates(requests, &candidates);
+
+        assert_eq!(results.len(), 1);
+        assert!(!results[0].result.ok);
+        assert!(results[0].result.candidates.is_empty());
     }
 }

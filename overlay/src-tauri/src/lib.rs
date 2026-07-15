@@ -15,7 +15,7 @@ use opener::{open_external_target, open_local_path};
 use tauri_plugin_notification::NotificationExt;
 use windows::{
     activate_external_window, external_window_candidate_at_cursor, list_external_window_candidates,
-    probe_external_window,
+    probe_external_window, probe_external_windows,
 };
 
 #[tauri::command]
@@ -143,6 +143,11 @@ fn probe_session_window(
 }
 
 #[tauri::command]
+fn probe_session_windows(requests: Vec<WindowProbeRequest>) -> Vec<WindowProbeResult> {
+    probe_external_windows(requests)
+}
+
+#[tauri::command]
 fn signal_frontend_ready() -> OpenPathResult {
     let Ok(path) = std::env::var("AGENT_MONITOR_SMOKE_FRONTEND_READY_FILE") else {
         return OpenPathResult {
@@ -218,6 +223,7 @@ pub fn run() {
             ensure_broker,
             list_session_window_candidates,
             probe_session_window,
+            probe_session_windows,
             window_candidate_at_cursor,
             open_path,
             select_workspace_directory,

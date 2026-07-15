@@ -454,9 +454,12 @@ export function MainOverlayApp() {
     <main className={`overlay-shell ${collapsed ? "is-collapsed" : ""}`}>
       <header
         className={`overlay-header ${collapsed ? "is-collapsed" : ""}`}
-        data-tauri-drag-region
         onPointerDown={(event) => {
-          if ((event.target as HTMLElement).closest("button")) {
+          if (
+            event.button !== 0 ||
+            !event.isPrimary ||
+            (event.target as HTMLElement).closest("button, input, select, textarea, label")
+          ) {
             return;
           }
 
@@ -465,11 +468,11 @@ export function MainOverlayApp() {
       >
         {collapsed ? (
           <>
-            <div className="collapsed-counts" data-tauri-drag-region aria-label="Collapsed session summary">
-              <span data-tauri-drag-region>
+            <div className="collapsed-counts" aria-label="Collapsed session summary">
+              <span>
                 <strong>{activeSessionCount}</strong> active
               </span>
-              <span className={attentionSignalCount > 0 ? "has-attention" : ""} data-tauri-drag-region>
+              <span className={attentionSignalCount > 0 ? "has-attention" : ""}>
                 <strong>{attentionSignalCount}</strong> need attention
               </span>
             </div>
@@ -479,9 +482,9 @@ export function MainOverlayApp() {
           </>
         ) : (
           <>
-            <div className="header-title" data-tauri-drag-region>
+            <div className="header-title">
               <GripHorizontal size={16} aria-hidden="true" />
-              <div data-tauri-drag-region>
+              <div>
                 <strong>Agents</strong>
                 <span>
                   {brokerReadinessLabels[brokerReadiness.state]}

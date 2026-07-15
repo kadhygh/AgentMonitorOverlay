@@ -137,6 +137,24 @@ export interface ActivationResult {
   candidates?: ActivationCandidate[];
 }
 
+export interface WindowActivationRequest {
+  sessionId: string;
+  tool: AgentTool;
+  title: string;
+  processName: string;
+  titleToken: string;
+  titleContains: string[];
+  project: string;
+  cwd: string;
+  pid: number | null;
+  hwnd: number | null;
+}
+
+export interface WindowProbeResult {
+  sessionId: string;
+  result: ActivationResult;
+}
+
 export type OpenPathResult = ActivationResult;
 
 export interface ObsidianVaultRegistrationResult {
