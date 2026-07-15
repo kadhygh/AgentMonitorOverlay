@@ -4,6 +4,8 @@ Updated: 2026-07-15
 
 This document is the execution contract for separating AMO runtime coordination from React user experience code. It complements `docs/refactor-execution-guide.md`: the previous refactor established useful source folders, while this phase fixes cross-layer timing and ownership.
 
+The product-level module map lives in `docs/amo-module-architecture.md`. This document specializes only the Overlay runtime, platform-port, and React interaction boundary.
+
 ## Why This Phase Exists
 
 The first refactor successfully separated Broker services, Overlay components/hooks, Tauri helpers, and Obsidian plugin modules. The remaining problem is not primarily file size. Background runtime work is still driven by React hooks:

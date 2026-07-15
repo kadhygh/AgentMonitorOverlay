@@ -328,21 +328,25 @@ Guardrails:
 
 Read in this order when taking over:
 
-1. `PROJECT_PLAN.md`
-2. `docs/supervisor-status.md`
-3. `docs/amo-obsidian-bridge-mvp.md`
-4. `docs/reference-mvps/obsidianplugintest/README.md`
-5. `docs/reference-mvps/obsidianplugintest/handoff/CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
-6. `docs/reference-mvps/obsidianplugintest/handoff/OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
-7. `docs/validation-checklist.md`
-8. `docs/window-routing-notes.md`
-9. `docs/tool-adapter-spike.md`
+1. `docs/amo-module-architecture.md`
+2. `docs/project-structure.md`
+3. `docs/runtime-architecture-v2.md`
+4. `docs/workspace-managed-launch-plan.md`
+5. `docs/amo-obsidian-bridge-mvp.md`
+6. `PROJECT_PLAN.md`
+7. `docs/supervisor-status.md`
+8. `docs/validation-checklist.md`
+9. `docs/window-routing-notes.md`
 10. `docs/adapter-deployment-guide.md`
-11. `docs/worktree-checkpoint-guide.md`
-12. `docs/session-handoffs/2026-05-13-amo-obsidian-bridge-pivot.md`
-13. `broker/README.md`
-14. `overlay/README.md`
-15. `USER_SESSION_MANUAL.md`
+11. `docs/tool-adapter-spike.md`
+12. `docs/reference-mvps/obsidianplugintest/README.md`
+13. `docs/reference-mvps/obsidianplugintest/handoff/CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+14. `docs/reference-mvps/obsidianplugintest/handoff/OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+15. `docs/worktree-checkpoint-guide.md`
+16. `docs/session-handoffs/2026-05-13-amo-obsidian-bridge-pivot.md`
+17. `broker/README.md`
+18. `overlay/README.md`
+19. `USER_SESSION_MANUAL.md`
 
 ## Development Workflow
 

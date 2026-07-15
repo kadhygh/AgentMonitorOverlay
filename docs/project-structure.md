@@ -4,6 +4,8 @@ Updated: 2026-07-15
 
 This document records the intended ownership boundaries for the Agent Monitor Overlay repository. Keep it updated when code moves.
 
+This is the physical source-ownership map. Read `docs/amo-module-architecture.md` first for the product modules, identity boundaries, launch command model, and cross-module dependency rules.
+
 ## Product Boundaries
 
 AMO has four runtime surfaces:

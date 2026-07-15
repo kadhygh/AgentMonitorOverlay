@@ -1,8 +1,7 @@
 # Workspace And Managed Launch Plan
 
-Updated: 2026-07-11
-Status: implementation in progress; Phase 0.5 and the first Phase 1/2 backend slice are complete
-Branch: `codex/tray-workspace-routing`
+Updated: 2026-07-15
+Status: core architecture implemented; historical implementation sequence retained below
 
 ## Purpose
 
@@ -10,6 +9,8 @@ This plan combines two related product improvements without making either one de
 
 1. A Workspace Center that remembers explicitly deployed AMO projects and gives the user a stable place to inspect, maintain, and launch them.
 2. Managed Launch identity that lets AMO prove which CLI instance produced a hook event, bind the resulting provider session, and resume the same session after its CLI window closes.
+
+The current top-level module and launch-entry model lives in `docs/amo-module-architecture.md`. This document remains the detailed managed CLI identity and lifecycle specification.
 
 Workspace management and launch identity are separate responsibilities. Workspace records answer "which projects does AMO know?" A `launchId` answers "which AMO-controlled CLI process instance produced this event?" They should share one implementation plan, but provider `sessionId` remains the durable conversation identity.
 
@@ -87,7 +88,7 @@ Registry rules:
 
 ### Managed Launch Store
 
-Add broker-local `broker/data/launches.json` with short-lived active/recent intents:
+Broker-local `broker/data/launches.json` persists active launches and recent terminal diagnostics:
 
 ```json
 {
@@ -104,7 +105,7 @@ Add broker-local `broker/data/launches.json` with short-lived active/recent inte
       "titleToken": "[AMO:codex:7f91c2]",
       "state": "waiting_hook",
       "createdAt": "2026-07-11T00:00:00.000Z",
-      "expiresAt": "2026-07-11T00:02:00.000Z",
+      "updatedAt": "2026-07-11T00:00:00.000Z",
       "claimedSessionId": null
     }
   ]
@@ -116,13 +117,14 @@ Launch state:
 ```text
 created -> spawning -> waiting_hook -> claimed -> connected
                     -> failed
-                    -> expired
 connected -> offline -> spawning (new launchId for resume)
 ```
 
-Persist active launch intents so a Broker restart does not immediately lose ownership proof. Prune expired and old diagnostic records; do not let this become an unbounded history database.
+Persist active launch intents so a Broker restart does not lose ownership proof. A `created`, `spawning`, or `waiting_hook` launch remains claimable without a time limit because AMO cannot know when the user will begin the first turn. Prune old terminal `failed` and `offline` diagnostics after the retention window so this does not become an unbounded history database.
 
-## Hook Protocol V3
+## Managed Launch Hook Protocol
+
+This identity transport was introduced in Hook Protocol v3. The current deployment and hook protocol version is v4; the launch identity fields remain the same.
 
 AMO-controlled CLI wrappers set environment variables before creating the provider process:
 
@@ -150,11 +152,11 @@ Deployed Codex and Claude hook scripts copy them into every broker payload:
 Rules:
 
 - Missing `launchId` is valid and means an unmanaged/manual provider launch.
-- A launch claim requires matching `launchId`, workspace, adapter/tool, TTL, and lifecycle state.
+- A launch claim requires matching `launchId`, workspace, adapter/tool, requested resume session when applicable, and an active lifecycle state.
 - CWD, PID, title, and project name may reject a mismatch or rank manual candidates, but cannot claim a launch.
 - Claiming must happen before the event creates/updates the final card and before reply/prompt artifacts are routed.
-- Hook protocol v2 remains accepted for ordinary unbound cards during rollout, but cannot claim managed launches.
-- Deploy/Update moves adapter metadata to deployment version 3 and hook protocol version 3. Installed workspaces show `needs-update` until redeployed.
+- Hook payloads without managed identity remain valid for ordinary unbound cards, but cannot claim managed launches.
+- Deploy/Update moves adapter metadata to deployment version 4 and hook protocol version 4. Older installed workspaces show `needs-update` until redeployed.
 
 ## Terminal Launch Contract
 
@@ -474,7 +476,7 @@ Completed in the first implementation slice:
 - Codex provisional permission gate with a 6-second production grace period.
 - Persistent `workspaces.json` registry with list, register-on-inspect/deploy, availability status, and non-destructive forget.
 - Workspace Center shell in the existing Deploy utility window.
-- Persistent `launches.json` intents with random `launchId`, TTL, state, and atomic provider-session claim.
+- Persistent `launches.json` intents with random `launchId`, durable active state, terminal-record retention, and atomic provider-session claim.
 - Hook/deployment protocol v3 environment fields for Codex CLI and Claude CLI.
 - Windows Terminal launch environment injection and persistent exact title tokens via `--suppressApplicationTitle`.
 - Managed card routing hints that do not pretend the `wt.exe` launcher PID is the CLI/window identity.
