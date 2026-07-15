@@ -4,6 +4,39 @@ Updated: 2026-07-08
 
 This guide defines how Agent Monitor Overlay deploys workspace-local adapters and hooks. Deployment should be deterministic, script-driven, and reversible. Do not rely on an LLM to decide which files to write during normal deployment.
 
+## Project Document Mappings
+
+An enrolled workspace may expose selected project documentation folders inside its AMO Obsidian vault. This is a
+separate deploy action from CLI adapters and does not change hook or deployment protocol versions.
+
+The deploy window writes mappings below the vault-local `Project/` directory:
+
+```text
+<workspace>/.amo/AMO - <project>/Project/AIWork
+  -> <workspace>/AIWork
+
+<workspace>/.amo/AMO - <project>/Project/Docs
+  -> <workspace>/Docs
+```
+
+On Windows these are directory junctions. The source directory remains authoritative: opening or editing a mapped
+Markdown file in Obsidian reads and writes the real project file. Removing a mapping deletes only the junction and its
+workspace metadata; it must never recursively delete the source directory.
+
+Mapping safety rules:
+
+- the source must be an existing directory inside the selected workspace
+- the workspace root itself cannot be mapped
+- `.amo` and all descendants cannot be mapped
+- a directory containing the AMO vault cannot be mapped, preventing recursive traversal
+- a normal file/directory or a junction to another source at the target path is a conflict and is never overwritten
+- target names are derived from the selected source directory name and live directly under `Project/`
+
+Workspace Check reports configured mappings only. Every source directory must be selected or entered explicitly; AMO
+does not infer mappings from conventional folder names such as `AIWork` or `Docs`. Mapping metadata is stored in
+`.amo/workspace.json` under `documentMappings`. `Clear Generated` preserves `Project/` mappings. The local
+`.amo/.gitignore` excludes `AMO - */Project/` so Git does not traverse or record mapped documentation through the vault.
+
 Workspace registry, managed launch identity, Hook Protocol v3, placeholder cards, and Card resume are planned in `docs/workspace-managed-launch-plan.md`. Project-local deployment metadata remains authoritative; the future broker Workspace Registry is only an index of explicitly enrolled projects.
 
 ## Goals

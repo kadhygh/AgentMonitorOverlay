@@ -148,6 +148,7 @@
 :root[data-amo-theme="light"] .deploy-placeholder,
 :root[data-amo-theme="light"] .deploy-git-exclude-note,
 :root[data-amo-theme="light"] .deploy-git-exclude-list li,
+:root[data-amo-theme="light"] .deploy-document-mapping,
 :root[data-amo-theme="light"] .deploy-adapter-card,
 :root[data-amo-theme="light"] .deploy-adapter-badges em,
 :root[data-amo-theme="light"] .deploy-adapter-badges small,

@@ -7,6 +7,7 @@ const {
   AMO_DIR,
   AMO_HOOK_PROTOCOL_VERSION,
   AMO_LAYOUT_VERSION,
+  AMO_PROJECT_DOCS_PATH,
   AMO_SCHEMA_VERSION,
   AMO_SESSION_GENERATED_PATH,
   AMO_SESSIONS_PATH,
@@ -89,6 +90,8 @@ function enrollWorkspace(payload, options = {}) {
     generatedTurnsPath: `${AMO_SESSIONS_PATH}/<session-id>/${AMO_SESSION_GENERATED_PATH}`,
     canvasesPath: AMO_CANVASES_PATH,
     workCanvasesPath: AMO_WORK_CANVASES_PATH,
+    projectDocsPath: AMO_PROJECT_DOCS_PATH,
+    documentMappings: Array.isArray(existingWorkspace?.documentMappings) ? existingWorkspace.documentMappings : [],
   });
   installedFiles.push(".amo/workspace.json");
 
@@ -259,6 +262,7 @@ function amoGitignore() {
     "logs/",
     "AMO - */Sessions/",
     "AMO - */Canvases/AgentFlow.base.canvas",
+    "AMO - */Project/",
     "AMO - */Replies/",
     "AMO - */Prompts/",
     "AMO - */AgentFlow.canvas",

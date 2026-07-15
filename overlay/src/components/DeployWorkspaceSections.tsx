@@ -1,4 +1,4 @@
-import { Bot, FolderOpen, RefreshCcw, SquareTerminal, Trash2 } from "lucide-react";
+import { Bot, FolderOpen, Link2, RefreshCcw, SquareTerminal, Trash2, Unlink } from "lucide-react";
 import { projectName, shortPathLabel } from "../domain/routingModel";
 import {
   adapterContextLabel,
@@ -8,7 +8,13 @@ import {
   workspaceDeploymentStateLabel,
   workspaceDeploymentSummary,
 } from "../domain/workspaceModel";
-import type { WorkspaceEnrollment, WorkspaceGitExcludeStatus, WorkspaceInspection } from "../types";
+import type {
+  WorkspaceDocumentMappingEntry,
+  WorkspaceDocumentMappingsStatus,
+  WorkspaceEnrollment,
+  WorkspaceGitExcludeStatus,
+  WorkspaceInspection,
+} from "../types";
 
 type DeployBusy = "inspect" | "enroll" | "clean" | null;
 
@@ -25,6 +31,10 @@ interface DeployWorkspaceSectionProps {
   gitExcludeBlocked: boolean;
   gitExcludeBusy: boolean;
   includeClaudeSettingsExclude: boolean;
+  documentMappingPath: string;
+  documentMappings: WorkspaceDocumentMappingsStatus | null;
+  documentMappingBusy: string | null;
+  documentMappingBlocked: boolean;
   onWorkspacePathChange: (value: string) => void;
   onInspectWorkspace: () => void;
   onChooseWorkspace: () => void;
@@ -34,6 +44,11 @@ interface DeployWorkspaceSectionProps {
   onApplyGitExclude: () => void;
   onChooseGit: () => void;
   onClaudeSettingsExcludeChange: (checked: boolean) => void;
+  onDocumentMappingPathChange: (value: string) => void;
+  onChooseDocumentMapping: () => void;
+  onDeployDocumentMapping: (sourcePath?: string) => void;
+  onRemoveDocumentMapping: (entry: WorkspaceDocumentMappingEntry) => void;
+  onOpenDocumentMappingPath: (path: string, label: string) => void;
 }
 
 export function DeployWorkspaceSection({
@@ -49,6 +64,10 @@ export function DeployWorkspaceSection({
   gitExcludeBlocked,
   gitExcludeBusy,
   includeClaudeSettingsExclude,
+  documentMappingPath,
+  documentMappings,
+  documentMappingBusy,
+  documentMappingBlocked,
   onWorkspacePathChange,
   onInspectWorkspace,
   onChooseWorkspace,
@@ -58,8 +77,13 @@ export function DeployWorkspaceSection({
   onApplyGitExclude,
   onChooseGit,
   onClaudeSettingsExcludeChange,
+  onDocumentMappingPathChange,
+  onChooseDocumentMapping,
+  onDeployDocumentMapping,
+  onRemoveDocumentMapping,
+  onOpenDocumentMappingPath,
 }: DeployWorkspaceSectionProps) {
-  const workspaceActionsBlocked = deployBusy !== null || launchBusy !== null;
+  const workspaceActionsBlocked = deployBusy !== null || launchBusy !== null || documentMappingBusy !== null;
 
   return (
     <section className="dialog-section deploy-workspace-section">
@@ -181,7 +205,134 @@ export function DeployWorkspaceSection({
           trackedPatterns={gitExcludeTrackedPatterns}
         />
       </div>
+
+      <DocumentMappingsSection
+        workspaceEnrolled={Boolean(workspaceInspection?.existingEnrollment)}
+        mappingPath={documentMappingPath}
+        status={documentMappings}
+        busy={documentMappingBusy}
+        blocked={documentMappingBlocked}
+        onMappingPathChange={onDocumentMappingPathChange}
+        onChoose={onChooseDocumentMapping}
+        onDeploy={onDeployDocumentMapping}
+        onRemove={onRemoveDocumentMapping}
+        onOpenPath={onOpenDocumentMappingPath}
+      />
     </section>
+  );
+}
+
+interface DocumentMappingsSectionProps {
+  workspaceEnrolled: boolean;
+  mappingPath: string;
+  status: WorkspaceDocumentMappingsStatus | null;
+  busy: string | null;
+  blocked: boolean;
+  onMappingPathChange: (value: string) => void;
+  onChoose: () => void;
+  onDeploy: (sourcePath?: string) => void;
+  onRemove: (entry: WorkspaceDocumentMappingEntry) => void;
+  onOpenPath: (path: string, label: string) => void;
+}
+
+function DocumentMappingsSection({
+  workspaceEnrolled,
+  mappingPath,
+  status,
+  busy,
+  blocked,
+  onMappingPathChange,
+  onChoose,
+  onDeploy,
+  onRemove,
+  onOpenPath,
+}: DocumentMappingsSectionProps) {
+  const actionsBlocked = blocked || !workspaceEnrolled;
+
+  return (
+    <div className="deploy-subsection deploy-document-mappings">
+      <div className="dialog-section-heading">
+        <strong>Project notes</strong>
+        <span>{status ? `${status.mappedCount} mapped` : "Optional"}</span>
+      </div>
+      <input
+        className="deploy-path-input"
+        type="text"
+        spellCheck={false}
+        value={mappingPath}
+        placeholder="Project document folder, for example AIWork"
+        title={mappingPath || "No document folder selected"}
+        disabled={actionsBlocked}
+        onChange={(event) => onMappingPathChange(event.currentTarget.value)}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            event.preventDefault();
+            onDeploy();
+          }
+        }}
+      />
+      <div className="deploy-action-row">
+        <button type="button" disabled={actionsBlocked} onClick={onChoose}>
+          <FolderOpen size={12} aria-hidden="true" />
+          <span>Choose folder</span>
+        </button>
+        <button
+          type="button"
+          className="primary"
+          disabled={actionsBlocked || !mappingPath.trim()}
+          onClick={() => onDeploy()}
+        >
+          <Link2 size={12} aria-hidden="true" />
+          <span>{busy === "add" ? "Deploying" : "Deploy mapping"}</span>
+        </button>
+        <button
+          type="button"
+          disabled={!status?.projectRoot || status.mappedCount === 0 || blocked}
+          onClick={() => status?.projectRoot && onOpenPath(status.projectRoot, "project notes")}
+        >
+          <FolderOpen size={12} aria-hidden="true" />
+          <span>Open mapped</span>
+        </button>
+      </div>
+      {!workspaceEnrolled ? (
+        <div className="deploy-git-exclude-note status-missing">
+          <span>Deploy at least one workspace adapter before adding project document mappings.</span>
+        </div>
+      ) : status ? (
+        <div className="deploy-document-mapping-list" aria-label="Project document mappings">
+          {status.entries.length === 0 ? (
+            <div className="deploy-git-exclude-note"><span>{status.message}</span></div>
+          ) : status.entries.map((entry) => {
+            const entryBusy = busy === entry.sourcePath;
+            const canDeploy = entry.status === "available" || entry.status === "missing-target";
+            return (
+              <article className={`deploy-document-mapping status-${entry.status}`} key={entry.sourcePath}>
+                <span className="deploy-document-mapping-copy">
+                  <strong>{entry.label}</strong>
+                  <small title={entry.sourcePath}>{entry.sourceRelativePath} -&gt; {entry.targetRelativePath}</small>
+                </span>
+                <em>{entry.status}</em>
+                <span className="deploy-document-mapping-actions">
+                  <button type="button" title="Open source folder" disabled={blocked || !entry.sourceExists} onClick={() => onOpenPath(entry.sourcePath, entry.label)}>
+                    <FolderOpen size={12} aria-hidden="true" />
+                  </button>
+                  {entry.status === "mapped" && entry.configured ? (
+                    <button type="button" title="Remove mapping" disabled={blocked} onClick={() => onRemove(entry)}>
+                      <Unlink size={12} aria-hidden="true" />
+                    </button>
+                  ) : canDeploy || (entry.status === "mapped" && !entry.configured) ? (
+                    <button type="button" title="Deploy mapping" disabled={blocked} onClick={() => onDeploy(entry.sourcePath)}>
+                      <Link2 size={12} aria-hidden="true" />
+                    </button>
+                  ) : null}
+                </span>
+                {entryBusy ? <span className="deploy-document-mapping-progress">Working...</span> : null}
+              </article>
+            );
+          })}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -236,6 +387,7 @@ interface DeployAdaptersSectionProps {
   selectedDeployAdapters: string[];
   deployBusy: DeployBusy;
   launchBusy: string | null;
+  documentMappingBusy: boolean;
   onAdapterSelectedChange: (adapterId: string, selected: boolean) => void;
   onDeployAdapter: (adapterId: string) => void;
   onLaunchWorkspace: (adapterId: string) => void;
@@ -246,11 +398,12 @@ export function DeployAdaptersSection({
   selectedDeployAdapters,
   deployBusy,
   launchBusy,
+  documentMappingBusy,
   onAdapterSelectedChange,
   onDeployAdapter,
   onLaunchWorkspace,
 }: DeployAdaptersSectionProps) {
-  const workspaceActionsBlocked = deployBusy !== null || launchBusy !== null;
+  const workspaceActionsBlocked = deployBusy !== null || launchBusy !== null || documentMappingBusy;
 
   return (
     <section className="dialog-section deploy-adapters-section">

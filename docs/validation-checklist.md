@@ -98,6 +98,9 @@ Status: user smoke validated for the current Codex CLI MVP loop on 2026-05-20; p
 - Confirm the maintenance panel can open the project/vault folders from the card.
 - Confirm the maintenance panel cleanup action clears generated `Sessions/` note content, resets `Canvases/AgentFlow.base.canvas`, and clears canvas bindings without removing hooks, workspace enrollment metadata, or future work canvas folders.
 - Confirm the deploy panel `Clear Generated` action performs the same generated-content cleanup for an enrolled workspace after a confirmation prompt, then leaves adapters/hooks deployed.
+- Confirm Project notes lists only explicitly deployed mappings, accepts a manually selected workspace folder, deploys it below the vault-local `Project/` directory, and reports it as `mapped` after another Check.
+- Confirm removing a Project notes mapping removes only the vault junction while the source directory and files remain unchanged.
+- Confirm `Clear Generated` preserves deployed Project notes mappings.
 
 ## Vibe Checks
 

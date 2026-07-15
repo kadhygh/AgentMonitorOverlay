@@ -21,6 +21,7 @@ const {
 } = require("./lib/target-binding");
 const { enrollWorkspace } = require("./lib/workspace-deploy");
 const { updateWorkspaceGitExclude } = require("./lib/workspace-git-exclude");
+const { updateWorkspaceDocumentMapping } = require("./lib/workspace-document-mappings");
 const { inspectWorkspace } = require("./lib/workspace-inspect");
 const { launchWorkspace } = require("./lib/workspace-launch");
 const { createWorkspaceRegistry } = require("./lib/workspace-registry");
@@ -154,6 +155,7 @@ const routeContext = {
   inspectWorkspace,
   enrollWorkspace,
   updateWorkspaceGitExclude,
+  updateWorkspaceDocumentMapping,
   launchWorkspace,
   inspectWorkspaceMaintenance,
   cleanWorkspaceVault,

@@ -133,6 +133,120 @@
   white-space: nowrap;
 }
 
+.deploy-document-mapping-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.deploy-document-mapping {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+  padding: 7px 8px;
+  color: #dbe9e4;
+  background: rgba(0, 0, 0, 0.13);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 6px;
+}
+
+.deploy-document-mapping.status-mapped {
+  background: rgba(45, 139, 112, 0.11);
+  border-color: rgba(111, 224, 190, 0.22);
+}
+
+.deploy-document-mapping.status-available,
+.deploy-document-mapping.status-missing-target {
+  background: rgba(178, 128, 56, 0.1);
+  border-color: rgba(255, 199, 115, 0.2);
+}
+
+.deploy-document-mapping.status-conflict,
+.deploy-document-mapping.status-missing-source {
+  background: rgba(190, 68, 60, 0.11);
+  border-color: rgba(255, 132, 116, 0.24);
+}
+
+.deploy-document-mapping-copy {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.deploy-document-mapping-copy strong,
+.deploy-document-mapping-copy small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.deploy-document-mapping-copy strong {
+  color: #edf8f4;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.deploy-document-mapping-copy small {
+  color: #91a39d;
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.deploy-document-mapping > em {
+  color: #9fafaa;
+  font-size: 8px;
+  font-style: normal;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.deploy-document-mapping.status-mapped > em { color: #9be8cf; }
+.deploy-document-mapping.status-available > em,
+.deploy-document-mapping.status-missing-target > em { color: #f0c878; }
+.deploy-document-mapping.status-conflict > em,
+.deploy-document-mapping.status-missing-source > em { color: #ffad9d; }
+
+.deploy-document-mapping-actions {
+  display: flex;
+  gap: 4px;
+}
+
+.deploy-document-mapping-actions button {
+  display: grid;
+  place-items: center;
+  width: 25px;
+  height: 25px;
+  padding: 0;
+  color: #b9cbc5;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.deploy-document-mapping-actions button:hover:not(:disabled) {
+  color: #effbf7;
+  background: rgba(111, 224, 190, 0.14);
+  border-color: rgba(111, 224, 190, 0.28);
+}
+
+.deploy-document-mapping-actions button:disabled {
+  opacity: 0.42;
+  cursor: not-allowed;
+}
+
+.deploy-document-mapping-progress {
+  position: absolute;
+  right: 8px;
+  bottom: 1px;
+  color: #9be8cf;
+  font-size: 8px;
+  line-height: 9px;
+}
+
 .deploy-adapter-list {
   display: grid;
   gap: 8px;

@@ -37,6 +37,15 @@ async function handleWorkspaceRoutes(req, res, url, context) {
     return sendHandled(res, 200, context.updateWorkspaceGitExclude(payload, { recordDebugLog: context.recordDebugLog }));
   }
 
+  if (req.method === "POST" && url.pathname === "/api/workspaces/document-mappings") {
+    const payload = await readJsonBody(req);
+    return sendHandled(
+      res,
+      200,
+      context.updateWorkspaceDocumentMapping(payload, { recordDebugLog: context.recordDebugLog }),
+    );
+  }
+
   if (req.method === "POST" && url.pathname === "/api/workspaces/launch") {
     const payload = await readJsonBody(req);
     const result = await context.launchWorkspace(payload, {

@@ -4,6 +4,7 @@ import { FolderPlus, Plus, Trash2, X } from "lucide-react";
 import {
   BROKER_DEBUG_LOGS_URL,
   BROKER_WORKSPACE_CLEAN_VAULT_URL,
+  BROKER_WORKSPACE_DOCUMENT_MAPPINGS_URL,
   BROKER_WORKSPACE_ENROLL_URL,
   BROKER_WORKSPACE_GIT_EXCLUDE_URL,
   BROKER_WORKSPACE_INSPECT_URL,
@@ -33,6 +34,8 @@ import type {
   FolderPickResult,
   OpenPathResult,
   WorkspaceCleanResult,
+  WorkspaceDocumentMappingEntry,
+  WorkspaceDocumentMappingResult,
   WorkspaceEnrollment,
   WorkspaceGitExcludeResult,
   WorkspaceInspection,
@@ -64,6 +67,8 @@ export function DeployWorkspaceApp() {
   const [gitExcludeResult, setGitExcludeResult] = useState<WorkspaceGitExcludeResult | null>(null);
   const [includeClaudeSettingsExclude, setIncludeClaudeSettingsExclude] = useState(false);
   const includeClaudeSettingsExcludeRef = useRef(false);
+  const [documentMappingPath, setDocumentMappingPath] = useState("");
+  const [documentMappingBusy, setDocumentMappingBusy] = useState<string | null>(null);
   const [feedback, setFeedback] = useState("Choose or paste a workspace path.");
   const [registeredWorkspaces, setRegisteredWorkspaces] = useState<WorkspaceRegistryEntry[]>([]);
   const [registryBusy, setRegistryBusy] = useState(false);
@@ -162,6 +167,7 @@ export function DeployWorkspaceApp() {
       includeClaudeSettingsExcludeRef.current = false;
       setIncludeClaudeSettingsExclude(false);
       setSelectedDeployAdapters([]);
+      setDocumentMappingPath("");
       await inspectWorkspace(result.path);
     } catch (error) {
       setFeedback(`Folder selection failed: ${(error as Error).message}`);
@@ -175,6 +181,7 @@ export function DeployWorkspaceApp() {
       setWorkspaceEnrollment(null);
       setGitExcludeResult(null);
       setSelectedDeployAdapters([]);
+      setDocumentMappingPath("");
     }
   }
 
@@ -204,6 +211,103 @@ export function DeployWorkspaceApp() {
       setFeedback("Git folder selected. Click Add exclude to write local rules.");
     } catch (error) {
       setFeedback(`Git folder selection failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function chooseDocumentMappingDirectory() {
+    setFeedback("Choose a project document folder...");
+
+    try {
+      const result = await runWithNativeDialogLayer(() => invoke<FolderPickResult>("select_workspace_directory"));
+      if (!result.ok || !result.path) {
+        setFeedback(result.message);
+        return;
+      }
+
+      setDocumentMappingPath(result.path);
+      setFeedback("Document folder selected. Click Deploy mapping to expose it inside the AMO vault.");
+    } catch (error) {
+      setFeedback(`Document folder selection failed: ${(error as Error).message}`);
+    }
+  }
+
+  async function deployDocumentMapping(sourcePath?: string) {
+    const targetWorkspace = workspaceInspection?.workspacePath ?? workspacePath.trim();
+    const targetSource = (sourcePath ?? documentMappingPath).trim();
+    if (!targetWorkspace || !targetSource) {
+      setFeedback("Workspace and project document folder are required.");
+      return;
+    }
+    if (!workspaceInspection?.existingEnrollment) {
+      setFeedback("Deploy this workspace before adding project document mappings.");
+      return;
+    }
+
+    const busyKey = sourcePath ? targetSource : "add";
+    setDocumentMappingBusy(busyKey);
+    setFeedback("Deploying project document mapping...");
+    try {
+      const result = await postBrokerJson<WorkspaceDocumentMappingResult>(BROKER_WORKSPACE_DOCUMENT_MAPPINGS_URL, {
+        workspacePath: targetWorkspace,
+        sourcePath: targetSource,
+        action: "add",
+      });
+      setWorkspaceInspection((current) =>
+        current ? { ...current, documentMappings: result.documentMappings } : current,
+      );
+      setDocumentMappingPath("");
+      void postUtilityDebugLog("workspace.document_mapping.add.ok", {
+        workspacePath: result.workspacePath,
+        sourcePath: targetSource,
+        projectRoot: result.documentMappings.projectRoot,
+        changed: result.changed,
+      });
+      setFeedback(
+        result.changed
+          ? `Project documents mapped into ${result.documentMappings.projectRootRelativePath}.`
+          : "Project document mapping is already active.",
+      );
+    } catch (error) {
+      void postUtilityDebugLog("workspace.document_mapping.add.error", {
+        workspacePath: targetWorkspace,
+        sourcePath: targetSource,
+        message: (error as Error).message,
+      });
+      setFeedback(`Document mapping failed: ${(error as Error).message}`);
+    } finally {
+      setDocumentMappingBusy(null);
+    }
+  }
+
+  async function removeDocumentMapping(entry: WorkspaceDocumentMappingEntry) {
+    const targetWorkspace = workspaceInspection?.workspacePath ?? workspacePath.trim();
+    if (!targetWorkspace) return;
+
+    setDocumentMappingBusy(entry.sourcePath);
+    setFeedback(`Removing ${entry.label} mapping...`);
+    try {
+      const result = await postBrokerJson<WorkspaceDocumentMappingResult>(BROKER_WORKSPACE_DOCUMENT_MAPPINGS_URL, {
+        workspacePath: targetWorkspace,
+        sourcePath: entry.sourceRelativePath,
+        action: "remove",
+      });
+      setWorkspaceInspection((current) =>
+        current ? { ...current, documentMappings: result.documentMappings } : current,
+      );
+      void postUtilityDebugLog("workspace.document_mapping.remove.ok", {
+        workspacePath: result.workspacePath,
+        sourcePath: entry.sourcePath,
+      });
+      setFeedback(`Removed ${entry.label} mapping. Source files were not changed.`);
+    } catch (error) {
+      void postUtilityDebugLog("workspace.document_mapping.remove.error", {
+        workspacePath: targetWorkspace,
+        sourcePath: entry.sourcePath,
+        message: (error as Error).message,
+      });
+      setFeedback(`Remove mapping failed: ${(error as Error).message}`);
+    } finally {
+      setDocumentMappingBusy(null);
     }
   }
 
@@ -441,6 +545,7 @@ export function DeployWorkspaceApp() {
     setWorkspaceEnrollment(null);
     setSelectedDeployAdapters([]);
     setGitRootPath("");
+    setDocumentMappingPath("");
     setFeedback("Choose or paste a workspace path.");
   }
 
@@ -462,6 +567,8 @@ export function DeployWorkspaceApp() {
   const gitExcludeMissingPatterns = new Set(gitExcludeStatus?.missingEntries.map((entry) => entry.pattern) ?? []);
   const gitExcludeTrackedPatterns = new Set(gitExcludeStatus?.trackedEntries.map((entry) => entry.pattern) ?? []);
   const gitExcludeBlocked = deployBusy !== null || launchBusy !== null || gitExcludeBusy;
+  const documentMappingBlocked =
+    deployBusy !== null || launchBusy !== null || gitExcludeBusy || documentMappingBusy !== null;
 
   return (
     <main className="utility-window-shell deploy-window-shell">
@@ -539,6 +646,10 @@ export function DeployWorkspaceApp() {
             gitExcludeBlocked={gitExcludeBlocked}
             gitExcludeBusy={gitExcludeBusy}
             includeClaudeSettingsExclude={includeClaudeSettingsExclude}
+            documentMappingPath={documentMappingPath}
+            documentMappings={workspaceInspection?.documentMappings ?? null}
+            documentMappingBusy={documentMappingBusy}
+            documentMappingBlocked={documentMappingBlocked}
             onWorkspacePathChange={updateWorkspacePathInput}
             onInspectWorkspace={() => void inspectWorkspace()}
             onChooseWorkspace={() => void chooseWorkspaceDirectory()}
@@ -548,12 +659,18 @@ export function DeployWorkspaceApp() {
             onApplyGitExclude={() => void applyGitExclude()}
             onChooseGit={() => void chooseGitDirectory()}
             onClaudeSettingsExcludeChange={updateClaudeSettingsExclude}
+            onDocumentMappingPathChange={setDocumentMappingPath}
+            onChooseDocumentMapping={() => void chooseDocumentMappingDirectory()}
+            onDeployDocumentMapping={(sourcePath) => void deployDocumentMapping(sourcePath)}
+            onRemoveDocumentMapping={(entry) => void removeDocumentMapping(entry)}
+            onOpenDocumentMappingPath={(path, label) => void openDeploymentPath(path, label)}
           />
           <DeployAdaptersSection
             workspaceInspection={workspaceInspection}
             selectedDeployAdapters={selectedDeployAdapters}
             deployBusy={deployBusy}
             launchBusy={launchBusy}
+            documentMappingBusy={documentMappingBusy !== null}
             onAdapterSelectedChange={(adapterId, selected) => {
               setSelectedDeployAdapters((current) =>
                 selected ? Array.from(new Set([...current, adapterId])) : current.filter((id) => id !== adapterId),

@@ -56,6 +56,7 @@ Expected ownership after refactor:
 - `lib/workspace-inspect.js`: workspace status, vault-root planning, adapter deployment coverage, and deployability plans.
 - `lib/workspace-deploy.js`: workspace enrollment, adapter hook install/merge, AMO vault creation, plugin install, and `.amo/.gitignore`.
 - `lib/workspace-git-exclude.js`: project-local Git exclude inspection, planning, and update writes.
+- `lib/workspace-document-mappings.js`: project documentation mapping inspection, validation, junction lifecycle, and workspace metadata updates.
 - `lib/workspace-launch.js`: workspace CLI/App launch, Codex CLI resume title route, and launch-time target binding.
 - `lib/workspace-maintenance.js`: workspace maintenance snapshot, vault cleanup, plugin update, canvas inspection, and cleanup bridge-state resets.
 - `lib/conversation-artifacts.js`: prompt/reply notes, note index, session layout v2 files.
@@ -238,6 +239,7 @@ The broker extraction has started. These boundaries have already moved out of `b
 - detached terminal/process launch helpers: `broker/lib/terminal-launch.js`
 - shared note title, filename, and preview text formatting helpers: `broker/lib/text-format.js`
 - project-local Git exclude inspection and update planning: `broker/lib/workspace-git-exclude.js`
+- project documentation candidate inspection and safe vault junction lifecycle: `broker/lib/workspace-document-mappings.js`
 - workspace inspection, vault-root planning, adapter deployability, and adapter deployment coverage: `broker/lib/workspace-inspect.js`
 - workspace enrollment, hook install/merge, AMO vault creation, plugin install, and `.amo/.gitignore`: `broker/lib/workspace-deploy.js`
 - workspace launch, launch-time Codex CLI target binding, maintenance status, vault cleanup, plugin update, and Git exclude writes: `broker/lib/workspace-launch.js`, `broker/lib/workspace-maintenance.js`, `broker/lib/workspace-git-exclude.js`

@@ -7,6 +7,7 @@ const {
   AMO_DEPLOYMENT_VERSION,
   AMO_DIR,
   AMO_HOOK_PROTOCOL_VERSION,
+  AMO_PROJECT_DOCS_PATH,
   AMO_SCHEMA_VERSION,
   AMO_SESSIONS_PATH,
   AMO_VAULT_NAME_PREFIX,
@@ -16,6 +17,7 @@ const {
 const { isWritableDirectory, readDirectoryNames, readJsonFile, resolveWorkspacePath } = require("./filesystem");
 const { normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./normalize");
 const { inspectWorkspaceGitExclude } = require("./workspace-git-exclude");
+const { inspectWorkspaceDocumentMappings } = require("./workspace-document-mappings");
 const { CODEX_HOOK_EVENTS } = require("../hooks/codex");
 const { CLAUDE_HOOK_EVENTS } = require("../hooks/claude");
 
@@ -176,6 +178,7 @@ function inspectWorkspace(payload) {
     payload?.gitRootPath || payload?.git_root_path,
     Boolean(payload?.includeClaudeSettingsLocal || payload?.include_claude_settings_local)
   );
+  const documentMappings = inspectWorkspaceDocumentMappings(workspacePath, plannedVaultRoot, existingWorkspace);
   const rootIndicators = [".git", "package.json", "pyproject.toml", "Cargo.toml"].filter((name) => {
     return fs.existsSync(path.join(workspacePath, name));
   });
@@ -215,6 +218,7 @@ function inspectWorkspace(payload) {
     `${plannedVaultRelativePath}/${AMO_SESSIONS_PATH}`,
     `${plannedVaultRelativePath}/${AMO_CANVASES_PATH}`,
     `${plannedVaultRelativePath}/${AMO_WORK_CANVASES_PATH}`,
+    `${plannedVaultRelativePath}/${AMO_PROJECT_DOCS_PATH}`,
     `${plannedVaultRelativePath}/.obsidian`,
     `${plannedVaultRelativePath}/.obsidian/plugins`,
     `${plannedVaultRelativePath}/.obsidian/plugins/${OBSIDIAN_PLUGIN_ID}`,
@@ -242,6 +246,7 @@ function inspectWorkspace(payload) {
     existingEnrollment: hasAmo,
     deploymentRoot: AMO_DIR,
     gitExclude,
+    documentMappings,
     supportedAdapters: [
       {
         id: "codex-cli",

@@ -9,6 +9,7 @@ const AMO_SESSIONS_PATH = "Sessions";
 const AMO_SESSION_GENERATED_PATH = "turns/generated";
 const AMO_CANVASES_PATH = "Canvases";
 const AMO_WORK_CANVASES_PATH = "Canvases/Work";
+const AMO_PROJECT_DOCS_PATH = "Project";
 const AMO_CANVAS_PATH = "Canvases/AgentFlow.base.canvas";
 const AMO_CANVAS_TYPE = "agent-flow-base";
 const AMO_CANVAS_MANAGER = "agent-monitor-overlay";
@@ -32,6 +33,7 @@ module.exports = {
   AMO_HOOK_PROTOCOL_VERSION,
   AMO_LAYOUT_VERSION,
   AMO_NOTE_INDEX_PATH,
+  AMO_PROJECT_DOCS_PATH,
   AMO_SCHEMA_VERSION,
   AMO_SESSION_GENERATED_PATH,
   AMO_SESSIONS_PATH,

@@ -347,6 +347,7 @@
 }
 
 :root[data-amo-theme="light"] .deploy-git-exclude-note.status-covered,
+:root[data-amo-theme="light"] .deploy-document-mapping.status-mapped,
 :root[data-amo-theme="light"] .deploy-adapter-card.state-deployed {
   color: #0d755b;
   background: rgba(18, 135, 105, 0.09);
@@ -354,6 +355,8 @@
 }
 
 :root[data-amo-theme="light"] .deploy-git-exclude-note.status-missing,
+:root[data-amo-theme="light"] .deploy-document-mapping.status-available,
+:root[data-amo-theme="light"] .deploy-document-mapping.status-missing-target,
 :root[data-amo-theme="light"] .deploy-adapter-card.state-undeployed,
 :root[data-amo-theme="light"] .deploy-adapter-card.state-needs-update,
 :root[data-amo-theme="light"] .workspace-issues span {
@@ -365,6 +368,8 @@
 :root[data-amo-theme="light"] .deploy-git-exclude-note.status-tracked,
 :root[data-amo-theme="light"] .deploy-git-exclude-note.status-error,
 :root[data-amo-theme="light"] .deploy-git-exclude-note.status-not-found,
+:root[data-amo-theme="light"] .deploy-document-mapping.status-conflict,
+:root[data-amo-theme="light"] .deploy-document-mapping.status-missing-source,
 :root[data-amo-theme="light"] .deploy-adapter-card.status-blocked,
 :root[data-amo-theme="light"] .workspace-panel-error {
   color: #9b332e;
@@ -389,6 +394,21 @@
 :root[data-amo-theme="light"] .deploy-status-grid dd,
 :root[data-amo-theme="light"] .deploy-git-exclude-list span {
   color: #24342f;
+}
+
+:root[data-amo-theme="light"] .deploy-document-mapping-copy strong {
+  color: #1c302a;
+}
+
+:root[data-amo-theme="light"] .deploy-document-mapping-copy small,
+:root[data-amo-theme="light"] .deploy-document-mapping > em {
+  color: #667a73;
+}
+
+:root[data-amo-theme="light"] .deploy-document-mapping-actions button {
+  color: #315d51;
+  background: rgba(255, 255, 255, 0.74);
+  border-color: rgba(42, 74, 64, 0.14);
 }
 
 :root[data-amo-theme="light"] .workspace-panel.tone-warning {

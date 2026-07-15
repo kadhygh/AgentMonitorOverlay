@@ -247,6 +247,7 @@ export interface WorkspaceInspection {
   existingEnrollment?: boolean;
   deploymentRoot?: string;
   gitExclude?: WorkspaceGitExcludeStatus;
+  documentMappings?: WorkspaceDocumentMappingsStatus;
   supportedAdapters: WorkspaceAdapterPlan[];
   deferredAdapters?: WorkspaceAdapterPlan[];
 }
@@ -289,6 +290,39 @@ export interface WorkspaceLaunchResult {
   session?: AgentSession | null;
   launch?: ManagedLaunch | null;
   message: string;
+}
+
+export interface WorkspaceDocumentMappingEntry {
+  label: string;
+  sourcePath: string;
+  sourceRelativePath: string;
+  targetPath: string;
+  targetRelativePath: string;
+  type: string;
+  configured: boolean;
+  sourceExists: boolean;
+  targetExists: boolean;
+  status: "available" | "mapped" | "missing-source" | "missing-target" | "conflict" | string;
+  message: string;
+}
+
+export interface WorkspaceDocumentMappingsStatus {
+  ok: boolean;
+  available: boolean;
+  projectRoot: string;
+  projectRootRelativePath: string;
+  mappedCount: number;
+  entries: WorkspaceDocumentMappingEntry[];
+  message: string;
+}
+
+export interface WorkspaceDocumentMappingResult {
+  ok: boolean;
+  schemaVersion: number;
+  changed: boolean;
+  workspacePath: string;
+  vaultRoot: string;
+  documentMappings: WorkspaceDocumentMappingsStatus;
 }
 
 export interface CliEnvironmentOption {

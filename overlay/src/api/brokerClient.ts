@@ -7,6 +7,8 @@ export const BROKER_WORKSPACES_URL = "http://127.0.0.1:17654/api/workspaces";
 export const BROKER_WORKSPACE_FORGET_URL = "http://127.0.0.1:17654/api/workspaces/forget";
 export const BROKER_WORKSPACE_ENROLL_URL = "http://127.0.0.1:17654/api/workspaces/enroll";
 export const BROKER_WORKSPACE_GIT_EXCLUDE_URL = "http://127.0.0.1:17654/api/workspaces/git-exclude";
+export const BROKER_WORKSPACE_DOCUMENT_MAPPINGS_URL =
+  "http://127.0.0.1:17654/api/workspaces/document-mappings";
 export const BROKER_WORKSPACE_LAUNCH_URL = "http://127.0.0.1:17654/api/workspaces/launch";
 export const BROKER_WORKSPACE_STATUS_URL = "http://127.0.0.1:17654/api/workspaces/status";
 export const BROKER_WORKSPACE_CLEAN_VAULT_URL = "http://127.0.0.1:17654/api/workspaces/clean-vault";
