@@ -22,15 +22,31 @@ export function toVaultRelativeProtocolPath(value, vaultRoot = "") {
   return normalizedPath;
 }
 
-function decodeProtocolPathValue(value) {
+export function protocolPathBelongsToVault(value, vaultRoot = "") {
+  const rawPath = decodeProtocolPathValue(value);
+  if (!rawPath || !vaultRoot) return true;
+
+  const normalizedPath = rawPath.replace(/\\/gu, "/").replace(/\/+$/u, "");
+  const normalizedRoot = String(vaultRoot || "").replace(/\\/gu, "/").replace(/\/+$/u, "");
+  const isWindowsPath = /^[A-Za-z]:\//u.test(normalizedPath);
+  const isAbsolutePath = isWindowsPath || normalizedPath.startsWith("/");
+  if (!isAbsolutePath) return true;
+
+  const comparablePath = isWindowsPath ? normalizedPath.toLowerCase() : normalizedPath;
+  const comparableRoot = isWindowsPath ? normalizedRoot.toLowerCase() : normalizedRoot;
+  return comparablePath === comparableRoot || comparablePath.startsWith(comparableRoot + "/");
+}
+
+export function decodeProtocolPathValue(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
 
-  const plusDecoded = raw.replace(/\+/gu, " ");
   try {
-    return decodeURIComponent(plusDecoded);
+    // Obsidian already decodes protocol query values before invoking the handler.
+    // Keep literal plus signs intact because they are valid note filename characters.
+    return decodeURIComponent(raw);
   } catch {
-    return plusDecoded;
+    return raw;
   }
 }
 

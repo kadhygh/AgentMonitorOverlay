@@ -10,6 +10,7 @@ import {
   notePathForOpen,
   obsidianAmoOpenUri,
   obsidianOpenUri,
+  obsidianVaultOpenUri,
 } from "../domain/routingModel";
 import { writeClipboardText } from "../native/clipboard";
 import type { ObsidianVaultRecoveryState } from "../components/ObsidianVaultRecoveryDialog";
@@ -20,6 +21,7 @@ import type {
 } from "../types";
 
 const OBSIDIAN_PLUGIN_BOOTSTRAP_DELAY_MS = 1200;
+const OBSIDIAN_VAULT_ROUTE_DELAY_MS = 180;
 
 function sleep(ms: number) {
   return new Promise((resolve) => window.setTimeout(resolve, ms));
@@ -138,7 +140,9 @@ export function useObsidianOpen(options: UseObsidianOpenOptions) {
       }
 
       const bootstrapUri = vaultId ? obsidianOpenUri(targetPath, vaultId, session.vaultRoot) : null;
+      const vaultRouteUri = vaultId ? obsidianVaultOpenUri(vaultId) : null;
       let bootstrapResult: OpenPathResult | null = null;
+      let vaultRouteResult: OpenPathResult | null = null;
       const needsRuntimeBootstrap = Boolean(registration && !registration.runtimeConfigExists);
       if (registration && needsRuntimeBootstrap && (registration.obsidianProcessCount ?? 0) > 0) {
         const message =
@@ -157,6 +161,27 @@ export function useObsidianOpen(options: UseObsidianOpenOptions) {
         showObsidianVaultRecovery(session, target, targetPath, focusNotePath, registration, message);
         options.setFeedback(message);
         return;
+      }
+
+      if (vaultRouteUri && !needsRuntimeBootstrap) {
+        options.postDebugLog("obsidian.open.vault_route_uri", {
+          sessionId: session.sessionId,
+          target,
+          uri: vaultRouteUri,
+          vaultId,
+        });
+        vaultRouteResult = await invoke<OpenPathResult>("open_uri", { uri: vaultRouteUri });
+        options.postDebugLog("obsidian.open.vault_route_result", {
+          sessionId: session.sessionId,
+          target,
+          ok: vaultRouteResult.ok,
+          message: vaultRouteResult.message,
+        });
+        if (!vaultRouteResult.ok) {
+          options.setFeedback(vaultRouteResult.message);
+          return;
+        }
+        await sleep(OBSIDIAN_VAULT_ROUTE_DELAY_MS);
       }
 
       if (bootstrapUri && needsRuntimeBootstrap) {
@@ -223,6 +248,7 @@ export function useObsidianOpen(options: UseObsidianOpenOptions) {
         uri,
         vaultId: vaultId ?? null,
         bootstrapUsed: Boolean(bootstrapResult),
+        vaultRouteUsed: Boolean(vaultRouteResult),
         pluginOpenSkipped: false,
       });
       const result = await invoke<OpenPathResult>("open_uri", { uri });
@@ -233,6 +259,7 @@ export function useObsidianOpen(options: UseObsidianOpenOptions) {
         ok: result.ok,
         message: result.message,
         bootstrapUsed: Boolean(bootstrapResult),
+        vaultRouteUsed: Boolean(vaultRouteResult),
         pluginOpenSkipped: false,
       });
       if (result.ok) {

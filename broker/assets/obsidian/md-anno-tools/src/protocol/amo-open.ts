@@ -1,8 +1,30 @@
 import { Notice } from "obsidian";
-import { normalizeOpenKind, normalizeVaultFilePath, toVaultRelativeProtocolPath } from "../core/paths";
+import {
+  normalizeOpenKind,
+  normalizeVaultFilePath,
+  protocolPathBelongsToVault,
+  toVaultRelativeProtocolPath,
+} from "../core/paths";
 import { getVaultRoot } from "../core/ui-utils";
 
 export async function handleAmoOpenProtocol(plugin: any, params) {
+  const vaultRoot = getVaultRoot(plugin.app);
+  if (!protocolPathBelongsToVault(params && params.path, vaultRoot)) {
+    plugin.debugLog?.("protocol.open.ignored_foreign_vault", {
+      path: params && params.path,
+      relativePath: params && (params.relativePath || params.relative_path),
+      requestedVaultId: params && params.vault,
+      vaultRoot,
+    });
+    return;
+  }
+
+  plugin.debugLog?.("protocol.open.accepted", {
+    path: params && params.path,
+    relativePath: params && (params.relativePath || params.relative_path),
+    requestedVaultId: params && params.vault,
+    vaultRoot,
+  });
   const targetPath = resolveProtocolTargetPath(plugin, params);
   if (!targetPath) {
     new Notice("AMO open URL is missing a vault-relative path.");

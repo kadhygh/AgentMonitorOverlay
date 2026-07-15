@@ -243,6 +243,10 @@ export function obsidianOpenUri(targetPath: string, vaultId?: string, vaultRoot?
   return `obsidian://open?${uriQuery(params)}`;
 }
 
+export function obsidianVaultOpenUri(vaultId: string) {
+  return `obsidian://open?${uriQuery({ vault: vaultId })}`;
+}
+
 export function obsidianAmoOpenUri(
   targetPath: string,
   target: "note" | "canvas",
@@ -260,6 +264,9 @@ export function obsidianAmoOpenUri(
     relativePath: filePath,
     kind: target,
   };
+  if (vaultId) {
+    params.vault = vaultId;
+  }
   if (options?.focusNotePath) {
     const focusNotePath = vaultRelativeFilePath(options.focusNotePath, vaultRoot) ?? options.focusNotePath;
     params.focusNotePath = focusNotePath;

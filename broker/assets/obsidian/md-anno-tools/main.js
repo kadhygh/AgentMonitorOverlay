@@ -38,7 +38,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.42";
+var PLUGIN_VERSION = "1.4.43";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -148,14 +148,25 @@ function toVaultRelativeProtocolPath(value, vaultRoot = "") {
   }
   return normalizedPath;
 }
+function protocolPathBelongsToVault(value, vaultRoot = "") {
+  const rawPath = decodeProtocolPathValue(value);
+  if (!rawPath || !vaultRoot) return true;
+  const normalizedPath = rawPath.replace(/\\/gu, "/").replace(/\/+$/u, "");
+  const normalizedRoot = String(vaultRoot || "").replace(/\\/gu, "/").replace(/\/+$/u, "");
+  const isWindowsPath = /^[A-Za-z]:\//u.test(normalizedPath);
+  const isAbsolutePath = isWindowsPath || normalizedPath.startsWith("/");
+  if (!isAbsolutePath) return true;
+  const comparablePath = isWindowsPath ? normalizedPath.toLowerCase() : normalizedPath;
+  const comparableRoot = isWindowsPath ? normalizedRoot.toLowerCase() : normalizedRoot;
+  return comparablePath === comparableRoot || comparablePath.startsWith(comparableRoot + "/");
+}
 function decodeProtocolPathValue(value) {
   const raw = String(value || "").trim();
   if (!raw) return "";
-  const plusDecoded = raw.replace(/\+/gu, " ");
   try {
-    return decodeURIComponent(plusDecoded);
+    return decodeURIComponent(raw);
   } catch (e) {
-    return plusDecoded;
+    return raw;
   }
 }
 function normalizeOpenKind(value, filePath = "") {
@@ -4118,6 +4129,23 @@ function clearAmoNotePropertyViewClasses(plugin) {
 // src/protocol/amo-open.ts
 var import_obsidian16 = require("obsidian");
 async function handleAmoOpenProtocol(plugin, params) {
+  var _a, _b;
+  const vaultRoot = getVaultRoot(plugin.app);
+  if (!protocolPathBelongsToVault(params && params.path, vaultRoot)) {
+    (_a = plugin.debugLog) == null ? void 0 : _a.call(plugin, "protocol.open.ignored_foreign_vault", {
+      path: params && params.path,
+      relativePath: params && (params.relativePath || params.relative_path),
+      requestedVaultId: params && params.vault,
+      vaultRoot
+    });
+    return;
+  }
+  (_b = plugin.debugLog) == null ? void 0 : _b.call(plugin, "protocol.open.accepted", {
+    path: params && params.path,
+    relativePath: params && (params.relativePath || params.relative_path),
+    requestedVaultId: params && params.vault,
+    vaultRoot
+  });
   const targetPath = resolveProtocolTargetPath(plugin, params);
   if (!targetPath) {
     new import_obsidian16.Notice("AMO open URL is missing a vault-relative path.");
