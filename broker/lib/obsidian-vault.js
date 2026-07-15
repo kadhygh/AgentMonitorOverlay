@@ -10,8 +10,8 @@ const { normalizeText } = require("./normalize");
 const DEFAULT_CANVAS_APPEND_DIRECTION = "down";
 const CANVAS_APPEND_DIRECTIONS = new Set(["down", "right"]);
 
-function registerObsidianVault(vaultRoot) {
-  const registryPath = obsidianRegistryPath();
+function registerObsidianVault(vaultRoot, options = {}) {
+  const registryPath = options.registryPath || obsidianRegistryPath();
   if (!registryPath) {
     throw httpError(409, "obsidian_registry_unavailable", "Could not locate the Obsidian registry path for this OS");
   }
@@ -52,6 +52,8 @@ function registerObsidianVault(vaultRoot) {
   const runtimeConfigPath = path.join(path.dirname(registryPath), `${vaultId}.json`);
   const runtimeConfigExists = fs.existsSync(runtimeConfigPath);
   const vaultRuntimeState = inspectObsidianVaultRuntimeState(vaultRoot);
+  const runtimeReady = runtimeConfigExists || vaultRuntimeState.loaded;
+  const processCounter = options.countObsidianProcesses || countObsidianProcesses;
 
   return {
     ok: true,
@@ -59,10 +61,10 @@ function registerObsidianVault(vaultRoot) {
     vaultId,
     registryPath,
     runtimeConfigPath,
-    runtimeConfigExists: runtimeConfigExists || vaultRuntimeState.loaded,
+    runtimeConfigExists: runtimeReady,
     runtimeConfigFileExists: runtimeConfigExists,
     vaultRuntimeState,
-    obsidianProcessCount: countObsidianProcesses(),
+    obsidianProcessCount: runtimeReady ? null : processCounter(),
     alreadyRegistered,
     changed: !alreadyRegistered,
   };
