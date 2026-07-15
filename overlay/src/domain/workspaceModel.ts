@@ -1,6 +1,6 @@
 import type { AgentSession, WorkspaceAdapterPlan, WorkspaceCleanResult, WorkspaceInspection, WorkspaceMaintenanceStatus } from "../types";
 
-export type LaunchPanelAdapterId = "codex-cli" | "claude-cli";
+export type LaunchPanelAdapterId = "codex-cli" | "claude-cli" | "codex-app";
 export type MaintenanceTone = "ok" | "warning" | "error" | "unknown";
 
 export function isDeployableWorkspaceAdapter(adapter: WorkspaceAdapterPlan) {
@@ -19,13 +19,16 @@ export function isWorkspaceAdapterInstalled(adapter: WorkspaceAdapterPlan) {
   return adapter.deploymentStatus === "deployed" || adapter.deploymentStatus === "needs-update";
 }
 
-export function cliLaunchLabel(adapterId: LaunchPanelAdapterId) {
-  return adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI";
+export function workspaceLaunchLabel(adapterId: LaunchPanelAdapterId) {
+  if (adapterId === "codex-cli") return "Codex CLI";
+  if (adapterId === "claude-cli") return "Claude CLI";
+  return "Codex App";
 }
 
 export function workspaceAdapterPlan(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {
+  const requiredAdapterId = adapterId === "codex-app" ? "codex-cli" : adapterId;
   const allAdapters = [...(inspection?.supportedAdapters ?? []), ...(inspection?.deferredAdapters ?? [])];
-  return allAdapters.find((adapter) => adapter.id === adapterId) ?? null;
+  return allAdapters.find((adapter) => adapter.id === requiredAdapterId) ?? null;
 }
 
 export function workspaceAdapterLaunchable(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {
@@ -39,6 +42,7 @@ export function workspaceAdapterLaunchDetail(inspection: WorkspaceInspection | n
     return "not detected";
   }
   if (isWorkspaceAdapterInstalled(adapter)) {
+    if (adapterId === "codex-app") return "open this project";
     return adapter.deploymentStatus === "needs-update" ? "deployed, update available" : "deployed";
   }
   return adapter.deploymentStatus ?? adapter.status;

@@ -13,7 +13,7 @@ import { cliLaunchPreferencePayload } from "../native/cliLaunch";
 import { launchPanelPosition, workspacePanelPosition } from "../domain/overlaySessionUi";
 import { projectName, workspacePathForSession } from "../domain/routingModel";
 import {
-  cliLaunchLabel,
+  workspaceLaunchLabel,
   workspaceAdapterLaunchable,
   workspaceCleanFeedback,
   type LaunchPanelAdapterId,
@@ -118,7 +118,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     }
   }
 
-  async function launchProjectCliFromPanel(adapterId: LaunchPanelAdapterId) {
+  async function launchProjectToolFromPanel(adapterId: LaunchPanelAdapterId) {
     if (!options.launchPanel) return;
 
     const session = options.launchPanel.session;
@@ -132,13 +132,15 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
 
     if (!workspaceAdapterLaunchable(options.launchPanel.inspection, adapterId)) {
       options.setLaunchPanel((current) =>
-        current ? { ...current, error: `${cliLaunchLabel(adapterId)} is not deployed in this workspace.` } : current,
+        current ? { ...current, error: `${workspaceLaunchLabel(adapterId)} is not available in this workspace.` } : current,
       );
       return;
     }
 
     options.setLaunchPanel((current) => (current ? { ...current, busy: adapterId, error: null } : current));
-    options.setFeedback(`Launching new ${cliLaunchLabel(adapterId)} for ${projectName(workspacePath)}...`);
+    options.setFeedback(
+      `${adapterId === "codex-app" ? "Opening" : "Launching new"} ${workspaceLaunchLabel(adapterId)} for ${projectName(workspacePath)}...`,
+    );
     options.postDebugLog("workspace.launch_panel.launch.start", {
       sessionId: session.sessionId,
       workspacePath,
@@ -408,7 +410,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
 
   return {
     cleanWorkspaceVaultFromPanel,
-    launchProjectCliFromPanel,
+    launchProjectToolFromPanel,
     loadWorkspaceStatus,
     openLaunchPanel,
     openMaintenancePath,

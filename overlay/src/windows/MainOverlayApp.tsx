@@ -304,7 +304,7 @@ export function MainOverlayApp() {
 
   const {
     cleanWorkspaceVaultFromPanel,
-    launchProjectCliFromPanel,
+    launchProjectToolFromPanel,
     loadWorkspaceStatus,
     openLaunchPanel,
     openMaintenancePath,
@@ -696,7 +696,7 @@ export function MainOverlayApp() {
             <LaunchPanel
               state={launchPanel}
               onClose={() => setLaunchPanel(null)}
-              onLaunch={(adapterId) => void launchProjectCliFromPanel(adapterId)}
+              onLaunch={(adapterId) => void launchProjectToolFromPanel(adapterId)}
             />
           ) : null}
           {workspacePanel ? (

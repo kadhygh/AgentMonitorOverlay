@@ -1,6 +1,6 @@
 import { X } from "lucide-react";
 import {
-  cliLaunchLabel,
+  workspaceLaunchLabel,
   workspaceAdapterLaunchDetail,
   workspaceAdapterLaunchable,
   type LaunchPanelAdapterId,
@@ -37,7 +37,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
       <div className="launch-panel-header">
         <div>
           <strong>{projectName(workspacePath)}</strong>
-          <span>{state.busy === "inspect" ? "Checking deploy status" : "New managed CLI"}</span>
+          <span>{state.busy === "inspect" ? "Checking deploy status" : "Launch workspace tool"}</span>
         </div>
         <button type="button" className="candidate-close" title="Close" onClick={onClose}>
           <X size={13} aria-hidden="true" />
@@ -51,7 +51,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
       {state.error ? <p className="launch-panel-error">{state.error}</p> : null}
 
       <div className="launch-panel-actions">
-        {(["codex-cli", "claude-cli"] as LaunchPanelAdapterId[]).map((adapterId) => {
+        {(["codex-cli", "claude-cli", "codex-app"] as LaunchPanelAdapterId[]).map((adapterId) => {
           const launchable = workspaceAdapterLaunchable(state.inspection, adapterId);
           const checking = state.busy === "inspect";
           const busy = state.busy === adapterId;
@@ -65,7 +65,15 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
             >
               <LaunchToolMark adapterId={adapterId} />
               <span>
-                <strong>{busy ? "Starting" : `Managed ${cliLaunchLabel(adapterId)}`}</strong>
+                <strong>
+                  {busy
+                    ? adapterId === "codex-app"
+                      ? "Opening"
+                      : "Starting"
+                    : adapterId === "codex-app"
+                      ? "Open Codex App"
+                      : `Managed ${workspaceLaunchLabel(adapterId)}`}
+                </strong>
                 <small>{checking ? "checking" : workspaceAdapterLaunchDetail(state.inspection, adapterId)}</small>
               </span>
             </button>
@@ -74,7 +82,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
       </div>
 
       {state.inspection ? (
-        <span className="launch-panel-note">Managed CLI starts in the project directory and waits for its own hook-created card.</span>
+        <span className="launch-panel-note">Managed CLI waits for its own hook-created card. Codex App opens the selected project without creating a card.</span>
       ) : (
         <span className="launch-panel-note">Inspecting deployment before enabling launch actions.</span>
       )}

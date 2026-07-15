@@ -172,6 +172,7 @@ export function SessionRowContent({
     !managedConnected &&
     !managedLaunching &&
     (managedOffline || !session.launchId);
+  const canOpenCodexAppAlternative = canResumeAsManaged && isCodexSession(session);
   const canUnbindTarget = Boolean(targetBinding && targetBinding.type !== "codex-cli-session");
   const canBindWindow = (!targetBinding || targetBinding.type === "codex-cli-session") && !managedConnected;
   const archived = sessionArchived(session);
@@ -230,6 +231,23 @@ export function SessionRowContent({
           }}
         >
           <SquareTerminal size={13} aria-hidden="true" />
+        </button>
+      ) : null}
+      {canOpenCodexAppAlternative ? (
+        <button
+          type="button"
+          className={`card-codex-app-launch-button ${activating ? "is-busy" : ""}`}
+          title="Open this session in Codex App"
+          aria-label={`Open ${session.title} in Codex App`}
+          aria-busy={activating}
+          disabled={activating}
+          onClick={(event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            onOpenCodexAppTarget();
+          }}
+        >
+          <Bot size={13} aria-hidden="true" />
         </button>
       ) : null}
       {canBindWindow ? (
@@ -502,6 +520,23 @@ export function SessionRowContent({
               >
                 <RotateCcw size={13} aria-hidden="true" />
                 <span>{managedLaunching ? "Retry CLI" : "Resume CLI"}</span>
+              </button>
+            ) : null}
+            {managedOffline && codexAppAvailable ? (
+              <button
+                type="button"
+                className={`row-tool-button codex-app-target-button ${activating ? "is-busy" : ""}`}
+                aria-busy={activating}
+                disabled={activating}
+                title="Open this session in Codex App"
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOpenCodexAppTarget();
+                }}
+              >
+                <Bot size={13} aria-hidden="true" />
+                <span>App</span>
               </button>
             ) : null}
             {canUnbindTarget ? (
