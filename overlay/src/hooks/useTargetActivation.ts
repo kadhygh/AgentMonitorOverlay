@@ -95,7 +95,7 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     options.markSessionVisuallySeen(session);
     setActivatingId(session.sessionId);
     options.setCandidateMenu(null);
-    options.setFeedback(`${bindTarget ? "Binding and opening" : "Opening"} Codex App for ${projectName(session.cwd)}...`);
+    options.setFeedback(`${bindTarget ? "Binding and opening" : "Opening"} ChatGPT for ${projectName(session.cwd)}...`);
     options.postDebugLog("codex_app.target_open.start", {
       sessionId: session.sessionId,
       bindTarget,
@@ -123,7 +123,7 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
         ok: result.ok,
         message: result.message,
       });
-      options.setFeedback(result.ok ? "Codex App thread opened." : result.message);
+      options.setFeedback(result.ok ? "ChatGPT task opened." : result.message);
       if (result.ok && openOptions.clearAttentionOnSuccess) {
         void options.clearSessionAttentionAfterActivation(session, "open-codex-app");
       }
@@ -136,7 +136,7 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
         bindTarget,
         message: (error as Error).message,
       });
-      options.setFeedback(`Open Codex App target failed: ${(error as Error).message}`);
+      options.setFeedback(`Open ChatGPT target failed: ${(error as Error).message}`);
     } finally {
       setActivatingId(null);
     }

@@ -71,7 +71,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
                       ? "Opening"
                       : "Starting"
                     : adapterId === "codex-app"
-                      ? "Open Codex App"
+                      ? "Open ChatGPT"
                       : `Managed ${workspaceLaunchLabel(adapterId)}`}
                 </strong>
                 <small>{checking ? "checking" : workspaceAdapterLaunchDetail(state.inspection, adapterId)}</small>
@@ -82,7 +82,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
       </div>
 
       {state.inspection ? (
-        <span className="launch-panel-note">Managed CLI waits for its own hook-created card. Codex App opens the selected project without creating a card.</span>
+        <span className="launch-panel-note">Managed CLI waits for its own hook-created card. ChatGPT opens a new task in the selected project without creating a card.</span>
       ) : (
         <span className="launch-panel-note">Inspecting deployment before enabling launch actions.</span>
       )}

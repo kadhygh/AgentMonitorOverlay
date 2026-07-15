@@ -283,15 +283,17 @@ Known risks:
 - Hook payload does not provide a native window handle.
 - `transcript_path` and its JSONL shape are not a stable public hook contract. AMO therefore token-filters for `turn_aborted`, validates the exact row shape, starts at EOF, and ignores unknown rows.
 
-### `codex-app`
+### `codex-app` (ChatGPT desktop compatibility ID)
 
 MVP status: accepted as the current app target provider.
 
 Current route:
 
-- use explicit target binding/opening instead of assuming Codex CLI hook files apply to Codex App
-- keep Codex App as a launch/focus target for sessions where that workflow is more convenient than CLI
-- do not require Codex App to produce the same hook payloads as Codex CLI before treating it as useful
+- use explicit target binding/opening instead of assuming Codex CLI hook files apply to ChatGPT desktop
+- keep ChatGPT desktop as a launch/focus target for sessions where that workflow is more convenient than CLI
+- keep `codex-app`, `codex-app-thread`, and `codex://` as compatibility identifiers even though the user-facing product name is ChatGPT
+- open a project with `codex://threads/new?path=<absolute-workspace-path>` and an existing task with `codex://threads/<session-id>`
+- do not require ChatGPT desktop to produce the same hook payloads as Codex CLI before treating it as useful
 
 ### `claude-cli`
 

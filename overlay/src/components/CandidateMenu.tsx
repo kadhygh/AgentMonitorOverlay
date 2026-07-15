@@ -102,8 +102,8 @@ export function CandidateMenu({
               title={codexAppThreadUri(state.session.sessionId)}
               onClick={onOpenCodexAppTarget}
             >
-              <strong>Codex App</strong>
-              <span>Open thread {state.session.sessionId}</span>
+              <strong>ChatGPT</strong>
+              <span>Open task {state.session.sessionId}</span>
             </button>
           ) : null}
           {state.candidates.map((candidate) => {

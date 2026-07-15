@@ -59,7 +59,7 @@ const toolDisplay: Record<ToolDisplayId, ToolDisplay> = {
     badge: "CLI",
   },
   "codex-app": {
-    label: "Codex App",
+    label: "ChatGPT",
     icon: codexAppIcon,
   },
   "claude-cli": {
@@ -237,8 +237,8 @@ export function SessionRowContent({
         <button
           type="button"
           className={`card-codex-app-launch-button ${activating ? "is-busy" : ""}`}
-          title="Open this session in Codex App"
-          aria-label={`Open ${session.title} in Codex App`}
+          title="Open this task in ChatGPT"
+          aria-label={`Open ${session.title} in ChatGPT`}
           aria-busy={activating}
           disabled={activating}
           onClick={(event) => {
@@ -444,7 +444,7 @@ export function SessionRowContent({
                 type="button"
                 className={`row-tool-button target-choice-button ${activating ? "is-busy" : ""}`}
                 aria-busy={activating}
-                title="Choose Codex CLI or Codex App for this card"
+                title="Choose Codex CLI or ChatGPT for this card"
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -462,7 +462,7 @@ export function SessionRowContent({
                   targetBinding?.type === "codex-app-thread" ? "is-target" : ""
                 } ${activating ? "is-busy" : ""}`}
                 aria-busy={activating}
-                title="Open and bind this card to Codex App"
+                title="Open and bind this card to ChatGPT"
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -470,7 +470,7 @@ export function SessionRowContent({
                 }}
               >
                 <Bot size={13} aria-hidden="true" />
-                <span>App</span>
+                <span>ChatGPT</span>
               </button>
             ) : null}
             {targetBinding?.type === "codex-cli-session" ? (
@@ -528,7 +528,7 @@ export function SessionRowContent({
                 className={`row-tool-button codex-app-target-button ${activating ? "is-busy" : ""}`}
                 aria-busy={activating}
                 disabled={activating}
-                title="Open this session in Codex App"
+                title="Open this task in ChatGPT"
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -536,7 +536,7 @@ export function SessionRowContent({
                 }}
               >
                 <Bot size={13} aria-hidden="true" />
-                <span>App</span>
+                <span>ChatGPT</span>
               </button>
             ) : null}
             {canUnbindTarget ? (

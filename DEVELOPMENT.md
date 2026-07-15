@@ -393,4 +393,4 @@ Do not commit:
 6. Generate a reply note and append-only canvas file node in the project-local vault.
 7. Add overlay actions for `Focus CLI`, `Open Note`, and `Open Canvas`; Obsidian `Send to AMO` should trigger automatic copy+focus instead of a card-face Sync button.
 8. Add an Obsidian plugin command that owns note/canvas opening with tab reuse and sends extracted `[!anno]...[/anno]` annotations to AMO.
-9. Run a manual end-to-end smoke before expanding to Codex App, Claude CLI, Kiro IDE, or multi-CLI canvas shortcuts.
+9. Run a manual end-to-end smoke before expanding to ChatGPT desktop, Claude CLI, or multi-CLI canvas shortcuts.

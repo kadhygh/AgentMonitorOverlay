@@ -3,7 +3,8 @@ const { AMO_DIR, AMO_SCHEMA_VERSION } = require("./amo-constants");
 const { readJsonFile, resolveWorkspacePath } = require("./filesystem");
 const { httpError } = require("./http");
 const { normalizeText } = require("./normalize");
-const { launchCliInTerminal, spawnDetached } = require("./terminal-launch");
+const { prepareChatGptWorkspaceLaunch } = require("./chatgpt-desktop");
+const { launchCliInTerminal } = require("./terminal-launch");
 const { normalizeCliLaunchEnvironment } = require("./cli-environments");
 
 async function launchWorkspace(payload, options = {}) {
@@ -86,7 +87,7 @@ async function launchWorkspace(payload, options = {}) {
         recordDebugLog,
       });
     } else {
-      launch = await spawnDetached("codex", ["app", workspacePath], workspacePath);
+      launch = prepareChatGptWorkspaceLaunch(workspacePath);
     }
     if (managedLaunch) {
       launchStore.update(managedLaunch.launchId, {
@@ -112,6 +113,7 @@ async function launchWorkspace(payload, options = {}) {
     pid: launch.pid || null,
     command: launch.command,
     args: launch.args,
+    uri: launch.uri || null,
     resumeSessionId: resumeSessionId || null,
     launchId: managedLaunch?.launchId || null,
     titleToken: managedLaunch?.titleToken || null,
@@ -133,6 +135,7 @@ async function launchWorkspace(payload, options = {}) {
     pid: launch.pid || null,
     command: launch.command,
     args: launch.args,
+    uri: launch.uri || null,
     shell: launch.shell || null,
     shellFallback: Boolean(launch.shellFallback),
     launchEnvironment: launch.launchEnvironment || null,
@@ -152,7 +155,7 @@ async function launchWorkspace(payload, options = {}) {
     session: null,
     message:
       adapterId === "codex-app"
-        ? `Opened Codex App for ${projectName}.`
+        ? `Opened a new ChatGPT task for ${projectName}.`
         : resumeSessionId && adapterId === "codex-cli"
         ? `Launched Codex CLI resume for ${projectName}.`
         : `Launched ${adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI"} for ${projectName}.`,

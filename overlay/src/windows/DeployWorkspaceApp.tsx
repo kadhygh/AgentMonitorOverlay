@@ -485,7 +485,7 @@ export function DeployWorkspaceApp() {
 
     setLaunchBusy(adapterId);
     const label =
-      adapterId === "codex-cli" ? "Codex CLI" : adapterId === "claude-cli" ? "Claude CLI" : "Codex App";
+      adapterId === "codex-cli" ? "Codex CLI" : adapterId === "claude-cli" ? "Claude CLI" : "ChatGPT";
     setFeedback(`Launching ${label}...`);
 
     try {
@@ -494,6 +494,11 @@ export function DeployWorkspaceApp() {
         adapterId,
         ...cliLaunchPreferencePayload(),
       });
+      if (adapterId === "codex-app") {
+        if (!result.uri) throw new Error("Broker did not return a ChatGPT workspace URI.");
+        const openResult = await invoke<OpenPathResult>("open_uri", { uri: result.uri });
+        if (!openResult.ok) throw new Error(openResult.message);
+      }
       void postUtilityDebugLog("workspace.launch.ok", {
         workspacePath: result.workspacePath,
         adapterId: result.adapterId,

@@ -23,9 +23,9 @@ The root MIT License answers only the first question.
 | npm dependencies | Committed package lockfiles with package license metadata | Review direct dependency changes and retain required notices |
 | Rust dependencies | Committed `Cargo.lock`; upstream crate metadata | Review direct dependency changes and retain required notices |
 | Obsidian desktop application | Not bundled | External prerequisite; no redistribution by AMO |
-| Codex CLI, Claude CLI, Codex App, Windows Terminal, Zed | Not bundled | External prerequisites; names used for interoperability |
+| Codex CLI, Claude CLI, ChatGPT desktop, Windows Terminal, Zed | Not bundled | External prerequisites; names used for interoperability |
 | `overlay/src/assets/tool-icons/codex-cli.png` | No provenance record in repository | **Unresolved: do not approve for public binary distribution** |
-| `overlay/src/assets/tool-icons/codex-app.png` | No provenance record in repository | **Unresolved: do not approve for public binary distribution** |
+| `overlay/src/assets/tool-icons/codex-app.png` | No provenance record in repository | **Unresolved: legacy internal filename for the ChatGPT target icon; do not approve for public binary distribution** |
 | `overlay/src/assets/tool-icons/claude-cli.png` | No provenance record in repository | **Unresolved: do not approve for public binary distribution** |
 
 ## Provider Icon Resolution

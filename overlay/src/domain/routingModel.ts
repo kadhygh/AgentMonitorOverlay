@@ -20,7 +20,12 @@ export function toolDisplayIdForSession(session: AgentSession): ToolDisplayId {
     .join(" ")
     .toLowerCase();
 
-  if (rawTool.includes("codex-app") || windowText.includes("codex app")) {
+  if (
+    rawTool.includes("codex-app") ||
+    rawTool.includes("chatgpt") ||
+    windowText.includes("codex app") ||
+    windowText.includes("chatgpt")
+  ) {
     return "codex-app";
   }
   if (rawTool.includes("codex")) {
@@ -44,7 +49,7 @@ export function codexAppThreadUri(threadId: string) {
 export function codexAppTargetForSession(session: AgentSession): TargetBinding {
   return {
     type: "codex-app-thread",
-    label: "Codex App",
+    label: "ChatGPT",
     threadId: session.sessionId,
     uri: codexAppThreadUri(session.sessionId),
   };
@@ -106,7 +111,7 @@ export function activationCandidateKey(candidate: ActivationCandidate) {
 export function targetLabelForSession(session: AgentSession) {
   const target = targetBindingForSession(session);
   if (!target) return "Choose target";
-  if (target.type === "codex-app-thread") return "Codex App";
+  if (target.type === "codex-app-thread") return "ChatGPT";
   if (target.type === "codex-cli-session") return "Codex CLI";
   return target.label ?? target.title ?? target.processName ?? "Window";
 }

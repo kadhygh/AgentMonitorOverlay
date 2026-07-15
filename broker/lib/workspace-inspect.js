@@ -331,7 +331,7 @@ function inspectWorkspace(payload) {
       },
     ],
     deferredAdapters: [
-      deferredAdapter("codex-app", "Codex App", "Direct Codex App integration is deferred until its local control surface is defined."),
+      deferredAdapter("codex-app", "ChatGPT", "ChatGPT task hooks are not required; AMO supports workspace and task deep links."),
     ],
   };
 }

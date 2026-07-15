@@ -17,7 +17,7 @@ This document owns the stable product boundaries above those implementation deta
 
 ## System Model
 
-AMO is a local coordination layer. It does not execute model inference and does not replace Codex CLI, Claude CLI, Codex App, or Obsidian.
+AMO is a local coordination layer. It does not execute model inference and does not replace Codex CLI, Claude CLI, ChatGPT desktop, or Obsidian.
 
 ```mermaid
 flowchart LR
@@ -157,7 +157,7 @@ Must not own:
 
 - provider conversation identity
 - manual window bindings
-- Codex App thread bindings
+- ChatGPT task bindings
 - card creation before a provider hook proves a real session
 
 Current implementation anchors:
@@ -172,7 +172,7 @@ Current implementation anchors:
 
 Owns:
 
-- explicit Codex App thread targets
+- explicit ChatGPT task targets
 - manual window candidate selection and drag-to-window binding
 - activation of a bound or managed target
 - validation and release of stale runtime window hints
@@ -297,7 +297,7 @@ Never replace one identity with another. In particular:
 
 - PID and HWND are not `sessionId` or `launchId`.
 - A project path is not a session identity.
-- A Codex App target is not a managed CLI launch.
+- A ChatGPT target is not a managed CLI launch.
 - A card is not a terminal window.
 
 ## Launch And Routing Command Model
@@ -307,9 +307,9 @@ Every UI entry must map to one of these commands:
 | Command | Meaning | Creates `launchId` | Creates a card | Changes target binding |
 | --- | --- | ---: | ---: | ---: |
 | Launch workspace CLI | Start a new Codex/Claude CLI in a project | Yes | Only after hook | After hook claim |
-| Open workspace App | Open Codex App for a project | No | No | No |
+| Open workspace App | Open a new ChatGPT task for a project | No | No | No |
 | Resume managed session | Resume one existing session in a new CLI | Yes | Reuses card | After hook claim |
-| Open provider target | Open current Codex session in Codex App | No | Reuses card | Optional/explicit |
+| Open provider target | Open the current Codex task in ChatGPT | No | Reuses card | Optional/explicit |
 | Bind/focus window target | Select or activate a CLI/app window | No | No | On explicit confirm |
 
 Do not add a sixth behavior under a reused label. If a future entry has different state effects, define a new command contract first.
@@ -319,27 +319,29 @@ Do not add a sixth behavior under a reused label. If a future entry has differen
 | Surface | Entry | Command | Current behavior |
 | --- | --- | --- | --- |
 | Deploy window | Run Codex / Run Claude | Launch workspace CLI | Starts managed CLI; no card until hook |
-| Deploy window | App / Open App | Open workspace App | Opens selected project in Codex App |
+| Deploy window | Open ChatGPT | Open workspace App | Opens a new ChatGPT task in the selected project |
 | Card header `+` | Managed Codex / Managed Claude | Launch workspace CLI | Starts a new project CLI unrelated to the source card session |
-| Card header `+` | Open Codex App | Open workspace App | Opens the card's project; does not bind the card |
+| Card header `+` | Open ChatGPT | Open workspace App | Opens a new task in the card's project; does not bind the card |
 | Card managed shortcut | Terminal icon | Resume managed session | Resumes the current provider session |
 | Card App shortcut | App icon | Open provider target | Opens and binds the current Codex session |
 | Card action row | Resume CLI / Retry CLI | Resume managed session | Reuses the card and waits for hook claim |
 | Card action row | App | Open provider target | Opens and binds the current Codex session |
 | Choose Target | Managed CLI | Resume managed session | Explicit fallback when no suitable window is selected |
-| Choose Target | Codex App | Open provider target | Opens current thread; binding follows the toggle |
+| Choose Target | ChatGPT | Open provider target | Opens the current task; binding follows the toggle |
 | Choose Target | Window candidate | Bind/focus window target | Focuses or explicitly binds selected HWND |
 | Bound card / Return action | CLI or App target | Bind/focus or open provider target | Activates existing target; does not launch a new session |
 
 Rules:
 
 - Deployment never creates a card.
-- A project-level Codex App launch never creates or binds a card.
-- A session-level Codex App action applies only to Codex sessions.
-- `Managed` describes CLI launch identity, not Codex App.
+- A project-level ChatGPT launch never creates or binds a card.
+- A session-level ChatGPT action applies only to Codex sessions.
+- `Managed` describes CLI launch identity, not ChatGPT desktop.
 - All project-level launch entries use the same workspace launch service.
 - All session-level resume entries use the same session resume service.
 - UI components render availability; they do not implement launch policy independently.
+
+ChatGPT desktop keeps the `codex://` URL scheme for compatibility. AMO also keeps the serialized IDs `codex-app` and `codex-app-thread` so existing cards and bindings remain readable. These are compatibility identifiers, not the current user-facing product name.
 
 ## Primary Flows
 
@@ -355,12 +357,22 @@ Workspace launch entry
   -> session card appears or revives
 ```
 
-### Open Current Session In Codex App
+### Open A New ChatGPT Task In A Workspace
+
+```text
+Workspace App entry
+  -> Broker validates the workspace and returns codex://threads/new?path=<absolute-workspace-path>
+  -> Tauri passes the URI to Windows ShellExecuteW
+  -> ChatGPT opens a new task with that project as its active workspace
+  -> no launchId, card, or target binding is created
+```
+
+### Open Current Session In ChatGPT
 
 ```text
 Card/Candidate App action
   -> construct codex://threads/<sessionId>
-  -> optionally persist Codex App target binding
+  -> optionally persist ChatGPT target binding
   -> Tauri opens URI
   -> existing card remains the durable session
 ```
@@ -423,7 +435,7 @@ Decide each capability independently:
 - explicit provider target
 - artifact generation
 
-Do not describe a provider as supported when only one capability exists. Codex App, for example, is currently a workspace/session target but not a hook adapter or managed CLI.
+Do not describe a provider as supported when only one capability exists. ChatGPT desktop, for example, is currently a workspace/task target but not a hook adapter or managed CLI.
 
 ### Add A Launch Entry
 

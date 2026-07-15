@@ -24,7 +24,7 @@ Development mode may use repository-local Broker data instead. The active runtim
 
 The desktop client communicates with the local AMO Broker on `127.0.0.1`. Hooks and the Obsidian plugin use this local bridge to publish session events and request AMO actions.
 
-AMO does not act as a model API proxy and does not replace Codex CLI, Claude CLI, Codex App, or Obsidian. Those external applications retain their own network, authentication, and data behavior.
+AMO does not act as a model API proxy and does not replace Codex CLI, Claude CLI, ChatGPT desktop, or Obsidian. Those external applications retain their own network, authentication, and data behavior.
 
 ## Network And Telemetry Audit
 
@@ -49,4 +49,3 @@ Before sharing a bug report:
 - never attach an entire `.amo` vault from a private project without reviewing it.
 
 Before committing a project, use AMO's Git exclude support or configure the repository deliberately. Git ignore and Git exclude do not remove files that are already tracked.
-

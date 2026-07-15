@@ -22,7 +22,7 @@ export function isWorkspaceAdapterInstalled(adapter: WorkspaceAdapterPlan) {
 export function workspaceLaunchLabel(adapterId: LaunchPanelAdapterId) {
   if (adapterId === "codex-cli") return "Codex CLI";
   if (adapterId === "claude-cli") return "Claude CLI";
-  return "Codex App";
+  return "ChatGPT";
 }
 
 export function workspaceAdapterPlan(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {
@@ -42,7 +42,7 @@ export function workspaceAdapterLaunchDetail(inspection: WorkspaceInspection | n
     return "not detected";
   }
   if (isWorkspaceAdapterInstalled(adapter)) {
-    if (adapterId === "codex-app") return "open this project";
+    if (adapterId === "codex-app") return "open a new task";
     return adapter.deploymentStatus === "needs-update" ? "deployed, update available" : "deployed";
   }
   return adapter.deploymentStatus ?? adapter.status;

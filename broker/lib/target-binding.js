@@ -69,12 +69,12 @@ function normalizeTargetBinding(value, sessionId, boundAt) {
 
     const uri = normalizeText(value.uri) || codexAppThreadUri(threadId);
     if (!uri.startsWith("codex://threads/")) {
-      throw httpError(400, "invalid_codex_app_uri", "Codex App target URI must start with codex://threads/");
+      throw httpError(400, "invalid_codex_app_uri", "ChatGPT task target URI must start with codex://threads/");
     }
 
     return {
       type: "codex-app-thread",
-      label: normalizeText(value.label) || "Codex App",
+      label: normalizeText(value.label) || "ChatGPT",
       threadId,
       uri,
       boundAt: now,

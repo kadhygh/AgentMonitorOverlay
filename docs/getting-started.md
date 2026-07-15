@@ -15,7 +15,7 @@ Optional but recommended:
 
 - Windows Terminal for managed CLI windows;
 - Obsidian for reply notes, annotations, and canvases;
-- Codex App when a task should target the desktop app instead of a CLI window.
+- ChatGPT desktop app when a task should target the desktop app instead of a CLI window.
 
 Normal Portable users do not need Node.js, npm, Rust, or a source checkout. AMO carries the Broker and its pinned Node runtime in the release folder.
 
@@ -117,4 +117,3 @@ return to the managed CLI, and show the text ready to paste/send. This is the mo
 - [Shortcut Configuration](shortcut-configuration.md)
 - [Local Data and Privacy](data-and-privacy.md)
 - [Portable Release SOP](portable-release-sop.md)
-

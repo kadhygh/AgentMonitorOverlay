@@ -280,6 +280,7 @@ export interface WorkspaceLaunchResult {
   pid?: number | null;
   command?: string;
   args?: string[];
+  uri?: string | null;
   shell?: string;
   shellFallback?: boolean;
   launchEnvironment?: string | null;

@@ -50,7 +50,7 @@ function attentionNotificationTitle(session: AgentSession) {
 
 function toolLabel(session: AgentSession) {
   if (session.tool === "claude" || session.tool === "claude-cli") return "Claude CLI";
-  if (session.tool === "codex-app") return "Codex App";
+  if (session.tool === "codex-app") return "ChatGPT";
   if (session.tool === "codex" || session.tool === "codex-cli") return "Codex CLI";
   return session.tool;
 }

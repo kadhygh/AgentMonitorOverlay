@@ -154,6 +154,11 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         sourceCardSessionId: session.sessionId,
         ...cliLaunchPreferencePayload(),
       });
+      if (adapterId === "codex-app") {
+        if (!result.uri) throw new Error("Broker did not return a ChatGPT workspace URI.");
+        const openResult = await invoke<OpenPathResult>("open_uri", { uri: result.uri });
+        if (!openResult.ok) throw new Error(openResult.message);
+      }
       options.postDebugLog("workspace.launch_panel.launch.ok", {
         sessionId: session.sessionId,
         workspacePath: result.workspacePath,

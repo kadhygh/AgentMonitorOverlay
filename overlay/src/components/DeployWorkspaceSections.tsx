@@ -451,7 +451,7 @@ export function DeployAdaptersSection({
                       {adapter.id === "codex-cli" ? (
                         <button type="button" disabled={workspaceActionsBlocked} onClick={() => onLaunchWorkspace("codex-app")}>
                           <Bot size={12} aria-hidden="true" />
-                          <span>{launchBusy === "codex-app" ? "Opening" : "App"}</span>
+                          <span>{launchBusy === "codex-app" ? "Opening" : "ChatGPT"}</span>
                         </button>
                       ) : null}
                       <button
@@ -536,7 +536,7 @@ export function DeployResultFooter({
         {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
           <button type="button" disabled={actionsBlocked} onClick={() => onLaunchWorkspace("codex-app")}>
             <Bot size={12} aria-hidden="true" />
-            <span>{launchBusy === "codex-app" ? "Opening" : "Open App"}</span>
+            <span>{launchBusy === "codex-app" ? "Opening" : "Open ChatGPT"}</span>
           </button>
         ) : null}
         <button type="button" disabled={actionsBlocked} onClick={() => onOpenDeploymentPath(workspaceEnrollment.workspacePath, "workspace")}>
