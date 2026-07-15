@@ -263,11 +263,32 @@ export interface WorkspaceLaunchResult {
   args?: string[];
   shell?: string;
   shellFallback?: boolean;
+  launchEnvironment?: string | null;
+  requestedLaunchEnvironment?: string | null;
+  environmentFallback?: boolean;
   windowHint?: WindowHint | null;
   targetBinding?: TargetBinding | null;
   session?: AgentSession | null;
   launch?: ManagedLaunch | null;
   message: string;
+}
+
+export interface CliEnvironmentOption {
+  id: "windows-powershell" | "powershell7" | "alacritty-powershell7";
+  label: string;
+  available: boolean;
+  terminal: string;
+  shell: string;
+  executablePath?: string | null;
+  shellPath?: string | null;
+  version?: string | null;
+  reason?: string | null;
+}
+
+export interface CliEnvironmentsResult {
+  ok: boolean;
+  defaultId: CliEnvironmentOption["id"];
+  environments: CliEnvironmentOption[];
 }
 
 export interface WorkspaceRegistryEntry {

@@ -545,13 +545,25 @@ fn tool_process_matches(candidate: &WindowCandidate, tool: &str) -> bool {
         value if value.starts_with("codex") => {
             matches!(
                 process.as_str(),
-                "windowsterminal" | "powershell" | "pwsh" | "cmd" | "conhost" | "codex"
+                "windowsterminal"
+                    | "alacritty"
+                    | "powershell"
+                    | "pwsh"
+                    | "cmd"
+                    | "conhost"
+                    | "codex"
             )
         }
         value if value.starts_with("claude") => {
             matches!(
                 process.as_str(),
-                "windowsterminal" | "powershell" | "pwsh" | "cmd" | "conhost" | "claude"
+                "windowsterminal"
+                    | "alacritty"
+                    | "powershell"
+                    | "pwsh"
+                    | "cmd"
+                    | "conhost"
+                    | "claude"
             )
         }
         _ => true,

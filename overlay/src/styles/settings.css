@@ -186,6 +186,60 @@
   white-space: nowrap;
 }
 
+.settings-environment-list {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+
+.settings-environment-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  gap: 3px 10px;
+  min-width: 0;
+  padding: 8px 9px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+}
+
+.settings-environment-row strong,
+.settings-environment-row span,
+.settings-environment-row code {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.settings-environment-row strong {
+  color: #dcece7;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.settings-environment-row span {
+  color: #79d9ba;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.settings-environment-row code {
+  grid-column: 1 / -1;
+  color: #8fa39c;
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.settings-environment-row.is-unavailable {
+  opacity: 0.58;
+}
+
+.settings-environment-row.is-unavailable span,
+.settings-environment-error {
+  color: #d9a66d;
+}
+
 .settings-debug-status span {
   color: #9fb0aa;
   font-size: 10px;

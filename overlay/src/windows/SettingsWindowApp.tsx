@@ -1,11 +1,12 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Bell, Bug, ClipboardPaste, Palette, Settings2, StickyNote, Terminal, X } from "lucide-react";
+import { BROKER_CLI_ENVIRONMENTS_URL, getBrokerJson } from "../api/brokerClient";
 import { useDebugLogging } from "../hooks/useDebugLogging";
 import {
-  loadCliShellPreference,
-  saveCliShellPreference,
-  type CliShellPreference,
+  loadCliLaunchEnvironment,
+  saveCliLaunchEnvironment,
+  type CliLaunchEnvironment,
 } from "../native/cliLaunch";
 import { loadCliSafePasteEnabled, saveCliSafePasteEnabled } from "../native/clipboard";
 import {
@@ -21,7 +22,7 @@ import {
   showWindowsNotification,
 } from "../native/windowsNotifications";
 import { type AmoTheme, useAmoThemeRuntime } from "../theme/amoTheme";
-import type { OpenPathResult } from "../types";
+import type { CliEnvironmentOption, CliEnvironmentsResult, OpenPathResult } from "../types";
 import {
   closeUtilityWindow,
   startUtilityWindowDrag,
@@ -99,7 +100,8 @@ interface SettingsDetailHeaderProps {
   debugEnabled: boolean;
   debugCount: number;
   windowsNotificationsEnabled: boolean;
-  cliShellPreference: CliShellPreference;
+  cliLaunchEnvironment: CliLaunchEnvironment;
+  cliEnvironmentOptions: CliEnvironmentOption[];
 }
 
 function SettingsDetailHeader({
@@ -110,8 +112,10 @@ function SettingsDetailHeader({
   debugEnabled,
   debugCount,
   windowsNotificationsEnabled,
-  cliShellPreference,
+  cliLaunchEnvironment,
+  cliEnvironmentOptions,
 }: SettingsDetailHeaderProps) {
+  const selectedCliEnvironment = cliEnvironmentOptions.find((option) => option.id === cliLaunchEnvironment);
   const title =
     settingsSection === "cli"
       ? "CLI"
@@ -126,9 +130,13 @@ function SettingsDetailHeader({
             : "Scratchpad";
   const status =
     settingsSection === "cli"
-      ? cliShellPreference === "powershell7"
-        ? "PowerShell 7"
-        : "Windows PowerShell 5.1"
+      ? selectedCliEnvironment
+        ? `${selectedCliEnvironment.label}${selectedCliEnvironment.version ? ` | ${selectedCliEnvironment.version}` : ""}`
+        : cliLaunchEnvironment === "alacritty-powershell7"
+          ? "Alacritty + PowerShell 7"
+          : cliLaunchEnvironment === "powershell7"
+            ? "PowerShell 7"
+            : "Windows PowerShell 5.1"
       : settingsSection === "theme"
       ? amoTheme === "light"
         ? "Light"
@@ -158,28 +166,61 @@ function SettingsDetailHeader({
 }
 
 interface CliSettingsBodyProps {
-  shellPreference: CliShellPreference;
-  onShellPreferenceChange: (preference: CliShellPreference) => void;
+  launchEnvironment: CliLaunchEnvironment;
+  environments: CliEnvironmentOption[];
+  loading: boolean;
+  error: string | null;
+  onLaunchEnvironmentChange: (environment: CliLaunchEnvironment) => void;
+  onRefresh: () => void;
 }
 
-function CliSettingsBody({ shellPreference, onShellPreferenceChange }: CliSettingsBodyProps) {
-  const usePowerShell7 = shellPreference === "powershell7";
-
+function CliSettingsBody({
+  launchEnvironment,
+  environments,
+  loading,
+  error,
+  onLaunchEnvironmentChange,
+  onRefresh,
+}: CliSettingsBodyProps) {
   return (
     <div className="settings-section-body">
-      <label className="settings-toggle">
-        <input
-          type="checkbox"
-          checked={usePowerShell7}
-          onChange={(event) =>
-            onShellPreferenceChange(event.currentTarget.checked ? "powershell7" : "windows-powershell")
-          }
-        />
-        <span>Use PowerShell 7 for managed CLI</span>
+      <label className="settings-field">
+        <span>Managed CLI environment</span>
+        <select
+          value={launchEnvironment}
+          disabled={loading || environments.length === 0}
+          onChange={(event) => onLaunchEnvironmentChange(event.currentTarget.value as CliLaunchEnvironment)}
+        >
+          {environments.map((environment) => (
+            <option key={environment.id} value={environment.id} disabled={!environment.available}>
+              {environment.label}
+              {environment.version ? ` (${environment.version})` : ""}
+              {!environment.available ? " - not found" : ""}
+            </option>
+          ))}
+        </select>
       </label>
       <p className="settings-help-copy">
-        Launch new and resumed Codex or Claude sessions with `pwsh.exe`. AMO falls back to Windows PowerShell 5.1 when PowerShell 7 is unavailable.
+        The selected environment is used for every new or resumed managed Codex and Claude session. Windows PowerShell 5.1 remains the safe default.
       </p>
+      <div className="settings-environment-list" aria-live="polite">
+        {environments.map((environment) => (
+          <div
+            key={environment.id}
+            className={`settings-environment-row ${environment.available ? "is-available" : "is-unavailable"}`}
+          >
+            <strong>{environment.label}</strong>
+            <span>{environment.available ? environment.version || "Detected" : environment.reason || "Not found"}</span>
+            <code title={environment.executablePath || environment.reason || undefined}>
+              {environment.executablePath || "Not installed"}
+            </code>
+          </div>
+        ))}
+      </div>
+      {error ? <p className="settings-help-copy settings-environment-error">{error}</p> : null}
+      <button type="button" className="settings-primary-action" disabled={loading} onClick={onRefresh}>
+        {loading ? "Detecting environments" : "Detect again"}
+      </button>
     </div>
   );
 }
@@ -384,7 +425,10 @@ interface SettingsDetailProps {
   debugCount: number;
   debugEnabled: boolean;
   windowsNotificationsEnabled: boolean;
-  cliShellPreference: CliShellPreference;
+  cliLaunchEnvironment: CliLaunchEnvironment;
+  cliEnvironmentOptions: CliEnvironmentOption[];
+  cliEnvironmentLoading: boolean;
+  cliEnvironmentError: string | null;
   onScratchpadShortcutChange: (next: ScratchpadShortcutState) => void;
   onSafePasteEnabledChange: (enabled: boolean) => void;
   onOpenScratchpadNow: () => void;
@@ -392,7 +436,8 @@ interface SettingsDetailProps {
   onToggleDebugLogging: () => void;
   onWindowsNotificationsEnabledChange: (enabled: boolean) => void;
   onSendTestNotification: () => void;
-  onCliShellPreferenceChange: (preference: CliShellPreference) => void;
+  onCliLaunchEnvironmentChange: (environment: CliLaunchEnvironment) => void;
+  onRefreshCliEnvironments: () => void;
 }
 
 export function SettingsDetail({
@@ -404,7 +449,10 @@ export function SettingsDetail({
   debugCount,
   debugEnabled,
   windowsNotificationsEnabled,
-  cliShellPreference,
+  cliLaunchEnvironment,
+  cliEnvironmentOptions,
+  cliEnvironmentLoading,
+  cliEnvironmentError,
   onScratchpadShortcutChange,
   onSafePasteEnabledChange,
   onOpenScratchpadNow,
@@ -412,7 +460,8 @@ export function SettingsDetail({
   onToggleDebugLogging,
   onWindowsNotificationsEnabledChange,
   onSendTestNotification,
-  onCliShellPreferenceChange,
+  onCliLaunchEnvironmentChange,
+  onRefreshCliEnvironments,
 }: SettingsDetailProps) {
   return (
     <div className="settings-detail">
@@ -424,13 +473,18 @@ export function SettingsDetail({
         debugEnabled={debugEnabled}
         debugCount={debugCount}
         windowsNotificationsEnabled={windowsNotificationsEnabled}
-        cliShellPreference={cliShellPreference}
+        cliLaunchEnvironment={cliLaunchEnvironment}
+        cliEnvironmentOptions={cliEnvironmentOptions}
       />
 
       {settingsSection === "cli" ? (
         <CliSettingsBody
-          shellPreference={cliShellPreference}
-          onShellPreferenceChange={onCliShellPreferenceChange}
+          launchEnvironment={cliLaunchEnvironment}
+          environments={cliEnvironmentOptions}
+          loading={cliEnvironmentLoading}
+          error={cliEnvironmentError}
+          onLaunchEnvironmentChange={onCliLaunchEnvironmentChange}
+          onRefresh={onRefreshCliEnvironments}
         />
       ) : settingsSection === "scratchpad" ? (
         <ScratchpadSettingsBody
@@ -472,9 +526,12 @@ export function SettingsWindowApp() {
     loadScratchpadShortcutState(),
   );
   const [safePasteEnabled, setSafePasteEnabled] = useState(() => loadCliSafePasteEnabled());
-  const [cliShellPreference, setCliShellPreference] = useState<CliShellPreference>(() =>
-    loadCliShellPreference(),
+  const [cliLaunchEnvironment, setCliLaunchEnvironment] = useState<CliLaunchEnvironment>(() =>
+    loadCliLaunchEnvironment(),
   );
+  const [cliEnvironmentOptions, setCliEnvironmentOptions] = useState<CliEnvironmentOption[]>([]);
+  const [cliEnvironmentLoading, setCliEnvironmentLoading] = useState(true);
+  const [cliEnvironmentError, setCliEnvironmentError] = useState<string | null>(null);
   const [windowsNotificationsEnabled, setWindowsNotificationsEnabled] = useState(() =>
     loadWindowsNotificationsEnabled(),
   );
@@ -491,6 +548,7 @@ export function SettingsWindowApp() {
 
   useEffect(() => {
     void refreshDebugStatus();
+    void refreshCliEnvironments();
   }, []);
 
   async function updateScratchpadShortcut(next: ScratchpadShortcutState) {
@@ -528,14 +586,34 @@ export function SettingsWindowApp() {
     setFeedback(enabled ? "Safe CLI copy enabled." : "Original clipboard formatting enabled.");
   }
 
-  function updateCliShellPreference(preference: CliShellPreference) {
-    setCliShellPreference(preference);
-    saveCliShellPreference(preference);
-    setFeedback(
-      preference === "powershell7"
-        ? "Managed CLI launches will use PowerShell 7."
-        : "Managed CLI launches will use Windows PowerShell 5.1.",
-    );
+  async function refreshCliEnvironments() {
+    setCliEnvironmentLoading(true);
+    setCliEnvironmentError(null);
+    try {
+      const result = await getBrokerJson<CliEnvironmentsResult>(BROKER_CLI_ENVIRONMENTS_URL);
+      setCliEnvironmentOptions(result.environments);
+      const selected = result.environments.find((environment) => environment.id === cliLaunchEnvironment);
+      if (selected && !selected.available) {
+        setFeedback(`${selected.label} is not available. New launches will fall back to Windows PowerShell 5.1.`);
+      }
+    } catch (error) {
+      const message = `Environment detection failed: ${(error as Error).message}`;
+      setCliEnvironmentError(message);
+      setFeedback(message);
+    } finally {
+      setCliEnvironmentLoading(false);
+    }
+  }
+
+  function updateCliLaunchEnvironment(environment: CliLaunchEnvironment) {
+    const selected = cliEnvironmentOptions.find((option) => option.id === environment);
+    if (selected && !selected.available) {
+      setFeedback(`${selected.label} is not available on this computer.`);
+      return;
+    }
+    setCliLaunchEnvironment(environment);
+    saveCliLaunchEnvironment(environment);
+    setFeedback(`Managed CLI environment set to ${selected?.label || environment}.`);
   }
 
   async function updateWindowsNotificationsEnabled(enabled: boolean) {
@@ -588,7 +666,10 @@ export function SettingsWindowApp() {
           debugCount={debugCount}
           debugEnabled={debugEnabled}
           windowsNotificationsEnabled={windowsNotificationsEnabled}
-          cliShellPreference={cliShellPreference}
+          cliLaunchEnvironment={cliLaunchEnvironment}
+          cliEnvironmentOptions={cliEnvironmentOptions}
+          cliEnvironmentLoading={cliEnvironmentLoading}
+          cliEnvironmentError={cliEnvironmentError}
           onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
           onSafePasteEnabledChange={updateSafePasteEnabled}
           onOpenScratchpadNow={() => void openScratchpadNow()}
@@ -596,7 +677,8 @@ export function SettingsWindowApp() {
           onToggleDebugLogging={() => void toggleDebugLogging()}
           onWindowsNotificationsEnabledChange={(enabled) => void updateWindowsNotificationsEnabled(enabled)}
           onSendTestNotification={() => void sendTestNotification()}
-          onCliShellPreferenceChange={updateCliShellPreference}
+          onCliLaunchEnvironmentChange={updateCliLaunchEnvironment}
+          onRefreshCliEnvironments={() => void refreshCliEnvironments()}
         />
 
         <footer className="app-dialog-footer">

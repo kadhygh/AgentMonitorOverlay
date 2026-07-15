@@ -168,6 +168,26 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     ) || null;
   }
 
+  function supersedeActiveResume(sessionId, reason = "resume-retried") {
+    const now = new Date().toISOString();
+    const superseded = [];
+    for (const launch of launches.values()) {
+      if (
+        launch.mode !== "resume" ||
+        launch.requestedSessionId !== sessionId ||
+        !["created", "spawning", "waiting_hook"].includes(launch.state)
+      ) {
+        continue;
+      }
+      superseded.push(update(launch.launchId, {
+        state: "offline",
+        offlineAt: now,
+        offlineReason: normalizeText(reason) || "resume-retried",
+      }));
+    }
+    return superseded.filter(Boolean);
+  }
+
   function markSessionOffline(sessionId, sessions, options = {}) {
     if (!(sessions instanceof Map)) return null;
     const existing = sessions.get(sessionId);
@@ -224,7 +244,16 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
   }
 
   load();
-  return { claim, create, findActiveResume, list, markSessionOffline, reconcileSessions, update };
+  return {
+    claim,
+    create,
+    findActiveResume,
+    list,
+    markSessionOffline,
+    reconcileSessions,
+    supersedeActiveResume,
+    update,
+  };
 }
 
 function releasePreviousSession(sessions, sessionId, launchId, titleToken, bindingRevision) {

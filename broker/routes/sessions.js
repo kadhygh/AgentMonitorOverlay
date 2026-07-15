@@ -149,8 +149,26 @@ async function handleSessionRoutes(req, res, url, context) {
     }
 
     const activeResume = context.launchStore.findActiveResume(sessionId);
-    if (activeResume) {
+    const replacePending = payload?.replacePending === true || payload?.replace_pending === true;
+    if (activeResume && !replacePending) {
       return sendHandled(res, 200, { ok: true, duplicate: true, launch: activeResume, session: existing });
+    }
+    if (activeResume) {
+      context.launchStore.supersedeActiveResume(sessionId, "resume-retried");
+      const offlineSession = {
+        ...existing,
+        launchState: "offline",
+        launchOfflineAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString(),
+      };
+      context.sessions.set(sessionId, offlineSession);
+      context.persistSnapshot();
+      context.publishSessionChanged("managed-launch-retry", offlineSession);
+      context.recordDebugLog("broker", "launch.resume_retried", {
+        sessionId,
+        supersededLaunchId: activeResume.launchId,
+        launchEnvironment: payload?.launchEnvironment || payload?.launch_environment || null,
+      });
     }
 
     const rawTool = String(existing.tool || "").toLowerCase();
@@ -168,13 +186,14 @@ async function handleSessionRoutes(req, res, url, context) {
         adapterId,
         sessionId,
         sourceCardSessionId: sessionId,
+        launchEnvironment: payload?.launchEnvironment,
         shellPreference: payload?.shellPreference,
       },
       { launchStore: context.launchStore, recordDebugLog: context.recordDebugLog }
     );
     const now = new Date().toISOString();
     const session = {
-      ...existing,
+      ...(context.sessions.get(sessionId) || existing),
       launchId: result.launch?.launchId || null,
       launchState: result.launch?.state || "waiting_hook",
       launchRevision: (existing.launchRevision || 0) + 1,

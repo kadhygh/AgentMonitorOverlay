@@ -14,6 +14,10 @@ async function handleConfigRoutes(req, res, url, context) {
     });
   }
 
+  if (req.method === "GET" && url.pathname === "/api/cli-environments") {
+    return sendHandled(res, 200, context.detectCliEnvironments());
+  }
+
   if (req.method === "GET" && url.pathname === "/api/debug") {
     return sendHandled(res, 200, context.debugStatus(url.searchParams));
   }

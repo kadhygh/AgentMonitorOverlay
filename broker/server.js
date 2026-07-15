@@ -2,6 +2,7 @@ const http = require("http");
 const path = require("path");
 const { AMO_SCHEMA_VERSION } = require("./lib/amo-constants");
 const { createConversationService } = require("./lib/conversation-service");
+const { detectCliEnvironments } = require("./lib/cli-environments");
 const { CORS_HEADERS, httpError, sendEmpty, sendJson } = require("./lib/http");
 const { createDebugLogStore } = require("./lib/debug");
 const { normalizeInteger, normalizeText } = require("./lib/normalize");
@@ -165,6 +166,7 @@ const routeContext = {
   launchStore,
   conversationService,
   obsidianBridge,
+  detectCliEnvironments,
 };
 
 const server = http.createServer(async (req, res) => {

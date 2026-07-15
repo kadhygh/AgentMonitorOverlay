@@ -490,10 +490,10 @@ export function SessionRowContent({
             {managedOffline || managedLaunching ? (
               <button
                 type="button"
-                className={`row-tool-button codex-cli-target-button ${activating || managedLaunching ? "is-busy" : ""}`}
-                aria-busy={activating || managedLaunching}
-                disabled={activating || managedLaunching}
-                title={managedLaunching ? "Waiting for the resumed CLI hook" : "Resume this session in a new managed CLI"}
+                className={`row-tool-button codex-cli-target-button ${activating ? "is-busy" : ""}`}
+                aria-busy={activating}
+                disabled={activating}
+                title={managedLaunching ? "Retry this session in a new managed CLI" : "Resume this session in a new managed CLI"}
                 onClick={(event) => {
                   event.preventDefault();
                   event.stopPropagation();
@@ -501,7 +501,7 @@ export function SessionRowContent({
                 }}
               >
                 <RotateCcw size={13} aria-hidden="true" />
-                <span>{managedLaunching ? "Launching" : "Resume CLI"}</span>
+                <span>{managedLaunching ? "Retry CLI" : "Resume CLI"}</span>
               </button>
             ) : null}
             {canUnbindTarget ? (

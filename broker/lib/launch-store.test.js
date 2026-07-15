@@ -45,6 +45,36 @@ test("waiting launch remains claimable without a time limit", (t) => {
   assert.equal(claim?.launch.currentSessionId, sessionId);
 });
 
+test("an explicit resume retry supersedes every pending launch for that session", (t) => {
+  const { store } = createTestStore(t);
+  const sessionId = "session-resume";
+  const first = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+    mode: "resume",
+    requestedSessionId: sessionId,
+  });
+  const second = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+    mode: "resume",
+    requestedSessionId: sessionId,
+  });
+  store.update(first.launchId, { state: "waiting_hook" });
+  store.update(second.launchId, { state: "spawning" });
+
+  const superseded = store.supersedeActiveResume(sessionId);
+
+  assert.deepEqual(superseded.map((item) => item.launchId), [first.launchId, second.launchId]);
+  assert.equal(store.findActiveResume(sessionId), null);
+  for (const launch of superseded) {
+    assert.equal(launch.state, "offline");
+    assert.equal(launch.offlineReason, "resume-retried");
+  }
+});
+
 test("legacy expired launch migrates back to waiting_hook", (t) => {
   const { dataFile } = createTestStore(t);
   fs.writeFileSync(dataFile, JSON.stringify({

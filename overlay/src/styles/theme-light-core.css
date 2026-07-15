@@ -56,7 +56,8 @@
 :root[data-amo-theme="light"] .collapsed-counts,
 :root[data-amo-theme="light"] .deploy-adapter-copy strong,
 :root[data-amo-theme="light"] .settings-detail-header strong,
-:root[data-amo-theme="light"] .settings-debug-status strong {
+:root[data-amo-theme="light"] .settings-debug-status strong,
+:root[data-amo-theme="light"] .settings-environment-row strong {
   color: #17211f;
 }
 
@@ -83,6 +84,7 @@
 :root[data-amo-theme="light"] .settings-help-copy,
 :root[data-amo-theme="light"] .settings-field > span,
 :root[data-amo-theme="light"] .settings-debug-status span,
+:root[data-amo-theme="light"] .settings-environment-row code,
 :root[data-amo-theme="light"] .theme-choice > span:not(.theme-swatch),
 :root[data-amo-theme="light"] .launch-panel-header span,
 :root[data-amo-theme="light"] .launch-panel-path,
@@ -136,6 +138,7 @@
 :root[data-amo-theme="light"] .session-empty-state,
 :root[data-amo-theme="light"] .settings-toggle,
 :root[data-amo-theme="light"] .settings-field,
+:root[data-amo-theme="light"] .settings-environment-row,
 :root[data-amo-theme="light"] .theme-choice,
 :root[data-amo-theme="light"] .launch-panel-path,
 :root[data-amo-theme="light"] .launch-panel-note,
@@ -153,6 +156,15 @@
   color: #24342f;
   background: rgba(244, 249, 247, 0.9);
   border-color: rgba(42, 74, 64, 0.13);
+}
+
+:root[data-amo-theme="light"] .settings-environment-row.is-available span {
+  color: #147e64;
+}
+
+:root[data-amo-theme="light"] .settings-environment-row.is-unavailable span,
+:root[data-amo-theme="light"] .settings-environment-error {
+  color: #9a642c;
 }
 
 :root[data-amo-theme="light"] .settings-sidebar {

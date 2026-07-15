@@ -4,6 +4,7 @@ const { readJsonFile, resolveWorkspacePath } = require("./filesystem");
 const { httpError } = require("./http");
 const { normalizeText } = require("./normalize");
 const { launchCliInTerminal, spawnDetached } = require("./terminal-launch");
+const { normalizeCliLaunchEnvironment } = require("./cli-environments");
 
 async function launchWorkspace(payload, options = {}) {
   const recordDebugLog = typeof options.recordDebugLog === "function" ? options.recordDebugLog : () => {};
@@ -11,9 +12,10 @@ async function launchWorkspace(payload, options = {}) {
   const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
   const adapterId = normalizeText(payload?.adapterId || payload?.adapter_id || payload?.adapter);
   const resumeSessionId = normalizeText(payload?.sessionId || payload?.session_id || payload?.resumeSessionId || payload?.resume_session_id);
-  const shellPreference = normalizeText(payload?.shellPreference || payload?.shell_preference) === "powershell7"
-    ? "powershell7"
-    : "windows-powershell";
+  const legacyShellPreference = normalizeText(payload?.shellPreference || payload?.shell_preference);
+  const launchEnvironment = normalizeCliLaunchEnvironment(
+    payload?.launchEnvironment || payload?.launch_environment || legacyShellPreference,
+  );
   const supportedLaunchIds = new Set(["codex-cli", "claude-cli", "codex-app"]);
   if (!supportedLaunchIds.has(adapterId)) {
     throw httpError(400, "unsupported_launch_adapter", `Unsupported launch adapter: ${adapterId || "missing"}`);
@@ -70,7 +72,7 @@ async function launchWorkspace(payload, options = {}) {
         command: "codex",
         args: resumeSessionId ? ["resume", resumeSessionId, "-C", workspacePath] : [],
         environment,
-        shellPreference,
+        launchEnvironment,
         recordDebugLog,
       });
     } else if (adapterId === "claude-cli") {
@@ -80,13 +82,24 @@ async function launchWorkspace(payload, options = {}) {
         command: "claude",
         args: resumeSessionId ? ["--resume", resumeSessionId] : [],
         environment,
-        shellPreference,
+        launchEnvironment,
         recordDebugLog,
       });
     } else {
       launch = await spawnDetached("codex", ["app", workspacePath], workspacePath);
     }
-    if (managedLaunch) launchStore.update(managedLaunch.launchId, { state: "waiting_hook", launchedPid: launch.pid || null });
+    if (managedLaunch) {
+      launchStore.update(managedLaunch.launchId, {
+        state: "waiting_hook",
+        launchedPid: launch.pid || null,
+        launchEnvironment: launch.launchEnvironment || launchEnvironment,
+        requestedLaunchEnvironment: launch.requestedLaunchEnvironment || launchEnvironment,
+        environmentFallback: Boolean(launch.environmentFallback),
+        terminal: launch.terminal || null,
+        terminalExecutable: launch.terminalExecutable || null,
+        shellExecutable: launch.shell || null,
+      });
+    }
   } catch (error) {
     if (managedLaunch) launchStore.update(managedLaunch.launchId, { state: "failed", error: error.message || String(error) });
     throw error;
@@ -104,6 +117,9 @@ async function launchWorkspace(payload, options = {}) {
     titleToken: managedLaunch?.titleToken || null,
     shell: launch.shell || null,
     shellFallback: Boolean(launch.shellFallback),
+    launchEnvironment: launch.launchEnvironment || null,
+    requestedLaunchEnvironment: launch.requestedLaunchEnvironment || launchEnvironment,
+    environmentFallback: Boolean(launch.environmentFallback),
   });
 
   return {
@@ -119,6 +135,9 @@ async function launchWorkspace(payload, options = {}) {
     args: launch.args,
     shell: launch.shell || null,
     shellFallback: Boolean(launch.shellFallback),
+    launchEnvironment: launch.launchEnvironment || null,
+    requestedLaunchEnvironment: launch.requestedLaunchEnvironment || launchEnvironment,
+    environmentFallback: Boolean(launch.environmentFallback),
     launch: managedLaunch ? launchStore.list().find((item) => item.launchId === managedLaunch.launchId) : null,
     windowHint: managedLaunch ? {
       title,

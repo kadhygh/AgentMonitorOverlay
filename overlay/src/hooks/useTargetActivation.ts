@@ -150,7 +150,7 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     try {
       const result = await postBrokerJson<WorkspaceLaunchResult & { duplicate?: boolean }>(
         brokerSessionResumeUrl(session.sessionId),
-        cliLaunchPreferencePayload(),
+        { ...cliLaunchPreferencePayload(), replacePending: true },
       );
       if (result.session) {
         options.setSessions((previous) =>
