@@ -87,8 +87,8 @@ export class AmoAnnotationPanelView extends ItemView {
     const canvasFile = this.plugin.getPanelCanvasFile();
     const workspaceState = this.workspaceStateFor(info, canvasFile);
     this.renderHeader(root, workspaceState);
-    this.renderCurrentNote(root, info);
-    this.renderActions(root, info, canvasFile, workspaceState, workCanvasTargets);
+    this.renderCurrentNote(root, info, workCanvasTargets);
+    this.renderActions(root, info, canvasFile, workspaceState);
     this.renderAnnotations(root, info);
     this.renderOperationStatus(root);
     this.renderDetails(root, info, canvasFile, workspaceState);
@@ -125,9 +125,31 @@ export class AmoAnnotationPanelView extends ItemView {
     if (status.at) statusEl.createEl("span", { text: formatTime(status.at) });
   }
 
-  renderCurrentNote(root: HTMLElement, info: any) {
+  renderCurrentNote(root: HTMLElement, info: any, workCanvasTargets: any[]) {
     const section = root.createDiv({ cls: "amo-panel-current-note-card" });
-    section.createEl("h4", { text: "Opened note" });
+    const header = section.createDiv({ cls: "amo-panel-current-note-header" });
+    header.createEl("h4", { text: "Opened note" });
+
+    if (info.file) {
+      const linkedCanvasCount = (Array.isArray(workCanvasTargets) ? workCanvasTargets : []).filter(
+        (target) => target.containsNote
+      ).length;
+      const linkSummary = header.createDiv({
+        cls: "amo-panel-current-work-canvas-count",
+        attr: {
+          title:
+            linkedCanvasCount === 1
+              ? "Linked to 1 work canvas"
+              : "Linked to " + linkedCanvasCount + " work canvases",
+          "aria-label":
+            linkedCanvasCount === 1
+              ? "Linked to 1 work canvas"
+              : "Linked to " + linkedCanvasCount + " work canvases",
+        },
+      });
+      setIcon(linkSummary.createSpan({ cls: "amo-panel-current-work-canvas-icon" }), "layout-template");
+      linkSummary.createSpan({ text: String(linkedCanvasCount) });
+    }
 
     if (!info.file) {
       section.createDiv({
@@ -287,7 +309,7 @@ export class AmoAnnotationPanelView extends ItemView {
     }, 0);
   }
 
-  renderActions(root: HTMLElement, info: any, canvasFile: any, workspaceState: any, workCanvasTargets: any[]) {
+  renderActions(root: HTMLElement, info: any, canvasFile: any, workspaceState: any) {
     const section = root.createDiv({ cls: "amo-panel-section amo-panel-actions" });
     section.createEl("h4", { text: "Actions" });
 
@@ -382,8 +404,6 @@ export class AmoAnnotationPanelView extends ItemView {
       Boolean(info.file),
       "Open a work canvas associated with this note."
     );
-    this.renderWorkCanvasLinks(noteGroup, info, workCanvasTargets);
-
     const canvasActionsEnabled = Boolean(canvasFile && (workspaceState.key === "canvas" || workspaceState.key === "canvas-note"));
     const canvasGroup = section.createDiv({
       cls: "amo-panel-action-group" + (canvasActionsEnabled ? "" : " is-disabled"),
@@ -432,48 +452,6 @@ export class AmoAnnotationPanelView extends ItemView {
       canvasActionsEnabled,
       "Reveal the active canvas file in the file explorer."
     );
-  }
-
-  renderWorkCanvasLinks(container: HTMLElement, info: any, workCanvasTargets: any[]) {
-    if (!info.file) return;
-    const linkedTargets = (Array.isArray(workCanvasTargets) ? workCanvasTargets : []).filter((target) => target.containsNote);
-    const links = container.createDiv({ cls: "amo-panel-work-canvas-links" });
-    const heading = links.createDiv({ cls: "amo-panel-work-canvas-links-heading" });
-    heading.createSpan({ text: "Work canvases" });
-    heading.createSpan({ text: String(linkedTargets.length) });
-
-    if (linkedTargets.length === 0) {
-      links.createDiv({ cls: "amo-panel-muted", text: "Not linked to a work canvas." });
-      return;
-    }
-
-    const list = links.createDiv({ cls: "amo-panel-work-canvas-link-list" });
-    for (const target of linkedTargets) {
-      const button = list.createEl("button", {
-        cls: "amo-panel-work-canvas-link",
-        attr: {
-          type: "button",
-          title: "Open " + target.path,
-        },
-      }) as HTMLButtonElement;
-      setIcon(button.createSpan({ cls: "amo-panel-work-canvas-link-icon" }), "map-pin");
-      button.createSpan({ cls: "amo-panel-work-canvas-link-name", text: target.displayName || target.path });
-      if (target.occurrenceCount > 1) {
-        button.createSpan({ cls: "amo-panel-work-canvas-link-count", text: "x" + target.occurrenceCount });
-      }
-      button.addEventListener("mousedown", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      });
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void (async () => {
-          const currentInfo = await this.requireRenderedInfo(info, "open-work-canvas-link");
-          if (currentInfo) await this.plugin.openWorkCanvasTarget(currentInfo.file, target);
-        })();
-      });
-    }
   }
 
   renderAnnotations(root: HTMLElement, info: any) {

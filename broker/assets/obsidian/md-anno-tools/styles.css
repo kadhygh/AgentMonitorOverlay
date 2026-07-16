@@ -343,6 +343,32 @@
   margin-bottom: 2px;
 }
 
+.amo-panel-current-note-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.amo-panel-current-work-canvas-count {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--background-modifier-border);
+  border-radius: 5px;
+  padding: 2px 6px;
+  background: var(--background-secondary);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+
+.amo-panel-current-work-canvas-icon {
+  display: inline-flex;
+}
+
 .amo-panel-current-title-row {
   display: flex;
   align-items: center;
@@ -514,67 +540,6 @@
   min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.amo-panel-work-canvas-links {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  border-top: 1px solid var(--background-modifier-border);
-  padding-top: 8px;
-}
-
-.amo-panel-work-canvas-links-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  color: var(--text-muted);
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.amo-panel-work-canvas-link-list {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.amo-panel-work-canvas-link {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 7px;
-  min-width: 0;
-  width: 100%;
-  border: 1px solid var(--background-modifier-border);
-  border-radius: 6px;
-  padding: 6px 8px;
-  background: var(--background-secondary);
-  color: var(--text-normal);
-  text-align: left;
-}
-
-.amo-panel-work-canvas-link:hover {
-  border-color: var(--interactive-accent);
-  background: var(--background-modifier-hover);
-}
-
-.amo-panel-work-canvas-link-icon {
-  display: inline-flex;
-  color: var(--interactive-accent);
-}
-
-.amo-panel-work-canvas-link-name {
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.amo-panel-work-canvas-link-count {
-  color: var(--text-muted);
-  font-size: 11px;
 }
 
 .amo-panel-annotation-list {

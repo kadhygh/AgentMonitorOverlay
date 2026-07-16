@@ -38,7 +38,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.43";
+var PLUGIN_VERSION = "1.4.44";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -859,8 +859,8 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     const canvasFile = this.plugin.getPanelCanvasFile();
     const workspaceState = this.workspaceStateFor(info, canvasFile);
     this.renderHeader(root, workspaceState);
-    this.renderCurrentNote(root, info);
-    this.renderActions(root, info, canvasFile, workspaceState, workCanvasTargets);
+    this.renderCurrentNote(root, info, workCanvasTargets);
+    this.renderActions(root, info, canvasFile, workspaceState);
     this.renderAnnotations(root, info);
     this.renderOperationStatus(root);
     this.renderDetails(root, info, canvasFile, workspaceState);
@@ -892,9 +892,24 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     statusEl.createEl("strong", { text: status.message });
     if (status.at) statusEl.createEl("span", { text: formatTime(status.at) });
   }
-  renderCurrentNote(root, info) {
+  renderCurrentNote(root, info, workCanvasTargets) {
     const section = root.createDiv({ cls: "amo-panel-current-note-card" });
-    section.createEl("h4", { text: "Opened note" });
+    const header = section.createDiv({ cls: "amo-panel-current-note-header" });
+    header.createEl("h4", { text: "Opened note" });
+    if (info.file) {
+      const linkedCanvasCount = (Array.isArray(workCanvasTargets) ? workCanvasTargets : []).filter(
+        (target) => target.containsNote
+      ).length;
+      const linkSummary = header.createDiv({
+        cls: "amo-panel-current-work-canvas-count",
+        attr: {
+          title: linkedCanvasCount === 1 ? "Linked to 1 work canvas" : "Linked to " + linkedCanvasCount + " work canvases",
+          "aria-label": linkedCanvasCount === 1 ? "Linked to 1 work canvas" : "Linked to " + linkedCanvasCount + " work canvases"
+        }
+      });
+      (0, import_obsidian2.setIcon)(linkSummary.createSpan({ cls: "amo-panel-current-work-canvas-icon" }), "layout-template");
+      linkSummary.createSpan({ text: String(linkedCanvasCount) });
+    }
     if (!info.file) {
       section.createDiv({
         cls: "amo-panel-muted",
@@ -1037,7 +1052,7 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       input.select();
     }, 0);
   }
-  renderActions(root, info, canvasFile, workspaceState, workCanvasTargets) {
+  renderActions(root, info, canvasFile, workspaceState) {
     const section = root.createDiv({ cls: "amo-panel-section amo-panel-actions" });
     section.createEl("h4", { text: "Actions" });
     const isCanvasNoteContext = workspaceState.key === "canvas-note" || info.source === "canvas-selection";
@@ -1129,7 +1144,6 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       Boolean(info.file),
       "Open a work canvas associated with this note."
     );
-    this.renderWorkCanvasLinks(noteGroup, info, workCanvasTargets);
     const canvasActionsEnabled = Boolean(canvasFile && (workspaceState.key === "canvas" || workspaceState.key === "canvas-note"));
     const canvasGroup = section.createDiv({
       cls: "amo-panel-action-group" + (canvasActionsEnabled ? "" : " is-disabled")
@@ -1178,45 +1192,6 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       canvasActionsEnabled,
       "Reveal the active canvas file in the file explorer."
     );
-  }
-  renderWorkCanvasLinks(container, info, workCanvasTargets) {
-    if (!info.file) return;
-    const linkedTargets = (Array.isArray(workCanvasTargets) ? workCanvasTargets : []).filter((target) => target.containsNote);
-    const links = container.createDiv({ cls: "amo-panel-work-canvas-links" });
-    const heading = links.createDiv({ cls: "amo-panel-work-canvas-links-heading" });
-    heading.createSpan({ text: "Work canvases" });
-    heading.createSpan({ text: String(linkedTargets.length) });
-    if (linkedTargets.length === 0) {
-      links.createDiv({ cls: "amo-panel-muted", text: "Not linked to a work canvas." });
-      return;
-    }
-    const list = links.createDiv({ cls: "amo-panel-work-canvas-link-list" });
-    for (const target of linkedTargets) {
-      const button = list.createEl("button", {
-        cls: "amo-panel-work-canvas-link",
-        attr: {
-          type: "button",
-          title: "Open " + target.path
-        }
-      });
-      (0, import_obsidian2.setIcon)(button.createSpan({ cls: "amo-panel-work-canvas-link-icon" }), "map-pin");
-      button.createSpan({ cls: "amo-panel-work-canvas-link-name", text: target.displayName || target.path });
-      if (target.occurrenceCount > 1) {
-        button.createSpan({ cls: "amo-panel-work-canvas-link-count", text: "x" + target.occurrenceCount });
-      }
-      button.addEventListener("mousedown", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-      });
-      button.addEventListener("click", (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void (async () => {
-          const currentInfo = await this.requireRenderedInfo(info, "open-work-canvas-link");
-          if (currentInfo) await this.plugin.openWorkCanvasTarget(currentInfo.file, target);
-        })();
-      });
-    }
   }
   renderAnnotations(root, info) {
     const annotationItems = info.annotationItems || [];
