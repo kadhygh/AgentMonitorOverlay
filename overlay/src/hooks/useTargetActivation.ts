@@ -312,7 +312,13 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
         activationWindowRequest(session, activationTarget),
       );
       let menuSession = session;
-      if (!result.ok && session.launchId && session.launchState === "connected" && session.windowHint?.titleToken) {
+      if (
+        !result.ok &&
+        session.launchId &&
+        session.launchState === "connected" &&
+        session.windowHint?.titleToken &&
+        session.windowHint?.hwnd
+      ) {
         try {
           const probe = await probeSessionWindow(
             activationWindowRequest(session, null, { includeWindowHintIdentity: true }),

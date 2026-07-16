@@ -15,7 +15,7 @@ after(async () => {
   await vite.close();
 });
 
-function target(sessionId = "session-a", launchId = "launch-a") {
+function target(sessionId = "session-a", launchId = "launch-a", identity = null) {
   return {
     sessionId,
     launchId,
@@ -28,8 +28,8 @@ function target(sessionId = "session-a", launchId = "launch-a") {
       titleContains: [`[AMO:codex:${launchId}]`],
       project: "project",
       cwd: "G:\\PROJECT\\project",
-      pid: null,
-      hwnd: null,
+      pid: identity?.pid ?? null,
+      hwnd: identity?.hwnd ?? null,
     },
   };
 }
@@ -40,7 +40,13 @@ function resultFor(request, ok) {
     result: {
       ok,
       message: ok ? "alive" : "missing",
-      candidates: [],
+      candidates: ok ? [{
+        hwnd: request.hwnd ?? 101,
+        processId: request.pid ?? 202,
+        processName: "WindowsTerminal.exe",
+        title: request.title,
+        label: request.title,
+      }] : [],
     },
   };
 }
@@ -71,10 +77,10 @@ test("changing launch identity clears misses collected for the previous window",
     probe: async (requests) => requests.map((request) => resultFor(request, false)),
     onOffline: async (current) => offline.push(current.launchId),
   });
-  monitor.updateTargets([target("session-a", "launch-a")]);
+  monitor.updateTargets([target("session-a", "launch-a", { hwnd: 101, pid: 202 })]);
   await monitor.runOnce();
 
-  monitor.updateTargets([target("session-a", "launch-b")]);
+  monitor.updateTargets([target("session-a", "launch-b", { hwnd: 303, pid: 404 })]);
   await monitor.runOnce();
   assert.deepEqual(offline, []);
 
@@ -104,4 +110,49 @@ test("stopping the monitor invalidates an in-flight probe", async () => {
   await pending;
 
   assert.deepEqual(offline, []);
+});
+
+test("a newly claimed launch remains unresolved instead of being marked offline", async () => {
+  let now = 1_000;
+  const offline = [];
+  const events = [];
+  const monitor = new ManagedWindowMonitor({
+    initialResolutionGraceMs: 10_000,
+    now: () => now,
+    probe: async (requests) => requests.map((request) => resultFor(request, false)),
+    onEvent: (event) => events.push(event),
+    onOffline: async (current) => offline.push(current.launchId),
+  });
+  monitor.updateTargets([target()]);
+
+  await monitor.runOnce();
+  now += 12_000;
+  await monitor.runOnce();
+  await monitor.runOnce();
+
+  assert.deepEqual(offline, []);
+  assert.ok(events.includes("managed_window.awaiting_resolution"));
+  assert.equal(events.filter((event) => event === "managed_window.unresolved").length, 1);
+});
+
+test("the first title-token match persists a stable window identity", async () => {
+  const resolved = [];
+  const requests = [];
+  const monitor = new ManagedWindowMonitor({
+    probe: async ([request]) => {
+      requests.push(request);
+      return [resultFor(request, true)];
+    },
+    onResolved: async (current, candidate) => resolved.push({ current, candidate }),
+    onOffline: async () => undefined,
+  });
+  monitor.updateTargets([target()]);
+
+  await monitor.runOnce();
+  await monitor.runOnce();
+
+  assert.equal(resolved.length, 1);
+  assert.equal(resolved[0].candidate.hwnd, 101);
+  assert.equal(requests[1].hwnd, 101);
+  assert.equal(requests[1].pid, 202);
 });

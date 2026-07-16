@@ -179,6 +179,52 @@ test("connected launch reconciliation removes redundant managed window targets",
   assert.equal(sessions.get(sessionId).windowHint.boundBy, "managed-launch");
 });
 
+test("resolved managed window identity is persisted and restored during reconciliation", (t) => {
+  const { dataFile, store } = createTestStore(t);
+  const sessionId = "session-managed";
+  const launch = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+  });
+  store.update(launch.launchId, {
+    state: "connected",
+    claimedSessionId: sessionId,
+    currentSessionId: sessionId,
+    bindingRevision: 1,
+  });
+  const sessions = new Map([[sessionId, {
+    sessionId,
+    launchId: launch.launchId,
+    launchState: "connected",
+    windowHint: {
+      titleToken: launch.titleToken,
+      boundBy: "managed-launch",
+    },
+  }]]);
+
+  const resolved = store.resolveSessionWindow(sessionId, sessions, {
+    launchId: launch.launchId,
+    hwnd: 4242,
+    processId: 99,
+    processName: "WindowsTerminal.exe",
+    title: `${launch.titleToken} Codex CLI - demo`,
+  });
+
+  assert.equal(resolved.session.windowHint.hwnd, 4242);
+  assert.equal(resolved.session.windowHint.pid, 99);
+  assert.equal(resolved.session.windowHint.process, "WindowsTerminal.exe");
+  assert.ok(resolved.session.launchWindowResolvedAt);
+  assert.equal(store.list()[0].windowHwnd, 4242);
+
+  const reloadedStore = createLaunchStore({ dataFile });
+  sessions.set(sessionId, { sessionId, launchId: launch.launchId });
+  reloadedStore.reconcileSessions(sessions);
+  assert.equal(sessions.get(sessionId).windowHint.hwnd, 4242);
+  assert.equal(sessions.get(sessionId).windowHint.pid, 99);
+  assert.equal(sessions.get(sessionId).windowHint.process, "WindowsTerminal.exe");
+});
+
 test("active launches survive retention pruning while old terminal launches are removed", (t) => {
   const { dataFile } = createTestStore(t);
   fs.writeFileSync(dataFile, JSON.stringify({

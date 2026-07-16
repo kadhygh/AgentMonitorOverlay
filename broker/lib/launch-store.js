@@ -2,7 +2,7 @@ const crypto = require("crypto");
 const path = require("path");
 const { AMO_SCHEMA_VERSION } = require("./amo-constants");
 const { readJsonFile, writeJsonFile } = require("./filesystem");
-const { normalizeText } = require("./normalize");
+const { normalizeInteger, normalizeText } = require("./normalize");
 
 const RETAIN_LAUNCH_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_LAUNCH_STATES = new Set(["created", "spawning", "waiting_hook", "claimed", "connected"]);
@@ -120,12 +120,16 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     payload.launchRevision = bindingRevision;
     payload.windowHint = {
       ...(payload.windowHint || payload.window_hint || {}),
+      process: claimed.windowProcessName || null,
       title: `${launch.titleToken} ${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} - ${path.basename(launch.workspacePath)}`,
       titleToken: launch.titleToken,
       titleContains: [launch.titleToken],
       project: path.basename(launch.workspacePath),
       cwd: launch.workspacePath,
       tool: expectedTool,
+      pid: claimed.windowPid || null,
+      hwnd: claimed.windowHwnd || null,
+      boundAt: claimed.windowResolvedAt || null,
       boundBy: "managed-launch",
       boundLabel: `${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} managed launch`,
     };
@@ -205,6 +209,10 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
           state: "offline",
           offlineAt: now,
           offlineReason: normalizeText(options.reason) || "window-not-found",
+          windowHwnd: null,
+          windowPid: null,
+          windowProcessName: null,
+          windowTitle: null,
         });
       }
     }
@@ -225,6 +233,63 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       reason: normalizeText(options.reason) || "window-not-found",
     });
     return session;
+  }
+
+  function resolveSessionWindow(sessionId, sessions, options = {}) {
+    if (!(sessions instanceof Map)) return null;
+    const existing = sessions.get(sessionId);
+    if (!existing?.launchId) return null;
+
+    const expectedLaunchId = normalizeText(options.launchId);
+    if (!expectedLaunchId || expectedLaunchId !== existing.launchId) return null;
+
+    const launch = launches.get(existing.launchId);
+    const launchSessionId = launch?.currentSessionId || launch?.claimedSessionId || null;
+    if (!launch || launch.state !== "connected" || launchSessionId !== sessionId) return null;
+
+    const hwnd = normalizeInteger(options.hwnd || options.windowHandle || options.window_handle);
+    const pid = normalizeInteger(options.pid || options.processId || options.process_id);
+    if (hwnd === null || pid === null) return null;
+
+    const now = new Date().toISOString();
+    const processName = normalizeText(options.processName || options.process_name || options.process);
+    const title = normalizeText(options.title);
+    const resolvedAt = launch.windowResolvedAt || now;
+    const updatedLaunch = update(existing.launchId, {
+      state: "connected",
+      windowHwnd: hwnd,
+      windowPid: pid,
+      windowProcessName: processName || launch.windowProcessName || null,
+      windowTitle: title || launch.windowTitle || null,
+      windowResolvedAt: resolvedAt,
+      windowLastSeenAt: now,
+      offlineAt: null,
+      offlineReason: null,
+    });
+    const baseHint = existing.windowHint || {};
+    const session = {
+      ...existing,
+      launchState: "connected",
+      launchWindowResolvedAt: resolvedAt,
+      windowHint: {
+        ...baseHint,
+        process: processName || baseHint.process || null,
+        pid,
+        hwnd,
+        boundAt: baseHint.boundAt || resolvedAt,
+        boundBy: "managed-launch",
+      },
+    };
+    sessions.set(sessionId, session);
+    recordDebugLog("broker", "launch.window_resolved", {
+      sessionId,
+      launchId: existing.launchId,
+      hwnd,
+      pid,
+      processName: processName || null,
+      title: title || null,
+    });
+    return { launch: updatedLaunch, session };
   }
 
   function prune() {
@@ -251,6 +316,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     list,
     markSessionOffline,
     reconcileSessions,
+    resolveSessionWindow,
     supersedeActiveResume,
     update,
   };
@@ -290,11 +356,14 @@ function attachLaunchToSession(session, launch) {
       project: path.basename(launch.workspacePath),
       cwd: launch.workspacePath,
       tool: expectedTool,
-      pid: null,
-      hwnd: null,
+      process: launch.windowProcessName || null,
+      pid: launch.windowPid || null,
+      hwnd: launch.windowHwnd || null,
+      boundAt: launch.windowResolvedAt || null,
       boundBy: "managed-launch",
       boundLabel: `${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} managed launch`,
     },
+    launchWindowResolvedAt: launch.windowResolvedAt || null,
   };
 }
 

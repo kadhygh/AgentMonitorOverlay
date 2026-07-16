@@ -121,6 +121,22 @@ async function handleSessionRoutes(req, res, url, context) {
 
   const resumeMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/resume$/);
 
+  const managedWindowMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/managed-launch\/window$/);
+  if (req.method === "POST" && managedWindowMatch) {
+    const sessionId = decodeURIComponent(managedWindowMatch[1]);
+    const payload = await readJsonBody(req);
+    const result = context.launchStore.resolveSessionWindow(sessionId, context.sessions, payload || {});
+    if (!result) {
+      const error = new Error(`Managed launch window could not be resolved for session: ${sessionId}`);
+      error.statusCode = 409;
+      error.code = "managed_window_resolution_rejected";
+      throw error;
+    }
+    context.persistSnapshot();
+    context.publishSessionChanged("managed-launch-window", result.session);
+    return sendHandled(res, 200, { ok: true, ...result });
+  }
+
   const managedOfflineMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/managed-launch\/offline$/);
   if (req.method === "POST" && managedOfflineMatch) {
     const sessionId = decodeURIComponent(managedOfflineMatch[1]);

@@ -836,4 +836,24 @@ mod tests {
         assert!(!results[0].result.ok);
         assert!(results[0].result.candidates.is_empty());
     }
+
+    #[test]
+    fn resolved_hwnd_remains_valid_after_the_terminal_title_changes() {
+        let mut resolved_request = request("session-a", "[AMO:codex:old-title]");
+        resolved_request.hint.hwnd = Some(30);
+        resolved_request.hint.pid = Some(100);
+        resolved_request.hint.process_name = "WindowsTerminal.exe".to_string();
+        let candidates = vec![WindowCandidate {
+            hwnd: 30,
+            process_id: 100,
+            process_name: Some("WindowsTerminal.exe".to_string()),
+            title: "project_mining_dev".to_string(),
+        }];
+
+        let results = probe_requests_against_candidates(vec![resolved_request], &candidates);
+
+        assert_eq!(results.len(), 1);
+        assert!(results[0].result.ok);
+        assert_eq!(results[0].result.candidates[0].hwnd, 30);
+    }
 }

@@ -1,4 +1,4 @@
-import type { WindowActivationRequest, WindowProbeResult } from "../types";
+import type { ActivationCandidate, WindowActivationRequest, WindowProbeResult } from "../types";
 
 export interface ManagedWindowTarget {
   sessionId: string;
@@ -9,23 +9,39 @@ export interface ManagedWindowTarget {
 interface ManagedWindowMonitorOptions {
   intervalMs?: number;
   missesBeforeOffline?: number;
+  initialResolutionGraceMs?: number;
+  now?: () => number;
   onEvent?: (event: string, data: Record<string, unknown>) => void;
   onOffline: (target: ManagedWindowTarget) => Promise<void>;
+  onResolved?: (target: ManagedWindowTarget, candidate: ActivationCandidate) => Promise<void>;
   probe: (requests: WindowActivationRequest[]) => Promise<WindowProbeResult[]>;
 }
 
 const DEFAULT_INTERVAL_MS = 2500;
 const DEFAULT_MISSES_BEFORE_OFFLINE = 2;
+const DEFAULT_INITIAL_RESOLUTION_GRACE_MS = 15_000;
+
+interface ManagedWindowPhase {
+  launchId: string;
+  firstObservedAt: number;
+  resolved: boolean;
+  unresolvedLogged: boolean;
+}
 
 export class ManagedWindowMonitor {
   private readonly intervalMs: number;
   private readonly missesBeforeOffline: number;
+  private readonly initialResolutionGraceMs: number;
+  private readonly now: () => number;
   private readonly onEvent: (event: string, data: Record<string, unknown>) => void;
   private readonly onOffline: (target: ManagedWindowTarget) => Promise<void>;
+  private readonly onResolved: (target: ManagedWindowTarget, candidate: ActivationCandidate) => Promise<void>;
   private readonly probe: (requests: WindowActivationRequest[]) => Promise<WindowProbeResult[]>;
   private readonly targets = new Map<string, ManagedWindowTarget>();
+  private readonly phases = new Map<string, ManagedWindowPhase>();
   private readonly misses = new Map<string, number>();
   private readonly offlinePending = new Set<string>();
+  private readonly resolutionPending = new Set<string>();
   private timerId: number | null = null;
   private probeRunning = false;
   private generation = 0;
@@ -33,8 +49,11 @@ export class ManagedWindowMonitor {
   constructor(options: ManagedWindowMonitorOptions) {
     this.intervalMs = options.intervalMs ?? DEFAULT_INTERVAL_MS;
     this.missesBeforeOffline = options.missesBeforeOffline ?? DEFAULT_MISSES_BEFORE_OFFLINE;
+    this.initialResolutionGraceMs = options.initialResolutionGraceMs ?? DEFAULT_INITIAL_RESOLUTION_GRACE_MS;
+    this.now = options.now ?? Date.now;
     this.onEvent = options.onEvent ?? (() => undefined);
     this.onOffline = options.onOffline;
+    this.onResolved = options.onResolved ?? (async () => undefined);
     this.probe = options.probe;
   }
 
@@ -43,17 +62,33 @@ export class ManagedWindowMonitor {
     for (const sessionId of this.targets.keys()) {
       if (nextIds.has(sessionId)) continue;
       this.targets.delete(sessionId);
+      this.phases.delete(sessionId);
       this.misses.delete(sessionId);
       this.offlinePending.delete(sessionId);
+      this.resolutionPending.delete(sessionId);
     }
 
     for (const target of nextTargets) {
       const previous = this.targets.get(target.sessionId);
+      const previousPhase = this.phases.get(target.sessionId);
       if (previous?.launchId !== target.launchId) {
+        this.phases.set(target.sessionId, {
+          launchId: target.launchId,
+          firstObservedAt: this.now(),
+          resolved: Boolean(target.request.hwnd),
+          unresolvedLogged: false,
+        });
         this.misses.delete(target.sessionId);
         this.offlinePending.delete(target.sessionId);
+        this.resolutionPending.delete(target.sessionId);
+      } else if (previousPhase && target.request.hwnd) {
+        previousPhase.resolved = true;
+        previousPhase.unresolvedLogged = false;
       }
-      this.targets.set(target.sessionId, target);
+      const request = previous?.request.hwnd && !target.request.hwnd
+        ? { ...target.request, hwnd: previous.request.hwnd, pid: previous.request.pid, processName: previous.request.processName }
+        : target.request;
+      this.targets.set(target.sessionId, { ...target, request });
     }
   }
 
@@ -71,8 +106,10 @@ export class ManagedWindowMonitor {
       this.timerId = null;
     }
     this.targets.clear();
+    this.phases.clear();
     this.misses.clear();
     this.offlinePending.clear();
+    this.resolutionPending.clear();
   }
 
   async runOnce() {
@@ -104,6 +141,68 @@ export class ManagedWindowMonitor {
             this.onEvent("managed_window.probe_recovered", {
               sessionId: target.sessionId,
               launchId: target.launchId,
+            });
+          }
+          const candidate = result.candidates?.[0];
+          if (candidate) {
+            const phase = this.phases.get(target.sessionId);
+            if (phase) {
+              phase.resolved = true;
+              phase.unresolvedLogged = false;
+            }
+            if (!current.request.hwnd && !this.resolutionPending.has(target.sessionId)) {
+              const resolvedTarget = {
+                ...current,
+                request: {
+                  ...current.request,
+                  hwnd: candidate.hwnd,
+                  pid: candidate.processId,
+                  processName: candidate.processName ?? current.request.processName,
+                },
+              };
+              this.targets.set(target.sessionId, resolvedTarget);
+              this.resolutionPending.add(target.sessionId);
+              try {
+                await this.onResolved(resolvedTarget, candidate);
+                this.onEvent("managed_window.resolved", {
+                  sessionId: target.sessionId,
+                  launchId: target.launchId,
+                  hwnd: candidate.hwnd,
+                  pid: candidate.processId,
+                  processName: candidate.processName ?? null,
+                });
+              } catch (error) {
+                this.onEvent("managed_window.resolve_error", {
+                  sessionId: target.sessionId,
+                  launchId: target.launchId,
+                  message: (error as Error).message,
+                });
+              } finally {
+                this.resolutionPending.delete(target.sessionId);
+              }
+            }
+          }
+          continue;
+        }
+
+        const phase = this.phases.get(target.sessionId);
+        if (!phase?.resolved) {
+          const elapsedMs = phase ? this.now() - phase.firstObservedAt : 0;
+          if (elapsedMs < this.initialResolutionGraceMs) {
+            this.onEvent("managed_window.awaiting_resolution", {
+              sessionId: target.sessionId,
+              launchId: target.launchId,
+              elapsedMs,
+              graceMs: this.initialResolutionGraceMs,
+              message: result.message,
+            });
+          } else if (phase && !phase.unresolvedLogged) {
+            phase.unresolvedLogged = true;
+            this.onEvent("managed_window.unresolved", {
+              sessionId: target.sessionId,
+              launchId: target.launchId,
+              elapsedMs,
+              message: result.message,
             });
           }
           continue;

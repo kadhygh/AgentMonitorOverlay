@@ -58,6 +58,10 @@ export function brokerSessionManagedOfflineUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/managed-launch/offline`;
 }
 
+export function brokerSessionManagedWindowUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/managed-launch/window`;
+}
+
 export async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
   const response = await fetch(url, {
     method: "POST",

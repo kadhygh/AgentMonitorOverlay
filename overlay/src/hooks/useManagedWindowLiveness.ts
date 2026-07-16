@@ -1,5 +1,9 @@
 import { useEffect, useRef, type Dispatch, type SetStateAction } from "react";
-import { brokerSessionManagedOfflineUrl, postBrokerJson } from "../api/brokerClient";
+import {
+  brokerSessionManagedOfflineUrl,
+  brokerSessionManagedWindowUrl,
+  postBrokerJson,
+} from "../api/brokerClient";
 import { activationWindowRequest } from "../domain/routingModel";
 import { mergeChangedSession } from "../domain/sessionModel";
 import { probeSessionWindows } from "../platform/windowClient";
@@ -53,6 +57,19 @@ export function useManagedWindowLiveness(options: UseManagedWindowLivenessOption
     const monitor = new ManagedWindowMonitor({
       probe: probeSessionWindows,
       onEvent: (event, data) => callbacksRef.current.postDebugLog(event, data),
+      onResolved: async (target, candidate) => {
+        const response = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+          brokerSessionManagedWindowUrl(target.sessionId),
+          {
+            launchId: target.launchId,
+            hwnd: candidate.hwnd,
+            processId: candidate.processId,
+            processName: candidate.processName ?? null,
+            title: candidate.title,
+          },
+        );
+        callbacksRef.current.setSessions((previous) => mergeChangedSession(previous, response.session));
+      },
       onOffline: async (target) => {
         const response = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
           brokerSessionManagedOfflineUrl(target.sessionId),

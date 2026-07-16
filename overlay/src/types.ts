@@ -78,6 +78,7 @@ export interface AgentSession {
   launchId?: string | null;
   launchState?: string | null;
   launchRevision?: number | null;
+  launchWindowResolvedAt?: string | null;
   vaultRoot?: string;
   lastReplyAt?: string;
   lastReplyNote?: string;
