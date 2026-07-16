@@ -412,7 +412,7 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
 
   async function bindWindowAtCursor(session: AgentSession) {
     const currentTarget = targetBindingForSession(session);
-    if (currentTarget && currentTarget.type !== "codex-cli-session") {
+    if (currentTarget) {
       options.setFeedback("This card already has a target binding.");
       return;
     }

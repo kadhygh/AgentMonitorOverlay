@@ -22,17 +22,40 @@ function clearWindowIdentity(currentHint, existing) {
   return normalizeWindowHint(resetHint);
 }
 
+function clearTargetBindingState(existing) {
+  const currentTarget = existing?.targetBinding || null;
+  const currentHint = existing?.windowHint || null;
+  const managedWindowTarget = isManagedLaunchWindowTarget(currentTarget);
+  const managedWindowHint = currentHint?.boundBy === "managed-launch";
+  const overlayBoundWindow =
+    currentHint?.boundBy === "overlay-candidate-menu" ||
+    currentHint?.boundBy === "overlay-target-menu";
+  const shouldClearWindow =
+    !managedWindowHint &&
+    !managedWindowTarget &&
+    (currentTarget?.type === "window" ||
+      overlayBoundWindow ||
+      ((!currentTarget || currentTarget.type === "codex-cli-session") &&
+        Boolean(currentHint?.hwnd || currentHint?.pid)));
+
+  return {
+    windowHint: shouldClearWindow ? clearWindowIdentity(currentHint || {}, existing || {}) : currentHint,
+    targetBinding: null,
+    clearedWindow: shouldClearWindow,
+  };
+}
+
 function codexAppThreadUri(threadId) {
   return `codex://threads/${encodeURIComponent(threadId)}`;
 }
 
 function resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt, windowHint }) {
   const explicitTarget = normalizeTargetBinding(payload?.targetBinding || payload?.target_binding, sessionId, boundAt);
-  if (explicitTarget) {
+  if (explicitTarget && !isManagedLaunchWindowTarget(explicitTarget)) {
     return explicitTarget;
   }
 
-  if (existing?.targetBinding) {
+  if (existing?.targetBinding && !isManagedLaunchWindowTarget(existing.targetBinding)) {
     return existing.targetBinding;
   }
 
@@ -124,7 +147,11 @@ function normalizeTargetBinding(value, sessionId, boundAt) {
 }
 
 function targetBindingFromWindowHint(windowHint, boundAt) {
-  if (!windowHint || (windowHint.hwnd === null && windowHint.pid === null)) {
+  if (
+    !windowHint ||
+    windowHint.boundBy === "managed-launch" ||
+    (windowHint.hwnd == null && windowHint.pid == null)
+  ) {
     return null;
   }
 
@@ -211,10 +238,16 @@ function normalizeWindowHint(value) {
   };
 }
 
+function isManagedLaunchWindowTarget(targetBinding) {
+  return targetBinding?.type === "window" && targetBinding?.boundBy === "managed-launch";
+}
+
 module.exports = {
+  clearTargetBindingState,
   clearWindowIdentity,
   codexAppThreadUri,
   defaultHookTargetBinding,
+  isManagedLaunchWindowTarget,
   normalizeTargetBinding,
   normalizeWindowHint,
   resolveSessionTargetBinding,

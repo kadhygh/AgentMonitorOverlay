@@ -3,6 +3,7 @@ const path = require("path");
 const { AMO_SCHEMA_VERSION } = require("./amo-constants");
 const { readJsonFile, writeJsonFile } = require("./filesystem");
 const { normalizeInteger, normalizeText } = require("./normalize");
+const { isManagedLaunchWindowTarget } = require("./target-binding");
 
 const RETAIN_LAUNCH_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_LAUNCH_STATES = new Set(["created", "spawning", "waiting_hook", "claimed", "connected"]);
@@ -145,7 +146,13 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
 
   function reconcileSessions(sessions) {
     if (!(sessions instanceof Map)) return [];
-    const changed = [];
+    const changed = new Map();
+    for (const [sessionId, session] of sessions) {
+      if (!isManagedLaunchWindowTarget(session.targetBinding)) continue;
+      const cleaned = { ...session, targetBinding: null };
+      sessions.set(sessionId, cleaned);
+      changed.set(sessionId, cleaned);
+    }
     for (const launch of launches.values()) {
       if (launch.state !== "connected") continue;
       const sessionId = launch.currentSessionId || launch.claimedSessionId;
@@ -153,9 +160,9 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       if (!session) continue;
       const next = attachLaunchToSession(session, launch);
       sessions.set(sessionId, next);
-      changed.push(next);
+      changed.set(sessionId, next);
     }
-    return changed;
+    return Array.from(changed.values());
   }
 
   function list() {
@@ -225,6 +232,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       windowHint: existing.windowHint
         ? { ...existing.windowHint, pid: null, hwnd: null }
         : existing.windowHint,
+      targetBinding: isManagedLaunchWindowTarget(existing.targetBinding) ? null : existing.targetBinding || null,
     };
     sessions.set(sessionId, session);
     recordDebugLog("broker", "launch.window_offline", {
@@ -332,6 +340,7 @@ function releasePreviousSession(sessions, sessionId, launchId, titleToken, bindi
     launchState: "offline",
     launchRevision: bindingRevision,
     windowHint: managedHint ? null : existing.windowHint || null,
+    targetBinding: isManagedLaunchWindowTarget(existing.targetBinding) ? null : existing.targetBinding || null,
     updatedAt: new Date().toISOString(),
   };
   sessions.set(sessionId, released);
@@ -347,7 +356,7 @@ function attachLaunchToSession(session, launch) {
     launchId: launch.launchId,
     launchState: launch.state,
     launchRevision: launch.bindingRevision || 1,
-    targetBinding: isRedundantManagedWindowTarget(session.targetBinding) ? null : session.targetBinding || null,
+    targetBinding: isManagedLaunchWindowTarget(session.targetBinding) ? null : session.targetBinding || null,
     windowHint: {
       ...(session.windowHint || {}),
       title: `${launch.titleToken} ${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} - ${path.basename(launch.workspacePath)}`,
@@ -385,12 +394,8 @@ function clearSupersededTargetBinding(sessions, sessionId, firstClaim) {
   if (!(sessions instanceof Map)) return;
   const session = sessions.get(sessionId);
   if (!session) return;
-  if (!firstClaim && !isRedundantManagedWindowTarget(session.targetBinding)) return;
+  if (!firstClaim && !isManagedLaunchWindowTarget(session.targetBinding)) return;
   sessions.set(sessionId, { ...session, targetBinding: null });
-}
-
-function isRedundantManagedWindowTarget(targetBinding) {
-  return targetBinding?.type === "window" && targetBinding?.boundBy === "managed-launch";
 }
 
 module.exports = { createLaunchStore };

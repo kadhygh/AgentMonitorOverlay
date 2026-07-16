@@ -13,7 +13,9 @@ const { createSessionStore } = require("./lib/session-store");
 const { createTranscriptMonitor } = require("./lib/transcript-monitor");
 const { attachObsidianPluginHealth } = require("./lib/obsidian-vault");
 const {
+  clearTargetBindingState,
   clearWindowIdentity,
+  isManagedLaunchWindowTarget,
   normalizeTargetBinding,
   normalizeWindowHint,
   targetBindingFromWindowHint,
@@ -437,39 +439,31 @@ function clearSessionWindowBinding(sessionId) {
   }
 
   const currentHint = existing.windowHint || {};
-  const resetHint =
-    currentHint.boundBy === "overlay-candidate-menu"
-      ? {
-          titleToken: currentHint.titleToken || null,
-          titleContains: Array.isArray(currentHint.titleContains) ? currentHint.titleContains : [],
-          project: currentHint.project || path.basename(existing.cwd || "") || null,
-          cwd: currentHint.cwd || existing.cwd || null,
-          tool: currentHint.tool || existing.tool || null,
-          pid: null,
-          hwnd: null,
-        }
-      : {
-          ...currentHint,
-          pid: null,
-          hwnd: null,
-        };
-  const nextHint = normalizeWindowHint(resetHint);
+  const managedWindowHint = currentHint.boundBy === "managed-launch";
+  const nextHint = managedWindowHint ? currentHint : clearWindowIdentity(currentHint, existing);
   const now = new Date().toISOString();
   const session = {
     ...existing,
     windowHint: nextHint,
-    targetBinding: existing.targetBinding?.type === "window" ? null : existing.targetBinding || null,
-    lastEvent: "WindowUnbound",
-    lastMessage: "Window binding cleared; AMO will ask again if routing is ambiguous",
+    targetBinding: isManagedLaunchWindowTarget(existing.targetBinding)
+      ? null
+      : existing.targetBinding?.type === "window"
+        ? null
+        : existing.targetBinding || null,
+    lastEvent: managedWindowHint ? existing.lastEvent : "WindowUnbound",
+    lastMessage: managedWindowHint
+      ? existing.lastMessage
+      : "Window binding cleared; AMO will ask again if routing is ambiguous",
     updatedAt: now,
-    eventCount: (existing.eventCount || 0) + 1,
+    eventCount: (existing.eventCount || 0) + (managedWindowHint ? 0 : 1),
   };
 
   sessions.set(sessionId, session);
-  recordDebugLog("broker", "window.unbind", {
+  recordDebugLog("broker", managedWindowHint ? "window.unbind_ignored" : "window.unbind", {
     sessionId,
     previousHwnd: currentHint.hwnd || null,
     previousPid: currentHint.pid || null,
+    reason: managedWindowHint ? "managed-launch" : null,
   });
   return {
     ok: true,
@@ -492,14 +486,8 @@ function clearSessionTargetBinding(sessionId) {
   }
 
   const currentTarget = existing.targetBinding || null;
-  const overlayBoundWindow =
-    existing.windowHint?.boundBy === "overlay-candidate-menu" ||
-    existing.windowHint?.boundBy === "overlay-target-menu";
-  const shouldClearWindow =
-    currentTarget?.type === "window" ||
-    overlayBoundWindow ||
-    (!currentTarget && Boolean(existing.windowHint?.hwnd || existing.windowHint?.pid));
-  const nextHint = shouldClearWindow ? clearWindowIdentity(existing.windowHint || {}, existing) : existing.windowHint || null;
+  const cleared = clearTargetBindingState(existing);
+  const nextHint = cleared.windowHint;
   const now = new Date().toISOString();
   const session = {
     ...existing,
@@ -516,7 +504,7 @@ function clearSessionTargetBinding(sessionId) {
     sessionId,
     previousType: currentTarget?.type || null,
     previousLabel: currentTarget?.label || null,
-    clearedWindow: shouldClearWindow,
+    clearedWindow: cleared.clearedWindow,
   });
 
   return {

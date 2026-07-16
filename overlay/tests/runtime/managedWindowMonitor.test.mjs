@@ -7,9 +7,14 @@ const vite = await createServer({
   appType: "custom",
   configFile: false,
   root: fileURLToPath(new URL("../..", import.meta.url)),
+  optimizeDeps: { noDiscovery: true },
   server: { middlewareMode: true },
 });
 const { ManagedWindowMonitor } = await vite.ssrLoadModule("/src/runtime/managedWindowMonitor.ts");
+const {
+  activationTargetForSession,
+  targetBindingForSession,
+} = await vite.ssrLoadModule("/src/domain/routingModel.ts");
 
 after(async () => {
   await vite.close();
@@ -155,4 +160,46 @@ test("the first title-token match persists a stable window identity", async () =
   assert.equal(resolved[0].candidate.hwnd, 101);
   assert.equal(requests[1].hwnd, 101);
   assert.equal(requests[1].pid, 202);
+});
+
+function sessionWithTarget(targetBinding, boundBy) {
+  return {
+    sessionId: "session-managed",
+    tool: "codex",
+    targetBinding,
+    windowHint: {
+      hwnd: 4242,
+      pid: 99,
+      process: "WindowsTerminal.exe",
+      boundBy,
+    },
+  };
+}
+
+test("managed window targets are hidden from explicit target UI", () => {
+  const session = sessionWithTarget({
+    type: "window",
+    hwnd: 4242,
+    processId: 99,
+    boundBy: "managed-launch",
+  }, "managed-launch");
+
+  assert.equal(targetBindingForSession(session), null);
+  const activationTarget = activationTargetForSession(session);
+  assert.equal(activationTarget.type, "window");
+  assert.equal(activationTarget.hwnd, 4242);
+  assert.equal(activationTarget.boundBy, "managed-launch");
+});
+
+test("manual window targets remain explicit and unbindable", () => {
+  const manualTarget = {
+    type: "window",
+    hwnd: 4242,
+    processId: 99,
+    boundBy: "overlay-target-menu",
+  };
+  const session = sessionWithTarget(manualTarget, "overlay-target-menu");
+
+  assert.equal(targetBindingForSession(session), manualTarget);
+  assert.equal(activationTargetForSession(session), manualTarget);
 });

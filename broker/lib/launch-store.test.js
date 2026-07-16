@@ -179,6 +179,62 @@ test("connected launch reconciliation removes redundant managed window targets",
   assert.equal(sessions.get(sessionId).windowHint.boundBy, "managed-launch");
 });
 
+test("reconciliation removes redundant managed targets from offline sessions", (t) => {
+  const { store } = createTestStore(t);
+  const sessionId = "session-offline";
+  const sessions = new Map([[sessionId, {
+    sessionId,
+    launchState: "offline",
+    targetBinding: {
+      type: "window",
+      hwnd: 4242,
+      processId: 99,
+      boundBy: "managed-launch",
+    },
+  }]]);
+
+  const changed = store.reconcileSessions(sessions);
+  assert.equal(changed.length, 1);
+  assert.equal(sessions.get(sessionId).targetBinding, null);
+  assert.equal(sessions.get(sessionId).launchState, "offline");
+});
+
+test("marking a managed session offline clears its redundant target", (t) => {
+  const { store } = createTestStore(t);
+  const sessionId = "session-managed";
+  const launch = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+  });
+  store.update(launch.launchId, {
+    state: "connected",
+    claimedSessionId: sessionId,
+    currentSessionId: sessionId,
+  });
+  const sessions = new Map([[sessionId, {
+    sessionId,
+    launchId: launch.launchId,
+    launchState: "connected",
+    windowHint: {
+      hwnd: 4242,
+      pid: 99,
+      boundBy: "managed-launch",
+    },
+    targetBinding: {
+      type: "window",
+      hwnd: 4242,
+      processId: 99,
+      boundBy: "managed-launch",
+    },
+  }]]);
+
+  store.markSessionOffline(sessionId, sessions, { launchId: launch.launchId });
+  assert.equal(sessions.get(sessionId).targetBinding, null);
+  assert.equal(sessions.get(sessionId).windowHint.hwnd, null);
+  assert.equal(sessions.get(sessionId).windowHint.pid, null);
+});
+
 test("resolved managed window identity is persisted and restored during reconciliation", (t) => {
   const { dataFile, store } = createTestStore(t);
   const sessionId = "session-managed";

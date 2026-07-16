@@ -31,7 +31,7 @@ export function useWindowBindDrag(options: UseWindowBindDragOptions) {
 
   function startWindowBindDrag(session: AgentSession, event: PointerEvent<HTMLElement>) {
     const currentTarget = targetBindingForSession(session);
-    if (currentTarget && currentTarget.type !== "codex-cli-session") {
+    if (currentTarget) {
       options.setFeedback("This card already has a target. Unbind it before dragging to a different window.");
       return;
     }
@@ -125,7 +125,7 @@ export function useWindowBindDrag(options: UseWindowBindDragOptions) {
     }
 
     const currentTarget = targetBindingForSession(session);
-    if (currentTarget && currentTarget.type !== "codex-cli-session") {
+    if (currentTarget) {
       options.setFeedback("This card already has a target binding.");
       return;
     }

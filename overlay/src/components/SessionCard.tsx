@@ -173,8 +173,8 @@ export function SessionRowContent({
     !managedLaunching &&
     (managedOffline || !session.launchId);
   const canOpenCodexAppAlternative = canResumeAsManaged && isCodexSession(session);
-  const canUnbindTarget = Boolean(targetBinding && targetBinding.type !== "codex-cli-session");
-  const canBindWindow = (!targetBinding || targetBinding.type === "codex-cli-session") && !managedConnected;
+  const canUnbindTarget = Boolean(targetBinding);
+  const canBindWindow = !targetBinding && !managedConnected;
   const archived = sessionArchived(session);
   const archiveActionBusy = archiving || dismissing;
   const codexAppAvailable = isCodexSession(session);

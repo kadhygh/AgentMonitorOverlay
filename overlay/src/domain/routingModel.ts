@@ -83,7 +83,11 @@ export function windowTargetForSession(session: AgentSession): TargetBinding | n
 }
 
 export function targetBindingForSession(session: AgentSession): TargetBinding | null {
-  return session.targetBinding ?? null;
+  const target = session.targetBinding ?? null;
+  if (target?.type === "window" && target.boundBy === "managed-launch") {
+    return null;
+  }
+  return target;
 }
 
 export function activationTargetForSession(session: AgentSession): TargetBinding | null {
