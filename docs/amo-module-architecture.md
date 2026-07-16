@@ -10,6 +10,7 @@ Use the surrounding documents for narrower questions:
 - `docs/project-structure.md`: where implementation files live.
 - `docs/runtime-architecture-v2.md`: how background runtime work stays outside the React interaction path.
 - `docs/workspace-managed-launch-plan.md`: managed CLI identity and lifecycle details.
+- `docs/managed-side-fork-plan.md`: persistent Codex side-chat forks, suppression, and parent/child lifecycle.
 - `docs/window-routing-notes.md`: Win32 discovery, candidate selection, and activation.
 - `docs/amo-obsidian-bridge-mvp.md`: note, Canvas, annotation, and return-to-target contracts.
 

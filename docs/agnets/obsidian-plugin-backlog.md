@@ -1,6 +1,6 @@
 # Obsidian Plugin Backlog
 
-Updated: 2026-05-21
+Updated: 2026-07-15
 
 This backlog is the working queue for the AMO Obsidian Plugin Agent. Items here are scoped to Obsidian plugin behavior unless they explicitly call out a broker or overlay contract.
 
@@ -14,6 +14,7 @@ This backlog is the working queue for the AMO Obsidian Plugin Agent. Items here 
 
 ## Next
 
+- Implement the first Codex CLI Managed Side Fork slice after approval of `docs/managed-side-fork-plan.md`; keep the Obsidian annotation entry for a later phase.
 - Introduce a narrow Canvas adapter module before adding more Canvas behavior, so private view/selection/focus calls are isolated and labeled.
 - Improve canvas selected note operations so selected note actions are visible and predictable.
 - Design a safe Canvas notecard display strategy before attempting to hide native properties inside Canvas file-node previews.
@@ -32,6 +33,20 @@ This backlog is the working queue for the AMO Obsidian Plugin Agent. Items here 
 - Branch a question from selected note text or selected canvas node.
 - Multi-agent/parallel CLI orchestration from an Obsidian canvas.
 - Plugin-managed permission request display, if the broker/overlay contract later supports it.
+
+## Active Design: Managed Side Fork
+
+The active provider-first design is `docs/managed-side-fork-plan.md`. The first implementation starts from an eligible Codex task card and launches a persistent managed fork through `codex fork`. The future Obsidian annotation action will reuse that Broker contract after the CLI workflow is stable.
+
+The core constraints from the earlier annotation-side investigation still apply:
+
+1. Capture an explicit parent provider session id and workspace.
+2. Start a dedicated managed CLI with a fresh `launchId` and `role: side-chat`.
+3. Keep child hooks out of normal task-card, generated-note, base-canvas, and parent-binding flows.
+4. Keep side status observable in a compact independent surface rather than making it completely invisible.
+5. Add the annotation source, selected text, and optional question only when the later Obsidian entry is implemented.
+
+Do not implement classification from title, PID, CWD, or timing guesses. A future explicit `Promote to task` action may remove suppression and create a normal card, but implicit promotion is not allowed.
 
 ## Open Questions
 
