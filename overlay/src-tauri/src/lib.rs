@@ -1,6 +1,7 @@
 mod broker;
 mod clipboard;
 mod dialogs;
+mod model_credentials;
 mod models;
 mod opener;
 mod scratchpad;
@@ -114,6 +115,61 @@ fn ensure_broker() -> BrokerEnsureResult {
 }
 
 #[tauri::command]
+async fn model_credential_status(provider_ids: Vec<String>) -> ModelCredentialStatus {
+    tauri::async_runtime::spawn_blocking(move || model_credentials::credential_status(provider_ids))
+        .await
+        .unwrap_or_else(|error| ModelCredentialStatus {
+            ok: false,
+            configured_provider_ids: Vec::new(),
+            message: format!("Credential status task failed: {error}"),
+        })
+}
+
+#[tauri::command]
+async fn save_model_credential(provider_id: String, api_key: String) -> ModelCredentialResult {
+    let fallback_provider_id = provider_id.clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        model_credentials::save_credential(provider_id, api_key)
+    })
+    .await
+    .unwrap_or_else(|error| ModelCredentialResult {
+        ok: false,
+        provider_id: fallback_provider_id,
+        configured: false,
+        api_key: None,
+        message: format!("Credential save task failed: {error}"),
+    })
+}
+
+#[tauri::command]
+async fn delete_model_credential(provider_id: String) -> ModelCredentialResult {
+    let fallback_provider_id = provider_id.clone();
+    tauri::async_runtime::spawn_blocking(move || model_credentials::delete_credential(provider_id))
+        .await
+        .unwrap_or_else(|error| ModelCredentialResult {
+            ok: false,
+            provider_id: fallback_provider_id,
+            configured: false,
+            api_key: None,
+            message: format!("Credential removal task failed: {error}"),
+        })
+}
+
+#[tauri::command]
+async fn resolve_model_credential(provider_id: String) -> ModelCredentialResult {
+    let fallback_provider_id = provider_id.clone();
+    tauri::async_runtime::spawn_blocking(move || model_credentials::resolve_credential(provider_id))
+        .await
+        .unwrap_or_else(|error| ModelCredentialResult {
+            ok: false,
+            provider_id: fallback_provider_id,
+            configured: false,
+            api_key: None,
+            message: format!("Credential read task failed: {error}"),
+        })
+}
+
+#[tauri::command]
 fn probe_session_window(
     session_id: String,
     tool: String,
@@ -221,6 +277,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             activate_session_window,
             ensure_broker,
+            model_credential_status,
+            save_model_credential,
+            delete_model_credential,
+            resolve_model_credential,
             list_session_window_candidates,
             probe_session_window,
             probe_session_windows,

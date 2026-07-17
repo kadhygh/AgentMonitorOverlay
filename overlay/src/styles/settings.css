@@ -391,3 +391,188 @@
   background: rgba(52, 111, 145, 0.55);
 }
 
+
+.settings-provider-list {
+  display: grid;
+  gap: 8px;
+}
+
+.settings-provider-card {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 7px;
+}
+
+.settings-provider-card > header {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.settings-provider-card > header > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.settings-provider-card > header strong {
+  color: #dcece7;
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.settings-provider-card > header span,
+.settings-provider-card > p,
+.settings-provider-card label > span {
+  color: #91a49d;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.settings-provider-card > header em {
+  flex: 0 0 auto;
+  color: #d4a56e;
+  font-size: 8px;
+  font-style: normal;
+  line-height: 12px;
+  text-transform: uppercase;
+}
+
+.settings-provider-card > header em.is-configured {
+  color: #6fe0be;
+}
+
+.settings-provider-card > p {
+  margin: 0;
+}
+
+.settings-provider-card label {
+  display: grid;
+  gap: 5px;
+}
+
+.settings-provider-card label > span {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.settings-provider-card input {
+  min-width: 0;
+  height: 32px;
+  padding: 0 9px;
+  color: #edf7f3;
+  background: rgba(8, 14, 17, 0.72);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 6px;
+  outline: none;
+  font: inherit;
+  font-size: 10px;
+}
+
+.settings-provider-card input:focus {
+  border-color: rgba(111, 224, 190, 0.46);
+  box-shadow: 0 0 0 2px rgba(111, 224, 190, 0.08);
+}
+
+.settings-provider-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.settings-provider-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 30px;
+  padding: 0 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+}
+
+.settings-provider-actions .settings-primary-action {
+  justify-self: auto;
+}
+
+.settings-danger-action {
+  color: #efb4b8;
+  background: rgba(255, 92, 104, 0.06);
+  border: 1px solid rgba(255, 92, 104, 0.18);
+}
+
+.settings-danger-action:hover:not(:disabled) {
+  color: #ffd8da;
+  background: rgba(255, 92, 104, 0.12);
+  border-color: rgba(255, 92, 104, 0.3);
+}
+
+.settings-provider-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+
+.settings-security-note {
+  display: flex;
+  align-items: start;
+  gap: 7px;
+  padding: 8px 9px;
+  color: #8fa39c;
+  background: rgba(111, 224, 190, 0.045);
+  border-left: 2px solid rgba(111, 224, 190, 0.4);
+  font-size: 9px;
+  line-height: 14px;
+}
+
+.settings-security-note svg {
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+:root[data-amo-theme="light"] .settings-provider-card {
+  color: #24342f;
+  background: rgba(244, 249, 247, 0.9);
+  border-color: rgba(42, 74, 64, 0.13);
+}
+
+:root[data-amo-theme="light"] .settings-provider-card > header strong {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .settings-provider-card > header span,
+:root[data-amo-theme="light"] .settings-provider-card > p,
+:root[data-amo-theme="light"] .settings-provider-card label > span,
+:root[data-amo-theme="light"] .settings-security-note {
+  color: #5d6f69;
+}
+
+:root[data-amo-theme="light"] .settings-provider-card > header em {
+  color: #8b5b2d;
+}
+
+:root[data-amo-theme="light"] .settings-provider-card > header em.is-configured {
+  color: #147e64;
+}
+
+:root[data-amo-theme="light"] .settings-provider-card input {
+  color: #17211f;
+  background: #ffffff;
+  border-color: rgba(42, 74, 64, 0.2);
+}
+
+:root[data-amo-theme="light"] .settings-danger-action {
+  color: #9a4048;
+  background: rgba(170, 53, 62, 0.06);
+  border-color: rgba(170, 53, 62, 0.2);
+}
+
+:root[data-amo-theme="light"] .settings-security-note {
+  background: rgba(18, 135, 105, 0.055);
+  border-left-color: rgba(18, 135, 105, 0.42);
+}

@@ -9,16 +9,12 @@ async function launchCliInTerminal({
   title,
   command,
   args = [],
+  cleanupPaths = [],
   environment = {},
   launchEnvironment = WINDOWS_POWERSHELL,
   recordDebugLog = null,
 }) {
-  const cliArgs = args.map(powershellSingleQuoted).join(" ");
-  const environmentAssignments = Object.entries(environment)
-    .filter(([, value]) => value !== null && value !== undefined && String(value).length > 0)
-    .map(([name, value]) => `$env:${name} = ${powershellSingleQuoted(value)}`)
-    .join("; ");
-  const commandLine = `${environmentAssignments ? `${environmentAssignments}; ` : ""}$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)}; & ${command}${cliArgs ? ` ${cliArgs}` : ""}`;
+  const commandLine = buildPowerShellCommandLine({ workspacePath, title, command, args, cleanupPaths });
   const powershellArgs = powershellNoExitEncodedArgs(commandLine);
   if (process.platform === "win32") {
     let selected = resolveCliLaunchEnvironment(launchEnvironment);
@@ -42,7 +38,7 @@ async function launchCliInTerminal({
         ...powershellArgs,
       ];
       try {
-        const result = await spawnDetached(selected.terminalExecutable, alacrittyArgs, workspacePath);
+        const result = await spawnDetached(selected.terminalExecutable, alacrittyArgs, workspacePath, { environment });
         return decorateLaunchResult(result, selected);
       } catch (error) {
         if (typeof recordDebugLog === "function") {
@@ -64,6 +60,7 @@ async function launchCliInTerminal({
       "-w",
       "new",
       "new-tab",
+      "--inheritEnvironment",
       "--title",
       title,
       "--suppressApplicationTitle",
@@ -73,7 +70,7 @@ async function launchCliInTerminal({
       ...powershellArgs,
     ];
     try {
-      const result = await spawnDetached("wt.exe", wtArgs, workspacePath);
+      const result = await spawnDetached("wt.exe", wtArgs, workspacePath, { environment });
       return decorateLaunchResult(result, selected);
     } catch (error) {
       if (typeof recordDebugLog === "function") {
@@ -85,11 +82,11 @@ async function launchCliInTerminal({
       }
     }
 
-    const result = await spawnDetached(selected.shellExecutable, powershellArgs, workspacePath);
+    const result = await spawnDetached(selected.shellExecutable, powershellArgs, workspacePath, { environment });
     return decorateLaunchResult(result, selected);
   }
 
-  const result = await spawnDetached(command, [], workspacePath);
+  const result = await spawnDetached(command, args, workspacePath, { environment });
   return {
     ...result,
     shell: null,
@@ -111,6 +108,25 @@ function decorateLaunchResult(result, selected) {
     requestedLaunchEnvironment: selected.requestedId,
     environmentFallback: selected.fallback,
   };
+}
+
+function buildPowerShellCommandLine({
+  workspacePath,
+  title,
+  command,
+  args = [],
+  cleanupPaths = [],
+}) {
+  const cliArgs = args.map(powershellSingleQuoted).join(" ");
+  const invocation = `& ${command}${cliArgs ? ` ${cliArgs}` : ""}`;
+  const prefix = `$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)};`;
+  const cleanupCommands = cleanupPaths
+    .filter((filePath) => typeof filePath === "string" && filePath.trim())
+    .map((filePath) => `Remove-Item -LiteralPath ${powershellSingleQuoted(filePath)} -Force -ErrorAction SilentlyContinue`);
+
+  return cleanupCommands.length > 0
+    ? `${prefix} try { ${invocation} } finally { ${cleanupCommands.join("; ")} }`
+    : `${prefix} ${invocation}`;
 }
 
 function powershellSingleQuoted(value) {
@@ -137,6 +153,7 @@ function spawnDetached(command, args, cwd, options = {}) {
         detached: true,
         stdio: "ignore",
         windowsHide: options.windowsHide ?? false,
+        env: launchProcessEnvironment(options.environment),
       });
     } catch (error) {
       reject(error);
@@ -163,7 +180,18 @@ function spawnDetached(command, args, cwd, options = {}) {
   });
 }
 
+function launchProcessEnvironment(environment = {}) {
+  const additions = Object.fromEntries(
+    Object.entries(environment)
+      .filter(([name, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && value !== null && value !== undefined && String(value).length > 0)
+      .map(([name, value]) => [name, String(value)]),
+  );
+  return { ...process.env, ...additions };
+}
+
 module.exports = {
+  buildPowerShellCommandLine,
   launchCliInTerminal,
+  launchProcessEnvironment,
   spawnDetached,
 };

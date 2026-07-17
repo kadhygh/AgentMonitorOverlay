@@ -58,6 +58,47 @@ pub(crate) struct BrokerEnsureResult {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct ModelCredentialStatus {
+    pub(crate) ok: bool,
+    pub(crate) configured_provider_ids: Vec<String>,
+    pub(crate) message: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct ModelCredentialResult {
+    pub(crate) ok: bool,
+    pub(crate) provider_id: String,
+    pub(crate) configured: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) api_key: Option<String>,
+    pub(crate) message: String,
+}
+
+impl ModelCredentialResult {
+    pub(crate) fn success(provider_id: String, configured: bool, message: String) -> Self {
+        Self {
+            ok: true,
+            provider_id,
+            configured,
+            api_key: None,
+            message,
+        }
+    }
+
+    pub(crate) fn error(provider_id: String, message: String) -> Self {
+        Self {
+            ok: false,
+            provider_id,
+            configured: false,
+            api_key: None,
+            message,
+        }
+    }
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ScratchpadShortcutResult {
     pub(crate) ok: bool,
     pub(crate) enabled: bool,

@@ -10,7 +10,7 @@ import {
   postBrokerJson,
 } from "../api/brokerClient";
 import { cliLaunchPreferencePayload } from "../native/cliLaunch";
-import { launchPanelPosition, workspacePanelPosition } from "../domain/overlaySessionUi";
+import { workspacePanelPosition } from "../domain/overlaySessionUi";
 import { projectName, workspacePathForSession } from "../domain/routingModel";
 import {
   workspaceLaunchLabel,
@@ -20,7 +20,7 @@ import {
 } from "../domain/workspaceModel";
 import type { CandidateMenuState } from "../components/CandidateMenu";
 import type { CleanConfirmState } from "../components/CleanConfirmDialog";
-import type { LaunchPanelState } from "../components/LaunchPanel";
+import type { LaunchPanelState, ManagedLaunchSelection } from "../components/LaunchPanel";
 import type { WorkspacePanelState } from "../components/WorkspacePanel";
 import type {
   AgentSession,
@@ -62,14 +62,14 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     await loadWorkspaceStatus(session);
   }
 
-  async function openLaunchPanel(session: AgentSession, x?: number, y?: number) {
-    const position = launchPanelPosition(x, y);
+  async function openLaunchPanel(session: AgentSession, _x?: number, _y?: number) {
+    const workspacePath = workspacePathForSession(session);
     options.setCandidateMenu(null);
     options.setWorkspacePanel(null);
     options.setLaunchPanel({
+      source: "card",
       session,
-      x: position.x,
-      y: position.y,
+      workspacePath,
       inspection: null,
       busy: "inspect",
       error: null,
@@ -81,7 +81,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     const workspacePath = workspacePathForSession(session);
     if (!workspacePath) {
       options.setLaunchPanel((current) =>
-        current && current.session.sessionId === session.sessionId
+        current && current.session?.sessionId === session.sessionId
           ? { ...current, busy: null, error: "No workspace path is linked to this card." }
           : current,
       );
@@ -89,7 +89,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     }
 
     options.setLaunchPanel((current) =>
-      current && current.session.sessionId === session.sessionId ? { ...current, busy: "inspect", error: null } : current,
+      current && current.session?.sessionId === session.sessionId ? { ...current, busy: "inspect", error: null } : current,
     );
 
     try {
@@ -97,7 +97,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         workspacePath,
       });
       options.setLaunchPanel((current) =>
-        current && current.session.sessionId === session.sessionId
+        current && current.session?.sessionId === session.sessionId
           ? { ...current, inspection, busy: null, error: null }
           : current,
       );
@@ -108,7 +108,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     } catch (error) {
       const message = (error as Error).message;
       options.setLaunchPanel((current) =>
-        current && current.session.sessionId === session.sessionId ? { ...current, busy: null, error: message } : current,
+        current && current.session?.sessionId === session.sessionId ? { ...current, busy: null, error: message } : current,
       );
       options.postDebugLog("workspace.launch_panel.inspect.error", {
         sessionId: session.sessionId,
@@ -118,8 +118,9 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     }
   }
 
-  async function launchProjectToolFromPanel(adapterId: LaunchPanelAdapterId) {
-    if (!options.launchPanel) return;
+  async function launchProjectToolFromPanel(selection: ManagedLaunchSelection) {
+    const adapterId: LaunchPanelAdapterId = selection.adapterId;
+    if (!options.launchPanel?.session) return;
 
     const session = options.launchPanel.session;
     const workspacePath = options.launchPanel.inspection?.workspacePath ?? workspacePathForSession(session);
@@ -137,7 +138,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
       return;
     }
 
-    options.setLaunchPanel((current) => (current ? { ...current, busy: adapterId, error: null } : current));
+    options.setLaunchPanel((current) => (current ? { ...current, busy: "launch", error: null } : current));
     options.setFeedback(
       `${adapterId === "codex-app" ? "Opening" : "Launching new"} ${workspaceLaunchLabel(adapterId)} for ${projectName(workspacePath)}...`,
     );
@@ -145,6 +146,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
       sessionId: session.sessionId,
       workspacePath,
       adapterId,
+      claudeProviderId: selection.claudeProvider?.presetId ?? null,
     });
 
     try {
@@ -152,6 +154,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         workspacePath,
         adapterId,
         sourceCardSessionId: session.sessionId,
+        claudeProvider: selection.claudeProvider,
         ...cliLaunchPreferencePayload(),
       });
       if (adapterId === "codex-app") {
@@ -195,7 +198,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         workspacePath,
       });
       options.setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
+        current && current.session?.sessionId === session.sessionId
           ? {
               ...current,
               status,
@@ -215,7 +218,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         ? "AMO broker is still running an older version. Restart AMO, then try Update plugin again."
         : rawMessage;
       options.setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
+        current && current.session?.sessionId === session.sessionId
           ? { ...current, busy: null, error: message }
           : current,
       );
@@ -246,7 +249,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         workspacePath,
       });
       options.setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
+        current && current.session?.sessionId === session.sessionId
           ? {
               ...current,
               status: result.after,
@@ -265,7 +268,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     } catch (error) {
       const message = (error as Error).message;
       options.setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
+        current && current.session?.sessionId === session.sessionId
           ? { ...current, busy: null, error: message }
           : current,
       );
@@ -296,7 +299,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         workspacePath,
       });
       options.setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
+        current && current.session?.sessionId === session.sessionId
           ? {
               ...current,
               status: result.after,
@@ -319,7 +322,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     } catch (error) {
       const message = (error as Error).message;
       options.setWorkspacePanel((current) =>
-        current && current.session.sessionId === session.sessionId
+        current && current.session?.sessionId === session.sessionId
           ? { ...current, busy: null, error: message }
           : current,
       );
@@ -385,7 +388,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
       );
       options.setWorkspacePanel((current) =>
-        current && current.session.sessionId === result.session.sessionId
+        current && current.session?.sessionId === result.session.sessionId
           ? {
               ...current,
               session: result.session,
@@ -403,7 +406,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     } catch (error) {
       const message = (error as Error).message;
       options.setWorkspacePanel((current) =>
-        current && current.session.sessionId === sessionId ? { ...current, busy: null, error: message } : current,
+        current && current.session?.sessionId === sessionId ? { ...current, busy: null, error: message } : current,
       );
       options.setFeedback(`Task name save failed: ${message}`);
       options.postDebugLog("session.task_title.save.error", {

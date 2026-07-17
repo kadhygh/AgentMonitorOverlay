@@ -342,6 +342,37 @@ Rules:
 - All session-level resume entries use the same session resume service.
 - UI components render availability; they do not implement launch policy independently.
 
+### Unified Launch Dialog And Claude Routing
+
+Workspace Run actions and the card header `+` action open the same launch dialog. Their context differs, but their launch policy does not:
+
+- Workspace context starts an independent project task and has no source card.
+- Card context starts an independent project task and shows the source card only as orientation.
+- Neither context reuses or resumes the source card session.
+- Resume remains a separate command and must not silently reuse the project-launch behavior.
+
+The dialog owns client selection. When `claude-cli` is selected, it also owns one mutually exclusive provider preset:
+
+- `anthropic-default`: use the existing Claude Code account and local configuration.
+- `deepseek-v4`: use the official DeepSeek Anthropic-compatible endpoint and V4 model mapping.
+- `glm-5.2`: use the official GLM Anthropic-compatible endpoint and 1M model mapping.
+
+Provider selection is radio-style, not a checkbox set. One Claude process can use only one endpoint/model mapping at launch time.
+
+Model settings and security rules:
+
+- The Settings `Models` section owns the default Claude provider and remembered provider credentials.
+- The default provider ID is an ordinary non-secret preference and may be stored in local storage.
+- Remembered DeepSeek and GLM keys are stored as generic credentials in Windows Credential Manager for the current Windows user.
+- Settings never reads a saved key back into an editable field. It exposes only configured/not-configured state and replace/clear commands.
+- The launch dialog selects the configured default, permits a one-launch override, and resolves a remembered key only when the user confirms launch.
+- The Broker validates a known preset and creates a per-launch Claude `--settings` file under `%LOCALAPPDATA%\AgentMonitorOverlay\runtime\claude-launches`.
+- That temporary file contains the selected provider mapping and key so command-line settings override conflicting user-level `~/.claude/settings.json` environment values.
+- The key is never embedded in PowerShell `-EncodedCommand`, workspace files, launch snapshots, session snapshots, local storage, or debug logs.
+- The temporary file is removed by the terminal wrapper as soon as Claude exits. Files left by a forced terminal/process shutdown are removed by best-effort stale cleanup after seven days.
+- Launch/session state may retain only non-secret `claudeProviderId` and `claudeModel` metadata.
+- Resume resolves the remembered key again and reuses the provider stored on the card, so provider routing remains stable across a managed resume.
+
 ChatGPT desktop keeps the `codex://` URL scheme for compatibility. AMO also keeps the serialized IDs `codex-app` and `codex-app-thread` so existing cards and bindings remain readable. These are compatibility identifiers, not the current user-facing product name.
 
 ## Primary Flows

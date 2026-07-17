@@ -175,13 +175,13 @@ export function useSessionActions(options: UseSessionActionsOptions) {
         previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
       );
       options.setCandidateMenu((current) =>
-        current?.session.sessionId === result.session.sessionId ? null : current,
+        current?.session?.sessionId === result.session.sessionId ? null : current,
       );
       options.setWorkspacePanel((current) =>
-        current?.session.sessionId === result.session.sessionId ? null : current,
+        current?.session?.sessionId === result.session.sessionId ? null : current,
       );
       options.setLaunchPanel((current) =>
-        current?.session.sessionId === result.session.sessionId ? null : current,
+        current?.session?.sessionId === result.session.sessionId ? null : current,
       );
       options.setFeedback(`Archived ${session.title}.`);
       options.postDebugLog("session.archive.ok", {
@@ -216,13 +216,13 @@ export function useSessionActions(options: UseSessionActionsOptions) {
       options.setSessions((previous) => previous.filter((item) => item.sessionId !== dismissedSessionId));
       options.setSessionOrder((previousOrder) => previousOrder.filter((sessionId) => sessionId !== dismissedSessionId));
       options.setCandidateMenu((current) =>
-        current?.session.sessionId === dismissedSessionId ? null : current,
+        current?.session?.sessionId === dismissedSessionId ? null : current,
       );
       options.setWorkspacePanel((current) =>
-        current?.session.sessionId === dismissedSessionId ? null : current,
+        current?.session?.sessionId === dismissedSessionId ? null : current,
       );
       options.setLaunchPanel((current) =>
-        current?.session.sessionId === dismissedSessionId ? null : current,
+        current?.session?.sessionId === dismissedSessionId ? null : current,
       );
       options.setFeedback(`Hidden ${session.title}.`);
       options.postDebugLog("session.dismiss.ok", {

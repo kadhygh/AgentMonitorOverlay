@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Bell, Bug, ClipboardPaste, Palette, Settings2, StickyNote, Terminal, X } from "lucide-react";
+import { Bell, BrainCircuit, Bug, ClipboardPaste, Palette, Settings2, StickyNote, Terminal, X } from "lucide-react";
 import { BROKER_CLI_ENVIRONMENTS_URL, getBrokerJson } from "../api/brokerClient";
+import { ModelSettingsBody } from "../components/ModelSettingsBody";
 import { useDebugLogging } from "../hooks/useDebugLogging";
 import {
   loadCliLaunchEnvironment,
@@ -9,6 +10,12 @@ import {
   type CliLaunchEnvironment,
 } from "../native/cliLaunch";
 import { loadCliSafePasteEnabled, saveCliSafePasteEnabled } from "../native/clipboard";
+import {
+  CLAUDE_PROVIDER_DEFINITIONS,
+  loadDefaultClaudeProvider,
+  saveDefaultClaudeProvider,
+  type ClaudeProviderPresetId,
+} from "../native/modelProviders";
 import {
   applyScratchpadShortcutState,
   loadScratchpadShortcutState,
@@ -29,7 +36,7 @@ import {
   useUtilityWindowLifecycle,
 } from "./utilityWindow";
 
-export type SettingsSection = "cli" | "scratchpad" | "clipboard" | "theme" | "notifications" | "debug";
+export type SettingsSection = "cli" | "models" | "scratchpad" | "clipboard" | "theme" | "notifications" | "debug";
 
 interface SettingsSidebarProps {
   settingsSection: SettingsSection;
@@ -47,6 +54,14 @@ export function SettingsSidebar({ settingsSection, onSettingsSectionChange }: Se
       >
         <Terminal size={13} aria-hidden="true" />
         <span>CLI</span>
+      </button>
+      <button
+        type="button"
+        className={`settings-nav-button ${settingsSection === "models" ? "is-active" : ""}`}
+        onClick={() => onSettingsSectionChange("models")}
+      >
+        <BrainCircuit size={13} aria-hidden="true" />
+        <span>Models</span>
       </button>
       <button
         type="button"
@@ -102,6 +117,7 @@ interface SettingsDetailHeaderProps {
   windowsNotificationsEnabled: boolean;
   cliLaunchEnvironment: CliLaunchEnvironment;
   cliEnvironmentOptions: CliEnvironmentOption[];
+  defaultClaudeProvider: ClaudeProviderPresetId;
 }
 
 function SettingsDetailHeader({
@@ -114,12 +130,16 @@ function SettingsDetailHeader({
   windowsNotificationsEnabled,
   cliLaunchEnvironment,
   cliEnvironmentOptions,
+  defaultClaudeProvider,
 }: SettingsDetailHeaderProps) {
   const selectedCliEnvironment = cliEnvironmentOptions.find((option) => option.id === cliLaunchEnvironment);
+  const defaultProvider = CLAUDE_PROVIDER_DEFINITIONS.find((provider) => provider.id === defaultClaudeProvider);
   const title =
     settingsSection === "cli"
       ? "CLI"
-      : settingsSection === "theme"
+      : settingsSection === "models"
+        ? "Models"
+        : settingsSection === "theme"
       ? "Theme"
       : settingsSection === "clipboard"
         ? "Clipboard"
@@ -137,7 +157,9 @@ function SettingsDetailHeader({
           : cliLaunchEnvironment === "powershell7"
             ? "PowerShell 7"
             : "Windows PowerShell 5.1"
-      : settingsSection === "theme"
+      : settingsSection === "models"
+        ? `${defaultProvider?.title || "Claude default"} default`
+        : settingsSection === "theme"
       ? amoTheme === "light"
         ? "Light"
         : "Dark"
@@ -429,6 +451,9 @@ interface SettingsDetailProps {
   cliEnvironmentOptions: CliEnvironmentOption[];
   cliEnvironmentLoading: boolean;
   cliEnvironmentError: string | null;
+  defaultClaudeProvider: ClaudeProviderPresetId;
+  onDefaultClaudeProviderChange: (providerId: ClaudeProviderPresetId) => void;
+  onFeedback: (message: string) => void;
   onScratchpadShortcutChange: (next: ScratchpadShortcutState) => void;
   onSafePasteEnabledChange: (enabled: boolean) => void;
   onOpenScratchpadNow: () => void;
@@ -453,6 +478,9 @@ export function SettingsDetail({
   cliEnvironmentOptions,
   cliEnvironmentLoading,
   cliEnvironmentError,
+  defaultClaudeProvider,
+  onDefaultClaudeProviderChange,
+  onFeedback,
   onScratchpadShortcutChange,
   onSafePasteEnabledChange,
   onOpenScratchpadNow,
@@ -475,6 +503,7 @@ export function SettingsDetail({
         windowsNotificationsEnabled={windowsNotificationsEnabled}
         cliLaunchEnvironment={cliLaunchEnvironment}
         cliEnvironmentOptions={cliEnvironmentOptions}
+        defaultClaudeProvider={defaultClaudeProvider}
       />
 
       {settingsSection === "cli" ? (
@@ -485,6 +514,12 @@ export function SettingsDetail({
           error={cliEnvironmentError}
           onLaunchEnvironmentChange={onCliLaunchEnvironmentChange}
           onRefresh={onRefreshCliEnvironments}
+        />
+      ) : settingsSection === "models" ? (
+        <ModelSettingsBody
+          defaultProviderId={defaultClaudeProvider}
+          onDefaultProviderChange={onDefaultClaudeProviderChange}
+          onFeedback={onFeedback}
         />
       ) : settingsSection === "scratchpad" ? (
         <ScratchpadSettingsBody
@@ -526,6 +561,9 @@ export function SettingsWindowApp() {
     loadScratchpadShortcutState(),
   );
   const [safePasteEnabled, setSafePasteEnabled] = useState(() => loadCliSafePasteEnabled());
+  const [defaultClaudeProvider, setDefaultClaudeProvider] = useState<ClaudeProviderPresetId>(() =>
+    loadDefaultClaudeProvider(),
+  );
   const [cliLaunchEnvironment, setCliLaunchEnvironment] = useState<CliLaunchEnvironment>(() =>
     loadCliLaunchEnvironment(),
   );
@@ -616,6 +654,13 @@ export function SettingsWindowApp() {
     setFeedback(`Managed CLI environment set to ${selected?.label || environment}.`);
   }
 
+  function updateDefaultClaudeProvider(providerId: ClaudeProviderPresetId) {
+    setDefaultClaudeProvider(providerId);
+    saveDefaultClaudeProvider(providerId);
+    const provider = CLAUDE_PROVIDER_DEFINITIONS.find((item) => item.id === providerId);
+    setFeedback(`Default Claude model routing set to ${provider?.title || providerId}.`);
+  }
+
   async function updateWindowsNotificationsEnabled(enabled: boolean) {
     setWindowsNotificationsEnabled(enabled);
     await saveWindowsNotificationsEnabled(enabled);
@@ -670,6 +715,9 @@ export function SettingsWindowApp() {
           cliEnvironmentOptions={cliEnvironmentOptions}
           cliEnvironmentLoading={cliEnvironmentLoading}
           cliEnvironmentError={cliEnvironmentError}
+          defaultClaudeProvider={defaultClaudeProvider}
+          onDefaultClaudeProviderChange={updateDefaultClaudeProvider}
+          onFeedback={setFeedback}
           onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
           onSafePasteEnabledChange={updateSafePasteEnabled}
           onOpenScratchpadNow={() => void openScratchpadNow()}

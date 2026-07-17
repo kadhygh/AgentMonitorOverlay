@@ -8,6 +8,12 @@ import {
 } from "../api/brokerClient";
 import { cliLaunchPreferencePayload } from "../native/cliLaunch";
 import {
+  isClaudeProviderPresetId,
+  resolveModelCredential,
+  type ClaudeProviderLaunchConfig,
+  type StoredClaudeProviderPresetId,
+} from "../native/modelProviders";
+import {
   activateSessionWindow,
   listSessionWindowCandidates,
   probeSessionWindow,
@@ -153,9 +159,19 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
     });
 
     try {
+      let claudeProvider: ClaudeProviderLaunchConfig | undefined;
+      const providerId = session.claudeProviderId ?? null;
+      if (
+        providerId
+        && providerId !== "anthropic-default"
+        && isClaudeProviderPresetId(providerId)
+      ) {
+        const apiKey = await resolveModelCredential(providerId as StoredClaudeProviderPresetId);
+        claudeProvider = { presetId: providerId, apiKey };
+      }
       const result = await postBrokerJson<WorkspaceLaunchResult & { duplicate?: boolean }>(
         brokerSessionResumeUrl(session.sessionId),
-        { ...cliLaunchPreferencePayload(), replacePending: true },
+        { ...cliLaunchPreferencePayload(), replacePending: true, claudeProvider },
       );
       if (result.session) {
         options.setSessions((previous) =>

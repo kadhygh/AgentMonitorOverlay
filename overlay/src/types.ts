@@ -79,6 +79,8 @@ export interface AgentSession {
   launchState?: string | null;
   launchRevision?: number | null;
   launchWindowResolvedAt?: string | null;
+  claudeProviderId?: string | null;
+  claudeModel?: string | null;
   vaultRoot?: string;
   lastReplyAt?: string;
   lastReplyNote?: string;
@@ -287,6 +289,9 @@ export interface WorkspaceLaunchResult {
   launchEnvironment?: string | null;
   requestedLaunchEnvironment?: string | null;
   environmentFallback?: boolean;
+  claudeProviderId?: string | null;
+  claudeProviderLabel?: string | null;
+  claudeModel?: string | null;
   windowHint?: WindowHint | null;
   targetBinding?: TargetBinding | null;
   session?: AgentSession | null;
@@ -377,6 +382,8 @@ export interface ManagedLaunch {
   createdAt: string;
   expiresAt?: string;
   claimedSessionId?: string | null;
+  claudeProviderId?: string | null;
+  claudeModel?: string | null;
 }
 
 export interface WorkspaceGitExcludeEntry {

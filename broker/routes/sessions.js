@@ -204,6 +204,7 @@ async function handleSessionRoutes(req, res, url, context) {
         sourceCardSessionId: sessionId,
         launchEnvironment: payload?.launchEnvironment,
         shellPreference: payload?.shellPreference,
+        claudeProvider: payload?.claudeProvider || payload?.claude_provider,
       },
       { launchStore: context.launchStore, recordDebugLog: context.recordDebugLog }
     );

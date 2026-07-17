@@ -356,6 +356,8 @@ function attachLaunchToSession(session, launch) {
     launchId: launch.launchId,
     launchState: launch.state,
     launchRevision: launch.bindingRevision || 1,
+    claudeProviderId: launch.claudeProviderId || null,
+    claudeModel: launch.claudeModel || null,
     targetBinding: isManagedLaunchWindowTarget(session.targetBinding) ? null : session.targetBinding || null,
     windowHint: {
       ...(session.windowHint || {}),

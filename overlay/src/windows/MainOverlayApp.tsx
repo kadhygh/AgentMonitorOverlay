@@ -141,14 +141,14 @@ export function MainOverlayApp() {
   } = useBrokerSessions({
     autoCopyAndFocusPendingPrompt,
     clearLaunchPanelForSession: (sessionId) =>
-      setLaunchPanel((current) => (current?.session.sessionId === sessionId ? null : current)),
+      setLaunchPanel((current) => (current?.session?.sessionId === sessionId ? null : current)),
     clearSessionMenus: () => {
       setCandidateMenu(null);
       setWorkspacePanel(null);
       setLaunchPanel(null);
     },
     clearWorkspacePanelForSession: (sessionId) =>
-      setWorkspacePanel((current) => (current?.session.sessionId === sessionId ? null : current)),
+      setWorkspacePanel((current) => (current?.session?.sessionId === sessionId ? null : current)),
     onStartupRefreshSettled: () => {
       void refreshDebugStatus();
     },
@@ -696,7 +696,7 @@ export function MainOverlayApp() {
             <LaunchPanel
               state={launchPanel}
               onClose={() => setLaunchPanel(null)}
-              onLaunch={(adapterId) => void launchProjectToolFromPanel(adapterId)}
+              onLaunch={(selection) => void launchProjectToolFromPanel(selection)}
             />
           ) : null}
           {workspacePanel ? (

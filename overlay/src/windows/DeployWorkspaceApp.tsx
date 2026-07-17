@@ -14,6 +14,7 @@ import {
   getBrokerJson,
   postBrokerJson,
 } from "../api/brokerClient";
+import { LaunchPanel, type LaunchPanelState, type ManagedLaunchSelection } from "../components/LaunchPanel";
 import {
   DeployAdaptersSection,
   DeployResultFooter,
@@ -63,6 +64,7 @@ export function DeployWorkspaceApp() {
   const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | "clean" | null>(null);
   const [gitExcludeBusy, setGitExcludeBusy] = useState(false);
   const [launchBusy, setLaunchBusy] = useState<string | null>(null);
+  const [launchPanel, setLaunchPanel] = useState<LaunchPanelState | null>(null);
   const [gitRootPath, setGitRootPath] = useState("");
   const [gitExcludeResult, setGitExcludeResult] = useState<WorkspaceGitExcludeResult | null>(null);
   const [includeClaudeSettingsExclude, setIncludeClaudeSettingsExclude] = useState(false);
@@ -476,14 +478,34 @@ export function DeployWorkspaceApp() {
     }
   }
 
-  async function launchWorkspace(adapterId: string) {
+  function openLaunchDialog(adapterId: string) {
     const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
+    if (!targetPath || !workspaceInspection) {
+      setFeedback("Check a deployed workspace before launching a task.");
+      return;
+    }
+
+    setLaunchPanel({
+      source: "workspace",
+      session: null,
+      workspacePath: targetPath,
+      inspection: workspaceInspection,
+      initialAdapterId: adapterId as LaunchPanelState["initialAdapterId"],
+      busy: null,
+      error: null,
+    });
+  }
+
+  async function launchWorkspace(selection: ManagedLaunchSelection) {
+    const targetPath = launchPanel?.workspacePath;
     if (!targetPath) {
       setFeedback("Workspace path is required.");
       return;
     }
 
+    const adapterId = selection.adapterId;
     setLaunchBusy(adapterId);
+    setLaunchPanel((current) => (current ? { ...current, busy: "launch", error: null } : current));
     const label =
       adapterId === "codex-cli" ? "Codex CLI" : adapterId === "claude-cli" ? "Claude CLI" : "ChatGPT";
     setFeedback(`Launching ${label}...`);
@@ -492,6 +514,7 @@ export function DeployWorkspaceApp() {
       const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
         workspacePath: targetPath,
         adapterId,
+        claudeProvider: selection.claudeProvider,
         ...cliLaunchPreferencePayload(),
       });
       if (adapterId === "codex-app") {
@@ -502,16 +525,21 @@ export function DeployWorkspaceApp() {
       void postUtilityDebugLog("workspace.launch.ok", {
         workspacePath: result.workspacePath,
         adapterId: result.adapterId,
+        claudeProviderId: selection.claudeProvider?.presetId ?? null,
         pid: result.pid ?? null,
       });
       setFeedback(result.message);
+      setLaunchPanel(null);
     } catch (error) {
+      const message = (error as Error).message;
       void postUtilityDebugLog("workspace.launch.error", {
         workspacePath: targetPath,
         adapterId,
-        message: (error as Error).message,
+        claudeProviderId: selection.claudeProvider?.presetId ?? null,
+        message,
       });
-      setFeedback(`Launch failed: ${(error as Error).message}`);
+      setLaunchPanel((current) => (current ? { ...current, busy: null, error: message } : current));
+      setFeedback(`Launch failed: ${message}`);
     } finally {
       setLaunchBusy(null);
     }
@@ -682,7 +710,7 @@ export function DeployWorkspaceApp() {
               );
             }}
             onDeployAdapter={(adapterId) => void enrollWorkspace([adapterId])}
-            onLaunchWorkspace={(adapterId) => void launchWorkspace(adapterId)}
+            onLaunchWorkspace={(adapterId) => openLaunchDialog(adapterId)}
           />
         </div>
 
@@ -692,11 +720,18 @@ export function DeployWorkspaceApp() {
             feedback={feedback}
             deployBusy={deployBusy}
             launchBusy={launchBusy}
-            onLaunchWorkspace={(adapterId) => void launchWorkspace(adapterId)}
+            onLaunchWorkspace={(adapterId) => openLaunchDialog(adapterId)}
             onOpenDeploymentPath={(path, label) => void openDeploymentPath(path, label)}
           />
         </footer>
       </section>
+      {launchPanel ? (
+        <LaunchPanel
+          state={launchPanel}
+          onClose={() => setLaunchPanel(null)}
+          onLaunch={(selection) => void launchWorkspace(selection)}
+        />
+      ) : null}
     </main>
   );
 }

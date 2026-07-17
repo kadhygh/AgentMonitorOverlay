@@ -6,6 +6,11 @@ const { normalizeText } = require("./normalize");
 const { prepareChatGptWorkspaceLaunch } = require("./chatgpt-desktop");
 const { launchCliInTerminal } = require("./terminal-launch");
 const { normalizeCliLaunchEnvironment } = require("./cli-environments");
+const { resolveClaudeProvider } = require("./claude-provider");
+const {
+  cleanupClaudeLaunchSettings,
+  createClaudeLaunchSettings,
+} = require("./claude-launch-settings");
 
 async function launchWorkspace(payload, options = {}) {
   const recordDebugLog = typeof options.recordDebugLog === "function" ? options.recordDebugLog : () => {};
@@ -24,6 +29,9 @@ async function launchWorkspace(payload, options = {}) {
   if (adapterId !== "codex-app" && !launchStore) {
     throw httpError(503, "managed_launch_unavailable", "AMO cannot launch a CLI without its managed launch store");
   }
+  const claudeProvider = adapterId === "claude-cli"
+    ? resolveClaudeProvider(payload?.claudeProvider || payload?.claude_provider)
+    : null;
 
   const amoRoot = path.join(workspacePath, AMO_DIR);
   const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
@@ -63,6 +71,7 @@ async function launchWorkspace(payload, options = {}) {
         AMO_REQUESTED_SESSION_ID: resumeSessionId,
       }
     : {};
+  let claudeLaunchSettings = null;
   let launch;
   try {
     if (managedLaunch) launchStore.update(managedLaunch.launchId, { state: "spawning" });
@@ -77,11 +86,22 @@ async function launchWorkspace(payload, options = {}) {
         recordDebugLog,
       });
     } else if (adapterId === "claude-cli") {
+      claudeLaunchSettings = createClaudeLaunchSettings({
+        launchId: managedLaunch.launchId,
+        provider: claudeProvider,
+      });
+      const claudeArgs = [
+        ...(claudeLaunchSettings
+          ? ["--settings", claudeLaunchSettings.filePath, "--model", claudeProvider.model]
+          : []),
+        ...(resumeSessionId ? ["--resume", resumeSessionId] : []),
+      ];
       launch = await launchCliInTerminal({
         workspacePath,
         title,
         command: "claude",
-        args: resumeSessionId ? ["--resume", resumeSessionId] : [],
+        args: claudeArgs,
+        cleanupPaths: claudeLaunchSettings ? [claudeLaunchSettings.filePath] : [],
         environment,
         launchEnvironment,
         recordDebugLog,
@@ -99,9 +119,14 @@ async function launchWorkspace(payload, options = {}) {
         terminal: launch.terminal || null,
         terminalExecutable: launch.terminalExecutable || null,
         shellExecutable: launch.shell || null,
+        claudeProviderId: claudeProvider?.id || null,
+        claudeModel: claudeProvider?.model || null,
       });
     }
   } catch (error) {
+    if (claudeLaunchSettings) {
+      cleanupClaudeLaunchSettings(claudeLaunchSettings.filePath, claudeLaunchSettings.rootDir);
+    }
     if (managedLaunch) launchStore.update(managedLaunch.launchId, { state: "failed", error: error.message || String(error) });
     throw error;
   }
@@ -122,6 +147,8 @@ async function launchWorkspace(payload, options = {}) {
     launchEnvironment: launch.launchEnvironment || null,
     requestedLaunchEnvironment: launch.requestedLaunchEnvironment || launchEnvironment,
     environmentFallback: Boolean(launch.environmentFallback),
+    claudeProviderId: claudeProvider?.id || null,
+    claudeModel: claudeProvider?.model || null,
   });
 
   return {
@@ -141,6 +168,9 @@ async function launchWorkspace(payload, options = {}) {
     launchEnvironment: launch.launchEnvironment || null,
     requestedLaunchEnvironment: launch.requestedLaunchEnvironment || launchEnvironment,
     environmentFallback: Boolean(launch.environmentFallback),
+    claudeProviderId: claudeProvider?.id || null,
+    claudeProviderLabel: claudeProvider?.label || null,
+    claudeModel: claudeProvider?.model || null,
     launch: managedLaunch ? launchStore.list().find((item) => item.launchId === managedLaunch.launchId) : null,
     windowHint: managedLaunch ? {
       title,
