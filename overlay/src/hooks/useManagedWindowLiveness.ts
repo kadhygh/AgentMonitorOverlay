@@ -21,6 +21,7 @@ function managedWindowTargets(sessions: AgentSession[]): ManagedWindowTarget[] {
   return sessions
     .filter(
       (session) =>
+        !session.archivedAt &&
         session.launchId &&
         session.launchState === "connected" &&
         session.windowHint?.boundBy === "managed-launch" &&

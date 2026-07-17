@@ -4,7 +4,7 @@ import { isCodexSession } from "./routingModel";
 const CODEX_ACTION_REQUIRED_TITLE_PATTERN = /\[\s*!\s*\]\s*Action Required/i;
 
 export function shouldProbeCodexActionRequired(session: AgentSession) {
-  if (!isCodexSession(session)) return false;
+  if (session.archivedAt || !isCodexSession(session)) return false;
   if (session.state === "waiting_permission" || session.state === "waiting_user") return false;
   if (session.state !== "running" && session.state !== "starting") return false;
   return Boolean(session.windowHint?.hwnd || session.windowHint?.pid);

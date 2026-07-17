@@ -14,6 +14,7 @@ import {
   Search,
   Settings2,
   SquareTerminal,
+  Trash2,
   X,
 } from "lucide-react";
 import {
@@ -48,6 +49,7 @@ import {
   brokerReadinessLabels,
   type BrokerReadiness,
 } from "../components/BrokerReadinessPanel";
+import { ArchiveClearConfirmDialog } from "../components/ArchiveClearConfirmDialog";
 import { CandidateMenu, type CandidateMenuState } from "../components/CandidateMenu";
 import { CleanConfirmDialog, type CleanConfirmState } from "../components/CleanConfirmDialog";
 import { LaunchPanel, type LaunchPanelState } from "../components/LaunchPanel";
@@ -113,6 +115,7 @@ export function MainOverlayApp() {
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
   const [launchPanel, setLaunchPanel] = useState<LaunchPanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
+  const [archiveClearConfirmOpen, setArchiveClearConfirmOpen] = useState(false);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const orderedSessionsRef = useRef<AgentSession[]>([]);
   const actionRequiredProbeHandlerRef = useRef<((candidateSessions: AgentSession[], reason: string) => Promise<void>) | null>(null);
@@ -230,7 +233,9 @@ export function MainOverlayApp() {
   const {
     archiveSession,
     archivingSessionId,
+    clearArchivedSessions,
     clearSessionAttentionAfterActivation,
+    clearingArchive,
     clearWindowBinding,
     dismissingSessionId,
     dismissSession,
@@ -531,7 +536,13 @@ export function MainOverlayApp() {
                   <strong>{attentionCount} need attention</strong>
                   {reviewCount > 0 ? <strong className="summary-review">{reviewCount} review</strong> : null}
                   {archiveCount > 0 ? <em>{archiveCount} archive</em> : null}
-                  {sessionFilter !== "all" || sessionSearch.trim() ? <em>{filteredSessions.length} shown</em> : null}
+                  {sessionFilter !== "all" || sessionSearch.trim() ? (
+                    <em>
+                      {orderedSessions.length === filteredSessions.length
+                        ? filteredSessions.length + " shown"
+                        : orderedSessions.length + " of " + filteredSessions.length + " shown"}
+                    </em>
+                  ) : null}
                 </>
               ) : (
                 <>
@@ -557,6 +568,17 @@ export function MainOverlayApp() {
                     {filter === "archive" ? <Archive size={12} aria-hidden="true" /> : null}
                   </button>
                 ))}
+                {sessionFilter === "archive" && archiveCount > 0 ? (
+                  <button
+                    type="button"
+                    className="summary-clear-archive-button"
+                    title="Clear archive"
+                    aria-label={"Clear " + archiveCount + " archived cards"}
+                    onClick={() => setArchiveClearConfirmOpen(true)}
+                  >
+                    <Trash2 size={12} aria-hidden="true" />
+                  </button>
+                ) : null}
                 <label className="summary-search" title="Search cards">
                   <Search size={11} aria-hidden="true" />
                   <input
@@ -719,6 +741,21 @@ export function MainOverlayApp() {
               onClose={closeObsidianVaultRecovery}
               onOpenFolder={() => void openRecoveryVaultFolder()}
               onCopyPath={() => void copyRecoveryVaultPath()}
+            />
+          ) : null}
+
+          {archiveClearConfirmOpen ? (
+            <ArchiveClearConfirmDialog
+              count={archiveCount}
+              busy={clearingArchive}
+              onClose={() => {
+                if (!clearingArchive) setArchiveClearConfirmOpen(false);
+              }}
+              onConfirm={() => {
+                void clearArchivedSessions().then((cleared) => {
+                  if (cleared) setArchiveClearConfirmOpen(false);
+                });
+              }}
             />
           ) : null}
 

@@ -1,5 +1,6 @@
 import { useState, type Dispatch, type SetStateAction } from "react";
 import {
+  BROKER_DISMISS_ARCHIVED_URL,
   brokerSessionArchiveUrl,
   brokerSessionAttentionClearedUrl,
   brokerSessionDismissUrl,
@@ -31,6 +32,7 @@ export function useSessionActions(options: UseSessionActionsOptions) {
   const [reviewingSessionId, setReviewingSessionId] = useState<string | null>(null);
   const [dismissingSessionId, setDismissingSessionId] = useState<string | null>(null);
   const [archivingSessionId, setArchivingSessionId] = useState<string | null>(null);
+  const [clearingArchive, setClearingArchive] = useState(false);
 
   async function clearWindowBinding(session: AgentSession) {
     setUnbindingWindowId(session.sessionId);
@@ -199,6 +201,49 @@ export function useSessionActions(options: UseSessionActionsOptions) {
     }
   }
 
+  async function clearArchivedSessions() {
+    setClearingArchive(true);
+    options.setFeedback("Clearing archived cards...");
+    options.postDebugLog("session.archive_clear.start", {});
+
+    try {
+      const result = await postBrokerJson<{
+        ok: boolean;
+        count: number;
+        sessionIds: string[];
+      }>(
+        BROKER_DISMISS_ARCHIVED_URL,
+        { reason: "user-clear-archive" },
+      );
+      const dismissedIds = new Set(result.sessionIds || []);
+      options.setSessions((previous) =>
+        previous.filter((session) => !dismissedIds.has(session.sessionId)),
+      );
+      options.setSessionOrder((previousOrder) =>
+        previousOrder.filter((sessionId) => !dismissedIds.has(sessionId)),
+      );
+      options.setCandidateMenu(null);
+      options.setWorkspacePanel(null);
+      options.setLaunchPanel(null);
+      options.setFeedback(
+        result.count > 0
+          ? "Cleared " + result.count + " archived card" + (result.count === 1 ? "." : "s.")
+          : "Archive is already empty.",
+      );
+      options.postDebugLog("session.archive_clear.ok", {
+        count: result.count,
+      });
+      return true;
+    } catch (error) {
+      const message = (error as Error).message;
+      options.setFeedback("Clear archive failed: " + message);
+      options.postDebugLog("session.archive_clear.error", { message });
+      return false;
+    } finally {
+      setClearingArchive(false);
+    }
+  }
+
   async function dismissSession(session: AgentSession) {
     setDismissingSessionId(session.sessionId);
     options.setFeedback(`Hiding ${session.title}...`);
@@ -243,8 +288,10 @@ export function useSessionActions(options: UseSessionActionsOptions) {
   return {
     archiveSession,
     archivingSessionId,
+    clearArchivedSessions,
     clearSessionAttentionAfterActivation,
     clearWindowBinding,
+    clearingArchive,
     dismissingSessionId,
     dismissSession,
     markSessionReviewed,

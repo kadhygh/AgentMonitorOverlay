@@ -55,10 +55,9 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         throw new Error("broker response has no sessions");
       }
 
-      const visibleSessions = nextSessions.slice(0, 8);
-      setSessions(visibleSessions);
-      sessionsRef.current = visibleSessions;
-      setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, visibleSessions));
+      setSessions(nextSessions);
+      sessionsRef.current = nextSessions;
+      setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, nextSessions));
       setBrokerReadiness({
         state: "ready",
         message: "Broker ready",
@@ -67,13 +66,13 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
       setLastRefreshAt(new Date().toISOString());
       setHasLoadedSessionSnapshot(true);
       setFeedback(nextSessions.length > 0 ? `Broker sessions loaded: ${nextSessions.length}` : "No active broker sessions.");
-      void options.reconcileCodexActionRequired(visibleSessions, reason);
+      void options.reconcileCodexActionRequired(nextSessions, reason);
       if (shouldLog) {
         void options.postDebugLog("sessions.refresh.ok", {
           reason,
           durationMs: Math.round(performance.now() - startedAt),
           sessionCount: nextSessions.length,
-          visibleSessionCount: visibleSessions.length,
+          trackedSessionCount: nextSessions.length,
         });
       }
     } catch (error) {
@@ -172,7 +171,25 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
           brokerToOverlayMs:
             typeof payload.brokerPublishedAtMs === "number" ? receivedAtMs - payload.brokerPublishedAtMs : null,
         });
-        if (eventReason === "dismiss-all") {
+        if (eventReason === "dismiss-archived") {
+          const archivedIds = new Set(
+            sessionsRef.current
+              .filter((session) => Boolean(session.archivedAt))
+              .map((session) => session.sessionId),
+          );
+          const nextSessions = sessionsRef.current.filter((session) => !archivedIds.has(session.sessionId));
+          sessionsRef.current = nextSessions;
+          setSessions(nextSessions);
+          setSessionOrder((previousOrder) =>
+            previousOrder.filter((sessionId) => !archivedIds.has(sessionId)),
+          );
+          options.clearSessionMenus();
+          setLastRefreshAt(new Date().toISOString());
+          options.postDebugLog("session_event.dismiss_archived_applied", {
+            sequence: payload.sequence ?? null,
+            durationMs: Math.round(performance.now() - applyStartedAt),
+          });
+        } else if (eventReason === "dismiss-all") {
           setSessions([]);
           sessionsRef.current = [];
           setSessionOrder([]);

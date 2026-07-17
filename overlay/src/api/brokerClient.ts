@@ -1,5 +1,6 @@
 export const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
 export const BROKER_SESSION_EVENTS_URL = "http://127.0.0.1:17654/api/session-events";
+export const BROKER_DISMISS_ARCHIVED_URL = "http://127.0.0.1:17654/api/sessions/dismiss-archived";
 export const BROKER_OBSIDIAN_REGISTER_VAULT_URL = "http://127.0.0.1:17654/api/obsidian/register-vault";
 export const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 export const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";

@@ -535,6 +535,33 @@ function createSessionStore({
     };
   }
 
+  function dismissArchivedSessions(payload = {}) {
+    const now = new Date().toISOString();
+    const reason = normalizeText(payload.reason) || "user-clear-archive";
+    const sessionIds = [];
+
+    for (const [sessionId, session] of sessions) {
+      if (!session.archivedAt) continue;
+      sessions.delete(sessionId);
+      sessionIds.push(sessionId);
+    }
+
+    recordDebugLog("broker", "session.dismissed_archived", {
+      count: sessionIds.length,
+      reason,
+      remainingSessionCount: sessions.size,
+    });
+
+    return {
+      ok: true,
+      schemaVersion: AMO_SCHEMA_VERSION,
+      dismissedAt: now,
+      reason,
+      count: sessionIds.length,
+      sessionIds,
+    };
+  }
+
   function dismissAllSessions(payload = {}) {
     const now = new Date().toISOString();
     const reason = normalizeText(payload.reason) || "user-clear";
@@ -617,6 +644,7 @@ function createSessionStore({
     updateSessionTaskTitle,
     archiveSession,
     dismissSession,
+    dismissArchivedSessions,
     dismissAllSessions,
     listSessions,
     loadSnapshot,

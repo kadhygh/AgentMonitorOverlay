@@ -8,6 +8,14 @@ async function handleSessionRoutes(req, res, url, context) {
     });
   }
 
+  if (req.method === "POST" && url.pathname === "/api/sessions/dismiss-archived") {
+    const payload = await readJsonBody(req, { allowEmpty: true });
+    const result = context.dismissArchivedSessions(payload || {});
+    context.persistSnapshot();
+    context.publishSessionChanged("dismiss-archived", null);
+    return sendHandled(res, 200, result);
+  }
+
   if (req.method === "POST" && url.pathname === "/api/sessions/dismiss-all") {
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissAllSessions(payload || {});

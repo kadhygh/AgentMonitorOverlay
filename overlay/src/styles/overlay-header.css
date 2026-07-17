@@ -248,6 +248,26 @@
   border-color: rgba(57, 208, 165, 0.32);
 }
 
+.summary-clear-archive-button {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  min-height: 22px;
+  padding: 0;
+  color: #d9aaa9;
+  background: rgba(205, 76, 82, 0.08);
+  border: 1px solid rgba(225, 104, 110, 0.16);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.summary-clear-archive-button:hover,
+.summary-clear-archive-button:focus-visible {
+  color: #ffd9d9;
+  background: rgba(205, 76, 82, 0.16);
+  border-color: rgba(225, 104, 110, 0.3);
+}
+
 .summary-search {
   display: flex;
   align-items: center;
