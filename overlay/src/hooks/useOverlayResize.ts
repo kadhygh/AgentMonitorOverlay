@@ -30,13 +30,15 @@ export function useOverlayResize(options: UseOverlayResizeOptions) {
     event.currentTarget.setPointerCapture(event.pointerId);
 
     try {
-      const size = await getCurrentWindow().innerSize();
+      const window = getCurrentWindow();
+      const [physicalSize, scaleFactor] = await Promise.all([window.innerSize(), window.scaleFactor()]);
+      const logicalSize = physicalSize.toLogical(scaleFactor);
       resizeRef.current = {
         mode,
         startScreenX: event.screenX,
         startScreenY: event.screenY,
-        startWidth: size.width,
-        startHeight: size.height,
+        startWidth: logicalSize.width,
+        startHeight: logicalSize.height,
       };
       setIsResizing(true);
       options.setFeedback("Resizing overlay.");
