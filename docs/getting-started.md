@@ -73,7 +73,7 @@ When deployment succeeds, the workspace appears in the left column, adapter rows
 
 Optional actions in the center column serve different purposes:
 
-- **Choose Git / Add exclude** writes local exclusions for AMO-generated files when the project belongs to a Git repository.
+- **Choose Git / Add exclude** writes local exclusions for AMO-generated files when the project belongs to a Git repository. Select the repository root containing `.git` when it is not detected automatically, optionally enable **Also exclude `.claude\settings.local.json`**, and then select **Add exclude**. AMO writes `.amo/`, `.codex/cache/`, and `.codex/hooks.json` to that clone's `.git/info/exclude`; it does not modify the shared `.gitignore`. A **Covered** result means the local rules are active. Files that Git already tracks remain tracked and must be reviewed and removed from the index separately when that is the intended repository policy.
 - **Project notes / Deploy mapping** exposes an existing project documentation folder inside the AMO Vault.
 - **Clear Generated** removes generated AMO content; do not use it as a normal update action.
 
@@ -112,7 +112,7 @@ Use a launch action from Workspace Center or a task card. In a deployed adapter 
 
 ![Choose a deployed client and launch a Managed CLI](assets/getting-started/launch-managed-client.png)
 
-AMO injects a launch identity and records the managed window so later hooks can claim the correct task card.
+AMO injects a launch identity and records the managed window so later hooks can claim the correct task card. Launching the terminal does **not** create a task card immediately. At this point AMO stores a pending launch identity; the card is created, or reconnected to an existing session card, only after that CLI emits its first AMO-recognized session hook. An idle terminal with no prompt, permission, tool, or reply interaction therefore has no new card by design.
 
 ### Claude Model Routing: GLM And DeepSeek
 
@@ -141,9 +141,9 @@ To use or override the preset for one session:
 
 The provider environment applies only to that Managed Claude CLI process. AMO does not rewrite the user's global Claude Code configuration. Saved keys remain in Windows Credential Manager for the current Windows user; at launch, the selected key and routing variables are copied into a temporary Claude settings file that is removed when Claude exits. They are not stored in localStorage, Broker state, project files, or logs.
 
-A CLI started manually can still produce hook cards, but AMO may require an explicit window choice or drag-to-bind action because the hook alone cannot always identify a Windows Terminal tab or pane.
+A CLI started manually can still produce hook cards after it emits a supported hook, but AMO may require an explicit window choice or drag-to-bind action because the hook alone cannot always identify a Windows Terminal tab or pane.
 
-Start one conversation and wait for its reply hook. The card should move through the running lifecycle and end in Review when a reply is ready.
+Start one conversation and wait for its first hook interaction. The matching task card should then appear and move through the running lifecycle; it ends in Review when a reply is ready.
 
 The terminal starts in the selected project directory. After a reply hook arrives, the matching AMO card exposes **Seen**, **Note**, **Canvas**, and **CLI**. A **Review** state means a reply is ready for human attention; opening the CLI alone does not replace reviewing or handling the reply.
 
