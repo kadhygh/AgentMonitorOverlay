@@ -1,6 +1,6 @@
 param(
-    [ValidateSet("Source", "Portable")]
-    [string]$Mode = "Source",
+    [ValidateSet("Stable", "Source", "Portable")]
+    [string]$Mode = "Stable",
     [switch]$DebugMode,
     [switch]$SkipDependencyInstall
 )
@@ -9,6 +9,12 @@ $ErrorActionPreference = "Stop"
 $repoRoot = (Resolve-Path $PSScriptRoot).Path
 $overlayRoot = Join-Path $repoRoot "overlay"
 $localConfigPath = Join-Path $repoRoot "amo.local.json"
+
+# Some managed shells inject both Path and PATH. Start-Process treats those as
+# duplicate dictionary keys, so normalize them before launching child processes.
+$processPath = [string][Environment]::GetEnvironmentVariable("Path", "Process")
+[Environment]::SetEnvironmentVariable("PATH", $null, "Process")
+[Environment]::SetEnvironmentVariable("Path", $processPath, "Process")
 
 Remove-Item Env:AGENT_MONITOR_SHORTCUT_PROFILE -ErrorAction SilentlyContinue
 Remove-Item Env:VITE_AMO_SHORTCUT_PROFILE -ErrorAction SilentlyContinue
@@ -21,7 +27,7 @@ if (Test-Path -LiteralPath $localConfigPath) {
     }
 }
 
-if ($Mode -eq "Source") {
+if ($Mode -in @("Stable", "Source")) {
     $portableRoot = Join-Path $repoRoot "dist\portable"
     $tauriTargetRoot = Join-Path $overlayRoot "src-tauri\target"
     foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
@@ -47,12 +53,17 @@ if ($Mode -eq "Source") {
 
     $startParams = @{}
     if ($DebugMode) { $startParams.DebugMode = $true }
-    & (Join-Path $repoRoot "scripts\amo\start.ps1") @startParams
+    $startScript = if ($Mode -eq "Stable") {
+        Join-Path $repoRoot "scripts\amo\start-stable.ps1"
+    } else {
+        Join-Path $repoRoot "scripts\amo\start.ps1"
+    }
+    & $startScript @startParams
     exit $LASTEXITCODE
 }
 
 if ($DebugMode) {
-    throw "DebugMode is available for Source mode. Portable mode always starts with release behavior."
+    throw "DebugMode is available for Stable and Source modes. Portable mode always starts with release behavior."
 }
 
 $version = [string](Get-Content -Raw -Encoding UTF8 (Join-Path $overlayRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json).version

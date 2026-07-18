@@ -10,6 +10,7 @@ The first AMO Portable format is a ZIP folder, not a single executable. It conta
 Portable guarantees:
 
 - no Node, npm, Rust, repository checkout, or PowerShell startup script is required on the target machine;
+- the packaged executable runs in stable mode without the source `tauri dev` watcher;
 - `AMO.exe` starts the bundled Broker without a console window;
 - Broker state lives under the package-local `data/` directory;
 - moving the whole extracted folder preserves behavior and state;

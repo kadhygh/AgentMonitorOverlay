@@ -99,7 +99,15 @@ npm run adapters:verify -- -Port 17655
 
 ## Running Locally
 
-Use the root entry point for both internal startup modes. Source mode runs a frontend production build first, then starts the Tauri development stack:
+Use the root entry point for all internal startup modes. Stable mode is the default for normal use. It runs frontend validation, performs a locked Rust debug build, then starts the Broker, Vite, and the compiled native executable without the Tauri watcher:
+
+```powershell
+.\amo.ps1 -Mode Stable
+```
+
+The equivalent npm commands are `npm run amo` and `npm run amo:stable`. Because Stable does not run `tauri dev`, Git operations and read-only source inspection do not restart the native window.
+
+Source mode keeps the Tauri development watcher for Rust/Tauri work:
 
 ```powershell
 .\amo.ps1 -Mode Source
@@ -117,7 +125,9 @@ Portable mode stops repository-owned AMO processes, preserves the latest Portabl
 .\amo.ps1 -Mode Portable -SkipDependencyInstall
 ```
 
-The npm aliases are `npm run amo`, `npm run amo:debug`, and `npm run amo:portable`.
+Portable always runs the packaged executable without a source watcher. The npm aliases are `npm run amo`, `npm run amo:stable`, `npm run amo:source`, `npm run amo:debug`, and `npm run amo:portable`.
+
+For Source prerequisites and the repeatable desktop CMD launcher installer, see `docs/source-stable-startup.md`.
 
 Start only the broker:
 

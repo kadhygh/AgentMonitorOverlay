@@ -10,7 +10,9 @@
     "url": "git+https://github.com/kadhygh/AgentMonitorOverlay.git"
   },
   "scripts": {
-    "amo": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source",
+    "amo": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable",
+    "amo:stable": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable",
+    "amo:source": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source",
     "amo:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source -DebugMode",
     "amo:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Portable -SkipDependencyInstall",
     "broker": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1",
