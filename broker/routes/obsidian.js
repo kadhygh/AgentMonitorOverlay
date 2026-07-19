@@ -4,6 +4,9 @@ async function handleObsidianRoutes(req, res, url, context) {
   if (req.method === "POST" && url.pathname === "/api/events") {
     const payload = await readJsonBody(req);
     const claim = context.launchStore.claim(payload, { sessions: context.sessions });
+    if (claim?.kind === "pending-owner" || claim?.kind === "foreign") {
+      return sendHandled(res, 202, { ok: true, ignored: true, reason: claim.reason || "waiting_owner_session_start", launch: claim.launch });
+    }
     publishReleasedSession(context, claim);
     const result = context.permissionGate.handleEvent(payload);
     context.transcriptMonitor.track(payload, result.session);
@@ -19,6 +22,9 @@ async function handleObsidianRoutes(req, res, url, context) {
   if (req.method === "POST" && url.pathname === "/api/replies") {
     const payload = await readJsonBody(req);
     const claim = context.launchStore.claim(payload, { sessions: context.sessions });
+    if (claim?.kind === "pending-owner" || claim?.kind === "foreign") {
+      return sendHandled(res, 202, { ok: true, ignored: true, reason: claim.reason || "waiting_owner_session_start", launch: claim.launch });
+    }
     publishReleasedSession(context, claim);
     const reply = context.conversationService.handleReply(payload);
     context.transcriptMonitor.track(payload, reply.session);
@@ -30,6 +36,9 @@ async function handleObsidianRoutes(req, res, url, context) {
   if (req.method === "POST" && url.pathname === "/api/prompts") {
     const payload = await readJsonBody(req);
     const claim = context.launchStore.claim(payload, { sessions: context.sessions });
+    if (claim?.kind === "pending-owner" || claim?.kind === "foreign") {
+      return sendHandled(res, 202, { ok: true, ignored: true, reason: claim.reason || "waiting_owner_session_start", launch: claim.launch });
+    }
     publishReleasedSession(context, claim);
     const prompt = context.conversationService.handlePrompt(payload);
     context.transcriptMonitor.track(payload, prompt.session);

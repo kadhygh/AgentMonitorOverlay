@@ -78,6 +78,9 @@ export interface AgentSession {
   launchId?: string | null;
   launchState?: string | null;
   launchRevision?: number | null;
+  launchRelation?: "owner" | "attached-child" | "foreign-leak" | string | null;
+  routeOwnerSessionId?: string | null;
+  observedLaunchId?: string | null;
   launchWindowResolvedAt?: string | null;
   claudeProviderId?: string | null;
   claudeModel?: string | null;

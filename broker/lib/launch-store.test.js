@@ -19,6 +19,7 @@ function matchingPayload(launch, sessionId) {
     workspaceId: launch.workspaceId,
     workspacePath: launch.workspacePath,
     tool: launch.adapterId === "claude-cli" ? "claude" : "codex",
+    hookEventName: "SessionStart",
   };
 }
 
@@ -311,4 +312,123 @@ test("active launches survive retention pruning while old terminal launches are 
 
   const launches = store.list();
   assert.deepEqual(launches.map((item) => item.launchId), ["launch_active"]);
+});
+
+test("claim classifies an event whose cwd is outside the workspace as foreign", (t) => {
+  const { store } = createTestStore(t);
+  const launch = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+  });
+  store.update(launch.launchId, { state: "waiting_hook" });
+
+  const result = store.claim({
+    launchId: launch.launchId,
+    sessionId: "memory-consolidation",
+    workspaceId: launch.workspaceId,
+    workspacePath: launch.workspacePath,
+    tool: "codex",
+    cwd: "C:\\Users\\kadhy\\.codex\\memories",
+  }, { sessions: new Map() });
+
+  assert.equal(result?.kind, "foreign");
+  const stored = store.list()[0];
+  assert.equal(stored.state, "waiting_hook");
+  assert.equal(stored.currentSessionId, null);
+});
+
+test("claim locks onto the first session and refuses to transfer to a different one", (t) => {
+  const { store } = createTestStore(t);
+  const launch = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+    mode: "new",
+  });
+  store.update(launch.launchId, { state: "waiting_hook" });
+  const sessions = new Map();
+
+  const first = store.claim(matchingPayload(launch, "main-session"), { sessions });
+  assert.equal(first?.launch.state, "connected");
+  assert.equal(first?.launch.currentSessionId, "main-session");
+  assert.equal(first.releasedSession, null);
+
+  sessions.set("main-session", {
+    sessionId: "main-session",
+    launchId: launch.launchId,
+    windowHint: { boundBy: "managed-launch", titleToken: launch.titleToken },
+    targetBinding: { type: "window", hwnd: 4242, processId: 99, boundBy: "managed-launch" },
+  });
+
+  // subagent 继承同一 AMO_LAUNCH_ID，sessionId 不同，cwd 仍在 workspace 内
+  const subagentClaim = store.claim({
+    ...matchingPayload(launch, "subagent-session"),
+    cwd: "C:\\Projects\\demo",
+  }, { sessions });
+
+  assert.equal(subagentClaim?.kind, "attached-child");
+  assert.equal(subagentClaim?.ownerSessionId, "main-session");
+  assert.equal(subagentClaim?.launch.currentSessionId, "main-session");
+  const stored = store.list()[0];
+  assert.equal(stored.state, "connected");
+  assert.equal(stored.currentSessionId, "main-session");
+  // 主会话的 managed 绑定未被释放
+  assert.equal(sessions.get("main-session").targetBinding.type, "window");
+  assert.equal(sessions.get("main-session").windowHint.boundBy, "managed-launch");
+});
+
+test("new launch waits for the owner SessionStart instead of claiming an ordinary child event", (t) => {
+  const { store } = createTestStore(t);
+  const launch = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+    mode: "new",
+  });
+  store.update(launch.launchId, { state: "waiting_hook" });
+
+  const earlyChild = store.claim({
+    ...matchingPayload(launch, "subagent-session"),
+    hookEventName: "PermissionRequest",
+    cwd: launch.workspacePath,
+  }, { sessions: new Map() });
+
+  assert.equal(earlyChild?.kind, "pending-owner");
+  assert.equal(store.list()[0].currentSessionId, null);
+
+  const owner = store.claim({
+    ...matchingPayload(launch, "main-session"),
+    cwd: launch.workspacePath,
+    hookParentPid: 4242,
+  }, { sessions: new Map() });
+  assert.equal(owner?.kind, "owner");
+  assert.equal(owner?.launch.ownerSessionId, "main-session");
+  assert.equal(owner?.launch.cliHostPid, 4242);
+});
+
+test("persisted transfer is repaired back to the first claimed owner", (t) => {
+  const { dataFile } = createTestStore(t);
+  fs.writeFileSync(dataFile, JSON.stringify({
+    launches: [{
+      launchId: "launch-transferred",
+      workspaceId: "workspace-1",
+      workspacePath: "C:\\Projects\\demo",
+      adapterId: "codex-cli",
+      mode: "new",
+      state: "connected",
+      createdAt: "2026-07-19T00:00:00.000Z",
+      updatedAt: "2026-07-19T01:00:00.000Z",
+      firstClaimedSessionId: "main-session",
+      claimedSessionId: "memory-session",
+      currentSessionId: "memory-session",
+      bindingRevision: 3,
+    }],
+  }));
+
+  const store = createLaunchStore({ dataFile });
+  const repaired = store.list()[0];
+  assert.equal(repaired.ownerSessionId, "main-session");
+  assert.equal(repaired.claimedSessionId, "main-session");
+  assert.equal(repaired.currentSessionId, "main-session");
 });

@@ -130,6 +130,8 @@ function createSessionStore({
     const promptMessage = promptMessageFromEvent(payload, eventName, message);
     const cwd = normalizeText(payload.cwd || payload.projectPath || payload.project_path) || existing?.cwd || null;
     const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null;
+    const launchRelation = normalizeText(payload.launchRelation || payload.launch_relation) || existing?.launchRelation || null;
+    const attachedChild = launchRelation === "attached-child";
     const shouldClearAttention = shouldClearAttentionForActivity({
       eventName,
       state,
@@ -152,8 +154,8 @@ function createSessionStore({
           : typeof payload.needsAttention === "boolean"
           ? payload.needsAttention
           : state === "waiting_permission" || state === "waiting_user" || state === "failed",
-      windowHint,
-      targetBinding: resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: now, windowHint }),
+      windowHint: attachedChild ? normalizeWindowHint(payload.windowHint || payload.window_hint) : windowHint,
+      targetBinding: attachedChild ? null : resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: now, windowHint }),
       updatedAt: normalizeText(payload.timestamp || payload.updatedAt || payload.updated_at) || now,
       createdAt: existing?.createdAt || now,
       heartbeatAt: existing?.heartbeatAt || null,
@@ -171,10 +173,15 @@ function createSessionStore({
         : existing?.hookEvents || [],
       workspaceId: normalizeText(payload.workspaceId || payload.workspace_id) || existing?.workspaceId || null,
       workspacePath: normalizeText(payload.workspacePath || payload.workspace_path) || existing?.workspacePath || cwd,
-      launchId: normalizeText(payload.launchId || payload.launch_id) || existing?.launchId || null,
-      launchState: normalizeText(payload.launchState || payload.launch_state) || existing?.launchState || null,
+      launchId: attachedChild ? null : normalizeText(payload.launchId || payload.launch_id) || existing?.launchId || null,
+      launchState: attachedChild ? null : normalizeText(payload.launchState || payload.launch_state) || existing?.launchState || null,
       launchRevision:
-        normalizeInteger(payload.launchRevision || payload.launch_revision) ?? existing?.launchRevision ?? null,
+        attachedChild ? null : normalizeInteger(payload.launchRevision || payload.launch_revision) ?? existing?.launchRevision ?? null,
+      launchRelation,
+      routeOwnerSessionId:
+        normalizeText(payload.routeOwnerSessionId || payload.route_owner_session_id) || existing?.routeOwnerSessionId || null,
+      observedLaunchId:
+        normalizeText(payload.observedLaunchId || payload.observed_launch_id) || existing?.observedLaunchId || null,
       activeTurnId:
         `${eventName || ""}`.toLowerCase() === "sessionstart"
           ? null

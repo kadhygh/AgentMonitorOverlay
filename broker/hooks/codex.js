@@ -13,7 +13,7 @@ const CODEX_HOOK_EVENTS = Object.freeze([
 ]);
 function codexReplyHookScript(options = {}) {
   const deploymentVersion = options.deploymentVersion ?? 4;
-  const hookProtocolVersion = options.hookProtocolVersion ?? 4;
+  const hookProtocolVersion = options.hookProtocolVersion ?? 5;
   return [
     "import fs from 'node:fs/promises';",
     "import path from 'node:path';",
@@ -67,6 +67,8 @@ function codexReplyHookScript(options = {}) {
     "      workspaceId: normalizeEnv('AMO_WORKSPACE_ID'),",
     "      workspacePath: normalizeEnv('AMO_WORKSPACE_PATH'),",
     "      requestedSessionId: normalizeEnv('AMO_REQUESTED_SESSION_ID'),",
+    "      hookPid: process.pid,",
+    "      hookParentPid: process.ppid,",
     "      tool: 'codex',",
     "      role: isPromptEvent ? 'user' : isReplyEvent ? 'assistant' : 'event',",
     "      source: isPromptEvent ? 'codex-user-prompt-hook' : isReplyEvent ? 'codex-stop-hook' : 'codex-event-hook',",

@@ -79,7 +79,23 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       recordDebugLog("broker", "launch.claim_rejected", { launchId, sessionId, workspaceId, tool });
       return null;
     }
+    // 辅助护栏：事件 cwd 必须落在 launch.workspacePath 之内。codex 的记忆整理子会话
+    // cwd 在 ~/.codex/memories（workspace 之外），在此直接拒绝，避免它干扰主会话绑定。
+    // 未携带 cwd 的事件放行（保持向后兼容）；主护栏是下方的 sessionId 锁定。
+    const eventCwd = normalizeText(payload?.cwd);
+    if (eventCwd && launch.workspacePath && !isPathWithin(eventCwd, launch.workspacePath)) {
+      recordDebugLog("broker", "launch.claim_cwd_outside_workspace", {
+        launchId,
+        sessionId,
+        cwd: eventCwd,
+        workspacePath: launch.workspacePath,
+      });
+      return { kind: "foreign", launch, sessionId, reason: "cwd_outside_workspace" };
+    }
     const previousSessionId = launch.currentSessionId || launch.claimedSessionId || null;
+    const eventName = normalizeText(
+      payload?.event || payload?.eventName || payload?.hookEventName || payload?.hook_event_name || payload?.type
+    )?.toLowerCase();
     if (
       launch.mode === "resume" &&
       !previousSessionId &&
@@ -97,10 +113,42 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       recordDebugLog("broker", "launch.offline_claim_rejected", { launchId, sessionId });
       return null;
     }
-    const transferred = Boolean(previousSessionId && previousSessionId !== sessionId);
+    if (!previousSessionId && launch.mode === "new" && eventName !== "sessionstart") {
+      recordDebugLog("broker", "launch.owner_waiting_session_start", {
+        launchId,
+        sessionId,
+        eventName: eventName || null,
+      });
+      return { kind: "pending-owner", launch, sessionId };
+    }
+    // 主护栏：一个 managed launch 锁定到首次 claim 的 sessionId。之后同一 launch 收到
+    // 不同 sessionId 的事件（codex 记忆整理子会话、subagent 等继承 AMO_LAUNCH_ID 的
+    // 派生会话）不再接管绑定，而是作为独立 card 走权限/review 流程；需要更换绑定时，
+    // 必须显式重新 launch/resume，而不是被动地由子会话事件迁移。
+    if (previousSessionId && previousSessionId !== sessionId) {
+      const ownerSession = options.sessions instanceof Map ? options.sessions.get(previousSessionId) : null;
+      payload.observedLaunchId = launchId;
+      payload.launchRelation = "attached-child";
+      payload.routeOwnerSessionId = previousSessionId;
+      payload.workspaceId = launch.workspaceId;
+      payload.workspacePath = launch.workspacePath;
+      payload.launchId = null;
+      payload.launchState = null;
+      payload.launchRevision = null;
+      payload.windowHint = ownerSession?.windowHint || null;
+      payload.targetBinding = null;
+      recordDebugLog("broker", "launch.child_attached", {
+        launchId,
+        sessionId,
+        ownerSessionId: previousSessionId,
+        hookPid: normalizeInteger(payload?.hookPid || payload?.hook_pid),
+        hookParentPid: normalizeInteger(payload?.hookParentPid || payload?.hook_parent_pid),
+      });
+      return { kind: "attached-child", launch, sessionId, ownerSessionId: previousSessionId };
+    }
     clearSupersededTargetBinding(options.sessions, sessionId, !previousSessionId);
     const claimedAt = new Date().toISOString();
-    const bindingRevision = transferred || !previousSessionId
+    const bindingRevision = !previousSessionId
       ? (Number.isInteger(launch.bindingRevision) ? launch.bindingRevision : 0) + 1
       : launch.bindingRevision || 1;
     const claimed = update(launchId, {
@@ -108,17 +156,19 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       claimedSessionId: sessionId,
       currentSessionId: sessionId,
       firstClaimedSessionId: launch.firstClaimedSessionId || sessionId,
+      ownerSessionId: launch.ownerSessionId || sessionId,
+      cliHostPid: normalizeInteger(payload?.hookParentPid || payload?.hook_parent_pid) || launch.cliHostPid || null,
       bindingRevision,
       claimedAt,
     });
-    const releasedSession = transferred
-      ? releasePreviousSession(options.sessions, previousSessionId, launchId, claimed.titleToken, bindingRevision)
-      : null;
     payload.workspaceId = launch.workspaceId;
     payload.workspacePath = launch.workspacePath;
     payload.launchId = launch.launchId;
     payload.launchState = "connected";
     payload.launchRevision = bindingRevision;
+    payload.launchRelation = "owner";
+    payload.routeOwnerSessionId = null;
+    payload.observedLaunchId = launch.launchId;
     payload.windowHint = {
       ...(payload.windowHint || payload.window_hint || {}),
       process: claimed.windowProcessName || null,
@@ -134,14 +184,14 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       boundBy: "managed-launch",
       boundLabel: `${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} managed launch`,
     };
-    recordDebugLog("broker", transferred ? "launch.session_transferred" : "launch.claimed", {
+    recordDebugLog("broker", "launch.claimed", {
       launchId,
       sessionId,
       previousSessionId,
       workspaceId,
       bindingRevision,
     });
-    return { launch: claimed, releasedSession };
+    return { kind: "owner", launch: claimed, releasedSession: null };
   }
 
   function reconcileSessions(sessions) {
@@ -155,12 +205,29 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     }
     for (const launch of launches.values()) {
       if (launch.state !== "connected") continue;
-      const sessionId = launch.currentSessionId || launch.claimedSessionId;
+      const sessionId = launch.ownerSessionId || launch.firstClaimedSessionId || launch.currentSessionId || launch.claimedSessionId;
       const session = sessions.get(sessionId);
       if (!session) continue;
       const next = attachLaunchToSession(session, launch);
       sessions.set(sessionId, next);
       changed.set(sessionId, next);
+      for (const [candidateId, candidate] of sessions) {
+        if (candidateId === sessionId || candidate.launchId !== launch.launchId) continue;
+        const withinWorkspace = isPathWithin(candidate.cwd, launch.workspacePath);
+        const detached = {
+          ...candidate,
+          launchId: null,
+          launchState: null,
+          launchRevision: null,
+          targetBinding: null,
+          windowHint: withinWorkspace ? next.windowHint : null,
+          launchRelation: withinWorkspace ? "attached-child" : "foreign-leak",
+          routeOwnerSessionId: withinWorkspace ? sessionId : null,
+          observedLaunchId: launch.launchId,
+        };
+        sessions.set(candidateId, detached);
+        changed.set(candidateId, detached);
+      }
     }
     return Array.from(changed.values());
   }
@@ -330,23 +397,6 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
   };
 }
 
-function releasePreviousSession(sessions, sessionId, launchId, titleToken, bindingRevision) {
-  if (!(sessions instanceof Map)) return null;
-  const existing = sessions.get(sessionId);
-  if (!existing || existing.launchId !== launchId) return null;
-  const managedHint = existing.windowHint?.boundBy === "managed-launch" && existing.windowHint?.titleToken === titleToken;
-  const released = {
-    ...existing,
-    launchState: "offline",
-    launchRevision: bindingRevision,
-    windowHint: managedHint ? null : existing.windowHint || null,
-    targetBinding: isManagedLaunchWindowTarget(existing.targetBinding) ? null : existing.targetBinding || null,
-    updatedAt: new Date().toISOString(),
-  };
-  sessions.set(sessionId, released);
-  return released;
-}
-
 function attachLaunchToSession(session, launch) {
   const expectedTool = launch.adapterId === "claude-cli" ? "claude" : "codex";
   return {
@@ -356,6 +406,9 @@ function attachLaunchToSession(session, launch) {
     launchId: launch.launchId,
     launchState: launch.state,
     launchRevision: launch.bindingRevision || 1,
+    launchRelation: "owner",
+    routeOwnerSessionId: null,
+    observedLaunchId: launch.launchId,
     claudeProviderId: launch.claudeProviderId || null,
     claudeModel: launch.claudeModel || null,
     targetBinding: isManagedLaunchWindowTarget(session.targetBinding) ? null : session.targetBinding || null,
@@ -382,14 +435,31 @@ function eventSessionId(payload) {
   return normalizeText(payload?.sessionId || payload?.session_id || payload?.threadId || payload?.thread_id);
 }
 
-function normalizePersistedLaunch(launch) {
-  if (launch.state !== "expired" && !Object.prototype.hasOwnProperty.call(launch, "expiresAt")) {
-    return launch;
-  }
+function isPathWithin(childPath, parentPath) {
+  if (!childPath || !parentPath) return false;
+  const normalize = (value) => String(value).replace(/[\\/]+$/u, "").toLowerCase();
+  const child = normalize(childPath);
+  const parent = normalize(parentPath);
+  if (child === parent) return true;
+  return child.startsWith(`${parent}\\`) || child.startsWith(`${parent}/`);
+}
 
-  const { expiresAt: _legacyExpiresAt, ...normalized } = launch;
+function normalizePersistedLaunch(launch) {
+  const ownerSessionId = launch.ownerSessionId || launch.firstClaimedSessionId || launch.currentSessionId || launch.claimedSessionId || null;
+  const { expiresAt: _legacyExpiresAt, ...normalized } = {
+    ...launch,
+    ownerSessionId,
+    claimedSessionId: ownerSessionId,
+    currentSessionId: ownerSessionId,
+  };
   if (normalized.state === "expired") normalized.state = "waiting_hook";
-  return normalized;
+  const changed =
+    Object.prototype.hasOwnProperty.call(launch, "expiresAt") ||
+    launch.ownerSessionId !== normalized.ownerSessionId ||
+    launch.claimedSessionId !== normalized.claimedSessionId ||
+    launch.currentSessionId !== normalized.currentSessionId ||
+    launch.state !== normalized.state;
+  return changed ? normalized : launch;
 }
 
 function clearSupersededTargetBinding(sessions, sessionId, firstClaim) {
