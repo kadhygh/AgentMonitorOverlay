@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.2",
+    [string]$Version = "0.1.3",
     [string]$NodeVersion = "24.13.0",
     [switch]$SkipDependencyInstall
 )
@@ -10,6 +10,10 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $overlayRoot = Join-Path $repoRoot "overlay"
 $cargoManifest = Join-Path $overlayRoot "src-tauri\Cargo.toml"
 $sourceVersion = [string](Get-Content -Raw -Encoding UTF8 (Join-Path $overlayRoot "src-tauri\tauri.conf.json") | ConvertFrom-Json).version
+$amoConstantsPath = Join-Path $repoRoot "broker\lib\amo-constants.js"
+$amoProtocolJson = & node -e 'const c = require(process.argv[1]); process.stdout.write(JSON.stringify({ deploymentVersion: c.AMO_DEPLOYMENT_VERSION, hookProtocolVersion: c.AMO_HOOK_PROTOCOL_VERSION }));' $amoConstantsPath
+if ($LASTEXITCODE -ne 0) { throw "Could not read AMO protocol constants from $amoConstantsPath" }
+$amoProtocol = $amoProtocolJson | ConvertFrom-Json
 $releaseExe = Join-Path $overlayRoot "src-tauri\target\release\agent-monitor-overlay.exe"
 $portableOutput = Join-Path $repoRoot "dist\portable"
 $packageName = "AMO-v$Version-win-x64"
@@ -67,8 +71,8 @@ $versionInfo = [ordered]@{
     schemaVersion = 1
     appVersion = $Version
     brokerVersion = $Version
-    deploymentVersion = 4
-    hookProtocolVersion = 4
+    deploymentVersion = [int]$amoProtocol.deploymentVersion
+    hookProtocolVersion = [int]$amoProtocol.hookProtocolVersion
     obsidianPluginVersion = [string]$pluginManifest.version
     bundledNodeVersion = $NodeVersion
     platform = "windows-x64"
