@@ -38,6 +38,7 @@ struct TrayRuntime {
 
 struct TrayShared {
     runtime: Mutex<TrayRuntime>,
+    native_operation: Mutex<()>,
     wake: Condvar,
     tray: TrayIcon,
     normal_icon: Image<'static>,
@@ -54,6 +55,7 @@ impl TrayState {
         Self {
             shared: Arc::new(TrayShared {
                 runtime: Mutex::new(TrayRuntime::default()),
+                native_operation: Mutex::new(()),
                 wake: Condvar::new(),
                 tray,
                 normal_icon,
@@ -299,17 +301,33 @@ fn tray_worker(shared: Arc<TrayShared>) {
 
         if show_menu {
             // Delay this ourselves so Windows still has a chance to report a double-click.
-            if let Err(error) = shared
+            let native_operation = shared
+                .native_operation
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+            let result = shared
                 .tray
-                .with_inner_tray_icon(|tray_icon| tray_icon.show_menu())
-            {
+                .with_inner_tray_icon(|tray_icon| tray_icon.show_menu());
+            drop(native_operation);
+
+            if let Err(error) = result {
                 eprintln!("failed to show tray menu: {error}");
+            }
+
+            // The menu owns tray-icon's internal RefCell until TrackPopupMenu returns.
+            // Apply any attention change that arrived while the menu was open afterwards.
+            if let Err(error) = apply_current_icon(&shared) {
+                eprintln!("failed to refresh tray icon after closing menu: {error}");
             }
         }
     }
 }
 
 fn apply_current_icon(shared: &TrayShared) -> tauri::Result<()> {
+    let Ok(_native_operation) = shared.native_operation.try_lock() else {
+        return Ok(());
+    };
+
     loop {
         let (revision, icon) = {
             let runtime = lock_runtime(shared);
