@@ -12,6 +12,7 @@ import { useAmoThemeRuntime } from "../theme/amoTheme";
 const SCRATCHPAD_TEXT_STORAGE_KEY = "amo.scratchpad.text";
 const SCRATCHPAD_ACTIVE_PAGE_STORAGE_KEY = "amo.scratchpad.activePage";
 const SCRATCHPAD_PAGE_COUNT = 3;
+const SCRATCHPAD_SAVE_DELAY_MS = 500;
 
 function scratchpadPageStorageKey(pageIndex: number) {
   return `${SCRATCHPAD_TEXT_STORAGE_KEY}.${pageIndex + 1}`;
@@ -34,7 +35,7 @@ function loadScratchpadPageText(pageIndex: number) {
 function saveScratchpadPageText(pageIndex: number, text: string) {
   localStorage.setItem(scratchpadPageStorageKey(pageIndex), text);
   if (pageIndex === 0) {
-    localStorage.setItem(SCRATCHPAD_TEXT_STORAGE_KEY, text);
+    localStorage.removeItem(SCRATCHPAD_TEXT_STORAGE_KEY);
   }
 }
 
@@ -42,23 +43,65 @@ export function ScratchpadApp() {
   useAmoThemeRuntime();
 
   const textareaRef = useRef<HTMLTextAreaElement | null>(null);
+  const activePageRef = useRef(0);
+  const pendingTextRef = useRef(new Map<number, string>());
+  const saveTimersRef = useRef(new Map<number, number>());
   const [activePage, setActivePage] = useState(() =>
     normalizeScratchpadPage(localStorage.getItem(SCRATCHPAD_ACTIVE_PAGE_STORAGE_KEY)),
   );
   const [textLength, setTextLength] = useState(0);
   const [status, setStatus] = useState("Ready");
 
+  activePageRef.current = activePage;
+
+  function flushPageText(pageIndex: number) {
+    const pendingText = pendingTextRef.current.get(pageIndex);
+    if (pendingText === undefined) return;
+
+    const timer = saveTimersRef.current.get(pageIndex);
+    if (timer !== undefined) {
+      window.clearTimeout(timer);
+      saveTimersRef.current.delete(pageIndex);
+    }
+    pendingTextRef.current.delete(pageIndex);
+    saveScratchpadPageText(pageIndex, pendingText);
+  }
+
+  function queuePageTextSave(pageIndex: number, text: string) {
+    pendingTextRef.current.set(pageIndex, text);
+    const previousTimer = saveTimersRef.current.get(pageIndex);
+    if (previousTimer !== undefined) {
+      window.clearTimeout(previousTimer);
+    }
+
+    const timer = window.setTimeout(() => {
+      flushPageText(pageIndex);
+      if (activePageRef.current === pageIndex) {
+        setStatus("Saved");
+      }
+    }, SCRATCHPAD_SAVE_DELAY_MS);
+    saveTimersRef.current.set(pageIndex, timer);
+  }
+
   useEffect(() => {
     const textarea = textareaRef.current;
     if (!textarea) return;
 
-    const savedText = loadScratchpadPageText(activePage);
+    const savedText = pendingTextRef.current.get(activePage) ?? loadScratchpadPageText(activePage);
     textarea.value = savedText;
     setTextLength(savedText.length);
     localStorage.setItem(SCRATCHPAD_ACTIVE_PAGE_STORAGE_KEY, String(activePage));
     setStatus(`Page ${activePage + 1} ready`);
     window.setTimeout(() => textarea.focus(), 30);
   }, [activePage]);
+
+  useEffect(() => {
+    return () => {
+      for (const pageIndex of pendingTextRef.current.keys()) {
+        flushPageText(pageIndex);
+      }
+    };
+  }, []);
 
   useEffect(() => {
     function handleKeyDown(event: KeyboardEvent) {
@@ -71,9 +114,9 @@ export function ScratchpadApp() {
     return () => window.removeEventListener("keydown", handleKeyDown);
   }, []);
 
-  function persistCurrentText() {
+  function captureCurrentText() {
     const text = textareaRef.current?.value || "";
-    saveScratchpadPageText(activePage, text);
+    queuePageTextSave(activePage, text);
     setTextLength(text.length);
     return text;
   }
@@ -84,13 +127,13 @@ export function ScratchpadApp() {
       return;
     }
 
-    persistCurrentText();
+    captureCurrentText();
     setActivePage(nextPage);
   }
 
   async function copyText() {
-    const text = persistCurrentText();
-    if (!text.trim()) {
+    const text = captureCurrentText();
+    if (!/\S/.test(text)) {
       setStatus("Nothing to copy");
       textareaRef.current?.focus();
       return;
@@ -150,7 +193,7 @@ export function ScratchpadApp() {
       textarea.value = "";
       textarea.dispatchEvent(new Event("input", { bubbles: true }));
     }
-    persistCurrentText();
+    captureCurrentText();
     setStatus("Cleared; Ctrl+Z can restore while focused");
   }
 
@@ -197,8 +240,8 @@ export function ScratchpadApp() {
         spellCheck={false}
         placeholder="Write the reply points you want to keep while reading..."
         onInput={() => {
-          persistCurrentText();
-          setStatus("Saved");
+          captureCurrentText();
+          setStatus("Saving...");
         }}
       />
       <footer className="scratchpad-footer">

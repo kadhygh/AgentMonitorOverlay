@@ -15,7 +15,6 @@ const HIDE_MENU_ID: &str = "amo-tray-hide";
 const QUIT_MENU_ID: &str = "amo-tray-quit";
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_OPEN_REQUESTED_EVENT: &str = "tray-open-requested";
-const FLASH_INTERVAL: Duration = Duration::from_millis(650);
 
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,9 +26,7 @@ struct TrayOpenRequest {
 #[derive(Default)]
 struct TrayRuntime {
     attention: bool,
-    attention_icon_visible: bool,
     icon_revision: u64,
-    next_flash_at: Option<Instant>,
     menu_deadline: Option<Instant>,
     suppress_next_left_release: bool,
     shutdown: bool,
@@ -96,12 +93,9 @@ impl TrayState {
             }
 
             runtime.attention = attention;
-            runtime.attention_icon_visible = attention;
-            runtime.next_flash_at = attention.then(|| Instant::now() + FLASH_INTERVAL);
             runtime.icon_revision = runtime.icon_revision.wrapping_add(1);
         }
 
-        self.shared.wake.notify_all();
         apply_current_icon(&self.shared).map_err(|error| error.to_string())
     }
 
@@ -136,8 +130,6 @@ impl TrayState {
         {
             let mut runtime = lock_runtime(&self.shared);
             runtime.attention = false;
-            runtime.attention_icon_visible = false;
-            runtime.next_flash_at = None;
             runtime.menu_deadline = None;
             runtime.shutdown = true;
             runtime.icon_revision = runtime.icon_revision.wrapping_add(1);
@@ -151,7 +143,6 @@ impl TrayState {
 
     fn stop_worker(&self) {
         let mut runtime = lock_runtime(&self.shared);
-        runtime.next_flash_at = None;
         runtime.menu_deadline = None;
         runtime.shutdown = true;
         drop(runtime);
@@ -245,7 +236,7 @@ pub(crate) fn stop_worker(app: &AppHandle) {
 
 fn tray_worker(shared: Arc<TrayShared>) {
     loop {
-        let (show_menu, refresh_icon) = {
+        {
             let mut runtime = lock_runtime(&shared);
             loop {
                 if runtime.shutdown {
@@ -256,27 +247,13 @@ fn tray_worker(shared: Arc<TrayShared>) {
                 let show_menu = runtime
                     .menu_deadline
                     .is_some_and(|deadline| deadline <= now);
-                let refresh_icon = runtime
-                    .next_flash_at
-                    .is_some_and(|deadline| deadline <= now);
 
-                if show_menu || refresh_icon {
-                    if show_menu {
-                        runtime.menu_deadline = None;
-                    }
-                    if refresh_icon {
-                        runtime.attention_icon_visible = !runtime.attention_icon_visible;
-                        runtime.next_flash_at = Some(now + FLASH_INTERVAL);
-                        runtime.icon_revision = runtime.icon_revision.wrapping_add(1);
-                    }
-                    break (show_menu, refresh_icon);
+                if show_menu {
+                    runtime.menu_deadline = None;
+                    break;
                 }
 
-                let next_deadline = [runtime.menu_deadline, runtime.next_flash_at]
-                    .into_iter()
-                    .flatten()
-                    .min();
-                runtime = match next_deadline {
+                runtime = match runtime.menu_deadline {
                     Some(deadline) => {
                         let timeout = deadline.saturating_duration_since(now);
                         let (next_runtime, _) = shared
@@ -291,34 +268,26 @@ fn tray_worker(shared: Arc<TrayShared>) {
                         .unwrap_or_else(|poisoned| poisoned.into_inner()),
                 };
             }
-        };
-
-        if refresh_icon {
-            if let Err(error) = apply_current_icon(&shared) {
-                eprintln!("failed to update flashing tray icon: {error}");
-            }
         }
 
-        if show_menu {
-            // Delay this ourselves so Windows still has a chance to report a double-click.
-            let native_operation = shared
-                .native_operation
-                .lock()
-                .unwrap_or_else(|poisoned| poisoned.into_inner());
-            let result = shared
-                .tray
-                .with_inner_tray_icon(|tray_icon| tray_icon.show_menu());
-            drop(native_operation);
+        // Delay this ourselves so Windows still has a chance to report a double-click.
+        let native_operation = shared
+            .native_operation
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let result = shared
+            .tray
+            .with_inner_tray_icon(|tray_icon| tray_icon.show_menu());
+        drop(native_operation);
 
-            if let Err(error) = result {
-                eprintln!("failed to show tray menu: {error}");
-            }
+        if let Err(error) = result {
+            eprintln!("failed to show tray menu: {error}");
+        }
 
-            // The menu owns tray-icon's internal RefCell until TrackPopupMenu returns.
-            // Apply any attention change that arrived while the menu was open afterwards.
-            if let Err(error) = apply_current_icon(&shared) {
-                eprintln!("failed to refresh tray icon after closing menu: {error}");
-            }
+        // The menu owns tray-icon's internal RefCell until TrackPopupMenu returns.
+        // Apply any attention change that arrived while the menu was open afterwards.
+        if let Err(error) = apply_current_icon(&shared) {
+            eprintln!("failed to refresh tray icon after closing menu: {error}");
         }
     }
 }
@@ -331,7 +300,7 @@ fn apply_current_icon(shared: &TrayShared) -> tauri::Result<()> {
     loop {
         let (revision, icon) = {
             let runtime = lock_runtime(shared);
-            let icon = if runtime.attention && runtime.attention_icon_visible {
+            let icon = if runtime.attention {
                 shared.attention_icon.clone()
             } else {
                 shared.normal_icon.clone()
