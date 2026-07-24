@@ -1,5 +1,6 @@
 import { normalizeVaultFilePath } from "../core/paths";
 import { describeElement, previewText, rootContainsAnnotationMarkers } from "../core/ui-utils";
+import { rewriteMappedMarkdownLinks } from "../editor/mapped-markdown-links";
 import {
   findLegacyAnnotationBlockForSection as findLegacyAnnotationBlockForSectionFromBlocks,
   linkifyLocalCodeLinks,
@@ -11,6 +12,7 @@ import {
 
 export async function renderAnnotations(plugin, root, context) {
   await plugin.renderAmoNoteDisplayHeader(root, context);
+  rewriteMappedMarkdownLinks(plugin, root, context?.sourcePath || "");
 
   if (await renderLegacyAnnotationSection(plugin, root, context)) return;
 

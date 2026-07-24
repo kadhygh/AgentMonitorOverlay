@@ -11,6 +11,11 @@ import {
   openZedCodeLink,
   parseLocalCodeLink,
 } from "./local-code-links";
+import {
+  findAbsoluteMarkdownLinkTargetInLine,
+  openMappedMarkdownLinkTarget,
+  parseAbsoluteMarkdownLink,
+} from "./mapped-markdown-links";
 
 export function handleLocalCodeLinkClick(plugin: any, event: MouseEvent) {
   if (event.button !== 0 || plugin.settings.interceptLocalCodeLinks === false) return;
@@ -50,6 +55,15 @@ export function handleEditorLocalCodeLinkEvent(plugin: any, event: MouseEvent, v
 
   const linkTarget = localCodeLinkTargetFromEditorEvent(event, view);
   if (!linkTarget) return false;
+  if (parseAbsoluteMarkdownLink(linkTarget, linkTarget)) {
+    const sourcePath = plugin.app.workspace.getActiveFile()?.path || "";
+    if (openMappedMarkdownLinkTarget(plugin, linkTarget, sourcePath, true, "editing-" + phase)) {
+      event.preventDefault();
+      event.stopPropagation();
+      event.stopImmediatePropagation();
+      return true;
+    }
+  }
   if (suppressLocalCodeLinkFollowup(plugin, linkTarget, event, phase)) return true;
 
   const link = parseLocalCodeLink(linkTarget, linkTarget);
@@ -109,7 +123,8 @@ function localCodeLinkTargetFromEditorEvent(event: MouseEvent, view: any) {
 
   const line = view.state.doc.lineAt(pos);
   const offset = pos - line.from;
-  return findLocalCodeLinkTargetInLine(line.text, offset);
+  return findAbsoluteMarkdownLinkTargetInLine(line.text, offset) ||
+    findLocalCodeLinkTargetInLine(line.text, offset);
 }
 
 async function openLocalCodeLink(plugin: any, link, rawHref: string) {
