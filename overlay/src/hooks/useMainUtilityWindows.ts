@@ -60,21 +60,28 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
     await openUtilityWindow("settings");
   }
 
+  async function openPriorityDialog() {
+    await openUtilityWindow("priorities");
+  }
+
   async function openUtilityWindow(label: UtilityWindowKind) {
     setActiveUtilityWindow(label);
     try {
-      const otherLabel: UtilityWindowKind = label === "deploy" ? "settings" : "deploy";
-      const otherWindow = await WebviewWindow.getByLabel(otherLabel);
-      if (otherWindow) {
-        await otherWindow.hide();
-        await setAmoWindowAlwaysOnTop(otherLabel, false);
-      }
+      const utilityLabels: UtilityWindowKind[] = ["deploy", "settings", "priorities"];
+      await Promise.all(
+        utilityLabels.filter((otherLabel) => otherLabel !== label).map(async (otherLabel) => {
+          const otherWindow = await WebviewWindow.getByLabel(otherLabel);
+          if (otherWindow) await otherWindow.hide();
+          await setAmoWindowAlwaysOnTop(otherLabel, false);
+        }),
+      );
       const targetWindow = await WebviewWindow.getByLabel(label);
       if (!targetWindow) {
         throw new Error(`${label} window is not registered`);
       }
       await bringUtilityWindowToFront(label);
-      options.setFeedback(`${label === "deploy" ? "Workspace Center" : "Settings"} opened.`);
+      const title = label === "deploy" ? "Workspace Center" : label === "settings" ? "Settings" : "Task Priorities";
+      options.setFeedback(`${title} opened.`);
     } catch (error) {
       setActiveUtilityWindow(null);
       options.setFeedback(`Open ${label} window failed: ${(error as Error).message}`);
@@ -122,6 +129,7 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
     focusUtilityWindow,
     hideUtilityWindow,
     openDeployDialog,
+    openPriorityDialog,
     openSettingsDialog,
   };
 }

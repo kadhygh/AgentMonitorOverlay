@@ -11,6 +11,7 @@ import {
   GripHorizontal,
   GripVertical,
   ListFilter,
+  ListTodo,
   Search,
   Settings2,
   SquareTerminal,
@@ -39,6 +40,7 @@ import { useObsidianOpen } from "../hooks/useObsidianOpen";
 import { useOverlayResize } from "../hooks/useOverlayResize";
 import { usePendingPromptSync } from "../hooks/usePendingPromptSync";
 import { useSessionActions } from "../hooks/useSessionActions";
+import { useSessionPriorities } from "../hooks/useSessionPriorities";
 import { useTargetActivation } from "../hooks/useTargetActivation";
 import { useWindowBindDrag } from "../hooks/useWindowBindDrag";
 import { useWindowsNotifications } from "../hooks/useWindowsNotifications";
@@ -54,6 +56,7 @@ import { CandidateMenu, type CandidateMenuState } from "../components/CandidateM
 import { CleanConfirmDialog, type CleanConfirmState } from "../components/CleanConfirmDialog";
 import { LaunchPanel, type LaunchPanelState } from "../components/LaunchPanel";
 import { ObsidianVaultRecoveryDialog } from "../components/ObsidianVaultRecoveryDialog";
+import { PriorityMenu, type PriorityMenuState } from "../components/PriorityMenu";
 import { WorkspacePanel, type WorkspacePanelState } from "../components/WorkspacePanel";
 import {
   applyScratchpadShortcutState,
@@ -67,6 +70,10 @@ import type {
 
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 52 };
+
+function utilityWindowTitle(label: string) {
+  return label === "deploy" ? "Workspace Center" : label === "settings" ? "Settings" : "Task Priorities";
+}
 
 function sessionMatchesSearch(session: AgentSession, query: string) {
   const normalizedQuery = query.trim().toLowerCase();
@@ -112,6 +119,7 @@ export function MainOverlayApp() {
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
   const [sessionSearch, setSessionSearch] = useState("");
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
+  const [priorityMenu, setPriorityMenu] = useState<PriorityMenuState | null>(null);
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
   const [launchPanel, setLaunchPanel] = useState<LaunchPanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
@@ -147,6 +155,7 @@ export function MainOverlayApp() {
       setLaunchPanel((current) => (current?.session?.sessionId === sessionId ? null : current)),
     clearSessionMenus: () => {
       setCandidateMenu(null);
+      setPriorityMenu(null);
       setWorkspacePanel(null);
       setLaunchPanel(null);
     },
@@ -201,9 +210,20 @@ export function MainOverlayApp() {
     focusUtilityWindow,
     hideUtilityWindow,
     openDeployDialog,
+    openPriorityDialog,
     openSettingsDialog,
   } = useMainUtilityWindows({
     setFeedback,
+  });
+
+  const {
+    persistSessionDisplayOrder,
+    priorityBusy,
+    updateSessionPriorities,
+  } = useSessionPriorities({
+    postDebugLog,
+    setFeedback,
+    setSessions,
   });
 
   const {
@@ -218,6 +238,7 @@ export function MainOverlayApp() {
     setFeedback,
     setSessionOrder,
     suppressNextClickRef,
+    onOrderCommitted: (sessionIds) => void persistSessionDisplayOrder(sessionIds),
   });
 
   const {
@@ -568,6 +589,15 @@ export function MainOverlayApp() {
                     {filter === "archive" ? <Archive size={12} aria-hidden="true" /> : null}
                   </button>
                 ))}
+                <button
+                  type="button"
+                  className={`summary-filter-button ${activeUtilityWindow === "priorities" ? "is-active" : ""}`}
+                  title="Manage priorities"
+                  aria-label="Manage task priorities"
+                  onClick={() => void openPriorityDialog()}
+                >
+                  <ListTodo size={12} aria-hidden="true" />
+                </button>
                 {sessionFilter === "archive" && archiveCount > 0 ? (
                   <button
                     type="button"
@@ -622,6 +652,12 @@ export function MainOverlayApp() {
                 } ${isSessionVisuallySeen(session) ? "is-attention-seen" : ""} ${
                   cardDrag?.sessionId === session.sessionId ? "is-drag-placeholder" : ""
                 } ${dropTargetId === session.sessionId ? "is-drop-target" : ""}`}
+                onContextMenu={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  setCandidateMenu(null);
+                  setPriorityMenu({ session, x: event.clientX, y: event.clientY });
+                }}
                 onClick={(event) => {
                   if (suppressNextClickRef.current) {
                     suppressNextClickRef.current = false;
@@ -683,6 +719,22 @@ export function MainOverlayApp() {
             )}
           </section>
 
+          {priorityMenu ? (
+            <PriorityMenu
+              state={priorityMenu}
+              busy={priorityBusy}
+              onClose={() => setPriorityMenu(null)}
+              onSelect={(priority) => {
+                void updateSessionPriorities([priorityMenu.session.sessionId], priority).then((updated) => {
+                  if (updated) setPriorityMenu(null);
+                });
+              }}
+              onManage={() => {
+                setPriorityMenu(null);
+                void openPriorityDialog();
+              }}
+            />
+          ) : null}
           {candidateMenu ? (
             <CandidateMenu
               state={candidateMenu}
@@ -857,7 +909,7 @@ export function MainOverlayApp() {
             <div
               className="main-window-blocker"
               role="presentation"
-              title={`Focus ${activeUtilityWindow === "deploy" ? "Deploy Workspace" : "Settings"}`}
+              title={`Focus ${utilityWindowTitle(activeUtilityWindow)}`}
               onClick={() => void focusUtilityWindow(activeUtilityWindow)}
             >
               <div
@@ -866,7 +918,7 @@ export function MainOverlayApp() {
                 aria-label="Utility window active"
                 onClick={(event) => event.stopPropagation()}
               >
-                <span>{activeUtilityWindow === "deploy" ? "Deploy Workspace" : "Settings"} is open</span>
+                <span>{utilityWindowTitle(activeUtilityWindow)} is open</span>
                 <div className="main-window-blocker-actions">
                   <button type="button" onClick={() => void focusUtilityWindow(activeUtilityWindow)}>
                     Focus

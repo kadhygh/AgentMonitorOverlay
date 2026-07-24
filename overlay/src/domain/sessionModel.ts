@@ -1,6 +1,21 @@
-import type { AgentSession } from "../types";
+import type { AgentSession, SessionPriority } from "../types";
 
 export const ATTENTION_VISUAL_ACTIVE_MS = 10_000;
+export const SESSION_PRIORITIES: SessionPriority[] = ["focus", "next", "later"];
+export const sessionPriorityLabels: Record<SessionPriority, string> = {
+  focus: "Focus",
+  next: "Next",
+  later: "Later",
+};
+
+export function normalizeSessionPriority(priority: AgentSession["priority"]): SessionPriority | null {
+  return priority === "focus" || priority === "next" || priority === "later" ? priority : null;
+}
+
+export function sessionPriorityRank(priority: AgentSession["priority"]) {
+  const normalized = normalizeSessionPriority(priority);
+  return normalized === "focus" ? 0 : normalized === "next" ? 1 : normalized === "later" ? 2 : 3;
+}
 
 export type SessionFilter = "all" | "attention" | "idle" | "archive";
 
@@ -34,11 +49,16 @@ export function mergeSessionOrder(previousOrder: string[], nextSessions: AgentSe
 export function applySessionOrder(sessions: AgentSession[], order: string[]) {
   const indexed = new Map(order.map((sessionId, index) => [sessionId, index]));
   return [...sessions].sort((a, b) => {
+    const priorityDifference = sessionPriorityRank(a.priority) - sessionPriorityRank(b.priority);
+    if (priorityDifference !== 0) return priorityDifference;
+
     const aIndex = indexed.get(a.sessionId) ?? Number.MAX_SAFE_INTEGER;
     const bIndex = indexed.get(b.sessionId) ?? Number.MAX_SAFE_INTEGER;
-    if (aIndex !== bIndex) {
-      return aIndex - bIndex;
-    }
+    if (aIndex !== bIndex) return aIndex - bIndex;
+
+    const displayOrderDifference = (a.displayOrder ?? Number.MAX_SAFE_INTEGER) -
+      (b.displayOrder ?? Number.MAX_SAFE_INTEGER);
+    if (displayOrderDifference !== 0) return displayOrderDifference;
 
     return `${b.updatedAt}`.localeCompare(`${a.updatedAt}`);
   });

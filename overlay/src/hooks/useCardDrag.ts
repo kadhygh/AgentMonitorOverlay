@@ -7,7 +7,7 @@ import {
   type PointerEvent,
   type SetStateAction,
 } from "react";
-import { mergeSessionOrder } from "../domain/sessionModel";
+import { mergeSessionOrder, normalizeSessionPriority } from "../domain/sessionModel";
 import type { AgentSession } from "../types";
 
 interface CardDragState {
@@ -26,6 +26,7 @@ interface UseCardDragOptions {
   sessionsRef: MutableRefObject<AgentSession[]>;
   setFeedback: Dispatch<SetStateAction<string>>;
   setSessionOrder: Dispatch<SetStateAction<string[]>>;
+  onOrderCommitted: (sessionIds: string[]) => void;
   suppressNextClickRef: MutableRefObject<boolean>;
 }
 
@@ -34,11 +35,16 @@ export function useCardDrag(options: UseCardDragOptions) {
   const [dropTargetId, setDropTargetId] = useState<string | null>(null);
   const cardDragRef = useRef<CardDragState | null>(null);
   const cardDragCleanupRef = useRef<(() => void) | null>(null);
+  const pendingOrderRef = useRef<string[] | null>(null);
 
   function moveDraggedSessionToIndex(draggingSessionId: string, targetIndex: number) {
     options.setSessionOrder((previousOrder) => {
       const currentSessions = options.sessionsRef.current;
-      const orderedVisibleIds = options.orderedSessionsRef.current.map((session) => session.sessionId);
+      const activeSession = currentSessions.find((session) => session.sessionId === draggingSessionId);
+      const activePriority = normalizeSessionPriority(activeSession?.priority);
+      const orderedVisibleIds = options.orderedSessionsRef.current
+        .filter((session) => normalizeSessionPriority(session.priority) === activePriority)
+        .map((session) => session.sessionId);
       const visibleWithoutDragged = orderedVisibleIds.filter((sessionId) => sessionId !== draggingSessionId);
       const baseOrder = mergeSessionOrder(previousOrder, currentSessions).filter(
         (sessionId) => sessionId !== draggingSessionId,
@@ -55,6 +61,7 @@ export function useCardDrag(options: UseCardDragOptions) {
       const safeIndex = Math.max(0, Math.min(insertIndex, baseOrder.length));
       const nextOrder = [...baseOrder];
       nextOrder.splice(safeIndex, 0, draggingSessionId);
+      pendingOrderRef.current = nextOrder;
 
       if (nextOrder.join("\u0000") === mergeSessionOrder(previousOrder, currentSessions).join("\u0000")) {
         return previousOrder;
@@ -70,8 +77,12 @@ export function useCardDrag(options: UseCardDragOptions) {
       return;
     }
 
+    const activeSession = options.sessionsRef.current.find((session) => session.sessionId === activeDrag.sessionId);
+    const activePriority = normalizeSessionPriority(activeSession?.priority);
     const visibleTargets = options.orderedSessionsRef.current.filter(
-      (session) => session.sessionId !== activeDrag.sessionId,
+      (session) =>
+        session.sessionId !== activeDrag.sessionId &&
+        normalizeSessionPriority(session.priority) === activePriority,
     );
     let targetIndex = visibleTargets.length;
     let nextDropTargetId: string | null = null;
@@ -122,6 +133,7 @@ export function useCardDrag(options: UseCardDragOptions) {
       height: rect.height,
     };
     cardDragRef.current = nextDrag;
+    pendingOrderRef.current = null;
     options.suppressNextClickRef.current = true;
     setCardDrag(nextDrag);
     setDropTargetId(null);
@@ -186,6 +198,9 @@ export function useCardDrag(options: UseCardDragOptions) {
     }
 
     removeCardDragListeners();
+    const committedOrder = pendingOrderRef.current;
+    pendingOrderRef.current = null;
+    if (committedOrder) options.onOrderCommitted(committedOrder);
     cardDragRef.current = null;
     setCardDrag(null);
     setDropTargetId(null);

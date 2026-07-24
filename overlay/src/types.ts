@@ -10,6 +10,7 @@ export type SessionState =
   | "unknown";
 
 export type AgentTool = "codex" | "codex-cli" | "codex-app" | "claude" | "claude-cli" | "other";
+export type SessionPriority = "focus" | "next" | "later";
 
 export interface WindowHint {
   process?: string;
@@ -67,6 +68,10 @@ export interface AgentSession {
   cwd: string;
   title: string;
   taskTitle?: string | null;
+  priority?: SessionPriority | null;
+  priorityUpdatedAt?: string | null;
+  displayOrder?: number | null;
+  orderUpdatedAt?: string | null;
   state: SessionState;
   lastEvent: string;
   lastMessage: string;

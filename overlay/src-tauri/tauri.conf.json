@@ -78,6 +78,22 @@
         "skipTaskbar": true,
         "visible": false,
         "center": true
+      },
+      {
+        "label": "priorities",
+        "title": "AMO Task Priorities",
+        "width": 720,
+        "height": 580,
+        "minWidth": 560,
+        "minHeight": 430,
+        "resizable": true,
+        "decorations": false,
+        "alwaysOnTop": true,
+        "transparent": true,
+        "shadow": true,
+        "skipTaskbar": true,
+        "visible": false,
+        "center": true
       }
     ]
   },

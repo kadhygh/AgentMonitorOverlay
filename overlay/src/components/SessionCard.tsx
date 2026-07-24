@@ -17,8 +17,10 @@ import claudeCliIcon from "../assets/tool-icons/claude-cli.png";
 import codexAppIcon from "../assets/tool-icons/codex-app.png";
 import codexCliIcon from "../assets/tool-icons/codex-cli.png";
 import {
+  normalizeSessionPriority,
   sessionArchived,
   sessionNeedsReview,
+  sessionPriorityLabels,
   formatAgo,
 } from "../domain/sessionModel";
 import {
@@ -185,6 +187,7 @@ export function SessionRowContent({
   const failed = session.state === "failed";
   const reviewPending = sessionNeedsReview(session);
   const attentionTone = reviewPending ? "review" : waitingForPermission ? "permission" : failed ? "failed" : "attention";
+  const priority = normalizeSessionPriority(session.priority);
   const display = toolDisplayForSession(session);
   const statusLabel = activating
     ? "Opening"
@@ -326,6 +329,12 @@ export function SessionRowContent({
             <span className="state-dot" aria-hidden="true" />
             <span>{statusLabel}</span>
           </span>
+          {priority ? (
+            <span className={`priority-pill priority-${priority}`} title={`Task priority: ${sessionPriorityLabels[priority]}`}>
+              <span className="priority-dot" aria-hidden="true" />
+              <span>{sessionPriorityLabels[priority]}</span>
+            </span>
+          ) : null}
           <span className="session-inline-meta">
             <span className="session-info-project">{sessionProjectName}</span>
             <span className="session-meta-separator">·</span>

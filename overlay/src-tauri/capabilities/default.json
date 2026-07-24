@@ -2,7 +2,7 @@
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "default",
   "description": "Desktop permissions for the overlay prototype.",
-  "windows": ["main", "scratchpad", "deploy", "settings"],
+  "windows": ["main", "scratchpad", "deploy", "settings", "priorities"],
   "permissions": [
     "core:default",
     "core:window:allow-hide",

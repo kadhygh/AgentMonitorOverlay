@@ -29,6 +29,22 @@ async function handleSessionRoutes(req, res, url, context) {
     return true;
   }
 
+  if (req.method === "POST" && url.pathname === "/api/sessions/priorities") {
+    const payload = await readJsonBody(req);
+    const result = context.updateSessionPriorities(payload || {});
+    context.persistSnapshot();
+    for (const session of result.sessions) context.publishSessionChanged("priority", session);
+    return sendHandled(res, 200, result);
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/sessions/display-order") {
+    const payload = await readJsonBody(req);
+    const result = context.updateSessionDisplayOrder(payload || {});
+    context.persistSnapshot();
+    context.publishSessionChanged("display-order", null);
+    return sendHandled(res, 200, result);
+  }
+
   const windowBindingMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/window-binding$/);
   if (req.method === "POST" && windowBindingMatch) {
     const sessionId = decodeURIComponent(windowBindingMatch[1]);

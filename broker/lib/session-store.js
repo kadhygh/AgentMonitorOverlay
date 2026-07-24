@@ -18,6 +18,13 @@ const VALID_STATES = new Set([
   "failed",
   "cancelled",
 ]);
+const VALID_PRIORITIES = new Set(["focus", "next", "later"]);
+const PRIORITY_RANK = new Map([
+  ["focus", 0],
+  ["next", 1],
+  ["later", 2],
+  [null, 3],
+]);
 
 function createSessionStore({
   dataFile,
@@ -70,6 +77,35 @@ function createSessionStore({
       reviewNote: null,
       reviewCanvasNodeId: null,
     };
+  }
+
+  function normalizePriority(value, { strict = false } = {}) {
+    const normalized = (normalizeText(value) || "").toLowerCase();
+    if (!normalized || normalized === "none") return null;
+    if (VALID_PRIORITIES.has(normalized)) return normalized;
+    if (strict) {
+      throw httpError(400, "invalid_priority", `Unsupported task priority: ${normalized}`);
+    }
+    return null;
+  }
+
+  function nextDisplayOrder() {
+    let maximum = -1;
+    for (const session of sessions.values()) {
+      if (Number.isFinite(session?.displayOrder)) maximum = Math.max(maximum, session.displayOrder);
+    }
+    return maximum + 1;
+  }
+
+  function ensurePresentationFields(session, fallbackOrder = null) {
+    const priority = normalizePriority(session?.priority);
+    const displayOrder = Number.isFinite(session?.displayOrder)
+      ? session.displayOrder
+      : Number.isFinite(fallbackOrder)
+        ? fallbackOrder
+        : nextDisplayOrder();
+    if (session?.priority === priority && session?.displayOrder === displayOrder) return session;
+    return { ...session, priority, displayOrder };
   }
 
   function reviveArchivedSession(session, reason, existing = session) {
@@ -187,6 +223,8 @@ function createSessionStore({
           ? null
           : incomingTurnId || existing?.activeTurnId || null,
       transcriptPath,
+      priority: normalizePriority(existing?.priority),
+      displayOrder: Number.isFinite(existing?.displayOrder) ? existing.displayOrder : nextDisplayOrder(),
     };
     if (shouldClearAttention) {
       const hadAttention = sessionHasAttentionState(existing) || Boolean(payload.needsAttention);
@@ -473,6 +511,75 @@ function createSessionStore({
     };
   }
 
+  function updateSessionPriorities(payload = {}) {
+    const sessionIds = Array.from(new Set(normalizeTextArray(payload.sessionIds || payload.session_ids)));
+    if (sessionIds.length === 0) {
+      throw httpError(400, "missing_session_ids", "Priority update must include at least one session id");
+    }
+
+    const priority = normalizePriority(payload.priority, { strict: true });
+    const missingSessionIds = sessionIds.filter((sessionId) => !sessions.has(sessionId));
+    if (missingSessionIds.length > 0) {
+      throw httpError(404, "session_not_found", `Session not found for priority update: ${missingSessionIds[0]}`);
+    }
+
+    const now = new Date().toISOString();
+    const updatedSessions = sessionIds.map((sessionId) => {
+      const existing = ensurePresentationFields(sessions.get(sessionId));
+      const session = { ...existing, priority, priorityUpdatedAt: now };
+      sessions.set(sessionId, session);
+      return session;
+    });
+
+    recordDebugLog("broker", "session.priority.updated", { sessionIds, priority, count: updatedSessions.length });
+    return {
+      ok: true,
+      schemaVersion: AMO_SCHEMA_VERSION,
+      priority,
+      count: updatedSessions.length,
+      sessionIds,
+      sessions: updatedSessions,
+    };
+  }
+
+  function updateSessionDisplayOrder(payload = {}) {
+    const sessionIds = Array.from(new Set(normalizeTextArray(payload.sessionIds || payload.session_ids)));
+    if (sessionIds.length === 0) {
+      throw httpError(400, "missing_session_ids", "Display order update must include at least one session id");
+    }
+
+    const missingSessionIds = sessionIds.filter((sessionId) => !sessions.has(sessionId));
+    if (missingSessionIds.length > 0) {
+      throw httpError(404, "session_not_found", `Session not found for display order update: ${missingSessionIds[0]}`);
+    }
+
+    const now = new Date().toISOString();
+    const orderedIds = [
+      ...sessionIds,
+      ...Array.from(sessions.keys()).filter((sessionId) => !sessionIds.includes(sessionId)),
+    ];
+    const updatedSessions = orderedIds.map((sessionId, displayOrder) => {
+      const existing = sessions.get(sessionId);
+      const session = {
+        ...existing,
+        priority: normalizePriority(existing?.priority),
+        displayOrder,
+        orderUpdatedAt: now,
+      };
+      sessions.set(sessionId, session);
+      return session;
+    });
+
+    recordDebugLog("broker", "session.display_order.updated", { orderedSessionIds: orderedIds, count: updatedSessions.length });
+    return {
+      ok: true,
+      schemaVersion: AMO_SCHEMA_VERSION,
+      count: updatedSessions.length,
+      sessionIds: orderedIds,
+      sessions: updatedSessions,
+    };
+  }
+
   function archiveSession(sessionId, payload = {}) {
     if (!sessionId) {
       throw httpError(400, "missing_session_id", "Archive URL must include session id");
@@ -590,13 +697,19 @@ function createSessionStore({
 
   function listSessions() {
     const healthCache = new Map();
-    return Array.from(sessions.values()).map((session) => {
-      const refreshedSession = refreshSessionTitle(session);
+    return Array.from(sessions.values()).map((session, index) => {
+      const refreshedSession = ensurePresentationFields(refreshSessionTitle(session), index);
       if (refreshedSession !== session) {
         sessions.set(refreshedSession.sessionId, refreshedSession);
       }
       return attachObsidianPluginHealth(refreshedSession, healthCache, { expectedBridgeUrl: bridgeUrl() });
     }).sort((a, b) => {
+      const priorityDifference = (PRIORITY_RANK.get(normalizePriority(a.priority)) ?? 3) -
+        (PRIORITY_RANK.get(normalizePriority(b.priority)) ?? 3);
+      if (priorityDifference !== 0) return priorityDifference;
+      const orderDifference = (Number.isFinite(a.displayOrder) ? a.displayOrder : Number.MAX_SAFE_INTEGER) -
+        (Number.isFinite(b.displayOrder) ? b.displayOrder : Number.MAX_SAFE_INTEGER);
+      if (orderDifference !== 0) return orderDifference;
       return `${b.updatedAt}`.localeCompare(`${a.updatedAt}`);
     });
   }
@@ -613,9 +726,9 @@ function createSessionStore({
         return;
       }
 
-      for (const session of snapshot.sessions) {
+      for (const [index, session] of snapshot.sessions.entries()) {
         if (session && session.sessionId) {
-          sessions.set(session.sessionId, refreshSessionTitle(session));
+          sessions.set(session.sessionId, ensurePresentationFields(refreshSessionTitle(session), index));
         }
       }
     } catch (error) {
@@ -649,6 +762,8 @@ function createSessionStore({
     markSessionReviewed,
     clearSessionAttention,
     updateSessionTaskTitle,
+    updateSessionPriorities,
+    updateSessionDisplayOrder,
     archiveSession,
     dismissSession,
     dismissArchivedSessions,

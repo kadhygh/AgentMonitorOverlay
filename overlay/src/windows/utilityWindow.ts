@@ -2,7 +2,7 @@ import { useEffect, type PointerEvent } from "react";
 import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window";
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
-export type UtilityWindowKind = "deploy" | "settings";
+export type UtilityWindowKind = "deploy" | "settings" | "priorities";
 export type AmoWindowLabel = "main" | "scratchpad" | UtilityWindowKind;
 
 export interface UtilityWindowStateEvent {
@@ -13,7 +13,7 @@ export interface UtilityWindowStateEvent {
 export const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
 
 const AMO_FLOATING_WINDOWS: AmoWindowLabel[] = ["main", "scratchpad"];
-const AMO_UTILITY_WINDOWS: UtilityWindowKind[] = ["deploy", "settings"];
+const AMO_UTILITY_WINDOWS: UtilityWindowKind[] = ["deploy", "settings", "priorities"];
 const AMO_WINDOW_LABELS: AmoWindowLabel[] = [...AMO_FLOATING_WINDOWS, ...AMO_UTILITY_WINDOWS];
 
 export function startUtilityWindowDrag(event: PointerEvent<HTMLElement>) {
@@ -64,7 +64,7 @@ export function useUtilityWindowLifecycle(label: UtilityWindowKind) {
 }
 
 export function isUtilityWindowLabel(label: string): label is UtilityWindowKind {
-  return label === "deploy" || label === "settings";
+  return label === "deploy" || label === "settings" || label === "priorities";
 }
 
 async function getAmoWindow(label: AmoWindowLabel) {
