@@ -222,7 +222,6 @@
 :root[data-amo-theme="light"] .scratchpad-footer button,
 :root[data-amo-theme="light"] .scratchpad-safe-copy,
 :root[data-amo-theme="light"] .summary-filter-button,
-:root[data-amo-theme="light"] .summary-clear-archive-button,
 :root[data-amo-theme="light"] .settings-field select,
 :root[data-amo-theme="light"] .settings-primary-action,
 :root[data-amo-theme="light"] .summary-retry-button,
@@ -248,8 +247,6 @@
 :root[data-amo-theme="light"] .scratchpad-safe-copy:hover,
 :root[data-amo-theme="light"] .summary-filter-button:hover,
 :root[data-amo-theme="light"] .summary-filter-button:focus-visible,
-:root[data-amo-theme="light"] .summary-clear-archive-button:hover,
-:root[data-amo-theme="light"] .summary-clear-archive-button:focus-visible,
 :root[data-amo-theme="light"] .settings-primary-action:hover,
 :root[data-amo-theme="light"] .summary-retry-button:hover,
 :root[data-amo-theme="light"] .broker-retry-button:hover,
@@ -333,3 +330,105 @@
   box-shadow: 0 0 0 2px rgba(18, 135, 105, 0.1);
 }
 
+
+:root[data-amo-theme="light"] .priority-filter-toggle.priority-focus {
+  color: #7a369e;
+}
+
+:root[data-amo-theme="light"] .priority-filter-toggle.priority-next {
+  color: #275f91;
+}
+
+:root[data-amo-theme="light"] .priority-filter-toggle.priority-later {
+  color: #4f6f63;
+}
+
+:root[data-amo-theme="light"] .priority-filter-toggle.priority-none {
+  color: #6c7874;
+}
+
+:root[data-amo-theme="light"] .summary-filter-group {
+  background: rgba(42, 74, 64, 0.055);
+  border-color: rgba(42, 74, 64, 0.13);
+}
+
+:root[data-amo-theme="light"] .summary-filter-group .summary-filter-button {
+  background: transparent;
+  border-color: transparent;
+}
+
+:root[data-amo-theme="light"] .summary-filter-group .summary-filter-button:hover,
+:root[data-amo-theme="light"] .summary-filter-group .summary-filter-button:focus-visible {
+  background: rgba(18, 135, 105, 0.09);
+  border-color: rgba(18, 135, 105, 0.12);
+}
+
+:root[data-amo-theme="light"] .summary-filter-group .status-filter-attention.is-active {
+  color: #875609;
+  background: rgba(208, 147, 40, 0.15);
+  border-color: rgba(179, 122, 26, 0.2);
+}
+
+:root[data-amo-theme="light"] .summary-filter-group .priority-filter-toggle.priority-focus.is-active {
+  color: #642484;
+  background: rgba(151, 83, 188, 0.16);
+  border-color: rgba(126, 57, 162, 0.2);
+}
+
+:root[data-amo-theme="light"] .summary-filter-group .priority-filter-toggle.priority-next.is-active {
+  color: #1f527f;
+  background: rgba(64, 127, 182, 0.15);
+  border-color: rgba(46, 103, 153, 0.2);
+}
+
+:root[data-amo-theme="light"] .summary-filter-group .priority-filter-toggle.priority-later.is-active {
+  color: #36584d;
+  background: rgba(86, 125, 111, 0.14);
+  border-color: rgba(69, 105, 92, 0.18);
+}
+
+:root[data-amo-theme="light"] .summary-filter-group .priority-filter-toggle.priority-none.is-active {
+  color: #4f5e59;
+  background: rgba(103, 119, 113, 0.13);
+  border-color: rgba(78, 94, 88, 0.17);
+}
+
+:root[data-amo-theme="light"] .archive-panel {
+  color: #17211f;
+  background: rgba(249, 252, 251, 0.99);
+  border-color: rgba(42, 74, 64, 0.2);
+  box-shadow: 0 20px 42px rgba(40, 65, 57, 0.2);
+}
+
+:root[data-amo-theme="light"] .archive-panel-header small,
+:root[data-amo-theme="light"] .archive-panel-footer,
+:root[data-amo-theme="light"] .archive-panel-empty {
+  color: #63746e;
+}
+
+:root[data-amo-theme="light"] .archive-panel-search {
+  color: #52665f;
+  background: rgba(255, 255, 255, 0.82);
+  border-color: rgba(42, 74, 64, 0.16);
+}
+
+:root[data-amo-theme="light"] .archive-panel-search input,
+:root[data-amo-theme="light"] .archive-panel-row strong {
+  color: #17211f;
+}
+
+:root[data-amo-theme="light"] .archive-panel-row {
+  background: rgba(255, 255, 255, 0.72);
+  border-color: rgba(42, 74, 64, 0.13);
+}
+
+:root[data-amo-theme="light"] .archive-panel-row small {
+  color: #63746e;
+}
+
+:root[data-amo-theme="light"] .archive-panel-row button,
+:root[data-amo-theme="light"] .archive-panel-footer button {
+  color: #9b353a;
+  background: rgba(190, 55, 63, 0.07);
+  border-color: rgba(164, 44, 51, 0.18);
+}

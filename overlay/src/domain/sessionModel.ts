@@ -17,13 +17,11 @@ export function sessionPriorityRank(priority: AgentSession["priority"]) {
   return normalized === "focus" ? 0 : normalized === "next" ? 1 : normalized === "later" ? 2 : 3;
 }
 
-export type SessionFilter = "all" | "attention" | "idle" | "archive";
+export type SessionFilter = "all" | "attention";
 
 export const sessionFilterLabels: Record<SessionFilter, string> = {
   all: "All",
   attention: "Attention",
-  idle: "Idle",
-  archive: "Archive",
 };
 
 export function normalizeSessions(value: unknown): AgentSession[] | null {
@@ -143,20 +141,10 @@ export function sessionAttentionVisualActive(session: AgentSession, visuallySeen
 }
 
 export function sessionMatchesFilter(session: AgentSession, filter: SessionFilter) {
-  const archived = sessionArchived(session);
-  if (filter === "archive") {
-    return archived;
-  }
-  if (archived) {
+  if (sessionArchived(session)) {
     return false;
   }
-  if (filter === "attention") {
-    return sessionHasAttentionSignal(session);
-  }
-  if (filter === "idle") {
-    return session.state === "idle";
-  }
-  return true;
+  return filter === "attention" ? sessionHasAttentionSignal(session) : true;
 }
 
 export function formatAgo(updatedAt: string) {

@@ -4,24 +4,29 @@ import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
   AlertTriangle,
   Archive,
+  ArrowRight,
   ChevronDown,
   ChevronUp,
-  Clock,
+  Clock3,
+  Crosshair,
   FolderPlus,
   GripHorizontal,
   GripVertical,
   ListFilter,
   ListTodo,
+  Minus,
   Search,
   Settings2,
   SquareTerminal,
-  Trash2,
   X,
 } from "lucide-react";
 import {
   applySessionOrder,
+  normalizeSessionPriority,
+  SESSION_PRIORITIES,
   sessionArchived,
   sessionFilterLabels,
+  sessionPriorityLabels,
   formatAgo,
   sessionHasAttentionSignal,
   sessionMatchesFilter,
@@ -52,6 +57,7 @@ import {
   type BrokerReadiness,
 } from "../components/BrokerReadinessPanel";
 import { ArchiveClearConfirmDialog } from "../components/ArchiveClearConfirmDialog";
+import { ArchivePanel } from "../components/ArchivePanel";
 import { CandidateMenu, type CandidateMenuState } from "../components/CandidateMenu";
 import { CleanConfirmDialog, type CleanConfirmState } from "../components/CleanConfirmDialog";
 import { LaunchPanel, type LaunchPanelState } from "../components/LaunchPanel";
@@ -66,10 +72,12 @@ import { listenForTrayOpenRequests, setTrayAttentionState } from "../native/tray
 import { useAmoThemeRuntime } from "../theme/amoTheme";
 import type {
   AgentSession,
+  SessionPriority,
 } from "../types";
 
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 52 };
+type PriorityFilterValue = SessionPriority | "none";
 
 function utilityWindowTitle(label: string) {
   return label === "deploy" ? "Workspace Center" : label === "settings" ? "Settings" : "Task Priorities";
@@ -118,12 +126,14 @@ export function MainOverlayApp() {
   const [collapsed, setCollapsed] = useState(false);
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
   const [sessionSearch, setSessionSearch] = useState("");
+  const [priorityFilters, setPriorityFilters] = useState<Set<PriorityFilterValue>>(() => new Set());
   const [candidateMenu, setCandidateMenu] = useState<CandidateMenuState | null>(null);
   const [priorityMenu, setPriorityMenu] = useState<PriorityMenuState | null>(null);
   const [workspacePanel, setWorkspacePanel] = useState<WorkspacePanelState | null>(null);
   const [launchPanel, setLaunchPanel] = useState<LaunchPanelState | null>(null);
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
   const [archiveClearConfirmOpen, setArchiveClearConfirmOpen] = useState(false);
+  const [archivePanelOpen, setArchivePanelOpen] = useState(false);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const orderedSessionsRef = useRef<AgentSession[]>([]);
   const actionRequiredProbeHandlerRef = useRef<((candidateSessions: AgentSession[], reason: string) => Promise<void>) | null>(null);
@@ -190,10 +200,6 @@ export function MainOverlayApp() {
     sessions,
     setSessions,
   });
-  const reviewCount = useMemo(
-    () => sessions.filter((session) => !sessionArchived(session) && sessionNeedsReview(session)).length,
-    [sessions],
-  );
 
   const {
     isSessionVisualAttentionActive,
@@ -351,13 +357,15 @@ export function MainOverlayApp() {
     workspacePanel,
   });
 
-  const filteredSessions = useMemo(
-    () =>
-      applySessionOrder(sessions, sessionOrder).filter(
-        (session) => sessionMatchesFilter(session, sessionFilter) && sessionMatchesSearch(session, sessionSearch),
-      ),
-    [sessions, sessionOrder, sessionFilter, sessionSearch],
-  );
+  const filteredSessions = useMemo(() => {
+    return applySessionOrder(sessions, sessionOrder).filter((session) => {
+      const priority = normalizeSessionPriority(session.priority) || "none";
+      const matchesPriority = priorityFilters.size === 0 || priorityFilters.has(priority);
+      return sessionMatchesFilter(session, sessionFilter)
+        && matchesPriority
+        && sessionMatchesSearch(session, sessionSearch);
+    });
+  }, [sessions, sessionOrder, sessionFilter, sessionSearch, priorityFilters]);
 
   const orderedSessions = useMemo(
     () => filteredSessions.slice(0, 8),
@@ -374,10 +382,6 @@ export function MainOverlayApp() {
     [sessions],
   );
 
-  const attentionCount = useMemo(
-    () => sessions.filter((session) => !sessionArchived(session) && session.needsAttention).length,
-    [sessions],
-  );
 
   const attentionSignalCount = useMemo(
     () => sessions.filter((session) => !sessionArchived(session) && sessionHasAttentionSignal(session)).length,
@@ -476,6 +480,15 @@ export function MainOverlayApp() {
     await activateSession(clearedSession ?? session);
   }
 
+  function togglePriorityFilter(priority: PriorityFilterValue) {
+    setPriorityFilters((current) => {
+      const next = new Set(current);
+      if (next.has(priority)) next.delete(priority);
+      else next.add(priority);
+      return next;
+    });
+  }
+
   return (
     <main className={`overlay-shell ${collapsed ? "is-collapsed" : ""}`}>
       <header
@@ -554,16 +567,17 @@ export function MainOverlayApp() {
               {brokerReady ? (
                 <>
                   <span>{activeSessionCount} active lines</span>
-                  <strong>{attentionCount} need attention</strong>
-                  {reviewCount > 0 ? <strong className="summary-review">{reviewCount} review</strong> : null}
-                  {archiveCount > 0 ? <em>{archiveCount} archive</em> : null}
-                  {sessionFilter !== "all" || sessionSearch.trim() ? (
-                    <em>
-                      {orderedSessions.length === filteredSessions.length
-                        ? filteredSessions.length + " shown"
-                        : orderedSessions.length + " of " + filteredSessions.length + " shown"}
-                    </em>
-                  ) : null}
+                  <strong>{attentionSignalCount} need attention</strong>
+                  <label className="summary-search" title="Search cards">
+                    <Search size={11} aria-hidden="true" />
+                    <input
+                      type="search"
+                      aria-label="Search cards"
+                      placeholder="Search"
+                      value={sessionSearch}
+                      onChange={(event) => setSessionSearch(event.currentTarget.value)}
+                    />
+                  </label>
                 </>
               ) : (
                 <>
@@ -574,51 +588,77 @@ export function MainOverlayApp() {
             </div>
             {brokerReady ? (
               <div className="summary-controls" aria-label="Session filters">
-                {(["all", "attention", "idle", "archive"] as SessionFilter[]).map((filter) => (
+                <div className="summary-filter-group summary-status-filters" aria-label="Status filters">
+                  {(["all", "attention"] as SessionFilter[]).map((filter) => (
+                    <button
+                      key={filter}
+                      type="button"
+                      className={
+                        "summary-filter-button status-filter-" + filter + " "
+                        + (sessionFilter === filter ? "is-active" : "")
+                      }
+                      title={sessionFilterLabels[filter]}
+                      aria-label={"Show " + sessionFilterLabels[filter] + " cards"}
+                      onClick={() => setSessionFilter(filter)}
+                    >
+                      {filter === "all" ? <ListFilter size={12} aria-hidden="true" /> : null}
+                      {filter === "attention" ? <AlertTriangle size={12} aria-hidden="true" /> : null}
+                    </button>
+                  ))}
+                </div>
+
+                <div className="summary-filter-group summary-priority-filters" aria-label="Priority filters">
+                  {([...SESSION_PRIORITIES, "none"] as PriorityFilterValue[]).map((priority) => (
+                    <button
+                      key={priority}
+                      type="button"
+                      className={
+                        "summary-filter-button priority-filter-toggle priority-" + priority + " "
+                        + (priorityFilters.has(priority) ? "is-active" : "")
+                      }
+                      title={
+                        "Toggle "
+                        + (priority === "none" ? "no priority" : sessionPriorityLabels[priority])
+                        + " tasks"
+                      }
+                      aria-label={
+                        "Toggle "
+                        + (priority === "none" ? "no priority" : sessionPriorityLabels[priority])
+                        + " tasks"
+                      }
+                      aria-pressed={priorityFilters.has(priority)}
+                      onClick={() => togglePriorityFilter(priority)}
+                    >
+                      {priority === "focus" ? <Crosshair size={12} aria-hidden="true" /> : null}
+                      {priority === "next" ? <ArrowRight size={12} aria-hidden="true" /> : null}
+                      {priority === "later" ? <Clock3 size={12} aria-hidden="true" /> : null}
+                      {priority === "none" ? <Minus size={12} aria-hidden="true" /> : null}
+                    </button>
+                  ))}
+                </div>
+
+                <span className="summary-control-spacer" aria-hidden="true" />
+
+                <div className="summary-filter-group summary-management-filters" aria-label="Task management">
                   <button
-                    key={filter}
                     type="button"
-                    className={`summary-filter-button ${sessionFilter === filter ? "is-active" : ""}`}
-                    title={sessionFilterLabels[filter]}
-                    aria-label={`Show ${sessionFilterLabels[filter]} cards`}
-                    onClick={() => setSessionFilter(filter)}
+                    className={"summary-filter-button " + (archivePanelOpen ? "is-active" : "")}
+                    title={"Open archive (" + archiveCount + ")"}
+                    aria-label={"Open archive with " + archiveCount + " cards"}
+                    onClick={() => setArchivePanelOpen(true)}
                   >
-                    {filter === "all" ? <ListFilter size={12} aria-hidden="true" /> : null}
-                    {filter === "attention" ? <AlertTriangle size={12} aria-hidden="true" /> : null}
-                    {filter === "idle" ? <Clock size={12} aria-hidden="true" /> : null}
-                    {filter === "archive" ? <Archive size={12} aria-hidden="true" /> : null}
+                    <Archive size={12} aria-hidden="true" />
                   </button>
-                ))}
-                <button
-                  type="button"
-                  className={`summary-filter-button ${activeUtilityWindow === "priorities" ? "is-active" : ""}`}
-                  title="Manage priorities"
-                  aria-label="Manage task priorities"
-                  onClick={() => void openPriorityDialog()}
-                >
-                  <ListTodo size={12} aria-hidden="true" />
-                </button>
-                {sessionFilter === "archive" && archiveCount > 0 ? (
                   <button
                     type="button"
-                    className="summary-clear-archive-button"
-                    title="Clear archive"
-                    aria-label={"Clear " + archiveCount + " archived cards"}
-                    onClick={() => setArchiveClearConfirmOpen(true)}
+                    className={"summary-filter-button " + (activeUtilityWindow === "priorities" ? "is-active" : "")}
+                    title="Manage priorities"
+                    aria-label="Manage task priorities"
+                    onClick={() => void openPriorityDialog()}
                   >
-                    <Trash2 size={12} aria-hidden="true" />
+                    <ListTodo size={12} aria-hidden="true" />
                   </button>
-                ) : null}
-                <label className="summary-search" title="Search cards">
-                  <Search size={11} aria-hidden="true" />
-                  <input
-                    type="search"
-                    aria-label="Search cards"
-                    placeholder="Search"
-                    value={sessionSearch}
-                    onChange={(event) => setSessionSearch(event.currentTarget.value)}
-                  />
-                </label>
+                </div>
               </div>
             ) : (
               <button type="button" className="summary-retry-button" onClick={() => void ensureBrokerThenRefresh()}>
@@ -793,6 +833,17 @@ export function MainOverlayApp() {
               onClose={closeObsidianVaultRecovery}
               onOpenFolder={() => void openRecoveryVaultFolder()}
               onCopyPath={() => void copyRecoveryVaultPath()}
+            />
+          ) : null}
+
+          {archivePanelOpen ? (
+            <ArchivePanel
+              sessions={sessions.filter(sessionArchived)}
+              dismissingSessionId={dismissingSessionId}
+              clearing={clearingArchive}
+              onClose={() => setArchivePanelOpen(false)}
+              onDismiss={(session) => void dismissSession(session)}
+              onClear={() => setArchiveClearConfirmOpen(true)}
             />
           ) : null}
 

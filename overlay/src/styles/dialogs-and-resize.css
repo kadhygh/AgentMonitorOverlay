@@ -114,6 +114,176 @@
   opacity: 0.6;
 }
 
+.archive-panel-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 68;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(0, 0, 0, 0.42);
+  backdrop-filter: blur(2px);
+}
+
+.archive-panel {
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr) auto;
+  gap: 8px;
+  width: min(350px, calc(100vw - 28px));
+  max-height: min(430px, calc(100vh - 28px));
+  padding: 10px;
+  overflow: hidden;
+  color: #eef6f2;
+  background: rgba(18, 26, 30, 0.99);
+  border: 1px solid rgba(163, 187, 178, 0.24);
+  border-radius: 8px;
+  box-shadow: 0 20px 42px rgba(0, 0, 0, 0.48);
+}
+
+.archive-panel-header,
+.archive-panel-header > div,
+.archive-panel-footer,
+.archive-panel-footer button,
+.archive-panel-search {
+  display: flex;
+  align-items: center;
+}
+
+.archive-panel-header,
+.archive-panel-footer {
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.archive-panel-header > div {
+  min-width: 0;
+  gap: 7px;
+}
+
+.archive-panel-header span {
+  display: grid;
+  min-width: 0;
+}
+
+.archive-panel-header strong {
+  font-size: 12px;
+  line-height: 14px;
+}
+
+.archive-panel-header small,
+.archive-panel-footer {
+  color: #9fb0aa;
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.archive-panel-search {
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 7px;
+  color: #a8bbb5;
+  background: rgba(0, 0, 0, 0.14);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+}
+
+.archive-panel-search:focus-within {
+  color: #dff4ec;
+  border-color: rgba(111, 224, 190, 0.34);
+}
+
+.archive-panel-search input {
+  width: 100%;
+  min-width: 0;
+  color: #e8f5f1;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 10px;
+}
+
+.archive-panel-list {
+  display: grid;
+  align-content: start;
+  gap: 5px;
+  min-height: 90px;
+  overflow: auto;
+}
+
+.archive-panel-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 7px;
+  min-height: 48px;
+  padding: 6px 7px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+}
+
+.archive-panel-row > span {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.archive-panel-row strong,
+.archive-panel-row small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.archive-panel-row strong {
+  color: #e8f2ee;
+  font-size: 11px;
+}
+
+.archive-panel-row small {
+  color: #92a49e;
+  font-size: 9px;
+}
+
+.archive-panel-row button,
+.archive-panel-footer button {
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 0 7px;
+  color: #d9aaa9;
+  background: rgba(205, 76, 82, 0.08);
+  border: 1px solid rgba(225, 104, 110, 0.16);
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.archive-panel-row button {
+  width: 26px;
+  padding: 0;
+}
+
+.archive-panel-row button:hover:not(:disabled),
+.archive-panel-footer button:hover:not(:disabled) {
+  color: #ffd9d9;
+  background: rgba(205, 76, 82, 0.16);
+}
+
+.archive-panel-row button:disabled,
+.archive-panel-footer button:disabled {
+  cursor: wait;
+  opacity: 0.5;
+}
+
+.archive-panel-empty {
+  display: grid;
+  min-height: 100px;
+  place-items: center;
+  color: #8fa19b;
+  font-size: 10px;
+  text-align: center;
+}
+
 .vault-recovery-dialog {
   display: grid;
   gap: 10px;
