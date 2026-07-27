@@ -2,6 +2,7 @@ const fs = require("fs");
 const path = require("path");
 
 const { AMO_SCHEMA_VERSION } = require("./amo-constants");
+const { replaceFileSync } = require("./filesystem");
 const { httpError } = require("./http");
 const { refreshSessionTitle, resolveSessionTitle } = require("./display-names");
 const { normalizeInteger, normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./normalize");
@@ -747,7 +748,7 @@ function createSessionStore({
     };
     const tmpFile = `${dataFile}.${process.pid}.tmp`;
     fs.writeFileSync(tmpFile, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
-    fs.renameSync(tmpFile, dataFile);
+    replaceFileSync(tmpFile, dataFile);
   }
 
   return {

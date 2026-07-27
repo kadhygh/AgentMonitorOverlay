@@ -12,6 +12,42 @@ interface UseMainUtilityWindowsOptions {
   setFeedback: Dispatch<SetStateAction<string>>;
 }
 
+type LazyWindowKind = UtilityWindowKind | "scratchpad";
+
+const utilityWindowDefinitions: Record<
+  LazyWindowKind,
+  { title: string; width: number; height: number; minWidth: number; minHeight: number }
+> = {
+  deploy: {
+    title: "AMO Workspace Center",
+    width: 1000,
+    height: 640,
+    minWidth: 760,
+    minHeight: 500,
+  },
+  scratchpad: {
+    title: "AMO Scratchpad",
+    width: 480,
+    height: 320,
+    minWidth: 340,
+    minHeight: 220,
+  },
+  settings: {
+    title: "AMO Settings",
+    width: 660,
+    height: 500,
+    minWidth: 540,
+    minHeight: 400,
+  },
+  priorities: {
+    title: "AMO Task Priorities",
+    width: 720,
+    height: 580,
+    minWidth: 560,
+    minHeight: 430,
+  },
+};
+
 export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
   const [activeUtilityWindow, setActiveUtilityWindow] = useState<UtilityWindowKind | null>(null);
 
@@ -75,10 +111,7 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
           await setAmoWindowAlwaysOnTop(otherLabel, false);
         }),
       );
-      const targetWindow = await WebviewWindow.getByLabel(label);
-      if (!targetWindow) {
-        throw new Error(`${label} window is not registered`);
-      }
+      await getOrCreateUtilityWindow(label);
       await bringUtilityWindowToFront(label);
       const title = label === "deploy" ? "Workspace Center" : label === "settings" ? "Settings" : "Task Priorities";
       options.setFeedback(`${title} opened.`);
@@ -132,4 +165,47 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
     openPriorityDialog,
     openSettingsDialog,
   };
+}
+export function ensureScratchpadWindow() {
+  return getOrCreateUtilityWindow("scratchpad");
+}
+
+async function getOrCreateUtilityWindow(label: LazyWindowKind) {
+  const existing = await WebviewWindow.getByLabel(label);
+  if (existing) return existing;
+
+  const definition = utilityWindowDefinitions[label];
+  const target = new WebviewWindow(label, {
+    url: "/",
+    title: definition.title,
+    width: definition.width,
+    height: definition.height,
+    minWidth: definition.minWidth,
+    minHeight: definition.minHeight,
+    resizable: true,
+    decorations: false,
+    alwaysOnTop: true,
+    transparent: true,
+    shadow: true,
+    skipTaskbar: true,
+    visible: false,
+    center: true,
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    const timeoutId = window.setTimeout(() => {
+      reject(new Error(`${label} window creation timed out`));
+    }, 8000);
+
+    void target.once("tauri://created", () => {
+      window.clearTimeout(timeoutId);
+      resolve();
+    });
+    void target.once<string>("tauri://error", (event) => {
+      window.clearTimeout(timeoutId);
+      reject(new Error(event.payload || `${label} window creation failed`));
+    });
+  });
+
+  return target;
 }

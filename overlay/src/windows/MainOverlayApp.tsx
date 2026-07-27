@@ -39,7 +39,7 @@ import { useDebugLogging } from "../hooks/useDebugLogging";
 import { useBrokerSessions } from "../hooks/useBrokerSessions";
 import { useAttentionVisuals } from "../hooks/useAttentionVisuals";
 import { useCardDrag } from "../hooks/useCardDrag";
-import { useMainUtilityWindows } from "../hooks/useMainUtilityWindows";
+import { ensureScratchpadWindow, useMainUtilityWindows } from "../hooks/useMainUtilityWindows";
 import { useManagedWindowLiveness } from "../hooks/useManagedWindowLiveness";
 import { useObsidianOpen } from "../hooks/useObsidianOpen";
 import { useOverlayResize } from "../hooks/useOverlayResize";
@@ -78,6 +78,15 @@ import type {
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 52 };
 type PriorityFilterValue = SessionPriority | "none";
+type AmoRuntimeMode = "debug" | "portable" | "source" | "stable";
+
+const runtimeMode = ((import.meta.env.VITE_AMO_RUNTIME_MODE || "source").toLowerCase() as AmoRuntimeMode);
+const runtimeProfiles: Record<AmoRuntimeMode, { badge: string; contextLabel: string; contextValue: string }> = {
+  debug: { badge: "DEBUG", contextLabel: "Diagnostics", contextValue: "Console and debug logs" },
+  portable: { badge: "PORTABLE", contextLabel: "Storage", contextValue: "Portable data directory" },
+  source: { badge: "SOURCE", contextLabel: "Runtime", contextValue: "Local Vite frontend" },
+  stable: { badge: "STABLE", contextLabel: "Runtime", contextValue: "Local stable source" },
+};
 
 function utilityWindowTitle(label: string) {
   return label === "deploy" ? "Workspace Center" : label === "settings" ? "Settings" : "Task Priorities";
@@ -184,6 +193,26 @@ export function MainOverlayApp() {
       // Browser preview does not expose the native smoke command.
     });
   }, []);
+
+  useEffect(() => {
+    if (!hasLoadedSessionSnapshot && brokerReadiness.state !== "error") return;
+
+    void invoke("complete_startup").catch(() => {
+      // Direct browser previews do not use the native startup window.
+    });
+  }, [brokerReadiness.state, hasLoadedSessionSnapshot]);
+
+  useEffect(() => {
+    if (!hasLoadedSessionSnapshot) return undefined;
+
+    const preloadTimer = window.setTimeout(() => {
+      void ensureScratchpadWindow().catch(() => {
+        // The shortcut path reports a clear error if the lazy window cannot be created.
+      });
+    }, 750);
+
+    return () => window.clearTimeout(preloadTimer);
+  }, [hasLoadedSessionSnapshot]);
 
   const {
     reconcileCodexActionRequired: handleCodexActionRequiredProbe,
@@ -487,6 +516,41 @@ export function MainOverlayApp() {
       else next.add(priority);
       return next;
     });
+  }
+
+  if (!hasLoadedSessionSnapshot && brokerReadiness.state !== "error") {
+    const profile = runtimeProfiles[runtimeMode] || runtimeProfiles.source;
+    const brokerStage =
+      brokerReadiness.state === "starting"
+        ? "Starting local broker"
+        : brokerReadiness.state === "ready"
+          ? "Loading session snapshot"
+          : "Checking local broker";
+
+    return (
+      <main className="amo-boot" role="status" aria-live="polite">
+        <div className="amo-boot-content">
+          <span className="amo-boot-mode">{profile.badge}</span>
+          <div className="amo-boot-mark" aria-hidden="true" />
+          <strong>Starting AMO</strong>
+          <span className="amo-boot-stage">{brokerStage}</span>
+          <div className="amo-boot-details" aria-label="Startup details">
+            <div className="amo-boot-detail">
+              <span>Interface</span>
+              <span>Frontend ready</span>
+            </div>
+            <div className="amo-boot-detail">
+              <span>Broker</span>
+              <span>{brokerReadiness.message}</span>
+            </div>
+            <div className="amo-boot-detail">
+              <span>{profile.contextLabel}</span>
+              <span>{profile.contextValue}</span>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
   }
 
   return (

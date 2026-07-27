@@ -5,6 +5,7 @@ mod model_credentials;
 mod models;
 mod opener;
 mod scratchpad;
+mod startup;
 mod tray;
 mod windows;
 
@@ -13,6 +14,7 @@ use clipboard::write_text_to_clipboard;
 use dialogs::pick_workspace_directory;
 use models::*;
 use opener::{open_external_target, open_local_path};
+use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 use windows::{
     activate_external_window, external_window_candidate_at_cursor, list_external_window_candidates,
@@ -110,8 +112,26 @@ fn select_workspace_directory() -> FolderPickResult {
 }
 
 #[tauri::command]
-fn ensure_broker() -> BrokerEnsureResult {
-    ensure_local_broker()
+async fn ensure_broker() -> BrokerEnsureResult {
+    if std::env::var("AGENT_MONITOR_SKIP_BROKER")
+        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(false)
+    {
+        return BrokerEnsureResult {
+            ok: false,
+            started: false,
+            pid: None,
+            message: "Broker startup is disabled for this run.".to_string(),
+        };
+    }
+    tauri::async_runtime::spawn_blocking(ensure_local_broker)
+        .await
+        .unwrap_or_else(|error| BrokerEnsureResult {
+            ok: false,
+            started: false,
+            pid: None,
+            message: format!("Broker startup task failed: {error}"),
+        })
 }
 
 #[tauri::command]
@@ -225,6 +245,34 @@ fn signal_frontend_ready() -> OpenPathResult {
 }
 
 #[tauri::command]
+fn complete_startup(app: tauri::AppHandle) -> OpenPathResult {
+    let Some(main_window) = app.get_webview_window("main") else {
+        return OpenPathResult {
+            ok: false,
+            message: "Main window is not available.".to_string(),
+        };
+    };
+
+    if let Err(error) = main_window.show() {
+        return OpenPathResult {
+            ok: false,
+            message: format!("Could not show main window: {error}"),
+        };
+    }
+    let _ = main_window.unminimize();
+    let _ = main_window.set_focus();
+
+    if let Some(startup_window) = app.get_webview_window("startup") {
+        let _ = startup_window.close();
+    }
+
+    OpenPathResult {
+        ok: true,
+        message: "Startup window replaced by main window.".to_string(),
+    }
+}
+
+#[tauri::command]
 fn show_windows_notification(app: tauri::AppHandle, title: String, body: String) -> OpenPathResult {
     match app.notification().builder().title(title).body(body).show() {
         Ok(()) => OpenPathResult {
@@ -265,9 +313,8 @@ pub fn run() {
                 .build(),
         )
         .setup(|app| {
-            let broker = ensure_local_broker();
-            if !broker.ok {
-                eprintln!("AMO Broker startup failed: {}", broker.message);
+            if let Err(error) = startup::show_startup_window(app.handle()) {
+                eprintln!("AMO startup window warning: {error}");
             }
             scratchpad::install_scratchpad_mouse_hook(app.handle().clone());
             tray::install(app)?;
@@ -289,6 +336,8 @@ pub fn run() {
             select_workspace_directory,
             set_scratchpad_shortcut_config,
             signal_frontend_ready,
+            complete_startup,
+            startup::set_startup_theme,
             show_windows_notification,
             tray::set_tray_attention_state,
             show_scratchpad_at_cursor,

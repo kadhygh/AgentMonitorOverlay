@@ -6,10 +6,11 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
+$runtimeMode = if ($DebugMode) { "debug" } elseif ($Mode -eq "Portable") { "portable" } else { $Mode.ToLowerInvariant() }
+$env:VITE_AMO_RUNTIME_MODE = $runtimeMode
 $repoRoot = (Resolve-Path $PSScriptRoot).Path
 $overlayRoot = Join-Path $repoRoot "overlay"
 $localConfigPath = Join-Path $repoRoot "amo.local.json"
-
 # Some managed shells inject both Path and PATH. Start-Process treats those as
 # duplicate dictionary keys, so normalize them before launching child processes.
 $processPath = [string][Environment]::GetEnvironmentVariable("Path", "Process")
@@ -58,8 +59,16 @@ if ($Mode -in @("Stable", "Source")) {
     } else {
         Join-Path $repoRoot "scripts\amo\start.ps1"
     }
-    & $startScript @startParams
-    exit $LASTEXITCODE
+    try {
+        & $startScript @startParams
+        if (-not $?) {
+            exit 1
+        }
+    } catch {
+        Write-Error $_
+        exit 1
+    }
+    exit 0
 }
 
 if ($DebugMode) {

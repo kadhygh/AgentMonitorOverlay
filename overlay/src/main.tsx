@@ -1,10 +1,27 @@
-import React from "react";
-import ReactDOM from "react-dom/client";
-import App from "./App";
+import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
+import { ensureBrokerStarted } from "./startupBroker";
+import { installStartupStatusReplay, publishStartupStatus } from "./startupStatus";
 import "./styles.css";
 
-ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>,
-);
+async function renderApplication() {
+  const { renderApp } = await import("./renderApp");
+  renderApp();
+}
+
+async function startMainWindow() {
+  await installStartupStatusReplay().catch(() => {
+    // Direct browser previews do not expose the native startup window.
+  });
+  void publishStartupStatus({ module: "interface", state: "loading", message: "Loading frontend" });
+  void ensureBrokerStarted().catch(() => {
+    // The main application renders the recoverable Broker error state.
+  });
+  await renderApplication();
+  void publishStartupStatus({ module: "interface", state: "ready", message: "Ready" });
+}
+
+if (getCurrentWebviewWindow().label === "main") {
+  void startMainWindow();
+} else {
+  void renderApplication();
+}

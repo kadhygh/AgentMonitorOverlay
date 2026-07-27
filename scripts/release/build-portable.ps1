@@ -42,6 +42,7 @@ if (-not $SkipDependencyInstall -and -not (Test-Path -LiteralPath (Join-Path $ov
     }
 }
 
+$env:VITE_AMO_RUNTIME_MODE = "portable"
 Push-Location $overlayRoot
 try {
     npm run build

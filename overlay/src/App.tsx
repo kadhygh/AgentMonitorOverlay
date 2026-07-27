@@ -1,26 +1,40 @@
-import { DeployWorkspaceApp } from "./windows/DeployWorkspaceApp";
+import { lazy, Suspense, type ComponentType } from "react";
 import { MainOverlayApp } from "./windows/MainOverlayApp";
-import { PriorityManagerApp } from "./windows/PriorityManagerApp";
-import { ScratchpadApp } from "./windows/ScratchpadApp";
-import { SettingsWindowApp } from "./windows/SettingsWindowApp";
 import { CURRENT_WINDOW_LABEL } from "./windows/utilityWindow";
 
+const utilityApps: Record<string, React.LazyExoticComponent<ComponentType>> = {
+  deploy: lazy(() => import("./windows/DeployWorkspaceApp").then((module) => ({ default: module.DeployWorkspaceApp }))),
+  priorities: lazy(() => import("./windows/PriorityManagerApp").then((module) => ({ default: module.PriorityManagerApp }))),
+  scratchpad: lazy(() => import("./windows/ScratchpadApp").then((module) => ({ default: module.ScratchpadApp }))),
+  settings: lazy(() => import("./windows/SettingsWindowApp").then((module) => ({ default: module.SettingsWindowApp }))),
+};
+
+function UtilityWindowLoading() {
+  return (
+    <main className="amo-boot" role="status" aria-live="polite">
+      <div className="amo-boot-content">
+        <span className="amo-boot-mode">AMO</span>
+        <div className="amo-boot-mark" aria-hidden="true" />
+        <strong>Opening tool</strong>
+        <span className="amo-boot-stage">Loading window interface</span>
+      </div>
+    </main>
+  );
+}
+
 export default function App() {
-  if (CURRENT_WINDOW_LABEL === "scratchpad") {
-    return <ScratchpadApp />;
+  if (CURRENT_WINDOW_LABEL === "main") {
+    return <MainOverlayApp />;
   }
 
-  if (CURRENT_WINDOW_LABEL === "deploy") {
-    return <DeployWorkspaceApp />;
+  const UtilityApp = utilityApps[CURRENT_WINDOW_LABEL];
+  if (!UtilityApp) {
+    return <MainOverlayApp />;
   }
 
-  if (CURRENT_WINDOW_LABEL === "settings") {
-    return <SettingsWindowApp />;
-  }
-
-  if (CURRENT_WINDOW_LABEL === "priorities") {
-    return <PriorityManagerApp />;
-  }
-
-  return <MainOverlayApp />;
+  return (
+    <Suspense fallback={<UtilityWindowLoading />}>
+      <UtilityApp />
+    </Suspense>
+  );
 }

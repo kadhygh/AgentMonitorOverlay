@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 
 export type AmoTheme = "dark" | "light";
@@ -33,6 +34,9 @@ function saveAmoTheme(theme: AmoTheme) {
     // The visual preference still applies to the current window even if storage is unavailable.
   }
   applyAmoTheme(theme);
+  void invoke("set_startup_theme", { theme }).catch(() => {
+    // Browser previews and older runtimes do not expose the native theme cache command.
+  });
 }
 
 async function broadcastAmoTheme(theme: AmoTheme) {
@@ -50,7 +54,7 @@ export function useAmoThemeRuntime(): [AmoTheme, (next: AmoTheme) => Promise<voi
   const [theme, setTheme] = useState<AmoTheme>(() => loadAmoTheme());
 
   useEffect(() => {
-    applyAmoTheme(theme);
+    saveAmoTheme(theme);
   }, [theme]);
 
   useEffect(() => {

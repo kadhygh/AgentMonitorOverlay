@@ -14,5 +14,11 @@ export default defineConfig({
     target: "es2020",
     minify: false,
     sourcemap: true,
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        startup: "startup.html",
+      },
+    },
   },
 });

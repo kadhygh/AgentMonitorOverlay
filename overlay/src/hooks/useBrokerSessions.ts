@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { BROKER_SESSION_EVENTS_URL, BROKER_SESSIONS_URL } from "../api/brokerClient";
 import { mergeChangedSession, mergeSessionOrder, normalizeSessions } from "../domain/sessionModel";
 import type { BrokerReadiness } from "../components/BrokerReadinessPanel";
-import type { AgentSession, BrokerEnsureResult } from "../types";
+import { ensureBrokerStarted } from "../startupBroker";
+import { publishStartupStatus } from "../startupStatus";
+import type { AgentSession } from "../types";
 
 const REFRESH_INTERVAL_MS = 3000;
 
@@ -65,6 +66,11 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
       });
       setLastRefreshAt(new Date().toISOString());
       setHasLoadedSessionSnapshot(true);
+      void publishStartupStatus({
+        module: "sessions",
+        state: "ready",
+        message: `${nextSessions.length} loaded`,
+      });
       setFeedback(nextSessions.length > 0 ? `Broker sessions loaded: ${nextSessions.length}` : "No active broker sessions.");
       void options.reconcileCodexActionRequired(nextSessions, reason);
       if (shouldLog) {
@@ -76,6 +82,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         });
       }
     } catch (error) {
+      void publishStartupStatus({ module: "sessions", state: "error", message: "Unavailable" });
       setBrokerReadiness({
         state: "error",
         message: "Broker is not ready",
@@ -94,13 +101,14 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   }
 
   async function ensureBrokerThenRefresh() {
+    void publishStartupStatus({ module: "sessions", state: "loading", message: "Loading snapshot" });
     setBrokerReadiness({
       state: "checking",
       message: "Checking AMO broker",
       detail: "127.0.0.1:17654",
     });
     try {
-      const result = await invoke<BrokerEnsureResult>("ensure_broker");
+      const result = await ensureBrokerStarted();
       setBrokerReadiness({
         state: result.ok ? (result.started ? "starting" : "checking") : "error",
         message: result.ok ? (result.started ? "Starting AMO broker" : "AMO broker found") : "Broker startup failed",

@@ -54,14 +54,11 @@ if (-not (Test-Path -LiteralPath $appPath)) {
     throw "Stable AMO executable was not produced: $appPath"
 }
 
-$brokerParams = @{ SkipOverlay = $true }
-if ($SkipBroker) { $brokerParams.SkipBroker = $true }
-if ($DebugMode) { $brokerParams.DebugMode = $true }
-& (Join-Path $repoRoot "scripts\amo\start.ps1") @brokerParams
-if ($LASTEXITCODE -ne 0) {
-    throw "AMO broker startup failed with exit code $LASTEXITCODE"
+if ($SkipBroker) {
+    $env:AGENT_MONITOR_SKIP_BROKER = "1"
+} else {
+    Remove-Item Env:AGENT_MONITOR_SKIP_BROKER -ErrorAction SilentlyContinue
 }
-
 $viteListener = Get-NetTCPConnection -LocalPort 1420 -State Listen -ErrorAction SilentlyContinue
 if ($viteListener) {
     throw "Port 1420 is already in use by pid $($viteListener.OwningProcess)."

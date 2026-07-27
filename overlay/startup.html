@@ -1,0 +1,275 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Starting AMO</title>
+    <script>
+      try {
+        document.documentElement.dataset.amoTheme =
+          localStorage.getItem("amo.theme") === "light" ? "light" : "dark";
+      } catch {
+        document.documentElement.dataset.amoTheme = "dark";
+      }
+    </script>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      }
+
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        margin: 0;
+        overflow: hidden;
+        background: #141c20;
+      }
+
+      body {
+        box-sizing: border-box;
+        display: grid;
+        place-items: center;
+        color: #dcebe6;
+        border: 1px solid rgba(208, 231, 222, 0.2);
+        border-radius: 8px;
+      }
+
+      .startup-content {
+        box-sizing: border-box;
+        display: grid;
+        width: min(292px, calc(100vw - 40px));
+        justify-items: center;
+        gap: 14px;
+      }
+
+      .startup-title {
+        font-size: 14px;
+        line-height: 18px;
+      }
+
+      .startup-spinner {
+        position: relative;
+        width: 28px;
+        height: 28px;
+        border: 2px solid rgba(124, 226, 196, 0.18);
+        border-top-color: #7ce2c4;
+        border-radius: 50%;
+        animation: spin 720ms linear infinite;
+      }
+
+      .startup-spinner::after {
+        position: absolute;
+        inset: 7px;
+        content: "";
+        background: #7ce2c4;
+        border-radius: 50%;
+        opacity: 0.7;
+      }
+
+      .startup-ellipsis {
+        display: flex;
+        min-height: 16px;
+        gap: 5px;
+        color: #8fa49d;
+        font-size: 16px;
+        line-height: 16px;
+      }
+
+      .startup-ellipsis span {
+        animation: pulse-dot 1.2s ease-in-out infinite;
+      }
+
+      .startup-ellipsis span:nth-child(2) {
+        animation-delay: 160ms;
+      }
+
+      .startup-ellipsis span:nth-child(3) {
+        animation-delay: 320ms;
+      }
+
+      .startup-details {
+        box-sizing: border-box;
+        display: grid;
+        width: 100%;
+        max-height: 0;
+        gap: 7px;
+        overflow: hidden;
+        opacity: 0;
+        transition:
+          max-height 180ms ease,
+          margin-top 180ms ease,
+          opacity 160ms ease,
+          padding-top 180ms ease;
+      }
+
+      .startup-details.is-visible {
+        max-height: 96px;
+        margin-top: 4px;
+        padding-top: 12px;
+        border-top: 1px solid rgba(208, 231, 222, 0.12);
+        opacity: 1;
+      }
+
+      .startup-detail {
+        display: grid;
+        grid-template-columns: 62px minmax(0, 1fr);
+        gap: 10px;
+        font-size: 10px;
+        line-height: 13px;
+      }
+
+      .startup-detail span:first-child {
+        color: #687c75;
+        font-weight: 600;
+      }
+
+      .startup-detail span:last-child {
+        overflow: hidden;
+        color: #a9bbb5;
+        text-align: right;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .startup-detail[data-state="ready"] span:last-child {
+        color: #7ce2c4;
+      }
+
+      .startup-detail[data-state="error"] span:last-child {
+        color: #e3a27c;
+      }
+
+      .startup-context {
+        color: #687c75;
+        font-size: 9px;
+        line-height: 12px;
+      }
+
+      html[data-amo-theme="light"] {
+        color-scheme: light;
+      }
+
+      html[data-amo-theme="light"],
+      html[data-amo-theme="light"] body {
+        background: #f4f8f6;
+      }
+
+      html[data-amo-theme="light"] body {
+        color: #17211f;
+        border-color: rgba(42, 74, 64, 0.18);
+      }
+
+      html[data-amo-theme="light"] .startup-spinner {
+        border-color: rgba(18, 135, 105, 0.16);
+        border-top-color: #0d755b;
+      }
+
+      html[data-amo-theme="light"] .startup-spinner::after {
+        background: #0d755b;
+      }
+
+      html[data-amo-theme="light"] .startup-ellipsis,
+      html[data-amo-theme="light"] .startup-detail span:last-child {
+        color: #63746e;
+      }
+
+      html[data-amo-theme="light"] .startup-details.is-visible {
+        border-top-color: rgba(42, 74, 64, 0.12);
+      }
+
+      html[data-amo-theme="light"] .startup-detail span:first-child,
+      html[data-amo-theme="light"] .startup-context {
+        color: #7c8e88;
+      }
+
+      html[data-amo-theme="light"] .startup-detail[data-state="ready"] span:last-child {
+        color: #0d755b;
+      }
+
+      html[data-amo-theme="light"] .startup-detail[data-state="error"] span:last-child {
+        color: #a44a22;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      @keyframes pulse-dot {
+        0%,
+        100% {
+          opacity: 0.24;
+          transform: translateY(0);
+        }
+
+        50% {
+          opacity: 0.92;
+          transform: translateY(-1px);
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="startup-content" role="status" aria-live="polite">
+      <strong class="startup-title">Loading AMO</strong>
+      <div class="startup-spinner" aria-hidden="true"></div>
+      <div class="startup-ellipsis" aria-label="Loading">
+        <span>.</span><span>.</span><span>.</span>
+      </div>
+      <section class="startup-details" id="startup-details" aria-label="Startup details">
+        <div class="startup-detail" id="startup-interface" data-state="loading">
+          <span>Interface</span>
+          <span>Loading</span>
+        </div>
+        <div class="startup-detail" id="startup-broker" data-state="waiting">
+          <span>Broker</span>
+          <span>Waiting</span>
+        </div>
+        <div class="startup-detail" id="startup-sessions" data-state="waiting">
+          <span>Sessions</span>
+          <span>Waiting</span>
+        </div>
+      </section>
+      <span class="startup-context" id="startup-context">Source mode</span>
+    </main>
+    <script type="module">
+      import { emitTo, listen } from "@tauri-apps/api/event";
+
+      const configuredMode = (import.meta.env.VITE_AMO_RUNTIME_MODE || "").toLowerCase();
+      const fallbackMode =
+        location.protocol === "http:" || location.protocol === "https:" ? "source" : "portable";
+      const mode = configuredMode || fallbackMode;
+      const profiles = {
+        debug: "Debug mode - diagnostics enabled",
+        portable: "Portable mode - local data",
+        source: "Source mode - local frontend",
+        stable: "Stable mode - local source",
+      };
+      document.getElementById("startup-context").textContent = profiles[mode] || profiles.source;
+
+      const moduleElements = {
+        interface: document.getElementById("startup-interface"),
+        broker: document.getElementById("startup-broker"),
+        sessions: document.getElementById("startup-sessions"),
+      };
+      const details = document.getElementById("startup-details");
+
+      async function connectStartupStatus() {
+        await listen("amo-startup-status", (event) => {
+          const update = event.payload;
+          const row = update && moduleElements[update.module];
+          if (!row) return;
+          row.dataset.state = update.state || "loading";
+          row.lastElementChild.textContent = update.message || "Loading";
+          details.classList.add("is-visible");
+        });
+        await emitTo("main", "amo-startup-view-ready");
+      }
+
+      void connectStartupStatus();
+    </script>
+  </body>
+</html>

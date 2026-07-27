@@ -140,7 +140,39 @@ function writeTextFile(filePath, content) {
   fs.mkdirSync(path.dirname(filePath), { recursive: true });
   const tmpFile = `${filePath}.${process.pid}.tmp`;
   fs.writeFileSync(tmpFile, content, "utf8");
-  fs.renameSync(tmpFile, filePath);
+  replaceFileSync(tmpFile, filePath);
+}
+
+function replaceFileSync(tmpFile, filePath) {
+  const retryableCodes = new Set(["EACCES", "EBUSY", "EPERM"]);
+  const attempts = process.platform === "win32" ? 6 : 1;
+  let lastError = null;
+
+  for (let attempt = 0; attempt < attempts; attempt += 1) {
+    try {
+      fs.renameSync(tmpFile, filePath);
+      return;
+    } catch (error) {
+      lastError = error;
+      if (!retryableCodes.has(error?.code) || attempt === attempts - 1) {
+        break;
+      }
+      sleepSync(20 * (attempt + 1));
+    }
+  }
+
+  if (process.platform === "win32" && retryableCodes.has(lastError?.code)) {
+    fs.copyFileSync(tmpFile, filePath);
+    fs.rmSync(tmpFile, { force: true });
+    return;
+  }
+
+  throw lastError;
+}
+
+function sleepSync(milliseconds) {
+  const signal = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(signal, 0, 0, milliseconds);
 }
 
 function normalizeText(value) {
@@ -163,6 +195,7 @@ module.exports = {
   resolveDirectoryPath,
   resolveGitDirectoryPath,
   resolveWorkspacePath,
+  replaceFileSync,
   writeJsonFile,
   writeTextFile,
 };

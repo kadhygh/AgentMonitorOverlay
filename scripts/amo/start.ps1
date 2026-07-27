@@ -233,8 +233,21 @@ if (-not (Test-Path -LiteralPath $overlayPath)) {
     throw "Could not find overlay folder: $overlayPath"
 }
 
-$brokerProcess = Start-AmoBroker
+if ($SkipBroker) {
+    $env:AGENT_MONITOR_SKIP_BROKER = "1"
+} else {
+    Remove-Item Env:AGENT_MONITOR_SKIP_BROKER -ErrorAction SilentlyContinue
+}
+
+$brokerProcess = $null
 $overlayProcess = Start-AmoOverlay
+if ($SkipOverlay) {
+    $brokerProcess = Start-AmoBroker
+} elseif ($SkipBroker) {
+    Write-Host "Broker startup disabled for this run."
+} else {
+    Write-Host "Broker startup delegated to the visible AMO interface."
+}
 
 Write-Host "AMO startup sequence complete."
 Write-Host "Broker: $brokerBaseUrl"
