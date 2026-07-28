@@ -25,7 +25,12 @@ const {
   resolveWorkspaceVaultRoot,
   workspaceRelativePath,
 } = require("./workspace-inspect");
-const { CODEX_HOOK_EVENTS, codexReplyHookScript, mergeCodexHooks } = require("../hooks/codex");
+const {
+  CODEX_HOOK_EVENTS,
+  CODEX_PROJECT_HOOK_PATH,
+  codexReplyHookScript,
+  mergeCodexHooks,
+} = require("../hooks/codex");
 const {
   CLAUDE_HOOK_EVENTS,
   CLAUDE_PROJECT_HOOK_PATH,
@@ -102,7 +107,7 @@ function enrollWorkspace(payload, options = {}) {
 
   if (requestedAdapters.includes("codex-cli")) {
     const adapterFile = path.join(amoRoot, "adapters", "codex-cli.json");
-    const hookScriptPath = path.join(amoRoot, "hooks", "codex-stop-message.mjs");
+    const hookScriptFile = path.join(amoRoot, "hooks", "codex-stop-message.mjs");
     writeJsonFile(adapterFile, {
       schemaVersion: AMO_SCHEMA_VERSION,
       id: "codex-cli",
@@ -115,13 +120,13 @@ function enrollWorkspace(payload, options = {}) {
       bridgeEventsUrl: `${bridgeBaseUrl}/api/events`,
       bridgeRepliesUrl: `${bridgeBaseUrl}/api/replies`,
       bridgePromptsUrl: `${bridgeBaseUrl}/api/prompts`,
-      hookScriptPath,
-      cacheFallbackPath: path.join(workspacePath, ".codex", "cache"),
+      hookScriptPath: CODEX_PROJECT_HOOK_PATH,
+      cacheFallbackPath: ".codex/cache",
     });
     installedFiles.push(".amo/adapters/codex-cli.json");
 
     writeTextFile(
-      hookScriptPath,
+      hookScriptFile,
       codexReplyHookScript({
         deploymentVersion: AMO_DEPLOYMENT_VERSION,
         hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
@@ -129,7 +134,7 @@ function enrollWorkspace(payload, options = {}) {
     );
     installedFiles.push(".amo/hooks/codex-stop-message.mjs");
 
-    const mergeResult = mergeCodexHooks(workspacePath, hookScriptPath, amoRoot);
+    const mergeResult = mergeCodexHooks(workspacePath, amoRoot);
     if (mergeResult.changed) {
       mergedFiles.push(".codex/hooks.json");
     }
@@ -142,7 +147,7 @@ function enrollWorkspace(payload, options = {}) {
       hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
       hookEvents: CODEX_HOOK_EVENTS,
       installedAt: now,
-      hookScriptPath,
+      hookScriptPath: CODEX_PROJECT_HOOK_PATH,
       mergedFiles: [".codex/hooks.json"],
     });
   }

@@ -18,7 +18,10 @@ const { isWritableDirectory, readDirectoryNames, readJsonFile, resolveWorkspaceP
 const { normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./normalize");
 const { inspectWorkspaceGitExclude } = require("./workspace-git-exclude");
 const { inspectWorkspaceDocumentMappings } = require("./workspace-document-mappings");
-const { CODEX_HOOK_EVENTS } = require("../hooks/codex");
+const {
+  CODEX_HOOK_EVENTS,
+  CODEX_PROJECT_HOOK_COMMAND,
+} = require("../hooks/codex");
 const { CLAUDE_HOOK_EVENTS } = require("../hooks/claude");
 
 function amoVaultDirectoryName(projectName) {
@@ -193,6 +196,7 @@ function inspectWorkspace(payload) {
     hookConfigPath: ".codex/hooks.json",
     hookMarker: "codex-stop-message.mjs",
     expectedHookEvents: CODEX_HOOK_EVENTS,
+    requiredCommandMarkers: [CODEX_PROJECT_HOOK_COMMAND],
   });
   const claudeDeployment = inspectAdapterDeployment(workspacePath, amoRoot, {
     adapterId: "claude-cli",

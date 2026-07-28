@@ -285,15 +285,30 @@ function codexReplyHookScript(options = {}) {
   ].join("\n");
 }
 
-function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
+const CODEX_PROJECT_HOOK_PATH = ".amo/hooks/codex-stop-message.mjs";
+const CODEX_PROJECT_HOOK_COMMAND = [
+  'node -e "',
+  "const fs=require('node:fs'),path=require('node:path'),url=require('node:url');",
+  "let root=process.cwd(),script;",
+  "for(;;){",
+  "script=path.join(root,'.amo','hooks','codex-stop-message.mjs');",
+  "if(fs.existsSync(script))break;",
+  "const parent=path.dirname(root);",
+  "if(parent===root)process.exit(1);",
+  "root=parent;",
+  "}",
+  "import(url.pathToFileURL(script).href).catch(()=>process.exit(1));",
+  '"',
+].join("");
+
+function mergeCodexHooks(workspacePath, amoRoot) {
   const codexDir = path.join(workspacePath, ".codex");
   const hookConfigPath = path.join(codexDir, "hooks.json");
-  const command = `node "${hookScriptPath}"`;
   const hookEntry = {
     hooks: [
       {
         type: "command",
-        command,
+        command: CODEX_PROJECT_HOOK_COMMAND,
         timeout: 10,
         statusMessage: "AMO capture Codex lifecycle",
       },
@@ -312,17 +327,18 @@ function mergeCodexHooks(workspacePath, hookScriptPath, amoRoot) {
   if (!config.hooks || typeof config.hooks !== "object" || Array.isArray(config.hooks)) {
     config.hooks = {};
   }
-  if (Array.isArray(config.hooks.PostToolUseFailure)) {
-    config.hooks.PostToolUseFailure = removeManagedHookEntries(config.hooks.PostToolUseFailure, "codex-stop-message.mjs");
-    if (config.hooks.PostToolUseFailure.length === 0) delete config.hooks.PostToolUseFailure;
+  for (const eventName of Object.keys(config.hooks)) {
+    if (!Array.isArray(config.hooks[eventName])) continue;
+    config.hooks[eventName] = removeManagedHookEntries(config.hooks[eventName], "codex-stop-message.mjs");
+    if (config.hooks[eventName].length === 0 && !CODEX_HOOK_EVENTS.includes(eventName)) {
+      delete config.hooks[eventName];
+    }
   }
   for (const eventName of CODEX_HOOK_EVENTS) {
     if (!Array.isArray(config.hooks[eventName])) {
       config.hooks[eventName] = [];
     }
-    if (!JSON.stringify(config.hooks[eventName]).includes("codex-stop-message.mjs")) {
-      config.hooks[eventName].push(hookEntry);
-    }
+    config.hooks[eventName].push(hookEntry);
   }
 
   const nextRaw = `${JSON.stringify(config, null, 2)}\n`;
@@ -357,6 +373,8 @@ function fileSafeTimestamp(value) {
 
 module.exports = {
   CODEX_HOOK_EVENTS,
+  CODEX_PROJECT_HOOK_COMMAND,
+  CODEX_PROJECT_HOOK_PATH,
   codexReplyHookScript,
   mergeCodexHooks,
 };
