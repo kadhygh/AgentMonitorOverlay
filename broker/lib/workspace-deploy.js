@@ -26,7 +26,12 @@ const {
   workspaceRelativePath,
 } = require("./workspace-inspect");
 const { CODEX_HOOK_EVENTS, codexReplyHookScript, mergeCodexHooks } = require("../hooks/codex");
-const { CLAUDE_HOOK_EVENTS, claudeMessageHookScript, mergeClaudeSettings } = require("../hooks/claude");
+const {
+  CLAUDE_HOOK_EVENTS,
+  CLAUDE_PROJECT_HOOK_PATH,
+  claudeMessageHookScript,
+  mergeClaudeSettings,
+} = require("../hooks/claude");
 
 function enrollWorkspace(payload, options = {}) {
   const bridgeBaseUrl = resolveBridgeBaseUrl(options.baseUrl);
@@ -144,7 +149,7 @@ function enrollWorkspace(payload, options = {}) {
 
   if (requestedAdapters.includes("claude-cli")) {
     const adapterFile = path.join(amoRoot, "adapters", "claude-cli.json");
-    const hookScriptPath = path.join(amoRoot, "hooks", "claude-message.mjs");
+    const hookScriptFile = path.join(amoRoot, "hooks", "claude-message.mjs");
     writeJsonFile(adapterFile, {
       schemaVersion: AMO_SCHEMA_VERSION,
       id: "claude-cli",
@@ -157,13 +162,13 @@ function enrollWorkspace(payload, options = {}) {
       bridgeEventsUrl: `${bridgeBaseUrl}/api/events`,
       bridgeRepliesUrl: `${bridgeBaseUrl}/api/replies`,
       bridgePromptsUrl: `${bridgeBaseUrl}/api/prompts`,
-      hookScriptPath,
-      cacheFallbackPath: path.join(amoRoot, "logs", "claude-cache"),
+      hookScriptPath: CLAUDE_PROJECT_HOOK_PATH,
+      cacheFallbackPath: ".amo/logs/claude-cache",
     });
     installedFiles.push(".amo/adapters/claude-cli.json");
 
     writeTextFile(
-      hookScriptPath,
+      hookScriptFile,
       claudeMessageHookScript({
         deploymentVersion: AMO_DEPLOYMENT_VERSION,
         hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
@@ -171,7 +176,7 @@ function enrollWorkspace(payload, options = {}) {
     );
     installedFiles.push(".amo/hooks/claude-message.mjs");
 
-    const mergeResult = mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot);
+    const mergeResult = mergeClaudeSettings(workspacePath, amoRoot);
     if (mergeResult.changed) {
       mergedFiles.push(".claude/settings.local.json");
     }
@@ -184,7 +189,7 @@ function enrollWorkspace(payload, options = {}) {
       hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
       hookEvents: CLAUDE_HOOK_EVENTS,
       installedAt: now,
-      hookScriptPath,
+      hookScriptPath: CLAUDE_PROJECT_HOOK_PATH,
       mergedFiles: [".claude/settings.local.json"],
     });
   }

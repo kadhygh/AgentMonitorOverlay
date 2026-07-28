@@ -322,15 +322,17 @@ function claudeMessageHookScript(options = {}) {
   ].join("\n");
 }
 
-function mergeClaudeSettings(workspacePath, hookScriptPath, amoRoot) {
+const CLAUDE_PROJECT_HOOK_PATH = "${CLAUDE_PROJECT_DIR}/.amo/hooks/claude-message.mjs";
+const CLAUDE_PROJECT_HOOK_COMMAND = `node "${CLAUDE_PROJECT_HOOK_PATH}"`;
+
+function mergeClaudeSettings(workspacePath, amoRoot) {
   const claudeDir = path.join(workspacePath, ".claude");
   const settingsPath = path.join(claudeDir, "settings.local.json");
-  const command = `node "${hookScriptPath}"`;
   const hookEntry = {
     hooks: [
       {
         type: "command",
-        command,
+        command: CLAUDE_PROJECT_HOOK_COMMAND,
         timeout: 10,
       },
     ],
@@ -400,6 +402,8 @@ function fileSafeTimestamp(value) {
 
 module.exports = {
   CLAUDE_HOOK_EVENTS,
+  CLAUDE_PROJECT_HOOK_COMMAND,
+  CLAUDE_PROJECT_HOOK_PATH,
   claudeMessageHookScript,
   mergeClaudeSettings,
 };

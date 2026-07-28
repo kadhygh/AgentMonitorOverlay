@@ -53,7 +53,7 @@ function adapterConfigPath(amoRoot, adapterId) {
   return path.join(amoRoot, "adapters", `${adapterId}.json`);
 }
 
-function inspectHookConfigCoverage(workspacePath, relativePath, expectedEvents, hookMarker) {
+function inspectHookConfigCoverage(workspacePath, relativePath, expectedEvents, hookMarker, requiredCommandMarkers = []) {
   const configPath = path.join(workspacePath, relativePath);
   if (!fs.existsSync(configPath)) {
     return {
@@ -76,25 +76,48 @@ function inspectHookConfigCoverage(workspacePath, relativePath, expectedEvents, 
 
   const configuredHookEvents = [];
   const missingHookEvents = [];
+  const outdatedHookEvents = [];
   for (const eventName of expectedEvents) {
     const hooksForEvent = config.hooks[eventName];
-    if (Array.isArray(hooksForEvent) && JSON.stringify(hooksForEvent).includes(hookMarker)) {
+    const commands = Array.isArray(hooksForEvent)
+      ? hooksForEvent
+          .flatMap((entry) => (Array.isArray(entry?.hooks) ? entry.hooks : []))
+          .map((hook) => String(hook?.command || ""))
+          .filter(Boolean)
+      : [];
+    const managedCommands = commands.filter((command) => command.includes(hookMarker));
+    if (managedCommands.length > 0) {
       configuredHookEvents.push(eventName);
     } else {
       missingHookEvents.push(eventName);
     }
+    if (
+      managedCommands.length > 0 &&
+      !managedCommands.some((command) => requiredCommandMarkers.every((marker) => command.includes(marker)))
+    ) {
+      outdatedHookEvents.push(eventName);
+    }
+  }
+
+  const issues = [];
+  if (missingHookEvents.length > 0) {
+    issues.push(`${relativePath} is missing AMO hook event(s): ${missingHookEvents.join(", ")}`);
+  }
+  if (outdatedHookEvents.length > 0) {
+    issues.push(`${relativePath} uses an outdated AMO hook command for event(s): ${outdatedHookEvents.join(", ")}`);
   }
 
   return {
     hookConfigPath: relativePath,
     configuredHookEvents,
     missingHookEvents,
-    issues: missingHookEvents.length > 0 ? [`${relativePath} is missing AMO hook event(s): ${missingHookEvents.join(", ")}`] : [],
+    outdatedHookEvents,
+    issues,
   };
 }
 
 function inspectAdapterDeployment(workspacePath, amoRoot, options) {
-  const { adapterId, hookConfigPath, hookMarker, expectedHookEvents } = options;
+  const { adapterId, hookConfigPath, hookMarker, expectedHookEvents, requiredCommandMarkers = [] } = options;
   const config = readJsonFile(adapterConfigPath(amoRoot, adapterId), null);
   if (!config) {
     return {
@@ -115,7 +138,13 @@ function inspectAdapterDeployment(workspacePath, amoRoot, options) {
   const installedHookProtocolVersion = normalizeVersionNumber(config.hookProtocolVersion);
   const metadataHookEvents = normalizeTextArray(config.hookEvents);
   const metadataMissingHookEvents = expectedHookEvents.filter((eventName) => !metadataHookEvents.includes(eventName));
-  const coverage = inspectHookConfigCoverage(workspacePath, hookConfigPath, expectedHookEvents, hookMarker);
+  const coverage = inspectHookConfigCoverage(
+    workspacePath,
+    hookConfigPath,
+    expectedHookEvents,
+    hookMarker,
+    requiredCommandMarkers,
+  );
   const issues = [];
 
   if (installedDeploymentVersion !== AMO_DEPLOYMENT_VERSION) {
@@ -170,6 +199,7 @@ function inspectWorkspace(payload) {
     hookConfigPath: ".claude/settings.local.json",
     hookMarker: "claude-message.mjs",
     expectedHookEvents: CLAUDE_HOOK_EVENTS,
+    requiredCommandMarkers: ["${CLAUDE_PROJECT_DIR}"],
   });
   const hasCodexAdapter = codexDeployment.installed;
   const hasClaudeAdapter = claudeDeployment.installed;
