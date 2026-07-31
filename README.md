@@ -16,7 +16,7 @@ AMO（Agent Monitor Overlay）是一层面向 Windows 本地 AI CLI 工作流的
 
 ### Claude Code Managed CLI：GLM 与 DeepSeek 路由
 
-AMO 现在可以为由它拉起的 Claude Code CLI（界面中的 **Claude CLI**）单独配置模型路由。打开 **Settings → Models**，分别保存 `DeepSeek API Key` 或 `GLM Coding Plan API Key`，并按需把 **DeepSeek V4 Pro** 或 **GLM-5.2** 设为默认 Claude 路由。之后从 Workspace Center 点击 **Run Claude**，Launch Task 会显示 **Model routing**；可以使用默认值，也可以只为本次启动改回 Claude default 或切换到另一个已配置的提供方。
+AMO 现在可以为由它拉起的 Claude Code CLI（界面中的 **Claude CLI**）单独配置模型路由。打开 **Settings → Models**，分别保存 `DeepSeek API Key` 或 `GLM Coding Plan API Key`，并按需把 **DeepSeek V4 Flash** 或 **GLM-5.2** 设为默认 Claude 路由。之后从 Workspace Center 点击 **Run Claude**，Launch Task 会显示 **Model routing**；可以使用默认值，也可以只为本次启动改回 Claude default 或切换到另一个已配置的提供方。
 
 该路由只影响这次 Managed Claude CLI 进程，不会覆盖用户现有的全局 Claude Code 配置。保存的 Key 位于当前 Windows 用户的 Credential Manager；启动时只写入临时 Claude settings，Claude 退出后删除，不进入 localStorage、Broker 状态、工程文件或日志。具体步骤见[入门指南中的 Claude 模型路由](docs/getting-started.md#claude-model-routing-glm-and-deepseek)。
 

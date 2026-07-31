@@ -41,9 +41,9 @@ export const CLAUDE_PROVIDER_DEFINITIONS: ClaudeProviderDefinition[] = [
   },
   {
     id: "deepseek-v4",
-    title: "DeepSeek V4 Pro",
-    detail: "Official 1M Claude Code mapping, with V4 Flash for Haiku and subagents.",
-    model: "deepseek-v4-pro[1m]",
+    title: "DeepSeek V4 Flash",
+    detail: "Official Anthropic-compatible routing, with V4 Flash for main tasks and subagents.",
+    model: "deepseek-v4-flash",
     keyLabel: "DeepSeek API Key",
   },
   {

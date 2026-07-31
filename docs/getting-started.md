@@ -120,7 +120,7 @@ AMO can route only the Claude CLI process it launches through a configured DeepS
 
 1. open AMO Settings from the sliders button in the main window;
 2. select **Models**;
-3. enter the provider credential under **DeepSeek V4 Pro** or **GLM-5.2**;
+3. enter the provider credential under **DeepSeek V4 Flash** or **GLM-5.2**;
 4. select **Save key** and wait for the provider state to report **Configured**;
 5. set **Default Claude model routing** when every new Claude Launch Task should preselect that provider.
 
@@ -128,14 +128,14 @@ The two presets currently map to:
 
 | Launch option | Credential field | Main model |
 | --- | --- | --- |
-| DeepSeek V4 Pro | `DeepSeek API Key` | `deepseek-v4-pro[1m]` |
+| DeepSeek V4 Flash | `DeepSeek API Key` | `deepseek-v4-flash` |
 | GLM-5.2 | `GLM Coding Plan API Key` | `glm-5.2[1m]` |
 
 To use or override the preset for one session:
 
 1. return to Workspace Center and select **Run Claude**;
 2. select **Claude CLI** in Launch Task;
-3. under **Model routing**, choose **Claude default**, **DeepSeek V4 Pro**, or **GLM-5.2**;
+3. under **Model routing**, choose **Claude default**, **DeepSeek V4 Flash**, or **GLM-5.2**;
 4. if the selected provider is not saved, enter its key in the launch dialog; a saved key can also be overridden only for this launch;
 5. select **Launch managed CLI**.
 

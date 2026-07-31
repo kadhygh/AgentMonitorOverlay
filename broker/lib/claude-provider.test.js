@@ -25,15 +25,17 @@ test("GLM preset overrides user-level model routing for the launch", () => {
   });
 });
 
-test("DeepSeek preset carries its full one-launch routing", () => {
+test("DeepSeek preset routes every Claude model slot to V4 Flash", () => {
   const provider = resolveClaudeProvider({
     presetId: "deepseek-v4",
     apiKey: "deepseek-secret",
   });
 
-  assert.equal(provider.model, "deepseek-v4-pro[1m]");
+  assert.equal(provider.model, "deepseek-v4-flash");
   assert.equal(provider.environment.ANTHROPIC_BASE_URL, "https://api.deepseek.com/anthropic");
-  assert.equal(provider.environment.ANTHROPIC_MODEL, "deepseek-v4-pro[1m]");
+  assert.equal(provider.environment.ANTHROPIC_MODEL, "deepseek-v4-flash");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_OPUS_MODEL, "deepseek-v4-flash");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_SONNET_MODEL, "deepseek-v4-flash");
   assert.equal(provider.environment.ANTHROPIC_DEFAULT_HAIKU_MODEL, "deepseek-v4-flash");
   assert.equal(provider.environment.CLAUDE_CODE_SUBAGENT_MODEL, "deepseek-v4-flash");
   assert.equal(provider.environment.ANTHROPIC_AUTH_TOKEN, "deepseek-secret");
