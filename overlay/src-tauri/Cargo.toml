@@ -1,6 +1,6 @@
 [package]
 name = "agent-monitor-overlay"
-version = "0.1.4"
+version = "0.1.5"
 description = "Windows desktop overlay prototype for monitoring local agent sessions."
 authors = ["kadhygh"]
 license = "MIT"
