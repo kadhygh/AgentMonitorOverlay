@@ -114,32 +114,37 @@ Use a launch action from Workspace Center or a task card. In a deployed adapter 
 
 AMO injects a launch identity and records the managed window so later hooks can claim the correct task card. Launching the terminal does **not** create a task card immediately. At this point AMO stores a pending launch identity; the card is created, or reconnected to an existing session card, only after that CLI emits its first AMO-recognized session hook. An idle terminal with no prompt, permission, tool, or reply interaction therefore has no new card by design.
 
-### Claude Model Routing: GLM And DeepSeek
+### Codex And Claude Model Routing: DeepSeek And GLM
 
-AMO can route only the Claude CLI process it launches through a configured DeepSeek or GLM Claude Code-compatible endpoint. Configure the credentials before the first managed launch:
+AMO can route only the Codex or Claude CLI process it launches through a configured provider. Codex uses DeepSeek's official Responses API support; Claude uses the provider's Claude Code-compatible endpoint. Configure the credentials before the first managed launch:
 
 1. open AMO Settings from the sliders button in the main window;
 2. select **Models**;
 3. enter the provider credential under **DeepSeek V4 Flash** or **GLM-5.2**;
 4. select **Save key** and wait for the provider state to report **Configured**;
-5. set **Default Claude model routing** when every new Claude Launch Task should preselect that provider.
+5. set **Default Codex model routing** and/or **Default Claude model routing** when new Launch Tasks should preselect that provider.
 
 The two presets currently map to:
 
-| Launch option | Credential field | Main model |
-| --- | --- | --- |
-| DeepSeek V4 Flash | `DeepSeek API Key` | `deepseek-v4-flash` |
-| GLM-5.2 | `GLM Coding Plan API Key` | `glm-5.2[1m]` |
+| Client | Launch option | Credential field | Main model |
+| --- | --- | --- | --- |
+| Codex CLI | DeepSeek V4 Flash | `DeepSeek API Key` | `deepseek-v4-flash` |
+| Claude CLI | DeepSeek V4 Flash | `DeepSeek API Key` | `deepseek-v4-flash` |
+| Claude CLI | GLM-5.2 | `GLM Coding Plan API Key` | `glm-5.2[1m]` |
 
 To use or override the preset for one session:
 
-1. return to Workspace Center and select **Run Claude**;
-2. select **Claude CLI** in Launch Task;
-3. under **Model routing**, choose **Claude default**, **DeepSeek V4 Flash**, or **GLM-5.2**;
+1. return to Workspace Center and select **Run Codex** or **Run Claude**;
+2. select **Codex CLI** or **Claude CLI** in Launch Task;
+3. under **Model routing**, choose **Codex default** / **DeepSeek V4 Flash** for Codex, or **Claude default** / **DeepSeek V4 Flash** / **GLM-5.2** for Claude;
 4. if the selected provider is not saved, enter its key in the launch dialog; a saved key can also be overridden only for this launch;
 5. select **Launch managed CLI**.
 
-The provider environment applies only to that Managed Claude CLI process. AMO does not rewrite the user's global Claude Code configuration. Saved keys remain in Windows Credential Manager for the current Windows user; at launch, the selected key and routing variables are copied into a temporary Claude settings file that is removed when Claude exits. They are not stored in localStorage, Broker state, project files, or logs.
+The provider selection applies only to that Managed CLI process. AMO does not rewrite the user's global Codex or Claude Code configuration. Saved keys remain in Windows Credential Manager for the current Windows user and are resolved only when a launch starts.
+
+For Codex, AMO ships one shared read-only model catalog under the Broker runtime's `assets/codex` directory and applies the selected provider/model only to that launch with repeated `-c key=value` arguments. The selected Key is passed only through `DEEPSEEK_API_KEY`; it is never placed in the command arguments or catalog. AMO does not create a profile or model file in `~/.codex`, so concurrent Codex CLIs reuse the same catalog while retaining independent process environments. When Codex exits, the Key variable is cleared from the still-open terminal shell. The bundled DeepSeek catalog requires Codex CLI `0.144.0` or newer.
+
+For Claude, the selected Key and routing variables are copied into a temporary Claude settings file that is removed when Claude exits. Neither path stores keys in localStorage, Broker state, project files, or logs. The DeepSeek Codex choice is currently available for Managed **Codex CLI**, not the **ChatGPT desktop app** launch entry.
 
 A CLI started manually can still produce hook cards after it emits a supported hook, but AMO may require an explicit window choice or drag-to-bind action because the hook alone cannot always identify a Windows Terminal tab or pane.
 

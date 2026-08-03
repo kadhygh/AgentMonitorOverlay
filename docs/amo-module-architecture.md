@@ -342,7 +342,7 @@ Rules:
 - All session-level resume entries use the same session resume service.
 - UI components render availability; they do not implement launch policy independently.
 
-### Unified Launch Dialog And Claude Routing
+### Unified Launch Dialog And Model Routing
 
 Workspace Run actions and the card header `+` action open the same launch dialog. Their context differs, but their launch policy does not:
 
@@ -351,18 +351,26 @@ Workspace Run actions and the card header `+` action open the same launch dialog
 - Neither context reuses or resumes the source card session.
 - Resume remains a separate command and must not silently reuse the project-launch behavior.
 
-The dialog owns client selection. When `claude-cli` is selected, it also owns one mutually exclusive provider preset:
+The dialog owns client selection. When `codex-cli` is selected, it owns one mutually exclusive provider preset:
+
+- `openai-default`: use the existing Codex account, model, and provider configuration.
+- `deepseek-v4`: use the official DeepSeek Responses API endpoint and V4 Flash model catalog.
+
+When `claude-cli` is selected, the dialog owns one mutually exclusive provider preset:
 
 - `anthropic-default`: use the existing Claude Code account and local configuration.
 - `deepseek-v4`: use the official DeepSeek Anthropic-compatible endpoint and V4 model mapping.
 - `glm-5.2`: use the official GLM Anthropic-compatible endpoint and 1M model mapping.
 
-Provider selection is radio-style, not a checkbox set. One Claude process can use only one endpoint/model mapping at launch time.
+Provider selection is radio-style, not a checkbox set. One CLI process can use only one endpoint/model mapping at launch time.
 
 Model settings and security rules:
 
-- The Settings `Models` section owns the default Claude provider and remembered provider credentials.
+- The Settings `Models` section owns the default Codex and Claude providers plus remembered provider credentials.
 - The default provider ID is an ordinary non-secret preference and may be stored in local storage.
+- The DeepSeek credential is shared by the Codex and Claude presets and remains in Windows Credential Manager.
+- Codex routing uses one shared read-only model catalog in the AMO Broker runtime plus per-launch `-c key=value` overrides, and passes the Key through `DEEPSEEK_API_KEY`; it neither writes nor rewrites files under `$CODEX_HOME`.
+- Concurrent managed Codex CLIs reference that same catalog while each process receives its own environment, so AMO does not create duplicate profile or catalog files per launch.
 - Remembered DeepSeek and GLM keys are stored as generic credentials in Windows Credential Manager for the current Windows user.
 - Settings never reads a saved key back into an editable field. It exposes only configured/not-configured state and replace/clear commands.
 - The launch dialog selects the configured default, permits a one-launch override, and resolves a remembered key only when the user confirms launch.

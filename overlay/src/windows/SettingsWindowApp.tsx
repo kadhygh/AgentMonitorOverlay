@@ -12,9 +12,13 @@ import {
 import { loadCliSafePasteEnabled, saveCliSafePasteEnabled } from "../native/clipboard";
 import {
   CLAUDE_PROVIDER_DEFINITIONS,
+  CODEX_PROVIDER_DEFINITIONS,
   loadDefaultClaudeProvider,
+  loadDefaultCodexProvider,
   saveDefaultClaudeProvider,
+  saveDefaultCodexProvider,
   type ClaudeProviderPresetId,
+  type CodexProviderPresetId,
 } from "../native/modelProviders";
 import {
   applyScratchpadShortcutState,
@@ -118,6 +122,7 @@ interface SettingsDetailHeaderProps {
   cliLaunchEnvironment: CliLaunchEnvironment;
   cliEnvironmentOptions: CliEnvironmentOption[];
   defaultClaudeProvider: ClaudeProviderPresetId;
+  defaultCodexProvider: CodexProviderPresetId;
 }
 
 function SettingsDetailHeader({
@@ -131,9 +136,11 @@ function SettingsDetailHeader({
   cliLaunchEnvironment,
   cliEnvironmentOptions,
   defaultClaudeProvider,
+  defaultCodexProvider,
 }: SettingsDetailHeaderProps) {
   const selectedCliEnvironment = cliEnvironmentOptions.find((option) => option.id === cliLaunchEnvironment);
   const defaultProvider = CLAUDE_PROVIDER_DEFINITIONS.find((provider) => provider.id === defaultClaudeProvider);
+  const defaultCodex = CODEX_PROVIDER_DEFINITIONS.find((provider) => provider.id === defaultCodexProvider);
   const title =
     settingsSection === "cli"
       ? "CLI"
@@ -158,7 +165,7 @@ function SettingsDetailHeader({
             ? "PowerShell 7"
             : "Windows PowerShell 5.1"
       : settingsSection === "models"
-        ? `${defaultProvider?.title || "Claude default"} default`
+        ? `Codex: ${defaultCodex?.title || "default"} | Claude: ${defaultProvider?.title || "default"}`
         : settingsSection === "theme"
       ? amoTheme === "light"
         ? "Light"
@@ -452,7 +459,9 @@ interface SettingsDetailProps {
   cliEnvironmentLoading: boolean;
   cliEnvironmentError: string | null;
   defaultClaudeProvider: ClaudeProviderPresetId;
+  defaultCodexProvider: CodexProviderPresetId;
   onDefaultClaudeProviderChange: (providerId: ClaudeProviderPresetId) => void;
+  onDefaultCodexProviderChange: (providerId: CodexProviderPresetId) => void;
   onFeedback: (message: string) => void;
   onScratchpadShortcutChange: (next: ScratchpadShortcutState) => void;
   onSafePasteEnabledChange: (enabled: boolean) => void;
@@ -479,7 +488,9 @@ export function SettingsDetail({
   cliEnvironmentLoading,
   cliEnvironmentError,
   defaultClaudeProvider,
+  defaultCodexProvider,
   onDefaultClaudeProviderChange,
+  onDefaultCodexProviderChange,
   onFeedback,
   onScratchpadShortcutChange,
   onSafePasteEnabledChange,
@@ -504,6 +515,7 @@ export function SettingsDetail({
         cliLaunchEnvironment={cliLaunchEnvironment}
         cliEnvironmentOptions={cliEnvironmentOptions}
         defaultClaudeProvider={defaultClaudeProvider}
+        defaultCodexProvider={defaultCodexProvider}
       />
 
       {settingsSection === "cli" ? (
@@ -517,8 +529,10 @@ export function SettingsDetail({
         />
       ) : settingsSection === "models" ? (
         <ModelSettingsBody
-          defaultProviderId={defaultClaudeProvider}
-          onDefaultProviderChange={onDefaultClaudeProviderChange}
+          defaultClaudeProviderId={defaultClaudeProvider}
+          defaultCodexProviderId={defaultCodexProvider}
+          onDefaultClaudeProviderChange={onDefaultClaudeProviderChange}
+          onDefaultCodexProviderChange={onDefaultCodexProviderChange}
           onFeedback={onFeedback}
         />
       ) : settingsSection === "scratchpad" ? (
@@ -563,6 +577,9 @@ export function SettingsWindowApp() {
   const [safePasteEnabled, setSafePasteEnabled] = useState(() => loadCliSafePasteEnabled());
   const [defaultClaudeProvider, setDefaultClaudeProvider] = useState<ClaudeProviderPresetId>(() =>
     loadDefaultClaudeProvider(),
+  );
+  const [defaultCodexProvider, setDefaultCodexProvider] = useState<CodexProviderPresetId>(() =>
+    loadDefaultCodexProvider(),
   );
   const [cliLaunchEnvironment, setCliLaunchEnvironment] = useState<CliLaunchEnvironment>(() =>
     loadCliLaunchEnvironment(),
@@ -661,6 +678,13 @@ export function SettingsWindowApp() {
     setFeedback(`Default Claude model routing set to ${provider?.title || providerId}.`);
   }
 
+  function updateDefaultCodexProvider(providerId: CodexProviderPresetId) {
+    setDefaultCodexProvider(providerId);
+    saveDefaultCodexProvider(providerId);
+    const provider = CODEX_PROVIDER_DEFINITIONS.find((item) => item.id === providerId);
+    setFeedback(`Default Codex model routing set to ${provider?.title || providerId}.`);
+  }
+
   async function updateWindowsNotificationsEnabled(enabled: boolean) {
     setWindowsNotificationsEnabled(enabled);
     await saveWindowsNotificationsEnabled(enabled);
@@ -716,7 +740,9 @@ export function SettingsWindowApp() {
           cliEnvironmentLoading={cliEnvironmentLoading}
           cliEnvironmentError={cliEnvironmentError}
           defaultClaudeProvider={defaultClaudeProvider}
+          defaultCodexProvider={defaultCodexProvider}
           onDefaultClaudeProviderChange={updateDefaultClaudeProvider}
+          onDefaultCodexProviderChange={updateDefaultCodexProvider}
           onFeedback={setFeedback}
           onScratchpadShortcutChange={(next) => void updateScratchpadShortcut(next)}
           onSafePasteEnabledChange={updateSafePasteEnabled}

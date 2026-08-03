@@ -229,6 +229,7 @@ async function handleSessionRoutes(req, res, url, context) {
         launchEnvironment: payload?.launchEnvironment,
         shellPreference: payload?.shellPreference,
         claudeProvider: payload?.claudeProvider || payload?.claude_provider,
+        codexProvider: payload?.codexProvider || payload?.codex_provider,
       },
       { launchStore: context.launchStore, recordDebugLog: context.recordDebugLog }
     );

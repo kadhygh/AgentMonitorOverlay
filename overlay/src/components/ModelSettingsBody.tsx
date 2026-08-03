@@ -2,32 +2,38 @@ import { useEffect, useState } from "react";
 import { Check, KeyRound, ShieldCheck, Trash2 } from "lucide-react";
 import {
   CLAUDE_PROVIDER_DEFINITIONS,
+  CODEX_PROVIDER_DEFINITIONS,
   deleteModelCredential,
   loadModelCredentialStatus,
   saveModelCredential,
-  STORED_CLAUDE_PROVIDER_IDS,
+  STORED_MODEL_PROVIDER_IDS,
   type ClaudeProviderPresetId,
-  type StoredClaudeProviderPresetId,
+  type CodexProviderPresetId,
+  type StoredModelProviderId,
 } from "../native/modelProviders";
 
 interface ModelSettingsBodyProps {
-  defaultProviderId: ClaudeProviderPresetId;
-  onDefaultProviderChange: (providerId: ClaudeProviderPresetId) => void;
+  defaultClaudeProviderId: ClaudeProviderPresetId;
+  defaultCodexProviderId: CodexProviderPresetId;
+  onDefaultClaudeProviderChange: (providerId: ClaudeProviderPresetId) => void;
+  onDefaultCodexProviderChange: (providerId: CodexProviderPresetId) => void;
   onFeedback: (message: string) => void;
 }
 
 export function ModelSettingsBody({
-  defaultProviderId,
-  onDefaultProviderChange,
+  defaultClaudeProviderId,
+  defaultCodexProviderId,
+  onDefaultClaudeProviderChange,
+  onDefaultCodexProviderChange,
   onFeedback,
 }: ModelSettingsBodyProps) {
   const [configuredProviderIds, setConfiguredProviderIds] = useState<Set<string>>(new Set());
-  const [apiKeys, setApiKeys] = useState<Record<StoredClaudeProviderPresetId, string>>({
+  const [apiKeys, setApiKeys] = useState<Record<StoredModelProviderId, string>>({
     "deepseek-v4": "",
     "glm-5.2": "",
   });
   const [loading, setLoading] = useState(true);
-  const [busyProviderId, setBusyProviderId] = useState<StoredClaudeProviderPresetId | null>(null);
+  const [busyProviderId, setBusyProviderId] = useState<StoredModelProviderId | null>(null);
 
   useEffect(() => {
     void refreshStatus();
@@ -45,7 +51,7 @@ export function ModelSettingsBody({
     }
   }
 
-  async function saveCredential(providerId: StoredClaudeProviderPresetId) {
+  async function saveCredential(providerId: StoredModelProviderId) {
     const apiKey = apiKeys[providerId].trim();
     if (!apiKey) {
       onFeedback("Enter an API key before saving.");
@@ -67,7 +73,7 @@ export function ModelSettingsBody({
     }
   }
 
-  async function clearCredential(providerId: StoredClaudeProviderPresetId) {
+  async function clearCredential(providerId: StoredModelProviderId) {
     setBusyProviderId(providerId);
     try {
       const result = await deleteModelCredential(providerId);
@@ -89,10 +95,24 @@ export function ModelSettingsBody({
   return (
     <div className="settings-section-body">
       <label className="settings-field">
+        <span>Default Codex model routing</span>
+        <select
+          value={defaultCodexProviderId}
+          onChange={(event) => onDefaultCodexProviderChange(event.currentTarget.value as CodexProviderPresetId)}
+        >
+          {CODEX_PROVIDER_DEFINITIONS.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.title}
+            </option>
+          ))}
+        </select>
+      </label>
+
+      <label className="settings-field">
         <span>Default Claude model routing</span>
         <select
-          value={defaultProviderId}
-          onChange={(event) => onDefaultProviderChange(event.currentTarget.value as ClaudeProviderPresetId)}
+          value={defaultClaudeProviderId}
+          onChange={(event) => onDefaultClaudeProviderChange(event.currentTarget.value as ClaudeProviderPresetId)}
         >
           {CLAUDE_PROVIDER_DEFINITIONS.map((provider) => (
             <option key={provider.id} value={provider.id}>
@@ -103,11 +123,11 @@ export function ModelSettingsBody({
       </label>
 
       <p className="settings-help-copy">
-        This preset is selected whenever AMO opens the managed launch dialog. You can still override it for one launch.
+        These presets are selected whenever AMO opens the managed launch dialog. You can still override either client for one launch.
       </p>
 
       <div className="settings-provider-list">
-        {STORED_CLAUDE_PROVIDER_IDS.map((providerId) => {
+        {STORED_MODEL_PROVIDER_IDS.map((providerId) => {
           const provider = CLAUDE_PROVIDER_DEFINITIONS.find((item) => item.id === providerId);
           if (!provider) return null;
           const configured = configuredProviderIds.has(providerId);
@@ -174,6 +194,7 @@ export function ModelSettingsBody({
         <ShieldCheck size={14} aria-hidden="true" />
         <span>
           Keys are stored in Windows Credential Manager for the current Windows user. AMO never writes them to localStorage, Broker state, project files, or logs.
+          The DeepSeek key is shared by the Codex and Claude launch presets.
         </span>
       </div>
     </div>

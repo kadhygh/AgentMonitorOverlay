@@ -10,11 +10,19 @@ async function launchCliInTerminal({
   command,
   args = [],
   cleanupPaths = [],
+  cleanupEnvironmentKeys = [],
   environment = {},
   launchEnvironment = WINDOWS_POWERSHELL,
   recordDebugLog = null,
 }) {
-  const commandLine = buildPowerShellCommandLine({ workspacePath, title, command, args, cleanupPaths });
+  const commandLine = buildPowerShellCommandLine({
+    workspacePath,
+    title,
+    command,
+    args,
+    cleanupPaths,
+    cleanupEnvironmentKeys,
+  });
   const powershellArgs = powershellNoExitEncodedArgs(commandLine);
   if (process.platform === "win32") {
     let selected = resolveCliLaunchEnvironment(launchEnvironment);
@@ -116,6 +124,7 @@ function buildPowerShellCommandLine({
   command,
   args = [],
   cleanupPaths = [],
+  cleanupEnvironmentKeys = [],
 }) {
   const cliArgs = args.map(powershellSingleQuoted).join(" ");
   const invocation = `& ${command}${cliArgs ? ` ${cliArgs}` : ""}`;
@@ -123,6 +132,11 @@ function buildPowerShellCommandLine({
   const cleanupCommands = cleanupPaths
     .filter((filePath) => typeof filePath === "string" && filePath.trim())
     .map((filePath) => `Remove-Item -LiteralPath ${powershellSingleQuoted(filePath)} -Force -ErrorAction SilentlyContinue`);
+  cleanupCommands.push(
+    ...cleanupEnvironmentKeys
+      .filter((name) => typeof name === "string" && /^[A-Za-z_][A-Za-z0-9_]*$/u.test(name))
+      .map((name) => `Remove-Item -LiteralPath ${powershellSingleQuoted(`Env:${name}`)} -ErrorAction SilentlyContinue`),
+  );
 
   return cleanupCommands.length > 0
     ? `${prefix} try { ${invocation} } finally { ${cleanupCommands.join("; ")} }`

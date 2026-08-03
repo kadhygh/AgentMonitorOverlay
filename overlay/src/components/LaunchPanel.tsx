@@ -9,12 +9,16 @@ import {
 import { projectName, shortPathLabel } from "../domain/routingModel";
 import {
   CLAUDE_PROVIDER_DEFINITIONS,
+  CODEX_PROVIDER_DEFINITIONS,
   loadDefaultClaudeProvider,
+  loadDefaultCodexProvider,
   loadModelCredentialStatus,
   resolveModelCredential,
   type ClaudeProviderLaunchConfig,
   type ClaudeProviderPresetId,
-  type StoredClaudeProviderPresetId,
+  type CodexProviderLaunchConfig,
+  type CodexProviderPresetId,
+  type StoredModelProviderId,
 } from "../native/modelProviders";
 import type { AgentSession, WorkspaceInspection } from "../types";
 import { LaunchToolMark } from "./SessionCard";
@@ -22,6 +26,7 @@ import { LaunchToolMark } from "./SessionCard";
 export interface ManagedLaunchSelection {
   adapterId: LaunchPanelAdapterId;
   claudeProvider?: ClaudeProviderLaunchConfig;
+  codexProvider?: CodexProviderLaunchConfig;
 }
 
 export interface LaunchPanelState {
@@ -47,6 +52,9 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
   const [claudeProviderId, setClaudeProviderId] = useState<ClaudeProviderPresetId>(() =>
     loadDefaultClaudeProvider(),
   );
+  const [codexProviderId, setCodexProviderId] = useState<CodexProviderPresetId>(() =>
+    loadDefaultCodexProvider(),
+  );
   const [configuredProviderIds, setConfiguredProviderIds] = useState<Set<string>>(new Set());
   const [credentialStatusLoading, setCredentialStatusLoading] = useState(false);
   const [apiKey, setApiKey] = useState("");
@@ -56,6 +64,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
   useEffect(() => {
     setAdapterId(state.initialAdapterId ?? "codex-cli");
     setClaudeProviderId(loadDefaultClaudeProvider());
+    setCodexProviderId(loadDefaultCodexProvider());
     setApiKey("");
     setCredentialError(null);
     setCredentialStatusLoading(true);
@@ -70,16 +79,19 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
       .finally(() => setCredentialStatusLoading(false));
   }, [state.source, state.session?.sessionId, state.workspacePath, state.initialAdapterId]);
 
-  const provider =
-    CLAUDE_PROVIDER_DEFINITIONS.find((item) => item.id === claudeProviderId)
-    ?? CLAUDE_PROVIDER_DEFINITIONS[0];
+  const providerDefinitions = adapterId === "codex-cli"
+    ? CODEX_PROVIDER_DEFINITIONS
+    : CLAUDE_PROVIDER_DEFINITIONS;
+  const selectedProviderId = adapterId === "codex-cli" ? codexProviderId : claudeProviderId;
+  const defaultProviderId = adapterId === "codex-cli" ? "openai-default" : "anthropic-default";
+  const provider = providerDefinitions.find((item) => item.id === selectedProviderId) ?? providerDefinitions[0];
   const launchable = workspaceAdapterLaunchable(state.inspection, adapterId);
   const checking = state.busy === "inspect";
   const launching = state.busy === "launch" || resolvingCredential;
-  const storedCredentialConfigured = configuredProviderIds.has(claudeProviderId);
+  const storedCredentialConfigured = configuredProviderIds.has(selectedProviderId);
   const missingProviderKey =
-    adapterId === "claude-cli"
-    && claudeProviderId !== "anthropic-default"
+    (adapterId === "codex-cli" || adapterId === "claude-cli")
+    && selectedProviderId !== defaultProviderId
     && !storedCredentialConfigured
     && !apiKey.trim();
   const contextTitle = state.source === "card" ? "New task from card workspace" : "New workspace task";
@@ -93,13 +105,13 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
     let launchApiKey = apiKey.trim();
 
     if (
-      adapterId === "claude-cli"
-      && claudeProviderId !== "anthropic-default"
+      (adapterId === "codex-cli" || adapterId === "claude-cli")
+      && selectedProviderId !== defaultProviderId
       && !launchApiKey
     ) {
       setResolvingCredential(true);
       try {
-        launchApiKey = await resolveModelCredential(claudeProviderId as StoredClaudeProviderPresetId);
+        launchApiKey = await resolveModelCredential(selectedProviderId as StoredModelProviderId);
       } catch (error) {
         setCredentialError(`Stored API key could not be loaded: ${(error as Error).message}`);
         return;
@@ -114,6 +126,12 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
         ? {
             presetId: claudeProviderId,
             apiKey: claudeProviderId === "anthropic-default" ? undefined : launchApiKey,
+          }
+        : undefined,
+      codexProvider: adapterId === "codex-cli"
+        ? {
+            presetId: codexProviderId,
+            apiKey: codexProviderId === "openai-default" ? undefined : launchApiKey,
           }
         : undefined,
     });
@@ -187,23 +205,31 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
             </div>
           </section>
 
-          {adapterId === "claude-cli" ? (
+          {adapterId === "codex-cli" || adapterId === "claude-cli" ? (
             <section className="managed-launch-section">
               <div className="managed-launch-section-title">
                 <strong>Model routing</strong>
-                <span>Only this Claude CLI process</span>
+                <span>Only this {adapterId === "codex-cli" ? "Codex" : "Claude"} CLI process</span>
               </div>
-              <div className="managed-launch-providers" role="radiogroup" aria-label="Claude model provider">
-                {CLAUDE_PROVIDER_DEFINITIONS.map((item) => (
-                  <label className={claudeProviderId === item.id ? "is-selected" : ""} key={item.id}>
+              <div
+                className="managed-launch-providers"
+                role="radiogroup"
+                aria-label={`${adapterId === "codex-cli" ? "Codex" : "Claude"} model provider`}
+              >
+                {providerDefinitions.map((item) => (
+                  <label className={selectedProviderId === item.id ? "is-selected" : ""} key={item.id}>
                     <input
                       type="radio"
-                      name="claude-provider"
+                      name={`${adapterId}-provider`}
                       value={item.id}
-                      checked={claudeProviderId === item.id}
+                      checked={selectedProviderId === item.id}
                       disabled={launching}
                       onChange={() => {
-                        setClaudeProviderId(item.id);
+                        if (adapterId === "codex-cli") {
+                          setCodexProviderId(item.id as CodexProviderPresetId);
+                        } else {
+                          setClaudeProviderId(item.id as ClaudeProviderPresetId);
+                        }
                         setApiKey("");
                         setCredentialError(null);
                       }}
@@ -212,7 +238,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
                       <strong>{item.title}</strong>
                       <small>{item.detail}</small>
                     </span>
-                    {item.id !== "anthropic-default" ? (
+                    {item.id !== defaultProviderId ? (
                       <em className={configuredProviderIds.has(item.id) ? "is-configured" : ""}>
                         {credentialStatusLoading
                           ? "Checking"
@@ -254,8 +280,12 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
                 <ShieldCheck size={13} aria-hidden="true" />
                 <span>
                   {storedCredentialConfigured && !apiKey.trim()
-                    ? "The saved key is resolved only at launch and copied into a temporary Claude settings file."
-                    : "This key is written only to a temporary launch settings file and removed when Claude exits."}
+                    ? adapterId === "codex-cli"
+                      ? "The saved key is resolved only at launch and passed through the Codex process environment."
+                      : "The saved key is resolved only at launch and copied into a temporary Claude settings file."
+                    : adapterId === "codex-cli"
+                      ? "This key stays in the Codex process environment; AMO does not write a Codex profile or secret file."
+                      : "This key is written only to a temporary launch settings file and removed when Claude exits."}
                 </span>
               </div>
             </section>

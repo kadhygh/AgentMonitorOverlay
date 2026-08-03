@@ -515,6 +515,7 @@ export function DeployWorkspaceApp() {
         workspacePath: targetPath,
         adapterId,
         claudeProvider: selection.claudeProvider,
+        codexProvider: selection.codexProvider,
         ...cliLaunchPreferencePayload(),
       });
       if (adapterId === "codex-app") {
@@ -526,6 +527,7 @@ export function DeployWorkspaceApp() {
         workspacePath: result.workspacePath,
         adapterId: result.adapterId,
         claudeProviderId: selection.claudeProvider?.presetId ?? null,
+        codexProviderId: selection.codexProvider?.presetId ?? null,
         pid: result.pid ?? null,
       });
       setFeedback(result.message);
@@ -536,6 +538,7 @@ export function DeployWorkspaceApp() {
         workspacePath: targetPath,
         adapterId,
         claudeProviderId: selection.claudeProvider?.presetId ?? null,
+        codexProviderId: selection.codexProvider?.presetId ?? null,
         message,
       });
       setLaunchPanel((current) => (current ? { ...current, busy: null, error: message } : current));

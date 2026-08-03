@@ -147,6 +147,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
       workspacePath,
       adapterId,
       claudeProviderId: selection.claudeProvider?.presetId ?? null,
+      codexProviderId: selection.codexProvider?.presetId ?? null,
     });
 
     try {
@@ -155,6 +156,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         adapterId,
         sourceCardSessionId: session.sessionId,
         claudeProvider: selection.claudeProvider,
+        codexProvider: selection.codexProvider,
         ...cliLaunchPreferencePayload(),
       });
       if (adapterId === "codex-app") {

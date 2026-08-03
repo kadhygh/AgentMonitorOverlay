@@ -411,6 +411,8 @@ function attachLaunchToSession(session, launch) {
     observedLaunchId: launch.launchId,
     claudeProviderId: launch.claudeProviderId || null,
     claudeModel: launch.claudeModel || null,
+    codexProviderId: launch.codexProviderId || null,
+    codexModel: launch.codexModel || null,
     targetBinding: isManagedLaunchWindowTarget(session.targetBinding) ? null : session.targetBinding || null,
     windowHint: {
       ...(session.windowHint || {}),

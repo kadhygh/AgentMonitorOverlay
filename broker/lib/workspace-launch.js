@@ -7,10 +7,12 @@ const { prepareChatGptWorkspaceLaunch } = require("./chatgpt-desktop");
 const { launchCliInTerminal } = require("./terminal-launch");
 const { normalizeCliLaunchEnvironment } = require("./cli-environments");
 const { resolveClaudeProvider } = require("./claude-provider");
+const { resolveCodexProvider } = require("./codex-provider");
 const {
   cleanupClaudeLaunchSettings,
   createClaudeLaunchSettings,
 } = require("./claude-launch-settings");
+const { createCodexLaunchArgs } = require("./codex-launch-config");
 
 async function launchWorkspace(payload, options = {}) {
   const recordDebugLog = typeof options.recordDebugLog === "function" ? options.recordDebugLog : () => {};
@@ -31,6 +33,9 @@ async function launchWorkspace(payload, options = {}) {
   }
   const claudeProvider = adapterId === "claude-cli"
     ? resolveClaudeProvider(payload?.claudeProvider || payload?.claude_provider)
+    : null;
+  const codexProvider = adapterId === "codex-cli"
+    ? resolveCodexProvider(payload?.codexProvider || payload?.codex_provider)
     : null;
 
   const amoRoot = path.join(workspacePath, AMO_DIR);
@@ -69,6 +74,7 @@ async function launchWorkspace(payload, options = {}) {
         AMO_WORKSPACE_ID: managedLaunch.workspaceId,
         AMO_WORKSPACE_PATH: managedLaunch.workspacePath,
         AMO_REQUESTED_SESSION_ID: resumeSessionId,
+        ...(codexProvider?.environment || {}),
       }
     : {};
   let claudeLaunchSettings = null;
@@ -76,11 +82,18 @@ async function launchWorkspace(payload, options = {}) {
   try {
     if (managedLaunch) launchStore.update(managedLaunch.launchId, { state: "spawning" });
     if (adapterId === "codex-cli") {
+      const codexArgs = [
+        ...createCodexLaunchArgs({ provider: codexProvider }),
+        ...(resumeSessionId ? ["resume", resumeSessionId, "-C", workspacePath] : []),
+      ];
       launch = await launchCliInTerminal({
         workspacePath,
         title,
         command: "codex",
-        args: resumeSessionId ? ["resume", resumeSessionId, "-C", workspacePath] : [],
+        args: codexArgs,
+        cleanupEnvironmentKeys: codexProvider?.environment?.DEEPSEEK_API_KEY
+          ? ["DEEPSEEK_API_KEY"]
+          : [],
         environment,
         launchEnvironment,
         recordDebugLog,
@@ -121,6 +134,8 @@ async function launchWorkspace(payload, options = {}) {
         shellExecutable: launch.shell || null,
         claudeProviderId: claudeProvider?.id || null,
         claudeModel: claudeProvider?.model || null,
+        codexProviderId: codexProvider?.id || null,
+        codexModel: codexProvider?.model || null,
       });
     }
   } catch (error) {
@@ -149,6 +164,8 @@ async function launchWorkspace(payload, options = {}) {
     environmentFallback: Boolean(launch.environmentFallback),
     claudeProviderId: claudeProvider?.id || null,
     claudeModel: claudeProvider?.model || null,
+    codexProviderId: codexProvider?.id || null,
+    codexModel: codexProvider?.model || null,
   });
 
   return {
@@ -171,6 +188,9 @@ async function launchWorkspace(payload, options = {}) {
     claudeProviderId: claudeProvider?.id || null,
     claudeProviderLabel: claudeProvider?.label || null,
     claudeModel: claudeProvider?.model || null,
+    codexProviderId: codexProvider?.id || null,
+    codexProviderLabel: codexProvider?.label || null,
+    codexModel: codexProvider?.model || null,
     launch: managedLaunch ? launchStore.list().find((item) => item.launchId === managedLaunch.launchId) : null,
     windowHint: managedLaunch ? {
       title,
@@ -187,8 +207,8 @@ async function launchWorkspace(payload, options = {}) {
       adapterId === "codex-app"
         ? `Opened a new ChatGPT task for ${projectName}.`
         : resumeSessionId && adapterId === "codex-cli"
-        ? `Launched Codex CLI resume for ${projectName}.`
-        : `Launched ${adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI"} for ${projectName}.`,
+        ? `Launched Codex CLI resume${codexProvider?.model ? ` with ${codexProvider.label}` : ""} for ${projectName}.`
+        : `Launched ${adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI"}${codexProvider?.model ? ` with ${codexProvider.label}` : ""} for ${projectName}.`,
   };
 }
 

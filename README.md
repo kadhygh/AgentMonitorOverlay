@@ -14,11 +14,11 @@ AMO（Agent Monitor Overlay）是一层面向 Windows 本地 AI CLI 工作流的
 
 ## 最新更新
 
-### Claude Code Managed CLI：GLM 与 DeepSeek 路由
+### Codex / Claude Managed CLI：DeepSeek 与 GLM 路由
 
-AMO 现在可以为由它拉起的 Claude Code CLI（界面中的 **Claude CLI**）单独配置模型路由。打开 **Settings → Models**，分别保存 `DeepSeek API Key` 或 `GLM Coding Plan API Key`，并按需把 **DeepSeek V4 Flash** 或 **GLM-5.2** 设为默认 Claude 路由。之后从 Workspace Center 点击 **Run Claude**，Launch Task 会显示 **Model routing**；可以使用默认值，也可以只为本次启动改回 Claude default 或切换到另一个已配置的提供方。
+AMO 现在可以为由它拉起的 **Codex CLI** 单独选择 **Codex default** 或 **DeepSeek V4 Flash**，也保留 Claude Code CLI 的 DeepSeek / GLM 路由。打开 **Settings → Models** 保存 `DeepSeek API Key`，并按需把 **DeepSeek V4 Flash** 设为默认 Codex 路由；之后从 Workspace Center 点击 **Run Codex**，Launch Task 会显示 **Model routing**。DeepSeek Key 同时供 Codex 与 Claude 的 DeepSeek 启动预设使用。
 
-该路由只影响这次 Managed Claude CLI 进程，不会覆盖用户现有的全局 Claude Code 配置。保存的 Key 位于当前 Windows 用户的 Credential Manager；启动时只写入临时 Claude settings，Claude 退出后删除，不进入 localStorage、Broker 状态、工程文件或日志。具体步骤见[入门指南中的 Claude 模型路由](docs/getting-started.md#claude-model-routing-glm-and-deepseek)。
+该路由只影响这次 Managed CLI，不会覆盖用户现有的全局 Codex 或 Claude Code 配置。保存的 Key 位于当前 Windows 用户的 Credential Manager。Codex 使用随 AMO Broker 部署的一份共享只读模型目录，并通过单次 `-c` 参数覆盖 provider/model；启动时只把 Key 放入进程环境，退出后再清除终端中的 Key 环境变量，不会在 `~/.codex` 创建 profile 或模型文件。多个 Codex CLI 会共用同一份目录。Claude 仍使用退出后删除的临时 settings。Key 不进入命令参数、模型目录、localStorage、Broker 状态、工程文件或日志。当前 **ChatGPT desktop app** 启动入口不提供这个 AMO 路由选择；该选项针对 Managed Codex CLI。具体步骤见[入门指南中的 Codex / Claude 模型路由](docs/getting-started.md#codex-and-claude-model-routing-deepseek-and-glm)。
 
 ## 为什么做 AMO
 

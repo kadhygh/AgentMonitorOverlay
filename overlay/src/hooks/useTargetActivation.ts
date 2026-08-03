@@ -9,9 +9,11 @@ import {
 import { cliLaunchPreferencePayload } from "../native/cliLaunch";
 import {
   isClaudeProviderPresetId,
+  isCodexProviderPresetId,
   resolveModelCredential,
   type ClaudeProviderLaunchConfig,
-  type StoredClaudeProviderPresetId,
+  type CodexProviderLaunchConfig,
+  type StoredModelProviderId,
 } from "../native/modelProviders";
 import {
   activateSessionWindow,
@@ -160,18 +162,28 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
 
     try {
       let claudeProvider: ClaudeProviderLaunchConfig | undefined;
+      let codexProvider: CodexProviderLaunchConfig | undefined;
       const providerId = session.claudeProviderId ?? null;
       if (
         providerId
         && providerId !== "anthropic-default"
         && isClaudeProviderPresetId(providerId)
       ) {
-        const apiKey = await resolveModelCredential(providerId as StoredClaudeProviderPresetId);
+        const apiKey = await resolveModelCredential(providerId as StoredModelProviderId);
         claudeProvider = { presetId: providerId, apiKey };
+      }
+      const codexProviderId = session.codexProviderId ?? null;
+      if (
+        codexProviderId
+        && codexProviderId !== "openai-default"
+        && isCodexProviderPresetId(codexProviderId)
+      ) {
+        const apiKey = await resolveModelCredential(codexProviderId as StoredModelProviderId);
+        codexProvider = { presetId: codexProviderId, apiKey };
       }
       const result = await postBrokerJson<WorkspaceLaunchResult & { duplicate?: boolean }>(
         brokerSessionResumeUrl(session.sessionId),
-        { ...cliLaunchPreferencePayload(), replacePending: true, claudeProvider },
+        { ...cliLaunchPreferencePayload(), replacePending: true, claudeProvider, codexProvider },
       );
       if (result.session) {
         options.setSessions((previous) =>

@@ -137,6 +137,10 @@ function Copy-BrokerRuntime {
     foreach ($fileName in @("main.js", "manifest.json", "styles.css")) {
         Copy-Item -LiteralPath (Join-Path $pluginSource $fileName) -Destination $pluginDestination
     }
+    $codexAssetsSource = Join-Path $RepoRoot "broker\assets\codex"
+    $codexAssetsDestination = Join-Path $DestinationRoot "assets\codex"
+    New-Item -ItemType Directory -Force -Path $codexAssetsDestination | Out-Null
+    Copy-Item -LiteralPath (Join-Path $codexAssetsSource "deepseek-v4-flash.models.json") -Destination $codexAssetsDestination
 }
 
 function Copy-NodeRuntime {
@@ -179,6 +183,7 @@ function Assert-PortableLayout {
         "app\broker\server.js",
         "app\broker\lib\workspace-deploy.js",
         "app\broker\hooks\codex.js",
+        "app\broker\assets\codex\deepseek-v4-flash.models.json",
         "app\broker\assets\obsidian\md-anno-tools\main.js",
         "app\broker\assets\obsidian\md-anno-tools\manifest.json",
         "version.json",
