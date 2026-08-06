@@ -1,4 +1,5 @@
 export const BROKER_SESSIONS_URL = "http://127.0.0.1:17654/api/sessions";
+export const BROKER_REFRESH_SESSION_TITLES_URL = "http://127.0.0.1:17654/api/sessions/refresh-titles";
 export const BROKER_SESSION_EVENTS_URL = "http://127.0.0.1:17654/api/session-events";
 export const BROKER_DISMISS_ARCHIVED_URL = "http://127.0.0.1:17654/api/sessions/dismiss-archived";
 export const BROKER_SESSION_PRIORITIES_URL = "http://127.0.0.1:17654/api/sessions/priorities";

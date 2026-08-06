@@ -3,7 +3,7 @@ const fs = require("fs");
 const { AMO_SCHEMA_VERSION } = require("./amo-constants");
 const { createObsidianPluginHealthCache } = require("./obsidian-health-cache");
 const { httpError } = require("./http");
-const { refreshSessionTitle, resolveSessionTitle } = require("./display-names");
+const { refreshSessionTitle: refreshProviderSessionTitle, resolveSessionTitle } = require("./display-names");
 const { normalizeInteger, normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./normalize");
 const { createSnapshotWriter } = require("./snapshot-writer");
 const { normalizeWindowHint, resolveSessionTargetBinding } = require("./target-binding");
@@ -32,6 +32,7 @@ function createSessionStore({
   recordDebugLog = () => {},
   promptEventHandler = null,
   onObsidianHealthChanged = () => {},
+  refreshTitle = refreshProviderSessionTitle,
 } = {}) {
   if (!dataFile) {
     throw new Error("createSessionStore requires dataFile");
@@ -729,6 +730,30 @@ function createSessionStore({
     });
   }
 
+  function refreshSessionTitles() {
+    const changedSessions = [];
+
+    for (const [sessionId, session] of sessions.entries()) {
+      const refreshedSession = refreshTitle(session);
+      if (!refreshedSession || refreshedSession.title === session.title) continue;
+
+      sessions.set(sessionId, refreshedSession);
+      changedSessions.push(refreshedSession);
+    }
+
+    recordDebugLog("broker", "session_titles.refreshed", {
+      sessionCount: sessions.size,
+      changedCount: changedSessions.length,
+    });
+
+    return {
+      ok: true,
+      schemaVersion: AMO_SCHEMA_VERSION,
+      count: changedSessions.length,
+      sessions: changedSessions,
+    };
+  }
+
   function rawSessionsForSnapshot() {
     return Array.from(sessions.values()).map((session) => {
       const { obsidianPluginHealth: _health, ...rawSession } = session;
@@ -763,7 +788,7 @@ function createSessionStore({
             healthCache.prime(vaultRoot, session.obsidianPluginHealth, { expectedBridgeUrl: bridgeUrl() });
           }
           const { obsidianPluginHealth: _health, ...rawSession } = session;
-          sessions.set(rawSession.sessionId, ensurePresentationFields(refreshSessionTitle(rawSession), index));
+          sessions.set(rawSession.sessionId, ensurePresentationFields(refreshTitle(rawSession), index));
         }
       }
     } catch (error) {
@@ -808,6 +833,7 @@ function createSessionStore({
     dismissAllSessions,
     decorateSession,
     listSessions,
+    refreshSessionTitles,
     rawSessionsForSnapshot,
     loadSnapshot,
     scheduleSnapshotPersist,

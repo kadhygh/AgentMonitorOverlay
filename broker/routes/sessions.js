@@ -11,6 +11,15 @@ async function handleSessionRoutes(req, res, url, context) {
     });
   }
 
+  if (req.method === "POST" && url.pathname === "/api/sessions/refresh-titles") {
+    const result = context.refreshSessionTitles();
+    if (result.count > 0) {
+      await context.persistSnapshot("session-title-refresh");
+      for (const session of result.sessions) context.publishSessionChanged("provider-title-refresh", session);
+    }
+    return sendHandled(res, 200, result);
+  }
+
   if (req.method === "POST" && url.pathname === "/api/sessions/dismiss-archived") {
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissArchivedSessions(payload || {});

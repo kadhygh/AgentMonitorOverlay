@@ -1,5 +1,10 @@
 import { useEffect, useRef, useState } from "react";
-import { BROKER_SESSION_EVENTS_URL, BROKER_SESSIONS_URL, getBrokerJson } from "../api/brokerClient";
+import {
+  BROKER_REFRESH_SESSION_TITLES_URL,
+  BROKER_SESSION_EVENTS_URL,
+  BROKER_SESSIONS_URL,
+  getBrokerJson,
+} from "../api/brokerClient";
 import { mergeChangedSession, mergeSessionOrder, normalizeSessions } from "../domain/sessionModel";
 import { createSingleFlight, SessionRevisionGate } from "../runtime/sessionRevisionGate";
 import type { BrokerReadiness } from "../components/BrokerReadinessPanel";
@@ -45,6 +50,10 @@ interface SessionChangedPayload {
   sessionId?: string | null;
 }
 
+interface SessionTitleRefreshPayload {
+  count?: number;
+}
+
 export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionOrder, setSessionOrder] = useState<string[]>([]);
@@ -58,6 +67,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   const [hasLoadedSessionSnapshot, setHasLoadedSessionSnapshot] = useState(false);
   const [sessionCounts, setSessionCounts] = useState<SessionCounts>({ active: 0, archived: 0, total: 0 });
   const [archiveLoading, setArchiveLoading] = useState(false);
+  const [refreshingSessionTitles, setRefreshingSessionTitles] = useState(false);
   const [archiveHasMore, setArchiveHasMore] = useState(false);
   const archiveOffsetRef = useRef(0);
   const archiveLoadingRef = useRef(false);
@@ -172,6 +182,38 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         window.clearTimeout(timeoutId);
       }
     });
+  }
+
+  async function refreshSessionTitles() {
+    if (refreshingSessionTitles) return;
+
+    setRefreshingSessionTitles(true);
+    setFeedback("Refreshing session names...");
+    options.postDebugLog("session_titles.refresh.start", {});
+
+    try {
+      const response = await fetch(BROKER_REFRESH_SESSION_TITLES_URL, {
+        method: "POST",
+        cache: "no-store",
+      });
+      if (!response.ok) throw new Error(`broker returned ${response.status}`);
+
+      const payload = (await response.json()) as SessionTitleRefreshPayload;
+      await refreshSessions("manual-title-refresh");
+      const changedCount = Number.isFinite(payload.count) ? Number(payload.count) : 0;
+      setFeedback(
+        changedCount > 0
+          ? `Refreshed ${changedCount} session name${changedCount === 1 ? "" : "s"}.`
+          : "Session names are already up to date.",
+      );
+      options.postDebugLog("session_titles.refresh.ok", { changedCount });
+    } catch (error) {
+      const message = (error as Error).message;
+      setFeedback(`Session name refresh failed: ${message}`);
+      options.postDebugLog("session_titles.refresh.error", { message });
+    } finally {
+      setRefreshingSessionTitles(false);
+    }
   }
 
   async function loadArchivedSessions({ reset = false }: { reset?: boolean } = {}) {
@@ -437,6 +479,8 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
     hasLoadedSessionSnapshot,
     lastRefreshAt,
     loadArchivedSessions,
+    refreshingSessionTitles,
+    refreshSessionTitles,
     refreshSessions,
     sessionCounts,
     sessionOrder,

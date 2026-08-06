@@ -5,10 +5,11 @@ const path = require("node:path");
 const test = require("node:test");
 const { createSessionStore } = require("./session-store");
 
-function createTestStore(t) {
+function createTestStore(t, options = {}) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "amo-session-store-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   return createSessionStore({
+    ...options,
     dataFile: path.join(root, "sessions.json"),
   });
 }
@@ -123,4 +124,39 @@ test("snapshot serialization excludes derived Obsidian health", (t) => {
   assert.equal(raw.length, 1);
   assert.equal("obsidianPluginHealth" in raw[0], false);
   assert.deepEqual(store.sessions.get("health-session").obsidianPluginHealth.ok, true);
+});
+
+test("manual title refresh updates changed provider titles without changing card activity order", (t) => {
+  const store = createTestStore(t, {
+    refreshTitle: (session) => session.sessionId === "renamed"
+      ? { ...session, title: "Renamed in provider" }
+      : session,
+  });
+  store.sessions.set("renamed", {
+    sessionId: "renamed",
+    tool: "codex",
+    title: "Old title",
+    taskTitle: "Pinned AMO task name",
+    updatedAt: "2026-08-06T00:00:00.000Z",
+    displayOrder: 3,
+  });
+  store.sessions.set("unchanged", {
+    sessionId: "unchanged",
+    tool: "claude",
+    title: "Unchanged",
+    updatedAt: "2026-08-06T01:00:00.000Z",
+    displayOrder: 1,
+  });
+
+  const result = store.refreshSessionTitles();
+
+  assert.equal(result.count, 1);
+  assert.deepEqual(result.sessions.map((session) => session.sessionId), ["renamed"]);
+  assert.equal(store.sessions.get("renamed").title, "Renamed in provider");
+  assert.equal(store.sessions.get("renamed").taskTitle, "Pinned AMO task name");
+  assert.equal(store.sessions.get("renamed").updatedAt, "2026-08-06T00:00:00.000Z");
+  assert.equal(store.sessions.get("renamed").displayOrder, 3);
+
+  const unchangedResult = store.refreshSessionTitles();
+  assert.equal(unchangedResult.count, 0);
 });

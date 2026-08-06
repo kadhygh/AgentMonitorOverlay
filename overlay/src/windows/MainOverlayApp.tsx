@@ -15,6 +15,7 @@ import {
   ListFilter,
   ListTodo,
   Minus,
+  RefreshCw,
   Search,
   Settings2,
   SquareTerminal,
@@ -165,6 +166,8 @@ export function MainOverlayApp() {
     hasLoadedSessionSnapshot,
     lastRefreshAt,
     loadArchivedSessions,
+    refreshingSessionTitles,
+    refreshSessionTitles,
     refreshSessions,
     sessionCounts,
     sessionOrder,
@@ -713,6 +716,17 @@ export function MainOverlayApp() {
                 <span className="summary-control-spacer" aria-hidden="true" />
 
                 <div className="summary-filter-group summary-management-filters" aria-label="Task management">
+                  <button
+                    type="button"
+                    className={"summary-filter-button " + (refreshingSessionTitles ? "is-refreshing" : "")}
+                    title={refreshingSessionTitles ? "Refreshing session names..." : "Refresh session names"}
+                    aria-label={refreshingSessionTitles ? "Refreshing session names" : "Refresh session names"}
+                    aria-busy={refreshingSessionTitles}
+                    disabled={refreshingSessionTitles}
+                    onClick={() => void refreshSessionTitles()}
+                  >
+                    <RefreshCw size={12} aria-hidden="true" />
+                  </button>
                   <button
                     type="button"
                     className={"summary-filter-button " + (archivePanelOpen ? "is-active" : "")}
