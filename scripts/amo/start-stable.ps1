@@ -159,8 +159,8 @@ function Get-AmoStableViteProcesses {
 function Stop-AmoProcessTree {
     param([int]$ProcessId)
     if ($ProcessId -le 0) { return }
-    & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null
-    if ($LASTEXITCODE -ne 0) {
+    try { & taskkill.exe /PID $ProcessId /T /F 2>$null | Out-Null } catch {}
+    if (Get-Process -Id $ProcessId -ErrorAction SilentlyContinue) {
         Stop-Process -Id $ProcessId -Force -ErrorAction SilentlyContinue
     }
 }
@@ -224,8 +224,8 @@ try {
 
     $phase = "existing UI shutdown"
     Stop-ExistingStableUi
-    $listener = Get-NetTCPConnection -LocalPort 1420 -State Listen -ErrorAction SilentlyContinue
-    if ($listener) { throw "Port 1420 remains in use by pid $($listener.OwningProcess)." }
+    $listeners = @(Get-AmoPortProcesses -Port 1420)
+    if ($listeners.Count -gt 0) { throw "Port 1420 remains in use by pid $((@($listeners.Id) -join ', '))." }
 
     if (-not $RestartOnly) {
         $phase = "native executable activation"
@@ -240,9 +240,12 @@ try {
     Remove-Item -LiteralPath $viteStdout, $viteStderr, $appStdout, $appStderr, $brokerStdout, $brokerStderr -Force -ErrorAction SilentlyContinue
 
     $phase = "Vite startup"
+    $viteScript = Join-Path $overlayRoot "node_modules\vite\bin\vite.js"
+    if (-not (Test-Path -LiteralPath $viteScript)) { throw "Could not find Vite entry point: $viteScript" }
+    $nodeCommand = Get-Command node -ErrorAction Stop
     $viteParams = @{
-        FilePath = "cmd.exe"
-        ArgumentList = @("/c", "npm run dev")
+        FilePath = $nodeCommand.Source
+        ArgumentList = @($viteScript)
         WorkingDirectory = $overlayRoot
         PassThru = $true
     }
