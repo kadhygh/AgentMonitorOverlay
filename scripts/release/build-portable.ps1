@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.5",
+    [string]$Version = "0.1.6",
     [string]$NodeVersion = "24.13.0",
     [switch]$SkipDependencyInstall
 )
@@ -20,6 +20,7 @@ $packageName = "AMO-v$Version-win-x64"
 $stageRoot = Join-Path $portableOutput $packageName
 $zipPath = Join-Path $portableOutput "$packageName.zip"
 $checksumPath = "$zipPath.sha256"
+$releaseNotesPath = Join-Path $repoRoot "docs\releases\v$Version.md"
 $cacheRoot = Join-Path $repoRoot "tmp\release-cache\node-v$NodeVersion-win-x64"
 $nodeArchive = Join-Path $cacheRoot "node-v$NodeVersion-win-x64.zip"
 $nodeExtractRoot = Join-Path $cacheRoot "extracted"
@@ -31,6 +32,7 @@ if ($Version -ne $sourceVersion) {
     throw "Portable version $Version does not match source version $sourceVersion in overlay/src-tauri/tauri.conf.json"
 }
 Assert-SafeOutputPath $repoRoot $portableOutput
+if (-not (Test-Path -LiteralPath $releaseNotesPath)) { throw "Release notes are missing: $releaseNotesPath" }
 
 if (-not $SkipDependencyInstall -and -not (Test-Path -LiteralPath (Join-Path $overlayRoot "node_modules"))) {
     Push-Location $overlayRoot
@@ -63,6 +65,7 @@ New-Item -ItemType Directory -Force -Path $stageRoot | Out-Null
 Copy-Item -LiteralPath $releaseExe -Destination (Join-Path $stageRoot "AMO.exe")
 Copy-Item -LiteralPath (Join-Path $repoRoot "LICENSE") -Destination (Join-Path $stageRoot "LICENSE.txt")
 Copy-Item -LiteralPath (Join-Path $repoRoot "THIRD_PARTY_NOTICES.md") -Destination (Join-Path $stageRoot "THIRD_PARTY_NOTICES.md")
+Copy-Item -LiteralPath $releaseNotesPath -Destination (Join-Path $stageRoot "RELEASE_NOTES.md")
 Copy-BrokerRuntime -RepoRoot $repoRoot -DestinationRoot (Join-Path $stageRoot "app\broker")
 Copy-NodeRuntime -Version $NodeVersion -ArchivePath $nodeArchive -ExtractRoot $nodeExtractRoot -DistributionRoot $nodeDistributionRoot -DestinationRoot (Join-Path $stageRoot "runtime")
 New-Item -ItemType Directory -Force -Path (Join-Path $stageRoot "data") | Out-Null
@@ -178,6 +181,7 @@ function Assert-PortableLayout {
         "AMO.exe",
         "LICENSE.txt",
         "THIRD_PARTY_NOTICES.md",
+        "RELEASE_NOTES.md",
         "runtime\node.exe",
         "runtime\NODE-LICENSE.txt",
         "app\broker\server.js",

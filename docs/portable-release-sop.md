@@ -30,6 +30,7 @@ Before release, keep these values aligned:
 | Deployment/hook protocol | `broker/lib/amo-constants.js` |
 | Obsidian plugin version | `broker/assets/obsidian/md-anno-tools/manifest.json` |
 | Bundled Node | `scripts/release/build-portable.ps1` default |
+| Curated release notes | `docs/releases/v<version>.md` |
 
 The release tag uses `v<major>.<minor>.<patch>`, for example `v0.1.0`. The ZIP uses `AMO-v0.1.0-win-x64.zip`.
 
@@ -58,7 +59,7 @@ The script performs:
 3. official Node ZIP download and SHA256 verification;
 4. minimal Broker and Obsidian plugin asset staging;
 5. package-local `data/` creation;
-6. `version.json`, README, and Node license generation;
+6. `version.json`, README, curated `RELEASE_NOTES.md`, and Node license generation;
 7. ZIP creation and SHA256 output.
 
 Outputs:
@@ -101,6 +102,8 @@ Manual acceptance before tagging:
 ## GitHub Release
 
 The workflow `.github/workflows/release-portable.yml` uses the same build script. A pushed `v*` tag builds and publishes the ZIP and checksum.
+
+When `docs/releases/v<version>.md` exists, the workflow uses it as the GitHub Release body and the build copies it into the Portable root as `RELEASE_NOTES.md`. If it is absent, GitHub falls back to generated notes, while the local Portable build fails to prevent a release without bundled notes.
 
 Release sequence:
 
