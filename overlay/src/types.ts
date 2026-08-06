@@ -189,10 +189,61 @@ export interface ObsidianVaultRegistrationResult {
     }>;
   };
   obsidianProcessCount?: number | null;
+  obsidianProcessState?: "ready" | "running" | "not-running" | "unknown" | "unsupported";
+  processProbe?: {
+    state: string;
+    count: number | null;
+    cached: boolean;
+    timedOut: boolean;
+    durationMs: number;
+    checkedAt: string;
+    errorCode?: string | null;
+  };
+  timings?: {
+    registryReadMs: number;
+    registryWriteMs: number;
+    runtimeInspectionMs: number;
+    processProbeMs: number;
+    totalMs: number;
+  };
+  openRequestId?: string | null;
+  pluginRuntime?: ObsidianPluginRuntime | null;
   alreadyRegistered: boolean;
   changed: boolean;
 }
 
+export interface ObsidianPluginRuntime {
+  ok: boolean;
+  active: boolean;
+  vaultRoot?: string | null;
+  vaultId?: string | null;
+  pluginId?: string | null;
+  pluginVersion?: string | null;
+  capabilities: string[];
+  startedAt?: string | null;
+  heartbeatAt?: string | null;
+  ageMs?: number;
+}
+
+export interface ObsidianRuntimeResult {
+  ok: boolean;
+  active: boolean;
+  runtime: ObsidianPluginRuntime | null;
+}
+
+export interface ObsidianOpenResult {
+  ok: boolean;
+  pending?: boolean;
+  openRequestId: string;
+  status?: "opened" | "focused" | "not_found" | "rejected" | "error";
+  targetPath?: string | null;
+  kind?: "note" | "canvas" | null;
+  reusedLeaf?: boolean;
+  message?: string | null;
+  timings?: Record<string, number>;
+  pluginVersion?: string | null;
+  completedAt?: string;
+}
 export interface FolderPickResult {
   ok: boolean;
   cancelled: boolean;

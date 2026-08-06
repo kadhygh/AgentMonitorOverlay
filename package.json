@@ -12,6 +12,8 @@
   "scripts": {
     "amo": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable",
     "amo:stable": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable",
+    "amo:health": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable -HealthOnly",
+    "amo:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable -RestartOnly",
     "amo:source": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source",
     "amo:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source -DebugMode",
     "amo:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Portable -SkipDependencyInstall",

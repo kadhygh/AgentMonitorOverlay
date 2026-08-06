@@ -45,7 +45,7 @@ test("clearing archive dismisses only archived sessions", (t) => {
   assert.equal(store.sessions.has("archived-codex"), false);
 });
 
-test("priority updates persist across archive revival and snapshot reload", (t) => {
+test("priority updates persist across archive revival and snapshot reload", async (t) => {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), "amo-session-priority-"));
   t.after(() => fs.rmSync(root, { recursive: true, force: true }));
   const dataFile = path.join(root, "sessions.json");
@@ -66,7 +66,7 @@ test("priority updates persist across archive revival and snapshot reload", (t) 
     event: "UserPromptSubmit",
     state: "running",
   });
-  store.persistSnapshot();
+  await store.persistSnapshot("test");
 
   const restored = createSessionStore({ dataFile });
   restored.loadSnapshot();
@@ -106,4 +106,21 @@ test("batch priority update validates values and supports clearing", (t) => {
   assert.equal(result.count, 2);
   assert.equal(store.sessions.get("one").priority, null);
   assert.equal(store.sessions.get("two").priority, null);
+});
+test("snapshot serialization excludes derived Obsidian health", (t) => {
+  const store = createTestStore(t);
+  store.sessions.set("health-session", {
+    sessionId: "health-session",
+    tool: "codex",
+    title: "Health session",
+    vaultRoot: "G:\\Vault",
+    obsidianPluginHealth: { ok: true, status: "healthy", checkedAt: new Date().toISOString() },
+    updatedAt: "2026-08-06T00:00:00.000Z",
+  });
+
+  const raw = store.rawSessionsForSnapshot();
+
+  assert.equal(raw.length, 1);
+  assert.equal("obsidianPluginHealth" in raw[0], false);
+  assert.deepEqual(store.sessions.get("health-session").obsidianPluginHealth.ok, true);
 });

@@ -98,7 +98,7 @@ fn open_uri(uri: String) -> OpenPathResult {
         };
     }
 
-    open_external_target(&uri, "Opened URI")
+    open_external_target(&uri, "Dispatched URI")
 }
 
 #[tauri::command]

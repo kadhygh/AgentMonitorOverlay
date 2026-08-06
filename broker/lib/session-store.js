@@ -1,12 +1,11 @@
 const fs = require("fs");
-const path = require("path");
 
 const { AMO_SCHEMA_VERSION } = require("./amo-constants");
-const { replaceFileSync } = require("./filesystem");
+const { createObsidianPluginHealthCache } = require("./obsidian-health-cache");
 const { httpError } = require("./http");
 const { refreshSessionTitle, resolveSessionTitle } = require("./display-names");
 const { normalizeInteger, normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./normalize");
-const { attachObsidianPluginHealth } = require("./obsidian-vault");
+const { createSnapshotWriter } = require("./snapshot-writer");
 const { normalizeWindowHint, resolveSessionTargetBinding } = require("./target-binding");
 
 const VALID_STATES = new Set([
@@ -32,6 +31,7 @@ function createSessionStore({
   expectedBridgeUrl = "",
   recordDebugLog = () => {},
   promptEventHandler = null,
+  onObsidianHealthChanged = () => {},
 } = {}) {
   if (!dataFile) {
     throw new Error("createSessionStore requires dataFile");
@@ -40,6 +40,15 @@ function createSessionStore({
   const sessions = new Map();
   let currentPromptEventHandler = promptEventHandler;
   const bridgeUrl = typeof expectedBridgeUrl === "function" ? expectedBridgeUrl : () => expectedBridgeUrl;
+  const healthCache = createObsidianPluginHealthCache({
+    recordDebugLog,
+    onChanged: onObsidianHealthChanged,
+  });
+  const snapshotWriter = createSnapshotWriter({
+    dataFile,
+    createSnapshot,
+    recordDebugLog,
+  });
 
   function setPromptEventHandler(handler) {
     currentPromptEventHandler = typeof handler === "function" ? handler : null;
@@ -696,15 +705,20 @@ function createSessionStore({
     };
   }
 
+  function decorateSession(session, fallbackOrder = null) {
+    const presentedSession = ensurePresentationFields(session, fallbackOrder);
+    const vaultRoot = normalizeText(session.vaultRoot || session.pendingAnnotationSource?.vaultRoot);
+    if (!vaultRoot) return presentedSession;
+    const health = healthCache.get(
+      vaultRoot,
+      { expectedBridgeUrl: bridgeUrl() },
+      session.obsidianPluginHealth || null,
+    );
+    return health ? { ...presentedSession, obsidianPluginHealth: health } : presentedSession;
+  }
+
   function listSessions() {
-    const healthCache = new Map();
-    return Array.from(sessions.values()).map((session, index) => {
-      const refreshedSession = ensurePresentationFields(refreshSessionTitle(session), index);
-      if (refreshedSession !== session) {
-        sessions.set(refreshedSession.sessionId, refreshedSession);
-      }
-      return attachObsidianPluginHealth(refreshedSession, healthCache, { expectedBridgeUrl: bridgeUrl() });
-    }).sort((a, b) => {
+    return Array.from(sessions.values()).map((session, index) => decorateSession(session, index)).sort((a, b) => {
       const priorityDifference = (PRIORITY_RANK.get(normalizePriority(a.priority)) ?? 3) -
         (PRIORITY_RANK.get(normalizePriority(b.priority)) ?? 3);
       if (priorityDifference !== 0) return priorityDifference;
@@ -713,6 +727,21 @@ function createSessionStore({
       if (orderDifference !== 0) return orderDifference;
       return `${b.updatedAt}`.localeCompare(`${a.updatedAt}`);
     });
+  }
+
+  function rawSessionsForSnapshot() {
+    return Array.from(sessions.values()).map((session) => {
+      const { obsidianPluginHealth: _health, ...rawSession } = session;
+      return rawSession;
+    });
+  }
+
+  function createSnapshot() {
+    return {
+      schemaVersion: 1,
+      savedAt: new Date().toISOString(),
+      sessions: rawSessionsForSnapshot(),
+    };
   }
 
   function loadSnapshot() {
@@ -729,7 +758,12 @@ function createSessionStore({
 
       for (const [index, session] of snapshot.sessions.entries()) {
         if (session && session.sessionId) {
-          sessions.set(session.sessionId, ensurePresentationFields(refreshSessionTitle(session), index));
+          const vaultRoot = normalizeText(session.vaultRoot || session.pendingAnnotationSource?.vaultRoot);
+          if (vaultRoot && session.obsidianPluginHealth) {
+            healthCache.prime(vaultRoot, session.obsidianPluginHealth, { expectedBridgeUrl: bridgeUrl() });
+          }
+          const { obsidianPluginHealth: _health, ...rawSession } = session;
+          sessions.set(rawSession.sessionId, ensurePresentationFields(refreshSessionTitle(rawSession), index));
         }
       }
     } catch (error) {
@@ -737,18 +771,21 @@ function createSessionStore({
     }
   }
 
-  function persistSnapshot() {
-    const dir = path.dirname(dataFile);
-    fs.mkdirSync(dir, { recursive: true });
+  function scheduleSnapshotPersist(reason = "mutation") {
+    snapshotWriter.schedule(reason);
+  }
 
-    const snapshot = {
-      schemaVersion: 1,
-      savedAt: new Date().toISOString(),
-      sessions: listSessions(),
-    };
-    const tmpFile = `${dataFile}.${process.pid}.tmp`;
-    fs.writeFileSync(tmpFile, `${JSON.stringify(snapshot, null, 2)}\n`, "utf8");
-    replaceFileSync(tmpFile, dataFile);
+  async function flushSnapshot(reason = "explicit") {
+    return snapshotWriter.flush(reason);
+  }
+
+  async function persistSnapshot(reason = "explicit") {
+    snapshotWriter.schedule(reason);
+    return snapshotWriter.flush(reason);
+  }
+
+  function invalidateObsidianHealth(vaultRoot = null) {
+    healthCache.invalidate(vaultRoot);
   }
 
   return {
@@ -769,9 +806,15 @@ function createSessionStore({
     dismissSession,
     dismissArchivedSessions,
     dismissAllSessions,
+    decorateSession,
     listSessions,
+    rawSessionsForSnapshot,
     loadSnapshot,
+    scheduleSnapshotPersist,
+    flushSnapshot,
     persistSnapshot,
+    snapshotWriterStatus: snapshotWriter.status,
+    invalidateObsidianHealth,
     normalizeState,
   };
 }

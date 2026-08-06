@@ -7,11 +7,12 @@ const { CORS_HEADERS, httpError, sendEmpty, sendJson } = require("./lib/http");
 const { createDebugLogStore } = require("./lib/debug");
 const { normalizeInteger, normalizeText } = require("./lib/normalize");
 const { createObsidianBridge } = require("./lib/obsidian-bridge");
+const { createObsidianRuntimeStore } = require("./lib/obsidian-runtime-store");
 const { createPermissionGate } = require("./lib/permission-gate");
 const { createLaunchStore } = require("./lib/launch-store");
 const { createSessionStore } = require("./lib/session-store");
 const { createTranscriptMonitor } = require("./lib/transcript-monitor");
-const { attachObsidianPluginHealth } = require("./lib/obsidian-vault");
+
 const {
   clearTargetBindingState,
   clearWindowIdentity,
@@ -64,10 +65,14 @@ const recordDebugLog = debugLogStore.record;
 const debugPreview = debugLogStore.preview;
 const workspaceRegistry = createWorkspaceRegistry({ dataFile: WORKSPACE_DATA_FILE, recordDebugLog });
 const launchStore = createLaunchStore({ dataFile: LAUNCH_DATA_FILE, recordDebugLog });
+const obsidianRuntimeStore = createObsidianRuntimeStore({ recordDebugLog });
 const sessionStore = createSessionStore({
   dataFile: DATA_FILE,
   expectedBridgeUrl: baseUrl,
   recordDebugLog,
+  onObsidianHealthChanged: ({ vaultRoot }) => {
+    publishSessionChanged("obsidian-health", null, { vaultRoot });
+  },
 });
 const {
   sessions,
@@ -87,9 +92,14 @@ const {
   dismissSession,
   dismissArchivedSessions,
   dismissAllSessions,
+  decorateSession,
   listSessions,
   loadSnapshot,
+  scheduleSnapshotPersist,
+  flushSnapshot,
   persistSnapshot,
+  snapshotWriterStatus,
+  invalidateObsidianHealth,
   normalizeState,
 } = sessionStore;
 const conversationService = createConversationService({
@@ -110,11 +120,11 @@ const obsidianBridge = createObsidianBridge({
 });
 loadSnapshot();
 const reconciledManagedSessions = launchStore.reconcileSessions(sessions);
-if (reconciledManagedSessions.length > 0) persistSnapshot();
+if (reconciledManagedSessions.length > 0) scheduleSnapshotPersist("managed-session-reconcile");
 const permissionGate = createPermissionGate({
   sessions,
   upsertSessionFromEvent,
-  persistSnapshot,
+  persistSnapshot: () => scheduleSnapshotPersist("permission-gate"),
   publishSessionChanged,
   recordDebugLog,
   graceMs: Number.parseInt(process.env.AGENT_MONITOR_PERMISSION_GRACE_MS || "6000", 10),
@@ -125,7 +135,7 @@ const transcriptMonitor = createTranscriptMonitor({
     permissionGate.resolveSession(event.sessionId, "turn_aborted");
     const session = markSessionCancelledFromTranscript(event);
     if (!session) return;
-    persistSnapshot();
+    scheduleSnapshotPersist("transcript-turn-aborted");
     publishSessionChanged("transcript-turn-aborted", session);
   },
 });
@@ -143,9 +153,15 @@ const routeContext = {
   handleDebugLog,
   recordDebugLog,
   listSessions,
+  decorateSession,
+  getSessionRevision: () => eventSequence,
   dismissArchivedSessions,
   dismissAllSessions,
   persistSnapshot,
+  scheduleSnapshotPersist,
+  flushSnapshot,
+  snapshotWriterStatus,
+  invalidateObsidianHealth,
   publishSessionChanged,
   openSessionEventStream,
   bindSessionWindow,
@@ -176,6 +192,7 @@ const routeContext = {
   launchStore,
   conversationService,
   obsidianBridge,
+  obsidianRuntimeStore,
   detectCliEnvironments,
 };
 
@@ -222,8 +239,35 @@ server.listen(PORT, HOST, () => {
 server.on("close", () => {
   permissionGate.dispose();
   transcriptMonitor.dispose();
+  void flushSnapshot("server-close").catch((error) => {
+    console.error(`Failed to flush AMO session snapshot during shutdown: ${error.message}`);
+  });
 });
 
+let shutdownStarted = false;
+async function shutdown(signal) {
+  if (shutdownStarted) return;
+  shutdownStarted = true;
+  recordDebugLog("broker", "shutdown.start", { signal, clientCount: eventClients.size });
+  for (const client of eventClients) {
+    try { client.res.end(); } catch { /* connection already closed */ }
+  }
+  eventClients.clear();
+  try {
+    await flushSnapshot(`shutdown-${signal}`);
+  } catch (error) {
+    console.error(`Failed to flush AMO session snapshot during ${signal}: ${error.message}`);
+  }
+  const forceExit = setTimeout(() => process.exitCode = 1, 5_000);
+  forceExit.unref?.();
+  server.close(() => {
+    clearTimeout(forceExit);
+    process.exitCode = 0;
+  });
+}
+
+process.once("SIGINT", () => void shutdown("SIGINT"));
+process.once("SIGTERM", () => void shutdown("SIGTERM"));
 function openSessionEventStream(req, res) {
   res.writeHead(200, {
     ...CORS_HEADERS,
@@ -232,7 +276,11 @@ function openSessionEventStream(req, res) {
     connection: "keep-alive",
     "x-accel-buffering": "no",
   });
-  res.write(`event: broker.ready\ndata: ${JSON.stringify({ ok: true, startedAt: startedAt.toISOString() })}\n\n`);
+res.write(`event: broker.ready\ndata: ${JSON.stringify({
+    ok: true,
+    startedAt: startedAt.toISOString(),
+    revision: eventSequence,
+  })}\n\n`);
 
   const client = { res };
   eventClients.add(client);
@@ -257,20 +305,19 @@ function openSessionEventStream(req, res) {
   });
 }
 
-function publishSessionChanged(reason, session) {
+function publishSessionChanged(reason, session, extra = {}) {
+  const sequence = ++eventSequence;
   if (eventClients.size === 0) {
     recordDebugLog("broker", "session_event.no_clients", {
       reason,
+      sequence,
       sessionId: session?.sessionId || null,
     });
     return;
   }
 
-  const sequence = ++eventSequence;
   const publishStartedAtMs = Date.now();
-  const decoratedSession = session
-    ? attachObsidianPluginHealth(session, new Map(), { expectedBridgeUrl: baseUrl() })
-    : null;
+  const decoratedSession = session ? decorateSession(session) : null;
   const payload = JSON.stringify({
     ok: true,
     sequence,
@@ -280,6 +327,7 @@ function publishSessionChanged(reason, session) {
     session: decoratedSession,
     brokerPublishedAtMs: publishStartedAtMs,
     updatedAt: new Date().toISOString(),
+    ...extra,
   });
   const chunk = `id: ${sequence}\nevent: sessions.changed\ndata: ${payload}\n\n`;
 

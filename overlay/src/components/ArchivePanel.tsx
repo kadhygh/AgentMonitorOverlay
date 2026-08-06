@@ -6,10 +6,14 @@ import type { AgentSession } from "../types";
 
 interface ArchivePanelProps {
   sessions: AgentSession[];
+  totalCount: number;
+  loading: boolean;
+  hasMore: boolean;
   dismissingSessionId: string | null;
   clearing: boolean;
   onClose: () => void;
   onDismiss: (session: AgentSession) => void;
+  onLoadMore: () => void;
   onClear: () => void;
 }
 
@@ -35,10 +39,14 @@ function matchesSearch(session: AgentSession, search: string) {
 
 export function ArchivePanel({
   sessions,
+  totalCount,
+  loading,
+  hasMore,
   dismissingSessionId,
   clearing,
   onClose,
   onDismiss,
+  onLoadMore,
   onClear,
 }: ArchivePanelProps) {
   const [search, setSearch] = useState("");
@@ -61,7 +69,7 @@ export function ArchivePanel({
             <Archive size={15} aria-hidden="true" />
             <span>
               <strong>Archive</strong>
-              <small>{sessions.length} archived cards</small>
+              <small>{totalCount} archived cards</small>
             </span>
           </div>
           <button type="button" className="candidate-close" title="Close archive" onClick={onClose}>
@@ -104,14 +112,19 @@ export function ArchivePanel({
             );
           }) : (
             <div className="archive-panel-empty">
-              {sessions.length > 0 ? "No archived cards match this search." : "Archive is empty."}
+              {loading ? "Loading archive..." : sessions.length > 0 ? "No archived cards match this search." : "Archive is empty."}
             </div>
           )}
         </div>
 
         <footer className="archive-panel-footer">
-          <span>{visibleSessions.length} shown</span>
-          <button type="button" disabled={sessions.length === 0 || clearing} onClick={onClear}>
+          <span>{visibleSessions.length} loaded / {totalCount} total</span>
+          {hasMore ? (
+            <button type="button" disabled={loading || clearing} onClick={onLoadMore}>
+              <span>{loading ? "Loading..." : "Load more"}</span>
+            </button>
+          ) : null}
+          <button type="button" disabled={totalCount === 0 || clearing} onClick={onClear}>
             <Trash2 size={12} aria-hidden="true" />
             <span>{clearing ? "Clearing..." : "Clear archive"}</span>
           </button>

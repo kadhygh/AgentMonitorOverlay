@@ -232,7 +232,12 @@ function timestampValue(value?: string | null) {
   return Number.isFinite(timestamp) ? timestamp : 0;
 }
 
-export function obsidianOpenUri(targetPath: string, vaultId?: string, vaultRoot?: string) {
+export function obsidianOpenUri(
+  targetPath: string,
+  vaultId?: string,
+  vaultRoot?: string,
+  options?: { openRequestId?: string | null },
+) {
   const params: Record<string, string> = {};
   const filePath = vaultRelativeFilePath(targetPath, vaultRoot);
 
@@ -244,11 +249,12 @@ export function obsidianOpenUri(targetPath: string, vaultId?: string, vaultRoot?
   }
 
   params.paneType = "tab";
+  if (options?.openRequestId) params.openRequestId = options.openRequestId;
   return `obsidian://open?${uriQuery(params)}`;
 }
 
-export function obsidianVaultOpenUri(vaultId: string) {
-  return `obsidian://open?${uriQuery({ vault: vaultId })}`;
+export function obsidianVaultOpenUri(vaultId: string, openRequestId?: string | null) {
+  return `obsidian://open?${uriQuery({ vault: vaultId, ...(openRequestId ? { openRequestId } : {}) })}`;
 }
 
 export function obsidianAmoOpenUri(
@@ -256,21 +262,18 @@ export function obsidianAmoOpenUri(
   target: "note" | "canvas",
   vaultId?: string,
   vaultRoot?: string,
-  options?: { focusNotePath?: string | null },
+  options?: { focusNotePath?: string | null; openRequestId?: string | null },
 ) {
   const filePath = vaultRelativeFilePath(targetPath, vaultRoot);
-  if (!filePath) {
-    return obsidianOpenUri(targetPath, vaultId, vaultRoot);
-  }
+  if (!filePath) return obsidianOpenUri(targetPath, vaultId, vaultRoot, options);
 
   const params: Record<string, string> = {
     path: targetPath,
     relativePath: filePath,
     kind: target,
   };
-  if (vaultId) {
-    params.vault = vaultId;
-  }
+  if (vaultId) params.vault = vaultId;
+  if (options?.openRequestId) params.openRequestId = options.openRequestId;
   if (options?.focusNotePath) {
     const focusNotePath = vaultRelativeFilePath(options.focusNotePath, vaultRoot) ?? options.focusNotePath;
     params.focusNotePath = focusNotePath;

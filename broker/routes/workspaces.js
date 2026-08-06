@@ -22,6 +22,7 @@ async function handleWorkspaceRoutes(req, res, url, context) {
     const payload = await readJsonBody(req);
     const enrollment = context.enrollWorkspace(payload, { baseUrl: context.baseUrl, recordDebugLog: context.recordDebugLog });
     context.workspaceRegistry.registerEnrollment(enrollment);
+    context.invalidateObsidianHealth(enrollment.vaultRoot || null);
     return sendHandled(res, 200, enrollment);
   }
 
@@ -73,7 +74,7 @@ async function handleWorkspaceRoutes(req, res, url, context) {
       publishSessionChanged: context.publishSessionChanged,
       recordDebugLog: context.recordDebugLog,
     });
-    context.persistSnapshot();
+    await context.persistSnapshot("workspace-mutation");
     return sendHandled(res, 200, result);
   }
 
@@ -83,7 +84,8 @@ async function handleWorkspaceRoutes(req, res, url, context) {
       baseUrl: context.baseUrl,
       recordDebugLog: context.recordDebugLog,
     });
-    context.persistSnapshot();
+    await context.persistSnapshot("workspace-mutation");
+    context.invalidateObsidianHealth(result.vaultRoot || payload?.vaultRoot || payload?.vault_root || null);
     context.publishSessionChanged("obsidian-plugin-update", null);
     return sendHandled(res, 200, result);
   }

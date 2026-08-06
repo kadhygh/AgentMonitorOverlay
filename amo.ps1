@@ -2,7 +2,9 @@ param(
     [ValidateSet("Stable", "Source", "Portable")]
     [string]$Mode = "Stable",
     [switch]$DebugMode,
-    [switch]$SkipDependencyInstall
+    [switch]$SkipDependencyInstall,
+    [switch]$HealthOnly,
+    [switch]$RestartOnly
 )
 
 $ErrorActionPreference = "Stop"
@@ -11,6 +13,14 @@ $env:VITE_AMO_RUNTIME_MODE = $runtimeMode
 $repoRoot = (Resolve-Path $PSScriptRoot).Path
 $overlayRoot = Join-Path $repoRoot "overlay"
 $localConfigPath = Join-Path $repoRoot "amo.local.json"
+
+if ($HealthOnly -and $RestartOnly) {
+    throw "HealthOnly and RestartOnly cannot be used together."
+}
+if (($HealthOnly -or $RestartOnly) -and $Mode -ne "Stable") {
+    throw "HealthOnly and RestartOnly are available only in Stable mode."
+}
+
 # Some managed shells inject both Path and PATH. Start-Process treats those as
 # duplicate dictionary keys, so normalize them before launching child processes.
 $processPath = [string][Environment]::GetEnvironmentVariable("Path", "Process")
@@ -28,22 +38,16 @@ if (Test-Path -LiteralPath $localConfigPath) {
     }
 }
 
-if ($Mode -in @("Stable", "Source")) {
-    $portableRoot = Join-Path $repoRoot "dist\portable"
-    $tauriTargetRoot = Join-Path $overlayRoot "src-tauri\target"
-    foreach ($process in @(Get-CimInstance Win32_Process -ErrorAction SilentlyContinue | Where-Object {
-        $executablePath = [string]$_.ExecutablePath
-        $commandLine = [string]$_.CommandLine
-        ($executablePath -and $executablePath.StartsWith($portableRoot, [System.StringComparison]::OrdinalIgnoreCase)) -or
-        ($executablePath -and $executablePath.StartsWith($tauriTargetRoot, [System.StringComparison]::OrdinalIgnoreCase)) -or
-        ($_.Name -ieq "node.exe" -and $commandLine -like "*$repoRoot*broker*server.js*") -or
-        ($commandLine -like "*$overlayRoot*" -and ($commandLine -like "*tauri*dev*" -or $commandLine -like "*vite*")) -or
-        ($_.Name -ieq "cmd.exe" -and $commandLine -like "*AMO Broker Debug*")
-    })) {
-        Stop-Process -Id $process.ProcessId -Force -ErrorAction SilentlyContinue
-    }
-    Start-Sleep -Milliseconds 700
+if ($Mode -eq "Stable") {
+    $startParams = @{}
+    if ($DebugMode) { $startParams.DebugMode = $true }
+    if ($HealthOnly) { $startParams.HealthOnly = $true }
+    if ($RestartOnly) { $startParams.RestartOnly = $true }
+    & (Join-Path $repoRoot "scripts\amo\start-stable.ps1") @startParams
+    exit $LASTEXITCODE
+}
 
+if ($Mode -eq "Source") {
     Push-Location $overlayRoot
     try {
         npm run build
@@ -54,21 +58,8 @@ if ($Mode -in @("Stable", "Source")) {
 
     $startParams = @{}
     if ($DebugMode) { $startParams.DebugMode = $true }
-    $startScript = if ($Mode -eq "Stable") {
-        Join-Path $repoRoot "scripts\amo\start-stable.ps1"
-    } else {
-        Join-Path $repoRoot "scripts\amo\start.ps1"
-    }
-    try {
-        & $startScript @startParams
-        if (-not $?) {
-            exit 1
-        }
-    } catch {
-        Write-Error $_
-        exit 1
-    }
-    exit 0
+    & (Join-Path $repoRoot "scripts\amo\start.ps1") @startParams
+    exit $LASTEXITCODE
 }
 
 if ($DebugMode) {

@@ -1,7 +1,7 @@
 const crypto = require("crypto");
 const fs = require("fs");
 const path = require("path");
-const { spawnSync } = require("child_process");
+const { probeObsidianProcesses } = require("./obsidian-process-probe");
 const { OBSIDIAN_PLUGIN_ID } = require("./amo-constants");
 const { httpError } = require("./http");
 const { readJsonFile, readJsonFileStrict, writeJsonFile } = require("./filesystem");
@@ -10,12 +10,14 @@ const { normalizeText } = require("./normalize");
 const DEFAULT_CANVAS_APPEND_DIRECTION = "down";
 const CANVAS_APPEND_DIRECTIONS = new Set(["down", "right"]);
 
-function registerObsidianVault(vaultRoot, options = {}) {
+async function registerObsidianVault(vaultRoot, options = {}) {
+  const startedAt = Date.now();
   const registryPath = options.registryPath || obsidianRegistryPath();
   if (!registryPath) {
     throw httpError(409, "obsidian_registry_unavailable", "Could not locate the Obsidian registry path for this OS");
   }
 
+  const registryReadStartedAt = Date.now();
   const existingRegistry = fs.existsSync(registryPath) ? readJsonFileStrict(registryPath) : {};
   if (
     typeof existingRegistry !== "object" ||
@@ -24,12 +26,12 @@ function registerObsidianVault(vaultRoot, options = {}) {
   ) {
     throw httpError(409, "invalid_obsidian_registry", `${registryPath} is not a supported Obsidian registry file`);
   }
+  const registryReadMs = Date.now() - registryReadStartedAt;
 
   const vaults = existingRegistry.vaults || {};
   const normalizedVaultRoot = normalizeComparablePath(vaultRoot);
   let vaultId = Object.keys(vaults).find((id) => normalizeComparablePath(vaults[id]?.path) === normalizedVaultRoot);
   const alreadyRegistered = Boolean(vaultId);
-
   if (!vaultId) {
     vaultId = obsidianVaultIdForPath(vaultRoot);
     while (vaults[vaultId] && normalizeComparablePath(vaults[vaultId]?.path) !== normalizedVaultRoot) {
@@ -37,23 +39,52 @@ function registerObsidianVault(vaultRoot, options = {}) {
     }
   }
 
-  vaults[vaultId] = {
-    ...(vaults[vaultId] || {}),
-    path: vaultRoot,
-    ts: Date.now(),
-    open: true,
-  };
+  const existingVault = vaults[vaultId] || null;
+  const registryChanged = !alreadyRegistered || existingVault?.open !== true;
+  let registryWriteMs = 0;
+  if (registryChanged) {
+    vaults[vaultId] = {
+      ...(existingVault || {}),
+      path: vaultRoot,
+      ts: Date.now(),
+      open: true,
+    };
+    const registryWriteStartedAt = Date.now();
+    writeJsonFile(registryPath, { ...existingRegistry, vaults });
+    registryWriteMs = Date.now() - registryWriteStartedAt;
+  }
 
-  writeJsonFile(registryPath, {
-    ...existingRegistry,
-    vaults,
-  });
-
+  const runtimeInspectionStartedAt = Date.now();
   const runtimeConfigPath = path.join(path.dirname(registryPath), `${vaultId}.json`);
   const runtimeConfigExists = fs.existsSync(runtimeConfigPath);
   const vaultRuntimeState = inspectObsidianVaultRuntimeState(vaultRoot);
   const runtimeReady = runtimeConfigExists || vaultRuntimeState.loaded;
-  const processCounter = options.countObsidianProcesses || countObsidianProcesses;
+  const runtimeInspectionMs = Date.now() - runtimeInspectionStartedAt;
+  let processProbe = {
+    state: "ready",
+    count: null,
+    cached: true,
+    timedOut: false,
+    durationMs: 0,
+    checkedAt: new Date().toISOString(),
+    errorCode: null,
+  };
+  if (!runtimeReady) {
+    if (typeof options.countObsidianProcesses === "function") {
+      const count = await Promise.resolve(options.countObsidianProcesses());
+      processProbe = {
+        state: count === null ? "unknown" : count > 0 ? "running" : "not-running",
+        count,
+        cached: false,
+        timedOut: false,
+        durationMs: 0,
+        checkedAt: new Date().toISOString(),
+        errorCode: null,
+      };
+    } else {
+      processProbe = await (options.processProbe || probeObsidianProcesses)();
+    }
+  }
 
   return {
     ok: true,
@@ -64,9 +95,18 @@ function registerObsidianVault(vaultRoot, options = {}) {
     runtimeConfigExists: runtimeReady,
     runtimeConfigFileExists: runtimeConfigExists,
     vaultRuntimeState,
-    obsidianProcessCount: runtimeReady ? null : processCounter(),
+    obsidianProcessCount: processProbe.count,
+    obsidianProcessState: processProbe.state,
+    processProbe,
     alreadyRegistered,
-    changed: !alreadyRegistered,
+    changed: registryChanged,
+    timings: {
+      registryReadMs,
+      registryWriteMs,
+      runtimeInspectionMs,
+      processProbeMs: processProbe.durationMs || 0,
+      totalMs: Date.now() - startedAt,
+    },
   };
 }
 
@@ -101,29 +141,6 @@ function inspectObsidianVaultRuntimeState(vaultRoot) {
     loaded: evidence.some((item) => item.exists),
     evidence,
   };
-}
-
-function countObsidianProcesses() {
-  if (process.platform !== "win32") {
-    return null;
-  }
-
-  try {
-    const result = spawnSync("tasklist.exe", ["/FI", "IMAGENAME eq Obsidian.exe", "/FO", "CSV", "/NH"], {
-      encoding: "utf8",
-      windowsHide: true,
-    });
-    if (result.error || result.status !== 0) {
-      return null;
-    }
-
-    return result.stdout
-      .split(/\r?\n/u)
-      .filter((line) => /^"Obsidian\.exe"/iu.test(line.trim()))
-      .length;
-  } catch {
-    return null;
-  }
 }
 
 function obsidianRegistryPath() {

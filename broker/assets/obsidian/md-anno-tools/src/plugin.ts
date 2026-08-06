@@ -15,7 +15,7 @@ import {
   DEFAULT_SETTINGS,
   PLUGIN_VERSION,
 } from "./core/constants";
-import { joinUrl, postDebugLog } from "./core/api";
+import { joinUrl, postDebugLog, postJson } from "./core/api";
 import { normalizeVaultFilePath } from "./core/paths";
 import { parseAmoMetadata } from "./core/metadata";
 import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, describeElement } from "./core/ui-utils";
@@ -58,6 +58,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
   codeLinkSuppressUntilMs: number;
   codeLinkSuppressTarget: string;
   sendToAmoShortcutSuppressUntilMs: number;
+  amoOpenRequests: Map<string, Promise<void>>;
 
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) || {});
@@ -78,6 +79,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     this.codeLinkSuppressUntilMs = 0;
     this.codeLinkSuppressTarget = "";
     this.sendToAmoShortcutSuppressUntilMs = 0;
+    this.amoOpenRequests = new Map();
 
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
     this.registerEditorExtension(amoMarkerHiderExtension);
@@ -101,9 +103,24 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
     if (typeof this.registerObsidianProtocolHandler === "function") {
       this.registerObsidianProtocolHandler(AMO_OPEN_PROTOCOL, (params) => {
-        void handleAmoOpenProtocol(this, params);
+        const openRequestId = String(params?.openRequestId || params?.open_request_id || "").trim();
+        if (!openRequestId) {
+          void handleAmoOpenProtocol(this, params);
+          return;
+        }
+        if (this.amoOpenRequests.has(openRequestId)) {
+          this.debugLog("protocol.open.duplicate", { openRequestId });
+          return;
+        }
+        const request = handleAmoOpenProtocol(this, params);
+        this.amoOpenRequests.set(openRequestId, request);
+        void request.finally(() => {
+          window.setTimeout(() => this.amoOpenRequests.delete(openRequestId), 120_000);
+        });
       });
     }
+
+    this.startAmoRuntimeHeartbeat();
 
     this.addRibbonIcon("panel-right", "Open AMO annotation panel", () => {
       void this.activatePanel();
@@ -373,6 +390,24 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
     }, 80);
   }
 
+  startAmoRuntimeHeartbeat() {
+    const startedAt = new Date().toISOString();
+    const sendHeartbeat = async () => {
+      try {
+        await postJson(joinUrl(this.settings.bridgeUrl, "/api/obsidian/runtime"), {
+          vaultRoot: getVaultRoot(this.app),
+          pluginId: this.manifest.id,
+          pluginVersion: PLUGIN_VERSION,
+          capabilities: ["open-result-v1", "runtime-heartbeat-v1"],
+          startedAt,
+        });
+      } catch (error) {
+        this.debugLog("runtime.heartbeat.error", { message: messageFromError(error) });
+      }
+    };
+    void sendHeartbeat();
+    this.registerInterval(window.setInterval(() => void sendHeartbeat(), 15_000));
+  }
   debugLog(event: string, data: any = null) {
     void postDebugLog(joinUrl(this.settings.bridgeUrl, "/api/debug/logs"), {
       source: "obsidian-plugin",

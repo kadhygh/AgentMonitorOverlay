@@ -17,11 +17,11 @@ function createFixture({ loaded = false } = {}) {
   return { root, vaultRoot, registryPath };
 }
 
-test("registering an already loaded vault skips the expensive process scan", () => {
+test("registering an already loaded vault skips the expensive process scan", async () => {
   const fixture = createFixture({ loaded: true });
   let processScans = 0;
   try {
-    const result = registerObsidianVault(fixture.vaultRoot, {
+    const result = await registerObsidianVault(fixture.vaultRoot, {
       registryPath: fixture.registryPath,
       countObsidianProcesses: () => {
         processScans += 1;
@@ -37,11 +37,11 @@ test("registering an already loaded vault skips the expensive process scan", () 
   }
 });
 
-test("registering an unloaded vault still scans for a running Obsidian process", () => {
+test("registering an unloaded vault still scans for a running Obsidian process", async () => {
   const fixture = createFixture();
   let processScans = 0;
   try {
-    const result = registerObsidianVault(fixture.vaultRoot, {
+    const result = await registerObsidianVault(fixture.vaultRoot, {
       registryPath: fixture.registryPath,
       countObsidianProcesses: () => {
         processScans += 1;
@@ -52,6 +52,22 @@ test("registering an unloaded vault still scans for a running Obsidian process",
     assert.equal(result.runtimeConfigExists, false);
     assert.equal(result.obsidianProcessCount, 2);
     assert.equal(processScans, 1);
+  } finally {
+    fs.rmSync(fixture.root, { recursive: true, force: true });
+  }
+});
+test("unchanged registration does not rewrite the Obsidian registry", async () => {
+  const fixture = createFixture({ loaded: true });
+  try {
+    const first = await registerObsidianVault(fixture.vaultRoot, { registryPath: fixture.registryPath });
+    const firstContents = fs.readFileSync(fixture.registryPath, "utf8");
+    const second = await registerObsidianVault(fixture.vaultRoot, { registryPath: fixture.registryPath });
+    const secondContents = fs.readFileSync(fixture.registryPath, "utf8");
+
+    assert.equal(first.changed, true);
+    assert.equal(second.changed, false);
+    assert.equal(secondContents, firstContents);
+    assert.equal(second.timings.registryWriteMs, 0);
   } finally {
     fs.rmSync(fixture.root, { recursive: true, force: true });
   }

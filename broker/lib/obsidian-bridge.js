@@ -372,7 +372,7 @@ function handleSyncBack(payload, { sessions, recordDebugLog = () => {}, handlePr
   };
 }
 
-function handleRegisterObsidianVault(payload, { recordDebugLog = () => {} } = {}) {
+async function handleRegisterObsidianVault(payload, { recordDebugLog = () => {} } = {}) {
   if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
     throw httpError(400, "invalid_json", "Vault registration payload must be a JSON object");
   }
@@ -383,25 +383,44 @@ function handleRegisterObsidianVault(payload, { recordDebugLog = () => {} } = {}
   }
 
   const vaultRoot = path.resolve(rawVaultRoot);
-  let stat;
+  const openRequestId = normalizeText(payload.openRequestId || payload.open_request_id);
+  const startedAt = Date.now();
+  recordDebugLog("broker", "obsidian.open.registration.start", { openRequestId, vaultRoot });
   try {
-    stat = fs.statSync(vaultRoot);
-  } catch {
-    throw httpError(404, "vault_not_found", `Obsidian vault root does not exist: ${vaultRoot}`);
-  }
+    let stat;
+    try {
+      stat = fs.statSync(vaultRoot);
+    } catch {
+      throw httpError(404, "vault_not_found", `Obsidian vault root does not exist: ${vaultRoot}`);
+    }
+    if (!stat.isDirectory()) {
+      throw httpError(400, "vault_not_directory", `Obsidian vault root must be a directory: ${vaultRoot}`);
+    }
 
-  if (!stat.isDirectory()) {
-    throw httpError(400, "vault_not_directory", `Obsidian vault root must be a directory: ${vaultRoot}`);
+    fs.mkdirSync(path.join(vaultRoot, ".obsidian"), { recursive: true });
+    const result = await registerObsidianVault(vaultRoot);
+    recordDebugLog("broker", "obsidian.open.registration.ok", {
+      openRequestId,
+      vaultRoot,
+      vaultId: result.vaultId,
+      changed: result.changed,
+      processState: result.obsidianProcessState,
+      processProbeCached: result.processProbe?.cached ?? null,
+      processProbeTimedOut: result.processProbe?.timedOut ?? null,
+      durationMs: Date.now() - startedAt,
+      timings: result.timings,
+    });
+    return { ...result, openRequestId };
+  } catch (error) {
+    recordDebugLog("broker", "obsidian.open.registration.error", {
+      openRequestId,
+      vaultRoot,
+      durationMs: Date.now() - startedAt,
+      code: error?.code || null,
+      message: error?.message || String(error),
+    });
+    throw error;
   }
-
-  fs.mkdirSync(path.join(vaultRoot, ".obsidian"), { recursive: true });
-  const result = registerObsidianVault(vaultRoot);
-  recordDebugLog("broker", "obsidian.vault.registered", {
-    vaultRoot,
-    vaultId: result.vaultId,
-    changed: result.changed,
-  });
-  return result;
 }
 
 module.exports = {

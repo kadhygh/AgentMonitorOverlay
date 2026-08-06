@@ -4,6 +4,8 @@ export const BROKER_DISMISS_ARCHIVED_URL = "http://127.0.0.1:17654/api/sessions/
 export const BROKER_SESSION_PRIORITIES_URL = "http://127.0.0.1:17654/api/sessions/priorities";
 export const BROKER_SESSION_DISPLAY_ORDER_URL = "http://127.0.0.1:17654/api/sessions/display-order";
 export const BROKER_OBSIDIAN_REGISTER_VAULT_URL = "http://127.0.0.1:17654/api/obsidian/register-vault";
+export const BROKER_OBSIDIAN_RUNTIME_URL = "http://127.0.0.1:17654/api/obsidian/runtime";
+export const BROKER_OBSIDIAN_OPEN_RESULTS_URL = "http://127.0.0.1:17654/api/obsidian/open-results";
 export const BROKER_SYNC_BACK_URL = "http://127.0.0.1:17654/api/sync-back";
 export const BROKER_WORKSPACE_INSPECT_URL = "http://127.0.0.1:17654/api/workspaces/inspect";
 export const BROKER_WORKSPACES_URL = "http://127.0.0.1:17654/api/workspaces";
@@ -65,25 +67,46 @@ export function brokerSessionManagedWindowUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/managed-launch/window`;
 }
 
-export async function postBrokerJson<T>(url: string, body: unknown): Promise<T> {
-  const response = await fetch(url, {
+export interface BrokerRequestOptions {
+  timeoutMs?: number;
+}
+
+export function brokerObsidianOpenResultUrl(openRequestId: string) {
+  return `${BROKER_OBSIDIAN_OPEN_RESULTS_URL}/${encodeURIComponent(openRequestId)}`;
+}
+
+export function brokerObsidianRuntimeUrl(vaultId?: string | null, vaultRoot?: string | null) {
+  const query = new URLSearchParams();
+  if (vaultId) query.set("vaultId", vaultId);
+  if (vaultRoot) query.set("vaultRoot", vaultRoot);
+  return `${BROKER_OBSIDIAN_RUNTIME_URL}?${query.toString()}`;
+}
+
+export async function postBrokerJson<T>(url: string, body: unknown, options: BrokerRequestOptions = {}): Promise<T> {
+  return brokerFetchJson<T>(url, {
     method: "POST",
     headers: { "content-type": "application/json" },
     body: JSON.stringify(body),
-  });
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.message ?? `broker returned ${response.status}`);
-  }
-
-  return payload as T;
+  }, options);
 }
 
-export async function getBrokerJson<T>(url: string): Promise<T> {
-  const response = await fetch(url);
-  const payload = await response.json().catch(() => null);
-  if (!response.ok) {
-    throw new Error(payload?.message ?? `broker returned ${response.status}`);
+export async function getBrokerJson<T>(url: string, options: BrokerRequestOptions = {}): Promise<T> {
+  return brokerFetchJson<T>(url, {}, options);
+}
+
+async function brokerFetchJson<T>(url: string, init: RequestInit, options: BrokerRequestOptions): Promise<T> {
+  const controller = new AbortController();
+  const timeoutMs = options.timeoutMs ?? 30_000;
+  const timeoutId = window.setTimeout(() => controller.abort("broker request timed out"), timeoutMs);
+  try {
+    const response = await fetch(url, { ...init, signal: controller.signal });
+    const payload = await response.json().catch(() => null);
+    if (!response.ok) throw new Error(payload?.message ?? `broker returned ${response.status}`);
+    return payload as T;
+  } catch (error) {
+    if (controller.signal.aborted) throw new Error(`broker request timed out after ${timeoutMs} ms`);
+    throw error;
+  } finally {
+    window.clearTimeout(timeoutId);
   }
-  return payload as T;
 }

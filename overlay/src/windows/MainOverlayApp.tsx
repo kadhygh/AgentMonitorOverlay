@@ -77,6 +77,7 @@ import type {
 
 const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 52 };
+const MAX_VISIBLE_SESSION_CARDS = 20;
 type PriorityFilterValue = SessionPriority | "none";
 type AmoRuntimeMode = "debug" | "portable" | "source" | "stable";
 
@@ -143,6 +144,7 @@ export function MainOverlayApp() {
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
   const [archiveClearConfirmOpen, setArchiveClearConfirmOpen] = useState(false);
   const [archivePanelOpen, setArchivePanelOpen] = useState(false);
+  const [sessionPage, setSessionPage] = useState(0);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const orderedSessionsRef = useRef<AgentSession[]>([]);
   const actionRequiredProbeHandlerRef = useRef<((candidateSessions: AgentSession[], reason: string) => Promise<void>) | null>(null);
@@ -155,12 +157,16 @@ export function MainOverlayApp() {
     refreshDebugStatus,
   } = useDebugLogging();
   const {
+    archiveHasMore,
+    archiveLoading,
     brokerReadiness,
     ensureBrokerThenRefresh,
     feedback,
     hasLoadedSessionSnapshot,
     lastRefreshAt,
+    loadArchivedSessions,
     refreshSessions,
+    sessionCounts,
     sessionOrder,
     sessions,
     sessionsRef,
@@ -396,20 +402,23 @@ export function MainOverlayApp() {
     });
   }, [sessions, sessionOrder, sessionFilter, sessionSearch, priorityFilters]);
 
+  const sessionPageCount = Math.max(1, Math.ceil(filteredSessions.length / MAX_VISIBLE_SESSION_CARDS));
+  const sessionPageStart = sessionPage * MAX_VISIBLE_SESSION_CARDS;
   const orderedSessions = useMemo(
-    () => filteredSessions.slice(0, 8),
-    [filteredSessions],
+    () => filteredSessions.slice(sessionPageStart, sessionPageStart + MAX_VISIBLE_SESSION_CARDS),
+    [filteredSessions, sessionPageStart],
   );
 
-  const activeSessionCount = useMemo(
-    () => sessions.filter((session) => !sessionArchived(session)).length,
-    [sessions],
+  const attentionOutsidePageIndex = filteredSessions.findIndex((session, index) =>
+    (index < sessionPageStart || index >= sessionPageStart + MAX_VISIBLE_SESSION_CARDS)
+      && sessionHasAttentionSignal(session),
   );
+  useEffect(() => {
+    setSessionPage((current) => Math.min(current, sessionPageCount - 1));
+  }, [sessionPageCount]);
 
-  const archiveCount = useMemo(
-    () => sessions.filter(sessionArchived).length,
-    [sessions],
-  );
+  const activeSessionCount = sessionCounts.active;
+  const archiveCount = sessionCounts.archived;
 
 
   const attentionSignalCount = useMemo(
@@ -709,7 +718,10 @@ export function MainOverlayApp() {
                     className={"summary-filter-button " + (archivePanelOpen ? "is-active" : "")}
                     title={"Open archive (" + archiveCount + ")"}
                     aria-label={"Open archive with " + archiveCount + " cards"}
-                    onClick={() => setArchivePanelOpen(true)}
+                    onClick={() => {
+                      setArchivePanelOpen(true);
+                      void loadArchivedSessions({ reset: true });
+                    }}
                   >
                     <Archive size={12} aria-hidden="true" />
                   </button>
@@ -737,7 +749,9 @@ export function MainOverlayApp() {
                 readiness={brokerReadiness}
                 onRetry={() => void ensureBrokerThenRefresh()}
               />
-            ) : orderedSessions.length > 0 ? orderedSessions.map((session) => (
+            ) : orderedSessions.length > 0 ? (
+              <>
+                {orderedSessions.map((session) => (
               <div
                 role="button"
                 tabIndex={0}
@@ -816,7 +830,36 @@ export function MainOverlayApp() {
                   windowBindDragging={windowBindDrag?.sessionId === session.sessionId}
                 />
               </div>
-            )) : (
+            ))}
+                {attentionOutsidePageIndex >= 0 || sessionPageCount > 1 ? (
+                  <nav className="session-list-page" aria-label="Card pages">
+                    {attentionOutsidePageIndex >= 0 ? (
+                      <button
+                        type="button"
+                        onClick={() => setSessionPage(Math.floor(attentionOutsidePageIndex / MAX_VISIBLE_SESSION_CARDS))}
+                      >
+                        Attention off page
+                      </button>
+                    ) : null}
+                    {sessionPageCount > 1 ? (
+                      <span className="session-list-page-actions">
+                        <button type="button" disabled={sessionPage === 0} onClick={() => setSessionPage((page) => page - 1)}>
+                          Previous
+                        </button>
+                        <strong>{sessionPage + 1}/{sessionPageCount}</strong>
+                        <button
+                          type="button"
+                          disabled={sessionPage >= sessionPageCount - 1}
+                          onClick={() => setSessionPage((page) => page + 1)}
+                        >
+                          Next
+                        </button>
+                      </span>
+                    ) : null}
+                  </nav>
+                ) : null}
+              </>
+            ) : (
               <div className="session-empty-state">
                 No matching cards.
               </div>
@@ -903,10 +946,14 @@ export function MainOverlayApp() {
           {archivePanelOpen ? (
             <ArchivePanel
               sessions={sessions.filter(sessionArchived)}
+              totalCount={archiveCount}
+              loading={archiveLoading}
+              hasMore={archiveHasMore}
               dismissingSessionId={dismissingSessionId}
               clearing={clearingArchive}
               onClose={() => setArchivePanelOpen(false)}
               onDismiss={(session) => void dismissSession(session)}
+              onLoadMore={() => void loadArchivedSessions()}
               onClear={() => setArchiveClearConfirmOpen(true)}
             />
           ) : null}

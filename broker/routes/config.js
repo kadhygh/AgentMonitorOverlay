@@ -10,6 +10,9 @@ async function handleConfigRoutes(req, res, url, context) {
       startedAt: context.startedAt.toISOString(),
       uptimeSeconds: Math.round(process.uptime()),
       sessionCount: context.sessions.size,
+      sessionRevision: context.getSessionRevision(),
+      snapshotWriter: context.snapshotWriterStatus(),
+      obsidianRuntime: context.obsidianRuntimeStore.status(),
       storage: context.dataFile,
     });
   }

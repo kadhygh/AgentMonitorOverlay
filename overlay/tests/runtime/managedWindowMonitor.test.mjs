@@ -8,7 +8,7 @@ const vite = await createServer({
   configFile: false,
   root: fileURLToPath(new URL("../..", import.meta.url)),
   optimizeDeps: { noDiscovery: true },
-  server: { middlewareMode: true },
+  server: { hmr: { port: 24679 }, middlewareMode: true },
 });
 const { ManagedWindowMonitor } = await vite.ssrLoadModule("/src/runtime/managedWindowMonitor.ts");
 const {

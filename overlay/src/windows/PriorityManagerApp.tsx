@@ -71,7 +71,7 @@ export function PriorityManagerApp() {
 
   useEffect(() => {
     void loadSessions();
-    const intervalId = window.setInterval(() => void loadSessions(), 3000);
+    const intervalId = window.setInterval(() => void loadSessions(), 45_000);
     const refreshOnFocus = () => void loadSessions();
     window.addEventListener("focus", refreshOnFocus);
     return () => {

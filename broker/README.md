@@ -36,11 +36,20 @@ All API responses include local CORS headers so the Tauri/Vite WebView can fetch
 
 ### `GET /api/health`
 
-Returns broker status, uptime, session count, and storage path.
+Returns Broker status, uptime, session count, storage path, monotonic `sessionRevision`, asynchronous `snapshotWriter` state, and the current Obsidian runtime/result-store counts. A healthy response proves process liveness; Stable startup additionally verifies the active-session summary endpoint.
 
 ### `GET /api/sessions`
 
-Returns the unified session list:
+Returns the unified session list. The default request is an active summary page. Supported query parameters are:
+
+- `scope=active|archived|all` (default `active`);
+- `offset=<non-negative integer>`;
+- `limit=<page size>` (archive defaults to 50 and is capped at 200);
+- `summary=1|0`.
+
+Responses include `revision`, page `count`, matching `total`, `offset`, `limit`, and `hasMore`. Summary records omit transcript paths/hashes and other internal hook fields. Use `GET /api/sessions/:id` only when a full detail record is required.
+
+Example summary response:
 
 ```json
 {
@@ -79,7 +88,7 @@ Returns the unified session list:
 
 Opens a local Server-Sent Events stream for low-latency overlay refreshes.
 
-The stream sends `sessions.changed` whenever a broker route mutates a session, including events, replies, prompts, Obsidian annotations, sync-back, window binding, and heartbeat updates. The event includes the changed session so the overlay can update the affected card immediately; interval polling still runs as a fallback and reconciliation path.
+The stream sends `sessions.changed` whenever a Broker route mutates a session, including events, replies, prompts, Obsidian annotations, sync-back, window binding, and heartbeat updates. Events and `broker.ready` carry a monotonic revision. Complete single-session events can be applied directly; collection changes, revision gaps, and reconnects require one single-flight summary reconciliation. The overlay polls only while SSE is unhealthy, at a low recovery frequency.
 
 Example event:
 
@@ -133,7 +142,19 @@ Optional payload:
 
 ### `POST /api/obsidian/register-vault`
 
-Registers a project-local AMO vault in Obsidian's `obsidian.json` vault registry and reports whether the vault appears loaded enough for plugin-owned `obsidian://amo-open` links. The loaded check accepts either Obsidian's global runtime config file (`runtimeConfigFileExists`) or vault-local evidence (`vaultRuntimeState.loaded`) such as `.obsidian/workspace.json`, `.obsidian/app.json`, or `.obsidian/core-plugins.json`.
+Registers a project-local AMO vault idempotently and returns registration, cached process-probe, and timing details. An unchanged registry is not rewritten. The Windows process probe is asynchronous, cached, and hard-bounded; a timeout returns `unknown` instead of blocking the request path.
+
+### `POST /api/obsidian/runtime`
+
+Receives the vault-local plugin heartbeat and capabilities. Plugin 1.5.0 advertises `open-result-v1` and `runtime-heartbeat-v1`. `GET /api/obsidian/runtime?vaultId=...` returns bounded readiness information for the overlay; heartbeats expire when the plugin is no longer active.
+
+### `POST /api/obsidian/open-results`
+
+Receives the plugin's terminal result for an `openRequestId`, including status and lookup/open/reveal/focus/total timings. Duplicate successful results are idempotent.
+
+### `GET /api/obsidian/open-results/:id`
+
+Returns a pending or terminal open result. The overlay retries one timed-out URI dispatch with the same request ID, preventing duplicate tabs. Only plugin-confirmed open/focus is allowed to mark review state; OS URI dispatch alone means only that dispatch was accepted.
 
 ### `POST /api/events`
 
@@ -174,7 +195,7 @@ Updates `heartbeatAt`, `updatedAt`, and optionally `state`, `message`, `title`, 
 
 ## Persistence Strategy
 
-The broker persists the latest session snapshot after every event and heartbeat. The file is:
+The Broker schedules the latest raw session snapshot after events and heartbeats through a coalesced asynchronous atomic writer (150 ms debounce, 1 s maximum wait). User mutations explicitly flush before returning. Derived presentation health is cached separately and is not serialized into the raw snapshot. The file is:
 
 ```text
 broker/data/sessions.json

@@ -14,7 +14,7 @@ async function handleObsidianRoutes(req, res, url, context) {
       return sendHandled(res, 200, { ok: true, provisional: true, launch: claim?.launch || null, session: result.session });
     }
     const session = result.session;
-    context.persistSnapshot();
+    context.scheduleSnapshotPersist("event");
     context.publishSessionChanged("event", session);
     return sendHandled(res, 200, { ok: true, launch: claim?.launch || null, session });
   }
@@ -28,7 +28,7 @@ async function handleObsidianRoutes(req, res, url, context) {
     publishReleasedSession(context, claim);
     const reply = context.conversationService.handleReply(payload);
     context.transcriptMonitor.track(payload, reply.session);
-    context.persistSnapshot();
+    context.scheduleSnapshotPersist("reply");
     context.publishSessionChanged("reply", reply.session);
     return sendHandled(res, 200, reply);
   }
@@ -42,7 +42,7 @@ async function handleObsidianRoutes(req, res, url, context) {
     publishReleasedSession(context, claim);
     const prompt = context.conversationService.handlePrompt(payload);
     context.transcriptMonitor.track(payload, prompt.session);
-    context.persistSnapshot();
+    context.scheduleSnapshotPersist("prompt");
     context.publishSessionChanged("prompt", prompt.session);
     return sendHandled(res, 200, prompt);
   }
@@ -50,7 +50,7 @@ async function handleObsidianRoutes(req, res, url, context) {
   if (req.method === "POST" && url.pathname === "/api/obsidian/annotations") {
     const payload = await readJsonBody(req);
     const result = context.obsidianBridge.handleObsidianAnnotations(payload);
-    context.persistSnapshot();
+    await context.persistSnapshot("obsidian-annotations");
     context.publishSessionChanged("obsidian-annotations", result.session);
     return sendHandled(res, 200, result);
   }
@@ -58,7 +58,7 @@ async function handleObsidianRoutes(req, res, url, context) {
   if (req.method === "POST" && url.pathname === "/api/obsidian/return") {
     const payload = await readJsonBody(req);
     const result = context.obsidianBridge.handleObsidianReturn(payload);
-    context.persistSnapshot();
+    await context.persistSnapshot("obsidian-return");
     context.publishSessionChanged("obsidian-return", result.session);
     return sendHandled(res, 200, result);
   }
@@ -71,13 +71,46 @@ async function handleObsidianRoutes(req, res, url, context) {
 
   if (req.method === "POST" && url.pathname === "/api/obsidian/register-vault") {
     const payload = await readJsonBody(req);
-    return sendHandled(res, 200, context.obsidianBridge.handleRegisterObsidianVault(payload));
+    const result = await context.obsidianBridge.handleRegisterObsidianVault(payload);
+    context.invalidateObsidianHealth(result.vaultRoot);
+    const pluginRuntime = context.obsidianRuntimeStore.getRuntime({
+      vaultId: result.vaultId,
+      vaultRoot: result.vaultRoot,
+    });
+    return sendHandled(res, 200, { ...result, pluginRuntime });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/obsidian/runtime") {
+    const payload = await readJsonBody(req);
+    const runtime = context.obsidianRuntimeStore.heartbeat(payload);
+    return sendHandled(res, 200, runtime);
+  }
+
+  if (req.method === "GET" && url.pathname === "/api/obsidian/runtime") {
+    const runtime = context.obsidianRuntimeStore.getRuntime({
+      vaultId: url.searchParams.get("vaultId"),
+      vaultRoot: url.searchParams.get("vaultRoot"),
+    });
+    return sendHandled(res, 200, { ok: true, active: Boolean(runtime?.active), runtime });
+  }
+
+  if (req.method === "POST" && url.pathname === "/api/obsidian/open-results") {
+    const payload = await readJsonBody(req);
+    const result = context.obsidianRuntimeStore.recordOpenResult(payload);
+    return sendHandled(res, 200, result);
+  }
+
+  const openResultMatch = url.pathname.match(/^\/api\/obsidian\/open-results\/([^/]+)$/);
+  if (req.method === "GET" && openResultMatch) {
+    const openRequestId = decodeURIComponent(openResultMatch[1]);
+    const result = context.obsidianRuntimeStore.getOpenResult(openRequestId);
+    return sendHandled(res, 200, result || { ok: true, pending: true, openRequestId });
   }
 
   if (req.method === "POST" && url.pathname === "/api/sync-back") {
     const payload = await readJsonBody(req);
     const result = context.obsidianBridge.handleSyncBack(payload);
-    context.persistSnapshot();
+    await context.persistSnapshot("sync-back");
     context.publishSessionChanged("sync-back", result.session);
     return sendHandled(res, 200, result);
   }
@@ -87,7 +120,7 @@ async function handleObsidianRoutes(req, res, url, context) {
 
 function publishReleasedSession(context, claim) {
   if (!claim?.releasedSession) return;
-  context.persistSnapshot();
+  context.scheduleSnapshotPersist("managed-launch-released");
   context.publishSessionChanged("managed-launch-released", claim.releasedSession);
 }
 

@@ -268,10 +268,10 @@ try {
 
     $workspaceData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\workspace.json") | ConvertFrom-Json
     $enrollmentData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\enrollment.json") | ConvertFrom-Json
-    if ($workspaceData.deploymentVersion -ne 4 -or $workspaceData.hookProtocolVersion -ne 4) {
+    if ($workspaceData.deploymentVersion -ne 4 -or $workspaceData.hookProtocolVersion -ne 5) {
         throw "Workspace metadata does not include expected deployment/hook protocol versions."
     }
-    if ($enrollmentData.deploymentVersion -ne 4 -or $enrollmentData.hookProtocolVersion -ne 4) {
+    if ($enrollmentData.deploymentVersion -ne 4 -or $enrollmentData.hookProtocolVersion -ne 5) {
         throw "Enrollment metadata does not include expected deployment/hook protocol versions."
     }
 
@@ -289,7 +289,7 @@ try {
     if (-not $codexAdapterData.bridgeEventsUrl -or $codexAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Codex adapter config does not include bridgeEventsUrl."
     }
-    if ($codexAdapterData.deploymentVersion -ne 4 -or $codexAdapterData.hookProtocolVersion -ne 4) {
+    if ($codexAdapterData.deploymentVersion -ne 4 -or $codexAdapterData.hookProtocolVersion -ne 5) {
         throw "Codex adapter config does not include expected deployment/hook protocol versions."
     }
     if (@($codexAdapterData.hookEvents) -notcontains "SessionStart" -or @($codexAdapterData.hookEvents) -notcontains "PreToolUse" -or @($codexAdapterData.hookEvents) -notcontains "PostToolUse") {
@@ -306,7 +306,7 @@ try {
     if (-not $claudeAdapterData.bridgeEventsUrl -or $claudeAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Claude adapter config does not include bridgeEventsUrl."
     }
-    if ($claudeAdapterData.deploymentVersion -ne 4 -or $claudeAdapterData.hookProtocolVersion -ne 4) {
+    if ($claudeAdapterData.deploymentVersion -ne 4 -or $claudeAdapterData.hookProtocolVersion -ne 5) {
         throw "Claude adapter config does not include expected deployment/hook protocol versions."
     }
     if (@($claudeAdapterData.hookEvents) -notcontains "SessionStart" -or @($claudeAdapterData.hookEvents) -notcontains "StopFailure" -or @($claudeAdapterData.hookEvents) -notcontains "SessionEnd" -or @($claudeAdapterData.hookEvents) -notcontains "ElicitationResult") {
@@ -645,8 +645,16 @@ try {
         throw "Reply session is missing absolute note/canvas paths for overlay open actions."
     }
     if (-not $replySession.obsidianPluginHealth -or -not $replySession.obsidianPluginHealth.ok) {
+        $healthDeadline = (Get-Date).AddSeconds(5)
+        do {
+            Start-Sleep -Milliseconds 100
+            $sessionsAfterReply = Invoke-BrokerJson -Method GET -Path "/api/sessions?scope=active&summary=1"
+            $replySession = @($sessionsAfterReply.sessions | Where-Object { $_.sessionId -eq "codex-reply-verify" })[0]
+        } while ((-not $replySession.obsidianPluginHealth -or -not $replySession.obsidianPluginHealth.ok) -and (Get-Date) -lt $healthDeadline)
+    }
+    if (-not $replySession.obsidianPluginHealth -or -not $replySession.obsidianPluginHealth.ok) {
         $issues = @($replySession.obsidianPluginHealth.issues) -join "; "
-        throw "Reply session Obsidian plugin health is not OK: $issues"
+        throw "Reply session Obsidian plugin health did not converge: $issues"
     }
     Write-Host "Reply bridge OK -> $($reply.notePath)"
 

@@ -48,7 +48,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.4.49";
+var PLUGIN_VERSION = "1.5.0";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -4248,38 +4248,152 @@ function clearAmoNotePropertyViewClasses(plugin) {
 // src/protocol/amo-open.ts
 var import_obsidian16 = require("obsidian");
 async function handleAmoOpenProtocol(plugin, params) {
-  var _a, _b;
+  var _a, _b, _c, _d, _e;
+  const startedAt = performance.now();
   const vaultRoot = getVaultRoot(plugin.app);
-  if (!protocolPathBelongsToVault(params && params.path, vaultRoot)) {
+  const openRequestId = String((params == null ? void 0 : params.openRequestId) || (params == null ? void 0 : params.open_request_id) || "").trim() || null;
+  const requestedVaultId = (params == null ? void 0 : params.vault) || null;
+  const details = { reusedLeaf: false, lookupMs: 0, openFileMs: 0, revealMs: 0, focusFollowupMs: 0 };
+  const logContext = { openRequestId, requestedVaultId, vaultRoot };
+  if (!protocolPathBelongsToVault(params == null ? void 0 : params.path, vaultRoot)) {
+    const message = "AMO open request targets a different vault.";
     (_a = plugin.debugLog) == null ? void 0 : _a.call(plugin, "protocol.open.ignored_foreign_vault", {
-      path: params && params.path,
-      relativePath: params && (params.relativePath || params.relative_path),
-      requestedVaultId: params && params.vault,
-      vaultRoot
+      ...logContext,
+      path: params == null ? void 0 : params.path,
+      relativePath: (params == null ? void 0 : params.relativePath) || (params == null ? void 0 : params.relative_path)
+    });
+    await acknowledgeOpen(plugin, {
+      openRequestId,
+      status: "rejected",
+      vaultRoot,
+      vaultId: requestedVaultId,
+      targetPath: null,
+      kind: (params == null ? void 0 : params.kind) || null,
+      message,
+      timings: withTotal(details, startedAt)
     });
     return;
   }
-  (_b = plugin.debugLog) == null ? void 0 : _b.call(plugin, "protocol.open.accepted", {
-    path: params && params.path,
-    relativePath: params && (params.relativePath || params.relative_path),
-    requestedVaultId: params && params.vault,
-    vaultRoot
-  });
   const targetPath = resolveProtocolTargetPath(plugin, params);
+  const kind = normalizeOpenKind((params == null ? void 0 : params.kind) || (params == null ? void 0 : params.target), targetPath);
   if (!targetPath) {
-    new import_obsidian16.Notice("AMO open URL is missing a vault-relative path.");
+    const message = "AMO open URL is missing a vault-relative path.";
+    new import_obsidian16.Notice(message);
+    await acknowledgeOpen(plugin, {
+      openRequestId,
+      status: "rejected",
+      vaultRoot,
+      vaultId: requestedVaultId,
+      targetPath: null,
+      kind,
+      message,
+      timings: withTotal(details, startedAt)
+    });
     return;
   }
-  const kind = normalizeOpenKind(params && (params.kind || params.target), targetPath);
-  const focusNotePath = resolveProtocolFocusNotePath(plugin, params);
-  const opened = await openVaultPath(plugin, targetPath, kind);
-  if (opened && kind === "canvas" && focusNotePath) {
-    window.setTimeout(() => {
-      void plugin.refreshCanvasForExplicitOpen(targetPath).finally(() => {
-        void plugin.focusCanvasNoteNode(targetPath, focusNotePath);
+  (_b = plugin.debugLog) == null ? void 0 : _b.call(plugin, "protocol.open.accepted", { ...logContext, targetPath, kind });
+  try {
+    const opened = await openVaultPath(plugin, targetPath, kind, details);
+    if (!opened) {
+      await acknowledgeOpen(plugin, {
+        openRequestId,
+        status: details.status || "not_found",
+        vaultRoot,
+        vaultId: requestedVaultId,
+        targetPath,
+        kind,
+        message: details.message || `AMO target not found: ${targetPath}`,
+        reusedLeaf: details.reusedLeaf,
+        timings: withTotal(details, startedAt)
       });
-    }, 120);
+      return;
+    }
+    const focusNotePath = resolveProtocolFocusNotePath(plugin, params);
+    if (kind === "canvas" && focusNotePath) {
+      const focusStartedAt = performance.now();
+      await new Promise((resolve2) => window.setTimeout(resolve2, 120));
+      try {
+        await plugin.refreshCanvasForExplicitOpen(targetPath);
+        await plugin.focusCanvasNoteNode(targetPath, focusNotePath);
+      } catch (error) {
+        (_c = plugin.debugLog) == null ? void 0 : _c.call(plugin, "protocol.open.focus_followup_error", {
+          ...logContext,
+          targetPath,
+          focusNotePath,
+          message: messageFromError(error)
+        });
+      }
+      details.focusFollowupMs = Math.round(performance.now() - focusStartedAt);
+    }
+    const status = details.reusedLeaf ? "focused" : "opened";
+    const timings = withTotal(details, startedAt);
+    (_d = plugin.debugLog) == null ? void 0 : _d.call(plugin, "protocol.open.completed", {
+      ...logContext,
+      targetPath,
+      kind,
+      status,
+      reusedLeaf: details.reusedLeaf,
+      timings
+    });
+    await acknowledgeOpen(plugin, {
+      openRequestId,
+      status,
+      vaultRoot,
+      vaultId: requestedVaultId,
+      targetPath,
+      kind,
+      reusedLeaf: details.reusedLeaf,
+      message: details.reusedLeaf ? "Focused existing Obsidian tab." : "Opened Obsidian tab.",
+      timings
+    });
+  } catch (error) {
+    const message = messageFromError(error);
+    const timings = withTotal(details, startedAt);
+    (_e = plugin.debugLog) == null ? void 0 : _e.call(plugin, "protocol.open.error", { ...logContext, targetPath, kind, message, timings });
+    new import_obsidian16.Notice(`AMO could not open ${targetPath}: ${message}`);
+    await acknowledgeOpen(plugin, {
+      openRequestId,
+      status: "error",
+      vaultRoot,
+      vaultId: requestedVaultId,
+      targetPath,
+      kind,
+      reusedLeaf: details.reusedLeaf,
+      message,
+      timings
+    });
   }
+}
+async function acknowledgeOpen(plugin, payload) {
+  var _a, _b;
+  if (!payload.openRequestId) return;
+  try {
+    await postJson(joinUrl(plugin.settings.bridgeUrl, "/api/obsidian/open-results"), {
+      ...payload,
+      pluginVersion: PLUGIN_VERSION,
+      completedAt: (/* @__PURE__ */ new Date()).toISOString()
+    });
+    (_a = plugin.debugLog) == null ? void 0 : _a.call(plugin, "protocol.open.ack_sent", {
+      openRequestId: payload.openRequestId,
+      status: payload.status,
+      targetPath: payload.targetPath
+    });
+  } catch (error) {
+    (_b = plugin.debugLog) == null ? void 0 : _b.call(plugin, "protocol.open.ack_error", {
+      openRequestId: payload.openRequestId,
+      status: payload.status,
+      message: messageFromError(error)
+    });
+  }
+}
+function withTotal(details, startedAt) {
+  return {
+    lookupMs: details.lookupMs || 0,
+    openFileMs: details.openFileMs || 0,
+    revealMs: details.revealMs || 0,
+    focusFollowupMs: details.focusFollowupMs || 0,
+    totalMs: Math.round(performance.now() - startedAt)
+  };
 }
 function resolveProtocolTargetPath(plugin, params) {
   const rawPath = params && (params.relativePath || params.relative_path || params.file || params.notePath || params.note_path || params.canvasPath || params.canvas_path || params.path);
@@ -4289,30 +4403,42 @@ function resolveProtocolFocusNotePath(plugin, params) {
   const rawPath = params && (params.focusNotePath || params.focus_note_path || params.latestNotePath || params.latest_note_path || params.selectedNotePath || params.selected_note_path);
   return normalizeVaultFilePath(toVaultRelativeProtocolPath(rawPath, getVaultRoot(plugin.app)));
 }
-async function openVaultPath(plugin, filePath, kind) {
+async function openVaultPath(plugin, filePath, kind, details = {}) {
   const targetPath = normalizeVaultFilePath(filePath);
   if (!targetPath) {
-    new import_obsidian16.Notice("AMO target path is empty.");
+    details.status = "rejected";
+    details.message = "AMO target path is empty.";
+    new import_obsidian16.Notice(details.message);
     return false;
   }
+  const lookupStartedAt = performance.now();
   const file = plugin.app.vault.getAbstractFileByPath(targetPath);
+  details.lookupMs = Math.round(performance.now() - lookupStartedAt);
   if (!file || typeof file.path !== "string") {
-    const message = "AMO target not found: " + targetPath;
-    plugin.setOperationStatus(message, "error");
-    new import_obsidian16.Notice(message);
+    details.status = "not_found";
+    details.message = "AMO target not found: " + targetPath;
+    plugin.setOperationStatus(details.message, "error");
+    new import_obsidian16.Notice(details.message);
     return false;
   }
   const existingLeaf = findLeafForFilePath(plugin.app, file.path, kind);
   if (existingLeaf) {
+    details.reusedLeaf = true;
+    const revealStartedAt2 = performance.now();
     plugin.app.workspace.revealLeaf(existingLeaf);
     plugin.app.workspace.setActiveLeaf(existingLeaf, { focus: true });
+    details.revealMs = Math.round(performance.now() - revealStartedAt2);
     plugin.rememberMarkdownLeaf(existingLeaf);
     plugin.setOperationStatus("Focused open " + kind + ": " + file.path + ".", "success");
     return true;
   }
   const leaf = createTabLeaf(plugin.app);
+  const openFileStartedAt = performance.now();
   await leaf.openFile(file, { active: true });
+  details.openFileMs = Math.round(performance.now() - openFileStartedAt);
+  const revealStartedAt = performance.now();
   plugin.app.workspace.revealLeaf(leaf);
+  details.revealMs = Math.round(performance.now() - revealStartedAt);
   plugin.rememberMarkdownLeaf(leaf);
   plugin.setOperationStatus("Opened " + kind + ": " + file.path + ".", "success");
   return true;
@@ -4340,9 +4466,7 @@ function findLeafForFilePath(app, filePath, kind) {
 function findLeafForFilePathInViewType(app, filePath, viewType) {
   for (const leaf of app.workspace.getLeavesOfType(viewType)) {
     const view = leaf.view;
-    if (view && view.file && view.file.path === filePath) {
-      return leaf;
-    }
+    if (view && view.file && view.file.path === filePath) return leaf;
   }
   return null;
 }
@@ -4368,6 +4492,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
     this.codeLinkSuppressUntilMs = 0;
     this.codeLinkSuppressTarget = "";
     this.sendToAmoShortcutSuppressUntilMs = 0;
+    this.amoOpenRequests = /* @__PURE__ */ new Map();
     this.registerView(AMO_PANEL_VIEW_TYPE, (leaf) => new AmoAnnotationPanelView(leaf, this));
     this.registerEditorExtension(amoMarkerHiderExtension);
     this.registerEditorExtension(
@@ -4387,9 +4512,23 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
     });
     if (typeof this.registerObsidianProtocolHandler === "function") {
       this.registerObsidianProtocolHandler(AMO_OPEN_PROTOCOL, (params) => {
-        void handleAmoOpenProtocol(this, params);
+        const openRequestId = String((params == null ? void 0 : params.openRequestId) || (params == null ? void 0 : params.open_request_id) || "").trim();
+        if (!openRequestId) {
+          void handleAmoOpenProtocol(this, params);
+          return;
+        }
+        if (this.amoOpenRequests.has(openRequestId)) {
+          this.debugLog("protocol.open.duplicate", { openRequestId });
+          return;
+        }
+        const request = handleAmoOpenProtocol(this, params);
+        this.amoOpenRequests.set(openRequestId, request);
+        void request.finally(() => {
+          window.setTimeout(() => this.amoOpenRequests.delete(openRequestId), 12e4);
+        });
       });
     }
+    this.startAmoRuntimeHeartbeat();
     this.addRibbonIcon("panel-right", "Open AMO annotation panel", () => {
       void this.activatePanel();
     });
@@ -4608,6 +4747,24 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
       });
       this.refreshPanels();
     }, 80);
+  }
+  startAmoRuntimeHeartbeat() {
+    const startedAt = (/* @__PURE__ */ new Date()).toISOString();
+    const sendHeartbeat = async () => {
+      try {
+        await postJson(joinUrl(this.settings.bridgeUrl, "/api/obsidian/runtime"), {
+          vaultRoot: getVaultRoot(this.app),
+          pluginId: this.manifest.id,
+          pluginVersion: PLUGIN_VERSION,
+          capabilities: ["open-result-v1", "runtime-heartbeat-v1"],
+          startedAt
+        });
+      } catch (error) {
+        this.debugLog("runtime.heartbeat.error", { message: messageFromError(error) });
+      }
+    };
+    void sendHeartbeat();
+    this.registerInterval(window.setInterval(() => void sendHeartbeat(), 15e3));
   }
   debugLog(event, data = null) {
     void postDebugLog(joinUrl(this.settings.bridgeUrl, "/api/debug/logs"), {

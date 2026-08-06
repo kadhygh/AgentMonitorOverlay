@@ -9,6 +9,7 @@ Use the surrounding documents for narrower questions:
 
 - `docs/project-structure.md`: where implementation files live.
 - `docs/runtime-architecture-v2.md`: how background runtime work stays outside the React interaction path.
+- `docs/runtime-and-obsidian-open-performance-plan.md`: phased runtime hot-path and Obsidian open-latency optimization contract.
 - `docs/workspace-managed-launch-plan.md`: managed CLI identity and lifecycle details.
 - `docs/managed-side-fork-plan.md`: persistent Codex side-chat forks, suppression, and parent/child lifecycle.
 - `docs/window-routing-notes.md`: Win32 discovery, candidate selection, and activation.
@@ -116,8 +117,10 @@ Owns:
 
 - one durable task card per provider session
 - session state, attention, review, archive, and dismiss policy
-- hook-event reconciliation and session persistence
+- hook-event reconciliation, monotonic session revision, and coalesced atomic persistence
+- active/archived summary pagination and on-demand full session detail
 - the rule that a new hook revives an archived session
+- cached presentation health kept outside the raw durable snapshot
 - notifications derived from actionable session state
 
 Source of truth:
@@ -133,8 +136,12 @@ Must not own:
 Current implementation anchors:
 
 - `broker/lib/session-store.js`
+- `broker/lib/snapshot-writer.js`
+- `broker/lib/session-query.js`
+- `broker/lib/obsidian-health-cache.js`
 - `broker/lib/permission-gate.js`
 - `broker/routes/sessions.js`
+- `overlay/src/runtime/sessionRevisionGate.ts`
 - `overlay/src/domain/sessionModel.ts`
 - `overlay/src/hooks/useSessionActions.ts`
 - `overlay/src/hooks/useAttentionVisuals.ts`
@@ -234,11 +241,13 @@ Owns:
 - annotation insertion, quote annotation, copy, and deletion UX
 - AMO title presentation and note/header behavior
 - note/Canvas open reuse, reveal, focus, and work-Canvas actions
+- runtime heartbeats and terminal open acknowledgments keyed by `openRequestId`
 - returning annotations to the selected session target
 
 Source of truth:
 
 - Obsidian workspace state for active leaf, editor selection, and Canvas selection
+- Broker runtime/result store for bounded readiness and open confirmation
 - Broker contracts for session linkage and sync-back
 
 Must not own:
@@ -250,6 +259,9 @@ Must not own:
 Current implementation anchors:
 
 - `broker/assets/obsidian/md-anno-tools/src`
+- `broker/lib/obsidian-runtime-store.js`
+- `broker/lib/obsidian-process-probe.js`
+- `overlay/src/runtime/obsidianOpenPolicy.ts`
 - `docs/agnets/obsidian-canvas-development-guidelines.md`
 
 ### 8. Overlay, Platform, And Operations

@@ -105,7 +105,16 @@ Use the root entry point for all internal startup modes. Stable mode is the defa
 .\amo.ps1 -Mode Stable
 ```
 
-The equivalent npm commands are `npm run amo` and `npm run amo:stable`. Because Stable does not run `tauri dev`, Git operations and read-only source inspection do not restart the native window.
+The equivalent npm commands are `npm run amo` and `npm run amo:stable`. Stable startup is transactional: it validates the frontend and builds the native executable in an isolated staging target before stopping the existing AMO processes, then starts the current-source Broker, Vite, and native app and requires Broker health plus an initial active-session response. If activation fails, the attempted process set is stopped and the prior executable is restored. Because Stable does not run `tauri dev`, Git operations and read-only source inspection do not restart the native window.
+
+For bounded operational checks without rebuilding:
+
+```powershell
+npm run amo:health   # read-only Vite, Broker, initial-session, and native-app readiness
+npm run amo:restart  # restart the already-built Stable runtime and run readiness checks
+```
+
+`amo:health` also verifies that `GET /api/sessions?scope=active&offset=0&limit=1&summary=1` returns a monotonic `revision`; this prevents an old Broker process from being reported as a healthy current runtime.
 
 Source mode keeps the Tauri development watcher for Rust/Tauri work:
 
@@ -261,7 +270,7 @@ Current implemented behavior:
 - Future startup UX should avoid the brief white overlay flash while the app initializes or auto-starts the broker; add a lightweight loading state with text such as `Initializing` / `Starting broker`.
 - Obsidian vault note writing and canvas append are implemented for the project-local `workspace.vaultRoot`.
 - Deployments create a friendly vault folder named `.amo/AMO - <project>/` so Obsidian's vault list is distinguishable. Test workspaces can be redeployed instead of migrated.
-- Before opening note/canvas links, the overlay asks the broker to register `workspace.vaultRoot` in Obsidian's vault registry and checks whether Obsidian has a per-vault runtime config for that vault. If Obsidian is already running but has not loaded a brand-new AMO vault, overlay reports the manual open-vault requirement instead of firing a URI that produces `Vault not found`. Once loaded, the plugin-owned `amo-open` URI uses only vault-relative `path/kind`.
+- Before opening note/canvas links, the overlay performs a bounded, idempotent vault registration and waits for the target vault plugin runtime heartbeat instead of sleeping for a fixed delay. Every open carries an `openRequestId`; plugin 1.5.0 acknowledges only after lookup, open/reuse, reveal, and focus, with explicit `opened`, `focused`, `not_found`, `rejected`, or `error` results. A native URI dispatch is only dispatch acceptance, never confirmation, and review state changes only after a confirmed plugin result. Legacy plugins remain usable in labeled compatibility mode but cannot claim confirmed open.
 - Broker-side `/api/obsidian/annotations` and `/api/sync-back` are implemented.
 - Workspace enroll installs and enables a vault-local `md-anno-tools` Obsidian plugin with an explicit `Send current note annotations to AMO` command. First-load behavior still depends on Obsidian loading/reloading the project-local vault and community plugin state.
 
@@ -341,22 +350,23 @@ Read in this order when taking over:
 1. `docs/amo-module-architecture.md`
 2. `docs/project-structure.md`
 3. `docs/runtime-architecture-v2.md`
-4. `docs/workspace-managed-launch-plan.md`
-5. `docs/amo-obsidian-bridge-mvp.md`
-6. `PROJECT_PLAN.md`
-7. `docs/supervisor-status.md`
-8. `docs/validation-checklist.md`
-9. `docs/window-routing-notes.md`
-10. `docs/adapter-deployment-guide.md`
-11. `docs/tool-adapter-spike.md`
-12. `docs/reference-mvps/obsidianplugintest/README.md`
-13. `docs/reference-mvps/obsidianplugintest/handoff/CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
-14. `docs/reference-mvps/obsidianplugintest/handoff/OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
-15. `docs/worktree-checkpoint-guide.md`
-16. `docs/session-handoffs/2026-05-13-amo-obsidian-bridge-pivot.md`
-17. `broker/README.md`
-18. `overlay/README.md`
-19. `USER_SESSION_MANUAL.md`
+4. `docs/runtime-and-obsidian-open-performance-plan.md`
+5. `docs/workspace-managed-launch-plan.md`
+6. `docs/amo-obsidian-bridge-mvp.md`
+7. `PROJECT_PLAN.md`
+8. `docs/supervisor-status.md`
+9. `docs/validation-checklist.md`
+10. `docs/window-routing-notes.md`
+11. `docs/adapter-deployment-guide.md`
+12. `docs/tool-adapter-spike.md`
+13. `docs/reference-mvps/obsidianplugintest/README.md`
+14. `docs/reference-mvps/obsidianplugintest/handoff/CODEX_REPLY_NOTE_HOOK_INTEGRATION.md`
+15. `docs/reference-mvps/obsidianplugintest/handoff/OBSIDIAN_ANNOTATION_PLUGIN_DEVELOPMENT.md`
+16. `docs/worktree-checkpoint-guide.md`
+17. `docs/session-handoffs/2026-05-13-amo-obsidian-bridge-pivot.md`
+18. `broker/README.md`
+19. `overlay/README.md`
+20. `USER_SESSION_MANUAL.md`
 
 ## Development Workflow
 

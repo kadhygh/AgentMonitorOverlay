@@ -1,17 +1,20 @@
-const { readJsonBody, sendJson } = require("../lib/http");
+const { httpError, readJsonBody, sendJson } = require("../lib/http");
+const { querySessions } = require("../lib/session-query");
 
 async function handleSessionRoutes(req, res, url, context) {
   if (req.method === "GET" && url.pathname === "/api/sessions") {
+    const result = querySessions(context.listSessions(), url.searchParams);
     return sendHandled(res, 200, {
-      count: context.sessions.size,
-      sessions: context.listSessions(),
+      ok: true,
+      revision: context.getSessionRevision(),
+      ...result,
     });
   }
 
   if (req.method === "POST" && url.pathname === "/api/sessions/dismiss-archived") {
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissArchivedSessions(payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("dismiss-archived", null);
     return sendHandled(res, 200, result);
   }
@@ -19,7 +22,7 @@ async function handleSessionRoutes(req, res, url, context) {
   if (req.method === "POST" && url.pathname === "/api/sessions/dismiss-all") {
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissAllSessions(payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("dismiss-all", null);
     return sendHandled(res, 200, result);
   }
@@ -29,10 +32,21 @@ async function handleSessionRoutes(req, res, url, context) {
     return true;
   }
 
+  const detailMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)$/);
+  if (req.method === "GET" && detailMatch) {
+    const sessionId = decodeURIComponent(detailMatch[1]);
+    const session = context.sessions.get(sessionId);
+    if (!session) throw httpError(404, "session_not_found", `Session not found: ${sessionId}`);
+    return sendHandled(res, 200, {
+      ok: true,
+      revision: context.getSessionRevision(),
+      session: context.decorateSession(session),
+    });
+  }
   if (req.method === "POST" && url.pathname === "/api/sessions/priorities") {
     const payload = await readJsonBody(req);
     const result = context.updateSessionPriorities(payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     for (const session of result.sessions) context.publishSessionChanged("priority", session);
     return sendHandled(res, 200, result);
   }
@@ -40,7 +54,7 @@ async function handleSessionRoutes(req, res, url, context) {
   if (req.method === "POST" && url.pathname === "/api/sessions/display-order") {
     const payload = await readJsonBody(req);
     const result = context.updateSessionDisplayOrder(payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("display-order", null);
     return sendHandled(res, 200, result);
   }
@@ -50,7 +64,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(windowBindingMatch[1]);
     const payload = await readJsonBody(req);
     const result = context.bindSessionWindow(sessionId, payload);
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("window-bind", result.session);
     return sendHandled(res, 200, result);
   }
@@ -59,7 +73,7 @@ async function handleSessionRoutes(req, res, url, context) {
   if (req.method === "POST" && clearWindowBindingMatch) {
     const sessionId = decodeURIComponent(clearWindowBindingMatch[1]);
     const result = context.clearSessionWindowBinding(sessionId);
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("window-unbind", result.session);
     return sendHandled(res, 200, result);
   }
@@ -69,7 +83,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(targetBindingMatch[1]);
     const payload = await readJsonBody(req);
     const result = context.bindSessionTarget(sessionId, payload);
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("target-bind", result.session);
     return sendHandled(res, 200, result);
   }
@@ -78,7 +92,7 @@ async function handleSessionRoutes(req, res, url, context) {
   if (req.method === "POST" && clearTargetBindingMatch) {
     const sessionId = decodeURIComponent(clearTargetBindingMatch[1]);
     const result = context.clearSessionTargetBinding(sessionId);
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("target-unbind", result.session);
     return sendHandled(res, 200, result);
   }
@@ -88,7 +102,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(taskTitleMatch[1]);
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.updateSessionTaskTitle(sessionId, payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("task-title", result.session);
     return sendHandled(res, 200, result);
   }
@@ -98,7 +112,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(reviewMatch[1]);
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.markSessionReviewed(sessionId, payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("reviewed", result.session);
     return sendHandled(res, 200, result);
   }
@@ -108,7 +122,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(attentionClearMatch[1]);
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.clearSessionAttention(sessionId, payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("attention-cleared", result.session);
     return sendHandled(res, 200, result);
   }
@@ -118,7 +132,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(dismissMatch[1]);
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissSession(sessionId, payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("dismiss", result.session);
     return sendHandled(res, 200, result);
   }
@@ -128,7 +142,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(archiveMatch[1]);
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.archiveSession(sessionId, payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("archive", result.session);
     return sendHandled(res, 200, result);
   }
@@ -138,7 +152,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(heartbeatMatch[1]);
     const payload = await readJsonBody(req, { allowEmpty: true });
     const session = context.updateHeartbeat(sessionId, payload || {});
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("heartbeat", session);
     return sendHandled(res, 200, { ok: true, session });
   }
@@ -156,7 +170,7 @@ async function handleSessionRoutes(req, res, url, context) {
       error.code = "managed_window_resolution_rejected";
       throw error;
     }
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("managed-launch-window", result.session);
     return sendHandled(res, 200, { ok: true, ...result });
   }
@@ -172,7 +186,7 @@ async function handleSessionRoutes(req, res, url, context) {
       error.code = "session_not_found";
       throw error;
     }
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("managed-launch-offline", session);
     return sendHandled(res, 200, { ok: true, session });
   }
@@ -202,7 +216,7 @@ async function handleSessionRoutes(req, res, url, context) {
         updatedAt: new Date().toISOString(),
       };
       context.sessions.set(sessionId, offlineSession);
-      context.persistSnapshot();
+      await context.persistSnapshot("session-mutation");
       context.publishSessionChanged("managed-launch-retry", offlineSession);
       context.recordDebugLog("broker", "launch.resume_retried", {
         sessionId,
@@ -245,7 +259,7 @@ async function handleSessionRoutes(req, res, url, context) {
       updatedAt: now,
     };
     context.sessions.set(sessionId, session);
-    context.persistSnapshot();
+    await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("managed-launch-resume", session);
     return sendHandled(res, 200, { ...result, session });
   }
