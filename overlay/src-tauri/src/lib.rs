@@ -13,7 +13,7 @@ use broker::{ensure_local_broker, stop_owned_broker};
 use clipboard::write_text_to_clipboard;
 use dialogs::pick_workspace_directory;
 use models::*;
-use opener::{open_external_target, open_local_path};
+use opener::{open_external_target, open_local_path, open_workspace_in_vscode};
 use tauri::Manager;
 use tauri_plugin_notification::NotificationExt;
 use windows::{
@@ -87,6 +87,16 @@ fn window_candidate_at_cursor() -> ActivationResult {
 #[tauri::command]
 fn open_path(path: String) -> OpenPathResult {
     open_local_path(path)
+}
+
+#[tauri::command]
+async fn open_vscode(path: String) -> OpenPathResult {
+    tauri::async_runtime::spawn_blocking(move || open_workspace_in_vscode(path))
+        .await
+        .unwrap_or_else(|error| OpenPathResult {
+            ok: false,
+            message: format!("VS Code open task failed: {error}"),
+        })
 }
 
 #[tauri::command]
@@ -333,6 +343,7 @@ pub fn run() {
             probe_session_windows,
             window_candidate_at_cursor,
             open_path,
+            open_vscode,
             select_workspace_directory,
             set_scratchpad_shortcut_config,
             signal_frontend_ready,

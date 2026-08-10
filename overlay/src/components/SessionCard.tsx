@@ -3,6 +3,7 @@ import {
   AlertTriangle,
   Bot,
   CircleCheck,
+  Code2,
   Crosshair,
   FileText,
   ListFilter,
@@ -31,6 +32,7 @@ import {
   targetBindingForSession,
   targetLabelForSession,
   toolDisplayIdForSession,
+  workspacePathForSession,
   type ToolDisplayId,
 } from "../domain/routingModel";
 import {
@@ -111,6 +113,7 @@ interface SessionRowContentProps {
   session: AgentSession;
   activating: boolean;
   openingTarget: "note" | "canvas" | null;
+  openingVSCode: boolean;
   unbindingWindow: boolean;
   archiving: boolean;
   reviewing: boolean;
@@ -118,6 +121,7 @@ interface SessionRowContentProps {
   attentionSignal: boolean;
   attentionVisualActive: boolean;
   onOpenNote: () => void;
+  onOpenVSCode: () => void;
   onOpenCanvas: () => void;
   onMarkReviewed: () => void;
   onUnbindWindow: () => void;
@@ -137,6 +141,7 @@ export function SessionRowContent({
   session,
   activating,
   openingTarget,
+  openingVSCode,
   unbindingWindow,
   archiving,
   reviewing,
@@ -144,6 +149,7 @@ export function SessionRowContent({
   attentionSignal,
   attentionVisualActive,
   onOpenNote,
+  onOpenVSCode,
   onOpenCanvas,
   onMarkReviewed,
   onUnbindWindow,
@@ -160,6 +166,7 @@ export function SessionRowContent({
 }: SessionRowContentProps) {
   const notePath = notePathForOpen(session);
   const canvasPath = canvasPathForOpen(session);
+  const workspacePath = workspacePathForSession(session);
   const managedConnected = Boolean(session.launchId && session.launchState === "connected" && session.windowHint?.titleToken);
   const managedOffline = Boolean(session.launchId && session.launchState === "offline");
   const managedLaunching = Boolean(session.launchId && ["created", "spawning", "waiting_hook", "launching"].includes(session.launchState || ""));
@@ -376,7 +383,7 @@ export function SessionRowContent({
             ) : null}
           </span>
         </span>
-        {reviewPending || notePath || canvasPath || targetBound || managedConnected || managedOffline || managedLaunching || waitingForPermission || failed || codexAppAvailable ? (
+        {reviewPending || notePath || canvasPath || workspacePath || targetBound || managedConnected || managedOffline || managedLaunching || waitingForPermission || failed || codexAppAvailable ? (
           <span className="bridge-actions" aria-label="Bridge actions">
             {reviewPending ? (
               <button
@@ -446,6 +453,23 @@ export function SessionRowContent({
               >
                 <MapIcon size={13} aria-hidden="true" />
                 <span>Canvas</span>
+              </button>
+            ) : null}
+            {workspacePath ? (
+              <button
+                type="button"
+                className={`row-tool-button ${openingVSCode ? "is-busy" : ""}`}
+                aria-busy={openingVSCode}
+                disabled={openingVSCode}
+                title={`Open workspace in VS Code: ${workspacePath}`}
+                onClick={(event) => {
+                  event.preventDefault();
+                  event.stopPropagation();
+                  onOpenVSCode();
+                }}
+              >
+                <Code2 size={13} aria-hidden="true" />
+                <span>VS Code</span>
               </button>
             ) : null}
             {needsTargetChoice ? (

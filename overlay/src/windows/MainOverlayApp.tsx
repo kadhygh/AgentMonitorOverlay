@@ -48,6 +48,7 @@ import { usePendingPromptSync } from "../hooks/usePendingPromptSync";
 import { useSessionActions } from "../hooks/useSessionActions";
 import { useSessionPriorities } from "../hooks/useSessionPriorities";
 import { useTargetActivation } from "../hooks/useTargetActivation";
+import { useVSCodeOpen } from "../hooks/useVSCodeOpen";
 import { useWindowBindDrag } from "../hooks/useWindowBindDrag";
 import { useWindowsNotifications } from "../hooks/useWindowsNotifications";
 import { useWorkspacePanels } from "../hooks/useWorkspacePanels";
@@ -368,6 +369,14 @@ export function MainOverlayApp() {
   } = useObsidianOpen({
     markSessionReviewed,
     markSessionVisuallySeen,
+    postDebugLog,
+    setFeedback,
+  });
+
+  const {
+    openingVSCodeSessionId,
+    openSessionWorkspaceInVSCode,
+  } = useVSCodeOpen({
     postDebugLog,
     setFeedback,
   });
@@ -822,6 +831,7 @@ export function MainOverlayApp() {
                   session={session}
                   activating={activatingId === session.sessionId}
                   openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
+                  openingVSCode={openingVSCodeSessionId === session.sessionId}
                   unbindingWindow={unbindingWindowId === session.sessionId}
                   archiving={archivingSessionId === session.sessionId}
                   reviewing={reviewingSessionId === session.sessionId}
@@ -829,6 +839,7 @@ export function MainOverlayApp() {
                   attentionSignal={sessionHasAttentionSignal(session)}
                   attentionVisualActive={isSessionVisualAttentionActive(session)}
                   onOpenNote={() => void openBridgePath(session, "note")}
+                  onOpenVSCode={() => void openSessionWorkspaceInVSCode(session)}
                   onOpenCanvas={() => void openBridgePath(session, "canvas")}
                   onMarkReviewed={() => void markSessionReviewed(session, "manual")}
                   onUnbindWindow={() => void clearWindowBinding(session)}
@@ -1014,6 +1025,7 @@ export function MainOverlayApp() {
                     session={session}
                     activating={activatingId === session.sessionId}
                     openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
+                    openingVSCode={openingVSCodeSessionId === session.sessionId}
                     unbindingWindow={unbindingWindowId === session.sessionId}
                     archiving={false}
                     reviewing={reviewingSessionId === session.sessionId}
@@ -1021,6 +1033,7 @@ export function MainOverlayApp() {
                     attentionSignal={sessionHasAttentionSignal(session)}
                     attentionVisualActive={isSessionVisualAttentionActive(session)}
                     onOpenNote={() => undefined}
+                    onOpenVSCode={() => undefined}
                     onOpenCanvas={() => undefined}
                     onMarkReviewed={() => undefined}
                     onUnbindWindow={() => undefined}

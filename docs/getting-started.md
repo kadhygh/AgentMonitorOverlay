@@ -150,7 +150,7 @@ A CLI started manually can still produce hook cards after it emits a supported h
 
 Start one conversation and wait for its first hook interaction. The matching task card should then appear and move through the running lifecycle; it ends in Review when a reply is ready.
 
-The terminal starts in the selected project directory. After a reply hook arrives, the matching AMO card exposes **Seen**, **Note**, **Canvas**, and **CLI**. A **Review** state means a reply is ready for human attention; opening the CLI alone does not replace reviewing or handling the reply.
+The terminal starts in the selected project directory. After a reply hook arrives, the matching AMO card exposes **Seen**, **Note**, **Canvas**, **VS Code**, and **CLI**. Select **VS Code** to open the task workspace. AMO first focuses an existing VS Code window for that folder; when task workspaces are sibling Git clones, it can also focus the already-open clone with the same remote repository. If no matching window exists, AMO asks VS Code to open the task folder. A **Review** state means a reply is ready for human attention; opening VS Code or the CLI alone does not replace reviewing or handling the reply.
 
 ![Managed CLI reply and the corresponding Review card](assets/getting-started/managed-session-review.png)
 

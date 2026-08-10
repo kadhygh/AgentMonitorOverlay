@@ -1,7 +1,12 @@
 use crate::models::{
-    ActivationCandidate, ActivationResult, WindowCandidate, WindowHintInput, WindowProbeRequest,
-    WindowProbeResult,
+    ActivationCandidate, ActivationResult, OpenPathResult, WindowCandidate, WindowHintInput,
+    WindowProbeRequest, WindowProbeResult,
 };
+
+#[cfg(not(windows))]
+pub(crate) fn focus_vscode_workspace(_project_names: &[String]) -> Option<OpenPathResult> {
+    None
+}
 
 #[cfg(not(windows))]
 pub(crate) fn activate_external_window(
@@ -55,6 +60,101 @@ pub(crate) fn external_window_candidate_at_cursor() -> ActivationResult {
         ok: false,
         message: "Picking a window from the cursor is only implemented on Windows.".to_string(),
         candidates: Vec::new(),
+    }
+}
+
+#[cfg(windows)]
+pub(crate) fn focus_vscode_workspace(project_names: &[String]) -> Option<OpenPathResult> {
+    let candidates = enumerate_windows()
+        .into_iter()
+        .filter(is_vscode_window)
+        .collect::<Vec<_>>();
+
+    for project_name in project_names {
+        let exact_matches = candidates
+            .iter()
+            .filter(|candidate| vscode_title_has_project_segment(&candidate.title, project_name))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        match exact_matches.len() {
+            0 => {}
+            1 => return Some(focus_vscode_candidate(&exact_matches[0], project_name)),
+            count => {
+                return Some(OpenPathResult {
+                    ok: false,
+                    message: format!(
+                        "Found {count} VS Code windows for {project_name}; could not choose one safely."
+                    ),
+                });
+            }
+        }
+    }
+
+    for project_name in project_names {
+        let project = normalized(project_name);
+        if project.is_empty() {
+            continue;
+        }
+
+        let partial_matches = candidates
+            .iter()
+            .filter(|candidate| normalized(&candidate.title).contains(&project))
+            .cloned()
+            .collect::<Vec<_>>();
+
+        if partial_matches.len() == 1 {
+            return Some(focus_vscode_candidate(&partial_matches[0], project_name));
+        }
+    }
+
+    None
+}
+
+#[cfg(windows)]
+fn is_vscode_window(candidate: &WindowCandidate) -> bool {
+    candidate
+        .process_name
+        .as_deref()
+        .map(|process_name| {
+            matches!(
+                process_name
+                    .trim_end_matches(".exe")
+                    .to_ascii_lowercase()
+                    .as_str(),
+                "code" | "code - insiders"
+            )
+        })
+        .unwrap_or(false)
+        && normalized(&candidate.title).contains("visual studio code")
+}
+
+#[cfg(windows)]
+fn vscode_title_has_project_segment(title: &str, project_name: &str) -> bool {
+    let project = normalized(project_name);
+    !project.is_empty()
+        && title
+            .split(" - ")
+            .map(normalized)
+            .any(|segment| segment == project)
+}
+
+#[cfg(windows)]
+fn focus_vscode_candidate(candidate: &WindowCandidate, project_name: &str) -> OpenPathResult {
+    let focused = unsafe { focus_window(candidate.hwnd as windows_sys::Win32::Foundation::HWND) };
+
+    if focused {
+        OpenPathResult {
+            ok: true,
+            message: format!("Focused {project_name} in VS Code."),
+        }
+    } else {
+        OpenPathResult {
+            ok: false,
+            message: format!(
+                "Found the VS Code window for {project_name}, but Windows blocked focus transfer."
+            ),
+        }
     }
 }
 
@@ -818,6 +918,18 @@ mod tests {
         assert_eq!(results[0].result.candidates[0].hwnd, 10);
         assert!(results[1].result.ok);
         assert_eq!(results[1].result.candidates[0].hwnd, 20);
+    }
+
+    #[test]
+    fn vscode_project_match_uses_a_complete_title_segment() {
+        assert!(vscode_title_has_project_segment(
+            "Release Notes: 1.132.0 - project_mining - Visual Studio Code",
+            "project_mining"
+        ));
+        assert!(!vscode_title_has_project_segment(
+            "project_mining_dev2 - Visual Studio Code",
+            "project_mining"
+        ));
     }
 
     #[test]
