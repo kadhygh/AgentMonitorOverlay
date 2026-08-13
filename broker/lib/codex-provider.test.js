@@ -2,7 +2,20 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const { resolveCodexProvider } = require("./codex-provider");
 
-test("DeepSeek preset uses the official Responses endpoint and an environment-scoped key", () => {
+test("DeepSeek V4 Pro preset uses the official Responses endpoint and an environment-scoped key", () => {
+  const provider = resolveCodexProvider({
+    presetId: "deepseek-v4-pro",
+    apiKey: "deepseek-secret",
+  });
+
+  assert.equal(provider.id, "deepseek-v4-pro");
+  assert.equal(provider.providerId, "amo-deepseek");
+  assert.equal(provider.model, "deepseek-v4-pro");
+  assert.equal(provider.baseUrl, "https://api.deepseek.com/");
+  assert.deepEqual(provider.environment, { DEEPSEEK_API_KEY: "deepseek-secret" });
+});
+
+test("DeepSeek V4 Flash preset remains available", () => {
   const provider = resolveCodexProvider({
     presetId: "deepseek-v4",
     apiKey: "deepseek-secret",
@@ -17,7 +30,7 @@ test("DeepSeek preset uses the official Responses endpoint and an environment-sc
 
 test("DeepSeek Codex preset requires a key", () => {
   assert.throws(
-    () => resolveCodexProvider({ presetId: "deepseek-v4" }),
+    () => resolveCodexProvider({ presetId: "deepseek-v4-pro" }),
     (error) => error?.code === "codex_provider_api_key_required",
   );
 });

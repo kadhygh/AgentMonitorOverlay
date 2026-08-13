@@ -25,6 +25,24 @@ test("GLM preset overrides user-level model routing for the launch", () => {
   });
 });
 
+test("DeepSeek V4 Pro preset uses the official mixed Claude Code mapping", () => {
+  const provider = resolveClaudeProvider({
+    presetId: "deepseek-v4-pro",
+    apiKey: "deepseek-secret",
+  });
+
+  assert.equal(provider.id, "deepseek-v4-pro");
+  assert.equal(provider.model, "deepseek-v4-pro[1m]");
+  assert.equal(provider.environment.ANTHROPIC_BASE_URL, "https://api.deepseek.com/anthropic");
+  assert.equal(provider.environment.ANTHROPIC_MODEL, "deepseek-v4-pro[1m]");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_OPUS_MODEL, "deepseek-v4-pro[1m]");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_SONNET_MODEL, "deepseek-v4-pro[1m]");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_HAIKU_MODEL, "deepseek-v4-flash");
+  assert.equal(provider.environment.CLAUDE_CODE_SUBAGENT_MODEL, "deepseek-v4-flash");
+  assert.equal(provider.environment.CLAUDE_CODE_EFFORT_LEVEL, "max");
+  assert.equal(provider.environment.ANTHROPIC_AUTH_TOKEN, "deepseek-secret");
+});
+
 test("DeepSeek preset routes every Claude model slot to V4 Flash", () => {
   const provider = resolveClaudeProvider({
     presetId: "deepseek-v4",

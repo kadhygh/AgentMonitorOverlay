@@ -12,6 +12,17 @@ const PROVIDER_PRESETS = Object.freeze({
     baseUrl: null,
     environment: {},
   },
+  "deepseek-v4-pro": {
+    id: "deepseek-v4-pro",
+    label: "DeepSeek V4 Pro",
+    model: "deepseek-v4-pro",
+    requiresApiKey: true,
+    providerId: "amo-deepseek",
+    baseUrl: "https://api.deepseek.com/",
+    environment: {
+      DEEPSEEK_API_KEY: null,
+    },
+  },
   "deepseek-v4": {
     id: "deepseek-v4",
     label: "DeepSeek V4 Flash",

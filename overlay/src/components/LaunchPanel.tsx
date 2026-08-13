@@ -13,12 +13,12 @@ import {
   loadDefaultClaudeProvider,
   loadDefaultCodexProvider,
   loadModelCredentialStatus,
+  modelCredentialProviderId,
   resolveModelCredential,
   type ClaudeProviderLaunchConfig,
   type ClaudeProviderPresetId,
   type CodexProviderLaunchConfig,
   type CodexProviderPresetId,
-  type StoredModelProviderId,
 } from "../native/modelProviders";
 import type { AgentSession, WorkspaceInspection } from "../types";
 import { LaunchToolMark } from "./SessionCard";
@@ -85,10 +85,13 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
   const selectedProviderId = adapterId === "codex-cli" ? codexProviderId : claudeProviderId;
   const defaultProviderId = adapterId === "codex-cli" ? "openai-default" : "anthropic-default";
   const provider = providerDefinitions.find((item) => item.id === selectedProviderId) ?? providerDefinitions[0];
+  const credentialProviderId = modelCredentialProviderId(selectedProviderId);
   const launchable = workspaceAdapterLaunchable(state.inspection, adapterId);
   const checking = state.busy === "inspect";
   const launching = state.busy === "launch" || resolvingCredential;
-  const storedCredentialConfigured = configuredProviderIds.has(selectedProviderId);
+  const storedCredentialConfigured = Boolean(
+    credentialProviderId && configuredProviderIds.has(credentialProviderId),
+  );
   const missingProviderKey =
     (adapterId === "codex-cli" || adapterId === "claude-cli")
     && selectedProviderId !== defaultProviderId
@@ -111,7 +114,8 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
     ) {
       setResolvingCredential(true);
       try {
-        launchApiKey = await resolveModelCredential(selectedProviderId as StoredModelProviderId);
+        if (!credentialProviderId) throw new Error(`No credential mapping exists for ${selectedProviderId}.`);
+        launchApiKey = await resolveModelCredential(credentialProviderId);
       } catch (error) {
         setCredentialError(`Stored API key could not be loaded: ${(error as Error).message}`);
         return;
@@ -216,39 +220,45 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
                 role="radiogroup"
                 aria-label={`${adapterId === "codex-cli" ? "Codex" : "Claude"} model provider`}
               >
-                {providerDefinitions.map((item) => (
-                  <label className={selectedProviderId === item.id ? "is-selected" : ""} key={item.id}>
-                    <input
-                      type="radio"
-                      name={`${adapterId}-provider`}
-                      value={item.id}
-                      checked={selectedProviderId === item.id}
-                      disabled={launching}
-                      onChange={() => {
-                        if (adapterId === "codex-cli") {
-                          setCodexProviderId(item.id as CodexProviderPresetId);
-                        } else {
-                          setClaudeProviderId(item.id as ClaudeProviderPresetId);
-                        }
-                        setApiKey("");
-                        setCredentialError(null);
-                      }}
-                    />
-                    <span>
-                      <strong>{item.title}</strong>
-                      <small>{item.detail}</small>
-                    </span>
-                    {item.id !== defaultProviderId ? (
-                      <em className={configuredProviderIds.has(item.id) ? "is-configured" : ""}>
-                        {credentialStatusLoading
-                          ? "Checking"
-                          : configuredProviderIds.has(item.id)
-                            ? "Configured"
-                            : "Key required"}
-                      </em>
-                    ) : null}
-                  </label>
-                ))}
+                {providerDefinitions.map((item) => {
+                  const itemCredentialProviderId = modelCredentialProviderId(item.id);
+                  const itemCredentialConfigured = Boolean(
+                    itemCredentialProviderId && configuredProviderIds.has(itemCredentialProviderId),
+                  );
+                  return (
+                    <label className={selectedProviderId === item.id ? "is-selected" : ""} key={item.id}>
+                      <input
+                        type="radio"
+                        name={`${adapterId}-provider`}
+                        value={item.id}
+                        checked={selectedProviderId === item.id}
+                        disabled={launching}
+                        onChange={() => {
+                          if (adapterId === "codex-cli") {
+                            setCodexProviderId(item.id as CodexProviderPresetId);
+                          } else {
+                            setClaudeProviderId(item.id as ClaudeProviderPresetId);
+                          }
+                          setApiKey("");
+                          setCredentialError(null);
+                        }}
+                      />
+                      <span>
+                        <strong>{item.title}</strong>
+                        <small>{item.detail}</small>
+                      </span>
+                      {item.id !== defaultProviderId ? (
+                        <em className={itemCredentialConfigured ? "is-configured" : ""}>
+                          {credentialStatusLoading
+                            ? "Checking"
+                            : itemCredentialConfigured
+                              ? "Configured"
+                              : "Key required"}
+                        </em>
+                      ) : null}
+                    </label>
+                  );
+                })}
               </div>
 
               {provider.keyLabel ? (

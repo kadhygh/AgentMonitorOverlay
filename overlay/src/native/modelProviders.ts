@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ClaudeProviderPresetId = "anthropic-default" | "deepseek-v4" | "glm-5.2";
-export type CodexProviderPresetId = "openai-default" | "deepseek-v4";
+export type ClaudeProviderPresetId = "anthropic-default" | "deepseek-v4-pro" | "deepseek-v4" | "glm-5.2";
+export type CodexProviderPresetId = "openai-default" | "deepseek-v4-pro" | "deepseek-v4";
 export type StoredModelProviderId = "deepseek-v4" | "glm-5.2";
 export type StoredClaudeProviderPresetId = StoredModelProviderId;
 
@@ -31,6 +31,14 @@ export interface CodexProviderDefinition {
   keyLabel?: string;
 }
 
+export interface StoredModelProviderDefinition {
+  id: StoredModelProviderId;
+  title: string;
+  detail: string;
+  model: string;
+  keyLabel: string;
+}
+
 export interface ModelCredentialStatus {
   ok: boolean;
   configuredProviderIds: string[];
@@ -56,6 +64,13 @@ export const CLAUDE_PROVIDER_DEFINITIONS: ClaudeProviderDefinition[] = [
     model: "Local Claude configuration",
   },
   {
+    id: "deepseek-v4-pro",
+    title: "DeepSeek V4 Pro",
+    detail: "Official Claude Code mapping: V4 Pro for main, Opus, and Sonnet; V4 Flash for Haiku and subagents.",
+    model: "deepseek-v4-pro[1m]",
+    keyLabel: "DeepSeek API Key",
+  },
+  {
     id: "deepseek-v4",
     title: "DeepSeek V4 Flash",
     detail: "Official Anthropic-compatible routing, with V4 Flash for main tasks and subagents.",
@@ -79,6 +94,13 @@ export const CODEX_PROVIDER_DEFINITIONS: CodexProviderDefinition[] = [
     model: "Local Codex configuration",
   },
   {
+    id: "deepseek-v4-pro",
+    title: "DeepSeek V4 Pro",
+    detail: "Official Responses API routing to DeepSeek-V4-Pro-0813 through one-launch overrides.",
+    model: "deepseek-v4-pro",
+    keyLabel: "DeepSeek API Key",
+  },
+  {
     id: "deepseek-v4",
     title: "DeepSeek V4 Flash",
     detail: "Official Responses API routing through one-launch overrides and AMO's shared model catalog.",
@@ -93,6 +115,31 @@ export const STORED_CLAUDE_PROVIDER_IDS: StoredClaudeProviderPresetId[] = [
 ];
 
 export const STORED_MODEL_PROVIDER_IDS: StoredModelProviderId[] = STORED_CLAUDE_PROVIDER_IDS;
+
+export const STORED_MODEL_PROVIDER_DEFINITIONS: StoredModelProviderDefinition[] = [
+  {
+    id: "deepseek-v4",
+    title: "DeepSeek V4",
+    detail: "One shared DeepSeek API key for the V4 Pro and V4 Flash Codex and Claude launch presets.",
+    model: "deepseek-v4-pro / deepseek-v4-flash",
+    keyLabel: "DeepSeek API Key",
+  },
+  {
+    id: "glm-5.2",
+    title: "GLM-5.2",
+    detail: "Official 1M Claude Code mapping with max-length auto compact settings.",
+    model: "glm-5.2[1m]",
+    keyLabel: "GLM Coding Plan API Key",
+  },
+];
+
+export function modelCredentialProviderId(
+  presetId: ClaudeProviderPresetId | CodexProviderPresetId | string | null,
+): StoredModelProviderId | null {
+  if (presetId === "deepseek-v4" || presetId === "deepseek-v4-pro") return "deepseek-v4";
+  if (presetId === "glm-5.2") return "glm-5.2";
+  return null;
+}
 
 export function isClaudeProviderPresetId(value: string | null): value is ClaudeProviderPresetId {
   return CLAUDE_PROVIDER_DEFINITIONS.some((provider) => provider.id === value);

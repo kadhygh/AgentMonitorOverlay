@@ -8,9 +8,9 @@ const {
 } = require("./codex-launch-config");
 
 const deepSeekProvider = {
-  id: "deepseek-v4",
-  label: "DeepSeek V4 Flash",
-  model: "deepseek-v4-flash",
+  id: "deepseek-v4-pro",
+  label: "DeepSeek V4 Pro",
+  model: "deepseek-v4-pro",
   providerId: "amo-deepseek",
   baseUrl: "https://api.deepseek.com/",
 };
@@ -20,7 +20,11 @@ test("shared Codex model catalog is shipped beside the Broker runtime", () => {
   assert.equal(fs.existsSync(CODEX_MODEL_CATALOG_PATH), true);
 
   const catalog = JSON.parse(fs.readFileSync(CODEX_MODEL_CATALOG_PATH, "utf8"));
-  assert.equal(catalog.models[0].slug, "deepseek-v4-flash");
+  assert.deepEqual(catalog.models.map((model) => model.slug), [
+    "deepseek-v4-pro",
+    "deepseek-v4-flash",
+  ]);
+  assert.equal(catalog.models[0].display_name, "DeepSeek-V4-Pro-0813");
   assert.equal(catalog.models[0].minimal_client_version, "0.144.0");
   assert.match(catalog.models[0].base_instructions, /agentic coding assistant/u);
 });
@@ -31,7 +35,7 @@ test("one-launch Codex overrides route DeepSeek without storing the secret", () 
   const portableCatalogPath = CODEX_MODEL_CATALOG_PATH.replace(/\\/gu, "/");
 
   assert.equal(args.filter((value) => value === "-c").length, 8);
-  assert.match(serialized, /model="deepseek-v4-flash"/u);
+  assert.match(serialized, /model="deepseek-v4-pro"/u);
   assert.match(serialized, /model_provider="amo-deepseek"/u);
   assert.equal(args.includes(`model_catalog_json=${JSON.stringify(portableCatalogPath)}`), true);
   assert.match(serialized, /model_providers\.amo-deepseek\.base_url="https:\/\/api\.deepseek\.com\/"/u);

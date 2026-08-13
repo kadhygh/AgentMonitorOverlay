@@ -10,10 +10,10 @@ import { cliLaunchPreferencePayload } from "../native/cliLaunch";
 import {
   isClaudeProviderPresetId,
   isCodexProviderPresetId,
+  modelCredentialProviderId,
   resolveModelCredential,
   type ClaudeProviderLaunchConfig,
   type CodexProviderLaunchConfig,
-  type StoredModelProviderId,
 } from "../native/modelProviders";
 import {
   activateSessionWindow,
@@ -169,7 +169,9 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
         && providerId !== "anthropic-default"
         && isClaudeProviderPresetId(providerId)
       ) {
-        const apiKey = await resolveModelCredential(providerId as StoredModelProviderId);
+        const credentialProviderId = modelCredentialProviderId(providerId);
+        if (!credentialProviderId) throw new Error(`No credential mapping exists for ${providerId}.`);
+        const apiKey = await resolveModelCredential(credentialProviderId);
         claudeProvider = { presetId: providerId, apiKey };
       }
       const codexProviderId = session.codexProviderId ?? null;
@@ -178,7 +180,9 @@ export function useTargetActivation(options: UseTargetActivationOptions) {
         && codexProviderId !== "openai-default"
         && isCodexProviderPresetId(codexProviderId)
       ) {
-        const apiKey = await resolveModelCredential(codexProviderId as StoredModelProviderId);
+        const credentialProviderId = modelCredentialProviderId(codexProviderId);
+        if (!credentialProviderId) throw new Error(`No credential mapping exists for ${codexProviderId}.`);
+        const apiKey = await resolveModelCredential(credentialProviderId);
         codexProvider = { presetId: codexProviderId, apiKey };
       }
       const result = await postBrokerJson<WorkspaceLaunchResult & { duplicate?: boolean }>(

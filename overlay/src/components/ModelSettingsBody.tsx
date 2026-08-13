@@ -6,7 +6,7 @@ import {
   deleteModelCredential,
   loadModelCredentialStatus,
   saveModelCredential,
-  STORED_MODEL_PROVIDER_IDS,
+  STORED_MODEL_PROVIDER_DEFINITIONS,
   type ClaudeProviderPresetId,
   type CodexProviderPresetId,
   type StoredModelProviderId,
@@ -127,9 +127,8 @@ export function ModelSettingsBody({
       </p>
 
       <div className="settings-provider-list">
-        {STORED_MODEL_PROVIDER_IDS.map((providerId) => {
-          const provider = CLAUDE_PROVIDER_DEFINITIONS.find((item) => item.id === providerId);
-          if (!provider) return null;
+        {STORED_MODEL_PROVIDER_DEFINITIONS.map((provider) => {
+          const providerId = provider.id;
           const configured = configuredProviderIds.has(providerId);
           const busy = busyProviderId === providerId;
           return (

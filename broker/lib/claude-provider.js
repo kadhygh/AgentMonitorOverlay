@@ -10,6 +10,21 @@ const PROVIDER_PRESETS = Object.freeze({
     requiresApiKey: false,
     environment: {},
   },
+  "deepseek-v4-pro": {
+    id: "deepseek-v4-pro",
+    label: "DeepSeek V4 Pro",
+    model: "deepseek-v4-pro[1m]",
+    requiresApiKey: true,
+    environment: {
+      ANTHROPIC_BASE_URL: "https://api.deepseek.com/anthropic",
+      ANTHROPIC_MODEL: "deepseek-v4-pro[1m]",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "deepseek-v4-pro[1m]",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "deepseek-v4-pro[1m]",
+      ANTHROPIC_DEFAULT_HAIKU_MODEL: "deepseek-v4-flash",
+      CLAUDE_CODE_SUBAGENT_MODEL: "deepseek-v4-flash",
+      CLAUDE_CODE_EFFORT_LEVEL: "max",
+    },
+  },
   "deepseek-v4": {
     id: "deepseek-v4",
     label: "DeepSeek V4 Flash",

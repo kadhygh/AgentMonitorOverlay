@@ -366,12 +366,14 @@ Workspace Run actions and the card header `+` action open the same launch dialog
 The dialog owns client selection. When `codex-cli` is selected, it owns one mutually exclusive provider preset:
 
 - `openai-default`: use the existing Codex account, model, and provider configuration.
+- `deepseek-v4-pro`: use the official DeepSeek Responses API endpoint and V4 Pro model catalog entry.
 - `deepseek-v4`: use the official DeepSeek Responses API endpoint and V4 Flash model catalog.
 
 When `claude-cli` is selected, the dialog owns one mutually exclusive provider preset:
 
 - `anthropic-default`: use the existing Claude Code account and local configuration.
-- `deepseek-v4`: use the official DeepSeek Anthropic-compatible endpoint and V4 model mapping.
+- `deepseek-v4-pro`: use the official DeepSeek Anthropic-compatible mapping with Pro for main/Opus/Sonnet and Flash for Haiku/subagents.
+- `deepseek-v4`: retain the all-Flash DeepSeek Anthropic-compatible mapping.
 - `glm-5.2`: use the official GLM Anthropic-compatible endpoint and 1M model mapping.
 
 Provider selection is radio-style, not a checkbox set. One CLI process can use only one endpoint/model mapping at launch time.
