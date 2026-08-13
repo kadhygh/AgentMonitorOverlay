@@ -18,6 +18,8 @@ import {
 import { writeClipboardText } from "../native/clipboard";
 import {
   confirmedObsidianOpen,
+  obsidianOpenAttemptRequestId,
+  retryableObsidianOpenResult,
   shouldMarkReviewedForObsidianOpen,
   supportsConfirmedObsidianOpen,
 } from "../runtime/obsidianOpenPolicy";
@@ -34,7 +36,8 @@ import type {
 const REGISTRATION_TIMEOUT_MS = 1_800;
 const ACTIVE_RUNTIME_WAIT_MS = 1_800;
 const BOOTSTRAP_RUNTIME_WAIT_MS = 4_000;
-const OPEN_ACK_ATTEMPT_TIMEOUT_MS = 2_250;
+const INITIAL_OPEN_ACK_TIMEOUT_MS = 2_250;
+const RETRY_OPEN_ACK_TIMEOUT_MS = 6_000;
 const RESULT_POLL_MS = 120;
 const OPEN_RESULT_CAPABILITY = "open-result-v1";
 
@@ -181,33 +184,92 @@ export function useObsidianOpen(options: UseObsidianOpenOptions) {
     return null;
   }
 
-  async function waitForOpenResult(openRequestId: string, context: Record<string, unknown>) {
+  async function waitForOpenResult(
+    openRequestIds: string[],
+    context: Record<string, unknown>,
+    timeoutMs: number,
+  ) {
     const startedAt = performance.now();
-    while (performance.now() - startedAt < OPEN_ACK_ATTEMPT_TIMEOUT_MS) {
-      try {
-        const result = await getBrokerJson<ObsidianOpenResult>(brokerObsidianOpenResultUrl(openRequestId), {
-          timeoutMs: 700,
-        });
-        if (!result.pending) {
-          options.postDebugLog("obsidian.open.ack.received", {
-            ...context,
-            status: result.status ?? null,
-            ok: result.ok,
-            durationMs: Math.round(performance.now() - startedAt),
-            pluginTimings: result.timings ?? null,
+    let lastFailure: { requestId: string; result: ObsidianOpenResult } | null = null;
+    while (performance.now() - startedAt < timeoutMs) {
+      for (const requestId of openRequestIds) {
+        try {
+          const result = await getBrokerJson<ObsidianOpenResult>(brokerObsidianOpenResultUrl(requestId), {
+            timeoutMs: 700,
           });
-          return result;
+          if (!result.pending) {
+            if (confirmedObsidianOpen(result)) {
+              options.postDebugLog("obsidian.open.ack.received", {
+                ...context,
+                acknowledgedRequestId: requestId,
+                status: result.status ?? null,
+                ok: result.ok,
+                durationMs: Math.round(performance.now() - startedAt),
+                pluginTimings: result.timings ?? null,
+              });
+              return result;
+            }
+            lastFailure = { requestId, result };
+          }
+        } catch (error) {
+          options.postDebugLog("obsidian.open.ack.poll_error", {
+            ...context,
+            polledRequestId: requestId,
+            message: (error as Error).message,
+          });
         }
-      } catch (error) {
-        options.postDebugLog("obsidian.open.ack.poll_error", {
-          ...context,
-          message: (error as Error).message,
-        });
       }
       await sleep(RESULT_POLL_MS);
     }
-    options.postDebugLog("obsidian.open.ack.timeout", { ...context, timeoutMs: OPEN_ACK_ATTEMPT_TIMEOUT_MS });
+    if (lastFailure) {
+      options.postDebugLog("obsidian.open.ack.received", {
+        ...context,
+        acknowledgedRequestId: lastFailure.requestId,
+        status: lastFailure.result.status ?? null,
+        ok: lastFailure.result.ok,
+        durationMs: Math.round(performance.now() - startedAt),
+        pluginTimings: lastFailure.result.timings ?? null,
+        delayedForSuccessRace: true,
+      });
+      return lastFailure.result;
+    }
+    options.postDebugLog("obsidian.open.ack.timeout", {
+      ...context,
+      openRequestIds,
+      timeoutMs,
+    });
     return null;
+  }
+
+  function pluginOpenUri(
+    targetPath: string,
+    target: "note" | "canvas",
+    vaultId: string | undefined,
+    vaultRoot: string | undefined,
+    focusNotePath: string | null,
+    openRequestId: string,
+  ) {
+    return obsidianAmoOpenUri(targetPath, target, vaultId, vaultRoot, {
+      focusNotePath,
+      openRequestId,
+    });
+  }
+
+  async function dispatchPluginOpenAttempt(
+    uri: string,
+    attempt: number,
+    openRequestId: string,
+    context: Record<string, unknown>,
+    vaultId: string | undefined,
+    runtimeActive: boolean,
+  ) {
+    return dispatchObsidianUri(uri, attempt === 1 ? "plugin-open" : "plugin-open-retry", {
+      ...context,
+      openRequestId,
+      vaultId: vaultId ?? null,
+      runtimeActive,
+      attempt,
+    });
   }
 
   async function openBridgePath(session: AgentSession, target: "note" | "canvas") {
@@ -218,9 +280,10 @@ export function useObsidianOpen(options: UseObsidianOpenOptions) {
       return;
     }
 
-    const openRequestId = createOpenRequestId();
+    const openOperationId = createOpenRequestId();
+    const openRequestId = obsidianOpenAttemptRequestId(openOperationId, 1);
     const openStartedAt = performance.now();
-    const context = { openRequestId, sessionId: session.sessionId, target, targetPath };
+    const context = { openOperationId, openRequestId, sessionId: session.sessionId, target, targetPath };
     options.markSessionVisuallySeen(session);
     setOpeningPath({ sessionId: session.sessionId, target });
     options.setFeedback(`Opening ${target} for ${session.title}...`);
@@ -314,15 +377,22 @@ export function useObsidianOpen(options: UseObsidianOpenOptions) {
         pluginRuntime = await waitForPluginRuntime(vaultId, session.vaultRoot, ACTIVE_RUNTIME_WAIT_MS, context);
       }
 
-      const uri = obsidianAmoOpenUri(targetPath, target, vaultId, session.vaultRoot, {
+      const uri = pluginOpenUri(
+        targetPath,
+        target,
+        vaultId,
+        session.vaultRoot,
         focusNotePath,
         openRequestId,
-      });
-      const result = await dispatchObsidianUri(uri, "plugin-open", {
-        ...context,
-        vaultId: vaultId ?? null,
-        runtimeActive: pluginRuntime?.active ?? false,
-      });
+      );
+      const result = await dispatchPluginOpenAttempt(
+        uri,
+        1,
+        openRequestId,
+        context,
+        vaultId,
+        pluginRuntime?.active ?? false,
+      );
       if (!result.ok) {
         options.setFeedback(result.message);
         return;
@@ -342,16 +412,45 @@ export function useObsidianOpen(options: UseObsidianOpenOptions) {
       }
 
       options.setFeedback(`Obsidian accepted the ${target} request; waiting for confirmation...`);
-      let openResult = await waitForOpenResult(openRequestId, context);
+      const attemptRequestIds = [openRequestId];
+      let openResult = await waitForOpenResult(attemptRequestIds, context, INITIAL_OPEN_ACK_TIMEOUT_MS);
+      let retryReason: "ack-timeout" | "foreign-vault-rejection" | null = null;
       if (!openResult) {
-        options.postDebugLog("obsidian.open.retry", { ...context, attempt: 2, reason: "ack-timeout" });
-        options.setFeedback(`Obsidian has not confirmed the ${target} yet; retrying once...`);
-        const retryResult = await dispatchObsidianUri(uri, "plugin-open-retry", {
+        retryReason = "ack-timeout";
+      } else if (retryableObsidianOpenResult(openResult)) {
+        retryReason = "foreign-vault-rejection";
+        openResult = null;
+      }
+      if (retryReason) {
+        const retryRequestId = obsidianOpenAttemptRequestId(openOperationId, 2);
+        attemptRequestIds.push(retryRequestId);
+        const retryUri = pluginOpenUri(
+          targetPath,
+          target,
+          vaultId,
+          session.vaultRoot,
+          focusNotePath,
+          retryRequestId,
+        );
+        options.postDebugLog("obsidian.open.retry", {
           ...context,
-          vaultId: vaultId ?? null,
+          openRequestId: retryRequestId,
+          previousRequestId: openRequestId,
           attempt: 2,
+          reason: retryReason,
         });
-        if (retryResult.ok) openResult = await waitForOpenResult(openRequestId, context);
+        options.setFeedback(`Obsidian has not confirmed the ${target} yet; retrying once...`);
+        const retryResult = await dispatchPluginOpenAttempt(
+          retryUri,
+          2,
+          retryRequestId,
+          context,
+          vaultId,
+          pluginRuntime?.active ?? false,
+        );
+        if (retryResult.ok) {
+          openResult = await waitForOpenResult(attemptRequestIds, context, RETRY_OPEN_ACK_TIMEOUT_MS);
+        }
       }
       if (!openResult) {
         options.setFeedback(`Obsidian did not confirm the ${target} open after one retry. You can retry safely.`);
