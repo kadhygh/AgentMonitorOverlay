@@ -115,18 +115,9 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
     try {
       const target = await getOrCreateUtilityWindow(label);
       await target.show();
-      await target.setFocus().catch(() => undefined);
       setActiveUtilityWindow(label);
-      await bringUtilityWindowToFront(label);
-
-      const utilityLabels: UtilityWindowKind[] = ["deploy", "settings", "priorities", "harness"];
-      await Promise.all(
-        utilityLabels.filter((otherLabel) => otherLabel !== label).map(async (otherLabel) => {
-          const otherWindow = await WebviewWindow.getByLabel(otherLabel);
-          if (otherWindow) await otherWindow.hide();
-          await setAmoWindowAlwaysOnTop(otherLabel, false);
-        }),
-      );
+      void target.setFocus().catch(() => undefined);
+      void bringUtilityWindowToFront(label).catch(() => undefined);
       const title = label === "deploy"
         ? "Workspace Center"
         : label === "settings"
@@ -158,8 +149,8 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
     try {
       const target = await getOrCreateUtilityWindow(label);
       await target.show();
-      await target.setFocus().catch(() => undefined);
-      await bringUtilityWindowToFront(label);
+      void target.setFocus().catch(() => undefined);
+      void bringUtilityWindowToFront(label).catch(() => undefined);
     } catch (error) {
       setActiveUtilityWindow(null);
       options.setFeedback(`Focus ${label} window failed: ${(error as Error).message}`);

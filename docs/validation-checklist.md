@@ -47,6 +47,21 @@ Status: build verified locally; native overlay appeared in user smoke validation
 - Click `Seen`, `Note`, or `Canvas` and confirm the green review prompt clears.
 - Trigger another user prompt/running hook and confirm any stale review prompt clears.
 
+## Shell-first Startup And Runtime Regression
+
+Status: automated coverage and Stable native warm-start smoke implemented on 2026-08-14; broader cold/error matrix remains a release check.
+
+- Confirm the main AMO frame appears independently of Broker and initial task snapshot readiness.
+- Confirm Settings, Workspace Center, Priorities, and Harness Lab controls remain reachable while task data is loading or degraded.
+- Confirm repeated Harness Lab clicks share one creation and immediately show the native/HTML loading shell.
+- Confirm Utility Window opening is not blocked by sibling-window housekeeping and close state reaches Main through lifecycle events.
+- Confirm Session SSE health disables snapshot fallback; disconnect recovery is visibility/online gated and backs off from 45 seconds to at most 5 minutes.
+- Confirm Priority Manager refreshes from Broker session events without a 45-second steady interval.
+- Confirm Harness polling pauses while unfocused and uses adaptive 3/8/15-second focused cadence.
+- Confirm attention animation expiry does not drive one React task-list render per second.
+- Confirm `tmp\amo-stable-app.err.log` contains ordered `AMO startup milestone` entries for process setup, visible surfaces, shell, runtime, snapshot, and interactive phases.
+- Run Stable twice without source changes and confirm the second run reports `reusing existing artifacts`; change a tracked build input and confirm transactional validation/build runs again.
+
 ## Phase 4 Spike: Tool Adapters
 
 Status: isolated adapter contract verification passes on 2026-05-08; Claude live hook smoke passed; Codex hook loading still pending

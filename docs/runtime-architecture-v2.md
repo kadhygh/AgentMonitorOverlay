@@ -1,6 +1,6 @@
 # AMO Runtime Architecture v2
 
-Updated: 2026-07-15
+Updated: 2026-08-14
 
 Active execution companion: `docs/shell-first-startup-runtime-refactor.md`. That document applies these ownership rules to startup responsiveness, Session Runtime extraction, and polling governance, and is updated as each implementation phase lands.
 
@@ -141,6 +141,8 @@ Acceptance:
 
 ## Phase R2: Session Runtime Controller
 
+Status: scheduling and startup-coordination boundary implemented; session mutation/store extraction remains incremental.
+
 Create a session controller/store that owns:
 
 - initial Broker snapshot
@@ -157,6 +159,17 @@ Acceptance:
 - SSE does not force an unnecessary full refresh for every event
 - fallback polling remains available when SSE is disconnected
 - pending prompt and permission events remain low latency
+
+Current implementation:
+
+- `runtime/StartupCoordinator` owns single-flight Broker bootstrap followed by initial hydration; data hydration is still attempted when bootstrap fails because another local Broker may already own the endpoint.
+- `startupStatus.ts` publishes an independent `shell/runtime/data` startup snapshot instead of one ambiguous ready flag.
+- `runtime/SessionRuntimeController` owns EventSource lifecycle, 350 ms reconcile debounce, stream-health state, hidden/offline gates, focus/online recovery, and bounded 45 s to 5 min fallback backoff.
+- `useBrokerSessions` remains the React session-store adapter and applies optimistic payloads; it no longer owns EventSource or interval lifecycle policy.
+- `runtime/AdaptivePollController` owns visible-window external-fact sampling and request coalescing for Harness Lab.
+- Priority Manager uses Broker SSE invalidation; Utility Window visibility uses lifecycle events plus focus reconciliation; Attention rendering schedules exact semantic transitions.
+
+Retained schedulers are deliberate: Broker SSE and Obsidian heartbeats are protocol liveness, `ManagedWindowMonitor` batches one native snapshot only while eligible managed targets exist, and Broker transcript monitoring samples an external file fact under Broker ownership.
 
 ## Phase R3: Broker Event And Binding Services
 

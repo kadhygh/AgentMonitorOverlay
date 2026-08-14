@@ -11,7 +11,7 @@
 | Source Debug | `npm run amo:debug` | 显示 Broker/Overlay 调试控制台 |
 | Portable | `npm run amo:portable` | 构建并运行打包版本；始终无源码 watcher |
 
-Stable 仍然从当前源码构建：入口先运行前端类型检查/生产构建，再执行锁定的 Rust debug 构建。运行阶段由 Broker、Vite 和已生成的 `agent-monitor-overlay.exe` 组成，但不会启动 `tauri dev`。
+Stable 仍然保证运行产物与当前源码一致，但不会无条件重复构建。入口会为前端、Tauri 源码、依赖清单和构建配置计算 SHA-256 指纹：输入变化或 `dist/index.html`/原生程序缺失时，先运行前端类型检查/生产构建，再执行锁定的 Rust debug 构建；输入与上一次已成功启动的指纹一致时，直接复用已验证产物。运行阶段由 Broker、Vite Preview（只提供已构建的生产 bundle）和已生成的 `agent-monitor-overlay.exe` 组成，不会启动 Vite 开发转换管线或 `tauri dev` watcher。
 
 ## 首次部署
 
@@ -34,7 +34,7 @@ cd ..
 .\amo.ps1 -Mode Stable
 ```
 
-首次 Rust 构建会下载并编译依赖，后续启动复用 `overlay\src-tauri\target\debug` 增量缓存。
+首次 Rust 构建会下载并编译依赖，后续源码变化时复用 `overlay\src-tauri\target\debug` 增量缓存；源码未变化时跳过前端/Rust 构建。成功完成原生启动和健康检查后，验证指纹写入 `overlay\src-tauri\target\.amo-stable-build-fingerprint`。构建或启动失败不会把新指纹标记为有效，并继续保留事务式旧二进制恢复。
 
 ## 安装桌面启动脚本
 
@@ -83,7 +83,7 @@ npm ci
 cd ..
 ```
 
-桌面启动脚本不需要重建；下次点击会构建并运行新源码。只有仓库路径发生变化时才需要重新安装。
+桌面启动脚本不需要重建；下次点击会检测源码指纹，必要时构建并运行新源码。只有仓库路径发生变化时才需要重新安装。
 
 ## 故障排查
 

@@ -44,11 +44,13 @@ test("opening shows and focuses the requested window before cleaning up peers", 
   const openFlow = utilityWindows.slice(start, end);
   const showIndex = openFlow.indexOf("await target.show()");
   const activeIndex = openFlow.indexOf("setActiveUtilityWindow(label)");
-  const peerHideIndex = openFlow.indexOf("await otherWindow.hide()");
+  const coordinationIndex = openFlow.indexOf("void bringUtilityWindowToFront(label)");
 
   assert.ok(showIndex >= 0, "the target should be shown explicitly");
   assert.ok(activeIndex > showIndex, "the main window should only be blocked after show starts");
-  assert.ok(peerHideIndex > showIndex, "peer cleanup must not delay the requested window");
+  assert.ok(coordinationIndex > showIndex, "window coordination should follow target visibility");
+  assert.doesNotMatch(openFlow, /await bringUtilityWindowToFront/);
+  assert.doesNotMatch(openFlow, /await otherWindow\.hide/);
 });
 
 test("concurrent open and focus requests share one window creation", () => {

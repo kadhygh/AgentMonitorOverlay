@@ -1,5 +1,6 @@
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 import { installStartupStatusReplay, publishStartupStatus } from "./startupStatus";
+import { recordStartupMilestone } from "./startupDiagnostics";
 import "./styles.css";
 
 async function renderApplication() {
@@ -17,6 +18,7 @@ async function startMainWindow() {
 }
 
 if (getCurrentWebviewWindow().label === "main") {
+  void recordStartupMilestone("mainHtmlReady");
   void startMainWindow();
 } else {
   void renderApplication();

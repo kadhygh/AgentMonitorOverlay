@@ -8,9 +8,11 @@ import {
 import { mergeChangedSession, mergeSessionOrder, normalizeSessions } from "../domain/sessionModel";
 import { SessionRuntimeController } from "../runtime/sessionRuntimeController";
 import { createSingleFlight, SessionRevisionGate } from "../runtime/sessionRevisionGate";
+import { StartupCoordinator } from "../runtime/startupCoordinator";
 import type { BrokerReadiness } from "../components/BrokerReadinessPanel";
 import { ensureBrokerStarted } from "../startupBroker";
 import { publishStartupStatus } from "../startupStatus";
+import { recordStartupMilestone } from "../startupDiagnostics";
 import type { AgentSession } from "../types";
 
 const REFRESH_TIMEOUT_MS = 2_500;
@@ -84,6 +86,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   const revisionGateRef = useRef<SessionRevisionGate | null>(null);
   const refreshSingleFlightRef = useRef<ReturnType<typeof createSingleFlight<void>> | null>(null);
   const runtimeControllerRef = useRef<SessionRuntimeController | null>(null);
+  const startupCoordinatorRef = useRef<StartupCoordinator | null>(null);
   const sseHealthyRef = useRef(false);
   if (!revisionGateRef.current) revisionGateRef.current = new SessionRevisionGate();
   if (!refreshSingleFlightRef.current) refreshSingleFlightRef.current = createSingleFlight<void>();
@@ -165,6 +168,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         hasLoadedSessionSnapshotRef.current = true;
         setHasLoadedSessionSnapshot(true);
         setSessionHydration({ state: "ready", message: `${incomingActive.length} active task${incomingActive.length === 1 ? "" : "s"} loaded` });
+        void recordStartupMilestone("snapshotReady");
         void publishStartupStatus({ module: "sessions", state: "ready", message: `${incomingActive.length} loaded` });
         setFeedback(incomingActive.length > 0 ? `Broker sessions loaded: ${incomingActive.length}` : "No active broker sessions.");
         void options.reconcileCodexActionRequired(incomingActive, reason);
@@ -279,7 +283,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
       setArchiveLoading(false);
     }
   }
-  async function ensureBrokerThenRefresh() {
+  async function ensureBrokerRuntime() {
     void publishStartupStatus({ module: "sessions", state: "loading", message: "Loading snapshot" });
     if (!hasLoadedSessionSnapshotRef.current) {
       setSessionHydration({ state: "loading", message: "Connecting to the task runtime" });
@@ -298,11 +302,20 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
       setFeedback(`Broker auto-start unavailable: ${(error as Error).message}`);
     }
 
-    await refreshSessions("startup");
+  }
+
+  function ensureBrokerThenRefresh() {
+    return startupCoordinatorRef.current?.start("retry") ?? Promise.resolve();
   }
 
   useEffect(() => {
-    void ensureBrokerThenRefresh().finally(() => options.onStartupRefreshSettled());
+    const startupCoordinator = new StartupCoordinator({
+      ensureRuntime: ensureBrokerRuntime,
+      hydrateData: () => refreshSessions("startup"),
+      onSettled: () => options.onStartupRefreshSettled(),
+    });
+    startupCoordinatorRef.current = startupCoordinator;
+    void startupCoordinator.start("startup");
     let runtimeController: SessionRuntimeController;
 
     const applyChangedSession = (changedSession: AgentSession, eventReason: string, sequence: number | undefined, applyStartedAt: number) => {
@@ -444,6 +457,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
       onStreamHealthChanged: (healthy, readyState) => {
         sseHealthyRef.current = healthy;
         if (healthy) {
+          void recordStartupMilestone("brokerReady");
           setBrokerReadiness((current) => current.state === "ready" ? current : {
             state: "ready",
             message: "Broker ready",
@@ -473,6 +487,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
     return () => {
       runtimeController.stop();
       runtimeControllerRef.current = null;
+      startupCoordinatorRef.current = null;
       sseHealthyRef.current = false;
     };
   }, []);

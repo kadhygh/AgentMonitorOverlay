@@ -200,7 +200,7 @@ Status: complete
 
 ### S2: Startup Coordinator and Session Runtime boundary
 
-Status: in progress
+Status: complete
 
 - Remove duplicate Broker startup ownership from `main.tsx` and `useBrokerSessions`.
 - Introduce a startup snapshot with independent shell/runtime/data states.
@@ -220,7 +220,7 @@ Status: complete
 
 ### S4: Startup instrumentation and Source Stable fast path
 
-Status: pending
+Status: complete
 
 - Record `processSetup`, `startupVisible`, `mainHtmlReady`, `shellCommitted`, `firstVisibleFrame`, `brokerReady`, `snapshotReady`, and `interactive`.
 - Surface diagnostics without blocking startup.
@@ -229,7 +229,7 @@ Status: pending
 
 ### S5: Consolidation and release readiness
 
-Status: pending
+Status: complete for this refactor; broader release-matrix checks remain in `docs/validation-checklist.md`
 
 - Decide from measurements whether the separate Startup Window still earns its WebView cost.
 - Finish the reusable Utility Window lifecycle coordinator.
@@ -300,6 +300,31 @@ Long-lived scheduling policy now lives in testable TypeScript controllers rather
 
 Attention visuals use the exact timestamp at which the ten-second animation window begins or ends. CSS continues animation frames independently; React no longer re-renders the complete task list once per second merely to discover that no semantic state changed.
 
+### 2026-08-14: Stable serves validated production assets
+
+Stable no longer makes the WebView trigger Vite's development transform pipeline across roughly 1,650 modules. Build inputs are hashed, changed inputs are validated and built transactionally, and matching inputs reuse the existing native executable and `dist` assets. Vite Preview serves that validated production bundle on the existing local URL, preserving the current Tauri configuration while removing development transforms from the shell critical path.
+
+### 2026-08-14: Retain the Startup Window until a multi-run p95 review
+
+After production-bundle serving, one native run recorded `startupVisible=912 ms` and `shellCommitted=1,131 ms`. The Startup Window still provides themed feedback about 219 ms before the complete Main Shell. This refactor therefore keeps it as a cold-WebView bridge. Removal requires a multi-run warm/cold p95 comparison and must show that eliminating the second WebView does not regress first-feedback latency.
+
+## Measured Native Result
+
+Single development-machine runs captured by the native monotonic clock:
+
+| Milestone | Stable with Vite dev transforms | First production-bundle run | Validated-artifact reuse run |
+| --- | ---: | ---: | ---: |
+| `startupVisible` | 979 ms | 912 ms | 641 ms |
+| `mainHtmlReady` | 9,151 ms | 1,109 ms | 810 ms |
+| `shellCommitted` | 10,236 ms | 1,131 ms | 823 ms |
+| `mainVisible` | 10,308 ms | 1,210 ms | 942 ms |
+| `brokerReady` | 10,336 ms | 1,228 ms | 959 ms |
+| `firstVisibleFrame` | 10,412 ms | 1,338 ms | 1,061 ms |
+| `snapshotReady` | 10,436 ms | 1,361 ms | 1,096 ms |
+| `interactive` | 10,449 ms | 1,402 ms | 1,108 ms |
+
+The Shell became visible about 9.1 seconds earlier in the first comparison and reached 823 ms on the subsequent validated-artifact reuse run. These are diagnostic samples, not a p95 benchmark; the important architectural result is that runtime/data milestones remain downstream from a visible Shell.
+
 ## Iteration Ledger
 
 | Date | Phase | Change | Evidence | Remaining |
@@ -309,3 +334,6 @@ Attention visuals use the exact timestamp at which the ten-second animation wind
 | 2026-08-14 | S1 | Verified the shell-first handoff in the native Stable runtime | 31 runtime tests passed; production build passed; `amo:restart` and `amo:health` passed; responsive `Agent Monitor Overlay` native window had a valid handle | Continue Startup/Session controller extraction |
 | 2026-08-14 | S2 | Added a framework-independent Session Runtime scheduling boundary; main entry no longer starts Broker; single-flight snapshot ownership remains in the session adapter during staged migration | Controller tests cover stream health, reconcile debounce, hidden/offline gates, resume refresh, and exponential fallback | Add unified startup snapshot/timestamps and thin the remaining session adapter |
 | 2026-08-14 | S3 | Removed Utility Window 1.2 s polling; converted Harness to focused adaptive 3/8/15 s sampling; converted Priority Manager to SSE invalidation; added Session fallback visibility/offline backoff; replaced Attention 1 s clock with exact transition timers | 36 runtime tests passed; TypeScript/Vite production build passed; no fixed intervals remain in these UI paths | Retain and document managed-window, protocol heartbeat, and transcript-monitor schedulers |
+| 2026-08-14 | S2 | Added `StartupCoordinator` single-flight runtime/hydration sequencing and an independent shell/runtime/data snapshot; added native monotonic startup diagnostics | 41 Runtime tests and production build passed; Rust 17 tests and `cargo check` passed | Continue moving optimistic session mutation out of the React adapter only when it creates a useful store boundary |
+| 2026-08-14 | S4 | Added nine native startup milestones; added validated build-input fingerprinting; Stable now serves the production bundle through Vite Preview | First measured Shell improved from 10,236 ms to 1,131 ms and interactive from 10,449 ms to 1,402 ms; Stable health passed | Collect multi-run p95 data before changing the Startup Window decision |
+| 2026-08-14 | S5 | Removed duplicate Utility Window housekeeping from the awaited open path; synchronized Runtime, module, structure, Stable SOP, and validation docs | Main window responsive with a valid native handle; Broker 86 tests passed; transactional failure rollback and RestartOnly recovery were exercised | Execute the broader manual cold/error matrix during release preparation |

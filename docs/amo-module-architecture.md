@@ -1,6 +1,6 @@
 # AMO Product Module Architecture
 
-Updated: 2026-07-15
+Updated: 2026-08-14
 Status: current logical architecture
 
 This document is the top-level design map for AMO. It describes why the system is split into modules, which module owns each decision, how identities cross module boundaries, and what every launch entry means.
@@ -271,7 +271,8 @@ Owns:
 - cards, filters, search, deploy/settings/scratchpad windows, and visible feedback
 - tray, taskbar state, Windows notifications, clipboard, dialogs, URI/path opening, and shortcuts
 - thin React adapters around runtime controllers
-- health, debug logging, startup, portable packaging, and release scripts
+- Shell-first startup handoff, independent shell/runtime/data startup state, and monotonic native startup diagnostics
+- event-first runtime scheduling, bounded recovery polling, health, debug logging, portable packaging, and release scripts
 
 Source of truth:
 
@@ -289,8 +290,12 @@ Current implementation anchors:
 - `overlay/src/components`
 - `overlay/src/windows`
 - `overlay/src/runtime`
+- `overlay/src/runtime/startupCoordinator.ts`
+- `overlay/src/runtime/sessionRuntimeController.ts`
+- `overlay/src/runtime/adaptivePollController.ts`
+- `overlay/src/startupStatus.ts` and `overlay/src/startupDiagnostics.ts`
 - `overlay/src/platform`
-- `overlay/src-tauri/src`
+- `overlay/src-tauri/src/startup.rs` and `overlay/src-tauri/src/startup_diagnostics.rs`
 - `scripts/amo` and `scripts/release`
 
 ## Identity Model

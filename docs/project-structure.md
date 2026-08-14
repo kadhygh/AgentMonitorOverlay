@@ -157,7 +157,7 @@ The repository has completed the first overlay extraction pass. These boundaries
 - shared utility window lifecycle/layering helpers: `overlay/src/windows/utilityWindow.ts`
 - main overlay monitor window: `overlay/src/windows/MainOverlayApp.tsx`
 - thin Tauri webview window switch root: `overlay/src/App.tsx`
-- broker session polling, readiness, SSE updates, and session list state: `overlay/src/hooks/useBrokerSessions.ts`
+- React session snapshot/readiness adapter and optimistic session application: `overlay/src/hooks/useBrokerSessions.ts`
 - session review, attention clear, target unbind, archive/dismiss broker actions, and related busy state: `overlay/src/hooks/useSessionActions.ts`
 - Codex App/CLI target opening, candidate window listing/activation, target binding, and activation busy state: `overlay/src/hooks/useTargetActivation.ts`
 - Obsidian note/canvas opening, AMO vault recovery dialog state, and recovery folder/path actions: `overlay/src/hooks/useObsidianOpen.ts`
@@ -166,20 +166,28 @@ The repository has completed the first overlay extraction pass. These boundaries
 - drag-to-window binding pointer lifecycle: `overlay/src/hooks/useWindowBindDrag.ts`
 - overlay resize pointer lifecycle: `overlay/src/hooks/useOverlayResize.ts`
 - deploy/settings utility window open, focus, hide, and main-window blocking state: `overlay/src/hooks/useMainUtilityWindows.ts`
-- attention visual seen state, attention animation clock, and taskbar review attention requests: `overlay/src/hooks/useAttentionVisuals.ts`
+- attention visual seen state, semantic animation-deadline scheduling, and taskbar review attention requests: `overlay/src/hooks/useAttentionVisuals.ts`
 - pending prompt copy, sync-back acknowledgement, duplicate auto-sync guard, and target focus handoff: `overlay/src/hooks/usePendingPromptSync.ts`
 - Codex CLI action-required window probing and permission-attention heartbeat update: `overlay/src/hooks/useCodexActionRequiredProbe.ts`
 - overlay debug status, debug toggle, and non-blocking debug log posting: `overlay/src/hooks/useDebugLogging.ts`
 - typed native window activation, candidate listing, cursor selection, and single/batch probe access: `overlay/src/platform/windowClient.ts`
 - managed-window probe scheduling, in-flight control, miss tracking, launch revision resets, and offline transitions: `overlay/src/runtime/managedWindowMonitor.ts`
+- single-flight Broker bootstrap and initial hydration sequencing: `overlay/src/runtime/startupCoordinator.ts`
+- Session SSE lifecycle, reconcile debounce, visibility/connectivity recovery, and bounded fallback backoff: `overlay/src/runtime/sessionRuntimeController.ts`
+- focused-window adaptive external-fact sampling and coalescing: `overlay/src/runtime/adaptivePollController.ts`
+- independent shell/runtime/data startup snapshot: `overlay/src/startupStatus.ts`
+- frontend-to-native startup milestone bridge: `overlay/src/startupDiagnostics.ts`
+- native monotonic startup timing state and query command: `overlay/src-tauri/src/startup_diagnostics.rs`
 
 `useManagedWindowLiveness.ts` is now a thin React adapter around `ManagedWindowMonitor`: it derives monitor targets from
 the current session snapshot, forwards batch probe results, and applies Broker offline responses. Native window identity
 matching remains in Tauri. The `probe_session_windows` command enumerates visible windows once per monitor tick and
 resolves all managed targets against the same snapshot.
 
-The remaining runtime extraction is tracked in `docs/runtime-architecture-v2.md`. The next boundary is the session
-snapshot/reconciliation controller; do not continue splitting presentational files merely to reduce line counts.
+The Runtime Architecture v2 scheduling boundary is active: framework-independent controllers own long-lived timers,
+EventSource recovery, startup sequencing, and native monitoring, while React hooks adapt controller results to UI state.
+The remaining incremental boundary is moving optimistic session mutation/store publication out of `useBrokerSessions`;
+do not split presentational files merely to reduce line counts.
 
 `DeployWorkspaceApp.tsx` remains the deploy workflow owner: broker requests, native folder dialogs, debug logging,
 busy states, and feedback messages stay there. `DeployWorkspaceSections.tsx` owns only the visible workspace,

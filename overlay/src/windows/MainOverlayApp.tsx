@@ -42,6 +42,7 @@ import { useAttentionVisuals } from "../hooks/useAttentionVisuals";
 import { useCardDrag } from "../hooks/useCardDrag";
 import { ensureScratchpadWindow, useMainUtilityWindows } from "../hooks/useMainUtilityWindows";
 import { useMainShellLifecycle } from "../hooks/useMainShellLifecycle";
+import { recordStartupMilestone } from "../startupDiagnostics";
 import { useManagedWindowLiveness } from "../hooks/useManagedWindowLiveness";
 import { useObsidianOpen } from "../hooks/useObsidianOpen";
 import { useOverlayResize } from "../hooks/useOverlayResize";
@@ -220,6 +221,10 @@ export function MainOverlayApp() {
 
   const brokerReady = brokerReadiness.state === "ready";
   const sessionDataReady = sessionHydration.state === "ready";
+
+  useEffect(() => {
+    if (sessionDataReady) void recordStartupMilestone("interactive");
+  }, [sessionDataReady]);
   const sessionSurfaceReadiness: BrokerReadiness = sessionHydration.state === "error"
     ? {
         state: "error",

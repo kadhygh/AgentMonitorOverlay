@@ -7,6 +7,7 @@ mod models;
 mod opener;
 mod scratchpad;
 mod startup;
+mod startup_diagnostics;
 mod tray;
 mod windows;
 
@@ -15,7 +16,8 @@ use clipboard::write_text_to_clipboard;
 use dialogs::pick_workspace_directory;
 use models::*;
 use opener::{open_external_target, open_local_path, open_workspace_in_vscode};
-use tauri::Manager;
+use startup_diagnostics::{StartupDiagnostics, StartupDiagnosticsSnapshot};
+use tauri::{Manager, State};
 use tauri_plugin_notification::NotificationExt;
 use windows::{
     activate_external_window, external_window_candidate_at_cursor, list_external_window_candidates,
@@ -336,7 +338,8 @@ fn probe_session_windows(requests: Vec<WindowProbeRequest>) -> Vec<WindowProbeRe
 }
 
 #[tauri::command]
-fn signal_frontend_ready() -> OpenPathResult {
+fn signal_frontend_ready(diagnostics: State<'_, StartupDiagnostics>) -> OpenPathResult {
+    diagnostics.record("firstVisibleFrame");
     let Ok(path) = std::env::var("AGENT_MONITOR_SMOKE_FRONTEND_READY_FILE") else {
         return OpenPathResult {
             ok: true,
@@ -357,7 +360,11 @@ fn signal_frontend_ready() -> OpenPathResult {
 }
 
 #[tauri::command]
-fn complete_startup(app: tauri::AppHandle) -> OpenPathResult {
+fn complete_startup(
+    app: tauri::AppHandle,
+    diagnostics: State<'_, StartupDiagnostics>,
+) -> OpenPathResult {
+    diagnostics.record("shellCommitted");
     let Some(main_window) = app.get_webview_window("main") else {
         return OpenPathResult {
             ok: false,
@@ -373,6 +380,7 @@ fn complete_startup(app: tauri::AppHandle) -> OpenPathResult {
     }
     let _ = main_window.unminimize();
     let _ = main_window.set_focus();
+    diagnostics.record("mainVisible");
 
     if let Some(startup_window) = app.get_webview_window("startup") {
         let _ = startup_window.close();
@@ -382,6 +390,22 @@ fn complete_startup(app: tauri::AppHandle) -> OpenPathResult {
         ok: true,
         message: "Startup window replaced by main window.".to_string(),
     }
+}
+
+#[tauri::command]
+fn record_startup_milestone(
+    diagnostics: State<'_, StartupDiagnostics>,
+    name: String,
+) -> StartupDiagnosticsSnapshot {
+    diagnostics.record(&name);
+    diagnostics.snapshot()
+}
+
+#[tauri::command]
+fn get_startup_diagnostics(
+    diagnostics: State<'_, StartupDiagnostics>,
+) -> StartupDiagnosticsSnapshot {
+    diagnostics.snapshot()
 }
 
 #[tauri::command]
@@ -414,6 +438,7 @@ fn show_scratchpad_at_cursor(app: tauri::AppHandle) -> OpenPathResult {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .manage(StartupDiagnostics::new())
         .plugin(tauri_plugin_notification::init())
         .plugin(
             tauri_plugin_global_shortcut::Builder::new()
@@ -427,6 +452,8 @@ pub fn run() {
         .setup(|app| {
             if let Err(error) = startup::show_startup_window(app.handle()) {
                 eprintln!("AMO startup window warning: {error}");
+            } else {
+                app.state::<StartupDiagnostics>().record("startupVisible");
             }
             scratchpad::install_scratchpad_mouse_hook(app.handle().clone());
             tray::install(app)?;
@@ -457,6 +484,8 @@ pub fn run() {
             set_scratchpad_shortcut_config,
             signal_frontend_ready,
             complete_startup,
+            record_startup_milestone,
+            get_startup_diagnostics,
             startup::set_startup_theme,
             show_windows_notification,
             tray::set_tray_attention_state,

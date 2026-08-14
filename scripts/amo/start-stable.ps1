@@ -11,11 +11,13 @@ $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $overlayRoot = Join-Path $repoRoot "overlay"
 $tauriRoot = Join-Path $overlayRoot "src-tauri"
 $cargoManifest = Join-Path $tauriRoot "Cargo.toml"
+$frontendArtifactPath = Join-Path $overlayRoot "dist\index.html"
 $appPath = Join-Path $tauriRoot "target\debug\agent-monitor-overlay.exe"
 $tmpRoot = Join-Path $repoRoot "tmp"
 $attemptId = [Guid]::NewGuid().ToString("N")
 $buildRoot = Join-Path $tauriRoot "target\amo-stable-staging"
 $builtAppPath = Join-Path $buildRoot "debug\agent-monitor-overlay.exe"
+$buildFingerprintPath = Join-Path $tauriRoot "target\.amo-stable-build-fingerprint"
 $backupAppPath = Join-Path $tmpRoot ("amo-stable-previous-" + $attemptId + ".exe")
 $viteUrl = "http://127.0.0.1:1420/"
 $brokerUrl = "http://127.0.0.1:17654"
@@ -31,6 +33,8 @@ $viteProcess = $null
 $appProcess = $null
 $brokerProcess = $null
 $binaryReplaced = $false
+$buildRequired = $false
+$currentBuildFingerprint = $null
 
 function Test-AmoUrl {
     param([Parameter(Mandatory = $true)][string]$Url)
@@ -39,6 +43,55 @@ function Test-AmoUrl {
         return $response.StatusCode -ge 200 -and $response.StatusCode -lt 500
     } catch {
         return $false
+    }
+}
+
+function Get-AmoStableBuildFingerprint {
+    $inputFiles = @()
+    foreach ($directory in @(
+        (Join-Path $overlayRoot "src"),
+        (Join-Path $tauriRoot "src"),
+        (Join-Path $tauriRoot "capabilities")
+    )) {
+        if (Test-Path -LiteralPath $directory) {
+            $inputFiles += @(Get-ChildItem -LiteralPath $directory -Recurse -File)
+        }
+    }
+    foreach ($file in @(
+        (Join-Path $overlayRoot "index.html"),
+        (Join-Path $overlayRoot "startup.html"),
+        (Join-Path $overlayRoot "package.json"),
+        (Join-Path $overlayRoot "package-lock.json"),
+        (Join-Path $overlayRoot "tsconfig.json"),
+        (Join-Path $overlayRoot "vite.config.ts"),
+        (Join-Path $tauriRoot "build.rs"),
+        (Join-Path $tauriRoot "Cargo.toml"),
+        (Join-Path $tauriRoot "Cargo.lock"),
+        (Join-Path $tauriRoot "tauri.conf.json")
+    )) {
+        if (Test-Path -LiteralPath $file) {
+            $inputFiles += @(Get-Item -LiteralPath $file)
+        }
+    }
+
+    $manifest = @($inputFiles | Sort-Object FullName -Unique | ForEach-Object {
+        $relativePath = $_.FullName.Substring($repoRoot.Length).TrimStart('\', '/')
+        $fileStream = [System.IO.File]::OpenRead($_.FullName)
+        $fileHasher = [System.Security.Cryptography.SHA256]::Create()
+        try {
+            $fileHash = ([System.BitConverter]::ToString($fileHasher.ComputeHash($fileStream))).Replace("-", "").ToLowerInvariant()
+        } finally {
+            $fileHasher.Dispose()
+            $fileStream.Dispose()
+        }
+        "$relativePath|$fileHash"
+    }) -join "`n"
+    $sha256 = [System.Security.Cryptography.SHA256]::Create()
+    try {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($manifest)
+        return ([System.BitConverter]::ToString($sha256.ComputeHash($bytes))).Replace("-", "").ToLowerInvariant()
+    } finally {
+        $sha256.Dispose()
     }
 }
 
@@ -203,21 +256,36 @@ if ($HealthOnly) {
 
 try {
     if (-not $RestartOnly) {
-        $phase = "frontend build"
-        Write-Host "Validating Stable frontend before stopping the running UI..."
-        Push-Location $overlayRoot
-        try {
-            npm run build
-            if ($LASTEXITCODE -ne 0) { throw "Frontend build exited with code $LASTEXITCODE." }
-        } finally {
-            Pop-Location
+        $phase = "build fingerprint"
+        $currentBuildFingerprint = Get-AmoStableBuildFingerprint
+        $validatedBuildFingerprint = if (Test-Path -LiteralPath $buildFingerprintPath) {
+            (Get-Content -LiteralPath $buildFingerprintPath -Raw).Trim()
+        } else {
+            ""
         }
+        $buildRequired = -not (Test-Path -LiteralPath $appPath) -or
+            -not (Test-Path -LiteralPath $frontendArtifactPath) -or
+            $validatedBuildFingerprint -ne $currentBuildFingerprint
 
-        $phase = "native build"
-        Write-Host "Building Stable native executable in isolated target $buildRoot..."
-        cargo build --locked --no-default-features --manifest-path $cargoManifest --target-dir $buildRoot
-        if ($LASTEXITCODE -ne 0) { throw "Stable Cargo build exited with code $LASTEXITCODE." }
-        if (-not (Test-Path -LiteralPath $builtAppPath)) { throw "Stable build did not produce $builtAppPath." }
+        if ($buildRequired) {
+            $phase = "frontend build"
+            Write-Host "Stable inputs changed; validating frontend before stopping the running UI..."
+            Push-Location $overlayRoot
+            try {
+                npm run build
+                if ($LASTEXITCODE -ne 0) { throw "Frontend build exited with code $LASTEXITCODE." }
+            } finally {
+                Pop-Location
+            }
+
+            $phase = "native build"
+            Write-Host "Building Stable native executable in isolated target $buildRoot..."
+            cargo build --locked --no-default-features --manifest-path $cargoManifest --target-dir $buildRoot
+            if ($LASTEXITCODE -ne 0) { throw "Stable Cargo build exited with code $LASTEXITCODE." }
+            if (-not (Test-Path -LiteralPath $builtAppPath)) { throw "Stable build did not produce $builtAppPath." }
+        } else {
+            Write-Host "Stable build inputs match the validated fingerprint; reusing existing artifacts."
+        }
     } elseif (-not (Test-Path -LiteralPath $appPath)) {
         throw "RestartOnly requires an existing Stable executable at $appPath."
     }
@@ -227,7 +295,7 @@ try {
     $listeners = @(Get-AmoPortProcesses -Port 1420)
     if ($listeners.Count -gt 0) { throw "Port 1420 remains in use by pid $((@($listeners.Id) -join ', '))." }
 
-    if (-not $RestartOnly) {
+    if (-not $RestartOnly -and $buildRequired) {
         $phase = "native executable activation"
         New-Item -ItemType Directory -Force -Path (Split-Path -Parent $appPath) | Out-Null
         if (Test-Path -LiteralPath $appPath) { Copy-Item -LiteralPath $appPath -Destination $backupAppPath -Force }
@@ -245,7 +313,7 @@ try {
     $nodeCommand = Get-Command node -ErrorAction Stop
     $viteParams = @{
         FilePath = $nodeCommand.Source
-        ArgumentList = @($viteScript)
+        ArgumentList = @($viteScript, "preview", "--host", "127.0.0.1", "--port", "1420", "--strictPort")
         WorkingDirectory = $overlayRoot
         PassThru = $true
     }
@@ -286,6 +354,11 @@ try {
         Wait-AmoBrokerHealth
         $phase = "initial sessions response"
         Wait-AmoInitialSessions
+    }
+
+    if (-not $RestartOnly -and $buildRequired) {
+        $phase = "build fingerprint activation"
+        Set-Content -LiteralPath $buildFingerprintPath -Value $currentBuildFingerprint -Encoding ASCII
     }
 
     $phase = "complete"
