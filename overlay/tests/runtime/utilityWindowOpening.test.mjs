@@ -12,6 +12,14 @@ const harnessLab = readFileSync(
   `${overlayRoot}/src/windows/HarnessLabApp.tsx`,
   "utf8",
 );
+const priorityManager = readFileSync(
+  `${overlayRoot}/src/windows/PriorityManagerApp.tsx`,
+  "utf8",
+);
+const attentionVisuals = readFileSync(
+  `${overlayRoot}/src/hooks/useAttentionVisuals.ts`,
+  "utf8",
+);
 const entryHtml = readFileSync(`${overlayRoot}/index.html`, "utf8");
 
 test("the HTML entry renders a loading shell before React is available", () => {
@@ -48,10 +56,31 @@ test("concurrent open and focus requests share one window creation", () => {
   assert.match(utilityWindows, /pendingUtilityWindowRequests\.set\(label, request\)/);
 });
 
+test("utility window state is event and focus driven instead of continuously polled", () => {
+  assert.doesNotMatch(utilityWindows, /setInterval\(sync, 1200\)/);
+  assert.match(utilityWindows, /amo-utility-window-state/);
+  assert.match(utilityWindows, /addEventListener\("focus", sync\)/);
+});
+
 test("Harness status probing starts after the loading shell can paint", () => {
   const frameIndex = harnessLab.indexOf("window.requestAnimationFrame");
-  const initialRefreshIndex = harnessLab.indexOf("void refreshStatus(false, true)");
+  const initialRefreshIndex = harnessLab.indexOf('pollController.start("startup")');
 
   assert.ok(frameIndex >= 0, "initial loading should wait for a browser frame");
   assert.ok(initialRefreshIndex > frameIndex, "status probing must follow the first-frame gate");
+});
+
+test("Harness status polling is adaptive and stops while the window is inactive", () => {
+  assert.doesNotMatch(harnessLab, /setInterval/);
+  assert.match(harnessLab, /new AdaptivePollController/);
+  assert.match(harnessLab, /pollController\.setActive\(event\.payload/);
+  assert.match(harnessLab, /return 3_000/);
+  assert.match(harnessLab, /return 15_000/);
+});
+
+test("secondary session views and attention visuals avoid steady fixed intervals", () => {
+  assert.doesNotMatch(priorityManager, /setInterval/);
+  assert.match(priorityManager, /new SessionRuntimeController/);
+  assert.doesNotMatch(attentionVisuals, /setInterval/);
+  assert.match(attentionVisuals, /sessionAttentionVisualNextTransitionAt/);
 });

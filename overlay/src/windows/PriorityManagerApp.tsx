@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { CheckSquare, Flag, ListTodo, Search, Square, X } from "lucide-react";
 import {
+  BROKER_SESSION_EVENTS_URL,
   BROKER_SESSIONS_URL,
   BROKER_SESSION_PRIORITIES_URL,
   getBrokerJson,
@@ -16,6 +17,7 @@ import {
 import { projectName } from "../domain/routingModel";
 import type { AgentSession, SessionPriority } from "../types";
 import type { SessionPriorityUpdateResult } from "../hooks/useSessionPriorities";
+import { SessionRuntimeController } from "../runtime/sessionRuntimeController";
 import {
   closeUtilityWindow,
   startUtilityWindowDrag,
@@ -71,12 +73,16 @@ export function PriorityManagerApp() {
 
   useEffect(() => {
     void loadSessions();
-    const intervalId = window.setInterval(() => void loadSessions(), 45_000);
-    const refreshOnFocus = () => void loadSessions();
-    window.addEventListener("focus", refreshOnFocus);
+    let runtimeController: SessionRuntimeController;
+    runtimeController = new SessionRuntimeController({
+      eventUrl: BROKER_SESSION_EVENTS_URL,
+      refresh: loadSessions,
+      onBrokerReady: () => runtimeController.scheduleReconcile("priority-broker-ready"),
+      onSessionsChanged: () => runtimeController.scheduleReconcile("priority-session-event"),
+    });
+    runtimeController.start();
     return () => {
-      window.clearInterval(intervalId);
-      window.removeEventListener("focus", refreshOnFocus);
+      runtimeController.stop();
     };
   }, []);
 

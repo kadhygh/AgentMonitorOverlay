@@ -6,15 +6,14 @@ import {
   getBrokerJson,
 } from "../api/brokerClient";
 import { mergeChangedSession, mergeSessionOrder, normalizeSessions } from "../domain/sessionModel";
+import { SessionRuntimeController } from "../runtime/sessionRuntimeController";
 import { createSingleFlight, SessionRevisionGate } from "../runtime/sessionRevisionGate";
 import type { BrokerReadiness } from "../components/BrokerReadinessPanel";
 import { ensureBrokerStarted } from "../startupBroker";
 import { publishStartupStatus } from "../startupStatus";
 import type { AgentSession } from "../types";
 
-const FALLBACK_REFRESH_INTERVAL_MS = 45_000;
 const REFRESH_TIMEOUT_MS = 2_500;
-const EVENT_RECONCILE_DELAY_MS = 350;
 
 interface UseBrokerSessionsOptions {
   autoCopyAndFocusPendingPrompt: (session: AgentSession, reason: string) => void;
@@ -84,6 +83,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   const hasLoadedSessionSnapshotRef = useRef(false);
   const revisionGateRef = useRef<SessionRevisionGate | null>(null);
   const refreshSingleFlightRef = useRef<ReturnType<typeof createSingleFlight<void>> | null>(null);
+  const runtimeControllerRef = useRef<SessionRuntimeController | null>(null);
   const sseHealthyRef = useRef(false);
   if (!revisionGateRef.current) revisionGateRef.current = new SessionRevisionGate();
   if (!refreshSingleFlightRef.current) refreshSingleFlightRef.current = createSingleFlight<void>();
@@ -303,21 +303,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
 
   useEffect(() => {
     void ensureBrokerThenRefresh().finally(() => options.onStartupRefreshSettled());
-    let eventSource: EventSource | null = null;
-    let eventRefreshTimer: number | null = null;
-
-    const scheduleEventRefresh = (eventReason = "unknown", sessionId: string | null = null) => {
-      const rescheduled = eventRefreshTimer !== null;
-      if (eventRefreshTimer !== null) window.clearTimeout(eventRefreshTimer);
-      options.postDebugLog(
-        rescheduled ? "session_event.reconcile_rescheduled" : "session_event.reconcile_scheduled",
-        { reason: eventReason, sessionId, delayMs: EVENT_RECONCILE_DELAY_MS },
-      );
-      eventRefreshTimer = window.setTimeout(() => {
-        eventRefreshTimer = null;
-        void refreshSessions("sse-reconcile");
-      }, EVENT_RECONCILE_DELAY_MS);
-    };
+    let runtimeController: SessionRuntimeController;
 
     const applyChangedSession = (changedSession: AgentSession, eventReason: string, sequence: number | undefined, applyStartedAt: number) => {
       if (changedSession.dismissedAt) {
@@ -421,13 +407,13 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         } else if (changedSession?.sessionId) {
           applyChangedSession(changedSession, eventReason, payload.sequence, applyStartedAt);
         } else {
-          scheduleEventRefresh(eventReason, eventSessionId);
+          runtimeController.scheduleReconcile(eventReason, eventSessionId);
         }
         setLastRefreshAt(new Date().toISOString());
-        if (revision.gap) scheduleEventRefresh("sequence-gap", eventSessionId);
+        if (revision.gap) runtimeController.scheduleReconcile("sequence-gap", eventSessionId);
       } catch (error) {
         options.postDebugLog("session_event.parse_error", { message: (error as Error).message });
-        scheduleEventRefresh("parse-error", null);
+        runtimeController.scheduleReconcile("parse-error", null);
       }
     };
 
@@ -446,49 +432,48 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         overlayRevision: revisionGateRef.current!.current(),
       });
       if (brokerRevision !== null && brokerRevision !== revisionGateRef.current!.current()) {
-        scheduleEventRefresh("stream-reconcile", null);
+        runtimeController.scheduleReconcile("stream-reconcile", null);
       }
     };
 
-    if (typeof EventSource !== "undefined") {
-      try {
-        eventSource = new EventSource(BROKER_SESSION_EVENTS_URL);
-        eventSource.onopen = () => {
-          sseHealthyRef.current = true;
+    runtimeController = new SessionRuntimeController({
+      eventUrl: BROKER_SESSION_EVENTS_URL,
+      refresh: refreshSessions,
+      onBrokerReady: handleBrokerReady,
+      onSessionsChanged: handleSessionChanged,
+      onStreamHealthChanged: (healthy, readyState) => {
+        sseHealthyRef.current = healthy;
+        if (healthy) {
           setBrokerReadiness((current) => current.state === "ready" ? current : {
             state: "ready",
             message: "Broker ready",
             detail: "Event stream connected",
           });
-        };
-        eventSource.onerror = () => {
-          sseHealthyRef.current = false;
-          options.postDebugLog("session_event.stream_error", { readyState: eventSource?.readyState ?? null });
-          scheduleEventRefresh("stream-error", null);
-        };
-        eventSource.addEventListener("broker.ready", handleBrokerReady);
-        eventSource.addEventListener("sessions.changed", handleSessionChanged);
-      } catch (error) {
-        sseHealthyRef.current = false;
+        } else if (readyState !== null) {
+          options.postDebugLog("session_event.stream_error", { readyState });
+        }
+      },
+      onReconcileScheduled: ({ reason, sessionId, delayMs, rescheduled }) => {
+        options.postDebugLog(
+          rescheduled ? "session_event.reconcile_rescheduled" : "session_event.reconcile_scheduled",
+          { reason, sessionId, delayMs },
+        );
+      },
+      onStreamCreateError: (error) => {
         options.postDebugLog("session_event.stream_create_error", {
           url: BROKER_SESSION_EVENTS_URL,
-          message: (error as Error).message,
+          message: error.message,
         });
-        eventSource = null;
-      }
-    } else {
-      options.postDebugLog("session_event.unsupported", {});
-    }
-
-    const interval = window.setInterval(() => {
-      if (!sseHealthyRef.current) void refreshSessions("interval");
-    }, FALLBACK_REFRESH_INTERVAL_MS);
+      },
+      onUnsupported: () => options.postDebugLog("session_event.unsupported", {}),
+    });
+    runtimeControllerRef.current = runtimeController;
+    runtimeController.start();
 
     return () => {
-      window.clearInterval(interval);
-      if (eventRefreshTimer !== null) window.clearTimeout(eventRefreshTimer);
+      runtimeController.stop();
+      runtimeControllerRef.current = null;
       sseHealthyRef.current = false;
-      eventSource?.close();
     };
   }, []);
 

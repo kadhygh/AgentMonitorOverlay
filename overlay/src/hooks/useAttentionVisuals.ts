@@ -3,6 +3,7 @@ import { getCurrentWindow, ProgressBarStatus } from "@tauri-apps/api/window";
 import {
   sessionArchived,
   sessionAttentionKey,
+  sessionAttentionVisualNextTransitionAt,
   sessionAttentionVisualActive,
   sessionHasAttentionSignal,
   sessionNeedsReview,
@@ -62,22 +63,32 @@ export function useAttentionVisuals(options: UseAttentionVisualsOptions) {
   const [attentionVisualSeen, setAttentionVisualSeen] = useState<Record<string, string>>({});
   const [attentionClock, setAttentionClock] = useState(() => Date.now());
   const taskbarAttentionLevelRef = useRef<TaskbarAttentionLevel>("none");
-  const hasAttentionSignal = options.sessions.some(
-    (session) => !sessionArchived(session) && sessionHasAttentionSignal(session),
-  );
   const taskbarAttentionLevel = options.brokerReady
     ? highestTaskbarAttentionLevel(options.sessions)
     : "none";
 
   useEffect(() => {
-    if (!hasAttentionSignal) {
-      return undefined;
-    }
-
     setAttentionClock(Date.now());
-    const intervalId = window.setInterval(() => setAttentionClock(Date.now()), 1000);
-    return () => window.clearInterval(intervalId);
-  }, [hasAttentionSignal]);
+  }, [attentionVisualSeen, options.sessions]);
+
+  useEffect(() => {
+    const now = attentionClock;
+    const nextTransitionAt = options.sessions.reduce<number | null>((earliest, session) => {
+      const transitionAt = sessionAttentionVisualNextTransitionAt(
+        session,
+        attentionVisualSeen[session.sessionId] === sessionAttentionKey(session),
+        now,
+      );
+      if (transitionAt === null) return earliest;
+      return earliest === null ? transitionAt : Math.min(earliest, transitionAt);
+    }, null);
+    if (nextTransitionAt === null) return undefined;
+    const timeoutId = window.setTimeout(
+      () => setAttentionClock(Date.now()),
+      Math.max(0, nextTransitionAt - now),
+    );
+    return () => window.clearTimeout(timeoutId);
+  }, [attentionClock, attentionVisualSeen, options.sessions]);
 
   useEffect(() => {
     setAttentionVisualSeen((previous) => {

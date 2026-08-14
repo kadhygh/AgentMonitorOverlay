@@ -25,6 +25,7 @@ import {
   updateHarnessLabRuntime,
   type HarnessLabStatus,
 } from "../native/deepseekHarness";
+import { AdaptivePollController } from "../runtime/adaptivePollController";
 import { useAmoThemeRuntime } from "../theme/amoTheme";
 import {
   closeUtilityWindow,
@@ -52,9 +53,9 @@ export function HarnessLabApp() {
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("Loading DeepSeek Harness Lab status...");
   const busyRef = useRef<HarnessAction | null>(null);
-  const windowActiveRef = useRef(true);
   const lastStatusAtRef = useRef(0);
   const loadingRequestRef = useRef(0);
+  const statusStateRef = useRef<string | null>(null);
 
   useEffect(() => {
     busyRef.current = busy;
@@ -69,6 +70,7 @@ export function HarnessLabApp() {
     }
     try {
       const next = await loadHarnessLabStatus();
+      statusStateRef.current = next.state;
       setStatus(next);
       setFeedback(next.message);
       lastStatusAtRef.current = Date.now();
@@ -87,35 +89,44 @@ export function HarnessLabApp() {
     let unlistenFocus: (() => void) | null = null;
     let initialStatusStarted = false;
     let initialStatusTimeout: number | null = null;
+    const pollController = new AdaptivePollController({
+      nextDelayMs: () => {
+        const state = statusStateRef.current;
+        if (state === "running" || state === "starting") return 3_000;
+        if (state === "stopped" || state === "notInstalled") return 15_000;
+        return 8_000;
+      },
+      run: async (reason) => {
+        if (busyRef.current) return;
+        await refreshStatus(false, reason === "startup");
+      },
+    });
     const initialStatusFrame = window.requestAnimationFrame(() => {
       initialStatusTimeout = window.setTimeout(() => {
         if (disposed) return;
         initialStatusStarted = true;
-        void refreshStatus(false, true);
+        pollController.start("startup");
       }, 0);
     });
 
     void getCurrentWindow()
       .onFocusChanged((event) => {
-        windowActiveRef.current = event.payload;
-        if (!event.payload || busyRef.current || !initialStatusStarted) return;
+        const activityChanged = pollController.setActive(event.payload, "focus-resume");
+        if (!event.payload || activityChanged || busyRef.current || !initialStatusStarted) return;
         const statusIsStale = Date.now() - lastStatusAtRef.current > 2_000;
-        void refreshStatus(false, statusIsStale);
+        if (statusIsStale) pollController.request("focus-stale");
       })
       .then((handler) => {
         if (disposed) handler();
         else unlistenFocus = handler;
       });
 
-    const intervalId = window.setInterval(() => {
-      if (windowActiveRef.current && !busyRef.current) void refreshStatus(false);
-    }, 1500);
     return () => {
       disposed = true;
+      pollController.stop();
       unlistenFocus?.();
       window.cancelAnimationFrame(initialStatusFrame);
       if (initialStatusTimeout !== null) window.clearTimeout(initialStatusTimeout);
-      window.clearInterval(intervalId);
     };
   }, [refreshStatus]);
 
@@ -130,7 +141,8 @@ export function HarnessLabApp() {
             ? await updateHarnessLabRuntime()
         : action === "start"
           ? await startHarnessLabService()
-          : await stopHarnessLabService();
+           : await stopHarnessLabService();
+      statusStateRef.current = next.state;
       setStatus(next);
       setFeedback(next.message);
     } catch (error) {

@@ -126,6 +126,21 @@ function sessionAttentionTime(session: AgentSession) {
   return Number.isFinite(parsed) ? parsed : null;
 }
 
+export function sessionAttentionVisualNextTransitionAt(
+  session: AgentSession,
+  visuallySeen: boolean,
+  now: number,
+) {
+  if (!sessionHasAttentionSignal(session) || visuallySeen) return null;
+  const timestamp = sessionAttentionTime(session);
+  if (timestamp === null) return null;
+  const activeStartsAt = timestamp - ATTENTION_VISUAL_ACTIVE_MS;
+  const activeEndsAt = timestamp + ATTENTION_VISUAL_ACTIVE_MS;
+  if (now < activeStartsAt) return activeStartsAt;
+  if (now <= activeEndsAt) return activeEndsAt + 1;
+  return null;
+}
+
 export function sessionAttentionVisualActive(session: AgentSession, visuallySeen: boolean, now: number) {
   if (!sessionHasAttentionSignal(session) || visuallySeen) {
     return false;

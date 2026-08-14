@@ -87,12 +87,10 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
 
     const label = activeUtilityWindow;
     const sync = () => void syncUtilityWindowState(label);
-    const intervalId = window.setInterval(sync, 1200);
     window.addEventListener("focus", sync);
     void syncUtilityWindowState(label);
 
     return () => {
-      window.clearInterval(intervalId);
       window.removeEventListener("focus", sync);
     };
   }, [activeUtilityWindow]);

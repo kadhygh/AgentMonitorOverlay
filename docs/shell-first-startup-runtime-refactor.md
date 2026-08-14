@@ -189,7 +189,7 @@ Status: complete
 
 ### S1: Shell visibility independent of session data
 
-Status: in progress
+Status: complete
 
 - Add an explicit `shellCommitted` handoff and a separate first-visible-frame measurement.
 - Complete native startup handoff after the shell commits, not after session hydration.
@@ -200,7 +200,7 @@ Status: in progress
 
 ### S2: Startup Coordinator and Session Runtime boundary
 
-Status: pending
+Status: in progress
 
 - Remove duplicate Broker startup ownership from `main.tsx` and `useBrokerSessions`.
 - Introduce a startup snapshot with independent shell/runtime/data states.
@@ -209,7 +209,7 @@ Status: pending
 
 ### S3: Polling governance
 
-Status: pending
+Status: complete
 
 - Replace Utility Window 1.2 s steady polling with event/focus reconciliation.
 - Convert Harness status refresh to adaptive focused/visible scheduling.
@@ -292,9 +292,20 @@ Broker/SSE/snapshot failure transitions to an in-shell recoverable state. It nev
 
 Protocol heartbeat and unavoidable external-fact sampling remain. UI compensation and data polling move to events, focus reconciliation, visibility gates, and backoff.
 
+### 2026-08-14: Runtime scheduling is framework-independent
+
+Long-lived scheduling policy now lives in testable TypeScript controllers rather than component effects. `SessionRuntimeController` owns EventSource health, reconcile debounce, visibility/connectivity recovery, and bounded snapshot fallback. `AdaptivePollController` owns focused external-fact sampling and request coalescing. React remains responsible for rendering state and invoking explicit user actions while the remaining session mutation logic is migrated incrementally.
+
+### 2026-08-14: Presentation timers target semantic transitions
+
+Attention visuals use the exact timestamp at which the ten-second animation window begins or ends. CSS continues animation frames independently; React no longer re-renders the complete task list once per second merely to discover that no semantic state changed.
+
 ## Iteration Ledger
 
 | Date | Phase | Change | Evidence | Remaining |
 | --- | --- | --- | --- | --- |
 | 2026-08-14 | S0 | Created active plan; recorded baseline, target state, ownership, polling inventory, budgets, and validation matrix | Source audit of Tauri setup, MainOverlayApp, useBrokerSessions, utility windows, Harness, Broker SSE, and Stable launcher | Implement S1 tests and shell handoff |
 | 2026-08-14 | S1 | Main entry stopped owning Broker startup; shell-paint lifecycle now owns native handoff; session hydration is distinct from SSE/Broker readiness; full-screen React boot gate removed | TypeScript/Vite production build passed; startup regression suite added | Complete automated suite and native startup smoke |
+| 2026-08-14 | S1 | Verified the shell-first handoff in the native Stable runtime | 31 runtime tests passed; production build passed; `amo:restart` and `amo:health` passed; responsive `Agent Monitor Overlay` native window had a valid handle | Continue Startup/Session controller extraction |
+| 2026-08-14 | S2 | Added a framework-independent Session Runtime scheduling boundary; main entry no longer starts Broker; single-flight snapshot ownership remains in the session adapter during staged migration | Controller tests cover stream health, reconcile debounce, hidden/offline gates, resume refresh, and exponential fallback | Add unified startup snapshot/timestamps and thin the remaining session adapter |
+| 2026-08-14 | S3 | Removed Utility Window 1.2 s polling; converted Harness to focused adaptive 3/8/15 s sampling; converted Priority Manager to SSE invalidation; added Session fallback visibility/offline backoff; replaced Attention 1 s clock with exact transition timers | 36 runtime tests passed; TypeScript/Vite production build passed; no fixed intervals remain in these UI paths | Retain and document managed-window, protocol heartbeat, and transcript-monitor schedulers |
