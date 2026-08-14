@@ -8,7 +8,8 @@
     "scratchpad",
     "deploy",
     "settings",
-    "priorities"
+    "priorities",
+    "harness"
   ],
   "permissions": [
     "core:default",

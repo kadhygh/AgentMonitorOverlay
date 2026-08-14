@@ -4,6 +4,7 @@ import { CURRENT_WINDOW_LABEL } from "./windows/utilityWindow";
 
 const utilityApps: Record<string, React.LazyExoticComponent<ComponentType>> = {
   deploy: lazy(() => import("./windows/DeployWorkspaceApp").then((module) => ({ default: module.DeployWorkspaceApp }))),
+  harness: lazy(() => import("./windows/HarnessLabApp").then((module) => ({ default: module.HarnessLabApp }))),
   priorities: lazy(() => import("./windows/PriorityManagerApp").then((module) => ({ default: module.PriorityManagerApp }))),
   scratchpad: lazy(() => import("./windows/ScratchpadApp").then((module) => ({ default: module.ScratchpadApp }))),
   settings: lazy(() => import("./windows/SettingsWindowApp").then((module) => ({ default: module.SettingsWindowApp }))),

@@ -10,6 +10,7 @@ import {
   Clock3,
   Crosshair,
   FolderPlus,
+  FlaskConical,
   GripHorizontal,
   GripVertical,
   ListFilter,
@@ -92,7 +93,13 @@ const runtimeProfiles: Record<AmoRuntimeMode, { badge: string; contextLabel: str
 };
 
 function utilityWindowTitle(label: string) {
-  return label === "deploy" ? "Workspace Center" : label === "settings" ? "Settings" : "Task Priorities";
+  return label === "deploy"
+    ? "Workspace Center"
+    : label === "settings"
+      ? "Settings"
+      : label === "harness"
+        ? "DeepSeek Harness Lab"
+        : "Task Priorities";
 }
 
 function sessionMatchesSearch(session: AgentSession, query: string) {
@@ -255,6 +262,7 @@ export function MainOverlayApp() {
     focusUtilityWindow,
     hideUtilityWindow,
     openDeployDialog,
+    openHarnessDialog,
     openPriorityDialog,
     openSettingsDialog,
   } = useMainUtilityWindows({
@@ -617,6 +625,17 @@ export function MainOverlayApp() {
               </div>
             </div>
             <div className="header-actions">
+              <button
+                type="button"
+                className={`icon-button ${activeUtilityWindow === "harness" ? "is-active" : ""}`}
+                title="Open DeepSeek Harness Lab"
+                aria-label="Open DeepSeek Harness Lab"
+                onClick={() => {
+                  void openHarnessDialog();
+                }}
+              >
+                <FlaskConical size={15} aria-hidden="true" />
+              </button>
               <button
                 type="button"
                 className={`icon-button ${activeUtilityWindow === "settings" ? "is-active" : ""}`}

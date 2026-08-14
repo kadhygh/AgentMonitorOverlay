@@ -1,5 +1,6 @@
 mod broker;
 mod clipboard;
+mod deepseek_harness;
 mod dialogs;
 mod model_credentials;
 mod models;
@@ -117,6 +118,102 @@ fn write_clipboard_text(text: String) -> OpenPathResult {
 }
 
 #[tauri::command]
+async fn harness_lab_status() -> HarnessLabStatus {
+    tauri::async_runtime::spawn_blocking(deepseek_harness::harness_status)
+        .await
+        .unwrap_or_else(|error| HarnessLabStatus {
+            ok: false,
+            state: "error".to_string(),
+            installed: false,
+            installed_version: None,
+            expected_version: "0.1.0-rc.6".to_string(),
+            remote_version: None,
+            update_available: false,
+            running: false,
+            owned: false,
+            pid: None,
+            url: "http://127.0.0.1:3080".to_string(),
+            port: 3080,
+            runtime_path: String::new(),
+            data_path: String::new(),
+            dsh_home: String::new(),
+            node_available: false,
+            node_version: None,
+            npm_available: false,
+            deepseek_key_configured: false,
+            glm_key_configured: false,
+            glm_provider_configured: false,
+            message: format!("Harness status task failed: {error}"),
+            recent_log: String::new(),
+        })
+}
+
+#[tauri::command]
+async fn install_harness_lab_runtime() -> HarnessLabStatus {
+    tauri::async_runtime::spawn_blocking(deepseek_harness::install_harness)
+        .await
+        .unwrap_or_else(|error| {
+            let mut result = deepseek_harness::harness_status();
+            result.ok = false;
+            result.message = format!("Harness install task failed: {error}");
+            result
+        })
+}
+
+#[tauri::command]
+async fn check_harness_lab_remote_version() -> HarnessLabStatus {
+    tauri::async_runtime::spawn_blocking(deepseek_harness::check_remote_version)
+        .await
+        .unwrap_or_else(|error| {
+            let mut result = deepseek_harness::harness_status();
+            result.ok = false;
+            result.message = format!("Harness version check task failed: {error}");
+            result
+        })
+}
+
+#[tauri::command]
+async fn update_harness_lab_runtime() -> HarnessLabStatus {
+    tauri::async_runtime::spawn_blocking(deepseek_harness::update_harness)
+        .await
+        .unwrap_or_else(|error| {
+            let mut result = deepseek_harness::harness_status();
+            result.ok = false;
+            result.message = format!("Harness update task failed: {error}");
+            result
+        })
+}
+
+#[tauri::command]
+async fn start_harness_lab_service() -> HarnessLabStatus {
+    tauri::async_runtime::spawn_blocking(deepseek_harness::start_harness)
+        .await
+        .unwrap_or_else(|error| {
+            let mut result = deepseek_harness::harness_status();
+            result.ok = false;
+            result.message = format!("Harness start task failed: {error}");
+            result
+        })
+}
+
+#[tauri::command]
+async fn stop_harness_lab_service() -> HarnessLabStatus {
+    tauri::async_runtime::spawn_blocking(deepseek_harness::stop_harness)
+        .await
+        .unwrap_or_else(|error| {
+            let mut result = deepseek_harness::harness_status();
+            result.ok = false;
+            result.message = format!("Harness stop task failed: {error}");
+            result
+        })
+}
+
+#[tauri::command]
+fn open_harness_lab_web() -> OpenPathResult {
+    open_external_target("http://127.0.0.1:3080", "Opened DeepSeek Harness")
+}
+
+#[tauri::command]
 fn select_workspace_directory() -> FolderPickResult {
     pick_workspace_directory()
 }
@@ -124,7 +221,12 @@ fn select_workspace_directory() -> FolderPickResult {
 #[tauri::command]
 async fn ensure_broker() -> BrokerEnsureResult {
     if std::env::var("AGENT_MONITOR_SKIP_BROKER")
-        .map(|value| matches!(value.trim().to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.trim().to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
     {
         return BrokerEnsureResult {
@@ -343,6 +445,13 @@ pub fn run() {
             probe_session_windows,
             window_candidate_at_cursor,
             open_path,
+            harness_lab_status,
+            install_harness_lab_runtime,
+            check_harness_lab_remote_version,
+            update_harness_lab_runtime,
+            start_harness_lab_service,
+            stop_harness_lab_service,
+            open_harness_lab_web,
             open_vscode,
             select_workspace_directory,
             set_scratchpad_shortcut_config,
@@ -360,6 +469,7 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
+            deepseek_harness::stop_owned_harness();
             stop_owned_broker();
             tray::stop_worker(app_handle);
         }

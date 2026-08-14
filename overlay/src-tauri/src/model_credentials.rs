@@ -86,6 +86,10 @@ fn read_credential(provider_id: &str) -> Result<Option<String>, String> {
     result
 }
 
+pub(crate) fn resolved_secret(provider_id: &str) -> Result<Option<String>, String> {
+    read_credential(provider_id)
+}
+
 pub(crate) fn credential_status(provider_ids: Vec<String>) -> ModelCredentialStatus {
     let mut configured_provider_ids = Vec::new();
     for provider_id in provider_ids {

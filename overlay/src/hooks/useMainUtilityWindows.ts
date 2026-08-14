@@ -46,6 +46,13 @@ const utilityWindowDefinitions: Record<
     minWidth: 560,
     minHeight: 430,
   },
+  harness: {
+    title: "AMO DeepSeek Harness Lab",
+    width: 820,
+    height: 650,
+    minWidth: 680,
+    minHeight: 520,
+  },
 };
 
 export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
@@ -100,10 +107,14 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
     await openUtilityWindow("priorities");
   }
 
+  async function openHarnessDialog() {
+    await openUtilityWindow("harness");
+  }
+
   async function openUtilityWindow(label: UtilityWindowKind) {
     setActiveUtilityWindow(label);
     try {
-      const utilityLabels: UtilityWindowKind[] = ["deploy", "settings", "priorities"];
+      const utilityLabels: UtilityWindowKind[] = ["deploy", "settings", "priorities", "harness"];
       await Promise.all(
         utilityLabels.filter((otherLabel) => otherLabel !== label).map(async (otherLabel) => {
           const otherWindow = await WebviewWindow.getByLabel(otherLabel);
@@ -113,7 +124,13 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
       );
       await getOrCreateUtilityWindow(label);
       await bringUtilityWindowToFront(label);
-      const title = label === "deploy" ? "Workspace Center" : label === "settings" ? "Settings" : "Task Priorities";
+      const title = label === "deploy"
+        ? "Workspace Center"
+        : label === "settings"
+          ? "Settings"
+          : label === "harness"
+            ? "DeepSeek Harness Lab"
+            : "Task Priorities";
       options.setFeedback(`${title} opened.`);
     } catch (error) {
       setActiveUtilityWindow(null);
@@ -162,6 +179,7 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
     focusUtilityWindow,
     hideUtilityWindow,
     openDeployDialog,
+    openHarnessDialog,
     openPriorityDialog,
     openSettingsDialog,
   };

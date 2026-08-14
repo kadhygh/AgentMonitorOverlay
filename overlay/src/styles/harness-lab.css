@@ -1,0 +1,554 @@
+.harness-lab-dialog {
+  grid-template-areas:
+    "title"
+    "content"
+    "footer";
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: max-content minmax(0, 1fr) max-content;
+  width: min(792px, calc(100vw - 28px));
+  height: min(622px, calc(100vh - 28px));
+  border: 1px solid rgba(143, 196, 255, 0.24);
+}
+
+.harness-lab-dialog .app-dialog-titlebar {
+  grid-area: title;
+}
+
+.harness-lab-dialog .app-dialog-footer {
+  grid-area: footer;
+}
+
+.harness-lab-content {
+  position: relative;
+  grid-area: content;
+  display: grid;
+  align-content: start;
+  gap: 11px;
+  min-width: 0;
+  min-height: 0;
+  padding: 14px;
+  overflow: auto;
+}
+
+.harness-loading-view {
+  position: absolute;
+  inset: 0;
+  z-index: 10;
+  display: grid;
+  place-content: center;
+  justify-items: center;
+  gap: 7px;
+  min-height: 100%;
+  padding: 24px;
+  color: #8fc4ff;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(143, 196, 255, 0.09), transparent 34%),
+    linear-gradient(145deg, rgba(18, 24, 28, 0.99), rgba(21, 28, 32, 0.99)),
+    #12191d;
+  text-align: center;
+}
+
+.harness-loading-view strong {
+  color: #eaf5f1;
+  font-size: 12px;
+  line-height: 16px;
+}
+
+.harness-loading-view span {
+  color: #879b94;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.harness-status-hero {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+  padding: 12px;
+  background: rgba(143, 196, 255, 0.07);
+  border: 1px solid rgba(143, 196, 255, 0.18);
+  border-radius: 9px;
+}
+
+.harness-status-hero.is-running {
+  background: rgba(111, 224, 190, 0.08);
+  border-color: rgba(111, 224, 190, 0.27);
+}
+
+.harness-status-hero.is-error,
+.harness-status-hero.is-portConflict {
+  background: rgba(255, 112, 122, 0.07);
+  border-color: rgba(255, 112, 122, 0.24);
+}
+
+.harness-status-icon {
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  color: #8fc4ff;
+  background: rgba(143, 196, 255, 0.1);
+  border-radius: 9px;
+}
+
+.harness-status-hero.is-running .harness-status-icon {
+  color: #6fe0be;
+  background: rgba(111, 224, 190, 0.11);
+}
+
+.harness-status-hero > div:nth-child(2) {
+  display: grid;
+  min-width: 0;
+  gap: 2px;
+}
+
+.harness-status-hero span,
+.harness-status-hero p {
+  color: #93a7a0;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.harness-status-hero strong {
+  color: #edf8f4;
+  font-size: 15px;
+  line-height: 18px;
+}
+
+.harness-status-hero p {
+  margin: 0;
+}
+
+.harness-status-hero > code {
+  max-width: 220px;
+  overflow: hidden;
+  color: #aebfba;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-action-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7px;
+}
+
+.harness-install-note {
+  margin: -3px 0 0;
+  color: #82968f;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.harness-action,
+.harness-icon-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  min-height: 33px;
+  padding: 0 11px;
+  color: #cadbd5;
+  background: rgba(255, 255, 255, 0.055);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 10px;
+}
+
+.harness-action.is-primary {
+  color: #effbf7;
+  background: rgba(111, 224, 190, 0.14);
+  border-color: rgba(111, 224, 190, 0.3);
+}
+
+.harness-action.is-danger {
+  color: #edb4b8;
+  background: rgba(255, 92, 104, 0.06);
+  border-color: rgba(255, 92, 104, 0.18);
+}
+
+.harness-action:hover:not(:disabled),
+.harness-icon-action:hover:not(:disabled) {
+  color: #ffffff;
+  background: rgba(143, 196, 255, 0.12);
+  border-color: rgba(143, 196, 255, 0.3);
+}
+
+.harness-action:disabled,
+.harness-icon-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.harness-icon-action {
+  width: 33px;
+  padding: 0;
+}
+
+.harness-card-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.harness-info-card {
+  display: grid;
+  align-content: start;
+  gap: 9px;
+  min-width: 0;
+  padding: 11px;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 8px;
+}
+
+.harness-info-card > header {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 7px;
+  color: #cfe0da;
+}
+
+.harness-info-card > header strong {
+  font-size: 11px;
+  line-height: 14px;
+}
+
+.harness-info-card > header em {
+  color: #d5a56e;
+  font-size: 8px;
+  font-style: normal;
+  text-transform: uppercase;
+}
+
+.harness-info-card > header em.is-ready {
+  color: #6fe0be;
+}
+
+.harness-info-card > header em.is-update,
+.harness-info-card dd.is-update {
+  color: #8fc4ff;
+}
+
+.harness-info-card dl {
+  display: grid;
+  gap: 5px;
+  margin: 0;
+}
+
+.harness-info-card dl > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.harness-info-card dt,
+.harness-info-card dd,
+.harness-info-card p,
+.harness-readiness-list span {
+  min-width: 0;
+  margin: 0;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.harness-info-card dt,
+.harness-info-card p {
+  color: #8fa39c;
+}
+
+.harness-info-card dd {
+  overflow: hidden;
+  color: #c6d7d1;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-info-card dd.is-warning {
+  color: #d9a66d;
+}
+
+.harness-version-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding-top: 2px;
+}
+
+.harness-version-actions button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 27px;
+  padding: 0 8px;
+  color: #b8c9c3;
+  background: rgba(255, 255, 255, 0.045);
+  border: 1px solid rgba(255, 255, 255, 0.085);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+}
+
+.harness-version-actions button.is-update {
+  color: #d9ecff;
+  background: rgba(143, 196, 255, 0.11);
+  border-color: rgba(143, 196, 255, 0.28);
+}
+
+.harness-version-actions button:hover:not(:disabled) {
+  color: #ffffff;
+  border-color: rgba(143, 196, 255, 0.3);
+}
+
+.harness-version-actions button:disabled {
+  cursor: not-allowed;
+  opacity: 0.4;
+}
+
+.harness-readiness-list {
+  display: grid;
+  gap: 5px;
+}
+
+.harness-readiness-list span {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #aabbb5;
+}
+
+.harness-readiness-list i {
+  width: 7px;
+  height: 7px;
+  background: #768882;
+  border-radius: 999px;
+}
+
+.harness-readiness-list .is-ready i {
+  background: #6fe0be;
+  box-shadow: 0 0 8px rgba(111, 224, 190, 0.42);
+}
+
+.harness-readiness-list .is-warning i {
+  background: #d9a66d;
+}
+
+.harness-paths {
+  display: grid;
+  gap: 5px;
+  padding: 9px 10px;
+  background: rgba(0, 0, 0, 0.12);
+  border-radius: 7px;
+}
+
+.harness-paths > div {
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.harness-paths span,
+.harness-paths code {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 9px;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-paths span {
+  color: #83968f;
+  text-transform: uppercase;
+}
+
+.harness-paths code {
+  color: #aebfba;
+}
+
+.harness-log-panel {
+  display: grid;
+  min-height: 0;
+  background: rgba(143, 196, 255, 0.035);
+  border: 1px solid rgba(143, 196, 255, 0.12);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.harness-log-toggle {
+  display: grid;
+  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 7px;
+  min-height: 35px;
+  padding: 0 10px;
+  color: #b8cac4;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.harness-log-toggle:hover {
+  color: #effbf7;
+  background: rgba(143, 196, 255, 0.055);
+}
+
+.harness-log-toggle strong,
+.harness-log-toggle span,
+.harness-log-toggle em {
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.harness-log-toggle span {
+  overflow: hidden;
+  color: #80958e;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-log-toggle em {
+  color: #8fc4ff;
+  font-style: normal;
+}
+
+.harness-log-panel.is-expanded .harness-log-toggle {
+  border-bottom: 1px solid rgba(143, 196, 255, 0.1);
+}
+
+.harness-log-panel pre {
+  max-height: 220px;
+  margin: 0;
+  padding: 10px;
+  overflow: auto;
+  color: #aebfba;
+  background:
+    linear-gradient(145deg, rgba(22, 31, 35, 0.72), rgba(18, 27, 31, 0.82)),
+    #151e22;
+  font-family: Consolas, "Cascadia Mono", monospace;
+  font-size: 9px;
+  line-height: 14px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.is-spinning {
+  animation: harness-spin 0.9s linear infinite;
+}
+
+@keyframes harness-spin {
+  to { transform: rotate(360deg); }
+}
+
+:root[data-amo-theme="light"] .harness-status-hero,
+:root[data-amo-theme="light"] .harness-info-card,
+:root[data-amo-theme="light"] .harness-paths {
+  background: rgba(244, 249, 247, 0.92);
+  border-color: rgba(42, 74, 64, 0.14);
+}
+
+:root[data-amo-theme="light"] .harness-loading-view {
+  color: #3976a9;
+  background:
+    radial-gradient(circle at 50% 42%, rgba(57, 118, 169, 0.08), transparent 34%),
+    linear-gradient(145deg, rgba(246, 250, 248, 0.99), rgba(237, 245, 242, 0.99)),
+    #f1f7f5;
+}
+
+:root[data-amo-theme="light"] .harness-loading-view strong {
+  color: #203a32;
+}
+
+:root[data-amo-theme="light"] .harness-loading-view span {
+  color: #6a7e77;
+}
+
+:root[data-amo-theme="light"] .harness-status-hero strong,
+:root[data-amo-theme="light"] .harness-info-card > header,
+:root[data-amo-theme="light"] .harness-info-card dd {
+  color: #1d2b27;
+}
+
+:root[data-amo-theme="light"] .harness-status-hero span,
+:root[data-amo-theme="light"] .harness-status-hero p,
+:root[data-amo-theme="light"] .harness-info-card dt,
+:root[data-amo-theme="light"] .harness-info-card p,
+:root[data-amo-theme="light"] .harness-paths span,
+:root[data-amo-theme="light"] .harness-readiness-list span {
+  color: #61736d;
+}
+
+:root[data-amo-theme="light"] .harness-install-note {
+  color: #697b75;
+}
+
+:root[data-amo-theme="light"] .harness-paths code {
+  color: #41554e;
+}
+
+:root[data-amo-theme="light"] .harness-action,
+:root[data-amo-theme="light"] .harness-icon-action,
+:root[data-amo-theme="light"] .harness-version-actions button {
+  color: #30463f;
+  background: rgba(42, 74, 64, 0.055);
+  border-color: rgba(42, 74, 64, 0.15);
+}
+
+:root[data-amo-theme="light"] .harness-log-panel {
+  background: rgba(73, 113, 100, 0.035);
+  border-color: rgba(42, 74, 64, 0.14);
+}
+
+:root[data-amo-theme="light"] .harness-log-toggle {
+  color: #324b43;
+}
+
+:root[data-amo-theme="light"] .harness-log-toggle:hover {
+  color: #18362d;
+  background: rgba(42, 74, 64, 0.055);
+}
+
+:root[data-amo-theme="light"] .harness-log-toggle span {
+  color: #6c8079;
+}
+
+:root[data-amo-theme="light"] .harness-log-toggle em {
+  color: #3976a9;
+}
+
+:root[data-amo-theme="light"] .harness-log-panel.is-expanded .harness-log-toggle {
+  border-bottom-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .harness-log-panel pre {
+  color: #30473f;
+  background:
+    linear-gradient(145deg, rgba(241, 247, 245, 0.98), rgba(232, 241, 238, 0.98)),
+    #edf4f1;
+}
+
+@media (max-width: 720px) {
+  .harness-card-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .harness-status-hero {
+    grid-template-columns: max-content minmax(0, 1fr);
+  }
+
+  .harness-status-hero > code {
+    grid-column: 2;
+  }
+}

@@ -58,6 +58,34 @@ pub(crate) struct BrokerEnsureResult {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct HarnessLabStatus {
+    pub(crate) ok: bool,
+    pub(crate) state: String,
+    pub(crate) installed: bool,
+    pub(crate) installed_version: Option<String>,
+    pub(crate) expected_version: String,
+    pub(crate) remote_version: Option<String>,
+    pub(crate) update_available: bool,
+    pub(crate) running: bool,
+    pub(crate) owned: bool,
+    pub(crate) pid: Option<u32>,
+    pub(crate) url: String,
+    pub(crate) port: u16,
+    pub(crate) runtime_path: String,
+    pub(crate) data_path: String,
+    pub(crate) dsh_home: String,
+    pub(crate) node_available: bool,
+    pub(crate) node_version: Option<String>,
+    pub(crate) npm_available: bool,
+    pub(crate) deepseek_key_configured: bool,
+    pub(crate) glm_key_configured: bool,
+    pub(crate) glm_provider_configured: bool,
+    pub(crate) message: String,
+    pub(crate) recent_log: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ModelCredentialStatus {
     pub(crate) ok: bool,
     pub(crate) configured_provider_ids: Vec<String>,
