@@ -85,7 +85,7 @@ test("Claude launch settings are removed when the CLI exits", () => {
       "--settings",
       "C:/Users/Test User/AppData/Local/AgentMonitorOverlay/runtime/claude-launches/launch-test.settings.json",
       "--model",
-      "glm-5.2[1m]",
+      "glm-5.3[1m]",
     ],
     cleanupPaths: [
       "C:/Users/Test User/AppData/Local/AgentMonitorOverlay/runtime/claude-launches/launch-test.settings.json",
@@ -94,7 +94,7 @@ test("Claude launch settings are removed when the CLI exits", () => {
 
   assert.match(commandLine, /try \{ & claude/);
   assert.match(commandLine, /'--settings' 'C:\/Users\/Test User\/AppData/);
-  assert.match(commandLine, /'--model' 'glm-5\.2\[1m\]'/);
+  assert.match(commandLine, /'--model' 'glm-5\.3\[1m\]'/);
   assert.match(commandLine, /finally \{ Remove-Item -LiteralPath/);
   assert.match(commandLine, /-Force -ErrorAction SilentlyContinue/);
 });

@@ -8,7 +8,7 @@ use windows_sys::Win32::Security::Credentials::{
 };
 
 const TARGET_PREFIX: &str = "AgentMonitorOverlay/model-provider/";
-const SUPPORTED_PROVIDERS: [&str; 2] = ["deepseek-v4", "glm-5.2"];
+const SUPPORTED_PROVIDERS: [&str; 3] = ["deepseek-v4", "glm-coding", "glm-5.2"];
 
 fn validate_provider_id(provider_id: &str) -> Result<(), String> {
     let supported = SUPPORTED_PROVIDERS.contains(&provider_id);
@@ -30,8 +30,15 @@ fn target_name(provider_id: &str) -> String {
     format!("{TARGET_PREFIX}{provider_id}")
 }
 
-fn credential_exists(provider_id: &str) -> Result<bool, String> {
-    validate_provider_id(provider_id)?;
+fn credential_provider_candidates(provider_id: &str) -> Vec<&str> {
+    if provider_id == "glm-coding" {
+        vec!["glm-coding", "glm-5.2"]
+    } else {
+        vec![provider_id]
+    }
+}
+
+fn credential_exists_exact(provider_id: &str) -> Result<bool, String> {
     let target = wide(&target_name(provider_id));
     let mut credential_ptr: *mut CREDENTIALW = null_mut();
     let read_ok = unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut credential_ptr) };
@@ -50,8 +57,17 @@ fn credential_exists(provider_id: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-fn read_credential(provider_id: &str) -> Result<Option<String>, String> {
+fn credential_exists(provider_id: &str) -> Result<bool, String> {
     validate_provider_id(provider_id)?;
+    for candidate in credential_provider_candidates(provider_id) {
+        if credential_exists_exact(candidate)? {
+            return Ok(true);
+        }
+    }
+    Ok(false)
+}
+
+fn read_credential_exact(provider_id: &str) -> Result<Option<String>, String> {
     let target = wide(&target_name(provider_id));
     let mut credential_ptr: *mut CREDENTIALW = null_mut();
     let read_ok = unsafe { CredReadW(target.as_ptr(), CRED_TYPE_GENERIC, 0, &mut credential_ptr) };
@@ -84,6 +100,16 @@ fn read_credential(provider_id: &str) -> Result<Option<String>, String> {
     };
     unsafe { CredFree(credential_ptr.cast::<c_void>()) };
     result
+}
+
+fn read_credential(provider_id: &str) -> Result<Option<String>, String> {
+    validate_provider_id(provider_id)?;
+    for candidate in credential_provider_candidates(provider_id) {
+        if let Some(api_key) = read_credential_exact(candidate)? {
+            return Ok(Some(api_key));
+        }
+    }
+    Ok(None)
 }
 
 pub(crate) fn resolved_secret(provider_id: &str) -> Result<Option<String>, String> {
@@ -161,15 +187,17 @@ pub(crate) fn delete_credential(provider_id: String) -> ModelCredentialResult {
     if let Err(message) = validate_provider_id(&provider_id) {
         return ModelCredentialResult::error(provider_id, message);
     }
-    let target = wide(&target_name(&provider_id));
-    let delete_ok = unsafe { CredDeleteW(target.as_ptr(), CRED_TYPE_GENERIC, 0) };
-    if delete_ok == 0 {
-        let error = unsafe { GetLastError() };
-        if error != ERROR_NOT_FOUND {
-            return ModelCredentialResult::error(
-                provider_id,
-                format!("Windows Credential Manager delete failed ({error})."),
-            );
+    for candidate in credential_provider_candidates(&provider_id) {
+        let target = wide(&target_name(candidate));
+        let delete_ok = unsafe { CredDeleteW(target.as_ptr(), CRED_TYPE_GENERIC, 0) };
+        if delete_ok == 0 {
+            let error = unsafe { GetLastError() };
+            if error != ERROR_NOT_FOUND {
+                return ModelCredentialResult::error(
+                    provider_id,
+                    format!("Windows Credential Manager delete failed ({error})."),
+                );
+            }
         }
     }
 
@@ -208,6 +236,20 @@ mod tests {
     #[test]
     fn unsupported_providers_are_rejected() {
         assert!(validate_provider_id("custom").is_err());
+    }
+
+    #[test]
+    fn glm_coding_credentials_fall_back_to_the_legacy_model_target() {
+        assert_eq!(
+            credential_provider_candidates("glm-coding"),
+            vec!["glm-coding", "glm-5.2"]
+        );
+        assert_eq!(
+            credential_provider_candidates("deepseek-v4"),
+            vec!["deepseek-v4"]
+        );
+        assert!(validate_provider_id("glm-coding").is_ok());
+        assert!(validate_provider_id("glm-5.2").is_ok());
     }
 
     #[test]

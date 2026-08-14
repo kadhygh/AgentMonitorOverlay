@@ -1,8 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 
-export type ClaudeProviderPresetId = "anthropic-default" | "deepseek-v4-pro" | "deepseek-v4" | "glm-5.2";
+export type ClaudeProviderPresetId = "anthropic-default" | "deepseek-v4-pro" | "deepseek-v4" | "glm-5.3";
 export type CodexProviderPresetId = "openai-default" | "deepseek-v4-pro" | "deepseek-v4";
-export type StoredModelProviderId = "deepseek-v4" | "glm-5.2";
+export type StoredModelProviderId = "deepseek-v4" | "glm-coding";
 export type StoredClaudeProviderPresetId = StoredModelProviderId;
 
 export interface ClaudeProviderLaunchConfig {
@@ -78,10 +78,10 @@ export const CLAUDE_PROVIDER_DEFINITIONS: ClaudeProviderDefinition[] = [
     keyLabel: "DeepSeek API Key",
   },
   {
-    id: "glm-5.2",
-    title: "GLM-5.2",
+    id: "glm-5.3",
+    title: "GLM-5.3",
     detail: "Official 1M Claude Code mapping with max-length auto compact settings.",
-    model: "glm-5.2[1m]",
+    model: "glm-5.3[1m]",
     keyLabel: "GLM Coding Plan API Key",
   },
 ];
@@ -111,7 +111,7 @@ export const CODEX_PROVIDER_DEFINITIONS: CodexProviderDefinition[] = [
 
 export const STORED_CLAUDE_PROVIDER_IDS: StoredClaudeProviderPresetId[] = [
   "deepseek-v4",
-  "glm-5.2",
+  "glm-coding",
 ];
 
 export const STORED_MODEL_PROVIDER_IDS: StoredModelProviderId[] = STORED_CLAUDE_PROVIDER_IDS;
@@ -125,10 +125,10 @@ export const STORED_MODEL_PROVIDER_DEFINITIONS: StoredModelProviderDefinition[] 
     keyLabel: "DeepSeek API Key",
   },
   {
-    id: "glm-5.2",
-    title: "GLM-5.2",
+    id: "glm-coding",
+    title: "GLM Coding Plan",
     detail: "Official 1M Claude Code mapping with max-length auto compact settings.",
-    model: "glm-5.2[1m]",
+    model: "glm-5.3[1m]",
     keyLabel: "GLM Coding Plan API Key",
   },
 ];
@@ -137,12 +137,17 @@ export function modelCredentialProviderId(
   presetId: ClaudeProviderPresetId | CodexProviderPresetId | string | null,
 ): StoredModelProviderId | null {
   if (presetId === "deepseek-v4" || presetId === "deepseek-v4-pro") return "deepseek-v4";
-  if (presetId === "glm-5.2") return "glm-5.2";
+  if (presetId === "glm-5.3" || presetId === "glm-5.2") return "glm-coding";
   return null;
 }
 
 export function isClaudeProviderPresetId(value: string | null): value is ClaudeProviderPresetId {
   return CLAUDE_PROVIDER_DEFINITIONS.some((provider) => provider.id === value);
+}
+
+export function normalizeClaudeProviderPresetId(value: string | null): ClaudeProviderPresetId {
+  if (value === "glm-5.2") return "glm-5.3";
+  return isClaudeProviderPresetId(value) ? value : "anthropic-default";
 }
 
 export function isCodexProviderPresetId(value: string | null): value is CodexProviderPresetId {
@@ -152,7 +157,11 @@ export function isCodexProviderPresetId(value: string | null): value is CodexPro
 export function loadDefaultClaudeProvider(): ClaudeProviderPresetId {
   try {
     const value = localStorage.getItem(DEFAULT_CLAUDE_PROVIDER_STORAGE_KEY);
-    return isClaudeProviderPresetId(value) ? value : "anthropic-default";
+    const providerId = normalizeClaudeProviderPresetId(value);
+    if (value === "glm-5.2") {
+      localStorage.setItem(DEFAULT_CLAUDE_PROVIDER_STORAGE_KEY, providerId);
+    }
+    return providerId;
   } catch {
     return "anthropic-default";
   }

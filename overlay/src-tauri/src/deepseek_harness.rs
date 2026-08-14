@@ -286,7 +286,9 @@ pub(crate) fn start_harness() -> HarnessLabStatus {
     let deepseek_key = model_credentials::resolved_secret("deepseek-v4")
         .ok()
         .flatten();
-    let glm_key = model_credentials::resolved_secret("glm-5.2").ok().flatten();
+    let glm_key = model_credentials::resolved_secret("glm-coding")
+        .ok()
+        .flatten();
 
     let mut command = Command::new(node);
     command
@@ -505,7 +507,7 @@ fn build_status(
     let deepseek_key_configured = model_credentials::resolved_secret("deepseek-v4")
         .map(|value| value.is_some())
         .unwrap_or(false);
-    let glm_key_configured = model_credentials::resolved_secret("glm-5.2")
+    let glm_key_configured = model_credentials::resolved_secret("glm-coding")
         .map(|value| value.is_some())
         .unwrap_or(false);
 
@@ -742,6 +744,11 @@ fn prepare_managed_home(paths: &HarnessPaths) -> Result<(), String> {
     let settings_path = paths.dsh_home.join("settings.yaml");
     let existing = std::fs::read_to_string(&settings_path).unwrap_or_default();
     if existing.contains("amo-glm:") {
+        let upgraded = upgrade_managed_glm_provider(&existing);
+        if upgraded != existing {
+            std::fs::write(settings_path, upgraded)
+                .map_err(|error| format!("Could not upgrade the GLM provider: {error}"))?;
+        }
         return Ok(());
     }
     if existing.contains("llm-pi-ai:") {
@@ -752,13 +759,13 @@ fn prepare_managed_home(paths: &HarnessPaths) -> Result<(), String> {
 llm-pi-ai:
   providers:
     amo-glm:
-      displayName: GLM-5.2 (AMO)
+      displayName: GLM-5.3 (AMO)
       apiKeyEnv: AMO_GLM_API_KEY
       api: anthropic-messages
       baseURL: https://open.bigmodel.cn/api/anthropic
       models:
-        - id: glm-5.2[1m]
-          name: GLM-5.2 1M
+        - id: glm-5.3[1m]
+          name: GLM-5.3 1M
           contextWindow: 1000000
 "#;
     let content = if existing.trim().is_empty() {
@@ -768,6 +775,13 @@ llm-pi-ai:
     };
     std::fs::write(settings_path, content)
         .map_err(|error| format!("Could not initialize the GLM provider: {error}"))
+}
+
+fn upgrade_managed_glm_provider(value: &str) -> String {
+    value
+        .replace("GLM-5.2 (AMO)", "GLM-5.3 (AMO)")
+        .replace("glm-5.2[1m]", "glm-5.3[1m]")
+        .replace("GLM-5.2 1M", "GLM-5.3 1M")
 }
 
 fn glm_provider_is_configured(dsh_home: &Path) -> bool {
@@ -929,5 +943,23 @@ mod tests {
         assert!(!valid_package_version(""));
         assert!(!valid_package_version("latest --force"));
         assert!(!valid_package_version("1.2.3;whoami"));
+    }
+
+    #[test]
+    fn managed_glm_provider_is_upgraded_without_rewriting_other_settings() {
+        let existing = r#"theme: dark
+amo-glm:
+  displayName: GLM-5.2 (AMO)
+  models:
+    - id: glm-5.2[1m]
+      name: GLM-5.2 1M
+custom: retained
+"#;
+
+        let upgraded = upgrade_managed_glm_provider(existing);
+        assert!(upgraded.contains("GLM-5.3 (AMO)"));
+        assert!(upgraded.contains("glm-5.3[1m]"));
+        assert!(upgraded.contains("GLM-5.3 1M"));
+        assert!(upgraded.contains("custom: retained"));
     }
 }

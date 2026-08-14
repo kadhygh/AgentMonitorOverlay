@@ -14,6 +14,7 @@ const {
   CLAUDE_PROVIDER_DEFINITIONS,
   CODEX_PROVIDER_DEFINITIONS,
   modelCredentialProviderId,
+  normalizeClaudeProviderPresetId,
 } = await vite.ssrLoadModule("/src/native/modelProviders.ts");
 
 after(async () => {
@@ -27,15 +28,21 @@ test("DeepSeek V4 Pro appears above the retained Flash preset", () => {
   );
   assert.deepEqual(
     CLAUDE_PROVIDER_DEFINITIONS.map((provider) => provider.id),
-    ["anthropic-default", "deepseek-v4-pro", "deepseek-v4", "glm-5.2"],
+    ["anthropic-default", "deepseek-v4-pro", "deepseek-v4", "glm-5.3"],
   );
 });
 
 test("DeepSeek V4 Pro and Flash share the existing secure credential", () => {
   assert.equal(modelCredentialProviderId("deepseek-v4-pro"), "deepseek-v4");
   assert.equal(modelCredentialProviderId("deepseek-v4"), "deepseek-v4");
-  assert.equal(modelCredentialProviderId("glm-5.2"), "glm-5.2");
+  assert.equal(modelCredentialProviderId("glm-5.3"), "glm-coding");
+  assert.equal(modelCredentialProviderId("glm-5.2"), "glm-coding");
   assert.equal(modelCredentialProviderId("openai-default"), null);
+});
+
+test("legacy GLM-5.2 defaults migrate to GLM-5.3", () => {
+  assert.equal(normalizeClaudeProviderPresetId("glm-5.2"), "glm-5.3");
+  assert.equal(normalizeClaudeProviderPresetId("glm-5.3"), "glm-5.3");
 });
 
 test("DeepSeek V4 Pro exposes the official client-specific model names", () => {

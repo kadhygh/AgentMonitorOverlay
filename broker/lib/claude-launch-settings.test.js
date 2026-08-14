@@ -21,10 +21,10 @@ test("one-launch Claude settings contain provider routing and the temporary key"
     launchId: "launch-test-1",
     rootDir,
     provider: {
-      id: "glm-5.2",
+      id: "glm-5.3",
       environment: {
         ANTHROPIC_BASE_URL: "https://open.bigmodel.cn/api/anthropic",
-        ANTHROPIC_MODEL: "glm-5.2[1m]",
+        ANTHROPIC_MODEL: "glm-5.3[1m]",
         ANTHROPIC_AUTH_TOKEN: "temporary-secret",
       },
     },
@@ -33,7 +33,7 @@ test("one-launch Claude settings contain provider routing and the temporary key"
   assert.ok(result);
   assert.equal(path.dirname(result.filePath), rootDir);
   const payload = JSON.parse(fs.readFileSync(result.filePath, "utf8"));
-  assert.equal(payload.env.ANTHROPIC_MODEL, "glm-5.2[1m]");
+  assert.equal(payload.env.ANTHROPIC_MODEL, "glm-5.3[1m]");
   assert.equal(payload.env.ANTHROPIC_AUTH_TOKEN, "temporary-secret");
 });
 

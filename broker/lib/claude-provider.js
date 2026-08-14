@@ -2,6 +2,9 @@ const { httpError } = require("./http");
 const { normalizeText } = require("./normalize");
 
 const DEFAULT_PROVIDER = "anthropic-default";
+const LEGACY_PROVIDER_ALIASES = Object.freeze({
+  "glm-5.2": "glm-5.3",
+});
 const PROVIDER_PRESETS = Object.freeze({
   [DEFAULT_PROVIDER]: {
     id: DEFAULT_PROVIDER,
@@ -40,17 +43,17 @@ const PROVIDER_PRESETS = Object.freeze({
       CLAUDE_CODE_EFFORT_LEVEL: "max",
     },
   },
-  "glm-5.2": {
-    id: "glm-5.2",
-    label: "GLM-5.2 1M",
-    model: "glm-5.2[1m]",
+  "glm-5.3": {
+    id: "glm-5.3",
+    label: "GLM-5.3 1M",
+    model: "glm-5.3[1m]",
     requiresApiKey: true,
     environment: {
       ANTHROPIC_BASE_URL: "https://open.bigmodel.cn/api/anthropic",
-      ANTHROPIC_MODEL: "glm-5.2[1m]",
+      ANTHROPIC_MODEL: "glm-5.3[1m]",
       ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-4.7",
-      ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-5.2[1m]",
-      ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5.2[1m]",
+      ANTHROPIC_DEFAULT_SONNET_MODEL: "glm-5.3[1m]",
+      ANTHROPIC_DEFAULT_OPUS_MODEL: "glm-5.3[1m]",
       CLAUDE_CODE_SUBAGENT_MODEL: "glm-4.7",
       CLAUDE_CODE_EFFORT_LEVEL: "max",
       CLAUDE_CODE_AUTO_COMPACT_WINDOW: "1000000",
@@ -61,7 +64,8 @@ const PROVIDER_PRESETS = Object.freeze({
 });
 
 function resolveClaudeProvider(payload) {
-  const providerId = normalizeText(payload?.presetId || payload?.preset_id || payload?.id) || DEFAULT_PROVIDER;
+  const requestedProviderId = normalizeText(payload?.presetId || payload?.preset_id || payload?.id) || DEFAULT_PROVIDER;
+  const providerId = LEGACY_PROVIDER_ALIASES[requestedProviderId] || requestedProviderId;
   const preset = PROVIDER_PRESETS[providerId];
   if (!preset) {
     throw httpError(400, "unsupported_claude_provider", `Unsupported Claude provider preset: ${providerId}`);

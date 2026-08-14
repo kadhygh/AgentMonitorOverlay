@@ -379,7 +379,9 @@ When `claude-cli` is selected, the dialog owns one mutually exclusive provider p
 - `anthropic-default`: use the existing Claude Code account and local configuration.
 - `deepseek-v4-pro`: use the official DeepSeek Anthropic-compatible mapping with Pro for main/Opus/Sonnet and Flash for Haiku/subagents.
 - `deepseek-v4`: retain the all-Flash DeepSeek Anthropic-compatible mapping.
-- `glm-5.2`: use the official GLM Anthropic-compatible endpoint and 1M model mapping.
+- `glm-5.3`: use the official GLM Anthropic-compatible endpoint and `glm-5.3[1m]` mapping.
+
+GLM credentials use the version-independent `glm-coding` storage identity. The native credential adapter falls back to the legacy `glm-5.2` target, and persisted `glm-5.2` launch defaults are normalized to `glm-5.3`, so model upgrades do not require users to re-enter their Coding Plan key.
 
 Provider selection is radio-style, not a checkbox set. One CLI process can use only one endpoint/model mapping at launch time.
 

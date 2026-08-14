@@ -57,7 +57,7 @@ DeepSeek Harness 当前仍处于 Developer Preview / RC 阶段，接口、插件
   - Provider ID：`amo-glm`
   - 协议：`anthropic-messages`
   - Base URL：`https://open.bigmodel.cn/api/anthropic`
-  - Model：`glm-5.2[1m]`
+  - Model：`glm-5.3[1m]`
 - 不覆盖用户已经存在的 `llm-pi-ai` 配置；发生配置冲突时保留用户配置，并在面板提示改用 Harness 的 Models 页面手动添加。
 - DeepSeek 和 GLM Key 均不写入 `settings.yaml` 或 Harness 日志。
 
@@ -77,7 +77,7 @@ DeepSeek Harness 当前仍处于 Developer Preview / RC 阶段，接口、插件
 
 - Windows 下长时间运行、休眠唤醒和网络切换。
 - 多工作区、多 Session、任务取消、授权、上下文压缩和恢复。
-- DeepSeek V4 Pro、V4 Flash 与 GLM-5.2 的实际兼容性。
+- DeepSeek V4 Pro、V4 Flash 与 GLM-5.3 的实际兼容性。
 - Harness 升级后的配置迁移和 Session 恢复。
 - 端口占用、异常退出、孤儿进程和日志滚动。
 - Portable 包内预装 Node + Harness 后的离线启动。
