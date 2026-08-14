@@ -54,6 +54,11 @@ interface SessionTitleRefreshPayload {
   count?: number;
 }
 
+export interface SessionHydration {
+  state: "loading" | "ready" | "error";
+  message: string;
+}
+
 export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   const [sessions, setSessions] = useState<AgentSession[]>([]);
   const [sessionOrder, setSessionOrder] = useState<string[]>([]);
@@ -65,6 +70,10 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   const [feedback, setFeedback] = useState("Checking AMO broker...");
   const [lastRefreshAt, setLastRefreshAt] = useState<string | null>(null);
   const [hasLoadedSessionSnapshot, setHasLoadedSessionSnapshot] = useState(false);
+  const [sessionHydration, setSessionHydration] = useState<SessionHydration>({
+    state: "loading",
+    message: "Waiting for the initial task snapshot",
+  });
   const [sessionCounts, setSessionCounts] = useState<SessionCounts>({ active: 0, archived: 0, total: 0 });
   const [archiveLoading, setArchiveLoading] = useState(false);
   const [refreshingSessionTitles, setRefreshingSessionTitles] = useState(false);
@@ -72,6 +81,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   const archiveOffsetRef = useRef(0);
   const archiveLoadingRef = useRef(false);
   const sessionsRef = useRef(sessions);
+  const hasLoadedSessionSnapshotRef = useRef(false);
   const revisionGateRef = useRef<SessionRevisionGate | null>(null);
   const refreshSingleFlightRef = useRef<ReturnType<typeof createSingleFlight<void>> | null>(null);
   const sseHealthyRef = useRef(false);
@@ -120,6 +130,10 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
             currentRevision: revisionGateRef.current!.current(),
             durationMs: Math.round(performance.now() - startedAt),
           });
+          if (!hasLoadedSessionSnapshotRef.current) {
+            setSessionHydration({ state: "loading", message: "Synchronizing the latest task snapshot" });
+            window.setTimeout(() => void refreshSessions("initial-stale-retry"), 0);
+          }
           return;
         }
 
@@ -148,7 +162,9 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
           detail: `${incomingActive.length} active session${incomingActive.length === 1 ? "" : "s"} loaded`,
         });
         setLastRefreshAt(new Date().toISOString());
+        hasLoadedSessionSnapshotRef.current = true;
         setHasLoadedSessionSnapshot(true);
+        setSessionHydration({ state: "ready", message: `${incomingActive.length} active task${incomingActive.length === 1 ? "" : "s"} loaded` });
         void publishStartupStatus({ module: "sessions", state: "ready", message: `${incomingActive.length} loaded` });
         setFeedback(incomingActive.length > 0 ? `Broker sessions loaded: ${incomingActive.length}` : "No active broker sessions.");
         void options.reconcileCodexActionRequired(incomingActive, reason);
@@ -168,6 +184,9 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
           void publishStartupStatus({ module: "sessions", state: "error", message: "Unavailable" });
           setBrokerReadiness({ state: "error", message: "Broker is not ready", detail: message });
           setFeedback(`Broker unavailable: ${message}`);
+        }
+        if (!hasLoadedSessionSnapshotRef.current) {
+          setSessionHydration({ state: "error", message });
         }
         setLastRefreshAt(new Date().toISOString());
         if (shouldLog) {
@@ -262,6 +281,9 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   }
   async function ensureBrokerThenRefresh() {
     void publishStartupStatus({ module: "sessions", state: "loading", message: "Loading snapshot" });
+    if (!hasLoadedSessionSnapshotRef.current) {
+      setSessionHydration({ state: "loading", message: "Connecting to the task runtime" });
+    }
     setBrokerReadiness({ state: "checking", message: "Checking AMO broker", detail: "127.0.0.1:17654" });
     try {
       const result = await ensureBrokerStarted();
@@ -484,6 +506,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
     refreshSessions,
     sessionCounts,
     sessionOrder,
+    sessionHydration,
     sessions,
     sessionsRef,
     setFeedback,

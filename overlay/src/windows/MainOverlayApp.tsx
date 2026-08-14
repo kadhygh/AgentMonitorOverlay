@@ -1,5 +1,4 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow, LogicalSize } from "@tauri-apps/api/window";
 import {
   AlertTriangle,
@@ -42,6 +41,7 @@ import { useBrokerSessions } from "../hooks/useBrokerSessions";
 import { useAttentionVisuals } from "../hooks/useAttentionVisuals";
 import { useCardDrag } from "../hooks/useCardDrag";
 import { ensureScratchpadWindow, useMainUtilityWindows } from "../hooks/useMainUtilityWindows";
+import { useMainShellLifecycle } from "../hooks/useMainShellLifecycle";
 import { useManagedWindowLiveness } from "../hooks/useManagedWindowLiveness";
 import { useObsidianOpen } from "../hooks/useObsidianOpen";
 import { useOverlayResize } from "../hooks/useOverlayResize";
@@ -82,15 +82,6 @@ const DEFAULT_OVERLAY_SIZE = { width: 380, height: 520 };
 const COLLAPSED_OVERLAY_SIZE = { width: 264, height: 52 };
 const MAX_VISIBLE_SESSION_CARDS = 20;
 type PriorityFilterValue = SessionPriority | "none";
-type AmoRuntimeMode = "debug" | "portable" | "source" | "stable";
-
-const runtimeMode = ((import.meta.env.VITE_AMO_RUNTIME_MODE || "source").toLowerCase() as AmoRuntimeMode);
-const runtimeProfiles: Record<AmoRuntimeMode, { badge: string; contextLabel: string; contextValue: string }> = {
-  debug: { badge: "DEBUG", contextLabel: "Diagnostics", contextValue: "Console and debug logs" },
-  portable: { badge: "PORTABLE", contextLabel: "Storage", contextValue: "Portable data directory" },
-  source: { badge: "SOURCE", contextLabel: "Runtime", contextValue: "Local Vite frontend" },
-  stable: { badge: "STABLE", contextLabel: "Runtime", contextValue: "Local stable source" },
-};
 
 function utilityWindowTitle(label: string) {
   return label === "deploy"
@@ -142,6 +133,7 @@ function sessionMatchesSearch(session: AgentSession, query: string) {
 
 export function MainOverlayApp() {
   useAmoThemeRuntime();
+  useMainShellLifecycle();
   const [collapsed, setCollapsed] = useState(false);
   const [sessionFilter, setSessionFilter] = useState<SessionFilter>("all");
   const [sessionSearch, setSessionSearch] = useState("");
@@ -179,6 +171,7 @@ export function MainOverlayApp() {
     refreshSessions,
     sessionCounts,
     sessionOrder,
+    sessionHydration,
     sessions,
     sessionsRef,
     setFeedback,
@@ -206,20 +199,6 @@ export function MainOverlayApp() {
   attachFeedbackSetter(setFeedback);
 
   useEffect(() => {
-    void invoke("signal_frontend_ready").catch(() => {
-      // Browser preview does not expose the native smoke command.
-    });
-  }, []);
-
-  useEffect(() => {
-    if (!hasLoadedSessionSnapshot && brokerReadiness.state !== "error") return;
-
-    void invoke("complete_startup").catch(() => {
-      // Direct browser previews do not use the native startup window.
-    });
-  }, [brokerReadiness.state, hasLoadedSessionSnapshot]);
-
-  useEffect(() => {
     if (!hasLoadedSessionSnapshot) return undefined;
 
     const preloadTimer = window.setTimeout(() => {
@@ -240,6 +219,20 @@ export function MainOverlayApp() {
   actionRequiredProbeHandlerRef.current = handleCodexActionRequiredProbe;
 
   const brokerReady = brokerReadiness.state === "ready";
+  const sessionDataReady = sessionHydration.state === "ready";
+  const sessionSurfaceReadiness: BrokerReadiness = sessionHydration.state === "error"
+    ? {
+        state: "error",
+        message: "Task cards unavailable",
+        detail: sessionHydration.message,
+      }
+    : !sessionDataReady
+      ? {
+          state: brokerReadiness.state === "starting" ? "starting" : "checking",
+          message: brokerReady ? "Loading task cards" : brokerReadiness.message,
+          detail: brokerReady ? sessionHydration.message : brokerReadiness.detail,
+        }
+      : brokerReadiness;
   useManagedWindowLiveness({
     brokerReady,
     postDebugLog,
@@ -547,41 +540,6 @@ export function MainOverlayApp() {
     });
   }
 
-  if (!hasLoadedSessionSnapshot && brokerReadiness.state !== "error") {
-    const profile = runtimeProfiles[runtimeMode] || runtimeProfiles.source;
-    const brokerStage =
-      brokerReadiness.state === "starting"
-        ? "Starting local broker"
-        : brokerReadiness.state === "ready"
-          ? "Loading session snapshot"
-          : "Checking local broker";
-
-    return (
-      <main className="amo-boot" role="status" aria-live="polite">
-        <div className="amo-boot-content">
-          <span className="amo-boot-mode">{profile.badge}</span>
-          <div className="amo-boot-mark" aria-hidden="true" />
-          <strong>Starting AMO</strong>
-          <span className="amo-boot-stage">{brokerStage}</span>
-          <div className="amo-boot-details" aria-label="Startup details">
-            <div className="amo-boot-detail">
-              <span>Interface</span>
-              <span>Frontend ready</span>
-            </div>
-            <div className="amo-boot-detail">
-              <span>Broker</span>
-              <span>{brokerReadiness.message}</span>
-            </div>
-            <div className="amo-boot-detail">
-              <span>{profile.contextLabel}</span>
-              <span>{profile.contextValue}</span>
-            </div>
-          </div>
-        </div>
-      </main>
-    );
-  }
-
   return (
     <main className={`overlay-shell ${collapsed ? "is-collapsed" : ""}`}>
       <header
@@ -619,7 +577,7 @@ export function MainOverlayApp() {
               <div>
                 <strong>Agents</strong>
                 <span>
-                  {brokerReadinessLabels[brokerReadiness.state]}
+                  {brokerReadinessLabels[sessionSurfaceReadiness.state]}
                   {lastRefreshAt ? ` | ${formatAgo(lastRefreshAt)} ago` : ""}
                 </span>
               </div>
@@ -668,7 +626,7 @@ export function MainOverlayApp() {
         <>
           <section className="summary-strip" aria-label="Session summary">
             <div className="summary-info">
-              {brokerReady ? (
+              {sessionDataReady ? (
                 <>
                   <span>{activeSessionCount} active lines</span>
                   <strong>{attentionSignalCount} need attention</strong>
@@ -690,7 +648,7 @@ export function MainOverlayApp() {
                 </>
               )}
             </div>
-            {brokerReady ? (
+            {sessionDataReady ? (
               <div className="summary-controls" aria-label="Session filters">
                 <div className="summary-filter-group summary-status-filters" aria-label="Status filters">
                   {(["all", "attention"] as SessionFilter[]).map((filter) => (
@@ -778,17 +736,17 @@ export function MainOverlayApp() {
                   </button>
                 </div>
               </div>
-            ) : (
+            ) : sessionSurfaceReadiness.state === "error" ? (
               <button type="button" className="summary-retry-button" onClick={() => void ensureBrokerThenRefresh()}>
                 Retry
               </button>
-            )}
+            ) : null}
           </section>
 
           <section className="session-list" aria-label="Agent sessions">
-            {!brokerReady ? (
+            {!sessionDataReady ? (
               <BrokerReadinessPanel
-                readiness={brokerReadiness}
+                readiness={sessionSurfaceReadiness}
                 onRetry={() => void ensureBrokerThenRefresh()}
               />
             ) : orderedSessions.length > 0 ? (

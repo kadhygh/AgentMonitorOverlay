@@ -31,9 +31,11 @@ export function BrokerReadinessPanel({ readiness, onRetry }: BrokerReadinessPane
         <strong>{readiness.message}</strong>
         {readiness.detail ? <span>{readiness.detail}</span> : null}
       </div>
-      <button type="button" className="broker-retry-button" onClick={onRetry}>
-        Retry
-      </button>
+      {isError ? (
+        <button type="button" className="broker-retry-button" onClick={onRetry}>
+          Retry
+        </button>
+      ) : null}
     </div>
   );
 }

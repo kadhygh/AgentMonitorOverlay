@@ -119,7 +119,7 @@ The smoke-ready command proves that React mounted, but AMO does not currently re
 | --- | --- | --- | ---: |
 | `native-visible` | Tauri shell | A themed native window is visible | Yes |
 | `html-boot` | static HTML | Loading feedback exists without React | Yes |
-| `shell-ready` | React shell adapter | Header, primary actions, and content frame painted | Yes |
+| `shell-ready` | React shell adapter | Header, primary actions, and content frame committed | Yes |
 | `runtime-connecting` | Startup/Session controller | Broker and event stream are connecting | Yes |
 | `data-hydrating` | Session controller | Initial active-session snapshot is loading | Yes |
 | `ready` | Session controller | Initial data is available | Yes |
@@ -139,7 +139,7 @@ Owns feedback before the React bundle is available and cached/default theme appl
 
 ### React App Shell
 
-Owns the persistent frame, header, buttons, filters, skeletons, errors, retry gestures, cached UI configuration, controller subscriptions, and the `shellPainted` signal. It does not own Broker startup, long-lived polling, SSE reconciliation, or native liveness policy.
+Owns the persistent frame, header, buttons, filters, skeletons, errors, retry gestures, cached UI configuration, controller subscriptions, and the `shellCommitted` signal. It does not own Broker startup, long-lived polling, SSE reconciliation, or native liveness policy.
 
 ### Startup Coordinator
 
@@ -180,7 +180,7 @@ Rules:
 
 ### S0: Plan, measurement contract, and regression locks
 
-Status: in progress
+Status: complete
 
 - Establish this living document.
 - Add tests for shell/data phase separation and startup completion semantics.
@@ -189,9 +189,9 @@ Status: in progress
 
 ### S1: Shell visibility independent of session data
 
-Status: pending
+Status: in progress
 
-- Add an explicit `shellPainted` handshake.
+- Add an explicit `shellCommitted` handoff and a separate first-visible-frame measurement.
 - Complete native startup handoff after the shell commits, not after session hydration.
 - Keep the Main Overlay frame mounted during runtime connection.
 - Render Broker/session loading and degraded states inside the session content area.
@@ -222,7 +222,7 @@ Status: pending
 
 Status: pending
 
-- Record `processSetup`, `startupVisible`, `mainHtmlReady`, `shellPainted`, `brokerReady`, `snapshotReady`, and `interactive`.
+- Record `processSetup`, `startupVisible`, `mainHtmlReady`, `shellCommitted`, `firstVisibleFrame`, `brokerReady`, `snapshotReady`, and `interactive`.
 - Surface diagnostics without blocking startup.
 - Add validated build-input fingerprints for Stable.
 - Reuse validated artifacts when inputs match; retain transactional rebuild when they differ.
@@ -282,7 +282,7 @@ Native smoke:
 
 ### 2026-08-14: Keep the Startup Window during S1
 
-The first implementation keeps `startup.html` as a very short WebView cold-start bridge. It hands off on `shellPainted`. Removing the second window is deferred until timing data shows whether the extra WebView costs more than the early native feedback it provides.
+The first implementation keeps `startup.html` as a very short WebView cold-start bridge. It hands off after the React shell DOM commits. The first visible frame is measured afterward and is not a prerequisite because hidden WebViews may throttle `requestAnimationFrame`. Removing the second window is deferred until timing data shows whether the extra WebView costs more than the early native feedback it provides.
 
 ### 2026-08-14: Runtime failures degrade the shell
 
@@ -297,4 +297,4 @@ Protocol heartbeat and unavoidable external-fact sampling remain. UI compensatio
 | Date | Phase | Change | Evidence | Remaining |
 | --- | --- | --- | --- | --- |
 | 2026-08-14 | S0 | Created active plan; recorded baseline, target state, ownership, polling inventory, budgets, and validation matrix | Source audit of Tauri setup, MainOverlayApp, useBrokerSessions, utility windows, Harness, Broker SSE, and Stable launcher | Implement S1 tests and shell handoff |
-
+| 2026-08-14 | S1 | Main entry stopped owning Broker startup; shell-paint lifecycle now owns native handoff; session hydration is distinct from SSE/Broker readiness; full-screen React boot gate removed | TypeScript/Vite production build passed; startup regression suite added | Complete automated suite and native startup smoke |
