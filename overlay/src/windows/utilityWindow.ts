@@ -82,15 +82,17 @@ export async function setAmoWindowsAlwaysOnTop(alwaysOnTop: boolean) {
 
 export async function bringUtilityWindowToFront(label: UtilityWindowKind) {
   const target = await getAmoWindow(label);
-  await setAmoWindowAlwaysOnTop("main", false);
+  await target?.show().catch(() => undefined);
+  await Promise.all([
+    setAmoWindowAlwaysOnTop("main", false),
+    target?.setAlwaysOnTop(true).catch(() => undefined),
+  ]);
+  await target?.setFocus().catch(() => undefined);
   await Promise.all(
     AMO_UTILITY_WINDOWS.filter((utilityLabel) => utilityLabel !== label).map((utilityLabel) =>
       setAmoWindowAlwaysOnTop(utilityLabel, false),
     ),
   );
-  await setAmoWindowAlwaysOnTop(label, true);
-  await target?.show().catch(() => undefined);
-  await target?.setFocus().catch(() => undefined);
 }
 
 export async function restoreAmoWindowLayerAfterNativeDialog() {

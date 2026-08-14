@@ -14,6 +14,8 @@ interface UseMainUtilityWindowsOptions {
 
 type LazyWindowKind = UtilityWindowKind | "scratchpad";
 
+const pendingUtilityWindowRequests = new Map<LazyWindowKind, Promise<WebviewWindow>>();
+
 const utilityWindowDefinitions: Record<
   LazyWindowKind,
   { title: string; width: number; height: number; minWidth: number; minHeight: number }
@@ -112,8 +114,13 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
   }
 
   async function openUtilityWindow(label: UtilityWindowKind) {
-    setActiveUtilityWindow(label);
     try {
+      const target = await getOrCreateUtilityWindow(label);
+      await target.show();
+      await target.setFocus().catch(() => undefined);
+      setActiveUtilityWindow(label);
+      await bringUtilityWindowToFront(label);
+
       const utilityLabels: UtilityWindowKind[] = ["deploy", "settings", "priorities", "harness"];
       await Promise.all(
         utilityLabels.filter((otherLabel) => otherLabel !== label).map(async (otherLabel) => {
@@ -122,8 +129,6 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
           await setAmoWindowAlwaysOnTop(otherLabel, false);
         }),
       );
-      await getOrCreateUtilityWindow(label);
-      await bringUtilityWindowToFront(label);
       const title = label === "deploy"
         ? "Workspace Center"
         : label === "settings"
@@ -153,6 +158,9 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
 
   async function focusUtilityWindow(label: UtilityWindowKind) {
     try {
+      const target = await getOrCreateUtilityWindow(label);
+      await target.show();
+      await target.setFocus().catch(() => undefined);
       await bringUtilityWindowToFront(label);
     } catch (error) {
       setActiveUtilityWindow(null);
@@ -189,10 +197,27 @@ export function ensureScratchpadWindow() {
 }
 
 async function getOrCreateUtilityWindow(label: LazyWindowKind) {
+  const pending = pendingUtilityWindowRequests.get(label);
+  if (pending) return pending;
+
+  const request = createOrFindUtilityWindow(label);
+  pendingUtilityWindowRequests.set(label, request);
+  try {
+    return await request;
+  } finally {
+    if (pendingUtilityWindowRequests.get(label) === request) {
+      pendingUtilityWindowRequests.delete(label);
+    }
+  }
+}
+
+async function createOrFindUtilityWindow(label: LazyWindowKind) {
   const existing = await WebviewWindow.getByLabel(label);
   if (existing) return existing;
 
   const definition = utilityWindowDefinitions[label];
+  const isHarnessLab = label === "harness";
+  const isLightTheme = document.documentElement.dataset.amoTheme === "light";
   const target = new WebviewWindow(label, {
     url: "/",
     title: definition.title,
@@ -203,10 +228,11 @@ async function getOrCreateUtilityWindow(label: LazyWindowKind) {
     resizable: true,
     decorations: false,
     alwaysOnTop: true,
-    transparent: true,
+    transparent: !isHarnessLab,
+    backgroundColor: isHarnessLab ? (isLightTheme ? "#f1f7f5" : "#12191d") : undefined,
     shadow: true,
     skipTaskbar: true,
-    visible: false,
+    visible: label !== "scratchpad",
     center: true,
   });
 

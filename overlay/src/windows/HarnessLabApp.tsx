@@ -85,12 +85,20 @@ export function HarnessLabApp() {
   useEffect(() => {
     let disposed = false;
     let unlistenFocus: (() => void) | null = null;
-    void refreshStatus(false, true);
+    let initialStatusStarted = false;
+    let initialStatusTimeout: number | null = null;
+    const initialStatusFrame = window.requestAnimationFrame(() => {
+      initialStatusTimeout = window.setTimeout(() => {
+        if (disposed) return;
+        initialStatusStarted = true;
+        void refreshStatus(false, true);
+      }, 0);
+    });
 
     void getCurrentWindow()
       .onFocusChanged((event) => {
         windowActiveRef.current = event.payload;
-        if (!event.payload || busyRef.current) return;
+        if (!event.payload || busyRef.current || !initialStatusStarted) return;
         const statusIsStale = Date.now() - lastStatusAtRef.current > 2_000;
         void refreshStatus(false, statusIsStale);
       })
@@ -105,6 +113,8 @@ export function HarnessLabApp() {
     return () => {
       disposed = true;
       unlistenFocus?.();
+      window.cancelAnimationFrame(initialStatusFrame);
+      if (initialStatusTimeout !== null) window.clearTimeout(initialStatusTimeout);
       window.clearInterval(intervalId);
     };
   }, [refreshStatus]);
