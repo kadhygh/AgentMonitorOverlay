@@ -9,6 +9,7 @@ This file summarizes the principal components used by the current Windows applic
 | Component | Project | License |
 | --- | --- | --- |
 | Node.js | <https://nodejs.org/> | MIT and bundled third-party notices |
+| npm CLI | <https://github.com/npm/cli> | Artistic-2.0 |
 | Tauri | <https://tauri.app/> | Apache-2.0 OR MIT |
 | React and React DOM | <https://react.dev/> | MIT |
 | Lucide | <https://lucide.dev/> | ISC |
@@ -16,7 +17,7 @@ This file summarizes the principal components used by the current Windows applic
 | Tauri Notification plugin | <https://github.com/tauri-apps/plugins-workspace> | Apache-2.0 OR MIT |
 | Tauri Global Shortcut plugin | <https://github.com/tauri-apps/plugins-workspace> | Apache-2.0 OR MIT |
 
-The Portable package includes a pinned Node.js executable. Its complete upstream license is copied into the package as `runtime/NODE-LICENSE.txt` by the release build.
+The Portable package includes a pinned Node.js executable and the npm CLI used only by explicit DeepSeek Harness Lab runtime-management actions. The Node.js upstream license is copied as `runtime/NODE-LICENSE.txt`; npm's license and bundled dependency notices remain under `runtime/node_modules/npm/`.
 
 ## Obsidian Plugin Build Components
 

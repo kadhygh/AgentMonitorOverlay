@@ -5,11 +5,12 @@ Applies to: Windows x64 Portable ZIP releases
 
 ## Release Contract
 
-The first AMO Portable format is a ZIP folder, not a single executable. It contains the Tauri application, a pinned Node runtime, the Broker source/runtime assets, persistent data storage, licenses, and version metadata.
+The first AMO Portable format is a ZIP folder, not a single executable. It contains the Tauri application, a pinned Node/npm runtime, the Broker source/runtime assets, persistent data storage, licenses, and version metadata.
 
 Portable guarantees:
 
 - no Node, npm, Rust, repository checkout, or PowerShell startup script is required on the target machine;
+- the bundled npm CLI is used only for explicit DeepSeek Harness Lab Install, Repair, Update, and remote-version actions; normal AMO or Harness startup never invokes npm;
 - the packaged executable runs in stable mode without the source `tauri dev` watcher;
 - `AMO.exe` starts the bundled Broker without a console window;
 - Broker state lives under the package-local `data/` directory;
@@ -84,6 +85,7 @@ The smoke requires evidence that:
 - `AMO.exe` starts;
 - health responds from port `17654`;
 - the Broker executable is exactly the packaged `runtime/node.exe`;
+- `runtime/npm.cmd` and its packaged npm CLI entry are present for optional Harness Lab runtime deployment;
 - the Broker script is exactly the packaged `app/broker/server.js`;
 - storage resolves to package-local `data/sessions.json`;
 - Workspace Registry responds;

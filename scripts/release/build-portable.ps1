@@ -1,5 +1,5 @@
 param(
-    [string]$Version = "0.1.6",
+    [string]$Version = "0.1.7",
     [string]$NodeVersion = "24.13.0",
     [switch]$SkipDependencyInstall
 )
@@ -90,6 +90,8 @@ AMO Portable v$Version
 
 Run AMO.exe. The bundled Broker and Node runtime start automatically.
 
+DeepSeek Harness Lab can use the bundled npm CLI for its explicit Install, Repair, and Update actions. These actions still require network access to the npm registry.
+
 Portable data is stored in the data folder beside AMO.exe. Keep that folder when updating.
 Codex CLI, Claude CLI, Obsidian, Windows Terminal, and WebView2 are external prerequisites when their features are used.
 
@@ -172,6 +174,10 @@ function Copy-NodeRuntime {
     Expand-Archive -LiteralPath $ArchivePath -DestinationPath $ExtractRoot
     New-Item -ItemType Directory -Force -Path $DestinationRoot | Out-Null
     Copy-Item -LiteralPath (Join-Path $DistributionRoot "node.exe") -Destination $DestinationRoot
+    Copy-Item -LiteralPath (Join-Path $DistributionRoot "npm.cmd") -Destination $DestinationRoot
+    $nodeModulesDestination = Join-Path $DestinationRoot "node_modules"
+    New-Item -ItemType Directory -Force -Path $nodeModulesDestination | Out-Null
+    Copy-Item -LiteralPath (Join-Path $DistributionRoot "node_modules\npm") -Destination $nodeModulesDestination -Recurse
     Copy-Item -LiteralPath (Join-Path $DistributionRoot "LICENSE") -Destination (Join-Path $DestinationRoot "NODE-LICENSE.txt")
 }
 
@@ -183,6 +189,9 @@ function Assert-PortableLayout {
         "THIRD_PARTY_NOTICES.md",
         "RELEASE_NOTES.md",
         "runtime\node.exe",
+        "runtime\npm.cmd",
+        "runtime\node_modules\npm\bin\npm-cli.js",
+        "runtime\node_modules\npm\LICENSE",
         "runtime\NODE-LICENSE.txt",
         "app\broker\server.js",
         "app\broker\lib\workspace-deploy.js",
