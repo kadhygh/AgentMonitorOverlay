@@ -2,6 +2,8 @@
 
 Updated: 2026-07-15
 
+Active execution companion: `docs/shell-first-startup-runtime-refactor.md`. That document applies these ownership rules to startup responsiveness, Session Runtime extraction, and polling governance, and is updated as each implementation phase lands.
+
 This document is the execution contract for separating AMO runtime coordination from React user experience code. It complements `docs/refactor-execution-guide.md`: the previous refactor established useful source folders, while this phase fixes cross-layer timing and ownership.
 
 The product-level module map lives in `docs/amo-module-architecture.md`. This document specializes only the Overlay runtime, platform-port, and React interaction boundary.
