@@ -1,148 +1,102 @@
-# DeepSeek Harness 测试开发路线
+# DeepSeek Harness 全局安装与监控路线
 
-> 记录日期：2026-08-14
-> 当前策略：将 DeepSeek Harness 视为快速演进的独立实验运行时，先验证产品和部署，再逐步开发插件；早期不与 AMO Task Card 建立强耦合。
+## 产品边界
 
-## 背景与判断
+DeepSeek Harness 是与 Codex CLI、Claude CLI 同级的独立本机工具。AMO 不分发私有 Harness runtime，不拥有 Harness 进程，不维护 Harness 模型、Provider 或凭据，也不为 Harness 设置私有 `DSH_HOME`。Harness 自己管理 Web UI、模型路由、密钥、会话、Profile、Bundle 与 Agent Preset。
 
-DeepSeek Harness 当前仍处于 Developer Preview / RC 阶段，接口、插件结构和 Web Client 都可能快速变化。与此同时，它的 Cordis 插件架构、持久化 Session、Web UI、Headless 与 Host API 暴露了很大的扩展空间，后续很可能演化出比“兼容 Codex Hook”更适合 AMO 的新架构。
+Harness Lab 是机器级安装与状态中心，负责全局安装、远程版本检查、显式更新、本机 Web 健康检查、用户触发的 Web 启停及安装路径诊断。Start Web 只从已验证的全局 package root 启动 Web，Stop Web 只终止命令行与监听端口都验证为当前全局 DSH 的进程；AMO 不持有子进程句柄，也不在退出时停止 DSH。Task Card 集成不属于当前阶段；未来直接通过正式的 Harness 原生 Bundle 实现，不交付 shell-hook 原型。
 
-因此，AMO 不在第一阶段直接绑定 Harness 内部事件或 Session API。第一阶段先提供一个独立的 Harness Lab，让 Harness 能够稳定安装、启动、观察和使用；确认真实使用体验后，再决定插件和 Card 集成边界。
+## 当前阶段
 
-## 总体原则
+### 移除旧托管
 
-1. **安装和运行分离**：`npm install` 只用于首次安装、修复或版本升级；日常启动只运行已经安装的 `dsh web`。
-2. **独立演进**：Harness Lab 使用独立运行目录、`DSH_HOME`、端口、日志和状态，不改动现有 Codex/Claude/Card 链路。
-3. **固定基线、显式升级**：Developer Preview 阶段以精确 npm 版本作为安装基线，不使用无版本约束的 `npx` 启动；远端版本只在用户主动检查时查询，只在用户明确点击更新时升级。
-4. **凭据不落日志**：复用 AMO 存在 Windows Credential Manager 中的 DeepSeek/GLM Key，只通过子进程环境传入，不写命令行、项目文件或日志。
-5. **先观察后抽象**：先用 Harness 原生 Web UI 选择工作目录和创建任务；稳定后才设计 AMO 插件协议和 Card 映射。
-6. **只监听不代替授权**：未来的 AMO 插件可以显示 Harness 授权状态，但不自动批准危险操作。
+- 删除 AMO 私有 `@deepseek-ai/dsh` runtime 的安装、修复和更新路径。
+- 删除 AMO 启动、停止和退出时终止 Harness 子进程的行为。
+- 删除 `DEEPSEEK_API_KEY`、`AMO_GLM_API_KEY` 对 Harness 子进程的注入。
+- 删除 AMO 初始化或升级 Harness `settings.yaml` Provider 的行为。
+- 删除 Harness Lab 中的模型、密钥、Repair 和私有 runtime 启停控件；全局部署只提供明确命名的 Start Web 与 Stop Web。
+- Portable 发行物只为 AMO Broker 携带 Node.js，不携带 npm 或 Harness runtime。
 
-## 阶段 0：调查与版本钉住（已完成）
+旧的开发期 `tmp/deepseek-harness-lab` 数据不再是运行输入。清理前必须确认端口 3080 的旧受管进程已停止，并验证待删除的绝对路径仍位于准确的旧数据根下。
 
-- 确认产品形态是 `dsh` CLI 启动器、本地 Web 服务和浏览器 UI，不是 Electron/Tauri 桌面应用。
-- 确认 Web、Headless、Host API、ACP、JSON-RPC、Python SDK 等入口。
-- 确认官方 Codex/Claude Hook Bridge 仅为部分兼容层。
-- 确认正式 Card 集成应优先考虑 Cordis 原生事件和持久化 `session/event`。
-- 当前实验版本固定为 `@deepseek-ai/dsh@0.1.0-rc.6`；升级必须经过单独验证。
+### 全局安装
 
-## 阶段 1：Harness Lab 独立运行面板（当前版本）
+Harness Lab 通过系统 npm 安装明确版本：
 
-### UI 入口
+```powershell
+npm install --global @deepseek-ai/dsh@0.1.0-rc.6 --no-audit --no-fund
+```
 
-- 在 AMO 主窗口 **Open Settings 左侧**增加 Harness Lab 按钮。
-- 点击后打开独立的 **DeepSeek Harness Lab** 工具窗口。
-- 该窗口与 Settings、Workspace Center 一样使用 AMO 的独立工具窗口管理，不占用 Task Card 区域。
+安装器不使用浮动包 spec，不修改 npm global prefix，不自动启动 Harness，也不创建模型配置。用户可以在安装后显式选择 Start Web。面板显示系统 Node、npm 与 pnpm 版本；pnpm 缺失不会阻止 Web 运行，但会提示外部 Bundle 管理不可用。
 
-### 面板能力
+### 远程版本与更新
 
-- 显示固定的 Harness 版本、安装路径、`DSH_HOME`、服务 URL 和 PID。
-- 检测内置/受管 Node 是否可用。
-- 检测 Harness 是否已经安装。
-- 提供一次性的 **Install / Repair test runtime**。
-- 首次安装使用固定基线版本；Repair 修复当前本地版本，不会把已经显式升级的版本自动降回基线。
-- 显示当前本地运行时版本；按需查询 npm registry 上发布的远端版本，并提示是否有更新。
-- 提供显式的一键更新；更新前要求停止 Harness，只更新 AMO 独立受管 runtime，不修改全局 npm 包。
-- 启动 `dsh web` 后台服务。
-- 停止由当前 AMO 实例启动的服务。
-- 轮询并展示 `Stopped / Starting / Running / Port conflict / Error` 状态。
-- 展示最近的 stdout/stderr/install 日志，不显示凭据。
-- 一键在系统浏览器打开 Harness Web UI。
+远程检查通过系统 npm 查询发布版本：
 
-### 凭据和模型
+```powershell
+npm view @deepseek-ai/dsh version
+```
 
-- 启动时从 Windows Credential Manager 读取 AMO 已保存的 DeepSeek Key，并通过 `DEEPSEEK_API_KEY` 注入子进程。
-- 如果 AMO 已保存 GLM Key，通过独立环境变量注入 Harness。
-- 在全新的受管 `DSH_HOME/settings.yaml` 中初始化一个 GLM 自定义 Provider：
-  - Provider ID：`amo-glm`
-  - 协议：`anthropic-messages`
-  - Base URL：`https://open.bigmodel.cn/api/anthropic`
-  - Model：`glm-5.3[1m]`
-- 不覆盖用户已经存在的 `llm-pi-ai` 配置；发生配置冲突时保留用户配置，并在面板提示改用 Harness 的 Models 页面手动添加。
-- DeepSeek 和 GLM Key 均不写入 `settings.yaml` 或 Harness 日志。
+版本使用语义化版本规则比较，正确处理 `rc.9` 与 `rc.10`。安装状态区分推荐版本、已安装版本和 registry 版本。更新操作先解析并校验 registry 返回的版本，再把该明确版本传给全局 npm 安装；不把 `latest` 作为安装参数。运行中的本机 3080 服务必须由用户在 AMO 外停止后才能更新。
 
-### 第一阶段验收标准
+### 本机状态
 
-- Harness Lab 能明确区分未安装、已停止、运行中和端口冲突。
-- 首次安装完成后，后续启停不再执行 `npm install`。
-- AMO 重开后仍能识别已经运行的 Harness 服务。
-- 点击 Open Web 能打开 `http://127.0.0.1:3080`。
-- Harness Web UI 能添加工作目录、创建多个任务并使用 DeepSeek 模型。
-- 已配置 GLM Key 时，模型选择器能看到并调用 GLM；未配置时给出清楚提示。
-- Harness 崩溃时状态和日志能反映真实情况，不影响 AMO Broker 和现有 Card。
+Harness Lab 分别显示：
 
-## 阶段 2：真实使用验证与运行时固化
+- 全局 DSH 命令及发现到的全部同名命令路径；
+- npm global root 与 `@deepseek-ai/dsh` package root；
+- `DSH_HOME`（环境变量优先，否则为 `%USERPROFILE%\.dsh`）；
+- Node、npm、pnpm 版本；
+- 3080 监听 PID；
+- DSH Web 健康、端口冲突和部分安装状态；
+- 最近一次全局 npm 安装或更新日志。
 
-在开发插件前，先持续验证以下行为：
+AMO 探测外部服务并提供显式 Web 启停入口。Start Web 启动脱离 AMO 生命周期的全局进程；Stop Web 在终止前验证监听 PID 的完整命令行必须指向当前 npm global root 下的 `@deepseek-ai/dsh/lib/bin.js web --port 3080`。端口冲突、命令行不可读或 package root 不匹配时拒绝终止。AMO 关闭时不终止 DSH，DSH 停止时也不影响 AMO。
 
-- Windows 下长时间运行、休眠唤醒和网络切换。
-- 多工作区、多 Session、任务取消、授权、上下文压缩和恢复。
-- DeepSeek V4 Pro、V4 Flash 与 GLM-5.3 的实际兼容性。
-- Harness 升级后的配置迁移和 Session 恢复。
-- 端口占用、异常退出、孤儿进程和日志滚动。
-- Portable 包内预装 Node + Harness 后的离线启动。
+## 运行方式
 
-这一阶段完成后，把构建机上已安装并验证的 Harness 运行时打入 Portable。用户机器不再依赖系统 Node、npm、PATH 或在线 registry。
+用户在任意终端独立启动 Harness：
 
-## 阶段 3：AMO 原生 Cordis Bridge 插件
+```powershell
+dsh web --host 127.0.0.1 --port 3080
+```
 
-确认 Harness 的扩展面相对稳定后，再开发独立包 `@amo/dsh-bridge`：
+Harness Lab 提供 Start Web、Stop Web 与 Open Web，分别对应显式启动、验证后停止和打开本机页面。它不提供长期进程托管、崩溃重启或开机自启；这些职责属于用户的终端、任务计划程序或其他独立服务管理器。
 
-- 监听 `session/event`、`agent/status`、工具流水线和授权事件。
-- 将事件转换成版本化的 AMO Broker 协议。
-- 从 `assistant/message` 获取完整最终回复。
-- 从 `approval/request` / `approval/asked` 显示等待授权，但调用 `next()` 把决定交给 Harness UI。
-- 对 Harness 版本做严格兼容检查；不兼容时禁用插件并保留原生 Web 使用能力。
-- 不把现有 Codex/Claude Hook Bridge 当作正式主链路。
+## 插件与模型
 
-## 阶段 4：精确 Session 跳转
+Agent Preset 存放在 `$DSH_HOME/.agent-presets/<id>`。外部 Bundle 使用 Harness 自己的 Profile 命令管理：
 
-开发一个很小的 Harness Web Client 插件：
+```powershell
+dsh plugin --profile web add <package>@<version> --save-exact
+```
 
-- 支持 `?amo-session=<sessionId>`。
-- 根据 URL 参数调用 Harness Client Session API 切换到对应任务。
-- 保留普通 `http://127.0.0.1:3080` 首页行为。
-- 验证冷 Session、已归档 Session、无效 Session ID 和服务重启后的处理。
+Harness Lab 不安装、更新或删除 Preset/Bundle，不读取 `.credentials.yaml`，也不展示明文凭据。未来可以增加只读的插件兼容性与 Provider/Model 名称健康检查，但必须通过 Harness 的脱敏接口获得数据。
 
-## 阶段 5：Task Card 只读联动
+## Future：原生 Task Card Bundle
 
-先做低风险、只读型集成：
+Task Card 集成延后到全局安装与状态模型稳定以后。正式实现是可由 `dsh plugin` 安装的 AMO Bundle，直接消费 Harness 类型化 session/telemetry 事件，并向 AMO Broker 发送版本化、去重、脱敏且非阻塞的事件。它不经过 Codex 或 Claude hook 方言，也不交付临时 shell-hook 适配层。
 
-- Harness Session 创建后生成 AMO Card。
-- 同步 Running、Idle、Waiting Permission、Completed、Failed、Cancelled。
-- Card 保存 `sessionId`、Workspace 和 Harness 实例 ID。
-- Harness 按钮精确打开对应 Session。
-- Note/Canvas 可以读取最终回复或任务摘要。
-- VS Code 按钮继续按 Workspace 打开工程。
+未来 Bundle 至少需要覆盖：
 
-这一阶段不从 AMO 发送 Prompt，不执行授权，不改变 Harness Session。
+- session 创建、恢复、释放；
+- turn 与 step 开始/结束；
+- provider/model 路由；
+- tool call/result；
+- approval asked/decided；
+- `ask_user_question` 的未决工具调用；
+- agent error；
+- 基于 `(session.id, event.seq)` 的接收端去重。
 
-## 阶段 6：双向任务管理
+`turn/end` 表示一轮结束，不表示整个会话完成。正式适配必须显式发送 AMO state，不能依赖现有 hook 事件名字符串推断。
 
-只在 Host API 和插件协议稳定后考虑：
+## 当前阶段验收
 
-- 从 AMO 创建 Session、选择 Workspace 和模型。
-- 发送 Prompt、Cancel、Resume、Rename、Archive、Fork。
-- 进程重启后恢复 `Card ↔ sessionId` 映射。
-- 增加明确的权限边界、操作确认和失败回滚。
-
-## 暂不实施的内容
-
-- 不在第一阶段把 Harness Session 自动转成 Card。
-- 不直接依赖未版本化的内部 Web API。
-- 不把 Harness 端口暴露到 `0.0.0.0`、局域网或公网。
-- 不自动审批 Harness 的权限请求。
-- 不用 UI 自动化或修改浏览器 localStorage 模拟任务跳转。
-- 不在每次 AMO 或任务启动时运行 `npm install`。
-
-## 升级门禁
-
-每次升级 Harness 固定版本前，至少验证：
-
-1. 安装和 `dsh web` 启动。
-2. 首页识别标记和服务健康检查。
-3. DeepSeek/GLM 凭据解析。
-4. Workspace 添加、Session 创建和恢复。
-5. Windows 工具执行与授权。
-6. 旧 `DSH_HOME` 和 Session 日志兼容性。
-7. 如果已进入阶段 3，Cordis Bridge 合约测试和 Session Deep Link 测试。
+1. AMO 不再拥有私有 Harness runtime、home 或进程。
+2. AMO 不再管理 Harness 模型和密钥。
+3. 全局安装使用明确版本并在完成后重新探测命令与 package root。
+4. 远程版本查询失败不影响本机安装与 Web 健康状态。
+5. AMO 能区分未安装、已停止、运行中、端口冲突和部分安装。
+6. AMO 更新或退出不停止 DSH；DSH 更新不覆盖 AMO。
+7. Portable 发行物不携带 npm 或 Harness runtime。
+8. 本阶段不创建 DSH Task Card，不安装 Hook 原型。

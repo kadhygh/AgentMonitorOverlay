@@ -1,28 +1,33 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
-  Activity,
+  Blocks,
   ChevronDown,
   ChevronRight,
   CloudDownload,
+  Cpu,
   ExternalLink,
   FlaskConical,
+  FolderCog,
+  KeyRound,
   LoaderCircle,
+  PackageCheck,
+  PanelTop,
   Play,
   RefreshCw,
-  Server,
+  Search,
   Square,
-  Wrench,
+  SquareTerminal,
   X,
 } from "lucide-react";
 import {
-  checkHarnessLabRemoteVersion,
-  installHarnessLabRuntime,
+  checkHarnessRemoteVersion,
+  installGlobalHarness,
   loadHarnessLabStatus,
   openHarnessLabWeb,
-  startHarnessLabService,
-  stopHarnessLabService,
-  updateHarnessLabRuntime,
+  startGlobalHarnessWeb,
+  stopGlobalHarnessWeb,
+  updateGlobalHarness,
   type HarnessLabStatus,
 } from "../native/deepseekHarness";
 import { AdaptivePollController } from "../runtime/adaptivePollController";
@@ -36,11 +41,11 @@ import {
 type HarnessAction = "install" | "checkVersion" | "update" | "start" | "stop" | "open" | "refresh";
 
 const stateLabels: Record<string, string> = {
-  notInstalled: "Not installed",
+  notInstalled: "Unavailable",
   stopped: "Stopped",
-  starting: "Starting",
   running: "Running",
   portConflict: "Port conflict",
+  installationBroken: "Installation issue",
   error: "Error",
 };
 
@@ -49,9 +54,9 @@ export function HarnessLabApp() {
   useAmoThemeRuntime();
   const [status, setStatus] = useState<HarnessLabStatus | null>(null);
   const [busy, setBusy] = useState<HarnessAction | null>(null);
-  const [logsExpanded, setLogsExpanded] = useState(false);
+  const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
   const [loading, setLoading] = useState(true);
-  const [feedback, setFeedback] = useState("Loading DeepSeek Harness Lab status...");
+  const [feedback, setFeedback] = useState("Loading DeepSeek Harness status...");
   const busyRef = useRef<HarnessAction | null>(null);
   const lastStatusAtRef = useRef(0);
   const loadingRequestRef = useRef(0);
@@ -61,19 +66,22 @@ export function HarnessLabApp() {
     busyRef.current = busy;
   }, [busy]);
 
+  const applyStatus = useCallback((next: HarnessLabStatus) => {
+    statusStateRef.current = next.state;
+    setStatus(next);
+    setFeedback(next.message);
+    lastStatusAtRef.current = Date.now();
+  }, []);
+
   const refreshStatus = useCallback(async (showBusy = true, showLoading = false) => {
     const loadingRequest = showLoading ? ++loadingRequestRef.current : 0;
     if (showBusy) setBusy("refresh");
     if (showLoading) {
       setLoading(true);
-      setFeedback("Loading DeepSeek Harness Lab status...");
+      setFeedback("Loading DeepSeek Harness status...");
     }
     try {
-      const next = await loadHarnessLabStatus();
-      statusStateRef.current = next.state;
-      setStatus(next);
-      setFeedback(next.message);
-      lastStatusAtRef.current = Date.now();
+      applyStatus(await loadHarnessLabStatus());
     } catch (error) {
       setFeedback(`Harness status failed: ${(error as Error).message}`);
     } finally {
@@ -82,7 +90,7 @@ export function HarnessLabApp() {
         setLoading(false);
       }
     }
-  }, []);
+  }, [applyStatus]);
 
   useEffect(() => {
     let disposed = false;
@@ -91,10 +99,8 @@ export function HarnessLabApp() {
     let initialStatusTimeout: number | null = null;
     const pollController = new AdaptivePollController({
       nextDelayMs: () => {
-        const state = statusStateRef.current;
-        if (state === "running" || state === "starting") return 3_000;
-        if (state === "stopped" || state === "notInstalled") return 15_000;
-        return 8_000;
+        if (statusStateRef.current === "running") return 3_000;
+        return 15_000;
       },
       run: async (reason) => {
         if (busyRef.current) return;
@@ -113,8 +119,7 @@ export function HarnessLabApp() {
       .onFocusChanged((event) => {
         const activityChanged = pollController.setActive(event.payload, "focus-resume");
         if (!event.payload || activityChanged || busyRef.current || !initialStatusStarted) return;
-        const statusIsStale = Date.now() - lastStatusAtRef.current > 2_000;
-        if (statusIsStale) pollController.request("focus-stale");
+        if (Date.now() - lastStatusAtRef.current > 2_000) pollController.request("focus-stale");
       })
       .then((handler) => {
         if (disposed) handler();
@@ -134,17 +139,15 @@ export function HarnessLabApp() {
     setBusy(action);
     try {
       const next = action === "install"
-        ? await installHarnessLabRuntime()
+        ? await installGlobalHarness()
         : action === "checkVersion"
-          ? await checkHarnessLabRemoteVersion()
+          ? await checkHarnessRemoteVersion()
           : action === "update"
-            ? await updateHarnessLabRuntime()
-        : action === "start"
-          ? await startHarnessLabService()
-           : await stopHarnessLabService();
-      statusStateRef.current = next.state;
-      setStatus(next);
-      setFeedback(next.message);
+            ? await updateGlobalHarness()
+            : action === "start"
+              ? await startGlobalHarnessWeb()
+              : await stopGlobalHarnessWeb();
+      applyStatus(next);
     } catch (error) {
       setFeedback(`Harness ${action} failed: ${(error as Error).message}`);
     } finally {
@@ -164,36 +167,48 @@ export function HarnessLabApp() {
     }
   }
 
-  const state = status?.state || "starting";
+  const state = status?.state || "notInstalled";
   const stateLabel = stateLabels[state] || state;
-  const versionBadge = status?.updateAvailable
-    ? "Update available"
-    : status?.remoteVersion && status?.installedVersion === status.remoteVersion
-      ? "Up to date"
-      : status?.installed
-        ? "Ready"
-        : "Missing";
+  const versionBadge = status?.installedAhead
+    ? "Ahead of registry"
+    : status?.updateAvailable
+      ? "Update available"
+      : status?.remoteVersion && status?.installedVersion === status.remoteVersion
+        ? "Up to date"
+        : status?.installed
+          ? "Installed"
+          : "Missing";
+  const canStartWeb = Boolean(status?.installed && !status.running && state !== "portConflict" && state !== "installationBroken");
+  const webAddress = status?.running
+    ? `${status.url} · PID ${status.pid || "detecting"}`
+    : status?.installed
+      ? "Global DSH remains installed · Web process is not running"
+      : "Install global DSH to enable its Web interface";
 
   return (
     <main className="utility-window-shell harness-lab-window-shell">
-      <section className="app-dialog harness-lab-dialog" role="dialog" aria-label="DeepSeek Harness Lab">
+      <section className="app-dialog harness-lab-dialog" role="dialog" aria-label="Harness Lab">
         <header className="app-dialog-titlebar">
           <div className="app-dialog-title" onPointerDown={startUtilityWindowDrag}>
             <FlaskConical size={16} aria-hidden="true" />
             <div>
-              <strong>DeepSeek Harness Lab</strong>
-              <span>Independent preview runtime and service controls</span>
+              <strong>Harness Lab</strong>
+              <span>Global DSH installation and Web control</span>
             </div>
           </div>
-          <button
-            type="button"
-            className="candidate-close"
-            title="Close Harness Lab"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={() => void closeUtilityWindow("harness")}
-          >
-            <X size={13} aria-hidden="true" />
-          </button>
+          <div className="harness-title-meta">
+            <span>Global command</span>
+            <code>dsh {status?.installedVersion || "—"}</code>
+            <button
+              type="button"
+              className="candidate-close"
+              title="Close Harness Lab"
+              onPointerDown={(event) => event.stopPropagation()}
+              onClick={() => void closeUtilityWindow("harness")}
+            >
+              <X size={13} aria-hidden="true" />
+            </button>
+          </div>
         </header>
 
         <div className="harness-lab-content">
@@ -201,167 +216,210 @@ export function HarnessLabApp() {
             <div className="harness-loading-view" role="status" aria-live="polite">
               <LoaderCircle size={24} aria-hidden="true" className="is-spinning" />
               <strong>Loading Harness Lab</strong>
-              <span>Checking the local runtime and service status...</span>
+              <span>Checking the global command and local Web interface...</span>
             </div>
           ) : null}
-          <section className={`harness-status-hero is-${state}`} aria-live="polite">
-            <div className="harness-status-icon">
-              <Activity size={18} aria-hidden="true" />
-            </div>
-            <div>
-              <span>Service status</span>
-              <strong>{stateLabel}</strong>
-              <p>{status?.message || "Checking the managed runtime and local service."}</p>
-            </div>
-            <code>{status?.url || "http://127.0.0.1:3080"}</code>
-          </section>
 
-          <div className="harness-action-row" aria-label="Harness controls">
-            <button
-              type="button"
-              className="harness-action is-secondary"
-              disabled={Boolean(busy || status?.running || !status?.npmAvailable)}
-              title={!status?.npmAvailable ? "A system npm is needed by this development-only installer." : undefined}
-              onClick={() => void runStatusAction("install")}
-            >
-              <Wrench size={14} aria-hidden="true" />
-              <span>{busy === "install" ? "Installing..." : status?.installed ? "Repair runtime" : "Install runtime"}</span>
-            </button>
-            <button
-              type="button"
-              className="harness-action is-primary"
-              disabled={Boolean(busy || !status?.installed || status?.running || state === "portConflict")}
-              onClick={() => void runStatusAction("start")}
-            >
-              <Play size={14} aria-hidden="true" />
-              <span>{busy === "start" ? "Starting..." : "Start service"}</span>
-            </button>
-            <button
-              type="button"
-              className="harness-action is-danger"
-              disabled={Boolean(busy || !status?.owned)}
-              title={status?.running && !status.owned ? "AMO does not terminate externally-owned services." : undefined}
-              onClick={() => void runStatusAction("stop")}
-            >
-              <Square size={13} aria-hidden="true" />
-              <span>{busy === "stop" ? "Stopping..." : "Stop"}</span>
-            </button>
-            <button
-              type="button"
-              className="harness-action is-secondary"
-              disabled={Boolean(busy || !status?.running)}
-              onClick={() => void openWeb()}
-            >
-              <ExternalLink size={14} aria-hidden="true" />
-              <span>Open Web</span>
-            </button>
-            <button
-              type="button"
-              className="harness-icon-action"
-              disabled={Boolean(busy)}
-              title="Refresh status"
-              aria-label="Refresh Harness status"
-              onClick={() => void refreshStatus()}
-            >
-              <RefreshCw size={14} aria-hidden="true" className={busy === "refresh" ? "is-spinning" : ""} />
-            </button>
-          </div>
-
-          <p className="harness-install-note">
-            Install / Repair and Update are explicit runtime operations and can take several minutes. Normal Start service never runs npm install or checks the network.
-          </p>
-
-          <section className="harness-card-grid" aria-label="Harness runtime details">
-            <article className="harness-info-card">
-              <header>
-                <Server size={14} aria-hidden="true" />
-                <strong>Runtime</strong>
-                <em className={status?.updateAvailable ? "is-update" : status?.installed ? "is-ready" : ""}>{versionBadge}</em>
-              </header>
-              <dl>
-                <div><dt>Baseline</dt><dd>{status?.expectedVersion || "0.1.0-rc.6"}</dd></div>
-                <div><dt>Local</dt><dd className={status?.updateAvailable ? "is-warning" : ""}>{status?.installedVersion || "—"}</dd></div>
-                <div><dt>Remote</dt><dd className={status?.updateAvailable ? "is-update" : ""}>{status?.remoteVersion || "Not checked"}</dd></div>
-                <div><dt>Node</dt><dd>{status?.nodeVersion || (status?.nodeAvailable ? "Detected" : "Missing")}</dd></div>
-                <div><dt>PID</dt><dd>{status?.pid || "—"}</dd></div>
-              </dl>
-              <div className="harness-version-actions" aria-label="Harness version controls">
-                <button
-                  type="button"
-                  disabled={Boolean(busy || !status?.npmAvailable)}
-                  title={!status?.npmAvailable ? "npm is needed to query the package registry." : "Check the latest published npm version"}
-                  onClick={() => void runStatusAction("checkVersion")}
-                >
-                  <RefreshCw size={12} aria-hidden="true" className={busy === "checkVersion" ? "is-spinning" : ""} />
-                  <span>{busy === "checkVersion" ? "Checking..." : "Check remote"}</span>
-                </button>
-                <button
-                  type="button"
-                  className={status?.updateAvailable ? "is-update" : ""}
-                  disabled={Boolean(busy || !status?.installed || status?.running || !status?.npmAvailable)}
-                  title={status?.running ? "Stop the Harness service before updating." : "Install the latest published version into AMO's managed runtime"}
-                  onClick={() => void runStatusAction("update")}
-                >
-                  <CloudDownload size={12} aria-hidden="true" />
-                  <span>{busy === "update" ? "Updating..." : "Update"}</span>
-                </button>
+          <section className={`harness-web-status is-${state}`} aria-live="polite">
+            <div className="harness-web-main">
+              <div className="harness-web-icon">
+                <PanelTop size={18} aria-hidden="true" />
               </div>
-            </article>
-
-            <article className="harness-info-card">
-              <header>
-                <FlaskConical size={14} aria-hidden="true" />
-                <strong>Models & credentials</strong>
-              </header>
-              <div className="harness-readiness-list">
-                <span className={status?.deepseekKeyConfigured ? "is-ready" : "is-warning"}>
-                  <i /> DeepSeek Key {status?.deepseekKeyConfigured ? "ready" : "missing"}
-                </span>
-                <span className={status?.glmKeyConfigured ? "is-ready" : "is-warning"}>
-                  <i /> GLM Key {status?.glmKeyConfigured ? "ready" : "missing"}
-                </span>
-                <span className={status?.glmProviderConfigured ? "is-ready" : ""}>
-                  <i /> GLM Provider {status?.glmProviderConfigured ? "seeded" : "seeds on first start"}
-                </span>
+              <div className="harness-web-copy">
+                <span>Web interface</span>
+                <strong>{stateLabel}</strong>
+                <small title={webAddress}>{webAddress}</small>
               </div>
-              <p>
-                Keys are read from AMO's Windows Credential Manager entries and passed only in the Harness process environment.
-              </p>
-            </article>
+            </div>
+            <div className="harness-web-actions">
+              <button
+                type="button"
+                className="harness-action is-primary"
+                disabled={Boolean(busy || !status?.running)}
+                onClick={() => void openWeb()}
+              >
+                <ExternalLink size={14} aria-hidden="true" />
+                <span>{busy === "open" ? "Opening..." : "Open Web"}</span>
+              </button>
+              <button
+                type="button"
+                className="harness-action"
+                disabled={Boolean(busy || !canStartWeb)}
+                title={state === "portConflict" ? "Port 3080 is occupied by another service." : "Start the globally installed DSH Web interface"}
+                onClick={() => void runStatusAction("start")}
+              >
+                <Play size={14} aria-hidden="true" />
+                <span>{busy === "start" ? "Starting..." : "Start Web"}</span>
+              </button>
+              <button
+                type="button"
+                className="harness-action is-danger"
+                disabled={Boolean(busy || !status?.running)}
+                title="Stop only the verified global DSH Web process"
+                onClick={() => void runStatusAction("stop")}
+              >
+                <Square size={13} aria-hidden="true" />
+                <span>{busy === "stop" ? "Stopping..." : "Stop Web"}</span>
+              </button>
+              <button
+                type="button"
+                className="harness-icon-action"
+                disabled={Boolean(busy)}
+                title="Refresh Harness status"
+                aria-label="Refresh Harness status"
+                onClick={() => void refreshStatus()}
+              >
+                <RefreshCw size={14} aria-hidden="true" className={busy === "refresh" ? "is-spinning" : ""} />
+              </button>
+            </div>
           </section>
 
-          <section className="harness-paths" aria-label="Harness paths">
-            <div><span>Runtime</span><code title={status?.runtimePath}>{status?.runtimePath || "Detecting..."}</code></div>
-            <div><span>DSH_HOME</span><code title={status?.dshHome}>{status?.dshHome || "Detecting..."}</code></div>
+          <section className="harness-installation-row" aria-label="Global DSH installation">
+            <div className="harness-installation-main">
+              <div className="harness-installation-icon">
+                <SquareTerminal size={17} aria-hidden="true" />
+              </div>
+              <div className="harness-installation-copy">
+                <span>Global installation</span>
+                <div>
+                  <strong>DeepSeek Harness {status?.installedVersion || "not installed"}</strong>
+                  <em className={status?.updateAvailable ? "is-update" : status?.installed ? "is-ready" : "is-missing"}>{versionBadge}</em>
+                </div>
+                <small>
+                  {status?.installed
+                    ? "Available in every terminal and project through the dsh command"
+                    : `Recommended version: ${status?.recommendedVersion || "0.1.0-rc.6"}`}
+                </small>
+              </div>
+            </div>
+            <div className="harness-installation-actions">
+              <button
+                type="button"
+                className="harness-action"
+                disabled={Boolean(busy || status?.running || !status?.npmAvailable)}
+                title={!status?.npmAvailable ? "A system npm on PATH is required." : "Install the explicit recommended version globally"}
+                onClick={() => void runStatusAction("install")}
+              >
+                <PackageCheck size={14} aria-hidden="true" />
+                <span>{busy === "install" ? "Installing..." : status?.installed ? "Reinstall" : "Install DSH"}</span>
+              </button>
+              <button
+                type="button"
+                className="harness-action"
+                disabled={Boolean(busy || !status?.npmAvailable)}
+                title="Check the published npm version"
+                onClick={() => void runStatusAction("checkVersion")}
+              >
+                <Search size={14} aria-hidden="true" />
+                <span>{busy === "checkVersion" ? "Checking..." : "Check remote"}</span>
+              </button>
+              <button
+                type="button"
+                className={`harness-action${status?.updateAvailable ? " is-primary" : ""}`}
+                disabled={Boolean(busy || status?.running || !status?.npmAvailable || !status?.updateAvailable)}
+                title={status?.running ? "Stop Web before updating DSH." : "Install the exact remote version globally"}
+                onClick={() => void runStatusAction("update")}
+              >
+                <CloudDownload size={14} aria-hidden="true" />
+                <span>{busy === "update" ? "Updating..." : "Update"}</span>
+              </button>
+            </div>
           </section>
 
-          <section className={`harness-log-panel${logsExpanded ? " is-expanded" : ""}`}>
+          <section className="harness-owned-section" aria-labelledby="harness-owned-title">
+            <div className="harness-section-heading">
+              <strong id="harness-owned-title">Managed inside DSH</strong>
+              <span>AMO does not read or rewrite these settings</span>
+            </div>
+            <div className="harness-owned-grid">
+              <HarnessOwnedItem
+                icon={<Cpu size={15} aria-hidden="true" />}
+                title="Models & Providers"
+                detail="Routes, endpoints, and model names"
+                disabled={Boolean(busy || !status?.running)}
+                onOpen={openWeb}
+              />
+              <HarnessOwnedItem
+                icon={<KeyRound size={15} aria-hidden="true" />}
+                title="Credentials"
+                detail="Provider keys owned by DSH"
+                disabled={Boolean(busy || !status?.running)}
+                onOpen={openWeb}
+              />
+              <HarnessOwnedItem
+                icon={<Blocks size={15} aria-hidden="true" />}
+                title="Presets & Plugins"
+                detail="Agent Presets and profile plugins"
+                disabled={Boolean(busy || !status?.running)}
+                onOpen={openWeb}
+              />
+            </div>
+          </section>
+
+          <section className={`harness-diagnostics${diagnosticsExpanded ? " is-expanded" : ""}`}>
             <button
               type="button"
-              className="harness-log-toggle"
-              aria-expanded={logsExpanded}
-              aria-controls="harness-service-logs"
-              onClick={() => setLogsExpanded((current) => !current)}
+              className="harness-diagnostics-toggle"
+              aria-expanded={diagnosticsExpanded}
+              aria-controls="harness-diagnostics-content"
+              onClick={() => setDiagnosticsExpanded((current) => !current)}
             >
-              {logsExpanded
-                ? <ChevronDown size={13} aria-hidden="true" />
-                : <ChevronRight size={13} aria-hidden="true" />}
-              <strong>Service logs</strong>
-              <span>Read-only diagnostics</span>
-              <em>{logsExpanded ? "Collapse" : "Show"}</em>
+              <span>
+                <FolderCog size={14} aria-hidden="true" />
+                <strong>Installation details</strong>
+              </span>
+              <em>Paths, toolchain, and logs</em>
+              {diagnosticsExpanded
+                ? <ChevronDown size={14} aria-hidden="true" />
+                : <ChevronRight size={14} aria-hidden="true" />}
             </button>
-            {logsExpanded ? (
-              <pre id="harness-service-logs" aria-label="Read-only Harness service logs">
-                {status?.recentLog || "No Harness service logs yet."}
-              </pre>
+            {diagnosticsExpanded ? (
+              <div className="harness-diagnostics-content" id="harness-diagnostics-content">
+                <div className="harness-diagnostics-grid">
+                  <div><span>Executable</span><code title={status?.executablePath || undefined}>{status?.executablePath || "Not found"}</code></div>
+                  <div><span>Package</span><code title={status?.packageRoot || undefined}>{status?.packageRoot || "Not found"}</code></div>
+                  <div><span>npm root</span><code title={status?.npmGlobalRoot || undefined}>{status?.npmGlobalRoot || "Not found"}</code></div>
+                  <div><span>DSH_HOME</span><code title={status?.dshHome}>{status?.dshHome || "Detecting..."}</code></div>
+                  <div><span>Versions</span><code>recommended {status?.recommendedVersion || "—"} · registry {status?.remoteVersion || "not checked"}</code></div>
+                  <div><span>Toolchain</span><code>Node {status?.nodeVersion || "missing"} · npm {status?.npmVersion || "missing"} · pnpm {status?.pnpmVersion || "missing"}</code></div>
+                  <div><span>Command paths</span><code>{status?.multipleInstallations ? status.executablePaths.join(" · ") : "Single global DSH installation"}</code></div>
+                </div>
+                <pre aria-label="Global DSH operation log">{status?.recentLog || "No global DSH installation or Web stop operations yet."}</pre>
+              </div>
             ) : null}
           </section>
         </div>
 
-        <footer className="app-dialog-footer">
+        <footer className="app-dialog-footer harness-lab-footer">
           <span title={feedback}>{feedback}</span>
+          <em>Process lifecycle: user controlled</em>
         </footer>
       </section>
     </main>
+  );
+}
+
+function HarnessOwnedItem({
+  icon,
+  title,
+  detail,
+  disabled,
+  onOpen,
+}: {
+  icon: ReactNode;
+  title: string;
+  detail: string;
+  disabled: boolean;
+  onOpen: () => Promise<void>;
+}) {
+  return (
+    <article className="harness-owned-item">
+      <span>{icon}</span>
+      <div>
+        <strong>{title}</strong>
+        <small>{detail}</small>
+      </div>
+      <button type="button" disabled={disabled} onClick={() => void onOpen()}>Open</button>
+    </article>
   );
 }

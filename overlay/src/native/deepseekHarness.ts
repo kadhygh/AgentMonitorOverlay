@@ -1,30 +1,34 @@
 import { invoke } from "@tauri-apps/api/core";
 import type { OpenPathResult } from "../types";
 
-export type HarnessLabState = "notInstalled" | "stopped" | "starting" | "running" | "portConflict" | "error";
+export type HarnessLabState = "notInstalled" | "stopped" | "running" | "portConflict" | "installationBroken" | "error";
 
 export interface HarnessLabStatus {
   ok: boolean;
   state: HarnessLabState;
   installed: boolean;
   installedVersion: string | null;
-  expectedVersion: string;
+  recommendedVersion: string;
   remoteVersion: string | null;
   updateAvailable: boolean;
+  installedAhead: boolean;
   running: boolean;
-  owned: boolean;
   pid: number | null;
   url: string;
   port: number;
-  runtimePath: string;
-  dataPath: string;
+  executablePath: string | null;
+  executablePaths: string[];
+  multipleInstallations: boolean;
+  packageRoot: string | null;
+  npmGlobalRoot: string | null;
   dshHome: string;
   nodeAvailable: boolean;
   nodeVersion: string | null;
   npmAvailable: boolean;
-  deepseekKeyConfigured: boolean;
-  glmKeyConfigured: boolean;
-  glmProviderConfigured: boolean;
+  npmVersion: string | null;
+  pnpmAvailable: boolean;
+  pnpmVersion: string | null;
+  installSource: string | null;
   message: string;
   recentLog: string;
 }
@@ -33,24 +37,24 @@ export function loadHarnessLabStatus(): Promise<HarnessLabStatus> {
   return invoke<HarnessLabStatus>("harness_lab_status");
 }
 
-export function installHarnessLabRuntime(): Promise<HarnessLabStatus> {
-  return invoke<HarnessLabStatus>("install_harness_lab_runtime");
+export function installGlobalHarness(): Promise<HarnessLabStatus> {
+  return invoke<HarnessLabStatus>("install_global_harness");
 }
 
-export function checkHarnessLabRemoteVersion(): Promise<HarnessLabStatus> {
-  return invoke<HarnessLabStatus>("check_harness_lab_remote_version");
+export function startGlobalHarnessWeb(): Promise<HarnessLabStatus> {
+  return invoke<HarnessLabStatus>("start_global_harness_web");
 }
 
-export function updateHarnessLabRuntime(): Promise<HarnessLabStatus> {
-  return invoke<HarnessLabStatus>("update_harness_lab_runtime");
+export function stopGlobalHarnessWeb(): Promise<HarnessLabStatus> {
+  return invoke<HarnessLabStatus>("stop_global_harness_web");
 }
 
-export function startHarnessLabService(): Promise<HarnessLabStatus> {
-  return invoke<HarnessLabStatus>("start_harness_lab_service");
+export function checkHarnessRemoteVersion(): Promise<HarnessLabStatus> {
+  return invoke<HarnessLabStatus>("check_harness_remote_version");
 }
 
-export function stopHarnessLabService(): Promise<HarnessLabStatus> {
-  return invoke<HarnessLabStatus>("stop_harness_lab_service");
+export function updateGlobalHarness(): Promise<HarnessLabStatus> {
+  return invoke<HarnessLabStatus>("update_global_harness");
 }
 
 export function openHarnessLabWeb(): Promise<OpenPathResult> {

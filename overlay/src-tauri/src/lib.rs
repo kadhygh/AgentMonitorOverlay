@@ -128,30 +128,34 @@ async fn harness_lab_status() -> HarnessLabStatus {
             state: "error".to_string(),
             installed: false,
             installed_version: None,
-            expected_version: "0.1.0-rc.6".to_string(),
+            recommended_version: "0.1.0-rc.6".to_string(),
             remote_version: None,
             update_available: false,
+            installed_ahead: false,
             running: false,
-            owned: false,
             pid: None,
             url: "http://127.0.0.1:3080".to_string(),
             port: 3080,
-            runtime_path: String::new(),
-            data_path: String::new(),
+            executable_path: None,
+            executable_paths: Vec::new(),
+            multiple_installations: false,
+            package_root: None,
+            npm_global_root: None,
             dsh_home: String::new(),
             node_available: false,
             node_version: None,
             npm_available: false,
-            deepseek_key_configured: false,
-            glm_key_configured: false,
-            glm_provider_configured: false,
+            npm_version: None,
+            pnpm_available: false,
+            pnpm_version: None,
+            install_source: None,
             message: format!("Harness status task failed: {error}"),
             recent_log: String::new(),
         })
 }
 
 #[tauri::command]
-async fn install_harness_lab_runtime() -> HarnessLabStatus {
+async fn install_global_harness() -> HarnessLabStatus {
     tauri::async_runtime::spawn_blocking(deepseek_harness::install_harness)
         .await
         .unwrap_or_else(|error| {
@@ -163,7 +167,31 @@ async fn install_harness_lab_runtime() -> HarnessLabStatus {
 }
 
 #[tauri::command]
-async fn check_harness_lab_remote_version() -> HarnessLabStatus {
+async fn start_global_harness_web() -> HarnessLabStatus {
+    tauri::async_runtime::spawn_blocking(deepseek_harness::start_harness_web)
+        .await
+        .unwrap_or_else(|error| {
+            let mut result = deepseek_harness::harness_status();
+            result.ok = false;
+            result.message = format!("Harness Web start task failed: {error}");
+            result
+        })
+}
+
+#[tauri::command]
+async fn stop_global_harness_web() -> HarnessLabStatus {
+    tauri::async_runtime::spawn_blocking(deepseek_harness::stop_harness_web)
+        .await
+        .unwrap_or_else(|error| {
+            let mut result = deepseek_harness::harness_status();
+            result.ok = false;
+            result.message = format!("Harness Web stop task failed: {error}");
+            result
+        })
+}
+
+#[tauri::command]
+async fn check_harness_remote_version() -> HarnessLabStatus {
     tauri::async_runtime::spawn_blocking(deepseek_harness::check_remote_version)
         .await
         .unwrap_or_else(|error| {
@@ -175,37 +203,13 @@ async fn check_harness_lab_remote_version() -> HarnessLabStatus {
 }
 
 #[tauri::command]
-async fn update_harness_lab_runtime() -> HarnessLabStatus {
+async fn update_global_harness() -> HarnessLabStatus {
     tauri::async_runtime::spawn_blocking(deepseek_harness::update_harness)
         .await
         .unwrap_or_else(|error| {
             let mut result = deepseek_harness::harness_status();
             result.ok = false;
             result.message = format!("Harness update task failed: {error}");
-            result
-        })
-}
-
-#[tauri::command]
-async fn start_harness_lab_service() -> HarnessLabStatus {
-    tauri::async_runtime::spawn_blocking(deepseek_harness::start_harness)
-        .await
-        .unwrap_or_else(|error| {
-            let mut result = deepseek_harness::harness_status();
-            result.ok = false;
-            result.message = format!("Harness start task failed: {error}");
-            result
-        })
-}
-
-#[tauri::command]
-async fn stop_harness_lab_service() -> HarnessLabStatus {
-    tauri::async_runtime::spawn_blocking(deepseek_harness::stop_harness)
-        .await
-        .unwrap_or_else(|error| {
-            let mut result = deepseek_harness::harness_status();
-            result.ok = false;
-            result.message = format!("Harness stop task failed: {error}");
             result
         })
 }
@@ -473,11 +477,11 @@ pub fn run() {
             window_candidate_at_cursor,
             open_path,
             harness_lab_status,
-            install_harness_lab_runtime,
-            check_harness_lab_remote_version,
-            update_harness_lab_runtime,
-            start_harness_lab_service,
-            stop_harness_lab_service,
+            install_global_harness,
+            start_global_harness_web,
+            stop_global_harness_web,
+            check_harness_remote_version,
+            update_global_harness,
             open_harness_lab_web,
             open_vscode,
             select_workspace_directory,
@@ -498,7 +502,6 @@ pub fn run() {
 
     app.run(|app_handle, event| {
         if matches!(event, tauri::RunEvent::Exit) {
-            deepseek_harness::stop_owned_harness();
             stop_owned_broker();
             tray::stop_worker(app_handle);
         }

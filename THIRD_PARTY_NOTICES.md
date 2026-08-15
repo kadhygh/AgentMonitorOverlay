@@ -17,7 +17,7 @@ This file summarizes the principal components used by the current Windows applic
 | Tauri Notification plugin | <https://github.com/tauri-apps/plugins-workspace> | Apache-2.0 OR MIT |
 | Tauri Global Shortcut plugin | <https://github.com/tauri-apps/plugins-workspace> | Apache-2.0 OR MIT |
 
-The Portable package includes a pinned Node.js executable and the npm CLI used only by explicit DeepSeek Harness Lab runtime-management actions. The Node.js upstream license is copied as `runtime/NODE-LICENSE.txt`; npm's license and bundled dependency notices remain under `runtime/node_modules/npm/`.
+The Portable package includes a pinned Node.js executable for the bundled AMO Broker. The Node.js upstream license is copied as `runtime/NODE-LICENSE.txt`. DeepSeek Harness global installation and updates use the user's system npm and are not bundled into AMO.
 
 ## Obsidian Plugin Build Components
 

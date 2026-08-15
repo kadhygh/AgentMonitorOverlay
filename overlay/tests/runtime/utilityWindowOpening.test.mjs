@@ -80,6 +80,17 @@ test("Harness status polling is adaptive and stops while the window is inactive"
   assert.match(harnessLab, /return 15_000/);
 });
 
+test("Harness Lab separates global installation from the Web lifecycle", () => {
+  assert.match(harnessLab, /Global installation/);
+  assert.match(harnessLab, /Web interface/);
+  assert.match(harnessLab, /Start Web/);
+  assert.match(harnessLab, /Stop Web/);
+  assert.match(harnessLab, /Managed inside DSH/);
+  assert.match(harnessLab, /startGlobalHarnessWeb/);
+  assert.match(harnessLab, /stopGlobalHarnessWeb/);
+  assert.doesNotMatch(harnessLab, /Install runtime|Start service|Stop service|seeds on first start/i);
+});
+
 test("secondary session views and attention visuals avoid steady fixed intervals", () => {
   assert.doesNotMatch(priorityManager, /setInterval/);
   assert.match(priorityManager, /new SessionRuntimeController/);

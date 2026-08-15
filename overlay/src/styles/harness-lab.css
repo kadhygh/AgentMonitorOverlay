@@ -5,13 +5,35 @@
     "footer";
   grid-template-columns: minmax(0, 1fr);
   grid-template-rows: max-content minmax(0, 1fr) max-content;
-  width: min(792px, calc(100vw - 28px));
-  height: min(622px, calc(100vh - 28px));
-  border: 1px solid rgba(143, 196, 255, 0.24);
+  width: min(840px, calc(100vw - 28px));
+  height: min(640px, calc(100vh - 28px));
+  border: 1px solid rgba(143, 196, 255, 0.22);
 }
 
 .harness-lab-dialog .app-dialog-titlebar {
   grid-area: title;
+}
+
+.harness-title-meta {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+
+.harness-title-meta > span {
+  color: #7f948d;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.harness-title-meta > code {
+  max-width: 150px;
+  overflow: hidden;
+  color: #b7cac4;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .harness-lab-dialog .app-dialog-footer {
@@ -23,7 +45,7 @@
   grid-area: content;
   display: grid;
   align-content: start;
-  gap: 11px;
+  gap: 12px;
   min-width: 0;
   min-height: 0;
   padding: 14px;
@@ -60,88 +82,113 @@
   line-height: 13px;
 }
 
-.harness-status-hero {
+.harness-web-status {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  grid-template-columns: minmax(0, 1fr) max-content;
   align-items: center;
-  gap: 11px;
+  gap: 14px;
   min-width: 0;
-  padding: 12px;
-  background: rgba(143, 196, 255, 0.07);
+  padding: 14px;
+  background: rgba(143, 196, 255, 0.06);
   border: 1px solid rgba(143, 196, 255, 0.18);
   border-radius: 9px;
 }
 
-.harness-status-hero.is-running {
-  background: rgba(111, 224, 190, 0.08);
+.harness-web-status.is-running {
+  background: rgba(111, 224, 190, 0.075);
   border-color: rgba(111, 224, 190, 0.27);
 }
 
-.harness-status-hero.is-error,
-.harness-status-hero.is-portConflict {
-  background: rgba(255, 112, 122, 0.07);
-  border-color: rgba(255, 112, 122, 0.24);
+.harness-web-status.is-portConflict,
+.harness-web-status.is-installationBroken,
+.harness-web-status.is-error {
+  background: rgba(255, 112, 122, 0.065);
+  border-color: rgba(255, 112, 122, 0.23);
 }
 
-.harness-status-icon {
+.harness-web-main {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-width: 0;
+}
+
+.harness-web-icon {
+  position: relative;
   display: grid;
   place-items: center;
-  width: 36px;
-  height: 36px;
+  flex: 0 0 auto;
+  width: 38px;
+  height: 38px;
   color: #8fc4ff;
   background: rgba(143, 196, 255, 0.1);
-  border-radius: 9px;
+  border-radius: 999px;
 }
 
-.harness-status-hero.is-running .harness-status-icon {
+.harness-web-icon::after {
+  position: absolute;
+  right: 0;
+  bottom: 1px;
+  width: 8px;
+  height: 8px;
+  background: #d9a66d;
+  border: 2px solid #192126;
+  border-radius: 999px;
+  content: "";
+}
+
+.harness-web-status.is-running .harness-web-icon {
   color: #6fe0be;
   background: rgba(111, 224, 190, 0.11);
 }
 
-.harness-status-hero > div:nth-child(2) {
+.harness-web-status.is-running .harness-web-icon::after {
+  background: #6fe0be;
+  box-shadow: 0 0 8px rgba(111, 224, 190, 0.4);
+}
+
+.harness-web-status.is-portConflict .harness-web-icon,
+.harness-web-status.is-installationBroken .harness-web-icon,
+.harness-web-status.is-error .harness-web-icon {
+  color: #ff8e97;
+  background: rgba(255, 112, 122, 0.1);
+}
+
+.harness-web-status.is-portConflict .harness-web-icon::after,
+.harness-web-status.is-installationBroken .harness-web-icon::after,
+.harness-web-status.is-error .harness-web-icon::after {
+  background: #ff707a;
+}
+
+.harness-web-copy {
   display: grid;
   min-width: 0;
   gap: 2px;
 }
 
-.harness-status-hero span,
-.harness-status-hero p {
-  color: #93a7a0;
+.harness-web-copy > span,
+.harness-web-copy > small {
+  overflow: hidden;
+  color: #8fa39c;
   font-size: 9px;
   line-height: 13px;
-}
-
-.harness-status-hero strong {
-  color: #edf8f4;
-  font-size: 15px;
-  line-height: 18px;
-}
-
-.harness-status-hero p {
-  margin: 0;
-}
-
-.harness-status-hero > code {
-  max-width: 220px;
-  overflow: hidden;
-  color: #aebfba;
-  font-size: 9px;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.harness-action-row {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 7px;
+.harness-web-copy > strong {
+  color: #edf8f4;
+  font-size: 16px;
+  line-height: 19px;
 }
 
-.harness-install-note {
-  margin: -3px 0 0;
-  color: #82968f;
-  font-size: 9px;
-  line-height: 13px;
+.harness-web-actions,
+.harness-installation-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 7px;
 }
 
 .harness-action,
@@ -153,12 +200,13 @@
   min-height: 33px;
   padding: 0 11px;
   color: #cadbd5;
-  background: rgba(255, 255, 255, 0.055);
+  background: rgba(255, 255, 255, 0.052);
   border: 1px solid rgba(255, 255, 255, 0.09);
   border-radius: 7px;
   cursor: pointer;
   font: inherit;
   font-size: 10px;
+  white-space: nowrap;
 }
 
 .harness-action.is-primary {
@@ -174,16 +222,19 @@
 }
 
 .harness-action:hover:not(:disabled),
-.harness-icon-action:hover:not(:disabled) {
+.harness-icon-action:hover:not(:disabled),
+.harness-owned-item > button:hover:not(:disabled),
+.harness-diagnostics-toggle:hover {
   color: #ffffff;
-  background: rgba(143, 196, 255, 0.12);
-  border-color: rgba(143, 196, 255, 0.3);
+  background: rgba(143, 196, 255, 0.11);
+  border-color: rgba(143, 196, 255, 0.28);
 }
 
 .harness-action:disabled,
-.harness-icon-action:disabled {
+.harness-icon-action:disabled,
+.harness-owned-item > button:disabled {
   cursor: not-allowed;
-  opacity: 0.4;
+  opacity: 0.38;
 }
 
 .harness-icon-action {
@@ -191,206 +242,190 @@
   padding: 0;
 }
 
-.harness-card-grid {
+.harness-installation-row {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10px;
+  grid-template-columns: minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 14px;
+  min-width: 0;
+  padding: 12px 2px;
+  border-top: 1px solid rgba(255, 255, 255, 0.075);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.075);
 }
 
-.harness-info-card {
-  display: grid;
-  align-content: start;
-  gap: 9px;
+.harness-installation-main {
+  display: flex;
+  align-items: center;
+  gap: 10px;
   min-width: 0;
-  padding: 11px;
-  background: rgba(255, 255, 255, 0.035);
-  border: 1px solid rgba(255, 255, 255, 0.075);
+}
+
+.harness-installation-icon {
+  display: grid;
+  place-items: center;
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  color: #aebfba;
+  background: rgba(255, 255, 255, 0.06);
   border-radius: 8px;
 }
 
-.harness-info-card > header {
+.harness-installation-copy {
   display: grid;
-  grid-template-columns: max-content minmax(0, 1fr) max-content;
-  align-items: center;
-  gap: 7px;
-  color: #cfe0da;
-}
-
-.harness-info-card > header strong {
-  font-size: 11px;
-  line-height: 14px;
-}
-
-.harness-info-card > header em {
-  color: #d5a56e;
-  font-size: 8px;
-  font-style: normal;
-  text-transform: uppercase;
-}
-
-.harness-info-card > header em.is-ready {
-  color: #6fe0be;
-}
-
-.harness-info-card > header em.is-update,
-.harness-info-card dd.is-update {
-  color: #8fc4ff;
-}
-
-.harness-info-card dl {
-  display: grid;
-  gap: 5px;
-  margin: 0;
-}
-
-.harness-info-card dl > div {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 8px;
-}
-
-.harness-info-card dt,
-.harness-info-card dd,
-.harness-info-card p,
-.harness-readiness-list span {
   min-width: 0;
-  margin: 0;
+  gap: 2px;
+}
+
+.harness-installation-copy > span,
+.harness-installation-copy > small {
+  overflow: hidden;
+  color: #879b94;
   font-size: 9px;
   line-height: 13px;
-}
-
-.harness-info-card dt,
-.harness-info-card p {
-  color: #8fa39c;
-}
-
-.harness-info-card dd {
-  overflow: hidden;
-  color: #c6d7d1;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.harness-info-card dd.is-warning {
-  color: #d9a66d;
-}
-
-.harness-version-actions {
+.harness-installation-copy > div {
   display: flex;
+  align-items: center;
   flex-wrap: wrap;
-  gap: 6px;
-  padding-top: 2px;
+  gap: 7px;
 }
 
-.harness-version-actions button {
-  display: inline-flex;
+.harness-installation-copy strong {
+  color: #dbe9e4;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.harness-installation-copy em {
+  padding: 2px 7px;
+  color: #d5a56e;
+  background: rgba(213, 165, 110, 0.09);
+  border-radius: 999px;
+  font-size: 8px;
+  font-style: normal;
+  line-height: 12px;
+  text-transform: uppercase;
+}
+
+.harness-installation-copy em.is-ready {
+  color: #6fe0be;
+  background: rgba(111, 224, 190, 0.09);
+}
+
+.harness-installation-copy em.is-update {
+  color: #8fc4ff;
+  background: rgba(143, 196, 255, 0.09);
+}
+
+.harness-installation-copy em.is-missing {
+  color: #ff8e97;
+  background: rgba(255, 112, 122, 0.08);
+}
+
+.harness-owned-section {
+  display: grid;
+  gap: 8px;
+}
+
+.harness-section-heading {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.harness-section-heading strong {
+  color: #cfe0da;
+  font-size: 11px;
+  line-height: 15px;
+}
+
+.harness-section-heading span {
+  color: #7f948d;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.harness-owned-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.harness-owned-item {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
-  justify-content: center;
-  gap: 5px;
+  gap: 8px;
+  min-width: 0;
+  padding: 10px;
+  background: rgba(255, 255, 255, 0.034);
+  border: 1px solid rgba(255, 255, 255, 0.075);
+  border-radius: 8px;
+}
+
+.harness-owned-item > span {
+  display: grid;
+  place-items: center;
+  color: #9fb2ac;
+}
+
+.harness-owned-item > div {
+  display: grid;
+  min-width: 0;
+  gap: 1px;
+}
+
+.harness-owned-item strong,
+.harness-owned-item small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-owned-item strong {
+  color: #cbdcd6;
+  font-size: 10px;
+  line-height: 14px;
+}
+
+.harness-owned-item small {
+  color: #82968f;
+  font-size: 8px;
+  line-height: 12px;
+}
+
+.harness-owned-item > button {
   min-height: 27px;
   padding: 0 8px;
   color: #b8c9c3;
-  background: rgba(255, 255, 255, 0.045);
-  border: 1px solid rgba(255, 255, 255, 0.085);
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
   border-radius: 6px;
   cursor: pointer;
   font: inherit;
   font-size: 9px;
 }
 
-.harness-version-actions button.is-update {
-  color: #d9ecff;
-  background: rgba(143, 196, 255, 0.11);
-  border-color: rgba(143, 196, 255, 0.28);
-}
-
-.harness-version-actions button:hover:not(:disabled) {
-  color: #ffffff;
-  border-color: rgba(143, 196, 255, 0.3);
-}
-
-.harness-version-actions button:disabled {
-  cursor: not-allowed;
-  opacity: 0.4;
-}
-
-.harness-readiness-list {
-  display: grid;
-  gap: 5px;
-}
-
-.harness-readiness-list span {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #aabbb5;
-}
-
-.harness-readiness-list i {
-  width: 7px;
-  height: 7px;
-  background: #768882;
-  border-radius: 999px;
-}
-
-.harness-readiness-list .is-ready i {
-  background: #6fe0be;
-  box-shadow: 0 0 8px rgba(111, 224, 190, 0.42);
-}
-
-.harness-readiness-list .is-warning i {
-  background: #d9a66d;
-}
-
-.harness-paths {
-  display: grid;
-  gap: 5px;
-  padding: 9px 10px;
-  background: rgba(0, 0, 0, 0.12);
-  border-radius: 7px;
-}
-
-.harness-paths > div {
-  display: grid;
-  grid-template-columns: 72px minmax(0, 1fr);
-  gap: 8px;
-  min-width: 0;
-}
-
-.harness-paths span,
-.harness-paths code {
-  min-width: 0;
-  overflow: hidden;
-  font-size: 9px;
-  line-height: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.harness-paths span {
-  color: #83968f;
-  text-transform: uppercase;
-}
-
-.harness-paths code {
-  color: #aebfba;
-}
-
-.harness-log-panel {
+.harness-diagnostics {
   display: grid;
   min-height: 0;
-  background: rgba(143, 196, 255, 0.035);
-  border: 1px solid rgba(143, 196, 255, 0.12);
+  background: rgba(143, 196, 255, 0.028);
+  border: 1px solid rgba(143, 196, 255, 0.11);
   border-radius: 8px;
   overflow: hidden;
 }
 
-.harness-log-toggle {
+.harness-diagnostics-toggle {
   display: grid;
-  grid-template-columns: max-content max-content minmax(0, 1fr) max-content;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
   align-items: center;
-  gap: 7px;
-  min-height: 35px;
+  gap: 8px;
+  min-height: 38px;
   padding: 0 10px;
   color: #b8cac4;
   background: transparent;
@@ -400,48 +435,101 @@
   text-align: left;
 }
 
-.harness-log-toggle:hover {
-  color: #effbf7;
-  background: rgba(143, 196, 255, 0.055);
+.harness-diagnostics-toggle > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
 }
 
-.harness-log-toggle strong,
-.harness-log-toggle span,
-.harness-log-toggle em {
+.harness-diagnostics-toggle strong,
+.harness-diagnostics-toggle em {
   font-size: 9px;
   line-height: 12px;
 }
 
-.harness-log-toggle span {
+.harness-diagnostics-toggle em {
   overflow: hidden;
-  color: #80958e;
+  color: #7d918a;
+  font-style: normal;
+  text-align: right;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.harness-log-toggle em {
-  color: #8fc4ff;
-  font-style: normal;
-}
-
-.harness-log-panel.is-expanded .harness-log-toggle {
+.harness-diagnostics.is-expanded .harness-diagnostics-toggle {
   border-bottom: 1px solid rgba(143, 196, 255, 0.1);
 }
 
-.harness-log-panel pre {
-  max-height: 220px;
-  margin: 0;
+.harness-diagnostics-content {
+  display: grid;
+  gap: 9px;
   padding: 10px;
+}
+
+.harness-diagnostics-grid {
+  display: grid;
+  gap: 5px;
+}
+
+.harness-diagnostics-grid > div {
+  display: grid;
+  grid-template-columns: 88px minmax(0, 1fr);
+  gap: 8px;
+  min-width: 0;
+}
+
+.harness-diagnostics-grid span,
+.harness-diagnostics-grid code {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 9px;
+  line-height: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-diagnostics-grid span {
+  color: #7f938c;
+  text-transform: uppercase;
+}
+
+.harness-diagnostics-grid code {
+  color: #aebfba;
+}
+
+.harness-diagnostics-content pre {
+  max-height: 150px;
+  margin: 0;
+  padding: 9px;
   overflow: auto;
   color: #aebfba;
-  background:
-    linear-gradient(145deg, rgba(22, 31, 35, 0.72), rgba(18, 27, 31, 0.82)),
-    #151e22;
+  background: rgba(0, 0, 0, 0.14);
+  border-radius: 6px;
   font-family: Consolas, "Cascadia Mono", monospace;
   font-size: 9px;
   line-height: 14px;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.harness-lab-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+}
+
+.harness-lab-footer > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-lab-footer > em {
+  color: #789087;
+  font-size: 9px;
+  font-style: normal;
+  white-space: nowrap;
 }
 
 .is-spinning {
@@ -452,13 +540,6 @@
   to { transform: rotate(360deg); }
 }
 
-:root[data-amo-theme="light"] .harness-status-hero,
-:root[data-amo-theme="light"] .harness-info-card,
-:root[data-amo-theme="light"] .harness-paths {
-  background: rgba(244, 249, 247, 0.92);
-  border-color: rgba(42, 74, 64, 0.14);
-}
-
 :root[data-amo-theme="light"] .harness-loading-view {
   color: #3976a9;
   background:
@@ -467,88 +548,121 @@
     #f1f7f5;
 }
 
-:root[data-amo-theme="light"] .harness-loading-view strong {
-  color: #203a32;
-}
-
-:root[data-amo-theme="light"] .harness-loading-view span {
-  color: #6a7e77;
-}
-
-:root[data-amo-theme="light"] .harness-status-hero strong,
-:root[data-amo-theme="light"] .harness-info-card > header,
-:root[data-amo-theme="light"] .harness-info-card dd {
+:root[data-amo-theme="light"] .harness-loading-view strong,
+:root[data-amo-theme="light"] .harness-web-copy > strong,
+:root[data-amo-theme="light"] .harness-installation-copy strong,
+:root[data-amo-theme="light"] .harness-section-heading strong,
+:root[data-amo-theme="light"] .harness-owned-item strong {
   color: #1d2b27;
 }
 
-:root[data-amo-theme="light"] .harness-status-hero span,
-:root[data-amo-theme="light"] .harness-status-hero p,
-:root[data-amo-theme="light"] .harness-info-card dt,
-:root[data-amo-theme="light"] .harness-info-card p,
-:root[data-amo-theme="light"] .harness-paths span,
-:root[data-amo-theme="light"] .harness-readiness-list span {
+:root[data-amo-theme="light"] .harness-loading-view span,
+:root[data-amo-theme="light"] .harness-web-copy > span,
+:root[data-amo-theme="light"] .harness-web-copy > small,
+:root[data-amo-theme="light"] .harness-installation-copy > span,
+:root[data-amo-theme="light"] .harness-installation-copy > small,
+:root[data-amo-theme="light"] .harness-section-heading span,
+:root[data-amo-theme="light"] .harness-owned-item small,
+:root[data-amo-theme="light"] .harness-diagnostics-grid span,
+:root[data-amo-theme="light"] .harness-title-meta > span {
   color: #61736d;
 }
 
-:root[data-amo-theme="light"] .harness-install-note {
-  color: #697b75;
+:root[data-amo-theme="light"] .harness-web-status,
+:root[data-amo-theme="light"] .harness-owned-item {
+  background: rgba(244, 249, 247, 0.92);
+  border-color: rgba(42, 74, 64, 0.14);
 }
 
-:root[data-amo-theme="light"] .harness-paths code {
-  color: #41554e;
+:root[data-amo-theme="light"] .harness-web-status.is-running {
+  background: rgba(225, 247, 238, 0.92);
+  border-color: rgba(44, 132, 99, 0.24);
+}
+
+:root[data-amo-theme="light"] .harness-web-icon::after {
+  border-color: #f1f7f5;
+}
+
+:root[data-amo-theme="light"] .harness-installation-row {
+  border-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .harness-installation-icon {
+  color: #51665e;
+  background: rgba(42, 74, 64, 0.065);
 }
 
 :root[data-amo-theme="light"] .harness-action,
 :root[data-amo-theme="light"] .harness-icon-action,
-:root[data-amo-theme="light"] .harness-version-actions button {
+:root[data-amo-theme="light"] .harness-owned-item > button {
   color: #30463f;
-  background: rgba(42, 74, 64, 0.055);
+  background: rgba(42, 74, 64, 0.05);
   border-color: rgba(42, 74, 64, 0.15);
 }
 
-:root[data-amo-theme="light"] .harness-log-panel {
-  background: rgba(73, 113, 100, 0.035);
+:root[data-amo-theme="light"] .harness-diagnostics {
+  background: rgba(73, 113, 100, 0.028);
   border-color: rgba(42, 74, 64, 0.14);
 }
 
-:root[data-amo-theme="light"] .harness-log-toggle {
+:root[data-amo-theme="light"] .harness-diagnostics-toggle {
   color: #324b43;
 }
 
-:root[data-amo-theme="light"] .harness-log-toggle:hover {
-  color: #18362d;
-  background: rgba(42, 74, 64, 0.055);
-}
-
-:root[data-amo-theme="light"] .harness-log-toggle span {
+:root[data-amo-theme="light"] .harness-diagnostics-toggle em {
   color: #6c8079;
 }
 
-:root[data-amo-theme="light"] .harness-log-toggle em {
-  color: #3976a9;
-}
-
-:root[data-amo-theme="light"] .harness-log-panel.is-expanded .harness-log-toggle {
-  border-bottom-color: rgba(42, 74, 64, 0.12);
-}
-
-:root[data-amo-theme="light"] .harness-log-panel pre {
+:root[data-amo-theme="light"] .harness-diagnostics-grid code,
+:root[data-amo-theme="light"] .harness-title-meta > code,
+:root[data-amo-theme="light"] .harness-diagnostics-content pre {
   color: #30473f;
-  background:
-    linear-gradient(145deg, rgba(241, 247, 245, 0.98), rgba(232, 241, 238, 0.98)),
-    #edf4f1;
 }
 
-@media (max-width: 720px) {
-  .harness-card-grid {
+:root[data-amo-theme="light"] .harness-diagnostics-content pre {
+  background: rgba(42, 74, 64, 0.055);
+}
+
+@media (max-width: 760px) {
+  .harness-web-status,
+  .harness-installation-row {
     grid-template-columns: minmax(0, 1fr);
   }
 
-  .harness-status-hero {
-    grid-template-columns: max-content minmax(0, 1fr);
+  .harness-web-actions,
+  .harness-installation-actions {
+    justify-content: flex-start;
   }
 
-  .harness-status-hero > code {
-    grid-column: 2;
+  .harness-owned-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 520px) {
+  .harness-title-meta > span,
+  .harness-title-meta > code {
+    display: none;
+  }
+
+  .harness-web-actions .harness-action,
+  .harness-installation-actions .harness-action {
+    flex: 1 1 auto;
+  }
+
+  .harness-section-heading,
+  .harness-lab-footer {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: 3px;
+  }
+
+  .harness-lab-footer > span {
+    white-space: normal;
+  }
+
+  .harness-diagnostics-grid > div {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1px;
   }
 }

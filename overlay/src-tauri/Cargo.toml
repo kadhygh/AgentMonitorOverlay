@@ -20,6 +20,7 @@ tauri-build = { version = "2.4.1", features = [] }
 
 [dependencies]
 serde = { version = "1", features = ["derive"] }
+semver = "1"
 tauri = { version = "~2.11.1", features = ["tray-icon"] }
 tauri-plugin-global-shortcut = "2.3.2"
 tauri-plugin-notification = "2.3.3"
