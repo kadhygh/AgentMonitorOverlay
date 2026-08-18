@@ -34,6 +34,15 @@ export function WorkspacePanel({
   onRequestClean,
   onUpdatePlugin,
 }: WorkspacePanelProps) {
+  const statusLabel = state.busy === "status"
+    ? "Checking"
+    : state.status
+      ? state.status.ok
+        ? "Ready"
+        : "Needs review"
+      : state.error
+        ? "Check failed"
+        : "Not checked";
   const pluginHealth = state.status?.pluginHealth;
   const pluginNeedsUpdate = Boolean(
     pluginHealth &&
@@ -58,7 +67,7 @@ export function WorkspacePanel({
       <div className="workspace-panel-header">
         <div>
           <strong>{projectName(workspacePathForSession(state.session))}</strong>
-          <span>{state.status ? (state.status.ok ? "Ready" : "Needs review") : "Checking"}</span>
+          <span>{statusLabel}</span>
         </div>
         <button type="button" className="candidate-close" title="Close" onClick={onClose}>
           <X size={13} aria-hidden="true" />
@@ -208,8 +217,10 @@ export function WorkspacePanel({
             </div>
           ) : null}
         </div>
-      ) : (
+      ) : state.busy === "status" ? (
         <div className="workspace-panel-loading">Checking workspace folders...</div>
+      ) : state.error ? null : (
+        <div className="workspace-panel-loading">Click Check to load workspace folders.</div>
       )}
       </section>
     </div>

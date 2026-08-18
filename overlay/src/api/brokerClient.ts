@@ -106,6 +106,9 @@ async function brokerFetchJson<T>(url: string, init: RequestInit, options: Broke
     return payload as T;
   } catch (error) {
     if (controller.signal.aborted) throw new Error(`broker request timed out after ${timeoutMs} ms`);
+    if (error instanceof TypeError) {
+      throw new Error("AMO Broker is unavailable at 127.0.0.1:17654. Restart AMO and try again.");
+    }
     throw error;
   } finally {
     window.clearTimeout(timeoutId);

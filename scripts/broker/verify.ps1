@@ -444,6 +444,9 @@ try {
     if ($pluginMain -notmatch "lastCanvasView" -or $pluginMain -notmatch "isActiveLeafAmoPanel") {
         throw "Obsidian plugin main.js does not preserve canvas target context while the AMO panel is active."
     }
+    if ($pluginMain -notmatch "FavoritesModal" -or $pluginMain -notmatch "favorite-current-note-or-canvas" -or $pluginMain -notmatch "favorites\.renamed" -or $pluginMain -notmatch "favorites\.remark_saved" -or $pluginMain -notmatch "is-favorite-active" -or $pluginMain -notmatch "cancelFavoriteRemarkEdit") {
+        throw "Obsidian plugin main.js does not include persistent favorites, toggle state, rename tracking, and confirm/cancel remarks."
+    }
     if ($pluginMain -notmatch "panel.copy.clicked" -or $pluginMain -notmatch "copyAnnotationsFromFile\(currentInfo\.file\)") {
         throw "Obsidian plugin panel copy action does not use the currently displayed note."
     }

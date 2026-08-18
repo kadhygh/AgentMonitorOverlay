@@ -39,7 +39,7 @@ __export(main_exports, {
 module.exports = __toCommonJS(main_exports);
 
 // src/plugin.ts
-var import_obsidian17 = require("obsidian");
+var import_obsidian18 = require("obsidian");
 var import_view2 = require("@codemirror/view");
 
 // src/core/constants.ts
@@ -48,7 +48,7 @@ var ANNO_TAG_PREFIX = "[!anno]";
 var ANNO_TAG_SUFFIX = "[/anno]";
 var EMPTY_ANNO_TEXT = "(empty annotation)";
 var ANNOTATION_DEFAULT_LABEL = "\u6279\u6CE8";
-var PLUGIN_VERSION = "1.5.0";
+var PLUGIN_VERSION = "1.5.3";
 var AMO_CANVAS_MANAGER = "agent-monitor-overlay";
 var AMO_CANVAS_TYPE = "agent-flow-base";
 var DEFAULT_SETTINGS = {
@@ -64,7 +64,8 @@ var DEFAULT_SETTINGS = {
   localCodeLinkEditor: "vscode",
   localCodeLinkUrlTemplate: "vscode://file/{path}:{line}",
   zedCommand: "zed",
-  workCanvasFolder: "Canvases/work"
+  workCanvasFolder: "Canvases/work",
+  favorites: []
 };
 var AMO_PANEL_VIEW_TYPE = "amo-annotation-panel";
 var AMO_OPEN_PROTOCOL = "amo-open";
@@ -807,6 +808,105 @@ var WorkCanvasNavigationModal = class extends import_obsidian.Modal {
     this.contentEl.empty();
   }
 };
+var FavoritesModal = class extends import_obsidian.Modal {
+  constructor(app, options) {
+    super(app);
+    this.options = options || {};
+    this.query = "";
+    this.listEl = null;
+  }
+  onOpen() {
+    this.modalEl.addClass("anno-modal", "amo-favorites-modal");
+    this.titleEl.setText("\u6536\u85CF\u5939");
+    this.contentEl.createEl("p", {
+      text: "\u5FEB\u901F\u6253\u5F00\u5DF2\u6536\u85CF\u7684 Note \u6216 Canvas\u3002\u6536\u85CF\u5185\u5BB9\u4FDD\u5B58\u5728\u5F53\u524D Obsidian vault \u7684 AMO \u63D2\u4EF6\u6570\u636E\u4E2D\u3002"
+    });
+    const search = new import_obsidian.TextComponent(this.contentEl);
+    search.setPlaceholder("\u641C\u7D22\u540D\u79F0\u3001\u8DEF\u5F84\u6216\u5907\u6CE8");
+    search.inputEl.addClass("amo-favorites-search");
+    search.onChange((value) => {
+      this.query = value.trim().toLowerCase();
+      this.renderList();
+    });
+    this.listEl = this.contentEl.createDiv({ cls: "amo-favorites-list" });
+    this.renderList();
+    const actions = this.contentEl.createDiv({ cls: "anno-modal-actions" });
+    new import_obsidian.ButtonComponent(actions).setButtonText("\u5173\u95ED").onClick(() => this.close());
+    window.setTimeout(() => search.inputEl.focus(), 0);
+  }
+  onClose() {
+    this.contentEl.empty();
+    this.listEl = null;
+  }
+  renderList() {
+    var _a, _b;
+    if (!this.listEl) return;
+    this.listEl.empty();
+    const allItems = ((_b = (_a = this.options).getItems) == null ? void 0 : _b.call(_a)) || [];
+    const items = allItems.filter((item) => {
+      if (!this.query) return true;
+      return item.displayName.toLowerCase().includes(this.query) || item.path.toLowerCase().includes(this.query) || item.remark.toLowerCase().includes(this.query);
+    });
+    if (items.length === 0) {
+      this.listEl.createDiv({
+        cls: "amo-favorites-empty",
+        text: allItems.length === 0 ? "\u8FD8\u6CA1\u6709\u6536\u85CF\u4EFB\u4F55 Note \u6216 Canvas\u3002" : "\u6CA1\u6709\u5339\u914D\u7684\u6536\u85CF\u5185\u5BB9\u3002"
+      });
+      return;
+    }
+    for (const item of items) this.renderItem(item);
+  }
+  renderItem(item) {
+    if (!this.listEl) return;
+    const row = this.listEl.createDiv({ cls: "amo-favorite-row" + (item.exists ? "" : " is-missing") });
+    const openButton = row.createEl("button", {
+      cls: "amo-favorite-open",
+      attr: {
+        type: "button",
+        title: item.exists ? "\u6253\u5F00 " + item.path : "\u6587\u4EF6\u5DF2\u4E0D\u5B58\u5728\uFF1A" + item.path,
+        "aria-label": item.exists ? "\u6253\u5F00 " + item.path : "\u6587\u4EF6\u5DF2\u4E0D\u5B58\u5728\uFF1A" + item.path
+      }
+    });
+    openButton.disabled = !item.exists;
+    (0, import_obsidian.setIcon)(openButton.createSpan({ cls: "amo-favorite-icon" }), item.kind === "canvas" ? "layout-dashboard" : "file-text");
+    const text = openButton.createSpan({ cls: "amo-favorite-text" });
+    text.createSpan({ cls: "amo-favorite-name", text: item.displayName });
+    text.createSpan({ cls: "amo-favorite-path", text: item.path });
+    if (item.remark) {
+      text.createSpan({
+        cls: "amo-favorite-remark",
+        text: item.remark,
+        attr: { title: item.remark }
+      });
+    }
+    openButton.createSpan({
+      cls: "amo-favorite-kind",
+      text: item.exists ? item.kind === "canvas" ? "Canvas" : "Note" : "\u5DF2\u5931\u6548"
+    });
+    openButton.addEventListener("click", async () => {
+      var _a, _b;
+      if (!item.exists) return;
+      const opened = await ((_b = (_a = this.options).onOpen) == null ? void 0 : _b.call(_a, item));
+      if (opened !== false) this.close();
+    });
+    const removeButton = row.createEl("button", {
+      cls: "amo-favorite-remove",
+      attr: {
+        type: "button",
+        title: "\u4ECE\u6536\u85CF\u5939\u79FB\u9664",
+        "aria-label": "\u4ECE\u6536\u85CF\u5939\u79FB\u9664 " + item.displayName
+      }
+    });
+    (0, import_obsidian.setIcon)(removeButton, "trash-2");
+    removeButton.addEventListener("click", async (event) => {
+      var _a, _b;
+      event.preventDefault();
+      event.stopPropagation();
+      await ((_b = (_a = this.options).onRemove) == null ? void 0 : _b.call(_a, item.path));
+      this.renderList();
+    });
+  }
+};
 
 // src/ui/panel-view.ts
 var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
@@ -816,6 +916,10 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
     this.editingTitle = false;
     this.editingTitleFilePath = "";
     this.editingTitleValue = "";
+    this.favoriteRemarkFilePath = "";
+    this.favoriteRemarkValue = "";
+    this.favoriteRemarkDirty = false;
+    this.editingFavoriteRemark = false;
     this.renderRevision = 0;
   }
   getViewType() {
@@ -1202,6 +1306,173 @@ var AmoAnnotationPanelView = class extends import_obsidian2.ItemView {
       canvasActionsEnabled,
       "Reveal the active canvas file in the file explorer."
     );
+    const favoriteTarget = this.favoriteTargetFor(info, canvasFile, workspaceState);
+    const favoriteGroup = section.createDiv({ cls: "amo-panel-action-group" });
+    const favoriteHeader = favoriteGroup.createDiv({ cls: "amo-panel-action-group-header" });
+    (0, import_obsidian2.setIcon)(favoriteHeader.createSpan(), "star");
+    favoriteHeader.createSpan({ text: "Favorites" });
+    const favoriteButtons = favoriteGroup.createDiv({ cls: "amo-panel-action-grid" });
+    const favoriteEntry = favoriteTarget ? this.plugin.getFavoriteEntry(favoriteTarget.path) : null;
+    const favoriteToggleButton = this.addActionButton(
+      favoriteButtons,
+      "star",
+      favoriteEntry ? "\u53D6\u6D88\u6536\u85CF" : "\u6536\u85CF",
+      async () => {
+        if (!favoriteTarget) return;
+        if (favoriteEntry) {
+          await this.plugin.removeFavorite(favoriteTarget.path);
+        } else {
+          await this.plugin.addFavorite(favoriteTarget);
+        }
+      },
+      Boolean(favoriteTarget),
+      favoriteTarget ? (favoriteEntry ? "\u53D6\u6D88\u6536\u85CF " : "\u6536\u85CF\u5F53\u524D ") + (this.plugin.favoriteKindForFile(favoriteTarget) === "canvas" ? "Canvas" : "Note") + "\uFF1A" + favoriteTarget.path : "\u8BF7\u5148\u6253\u5F00 vault \u4E2D\u7684 Note \u6216 Canvas\u3002"
+    );
+    favoriteToggleButton.classList.toggle("is-favorite-active", Boolean(favoriteEntry));
+    favoriteToggleButton.setAttribute("aria-pressed", favoriteEntry ? "true" : "false");
+    this.addActionButton(
+      favoriteButtons,
+      "folder-heart",
+      "\u6253\u5F00\u6536\u85CF\u5939",
+      () => this.plugin.openFavorites(),
+      true,
+      "\u67E5\u770B\u6536\u85CF\u5185\u5BB9\u5E76\u5FEB\u901F\u8DF3\u8F6C\u3002"
+    );
+    this.renderFavoriteRemark(favoriteGroup, favoriteTarget, favoriteEntry);
+  }
+  renderFavoriteRemark(container, favoriteTarget, favoriteEntry) {
+    const filePath = favoriteTarget && favoriteTarget.path ? favoriteTarget.path : "";
+    const savedRemark = favoriteEntry && typeof favoriteEntry.remark === "string" ? favoriteEntry.remark : "";
+    if (this.favoriteRemarkFilePath !== filePath || !favoriteEntry) {
+      this.favoriteRemarkFilePath = filePath;
+      this.favoriteRemarkValue = savedRemark;
+      this.favoriteRemarkDirty = false;
+      this.editingFavoriteRemark = false;
+    } else if (!this.favoriteRemarkDirty && this.favoriteRemarkValue !== savedRemark) {
+      this.favoriteRemarkValue = savedRemark;
+    }
+    const card = container.createDiv({
+      cls: "amo-favorite-remark-card" + (favoriteEntry ? "" : " is-disabled")
+    });
+    const header = card.createDiv({ cls: "amo-favorite-remark-header" });
+    (0, import_obsidian2.setIcon)(header.createSpan(), "message-square-text");
+    header.createSpan({ text: "\u5907\u6CE8\u4FE1\u606F" });
+    if (!favoriteEntry) {
+      card.createDiv({ cls: "amo-favorite-remark-disabled", text: "\u6536\u85CF\u5F53\u524D Note \u6216 Canvas \u540E\u53EF\u4EE5\u6DFB\u52A0\u5907\u6CE8\u3002" });
+      return;
+    }
+    if (!this.editingFavoriteRemark) {
+      const display = card.createDiv({
+        cls: "amo-favorite-remark-display" + (savedRemark ? "" : " is-empty"),
+        text: savedRemark || "\u70B9\u51FB\u6DFB\u52A0\u5907\u6CE8\u4FE1\u606F",
+        attr: {
+          role: "button",
+          tabindex: "0",
+          title: savedRemark ? "\u70B9\u51FB\u7F16\u8F91\u6536\u85CF\u5907\u6CE8" : "\u70B9\u51FB\u6DFB\u52A0\u6536\u85CF\u5907\u6CE8"
+        }
+      });
+      const startEditing = () => {
+        this.favoriteRemarkValue = savedRemark;
+        this.favoriteRemarkDirty = false;
+        this.editingFavoriteRemark = true;
+        this.render();
+      };
+      display.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      display.addEventListener("click", startEditing);
+      display.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        startEditing();
+      });
+      return;
+    }
+    const editor = card.createDiv({ cls: "amo-panel-title-edit amo-favorite-remark-edit" });
+    const row = editor.createDiv({ cls: "amo-panel-title-edit-row" });
+    const input = row.createEl("textarea", {
+      attr: {
+        rows: "4",
+        placeholder: "\u4E3A\u5F53\u524D\u6536\u85CF\u6DFB\u52A0\u5907\u6CE8\u4FE1\u606F",
+        "aria-label": "\u6536\u85CF\u5907\u6CE8\u4FE1\u606F"
+      }
+    });
+    input.value = this.favoriteRemarkValue;
+    input.addEventListener("input", () => {
+      this.favoriteRemarkValue = input.value;
+      this.favoriteRemarkDirty = true;
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.cancelFavoriteRemarkEdit(savedRemark);
+      } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        void this.saveFavoriteRemark(filePath, input.value);
+      }
+    });
+    const actions = row.createDiv({ cls: "amo-panel-title-edit-actions" });
+    const saveButton = actions.createEl("button", {
+      cls: "amo-panel-title-icon-button",
+      attr: { type: "button", title: "\u786E\u8BA4\u5E76\u4FDD\u5B58\u5907\u6CE8", "aria-label": "\u786E\u8BA4\u5E76\u4FDD\u5B58\u5907\u6CE8" }
+    });
+    (0, import_obsidian2.setIcon)(saveButton, "check");
+    saveButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    saveButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void this.saveFavoriteRemark(filePath, input.value);
+    });
+    const cancelButton = actions.createEl("button", {
+      cls: "amo-panel-title-icon-button",
+      attr: { type: "button", title: "\u53D6\u6D88\u5907\u6CE8\u7F16\u8F91", "aria-label": "\u53D6\u6D88\u5907\u6CE8\u7F16\u8F91" }
+    });
+    (0, import_obsidian2.setIcon)(cancelButton, "x");
+    cancelButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    cancelButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.cancelFavoriteRemarkEdit(savedRemark);
+    });
+    editor.createDiv({
+      cls: "amo-panel-title-edit-hint",
+      text: "Ctrl/Cmd+Enter \u4FDD\u5B58\u3002Esc \u53D6\u6D88\u3002"
+    });
+    window.setTimeout(() => {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }, 0);
+  }
+  async saveFavoriteRemark(filePath, value) {
+    this.favoriteRemarkValue = value;
+    const saved = await this.plugin.saveFavoriteRemark(filePath, value);
+    if (!saved) return;
+    this.favoriteRemarkValue = saved.remark || "";
+    this.favoriteRemarkDirty = false;
+    this.editingFavoriteRemark = false;
+    this.render();
+  }
+  cancelFavoriteRemarkEdit(savedRemark) {
+    this.favoriteRemarkValue = savedRemark;
+    this.favoriteRemarkDirty = false;
+    this.editingFavoriteRemark = false;
+    this.render();
+  }
+  favoriteTargetFor(info, canvasFile, workspaceState) {
+    if ((workspaceState.key === "canvas" || workspaceState.key === "canvas-note") && this.plugin.favoriteKindForFile(canvasFile) === "canvas") {
+      return canvasFile;
+    }
+    return this.plugin.favoriteKindForFile(info && info.file) === "note" ? info.file : null;
   }
   renderAnnotations(root, info) {
     const annotationItems = info.annotationItems || [];
@@ -4471,10 +4742,168 @@ function findLeafForFilePathInViewType(app, filePath, viewType) {
   return null;
 }
 
+// src/favorites/actions.ts
+var import_obsidian17 = require("obsidian");
+function favoriteKindForPath(filePath) {
+  const path2 = normalizeVaultFilePath(filePath).toLowerCase();
+  if (path2.endsWith(".md")) return "note";
+  if (path2.endsWith(".canvas")) return "canvas";
+  return null;
+}
+function favoriteKindForFile(file) {
+  if (!file || typeof file.path !== "string" || typeof file.extension !== "string") return null;
+  const extension = file.extension.toLowerCase();
+  if (extension === "md") return "note";
+  if (extension === "canvas") return "canvas";
+  return null;
+}
+function normalizeFavoriteEntries(rawEntries) {
+  const entries = Array.isArray(rawEntries) ? rawEntries : [];
+  const seen = /* @__PURE__ */ new Set();
+  const normalized = [];
+  for (const rawEntry of entries) {
+    const rawPath = typeof rawEntry === "string" ? rawEntry : rawEntry && rawEntry.path;
+    const path2 = normalizeVaultFilePath(rawPath);
+    const kind = favoriteKindForPath(path2);
+    const key = path2.toLowerCase();
+    if (!path2 || !kind || seen.has(key)) continue;
+    seen.add(key);
+    normalized.push({
+      path: path2,
+      kind,
+      addedAt: typeof rawEntry === "object" && typeof rawEntry.addedAt === "string" ? rawEntry.addedAt : "",
+      remark: typeof rawEntry === "object" && typeof rawEntry.remark === "string" ? rawEntry.remark : ""
+    });
+  }
+  return normalized;
+}
+function listFavorites(plugin) {
+  return normalizeFavoriteEntries(plugin.settings.favorites).map((entry) => {
+    const file = plugin.app.vault.getAbstractFileByPath(entry.path);
+    return {
+      ...entry,
+      displayName: favoriteDisplayName(entry.path),
+      exists: Boolean(file && typeof file.path === "string" && favoriteKindForFile(file) === entry.kind)
+    };
+  }).reverse();
+}
+async function addFavorite(plugin, fileOrPath) {
+  const candidatePath = typeof fileOrPath === "string" ? fileOrPath : fileOrPath && typeof fileOrPath.path === "string" ? fileOrPath.path : "";
+  const path2 = normalizeVaultFilePath(candidatePath);
+  const file = path2 ? plugin.app.vault.getAbstractFileByPath(path2) : null;
+  const kind = favoriteKindForFile(file);
+  if (!file || !kind) {
+    new import_obsidian17.Notice("Only Markdown notes and Canvas files in this vault can be favorited.");
+    return false;
+  }
+  const entries = normalizeFavoriteEntries(plugin.settings.favorites);
+  if (entries.some((entry) => entry.path.toLowerCase() === path2.toLowerCase())) {
+    plugin.setOperationStatus("Already in favorites: " + path2 + ".", "neutral");
+    new import_obsidian17.Notice("Already in favorites.");
+    return false;
+  }
+  plugin.settings.favorites = [
+    ...entries,
+    {
+      path: path2,
+      kind,
+      addedAt: (/* @__PURE__ */ new Date()).toISOString(),
+      remark: ""
+    }
+  ];
+  await plugin.saveSettings();
+  plugin.setOperationStatus("Added to favorites: " + path2 + ".", "success");
+  plugin.debugLog("favorites.added", { path: path2, kind });
+  new import_obsidian17.Notice("Added to favorites: " + favoriteDisplayName(path2));
+  return true;
+}
+async function removeFavorite(plugin, filePath, options = {}) {
+  const path2 = normalizeVaultFilePath(filePath);
+  const entries = normalizeFavoriteEntries(plugin.settings.favorites);
+  const nextEntries = entries.filter((entry) => entry.path.toLowerCase() !== path2.toLowerCase());
+  if (nextEntries.length === entries.length) return false;
+  plugin.settings.favorites = nextEntries;
+  await plugin.saveSettings();
+  plugin.refreshPanels();
+  plugin.debugLog("favorites.removed", { path: path2, reason: options.reason || "manual" });
+  if (options.notice !== false) new import_obsidian17.Notice("Removed from favorites: " + favoriteDisplayName(path2));
+  return true;
+}
+function getFavoriteEntry(plugin, filePath) {
+  const path2 = normalizeVaultFilePath(filePath).toLowerCase();
+  return normalizeFavoriteEntries(plugin.settings.favorites).find((entry) => entry.path.toLowerCase() === path2) || null;
+}
+async function saveFavoriteRemark(plugin, filePath, rawRemark) {
+  const path2 = normalizeVaultFilePath(filePath);
+  const entries = normalizeFavoriteEntries(plugin.settings.favorites);
+  const index = entries.findIndex((entry) => entry.path.toLowerCase() === path2.toLowerCase());
+  if (index < 0) {
+    new import_obsidian17.Notice("Favorite the current Note or Canvas before adding a remark.");
+    return null;
+  }
+  const remark = String(rawRemark || "").trim();
+  entries[index] = { ...entries[index], remark };
+  plugin.settings.favorites = entries;
+  await plugin.saveSettings();
+  plugin.setOperationStatus("Saved favorite remark: " + path2 + ".", "success");
+  plugin.debugLog("favorites.remark_saved", { path: path2, hasRemark: remark.length > 0, length: remark.length });
+  new import_obsidian17.Notice(remark ? "Favorite remark saved." : "Favorite remark cleared.");
+  return entries[index];
+}
+async function renameFavorite(plugin, file, oldPath) {
+  const previousPath = normalizeVaultFilePath(oldPath);
+  const nextPath = normalizeVaultFilePath(file && file.path);
+  const entries = normalizeFavoriteEntries(plugin.settings.favorites);
+  const previousKey = previousPath.toLowerCase();
+  const previousPrefix = previousKey + "/";
+  const affected = entries.filter((entry) => {
+    const key = entry.path.toLowerCase();
+    return key === previousKey || key.startsWith(previousPrefix);
+  });
+  if (affected.length === 0 || !nextPath) return false;
+  const renamedEntries = entries.flatMap((entry) => {
+    const key = entry.path.toLowerCase();
+    if (key !== previousKey && !key.startsWith(previousPrefix)) return [entry];
+    const path2 = normalizeVaultFilePath(nextPath + entry.path.slice(previousPath.length));
+    const kind = favoriteKindForPath(path2);
+    return kind ? [{ ...entry, path: path2, kind }] : [];
+  });
+  plugin.settings.favorites = normalizeFavoriteEntries(renamedEntries);
+  await plugin.saveSettings();
+  plugin.refreshPanels();
+  plugin.debugLog("favorites.renamed", { oldPath: previousPath, path: nextPath, count: affected.length });
+  return true;
+}
+async function removeDeletedFavorites(plugin, deletedPath) {
+  const path2 = normalizeVaultFilePath(deletedPath);
+  const key = path2.toLowerCase();
+  const prefix = key + "/";
+  const entries = normalizeFavoriteEntries(plugin.settings.favorites);
+  const nextEntries = entries.filter((entry) => {
+    const entryKey = entry.path.toLowerCase();
+    return entryKey !== key && !entryKey.startsWith(prefix);
+  });
+  if (nextEntries.length === entries.length) return false;
+  plugin.settings.favorites = nextEntries;
+  await plugin.saveSettings();
+  plugin.refreshPanels();
+  plugin.debugLog("favorites.removed", {
+    path: path2,
+    reason: "file-or-folder-deleted",
+    count: entries.length - nextEntries.length
+  });
+  return true;
+}
+function favoriteDisplayName(filePath) {
+  const name = normalizeVaultFilePath(filePath).split("/").pop() || filePath;
+  return name.replace(/\.(?:md|canvas)$/i, "") || name;
+}
+
 // src/plugin.ts
-var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
+var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian18.Plugin {
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, await this.loadData() || {});
+    this.settings.favorites = normalizeFavoriteEntries(this.settings.favorites);
     this.operationStatus = {
       tone: "neutral",
       message: "Ready.",
@@ -4571,6 +5000,21 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
       callback: () => {
         void this.openVaultPath(DEFAULT_CANVAS_PATH, "canvas");
       }
+    });
+    this.addCommand({
+      id: "favorite-current-note-or-canvas",
+      name: "Favorite current Note or Canvas",
+      checkCallback: (checking) => {
+        const file = this.currentFavoriteFile();
+        if (!file) return false;
+        if (!checking) void this.addFavorite(file);
+        return true;
+      }
+    });
+    this.addCommand({
+      id: "open-amo-favorites",
+      name: "Open AMO favorites",
+      callback: () => this.openFavorites()
     });
     this.addCommand({
       id: "copy-annotations-from-current-note",
@@ -4704,6 +5148,17 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
         this.refreshPanels();
       })
     );
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        void renameFavorite(this, file, oldPath);
+      })
+    );
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (!file || typeof file.path !== "string") return;
+        void removeDeletedFavorites(this, file.path);
+      })
+    );
   }
   onunload() {
     if (this.panelRefreshTimer) {
@@ -4782,7 +5237,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
   handleEditorAnnotationMouseShortcut(event, view, phase) {
     var _a, _b;
     if (!this.matchesContextMouseShortcut(event)) return false;
-    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian17.MarkdownView) || this.getActiveMarkdownView();
+    const activeView = this.app.workspace.getActiveViewOfType(import_obsidian18.MarkdownView) || this.getActiveMarkdownView();
     if (!activeView || !activeView.editor) {
       this.debugLog("annotations.editor_mouse_shortcut.no_editor", {
         phase,
@@ -4819,7 +5274,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
         type: event.type,
         target: event.target instanceof Element ? describeElement(event.target) : ""
       });
-      new import_obsidian17.Notice("No active Markdown note.");
+      new import_obsidian18.Notice("No active Markdown note.");
       return true;
     }
     this.debugLog("annotations.send.mouse5", {
@@ -4838,6 +5293,37 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
   }
   async openVaultPath(filePath, kind) {
     return openVaultPath(this, filePath, kind);
+  }
+  favoriteKindForFile(file) {
+    return favoriteKindForFile(file);
+  }
+  currentFavoriteFile() {
+    const activeLeaf = this.app.workspace.activeLeaf;
+    const view = activeLeaf && activeLeaf.view;
+    const file = view && view.file;
+    return favoriteKindForFile(file) ? file : null;
+  }
+  async addFavorite(fileOrPath) {
+    return addFavorite(this, fileOrPath);
+  }
+  async removeFavorite(filePath, options = {}) {
+    return removeFavorite(this, filePath, options);
+  }
+  listFavorites() {
+    return listFavorites(this);
+  }
+  getFavoriteEntry(filePath) {
+    return getFavoriteEntry(this, filePath);
+  }
+  async saveFavoriteRemark(filePath, remark) {
+    return saveFavoriteRemark(this, filePath, remark);
+  }
+  openFavorites() {
+    new FavoritesModal(this.app, {
+      getItems: () => this.listFavorites(),
+      onOpen: async (item) => this.openVaultPath(item.path, item.kind),
+      onRemove: async (filePath) => this.removeFavorite(filePath)
+    }).open();
   }
   async focusCanvasNoteNode(canvasPath, notePath, nodeId = null) {
     const normalizedCanvasPath = normalizeVaultFilePath(canvasPath);
@@ -4973,12 +5459,12 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
   }
   syncMarkdownViewActions() {
     for (const leaf of this.app.workspace.getLeavesOfType("markdown")) {
-      if (!(leaf.view instanceof import_obsidian17.MarkdownView)) continue;
+      if (!(leaf.view instanceof import_obsidian18.MarkdownView)) continue;
       const view = leaf.view;
       if (!view.containerEl.querySelector("." + AMO_SEND_ACTION_CLASS)) {
         const sendAction = view.addAction("send", "Send annotations to AMO", () => {
           if (!view.file) {
-            new import_obsidian17.Notice("No active Markdown note.");
+            new import_obsidian18.Notice("No active Markdown note.");
             return;
           }
           void this.sendAnnotationsFromFile(view.file);
@@ -4994,7 +5480,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
       if (!view.containerEl.querySelector("." + AMO_TITLE_ACTION_CLASS)) {
         const titleAction = view.addAction("pencil", "Edit AMO note title", () => {
           if (!view.file) {
-            new import_obsidian17.Notice("No active Markdown note.");
+            new import_obsidian18.Notice("No active Markdown note.");
             return;
           }
           void this.editAmoNoteTitle(view.file);
@@ -5182,7 +5668,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
       activeLeafType: this.activeLeafType()
     });
     if (!file) {
-      new import_obsidian17.Notice("No active Markdown note.");
+      new import_obsidian18.Notice("No active Markdown note.");
       return;
     }
     await this.copyAnnotationsFromFile(file);
@@ -5193,7 +5679,7 @@ var AmoMarkdownAnnotationToolsPlugin = class extends import_obsidian17.Plugin {
   async sendAnnotationsFromActiveFile() {
     const file = this.getActiveMarkdownFile();
     if (!file) {
-      new import_obsidian17.Notice("No active Markdown note.");
+      new import_obsidian18.Notice("No active Markdown note.");
       return;
     }
     await this.sendAnnotationsFromFile(file);

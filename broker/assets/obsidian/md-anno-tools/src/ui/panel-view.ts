@@ -16,6 +16,10 @@ export class AmoAnnotationPanelView extends ItemView {
   editingTitle: boolean;
   editingTitleFilePath: string;
   editingTitleValue: string;
+  favoriteRemarkFilePath: string;
+  favoriteRemarkValue: string;
+  favoriteRemarkDirty: boolean;
+  editingFavoriteRemark: boolean;
   renderRevision: number;
 
   constructor(leaf: any, plugin: AmoMarkdownAnnotationToolsPlugin) {
@@ -24,6 +28,10 @@ export class AmoAnnotationPanelView extends ItemView {
     this.editingTitle = false;
     this.editingTitleFilePath = "";
     this.editingTitleValue = "";
+    this.favoriteRemarkFilePath = "";
+    this.favoriteRemarkValue = "";
+    this.favoriteRemarkDirty = false;
+    this.editingFavoriteRemark = false;
     this.renderRevision = 0;
   }
 
@@ -452,6 +460,193 @@ export class AmoAnnotationPanelView extends ItemView {
       canvasActionsEnabled,
       "Reveal the active canvas file in the file explorer."
     );
+
+    const favoriteTarget = this.favoriteTargetFor(info, canvasFile, workspaceState);
+    const favoriteGroup = section.createDiv({ cls: "amo-panel-action-group" });
+    const favoriteHeader = favoriteGroup.createDiv({ cls: "amo-panel-action-group-header" });
+    setIcon(favoriteHeader.createSpan(), "star");
+    favoriteHeader.createSpan({ text: "Favorites" });
+    const favoriteButtons = favoriteGroup.createDiv({ cls: "amo-panel-action-grid" });
+    const favoriteEntry = favoriteTarget ? this.plugin.getFavoriteEntry(favoriteTarget.path) : null;
+    const favoriteToggleButton = this.addActionButton(
+      favoriteButtons,
+      "star",
+      favoriteEntry ? "取消收藏" : "收藏",
+      async () => {
+        if (!favoriteTarget) return;
+        if (favoriteEntry) {
+          await this.plugin.removeFavorite(favoriteTarget.path);
+        } else {
+          await this.plugin.addFavorite(favoriteTarget);
+        }
+      },
+      Boolean(favoriteTarget),
+      favoriteTarget
+        ? (favoriteEntry ? "取消收藏 " : "收藏当前 ") +
+          (this.plugin.favoriteKindForFile(favoriteTarget) === "canvas" ? "Canvas" : "Note") +
+          "：" +
+          favoriteTarget.path
+        : "请先打开 vault 中的 Note 或 Canvas。"
+    );
+    favoriteToggleButton.classList.toggle("is-favorite-active", Boolean(favoriteEntry));
+    favoriteToggleButton.setAttribute("aria-pressed", favoriteEntry ? "true" : "false");
+    this.addActionButton(
+      favoriteButtons,
+      "folder-heart",
+      "打开收藏夹",
+      () => this.plugin.openFavorites(),
+      true,
+      "查看收藏内容并快速跳转。"
+    );
+    this.renderFavoriteRemark(favoriteGroup, favoriteTarget, favoriteEntry);
+  }
+
+  renderFavoriteRemark(container: HTMLElement, favoriteTarget: any, favoriteEntry: any) {
+    const filePath = favoriteTarget && favoriteTarget.path ? favoriteTarget.path : "";
+    const savedRemark = favoriteEntry && typeof favoriteEntry.remark === "string" ? favoriteEntry.remark : "";
+    if (this.favoriteRemarkFilePath !== filePath || !favoriteEntry) {
+      this.favoriteRemarkFilePath = filePath;
+      this.favoriteRemarkValue = savedRemark;
+      this.favoriteRemarkDirty = false;
+      this.editingFavoriteRemark = false;
+    } else if (!this.favoriteRemarkDirty && this.favoriteRemarkValue !== savedRemark) {
+      this.favoriteRemarkValue = savedRemark;
+    }
+
+    const card = container.createDiv({
+      cls: "amo-favorite-remark-card" + (favoriteEntry ? "" : " is-disabled"),
+    });
+    const header = card.createDiv({ cls: "amo-favorite-remark-header" });
+    setIcon(header.createSpan(), "message-square-text");
+    header.createSpan({ text: "备注信息" });
+
+    if (!favoriteEntry) {
+      card.createDiv({ cls: "amo-favorite-remark-disabled", text: "收藏当前 Note 或 Canvas 后可以添加备注。" });
+      return;
+    }
+
+    if (!this.editingFavoriteRemark) {
+      const display = card.createDiv({
+        cls: "amo-favorite-remark-display" + (savedRemark ? "" : " is-empty"),
+        text: savedRemark || "点击添加备注信息",
+        attr: {
+          role: "button",
+          tabindex: "0",
+          title: savedRemark ? "点击编辑收藏备注" : "点击添加收藏备注",
+        },
+      });
+      const startEditing = () => {
+        this.favoriteRemarkValue = savedRemark;
+        this.favoriteRemarkDirty = false;
+        this.editingFavoriteRemark = true;
+        this.render();
+      };
+      display.addEventListener("mousedown", (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+      });
+      display.addEventListener("click", startEditing);
+      display.addEventListener("keydown", (event) => {
+        if (event.key !== "Enter" && event.key !== " ") return;
+        event.preventDefault();
+        event.stopPropagation();
+        startEditing();
+      });
+      return;
+    }
+
+    const editor = card.createDiv({ cls: "amo-panel-title-edit amo-favorite-remark-edit" });
+    const row = editor.createDiv({ cls: "amo-panel-title-edit-row" });
+    const input = row.createEl("textarea", {
+      attr: {
+        rows: "4",
+        placeholder: "为当前收藏添加备注信息",
+        "aria-label": "收藏备注信息",
+      },
+    }) as HTMLTextAreaElement;
+    input.value = this.favoriteRemarkValue;
+    input.addEventListener("input", () => {
+      this.favoriteRemarkValue = input.value;
+      this.favoriteRemarkDirty = true;
+    });
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        event.stopPropagation();
+        this.cancelFavoriteRemarkEdit(savedRemark);
+      } else if (event.key === "Enter" && (event.ctrlKey || event.metaKey)) {
+        event.preventDefault();
+        event.stopPropagation();
+        void this.saveFavoriteRemark(filePath, input.value);
+      }
+    });
+
+    const actions = row.createDiv({ cls: "amo-panel-title-edit-actions" });
+    const saveButton = actions.createEl("button", {
+      cls: "amo-panel-title-icon-button",
+      attr: { type: "button", title: "确认并保存备注", "aria-label": "确认并保存备注" },
+    }) as HTMLButtonElement;
+    setIcon(saveButton, "check");
+    saveButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    saveButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      void this.saveFavoriteRemark(filePath, input.value);
+    });
+
+    const cancelButton = actions.createEl("button", {
+      cls: "amo-panel-title-icon-button",
+      attr: { type: "button", title: "取消备注编辑", "aria-label": "取消备注编辑" },
+    }) as HTMLButtonElement;
+    setIcon(cancelButton, "x");
+    cancelButton.addEventListener("mousedown", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+    });
+    cancelButton.addEventListener("click", (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      this.cancelFavoriteRemarkEdit(savedRemark);
+    });
+
+    editor.createDiv({
+      cls: "amo-panel-title-edit-hint",
+      text: "Ctrl/Cmd+Enter 保存。Esc 取消。",
+    });
+    window.setTimeout(() => {
+      input.focus();
+      input.setSelectionRange(input.value.length, input.value.length);
+    }, 0);
+  }
+
+  async saveFavoriteRemark(filePath: string, value: string) {
+    this.favoriteRemarkValue = value;
+    const saved = await this.plugin.saveFavoriteRemark(filePath, value);
+    if (!saved) return;
+    this.favoriteRemarkValue = saved.remark || "";
+    this.favoriteRemarkDirty = false;
+    this.editingFavoriteRemark = false;
+    this.render();
+  }
+
+  cancelFavoriteRemarkEdit(savedRemark: string) {
+    this.favoriteRemarkValue = savedRemark;
+    this.favoriteRemarkDirty = false;
+    this.editingFavoriteRemark = false;
+    this.render();
+  }
+
+  favoriteTargetFor(info: any, canvasFile: any, workspaceState: any) {
+    if (
+      (workspaceState.key === "canvas" || workspaceState.key === "canvas-note") &&
+      this.plugin.favoriteKindForFile(canvasFile) === "canvas"
+    ) {
+      return canvasFile;
+    }
+    return this.plugin.favoriteKindForFile(info && info.file) === "note" ? info.file : null;
   }
 
   renderAnnotations(root: HTMLElement, info: any) {

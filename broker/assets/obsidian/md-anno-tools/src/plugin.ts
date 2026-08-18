@@ -20,7 +20,7 @@ import { normalizeVaultFilePath } from "./core/paths";
 import { parseAmoMetadata } from "./core/metadata";
 import { getVaultRoot, getWindowSelectionText, messageFromError, previewText, describeElement } from "./core/ui-utils";
 import { AmoAnnotationPanelView } from "./ui/panel-view";
-import { AnnotationInputModal } from "./ui/modals";
+import { AnnotationInputModal, FavoritesModal } from "./ui/modals";
 import * as panelActions from "./ui/panel-actions";
 import { AmoAnnotationSettingTab } from "./ui/settings-tab";
 import { extractAnnotationItems } from "./annotations/syntax";
@@ -41,6 +41,7 @@ import * as noteTitleActions from "./note/title-actions";
 import * as activeTarget from "./note/active-target";
 import * as noteProperties from "./note/properties";
 import { handleAmoOpenProtocol, openVaultPath as openAmoVaultPath } from "./protocol/amo-open";
+import * as favoriteActions from "./favorites/actions";
 
 
 export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
@@ -62,6 +63,7 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
   async onload() {
     this.settings = Object.assign({}, DEFAULT_SETTINGS, (await this.loadData()) || {});
+    this.settings.favorites = favoriteActions.normalizeFavoriteEntries(this.settings.favorites);
     this.operationStatus = {
       tone: "neutral",
       message: "Ready.",
@@ -170,6 +172,23 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
       callback: () => {
         void this.openVaultPath(DEFAULT_CANVAS_PATH, "canvas");
       },
+    });
+
+    this.addCommand({
+      id: "favorite-current-note-or-canvas",
+      name: "Favorite current Note or Canvas",
+      checkCallback: (checking) => {
+        const file = this.currentFavoriteFile();
+        if (!file) return false;
+        if (!checking) void this.addFavorite(file);
+        return true;
+      },
+    });
+
+    this.addCommand({
+      id: "open-amo-favorites",
+      name: "Open AMO favorites",
+      callback: () => this.openFavorites(),
     });
 
     this.addCommand({
@@ -318,6 +337,19 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
         void this.syncAmoCanvasRendering();
         void this.syncAmoNotePropertyViews();
         this.refreshPanels();
+      })
+    );
+
+    this.registerEvent(
+      this.app.vault.on("rename", (file, oldPath) => {
+        void favoriteActions.renameFavorite(this, file, oldPath);
+      })
+    );
+
+    this.registerEvent(
+      this.app.vault.on("delete", (file) => {
+        if (!file || typeof file.path !== "string") return;
+        void favoriteActions.removeDeletedFavorites(this, file.path);
       })
     );
 
@@ -488,6 +520,45 @@ export class AmoMarkdownAnnotationToolsPlugin extends Plugin {
 
   async openVaultPath(filePath, kind) {
     return openAmoVaultPath(this, filePath, kind);
+  }
+
+  favoriteKindForFile(file) {
+    return favoriteActions.favoriteKindForFile(file);
+  }
+
+  currentFavoriteFile() {
+    const activeLeaf = this.app.workspace.activeLeaf;
+    const view: any = activeLeaf && activeLeaf.view;
+    const file = view && view.file;
+    return favoriteActions.favoriteKindForFile(file) ? file : null;
+  }
+
+  async addFavorite(fileOrPath) {
+    return favoriteActions.addFavorite(this, fileOrPath);
+  }
+
+  async removeFavorite(filePath, options = {}) {
+    return favoriteActions.removeFavorite(this, filePath, options);
+  }
+
+  listFavorites() {
+    return favoriteActions.listFavorites(this);
+  }
+
+  getFavoriteEntry(filePath) {
+    return favoriteActions.getFavoriteEntry(this, filePath);
+  }
+
+  async saveFavoriteRemark(filePath, remark) {
+    return favoriteActions.saveFavoriteRemark(this, filePath, remark);
+  }
+
+  openFavorites() {
+    new FavoritesModal(this.app, {
+      getItems: () => this.listFavorites(),
+      onOpen: async (item) => this.openVaultPath(item.path, item.kind),
+      onRemove: async (filePath) => this.removeFavorite(filePath),
+    }).open();
   }
 
   async focusCanvasNoteNode(canvasPath, notePath, nodeId = null) {

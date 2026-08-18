@@ -1,5 +1,6 @@
-import { ButtonComponent, Modal, TextAreaComponent, TextComponent } from "obsidian";
+import { ButtonComponent, Modal, setIcon, TextAreaComponent, TextComponent } from "obsidian";
 import { canvasTargetDisplayName } from "../canvas/target";
+import type { FavoriteListItem } from "../favorites/actions";
 
 export class AnnotationInputModal extends Modal {
   onSubmit: (value: string) => void | Promise<void>;
@@ -339,5 +340,120 @@ export class WorkCanvasNavigationModal extends Modal {
 
   onClose() {
     this.contentEl.empty();
+  }
+}
+
+export class FavoritesModal extends Modal {
+  options: any;
+  query: string;
+  listEl: HTMLElement | null;
+
+  constructor(app: any, options: any) {
+    super(app);
+    this.options = options || {};
+    this.query = "";
+    this.listEl = null;
+  }
+
+  onOpen() {
+    this.modalEl.addClass("anno-modal", "amo-favorites-modal");
+    this.titleEl.setText("收藏夹");
+    this.contentEl.createEl("p", {
+      text: "快速打开已收藏的 Note 或 Canvas。收藏内容保存在当前 Obsidian vault 的 AMO 插件数据中。",
+    });
+
+    const search = new TextComponent(this.contentEl);
+    search.setPlaceholder("搜索名称、路径或备注");
+    search.inputEl.addClass("amo-favorites-search");
+    search.onChange((value) => {
+      this.query = value.trim().toLowerCase();
+      this.renderList();
+    });
+
+    this.listEl = this.contentEl.createDiv({ cls: "amo-favorites-list" });
+    this.renderList();
+
+    const actions = this.contentEl.createDiv({ cls: "anno-modal-actions" });
+    new ButtonComponent(actions).setButtonText("关闭").onClick(() => this.close());
+    window.setTimeout(() => search.inputEl.focus(), 0);
+  }
+
+  onClose() {
+    this.contentEl.empty();
+    this.listEl = null;
+  }
+
+  renderList() {
+    if (!this.listEl) return;
+    this.listEl.empty();
+    const allItems: FavoriteListItem[] = this.options.getItems?.() || [];
+    const items = allItems.filter((item) => {
+      if (!this.query) return true;
+      return (
+        item.displayName.toLowerCase().includes(this.query) ||
+        item.path.toLowerCase().includes(this.query) ||
+        item.remark.toLowerCase().includes(this.query)
+      );
+    });
+
+    if (items.length === 0) {
+      this.listEl.createDiv({
+        cls: "amo-favorites-empty",
+        text: allItems.length === 0 ? "还没有收藏任何 Note 或 Canvas。" : "没有匹配的收藏内容。",
+      });
+      return;
+    }
+
+    for (const item of items) this.renderItem(item);
+  }
+
+  renderItem(item: FavoriteListItem) {
+    if (!this.listEl) return;
+    const row = this.listEl.createDiv({ cls: "amo-favorite-row" + (item.exists ? "" : " is-missing") });
+    const openButton = row.createEl("button", {
+      cls: "amo-favorite-open",
+      attr: {
+        type: "button",
+        title: item.exists ? "打开 " + item.path : "文件已不存在：" + item.path,
+        "aria-label": item.exists ? "打开 " + item.path : "文件已不存在：" + item.path,
+      },
+    }) as HTMLButtonElement;
+    openButton.disabled = !item.exists;
+    setIcon(openButton.createSpan({ cls: "amo-favorite-icon" }), item.kind === "canvas" ? "layout-dashboard" : "file-text");
+    const text = openButton.createSpan({ cls: "amo-favorite-text" });
+    text.createSpan({ cls: "amo-favorite-name", text: item.displayName });
+    text.createSpan({ cls: "amo-favorite-path", text: item.path });
+    if (item.remark) {
+      text.createSpan({
+        cls: "amo-favorite-remark",
+        text: item.remark,
+        attr: { title: item.remark },
+      });
+    }
+    openButton.createSpan({
+      cls: "amo-favorite-kind",
+      text: item.exists ? (item.kind === "canvas" ? "Canvas" : "Note") : "已失效",
+    });
+    openButton.addEventListener("click", async () => {
+      if (!item.exists) return;
+      const opened = await this.options.onOpen?.(item);
+      if (opened !== false) this.close();
+    });
+
+    const removeButton = row.createEl("button", {
+      cls: "amo-favorite-remove",
+      attr: {
+        type: "button",
+        title: "从收藏夹移除",
+        "aria-label": "从收藏夹移除 " + item.displayName,
+      },
+    }) as HTMLButtonElement;
+    setIcon(removeButton, "trash-2");
+    removeButton.addEventListener("click", async (event) => {
+      event.preventDefault();
+      event.stopPropagation();
+      await this.options.onRemove?.(item.path);
+      this.renderList();
+    });
   }
 }

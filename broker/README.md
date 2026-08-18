@@ -146,7 +146,7 @@ Registers a project-local AMO vault idempotently and returns registration, cache
 
 ### `POST /api/obsidian/runtime`
 
-Receives the vault-local plugin heartbeat and capabilities. Plugin 1.5.0 advertises `open-result-v1` and `runtime-heartbeat-v1`. `GET /api/obsidian/runtime?vaultId=...` returns bounded readiness information for the overlay; heartbeats expire when the plugin is no longer active.
+Receives the vault-local plugin heartbeat and capabilities. Plugin 1.5.3 advertises `open-result-v1` and `runtime-heartbeat-v1`. `GET /api/obsidian/runtime?vaultId=...` returns bounded readiness information for the overlay; heartbeats expire when the plugin is no longer active.
 
 ### `POST /api/obsidian/open-results`
 
