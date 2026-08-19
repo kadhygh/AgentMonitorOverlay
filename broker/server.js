@@ -11,6 +11,7 @@ const { createObsidianRuntimeStore } = require("./lib/obsidian-runtime-store");
 const { createPermissionGate } = require("./lib/permission-gate");
 const { createLaunchStore } = require("./lib/launch-store");
 const { createSessionStore } = require("./lib/session-store");
+const { createSessionNamingService } = require("./lib/session-naming");
 const { createTranscriptMonitor } = require("./lib/transcript-monitor");
 
 const {
@@ -103,6 +104,12 @@ const {
   invalidateObsidianHealth,
   normalizeState,
 } = sessionStore;
+const sessionNamingService = createSessionNamingService({
+  sessions,
+  scheduleSnapshotPersist,
+  publishSessionChanged,
+  recordDebugLog,
+});
 const conversationService = createConversationService({
   sessions,
   recordDebugLog,
@@ -111,6 +118,7 @@ const conversationService = createConversationService({
   clearSessionAttentionFields,
   sessionHasAttentionState,
   normalizeState,
+  onPromptCaptured: sessionNamingService.onPromptCaptured,
 });
 setPromptEventHandler((payload) => conversationService.handlePrompt(payload));
 const obsidianBridge = createObsidianBridge({
@@ -120,6 +128,7 @@ const obsidianBridge = createObsidianBridge({
   handlePrompt: (payload) => conversationService.handlePrompt(payload),
 });
 loadSnapshot();
+sessionNamingService.recoverPending();
 const reconciledManagedSessions = launchStore.reconcileSessions(sessions);
 if (reconciledManagedSessions.length > 0) scheduleSnapshotPersist("managed-session-reconcile");
 const permissionGate = createPermissionGate({

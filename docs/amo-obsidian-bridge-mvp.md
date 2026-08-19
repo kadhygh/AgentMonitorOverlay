@@ -662,9 +662,9 @@ Launch flow:
 
 Current provider decision:
 
-- Claude CLI may support the second-step session-name prompt because local `claude --help` exposes `--name <name>`. AMO can pass that name to Claude and may also cache it as a pending AMO `taskTitle` for the first matching hook-created session from the same workspace/tool.
-- Codex CLI should not expose the second-step session-name prompt yet. Local `codex --help` does not expose a verified new-session naming option; `codex resume` can resolve an existing session id/name, but that is not the same as naming a new session at launch. AMO must not pass guessed or unsupported Codex CLI arguments.
-- Codex CLI can still be launched from the card as a plain new CLI in the project folder. The user can rename the AMO task card after the hook-created session appears.
+- Workspace Center supports a project-local `workspaceLabel` such as `main` or `dev1`. On the first `UserPromptSubmit` of a `SessionStart(source=startup)` session, AMO derives one deterministic `<workspaceLabel>-<prompt summary>` name and never reapplies it on resume, clear, compact, duplicate, or later prompts.
+- Codex CLI is still launched without a guessed naming argument. After the Hook provides the real thread id, Broker uses Codex App Server `thread/name/set` asynchronously; failure does not block the Hook and remains visible through `sessionNaming.status = failed`.
+- Claude and providers without an implemented native rename adapter use `sessionNaming.status = display-only`: AMO shows the derived name but does not claim that the provider's stored session was renamed.
 
 If AMO later adds pending launch names, matching must be conservative. A pending name is only a display hint; it must never replace provider `sessionId` as identity. If multiple same-tool launches are pending in one workspace, use FIFO only as an MVP fallback and prefer a future launch token/window-title token when the hook payload can prove the match.
 

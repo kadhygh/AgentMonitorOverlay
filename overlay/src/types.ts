@@ -68,6 +68,16 @@ export interface AgentSession {
   cwd: string;
   title: string;
   taskTitle?: string | null;
+  sessionStartSource?: "startup" | "resume" | "clear" | "compact" | string | null;
+  sessionNaming?: {
+    status: "pending" | "renamed" | "display-only" | "failed" | string;
+    requestedName: string;
+    workspaceLabel: string;
+    attemptedAt: string;
+    completedAt?: string | null;
+    providerSynced: boolean;
+    error?: string | null;
+  } | null;
   priority?: SessionPriority | null;
   priorityUpdatedAt?: string | null;
   displayOrder?: number | null;
@@ -308,6 +318,7 @@ export interface WorkspaceInspection {
   workspaceId: string;
   workspacePath: string;
   projectName: string;
+  workspaceLabel?: string | null;
   existingEnrollment?: boolean;
   deploymentRoot?: string;
   gitExclude?: WorkspaceGitExcludeStatus;
@@ -323,6 +334,7 @@ export interface WorkspaceEnrollment {
   hookProtocolVersion?: number;
   workspaceId: string;
   workspacePath: string;
+  workspaceLabel?: string | null;
   deploymentRoot: string;
   installedAdapters: string[];
   installedFiles: string[];
@@ -418,6 +430,7 @@ export interface WorkspaceRegistryEntry {
   workspaceId: string;
   workspacePath: string;
   projectName: string;
+  workspaceLabel?: string | null;
   vaultRoot?: string | null;
   adapterIds: string[];
   deploymentVersion?: number | null;

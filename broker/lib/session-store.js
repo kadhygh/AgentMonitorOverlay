@@ -190,7 +190,7 @@ function createSessionStore({
       tool,
       sessionId,
       cwd,
-      title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title),
+      title: resolveSessionTitle(tool, sessionId, payload.title, existing?.title, existing?.sessionNaming),
       taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null,
       state,
       lastEvent: eventName || existing?.lastEvent || null,
@@ -233,6 +233,10 @@ function createSessionStore({
         `${eventName || ""}`.toLowerCase() === "sessionstart"
           ? null
           : incomingTurnId || existing?.activeTurnId || null,
+      sessionStartSource:
+        `${eventName || ""}`.toLowerCase() === "sessionstart"
+          ? normalizeText(payload.sessionStartSource || payload.session_start_source)
+          : existing?.sessionStartSource || null,
       transcriptPath,
       priority: normalizePriority(existing?.priority),
       displayOrder: Number.isFinite(existing?.displayOrder) ? existing.displayOrder : nextDisplayOrder(),
@@ -346,7 +350,7 @@ function createSessionStore({
     let session = {
       ...existing,
       cwd,
-      title: resolveSessionTitle(existing.tool || payload.tool, sessionId, payload.title, existing.title),
+      title: resolveSessionTitle(existing.tool || payload.tool, sessionId, payload.title, existing.title, existing.sessionNaming),
       taskTitle: normalizeText(payload.taskTitle || payload.task_title) || existing.taskTitle || null,
       state: nextState,
       lastEvent: eventName || existing.lastEvent,

@@ -210,6 +210,15 @@ export function SessionRowContent({
   const threadTitle = session.title?.trim() || sessionProjectName;
   const taskTitle = session.taskTitle?.trim() || "";
   const conversationTitle = taskTitle || threadTitle;
+  const namingTitle = session.sessionNaming?.status === "renamed"
+    ? `Automatically renamed in ${display.label}`
+    : session.sessionNaming?.status === "display-only"
+    ? `Automatic project name is shown in AMO only; ${display.label} was not renamed`
+    : session.sessionNaming?.status === "failed"
+    ? `Automatic project name is shown in AMO; provider rename failed: ${session.sessionNaming.error || "unknown error"}`
+    : session.sessionNaming?.status === "pending"
+    ? `Renaming this session in ${display.label}`
+    : conversationTitle;
   const subtitleLabel = `${sessionProjectName} · ${statusLabel} · ${display.label} · ${formatAgo(session.updatedAt)}`;
 
   return (
@@ -323,7 +332,7 @@ export function SessionRowContent({
                 aria-hidden="true"
               />
             ) : null}
-            <strong title={conversationTitle}>{conversationTitle}</strong>
+            <strong title={namingTitle}>{conversationTitle}</strong>
           </span>
           {taskTitle ? (
             <span className="session-title-subtitle" title={threadTitle}>

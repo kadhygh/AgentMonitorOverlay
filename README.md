@@ -93,11 +93,12 @@ AMO 不会安装或替代这些应用。每项集成都仍然是可选的外部�
 2. 将 ZIP 完整解压到可写目录，保持 `AMO.exe`、`app/`、`runtime/` 和 `data/` 在一起，然后双击 `AMO.exe`。
 3. 在 AMO 顶部点击文件夹图标打开 **Workspace Center**；点击 **Choose** 选择工程目录，再点击 **Check**。Check 只检查状态，不会写入工程。
 4. 勾选 Codex CLI 和/或 Claude CLI Adapter，点击 **Deploy Selected**，把工程内 Hook 和 `.amo` 工作区部署到所选目录。
-5. 部署完成后点击 **Vault**。首次打开时，在确认仓库来源可信的前提下，让 Obsidian 信任该 Vault 并启用随 Vault 部署的 AMO 插件。
-6. 在 AMO 设置的 **Scratchpad** 页面启用适合自己的全局快捷键；阅读长回复时可呼出三页临时面板，记录尚未整理成熟的想法。
-7. 在 Workspace Center 的 Adapter 行点击 **Run**，或使用底部的 **Run Codex / Run Claude**；选择客户端后点击 **Launch managed CLI**。
-8. 在新终端中开始对话。Hook 发出回复事件后，AMO 会创建或接管任务卡片；当卡片进入 **Review**，点击 **Note** 打开对应回复。
-9. 在 Obsidian 中点击工具栏的 **Open AMO panel**，选中需要回应的原文并点击 **批注**；整理完成后使用 **返回窗口** 回到对应 CLI。
+5. 部署完成后，可在左侧 Workspace 列表使用铅笔按钮设置 `main`、`dev1` 等项目备注。新启动的 Session 会在首轮 Prompt 后生成 `<项目备注>-<开发内容>` 名称；Codex 会同步修改原生 Thread 名称，其他 Provider 会明确保留为 AMO 显示名称。
+6. 点击 **Vault**。首次打开时，在确认仓库来源可信的前提下，让 Obsidian 信任该 Vault 并启用随 Vault 部署的 AMO 插件。
+7. 在 AMO 设置的 **Scratchpad** 页面启用适合自己的全局快捷键；阅读长回复时可呼出三页临时面板，记录尚未整理成熟的想法。
+8. 在 Workspace Center 的 Adapter 行点击 **Run**，或使用底部的 **Run Codex / Run Claude**；选择客户端后点击 **Launch managed CLI**。
+9. 在新终端中开始对话。Hook 发出回复事件后，AMO 会创建或接管任务卡片；当卡片进入 **Review**，点击 **Note** 打开对应回复。
+10. 在 Obsidian 中点击工具栏的 **Open AMO panel**，选中需要回应的原文并点击 **批注**；整理完成后使用 **返回窗口** 回到对应 CLI。
 
 前置条件、部署细节和首次启动排错见 [入门指南](docs/getting-started.md)。
 

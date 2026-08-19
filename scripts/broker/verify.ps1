@@ -268,10 +268,10 @@ try {
 
     $workspaceData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\workspace.json") | ConvertFrom-Json
     $enrollmentData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\enrollment.json") | ConvertFrom-Json
-    if ($workspaceData.deploymentVersion -ne 4 -or $workspaceData.hookProtocolVersion -ne 5) {
+    if ($workspaceData.deploymentVersion -ne 5 -or $workspaceData.hookProtocolVersion -ne 6) {
         throw "Workspace metadata does not include expected deployment/hook protocol versions."
     }
-    if ($enrollmentData.deploymentVersion -ne 4 -or $enrollmentData.hookProtocolVersion -ne 5) {
+    if ($enrollmentData.deploymentVersion -ne 5 -or $enrollmentData.hookProtocolVersion -ne 6) {
         throw "Enrollment metadata does not include expected deployment/hook protocol versions."
     }
 
@@ -289,7 +289,7 @@ try {
     if (-not $codexAdapterData.bridgeEventsUrl -or $codexAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Codex adapter config does not include bridgeEventsUrl."
     }
-    if ($codexAdapterData.deploymentVersion -ne 4 -or $codexAdapterData.hookProtocolVersion -ne 5) {
+    if ($codexAdapterData.deploymentVersion -ne 5 -or $codexAdapterData.hookProtocolVersion -ne 6) {
         throw "Codex adapter config does not include expected deployment/hook protocol versions."
     }
     if (@($codexAdapterData.hookEvents) -notcontains "SessionStart" -or @($codexAdapterData.hookEvents) -notcontains "PreToolUse" -or @($codexAdapterData.hookEvents) -notcontains "PostToolUse") {
@@ -306,7 +306,7 @@ try {
     if (-not $claudeAdapterData.bridgeEventsUrl -or $claudeAdapterData.bridgeEventsUrl -ne "$baseUrl/api/events") {
         throw "Claude adapter config does not include bridgeEventsUrl."
     }
-    if ($claudeAdapterData.deploymentVersion -ne 4 -or $claudeAdapterData.hookProtocolVersion -ne 5) {
+    if ($claudeAdapterData.deploymentVersion -ne 5 -or $claudeAdapterData.hookProtocolVersion -ne 6) {
         throw "Claude adapter config does not include expected deployment/hook protocol versions."
     }
     if (@($claudeAdapterData.hookEvents) -notcontains "SessionStart" -or @($claudeAdapterData.hookEvents) -notcontains "StopFailure" -or @($claudeAdapterData.hookEvents) -notcontains "SessionEnd" -or @($claudeAdapterData.hookEvents) -notcontains "ElicitationResult") {
@@ -352,6 +352,16 @@ try {
         throw "Workspace registry did not persist the enrolled verification workspace."
     }
     Write-Host "Workspace registry OK -> $($registeredWorkspace.projectName)"
+
+    $workspaceLabelResult = Invoke-BrokerJson -Method POST -Path "/api/workspaces/label" -Body @{
+        workspaceId = $enroll.workspaceId
+        workspaceLabel = "dev1"
+    }
+    $workspaceData = Get-Content -Raw -Encoding UTF8 (Join-Path $workspaceRoot ".amo\workspace.json") | ConvertFrom-Json
+    if ($workspaceLabelResult.workspace.workspaceLabel -ne "dev1" -or $workspaceData.workspaceLabel -ne "dev1") {
+        throw "Workspace label did not persist to the registry and project metadata."
+    }
+    Write-Host "Workspace label OK -> $($workspaceLabelResult.workspace.workspaceLabel)"
 
     $pluginList = Get-Content -Raw -Encoding UTF8 (Join-Path $vaultRoot ".obsidian\community-plugins.json") | ConvertFrom-Json
     if (@($pluginList) -notcontains "md-anno-tools") {
@@ -932,6 +942,17 @@ try {
     Write-Host "Codex CLI target binding OK -> bind/clear"
 
     $claudeHookPath = Join-Path $workspaceRoot ".amo\hooks\claude-message.mjs"
+    $claudeSessionStartInput = @{
+        session_id = "claude-hook-verify"
+        transcript_path = (Join-Path $workspaceRoot ".claude\projects\verify.jsonl")
+        cwd = $workspaceRoot
+        hook_event_name = "SessionStart"
+        source = "startup"
+    } | ConvertTo-Json -Depth 8 -Compress
+    $claudeSessionStartOutput = $claudeSessionStartInput | node $claudeHookPath
+    if ($LASTEXITCODE -ne 0 -or $claudeSessionStartOutput -notmatch '"continue"\s*:\s*true') {
+        throw "Claude SessionStart hook did not return a non-blocking JSON response."
+    }
     $claudePromptInput = @{
         session_id = "claude-hook-verify"
         transcript_path = (Join-Path $workspaceRoot ".claude\projects\verify.jsonl")
@@ -999,6 +1020,9 @@ try {
     $claudeSession = @($sessionsAfterClaudeHook.sessions | Where-Object { $_.sessionId -eq "claude-hook-verify" })[0]
     if (-not $claudeSession -or $claudeSession.tool -ne "claude" -or -not $claudeSession.lastPromptNote -or -not $claudeSession.lastReplyNote) {
         throw "Claude generated hook did not create prompt/reply notes on one session."
+    }
+    if ($claudeSession.title -ne "dev1-Claude verification prompt" -or $claudeSession.sessionNaming.status -ne "display-only") {
+        throw "Claude first prompt did not apply the explicit display-only workspace label fallback."
     }
     $claudePromptNotePath = Join-Path $vaultRoot ($claudeSession.lastPromptNote -replace "/", [System.IO.Path]::DirectorySeparatorChar)
     $claudeReplyNotePath = Join-Path $vaultRoot ($claudeSession.lastReplyNote -replace "/", [System.IO.Path]::DirectorySeparatorChar)

@@ -277,6 +277,7 @@ function inspectWorkspace(payload) {
     workspaceId,
     workspacePath,
     projectName,
+    workspaceLabel: normalizeText(existingWorkspace?.workspaceLabel),
     existingEnrollment: hasAmo,
     deploymentRoot: AMO_DIR,
     gitExclude,

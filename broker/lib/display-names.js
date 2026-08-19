@@ -14,7 +14,11 @@ const claudeSessionNameCache = {
   names: new Map(),
 };
 
-function resolveSessionTitle(tool, sessionId, explicitTitle, existingTitle) {
+function resolveSessionTitle(tool, sessionId, explicitTitle, existingTitle, sessionNaming = null) {
+  const automaticTitle = retainedAutomaticTitle(sessionNaming);
+  if (automaticTitle) {
+    return automaticTitle;
+  }
   const payloadTitle = normalizeText(explicitTitle);
   if (payloadTitle) {
     return payloadTitle;
@@ -33,8 +37,14 @@ function refreshSessionTitle(session) {
     return session;
   }
 
-  const title = resolveSessionTitle(session.tool, session.sessionId, null, session.title);
+  const title = resolveSessionTitle(session.tool, session.sessionId, null, session.title, session.sessionNaming);
   return title && title !== session.title ? { ...session, title } : session;
+}
+
+function retainedAutomaticTitle(sessionNaming) {
+  const status = normalizeText(sessionNaming?.status)?.toLowerCase();
+  if (!status || status === "renamed") return null;
+  return normalizeText(sessionNaming?.requestedName);
 }
 
 function lookupSessionDisplayName(tool, sessionId) {

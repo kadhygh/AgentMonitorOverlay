@@ -160,3 +160,48 @@ test("manual title refresh updates changed provider titles without changing card
   const unchangedResult = store.refreshSessionTitles();
   assert.equal(unchangedResult.count, 0);
 });
+
+test("SessionStart preserves provider source so startup can be distinguished from resume", (t) => {
+  const store = createTestStore(t);
+  const started = store.upsertSessionFromEvent({
+    tool: "codex",
+    sessionId: "source-session",
+    hookEventName: "SessionStart",
+    sessionStartSource: "startup",
+  });
+  const prompted = store.upsertSessionFromEvent({
+    tool: "codex",
+    sessionId: "source-session",
+    hookEventName: "PreToolUse",
+  });
+
+  assert.equal(started.sessionStartSource, "startup");
+  assert.equal(prompted.sessionStartSource, "startup");
+});
+
+test("display-only automatic names survive later provider events and snapshot reload", async (t) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "amo-session-display-name-"));
+  t.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const dataFile = path.join(root, "sessions.json");
+  const store = createSessionStore({ dataFile });
+  store.sessions.set("display-only", {
+    sessionId: "display-only",
+    tool: "claude",
+    title: "dev1-开发模块",
+    sessionNaming: { status: "display-only", requestedName: "dev1-开发模块" },
+    updatedAt: "2026-08-20T00:00:00.000Z",
+  });
+
+  const updated = store.upsertSessionFromEvent({
+    sessionId: "display-only",
+    tool: "claude",
+    hookEventName: "Stop",
+    title: "Provider summary",
+  });
+  await store.persistSnapshot("test");
+  const restored = createSessionStore({ dataFile });
+  restored.loadSnapshot();
+
+  assert.equal(updated.title, "dev1-开发模块");
+  assert.equal(restored.sessions.get("display-only").title, "dev1-开发模块");
+});

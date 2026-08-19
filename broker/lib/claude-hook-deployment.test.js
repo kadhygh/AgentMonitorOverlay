@@ -6,6 +6,7 @@ const test = require("node:test");
 const {
   CLAUDE_HOOK_EVENTS,
   CLAUDE_PROJECT_HOOK_COMMAND,
+  claudeMessageHookScript,
   mergeClaudeSettings,
 } = require("../hooks/claude");
 const { AMO_DEPLOYMENT_VERSION, AMO_HOOK_PROTOCOL_VERSION } = require("./amo-constants");
@@ -19,6 +20,10 @@ function createFixture() {
   fs.mkdirSync(path.join(amoRoot, "adapters"), { recursive: true });
   return { root, workspacePath, amoRoot };
 }
+
+test("Claude hook forwards the SessionStart source used by display-only automatic naming", () => {
+  assert.match(claudeMessageHookScript(), /sessionStartSource: lowerEventName === 'sessionstart'/u);
+});
 
 function inspectClaude(fixture) {
   return inspectAdapterDeployment(fixture.workspacePath, fixture.amoRoot, {

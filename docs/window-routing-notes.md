@@ -126,10 +126,12 @@ Current capability boundary:
 | Provider | Native new-session name | AMO launch behavior |
 | --- | --- | --- |
 | Claude CLI | Supported by local `claude --help` through `--name <name>`. | A card launch flow may ask for a session name, pass it to Claude, and cache it as a pending AMO task title for the first matching hook-created session. |
-| Codex CLI | Not verified. Local `codex --help` does not expose a new-session naming option; `codex resume` can accept an existing session id/name. | Do not ask for or pass a Codex new-session name. Launch plain `codex` and let the hook-created card be renamed in AMO if the user wants a display label. |
+| Codex CLI | Verified through Codex App Server `thread/name/set`; this is available after the Hook exposes the provider thread id, not as a new-session CLI argument. | Launch plain `codex`. When an enrolled workspace has `workspaceLabel`, AMO derives a deterministic name from the first `UserPromptSubmit` of a `startup` session and asynchronously updates the native Thread. Resume, clear, compact, duplicate, and later prompts do not rename again. |
 | Codex App | App-specific. | Do not reuse CLI naming assumptions. Keep explicit user target binding. |
 
 AMO may still set a terminal/window title for routing when it controls the launcher, but that title is only a window hint. It must not replace the provider session id, and it should not be treated as proof that the provider internally named the session.
+
+Workspace-label naming is independent of terminal titles and target binding. Codex native rename success is recorded as `sessionNaming.status = renamed`; provider failure keeps the AMO title with `failed`, while providers without a native adapter use the explicit `display-only` state.
 
 If AMO records a pending launch label before the first hook event, it should be short-lived, workspace/tool scoped, and consumed only when the matching hook-created session has no user-edited `taskTitle`. Multiple same-tool launches in the same workspace are ambiguous unless a future launch token can be proven from the hook payload or selected window binding.
 

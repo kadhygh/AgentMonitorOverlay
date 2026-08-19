@@ -12,8 +12,8 @@ const CODEX_HOOK_EVENTS = Object.freeze([
   "PostToolUse",
 ]);
 function codexReplyHookScript(options = {}) {
-  const deploymentVersion = options.deploymentVersion ?? 4;
-  const hookProtocolVersion = options.hookProtocolVersion ?? 5;
+  const deploymentVersion = options.deploymentVersion ?? 5;
+  const hookProtocolVersion = options.hookProtocolVersion ?? 6;
   return [
     "import fs from 'node:fs/promises';",
     "import path from 'node:path';",
@@ -77,6 +77,7 @@ function codexReplyHookScript(options = {}) {
     "      turnId: typeof payload.turn_id === 'string' ? payload.turn_id : 'unknown-turn',",
     "      model: typeof payload.model === 'string' ? payload.model : null,",
     "      hookEventName: eventName,",
+    "      sessionStartSource: lowerEventName === 'sessionstart' && typeof payload.source === 'string' ? payload.source : null,",
     "      cwd: typeof payload.cwd === 'string' ? payload.cwd : projectRoot,",
     "      transcriptPath: typeof payload.transcript_path === 'string' ? payload.transcript_path : null,",
     "      permissionMode: typeof payload.permission_mode === 'string' ? payload.permission_mode : null,",

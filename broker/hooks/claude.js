@@ -18,8 +18,8 @@ const CLAUDE_HOOK_EVENTS = Object.freeze([
   "ElicitationResult",
 ]);
 function claudeMessageHookScript(options = {}) {
-  const deploymentVersion = options.deploymentVersion ?? 4;
-  const hookProtocolVersion = options.hookProtocolVersion ?? 5;
+  const deploymentVersion = options.deploymentVersion ?? 5;
+  const hookProtocolVersion = options.hookProtocolVersion ?? 6;
   return [
     "import fs from 'node:fs/promises';",
     "import path from 'node:path';",
@@ -87,6 +87,7 @@ function claudeMessageHookScript(options = {}) {
     "      turnId,",
     "      model: typeof payload.model === 'string' ? payload.model : null,",
     "      hookEventName: eventName,",
+    "      sessionStartSource: lowerEventName === 'sessionstart' && typeof payload.source === 'string' ? payload.source : null,",
     "      cwd,",
     "      transcriptPath: typeof payload.transcript_path === 'string' ? payload.transcript_path : null,",
     "      permissionMode: typeof payload.permission_mode === 'string' ? payload.permission_mode : null,",

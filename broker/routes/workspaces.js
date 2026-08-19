@@ -33,6 +33,13 @@ async function handleWorkspaceRoutes(req, res, url, context) {
     return sendHandled(res, 200, { ok: true, workspaceId: workspace.workspaceId });
   }
 
+  if (req.method === "POST" && url.pathname === "/api/workspaces/label") {
+    const payload = await readJsonBody(req);
+    const workspaceId = payload?.workspaceId || payload?.workspace_id;
+    const workspace = context.workspaceRegistry.updateLabel(workspaceId, payload?.workspaceLabel ?? payload?.workspace_label);
+    return sendHandled(res, 200, { ok: true, workspace });
+  }
+
   if (req.method === "POST" && url.pathname === "/api/workspaces/git-exclude") {
     const payload = await readJsonBody(req);
     return sendHandled(res, 200, context.updateWorkspaceGitExclude(payload, { recordDebugLog: context.recordDebugLog }));

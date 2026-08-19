@@ -7,6 +7,7 @@ const test = require("node:test");
 const {
   CODEX_HOOK_EVENTS,
   CODEX_PROJECT_HOOK_COMMAND,
+  codexReplyHookScript,
   mergeCodexHooks,
 } = require("../hooks/codex");
 const { AMO_DEPLOYMENT_VERSION, AMO_HOOK_PROTOCOL_VERSION } = require("./amo-constants");
@@ -30,6 +31,10 @@ function inspectCodex(fixture) {
     requiredCommandMarkers: [CODEX_PROJECT_HOOK_COMMAND],
   });
 }
+
+test("Codex hook forwards the SessionStart source used by automatic naming", () => {
+  assert.match(codexReplyHookScript(), /sessionStartSource: lowerEventName === 'sessionstart'/u);
+});
 
 test("Codex deployment replaces absolute AMO hooks with the workspace locator command", () => {
   const fixture = createFixture();

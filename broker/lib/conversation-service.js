@@ -29,6 +29,7 @@ function createConversationService(options = {}) {
       typeof options.sessionHasAttentionState === "function" ? options.sessionHasAttentionState : () => false,
     normalizeState: typeof options.normalizeState === "function" ? options.normalizeState : (state) => normalizeText(state),
     promptDuplicateWindowMs: options.promptDuplicateWindowMs,
+    onPromptCaptured: typeof options.onPromptCaptured === "function" ? options.onPromptCaptured : () => null,
   };
 
   return {
@@ -69,7 +70,7 @@ function handleReply(payload, context) {
   const cwd = normalizeText(payload.cwd) || workspaceRoot;
   const transcriptPath = normalizeText(payload.transcriptPath || payload.transcript_path);
   const existing = sessions.get(sessionId);
-  const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title);
+  const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title, existing?.sessionNaming);
   const taskTitle = normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null;
   const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null;
   const targetBinding = resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: capturedAt, windowHint });
@@ -217,7 +218,7 @@ function handlePrompt(payload, context) {
   const hookEventName = normalizeText(payload.hookEventName || payload.hook_event_name) || "UserPromptSubmit";
   const cwd = normalizeText(payload.cwd) || existing?.cwd || workspaceRoot;
   const transcriptPath = normalizeText(payload.transcriptPath || payload.transcript_path);
-  const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title);
+  const title = resolveSessionTitle(tool, sessionId, payload.title, existing?.title, existing?.sessionNaming);
   const taskTitle = normalizeText(payload.taskTitle || payload.task_title) || existing?.taskTitle || null;
   const windowHint = normalizeWindowHint(payload.windowHint || payload.window_hint) || existing?.windowHint || null;
   const targetBinding = resolveSessionTargetBinding({ payload, existing, sessionId, tool, cwd, boundAt: capturedAt, windowHint });
@@ -357,6 +358,13 @@ function handlePrompt(payload, context) {
     canvasNodeId: canvas.canvasNodeId,
   }, "prompt", existing);
   sessions.set(sessionId, session);
+  const capturedSession = notifyPromptCaptured(context, {
+    payload,
+    session,
+    workspace,
+    message,
+    firstPrompt: !existing?.lastPromptAt,
+  }) || session;
 
   recordDebugLog("broker", "prompt.created", {
     sessionId,
@@ -381,8 +389,20 @@ function handlePrompt(payload, context) {
     canvasPath: canvas.canvasPath,
     canvasAbsolutePath: canvas.canvasAbsolutePath,
     canvasNodeId: canvas.canvasNodeId,
-    session,
+    session: capturedSession,
   };
+}
+
+function notifyPromptCaptured(context, capture) {
+  try {
+    return context.onPromptCaptured(capture);
+  } catch (error) {
+    context.recordDebugLog("broker", "session.auto_name.schedule_failed", {
+      sessionId: capture.session?.sessionId || null,
+      message: error?.message || String(error),
+    });
+    return capture.session;
+  }
 }
 
 function findEnrolledWorkspace(value) {

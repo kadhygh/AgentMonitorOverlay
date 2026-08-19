@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { FolderPlus, Plus, Trash2, X } from "lucide-react";
+import { Check, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react";
 import {
   BROKER_DEBUG_LOGS_URL,
   BROKER_WORKSPACE_CLEAN_VAULT_URL,
@@ -9,6 +9,7 @@ import {
   BROKER_WORKSPACE_GIT_EXCLUDE_URL,
   BROKER_WORKSPACE_INSPECT_URL,
   BROKER_WORKSPACE_LAUNCH_URL,
+  BROKER_WORKSPACE_LABEL_URL,
   BROKER_WORKSPACE_FORGET_URL,
   BROKER_WORKSPACES_URL,
   getBrokerJson,
@@ -74,6 +75,8 @@ export function DeployWorkspaceApp() {
   const [feedback, setFeedback] = useState("Choose or paste a workspace path.");
   const [registeredWorkspaces, setRegisteredWorkspaces] = useState<WorkspaceRegistryEntry[]>([]);
   const [registryBusy, setRegistryBusy] = useState(false);
+  const [editingWorkspaceId, setEditingWorkspaceId] = useState<string | null>(null);
+  const [workspaceLabelDraft, setWorkspaceLabelDraft] = useState("");
 
   useEffect(() => {
     void loadWorkspaceRegistry();
@@ -575,6 +578,32 @@ export function DeployWorkspaceApp() {
     }
   }
 
+  function beginWorkspaceLabelEdit(workspace: WorkspaceRegistryEntry) {
+    setEditingWorkspaceId(workspace.workspaceId);
+    setWorkspaceLabelDraft(workspace.workspaceLabel ?? "");
+  }
+
+  async function saveWorkspaceLabel(workspace: WorkspaceRegistryEntry) {
+    setRegistryBusy(true);
+    try {
+      const result = await postBrokerJson<{ ok: boolean; workspace: WorkspaceRegistryEntry }>(
+        BROKER_WORKSPACE_LABEL_URL,
+        { workspaceId: workspace.workspaceId, workspaceLabel: workspaceLabelDraft },
+      );
+      setRegisteredWorkspaces((current) => current.map((entry) => (
+        entry.workspaceId === result.workspace.workspaceId ? result.workspace : entry
+      )));
+      setEditingWorkspaceId(null);
+      setFeedback(result.workspace.workspaceLabel
+        ? `Workspace label saved as ${result.workspace.workspaceLabel}.`
+        : `Automatic session naming disabled for ${workspace.projectName}.`);
+    } catch (error) {
+      setFeedback(`Workspace label failed: ${(error as Error).message}`);
+    } finally {
+      setRegistryBusy(false);
+    }
+  }
+
   function prepareNewWorkspace() {
     setWorkspacePath("");
     setWorkspaceInspection(null);
@@ -650,21 +679,48 @@ export function DeployWorkspaceApp() {
                   className={`workspace-registry-item${workspace.workspacePath === workspacePath ? " selected" : ""}`}
                   key={workspace.workspaceId}
                 >
-                  <button type="button" className="workspace-registry-select" onClick={() => void selectRegisteredWorkspace(workspace)}>
-                    <span className={`workspace-status-dot ${workspace.status}`} aria-hidden="true" />
-                    <span>
-                      <strong>{workspace.projectName}</strong>
-                      <small>{workspace.adapterIds.join(" + ") || "No adapters"}</small>
-                    </span>
-                  </button>
-                  <button
-                    type="button"
-                    className="workspace-registry-forget"
-                    title="Forget workspace"
-                    onClick={() => void forgetRegisteredWorkspace(workspace)}
-                  >
-                    <Trash2 size={12} aria-hidden="true" />
-                  </button>
+                  {editingWorkspaceId === workspace.workspaceId ? (
+                    <form className="workspace-label-editor" onSubmit={(event) => {
+                      event.preventDefault();
+                      void saveWorkspaceLabel(workspace);
+                    }}>
+                      <input
+                        autoFocus
+                        maxLength={32}
+                        value={workspaceLabelDraft}
+                        aria-label={`Label for ${workspace.projectName}`}
+                        placeholder="Project label"
+                        onChange={(event) => setWorkspaceLabelDraft(event.target.value)}
+                        onKeyDown={(event) => {
+                          if (event.key === "Escape") setEditingWorkspaceId(null);
+                        }}
+                      />
+                      <button type="submit" title="Save label" disabled={registryBusy}>
+                        <Check size={12} aria-hidden="true" />
+                      </button>
+                      <button type="button" title="Cancel" onClick={() => setEditingWorkspaceId(null)}>
+                        <X size={12} aria-hidden="true" />
+                      </button>
+                    </form>
+                  ) : (
+                    <>
+                      <button type="button" className="workspace-registry-select" onClick={() => void selectRegisteredWorkspace(workspace)}>
+                        <span className={`workspace-status-dot ${workspace.status}`} aria-hidden="true" />
+                        <span>
+                          <strong>{workspace.workspaceLabel || workspace.projectName}</strong>
+                          <small>{workspace.workspaceLabel ? workspace.projectName : workspace.adapterIds.join(" + ") || "No adapters"}</small>
+                        </span>
+                      </button>
+                      <div className="workspace-registry-actions">
+                        <button type="button" title="Edit project label" onClick={() => beginWorkspaceLabelEdit(workspace)}>
+                          <Pencil size={12} aria-hidden="true" />
+                        </button>
+                        <button type="button" title="Forget workspace" onClick={() => void forgetRegisteredWorkspace(workspace)}>
+                          <Trash2 size={12} aria-hidden="true" />
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </div>
               ))}
             </div>
