@@ -601,7 +601,7 @@ export function DeployWorkspaceApp() {
       setEditingWorkspaceId(null);
       setFeedback(result.workspace.workspaceLabel
         ? `Workspace label saved as ${result.workspace.workspaceLabel}.`
-        : `Automatic session naming disabled for ${workspace.projectName}.`);
+        : `Automatic AMO task naming disabled for ${workspace.projectName}.`);
     } catch (error) {
       setFeedback(`Workspace label failed: ${(error as Error).message}`);
     } finally {

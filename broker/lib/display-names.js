@@ -48,7 +48,7 @@ function refreshSessionTitle(session) {
 
 function retainedAutomaticTitle(sessionNaming) {
   const status = normalizeText(sessionNaming?.status)?.toLowerCase();
-  if (!status || status === "renamed") return null;
+  if (!status || status === "renamed" || status === "amo-only") return null;
   return normalizeText(sessionNaming?.requestedName);
 }
 

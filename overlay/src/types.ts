@@ -70,12 +70,20 @@ export interface AgentSession {
   taskTitle?: string | null;
   sessionStartSource?: "startup" | "resume" | "clear" | "compact" | string | null;
   sessionNaming?: {
-    status: "pending" | "renamed" | "display-only" | "failed" | string;
+    status: "amo-only" | "pending" | "renamed" | "display-only" | "failed" | string;
     requestedName: string;
     workspaceLabel: string;
     attemptedAt: string;
     completedAt?: string | null;
     providerSynced: boolean;
+    error?: string | null;
+  } | null;
+  providerNameSync?: {
+    status: "idle" | "syncing" | "synced" | "stale" | "failed" | string;
+    requestedTitle?: string | null;
+    attemptedAt?: string | null;
+    completedAt?: string | null;
+    providerSynced?: boolean;
     error?: string | null;
   } | null;
   priority?: SessionPriority | null;

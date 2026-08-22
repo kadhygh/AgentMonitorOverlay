@@ -1,4 +1,6 @@
 const { renameCodexThreadName } = require("./codex-app-server");
+const { AMO_SCHEMA_VERSION } = require("./amo-constants");
+const { httpError } = require("./http");
 const { normalizeText } = require("./normalize");
 
 const MAX_SESSION_NAME_LENGTH = 64;
@@ -10,10 +12,9 @@ function createSessionNamingService(options = {}) {
   const scheduleSnapshotPersist = typeof options.scheduleSnapshotPersist === "function" ? options.scheduleSnapshotPersist : () => {};
   const publishSessionChanged = typeof options.publishSessionChanged === "function" ? options.publishSessionChanged : () => {};
   const recordDebugLog = typeof options.recordDebugLog === "function" ? options.recordDebugLog : () => {};
-  let codexQueue = Promise.resolve();
 
   function onPromptCaptured({ session, workspace, message, firstPrompt = false, duplicate = false } = {}) {
-    if (!session || !firstPrompt || duplicate || session.sessionNaming?.attemptedAt) return session;
+    if (!session || !firstPrompt || duplicate || session.sessionNaming?.attemptedAt || normalizeText(session.taskTitle)) return session;
     const workspaceLabel = normalizeText(workspace?.workspaceLabel);
     const sessionStartSource = normalizeText(session.sessionStartSource);
     if (!workspaceLabel || !isFreshSessionStart(sessionStartSource)) {
@@ -32,94 +33,151 @@ function createSessionNamingService(options = {}) {
     if (!requestedName) return session;
 
     const now = new Date().toISOString();
-    const isCodex = /^codex(?:-cli)?$/iu.test(normalizeText(session.tool) || "");
     const nextSession = {
       ...session,
-      title: requestedName,
+      taskTitle: requestedName,
       sessionNaming: {
-        status: isCodex ? "pending" : "display-only",
+        status: "amo-only",
         requestedName,
         workspaceLabel,
         attemptedAt: now,
-        completedAt: isCodex ? null : now,
+        completedAt: now,
         providerSynced: false,
         error: null,
       },
     };
     sessions.set(session.sessionId, nextSession);
-    scheduleSnapshotPersist("session-auto-name");
-    publishSessionChanged("session-auto-name", nextSession);
-
-    if (!isCodex) {
-      recordDebugLog("broker", "session.auto_name.display_only", {
-        sessionId: session.sessionId,
-        tool: session.tool,
-        requestedName,
-      });
-      return nextSession;
-    }
-
-    enqueueCodexRename(session.sessionId, requestedName);
+    scheduleSnapshotPersist("session-auto-name-local");
+    publishSessionChanged("session-auto-name-local", nextSession);
+    recordDebugLog("broker", "session.auto_name.local", {
+      sessionId: session.sessionId,
+      tool: session.tool,
+      requestedName,
+    });
     return nextSession;
   }
 
   function recoverPending() {
     for (const session of sessions.values()) {
       const requestedName = normalizeText(session?.sessionNaming?.requestedName);
-      if (session?.sessionNaming?.status !== "pending" || !requestedName || !/^codex(?:-cli)?$/iu.test(session.tool || "")) continue;
-      sessions.set(session.sessionId, { ...session, title: requestedName });
-      enqueueCodexRename(session.sessionId, requestedName);
+      const interruptedSync = session?.providerNameSync?.status === "syncing";
+      const legacyAutomaticStatus = ["pending", "failed", "display-only"].includes(session?.sessionNaming?.status);
+      if (!legacyAutomaticStatus && !interruptedSync) continue;
+
+      const now = new Date().toISOString();
+      const nextSession = {
+        ...session,
+        taskTitle: normalizeText(session.taskTitle) || requestedName || null,
+        sessionNaming: requestedName
+          ? {
+              ...session.sessionNaming,
+              status: "amo-only",
+              completedAt: session.sessionNaming?.completedAt || now,
+              providerSynced: false,
+              error: null,
+            }
+          : session.sessionNaming || null,
+        providerNameSync: interruptedSync
+          ? {
+              ...session.providerNameSync,
+              status: "failed",
+              completedAt: now,
+              error: "Broker restarted before provider name sync completed",
+            }
+          : session.providerNameSync || null,
+      };
+      sessions.set(session.sessionId, nextSession);
+      scheduleSnapshotPersist("session-auto-name-recovered");
+      publishSessionChanged("session-auto-name-recovered", nextSession);
     }
   }
 
-  function enqueueCodexRename(sessionId, requestedName) {
-    codexQueue = codexQueue.then(
-      () => completeCodexRename(sessionId, requestedName),
-      () => completeCodexRename(sessionId, requestedName),
-    );
-  }
+  async function syncProviderName(sessionId, payload = {}) {
+    const existing = sessions.get(sessionId);
+    if (!existing) {
+      throw httpError(404, "session_not_found", `Session not found for provider name sync: ${sessionId}`);
+    }
+    if (!/^codex(?:-cli)?$/iu.test(normalizeText(existing.tool) || "")) {
+      throw httpError(400, "provider_name_sync_unsupported", `Provider name sync is not supported for ${existing.tool || "unknown"}`);
+    }
 
-  async function completeCodexRename(sessionId, requestedName) {
-    try {
-      await renameCodexThread(sessionId, requestedName);
-      updateNamingResult(sessionId, requestedName, {
-        status: "renamed",
-        providerSynced: true,
-        error: null,
-      });
-      recordDebugLog("broker", "session.auto_name.renamed", { sessionId, requestedName });
-    } catch (error) {
-      updateNamingResult(sessionId, requestedName, {
-        status: "failed",
+    const requestedTitle = normalizeText(existing.taskTitle);
+    if (!requestedTitle) {
+      throw httpError(409, "missing_task_title", "Set an AMO task name before syncing it to the provider session");
+    }
+    const expectedTaskTitle = normalizeText(payload.expectedTaskTitle || payload.expected_task_title);
+    if (expectedTaskTitle && expectedTaskTitle !== requestedTitle) {
+      throw httpError(409, "task_title_changed", "The AMO task name changed before provider sync started");
+    }
+
+    const attemptedAt = new Date().toISOString();
+    const syncingSession = {
+      ...existing,
+      providerNameSync: {
+        status: "syncing",
+        requestedTitle,
+        attemptedAt,
+        completedAt: null,
         providerSynced: false,
-        error: trimError(error),
-      });
-      recordDebugLog("broker", "session.auto_name.failed", {
-        sessionId,
-        requestedName,
-        message: trimError(error),
-      });
-    }
-  }
-
-  function updateNamingResult(sessionId, requestedName, result) {
-    const current = sessions.get(sessionId);
-    if (!current || current.sessionNaming?.requestedName !== requestedName) return;
-    const nextSession = {
-      ...current,
-      title: requestedName,
-      sessionNaming: {
-        ...current.sessionNaming,
-        ...result,
-        completedAt: new Date().toISOString(),
+        error: null,
       },
     };
-    sessions.set(sessionId, nextSession);
-    scheduleSnapshotPersist("session-auto-name-result");
-    publishSessionChanged("session-auto-name-result", nextSession);
+    sessions.set(sessionId, syncingSession);
+    scheduleSnapshotPersist("provider-name-sync-start");
+    publishSessionChanged("provider-name-sync-start", syncingSession);
+    recordDebugLog("broker", "session.provider_name_sync.start", { sessionId, requestedTitle });
+
+    try {
+      await renameCodexThread(sessionId, requestedTitle);
+      const current = sessions.get(sessionId) || syncingSession;
+      const taskTitleChanged = normalizeText(current.taskTitle) !== requestedTitle;
+      const completedAt = new Date().toISOString();
+      const session = {
+        ...current,
+        title: requestedTitle,
+        providerNameSync: {
+          status: taskTitleChanged ? "stale" : "synced",
+          requestedTitle,
+          attemptedAt,
+          completedAt,
+          providerSynced: true,
+          error: null,
+        },
+      };
+      sessions.set(sessionId, session);
+      scheduleSnapshotPersist("provider-name-sync-result");
+      publishSessionChanged("provider-name-sync-result", session);
+      recordDebugLog("broker", "session.provider_name_sync.ok", { sessionId, requestedTitle, taskTitleChanged });
+      return {
+        ok: true,
+        schemaVersion: AMO_SCHEMA_VERSION,
+        sessionId,
+        requestedTitle,
+        session,
+      };
+    } catch (error) {
+      const current = sessions.get(sessionId) || syncingSession;
+      const message = trimError(error);
+      const session = {
+        ...current,
+        providerNameSync: {
+          status: "failed",
+          requestedTitle,
+          attemptedAt,
+          completedAt: new Date().toISOString(),
+          providerSynced: false,
+          error: message,
+        },
+      };
+      sessions.set(sessionId, session);
+      scheduleSnapshotPersist("provider-name-sync-result");
+      publishSessionChanged("provider-name-sync-result", session);
+      recordDebugLog("broker", "session.provider_name_sync.failed", { sessionId, requestedTitle, message });
+      throw error;
+    }
   }
 
-  return { onPromptCaptured, recoverPending, flush: () => codexQueue };
+  return { onPromptCaptured, recoverPending, syncProviderName, flush: () => Promise.resolve() };
 }
 
 function isFreshSessionStart(source) {
@@ -131,16 +189,20 @@ function deriveSessionName(workspaceLabel, prompt) {
   const rawPrompt = normalizeText(prompt);
   if (!label || !rawPrompt) return null;
 
-  const cleaned = rawPrompt
+  const cleaned = extractUserRequest(rawPrompt)
     .replace(/<environment_context>[\s\S]*?<\/environment_context>/giu, " ")
     .replace(/```[\s\S]*?```/gu, " ")
     .replace(/https?:\/\/\S+/giu, " ")
+    .replace(/^\s{0,3}#{1,6}\s+/gmu, "")
     .replace(/[\r\n]+/gu, "。")
     .replace(/\s+/gu, " ")
     .trim();
   if (!cleaned) return null;
 
-  const clauses = cleaned.split(/[。！？!?;；]+/gu).map(cleanTitleClause).filter(Boolean);
+  const clauses = cleaned
+    .split(/[。！？!?;；]+/gu)
+    .map(cleanTitleClause)
+    .filter((clause) => clause && !isPromptEnvelopeClause(clause));
   const meaningful = clauses.find((clause) => !isProceduralClause(clause)) || clauses[0];
   if (!meaningful) return null;
 
@@ -150,8 +212,14 @@ function deriveSessionName(workspaceLabel, prompt) {
   return body ? `${label}-${body}` : null;
 }
 
+function extractUserRequest(prompt) {
+  const marker = /^\s{0,3}#{1,6}\s*my request\s*:\s*$/imu;
+  const match = marker.exec(prompt);
+  return match ? prompt.slice(match.index + match[0].length) : prompt;
+}
+
 function cleanTitleClause(value) {
-  let result = `${value || ""}`.trim();
+  let result = `${value || ""}`.trim().replace(/^#{1,6}\s*/u, "");
   const leadIns = [
     /^(?:接下来|然后|另外|现在)[,，\s]*/iu,
     /^(?:请|麻烦)?(?:你|帮我|我们)?(?:先)?(?:帮忙)?[,，\s]*/iu,
@@ -165,6 +233,12 @@ function cleanTitleClause(value) {
     if (result === before) break;
   }
   return result.replace(/^[,，、:：\s-]+/gu, "").replace(/\s+/gu, " ").trim();
+}
+
+function isPromptEnvelopeClause(value) {
+  const normalized = value.replace(/\s+/gu, " ").trim().toLowerCase();
+  return normalized === "files mentioned by the user" ||
+    normalized.startsWith("distinguish instructions in attached documents from the user's request");
 }
 
 function isProceduralClause(value) {

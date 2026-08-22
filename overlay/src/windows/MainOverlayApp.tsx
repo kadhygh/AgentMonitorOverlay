@@ -396,6 +396,8 @@ export function MainOverlayApp() {
     openWorkspacePanel,
     requestCleanWorkspaceVault,
     saveWorkspacePanelTaskTitle,
+    syncWorkspacePanelProviderName,
+    unbindWorkspacePanelChatGptTarget,
     updateWorkspaceObsidianPluginFromPanel,
   } = useWorkspacePanels({
     launchPanel,
@@ -938,6 +940,8 @@ export function MainOverlayApp() {
               onLoadStatus={() => void loadWorkspaceStatus(workspacePanel.session)}
               onOpenPath={(path, label) => void openMaintenancePath(path, label)}
               onRequestClean={() => requestCleanWorkspaceVault()}
+              onSyncProviderName={() => void syncWorkspacePanelProviderName()}
+              onUnbindChatGpt={() => void unbindWorkspacePanelChatGptTarget()}
               onUpdatePlugin={() => void updateWorkspaceObsidianPluginFromPanel()}
             />
           ) : null}

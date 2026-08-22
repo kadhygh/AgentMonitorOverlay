@@ -662,9 +662,10 @@ Launch flow:
 
 Current provider decision:
 
-- Workspace Center supports a project-local `workspaceLabel` such as `main` or `dev1`. On the first `UserPromptSubmit` of a fresh session (`SessionStart` source `startup` or Grok's `new`), AMO derives one deterministic `<workspaceLabel>-<prompt summary>` name and never reapplies it on resume, clear, compact, duplicate, or later prompts.
-- Codex CLI is still launched without a guessed naming argument. After the Hook provides the real thread id, Broker uses Codex App Server `thread/name/set` asynchronously; failure does not block the Hook and remains visible through `sessionNaming.status = failed`.
-- Claude and providers without an implemented native rename adapter use `sessionNaming.status = display-only`: AMO shows the derived name but does not claim that the provider's stored session was renamed.
+- Workspace Center supports a project-local `workspaceLabel` such as `main` or `dev1`. On the first `UserPromptSubmit` of a fresh session (`SessionStart` source `startup` or Grok's `new`), AMO derives one deterministic `<workspaceLabel>-<prompt summary>` local `taskTitle` and never reapplies it on resume, clear, compact, duplicate, or later prompts.
+- Automatic naming never changes the provider session. `sessionNaming.status = amo-only` records the local naming result, while the provider's current name remains in `title`.
+- Workspace Tools derives name sync state from `taskTitle` and `title`. Matching names show green. Different names expose `Sync to Session` only for providers with a verified rename adapter. Codex uses App Server `thread/name/set` only after that explicit user action; failures are recorded in `providerNameSync` and can be retried.
+- Attached-file prompt envelopes are stripped before local title derivation; when `## My request:` is present, only the request body participates in naming.
 
 If AMO later adds pending launch names, matching must be conservative. A pending name is only a display hint; it must never replace provider `sessionId` as identity. If multiple same-tool launches are pending in one workspace, use FIFO only as an MVP fallback and prefer a future launch token/window-title token when the hook payload can prove the match.
 

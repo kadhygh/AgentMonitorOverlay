@@ -6,12 +6,14 @@ import {
   BROKER_WORKSPACE_LAUNCH_URL,
   BROKER_WORKSPACE_STATUS_URL,
   BROKER_WORKSPACE_UPDATE_OBSIDIAN_PLUGIN_URL,
+  brokerSessionProviderNameSyncUrl,
+  brokerSessionTargetBindingClearUrl,
   brokerSessionTaskTitleUrl,
   postBrokerJson,
 } from "../api/brokerClient";
 import { cliLaunchPreferencePayload } from "../native/cliLaunch";
 import { workspacePanelPosition } from "../domain/overlaySessionUi";
-import { projectName, workspacePathForSession } from "../domain/routingModel";
+import { projectName, targetBindingForSession, workspacePathForSession } from "../domain/routingModel";
 import {
   workspaceLaunchAdapterForSession,
   workspaceLaunchLabel,
@@ -420,6 +422,112 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     }
   }
 
+  async function syncWorkspacePanelProviderName() {
+    if (!options.workspacePanel) return;
+
+    const session = options.workspacePanel.session;
+    const taskTitle = session.taskTitle?.trim() ?? "";
+    if (!taskTitle) return;
+
+    options.setWorkspacePanel((current) => (current ? { ...current, busy: "provider-name-sync", error: null } : current));
+    options.setFeedback(`Syncing AMO name to Session: ${taskTitle}`);
+    options.postDebugLog("workspace.provider_name_sync.start", {
+      sessionId: session.sessionId,
+      taskTitle,
+      providerTitle: session.title,
+    });
+
+    try {
+      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+        brokerSessionProviderNameSyncUrl(session.sessionId),
+        { expectedTaskTitle: taskTitle },
+      );
+      options.setSessions((previous) =>
+        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
+      );
+      options.setWorkspacePanel((current) =>
+        current && current.session.sessionId === result.session.sessionId
+          ? { ...current, session: result.session, busy: null, error: null }
+          : current,
+      );
+      options.setFeedback("AMO name synced to the Session.");
+      options.postDebugLog("workspace.provider_name_sync.ok", {
+        sessionId: result.session.sessionId,
+        providerTitle: result.session.title,
+      });
+    } catch (error) {
+      const message = (error as Error).message;
+      options.setWorkspacePanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? {
+              ...current,
+              busy: null,
+              error: message,
+              session: {
+                ...current.session,
+                providerNameSync: {
+                  status: "failed",
+                  requestedTitle: taskTitle,
+                  error: message,
+                },
+              },
+            }
+          : current,
+      );
+      options.setFeedback(`Session name sync failed: ${message}`);
+      options.postDebugLog("workspace.provider_name_sync.error", {
+        sessionId: session.sessionId,
+        taskTitle,
+        message,
+      });
+    }
+  }
+
+  async function unbindWorkspacePanelChatGptTarget() {
+    if (!options.workspacePanel) return;
+
+    const session = options.workspacePanel.session;
+    if (targetBindingForSession(session)?.type !== "codex-app-thread") return;
+
+    options.setWorkspacePanel((current) => (current ? { ...current, busy: "target-unbind", error: null } : current));
+    options.setFeedback(`Unbinding ChatGPT from ${session.title}...`);
+    options.postDebugLog("workspace.target_unbind.start", {
+      sessionId: session.sessionId,
+      targetType: "codex-app-thread",
+    });
+
+    try {
+      const result = await postBrokerJson<{ ok: boolean; session: AgentSession }>(
+        brokerSessionTargetBindingClearUrl(session.sessionId),
+        {},
+      );
+      options.setSessions((previous) =>
+        previous.map((item) => (item.sessionId === result.session.sessionId ? result.session : item)),
+      );
+      options.setWorkspacePanel((current) =>
+        current && current.session.sessionId === result.session.sessionId
+          ? { ...current, session: result.session, busy: null, error: null }
+          : current,
+      );
+      options.setFeedback("ChatGPT target unbound. Choose a new target from the card.");
+      options.postDebugLog("workspace.target_unbind.ok", {
+        sessionId: result.session.sessionId,
+      });
+    } catch (error) {
+      const message = (error as Error).message;
+      options.setWorkspacePanel((current) =>
+        current && current.session.sessionId === session.sessionId
+          ? { ...current, busy: null, error: message }
+          : current,
+      );
+      options.setFeedback(`ChatGPT unbind failed: ${message}`);
+      options.postDebugLog("workspace.target_unbind.error", {
+        sessionId: session.sessionId,
+        message,
+      });
+    }
+  }
+
   return {
     cleanWorkspaceVaultFromPanel,
     launchProjectToolFromPanel,
@@ -429,6 +537,8 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     openWorkspacePanel,
     requestCleanWorkspaceVault,
     saveWorkspacePanelTaskTitle,
+    syncWorkspacePanelProviderName,
+    unbindWorkspacePanelChatGptTarget,
     updateWorkspaceObsidianPluginFromPanel,
   };
 }

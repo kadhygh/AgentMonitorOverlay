@@ -205,3 +205,33 @@ test("display-only automatic names survive later provider events and snapshot re
   assert.equal(updated.title, "dev1-开发模块");
   assert.equal(restored.sessions.get("display-only").title, "dev1-开发模块");
 });
+
+test("AMO-only names preserve taskTitle while provider events update the session title", (t) => {
+  const store = createTestStore(t);
+  store.sessions.set("amo-only", {
+    sessionId: "amo-only",
+    tool: "codex",
+    title: "Initial provider name",
+    taskTitle: "dev-雷电配置调查",
+    sessionStartSource: "startup",
+    sessionNaming: {
+      status: "amo-only",
+      requestedName: "dev-雷电配置调查",
+      workspaceLabel: "dev",
+      attemptedAt: "2026-08-22T00:00:00.000Z",
+      completedAt: "2026-08-22T00:00:00.000Z",
+      providerSynced: false,
+    },
+  });
+
+  const updated = store.upsertSessionFromEvent({
+    sessionId: "amo-only",
+    tool: "codex",
+    hookEventName: "PostToolUse",
+    title: "Provider generated title",
+  });
+
+  assert.equal(updated.title, "Provider generated title");
+  assert.equal(updated.taskTitle, "dev-雷电配置调查");
+  assert.equal(updated.sessionNaming.status, "amo-only");
+});

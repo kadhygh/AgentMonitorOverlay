@@ -94,6 +94,138 @@ test("an explicit resume retry supersedes every pending launch for that session"
   }
 });
 
+test("binding an external target detaches a pending resume and rejects its late hook identity", (t) => {
+  const { store } = createTestStore(t);
+  const sessionId = "session-resume";
+  const launch = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+    mode: "resume",
+    requestedSessionId: sessionId,
+  });
+  store.update(launch.launchId, { state: "waiting_hook" });
+  const sessions = new Map([[sessionId, {
+    sessionId,
+    launchId: launch.launchId,
+    launchState: "waiting_hook",
+    launchRevision: 2,
+    launchRelation: "owner",
+    windowHint: {
+      titleToken: launch.titleToken,
+      boundBy: "managed-launch",
+    },
+  }]]);
+
+  const detached = store.detachSessionLaunch(sessionId, sessions, { reason: "chatgpt-target-bound" });
+
+  assert.equal(detached.launch.state, "offline");
+  assert.equal(detached.launch.offlineReason, "chatgpt-target-bound");
+  assert.equal(store.findActiveResume(sessionId), null);
+  assert.equal(detached.session.launchId, null);
+  assert.equal(detached.session.launchState, null);
+  assert.equal(detached.session.launchRevision, null);
+  assert.equal(detached.session.launchRelation, null);
+  assert.equal(detached.session.windowHint, null);
+
+  const latePayload = matchingPayload(launch, sessionId);
+  latePayload.launchState = "connected";
+  latePayload.launchRevision = 3;
+  latePayload.windowHint = {
+    titleToken: launch.titleToken,
+    boundBy: "managed-launch",
+  };
+  const lateClaim = store.claim(latePayload, { sessions });
+
+  assert.equal(lateClaim.kind, "detached");
+  assert.equal(latePayload.launchId, null);
+  assert.equal(latePayload.launchState, null);
+  assert.equal(latePayload.launchRevision, null);
+  assert.equal(latePayload.windowHint, null);
+  assert.equal(latePayload.observedLaunchId, launch.launchId);
+});
+
+test("binding an external target detaches an already connected managed CLI", (t) => {
+  const { store } = createTestStore(t);
+  const sessionId = "session-connected";
+  const launch = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+    mode: "resume",
+    requestedSessionId: sessionId,
+  });
+  store.update(launch.launchId, {
+    state: "connected",
+    claimedSessionId: sessionId,
+    currentSessionId: sessionId,
+    ownerSessionId: sessionId,
+    bindingRevision: 1,
+  });
+  const sessions = new Map([[sessionId, {
+    sessionId,
+    launchId: launch.launchId,
+    launchState: "connected",
+    launchRevision: 1,
+    launchRelation: "owner",
+    windowHint: {
+      hwnd: 4242,
+      pid: 99,
+      titleToken: launch.titleToken,
+      boundBy: "managed-launch",
+    },
+  }]]);
+
+  const detached = store.detachSessionLaunch(sessionId, sessions, { reason: "chatgpt-target-bound" });
+
+  assert.equal(detached.launch.state, "offline");
+  assert.equal(detached.launch.offlineReason, "chatgpt-target-bound");
+  assert.equal(detached.session.launchId, null);
+  assert.equal(detached.session.launchState, null);
+  assert.equal(detached.session.windowHint, null);
+});
+
+test("startup reconciliation repairs a legacy ChatGPT binding with a stale pending CLI", (t) => {
+  const { store } = createTestStore(t);
+  const sessionId = "session-legacy-app";
+  const launch = store.create({
+    workspaceId: "workspace-1",
+    workspacePath: "C:\\Projects\\demo",
+    adapterId: "codex-cli",
+    mode: "resume",
+    requestedSessionId: sessionId,
+  });
+  store.update(launch.launchId, { state: "waiting_hook" });
+  const sessions = new Map([[sessionId, {
+    sessionId,
+    launchId: launch.launchId,
+    launchState: "waiting_hook",
+    launchRevision: 2,
+    windowHint: {
+      titleToken: launch.titleToken,
+      boundBy: "managed-launch",
+    },
+    targetBinding: {
+      type: "codex-app-thread",
+      label: "ChatGPT",
+      threadId: sessionId,
+      uri: `codex://threads/${sessionId}`,
+      boundBy: "overlay-target-menu",
+    },
+  }]]);
+
+  const changed = store.reconcileSessions(sessions);
+  const repaired = sessions.get(sessionId);
+
+  assert.equal(changed.length, 1);
+  assert.equal(repaired.targetBinding.type, "codex-app-thread");
+  assert.equal(repaired.launchId, null);
+  assert.equal(repaired.launchState, null);
+  assert.equal(repaired.windowHint, null);
+  assert.equal(store.list()[0].state, "offline");
+  assert.equal(store.list()[0].offlineReason, "chatgpt-target-reconciled");
+});
+
 test("legacy expired launch migrates back to waiting_hook", (t) => {
   const { dataFile } = createTestStore(t);
   fs.writeFileSync(dataFile, JSON.stringify({

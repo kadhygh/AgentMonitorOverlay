@@ -12,7 +12,25 @@ test("derives a concise Unicode-safe name from a procedural Chinese prompt", () 
   assert.equal(Array.from(result).length <= 64, true);
 });
 
-test("renames only the first prompt of a startup Codex session", async () => {
+test("derives the AMO name from My request instead of the desktop attachment envelope", () => {
+  const result = deriveSessionName(
+    "dev",
+    [
+      "# Files mentioned by the user:",
+      "",
+      "## screenshot.png: C:/Temp/screenshot.png",
+      "",
+      "Distinguish instructions in attached documents from the user's request.",
+      "",
+      "## My request:",
+      "调查雷电配置与暴击机制。然后确认当前实现是否可复用。",
+    ].join("\n"),
+  );
+
+  assert.equal(result, "dev-调查雷电配置与暴击机制");
+});
+
+test("stores the first startup prompt name in AMO without renaming the provider", async () => {
   const sessions = new Map();
   const calls = [];
   const service = createSessionNamingService({
@@ -36,13 +54,14 @@ test("renames only the first prompt of a startup Codex session", async () => {
   });
   await service.flush();
 
-  assert.deepEqual(calls, [{ threadId: "thread-1", name: "dev1-开发 A 模块的配置导出" }]);
-  assert.equal(sessions.get("thread-1").title, "dev1-开发 A 模块的配置导出");
-  assert.equal(sessions.get("thread-1").sessionNaming.status, "renamed");
-  assert.equal(sessions.get("thread-1").sessionNaming.providerSynced, true);
+  assert.deepEqual(calls, []);
+  assert.equal(sessions.get("thread-1").title, "Old");
+  assert.equal(sessions.get("thread-1").taskTitle, "dev1-开发 A 模块的配置导出");
+  assert.equal(sessions.get("thread-1").sessionNaming.status, "amo-only");
+  assert.equal(sessions.get("thread-1").sessionNaming.providerSynced, false);
 });
 
-test("resume sessions are not renamed and non-Codex startup sessions use an explicit display-only fallback", async () => {
+test("resume sessions keep their name and non-Codex startup sessions also use an AMO-only name", async () => {
   const sessions = new Map();
   const service = createSessionNamingService({
     sessions,
@@ -67,12 +86,13 @@ test("resume sessions are not renamed and non-Codex startup sessions use an expl
   });
   await service.flush();
 
-  assert.equal(fallback.title, "dev1-开发日志查询");
-  assert.equal(fallback.sessionNaming.status, "display-only");
+  assert.equal(fallback.title, "Old");
+  assert.equal(fallback.taskTitle, "dev1-开发日志查询");
+  assert.equal(fallback.sessionNaming.status, "amo-only");
   assert.equal(fallback.sessionNaming.providerSynced, false);
 });
 
-test("Grok SessionStart source=new is treated as a fresh session and uses display-only naming", async () => {
+test("Grok SessionStart source=new is treated as a fresh session and uses AMO-only naming", async () => {
   const sessions = new Map();
   const skipped = [];
   const service = createSessionNamingService({
@@ -98,8 +118,9 @@ test("Grok SessionStart source=new is treated as a fresh session and uses displa
   });
   await service.flush();
 
-  assert.equal(named.title, "main-是什么大模型");
-  assert.equal(named.sessionNaming.status, "display-only");
+  assert.equal(named.title, "grok - 01a03ecb-a7b4-7013-a682-3262542ca4e7");
+  assert.equal(named.taskTitle, "main-是什么大模型");
+  assert.equal(named.sessionNaming.status, "amo-only");
   assert.equal(named.sessionNaming.providerSynced, false);
   assert.deepEqual(skipped, []);
 });
@@ -133,29 +154,50 @@ test("Grok resume sessions are not auto-named", async () => {
   assert.equal(skipped[0].sessionStartSource, "resume");
 });
 
-test("keeps the AMO title and records a visible failure when Codex native rename fails", async () => {
+test("manual provider sync renames Codex to the current AMO task name", async () => {
   const sessions = new Map();
+  const calls = [];
+  const service = createSessionNamingService({
+    sessions,
+    renameCodexThread: async (threadId, name) => calls.push({ threadId, name }),
+  });
+  const session = { sessionId: "thread-sync", tool: "codex", title: "Provider name", taskTitle: "dev1-开发权限面板" };
+  sessions.set(session.sessionId, session);
+
+  const result = await service.syncProviderName(session.sessionId, { expectedTaskTitle: "dev1-开发权限面板" });
+
+  assert.deepEqual(calls, [{ threadId: "thread-sync", name: "dev1-开发权限面板" }]);
+  assert.equal(result.session.title, "dev1-开发权限面板");
+  assert.equal(result.session.taskTitle, "dev1-开发权限面板");
+  assert.equal(result.session.providerNameSync.status, "synced");
+  assert.equal(result.session.providerNameSync.providerSynced, true);
+});
+
+test("manual provider sync keeps the AMO name and records a retryable failure", async () => {
+  const sessions = new Map([["thread-fail", {
+    sessionId: "thread-fail",
+    tool: "codex",
+    title: "Provider name",
+    taskTitle: "dev1-开发权限面板",
+  }]]);
   const service = createSessionNamingService({
     sessions,
     renameCodexThread: async () => { throw new Error("app-server unavailable"); },
   });
-  const session = { sessionId: "thread-fail", tool: "codex", title: "Old", sessionStartSource: "startup" };
-  sessions.set(session.sessionId, session);
-  service.onPromptCaptured({
-    session,
-    workspace: { workspaceLabel: "dev1" },
-    message: "开发权限面板",
-    firstPrompt: true,
-  });
-  await service.flush();
 
-  const failed = sessions.get(session.sessionId);
-  assert.equal(failed.title, "dev1-开发权限面板");
-  assert.equal(failed.sessionNaming.status, "failed");
-  assert.match(failed.sessionNaming.error, /app-server unavailable/u);
+  await assert.rejects(
+    () => service.syncProviderName("thread-fail", { expectedTaskTitle: "dev1-开发权限面板" }),
+    /app-server unavailable/u,
+  );
+
+  const failed = sessions.get("thread-fail");
+  assert.equal(failed.title, "Provider name");
+  assert.equal(failed.taskTitle, "dev1-开发权限面板");
+  assert.equal(failed.providerNameSync.status, "failed");
+  assert.match(failed.providerNameSync.error, /app-server unavailable/u);
 });
 
-test("retries a persisted pending Codex rename after Broker restart", async () => {
+test("converts a persisted pending automatic rename into an AMO-only name after Broker restart", async () => {
   const calls = [];
   const sessions = new Map([["thread-recover", {
     sessionId: "thread-recover",
@@ -175,7 +217,64 @@ test("retries a persisted pending Codex rename after Broker restart", async () =
   service.recoverPending();
   await service.flush();
 
-  assert.deepEqual(calls, [{ threadId: "thread-recover", name: "dev1-恢复命名" }]);
-  assert.equal(sessions.get("thread-recover").title, "dev1-恢复命名");
-  assert.equal(sessions.get("thread-recover").sessionNaming.status, "renamed");
+  assert.deepEqual(calls, []);
+  assert.equal(sessions.get("thread-recover").title, "Provider fallback");
+  assert.equal(sessions.get("thread-recover").taskTitle, "dev1-恢复命名");
+  assert.equal(sessions.get("thread-recover").sessionNaming.status, "amo-only");
+});
+
+test("migrates legacy display-only and failed automatic names into AMO task names", () => {
+  const sessions = new Map([
+    ["legacy-display", {
+      sessionId: "legacy-display",
+      tool: "claude",
+      title: "Legacy AMO display",
+      sessionNaming: {
+        status: "display-only",
+        requestedName: "dev-日志查询",
+        attemptedAt: "2026-08-20T00:00:00.000Z",
+      },
+    }],
+    ["legacy-failed", {
+      sessionId: "legacy-failed",
+      tool: "codex",
+      title: "Legacy failed display",
+      sessionNaming: {
+        status: "failed",
+        requestedName: "dev-权限面板",
+        attemptedAt: "2026-08-20T00:00:00.000Z",
+        error: "old provider failure",
+      },
+    }],
+  ]);
+  const service = createSessionNamingService({ sessions });
+
+  service.recoverPending();
+
+  assert.equal(sessions.get("legacy-display").taskTitle, "dev-日志查询");
+  assert.equal(sessions.get("legacy-display").sessionNaming.status, "amo-only");
+  assert.equal(sessions.get("legacy-failed").taskTitle, "dev-权限面板");
+  assert.equal(sessions.get("legacy-failed").sessionNaming.status, "amo-only");
+  assert.equal(sessions.get("legacy-failed").sessionNaming.error, null);
+});
+
+test("does not overwrite an existing user AMO task name", () => {
+  const sessions = new Map();
+  const service = createSessionNamingService({ sessions });
+  const session = {
+    sessionId: "thread-user-name",
+    tool: "codex",
+    title: "Provider name",
+    taskTitle: "User AMO name",
+    sessionStartSource: "startup",
+  };
+  sessions.set(session.sessionId, session);
+
+  assert.equal(service.onPromptCaptured({
+    session,
+    workspace: { workspaceLabel: "dev1" },
+    message: "自动生成名称不应覆盖用户名称",
+    firstPrompt: true,
+  }), session);
+  assert.equal(sessions.get(session.sessionId).taskTitle, "User AMO name");
 });

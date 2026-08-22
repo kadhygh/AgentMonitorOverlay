@@ -215,7 +215,9 @@ export function SessionRowContent({
   const threadTitle = session.title?.trim() || sessionProjectName;
   const taskTitle = session.taskTitle?.trim() || "";
   const conversationTitle = taskTitle || threadTitle;
-  const namingTitle = session.sessionNaming?.status === "renamed"
+  const namingTitle = session.sessionNaming?.status === "amo-only"
+    ? `Automatically named in AMO; ${display.label} keeps its own session name`
+    : session.sessionNaming?.status === "renamed"
     ? `Automatically renamed in ${display.label}`
     : session.sessionNaming?.status === "display-only"
     ? `Automatic project name is shown in AMO only; ${display.label} was not renamed`

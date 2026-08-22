@@ -116,6 +116,14 @@ async function handleSessionRoutes(req, res, url, context) {
     return sendHandled(res, 200, result);
   }
 
+  const providerNameSyncMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/provider-name-sync$/);
+  if (req.method === "POST" && providerNameSyncMatch) {
+    const sessionId = decodeURIComponent(providerNameSyncMatch[1]);
+    const payload = await readJsonBody(req, { allowEmpty: true });
+    const result = await context.syncSessionProviderName(sessionId, payload || {});
+    return sendHandled(res, 200, result);
+  }
+
   const reviewMatch = url.pathname.match(/^\/api\/sessions\/([^/]+)\/reviewed$/);
   if (req.method === "POST" && reviewMatch) {
     const sessionId = decodeURIComponent(reviewMatch[1]);

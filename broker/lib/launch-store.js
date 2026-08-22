@@ -112,8 +112,9 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       return null;
     }
     if (launch.state === "offline" && options.sessions?.get(sessionId)?.launchId !== launchId) {
+      detachManagedLaunchPayload(payload, launchId);
       recordDebugLog("broker", "launch.offline_claim_rejected", { launchId, sessionId });
-      return null;
+      return { kind: "detached", launch, sessionId, reason: "launch_offline" };
     }
     if (!previousSessionId && launch.mode === "new" && eventName !== "sessionstart") {
       recordDebugLog("broker", "launch.owner_waiting_session_start", {
@@ -200,6 +201,14 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     if (!(sessions instanceof Map)) return [];
     const changed = new Map();
     for (const [sessionId, session] of sessions) {
+      if (
+        session.targetBinding?.type === "codex-app-thread" &&
+        (session.launchId || session.launchState || session.windowHint?.boundBy === "managed-launch")
+      ) {
+        const detached = detachSessionLaunch(sessionId, sessions, { reason: "chatgpt-target-reconciled" });
+        if (detached?.session) changed.set(sessionId, detached.session);
+        continue;
+      }
       if (!isManagedLaunchWindowTarget(session.targetBinding)) continue;
       const cleaned = { ...session, targetBinding: null };
       sessions.set(sessionId, cleaned);
@@ -266,6 +275,53 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       }));
     }
     return superseded.filter(Boolean);
+  }
+
+  function detachSessionLaunch(sessionId, sessions, options = {}) {
+    if (!(sessions instanceof Map)) return null;
+    const existing = sessions.get(sessionId);
+    if (!existing) return null;
+
+    const launchId = normalizeText(existing.launchId);
+    const reason = normalizeText(options.reason) || "external-target-bound";
+    const now = new Date().toISOString();
+    let launch = launchId ? launches.get(launchId) || null : null;
+    const previousState = launch?.state || existing.launchState || null;
+    if (launch) {
+      launch = update(launchId, {
+        state: "offline",
+        offlineAt: now,
+        offlineReason: reason,
+        windowHwnd: null,
+        windowPid: null,
+        windowProcessName: null,
+        windowTitle: null,
+      });
+    }
+
+    const managedWindowHint = existing.windowHint?.boundBy === "managed-launch";
+    const session = {
+      ...existing,
+      launchId: null,
+      launchState: null,
+      launchRevision: null,
+      launchRelation: null,
+      routeOwnerSessionId: null,
+      observedLaunchId: existing.observedLaunchId || launchId || null,
+      launchWindowResolvedAt: null,
+      launchOfflineAt: null,
+      windowHint: managedWindowHint ? null : existing.windowHint || null,
+      updatedAt: now,
+    };
+    sessions.set(sessionId, session);
+    recordDebugLog("broker", "launch.detached", {
+      sessionId,
+      launchId,
+      previousState,
+      reason,
+      clearedManagedWindowHint: managedWindowHint,
+    });
+    return { launch, session };
   }
 
   function markSessionOffline(sessionId, sessions, options = {}) {
@@ -389,6 +445,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
   return {
     claim,
     create,
+    detachSessionLaunch,
     findActiveResume,
     list,
     markSessionOffline,
@@ -397,6 +454,26 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     supersedeActiveResume,
     update,
   };
+}
+
+function detachManagedLaunchPayload(payload, launchId) {
+  if (!payload || typeof payload !== "object") return;
+  payload.observedLaunchId = launchId;
+  payload.observed_launch_id = launchId;
+  payload.launchId = null;
+  payload.launch_id = null;
+  payload.amoLaunchId = null;
+  payload.amo_launch_id = null;
+  payload.launchState = null;
+  payload.launch_state = null;
+  payload.launchRevision = null;
+  payload.launch_revision = null;
+  payload.launchRelation = null;
+  payload.launch_relation = null;
+  payload.routeOwnerSessionId = null;
+  payload.route_owner_session_id = null;
+  payload.windowHint = null;
+  payload.window_hint = null;
 }
 
 function attachLaunchToSession(session, launch) {

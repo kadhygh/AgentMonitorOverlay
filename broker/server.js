@@ -180,6 +180,7 @@ const routeContext = {
   bindSessionTarget,
   clearSessionTargetBinding,
   updateSessionTaskTitle,
+  syncSessionProviderName: sessionNamingService.syncProviderName,
   updateSessionPriorities,
   updateSessionDisplayOrder,
   markSessionReviewed,
@@ -446,7 +447,7 @@ function bindSessionTarget(sessionId, payload) {
     throw httpError(400, "invalid_json", "Target binding payload must be a JSON object");
   }
 
-  const existing = sessions.get(sessionId);
+  let existing = sessions.get(sessionId);
   if (!existing) {
     throw httpError(404, "session_not_found", `Session not found for target binding: ${sessionId}`);
   }
@@ -455,6 +456,13 @@ function bindSessionTarget(sessionId, payload) {
   const targetBinding = normalizeTargetBinding(payload.targetBinding || payload.target_binding || payload, sessionId, now);
   if (!targetBinding) {
     throw httpError(400, "invalid_target_binding", "Target binding payload must include a supported target type");
+  }
+
+  const detachedLaunch = targetBinding.type === "codex-app-thread"
+    ? launchStore.detachSessionLaunch(sessionId, sessions, { reason: "chatgpt-target-bound" })
+    : null;
+  if (detachedLaunch?.session) {
+    existing = detachedLaunch.session;
   }
 
   let windowHint = existing.windowHint || null;
@@ -481,6 +489,7 @@ function bindSessionTarget(sessionId, payload) {
     threadId: targetBinding.threadId || null,
     hwnd: targetBinding.hwnd || null,
     processId: targetBinding.processId || null,
+    detachedLaunchId: detachedLaunch?.launch?.launchId || null,
   });
 
   return {
@@ -489,6 +498,7 @@ function bindSessionTarget(sessionId, payload) {
     sessionId,
     targetBinding,
     windowHint,
+    detachedLaunch: detachedLaunch?.launch || null,
     session,
   };
 }

@@ -1,5 +1,5 @@
-import { AlertTriangle, CircleCheck, FolderOpen, RefreshCcw, Trash2, X } from "lucide-react";
-import { pluginHealthTitle, projectName, shortPathLabel, workspacePathForSession } from "../domain/routingModel";
+import { AlertTriangle, CircleCheck, FolderOpen, RefreshCcw, Trash2, Unlink, X } from "lucide-react";
+import { isCodexSession, pluginHealthTitle, projectName, shortPathLabel, workspacePathForSession } from "../domain/routingModel";
 import { maintenanceToneForSession } from "../domain/workspaceModel";
 import type { AgentSession, WorkspaceMaintenanceStatus } from "../types";
 
@@ -8,7 +8,7 @@ export interface WorkspacePanelState {
   x: number;
   y: number;
   status: WorkspaceMaintenanceStatus | null;
-  busy: "status" | "clean" | "open" | "task-title" | "plugin-update" | null;
+  busy: "status" | "clean" | "open" | "task-title" | "plugin-update" | "provider-name-sync" | "target-unbind" | null;
   error: string | null;
   taskTitleDraft: string;
 }
@@ -21,6 +21,8 @@ interface WorkspacePanelProps {
   onLoadStatus: () => void;
   onOpenPath: (path: string | undefined, label: string) => void;
   onRequestClean: () => void;
+  onSyncProviderName: () => void;
+  onUnbindChatGpt: () => void;
   onUpdatePlugin: () => void;
 }
 
@@ -32,6 +34,8 @@ export function WorkspacePanel({
   onLoadStatus,
   onOpenPath,
   onRequestClean,
+  onSyncProviderName,
+  onUnbindChatGpt,
   onUpdatePlugin,
 }: WorkspacePanelProps) {
   const statusLabel = state.busy === "status"
@@ -44,6 +48,43 @@ export function WorkspacePanel({
         ? "Check failed"
         : "Not checked";
   const pluginHealth = state.status?.pluginHealth;
+  const chatGptBinding = state.session.targetBinding?.type === "codex-app-thread"
+    ? state.session.targetBinding
+    : null;
+  const amoTaskTitle = normalizedComparableName(state.session.taskTitle);
+  const providerTitle = normalizedComparableName(state.session.title);
+  const syncRequestMatchesTaskTitle = normalizedComparableName(state.session.providerNameSync?.requestedTitle) === amoTaskTitle;
+  const namesMatch = Boolean(amoTaskTitle && providerTitle && amoTaskTitle === providerTitle);
+  const providerSyncing = Boolean(
+    amoTaskTitle &&
+    syncRequestMatchesTaskTitle &&
+    (state.busy === "provider-name-sync" || state.session.providerNameSync?.status === "syncing"),
+  );
+  const providerSyncFailed = Boolean(
+    amoTaskTitle &&
+    syncRequestMatchesTaskTitle &&
+    state.session.providerNameSync?.status === "failed",
+  );
+  const nameSyncState = !amoTaskTitle
+    ? "following"
+    : providerSyncing
+      ? "syncing"
+      : namesMatch
+        ? "synced"
+        : !providerTitle
+          ? "waiting"
+          : providerSyncFailed
+            ? "failed"
+            : "different";
+  const nameSyncLabel = {
+    following: "Following Session name",
+    syncing: "Syncing to Session",
+    synced: "Names synced",
+    waiting: "Waiting for Session name",
+    failed: "Sync failed",
+    different: "Names differ",
+  }[nameSyncState];
+  const canSyncProviderName = Boolean(amoTaskTitle && !namesMatch && isCodexSession(state.session));
   const pluginNeedsUpdate = Boolean(
     pluginHealth &&
       !pluginHealth.ok &&
@@ -76,7 +117,7 @@ export function WorkspacePanel({
 
       <div className="workspace-task-title-editor">
         <label>
-          <span>任务名</span>
+          <span>AMO 备注名称</span>
           <input
             type="text"
             value={state.taskTitleDraft}
@@ -101,6 +142,29 @@ export function WorkspacePanel({
         >
           Clear
         </button>
+      </div>
+
+      <div
+        className={`workspace-name-sync tone-${nameSyncState}`}
+        title={providerSyncFailed ? state.session.providerNameSync?.error ?? undefined : undefined}
+      >
+        <div className="workspace-name-sync-summary">
+          <span className="workspace-name-sync-dot" aria-hidden="true" />
+          <div>
+            <strong>{nameSyncLabel}</strong>
+            <span title={state.session.title || undefined}>
+              Session: {state.session.title || "Name unavailable"}
+            </span>
+          </div>
+        </div>
+        {canSyncProviderName ? (
+          <button type="button" disabled={state.busy !== null} onClick={onSyncProviderName}>
+            <RefreshCcw size={12} aria-hidden="true" />
+            <span>
+              {providerSyncing ? "Syncing" : providerSyncFailed ? "Retry Sync" : "Sync to Session"}
+            </span>
+          </button>
+        ) : null}
       </div>
 
       <div className="workspace-panel-actions">
@@ -129,6 +193,26 @@ export function WorkspacePanel({
           <span>{state.busy === "clean" ? "Cleaning" : "Clean"}</span>
         </button>
       </div>
+
+      {chatGptBinding ? (
+        <div className="workspace-target-binding">
+          <div>
+            <strong>ChatGPT target</strong>
+            <span title={chatGptBinding.threadId ?? chatGptBinding.uri ?? undefined}>
+              Bound to this task
+            </span>
+          </div>
+          <button
+            type="button"
+            className="danger-action"
+            disabled={state.busy !== null}
+            onClick={onUnbindChatGpt}
+          >
+            <Unlink size={12} aria-hidden="true" />
+            <span>{state.busy === "target-unbind" ? "Unbinding" : "Unbind ChatGPT"}</span>
+          </button>
+        </div>
+      ) : null}
 
       {state.error ? <p className="workspace-panel-error">{state.error}</p> : null}
 
@@ -225,4 +309,8 @@ export function WorkspacePanel({
       </section>
     </div>
   );
+}
+
+function normalizedComparableName(value: string | null | undefined) {
+  return `${value || ""}`.normalize("NFC").trim().replace(/\s+/gu, " ");
 }

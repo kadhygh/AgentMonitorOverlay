@@ -267,6 +267,106 @@
   opacity: 0.52;
 }
 
+.workspace-name-sync {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px;
+  color: #cbd9d4;
+  background: rgba(255, 255, 255, 0.035);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+}
+
+.workspace-name-sync-summary {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  min-width: 0;
+}
+
+.workspace-name-sync-summary > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workspace-name-sync-summary strong,
+.workspace-name-sync-summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-name-sync-summary strong {
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.workspace-name-sync-summary span {
+  color: #8fa19b;
+  font-size: 9px;
+  line-height: 11px;
+}
+
+.workspace-name-sync-dot {
+  flex: 0 0 auto;
+  width: 8px;
+  height: 8px;
+  background: #7f918b;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px rgba(127, 145, 139, 0.12);
+}
+
+.workspace-name-sync.tone-synced .workspace-name-sync-dot {
+  background: #6fe0be;
+  box-shadow: 0 0 0 2px rgba(111, 224, 190, 0.14);
+}
+
+.workspace-name-sync.tone-different .workspace-name-sync-dot,
+.workspace-name-sync.tone-waiting .workspace-name-sync-dot {
+  background: #e6b45c;
+  box-shadow: 0 0 0 2px rgba(230, 180, 92, 0.14);
+}
+
+.workspace-name-sync.tone-syncing .workspace-name-sync-dot {
+  background: #52a8d3;
+  box-shadow: 0 0 0 2px rgba(82, 168, 211, 0.16);
+}
+
+.workspace-name-sync.tone-failed .workspace-name-sync-dot {
+  background: #ff7f89;
+  box-shadow: 0 0 0 2px rgba(255, 92, 104, 0.14);
+}
+
+.workspace-name-sync button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 8px;
+  color: #b8f0dc;
+  background: rgba(111, 224, 190, 0.1);
+  border: 1px solid rgba(111, 224, 190, 0.24);
+  border-radius: 6px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.workspace-name-sync button:hover:not(:disabled) {
+  color: #ecfff8;
+  background: rgba(111, 224, 190, 0.17);
+  border-color: rgba(111, 224, 190, 0.38);
+}
+
+.workspace-name-sync button:disabled {
+  cursor: default;
+  opacity: 0.52;
+}
+
 .workspace-panel-actions {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -311,6 +411,69 @@
   line-height: 12px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.workspace-target-binding {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 7px;
+  color: #dbe9e4;
+  background: rgba(82, 168, 211, 0.09);
+  border: 1px solid rgba(82, 168, 211, 0.24);
+  border-radius: 6px;
+}
+
+.workspace-target-binding > div {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.workspace-target-binding strong,
+.workspace-target-binding span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-target-binding strong {
+  font-size: 10px;
+  line-height: 12px;
+}
+
+.workspace-target-binding > div span {
+  color: #8fa19b;
+  font-size: 9px;
+  line-height: 11px;
+}
+
+.workspace-target-binding button {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 26px;
+  padding: 4px 8px;
+  color: #ffd7da;
+  background: rgba(255, 92, 104, 0.11);
+  border: 1px solid rgba(255, 92, 104, 0.22);
+  border-radius: 6px;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.workspace-target-binding button:hover:not(:disabled) {
+  color: #fff0f1;
+  background: rgba(255, 92, 104, 0.17);
+  border-color: rgba(255, 92, 104, 0.34);
+}
+
+.workspace-target-binding button:disabled {
+  cursor: default;
+  opacity: 0.52;
 }
 
 .workspace-panel-error,

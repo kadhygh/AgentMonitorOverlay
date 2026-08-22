@@ -421,10 +421,43 @@
 }
 
 :root[data-amo-theme="light"] .workspace-panel-actions .danger-action,
+:root[data-amo-theme="light"] .workspace-target-binding button,
 :root[data-amo-theme="light"] .confirm-dialog-actions .danger-action {
   color: #9b332e;
   background: rgba(208, 77, 67, 0.1);
   border-color: rgba(208, 77, 67, 0.22);
+}
+
+:root[data-amo-theme="light"] .workspace-target-binding {
+  color: #24342f;
+  background: rgba(40, 126, 176, 0.08);
+  border-color: rgba(40, 126, 176, 0.2);
+}
+
+:root[data-amo-theme="light"] .workspace-target-binding > div span {
+  color: #60756e;
+}
+
+:root[data-amo-theme="light"] .workspace-name-sync {
+  color: #24342f;
+  background: rgba(244, 249, 247, 0.92);
+  border-color: rgba(42, 74, 64, 0.14);
+}
+
+:root[data-amo-theme="light"] .workspace-name-sync-summary span {
+  color: #60756e;
+}
+
+:root[data-amo-theme="light"] .workspace-name-sync button {
+  color: #146c57;
+  background: rgba(18, 135, 105, 0.09);
+  border-color: rgba(18, 135, 105, 0.24);
+}
+
+:root[data-amo-theme="light"] .workspace-name-sync button:hover:not(:disabled) {
+  color: #0d5645;
+  background: rgba(18, 135, 105, 0.14);
+  border-color: rgba(18, 135, 105, 0.34);
 }
 
 :root[data-amo-theme="light"] .workspace-inline-action {
