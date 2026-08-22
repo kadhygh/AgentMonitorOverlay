@@ -57,6 +57,10 @@ export function brokerSessionTaskTitleUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/task-title`;
 }
 
+export function brokerSessionProviderNameSyncUrl(sessionId: string) {
+  return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/provider-name-sync`;
+}
+
 export function brokerSessionResumeUrl(sessionId: string) {
   return `http://127.0.0.1:17654/api/sessions/${encodeURIComponent(sessionId)}/resume`;
 }
