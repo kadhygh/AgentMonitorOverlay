@@ -11,6 +11,33 @@ $ErrorActionPreference = "Stop"
 $runtimeMode = if ($DebugMode) { "debug" } elseif ($Mode -eq "Portable") { "portable" } else { $Mode.ToLowerInvariant() }
 $env:VITE_AMO_RUNTIME_MODE = $runtimeMode
 $repoRoot = (Resolve-Path $PSScriptRoot).Path
+$machineLauncherConfigPath = Join-Path $env:LOCALAPPDATA "AgentMonitorOverlay\launcher.json"
+
+if ($Mode -eq "Source" -and (Test-Path -LiteralPath $machineLauncherConfigPath)) {
+    $machineLauncherConfig = Get-Content -Raw -Encoding UTF8 $machineLauncherConfigPath | ConvertFrom-Json
+    $configuredSourceRoot = [string]$machineLauncherConfig.sourceRoot
+    if ($configuredSourceRoot) {
+        if (-not (Test-Path -LiteralPath $configuredSourceRoot -PathType Container)) {
+            throw "Configured canonical AMO Source root does not exist: $configuredSourceRoot"
+        }
+
+        $canonicalSourceRoot = (Resolve-Path -LiteralPath $configuredSourceRoot).Path
+        if (-not $repoRoot.Equals($canonicalSourceRoot, [System.StringComparison]::OrdinalIgnoreCase)) {
+            $canonicalEntryPoint = Join-Path $canonicalSourceRoot "amo.ps1"
+            if (-not (Test-Path -LiteralPath $canonicalEntryPoint -PathType Leaf)) {
+                throw "Configured canonical AMO Source entry point does not exist: $canonicalEntryPoint"
+            }
+
+            Write-Host "Delegating AMO Source startup to canonical repository: $canonicalSourceRoot"
+            $delegateParams = @{ Mode = "Source" }
+            if ($DebugMode) { $delegateParams.DebugMode = $true }
+            if ($SkipDependencyInstall) { $delegateParams.SkipDependencyInstall = $true }
+            & $canonicalEntryPoint @delegateParams
+            exit $LASTEXITCODE
+        }
+    }
+}
+
 $overlayRoot = Join-Path $repoRoot "overlay"
 $localConfigPath = Join-Path $repoRoot "amo.local.json"
 

@@ -68,6 +68,17 @@ function Test-AmoBrokerProcess {
         ($commandLine -like "*broker/server.js*" -or $commandLine -like "*broker\server.js*")
 }
 
+function Test-CurrentRepoAmoBroker {
+    param([object]$Owner)
+
+    if (-not (Test-AmoBrokerProcess -Owner $Owner)) {
+        return $false
+    }
+
+    $commandLine = [string]$Owner.CommandLine
+    return $commandLine.IndexOf($serverPath, [System.StringComparison]::OrdinalIgnoreCase) -ge 0
+}
+
 function Stop-StaleAmoBrokerOnPort {
     $owners = @(Get-PortOwners -Port $brokerPort)
     if ($owners.Count -eq 0) {
@@ -90,7 +101,7 @@ function Stop-OverlayDevProcesses {
         Where-Object {
             $commandLine = [string]$_.CommandLine
             $executablePath = [string]$_.ExecutablePath
-            $isOverlayProcess =
+            $isOverlayProcess = $_.Name -ieq "agent-monitor-overlay.exe" -or
                 $commandLine -like "*AgentMonitorOverlay*overlay*" -or
                 ($executablePath -and $executablePath.StartsWith($overlayPath, [System.StringComparison]::OrdinalIgnoreCase))
 
@@ -150,8 +161,14 @@ function Start-AmoBroker {
     }
 
     if (Test-AmoBrokerHealthy) {
-        Write-Host "AMO broker is already healthy at $brokerBaseUrl."
-        return $null
+        $healthyOwners = @(Get-PortOwners -Port $brokerPort)
+        if ($healthyOwners.Count -eq 1 -and (Test-CurrentRepoAmoBroker -Owner $healthyOwners[0])) {
+            Write-Host "Current-repository AMO broker is already healthy at $brokerBaseUrl."
+            return $null
+        }
+
+        Write-Host "A different AMO broker owns $brokerBaseUrl; replacing it with $serverPath."
+        Stop-StaleAmoBrokerOnPort
     }
 
     Stop-StaleAmoBrokerOnPort
@@ -239,14 +256,10 @@ if ($SkipBroker) {
     Remove-Item Env:AGENT_MONITOR_SKIP_BROKER -ErrorAction SilentlyContinue
 }
 
-$brokerProcess = $null
+$brokerProcess = Start-AmoBroker
 $overlayProcess = Start-AmoOverlay
-if ($SkipOverlay) {
-    $brokerProcess = Start-AmoBroker
-} elseif ($SkipBroker) {
+if ($SkipBroker) {
     Write-Host "Broker startup disabled for this run."
-} else {
-    Write-Host "Broker startup delegated to the visible AMO interface."
 }
 
 Write-Host "AMO startup sequence complete."

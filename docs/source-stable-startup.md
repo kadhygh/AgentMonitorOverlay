@@ -51,7 +51,7 @@ powershell -NoProfile `
 <Windows Desktop>\AMO Stable.cmd
 ```
 
-启动器调用当前仓库的 Stable 入口。它不使用 LNK、隐藏 PowerShell 或 `ExecutionPolicy Bypass`，失败时保留控制台输出。仓库移动后需要在新路径重新运行安装脚本。
+启动器调用当前仓库的 Stable 入口。它是可直接审计的 CMD，使用明确的 `NoProfile` 和 `ExecutionPolicy Bypass` 参数，失败时保留控制台输出。仓库移动后需要在新路径重新运行安装脚本。
 
 指定其他启动器路径：
 
@@ -59,6 +59,14 @@ powershell -NoProfile `
 .\scripts\amo\install-source-launcher.ps1 `
   -LauncherPath "D:\Tools\AMO Stable.cmd"
 ```
+
+需要与开发时的 Source watcher 完全一致时，安装 Source 启动器：
+
+```powershell
+.\scripts\amo\install-source-launcher.ps1 -Mode Source
+```
+
+它会创建 `<Windows Desktop>\AMO Source.cmd`，固定调用安装脚本所在仓库的 `amo.ps1 -Mode Source -SkipDependencyInstall`。机器级 `%LOCALAPPDATA%\AgentMonitorOverlay\launcher.json` 可以设置唯一的 `sourceRoot`；从其他 Codex worktree 误调用 Source 模式时，入口会自动委托给该规范仓库，避免产生第二份 Broker registry、sessions 和 launches。
 
 Stable 组件日志：
 

@@ -122,6 +122,8 @@ Source mode keeps the Tauri development watcher for Rust/Tauri work:
 .\amo.ps1 -Mode Source
 ```
 
+On machines with `%LOCALAPPDATA%\AgentMonitorOverlay\launcher.json`, `sourceRoot` is the canonical Source repository. Invoking Source mode from another Codex worktree delegates to that repository, so desktop and agent-driven launches share the same Broker data and process ownership. Install the matching readable desktop launcher with `scripts\amo\install-source-launcher.ps1 -Mode Source`.
+
 This starts the broker first, waits for `http://127.0.0.1:17654/api/health`, clears stale AMO overlay dev processes that would block Vite port `1420`, and then starts the Tauri overlay dev process. Use a visible broker/overlay console only while debugging:
 
 ```powershell

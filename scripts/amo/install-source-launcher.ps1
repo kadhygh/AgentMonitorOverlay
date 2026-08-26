@@ -1,5 +1,7 @@
 param(
-    [string]$LauncherPath = (Join-Path ([Environment]::GetFolderPath("Desktop")) "AMO Stable.cmd")
+    [ValidateSet("Stable", "Source")]
+    [string]$Mode = "Stable",
+    [string]$LauncherPath = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -10,6 +12,10 @@ if (-not $IsWindows -and $env:OS -ne "Windows_NT") {
 
 $repoRoot = (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path
 $entryPoint = Join-Path $repoRoot "amo.ps1"
+$launcherName = "AMO $Mode.cmd"
+if (-not $LauncherPath) {
+    $LauncherPath = Join-Path ([Environment]::GetFolderPath("Desktop")) $launcherName
+}
 $launcherFullPath = [System.IO.Path]::GetFullPath($LauncherPath)
 $launcherDirectory = Split-Path -Parent $launcherFullPath
 
@@ -27,10 +33,10 @@ $launcherContent = @"
 chcp 65001 >nul
 setlocal
 cd /d "$repoRoot"
-powershell.exe -NoProfile -File "$entryPoint" -Mode Stable
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File "$entryPoint" -Mode $Mode$(if ($Mode -eq "Source") { " -SkipDependencyInstall" } else { "" })
 if errorlevel 1 (
   echo.
-  echo AMO Stable failed to start. Review the output above and the logs under:
+  echo AMO $Mode failed to start. Review the output above and the logs under:
   echo $repoRoot\tmp
   pause
 )
@@ -43,7 +49,7 @@ if (-not (Test-Path -LiteralPath $launcherFullPath)) {
     throw "Desktop launcher was not created: $launcherFullPath"
 }
 
-Write-Host "AMO Stable desktop launcher installed."
+Write-Host "AMO $Mode desktop launcher installed."
 Write-Host "Launcher: $launcherFullPath"
 Write-Host "Repository: $repoRoot"
-Write-Host "The launcher is a readable CMD file and does not hide PowerShell or bypass execution policy."
+Write-Host "The launcher is a readable CMD file and uses explicit NoProfile/ExecutionPolicy Bypass PowerShell arguments."
