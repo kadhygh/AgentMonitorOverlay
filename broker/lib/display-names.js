@@ -14,6 +14,11 @@ const claudeSessionNameCache = {
   names: new Map(),
 };
 
+const grokSessionNameCache = {
+  signature: null,
+  names: new Map(),
+};
+
 function resolveSessionTitle(tool, sessionId, explicitTitle, existingTitle, sessionNaming = null) {
   const automaticTitle = retainedAutomaticTitle(sessionNaming);
   if (automaticTitle) {
@@ -48,7 +53,9 @@ function retainedAutomaticTitle(sessionNaming) {
 }
 
 function lookupSessionDisplayName(tool, sessionId) {
-  return lookupCodexThreadName(tool, sessionId) || lookupClaudeSessionName(tool, sessionId);
+  return lookupCodexThreadName(tool, sessionId)
+    || lookupClaudeSessionName(tool, sessionId)
+    || lookupGrokSessionName(tool, sessionId);
 }
 
 function lookupCodexThreadName(tool, sessionId) {
@@ -117,6 +124,113 @@ function loadCodexThreadNameIndex() {
   codexThreadNameCache.mtimeMs = stat.mtimeMs;
   codexThreadNameCache.names = names;
   return names;
+}
+
+function lookupGrokSessionName(tool, sessionId) {
+  const normalizedTool = normalizeText(tool);
+  if (!normalizedTool || !normalizedTool.toLowerCase().startsWith("grok")) {
+    return null;
+  }
+
+  const normalizedSessionId = normalizeText(sessionId);
+  if (!normalizedSessionId) {
+    return null;
+  }
+
+  return loadGrokSessionNameIndex().get(normalizedSessionId) || null;
+}
+
+function loadGrokSessionNameIndex() {
+  const grokRoot = process.env.GROK_HOME || path.join(os.homedir(), ".grok");
+  const sessionsDir = path.join(grokRoot, "sessions");
+  const summaryFiles = listGrokSummaryFiles(sessionsDir);
+  const signature = summaryFiles.map(fileSignature).join("|");
+
+  if (grokSessionNameCache.signature === signature) {
+    return grokSessionNameCache.names;
+  }
+
+  const names = new Map();
+  const updatedAtById = new Map();
+
+  for (const filePath of summaryFiles) {
+    const stat = statFileSafe(filePath);
+    const record = readJsonFile(filePath, null);
+    if (!record || typeof record !== "object" || Array.isArray(record)) {
+      continue;
+    }
+
+    const id = normalizeText(record.info?.id || record.sessionId || record.session_id || path.basename(path.dirname(filePath)));
+    const title = normalizeGrokSessionDisplayName(record);
+    if (!id || !title) {
+      continue;
+    }
+
+    const updatedAt = timestampMs(
+      record.updated_at || record.updatedAt || record.last_active_at || record.lastActiveAt,
+      stat?.mtimeMs
+    );
+    const previousUpdatedAt = updatedAtById.get(id) ?? -1;
+    if (!names.has(id) || updatedAt >= previousUpdatedAt) {
+      names.set(id, title);
+      updatedAtById.set(id, updatedAt);
+    }
+  }
+
+  grokSessionNameCache.signature = signature;
+  grokSessionNameCache.names = names;
+  return names;
+}
+
+function listGrokSummaryFiles(sessionsDir) {
+  const files = [];
+  let topEntries;
+  try {
+    topEntries = fs.readdirSync(sessionsDir, { withFileTypes: true });
+  } catch {
+    return files;
+  }
+
+  for (const entry of topEntries) {
+    if (!entry.isDirectory()) continue;
+    const sessionDir = path.join(sessionsDir, entry.name);
+    const directSummary = path.join(sessionDir, "summary.json");
+    if (fs.existsSync(directSummary)) {
+      files.push(directSummary);
+      continue;
+    }
+
+    let nested;
+    try {
+      nested = fs.readdirSync(sessionDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const child of nested) {
+      if (!child.isDirectory()) continue;
+      const nestedSummary = path.join(sessionDir, child.name, "summary.json");
+      if (fs.existsSync(nestedSummary)) files.push(nestedSummary);
+    }
+  }
+
+  return files.sort();
+}
+
+function normalizeGrokSessionDisplayName(record) {
+  const manualTitle = record?.title_is_manual
+    ? normalizeText(record.title || record.generated_title || record.session_summary)
+    : null;
+  const title = manualTitle || normalizeText(record?.generated_title || record?.session_summary || record?.title);
+  if (!title) {
+    return null;
+  }
+
+  const normalized = title.toLowerCase();
+  if (normalized === "new conversation" || normalized === "untitled" || normalized === "new session") {
+    return null;
+  }
+
+  return title;
 }
 
 function lookupClaudeSessionName(tool, sessionId) {

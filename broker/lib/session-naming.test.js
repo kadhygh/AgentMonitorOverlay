@@ -72,6 +72,67 @@ test("resume sessions are not renamed and non-Codex startup sessions use an expl
   assert.equal(fallback.sessionNaming.providerSynced, false);
 });
 
+test("Grok SessionStart source=new is treated as a fresh session and uses display-only naming", async () => {
+  const sessions = new Map();
+  const skipped = [];
+  const service = createSessionNamingService({
+    sessions,
+    renameCodexThread: async () => assert.fail("provider rename should not run"),
+    recordDebugLog: (_channel, eventName, payload) => {
+      if (eventName === "session.auto_name.skipped") skipped.push(payload);
+    },
+  });
+  const grok = {
+    sessionId: "01a03ecb-a7b4-7013-a682-3262542ca4e7",
+    tool: "grok",
+    title: "grok - 01a03ecb-a7b4-7013-a682-3262542ca4e7",
+    sessionStartSource: "new",
+  };
+  sessions.set(grok.sessionId, grok);
+
+  const named = service.onPromptCaptured({
+    session: grok,
+    workspace: { workspaceLabel: "main" },
+    message: "你是什么大模型",
+    firstPrompt: true,
+  });
+  await service.flush();
+
+  assert.equal(named.title, "main-是什么大模型");
+  assert.equal(named.sessionNaming.status, "display-only");
+  assert.equal(named.sessionNaming.providerSynced, false);
+  assert.deepEqual(skipped, []);
+});
+
+test("Grok resume sessions are not auto-named", async () => {
+  const sessions = new Map();
+  const skipped = [];
+  const service = createSessionNamingService({
+    sessions,
+    renameCodexThread: async () => assert.fail("provider rename should not run"),
+    recordDebugLog: (_channel, eventName, payload) => {
+      if (eventName === "session.auto_name.skipped") skipped.push(payload);
+    },
+  });
+  const grok = {
+    sessionId: "grok-resume",
+    tool: "grok",
+    title: "grok - grok-resume",
+    sessionStartSource: "resume",
+  };
+  sessions.set(grok.sessionId, grok);
+
+  assert.equal(service.onPromptCaptured({
+    session: grok,
+    workspace: { workspaceLabel: "main" },
+    message: "继续刚才的问题",
+    firstPrompt: true,
+  }), grok);
+  assert.equal(sessions.get("grok-resume").sessionNaming, undefined);
+  assert.equal(skipped.length, 1);
+  assert.equal(skipped[0].sessionStartSource, "resume");
+});
+
 test("keeps the AMO title and records a visible failure when Codex native rename fails", async () => {
   const sessions = new Map();
   const service = createSessionNamingService({

@@ -127,6 +127,7 @@ Current capability boundary:
 | --- | --- | --- |
 | Claude CLI | Supported by local `claude --help` through `--name <name>`. | A card launch flow may ask for a session name, pass it to Claude, and cache it as a pending AMO task title for the first matching hook-created session. |
 | Codex CLI | Verified through Codex App Server `thread/name/set`; this is available after the Hook exposes the provider thread id, not as a new-session CLI argument. | Launch plain `codex`. When an enrolled workspace has `workspaceLabel`, AMO derives a deterministic name from the first `UserPromptSubmit` of a `startup` session and asynchronously updates the native Thread. Resume, clear, compact, duplicate, and later prompts do not rename again. |
+| Grok Build | No verified native rename adapter. Grok generates its own session title after the first turns. | Launch `grok`. The first `UserPromptSubmit` of a `startup` or `new` session with `workspaceLabel` gets an AMO `display-only` name. Resume, compact, duplicate, and later prompts do not rename again. If AMO has not named the card, Broker can fall back to Grok's local `generated_title`. |
 | Codex App | App-specific. | Do not reuse CLI naming assumptions. Keep explicit user target binding. |
 
 AMO may still set a terminal/window title for routing when it controls the launcher, but that title is only a window hint. It must not replace the provider session id, and it should not be treated as proof that the provider internally named the session.

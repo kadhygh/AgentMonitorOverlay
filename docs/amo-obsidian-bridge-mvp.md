@@ -662,7 +662,7 @@ Launch flow:
 
 Current provider decision:
 
-- Workspace Center supports a project-local `workspaceLabel` such as `main` or `dev1`. On the first `UserPromptSubmit` of a `SessionStart(source=startup)` session, AMO derives one deterministic `<workspaceLabel>-<prompt summary>` name and never reapplies it on resume, clear, compact, duplicate, or later prompts.
+- Workspace Center supports a project-local `workspaceLabel` such as `main` or `dev1`. On the first `UserPromptSubmit` of a fresh session (`SessionStart` source `startup` or Grok's `new`), AMO derives one deterministic `<workspaceLabel>-<prompt summary>` name and never reapplies it on resume, clear, compact, duplicate, or later prompts.
 - Codex CLI is still launched without a guessed naming argument. After the Hook provides the real thread id, Broker uses Codex App Server `thread/name/set` asynchronously; failure does not block the Hook and remains visible through `sessionNaming.status = failed`.
 - Claude and providers without an implemented native rename adapter use `sessionNaming.status = display-only`: AMO shows the derived name but does not claim that the provider's stored session was renamed.
 

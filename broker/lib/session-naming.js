@@ -2,6 +2,7 @@ const { renameCodexThreadName } = require("./codex-app-server");
 const { normalizeText } = require("./normalize");
 
 const MAX_SESSION_NAME_LENGTH = 64;
+const FRESH_SESSION_START_SOURCES = new Set(["startup", "new"]);
 
 function createSessionNamingService(options = {}) {
   const sessions = options.sessions instanceof Map ? options.sessions : new Map();
@@ -14,7 +15,18 @@ function createSessionNamingService(options = {}) {
   function onPromptCaptured({ session, workspace, message, firstPrompt = false, duplicate = false } = {}) {
     if (!session || !firstPrompt || duplicate || session.sessionNaming?.attemptedAt) return session;
     const workspaceLabel = normalizeText(workspace?.workspaceLabel);
-    if (!workspaceLabel || normalizeText(session.sessionStartSource)?.toLowerCase() !== "startup") return session;
+    const sessionStartSource = normalizeText(session.sessionStartSource);
+    if (!workspaceLabel || !isFreshSessionStart(sessionStartSource)) {
+      if (firstPrompt) {
+        recordDebugLog("broker", "session.auto_name.skipped", {
+          sessionId: session.sessionId,
+          tool: session.tool || null,
+          sessionStartSource,
+          hasWorkspaceLabel: Boolean(workspaceLabel),
+        });
+      }
+      return session;
+    }
 
     const requestedName = deriveSessionName(workspaceLabel, message);
     if (!requestedName) return session;
@@ -110,6 +122,10 @@ function createSessionNamingService(options = {}) {
   return { onPromptCaptured, recoverPending, flush: () => codexQueue };
 }
 
+function isFreshSessionStart(source) {
+  return FRESH_SESSION_START_SOURCES.has(normalizeText(source)?.toLowerCase());
+}
+
 function deriveSessionName(workspaceLabel, prompt) {
   const label = normalizeText(workspaceLabel);
   const rawPrompt = normalizeText(prompt);
@@ -165,4 +181,4 @@ function trimError(error) {
   return `${error?.message || error || "Unknown rename error"}`.slice(0, 500);
 }
 
-module.exports = { createSessionNamingService, deriveSessionName };
+module.exports = { createSessionNamingService, deriveSessionName, isFreshSessionStart };
