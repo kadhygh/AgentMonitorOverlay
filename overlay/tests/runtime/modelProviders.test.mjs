@@ -13,6 +13,7 @@ const vite = await createServer({
 const {
   CLAUDE_PROVIDER_DEFINITIONS,
   CODEX_PROVIDER_DEFINITIONS,
+  GROK_PROVIDER_DEFINITIONS,
   modelCredentialProviderId,
   normalizeClaudeProviderPresetId,
 } = await vite.ssrLoadModule("/src/native/modelProviders.ts");
@@ -50,4 +51,15 @@ test("DeepSeek V4 Pro exposes the official client-specific model names", () => {
   const claude = CLAUDE_PROVIDER_DEFINITIONS.find((provider) => provider.id === "deepseek-v4-pro");
   assert.equal(codex.model, "deepseek-v4-pro");
   assert.equal(claude.model, "deepseek-v4-pro[1m]");
+});
+
+test("Grok Build exposes only the local Grok Default route", () => {
+  assert.deepEqual(GROK_PROVIDER_DEFINITIONS, [
+    {
+      id: "grok-default",
+      title: "Grok Default",
+      detail: "Use the existing local Grok Build account, model, and configuration.",
+      model: "Local Grok Build configuration",
+    },
+  ]);
 });

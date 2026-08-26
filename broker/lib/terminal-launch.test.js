@@ -127,3 +127,14 @@ test("Codex DeepSeek overrides are applied before resume and the environment key
   assert.doesNotMatch(commandLine, /deepseek-v4-flash\.models\.json' -Force/u);
   assert.doesNotMatch(commandLine, /deepseek-secret/u);
 });
+
+test("Grok Build launch quotes the official Windows user install path and resumes by session ID", () => {
+  const commandLine = buildPowerShellCommandLine({
+    workspacePath: "G:/PROJECT/demo",
+    title: "[AMO:grok:test] Grok Build",
+    command: "C:/Users/Test User/.grok/bin/grok.exe",
+    args: ["--resume", "grok-session-test"],
+  });
+
+  assert.match(commandLine, /& 'C:\/Users\/Test User\/\.grok\/bin\/grok\.exe' '--resume' 'grok-session-test'/u);
+});

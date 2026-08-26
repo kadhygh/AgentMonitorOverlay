@@ -533,6 +533,12 @@ export function DeployResultFooter({
             <span>{launchBusy === "claude-cli" ? "Starting" : "Run Claude"}</span>
           </button>
         ) : null}
+        {workspaceEnrollment.installedAdapters.includes("grok-build") ? (
+          <button type="button" disabled={actionsBlocked} onClick={() => onLaunchWorkspace("grok-build")}>
+            <SquareTerminal size={12} aria-hidden="true" />
+            <span>{launchBusy === "grok-build" ? "Starting" : "Run Grok"}</span>
+          </button>
+        ) : null}
         {workspaceEnrollment.installedAdapters.includes("codex-cli") ? (
           <button type="button" disabled={actionsBlocked} onClick={() => onLaunchWorkspace("codex-app")}>
             <Bot size={12} aria-hidden="true" />

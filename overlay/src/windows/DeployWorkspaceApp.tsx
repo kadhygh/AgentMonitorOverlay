@@ -509,8 +509,13 @@ export function DeployWorkspaceApp() {
     const adapterId = selection.adapterId;
     setLaunchBusy(adapterId);
     setLaunchPanel((current) => (current ? { ...current, busy: "launch", error: null } : current));
-    const label =
-      adapterId === "codex-cli" ? "Codex CLI" : adapterId === "claude-cli" ? "Claude CLI" : "ChatGPT";
+    const label = adapterId === "codex-cli"
+      ? "Codex CLI"
+      : adapterId === "claude-cli"
+        ? "Claude CLI"
+        : adapterId === "grok-build"
+          ? "Grok Build"
+          : "ChatGPT";
     setFeedback(`Launching ${label}...`);
 
     try {

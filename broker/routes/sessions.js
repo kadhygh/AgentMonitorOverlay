@@ -235,7 +235,13 @@ async function handleSessionRoutes(req, res, url, context) {
     }
 
     const rawTool = String(existing.tool || "").toLowerCase();
-    const adapterId = rawTool.includes("claude") ? "claude-cli" : rawTool.includes("codex") ? "codex-cli" : null;
+    const adapterId = rawTool.includes("claude")
+      ? "claude-cli"
+      : rawTool.includes("grok")
+        ? "grok-build"
+        : rawTool.includes("codex")
+          ? "codex-cli"
+          : null;
     if (!adapterId) {
       const error = new Error(`Session tool cannot be resumed as a managed CLI: ${existing.tool || "unknown"}`);
       error.statusCode = 400;

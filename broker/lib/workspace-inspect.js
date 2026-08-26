@@ -23,6 +23,11 @@ const {
   CODEX_PROJECT_HOOK_COMMAND,
 } = require("../hooks/codex");
 const { CLAUDE_HOOK_EVENTS } = require("../hooks/claude");
+const {
+  GROK_HOOK_EVENTS,
+  GROK_PROJECT_HOOK_COMMAND,
+  GROK_PROJECT_HOOK_CONFIG_PATH,
+} = require("../hooks/grok");
 
 function amoVaultDirectoryName(projectName) {
   const cleaned = (normalizeText(projectName) || "workspace")
@@ -191,6 +196,8 @@ function inspectWorkspace(payload) {
   const hasClaudeDir = fs.existsSync(path.join(workspacePath, ".claude"));
   const hasClaudeLocalSettings = fs.existsSync(path.join(workspacePath, ".claude", "settings.local.json"));
   const hasClaudeProjectSettings = fs.existsSync(path.join(workspacePath, ".claude", "settings.json"));
+  const hasGrokDir = fs.existsSync(path.join(workspacePath, ".grok"));
+  const hasGrokHooks = fs.existsSync(path.join(workspacePath, GROK_PROJECT_HOOK_CONFIG_PATH));
   const codexDeployment = inspectAdapterDeployment(workspacePath, amoRoot, {
     adapterId: "codex-cli",
     hookConfigPath: ".codex/hooks.json",
@@ -205,8 +212,16 @@ function inspectWorkspace(payload) {
     expectedHookEvents: CLAUDE_HOOK_EVENTS,
     requiredCommandMarkers: ["${CLAUDE_PROJECT_DIR}"],
   });
+  const grokDeployment = inspectAdapterDeployment(workspacePath, amoRoot, {
+    adapterId: "grok-build",
+    hookConfigPath: GROK_PROJECT_HOOK_CONFIG_PATH,
+    hookMarker: "grok-message.mjs",
+    expectedHookEvents: GROK_HOOK_EVENTS,
+    requiredCommandMarkers: [GROK_PROJECT_HOOK_COMMAND],
+  });
   const hasCodexAdapter = codexDeployment.installed;
   const hasClaudeAdapter = claudeDeployment.installed;
+  const hasGrokAdapter = grokDeployment.installed;
   const gitExclude = inspectWorkspaceGitExclude(
     workspacePath,
     payload?.gitRootPath || payload?.git_root_path,
@@ -224,22 +239,28 @@ function inspectWorkspace(payload) {
   if (hasAmo) evidence.push("existing .amo workspace metadata found");
   if (hasCodexAdapter) evidence.push("existing Codex CLI adapter metadata found");
   if (hasClaudeAdapter) evidence.push("existing Claude CLI adapter metadata found");
+  if (hasGrokAdapter) evidence.push("existing Grok Build adapter metadata found");
   if (hasCodexDir) evidence.push("existing .codex directory found");
   if (hasCodexHooks) evidence.push("existing .codex/hooks.json found and will be merged");
   if (hasClaudeDir) evidence.push("existing .claude directory found");
   if (hasClaudeLocalSettings) evidence.push("existing .claude/settings.local.json found and will be merged");
   if (hasClaudeProjectSettings) evidence.push("existing .claude/settings.json found");
+  if (hasGrokDir) evidence.push("existing .grok directory found");
+  if (hasGrokHooks) evidence.push(`existing ${GROK_PROJECT_HOOK_CONFIG_PATH} found and will be merged`);
   if (rootIndicators.length > 0) evidence.push(`project indicators: ${rootIndicators.join(", ")}`);
   if (isEmptyWorkspace) evidence.push("workspace folder is empty");
   if (writable) evidence.push("workspace is writable");
 
   const codexStatus = writable ? "available" : "blocked";
   const claudeStatus = writable ? "available" : "blocked";
+  const grokStatus = writable ? "available" : "blocked";
   const codexConfidence = hasCodexDir || hasCodexHooks ? "configured" : rootIndicators.length > 0 ? "project" : workspaceState;
   const claudeConfidence =
     hasClaudeDir || hasClaudeLocalSettings || hasClaudeProjectSettings ? "configured" : rootIndicators.length > 0 ? "project" : workspaceState;
+  const grokConfidence = hasGrokDir || hasGrokHooks ? "configured" : rootIndicators.length > 0 ? "project" : workspaceState;
   const codexDeploymentStatus = codexDeployment.deploymentStatus;
   const claudeDeploymentStatus = claudeDeployment.deploymentStatus;
+  const grokDeploymentStatus = grokDeployment.deploymentStatus;
   const recommended = !isEmptyWorkspace;
   const commonDirectoriesToCreate = [
     ".amo",
@@ -362,6 +383,46 @@ function inspectWorkspace(payload) {
           "Claude Code may require reviewing hooks with /hooks before first use.",
           "Claude hook payloads do not provide native HWND/PID; window routing should use title/project hints unless separately bound.",
           "AMO writes only .claude/settings.local.json so the hook stays local to this machine.",
+        ],
+      },
+      {
+        id: "grok-build",
+        label: "Grok Build",
+        status: grokStatus,
+        deploymentStatus: grokDeploymentStatus,
+        workspaceState,
+        deployable: writable,
+        recommended,
+        confidence: grokConfidence,
+        scope: "project-local",
+        installedDeploymentVersion: grokDeployment.installedDeploymentVersion,
+        expectedDeploymentVersion: grokDeployment.expectedDeploymentVersion,
+        installedHookProtocolVersion: grokDeployment.installedHookProtocolVersion,
+        expectedHookProtocolVersion: grokDeployment.expectedHookProtocolVersion,
+        expectedHookEvents: grokDeployment.expectedHookEvents,
+        configuredHookEvents: grokDeployment.configuredHookEvents,
+        missingHookEvents: grokDeployment.missingHookEvents,
+        deploymentIssues: grokDeployment.deploymentIssues,
+        reason: adapterDeploymentReason({
+          writable,
+          installed: hasGrokAdapter,
+          deploymentStatus: grokDeploymentStatus,
+          deploymentIssues: grokDeployment.deploymentIssues,
+          empty: isEmptyWorkspace,
+          label: "Grok Build",
+          hookDescription: ".grok project lifecycle hooks for prompt/reply capture",
+        }),
+        evidence,
+        directoriesToCreate: [...commonDirectoriesToCreate, ".grok", ".grok/hooks"],
+        filesToWrite: [
+          ".amo/adapters/grok-build.json",
+          ".amo/hooks/grok-message.mjs",
+          ...commonFilesToWrite,
+        ],
+        filesToMerge: [GROK_PROJECT_HOOK_CONFIG_PATH],
+        risks: [
+          "Grok Build requires trusting this project before project-local hooks run; use --trust or /hooks-trust.",
+          "Grok hook payloads do not provide native HWND/PID; window routing uses the managed title token.",
         ],
       },
     ],

@@ -4,6 +4,7 @@ const os = require("node:os");
 const path = require("node:path");
 const test = require("node:test");
 const { createLaunchStore } = require("./launch-store");
+const { launchAdapterTool } = require("./launch-adapters");
 
 function createTestStore(t) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "amo-launch-store-"));
@@ -18,10 +19,27 @@ function matchingPayload(launch, sessionId) {
     sessionId,
     workspaceId: launch.workspaceId,
     workspacePath: launch.workspacePath,
-    tool: launch.adapterId === "claude-cli" ? "claude" : "codex",
+    tool: launchAdapterTool(launch.adapterId),
     hookEventName: "SessionStart",
   };
 }
+
+test("Grok Build managed launch claims only Grok hook events", (t) => {
+  const { store } = createTestStore(t);
+  const launch = store.create({
+    workspaceId: "workspace-grok",
+    workspacePath: "C:\\Projects\\grok-demo",
+    adapterId: "grok-build",
+  });
+  store.update(launch.launchId, { state: "waiting_hook" });
+
+  assert.match(launch.titleToken, /^\[AMO:grok:/u);
+  assert.equal(store.claim({ ...matchingPayload(launch, "wrong-tool"), tool: "codex" }, { sessions: new Map() }), null);
+
+  const claim = store.claim(matchingPayload(launch, "grok-session"), { sessions: new Map() });
+  assert.equal(claim?.kind, "owner");
+  assert.equal(claim?.launch.currentSessionId, "grok-session");
+});
 
 test("waiting launch remains claimable without a time limit", (t) => {
   const { store } = createTestStore(t);

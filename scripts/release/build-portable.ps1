@@ -93,7 +93,7 @@ Run AMO.exe. The bundled Broker and Node runtime start automatically.
 DeepSeek Harness is installed globally and runs independently of AMO. Harness install, update, and remote-version actions require a system Node.js and npm on PATH.
 
 Portable data is stored in the data folder beside AMO.exe. Keep that folder when updating.
-Codex CLI, Claude CLI, Obsidian, Windows Terminal, and WebView2 are external prerequisites when their features are used.
+Codex CLI, Claude CLI, Grok Build, Obsidian, Windows Terminal, and WebView2 are external prerequisites when their features are used.
 
 Normal startup does not show a Broker console. Enable Debug in AMO Settings for diagnostic logging.
 "@ | Set-Content -LiteralPath (Join-Path $stageRoot "README.txt") -Encoding UTF8

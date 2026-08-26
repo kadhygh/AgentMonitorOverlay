@@ -13,6 +13,7 @@ import { cliLaunchPreferencePayload } from "../native/cliLaunch";
 import { workspacePanelPosition } from "../domain/overlaySessionUi";
 import { projectName, workspacePathForSession } from "../domain/routingModel";
 import {
+  workspaceLaunchAdapterForSession,
   workspaceLaunchLabel,
   workspaceAdapterLaunchable,
   workspaceCleanFeedback,
@@ -71,6 +72,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
       session,
       workspacePath,
       inspection: null,
+      initialAdapterId: workspaceLaunchAdapterForSession(session),
       busy: "inspect",
       error: null,
     });

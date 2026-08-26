@@ -6,7 +6,7 @@ import type {
   WindowActivationRequest,
 } from "../types";
 
-export type ToolDisplayId = "codex-cli" | "codex-app" | "claude-cli" | "other";
+export type ToolDisplayId = "codex-cli" | "codex-app" | "claude-cli" | "grok-build" | "other";
 
 export function toolDisplayIdForSession(session: AgentSession): ToolDisplayId {
   const rawTool = String(session.tool || "").toLowerCase();
@@ -33,6 +33,9 @@ export function toolDisplayIdForSession(session: AgentSession): ToolDisplayId {
   }
   if (rawTool.includes("claude")) {
     return "claude-cli";
+  }
+  if (rawTool.includes("grok")) {
+    return "grok-build";
   }
   return "other";
 }

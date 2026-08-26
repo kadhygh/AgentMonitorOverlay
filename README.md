@@ -2,7 +2,7 @@
 
 AMO（Agent Monitor Overlay）是一层面向 Windows 本地 AI CLI 工作流的轻量控制界面。
 
-它通过工程内 Hook 跟踪 Codex CLI 和 Claude CLI 会话，将任务呈现为桌面卡片，并把长回复的审阅流程连接到 Obsidian 笔记、批注和 Canvas。
+它通过工程内 Hook 跟踪 Codex CLI、Claude CLI 和 Grok Build 会话，将任务呈现为桌面卡片，并把长回复的审阅流程连接到 Obsidian 笔记、批注和 Canvas。
 
 > AMO 先解决作者自己的问题，不以成为通用 Agent 平台为目标。
 
@@ -81,6 +81,7 @@ AMO 当前主要面向 Windows x64，已经支持以下工作路径：
 | --- | --- |
 | Codex CLI | 工程内 Hook、Managed Launch/Resume、Prompt/Reply/Permission 生命周期 |
 | Claude CLI | 工程内 Hook、Managed Launch/Resume、Prompt/Reply/Permission 生命周期 |
+| Grok Build | `.grok/hooks` 工程内 Hook、Managed Launch/Resume、Grok Default 路由 |
 | ChatGPT desktop app | 任务卡片的显式 Target，以及打开对应任务 |
 | Obsidian | AMO Vault、生成笔记、批注、Canvas 和返回会话操作 |
 | Scratchpad | 三页全局临时写作面板，并提供适合 CLI 粘贴的安全复制 |
@@ -92,11 +93,11 @@ AMO 不会安装或替代这些应用。每项集成都仍然是可选的外部�
 1. 打开 [GitHub Releases](https://github.com/kadhygh/AgentMonitorOverlay/releases)，展开最新版本的 **Assets**，下载 `AMO-v<版本>-win-x64.zip`，不要下载页面自动生成的 Source code 压缩包。
 2. 将 ZIP 完整解压到可写目录，保持 `AMO.exe`、`app/`、`runtime/` 和 `data/` 在一起，然后双击 `AMO.exe`。
 3. 在 AMO 顶部点击文件夹图标打开 **Workspace Center**；点击 **Choose** 选择工程目录，再点击 **Check**。Check 只检查状态，不会写入工程。
-4. 勾选 Codex CLI 和/或 Claude CLI Adapter，点击 **Deploy Selected**，把工程内 Hook 和 `.amo` 工作区部署到所选目录。
+4. 勾选 Codex CLI、Claude CLI 和/或 Grok Build Adapter，点击 **Deploy Selected**，把工程内 Hook 和 `.amo` 工作区部署到所选目录。
 5. 部署完成后，可在左侧 Workspace 列表使用铅笔按钮设置 `main`、`dev1` 等项目备注。新启动的 Session 会在首轮 Prompt 后生成 `<项目备注>-<开发内容>` 名称；Codex 会同步修改原生 Thread 名称，其他 Provider 会明确保留为 AMO 显示名称。
 6. 点击 **Vault**。首次打开时，在确认仓库来源可信的前提下，让 Obsidian 信任该 Vault 并启用随 Vault 部署的 AMO 插件。
 7. 在 AMO 设置的 **Scratchpad** 页面启用适合自己的全局快捷键；阅读长回复时可呼出三页临时面板，记录尚未整理成熟的想法。
-8. 在 Workspace Center 的 Adapter 行点击 **Run**，或使用底部的 **Run Codex / Run Claude**；选择客户端后点击 **Launch managed CLI**。
+8. 在 Workspace Center 的 Adapter 行点击 **Run**，或使用底部的 **Run Codex / Run Claude / Run Grok**；选择客户端和 Model routing 后点击 **Launch managed CLI**。Grok Build 当前固定使用 **Grok Default**，沿用本机登录、模型和配置。
 9. 在新终端中开始对话。Hook 发出回复事件后，AMO 会创建或接管任务卡片；当卡片进入 **Review**，点击 **Note** 打开对应回复。
 10. 在 Obsidian 中点击工具栏的 **Open AMO panel**，选中需要回应的原文并点击 **批注**；整理完成后使用 **返回窗口** 回到对应 CLI。
 
@@ -110,7 +111,7 @@ AMO 不会安装或替代这些应用。每项集成都仍然是可选的外部�
 
 ![Workspace Center 已部署并提供 Managed CLI 启动操作](docs/assets/getting-started/workspace-deployed.png)
 
-如果工作区属于 Git 仓库，但不希望 AMO 生成的本地文件进入提交，可以使用图中间栏的 **Git exclude**：确认或通过 **Choose Git** 选择包含 `.git` 的仓库根目录，然后点击 **Add exclude**。AMO 会把 `.amo/`、`.codex/cache/` 和 `.codex/hooks.json` 写入当前克隆的 `.git/info/exclude`；规则只在本机生效，不会修改共享的 `.gitignore`，也不会出现在提交中。
+如果工作区属于 Git 仓库，但不希望 AMO 生成的本地文件进入提交，可以使用图中间栏的 **Git exclude**：确认或通过 **Choose Git** 选择包含 `.git` 的仓库根目录，然后点击 **Add exclude**。AMO 会把 `.amo/`、`.codex/cache/`、`.codex/hooks.json` 和 `.grok/hooks/amo.json` 写入当前克隆的 `.git/info/exclude`；规则只在本机生效，不会修改共享的 `.gitignore`，也不会出现在提交中。
 
 Claude 用户可以在点击 **Add exclude** 前勾选 **Also exclude `.claude\settings.local.json`**。这个选项默认关闭，因为有些团队会主动版本化 `.claude` 下的配置。操作完成后，下方状态应显示对应规则为 **Covered**。Git exclude 只阻止未跟踪文件进入后续提交；如果某个文件已经被 Git 跟踪，AMO 会提示 tracked 状态，需要先确认团队策略，再手动从索引中移除，而不是依赖 exclude 自动取消跟踪。
 

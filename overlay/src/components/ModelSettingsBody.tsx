@@ -3,6 +3,7 @@ import { Check, KeyRound, ShieldCheck, Trash2 } from "lucide-react";
 import {
   CLAUDE_PROVIDER_DEFINITIONS,
   CODEX_PROVIDER_DEFINITIONS,
+  GROK_PROVIDER_DEFINITIONS,
   deleteModelCredential,
   loadModelCredentialStatus,
   saveModelCredential,
@@ -122,8 +123,19 @@ export function ModelSettingsBody({
         </select>
       </label>
 
+      <label className="settings-field">
+        <span>Default Grok Build model routing</span>
+        <select value="grok-default" disabled>
+          {GROK_PROVIDER_DEFINITIONS.map((provider) => (
+            <option key={provider.id} value={provider.id}>
+              {provider.title}
+            </option>
+          ))}
+        </select>
+      </label>
+
       <p className="settings-help-copy">
-        These presets are selected whenever AMO opens the managed launch dialog. You can still override either client for one launch.
+        These presets are selected whenever AMO opens the managed launch dialog. Grok Build currently uses its local default routing.
       </p>
 
       <div className="settings-provider-list">

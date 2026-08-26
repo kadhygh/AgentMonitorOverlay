@@ -13,6 +13,8 @@ const {
   createClaudeLaunchSettings,
 } = require("./claude-launch-settings");
 const { createCodexLaunchArgs } = require("./codex-launch-config");
+const { resolveGrokExecutable } = require("./grok-executable");
+const { launchAdapterLabel, launchAdapterTool } = require("./launch-adapters");
 
 async function launchWorkspace(payload, options = {}) {
   const recordDebugLog = typeof options.recordDebugLog === "function" ? options.recordDebugLog : () => {};
@@ -24,7 +26,7 @@ async function launchWorkspace(payload, options = {}) {
   const launchEnvironment = normalizeCliLaunchEnvironment(
     payload?.launchEnvironment || payload?.launch_environment || legacyShellPreference,
   );
-  const supportedLaunchIds = new Set(["codex-cli", "claude-cli", "codex-app"]);
+  const supportedLaunchIds = new Set(["codex-cli", "claude-cli", "grok-build", "codex-app"]);
   if (!supportedLaunchIds.has(adapterId)) {
     throw httpError(400, "unsupported_launch_adapter", `Unsupported launch adapter: ${adapterId || "missing"}`);
   }
@@ -36,6 +38,9 @@ async function launchWorkspace(payload, options = {}) {
     : null;
   const codexProvider = adapterId === "codex-cli"
     ? resolveCodexProvider(payload?.codexProvider || payload?.codex_provider)
+    : null;
+  const grokProvider = adapterId === "grok-build"
+    ? { id: "grok-default", label: "Grok Default", model: null }
     : null;
 
   const amoRoot = path.join(workspacePath, AMO_DIR);
@@ -66,14 +71,21 @@ async function launchWorkspace(payload, options = {}) {
         sourceCardSessionId: normalizeText(payload?.sourceCardSessionId || payload?.source_card_session_id),
       });
   const title = managedLaunch
-    ? `${managedLaunch.titleToken} ${adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} - ${projectName}`
-    : `AMO ${adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} - ${projectName}`;
+    ? `${managedLaunch.titleToken} ${launchAdapterLabel(adapterId)} - ${projectName}`
+    : `AMO ${launchAdapterLabel(adapterId)} - ${projectName}`;
   const environment = managedLaunch
     ? {
         AMO_LAUNCH_ID: managedLaunch.launchId,
         AMO_WORKSPACE_ID: managedLaunch.workspaceId,
         AMO_WORKSPACE_PATH: managedLaunch.workspacePath,
         AMO_REQUESTED_SESSION_ID: resumeSessionId,
+        ...(adapterId === "grok-build"
+          ? {
+              AMO_CLIENT_TOOL: "grok",
+              GROK_CLAUDE_HOOKS_ENABLED: "0",
+              GROK_CURSOR_HOOKS_ENABLED: "0",
+            }
+          : {}),
         ...(codexProvider?.environment || {}),
       }
     : {};
@@ -119,6 +131,20 @@ async function launchWorkspace(payload, options = {}) {
         launchEnvironment,
         recordDebugLog,
       });
+    } else if (adapterId === "grok-build") {
+      launch = await launchCliInTerminal({
+        workspacePath,
+        title,
+        command: resolveGrokExecutable(),
+        args: resumeSessionId ? ["--resume", resumeSessionId] : [],
+        cleanupEnvironmentKeys: [
+          "GROK_CLAUDE_HOOKS_ENABLED",
+          "GROK_CURSOR_HOOKS_ENABLED",
+        ],
+        environment,
+        launchEnvironment,
+        recordDebugLog,
+      });
     } else {
       launch = prepareChatGptWorkspaceLaunch(workspacePath);
     }
@@ -136,6 +162,8 @@ async function launchWorkspace(payload, options = {}) {
         claudeModel: claudeProvider?.model || null,
         codexProviderId: codexProvider?.id || null,
         codexModel: codexProvider?.model || null,
+        grokProviderId: grokProvider?.id || null,
+        grokModel: grokProvider?.model || null,
       });
     }
   } catch (error) {
@@ -166,6 +194,8 @@ async function launchWorkspace(payload, options = {}) {
     claudeModel: claudeProvider?.model || null,
     codexProviderId: codexProvider?.id || null,
     codexModel: codexProvider?.model || null,
+    grokProviderId: grokProvider?.id || null,
+    grokModel: grokProvider?.model || null,
   });
 
   return {
@@ -191,6 +221,9 @@ async function launchWorkspace(payload, options = {}) {
     codexProviderId: codexProvider?.id || null,
     codexProviderLabel: codexProvider?.label || null,
     codexModel: codexProvider?.model || null,
+    grokProviderId: grokProvider?.id || null,
+    grokProviderLabel: grokProvider?.label || null,
+    grokModel: grokProvider?.model || null,
     launch: managedLaunch ? launchStore.list().find((item) => item.launchId === managedLaunch.launchId) : null,
     windowHint: managedLaunch ? {
       title,
@@ -198,7 +231,7 @@ async function launchWorkspace(payload, options = {}) {
       titleContains: [managedLaunch.titleToken],
       project: projectName,
       cwd: workspacePath,
-      tool: adapterId === "claude-cli" ? "claude" : "codex",
+      tool: launchAdapterTool(adapterId) || "codex",
       boundBy: "managed-launch",
     } : null,
     targetBinding: null,
@@ -206,9 +239,9 @@ async function launchWorkspace(payload, options = {}) {
     message:
       adapterId === "codex-app"
         ? `Opened a new ChatGPT task for ${projectName}.`
-        : resumeSessionId && adapterId === "codex-cli"
-        ? `Launched Codex CLI resume${codexProvider?.model ? ` with ${codexProvider.label}` : ""} for ${projectName}.`
-        : `Launched ${adapterId === "codex-cli" ? "Codex CLI" : "Claude CLI"}${codexProvider?.model ? ` with ${codexProvider.label}` : ""} for ${projectName}.`,
+        : resumeSessionId
+          ? `Launched ${launchAdapterLabel(adapterId)} resume${codexProvider?.model ? ` with ${codexProvider.label}` : ""} for ${projectName}.`
+          : `Launched ${launchAdapterLabel(adapterId)}${codexProvider?.model ? ` with ${codexProvider.label}` : ""} for ${projectName}.`,
   };
 }
 

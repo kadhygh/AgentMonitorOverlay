@@ -71,6 +71,11 @@ const toolDisplay: Record<ToolDisplayId, ToolDisplay> = {
     icon: claudeCliIcon,
     badge: "CLI",
   },
+  "grok-build": {
+    label: "Grok Build",
+    icon: null,
+    badge: "GROK",
+  },
   other: {
     label: "Agent",
     icon: null,
@@ -174,7 +179,7 @@ export function SessionRowContent({
   const targetBinding = targetBindingForSession(session);
   const targetBound = Boolean(targetBinding);
   const rawTool = String(session.tool || "").toLowerCase();
-  const supportsManagedResume = rawTool.includes("codex") || rawTool.includes("claude");
+  const supportsManagedResume = rawTool.includes("codex") || rawTool.includes("claude") || rawTool.includes("grok");
   const canResumeAsManaged =
     supportsManagedResume &&
     !targetBound &&

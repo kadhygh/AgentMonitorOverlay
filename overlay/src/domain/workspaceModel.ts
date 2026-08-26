@@ -1,6 +1,6 @@
 import type { AgentSession, WorkspaceAdapterPlan, WorkspaceCleanResult, WorkspaceInspection, WorkspaceMaintenanceStatus } from "../types";
 
-export type LaunchPanelAdapterId = "codex-cli" | "claude-cli" | "codex-app";
+export type LaunchPanelAdapterId = "codex-cli" | "claude-cli" | "grok-build" | "codex-app";
 export type MaintenanceTone = "ok" | "warning" | "error" | "unknown";
 
 export function isDeployableWorkspaceAdapter(adapter: WorkspaceAdapterPlan) {
@@ -22,7 +22,16 @@ export function isWorkspaceAdapterInstalled(adapter: WorkspaceAdapterPlan) {
 export function workspaceLaunchLabel(adapterId: LaunchPanelAdapterId) {
   if (adapterId === "codex-cli") return "Codex CLI";
   if (adapterId === "claude-cli") return "Claude CLI";
+  if (adapterId === "grok-build") return "Grok Build";
   return "ChatGPT";
+}
+
+export function workspaceLaunchAdapterForSession(session: AgentSession): LaunchPanelAdapterId {
+  const tool = String(session.tool || "").toLowerCase();
+  if (tool.includes("claude")) return "claude-cli";
+  if (tool.includes("grok")) return "grok-build";
+  if (tool.includes("codex-app") || tool.includes("chatgpt")) return "codex-app";
+  return "codex-cli";
 }
 
 export function workspaceAdapterPlan(inspection: WorkspaceInspection | null | undefined, adapterId: LaunchPanelAdapterId) {

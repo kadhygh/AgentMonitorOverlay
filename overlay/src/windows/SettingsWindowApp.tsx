@@ -165,7 +165,7 @@ function SettingsDetailHeader({
             ? "PowerShell 7"
             : "Windows PowerShell 5.1"
       : settingsSection === "models"
-        ? `Codex: ${defaultCodex?.title || "default"} | Claude: ${defaultProvider?.title || "default"}`
+        ? `Codex: ${defaultCodex?.title || "default"} | Claude: ${defaultProvider?.title || "default"} | Grok: Grok Default`
         : settingsSection === "theme"
       ? amoTheme === "light"
         ? "Light"
@@ -230,7 +230,7 @@ function CliSettingsBody({
         </select>
       </label>
       <p className="settings-help-copy">
-        The selected environment is used for every new or resumed managed Codex and Claude session. Windows PowerShell 5.1 remains the safe default.
+        The selected environment is used for every new or resumed managed Codex, Claude, and Grok Build session. Windows PowerShell 5.1 remains the safe default.
       </p>
       <div className="settings-environment-list" aria-live="polite">
         {environments.map((environment) => (

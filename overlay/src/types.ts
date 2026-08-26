@@ -9,7 +9,7 @@ export type SessionState =
   | "cancelled"
   | "unknown";
 
-export type AgentTool = "codex" | "codex-cli" | "codex-app" | "claude" | "claude-cli" | "other";
+export type AgentTool = "codex" | "codex-cli" | "codex-app" | "claude" | "claude-cli" | "grok" | "grok-build" | "other";
 export type SessionPriority = "focus" | "next" | "later";
 
 export interface WindowHint {
@@ -101,6 +101,8 @@ export interface AgentSession {
   claudeModel?: string | null;
   codexProviderId?: string | null;
   codexModel?: string | null;
+  grokProviderId?: string | null;
+  grokModel?: string | null;
   vaultRoot?: string;
   lastReplyAt?: string;
   lastReplyNote?: string;
@@ -368,6 +370,9 @@ export interface WorkspaceLaunchResult {
   codexProviderId?: string | null;
   codexProviderLabel?: string | null;
   codexModel?: string | null;
+  grokProviderId?: string | null;
+  grokProviderLabel?: string | null;
+  grokModel?: string | null;
   windowHint?: WindowHint | null;
   targetBinding?: TargetBinding | null;
   session?: AgentSession | null;
@@ -463,6 +468,8 @@ export interface ManagedLaunch {
   claudeModel?: string | null;
   codexProviderId?: string | null;
   codexModel?: string | null;
+  grokProviderId?: string | null;
+  grokModel?: string | null;
 }
 
 export interface WorkspaceGitExcludeEntry {

@@ -37,12 +37,19 @@ const {
   claudeMessageHookScript,
   mergeClaudeSettings,
 } = require("../hooks/claude");
+const {
+  GROK_HOOK_EVENTS,
+  GROK_PROJECT_HOOK_CONFIG_PATH,
+  GROK_PROJECT_HOOK_PATH,
+  grokMessageHookScript,
+  mergeGrokHooks,
+} = require("../hooks/grok");
 
 function enrollWorkspace(payload, options = {}) {
   const bridgeBaseUrl = resolveBridgeBaseUrl(options.baseUrl);
   const recordDebugLog = typeof options.recordDebugLog === "function" ? options.recordDebugLog : () => {};
   const requestedAdapters = normalizeAdapterIds(payload?.adapters || payload?.adapterIds || payload?.adapter_ids);
-  const supportedAdapterIds = new Set(["codex-cli", "claude-cli"]);
+  const supportedAdapterIds = new Set(["codex-cli", "claude-cli", "grok-build"]);
   const unsupported = requestedAdapters.filter((id) => !supportedAdapterIds.has(id));
   if (unsupported.length > 0) {
     throw httpError(400, "unsupported_adapter", `Unsupported MVP adapter(s): ${unsupported.join(", ")}`);
@@ -197,6 +204,51 @@ function enrollWorkspace(payload, options = {}) {
       installedAt: now,
       hookScriptPath: CLAUDE_PROJECT_HOOK_PATH,
       mergedFiles: [".claude/settings.local.json"],
+    });
+  }
+
+  if (requestedAdapters.includes("grok-build")) {
+    const adapterFile = path.join(amoRoot, "adapters", "grok-build.json");
+    const hookScriptFile = path.join(amoRoot, "hooks", "grok-message.mjs");
+    writeJsonFile(adapterFile, {
+      schemaVersion: AMO_SCHEMA_VERSION,
+      id: "grok-build",
+      label: "Grok Build",
+      status: "installed",
+      deploymentVersion: AMO_DEPLOYMENT_VERSION,
+      hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
+      hookEvents: GROK_HOOK_EVENTS,
+      installedAt: now,
+      bridgeEventsUrl: `${bridgeBaseUrl}/api/events`,
+      bridgeRepliesUrl: `${bridgeBaseUrl}/api/replies`,
+      bridgePromptsUrl: `${bridgeBaseUrl}/api/prompts`,
+      hookScriptPath: GROK_PROJECT_HOOK_PATH,
+      cacheFallbackPath: ".amo/logs/grok-cache",
+    });
+    installedFiles.push(".amo/adapters/grok-build.json");
+
+    writeTextFile(
+      hookScriptFile,
+      grokMessageHookScript({
+        deploymentVersion: AMO_DEPLOYMENT_VERSION,
+        hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
+      }),
+    );
+    installedFiles.push(".amo/hooks/grok-message.mjs");
+
+    const mergeResult = mergeGrokHooks(workspacePath, amoRoot);
+    if (mergeResult.changed) mergedFiles.push(GROK_PROJECT_HOOK_CONFIG_PATH);
+    backups.push(...mergeResult.backups);
+    installedAdapters.push("grok-build");
+    enrollmentAdapters.push({
+      id: "grok-build",
+      status: "installed",
+      deploymentVersion: AMO_DEPLOYMENT_VERSION,
+      hookProtocolVersion: AMO_HOOK_PROTOCOL_VERSION,
+      hookEvents: GROK_HOOK_EVENTS,
+      installedAt: now,
+      hookScriptPath: GROK_PROJECT_HOOK_PATH,
+      mergedFiles: [GROK_PROJECT_HOOK_CONFIG_PATH],
     });
   }
 

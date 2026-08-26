@@ -52,6 +52,7 @@ function toolLabel(session: AgentSession) {
   if (session.tool === "claude" || session.tool === "claude-cli") return "Claude CLI";
   if (session.tool === "codex-app") return "ChatGPT";
   if (session.tool === "codex" || session.tool === "codex-cli") return "Codex CLI";
+  if (session.tool === "grok" || session.tool === "grok-build") return "Grok Build";
   return session.tool;
 }
 

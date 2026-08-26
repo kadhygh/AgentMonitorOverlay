@@ -10,6 +10,7 @@ import { projectName, shortPathLabel } from "../domain/routingModel";
 import {
   CLAUDE_PROVIDER_DEFINITIONS,
   CODEX_PROVIDER_DEFINITIONS,
+  GROK_PROVIDER_DEFINITIONS,
   loadDefaultClaudeProvider,
   loadDefaultCodexProvider,
   loadModelCredentialStatus,
@@ -45,7 +46,7 @@ interface LaunchPanelProps {
   onLaunch: (selection: ManagedLaunchSelection) => void;
 }
 
-const adapters: LaunchPanelAdapterId[] = ["codex-cli", "claude-cli", "codex-app"];
+const adapters: LaunchPanelAdapterId[] = ["codex-cli", "claude-cli", "grok-build", "codex-app"];
 
 export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
   const [adapterId, setAdapterId] = useState<LaunchPanelAdapterId>(state.initialAdapterId ?? "codex-cli");
@@ -81,9 +82,19 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
 
   const providerDefinitions = adapterId === "codex-cli"
     ? CODEX_PROVIDER_DEFINITIONS
-    : CLAUDE_PROVIDER_DEFINITIONS;
-  const selectedProviderId = adapterId === "codex-cli" ? codexProviderId : claudeProviderId;
-  const defaultProviderId = adapterId === "codex-cli" ? "openai-default" : "anthropic-default";
+    : adapterId === "claude-cli"
+      ? CLAUDE_PROVIDER_DEFINITIONS
+      : GROK_PROVIDER_DEFINITIONS;
+  const selectedProviderId = adapterId === "codex-cli"
+    ? codexProviderId
+    : adapterId === "claude-cli"
+      ? claudeProviderId
+      : "grok-default";
+  const defaultProviderId = adapterId === "codex-cli"
+    ? "openai-default"
+    : adapterId === "claude-cli"
+      ? "anthropic-default"
+      : "grok-default";
   const provider = providerDefinitions.find((item) => item.id === selectedProviderId) ?? providerDefinitions[0];
   const credentialProviderId = modelCredentialProviderId(selectedProviderId);
   const launchable = workspaceAdapterLaunchable(state.inspection, adapterId);
@@ -209,16 +220,16 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
             </div>
           </section>
 
-          {adapterId === "codex-cli" || adapterId === "claude-cli" ? (
+          {adapterId === "codex-cli" || adapterId === "claude-cli" || adapterId === "grok-build" ? (
             <section className="managed-launch-section">
               <div className="managed-launch-section-title">
                 <strong>Model routing</strong>
-                <span>Only this {adapterId === "codex-cli" ? "Codex" : "Claude"} CLI process</span>
+                <span>Only this {workspaceLaunchLabel(adapterId)} process</span>
               </div>
               <div
                 className="managed-launch-providers"
                 role="radiogroup"
-                aria-label={`${adapterId === "codex-cli" ? "Codex" : "Claude"} model provider`}
+                aria-label={`${workspaceLaunchLabel(adapterId)} model provider`}
               >
                 {providerDefinitions.map((item) => {
                   const itemCredentialProviderId = modelCredentialProviderId(item.id);
@@ -236,7 +247,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
                         onChange={() => {
                           if (adapterId === "codex-cli") {
                             setCodexProviderId(item.id as CodexProviderPresetId);
-                          } else {
+                          } else if (adapterId === "claude-cli") {
                             setClaudeProviderId(item.id as ClaudeProviderPresetId);
                           }
                           setApiKey("");
@@ -289,7 +300,9 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
               <div className="managed-launch-security-note">
                 <ShieldCheck size={13} aria-hidden="true" />
                 <span>
-                  {storedCredentialConfigured && !apiKey.trim()
+                  {adapterId === "grok-build"
+                    ? "Grok Default uses the existing local Grok Build login, model, and configuration."
+                    : storedCredentialConfigured && !apiKey.trim()
                     ? adapterId === "codex-cli"
                       ? "The saved key is resolved only at launch and passed through the Codex process environment."
                       : "The saved key is resolved only at launch and copied into a temporary Claude settings file."

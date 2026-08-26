@@ -127,7 +127,7 @@ function buildPowerShellCommandLine({
   cleanupEnvironmentKeys = [],
 }) {
   const cliArgs = args.map(powershellSingleQuoted).join(" ");
-  const invocation = `& ${command}${cliArgs ? ` ${cliArgs}` : ""}`;
+  const invocation = `& ${powershellCommand(command)}${cliArgs ? ` ${cliArgs}` : ""}`;
   const prefix = `$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)};`;
   const cleanupCommands = cleanupPaths
     .filter((filePath) => typeof filePath === "string" && filePath.trim())
@@ -141,6 +141,11 @@ function buildPowerShellCommandLine({
   return cleanupCommands.length > 0
     ? `${prefix} try { ${invocation} } finally { ${cleanupCommands.join("; ")} }`
     : `${prefix} ${invocation}`;
+}
+
+function powershellCommand(value) {
+  const command = String(value || "").trim();
+  return /^[A-Za-z0-9_.-]+$/u.test(command) ? command : powershellSingleQuoted(command);
 }
 
 function powershellSingleQuoted(value) {

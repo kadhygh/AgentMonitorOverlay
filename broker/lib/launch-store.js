@@ -4,6 +4,7 @@ const { AMO_SCHEMA_VERSION } = require("./amo-constants");
 const { readJsonFile, writeJsonFile } = require("./filesystem");
 const { normalizeInteger, normalizeText } = require("./normalize");
 const { isManagedLaunchWindowTarget } = require("./target-binding");
+const { launchAdapterLabel, launchAdapterTool } = require("./launch-adapters");
 
 const RETAIN_LAUNCH_MS = 24 * 60 * 60 * 1000;
 const ACTIVE_LAUNCH_STATES = new Set(["created", "spawning", "waiting_hook", "claimed", "connected"]);
@@ -32,7 +33,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
   function create({ workspaceId, workspacePath, adapterId, mode = "new", requestedSessionId = null, sourceCardSessionId = null }) {
     const launchId = `launch_${crypto.randomUUID()}`;
     const createdAt = new Date();
-    const provider = adapterId === "claude-cli" ? "claude" : "codex";
+    const provider = launchAdapterTool(adapterId) || "codex";
     const titleToken = `[AMO:${provider}:${launchId.slice(7, 15)}]`;
     const launch = {
       launchId,
@@ -74,7 +75,8 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     const sessionId = eventSessionId(payload);
     const workspaceId = normalizeText(payload?.workspaceId || payload?.workspace_id || payload?.amoWorkspaceId || payload?.amo_workspace_id);
     const tool = normalizeText(payload?.tool)?.toLowerCase();
-    const expectedTool = launch.adapterId === "claude-cli" ? "claude" : "codex";
+    const expectedTool = launchAdapterTool(launch.adapterId) || "codex";
+    const adapterLabel = launchAdapterLabel(launch.adapterId);
     if (!sessionId || workspaceId !== launch.workspaceId || tool !== expectedTool) {
       recordDebugLog("broker", "launch.claim_rejected", { launchId, sessionId, workspaceId, tool });
       return null;
@@ -172,7 +174,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     payload.windowHint = {
       ...(payload.windowHint || payload.window_hint || {}),
       process: claimed.windowProcessName || null,
-      title: `${launch.titleToken} ${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} - ${path.basename(launch.workspacePath)}`,
+      title: `${launch.titleToken} ${adapterLabel} - ${path.basename(launch.workspacePath)}`,
       titleToken: launch.titleToken,
       titleContains: [launch.titleToken],
       project: path.basename(launch.workspacePath),
@@ -182,7 +184,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       hwnd: claimed.windowHwnd || null,
       boundAt: claimed.windowResolvedAt || null,
       boundBy: "managed-launch",
-      boundLabel: `${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} managed launch`,
+      boundLabel: `${adapterLabel} managed launch`,
     };
     recordDebugLog("broker", "launch.claimed", {
       launchId,
@@ -398,7 +400,8 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
 }
 
 function attachLaunchToSession(session, launch) {
-  const expectedTool = launch.adapterId === "claude-cli" ? "claude" : "codex";
+  const expectedTool = launchAdapterTool(launch.adapterId) || "codex";
+  const adapterLabel = launchAdapterLabel(launch.adapterId);
   return {
     ...session,
     workspaceId: launch.workspaceId,
@@ -413,10 +416,12 @@ function attachLaunchToSession(session, launch) {
     claudeModel: launch.claudeModel || null,
     codexProviderId: launch.codexProviderId || null,
     codexModel: launch.codexModel || null,
+    grokProviderId: launch.grokProviderId || null,
+    grokModel: launch.grokModel || null,
     targetBinding: isManagedLaunchWindowTarget(session.targetBinding) ? null : session.targetBinding || null,
     windowHint: {
       ...(session.windowHint || {}),
-      title: `${launch.titleToken} ${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} - ${path.basename(launch.workspacePath)}`,
+      title: `${launch.titleToken} ${adapterLabel} - ${path.basename(launch.workspacePath)}`,
       titleToken: launch.titleToken,
       titleContains: [launch.titleToken],
       project: path.basename(launch.workspacePath),
@@ -427,7 +432,7 @@ function attachLaunchToSession(session, launch) {
       hwnd: launch.windowHwnd || null,
       boundAt: launch.windowResolvedAt || null,
       boundBy: "managed-launch",
-      boundLabel: `${launch.adapterId === "claude-cli" ? "Claude CLI" : "Codex CLI"} managed launch`,
+      boundLabel: `${adapterLabel} managed launch`,
     },
     launchWindowResolvedAt: launch.windowResolvedAt || null,
   };

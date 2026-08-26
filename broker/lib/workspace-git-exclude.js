@@ -205,6 +205,10 @@ function defaultWorkspaceGitExcludeEntries(workspaceRelativePath, includeClaudeS
       pattern: gitExcludePattern(prefix, ".codex/hooks.json"),
       reason: "project-local AMO Codex hook registration",
     },
+    {
+      pattern: gitExcludePattern(prefix, ".grok/hooks/amo.json"),
+      reason: "project-local AMO Grok Build hook registration",
+    },
   ];
 
   if (includeClaudeSettingsLocal) {

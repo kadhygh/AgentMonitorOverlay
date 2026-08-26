@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 
 export type ClaudeProviderPresetId = "anthropic-default" | "deepseek-v4-pro" | "deepseek-v4" | "glm-5.3";
 export type CodexProviderPresetId = "openai-default" | "deepseek-v4-pro" | "deepseek-v4";
+export type GrokProviderPresetId = "grok-default";
 export type StoredModelProviderId = "deepseek-v4" | "glm-coding";
 export type StoredClaudeProviderPresetId = StoredModelProviderId;
 
@@ -25,6 +26,14 @@ export interface ClaudeProviderDefinition {
 
 export interface CodexProviderDefinition {
   id: CodexProviderPresetId;
+  title: string;
+  detail: string;
+  model: string;
+  keyLabel?: string;
+}
+
+export interface GrokProviderDefinition {
+  id: GrokProviderPresetId;
   title: string;
   detail: string;
   model: string;
@@ -106,6 +115,15 @@ export const CODEX_PROVIDER_DEFINITIONS: CodexProviderDefinition[] = [
     detail: "Official Responses API routing through one-launch overrides and AMO's shared model catalog.",
     model: "deepseek-v4-flash",
     keyLabel: "DeepSeek API Key",
+  },
+];
+
+export const GROK_PROVIDER_DEFINITIONS: GrokProviderDefinition[] = [
+  {
+    id: "grok-default",
+    title: "Grok Default",
+    detail: "Use the existing local Grok Build account, model, and configuration.",
+    model: "Local Grok Build configuration",
   },
 ];
 
