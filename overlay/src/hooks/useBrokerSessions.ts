@@ -13,6 +13,8 @@ import type { BrokerReadiness } from "../components/BrokerReadinessPanel";
 import { ensureBrokerStarted } from "../startupBroker";
 import { publishStartupStatus } from "../startupStatus";
 import { recordStartupMilestone } from "../startupDiagnostics";
+import { useSessionReplica } from "./useSessionReplica";
+import { loadActiveSessionSnapshot } from "../api/sessionSnapshot";
 import type { AgentSession } from "../types";
 
 const REFRESH_TIMEOUT_MS = 2_500;
@@ -34,6 +36,7 @@ interface SessionCounts {
 }
 
 interface SessionSnapshotPayload {
+  brokerInstanceId?: string;
   revision?: number;
   sessions?: AgentSession[];
   counts?: SessionCounts;
@@ -44,6 +47,9 @@ interface SessionSnapshotPayload {
 }
 
 interface SessionChangedPayload {
+  brokerInstanceId?: string;
+  removedSessions?: AgentSession[];
+  counts?: SessionCounts;
   brokerPublishedAtMs?: number;
   reason?: string;
   sequence?: number;
@@ -61,7 +67,7 @@ export interface SessionHydration {
 }
 
 export function useBrokerSessions(options: UseBrokerSessionsOptions) {
-  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const { sessions, sessionsRef, setSessions, replica } = useSessionReplica();
   const [sessionOrder, setSessionOrder] = useState<string[]>([]);
   const [brokerReadiness, setBrokerReadiness] = useState<BrokerReadiness>({
     state: "checking",
@@ -81,7 +87,6 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
   const [archiveHasMore, setArchiveHasMore] = useState(false);
   const archiveOffsetRef = useRef(0);
   const archiveLoadingRef = useRef(false);
-  const sessionsRef = useRef(sessions);
   const hasLoadedSessionSnapshotRef = useRef(false);
   const revisionGateRef = useRef<SessionRevisionGate | null>(null);
   const refreshSingleFlightRef = useRef<ReturnType<typeof createSingleFlight<void>> | null>(null);
@@ -102,6 +107,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
     }
 
     return singleFlight.run(async () => {
+      const requestGeneration = revisionGateRef.current!.requestGeneration();
       const startedAt = performance.now();
       const shouldLog = reason !== "interval";
       const controller = new AbortController();
@@ -115,18 +121,15 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
       }
 
       try {
-        const response = await fetch(BROKER_SESSIONS_URL, {
-          cache: "no-store",
-          signal: controller.signal,
-        });
-        if (!response.ok) throw new Error(`broker returned ${response.status}`);
-
-        const payload = (await response.json()) as SessionSnapshotPayload | AgentSession[];
+        const payload = await loadActiveSessionSnapshot(controller.signal);
         const nextSessions = normalizeSessions(payload);
         if (!nextSessions) throw new Error("broker response has no sessions");
-        const snapshotRevision = Array.isArray(payload) ? undefined : payload.revision;
-        const revisionResult = revisionGateRef.current!.acceptSnapshot(snapshotRevision);
+        const snapshotRevision = payload.revision;
+        const revisionResult = replica.acceptsSnapshot(payload.brokerInstanceId, payload.storeRevision)
+          ? revisionGateRef.current!.acceptSnapshot(snapshotRevision, payload.brokerInstanceId, requestGeneration)
+          : { accepted: false, revision: snapshotRevision };
         if (!revisionResult.accepted) {
+          runtimeControllerRef.current?.scheduleReconcile("stale-snapshot", null);
           options.postDebugLog("sessions.refresh.stale_ignored", {
             reason,
             snapshotRevision: revisionResult.revision,
@@ -140,7 +143,9 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
           return;
         }
 
+        replica.beginInstance(payload.brokerInstanceId);
         const incomingActive = nextSessions.filter((session) => !session.archivedAt);
+        replica.markMissingActive(incomingActive, payload.storeRevision);
         const incomingArchived = nextSessions.filter((session) => Boolean(session.archivedAt));
         const preservedArchived = incomingArchived.length > 0
           ? incomingArchived
@@ -151,7 +156,6 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
           ...preservedArchived.filter((session) => !activeIds.has(session.sessionId)),
         ];
         setSessions(mergedSessions);
-        sessionsRef.current = mergedSessions;
         setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, mergedSessions));
         if (!Array.isArray(payload) && payload.counts) setSessionCounts(payload.counts);
         else setSessionCounts({
@@ -253,15 +257,15 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
       );
       const page = normalizeSessions(payload);
       if (!page) throw new Error("archive response has no sessions");
+      if (payload.brokerInstanceId && payload.brokerInstanceId !== revisionGateRef.current!.instance()) return;
       const activeSessions = sessionsRef.current.filter((session) => !session.archivedAt);
       const existingArchived = reset ? [] : sessionsRef.current.filter((session) => Boolean(session.archivedAt));
       const archivedById = new Map(existingArchived.map((session) => [session.sessionId, session]));
       for (const session of page) archivedById.set(session.sessionId, session);
       const mergedSessions = [...activeSessions, ...archivedById.values()];
-      sessionsRef.current = mergedSessions;
       setSessions(mergedSessions);
       setSessionOrder((previousOrder) => mergeSessionOrder(previousOrder, mergedSessions));
-      if (payload.counts) setSessionCounts(payload.counts);
+      if (payload.counts && (payload.revision ?? 0) >= revisionGateRef.current!.current()) setSessionCounts(payload.counts);
       archiveOffsetRef.current = offset + page.length;
       setArchiveHasMore(Boolean(payload.hasMore));
       options.postDebugLog("sessions.archive_load.ok", {
@@ -319,9 +323,11 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
     let runtimeController: SessionRuntimeController;
 
     const applyChangedSession = (changedSession: AgentSession, eventReason: string, sequence: number | undefined, applyStartedAt: number) => {
+      const acceptedSession = replica.remember(changedSession);
+      if (!acceptedSession) return;
+      changedSession = acceptedSession;
       if (changedSession.dismissedAt) {
         const nextSessions = sessionsRef.current.filter((session) => session.sessionId !== changedSession.sessionId);
-        sessionsRef.current = nextSessions;
         setSessions(nextSessions);
         setSessionOrder((previousOrder) => previousOrder.filter((sessionId) => sessionId !== changedSession.sessionId));
         options.clearWorkspacePanelForSession(changedSession.sessionId);
@@ -336,7 +342,6 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
       }
 
       const nextSessions = mergeChangedSession(sessionsRef.current, changedSession);
-      sessionsRef.current = nextSessions;
       setSessions(nextSessions);
       setSessionOrder((previousOrder) =>
         previousOrder.includes(changedSession.sessionId) ? previousOrder : [...previousOrder, changedSession.sessionId],
@@ -360,7 +365,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         const eventReason = payload.reason ?? "unknown";
         const changedSession = payload.session;
         const eventSessionId = payload.sessionId ?? changedSession?.sessionId ?? null;
-        const revision = revisionGateRef.current!.observeEvent(payload.sequence);
+        const revision = revisionGateRef.current!.observeEvent(payload.sequence, payload.brokerInstanceId);
         options.postDebugLog("session_event.received", {
           sequence: payload.sequence ?? null,
           reason: eventReason,
@@ -371,11 +376,20 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
           brokerToOverlayMs: typeof payload.brokerPublishedAtMs === "number" ? receivedAtMs - payload.brokerPublishedAtMs : null,
         });
         if (revision.duplicate) return;
+        if (payload.removedSessions) {
+          if (payload.counts) setSessionCounts(payload.counts);
+          for (const session of payload.removedSessions) replica.remember(session);
+          setSessions((current) => current);
+          setSessionOrder((current) => mergeSessionOrder(current, sessionsRef.current));
+          runtimeController.scheduleReconcile(eventReason, null);
+          return;
+        }
 
         const previousSession = changedSession?.sessionId
           ? sessionsRef.current.find((session) => session.sessionId === changedSession.sessionId)
           : null;
         setSessionCounts((current) => {
+          if (payload.counts) return payload.counts;
           let active = current.active;
           let archived = current.archived;
           if (eventReason === "dismiss-all") {
@@ -408,12 +422,10 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         if (eventReason === "dismiss-archived") {
           const archivedIds = new Set(sessionsRef.current.filter((session) => Boolean(session.archivedAt)).map((session) => session.sessionId));
           const nextSessions = sessionsRef.current.filter((session) => !archivedIds.has(session.sessionId));
-          sessionsRef.current = nextSessions;
           setSessions(nextSessions);
           setSessionOrder((previousOrder) => previousOrder.filter((sessionId) => !archivedIds.has(sessionId)));
           options.clearSessionMenus();
         } else if (eventReason === "dismiss-all") {
-          sessionsRef.current = [];
           setSessions([]);
           setSessionOrder([]);
           options.clearSessionMenus();
@@ -434,7 +446,11 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
       sseHealthyRef.current = true;
       let brokerRevision: number | null = null;
       try {
-        const payload = JSON.parse(event.data) as { revision?: number };
+        const payload = JSON.parse(event.data) as { revision?: number; brokerInstanceId?: string };
+        const instance = revisionGateRef.current!.observeInstance(payload.brokerInstanceId);
+        if (!instance.accepted) return;
+        replica.beginInstance(payload.brokerInstanceId);
+        if (instance.changed) runtimeController.scheduleReconcile("broker-instance-changed", null);
         brokerRevision = typeof payload.revision === "number" ? payload.revision : null;
       } catch {
         // Older brokers did not include a ready payload revision.
@@ -444,7 +460,7 @@ export function useBrokerSessions(options: UseBrokerSessionsOptions) {
         brokerRevision,
         overlayRevision: revisionGateRef.current!.current(),
       });
-      if (brokerRevision !== null && brokerRevision !== revisionGateRef.current!.current()) {
+      if (!hasLoadedSessionSnapshotRef.current || (brokerRevision !== null && brokerRevision !== revisionGateRef.current!.current())) {
         runtimeController.scheduleReconcile("stream-reconcile", null);
       }
     };

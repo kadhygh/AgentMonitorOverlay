@@ -7,6 +7,8 @@ async function handleSessionRoutes(req, res, url, context) {
     return sendHandled(res, 200, {
       ok: true,
       revision: context.getSessionRevision(),
+      brokerInstanceId: context.brokerInstanceId,
+      storeRevision: context.sessions.revision,
       ...result,
     });
   }
@@ -24,7 +26,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissArchivedSessions(payload || {});
     await context.persistSnapshot("session-mutation");
-    context.publishSessionChanged("dismiss-archived", null);
+    context.publishSessionChanged("dismiss-archived", null, { removedSessions: result.sessions });
     return sendHandled(res, 200, result);
   }
 
@@ -32,7 +34,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissAllSessions(payload || {});
     await context.persistSnapshot("session-mutation");
-    context.publishSessionChanged("dismiss-all", null);
+    context.publishSessionChanged("dismiss-all", null, { removedSessions: result.sessions });
     return sendHandled(res, 200, result);
   }
 
@@ -49,6 +51,7 @@ async function handleSessionRoutes(req, res, url, context) {
     return sendHandled(res, 200, {
       ok: true,
       revision: context.getSessionRevision(),
+      brokerInstanceId: context.brokerInstanceId,
       session: context.decorateSession(session),
     });
   }

@@ -55,6 +55,8 @@ import { useWindowBindDrag } from "../hooks/useWindowBindDrag";
 import { useWindowsNotifications } from "../hooks/useWindowsNotifications";
 import { useWorkspacePanels } from "../hooks/useWorkspacePanels";
 import { SessionRowContent, toolDisplayForSession } from "../components/SessionCard";
+import { TaskCard } from "../components/TaskCard";
+import { useTaskCardCommands } from "../hooks/useTaskCardCommands";
 import {
   BrokerReadinessPanel,
   brokerReadinessLabels,
@@ -422,6 +424,22 @@ export function MainOverlayApp() {
     });
   }, [sessions, sessionOrder, sessionFilter, sessionSearch, priorityFilters]);
 
+  const cardCommands = useTaskCardCommands({
+    openNote: (session) => void openBridgePath(session, "note"),
+    openVSCode: (session) => void openSessionWorkspaceInVSCode(session),
+    openCanvas: (session) => void openBridgePath(session, "canvas"),
+    markReviewed: (session) => void markSessionReviewed(session, "manual"),
+    unbindWindow: (session) => void clearWindowBinding(session),
+    archive: (session) => void archiveSession(session),
+    dismiss: (session) => void dismissSession(session),
+    openApp: (session) => void openCodexAppTarget(session, true),
+    activate: (session) => void activateSession(session),
+    resume: (session) => void resumeManagedSession(session),
+    handleAttention: (session) => void handleSessionAttention(session),
+    openLaunchPanel: (session, x, y) => void openLaunchPanel(session, x, y),
+    openWorkspacePanel: (session, x, y) => void openWorkspacePanel(session, x, y),
+    startWindowBindDrag: (session, event) => startWindowBindDrag(session, event),
+  });
   const sessionPageCount = Math.max(1, Math.ceil(filteredSessions.length / MAX_VISIBLE_SESSION_CARDS));
   const sessionPageStart = sessionPage * MAX_VISIBLE_SESSION_CARDS;
   const orderedSessions = useMemo(
@@ -811,8 +829,10 @@ export function MainOverlayApp() {
                 >
                   <GripVertical size={15} aria-hidden="true" />
                 </span>
-                <SessionRowContent
+                <TaskCard
+                  commands={cardCommands}
                   session={session}
+                  updatedAge={formatAgo(session.updatedAt)}
                   activating={activatingId === session.sessionId}
                   openingTarget={openingPath?.sessionId === session.sessionId ? openingPath.target : null}
                   openingVSCode={openingVSCodeSessionId === session.sessionId}
@@ -822,20 +842,6 @@ export function MainOverlayApp() {
                   dismissing={dismissingSessionId === session.sessionId}
                   attentionSignal={sessionHasAttentionSignal(session)}
                   attentionVisualActive={isSessionVisualAttentionActive(session)}
-                  onOpenNote={() => void openBridgePath(session, "note")}
-                  onOpenVSCode={() => void openSessionWorkspaceInVSCode(session)}
-                  onOpenCanvas={() => void openBridgePath(session, "canvas")}
-                  onMarkReviewed={() => void markSessionReviewed(session, "manual")}
-                  onUnbindWindow={() => void clearWindowBinding(session)}
-                  onArchive={() => void archiveSession(session)}
-                  onDismiss={() => void dismissSession(session)}
-                  onOpenCodexAppTarget={() => void openCodexAppTarget(session, true)}
-                  onActivateSession={() => void activateSession(session)}
-                  onResumeSession={() => void resumeManagedSession(session)}
-                  onHandleAttention={() => void handleSessionAttention(session)}
-                  onOpenLaunchPanel={(x, y) => void openLaunchPanel(session, x, y)}
-                  onOpenWorkspacePanel={(x, y) => void openWorkspacePanel(session, x, y)}
-                  onStartWindowBindDrag={(event) => startWindowBindDrag(session, event)}
                   windowBindDragging={windowBindDrag?.sessionId === session.sessionId}
                 />
               </div>

@@ -20,9 +20,10 @@ function querySessions(allSessions, searchParams = new URLSearchParams()) {
   const active = allSessions.filter((session) => !session.archivedAt);
   const archived = allSessions.filter((session) => Boolean(session.archivedAt));
   const scoped = scope === "active" ? active : scope === "archived" ? archived : allSessions;
-  const offset = boundedInteger(searchParams.get("offset"), 0, Number.MAX_SAFE_INTEGER, 0);
+  const completeActiveSnapshot = scope === "active" && searchParams.get("snapshot") === "1";
+  const offset = completeActiveSnapshot ? 0 : boundedInteger(searchParams.get("offset"), 0, Number.MAX_SAFE_INTEGER, 0);
   const defaultLimit = scope === "archived" ? DEFAULT_ARCHIVE_LIMIT : DEFAULT_ACTIVE_LIMIT;
-  const limit = boundedInteger(searchParams.get("limit"), 1, MAX_LIMIT, defaultLimit);
+  const limit = completeActiveSnapshot ? Math.max(1, scoped.length) : boundedInteger(searchParams.get("limit"), 1, MAX_LIMIT, defaultLimit);
   const summary = searchParams.get("summary") !== "0";
   const page = scoped.slice(offset, offset + limit);
 

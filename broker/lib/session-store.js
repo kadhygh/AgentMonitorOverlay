@@ -6,6 +6,7 @@ const { httpError } = require("./http");
 const { refreshSessionTitle: refreshProviderSessionTitle, resolveSessionTitle } = require("./display-names");
 const { normalizeInteger, normalizeText, normalizeTextArray, normalizeVersionNumber } = require("./normalize");
 const { createSnapshotWriter } = require("./snapshot-writer");
+const { SessionCollection } = require("./session-collection");
 const { normalizeWindowHint, resolveSessionTargetBinding } = require("./target-binding");
 
 const VALID_STATES = new Set([
@@ -38,7 +39,7 @@ function createSessionStore({
     throw new Error("createSessionStore requires dataFile");
   }
 
-  const sessions = new Map();
+  const sessions = new SessionCollection();
   let currentPromptEventHandler = promptEventHandler;
   const bridgeUrl = typeof expectedBridgeUrl === "function" ? expectedBridgeUrl : () => expectedBridgeUrl;
   const healthCache = createObsidianPluginHealthCache({
@@ -648,6 +649,7 @@ function createSessionStore({
       updatedAt: now,
     };
 
+    sessions.stamp(session);
     sessions.delete(sessionId);
     recordDebugLog("broker", "session.dismissed", {
       sessionId,
@@ -668,9 +670,11 @@ function createSessionStore({
     const now = new Date().toISOString();
     const reason = normalizeText(payload.reason) || "user-clear-archive";
     const sessionIds = [];
+    const removedSessions = [];
 
     for (const [sessionId, session] of sessions) {
       if (!session.archivedAt) continue;
+      removedSessions.push(sessions.stamp({ ...session, dismissedAt: now, dismissReason: reason }));
       sessions.delete(sessionId);
       sessionIds.push(sessionId);
     }
@@ -688,6 +692,7 @@ function createSessionStore({
       reason,
       count: sessionIds.length,
       sessionIds,
+      sessions: removedSessions,
     };
   }
 
@@ -695,6 +700,8 @@ function createSessionStore({
     const now = new Date().toISOString();
     const reason = normalizeText(payload.reason) || "user-clear";
     const count = sessions.size;
+    const removedSessions = Array.from(sessions.values(), (session) =>
+      sessions.stamp({ ...session, dismissedAt: now, dismissReason: reason }));
     sessions.clear();
     recordDebugLog("broker", "session.dismissed_all", {
       count,
@@ -707,6 +714,7 @@ function createSessionStore({
       dismissedAt: now,
       reason,
       count,
+      sessions: removedSessions,
     };
   }
 
@@ -760,7 +768,7 @@ function createSessionStore({
 
   function rawSessionsForSnapshot() {
     return Array.from(sessions.values()).map((session) => {
-      const { obsidianPluginHealth: _health, ...rawSession } = session;
+      const { obsidianPluginHealth: _health, sessionRevision: _revision, brokerInstanceId: _instance, ...rawSession } = session;
       return rawSession;
     });
   }

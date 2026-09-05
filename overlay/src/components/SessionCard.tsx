@@ -114,8 +114,9 @@ export function LaunchToolMark({ adapterId }: { adapterId: LaunchPanelAdapterId 
   );
 }
 
-interface SessionRowContentProps {
+export interface SessionRowContentProps {
   session: AgentSession;
+  updatedAge?: string;
   activating: boolean;
   openingTarget: "note" | "canvas" | null;
   openingVSCode: boolean;
@@ -144,6 +145,7 @@ interface SessionRowContentProps {
 
 export function SessionRowContent({
   session,
+  updatedAge,
   activating,
   openingTarget,
   openingVSCode,
@@ -226,7 +228,8 @@ export function SessionRowContent({
     : session.sessionNaming?.status === "pending"
     ? `Renaming this session in ${display.label}`
     : conversationTitle;
-  const subtitleLabel = `${sessionProjectName} · ${statusLabel} · ${display.label} · ${formatAgo(session.updatedAt)}`;
+  const ageLabel = updatedAge ?? formatAgo(session.updatedAt);
+  const subtitleLabel = `${sessionProjectName} · ${statusLabel} · ${display.label} · ${ageLabel}`;
 
   return (
     <span className="session-main">
@@ -362,7 +365,7 @@ export function SessionRowContent({
             <span className="session-info-project">{sessionProjectName}</span>
             <span className="session-meta-separator">·</span>
             <span>
-              {display.label} · {formatAgo(session.updatedAt)}
+              {display.label} · {ageLabel}
             </span>
           </span>
         </span>

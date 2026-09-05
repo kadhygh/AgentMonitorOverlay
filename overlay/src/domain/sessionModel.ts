@@ -39,8 +39,10 @@ export function normalizeSessions(value: unknown): AgentSession[] | null {
 
 export function mergeSessionOrder(previousOrder: string[], nextSessions: AgentSession[]) {
   const nextIds = nextSessions.map((session) => session.sessionId);
-  const keptIds = previousOrder.filter((sessionId) => nextIds.includes(sessionId));
-  const addedIds = nextIds.filter((sessionId) => !keptIds.includes(sessionId));
+  const nextIdSet = new Set(nextIds);
+  const keptIds = previousOrder.filter((sessionId) => nextIdSet.has(sessionId));
+  const keptIdSet = new Set(keptIds);
+  const addedIds = nextIds.filter((sessionId) => !keptIdSet.has(sessionId));
   return [...keptIds, ...addedIds];
 }
 

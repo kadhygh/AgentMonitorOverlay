@@ -154,7 +154,7 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
     const bindingRevision = !previousSessionId
       ? (Number.isInteger(launch.bindingRevision) ? launch.bindingRevision : 0) + 1
       : launch.bindingRevision || 1;
-    const claimed = update(launchId, {
+    const claimPatch = {
       state: "connected",
       claimedSessionId: sessionId,
       currentSessionId: sessionId,
@@ -163,7 +163,10 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       cliHostPid: normalizeInteger(payload?.hookParentPid || payload?.hook_parent_pid) || launch.cliHostPid || null,
       bindingRevision,
       claimedAt,
-    });
+    };
+    // Repeated owner hooks are observations, not new durable launch transitions.
+    const claimChanged = Object.entries(claimPatch).some(([key, value]) => key !== "claimedAt" && launch[key] !== value);
+    const claimed = claimChanged ? update(launchId, claimPatch) : launch;
     payload.workspaceId = launch.workspaceId;
     payload.workspacePath = launch.workspacePath;
     payload.launchId = launch.launchId;

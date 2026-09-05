@@ -8,12 +8,37 @@ export interface SessionRevisionObservation {
 
 export class SessionRevisionGate {
   private revision = 0;
+  private instanceId: string | null = null;
+  private retiredInstances = new Set<string>();
+  private generation = 0;
+
+  requestGeneration() {
+    return this.generation;
+  }
+
+  instance() {
+    return this.instanceId;
+  }
+
+  observeInstance(instanceId?: string) {
+    if (!instanceId || instanceId === this.instanceId) return { accepted: true, changed: false };
+    if (this.retiredInstances.has(instanceId)) return { accepted: false, changed: false };
+    if (this.instanceId) this.retiredInstances.add(this.instanceId);
+    this.instanceId = instanceId;
+    this.generation += 1;
+    this.revision = 0;
+    return { accepted: true, changed: true };
+  }
 
   current() {
     return this.revision;
   }
 
-  observeEvent(value: unknown): SessionRevisionObservation {
+  observeEvent(value: unknown, instanceId?: string): SessionRevisionObservation {
+    if (instanceId && this.instanceId && instanceId !== this.instanceId) {
+      return { accepted: false, duplicate: true, gap: false, previousRevision: this.revision, revision: this.revision };
+    }
+    this.observeInstance(instanceId);
     const next = normalizeRevision(value);
     const previousRevision = this.revision;
     if (next === null || next <= previousRevision) {
@@ -36,7 +61,11 @@ export class SessionRevisionGate {
     };
   }
 
-  acceptSnapshot(value: unknown) {
+  acceptSnapshot(value: unknown, instanceId?: string, requestGeneration = this.generation) {
+    if (requestGeneration !== this.generation && instanceId !== this.instanceId) {
+      return { accepted: false, revision: this.revision };
+    }
+    if (!this.observeInstance(instanceId).accepted) return { accepted: false, revision: this.revision };
     const next = normalizeRevision(value);
     if (next === null) return { accepted: this.revision === 0, revision: this.revision };
     if (next < this.revision) return { accepted: false, revision: next };

@@ -63,6 +63,8 @@ export interface ObsidianPluginHealth {
 }
 
 export interface AgentSession {
+  brokerInstanceId?: string;
+  sessionRevision?: number;
   tool: AgentTool;
   sessionId: string;
   cwd: string;

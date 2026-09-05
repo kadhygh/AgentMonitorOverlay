@@ -24,6 +24,21 @@ function matchingPayload(launch, sessionId) {
   };
 }
 
+test("steady owner hooks avoid file writes while changed host identity persists", (t) => {
+  const { store } = createTestStore(t);
+  const launch = store.create({ workspaceId: "workspace-test", workspacePath: "C:\\Projects\\test", adapterId: "codex-cli" });
+  const payload = { ...matchingPayload(launch, "session-test"), hookParentPid: 10 };
+  store.claim({ ...payload });
+  const originalWrite = fs.writeFileSync;
+  let writes = 0;
+  t.mock.method(fs, "writeFileSync", function (...args) { writes += 1; return originalWrite.apply(this, args); });
+  for (let index = 0; index < 100; index += 1) store.claim({ ...payload, hookEventName: "PostToolUse" });
+  assert.equal(writes, 0);
+  const changed = store.claim({ ...payload, hookParentPid: 11 });
+  assert.equal(changed.launch.cliHostPid, 11);
+  assert.equal(writes, 1);
+});
+
 test("Grok Build managed launch claims only Grok hook events", (t) => {
   const { store } = createTestStore(t);
   const launch = store.create({

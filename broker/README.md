@@ -47,6 +47,10 @@ Returns the unified session list. The default request is an active summary page.
 - `limit=<page size>` (archive defaults to 50 and is capped at 200);
 - `summary=1|0`.
 
+Use `scope=active&snapshot=1&summary=1` for a complete active snapshot when hydrating a task surface. This bypasses the active page limit; ordinary active/archive pagination remains unchanged.
+
+Snapshots include `brokerInstanceId` and `storeRevision`, and session records include `brokerInstanceId` and `sessionRevision`. Treat transport `revision` as instance-scoped. On Broker instance changes, reset stream reconciliation and reject responses from retired instances. Compare per-session mutation revisions when applying command results and SSE updates, since disk and HTTP completion can occur out of order. Runtime revision metadata is excluded from durable session snapshots.
+
 Responses include `revision`, page `count`, matching `total`, `offset`, `limit`, and `hasMore`. Summary records omit transcript paths/hashes and other internal hook fields. Use `GET /api/sessions/:id` only when a full detail record is required.
 
 Example summary response:

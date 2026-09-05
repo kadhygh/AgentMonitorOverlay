@@ -158,6 +158,7 @@ const routeContext = {
   startedAt,
   sessions,
   debugLogStore,
+  brokerInstanceId: sessions.brokerInstanceId,
   debugStatus,
   updateDebugConfig,
   handleDebugLog,
@@ -291,6 +292,7 @@ function openSessionEventStream(req, res) {
 res.write(`event: broker.ready\ndata: ${JSON.stringify({
     ok: true,
     startedAt: startedAt.toISOString(),
+    brokerInstanceId: sessions.brokerInstanceId,
     revision: eventSequence,
   })}\n\n`);
 
@@ -329,11 +331,14 @@ function publishSessionChanged(reason, session, extra = {}) {
   }
 
   const publishStartedAtMs = Date.now();
-  const decoratedSession = session ? decorateSession(session) : null;
+  const currentSession = session ? sessions.get(session.sessionId) || (session.dismissedAt ? session : null) : null;
+  const decoratedSession = currentSession ? decorateSession(currentSession) : null;
   const payload = JSON.stringify({
     ok: true,
     sequence,
     event: "sessions.changed",
+    brokerInstanceId: sessions.brokerInstanceId,
+    counts: sessions.counts,
     reason,
     sessionId: session?.sessionId || null,
     session: decoratedSession,

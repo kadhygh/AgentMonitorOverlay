@@ -73,6 +73,8 @@ export class SessionRuntimeController {
   private fallbackAttempt = 0;
   private fallbackTimer: number | null = null;
   private reconcileTimer: number | null = null;
+  private reconcileMaxTimer: number | null = null;
+  private reconcilePending = false;
   private removeResumeListener: (() => void) | null = null;
   private running = false;
   private sseHealthy = false;
@@ -124,6 +126,7 @@ export class SessionRuntimeController {
     this.running = false;
     this.clearFallback();
     this.clearReconcile();
+    this.reconcilePending = false;
     this.removeResumeListener?.();
     this.removeResumeListener = null;
     this.eventSource?.close();
@@ -137,22 +140,36 @@ export class SessionRuntimeController {
 
   scheduleReconcile(reason = "unknown", sessionId: string | null = null) {
     if (!this.running) return;
+    this.reconcilePending = true;
+    if (!this.canRefresh()) return;
     const rescheduled = this.reconcileTimer !== null;
-    this.clearReconcile();
+    if (this.reconcileTimer !== null) this.host.clearTimeout(this.reconcileTimer);
     this.options.onReconcileScheduled?.({
       reason,
       sessionId,
       delayMs: this.reconcileDelayMs,
       rescheduled,
     });
-    this.reconcileTimer = this.host.setTimeout(() => {
-      this.reconcileTimer = null;
-      void this.options.refresh("sse-reconcile");
-    }, this.reconcileDelayMs);
+    this.reconcileTimer = this.host.setTimeout(() => this.flushReconcile(), this.reconcileDelayMs);
+    if (this.reconcileMaxTimer === null) {
+      this.reconcileMaxTimer = this.host.setTimeout(() => this.flushReconcile(), Math.max(1000, this.reconcileDelayMs));
+    }
+  }
+
+  private flushReconcile() {
+    this.clearReconcile();
+    if (!this.running || !this.canRefresh()) return;
+    this.reconcilePending = false;
+    void this.options.refresh("sse-reconcile");
   }
 
   private resume() {
-    if (!this.running || this.sseHealthy || !this.canRefresh()) return;
+    if (!this.running || !this.canRefresh()) return;
+    if (this.reconcilePending) {
+      this.flushReconcile();
+      return;
+    }
+    if (this.sseHealthy) return;
     this.fallbackAttempt = 0;
     void Promise.resolve(this.options.refresh("runtime-resume")).finally(() => {
       if (this.running && !this.sseHealthy) this.scheduleFallback();
@@ -201,6 +218,8 @@ export class SessionRuntimeController {
   }
 
   private clearReconcile() {
+    if (this.reconcileMaxTimer !== null) this.host.clearTimeout(this.reconcileMaxTimer);
+    this.reconcileMaxTimer = null;
     if (this.reconcileTimer === null) return;
     this.host.clearTimeout(this.reconcileTimer);
     this.reconcileTimer = null;

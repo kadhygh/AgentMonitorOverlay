@@ -8,7 +8,7 @@ import {
   brokerSessionTargetBindingClearUrl,
   postBrokerJson,
 } from "../api/brokerClient";
-import { sessionNeedsManualAttentionClear, sessionNeedsReview } from "../domain/sessionModel";
+import { mergeChangedSession, sessionNeedsManualAttentionClear, sessionNeedsReview } from "../domain/sessionModel";
 import { targetBindingForSession } from "../domain/routingModel";
 import type { CandidateMenuState } from "../components/CandidateMenu";
 import type { LaunchPanelState } from "../components/LaunchPanel";
@@ -211,14 +211,17 @@ export function useSessionActions(options: UseSessionActionsOptions) {
         ok: boolean;
         count: number;
         sessionIds: string[];
+        sessions?: AgentSession[];
       }>(
         BROKER_DISMISS_ARCHIVED_URL,
         { reason: "user-clear-archive" },
       );
       const dismissedIds = new Set(result.sessionIds || []);
-      options.setSessions((previous) =>
-        previous.filter((session) => !dismissedIds.has(session.sessionId)),
-      );
+      if (result.sessions) {
+        options.setSessions((previous) => result.sessions!.reduce(mergeChangedSession, previous));
+      } else {
+        await options.refreshSessions("archive-clear");
+      }
       options.setSessionOrder((previousOrder) =>
         previousOrder.filter((sessionId) => !dismissedIds.has(sessionId)),
       );
@@ -253,12 +256,13 @@ export function useSessionActions(options: UseSessionActionsOptions) {
     });
 
     try {
-      const result = await postBrokerJson<{ ok: boolean; sessionId: string }>(
+      const result = await postBrokerJson<{ ok: boolean; sessionId: string; session?: AgentSession }>(
         brokerSessionDismissUrl(session.sessionId),
         { reason: "user" },
       );
       const dismissedSessionId = result.sessionId || session.sessionId;
-      options.setSessions((previous) => previous.filter((item) => item.sessionId !== dismissedSessionId));
+      if (result.session) options.setSessions((previous) => mergeChangedSession(previous, result.session!));
+      else await options.refreshSessions("dismiss");
       options.setSessionOrder((previousOrder) => previousOrder.filter((sessionId) => sessionId !== dismissedSessionId));
       options.setCandidateMenu((current) =>
         current?.session?.sessionId === dismissedSessionId ? null : current,

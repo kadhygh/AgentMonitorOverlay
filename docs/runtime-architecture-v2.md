@@ -165,7 +165,7 @@ Current implementation:
 - `runtime/StartupCoordinator` owns single-flight Broker bootstrap followed by initial hydration; data hydration is still attempted when bootstrap fails because another local Broker may already own the endpoint.
 - `startupStatus.ts` publishes an independent `shell/runtime/data` startup snapshot instead of one ambiguous ready flag.
 - `runtime/SessionRuntimeController` owns EventSource lifecycle, 350 ms reconcile debounce, stream-health state, hidden/offline gates, focus/online recovery, and bounded 45 s to 5 min fallback backoff.
-- `useBrokerSessions` remains the React session-store adapter and applies optimistic payloads; it no longer owns EventSource or interval lifecycle policy.
+- `useBrokerSessions` remains the main React session adapter; `runtime/SessionReplica` now owns per-task freshness, deletion barriers, and reference preservation, shared through `useSessionReplica` with Priority Manager. Broker instance identity and request generations protect reconnects. See `docs/task-card-scale-performance-2026-09-05.md` for the September scale pass.
 - `runtime/AdaptivePollController` owns visible-window external-fact sampling and request coalescing for Harness Lab.
 - Priority Manager uses Broker SSE invalidation; Utility Window visibility uses lifecycle events plus focus reconciliation; Attention rendering schedules exact semantic transitions.
 

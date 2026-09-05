@@ -35,3 +35,12 @@ test("detail summaries omit internal transcript fields but preserve card fields"
   assert.equal(summary.transcriptPath, undefined);
   assert.equal(summary.hookEvents, undefined);
 });
+
+test("complete active snapshots include hundreds of cards without changing paginated queries", () => {
+  const records = Array.from({ length: 350 }, (_, index) => ({ sessionId: `session-${index}` }));
+  assert.equal(querySessions(records).sessions.length, 200);
+  const snapshot = querySessions(records, new URLSearchParams("scope=active&snapshot=1"));
+  assert.equal(snapshot.sessions.length, 350);
+  assert.equal(snapshot.hasMore, false);
+  assert.equal(snapshot.counts.active, 350);
+});

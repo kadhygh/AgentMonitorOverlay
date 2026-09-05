@@ -1,16 +1,15 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { CheckSquare, Flag, ListTodo, Search, Square, X } from "lucide-react";
 import {
   BROKER_SESSION_EVENTS_URL,
-  BROKER_SESSIONS_URL,
   BROKER_SESSION_PRIORITIES_URL,
-  getBrokerJson,
   postBrokerJson,
 } from "../api/brokerClient";
 import { toolDisplayForSession } from "../components/SessionCard";
 import {
   SESSION_PRIORITIES,
   normalizeSessions,
+  mergeChangedSession,
   normalizeSessionPriority,
   sessionPriorityLabels,
 } from "../domain/sessionModel";
@@ -18,6 +17,9 @@ import { projectName } from "../domain/routingModel";
 import type { AgentSession, SessionPriority } from "../types";
 import type { SessionPriorityUpdateResult } from "../hooks/useSessionPriorities";
 import { SessionRuntimeController } from "../runtime/sessionRuntimeController";
+import { SessionRevisionGate, createSingleFlight } from "../runtime/sessionRevisionGate";
+import { useSessionReplica } from "../hooks/useSessionReplica";
+import { loadActiveSessionSnapshot } from "../api/sessionSnapshot";
 import {
   closeUtilityWindow,
   startUtilityWindowDrag,
@@ -50,7 +52,10 @@ function mergeUpdatedSessions(current: AgentSession[], updated: AgentSession[]) 
 export function PriorityManagerApp() {
   useAmoThemeRuntime();
   useUtilityWindowLifecycle("priorities");
-  const [sessions, setSessions] = useState<AgentSession[]>([]);
+  const { sessions, setSessions, replica } = useSessionReplica();
+  const gate = useRef(new SessionRevisionGate()).current;
+  const refreshFlight = useRef(createSingleFlight<void>()).current;
+  const controllerRef = useRef<SessionRuntimeController | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(() => new Set());
   const [priorityFilter, setPriorityFilter] = useState<PriorityFilter>("all");
   const [search, setSearch] = useState("");
@@ -58,17 +63,26 @@ export function PriorityManagerApp() {
   const [feedback, setFeedback] = useState("Loading active cards...");
 
   async function loadSessions() {
-    try {
-      const payload = await getBrokerJson<unknown>(BROKER_SESSIONS_URL);
-      const nextSessions = normalizeSessions(payload) || [];
-      setSessions(nextSessions.filter((session) => !session.archivedAt));
-      setSelectedIds((current) => new Set([...current].filter((sessionId) =>
-        nextSessions.some((session) => session.sessionId === sessionId && !session.archivedAt)
-      )));
-      setFeedback(`${nextSessions.filter((session) => !session.archivedAt).length} active cards`);
-    } catch (error) {
-      setFeedback(`Could not load cards: ${(error as Error).message}`);
-    }
+    return refreshFlight.run(async () => {
+      const requestGeneration = gate.requestGeneration();
+      try {
+        const payload = await loadActiveSessionSnapshot(AbortSignal.timeout(2500));
+        if (!replica.acceptsSnapshot(payload.brokerInstanceId, payload.storeRevision) ||
+          !gate.acceptSnapshot(payload.revision, payload.brokerInstanceId, requestGeneration).accepted) {
+          controllerRef.current?.scheduleReconcile("priority-stale-snapshot");
+          return;
+        }
+        replica.beginInstance(payload.brokerInstanceId);
+        const nextSessions = normalizeSessions(payload) || [];
+        replica.markMissingActive(nextSessions, payload.storeRevision);
+        setSessions(nextSessions.filter((session) => !session.archivedAt));
+        const activeIds = new Set(nextSessions.filter((session) => !session.archivedAt).map((session) => session.sessionId));
+        setSelectedIds((current) => new Set([...current].filter((sessionId) => activeIds.has(sessionId))));
+        setFeedback(`${activeIds.size} active cards`);
+      } catch (error) {
+        setFeedback(`Could not load cards: ${(error as Error).message}`);
+      }
+    });
   }
 
   useEffect(() => {
@@ -77,17 +91,40 @@ export function PriorityManagerApp() {
     runtimeController = new SessionRuntimeController({
       eventUrl: BROKER_SESSION_EVENTS_URL,
       refresh: loadSessions,
-      onBrokerReady: () => runtimeController.scheduleReconcile("priority-broker-ready"),
-      onSessionsChanged: () => runtimeController.scheduleReconcile("priority-session-event"),
+      onBrokerReady: (event) => {
+        const payload = JSON.parse(event.data);
+        if (!gate.observeInstance(payload.brokerInstanceId).accepted) return;
+        replica.beginInstance(payload.brokerInstanceId);
+        runtimeController.scheduleReconcile("priority-broker-ready");
+      },
+      onSessionsChanged: (event) => {
+        try {
+          const payload = JSON.parse(event.data);
+          const revision = gate.observeEvent(payload.sequence, payload.brokerInstanceId);
+          if (!revision.accepted) return;
+          if (payload.session) setSessions((current) => mergeChangedSession(current, payload.session));
+          if (payload.removedSessions) {
+            setSessions((current) => (payload.removedSessions as AgentSession[]).reduce(mergeChangedSession, current));
+          }
+          if (revision.gap || (!payload.session && !payload.removedSessions)) {
+            runtimeController.scheduleReconcile("priority-session-event");
+          }
+        } catch {
+          runtimeController.scheduleReconcile("priority-event-invalid");
+        }
+      },
     });
     runtimeController.start();
+    controllerRef.current = runtimeController;
     return () => {
       runtimeController.stop();
+      controllerRef.current = null;
     };
   }, []);
 
   const visibleSessions = useMemo(
     () => sessions.filter((session) => {
+      if (session.archivedAt) return false;
       const priority = normalizeSessionPriority(session.priority);
       const matchesPriority =
         priorityFilter === "all" ||
@@ -96,6 +133,14 @@ export function PriorityManagerApp() {
     }),
     [priorityFilter, search, sessions],
   );
+
+  useEffect(() => {
+    const activeIds = new Set(sessions.filter((session) => !session.archivedAt).map((session) => session.sessionId));
+    setSelectedIds((current) => {
+      const next = new Set([...current].filter((sessionId) => activeIds.has(sessionId)));
+      return next.size === current.size ? current : next;
+    });
+  }, [sessions]);
 
   const visibleIds = visibleSessions.map((session) => session.sessionId);
   const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((sessionId) => selectedIds.has(sessionId));

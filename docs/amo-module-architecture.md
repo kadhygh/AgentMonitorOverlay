@@ -54,6 +54,8 @@ The Broker is the authoritative coordination process for workspace records, laun
 
 ## Logical Modules
 
+Canvas preparation (2026-09-05): the task card remains a single-task unit. A future Canvas workbench adds its own node/group/relationship containers around shared task presentation and commands. Current implementation and scale measurements are recorded in `docs/task-card-scale-performance-2026-09-05.md`; the Canvas UI/API and its nonmodal window policy remain future work.
+
 ### 1. Workspace And Deployment
 
 Owns:

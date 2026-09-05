@@ -152,3 +152,40 @@ test("event reconciliation is debounced and owned by the controller", () => {
   assert.deepEqual(refreshes, ["sse-reconcile"]);
   controller.stop();
 });
+
+test("continuous invalidations cannot postpone reconciliation past its maximum wait", () => {
+  const harness = createHarness();
+  let refreshes = 0;
+  const controller = new SessionRuntimeController({
+    eventUrl: "http://127.0.0.1/events", host: harness.host, refresh: () => { refreshes += 1; },
+    onBrokerReady() {}, onSessionsChanged() {},
+  });
+  controller.start();
+  harness.source.onopen(new Event("open"));
+  controller.scheduleReconcile("first");
+  const maxTimer = [...harness.timers].find(([, timer]) => timer.delayMs === 1000)[0];
+  for (let index = 0; index < 100; index += 1) controller.scheduleReconcile("burst");
+  assert.ok(harness.timers.has(maxTimer));
+  harness.runTimerByDelay(1000);
+  assert.equal(refreshes, 1);
+  assert.equal(harness.timers.size, 0);
+  controller.stop();
+});
+
+test("hidden healthy views defer snapshot work and reconcile on visibility resume", () => {
+  const harness = createHarness();
+  let refreshes = 0;
+  const controller = new SessionRuntimeController({
+    eventUrl: "http://127.0.0.1/events", host: harness.host, refresh: () => { refreshes += 1; },
+    onBrokerReady() {}, onSessionsChanged() {},
+  });
+  controller.start();
+  harness.source.onopen(new Event("open"));
+  harness.state.visible = false;
+  controller.scheduleReconcile("hidden-change");
+  assert.equal(harness.timers.size, 0);
+  harness.state.visible = true;
+  harness.resume();
+  assert.equal(refreshes, 1);
+  controller.stop();
+});
