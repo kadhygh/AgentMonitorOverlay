@@ -3,6 +3,7 @@ import { MainOverlayApp } from "./windows/MainOverlayApp";
 import { CURRENT_WINDOW_LABEL } from "./windows/utilityWindow";
 
 const utilityApps: Record<string, React.LazyExoticComponent<ComponentType>> = {
+  canvas: lazy(() => import("./windows/CanvasWorkbenchApp").then((module) => ({ default: module.CanvasWorkbenchApp }))),
   deploy: lazy(() => import("./windows/DeployWorkspaceApp").then((module) => ({ default: module.DeployWorkspaceApp }))),
   harness: lazy(() => import("./windows/HarnessLabApp").then((module) => ({ default: module.HarnessLabApp }))),
   priorities: lazy(() => import("./windows/PriorityManagerApp").then((module) => ({ default: module.PriorityManagerApp }))),

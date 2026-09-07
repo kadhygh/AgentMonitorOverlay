@@ -9,7 +9,8 @@
     "deploy",
     "settings",
     "priorities",
-    "harness"
+    "harness",
+    "canvas"
   ],
   "permissions": [
     "core:default",

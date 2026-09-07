@@ -3,7 +3,9 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { WebviewWindow } from "@tauri-apps/api/webviewWindow";
 import {
   bringUtilityWindowToFront,
+  isUtilityWindowLabel,
   setAmoWindowAlwaysOnTop,
+  TOOL_WINDOW_POLICY,
   type UtilityWindowKind,
   type UtilityWindowStateEvent,
 } from "../windows/utilityWindow";
@@ -12,7 +14,7 @@ interface UseMainUtilityWindowsOptions {
   setFeedback: Dispatch<SetStateAction<string>>;
 }
 
-type LazyWindowKind = UtilityWindowKind | "scratchpad";
+type LazyWindowKind = UtilityWindowKind | "scratchpad" | "canvas";
 
 const pendingUtilityWindowRequests = new Map<LazyWindowKind, Promise<WebviewWindow>>();
 
@@ -20,6 +22,13 @@ const utilityWindowDefinitions: Record<
   LazyWindowKind,
   { title: string; width: number; height: number; minWidth: number; minHeight: number }
 > = {
+  canvas: {
+    title: "AMO Canvas",
+    width: 1160,
+    height: 780,
+    minWidth: 800,
+    minHeight: 560,
+  },
   deploy: {
     title: "AMO Workspace Center",
     width: 1000,
@@ -65,7 +74,7 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
     void getCurrentWindow()
       .listen<UtilityWindowStateEvent>("amo-utility-window-state", (event) => {
         const payload = event.payload;
-        if (!payload?.label) return;
+        if (!payload?.label || !isUtilityWindowLabel(payload.label)) return;
         setActiveUtilityWindow((current) => {
           if (payload.open) {
             return payload.label;
@@ -109,6 +118,16 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
 
   async function openHarnessDialog() {
     await openUtilityWindow("harness");
+  }
+
+  async function openCanvasWindow() {
+    try {
+      await getOrCreateUtilityWindow("canvas");
+      await bringUtilityWindowToFront("canvas");
+      options.setFeedback("Canvas opened.");
+    } catch (error) {
+      options.setFeedback(`Open canvas window failed: ${(error as Error).message}`);
+    }
   }
 
   async function openUtilityWindow(label: UtilityWindowKind) {
@@ -175,6 +194,7 @@ export function useMainUtilityWindows(options: UseMainUtilityWindowsOptions) {
     activeUtilityWindow,
     focusUtilityWindow,
     hideUtilityWindow,
+    openCanvasWindow,
     openDeployDialog,
     openHarnessDialog,
     openPriorityDialog,
@@ -205,7 +225,7 @@ async function createOrFindUtilityWindow(label: LazyWindowKind) {
   if (existing) return existing;
 
   const definition = utilityWindowDefinitions[label];
-  const isHarnessLab = label === "harness";
+  const isOpaqueWindow = label === "harness" || label === "canvas";
   const isLightTheme = document.documentElement.dataset.amoTheme === "light";
   const target = new WebviewWindow(label, {
     url: "/",
@@ -216,11 +236,11 @@ async function createOrFindUtilityWindow(label: LazyWindowKind) {
     minHeight: definition.minHeight,
     resizable: true,
     decorations: false,
-    alwaysOnTop: true,
-    transparent: !isHarnessLab,
-    backgroundColor: isHarnessLab ? (isLightTheme ? "#f1f7f5" : "#12191d") : undefined,
+    alwaysOnTop: label === "scratchpad" || TOOL_WINDOW_POLICY[label].alwaysOnTop,
+    transparent: !isOpaqueWindow,
+    backgroundColor: isOpaqueWindow ? (isLightTheme ? "#f1f7f5" : "#12191d") : undefined,
     shadow: true,
-    skipTaskbar: true,
+    skipTaskbar: label !== "canvas",
     visible: label !== "scratchpad",
     center: true,
   });

@@ -3,6 +3,8 @@
 Updated: 2026-07-16
 Status: investigated and proposed; implementation not started
 
+2026-09-07 follow-up: the user confirmed that the current monitoring issue primarily occurs after `/fork` inside an existing Codex CLI window, and also wants Side Chat. See [Canvas, Area, task organization and orchestration plan](canvas-area-task-orchestration-plan-2026-09-07.md) for the current analysis and implementation order. This older document remains a Side Chat proposal: its card/artifact suppression rules do not govern ordinary forks, and its historical provider checks must not be treated as current capabilities.
+
 ## Purpose
 
 AMO needs a lightweight way to branch a focused question from an existing Codex task without adding another normal task card or polluting the task's Obsidian conversation flow.

@@ -1,4 +1,5 @@
 const path = require("path");
+const { randomUUID } = require("crypto");
 const { AMO_DIR, AMO_SCHEMA_VERSION } = require("./amo-constants");
 const { readJsonFile, resolveWorkspacePath } = require("./filesystem");
 const { httpError } = require("./http");
@@ -19,6 +20,12 @@ const { launchAdapterLabel, launchAdapterTool } = require("./launch-adapters");
 async function launchWorkspace(payload, options = {}) {
   const recordDebugLog = typeof options.recordDebugLog === "function" ? options.recordDebugLog : () => {};
   const launchStore = options.launchStore || null;
+  const launchMode = payload?.launchMode ?? "managed";
+  if (!["managed", "cli-only"].includes(launchMode)) {
+    throw httpError(400, "invalid_launch_mode", "Unsupported launch mode");
+  }
+  const cliOnly = launchMode === "cli-only";
+  const runCli = options.launchCliInTerminal || launchCliInTerminal;
   const workspacePath = resolveWorkspacePath(payload?.workspacePath || payload?.workspace_path);
   const adapterId = normalizeText(payload?.adapterId || payload?.adapter_id || payload?.adapter);
   const resumeSessionId = normalizeText(payload?.sessionId || payload?.session_id || payload?.resumeSessionId || payload?.resume_session_id);
@@ -30,7 +37,10 @@ async function launchWorkspace(payload, options = {}) {
   if (!supportedLaunchIds.has(adapterId)) {
     throw httpError(400, "unsupported_launch_adapter", `Unsupported launch adapter: ${adapterId || "missing"}`);
   }
-  if (adapterId !== "codex-app" && !launchStore) {
+  if (cliOnly && (adapterId === "codex-app" || resumeSessionId)) {
+    throw httpError(400, "unsupported_cli_only_launch", "CLI-only launch requires a new CLI session");
+  }
+  if (!cliOnly && adapterId !== "codex-app" && !launchStore) {
     throw httpError(503, "managed_launch_unavailable", "AMO cannot launch a CLI without its managed launch store");
   }
   const claudeProvider = adapterId === "claude-cli"
@@ -44,12 +54,12 @@ async function launchWorkspace(payload, options = {}) {
     : null;
 
   const amoRoot = path.join(workspacePath, AMO_DIR);
-  const workspace = readJsonFile(path.join(amoRoot, "workspace.json"), null);
-  if (!workspace || !workspace.workspaceId) {
+  const workspace = cliOnly ? null : readJsonFile(path.join(amoRoot, "workspace.json"), null);
+  if (!cliOnly && (!workspace || !workspace.workspaceId)) {
     throw httpError(400, "workspace_not_enrolled", "Selected workspace does not have AMO enrollment metadata");
   }
 
-  if (adapterId !== "codex-app") {
+  if (!cliOnly && adapterId !== "codex-app") {
     const enrollment = readJsonFile(path.join(amoRoot, "enrollment.json"), null);
     const installedAdapters = Array.isArray(enrollment?.adapters) ? enrollment.adapters : [];
     const installed = installedAdapters.some((adapter) => normalizeText(adapter?.id) === adapterId);
@@ -60,7 +70,7 @@ async function launchWorkspace(payload, options = {}) {
 
   const projectName = path.basename(workspacePath);
   const startedAt = new Date().toISOString();
-  const managedLaunch = adapterId === "codex-app"
+  const managedLaunch = cliOnly || adapterId === "codex-app"
     ? null
     : launchStore.create({
         workspaceId: workspace.workspaceId,
@@ -73,22 +83,20 @@ async function launchWorkspace(payload, options = {}) {
   const title = managedLaunch
     ? `${managedLaunch.titleToken} ${launchAdapterLabel(adapterId)} - ${projectName}`
     : `AMO ${launchAdapterLabel(adapterId)} - ${projectName}`;
-  const environment = managedLaunch
-    ? {
-        AMO_LAUNCH_ID: managedLaunch.launchId,
-        AMO_WORKSPACE_ID: managedLaunch.workspaceId,
-        AMO_WORKSPACE_PATH: managedLaunch.workspacePath,
-        AMO_REQUESTED_SESSION_ID: resumeSessionId,
-        ...(adapterId === "grok-build"
-          ? {
-              AMO_CLIENT_TOOL: "grok",
-              GROK_CLAUDE_HOOKS_ENABLED: "0",
-              GROK_CURSOR_HOOKS_ENABLED: "0",
-            }
-          : {}),
-        ...(codexProvider?.environment || {}),
-      }
-    : {};
+  const environment = {
+    ...(managedLaunch ? {
+      AMO_LAUNCH_ID: managedLaunch.launchId,
+      AMO_WORKSPACE_ID: managedLaunch.workspaceId,
+      AMO_WORKSPACE_PATH: managedLaunch.workspacePath,
+      AMO_REQUESTED_SESSION_ID: resumeSessionId,
+    } : {}),
+    ...(adapterId === "grok-build" ? {
+      AMO_CLIENT_TOOL: "grok",
+      GROK_CLAUDE_HOOKS_ENABLED: "0",
+      GROK_CURSOR_HOOKS_ENABLED: "0",
+    } : {}),
+    ...(codexProvider?.environment || {}),
+  };
   let claudeLaunchSettings = null;
   let launch;
   try {
@@ -98,21 +106,19 @@ async function launchWorkspace(payload, options = {}) {
         ...createCodexLaunchArgs({ provider: codexProvider }),
         ...(resumeSessionId ? ["resume", resumeSessionId, "-C", workspacePath] : []),
       ];
-      launch = await launchCliInTerminal({
+      launch = await runCli({
         workspacePath,
         title,
         command: "codex",
         args: codexArgs,
-        cleanupEnvironmentKeys: codexProvider?.environment?.DEEPSEEK_API_KEY
-          ? ["DEEPSEEK_API_KEY"]
-          : [],
+        cleanupEnvironmentKeys: Object.keys(codexProvider?.environment || {}),
         environment,
         launchEnvironment,
         recordDebugLog,
       });
     } else if (adapterId === "claude-cli") {
       claudeLaunchSettings = createClaudeLaunchSettings({
-        launchId: managedLaunch.launchId,
+        launchId: managedLaunch?.launchId || `cli_${randomUUID()}`,
         provider: claudeProvider,
       });
       const claudeArgs = [
@@ -121,7 +127,7 @@ async function launchWorkspace(payload, options = {}) {
           : []),
         ...(resumeSessionId ? ["--resume", resumeSessionId] : []),
       ];
-      launch = await launchCliInTerminal({
+      launch = await runCli({
         workspacePath,
         title,
         command: "claude",
@@ -132,7 +138,7 @@ async function launchWorkspace(payload, options = {}) {
         recordDebugLog,
       });
     } else if (adapterId === "grok-build") {
-      launch = await launchCliInTerminal({
+      launch = await runCli({
         workspacePath,
         title,
         command: resolveGrokExecutable(),
@@ -201,7 +207,8 @@ async function launchWorkspace(payload, options = {}) {
   return {
     ok: true,
     schemaVersion: AMO_SCHEMA_VERSION,
-    workspaceId: workspace.workspaceId,
+    workspaceId: workspace?.workspaceId || null,
+    launchMode,
     workspacePath,
     adapterId,
     projectName,
@@ -237,6 +244,7 @@ async function launchWorkspace(payload, options = {}) {
     targetBinding: null,
     session: null,
     message:
+      cliOnly ? `Started ${launchAdapterLabel(adapterId)} in ${workspacePath}. No managed task was created.` :
       adapterId === "codex-app"
         ? `Opened a new ChatGPT task for ${projectName}.`
         : resumeSessionId

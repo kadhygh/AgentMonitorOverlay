@@ -34,8 +34,8 @@ test("the HTML entry renders a loading shell before React is available", () => {
 
 test("utility window creation shows the native shell immediately", () => {
   assert.match(utilityWindows, /visible:\s*label\s*!==\s*"scratchpad"/);
-  assert.match(utilityWindows, /transparent:\s*!isHarnessLab/);
-  assert.match(utilityWindows, /backgroundColor:\s*isHarnessLab/);
+  assert.match(utilityWindows, /transparent:\s*!isOpaqueWindow/);
+  assert.match(utilityWindows, /backgroundColor:\s*isOpaqueWindow/);
 });
 
 test("opening shows and focuses the requested window before cleaning up peers", () => {

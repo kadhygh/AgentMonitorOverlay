@@ -31,6 +31,7 @@ export interface ManagedLaunchSelection {
 }
 
 export interface LaunchPanelState {
+  launchMode?: "managed" | "cli-only";
   source: "card" | "workspace";
   session: AgentSession | null;
   workspacePath: string;
@@ -97,7 +98,8 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
       : "grok-default";
   const provider = providerDefinitions.find((item) => item.id === selectedProviderId) ?? providerDefinitions[0];
   const credentialProviderId = modelCredentialProviderId(selectedProviderId);
-  const launchable = workspaceAdapterLaunchable(state.inspection, adapterId);
+  const cliOnly = state.launchMode === "cli-only";
+  const launchable = cliOnly ? adapterId !== "codex-app" && Boolean(state.workspacePath.trim()) : workspaceAdapterLaunchable(state.inspection, adapterId);
   const checking = state.busy === "inspect";
   const launching = state.busy === "launch" || resolvingCredential;
   const storedCredentialConfigured = Boolean(
@@ -108,8 +110,8 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
     && selectedProviderId !== defaultProviderId
     && !storedCredentialConfigured
     && !apiKey.trim();
-  const contextTitle = state.source === "card" ? "New task from card workspace" : "New workspace task";
-  const contextDetail = state.source === "card"
+  const contextTitle = cliOnly ? "Launch in any folder" : state.source === "card" ? "New task from card workspace" : "New workspace task";
+  const contextDetail = cliOnly ? "No deployment required. No managed task is created." : state.source === "card"
     ? state.session?.taskTitle || state.session?.title || "Current card"
     : "No card is created until the launched tool emits its first hook.";
 
@@ -165,7 +167,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
           <div className="managed-launch-heading">
             <Radio size={16} aria-hidden="true" />
             <div>
-              <strong>Launch Task</strong>
+              <strong>{cliOnly ? "Launch CLI" : "Launch Task"}</strong>
               <span>{contextTitle}</span>
             </div>
           </div>
@@ -194,11 +196,11 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
           <section className="managed-launch-section">
             <div className="managed-launch-section-title">
               <strong>Client</strong>
-              <span>{checking ? "Checking deployment" : workspaceAdapterLaunchDetail(state.inspection, adapterId)}</span>
+              <span>{cliOnly ? "Choose an installed CLI" : checking ? "Checking deployment" : workspaceAdapterLaunchDetail(state.inspection, adapterId)}</span>
             </div>
             <div className="managed-launch-clients" role="radiogroup" aria-label="Launch client">
-              {adapters.map((candidateId) => {
-                const candidateLaunchable = workspaceAdapterLaunchable(state.inspection, candidateId);
+              {adapters.filter(id => !cliOnly || id !== "codex-app").map((candidateId) => {
+                const candidateLaunchable = cliOnly || workspaceAdapterLaunchable(state.inspection, candidateId);
                 return (
                   <button
                     type="button"
@@ -212,7 +214,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
                     <LaunchToolMark adapterId={candidateId} />
                     <span>
                       <strong>{workspaceLaunchLabel(candidateId)}</strong>
-                      <small>{checking ? "checking" : workspaceAdapterLaunchDetail(state.inspection, candidateId)}</small>
+                      <small>{cliOnly ? "No deployment required" : checking ? "checking" : workspaceAdapterLaunchDetail(state.inspection, candidateId)}</small>
                     </span>
                   </button>
                 );
@@ -317,7 +319,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
 
         <footer className="managed-launch-footer">
           <span>
-            {adapterId === "codex-app"
+            {cliOnly ? "Starts a terminal in this folder without creating a managed task." : adapterId === "codex-app"
               ? "ChatGPT opens a new task and does not create a card until a hook exists."
               : "The managed card appears or reconnects after the CLI emits a hook."}
           </span>
@@ -337,7 +339,7 @@ export function LaunchPanel({ state, onClose, onLaunch }: LaunchPanelProps) {
                     ? "Launching"
                     : adapterId === "codex-app"
                       ? "Open ChatGPT"
-                      : "Launch managed CLI"}
+                      : cliOnly ? "Launch CLI" : "Launch managed CLI"}
               </span>
             </button>
           </div>

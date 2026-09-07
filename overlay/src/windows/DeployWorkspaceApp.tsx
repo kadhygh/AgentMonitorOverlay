@@ -58,7 +58,9 @@ export function DeployWorkspaceApp() {
   useUtilityWindowLifecycle("deploy");
   useAmoThemeRuntime();
 
-  const [workspacePath, setWorkspacePath] = useState("");
+  const [workspacePath, setWorkspacePath] = useState(() => {
+    try { return localStorage.getItem("amo.cli.lastWorkspacePath") || ""; } catch { return ""; }
+  });
   const [workspaceInspection, setWorkspaceInspection] = useState<WorkspaceInspection | null>(null);
   const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
   const [selectedDeployAdapters, setSelectedDeployAdapters] = useState<string[]>([]);
@@ -481,6 +483,13 @@ export function DeployWorkspaceApp() {
     }
   }
 
+  function openCliLaunchDialog() {
+    const targetPath = workspacePath.trim();
+    if (!targetPath) { setFeedback("Choose or paste a folder before launching a CLI."); return; }
+    setLaunchPanel({ source: "workspace", launchMode: "cli-only", session: null,
+      workspacePath: targetPath, inspection: null, initialAdapterId: "codex-cli", busy: null, error: null });
+  }
+
   function openLaunchDialog(adapterId: string) {
     const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
     if (!targetPath || !workspaceInspection) {
@@ -522,6 +531,7 @@ export function DeployWorkspaceApp() {
       const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
         workspacePath: targetPath,
         adapterId,
+        launchMode: launchPanel?.launchMode ?? "managed",
         claudeProvider: selection.claudeProvider,
         codexProvider: selection.codexProvider,
         ...cliLaunchPreferencePayload(),
@@ -538,6 +548,9 @@ export function DeployWorkspaceApp() {
         codexProviderId: selection.codexProvider?.presetId ?? null,
         pid: result.pid ?? null,
       });
+      if (launchPanel?.launchMode === "cli-only") {
+        try { localStorage.setItem("amo.cli.lastWorkspacePath", result.workspacePath); } catch { /* Optional preference. */ }
+      }
       setFeedback(result.message);
       setLaunchPanel(null);
     } catch (error) {
@@ -750,6 +763,7 @@ export function DeployWorkspaceApp() {
             onWorkspacePathChange={updateWorkspacePathInput}
             onInspectWorkspace={() => void inspectWorkspace()}
             onChooseWorkspace={() => void chooseWorkspaceDirectory()}
+            onLaunchCli={openCliLaunchDialog}
             onDeploySelected={() => void enrollWorkspace()}
             onClearGenerated={() => void clearWorkspaceGenerated()}
             onGitRootPathChange={updateGitRootPathInput}

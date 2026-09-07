@@ -199,13 +199,18 @@ function spawnDetached(command, args, cwd, options = {}) {
   });
 }
 
-function launchProcessEnvironment(environment = {}) {
+function launchProcessEnvironment(environment = {}, parentEnvironment = process.env) {
   const additions = Object.fromEntries(
     Object.entries(environment)
       .filter(([name, value]) => /^[A-Za-z_][A-Za-z0-9_]*$/.test(name) && value !== null && value !== undefined && String(value).length > 0)
       .map(([name, value]) => [name, String(value)]),
   );
-  return { ...process.env, ...additions };
+  // A Broker started inside a managed CLI must not pass that CLI's ownership
+  // to an unrelated new launch. Managed launches explicitly supply fresh values.
+  const identityKeys = new Set(["AMO_LAUNCH_ID", "AMO_WORKSPACE_ID", "AMO_WORKSPACE_PATH", "AMO_REQUESTED_SESSION_ID", "AMO_CLIENT_TOOL"]);
+  const inherited = Object.fromEntries(Object.entries(parentEnvironment)
+    .filter(([name]) => !identityKeys.has(name.toUpperCase())));
+  return { ...inherited, ...additions };
 }
 
 module.exports = {

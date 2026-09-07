@@ -360,7 +360,8 @@ export interface WorkspaceEnrollment {
 export interface WorkspaceLaunchResult {
   ok: boolean;
   schemaVersion: number;
-  workspaceId: string;
+  workspaceId: string | null;
+  launchMode?: "managed" | "cli-only";
   workspacePath: string;
   adapterId: string;
   projectName: string;

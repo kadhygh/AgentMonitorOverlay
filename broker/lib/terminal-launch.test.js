@@ -138,3 +138,13 @@ test("Grok Build launch quotes the official Windows user install path and resume
 
   assert.match(commandLine, /& 'C:\/Users\/Test User\/\.grok\/bin\/grok\.exe' '--resume' 'grok-session-test'/u);
 });
+
+test("new CLI launches cannot inherit the Broker parent managed identity", () => {
+  const parent = { Path: "system-path", AMO_LAUNCH_ID: "old-launch", amo_workspace_id: "old-workspace", AMO_WORKSPACE_PATH: "old-folder", AMO_REQUESTED_SESSION_ID: "old-session", AMO_CLIENT_TOOL: "grok" };
+  const cliOnly = launchProcessEnvironment({}, parent);
+  assert.deepEqual(cliOnly, { Path: "system-path" });
+  const managed = launchProcessEnvironment({ AMO_LAUNCH_ID: "new-launch", AMO_WORKSPACE_ID: "new-workspace" }, parent);
+  assert.equal(managed.AMO_LAUNCH_ID, "new-launch");
+  assert.equal(managed.AMO_WORKSPACE_ID, "new-workspace");
+  assert.equal(parent.AMO_LAUNCH_ID, "old-launch");
+});

@@ -1021,8 +1021,8 @@ try {
     if (-not $claudeSession -or $claudeSession.tool -ne "claude" -or -not $claudeSession.lastPromptNote -or -not $claudeSession.lastReplyNote) {
         throw "Claude generated hook did not create prompt/reply notes on one session."
     }
-    if ($claudeSession.title -ne "dev1-Claude verification prompt" -or $claudeSession.sessionNaming.status -ne "display-only") {
-        throw "Claude first prompt did not apply the explicit display-only workspace label fallback."
+    if ($claudeSession.taskTitle -ne "dev1-Claude verification prompt" -or $claudeSession.sessionNaming.status -ne "amo-only" -or $claudeSession.title -eq $claudeSession.taskTitle -or $claudeSession.sessionNaming.providerSynced) {
+        throw "Claude first prompt must set an AMO-only task title while preserving the provider name."
     }
     $claudePromptNotePath = Join-Path $vaultRoot ($claudeSession.lastPromptNote -replace "/", [System.IO.Path]::DirectorySeparatorChar)
     $claudeReplyNotePath = Join-Path $vaultRoot ($claudeSession.lastReplyNote -replace "/", [System.IO.Path]::DirectorySeparatorChar)

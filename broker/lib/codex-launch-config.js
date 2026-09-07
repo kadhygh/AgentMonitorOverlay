@@ -9,11 +9,13 @@ const CODEX_MODEL_CATALOG_PATH = path.resolve(
   "deepseek-v4-flash.models.json",
 );
 
-function createCodexLaunchArgs({ provider, modelCatalogPath = CODEX_MODEL_CATALOG_PATH } = {}) {
+function createCodexLaunchArgs({ provider, modelCatalogPath } = {}) {
   if (!provider?.providerId || provider.id === "openai-default") return [];
 
   const providerId = validateProviderId(provider.providerId);
-  const resolvedCatalogPath = path.resolve(modelCatalogPath);
+  const resolvedCatalogPath = path.resolve(modelCatalogPath || (provider.modelCatalogFile
+    ? path.join(__dirname, "..", "assets", "codex", provider.modelCatalogFile)
+    : CODEX_MODEL_CATALOG_PATH));
   validateModelCatalog(resolvedCatalogPath, provider.model);
   const providerKey = `model_providers.${providerId}`;
 
@@ -25,7 +27,7 @@ function createCodexLaunchArgs({ provider, modelCatalogPath = CODEX_MODEL_CATALO
     "-c", `${providerKey}.name=${tomlString(provider.label)}`,
     "-c", `${providerKey}.base_url=${tomlString(provider.baseUrl)}`,
     "-c", `${providerKey}.wire_api="responses"`,
-    "-c", `${providerKey}.env_key="DEEPSEEK_API_KEY"`,
+    "-c", `${providerKey}.env_key=${tomlString(provider.envKey || "DEEPSEEK_API_KEY")}`,
   ];
 }
 

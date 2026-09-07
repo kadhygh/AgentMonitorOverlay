@@ -156,6 +156,8 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       : launch.bindingRevision || 1;
     const claimPatch = {
       state: "connected",
+      offlineAt: null,
+      offlineReason: null,
       claimedSessionId: sessionId,
       currentSessionId: sessionId,
       firstClaimedSessionId: launch.firstClaimedSessionId || sessionId,
@@ -344,10 +346,10 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
           state: "offline",
           offlineAt: now,
           offlineReason: normalizeText(options.reason) || "window-not-found",
-          windowHwnd: null,
-          windowPid: null,
-          windowProcessName: null,
-          windowTitle: null,
+          windowHwnd: launch.windowHwnd ?? normalizeInteger(existing.windowHint?.hwnd),
+          windowPid: launch.windowPid ?? normalizeInteger(existing.windowHint?.pid),
+          windowProcessName: launch.windowProcessName || normalizeText(existing.windowHint?.process) || null,
+          windowTitle: launch.windowTitle || normalizeText(existing.windowHint?.title) || null,
         });
       }
     }
@@ -357,9 +359,9 @@ function createLaunchStore({ dataFile, recordDebugLog = () => {} } = {}) {
       launchState: "offline",
       launchOfflineAt: now,
       updatedAt: now,
-      windowHint: existing.windowHint
-        ? { ...existing.windowHint, pid: null, hwnd: null }
-        : existing.windowHint,
+      // A transient enumeration miss does not invalidate a resolved window identity.
+      // Native routing still validates the saved HWND/PID before activating it.
+      windowHint: existing.windowHint,
       targetBinding: isManagedLaunchWindowTarget(existing.targetBinding) ? null : existing.targetBinding || null,
     };
     sessions.set(sessionId, session);

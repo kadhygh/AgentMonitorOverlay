@@ -17,7 +17,7 @@ use dialogs::pick_workspace_directory;
 use models::*;
 use opener::{open_external_target, open_local_path, open_workspace_in_vscode};
 use startup_diagnostics::{StartupDiagnostics, StartupDiagnosticsSnapshot};
-use tauri::{Manager, State};
+use tauri::{Emitter, Manager, State};
 use tauri_plugin_notification::NotificationExt;
 use windows::{
     activate_external_window, external_window_candidate_at_cursor, list_external_window_candidates,
@@ -442,6 +442,17 @@ fn show_scratchpad_at_cursor(app: tauri::AppHandle) -> OpenPathResult {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
+        .on_window_event(|window, event| {
+            if window.label() == "canvas" {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    // Preserve the workbench draft, including while its lazy UI is loading.
+                    api.prevent_close();
+                    if window.hide().is_ok() {
+                        let _ = window.emit_to("canvas", "amo-canvas-visibility", false);
+                    }
+                }
+            }
+        })
         .manage(StartupDiagnostics::new())
         .plugin(tauri_plugin_notification::init())
         .plugin(

@@ -1,9 +1,9 @@
 import { invoke } from "@tauri-apps/api/core";
 
 export type ClaudeProviderPresetId = "anthropic-default" | "deepseek-v4-pro" | "deepseek-v4" | "glm-5.3";
-export type CodexProviderPresetId = "openai-default" | "deepseek-v4-pro" | "deepseek-v4";
+export type CodexProviderPresetId = "openai-default" | "deepseek-v4-pro" | "deepseek-v4" | "dxx";
 export type GrokProviderPresetId = "grok-default";
-export type StoredModelProviderId = "deepseek-v4" | "glm-coding";
+export type StoredModelProviderId = "deepseek-v4" | "glm-coding" | "dxx";
 export type StoredClaudeProviderPresetId = StoredModelProviderId;
 
 export interface ClaudeProviderLaunchConfig {
@@ -103,6 +103,13 @@ export const CODEX_PROVIDER_DEFINITIONS: CodexProviderDefinition[] = [
     model: "Local Codex configuration",
   },
   {
+    id: "dxx",
+    title: "DXX · GPT-5.6 Sol",
+    detail: "Direct DXX Responses API routing with a separate key for this CLI session.",
+    model: "gpt-5.6-sol",
+    keyLabel: "DXX API Key",
+  },
+  {
     id: "deepseek-v4-pro",
     title: "DeepSeek V4 Pro",
     detail: "Official Responses API routing to DeepSeek-V4-Pro-0813 through one-launch overrides.",
@@ -132,9 +139,16 @@ export const STORED_CLAUDE_PROVIDER_IDS: StoredClaudeProviderPresetId[] = [
   "glm-coding",
 ];
 
-export const STORED_MODEL_PROVIDER_IDS: StoredModelProviderId[] = STORED_CLAUDE_PROVIDER_IDS;
+export const STORED_MODEL_PROVIDER_IDS: StoredModelProviderId[] = [...STORED_CLAUDE_PROVIDER_IDS, "dxx"];
 
 export const STORED_MODEL_PROVIDER_DEFINITIONS: StoredModelProviderDefinition[] = [
+  {
+    id: "dxx",
+    title: "DXX",
+    detail: "Separate API key for Codex CLI through gorilla-api.dxxapi.com.",
+    model: "gpt-5.6-sol",
+    keyLabel: "DXX API Key",
+  },
   {
     id: "deepseek-v4",
     title: "DeepSeek V4",
@@ -154,6 +168,7 @@ export const STORED_MODEL_PROVIDER_DEFINITIONS: StoredModelProviderDefinition[] 
 export function modelCredentialProviderId(
   presetId: ClaudeProviderPresetId | CodexProviderPresetId | string | null,
 ): StoredModelProviderId | null {
+  if (presetId === "dxx") return "dxx";
   if (presetId === "deepseek-v4" || presetId === "deepseek-v4-pro") return "deepseek-v4";
   if (presetId === "glm-5.3" || presetId === "glm-5.2") return "glm-coding";
   return null;

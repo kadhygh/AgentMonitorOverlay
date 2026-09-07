@@ -38,6 +38,7 @@ interface DeployWorkspaceSectionProps {
   onWorkspacePathChange: (value: string) => void;
   onInspectWorkspace: () => void;
   onChooseWorkspace: () => void;
+  onLaunchCli: () => void;
   onDeploySelected: () => void;
   onClearGenerated: () => void;
   onGitRootPathChange: (value: string) => void;
@@ -71,6 +72,7 @@ export function DeployWorkspaceSection({
   onWorkspacePathChange,
   onInspectWorkspace,
   onChooseWorkspace,
+  onLaunchCli,
   onDeploySelected,
   onClearGenerated,
   onGitRootPathChange,
@@ -118,6 +120,11 @@ export function DeployWorkspaceSection({
           onClick={onInspectWorkspace}
         >
           {deployBusy === "inspect" ? "Checking" : "Check"}
+        </button>
+        <button type="button" title="Start a CLI in this folder without deployment or a managed task."
+          disabled={!workspacePath.trim() || workspaceActionsBlocked} onClick={onLaunchCli}>
+          <SquareTerminal size={12} aria-hidden="true" />
+          <span>Launch CLI</span>
         </button>
         <button
           type="button"

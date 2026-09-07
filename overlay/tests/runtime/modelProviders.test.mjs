@@ -25,7 +25,7 @@ after(async () => {
 test("DeepSeek V4 Pro appears above the retained Flash preset", () => {
   assert.deepEqual(
     CODEX_PROVIDER_DEFINITIONS.map((provider) => provider.id),
-    ["openai-default", "deepseek-v4-pro", "deepseek-v4"],
+    ["openai-default", "dxx", "deepseek-v4-pro", "deepseek-v4"],
   );
   assert.deepEqual(
     CLAUDE_PROVIDER_DEFINITIONS.map((provider) => provider.id),
@@ -39,6 +39,8 @@ test("DeepSeek V4 Pro and Flash share the existing secure credential", () => {
   assert.equal(modelCredentialProviderId("glm-5.3"), "glm-coding");
   assert.equal(modelCredentialProviderId("glm-5.2"), "glm-coding");
   assert.equal(modelCredentialProviderId("openai-default"), null);
+  assert.equal(modelCredentialProviderId("dxx"), "dxx");
+  assert.equal(CODEX_PROVIDER_DEFINITIONS.find(p => p.id === "dxx").model, "gpt-5.6-sol");
 });
 
 test("legacy GLM-5.2 defaults migrate to GLM-5.3", () => {

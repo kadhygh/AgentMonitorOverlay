@@ -8,7 +8,7 @@ use windows_sys::Win32::Security::Credentials::{
 };
 
 const TARGET_PREFIX: &str = "AgentMonitorOverlay/model-provider/";
-const SUPPORTED_PROVIDERS: [&str; 3] = ["deepseek-v4", "glm-coding", "glm-5.2"];
+const SUPPORTED_PROVIDERS: [&str; 4] = ["deepseek-v4", "glm-coding", "glm-5.2", "dxx"];
 
 fn validate_provider_id(provider_id: &str) -> Result<(), String> {
     let supported = SUPPORTED_PROVIDERS.contains(&provider_id);
@@ -244,6 +244,8 @@ mod tests {
             credential_provider_candidates("deepseek-v4"),
             vec!["deepseek-v4"]
         );
+        assert!(validate_provider_id("dxx").is_ok());
+        assert_eq!(credential_provider_candidates("dxx"), vec!["dxx"]);
         assert!(validate_provider_id("glm-coding").is_ok());
         assert!(validate_provider_id("glm-5.2").is_ok());
     }

@@ -32,6 +32,7 @@ export function ModelSettingsBody({
   const [apiKeys, setApiKeys] = useState<Record<StoredModelProviderId, string>>({
     "deepseek-v4": "",
     "glm-coding": "",
+    "dxx": "",
   });
   const [loading, setLoading] = useState(true);
   const [busyProviderId, setBusyProviderId] = useState<StoredModelProviderId | null>(null);

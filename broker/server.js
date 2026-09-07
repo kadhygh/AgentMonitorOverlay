@@ -11,6 +11,7 @@ const { createObsidianRuntimeStore } = require("./lib/obsidian-runtime-store");
 const { createPermissionGate } = require("./lib/permission-gate");
 const { createLaunchStore } = require("./lib/launch-store");
 const { createSessionStore } = require("./lib/session-store");
+const { createTaskCanvasStore } = require("./lib/task-canvas-store");
 const { createSessionNamingService } = require("./lib/session-naming");
 const { createTranscriptMonitor } = require("./lib/transcript-monitor");
 
@@ -37,6 +38,7 @@ const {
 const { handleConfigRoutes } = require("./routes/config");
 const { handleObsidianRoutes } = require("./routes/obsidian");
 const { handleSessionRoutes } = require("./routes/sessions");
+const { handleTaskCanvasRoutes } = require("./routes/task-canvas");
 const { handleWorkspaceRoutes } = require("./routes/workspaces");
 
 const HOST = process.env.AGENT_MONITOR_HOST || "127.0.0.1";
@@ -51,6 +53,7 @@ const LAUNCH_DATA_FILE =
   process.env.AGENT_MONITOR_LAUNCH_DATA_FILE ||
   path.join(path.dirname(DATA_FILE), "launches.json");
 const DEBUG_MAX_LOG_ENTRIES = 800;
+const TASK_CANVAS_DATA_FILE = process.env.AGENT_MONITOR_TASK_CANVAS_DATA_FILE || path.join(path.dirname(DATA_FILE), "task-canvas.json");
 
 const startedAt = new Date();
 const eventClients = new Set();
@@ -67,6 +70,7 @@ const debugPreview = debugLogStore.preview;
 const workspaceRegistry = createWorkspaceRegistry({ dataFile: WORKSPACE_DATA_FILE, recordDebugLog });
 const launchStore = createLaunchStore({ dataFile: LAUNCH_DATA_FILE, recordDebugLog });
 const obsidianRuntimeStore = createObsidianRuntimeStore({ recordDebugLog });
+const taskCanvasStore = createTaskCanvasStore({ dataFile: TASK_CANVAS_DATA_FILE });
 const sessionStore = createSessionStore({
   dataFile: DATA_FILE,
   expectedBridgeUrl: baseUrl,
@@ -152,6 +156,7 @@ const transcriptMonitor = createTranscriptMonitor({
 for (const session of sessions.values()) transcriptMonitor.track({}, session);
 
 const routeContext = {
+  taskCanvasStore,
   host: HOST,
   port: PORT,
   dataFile: DATA_FILE,
@@ -218,6 +223,7 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
 
     const handled =
+      (await handleTaskCanvasRoutes(req, res, url, routeContext)) ||
       (await handleConfigRoutes(req, res, url, routeContext)) ||
       (await handleSessionRoutes(req, res, url, routeContext)) ||
       (await handleWorkspaceRoutes(req, res, url, routeContext)) ||

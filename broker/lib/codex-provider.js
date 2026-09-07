@@ -12,6 +12,16 @@ const PROVIDER_PRESETS = Object.freeze({
     baseUrl: null,
     environment: {},
   },
+  "dxx": {
+    id: "dxx",
+    label: "DXX · GPT-5.6 Sol",
+    model: "gpt-5.6-sol",
+    requiresApiKey: true,
+    providerId: "amo-dxx",
+    baseUrl: "https://gorilla-api.dxxapi.com",
+    envKey: "DXX_API_KEY",
+    modelCatalogFile: "dxx.models.json",
+  },
   "deepseek-v4-pro": {
     id: "deepseek-v4-pro",
     label: "DeepSeek V4 Pro",
@@ -54,8 +64,10 @@ function resolveCodexProvider(payload) {
     model: preset.model,
     providerId: preset.providerId,
     baseUrl: preset.baseUrl,
+    envKey: preset.envKey || "DEEPSEEK_API_KEY",
+    modelCatalogFile: preset.modelCatalogFile,
     environment: preset.requiresApiKey
-      ? { DEEPSEEK_API_KEY: apiKey }
+      ? { [preset.envKey || "DEEPSEEK_API_KEY"]: apiKey }
       : {},
   };
 }

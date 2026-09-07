@@ -14,6 +14,7 @@ import {
   GripVertical,
   ListFilter,
   ListTodo,
+  LayoutDashboard,
   Minus,
   RefreshCw,
   Search,
@@ -261,6 +262,7 @@ export function MainOverlayApp() {
     activeUtilityWindow,
     focusUtilityWindow,
     hideUtilityWindow,
+    openCanvasWindow,
     openDeployDialog,
     openHarnessDialog,
     openPriorityDialog,
@@ -608,6 +610,15 @@ export function MainOverlayApp() {
               </div>
             </div>
             <div className="header-actions">
+              <button
+                type="button"
+                className="icon-button"
+                title="Open Canvas"
+                aria-label="Open Canvas"
+                onClick={() => void openCanvasWindow()}
+              >
+                <LayoutDashboard size={15} aria-hidden="true" />
+              </button>
               <button
                 type="button"
                 className={`icon-button ${activeUtilityWindow === "harness" ? "is-active" : ""}`}

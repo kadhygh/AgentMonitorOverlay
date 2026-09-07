@@ -365,7 +365,7 @@ test("reconciliation removes redundant managed targets from offline sessions", (
   assert.equal(sessions.get(sessionId).launchState, "offline");
 });
 
-test("marking a managed session offline clears its redundant target", (t) => {
+test("offline managed sessions preserve resolved identity and clear offline metadata on reconnect", (t) => {
   const { store } = createTestStore(t);
   const sessionId = "session-managed";
   const launch = store.create({
@@ -397,8 +397,17 @@ test("marking a managed session offline clears its redundant target", (t) => {
 
   store.markSessionOffline(sessionId, sessions, { launchId: launch.launchId });
   assert.equal(sessions.get(sessionId).targetBinding, null);
-  assert.equal(sessions.get(sessionId).windowHint.hwnd, null);
-  assert.equal(sessions.get(sessionId).windowHint.pid, null);
+  assert.equal(sessions.get(sessionId).windowHint.hwnd, 4242);
+  assert.equal(sessions.get(sessionId).windowHint.pid, 99);
+  assert.equal(store.list()[0].windowHwnd, 4242);
+  assert.equal(store.list()[0].windowPid, 99);
+  const reconnect = matchingPayload(launch, sessionId);
+  store.claim(reconnect, { sessions });
+  assert.equal(reconnect.launchState, "connected");
+  assert.equal(reconnect.windowHint.hwnd, 4242);
+  assert.equal(reconnect.windowHint.pid, 99);
+  assert.equal(store.list()[0].offlineAt, null);
+  assert.equal(store.list()[0].offlineReason, null);
 });
 
 test("resolved managed window identity is persisted and restored during reconciliation", (t) => {

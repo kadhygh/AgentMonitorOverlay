@@ -3,7 +3,17 @@ import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window"
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export type UtilityWindowKind = "deploy" | "settings" | "priorities" | "harness";
-export type AmoWindowLabel = "main" | "scratchpad" | UtilityWindowKind;
+export type ToolWindowKind = UtilityWindowKind | "canvas";
+export type AmoWindowLabel = "main" | "scratchpad" | ToolWindowKind;
+
+// Canvas is an independent work surface; modal utility coordination must never own it.
+export const TOOL_WINDOW_POLICY = {
+  deploy: { modal: true, closeOnEscape: true, alwaysOnTop: true },
+  settings: { modal: true, closeOnEscape: true, alwaysOnTop: true },
+  priorities: { modal: true, closeOnEscape: true, alwaysOnTop: true },
+  harness: { modal: true, closeOnEscape: true, alwaysOnTop: true },
+  canvas: { modal: false, closeOnEscape: false, alwaysOnTop: false },
+} as const satisfies Record<ToolWindowKind, { modal: boolean; closeOnEscape: boolean; alwaysOnTop: boolean }>;
 
 export interface UtilityWindowStateEvent {
   label: UtilityWindowKind;
@@ -24,7 +34,12 @@ export function startUtilityWindowDrag(event: PointerEvent<HTMLElement>) {
   void getCurrentWindow().startDragging().catch(() => undefined);
 }
 
-export async function closeUtilityWindow(label: UtilityWindowKind) {
+export async function closeUtilityWindow(label: ToolWindowKind) {
+  if (label === "canvas") {
+    await getCurrentWindow().hide();
+    await getCurrentWindow().emitTo("canvas", "amo-canvas-visibility", false).catch(() => undefined);
+    return;
+  }
   const payload = { label, open: false } satisfies UtilityWindowStateEvent;
   await getCurrentWindow().emitTo("main", "amo-utility-window-state", payload).catch(() => undefined);
   await getCurrentWindow().hide().catch(() => undefined);
@@ -33,24 +48,28 @@ export async function closeUtilityWindow(label: UtilityWindowKind) {
   await getCurrentWindow().emitTo("main", "amo-utility-window-state", payload).catch(() => undefined);
 }
 
-export function useUtilityWindowLifecycle(label: UtilityWindowKind) {
+export function useUtilityWindowLifecycle(label: ToolWindowKind) {
   useEffect(() => {
     let unlisten: (() => void) | null = null;
+    let disposed = false;
     void getCurrentWindow()
       .onCloseRequested((event) => {
         event.preventDefault();
         void closeUtilityWindow(label);
       })
       .then((handler) => {
-        unlisten = handler;
+        if (disposed) handler();
+        else unlisten = handler;
       });
 
     return () => {
+      disposed = true;
       unlisten?.();
     };
   }, [label]);
 
   useEffect(() => {
+    if (!TOOL_WINDOW_POLICY[label].closeOnEscape) return;
     const handleKeyDown = (event: KeyboardEvent) => {
       if (event.key === "Escape") {
         event.preventDefault();
@@ -64,7 +83,8 @@ export function useUtilityWindowLifecycle(label: UtilityWindowKind) {
 }
 
 export function isUtilityWindowLabel(label: string): label is UtilityWindowKind {
-  return label === "deploy" || label === "settings" || label === "priorities" || label === "harness";
+  return Object.prototype.hasOwnProperty.call(TOOL_WINDOW_POLICY, label)
+    && TOOL_WINDOW_POLICY[label as ToolWindowKind].modal;
 }
 
 async function getAmoWindow(label: AmoWindowLabel) {
@@ -80,8 +100,16 @@ export async function setAmoWindowsAlwaysOnTop(alwaysOnTop: boolean) {
   await Promise.all(AMO_WINDOW_LABELS.map((label) => setAmoWindowAlwaysOnTop(label, alwaysOnTop)));
 }
 
-export async function bringUtilityWindowToFront(label: UtilityWindowKind) {
+export async function bringUtilityWindowToFront(label: ToolWindowKind) {
   const target = await getAmoWindow(label);
+  if (!target) return;
+  if (label === "canvas") {
+    await target.unminimize().catch(() => undefined);
+    await target.show();
+    await target.emitTo("canvas", "amo-canvas-visibility", true).catch(() => undefined);
+    await target.setFocus().catch(() => undefined);
+    return;
+  }
   await target?.show().catch(() => undefined);
   await Promise.all([
     setAmoWindowAlwaysOnTop("main", false),
