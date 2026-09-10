@@ -145,7 +145,10 @@ function Copy-BrokerRuntime {
     $codexAssetsSource = Join-Path $RepoRoot "broker\assets\codex"
     $codexAssetsDestination = Join-Path $DestinationRoot "assets\codex"
     New-Item -ItemType Directory -Force -Path $codexAssetsDestination | Out-Null
-    Copy-Item -LiteralPath (Join-Path $codexAssetsSource "deepseek-v4-flash.models.json") -Destination $codexAssetsDestination
+    Get-ChildItem -LiteralPath $codexAssetsSource -Filter '*.models.json' -File | ForEach-Object {
+        Copy-Item -LiteralPath $_.FullName -Destination $codexAssetsDestination
+    }
+    Copy-Item -LiteralPath (Join-Path $RepoRoot "broker\assets\deepseek") -Destination (Join-Path $DestinationRoot "assets") -Recurse
 }
 
 function Copy-NodeRuntime {
@@ -190,6 +193,8 @@ function Assert-PortableLayout {
         "app\broker\lib\workspace-deploy.js",
         "app\broker\hooks\codex.js",
         "app\broker\assets\codex\deepseek-v4-flash.models.json",
+        "app\broker\assets\deepseek\profiles.json",
+        "app\broker\assets\deepseek\releases.json",
         "app\broker\assets\obsidian\md-anno-tools\main.js",
         "app\broker\assets\obsidian\md-anno-tools\manifest.json",
         "version.json",
@@ -198,6 +203,13 @@ function Assert-PortableLayout {
     )) {
         if (-not (Test-Path -LiteralPath (Join-Path $Root $relativePath))) {
             throw "Portable package is missing required path: $relativePath"
+        }
+    }
+    $profiles = Get-Content -LiteralPath (Join-Path $Root "app\broker\assets\deepseek\profiles.json") -Raw | ConvertFrom-Json
+    foreach ($profile in $profiles.profiles) {
+        $catalogPath = Join-Path $Root ("app\broker\assets\codex\" + $profile.modelCatalogFile)
+        if (-not (Test-Path -LiteralPath $catalogPath -PathType Leaf)) {
+            throw "Portable package is missing DeepSeek catalog: $($profile.modelCatalogFile)"
         }
     }
 }

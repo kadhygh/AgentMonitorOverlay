@@ -10,6 +10,8 @@
     "url": "git+https://github.com/kadhygh/AgentMonitorOverlay.git"
   },
   "scripts": {
+    "deepseek:routing": "node scripts/models/deepseek-routing.cjs",
+    "deepseek:check": "node scripts/models/deepseek-routing.cjs --check",
     "amo": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable",
     "amo:stable": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable",
     "amo:health": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable -HealthOnly",

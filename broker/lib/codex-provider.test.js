@@ -35,7 +35,7 @@ test("DeepSeek Codex preset requires a key", () => {
   );
 });
 
-test("Codex default preserves the user's local provider configuration", () => {
+test("GPT-Official preserves the user's local provider configuration", () => {
   const provider = resolveCodexProvider({ presetId: "openai-default" });
   assert.equal(provider.model, null);
   assert.equal(provider.providerId, null);

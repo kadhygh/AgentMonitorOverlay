@@ -3,7 +3,6 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   BROKER_WORKSPACE_CLEAN_VAULT_URL,
   BROKER_WORKSPACE_INSPECT_URL,
-  BROKER_WORKSPACE_LAUNCH_URL,
   BROKER_WORKSPACE_STATUS_URL,
   BROKER_WORKSPACE_UPDATE_OBSIDIAN_PLUGIN_URL,
   brokerSessionProviderNameSyncUrl,
@@ -11,13 +10,12 @@ import {
   brokerSessionTaskTitleUrl,
   postBrokerJson,
 } from "../api/brokerClient";
-import { cliLaunchPreferencePayload } from "../native/cliLaunch";
+import { launchWorkspaceTool, type WorkspaceLaunchMode } from "../api/workspaceLaunch";
 import { workspacePanelPosition } from "../domain/overlaySessionUi";
 import { projectName, targetBindingForSession, workspacePathForSession } from "../domain/routingModel";
 import {
   workspaceLaunchAdapterForSession,
   workspaceLaunchLabel,
-  workspaceAdapterLaunchable,
   workspaceCleanFeedback,
   type LaunchPanelAdapterId,
 } from "../domain/workspaceModel";
@@ -30,7 +28,6 @@ import type {
   OpenPathResult,
   WorkspaceCleanResult,
   WorkspaceInspection,
-  WorkspaceLaunchResult,
   WorkspaceMaintenanceStatus,
   WorkspacePluginUpdateResult,
 } from "../types";
@@ -122,7 +119,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     }
   }
 
-  async function launchProjectToolFromPanel(selection: ManagedLaunchSelection) {
+  async function launchProjectToolFromPanel(selection: ManagedLaunchSelection, launchMode: WorkspaceLaunchMode = "managed") {
     const adapterId: LaunchPanelAdapterId = selection.adapterId;
     if (!options.launchPanel?.session) return;
 
@@ -135,14 +132,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
       return;
     }
 
-    if (!workspaceAdapterLaunchable(options.launchPanel.inspection, adapterId)) {
-      options.setLaunchPanel((current) =>
-        current ? { ...current, error: `${workspaceLaunchLabel(adapterId)} is not available in this workspace.` } : current,
-      );
-      return;
-    }
-
-    options.setLaunchPanel((current) => (current ? { ...current, busy: "launch", error: null } : current));
+    options.setLaunchPanel((current) => (current?.session?.sessionId === session.sessionId ? { ...current, busy: "launch", error: null } : current));
     options.setFeedback(
       `${adapterId === "codex-app" ? "Opening" : "Launching new"} ${workspaceLaunchLabel(adapterId)} for ${projectName(workspacePath)}...`,
     );
@@ -155,19 +145,13 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
     });
 
     try {
-      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
+      const result = await launchWorkspaceTool({
         workspacePath,
-        adapterId,
+        inspection: options.launchPanel.inspection,
+        selection,
+        launchMode,
         sourceCardSessionId: session.sessionId,
-        claudeProvider: selection.claudeProvider,
-        codexProvider: selection.codexProvider,
-        ...cliLaunchPreferencePayload(),
       });
-      if (adapterId === "codex-app") {
-        if (!result.uri) throw new Error("Broker did not return a ChatGPT workspace URI.");
-        const openResult = await invoke<OpenPathResult>("open_uri", { uri: result.uri });
-        if (!openResult.ok) throw new Error(openResult.message);
-      }
       options.postDebugLog("workspace.launch_panel.launch.ok", {
         sessionId: session.sessionId,
         workspacePath: result.workspacePath,
@@ -175,7 +159,7 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         pid: result.pid ?? null,
       });
       options.setFeedback(result.message);
-      options.setLaunchPanel(null);
+      options.setLaunchPanel(current => current?.session?.sessionId === session.sessionId ? null : current);
     } catch (error) {
       const message = (error as Error).message;
       options.postDebugLog("workspace.launch_panel.launch.error", {
@@ -184,8 +168,9 @@ export function useWorkspacePanels(options: UseWorkspacePanelsOptions) {
         adapterId,
         message,
       });
-      options.setLaunchPanel((current) => (current ? { ...current, busy: null, error: message } : current));
+      options.setLaunchPanel((current) => (current?.session?.sessionId === session.sessionId ? { ...current, busy: null, error: message } : current));
       options.setFeedback(`Launch failed: ${message}`);
+      throw error;
     }
   }
 

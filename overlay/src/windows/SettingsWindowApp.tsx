@@ -571,6 +571,19 @@ export function SettingsWindowApp() {
   const [amoTheme, setAmoThemePreference] = useAmoThemeRuntime();
 
   const [settingsSection, setSettingsSection] = useState<SettingsSection>("scratchpad");
+  useEffect(() => {
+    function openRequestedSection() {
+      try {
+        if (localStorage.getItem("amo.settings.requestedSection") === "models") {
+          setSettingsSection("models");
+          localStorage.removeItem("amo.settings.requestedSection");
+        }
+      } catch { /* Navigation remains available through the sidebar. */ }
+    }
+    openRequestedSection();
+    window.addEventListener("focus", openRequestedSection);
+    return () => window.removeEventListener("focus", openRequestedSection);
+  }, []);
   const [scratchpadShortcut, setScratchpadShortcut] = useState<ScratchpadShortcutState>(() =>
     loadScratchpadShortcutState(),
   );

@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Check, FolderPlus, Pencil, Plus, Trash2, X } from "lucide-react";
+import { BookOpen, Check, Download, Folder, FolderOpen, Pencil, Plus, RefreshCw, X } from "lucide-react";
 import {
   BROKER_DEBUG_LOGS_URL,
   BROKER_WORKSPACE_CLEAN_VAULT_URL,
@@ -8,18 +8,18 @@ import {
   BROKER_WORKSPACE_ENROLL_URL,
   BROKER_WORKSPACE_GIT_EXCLUDE_URL,
   BROKER_WORKSPACE_INSPECT_URL,
-  BROKER_WORKSPACE_LAUNCH_URL,
   BROKER_WORKSPACE_LABEL_URL,
   BROKER_WORKSPACE_FORGET_URL,
   BROKER_WORKSPACES_URL,
   getBrokerJson,
   postBrokerJson,
 } from "../api/brokerClient";
-import { LaunchPanel, type LaunchPanelState, type ManagedLaunchSelection } from "../components/LaunchPanel";
+import type { ManagedLaunchSelection } from "../components/LaunchPanel";
+import { WorkspaceLaunchForm } from "../components/WorkspaceLaunchForm";
+import { openModelSettingsWindow } from "../hooks/useMainUtilityWindows";
 import {
-  DeployAdaptersSection,
-  DeployResultFooter,
-  DeployWorkspaceSection,
+  DocumentMappingsSection,
+  GitExcludeStatusView,
 } from "../components/DeployWorkspaceSections";
 import { projectName } from "../domain/routingModel";
 import {
@@ -29,9 +29,10 @@ import {
   workspaceCleanFeedback,
   workspaceDeploymentSummary,
   workspaceGeneratedNoteCount,
+  adapterContextLabel,
 } from "../domain/workspaceModel";
 import { useAmoThemeRuntime } from "../theme/amoTheme";
-import { cliLaunchPreferencePayload } from "../native/cliLaunch";
+import { launchWorkspaceTool } from "../api/workspaceLaunch";
 import type {
   FolderPickResult,
   OpenPathResult,
@@ -41,7 +42,6 @@ import type {
   WorkspaceEnrollment,
   WorkspaceGitExcludeResult,
   WorkspaceInspection,
-  WorkspaceLaunchResult,
   WorkspaceRegistryEntry,
   WorkspaceRegistryResult,
 } from "../types";
@@ -59,7 +59,7 @@ export function DeployWorkspaceApp() {
   useAmoThemeRuntime();
 
   const [workspacePath, setWorkspacePath] = useState(() => {
-    try { return localStorage.getItem("amo.cli.lastWorkspacePath") || ""; } catch { return ""; }
+    try { return localStorage.getItem("amo.workspace.requestedPath") || localStorage.getItem("amo.cli.lastWorkspacePath") || ""; } catch { return ""; }
   });
   const [workspaceInspection, setWorkspaceInspection] = useState<WorkspaceInspection | null>(null);
   const [workspaceEnrollment, setWorkspaceEnrollment] = useState<WorkspaceEnrollment | null>(null);
@@ -67,7 +67,10 @@ export function DeployWorkspaceApp() {
   const [deployBusy, setDeployBusy] = useState<"inspect" | "enroll" | "clean" | null>(null);
   const [gitExcludeBusy, setGitExcludeBusy] = useState(false);
   const [launchBusy, setLaunchBusy] = useState<string | null>(null);
-  const [launchPanel, setLaunchPanel] = useState<LaunchPanelState | null>(null);
+  const [activeTab, setActiveTab] = useState<"launch" | "deploy" | "settings">("launch");
+  const [editingPath, setEditingPath] = useState(false);
+  const [credentialBusy, setCredentialBusy] = useState(false);
+  const [maintenance, setMaintenance] = useState<"clean" | "forget" | null>(null);
   const [gitRootPath, setGitRootPath] = useState("");
   const [gitExcludeResult, setGitExcludeResult] = useState<WorkspaceGitExcludeResult | null>(null);
   const [includeClaudeSettingsExclude, setIncludeClaudeSettingsExclude] = useState(false);
@@ -81,7 +84,14 @@ export function DeployWorkspaceApp() {
   const [workspaceLabelDraft, setWorkspaceLabelDraft] = useState("");
 
   useEffect(() => {
+    try {
+      if (localStorage.getItem("amo.workspace.requestedPath")) {
+        localStorage.removeItem("amo.workspace.requestedPath");
+        setActiveTab("deploy");
+      }
+    } catch { /* Optional navigation request. */ }
     void loadWorkspaceRegistry();
+    if (workspacePath.trim()) void inspectWorkspace();
   }, []);
 
   async function loadWorkspaceRegistry() {
@@ -138,6 +148,7 @@ export function DeployWorkspaceApp() {
       });
       setWorkspaceInspection(result);
       setWorkspacePath(result.workspacePath);
+      setEditingPath(false);
       setGitRootPath(result.gitExclude?.gitRootPath || "");
       setGitExcludeResult(null);
       const selectedAdapters = selectedWorkspaceAdapterIds(result);
@@ -167,6 +178,7 @@ export function DeployWorkspaceApp() {
       }
 
       setWorkspacePath(result.path);
+      setEditingPath(false);
       setWorkspaceInspection(null);
       setWorkspaceEnrollment(null);
       setGitRootPath("");
@@ -443,11 +455,7 @@ export function DeployWorkspaceApp() {
       return;
     }
 
-    const confirmed = window.confirm(
-      `Clear generated AMO notes and reset the base canvas for ${projectName(targetPath)}?\n\nHooks, deployment metadata, and work canvas folders will be kept.`,
-    );
-    if (!confirmed) return;
-
+    setMaintenance(null);
     setDeployBusy("clean");
     setFeedback(`Clearing generated AMO content for ${projectName(targetPath)}...`);
 
@@ -483,33 +491,8 @@ export function DeployWorkspaceApp() {
     }
   }
 
-  function openCliLaunchDialog() {
+  async function launchWorkspace(selection: ManagedLaunchSelection, launchMode: "managed" | "cli-only") {
     const targetPath = workspacePath.trim();
-    if (!targetPath) { setFeedback("Choose or paste a folder before launching a CLI."); return; }
-    setLaunchPanel({ source: "workspace", launchMode: "cli-only", session: null,
-      workspacePath: targetPath, inspection: null, initialAdapterId: "codex-cli", busy: null, error: null });
-  }
-
-  function openLaunchDialog(adapterId: string) {
-    const targetPath = workspaceInspection?.workspacePath ?? (workspacePath.trim() || workspaceEnrollment?.workspacePath);
-    if (!targetPath || !workspaceInspection) {
-      setFeedback("Check a deployed workspace before launching a task.");
-      return;
-    }
-
-    setLaunchPanel({
-      source: "workspace",
-      session: null,
-      workspacePath: targetPath,
-      inspection: workspaceInspection,
-      initialAdapterId: adapterId as LaunchPanelState["initialAdapterId"],
-      busy: null,
-      error: null,
-    });
-  }
-
-  async function launchWorkspace(selection: ManagedLaunchSelection) {
-    const targetPath = launchPanel?.workspacePath;
     if (!targetPath) {
       setFeedback("Workspace path is required.");
       return;
@@ -517,7 +500,6 @@ export function DeployWorkspaceApp() {
 
     const adapterId = selection.adapterId;
     setLaunchBusy(adapterId);
-    setLaunchPanel((current) => (current ? { ...current, busy: "launch", error: null } : current));
     const label = adapterId === "codex-cli"
       ? "Codex CLI"
       : adapterId === "claude-cli"
@@ -528,19 +510,9 @@ export function DeployWorkspaceApp() {
     setFeedback(`Launching ${label}...`);
 
     try {
-      const result = await postBrokerJson<WorkspaceLaunchResult>(BROKER_WORKSPACE_LAUNCH_URL, {
-        workspacePath: targetPath,
-        adapterId,
-        launchMode: launchPanel?.launchMode ?? "managed",
-        claudeProvider: selection.claudeProvider,
-        codexProvider: selection.codexProvider,
-        ...cliLaunchPreferencePayload(),
+      const result = await launchWorkspaceTool({
+        workspacePath: targetPath, inspection: workspaceInspection, selection, launchMode,
       });
-      if (adapterId === "codex-app") {
-        if (!result.uri) throw new Error("Broker did not return a ChatGPT workspace URI.");
-        const openResult = await invoke<OpenPathResult>("open_uri", { uri: result.uri });
-        if (!openResult.ok) throw new Error(openResult.message);
-      }
       void postUtilityDebugLog("workspace.launch.ok", {
         workspacePath: result.workspacePath,
         adapterId: result.adapterId,
@@ -548,11 +520,7 @@ export function DeployWorkspaceApp() {
         codexProviderId: selection.codexProvider?.presetId ?? null,
         pid: result.pid ?? null,
       });
-      if (launchPanel?.launchMode === "cli-only") {
-        try { localStorage.setItem("amo.cli.lastWorkspacePath", result.workspacePath); } catch { /* Optional preference. */ }
-      }
       setFeedback(result.message);
-      setLaunchPanel(null);
     } catch (error) {
       const message = (error as Error).message;
       void postUtilityDebugLog("workspace.launch.error", {
@@ -562,14 +530,20 @@ export function DeployWorkspaceApp() {
         codexProviderId: selection.codexProvider?.presetId ?? null,
         message,
       });
-      setLaunchPanel((current) => (current ? { ...current, busy: null, error: message } : current));
       setFeedback(`Launch failed: ${message}`);
+      throw error;
     } finally {
       setLaunchBusy(null);
     }
   }
 
   async function selectRegisteredWorkspace(workspace: WorkspaceRegistryEntry) {
+    setMaintenance(null);
+    setEditingWorkspaceId(null);
+    setEditingPath(false);
+    setGitRootPath("");
+    setGitExcludeResult(null);
+    setDocumentMappingPath("");
     setWorkspacePath(workspace.workspacePath);
     setWorkspaceInspection(null);
     setWorkspaceEnrollment(null);
@@ -582,6 +556,8 @@ export function DeployWorkspaceApp() {
   }
 
   async function forgetRegisteredWorkspace(workspace: WorkspaceRegistryEntry) {
+    setMaintenance(null);
+    setRegistryBusy(true);
     try {
       await postBrokerJson<{ ok: boolean }>(BROKER_WORKSPACE_FORGET_URL, { workspaceId: workspace.workspaceId });
       if (workspacePath === workspace.workspacePath) {
@@ -593,7 +569,7 @@ export function DeployWorkspaceApp() {
       setFeedback(`Forgot ${workspace.projectName}. Project files were not changed.`);
     } catch (error) {
       setFeedback(`Forget failed: ${(error as Error).message}`);
-    }
+    } finally { setRegistryBusy(false); }
   }
 
   function beginWorkspaceLabelEdit(workspace: WorkspaceRegistryEntry) {
@@ -623,6 +599,11 @@ export function DeployWorkspaceApp() {
   }
 
   function prepareNewWorkspace() {
+    setEditingPath(true);
+    setActiveTab("launch");
+    setMaintenance(null);
+    setEditingWorkspaceId(null);
+    setGitExcludeResult(null);
     setWorkspacePath("");
     setWorkspaceInspection(null);
     setWorkspaceEnrollment(null);
@@ -649,167 +630,130 @@ export function DeployWorkspaceApp() {
       : null;
   const gitExcludeMissingPatterns = new Set(gitExcludeStatus?.missingEntries.map((entry) => entry.pattern) ?? []);
   const gitExcludeTrackedPatterns = new Set(gitExcludeStatus?.trackedEntries.map((entry) => entry.pattern) ?? []);
-  const gitExcludeBlocked = deployBusy !== null || launchBusy !== null || gitExcludeBusy;
-  const documentMappingBlocked =
-    deployBusy !== null || launchBusy !== null || gitExcludeBusy || documentMappingBusy !== null;
+  const actionsBlocked = deployBusy !== null || launchBusy !== null || gitExcludeBusy || documentMappingBusy !== null || credentialBusy || registryBusy;
+  const currentWorkspace = registeredWorkspaces.find(item => item.workspacePath === workspacePath);
+  const vaultPath = workspaceEnrollment?.vaultRoot || currentWorkspace?.vaultRoot || undefined;
+  const updateCount = workspaceInspection?.supportedAdapters.filter(item => item.deploymentStatus === "needs-update").length || 0;
+
+  async function openCredentials() {
+    try { await openModelSettingsWindow(); }
+    catch (e) { setFeedback(`打开凭据设置失败：${(e as Error).message}`); }
+  }
+
+  useEffect(() => {
+    function acceptRequestedWorkspace() {
+      if (actionsBlocked) return;
+      let requested: string | null;
+      try {
+        requested = localStorage.getItem("amo.workspace.requestedPath");
+        if (requested) localStorage.removeItem("amo.workspace.requestedPath");
+      } catch { return; }
+      if (!requested) return;
+      setActiveTab("deploy");
+      setMaintenance(null);
+      setEditingWorkspaceId(null);
+      setDocumentMappingPath("");
+      updateWorkspacePathInput(requested);
+      void inspectWorkspace(requested);
+    }
+    acceptRequestedWorkspace();
+    window.addEventListener("focus", acceptRequestedWorkspace);
+    return () => window.removeEventListener("focus", acceptRequestedWorkspace);
+  }, [actionsBlocked]);
 
   return (
-    <main className="utility-window-shell deploy-window-shell">
-      <section className="app-dialog deploy-panel" role="dialog" aria-label="Workspace deployment">
-        <header className="app-dialog-titlebar">
-          <div className="app-dialog-title" onPointerDown={startUtilityWindowDrag}>
-            <FolderPlus size={16} aria-hidden="true" />
-            <div>
-              <strong>Workspace Center</strong>
-              <span>Projects, adapters and managed launches</span>
-            </div>
+    <main className="utility-window-shell workspace-center">
+      <header className="wc-titlebar" onPointerDown={startUtilityWindowDrag}>
+        <div><strong className="wc-brand">AMO</strong><span className="wc-divider" /><span>工作区中心</span><small>Workspace Center</small></div>
+        <button type="button" className="wc-icon-button" aria-label="关闭工作区中心" onClick={() => void closeUtilityWindow("deploy")}><X size={16} /></button>
+      </header>
+      <div className="wc-shell">
+        <aside className="wc-sidebar" aria-label="工作区列表">
+          <div className="wc-sidebar-heading"><span>工作区</span><button type="button" className="wc-icon-button" aria-label="添加工作区" disabled={actionsBlocked} onClick={prepareNewWorkspace}><Plus size={16} /></button></div>
+          <div className="wc-workspaces">
+            {registeredWorkspaces.length === 0 && <p className="wc-help">选择一个目录，即可启动 CLI 或接入 AMO。</p>}
+            {registeredWorkspaces.map(workspace => <button type="button" key={workspace.workspaceId} className="wc-workspace"
+              aria-pressed={workspace.workspacePath === workspacePath} disabled={actionsBlocked} title={workspace.workspacePath}
+              onClick={() => void selectRegisteredWorkspace(workspace)}>
+              <Folder size={16} /><span><strong>{workspace.workspaceLabel || workspace.projectName}</strong><small>{!workspace.available ? "目录不可用" : workspace.enrollmentPresent ? `${workspace.workspaceLabel ? `${workspace.projectName} · ` : ""}已接入` : "未接入 AMO"}</small></span>
+            </button>)}
+            {!currentWorkspace && workspacePath && <button type="button" className="wc-workspace" aria-pressed="true" disabled={actionsBlocked} onClick={() => setActiveTab("launch")} title={workspacePath}><FolderOpen size={16} /><span><strong>{projectName(workspacePath)}</strong><small>当前目录 · 未登记</small></span></button>}
           </div>
-          <button
-            type="button"
-            className="candidate-close"
-            title="Close deploy"
-            onPointerDown={(event) => event.stopPropagation()}
-            onClick={(event) => {
-              event.stopPropagation();
-              void closeUtilityWindow("deploy");
-            }}
-          >
-            <X size={13} aria-hidden="true" />
-          </button>
-        </header>
-
-        <div className="deploy-dialog-body">
-          <aside className="workspace-registry" aria-label="Registered workspaces">
-            <div className="workspace-registry-heading">
-              <div>
-                <strong>Workspaces</strong>
-                <span>{registryBusy ? "Loading" : `${registeredWorkspaces.length} registered`}</span>
-              </div>
-              <button type="button" title="Add workspace" onClick={prepareNewWorkspace}>
-                <Plus size={14} aria-hidden="true" />
-              </button>
+          <div className="wc-sidebar-footer"><span className="wc-dot" />本机工作区</div>
+        </aside>
+        <div className="wc-main">
+          <div className="wc-project-header">
+            {(editingPath || !workspacePath) && <div className="wc-path-editor">
+              <label htmlFor="wc-workspace-path">打开目录</label>
+              <input id="wc-workspace-path" autoFocus spellCheck={false} value={workspacePath} disabled={actionsBlocked} placeholder="粘贴工作区路径，例如 G:\PROJECT\MyProject"
+                onChange={e => updateWorkspacePathInput(e.target.value)} onKeyDown={e => { if (e.key === "Enter") void inspectWorkspace(); }} />
+              <div className="wc-row wc-between"><span className="wc-help">可直接普通启动，稍后再接入 AMO。</span><div className="wc-row">
+                {workspacePath && <button type="button" className="wc-button" disabled={actionsBlocked} onClick={() => setEditingPath(false)}>收起</button>}
+                <button type="button" className="wc-button" disabled={actionsBlocked} onClick={() => void chooseWorkspaceDirectory()}>选择文件夹</button>
+                <button type="button" className="wc-button wc-primary" disabled={actionsBlocked || !workspacePath.trim()} onClick={() => void inspectWorkspace()}>{deployBusy === "inspect" ? "检查中…" : "打开并检查"}</button>
+              </div></div>
+            </div>}
+            <div className="wc-project-heading"><h1>{workspacePath ? projectName(workspacePath) : "选择工作区"}</h1><div className="wc-row">
+              <button type="button" className="wc-button wc-quiet" disabled={!workspacePath || actionsBlocked} onClick={() => void openDeploymentPath(workspacePath, "workspace")}><FolderOpen size={15} />目录</button>
+              <button type="button" className="wc-button wc-quiet" disabled={!vaultPath || actionsBlocked} onClick={() => void openDeploymentPath(vaultPath, "vault")}><BookOpen size={15} />Vault</button>
+            </div></div>
+            <div className="wc-path"><Folder size={14} /><span title={workspacePath}>{workspacePath || "尚未选择目录"}</span><button type="button" className="wc-icon-button" aria-label="修改工作区目录" disabled={actionsBlocked} onClick={() => setEditingPath(true)}><Pencil size={13} /></button></div>
+            <nav className="wc-tabs" role="tablist" aria-label="工作区操作">
+              {([['launch', '启动'], ['deploy', '接入与更新'], ['settings', '工作区设置']] as const).map(([id, label]) =>
+                <button type="button" role="tab" id={`wc-tab-${id}`} aria-controls={`wc-panel-${id}`} aria-selected={activeTab === id} key={id} onClick={() => setActiveTab(id)}>{label}{id === "deploy" && updateCount > 0 && <span className="wc-warning">{updateCount}</span>}</button>)}
+            </nav>
+          </div>
+          <div className="wc-panel" id="wc-panel-launch" role="tabpanel" aria-labelledby="wc-tab-launch" hidden={activeTab !== "launch"}>
+            <WorkspaceLaunchForm workspacePath={workspacePath} inspection={workspaceInspection} busy={actionsBlocked}
+              onLaunch={launchWorkspace} onDeploy={() => setActiveTab("deploy")} onCredentials={() => void openCredentials()} onBusyChange={setCredentialBusy} />
+          </div>
+          <div className="wc-panel" id="wc-panel-deploy" role="tabpanel" aria-labelledby="wc-tab-deploy" hidden={activeTab !== "deploy"}>
+            <div className="wc-notice"><div><strong>{updateCount ? `${updateCount} 个客户端有接入更新` : workspaceInspection?.existingEnrollment ? "当前工作区已接入 AMO" : "选择需要接入 AMO 的客户端"}</strong><p className="wc-help">{workspaceInspection ? workspaceDeploymentSummary(workspaceInspection) : "检查目录以查看可接入的客户端；检查操作不会写入文件。"}</p></div>
+              <button type="button" className="wc-button" disabled={!workspacePath.trim() || actionsBlocked} onClick={() => void inspectWorkspace()}><RefreshCw size={14} />{deployBusy === "inspect" ? "检查中…" : "重新检查"}</button>
             </div>
-            <div className="workspace-registry-list">
-              {registeredWorkspaces.length === 0 ? (
-                <p>No deployed workspaces yet.</p>
-              ) : registeredWorkspaces.map((workspace) => (
-                <div
-                  className={`workspace-registry-item${workspace.workspacePath === workspacePath ? " selected" : ""}`}
-                  key={workspace.workspaceId}
-                >
-                  {editingWorkspaceId === workspace.workspaceId ? (
-                    <form className="workspace-label-editor" onSubmit={(event) => {
-                      event.preventDefault();
-                      void saveWorkspaceLabel(workspace);
-                    }}>
-                      <input
-                        autoFocus
-                        maxLength={32}
-                        value={workspaceLabelDraft}
-                        aria-label={`Label for ${workspace.projectName}`}
-                        placeholder="Project label"
-                        onChange={(event) => setWorkspaceLabelDraft(event.target.value)}
-                        onKeyDown={(event) => {
-                          if (event.key === "Escape") setEditingWorkspaceId(null);
-                        }}
-                      />
-                      <button type="submit" title="Save label" disabled={registryBusy}>
-                        <Check size={12} aria-hidden="true" />
-                      </button>
-                      <button type="button" title="Cancel" onClick={() => setEditingWorkspaceId(null)}>
-                        <X size={12} aria-hidden="true" />
-                      </button>
-                    </form>
-                  ) : (
-                    <>
-                      <button type="button" className="workspace-registry-select" onClick={() => void selectRegisteredWorkspace(workspace)}>
-                        <span className={`workspace-status-dot ${workspace.status}`} aria-hidden="true" />
-                        <span>
-                          <strong>{workspace.workspaceLabel || workspace.projectName}</strong>
-                          <small>{workspace.workspaceLabel ? workspace.projectName : workspace.adapterIds.join(" + ") || "No adapters"}</small>
-                        </span>
-                      </button>
-                      <div className="workspace-registry-actions">
-                        <button type="button" title="Edit project label" onClick={() => beginWorkspaceLabelEdit(workspace)}>
-                          <Pencil size={12} aria-hidden="true" />
-                        </button>
-                        <button type="button" title="Forget workspace" onClick={() => void forgetRegisteredWorkspace(workspace)}>
-                          <Trash2 size={12} aria-hidden="true" />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-            </div>
-          </aside>
-          <DeployWorkspaceSection
-            workspacePath={workspacePath}
-            workspaceInspection={workspaceInspection}
-            selectedDeployAdapters={selectedDeployAdapters}
-            deployBusy={deployBusy}
-            launchBusy={launchBusy}
-            gitRootPath={gitRootPath}
-            gitExcludeStatus={gitExcludeStatus}
-            gitExcludeMissingPatterns={gitExcludeMissingPatterns}
-            gitExcludeTrackedPatterns={gitExcludeTrackedPatterns}
-            gitExcludeBlocked={gitExcludeBlocked}
-            gitExcludeBusy={gitExcludeBusy}
-            includeClaudeSettingsExclude={includeClaudeSettingsExclude}
-            documentMappingPath={documentMappingPath}
-            documentMappings={workspaceInspection?.documentMappings ?? null}
-            documentMappingBusy={documentMappingBusy}
-            documentMappingBlocked={documentMappingBlocked}
-            onWorkspacePathChange={updateWorkspacePathInput}
-            onInspectWorkspace={() => void inspectWorkspace()}
-            onChooseWorkspace={() => void chooseWorkspaceDirectory()}
-            onLaunchCli={openCliLaunchDialog}
-            onDeploySelected={() => void enrollWorkspace()}
-            onClearGenerated={() => void clearWorkspaceGenerated()}
-            onGitRootPathChange={updateGitRootPathInput}
-            onApplyGitExclude={() => void applyGitExclude()}
-            onChooseGit={() => void chooseGitDirectory()}
-            onClaudeSettingsExcludeChange={updateClaudeSettingsExclude}
-            onDocumentMappingPathChange={setDocumentMappingPath}
-            onChooseDocumentMapping={() => void chooseDocumentMappingDirectory()}
-            onDeployDocumentMapping={(sourcePath) => void deployDocumentMapping(sourcePath)}
-            onRemoveDocumentMapping={(entry) => void removeDocumentMapping(entry)}
-            onOpenDocumentMappingPath={(path, label) => void openDeploymentPath(path, label)}
-          />
-          <DeployAdaptersSection
-            workspaceInspection={workspaceInspection}
-            selectedDeployAdapters={selectedDeployAdapters}
-            deployBusy={deployBusy}
-            launchBusy={launchBusy}
-            documentMappingBusy={documentMappingBusy !== null}
-            onAdapterSelectedChange={(adapterId, selected) => {
-              setSelectedDeployAdapters((current) =>
-                selected ? Array.from(new Set([...current, adapterId])) : current.filter((id) => id !== adapterId),
-              );
-            }}
-            onDeployAdapter={(adapterId) => void enrollWorkspace([adapterId])}
-            onLaunchWorkspace={(adapterId) => openLaunchDialog(adapterId)}
-          />
+            <div className="wc-row wc-between wc-list-heading"><span>客户端接入</span><span>当前工作区状态</span></div>
+            {workspaceInspection?.supportedAdapters.map(adapter => {
+              const status = adapter.deploymentStatus;
+              const selectable = isDeployableWorkspaceAdapter(adapter);
+              return <article className="wc-adapter" key={adapter.id}>
+                <input type="checkbox" aria-label={`选择 ${adapter.label} 接入`} checked={selectedDeployAdapters.includes(adapter.id)} disabled={!selectable || actionsBlocked}
+                  onChange={e => setSelectedDeployAdapters(current => e.target.checked ? [...new Set([...current, adapter.id])] : current.filter(id => id !== adapter.id))} />
+                <div><strong>{adapter.label}</strong><p>{adapter.reason}</p>{adapter.deploymentIssues?.length ? <details><summary>查看接入问题</summary><ul>{adapter.deploymentIssues.map(issue => <li key={issue}>{issue}</li>)}</ul></details> : null}</div>
+                <div className="wc-adapter-status"><span className={status === "deployed" ? "wc-good" : status === "needs-update" ? "wc-warning" : ""}>{status === "deployed" ? "已接入" : status === "needs-update" ? "可更新" : selectable ? "未接入" : "不可接入"}</span><small>{adapterContextLabel(adapter)}</small></div>
+              </article>;
+            })}
+            {workspaceInspection?.deferredAdapters?.map(adapter => <div className="wc-notice" key={adapter.id}><span>{adapter.label}：{adapter.reason || "暂不支持接入"}</span></div>)}
+            <p className="wc-help wc-deploy-help">部署范围为当前工作区，已有接入可重新部署。</p>
+            <div className="wc-launch-footer"><span className="wc-help">已选择 {selectedDeployAdapters.length} 个客户端</span><button type="button" className="wc-button wc-primary" disabled={!workspaceInspection || !selectedDeployAdapters.length || actionsBlocked} onClick={() => void enrollWorkspace()}><Download size={15} />{deployBusy === "enroll" ? "正在部署…" : "部署 / 更新选中项"}</button></div>
+            {workspaceEnrollment && <div className="wc-notice wc-deploy-result"><span>部署完成 · {workspaceEnrollment.installedFiles.length} 个文件，{workspaceEnrollment.mergedFiles.length} 个合并</span><button type="button" className="wc-link" onClick={() => setActiveTab("launch")}>前往启动 →</button></div>}
+          </div>
+          <div className="wc-panel wc-settings" id="wc-panel-settings" role="tabpanel" aria-labelledby="wc-tab-settings" hidden={activeTab !== "settings"}>
+            <section className="wc-setting-block"><div className="wc-setting-row"><div><h2>工作区备注</h2><p className="wc-help">用于列表显示和任务命名。</p></div>
+              {currentWorkspace ? editingWorkspaceId === currentWorkspace.workspaceId ? <form className="wc-row" onSubmit={e => { e.preventDefault(); void saveWorkspaceLabel(currentWorkspace); }}><input aria-label="工作区备注" maxLength={32} autoFocus value={workspaceLabelDraft} disabled={actionsBlocked} onChange={e => setWorkspaceLabelDraft(e.target.value)} /><button type="submit" className="wc-button" disabled={actionsBlocked}><Check size={14} />保存</button><button type="button" className="wc-icon-button" aria-label="取消修改备注" onClick={() => setEditingWorkspaceId(null)}><X size={14} /></button></form>
+                : <button type="button" className="wc-button" disabled={actionsBlocked} onClick={() => beginWorkspaceLabelEdit(currentWorkspace)}><Pencil size={14} />{currentWorkspace.workspaceLabel || "设置备注"}</button>
+                : <span className="wc-help">接入工作区后可设置</span>}
+            </div></section>
+            <section className="wc-setting-block"><div className="wc-setting-row"><div><h2>Git 本地排除</h2><p className="wc-help">将 AMO 生成文件加入本机 Git 排除规则。</p></div><span className="wc-help">{gitExcludeStatus?.status || "尚未检查"}</span></div>
+              <details><summary>查看与修改规则</summary><div className="wc-settings-detail">
+                <label className="wc-field"><span>Git 仓库目录</span><input value={gitRootPath} aria-label="Git 仓库目录" disabled={actionsBlocked} onChange={e => updateGitRootPathInput(e.target.value)} placeholder="可选，自动检测仓库根目录" /></label>
+                <label className="wc-check"><input type="checkbox" checked={includeClaudeSettingsExclude} disabled={actionsBlocked} onChange={e => updateClaudeSettingsExclude(e.target.checked)} />同时排除 .claude/settings.local.json</label>
+                <div className="wc-row wc-between"><button type="button" className="wc-button" disabled={actionsBlocked} onClick={() => void chooseGitDirectory()}>选择 Git 目录</button><button type="button" className="wc-button" disabled={actionsBlocked || !workspacePath.trim()} onClick={() => void applyGitExclude()}>{gitExcludeBusy ? "正在添加…" : "添加排除规则"}</button></div>
+                <GitExcludeStatusView status={gitExcludeStatus} missingPatterns={gitExcludeMissingPatterns} trackedPatterns={gitExcludeTrackedPatterns} />
+              </div></details>
+            </section>
+            <section className="wc-setting-block"><h2>项目文档映射</h2><p className="wc-help">在 Obsidian Vault 中打开项目文档，源文件保留在工程中。</p>
+              <DocumentMappingsSection key={workspacePath} compact workspaceEnrolled={Boolean(workspaceInspection?.existingEnrollment)} mappingPath={documentMappingPath} status={workspaceInspection?.documentMappings ?? null} busy={documentMappingBusy} blocked={actionsBlocked}
+                onMappingPathChange={setDocumentMappingPath} onChoose={() => void chooseDocumentMappingDirectory()} onDeploy={sourcePath => void deployDocumentMapping(sourcePath)} onRemove={entry => void removeDocumentMapping(entry)} onOpenPath={(path, label) => void openDeploymentPath(path, label)} />
+            </section>
+            <details className="wc-maintenance"><summary>维护与移除</summary><div className="wc-settings-detail">
+              <div className="wc-setting-row"><div><h2>清理生成内容</h2><p className="wc-help">删除生成笔记、重置基础画布；保留 Hooks 和工作画布。</p></div><button type="button" className="wc-button wc-danger" disabled={actionsBlocked || !workspaceInspection?.existingEnrollment} onClick={() => setMaintenance("clean")}>清理</button></div>
+              <div className="wc-setting-row"><div><h2>从列表移除工作区</h2><p className="wc-help">工程文件和已部署的 Hooks 会保留。</p></div><button type="button" className="wc-button wc-danger" disabled={actionsBlocked || !currentWorkspace} onClick={() => setMaintenance("forget")}>移除</button></div>
+              {maintenance && <div className="wc-confirm" role="alert"><strong>{maintenance === "clean" ? "确认清理当前工作区的生成内容？" : "确认从列表移除当前工作区？"}</strong><p className="wc-help">{maintenance === "clean" ? "生成笔记将被删除，基础画布将被重置，此操作无法撤销。" : "仅移除工作区登记，工程文件与 Hooks 保留。"}</p><div className="wc-row"><button type="button" className="wc-button" disabled={actionsBlocked} onClick={() => setMaintenance(null)}>取消</button><button type="button" className="wc-button wc-danger" disabled={actionsBlocked} onClick={() => { if (maintenance === "clean") void clearWorkspaceGenerated(); else if (currentWorkspace) void forgetRegisteredWorkspace(currentWorkspace); }}>确认{maintenance === "clean" ? "清理" : "移除"}</button></div></div>}
+            </div></details>
+          </div>
+          <footer className="wc-statusbar" role="status" aria-live="polite"><span className="wc-dot" /><span title={feedback}>{feedback}</span></footer>
         </div>
-
-        <footer className="app-dialog-footer">
-          <DeployResultFooter
-            workspaceEnrollment={workspaceEnrollment}
-            feedback={feedback}
-            deployBusy={deployBusy}
-            launchBusy={launchBusy}
-            onLaunchWorkspace={(adapterId) => openLaunchDialog(adapterId)}
-            onOpenDeploymentPath={(path, label) => void openDeploymentPath(path, label)}
-          />
-        </footer>
-      </section>
-      {launchPanel ? (
-        <LaunchPanel
-          state={launchPanel}
-          onClose={() => setLaunchPanel(null)}
-          onLaunch={(selection) => void launchWorkspace(selection)}
-        />
-      ) : null}
+      </div>
     </main>
   );
 }

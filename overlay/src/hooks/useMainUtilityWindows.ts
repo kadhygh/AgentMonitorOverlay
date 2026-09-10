@@ -32,8 +32,8 @@ const utilityWindowDefinitions: Record<
   deploy: {
     title: "AMO Workspace Center",
     width: 1000,
-    height: 640,
-    minWidth: 760,
+    height: 720,
+    minWidth: 640,
     minHeight: 500,
   },
   scratchpad: {
@@ -205,7 +205,24 @@ export function ensureScratchpadWindow() {
   return getOrCreateUtilityWindow("scratchpad");
 }
 
-async function getOrCreateUtilityWindow(label: LazyWindowKind) {
+export async function openModelSettingsWindow() {
+  try { localStorage.setItem("amo.settings.requestedSection", "models"); } catch { /* Sidebar navigation remains available. */ }
+  await openSharedUtilityWindow("settings");
+}
+
+export async function openWorkspaceCenterForPath(workspacePath: string) {
+  localStorage.setItem("amo.workspace.requestedPath", workspacePath);
+  await openSharedUtilityWindow("deploy");
+}
+
+async function openSharedUtilityWindow(label: UtilityWindowKind) {
+  const target = await getOrCreateUtilityWindow(label);
+  await target.show();
+  await target.emitTo("main", "amo-utility-window-state", { label, open: true });
+  await bringUtilityWindowToFront(label);
+}
+
+export async function getOrCreateUtilityWindow(label: LazyWindowKind) {
   const pending = pendingUtilityWindowRequests.get(label);
   if (pending) return pending;
 

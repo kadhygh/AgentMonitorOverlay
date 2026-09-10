@@ -15,8 +15,15 @@ const {
   CODEX_PROVIDER_DEFINITIONS,
   GROK_PROVIDER_DEFINITIONS,
   modelCredentialProviderId,
+  isCodexProviderPresetId,
+  loadDefaultCodexProvider,
+  saveDefaultCodexProvider,
   normalizeClaudeProviderPresetId,
+  DEEPSEEK_DEFAULT_PRESET_ID,
+  loadDefaultClaudeProvider,
+  saveDefaultClaudeProvider,
 } = await vite.ssrLoadModule("/src/native/modelProviders.ts");
+const { workspaceLaunchRoutes, workspaceLaunchModelLabel } = await vite.ssrLoadModule("/src/domain/workspaceLaunchRoutes.ts");
 
 after(async () => {
   await vite.close();
@@ -24,11 +31,11 @@ after(async () => {
 
 test("DeepSeek V4 Pro appears above the retained Flash preset", () => {
   assert.deepEqual(
-    CODEX_PROVIDER_DEFINITIONS.map((provider) => provider.id),
-    ["openai-default", "dxx", "deepseek-v4-pro", "deepseek-v4"],
+    CODEX_PROVIDER_DEFINITIONS.filter(provider => !provider.id.startsWith("deepseek-profile-")).map((provider) => provider.id),
+    ["openai-default", "dxx", "dxx-gpt-6-astra", "deepseek-v4-pro", "deepseek-v4"],
   );
   assert.deepEqual(
-    CLAUDE_PROVIDER_DEFINITIONS.map((provider) => provider.id),
+    CLAUDE_PROVIDER_DEFINITIONS.filter(provider => !provider.id.startsWith("deepseek-profile-")).map((provider) => provider.id),
     ["anthropic-default", "deepseek-v4-pro", "deepseek-v4", "glm-5.3"],
   );
 });
@@ -41,6 +48,57 @@ test("DeepSeek V4 Pro and Flash share the existing secure credential", () => {
   assert.equal(modelCredentialProviderId("openai-default"), null);
   assert.equal(modelCredentialProviderId("dxx"), "dxx");
   assert.equal(CODEX_PROVIDER_DEFINITIONS.find(p => p.id === "dxx").model, "gpt-5.6-sol");
+});
+
+test("workspace routes group models without changing launch and resume preset IDs", () => {
+  const routes = workspaceLaunchRoutes("codex-cli");
+  assert.equal(routes.find(route => route.id === "dxx").title, "GPT-Dxx");
+  assert.deepEqual(routes.find(route => route.id === "dxx").models.map(model => model.id), ["dxx", "dxx-gpt-6-astra"]);
+  assert.deepEqual(routes.flatMap(route => route.models.map(model => model.id)), CODEX_PROVIDER_DEFINITIONS.filter(model => !model.hidden).map(model => model.id));
+  assert.deepEqual(workspaceLaunchRoutes("claude-cli").flatMap(route => route.models.map(model => model.id)), CLAUDE_PROVIDER_DEFINITIONS.filter(model => !model.hidden).map(model => model.id));
+  const deepseek = routes.find(route => route.id === "deepseek-v4");
+  assert.equal(deepseek.models.length, 2);
+  assert.equal(deepseek.models[0].id, DEEPSEEK_DEFAULT_PRESET_ID);
+  for (const model of deepseek.models) {
+    assert.equal(modelCredentialProviderId(model.id), "deepseek-v4");
+    assert.equal(isCodexProviderPresetId(model.id), true);
+  }
+  assert.equal(workspaceLaunchRoutes("grok-build").length, 1);
+  assert.equal(workspaceLaunchModelLabel("gpt-6-astra"), "GPT-6 Astra");
+  assert.equal(workspaceLaunchModelLabel("Local Codex configuration"), "沿用本机配置");
+});
+
+test("DXX Sol and Astra share credentials and remain valid saved launch/resume presets", t => {
+  const storage = new Map();
+  const originalStorage = Object.getOwnPropertyDescriptor(globalThis, "localStorage");
+  Object.defineProperty(globalThis, "localStorage", {
+    configurable: true,
+    value: {
+      getItem: key => storage.get(key) ?? null,
+      setItem: (key, value) => storage.set(key, value),
+    },
+  });
+  t.after(() => {
+    if (originalStorage) Object.defineProperty(globalThis, "localStorage", originalStorage);
+    else delete globalThis.localStorage;
+  });
+  storage.set("amo.models.defaultCodexProvider", "dxx");
+  assert.equal(loadDefaultCodexProvider(), "dxx-gpt-6-astra");
+  assert.equal(storage.get("amo.models.defaultCodexProvider"), "dxx-gpt-6-astra");
+  saveDefaultCodexProvider("deepseek-v4");
+  saveDefaultClaudeProvider("deepseek-v4-pro");
+  assert.equal(loadDefaultCodexProvider(), DEEPSEEK_DEFAULT_PRESET_ID);
+  assert.equal(loadDefaultClaudeProvider(), DEEPSEEK_DEFAULT_PRESET_ID);
+  const activeMixed = CODEX_PROVIDER_DEFINITIONS.find(model => model.id.startsWith("deepseek-profile-") && model.id.endsWith("-pro-flash")).id;
+  saveDefaultCodexProvider(activeMixed);
+  assert.equal(loadDefaultCodexProvider(), activeMixed);
+  for (const [presetId, model] of [["dxx", "gpt-5.6-sol"], ["dxx-gpt-6-astra", "gpt-6-astra"]]) {
+    assert.equal(isCodexProviderPresetId(presetId), true);
+    assert.equal(modelCredentialProviderId(presetId), "dxx");
+    assert.equal(CODEX_PROVIDER_DEFINITIONS.find(p => p.id === presetId).model, model);
+    saveDefaultCodexProvider(presetId);
+    assert.equal(loadDefaultCodexProvider(), presetId);
+  }
 });
 
 test("legacy GLM-5.2 defaults migrate to GLM-5.3", () => {

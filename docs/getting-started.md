@@ -138,7 +138,7 @@ To use or override the preset for one session:
 
 1. return to Workspace Center and select **Run Codex** or **Run Claude**;
 2. select **Codex CLI** or **Claude CLI** in Launch Task;
-3. under **Model routing**, choose **Codex default** / **DeepSeek V4 Pro** / **DeepSeek V4 Flash** for Codex, or **Claude default** / **DeepSeek V4 Pro** / **DeepSeek V4 Flash** / **GLM-5.3** for Claude;
+3. under **Model routing**, choose **GPT-Official** / **DeepSeek V4 Pro** / **DeepSeek V4 Flash** for Codex, or **Claude default** / **DeepSeek V4 Pro** / **DeepSeek V4 Flash** / **GLM-5.3** for Claude;
 4. if the selected provider is not saved, enter its key in the launch dialog; a saved key can also be overridden only for this launch;
 5. select **Launch managed CLI**.
 

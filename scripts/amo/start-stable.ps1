@@ -50,6 +50,7 @@ function Get-AmoStableBuildFingerprint {
     $inputFiles = @()
     foreach ($directory in @(
         (Join-Path $overlayRoot "src"),
+        (Join-Path $repoRoot "broker\assets\deepseek"),
         (Join-Path $tauriRoot "src"),
         (Join-Path $tauriRoot "capabilities")
     )) {

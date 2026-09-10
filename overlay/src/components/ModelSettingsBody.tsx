@@ -102,7 +102,7 @@ export function ModelSettingsBody({
           value={defaultCodexProviderId}
           onChange={(event) => onDefaultCodexProviderChange(event.currentTarget.value as CodexProviderPresetId)}
         >
-          {CODEX_PROVIDER_DEFINITIONS.map((provider) => (
+          {CODEX_PROVIDER_DEFINITIONS.filter(provider => !provider.hidden).map((provider) => (
             <option key={provider.id} value={provider.id}>
               {provider.title}
             </option>
@@ -116,7 +116,7 @@ export function ModelSettingsBody({
           value={defaultClaudeProviderId}
           onChange={(event) => onDefaultClaudeProviderChange(event.currentTarget.value as ClaudeProviderPresetId)}
         >
-          {CLAUDE_PROVIDER_DEFINITIONS.map((provider) => (
+          {CLAUDE_PROVIDER_DEFINITIONS.filter(provider => !provider.hidden).map((provider) => (
             <option key={provider.id} value={provider.id}>
               {provider.title}
             </option>

@@ -943,7 +943,7 @@ export function MainOverlayApp() {
             <LaunchPanel
               state={launchPanel}
               onClose={() => setLaunchPanel(null)}
-              onLaunch={(selection) => void launchProjectToolFromPanel(selection)}
+              onLaunch={launchProjectToolFromPanel}
             />
           ) : null}
           {workspacePanel ? (

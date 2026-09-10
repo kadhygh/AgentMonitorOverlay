@@ -1,11 +1,13 @@
 const { httpError } = require("./http");
 const { normalizeText } = require("./normalize");
+const { codexProfiles } = require("./deepseek-profiles");
 
 const DEFAULT_PROVIDER = "openai-default";
 const PROVIDER_PRESETS = Object.freeze({
+  ...codexProfiles,
   [DEFAULT_PROVIDER]: {
     id: DEFAULT_PROVIDER,
-    label: "Codex default",
+    label: "GPT-Official",
     model: null,
     requiresApiKey: false,
     providerId: null,
@@ -14,8 +16,18 @@ const PROVIDER_PRESETS = Object.freeze({
   },
   "dxx": {
     id: "dxx",
-    label: "DXX · GPT-5.6 Sol",
+    label: "GPT-Dxx",
     model: "gpt-5.6-sol",
+    requiresApiKey: true,
+    providerId: "amo-dxx",
+    baseUrl: "https://gorilla-api.dxxapi.com",
+    envKey: "DXX_API_KEY",
+    modelCatalogFile: "dxx.models.json",
+  },
+  "dxx-gpt-6-astra": {
+    id: "dxx-gpt-6-astra",
+    label: "DXX · GPT-6 Astra",
+    model: "gpt-6-astra",
     requiresApiKey: true,
     providerId: "amo-dxx",
     baseUrl: "https://gorilla-api.dxxapi.com",
@@ -66,6 +78,9 @@ function resolveCodexProvider(payload) {
     baseUrl: preset.baseUrl,
     envKey: preset.envKey || "DEEPSEEK_API_KEY",
     modelCatalogFile: preset.modelCatalogFile,
+    subagentModel: preset.subagentModel,
+    reviewModel: preset.reviewModel,
+    reasoningEffort: preset.reasoningEffort,
     environment: preset.requiresApiKey
       ? { [preset.envKey || "DEEPSEEK_API_KEY"]: apiKey }
       : {},

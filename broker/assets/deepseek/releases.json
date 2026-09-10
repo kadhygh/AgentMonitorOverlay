@@ -1,0 +1,31 @@
+{
+  "schemaVersion": 1,
+  "activeRelease": "v41-flash",
+  "defaultMode": "flash-all",
+  "releases": [
+    {
+      "id": "v4",
+      "label": "V4 稳定版",
+      "flashModel": "deepseek-v4-flash",
+      "proModel": "deepseek-v4-pro",
+      "claudeProModel": "deepseek-v4-pro[1m]",
+      "vision": false
+    },
+    {
+      "id": "v41-flash-0910",
+      "label": "V4.1 Flash 0910",
+      "flashModel": "deepseek-v4.1-flash-expires-on-0910",
+      "proModel": "deepseek-v4-pro",
+      "claudeProModel": "deepseek-v4-pro[1m]",
+      "vision": true
+    },
+    {
+      "id": "v41-flash",
+      "label": "V4.1 Flash",
+      "flashModel": "deepseek-flash",
+      "proModel": "deepseek-v4-pro",
+      "claudeProModel": "deepseek-v4-pro[1m]",
+      "vision": true
+    }
+  ]
+}

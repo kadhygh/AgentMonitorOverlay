@@ -14,9 +14,13 @@ AMO（Agent Monitor Overlay）是一层面向 Windows 本地 AI CLI 工作流的
 
 ## 最新更新
 
+### DeepSeek 版本配置与两种路由模式
+
+DeepSeek 现按发布版本统一生成 Codex CLI、Claude CLI 的路由：**flash-all** 将主任务和子任务都交给 Flash，**pro-flash** 用 Pro 处理主任务、Flash 处理子任务。当前默认接入 `deepseek-flash` 的 flash-all 模式。在工作区中心或任务快速入口选择 **DeepSeek → Flash 全部 · V4.1 Flash** 即可使用已保存的 DeepSeek Key 启动。后续新模型接入、切换模式和回滚使用同一脚本；详见 [DeepSeek 路由 SOP](docs/deepseek-routing-sop.md)。
+
 ### 任意目录启动 CLI 与独立任务画板
 
-Workspace Center 的路径栏下新增 **Launch CLI**：选择现有目录即可启动 Codex CLI、Claude CLI 或 Grok Build，无需先 Check 或 Deploy。该模式不部署 AMO 文件、不创建受管启动记录；已有 hooks 仍可能报告事件。Codex CLI 新增 **DXX · GPT-5.6 Sol** 路由，独立 Key 在 Settings → Models 保存。详见[免部署启动说明](docs/cli-only-launch.md)和[DXX 配置](docs/dxx-codex-provider.md)。
+Workspace Center 的路径栏下新增 **Launch CLI**：选择现有目录即可启动 Codex CLI、Claude CLI 或 Grok Build，无需先 Check 或 Deploy。该模式不部署 AMO 文件、不创建受管启动记录；已有 hooks 仍可能报告事件。Codex CLI 支持 **GPT-Dxx** 和 **DXX · GPT-6 Astra** 路由，共用 Settings → Models 中保存的独立 DXX Key，也可在 CLI 内通过 `/model` 切换。详见[免部署启动说明](docs/cli-only-launch.md)和[DXX 配置](docs/dxx-codex-provider.md)。
 
 主浮窗的 **Open Canvas** 打开独立跨工作区任务画板，支持任务引用、便笺、拖动、连线和保存。详见[任务画板说明](docs/task-canvas-workbench.md)。
 
@@ -98,12 +102,12 @@ AMO 不会安装或替代这些应用。每项集成都仍然是可选的外部�
 
 1. 打开 [GitHub Releases](https://github.com/kadhygh/AgentMonitorOverlay/releases)，展开最新版本的 **Assets**，下载 `AMO-v<版本>-win-x64.zip`，不要下载页面自动生成的 Source code 压缩包。
 2. 将 ZIP 完整解压到可写目录，保持 `AMO.exe`、`app/`、`runtime/` 和 `data/` 在一起，然后双击 `AMO.exe`。
-3. 在 AMO 顶部点击文件夹图标打开 **Workspace Center**；点击 **Choose** 选择工程目录，再点击 **Check**。Check 只检查状态，不会写入工程。
-4. 勾选 Codex CLI、Claude CLI 和/或 Grok Build Adapter，点击 **Deploy Selected**，把工程内 Hook 和 `.amo` 工作区部署到所选目录。
-5. 部署完成后，可在左侧 Workspace 列表使用铅笔按钮设置 `main`、`dev1` 等项目备注。新启动的 Session 会在首轮 Prompt 后生成 `<项目备注>-<开发内容>` 名称；自动命名只更新 AMO 显示名称；需要同步到支持的 Provider 时，在 Workspace Tools 中显式点击 **Sync to Session**。
+3. 在 AMO 顶部点击文件夹图标打开 **Workspace Center**；点击工作区列表旁的 **＋**，选择文件夹或粘贴路径后点击 **打开并检查**。检查只读取状态，不会写入工程。
+4. 在 **接入与更新** 页勾选 Codex CLI、Claude CLI 和/或 Grok Build，点击 **部署 / 更新选中项**，把工程内 Hook 和 `.amo` 工作区部署到所选目录。只需普通 CLI 时，可跳过部署直接启动。
+5. 部署完成后，可在 **工作区设置 → 工作区备注** 设置 `main`、`dev1` 等项目备注。新启动的 Session 会在首轮 Prompt 后生成 `<项目备注>-<开发内容>` 名称；自动命名只更新 AMO 显示名称；需要同步到支持的 Provider 时，在 Workspace Tools 中显式点击 **Sync to Session**。
 6. 点击 **Vault**。首次打开时，在确认仓库来源可信的前提下，让 Obsidian 信任该 Vault 并启用随 Vault 部署的 AMO 插件。
 7. 在 AMO 设置的 **Scratchpad** 页面启用适合自己的全局快捷键；阅读长回复时可呼出三页临时面板，记录尚未整理成熟的想法。
-8. 在 Workspace Center 的 Adapter 行点击 **Run**，或使用底部的 **Run Codex / Run Claude / Run Grok**；选择客户端和 Model routing 后点击 **Launch managed CLI**。Grok Build 当前固定使用 **Grok Default**，沿用本机登录、模型和配置。
+8. 在 Workspace Center 的 **启动** 页选择客户端、**AMO 受管 / 普通 CLI**、模型路由和启动模型，再点击启动。GPT-Dxx 下可选 GPT-5.6 Sol 或 GPT-6 Astra；Grok Build 固定使用 **Grok Default**，沿用本机登录、模型和配置。
 9. 在新终端中开始对话。Hook 发出回复事件后，AMO 会创建或接管任务卡片；当卡片进入 **Review**，点击 **Note** 打开对应回复。
 10. 在 Obsidian 中点击工具栏的 **Open AMO panel**，选中需要回应的原文并点击 **批注**；整理完成后使用 **返回窗口** 回到对应 CLI。
 

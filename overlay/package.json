@@ -10,6 +10,7 @@
     "url": "git+https://github.com/kadhygh/AgentMonitorOverlay.git"
   },
   "scripts": {
+    "prebuild": "node ../scripts/models/deepseek-routing.cjs --check",
     "dev": "vite",
     "build": "tsc && vite build",
     "test:runtime": "node --test tests/runtime/*.test.mjs",

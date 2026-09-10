@@ -1,4 +1,5 @@
-import { Bot, FolderOpen, Link2, RefreshCcw, SquareTerminal, Trash2, Unlink } from "lucide-react";
+import { useState } from "react";
+import { Bot, FolderOpen, Link2, Plus, RefreshCcw, SquareTerminal, Trash2, Unlink } from "lucide-react";
 import { projectName, shortPathLabel } from "../domain/routingModel";
 import {
   adapterContextLabel,
@@ -230,6 +231,7 @@ export function DeployWorkspaceSection({
 }
 
 interface DocumentMappingsSectionProps {
+  compact?: boolean;
   workspaceEnrolled: boolean;
   mappingPath: string;
   status: WorkspaceDocumentMappingsStatus | null;
@@ -242,7 +244,8 @@ interface DocumentMappingsSectionProps {
   onOpenPath: (path: string, label: string) => void;
 }
 
-function DocumentMappingsSection({
+export function DocumentMappingsSection({
+  compact = false,
   workspaceEnrolled,
   mappingPath,
   status,
@@ -255,6 +258,26 @@ function DocumentMappingsSection({
   onOpenPath,
 }: DocumentMappingsSectionProps) {
   const actionsBlocked = blocked || !workspaceEnrolled;
+  const [adding, setAdding] = useState(false);
+
+  if (compact) return <div className="wc-document-mappings">
+    <div className="wc-row wc-between"><span className="wc-help">{status?.mappedCount || 0} 个目录已映射</span><div className="wc-row">
+      <button type="button" className="wc-link" disabled={blocked || !status?.projectRoot || !status.mappedCount} onClick={() => status?.projectRoot && onOpenPath(status.projectRoot, "project notes")}>打开映射目录</button>
+      <button type="button" className="wc-button" disabled={actionsBlocked} onClick={() => setAdding(!adding)}><Plus size={14} />添加目录</button>
+    </div></div>
+    {adding && <div className="wc-settings-detail"><label className="wc-field"><span>项目文档目录</span><input aria-label="项目文档目录" autoFocus value={mappingPath} disabled={actionsBlocked} placeholder="例如 AIWork 或项目内的文档路径" onChange={e => onMappingPathChange(e.target.value)} onKeyDown={e => { if (e.key === "Enter" && mappingPath.trim()) onDeploy(); }} /></label>
+      <div className="wc-row"><button type="button" className="wc-button" disabled={actionsBlocked} onClick={onChoose}>选择文件夹</button><button type="button" className="wc-button" disabled={actionsBlocked || !mappingPath.trim()} onClick={() => onDeploy()}>{busy === "add" ? "正在映射…" : "添加映射"}</button><button type="button" className="wc-link" disabled={blocked} onClick={() => setAdding(false)}>收起</button></div>
+    </div>}
+    {!workspaceEnrolled ? <p className="wc-help">接入至少一个客户端后，可添加项目文档映射。</p> : status && !status.entries.length ? <p className="wc-help">尚未映射项目文档。</p> : null}
+    {workspaceEnrolled && status?.entries.map(entry => {
+      const canDeploy = entry.status === "available" || entry.status === "missing-target" || (entry.status === "mapped" && !entry.configured);
+      return <div className="wc-mapping-row" key={entry.sourcePath}><div><strong>{entry.label}</strong><small title={entry.sourcePath}>{entry.sourceRelativePath} → {entry.targetRelativePath}</small></div><div className="wc-row"><span className={entry.status === "mapped" ? "wc-good" : "wc-warning"}>{busy === entry.sourcePath ? "处理中…" : entry.status === "mapped" ? "已映射" : entry.status === "missing-target" ? "需要修复" : entry.status === "available" ? "可映射" : entry.status}</span>
+        <button type="button" className="wc-icon-button" aria-label={`打开 ${entry.label} 源目录`} disabled={blocked || !entry.sourceExists} onClick={() => onOpenPath(entry.sourcePath, entry.label)}><FolderOpen size={15} /></button>
+        {entry.status === "mapped" && entry.configured ? <button type="button" className="wc-icon-button" aria-label={`移除 ${entry.label} 映射`} disabled={blocked} onClick={() => onRemove(entry)}><Unlink size={15} /></button>
+          : canDeploy ? <button type="button" className="wc-button" disabled={blocked} onClick={() => onDeploy(entry.sourcePath)}><Link2 size={14} />{entry.status === "missing-target" ? "修复" : "映射"}</button> : null}
+      </div></div>;
+    })}
+  </div>;
 
   return (
     <div className="deploy-subsection deploy-document-mappings">
@@ -349,7 +372,7 @@ interface GitExcludeStatusViewProps {
   trackedPatterns: Set<string>;
 }
 
-function GitExcludeStatusView({ status, missingPatterns, trackedPatterns }: GitExcludeStatusViewProps) {
+export function GitExcludeStatusView({ status, missingPatterns, trackedPatterns }: GitExcludeStatusViewProps) {
   if (!status) {
     return (
       <div className="deploy-git-exclude-note">

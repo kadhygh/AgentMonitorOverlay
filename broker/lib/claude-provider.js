@@ -1,11 +1,13 @@
 const { httpError } = require("./http");
 const { normalizeText } = require("./normalize");
+const { claudeProfiles } = require("./deepseek-profiles");
 
 const DEFAULT_PROVIDER = "anthropic-default";
 const LEGACY_PROVIDER_ALIASES = Object.freeze({
   "glm-5.2": "glm-5.3",
 });
 const PROVIDER_PRESETS = Object.freeze({
+  ...claudeProfiles,
   [DEFAULT_PROVIDER]: {
     id: DEFAULT_PROVIDER,
     label: "Claude default",

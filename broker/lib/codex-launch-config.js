@@ -17,17 +17,24 @@ function createCodexLaunchArgs({ provider, modelCatalogPath } = {}) {
     ? path.join(__dirname, "..", "assets", "codex", provider.modelCatalogFile)
     : CODEX_MODEL_CATALOG_PATH));
   validateModelCatalog(resolvedCatalogPath, provider.model);
+  if (provider.subagentModel) validateModelCatalog(resolvedCatalogPath, provider.subagentModel);
+  if (provider.reviewModel) validateModelCatalog(resolvedCatalogPath, provider.reviewModel);
   const providerKey = `model_providers.${providerId}`;
 
   return [
     "-c", `model=${tomlString(provider.model)}`,
     "-c", `model_provider=${tomlString(providerId)}`,
-    "-c", 'model_reasoning_effort="high"',
+    "-c", `model_reasoning_effort=${tomlString(provider.reasoningEffort || "high")}`,
     "-c", `model_catalog_json=${tomlString(toPortablePath(resolvedCatalogPath))}`,
     "-c", `${providerKey}.name=${tomlString(provider.label)}`,
     "-c", `${providerKey}.base_url=${tomlString(provider.baseUrl)}`,
     "-c", `${providerKey}.wire_api="responses"`,
     "-c", `${providerKey}.env_key=${tomlString(provider.envKey || "DEEPSEEK_API_KEY")}`,
+    ...(provider.subagentModel ? [
+      "-c", `agents.default_subagent_model=${tomlString(provider.subagentModel)}`,
+      "-c", 'agents.default_subagent_reasoning_effort="high"',
+    ] : []),
+    ...(provider.reviewModel ? ["-c", `review_model=${tomlString(provider.reviewModel)}`] : []),
   ];
 }
 

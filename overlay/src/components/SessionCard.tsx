@@ -102,14 +102,14 @@ function ToolMark({ session }: { session: AgentSession }) {
   );
 }
 
-export function LaunchToolMark({ adapterId }: { adapterId: LaunchPanelAdapterId }) {
+export function LaunchToolMark({ adapterId, compact = false }: { adapterId: LaunchPanelAdapterId; compact?: boolean }) {
   const displayId = toolDisplayIdForLaunchAdapter(adapterId);
   const display = toolDisplay[displayId];
 
   return (
     <span className={`launch-tool-mark tool-${displayId}`} title={display.label}>
       {display.icon ? <img src={display.icon} alt="" aria-hidden="true" /> : <Bot size={18} strokeWidth={2.1} aria-hidden="true" />}
-      {display.badge ? <span className="tool-badge">{display.badge}</span> : null}
+      {display.badge && !compact ? <span className="tool-badge">{display.badge}</span> : null}
     </span>
   );
 }

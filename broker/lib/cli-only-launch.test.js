@@ -9,9 +9,10 @@ function fixture(t) {
   t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
   return dir;
 }
-test('CLI-only DXX launch accepts an undeployed folder without creating managed state', async t => {
+for (const [presetId, model] of [['dxx', 'gpt-5.6-sol'], ['dxx-gpt-6-astra', 'gpt-6-astra']]) {
+test(`CLI-only ${presetId} launch accepts an undeployed folder without creating managed state`, async t => {
   const dir = fixture(t); let invocation;
-  const result = await launchWorkspace({ workspacePath: dir, adapterId: 'codex-cli', launchMode: 'cli-only', codexProvider: { presetId: 'dxx', apiKey: 'test-dxx-secret' } }, {
+  const result = await launchWorkspace({ workspacePath: dir, adapterId: 'codex-cli', launchMode: 'cli-only', codexProvider: { presetId, apiKey: 'test-dxx-secret' } }, {
     launchStore: { create() { throw Error('Must not create managed state'); } },
     launchCliInTerminal: async args => { invocation = args; return { pid: 123, command: args.command, args: args.args }; },
   });
@@ -20,10 +21,41 @@ test('CLI-only DXX launch accepts an undeployed folder without creating managed 
   assert.equal(invocation.environment.AMO_LAUNCH_ID, undefined);
   assert.deepEqual(invocation.cleanupEnvironmentKeys, ['DXX_API_KEY']);
   assert.ok(invocation.args.includes('model_provider="amo-dxx"'));
+  assert.ok(invocation.args.includes(`model="${model}"`));
+  assert.equal(result.codexProviderId, presetId);
+  assert.equal(result.codexModel, model);
   assert.equal(result.launch, null); assert.equal(result.workspaceId, null);
   assert.equal(result.windowHint, null); assert.equal(result.session, null);
   assert.ok(!JSON.stringify(result).includes('test-dxx-secret'));
   assert.deepEqual(fs.readdirSync(dir), []);
+});
+}
+
+test('managed Astra resume retains its DXX preset and model in the launch record', async t => {
+  const dir = fixture(t);
+  fs.mkdirSync(path.join(dir, '.amo'));
+  fs.writeFileSync(path.join(dir, '.amo/workspace.json'), JSON.stringify({ workspaceId: 'workspace-test' }));
+  fs.writeFileSync(path.join(dir, '.amo/enrollment.json'), JSON.stringify({ adapters: [{ id: 'codex-cli' }] }));
+  let record, invocation;
+  const result = await launchWorkspace({
+    workspacePath: dir, adapterId: 'codex-cli', sessionId: 'astra-session',
+    codexProvider: { presetId: 'dxx-gpt-6-astra', apiKey: 'test-dxx-secret' },
+  }, {
+    launchStore: {
+      create(input) { record = { ...input, launchId: 'astra-resume', titleToken: '[AMO:test]' }; return record; },
+      update(id, fields) { assert.equal(id, 'astra-resume'); Object.assign(record, fields); },
+      list() { return [record]; },
+    },
+    launchCliInTerminal: async args => { invocation = args; return { pid: 126, command: args.command, args: args.args }; },
+  });
+  assert.equal(record.mode, 'resume');
+  assert.equal(record.requestedSessionId, 'astra-session');
+  assert.equal(record.codexProviderId, 'dxx-gpt-6-astra');
+  assert.equal(record.codexModel, 'gpt-6-astra');
+  assert.ok(invocation.args.includes('model="gpt-6-astra"'));
+  assert.deepEqual(invocation.args.slice(-4), ['resume', 'astra-session', '-C', fs.realpathSync(dir)]);
+  assert.equal(invocation.environment.DXX_API_KEY, 'test-dxx-secret');
+  assert.ok(!JSON.stringify(result).includes('test-dxx-secret'));
 });
 test('managed launch still requires workspace enrollment', async t => {
   await assert.rejects(launchWorkspace({ workspacePath: fixture(t), adapterId: 'codex-cli' }, { launchStore: {} }), e => e.code === 'workspace_not_enrolled');

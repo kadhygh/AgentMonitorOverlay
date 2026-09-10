@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Workspace Center component checks</title></head>
+<body><div id="checks" style="height:32px;display:flex;align-items:center;gap:12px;padding:0 12px;background:#eee;color:#222;font:12px sans-serif"><strong>Isolated component fixture</strong><button id="theme">切换明暗</button><label><input id="fail-launch" type="checkbox">模拟启动失败</label><span id="last-request"></span></div><div id="root" style="height:calc(100% - 32px);min-height:0"></div>
+<script type="module">
+// Vite-only fixture. All broker and native operations below are simulated.
+// It is not included in the production entrypoints and never uses real credentials.
+import React from 'react';
+import {createRoot} from 'react-dom/client';
+import '/src/styles.css';
+const fixtureStyle=document.createElement('style');fixtureStyle.textContent='.workspace-center{height:100%}';document.head.append(fixtureStyle);
+const base='G:/PROJECT/AgentMonitorOverlay';
+localStorage.setItem('amo.cli.lastWorkspacePath',base);
+localStorage.setItem('amo.models.defaultCodexProvider','dxx-gpt-6-astra');
+localStorage.setItem('amo.theme','dark');
+const adapters=[{id:'codex-cli',label:'Codex CLI',status:'available',deployable:true,deploymentStatus:'deployed',reason:'Codex project hooks are current.'},{id:'claude-cli',label:'Claude CLI',status:'available',deployable:true,deploymentStatus:'needs-update',reason:'Hook update available.',installedHookProtocolVersion:2,expectedHookProtocolVersion:3},{id:'grok-build',label:'Grok Build',status:'available',deployable:true,deploymentStatus:'not-deployed',reason:'Grok project hooks are not installed.'}];
+const registry=[{workspaceId:'amo',workspacePath:base,projectName:'AgentMonitorOverlay',workspaceLabel:'主工程',available:true,enrollmentPresent:true,vaultRoot:base+'/.amo/vault',adapterIds:['codex-cli','claude-cli']},{workspaceId:'scratch',workspacePath:'G:/PROJECT/Playground',projectName:'Playground',available:true,enrollmentPresent:false,adapterIds:[]}];
+let callback=1;
+window.__TAURI_INTERNALS__={metadata:{currentWindow:{label:'deploy'},currentWebview:{label:'deploy'}},transformCallback:()=>callback++,unregisterCallback:()=>{},invoke:async(command,args)=>{
+  if(command==='model_credential_status')return {ok:true,configuredProviderIds:['dxx','deepseek-v4']};
+  if(command==='resolve_model_credential')return {ok:true,apiKey:'fixture-secret-not-real'};
+  if(command==='select_workspace_directory')return {ok:true,path:'G:/PROJECT/Playground'};
+  if(command.includes('get_all'))return [{label:'main'},{label:'deploy'},{label:'settings'}];
+  if(command==='plugin:event|listen')return callback++;
+  return {ok:true,message:'Fixture native operation'};
+}};
+const git={status:'covered',message:'Local AMO patterns are covered.',entries:[],missingEntries:[],trackedEntries:[],gitRootPath:base,includeClaudeSettingsLocal:false};
+let mappings={mappedCount:1,projectRoot:base+'/.amo/vault/Project',projectRootRelativePath:'Project',message:'',entries:[{label:'docs',sourcePath:base+'/docs',sourceRelativePath:'docs',targetRelativePath:'Project/docs',sourceExists:true,configured:true,status:'mapped'}]};
+function inspect(path){const workspace=registry.find(item=>item.workspacePath===path);return {schemaVersion:1,workspaceId:workspace?.workspaceId||'new',workspacePath:path,projectName:path.split('/').pop(),existingEnrollment:workspace?.enrollmentPresent||false,supportedAdapters:path===base?adapters:adapters.map(item=>({...item,deploymentStatus:'not-deployed'})),gitExclude:git,documentMappings:path===base?mappings:{...mappings,mappedCount:0,entries:[]}};}
+window.fetch=async(url,init={})=>{
+  const endpoint=new URL(url,location.href).pathname;
+  const input=init.body?JSON.parse(init.body):{};
+  let result={ok:true};
+  if(endpoint==='/api/workspaces')result={ok:true,workspaces:registry};
+  else if(endpoint.endsWith('/inspect'))result=inspect(input.workspacePath);
+  else if(endpoint.endsWith('/launch')){
+    document.getElementById('last-request').textContent=[input.adapterId,input.launchMode,input.codexProvider?.presetId||input.claudeProvider?.presetId||'default',input.sourceCardSessionId||'center'].join(' · ');
+    if(document.getElementById('fail-launch').checked)return Response.json({message:'Fixture launch failed'},{status:503});
+    result={ok:true,workspacePath:input.workspacePath,adapterId:input.adapterId,message:'Fixture launch successful',uri:'https://example.invalid'};
+  }else if(endpoint.endsWith('/enroll')){
+    adapters.filter(item=>input.adapters.includes(item.id)).forEach(item=>item.deploymentStatus='deployed');
+    result={ok:true,workspacePath:input.workspacePath,installedAdapters:input.adapters,installedFiles:['hook.js'],mergedFiles:[],vaultRoot:base+'/.amo/vault'};
+  }else if(endpoint.endsWith('/document-mappings')){
+    if(input.action==='remove')mappings.entries=mappings.entries.filter(item=>item.sourceRelativePath!==input.sourcePath);
+    else mappings.entries.push({label:input.sourcePath,sourcePath:input.sourcePath,sourceRelativePath:input.sourcePath,targetRelativePath:'Project/'+input.sourcePath,configured:true,sourceExists:true,status:'mapped'});
+    mappings.mappedCount=mappings.entries.length;result={ok:true,changed:true,documentMappings:mappings};
+  }else if(endpoint.endsWith('/label')){const workspace=registry.find(item=>item.workspaceId===input.workspaceId);workspace.workspaceLabel=input.workspaceLabel;result={ok:true,workspace};}
+  else if(endpoint.endsWith('/git-exclude'))result={ok:true,changed:false,gitRootPath:input.gitRootPath||base,status:git,addedEntries:[]};
+  else if(endpoint!='/api/debug/logs')throw new Error('Unsupported fixture operation: '+endpoint);
+  return Response.json(result);
+};
+document.getElementById('theme').onclick=()=>{document.documentElement.dataset.amoTheme=document.documentElement.dataset.amoTheme==='dark'?'light':'dark';};
+const {DeployWorkspaceApp}=await import('/src/windows/DeployWorkspaceApp.tsx');
+const {LaunchPanel}=await import('/src/components/LaunchPanel.tsx');
+const {useWorkspacePanels}=await import('/src/hooks/useWorkspacePanels.ts');
+function EntrypointFixture(){
+  const [launchPanel,setLaunchPanel]=React.useState(null);
+  const [,setFeedback]=React.useState('');
+  const panels=useWorkspacePanels({launchPanel,setLaunchPanel,setFeedback,
+    workspacePanel:null,postDebugLog:()=>{},refreshSessions:async()=>{},
+    setCandidateMenu:()=>{},setCleanConfirm:()=>{},setSessions:()=>{},setWorkspacePanel:()=>{},
+  });
+  React.useEffect(()=>{
+    const button=document.createElement('button');button.textContent='测试任务快速入口';button.id='quick-entry';
+    button.onclick=()=>panels.openLaunchPanel({sessionId:'game-task-fixture',title:'Game task',tool:'codex',workspacePath:base});
+    document.getElementById('checks').append(button);
+    return ()=>button.remove();
+  },[]);
+  return React.createElement(React.Fragment,null,React.createElement(DeployWorkspaceApp),launchPanel&&React.createElement(LaunchPanel,{state:launchPanel,onClose:()=>setLaunchPanel(null),onLaunch:panels.launchProjectToolFromPanel}));
+}
+createRoot(document.getElementById('root')).render(React.createElement(EntrypointFixture));
+</script></body></html>
