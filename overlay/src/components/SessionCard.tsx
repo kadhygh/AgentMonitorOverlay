@@ -6,6 +6,7 @@ import {
   Code2,
   Crosshair,
   FileText,
+  FolderPlus,
   ListFilter,
   Map as MapIcon,
   Plus,
@@ -115,6 +116,7 @@ export function LaunchToolMark({ adapterId, compact = false }: { adapterId: Laun
 }
 
 export interface SessionRowContentProps {
+  onAddToFocus?: () => void;
   session: AgentSession;
   updatedAge?: string;
   activating: boolean;
@@ -144,6 +146,7 @@ export interface SessionRowContentProps {
 }
 
 export function SessionRowContent({
+  onAddToFocus,
   session,
   updatedAge,
   activating,
@@ -402,8 +405,14 @@ export function SessionRowContent({
             ) : null}
           </span>
         </span>
-        {reviewPending || notePath || canvasPath || workspacePath || targetBound || managedConnected || managedOffline || managedLaunching || waitingForPermission || failed || codexAppAvailable ? (
+        {onAddToFocus || reviewPending || notePath || canvasPath || workspacePath || targetBound || managedConnected || managedOffline || managedLaunching || waitingForPermission || failed || codexAppAvailable ? (
           <span className="bridge-actions" aria-label="Bridge actions">
+            {onAddToFocus && !archived ? (
+              <button type="button" className="row-tool-button task-focus-add-button" title="加入 Focus 分组"
+                onClick={(event) => { event.preventDefault(); event.stopPropagation(); onAddToFocus(); }}>
+                <FolderPlus size={13} aria-hidden="true" /><span>加入 Focus 分组</span>
+              </button>
+            ) : null}
             {reviewPending ? (
               <button
                 type="button"

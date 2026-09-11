@@ -2,6 +2,8 @@
 
 日期：2026-09-11。基线：`90808f8`。开发分支：`codex/focus-manual-groups`。
 
+最新后续迭代见 [TaskCard 加入与 Review 接收](../tasks/focus-taskcard-review-routing-2026-09-11.md)：独立新建入口暂时关闭，从现有 TaskCard 加入；用户可指定唯一 Review 接收组。下文“回复不会换组”描述的是启用该规则前的人工分组基线。
+
 开发 worktree：`G:/PROJECT/AgentMonitorOverlay/tmp/worktrees/focus-manual-groups`。实现提交 `26bb27d`，已在用户明确确认“合入”后快进合入本地 master，并于 2026-09-11 15:13（香港时间）完成生产 Source 重启。未 push。
 
 ## 用户确认的范围

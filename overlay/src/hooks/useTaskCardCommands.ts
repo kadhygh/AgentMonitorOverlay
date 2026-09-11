@@ -5,6 +5,7 @@ export function useTaskCardCommands(commands: TaskCardCommands): TaskCardCommand
   const current = useRef(commands);
   current.current = commands;
   return useMemo(() => ({
+    addToFocus: commands.addToFocus ? (session) => current.current.addToFocus?.(session) : undefined,
     openNote: (session) => current.current.openNote(session),
     openVSCode: (session) => current.current.openVSCode(session),
     openCanvas: (session) => current.current.openCanvas(session),
@@ -19,5 +20,5 @@ export function useTaskCardCommands(commands: TaskCardCommands): TaskCardCommand
     openLaunchPanel: (session, x, y) => current.current.openLaunchPanel(session, x, y),
     openWorkspacePanel: (session, x, y) => current.current.openWorkspacePanel(session, x, y),
     startWindowBindDrag: (session, event) => current.current.startWindowBindDrag(session, event),
-  }), []);
+  }), [Boolean(commands.addToFocus)]);
 }

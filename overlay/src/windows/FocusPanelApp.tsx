@@ -11,6 +11,10 @@ import { useAmoThemeRuntime } from "../theme/amoTheme";
 import { closeUtilityWindow, startUtilityWindowDrag, useUtilityWindowLifecycle } from "./utilityWindow";
 import "../focus/focus.css";
 
+// Temporarily disabled: populate Focus from existing TaskCards instead.
+// Keep the standalone creation form and its draft handling for a later iteration.
+const MANUAL_CARD_CREATION_ENABLED = false;
+
 export function FocusPanelApp() {
   useUtilityWindowLifecycle("focus"); useAmoThemeRuntime();
   const feed = useFocusCards();
@@ -54,7 +58,7 @@ export function FocusPanelApp() {
     <header className="amo-focus-header" onPointerDown={startUtilityWindowDrag}>
       <span className="amo-focus-brand"><Focus size={19} /><h1>Focus Panel</h1></span>
       <div className="amo-focus-header-actions">
-        <button aria-label="新建卡片" title="新建卡片" onClick={() => setSurface("new")}><Plus size={16} /><span>新建卡片</span></button>
+        {MANUAL_CARD_CREATION_ENABLED && <button aria-label="新建卡片" title="新建卡片" onClick={() => setSurface("new")}><Plus size={16} /><span>新建卡片</span></button>}
         <button aria-label="全部分组" title="全部分组" onClick={() => setSurface("list")}><List size={17} /></button>
         <button aria-label="分组设置" title="分组设置" onClick={() => setSurface("settings")}><Settings2 size={16} /></button>
         <button aria-label="刷新" title="刷新" onClick={feed.refresh}><RefreshCw size={15} /></button>
@@ -78,19 +82,19 @@ export function FocusPanelApp() {
           setContext({ cardId: card.cardId, x: Math.max(8, Math.min(e.clientX - bounds.left, bounds.width - 220)), y: Math.max(8, Math.min(e.clientY - bounds.top, bounds.height - 200)) });
         }}>{card.title}</button>)}</div>
       </section>)}
-      {!feed.loading && !lanes.length && <div className="amo-focus-empty"><p>从一张卡片开始，按自己的方式整理。</p><button onClick={() => setSurface("settings")}>创建分组</button></div>}
+      {!feed.loading && !lanes.length && <div className="amo-focus-empty"><p>先创建分组，再从已有 TaskCard 加入。</p><button onClick={() => setSurface("settings")}>创建分组</button></div>}
       {feed.loading && <p className="amo-focus-empty" role="status">正在读取卡片…</p>}
     </section>
     {moveError && <div className="amo-focus-error" role="alert">{moveError}{retry && <button disabled={moving} onClick={() => void move()}>Retry same request</button>}</div>}
     <footer className="amo-focus-footer" role="status">{moving ? "正在保存分组…" : message}</footer>
     {context && <div ref={menu} role="menu" aria-label="移至分组" className="amo-focus-context" style={{ left: context.x, top: context.y, maxHeight: Math.max(80, (root.current?.clientHeight ?? 540) - context.y - 8) }}><strong>移至分组</strong>{feed.groups.map(group => <button role="menuitem" key={group.groupId} disabled={moving || retry} onClick={() => void move(context.cardId, group.groupId)}>{group.name}</button>)}</div>}
-    <TaskGroupSettings groups={feed.groups} revision={feed.groupRevision} open={surface === "settings"} onClose={() => setSurface(null)} onChanged={feed.refresh} />
+    <TaskGroupSettings groups={feed.groups} revision={feed.groupRevision} reviewGroupId={feed.reviewGroupId} open={surface === "settings"} onClose={() => setSurface(null)} onChanged={feed.refresh} />
     {surface === "list" && <FocusDialog title="全部分组" onClose={() => setSurface(null)}>
       {lanes.map(group => <details className="amo-focus-group-list" key={group.groupId ?? "ungrouped"} open><summary>{group.name}<span>{cardsInGroup(feed.cards, group.groupId, feed.groups, true).length}</span>{group.dragOnly && <small>仅拖拽时显示</small>}</summary>{cardsInGroup(feed.cards, group.groupId, feed.groups, true).map(card => <button className="amo-focus-list-card" key={card.cardId} onClick={() => openCard(card.cardId)}><span>{card.title}</span>{card.archivedAt && <small>已归档</small>}</button>)}</details>)}
       {!lanes.length && <p>还没有分组或卡片。</p>}
       {visited.filter(id => !feed.cards.some(c => c.cardId === id)).map(id => <button key={id} onClick={() => openCard(id)}>找回卡片草稿 · {id.slice(-8)}</button>)}
     </FocusDialog>}
-    <div hidden={surface !== "new"}><FocusDialog title="新建卡片" onClose={() => setSurface(null)}><NewCardForm open={surface === "new"} groups={feed.groups} onClose={() => setSurface(null)} onCreated={id => { feed.refresh(); openCard(id); }} /></FocusDialog></div>
+    {MANUAL_CARD_CREATION_ENABLED && <div hidden={surface !== "new"}><FocusDialog title="新建卡片" onClose={() => setSurface(null)}><NewCardForm open={surface === "new"} groups={feed.groups} onClose={() => setSurface(null)} onCreated={id => { feed.refresh(); openCard(id); }} /></FocusDialog></div>}
     {visited.map(id => <FocusCardEditor key={id} cardId={id} card={feed.cards.find(card => card.cardId === id)} groups={feed.groups} open={surface === id} onClose={() => setSurface(null)} onChanged={feed.refresh} onList={() => setSurface("list")} />)}
   </main>;
 }

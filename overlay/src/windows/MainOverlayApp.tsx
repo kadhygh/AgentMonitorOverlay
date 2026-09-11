@@ -59,6 +59,8 @@ import { useWindowsNotifications } from "../hooks/useWindowsNotifications";
 import { useWorkspacePanels } from "../hooks/useWorkspacePanels";
 import { SessionRowContent, toolDisplayForSession } from "../components/SessionCard";
 import { TaskCard } from "../components/TaskCard";
+import { TaskCardFocusPicker } from "../components/TaskCardFocusPicker";
+import { bringUtilityWindowToFront } from "./utilityWindow";
 import { useTaskCardCommands } from "../hooks/useTaskCardCommands";
 import { useFocusPanelWindow } from "../hooks/useFocusPanelWindow";
 import { useFocusPanelCommands } from "../hooks/useFocusPanelCommands";
@@ -153,6 +155,7 @@ export function MainOverlayApp() {
   const [cleanConfirm, setCleanConfirm] = useState<CleanConfirmState | null>(null);
   const [archiveClearConfirmOpen, setArchiveClearConfirmOpen] = useState(false);
   const [archivePanelOpen, setArchivePanelOpen] = useState(false);
+  const [focusPickerSession, setFocusPickerSession] = useState<AgentSession | null>(null);
   const [sessionPage, setSessionPage] = useState(0);
   const rowRefs = useRef(new Map<string, HTMLDivElement>());
   const orderedSessionsRef = useRef<AgentSession[]>([]);
@@ -432,6 +435,7 @@ export function MainOverlayApp() {
   }, [sessions, sessionOrder, sessionFilter, sessionSearch, priorityFilters]);
 
   const cardCommands = useTaskCardCommands({
+    addToFocus: setFocusPickerSession,
     openNote: (session) => void openBridgePath(session, "note"),
     openVSCode: (session) => void openSessionWorkspaceInVSCode(session),
     openCanvas: (session) => void openBridgePath(session, "canvas"),
@@ -1014,6 +1018,18 @@ export function MainOverlayApp() {
             />
           ) : null}
 
+          {focusPickerSession ? <TaskCardFocusPicker
+            key={`${focusPickerSession.tool}:${focusPickerSession.sessionId}`}
+            session={focusPickerSession}
+            focusPanelBusy={focusPanelBusy}
+            onClose={() => setFocusPickerSession(null)}
+            onOpenFocus={() => {
+              if (focusPanelBusy) return;
+              if (!focusPanelVisible) void toggleFocusPanel();
+              else void bringUtilityWindowToFront("focus").catch(error => setFeedback(`Focus Panel could not be opened: ${(error as Error).message}`));
+            }}
+            onAdded={groupName => setFeedback(`已加入 Focus 分组：${groupName}`)}
+          /> : null}
           {archivePanelOpen ? (
             <ArchivePanel
               sessions={sessions.filter(sessionArchived)}

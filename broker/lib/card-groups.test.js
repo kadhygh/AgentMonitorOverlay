@@ -23,7 +23,7 @@ const makeCard = (store, operationId, groupId, extra = []) => store.create({ ope
 
 test("manual groups have stable IDs, durable exact replay, conflicts and restart", async (t) => {
   const { store, dataFile } = fixture(t);
-  assert.deepEqual(await store.listGroups(), { schemaVersion: 1, revision: 0, groups: [] });
+  assert.deepEqual(await store.listGroups(), { schemaVersion: 1, revision: 0, groups: [], reviewGroupId: null });
   const create = request("create", 0, [createGroup()]);
   const first = await store.executeGroups(create);
   const groupId = first.groups[0].groupId;
@@ -134,7 +134,7 @@ test("prior cards snapshots default only missing group registry and preserve car
   const restarted = createCardStore({ dataFile });
   t.after(() => restarted.dispose());
   assert.deepEqual(await restarted.get(card.cardId), card);
-  assert.deepEqual(await restarted.listGroups(), { schemaVersion: 1, revision: 0, groups: [] });
+  assert.deepEqual(await restarted.listGroups(), { schemaVersion: 1, revision: 0, groups: [], reviewGroupId: null });
   await restarted.executeGroups(request("first", 0, [createGroup()]));
   assert.equal(JSON.parse(fs.readFileSync(dataFile, "utf8")).groupRevision, 1);
 });
@@ -153,4 +153,210 @@ test("group replay ledger is bounded and evicted stale requests cannot create gr
   await assert.rejects(store.executeGroups(firstRequest), { code: "card_group_revision_conflict" });
   assert.deepEqual(await store.executeGroups(lastRequest), result);
   assert.equal((await store.listGroups()).groups.length, 1);
+});
+
+test("one Review target survives rename and restart, clears on delete, and normalizes older replay snapshots", async (t) => {
+  const { store, dataFile } = fixture(t);
+  const initialRequest = request("groups", 0, [createGroup("Review"), createGroup("Later")]);
+  let view = await store.executeGroups(initialRequest);
+  const [first, second] = view.groups;
+  view = await store.executeGroups(request("target", view.revision, [{ type: "set-review-group", groupId: first.groupId }]));
+  assert.equal(view.reviewGroupId, first.groupId);
+  view = await store.executeGroups(request("rename-target", view.revision, [{ type: "update", groupId: first.groupId, name: "Look here", dragOnly: true }]));
+  assert.equal(view.reviewGroupId, first.groupId);
+  assert.equal((await store.listFocus()).reviewGroupId, first.groupId);
+  const missing = "group-00000000-0000-4000-8000-000000000000";
+  await assert.rejects(store.executeGroups(request("bad-target", view.revision, [{ type: "set-review-group", groupId: missing }])), { code: "card_group_not_found" });
+  view = await store.executeGroups(request("switch", view.revision, [{ type: "set-review-group", groupId: second.groupId }]));
+  assert.equal(view.reviewGroupId, second.groupId);
+  view = await store.executeGroups(request("remove-target", view.revision, [{ type: "delete", groupId: second.groupId }]));
+  assert.equal(view.reviewGroupId, null);
+  await store.dispose();
+  const old = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+  delete old.reviewGroupId;
+  delete old.groupOperations[0].result.reviewGroupId;
+  fs.writeFileSync(dataFile, JSON.stringify(old));
+  const restarted = createCardStore({ dataFile });
+  t.after(() => restarted.dispose());
+  assert.equal((await restarted.listGroups()).reviewGroupId, null);
+  assert.equal((await restarted.executeGroups(initialRequest)).reviewGroupId, null);
+});
+
+test("Session enrollment reuses canonical identity, preserves edits, restores Card only, and replays after restart", async (t) => {
+  const { store, dataFile } = fixture(t);
+  const sessions = new SessionCollection();
+  store.attach(sessions);
+  const runtime = { sessionId: "one", tool: "codex", title: "Task", state: "running", updatedAt: "2026-09-11T00:00:01.000Z" };
+  sessions.set("one", runtime);
+  const untouched = JSON.stringify(runtime);
+  const groups = await store.executeGroups(request("groups", 0, [createGroup("Review"), createGroup("Later")]));
+  const sessionRef = { frameworkId: "codex", sessionId: "one" };
+  const add = { operationId: "enroll", sessionRef, groupId: groups.groups[0].groupId };
+  const original = (await store.list()).cards[0];
+  const first = await store.fromSession(add);
+  assert.equal(first.cardId, original.cardId);
+  assert.deepEqual(await store.fromSession(add), first);
+  let card = await store.execute(first.cardId, request("note-archive", first.revision, [{ type: "set-note", componentId: "notes", text: "Keep my note" }, { type: "set-title", title: "Human title" }, { type: "archive" }]));
+  const restore = { ...add, operationId: "restore-enroll", groupId: groups.groups[1].groupId };
+  card = await store.fromSession(restore);
+  assert.equal(card.archivedAt, null);
+  assert.equal(card.cardId, original.cardId);
+  assert.equal(card.title, "Human title");
+  assert.equal(card.components.find((entry) => entry.type === "amo.notes").data.text, "Keep my note");
+  assert.equal(card.components.find((entry) => entry.type === "amo.task-group").data.groupId, restore.groupId);
+  assert.deepEqual(await store.fromSession({ ...restore, operationId: "repeated-add" }), card);
+  assert.equal((await store.list()).cards.length, 1);
+  assert.equal(JSON.stringify(sessions.get("one")), untouched);
+  await store.dispose();
+  const restarted = createCardStore({ dataFile });
+  t.after(() => restarted.dispose());
+  assert.deepEqual(await restarted.fromSession(add), first);
+  assert.deepEqual(await restarted.fromSession(restore), card);
+  await assert.rejects(restarted.fromSession({ ...add, groupId: restore.groupId }), { code: "card_operation_conflict" });
+});
+
+test("Session enrollment validates queued group/runtime state and never repairs changed sources", async (t) => {
+  const { store } = fixture(t);
+  const sessions = new SessionCollection();
+  store.attach(sessions);
+  const runtime = { sessionId: "one", tool: "codex", title: "Task", state: "running", updatedAt: "2026-09-11T00:00:01.000Z" };
+  sessions.set("one", runtime);
+  const groups = await store.executeGroups(request("groups", 0, [createGroup()]));
+  const add = { operationId: "add", sessionRef: { frameworkId: "codex", sessionId: "one" }, groupId: groups.groups[0].groupId };
+  await assert.rejects(store.fromSession({ ...add, sessionRef: { frameworkId: "claude", sessionId: "one" } }), { code: "card_session_unavailable" });
+  for (const change of [{ archivedAt: "2026-09-11T00:00:02.000Z" }, { dismissedAt: "2026-09-11T00:00:02.000Z" }]) {
+    sessions.set("one", { ...runtime, ...change });
+    await assert.rejects(store.fromSession(add), { code: "card_session_unavailable" });
+  }
+  sessions.delete("one");
+  await assert.rejects(store.fromSession(add), { code: "card_session_unavailable" });
+  sessions.set("one", runtime);
+  let card = (await store.list()).cards[0];
+  card = await store.execute(card.cardId, request("detach", card.revision, [{ type: "set-component", component: processing }]));
+  await assert.rejects(store.fromSession(add), { code: "card_source_changed" });
+  assert.deepEqual(await store.get(card.cardId), card);
+  const remove = store.executeGroups(request("remove", groups.revision, [{ type: "delete", groupId: add.groupId }]));
+  const staleAdd = store.fromSession(add);
+  await remove;
+  await assert.rejects(staleAdd, { code: "card_group_not_found" });
+});
+
+test("Review routing enrolls new replies but retains manual moves across duplicates, late events and restart", async (t) => {
+  const { store, dataFile } = fixture(t);
+  const sessions = new SessionCollection();
+  store.attach(sessions);
+  const base = { sessionId: "one", tool: "codex", title: "Task", state: "running", updatedAt: "2026-09-11T00:00:01.000Z" };
+  sessions.set("one", base);
+  let groups = await store.executeGroups(request("groups", 0, [createGroup("Review"), createGroup("Later")]));
+  const [review, later] = groups.groups;
+  groups = await store.executeGroups(request("target", groups.revision, [{ type: "set-review-group", groupId: review.groupId }]));
+  const reply = (second) => ({ ...base, state: "idle", lastReplyAt: `2026-09-11T00:00:0${second}.000Z`, lastReplyNote: `${second}.md`, reviewTurnId: `turn-${second}`, reviewRequired: true, updatedAt: `2026-09-11T00:00:0${second}.000Z` });
+  sessions.set("one", reply(2));
+  let card = (await store.list()).cards[0];
+  assert.equal(store.focusView(card).groupId, review.groupId);
+  card = await store.execute(card.cardId, request("move", card.revision, [{ type: "set-component", component: { ...groupComponent(later.groupId), componentId: card.components.find((entry) => entry.type === "amo.task-group").componentId } }]));
+  for (const event of [reply(2), { ...reply(2), state: "running", reviewTurnId: null, updatedAt: "2026-09-11T00:00:04.000Z" }, reply(1), { ...reply(2), state: "waiting_permission" }]) sessions.set("one", event);
+  assert.equal((await store.listFocus()).cards[0].groupId, later.groupId);
+  sessions.delete("one");
+  assert.equal((await store.listFocus()).cards[0].groupId, later.groupId);
+  sessions.set("one", reply(2));
+  await store.dispose();
+  const restarted = createCardStore({ dataFile, coalesceMs: 60000 });
+  t.after(() => restarted.dispose());
+  restarted.attach(sessions);
+  assert.equal((await restarted.listFocus()).cards[0].groupId, later.groupId);
+  sessions.set("one", reply(5));
+  assert.equal((await restarted.listFocus()).cards[0].groupId, review.groupId);
+});
+
+test("Review configuration and startup never sweep history, and archived Cards or Sessions remain excluded", async (t) => {
+  const { store, dataFile } = fixture(t);
+  const sessions = new SessionCollection();
+  const base = { sessionId: "one", tool: "codex", title: "Task", state: "idle", lastReplyAt: "2026-09-11T00:00:01.000Z", lastReplyNote: "old.md", reviewTurnId: "old", reviewRequired: true, updatedAt: "2026-09-11T00:00:01.000Z" };
+  sessions.set("one", base);
+  store.attach(sessions);
+  let groups = await store.executeGroups(request("groups", 0, [createGroup("Review")]));
+  const groupId = groups.groups[0].groupId;
+  await store.executeGroups(request("target", groups.revision, [{ type: "set-review-group", groupId }]));
+  assert.equal((await store.listFocus()).cards[0].groupId, null);
+  sessions.set("one", { ...base, state: "running" });
+  assert.equal((await store.listFocus()).cards[0].groupId, null);
+  let card = (await store.list()).cards[0];
+  await store.execute(card.cardId, request("archive", card.revision, [{ type: "archive" }]));
+  const fresh = { ...base, lastReplyAt: "2026-09-11T00:00:02.000Z", lastReplyNote: "new.md", reviewTurnId: "new", updatedAt: "2026-09-11T00:00:02.000Z" };
+  sessions.set("one", fresh);
+  assert.equal((await store.listFocus({ includeArchived: true })).cards[0].groupId, null);
+  const restored = await store.fromSession({ operationId: "restore", sessionRef: { frameworkId: "codex", sessionId: "one" }, groupId });
+  card = await store.execute(restored.cardId, request("ungroup", restored.revision, [{ type: "set-component", component: { ...groupComponent(null), componentId: restored.components.find((entry) => entry.type === "amo.task-group").componentId } }]));
+  sessions.set("one", fresh);
+  assert.equal((await store.listFocus()).cards[0].groupId, null);
+  sessions.set("two", { ...fresh, sessionId: "two", archivedAt: "2026-09-11T00:00:03.000Z" });
+  sessions.set("three", { ...fresh, sessionId: "three", dismissedAt: "2026-09-11T00:00:03.000Z" });
+  assert.ok((await store.listFocus()).cards.every((entry) => entry.groupId === null));
+  await store.dispose();
+  // A previously unseen offline reply is baselined at startup as well.
+  sessions.set("one", { ...fresh, lastReplyAt: "2026-09-11T00:00:04.000Z", lastReplyNote: "offline.md", reviewTurnId: "offline" });
+  const restarted = createCardStore({ dataFile, coalesceMs: 60000 });
+  t.after(() => restarted.dispose());
+  restarted.attach(sessions);
+  assert.ok((await restarted.listFocus()).cards.every((entry) => entry.groupId === null));
+});
+
+test("full component Cards cannot poison reply observation or partially enroll", async (t) => {
+  const { store } = fixture(t);
+  const sessions = new SessionCollection();
+  store.attach(sessions);
+  const base = { sessionId: "one", tool: "codex", title: "Task", state: "running", updatedAt: "2026-09-11T00:00:01.000Z" };
+  sessions.set("one", base);
+  let card = (await store.list()).cards[0];
+  for (let batch = 0; batch < 2; batch += 1) card = await store.execute(card.cardId, request(`fill-${batch}`, card.revision, Array.from({ length: 14 }, (_, i) => ({ type: "set-component", component: component("test.extra", `extra-${batch}-${i}`, {}) }))));
+  let groups = await store.executeGroups(request("groups", 0, [createGroup()]));
+  const groupId = groups.groups[0].groupId;
+  await store.executeGroups(request("target", groups.revision, [{ type: "set-review-group", groupId }]));
+  sessions.set("one", { ...base, state: "idle", reviewRequired: true, lastReplyAt: "2026-09-11T00:00:02.000Z", lastReplyNote: "reply.md" });
+  card = (await store.list()).cards[0];
+  assert.equal(card.components.length, 32);
+  assert.equal(store.focusView(card).groupId, null);
+  assert.equal(store.focusView(card).attention.hasUnseen, true);
+  await assert.rejects(store.fromSession({ operationId: "full-enroll", sessionRef: { frameworkId: "codex", sessionId: "one" }, groupId }), { statusCode: 400 });
+  assert.deepEqual(await store.get(card.cardId), card);
+});
+
+test("reply metadata only routes when the Session actually requires Review", async (t) => {
+  const { store } = fixture(t);
+  const sessions = new SessionCollection();
+  store.attach(sessions);
+  const groups = await store.executeGroups(request("groups", 0, [createGroup()]));
+  await store.executeGroups(request("target", groups.revision, [{ type: "set-review-group", groupId: groups.groups[0].groupId }]));
+  const base = { tool: "codex", title: "Task", state: "running", updatedAt: "2026-09-11T00:00:01.000Z", lastReplyAt: "2026-09-11T00:00:01.000Z", lastReplyNote: "old.md" };
+  for (const [sessionId, flags] of [["metadata-only", {}], ["reviewed-status", { reviewRequired: true, reviewStatus: "reviewed" }], ["reviewed-at", { reviewRequired: true, reviewedAt: "2026-09-11T00:00:02.000Z" }]]) sessions.set(sessionId, { ...base, sessionId, ...flags });
+  assert.ok((await store.listFocus()).cards.every((card) => card.groupId === null && card.attention.hasUnseen));
+});
+
+test("failed enrollment and Review target changes leave durable state untouched and retry exactly", async (t) => {
+  let failWrite = false;
+  const { store, dataFile } = fixture(t, { write: async (file, data) => { if (failWrite) throw new Error("disk unavailable"); return writeSnapshot(file, data); } });
+  const sessions = new SessionCollection();
+  store.attach(sessions);
+  sessions.set("one", { sessionId: "one", tool: "codex", title: "Task", state: "running", updatedAt: "2026-09-11T00:00:01.000Z" });
+  let groups = await store.executeGroups(request("groups", 0, [createGroup()]));
+  const groupId = groups.groups[0].groupId;
+  const target = request("target", groups.revision, [{ type: "set-review-group", groupId }]);
+  const bytes = fs.readFileSync(dataFile, "utf8");
+  failWrite = true;
+  await assert.rejects(store.executeGroups(target), { code: "card_write_failed" });
+  assert.equal((await store.listGroups()).reviewGroupId, null);
+  assert.equal(fs.readFileSync(dataFile, "utf8"), bytes);
+  failWrite = false;
+  groups = await store.executeGroups(target);
+  assert.equal(groups.reviewGroupId, groupId);
+  const original = (await store.list()).cards[0];
+  const add = { operationId: "add", sessionRef: { frameworkId: "codex", sessionId: "one" }, groupId };
+  failWrite = true;
+  await assert.rejects(store.fromSession(add), { code: "card_write_failed" });
+  assert.deepEqual(await store.get(original.cardId), original);
+  failWrite = false;
+  const card = await store.fromSession(add);
+  assert.equal(card.cardId, original.cardId);
+  assert.deepEqual(await store.fromSession(add), card);
 });

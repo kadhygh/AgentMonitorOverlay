@@ -8,7 +8,9 @@
 
 CardStore 同文件新增 `groups: {groupId,name,dragOnly}[]`、`groupRevision` 和有界 `groupOperations`。组 ID 是稳定 UUID，名称和 dragOnly 可修改。注册表初始为空。`GET /api/card-groups` 返回 `{schemaVersion:1,revision,groups}`；`POST /api/card-groups/commands` 以 operationId/expectedRevision 执行 create/update/delete 批次。create/update 均包含 name 和 dragOnly。
 
-通用 Card commands 设置分组引用时验证目标存在。删除分组与所有普通/归档 Card 引用清理在同一 writer 事务中完成，失败则整体不生效。组名变化不改变 Card 引用，运行观察不写人工分组。用户后续明确不要自动的“未分组”：没有有效分组引用的 Card 保留存储，但不进入 Focus 面板或分组列表。
+通用 Card commands 设置分组引用时验证目标存在。删除分组与所有普通/归档 Card 引用清理在同一 writer 事务中完成，失败则整体不生效。组名变化不改变 Card 引用。用户后续明确不要自动的“未分组”：没有有效分组引用的 Card 保留存储，但不进入 Focus 面板或分组列表。一般运行观察不改分组，唯一可选例外是用户配置的 Review 接收规则。
+
+新增注册表字段 `reviewGroupId:string|null` 和 `set-review-group` 命令。只有新的去重回复、Session 确实待 Review、非启动种入、Card/Session 都未归档时，才把卡片放入该目标。目标配置不扫描历史；删除目标组同时清空此字段。`POST /api/cards/from-session` 以 `{operationId,sessionRef,groupId}` 显式加入默认会话 Card，使用同一索引、writer 和重放记录。已存在 Card 保留身份/内容，显式加入可恢复 Card；组件已经改绑/移除的旧来源会拒绝，不自动修复关联。详见 [当前接入规则](tasks/focus-taskcard-review-routing-2026-09-11.md)。
 
 Focus schema 2 增加 groups/groupRevision 和每卡 groupId/archivedAt；`?includeArchived=1` 供完整列表使用，读取注册表和卡片引用保持一致。隐藏组只影响面板常驻展示，不影响列表、Card 归档状态或 Session。
 

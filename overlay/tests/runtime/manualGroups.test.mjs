@@ -33,7 +33,7 @@ test("manual move only updates its component; no processing or Session mutation"
 test("manual Focus requires matching group-capable broker and includes archived query", async () => {
   const original = globalThis.fetch;
   try {
-    globalThis.fetch = async url => { assert.ok(url.endsWith("?includeArchived=1")); return { ok: true, json: async () => ({ schemaVersion: 2, cards: [], groups, groupRevision: 2 }) }; };
+    globalThis.fetch = async url => { assert.ok(url.endsWith("?includeArchived=1")); return { ok: true, json: async () => ({ schemaVersion: 2, cards: [], groups, groupRevision: 2, reviewGroupId: null }) }; };
     assert.equal((await loadFocusCards()).groups[1].dragOnly, true);
     globalThis.fetch = async () => ({ ok: true, json: async () => ({ schemaVersion: 2, cards: [] }) });
     await assert.rejects(loadFocusCards(), /does not support manual Task groups/);

@@ -14,19 +14,25 @@ function groups(values) {
   }
 }
 function snapshot(value) {
-  schema.object(value, ["schemaVersion", "revision", "groups"], "task group snapshot");
+  schema.object(value, ["schemaVersion", "revision", "groups", "reviewGroupId"], "task group snapshot");
   if (value.schemaVersion !== 1) schema.fail("Invalid task group schema version");
   schema.integer(value.revision, "task group revision"); groups(value.groups);
+  reviewGroup(value.reviewGroupId ?? null, value.groups);
+}
+function reviewGroup(value, values) {
+  if (value === null) return;
+  groupId(value);
+  if (!values.some((group) => group.groupId === value)) schema.fail("Review task group does not exist");
 }
 function request(payload) {
   schema.object(payload, ["operationId", "expectedRevision", "commands"], "task group request");
   schema.identifier(payload.operationId, 256); schema.integer(payload.expectedRevision, "task group expected revision");
   if (!Array.isArray(payload.commands) || payload.commands.length < 1 || payload.commands.length > 20) schema.fail("A task group batch requires 1..20 commands");
   for (const command of payload.commands) {
-    if (!command || !["create", "update", "delete"].includes(command.type)) schema.fail("Unsupported task group command");
+    if (!command || !["create", "update", "delete", "set-review-group"].includes(command.type)) schema.fail("Unsupported task group command");
     schema.object(command, command.type === "create" ? ["type", "name", "dragOnly"] : command.type === "update" ? ["type", "groupId", "name", "dragOnly"] : ["type", "groupId"], "task group command");
-    if (command.type !== "create") groupId(command.groupId);
-    if (command.type !== "delete") {
+    if (command.type !== "create" && !(command.type === "set-review-group" && command.groupId === null)) groupId(command.groupId);
+    if (["create", "update"].includes(command.type)) {
       schema.string(command.name, 200, "task group name");
       if (typeof command.dragOnly !== "boolean") schema.fail("Task group dragOnly must be boolean");
     }
@@ -38,4 +44,4 @@ function validateReferences(card, values) {
     if (schema.isType(component, "amo.task-group") && component.data.groupId !== null && !values.some((group) => group.groupId === component.data.groupId)) schema.fail("Task group does not exist");
   }
 }
-module.exports = { groupId, groups, snapshot, request, validateReferences };
+module.exports = { groupId, groups, snapshot, request, validateReferences, reviewGroup };

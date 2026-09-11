@@ -3,6 +3,7 @@ import type { AgentSession } from "../types";
 import { SessionRowContent, type SessionRowContentProps } from "./SessionCard";
 
 export interface TaskCardCommands {
+  addToFocus?(session: AgentSession): void;
   openNote(session: AgentSession): void;
   openVSCode(session: AgentSession): void;
   openCanvas(session: AgentSession): void;
@@ -24,6 +25,7 @@ type TaskCardProps = Omit<SessionRowContentProps, `on${string}`> & { commands: T
 // Containers own selection, layout and commands; this component owns one task's presentation.
 export const TaskCard = memo(function TaskCard({ commands, session, ...props }: TaskCardProps) {
   return <SessionRowContent {...props} session={session}
+    onAddToFocus={commands.addToFocus ? () => commands.addToFocus?.(session) : undefined}
     onOpenNote={() => commands.openNote(session)}
     onOpenVSCode={() => commands.openVSCode(session)}
     onOpenCanvas={() => commands.openCanvas(session)}

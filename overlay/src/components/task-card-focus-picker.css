@@ -1,0 +1,38 @@
+.task-focus-picker-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  background: rgba(19, 31, 38, .32);
+}
+.task-focus-picker {
+  box-sizing: border-box;
+  width: min(100%, 390px);
+  max-height: calc(100vh - 28px);
+  overflow-y: auto;
+  padding: 16px;
+  border: 1px solid var(--amo-border, #bac6ce);
+  border-radius: 14px;
+  color: var(--amo-text, #243b4b);
+  background: var(--amo-surface, #fff);
+  box-shadow: 0 14px 38px #12222f30;
+  font-size: 12px;
+}
+.task-focus-picker header, .task-focus-picker footer { display: flex; align-items: center; gap: 8px; }
+.task-focus-picker header { justify-content: space-between; }
+.task-focus-picker header strong { font-size: 14px; }
+.task-focus-picker p { line-height: 1.6; overflow-wrap: anywhere; }
+.task-focus-picker-title { max-height: 96px; overflow-y: auto; }
+.task-focus-picker label { display: grid; gap: 7px; }
+.task-focus-picker select { width: 100%; min-width: 0; padding: 8px; border: 1px solid #a9b8c3; border-radius: 7px; color: inherit; background: inherit; font: inherit; }
+.task-focus-picker button { display: inline-flex; align-items: center; justify-content: center; gap: 5px; padding: 7px 9px; border: 1px solid #b4c1ca; border-radius: 7px; background: transparent; color: inherit; font: inherit; cursor: pointer; }
+.task-focus-picker button:disabled { opacity: .5; cursor: default; }
+.task-focus-picker footer { justify-content: flex-end; flex-wrap: wrap; margin-top: 16px; }
+.task-focus-picker .task-focus-picker-submit { background: #edf5fb; color: #245b80; border-color: #92b4cc; }
+.task-focus-picker .task-focus-picker-error { color: #ac392b; }
+:root[data-amo-theme="dark"] .task-focus-picker { background: #18262d; color: #e6f0ed; border-color: #52656d; }
+:root[data-amo-theme="dark"] .task-focus-picker .task-focus-picker-submit { background: #274757; color: #deeffa; border-color: #63869b; }
+:root[data-amo-theme="dark"] .task-focus-picker .task-focus-picker-error { color: #ffaaa0; }
+.row-tool-button.task-focus-add-button { grid-column: 1 / -1; justify-self: start; max-width: 100%; }

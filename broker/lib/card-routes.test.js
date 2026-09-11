@@ -8,6 +8,7 @@ const { createCardStore } = require("./card-store");
 const { handleCardRoutes } = require("../routes/cards");
 const { handleFocusPanelRoutes } = require("../routes/focus-panel");
 const { sendJson } = require("./http");
+const { SessionCollection } = require("./session-collection");
 
 async function fixture(t) {
   const directory = fs.mkdtempSync(path.join(os.tmpdir(), "amo-card-http-"));
@@ -30,7 +31,7 @@ const planned = { operationId: "create", title: "Planned card", components: [{ c
 
 test("task group HTTP registry and Focus all-groups projection use protected atomic commands", async (t) => {
   const { post, read } = await fixture(t);
-  assert.deepEqual(await read("/api/card-groups"), { schemaVersion: 1, revision: 0, groups: [] });
+  assert.deepEqual(await read("/api/card-groups"), { schemaVersion: 1, revision: 0, groups: [], reviewGroupId: null });
   const payload = { operationId: "group", expectedRevision: 0, commands: [{ type: "create", name: "Done", dragOnly: true }] };
   assert.equal((await post("/api/card-groups/commands", payload, { origin: "https://evil.example" })).status, 403);
   assert.equal((await post("/api/card-groups/commands", payload, { "content-type": "text/plain" })).status, 400);
@@ -97,4 +98,21 @@ test("all Card mutation interfaces enforce JSON/origin and reject protected atte
   assert.equal((await post(`/api/focus-panel/cards/${card.cardId}`, { operationId: "focus", expectedRevision: card.revision, action: "handle", throughGeneration: 0 }, { origin: "https://evil.example" })).status, 403);
   assert.equal((await post(endpoint, { ...request, commands: [{ type: "set-component", component: { ...planned.components[0], data: { ...planned.components[0].data, handledGeneration: 99 } } }] })).status, 400);
   for (const type of ["constructor", "toString", "__proto__"]) assert.equal((await post(endpoint, { ...request, commands: [{ type }] })).status, 400);
+});
+
+test("from-session HTTP adds exact live TaskCard once and protects mutation origin", async (t) => {
+  const { store, post, read } = await fixture(t);
+  const sessions = new SessionCollection();
+  store.attach(sessions);
+  sessions.set("one", { sessionId: "one", tool: "codex", title: "Task", state: "running", updatedAt: "2026-09-11T00:00:01.000Z" });
+  const groups = await (await post("/api/card-groups/commands", { operationId: "groups", expectedRevision: 0, commands: [{ type: "create", name: "Review", dragOnly: false }] })).json();
+  const payload = { operationId: "enroll", sessionRef: { frameworkId: "codex", sessionId: "one" }, groupId: groups.groups[0].groupId };
+  assert.equal((await post("/api/cards/from-session", payload, { origin: "https://evil.example" })).status, 403);
+  assert.equal((await post("/api/cards/from-session", payload, { "content-type": "text/plain" })).status, 400);
+  const response = await post("/api/cards/from-session", payload);
+  assert.equal(response.status, 200);
+  const result = await response.json();
+  assert.deepEqual(await (await post("/api/cards/from-session", payload)).json(), result);
+  assert.equal((await read("/api/focus-panel")).cards[0].groupId, payload.groupId);
+  assert.equal((await read("/api/cards")).cards.length, 1);
 });
