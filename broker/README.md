@@ -36,7 +36,9 @@ All API responses include local CORS headers so the Tauri/Vite WebView can fetch
 
 ### `GET /api/health`
 
-Returns Broker status, uptime, session count, storage path, monotonic `sessionRevision`, asynchronous `snapshotWriter` state, and the current Obsidian runtime/result-store counts. A healthy response proves process liveness; Stable startup additionally verifies the active-session summary endpoint.
+Returns Broker status, uptime, session count, storage path, monotonic `sessionRevision`, asynchronous `snapshotWriter` state, and the current Obsidian runtime/result-store counts. `sessionCounts` separates `active`, `archived`, and `total` records; `transcriptMonitor` reports the actual `tracked` count and whether a poll is in progress. A healthy response proves process liveness; Stable startup additionally verifies the active-session summary endpoint.
+
+Archived sessions remain in memory and in the persisted snapshot, but are excluded from Codex transcript monitoring. Archiving or dismissing a session immediately removes its tracking entry, including during an in-flight read. When new activity revives a session, monitoring starts again at the current end of its transcript, without replaying rows written while archived.
 
 ### `GET /api/sessions`
 

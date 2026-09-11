@@ -132,7 +132,6 @@ const obsidianBridge = createObsidianBridge({
   handlePrompt: (payload) => conversationService.handlePrompt(payload),
 });
 loadSnapshot();
-sessionNamingService.recoverPending();
 const reconciledManagedSessions = launchStore.reconcileSessions(sessions);
 if (reconciledManagedSessions.length > 0) scheduleSnapshotPersist("managed-session-reconcile");
 const permissionGate = createPermissionGate({
@@ -153,6 +152,8 @@ const transcriptMonitor = createTranscriptMonitor({
     publishSessionChanged("transcript-turn-aborted", session);
   },
 });
+// Recovery can publish changes, so the monitor must exist before it runs.
+sessionNamingService.recoverPending();
 for (const session of sessions.values()) transcriptMonitor.track({}, session);
 
 const routeContext = {
@@ -326,6 +327,12 @@ res.write(`event: broker.ready\ndata: ${JSON.stringify({
 }
 
 function publishSessionChanged(reason, session, extra = {}) {
+  // Read current state: an older mutation may finish persisting after a newer one.
+  if (session?.sessionId) {
+    const current = sessions.get(session.sessionId);
+    if (current) transcriptMonitor.track({}, current);
+    else transcriptMonitor.untrack(session.sessionId);
+  }
   const sequence = ++eventSequence;
   if (eventClients.size === 0) {
     recordDebugLog("broker", "session_event.no_clients", {

@@ -27,10 +27,15 @@ function createTranscriptMonitor({
   function track(payload = {}, session = null) {
     if (disposed) return false;
 
+    const sessionId = normalizeText(session?.sessionId) || normalizeText(payload.sessionId || payload.session_id);
+    if (session?.archivedAt || session?.dismissedAt) {
+      untrack(sessionId);
+      return false;
+    }
+
     const tool = normalizeText(payload.tool) || normalizeText(session?.tool);
     if (!tool || !tool.toLowerCase().includes("codex")) return false;
 
-    const sessionId = normalizeText(payload.sessionId || payload.session_id) || normalizeText(session?.sessionId);
     const transcriptPath = normalizeText(payload.transcriptPath || payload.transcript_path) || normalizeText(session?.transcriptPath);
     if (!sessionId || !isSupportedTranscriptPath(transcriptPath)) return false;
 
@@ -61,6 +66,16 @@ function createTranscriptMonitor({
     return true;
   }
 
+  function untrack(sessionId) {
+    const removed = trackedBySession.delete(sessionId);
+    if (removed) recordDebugLog("broker", "transcript_monitor.untracked", { sessionId });
+    return removed;
+  }
+
+  function isCurrent(entry) {
+    return !disposed && trackedBySession.get(entry.sessionId) === entry;
+  }
+
   async function pollNow() {
     if (disposed || polling) return;
     polling = true;
@@ -88,7 +103,7 @@ function createTranscriptMonitor({
       return;
     }
 
-    if (!stat.isFile()) return;
+    if (!isCurrent(entry) || !stat.isFile()) return;
     if (stat.size < entry.offset) {
       entry.offset = 0;
       entry.pending = Buffer.alloc(0);
@@ -99,11 +114,11 @@ function createTranscriptMonitor({
     let handle;
     try {
       handle = await fs.promises.open(entry.transcriptPath, "r");
-      while (entry.offset < stat.size) {
+      while (isCurrent(entry) && entry.offset < stat.size) {
         const length = Math.min(READ_CHUNK_BYTES, stat.size - entry.offset);
         const chunk = Buffer.allocUnsafe(length);
         const { bytesRead } = await handle.read(chunk, 0, length, entry.offset);
-        if (bytesRead <= 0) break;
+        if (!isCurrent(entry) || bytesRead <= 0) break;
         entry.offset += bytesRead;
         await consumeChunk(entry, chunk.subarray(0, bytesRead));
       }
@@ -123,7 +138,7 @@ function createTranscriptMonitor({
     entry.pending = Buffer.alloc(0);
     let start = 0;
 
-    while (start < data.length) {
+    while (isCurrent(entry) && start < data.length) {
       const newline = data.indexOf(0x0a, start);
       if (newline < 0) break;
 
@@ -135,7 +150,7 @@ function createTranscriptMonitor({
     }
 
     const remainder = data.subarray(start);
-    if (entry.discardUntilNewline) return;
+    if (!isCurrent(entry) || entry.discardUntilNewline) return;
     if (remainder.length > MAX_PENDING_LINE_BYTES && !remainder.includes(TURN_ABORTED_TOKEN)) {
       entry.discardUntilNewline = true;
       recordDebugLog("broker", "transcript_monitor.long_line_skipped", {
@@ -194,6 +209,7 @@ function createTranscriptMonitor({
     pollNow,
     status: () => ({ tracked: trackedBySession.size, polling }),
     track,
+    untrack,
   };
 }
 

@@ -25,6 +25,7 @@ async function handleSessionRoutes(req, res, url, context) {
   if (req.method === "POST" && url.pathname === "/api/sessions/dismiss-archived") {
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissArchivedSessions(payload || {});
+    for (const session of result.sessions) context.transcriptMonitor.untrack(session.sessionId);
     await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("dismiss-archived", null, { removedSessions: result.sessions });
     return sendHandled(res, 200, result);
@@ -33,6 +34,7 @@ async function handleSessionRoutes(req, res, url, context) {
   if (req.method === "POST" && url.pathname === "/api/sessions/dismiss-all") {
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissAllSessions(payload || {});
+    for (const session of result.sessions) context.transcriptMonitor.untrack(session.sessionId);
     await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("dismiss-all", null, { removedSessions: result.sessions });
     return sendHandled(res, 200, result);
@@ -152,6 +154,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(dismissMatch[1]);
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.dismissSession(sessionId, payload || {});
+    context.transcriptMonitor.untrack(sessionId);
     await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("dismiss", result.session);
     return sendHandled(res, 200, result);
@@ -162,6 +165,7 @@ async function handleSessionRoutes(req, res, url, context) {
     const sessionId = decodeURIComponent(archiveMatch[1]);
     const payload = await readJsonBody(req, { allowEmpty: true });
     const result = context.archiveSession(sessionId, payload || {});
+    context.transcriptMonitor.untrack(sessionId);
     await context.persistSnapshot("session-mutation");
     context.publishSessionChanged("archive", result.session);
     return sendHandled(res, 200, result);
