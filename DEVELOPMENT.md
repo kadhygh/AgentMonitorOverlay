@@ -14,6 +14,8 @@ This entry-flow iteration (`c5ddf51`, with handoff `66a791f`) was explicitly app
 
 Current native correction: [Focus input regions](docs/tasks/focus-input-regions-2026-09-11.md) makes drag-only visibility save immediately, removes the permanent move-success footer, and adds selective Windows hit regions. Idle blank areas pass through while controls remain interactive; drag/dialog capture restores the full region. Actual cross-process click and HTML-drag behavior passed in an isolated Tauri probe at 100% DPI; see the record for production and multi-monitor validation status.
 
+Input-region fix `7caeac7` is now deployed after explicit restart approval. Production HWND checks confirm blank-region pass-through, interactive settings controls, modal full capture and restoration after close; no background clicks or group mutations were submitted. Broker was left running. Multi-monitor/DPI and long-running app-specific interaction checks remain open.
+
 Implementation commit `26bb27d` was fast-forwarded into local `master` and deployed to the production Source runtime on 2026-09-11 after explicit user approval. Native transparency, show/close toggle synchronization, and group-settings opening were verified through the real Windows window; broader focus, dragging and CLI/App actions remain unverified. See the handoff for evidence and the production data backup. No push was performed. Preserve main-directory uncommitted work.
 
 ## Previous Handoff: Focus Panel And Card Components (2026-09-11)
