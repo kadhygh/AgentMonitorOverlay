@@ -18,6 +18,8 @@ Input-region fix `7caeac7` is now deployed after explicit restart approval. Prod
 
 Follow-up native rendering fix: [Focus deactivation artifacts](docs/tasks/focus-blur-rendering-2026-09-11.md) identifies Windows non-client activation painting inside clipped surfaces. A Focus-only subclass preserves Tao focus processing while suppressing that frame repaint. Before/after native reproduction and pass-through/drag regression passed; the task record distinguishes this from production deployment status.
 
+The deactivation fix `d7e211e` is now merged and deployed after explicit approval. Native startup completed and Broker was preserved. Production visual verification was interrupted by the Windows lock screen; no unlock interaction was attempted. Repeat visible focus-switch verification after unlock, without claiming the isolated-probe evidence covers that final production check.
+
 Implementation commit `26bb27d` was fast-forwarded into local `master` and deployed to the production Source runtime on 2026-09-11 after explicit user approval. Native transparency, show/close toggle synchronization, and group-settings opening were verified through the real Windows window; broader focus, dragging and CLI/App actions remain unverified. See the handoff for evidence and the production data backup. No push was performed. Preserve main-directory uncommitted work.
 
 ## Previous Handoff: Focus Panel And Card Components (2026-09-11)
