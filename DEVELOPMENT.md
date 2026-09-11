@@ -10,6 +10,8 @@ Latest correction: Focus displays only user-created groups; it no longer creates
 
 Latest entry flow: standalone New card is temporarily disabled (code retained). Existing main-window TaskCards can be added to a chosen Focus group using the canonical Session→Card mapping. Group settings optionally select one Review receiving group. Only a newly deduplicated reply that actually requires Review may route a nonarchived Card from a nonarchived Session to that group; startup history, duplicate hooks and opening details never reroute. See [TaskCard enrollment and Review routing](docs/tasks/focus-taskcard-review-routing-2026-09-11.md).
 
+This entry-flow iteration (`c5ddf51`, with handoff `66a791f`) was explicitly approved, merged and deployed to production Source on 2026-09-11. Native entry/picker/settings presence was checked without submitting production mutations; Review receiving remains opt-in. The task record contains backup and validation evidence.
+
 Implementation commit `26bb27d` was fast-forwarded into local `master` and deployed to the production Source runtime on 2026-09-11 after explicit user approval. Native transparency, show/close toggle synchronization, and group-settings opening were verified through the real Windows window; broader focus, dragging and CLI/App actions remain unverified. See the handoff for evidence and the production data backup. No push was performed. Preserve main-directory uncommitted work.
 
 ## Previous Handoff: Focus Panel And Card Components (2026-09-11)
