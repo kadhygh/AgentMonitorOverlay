@@ -11,6 +11,7 @@ const { createObsidianRuntimeStore } = require("./lib/obsidian-runtime-store");
 const { createPermissionGate } = require("./lib/permission-gate");
 const { createLaunchStore } = require("./lib/launch-store");
 const { createSessionStore } = require("./lib/session-store");
+const { createCardStore } = require("./lib/card-store");
 const { createTaskCanvasStore } = require("./lib/task-canvas-store");
 const { createSessionNamingService } = require("./lib/session-naming");
 const { createTranscriptMonitor } = require("./lib/transcript-monitor");
@@ -38,6 +39,8 @@ const {
 const { handleConfigRoutes } = require("./routes/config");
 const { handleObsidianRoutes } = require("./routes/obsidian");
 const { handleSessionRoutes } = require("./routes/sessions");
+const { handleFocusPanelRoutes } = require("./routes/focus-panel");
+const { handleCardRoutes } = require("./routes/cards");
 const { handleTaskCanvasRoutes } = require("./routes/task-canvas");
 const { handleWorkspaceRoutes } = require("./routes/workspaces");
 
@@ -53,6 +56,7 @@ const LAUNCH_DATA_FILE =
   process.env.AGENT_MONITOR_LAUNCH_DATA_FILE ||
   path.join(path.dirname(DATA_FILE), "launches.json");
 const DEBUG_MAX_LOG_ENTRIES = 800;
+const CARDS_DATA_FILE = process.env.AGENT_MONITOR_CARDS_DATA_FILE || path.join(path.dirname(DATA_FILE), "cards.json");
 const TASK_CANVAS_DATA_FILE = process.env.AGENT_MONITOR_TASK_CANVAS_DATA_FILE || path.join(path.dirname(DATA_FILE), "task-canvas.json");
 
 const startedAt = new Date();
@@ -70,6 +74,7 @@ const debugPreview = debugLogStore.preview;
 const workspaceRegistry = createWorkspaceRegistry({ dataFile: WORKSPACE_DATA_FILE, recordDebugLog });
 const launchStore = createLaunchStore({ dataFile: LAUNCH_DATA_FILE, recordDebugLog });
 const obsidianRuntimeStore = createObsidianRuntimeStore({ recordDebugLog });
+const cardStore = createCardStore({ dataFile: CARDS_DATA_FILE, recordDebugLog });
 const taskCanvasStore = createTaskCanvasStore({ dataFile: TASK_CANVAS_DATA_FILE });
 const sessionStore = createSessionStore({
   dataFile: DATA_FILE,
@@ -132,6 +137,7 @@ const obsidianBridge = createObsidianBridge({
   handlePrompt: (payload) => conversationService.handlePrompt(payload),
 });
 loadSnapshot();
+cardStore.attach(sessions);
 const reconciledManagedSessions = launchStore.reconcileSessions(sessions);
 if (reconciledManagedSessions.length > 0) scheduleSnapshotPersist("managed-session-reconcile");
 const permissionGate = createPermissionGate({
@@ -157,6 +163,7 @@ sessionNamingService.recoverPending();
 for (const session of sessions.values()) transcriptMonitor.track({}, session);
 
 const routeContext = {
+  cardStore,
   taskCanvasStore,
   host: HOST,
   port: PORT,
@@ -224,6 +231,8 @@ const server = http.createServer(async (req, res) => {
     const url = new URL(req.url, `http://${req.headers.host || `${HOST}:${PORT}`}`);
 
     const handled =
+      (await handleCardRoutes(req, res, url, routeContext)) ||
+      (await handleFocusPanelRoutes(req, res, url, routeContext)) ||
       (await handleTaskCanvasRoutes(req, res, url, routeContext)) ||
       (await handleConfigRoutes(req, res, url, routeContext)) ||
       (await handleSessionRoutes(req, res, url, routeContext)) ||
@@ -257,6 +266,7 @@ server.listen(PORT, HOST, () => {
   console.log(`session snapshot: ${DATA_FILE}`);
 });
 server.on("close", () => {
+  void cardStore.dispose().catch((error) => console.error(`Failed to flush Cards during shutdown: ${error.message}`));
   permissionGate.dispose();
   transcriptMonitor.dispose();
   void flushSnapshot("server-close").catch((error) => {
@@ -274,9 +284,11 @@ async function shutdown(signal) {
   }
   eventClients.clear();
   try {
-    await flushSnapshot(`shutdown-${signal}`);
+    const results = await Promise.allSettled([flushSnapshot(`shutdown-${signal}`), cardStore.flush()]);
+    const failed = results.find((result) => result.status === "rejected");
+    if (failed) throw failed.reason;
   } catch (error) {
-    console.error(`Failed to flush AMO session snapshot during ${signal}: ${error.message}`);
+    console.error(`Failed to flush AMO persistence during ${signal}: ${error.message}`);
   }
   const forceExit = setTimeout(() => process.exitCode = 1, 5_000);
   forceExit.unref?.();

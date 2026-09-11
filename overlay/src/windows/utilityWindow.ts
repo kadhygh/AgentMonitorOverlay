@@ -3,7 +3,7 @@ import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window"
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export type UtilityWindowKind = "deploy" | "settings" | "priorities" | "harness";
-export type ToolWindowKind = UtilityWindowKind | "canvas";
+export type ToolWindowKind = UtilityWindowKind | "canvas" | "focus";
 export type AmoWindowLabel = "main" | "scratchpad" | ToolWindowKind;
 
 // Canvas is an independent work surface; modal utility coordination must never own it.
@@ -13,6 +13,7 @@ export const TOOL_WINDOW_POLICY = {
   priorities: { modal: true, closeOnEscape: true, alwaysOnTop: true },
   harness: { modal: true, closeOnEscape: true, alwaysOnTop: true },
   canvas: { modal: false, closeOnEscape: false, alwaysOnTop: false },
+  focus: { modal: false, closeOnEscape: false, alwaysOnTop: true },
 } as const satisfies Record<ToolWindowKind, { modal: boolean; closeOnEscape: boolean; alwaysOnTop: boolean }>;
 
 export interface UtilityWindowStateEvent {
@@ -22,7 +23,7 @@ export interface UtilityWindowStateEvent {
 
 export const CURRENT_WINDOW_LABEL = getCurrentWebviewWindow().label;
 
-const AMO_FLOATING_WINDOWS: AmoWindowLabel[] = ["main", "scratchpad"];
+const AMO_FLOATING_WINDOWS: AmoWindowLabel[] = ["main", "scratchpad", "focus"];
 const AMO_UTILITY_WINDOWS: UtilityWindowKind[] = ["deploy", "settings", "priorities", "harness"];
 const AMO_WINDOW_LABELS: AmoWindowLabel[] = [...AMO_FLOATING_WINDOWS, ...AMO_UTILITY_WINDOWS];
 
@@ -35,6 +36,11 @@ export function startUtilityWindowDrag(event: PointerEvent<HTMLElement>) {
 }
 
 export async function closeUtilityWindow(label: ToolWindowKind) {
+  if (label === "focus") {
+    await getCurrentWindow().hide();
+    await publishFocusWindowVisibility(getCurrentWindow(), false);
+    return;
+  }
   if (label === "canvas") {
     await getCurrentWindow().hide();
     await getCurrentWindow().emitTo("canvas", "amo-canvas-visibility", false).catch(() => undefined);
@@ -103,6 +109,14 @@ export async function setAmoWindowsAlwaysOnTop(alwaysOnTop: boolean) {
 export async function bringUtilityWindowToFront(label: ToolWindowKind) {
   const target = await getAmoWindow(label);
   if (!target) return;
+  if (label === "focus") {
+    await target.unminimize().catch(() => undefined);
+    await target.show();
+    await target.setAlwaysOnTop(true);
+    await publishFocusWindowVisibility(target, true);
+    await target.setFocus().catch(() => undefined);
+    return;
+  }
   if (label === "canvas") {
     await target.unminimize().catch(() => undefined);
     await target.show();
@@ -121,6 +135,16 @@ export async function bringUtilityWindowToFront(label: ToolWindowKind) {
       setAmoWindowAlwaysOnTop(utilityLabel, false),
     ),
   );
+}
+
+export async function publishFocusWindowVisibility(
+  target: Pick<TauriWindow, "emitTo">,
+  visible: boolean,
+) {
+  await Promise.all([
+    target.emitTo("focus", "amo-focus-visibility", visible).catch(() => undefined),
+    target.emitTo("main", "amo-focus-window-state", visible).catch(() => undefined),
+  ]);
 }
 
 export async function restoreAmoWindowLayerAfterNativeDialog() {

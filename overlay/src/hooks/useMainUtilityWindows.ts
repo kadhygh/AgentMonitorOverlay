@@ -14,7 +14,7 @@ interface UseMainUtilityWindowsOptions {
   setFeedback: Dispatch<SetStateAction<string>>;
 }
 
-type LazyWindowKind = UtilityWindowKind | "scratchpad" | "canvas";
+type LazyWindowKind = UtilityWindowKind | "scratchpad" | "canvas" | "focus";
 
 const pendingUtilityWindowRequests = new Map<LazyWindowKind, Promise<WebviewWindow>>();
 
@@ -22,6 +22,13 @@ const utilityWindowDefinitions: Record<
   LazyWindowKind,
   { title: string; width: number; height: number; minWidth: number; minHeight: number }
 > = {
+  focus: {
+    title: "AMO Focus Panel",
+    width: 440,
+    height: 680,
+    minWidth: 360,
+    minHeight: 440,
+  },
   canvas: {
     title: "AMO Canvas",
     width: 1160,
@@ -242,7 +249,7 @@ async function createOrFindUtilityWindow(label: LazyWindowKind) {
   if (existing) return existing;
 
   const definition = utilityWindowDefinitions[label];
-  const isOpaqueWindow = label === "harness" || label === "canvas";
+  const isOpaqueWindow = label === "harness" || label === "canvas" || label === "focus";
   const isLightTheme = document.documentElement.dataset.amoTheme === "light";
   const target = new WebviewWindow(label, {
     url: "/",

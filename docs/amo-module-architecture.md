@@ -54,7 +54,7 @@ The Broker is the authoritative coordination process for workspace records, laun
 
 ## Logical Modules
 
-Canvas preparation (2026-09-05): the task card remains a single-task unit. Preparation and scale measurements are recorded in `docs/task-card-scale-performance-2026-09-05.md`. The first independent task Canvas (2026-09-07) adds its own task-reference/note nodes, directed relationships, revision-checked Broker storage, and nonmodal window policy; see `docs/task-canvas-workbench.md`. It reads session projections without duplicating the overlay's native/background owners. Shared task commands, groups, fork, and external AI authorization remain later work.
+Canvas preparation (2026-09-05): the existing task card remains a single-session unit. Preparation and scale measurements are recorded in `docs/task-card-scale-performance-2026-09-05.md`. The first independent task Canvas (2026-09-07) keeps its task-reference/note nodes and layout API; see `docs/task-canvas-workbench.md`. Focus Panel (2026-09-11) now consumes the generic CardStore: independent Card IDs and core data, registered session/conversation/processing/notes components, separate execution and GUI/TUI projections, and validated interface commands. See `docs/card-framework-design-2026-09-11.md` and `docs/focus-panel.md`. Native commands remain owned by main and revalidate current Card component references; no duplicate notification/monitor loop is introduced. Canvas adoption of CardStore, groups, fork, and external AI authorization remain later work.
 
 ### 1. Workspace And Deployment
 

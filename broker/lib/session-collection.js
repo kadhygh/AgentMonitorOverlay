@@ -6,6 +6,20 @@ class SessionCollection extends Map {
     this.brokerInstanceId = randomUUID();
     this.revision = 0;
     this.archivedCount = 0;
+    this.observers = new Set();
+  }
+
+  observe(observer) {
+    if (typeof observer !== "function") throw new TypeError("Session observer must be a function");
+    this.observers.add(observer);
+    return () => this.observers.delete(observer);
+  }
+
+  notify(change) {
+    // Observers must not change existing Map mutation semantics or break legacy writers.
+    for (const observer of this.observers) {
+      try { observer(change); } catch { /* Observer owners report/retry their own failures. */ }
+    }
   }
 
   stamp(session) {
@@ -16,19 +30,27 @@ class SessionCollection extends Map {
   }
 
   set(sessionId, session) {
+    const previous = this.get(sessionId);
     if (this.get(sessionId)?.archivedAt) this.archivedCount -= 1;
     if (session.archivedAt) this.archivedCount += 1;
-    return super.set(sessionId, this.stamp(session));
+    const result = super.set(sessionId, this.stamp(session));
+    this.notify({ type: "set", sessionId, session, previous });
+    return result;
   }
 
   delete(sessionId) {
+    const session = this.get(sessionId);
     if (this.get(sessionId)?.archivedAt) this.archivedCount -= 1;
-    return super.delete(sessionId);
+    const deleted = super.delete(sessionId);
+    if (deleted) this.notify({ type: "delete", sessionId, session });
+    return deleted;
   }
 
   clear() {
+    const sessions = [...this.values()];
     this.archivedCount = 0;
     super.clear();
+    if (sessions.length) this.notify({ type: "clear", sessions });
   }
 
   get counts() {

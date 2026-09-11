@@ -66,7 +66,7 @@ function compile(relativePath, replacements = {}) {
 }
 const utilityUrl = compile("../../src/windows/utilityWindow.ts");
 const utility = await import(utilityUrl);
-const { useMainUtilityWindows } = await import(compile("../../src/hooks/useMainUtilityWindows.ts", {
+const { useMainUtilityWindows, getOrCreateUtilityWindow } = await import(compile("../../src/hooks/useMainUtilityWindows.ts", {
   "../windows/utilityWindow": utilityUrl,
 }));
 
@@ -76,12 +76,32 @@ beforeEach(() => {
   domListeners.clear();
   nativeListeners.clear();
   windows.clear();
-  for (const label of ["main", "canvas", "deploy", "settings", "priorities", "harness", "scratchpad"]) {
+  for (const label of ["main", "canvas", "focus", "deploy", "settings", "priorities", "harness", "scratchpad"]) {
     windows.set(label, nativeWindow(label));
   }
   currentLabel = "main";
   activeUtility = null;
   failShow = false;
+});
+
+test("Focus creates one floating window and reports show/close to both consumers without modal state", async () => {
+  windows.delete("focus");
+  await Promise.all([getOrCreateUtilityWindow("focus"), getOrCreateUtilityWindow("focus")]);
+  const created = calls.filter(call => call[0] === "focus" && call[1] === "create");
+  assert.equal(created.length, 1);
+  assert.equal(created[0][2].alwaysOnTop, true);
+  assert.equal(created[0][2].transparent, false);
+  calls.length = 0;
+  await utility.bringUtilityWindowToFront("focus");
+  assert.ok(calls.some(call => call[1] === "emit" && call[2] === "main" && call[3] === "amo-focus-window-state" && call[4] === true));
+  assert.equal(calls.some(call => call[0] === "main" && call[1] === "top"), false);
+  currentLabel = "focus";
+  calls.length = 0;
+  await utility.closeUtilityWindow("focus");
+  assert.ok(calls.some(call => call[1] === "hide"));
+  assert.ok(calls.some(call => call[1] === "emit" && call[2] === "main" && call[4] === false));
+  assert.ok(calls.some(call => call[1] === "emit" && call[2] === "focus" && call[4] === false));
+  assert.equal(activeUtility, null);
 });
 
 test("Canvas open keeps an existing modal utility active and never changes window layers", async () => {

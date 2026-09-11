@@ -151,6 +151,12 @@ Managed CLI 产生回复后，AMO 会显示进入 Review 的任务卡片：
 
 见 [Task Canvas 使用与底层约定](docs/task-canvas-workbench.md)。
 
+### 人工处理队列：Focus Panel
+
+使用 **Open Canvas 右侧的 Focus Panel 开关**打开独立悬浮队列。任务可标为待处理、处理中、稍后、未来或本轮已处理，保存自己的备注，并通过已有 AMO 操作返回 CLI。人工处理状态与会话运行状态分开保存；打开 CLI 不会清除 Focus 待办。**New card** 可先创建不关联 Session 的想法或工作卡；会话资料和 GUI/TUI 对话承载通过独立组件组织。
+
+见 [Focus Panel 使用与卡片数据规范](docs/focus-panel.md)。
+
 ## 快捷键
 
 作者高频使用鼠标侧键组合，这是个人工作习惯，不是适合所有人的通用默认值。AMO 的全局 Scratchpad 快捷键和 Obsidian 插件命令均支持用户配置；个人覆盖配置会与代码内默认值分离，避免更新时被覆盖。没有鼠标侧键的用户也可以选择键盘组合或关闭对应快捷键。

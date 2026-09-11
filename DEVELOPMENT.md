@@ -2,6 +2,18 @@
 
 This document is for continuing Agent Monitor Overlay development on a new machine.
 
+## Current Handoff: Focus Panel And Card Components (2026-09-11)
+
+Start a continuation with [the current handoff](docs/session-handoffs/2026-09-11-focus-panel-card-framework.md), then read [the Card data framework](docs/card-framework-design-2026-09-11.md) and [Focus Panel usage](docs/focus-panel.md). The handoff distinguishes implemented behavior from remaining native validation and later Canvas work.
+
+The current implementation adds an independent Focus Panel toggle beside Open Canvas and a shared `CardStore`. Card identity is independent from Session identity. Registered `amo.session`, `amo.conversation`, `amo.processing`, and `amo.notes` components separate session execution, GUI/TUI conversation binding, human processing state, and notes. Core and component data changes use validated atomic interfaces.
+
+New data uses `cards.json` (`AGENT_MONITOR_CARDS_DATA_FILE`); the old `focus-cards.json` is not migrated or deleted. Focus returns schema-2 projections over the generic store. Existing runtime sessions/Hook APIs retain their role as the source of execution and platform facts. Canvas still uses its earlier node/layout model; migration to CardStore is future work.
+
+Implementation validation passed in the feature worktree: 208 Broker tests, 103 frontend runtime tests, production build, `cargo check --offline`, and the isolated Focus/Card browser smoke. Actual Windows stacking, CLI/App focus, and live resume remain unverified. This source handoff is not a running-app deployment.
+
+For the next session, preserve existing main-directory uncommitted files and begin with native Focus Panel workflow validation. Keep full user discussion/review inside existing CLI sessions; controller pre-review, automated task dispatch, and embedded chat are not current scope.
+
 ## Repository
 
 ```powershell
@@ -348,6 +360,8 @@ Guardrails:
 ## Useful Documents
 
 Read in this order when taking over:
+
+For the current Focus/Card work, read `docs/session-handoffs/2026-09-11-focus-panel-card-framework.md` first. The broader architecture references below remain useful background; older roadmap sections may describe superseded phases.
 
 1. `docs/amo-module-architecture.md`
 2. `docs/project-structure.md`

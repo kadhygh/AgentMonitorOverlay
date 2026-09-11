@@ -10,7 +10,8 @@
     "settings",
     "priorities",
     "harness",
-    "canvas"
+    "canvas",
+    "focus"
   ],
   "permissions": [
     "core:default",

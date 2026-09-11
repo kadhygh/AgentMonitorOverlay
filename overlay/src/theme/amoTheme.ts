@@ -9,7 +9,7 @@ interface AmoThemeChangedEvent {
 }
 
 const AMO_THEME_STORAGE_KEY = "amo.theme";
-const AMO_THEME_WINDOW_LABELS = ["main", "scratchpad", "deploy", "settings", "canvas"];
+const AMO_THEME_WINDOW_LABELS = ["main", "scratchpad", "deploy", "settings", "canvas", "focus"];
 
 function normalizeAmoTheme(value: unknown): AmoTheme {
   return value === "light" ? "light" : "dark";

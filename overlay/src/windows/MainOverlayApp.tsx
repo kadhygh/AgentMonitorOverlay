@@ -20,6 +20,8 @@ import {
   Search,
   Settings2,
   SquareTerminal,
+  ToggleLeft,
+  ToggleRight,
   X,
 } from "lucide-react";
 import {
@@ -58,6 +60,8 @@ import { useWorkspacePanels } from "../hooks/useWorkspacePanels";
 import { SessionRowContent, toolDisplayForSession } from "../components/SessionCard";
 import { TaskCard } from "../components/TaskCard";
 import { useTaskCardCommands } from "../hooks/useTaskCardCommands";
+import { useFocusPanelWindow } from "../hooks/useFocusPanelWindow";
+import { useFocusPanelCommands } from "../hooks/useFocusPanelCommands";
 import {
   BrokerReadinessPanel,
   brokerReadinessLabels,
@@ -270,6 +274,7 @@ export function MainOverlayApp() {
   } = useMainUtilityWindows({
     setFeedback,
   });
+  const { focusPanelVisible, focusPanelBusy, toggleFocusPanel } = useFocusPanelWindow(setFeedback);
 
   const {
     persistSessionDisplayOrder,
@@ -347,6 +352,10 @@ export function MainOverlayApp() {
     setFeedback,
     setLaunchPanel,
     setSessions,
+  });
+  useFocusPanelCommands({
+    activate: session => activateSession(session, undefined, undefined, { clearAttentionOnSuccess: false }),
+    resume: resumeManagedSession,
   });
 
   const {
@@ -618,6 +627,18 @@ export function MainOverlayApp() {
                 onClick={() => void openCanvasWindow()}
               >
                 <LayoutDashboard size={15} aria-hidden="true" />
+              </button>
+              <button
+                type="button"
+                role="switch"
+                aria-label="Focus Panel"
+                aria-checked={focusPanelVisible}
+                title={`Focus Panel: ${focusPanelVisible ? "On" : "Off"}`}
+                className={`icon-button ${focusPanelVisible ? "is-active" : ""}`}
+                disabled={focusPanelBusy}
+                onClick={() => void toggleFocusPanel()}
+              >
+                {focusPanelVisible ? <ToggleRight size={21} aria-hidden="true" /> : <ToggleLeft size={21} aria-hidden="true" />}
               </button>
               <button
                 type="button"
