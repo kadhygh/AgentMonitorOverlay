@@ -1,7 +1,9 @@
 export type TriageState = "pending" | "reviewing" | "later" | "future" | "handled";
+export interface TaskGroup { groupId: string; name: string; dragOnly: boolean }
 export interface FocusCardView {
   schemaVersion: 2; cardId: string; revision: number;
   title: string; createdAt: string; updatedAt: string;
+  groupId: string | null; archivedAt: string | null;
   triage: { state: TriageState; note: string; handledGeneration: number };
   attention: { generation: number; kind: "reply" | "permission" | "input" | "failure" | null; updatedAt: string | null; hasUnseen: boolean };
   session: null | { componentId: string; sessionRef: { frameworkId: string; sessionId: string }; presence: "live" | "archived" | "detached"; execution: string; workspaceId: string | null; workspacePath: string };
@@ -26,7 +28,7 @@ export function filterCards(cards: FocusCardView[], group: TriageState | "all", 
 }
 export function commandAvailable(card: FocusCardView, action: "activate" | "resume") {
   const { session, conversation } = card;
-  return !!session && !!conversation && session.presence === "live" && conversation.sessionComponentId === session.componentId && ["codex", "claude", "grok"].includes(session.sessionRef.frameworkId) && (action !== "resume" || conversation.surface !== "app") && conversation.capabilities[action];
+  return !card.archivedAt && !!session && !!conversation && session.presence === "live" && conversation.sessionComponentId === session.componentId && ["codex", "claude", "grok"].includes(session.sessionRef.frameworkId) && (action !== "resume" || conversation.surface !== "app") && conversation.capabilities[action];
 }
 export function createOperation(card: FocusCardView, action: FocusOperation["action"], operationId: string, options: { state?: FocusOperation["state"]; draft?: NoteDraft } = {}): FocusOperation {
   return { operationId, expectedRevision: options.draft?.baseRevision ?? card.revision, action, ...(action === "handle" ? { throughGeneration: card.attention.generation } : options.state ? { state: options.state } : {}), ...(options.draft ? { note: options.draft.text } : {}) };

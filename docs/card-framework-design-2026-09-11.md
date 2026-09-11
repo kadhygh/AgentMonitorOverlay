@@ -2,6 +2,18 @@
 
 日期：2026-09-11。状态：本轮最小框架已实现并接入 Focus Panel；未部署到正在运行的 AMO。
 
+## 当前增量：人工 Task groups
+
+后续交互讨论已确认 Focus 只做人工任务梳理。新增 `amo.task-group` 组件（schema 1，`{groupId:string|null}`，最多一个），独立于 processing 源游标。Focus 不再把 pending/reviewing/later/future/handled 用作固定分类，也不做点击自动 Reviewing 或特殊 Agent 分组。下文 processing 的既有数据接口仍保留，不能据此推断当前界面分类。
+
+CardStore 同文件新增 `groups: {groupId,name,dragOnly}[]`、`groupRevision` 和有界 `groupOperations`。组 ID 是稳定 UUID，名称和 dragOnly 可修改。注册表初始为空。`GET /api/card-groups` 返回 `{schemaVersion:1,revision,groups}`；`POST /api/card-groups/commands` 以 operationId/expectedRevision 执行 create/update/delete 批次。create/update 均包含 name 和 dragOnly。
+
+通用 Card commands 设置分组引用时验证目标存在。删除分组与所有普通/归档 Card 引用清理在同一 writer 事务中完成，失败则整体不生效。组名变化不改变 Card 引用，运行观察不写人工分组。缺失引用呈现为“未分组”，不创建虚构分组身份。
+
+Focus schema 2 增加 groups/groupRevision 和每卡 groupId/archivedAt；`?includeArchived=1` 供完整列表使用，读取注册表和卡片引用保持一致。隐藏组只影响面板常驻展示，不影响列表、Card 归档状态或 Session。
+
+UI 和验证详情见 [人工分组交接](session-handoffs/2026-09-11-focus-manual-groups.md)。原有 Card snapshot 缺少分组字段时只初始化空注册表，仍不读取或迁移旧 focus-cards.json。
+
 ## 本轮采用的约定
 
 Session 是最小运行单元。Card 是独立的工作与扩展单元，使用组件组合能力。Focus Panel 是第一个实际消费者；Canvas 的 Card 接入、需求包装与多任务聚合留待后续。

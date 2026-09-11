@@ -21,6 +21,10 @@ function createDefinitions(helpers) {
       validate(data) { object(data, ["text"], "notes data"); string(data.text, 2000, "note", true); },
       maxCount: 1,
     }],
+    ["amo.task-group", {
+      validate(data) { object(data, ["groupId"], "task group data"); if (data.groupId !== null) identifier(data.groupId, 100); },
+      maxCount: 1,
+    }],
   ]);
 }
 module.exports = { createDefinitions };

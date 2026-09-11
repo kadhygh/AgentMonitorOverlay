@@ -1,5 +1,7 @@
 # Card component refactor — implementation contract
 
+Continuation: the later approved manual-groups iteration adds `amo.task-group` and a same-writer group registry, replaces fixed Focus triage tabs, and reuses TaskCard in a detail dialog. See [current continuation](../session-handoffs/2026-09-11-focus-manual-groups.md). The acceptance and test counts below describe the earlier `90808f8` baseline; they do not claim validation of the new native window behavior.
+
 Status: minimum shared Card framework implemented, Focus Panel integrated, and automated acceptance passed. Latest user authorization: no old Focus/card data migration required; retain inexpensive existing runtime integration only. No live data deleted. New storage is `cards.json` (`AGENT_MONITOR_CARDS_DATA_FILE`); old `focus-cards.json` is not read, migrated, or removed.
 
 ## Ownership and scope

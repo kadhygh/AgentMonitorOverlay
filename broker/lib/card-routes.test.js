@@ -28,6 +28,26 @@ async function fixture(t) {
 }
 const planned = { operationId: "create", title: "Planned card", components: [{ componentId: "processing", type: "amo.processing", schemaVersion: 1, data: { sourceComponentId: null, state: "pending" } }] };
 
+test("task group HTTP registry and Focus all-groups projection use protected atomic commands", async (t) => {
+  const { post, read } = await fixture(t);
+  assert.deepEqual(await read("/api/card-groups"), { schemaVersion: 1, revision: 0, groups: [] });
+  const payload = { operationId: "group", expectedRevision: 0, commands: [{ type: "create", name: "Done", dragOnly: true }] };
+  assert.equal((await post("/api/card-groups/commands", payload, { origin: "https://evil.example" })).status, 403);
+  assert.equal((await post("/api/card-groups/commands", payload, { "content-type": "text/plain" })).status, 400);
+  const groups = await (await post("/api/card-groups/commands", payload)).json();
+  assert.deepEqual(await (await post("/api/card-groups/commands", payload)).json(), groups);
+  const groupId = groups.groups[0].groupId;
+  const { card } = await (await post("/api/cards", { ...planned, components: [...planned.components, { componentId: "task-group", type: "amo.task-group", schemaVersion: 1, data: { groupId } }] })).json();
+  await post(`/api/cards/${card.cardId}/commands`, { operationId: "archive", expectedRevision: card.revision, commands: [{ type: "archive" }] });
+  assert.equal((await read("/api/focus-panel")).cards.length, 0);
+  const all = await read("/api/focus-panel?includeArchived=1");
+  assert.equal(all.cards.length, 1);
+  assert.equal(all.cards[0].groupId, groupId);
+  assert.ok(all.cards[0].archivedAt);
+  assert.deepEqual(all.groups, groups.groups);
+  assert.equal(all.groupRevision, groups.revision);
+});
+
 test("generic create/get/commands and Focus facade share materialized data and durable replay", async (t) => {
   const { post, read } = await fixture(t);
   const createdResponse = await post("/api/cards", planned);

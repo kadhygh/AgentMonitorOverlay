@@ -84,3 +84,73 @@ test("a fresh GUI App binding prevents a stale CLI resume request", async () => 
   assert.equal((await route({ ...command, action: "resume" })).ok, false);
   assert.equal(calls.length, 0);
 });
+
+test("named TaskCard actions delegate only to their explicit main command handler", async () => {
+  for (const action of ["openNote", "openCanvas", "openVSCode", "markReviewed", "unbindWindow", "archive", "openApp", "handleAttention", "openLaunchPanel", "openWorkspacePanel", "bindInMain"]) {
+    const dispatched = [];
+    const { route, calls } = fixture({ commands: { [action]: async value => dispatched.push(value) } });
+    assert.equal((await route({ ...command, action })).ok, true, action);
+    assert.deepEqual(dispatched, [session], action);
+    assert.deepEqual(calls, ["reveal"]);
+  }
+  const { route, calls } = fixture();
+  assert.equal((await route({ ...command, action: "openNote" })).ok, false);
+  assert.deepEqual(calls, []);
+});
+
+test("session-only Card actions require an exact current session component and no stale conversation", async () => {
+  const sessionOnlyCard = { ...card, components: card.components.filter(value => value.type !== "amo.conversation") };
+  const dispatched = [];
+  const { route } = fixture({ loadCard: async () => sessionOnlyCard, commands: { openNote: value => dispatched.push(value) } });
+  assert.equal((await route({ ...command, action: "openNote", conversationComponentId: null })).ok, true);
+  assert.equal(dispatched.length, 1);
+  for (const action of ["activate", "resume", "openApp", "unbindWindow", "handleAttention", "bindInMain"]) {
+    assert.equal((await route({ ...command, requestId: action, action, conversationComponentId: null })).ok, false, action);
+  }
+  const currentWithConversation = fixture({ commands: { openNote: () => assert.fail("stale detail") } });
+  assert.equal((await currentWithConversation.route({ ...command, action: "openNote", conversationComponentId: null })).ok, false);
+});
+
+test("all delegated actions reject Card removal, component removal and same-ID session rebinding", async () => {
+  for (const current of [
+    { ...card, archivedAt: "2026-09-11" },
+    { ...card, components: card.components.filter(value => value.type !== "amo.session") },
+    { ...card, components: card.components.filter(value => value.type !== "amo.conversation") },
+    { ...card, components: card.components.map(value => value.type === "amo.session" ? { ...value, data: { sessionRef: { frameworkId: "codex", sessionId: "other" } } } : value) },
+    { ...card, components: card.components.map(value => value.type === "amo.conversation" ? { ...value, data: { sessionComponentId: "other" } } : value) },
+  ]) {
+    for (const action of ["openNote", "openVSCode", "archive", "markReviewed", "bindInMain"]) {
+      const { route, calls } = fixture({ loadCard: async () => current, commands: { [action]: () => assert.fail("stale detail dispatched") } });
+      assert.equal((await route({ ...command, action })).ok, false, action);
+      assert.deepEqual(calls, []);
+    }
+  }
+});
+
+test("session-only actions ignore conversations attached to another session component", async () => {
+  const multiSessionCard = structuredClone(card);
+  multiSessionCard.components = multiSessionCard.components.filter(value => value.type !== "amo.conversation");
+  multiSessionCard.components.push(
+    { componentId: "other-session", type: "amo.session", schemaVersion: 1, data: { sessionRef: { frameworkId: "codex", sessionId: "two" } } },
+    { componentId: "other-conversation", type: "amo.conversation", schemaVersion: 1, data: { sessionComponentId: "other-session" } },
+  );
+  const dispatched = [];
+  const { route } = fixture({ loadCard: async () => multiSessionCard, commands: { openNote: value => dispatched.push(value) } });
+  assert.equal((await route({ ...command, action: "openNote", conversationComponentId: null })).ok, true);
+  assert.deepEqual(dispatched, [session]);
+  assert.equal((await route({ ...command, requestId: "wrong-conversation", action: "openNote", conversationComponentId: "other-conversation" })).ok, false);
+  assert.equal(dispatched.length, 1);
+});
+
+test("dismiss can delegate an archived session but cannot open it; non-Codex cannot open ChatGPT", async () => {
+  const archived = { ...session, archivedAt: "2026-09-11" };
+  const dismissed = [];
+  const { route } = fixture({ loadSession: async () => archived, commands: { dismiss: value => dismissed.push(value) } });
+  assert.equal((await route({ ...command, action: "dismiss" })).ok, true);
+  assert.deepEqual(dismissed, [archived]);
+  assert.equal((await route({ ...command, requestId: "open" })).ok, false);
+  const claudeCard = structuredClone(card);
+  claudeCard.components[0].data.sessionRef.frameworkId = "claude";
+  const unsupported = fixture({ loadSession: async () => ({ ...session, tool: "claude" }), loadCard: async () => claudeCard, commands: { openApp: () => assert.fail("unsupported app") } });
+  assert.equal((await unsupported.route({ ...command, frameworkId: "claude", action: "openApp" })).ok, false);
+});

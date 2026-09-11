@@ -4,6 +4,9 @@ export class CardRequestError extends Error {
 export interface CardComponent { componentId: string; type: string; schemaVersion: number; data: Record<string, unknown> }
 export interface Card { schemaVersion: 1; cardId: string; title: string; revision: number; createdAt: string; updatedAt: string; archivedAt: string | null; components: CardComponent[] }
 export interface CreateCardOperation { operationId: string; title: string; components: CardComponent[] }
+export interface CardCommandOperation { operationId: string; expectedRevision: number; commands: Record<string, unknown>[] }
+export const loadCard = (cardId: string, signal?: AbortSignal) => requestCardJson<{ card: Card }>(`http://127.0.0.1:17654/api/cards/${encodeURIComponent(cardId)}`, { signal });
+export const executeCardCommands = (cardId: string, operation: CardCommandOperation) => requestCardJson<{ card: Card }>(`http://127.0.0.1:17654/api/cards/${encodeURIComponent(cardId)}/commands`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(operation) });
 export function plannedCardOperation(operationId: string, title: string, note: string, processingId: string, notesId: string): CreateCardOperation {
   return { operationId, title: title.trim(), components: [
     { componentId: processingId, type: "amo.processing", schemaVersion: 1, data: { sourceComponentId: null, state: "pending" } },

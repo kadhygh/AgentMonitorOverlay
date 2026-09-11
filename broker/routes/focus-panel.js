@@ -3,7 +3,7 @@ const { requireCardJson, decodeCardId } = require("../lib/card-http");
 
 async function handleFocusPanelRoutes(req, res, url, context) {
   if (req.method === "GET" && url.pathname === "/api/focus-panel") {
-    sendJson(res, 200, await context.cardStore.listFocus());
+    sendJson(res, 200, await context.cardStore.listFocus({ includeArchived: url.searchParams.get("includeArchived") === "1" }));
     return true;
   }
   const match = url.pathname.match(/^\/api\/focus-panel\/cards\/([^/]+)$/u);

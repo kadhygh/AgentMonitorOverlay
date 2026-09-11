@@ -3,6 +3,7 @@ const { randomUUID } = require("node:crypto");
 const { httpError } = require("./http");
 const { writeSnapshot } = require("./task-canvas-store");
 const schema = require("./card-components/schema");
+const groupSchema = require("./card-groups");
 const { canonicalFrameworkId } = require("./session-frameworks");
 const { hash, timestamp, text, observeAttention } = require("./session-frameworks/common");
 const { projectSessionRuntime, projectConversationRuntime } = require("./card-components/session-runtime");
@@ -27,11 +28,24 @@ function validateEvidence(evidence) {
   schema.date(evidence.replyThrough, true); schema.date(evidence.eventThrough, true);
 }
 function validateSnapshot(snapshot) {
-  schema.object(snapshot, ["schemaVersion", "records", "defaultSessionCards", "operations"], "Card snapshot");
+  schema.object(snapshot, ["schemaVersion", "records", "defaultSessionCards", "operations", "groups", "groupRevision", "groupOperations"], "Card snapshot");
+  groupSchema.groups(snapshot.groups);
+  schema.integer(snapshot.groupRevision, "task group revision");
+  if (!Array.isArray(snapshot.groupOperations) || snapshot.groupOperations.length > 128) schema.fail("Invalid task group operation ledger");
+  const groupOperations = new Set();
+  for (const entry of snapshot.groupOperations) {
+    schema.object(entry, ["operationId", "fingerprint", "result"], "task group operation");
+    schema.identifier(entry.operationId, 256);
+    if (groupOperations.has(entry.operationId) || typeof entry.fingerprint !== "string" || !/^[a-f0-9]{64}$/u.test(entry.fingerprint)) schema.fail("Invalid task group operation ledger");
+    groupOperations.add(entry.operationId);
+    groupSchema.snapshot(entry.result);
+    if (entry.result.revision > snapshot.groupRevision) schema.fail("Invalid task group result revision");
+  }
   if (snapshot.schemaVersion !== 1 || !snapshot.records || typeof snapshot.records !== "object" || Array.isArray(snapshot.records) || !snapshot.defaultSessionCards || typeof snapshot.defaultSessionCards !== "object" || Array.isArray(snapshot.defaultSessionCards) || !Array.isArray(snapshot.operations) || snapshot.operations.length > 128) schema.fail("Invalid Card snapshot");
   for (const [id, record] of Object.entries(snapshot.records)) {
     schema.object(record, ["card", "evidence"], "card record");
     schema.card(record.card);
+    groupSchema.validateReferences(record.card, snapshot.groups);
     if (record.card.cardId !== id) schema.fail("Card storage identity mismatch");
     if (!record.evidence || typeof record.evidence !== "object" || Array.isArray(record.evidence)) schema.fail("Invalid evidence map");
     const component = processing(record.card);
@@ -55,7 +69,7 @@ function validateSnapshot(snapshot) {
 }
 
 function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date().toISOString(), coalesceMs = 40, retryMs = 1000, recordDebugLog = () => {} }) {
-  let state = { schemaVersion: 1, records: {}, defaultSessionCards: {}, operations: [] };
+  let state = { schemaVersion: 1, records: {}, defaultSessionCards: {}, operations: [], groups: [], groupRevision: 0, groupOperations: [] };
   let corruption = null;
   let lastError = null;
   let queue = Promise.resolve();
@@ -68,6 +82,7 @@ function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date
   const observationErrors = new Map();
   try {
     const loaded = JSON.parse(fs.readFileSync(dataFile, "utf8"));
+    if (loaded && !["groups", "groupRevision", "groupOperations"].some((key) => Object.hasOwn(loaded, key))) Object.assign(loaded, { groups: [], groupRevision: 0, groupOperations: [] });
     validateSnapshot(loaded);
     state = loaded;
   } catch (error) {
@@ -223,6 +238,51 @@ function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date
     if (!Object.hasOwn(state.records, cardId)) throw httpError(404, "card_not_found", "Card does not exist");
     return clone(state.records[cardId].card);
   }
+  const groupView = (snapshot = state) => ({ schemaVersion: 1, revision: snapshot.groupRevision, groups: clone(snapshot.groups) });
+  function listGroups() {
+    return serialize(async () => { await flushPending(); return groupView(); });
+  }
+  function executeGroups(payload) {
+    let request;
+    try { request = groupSchema.request(payload); } catch (error) { return Promise.reject(error); }
+    return serialize(async () => {
+      if (corruption) throw corruption;
+      const fingerprint = hash(request);
+      const previous = state.groupOperations.find((entry) => entry.operationId === request.operationId);
+      if (previous) {
+        if (previous.fingerprint !== fingerprint) throw httpError(409, "card_group_operation_conflict", "operationId was used with a different task group request");
+        return clone(previous.result);
+      }
+      await flushPending();
+      if (request.expectedRevision !== state.groupRevision) throw httpError(409, "card_group_revision_conflict", `Expected task group revision ${request.expectedRevision}; current revision is ${state.groupRevision}`);
+      const next = clone(state);
+      const removed = new Set();
+      for (const command of request.commands) {
+        if (command.type === "create") next.groups.push({ groupId: `group-${randomUUID()}`, name: command.name, dragOnly: command.dragOnly });
+        else {
+          const target = next.groups.find((group) => group.groupId === command.groupId);
+          if (!target) throw httpError(404, "card_group_not_found", "Task group does not exist");
+          if (command.type === "update") Object.assign(target, { name: command.name, dragOnly: command.dragOnly });
+          else { next.groups = next.groups.filter((group) => group.groupId !== command.groupId); removed.add(command.groupId); }
+        }
+      }
+      // Group removal and all Card references share the same durable transaction,
+      // including archived Cards. Processing cursors and Sessions are untouched.
+      for (const record of Object.values(next.records)) {
+        const component = record.card.components.find((entry) => schema.isType(entry, "amo.task-group"));
+        if (component && removed.has(component.data.groupId)) {
+          component.data.groupId = null;
+          record.card.revision += 1;
+          record.card.updatedAt = now();
+        }
+      }
+      next.groupRevision += 1;
+      const result = groupView(next);
+      next.groupOperations = [...next.groupOperations, { operationId: request.operationId, fingerprint, result }].slice(-128);
+      await persist(next);
+      return clone(result);
+    });
+  }
   function replay(request) {
     if (corruption) throw corruption;
     const fingerprint = hash(request);
@@ -349,11 +409,19 @@ function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date
     const sourceId = component.data.sourceComponentId;
     const conversation = sourceId === null ? null : card.components.find((entry) => schema.isType(entry, "amo.conversation") && entry.data.sessionComponentId === sourceId);
     const note = card.components.find((entry) => schema.isType(entry, "amo.notes"));
-    return { schemaVersion: 2, cardId: card.cardId, revision: card.revision, title: card.title, createdAt: card.createdAt, updatedAt: card.updatedAt, triage: { state: component.data.state, note: note?.data.text || "", handledGeneration: component.data.handledGeneration }, attention: clone(component.data.attention), session: ref ? projectSessionRuntime(raw, clone(ref), sourceId) : null, conversation: conversation ? projectConversationRuntime(raw, clone(ref), conversation.componentId, sourceId) : null };
+    const group = card.components.find((entry) => schema.isType(entry, "amo.task-group"));
+    return { schemaVersion: 2, cardId: card.cardId, revision: card.revision, title: card.title, createdAt: card.createdAt, updatedAt: card.updatedAt, archivedAt: card.archivedAt, groupId: group?.data.groupId ?? null, triage: { state: component.data.state, note: note?.data.text || "", handledGeneration: component.data.handledGeneration }, attention: clone(component.data.attention), session: ref ? projectSessionRuntime(raw, clone(ref), sourceId) : null, conversation: conversation ? projectConversationRuntime(raw, clone(ref), conversation.componentId, sourceId) : null };
   }
-  async function listFocus() {
-    const result = await list();
-    return { schemaVersion: 2, cards: result.cards.filter((card) => !card.archivedAt && processing(card)).map(focusView) };
+  function listFocus({ includeArchived = false } = {}) {
+    return serialize(async () => {
+      await flushPending();
+      if (observationErrors.size) throw observationErrors.values().next().value;
+      // Read group registry and card references within the same serialized turn.
+      const cards = Object.values(state.records).map((record) => record.card)
+        .filter((card) => (includeArchived || !card.archivedAt) && processing(card))
+        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt) || a.cardId.localeCompare(b.cardId)).map(focusView);
+      return { schemaVersion: 2, cards, groups: clone(state.groups), groupRevision: state.groupRevision };
+    });
   }
   function mutateFocus(cardId, payload) {
     try {
@@ -383,7 +451,7 @@ function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date
     } catch (error) { return Promise.reject(error); }
   }
   async function dispose() { disposed = true; unsubscribe?.(); unsubscribe = null; await flush(); }
-  return { attach, observe, flush, list, get, create, execute, listFocus, mutateFocus, focusView, dispose, status: () => ({ pending: pending.length, error: (corruption || observationErrors.values().next().value || lastError)?.message || null }) };
+  return { attach, observe, flush, list, get, create, execute, listGroups, executeGroups, listFocus, mutateFocus, focusView, dispose, status: () => ({ pending: pending.length, error: (corruption || observationErrors.values().next().value || lastError)?.message || null }) };
 }
 
 module.exports = { createCardStore, validateSnapshot };

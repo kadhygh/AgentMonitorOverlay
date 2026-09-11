@@ -353,10 +353,6 @@ export function MainOverlayApp() {
     setLaunchPanel,
     setSessions,
   });
-  useFocusPanelCommands({
-    activate: session => activateSession(session, undefined, undefined, { clearAttentionOnSuccess: false }),
-    resume: resumeManagedSession,
-  });
 
   const {
     autoCopyAndFocusPendingPrompt: handleAutoCopyAndFocusPendingPrompt,
@@ -450,6 +446,32 @@ export function MainOverlayApp() {
     openLaunchPanel: (session, x, y) => void openLaunchPanel(session, x, y),
     openWorkspacePanel: (session, x, y) => void openWorkspacePanel(session, x, y),
     startWindowBindDrag: (session, event) => startWindowBindDrag(session, event),
+  });
+  useFocusPanelCommands({
+    prepareMain: () => setOverlayCollapsed(false),
+    activate: session => activateSession(session, undefined, undefined, { clearAttentionOnSuccess: false }),
+    resume: resumeManagedSession,
+    commands: {
+      openNote: session => openBridgePath(session, "note"),
+      openCanvas: session => openBridgePath(session, "canvas"),
+      openVSCode: openSessionWorkspaceInVSCode,
+      markReviewed: session => markSessionReviewed(session, "manual"),
+      unbindWindow: clearWindowBinding,
+      archive: archiveSession,
+      dismiss: dismissSession,
+      openApp: session => openCodexAppTarget(session, true, { clearAttentionOnSuccess: false }),
+      handleAttention: session => activateSession(session, undefined, undefined, { clearAttentionOnSuccess: false }),
+      // Coordinates from another webview are not meaningful in the main window.
+      openLaunchPanel: session => openLaunchPanel(session, 32, 88),
+      openWorkspacePanel: session => openWorkspacePanel(session, 32, 88),
+      bindInMain: session => {
+        setSessionFilter("all");
+        setPriorityFilters(new Set());
+        setSessionPage(0);
+        setSessionSearch(session.sessionId);
+        setFeedback(`Bind ${session.title}: find this session in AMO and drag its crosshair to the target window. Focus cannot transfer a pointer drag between windows.`);
+      },
+    },
   });
   const sessionPageCount = Math.max(1, Math.ceil(filteredSessions.length / MAX_VISIBLE_SESSION_CARDS));
   const sessionPageStart = sessionPage * MAX_VISIBLE_SESSION_CARDS;

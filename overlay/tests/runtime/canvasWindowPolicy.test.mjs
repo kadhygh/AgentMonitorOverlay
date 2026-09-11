@@ -90,7 +90,9 @@ test("Focus creates one floating window and reports show/close to both consumers
   const created = calls.filter(call => call[0] === "focus" && call[1] === "create");
   assert.equal(created.length, 1);
   assert.equal(created[0][2].alwaysOnTop, true);
-  assert.equal(created[0][2].transparent, false);
+  assert.equal(created[0][2].transparent, true);
+  assert.equal(created[0][2].shadow, false);
+  assert.equal(created[0][2].dragDropEnabled, false);
   calls.length = 0;
   await utility.bringUtilityWindowToFront("focus");
   assert.ok(calls.some(call => call[1] === "emit" && call[2] === "main" && call[3] === "amo-focus-window-state" && call[4] === true));

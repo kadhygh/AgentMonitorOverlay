@@ -1,6 +1,15 @@
 const { readJsonBody, sendJson } = require("../lib/http");
 const { requireCardJson, decodeCardId } = require("../lib/card-http");
 async function handleCardRoutes(req, res, url, context) {
+  if (req.method === "GET" && url.pathname === "/api/card-groups") {
+    sendJson(res, 200, await context.cardStore.listGroups());
+    return true;
+  }
+  if (req.method === "POST" && url.pathname === "/api/card-groups/commands") {
+    requireCardJson(req);
+    sendJson(res, 200, await context.cardStore.executeGroups(await readJsonBody(req, { maxBodyBytes: 32 * 1024 })));
+    return true;
+  }
   if (req.method === "GET" && url.pathname === "/api/cards") {
     sendJson(res, 200, await context.cardStore.list());
     return true;

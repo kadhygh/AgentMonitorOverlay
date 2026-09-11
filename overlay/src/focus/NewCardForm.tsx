@@ -1,19 +1,22 @@
 import { useRef, useState } from "react";
 import { Plus, X } from "lucide-react";
 import { CardRequestError, createCard, plannedCardOperation, type CreateCardOperation } from "../api/cardClient";
+import type { TaskGroup } from "./model";
 
-export function NewCardForm({ open, onClose, onCreated }: { open: boolean; onClose: () => void; onCreated: (id: string) => void }) {
+export function NewCardForm({ open, onClose, onCreated, groups = [] }: { open: boolean; onClose: () => void; onCreated: (id: string) => void; groups?: TaskGroup[] }) {
   const [title, setTitle] = useState(""), [note, setNote] = useState("");
   const [saving, setSaving] = useState(false), [error, setError] = useState("");
+  const [groupId, setGroupId] = useState("");
   const pending = useRef<CreateCardOperation | null>(null);
   const inFlight = useRef(false);
   async function submit() {
     if (inFlight.current || !title.trim()) return;
     const operation = pending.current ?? plannedCardOperation(crypto.randomUUID(), title, note, crypto.randomUUID(), crypto.randomUUID());
+    if (!pending.current && groupId) operation.components.push({ componentId: crypto.randomUUID(), type: "amo.task-group", schemaVersion: 1, data: { groupId } });
     pending.current = operation; inFlight.current = true; setSaving(true); setError("");
     try {
       const result = await createCard(operation);
-      pending.current = null; setTitle(""); setNote(""); onCreated(result.card.cardId);
+      pending.current = null; setTitle(""); setNote(""); setGroupId(""); onCreated(result.card.cardId);
     } catch (reason) {
       if (reason instanceof CardRequestError && reason.status >= 400 && reason.status < 500) pending.current = null;
       setError(reason instanceof Error ? reason.message : "Could not create the card. Your draft is kept.");
@@ -25,6 +28,7 @@ export function NewCardForm({ open, onClose, onCreated }: { open: boolean; onClo
     <p>Capture a plan or task. No session is required.</p>
     <label>Title<input autoFocus aria-label="New card title" required maxLength={300} value={title} disabled={saving || !!pending.current} onChange={event => setTitle(event.target.value)} placeholder="What would you like to work on?" /></label>
     <label>Note <small>{note.length}/2000</small><textarea aria-label="New card note" maxLength={2000} value={note} disabled={saving || !!pending.current} onChange={event => setNote(event.target.value)} placeholder="Optional context or next step" /></label>
+    <label>Task group<select aria-label="Task group" value={groupId} disabled={saving || !!pending.current} onChange={e => setGroupId(e.target.value)}><option value="">未分组</option>{groupId && !groups.some(g => g.groupId === groupId) && <option value={groupId} disabled>分组已删除，请重新选择</option>}{groups.map(group => <option key={group.groupId} value={group.groupId}>{group.name}</option>)}</select></label>
     {error && <div role="alert" className="amo-focus-card-error">{error}</div>}
     <button type="submit" disabled={saving || !title.trim()}><Plus size={14} />{saving ? "Creating…" : pending.current ? "Retry same creation" : "Create card"}</button>
   </form>;

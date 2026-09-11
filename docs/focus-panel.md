@@ -1,51 +1,53 @@
 # Focus Panel
 
-Focus Panel 是 AMO 的独立悬浮处理队列。Open Canvas 右侧的开关控制显示/隐藏，面板关闭按钮同步关闭开关。它现在读取通用 CardStore，不再维护独立的 Focus 卡片文件。
+Focus Panel 是独立的悬浮任务梳理面板。Open Canvas 旁的开关控制显示/隐藏；面板关闭会同步开关。当前版本由用户手动安排 Task groups，不再使用固定 pending / in progress 等分类，也没有 Agent 专用规则或点击自动 Reviewing。
 
-## 使用
+## 日常操作
 
-- **New card**：创建独立工作卡，填写标题和备注。可以先记录想法，不必先启动 Session。
-- **Pending / In progress / Later / Future / Handled**：保存你的人工处理安排；All tasks 查看全部。
-- 点击卡片展开。关联 Session 时显示常规会话状态；Conversation 区域单独显示 CLI/TUI、App/GUI 和绑定可用性。
-- **Open CLI / Open app / Open conversation**：通过主窗口已有入口返回对话。无绑定的 Codex 可进入目标选择；支持的无绑定 CLI 可恢复。App 不提供 CLI Resume。
-- **Task note / Save note**：保存自己的上下文。未保存草稿在隐藏后保留；只有保存后才能跨应用重启保留。
-- **Handle this update / Mark handled**：处理当前卡片或指定更新版本，不结束 Session，不代替 CLI 内权限回答。
+- **新建卡片**：填写标题、备注和可选分组；不需要 Session，不会启动任务。
+- **分组设置**：新增、改名、删除自己的 Task group。名称可变，ID 保持不变。每组可设置“仅拖拽时显示”。初始没有预设组。
+- **横向分组**：常驻组一组一行，卡片仅显示标题。拖拽或右键选择分组；卡片更新不会自动移组或重排。
+- **仅拖拽时显示**：平时整组隐藏，拖动卡片时显示组名和投放区域；放入或取消拖拽后隐藏。隐藏不删除任何数据。
+- **全部分组**：新建旁的列表按钮列出所有组和卡片，包括隐藏组、归档 Card。可以打开详情、手动换组或恢复 Card。
+- **详情**：点击只打开详情。修改标题、Task group、工作备注后点击“保存卡片”；Session 卡另外复用 AMO 的会话卡内容和动作。
+- **归档 Card / 恢复 Card**：只作用于工作卡。详情内的 Session 归档是另一动作；任何动作都不代表停止底层执行。
 
-打开对话不会清除人工待办。新回复保留 Later、Future、In progress 的选择并显示 New update；已处理卡片有新的回复时重新进入 Pending。重复回复不会重复增加版本。
+删除分组会原子地清除所有卡片的该分组引用，连同归档卡一起处理。卡片和备注保留在“未分组”。“未分组”是无引用的展示位置，没有可删除的分组 ID。
 
-并发备注冲突时保留当前草稿，并显示最新保存内容，需明确选择后重试。Card 归档或 processing 组件被移除后，卡片从队列消失；尚未保存的备注可以在 All tasks 中找回文本。
+## 保存与冲突
+
+隐藏面板或关闭详情保留内存草稿，只有保存的内容能跨应用退出恢复。新建草稿、详情草稿和未确认的请求保持各自状态。保存结果不明确时使用原请求重试，避免重复创建或重复执行。
+
+另一窗口、分组删除或其他 Card 命令造成版本冲突时，显示最新内容并保留草稿。明确选择“保留草稿并使用最新版本”或“使用最新保存内容”后继续。分组已删除时需要重新选择有效分组，不能复活旧引用。
 
 ## Card 与组件
 
-Card 有独立 UUID 身份，基本字段只包含标题、版本、时间、归档状态与组件集合。初版组件：
+Card 有独立 UUID。CardStore 的 `cards.json` 是工作数据来源。当前内置组件：
 
-| 组件 | 用途 |
+| 组件 | 职责 |
 |---|---|
-| amo.session | 引用真实会话，读取一般会话数据与运行状态 |
-| amo.conversation | 引用 Session 组件，单独读取 GUI/TUI 对话承载、绑定与可用性 |
-| amo.processing | 人工分组和处理到的源版本 |
-| amo.notes | 备注 |
+| `amo.session` | 真实会话引用；运行层提供执行状态与工程资料 |
+| `amo.conversation` | 指向 Session 组件，提供 GUI/TUI 承载、绑定与可用性 |
+| `amo.processing` | 保留源注意力与已处理游标；Focus 不再用它的状态字段做人工分组 |
+| `amo.notes` | 工作备注 |
+| `amo.task-group` | `{groupId:string|null}` 人工分组引用；每 Card 最多一个 |
 
-一张卡可以没有 Session，也可以包含多个 Session 引用。当前 Focus 的 processing 组件选择一个源来展示/处理；多源聚合后续再做。移除对话组件不结束 Session；Card 归档不等于 Session 归档。
+分组注册表与 Card 在同一文件、同一串行 writer 内保存。分组更新接口有独立 revision 和精确重放记录。多个 Broker 不能同时写同一文件。
 
-主窗口收到返回对话请求时，会重新核对 Card/组件关联与最新 Session，防止旧界面按钮操作已改绑的目标。
+`GET /api/focus-panel?includeArchived=1` 提供分组、分组 revision、Card 视图以及归档卡。`GET /api/card-groups` 和 `POST /api/card-groups/commands` 管理分组；Card 归属、标题、备注、归档沿用通用 Card commands。详见 [Card 框架](card-framework-design-2026-09-11.md) 和 [本轮交接](session-handoffs/2026-09-11-focus-manual-groups.md)。
 
-## 数据接口
+## 返回会话
 
-通用接口提供创建/读取 Card、修改标题、归档/恢复、增删组件、更新处理状态与备注。跨组件修改可以在单个原子命令批次中完成。Focus 接口是该存储的视图与命令门面。
+有关联 Session 时，详情复用已有 AMO TaskCard。Note、Canvas、VS Code、Seen、返回目标、目标选择、恢复、工程工具等沿用主窗口命令 owner。原生命令发送前重新读取当前 Card、Session 与组件引用，拒绝归档或改绑后的旧按钮。
 
-详细数据和接口定义见 [Card 整体框架](card-framework-design-2026-09-11.md)。
+跨窗口无法传递鼠标绑定手势，因此“Bind in AMO…”会定位主窗口的对应 Session，再由用户操作原绑定按钮。回执只表示委托，目标聚焦和启动结果以主窗口反馈为准。无 Session 卡不显示虚构状态和会话动作。
 
-## 本轮数据策略
+旧 Session 层的自动 Seen 行为没有全局重写，但不确认 Card processing、不改变人工分组。
 
-按用户授权直接采用 `cards.json`；可用 `AGENT_MONITOR_CARDS_DATA_FILE` 指定测试位置。旧 `focus-cards.json` 不读取、不迁移，也不自动删除。现有 Session 仍从原监控底座接入，并建立新的默认 Card 映射。
+## 隔离预览与验证
 
-首次接入时，已有未处理回复/阻塞进入 Pending，已看过的历史和无待处理内容的会话进入 Handled；后续以 Card 内人工记录为准。
+仓库根目录运行 `node scripts/performance/focus-panel-preview.cjs`，会启动真实 Focus UI 和空 Session 的临时 Broker，输出本地 URL 与数据目录。预览的数据保存在自己的 `tmp/focus-manual-preview-*` 中，与生产数据隔离。浏览器只允许预览数据接口，原生动作禁用；顶部预览控制模拟显隐和主题。Ctrl+C 停止预览及它自己的 Broker。`--check` 执行边界检查并退出。
 
-面板默认不随 AMO 启动自动打开，但 Broker 持续记录变化。复用已有 AMO 通知和原生操作，不创建第二个窗口探测/通知循环。
+`node scripts/performance/focus-panel-smoke.cjs` 使用临时空 Session Broker 与真实 UI，覆盖拖拽、设置、全部列表、独立卡、冲突、重放与重启。需要已有 Playwright 时设置 `AMO_PLAYWRIGHT_MODULE`。窗口 API 为模拟端口。
 
-## 验证与限制
-
-`node scripts/performance/focus-panel-smoke.cjs` 使用真实 Focus UI 和 Broker、临时工作区，以及模拟的原生接口。它验证独立卡创建、通用接口、组件拆分/移除、原子失败、处理状态、冲突、重试、真正的 Broker 重启和隐藏轮询。可用 `AMO_PLAYWRIGHT_MODULE` 指向现有 Playwright；产物位于 `tmp/focus-smoke-*`。
-
-[当前执行记录](tasks/card-components-refactor-2026-09-11.md) 记录最终验证。真实 Windows 窗口层级和 CLI/App 聚焦仍需实测；委托给 AMO 不代表已经成功聚焦。存储在单 Broker 内串行，不支持多个 Broker 同时写同一文件。对于没有稳定 turn/artifact ID 的未知来源，回复去重仍依赖时间信息。
+Focus 的原生选项为透明、无窗口阴影，关闭 Windows 原生文件拖放拦截以支持 HTML5 拖拽。**真实 Windows 透明效果、层级、焦点、拖动缩放与 CLI/App 返回仍未实测；未实现透明区域鼠标穿透。** 当前源码迭代没有部署或重启生产 AMO。

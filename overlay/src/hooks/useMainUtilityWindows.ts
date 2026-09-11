@@ -24,8 +24,8 @@ const utilityWindowDefinitions: Record<
 > = {
   focus: {
     title: "AMO Focus Panel",
-    width: 440,
-    height: 680,
+    width: 680,
+    height: 540,
     minWidth: 360,
     minHeight: 440,
   },
@@ -249,7 +249,7 @@ async function createOrFindUtilityWindow(label: LazyWindowKind) {
   if (existing) return existing;
 
   const definition = utilityWindowDefinitions[label];
-  const isOpaqueWindow = label === "harness" || label === "canvas" || label === "focus";
+  const isOpaqueWindow = label === "harness" || label === "canvas";
   const isLightTheme = document.documentElement.dataset.amoTheme === "light";
   const target = new WebviewWindow(label, {
     url: "/",
@@ -262,8 +262,10 @@ async function createOrFindUtilityWindow(label: LazyWindowKind) {
     decorations: false,
     alwaysOnTop: label === "scratchpad" || TOOL_WINDOW_POLICY[label].alwaysOnTop,
     transparent: !isOpaqueWindow,
+    // WebView2's native file-drop handler otherwise intercepts HTML5 card drags.
+    dragDropEnabled: label !== "focus",
     backgroundColor: isOpaqueWindow ? (isLightTheme ? "#f1f7f5" : "#12191d") : undefined,
-    shadow: true,
+    shadow: label !== "focus",
     skipTaskbar: label !== "canvas",
     visible: label !== "scratchpad",
     center: true,

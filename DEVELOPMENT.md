@@ -2,7 +2,13 @@
 
 This document is for continuing Agent Monitor Overlay development on a new machine.
 
-## Current Handoff: Focus Panel And Card Components (2026-09-11)
+## Current Handoff: Focus Manual Task Groups (2026-09-11)
+
+Start with [the manual-groups handoff](docs/session-handoffs/2026-09-11-focus-manual-groups.md). The approved iteration replaces fixed Focus triage tabs with user-defined horizontal Task groups, drag-only hidden groups, an all-groups list, and a detail dialog reusing AMO TaskCard content. Card group membership is manual and separate from processing attention. There is no special Agent group or click-to-Reviewing behavior.
+
+Implementation lives in `codex/focus-manual-groups`, isolated from the running main checkout. It is not a production deployment. See the handoff for verification evidence, temporary preview, and the remaining native Windows checks. Preserve main-directory uncommitted work.
+
+## Previous Handoff: Focus Panel And Card Components (2026-09-11)
 
 Start a continuation with [the current handoff](docs/session-handoffs/2026-09-11-focus-panel-card-framework.md), then read [the Card data framework](docs/card-framework-design-2026-09-11.md) and [Focus Panel usage](docs/focus-panel.md). The handoff distinguishes implemented behavior from remaining native validation and later Canvas work.
 

@@ -1,5 +1,7 @@
 # Focus Panel / Card Framework 交接
 
+后续状态：人工 Task groups 版本已在独立分支实现，替代本记录中的固定分类界面。继续开发请先读 [当前人工分组交接](2026-09-11-focus-manual-groups.md)；下文保留 `90808f8` 基线的实现和验证记录。
+
 日期：2026-09-11。来源分支：`codex/focus-panel`。开发方式：独立 worktree，基于 `717c985`；本记录随实现提交并合回本地主线 `master`。提交号以 `git log` 为准。
 
 ## 用户已确认的方向

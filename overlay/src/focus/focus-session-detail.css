@@ -1,0 +1,23 @@
+.focus-session-detail { display: grid; gap: 10px; min-width: 0; }
+.focus-session-detail-heading { display: flex; justify-content: space-between; align-items: center; }
+.focus-session-facts { display: grid; grid-template-columns: 90px minmax(0, 1fr); gap: 6px 10px; margin: 0; font-size: 12px; }
+.focus-session-facts dt { opacity: .65; }
+.focus-session-facts dd { margin: 0; overflow-wrap: anywhere; }
+.focus-session-card-shell { padding: 0; margin: 0; border: 0; min-width: 0; }
+.focus-session-legend { font-size: 12px; opacity: .65; margin-bottom: 7px; }
+.focus-session-card.session-row { display: block; cursor: default; user-select: text; padding: 12px; }
+.focus-session-card .session-main { min-width: 0; padding-top: 34px; }
+.amo-focus-panel .focus-session-card :is(.card-launch-button, .card-managed-launch-button, .card-codex-app-launch-button, .card-maintenance-button) { display: inline-grid; place-items: center; width: 26px; height: 26px; padding: 0; gap: 0; top: 0; }
+.focus-session-card .card-maintenance-button { right: 0; }
+.focus-session-card .card-launch-button { right: 32px; }
+.focus-session-card .card-managed-launch-button { right: 64px; }
+.focus-session-card .card-codex-app-launch-button { right: 96px; }
+.focus-session-card .session-title strong { white-space: normal; overflow-wrap: anywhere; }
+.focus-session-card .message-line { -webkit-line-clamp: unset; max-height: none; white-space: pre-wrap; overflow-wrap: anywhere; }
+.focus-session-card :is(.card-bind-drag-button, .card-archive-button) { display: none; }
+.focus-session-extra-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 10px; }
+.focus-session-explanation, .focus-session-empty, .focus-session-command-result { font-size: 12px; line-height: 1.5; margin: 0; opacity: .8; }
+.focus-session-command-result { opacity: 1; }
+.focus-session-card-shell:disabled { opacity: .7; }
+.focus-session-card-shell.no-conversation :is(.card-managed-launch-button, .card-codex-app-launch-button, .attention-action-button, .target-choice-button, .codex-app-target-button, .codex-cli-target-button, .binding-button),
+.focus-session-card-shell.app-conversation :is(.card-managed-launch-button, .codex-cli-target-button:not(.is-target)) { display: none; }

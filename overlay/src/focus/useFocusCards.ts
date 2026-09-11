@@ -2,10 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import { listen } from "@tauri-apps/api/event";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { loadFocusCards } from "../api/focusPanelClient";
-import { mergeCard, mergeSnapshot, type FocusCardView } from "./model";
+import { mergeCard, mergeSnapshot, type FocusCardView, type TaskGroup } from "./model";
 
 export function useFocusCards() {
   const [cards, setCards] = useState<FocusCardView[]>([]);
+  const [groups, setGroups] = useState<TaskGroup[]>([]);
+  const [groupRevision, setGroupRevision] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [visible, setVisible] = useState(true);
@@ -22,7 +24,7 @@ export function useFocusCards() {
       const version = mutationVersion.current;
       try {
         const result = await loadFocusCards(current.signal);
-        if (!disposed && !current.signal.aborted && version === mutationVersion.current) { setCards(previous => mergeSnapshot(previous, result.cards)); setError(""); }
+        if (!disposed && !current.signal.aborted && version === mutationVersion.current) { setCards(previous => mergeSnapshot(previous, result.cards)); setGroups(result.groups); setGroupRevision(result.groupRevision); setError(""); }
       } catch (reason) { if (!disposed && !current.signal.aborted) setError(reason instanceof Error ? reason.message : "Could not refresh tasks"); }
       finally { controller = undefined; if (!disposed) { setLoading(false); if (isVisible()) { const delay = refreshAgain ? 0 : 4000; refreshAgain = false; timer = setTimeout(() => void refresh(), delay); } } }
     };
@@ -46,5 +48,5 @@ export function useFocusCards() {
     void initializeVisibility();
     return () => { disposed = true; clearTimeout(timer); controller?.abort(); unlisten?.(); document.removeEventListener("visibilitychange", visibilityChanged); window.removeEventListener("focus", visibilityChanged); };
   }, []);
-  return { cards, loading, error, visible, refresh: () => { mutationVersion.current++; refreshRef.current(); }, acceptCard: (card: FocusCardView) => { mutationVersion.current++; setCards(previous => mergeCard(previous, card)); } };
+  return { cards, groups, groupRevision, loading, error, visible, refresh: () => { mutationVersion.current++; refreshRef.current(); }, acceptCard: (card: FocusCardView) => { mutationVersion.current++; setCards(previous => mergeCard(previous, card)); } };
 }
