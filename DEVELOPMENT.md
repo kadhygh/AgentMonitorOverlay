@@ -4,6 +4,8 @@ This document is for continuing Agent Monitor Overlay development on a new machi
 
 ## Current Handoff: Focus Manual Task Groups (2026-09-11)
 
+For switching devices, read [the consolidated device handoff](docs/session-handoffs/2026-09-11-focus-panel-device-handoff.md) first. It summarizes the final approved behavior, merged implementation, verification gaps, and local data/uncommitted work that Git does not transfer. Earlier "not pushed" / "awaiting deployment" statements below or in phase records are historical; use the current branch/remote state and the latest deployment paragraphs.
+
 Start with [the manual-groups handoff](docs/session-handoffs/2026-09-11-focus-manual-groups.md). The approved iteration replaces fixed Focus triage tabs with user-defined horizontal Task groups, drag-only hidden groups, an all-groups list, and a detail dialog reusing AMO TaskCard content. Card group membership is manual and separate from processing attention. There is no special Agent group or click-to-Reviewing behavior.
 
 Latest correction: Focus displays only user-created groups; it no longer creates an Ungrouped lane/list for unassigned Cards. Those records remain stored. [Archive-cost audit](docs/tasks/card-archive-cost-audit-2026-09-11.md) documents remaining Card attention/query work separately from the existing Session archive polling optimization; that lifecycle redesign has not been implemented.
