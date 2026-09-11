@@ -2,6 +2,7 @@ mod broker;
 mod clipboard;
 mod deepseek_harness;
 mod dialogs;
+mod focus_input;
 mod model_credentials;
 mod models;
 mod opener;
@@ -481,6 +482,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            focus_input::set_focus_input_regions,
             activate_session_window,
             ensure_broker,
             model_credential_status,

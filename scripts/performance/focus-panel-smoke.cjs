@@ -166,9 +166,11 @@ async function main() {
   const groups = (await registry()).groups;
   const active = groups.find(group => group.name === '待我梳理'), later = groups.find(group => group.name === '有空处理'), done = groups.find(group => group.name === '已完成');
   const settingRow = id => settings().locator(`[data-testid="focus-group-setting"][data-group-id="${id}"]`);
-  await settingRow(done.groupId).getByRole('checkbox', { name: '仅拖拽时显示', exact: true }).check();
-  await settingRow(done.groupId).getByRole('button', { name: '保存分组', exact: true }).click();
+  await settingRow(done.groupId).getByRole('textbox', { name: '分组名称', exact: true }).fill('尚未保存的名称草稿');
+  await settingRow(done.groupId).getByRole('checkbox', { name: '仅拖拽时显示（立即保存）', exact: true }).check();
   await eventually(registry, data => data.groups.find(group => group.groupId === done.groupId)?.dragOnly === true, 'saved hidden group');
+  assert.equal((await registry()).groups.find(group => group.groupId === done.groupId).name, done.name);
+  assert.equal(await settingRow(done.groupId).getByRole('textbox', { name: '分组名称', exact: true }).inputValue(), '尚未保存的名称草稿');
   await closeDialog(settings());
   assert.equal(await lane(done.groupId).isVisible(), false);
   evidence.push('Empty registry has no prescribed status categories. Settings create stable-ID groups and persist a drag-only group.');
@@ -229,6 +231,7 @@ async function main() {
   await page.mouse.up();
   await eventually(() => find(edited.title), card => card?.groupId === done.groupId, 'actual drag moved group');
   await lane(done.groupId).waitFor({ state: 'hidden' });
+  assert.equal(await page.getByText('分组已更新', { exact: true }).count(), 0);
   assert.equal((await find(edited.title)).triage.state, first.triage.state);
   await showList(); await listing().getByText(edited.title, { exact: true }).click(); await detail().waitFor();
   assert.equal(await detail().getByRole('textbox', { name: '工作备注', exact: true }).inputValue(), '保存标题、备注和人工分组。');
@@ -243,7 +246,7 @@ async function main() {
   if (await listing().isVisible()) await closeDialog(listing());
   await showSettings();
   await settingRow(done.groupId).getByRole('textbox', { name: '分组名称', exact: true }).fill('完成记录');
-  await settingRow(done.groupId).getByRole('button', { name: '保存分组', exact: true }).click();
+  await settingRow(done.groupId).getByRole('button', { name: '保存名称', exact: true }).click();
   await eventually(registry, data => data.groups.find(group => group.groupId === done.groupId)?.name === '完成记录', 'rename retains ID');
   assert.equal((await find(edited.title)).groupId, done.groupId);
   assert.equal((await find(archived.title)).groupId, done.groupId);

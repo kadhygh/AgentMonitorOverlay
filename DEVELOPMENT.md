@@ -12,6 +12,8 @@ Latest entry flow: standalone New card is temporarily disabled (code retained). 
 
 This entry-flow iteration (`c5ddf51`, with handoff `66a791f`) was explicitly approved, merged and deployed to production Source on 2026-09-11. Native entry/picker/settings presence was checked without submitting production mutations; Review receiving remains opt-in. The task record contains backup and validation evidence.
 
+Current native correction: [Focus input regions](docs/tasks/focus-input-regions-2026-09-11.md) makes drag-only visibility save immediately, removes the permanent move-success footer, and adds selective Windows hit regions. Idle blank areas pass through while controls remain interactive; drag/dialog capture restores the full region. Actual cross-process click and HTML-drag behavior passed in an isolated Tauri probe at 100% DPI; see the record for production and multi-monitor validation status.
+
 Implementation commit `26bb27d` was fast-forwarded into local `master` and deployed to the production Source runtime on 2026-09-11 after explicit user approval. Native transparency, show/close toggle synchronization, and group-settings opening were verified through the real Windows window; broader focus, dragging and CLI/App actions remain unverified. See the handoff for evidence and the production data backup. No push was performed. Preserve main-directory uncommitted work.
 
 ## Previous Handoff: Focus Panel And Card Components (2026-09-11)

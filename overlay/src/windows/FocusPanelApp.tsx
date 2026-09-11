@@ -1,14 +1,16 @@
 import { useEffect, useRef, useState } from "react";
-import { Focus, List, Plus, RefreshCw, Settings2, X } from "lucide-react";
+import { Focus, List, Maximize2, Plus, RefreshCw, Settings2, X } from "lucide-react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
 import { CardRequestError, executeCardCommands, loadCard, type CardCommandOperation } from "../api/cardClient";
 import { useFocusCards } from "../focus/useFocusCards";
 import { NewCardForm } from "../focus/NewCardForm";
 import { FocusCardEditor } from "../focus/FocusCardEditor";
 import { FocusDialog } from "../focus/FocusDialog";
 import { TaskGroupSettings } from "../focus/TaskGroupSettings";
+import { useFocusInputRegions } from "../focus/useFocusInputRegions";
 import { cardsInGroup, groupCommand, manualLanes } from "../focus/manualGroups";
 import { useAmoThemeRuntime } from "../theme/amoTheme";
-import { closeUtilityWindow, startUtilityWindowDrag, useUtilityWindowLifecycle } from "./utilityWindow";
+import { closeUtilityWindow, useUtilityWindowLifecycle } from "./utilityWindow";
 import "../focus/focus.css";
 
 // Temporarily disabled: populate Focus from existing TaskCards instead.
@@ -22,9 +24,10 @@ export function FocusPanelApp() {
   const [dragging, setDragging] = useState<string | null>(null), [over, setOver] = useState<string | null>(null);
   const dragId = useRef<string | null>(null);
   const [context, setContext] = useState<{ cardId: string; x: number; y: number } | null>(null);
-  const [message, setMessage] = useState(""), [moveError, setMoveError] = useState(""), [moving, setMoving] = useState(false), [retry, setRetry] = useState(false);
+  const [moveError, setMoveError] = useState(""), [moving, setMoving] = useState(false), [retry, setRetry] = useState(false);
   const movePending = useRef<{ cardId: string; operation: CardCommandOperation } | null>(null), moveBusy = useRef(false);
   const root = useRef<HTMLElement>(null), menu = useRef<HTMLDivElement>(null);
+  const { inputRegionError, runWindowGesture } = useFocusInputRegions(root, !!dragging || !!surface || !!context, feed.visible);
   const lanes = manualLanes(feed.groups);
   function openCard(cardId: string) { setVisited(ids => ids.includes(cardId) ? ids : [...ids, cardId]); setSurface(cardId); setContext(null); }
   function endDrag() { dragId.current = null; setDragging(null); setOver(null); }
@@ -47,7 +50,7 @@ export function FocusPanelApp() {
       }
       const request = movePending.current;
       await executeCardCommands(request.cardId, request.operation);
-      movePending.current = null; setRetry(false); setMessage("分组已更新"); feed.refresh();
+      movePending.current = null; setRetry(false); feed.refresh();
     } catch (reason) {
       const certain = reason instanceof CardRequestError && reason.status >= 400 && reason.status < 500;
       if (certain) movePending.current = null;
@@ -55,17 +58,22 @@ export function FocusPanelApp() {
     } finally { moveBusy.current = false; setMoving(false); }
   }
   return <main ref={root} data-testid="focus-panel" className={`amo-focus-panel${dragging ? " is-dragging" : ""}`} onPointerDown={e => { if (!(e.target as HTMLElement).closest(".amo-focus-context")) setContext(null); }}>
-    <header className="amo-focus-header" onPointerDown={startUtilityWindowDrag}>
-      <span className="amo-focus-brand"><Focus size={19} /><h1>Focus Panel</h1></span>
+    <header className="amo-focus-header" onPointerDown={event => {
+      if ((event.target as HTMLElement).closest("button, input, select, textarea, label") || event.button !== 0) return;
+      void runWindowGesture(() => getCurrentWindow().startDragging()).catch(reason => setMoveError(String(reason)));
+    }}>
+      <span data-focus-region className="amo-focus-brand"><Focus size={19} /><h1>Focus Panel</h1></span>
       <div className="amo-focus-header-actions">
         {MANUAL_CARD_CREATION_ENABLED && <button aria-label="新建卡片" title="新建卡片" onClick={() => setSurface("new")}><Plus size={16} /><span>新建卡片</span></button>}
-        <button aria-label="全部分组" title="全部分组" onClick={() => setSurface("list")}><List size={17} /></button>
-        <button aria-label="分组设置" title="分组设置" onClick={() => setSurface("settings")}><Settings2 size={16} /></button>
-        <button aria-label="刷新" title="刷新" onClick={feed.refresh}><RefreshCw size={15} /></button>
-        <button aria-label="关闭 Focus Panel" title="隐藏面板，保留草稿" onClick={() => void closeUtilityWindow("focus")}><X size={16} /></button>
+        <button data-focus-region aria-label="全部分组" title="全部分组" onClick={() => setSurface("list")}><List size={17} /></button>
+        <button data-focus-region aria-label="分组设置" title="分组设置" onClick={() => setSurface("settings")}><Settings2 size={16} /></button>
+        <button data-focus-region aria-label="刷新" title="刷新" onClick={feed.refresh}><RefreshCw size={15} /></button>
+        <button data-focus-region aria-label="调整面板大小" title="拖动调整面板大小" onPointerDown={event => { if (event.button !== 0) return; event.preventDefault(); void runWindowGesture(() => getCurrentWindow().startResizeDragging("SouthEast")).catch(reason => setMoveError(String(reason))); }}><Maximize2 size={15} /></button>
+        <button data-focus-region aria-label="关闭 Focus Panel" title="隐藏面板，保留草稿" onClick={() => void closeUtilityWindow("focus")}><X size={16} /></button>
       </div>
     </header>
-    {feed.error && <div role="alert" className="amo-focus-error">{feed.error}<button onClick={feed.refresh}>重试刷新</button></div>}
+    {feed.error && <div data-focus-region role="alert" className="amo-focus-error">{feed.error}<button onClick={feed.refresh}>重试刷新</button></div>}
+    {inputRegionError && <div data-focus-region role="alert" className="amo-focus-error">{inputRegionError}</div>}
     <section className="amo-focus-lanes" aria-label="任务分组">
       {lanes.map(group => <section key={group.groupId ?? "ungrouped"} data-testid="focus-group" data-group-id={group.groupId ?? ""} className={`amo-focus-lane${group.dragOnly ? " is-drag-only" : ""}${over === (group.groupId ?? "") ? " is-over" : ""}`} onDragOver={e => {
         if (!dragId.current || moving || retry) return;
@@ -74,19 +82,19 @@ export function FocusPanelApp() {
         if (!dragId.current || moving || retry) return;
         e.preventDefault(); const id = dragId.current; endDrag(); void move(id, group.groupId);
       }}>
-        <div className="amo-focus-lane-title"><span>{group.name}</span>{!group.dragOnly && <small>{cardsInGroup(feed.cards, group.groupId, feed.groups).length}</small>}</div>
-        <div className="amo-focus-tiles">{group.dragOnly ? <span className="amo-focus-drop-label">放到这里</span> : cardsInGroup(feed.cards, group.groupId, feed.groups).map(card => <button key={card.cardId} data-testid="focus-card" data-card-id={card.cardId} className="amo-focus-tile" draggable={!moving && !retry} onDragStart={e => {
+        <div className="amo-focus-lane-title"><span data-focus-region>{group.name}</span>{!group.dragOnly && <small data-focus-region>{cardsInGroup(feed.cards, group.groupId, feed.groups).length}</small>}</div>
+        <div className="amo-focus-tiles">{group.dragOnly ? <span className="amo-focus-drop-label">放到这里</span> : cardsInGroup(feed.cards, group.groupId, feed.groups).map(card => <button data-focus-region key={card.cardId} data-testid="focus-card" data-card-id={card.cardId} className="amo-focus-tile" draggable={!moving && !retry} onDragStart={e => {
           dragId.current = card.cardId; e.dataTransfer.setData("text/plain", card.cardId); e.dataTransfer.effectAllowed = "move"; setDragging(card.cardId); setContext(null);
         }} onClick={() => { if (!dragId.current) openCard(card.cardId); }} onContextMenu={e => {
           e.preventDefault(); const bounds = root.current?.getBoundingClientRect(); if (!bounds) return;
           setContext({ cardId: card.cardId, x: Math.max(8, Math.min(e.clientX - bounds.left, bounds.width - 220)), y: Math.max(8, Math.min(e.clientY - bounds.top, bounds.height - 200)) });
         }}>{card.title}</button>)}</div>
       </section>)}
-      {!feed.loading && !lanes.length && <div className="amo-focus-empty"><p>先创建分组，再从已有 TaskCard 加入。</p><button onClick={() => setSurface("settings")}>创建分组</button></div>}
-      {feed.loading && <p className="amo-focus-empty" role="status">正在读取卡片…</p>}
+      {!feed.loading && !lanes.length && <div data-focus-region className="amo-focus-empty"><p>先创建分组，再从已有 TaskCard 加入。</p><button onClick={() => setSurface("settings")}>创建分组</button></div>}
+      {feed.loading && <p data-focus-region className="amo-focus-empty" role="status">正在读取卡片…</p>}
     </section>
-    {moveError && <div className="amo-focus-error" role="alert">{moveError}{retry && <button disabled={moving} onClick={() => void move()}>Retry same request</button>}</div>}
-    <footer className="amo-focus-footer" role="status">{moving ? "正在保存分组…" : message}</footer>
+    {moveError && <div data-focus-region className="amo-focus-error" role="alert">{moveError}{retry && <button disabled={moving} onClick={() => void move()}>Retry same request</button>}</div>}
+    {moving && <footer data-focus-region className="amo-focus-footer" role="status">正在保存分组…</footer>}
     {context && <div ref={menu} role="menu" aria-label="移至分组" className="amo-focus-context" style={{ left: context.x, top: context.y, maxHeight: Math.max(80, (root.current?.clientHeight ?? 540) - context.y - 8) }}><strong>移至分组</strong>{feed.groups.map(group => <button role="menuitem" key={group.groupId} disabled={moving || retry} onClick={() => void move(context.cardId, group.groupId)}>{group.name}</button>)}</div>}
     <TaskGroupSettings groups={feed.groups} revision={feed.groupRevision} reviewGroupId={feed.reviewGroupId} open={surface === "settings"} onClose={() => setSurface(null)} onChanged={feed.refresh} />
     {surface === "list" && <FocusDialog title="全部分组" onClose={() => setSurface(null)}>
