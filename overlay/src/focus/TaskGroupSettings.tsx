@@ -50,6 +50,6 @@ export function TaskGroupSettings({ groups, revision, open, onClose, onChanged }
     {error && <p role="alert" className="amo-focus-error">{error}</p>}
     {uncertain && <button disabled={busy} onClick={() => void submit()}>Retry same request</button>}
     {(conflict || Object.values(drafts).some(d => d.revision !== revision)) && <button disabled={locked} onClick={() => { setDrafts(previous => Object.fromEntries(Object.entries(previous).filter(([id]) => groups.some(g => g.groupId === id)).map(([id, draft]) => [id, { ...draft, revision }]))); setConflict(false); setError(""); }}>已核对最新分组 · 保留我的修改</button>}
-    <p className="amo-focus-caption">删除分组会清除卡片的分组引用，卡片和备注保留在“未分组”。</p>
+    <p className="amo-focus-caption">删除分组会清除卡片的分组引用；卡片和备注保留，退出面板展示。</p>
   </FocusDialog>;
 }

@@ -21,7 +21,7 @@ export function FocusPanelApp() {
   const [message, setMessage] = useState(""), [moveError, setMoveError] = useState(""), [moving, setMoving] = useState(false), [retry, setRetry] = useState(false);
   const movePending = useRef<{ cardId: string; operation: CardCommandOperation } | null>(null), moveBusy = useRef(false);
   const root = useRef<HTMLElement>(null), menu = useRef<HTMLDivElement>(null);
-  const lanes = manualLanes(feed.groups, feed.cards);
+  const lanes = manualLanes(feed.groups);
   function openCard(cardId: string) { setVisited(ids => ids.includes(cardId) ? ids : [...ids, cardId]); setSurface(cardId); setContext(null); }
   function endDrag() { dragId.current = null; setDragging(null); setOver(null); }
   useEffect(() => {
@@ -83,7 +83,7 @@ export function FocusPanelApp() {
     </section>
     {moveError && <div className="amo-focus-error" role="alert">{moveError}{retry && <button disabled={moving} onClick={() => void move()}>Retry same request</button>}</div>}
     <footer className="amo-focus-footer" role="status">{moving ? "正在保存分组…" : message}</footer>
-    {context && <div ref={menu} role="menu" aria-label="移至分组" className="amo-focus-context" style={{ left: context.x, top: context.y, maxHeight: Math.max(80, (root.current?.clientHeight ?? 540) - context.y - 8) }}><strong>移至分组</strong>{[...feed.groups, { groupId: "", name: "未分组" }].map(group => <button role="menuitem" key={group.groupId} disabled={moving || retry} onClick={() => void move(context.cardId, group.groupId || null)}>{group.name}</button>)}</div>}
+    {context && <div ref={menu} role="menu" aria-label="移至分组" className="amo-focus-context" style={{ left: context.x, top: context.y, maxHeight: Math.max(80, (root.current?.clientHeight ?? 540) - context.y - 8) }}><strong>移至分组</strong>{feed.groups.map(group => <button role="menuitem" key={group.groupId} disabled={moving || retry} onClick={() => void move(context.cardId, group.groupId)}>{group.name}</button>)}</div>}
     <TaskGroupSettings groups={feed.groups} revision={feed.groupRevision} open={surface === "settings"} onClose={() => setSurface(null)} onChanged={feed.refresh} />
     {surface === "list" && <FocusDialog title="全部分组" onClose={() => setSurface(null)}>
       {lanes.map(group => <details className="amo-focus-group-list" key={group.groupId ?? "ungrouped"} open><summary>{group.name}<span>{cardsInGroup(feed.cards, group.groupId, feed.groups, true).length}</span>{group.dragOnly && <small>仅拖拽时显示</small>}</summary>{cardsInGroup(feed.cards, group.groupId, feed.groups, true).map(card => <button className="amo-focus-list-card" key={card.cardId} onClick={() => openCard(card.cardId)}><span>{card.title}</span>{card.archivedAt && <small>已归档</small>}</button>)}</details>)}

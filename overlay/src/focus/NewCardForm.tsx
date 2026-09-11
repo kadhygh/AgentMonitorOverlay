@@ -28,7 +28,8 @@ export function NewCardForm({ open, onClose, onCreated, groups = [] }: { open: b
     <p>Capture a plan or task. No session is required.</p>
     <label>Title<input autoFocus aria-label="New card title" required maxLength={300} value={title} disabled={saving || !!pending.current} onChange={event => setTitle(event.target.value)} placeholder="What would you like to work on?" /></label>
     <label>Note <small>{note.length}/2000</small><textarea aria-label="New card note" maxLength={2000} value={note} disabled={saving || !!pending.current} onChange={event => setNote(event.target.value)} placeholder="Optional context or next step" /></label>
-    <label>Task group<select aria-label="Task group" value={groupId} disabled={saving || !!pending.current} onChange={e => setGroupId(e.target.value)}><option value="">未分组</option>{groupId && !groups.some(g => g.groupId === groupId) && <option value={groupId} disabled>分组已删除，请重新选择</option>}{groups.map(group => <option key={group.groupId} value={group.groupId}>{group.name}</option>)}</select></label>
+    <label>Task group<select aria-label="Task group" value={groupId} disabled={saving || !!pending.current} onChange={e => setGroupId(e.target.value)}><option value="">不加入面板分组</option>{groupId && !groups.some(g => g.groupId === groupId) && <option value={groupId} disabled>分组已删除，请重新选择</option>}{groups.map(group => <option key={group.groupId} value={group.groupId}>{group.name}</option>)}</select></label>
+    {!groupId && <p>未选择分组时只保存卡片，不在面板或分组列表中展示。</p>}
     {error && <div role="alert" className="amo-focus-card-error">{error}</div>}
     <button type="submit" disabled={saving || !title.trim()}><Plus size={14} />{saving ? "Creating…" : pending.current ? "Retry same creation" : "Create card"}</button>
   </form>;

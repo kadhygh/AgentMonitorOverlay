@@ -241,13 +241,27 @@ async function main() {
   assert.ok((await find(archived.title)).archivedAt);
   await closeDialog(settings());
   evidence.push('Renaming preserves group identity. Deleting clears active and archived card references while retaining cards, notes and archive state.');
+  await showList();
+  assert.equal(await listing().getByText(archived.title, { exact: true }).count(), 0);
+  assert.equal(await listing().getByText(edited.title, { exact: true }).count(), 0);
+  assert.equal(await listing().getByText('未分组', { exact: true }).count(), 0);
+  await closeDialog(listing());
+  assert.equal(await cardButton(first.cardId).count(), 0);
+  evidence.push('Cleared group references stay stored but do not create an automatic Ungrouped lane or list.');
+  // Explicit assignment through the Card API makes retained records visible again.
+  for (const id of [first.cardId, archived.cardId]) {
+    const saved = await core(id), membership = saved.components.find(component => component.type === 'amo.task-group');
+    await post('/api/cards/' + id + '/commands', { operationId: randomUUID(), expectedRevision: saved.revision, commands: [{ type: 'set-component', component: { ...membership, data: { groupId: later.groupId } } }] });
+  }
+  await page.getByRole('button', { name: '刷新', exact: true }).click();
+  await cardButton(first.cardId).waitFor();
   await showList(); await listing().getByText(archived.title, { exact: true }).click();
   await detail().getByRole('button', { name: '恢复 Card', exact: true }).click();
   const restored = await eventually(() => find(archived.title), card => card?.archivedAt === null, 'restore archived card');
-  assert.equal(restored.groupId, null); assert.equal(restored.triage.note, archived.triage.note);
+  assert.equal(restored.groupId, later.groupId); assert.equal(restored.triage.note, archived.triage.note);
   await closeDialog(detail());
   await cardButton(archived.cardId).waitFor();
-  evidence.push('All-groups list exposes archived cards; restoring after group deletion returns the card to Ungrouped with its note intact.');
+  evidence.push('All-groups list exposes archived cards only in configured groups; restoring preserves the explicit group and note.');
 
   await cardButton(first.cardId).click();
   const note = () => detail().getByRole('textbox', { name: '工作备注', exact: true });

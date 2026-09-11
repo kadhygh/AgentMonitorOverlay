@@ -15,12 +15,14 @@ test("manual groups ignore processing state, attention, title and update recency
   assert.deepEqual(cardsInGroup([first], "g1", groups), []);
   assert.equal(manualLanes(groups, [first])[1].dragOnly, true);
 });
-test("all-groups list includes archived cards and ungrouped fallback without inventing group identities", () => {
+test("only explicitly configured groups appear; unassigned and deleted references never create an inbox", () => {
   const cards = [card("a", "g2", { archivedAt: "2026-09-11" }), card("b", null), card("c", "deleted")];
   assert.equal(cardsInGroup(cards, "g2", groups).length, 0);
   assert.equal(cardsInGroup(cards, "g2", groups, true).length, 1);
-  assert.deepEqual(cardsInGroup(cards, null, groups).map(c => c.cardId), ["b", "c"]);
-  assert.deepEqual(manualLanes(groups, cards).map(g => g.groupId), ["g1", "g2", null]);
+  assert.deepEqual(cardsInGroup(cards, null, groups), []);
+  assert.deepEqual(cardsInGroup(cards, "deleted", groups), []);
+  assert.deepEqual(manualLanes(groups).map(g => g.groupId), ["g1", "g2"]);
+  assert.deepEqual(manualLanes([]), []);
 });
 test("manual move only updates its component; no processing or Session mutation", () => {
   const core = { components: [{ componentId: "source", type: "amo.session", schemaVersion: 1, data: { sessionRef: { frameworkId: "codex", sessionId: "s" } } }, { componentId: "membership", type: "amo.task-group", schemaVersion: 1, data: { groupId: "g1" } }] };

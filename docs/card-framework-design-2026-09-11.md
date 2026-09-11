@@ -8,7 +8,7 @@
 
 CardStore 同文件新增 `groups: {groupId,name,dragOnly}[]`、`groupRevision` 和有界 `groupOperations`。组 ID 是稳定 UUID，名称和 dragOnly 可修改。注册表初始为空。`GET /api/card-groups` 返回 `{schemaVersion:1,revision,groups}`；`POST /api/card-groups/commands` 以 operationId/expectedRevision 执行 create/update/delete 批次。create/update 均包含 name 和 dragOnly。
 
-通用 Card commands 设置分组引用时验证目标存在。删除分组与所有普通/归档 Card 引用清理在同一 writer 事务中完成，失败则整体不生效。组名变化不改变 Card 引用，运行观察不写人工分组。缺失引用呈现为“未分组”，不创建虚构分组身份。
+通用 Card commands 设置分组引用时验证目标存在。删除分组与所有普通/归档 Card 引用清理在同一 writer 事务中完成，失败则整体不生效。组名变化不改变 Card 引用，运行观察不写人工分组。用户后续明确不要自动的“未分组”：没有有效分组引用的 Card 保留存储，但不进入 Focus 面板或分组列表。
 
 Focus schema 2 增加 groups/groupRevision 和每卡 groupId/archivedAt；`?includeArchived=1` 供完整列表使用，读取注册表和卡片引用保持一致。隐藏组只影响面板常驻展示，不影响列表、Card 归档状态或 Session。
 
