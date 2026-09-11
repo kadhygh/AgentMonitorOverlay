@@ -7,10 +7,11 @@
 .amo-focus-panel button:hover:not(:disabled) { border-color:var(--focus-accent); }
 .amo-focus-panel :is(button,input,select,textarea,summary):focus-visible { outline:2px solid var(--focus-accent); outline-offset:2px; }
 .amo-focus-header { flex:none; display:flex; align-items:center; gap:10px; justify-content:space-between; margin-bottom:22px; user-select:none; }
-.amo-focus-brand { display:flex; align-items:center; gap:8px; padding:7px 10px; border-radius:10px; background:var(--focus-panel); }
+.amo-focus-brand { display:flex; align-items:center; gap:8px; padding:7px 10px; border:1px solid var(--focus-chrome-line, #8aa493); border-radius:10px; background:var(--focus-panel); box-shadow:0 1px 3px #00000026; }
+.amo-focus-brand > svg { color:var(--focus-accent); stroke-width:2.4; }
 .amo-focus-header h1 { margin:0; font-size:14px; font-weight:500; white-space:nowrap; }
 .amo-focus-header-actions { display:flex; gap:5px; }
-.amo-focus-header-actions button { padding:7px; }
+.amo-focus-header-actions button { padding:7px; border-color:var(--focus-chrome-line, #8aa493); box-shadow:0 1px 3px #0000001a; }
 .amo-focus-lanes { flex:1; min-height:0; overflow:auto; scrollbar-width:thin; scrollbar-color:var(--focus-line) transparent; }
 .amo-focus-lane { display:grid; grid-template-columns:100px minmax(0,1fr); gap:12px; align-items:start; margin-bottom:10px; padding:10px 5px; border:1px solid transparent; border-radius:12px; }
 .amo-focus-lane-title { display:flex; align-items:center; gap:7px; min-height:40px; overflow-wrap:anywhere; }
@@ -66,5 +67,5 @@
 .amo-focus-create > p { color:var(--focus-muted); }
 .amo-focus-create small { color:var(--focus-muted); }
 .amo-focus-create > button { margin-top:8px; }
-:root[data-amo-theme="light"] .amo-focus-panel { --focus-bg:#f1f5f2; --focus-panel:#fff; --focus-card:#eaf1ec; --focus-text:#27372e; --focus-muted:#576e5e; --focus-line:#ccd9d0; --focus-accent:#35694b; }
+:root[data-amo-theme="light"] .amo-focus-panel { --focus-bg:#f1f5f2; --focus-panel:#fff; --focus-card:#eaf1ec; --focus-text:#27372e; --focus-muted:#576e5e; --focus-line:#ccd9d0; --focus-accent:#35694b; --focus-chrome-line:#728b7a; }
 @media(max-width:480px) { .amo-focus-panel { padding:8px; } .amo-focus-header { flex-wrap:wrap; margin-bottom:14px; gap:7px; } .amo-focus-header-actions { margin-left:auto; } .amo-focus-lane { grid-template-columns:1fr; gap:5px; } .amo-focus-lane-title { min-height:28px; } .amo-focus-backdrop { padding:6px; } .amo-focus-dialog-body { padding:12px; } }

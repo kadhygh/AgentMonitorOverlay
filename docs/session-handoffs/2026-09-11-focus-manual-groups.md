@@ -73,6 +73,8 @@ Focus 原生创建选项改为透明、无窗口阴影；关闭原生文件拖�
 
 原生检查产物在主目录 `tmp/native-focus-deployment-20260911/`，包含 `focus-native.png`、`window-bounds.json`、`native-controls.json`。检查时原生 PID 为 32572，窗口标题 AMO Focus Panel，尺寸680×540。PID仅为当时证据，不应作后续操作依据。
 
+后续桌面可读性修正：Focus 标识底框及顶部工具按钮使用更清晰的主题描边和轻微阴影，标识图标加粗笔画，改善浅色背景上的辨识度；面板整体仍透明。
+
 ## 后续工作
 
 继续让用户完整审核交互，并补齐上述原生验证缺口。真实 Session 动作验证仍不自动发送 CLI 消息或启动任务。不要自动扩展 Canvas、Area、秘书能力或分类自动化。
