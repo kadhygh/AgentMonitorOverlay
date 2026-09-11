@@ -50,4 +50,4 @@ Card 有独立 UUID。CardStore 的 `cards.json` 是工作数据来源。当前�
 
 `node scripts/performance/focus-panel-smoke.cjs` 使用临时空 Session Broker 与真实 UI，覆盖拖拽、设置、全部列表、独立卡、冲突、重放与重启。需要已有 Playwright 时设置 `AMO_PLAYWRIGHT_MODULE`。窗口 API 为模拟端口。
 
-Focus 的原生选项为透明、无窗口阴影，关闭 Windows 原生文件拖放拦截以支持 HTML5 拖拽。**真实 Windows 透明效果、层级、焦点、拖动缩放与 CLI/App 返回仍未实测；未实现透明区域鼠标穿透。** 当前源码迭代没有部署或重启生产 AMO。
+Focus 的原生选项为透明、无窗口阴影，关闭 Windows 原生文件拖放拦截以支持 HTML5 拖拽。`26bb27d` 已在 2026-09-11 经用户确认合入本地 master 并部署。真实 Windows 窗口中已确认透明背景、新版控件、关闭与主开关同步、重新显示及分组设置弹窗。**窗口层级/焦点的完整场景、原生拖动缩放及卡片拖拽、对 CLI/Unity 的影响、CLI/App 返回仍未实测；未实现透明区域鼠标穿透。** 生产保留原有 142 张 Card，初始全部未分组；隔离预览的空数据不会导入生产。

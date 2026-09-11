@@ -2,7 +2,7 @@
 
 日期：2026-09-11。基线：`90808f8`。开发分支：`codex/focus-manual-groups`。
 
-开发 worktree：`G:/PROJECT/AgentMonitorOverlay/tmp/worktrees/focus-manual-groups`。本轮没有合并回 master、push、部署或主动重启生产 AMO。
+开发 worktree：`G:/PROJECT/AgentMonitorOverlay/tmp/worktrees/focus-manual-groups`。实现提交 `26bb27d`，已在用户明确确认“合入”后快进合入本地 master，并于 2026-09-11 15:13（香港时间）完成生产 Source 重启。未 push。
 
 ## 用户确认的范围
 
@@ -53,7 +53,8 @@ Focus 原生创建选项改为透明、无窗口阴影；关闭原生文件拖�
 - **自动数据验证**：最终 Broker 215 项通过。隔离 `LOCALAPPDATA` 放在 worktree/tmp，未写生产数据。
 - **前端与原生命令模拟**：最终运行时测试 **112/112** 通过，`npm run build` 通过；窗口属性及委托路由用模拟端口验证。构建日志在本 worktree 的 `tmp/manual-groups-build.log`，测试日志在 `tmp/manual-groups-runtime-tests.log`。
 - **真实 UI + 临时 Broker**：新版 `scripts/performance/focus-panel-smoke.cjs` 使用空 Session 和隔离数据，验证分组、新建独立卡、真实浏览器鼠标拖拽、隐藏/列表、稳定改名、删除引用、归档、备注冲突、失响应重放、隐藏轮询与真实 Broker 进程重启；截图人工检查。
-- **未实测**：Windows 原生透明效果、窗口层级/焦点/拖动缩放、对 CLI/Unity 的影响、真实 CLI/App 返回/恢复。浏览器鼠标拖拽与窗口端口模拟不能替代这些验证。
+- **已原生实测**：部署后通过生产 AMO 的真实开关打开 Focus；截图确认卡片之间直接透出下层窗口，新版列表/设置/创建控件存在，旧 Pending/In progress 分类不存在。通过 Windows UI Automation 验证关闭同步主开关为 Off、重开为 On、分组设置可打开并关闭。未创建或修改生产卡片。
+- **未实测**：完整窗口层级/焦点场景、原生窗口拖动缩放和卡片拖拽、对 CLI/Unity 的影响、真实 CLI/App 返回/恢复。浏览器鼠标拖拽与窗口端口模拟不能替代这些验证。
 - 本轮无 Rust 源码或依赖变更；此前 `cargo check --offline` 属于基线证据，不列为本轮新实测。
 
 真实 UI smoke 最终产物：`tmp/focus-manual-smoke-IpSX3E/`，`result.json` 中页面错误为空。覆盖实际浏览器鼠标拖拽、右键移组、归档恢复、数据冲突与进程重启。该目录属于忽略的本地产物，不随源码提交。
@@ -62,11 +63,15 @@ Focus 原生创建选项改为透明、无窗口阴影；关闭原生文件拖�
 
 `scripts/performance/focus-panel-preview.cjs --check` 通过空数据启动、同源代理、拒绝 Session 动作、拒绝跨域请求检查。实际浏览器验证设置弹窗、模拟显示/隐藏与主题，页面错误为空。
 
-本轮留下的隔离预览：`http://127.0.0.1:3199/`，数据在 `tmp/focus-manual-preview-4t9LKM/`；初始 Card、group、Session 全为空，用户可手动创建。预览使用真实 UI 与临时 CardStore，原生接口模拟且禁止外部动作。服务退出后 URL 不再可用，数据文件保留；runner 下次启动会创建新的临时数据目录。生产 AMO 未重启。
+本轮留下的隔离预览：`http://127.0.0.1:3199/`，数据在 `tmp/focus-manual-preview-4t9LKM/`；初始 Card、group、Session 全为空，用户可手动创建。预览使用真实 UI 与临时 CardStore，原生接口模拟且禁止外部动作。服务退出后 URL 不再可用，数据文件保留；runner 下次启动会创建新的临时数据目录。预览数据未导入生产。
+
+生产部署前 JSON 备份：主目录 `tmp/production-backup-20260911-151222/`；同时保存四项既有未提交文件的 SHA256，合入后校验一致。生产 Session 数据仍为主目录 `broker/data/sessions.json`，142 个 Session 和142张 Card 保留，分组注册表为空（revision 0），所有卡片呈现为未分组。
+
+原生检查产物在主目录 `tmp/native-focus-deployment-20260911/`，包含 `focus-native.png`、`window-bounds.json`、`native-controls.json`。检查时原生 PID 为 32572，窗口标题 AMO Focus Panel，尺寸680×540。PID仅为当时证据，不应作后续操作依据。
 
 ## 后续工作
 
-先让用户用隔离测试 Card 完整审核这版交互，再决定原生部署与实机验证。真实 Session 接入阶段再检查对话返回和各动作，不在测试中自动发送 CLI 消息或启动任务。不要自动扩展 Canvas、Area、秘书能力或分类自动化。
+继续让用户完整审核交互，并补齐上述原生验证缺口。真实 Session 动作验证仍不自动发送 CLI 消息或启动任务。不要自动扩展 Canvas、Area、秘书能力或分类自动化。
 
 生产运行状态在接手时已经不一致：主目录存在 Tauri dev/Vite，原生 exe 启动于 11:39:55，Broker 仍是 9 月 10 日 21:39:25 的进程，旧 Broker `/api/focus-panel` 返回 404。以后不能仅看 master HEAD 判断实机版本；部署前再次只读核对。
 
