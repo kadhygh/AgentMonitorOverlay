@@ -115,11 +115,13 @@ pub async fn set_focus_input_regions(
 mod native {
     use super::{FocusInputRegions, InputMode};
     use std::{ffi::c_void, ptr::null_mut};
-    use windows_sys::Win32::Foundation::{BOOL, HWND, POINT, RECT};
-    use windows_sys::Win32::UI::WindowsAndMessaging::{GetClientRect, GetWindowRect};
+    use windows_sys::Win32::Foundation::{BOOL, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+    use windows_sys::Win32::UI::WindowsAndMessaging::{
+        GetClientRect, GetWindowRect, IsIconic, WM_NCACTIVATE, WM_NCDESTROY,
+    };
 
     // These small stable Win32 declarations avoid changing Cargo feature flags
-    // owned by other work. Their ABI matches winuser.h / wingdi.h.
+    // owned by other work. Their ABI matches winuser.h / wingdi.h / commctrl.h.
     #[link(name = "user32")]
     extern "system" {
         fn SetWindowRgn(window: HWND, region: *mut c_void, redraw: BOOL) -> i32;
@@ -137,6 +139,70 @@ mod native {
         fn DeleteObject(object: *mut c_void) -> BOOL;
     }
 
+    type SubclassProc =
+        unsafe extern "system" fn(HWND, u32, WPARAM, LPARAM, usize, usize) -> LRESULT;
+
+    #[link(name = "comctl32")]
+    extern "system" {
+        fn SetWindowSubclass(
+            window: HWND,
+            callback: Option<SubclassProc>,
+            id: usize,
+            reference_data: usize,
+        ) -> BOOL;
+        fn GetWindowSubclass(
+            window: HWND,
+            callback: Option<SubclassProc>,
+            id: usize,
+            reference_data: *mut usize,
+        ) -> BOOL;
+        fn RemoveWindowSubclass(window: HWND, callback: Option<SubclassProc>, id: usize) -> BOOL;
+        fn DefSubclassProc(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT;
+    }
+
+    const FOCUS_FRAME_SUBCLASS_ID: usize = 0x414d4f46;
+
+    unsafe extern "system" fn focus_frame_subclass(
+        window: HWND,
+        message: u32,
+        wparam: WPARAM,
+        lparam: LPARAM,
+        id: usize,
+        _reference_data: usize,
+    ) -> LRESULT {
+        if message == WM_NCDESTROY {
+            RemoveWindowSubclass(window, Some(focus_frame_subclass), id);
+        }
+        if message == WM_NCACTIVATE && IsIconic(window) == 0 {
+            // Tao retains native frame styles for resizing. Suppress their
+            // activation repaint inside our clipped surfaces, while forwarding
+            // through Tao so its active/focus bookkeeping still runs.
+            // https://learn.microsoft.com/en-us/windows/win32/winmsg/wm-ncactivate
+            return DefSubclassProc(window, message, wparam, -1);
+        }
+        DefSubclassProc(window, message, wparam, lparam)
+    }
+
+    unsafe fn ensure_focus_frame_subclass(window: HWND) -> Result<(), String> {
+        let mut reference_data = 0;
+        if GetWindowSubclass(
+            window,
+            Some(focus_frame_subclass),
+            FOCUS_FRAME_SUBCLASS_ID,
+            &mut reference_data,
+        ) == 0
+            && SetWindowSubclass(
+                window,
+                Some(focus_frame_subclass),
+                FOCUS_FRAME_SUBCLASS_ID,
+                0,
+            ) == 0
+        {
+            return Err("Could not configure Focus frame rendering.".into());
+        }
+        Ok(())
+    }
+
     struct OwnedRegion(*mut c_void);
 
     impl Drop for OwnedRegion {
@@ -152,6 +218,7 @@ mod native {
     pub fn apply(window: &tauri::WebviewWindow, payload: &FocusInputRegions) -> Result<(), String> {
         let hwnd = window.hwnd().map_err(|error| error.to_string())?.0 as HWND;
         unsafe {
+            ensure_focus_frame_subclass(hwnd)?;
             if payload.mode == InputMode::Full {
                 return if SetWindowRgn(hwnd, null_mut(), 1) != 0 {
                     Ok(())
