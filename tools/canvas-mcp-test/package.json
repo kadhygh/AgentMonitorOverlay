@@ -1,0 +1,8 @@
+{
+  "name": "canvas-mcp-test",
+  "private": true,
+  "type": "module",
+  "scripts": { "start": "node server.mjs", "test": "node --test test.mjs" },
+  "dependencies": { "@modelcontextprotocol/sdk": "^1.27.1" },
+  "engines": { "node": ">=20" }
+}

@@ -76,7 +76,7 @@ const CODEX_ASTRA_DEFAULT_MIGRATION_KEY = "amo.models.astraDefaultApplied";
 export const DEEPSEEK_DEFAULT_PRESET_ID = deepseekManifest.defaultPresetId as DeepSeekProfilePresetId;
 const deepseekPresetIds = new Set(deepseekManifest.profiles.map(profile => profile.id));
 const activeDeepseekProfiles = deepseekManifest.profiles
-  .filter(profile => profile.releaseId === deepseekManifest.activeRelease)
+  .filter(profile => profile.releaseId === deepseekManifest.activeRelease && profile.mode === "flash-all")
   .sort((left, right) => Number(right.id === DEEPSEEK_DEFAULT_PRESET_ID) - Number(left.id === DEEPSEEK_DEFAULT_PRESET_ID));
 
 function currentDeepseekDefault(value: string | null) {
@@ -96,17 +96,17 @@ export const CLAUDE_PROVIDER_DEFINITIONS: ClaudeProviderDefinition[] = [
   {
     id: "deepseek-v4-pro",
     hidden: true,
-    title: "DeepSeek V4 Pro",
-    detail: "Official Claude Code mapping: V4 Pro for main, Opus, and Sonnet; V4 Flash for Haiku and subagents.",
-    model: "deepseek-v4-pro[1m]",
+    title: "DeepSeek Flash",
+    detail: "DeepSeek Flash for all Claude model slots and subagents.",
+    model: "deepseek-flash",
     keyLabel: "DeepSeek API Key",
   },
   {
     id: "deepseek-v4",
     hidden: true,
-    title: "DeepSeek V4 Flash",
-    detail: "Official Anthropic-compatible routing, with V4 Flash for main tasks and subagents.",
-    model: "deepseek-v4-flash",
+    title: "DeepSeek Flash",
+    detail: "Official Anthropic-compatible routing, with DeepSeek Flash for main tasks and subagents.",
+    model: "deepseek-flash",
     keyLabel: "DeepSeek API Key",
   },
   {
@@ -146,17 +146,17 @@ export const CODEX_PROVIDER_DEFINITIONS: CodexProviderDefinition[] = [
   {
     id: "deepseek-v4-pro",
     hidden: true,
-    title: "DeepSeek V4 Pro",
-    detail: "Official Responses API routing to DeepSeek-V4-Pro-0813 through one-launch overrides.",
-    model: "deepseek-v4-pro",
+    title: "DeepSeek Flash",
+    detail: "Official Responses API routing to DeepSeek Flash through one-launch overrides.",
+    model: "deepseek-flash",
     keyLabel: "DeepSeek API Key",
   },
   {
     id: "deepseek-v4",
     hidden: true,
-    title: "DeepSeek V4 Flash",
+    title: "DeepSeek Flash",
     detail: "Official Responses API routing through one-launch overrides and AMO's shared model catalog.",
-    model: "deepseek-v4-flash",
+    model: "deepseek-flash",
     keyLabel: "DeepSeek API Key",
   },
   ...activeDeepseekProfiles.map(profile => ({
@@ -192,7 +192,7 @@ export const STORED_MODEL_PROVIDER_DEFINITIONS: StoredModelProviderDefinition[] 
   {
     id: "deepseek-v4",
     title: "DeepSeek",
-    detail: "One shared key for flash-all and pro-flash in Codex CLI and Claude CLI.",
+    detail: "One shared key for DeepSeek Flash in Codex CLI and Claude CLI.",
     model: activeDeepseekProfiles[0].subagentModel,
     keyLabel: "DeepSeek API Key",
   },

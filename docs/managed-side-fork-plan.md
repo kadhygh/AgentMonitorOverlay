@@ -1,5 +1,7 @@
 # Managed Side Fork Plan
 
+2026-09-08 direction update: [Obsidian-managed Fork investigation](obsidian-managed-fork-investigation-2026-09-08.md) proposes Obsidian-first entry points, precise historical turn selection, and separate branch notes. Its local App inspection distinguishes ephemeral Side Chat forks from More Details' Quick Chat context path. The older Overlay-first/no-Obsidian-artifact MVP below is historical context, not the proposed next implementation.
+
 Updated: 2026-07-16
 Status: investigated and proposed; implementation not started
 

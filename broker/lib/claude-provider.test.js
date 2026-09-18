@@ -31,37 +31,37 @@ test("legacy GLM-5.2 launch requests migrate to GLM-5.3", () => {
   assert.equal(provider.model, "glm-5.3[1m]");
 });
 
-test("DeepSeek V4 Pro preset uses the official mixed Claude Code mapping", () => {
+test("DeepSeek V4 Pro preset legacy preset routes all Claude slots to Flash", () => {
   const provider = resolveClaudeProvider({
     presetId: "deepseek-v4-pro",
     apiKey: "deepseek-secret",
   });
 
   assert.equal(provider.id, "deepseek-v4-pro");
-  assert.equal(provider.model, "deepseek-v4-pro[1m]");
+  assert.equal(provider.model, "deepseek-flash");
   assert.equal(provider.environment.ANTHROPIC_BASE_URL, "https://api.deepseek.com/anthropic");
-  assert.equal(provider.environment.ANTHROPIC_MODEL, "deepseek-v4-pro[1m]");
-  assert.equal(provider.environment.ANTHROPIC_DEFAULT_OPUS_MODEL, "deepseek-v4-pro[1m]");
-  assert.equal(provider.environment.ANTHROPIC_DEFAULT_SONNET_MODEL, "deepseek-v4-pro[1m]");
-  assert.equal(provider.environment.ANTHROPIC_DEFAULT_HAIKU_MODEL, "deepseek-v4-flash");
-  assert.equal(provider.environment.CLAUDE_CODE_SUBAGENT_MODEL, "deepseek-v4-flash");
+  assert.equal(provider.environment.ANTHROPIC_MODEL, "deepseek-flash");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_OPUS_MODEL, "deepseek-flash");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_SONNET_MODEL, "deepseek-flash");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_HAIKU_MODEL, "deepseek-flash");
+  assert.equal(provider.environment.CLAUDE_CODE_SUBAGENT_MODEL, "deepseek-flash");
   assert.equal(provider.environment.CLAUDE_CODE_EFFORT_LEVEL, "max");
   assert.equal(provider.environment.ANTHROPIC_AUTH_TOKEN, "deepseek-secret");
 });
 
-test("DeepSeek preset routes every Claude model slot to V4 Flash", () => {
+test("DeepSeek preset routes every Claude model slot to DeepSeek Flash", () => {
   const provider = resolveClaudeProvider({
     presetId: "deepseek-v4",
     apiKey: "deepseek-secret",
   });
 
-  assert.equal(provider.model, "deepseek-v4-flash");
+  assert.equal(provider.model, "deepseek-flash");
   assert.equal(provider.environment.ANTHROPIC_BASE_URL, "https://api.deepseek.com/anthropic");
-  assert.equal(provider.environment.ANTHROPIC_MODEL, "deepseek-v4-flash");
-  assert.equal(provider.environment.ANTHROPIC_DEFAULT_OPUS_MODEL, "deepseek-v4-flash");
-  assert.equal(provider.environment.ANTHROPIC_DEFAULT_SONNET_MODEL, "deepseek-v4-flash");
-  assert.equal(provider.environment.ANTHROPIC_DEFAULT_HAIKU_MODEL, "deepseek-v4-flash");
-  assert.equal(provider.environment.CLAUDE_CODE_SUBAGENT_MODEL, "deepseek-v4-flash");
+  assert.equal(provider.environment.ANTHROPIC_MODEL, "deepseek-flash");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_OPUS_MODEL, "deepseek-flash");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_SONNET_MODEL, "deepseek-flash");
+  assert.equal(provider.environment.ANTHROPIC_DEFAULT_HAIKU_MODEL, "deepseek-flash");
+  assert.equal(provider.environment.CLAUDE_CODE_SUBAGENT_MODEL, "deepseek-flash");
   assert.equal(provider.environment.ANTHROPIC_AUTH_TOKEN, "deepseek-secret");
 });
 

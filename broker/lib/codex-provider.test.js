@@ -10,7 +10,7 @@ test("DeepSeek V4 Pro preset uses the official Responses endpoint and an environ
 
   assert.equal(provider.id, "deepseek-v4-pro");
   assert.equal(provider.providerId, "amo-deepseek");
-  assert.equal(provider.model, "deepseek-v4-pro");
+  assert.equal(provider.model, "deepseek-flash");
   assert.equal(provider.baseUrl, "https://api.deepseek.com/");
   assert.deepEqual(provider.environment, { DEEPSEEK_API_KEY: "deepseek-secret" });
 });
@@ -23,7 +23,7 @@ test("DeepSeek V4 Flash preset remains available", () => {
 
   assert.equal(provider.id, "deepseek-v4");
   assert.equal(provider.providerId, "amo-deepseek");
-  assert.equal(provider.model, "deepseek-v4-flash");
+  assert.equal(provider.model, "deepseek-flash");
   assert.equal(provider.baseUrl, "https://api.deepseek.com/");
   assert.deepEqual(provider.environment, { DEEPSEEK_API_KEY: "deepseek-secret" });
 });

@@ -29,7 +29,7 @@ after(async () => {
   await vite.close();
 });
 
-test("DeepSeek V4 Pro appears above the retained Flash preset", () => {
+test("DeepSeek legacy preset IDs remain accepted", () => {
   assert.deepEqual(
     CODEX_PROVIDER_DEFINITIONS.filter(provider => !provider.id.startsWith("deepseek-profile-")).map((provider) => provider.id),
     ["openai-default", "dxx", "dxx-gpt-6-astra", "deepseek-v4-pro", "deepseek-v4"],
@@ -57,7 +57,7 @@ test("workspace routes group models without changing launch and resume preset ID
   assert.deepEqual(routes.flatMap(route => route.models.map(model => model.id)), CODEX_PROVIDER_DEFINITIONS.filter(model => !model.hidden).map(model => model.id));
   assert.deepEqual(workspaceLaunchRoutes("claude-cli").flatMap(route => route.models.map(model => model.id)), CLAUDE_PROVIDER_DEFINITIONS.filter(model => !model.hidden).map(model => model.id));
   const deepseek = routes.find(route => route.id === "deepseek-v4");
-  assert.equal(deepseek.models.length, 2);
+  assert.equal(deepseek.models.length, 1);
   assert.equal(deepseek.models[0].id, DEEPSEEK_DEFAULT_PRESET_ID);
   for (const model of deepseek.models) {
     assert.equal(modelCredentialProviderId(model.id), "deepseek-v4");
@@ -89,9 +89,9 @@ test("DXX Sol and Astra share credentials and remain valid saved launch/resume p
   saveDefaultClaudeProvider("deepseek-v4-pro");
   assert.equal(loadDefaultCodexProvider(), DEEPSEEK_DEFAULT_PRESET_ID);
   assert.equal(loadDefaultClaudeProvider(), DEEPSEEK_DEFAULT_PRESET_ID);
-  const activeMixed = CODEX_PROVIDER_DEFINITIONS.find(model => model.id.startsWith("deepseek-profile-") && model.id.endsWith("-pro-flash")).id;
+  const activeMixed = "deepseek-profile-v41-flash-pro-flash";
   saveDefaultCodexProvider(activeMixed);
-  assert.equal(loadDefaultCodexProvider(), activeMixed);
+  assert.equal(loadDefaultCodexProvider(), DEEPSEEK_DEFAULT_PRESET_ID);
   for (const [presetId, model] of [["dxx", "gpt-5.6-sol"], ["dxx-gpt-6-astra", "gpt-6-astra"]]) {
     assert.equal(isCodexProviderPresetId(presetId), true);
     assert.equal(modelCredentialProviderId(presetId), "dxx");
@@ -106,11 +106,11 @@ test("legacy GLM-5.2 defaults migrate to GLM-5.3", () => {
   assert.equal(normalizeClaudeProviderPresetId("glm-5.3"), "glm-5.3");
 });
 
-test("DeepSeek V4 Pro exposes the official client-specific model names", () => {
+test("DeepSeek V4 Pro legacy preset exposes deepseek-flash in both clients", () => {
   const codex = CODEX_PROVIDER_DEFINITIONS.find((provider) => provider.id === "deepseek-v4-pro");
   const claude = CLAUDE_PROVIDER_DEFINITIONS.find((provider) => provider.id === "deepseek-v4-pro");
-  assert.equal(codex.model, "deepseek-v4-pro");
-  assert.equal(claude.model, "deepseek-v4-pro[1m]");
+  assert.equal(codex.model, "deepseek-flash");
+  assert.equal(claude.model, "deepseek-flash");
 });
 
 test("Grok Build exposes only the local Grok Default route", () => {

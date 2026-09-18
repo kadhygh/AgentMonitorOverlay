@@ -1,5 +1,7 @@
 # Canvas、Area、需求卡与会话协作推进计划
 
+2026-09-08 方向补充：用户希望优先从 Obsidian 发起可定位历史来源的受管 Fork，并减少 CLI 内手动分叉。见 [Obsidian 受管 Fork 调查与建议](obsidian-managed-fork-investigation-2026-09-08.md)。下一轮建议先完成隔离实测及受管 Fork 基础，再接 Obsidian 入口；本文的 Area/需求卡模型保留为后续工作。
+
 日期：2026-09-07。
 状态：分析与建议，等待后续产品讨论；本轮没有实现这里的新功能。
 基础：当前工作区已有 Task Canvas 第一轮实现，见 [执行记录](tasks/task-canvas-foundation-2026-09-07.md)。

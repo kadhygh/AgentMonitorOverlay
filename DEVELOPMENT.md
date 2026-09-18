@@ -4,6 +4,12 @@ This document is for continuing Agent Monitor Overlay development on a new machi
 
 ## Current Handoff: Focus Manual Task Groups (2026-09-11)
 
+### Next iteration agreed on 2026-09-15
+
+The next focus is **task entry + stable Session lifecycle management**, making Focus practical and efficient before further Canvas work. The real Unity workflow uses three independent local copies of one Git repository, with one normally reserved for urgent requests and two used for ongoing branch/task work. Distinguish repository, local copy, current branch and task/session ownership; do not infer availability from an idle Session list or introduce automatic branch switching/merging. See [the updated task discussion](docs/tasks/managed-codex-first-prompt-focus-2026-09-14.md). Direction and ordering are agreed; detailed interfaces and lifecycle rules still require implementation design, and this next iteration is not yet coded.
+
+### Implemented baseline
+
 For switching devices, read [the consolidated device handoff](docs/session-handoffs/2026-09-11-focus-panel-device-handoff.md) first. It summarizes the final approved behavior, merged implementation, verification gaps, and local data/uncommitted work that Git does not transfer. Earlier "not pushed" / "awaiting deployment" statements below or in phase records are historical; use the current branch/remote state and the latest deployment paragraphs.
 
 Start with [the manual-groups handoff](docs/session-handoffs/2026-09-11-focus-manual-groups.md). The approved iteration replaces fixed Focus triage tabs with user-defined horizontal Task groups, drag-only hidden groups, an all-groups list, and a detail dialog reusing AMO TaskCard content. Card group membership is manual and separate from processing attention. There is no special Agent group or click-to-Reviewing behavior.

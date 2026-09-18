@@ -16,7 +16,7 @@ AMO（Agent Monitor Overlay）是一层面向 Windows 本地 AI CLI 工作流的
 
 ### DeepSeek 版本配置与两种路由模式
 
-DeepSeek 现按发布版本统一生成 Codex CLI、Claude CLI 的路由：**flash-all** 将主任务和子任务都交给 Flash，**pro-flash** 用 Pro 处理主任务、Flash 处理子任务。当前默认接入 `deepseek-flash` 的 flash-all 模式。在工作区中心或任务快速入口选择 **DeepSeek → Flash 全部 · V4.1 Flash** 即可使用已保存的 DeepSeek Key 启动。后续新模型接入、切换模式和回滚使用同一脚本；详见 [DeepSeek 路由 SOP](docs/deepseek-routing-sop.md)。
+DeepSeek 的 Codex CLI、Claude CLI 路由统一使用 `deepseek-flash`：主任务、审阅和子任务全部使用 Flash。在工作区中心或任务快速入口选择 **DeepSeek → Flash 全部 · V4.1 Flash** 即可使用已保存的 DeepSeek Key 启动。旧 Pro 和历史预设继续兼容，但同样调用 `deepseek-flash`；详见 [DeepSeek 路由 SOP](docs/deepseek-routing-sop.md)。
 
 ### 任意目录启动 CLI 与独立任务画板
 
@@ -26,7 +26,7 @@ Workspace Center 的路径栏下新增 **Launch CLI**：选择现有目录即可
 
 ### Codex / Claude Managed CLI：DeepSeek 与 GLM 路由
 
-AMO 现在可以为由它拉起的 **Codex CLI** 和 **Claude Code CLI** 选择 **DeepSeek V4 Pro** 或 **DeepSeek V4 Flash**，并保留默认提供商与 Claude 的 GLM 路由。Pro 选项显示在 Flash 上方：Codex Pro 直接调用当前 `DeepSeek-V4-Pro-0813`；Claude Pro 按 DeepSeek 官方配置让主模型、Opus、Sonnet 使用 Pro，让 Haiku 与 Subagent 使用 Flash。原有 Flash 预设仍会把全部 Claude 模型槽位路由到 Flash。打开 **Settings → Models** 只需保存一次 `DeepSeek API Key`，Codex 与 Claude 的 Pro/Flash 启动预设会共享该凭据。
+AMO 拉起的 **Codex CLI** 和 **Claude Code CLI** 均可选择 **DeepSeek Flash**。所有 DeepSeek 模型槽位统一使用 `deepseek-flash`。打开 **Settings → Models** 保存一次 `DeepSeek API Key`，两种 CLI 共享该凭据。
 
 该路由只影响这次 Managed CLI，不会覆盖用户现有的全局 Codex 或 Claude Code 配置。保存的 Key 位于当前 Windows 用户的 Credential Manager。Codex 使用随 AMO Broker 部署的一份共享只读模型目录，并通过单次 `-c` 参数覆盖 provider/model；启动时只把 Key 放入进程环境，退出后再清除终端中的 Key 环境变量，不会在 `~/.codex` 创建 profile 或模型文件。多个 Codex CLI 会共用同一份目录。Claude 仍使用退出后删除的临时 settings。Key 不进入命令参数、模型目录、localStorage、Broker 状态、工程文件或日志。当前 **ChatGPT desktop app** 启动入口不提供这个 AMO 路由选择；该选项针对 Managed Codex CLI。具体步骤见[入门指南中的 Codex / Claude 模型路由](docs/getting-started.md#codex-and-claude-model-routing-deepseek-and-glm)。
 

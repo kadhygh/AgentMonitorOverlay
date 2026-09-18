@@ -6,24 +6,24 @@ DeepSeek 的发布版本与路由模式分开维护。Flash、Pro 是角色名�
 
 - 发布 ID：`v41-flash`
 - Flash：`deepseek-flash`
-- Pro：`deepseek-v4-pro`；Claude 的 Pro 槽位保持原来的 `deepseek-v4-pro[1m]`
+- 原 Pro 槽位与历史版本：全部使用 `deepseek-flash`。
 - 默认模式：`flash-all`
-- 2026-09-10 按用户提供的官方公告，将当前 Flash 模型名更新为 `deepseek-flash`。只更新模型名称，保留已有模式、端点、Pro 配置与多模态设置；0910 配置作为历史版本保留。
+- 2026-09-14 按用户要求统一迁移全部 DeepSeek 路由（含旧 Pro、V4、0910 预设）到 `deepseek-flash`。保留旧预设 ID、端点与能力标记；界面仅显示当前 Flash 全部模式。
 - Codex Responses base URL：`https://api.deepseek.com/`
 - Claude Anthropic base URL：`https://api.deepseek.com/anthropic`
 - 继续共用 AMO 已保存的 DeepSeek Key；脚本不读取或写入密钥，也不修改用户全局 CLI 配置。
 
-## 两种模式的含义
+## 当前路由（旧模式 ID 保留兼容）
 
 | 槽位 | `flash-all` | `pro-flash` |
 | --- | --- | --- |
-| Codex 主模型、`/review` | Flash | Pro |
+| Codex 主模型、`/review` | Flash | Flash |
 | Codex 默认子智能体 | Flash | Flash |
-| Codex 模型菜单 | 只有 Flash | Pro、Flash |
-| Claude 主模型、Opus、Sonnet | Flash | Pro |
+| Codex 模型菜单 | 只有 Flash | 只有 Flash |
+| Claude 主模型、Opus、Sonnet | Flash | Flash |
 | Claude Haiku、子智能体 | Flash | Flash |
 
-主模型使用高推理配置：Codex `max`，子智能体默认 `high`；Claude 保持 `CLAUDE_CODE_EFFORT_LEVEL=max`。**推理强度与模型选择是两件事**：在主任务中调低 effort 不会自动从 Pro 换成 Flash。需要简单任务使用 Flash 时，通过子任务、Haiku 或明确的 Flash 模型选择实现。
+主模型推理配置保持不变：Codex `max`，子智能体默认 `high`；Claude 保持 `CLAUDE_CODE_EFFORT_LEVEL=max`。所有槽位的模型名均为 `deepseek-flash`。
 
 Codex 使用 `agents.default_subagent_model` 和 `review_model` 单次启动覆盖，Claude 使用对应环境变量映射。Codex 的显式 spawn 模型和自定义智能体配置仍可覆盖默认值；这些模式配置的是 AMO 管理的槽位，不是服务端强制拦截器。`flash-all` 目录只列 Flash，并附带保持所有子任务使用 Flash 的指引。使用自定义智能体时，也应检查其中是否硬编码了其他模型。
 
@@ -36,7 +36,7 @@ Codex 使用 `agents.default_subagent_model` 和 `review_model` 单次启动覆�
 3. `broker/assets/deepseek/profiles.json`：生成的两客户端共用预设清单。
 4. `broker/assets/codex/deepseek-profile-*.models.json`：生成的每个发布、每种模式的 Codex 模型目录。
 
-新发布使用新 ID。脚本拒绝修改已有发布 ID 对应的模型名或能力标记，以免恢复旧会话时悄悄切换模型。旧预设及目录保留供恢复会话和回滚使用；界面只显示当前发布的两种模式。旧版本的 DeepSeek 默认启动选择会跟随当前发布的默认模式，当前发布内显式保存的模式会保留。GPT-Dxx、GPT-Official 等其他提供商的选择不受影响。
+后续新发布仍使用新 ID，脚本拒绝修改已有发布的模型名或能力标记。本次统一 Flash 是用户明确要求的一次兼容迁移：旧预设及目录保留，但不再调用旧模型。界面只显示当前发布的 Flash 全部模式，旧 DeepSeek 默认选择会迁移到该模式。
 
 ## 接入新版本
 

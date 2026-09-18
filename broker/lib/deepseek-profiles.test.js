@@ -10,9 +10,9 @@ const { resolveClaudeProvider } = require("./claude-provider");
 const { createCodexLaunchArgs } = require("./codex-launch-config");
 const { generate, nextConfig, parseArgs } = require("../../scripts/models/deepseek-routing.cjs");
 
-test("0910 flash-all routes every Claude slot and Codex default to the exact beta ID", () => {
+test("historical 0910 preset routes every Claude slot and Codex default to current Flash", () => {
   const id = "deepseek-profile-v41-flash-0910-flash-all";
-  const model = "deepseek-v4.1-flash-expires-on-0910";
+  const model = "deepseek-flash";
   const profile = manifest.profiles.find(item => item.id === id);
   assert.equal(profile.mode, "flash-all");
   assert.equal(profile.mainModel, model);
@@ -32,7 +32,7 @@ test("0910 flash-all routes every Claude slot and Codex default to the exact bet
   assert.deepEqual(catalog.models[0].input_modalities, ["text", "image"]);
 });
 
-test("pro-flash uses Pro for main/review/Opus/Sonnet and the selected Flash for child/Haiku", () => {
+test("legacy pro-flash routes main, review and child tasks to Flash", () => {
   const profile = manifest.profiles.find(item => item.releaseId === manifest.activeRelease && item.mode === "pro-flash");
   const codex = resolveCodexProvider({ presetId: profile.id, apiKey: "fixture-key" });
   const args = createCodexLaunchArgs({ provider: codex });
@@ -47,6 +47,10 @@ test("pro-flash uses Pro for main/review/Opus/Sonnet and the selected Flash for 
 
 test("every retained profile resolves in both providers, validates its catalog, and requires a key", () => {
   for (const profile of manifest.profiles) {
+    assert.equal(profile.mainModel, "deepseek-flash");
+    assert.equal(profile.subagentModel, "deepseek-flash");
+    assert.equal(profile.reviewModel, "deepseek-flash");
+    assert.equal(profile.claudeModel, "deepseek-flash");
     assert.equal(resolveCodexProvider({ presetId: profile.id, apiKey: "fixture" }).model, profile.mainModel);
     assert.equal(resolveClaudeProvider({ presetId: profile.id, apiKey: "fixture" }).model, profile.claudeModel);
     createCodexLaunchArgs({ provider: resolveCodexProvider({ presetId: profile.id, apiKey: "fixture" }) });

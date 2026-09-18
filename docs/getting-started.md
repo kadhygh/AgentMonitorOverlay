@@ -128,17 +128,15 @@ The presets currently map to:
 
 | Client | Launch option | Credential field | Main model |
 | --- | --- | --- | --- |
-| Codex CLI | DeepSeek V4 Pro | `DeepSeek API Key` | `deepseek-v4-pro` (`DeepSeek-V4-Pro-0813`) |
-| Codex CLI | DeepSeek V4 Flash | `DeepSeek API Key` | `deepseek-v4-flash` |
-| Claude CLI | DeepSeek V4 Pro | `DeepSeek API Key` | `deepseek-v4-pro[1m]` for main/Opus/Sonnet; Flash for Haiku/subagents |
-| Claude CLI | DeepSeek V4 Flash | `DeepSeek API Key` | `deepseek-v4-flash` |
+| Codex CLI | DeepSeek Flash | `DeepSeek API Key` | `deepseek-flash` |
+| Claude CLI | DeepSeek Flash | `DeepSeek API Key` | `deepseek-flash` |
 | Claude CLI | GLM-5.3 | `GLM Coding Plan API Key` | `glm-5.3[1m]` |
 
 To use or override the preset for one session:
 
 1. return to Workspace Center and select **Run Codex** or **Run Claude**;
 2. select **Codex CLI** or **Claude CLI** in Launch Task;
-3. under **Model routing**, choose **GPT-Official** / **DeepSeek V4 Pro** / **DeepSeek V4 Flash** for Codex, or **Claude default** / **DeepSeek V4 Pro** / **DeepSeek V4 Flash** / **GLM-5.3** for Claude;
+3. under **Model routing**, choose **GPT-Official** / **DeepSeek Flash** for Codex, or **Claude default** / **DeepSeek Flash** / **GLM-5.3** for Claude;
 4. if the selected provider is not saved, enter its key in the launch dialog; a saved key can also be overridden only for this launch;
 5. select **Launch managed CLI**.
 

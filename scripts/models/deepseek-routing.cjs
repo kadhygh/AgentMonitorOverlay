@@ -26,8 +26,8 @@ function validateConfig(config) {
 
 function generate(config, template) {
   validateConfig(config);
-  const flashTemplate = template.models.find(model => model.slug === "deepseek-v4-flash");
-  const proTemplate = template.models.find(model => model.slug === "deepseek-v4-pro");
+  const flashTemplate = template.models.find(model => model.slug === "deepseek-flash");
+  const proTemplate = flashTemplate;
   if (!flashTemplate || !proTemplate) throw new Error("Missing stable DeepSeek model templates");
   const files = new Map();
   const profiles = [];
@@ -36,11 +36,12 @@ function generate(config, template) {
       const id = `deepseek-profile-${release.id}-${mode}`;
       const mainModel = mode === "flash-all" ? release.flashModel : release.proModel;
       const claudeModel = mode === "flash-all" ? release.flashModel : release.claudeProModel;
-      const optionLabel = `${mode === "flash-all" ? "Flash 全部" : "Pro 主任务 + Flash 子任务"} · ${release.label}`;
-      const description = mode === "flash-all"
+      const allFlash = mainModel === release.flashModel && claudeModel === release.flashModel;
+      const optionLabel = `${allFlash ? "Flash 全部" : "Pro 主任务 + Flash 子任务"} · ${release.label}`;
+      const description = allFlash
         ? `主任务、审阅和子任务全部使用 ${release.flashModel}。`
         : `主任务和审阅使用 ${release.proModel}；子任务和轻量槽位使用 ${release.flashModel}。`;
-      const instructions = mode === "flash-all"
+      const instructions = allFlash
         ? `AMO DeepSeek routing mode: flash-all. Use ${release.flashModel} for all work, reviews, and every subagent. Do not select another model within this preset.`
         : `AMO DeepSeek routing mode: pro-flash. Use ${release.proModel} for main work and reviews. Use ${release.flashModel} for subagents and delegated lightweight work. Reasoning effort alone does not switch models.`;
       const models = [...new Set([mainModel, release.flashModel])].map((slug, index) => {

@@ -1,9 +1,9 @@
 {
   "models": [
     {
-      "slug": "deepseek-v4-flash",
+      "slug": "deepseek-flash",
       "display_name": "DeepSeek Flash · V4 稳定版",
-      "description": "主任务、审阅和子任务全部使用 deepseek-v4-flash。",
+      "description": "主任务、审阅和子任务全部使用 deepseek-flash。",
       "context_window": 1048576,
       "max_context_window": 1048576,
       "effective_context_window_percent": 95,
@@ -21,7 +21,7 @@
       "multi_agent_version": "v2",
       "use_responses_lite": false,
       "include_skills_usage_instructions": false,
-      "auto_review_model_override": "deepseek-v4-flash",
+      "auto_review_model_override": "deepseek-flash",
       "truncation_policy": {
         "mode": "tokens",
         "limit": 10000
@@ -54,7 +54,7 @@
       "upgrade": null,
       "priority": 1,
       "model_messages": {
-        "instructions_template": "You are Codex, an agentic coding assistant working with the user in a shared repository.\n\nInspect the relevant code before changing it, preserve unrelated user work, and make scoped edits that directly satisfy the request.\n\nUse the available tools to investigate and implement changes, communicate material progress, and verify the result with appropriate tests or builds before handing it back.\n\nTreat credentials and destructive operations carefully. Never expose secrets, and ask before taking an action that materially exceeds the user's requested scope.\n\nAMO DeepSeek routing mode: flash-all. Use deepseek-v4-flash for all work, reviews, and every subagent. Do not select another model within this preset.",
+        "instructions_template": "You are Codex, an agentic coding assistant working with the user in a shared repository.\n\nInspect the relevant code before changing it, preserve unrelated user work, and make scoped edits that directly satisfy the request.\n\nUse the available tools to investigate and implement changes, communicate material progress, and verify the result with appropriate tests or builds before handing it back.\n\nTreat credentials and destructive operations carefully. Never expose secrets, and ask before taking an action that materially exceeds the user's requested scope.\n\nAMO DeepSeek routing mode: flash-all. Use deepseek-flash for all work, reviews, and every subagent. Do not select another model within this preset.",
         "instructions_variables": {
           "personality_default": "",
           "personality_friendly": "",
@@ -65,7 +65,7 @@
       "experimental_supported_tools": [],
       "supports_search_tool": true,
       "default_service_tier": null,
-      "base_instructions": "You are Codex, an agentic coding assistant working with the user in a shared repository.\n\nInspect the relevant code before changing it, preserve unrelated user work, and make scoped edits that directly satisfy the request.\n\nUse the available tools to investigate and implement changes, communicate material progress, and verify the result with appropriate tests or builds before handing it back.\n\nTreat credentials and destructive operations carefully. Never expose secrets, and ask before taking an action that materially exceeds the user's requested scope.\n\nAMO DeepSeek routing mode: flash-all. Use deepseek-v4-flash for all work, reviews, and every subagent. Do not select another model within this preset."
+      "base_instructions": "You are Codex, an agentic coding assistant working with the user in a shared repository.\n\nInspect the relevant code before changing it, preserve unrelated user work, and make scoped edits that directly satisfy the request.\n\nUse the available tools to investigate and implement changes, communicate material progress, and verify the result with appropriate tests or builds before handing it back.\n\nTreat credentials and destructive operations carefully. Never expose secrets, and ask before taking an action that materially exceeds the user's requested scope.\n\nAMO DeepSeek routing mode: flash-all. Use deepseek-flash for all work, reviews, and every subagent. Do not select another model within this preset."
     }
   ]
 }

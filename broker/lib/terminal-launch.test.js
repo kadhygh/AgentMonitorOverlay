@@ -106,7 +106,7 @@ test("Codex DeepSeek overrides are applied before resume and the environment key
     command: "codex",
     args: [
       "-c",
-      'model="deepseek-v4-flash"',
+      'model="deepseek-flash"',
       "-c",
       'model_provider="amo-deepseek"',
       "-c",
@@ -119,7 +119,7 @@ test("Codex DeepSeek overrides are applied before resume and the environment key
     cleanupEnvironmentKeys: ["DEEPSEEK_API_KEY"],
   });
 
-  assert.match(commandLine, /try \{ & codex '-c' 'model="deepseek-v4-flash"' '-c' 'model_provider="amo-deepseek"'/u);
+  assert.match(commandLine, /try \{ & codex '-c' 'model="deepseek-flash"' '-c' 'model_provider="amo-deepseek"'/u);
   assert.match(commandLine, /model_catalog_json="G:\/PROJECT\/AgentMonitorOverlay\/broker\/assets\/codex\/deepseek-v4-flash\.models\.json"/u);
   assert.match(commandLine, /'session-test' '-C' 'G:\/PROJECT\/demo'/u);
   assert.match(commandLine, /Remove-Item -LiteralPath 'Env:DEEPSEEK_API_KEY'/u);

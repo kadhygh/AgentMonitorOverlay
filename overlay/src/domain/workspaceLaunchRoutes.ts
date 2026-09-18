@@ -21,6 +21,7 @@ export function workspaceLaunchRoutes(adapter: LaunchPanelAdapterId) {
 export function workspaceLaunchModelLabel(model: string) {
   const names: Record<string, string> = {
     "gpt-5.6-sol": "GPT-5.6 Sol", "gpt-6-astra": "GPT-6 Astra",
+    "deepseek-flash": "DeepSeek Flash",
     "deepseek-v4-pro": "DeepSeek V4 Pro", "deepseek-v4-pro[1m]": "DeepSeek V4 Pro",
     "deepseek-v4-flash": "DeepSeek V4 Flash", "glm-5.3[1m]": "GLM-5.3",
   };
