@@ -216,8 +216,39 @@ async fn update_global_harness() -> HarnessLabStatus {
 }
 
 #[tauri::command]
+async fn harness_registry_versions() -> crate::models::HarnessRegistryVersionsResult {
+    tauri::async_runtime::spawn_blocking(deepseek_harness::registry_versions)
+        .await
+        .unwrap_or_else(|error| crate::models::HarnessRegistryVersionsResult {
+            ok: false,
+            message: format!("Harness version list task failed: {error}"),
+            versions: Vec::new(),
+        })
+}
+
+#[tauri::command]
+async fn install_harness_version(version: String) -> HarnessLabStatus {
+    tauri::async_runtime::spawn_blocking(move || {
+        deepseek_harness::install_harness_version(version)
+    })
+    .await
+    .unwrap_or_else(|error| {
+        let mut result = deepseek_harness::harness_status();
+        result.ok = false;
+        result.message = format!("Harness version install task failed: {error}");
+        result
+    })
+}
+
+#[tauri::command]
 fn open_harness_lab_web() -> OpenPathResult {
-    open_external_target("http://127.0.0.1:3080", "Opened DeepSeek Harness")
+    let target = deepseek_harness::web_open_url();
+    let message = if target.authenticated {
+        "Opened the authenticated DSH Web URL."
+    } else {
+        "Opened DeepSeek Harness."
+    };
+    open_external_target(&target.url, message)
 }
 
 #[tauri::command]
@@ -500,6 +531,8 @@ pub fn run() {
             stop_global_harness_web,
             check_harness_remote_version,
             update_global_harness,
+            harness_registry_versions,
+            install_harness_version,
             open_harness_lab_web,
             open_vscode,
             select_workspace_directory,

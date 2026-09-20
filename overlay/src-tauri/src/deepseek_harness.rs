@@ -1,5 +1,6 @@
-use crate::models::HarnessLabStatus;
+use crate::models::{HarnessLabStatus, HarnessRegistryVersion, HarnessRegistryVersionsResult};
 use semver::Version;
+use std::collections::HashMap;
 use std::fs::File;
 use std::io::{Read, Seek, SeekFrom, Write};
 use std::net::TcpStream;
@@ -323,6 +324,134 @@ pub(crate) fn update_harness() -> HarnessLabStatus {
             "Updated the global {HARNESS_PACKAGE} installation to the explicit version {version}."
         ),
     )
+}
+
+pub(crate) fn registry_versions() -> HarnessRegistryVersionsResult {
+    let mut versions = match fetch_registry_versions() {
+        Ok(versions) => versions,
+        Err(message) => {
+            return HarnessRegistryVersionsResult {
+                ok: false,
+                message,
+                versions: Vec::new(),
+            }
+        }
+    };
+    versions.sort_by(|left, right| right.publish_time.cmp(&left.publish_time));
+    HarnessRegistryVersionsResult {
+        ok: true,
+        message: format!(
+            "Loaded {} published {HARNESS_PACKAGE} versions across all dist-tags.",
+            versions.len()
+        ),
+        versions,
+    }
+}
+
+pub(crate) fn install_harness_version(version: String) -> HarnessLabStatus {
+    if !valid_package_version(&version) || Version::parse(&version).is_err() {
+        return build_status(
+            Some(false),
+            Some("Refusing to install an invalid DSH package version.".to_string()),
+        );
+    }
+    let installed = installed_harness().installed_version;
+    let success_message = match installed.as_deref().map(|local| compare_versions(local, &version))
+    {
+        Some(VersionRelation::Older) => format!(
+            "Upgraded the global {HARNESS_PACKAGE} installation to the explicit version {version}."
+        ),
+        Some(VersionRelation::Equal) => format!(
+            "Reinstalled the global {HARNESS_PACKAGE} installation at the explicit version {version}."
+        ),
+        Some(VersionRelation::Newer) => format!(
+            "Downgraded the global {HARNESS_PACKAGE} installation to the explicit version {version}."
+        ),
+        _ => format!(
+            "Installed {HARNESS_PACKAGE}@{version} globally. Use Start Web when you want the browser interface."
+        ),
+    };
+    install_global_version(&version, success_message)
+}
+
+fn fetch_registry_versions() -> Result<Vec<HarnessRegistryVersion>, String> {
+    let Some(npm) = find_npm_command() else {
+        return Err(
+            "npm was not found, so published DSH versions cannot be listed.".to_string()
+        );
+    };
+    let mut command = Command::new(npm);
+    command
+        .arg("view")
+        .arg(HARNESS_PACKAGE)
+        .arg("dist-tags")
+        .arg("time")
+        .arg("--json")
+        .stdin(Stdio::null());
+    hide_window(&mut command);
+    let output = command
+        .output()
+        .map_err(|error| format!("Could not start the npm version listing: {error}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr).trim().to_string();
+        return Err(if detail.is_empty() {
+            format!(
+                "Published DSH version listing failed with exit code {}.",
+                output.status.code().unwrap_or(-1)
+            )
+        } else {
+            format!("Published DSH version listing failed: {detail}")
+        });
+    }
+    parse_registry_versions(&String::from_utf8_lossy(&output.stdout))
+}
+
+fn parse_registry_versions(raw: &str) -> Result<Vec<HarnessRegistryVersion>, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(raw).map_err(|error| format!("The npm registry returned invalid version data: {error}"))?;
+    let (Some(tags), Some(times)) = (
+        value.get("dist-tags").and_then(|entry| entry.as_object()),
+        value.get("time").and_then(|entry| entry.as_object()),
+    ) else {
+        return Err(
+            "The npm registry response is missing dist-tags or publish times.".to_string()
+        );
+    };
+
+    let mut tags_by_version: HashMap<String, Vec<String>> = HashMap::new();
+    for (tag, version) in tags {
+        let (Some(tag), Some(version)) = (Some(tag.as_str()), version.as_str()) else {
+            continue;
+        };
+        if valid_package_version(version) {
+            tags_by_version
+                .entry(version.to_string())
+                .or_default()
+                .push(tag.to_string());
+        }
+    }
+
+    let mut versions = Vec::new();
+    for (version, published) in times {
+        let (version, Some(published)) = (version.as_str(), published.as_str()) else {
+            continue;
+        };
+        if version == "created"
+            || version == "modified"
+            || !valid_package_version(version)
+            || !published.contains('T')
+        {
+            continue;
+        }
+        let mut dist_tags = tags_by_version.remove(version).unwrap_or_default();
+        dist_tags.sort();
+        versions.push(HarnessRegistryVersion {
+            version: version.to_string(),
+            publish_time: published.to_string(),
+            dist_tags,
+        });
+    }
+    Ok(versions)
 }
 
 fn install_global_version(version: &str, success_message: String) -> HarnessLabStatus {
@@ -771,11 +900,69 @@ fn web_health() -> WebHealth {
     if stream.read_to_string(&mut response).is_err() {
         return WebHealth::PortConflict;
     }
-    if response.starts_with("HTTP/1.1 200") && response.contains("DeepSeek Harness") {
+    if is_global_dsh_web_response(&response) {
         WebHealth::Harness
     } else {
         WebHealth::PortConflict
     }
+}
+
+/// A plain-HTTP probe answer that identifies the global DSH Web service: the
+/// pre-auth page (0.1.5 and older) or the token-auth challenge (0.1.6-alpha+,
+/// which greets unauthenticated requests with 401 "dsh web authentication
+/// required"). Anything else on port 3080 is a foreign service.
+fn is_global_dsh_web_response(response: &str) -> bool {
+    let page = response.starts_with("HTTP/1.1 200") && response.contains("DeepSeek Harness");
+    let challenge = response.starts_with("HTTP/1.1 401") && response.contains("dsh web authentication");
+    page || challenge
+}
+
+/// The browser entry point for Open Web: the authenticated URL the running
+/// DSH Web printed to its AMO-captured stdout log, or the plain address when
+/// no token line exists (older DSH, or a manual terminal start whose URL is
+/// not ours to read).
+pub(crate) struct WebOpenUrl {
+    pub(crate) url: String,
+    pub(crate) authenticated: bool,
+}
+
+pub(crate) fn web_open_url() -> WebOpenUrl {
+    match authenticated_web_url() {
+        Some(url) => WebOpenUrl {
+            url,
+            authenticated: true,
+        },
+        None => WebOpenUrl {
+            url: HARNESS_URL.to_string(),
+            authenticated: false,
+        },
+    }
+}
+
+fn authenticated_web_url() -> Option<String> {
+    let log = std::fs::read_to_string(web_log_path("web.stdout.log")).ok()?;
+    extract_authenticated_web_url(&log)
+}
+
+fn extract_authenticated_web_url(log: &str) -> Option<String> {
+    let candidate = log
+        .lines()
+        .rev()
+        .find_map(|line| line.split_once("dsh web: ").map(|(_, rest)| rest.trim()))?;
+    let url = candidate.split_whitespace().next()?;
+    let query = url.strip_prefix(HARNESS_URL)?.strip_prefix("/?")?;
+    let token = query.strip_prefix("token=")?;
+    let token = token.split('&').next().unwrap_or(token);
+    (valid_web_token(token)).then(|| format!("{HARNESS_URL}/?token={token}"))
+}
+
+/// Token-auth URLs go straight to the shell opener, so accept only the
+/// compact URL-safe alphabet dsh prints and a sane length.
+fn valid_web_token(token: &str) -> bool {
+    (16..=256).contains(&token.len())
+        && token
+            .chars()
+            .all(|character| character.is_ascii_alphanumeric() || matches!(character, '-' | '_'))
 }
 
 fn listener_pid(port: u16) -> Option<u32> {
@@ -925,6 +1112,74 @@ mod tests {
         assert_eq!(
             distinct_executable_locations(&[same_root[0].clone(), second_root]),
             2
+        );
+    }
+
+    #[test]
+    fn registry_version_parser_merges_dist_tags_and_skips_bookkeeping_times() {
+        let raw = r#"{
+  "dist-tags": {
+    "next": "0.1.5-rc.2",
+    "latest": "0.1.5-rc.2",
+    "alpha": "0.1.6-alpha.2"
+  },
+  "time": {
+    "created": "2026-08-10T19:41:11.384Z",
+    "modified": "2026-09-17T13:52:10.380Z",
+    "0.1.5-rc.2": "2026-09-10T14:57:10.790Z",
+    "0.1.6-alpha.2": "2026-09-17T13:52:10.201Z"
+  }
+}"#;
+        let mut versions = parse_registry_versions(raw).unwrap();
+        versions.sort_by(|left, right| right.publish_time.cmp(&left.publish_time));
+        assert_eq!(versions.len(), 2);
+        assert_eq!(versions[0].version, "0.1.6-alpha.2");
+        assert_eq!(versions[0].dist_tags, vec!["alpha".to_string()]);
+        assert_eq!(versions[1].version, "0.1.5-rc.2");
+        assert_eq!(
+            versions[1].dist_tags,
+            vec!["latest".to_string(), "next".to_string()]
+        );
+    }
+
+    #[test]
+    fn registry_version_parser_rejects_non_object_payloads() {
+        assert!(parse_registry_versions("not json").is_err());
+        assert!(parse_registry_versions(r#"{"dist-tags":{}}"#).is_err());
+    }
+
+    #[test]
+    fn web_health_response_accepts_token_auth_challenge() {
+        let legacy_page = "HTTP/1.1 200 OK\r\ncontent-type: text/html\r\n\r\n<html><title>DeepSeek Harness</title></html>";
+        assert!(is_global_dsh_web_response(legacy_page));
+        let challenge = "HTTP/1.1 401 Unauthorized\r\ncontent-type: text/plain; charset=utf-8\r\n\r\n3f\r\ndsh web authentication required; reopen the URL printed by dsh web.\r\n0\r\n\r\n";
+        assert!(is_global_dsh_web_response(challenge));
+        assert!(!is_global_dsh_web_response("HTTP/1.1 200 OK\r\n\r\nOther service on 3080"));
+        assert!(!is_global_dsh_web_response("HTTP/1.1 404 Not Found\r\n\r\ndsh web authentication required"));
+        assert!(!is_global_dsh_web_response("HTTP/1.1 401 Unauthorized\r\n\r\nBasic realm=\"other\""));
+    }
+
+    #[test]
+    fn authenticated_web_url_uses_the_latest_valid_token_line() {
+        let log = "dsh web: http://127.0.0.1:3080/?token=OLDoldoldoldoldoldoldoldoldol\n\
+                   dsh web: opening the default browser; pass --no-open to disable\n\
+                   dsh web: http://127.0.0.1:3080/?token=NEWnewnewnewnewnewnewnewnewne\n";
+        assert_eq!(
+            extract_authenticated_web_url(log).as_deref(),
+            Some("http://127.0.0.1:3080/?token=NEWnewnewnewnewnewnewnewnewne")
+        );
+        assert_eq!(extract_authenticated_web_url("no url lines here"), None);
+        assert_eq!(
+            extract_authenticated_web_url("dsh web: http://evil.example/?token=aaaaaaaaaaaaaaaaaaaa"),
+            None
+        );
+        assert_eq!(
+            extract_authenticated_web_url("dsh web: http://127.0.0.1:3080/?token=short"),
+            None
+        );
+        assert_eq!(
+            extract_authenticated_web_url("dsh web: http://127.0.0.1:3080/?token=has space and injection"),
+            None
         );
     }
 

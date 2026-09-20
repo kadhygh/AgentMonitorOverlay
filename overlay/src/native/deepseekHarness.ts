@@ -33,6 +33,18 @@ export interface HarnessLabStatus {
   recentLog: string;
 }
 
+export interface HarnessRegistryVersion {
+  version: string;
+  publishTime: string;
+  distTags: string[];
+}
+
+export interface HarnessRegistryVersionsResult {
+  ok: boolean;
+  message: string;
+  versions: HarnessRegistryVersion[];
+}
+
 export function loadHarnessLabStatus(): Promise<HarnessLabStatus> {
   return invoke<HarnessLabStatus>("harness_lab_status");
 }
@@ -55,6 +67,14 @@ export function checkHarnessRemoteVersion(): Promise<HarnessLabStatus> {
 
 export function updateGlobalHarness(): Promise<HarnessLabStatus> {
   return invoke<HarnessLabStatus>("update_global_harness");
+}
+
+export function fetchHarnessRegistryVersions(): Promise<HarnessRegistryVersionsResult> {
+  return invoke<HarnessRegistryVersionsResult>("harness_registry_versions");
+}
+
+export function installHarnessVersion(version: string): Promise<HarnessLabStatus> {
+  return invoke<HarnessLabStatus>("install_harness_version", { version });
 }
 
 export function openHarnessLabWeb(): Promise<OpenPathResult> {

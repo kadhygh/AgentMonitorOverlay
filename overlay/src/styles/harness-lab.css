@@ -512,6 +512,185 @@
   word-break: break-word;
 }
 
+.harness-versions {
+  display: grid;
+  min-height: 0;
+  background: rgba(143, 196, 255, 0.028);
+  border: 1px solid rgba(143, 196, 255, 0.11);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.harness-versions-toggle {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr) max-content;
+  align-items: center;
+  gap: 8px;
+  min-height: 38px;
+  padding: 0 10px;
+  color: #b8cac4;
+  background: transparent;
+  border: 0;
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.harness-versions-toggle > span {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.harness-versions-toggle strong,
+.harness-versions-toggle em {
+  font-size: 9px;
+  line-height: 12px;
+}
+
+.harness-versions-toggle em {
+  overflow: hidden;
+  color: #7d918a;
+  font-style: normal;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-versions.is-expanded .harness-versions-toggle {
+  border-bottom: 1px solid rgba(143, 196, 255, 0.1);
+}
+
+.harness-versions-content {
+  display: grid;
+  gap: 8px;
+  padding: 10px;
+}
+
+.harness-versions-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.harness-versions-toolbar > span {
+  color: #82968f;
+  font-size: 9px;
+  line-height: 13px;
+}
+
+.harness-versions-empty {
+  padding: 14px 10px;
+  color: #82968f;
+  font-size: 9px;
+  line-height: 13px;
+  text-align: center;
+}
+
+.harness-versions-list {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.harness-version-row {
+  display: grid;
+  grid-template-columns: minmax(0, max-content) minmax(0, 1fr) max-content max-content;
+  align-items: center;
+  gap: 10px;
+  min-height: 32px;
+  padding: 3px 8px;
+  background: rgba(255, 255, 255, 0.028);
+  border: 1px solid rgba(255, 255, 255, 0.065);
+  border-radius: 6px;
+}
+
+.harness-version-row.is-current {
+  background: rgba(111, 224, 190, 0.055);
+  border-color: rgba(111, 224, 190, 0.22);
+}
+
+.harness-version-row > code {
+  overflow: hidden;
+  color: #cbdcd6;
+  font-size: 10px;
+  line-height: 14px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.harness-version-row.is-current > code {
+  color: #6fe0be;
+}
+
+.harness-version-tags {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+}
+
+.harness-version-tags em {
+  padding: 2px 6px;
+  color: #9fb2ac;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 999px;
+  font-size: 8px;
+  font-style: normal;
+  line-height: 11px;
+  text-transform: uppercase;
+}
+
+.harness-version-tags em.is-latest {
+  color: #6fe0be;
+  background: rgba(111, 224, 190, 0.09);
+}
+
+.harness-version-tags em.is-next {
+  color: #8fc4ff;
+  background: rgba(143, 196, 255, 0.09);
+}
+
+.harness-version-tags em.is-alpha {
+  color: #d5a56e;
+  background: rgba(213, 165, 110, 0.09);
+}
+
+.harness-version-row > time {
+  color: #7f938c;
+  font-size: 9px;
+  line-height: 12px;
+  white-space: nowrap;
+}
+
+.harness-version-action {
+  min-height: 24px;
+  padding: 0 10px;
+  color: #b8c9c3;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  border-radius: 6px;
+  cursor: pointer;
+  font: inherit;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.harness-version-action:not(:disabled):hover {
+  color: #eaf5f1;
+  background: rgba(143, 196, 255, 0.1);
+}
+
+.harness-version-action:disabled {
+  color: #6f827c;
+  cursor: default;
+  opacity: 0.7;
+}
+
 .harness-lab-footer {
   display: flex;
   align-items: center;
@@ -605,6 +784,71 @@
   border-color: rgba(42, 74, 64, 0.14);
 }
 
+:root[data-amo-theme="light"] .harness-versions {
+  background: rgba(73, 113, 100, 0.028);
+  border-color: rgba(42, 74, 64, 0.14);
+}
+
+:root[data-amo-theme="light"] .harness-versions-toggle {
+  color: #324b43;
+}
+
+:root[data-amo-theme="light"] .harness-versions-toggle em,
+:root[data-amo-theme="light"] .harness-versions-toolbar > span,
+:root[data-amo-theme="light"] .harness-versions-empty,
+:root[data-amo-theme="light"] .harness-version-row > time {
+  color: #6c8079;
+}
+
+:root[data-amo-theme="light"] .harness-version-row {
+  background: rgba(244, 249, 247, 0.92);
+  border-color: rgba(42, 74, 64, 0.12);
+}
+
+:root[data-amo-theme="light"] .harness-version-row.is-current {
+  background: rgba(225, 247, 238, 0.92);
+  border-color: rgba(44, 132, 99, 0.24);
+}
+
+:root[data-amo-theme="light"] .harness-version-row > code {
+  color: #30473f;
+}
+
+:root[data-amo-theme="light"] .harness-version-row.is-current > code {
+  color: #1f7a5c;
+}
+
+:root[data-amo-theme="light"] .harness-version-tags em {
+  color: #51665e;
+  background: rgba(42, 74, 64, 0.06);
+}
+
+:root[data-amo-theme="light"] .harness-version-tags em.is-latest {
+  color: #1f7a5c;
+  background: rgba(44, 132, 99, 0.1);
+}
+
+:root[data-amo-theme="light"] .harness-version-tags em.is-next {
+  color: #3976a9;
+  background: rgba(57, 118, 169, 0.1);
+}
+
+:root[data-amo-theme="light"] .harness-version-tags em.is-alpha {
+  color: #8a6a34;
+  background: rgba(213, 165, 110, 0.14);
+}
+
+:root[data-amo-theme="light"] .harness-version-action {
+  color: #30463f;
+  background: rgba(42, 74, 64, 0.05);
+  border-color: rgba(42, 74, 64, 0.15);
+}
+
+:root[data-amo-theme="light"] .harness-version-action:not(:disabled):hover {
+  color: #1d2b27;
+  background: rgba(57, 118, 169, 0.1);
+}
+
 :root[data-amo-theme="light"] .harness-diagnostics-toggle {
   color: #324b43;
 }
@@ -643,6 +887,31 @@
   .harness-title-meta > span,
   .harness-title-meta > code {
     display: none;
+  }
+
+  .harness-version-row {
+    grid-template-columns: minmax(0, 1fr) max-content;
+    grid-template-areas:
+      "version action"
+      "meta action";
+    row-gap: 2px;
+  }
+
+  .harness-version-row > code {
+    grid-area: version;
+  }
+
+  .harness-version-tags,
+  .harness-version-row > time {
+    grid-area: meta;
+  }
+
+  .harness-version-tags {
+    align-items: center;
+  }
+
+  .harness-version-action {
+    grid-area: action;
   }
 
   .harness-web-actions .harness-action,

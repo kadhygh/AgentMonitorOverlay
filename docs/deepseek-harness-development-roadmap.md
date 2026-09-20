@@ -39,6 +39,16 @@ npm view @deepseek-ai/dsh version
 
 版本使用语义化版本规则比较，正确处理 `rc.9` 与 `rc.10`。安装状态区分推荐版本、已安装版本和 registry 版本。更新操作先解析并校验 registry 返回的版本，再把该明确版本传给全局 npm 安装；不把 `latest` 作为安装参数。运行中的本机 3080 服务必须由用户在 AMO 外停止后才能更新。
 
+### 版本目录
+
+Harness Lab 提供可展开的版本目录，一次查询全部 dist-tag 与发布时间：
+
+```powershell
+npm view @deepseek-ai/dsh dist-tags time --json
+```
+
+结果按发布时间倒序展示，每行标注版本号、所属 dist-tag（`latest`、`next`、`alpha` 等）与 UTC 发布时间。`npm view ... version` 只返回 `latest` tag，看不到 `alpha` 渠道的预发布版本；版本目录补齐这一盲区。用户可以从目录中点击安装任意已发布版本：高于当前版本的行标记 Install，低于的标记 Downgrade，与当前一致的行标记 Installed 且不可重复安装。降级与升级走同一条显式版本安装路径；`~/.dsh/profiles/node_modules` 下的运行时包是指向全局 package 内部 `node_modules` 的 junction，因此全局包切换版本时整套 CLI 与插件闭包原子跟随，不会出现版本错配。Web 运行期间禁止安装、升级或降级。
+
 ### 本机状态
 
 Harness Lab 分别显示：
@@ -52,6 +62,8 @@ Harness Lab 分别显示：
 - 最近一次全局 npm 安装或更新日志。
 
 AMO 探测外部服务并提供显式 Web 启停入口。Start Web 启动脱离 AMO 生命周期的全局进程；Stop Web 在终止前验证监听 PID 的完整命令行必须指向当前 npm global root 下的 `@deepseek-ai/dsh/lib/bin.js web --port 3080`。端口冲突、命令行不可读或 package root 不匹配时拒绝终止。AMO 关闭时不终止 DSH，DSH 停止时也不影响 AMO。
+
+DSH 0.1.6-alpha 起 Web 启用令牌鉴权：未认证请求得到 `401 dsh web authentication required`。健康探测把该挑战页识别为健康的 DSH Web（不再是端口冲突）；Open Web 优先使用 Start Web 捕获的 `~/.dsh/logs/web.stdout.log` 中最新一条 `dsh web: <url>?token=...` 打开（校验 host、端口与令牌字符集），没有可用令牌行时回退裸地址。用户在终端手动启动的 DSH Web 的令牌 URL 不属于 AMO 可读取的范围。
 
 ## 运行方式
 

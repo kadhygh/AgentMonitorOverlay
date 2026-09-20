@@ -9,6 +9,7 @@ import {
   ExternalLink,
   FlaskConical,
   FolderCog,
+  History,
   KeyRound,
   LoaderCircle,
   PackageCheck,
@@ -22,14 +23,18 @@ import {
 } from "lucide-react";
 import {
   checkHarnessRemoteVersion,
+  fetchHarnessRegistryVersions,
   installGlobalHarness,
+  installHarnessVersion,
   loadHarnessLabStatus,
   openHarnessLabWeb,
   startGlobalHarnessWeb,
   stopGlobalHarnessWeb,
   updateGlobalHarness,
   type HarnessLabStatus,
+  type HarnessRegistryVersion,
 } from "../native/deepseekHarness";
+import { compareRegistryVersions, formatPublishTime } from "../native/harnessVersioning";
 import { AdaptivePollController } from "../runtime/adaptivePollController";
 import { useAmoThemeRuntime } from "../theme/amoTheme";
 import {
@@ -38,7 +43,16 @@ import {
   useUtilityWindowLifecycle,
 } from "./utilityWindow";
 
-type HarnessAction = "install" | "checkVersion" | "update" | "start" | "stop" | "open" | "refresh";
+type HarnessAction =
+  | "install"
+  | "checkVersion"
+  | "update"
+  | "start"
+  | "stop"
+  | "open"
+  | "refresh"
+  | "versions"
+  | "installVersion";
 
 const stateLabels: Record<string, string> = {
   notInstalled: "Unavailable",
@@ -55,6 +69,9 @@ export function HarnessLabApp() {
   const [status, setStatus] = useState<HarnessLabStatus | null>(null);
   const [busy, setBusy] = useState<HarnessAction | null>(null);
   const [diagnosticsExpanded, setDiagnosticsExpanded] = useState(false);
+  const [versionsOpen, setVersionsOpen] = useState(false);
+  const [versions, setVersions] = useState<HarnessRegistryVersion[] | null>(null);
+  const [installingVersion, setInstallingVersion] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [feedback, setFeedback] = useState("Loading DeepSeek Harness status...");
   const busyRef = useRef<HarnessAction | null>(null);
@@ -151,6 +168,38 @@ export function HarnessLabApp() {
     } catch (error) {
       setFeedback(`Harness ${action} failed: ${(error as Error).message}`);
     } finally {
+      setBusy(null);
+    }
+  }
+
+  const loadVersions = useCallback(async () => {
+    setBusy("versions");
+    try {
+      const result = await fetchHarnessRegistryVersions();
+      setVersions(result.versions);
+      if (!result.ok) setFeedback(result.message);
+    } catch (error) {
+      setFeedback(`Harness version list failed: ${(error as Error).message}`);
+    } finally {
+      setBusy(null);
+    }
+  }, []);
+
+  function toggleVersions() {
+    const next = !versionsOpen;
+    setVersionsOpen(next);
+    if (next && versions === null) void loadVersions();
+  }
+
+  async function installChosenVersion(version: string) {
+    setBusy("installVersion");
+    setInstallingVersion(version);
+    try {
+      applyStatus(await installHarnessVersion(version));
+    } catch (error) {
+      setFeedback(`Harness version install failed: ${(error as Error).message}`);
+    } finally {
+      setInstallingVersion(null);
       setBusy(null);
     }
   }
@@ -324,6 +373,103 @@ export function HarnessLabApp() {
                 <span>{busy === "update" ? "Updating..." : "Update"}</span>
               </button>
             </div>
+          </section>
+
+          <section className={`harness-versions${versionsOpen ? " is-expanded" : ""}`} aria-label="Published DSH versions">
+            <button
+              type="button"
+              className="harness-versions-toggle"
+              aria-expanded={versionsOpen}
+              aria-controls="harness-versions-content"
+              onClick={toggleVersions}
+            >
+              <span>
+                <History size={14} aria-hidden="true" />
+                <strong>Version catalogue</strong>
+              </span>
+              <em>
+                {busy === "versions"
+                  ? "Loading published versions..."
+                  : versions
+                    ? `${versions.length} published versions · all dist-tags · newest first`
+                    : "All dist-tags sorted by publish time"}
+              </em>
+              {versionsOpen
+                ? <ChevronDown size={14} aria-hidden="true" />
+                : <ChevronRight size={14} aria-hidden="true" />}
+            </button>
+            {versionsOpen ? (
+              <div className="harness-versions-content" id="harness-versions-content">
+                <div className="harness-versions-toolbar">
+                  <span>
+                    Install any published version — including downgrades — by picking it here.
+                    The whole runtime switches with it.
+                  </span>
+                  <button
+                    type="button"
+                    className="harness-icon-action"
+                    disabled={Boolean(busy)}
+                    title="Reload published versions from the npm registry"
+                    aria-label="Reload published versions"
+                    onClick={() => void loadVersions()}
+                  >
+                    <RefreshCw size={13} aria-hidden="true" className={busy === "versions" ? "is-spinning" : ""} />
+                  </button>
+                </div>
+                {versions === null || versions.length === 0 ? (
+                  <div className="harness-versions-empty">
+                    {busy === "versions" || versions === null
+                      ? "Loading published versions from the npm registry..."
+                      : "No published versions were returned. Reload or check the registry."}
+                  </div>
+                ) : (
+                  <ul className="harness-versions-list">
+                    {versions.map((entry) => {
+                      const relation = status?.installedVersion
+                        ? Math.sign(compareRegistryVersions(entry.version, status.installedVersion))
+                        : null;
+                      const isCurrent = relation === 0;
+                      const actionLabel = isCurrent
+                        ? "Installed"
+                        : relation === -1
+                          ? "Downgrade"
+                          : "Install";
+                      return (
+                        <li
+                          key={entry.version}
+                          className={`harness-version-row${isCurrent ? " is-current" : ""}`}
+                        >
+                          <code>{entry.version}</code>
+                          <span className="harness-version-tags">
+                            {entry.distTags.map((tag) => (
+                              <em key={tag} className={`is-${tag}`}>{tag}</em>
+                            ))}
+                          </span>
+                          <time dateTime={entry.publishTime} title={entry.publishTime}>
+                            {formatPublishTime(entry.publishTime)}
+                          </time>
+                          <button
+                            type="button"
+                            className="harness-version-action"
+                            disabled={Boolean(busy) || isCurrent || !status?.npmAvailable || Boolean(status?.running)}
+                            title={status?.running
+                              ? "Stop Web before changing the installed DSH version."
+                              : isCurrent
+                                ? "This version is installed globally."
+                                : `npm install --global @deepseek-ai/dsh@${entry.version}`}
+                            onClick={() => void installChosenVersion(entry.version)}
+                          >
+                            {busy === "installVersion" && installingVersion === entry.version
+                              ? "Working..."
+                              : actionLabel}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+              </div>
+            ) : null}
           </section>
 
           <section className="harness-owned-section" aria-labelledby="harness-owned-title">

@@ -90,6 +90,22 @@ pub(crate) struct HarnessLabStatus {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+pub(crate) struct HarnessRegistryVersion {
+    pub(crate) version: String,
+    pub(crate) publish_time: String,
+    pub(crate) dist_tags: Vec<String>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct HarnessRegistryVersionsResult {
+    pub(crate) ok: bool,
+    pub(crate) message: String,
+    pub(crate) versions: Vec<HarnessRegistryVersion>,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
 pub(crate) struct ModelCredentialStatus {
     pub(crate) ok: bool,
     pub(crate) configured_provider_ids: Vec<String>,
