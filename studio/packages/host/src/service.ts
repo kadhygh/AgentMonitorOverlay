@@ -12,6 +12,7 @@ import type {
   NewAnnotationInput,
   NewSessionInput,
   Scratchpad,
+  TodoItem,
   Session,
   SessionItem,
   StateSnapshot,
@@ -188,6 +189,49 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be reclaimed");
     return this.runtime.setWriter(sessionId, "workbench");
+  }
+
+  // Whole-picture todos
+
+  todos(): TodoItem[] {
+    return this.store.listTodos();
+  }
+
+  addTodo(input: { text?: unknown; workspaceId?: unknown }): TodoItem {
+    const text = typeof input?.text === "string" ? input.text.trim() : "";
+    if (!text) throw new HostError("bad_request", "text is required");
+    const todo: TodoItem = { id: newId("td"), text, done: false, workspaceId: this.optionalWorkspace(input.workspaceId), taskId: null, createdAt: new Date().toISOString() };
+    this.store.putTodo(todo);
+    this.publish({ type: "todo.upserted", todo });
+    return todo;
+  }
+
+  updateTodo(id: Id, patch: { text?: unknown; done?: unknown; workspaceId?: unknown }): TodoItem {
+    const current = this.store.getTodo(id);
+    if (!current) throw new HostError("not_found", `todo ${id} not found`);
+    const next: TodoItem = { ...current };
+    if (patch.text !== undefined) {
+      const text = typeof patch.text === "string" ? patch.text.trim() : "";
+      if (!text) throw new HostError("bad_request", "text is required");
+      next.text = text;
+    }
+    if (patch.done !== undefined) next.done = patch.done === true;
+    if (patch.workspaceId !== undefined) next.workspaceId = this.optionalWorkspace(patch.workspaceId);
+    this.store.putTodo(next);
+    this.publish({ type: "todo.upserted", todo: next });
+    return next;
+  }
+
+  deleteTodo(id: Id): void {
+    if (!this.store.getTodo(id)) throw new HostError("not_found", `todo ${id} not found`);
+    this.store.deleteTodo(id);
+    this.publish({ type: "todo.removed", todoId: id });
+  }
+
+  private optionalWorkspace(value: unknown): Id | null {
+    if (value === undefined || value === null || value === "") return null;
+    if (typeof value !== "string" || !this.store.getWorkspace(value)) throw new HostError("bad_request", `workspace ${String(value)} not found`);
+    return value;
   }
 
   // Canvas (one global document)

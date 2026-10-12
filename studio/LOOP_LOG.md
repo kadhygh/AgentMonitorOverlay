@@ -292,3 +292,11 @@
 - 验证：`npm run test` 连跑 2 次、`npm run verify` 均通过（118 个测试）
 - 过程问题：S3-04 那次提交（161a8d2）是在这条用例失败的情况下提交的——命令里用 grep 过滤输出，没有让失败中断提交。之后验证改为先看 `npm run verify` 的退出码再提交
 - commit：见本次 commit
+
+## 2026-10-13 09:55 · S3-05 侧栏：整体待办、agent 视角
+- 结果：done
+- 改动：Host 增加待办接口 `GET/POST /api/todos`、`PATCH/DELETE /api/todos/:id` 与事件 `todo.upserted`/`todo.removed`（文本必填、工作区须存在）；侧栏"整体待办"（新增时可选适合的工作区、勾选完成（乐观更新，失败时重新加载）、删除、已完成折到下面）；"agent 视角"（`/api/canvas/outline` 的大纲 / JSON 切换、复制，画布/任务/会话变化后 150ms 合并刷新）；接口单测 1 个、e2e `sidebar.spec.ts`
+- 调试：连续回车添加两条时第二条丢失——输入框原先等保存返回才清空，第二次输入被覆盖；改为立即清空、失败时还原。勾选完成原先等事件回来才变，Playwright 判定"点击没改变状态"；改为乐观更新
+- 默认决定（请你过目）：待办"转为任务""交给调度 agent"留到阶段 7；"复制"按钮测试里不点（测试不碰剪贴板）
+- 验证：`npm run verify` 退出码 0（119 个测试）；e2e 20/20；截图 `screenshots/stage-3/S3-05-todos.png`、`S3-05-agent-view.png`
+- commit：见本次 commit

@@ -393,3 +393,17 @@ a.md-link { cursor: pointer; }
   color: #f2d9a0; font-size: 12.5px; white-space: pre-wrap; cursor: pointer; user-select: none; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
 }
 .canvas-note.selected { border-color: var(--attention); }
+
+/* Canvas sidebar: todos and agent view (S3-05) */
+.todo-add { display: flex; flex-direction: column; gap: 6px; }
+.todo-add select { height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12.5px; }
+.todo-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); }
+.todo-row.done { opacity: 0.6; }
+.todo-row.done .todo-text { text-decoration: line-through; }
+.todo-row .link-btn { align-self: flex-end; }
+.todo-check { display: flex; align-items: flex-start; gap: 8px; font-size: 13px; cursor: pointer; }
+.todo-check input { margin-top: 3px; }
+.agent-tools { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.side-tabs.small .side-tab { height: 24px; padding: 0 12px; }
+.side-tab[aria-pressed="true"] { background: var(--border); color: var(--text); }
+.agent-view { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: #0c0e10; font-family: var(--font-code); font-size: 12px; color: #d7dce2; white-space: pre-wrap; word-break: break-word; max-height: 60vh; overflow: auto; }

@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { CanvasDoc, CanvasGroup, CanvasNode, Id, Session, Task, Workspace } from "@amo-studio/protocol";
 import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
+import { AgentTab } from "./AgentTab.js";
+import { TodoTab } from "./TodoTab.js";
 import type { HostLink } from "../host/client.js";
 import { SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { addGroup, arrowBetween, GROUP_HEADER, moveGroup, moveNode, resizeGroup, updateGroup } from "./geometry.js";
@@ -371,6 +373,8 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
           onClearSelection={() => setSelectionState(null)}
           onOpenTask={onOpenTask}
           newId={newCanvasId}
+          todoTab={<TodoTab link={link} workspaces={workspaces} />}
+          agentTab={<AgentTab link={link} />}
         />
       )}
       </div>

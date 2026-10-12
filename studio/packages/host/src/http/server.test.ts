@@ -214,6 +214,19 @@ describe("Host API", () => {
     }
   });
 
+  it("keeps whole-picture todos", async () => {
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    expect(await ok("GET", "/api/todos")).toEqual([]);
+    const todo = await ok<{ id: string; text: string; done: boolean; workspaceId: string | null }>("POST", "/api/todos", { text: " 统一掉落表格式 ", workspaceId: ws.id });
+    expect(todo).toMatchObject({ text: "统一掉落表格式", done: false, workspaceId: ws.id });
+    expect((await api("POST", "/api/todos", { text: "  " })).status).toBe(400);
+    expect((await api("POST", "/api/todos", { text: "x", workspaceId: "nope" })).status).toBe(400);
+    expect(await ok("PATCH", `/api/todos/${todo.id}`, { done: true, workspaceId: null })).toMatchObject({ done: true, workspaceId: null });
+    expect(await ok("DELETE", `/api/todos/${todo.id}`)).toEqual({ ok: true });
+    expect((await api("DELETE", `/api/todos/${todo.id}`)).status).toBe(404);
+    expect(await ok("GET", "/api/todos")).toEqual([]);
+  });
+
   it("saves the canvas with optimistic versions and serves its outline", async () => {
     const { task } = await createTask("canvas");
     const empty = await ok<CanvasDoc>("GET", "/api/canvas");
