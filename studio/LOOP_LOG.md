@@ -715,3 +715,18 @@
 - 验证：`npm run verify` 退出码 0（181 个测试）；e2e 31/31
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 06:00 · S5-08 真实冒烟
+- 结果：done
+- 脚本 `scripts/smoke-stage5.mjs`（`npm run smoke:stage5`）：Host 在沙箱数据目录、端口 47961，独立 CODEX_HOME；结束后归档会话、删除沙箱目录。结果在 `spikes/results/s5-08-smoke.json`
+- GLM（Claude 会话），4 回合全部通过：
+  - `task_note_add` 记进度：任务上出现这条进度，作者是这个会话；
+  - `decision_request` 提问"Retry limit: 3 or 5?"（选项 3/5），我通过接口回答 3；
+  - `mailbox_read` 读回答复，模型回答"You decided on a retry limit of 3."；
+  - `canvas_group_create` 先弹审批，批准后建出"GLM 组"
+- DeepSeek（Codex 会话），3 回合全部通过：
+  - `mailbox_send` 给 GLM 会话留言，**发件人正确记成这个 Codex 会话**：每个会话各自的身份请求头在真实 Codex 上生效；
+  - `handoff_submit` 提交交接摘要，记在自己的任务上；
+  - `canvas_group_create`：真实 Codex 发出 MCP 批准请求（elicitation），显示为审批卡片"Allow the amo MCP server to run tool "canvas_group_create"?"，批准后建出"DeepSeek 组"
+- 额度：GLM +4（20/5000），DeepSeek +3（25/1000）
+- commit：见本次 commit
