@@ -149,3 +149,55 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   margin: 12px 20px 0; padding: 10px 14px; border-radius: 8px; font-size: 13px;
   background: #2a1617; border: 1px solid #5a2a2c; color: var(--error-text);
 }
+
+.sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+.page-head { display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid var(--border); flex-wrap: wrap; }
+.page-crumb { font-size: 13px; color: var(--text-dim); }
+
+/* New task (DSH style) */
+.newtask { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.newtask-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 32px 24px; }
+.newtask-ask { font-size: 20px; font-weight: 600; }
+.newtask-title { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-dim); text-align: center; }
+.newtask-title input {
+  height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel);
+  color: var(--text); font-size: 15px; font-weight: 500; text-align: center;
+}
+.chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.chip {
+  height: 32px; padding: 0 14px; border-radius: 16px; font-size: 13px; cursor: pointer;
+  border: 1px solid var(--border); background: transparent; color: var(--text-dim);
+}
+.chip[aria-pressed="true"] { border-color: var(--primary); background: #1b2633; color: var(--text); }
+.chip:disabled { opacity: 0.5; cursor: default; }
+.newtask-hint { font-size: 12.5px; color: var(--text-dim); max-width: 520px; text-align: center; }
+.composer-wrap { padding: 0 24px 20px; display: flex; justify-content: center; }
+.composer {
+  width: 100%; max-width: 760px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--panel);
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.composer-input { display: flex; }
+.composer-input textarea { flex: 1; border: none; background: transparent; color: var(--text); font-size: 14.5px; resize: none; outline: none; }
+.composer-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inline-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.inline-field select {
+  height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg);
+  color: var(--text); font-size: 12.5px;
+}
+
+/* Task page */
+.taskpage { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.task-title { margin: 0; font-size: 17px; font-weight: 600; }
+.task-body { flex: 1; display: flex; min-height: 0; }
+.session-list { flex: 0 0 240px; border-right: 1px solid var(--border); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; }
+.session-row { justify-content: flex-start; gap: 10px; }
+.session-text { display: flex; flex-direction: column; min-width: 0; }
+.session-kind { font-size: 11px; color: var(--text-dim); }
+.thread { flex: 1; min-width: 0; overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px; }
+.thread-empty { color: var(--text-dim); font-size: 13px; }
+.msg-who { font-size: 11px; color: var(--text-dim); }
+.msg-text { white-space: pre-wrap; }
+.msg-user { display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: 10px; background: var(--panel-raised); border: 1px solid var(--border); }
+.msg-agent { display: flex; flex-direction: column; gap: 6px; }
+.msg-other { font-size: 13px; color: var(--text-dim); padding: 8px 12px; border: 1px solid var(--border); border-radius: 8px; }
+.streaming { color: var(--running-text); }

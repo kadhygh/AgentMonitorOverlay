@@ -149,7 +149,7 @@
   严格按 `design/prototype/Main.dc.html` 和 `interaction-notes` 实现。
 - 验收：端到端测试：登记沙盒工作区 → 看板显示；截图。
 
-### S1-10 新建任务页 · todo
+### S1-10 新建任务页 · done
 
 - 依赖：S1-09
 - 内容：DSH 式空白任务页，布局见 `interaction-notes` 的"新建任务"一节：

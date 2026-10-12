@@ -3,10 +3,12 @@ import type { Task } from "@amo-studio/protocol";
 import { Board, type Scope } from "./board/Board.js";
 import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
+import { NewTaskPage } from "./newtask/NewTaskPage.js";
+import { TaskPage } from "./task/TaskPage.js";
 import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
 import "./styles/app.css";
 
-type View = { kind: "board" } | { kind: "new" } | { kind: "task"; taskId: string };
+type View = { kind: "board" } | { kind: "new" } | { kind: "task"; taskId: string; sessionId?: string };
 
 export function App() {
   const host = useHostState();
@@ -53,21 +55,31 @@ export function App() {
         <main className="main">
           {view.kind === "board" && <Board tasks={state.tasks} sessions={state.sessions} workspaces={state.workspaces} scope={scope} onOpen={openTask} />}
           {view.kind === "new" && (
-            <div className="placeholder">
-              <span>新建任务页在 S1-10 实现。</span>
-              <button type="button" className="btn-ghost" onClick={() => setView({ kind: "board" })}>
-                ← 看板
-              </button>
-            </div>
+            <NewTaskPage
+              link={link}
+              workspaces={state.workspaces}
+              profiles={state.profiles}
+              scope={scope}
+              onBack={() => setView({ kind: "board" })}
+              onCreated={(task, session) => setView({ kind: "task", taskId: task.id, sessionId: session.id })}
+            />
           )}
-          {view.kind === "task" && (
-            <div className="placeholder">
-              <span>任务页在 S1-11 实现：{state.tasks.find((t) => t.id === view.taskId)?.title}</span>
-              <button type="button" className="btn-ghost" onClick={() => setView({ kind: "board" })}>
-                ← 看板
-              </button>
-            </div>
-          )}
+          {view.kind === "task" && (() => {
+            const task = state.tasks.find((t) => t.id === view.taskId);
+            if (!task) return <div className="placeholder">任务不存在或已被删除。</div>;
+            return (
+              <TaskPage
+                key={task.id}
+                link={link}
+                task={task}
+                sessions={state.sessions}
+                workspaces={state.workspaces}
+                profiles={state.profiles}
+                {...(view.sessionId ? { initialSessionId: view.sessionId } : {})}
+                onBack={() => setView({ kind: "board" })}
+              />
+            );
+          })()}
         </main>
       </div>
     </div>

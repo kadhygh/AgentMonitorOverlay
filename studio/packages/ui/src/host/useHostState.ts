@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { HostEvent, StateSnapshot } from "@amo-studio/protocol";
 import { discoverHost, loadState, type HostLink } from "./client.js";
+import { emitHostEvent, emitHostReconnect } from "./events.js";
 
 // Board-level state: the snapshot plus live workspace/task/session updates from the Host event stream.
 // Session items are loaded per task page (S1-11).
@@ -37,6 +38,7 @@ export function applyEvent(state: StateSnapshot, e: HostEvent): StateSnapshot {
 export function useHostState() {
   const [host, setHost] = useState<HostState>({ kind: "connecting" });
   const socket = useRef<WebSocket | null>(null);
+  const connectedOnce = useRef(false);
 
   const connect = useCallback(async () => {
     try {
@@ -47,10 +49,15 @@ export function useHostState() {
 
       const ws = new WebSocket(`${link.url.replace(/^http/, "ws")}/api/events?token=${encodeURIComponent(link.token)}&since=${state.eventSeq}`);
       socket.current = ws;
-      ws.onopen = () => setHost((h) => (h.kind === "ready" ? { ...h, live: true } : h));
+      ws.onopen = () => {
+        setHost((h) => (h.kind === "ready" ? { ...h, live: true } : h));
+        if (connectedOnce.current) emitHostReconnect();
+        connectedOnce.current = true;
+      };
       ws.onmessage = (msg) => {
         const event = JSON.parse(String(msg.data)) as HostEvent;
         setHost((h) => (h.kind === "ready" ? { ...h, state: applyEvent(h.state, event) } : h));
+        emitHostEvent(event);
       };
       ws.onclose = () => {
         if (socket.current !== ws) return;
