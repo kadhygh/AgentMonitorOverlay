@@ -348,3 +348,19 @@
 - 计划：`plans/stage-4.md`（10 个任务：S4-00 预研、mock Anthropic 接口、ClaudeRuntime、审批/分支/子 agent、模型配置、交接终端、只读 MCP、自动注入、GLM 冒烟、收尾）；写入 NEEDS_YOU（请你过目）
 - 关键约束：受管 Claude 会话用 Studio 自己的 `CLAUDE_CONFIG_DIR`（红线 2）；只用 GLM 和 mock；本机 Claude Code 2.1.296，SDK 最新 0.3.296，版本在预研后锁定
 - 通知：阶段完成 + 新的"必须等你"
+
+## 2026-10-13 12:55 · S4-00 预研 Claude Agent SDK
+- 结果：done，结论见 `spikes/RESULTS.md` 第 h 节
+- 依赖：host 包加入 `@anthropic-ai/claude-agent-sdk` 0.3.296（与本机 `claude` 2.1.296 同版本）及 peer 依赖 `zod` 4.6.6、`@anthropic-ai/sdk` 0.133.0、`@modelcontextprotocol/sdk` 1.32.1，均为精确版本，lockfile 一并提交
+- 凭据：只列了凭据管理器的条目名，GLM 的 id 是 `glm-5.2`；路由参数从旧 AMO 的 glm-5.3 预设只读获取（`broker/lib/claude-provider.js`）
+- 主要结论：
+  - `canUseTool` 可挂起等人；只读命令（如 `echo`）被 CLI 自动放行，不经过回调；
+  - `interrupt()` 后迭代器会抛异常；
+  - 生成中发的消息排到下一轮，不会插进当前回合；
+  - 不调模型的 `forkSession(id, { upToMessageId })` 可用，但读的是 Host 进程自己的 `CLAUDE_CONFIG_DIR`；
+  - 子 agent 靠 `parent_tool_use_id` 归组，没有独立 session id；
+  - 同一 `CLAUDE_CONFIG_DIR` 下真实 CLI 能 `--resume` SDK 创建的会话
+- 红线：所有会话都在 `%TEMP%\amo-studio-sandbox\s4-00\`；每次实验前后检查 `~/.claude.json`、`~/.claude/settings.json` 的修改时间都没变；密钥只放进子进程环境变量，结果文件里没有
+- 额度：GLM 12 次（12 / 5000）。另有两次脚本问题没有消耗额度：打断时 SDK 抛异常导致脚本退出（之后的实验没跑）；修复时 heredoc 把 `\n` 转成真换行导致语法错误
+- 计划更新：`plans/stage-4.md` 按结论改写 S4-02、S4-03 的做法
+- commit：见本次 commit

@@ -7,6 +7,6 @@
 - **已完成**：阶段 0、阶段 1（地基）、阶段 2（审阅）、阶段 3（画布与 Focus）
 - **在等你**：见 `NEEDS_YOU.md`，8 项"请你过目"（都不阻塞）、1 项"必须等你"（是否切换为日常工具、何时删除旧 AMO；等待期间继续阶段 4）
 - **试用**：`studio` 下 `npm start`；停止 Host 用 `npm run host:stop`
-- **已完成任务**：（阶段 4 尚无）
-- **下一步**：S4-00 预研 Claude Agent SDK（沙箱 + GLM）
-- **模型调用额度**：DeepSeek 19 / 1000，GLM 0 / 5000
+- **已完成任务**：S4-00 预研 Claude Agent SDK
+- **下一步**：S4-01 mock Anthropic 接口
+- **模型调用额度**：DeepSeek 19 / 1000，GLM 12 / 5000

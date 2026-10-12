@@ -1,0 +1,429 @@
+{
+  "basic": {
+    "at": "2026-10-12T18:28:12.851Z",
+    "sessionId": "8eff84ea-32b4-4be7-a5b5-a4e8c4073b76",
+    "kinds": {
+      "system:init": 1,
+      "system:status": 1,
+      "stream_event:message_start": 1,
+      "stream_event:content_block_start": 2,
+      "system:thinking_tokens": 37,
+      "stream_event:content_block_delta": 41,
+      "assistant": 2,
+      "stream_event:content_block_stop": 2,
+      "stream_event:message_delta": 1,
+      "stream_event:message_stop": 1,
+      "result": 1
+    },
+    "text": "S4-OK",
+    "result": {
+      "subtype": "success",
+      "is_error": false,
+      "num_turns": 1,
+      "permission_denials": []
+    },
+    "init": {
+      "claude_code_version": "2.1.296",
+      "model": "glm-5.3[1m]",
+      "cwd": "C:\\Users\\Kangaroo\\AppData\\Local\\Temp\\amo-studio-sandbox\\s4-00\\workspace",
+      "permissionMode": "default",
+      "tools": 22,
+      "mcp_servers": [],
+      "apiKeySource": "none"
+    },
+    "transcripts": [
+      "C--Users-Kangaroo-AppData-Local-Temp-amo-studio-sandbox-s4-00-workspace"
+    ]
+  },
+  "flags": {
+    "at": "2026-10-12T18:28:13.269Z",
+    "lines": [
+      "--bg, --background                    Start the session in the background and",
+      "`claude attach`, `logs`, `stop` and `rm`",
+      "--resume <session-id>, continues that",
+      "session in the background under the same",
+      "attribution, auto-memory, background",
+      "description, or attach to an existing",
+      "--resume <id> to pick the session)",
+      "--fork-session                        When resuming, create a new session ID",
+      "with --resume or --continue)",
+      "--remote-control [name]               Start an interactive session with Remote",
+      "--remote-control-session-name-prefix <prefix>",
+      "Prefix for auto-generated Remote Control session names (default: hostname)",
+      "-r, --resume [value]                  Resume a conversation by session ID, or",
+      "--session-id <uuid>                   Use a specific session ID for the",
+      "--teleport [session]                  Resume a teleport session, optionally",
+      "agents [options]                      Manage background agents",
+      "attach <id|name>                      Open a background session in this",
+      "`claude --bg` prints and `claude agents`",
+      "logs <id|name>                        Print a background session's recent",
+      "respawn [options] [id]                Restart a background session, or all of",
+      "rm <id>                               Delete a background session, and its",
+      "stop|kill <id>                        Stop a background session. Its",
+      "conversation is kept: `claude attach",
+      "<id>` opens it again, `claude --resume`"
+    ]
+  },
+  "redline": {
+    "at": "2026-10-12T18:31:13.760Z",
+    "userClaudeFilesUnchanged": true,
+    "checked": [
+      ".claude.json",
+      "settings.json"
+    ]
+  },
+  "approval": {
+    "at": "2026-10-12T18:29:25.589Z",
+    "sessionId": "eb950513-6ec1-4822-bfe7-20d169736441",
+    "kinds": {
+      "system:init": 1,
+      "system:status": 2,
+      "stream_event:message_start": 2,
+      "stream_event:content_block_start": 3,
+      "system:thinking_tokens": 44,
+      "stream_event:content_block_delta": 68,
+      "assistant": 3,
+      "stream_event:content_block_stop": 3,
+      "stream_event:message_delta": 2,
+      "stream_event:message_stop": 2,
+      "user": 1,
+      "result": 1
+    },
+    "text": "DONE",
+    "result": {
+      "subtype": "success",
+      "is_error": false,
+      "num_turns": 2,
+      "permission_denials": []
+    },
+    "asked": [
+      {
+        "toolName": "Bash",
+        "input": {
+          "command": "mkdir s4-allowed-dir",
+          "description": "Create directory s4-allowed-dir"
+        },
+        "keys": [
+          "signal",
+          "suggestions",
+          "blockedPath",
+          "decisionReason",
+          "title",
+          "displayName",
+          "description",
+          "defaultToNo",
+          "suppressAlwaysAllowRule",
+          "toolUseID",
+          "agentID",
+          "requestId"
+        ],
+        "at": 1791829756622
+      }
+    ],
+    "waitedMs": 3000,
+    "dirExists": true
+  },
+  "resume": {
+    "at": "2026-10-12T18:28:38.541Z",
+    "sessionId": "8eff84ea-32b4-4be7-a5b5-a4e8c4073b76",
+    "kinds": {
+      "system:init": 1,
+      "system:status": 1,
+      "stream_event:message_start": 1,
+      "stream_event:content_block_start": 2,
+      "system:thinking_tokens": 37,
+      "stream_event:content_block_delta": 40,
+      "assistant": 2,
+      "stream_event:content_block_stop": 2,
+      "stream_event:message_delta": 1,
+      "stream_event:message_stop": 1,
+      "result": 1
+    },
+    "text": "S4-OK",
+    "result": {
+      "subtype": "success",
+      "is_error": false,
+      "num_turns": 1,
+      "permission_denials": []
+    },
+    "resumedFrom": "8eff84ea-32b4-4be7-a5b5-a4e8c4073b76",
+    "sameSession": true
+  },
+  "fork": {
+    "at": "2026-10-12T18:29:51.685Z",
+    "sessionId": "6707770d-6360-4eb4-9fea-aba0b153260d",
+    "kinds": {
+      "system:init": 1,
+      "system:status": 1,
+      "stream_event:message_start": 1,
+      "stream_event:content_block_start": 2,
+      "system:thinking_tokens": 34,
+      "stream_event:content_block_delta": 36,
+      "assistant": 2,
+      "stream_event:content_block_stop": 2,
+      "stream_event:message_delta": 1,
+      "stream_event:message_stop": 1,
+      "result": 1
+    },
+    "text": "S4-FORK",
+    "result": {
+      "subtype": "success",
+      "is_error": false,
+      "num_turns": 1,
+      "permission_denials": []
+    },
+    "parent": "8eff84ea-32b4-4be7-a5b5-a4e8c4073b76",
+    "newSession": true,
+    "forkSessionFn": {
+      "sessionId": "e03a2967-76c2-4c5d-a932-91a4cded956e"
+    }
+  },
+  "deny": {
+    "at": "2026-10-12T18:29:46.249Z",
+    "sessionId": "2ff24821-9f86-4df9-ac8d-d537a2f82642",
+    "kinds": {
+      "system:init": 1,
+      "system:status": 2,
+      "stream_event:message_start": 2,
+      "stream_event:content_block_start": 4,
+      "system:thinking_tokens": 71,
+      "stream_event:content_block_delta": 96,
+      "assistant": 4,
+      "stream_event:content_block_stop": 4,
+      "stream_event:message_delta": 2,
+      "stream_event:message_stop": 2,
+      "user": 1,
+      "result": 1
+    },
+    "text": "DENIED",
+    "result": {
+      "subtype": "success",
+      "is_error": false,
+      "num_turns": 2,
+      "permission_denials": [
+        {
+          "tool_name": "Bash",
+          "tool_use_id": "call_a9e22f4539c641818d09d9b4",
+          "tool_input": {
+            "command": "mkdir s4-denied-dir",
+            "description": "Create directory s4-denied-dir"
+          }
+        }
+      ]
+    },
+    "asked": [
+      {
+        "toolName": "Bash",
+        "input": {
+          "command": "mkdir s4-denied-dir",
+          "description": "Create directory s4-denied-dir"
+        },
+        "keys": [
+          "signal",
+          "suggestions",
+          "blockedPath",
+          "decisionReason",
+          "title",
+          "displayName",
+          "description",
+          "defaultToNo",
+          "suppressAlwaysAllowRule",
+          "toolUseID",
+          "agentID",
+          "requestId"
+        ],
+        "at": 1791829779496
+      }
+    ],
+    "waitedMs": 3000,
+    "dirExists": false
+  },
+  "subagent": {
+    "at": "2026-10-12T18:30:06.622Z",
+    "sessionId": "866aa81f-942e-4fae-b271-449fac8172f6",
+    "kinds": {
+      "system:init": 1,
+      "system:status": 2,
+      "stream_event:message_start": 2,
+      "stream_event:content_block_start": 4,
+      "system:thinking_tokens": 77,
+      "stream_event:content_block_delta": 127,
+      "assistant": 4,
+      "stream_event:content_block_stop": 4,
+      "system:task_started": 1,
+      "user": 2,
+      "stream_event:message_delta": 2,
+      "stream_event:message_stop": 2,
+      "system:task_updated": 1,
+      "system:task_notification": 1,
+      "result": 1
+    },
+    "text": "The subagent returned exactly:\n\n```\nSUB-OK\n```",
+    "result": {
+      "subtype": "success",
+      "is_error": false,
+      "num_turns": 2,
+      "permission_denials": []
+    },
+    "toolUses": [
+      {
+        "id": "call_663368df0b964fbbb411dc05",
+        "name": "Agent"
+      }
+    ],
+    "subMessages": 1,
+    "subParents": [
+      "call_663368df0b964fbbb411dc05"
+    ],
+    "subSessionIds": [
+      "866aa81f-942e-4fae-b271-449fac8172f6"
+    ],
+    "systemSubtypes": [
+      "init",
+      "status",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "task_started",
+      "task_updated",
+      "task_notification",
+      "status",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens",
+      "thinking_tokens"
+    ]
+  },
+  "interrupt": {
+    "at": "2026-10-12T18:30:58.661Z",
+    "sessionId": "07fada44-6d8f-4568-9b24-499bd178ab7f",
+    "thrown": "Claude Code returned an error result: [ede_diagnostic] result_type=user last_content_type=n/a stop_reason=null",
+    "kinds": {
+      "system:init": 1,
+      "system:status": 1,
+      "stream_event:message_start": 1,
+      "stream_event:content_block_start": 1,
+      "system:thinking_tokens": 1,
+      "stream_event:content_block_delta": 1,
+      "user": 1,
+      "stream_event:content_block_stop": 1,
+      "stream_event:message_delta": 1,
+      "stream_event:message_stop": 1,
+      "result": 1
+    },
+    "text": "",
+    "result": {
+      "subtype": "error_during_execution",
+      "is_error": true,
+      "num_turns": 2,
+      "permission_denials": []
+    },
+    "interrupted": true,
+    "textLength": 0
+  },
+  "steer": {
+    "at": "2026-10-12T18:31:08.664Z",
+    "sessionId": "acae0a64-ab13-4d3f-af46-35d02d9bc629",
+    "thrown": null,
+    "kinds": {
+      "system:init": 2,
+      "system:status": 2,
+      "stream_event:message_start": 2,
+      "stream_event:content_block_start": 4,
+      "system:thinking_tokens": 96,
+      "stream_event:content_block_delta": 174,
+      "assistant": 4,
+      "stream_event:content_block_stop": 4,
+      "stream_event:message_delta": 2,
+      "stream_event:message_stop": 2,
+      "result": 2
+    },
+    "text": "1\n2\n3\n4\n5\n6\n7\n8\n9\n10\n11\n12\n13\n14\n15\n16\n17\n18\n19\n20\n21\n22\n23\n24\n25\n26\n27\n28\n29\n30\n31\n32\n33\n34\n35\n36\n37\n38\n39\n40STEERED",
+    "result": {
+      "subtype": "success",
+      "is_error": false,
+      "num_turns": 1,
+      "permission_denials": []
+    },
+    "results": 2,
+    "steeredInText": true
+  },
+  "cli": {
+    "at": "2026-10-12T18:31:13.759Z",
+    "exe": "C:\\Users\\Kangaroo\\.local\\bin\\claude.exe",
+    "session_id": "8eff84ea-32b4-4be7-a5b5-a4e8c4073b76",
+    "sameSession": true,
+    "result": "My first answer was exactly: S4-OK",
+    "is_error": false
+  }
+}
