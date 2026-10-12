@@ -8,6 +8,8 @@ declare global {
       host(): Promise<{ url: string; token: string } | null>;
       /** Native folder picker (Electron); absent in a plain browser. */
       pickDirectory?(): Promise<string | null>;
+      /** Opens an http(s) link in the system browser (Electron); absent in a plain browser. */
+      openExternal?(url: string): Promise<void>;
     };
   }
 }

@@ -274,3 +274,17 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .msg-error { padding: 8px 12px; border-radius: 8px; border: 1px solid #5a2a2c; background: #2a1617; color: var(--error-text); font-size: 13px; }
 .msg-notice { padding: 8px 12px; border-radius: 8px; border: 1px solid var(--border); color: var(--text-dim); font-size: 13px; }
 .msg-notice.warning { border-color: var(--attention-border); background: var(--attention-bg); color: var(--attention); }
+
+/* Markdown completion (S2-01) */
+.md-list .md-list { margin-top: 2px; }
+.md-li-text { white-space: pre-wrap; }
+.md-codeblock { border: 1px solid var(--border); border-radius: 8px; background: #0c0e10; overflow: hidden; }
+.md-codeblock .md-pre { border: none; border-radius: 0; }
+.md-code-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 8px 4px 12px; border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--text-dim); font-family: var(--font-code); }
+.md-copy { height: 22px; padding: 0 8px; border: 1px solid var(--border); border-radius: 5px; background: transparent; color: var(--text-dim); font-size: 11.5px; cursor: pointer; }
+.md-copy:hover { color: var(--text); }
+.md-table-wrap { overflow-x: auto; }
+.md-table { border-collapse: collapse; font-size: 13px; }
+.md-table th, .md-table td { border: 1px solid var(--border); padding: 5px 10px; text-align: left; vertical-align: top; }
+.md-table th { background: var(--panel-raised); font-weight: 600; }
+a.md-link { cursor: pointer; }

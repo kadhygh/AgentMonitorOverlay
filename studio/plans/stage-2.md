@@ -19,7 +19,7 @@
 
 状态值：`todo` | `in_progress` | `done` | `blocked`。
 
-### S2-01 markdown 补全 · todo
+### S2-01 markdown 补全 · done
 - 内容：表格、嵌套列表、代码块语言标签与"复制"按钮、http/https 链接用系统浏览器打开（preload `openExternal`，主进程只放行 http/https）；渲染块带源文本区间（`data-src-start`/`data-src-end`）。
 - 验收：单元测试覆盖解析（含表格、嵌套列表、未闭合代码块）；e2e 截图一条含表格和代码的回复。
 

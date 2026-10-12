@@ -14,6 +14,29 @@ export function mockCodexProvider(baseUrl: string) {
   return { name: "Mock", baseUrl, wireApi: "responses" as const, envKey: "AMO_MOCK_API_KEY", catalog: MOCK_MODEL_CATALOG };
 }
 
+/** Sample reply used by `[[markdown]]`. */
+export const MOCK_MARKDOWN = [
+  "## 校验结果",
+  "",
+  "发现 **3** 张表的概率之和不为 1：",
+  "",
+  "| 表 | 概率和 |",
+  "| --- | ---: |",
+  "| Boss_Lv20 | 0.97 |",
+  "| Chest_Rare | 1.04 |",
+  "",
+  "1. 先修正概率",
+  "   - Boss_Lv20 补 0.03",
+  "   - Chest_Rare 减 0.04",
+  "2. 再跑一次 `ValidateDropTables`",
+  "",
+  "```csharp",
+  "DropTable.Normalize(table);",
+  "```",
+  "",
+  "参考 [掉落表规范](https://example.com/drop-tables)。",
+].join("\n");
+
 /** One model reply: plain text, or a tool call that Codex will execute (and may ask approval for). */
 export type MockReply =
   | { kind: "text"; text: string; chunks?: number; delayMs?: number }
@@ -39,6 +62,7 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  * - `[[spawn: task_name: message]]` → call Codex's collaboration.spawn_agent once, then reply `MOCK-DONE`;
  *   the subagent itself replies `MOCK-SUB: /root/<task_name>`
  * - `[[slow]]` → stream the reply in many small chunks with a delay (for steer/interrupt tests)
+ * - `[[markdown]]` → a reply with a table, a nested list, a code block and a link (rendering tests)
  * - anything else → `MOCK: <user text>`
  */
 export const defaultScript: MockScript = (req) => {
@@ -56,6 +80,7 @@ export const defaultScript: MockScript = (req) => {
   if (spawn && req.tools.includes("collaboration.spawn_agent")) {
     return { kind: "function_call", name: "spawn_agent", namespace: "collaboration", arguments: { task_name: spawn[1]!, message: spawn[2]!.trim(), fork_turns: "none" } };
   }
+  if (req.lastUserText.includes("[[markdown]]")) return { kind: "text", text: MOCK_MARKDOWN };
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
   return { kind: "text", text: `MOCK: ${req.lastUserText}` };
 };

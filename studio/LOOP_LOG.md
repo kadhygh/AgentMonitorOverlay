@@ -203,3 +203,10 @@
 - 其他：新增 `npm start`（构建并打开 Studio）、`npm run host:stop`（核对命令行后停止常驻 Host 及其 app-server）
 - 合并：`studio/stage-1` 以 `--no-ff` 合并回 `studio/main`；新建 `studio/stage-2`，写 `plans/stage-2.md`
 - 遗留：TUI 里的交互（打字、`/fork`）仍等用户在真实终端看一眼（NEEDS_YOU S1-00e）
+
+## 2026-10-13 05:50 · S2-01 markdown 补全
+- 结果：done
+- 改动：`packages/ui/src/lib/markdown.tsx`（表格、嵌套列表、续行；代码块带语言标签与"复制"；http/https 链接和裸链接交给系统浏览器；每个块带 `data-src-start/end`，区间相对于统一为 LF 的源文本）、`markdown.test.ts`（7 个用例）、样式；preload/main 新增 `openExternal`（只放行 http/https，测试模式只记录不打开）；mock 模型新增 `[[markdown]]` 示例回复；e2e `markdown.spec.ts`
+- 验证：`npm run verify` 通过；e2e 12/12；截图 `screenshots/stage-2/S2-01-markdown.png`
+- commit：见本次 commit
+- 遗留：无
