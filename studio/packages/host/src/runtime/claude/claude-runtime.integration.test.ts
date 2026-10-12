@@ -1,0 +1,157 @@
+import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import type { ModelProfile, SessionItem, Task, Workspace } from "@amo-studio/protocol";
+import { MOCK_CLAUDE_MODEL, removeTempDir, startMockAnthropic, type ClaudeMockServer } from "@amo-studio/testkit";
+import { Store } from "../../store/store.js";
+import { StaticCredentialReader } from "../credentials.js";
+import { ClaudeRuntime } from "./claude-runtime.js";
+
+// Integration: Store + ClaudeRuntime + the real Claude Agent SDK against the mock Anthropic API, in a temp
+// CLAUDE_CONFIG_DIR. Covers a turn, approvals, queued messages, interrupt, resume and a Host restart. No model budget.
+
+const PROFILES: ModelProfile[] = [{ id: "claude-mock", label: "Mock Claude", runtime: "claude", provider: "mock", model: MOCK_CLAUDE_MODEL, credentialId: "mock" }];
+// Created in beforeAll, not at import: when every test is filtered out the hooks do not run and nothing would remove it.
+let root: string;
+let claudeHome: string;
+let wsDir: string;
+let mock: ClaudeMockServer;
+let store: Store;
+let runtime: ClaudeRuntime;
+let workspace: Workspace;
+let task: Task;
+
+function startRuntime(): ClaudeRuntime {
+  return new ClaudeRuntime({
+    store,
+    profiles: PROFILES,
+    providers: { mock: { baseUrl: mock.baseUrl } },
+    credentials: new StaticCredentialReader({ mock: "mock-key" }),
+    claudeHome,
+  });
+}
+
+const until = async (pred: () => boolean, label: string, timeoutMs = 60_000) => {
+  const start = Date.now();
+  while (!pred()) {
+    if (Date.now() - start > timeoutMs) throw new Error(`timeout waiting for ${label}`);
+    await new Promise((r) => setTimeout(r, 25));
+  }
+};
+const items = (sessionId: string) => store.listItems(sessionId);
+const agentTexts = (sessionId: string) => items(sessionId).filter((i): i is Extract<SessionItem, { type: "agent" }> => i.type === "agent" && !i.streaming).map((i) => i.markdown);
+const status = (sessionId: string) => store.getSession(sessionId)!.status;
+
+beforeAll(async () => {
+  root = mkdtempSync(join(tmpdir(), "amo-studio-test-claude-runtime-"));
+  claudeHome = join(root, "claude-home");
+  wsDir = join(root, "workspace");
+  mkdirSync(wsDir, { recursive: true });
+  mock = await startMockAnthropic();
+  store = new Store(join(root, "studio.db"));
+  runtime = startRuntime();
+  workspace = store.addWorkspace({ path: wsDir, name: "ws" });
+  task = store.createTask({ title: "claude", scope: { kind: "workspace", workspaceId: workspace.id } });
+});
+
+afterAll(async () => {
+  await runtime?.closeAll();
+  store?.close();
+  await mock?.close();
+  if (root) removeTempDir(root);
+});
+
+describe("ClaudeRuntime", () => {
+  it("runs a turn and continues the same Claude session on the next message", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "hello" });
+    expect(s).toMatchObject({ runtime: "claude", kind: "main", title: "hello" });
+    expect(s.runtimeRef).toMatch(/^[0-9a-f-]{36}$/);
+    await until(() => agentTexts(s.id).includes("MOCK: hello") && status(s.id) === "idle", "first reply");
+    expect(items(s.id).map((i) => i.type)).toEqual(["user", "agent"]);
+    // The transcript lives in Studio's config dir, under the id Studio chose.
+    const sent = await runtime.sendMessage(s.id, "again");
+    expect(sent.mode).toBe("start");
+    await until(() => agentTexts(s.id).includes("MOCK: again"), "second reply");
+    const last = mock.requests.at(-1)!;
+    expect(JSON.stringify(last.body.messages)).toContain("MOCK: hello"); // same conversation
+    expect(existsSync(join(claudeHome, "projects"))).toBe(true);
+  }, 120_000);
+
+  it("waits for the person on a command, and runs it once approved", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[shell: mkdir approved-dir]]" });
+    await until(() => status(s.id) === "awaiting-approval", "approval");
+    const approval = items(s.id).find((i) => i.type === "approval")!;
+    expect(approval).toMatchObject({ kind: "command", summary: "mkdir approved-dir", state: "pending" });
+    expect(existsSync(join(wsDir, "approved-dir"))).toBe(false);
+    await runtime.respondApproval(s.id, (approval as { approvalId: string }).approvalId, "accept");
+    await until(() => agentTexts(s.id).includes("MOCK-DONE") && status(s.id) === "idle", "after approval");
+    expect(existsSync(join(wsDir, "approved-dir"))).toBe(true);
+    expect(items(s.id).find((i) => i.type === "approval")).toMatchObject({ state: "accepted" });
+    expect(items(s.id).find((i) => i.type === "tool")).toMatchObject({ name: "shell", summary: "mkdir approved-dir", status: "completed" });
+  }, 120_000);
+
+  it("does not run a declined command", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[shell: mkdir declined-dir]]" });
+    await until(() => status(s.id) === "awaiting-approval", "approval");
+    const approval = items(s.id).find((i) => i.type === "approval") as { approvalId: string };
+    await runtime.respondApproval(s.id, approval.approvalId, "decline");
+    await until(() => status(s.id) === "idle" && agentTexts(s.id).length > 0, "after decline");
+    expect(existsSync(join(wsDir, "declined-dir"))).toBe(false);
+    expect(items(s.id).find((i) => i.type === "tool")).toMatchObject({ status: "declined" });
+  }, 120_000);
+
+  it("queues a message sent during a turn, and interrupts a slow reply", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[slow]]" });
+    await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent"), "slow reply started");
+    expect((await runtime.sendMessage(s.id, "next one")).mode).toBe("queue");
+    await until(() => agentTexts(s.id).includes("MOCK: next one") && status(s.id) === "idle", "queued message answered");
+
+    await runtime.sendMessage(s.id, "[[slow]]");
+    await until(() => status(s.id) === "running" && items(s.id).filter((i) => i.type === "agent").length >= 3, "second slow reply");
+    await runtime.interrupt(s.id);
+    await until(() => status(s.id) === "idle", "interrupted");
+    expect(items(s.id).some((i) => i.type === "error")).toBe(false);
+    // The session goes on afterwards (a new query resumes it).
+    await runtime.sendMessage(s.id, "after interrupt");
+    await until(() => agentTexts(s.id).includes("MOCK: after interrupt"), "reply after interrupt");
+  }, 180_000);
+
+  it("runs a subagent (grouping and permission-mode stripping are checked in S4-03)", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[spawn: helper: say hi]]" });
+    await until(() => status(s.id) === "awaiting-approval" || (status(s.id) === "idle" && agentTexts(s.id).includes("MOCK-DONE")), "spawn handled");
+    if (status(s.id) === "awaiting-approval") {
+      const approval = items(s.id).find((i) => i.type === "approval") as { approvalId: string };
+      await runtime.respondApproval(s.id, approval.approvalId, "accept");
+    }
+    await until(() => status(s.id) === "idle" && agentTexts(s.id).includes("MOCK-DONE"), "spawn done");
+    expect(mock.requests.some((r) => r.subagent === "helper")).toBe(true);
+  }, 120_000);
+
+  it("after a crash, marks turns that were in flight as over", async () => {
+    // As a crashed Host leaves it: no process, the session still awaiting approval, a card still pending.
+    const s = store.createSession({ taskId: task.id, parentId: null, kind: "main", runtime: "claude", profileId: "claude-mock", workspaceId: workspace.id, title: "crashed", status: "awaiting-approval", writer: "workbench", runtimeRef: "00000000-0000-4000-8000-000000000000" });
+    store.appendItem({ id: "i-crash-approval", sessionId: s.id, createdAt: new Date().toISOString(), type: "approval", approvalId: "t1", kind: "command", summary: "mkdir x", state: "pending" });
+    store.appendItem({ id: "i-crash-agent", sessionId: s.id, createdAt: new Date().toISOString(), type: "agent", markdown: "half", streaming: true });
+    const recovered = startRuntime();
+    expect(status(s.id)).toBe("idle");
+    expect(items(s.id).map((i) => [i.type, (i as { state?: string }).state ?? (i as { streaming?: boolean }).streaming ?? null])).toEqual([
+      ["approval", "resolved-elsewhere"],
+      ["agent", false],
+      ["notice", null],
+    ]);
+    await recovered.closeAll();
+  });
+
+  it("ends in-flight turns when the Host restarts", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[shell: mkdir restart-dir]]" });
+    await until(() => status(s.id) === "awaiting-approval", "approval before restart");
+    await runtime.closeAll();
+    runtime = startRuntime();
+    expect(status(s.id)).toBe("idle");
+    expect(items(s.id).find((i) => i.type === "approval")).toMatchObject({ state: "resolved-elsewhere" });
+    expect(items(s.id).filter((i) => i.type === "notice")).toHaveLength(1);
+    await runtime.sendMessage(s.id, "still there?");
+    await until(() => agentTexts(s.id).includes("MOCK: still there?"), "reply after restart");
+  }, 120_000);
+});

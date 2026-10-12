@@ -56,7 +56,8 @@ export interface HostRoutes {
   "POST /api/tasks/:id/sessions": { req: NewSessionInput; res: Session };
   "GET /api/sessions/:id/items": { req: void; res: SessionItem[] };
   /** Starts a turn when idle, steers the running turn otherwise. */
-  "POST /api/sessions/:id/messages": { req: { text: string }; res: { mode: "start" | "steer" } };
+  /** `queue`: a Claude session was mid-turn; the message runs as the next turn. Codex steers the running turn instead. */
+  "POST /api/sessions/:id/messages": { req: { text: string }; res: { mode: "start" | "steer" | "queue" } };
   "POST /api/sessions/:id/interrupt": { req: void; res: { ok: true } };
   "POST /api/sessions/:id/fork": { req: { profileId?: Id }; res: Session };
   /** Archives the session together with its forks and subagents; returns every session changed. */
@@ -70,7 +71,7 @@ export interface HostRoutes {
   "PATCH /api/annotations/:id": { req: { note: string }; res: Annotation };
   "DELETE /api/annotations/:id": { req: void; res: { ok: true } };
   /** Sends every unsent annotation of the session as one user message, in reply order, then marks them sent. */
-  "POST /api/sessions/:id/annotations/send": { req: void; res: { mode: "start" | "steer"; sent: Annotation[] } };
+  "POST /api/sessions/:id/annotations/send": { req: void; res: { mode: "start" | "steer" | "queue"; sent: Annotation[] } };
   /** The global scratchpad (interaction-notes: one shared draft area until the user asks for per-task ones). */
   "GET /api/scratchpad": { req: void; res: Scratchpad };
   "PUT /api/scratchpad": { req: { text: string }; res: Scratchpad };

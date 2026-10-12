@@ -83,10 +83,10 @@ type Block = { type?: string; text?: string };
 type Message = { role?: string; content?: string | Block[] };
 
 const blocksOf = (m: Message | undefined): Block[] => (typeof m?.content === "string" ? [{ type: "text", text: m.content }] : (m?.content ?? []));
-/** The person's text: text blocks that are not injected context such as <system-reminder>…. */
+/** The person's text: text blocks that are not injected context (<system-reminder>…, "[Request interrupted by user]"). */
 const personText = (m: Message | undefined) =>
   blocksOf(m)
-    .filter((b) => b.type === "text" && typeof b.text === "string" && !/^\s*<[a-z-]+>/.test(b.text))
+    .filter((b) => b.type === "text" && typeof b.text === "string" && !/^\s*<[a-z-]+>/.test(b.text) && !/^\s*\[Request interrupted/.test(b.text))
     .map((b) => b.text!.trim())
     .join("\n")
     .trim();

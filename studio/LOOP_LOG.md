@@ -379,3 +379,27 @@
 - 验证：`npm run verify` 退出码 0（142 个测试）
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-13 14:40 · S4-02 ClaudeRuntime
+- 结果：done
+- 改动：
+  - `runtime/runtime.ts`：运行时通用接口 `SessionRuntimeApi`、按会话或模型配置所属运行时分派的 `RuntimeRouter`、共用的持久化辅助基类 `RuntimeBase`（`CodexRuntime` 暂未迁移到基类，避免动已稳定的代码）；
+  - `runtime/claude/claude-env.ts`：Claude 提供方定义（内置 GLM）与子进程环境变量（去掉继承的 `ANTHROPIC_*`/`CLAUDE*`，加路由、凭据、Studio 自己的 `CLAUDE_CONFIG_DIR`；没有提供方或凭据时报错，即不使用 Claude 订阅登录）；
+  - `runtime/claude/claude-runtime.ts`：
+    - 会话 id 由 Studio 生成（SDK `sessionId`），之后 `resume`；
+    - 每个会话一个流式输入的 `query()`，始终 `permissionMode: "default"`；
+    - 生成中发的消息排队（接口返回 `mode: "queue"`）；
+    - `canUseTool` 挂起等人、转成审批卡片，`Agent` 调用去掉 `mode`；
+    - 打断后的异常按"已打断"处理；空闲 10 分钟关闭进程，下次发消息自动接续；
+    - Host 关闭或崩溃重启后，进行中的回合结束并留一条说明；
+  - Host 进程同时创建 Codex 和 Claude 两个运行时，经路由分派；关闭时等 Claude 进程全部退出；数据目录下新增 `claude-home`；
+  - 协议：发送消息和"汇总发回"的返回值加上 `"queue"`
+- 测试：集成测试 7 个（真实 SDK + mock：对话与接续、批准、拒绝、排队与打断、子 agent、崩溃恢复、关闭后重启接续）；`claudeEnv` 单测 3 个
+- 调试：
+  - 关闭后立刻接续会话时 CLI 报 "Session ID … is already in use"：`query.close()` 不等进程退出。改为关闭时等 `consume` 结束，同一会话再发消息前先等关闭完成；
+  - mock 把 CLI 注入的 "[Request interrupted by user]" 当成了人说的话，已跳过
+- 和计划的出入：审批（`canUseTool` → 卡片）提前到本任务做，因为 "default" 模式下没有它，需要审批的工具调用会全部被拒；S4-03 剩下分支和子 agent 归组。子 agent 那条用例只验证能跑通，`mode` 被去掉的验证留到 S4-03
+- 清理：用 `-t` 只跑部分用例时，测试文件在加载时创建的临时目录不会被清理（留下 2 个，已删）；Claude 的测试改为在 `beforeAll` 里创建。Codex 的两个集成测试也是同样写法，记为待办
+- 验证：`npm run verify` 退出码 0（152 个测试）；e2e 22/22；没有遗留的 SDK 进程
+- 额度：0
+- commit：见本次 commit

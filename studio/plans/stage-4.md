@@ -31,7 +31,7 @@
 - 内容：testkit 增加 mock Anthropic Messages 接口（流式 SSE），支持和 mock Responses 相同的指令：`[[shell: cmd]]`（发起工具调用，触发审批）、`[[slow]]`、`[[markdown]]`、`[[spawn: name: msg]]`（子 agent）。
 - 验收：单元测试；用 SDK 对着 mock 跑通一轮。
 
-### S4-02 ClaudeRuntime：创建、发送、中断、恢复 · todo
+### S4-02 ClaudeRuntime：创建、发送、中断、恢复 · done
 - 依赖：S4-01
 - 注意（S4-01 发现）：始终显式传 `permissionMode: "default"`（CLI 默认是 `auto`，等于自动审批）；一个 `query()` 里可能有多个 `result`（后台子 agent 结束后父会话会自动再跑一轮）。
 - 内容：`ClaudeRuntime` 实现与 `CodexRuntime` 相同的接口：新建会话、发送消息、生成中发的消息排队到下一轮（预研确认 SDK 不会插进当前回合，界面上写"排队"）、打断（`interrupt()` 之后的异常按"已打断"处理）、Host 重启后恢复；事件转成统一的会话条目（用户消息、回复流式增量、工具卡片、审批）。

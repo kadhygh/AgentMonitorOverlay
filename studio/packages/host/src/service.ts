@@ -24,7 +24,7 @@ import type {
 } from "@amo-studio/protocol";
 import { canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
-import type { CodexRuntime } from "./runtime/codex/codex-runtime.js";
+import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
 import type { TerminalLauncher } from "./terminal/launcher.js";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
@@ -48,7 +48,7 @@ export interface HostServiceEvents {
 export class HostService extends EventEmitter<HostServiceEvents> {
   constructor(
     readonly store: Store,
-    readonly runtime: CodexRuntime,
+    readonly runtime: SessionRuntimeApi,
     readonly profiles: readonly ModelProfile[],
     private readonly options: { launcher?: TerminalLauncher } = {},
   ) {
@@ -143,7 +143,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return this.store.listItems(sessionId, afterSeq);
   }
 
-  async sendMessage(sessionId: Id, text: string): Promise<{ mode: "start" | "steer" }> {
+  async sendMessage(sessionId: Id, text: string): Promise<{ mode: SendMode }> {
     this.requireSession(sessionId);
     if (!text?.trim()) throw new HostError("bad_request", "text is required");
     return this.wrap(() => this.runtime.sendMessage(sessionId, text));
@@ -357,7 +357,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   }
 
   /** Sends all unsent annotations as one message (reply order, then position in the reply) and marks them sent. */
-  async sendAnnotations(sessionId: Id): Promise<{ mode: "start" | "steer"; sent: Annotation[] }> {
+  async sendAnnotations(sessionId: Id): Promise<{ mode: SendMode; sent: Annotation[] }> {
     const pending = this.annotations(sessionId).filter((a) => !a.sentAt);
     if (!pending.length) throw new HostError("bad_request", "no annotations to send");
     const seq = (a: Annotation) => this.store.getItem(a.itemId)?.seq ?? Number.MAX_SAFE_INTEGER;
