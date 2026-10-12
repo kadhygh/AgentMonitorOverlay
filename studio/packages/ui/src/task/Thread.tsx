@@ -1,6 +1,9 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
-import type { ApprovalDecision, Session, SessionItem } from "@amo-studio/protocol";
+import type { Annotation, ApprovalDecision, Session, SessionItem } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
+import { readSelection, type SelectionAnchor } from "../lib/selection.js";
+import { copyText } from "../host/client.js";
+import { ReplyNav } from "./ReplyNav.js";
 
 type Approval = Extract<SessionItem, { type: "approval" }>;
 type Tool = Extract<SessionItem, { type: "tool" }>;
@@ -8,13 +11,19 @@ type Tool = Extract<SessionItem, { type: "tool" }>;
 interface ThreadProps {
   session: Session | null;
   items: readonly SessionItem[];
+  /** Unsent annotations are highlighted in the replies they point at. */
+  annotations: readonly Annotation[];
   model: string;
   busy: boolean;
   onApprove(item: Approval, decision: ApprovalDecision): void;
   onJump(sessionId: string): void;
   onSend(text: string): Promise<boolean>;
   onInterrupt(): void;
+  /** "添加批注" from the selection menu. */
+  onAnnotate(anchor: SelectionAnchor): void;
 }
+
+type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 const APPROVAL_STATE: Record<Approval["state"], string> = {
   pending: "",
@@ -25,11 +34,30 @@ const APPROVAL_STATE: Record<Approval["state"], string> = {
 const TOOL_STATUS: Record<Tool["status"], string> = { running: "进行中", completed: "完成", failed: "失败", declined: "已拒绝" };
 
 /** Conversation of one session plus its composer. */
-export function Thread({ session, items, model, busy, onApprove, onJump, onSend, onInterrupt }: ThreadProps) {
+export function Thread({ session, items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [draft, setDraft] = useState("");
+  const [menu, setMenu] = useState<Menu>(null);
   useEffect(() => setDraft(""), [session?.id]);
+
+  // The selection menu closes on Escape, on any click outside it, and when the thread scrolls.
+  useEffect(() => {
+    if (!menu) return;
+    const close = () => setMenu(null);
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
+    const onDown = (e: MouseEvent) => !(e.target as Element | null)?.closest?.(".ctx-menu") && close();
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [menu]);
+
+  const sources = new Map(items.filter((i) => i.type === "agent").map((i) => [i.id, (i as { markdown: string }).markdown]));
+  const quoteToDraft = (quote: string) =>
+    setDraft((d) => `${d.trim() ? `${d.trimEnd()}\n\n` : ""}${quote.split("\n").map((l) => `> ${l}`).join("\n")}\n\n`);
 
   // Keep following the bottom while new output arrives, unless the person scrolled up to read.
   useLayoutEffect(() => {
@@ -55,6 +83,8 @@ export function Thread({ session, items, model, busy, onApprove, onJump, onSend,
 
   return (
     <>
+      <div className="thread-wrap">
+      <ReplyNav scroller={scroller} itemCount={items.length} />
       <div
         className="thread"
         data-testid="thread"
@@ -62,13 +92,64 @@ export function Thread({ session, items, model, busy, onApprove, onJump, onSend,
         onScroll={(e) => {
           const el = e.currentTarget;
           stick.current = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
+          if (menu) setMenu(null);
+        }}
+        onContextMenu={(e) => {
+          const anchor = readSelection(sources);
+          if (!anchor) return setMenu(null);
+          e.preventDefault();
+          setMenu({ x: e.clientX, y: e.clientY, anchor });
         }}
       >
         {!session && <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>}
         {items.map((item) => (
-          <ItemView key={item.id} item={item} model={model} busy={busy} onApprove={onApprove} onJump={onJump} />
+          <ItemView
+            key={item.id}
+            item={item}
+            model={model}
+            busy={busy}
+            onApprove={onApprove}
+            onJump={onJump}
+            highlights={annotations.filter((a) => a.itemId === item.id && !a.sentAt)}
+          />
         ))}
       </div>
+      </div>
+      {menu && (
+        <div className="ctx-menu" role="menu" aria-label="选中文字" style={{ left: menu.x, top: menu.y }}>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              onAnnotate(menu.anchor);
+              setMenu(null);
+            }}
+          >
+            添加批注
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            disabled={!session || session.writer === "archived" || session.writer === "terminal-handoff"}
+            onClick={() => {
+              quoteToDraft(menu.anchor.quote);
+              setMenu(null);
+            }}
+          >
+            引用到输入框
+          </button>
+          <button
+            type="button"
+            role="menuitem"
+            onClick={() => {
+              void copyText(menu.anchor.quote);
+              setMenu(null);
+            }}
+          >
+            复制
+          </button>
+        </div>
+      )}
       {session && (
         <div className="composer-dock">
           <label className="composer-input boxed">
@@ -105,7 +186,21 @@ export function Thread({ session, items, model, busy, onApprove, onJump, onSend,
   );
 }
 
-function ItemView({ item, model, busy, onApprove, onJump }: { item: SessionItem; model: string; busy: boolean; onApprove: ThreadProps["onApprove"]; onJump: ThreadProps["onJump"] }) {
+function ItemView({
+  item,
+  model,
+  busy,
+  onApprove,
+  onJump,
+  highlights,
+}: {
+  item: SessionItem;
+  model: string;
+  busy: boolean;
+  onApprove: ThreadProps["onApprove"];
+  onJump: ThreadProps["onJump"];
+  highlights: readonly Annotation[];
+}) {
   switch (item.type) {
     case "user":
       return (
@@ -116,9 +211,9 @@ function ItemView({ item, model, busy, onApprove, onJump }: { item: SessionItem;
       );
     case "agent":
       return (
-        <div className="msg-agent" data-testid="msg-agent">
+        <div className="msg-agent" data-testid="msg-agent" data-item-id={item.id} data-item-type="agent">
           <span className="msg-who">{model}</span>
-          <Markdown source={item.markdown} />
+          <Markdown source={item.markdown} highlights={highlights} />
           {item.streaming && <span className="streaming">生成中…</span>}
         </div>
       );

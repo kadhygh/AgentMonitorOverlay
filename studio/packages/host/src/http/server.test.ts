@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import type { HostEvent, ModelProfile, Session, SessionItem, StateSnapshot, Task, Workspace } from "@amo-studio/protocol";
+import { composeAnnotationMessage, type Annotation, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type Task, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../runtime/codex/fake-servers.test-support.js";
@@ -208,5 +208,60 @@ describe("Host API", () => {
     } finally {
       await ui.close();
     }
+  });
+
+  it("reads and writes the global scratchpad, announcing changes", async () => {
+    expect(await ok("GET", "/api/scratchpad")).toEqual({ text: "", updatedAt: null });
+    const received: HostEvent[] = [];
+    const ws = new WebSocket(`${http.url.replace("http", "ws")}/api/events?token=${TOKEN}&since=${(await ok<StateSnapshot>("GET", "/api/state")).eventSeq}`);
+    ws.on("message", (raw) => received.push(JSON.parse(String(raw)) as HostEvent));
+    await new Promise<void>((r) => ws.once("open", () => r()));
+    const note = "待办：\n- 看掉落表";
+    const saved = await ok<{ text: string; updatedAt: string }>("PUT", "/api/scratchpad", { text: note });
+    expect(saved.text).toBe(note);
+    expect(saved.updatedAt).toBeTruthy();
+    expect((await api("PUT", "/api/scratchpad", { text: 42 })).status).toBe(400);
+    await until(() => received.some((e) => e.type === "scratchpad.updated"), "scratchpad event");
+    ws.close();
+    await shutdown();
+    await boot();
+    expect((await ok<{ text: string }>("GET", "/api/scratchpad")).text).toBe(note);
+  });
+
+  it("annotates replies and sends the annotations back as one message", async () => {
+    const { session } = await createTask("first reply");
+    await until(async () => (await lastAgentText(session.id)) === "FAKE: first reply", "first reply");
+    await ok("POST", `/api/sessions/${session.id}/messages`, { text: "second reply" });
+    await until(async () => (await lastAgentText(session.id)) === "FAKE: second reply", "second reply");
+    const agents = (await items(session.id)).filter((i) => i.type === "agent");
+    const userItem = (await items(session.id)).find((i) => i.type === "user")!;
+
+    // Validation: only agent replies, non-empty quote and note, a real range.
+    expect((await api("POST", `/api/sessions/${session.id}/annotations`, { itemId: userItem.id, quote: "x", start: 0, end: 1, note: "n" })).status).toBe(400);
+    expect((await api("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[0]!.id, quote: "x", start: 0, end: 1, note: " " })).status).toBe(400);
+    expect((await api("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[0]!.id, quote: "x", start: 3, end: 3, note: "n" })).status).toBe(400);
+    expect((await api("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[0]!.id, quote: "x", start: 0, end: 9999, note: "n" })).status).toBe(400);
+    expect((await api("POST", `/api/sessions/${session.id}/annotations/send`)).status).toBe(400);
+
+    // Created out of order on purpose: the summary follows reply order.
+    const later = await ok<Annotation>("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[1]!.id, quote: "second", start: 6, end: 12, prefix: "FAKE: ", suffix: " reply", note: "这里要改" });
+    const earlier = await ok<Annotation>("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[0]!.id, quote: "first", start: 6, end: 11, note: "这里不对" });
+    const scrap = await ok<Annotation>("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[0]!.id, quote: "reply", start: 12, end: 17, note: "删掉我" });
+    expect(later).toMatchObject({ prefix: "FAKE: ", suffix: " reply", sentAt: null });
+    expect((await ok<Annotation>("PATCH", `/api/annotations/${earlier.id}`, { note: "这里不对，换一种写法" })).note).toBe("这里不对，换一种写法");
+    expect(await ok("DELETE", `/api/annotations/${scrap.id}`)).toEqual({ ok: true });
+    expect((await ok<Annotation[]>("GET", `/api/sessions/${session.id}/annotations`)).map((a) => a.id).sort()).toEqual([earlier.id, later.id].sort());
+
+    const result = await ok<{ mode: string; sent: Annotation[] }>("POST", `/api/sessions/${session.id}/annotations/send`);
+    expect(result.mode).toBe("start");
+    expect(result.sent.map((a) => a.id)).toEqual([earlier.id, later.id]);
+    expect(result.sent.every((a) => a.sentAt)).toBe(true);
+    const expected = composeAnnotationMessage([{ quote: "first", note: "这里不对，换一种写法" }, { quote: "second", note: "这里要改" }]);
+    await until(async () => (await items(session.id)).some((i) => i.type === "user" && i.text === expected), "summary message");
+    expect(expected).toBe("针对你上面的回复，我有 2 条批注：\n\n> first\n这里不对，换一种写法\n\n> second\n这里要改");
+
+    // Sent annotations are frozen and nothing is left to send.
+    expect((await api("PATCH", `/api/annotations/${earlier.id}`, { note: "again" })).status).toBe(409);
+    expect((await api("POST", `/api/sessions/${session.id}/annotations/send`)).status).toBe(400);
   });
 });

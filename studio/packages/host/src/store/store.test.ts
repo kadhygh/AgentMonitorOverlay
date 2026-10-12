@@ -36,9 +36,9 @@ function seed(store: Store) {
 describe("Store", () => {
   it("applies migrations once", () => {
     const path = tempDbPath();
-    expect(makeStore(path).schemaVersion()).toBe(1);
+    expect(makeStore(path).schemaVersion()).toBe(2);
     open.pop()!.close();
-    expect(makeStore(path).schemaVersion()).toBe(1);
+    expect(makeStore(path).schemaVersion()).toBe(2);
   });
 
   it("creates, reads and updates workspaces, tasks and sessions", () => {
@@ -110,14 +110,23 @@ describe("Store", () => {
     const store = makeStore();
     const { main } = seed(store);
     const at = "2026-10-12T10:00:00.000Z";
-    store.putAnnotation({ id: "a1", sessionId: main.id, itemId: "i", quote: "q", start: 0, end: 1, note: "n", createdAt: at, sentAt: null });
-    store.putAnnotation({ id: "a1", sessionId: main.id, itemId: "i", quote: "q", start: 0, end: 1, note: "edited", createdAt: at, sentAt: null });
+    store.putAnnotation({ id: "a1", sessionId: main.id, itemId: "i", quote: "q", start: 0, end: 1, prefix: "", suffix: "", note: "n", createdAt: at, sentAt: null });
+    store.putAnnotation({ id: "a1", sessionId: main.id, itemId: "i", quote: "q", start: 0, end: 1, prefix: "", suffix: "", note: "edited", createdAt: at, sentAt: null });
     expect(store.listAnnotations(main.id).map((a) => a.note)).toEqual(["edited"]);
     const canvas = { id: "main", groups: [], nodes: [{ id: "n1", kind: "note" as const, text: "x", groupId: null, pos: { x: 1, y: 2 } }], edges: [], updatedAt: at };
     store.putCanvas(canvas);
     expect(store.getCanvas("main")).toEqual(canvas);
     store.putTodo({ id: "t1", text: "later", done: false, workspaceId: null, taskId: null, createdAt: at });
     expect(store.listTodos()).toHaveLength(1);
+  });
+
+  it("stores key/value settings", () => {
+    const store = makeStore();
+    expect(store.getKv("scratchpad")).toBeUndefined();
+    store.setKv("scratchpad", "first");
+    const second = store.setKv("scratchpad", "second");
+    expect(store.getKv("scratchpad")).toEqual(second);
+    expect(second.value).toBe("second");
   });
 
   it("keeps data across a restart", () => {

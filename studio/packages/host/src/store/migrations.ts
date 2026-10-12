@@ -80,4 +80,12 @@ export const MIGRATIONS: readonly string[] = [
     created_at TEXT NOT NULL
   );
   `,
+  // 2: small key/value settings (scratchpad and other per-install values)
+  `
+  CREATE TABLE kv (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  );
+  `,
 ];

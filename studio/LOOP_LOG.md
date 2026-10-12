@@ -203,3 +203,53 @@
 - 其他：新增 `npm start`（构建并打开 Studio）、`npm run host:stop`（核对命令行后停止常驻 Host 及其 app-server）
 - 合并：`studio/stage-1` 以 `--no-ff` 合并回 `studio/main`；新建 `studio/stage-2`，写 `plans/stage-2.md`
 - 遗留：TUI 里的交互（打字、`/fork`）仍等用户在真实终端看一眼（NEEDS_YOU S1-00e）
+
+## 2026-10-13 05:50 · S2-01 markdown 补全
+- 结果：done
+- 改动：`packages/ui/src/lib/markdown.tsx`（表格、嵌套列表、续行；代码块带语言标签与"复制"；http/https 链接和裸链接交给系统浏览器；每个块带 `data-src-start/end`，区间相对于统一为 LF 的源文本）、`markdown.test.ts`（7 个用例）、样式；preload/main 新增 `openExternal`（只放行 http/https，测试模式只记录不打开）；mock 模型新增 `[[markdown]]` 示例回复；e2e `markdown.spec.ts`
+- 验证：`npm run verify` 通过；e2e 12/12；截图 `screenshots/stage-2/S2-01-markdown.png`
+- commit：见本次 commit
+- 遗留：无
+
+## 2026-10-13 06:05 · S2-02 批注 API
+- 结果：done
+- 改动：protocol 的 `Annotation` 增加 `prefix`/`suffix`；新增 `NewAnnotationInput`、5 条批注路由、`annotation.upserted`/`annotation.removed` 事件、共享的 `composeAnnotationMessage`（Host 发送和 UI 预览用同一份格式）；Store 增加 `getAnnotation`、`deleteAnnotation`；HostService 增加列出/新建/修改/删除/汇总发回（只能批注 agent 回复、备注与原文不能为空、区间必须有效；按回复顺序和段内位置排序；发出后写 `sentAt`，已发送的批注不能再改）
+- 验证：`npm run verify` 通过；API 测试新增"建批注 → 改 → 删 → 汇总发回 → 会话收到一条按顺序拼好的用户消息、批注标记已发送"
+- commit：见本次 commit
+- 遗留：汇总消息的格式是"针对你上面的回复，我有 N 条批注："+ 每条"> 原文 / 备注"，原文超过 300 字截断；用户可在阶段 2 的请你过目里提意见
+
+## 2026-10-13 06:30 · S2-03 选中文字的右键菜单
+- 结果：done
+- 改动：`packages/ui/src/lib/selection.ts`（选区必须落在同一条 agent 回复里；按触到的渲染块在源文本中查找原文，渲染后丢掉的 markdown 符号用宽松匹配，找不到就退回块的区间；前后各 24 字上下文）、`selection.test.ts`；Thread 增加自定义右键菜单（添加批注 / 引用到输入框 / 复制；Esc、点外面、滚动时关闭；只读会话不能引用到输入框）；`task/AnnotationPanel.tsx`（任务页右栏，先做批注草稿卡，S2-04 补列表等）；新增 `amo:copy`（主进程写剪贴板，不依赖页面焦点；代码块"复制"也改走这里）；e2e `context-menu.spec.ts` 与选区助手 `selection.ts`
+- 验证：`npm run verify` 通过；e2e 13/13；截图 `screenshots/stage-2/S2-03-context-menu.png`
+- commit：见本次 commit
+- 遗留：测试模式下"复制"只记录、不写系统剪贴板（这台机器上 e2e 里系统剪贴板读写都不可靠，而且测试不应改用户的剪贴板）。排查时曾在主进程直接调用过一次 `clipboard.writeText("direct-1")`，回读为空，大概率没有写进去；如果写进去了，用户剪贴板内容在 06:25 左右被覆盖过一次
+
+## 2026-10-13 06:50 · S2-04 批注栏
+- 结果：done（ROADMAP 阶段 2 的核心验收流程已打通）
+- 改动：`packages/ui/src/task/AnnotationPanel.tsx`（未发送批注卡片：原文、备注、编辑、删除，点原文定位；"汇总发回会话（n）"，悬停可预览拼好的消息，会话只读时不可用；已发送的收进"▸ 已发送 n"）、`host/useAnnotations.ts`（加载 + 事件实时更新）、Markdown 的 `highlights`（与未发送批注重叠的块标记 `data-annotated` 并高亮）、TaskPage 的定位与闪烁、样式；e2e `review.spec.ts`
+- 验证：`npm run verify` 通过；e2e 14/14（新增：选中 → 右键批注 ×3 → 编辑 → 删除 → 高亮与定位 → 汇总发回 → 会话收到按顺序拼好的消息并得到回复 → 批注收进已发送）；截图 `S2-04-annotations.png`、`S2-04-sent.png`
+- commit：见本次 commit
+- 遗留：高亮粒度是"块"（段落、表格、列表），不是精确到选中的那几个字；精确高亮要在渲染时切分文本节点，先不做
+
+## 2026-10-13 07:10 · S2-05 草稿区
+- 结果：done
+- 改动：Store 迁移 2（`kv` 表）与 `getKv`/`setKv`；protocol 新增 `Scratchpad`、`GET/PUT /api/scratchpad`、`scratchpad.updated` 事件；HostService 读写草稿（必须是字符串，上限 20 万字）；`packages/ui/src/task/Scratchpad.tsx`（右栏底部，全局一份；停止输入 0.5 秒或失焦时保存，显示"保存中…/已保存"；其他窗口实时同步，本窗口有未保存输入时不覆盖）；e2e 助手支持复用数据目录重启应用；e2e `scratchpad.spec.ts`
+- 验证：`npm run verify` 通过（schema 版本 2、kv 读写、草稿 API 与事件、Host 重启后仍在）；e2e 15/15（输入 → 已保存 → 重启应用 → 仍在）；截图 `S2-05-scratchpad.png`
+- commit：见本次 commit
+- 遗留：写 e2e 时一度用了"不接 mock 模型 + DeepSeek 配置"建任务，那样会在用户真实的 ~/.codex 里建线程（虽然不发对话）。运行前已改为 mock 模型和沙盒 CODEX_HOME，并检查了其他用例：凡是 `mockModel: false` 的用例都不建会话
+
+## 2026-10-13 07:25 · S2-06 快速跳转
+- 结果：done
+- 改动：`packages/ui/src/task/ReplyNav.tsx`（对话区右上角浮动的"↑ n / N ↓"；`Alt+↑/↓`；跳到的回复闪一下；"当前回复"取最后一个越过顶边的回复，顶部时取第一条可见回复，滚到底时取最后一条；在长回复中间往上跳先回到这条的开头）；批注定位改用同一个 `flash`；`thread-wrap` 容器与样式；e2e `jumps.spec.ts`
+- 验证：`npm run verify` 通过；e2e 16/16；截图 `S2-06-jumps.png`
+- commit：见本次 commit
+- 遗留：对话区外包了一层容器后要给内部滚动区 `min-height: 0`，否则内容会把它撑开、无法滚动
+
+## 2026-10-13 07:45 · S2-07 阶段 2 收尾
+- 结果：done（阶段 2 完成）
+- 代码审查（同阶段 1，loop 无法调用 `/code-review`，由我审查阶段 2 的 23 个源文件改动）：修了两处——在草稿区打完字 0.5 秒内离开任务页会丢掉最后一次输入（改为卸载时补存，并加 e2e）；批注区间没有检查是否超出回复原文（加校验与测试）。其余检查：外链只放行 http/https；markdown 不注入 HTML；正则由用户选区构造时已转义；复制和打开链接在测试模式只记录
+- 防偏离自查：对照 interaction-notes"批注"一节——右键菜单三项、批注卡（上原文下输入框）、保存后段落高亮、多条汇总成一条用户消息、草稿区在右栏底部且先做全局，均一致；对照"明确不做"无越界
+- 完整验证：`npm run verify` 105 个测试通过；e2e 16/16
+- 合并：`studio/stage-2` 以 `--no-ff` 合并回 `studio/main`；新建 `studio/stage-3`，写 `plans/stage-3.md`
+- 遗留：无

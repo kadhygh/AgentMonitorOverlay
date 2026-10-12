@@ -1,11 +1,15 @@
 import { useEffect, useState } from "react";
-import { TASK_COLUMNS, type ApprovalDecision, type ModelProfile, type Session, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
+import { TASK_COLUMNS, type Annotation, type ApprovalDecision, type ModelProfile, type Session, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
+import { useAnnotations } from "../host/useAnnotations.js";
 import { shortModel } from "../lib/profiles.js";
 import { COLUMN_NAMES } from "../lib/status.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
+import { flash } from "./ReplyNav.js";
+import { AnnotationPanel } from "./AnnotationPanel.js";
+import type { SelectionAnchor } from "../lib/selection.js";
 
 interface TaskPageProps {
   link: HostLink;
@@ -32,6 +36,7 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
   const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingAnnotation, setPendingAnnotation] = useState<SelectionAnchor | null>(null);
 
   useEffect(() => {
     if (!selected || !own.some((s) => s.id === selected)) {
@@ -42,6 +47,7 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
 
   const session = own.find((s) => s.id === selected) ?? null;
   const { items } = useSessionItems(link, session?.id ?? null);
+  const annotations = useAnnotations(link, session?.id ?? null);
   const profile = (id: string) => profiles.find((p) => p.id === id);
   const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? "";
   const isArea = task.scope.kind === "area";
@@ -73,6 +79,21 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
     run(() => call(link, "POST /api/sessions/:id/terminal", { id }, { launch: true }), (r) =>
       setToast({ text: "已在新终端窗口接入同一会话。两边实时同步，都可以输入。", command: r.command }),
     );
+
+  const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
+
+  /** Scrolls to the annotated block of a reply and flashes it. */
+  function locate(a: Annotation) {
+    const reply = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(a.itemId)}"]`);
+    if (!reply) return;
+    const blocks = [...reply.querySelectorAll<HTMLElement>("[data-src-start]")];
+    const target =
+      blocks.find((b) => Number(b.dataset.srcStart) < a.end && Number(b.dataset.srcEnd) > a.start) ??
+      blocks.find((b) => b.textContent?.includes(a.quote)) ??
+      reply;
+    target.scrollIntoView({ block: "center" });
+    flash(target);
+  }
 
   const approve = (approvalId: string, decision: ApprovalDecision) =>
     session ? run(() => call(link, "POST /api/approvals/:approvalId", { approvalId }, { sessionId: session.id, decision })) : Promise.resolve();
@@ -178,8 +199,34 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
             onJump={setSelected}
             onSend={send}
             onInterrupt={() => session && void interrupt(session.id)}
+            onAnnotate={setPendingAnnotation}
+            annotations={annotations}
           />
         </div>
+        <AnnotationPanel
+          link={link}
+          annotations={annotations}
+          pending={pendingAnnotation}
+          busy={busy}
+          canSend={!readOnly}
+          onEdit={(id, note) => void run(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
+          onDelete={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}
+          onLocate={locate}
+          onSendAll={() => {
+            if (!session) return;
+            void run(() => call(link, "POST /api/sessions/:id/annotations/send", { id: session.id }), (r) =>
+              setToast({ text: `已把 ${r.sent.length} 条批注汇总发回会话。` }),
+            );
+          }}
+          onCancel={() => setPendingAnnotation(null)}
+          onSave={(note) => {
+            if (!session || !pendingAnnotation) return;
+            const anchor = pendingAnnotation;
+            void run(() => call(link, "POST /api/sessions/:id/annotations", { id: session.id }, { ...anchor, note }), () => {
+              setPendingAnnotation(null);
+            });
+          }}
+        />
       </div>
     </section>
   );

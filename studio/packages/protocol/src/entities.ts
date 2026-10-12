@@ -119,9 +119,12 @@ export interface Annotation {
   itemId: Id;
   /** The selected text, kept so the anchor survives re-rendering. */
   quote: string;
-  /** Character offsets into the item's markdown source. */
+  /** Character offsets into the item's markdown source (LF-normalised). */
   start: number;
   end: number;
+  /** Up to 24 characters before and after the quote, used to re-find it if the offsets no longer match. */
+  prefix: string;
+  suffix: string;
   note: string;
   createdAt: Timestamp;
   /** Set when sent back to the session as part of a summary message. */
