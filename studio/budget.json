@@ -1,0 +1,8 @@
+{
+  "unit": "one real model turn (turn/start or one SDK query turn)",
+  "providers": {
+    "deepseek": { "limit": 100, "used": 0 },
+    "glm": { "limit": 1000, "used": 0 }
+  },
+  "log": []
+}

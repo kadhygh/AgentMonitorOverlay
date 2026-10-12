@@ -1,0 +1,776 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AMO Studio 工作台</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400;500&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap">
+<style>
+body{margin:0;background:#111316}
+a{color:#7FB2FF}a:hover{color:#A9CBFF}
+button{font-family:inherit}
+button:focus-visible,input:focus-visible,textarea:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #7FB2FF;outline-offset:2px}
+.card:hover{border-color:#3A414A}
+.row:hover{background:#1F2328}
+.mi:hover{background:#2A3038}
+.tab:hover{color:#E6E8EB}
+::selection{background:#2D4560}
+</style>
+</helmet>
+<div onClick="{{closeCtx}}" style="min-height: 900px; display: flex; flex-direction: column; background: #111316; color: #E6E8EB; font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif; font-size: 14px; line-height: 1.55">
+
+  <header style="height: 52px; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid #2B3036; background: #15181B; flex-wrap: wrap">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <div style="width: 26px; height: 26px; border-radius: 7px; background: #E6E8EB; color: #111316; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px">A</div>
+      <span style="font-weight: 600">AMO Studio</span>
+      <span style="color: #A0A8B2">/</span>
+      <span style="font-weight: 500">Project Mining</span>
+    </div>
+    <nav aria-label="视图" style="display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: #1D2125; margin-left: 12px">
+      <button onClick="{{goBoard}}" style="{{boardTabStyle}}">看板</button>
+      <a class="tab" href="Canvas.dc.html" style="height: 26px; padding: 0 12px; border-radius: 7px; display: flex; align-items: center; color: #A0A8B2; text-decoration: none; font-size: 13px">画布</a>
+    </nav>
+    <div style="flex: 1"></div>
+    <sc-if value="{{hasNeeds}}" hint-placeholder-val="{{ true }}">
+      <button onClick="{{goBoard}}" style="height: 30px; padding: 0 12px; border-radius: 15px; border: 1px solid #5A4A22; background: #2A2416; color: #F2B544; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 8px">
+        <span style="width: 7px; height: 7px; border-radius: 50%; background: #F2B544"></span>需要你 {{needsCount}}
+      </button>
+    </sc-if>
+    <button onClick="{{openNew}}" style="height: 32px; padding: 0 14px; border-radius: 8px; border: none; background: #7FB2FF; color: #0B1626; font-weight: 600; font-size: 13px; cursor: pointer">+ 新任务</button>
+  </header>
+
+  <div style="flex: 1; display: flex; flex-wrap: wrap; min-height: 0">
+
+    <nav aria-label="工作区" style="flex: 0 0 210px; border-right: 1px solid #2B3036; padding: 16px 10px; background: #14171A">
+      <div style="font-size: 12px; color: #A0A8B2; padding: 0 10px 8px">范围</div>
+      <button class="row" onClick="{{showAll}}" style="{{allStyle}}">
+        <span>全部</span><span style="color: #A0A8B2; font-size: 12px">{{totalCount}}</span>
+      </button>
+      <button class="row" onClick="{{showArea}}" style="{{areaStyle}}">
+        <span>跨工作区</span><span style="color: #A0A8B2; font-size: 12px">{{areaCount}}</span>
+      </button>
+      <div style="font-size: 12px; color: #A0A8B2; padding: 14px 10px 8px">工作区</div>
+      <sc-for list="{{wsList}}" as="w" hint-placeholder-count="3">
+        <button class="row" onClick="{{w.select}}" style="{{w.style}}">
+          <span>{{w.name}}</span><span style="color: #A0A8B2; font-size: 12px">{{w.count}}</span>
+        </button>
+      </sc-for>
+      <div style="margin: 20px 10px 0; padding-top: 14px; border-top: 1px solid #2B3036; font-size: 12px; color: #A0A8B2; line-height: 1.7">
+        <div>Host 运行中</div>
+        <div>DeepSeek 已用 12 / 100</div>
+        <div>GLM 已用 87 / 1000</div>
+      </div>
+    </nav>
+
+    <main style="flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column">
+
+      <sc-if value="{{isBoard}}" hint-placeholder-val="{{ true }}">
+        <section aria-label="看板" style="padding: 18px 20px 24px; display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 14px; overflow-x: auto">
+          <sc-for list="{{columns}}" as="col" hint-placeholder-count="4">
+            <div style="min-width: 220px; display: flex; flex-direction: column; gap: 10px">
+              <div style="display: flex; align-items: baseline; gap: 8px; padding: 0 4px">
+                <span style="font-weight: 600">{{col.name}}</span>
+                <span style="color: #A0A8B2; font-size: 12px">{{col.count}}</span>
+              </div>
+              <sc-for list="{{col.cards}}" as="c" hint-placeholder-count="2">
+                <button class="card" onClick="{{c.open}}" style="text-align: left; padding: 12px 14px; border-radius: 10px; border: 1px solid #2B3036; background: #181B1F; color: #E6E8EB; cursor: pointer; display: flex; flex-direction: column; gap: 8px">
+                  <span style="font-weight: 500; font-size: 14px; line-height: 1.4">{{c.title}}</span>
+                  <span style="display: flex; align-items: center; gap: 8px; font-size: 12px; color: #A0A8B2">
+                    <span style="{{c.dotStyle}}"></span><span style="{{c.labelStyle}}">{{c.statusLabel}}</span>
+                    <span style="flex: 1"></span>
+                    <span>{{c.updated}}</span>
+                  </span>
+                  <span style="font-size: 12px; color: #A0A8B2">{{c.meta}}</span>
+                </button>
+              </sc-for>
+              <sc-if value="{{col.empty}}" hint-placeholder-val="{{ false }}">
+                <div style="padding: 14px; border: 1px dashed #2B3036; border-radius: 10px; color: #A0A8B2; font-size: 12px; text-align: center">空</div>
+              </sc-if>
+            </div>
+          </sc-for>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{isNew}}" hint-placeholder-val="{{ false }}">
+        <section aria-label="新任务" style="flex: 1; display: flex; flex-direction: column; min-height: 780px">
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #2B3036; flex-wrap: wrap">
+            <button onClick="{{goBoard}}" style="height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid #2B3036; background: transparent; color: #E6E8EB; cursor: pointer">← 看板</button>
+            <span style="font-size: 13px; color: #A0A8B2">新任务</span>
+          </div>
+          <div style="flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 32px 24px">
+            <span style="font-size: 20px; font-weight: 600">要推进什么？</span>
+            <label style="width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #A0A8B2; text-align: center">任务标题
+              <input value="{{ntTitle}}" onInput="{{setNtTitle}}" placeholder="可留空，按第一句话自动命名" style="height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid #2B3036; background: #181B1F; color: #E6E8EB; font-size: 15px; font-weight: 500; font-family: inherit; text-align: center">
+            </label>
+            <div role="group" aria-label="任务范围" style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center">
+              <sc-for list="{{scopeChips}}" as="sc" hint-placeholder-count="4">
+                <button onClick="{{sc.pick}}" style="{{sc.style}}">{{sc.name}}</button>
+              </sc-for>
+            </div>
+            <span style="font-size: 12.5px; color: #A0A8B2; max-width: 520px; text-align: center">{{scopeHint}}</span>
+          </div>
+          <div style="padding: 0 24px 20px; display: flex; justify-content: center">
+            <div style="width: 100%; max-width: 760px; border: 1px solid #3A414A; border-radius: 14px; background: #181B1F; padding: 12px 14px; display: flex; flex-direction: column; gap: 10px">
+              <label style="display: flex"><span style="position: absolute; left: -9999px">第一句话</span>
+                <textarea value="{{ntMsg}}" onInput="{{setNtMsg}}" rows="3" placeholder="描述问题和约束，回车前想好要不要先别改代码" style="flex: 1; border: none; background: transparent; color: #E6E8EB; font-family: inherit; font-size: 14.5px; resize: none"></textarea>
+              </label>
+              <div style="display: flex; align-items: center; gap: 10px; flex-wrap: wrap">
+                <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #A0A8B2">模型
+                  <select value="{{ntModel}}" onChange="{{setNtModel}}" style="height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid #2B3036; background: #111316; color: #E6E8EB; font-family: inherit; font-size: 12.5px">
+                    <option value="Codex · DeepSeek Flash">Codex · DeepSeek Flash</option>
+                    <option value="Codex · GPT 默认">Codex · GPT 默认</option>
+                    <option value="Claude · GLM-5.3">Claude · GLM-5.3</option>
+                    <option value="Claude · 默认">Claude · 默认</option>
+                  </select>
+                </label>
+                <sc-if value="{{ntIsArea}}" hint-placeholder-val="{{ false }}">
+                  <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #A0A8B2">首个会话在
+                    <select value="{{ntSessWs}}" onChange="{{setNtSessWs}}" style="height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid #2B3036; background: #111316; color: #E6E8EB; font-family: inherit; font-size: 12.5px">
+                      <option value="client">MiningClient</option>
+                      <option value="server">MiningServer</option>
+                      <option value="tools">MiningTools</option>
+                    </select>
+                  </label>
+                </sc-if>
+                <span style="flex: 1"></span>
+                <button onClick="{{createTask}}" style="height: 32px; padding: 0 16px; border-radius: 8px; border: none; background: #7FB2FF; color: #0B1626; font-weight: 600; cursor: pointer">开始</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </sc-if>
+
+      <sc-if value="{{isSession}}" hint-placeholder-val="{{ false }}">
+        <section aria-label="任务" style="flex: 1; display: flex; flex-direction: column; min-height: 0">
+
+          <div style="display: flex; align-items: center; gap: 12px; padding: 12px 20px; border-bottom: 1px solid #2B3036; flex-wrap: wrap">
+            <button onClick="{{goBoard}}" style="height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid #2B3036; background: transparent; color: #E6E8EB; cursor: pointer">← 看板</button>
+            <h1 style="margin: 0; font-size: 17px; font-weight: 600">{{cur.title}}</h1>
+            <span style="font-size: 12px; color: #A0A8B2">{{cur.scope}}</span>
+            <div style="flex: 1"></div>
+            <label style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #A0A8B2">任务状态
+              <select value="{{cur.col}}" onChange="{{setCol}}" style="height: 30px; padding: 0 6px; border-radius: 8px; border: 1px solid #2B3036; background: #111316; color: #E6E8EB; font-family: inherit">
+                <option value="todo">待办</option>
+                <option value="doing">进行中</option>
+                <option value="review">待审阅</option>
+                <option value="done">完成</option>
+              </select>
+            </label>
+          </div>
+
+          <sc-if value="{{hasToast}}" hint-placeholder-val="{{ false }}">
+            <div role="status" style="margin: 10px 20px 0; padding: 10px 14px; border-radius: 8px; background: #1B2633; border: 1px solid #2D4560; font-size: 13px; display: flex; flex-direction: column; gap: 4px">
+              <span>{{toast}}</span>
+              <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #A9CBFF">{{toastCmd}}</code>
+            </div>
+          </sc-if>
+
+          <div style="flex: 1; display: flex; flex-wrap: wrap; min-height: 0">
+
+            <aside aria-label="会话" style="flex: 1 1 210px; max-width: 260px; border-right: 1px solid #2B3036; padding: 14px 10px; display: flex; flex-direction: column; gap: 2px">
+              <div style="font-size: 12px; color: #A0A8B2; padding: 0 8px 8px">会话 {{sessionCount}}</div>
+              <sc-for list="{{tree}}" as="t" hint-placeholder-count="3">
+                <button class="row" onClick="{{t.select}}" style="{{t.rowStyle}}">
+                  <span style="{{t.dotStyle}}"></span>
+                  <span style="display: flex; flex-direction: column; min-width: 0">
+                    <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{t.title}}</span>
+                    <span style="font-size: 11px; color: #A0A8B2">{{t.kindLabel}}</span>
+                  </span>
+                </button>
+              </sc-for>
+              <div style="margin-top: 10px; padding: 10px 8px 0; border-top: 1px solid #2B3036; display: flex; flex-direction: column; gap: 6px">
+                <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #A0A8B2">新会话模型
+                  <select value="{{sessModel}}" onChange="{{setSessModel}}" style="height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid #2B3036; background: #111316; color: #E6E8EB; font-family: inherit; font-size: 12px">
+                    <option value="Codex · DeepSeek Flash">Codex · DeepSeek Flash</option>
+                    <option value="Codex · GPT 默认">Codex · GPT 默认</option>
+                    <option value="Claude · GLM-5.3">Claude · GLM-5.3</option>
+                    <option value="Claude · 默认">Claude · 默认</option>
+                  </select>
+                </label>
+                <sc-if value="{{curIsArea}}" hint-placeholder-val="{{ false }}">
+                  <label style="display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: #A0A8B2">所在工作区
+                    <select value="{{sessWs}}" onChange="{{setSessWs}}" style="height: 28px; padding: 0 6px; border-radius: 6px; border: 1px solid #2B3036; background: #111316; color: #E6E8EB; font-family: inherit; font-size: 12px">
+                      <option value="client">MiningClient</option>
+                      <option value="server">MiningServer</option>
+                      <option value="tools">MiningTools</option>
+                    </select>
+                  </label>
+                </sc-if>
+                <button onClick="{{newSession}}" style="height: 30px; border-radius: 8px; border: 1px dashed #3A414A; background: transparent; color: #E6E8EB; cursor: pointer; font-size: 13px">+ 新会话</button>
+              </div>
+              <sc-if value="{{hasArchived}}" hint-placeholder-val="{{ false }}">
+                <div style="margin-top: 14px; display: flex; flex-direction: column; gap: 2px">
+                  <button onClick="{{toggleArchived}}" style="text-align: left; padding: 4px 8px; border: none; background: transparent; color: #A0A8B2; font-size: 12px; cursor: pointer">{{archivedLabel}}</button>
+                  <sc-if value="{{showArchived}}" hint-placeholder-val="{{ false }}">
+                    <sc-for list="{{archived}}" as="ar" hint-placeholder-count="1">
+                      <div style="display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12.5px; color: #A0A8B2">
+                        <span style="flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{ar.title}}</span>
+                        <button onClick="{{ar.view}}" style="height: 22px; padding: 0 6px; border: none; border-radius: 5px; background: transparent; color: #A0A8B2; font-size: 12px; cursor: pointer">查看</button>
+                        <button onClick="{{ar.restore}}" style="height: 22px; padding: 0 6px; border: none; border-radius: 5px; background: transparent; color: #7FB2FF; font-size: 12px; cursor: pointer">恢复</button>
+                      </div>
+                    </sc-for>
+                  </sc-if>
+                </div>
+              </sc-if>
+            </aside>
+
+            <div style="flex: 999 1 460px; min-width: 0; display: flex; flex-direction: column">
+              <div style="display: flex; align-items: center; gap: 10px; padding: 10px 24px; border-bottom: 1px solid #22262B; flex-wrap: wrap">
+                <span style="font-weight: 500">{{thr.title}}</span>
+                <span style="font-size: 12px; color: #A0A8B2">{{thr.meta}}</span>
+                <span style="flex: 1"></span>
+                <span style="{{writerStyle}}">{{writerLabel}}</span>
+                <sc-if value="{{canOpenTerminal}}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{openTerminal}}" style="height: 28px; padding: 0 12px; border-radius: 8px; border: 1px solid #2B3036; background: #1F2328; color: #E6E8EB; cursor: pointer; font-size: 13px">在终端打开</button>
+                </sc-if>
+                <sc-if value="{{canArchive}}" hint-placeholder-val="{{ true }}">
+                  <button onClick="{{archiveThread}}" style="height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #2B3036; background: transparent; color: #A0A8B2; cursor: pointer; font-size: 13px">归档</button>
+                </sc-if>
+                <sc-if value="{{viewingArchived}}" hint-placeholder-val="{{ false }}">
+                  <button onClick="{{restoreThread}}" style="height: 28px; padding: 0 10px; border-radius: 8px; border: 1px solid #2B3036; background: transparent; color: #7FB2FF; cursor: pointer; font-size: 13px">恢复</button>
+                </sc-if>
+              </div>
+              <div onContextMenu="{{onCtx}}" style="height: 520px; overflow-y: auto; padding: 18px 24px; display: flex; flex-direction: column; gap: 16px">
+                <sc-if value="{{noThread}}" hint-placeholder-val="{{ false }}">
+                  <div style="color: #A0A8B2; font-size: 13px">这个任务还没有会话。在下方输入第一句话即可开始。</div>
+                </sc-if>
+                <sc-for list="{{messages}}" as="m" hint-placeholder-count="3">
+                  <div>
+                    <sc-if value="{{m.isUser}}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; flex-direction: column; gap: 4px; padding: 10px 14px; border-radius: 10px; background: #1F2328; border: 1px solid #2B3036">
+                        <span style="font-size: 11px; color: #A0A8B2">{{m.who}}</span>
+                        <span style="white-space: pre-wrap">{{m.text}}</span>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{m.isAgent}}" hint-placeholder-val="{{ true }}">
+                      <div style="display: flex; flex-direction: column; gap: 8px">
+                        <span style="font-size: 11px; color: #A0A8B2">{{m.who}}</span>
+                        <sc-for list="{{m.blocks}}" as="b" hint-placeholder-count="2">
+                          <div style="{{b.wrapStyle}}">
+                            <sc-if value="{{b.isCode}}" hint-placeholder-val="{{ false }}">
+                              <pre style="margin: 0; padding: 10px 12px; border-radius: 8px; background: #0C0E10; border: 1px solid #2B3036; font-family: 'JetBrains Mono', monospace; font-size: 12.5px; white-space: pre-wrap; color: #D7DCE2">{{b.text}}</pre>
+                            </sc-if>
+                            <sc-if value="{{b.isText}}" hint-placeholder-val="{{ true }}">
+                              <p style="margin: 0; white-space: pre-wrap">{{b.text}}</p>
+                            </sc-if>
+                          </div>
+                        </sc-for>
+                        <sc-if value="{{m.streaming}}" hint-placeholder-val="{{ false }}">
+                          <span style="font-size: 12px; color: #5CC98A">生成中…</span>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{m.isTool}}" hint-placeholder-val="{{ false }}">
+                      <div style="border: 1px solid #2B3036; border-radius: 8px; background: #15181B">
+                        <button onClick="{{m.toggle}}" style="width: 100%; text-align: left; padding: 8px 12px; border: none; background: transparent; color: #A0A8B2; font-size: 12.5px; cursor: pointer; display: flex; gap: 8px">
+                          <span>{{m.caret}}</span><span>{{m.title}}</span>
+                        </button>
+                        <sc-if value="{{m.open}}" hint-placeholder-val="{{ false }}">
+                          <pre style="margin: 0; padding: 0 12px 10px 30px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #C9CFD6; white-space: pre-wrap">{{m.detail}}</pre>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{m.isSub}}" hint-placeholder-val="{{ false }}">
+                      <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 1px solid #2B3036; border-radius: 8px; background: #15181B; font-size: 12.5px">
+                        <span style="color: #A0A8B2">子 agent</span><span>{{m.title}}</span>
+                        <span style="flex: 1"></span>
+                        <button onClick="{{m.jump}}" style="height: 26px; padding: 0 10px; border-radius: 6px; border: 1px solid #2B3036; background: transparent; color: #7FB2FF; cursor: pointer; font-size: 12px">查看</button>
+                      </div>
+                    </sc-if>
+                    <sc-if value="{{m.isApproval}}" hint-placeholder-val="{{ false }}">
+                      <div style="{{m.apStyle}}">
+                        <span style="font-weight: 600">{{m.title}}</span>
+                        <code style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #D7DCE2; white-space: pre-wrap">{{m.detail}}</code>
+                        <sc-if value="{{m.pending}}" hint-placeholder-val="{{ true }}">
+                          <div style="display: flex; gap: 8px">
+                            <button onClick="{{m.approve}}" style="height: 32px; padding: 0 14px; border-radius: 8px; border: none; background: #F2B544; color: #1E1606; font-weight: 600; cursor: pointer">批准</button>
+                            <button onClick="{{m.reject}}" style="height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid #5A4A22; background: transparent; color: #E6E8EB; cursor: pointer">拒绝</button>
+                          </div>
+                        </sc-if>
+                        <sc-if value="{{m.resolved}}" hint-placeholder-val="{{ false }}">
+                          <span style="font-size: 12px; color: #A0A8B2">{{m.resolvedLabel}}</span>
+                        </sc-if>
+                      </div>
+                    </sc-if>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="border-top: 1px solid #2B3036; padding: 12px 24px 16px; display: flex; flex-direction: column; gap: 8px">
+                <sc-if value="{{handoff}}" hint-placeholder-val="{{ false }}">
+                  <div style="display: flex; align-items: center; gap: 10px; padding: 8px 12px; border-radius: 8px; background: #2A2416; border: 1px solid #5A4A22; color: #F2D9A0; font-size: 13px">
+                    <span style="flex: 1">这个 Claude 会话已交给终端（claude --resume）。为避免两边同时写入丢内容，工作台暂时只读，终端退出后自动收回。</span>
+                    <button onClick="{{reclaim}}" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid #5A4A22; background: transparent; color: #F2B544; cursor: pointer">立即收回</button>
+                  </div>
+                </sc-if>
+                <label style="display: flex"><span style="position: absolute; left: -9999px">输入消息</span>
+                  <textarea value="{{draft}}" onInput="{{setDraft}}" disabled="{{composerDisabled}}" rows="3" placeholder="{{placeholder}}" style="flex: 1; padding: 10px 12px; border-radius: 10px; border: 1px solid #2B3036; background: #181B1F; color: #E6E8EB; font-family: inherit; font-size: 14px; resize: none"></textarea>
+                </label>
+                <div style="display: flex; align-items: center; gap: 10px">
+                  <span style="font-size: 12px; color: #A0A8B2">{{composerHint}}</span>
+                  <span style="flex: 1"></span>
+                  <sc-if value="{{isStreaming}}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{interrupt}}" style="height: 32px; padding: 0 12px; border-radius: 8px; border: 1px solid #2B3036; background: transparent; color: #E6E8EB; cursor: pointer">打断</button>
+                  </sc-if>
+                  <button onClick="{{send}}" disabled="{{composerDisabled}}" style="height: 32px; padding: 0 16px; border-radius: 8px; border: none; background: #7FB2FF; color: #0B1626; font-weight: 600; cursor: pointer">{{sendLabel}}</button>
+                </div>
+              </div>
+            </div>
+
+            <aside aria-label="批注" style="flex: 1 1 260px; max-width: 320px; border-left: 1px solid #2B3036; padding: 14px 16px; display: flex; flex-direction: column; gap: 12px">
+              <div style="display: flex; align-items: baseline; gap: 8px">
+                <span style="font-weight: 600">批注</span>
+                <span style="font-size: 12px; color: #A0A8B2">{{annoCount}}</span>
+              </div>
+              <sc-if value="{{hasPending}}" hint-placeholder-val="{{ false }}">
+                <div style="padding: 10px 12px; border-radius: 8px; background: #1B2633; border: 1px solid #2D4560; display: flex; flex-direction: column; gap: 8px">
+                  <span style="font-size: 12px; color: #A9CBFF; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden">「{{pendingQuote}}」</span>
+                  <label style="display: flex"><span style="position: absolute; left: -9999px">批注内容</span>
+                    <input value="{{annoDraft}}" onInput="{{setAnnoDraft}}" placeholder="对这段的意见或问题" style="flex: 1; height: 32px; padding: 0 10px; border-radius: 8px; border: 1px solid #7FB2FF; background: #111316; color: #E6E8EB; font-family: inherit; font-size: 13px">
+                  </label>
+                  <div style="display: flex; gap: 8px; justify-content: flex-end">
+                    <button onClick="{{cancelAnno}}" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid #2B3036; background: transparent; color: #E6E8EB; cursor: pointer">取消</button>
+                    <button onClick="{{saveAnno}}" style="height: 28px; padding: 0 12px; border-radius: 6px; border: none; background: #7FB2FF; color: #0B1626; font-weight: 600; cursor: pointer">保存</button>
+                  </div>
+                </div>
+              </sc-if>
+              <sc-if value="{{annoEmpty}}" hint-placeholder-val="{{ true }}">
+                <div style="font-size: 12.5px; color: #A0A8B2">选中回复里的文字，右键「添加批注」。积累几条后一起发回。</div>
+              </sc-if>
+              <sc-for list="{{annotations}}" as="a" hint-placeholder-count="2">
+                <div style="padding: 10px 12px; border-radius: 8px; background: #181B1F; border: 1px solid #2B3036; display: flex; flex-direction: column; gap: 6px">
+                  <span style="font-size: 12px; color: #A0A8B2; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden">「{{a.quote}}」</span>
+                  <span style="font-size: 13px">{{a.note}}</span>
+                  <button onClick="{{a.remove}}" style="align-self: flex-end; height: 24px; padding: 0 8px; border-radius: 6px; border: none; background: transparent; color: #A0A8B2; font-size: 12px; cursor: pointer">删除</button>
+                </div>
+              </sc-for>
+              <sc-if value="{{annoAny}}" hint-placeholder-val="{{ false }}">
+                <button onClick="{{sendAnnotations}}" style="height: 34px; border-radius: 8px; border: none; background: #7FB2FF; color: #0B1626; font-weight: 600; cursor: pointer">汇总发回会话</button>
+              </sc-if>
+              <div style="margin-top: auto; padding-top: 12px; border-top: 1px solid #2B3036; display: flex; flex-direction: column; gap: 6px">
+                <label style="display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: #A0A8B2">草稿区（只给自己看，跨天也在）
+                  <textarea value="{{scratch}}" onInput="{{setScratch}}" rows="5" placeholder="还没想清楚的点先记在这里" style="padding: 8px 10px; border-radius: 8px; border: 1px solid #2B3036; background: #111316; color: #E6E8EB; font-family: inherit; font-size: 13px; resize: vertical"></textarea>
+                </label>
+              </div>
+            </aside>
+          </div>
+        </section>
+      </sc-if>
+    </main>
+  </div>
+
+  <sc-if value="{{hasCtx}}" hint-placeholder-val="{{ false }}">
+    <div role="menu" aria-label="选中文字操作" style="{{ctxStyle}}">
+      <button class="mi" role="menuitem" onClick="{{ctxAnnotate}}" style="text-align: left; padding: 8px 12px; border: none; border-radius: 6px; background: transparent; color: #E6E8EB; cursor: pointer; font-size: 13px">添加批注</button>
+      <button class="mi" role="menuitem" onClick="{{ctxQuote}}" style="text-align: left; padding: 8px 12px; border: none; border-radius: 6px; background: transparent; color: #E6E8EB; cursor: pointer; font-size: 13px">引用到输入框</button>
+      <button class="mi" role="menuitem" onClick="{{ctxCopy}}" style="text-align: left; padding: 8px 12px; border: none; border-radius: 6px; background: transparent; color: #E6E8EB; cursor: pointer; font-size: 13px">复制</button>
+    </div>
+  </sc-if>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+var WS = { client: 'MiningClient', server: 'MiningServer', tools: 'MiningTools' };
+var COLS = [{ id: 'todo', name: '待办' }, { id: 'doing', name: '进行中' }, { id: 'review', name: '待审阅' }, { id: 'done', name: '完成' }];
+var ST = {
+  running: { label: '运行中', color: '#5CC98A', text: '#8FDDB0' },
+  approval: { label: '待批准', color: '#F2B544', text: '#F2B544' },
+  review: { label: '待审阅', color: '#F2B544', text: '#F2B544' },
+  idle: { label: '空闲', color: '#6B7480', text: '#A0A8B2' },
+  done: { label: '已完成', color: '#6B7480', text: '#A0A8B2' }
+};
+var KIND = { main: '会话', fork: '分支', sub: '子 agent' };
+var DS = 'Codex · DeepSeek Flash', GLM = 'Claude · GLM-5.3', GPT = 'Codex · GPT 默认';
+
+function seed() {
+  return {
+    view: 'board', filterWs: 'all', lastWs: 'client', curCard: null, curThread: null, showArchived: false,
+    ntTitle: '', ntScope: null, ntModel: DS, ntMsg: '', ntSessWs: 'client', sessModel: GLM, sessWs: 'client',
+    draft: '', ctx: null, pendingQuote: '', annoDraft: '', annotations: [], scratch: '', terminal: {}, toast: '', toastCmd: '',
+    streaming: null, seq: 100,
+    cards: [
+      { id: 'c1', title: '矿车寻路卡顿优化', ws: 'client', col: 'doing', status: 'running', updated: '刚刚' },
+      { id: 'c7', title: '掉落物拾取与存档联调', ws: 'area', col: 'doing', status: 'idle', updated: '1 小时前' },
+      { id: 'c3', title: '掉落表校验工具', ws: 'tools', col: 'doing', status: 'approval', updated: '2 分钟前' },
+      { id: 'c2', title: '武器后坐力改为配置表', ws: 'client', col: 'review', status: 'review', updated: '18 分钟前' },
+      { id: 'c4', title: '存档迁移 v3', ws: 'server', col: 'todo', status: 'idle', updated: '昨天' },
+      { id: 'c6', title: '服务器心跳超时排查', ws: 'server', col: 'todo', status: 'idle', updated: '昨天' },
+      { id: 'c5', title: '背包拖拽手感', ws: 'client', col: 'done', status: 'done', updated: '3 天前' }
+    ],
+    threads: [
+      { id: 't1', cardId: 'c1', parent: null, kind: 'main', model: DS, ws: 'client', title: '定位卡顿瓶颈', status: 'running', messages: [
+        { id: 'm1', role: 'user', text: '矿车超过 200 辆时寻路会卡顿，帮我定位瓶颈并给出方案。先别改代码。' },
+        { id: 'm2', role: 'tool', title: '读取 6 个文件 · Assets/Scripts/Pathing/', detail: 'CartPathfinder.cs\nAStar.cs\nRailGraph.cs\nCartController.cs\nSwitchNode.cs\nPathCache.cs (未使用)', open: false },
+        { id: 'm3', role: 'sub', title: '性能采样 · 已完成', target: 't3' },
+        { id: 'm4', role: 'agent', text: '定位结果：卡顿主要来自 CartPathfinder.Update() 每帧对所有矿车重新跑 A*，200 辆时单帧约 9.8ms。\n\n方案 A：路径缓存。轨道拓扑不变时复用上次结果，只在道岔切换时失效。改动小，预计降到 1ms 以内。\n\n方案 B：分帧计算。每帧只处理 1/8 的矿车，最坏延迟 8 帧。改动更小，但转向会有可感知的延迟。\n\n建议先做方案 A。方案 B 我开了一个分支在试算最坏延迟。' }
+      ] },
+      { id: 't2', cardId: 'c1', parent: 't1', kind: 'fork', model: DS, ws: 'client', title: '方案 B：分帧寻路', status: 'idle', messages: [
+        { id: 'm5', role: 'user', text: '按方案 B 在这个分支里试算一下最坏延迟。' },
+        { id: 'm6', role: 'agent', text: '试算完成：分 8 片时，60fps 下最坏转向延迟 133ms，玩家能感觉到。\n\n不建议单独使用，可以和方案 A 结合，作为缓存失效时的兜底。' }
+      ] },
+      { id: 't3', cardId: 'c1', parent: 't1', kind: 'sub', model: DS, ws: 'client', title: '性能采样', status: 'done', messages: [
+        { id: 'm7', role: 'user', who: '主线派发', text: '采样 300 帧，找出主线程热点。' },
+        { id: 'm8', role: 'agent', text: '采样 300 帧：A* 占 71%，碰撞检测 12%，渲染提交 9%。\n\n热点函数 AStar.Search 平均每次 0.05ms，每帧调用 196 次。' }
+      ] },
+      { id: 't7', cardId: 'c1', parent: null, kind: 'main', model: GLM, ws: 'client', title: '方案审阅', status: 'idle', messages: [
+        { id: 'm17', role: 'user', text: '审阅另一个会话给出的方案 A，重点看缓存失效时机。' },
+        { id: 'm18', role: 'agent', text: '方案 A 的失效时机基本正确：道岔切换时只失效经过该道岔的路径。\n\n有一个漏洞：矿车销毁后重建会复用旧的缓存键，可能拿到另一辆车的路径。建议缓存键加上实例 ID，并在 OnDestroy 时清理。' }
+      ] },
+      { id: 't10', cardId: 'c1', parent: null, kind: 'main', model: GPT, ws: 'client', title: '早期尝试：改 NavMesh', status: 'idle', archived: true, messages: [
+        { id: 'm23', role: 'user', text: '试试把轨道寻路换成 NavMesh。' },
+        { id: 'm24', role: 'agent', text: '轨道是离散图结构，换 NavMesh 收益不大，不建议。' }
+      ] },
+      { id: 't8', cardId: 'c7', parent: null, kind: 'main', model: DS, ws: 'client', title: '客户端拾取同步', status: 'idle', messages: [
+        { id: 'm19', role: 'user', text: '拾取掉落物后，把物品写入本地背包并发送 PickupEvent。服务器那边字段由另一个会话负责。' },
+        { id: 'm20', role: 'agent', text: '客户端部分已完成：PickupEvent 带 itemId、count、dropId 三个字段。\n\n等服务器那边确认存档字段后，我再补断线重连时的去重逻辑。' }
+      ] },
+      { id: 't9', cardId: 'c7', parent: null, kind: 'main', model: GLM, ws: 'server', title: '存档字段扩展', status: 'idle', messages: [
+        { id: 'm21', role: 'user', text: '存档里加上已拾取的 dropId 列表，用于去重。' },
+        { id: 'm22', role: 'agent', text: '已在 PlayerSave 中加入 pickedDrops（HashSet<int>），并在存档迁移 v3 里补了默认值。\n\n注意：这依赖「存档迁移 v3」任务先合入。' }
+      ] },
+      { id: 't4', cardId: 'c2', parent: null, kind: 'main', model: GLM, ws: 'client', title: '迁移到配置表', status: 'idle', messages: [
+        { id: 'm9', role: 'user', text: '把武器后坐力从硬编码挪到配置表，保持现有手感。' },
+        { id: 'm10', role: 'tool', title: '修改 14 个文件 · +412 −186', detail: 'Assets/Scripts/Weapons/WeaponRecoil.cs\nAssets/Scripts/Weapons/RecoilConfig.cs (新增)\nAssets/Config/Recoil/*.asset (12 个)', open: false },
+        { id: 'm11', role: 'agent', text: '已完成迁移，改动如下：\n\n1. 新增 RecoilConfig（ScriptableObject），字段与原常量一一对应。\n\n2. WeaponRecoil.cs 改为读取配置，原常量已删除。\n\n3. 为 12 把现有武器生成了配置资产，数值与旧常量逐项比对一致。\n\n需要你确认：霰弹枪有一段特殊衰减逻辑写在 Shotgun.cs 里，我保留原样，没有并入配置表。' }
+      ] },
+      { id: 't5', cardId: 'c3', parent: null, kind: 'main', model: DS, ws: 'tools', title: '校验工具', status: 'approval', messages: [
+        { id: 'm12', role: 'user', text: '写一个掉落表校验工具，检查概率之和与引用的物品 ID。' },
+        { id: 'm13', role: 'agent', text: '工具已写好：\n\n```\n[MenuItem("Tools/Validate Drop Tables")]\npublic static void Run() { ... }\n```\n\n需要运行一次 Unity 批处理来验证。' },
+        { id: 'm14', role: 'approval', title: '需要批准：运行命令', detail: 'Unity.exe -batchmode -projectPath MiningTools -executeMethod DropTableValidator.Run -quit', state: 'pending' }
+      ] },
+      { id: 't6', cardId: 'c5', parent: null, kind: 'main', model: GPT, ws: 'client', title: '调整回弹', status: 'done', messages: [
+        { id: 'm15', role: 'user', text: '背包拖拽松手时有回弹，调一下手感。' },
+        { id: 'm16', role: 'agent', text: '已把回弹插值从 0.25s 改为 0.08s，并在松手位置增加 12px 的吸附半径。' }
+      ] }
+    ]
+  };
+}
+
+function dot(color) { return 'width: 8px; height: 8px; border-radius: 50%; flex: none; background: ' + color; }
+function shortText(s, n) { s = String(s || '').replace(/\s+/g, ' '); return s.length > n ? s.slice(0, n) + '…' : s; }
+function shortModel(m) { return m.indexOf('DeepSeek') >= 0 ? 'DeepSeek' : m.indexOf('GLM') >= 0 ? 'GLM' : m.indexOf('GPT') >= 0 ? 'GPT' : 'Claude'; }
+function scopeName(ws) { return ws === 'area' ? '跨工作区' : WS[ws]; }
+
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = seed(); this._timer = null; this._toastTimer = null; }
+  componentWillUnmount() { clearInterval(this._timer); clearTimeout(this._toastTimer); }
+
+  threadById(s, tid) { return s.threads.find(function (x) { return x.id === tid; }) || null; }
+
+  setCardStatus(cardId, status) {
+    this.setState(function (s) { return { cards: s.cards.map(function (c) { return c.id === cardId ? Object.assign({}, c, { status: status, updated: '刚刚' }) : c; }) }; });
+  }
+
+  pushMessage(tid, msg) {
+    this.setState(function (s) {
+      var id = 'm' + (s.seq + 1);
+      return { seq: s.seq + 1, threads: s.threads.map(function (t) { return t.id === tid ? Object.assign({}, t, { messages: t.messages.concat([Object.assign({ id: id }, msg)]) }) : t; }) };
+    });
+  }
+
+  startReply(tid, full, endStatus) {
+    var self = this;
+    clearInterval(this._timer);
+    var mid = 'm' + (this.state.seq + 1);
+    var t0 = this.threadById(this.state, tid);
+    var cardId = t0 ? t0.cardId : this.state.curCard;
+    this.setState(function (s) {
+      return {
+        seq: s.seq + 1, streaming: tid,
+        threads: s.threads.map(function (t) { return t.id === tid ? Object.assign({}, t, { status: 'running', messages: t.messages.concat([{ id: mid, role: 'agent', text: '' }]) }) : t; }),
+        cards: s.cards.map(function (c) { return c.id === cardId ? Object.assign({}, c, { status: 'running', updated: '刚刚' }) : c; })
+      };
+    });
+    var i = 0;
+    this._timer = setInterval(function () {
+      i = Math.min(full.length, i + 3);
+      var slice = full.slice(0, i);
+      self.setState(function (s) { return { threads: s.threads.map(function (t) { return t.id === tid ? Object.assign({}, t, { messages: t.messages.map(function (m) { return m.id === mid ? Object.assign({}, m, { text: slice }) : m; }) }) : t; }) }; });
+      if (i >= full.length) {
+        clearInterval(self._timer); self._timer = null;
+        self.setState(function (s) { return { streaming: null, threads: s.threads.map(function (t) { return t.id === tid ? Object.assign({}, t, { status: 'idle' }) : t; }) }; });
+        self.setCardStatus(cardId, endStatus || 'review');
+      }
+    }, 22);
+  }
+
+  stopStream(suffix) {
+    var tid = this.state.streaming;
+    if (!tid) return;
+    clearInterval(this._timer); this._timer = null;
+    this.setState(function (s) {
+      return { streaming: null, threads: s.threads.map(function (t) {
+        if (t.id !== tid) return t;
+        var msgs = t.messages.slice();
+        var last = msgs[msgs.length - 1];
+        if (last && last.role === 'agent') msgs[msgs.length - 1] = Object.assign({}, last, { text: last.text + suffix });
+        return Object.assign({}, t, { status: 'idle', messages: msgs });
+      }) };
+    });
+  }
+
+  replyFor(text) {
+    return '明白，按这个要求继续：「' + shortText(text, 36) + '」\n\n先读相关代码确认影响范围，再给你改动方案；动手前会先列出要改的文件。\n\n预计改动集中在 2～3 个文件，完成后在这里汇报，并附上验证结果。';
+  }
+
+  showToast(text, cmd) {
+    var self = this;
+    clearTimeout(this._toastTimer);
+    this.setState({ toast: text, toastCmd: cmd || '' });
+    this._toastTimer = setTimeout(function () { self.setState({ toast: '', toastCmd: '' }); }, 6000);
+  }
+
+  firstActiveMain(s, cardId) {
+    return s.threads.find(function (t) { return t.cardId === cardId && t.kind === 'main' && !t.archived; }) || null;
+  }
+
+  openCard(card) {
+    var main = this.firstActiveMain(this.state, card.id);
+    this.setState({ view: 'session', curCard: card.id, curThread: main ? main.id : null, pendingQuote: '', annoDraft: '', ctx: null, showArchived: false });
+  }
+
+  createSession(firstText) {
+    var s = this.state;
+    var card = s.cards.find(function (c) { return c.id === s.curCard; });
+    var tid = 't' + (s.seq + 50);
+    var t = { id: tid, cardId: s.curCard, parent: null, kind: 'main', model: s.sessModel, ws: card && card.ws === 'area' ? s.sessWs : (card ? card.ws : 'client'), title: firstText ? shortText(firstText, 12) : '新会话', status: 'idle', messages: [] };
+    this.setState({ seq: s.seq + 51, threads: s.threads.concat([t]), curThread: tid });
+    return tid;
+  }
+
+  setArchived(tid, value) {
+    var s = this.state;
+    var ids = {}; ids[tid] = true;
+    var changed = true;
+    while (changed) { changed = false; s.threads.forEach(function (t) { if (t.parent && ids[t.parent] && !ids[t.id]) { ids[t.id] = true; changed = true; } }); }
+    var threads = s.threads.map(function (t) { return ids[t.id] ? Object.assign({}, t, { archived: value }) : t; });
+    var next = { threads: threads };
+    if (value) {
+      var main = threads.find(function (t) { return t.cardId === s.curCard && t.kind === 'main' && !t.archived; });
+      next.curThread = main ? main.id : null;
+      this.showToast('已归档，可以在会话列表底部找回。', '');
+    } else {
+      next.curThread = tid;
+    }
+    this.setState(next);
+  }
+
+  send() {
+    var s = this.state;
+    var text = s.draft.trim();
+    if (!text) return;
+    var tid = s.curThread;
+    var steer = !!s.streaming && s.streaming === tid;
+    if (!tid) tid = this.createSession(text);
+    if (steer) this.stopStream('…');
+    this.setState({ draft: '' });
+    this.pushMessage(tid, { role: 'user', text: text, who: steer ? '你 · 插话' : '你' });
+    this.startReply(tid, steer ? '收到插话，调整方向：「' + shortText(text, 30) + '」\n\n我先停下刚才的步骤，按新的要求重新规划，稍后给你更新后的方案。' : this.replyFor(text));
+  }
+
+  sendAnnotations() {
+    var s = this.state;
+    if (!s.annotations.length || !s.curThread) return;
+    var lines = s.annotations.map(function (a, i) { return (i + 1) + '. 「' + shortText(a.quote, 30) + '」\n   → ' + (a.note || '（无补充）'); });
+    var reply = s.annotations.map(function (a, i) { return (i + 1) + '. 关于「' + shortText(a.quote, 16) + '」：已按你的意见调整。'; }).join('\n\n') + '\n\n以上几点都处理完了，请再看一下。';
+    this.setState({ annotations: [], pendingQuote: '' });
+    this.pushMessage(s.curThread, { role: 'user', who: '你 · 批注汇总', text: '针对上一条回复的批注：\n\n' + lines.join('\n\n') });
+    this.startReply(s.curThread, reply);
+  }
+
+  decide(tid, mid, approve) {
+    var t0 = this.threadById(this.state, tid);
+    this.setState(function (s) { return { threads: s.threads.map(function (t) { return t.id === tid ? Object.assign({}, t, { messages: t.messages.map(function (m) { return m.id === mid ? Object.assign({}, m, { state: approve ? 'approved' : 'rejected' }) : m; }) }) : t; }) }; });
+    if (approve) {
+      this.pushMessage(tid, { role: 'tool', title: '运行完成 · 退出码 0 · 41s', detail: '检查 214 张掉落表\n概率之和异常：3\n无效物品引用：1', open: false });
+      this.startReply(tid, '校验结果：3 张表概率之和不为 1（Boss_Lv20 0.97、Chest_Rare 1.04、Mine_Gold 0.995），另有 1 处引用了已删除的物品 ID 4471。\n\n要我直接修正这几处吗？');
+    } else {
+      this.startReply(tid, '好的，不运行。你可以在 Unity 菜单 Tools → Validate Drop Tables 里手动执行。', 'idle');
+    }
+    if (t0) this.setCardStatus(t0.cardId, 'running');
+  }
+
+  openTerminal() {
+    var s = this.state;
+    var thread = this.threadById(s, s.curThread);
+    if (!thread) return;
+    var isClaude = thread.model.indexOf('Claude') === 0;
+    var t = Object.assign({}, s.terminal); t[thread.id] = isClaude ? 'handoff' : 'shared';
+    this.setState({ terminal: t });
+    if (isClaude) this.showToast('已在新终端窗口交接给 Claude CLI。终端退出后，会话自动回到工作台。', 'claude --resume 3f2a9c1e-…');
+    else this.showToast('已在新终端窗口接入同一会话。两边实时同步，都可以输入。', 'codex --remote ws://127.0.0.1:47820 resume 01a1…');
+  }
+
+  renderVals() {
+    var self = this;
+    var s = this.state;
+    var visible = s.cards.filter(function (c) { return s.filterWs === 'all' || c.ws === s.filterWs; });
+    var needsCount = s.cards.filter(function (c) { return c.status === 'approval' || c.status === 'review'; }).length;
+    var navStyle = function (active) { return 'width: 100%; display: flex; justify-content: space-between; align-items: center; padding: 7px 10px; border: none; border-radius: 8px; cursor: pointer; font-size: 13.5px; text-align: left; color: #E6E8EB; background: ' + (active ? '#22272D' : 'transparent'); };
+    var ntScope = s.ntScope || (s.filterWs !== 'all' ? s.filterWs : s.lastWs);
+
+    var columns = COLS.map(function (col) {
+      var cards = visible.filter(function (c) { return c.col === col.id; }).map(function (c) {
+        var st = ST[c.status];
+        var mains = s.threads.filter(function (t) { return t.cardId === c.id && t.kind === 'main' && !t.archived; });
+        var forks = s.threads.filter(function (t) { return t.cardId === c.id && t.kind !== 'main' && !t.archived; }).length;
+        var wsSet = {}; mains.forEach(function (t) { wsSet[WS[t.ws]] = true; });
+        var scope = c.ws === 'area' ? '跨工作区（' + Object.keys(wsSet).join('、') + '）' : (s.filterWs === 'all' ? WS[c.ws] : '');
+        var meta = (scope ? scope + ' · ' : '') + (mains.length ? mains.length + ' 个会话' : '还没有会话') + (forks ? ' · ' + forks + ' 个分支' : '');
+        return { title: c.title, updated: c.updated, statusLabel: st.label, dotStyle: dot(st.color), labelStyle: 'color: ' + st.text, meta: meta, open: function () { self.openCard(c); } };
+      });
+      return { name: col.name, count: cards.length, cards: cards, empty: cards.length === 0 };
+    });
+
+    var wsList = Object.keys(WS).map(function (k) {
+      return { name: WS[k], count: s.cards.filter(function (c) { return c.ws === k; }).length, style: navStyle(s.filterWs === k), select: function () { self.setState({ filterWs: k, view: 'board' }); } };
+    });
+    var scopeKeys = Object.keys(WS).concat(['area']);
+    var scopeChips = scopeKeys.map(function (k) {
+      var on = k === ntScope;
+      return { name: k === 'area' ? '跨工作区' : WS[k], style: 'height: 32px; padding: 0 14px; border-radius: 16px; font-size: 13px; cursor: pointer; border: 1px solid ' + (on ? '#7FB2FF' : '#2B3036') + '; background: ' + (on ? '#1B2633' : 'transparent') + '; color: ' + (on ? '#E6E8EB' : '#A0A8B2'),
+        pick: function () { self.setState({ ntScope: k }); } };
+    });
+
+    var card = s.cards.find(function (c) { return c.id === s.curCard; }) || null;
+    var cardThreads = card ? s.threads.filter(function (t) { return t.cardId === card.id; }) : [];
+    var activeThreads = cardThreads.filter(function (t) { return !t.archived; });
+    var archivedMains = cardThreads.filter(function (t) { return t.archived && (!t.parent || !cardThreads.some(function (p) { return p.id === t.parent && p.archived; })); });
+    var ordered = [];
+    var walk = function (parent, depth) {
+      activeThreads.filter(function (t) { return t.parent === parent; }).forEach(function (t) { ordered.push({ t: t, depth: depth }); walk(t.id, depth + 1); });
+    };
+    walk(null, 0);
+    var isArea = !!card && card.ws === 'area';
+    var tree = ordered.map(function (o, idx) {
+      var t = o.t; var st = ST[t.status] || ST.idle; var active = t.id === s.curThread;
+      return { title: t.title, kindLabel: KIND[t.kind] + ' · ' + shortModel(t.model) + (isArea && t.kind === 'main' ? ' · ' + WS[t.ws] : '') + (s.terminal[t.id] ? ' · 终端' : ''), dotStyle: dot(st.color),
+        rowStyle: 'width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 8px 7px ' + (8 + o.depth * 16) + 'px; border: none; border-radius: 8px; cursor: pointer; text-align: left; color: #E6E8EB; font-size: 13.5px; margin-top: ' + (o.depth === 0 && idx > 0 ? '8px' : '0') + '; background: ' + (active ? '#22272D' : 'transparent'),
+        select: function () { self.setState({ curThread: t.id, pendingQuote: '' }); } };
+    });
+
+    var thread = this.threadById(s, s.curThread);
+    var quotes = s.annotations.map(function (a) { return a.full; });
+    var messages = thread ? thread.messages.map(function (m, mi) {
+      var isLast = mi === thread.messages.length - 1;
+      var base = { isUser: m.role === 'user', isAgent: m.role === 'agent', isTool: m.role === 'tool', isSub: m.role === 'sub', isApproval: m.role === 'approval', text: m.text, title: m.title, detail: m.detail };
+      if (m.role === 'user') base.who = m.who || '你';
+      if (m.role === 'agent') {
+        base.who = shortModel(thread.model);
+        base.streaming = s.streaming === thread.id && isLast;
+        base.blocks = String(m.text || '').split('\n\n').filter(function (p) { return p.trim(); }).map(function (p) {
+          var isCode = p.indexOf('```') === 0;
+          var marked = quotes.some(function (q) { return q && (p.indexOf(q) >= 0 || q.indexOf(p) >= 0); });
+          return { text: isCode ? p.replace(/^```\w*\n?/, '').replace(/\n?```$/, '') : p, isCode: isCode, isText: !isCode,
+            wrapStyle: 'padding: 4px 8px; margin: 0 -8px; border-radius: 8px; ' + (marked ? 'background: #1B2633; box-shadow: inset 0 0 0 1px #2D4560' : '') };
+        });
+      }
+      if (m.role === 'tool') {
+        base.open = !!m.open; base.caret = m.open ? '▾' : '▸';
+        base.toggle = function () { self.setState(function (st) { return { threads: st.threads.map(function (t) { return t.id === thread.id ? Object.assign({}, t, { messages: t.messages.map(function (x) { return x.id === m.id ? Object.assign({}, x, { open: !x.open }) : x; }) }) : t; }) }; }); };
+      }
+      if (m.role === 'sub') base.jump = function () { self.setState({ curThread: m.target, pendingQuote: '' }); };
+      if (m.role === 'approval') {
+        base.pending = m.state === 'pending'; base.resolved = m.state !== 'pending';
+        base.resolvedLabel = m.state === 'approved' ? '已批准' : '已拒绝';
+        base.apStyle = 'display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 10px; border: 1px solid ' + (base.pending ? '#5A4A22' : '#2B3036') + '; background: ' + (base.pending ? '#2A2416' : '#15181B');
+        base.approve = function () { self.decide(thread.id, m.id, true); };
+        base.reject = function () { self.decide(thread.id, m.id, false); };
+      }
+      return base;
+    }) : [];
+
+    var term = thread ? s.terminal[thread.id] : null;
+    var handoff = term === 'handoff';
+    var archivedView = !!thread && !!thread.archived;
+    var writerLabel = !thread ? '未开始' : archivedView ? '已归档 · 只读' : term === 'shared' ? '终端已接入 · 共享' : handoff ? '已交给终端 · 只读' : '仅工作台';
+    var writerColor = term === 'shared' ? '#8FDDB0' : handoff ? '#F2B544' : '#A0A8B2';
+    var isStreaming = !!thread && s.streaming === thread.id;
+    var ctx = s.ctx;
+
+    return {
+      isBoard: s.view === 'board', isSession: s.view === 'session', isNew: s.view === 'new',
+      boardTabStyle: 'height: 26px; padding: 0 12px; border-radius: 7px; border: none; cursor: pointer; font-size: 13px; color: #E6E8EB; background: ' + (s.view === 'new' ? 'transparent' : '#2B3036'),
+      needsCount: needsCount, hasNeeds: needsCount > 0,
+      goBoard: function () { self.setState({ view: 'board', pendingQuote: '', ctx: null }); },
+      openNew: function () { self.setState({ view: 'new', ntTitle: '', ntMsg: '', ntScope: null }); },
+      showAll: function () { self.setState({ filterWs: 'all', view: 'board' }); },
+      showArea: function () { self.setState({ filterWs: 'area', view: 'board' }); },
+      allStyle: navStyle(s.filterWs === 'all'), areaStyle: navStyle(s.filterWs === 'area'),
+      totalCount: s.cards.length, areaCount: s.cards.filter(function (c) { return c.ws === 'area'; }).length,
+      wsList: wsList, columns: columns,
+      ntTitle: s.ntTitle, ntMsg: s.ntMsg, ntModel: s.ntModel, ntSessWs: s.ntSessWs, ntIsArea: ntScope === 'area', scopeChips: scopeChips,
+      scopeHint: ntScope === 'area' ? '跨工作区任务：可以在不同工程里各开会话，统一放在这个任务下管理。以后也会是调度 agent 工作的地方。' : '任务会建在 ' + WS[ntScope] + '。说出第一句话即可开始，标题可以之后再改。',
+      setNtTitle: function (e) { self.setState({ ntTitle: e.target.value }); },
+      setNtMsg: function (e) { self.setState({ ntMsg: e.target.value }); },
+      setNtModel: function (e) { self.setState({ ntModel: e.target.value }); },
+      setNtSessWs: function (e) { self.setState({ ntSessWs: e.target.value }); },
+      createTask: function () {
+        var first = s.ntMsg.trim();
+        var title = s.ntTitle.trim() || (first ? shortText(first, 14) : '未命名任务');
+        var id = 'c' + (s.seq + 1); var tid = 't' + (s.seq + 2);
+        var c = { id: id, title: title, ws: ntScope, col: 'doing', status: first ? 'running' : 'idle', updated: '刚刚' };
+        var t = { id: tid, cardId: id, parent: null, kind: 'main', model: s.ntModel, ws: ntScope === 'area' ? s.ntSessWs : ntScope, title: shortText(first || title, 12), status: 'idle', messages: [] };
+        self.setState({ seq: s.seq + 2, cards: s.cards.concat([c]), threads: s.threads.concat([t]), view: 'session', curCard: id, curThread: tid, lastWs: ntScope === 'area' ? s.lastWs : ntScope, sessWs: s.ntSessWs, showArchived: false });
+        if (first) { self.pushMessage(tid, { role: 'user', text: first }); self.startReply(tid, self.replyFor(first)); }
+      },
+      cur: card ? { title: card.title, scope: card.ws === 'area' ? 'Project Mining · 跨工作区' : WS[card.ws], col: card.col } : { title: '', scope: '', col: 'todo' },
+      curIsArea: isArea,
+      thr: thread ? { title: thread.title, meta: thread.model + (isArea ? ' · ' + WS[thread.ws] : '') } : { title: '新会话', meta: s.sessModel },
+      setCol: function (e) { var v = e.target.value; self.setState(function (st) { return { cards: st.cards.map(function (c) { return c.id === st.curCard ? Object.assign({}, c, { col: v }) : c; }) }; }); },
+      tree: tree, sessionCount: activeThreads.filter(function (t) { return t.kind === 'main'; }).length, noThread: !thread, messages: messages,
+      sessModel: s.sessModel, setSessModel: function (e) { self.setState({ sessModel: e.target.value }); },
+      sessWs: s.sessWs, setSessWs: function (e) { self.setState({ sessWs: e.target.value }); },
+      newSession: function () { self.createSession(''); },
+      hasArchived: archivedMains.length > 0, showArchived: s.showArchived,
+      archivedLabel: (s.showArchived ? '▾ ' : '▸ ') + '已归档 ' + archivedMains.length,
+      toggleArchived: function () { self.setState({ showArchived: !s.showArchived }); },
+      archived: archivedMains.map(function (t) { return { title: t.title, view: function () { self.setState({ curThread: t.id }); }, restore: function () { self.setArchived(t.id, false); } }; }),
+      canArchive: !!thread && !archivedView && !isStreaming, archiveThread: function () { self.setArchived(thread.id, true); },
+      viewingArchived: archivedView, restoreThread: function () { self.setArchived(thread.id, false); },
+      writerLabel: writerLabel,
+      writerStyle: 'font-size: 12px; padding: 3px 10px; border-radius: 12px; border: 1px solid #2B3036; color: ' + writerColor,
+      canOpenTerminal: !!thread && !term && !archivedView, openTerminal: function () { self.openTerminal(); },
+      hasToast: !!s.toast, toast: s.toast, toastCmd: s.toastCmd,
+      handoff: handoff,
+      reclaim: function () { var t = Object.assign({}, s.terminal); delete t[thread.id]; self.setState({ terminal: t }); self.showToast('已收回，工作台可以继续输入。', ''); },
+      draft: s.draft, setDraft: function (e) { self.setState({ draft: e.target.value }); },
+      composerDisabled: handoff || archivedView,
+      placeholder: archivedView ? '已归档的会话只读，恢复后可继续' : handoff ? '终端正在使用这个会话' : isStreaming ? '回复生成中，现在发送会作为插话' : (thread ? '继续对话…' : '输入第一句话，开始一个新会话'),
+      composerHint: thread ? thread.model + (term === 'shared' ? ' · 终端同步中' : '') : '将以 ' + s.sessModel + ' 新建会话',
+      isStreaming: isStreaming, interrupt: function () { self.stopStream('（已打断）'); if (card) self.setCardStatus(card.id, 'idle'); },
+      sendLabel: isStreaming ? '插话' : '发送', send: function () { self.send(); },
+      onCtx: function (e) {
+        var sel = '';
+        try { sel = String(window.getSelection ? window.getSelection() : '').trim(); } catch (err) { sel = ''; }
+        if (!sel) return;
+        e.preventDefault();
+        self.setState({ ctx: { x: e.clientX, y: e.clientY, text: sel } });
+      },
+      closeCtx: function () { if (self.state.ctx) self.setState({ ctx: null }); },
+      hasCtx: !!ctx,
+      ctxStyle: ctx ? 'position: fixed; left: ' + ctx.x + 'px; top: ' + ctx.y + 'px; z-index: 50; min-width: 150px; padding: 4px; border-radius: 8px; background: #22272D; border: 1px solid #3A414A; box-shadow: 0 10px 28px rgba(0,0,0,.5); display: flex; flex-direction: column' : '',
+      ctxAnnotate: function () { if (ctx) self.setState({ pendingQuote: ctx.text, annoDraft: '', ctx: null }); },
+      ctxQuote: function () { if (ctx) self.setState({ draft: (s.draft ? s.draft + '\n' : '') + '> ' + ctx.text + '\n', ctx: null }); },
+      ctxCopy: function () { if (ctx) { try { navigator.clipboard.writeText(ctx.text); } catch (err) {} self.setState({ ctx: null }); self.showToast('已复制', ''); } },
+      hasPending: !!s.pendingQuote, pendingQuote: shortText(s.pendingQuote, 120),
+      annotations: s.annotations.map(function (a, i) { return { quote: a.quote, note: a.note, remove: function () { self.setState({ annotations: s.annotations.filter(function (_, j) { return j !== i; }) }); } }; }),
+      annoCount: s.annotations.length ? s.annotations.length + ' 条待发回' : '', annoEmpty: s.annotations.length === 0 && !s.pendingQuote, annoAny: s.annotations.length > 0,
+      sendAnnotations: function () { self.sendAnnotations(); },
+      annoDraft: s.annoDraft, setAnnoDraft: function (e) { self.setState({ annoDraft: e.target.value }); },
+      saveAnno: function () {
+        if (!s.pendingQuote) return;
+        self.setState({ annotations: s.annotations.concat([{ full: s.pendingQuote, quote: shortText(s.pendingQuote, 60), note: s.annoDraft.trim() }]), pendingQuote: '', annoDraft: '' });
+      },
+      cancelAnno: function () { self.setState({ pendingQuote: '', annoDraft: '' }); },
+      scratch: s.scratch, setScratch: function (e) { self.setState({ scratch: e.target.value }); }
+    };
+  }
+}
+</script>
+</body>
+</html>

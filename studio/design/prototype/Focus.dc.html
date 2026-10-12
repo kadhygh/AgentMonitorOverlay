@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AMO Focus 悬浮窗</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap">
+<style>
+body{margin:0}
+button:focus-visible{outline:2px solid #7FB2FF;outline-offset:2px}
+.fi:hover{background:#22272D}
+</style>
+</helmet>
+<div style="width: 420px; height: 620px; box-sizing: border-box; padding: 30px; background: #0B0D10; font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif; color: #E6E8EB; font-size: 13.5px; line-height: 1.5">
+  <div style="width: 360px; border-radius: 14px; background: rgba(24, 27, 31, 0.94); border: 1px solid #2E343B; box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45); overflow: hidden">
+    <div style="display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid #2B3036">
+      <span style="font-weight: 600">Focus</span>
+      <span style="font-size: 12px; color: #F2B544">{{needsLabel}}</span>
+      <span style="font-size: 12px; color: #A0A8B2">· {{runningLabel}}</span>
+      <span style="flex: 1"></span>
+      <button onClick="{{toggleCompact}}" aria-label="{{compactAria}}" style="width: 28px; height: 28px; border-radius: 7px; border: 1px solid #2B3036; background: transparent; color: #A0A8B2; cursor: pointer">{{compactIcon}}</button>
+    </div>
+    <sc-if value="{{expanded}}" hint-placeholder-val="{{ true }}">
+      <div style="padding: 8px; display: flex; flex-direction: column; gap: 4px">
+        <sc-for list="{{items}}" as="it" hint-placeholder-count="3">
+          <div style="border-radius: 10px; background: {{it.bg}}">
+            <button class="fi" onClick="{{it.toggle}}" style="width: 100%; display: flex; align-items: center; gap: 10px; padding: 10px; border: none; border-radius: 10px; background: transparent; color: #E6E8EB; cursor: pointer; text-align: left">
+              <span style="{{it.dotStyle}}"></span>
+              <span style="flex: 1; min-width: 0; display: flex; flex-direction: column">
+                <span style="white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 500">{{it.title}}</span>
+                <span style="{{it.subStyle}}">{{it.sub}}</span>
+              </span>
+              <span style="font-size: 11px; color: #A0A8B2">{{it.time}}</span>
+            </button>
+            <sc-if value="{{it.open}}" hint-placeholder-val="{{ false }}">
+              <div style="padding: 0 12px 12px 28px; display: flex; flex-direction: column; gap: 10px">
+                <span style="font-size: 12.5px; color: #C9CFD6; white-space: pre-wrap">{{it.snippet}}</span>
+                <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                  <sc-if value="{{it.isApproval}}" hint-placeholder-val="{{ false }}">
+                    <button onClick="{{it.approve}}" style="height: 30px; padding: 0 12px; border-radius: 7px; border: none; background: #F2B544; color: #1E1606; font-weight: 600; cursor: pointer">批准</button>
+                  </sc-if>
+                  <button style="height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid #2B3036; background: transparent; color: #E6E8EB; cursor: pointer">在工作台打开</button>
+                  <button style="height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid #2B3036; background: transparent; color: #E6E8EB; cursor: pointer">终端</button>
+                </div>
+              </div>
+            </sc-if>
+          </div>
+        </sc-for>
+      </div>
+    </sc-if>
+  </div>
+  <div style="width: 360px; margin-top: 14px; font-size: 12px; color: #A0A8B2; line-height: 1.6">常驻桌面角落，只回答“现在有什么要我处理”。点开看最新一段内容，能就地批准；其余操作跳回工作台。</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":420,"height":620}}'>
+var COLORS = { approval: '#F2B544', review: '#F2B544', running: '#5CC98A' };
+class Component extends DCLogic {
+  constructor(props) {
+    super(props);
+    this.state = { compact: false, open: 'i1', items: [
+      { id: 'i1', kind: 'approval', title: '掉落表校验工具', sub: '待批准 · 运行 Unity 批处理', time: '2 分钟', snippet: 'Unity.exe -batchmode -executeMethod DropTableValidator.Run -quit' },
+      { id: 'i2', kind: 'review', title: '武器后坐力改为配置表', sub: '待审阅 · Claude · GLM-5.3', time: '18 分钟', snippet: '需要你确认：霰弹枪有一段特殊衰减逻辑写在 Shotgun.cs 里，我保留原样，没有并入配置表。' },
+      { id: 'i3', kind: 'running', title: '矿车寻路卡顿优化', sub: '运行中 · 2 个分支', time: '刚刚', snippet: '正在实现方案 A：路径缓存，已修改 CartPathfinder.cs…' }
+    ] };
+  }
+  renderVals() {
+    var self = this, s = this.state;
+    var needs = s.items.filter(function (i) { return i.kind !== 'running'; }).length;
+    var running = s.items.filter(function (i) { return i.kind === 'running'; }).length;
+    return {
+      needsLabel: needs ? '需要你 ' + needs : '没有待处理',
+      runningLabel: '运行中 ' + running,
+      expanded: !s.compact,
+      compactIcon: s.compact ? '+' : '–',
+      compactAria: s.compact ? '展开' : '收起',
+      toggleCompact: function () { self.setState({ compact: !s.compact }); },
+      items: s.items.map(function (i) {
+        var open = s.open === i.id;
+        return {
+          title: i.title, sub: i.sub, time: i.time, snippet: i.snippet, open: open, isApproval: i.kind === 'approval',
+          bg: open ? '#1F2328' : 'transparent',
+          dotStyle: 'width: 8px; height: 8px; border-radius: 50%; flex: none; background: ' + COLORS[i.kind],
+          subStyle: 'font-size: 12px; color: ' + (i.kind === 'running' ? '#A0A8B2' : '#F2B544'),
+          toggle: function () { self.setState({ open: open ? null : i.id }); },
+          approve: function () { self.setState({ open: 'i3', items: s.items.map(function (x) { return x.id === i.id ? Object.assign({}, x, { kind: 'running', sub: '运行中 · 已批准', time: '刚刚', snippet: '正在运行校验…' }) : x; }) }); }
+        };
+      })
+    };
+  }
+}
+</script>
+</body>
+</html>

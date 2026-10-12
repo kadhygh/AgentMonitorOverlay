@@ -1,0 +1,471 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>AMO Studio 画布</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&amp;family=JetBrains+Mono:wght@400&amp;family=Noto+Sans+SC:wght@400;500;700&amp;display=swap">
+<style>
+body{margin:0;background:#111316}
+button{font-family:inherit}
+button:focus-visible,a:focus-visible,select:focus-visible,input:focus-visible{outline:2px solid #7FB2FF;outline-offset:2px}
+.tab:hover{color:#E6E8EB}
+.node{user-select:none}
+.node:hover{border-color:#4A525C}
+.gbar:hover{background:rgba(255,255,255,.04)}
+</style>
+</helmet>
+<div style="min-height: 900px; display: flex; flex-direction: column; background: #111316; color: #E6E8EB; font-family: 'IBM Plex Sans', 'Noto Sans SC', sans-serif; font-size: 14px; line-height: 1.5">
+
+  <header style="height: 52px; display: flex; align-items: center; gap: 16px; padding: 0 20px; border-bottom: 1px solid #2B3036; background: #15181B; flex-wrap: wrap">
+    <div style="display: flex; align-items: center; gap: 10px">
+      <div style="width: 26px; height: 26px; border-radius: 7px; background: #E6E8EB; color: #111316; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px">A</div>
+      <span style="font-weight: 600">AMO Studio</span>
+      <span style="color: #A0A8B2">/</span>
+      <span style="font-weight: 500">Project Mining</span>
+    </div>
+    <nav aria-label="视图" style="display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: #1D2125; margin-left: 12px">
+      <a class="tab" href="Main.dc.html" style="height: 26px; padding: 0 12px; border-radius: 7px; display: flex; align-items: center; color: #A0A8B2; text-decoration: none; font-size: 13px">看板</a>
+      <span style="height: 26px; padding: 0 12px; border-radius: 7px; display: flex; align-items: center; background: #2B3036; font-size: 13px">画布</span>
+    </nav>
+    <div style="flex: 1"></div>
+    <button onClick="{{addGroup}}" style="height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid #2B3036; background: #1F2328; color: #E6E8EB; cursor: pointer; font-size: 13px">+ 分组</button>
+    <button onClick="{{addNote}}" style="height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid #2B3036; background: #1F2328; color: #E6E8EB; cursor: pointer; font-size: 13px">+ 便签</button>
+  </header>
+
+  <div style="flex: 1; display: flex; flex-wrap: wrap; min-height: 0">
+    <div style="flex: 999 1 640px; min-width: 0; padding: 12px; display: flex; flex-direction: column">
+      <div data-bg="1" onMouseDown="{{bgDown}}" onMouseMove="{{move}}" onMouseUp="{{up}}" onMouseLeave="{{up}}" onWheel="{{wheel}}" style="{{viewportStyle}}">
+        <div data-bg="1" style="{{worldStyle}}">
+
+          <sc-for list="{{groups}}" as="g" hint-placeholder-count="4">
+            <div data-bg="1" style="{{g.style}}">
+              <div class="gbar" onMouseDown="{{g.down}}" style="height: 30px; display: flex; align-items: center; gap: 8px; padding: 0 12px; border-radius: 10px 10px 0 0; cursor: grab; font-size: 12.5px; user-select: none">
+                <span style="color: #6E7884">⠿</span>
+                <span style="font-weight: 600; color: #D7DCE2">{{g.name}}</span>
+                <sc-if value="{{g.bound}}" hint-placeholder-val="{{ false }}">
+                  <span style="color: #A0A8B2">· {{g.wsName}}</span><span style="{{g.idleStyle}}">· {{g.idle}}</span>
+                </sc-if>
+              </div>
+              <div onMouseDown="{{g.resize}}" aria-label="调整分组大小" style="position: absolute; right: 2px; bottom: 2px; width: 14px; height: 14px; cursor: nwse-resize; border-right: 2px solid #4A525C; border-bottom: 2px solid #4A525C; border-radius: 0 0 6px 0"></div>
+            </div>
+          </sc-for>
+
+          <sc-for list="{{segments}}" as="sg" hint-placeholder-count="3">
+            <div>
+              <sc-if value="{{sg.head}}" hint-placeholder-val="{{ true }}">
+                <svg width="{{sg.w}}" height="{{sg.h}}" viewBox="{{sg.vb}}" preserveAspectRatio="none" style="{{sg.style}}"><defs><marker id="{{sg.mid}}" orient="auto" markerWidth="5" markerHeight="5" refX="2" refY="2" overflow="visible"><path d="M0 0 L4 2 L0 4 Z" fill="#7C8794" stroke="none" style="stroke: none; fill: #7C8794; fill: context-stroke"></path></marker></defs><path d="{{sg.d}}" marker-end="{{sg.mref}}"></path></svg>
+              </sc-if>
+              <sc-if value="{{sg.plain}}" hint-placeholder-val="{{ false }}">
+                <svg width="{{sg.w}}" height="{{sg.h}}" viewBox="{{sg.vb}}" preserveAspectRatio="none" style="{{sg.style}}"><path d="{{sg.d}}"></path></svg>
+              </sc-if>
+            </div>
+          </sc-for>
+
+          <sc-for list="{{nodes}}" as="n" hint-placeholder-count="6">
+            <div class="node" onMouseDown="{{n.down}}" role="button" tabindex="0" aria-label="{{n.title}}" style="{{n.style}}">
+              <span style="font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis">{{n.title}}</span>
+              <span style="display: flex; align-items: center; gap: 6px; font-size: 12px; color: #A0A8B2">
+                <span style="{{n.dotStyle}}"></span><span style="{{n.labelStyle}}">{{n.statusLabel}}</span><span>· {{n.meta}}</span>
+              </span>
+            </div>
+          </sc-for>
+
+          <sc-for list="{{notes}}" as="nt" hint-placeholder-count="1">
+            <div class="node" onMouseDown="{{nt.down}}" style="{{nt.style}}">{{nt.text}}</div>
+          </sc-for>
+        </div>
+
+        <div style="position: absolute; right: 12px; bottom: 12px; display: flex; align-items: center; gap: 4px; padding: 4px; border-radius: 9px; background: #1D2125; border: 1px solid #2B3036">
+          <button onClick="{{zoomOut}}" aria-label="缩小" style="width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #E6E8EB; cursor: pointer">−</button>
+          <span style="min-width: 44px; text-align: center; font-size: 12px; color: #A0A8B2">{{zoomLabel}}</span>
+          <button onClick="{{zoomIn}}" aria-label="放大" style="width: 28px; height: 28px; border: none; border-radius: 6px; background: transparent; color: #E6E8EB; cursor: pointer">+</button>
+          <button onClick="{{resetView}}" style="height: 28px; padding: 0 8px; border: none; border-radius: 6px; background: transparent; color: #A0A8B2; cursor: pointer; font-size: 12px">复位</button>
+        </div>
+        <div style="position: absolute; left: 12px; bottom: 12px; font-size: 12px; color: #A0A8B2; pointer-events: none">拖空白处平移 · 滚轮缩放 · 拖分组标题移动整组 · 右下角调整大小</div>
+      </div>
+    </div>
+
+    <aside style="flex: 1 1 300px; max-width: 360px; border-left: 1px solid #2B3036; padding: 16px; display: flex; flex-direction: column; gap: 14px">
+      <div role="tablist" aria-label="侧栏" style="display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: #1D2125">
+        <button role="tab" onClick="{{showTodo}}" style="{{todoTabStyle}}">整体待办</button>
+        <button role="tab" onClick="{{showDetail}}" style="{{detailTabStyle}}">详情</button>
+        <button role="tab" onClick="{{showAgent}}" style="{{agentTabStyle}}">agent 视角</button>
+      </div>
+
+      <sc-if value="{{isTodo}}" hint-placeholder-val="{{ true }}">
+        <div style="display: flex; flex-direction: column; gap: 12px">
+          <div style="padding: 10px 12px; border-radius: 8px; background: #1B2633; border: 1px solid #2D4560; font-size: 12.5px; color: #C8DCF5; display: flex; flex-direction: column; gap: 6px">
+            <span style="font-weight: 600; color: #A9CBFF">预览 · 后续开发</span>
+            <span>调度 agent 定期查看绑定了工作区的分组是否空闲，认领适合的待办，开出会话并把计划交给你批准后再开工。</span>
+          </div>
+          <sc-for list="{{todos}}" as="td" hint-placeholder-count="3">
+            <div style="padding: 10px 12px; border-radius: 8px; background: #181B1F; border: 1px solid #2B3036; display: flex; flex-direction: column; gap: 6px">
+              <span style="font-weight: 500">{{td.title}}</span>
+              <span style="font-size: 12px; color: #A0A8B2">适合：{{td.wsName}} · {{td.note}}</span>
+              <sc-if value="{{td.open}}" hint-placeholder-val="{{ true }}">
+                <div style="display: flex; gap: 8px; flex-wrap: wrap">
+                  <button onClick="{{td.convert}}" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px solid #2B3036; background: #1F2328; color: #E6E8EB; cursor: pointer; font-size: 12.5px">转为任务</button>
+                  <button disabled="{{ true }}" style="height: 28px; padding: 0 10px; border-radius: 6px; border: 1px dashed #2B3036; background: transparent; color: #A0A8B2; font-size: 12.5px">交给调度 agent（后续）</button>
+                </div>
+              </sc-if>
+              <sc-if value="{{td.done}}" hint-placeholder-val="{{ false }}">
+                <span style="font-size: 12px; color: #8FDDB0">已转为任务，放进绑定 {{td.wsName}} 的分组</span>
+              </sc-if>
+            </div>
+          </sc-for>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isDetail}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 12px">
+          <sc-if value="{{noSel}}" hint-placeholder-val="{{ true }}">
+            <span style="font-size: 13px; color: #A0A8B2">在画布上点一个任务，或点分组的标题栏。</span>
+          </sc-if>
+          <sc-if value="{{selIsNode}}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; gap: 10px">
+              <span style="font-size: 16px; font-weight: 600">{{sn.title}}</span>
+              <span style="font-size: 12px; color: #A0A8B2">{{sn.statusLabel}} · 分组：{{sn.groupName}}</span>
+              <sc-for list="{{sn.sessions}}" as="ss" hint-placeholder-count="2">
+                <div style="display: flex; justify-content: space-between; gap: 8px; padding: 8px 10px; border-radius: 8px; background: #181B1F; border: 1px solid #2B3036; font-size: 13px">
+                  <span>{{ss.title}}</span><span style="color: #A0A8B2; font-size: 12px">{{ss.meta}}</span>
+                </div>
+              </sc-for>
+              <span style="font-size: 12.5px; color: #A0A8B2">前置：{{sn.deps}}</span>
+              <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #A0A8B2">添加前置任务
+                <select value="" onChange="{{sn.addDep}}" style="height: 30px; padding: 0 6px; border-radius: 6px; border: 1px solid #2B3036; background: #111316; color: #E6E8EB; font-family: inherit">
+                  <option value="">选择…</option>
+                  <sc-for list="{{sn.candidates}}" as="cd" hint-placeholder-count="3">
+                    <option value="{{cd.id}}">{{cd.title}}</option>
+                  </sc-for>
+                </select>
+              </label>
+              <a href="Main.dc.html" style="align-self: flex-start; height: 32px; padding: 0 14px; border-radius: 8px; background: #7FB2FF; color: #0B1626; font-weight: 600; display: flex; align-items: center; text-decoration: none">打开任务</a>
+            </div>
+          </sc-if>
+          <sc-if value="{{selIsGroup}}" hint-placeholder-val="{{ false }}">
+            <div style="display: flex; flex-direction: column; gap: 10px">
+              <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #A0A8B2">分组名称
+                <input value="{{sg2.name}}" onInput="{{sg2.rename}}" style="height: 32px; padding: 0 10px; border-radius: 6px; border: 1px solid #2B3036; background: #111316; color: #E6E8EB; font-family: inherit; font-size: 14px">
+              </label>
+              <label style="display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #A0A8B2">绑定工作区（可选，调度 agent 据此判断空闲）
+                <select value="{{sg2.ws}}" onChange="{{sg2.bind}}" style="height: 30px; padding: 0 6px; border-radius: 6px; border: 1px solid #2B3036; background: #111316; color: #E6E8EB; font-family: inherit">
+                  <option value="">不绑定</option>
+                  <option value="client">MiningClient</option>
+                  <option value="server">MiningServer</option>
+                  <option value="tools">MiningTools</option>
+                </select>
+              </label>
+              <span style="font-size: 12.5px; color: #A0A8B2">成员：{{sg2.members}}</span>
+              <button onClick="{{sg2.remove}}" style="align-self: flex-start; height: 30px; padding: 0 12px; border-radius: 8px; border: 1px solid #2B3036; background: transparent; color: #A0A8B2; cursor: pointer">删除分组（保留卡片）</button>
+            </div>
+          </sc-if>
+        </div>
+      </sc-if>
+
+      <sc-if value="{{isAgent}}" hint-placeholder-val="{{ false }}">
+        <div style="display: flex; flex-direction: column; gap: 10px; min-height: 0">
+          <span style="font-size: 12.5px; color: #A0A8B2">MCP 的 canvas.read 返回下面这份结构。agent 不看坐标就能知道画布上有什么、怎么分组、谁依赖谁。写入接口（建组、连线、移动）之后再开放。</span>
+          <div style="display: flex; gap: 2px; padding: 3px; border-radius: 8px; background: #1D2125; align-self: flex-start">
+            <button onClick="{{showOutline}}" style="{{outlineTabStyle}}">大纲</button>
+            <button onClick="{{showJson}}" style="{{jsonTabStyle}}">JSON</button>
+          </div>
+          <pre style="margin: 0; max-height: 560px; overflow: auto; padding: 12px; border-radius: 8px; background: #0C0E10; border: 1px solid #2B3036; font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.6; color: #C9CFD6; white-space: pre-wrap">{{agentText}}</pre>
+        </div>
+      </sc-if>
+    </aside>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+var WS = { client: 'MiningClient', server: 'MiningServer', tools: 'MiningTools' };
+var IDLE = { client: { label: '忙', color: '#8FDDB0' }, server: { label: '空闲', color: '#A0A8B2' }, tools: { label: '等你批准', color: '#F2B544' } };
+var ST = {
+  running: { label: '运行中', color: '#5CC98A', text: '#8FDDB0' },
+  approval: { label: '待批准', color: '#F2B544', text: '#F2B544' },
+  review: { label: '待审阅', color: '#F2B544', text: '#F2B544' },
+  idle: { label: '空闲', color: '#6B7480', text: '#A0A8B2' },
+  todo: { label: '待办', color: '#6B7480', text: '#A0A8B2' },
+  done: { label: '已完成', color: '#6B7480', text: '#A0A8B2' }
+};
+var NW = 240, NH = 72, NOTE_W = 240, NOTE_H = 96;
+var HOME = { x: 40, y: 30, k: 1 };
+
+function seed() {
+  return {
+    tab: 'todo', agentMode: 'outline', sel: null, drag: null, seq: 0, view: { x: HOME.x, y: HOME.y, k: HOME.k },
+    groups: [
+      { id: 'g1', name: '跨工作区 · 掉落物联调', ws: '', x: 0, y: 0, w: 640, h: 170 },
+      { id: 'g2', name: '客户端', ws: 'client', x: 0, y: 230, w: 300, h: 420 },
+      { id: 'g3', name: '服务器', ws: 'server', x: 360, y: 230, w: 300, h: 300 },
+      { id: 'g4', name: '工具链', ws: 'tools', x: 720, y: 230, w: 300, h: 200 }
+    ],
+    nodes: [
+      { id: 'c7', title: '掉落物拾取与存档联调', group: 'g1', x: 370, y: 60, status: 'idle', meta: '2 个会话', scope: '跨工作区', sessions: [{ title: '客户端拾取同步', meta: 'DeepSeek · MiningClient' }, { title: '存档字段扩展', meta: 'GLM · MiningServer' }] },
+      { id: 'c1', title: '矿车寻路卡顿优化', group: 'g2', x: 30, y: 290, status: 'running', meta: '2 个会话', scope: 'MiningClient', sessions: [{ title: '定位卡顿瓶颈', meta: 'DeepSeek' }, { title: '方案审阅', meta: 'GLM' }] },
+      { id: 'c2', title: '武器后坐力改为配置表', group: 'g2', x: 30, y: 410, status: 'review', meta: '1 个会话', scope: 'MiningClient', sessions: [{ title: '迁移到配置表', meta: 'GLM' }] },
+      { id: 'c5', title: '背包拖拽手感', group: 'g2', x: 30, y: 530, status: 'done', meta: '1 个会话', scope: 'MiningClient', sessions: [{ title: '调整回弹', meta: 'GPT' }] },
+      { id: 'c4', title: '存档迁移 v3', group: 'g3', x: 390, y: 290, status: 'todo', meta: '还没有会话', scope: 'MiningServer', sessions: [] },
+      { id: 'c6', title: '服务器心跳超时排查', group: 'g3', x: 390, y: 410, status: 'todo', meta: '还没有会话', scope: 'MiningServer', sessions: [] },
+      { id: 'c3', title: '掉落表校验工具', group: 'g4', x: 750, y: 290, status: 'approval', meta: '1 个会话', scope: 'MiningTools', sessions: [{ title: '校验工具', meta: 'DeepSeek' }] }
+    ],
+    notes: [{ id: 'note1', group: null, x: 720, y: 480, text: '本周目标：矿区 0.3 可玩版本。联调任务优先，校验工具和存档迁移是它的前置。' }],
+    edges: [{ from: 'c4', to: 'c7' }, { from: 'c3', to: 'c7' }],
+    todos: [
+      { id: 'd1', title: '音效资源命名整理', ws: 'client', note: '低风险，可无人值守', done: false },
+      { id: 'd2', title: '矿车皮肤导入流程', ws: 'tools', note: '需要先确认规范', done: false },
+      { id: 'd3', title: '服务器日志轮转', ws: 'server', note: '该工程当前空闲', done: false }
+    ]
+  };
+}
+
+function seg(x1, y1, x2, y2, head, key) {
+  var horizontal = y1 === y2;
+  var h = head ? 4 : 0;
+  var out = { head: !!head, plain: !head, mid: 'dc-arrow-head-filled-' + key, mref: 'url(#dc-arrow-head-filled-' + key + ')' };
+  var base = 'position: absolute; overflow: visible; fill: none; stroke: #7C8794; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; ';
+  if (horizontal) {
+    var left = Math.min(x1, x2), n = Math.max(1, Math.abs(x2 - x1));
+    out.w = n; out.h = 8; out.vb = '0 0 ' + n + ' 8';
+    out.style = base + 'left: ' + left + 'px; top: ' + (y1 - 4) + 'px; width: ' + n + 'px; height: 8px';
+    out.d = x2 >= x1 ? 'M 0 4 L ' + (n - h) + ' 4' : 'M ' + n + ' 4 L ' + h + ' 4';
+  } else {
+    var top = Math.min(y1, y2), m = Math.max(1, Math.abs(y2 - y1));
+    out.w = 8; out.h = m; out.vb = '0 0 8 ' + m;
+    out.style = base + 'left: ' + (x1 - 4) + 'px; top: ' + top + 'px; width: 8px; height: ' + m + 'px';
+    out.d = y2 >= y1 ? 'M 4 0 L 4 ' + (m - h) : 'M 4 ' + m + ' L 4 ' + h;
+  }
+  return out;
+}
+
+function route(a, b, key) {
+  var ac = Math.round(a.x + NW / 2), bmid = Math.round(b.y + NH / 2);
+  var up = a.y > b.y;
+  var sy = up ? a.y : a.y + NH;
+  if (ac >= b.x + 16 && ac <= b.x + NW - 16) {
+    return [seg(ac, sy, ac, up ? b.y + NH + 1 : b.y - 1, true, key + 'a')];
+  }
+  if (Math.abs(a.y - b.y) < NH) {
+    var right = b.x > a.x;
+    var sx = right ? a.x + NW : a.x, my = Math.round(a.y + NH / 2);
+    var tx = right ? b.x - 1 : b.x + NW + 1;
+    if (my === bmid) return [seg(sx, my, tx, my, true, key + 'a')];
+    var midx = Math.round((sx + tx) / 2);
+    return [seg(sx, my, midx, my, false, key + 'a'), seg(midx, my, midx, bmid, false, key + 'b'), seg(midx, bmid, tx, bmid, true, key + 'c')];
+  }
+  var tx2 = b.x + NW / 2 < ac ? b.x + NW + 1 : b.x - 1;
+  return [seg(ac, sy, ac, bmid, false, key + 'a'), seg(ac, bmid, Math.round(tx2), bmid, true, key + 'b')];
+}
+
+function inside(px, py, g) { return px >= g.x && px <= g.x + g.w && py >= g.y + 30 && py <= g.y + g.h; }
+function groupAt(groups, px, py) {
+  var hit = groups.filter(function (g) { return inside(px, py, g); });
+  hit.sort(function (a, b) { return a.w * a.h - b.w * b.h; });
+  return hit.length ? hit[0].id : null;
+}
+
+class Component extends DCLogic {
+  constructor(props) { super(props); this.state = seed(); }
+
+  structure() {
+    var s = this.state;
+    var byId = {}; s.nodes.forEach(function (n) { byId[n.id] = n; });
+    return {
+      canvas: 'Project Mining',
+      groups: s.groups.map(function (g) {
+        return { id: g.id, name: g.name, workspace: g.ws ? WS[g.ws] : null, workspaceState: g.ws ? IDLE[g.ws].label : null,
+          tasks: s.nodes.filter(function (n) { return n.group === g.id; }).map(function (n) { return n.id; }),
+          notes: s.notes.filter(function (n) { return n.group === g.id; }).map(function (n) { return n.id; }) };
+      }),
+      tasks: s.nodes.map(function (n) {
+        return { id: n.id, title: n.title, status: ST[n.status].label, scope: n.scope, group: n.group, sessions: n.sessions.length,
+          dependsOn: s.edges.filter(function (e) { return e.to === n.id; }).map(function (e) { return e.from; }) };
+      }),
+      notes: s.notes.map(function (n) { return { id: n.id, group: n.group, text: n.text }; }),
+      ungrouped: s.nodes.filter(function (n) { return !n.group; }).map(function (n) { return n.id; })
+    };
+  }
+
+  outline() {
+    var st = this.structure();
+    var byId = {}; st.tasks.forEach(function (t) { byId[t.id] = t; });
+    var line = function (t) {
+      var deps = t.dependsOn.map(function (d) { return byId[d] ? byId[d].title : d; });
+      return '  - ' + t.title + ' [' + t.status + ' · ' + t.sessions + ' 会话]' + (deps.length ? '\n      依赖：' + deps.join('、') : '');
+    };
+    var out = ['画布 ' + st.canvas + '：' + st.tasks.length + ' 个任务 · ' + st.groups.length + ' 个分组 · ' + st.tasks.reduce(function (a, t) { return a + t.dependsOn.length; }, 0) + ' 条依赖 · ' + st.notes.length + ' 张便签', ''];
+    st.groups.forEach(function (g) {
+      out.push('分组「' + g.name + '」' + (g.workspace ? '（绑定 ' + g.workspace + ' · ' + g.workspaceState + '）' : ''));
+      g.tasks.forEach(function (id) { out.push(line(byId[id])); });
+      st.notes.filter(function (n) { return n.group === g.id; }).forEach(function (n) { out.push('  · 便签：' + n.text); });
+      if (!g.tasks.length) out.push('  （空）');
+      out.push('');
+    });
+    if (st.ungrouped.length) { out.push('未分组'); st.ungrouped.forEach(function (id) { out.push(line(byId[id])); }); out.push(''); }
+    st.notes.filter(function (n) { return !n.group; }).forEach(function (n) { out.push('便签：' + n.text); });
+    return out.join('\n');
+  }
+
+  screenCenterWorld() {
+    var v = this.state.view;
+    return { x: Math.round((420 - v.x) / v.k), y: Math.round((320 - v.y) / v.k) };
+  }
+
+  renderVals() {
+    var self = this, s = this.state, v = s.view;
+    var byId = {}; s.nodes.forEach(function (n) { byId[n.id] = n; });
+    var gById = {}; s.groups.forEach(function (g) { gById[g.id] = g; });
+    var segments = [];
+    s.edges.forEach(function (e, i) { if (byId[e.from] && byId[e.to]) segments = segments.concat(route(byId[e.from], byId[e.to], String(i + 1))); });
+
+    var startDrag = function (info) {
+      return function (e) {
+        e.stopPropagation(); e.preventDefault();
+        self.setState({ drag: Object.assign({ sx: e.clientX, sy: e.clientY, moved: false }, info) });
+      };
+    };
+    var tabStyle = function (on) { return 'flex: 1; height: 28px; border: none; border-radius: 7px; cursor: pointer; font-size: 13px; color: ' + (on ? '#E6E8EB' : '#A0A8B2') + '; background: ' + (on ? '#2B3036' : 'transparent'); };
+    var miniTab = function (on) { return 'height: 24px; padding: 0 10px; border: none; border-radius: 6px; cursor: pointer; font-size: 12px; color: ' + (on ? '#E6E8EB' : '#A0A8B2') + '; background: ' + (on ? '#2B3036' : 'transparent'); };
+    var zoomTo = function (nk) {
+      nk = Math.max(0.3, Math.min(2.5, nk));
+      var cx = 420, cy = 320;
+      self.setState({ view: { k: nk, x: cx - (cx - v.x) * (nk / v.k), y: cy - (cy - v.y) * (nk / v.k) } });
+    };
+    var selNode = s.sel && s.sel.kind === 'node' ? byId[s.sel.id] : null;
+    var selGroup = s.sel && s.sel.kind === 'group' ? gById[s.sel.id] : null;
+    var dotSize = 20 * v.k;
+
+    return {
+      viewportStyle: 'position: relative; flex: 1; min-height: 780px; overflow: hidden; border-radius: 12px; border: 1px solid #22262B; cursor: ' + (s.drag && s.drag.kind === 'pan' ? 'grabbing' : 'default') + '; background-color: #121417; background-image: radial-gradient(#262B31 1px, transparent 1px); background-size: ' + dotSize + 'px ' + dotSize + 'px; background-position: ' + v.x + 'px ' + v.y + 'px',
+      worldStyle: 'position: absolute; left: 0; top: 0; width: 1px; height: 1px; transform-origin: 0 0; transform: translate(' + v.x + 'px, ' + v.y + 'px) scale(' + v.k + ')',
+      zoomLabel: Math.round(v.k * 100) + '%',
+      zoomIn: function () { zoomTo(v.k * 1.2); },
+      zoomOut: function () { zoomTo(v.k / 1.2); },
+      resetView: function () { self.setState({ view: { x: HOME.x, y: HOME.y, k: HOME.k } }); },
+      wheel: function (e) {
+        var rect = e.currentTarget.getBoundingClientRect();
+        var px = e.clientX - rect.left, py = e.clientY - rect.top;
+        var nk = Math.max(0.3, Math.min(2.5, v.k * (e.deltaY < 0 ? 1.1 : 1 / 1.1)));
+        self.setState({ view: { k: nk, x: px - (px - v.x) * (nk / v.k), y: py - (py - v.y) * (nk / v.k) } });
+      },
+      bgDown: function (e) {
+        var t = e.target;
+        if (!t || !t.getAttribute || t.getAttribute('data-bg') !== '1') return;
+        self.setState({ drag: { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: v.x, oy: v.y, moved: false } });
+      },
+      move: function (e) {
+        var d = self.state.drag; if (!d) return;
+        var dx = e.clientX - d.sx, dy = e.clientY - d.sy;
+        var moved = d.moved || Math.abs(dx) + Math.abs(dy) > 3;
+        var k = self.state.view.k, wx = dx / k, wy = dy / k;
+        var nd = Object.assign({}, d, { moved: moved });
+        if (d.kind === 'pan') { self.setState({ drag: nd, view: { k: k, x: d.ox + dx, y: d.oy + dy } }); return; }
+        if (d.kind === 'node') { self.setState({ drag: nd, nodes: self.state.nodes.map(function (n) { return n.id === d.id ? Object.assign({}, n, { x: Math.round(d.ox + wx), y: Math.round(d.oy + wy) }) : n; }) }); return; }
+        if (d.kind === 'note') { self.setState({ drag: nd, notes: self.state.notes.map(function (n) { return n.id === d.id ? Object.assign({}, n, { x: Math.round(d.ox + wx), y: Math.round(d.oy + wy) }) : n; }) }); return; }
+        if (d.kind === 'resize') { self.setState({ drag: nd, groups: self.state.groups.map(function (g) { return g.id === d.id ? Object.assign({}, g, { w: Math.max(200, Math.round(d.ow + wx)), h: Math.max(120, Math.round(d.oh + wy)) }) : g; }) }); return; }
+        if (d.kind === 'group') {
+          self.setState({ drag: nd,
+            groups: self.state.groups.map(function (g) { return g.id === d.id ? Object.assign({}, g, { x: Math.round(d.ox + wx), y: Math.round(d.oy + wy) }) : g; }),
+            nodes: self.state.nodes.map(function (n) { var o = d.members[n.id]; return o ? Object.assign({}, n, { x: Math.round(o.x + wx), y: Math.round(o.y + wy) }) : n; }),
+            notes: self.state.notes.map(function (n) { var o = d.members[n.id]; return o ? Object.assign({}, n, { x: Math.round(o.x + wx), y: Math.round(o.y + wy) }) : n; }) });
+        }
+      },
+      up: function () {
+        var d = self.state.drag; if (!d) return;
+        var st = self.state;
+        if (d.kind === 'node') {
+          if (!d.moved) { self.setState({ drag: null, sel: { kind: 'node', id: d.id }, tab: 'detail' }); return; }
+          self.setState({ drag: null, nodes: st.nodes.map(function (n) { return n.id === d.id ? Object.assign({}, n, { group: groupAt(st.groups, n.x + NW / 2, n.y + NH / 2) }) : n; }) });
+          return;
+        }
+        if (d.kind === 'note') {
+          self.setState({ drag: null, notes: st.notes.map(function (n) { return n.id === d.id ? Object.assign({}, n, { group: groupAt(st.groups, n.x + NOTE_W / 2, n.y + 20) }) : n; }) });
+          return;
+        }
+        if (d.kind === 'group' && !d.moved) { self.setState({ drag: null, sel: { kind: 'group', id: d.id }, tab: 'detail' }); return; }
+        self.setState({ drag: null });
+      },
+      groups: s.groups.map(function (g) {
+        var on = s.sel && s.sel.kind === 'group' && s.sel.id === g.id;
+        return { name: g.name, bound: !!g.ws, wsName: g.ws ? WS[g.ws] : '', idle: g.ws ? IDLE[g.ws].label : '', idleStyle: 'color: ' + (g.ws ? IDLE[g.ws].color : '#A0A8B2'),
+          style: 'position: absolute; left: ' + g.x + 'px; top: ' + g.y + 'px; width: ' + g.w + 'px; height: ' + g.h + 'px; box-sizing: border-box; border-radius: 12px; background: rgba(255, 255, 255, 0.025); border: 1px ' + (on ? 'solid #7FB2FF' : 'solid #2A2F35'),
+          down: function (e) {
+            e.stopPropagation(); e.preventDefault();
+            var members = {};
+            self.state.nodes.forEach(function (n) { if (n.group === g.id) members[n.id] = { x: n.x, y: n.y }; });
+            self.state.notes.forEach(function (n) { if (n.group === g.id) members[n.id] = { x: n.x, y: n.y }; });
+            self.setState({ drag: { kind: 'group', id: g.id, sx: e.clientX, sy: e.clientY, ox: g.x, oy: g.y, members: members, moved: false } });
+          },
+          resize: startDrag({ kind: 'resize', id: g.id, ow: g.w, oh: g.h }) };
+      }),
+      segments: segments,
+      nodes: s.nodes.map(function (n) {
+        var st = ST[n.status]; var on = s.sel && s.sel.kind === 'node' && s.sel.id === n.id;
+        return { title: n.title, meta: n.meta, statusLabel: st.label, labelStyle: 'color: ' + st.text,
+          dotStyle: 'width: 7px; height: 7px; border-radius: 50%; flex: none; background: ' + st.color,
+          style: 'position: absolute; left: ' + n.x + 'px; top: ' + n.y + 'px; width: ' + NW + 'px; height: ' + NH + 'px; box-sizing: border-box; padding: 12px 14px; border-radius: 10px; display: flex; flex-direction: column; justify-content: center; gap: 4px; cursor: grab; background: ' + (n.status === 'done' ? '#15181B' : '#1B1F24') + '; border: 1px solid ' + (on ? '#7FB2FF' : '#2E343B') + '; opacity: ' + (n.status === 'done' ? '0.7' : '1'),
+          down: startDrag({ kind: 'node', id: n.id, ox: n.x, oy: n.y }) };
+      }),
+      notes: s.notes.map(function (n) {
+        return { text: n.text, down: startDrag({ kind: 'note', id: n.id, ox: n.x, oy: n.y }),
+          style: 'position: absolute; left: ' + n.x + 'px; top: ' + n.y + 'px; width: ' + NOTE_W + 'px; min-height: ' + NOTE_H + 'px; box-sizing: border-box; padding: 12px 14px; border-radius: 8px; background: #2A2416; border: 1px solid #5A4A22; color: #F2D9A0; font-size: 13px; cursor: grab; user-select: none' };
+      }),
+      addGroup: function () {
+        var c = self.screenCenterWorld(); var id = 'g' + (s.seq + 100);
+        self.setState({ seq: s.seq + 1, groups: s.groups.concat([{ id: id, name: '新分组', ws: '', x: c.x - 160, y: c.y - 100, w: 320, h: 200 }]), sel: { kind: 'group', id: id }, tab: 'detail' });
+      },
+      addNote: function () {
+        var c = self.screenCenterWorld();
+        self.setState({ seq: s.seq + 1, notes: s.notes.concat([{ id: 'note' + (s.seq + 100), group: null, x: c.x - 120, y: c.y - 40, text: '新便签：双击编辑（原型中暂不支持）' }]) });
+      },
+      isTodo: s.tab === 'todo', isDetail: s.tab === 'detail', isAgent: s.tab === 'agent',
+      todoTabStyle: tabStyle(s.tab === 'todo'), detailTabStyle: tabStyle(s.tab === 'detail'), agentTabStyle: tabStyle(s.tab === 'agent'),
+      showTodo: function () { self.setState({ tab: 'todo' }); },
+      showDetail: function () { self.setState({ tab: 'detail' }); },
+      showAgent: function () { self.setState({ tab: 'agent' }); },
+      outlineTabStyle: miniTab(s.agentMode === 'outline'), jsonTabStyle: miniTab(s.agentMode === 'json'),
+      showOutline: function () { self.setState({ agentMode: 'outline' }); },
+      showJson: function () { self.setState({ agentMode: 'json' }); },
+      agentText: s.tab === 'agent' ? (s.agentMode === 'json' ? JSON.stringify(this.structure(), null, 2) : this.outline()) : '',
+      todos: s.todos.map(function (t) {
+        return { title: t.title, wsName: WS[t.ws], note: t.note, open: !t.done, done: t.done,
+          convert: function () {
+            var st = self.state;
+            var g = st.groups.find(function (x) { return x.ws === t.ws; });
+            var members = g ? st.nodes.filter(function (n) { return n.group === g.id; }) : [];
+            var bottom = members.reduce(function (m, n) { return Math.max(m, n.y + NH); }, g ? g.y + 40 : 0);
+            var node = { id: 'n' + (st.seq + 1), title: t.title, group: g ? g.id : null, x: g ? g.x + 30 : 0, y: bottom + 48, status: 'todo', meta: '还没有会话', scope: WS[t.ws], sessions: [] };
+            var groups = g && node.y + NH + 24 > g.y + g.h ? st.groups.map(function (x) { return x.id === g.id ? Object.assign({}, x, { h: node.y + NH + 24 - x.y }) : x; }) : st.groups;
+            self.setState({ seq: st.seq + 1, nodes: st.nodes.concat([node]), groups: groups, todos: st.todos.map(function (x) { return x.id === t.id ? Object.assign({}, x, { done: true }) : x; }) });
+          } };
+      }),
+      noSel: !selNode && !selGroup, selIsNode: !!selNode, selIsGroup: !!selGroup,
+      sn: selNode ? {
+        title: selNode.title, statusLabel: ST[selNode.status].label, groupName: selNode.group && gById[selNode.group] ? gById[selNode.group].name : '未分组',
+        sessions: selNode.sessions.length ? selNode.sessions : [{ title: '还没有会话', meta: '' }],
+        deps: s.edges.filter(function (e) { return e.to === selNode.id; }).map(function (e) { return byId[e.from] ? byId[e.from].title : ''; }).join('、') || '无',
+        candidates: s.nodes.filter(function (n) { return n.id !== selNode.id && !s.edges.some(function (e) { return e.from === n.id && e.to === selNode.id; }); }).map(function (n) { return { id: n.id, title: n.title }; }),
+        addDep: function (e) { var from = e.target.value; if (!from) return; self.setState({ edges: self.state.edges.concat([{ from: from, to: selNode.id }]) }); }
+      } : { title: '', statusLabel: '', groupName: '', sessions: [], deps: '', candidates: [], addDep: function () {} },
+      sg2: selGroup ? {
+        name: selGroup.name, ws: selGroup.ws,
+        members: s.nodes.filter(function (n) { return n.group === selGroup.id; }).map(function (n) { return n.title; }).join('、') || '无',
+        rename: function (e) { var val = e.target.value; self.setState({ groups: self.state.groups.map(function (g) { return g.id === selGroup.id ? Object.assign({}, g, { name: val }) : g; }) }); },
+        bind: function (e) { var val = e.target.value; self.setState({ groups: self.state.groups.map(function (g) { return g.id === selGroup.id ? Object.assign({}, g, { ws: val }) : g; }) }); },
+        remove: function () {
+          var st = self.state;
+          self.setState({ sel: null, groups: st.groups.filter(function (g) { return g.id !== selGroup.id; }),
+            nodes: st.nodes.map(function (n) { return n.group === selGroup.id ? Object.assign({}, n, { group: null }) : n; }),
+            notes: st.notes.map(function (n) { return n.group === selGroup.id ? Object.assign({}, n, { group: null }) : n; }) });
+        }
+      } : { name: '', ws: '', members: '', rename: function () {}, bind: function () {}, remove: function () {} }
+    };
+  }
+}
+</script>
+</body>
+</html>
