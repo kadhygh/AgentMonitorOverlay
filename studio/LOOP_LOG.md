@@ -67,3 +67,10 @@
   - "session item 只追加"落实为：item 不删除、seq 不复用；正文可以原地替换（流式结束、审批结果），避免为每次状态变化多存一行
   - npm install 当时没下载 Electron 二进制，本轮手动执行 `node node_modules/electron/install.js` 补上；S1-08 需要确认 `npm install` 之后二进制是否存在
   - 用户中途把额度调为 DeepSeek 1000、GLM 5000（已提交 2cb5377）；用户说明 NEEDS_YOU 会很久没空处理，要求尽量推进。我尝试改写 ROADMAP/LOOP_RULES 的"必须等你"关卡，被自动模式拦截（属于修改 loop 自身规则），已在对话里请用户确认；阶段 1 没有"必须等你"关卡，不影响当前进度
+
+## 2026-10-12 23:40 · S1-04a mock 模型
+- 结果：done
+- 改动：`packages/testkit/src/mock-model.ts`（兼容 OpenAI Responses 的流式 SSE，支持文本、`[[shell: …]]` 工具调用、`[[slow]]` 慢速流）、`mock-model.test.ts`、`assets/mock-model.models.json`、`scripts/verify-mock-codex.mjs`；根目录新增 `npm run test:codex-mock`
+- 验证：`npm run verify` 通过（25 个单元测试）；`verify-mock-codex.mjs` 用真实 `codex app-server` 0.161 跑通两轮：纯文本（3 个 delta）和"审批 → 执行 `cmd /c echo` → 回复 MOCK-DONE"，没有消耗额度
+- commit：见本次 commit
+- 遗留：Codex 给模型的 shell 工具名是 `shell_command`，参数为 `{ command: string }`；`echo` 这类安全命令在 untrusted 下不会触发审批，测试审批要用 `cmd /c …`

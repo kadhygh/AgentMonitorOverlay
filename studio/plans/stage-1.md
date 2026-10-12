@@ -73,7 +73,7 @@
   - 确认 `node:sqlite` 在当前 Node 和 Electron 环境下可用，不可用则退回备选方案，并在日志里写明。
 - 验收：单元测试覆盖增删改查、会话树查询（含归档时连同子孙一起归档）、重启后数据仍在。
 
-### S1-04 测试工具：fake app-server 与 mock 模型 · todo
+### S1-04 测试工具：fake app-server 与 mock 模型 · in_progress（拆成 a、b）
 
 - 依赖：S1-02
 - 内容：
@@ -82,6 +82,9 @@
 - 验收：
   - fake app-server 的剧本测试通过；
   - 真实 Codex 加 mock 模型完成一轮对话，不消耗额度。
+- 子任务（2026-10-12 拆分）：
+  - S1-04a mock 模型（`packages/testkit/src/mock-model.ts`，`npm run test:codex-mock` 用真实 app-server 验证） · done
+  - S1-04b fake app-server（剧本驱动的 JSON-RPC 子集） · todo
 
 ### S1-05 凭据与模型路由 · todo
 
