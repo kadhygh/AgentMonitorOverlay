@@ -27,6 +27,7 @@ let importTask: Task;
 let configTask: Task;
 let identities: McpIdentities;
 let mainSessionId: string;
+let configSessionId: string;
 
 async function connect(token = TOKEN, sessionToken?: string): Promise<Client> {
   const client = new Client({ name: "amo-test", version: "0" });
@@ -57,7 +58,7 @@ beforeAll(async () => {
   mainSessionId = main.id;
   store.createSession({ taskId: importTask.id, parentId: main.id, kind: "fork", runtime: "codex", profileId: "p-ds", workspaceId: alpha.id, title: "退避方案", status: "idle", writer: "workbench", runtimeRef: "t2" });
   store.appendItem({ id: "i1", sessionId: main.id, createdAt: new Date().toISOString(), type: "agent", markdown: "x".repeat(400), streaming: false });
-  store.createSession({ taskId: configTask.id, parentId: null, kind: "main", runtime: "codex", profileId: "p-ds", workspaceId: beta.id, title: "", status: "idle", writer: "workbench", runtimeRef: "t3" });
+  configSessionId = store.createSession({ taskId: configTask.id, parentId: null, kind: "main", runtime: "codex", profileId: "p-ds", workspaceId: beta.id, title: "", status: "idle", writer: "workbench", runtimeRef: "t3" }).id;
   const canvas = service.canvas();
   service.saveCanvas({
     ...canvas,
@@ -78,10 +79,10 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists five read-only tools and two that write to the caller's own task", async () => {
+  it("lists five read-only tools and four that write for the caller", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "handoff_submit", "project_context", "session_tree", "task_get", "task_note_add"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "handoff_submit", "mailbox_read", "mailbox_send", "project_context", "session_tree", "task_get", "task_note_add"]);
     expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "project_context", "session_tree", "task_get"]);
     await client.close();
   });
@@ -108,9 +109,26 @@ describe("AMO MCP", () => {
     await client.close();
   });
 
+  it("leaves mail for another session or task, and the recipient reads it once", async () => {
+    const sender = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
+    expect((await call(sender, "mailbox_send", { toSessionId: configSessionId, text: "导入接口改好了" })).data).toMatchObject({ to: { kind: "session", sessionId: configSessionId }, state: "unread" });
+    expect((await call(sender, "mailbox_send", { toTaskId: configTask.id, text: "记得同步配置键" })).data).toMatchObject({ to: { kind: "task" } });
+    expect((await call(sender, "mailbox_send", { text: "nobody" })).isError).toBe(true);
+    expect((await call(sender, "mailbox_send", { toSessionId: mainSessionId, text: "me" })).isError).toBe(true);
+    await sender.close();
+
+    const reader = await connect(MCP_TOKEN, identities.tokenFor(configSessionId));
+    const read = (await call(reader, "mailbox_read")).data as { messages: Array<{ from: { sessionId: string } | string; text: string }> };
+    expect(read.messages.map((m) => m.text)).toEqual(["导入接口改好了", "记得同步配置键"]);
+    expect(read.messages[0]!.from).toMatchObject({ sessionId: mainSessionId, title: "计划" });
+    expect(((await call(reader, "mailbox_read")).data as { messages: unknown[] }).messages).toEqual([]);
+    expect(service.mail({ forTaskId: configTask.id }).map((m) => m.state)).toEqual(["read", "read"]);
+    await reader.close();
+  });
+
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(7);
+    expect((await client.listTools()).tools).toHaveLength(9);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);

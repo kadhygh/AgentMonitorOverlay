@@ -106,6 +106,7 @@ export function App() {
                 link={link}
                 task={task}
                 sessions={state.sessions}
+                tasks={state.tasks}
                 workspaces={state.workspaces}
                 profiles={state.profiles}
                 {...(view.sessionId ? { initialSessionId: view.sessionId } : {})}

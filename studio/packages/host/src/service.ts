@@ -331,8 +331,14 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return note;
   }
 
-  mail(filter: { sessionId?: Id; taskId?: Id; states?: MailMessage["state"][] } = {}): MailMessage[] {
-    return this.store.listMail(filter);
+  /** Mail by recipient; `forTaskId`: everything left for that task or for any of its sessions. */
+  mail(filter: { sessionId?: Id; taskId?: Id; forTaskId?: Id; states?: MailMessage["state"][] } = {}): MailMessage[] {
+    const { forTaskId, ...rest } = filter;
+    if (!forTaskId) return this.store.listMail(rest);
+    const sessions = new Set(this.store.listSessions({ taskId: forTaskId }).map((s) => s.id));
+    return this.store
+      .listMail(rest.states ? { states: rest.states } : {})
+      .filter((m) => (m.to.kind === "task" ? m.to.taskId === forTaskId : sessions.has(m.to.sessionId)));
   }
 
   /** Leaves a message for a session or a task. `fromSessionId` null: from the person. */

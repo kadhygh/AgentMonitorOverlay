@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { composeAnnotationMessage, type Annotation } from "@amo-studio/protocol";
 import type { SelectionAnchor } from "../lib/selection.js";
 import type { HostLink } from "../host/client.js";
@@ -18,10 +18,12 @@ interface AnnotationPanelProps {
   onDelete(id: string): void;
   onLocate(annotation: Annotation): void;
   onSendAll(): void;
+  /** Shown above the annotations (the task's mail). */
+  header?: ReactNode;
 }
 
 /** Right column of the task page: new annotation, unsent annotations, send-all, and the sent ones folded away. */
-export function AnnotationPanel({ link, annotations, pending, busy, canSend, onSave, onCancel, onEdit, onDelete, onLocate, onSendAll }: AnnotationPanelProps) {
+export function AnnotationPanel({ link, annotations, pending, busy, canSend, onSave, onCancel, onEdit, onDelete, onLocate, onSendAll, header }: AnnotationPanelProps) {
   const [note, setNote] = useState("");
   const [showSent, setShowSent] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -35,6 +37,7 @@ export function AnnotationPanel({ link, annotations, pending, busy, canSend, onS
 
   return (
     <aside className="anno-panel" aria-label="批注">
+      {header}
       <div className="anno-head">
         <span className="anno-title">批注</span>
         <span className="anno-count" data-testid="annotation-count">

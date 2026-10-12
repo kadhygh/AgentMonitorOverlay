@@ -49,10 +49,12 @@ export async function call<R extends HostRoute>(
   route: R,
   params: Record<string, string> = {},
   body?: RouteRequest<R>,
+  query?: Record<string, string>,
 ): Promise<RouteResponse<R>> {
   const [method, pattern] = route.split(" ") as [string, string];
   const path = pattern.replace(/:([A-Za-z]+)/g, (_, k: string) => encodeURIComponent(params[k] ?? ""));
-  const res = await fetch(`${link.url}${path}`, {
+  const search = query ? `?${new URLSearchParams(query).toString()}` : "";
+  const res = await fetch(`${link.url}${path}${search}`, {
     method,
     headers: { authorization: `Bearer ${link.token}`, "content-type": "application/json" },
     ...(body === undefined ? {} : { body: JSON.stringify(body) }),

@@ -10,7 +10,7 @@ import { NotFoundError, ReadModel } from "./read-model.js";
 
 export const AMO_MCP_NAME = "amo";
 export const AMO_MCP_INSTRUCTIONS =
-  "AMO Studio workbench. Read the board, tasks, session trees, workspaces and the canvas; record progress notes and handoff summaries on your own task.";
+  "AMO Studio workbench. Read the board, tasks, session trees, workspaces and the canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions (the person decides when mail enters a conversation).";
 
 /** The session a tool call comes from, if Studio could tell. */
 export interface McpCaller {
@@ -89,6 +89,43 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       readOnly: false,
       autoApprove: true,
       run: (args) => write(caller, (c) => service.addTaskNote(ownTask(c), { text: args.summary, kind: "handoff" }, c.sessionId)),
+    },
+    {
+      name: "mailbox_send",
+      title: "留言",
+      description:
+        "Leave a message for another AMO session (toSessionId) or for a task (toTaskId); find ids with board_list, task_get or session_tree. It does not enter their conversation by itself: the person decides when to forward it, and the recipient can read it with mailbox_read.",
+      inputSchema: { toSessionId: z.string().optional(), toTaskId: z.string().optional(), text: z.string() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) =>
+        write(caller, (c) => {
+          const to = typeof args.toSessionId === "string" ? { kind: "session", sessionId: args.toSessionId } : typeof args.toTaskId === "string" ? { kind: "task", taskId: args.toTaskId } : null;
+          if (!to) throw new HostError("bad_request", "give toSessionId or toTaskId");
+          const m = service.sendMail(c.sessionId, to, args.text);
+          return { id: m.id, to: m.to, state: m.state };
+        }),
+    },
+    {
+      name: "mailbox_read",
+      title: "读留言",
+      description: "Read the unread messages left for you or for your task (they are then marked read).",
+      inputSchema: {},
+      readOnly: false,
+      autoApprove: true,
+      run: () =>
+        write(caller, (c) => {
+          const title = (id: Id | null) => (id ? service.store.getSession(id)?.title || "会话" : "我（人）");
+          return {
+            // The text first: it is what the agent needs, the routing is context.
+            messages: service.readMailFromSession(c.sessionId).map((m) => ({
+              text: m.text,
+              from: m.fromSessionId ? { sessionId: m.fromSessionId, title: title(m.fromSessionId), taskId: m.fromTaskId } : "person",
+              to: m.to,
+              at: m.createdAt,
+            })),
+          };
+        }),
     },
   ];
 }

@@ -83,7 +83,10 @@ export interface HostRoutes {
   /** Progress notes and handoff summaries on a task, oldest first. The person can add notes too. */
   "GET /api/tasks/:id/notes": { req: void; res: TaskNote[] };
   "POST /api/tasks/:id/notes": { req: { text: string }; res: TaskNote };
-  /** Mail, filtered by `?sessionId=`, `?taskId=` (either matches) and `?state=` (comma separated). */
+  /**
+   * Mail, filtered by `?sessionId=`, `?taskId=` (either matches) and `?state=` (comma separated); `?forTask=` gives
+   * everything left for a task or any of its sessions.
+   */
   "GET /api/mail": { req: void; res: MailMessage[] };
   "POST /api/mail": { req: { to: MailRecipient; text: string }; res: MailMessage };
   "PATCH /api/mail/:id": { req: { state: "read" | "dismissed" }; res: MailMessage };
