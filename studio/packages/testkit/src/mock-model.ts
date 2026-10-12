@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { listenInStudioRange } from "./ports.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -219,7 +220,8 @@ export async function startMockModel(options: { port?: number; script?: MockScri
       res.end(JSON.stringify({ error: { message: String(err) } }));
     }
   });
-  await new Promise<void>((resolve) => server.listen(options.port ?? 0, "127.0.0.1", resolve));
+  if (options.port) await new Promise<void>((resolve) => server.listen(options.port, "127.0.0.1", resolve));
+  else await listenInStudioRange(server);
   const port = (server.address() as AddressInfo).port;
   return {
     baseUrl: `http://127.0.0.1:${port}/v1`,

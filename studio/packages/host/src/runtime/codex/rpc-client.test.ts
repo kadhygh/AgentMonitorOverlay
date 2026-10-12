@@ -3,6 +3,8 @@ import { afterEach, describe, expect, it } from "vitest";
 import { WebSocketServer } from "ws";
 import { startFakeAppServer, type FakeAppServer } from "@amo-studio/testkit";
 import { CodexRpcClient, ConnectionClosedError, RpcError, type ServerNotification, type ServerRequest } from "./rpc-client.js";
+import { createServer } from "node:http";
+import { listenInStudioRange } from "@amo-studio/testkit";
 
 let server: FakeAppServer | undefined;
 const clients: CodexRpcClient[] = [];
@@ -94,19 +96,20 @@ describe("CodexRpcClient", () => {
     await expect(client.request("model/list", {} as never)).rejects.toMatchObject({ code: -32601 });
 
     // A server that answers initialize and nothing else.
-    const silent = new WebSocketServer({ host: "127.0.0.1", port: 0 });
-    await new Promise<void>((r) => silent.once("listening", () => r()));
+    const http = createServer();
+    await listenInStudioRange(http); // before attaching ws, which re-emits the server's (retried) listen errors
+    const silent = new WebSocketServer({ server: http });
     silent.on("connection", (ws) => ws.on("message", (raw) => {
       const msg = JSON.parse(String(raw));
       if (msg.method === "initialize") ws.send(JSON.stringify({ id: msg.id, result: {} }));
     }));
     try {
-      const mute = await CodexRpcClient.connect({ url: `ws://127.0.0.1:${(silent.address() as AddressInfo).port}`, token: "t" });
+      const mute = await CodexRpcClient.connect({ url: `ws://127.0.0.1:${(http.address() as AddressInfo).port}`, token: "t" });
       clients.push(mute);
       await expect(mute.request("thread/list", {} as never, { timeoutMs: 50 })).rejects.toThrow(/timed out after 50 ms/);
     } finally {
       for (const c of silent.clients) c.terminate();
-      await new Promise<void>((r) => silent.close(() => r()));
+      await new Promise<void>((r) => silent.close(() => http.close(() => r())));
     }
   });
 });

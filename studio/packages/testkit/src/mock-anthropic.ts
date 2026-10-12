@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { listenInStudioRange } from "./ports.js";
 import { MOCK_MARKDOWN } from "./mock-model.js";
 
 // Local stand-in for the Anthropic Messages API, used as ANTHROPIC_BASE_URL so the Claude Agent SDK (and the Claude
@@ -232,7 +233,8 @@ export async function startMockAnthropic(options: { port?: number; script?: Clau
       res.end(JSON.stringify({ type: "error", error: { type: "api_error", message: String(err) } }));
     }
   });
-  await new Promise<void>((resolve) => server.listen(options.port ?? 0, "127.0.0.1", resolve));
+  if (options.port) await new Promise<void>((resolve) => server.listen(options.port, "127.0.0.1", resolve));
+  else await listenInStudioRange(server);
   const port = (server.address() as AddressInfo).port;
   return {
     baseUrl: `http://127.0.0.1:${port}`,

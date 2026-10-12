@@ -7,6 +7,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { HostErrorBody, HostEvent } from "@amo-studio/protocol";
 import { HostError, type HostService } from "../service.js";
 import { handleMcpRequest } from "../mcp/amo-mcp.js";
+import { listenInStudioRange } from "../net.js";
 import type { McpIdentities } from "../mcp/identity.js";
 
 // Host API over HTTP (REST) and WebSocket (events). Binds 127.0.0.1 only; every /api call needs the host token
@@ -102,6 +103,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       service.mail({
         ...(query.get("sessionId") ? { sessionId: query.get("sessionId")! } : {}),
         ...(query.get("taskId") ? { taskId: query.get("taskId")! } : {}),
+        ...(query.get("forTask") ? { forTaskId: query.get("forTask")! } : {}),
         ...(query.get("state") ? { states: query.get("state")!.split(",") as never } : {}),
       }),
     ),
@@ -270,7 +272,9 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
   };
   service.on("event", broadcast);
 
-  await new Promise<void>((r) => server.listen(options.port ?? 0, "127.0.0.1", r));
+  // Port 0 (tests, e2e): a free port in Studio's range, never an arbitrary one (red line 6).
+  if (options.port) await new Promise<void>((r) => server.listen(options.port, "127.0.0.1", r));
+  else await listenInStudioRange(server);
   const port = (server.address() as AddressInfo).port;
   return {
     port,

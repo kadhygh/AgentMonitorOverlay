@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
+import { listenInStudioRange } from "./ports.js";
 
 // Scripted stand-in for `codex app-server` over WebSocket. It implements the JSON-RPC subset the Host uses and mirrors
 // the behaviour measured in studio/spikes/RESULTS.md:
@@ -131,13 +133,17 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
   const calls: FakeAppServer["calls"] = [];
   let nextRequestId = 0;
 
+  // An HTTP server carries the WebSocket server so it can listen inside Studio's port range (red line 6). The
+  // WebSocket server is attached only once listening succeeded: it re-emits the HTTP server's errors, which would turn
+  // a port already in use (retried by listenInStudioRange) into an unhandled error.
+  const http = createHttpServer();
+  if (options.port) await new Promise<void>((resolve) => http.listen(options.port, "127.0.0.1", resolve));
+  else await listenInStudioRange(http);
   const wss = new WebSocketServer({
-    host: "127.0.0.1",
-    port: options.port ?? 0,
+    server: http,
     verifyClient: (info: { req: { headers: Record<string, string | string[] | undefined> } }) => info.req.headers.authorization === `Bearer ${token}`,
   });
-  await new Promise<void>((resolve) => wss.once("listening", () => resolve()));
-  const port = (wss.address() as AddressInfo).port;
+  const port = (http.address() as AddressInfo).port;
 
   const send = (client: Client, msg: unknown) => {
     if (client.ws.readyState === client.ws.OPEN) client.ws.send(JSON.stringify(msg));
@@ -431,7 +437,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
     close: () =>
       new Promise<void>((resolve) => {
         for (const c of clients) c.ws.terminate();
-        wss.close(() => resolve());
+        wss.close(() => http.close(() => resolve()));
       }),
   };
 }
