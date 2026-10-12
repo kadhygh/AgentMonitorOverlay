@@ -224,6 +224,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const start = Number(input.start);
     const end = Number(input.end);
     if (!Number.isInteger(start) || !Number.isInteger(end) || start < 0 || end <= start) throw new HostError("bad_request", "start/end must be a non-empty range");
+    if (end > item.markdown.replace(/\r\n/g, "\n").length) throw new HostError("bad_request", "start/end lie outside the reply");
     const annotation: Annotation = {
       id: newId("an"),
       sessionId,

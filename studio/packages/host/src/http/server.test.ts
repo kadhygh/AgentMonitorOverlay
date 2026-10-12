@@ -240,6 +240,7 @@ describe("Host API", () => {
     expect((await api("POST", `/api/sessions/${session.id}/annotations`, { itemId: userItem.id, quote: "x", start: 0, end: 1, note: "n" })).status).toBe(400);
     expect((await api("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[0]!.id, quote: "x", start: 0, end: 1, note: " " })).status).toBe(400);
     expect((await api("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[0]!.id, quote: "x", start: 3, end: 3, note: "n" })).status).toBe(400);
+    expect((await api("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[0]!.id, quote: "x", start: 0, end: 9999, note: "n" })).status).toBe(400);
     expect((await api("POST", `/api/sessions/${session.id}/annotations/send`)).status).toBe(400);
 
     // Created out of order on purpose: the summary follows reply order.

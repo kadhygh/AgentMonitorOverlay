@@ -44,11 +44,15 @@ export function Scratchpad({ link }: { link: HostLink }) {
       .catch(() => setState("error"));
   }
 
+  // Leaving the page right after typing must not drop the last edit: flush it on unmount.
+  const latest = useRef(text);
+  latest.current = text;
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
+      if (dirty.current) void call(link, "PUT /api/scratchpad", {}, { text: latest.current }).catch(() => undefined);
     },
-    [],
+    [link],
   );
 
   const status = { idle: "", dirty: "", saving: "保存中…", saved: "已保存", error: "保存失败，稍后会重试" }[state];
