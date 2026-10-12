@@ -68,9 +68,15 @@ export class ReadModel {
     };
   }
 
-  /** One task: where it stands, what it depends on, its group on the canvas and its sessions (no transcripts). */
+  /**
+   * One task: its latest handoff summary (first: it is what a session taking over needs), where it stands, what it
+   * depends on, its group on the canvas, recent progress notes and its sessions (no transcripts).
+   */
   taskGet(taskId: Id) {
     const t = this.requireTask(taskId);
+    const notes = this.store.listTaskNotes(t.id);
+    const author = (sessionId: Id | null) => (sessionId ? this.store.getSession(sessionId)?.title || "会话" : "person");
+    const handoff = [...notes].reverse().find((n) => n.kind === "handoff");
     const canvas = this.service.canvas();
     const title = (id: Id) => this.store.getTask(id)?.title || "未命名任务";
     const node = canvas.nodes.find((n) => n.kind === "task" && n.taskId === t.id);
@@ -78,6 +84,7 @@ export class ReadModel {
     return {
       id: t.id,
       title: t.title || "未命名任务",
+      handoff: handoff ? { text: handoff.text, by: author(handoff.sessionId), at: handoff.createdAt } : null,
       column: t.column,
       status: this.status(t.id),
       workspace: this.where(t),
@@ -87,6 +94,7 @@ export class ReadModel {
       canvasGroup: group,
       dependsOn: canvas.edges.filter((e) => e.to === t.id).map((e) => ({ id: e.from, title: title(e.from) })),
       dependents: canvas.edges.filter((e) => e.from === t.id).map((e) => ({ id: e.to, title: title(e.to) })),
+      recentNotes: notes.filter((n) => n.kind === "progress").slice(-5).map((n) => ({ text: n.text, by: author(n.sessionId), at: n.createdAt })),
       sessions: this.live(t.id).map((s) => ({ id: s.id, kind: s.kind, parentId: s.parentId, title: s.title, status: s.status, model: this.model(s.profileId) })),
     };
   }

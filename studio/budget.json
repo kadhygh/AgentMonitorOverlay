@@ -3,11 +3,11 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 22
+      "used": 25
     },
     "glm": {
       "limit": 5000,
-      "used": 16
+      "used": 20
     }
   },
   "log": [
@@ -200,6 +200,41 @@
       "at": "2026-10-12T20:02:15.328Z",
       "provider": "deepseek",
       "note": "S4-08 DeepSeek mcp"
+    },
+    {
+      "at": "2026-10-12T21:59:45.939Z",
+      "provider": "glm",
+      "note": "S5-08 GLM note"
+    },
+    {
+      "at": "2026-10-12T21:59:56.366Z",
+      "provider": "glm",
+      "note": "S5-08 GLM decision"
+    },
+    {
+      "at": "2026-10-12T22:00:04.424Z",
+      "provider": "glm",
+      "note": "S5-08 GLM mailbox_read"
+    },
+    {
+      "at": "2026-10-12T22:00:11.466Z",
+      "provider": "glm",
+      "note": "S5-08 GLM canvas (approval)"
+    },
+    {
+      "at": "2026-10-12T22:00:20.525Z",
+      "provider": "deepseek",
+      "note": "S5-08 DeepSeek mail"
+    },
+    {
+      "at": "2026-10-12T22:00:23.523Z",
+      "provider": "deepseek",
+      "note": "S5-08 DeepSeek handoff"
+    },
+    {
+      "at": "2026-10-12T22:00:25.551Z",
+      "provider": "deepseek",
+      "note": "S5-08 DeepSeek canvas (elicitation)"
     }
   ]
 }

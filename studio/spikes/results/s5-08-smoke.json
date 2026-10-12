@@ -1,0 +1,131 @@
+{
+  "startedAt": "2026-10-12T21:59:45.881Z",
+  "steps": [
+    {
+      "name": "glm-note",
+      "status": "idle",
+      "reply": "DONE",
+      "approvals": [],
+      "tools": [
+        "mcp__amo__task_note_add:completed"
+      ],
+      "errors": [],
+      "notes": [
+        [
+          "progress",
+          true,
+          "GLM smoke started."
+        ]
+      ]
+    },
+    {
+      "name": "glm-decision",
+      "status": "idle",
+      "reply": "ASKED",
+      "approvals": [],
+      "tools": [
+        "mcp__amo__task_note_add:completed",
+        "mcp__amo__decision_request:completed"
+      ],
+      "errors": [],
+      "open": [
+        [
+          "Retry limit: 3 or 5?",
+          [
+            "3",
+            "5"
+          ],
+          true
+        ]
+      ]
+    },
+    {
+      "name": "glm-read-answer",
+      "status": "idle",
+      "reply": "You decided on a retry limit of 3.",
+      "approvals": [],
+      "tools": [
+        "mcp__amo__task_note_add:completed",
+        "mcp__amo__decision_request:completed",
+        "mcp__amo__mailbox_read:completed"
+      ],
+      "errors": []
+    },
+    {
+      "name": "glm-canvas",
+      "status": "idle",
+      "reply": "DONE",
+      "approvals": [
+        "mcp__amo__canvas_group_create"
+      ],
+      "tools": [
+        "mcp__amo__decision_request:completed",
+        "mcp__amo__mailbox_read:completed",
+        "mcp__amo__canvas_group_create:completed"
+      ],
+      "errors": [],
+      "groups": [
+        "GLM 组"
+      ]
+    },
+    {
+      "name": "deepseek-mail",
+      "status": "idle",
+      "reply": "SENT",
+      "approvals": [],
+      "tools": [
+        "amo.mailbox_send:completed"
+      ],
+      "errors": [],
+      "mail": [
+        [
+          false,
+          "针对你的问题「Retry limit: 3 or 5?」，我的决定：3",
+          "read"
+        ],
+        [
+          true,
+          "hello from deepseek",
+          "unread"
+        ]
+      ]
+    },
+    {
+      "name": "deepseek-handoff",
+      "status": "idle",
+      "reply": "DONE",
+      "approvals": [],
+      "tools": [
+        "amo.mailbox_send:completed",
+        "amo.handoff_submit:completed"
+      ],
+      "errors": [],
+      "notes": [
+        [
+          "handoff",
+          true,
+          "DeepSeek smoke handoff, nothing left to do"
+        ]
+      ]
+    },
+    {
+      "name": "deepseek-canvas",
+      "status": "idle",
+      "reply": "DONE",
+      "approvals": [
+        "Allow the amo MCP server to run tool \"canvas_group_create\"?"
+      ],
+      "tools": [
+        "amo.mailbox_send:completed",
+        "amo.handoff_submit:completed",
+        "amo.canvas_group_create:completed"
+      ],
+      "errors": [],
+      "groups": [
+        "GLM 组",
+        "DeepSeek 组"
+      ]
+    }
+  ],
+  "finishedAt": "2026-10-12T22:00:27.973Z"
+}

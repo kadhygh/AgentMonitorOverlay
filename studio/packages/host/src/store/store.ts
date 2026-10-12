@@ -13,6 +13,9 @@ import {
   type Task,
   type TaskColumn,
   type TodoItem,
+  type TaskNote,
+  type MailMessage,
+  type DecisionRequest,
   type Workspace,
 } from "@amo-studio/protocol";
 import { MIGRATIONS } from "./migrations.js";
@@ -378,5 +381,57 @@ export class Store {
 
   listTodos(): TodoItem[] {
     return (this.db.prepare("SELECT body FROM todos ORDER BY created_at, id").all() as Row[]).map((r) => JSON.parse(str(r.body)) as TodoItem);
+  }
+
+  // Collaboration (stage 5)
+
+  addTaskNote(note: TaskNote): void {
+    this.db.prepare("INSERT INTO task_notes (id, task_id, body, created_at) VALUES (?, ?, ?, ?)").run(note.id, note.taskId, JSON.stringify(note), note.createdAt);
+  }
+
+  listTaskNotes(taskId: Id): TaskNote[] {
+    return (this.db.prepare("SELECT body FROM task_notes WHERE task_id = ? ORDER BY created_at, id").all(taskId) as Row[]).map((r) => JSON.parse(str(r.body)) as TaskNote);
+  }
+
+  putMail(m: MailMessage): void {
+    this.db
+      .prepare("INSERT INTO mail (id, to_session, to_task, state, body, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body")
+      .run(m.id, m.to.kind === "session" ? m.to.sessionId : null, m.to.kind === "task" ? m.to.taskId : null, m.state, JSON.stringify(m), m.createdAt);
+  }
+
+  getMail(id: Id): MailMessage | undefined {
+    const r = this.db.prepare("SELECT body FROM mail WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as MailMessage);
+  }
+
+  /** Mail for a session and/or task (either matches), optionally only in some states; oldest first. */
+  listMail(filter: { sessionId?: Id; taskId?: Id; states?: readonly MailMessage["state"][] } = {}): MailMessage[] {
+    const where: string[] = [];
+    const args: string[] = [];
+    const to: string[] = [];
+    if (filter.sessionId) (to.push("to_session = ?"), args.push(filter.sessionId));
+    if (filter.taskId) (to.push("to_task = ?"), args.push(filter.taskId));
+    if (to.length) where.push(`(${to.join(" OR ")})`);
+    if (filter.states?.length) (where.push(`state IN (${filter.states.map(() => "?").join(", ")})`), args.push(...filter.states));
+    const sql = `SELECT body FROM mail${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at, id`;
+    return (this.db.prepare(sql).all(...args) as Row[]).map((r) => JSON.parse(str(r.body)) as MailMessage);
+  }
+
+  putDecision(d: DecisionRequest): void {
+    this.db
+      .prepare("INSERT INTO decisions (id, session_id, task_id, state, body, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body")
+      .run(d.id, d.sessionId, d.taskId, d.state, JSON.stringify(d), d.createdAt);
+  }
+
+  getDecision(id: Id): DecisionRequest | undefined {
+    const r = this.db.prepare("SELECT body FROM decisions WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as DecisionRequest);
+  }
+
+  listDecisions(filter: { state?: DecisionRequest["state"] } = {}): DecisionRequest[] {
+    const rows = filter.state
+      ? this.db.prepare("SELECT body FROM decisions WHERE state = ? ORDER BY created_at, id").all(filter.state)
+      : this.db.prepare("SELECT body FROM decisions ORDER BY created_at, id").all();
+    return (rows as Row[]).map((r) => JSON.parse(str(r.body)) as DecisionRequest);
   }
 }

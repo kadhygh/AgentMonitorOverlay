@@ -4,6 +4,7 @@ import { call, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
+import { DecisionCard, useOpenDecisions } from "../task/DecisionPanel.js";
 import "./focus.css";
 
 // The Focus window: "what needs me right now". Lists sessions waiting for approval or review, newest first; one entry
@@ -27,10 +28,14 @@ export function latestSnippet(items: readonly SessionItem[]): { text: string; ap
   return { text: text.length > SNIPPET_MAX ? `${text.slice(0, SNIPPET_MAX)}…` : text, approval: null };
 }
 
+/** Placeholder while the Host connects (the decision hook runs before the link exists). */
+const NO_LINK = { url: "", token: "" };
+
 export function FocusApp() {
   const host = useHostState();
   const [compact, setCompact] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  const decisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
 
   // Clicks pass through the transparent window except over the panel.
   const catchMouse = (on: boolean) => window.amo?.focus?.setIgnoreMouse(!on);
@@ -51,6 +56,8 @@ export function FocusApp() {
 
   const { state, link } = host;
   const list = needsMe(state);
+  const asks = decisions.filter((d) => state.sessions.some((s) => s.id === d.sessionId && !s.archivedAt));
+  const needs = list.length + asks.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
   const openId = open && list.some((s) => s.id === open) ? open : (list[0]?.id ?? null);
   const title = (s: Session) => state.tasks.find((t) => t.id === s.taskId)?.title || "未命名任务";
@@ -60,8 +67,8 @@ export function FocusApp() {
       <div className="focus-panel" data-testid="focus-panel" onMouseEnter={() => catchMouse(true)} onMouseLeave={() => catchMouse(false)}>
         <div className="focus-head">
           <span className="focus-name">Focus</span>
-          <span className={list.length ? "focus-needs" : "focus-dim"} data-testid="focus-needs">
-            {list.length ? `需要你 ${list.length}` : "没有待处理"}
+          <span className={needs ? "focus-needs" : "focus-dim"} data-testid="focus-needs">
+            {needs ? `需要你 ${needs}` : "没有待处理"}
           </span>
           <span className="focus-dim">· 运行中 {running}</span>
           <span className="spacer" />
@@ -69,8 +76,22 @@ export function FocusApp() {
             {compact ? "+" : "–"}
           </button>
         </div>
-        {!compact && list.length > 0 && (
+        {!compact && needs > 0 && (
           <div className="focus-list">
+            {asks.map((d) => {
+              const s = state.sessions.find((x) => x.id === d.sessionId)!;
+              return (
+                <div key={d.id} className="focus-entry open" data-testid="focus-decision">
+                  <DecisionCard
+                    link={link}
+                    decision={d}
+                    sessionTitle={`${title(s)} · ${s.title || "会话"}`}
+                    className="focus-detail focus-decision"
+                    onWriteElsewhere={() => void window.amo?.openInWorkbench?.({ taskId: d.taskId, sessionId: d.sessionId })}
+                  />
+                </div>
+              );
+            })}
             {list.map((s) => (
               <FocusEntry
                 key={s.id}

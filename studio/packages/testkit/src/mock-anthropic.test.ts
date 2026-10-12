@@ -32,6 +32,18 @@ describe("mock Anthropic request parsing", () => {
     expect(defaultClaudeScript(req)).toEqual({ kind: "text", text: "MOCK-DONE" });
   });
 
+  it("treats a message folded in with a tool result as what the person said last", () => {
+    const req = parseClaudeRequest({
+      tools,
+      messages: [
+        { role: "user", content: "[[shell: mkdir x]]" },
+        { role: "assistant", content: [{ type: "tool_use", id: "t1", name: "Bash", input: {} }] },
+        { role: "user", content: [{ type: "tool_result", tool_use_id: "t1", content: "ok" }, { type: "text", text: "now the next thing" }] },
+      ],
+    });
+    expect(req).toMatchObject({ lastUserText: "now the next thing", afterToolOutput: false });
+  });
+
   it("recognises a subagent by its first message, and makes no tool call without the tool", () => {
     const sub = parseClaudeRequest({ tools: [{ name: "Bash" }], messages: [{ role: "user", content: [reminder, { type: "text", text: "[[subagent: helper]] say hi" }] }] });
     expect(defaultClaudeScript(sub)).toEqual({ kind: "text", text: "MOCK-SUB: helper" });

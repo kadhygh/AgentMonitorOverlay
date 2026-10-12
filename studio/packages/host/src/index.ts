@@ -9,6 +9,7 @@ export * from "./runtime/codex/rpc-client.js";
 export * from "./runtime/codex/server-manager.js";
 export * from "./runtime/codex/codex-runtime.js";
 export * from "./runtime/runtime.js";
+export * from "./mcp/identity.js";
 export * from "./runtime/claude/claude-env.js";
 export * from "./runtime/claude/claude-runtime.js";
 export * from "./service.js";

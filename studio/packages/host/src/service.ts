@@ -13,6 +13,10 @@ import type {
   NewSessionInput,
   Scratchpad,
   TodoItem,
+  TaskNote,
+  MailMessage,
+  MailRecipient,
+  DecisionRequest,
   Session,
   SessionItem,
   StateSnapshot,
@@ -22,7 +26,7 @@ import type {
   TaskScope,
   Workspace,
 } from "@amo-studio/protocol";
-import { canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
+import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
 import type { TerminalHandle, TerminalLauncher } from "./terminal/launcher.js";
@@ -43,6 +47,19 @@ export class HostError extends Error {
 
 export interface HostServiceEvents {
   event: [HostEvent];
+}
+
+// Agents write notes, mail and questions through the AMO MCP; a runaway turn must not fill the store or the Focus
+// window, so these texts are bounded (a handoff summary fits easily).
+const MAX_NOTE_CHARS = 8000;
+const MAX_QUESTION_CHARS = 2000;
+const MAX_OPTION_CHARS = 200;
+
+function boundedText(value: unknown, field: string, max: number): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) throw new HostError("bad_request", `${field} is required`);
+  if (text.length > max) throw new HostError("bad_request", `${field} is too long (${text.length} characters; at most ${max})`);
+  return text;
 }
 
 export class HostService extends EventEmitter<HostServiceEvents> {
@@ -307,6 +324,140 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return value;
   }
 
+  // Collaboration (stage 5). The `from…`/`…FromSession` methods are what the AMO MCP calls for the session behind a
+  // tool call; the others serve the workbench.
+
+  taskNotes(taskId: Id): TaskNote[] {
+    this.requireTask(taskId);
+    return this.store.listTaskNotes(taskId);
+  }
+
+  /** A note on a task, by the person (`sessionId` null) or by a session of that task. */
+  addTaskNote(taskId: Id, input: { text?: unknown; kind?: TaskNote["kind"] }, sessionId: Id | null = null): TaskNote {
+    this.requireTask(taskId);
+    const text = boundedText(input?.text, "text", MAX_NOTE_CHARS);
+    if (sessionId && this.requireSession(sessionId).taskId !== taskId) throw new HostError("bad_request", "a session can only write to its own task");
+    const note: TaskNote = { id: newId("note"), taskId, sessionId, kind: input.kind === "handoff" ? "handoff" : "progress", text, createdAt: new Date().toISOString() };
+    this.store.addTaskNote(note);
+    this.publish({ type: "task.note.added", note });
+    return note;
+  }
+
+  /** Mail by recipient; `forTaskId`: everything left for that task or for any of its sessions. */
+  mail(filter: { sessionId?: Id; taskId?: Id; forTaskId?: Id; states?: MailMessage["state"][] } = {}): MailMessage[] {
+    const { forTaskId, ...rest } = filter;
+    if (!forTaskId) return this.store.listMail(rest);
+    const sessions = new Set(this.store.listSessions({ taskId: forTaskId }).map((s) => s.id));
+    return this.store
+      .listMail(rest.states ? { states: rest.states } : {})
+      .filter((m) => (m.to.kind === "task" ? m.to.taskId === forTaskId : sessions.has(m.to.sessionId)));
+  }
+
+  /** Leaves a message for a session or a task. `fromSessionId` null: from the person. */
+  sendMail(fromSessionId: Id | null, to: unknown, textIn: unknown): MailMessage {
+    const text = boundedText(textIn, "text", MAX_NOTE_CHARS);
+    const recipient = this.validRecipient(to);
+    const from = fromSessionId ? this.requireSession(fromSessionId) : null;
+    if (from && recipient.kind === "session" && recipient.sessionId === from.id) throw new HostError("bad_request", "a session cannot leave mail for itself");
+    const mail: MailMessage = {
+      id: newId("mail"),
+      fromSessionId: from?.id ?? null,
+      fromTaskId: from?.taskId ?? null,
+      to: recipient,
+      text,
+      state: "unread",
+      createdAt: new Date().toISOString(),
+      handledAt: null,
+    };
+    this.store.putMail(mail);
+    this.publish({ type: "mail.upserted", mail });
+    return mail;
+  }
+
+  updateMail(id: Id, state: unknown): MailMessage {
+    if (state !== "read" && state !== "dismissed") throw new HostError("bad_request", "state must be read or dismissed");
+    return this.setMailState(this.requireMail(id), state);
+  }
+
+  /** The person puts a message into a conversation; it goes in as a user message, marked as coming from AMO mail. */
+  async forwardMail(id: Id, input: { sessionId?: unknown } = {}): Promise<MailMessage> {
+    const mail = this.requireMail(id);
+    if (mail.state === "forwarded") throw new HostError("conflict", "this message was already forwarded");
+    const target = mail.to.kind === "session" ? mail.to.sessionId : typeof input.sessionId === "string" ? input.sessionId : null;
+    if (!target) throw new HostError("bad_request", "name the session to forward this task message to");
+    const session = this.requireSession(target);
+    if (mail.to.kind === "task" && session.taskId !== mail.to.taskId) throw new HostError("bad_request", "that session is not part of the task the message was left for");
+    await this.sendMessage(target, this.mailAsMessage(mail));
+    return this.setMailState(mail, "forwarded");
+  }
+
+  /** Mail an agent reads for itself (`mailbox_read`): its own and its task's unread messages, then marked read. */
+  readMailFromSession(sessionId: Id): MailMessage[] {
+    const s = this.requireSession(sessionId);
+    const unread = this.store.listMail({ sessionId, taskId: s.taskId, states: ["unread"] });
+    return unread.map((m) => this.setMailState(m, "read"));
+  }
+
+  decisions(filter: { state?: DecisionRequest["state"] } = {}): DecisionRequest[] {
+    return this.store.listDecisions(filter);
+  }
+
+  requestDecisionFromSession(sessionId: Id, questionIn: unknown, optionsIn: unknown): DecisionRequest {
+    const s = this.requireSession(sessionId);
+    const question = boundedText(questionIn, "question", MAX_QUESTION_CHARS);
+    const options = Array.isArray(optionsIn) ? optionsIn.filter((o): o is string => typeof o === "string" && !!o.trim()).map((o) => o.trim().slice(0, MAX_OPTION_CHARS)).slice(0, 6) : [];
+    const d: DecisionRequest = { id: newId("dec"), sessionId, taskId: s.taskId, question, options, state: "open", answer: null, createdAt: new Date().toISOString(), answeredAt: null };
+    this.store.putDecision(d);
+    this.publish({ type: "decision.upserted", decision: d });
+    return d;
+  }
+
+  answerDecision(id: Id, answerIn: unknown): DecisionRequest {
+    const d = this.store.getDecision(id);
+    if (!d) throw new HostError("not_found", `decision ${id} not found`);
+    if (d.state !== "open") throw new HostError("conflict", "this decision was already answered");
+    const answer = boundedText(answerIn, "answer", MAX_QUESTION_CHARS);
+    const next: DecisionRequest = { ...d, state: "answered", answer, answeredAt: new Date().toISOString() };
+    this.store.putDecision(next);
+    this.publish({ type: "decision.upserted", decision: next });
+    this.sendMail(null, { kind: "session", sessionId: d.sessionId }, `针对你的问题「${d.question}」，我的决定：${answer}`);
+    return next;
+  }
+
+  private mailAsMessage(mail: MailMessage): string {
+    if (!mail.fromSessionId) return `[AMO 留言] 来自我：\n\n${mail.text}`;
+    const from = this.store.getSession(mail.fromSessionId);
+    const task = mail.fromTaskId ? this.store.getTask(mail.fromTaskId) : undefined;
+    return `[AMO 留言] 来自任务「${task?.title || "未命名任务"}」的会话「${from?.title || "会话"}」：\n\n${mail.text}`;
+  }
+
+  private setMailState(mail: MailMessage, state: MailMessage["state"]): MailMessage {
+    if (mail.state === state) return mail;
+    const next: MailMessage = { ...mail, state, handledAt: new Date().toISOString() };
+    this.store.putMail(next);
+    this.publish({ type: "mail.upserted", mail: next });
+    return next;
+  }
+
+  private requireMail(id: Id): MailMessage {
+    const m = this.store.getMail(id);
+    if (!m) throw new HostError("not_found", `mail ${id} not found`);
+    return m;
+  }
+
+  private validRecipient(to: unknown): MailRecipient {
+    const r = to as Partial<{ kind: string; sessionId: string; taskId: string }> | null;
+    if (r?.kind === "session" && typeof r.sessionId === "string") {
+      this.requireSession(r.sessionId);
+      return { kind: "session", sessionId: r.sessionId };
+    }
+    if (r?.kind === "task" && typeof r.taskId === "string") {
+      this.requireTask(r.taskId);
+      return { kind: "task", taskId: r.taskId };
+    }
+    throw new HostError("bad_request", "to must be { kind: \"session\", sessionId } or { kind: \"task\", taskId }");
+  }
+
   // Canvas (one global document)
 
   canvas(): CanvasDoc {
@@ -335,6 +486,49 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     this.store.putCanvas(next);
     this.publish({ type: "canvas.updated", canvas: next });
     return next;
+  }
+
+  // Canvas changes asked for by agents (AMO MCP): structure only, Studio lays out.
+
+  canvasCreateGroup(input: { title?: unknown; workspace?: unknown }): { groupId: Id; title: string } {
+    const title = typeof input.title === "string" ? input.title.trim() : "";
+    if (!title) throw new HostError("bad_request", "title is required");
+    let workspaceId: Id | null = null;
+    if (typeof input.workspace === "string" && input.workspace) {
+      const ws = this.store.listWorkspaces().find((w) => w.id === input.workspace || w.name === input.workspace);
+      if (!ws) throw new HostError("bad_request", `workspace ${input.workspace} not found`);
+      workspaceId = ws.id;
+    }
+    const id = newId("g");
+    this.mutateCanvas((doc) => addGroupAuto(doc, { id, title, workspaceId }));
+    return { groupId: id, title };
+  }
+
+  canvasAddDependency(fromTaskId: unknown, toTaskId: unknown): { from: Id; to: Id } {
+    const from = this.requireTask(String(fromTaskId)).id;
+    const to = this.requireTask(String(toTaskId)).id;
+    this.mutateCanvas((doc) => addDependency(doc, from, to, newId("e")));
+    return { from, to };
+  }
+
+  canvasPlaceTask(taskId: unknown, groupId: unknown): { taskId: Id; groupId: Id | null } {
+    const task = this.requireTask(String(taskId)).id;
+    const group = typeof groupId === "string" && groupId ? groupId : null;
+    this.mutateCanvas((doc) => placeTask(doc, task, group, newId("n")));
+    return { taskId: task, groupId: group };
+  }
+
+  /** Applies a change to the latest canvas and saves it (one synchronous read-modify-write, so no version race here). */
+  private mutateCanvas(change: (doc: CanvasDoc) => CanvasDoc): CanvasDoc {
+    const current = this.canvas();
+    let next: CanvasDoc;
+    try {
+      next = change(current);
+    } catch (err) {
+      if (err instanceof CanvasLayoutError) throw new HostError("bad_request", err.message);
+      throw err;
+    }
+    return this.saveCanvas({ ...next, version: current.version });
   }
 
   canvasOutline() {

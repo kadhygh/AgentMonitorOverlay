@@ -47,6 +47,13 @@ describe("codexServerSpec", () => {
     expect(config(spec.configArgs)).toMatchObject({ "mcp_servers.amo.url": "http://127.0.0.1:47900/mcp", "mcp_servers.amo.bearer_token_env_var": "AMO_STUDIO_MCP_TOKEN" });
     expect(spec.configArgs.join(" ")).not.toContain("mcp-secret");
     expect(spec.env.AMO_STUDIO_MCP_TOKEN).toBe("mcp-secret");
+    // Writes to the caller's own task run without asking; other writes ask through an MCP elicitation.
+    expect(config(spec.configArgs)).toMatchObject({
+      "mcp_servers.amo.tools.task_note_add.approval_mode": "approve",
+      "mcp_servers.amo.tools.handoff_submit.approval_mode": "approve",
+      "mcp_servers.amo.tools.canvas_group_create.approval_mode": "prompt",
+      "mcp_servers.amo.tools.canvas_place.approval_mode": "prompt",
+    });
     expect(Object.keys(config(codexServerSpec(byId("codex-default"), BUILTIN_PROFILES, creds).configArgs)).some((k) => k.startsWith("mcp_servers."))).toBe(false);
   });
 

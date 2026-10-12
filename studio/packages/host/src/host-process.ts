@@ -7,8 +7,8 @@ import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.j
 import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
 import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
-import { ReadModel } from "./mcp/read-model.js";
-import { amoTools } from "./mcp/tools.js";
+import { amoToolsFor } from "./mcp/tools.js";
+import { McpIdentities } from "./mcp/identity.js";
 import { CodexServerManager } from "./runtime/codex/server-manager.js";
 import { WindowsCredentialReader, type CredentialReader } from "./runtime/credentials.js";
 import { BUILTIN_PROFILES, type CodexProviderDef } from "./runtime/profiles.js";
@@ -143,7 +143,9 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
           mcp: () => mcp,
         });
     const servers = options.servers ?? manager!;
-    const codex = new CodexRuntime({ store, servers, profiles });
+    // Only app-servers Studio launches have the AMO MCP configured; threads then name their session to it.
+    const identities = new McpIdentities(store);
+    const codex = new CodexRuntime({ store, servers, profiles, ...(manager ? { identities } : {}) });
     // Managed Claude sessions keep their transcripts in Studio's own config dir, never in the person's ~/.claude.
     claude = new ClaudeRuntime({
       store,
@@ -152,7 +154,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       credentials: options.credentials ?? new WindowsCredentialReader(),
       claudeHome: paths.claudeHome,
       ...(options.claudeBaseEnv ? { baseEnv: options.claudeBaseEnv } : {}),
-      mcpTools: () => amoTools(new ReadModel(service)),
+      mcpTools: (sessionId) => amoToolsFor(service, { sessionId }),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude });
     const service = new HostService(store, runtime, profiles, { launcher: options.launcher ?? new WindowsTerminalLauncher() });
@@ -160,6 +162,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       service,
       token,
       mcpToken,
+      mcpIdentities: identities,
       port: options.port ?? HOST_DEFAULT_PORT,
       ...(options.uiDir ? { uiDir: options.uiDir } : {}),
       ...(options.allowedOrigins ? { allowedOrigins: options.allowedOrigins } : {}),

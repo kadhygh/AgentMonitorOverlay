@@ -4,6 +4,30 @@
 
 环境：Codex CLI 0.161.0（实际为 0.144.1，见上方更正），app-server 走 WebSocket 加 capability token，模型路由 DeepSeek Flash（`spikes/lib.mjs` 的 `deepseekConfigArgs`）。沙盒工作区在 `%TEMP%\amo-studio-sandbox\` 下。原始记录在 `spikes/results/`。
 
+## j. Codex 会话的调用者身份（2026-10-13，S5-00，mock 模型，不消耗额度）
+
+脚本：`spikes/s5-00-codex-identity.mjs`；结果：`spikes/results/s5-00.json`。一个 app-server（mock 模型、沙箱 `CODEX_HOME`）上开多个会话，各自在 `thread/start` 的 `config` 里覆盖 AMO MCP 设置，再调用一个记录请求头的探针 MCP 工具。
+
+| 做法 | 结果 |
+|---|---|
+| `config: { "mcp_servers.amo.http_headers": { "X-AMO-Session": … } }`（点号写法） | **有效**，探针收到这个会话自己的请求头，其余设置（url、令牌）保留 |
+| `config: { "mcp_servers.amo.url": "…/mcp?session=…" }` | 有效 |
+| `config: { mcp_servers: { amo: { http_headers: … } } }`（嵌套写法） | 报错 "invalid transport"：嵌套写法替换整张表，丢了 url |
+| 会话已加载时，换一个连接 resume（带或不带 config） | 保留最初的身份，resume 带的 config 不生效 |
+| app-server 重启后 resume，不带 config | **身份丢失**（没有请求头） |
+| app-server 重启后 resume，带 config | 用新带的身份 |
+
+另外两点：
+- Codex 0.161 调用**没有 `readOnlyHint` 的 MCP 工具前，会发 `mcpServer/elicitation/request`** 征求批准（"Allow the amo MCP server to run tool …?"），回复 `{ action: "accept" | "decline", content, _meta }`；审批策略为 `never` 时直接拒绝。阶段 4 的工具都标了只读，所以没有出现。阶段 5 的写入工具会触发它，`CodexRuntime` 必须把它转成审批卡片，否则回合会一直等。
+- 带 `readOnlyHint: true` 的工具在 `on-request` 下不征求批准。
+- MCP 工具审批模式（S5-02 `spikes/s5-02-approval-mode.mjs`）：`auto`/`prompt`/`writes`/`approve`，可以设给整个服务器（`mcp_servers.<名>.default_tools_approval_mode`），也可以设给单个工具（`mcp_servers.<名>.tools.<工具>.approval_mode`）。对没有任何标注的工具，只有 `approve` 不征求批准。
+- **S5-05 补充**：默认的 `auto` 对标注了 `destructiveHint: false` 的工具也不征求批准（画布写入工具第一次就这样直接执行了）。所以需要人批准的写入工具必须显式设为 `prompt`，不能依赖默认值。
+
+结论（写进阶段 5 的做法）：
+- 每个 Codex 会话在 `thread/start` 时带 `mcp_servers.amo.http_headers.X-AMO-Session-Token = <这个会话的随机令牌>`；Host 把令牌映射回会话。令牌经 WebSocket RPC 传递，不进命令行；agent 的命令环境里没有 MCP 服务令牌（阶段 4 已排除），伪造不了别的会话。
+- `CodexRuntime` 重新订阅（app-server 重启、Host 接管）和 fork 时都要带上对应会话的身份配置；终端接入的 TUI 在已加载的会话上，身份保留。
+- 没有身份的 MCP 调用（例如 Codex 自己派生的子 agent，或身份丢失时）只能用只读工具，写入工具拒绝并说明原因。
+
 ## i. MCP 注入（2026-10-13，S4-07，mock 模型，不消耗额度）
 
 - **Codex**：app-server 启动时加 `-c mcp_servers.amo.url="<Host>/mcp"` 和 `-c mcp_servers.amo.bearer_token_env_var="AMO_STUDIO_MCP_TOKEN"`，令牌只放在 app-server 的环境变量里。用的是 MCP 专用令牌，只能打开 `/mcp`，打不开可写的 REST 接口（agent 执行的命令可能继承 app-server 的环境变量）。
@@ -28,7 +52,7 @@
 | 分支 | `resume` + `forkSession: true` 得到新 session id，带着原会话上下文回复。另有不调模型的 `forkSession(sessionId, { upToMessageId })` 函数，可以只复制到某条消息为止——适合"从这条回复分支"；但它在 Host 进程里运行，读的是**进程自己的** `CLAUDE_CONFIG_DIR`，不认 `options.env`。 |
 | 子 agent | 工具名 `Agent`。子 agent 的消息带 `parent_tool_use_id`（等于父会话里那次 `Agent` 调用的 id），session id 和父会话相同；另有 `system:task_started` / `task_updated` / `task_notification` 事件。 |
 | 打断 | `query.interrupt()` 后结果为 `error_during_execution`，随后迭代器**抛出异常**（`Claude Code returned an error result`）。 |
-| 插话 | 流式输入里在生成中途推入第二条消息，**不会**插进当前回合：第一轮照常数到 40 结束，第二条作为下一轮处理（共两个 `result`）。 |
+| 插话 | 流式输入里在生成中途推入第二条消息：回合里**没有工具调用**时不会插进当前回合，第一轮照常数到 40 结束，第二条作为下一轮处理（共两个 `result`）。**S5-07 补充**：回合里**有**工具调用时，它会在下一次工具调用结束后，和工具结果放在同一条用户消息里并进当前回合。 |
 | 真实 CLI 接续 | 同一 `CLAUDE_CONFIG_DIR` 下 `claude -p --resume <id>` 接上 SDK 创建的会话，session id 相同，记得上文。 |
 | 共享方式 | `claude --help` 里有 `--bg`（后台会话）、`claude attach <id>`、`agents`、`logs`、`stop`。未实测，S4-05 再评估能否用作共享。 |
 

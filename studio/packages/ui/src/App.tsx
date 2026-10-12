@@ -7,6 +7,8 @@ import { NewTaskPage } from "./newtask/NewTaskPage.js";
 import { TaskPage } from "./task/TaskPage.js";
 import { CanvasPage } from "./canvas/CanvasPage.js";
 import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
+import { mailByTask, useUnreadMail } from "./host/useInbox.js";
+import { useOpenDecisions } from "./task/DecisionPanel.js";
 
 // `nav` changes when Focus asks for a session, so an already open task page re-opens on that session.
 type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
@@ -23,11 +25,16 @@ function useFocusToggle(): { on: boolean; available: boolean; set(on: boolean): 
   return { on, available: !!api, set: (next) => void api?.set(next) };
 }
 
+/** Placeholder until the Host is connected (hooks run before the early return). */
+const NO_LINK = { url: "", token: "" };
+
 export function App() {
   const host = useHostState();
   const [scope, setScope] = useState<Scope>({ kind: "all" });
   const [view, setView] = useState<View>({ kind: "board" });
   const focus = useFocusToggle();
+  const unreadMail = useUnreadMail(host.kind === "ready" ? host.link : NO_LINK);
+  const openDecisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
 
   useEffect(
     () =>
@@ -49,7 +56,10 @@ export function App() {
   }
 
   const { state, link, live } = host;
-  const needs = state.tasks.filter((t) => needsPerson(taskStatus(taskSessions(t, state.sessions)))).length;
+  const decisionsByTask = new Map<string, number>();
+  for (const d of openDecisions) decisionsByTask.set(d.taskId, (decisionsByTask.get(d.taskId) ?? 0) + 1);
+  // A task needs the person when a session waits for approval or review, or an agent asked for a decision.
+  const needs = state.tasks.filter((t) => needsPerson(taskStatus(taskSessions(t, state.sessions))) || decisionsByTask.has(t.id)).length;
   const scopeName = scope.kind === "area" ? "跨工作区" : scope.kind === "workspace" ? (state.workspaces.find((w) => w.id === scope.id)?.name ?? "") : "";
   const openTask = (task: Task) => setView({ kind: "task", taskId: task.id });
 
@@ -77,7 +87,17 @@ export function App() {
           }}
         />
         <main className="main">
-          {view.kind === "board" && <Board tasks={state.tasks} sessions={state.sessions} workspaces={state.workspaces} scope={scope} onOpen={openTask} />}
+          {view.kind === "board" && (
+            <Board
+              tasks={state.tasks}
+              sessions={state.sessions}
+              workspaces={state.workspaces}
+              scope={scope}
+              onOpen={openTask}
+              mail={mailByTask(unreadMail, state.sessions)}
+              decisions={decisionsByTask}
+            />
+          )}
           {view.kind === "canvas" && (
             <CanvasPage
               link={link}
@@ -106,6 +126,7 @@ export function App() {
                 link={link}
                 task={task}
                 sessions={state.sessions}
+                tasks={state.tasks}
                 workspaces={state.workspaces}
                 profiles={state.profiles}
                 {...(view.sessionId ? { initialSessionId: view.sessionId } : {})}

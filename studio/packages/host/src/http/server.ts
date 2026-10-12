@@ -7,6 +7,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { HostErrorBody, HostEvent } from "@amo-studio/protocol";
 import { HostError, type HostService } from "../service.js";
 import { handleMcpRequest } from "../mcp/amo-mcp.js";
+import { listenInStudioRange } from "../net.js";
+import type { McpIdentities } from "../mcp/identity.js";
 
 // Host API over HTTP (REST) and WebSocket (events). Binds 127.0.0.1 only; every /api call needs the host token
 // (Authorization: Bearer for REST, ?token= for the event socket since browsers cannot set WS headers).
@@ -16,6 +18,8 @@ export interface HostServerOptions {
   token: string;
   /** Opens /mcp only (given to agent processes, which must not reach the writable REST API). */
   mcpToken?: string;
+  /** Maps the per-thread session header on /mcp back to a session (stage 5 writes). */
+  mcpIdentities?: McpIdentities;
   port?: number;
   /** Built UI to serve at / (same origin as the API, so no CORS in production). */
   uiDir?: string;
@@ -93,6 +97,21 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     route("POST", "/api/todos", ({ body }) => service.addTodo(obj(body))),
     route("PATCH", "/api/todos/:id", ({ params, body }) => service.updateTodo(params.id!, obj(body))),
     route("DELETE", "/api/todos/:id", ({ params }) => (service.deleteTodo(params.id!), { ok: true })),
+    route("GET", "/api/tasks/:id/notes", ({ params }) => service.taskNotes(params.id!)),
+    route("POST", "/api/tasks/:id/notes", ({ params, body }) => service.addTaskNote(params.id!, obj(body))),
+    route("GET", "/api/mail", ({ query }) =>
+      service.mail({
+        ...(query.get("sessionId") ? { sessionId: query.get("sessionId")! } : {}),
+        ...(query.get("taskId") ? { taskId: query.get("taskId")! } : {}),
+        ...(query.get("forTask") ? { forTaskId: query.get("forTask")! } : {}),
+        ...(query.get("state") ? { states: query.get("state")!.split(",") as never } : {}),
+      }),
+    ),
+    route("POST", "/api/mail", ({ body }) => service.sendMail(null, obj(body).to, obj(body).text)),
+    route("PATCH", "/api/mail/:id", ({ params, body }) => service.updateMail(params.id!, obj(body).state)),
+    route("POST", "/api/mail/:id/forward", ({ params, body }) => service.forwardMail(params.id!, obj(body))),
+    route("GET", "/api/decisions", ({ query }) => service.decisions(query.get("state") ? { state: query.get("state") as never } : {})),
+    route("POST", "/api/decisions/:id/answer", ({ params, body }) => service.answerDecision(params.id!, obj(body).answer)),
     route("GET", "/api/canvas", () => service.canvas()),
     route("PUT", "/api/canvas", ({ body }) => service.saveCanvas(body)),
     route("GET", "/api/canvas/outline", () => service.canvasOutline()),
@@ -196,7 +215,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     if (isMcp) {
       // AMO MCP (read-only): the same token as the REST API.
       try {
-        return await handleMcpRequest(options.service, req, res, req.method === "POST" ? await readBody(req) : undefined);
+        return await handleMcpRequest(options.service, req, res, req.method === "POST" ? await readBody(req) : undefined, options.mcpIdentities);
       } catch (err) {
         if (!res.headersSent) return fail(res, err instanceof HostError ? statusOf[err.code] : 500, err instanceof HostError ? err.code : "internal", String((err as Error).message ?? err));
         return;
@@ -253,7 +272,9 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
   };
   service.on("event", broadcast);
 
-  await new Promise<void>((r) => server.listen(options.port ?? 0, "127.0.0.1", r));
+  // Port 0 (tests, e2e): a free port in Studio's range, never an arbitrary one (red line 6).
+  if (options.port) await new Promise<void>((r) => server.listen(options.port, "127.0.0.1", r));
+  else await listenInStudioRange(server);
   const port = (server.address() as AddressInfo).port;
   return {
     port,

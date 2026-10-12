@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import type { ApprovalDecision, HostEvent, Id, ModelProfile, Session, SessionItem, SessionStatus, Workspace } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
+import { McpIdentities } from "../../mcp/identity.js";
 import type { ServerNotification, ServerRequest } from "./rpc-client.js";
 import type { CodexServerHandle } from "./server-manager.js";
 
@@ -24,6 +25,8 @@ export interface CodexRuntimeOptions {
   /** Thread defaults for new sessions. */
   approvalPolicy?: "untrusted" | "on-request" | "never";
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
+  /** Set when app-servers have the AMO MCP: every thread then names its session to it (spikes/RESULTS.md section j). */
+  identities?: McpIdentities;
 }
 
 export interface CodexRuntimeEvents {
@@ -41,6 +44,8 @@ interface SessionState {
 }
 
 interface PendingApproval {
+  /** `elicitation`: an MCP server asking before a tool runs (answered with an action, not a decision). */
+  kind: "approval" | "elicitation";
   sessionId: Id;
   itemId: Id;
   profileId: string;
@@ -49,7 +54,8 @@ interface PendingApproval {
 
 type ThreadLike = { id: string; forkedFromId?: string | null; parentThreadId?: string | null; modelProvider?: string };
 
-const isApprovalMethod = (method: string) => method.endsWith("requestApproval") || method === "applyPatchApproval" || method === "execCommandApproval";
+const ELICITATION = "mcpServer/elicitation/request";
+const isApprovalMethod = (method: string) => method.endsWith("requestApproval") || method === "applyPatchApproval" || method === "execCommandApproval" || method === ELICITATION;
 
 export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   private readonly store: Store;
@@ -74,11 +80,12 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   async startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string }): Promise<Session> {
     const profile = this.profile(input.profileId);
     const handle = await this.handleFor(profile.id);
+    const token = this.options.identities?.issue();
     const started = await handle.client.request("thread/start", {
       cwd: input.workspace.path,
       approvalPolicy: this.options.approvalPolicy ?? "on-request",
       sandbox: this.options.sandbox ?? "workspace-write",
-      ...codexThreadParams(profile),
+      ...this.threadParams(profile, token),
     } as never);
     const session = this.findByThread(started.thread.id) ?? this.createSession({
       taskId: input.taskId,
@@ -89,6 +96,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       title: input.title ?? "",
       runtimeRef: started.thread.id,
     });
+    if (token) this.options.identities!.bind(token, session.id);
     if (input.text) await this.sendMessage(session.id, input.text);
     return this.store.getSession(session.id)!;
   }
@@ -124,9 +132,12 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     if (!parent.runtimeRef) throw new Error(`session ${sessionId} has no thread yet`);
     const profile = this.profile(profileId ?? parent.profileId);
     const handle = await this.handleFor(parent.profileId);
-    const r = await handle.client.request("thread/fork", { threadId: parent.runtimeRef, ...codexThreadParams(profile) } as never);
+    const token = this.options.identities?.issue();
+    const r = await handle.client.request("thread/fork", { threadId: parent.runtimeRef, ...this.threadParams(profile, token) } as never);
     // thread/started for the fork may already have created the session.
-    return this.findByThread(r.thread.id) ?? this.adoptThread(r.thread, parent, "fork", parent.profileId);
+    const fork = this.findByThread(r.thread.id) ?? this.adoptThread(r.thread, parent, "fork", parent.profileId);
+    if (token) this.options.identities!.bind(token, fork.id);
+    return fork;
   }
 
   /** Archives the session with its forks and subagents, and archives their threads. */
@@ -153,7 +164,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       try {
         const handle = await this.handleFor(s.profileId);
         await handle.client.request("thread/unarchive", { threadId: s.runtimeRef } as never);
-        await handle.client.request("thread/resume", { threadId: s.runtimeRef } as never);
+        await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id) } as never);
       } catch (err) {
         this.emit("log", `thread/unarchive failed for ${s.id}: ${String(err)}`);
       }
@@ -166,7 +177,10 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     const pending = this.approvals.get(approvalKey(sessionId, approvalId));
     if (!pending) throw new Error(`approval ${approvalId} is not pending`);
     const handle = await this.handleFor(pending.profileId);
-    handle.client.respond(pending.requestId, { decision });
+    handle.client.respond(
+      pending.requestId,
+      pending.kind === "elicitation" ? { action: decision === "accept" ? "accept" : "decline", content: decision === "accept" ? {} : null, _meta: null } : { decision },
+    );
     this.approvals.delete(approvalKey(sessionId, approvalId));
     this.updateItem(pending.itemId, (item) => (item.type === "approval" ? { ...item, state: decision === "accept" ? "accepted" : "declined" } : item));
     if (this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, "running");
@@ -178,7 +192,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     if (!s.runtimeRef) throw new Error(`session ${sessionId} has no thread yet`);
     const handle = await this.handleFor(s.profileId);
     // Make sure the thread is loaded on this server so `codex --remote … resume` finds it.
-    await handle.client.request("thread/resume", { threadId: s.runtimeRef } as never).catch(() => undefined);
+    await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id) } as never).catch(() => undefined);
     return { url: handle.url, token: handle.token, threadId: s.runtimeRef };
   }
 
@@ -224,7 +238,8 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     for (const s of this.store.listSessions()) {
       if (s.profileId !== handle.profileId || !s.runtimeRef || s.archivedAt || s.kind === "sub") continue;
       try {
-        const r = await handle.client.request("thread/resume", { threadId: s.runtimeRef } as never);
+        // A restarted app-server loads the thread again; only then does the identity header need setting again.
+        const r = await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id) } as never);
         // Turn events may have been missed while disconnected; take the status from the server's view.
         const active = (r.thread as { status?: { type?: string } }).status?.type === "active";
         const st = this.sessionState(s.id);
@@ -336,21 +351,22 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
 
   private onServerRequest(handle: CodexServerHandle, r: ServerRequest): void {
     if (!isApprovalMethod(r.method)) return;
-    const params = r.params as { threadId?: string; turnId?: string; itemId?: string; command?: string | null; reason?: string | null; cwd?: string };
+    const params = r.params as { threadId?: string; turnId?: string; itemId?: string; command?: string | null; reason?: string | null; cwd?: string; message?: string; serverName?: string };
     const s = params.threadId ? this.findByThread(params.threadId) : undefined;
     if (!s) return;
     const key = approvalKey(s.id, String(r.id));
     if (this.approvals.has(key)) return; // replayed on resubscribe
-    const kind = r.method.includes("fileChange") || r.method === "applyPatchApproval" ? "fileChange" : r.method.includes("permissions") ? "permissions" : "command";
+    const elicitation = r.method === ELICITATION;
+    const kind = elicitation ? "permissions" : r.method.includes("fileChange") || r.method === "applyPatchApproval" ? "fileChange" : r.method.includes("permissions") ? "permissions" : "command";
     const item = this.appendItem(s.id, {
       type: "approval",
       approvalId: String(r.id),
       kind,
-      summary: params.command ?? params.reason ?? r.method,
-      detail: params.cwd,
+      summary: elicitation ? (params.message ?? `MCP 服务 ${params.serverName ?? ""} 请求批准`) : (params.command ?? params.reason ?? r.method),
+      ...(elicitation ? (params.serverName ? { detail: `MCP：${params.serverName}` } : {}) : params.cwd ? { detail: params.cwd } : {}),
       state: "pending",
-    }, { method: r.method, itemId: params.itemId, turnId: params.turnId });
-    this.approvals.set(key, { sessionId: s.id, itemId: item.id, profileId: handle.profileId, requestId: r.id });
+    }, { method: r.method, ...(params.itemId ? { itemId: params.itemId } : {}), ...(params.turnId ? { turnId: params.turnId } : {}) });
+    this.approvals.set(key, { kind: elicitation ? "elicitation" : "approval", sessionId: s.id, itemId: item.id, profileId: handle.profileId, requestId: r.id });
     this.setStatus(s.id, "awaiting-approval");
   }
 
@@ -416,6 +432,19 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   }
 
   // ---- helpers ----------------------------------------------------------------------------------------------------
+
+  /** thread/start and thread/fork parameters: explicit provider and model, plus the AMO MCP identity header. */
+  private threadParams(profile: ModelProfile, token: string | undefined) {
+    const base = codexThreadParams(profile);
+    if (!token) return base;
+    return { ...base, config: { ...(base.config ?? {}), ...McpIdentities.threadConfig(token) } };
+  }
+
+  /** For thread/resume: the session's identity header (takes effect when the server loads the thread again). */
+  private identityConfig(sessionId: Id): { config?: Record<string, unknown> } {
+    const ids = this.options.identities;
+    return ids ? { config: McpIdentities.threadConfig(ids.tokenFor(sessionId)) } : {};
+  }
 
   private async handleFor(profileId: Id): Promise<CodexServerHandle> {
     const handle = await this.options.servers.ensure(profileId);

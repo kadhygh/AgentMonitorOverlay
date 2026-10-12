@@ -88,4 +88,35 @@ export const MIGRATIONS: readonly string[] = [
     updated_at TEXT NOT NULL
   );
   `,
+  // 3: collaboration (stage 5): task notes and handoffs, mail between sessions, decision requests
+  `
+  CREATE TABLE task_notes (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id),
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX task_notes_task ON task_notes(task_id, created_at);
+
+  CREATE TABLE mail (
+    id TEXT PRIMARY KEY,
+    to_session TEXT,
+    to_task TEXT,
+    state TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX mail_to_session ON mail(to_session, created_at);
+  CREATE INDEX mail_to_task ON mail(to_task, created_at);
+
+  CREATE TABLE decisions (
+    id TEXT PRIMARY KEY,
+    session_id TEXT NOT NULL REFERENCES sessions(id),
+    task_id TEXT NOT NULL REFERENCES tasks(id),
+    state TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX decisions_state ON decisions(state, created_at);
+  `,
 ];

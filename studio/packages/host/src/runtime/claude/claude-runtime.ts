@@ -35,7 +35,7 @@ export interface ClaudeRuntimeOptions {
   /** Variables the child environment starts from (default: process.env). */
   baseEnv?: NodeJS.ProcessEnv;
   /** The AMO MCP tools, given to every Claude session in-process (no token reaches the CLI). */
-  mcpTools?: () => AmoTool[];
+  mcpTools?: (sessionId: Id) => AmoTool[];
 }
 
 interface PendingApproval {
@@ -302,7 +302,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         includePartialMessages: true,
         canUseTool: (toolName, toolInput, ctx) => this.askPerson(session.id, live, toolName, toolInput, ctx),
         hooks: STRIP_SUBAGENT_MODE,
-        ...this.mcpOptions(),
+        ...this.mcpOptions(session.id),
         // A session that already has a transcript continues it; a new one starts under the id Studio chose.
         ...(this.hasTranscript(ref) ? { resume: ref } : { sessionId: ref }),
       },
@@ -562,19 +562,19 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   /**
-   * The AMO MCP as an in-process SDK server. Its tools only read Studio's own state, so they are allowed up front;
-   * everything else still goes through canUseTool.
+   * The AMO MCP as an in-process SDK server bound to this session. Reads and writes to the session's own task are
+   * allowed up front; everything else still goes through canUseTool.
    */
-  private mcpOptions() {
-    const tools = this.options.mcpTools?.() ?? [];
+  private mcpOptions(sessionId: Id) {
+    const tools = this.options.mcpTools?.(sessionId) ?? [];
     if (!tools.length) return {};
     const server = createSdkMcpServer({
       name: AMO_MCP_NAME,
-      version: "0.4.0",
+      version: "0.5.0",
       instructions: AMO_MCP_INSTRUCTIONS,
-      tools: tools.map((t) => tool(t.name, t.description, t.inputSchema, async (args) => t.run(args as Record<string, unknown>), { annotations: { readOnlyHint: true } })),
+      tools: tools.map((t) => tool(t.name, t.description, t.inputSchema, async (args) => t.run(args as Record<string, unknown>), { annotations: { readOnlyHint: t.readOnly } })),
     });
-    return { mcpServers: { [AMO_MCP_NAME]: server }, allowedTools: tools.map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
+    return { mcpServers: { [AMO_MCP_NAME]: server }, allowedTools: tools.filter((t) => t.autoApprove).map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
   }
 
   /** In-process SDK helpers (forkSession, getSessionMessages) read CLAUDE_CONFIG_DIR from this process. */

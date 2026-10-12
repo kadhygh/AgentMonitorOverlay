@@ -542,3 +542,207 @@
 - 遗留：`server-manager` 和 Codex 集成测试的临时目录在加载时创建，偶尔留下，已删除，仍记为待办
 - NEEDS_YOU：写入"阶段 4 完成"（请你过目），其中特别说明了安全修复，以及旧 AMO 可能有同样问题
 - 合并：`studio/stage-4` 用 `--no-ff` 合并到 `studio/main`（见下一条）
+
+## 2026-10-13 20:05 · 阶段 4 合并，开始阶段 5
+- 合并：`studio/stage-4` 用 `--no-ff` 合并到 `studio/main`（639c38b）；新建 `studio/stage-5`
+- 计划：`plans/stage-5.md`，共 11 个任务：
+  - S5-00 预研 Codex 调用者身份；
+  - 数据；写自身；信箱；请求决策；画布写入；工作台显示；
+  - 交接 e2e；真实冒烟；收尾；
+  - S5-10 派发评审（必须等你）
+- 已写入 NEEDS_YOU（请你过目）
+- 通知：阶段完成
+
+## 2026-10-13 20:40 · S5-00 预研 Codex 会话的调用者身份
+- 结果：done，结论见 `spikes/RESULTS.md` 第 j 节
+- 做法：
+  - 一个探针 MCP 服务（端口 47970）记录每次工具调用的请求头和 URL；
+  - 一个真实的 Codex app-server（mock 模型、沙箱 `CODEX_HOME`，端口 47912）上开多个会话，各自用 `thread/start` 的 `config` 覆盖 MCP 设置，再调用探针工具
+- 结论：
+  - 点号写法的 `mcp_servers.amo.http_headers` 能按会话带不同的请求头；嵌套写法会替换整张表，不能用；
+  - 会话加载期间身份保留；app-server 重启后需要在 resume 时重新带上；
+  - 定为：每个会话一个随机令牌，放进请求头，Host 映射回会话；重新订阅和 fork 时都带上
+- **新发现**：Codex 调用没有 `readOnlyHint` 的 MCP 工具前，会发 `mcpServer/elicitation/request` 征求批准，`CodexRuntime` 目前不处理它，阶段 5 的写入工具会让回合卡住。已写进计划，S5-02 处理
+- 调试：
+  - 第一次所有变体都没有调用到探针：审批策略设成了 `never`，MCP 工具调用被直接拒绝；
+  - 第二次用了错误的回复格式（`decision`），被当成拒绝；
+  - 按协议类型改成 `{ action: "accept", content, _meta }` 后得到结论
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 21:20 · S5-01 协作数据
+- 结果：done
+- 改动：
+  - protocol 新增 `TaskNote`（进度备注/交接摘要，作者是人或该任务的会话）、`MailMessage`（发给会话或任务；状态 未读/已读/已转进对话/已忽略）、`DecisionRequest`（问题、选项、答复）；
+  - Store 迁移 v3（`task_notes`、`mail`、`decisions`）；
+  - Host 接口：
+    - 任务备注读写；
+    - 留言列表（按会话、任务、状态筛选）、人发留言、标记已读或忽略、"转进对话"（作为用户消息发出，开头是"[AMO 留言] 来自任务「…」的会话「…」"；发给任务的留言要指定该任务的一个会话）；
+    - 决策列表与回答（答复作为留言回到提问的会话）；
+  - 事件：`task.note.added`、`mail.upserted`、`decision.upserted`；
+  - 服务层预留给 MCP 的入口：`addTaskNote(…, sessionId)`（只能写自己的任务）、`sendMail(fromSessionId, …)`（不能发给自己）、`readMailFromSession`（读自己和所属任务的未读，读后标已读）、`requestDecisionFromSession`
+- 测试：接口测试 3 个（备注与"只能写自己的任务"、留言的发送、筛选、读取、转进对话、忽略、决策回答与回信）；Store 的 schema 版本断言改为 3；接口测试的 `createTask` 改为复用已登记的工作区
+- 验证：`npm run verify` 退出码 0（171 个测试）；e2e 25/25
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 22:30 · S5-02 写自身的 MCP 工具
+- 结果：done
+- 预研（mock，`spikes/s5-02-approval-mode.mjs`）：Codex 的 MCP 工具审批模式有 `auto`/`prompt`/`writes`/`approve` 四种，可以设给整个服务器（`default_tools_approval_mode`），也可以设给单个工具（`tools.<名字>.approval_mode`）。对没有只读标注的工具，只有 `approve` 不征求批准，其余三种都会发 `mcpServer/elicitation/request`
+- 改动：
+  - **调用者身份**：`mcp/identity.ts`（`McpIdentities`，每个会话一个随机令牌，存在 kv 里，Host 重启后仍能认出被接管的 app-server 里的会话）。`CodexRuntime` 在 `thread/start`、`thread/fork` 时发新令牌并绑定到会话，在 `thread/resume`（重新订阅、取消归档、终端接入）时带上该会话的令牌；`/mcp` 从 `X-AMO-Session-Token` 请求头认出调用者。Claude 的进程内 MCP 直接绑定到它所属的会话；
+  - **写入工具**：`task_note_add`（进度备注）、`handoff_submit`（交接摘要），只写调用者自己所属的任务；没有身份的调用（例如 Codex 自己派生的子 agent）只能用只读工具，写入时返回可读的错误；
+  - **免审批**：这两个工具在 Codex 服务配置里设为 `approve`、在 Claude 里加入 `allowedTools`；其余非只读工具照常审批；
+  - **Codex 的 MCP 批准请求**：`CodexRuntime` 把 `mcpServer/elicitation/request` 转成审批卡片，按 `{ action, content, _meta }` 回复，回合不再卡住；fake app-server 增加 `[[elicit]]` 用于测试
+- 测试：
+  - 单测：身份映射、无身份或身份无效时拒绝写入、只写自己的任务、Codex 启动参数里两个工具是 `approve`、批准请求转成审批卡片（批准和拒绝各一次）；
+  - e2e：Codex 和 Claude 会话各自通过 MCP 记进度，备注记在自己的任务上、作者是该会话、没有弹审批；
+  - 两个 mock 的 `[[mcp: …]]` 支持 JSON 参数
+- 默认决定（请你过目）：
+  - 写自己任务的备注和交接不弹审批；
+  - 之后的画布写入工具会照常弹审批
+- 清理：e2e 留下 1 个临时目录，删除时报 EPERM（测试结束时还有进程占着，大概率是 Codex app-server 还没退干净），已手动删除，记为待办
+- 验证：`npm run verify` 退出码 0（173 个测试）；e2e 26/26
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 23:40 · 修复：测试服务不再用随机端口（红线 6）
+- 结果：done
+- 发现：MCP 接口测试偶发 `fetch failed: bad port`。测试里的 HTTP 服务用端口 0，系统随机分到了一个在 fetch 禁用名单里的端口。顺着查下去：从阶段 1 起，mock 模型服务、mock Anthropic、fake app-server、接口测试的 Host、e2e 的 Host（`AMO_STUDIO_PORT=0`）、RPC 客户端测试里的 WebSocket 服务都用端口 0，**违反了红线 6（只用 47900–47999）**
+- 修复：新增 `listenInStudioRange`，在 47950–47999 随机起点逐个尝试，端口被占用就换下一个（host 的 `net.ts` 和 testkit 的 `ports.ts` 各一份，因为两个包不能互相依赖）；
+  - 上面列的服务都改用它；
+  - Host 收到端口 0 时也在这个范围里挑；
+  - Codex app-server 仍用 47910–47949，Host 默认 47900
+- 调试：
+  - 第一版把 WebSocket 服务先挂到 HTTP 服务上再监听，ws 会转发 HTTP 服务的 error 事件，端口冲突变成了没人处理的错误，连带好几个测试超时。改为先监听成功再挂 WebSocket；
+  - 连跑第三次时，`server-manager` 测试拿到的端口不是预期的 47940：上一次测试的 Codex 进程还在退出，占着端口，几秒后释放，重跑通过。只在连续跑时出现，不是代码问题
+- 验证：`npm run verify` 连续两次退出码 0（174 个测试）；e2e 27/27
+- commit：见本次 commit
+
+## 2026-10-13 23:45 · S5-03 信箱
+- 结果：done
+- 改动：
+  - MCP 工具：
+    - `mailbox_send`：给某个会话（`toSessionId`）或任务（`toTaskId`）留言；
+    - `mailbox_read`：读自己和所属任务的未读留言，读后标为已读；输出把正文放在最前；
+    - 两者都不弹审批（留言不会自己进入对话，由人决定），加入免审批名单；
+  - 接口：`GET /api/mail?forTask=` 取回发给这个任务或其任意会话的留言；UI 的 `call()` 支持查询参数；
+  - 任务页：
+    - 右栏顶部"留言"面板：显示来源和收件方，"转进对话"（发给任务的留言转进当前会话）、"忽略"；
+    - 会话行显示"N 条留言"（未读、发给该会话的）；
+    - 来源过长时截断为一行
+- 测试：
+  - MCP 单测：发给会话或任务、缺收件人或发给自己时拒绝、收件方读一次后标为已读；
+  - e2e `mailbox.spec.ts`：Codex 会话给 Claude 会话及其任务各留一条，任务页显示 2 条、会话行显示"1 条留言"，忽略一条、转进一条（Claude 收到"[AMO 留言] 来自任务「发件任务」…"并回复），第三条由收件方用 `mailbox_read` 自己读到；
+  - 截图 `screenshots/stage-5/S5-03-mail.png`
+- 调试：e2e 第一次失败，`mailbox_read` 已读到第三条，但 mock 只截取工具结果的前 200 个字，正文排在发件人信息后面被截掉了。改为正文在前，对真实 agent 也更直观
+- 清理：e2e 留下 2 个临时目录（关闭时进程还没退干净，同一个待办），已删除
+- 验证：同上一条
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 00:20 · S5-04 请求决策
+- 结果：done
+- 改动：
+  - MCP 工具 `decision_request`（问题与可选项）：只是把问题放到人面前，不弹审批（加入免审批名单）；返回值提示答复会以留言回来；
+  - 任务页右栏"待决策"卡片：点选项，或者写答复后点"回答"；答复作为留言（来自"我"）回到提问的会话；
+  - Focus 窗口：待决策排在待批准/待审阅前面，"需要你"计数包含它。Focus 窗口不能获得键盘焦点，所以那里只有选项按钮，没有输入框；需要写答复时点"在工作台回答"，跳到对应任务页
+- 测试：
+  - MCP 单测：提问、空问题被拒、回答后 `mailbox_read` 读到答复；
+  - e2e `decisions.spec.ts`：任务页点选项回答，答复留言出现；Focus 里没有输入框，"在工作台回答"跳到任务页写答复；Focus 里点选项直接回答；
+  - 截图 `screenshots/stage-5/S5-04-decision.png`、`S5-04-focus-decision.png`
+- 过程：第一版在 Focus 里也放了输入框，e2e 能通过（Playwright 不经过系统焦点），但真实使用时打不了字；看截图时想到 Focus 设置成了不能获得焦点，改成上面的做法
+- 默认决定（请你过目）：
+  - Focus 里只能点选项作答，写答复要回工作台；
+  - 待决策暂时只出现在任务页和 Focus，看板卡片上的提示在 S5-06 做
+- 验证：`npm run verify` 退出码 0（175 个测试）；e2e 28/28
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 01:05 · S5-05 画布写入
+- 结果：done
+- 改动：
+  - protocol `canvas-layout.ts`（纯函数，agent 不写坐标，Studio 排）：新分组放在所有内容右边；任务放进分组按网格排，放不下时分组拉高；移出分组放到最下面；没在画布上的任务自动建卡片；加依赖时拒绝指向自己、重复和成环；
+  - Host：`canvasCreateGroup`（可按名字或 id 绑定工作区）、`canvasAddDependency`、`canvasPlaceTask`，都是同步的读出、修改、保存，经已有的 `canvas.updated` 事件推给画布页；
+  - MCP 工具 `canvas_group_create`、`canvas_depend`、`canvas_place`：**需要人批准**——Codex 走 MCP 批准请求，Claude 走 `canUseTool`，两边都显示成同样的审批卡片
+- **发现**：第一次跑 e2e 时，Codex 没有征求批准就建了组。原来 Codex 默认的 `auto` 对标注 `destructiveHint: false` 的工具也直接执行。改为在 app-server 启动参数里把这三个工具显式设为 `prompt`。已补进 `spikes/RESULTS.md` 第 j 节
+- 测试：
+  - 布局单测 4 个；
+  - MCP 单测：建组（含绑定工作区、找不到工作区时报错）、成环依赖被拒、放进分组、没有身份时拒绝；
+  - Codex 启动参数里画布工具是 `prompt`；
+  - e2e：Codex 和 Claude 会话各建一个组，都先出审批卡片、批准前画布没变、批准后出现在画布上；
+  - 截图 `screenshots/stage-5/S5-05-canvas-writes.png`
+- 验证：`npm run verify` 退出码 0（180 个测试）；e2e 29/29
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 01:40 · S5-06 工作台显示
+- 结果：done
+- 改动：
+  - 任务页右栏"进度"面板：最新的交接摘要置顶（带作者和时间），其下是进度备注，新的在前（默认显示 5 条，可展开）；人可以"记一笔进度"。右栏顺序：待决策 → 留言 → 进度 → 批注；
+  - 看板卡片：在卡片自己的一行里显示"N 个待决策 · N 条留言"，状态点仍只有一个（遵守"一个状态只显示一次"）；
+  - 顶栏"需要你"把有待决策的任务也算进去；
+  - `useUnreadMail`/`mailByTask`：看板的留言数不算人自己写的留言（决策答复是写给 agent 的，人已经知道内容）；任务页留言面板仍显示它，可以"转进对话"
+- 测试：e2e `progress.spec.ts`
+  - 会话记进度、提交交接，另一个会话给任务留言、提问；
+  - 看板卡片显示"1 个待决策 · 1 条留言"，顶栏"需要你 1"；
+  - 任务页交接置顶，人记一笔；
+  - 回答并忽略后卡片提示消失；
+  - 截图 `screenshots/stage-5/S5-06-board-hints.png`、`S5-06-progress.png`
+- 过程：第一次跑时，回答决策后卡片仍显示"1 条留言"，那是写回给 agent 的答复，于是看板计数不再算人写的留言
+- 默认决定（请你过目）：
+  - 决策答复只作为留言回到会话，要靠人"转进对话"或 agent 自己 `mailbox_read` 才能读到，不会自动插进对话；
+  - 画布卡片上暂不显示这些提示
+- 验证：`npm run verify` 退出码 0（180 个测试）；e2e 30/30
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 03:10 · S5-07 交接验收（阶段 5 的验收）
+- 结果：done
+- e2e `handoff-mail.spec.ts`：
+  - Codex 会话 A 提交交接摘要，并给 Claude 会话 B 留言；
+  - 留言在人转进对话之前不会进入 B；人转进后，B 用 `task_get` 读到 A 的交接，再用 `task_note_add` 在自己的任务上记"已接手"；
+  - 两个任务各自的记录正确，留言状态为"已转进对话"；
+  - 截图 `screenshots/stage-5/S5-07-handoff.png`
+- 改动：`task_get` 返回最新交接摘要（放在前面）和最近 5 条进度备注
+- 调试中查出并修复两个问题（在 Host 里临时加日志、界面监听请求，调试代码已全部删除）：
+  - **对话输入框会吞掉新打的字**：输入框要等发送请求返回才清空，期间新打的内容会被一起清掉。改为按下发送就清空，失败时（而且期间没有新输入）再把文字放回去。用户可见的问题；
+  - **mock 没处理"并进回合的消息"**：回合里有工具调用时，Claude CLI 会把生成中发的消息放在工具结果后面、同一条用户消息里，并进当前回合。mock 把整条当成工具输出，忽略了那段话。已修，加了单测
+- 更正：
+  - `spikes/RESULTS.md` 第 h 节：S4-00 写的"生成中发的消息不会插进当前回合"只在没有工具调用时成立；
+  - Claude 会话的提示改为"生成中：工具调用后或本轮结束后读到"（原来是"排到下一轮"），按钮仍是"排队"
+- 测试本身的问题：第一版等待"回复里出现交接摘要"，但 A 会话的标题就是它带摘要的第一条消息，转进来的留言回复里已经有这段文字，等待提前满足，下一条消息发得太早。改为先等 MCP 回复（`MOCK-MCP:`）
+- 验证：`npm run verify` 退出码 0（181 个测试）；e2e 31/31
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 06:00 · S5-08 真实冒烟
+- 结果：done
+- 脚本 `scripts/smoke-stage5.mjs`（`npm run smoke:stage5`）：Host 在沙箱数据目录、端口 47961，独立 CODEX_HOME；结束后归档会话、删除沙箱目录。结果在 `spikes/results/s5-08-smoke.json`
+- GLM（Claude 会话），4 回合全部通过：
+  - `task_note_add` 记进度：任务上出现这条进度，作者是这个会话；
+  - `decision_request` 提问"Retry limit: 3 or 5?"（选项 3/5），我通过接口回答 3；
+  - `mailbox_read` 读回答复，模型回答"You decided on a retry limit of 3."；
+  - `canvas_group_create` 先弹审批，批准后建出"GLM 组"
+- DeepSeek（Codex 会话），3 回合全部通过：
+  - `mailbox_send` 给 GLM 会话留言，**发件人正确记成这个 Codex 会话**：每个会话各自的身份请求头在真实 Codex 上生效；
+  - `handoff_submit` 提交交接摘要，记在自己的任务上；
+  - `canvas_group_create`：真实 Codex 发出 MCP 批准请求（elicitation），显示为审批卡片"Allow the amo MCP server to run tool "canvas_group_create"?"，批准后建出"DeepSeek 组"
+- 额度：GLM +4（20/5000），DeepSeek +3（25/1000）
+- commit：见本次 commit
+
+## 2026-10-14 06:40 · S5-09 阶段 5 收尾
+- 结果：done
+- 代码审查（`/code-review` 需要你来触发，这里按阶段 5 的全部改动自查，重点是 MCP 写入的权限边界）：
+  - 写入工具都按调用者自己的会话限定：没有身份或身份无效时只能读；写进度、交接时 Host 再核对"只能写自己的任务"；
+  - Codex 的身份令牌是随机 24 字节，只在本机数据库里；令牌只能代表一个会话写入；
+  - **修复**：agent 写的进度、留言、决策问题和人写的答复都没有长度上限，失控的回合可能写入超大文本，塞满数据库和 Focus。现在进度和留言最多 8000 字，问题和答复最多 2000 字，选项每个 200 字，超出返回 400；补了接口测试（62f358b）；
+  - 记录但没改：已归档的会话理论上仍可凭令牌写入，但归档后 Codex 线程和 Claude 进程都不会再运行，实际碰不到
+- 防偏离自查：
+  - "不做自动审批"：不弹审批的只有记自己任务的进度和交接、留言、读留言、提问，都不碰文件和命令、不进入别人的对话；画布写入一律弹审批；看板列只能由人移动。没有越界；
+  - interaction-notes "Focus 只能就地批准，其他回工作台"：Focus 里多了"点选项回答决策"，性质和批准相同（一键处理待办），写答复仍回工作台。已在阶段 5 完成里请你过目；
+  - "一个状态只显示一次"：看板卡片上待决策、留言是计数，写在卡片的说明行里，不是第二个状态点
+- 完整验证：`npm run verify` 退出码 0（181 个测试）；e2e 31/31
+- 合并：`studio/stage-5` 用 `--no-ff` 合并进 `studio/main`
+- NEEDS_YOU：写入"阶段 5 完成"（请你过目）、"是否开放派发、怎样限权"（必须等你，S5-10；不回复就保持不开放）
+- 额度：0

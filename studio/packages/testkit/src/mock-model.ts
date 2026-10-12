@@ -1,5 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { listenInStudioRange } from "./ports.js";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -65,20 +66,22 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  *   the subagent itself replies `MOCK-SUB: /root/<task_name>`
  * - `[[slow]]` → stream the reply in many small chunks with a delay (for steer/interrupt tests)
  * - `[[markdown]]` → a reply with a table, a nested list, a code block and a link (rendering tests)
- * - `[[mcp: <tool>]]` → calls the AMO MCP tool of that name (as Codex exposes it), then replies `MOCK-MCP: <start of its output>`
+ * - `[[mcp: <tool> {json args}]]` → calls the AMO MCP tool of that name (as Codex exposes it), then replies
+ *   `MOCK-MCP: <start of its output>`
  * - anything else → `MOCK: <user text>`
  */
 export const defaultScript: MockScript = (req) => {
   if (req.afterToolOutput && req.lastTool && /amo/.test(req.lastTool.name)) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.output.slice(0, 200)}` };
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
-  const mcp = /\[\[mcp:\s*([a-z_]+)\s*\]\]/.exec(req.lastUserText);
+  const mcp = /\[\[mcp:\s*([a-z_]+)\s*(\{.*?\})?\s*\]\]/.exec(req.lastUserText);
   if (mcp) {
     const name = req.tools.find((t) => /amo/.test(t) && (t.endsWith(`.${mcp[1]}`) || t.endsWith(`__${mcp[1]}`)));
     if (name) {
+      const args = mcp[2] ? (JSON.parse(mcp[2]) as Record<string, unknown>) : {};
       const dot = name.lastIndexOf(".");
       return dot > 0
-        ? { kind: "function_call", name: name.slice(dot + 1), namespace: name.slice(0, dot), arguments: {} }
-        : { kind: "function_call", name, arguments: {} };
+        ? { kind: "function_call", name: name.slice(dot + 1), namespace: name.slice(0, dot), arguments: args }
+        : { kind: "function_call", name, arguments: args };
     }
   }
   if (req.agentTask) return { kind: "text", text: `MOCK-SUB: ${req.agentTask}` };
@@ -217,7 +220,8 @@ export async function startMockModel(options: { port?: number; script?: MockScri
       res.end(JSON.stringify({ error: { message: String(err) } }));
     }
   });
-  await new Promise<void>((resolve) => server.listen(options.port ?? 0, "127.0.0.1", resolve));
+  if (options.port) await new Promise<void>((resolve) => server.listen(options.port, "127.0.0.1", resolve));
+  else await listenInStudioRange(server);
   const port = (server.address() as AddressInfo).port;
   return {
     baseUrl: `http://127.0.0.1:${port}/v1`,

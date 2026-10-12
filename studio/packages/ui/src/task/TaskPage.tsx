@@ -9,12 +9,17 @@ import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
 import { AnnotationPanel } from "./AnnotationPanel.js";
+import { MailPanel, useTaskMail } from "./MailPanel.js";
+import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
+import { NotesPanel, useTaskNotes } from "./NotesPanel.js";
 import type { SelectionAnchor } from "../lib/selection.js";
 
 interface TaskPageProps {
   link: HostLink;
   task: Task;
   sessions: readonly Session[];
+  /** All tasks (mail shows which task it came from). */
+  tasks?: readonly Task[];
   workspaces: readonly Workspace[];
   profiles: readonly ModelProfile[];
   initialSessionId?: string;
@@ -31,7 +36,7 @@ const WRITER = {
 } as const;
 
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
-export function TaskPage({ link, task, sessions, workspaces, profiles, initialSessionId, onBack }: TaskPageProps) {
+export function TaskPage({ link, task, sessions, tasks = [task], workspaces, profiles, initialSessionId, onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
   const [toast, setToast] = useState<Toast>(null);
@@ -84,6 +89,17 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
       ),
     );
   const reclaim = (id: string) => run(() => call(link, "POST /api/sessions/:id/reclaim", { id }));
+  const mail = useTaskMail(link, task, sessions);
+  const decisions = useOpenDecisions(link);
+  const notes = useTaskNotes(link, task.id);
+  const unread = new Map<string, number>();
+  for (const m of mail) if (m.state === "unread" && m.to.kind === "session") unread.set(m.to.sessionId, (unread.get(m.to.sessionId) ?? 0) + 1);
+  const forwardMail = (m: { id: string }, sessionId: string) =>
+    run(() => call(link, "POST /api/mail/:id/forward", { id: m.id }, { sessionId }), () => {
+      setSelected(sessionId);
+      setToast({ text: "已把留言转进对话。" });
+    });
+  const dismissMail = (m: { id: string }) => run(() => call(link, "PATCH /api/mail/:id", { id: m.id }, { state: "dismissed" }));
 
   const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
 
@@ -159,6 +175,7 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
           onSelect={setSelected}
           onNewSession={(input) => void newSession(input)}
           onRestore={(id) => void restore(id)}
+          unread={unread}
         />
         <div className="thread-col">
           {session && (
@@ -224,6 +241,21 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
           />
         </div>
         <AnnotationPanel
+          header={
+            <>
+            <DecisionPanel link={link} decisions={decisions} task={task} sessionTitle={(id) => sessions.find((s) => s.id === id)?.title || "会话"} />
+            <MailPanel
+              mail={mail}
+              sessions={sessions}
+              tasks={tasks}
+              current={session ?? null}
+              busy={busy}
+              onForward={(m, sessionId) => void forwardMail(m, sessionId)}
+              onDismiss={(m) => void dismissMail(m)}
+            />
+            <NotesPanel link={link} taskId={task.id} notes={notes} sessions={sessions} />
+            </>
+          }
           link={link}
           annotations={annotations}
           pending={pendingAnnotation}

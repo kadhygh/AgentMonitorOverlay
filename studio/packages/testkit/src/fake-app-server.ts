@@ -1,6 +1,8 @@
 import { randomUUID } from "node:crypto";
 import type { AddressInfo } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import { WebSocketServer, type WebSocket } from "ws";
+import { listenInStudioRange } from "./ports.js";
 
 // Scripted stand-in for `codex app-server` over WebSocket. It implements the JSON-RPC subset the Host uses and mirrors
 // the behaviour measured in studio/spikes/RESULTS.md:
@@ -45,6 +47,8 @@ export interface TurnContext {
   command(command: string, options?: { output?: string; approval?: boolean }): Promise<ApprovalDecision | "auto">;
   /** Creates a subagent thread, reports it through a subAgentActivity item and runs `text` as its reply. */
   subAgent(text: string): Promise<FakeThread>;
+  /** An MCP server asks before a tool runs (`mcpServer/elicitation/request`); resolves with the client's action. */
+  mcpElicitation(message: string, serverName?: string): Promise<string>;
   sleep(ms: number): Promise<void>;
 }
 
@@ -55,7 +59,8 @@ export class TurnInterrupted extends Error {}
 /**
  * Default script, matching the mock model's directives:
  * `[[shell: cmd]]` approval + command, `[[slow]]` slow stream, `[[subagent]]` spawns a subagent, `[[fail]]` fails the turn,
- * otherwise replies `FAKE: <text>`. Steered input is acknowledged in the reply.
+ * `[[elicit]]` an MCP tool approval (replies `FAKE-ELICITED: <action>`), otherwise replies `FAKE: <text>`. Steered input
+ * is acknowledged in the reply.
  */
 export const defaultTurnScript: TurnScript = async (ctx) => {
   const shell = /\[\[shell:\s*([^\]]+)\]\]/.exec(ctx.userText);
@@ -65,6 +70,11 @@ export const defaultTurnScript: TurnScript = async (ctx) => {
     return;
   }
   if (ctx.userText.includes("[[fail]]")) throw new Error("scripted failure");
+  if (ctx.userText.includes("[[elicit]]")) {
+    const action = await ctx.mcpElicitation('Allow the amo MCP server to run tool "canvas_group_create"?');
+    await ctx.agentMessage(`FAKE-ELICITED: ${action}`);
+    return;
+  }
   if (ctx.userText.includes("[[subagent]]")) {
     await ctx.subAgent("FAKE-SUB-DONE");
     await ctx.agentMessage("FAKE: subagent finished");
@@ -89,7 +99,7 @@ interface PendingApproval {
   threadId: string;
   method: string;
   params: Record<string, unknown>;
-  resolve: (decision: ApprovalDecision) => void;
+  resolve: (decision: string) => void;
 }
 
 export interface FakeAppServerOptions {
@@ -123,13 +133,17 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
   const calls: FakeAppServer["calls"] = [];
   let nextRequestId = 0;
 
+  // An HTTP server carries the WebSocket server so it can listen inside Studio's port range (red line 6). The
+  // WebSocket server is attached only once listening succeeded: it re-emits the HTTP server's errors, which would turn
+  // a port already in use (retried by listenInStudioRange) into an unhandled error.
+  const http = createHttpServer();
+  if (options.port) await new Promise<void>((resolve) => http.listen(options.port, "127.0.0.1", resolve));
+  else await listenInStudioRange(http);
   const wss = new WebSocketServer({
-    host: "127.0.0.1",
-    port: options.port ?? 0,
+    server: http,
     verifyClient: (info: { req: { headers: Record<string, string | string[] | undefined> } }) => info.req.headers.authorization === `Bearer ${token}`,
   });
-  await new Promise<void>((resolve) => wss.once("listening", () => resolve()));
-  const port = (wss.address() as AddressInfo).port;
+  const port = (http.address() as AddressInfo).port;
 
   const send = (client: Client, msg: unknown) => {
     if (client.ws.readyState === client.ws.OPEN) client.ws.send(JSON.stringify(msg));
@@ -227,6 +241,17 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
         turn.items.push(item);
         notify(thread.id, "item/completed", { item, threadId: thread.id, turnId: turn.id, completedAtMs: Date.now() });
       },
+      async mcpElicitation(message, serverName = "amo") {
+        check();
+        const requestId = nextRequestId++;
+        const params = { threadId: thread.id, turnId: turn.id, serverName, mode: "form", _meta: null, message, requestedSchema: { type: "object", properties: {} } };
+        const action = await new Promise<string>((resolve) => {
+          pending.set(requestId, { requestId, threadId: thread.id, method: "mcpServer/elicitation/request", params, resolve });
+          for (const c of subscribers(thread.id)) send(c, { id: requestId, method: "mcpServer/elicitation/request", params });
+        });
+        check();
+        return action;
+      },
       async command(command, opts = {}) {
         check();
         const itemId = randomUUID();
@@ -235,7 +260,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
           const requestId = nextRequestId++;
           const params = { threadId: thread.id, turnId: turn.id, itemId, command, cwd: thread.cwd, reason: null, startedAtMs: Date.now() };
           decision = await new Promise<ApprovalDecision>((resolve) => {
-            pending.set(requestId, { requestId, threadId: thread.id, method: "item/commandExecution/requestApproval", params, resolve });
+            pending.set(requestId, { requestId, threadId: thread.id, method: "item/commandExecution/requestApproval", params, resolve: (d) => resolve(d as ApprovalDecision) });
             for (const c of subscribers(thread.id)) send(c, { id: requestId, method: "item/commandExecution/requestApproval", params });
           });
           check();
@@ -379,7 +404,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
     clients.add(client);
     ws.on("close", () => clients.delete(client));
     ws.on("message", (data) => {
-      const msg = JSON.parse(String(data)) as { id?: number; method?: string; params?: Record<string, unknown>; result?: { decision?: ApprovalDecision } };
+      const msg = JSON.parse(String(data)) as { id?: number; method?: string; params?: Record<string, unknown>; result?: { decision?: ApprovalDecision; action?: string } };
       if (msg.method && msg.id !== undefined) {
         calls.push({ method: msg.method, params: msg.params });
         const handler = handlers[msg.method];
@@ -397,7 +422,8 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
         if (!p) return;
         pending.delete(msg.id);
         notify(p.threadId, "serverRequest/resolved", { threadId: p.threadId, requestId: msg.id });
-        p.resolve(msg.result.decision ?? "decline");
+        // Command approvals answer with a decision, MCP elicitations with an action.
+        p.resolve(msg.result.decision ?? msg.result.action ?? "decline");
       }
     });
   });
@@ -411,7 +437,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
     close: () =>
       new Promise<void>((resolve) => {
         for (const c of clients) c.ws.terminate();
-        wss.close(() => resolve());
+        wss.close(() => http.close(() => resolve()));
       }),
   };
 }

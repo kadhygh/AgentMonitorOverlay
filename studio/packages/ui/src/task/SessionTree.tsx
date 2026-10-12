@@ -15,10 +15,12 @@ interface SessionTreeProps {
   onSelect(id: string): void;
   onNewSession(input: { profileId: string; workspaceId?: string }): void;
   onRestore(id: string): void;
+  /** Unread mail per session id. */
+  unread?: ReadonlyMap<string, number>;
 }
 
 /** Left column of the task page: session tree (forks and subagents indented), new session, archived area. */
-export function SessionTree({ task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore }: SessionTreeProps) {
+export function SessionTree({ task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread }: SessionTreeProps) {
   const isArea = task.scope.kind === "area";
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
@@ -44,7 +46,8 @@ export function SessionTree({ task, sessions, workspaces, profiles, selected, bu
       {rows.map(({ node, depth }, idx) => {
         const s = node.session;
         const look = SESSION_LOOK[s.status];
-        const kind = [KIND[s.kind], shortModel(profile(s.profileId)), isArea && s.kind === "main" ? wsName(s.workspaceId) : "", s.writer === "terminal-shared" ? "终端" : ""]
+        const letters = unread?.get(s.id) ?? 0;
+        const kind = [KIND[s.kind], shortModel(profile(s.profileId)), isArea && s.kind === "main" ? wsName(s.workspaceId) : "", s.writer === "terminal-shared" ? "终端" : "", letters ? `${letters} 条留言` : ""]
           .filter(Boolean)
           .join(" · ");
         return (

@@ -15,10 +15,13 @@ interface BoardProps {
   workspaces: readonly Workspace[];
   scope: Scope;
   onOpen(task: Task): void;
+  /** Unread mail and open decisions per task id. */
+  mail?: ReadonlyMap<string, number>;
+  decisions?: ReadonlyMap<string, number>;
 }
 
 /** Four columns; the person moves cards, agents never do. Cards are entry points and carry no buttons. */
-export function Board({ tasks, sessions, workspaces, scope, onOpen }: BoardProps) {
+export function Board({ tasks, sessions, workspaces, scope, onOpen, mail, decisions }: BoardProps) {
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   return (
@@ -32,7 +35,16 @@ export function Board({ tasks, sessions, workspaces, scope, onOpen }: BoardProps
               <span className="column-count">{cards.length}</span>
             </div>
             {cards.map((task) => (
-              <TaskCard key={task.id} task={task} sessions={taskSessions(task, sessions)} scope={scope} workspaces={workspaces} onOpen={onOpen} />
+              <TaskCard
+                key={task.id}
+                task={task}
+                sessions={taskSessions(task, sessions)}
+                scope={scope}
+                workspaces={workspaces}
+                onOpen={onOpen}
+                mail={mail?.get(task.id) ?? 0}
+                decisions={decisions?.get(task.id) ?? 0}
+              />
             ))}
             {cards.length === 0 && <div className="empty-col">空</div>}
           </div>
@@ -42,7 +54,23 @@ export function Board({ tasks, sessions, workspaces, scope, onOpen }: BoardProps
   );
 }
 
-function TaskCard({ task, sessions, scope, workspaces, onOpen }: { task: Task; sessions: Session[]; scope: Scope; workspaces: readonly Workspace[]; onOpen(t: Task): void }) {
+function TaskCard({
+  task,
+  sessions,
+  scope,
+  workspaces,
+  onOpen,
+  mail = 0,
+  decisions = 0,
+}: {
+  task: Task;
+  sessions: Session[];
+  scope: Scope;
+  workspaces: readonly Workspace[];
+  onOpen(t: Task): void;
+  mail?: number;
+  decisions?: number;
+}) {
   const status = taskStatus(sessions);
   const look = status ? SESSION_LOOK[status] : null;
   const live = sessions.filter((s) => !s.archivedAt);
@@ -52,6 +80,8 @@ function TaskCard({ task, sessions, scope, workspaces, onOpen }: { task: Task; s
   let where = "";
   if (task.scope.kind === "area" || scope.kind === "all") where = taskWhere(task, sessions, workspaces);
   const meta = [where, mains.length ? `${mains.length} 个会话` : "还没有会话", branches ? `${branches} 个分支` : ""].filter(Boolean).join(" · ");
+  // Collaboration hints are counts in the meta line, not a second status: the dot keeps one status per card.
+  const asks = [decisions ? `${decisions} 个待决策` : "", mail ? `${mail} 条留言` : ""].filter(Boolean).join(" · ");
 
   return (
     <button type="button" className="card" onClick={() => onOpen(task)} data-testid="task-card">
@@ -72,6 +102,11 @@ function TaskCard({ task, sessions, scope, workspaces, onOpen }: { task: Task; s
         <span>{relativeTime(task.updatedAt)}</span>
       </span>
       <span className="card-meta">{meta}</span>
+      {asks && (
+        <span className="card-asks" data-testid="card-asks">
+          {asks}
+        </span>
+      )}
     </button>
   );
 }
