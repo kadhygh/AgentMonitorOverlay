@@ -403,3 +403,19 @@
 - 验证：`npm run verify` 退出码 0（152 个测试）；e2e 22/22；没有遗留的 SDK 进程
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-13 15:30 · S4-03 分支与子 agent（Claude）
+- 结果：done
+- 改动（`claude-runtime.ts`）：
+  - **分支**：用 SDK 的 `forkSession()` 复制会话记录（不调模型），建成 `kind: "fork"` 的子会话；还没有对话内容时拒绝；`forkSession` 在 Host 进程里读 `CLAUDE_CONFIG_DIR`，调用前临时设置、调用后恢复；
+  - **子 agent**：
+    - 每次 `Agent` 调用建一个 `kind: "sub"` 的子会话，父会话里显示一条子 agent 摘要，不再出工具卡片；子 agent 的提示、工具调用和结果写进子会话；
+    - 前台子 agent 的最终回复从父会话那次工具结果的 `tool_use_result` 里取（它不会流出来）；后台子 agent 等 `task_notification` 才算结束；
+    - Claude 的子 agent 会话不能单独发消息，也不能分支；
+  - **防提权**：`Agent` 调用不经过 `canUseTool`，所以上一轮写在 `canUseTool` 里的"去掉 mode"根本执行不到，已删除；改用 `PreToolUse` 钩子去掉 `mode`
+- 测试：集成测试新增 4 个（分支带上下文且互不影响、前台子 agent 归组、带 `bypassPermissions` 的子 agent 执行命令前仍出审批卡片、后台子 agent 等通知结束）；mock 单测 1 个；mock 新增 `[[spawn-mode-<mode>: …]]` 指令，子 agent 的提示里可以嵌套 `[[shell: …]]`
+- **更正 S4-01 的结论**：S4-01 写的"模型可以借 `mode` 让子 agent 绕过审批"不准确。实测父会话为 "default" 时，子 agent 带 `bypassPermissions`/`auto`/`acceptEdits`/`dontAsk` 执行命令都仍然要人批准。钩子作为保险保留。`spikes/RESULTS.md` 已更正
+- 过程问题：有一次用 Python 脚本改 mock 时断言失败、文件没改，但我没注意到输出里缺了 "ok"，接着用旧的 mock 调试了一轮。之后改用 Edit 工具
+- 验证：`npm run verify` 退出码 0（156 个测试）；e2e 22/22；没有遗留的临时目录和 SDK 进程
+- 额度：0
+- commit：见本次 commit

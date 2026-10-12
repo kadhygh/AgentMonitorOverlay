@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { query, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { forkSession, query, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ApprovalDecision, ApprovalKind, Id, ModelProfile, Session, Workspace } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
@@ -13,8 +13,11 @@ import { claudeEnv, type ClaudeProviderDef } from "./claude-env.js";
 //   canUseTool waits for the person and becomes an approval card;
 // - a message sent while a turn runs is queued for the next turn (the SDK does not fold it into the running one);
 // - after interrupt() the SDK ends the query with an error, which is treated as "interrupted";
-// - one query can produce several results (a background subagent's notification starts another turn).
-// Forks and subagent trees come in S4-03; terminal handoff in S4-05.
+// - one query can produce several results (a background subagent's notification starts another turn);
+// - a subagent has no session of its own in Claude: its messages carry parent_tool_use_id. Studio still gives each
+//   Agent call a child session ("sub") so the tree and "查看" work as for Codex; it cannot take messages itself;
+// - forks copy the transcript with forkSession() (no model call).
+// Terminal handoff comes in S4-05.
 
 export interface ClaudeRuntimeOptions {
   store: Store;
@@ -59,7 +62,31 @@ interface Live {
   tools: Map<string, Id>;
   declinedTools: Set<string>;
   approvals: Map<string, PendingApproval>;
+  /** Agent tool_use id -> child session */
+  subs: Map<string, Id>;
+  /** Agent calls running in the background (their tool result arrives at once; a task notification ends them) */
+  backgroundSubs: Set<string>;
 }
+
+/**
+ * Defence in depth: an Agent call may ask for a permission `mode` (bypassPermissions, auto, dontAsk…) for its
+ * subagent. The Agent tool itself does not go through canUseTool, so the mode is dropped in a PreToolUse hook.
+ * (With the parent in "default" mode, CLI 2.1.296 did not honour such a mode anyway; see spikes/RESULTS.md.)
+ */
+const STRIP_SUBAGENT_MODE: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
+  PreToolUse: [
+    {
+      matcher: "Agent|Task",
+      hooks: [
+        async (input) => {
+          const toolInput = (input as { tool_input?: Record<string, unknown> }).tool_input;
+          if (!toolInput || !("mode" in toolInput)) return {};
+          return { hookSpecificOutput: { hookEventName: "PreToolUse", updatedInput: withoutKey(toolInput, "mode") } };
+        },
+      ],
+    },
+  ],
+};
 
 const DECLINED = "The person declined this in AMO Studio.";
 
@@ -118,8 +145,34 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     await live.q.interrupt().catch((err: unknown) => this.emit("log", `interrupt failed for ${sessionId}: ${String(err)}`));
   }
 
-  async fork(): Promise<Session> {
-    throw new Error("forking Claude sessions comes in S4-03");
+  /** Copies the transcript into a new Claude session (no model call); the branch continues from there. */
+  async fork(sessionId: Id, profileId?: Id): Promise<Session> {
+    const parent = this.requireSession(sessionId);
+    if (parent.kind === "sub") throw Object.assign(new Error("Claude 的子 agent 没有独立的对话，不能分支"), { code: "read_only" });
+    const profile = this.profile(profileId ?? parent.profileId);
+    const workspace = this.store.getWorkspace(parent.workspaceId);
+    if (!workspace || !parent.runtimeRef) throw new Error(`session ${sessionId} cannot be forked`);
+    if (!this.hasTranscript(parent.runtimeRef)) throw Object.assign(new Error("这个会话还没有对话内容，不能分支"), { code: "conflict" });
+    const title = `${parent.title || "会话"} · 分支`;
+    // forkSession runs in this process and reads CLAUDE_CONFIG_DIR from it, not from the child env.
+    const previous = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = this.options.claudeHome;
+    let forked: { sessionId: string };
+    try {
+      forked = await forkSession(parent.runtimeRef, { dir: workspace.path, title });
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = previous;
+    }
+    return this.createSession({
+      taskId: parent.taskId,
+      parentId: parent.id,
+      kind: "fork",
+      profileId: profile.id,
+      workspaceId: parent.workspaceId,
+      title,
+      runtimeRef: forked.sessionId,
+    });
   }
 
   async archive(sessionId: Id): Promise<Session[]> {
@@ -204,6 +257,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       tools: new Map(),
       declinedTools: new Set(),
       approvals: new Map(),
+      subs: new Map(),
+      backgroundSubs: new Set(),
     };
     live.q = query({
       prompt: input(),
@@ -214,6 +269,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         permissionMode: "default",
         includePartialMessages: true,
         canUseTool: (toolName, toolInput, ctx) => this.askPerson(session.id, live, toolName, toolInput, ctx),
+        hooks: STRIP_SUBAGENT_MODE,
         // A session that already has a transcript continues it; a new one starts under the id Studio chose.
         ...(this.hasTranscript(ref) ? { resume: ref } : { sessionId: ref }),
       },
@@ -245,6 +301,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     for (const id of live.streaming) this.updateItem(id, (it) => (it.type === "agent" ? { ...it, markdown: live.text.get(id) ?? it.markdown, streaming: false } : it));
     for (const a of live.approvals.values()) this.updateItem(a.itemId, (it) => (it.type === "approval" && it.state === "pending" ? { ...it, state: "resolved-elsewhere" } : it));
     for (const id of live.tools.values()) this.updateItem(id, (it) => (it.type === "tool" && it.status === "running" ? { ...it, status: "failed" } : it));
+    for (const childId of live.subs.values()) {
+      if (this.store.getSession(childId)?.status === "running") this.setStatus(childId, err && !live.interrupted ? "error" : "idle");
+    }
     if (!this.store.getSession(sessionId)) return;
     if (err && !live.interrupted) {
       this.appendItem(sessionId, { type: "error", message: `Claude 会话异常结束：${firstLine(err)}` }, { method: "query/error" });
@@ -273,8 +332,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private onMessage(sessionId: Id, live: Live, m: SDKMessage): void {
-    // Subagent traffic (parent_tool_use_id set) is grouped under its Agent call in S4-03.
-    if ("parent_tool_use_id" in m && m.parent_tool_use_id) return;
+    const parentToolUse = "parent_tool_use_id" in m ? m.parent_tool_use_id : null;
+    if (parentToolUse) return this.onSubagentMessage(live, parentToolUse, m);
     switch (m.type) {
       case "stream_event": {
         const e = m.event as { type: string; index?: number; content_block?: { type: string }; delta?: { type: string; text?: string } };
@@ -306,8 +365,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
               this.appendItem(sessionId, { type: "agent", markdown: block.text, streaming: false }, { method: "assistant" });
             }
           } else if (block.type === "tool_use") {
-            const created = this.appendItem(sessionId, { type: "tool", ...describeToolUse(block.name, block.input as Record<string, unknown>), status: "running" }, { method: "tool_use", itemId: block.id });
-            live.tools.set(block.id, created.id);
+            if (block.name === "Agent" || block.name === "Task") this.startSubagent(sessionId, live, block.id, block.input as Record<string, unknown>);
+            else this.addToolCard(sessionId, live, block.id, block.name, block.input as Record<string, unknown>);
           }
         }
         return;
@@ -317,21 +376,32 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         if (!Array.isArray(content)) return;
         for (const block of content) {
           if (block.type !== "tool_result") continue;
-          const itemId = live.tools.get(block.tool_use_id);
-          if (!itemId) continue;
-          live.tools.delete(block.tool_use_id);
-          const declined = live.declinedTools.delete(block.tool_use_id);
-          const detail = toolResultText(block.content);
-          this.updateItem(itemId, (it) =>
-            it.type === "tool" ? { ...it, status: declined ? "declined" : block.is_error ? "failed" : "completed", ...(detail ? { detail: detail.slice(-4000) } : {}) } : it,
-          );
+          const child = live.subs.get(block.tool_use_id);
+          if (child) {
+            // A foreground subagent's final reply is not streamed: it only comes back in the Agent call's result.
+            const result = (m as { tool_use_result?: { status?: string; content?: unknown } }).tool_use_result;
+            const reply = result?.status === "completed" ? toolResultText(result.content).trim() : "";
+            const shown = this.store.listItems(child).some((i) => i.type === "agent" && i.markdown.trim() === reply);
+            if (reply && !shown) this.appendItem(child, { type: "agent", markdown: reply, streaming: false }, { method: "agent/result", itemId: block.tool_use_id });
+            // A background subagent's result only says it was launched; its task notification ends it.
+            if (!live.backgroundSubs.has(block.tool_use_id) || result?.status === "completed") this.setStatus(child, block.is_error ? "error" : "completed");
+            continue;
+          }
+          this.settleToolCard(live, block.tool_use_id, block.content, block.is_error === true);
         }
         return;
       }
       case "system": {
-        const s = m as { subtype: string; task_id?: string };
-        if (s.subtype === "task_started" && s.task_id) live.background.add(s.task_id);
-        if (s.subtype === "task_notification" && s.task_id) live.background.delete(s.task_id);
+        const s = m as { subtype: string; task_id?: string; tool_use_id?: string; status?: string };
+        if (s.subtype === "task_started" && s.task_id) {
+          live.background.add(s.task_id);
+          if (s.tool_use_id && live.subs.has(s.tool_use_id)) live.backgroundSubs.add(s.tool_use_id);
+        }
+        if (s.subtype === "task_notification" && s.task_id) {
+          live.background.delete(s.task_id);
+          const child = s.tool_use_id ? live.subs.get(s.tool_use_id) : undefined;
+          if (child) this.setStatus(child, s.status === "completed" ? "completed" : s.status === "stopped" ? "idle" : "error");
+        }
         return;
       }
       case "result": {
@@ -354,6 +424,57 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
   }
 
+  /** An Agent call: a child session in the tree and a summary line in the parent, instead of a tool card. */
+  private startSubagent(sessionId: Id, live: Live, toolUseId: string, input: Record<string, unknown>): void {
+    const parent = this.requireSession(sessionId);
+    const name = String(input.description ?? input.subagent_type ?? "子 agent");
+    const child = this.createSession({
+      taskId: parent.taskId,
+      parentId: parent.id,
+      kind: "sub",
+      profileId: parent.profileId,
+      workspaceId: parent.workspaceId,
+      title: name,
+      runtimeRef: `${parent.runtimeRef}/agent/${toolUseId}`,
+    });
+    this.setStatus(child.id, "running");
+    if (typeof input.prompt === "string" && input.prompt) this.appendItem(child.id, { type: "user", text: input.prompt }, { method: "agent/prompt", itemId: toolUseId });
+    live.subs.set(toolUseId, child.id);
+    this.appendItem(sessionId, { type: "subagent", childSessionId: child.id, summary: name }, { method: "tool_use", itemId: toolUseId });
+  }
+
+  /** Messages of a subagent (parent_tool_use_id set) go into its child session. Its partial stream is not shown. */
+  private onSubagentMessage(live: Live, parentToolUse: string, m: SDKMessage): void {
+    const child = live.subs.get(parentToolUse);
+    if (!child) return;
+    if (m.type === "assistant") {
+      for (const block of m.message.content) {
+        if (block.type === "text" && block.text) this.appendItem(child, { type: "agent", markdown: block.text, streaming: false }, { method: "assistant" });
+        else if (block.type === "tool_use") this.addToolCard(child, live, block.id, block.name, block.input as Record<string, unknown>);
+      }
+    } else if (m.type === "user" && Array.isArray(m.message.content)) {
+      for (const block of m.message.content) {
+        if (block.type === "tool_result") this.settleToolCard(live, block.tool_use_id, block.content, block.is_error === true);
+      }
+    }
+  }
+
+  private addToolCard(sessionId: Id, live: Live, toolUseId: string, name: string, input: Record<string, unknown>): void {
+    const created = this.appendItem(sessionId, { type: "tool", ...describeToolUse(name, input), status: "running" }, { method: "tool_use", itemId: toolUseId });
+    live.tools.set(toolUseId, created.id);
+  }
+
+  private settleToolCard(live: Live, toolUseId: string, content: unknown, isError: boolean): void {
+    const itemId = live.tools.get(toolUseId);
+    if (!itemId) return;
+    live.tools.delete(toolUseId);
+    const declined = live.declinedTools.delete(toolUseId);
+    const detail = toolResultText(content);
+    this.updateItem(itemId, (it) =>
+      it.type === "tool" ? { ...it, status: declined ? "declined" : isError ? "failed" : "completed", ...(detail ? { detail: detail.slice(-4000) } : {}) } : it,
+    );
+  }
+
   private turnStarted(sessionId: Id, live: Live): void {
     live.running = true;
     this.clearIdle(live);
@@ -368,8 +489,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     toolInput: Record<string, unknown>,
     ctx: { signal: AbortSignal; toolUseID?: string; title?: string; description?: string },
   ): Promise<PermissionResult> {
-    // A subagent must not be started in a mode that skips the person (bypassPermissions, auto, dontAsk…).
-    const input = toolName === "Agent" || toolName === "Task" ? withoutKey(toolInput, "mode") : toolInput;
+    const input = toolInput;
     const approvalId = ctx.toolUseID ?? randomUUID();
     const kind: ApprovalKind = toolName === "Bash" || toolName === "PowerShell" ? "command" : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(toolName) ? "fileChange" : "permissions";
     const summary = String(input.command ?? input.file_path ?? input.notebook_path ?? ctx.title ?? toolName);
@@ -402,7 +522,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         if (item.type === "tool" && item.status === "running") this.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "failed" } : it));
       }
       if (s.status === "running" || s.status === "awaiting-approval") {
-        this.appendItem(s.id, { type: "notice", level: "warning", message: "Host 重启时这条会话的回复被中断了。发一条消息即可接着对话。" });
+        if (s.kind !== "sub") this.appendItem(s.id, { type: "notice", level: "warning", message: "Host 重启时这条会话的回复被中断了。发一条消息即可接着对话。" });
         this.setStatus(s.id, "idle");
       }
     }
@@ -436,6 +556,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   private writable(id: Id): Session {
     const s = this.requireSession(id);
+    if (s.kind === "sub") throw Object.assign(new Error("Claude 的子 agent 不能单独接收消息，请在父会话里继续"), { code: "read_only" });
     if (s.writer === "archived" || s.writer === "terminal-handoff") throw Object.assign(new Error(`session ${id} is read-only (${s.writer})`), { code: "read_only" });
     if (!s.runtimeRef) throw new Error(`session ${id} has no Claude session id`);
     return s;

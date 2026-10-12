@@ -44,4 +44,11 @@ describe("mock Anthropic request parsing", () => {
     expect(defaultClaudeScript(req("[[spawn: a: go]]"))).toMatchObject({ name: "Agent", input: { run_in_background: false, prompt: "[[subagent: a]] go" } });
     expect(defaultClaudeScript(req("[[spawn-bg: b: go]]"))).toMatchObject({ name: "Agent", input: { run_in_background: true } });
   });
+
+  it("spawns before running a nested command, and passes a requested mode through", () => {
+    const parent = parseClaudeRequest({ tools, messages: [{ role: "user", content: "[[spawn-mode-bypassPermissions: h: [[shell: mkdir x]]]]" }] });
+    expect(defaultClaudeScript(parent)).toMatchObject({ name: "Agent", input: { mode: "bypassPermissions", prompt: "[[subagent: h]] [[shell: mkdir x]]" } });
+    const sub = parseClaudeRequest({ tools, messages: [{ role: "user", content: "[[subagent: h]] [[shell: mkdir x]]" }] });
+    expect(defaultClaudeScript(sub)).toMatchObject({ kind: "tool_use", name: "Bash", input: { command: "mkdir x" } });
+  });
 });

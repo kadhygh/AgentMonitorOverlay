@@ -33,8 +33,15 @@
 S4-01 用 mock Anthropic 接口补充发现（不消耗额度）：
 - **不传 `permissionMode` 时 CLI 默认是 `auto`**：由一个模型分类器代替人决定批不批，`canUseTool` 不会被调用（mock 收到了分类器的请求）。预研脚本显式传了 `"default"` 所以没暴露。**Host 必须始终显式传 `permissionMode: "default"`**，否则就是自动审批。
 - `Agent` 工具默认在**后台**运行子 agent（工具结果是 "Async agent launched successfully"）；子 agent 结束后 CLI 通知父会话，父会话**自动再跑一轮**，同一个 `query()` 里会出现两个 `result`。Runtime 不能假设"一次发送对应一个 result"。
-- `Agent` 工具的参数里有 `mode`（可取 `bypassPermissions`、`auto`、`dontAsk` 等）和 `run_in_background`。模型可以借 `mode` 让子 agent 绕过审批，**Host 的 `canUseTool` 收到 `Agent` 调用时必须去掉 `mode`（或拒绝）**。
+- `Agent` 工具的参数里有 `mode`（可取 `bypassPermissions`、`auto`、`dontAsk` 等）和 `run_in_background`。
+  - S4-03 实测更正：`Agent` 调用本身**不经过** `canUseTool`；父会话为 "default" 时，子 agent 带 `bypassPermissions`/`auto`/`acceptEdits`/`dontAsk` 去执行 `mkdir`，**仍然**走 `canUseTool` 要人批准，没有绕过。
+  - 作为保险，Host 仍用 `PreToolUse` 钩子（matcher `Agent|Task`）把 `mode` 去掉；集成测试验证带 `bypassPermissions` 的子 agent 执行命令前会出审批卡片。
 - 这个版本的 CLI 会在请求的消息列表里追加 `role: "system"` 的消息（环境信息、剩余 token），用户消息里还有 `<system-reminder>` 文本块。
+- 子 agent 的消息（S4-03）：
+  - 前台子 agent 运行中，它的工具调用和结果会带着 `parent_tool_use_id` 流出来，但**最终文字回复不会流出来**，只在父会话那次 `Agent` 工具结果的 `tool_use_result.content` 里（`tool_use_result` 还有 `status`、`agentId`、用量等）；
+  - 后台子 agent 的文字回复会流出来；
+  - 前台和后台都会发 `task_started`/`task_notification`（带 `tool_use_id`）；
+  - 完整记录可以用 `getSubagentMessages(sessionId, agentId)` 读，Studio 暂不需要。
 
 ## f. 用 npm 版 Codex 0.161 复测（2026-10-13，mock 模型，不消耗额度）
 

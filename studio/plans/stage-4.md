@@ -37,7 +37,7 @@
 - 内容：`ClaudeRuntime` 实现与 `CodexRuntime` 相同的接口：新建会话、发送消息、生成中发的消息排队到下一轮（预研确认 SDK 不会插进当前回合，界面上写"排队"）、打断（`interrupt()` 之后的异常按"已打断"处理）、Host 重启后恢复；事件转成统一的会话条目（用户消息、回复流式增量、工具卡片、审批）。
 - 验收：Host 单元测试 + 集成测试（mock）。
 
-### S4-03 审批、分支与子 agent · todo
+### S4-03 审批、分支与子 agent · done
 - 依赖：S4-02
 - 注意（S4-01 发现）：`Agent` 调用的参数里如果带 `mode`（如 `bypassPermissions`），`canUseTool` 要去掉它再放行，子 agent 才不会绕过审批；后台子 agent（`run_in_background`）结束时父会话会多出一轮。
 - 内容：`canUseTool` 转成审批卡片；分支（从某条回复分支用 `forkSession(id, { upToMessageId })`，不调模型）进入会话树；子 agent 按 `parent_tool_use_id` 归组显示为摘要——它没有独立 session id，"查看"展开父会话里那段内容。

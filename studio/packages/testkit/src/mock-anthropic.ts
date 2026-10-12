@@ -48,17 +48,23 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
  *   parent then `MOCK-DONE`
  * - `[[spawn-bg: name: message]]` → the same in the background: the CLI returns at once, and when the subagent ends it
  *   notifies the parent, which runs another turn (a second `result` in the same query)
+ * - `[[spawn-mode-<mode>: name: message]]` → a foreground subagent that asks for that permission `mode`
+ *   (e.g. `spawn-mode-bypassPermissions`, `spawn-mode-auto`): the Host must not let it skip the person
+ * A subagent's message may itself carry `[[shell: …]]`: the subagent then runs that command before replying.
  * - `[[slow]]` → many small chunks with a delay (interrupt/queue tests)
  * - `[[markdown]]` → the same sample as the Responses mock
  * - anything else → `MOCK: <user text>`
  * Tool calls are only made when the request offers that tool, so side requests always get text.
  */
 export const defaultClaudeScript: ClaudeMockScript = (req) => {
-  if (req.subagent) return { kind: "text", text: `MOCK-SUB: ${req.subagent}` };
-  if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
   const shell = /\[\[shell:\s*([^\]]+)\]\]/.exec(req.lastUserText);
-  if (shell && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: shell[1]!.trim(), description: "mock command" } };
-  const spawn = /\[\[spawn(-bg)?:\s*([a-z0-9_-]+)\s*:\s*([^\]]+)\]\]/.exec(req.lastUserText);
+  if (req.subagent) {
+    if (shell && !req.afterToolOutput && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: shell[1]!.trim(), description: "mock command" } };
+    return { kind: "text", text: `MOCK-SUB: ${req.subagent}` };
+  }
+  if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
+  // Spawn is checked before shell: the message may contain a nested [[shell: …]] for the subagent, so it runs up to the last "]]".
+  const spawn = /\[\[spawn(-bg|-mode-[A-Za-z]+)?:\s*([a-z0-9_-]+)\s*:\s*(.+)\]\]\s*$/.exec(req.lastUserText);
   if (spawn) {
     const tool = req.tools.includes("Agent") ? "Agent" : req.tools.includes("Task") ? "Task" : null;
     if (tool) {
@@ -70,10 +76,12 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
           prompt: `[[subagent: ${spawn[2]!}]] ${spawn[3]!.trim()}`,
           subagent_type: "general-purpose",
           run_in_background: spawn[1] === "-bg",
+          ...(spawn[1]?.startsWith("-mode-") ? { mode: spawn[1].slice("-mode-".length) } : {}),
         },
       };
     }
   }
+  if (shell && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: shell[1]!.trim(), description: "mock command" } };
   if (req.lastUserText.includes("[[markdown]]")) return { kind: "text", text: MOCK_MARKDOWN };
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
   return { kind: "text", text: `MOCK: ${req.lastUserText}` };

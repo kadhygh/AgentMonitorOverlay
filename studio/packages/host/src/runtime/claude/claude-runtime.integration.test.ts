@@ -117,15 +117,53 @@ describe("ClaudeRuntime", () => {
     await until(() => agentTexts(s.id).includes("MOCK: after interrupt"), "reply after interrupt");
   }, 180_000);
 
-  it("runs a subagent (grouping and permission-mode stripping are checked in S4-03)", async () => {
+  it("forks a session: the branch carries the context and goes its own way", async () => {
+    const parent = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "remember the apples" });
+    await until(() => agentTexts(parent.id).includes("MOCK: remember the apples") && status(parent.id) === "idle", "parent reply");
+    const branch = await runtime.fork(parent.id);
+    expect(branch).toMatchObject({ kind: "fork", parentId: parent.id, runtime: "claude", title: "remember the apples · 分支" });
+    expect(branch.runtimeRef).not.toBe(parent.runtimeRef);
+    await runtime.sendMessage(branch.id, "in the branch");
+    await until(() => agentTexts(branch.id).includes("MOCK: in the branch"), "branch reply");
+    expect(JSON.stringify(mock.requests.at(-1)!.body.messages)).toContain("MOCK: remember the apples");
+    expect(agentTexts(parent.id)).toEqual(["MOCK: remember the apples"]);
+    const fresh = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace });
+    await expect(runtime.fork(fresh.id)).rejects.toThrow(/还没有对话内容/);
+  }, 120_000);
+
+  it("groups a subagent's work in a child session under the Agent call", async () => {
     const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[spawn: helper: say hi]]" });
-    await until(() => status(s.id) === "awaiting-approval" || (status(s.id) === "idle" && agentTexts(s.id).includes("MOCK-DONE")), "spawn handled");
-    if (status(s.id) === "awaiting-approval") {
-      const approval = items(s.id).find((i) => i.type === "approval") as { approvalId: string };
-      await runtime.respondApproval(s.id, approval.approvalId, "accept");
-    }
     await until(() => status(s.id) === "idle" && agentTexts(s.id).includes("MOCK-DONE"), "spawn done");
-    expect(mock.requests.some((r) => r.subagent === "helper")).toBe(true);
+    const line = items(s.id).find((i) => i.type === "subagent") as { childSessionId: string; summary: string } | undefined;
+    expect(line?.summary).toBe("helper");
+    expect(items(s.id).some((i) => i.type === "tool")).toBe(false); // no tool card for the Agent call itself
+    const child = store.getSession(line!.childSessionId)!;
+    expect(child).toMatchObject({ kind: "sub", parentId: s.id, runtime: "claude", title: "helper", status: "completed" });
+    expect(items(child.id).map((i) => i.type)).toEqual(["user", "agent"]);
+    expect(agentTexts(child.id)).toEqual(["MOCK-SUB: helper"]);
+    await expect(runtime.sendMessage(child.id, "hi")).rejects.toThrow(/子 agent/);
+  }, 120_000);
+
+  it("asks the person before a subagent's command, even when the Agent call asks to bypass permissions", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[spawn-mode-bypassPermissions: helper: [[shell: mkdir sub-made-dir]]]]" });
+    await until(() => status(s.id) === "awaiting-approval", "subagent approval");
+    const approval = items(s.id).find((i) => i.type === "approval") as { approvalId: string; summary: string };
+    expect(approval.summary).toBe("mkdir sub-made-dir");
+    expect(existsSync(join(wsDir, "sub-made-dir"))).toBe(false);
+    await runtime.respondApproval(s.id, approval.approvalId, "accept");
+    await until(() => status(s.id) === "idle" && agentTexts(s.id).includes("MOCK-DONE"), "after subagent approval");
+    expect(existsSync(join(wsDir, "sub-made-dir"))).toBe(true);
+    const child = (items(s.id).find((i) => i.type === "subagent") as { childSessionId: string }).childSessionId;
+    expect(items(child).find((i) => i.type === "tool")).toMatchObject({ name: "shell", summary: "mkdir sub-made-dir", status: "completed" });
+  }, 120_000);
+
+  it("keeps a background subagent running until its notification arrives", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[spawn-bg: watcher: check later]]" });
+    await until(() => items(s.id).some((i) => i.type === "subagent"), "background subagent");
+    const child = (items(s.id).find((i) => i.type === "subagent") as { childSessionId: string }).childSessionId;
+    await until(() => status(child) === "completed", "background subagent completed");
+    await until(() => status(s.id) === "idle" && agentTexts(s.id).filter((t) => t === "MOCK-DONE").length >= 2, "parent's second turn");
+    expect(agentTexts(child)).toEqual(["MOCK-SUB: watcher"]);
   }, 120_000);
 
   it("after a crash, marks turns that were in flight as over", async () => {
