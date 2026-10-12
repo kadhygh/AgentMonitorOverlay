@@ -26,18 +26,20 @@
 - 内容：在沙箱里（`%TEMP%\\amo-studio-sandbox\\`，`CLAUDE_CONFIG_DIR` 指向沙箱）用 GLM 跑最小脚本，确认：SDK 版本与它调用的 Claude Code 可执行文件；流式事件的种类；`resume`、`forkSession`；子 agent 事件里的 `parent_tool_use_id`；`canUseTool` 能否挂起等待人工决定；`interrupt`；会话记录存放位置；`claude --resume` 在同一 `CLAUDE_CONFIG_DIR` 下能否接上；`claude --bg` 和 `attach` 是否可用作共享。确认 GLM 凭据 id（只列条目名，不读值到输出）。
 - 验收：结论写进 `spikes/RESULTS.md` 新的一节；GLM 用量记入 `budget.json`。
 
-### S4-01 mock Anthropic 接口 · todo
+### S4-01 mock Anthropic 接口 · done
 - 依赖：S4-00
 - 内容：testkit 增加 mock Anthropic Messages 接口（流式 SSE），支持和 mock Responses 相同的指令：`[[shell: cmd]]`（发起工具调用，触发审批）、`[[slow]]`、`[[markdown]]`、`[[spawn: name: msg]]`（子 agent）。
 - 验收：单元测试；用 SDK 对着 mock 跑通一轮。
 
 ### S4-02 ClaudeRuntime：创建、发送、中断、恢复 · todo
 - 依赖：S4-01
+- 注意（S4-01 发现）：始终显式传 `permissionMode: "default"`（CLI 默认是 `auto`，等于自动审批）；一个 `query()` 里可能有多个 `result`（后台子 agent 结束后父会话会自动再跑一轮）。
 - 内容：`ClaudeRuntime` 实现与 `CodexRuntime` 相同的接口：新建会话、发送消息、生成中发的消息排队到下一轮（预研确认 SDK 不会插进当前回合，界面上写"排队"）、打断（`interrupt()` 之后的异常按"已打断"处理）、Host 重启后恢复；事件转成统一的会话条目（用户消息、回复流式增量、工具卡片、审批）。
 - 验收：Host 单元测试 + 集成测试（mock）。
 
 ### S4-03 审批、分支与子 agent · todo
 - 依赖：S4-02
+- 注意（S4-01 发现）：`Agent` 调用的参数里如果带 `mode`（如 `bypassPermissions`），`canUseTool` 要去掉它再放行，子 agent 才不会绕过审批；后台子 agent（`run_in_background`）结束时父会话会多出一轮。
 - 内容：`canUseTool` 转成审批卡片；分支（从某条回复分支用 `forkSession(id, { upToMessageId })`，不调模型）进入会话树；子 agent 按 `parent_tool_use_id` 归组显示为摘要——它没有独立 session id，"查看"展开父会话里那段内容。
 - 验收：集成测试覆盖批准、拒绝、分支、子 agent。
 

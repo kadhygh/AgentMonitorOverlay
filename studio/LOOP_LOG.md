@@ -364,3 +364,18 @@
 - 额度：GLM 12 次（12 / 5000）。另有两次脚本问题没有消耗额度：打断时 SDK 抛异常导致脚本退出（之后的实验没跑）；修复时 heredoc 把 `\n` 转成真换行导致语法错误
 - 计划更新：`plans/stage-4.md` 按结论改写 S4-02、S4-03 的做法
 - commit：见本次 commit
+
+## 2026-10-13 13:30 · S4-01 mock Anthropic 接口
+- 结果：done
+- 改动：`packages/testkit/src/mock-anthropic.ts`（Anthropic Messages 接口的本地替身，流式 SSE 和非流式都支持；指令 `[[shell: …]]`、`[[spawn: …]]`（前台子 agent）、`[[spawn-bg: …]]`（后台子 agent）、`[[slow]]`、`[[markdown]]`；`mockClaudeEnv()` 给出把 CLI 指向 mock 的环境变量）；解析单测 4 个；`packages/host/src/runtime/claude/mock-anthropic.sdk.test.ts` 用真实 SDK 对着 mock 跑 4 个场景（普通回复、需审批的命令、前台子 agent、后台子 agent），都在临时 `CLAUDE_CONFIG_DIR` 里
+- 调试：
+  - 第一次跑审批用例时测试进程堆内存耗尽：CLI 在工具结果之后又追加了 `role: "system"` 消息，mock 没认出"工具已经执行过"，一直重复发起同一个命令。改成"人最后一句话之后出现过工具结果"；
+  - 用调试脚本看 CLI 实际发出的请求，脚本临时放在 `packages/host/`，跑完删除；临时目录也已清理
+- **重要发现**（已写进 `spikes/RESULTS.md` 第 h 节和阶段 4 计划）：
+  - 不传 `permissionMode` 时 CLI 默认是 `auto`，由模型分类器代替人审批——Host 必须始终显式传 `"default"`；
+  - `Agent` 工具默认在后台跑，结束后父会话会自动多一轮；
+  - `Agent` 的 `mode` 参数能让子 agent 绕过审批，Host 要在 `canUseTool` 里去掉
+- 清理：内存耗尽那次测试进程崩溃，留下 2 个 `amo-studio-test-claude-*` 临时目录，已删除；确认没有遗留的 SDK 子进程
+- 验证：`npm run verify` 退出码 0（142 个测试）
+- 额度：0
+- commit：见本次 commit
