@@ -22,3 +22,10 @@
 - 验证：真实 DeepSeek 跑两个变体，共 2 次调用；测试 thread 已归档
 - commit：见本次 commit
 - 遗留：审批挂起后才订阅的客户端能否补收请求，并入 S1-00c
+
+## 2026-10-12 22:30 · S1-00b 单 server 多 provider
+- 结果：done
+- 改动：`spikes/s1-00b-multi-provider.mjs`、`spikes/RESULTS.md`、`spikes/results/s1-00b.json`
+- 验证：真实 DeepSeek 两个 thread 并发各一轮，共 2 次；`CODEX_HOME` 用沙盒空目录，测试 thread 已归档
+- commit：见本次 commit
+- 遗留：重启后按 thread 指定的 provider 能否恢复，并入 S1-00c

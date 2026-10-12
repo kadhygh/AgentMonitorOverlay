@@ -26,9 +26,34 @@
 - Host 不需要做审批互斥，服务端已经保证只有一个回应生效。
 - 模型回复不可信：变体 1 里命令其实执行了，模型却回复 DENIED。界面以 item 状态为准，不以模型的文字为准。
 
-## b. 单 server 多 provider
+## b. 单 server 多 provider（2026-10-12，DeepSeek 2 次）
 
-待测（S1-00b）。
+脚本：`spikes/s1-00b-multi-provider.mjs`。app-server 启动时**不带任何 provider 参数**，`CODEX_HOME` 指向空的沙盒目录（没有 ChatGPT 登录，误路由只会失败，不会花 GPT 额度）。DeepSeek 的 Key 放在 server 进程的环境变量里。在同一个 server 上用两个不同的 provider id 各建一个 thread，`thread/start` 传：
+
+```js
+{ model: "deepseek-flash", modelProvider: "amo-ds-a",
+  config: { model_providers: { "amo-ds-a": { name, base_url, wire_api: "responses", env_key: "DEEPSEEK_API_KEY" } },
+            model_catalog_json: "<catalog>", model_reasoning_effort: "low" } }
+```
+
+| 现象 | 结果 |
+|---|---|
+| `thread/start` 响应 | `model`、`modelProvider`、`thread.modelProvider` 都是指定的值 |
+| 两个 thread 并发各跑一轮 | 都 `completed`，分别答出 ALPHA-OK、BRAVO-OK |
+| `thread/list` 带 `modelProviders` | 两个 thread 都列出，带各自的 `modelProvider` |
+| `thread/list` 不带过滤 | 空列表（默认只列默认 provider） |
+| `thread/read` | 返回正确的 `modelProvider` |
+
+结论：
+
+1. **一个 app-server 可以同时承载多个 provider**，provider 在 `thread/start` 的 `modelProvider` 加 `config.model_providers` 里按 thread 指定，不需要每个 provider 一个进程。
+2. 各 provider 的 Key 仍然只能放在 server 进程的环境变量里（`env_key`），所以 Host 拉起 server 时要把所有已配置 provider 的 Key 都放进环境变量。
+3. `thread/list` 必须带 `modelProviders`，否则看不到非默认 provider 的 thread（和阶段 0 的发现一致）。
+
+对 S1-06 的影响：
+
+- 采用**每个 Codex home 一个 app-server**，provider 按 thread 指定。模型 profile 落成"`modelProvider` + `config` 片段"，在 `thread/start` 时带上。
+- 待 S1-00c 确认：server 重启后 `thread/resume` 不带 `config` 能否恢复这个 thread 的 provider；`codex --remote resume` 接入一个按 thread 指定 provider 的会话时，路由是否仍然正确。如果不能，Host 要在 resume 时重新带上 profile 的 config。
 
 ## c. 重启重连
 

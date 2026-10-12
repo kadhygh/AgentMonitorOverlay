@@ -33,8 +33,8 @@
 - 验收：`RESULTS.md` 对 a～d 各有明确结论，并写清楚对 S1-06 设计的影响。
 - 子任务（2026-10-12 拆分，按顺序做）：
   - S1-00a 审批路由 · done
-  - S1-00b 单 server 多 provider · todo
-  - S1-00c 重启重连（顺带测：审批挂起后才订阅的客户端能否补收请求） · todo
+  - S1-00b 单 server 多 provider · done
+  - S1-00c 重启重连（顺带测：审批挂起后才订阅的客户端能否补收请求；按 thread 指定 provider 的会话在重启后 `thread/resume` 不带 config 能否恢复路由） · todo
   - S1-00d 其他客户端发起的 fork · todo
   - S1-00e 准备需要用户配合的 TUI 脚本（`/fork`、side chat、自动重连），写入 NEEDS_YOU · todo
 

@@ -3,7 +3,7 @@
   "providers": {
     "deepseek": {
       "limit": 100,
-      "used": 2
+      "used": 4
     },
     "glm": {
       "limit": 1000,
@@ -20,6 +20,16 @@
       "at": "2026-10-12T14:18:22.191Z",
       "provider": "deepseek",
       "note": "S1-00a approval turn, variant 2"
+    },
+    {
+      "at": "2026-10-12T14:21:35.491Z",
+      "provider": "deepseek",
+      "note": "S1-00b turn on amo-ds-a"
+    },
+    {
+      "at": "2026-10-12T14:21:35.493Z",
+      "provider": "deepseek",
+      "note": "S1-00b turn on amo-ds-b"
     }
   ]
 }
