@@ -457,3 +457,13 @@ a.md-link { cursor: pointer; }
 .pack-prompt { margin: 2px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--panel-raised); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
 .pack-doc { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); }
 .pack-doc.compact { max-height: 320px; overflow: auto; font-size: 13px; }
+
+/* Task checklist (S6-03) */
+.check-row { display: flex; align-items: flex-start; gap: 8px; padding: 4px 2px; font-size: 13px; cursor: pointer; }
+.check-row input { margin-top: 3px; }
+.check-row.done .check-text { color: var(--text-dim); text-decoration: line-through; }
+.check-text { flex: 1; }
+.check-by { font-size: 11.5px; color: var(--text-dim); }
+.newtask-template { display: flex; flex-direction: column; gap: 6px; align-items: center; font-size: 12px; color: var(--text-dim); max-width: 520px; }
+.newtask-template select { height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+.newtask-steps { margin: 0; padding-left: 18px; text-align: left; }

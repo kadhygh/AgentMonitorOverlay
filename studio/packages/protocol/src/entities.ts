@@ -188,6 +188,20 @@ export interface TaskNote {
   createdAt: Timestamp;
 }
 
+/** One step of a task's checklist, from an extension pack's task template (stage 6). */
+export interface ChecklistItem {
+  id: Id;
+  taskId: Id;
+  position: number;
+  text: string;
+  done: boolean;
+  /** Who ticked it: a session, or null for the person. */
+  doneBySessionId: Id | null;
+  doneAt: Timestamp | null;
+  /** Where the step came from, e.g. "demo/gameplay" (pack/template). */
+  source: string;
+}
+
 export type MailRecipient = { kind: "session"; sessionId: Id } | { kind: "task"; taskId: Id };
 
 /**

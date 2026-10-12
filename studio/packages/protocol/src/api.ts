@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { Annotation, CanvasDoc, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
+import type { Annotation, CanvasDoc, ChecklistItem, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -46,6 +46,13 @@ export interface TerminalAttach {
   launched: boolean;
 }
 
+/** A task template picked when creating a task: which workspace's pack, which template. */
+export interface TaskTemplateChoice {
+  workspaceId: Id;
+  pack: string;
+  template: string;
+}
+
 /** Every REST route as `"METHOD /path"` with its request body and response. `:id` segments are path params. */
 export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
@@ -54,7 +61,8 @@ export interface HostRoutes {
   /** Extension packs in the workspace's `.amo/packs`, valid or not (design/pack-format.md). */
   "GET /api/workspaces/:id/packs": { req: void; res: import("./packs.js").WorkspacePack[] };
   "GET /api/workspaces/:id/packs/:pack/docs/:doc": { req: void; res: import("./packs.js").PackDocContent };
-  "POST /api/tasks": { req: { title?: string; scope: TaskScope; firstSession: NewSessionInput }; res: { task: Task; session: Session } };
+  /** `template`: a task template from an extension pack; the task gets its title prefix and its steps as a checklist. */
+  "POST /api/tasks": { req: { title?: string; scope: TaskScope; firstSession: NewSessionInput; template?: TaskTemplateChoice }; res: { task: Task; session: Session } };
   "PATCH /api/tasks/:id": { req: { title?: string; column?: TaskColumn }; res: Task };
   "POST /api/tasks/:id/sessions": { req: NewSessionInput; res: Session };
   "GET /api/sessions/:id/items": { req: void; res: SessionItem[] };
@@ -99,6 +107,9 @@ export interface HostRoutes {
   "GET /api/decisions": { req: void; res: DecisionRequest[] };
   /** Answers a decision; the answer goes back to the asking session as mail. */
   "POST /api/decisions/:id/answer": { req: { answer: string }; res: DecisionRequest };
+  /** Checklist items, `?taskId=` for one task; ordered by task, then position. */
+  "GET /api/checklist": { req: void; res: ChecklistItem[] };
+  "PATCH /api/checklist/:id": { req: { done: boolean }; res: ChecklistItem };
   "GET /api/canvas": { req: void; res: CanvasDoc };
   /** Saves the whole canvas. `version` must equal the stored one (409 otherwise); the response carries the new one. */
   "PUT /api/canvas": { req: CanvasDoc; res: CanvasDoc };
@@ -135,6 +146,7 @@ export type HostEvent = { seq: number } & (
   | { type: "task.note.added"; note: TaskNote }
   | { type: "mail.upserted"; mail: MailMessage }
   | { type: "decision.upserted"; decision: DecisionRequest }
+  | { type: "checklist.upserted"; item: ChecklistItem }
 );
 
 export type HostEventType = HostEvent["type"];

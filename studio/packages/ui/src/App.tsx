@@ -10,6 +10,7 @@ import { CanvasPage } from "./canvas/CanvasPage.js";
 import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
 import { mailByTask, useUnreadMail } from "./host/useInbox.js";
 import { useOpenDecisions } from "./task/DecisionPanel.js";
+import { checklistByTask, useChecklist } from "./task/ChecklistPanel.js";
 
 // `nav` changes when Focus asks for a session, so an already open task page re-opens on that session.
 type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "packs"; workspaceId: string } | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
@@ -36,6 +37,7 @@ export function App() {
   const focus = useFocusToggle();
   const unreadMail = useUnreadMail(host.kind === "ready" ? host.link : NO_LINK);
   const openDecisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
+  const checklist = useChecklist(host.kind === "ready" ? host.link : NO_LINK);
 
   useEffect(
     () =>
@@ -98,6 +100,7 @@ export function App() {
               onOpen={openTask}
               mail={mailByTask(unreadMail, state.sessions)}
               decisions={decisionsByTask}
+              checklist={checklistByTask(checklist)}
             />
           )}
           {view.kind === "canvas" && (
@@ -135,6 +138,7 @@ export function App() {
                 tasks={state.tasks}
                 workspaces={state.workspaces}
                 profiles={state.profiles}
+                checklist={checklist.filter((i) => i.taskId === task.id)}
                 {...(view.sessionId ? { initialSessionId: view.sessionId } : {})}
                 onBack={() => setView({ kind: "board" })}
               />

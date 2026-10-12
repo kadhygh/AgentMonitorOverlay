@@ -119,4 +119,14 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX decisions_state ON decisions(state, created_at);
   `,
+  // 4: task checklists from extension pack templates (stage 6)
+  `
+  CREATE TABLE checklist_items (
+    id TEXT PRIMARY KEY,
+    task_id TEXT NOT NULL REFERENCES tasks(id),
+    position INTEGER NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX checklist_task ON checklist_items(task_id, position);
+  `,
 ];

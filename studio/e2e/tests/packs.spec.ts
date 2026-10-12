@@ -74,3 +74,34 @@ test("extension packs: browse a workspace's packs and read their documents from 
   await expect(page.getByTestId("task-pack-doc-view")).toContainText("冷却时间写成秒");
   await screenshot(studio.app, "stage-6", "S6-02-task-docs", page);
 });
+
+test("task templates: a task made from a template carries its steps as a checklist", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const path = studio.workspace("alpha");
+  cpSync(EXAMPLE, join(path, ".amo", "packs", "demo"), { recursive: true });
+  await studio.api<Workspace>("POST", "/api/workspaces", { path });
+
+  await page.getByTestId("scope-ws-alpha").click();
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  await page.getByLabel("流程模板").selectOption({ label: "示例：小游戏玩法开发 · 新玩法" });
+  await expect(page.getByTestId("template-steps").locator("li")).toHaveCount(5);
+  await page.locator(".newtask-title input").fill("冲刺技能");
+  await screenshot(studio.app, "stage-6", "S6-03-new-from-template", page);
+  await page.getByRole("button", { name: "开始" }).click();
+
+  // The task page: the title has the template's prefix; the checklist is ticked by the person.
+  await expect(page.locator(".page-head")).toContainText("[玩法] 冲刺技能");
+  const items = page.getByTestId("checklist-item");
+  await expect(items).toHaveCount(5);
+  await expect(page.getByTestId("checklist-count")).toHaveText("0/5");
+  // The box follows the Host (the item updates through its event), so click rather than check().
+  await items.first().locator("input").click();
+  await expect(page.getByTestId("checklist-count")).toHaveText("1/5");
+  await expect(items.first()).toContainText("我");
+  await screenshot(studio.app, "stage-6", "S6-03-checklist", page);
+
+  // The board card shows the progress in its meta line.
+  await page.getByRole("button", { name: "← 看板" }).click();
+  await expect(page.getByTestId("task-card").filter({ hasText: "冲刺技能" })).toContainText("清单 1/5");
+});

@@ -14,6 +14,7 @@ import {
   type TaskColumn,
   type TodoItem,
   type TaskNote,
+  type ChecklistItem,
   type MailMessage,
   type DecisionRequest,
   type Workspace,
@@ -391,6 +392,24 @@ export class Store {
 
   listTaskNotes(taskId: Id): TaskNote[] {
     return (this.db.prepare("SELECT body FROM task_notes WHERE task_id = ? ORDER BY created_at, id").all(taskId) as Row[]).map((r) => JSON.parse(str(r.body)) as TaskNote);
+  }
+
+  putChecklistItem(item: ChecklistItem): void {
+    this.db
+      .prepare("INSERT INTO checklist_items (id, task_id, position, body) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET body = excluded.body")
+      .run(item.id, item.taskId, item.position, JSON.stringify(item));
+  }
+
+  getChecklistItem(id: Id): ChecklistItem | undefined {
+    const r = this.db.prepare("SELECT body FROM checklist_items WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as ChecklistItem);
+  }
+
+  listChecklist(taskId?: Id): ChecklistItem[] {
+    const rows = taskId
+      ? this.db.prepare("SELECT body FROM checklist_items WHERE task_id = ? ORDER BY position").all(taskId)
+      : this.db.prepare("SELECT body FROM checklist_items ORDER BY task_id, position").all();
+    return (rows as Row[]).map((r) => JSON.parse(str(r.body)) as ChecklistItem);
   }
 
   putMail(m: MailMessage): void {

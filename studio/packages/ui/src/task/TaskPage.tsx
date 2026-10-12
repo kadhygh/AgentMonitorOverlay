@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TASK_COLUMNS, type Annotation, type ApprovalDecision, type ModelProfile, type Session, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
+import { TASK_COLUMNS, type Annotation, type ApprovalDecision, type ChecklistItem, type ModelProfile, type Session, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../host/useAnnotations.js";
@@ -13,6 +13,7 @@ import { MailPanel, useTaskMail } from "./MailPanel.js";
 import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
 import { NotesPanel, useTaskNotes } from "./NotesPanel.js";
 import { PackDocsPanel } from "../packs/PackDocsPanel.js";
+import { ChecklistPanel } from "./ChecklistPanel.js";
 import type { SelectionAnchor } from "../lib/selection.js";
 
 interface TaskPageProps {
@@ -23,6 +24,8 @@ interface TaskPageProps {
   tasks?: readonly Task[];
   workspaces: readonly Workspace[];
   profiles: readonly ModelProfile[];
+  /** This task's checklist (from a pack template). */
+  checklist?: readonly ChecklistItem[];
   initialSessionId?: string;
   onBack(): void;
 }
@@ -37,7 +40,7 @@ const WRITER = {
 } as const;
 
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
-export function TaskPage({ link, task, sessions, tasks = [task], workspaces, profiles, initialSessionId, onBack }: TaskPageProps) {
+export function TaskPage({ link, task, sessions, tasks = [task], workspaces, profiles, checklist = [], initialSessionId, onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
   const [toast, setToast] = useState<Toast>(null);
@@ -256,6 +259,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
               onForward={(m, sessionId) => void forwardMail(m, sessionId)}
               onDismiss={(m) => void dismissMail(m)}
             />
+            <ChecklistPanel link={link} items={checklist} sessions={sessions} />
             <NotesPanel link={link} taskId={task.id} notes={notes} sessions={sessions} />
             <PackDocsPanel link={link} workspaceIds={taskWorkspaceIds} />
             </>
