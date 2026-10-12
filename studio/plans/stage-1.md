@@ -29,12 +29,12 @@
   - c. **重启重连**：app-server 用同一端口和同一 token 重启后，WS 客户端重新连接并 `thread/resume`，能否继续收到事件。
   - d. **其他客户端发起的 fork**：在客户端 A 上 `thread/fork`，客户端 B 能否收到 `thread/started` 之类的事件，以及能否拿到 `forkedFromId`。
 - 需要用户配合的部分：在 TUI 里输入 `/fork` 或打开 side chat 后，AMO 侧收到的事件，以及 TUI 自动重连后能否回到原 thread。脚本准备好以后，写入 `NEEDS_YOU.md`（请你过目），不阻塞后续任务。
-- 预算：DeepSeek 约 8 次
+- 预算：DeepSeek 约 8 次（a～c 实际用了 9 次，d 预计 1～2 次）
 - 验收：`RESULTS.md` 对 a～d 各有明确结论，并写清楚对 S1-06 设计的影响。
 - 子任务（2026-10-12 拆分，按顺序做）：
   - S1-00a 审批路由 · done
   - S1-00b 单 server 多 provider · done
-  - S1-00c 重启重连（顺带测：审批挂起后才订阅的客户端能否补收请求；按 thread 指定 provider 的会话在重启后 `thread/resume` 不带 config 能否恢复路由） · todo
+  - S1-00c 重启重连（顺带测：审批挂起后才订阅的客户端能否补收请求；按 thread 指定 provider 的会话在重启后 `thread/resume` 不带 config 能否恢复路由） · done
   - S1-00d 其他客户端发起的 fork · todo
   - S1-00e 准备需要用户配合的 TUI 脚本（`/fork`、side chat、自动重连），写入 NEEDS_YOU · todo
 

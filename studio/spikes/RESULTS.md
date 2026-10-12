@@ -53,11 +53,34 @@
 对 S1-06 的影响：
 
 - 采用**每个 Codex home 一个 app-server**，provider 按 thread 指定。模型 profile 落成"`modelProvider` + `config` 片段"，在 `thread/start` 时带上。
-- 待 S1-00c 确认：server 重启后 `thread/resume` 不带 `config` 能否恢复这个 thread 的 provider；`codex --remote resume` 接入一个按 thread 指定 provider 的会话时，路由是否仍然正确。如果不能，Host 要在 resume 时重新带上 profile 的 config。
+- S1-00c 修正了这一点：provider **定义**必须放在 server 启动参数里，`thread/start` 只做选择，见 c 节。
 
-## c. 重启重连
+## c. 重启重连（2026-10-12，DeepSeek 5 次，其中 1 次是第一版脚本中途失败）
 
-待测（S1-00c）。
+脚本：`spikes/s1-00c-restart.mjs thread|server`。`CODEX_HOME` 用沙盒空目录。A1 建 thread 并跑一轮（记住暗号 KIWI-7），然后停掉 server，用**同一端口、同一 token** 重启。新客户端 A2 `thread/resume`，再发一轮：先执行一条需要审批的命令，再说出暗号。审批挂起后，客户端 B 才连上并 `thread/resume`。
+
+| 现象 | mode thread：provider 定义放在 `thread/start` 的 `config` | mode server：provider 定义在 server 启动参数 `-c model_providers.<id>.*`，thread 只选 `modelProvider` |
+|---|---|---|
+| 重启时已连接的 A1 | 收到 WS 关闭 | 同左 |
+| 重启后 `thread/resume` 不带 config | **失败**：`failed to load configuration: Model provider amo-ds-c not found` | 成功，`modelProvider` 正确 |
+| `thread/resume` 带上原 config | 成功 | 不需要 |
+| 重启后的这一轮 | 完成，答出 KIWI-7，命令执行 | 同左 |
+| 审批挂起后才订阅的 B | **能补收到**这条审批请求（id 相同），B 的回应生效 | 同左 |
+| B 订阅已加载的 thread 时不带 config | 成功（thread 已加载，不再读 provider 配置） | 成功 |
+
+结论：
+
+1. **按 thread 传入的 provider 定义不会持久化**。thread 记录里只有 provider id，重新加载时要在 server 配置里找到同名 provider，否则加载失败。
+2. **provider 定义放在 server 启动参数里**（`-c model_providers.<id>.*` 和 `model_catalog_json`），thread 只用 `modelProvider` 和 `model` 选择，重启后 resume 不带任何 config 也能恢复路由，上下文完整。
+3. 已加载的 thread，其他客户端（包括 `codex --remote` 接入的 TUI）resume 时不需要 config。未加载的 thread 由 TUI 直接 `--remote resume`，只有在 mode server 下才能成功，因为 TUI 无法传 config。
+4. **挂起的审批会补发给后来订阅的客户端**，所以 Host 重启或界面重连后，可以从 server 拿回待处理的审批，不需要 Host 自己持久化挂起状态（Host 本身重启除外：Host 重启时 server 也可能一起重启，此时 turn 已中断）。
+5. 同一端口加同一 token 重启后，客户端重新连接即可，不需要重新握手之外的任何步骤。
+
+对 S1-06 的影响：
+
+- **全部模型 profile 的 provider 定义在 app-server 启动时一次性传入**；新增或修改 profile 需要重启 server（或者再起一个 server）。`thread/start` 只带 `modelProvider`、`model`、`config.model_reasoning_effort` 等不影响加载的项。
+- server 端口和 token 固定保存在数据目录，崩溃重启时沿用，客户端断线后自动重连并对已打开的 thread 重新 `thread/resume`。
+- 界面重连后从 resume 补收挂起的审批即可。
 
 ## d. 其他客户端发起的 fork
 

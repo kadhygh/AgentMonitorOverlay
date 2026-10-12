@@ -1,0 +1,44 @@
+{
+  "scenario": "S1-00c restart, resume, late subscriber (mode server)",
+  "steps": [
+    {
+      "s": "seeded",
+      "threadId": "01a13080-a6a2-7cc1-a83d-ace110f15238",
+      "reply": "OK"
+    },
+    {
+      "s": "restarted server on same port/token",
+      "a1SawClose": true
+    },
+    {
+      "s": "resume without config",
+      "loadedBefore": {
+        "data": [],
+        "nextCursor": null
+      },
+      "model": "deepseek-flash",
+      "modelProvider": "amo-ds-c",
+      "threadProvider": "amo-ds-c",
+      "turns": 1
+    },
+    {
+      "s": "late subscriber while approval pending",
+      "bGotPendingRequest": true,
+      "sameId": true,
+      "method": "item/commandExecution/requestApproval"
+    },
+    {
+      "s": "post-restart turn",
+      "status": "completed",
+      "error": null,
+      "reply": "KIWI-7",
+      "cmd": [
+        {
+          "status": "completed",
+          "output": "late-subscriber"
+        }
+      ],
+      "bSawTurnDone": true
+    }
+  ]
+}

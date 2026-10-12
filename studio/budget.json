@@ -3,7 +3,7 @@
   "providers": {
     "deepseek": {
       "limit": 100,
-      "used": 4
+      "used": 9
     },
     "glm": {
       "limit": 1000,
@@ -30,6 +30,31 @@
       "at": "2026-10-12T14:21:35.493Z",
       "provider": "deepseek",
       "note": "S1-00b turn on amo-ds-b"
+    },
+    {
+      "at": "2026-10-12T14:24:25.548Z",
+      "provider": "deepseek",
+      "note": "S1-00c seed turn"
+    },
+    {
+      "at": "2026-10-12T14:24:47.366Z",
+      "provider": "deepseek",
+      "note": "S1-00c seed turn (thread)"
+    },
+    {
+      "at": "2026-10-12T14:24:49.389Z",
+      "provider": "deepseek",
+      "note": "S1-00c post-restart turn (thread)"
+    },
+    {
+      "at": "2026-10-12T14:25:00.136Z",
+      "provider": "deepseek",
+      "note": "S1-00c seed turn (server)"
+    },
+    {
+      "at": "2026-10-12T14:25:01.994Z",
+      "provider": "deepseek",
+      "note": "S1-00c post-restart turn (server)"
     }
   ]
 }

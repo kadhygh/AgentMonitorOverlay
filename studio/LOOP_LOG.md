@@ -29,3 +29,10 @@
 - 验证：真实 DeepSeek 两个 thread 并发各一轮，共 2 次；`CODEX_HOME` 用沙盒空目录，测试 thread 已归档
 - commit：见本次 commit
 - 遗留：重启后按 thread 指定的 provider 能否恢复，并入 S1-00c
+
+## 2026-10-12 22:40 · S1-00c 重启重连
+- 结果：done
+- 改动：`spikes/s1-00c-restart.mjs`、`spikes/RESULTS.md`、`spikes/results/s1-00c-{thread,server}.json`
+- 验证：真实 DeepSeek 共 5 次（第一版脚本 resume 失败用掉 1 次，两种模式各 2 次）；测试 thread 已归档，端口已释放
+- commit：见本次 commit
+- 遗留：关键结论——provider 定义必须放在 server 启动参数里，按 thread 传入的定义在重启后无法恢复；S1-06 按此设计
