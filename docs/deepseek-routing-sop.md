@@ -23,9 +23,9 @@ DeepSeek 的发布版本与路由模式分开维护。Flash、Pro 是角色名�
 | Claude 主模型、Opus、Sonnet | Flash | Flash |
 | Claude Haiku、子智能体 | Flash | Flash |
 
-主模型推理配置保持不变：Codex `max`，子智能体默认 `high`；Claude 保持 `CLAUDE_CODE_EFFORT_LEVEL=max`。所有槽位的模型名均为 `deepseek-flash`。
+主模型推理配置保持不变：Codex `max`；Claude 保持 `CLAUDE_CODE_EFFORT_LEVEL=max`。所有槽位的模型名均为 `deepseek-flash`。
 
-Codex 使用 `agents.default_subagent_model` 和 `review_model` 单次启动覆盖，Claude 使用对应环境变量映射。Codex 的显式 spawn 模型和自定义智能体配置仍可覆盖默认值；这些模式配置的是 AMO 管理的槽位，不是服务端强制拦截器。`flash-all` 目录只列 Flash，并附带保持所有子任务使用 Flash 的指引。使用自定义智能体时，也应检查其中是否硬编码了其他模型。
+Codex 使用 `review_model` 单次启动覆盖，子智能体沿用主线程的模型与 provider；Claude 使用对应环境变量映射。Codex 0.161 起 `[agents]` 不再接受 `default_subagent_model` / `default_subagent_reasoning_effort`，传入后会被当作角色定义并导致配置加载失败，因此 AMO 不再生成这两项（2026-10-12 实测子智能体在 DeepSeek 路由下正常运行）。Codex 的显式 spawn 模型和自定义智能体配置仍可覆盖默认值；这些模式配置的是 AMO 管理的槽位，不是服务端强制拦截器。`flash-all` 目录只列 Flash，并附带保持所有子任务使用 Flash 的指引。使用自定义智能体时，也应检查其中是否硬编码了其他模型。
 
 官方配置依据：[DeepSeek Claude Code 接入说明](https://api-docs.deepseek.com/zh-cn/guides/coding_agents/)、[Codex 子智能体默认模型与覆盖规则](https://learn.chatgpt.com/zh-Hans/docs/agent-configuration/subagents)、[Codex 配置参考](https://learn.chatgpt.com/docs/config-file/config-reference)。
 

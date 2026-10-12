@@ -30,10 +30,8 @@ function createCodexLaunchArgs({ provider, modelCatalogPath } = {}) {
     "-c", `${providerKey}.base_url=${tomlString(provider.baseUrl)}`,
     "-c", `${providerKey}.wire_api="responses"`,
     "-c", `${providerKey}.env_key=${tomlString(provider.envKey || "DEEPSEEK_API_KEY")}`,
-    ...(provider.subagentModel ? [
-      "-c", `agents.default_subagent_model=${tomlString(provider.subagentModel)}`,
-      "-c", 'agents.default_subagent_reasoning_effort="high"',
-    ] : []),
+    // Codex 0.161 removed agents.default_subagent_*; any agents.<key> string now parses as a
+    // role definition and fails config loading. Subagents inherit the parent model/provider.
     ...(provider.reviewModel ? ["-c", `review_model=${tomlString(provider.reviewModel)}`] : []),
   ];
 }

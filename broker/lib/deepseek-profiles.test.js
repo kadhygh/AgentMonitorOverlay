@@ -23,7 +23,8 @@ test("historical 0910 preset routes every Claude slot and Codex default to curre
   assert.equal(claude.environment.ANTHROPIC_BASE_URL, "https://api.deepseek.com/anthropic");
   const codex = resolveCodexProvider({ presetId: id, apiKey: "fixture-key" });
   const args = createCodexLaunchArgs({ provider: codex });
-  for (const key of ["model", "review_model", "agents.default_subagent_model"]) assert.ok(args.includes(`${key}="${model}"`), key);
+  for (const key of ["model", "review_model"]) assert.ok(args.includes(`${key}="${model}"`), key);
+  assert.ok(!args.some(arg => arg.startsWith("agents.")), "Codex 0.161 rejects agents.default_subagent_* overrides");
   assert.ok(args.includes('model_providers.amo-deepseek.base_url="https://api.deepseek.com/"'));
   assert.deepEqual(codex.environment, { DEEPSEEK_API_KEY: "fixture-key" });
   assert.ok(!args.join(" ").includes("fixture-key"));
@@ -38,7 +39,7 @@ test("legacy pro-flash routes main, review and child tasks to Flash", () => {
   const args = createCodexLaunchArgs({ provider: codex });
   assert.ok(args.includes(`model="${profile.mainModel}"`));
   assert.ok(args.includes(`review_model="${profile.mainModel}"`));
-  assert.ok(args.includes(`agents.default_subagent_model="${profile.subagentModel}"`));
+  assert.equal(profile.subagentModel, profile.mainModel, "Codex subagents inherit the main model");
   const claude = resolveClaudeProvider({ presetId: profile.id, apiKey: "fixture-key" });
   for (const key of ["ANTHROPIC_MODEL", "ANTHROPIC_DEFAULT_OPUS_MODEL", "ANTHROPIC_DEFAULT_SONNET_MODEL"]) assert.equal(claude.environment[key], profile.claudeModel);
   assert.equal(claude.environment.CLAUDE_CODE_SUBAGENT_MODEL, profile.subagentModel);
