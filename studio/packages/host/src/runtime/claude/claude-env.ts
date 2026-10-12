@@ -54,5 +54,8 @@ export function claudeEnv(
     ...(key ? { ANTHROPIC_AUTH_TOKEN: key } : {}),
     CLAUDE_CONFIG_DIR: claudeHome,
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+    // Without this, commands the agent runs (Bash) inherit ANTHROPIC_AUTH_TOKEN, and `env` prints the key into the
+    // transcript (verified in the S4-09 review).
+    CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
   };
 }

@@ -91,6 +91,18 @@ describe("ClaudeRuntime", () => {
     expect(items(s.id).find((i) => i.type === "tool")).toMatchObject({ name: "shell", summary: "mkdir approved-dir", status: "completed" });
   }, 120_000);
 
+  it("keeps the key out of the agent's commands", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[shell: echo T=$ANTHROPIC_AUTH_TOKEN B=$ANTHROPIC_BASE_URL]]" });
+    await until(() => status(s.id) === "awaiting-approval", "approval");
+    const approval = items(s.id).find((i) => i.type === "approval") as { approvalId: string };
+    await runtime.respondApproval(s.id, approval.approvalId, "accept");
+    await until(() => status(s.id) === "idle" && agentTexts(s.id).includes("MOCK-DONE"), "after approval");
+    const detail = (items(s.id).find((i) => i.type === "tool") as { detail?: string }).detail ?? "";
+    expect(detail).toMatch(/B=http:\/\/127\.0\.0\.1/); // the command really ran and expanded variables
+    expect(detail).toMatch(/T= B=/);
+    expect(detail).not.toContain("mock-key");
+  }, 120_000);
+
   it("does not run a declined command", async () => {
     const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[shell: mkdir declined-dir]]" });
     await until(() => status(s.id) === "awaiting-approval", "approval");

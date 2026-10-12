@@ -17,6 +17,7 @@ describe("claudeEnv", () => {
       ANTHROPIC_MODEL: "glm-5.3[1m]",
       CLAUDE_CONFIG_DIR: "D:/studio/.data/claude-home",
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
+      CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
     });
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.CLAUDECODE).toBeUndefined();

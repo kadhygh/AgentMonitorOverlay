@@ -38,7 +38,7 @@ function startHost(): Host {
     profiles: PROFILES,
     credentials: new StaticCredentialReader({ mock: "mock-key" }),
     cwd: root,
-    env: { CODEX_HOME: join(root, "codex-home") },
+    env: { CODEX_HOME: join(root, "codex-home"), AMO_STUDIO_MCP_TOKEN: "mcp-token-in-server-env" },
     providers: { "amo-mock": mockCodexProvider(mock.baseUrl) },
     portRange: [47930, 47939],
     backoffMs: { first: 200, max: 1000 },
@@ -103,6 +103,20 @@ describe("Codex runtime against the real app-server", () => {
     expect(tool).toMatchObject({ name: "shell", status: "completed" });
     expect((tool as { detail?: string }).detail).toContain("studio-approval");
     expect(lastAgent(mainId)!.markdown).toBe("MOCK-DONE");
+  }, 60_000);
+
+  it("keeps the provider key and the MCP token out of the agent's commands", async () => {
+    const before = items(mainId).filter((i) => i.type === "tool").length;
+    // Only the variables in question: a full listing would be cut to its last 4000 characters.
+    await host.runtime.sendMessage(mainId, "[[shell: cmd /c echo K=%AMO_MOCK_API_KEY% M=%AMO_STUDIO_MCP_TOKEN% E=%PATHEXT%]]");
+    await until(() => status(mainId) === "awaiting-approval", "approval");
+    const approval = items(mainId).filter((i): i is Extract<SessionItem, { type: "approval" }> => i.type === "approval").at(-1)!;
+    await host.runtime.respondApproval(mainId, approval.approvalId, "accept");
+    await until(settled(mainId), "after approval");
+    const tool = items(mainId).filter((i) => i.type === "tool")[before] as { detail?: string };
+    expect(tool.detail).toMatch(/E=\.COM/i); // the command really ran and expanded variables
+    expect(tool.detail).not.toContain("mock-key");
+    expect(tool.detail).not.toContain("mcp-token-in-server-env");
   }, 60_000);
 
   it("forks on the same provider and keeps context", async () => {

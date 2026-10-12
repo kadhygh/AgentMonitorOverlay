@@ -120,6 +120,11 @@ export function codexServerSpec(
     env[AMO_MCP_TOKEN_ENV] = options.mcp.token;
   }
 
+  // Commands the agent runs inherit the server's environment; Codex 0.161 passed the provider keys and the MCP token
+  // straight through (S4-09 review). Keep its default KEY/SECRET/TOKEN filter on and name ours explicitly.
+  const secrets = [...new Set([...[...used].map((id) => providers[id]!.envKey), AMO_MCP_TOKEN_ENV])].sort();
+  configArgs.push("-c", "shell_environment_policy.ignore_default_excludes=false", "-c", `shell_environment_policy.exclude=[${secrets.map(tomlString).join(",")}]`);
+
   return { profileId: profile.id, configArgs, env, missingCredentials };
 }
 
