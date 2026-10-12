@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -191,5 +191,22 @@ describe("Host API", () => {
     const other = await fetch(`${http.url}/api/state`, { method: "OPTIONS", headers: { origin: "http://evil.example" } });
     expect(other.headers.get("access-control-allow-origin")).toBeNull();
     expect((await fetch(`${http.url}/nothing`)).status).toBe(404);
+  });
+
+  it("serves the UI without escaping its folder and survives malformed paths", async () => {
+    const uiDir = join(root, "ui");
+    mkdirSync(uiDir);
+    writeFileSync(join(uiDir, "index.html"), "<!doctype html><title>ui</title>");
+    writeFileSync(join(root, "secret.txt"), "do not serve");
+    const runtime = new CodexRuntime({ store, servers, profiles: PROFILES });
+    const ui = await startHostServer({ service: new HostService(store, runtime, PROFILES), token: TOKEN, uiDir });
+    try {
+      expect(await (await fetch(`${ui.url}/`)).text()).toContain("<title>ui</title>");
+      expect(await (await fetch(`${ui.url}/..%2f..%2fsecret.txt`)).text()).not.toContain("do not serve");
+      expect((await fetch(`${ui.url}/%E0%A4%A`)).status).toBe(404);
+      expect((await fetch(`${ui.url}/api/state`, { headers: { authorization: `Bearer ${TOKEN}` } })).status).toBe(200);
+    } finally {
+      await ui.close();
+    }
   });
 });

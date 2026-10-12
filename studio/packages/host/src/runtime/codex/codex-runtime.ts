@@ -204,6 +204,19 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       }
     });
     handle.client.on("request", (r) => this.onServerRequest(handle, r));
+    handle.client.once("close", () => this.onConnectionLost(handle));
+  }
+
+  /**
+   * The connection to a server dropped (crash or restart). Answers can no longer reach pending approvals, so they are
+   * closed here; if the turn is still waiting, the server replays the request after resubscribing.
+   */
+  private onConnectionLost(handle: CodexServerHandle): void {
+    for (const [key, a] of this.approvals) {
+      if (a.profileId !== handle.profileId) continue;
+      this.approvals.delete(key);
+      this.updateItem(a.itemId, (item) => (item.type === "approval" && item.state === "pending" ? { ...item, state: "resolved-elsewhere" } : item));
+    }
   }
 
   /** After a (re)connect, subscribe again to every live thread served by this profile's server. */
@@ -211,7 +224,14 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     for (const s of this.store.listSessions()) {
       if (s.profileId !== handle.profileId || !s.runtimeRef || s.archivedAt || s.kind === "sub") continue;
       try {
-        await handle.client.request("thread/resume", { threadId: s.runtimeRef } as never);
+        const r = await handle.client.request("thread/resume", { threadId: s.runtimeRef } as never);
+        // Turn events may have been missed while disconnected; take the status from the server's view.
+        const active = (r.thread as { status?: { type?: string } }).status?.type === "active";
+        const st = this.sessionState(s.id);
+        if (!active) st.activeTurnId = null;
+        const current = this.store.getSession(s.id)!.status;
+        if (active && current !== "awaiting-approval") this.setStatus(s.id, "running");
+        if (!active && (current === "running" || current === "awaiting-approval")) this.setStatus(s.id, "idle");
       } catch (err) {
         this.emit("log", `thread/resume failed for ${s.id}: ${String(err)}`);
       }

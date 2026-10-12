@@ -148,7 +148,13 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
   const serveUi = (req: IncomingMessage, res: ServerResponse, path: string) => {
     if (!options.uiDir || (req.method !== "GET" && req.method !== "HEAD")) return false;
     const root = resolve(options.uiDir);
-    let file = normalize(join(root, decodeURIComponent(path)));
+    let decoded: string;
+    try {
+      decoded = decodeURIComponent(path);
+    } catch {
+      return false; // malformed escape: answer 404 instead of throwing inside the request handler
+    }
+    let file = normalize(join(root, decoded));
     if (!file.startsWith(root + sep) && file !== root) return false;
     if (!existsSync(file) || statSync(file).isDirectory()) file = join(root, "index.html");
     if (!existsSync(file)) return false;

@@ -19,7 +19,8 @@
     "test:codex-mock": "tsc -b && node packages/testkit/scripts/verify-mock-codex.mjs",
     "host": "tsc -b && node packages/host/dist/bin.js",
     "e2e": "npm run build && playwright test -c e2e/playwright.config.ts",
-    "smoke:stage1": "npm run build && node scripts/smoke-stage1.mjs"
+    "smoke:stage1": "npm run build && node scripts/smoke-stage1.mjs",
+    "start": "npm run build && electron packages/app"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",

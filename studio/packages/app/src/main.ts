@@ -87,6 +87,12 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
       backgroundThrottling: !testMode,
     },
   });
+  // The workbench never opens other windows or navigates away from the Host / dev server origin.
+  const allowedOrigin = new URL(process.env.AMO_STUDIO_DEV_URL ?? conn.url).origin;
+  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
+  win.webContents.on("will-navigate", (event, url) => {
+    if (new URL(url).origin !== allowedOrigin) event.preventDefault();
+  });
   win.once("ready-to-show", () => {
     if (testMode) win.showInactive();
     else win.show();

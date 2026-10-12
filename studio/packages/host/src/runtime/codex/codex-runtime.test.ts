@@ -157,4 +157,20 @@ describe("CodexRuntime", () => {
     await runtime.sendMessage(s.id, "after reconnect");
     await until(() => lastAgent(s.id)?.markdown === "FAKE: after reconnect", "reply after reconnect");
   });
+
+  it("closes pending approvals when the connection drops and picks up the replay after reconnecting", async () => {
+    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "[[shell: cmd /c echo x]]" });
+    await until(() => session(s.id).status === "awaiting-approval", "awaiting-approval");
+    const first = items(s.id).find((i) => i.type === "approval")!;
+    servers.handles.get("p-ds")!.client.close();
+    await until(() => (store.getItem(first.id) as { state: string }).state === "resolved-elsewhere", "closed after drop");
+    await servers.ensure("p-ds");
+    // The fake replays the still-pending request to the new subscriber; it becomes a fresh pending card.
+    await until(() => items(s.id).filter((i) => i.type === "approval").length === 2, "replayed approval");
+    const replay = items(s.id).filter((i): i is Extract<SessionItem, { type: "approval" }> => i.type === "approval")[1]!;
+    expect(replay.state).toBe("pending");
+    expect(session(s.id).status).toBe("awaiting-approval");
+    await runtime.respondApproval(s.id, replay.approvalId, "accept");
+    await until(idle(s.id), "idle after replayed approval");
+  });
 });
