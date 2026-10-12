@@ -2,11 +2,11 @@
 
 更新：2026-10-13
 
-- **当前阶段**：阶段 4 · Claude 与只读 MCP（计划已写，`plans/stage-4.md`）
-- **分支**：`studio/stage-4`（阶段 3 已用 `--no-ff` 合并回 `studio/main`）
-- **已完成**：阶段 0、阶段 1（地基）、阶段 2（审阅）、阶段 3（画布与 Focus）
-- **在等你**：见 `NEEDS_YOU.md`，9 项"请你过目"（都不阻塞）、1 项"必须等你"（是否切换为日常工具、何时删除旧 AMO；等待期间继续阶段 4）
+- **当前阶段**：阶段 5 · 可写 MCP 与协作（计划已写，`plans/stage-5.md`）
+- **分支**：`studio/stage-5`（阶段 4 已用 `--no-ff` 合并回 `studio/main`）
+- **已完成**：阶段 0、阶段 1（地基）、阶段 2（审阅）、阶段 3（画布与 Focus）、阶段 4（Claude 与只读 MCP）
+- **在等你**：见 `NEEDS_YOU.md`，10 项"请你过目"（都不阻塞）、1 项"必须等你"（是否切换为日常工具、何时删除旧 AMO；等待期间继续推进）
 - **试用**：`studio` 下 `npm start`；停止 Host 用 `npm run host:stop`
-- **已完成任务**：S4-00 预研 Claude Agent SDK、S4-01 mock Anthropic 接口、S4-02 ClaudeRuntime、S4-03 分支与子 agent、S4-04 Claude 模型配置与界面、S4-05 交接终端与收回、S4-06 只读 MCP、S4-07 MCP 自动注入、S4-08 真实冒烟
-- **下一步**：合并阶段 4，开始阶段 5
+- **已完成任务**：（阶段 5 尚无）
+- **下一步**：S5-00 预研 Codex 会话的调用者身份
 - **模型调用额度**：DeepSeek 22 / 1000，GLM 16 / 5000
