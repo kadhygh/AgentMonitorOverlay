@@ -11,6 +11,7 @@ import { flash } from "./ReplyNav.js";
 import { AnnotationPanel } from "./AnnotationPanel.js";
 import { MailPanel, useTaskMail } from "./MailPanel.js";
 import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
+import { NotesPanel, useTaskNotes } from "./NotesPanel.js";
 import type { SelectionAnchor } from "../lib/selection.js";
 
 interface TaskPageProps {
@@ -90,6 +91,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   const reclaim = (id: string) => run(() => call(link, "POST /api/sessions/:id/reclaim", { id }));
   const mail = useTaskMail(link, task, sessions);
   const decisions = useOpenDecisions(link);
+  const notes = useTaskNotes(link, task.id);
   const unread = new Map<string, number>();
   for (const m of mail) if (m.state === "unread" && m.to.kind === "session") unread.set(m.to.sessionId, (unread.get(m.to.sessionId) ?? 0) + 1);
   const forwardMail = (m: { id: string }, sessionId: string) =>
@@ -251,6 +253,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
               onForward={(m, sessionId) => void forwardMail(m, sessionId)}
               onDismiss={(m) => void dismissMail(m)}
             />
+            <NotesPanel link={link} taskId={task.id} notes={notes} sessions={sessions} />
             </>
           }
           link={link}

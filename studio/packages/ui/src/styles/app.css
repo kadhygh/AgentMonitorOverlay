@@ -428,3 +428,9 @@ a.md-link { cursor: pointer; }
 .decision-answer { display: flex; gap: 6px; }
 .decision-answer .field { flex: 1; min-width: 0; }
 .focus-decision { padding-top: 10px; }
+
+/* Task progress and board hints (S5-06) */
+.note-card { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); }
+.note-card.handoff { border-color: var(--primary); }
+.note-card.handoff.old { border-color: var(--border); }
+.card-asks { font-size: 12px; color: var(--attention); }
