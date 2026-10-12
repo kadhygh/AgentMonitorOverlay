@@ -26,6 +26,11 @@ Studio 现在能在工作台里用 Codex（含 DeepSeek 路由）推进任务：
 附件：`studio/screenshots/stage-1/`（S1-09 看板、S1-10 新建任务与首条回复、S1-11a 任务页、S1-11c 审批与子 agent）；`studio/spikes/RESULTS.md`（协议结论 a～g）
 回复：
 
+### [请你过目] 阶段 2 计划（2026-10-13，阶段 2）
+阶段 2 做审阅闭环：markdown 补全、选中文字右键批注、批注栏与汇总发回、草稿区、快速跳转，共 7 个任务，全部用 mock 模型。几处按默认推进：继续用自研的安全 markdown 渲染（不注入 HTML）；草稿区先做成全局一份；回复里的 http/https 链接用系统浏览器打开。有意见写在下面，不回复也会继续。
+附件：`studio/plans/stage-2.md`
+回复：
+
 ## 已处理
 
 （暂无）
