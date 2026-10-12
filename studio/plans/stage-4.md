@@ -53,9 +53,10 @@
 - 内容：Claude 会话"在终端打开"后，工作台只读并显示提示条和"立即收回"；终端进程退出后自动收回；收回后工作台读取终端期间新增的内容。
 - 验收：e2e（RecordingTerminalLauncher 模拟终端进程的启动和退出）。
 
-### S4-06 AMO MCP（只读） · todo
+### S4-06 AMO MCP（只读） · done
 - 依赖：无
 - 内容：Host 提供 MCP 服务：`board.list`、`task.get`、`session.tree`（摘要，不含全文）、`project.context`（工作区路径、名称）、`canvas.read`（大纲 + JSON）。传输方式与鉴权在实现前定下，写进计划。
+- 定下的做法：挂在 Host 自己的 HTTP 服务上，路径 `/mcp`，Streamable HTTP 无状态模式（每个请求一个 MCP 服务），和 REST 接口用同一个 Host 令牌（`Authorization: Bearer`）。工具名用下划线：`board_list`、`task_get`、`session_tree`、`project_context`、`canvas_read`（部分客户端不接受带点的工具名），都标为只读。
 - 验收：单元测试；用 MCP 客户端读取各工具。
 
 ### S4-07 受管会话自动注入 MCP · todo

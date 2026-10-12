@@ -6,6 +6,7 @@ import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { HostErrorBody, HostEvent } from "@amo-studio/protocol";
 import { HostError, type HostService } from "../service.js";
+import { handleMcpRequest } from "../mcp/amo-mcp.js";
 
 // Host API over HTTP (REST) and WebSocket (events). Binds 127.0.0.1 only; every /api call needs the host token
 // (Authorization: Bearer for REST, ?token= for the event socket since browsers cannot set WS headers).
@@ -181,12 +182,22 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     const url = new URL(req.url ?? "/", "http://127.0.0.1");
     cors(req, res);
     if (req.method === "OPTIONS") return res.writeHead(204).end();
-    if (!url.pathname.startsWith("/api/")) {
+    const isMcp = url.pathname === "/mcp";
+    if (!url.pathname.startsWith("/api/") && !isMcp) {
       if (serveUi(req, res, url.pathname)) return;
       return fail(res, 404, "not_found", "not found");
     }
     const auth = req.headers.authorization;
     if (!tokenOk(auth?.startsWith("Bearer ") ? auth.slice(7) : null)) return fail(res, 401, "bad_request", "missing or invalid host token");
+    if (isMcp) {
+      // AMO MCP (read-only): the same token as the REST API.
+      try {
+        return await handleMcpRequest(options.service, req, res, req.method === "POST" ? await readBody(req) : undefined);
+      } catch (err) {
+        if (!res.headersSent) return fail(res, err instanceof HostError ? statusOf[err.code] : 500, err instanceof HostError ? err.code : "internal", String((err as Error).message ?? err));
+        return;
+      }
+    }
     try {
       const body = req.method === "GET" || req.method === "DELETE" ? undefined : await readBody(req);
       for (const r of routes) {

@@ -473,3 +473,16 @@
 - 验证：`npm run verify` 退出码 0（159 个测试）；e2e 24/24
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-13 17:35 · S4-06 AMO MCP（只读）
+- 结果：done
+- 做法：挂在 Host 的 HTTP 服务上，路径 `/mcp`，Streamable HTTP 无状态模式，和 REST 接口用同一个 Host 令牌；不另开端口、不另起进程。受管会话怎么连上来（Codex 是否支持 HTTP 加令牌）在 S4-07 定，不支持的话再补 stdio 转发
+- 改动：
+  - `mcp/read-model.ts`：只读数据（按工作区或列筛选的看板；任务详情含依赖、被依赖、画布分组、会话列表；会话树每个会话只带最近一条回复的前 300 字；工作区和未完成任务；画布大纲直接复用 `canvasOutline`）；
+  - `mcp/amo-mcp.ts`：五个工具 `board_list`、`task_get`、`session_tree`、`project_context`、`canvas_read`，都标为只读；不存在的 id 返回可读的工具错误；
+  - `http/server.ts`：`/mcp` 与 `/api/` 共用令牌校验
+- 测试：4 个（官方 MCP 客户端走 HTTP：五个只读工具、令牌错误或缺失被拒、各工具的返回内容、不存在的 id）
+- 清理：Codex 集成测试又留下 1 个临时目录，日志里没有删除失败的警告，原因未明，已手动删除，仍记为待办
+- 验证：`npm run verify` 退出码 0（163 个测试）；e2e 24/24
+- 额度：0
+- commit：见本次 commit
