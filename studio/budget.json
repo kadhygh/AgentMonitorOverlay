@@ -2,11 +2,11 @@
   "unit": "one real model turn (turn/start or one SDK query turn)",
   "providers": {
     "deepseek": {
-      "limit": 100,
+      "limit": 1000,
       "used": 16
     },
     "glm": {
-      "limit": 1000,
+      "limit": 5000,
       "used": 0
     }
   },
