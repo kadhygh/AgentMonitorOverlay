@@ -284,3 +284,11 @@
 - 验证：`npm run verify` 通过；e2e 19/19；截图 `screenshots/stage-3/S3-04-deps-notes.png`
 - commit：见本次 commit
 - 遗留：自动摆放的起始高度下移到工具条下方
+
+## 2026-10-13 09:30 · 修复：Host 测试偶发 "fetch failed"
+- 结果：done
+- 原因：S3-04 的完整验证里 CORS 用例偶发 `fetch failed`，单独重跑 4 次都通过。每个用例都会新起一个 Host，系统可能把刚关闭的端口号再分出去，Node fetch 连接池里指向旧服务端的 keep-alive 连接就会失败
+- 改动：`server.test.ts`、`host-process.test.ts` 的请求一律带 `connection: close`，不复用连接
+- 验证：`npm run test` 连跑 2 次、`npm run verify` 均通过（118 个测试）
+- 过程问题：S3-04 那次提交（161a8d2）是在这条用例失败的情况下提交的——命令里用 grep 过滤输出，没有让失败中断提交。之后验证改为先看 `npm run verify` 的退出码再提交
+- commit：见本次 commit

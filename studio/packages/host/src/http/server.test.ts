@@ -11,6 +11,10 @@ import { HostService } from "../service.js";
 import { Store } from "../store/store.js";
 import { startHostServer, type HostServer } from "./server.js";
 
+// Each test boots a fresh server, and the OS may hand out a port that a closed server just used. A pooled keep-alive
+// socket to that old server would then fail ("fetch failed"), so test requests never reuse connections.
+const fetch = (url: string, init: RequestInit = {}) => globalThis.fetch(url, { ...init, headers: { connection: "close", ...(init.headers as Record<string, string> | undefined) } });
+
 const PROFILES: ModelProfile[] = [{ id: "p-ds", label: "DS", runtime: "codex", provider: "amo-ds", model: "ds-model" }];
 const TOKEN = "test-host-token";
 
