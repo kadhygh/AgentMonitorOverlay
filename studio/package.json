@@ -20,6 +20,7 @@
     "host": "tsc -b && node packages/host/dist/bin.js",
     "e2e": "npm run build && playwright test -c e2e/playwright.config.ts",
     "smoke:stage1": "npm run build && node scripts/smoke-stage1.mjs",
+    "smoke:stage4": "npm run build && node scripts/smoke-stage4.mjs",
     "start": "npm run build && electron packages/app",
     "host:stop": "node scripts/host-stop.mjs"
   },

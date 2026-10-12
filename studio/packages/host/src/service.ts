@@ -24,8 +24,8 @@ import type {
 } from "@amo-studio/protocol";
 import { canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
-import type { CodexRuntime } from "./runtime/codex/codex-runtime.js";
-import type { TerminalLauncher } from "./terminal/launcher.js";
+import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
+import type { TerminalHandle, TerminalLauncher } from "./terminal/launcher.js";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
@@ -46,9 +46,14 @@ export interface HostServiceEvents {
 }
 
 export class HostService extends EventEmitter<HostServiceEvents> {
+  /** Terminals that hold a Claude session (handoff); closing one gives the session back. */
+  private readonly handoffs = new Map<Id, TerminalHandle>();
+  /** One reclaim at a time per session, or the terminal's additions would be imported twice. */
+  private readonly reclaiming = new Map<Id, Promise<Session>>();
+
   constructor(
     readonly store: Store,
-    readonly runtime: CodexRuntime,
+    readonly runtime: SessionRuntimeApi,
     readonly profiles: readonly ModelProfile[],
     private readonly options: { launcher?: TerminalLauncher } = {},
   ) {
@@ -143,7 +148,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return this.store.listItems(sessionId, afterSeq);
   }
 
-  async sendMessage(sessionId: Id, text: string): Promise<{ mode: "start" | "steer" }> {
+  async sendMessage(sessionId: Id, text: string): Promise<{ mode: SendMode }> {
     this.requireSession(sessionId);
     if (!text?.trim()) throw new HostError("bad_request", "text is required");
     return this.wrap(() => this.runtime.sendMessage(sessionId, text));
@@ -184,7 +189,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   async terminal(sessionId: Id, launch: boolean): Promise<TerminalAttach> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be opened in a terminal");
-    if (s.runtime !== "codex") throw new HostError("bad_request", "only Codex sessions can be attached in stage 1");
+    if (s.runtime === "claude") return this.handToTerminal(s, launch);
     const info = await this.wrap(() => this.runtime.attachInfo(sessionId));
     const command = `codex --remote ${info.url} --remote-auth-token-env ${TERMINAL_TOKEN_ENV} resume ${info.threadId}`;
     if (launch) {
@@ -201,11 +206,62 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return { command, envVar: TERMINAL_TOKEN_ENV, launched: launch };
   }
 
-  /** Back to workbench-only writing (after closing the terminal, or taking a Claude handoff back in stage 4). */
-  reclaim(sessionId: Id): Session {
+  /**
+   * Claude: `claude --resume` in a terminal holds the session alone (two writers would lose turns), so Studio turns
+   * read-only and takes the session back when the terminal closes — or at once with "立即收回", which closes it.
+   */
+  private async handToTerminal(s: Session, launch: boolean): Promise<TerminalAttach> {
+    if (!launch) throw new HostError("bad_request", "a Claude session can only be handed to a terminal directly");
+    if (s.kind === "sub") throw new HostError("read_only", "a Claude subagent cannot be opened in a terminal");
+    const launcher = this.options.launcher;
+    if (!launcher) throw new HostError("bad_request", "no terminal launcher configured");
+    if (!this.runtime.handoff) throw new HostError("bad_request", "this Host cannot hand Claude sessions to a terminal");
+    const plan = await this.wrap(() => this.runtime.handoff!(s.id), "conflict");
+    let handle: TerminalHandle | undefined;
+    try {
+      // The complete environment: nothing Claude-related from the Host's own environment leaks into the terminal.
+      handle = launcher.launch({ command: plan.command, cwd: plan.cwd, env: plan.env, envMode: "replace", track: true, title: `AMO Studio · ${s.title || "Claude 会话"}` });
+    } catch (err) {
+      await this.reclaim(s.id).catch(() => undefined);
+      throw err;
+    }
+    if (handle) {
+      this.handoffs.set(s.id, handle);
+      handle.onExit(() => {
+        if (this.handoffs.get(s.id) !== handle) return;
+        this.handoffs.delete(s.id);
+        void this.reclaim(s.id).catch(() => undefined);
+      });
+    }
+    return { command: plan.command, envVar: null, launched: true };
+  }
+
+  /**
+   * Back to workbench-only writing: after closing a Codex TUI, or taking a Claude handoff back (closing its terminal
+   * if it is still open, then importing what it added).
+   */
+  async reclaim(sessionId: Id): Promise<Session> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be reclaimed");
-    return this.runtime.setWriter(sessionId, "workbench");
+    const pending = this.reclaiming.get(sessionId);
+    if (pending) return pending;
+    const run = (async () => {
+      const handle = this.handoffs.get(sessionId);
+      if (handle?.running) {
+        this.handoffs.delete(sessionId);
+        const exited = new Promise<void>((r) => handle.onExit(r));
+        handle.kill();
+        // The terminal's Claude process must be gone before Studio starts its own for the same session id.
+        await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
+      }
+      return this.wrap(() => (this.runtime.reclaim ? this.runtime.reclaim(sessionId) : Promise.resolve(this.runtime.setWriter(sessionId, "workbench"))));
+    })();
+    this.reclaiming.set(sessionId, run);
+    try {
+      return await run;
+    } finally {
+      this.reclaiming.delete(sessionId);
+    }
   }
 
   // Whole-picture todos
@@ -357,7 +413,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   }
 
   /** Sends all unsent annotations as one message (reply order, then position in the reply) and marks them sent. */
-  async sendAnnotations(sessionId: Id): Promise<{ mode: "start" | "steer"; sent: Annotation[] }> {
+  async sendAnnotations(sessionId: Id): Promise<{ mode: SendMode; sent: Annotation[] }> {
     const pending = this.annotations(sessionId).filter((a) => !a.sentAt);
     if (!pending.length) throw new HostError("bad_request", "no annotations to send");
     const seq = (a: Annotation) => this.store.getItem(a.itemId)?.seq ?? Number.MAX_SAFE_INTEGER;

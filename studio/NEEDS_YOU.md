@@ -81,6 +81,44 @@ Studio 现在能在工作台里用 Codex（含 DeepSeek 路由）推进任务：
 等你回复期间，loop 会继续推进阶段 4。
 回复：
 
+### [请你过目] 阶段 4 计划（2026-10-13，阶段 4）
+阶段 4 把 Claude 会话接进工作台，并让 agent 能读取工作台。
+- **Claude 会话**：用 Claude Agent SDK 实现，和 Codex 会话进同一棵会话树，支持审批、分支、子 agent。
+- **交接终端**：Claude 会话可以"在终端打开"，这期间工作台只读，终端退出后自动收回。
+- **只读 MCP**：agent 能读看板、任务、会话树摘要、项目信息和画布（`canvas.read`）；受管会话启动时自动带上。
+
+按默认推进的几处：
+- 受管的 Claude 会话用 Studio 自己的 `CLAUDE_CONFIG_DIR`，不碰你的 `~/.claude`；
+- loop 只用 GLM 和 mock，不调用 Claude 订阅；
+- 预计用 GLM 约 40 次，DeepSeek 0 次。
+
+附件：`studio/plans/stage-4.md`
+回复：
+
+### [请你过目] 阶段 4 完成：Claude 会话和只读 MCP（2026-10-13，阶段 4，S4-09）
+- **Claude 会话**：新建任务或会话时可以选 "Claude · GLM-5.3"。
+  - 需要改文件的命令会停下来等你批准；
+  - 回复生成中再发的消息会排到下一轮，按钮显示"排队"；
+  - 可以分支；子 agent 显示成摘要，点"查看"进子会话（只读）；
+  - "在终端打开"交给终端里的 `claude --resume`：这期间工作台只读，关闭终端后自动收回，并导入终端里的新内容；"立即收回"会关闭那个终端。
+- **AMO MCP（只读）**：受管的 Codex 和 Claude 会话都自动带上，agent 可以读看板、任务、会话树摘要、项目信息和画布。
+- **真实冒烟**：
+  - GLM：审批、MCP、分支、子 agent 都通过；
+  - DeepSeek：通过 MCP 读画布通过。
+- **安全修复**（这次复查发现，已修，有回归测试）：
+  - Codex 会话里 agent 执行的命令能读到 `DEEPSEEK_API_KEY`，从阶段 1 起就是这样；
+  - Claude 会话里的 `Bash` 能读到 GLM 的密钥；
+  - 现在都过滤掉了。旧 AMO 用同样的方式启动 Codex/Claude，很可能也有这个问题，我没有去动旧 AMO。
+- **试用方式**：`studio` 下 `npm start`。Claude 会话用的是凭据管理器里已有的 `glm-5.2` 密钥。
+- **本阶段的默认决定（可推翻）**：
+  - 受管的 Claude 会话用 Studio 自己的配置目录（数据目录下 `claude-home`），不碰你的 `~/.claude`；不使用 Claude 订阅登录；
+  - 交接终端用的是 SDK 自带的 claude.exe（和 SDK 同版本）；没有采用 `claude --bg`/`attach`；交接中的 Claude 不带 AMO MCP；交接期间仍允许分支；
+  - Studio 自己的五个只读 MCP 工具对 Claude 预先放行，不弹审批；
+  - Codex 的 MCP 用单独的只读令牌，不给 agent 可写接口的令牌；
+  - 我们维护的 DeepSeek 模型目录关掉了 `tool_search`，MCP 工具直接提供给模型。
+- 附件：`studio/screenshots/stage-4/`（S4-04 审批与子 agent、S4-05 交接、S4-07 读画布）；`studio/spikes/RESULTS.md` 第 h、i 节
+回复：
+
 ## 已处理
 
 （暂无）

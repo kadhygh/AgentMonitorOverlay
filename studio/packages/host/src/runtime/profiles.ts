@@ -29,6 +29,9 @@ export const CODEX_PROVIDERS: Record<string, CodexProviderDef> = {
   },
 };
 
+/** Env var that carries the MCP-only token to Codex app-servers. */
+export const AMO_MCP_TOKEN_ENV = "AMO_STUDIO_MCP_TOKEN";
+
 export const BUILTIN_PROFILES: readonly ModelProfile[] = [
   { id: "codex-default", label: "Codex", runtime: "codex", provider: null, model: null },
   {
@@ -40,6 +43,8 @@ export const BUILTIN_PROFILES: readonly ModelProfile[] = [
     reasoningEffort: "low",
     credentialId: "deepseek-v4",
   },
+  // Claude Code routed to GLM (old AMO's glm-5.3 preset; the key is the Coding Plan key stored as glm-5.2).
+  { id: "claude-glm", label: "GLM-5.3", runtime: "claude", provider: "glm", model: "glm-5.3[1m]", credentialId: "glm-5.2" },
 ];
 
 // src/ and dist/ sit at the same depth under packages/host.
@@ -73,7 +78,7 @@ export function codexServerSpec(
   profile: ModelProfile,
   profiles: readonly ModelProfile[],
   credentials: CredentialReader,
-  options: { providers?: Record<string, CodexProviderDef>; assetsDir?: string } = {},
+  options: { providers?: Record<string, CodexProviderDef>; assetsDir?: string; mcp?: { url: string; token: string } | null } = {},
 ): CodexServerSpec {
   if (profile.runtime !== "codex") throw new Error(`profile ${profile.id} is not a Codex profile`);
   const providers = options.providers ?? CODEX_PROVIDERS;
@@ -108,6 +113,17 @@ export function codexServerSpec(
   }
   if (profile.model) configArgs.push(...configArg("model", profile.model), ...configArg("review_model", profile.model));
   if (profile.reasoningEffort) configArgs.push(...configArg("model_reasoning_effort", profile.reasoningEffort));
+
+  // The AMO MCP (read-only) for every thread on this server. The token travels in the env, never on the command line.
+  if (options.mcp) {
+    configArgs.push(...configArg("mcp_servers.amo.url", options.mcp.url), ...configArg("mcp_servers.amo.bearer_token_env_var", AMO_MCP_TOKEN_ENV));
+    env[AMO_MCP_TOKEN_ENV] = options.mcp.token;
+  }
+
+  // Commands the agent runs inherit the server's environment; Codex 0.161 passed the provider keys and the MCP token
+  // straight through (S4-09 review). Keep its default KEY/SECRET/TOKEN filter on and name ours explicitly.
+  const secrets = [...new Set([...[...used].map((id) => providers[id]!.envKey), AMO_MCP_TOKEN_ENV])].sort();
+  configArgs.push("-c", "shell_environment_policy.ignore_default_excludes=false", "-c", `shell_environment_policy.exclude=[${secrets.map(tomlString).join(",")}]`);
 
   return { profileId: profile.id, configArgs, env, missingCredentials };
 }

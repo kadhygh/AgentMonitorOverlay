@@ -342,3 +342,203 @@
   - 修完后 `npm run verify` 退出码 0（134 个测试），e2e 22/22（截图同时重新生成，阶段 1、2 的截图顶栏多了"Focus"按钮）
 - NEEDS_YOU：写入"阶段 3 完成"（请你过目）、"是否切换为日常工具、何时删除旧 AMO"（必须等你，S3-10）
 - 合并：`studio/stage-3` 用 `--no-ff` 合并到 `studio/main`（见下一条）
+
+## 2026-10-13 12:25 · 阶段 3 合并，开始阶段 4
+- 合并：`studio/stage-3` 用 `--no-ff` 合并到 `studio/main`（f0ea8bc）；新建 `studio/stage-4`
+- 计划：`plans/stage-4.md`（10 个任务：S4-00 预研、mock Anthropic 接口、ClaudeRuntime、审批/分支/子 agent、模型配置、交接终端、只读 MCP、自动注入、GLM 冒烟、收尾）；写入 NEEDS_YOU（请你过目）
+- 关键约束：受管 Claude 会话用 Studio 自己的 `CLAUDE_CONFIG_DIR`（红线 2）；只用 GLM 和 mock；本机 Claude Code 2.1.296，SDK 最新 0.3.296，版本在预研后锁定
+- 通知：阶段完成 + 新的"必须等你"
+
+## 2026-10-13 12:55 · S4-00 预研 Claude Agent SDK
+- 结果：done，结论见 `spikes/RESULTS.md` 第 h 节
+- 依赖：host 包加入 `@anthropic-ai/claude-agent-sdk` 0.3.296（与本机 `claude` 2.1.296 同版本）及 peer 依赖 `zod` 4.6.6、`@anthropic-ai/sdk` 0.133.0、`@modelcontextprotocol/sdk` 1.32.1，均为精确版本，lockfile 一并提交
+- 凭据：只列了凭据管理器的条目名，GLM 的 id 是 `glm-5.2`；路由参数从旧 AMO 的 glm-5.3 预设只读获取（`broker/lib/claude-provider.js`）
+- 主要结论：
+  - `canUseTool` 可挂起等人；只读命令（如 `echo`）被 CLI 自动放行，不经过回调；
+  - `interrupt()` 后迭代器会抛异常；
+  - 生成中发的消息排到下一轮，不会插进当前回合；
+  - 不调模型的 `forkSession(id, { upToMessageId })` 可用，但读的是 Host 进程自己的 `CLAUDE_CONFIG_DIR`；
+  - 子 agent 靠 `parent_tool_use_id` 归组，没有独立 session id；
+  - 同一 `CLAUDE_CONFIG_DIR` 下真实 CLI 能 `--resume` SDK 创建的会话
+- 红线：所有会话都在 `%TEMP%\amo-studio-sandbox\s4-00\`；每次实验前后检查 `~/.claude.json`、`~/.claude/settings.json` 的修改时间都没变；密钥只放进子进程环境变量，结果文件里没有
+- 额度：GLM 12 次（12 / 5000）。另有两次脚本问题没有消耗额度：打断时 SDK 抛异常导致脚本退出（之后的实验没跑）；修复时 heredoc 把 `\n` 转成真换行导致语法错误
+- 计划更新：`plans/stage-4.md` 按结论改写 S4-02、S4-03 的做法
+- commit：见本次 commit
+
+## 2026-10-13 13:30 · S4-01 mock Anthropic 接口
+- 结果：done
+- 改动：`packages/testkit/src/mock-anthropic.ts`（Anthropic Messages 接口的本地替身，流式 SSE 和非流式都支持；指令 `[[shell: …]]`、`[[spawn: …]]`（前台子 agent）、`[[spawn-bg: …]]`（后台子 agent）、`[[slow]]`、`[[markdown]]`；`mockClaudeEnv()` 给出把 CLI 指向 mock 的环境变量）；解析单测 4 个；`packages/host/src/runtime/claude/mock-anthropic.sdk.test.ts` 用真实 SDK 对着 mock 跑 4 个场景（普通回复、需审批的命令、前台子 agent、后台子 agent），都在临时 `CLAUDE_CONFIG_DIR` 里
+- 调试：
+  - 第一次跑审批用例时测试进程堆内存耗尽：CLI 在工具结果之后又追加了 `role: "system"` 消息，mock 没认出"工具已经执行过"，一直重复发起同一个命令。改成"人最后一句话之后出现过工具结果"；
+  - 用调试脚本看 CLI 实际发出的请求，脚本临时放在 `packages/host/`，跑完删除；临时目录也已清理
+- **重要发现**（已写进 `spikes/RESULTS.md` 第 h 节和阶段 4 计划）：
+  - 不传 `permissionMode` 时 CLI 默认是 `auto`，由模型分类器代替人审批——Host 必须始终显式传 `"default"`；
+  - `Agent` 工具默认在后台跑，结束后父会话会自动多一轮；
+  - `Agent` 的 `mode` 参数能让子 agent 绕过审批，Host 要在 `canUseTool` 里去掉
+- 清理：内存耗尽那次测试进程崩溃，留下 2 个 `amo-studio-test-claude-*` 临时目录，已删除；确认没有遗留的 SDK 子进程
+- 验证：`npm run verify` 退出码 0（142 个测试）
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 14:40 · S4-02 ClaudeRuntime
+- 结果：done
+- 改动：
+  - `runtime/runtime.ts`：运行时通用接口 `SessionRuntimeApi`、按会话或模型配置所属运行时分派的 `RuntimeRouter`、共用的持久化辅助基类 `RuntimeBase`（`CodexRuntime` 暂未迁移到基类，避免动已稳定的代码）；
+  - `runtime/claude/claude-env.ts`：Claude 提供方定义（内置 GLM）与子进程环境变量（去掉继承的 `ANTHROPIC_*`/`CLAUDE*`，加路由、凭据、Studio 自己的 `CLAUDE_CONFIG_DIR`；没有提供方或凭据时报错，即不使用 Claude 订阅登录）；
+  - `runtime/claude/claude-runtime.ts`：
+    - 会话 id 由 Studio 生成（SDK `sessionId`），之后 `resume`；
+    - 每个会话一个流式输入的 `query()`，始终 `permissionMode: "default"`；
+    - 生成中发的消息排队（接口返回 `mode: "queue"`）；
+    - `canUseTool` 挂起等人、转成审批卡片，`Agent` 调用去掉 `mode`；
+    - 打断后的异常按"已打断"处理；空闲 10 分钟关闭进程，下次发消息自动接续；
+    - Host 关闭或崩溃重启后，进行中的回合结束并留一条说明；
+  - Host 进程同时创建 Codex 和 Claude 两个运行时，经路由分派；关闭时等 Claude 进程全部退出；数据目录下新增 `claude-home`；
+  - 协议：发送消息和"汇总发回"的返回值加上 `"queue"`
+- 测试：集成测试 7 个（真实 SDK + mock：对话与接续、批准、拒绝、排队与打断、子 agent、崩溃恢复、关闭后重启接续）；`claudeEnv` 单测 3 个
+- 调试：
+  - 关闭后立刻接续会话时 CLI 报 "Session ID … is already in use"：`query.close()` 不等进程退出。改为关闭时等 `consume` 结束，同一会话再发消息前先等关闭完成；
+  - mock 把 CLI 注入的 "[Request interrupted by user]" 当成了人说的话，已跳过
+- 和计划的出入：审批（`canUseTool` → 卡片）提前到本任务做，因为 "default" 模式下没有它，需要审批的工具调用会全部被拒；S4-03 剩下分支和子 agent 归组。子 agent 那条用例只验证能跑通，`mode` 被去掉的验证留到 S4-03
+- 清理：用 `-t` 只跑部分用例时，测试文件在加载时创建的临时目录不会被清理（留下 2 个，已删）；Claude 的测试改为在 `beforeAll` 里创建。Codex 的两个集成测试也是同样写法，记为待办
+- 验证：`npm run verify` 退出码 0（152 个测试）；e2e 22/22；没有遗留的 SDK 进程
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 15:30 · S4-03 分支与子 agent（Claude）
+- 结果：done
+- 改动（`claude-runtime.ts`）：
+  - **分支**：用 SDK 的 `forkSession()` 复制会话记录（不调模型），建成 `kind: "fork"` 的子会话；还没有对话内容时拒绝；`forkSession` 在 Host 进程里读 `CLAUDE_CONFIG_DIR`，调用前临时设置、调用后恢复；
+  - **子 agent**：
+    - 每次 `Agent` 调用建一个 `kind: "sub"` 的子会话，父会话里显示一条子 agent 摘要，不再出工具卡片；子 agent 的提示、工具调用和结果写进子会话；
+    - 前台子 agent 的最终回复从父会话那次工具结果的 `tool_use_result` 里取（它不会流出来）；后台子 agent 等 `task_notification` 才算结束；
+    - Claude 的子 agent 会话不能单独发消息，也不能分支；
+  - **防提权**：`Agent` 调用不经过 `canUseTool`，所以上一轮写在 `canUseTool` 里的"去掉 mode"根本执行不到，已删除；改用 `PreToolUse` 钩子去掉 `mode`
+- 测试：集成测试新增 4 个（分支带上下文且互不影响、前台子 agent 归组、带 `bypassPermissions` 的子 agent 执行命令前仍出审批卡片、后台子 agent 等通知结束）；mock 单测 1 个；mock 新增 `[[spawn-mode-<mode>: …]]` 指令，子 agent 的提示里可以嵌套 `[[shell: …]]`
+- **更正 S4-01 的结论**：S4-01 写的"模型可以借 `mode` 让子 agent 绕过审批"不准确。实测父会话为 "default" 时，子 agent 带 `bypassPermissions`/`auto`/`acceptEdits`/`dontAsk` 执行命令都仍然要人批准。钩子作为保险保留。`spikes/RESULTS.md` 已更正
+- 过程问题：有一次用 Python 脚本改 mock 时断言失败、文件没改，但我没注意到输出里缺了 "ok"，接着用旧的 mock 调试了一轮。之后改用 Edit 工具
+- 验证：`npm run verify` 退出码 0（156 个测试）；e2e 22/22；没有遗留的临时目录和 SDK 进程
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 16:05 · S4-04 Claude 模型配置与界面
+- 结果：done
+- 改动：
+  - 内置模型配置新增 "Claude · GLM-5.3"（`claude-glm`：provider `glm`、模型 `glm-5.3[1m]`、凭据 `glm-5.2`），新建任务和新会话都能选；
+  - 测试模式：`AMO_STUDIO_TEST_CLAUDE_URL` 加一个指向 mock Anthropic 的 `claude-mock` 配置；e2e 的 `launchStudio` 同时启动 mock Anthropic；
+  - 对话区：
+    - Claude 会话生成中时，按钮显示"排队"、提示"生成中：发送会排到下一轮"、输入框占位文字也相应改写（Codex 仍是"插话"）；
+    - Claude 子 agent 会话的输入框只读，并说明原因，也不显示"分支"
+- 测试：e2e `claude.spec.ts`（新建 Claude 任务、批准命令并确认目录创建、生成中排队、分支带上下文、子 agent 摘要与"查看"、子会话只读、会话记录写在测试数据目录的 `claude-home`）；内置配置变成 3 个后，profiles 单测改为只遍历 Codex 配置，shell.spec 改为检查配置 id 列表
+- 截图：`screenshots/stage-4/S4-04-claude-approval.png`、`S4-04-claude-subagent.png`
+- 清理：`%TEMP%` 下 7 个 `amo-studio-e2e-*` 是之前几轮 e2e 失败时留下的（10-12 23:47 到 10-13 02:06），已删除
+- 验证：`npm run verify` 退出码 0（156 个测试）；e2e 23/23（全量一次 22/23，失败的 shell.spec 改完预期后单独重跑通过）
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 16:55 · S4-05 Claude 交接到终端与收回
+- 结果：done
+- 改动：
+  - 终端启动器：
+    - 新增可追踪方式：cmd 不开窗口，用 `start /WAIT` 等终端窗口关闭；
+    - 句柄可以监听退出，也可以结束整棵进程树（`taskkill /T`）；
+    - 环境变量可以整份替换，Host 自身的 `ANTHROPIC_*` 不会混进终端；
+    - 测试用的假句柄可以模拟退出；
+  - ClaudeRuntime：
+    - `handoff`：回复生成中拒绝；先等 Studio 自己的 Claude 进程退出，记下会话记录条数（存进 kv，Host 重启后也能收回），会话标为"已交给终端"；
+    - 终端命令用 SDK 自带的 claude.exe（和 SDK 同版本），`--resume <id> --permission-mode default`，密钥只在环境变量里；
+    - `reclaim`：用 `getSessionMessages` 读出终端期间新增的内容，转成条目导入，留一条说明；
+  - HostService：
+    - Claude 会话"在终端打开"改为交接，终端关闭时自动收回；
+    - "立即收回"会先结束仍在运行的终端，等它退出再收回；
+    - 同一会话同时只做一次收回，避免重复导入；
+  - 界面：
+    - Claude 会话（子 agent 除外）显示"在终端打开"，回复生成中不可点；
+    - 交接期间对话顶部显示提示条（说明为何只读、关闭终端会自动收回）和"立即收回"
+- 测试：
+  - 集成测试 3 个：
+    - 交接参数（替换环境、`--permission-mode default`、命令里没有密钥、Host 的 `ANTHROPIC_API_KEY` 不进终端）、只读、模拟终端里一轮对话（用 claude.exe 打印模式对着 mock）、终端退出后自动收回并导入 2 条、收回后上下文完整；
+    - 立即收回会结束终端；
+    - 生成中拒绝交接；
+  - e2e 1 个：界面上交接 → 提示条和只读 → 立即收回 → 继续对话
+- 调试：
+  - 集成测试里模拟终端用了同步的 `execFileSync`，mock 和测试在同一个进程里，被阻塞后没法响应 CLI，卡到超时；
+  - 改成异步执行
+- 默认决定（请你过目）：
+  - 共享方式用 `claude --resume` 交接，没有采用 `claude --bg`/`attach`（没有实测，交接已能满足"只读 + 收回"）；
+  - 交接期间仍允许"分支"（复制当时的会话记录）
+- 清理：`%TEMP%` 下发现 298 个早先遗留的测试目录：
+  - 预算测试 165、Store 测试 104：测试从不删除，已改为每个用例结束后删除；
+  - Codex 集成测试 27：可能是删除时被 Codex 进程占用，记为待办；
+  - 全部已删除
+- 验证：`npm run verify` 退出码 0（159 个测试）；e2e 24/24
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 17:35 · S4-06 AMO MCP（只读）
+- 结果：done
+- 做法：挂在 Host 的 HTTP 服务上，路径 `/mcp`，Streamable HTTP 无状态模式，和 REST 接口用同一个 Host 令牌；不另开端口、不另起进程。受管会话怎么连上来（Codex 是否支持 HTTP 加令牌）在 S4-07 定，不支持的话再补 stdio 转发
+- 改动：
+  - `mcp/read-model.ts`：只读数据（按工作区或列筛选的看板；任务详情含依赖、被依赖、画布分组、会话列表；会话树每个会话只带最近一条回复的前 300 字；工作区和未完成任务；画布大纲直接复用 `canvasOutline`）；
+  - `mcp/amo-mcp.ts`：五个工具 `board_list`、`task_get`、`session_tree`、`project_context`、`canvas_read`，都标为只读；不存在的 id 返回可读的工具错误；
+  - `http/server.ts`：`/mcp` 与 `/api/` 共用令牌校验
+- 测试：4 个（官方 MCP 客户端走 HTTP：五个只读工具、令牌错误或缺失被拒、各工具的返回内容、不存在的 id）
+- 清理：Codex 集成测试又留下 1 个临时目录，日志里没有删除失败的警告，原因未明，已手动删除，仍记为待办
+- 验证：`npm run verify` 退出码 0（163 个测试）；e2e 24/24
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 18:30 · S4-07 受管会话自动注入 MCP
+- 结果：done
+- 做法：
+  - **Codex**：app-server 启动参数加 `mcp_servers.amo.url` 和 `bearer_token_env_var`，令牌只在环境变量里；
+  - **Claude**：SDK 进程内 MCP（`createSdkMcpServer`），不需要令牌；五个只读工具用 `allowedTools` 预先放行，其余工具照常审批；
+  - 工具定义抽到 `mcp/tools.ts`，HTTP 端和 Claude 端共用
+- **MCP 专用令牌**：数据目录新增 `mcp-token`，只能打开 `/mcp`，不能访问 `/api/`。原因：agent 执行的命令可能继承 app-server 的环境变量，不能让它拿到可写接口的 Host 令牌
+- **发现**：Codex 0.161 在模型目录 `supports_search_tool: true` 时会把 MCP 工具藏在 Responses 托管工具 `tool_search` 后面（e2e 第一次失败时，从 mock 收到的请求里看到）。DeepSeek 接口大概率不支持这种托管工具，所以把我们维护的 DeepSeek Flash 和 mock 模型目录改为 `false`，MCP 工具直接作为普通函数提供；S4-08 加一次 DeepSeek 带 MCP 的真实冒烟。详见 `spikes/RESULTS.md` 第 i 节
+- mock：两个 mock 都新增 `[[mcp: <tool>]]` 指令，调用后回复 `MOCK-MCP: <结果开头>`
+- 测试：
+  - e2e `mcp.spec.ts`：Codex 和 Claude 会话各自读画布，回复里出现分组大纲；
+  - 单测：Codex 启动参数里只有令牌所在环境变量的名字、MCP 令牌只能打开 `/mcp`
+- 默认决定（请你过目）：交接到终端的 Claude 不带 AMO MCP
+- 清理：Codex 集成测试又留下 1 个临时目录，已删
+- 验证：`npm run verify` 退出码 0（165 个测试）；e2e 25/25
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-13 19:05 · S4-08 GLM 与 DeepSeek 真实冒烟
+- 结果：done
+- 脚本：`scripts/smoke-stage4.mjs`（`npm run smoke:stage4`）
+  - Host 跑在沙箱数据目录，端口 47960；
+  - Codex 的 home 和工作区都在 `%TEMP%\amo-studio-sandbox\smoke-stage4-*`；
+  - 每个回合记入额度；结束时归档会话、删除沙箱目录
+- GLM（Claude 会话）全部通过：
+  - `mkdir` 等人批准后才执行，目录确实创建；
+  - 通过 MCP 读画布，答出分组名"掉落表校验"；
+  - 分支里记得之前建的文件夹；
+  - 子 agent 回复 SUB-OK，子会话生成并完成
+- DeepSeek（Codex 会话）通过 MCP（`amo.canvas_read`）读画布，答出分组名。确认模型目录关掉 `tool_search` 后，DeepSeek 能直接调用 MCP 工具
+- 过程问题：
+  - 第一次完整运行时，DeepSeek 一步的结果无效：Codex 会话在 `turn/started` 到达前一直显示"空闲"，脚本的等待函数第一次轮询就返回了；
+  - 加了只跑 DeepSeek 的开关后又跑了一次，同样无效；
+  - 改成"出现新回复且不在运行中"才算结束后，第三次有效；
+  - 结果文件被只跑 DeepSeek 的那次覆盖了，GLM 的结果按控制台输出写回，文件里注明了来源
+- 额度：
+  - GLM 4 次（16/5000）；
+  - DeepSeek 3 次（22/1000），其中 2 次是上面无效的那两次
+- 没有截图：冒烟是脚本直接调接口；界面截图用的是 S4-04、S4-07 的 mock 版本
+- commit：见本次 commit
+
+## 2026-10-13 19:55 · S4-09 阶段 4 收尾
+- 结果：done
+- 自查（`/code-review` 只能由用户触发）：阶段 4 共 39 个文件、约 2700 行。重点查"密钥会不会进到 agent 执行的命令里"，用 mock 实测，查出两处并修复（commit 1c23cfc）：
+  - **Codex**：0.161 把 app-server 的环境变量原样传给 agent 执行的命令，`cmd /c echo %AMO_MOCK_API_KEY%` 能打印出密钥。也就是说从阶段 1 起，DeepSeek 会话里的命令就能读到 `DEEPSEEK_API_KEY`，MCP 令牌同理。修法：app-server 启动参数加 `shell_environment_policy.ignore_default_excludes=false` 和 `shell_environment_policy.exclude=[各提供方的密钥变量, AMO_STUDIO_MCP_TOKEN]`；
+  - **Claude**：Claude Code 的 `Bash` 继承 `ANTHROPIC_AUTH_TOKEN`，`env` 会把 GLM 密钥打印进会话记录。修法：子进程环境加 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`（交接终端用同一份环境，也已覆盖）；
+  - 回归测试只打印相关变量：工具输出会截到最后 4000 字，打印完整的 `env` 时，"不包含密钥"的断言并不可靠
+- 防偏离自查：
+  - 没有自动审批：Claude 始终用 "default"，预先放行的只有 Studio 自己的只读 MCP 工具；
+  - 交接终端的交互（只读、提示条、立即收回）与 interaction-notes 一致；
+  - 没有越过"派发"（阶段 5 单独评审）
+- 完整验证：`npm run verify` 退出码 0（168 个测试），e2e 25/25
+- 遗留：`server-manager` 和 Codex 集成测试的临时目录在加载时创建，偶尔留下，已删除，仍记为待办
+- NEEDS_YOU：写入"阶段 4 完成"（请你过目），其中特别说明了安全修复，以及旧 AMO 可能有同样问题
+- 合并：`studio/stage-4` 用 `--no-ff` 合并到 `studio/main`（见下一条）

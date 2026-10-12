@@ -65,14 +65,22 @@ export function Thread({ session, items, annotations, model, busy, onApprove, on
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   }, [items]);
 
-  const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
+  // A Claude subagent has no conversation of its own; it is followed from its parent session.
+  const claudeSub = session?.runtime === "claude" && session.kind === "sub";
+  const readOnly = !session || claudeSub || session.writer === "archived" || session.writer === "terminal-handoff";
   const generating = !!session && (session.status === "running" || session.status === "awaiting-approval");
+  // Codex folds a message into the running turn; Claude runs it as the next turn.
+  const queues = session?.runtime === "claude";
   const placeholder = readOnly
-    ? session?.writer === "archived"
-      ? "已归档的会话只能查看，恢复后才能继续。"
-      : "会话已交给终端，工作台暂时只读。"
+    ? claudeSub
+      ? "Claude 的子 agent 不能单独接收消息，请在父会话里继续。"
+      : session?.writer === "archived"
+        ? "已归档的会话只能查看，恢复后才能继续。"
+        : "会话已交给终端，工作台暂时只读。"
     : generating
-      ? "回复生成中，输入的内容会作为插话发出"
+      ? queues
+        ? "回复生成中，输入的内容会排到下一轮"
+        : "回复生成中，输入的内容会作为插话发出"
       : "继续推进这个会话，回车发送，Shift+回车换行";
 
   async function send() {
@@ -169,7 +177,7 @@ export function Thread({ session, items, annotations, model, busy, onApprove, on
             />
           </label>
           <div className="composer-bar">
-            <span className="composer-hint">{generating && !readOnly ? "生成中：发送会插入到当前回合" : ""}</span>
+            <span className="composer-hint">{generating && !readOnly ? (queues ? "生成中：发送会排到下一轮" : "生成中：发送会插入到当前回合") : ""}</span>
             <span className="spacer" />
             {generating && !readOnly && (
               <button type="button" className="btn-ghost" onClick={onInterrupt}>
@@ -177,7 +185,7 @@ export function Thread({ session, items, annotations, model, busy, onApprove, on
               </button>
             )}
             <button type="button" className="btn-primary" onClick={() => void send()} disabled={readOnly || !draft.trim()}>
-              {generating ? "插话" : "发送"}
+              {generating ? (queues ? "排队" : "插话") : "发送"}
             </button>
           </div>
         </div>

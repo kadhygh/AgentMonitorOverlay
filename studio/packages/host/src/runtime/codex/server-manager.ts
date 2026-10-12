@@ -51,6 +51,8 @@ export interface CodexServerManagerOptions {
   portRange?: readonly [number, number];
   /** Backoff after a crash: first delay and cap, in ms. */
   backoffMs?: { first: number; max: number };
+  /** Where app-servers reach the AMO MCP; read when a server starts (the Host's address is known only later). */
+  mcp?: () => { url: string; token: string } | null;
 }
 
 interface Entry {
@@ -195,7 +197,7 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
 
   private spawnServer(entry: Entry): void {
     const profile = this.options.profiles.find((p) => p.id === entry.profileId)!;
-    const spec = codexServerSpec(profile, this.options.profiles, this.options.credentials, { providers: this.options.providers });
+    const spec = codexServerSpec(profile, this.options.profiles, this.options.credentials, { providers: this.options.providers, mcp: this.options.mcp?.() ?? null });
     const cmd = this.options.codexCommand ?? resolveCodexCommand();
     const tokenFile = this.tokenFile(entry.profileId);
     const args = [...cmd.prefixArgs, "app-server", ...spec.configArgs, "--listen", `ws://127.0.0.1:${entry.port}`, "--ws-auth", "capability-token", "--ws-token-file", tokenFile];

@@ -4,6 +4,11 @@ import { join } from "node:path";
 import { HOST_DEFAULT_PORT, type ModelProfile } from "@amo-studio/protocol";
 import { startHostServer, type HostServer } from "./http/server.js";
 import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.js";
+import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
+import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
+import { RuntimeRouter } from "./runtime/runtime.js";
+import { ReadModel } from "./mcp/read-model.js";
+import { amoTools } from "./mcp/tools.js";
 import { CodexServerManager } from "./runtime/codex/server-manager.js";
 import { WindowsCredentialReader, type CredentialReader } from "./runtime/credentials.js";
 import { BUILTIN_PROFILES, type CodexProviderDef } from "./runtime/profiles.js";
@@ -34,6 +39,10 @@ export interface StartHostOptions {
   /** Tests: replace the real app-server manager. */
   servers?: CodexServers & { stopAll?: () => Promise<void>; detachAll?: () => void };
   launcher?: TerminalLauncher;
+  /** Anthropic-compatible endpoints for Claude profiles (default: GLM). Tests point one at the mock. */
+  claudeProviders?: Record<string, ClaudeProviderDef>;
+  /** Variables Claude processes start from (default: process.env). */
+  claudeBaseEnv?: NodeJS.ProcessEnv;
 }
 
 export interface RunningHost {
@@ -55,8 +64,10 @@ export const hostPaths = (dataDir: string) => ({
   lock: join(dataDir, "host.lock"),
   info: join(dataDir, "host.json"),
   token: join(dataDir, "host-token"),
+  mcpToken: join(dataDir, "mcp-token"),
   db: join(dataDir, "studio.db"),
   codex: join(dataDir, "codex"),
+  claudeHome: join(dataDir, "claude-home"),
 });
 
 export function readHostInfo(dataDir: string): HostInfo | null {
@@ -112,9 +123,13 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
   let store: Store | undefined;
   let http: HostServer | undefined;
   let manager: CodexServerManager | undefined;
+  let claude: ClaudeRuntime | undefined;
   try {
     const profiles = options.profiles ?? BUILTIN_PROFILES;
     const token = loadOrCreateToken(paths.token);
+    // Agents get a token that opens the read-only MCP only, never the writable REST API.
+    const mcpToken = loadOrCreateToken(paths.mcpToken);
+    let mcp: { url: string; token: string } | null = null;
     store = new Store(paths.db);
     manager = options.servers
       ? undefined
@@ -125,17 +140,31 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
           cwd: options.dataDir,
           ...(options.codexEnv ? { env: options.codexEnv } : {}),
           ...(options.providers ? { providers: options.providers } : {}),
+          mcp: () => mcp,
         });
     const servers = options.servers ?? manager!;
-    const runtime = new CodexRuntime({ store, servers, profiles });
+    const codex = new CodexRuntime({ store, servers, profiles });
+    // Managed Claude sessions keep their transcripts in Studio's own config dir, never in the person's ~/.claude.
+    claude = new ClaudeRuntime({
+      store,
+      profiles,
+      providers: options.claudeProviders ?? BUILTIN_CLAUDE_PROVIDERS,
+      credentials: options.credentials ?? new WindowsCredentialReader(),
+      claudeHome: paths.claudeHome,
+      ...(options.claudeBaseEnv ? { baseEnv: options.claudeBaseEnv } : {}),
+      mcpTools: () => amoTools(new ReadModel(service)),
+    });
+    const runtime = new RuntimeRouter(store, profiles, { codex, claude });
     const service = new HostService(store, runtime, profiles, { launcher: options.launcher ?? new WindowsTerminalLauncher() });
     http = await startHostServer({
       service,
       token,
+      mcpToken,
       port: options.port ?? HOST_DEFAULT_PORT,
       ...(options.uiDir ? { uiDir: options.uiDir } : {}),
       ...(options.allowedOrigins ? { allowedOrigins: options.allowedOrigins } : {}),
     });
+    mcp = { url: `${http.url}/mcp`, token: mcpToken };
     const info: HostInfo = { url: http.url, port: http.port, pid: process.pid, startedAt: new Date().toISOString() };
     writeFileSync(paths.info, JSON.stringify(info, null, 2));
 
@@ -143,6 +172,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     const finalStore = store;
     const finalHttp = http;
     const finalManager = manager;
+    const finalClaude = claude;
     return {
       info,
       token,
@@ -151,6 +181,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         if (stopped) return;
         stopped = true;
         await finalHttp.close();
+        await finalClaude.closeAll();
         const s = finalManager ?? options.servers;
         if (keepServers) s?.detachAll?.();
         else await s?.stopAll?.();

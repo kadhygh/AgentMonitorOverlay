@@ -3,11 +3,11 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 19
+      "used": 22
     },
     "glm": {
       "limit": 5000,
-      "used": 0
+      "used": 16
     }
   },
   "log": [
@@ -105,6 +105,101 @@
       "at": "2026-10-12T16:24:16.679Z",
       "provider": "deepseek",
       "note": "S1-12 turn 3"
+    },
+    {
+      "at": "2026-10-12T18:28:10.192Z",
+      "provider": "glm",
+      "note": "S4-00 basic"
+    },
+    {
+      "at": "2026-10-12T18:28:24.195Z",
+      "provider": "glm",
+      "note": "S4-00 approval"
+    },
+    {
+      "at": "2026-10-12T18:28:35.445Z",
+      "provider": "glm",
+      "note": "S4-00 resume"
+    },
+    {
+      "at": "2026-10-12T18:28:38.542Z",
+      "provider": "glm",
+      "note": "S4-00 fork"
+    },
+    {
+      "at": "2026-10-12T18:29:11.554Z",
+      "provider": "glm",
+      "note": "S4-00 approval"
+    },
+    {
+      "at": "2026-10-12T18:29:34.409Z",
+      "provider": "glm",
+      "note": "S4-00 deny"
+    },
+    {
+      "at": "2026-10-12T18:29:46.250Z",
+      "provider": "glm",
+      "note": "S4-00 fork"
+    },
+    {
+      "at": "2026-10-12T18:29:51.686Z",
+      "provider": "glm",
+      "note": "S4-00 subagent"
+    },
+    {
+      "at": "2026-10-12T18:30:16.164Z",
+      "provider": "glm",
+      "note": "S4-00 interrupt"
+    },
+    {
+      "at": "2026-10-12T18:30:54.804Z",
+      "provider": "glm",
+      "note": "S4-00 interrupt"
+    },
+    {
+      "at": "2026-10-12T18:30:58.662Z",
+      "provider": "glm",
+      "note": "S4-00 steer"
+    },
+    {
+      "at": "2026-10-12T18:31:08.665Z",
+      "provider": "glm",
+      "note": "S4-00 cli resume"
+    },
+    {
+      "at": "2026-10-12T20:00:48.234Z",
+      "provider": "glm",
+      "note": "S4-08 GLM approval"
+    },
+    {
+      "at": "2026-10-12T20:01:00.664Z",
+      "provider": "glm",
+      "note": "S4-08 GLM mcp"
+    },
+    {
+      "at": "2026-10-12T20:01:10.724Z",
+      "provider": "glm",
+      "note": "S4-08 GLM fork"
+    },
+    {
+      "at": "2026-10-12T20:01:16.788Z",
+      "provider": "glm",
+      "note": "S4-08 GLM subagent"
+    },
+    {
+      "at": "2026-10-12T20:01:32.863Z",
+      "provider": "deepseek",
+      "note": "S4-08 DeepSeek mcp"
+    },
+    {
+      "at": "2026-10-12T20:01:53.744Z",
+      "provider": "deepseek",
+      "note": "S4-08 DeepSeek mcp"
+    },
+    {
+      "at": "2026-10-12T20:02:15.328Z",
+      "provider": "deepseek",
+      "note": "S4-08 DeepSeek mcp"
     }
   ]
 }

@@ -73,9 +73,9 @@ export function deepseekProviderArgs(id = "amo-deepseek") {
   ];
 }
 
-export function countTurn(note) {
-  const r = reserveModelTurn("deepseek", note);
-  console.log(`[budget] deepseek ${r.used}/${r.limit}${r.low ? " LOW" : ""} (${note})`);
+export function countTurn(note, provider = "deepseek") {
+  const r = reserveModelTurn(provider, note);
+  console.log(`[budget] ${provider} ${r.used}/${r.limit}${r.low ? " LOW" : ""} (${note})`);
 }
 
 // Starts `codex app-server` on a WS port with a capability token. Returns { url, token, stop, stderr }.

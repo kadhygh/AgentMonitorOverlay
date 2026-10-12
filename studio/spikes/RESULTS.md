@@ -4,6 +4,56 @@
 
 环境：Codex CLI 0.161.0（实际为 0.144.1，见上方更正），app-server 走 WebSocket 加 capability token，模型路由 DeepSeek Flash（`spikes/lib.mjs` 的 `deepseekConfigArgs`）。沙盒工作区在 `%TEMP%\amo-studio-sandbox\` 下。原始记录在 `spikes/results/`。
 
+## i. MCP 注入（2026-10-13，S4-07，mock 模型，不消耗额度）
+
+- **Codex**：app-server 启动时加 `-c mcp_servers.amo.url="<Host>/mcp"` 和 `-c mcp_servers.amo.bearer_token_env_var="AMO_STUDIO_MCP_TOKEN"`，令牌只放在 app-server 的环境变量里。用的是 MCP 专用令牌，只能打开 `/mcp`，打不开可写的 REST 接口（agent 执行的命令可能继承 app-server 的环境变量）。
+- **Codex 0.161 默认把 MCP 工具藏在 `tool_search` 后面**：模型目录里 `supports_search_tool: true` 时，请求只带一个 Responses 托管工具 `{"type":"tool_search","execution":"client"}`，MCP 工具要等模型先搜索才给出。DeepSeek 兼容接口大概率不支持这种托管工具，所以我们自己维护的模型目录（DeepSeek Flash、mock）改成 `supports_search_tool: false`，MCP 工具直接作为普通函数提供。`codex-default` 用 Codex 内置目录，不受影响。DeepSeek 带 MCP 的真实请求在 S4-08 冒烟里验证。
+- **Claude**：没有用 HTTP——SDK 把 `mcpServers` 配置交给 CLI 时可能出现在命令行上（令牌会暴露）。改用 SDK 的进程内服务 `createSdkMcpServer`，工具在 Host 进程里执行，CLI 通过 SDK 的内部通道调用，不需要令牌。这五个工具只读 Studio 自己的状态，用 `allowedTools` 预先放行，其余工具照常走 `canUseTool`。
+- 交接到终端的 Claude（`claude --resume`）不带 AMO MCP（进程内服务只存在于 Host 的 SDK 进程）。
+- S4-08 真实冒烟（`scripts/smoke-stage4.mjs`，结果 `spikes/results/s4-08-smoke.json`）：
+  - GLM 通过 Claude 会话调用 `mcp__amo__canvas_read`，正确答出分组名；
+  - DeepSeek Flash 通过 Codex 会话调用 MCP 工具（Codex 里的名字是 `amo.canvas_read`），正确答出分组名——关掉 `tool_search` 后 DeepSeek 可以直接调用 MCP 工具；
+  - SDK 会对 `allowedTools` 打出警告 `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED`（这五个工具不再经过 `canUseTool`），这是有意为之。
+
+## h. Claude Agent SDK 在 Windows 上的行为（2026-10-13，S4-00，GLM 12 次）
+
+脚本：`spikes/s4-00-claude-sdk.mjs`（按参数选实验）；原始结果：`spikes/results/s4-00.json`。环境：SDK `@anthropic-ai/claude-agent-sdk` 0.3.296（自带 win32-x64 的 Claude Code 2.1.296，和本机 `claude` 2.1.296 同版本）；GLM 路由沿用旧 AMO 的 glm-5.3 预设（`ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic`、`ANTHROPIC_MODEL=glm-5.3[1m]`，密钥放 `ANTHROPIC_AUTH_TOKEN`，凭据 id `glm-5.2`）；`CLAUDE_CONFIG_DIR` 和工作区都在 `%TEMP%\amo-studio-sandbox\s4-00\`；`settingSources: []`。
+
+| 项目 | 结果 |
+|---|---|
+| 基本一轮 | 正常。事件：`system:init`（含 `claude_code_version`、`model`、`tools`、`mcp_servers`）、`system:status`、`system:thinking_tokens`、`stream_event`（`message_start`/`content_block_delta`/…，需 `includePartialMessages`）、`assistant`（每个完成的内容块一条）、`result`。 |
+| 会话记录位置 | `<CLAUDE_CONFIG_DIR>/projects/<cwd 转义>/`。每次实验前后检查 `~/.claude.json` 和 `~/.claude/settings.json` 的修改时间，都没变（红线 2）。 |
+| 审批 | `echo` 这类只读命令会被自动放行，**不经过** `canUseTool`；`mkdir` 会调用 `canUseTool(toolName, input, ctx)`，回调挂起 3 秒期间回合一直等待，`allow` 后命令执行。`ctx` 里有 `toolUseID`、`title`、`description`、`displayName`、`suggestions`、`signal` 等，够做审批卡片。`deny` 后命令不执行，回复里说明被拒，`result.permission_denials` 列出这次调用。 |
+| 恢复 | `resume: <sessionId>` 接着原会话，session id 不变，记得上文。 |
+| 分支 | `resume` + `forkSession: true` 得到新 session id，带着原会话上下文回复。另有不调模型的 `forkSession(sessionId, { upToMessageId })` 函数，可以只复制到某条消息为止——适合"从这条回复分支"；但它在 Host 进程里运行，读的是**进程自己的** `CLAUDE_CONFIG_DIR`，不认 `options.env`。 |
+| 子 agent | 工具名 `Agent`。子 agent 的消息带 `parent_tool_use_id`（等于父会话里那次 `Agent` 调用的 id），session id 和父会话相同；另有 `system:task_started` / `task_updated` / `task_notification` 事件。 |
+| 打断 | `query.interrupt()` 后结果为 `error_during_execution`，随后迭代器**抛出异常**（`Claude Code returned an error result`）。 |
+| 插话 | 流式输入里在生成中途推入第二条消息，**不会**插进当前回合：第一轮照常数到 40 结束，第二条作为下一轮处理（共两个 `result`）。 |
+| 真实 CLI 接续 | 同一 `CLAUDE_CONFIG_DIR` 下 `claude -p --resume <id>` 接上 SDK 创建的会话，session id 相同，记得上文。 |
+| 共享方式 | `claude --help` 里有 `--bg`（后台会话）、`claude attach <id>`、`agents`、`logs`、`stop`。未实测，S4-05 再评估能否用作共享。 |
+
+结论（写进阶段 4 的做法）：
+- SDK 版本锁定 0.3.296，与本机 CLI 同版本，交接到终端时会话格式一致。peer 依赖锁定：`zod` 4.6.6、`@anthropic-ai/sdk` 0.133.0、`@modelcontextprotocol/sdk` 1.32.1。
+- Host 给 Claude 子进程的环境变量：继承的环境去掉所有 `ANTHROPIC_*` / `CLAUDE*`，再加上模型路由和 `CLAUDE_CONFIG_DIR`；Host 进程本身也设置同一个 `CLAUDE_CONFIG_DIR`，`forkSession` 等函数才能找到会话。
+- 审批：`canUseTool` 挂起，转成工作台的审批卡片，和 Codex 走同一套界面。只读命令被 CLI 自动放行，这是 Claude Code 自身的行为，不算"自动审批"。
+- 打断：调用 `interrupt()` 后出现的那次异常按"已打断"处理，不当作出错。
+- 插话：Claude 会话里生成中发出的消息排到下一轮，界面上的按钮和提示要说明"排队"，不能写成"插话"。
+- 分支：从某条回复分支时用 `forkSession(id, { upToMessageId })`，不调模型；在会话末尾分支也可以用 `resume` + `forkSession: true`。
+- 子 agent：按 `parent_tool_use_id` 归到父会话里那次 `Agent` 调用下面，显示成一条摘要；它没有独立的 session id，所以"查看"展开的是父会话里的那段内容，而不是一个独立会话（与 Codex 子 agent 不同，S4-03 处理）。
+
+S4-01 用 mock Anthropic 接口补充发现（不消耗额度）：
+- **不传 `permissionMode` 时 CLI 默认是 `auto`**：由一个模型分类器代替人决定批不批，`canUseTool` 不会被调用（mock 收到了分类器的请求）。预研脚本显式传了 `"default"` 所以没暴露。**Host 必须始终显式传 `permissionMode: "default"`**，否则就是自动审批。
+- `Agent` 工具默认在**后台**运行子 agent（工具结果是 "Async agent launched successfully"）；子 agent 结束后 CLI 通知父会话，父会话**自动再跑一轮**，同一个 `query()` 里会出现两个 `result`。Runtime 不能假设"一次发送对应一个 result"。
+- `Agent` 工具的参数里有 `mode`（可取 `bypassPermissions`、`auto`、`dontAsk` 等）和 `run_in_background`。
+  - S4-03 实测更正：`Agent` 调用本身**不经过** `canUseTool`；父会话为 "default" 时，子 agent 带 `bypassPermissions`/`auto`/`acceptEdits`/`dontAsk` 去执行 `mkdir`，**仍然**走 `canUseTool` 要人批准，没有绕过。
+  - 作为保险，Host 仍用 `PreToolUse` 钩子（matcher `Agent|Task`）把 `mode` 去掉；集成测试验证带 `bypassPermissions` 的子 agent 执行命令前会出审批卡片。
+- 这个版本的 CLI 会在请求的消息列表里追加 `role: "system"` 的消息（环境信息、剩余 token），用户消息里还有 `<system-reminder>` 文本块。
+- 子 agent 的消息（S4-03）：
+  - 前台子 agent 运行中，它的工具调用和结果会带着 `parent_tool_use_id` 流出来，但**最终文字回复不会流出来**，只在父会话那次 `Agent` 工具结果的 `tool_use_result.content` 里（`tool_use_result` 还有 `status`、`agentId`、用量等）；
+  - 后台子 agent 的文字回复会流出来；
+  - 前台和后台都会发 `task_started`/`task_notification`（带 `tool_use_id`）；
+  - 完整记录可以用 `getSubagentMessages(sessionId, agentId)` 读，Studio 暂不需要。
+
 ## f. 用 npm 版 Codex 0.161 复测（2026-10-13，mock 模型，不消耗额度）
 
 脚本：`spikes/s1-00f-recheck.mjs`，原始记录 `spikes/results/s1-00f.json`。a～d 的检查项改用本地 mock 模型（`packages/testkit` 的 `startMockModel`）在 0.161 上重跑，检查的是协议行为，与模型无关。

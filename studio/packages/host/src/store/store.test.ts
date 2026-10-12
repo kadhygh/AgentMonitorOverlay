@@ -3,15 +3,20 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import type { Session, SessionItem } from "@amo-studio/protocol";
+import { removeTempDir } from "@amo-studio/testkit";
 import { Store } from "./store.js";
 
 const open: Store[] = [];
+const dirs: string[] = [];
 afterEach(() => {
   while (open.length) open.pop()!.close();
+  while (dirs.length) removeTempDir(dirs.pop()!);
 });
 
 function tempDbPath(): string {
-  return join(mkdtempSync(join(tmpdir(), "amo-studio-test-store-")), "studio.db");
+  const dir = mkdtempSync(join(tmpdir(), "amo-studio-test-store-"));
+  dirs.push(dir);
+  return join(dir, "studio.db");
 }
 
 function makeStore(path = ":memory:"): Store {

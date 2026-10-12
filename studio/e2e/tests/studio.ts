@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, type ElectronApplication, type Page } from "@playwright/test";
-import { MOCK_MODEL_CATALOG, removeTempDir, startMockModel, type MockModelServer } from "@amo-studio/testkit";
+import { MOCK_MODEL_CATALOG, removeTempDir, startMockAnthropic, startMockModel, type ClaudeMockServer, type MockModelServer } from "@amo-studio/testkit";
 
 // Launch helper for Studio end-to-end tests: temp data dir, hidden window, attached Host on an ephemeral port, and by
 // default the mock model as the only model (no budget, no real Codex home).
@@ -22,6 +22,7 @@ export interface Studio {
   /** Temp root; `workspace(name)` dirs live here. */
   root: string;
   mock: MockModelServer | null;
+  claudeMock: ClaudeMockServer | null;
   /** Creates an empty project dir under the sandbox root. */
   workspace(name: string): string;
   /** Calls the Host API directly (setup and assertions), with the token from the data dir. */
@@ -37,8 +38,14 @@ export async function launchStudio(options: { mockModel?: boolean; env?: Record<
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(codexHome, { recursive: true });
   const mock = options.mockModel === false ? null : await startMockModel();
+  const claudeMock = options.mockModel === false ? null : await startMockAnthropic();
   const mockEnv: Record<string, string> = mock
-    ? { AMO_STUDIO_TEST_PROVIDER_URL: mock.baseUrl, AMO_STUDIO_TEST_CATALOG: MOCK_MODEL_CATALOG, AMO_STUDIO_TEST_CODEX_HOME: codexHome }
+    ? {
+        AMO_STUDIO_TEST_PROVIDER_URL: mock.baseUrl,
+        AMO_STUDIO_TEST_CATALOG: MOCK_MODEL_CATALOG,
+        AMO_STUDIO_TEST_CODEX_HOME: codexHome,
+        ...(claudeMock ? { AMO_STUDIO_TEST_CLAUDE_URL: claudeMock.baseUrl } : {}),
+      }
     : {};
   const app = await _electron.launch({
     executablePath: electronPath,
@@ -66,6 +73,7 @@ export async function launchStudio(options: { mockModel?: boolean; env?: Record<
     dataDir,
     root,
     mock,
+    claudeMock,
     workspace(name) {
       const dir = join(root, "workspaces", name);
       mkdirSync(dir, { recursive: true });
@@ -75,6 +83,7 @@ export async function launchStudio(options: { mockModel?: boolean; env?: Record<
     close: async ({ keepData = false } = {}) => {
       await app.close();
       await mock?.close();
+      await claudeMock?.close();
       if (!keepData) removeTempDir(root);
     },
   };

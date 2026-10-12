@@ -36,8 +36,22 @@ describe("codexServerSpec", () => {
     expect(spec.configArgs.join(" ")).not.toContain(SECRET);
   });
 
+  it("keeps provider keys and the MCP token out of the agent's command environment", () => {
+    const cfg = config(codexServerSpec(byId("codex-deepseek-flash"), BUILTIN_PROFILES, creds).configArgs) as Record<string, unknown>;
+    expect(cfg["shell_environment_policy.ignore_default_excludes"]).toBe(false);
+    expect(cfg["shell_environment_policy.exclude"]).toEqual(["AMO_STUDIO_MCP_TOKEN", "DEEPSEEK_API_KEY"]);
+  });
+
+  it("points every server at the AMO MCP with the token only in the env", () => {
+    const spec = codexServerSpec(byId("codex-default"), BUILTIN_PROFILES, creds, { mcp: { url: "http://127.0.0.1:47900/mcp", token: "mcp-secret" } });
+    expect(config(spec.configArgs)).toMatchObject({ "mcp_servers.amo.url": "http://127.0.0.1:47900/mcp", "mcp_servers.amo.bearer_token_env_var": "AMO_STUDIO_MCP_TOKEN" });
+    expect(spec.configArgs.join(" ")).not.toContain("mcp-secret");
+    expect(spec.env.AMO_STUDIO_MCP_TOKEN).toBe("mcp-secret");
+    expect(Object.keys(config(codexServerSpec(byId("codex-default"), BUILTIN_PROFILES, creds).configArgs)).some((k) => k.startsWith("mcp_servers."))).toBe(false);
+  });
+
   it("never emits agents.* overrides (rejected by Codex 0.161)", () => {
-    for (const profile of BUILTIN_PROFILES) {
+    for (const profile of BUILTIN_PROFILES.filter((p) => p.runtime === "codex")) {
       expect(Object.keys(config(codexServerSpec(profile, BUILTIN_PROFILES, creds).configArgs)).some((k) => k.startsWith("agents."))).toBe(false);
     }
   });
