@@ -51,3 +51,14 @@ describe("canvas geometry", () => {
     expect(d.nodes[0]).toMatchObject({ groupId: null, pos: { x: 20, y: 40 } });
   });
 });
+
+describe("arrowBetween", () => {
+  it("clips the arrow to both card borders", async () => {
+    const { arrowBetween } = await import("./geometry.js");
+    const left = { x: 0, y: 0, w: 100, h: 50 };
+    const right = { x: 300, y: 0, w: 100, h: 50 };
+    expect(arrowBetween(left, right)).toEqual({ a: { x: 100, y: 25 }, b: { x: 300, y: 25 } });
+    const below = { x: 0, y: 200, w: 100, h: 50 };
+    expect(arrowBetween(left, below)).toEqual({ a: { x: 50, y: 50 }, b: { x: 50, y: 200 } });
+  });
+});

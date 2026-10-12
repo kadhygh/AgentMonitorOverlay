@@ -277,3 +277,10 @@
   - 两个坑：同一窗口连续两次编辑（改名后马上绑定）会用旧版本号发出第二次保存而被判冲突，已用"本窗口续版"解决；页面上残留的文字选区会让拖动变成浏览器原生拖拽、吞掉后续鼠标事件，已在开始拖动时 `preventDefault`
   - 拖动监听改为 layout effect，确保快速拖动的第一下就有监听
   - 分组设置先放在画布右上角的浮层里，S3-05 搬进侧栏"详情"
+
+## 2026-10-13 09:20 · S3-04 依赖与便签
+- 结果：done
+- 改动：`packages/ui/src/canvas/CanvasSidebar.tsx`（画布右侧栏：整体待办 / 详情 / agent 视角三个标签页，本任务先做"详情"——任务：状态、打开任务、前置任务列表可移除、添加前置任务时用 `wouldCycle` 排除会成环的；分组：名称、绑定工作区、删除（从画布浮层搬过来）；便签：编辑与删除）；CanvasPage 增加 SVG 依赖箭头（从前置任务指向后续任务，裁到卡片边框）、"+ 便签"（建在视野中央，可拖动、可进出分组）；geometry 增加 `borderPoint`/`arrowBetween` 与测试；e2e `deps.spec.ts`，groups 用例改为在侧栏操作
+- 验证：`npm run verify` 通过；e2e 19/19；截图 `screenshots/stage-3/S3-04-deps-notes.png`
+- commit：见本次 commit
+- 遗留：自动摆放的起始高度下移到工具条下方

@@ -368,3 +368,28 @@ a.md-link { cursor: pointer; }
 .canvas-tools { position: absolute; left: 12px; top: 12px; display: flex; gap: 6px; }
 .canvas-tools .btn-ghost { background: var(--chip); }
 .group-panel { position: absolute; right: 12px; top: 12px; width: 220px; padding: 12px; border-radius: 10px; border: 1px solid var(--border-strong); background: #1b1f24; display: flex; flex-direction: column; gap: 10px; box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4); }
+
+/* Canvas sidebar, notes and dependencies (S3-04) */
+.canvas-page { padding: 0; }
+.canvas-row { flex: 1; min-height: 0; display: flex; }
+.canvas-row .canvas-viewport { margin: 12px; }
+.canvas-side { flex: 0 0 320px; border-left: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; }
+.side-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--chip); }
+.side-tab { flex: 1; height: 28px; border: none; border-radius: 7px; background: transparent; color: var(--text-dim); font-size: 12.5px; cursor: pointer; }
+.side-tab[aria-selected="true"] { background: var(--border); color: var(--text); }
+.side-section { display: flex; flex-direction: column; gap: 10px; }
+.side-heading { font-weight: 600; }
+.side-subheading { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
+.side-note { font-size: 12px; color: var(--text-dim); }
+.side-textarea { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px; resize: vertical; }
+.dep-row { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-radius: 8px; background: var(--panel); border: 1px solid var(--border); font-size: 13px; }
+.dep-row .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dep-add { display: flex; gap: 6px; }
+.dep-add select { flex: 1; min-width: 0; height: 28px; border-radius: 6px; border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 12.5px; }
+.canvas-edges { position: absolute; left: 0; top: 0; width: 1px; height: 1px; overflow: visible; pointer-events: none; }
+.canvas-edge { stroke: #7c8794; stroke-width: 1.6; }
+.canvas-note {
+  position: absolute; box-sizing: border-box; padding: 10px 12px; border-radius: 8px; border: 1px solid #5a4a22; background: #2a2416;
+  color: #f2d9a0; font-size: 12.5px; white-space: pre-wrap; cursor: pointer; user-select: none; box-shadow: 0 4px 14px rgba(0, 0, 0, 0.35);
+}
+.canvas-note.selected { border-color: var(--attention); }

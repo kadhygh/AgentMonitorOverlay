@@ -54,3 +54,23 @@ export function deleteGroup(doc: CanvasDoc, groupId: Id): CanvasDoc {
 export function addGroup(doc: CanvasDoc, group: CanvasGroup): CanvasDoc {
   return { ...doc, groups: [...doc.groups, group] };
 }
+
+/** Point where the segment from the centre of `rect` towards `target` leaves the rectangle. */
+export function borderPoint(rect: Rect, target: Point): Point {
+  const cx = rect.x + rect.w / 2;
+  const cy = rect.y + rect.h / 2;
+  const dx = target.x - cx;
+  const dy = target.y - cy;
+  if (dx === 0 && dy === 0) return { x: cx, y: cy };
+  const sx = dx === 0 ? Infinity : rect.w / 2 / Math.abs(dx);
+  const sy = dy === 0 ? Infinity : rect.h / 2 / Math.abs(dy);
+  const s = Math.min(sx, sy);
+  return { x: cx + dx * s, y: cy + dy * s };
+}
+
+/** Arrow from one card to another, clipped to both card borders. */
+export function arrowBetween(from: Rect, to: Rect): { a: Point; b: Point } {
+  const fc = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
+  const tc = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
+  return { a: borderPoint(from, tc), b: borderPoint(to, fc) };
+}

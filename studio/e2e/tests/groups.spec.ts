@@ -32,7 +32,7 @@ test("canvas groups: create, rename, bind, move with members, resize, membership
   // Create, rename and bind through the settings panel.
   await page.getByRole("button", { name: "+ 分组" }).click();
   await expect.poll(async () => (await canvas()).groups.length).toBe(1);
-  const panel = page.getByRole("dialog", { name: "分组设置" });
+  const panel = page.getByRole("group", { name: "分组设置" });
   await panel.getByLabel("分组名称").fill("导入");
   await panel.getByLabel("分组名称").press("Enter");
   await expect.poll(async () => (await canvas()).groups[0]!.title).toBe("导入");
@@ -76,7 +76,7 @@ test("canvas groups: create, rename, bind, move with members, resize, membership
   await expect.poll(async () => (await canvas()).nodes[0]!.groupId).toBe(group.id);
   const kept = (await canvas()).nodes[0]!.pos;
   await page.getByTestId("canvas-group").locator(".canvas-group-bar").click();
-  await page.getByRole("dialog", { name: "分组设置" }).getByRole("button", { name: "删除分组（保留卡片）" }).click();
+  await page.getByRole("group", { name: "分组设置" }).getByRole("button", { name: "删除分组（保留卡片）" }).click();
   await expect.poll(async () => (await canvas()).groups.length).toBe(0);
   expect((await canvas()).nodes[0]).toMatchObject({ groupId: null, pos: kept });
   await screenshot(studio.app, "stage-3", "S3-03-groups", page);

@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 import type { CanvasDoc, CanvasGroup, CanvasNode, Id, Session, Task, Workspace } from "@amo-studio/protocol";
+import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
 import type { HostLink } from "../host/client.js";
 import { SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
-import { addGroup, deleteGroup, GROUP_HEADER, moveGroup, moveNode, resizeGroup, updateGroup } from "./geometry.js";
+import { addGroup, arrowBetween, GROUP_HEADER, moveGroup, moveNode, resizeGroup, updateGroup } from "./geometry.js";
 import { useCanvas } from "./useCanvas.js";
 
 export const CARD_W = 220;
 export const CARD_H = 66;
+export const NOTE_W = 180;
+export const NOTE_H = 90;
+const nodeSize = (n: CanvasNode) => (n.kind === "note" ? { w: NOTE_W, h: NOTE_H } : { w: CARD_W, h: CARD_H });
 const MIN_K = 0.3;
 const MAX_K = 2.5;
 const VIEW_KEY = "amo.canvasView";
@@ -17,7 +21,6 @@ interface View {
   k: number;
 }
 
-type Selection = { kind: "node"; id: Id } | { kind: "group"; id: Id } | null;
 
 type Drag =
   | { kind: "pan"; sx: number; sy: number; vx: number; vy: number }
@@ -52,7 +55,7 @@ export function placeMissing(doc: CanvasDoc, tasks: readonly Task[]): CanvasDoc 
   const missing = tasks.filter((t) => !placed.has(t.id));
   if (!missing.length) return null;
   const bottoms = [...doc.nodes.map((n) => n.pos.y + CARD_H), ...doc.groups.map((g) => g.rect.y + g.rect.h)];
-  const baseY = bottoms.length ? Math.max(...bottoms) + 40 : 40;
+  const baseY = bottoms.length ? Math.max(...bottoms) + 40 : 64; // start below the toolbar
   const added: CanvasNode[] = missing.map((t, i) => ({
     id: newCanvasId("n"),
     kind: "task",
@@ -81,7 +84,12 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
     previewRef.current = next;
     setPreviewState(next);
   };
-  const [selection, setSelection] = useState<Selection>(null);
+  const [selection, setSelectionState] = useState<CanvasSelection>(null);
+  const [tab, setTab] = useState<SidebarTab>("detail");
+  const setSelection = (next: CanvasSelection) => {
+    setSelectionState(next);
+    if (next) setTab("detail");
+  };
   const [renaming, setRenaming] = useState<Id | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const placing = useRef(false);
@@ -143,7 +151,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
       drag.moved = true;
       if (drag.kind === "node") {
         const node = drag.base.nodes.find((n) => n.id === drag.id)!;
-        setPreview(moveNode(drag.base, drag.id, { x: node.pos.x + dx, y: node.pos.y + dy }, { w: CARD_W, h: CARD_H }));
+        setPreview(moveNode(drag.base, drag.id, { x: node.pos.x + dx, y: node.pos.y + dy }, nodeSize(node)));
       } else if (drag.kind === "group-move") {
         setPreview(moveGroup(drag.base, drag.id, dx, dy));
       } else {
@@ -195,9 +203,22 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
     setSelection({ kind: "group", id: group.id });
   };
 
+  /** New note in the middle of the visible area. */
+  const newNote = () => {
+    if (!doc) return;
+    const box = viewport.current?.getBoundingClientRect();
+    const x = Math.round(((box?.width ?? 800) / 2 - view.x) / view.k - NOTE_W / 2);
+    const y = Math.round(((box?.height ?? 600) / 2 - view.y) / view.k - NOTE_H / 2);
+    const id = newCanvasId("n");
+    persist(moveNode({ ...doc, nodes: [...doc.nodes, { id, kind: "note", text: "", groupId: null, pos: { x, y } }] }, id, { x, y }, { w: NOTE_W, h: NOTE_H }));
+    setSelection({ kind: "node", id });
+  };
+
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const wsName = (id: Id | null) => (id ? (workspaces.find((w) => w.id === id)?.name ?? "") : "");
-  const selectedGroup = selection?.kind === "group" ? shown?.groups.find((g) => g.id === selection.id) : undefined;
+  const cardOf = new Map(
+    (shown?.nodes ?? []).filter((n) => n.kind === "task").map((n) => [(n as { taskId: Id }).taskId, { x: n.pos.x, y: n.pos.y, w: CARD_W, h: CARD_H }]),
+  );
 
   return (
     <section className="canvas-page" aria-label="画布">
@@ -209,6 +230,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
           </button>
         </div>
       )}
+      <div className="canvas-row">
       <div className={drag?.kind === "pan" ? "canvas-viewport panning" : "canvas-viewport"} ref={viewport} onMouseDown={startPan} data-testid="canvas-viewport">
         <div className="canvas-world" data-testid="canvas-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
           {shown?.groups.map((g) => (
@@ -248,8 +270,37 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
               <div className="canvas-group-resize" aria-label="调整分组大小" onMouseDown={(e) => startDrag(e, "group-resize", g.id)} />
             </div>
           ))}
+          <svg className="canvas-edges" aria-hidden="true">
+            <defs>
+              <marker id="amo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 Z" fill="#7c8794" />
+              </marker>
+            </defs>
+            {shown?.edges.map((e) => {
+              const from = cardOf.get(e.from);
+              const to = cardOf.get(e.to);
+              if (!from || !to) return null;
+              const { a, b } = arrowBetween(from, to);
+              return <line key={e.id} x1={a.x} y1={a.y} x2={b.x} y2={b.y} className="canvas-edge" markerEnd="url(#amo-arrow)" data-testid="canvas-edge" />;
+            })}
+          </svg>
           {shown?.nodes.map((node) => {
-            if (node.kind !== "task") return null;
+            if (node.kind === "note") {
+              const noteSelected = selection?.kind === "node" && selection.id === node.id;
+              return (
+                <div
+                  key={node.id}
+                  className={noteSelected ? "canvas-note selected" : "canvas-note"}
+                  style={{ left: node.pos.x, top: node.pos.y, width: NOTE_W, minHeight: NOTE_H }}
+                  data-testid="canvas-note"
+                  data-node-id={node.id}
+                  data-group-id={node.groupId ?? ""}
+                  onMouseDown={(e) => startDrag(e, "node", node.id)}
+                >
+                  {node.text || <span className="dim">空便签，在侧栏编辑</span>}
+                </div>
+              );
+            }
             const task = taskById.get(node.taskId);
             if (!task) return null;
             const own = taskSessions(task, sessions);
@@ -288,47 +339,10 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
           <button type="button" className="btn-ghost small" onClick={newGroup} disabled={!doc}>
             + 分组
           </button>
+          <button type="button" className="btn-ghost small" onClick={newNote} disabled={!doc}>
+            + 便签
+          </button>
         </div>
-
-        {selectedGroup && doc && (
-          <div className="group-panel" role="dialog" aria-label="分组设置" onMouseDown={(e) => e.stopPropagation()}>
-            <label className="stack-field">
-              名称
-              <input
-                key={selectedGroup.id + selectedGroup.title}
-                className="field"
-                defaultValue={selectedGroup.title}
-                aria-label="分组名称"
-                onBlur={(e) => {
-                  const title = e.target.value.trim();
-                  if (title && title !== selectedGroup.title) persist(updateGroup(doc, selectedGroup.id, { title }));
-                }}
-                onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
-              />
-            </label>
-            <label className="stack-field">
-              绑定工作区
-              <select value={selectedGroup.workspaceId ?? ""} onChange={(e) => persist(updateGroup(doc, selectedGroup.id, { workspaceId: e.target.value || null }))}>
-                <option value="">不绑定</option>
-                {workspaces.map((w) => (
-                  <option key={w.id} value={w.id}>
-                    {w.name}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <button
-              type="button"
-              className="btn-ghost small dim"
-              onClick={() => {
-                persist(deleteGroup(doc, selectedGroup.id));
-                setSelection(null);
-              }}
-            >
-              删除分组（保留卡片）
-            </button>
-          </div>
-        )}
 
         <div className="canvas-zoom" onMouseDown={(e) => e.stopPropagation()}>
           <button type="button" aria-label="缩小" onClick={() => zoomCenter(1 / 1.2)}>
@@ -343,6 +357,22 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
           </button>
         </div>
         <div className="canvas-hint">拖空白处平移 · 滚轮缩放 · 拖卡片进出分组 · 拖分组标题移动整组 · 右下角调整大小 · 双击打开任务</div>
+      </div>
+      {shown && (
+        <CanvasSidebar
+          doc={shown}
+          selection={selection}
+          tasks={tasks}
+          sessions={sessions}
+          workspaces={workspaces}
+          tab={tab}
+          onTab={setTab}
+          onChange={persist}
+          onClearSelection={() => setSelectionState(null)}
+          onOpenTask={onOpenTask}
+          newId={newCanvasId}
+        />
+      )}
       </div>
     </section>
   );
