@@ -308,3 +308,16 @@
 - 默认决定（请你过目）：画布是全局的一张，不受左栏范围筛选影响（左栏选了 alpha，画布仍显示全部任务）
 - 验证：`npm run verify` 退出码 0（121 个测试）；e2e 21/21；截图 `screenshots/stage-3/S3-06-cross-workspace.png`
 - commit：见本次 commit
+
+## 2026-10-13 11:05 · S3-07 Focus 悬浮窗
+- 结果：done
+- 改动：
+  - Electron：`packages/app/src/focus-window.ts`（无边框、透明、置顶 floating、不可获得焦点、不进任务栏、不可调整大小，默认贴主显示器工作区右下角，测试模式放 -32000；透明区域默认点击穿透 `setIgnoreMouseEvents(true, {forward})`）；`ShellPrefs` 把 Focus 开关记在数据目录 `shell-prefs.json`；IPC：`amo:focus-get/set`、`amo:focus-changed`、`amo:focus-mouse`（只接受 Focus 窗口自己发来的）、`amo:open-in-workbench` → 主窗口收到 `amo:navigate`
+  - 界面：同一个 bundle，`#focus` 时渲染 `FocusApp`。标题行"需要你 n · 运行中 m"、收起/展开；列表只列待批准、待审阅的未归档会话，最新的在前；默认展开第一条，显示待批准的命令或最近一条回复（截到 300 字）；待批准可"批准"；"在工作台打开"跳到对应任务和会话（同一任务已打开时也会切到那个会话）；鼠标进入面板时关闭穿透、离开时恢复
+  - 工作台顶栏增加"Focus 开/关"按钮
+  - 测试辅助：`screenshot`/`windowState` 按 URL 区分主窗口和 Focus 窗口（原先取第一个窗口，两个窗口时不可靠），`windowState` 多返回 focusable、alwaysOnTop；测试模式记录最近一次穿透开关值
+  - 单测 2 个、e2e `focus.spec.ts`（打开 Focus、窗口状态（屏幕外、未聚焦、不可聚焦、置顶）、条目与命令、悬停切换穿透、在工作台打开、就地批准后条目消失、关闭 Focus）
+- 默认决定（请你过目）：Focus 平时默认开启、测试默认关闭，开关按本机记住；列表不放运行中的会话（原型里有，按阶段计划只列待你处理的，运行中只计数）；Focus 里只有"批准"，"拒绝"和"终端"回工作台做；暂不做托盘，开关在工作台顶栏
+- 验证：`npm run verify` 退出码 0（123 个测试）；e2e 22/22；截图 `screenshots/stage-3/S3-07-focus.png`
+- 真机观感（贴角位置、透明、穿透）测试里看不到，阶段收尾时写进"请你过目"
+- commit：见本次 commit

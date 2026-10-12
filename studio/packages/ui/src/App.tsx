@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { Task } from "@amo-studio/protocol";
 import { Board, type Scope } from "./board/Board.js";
 import { ScopeNav } from "./board/ScopeNav.js";
@@ -7,19 +7,40 @@ import { NewTaskPage } from "./newtask/NewTaskPage.js";
 import { TaskPage } from "./task/TaskPage.js";
 import { CanvasPage } from "./canvas/CanvasPage.js";
 import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
-import "./styles/app.css";
 
-type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "task"; taskId: string; sessionId?: string };
+// `nav` changes when Focus asks for a session, so an already open task page re-opens on that session.
+type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
+
+/** Focus window on/off, mirrored from the Electron shell (absent in a plain browser). */
+function useFocusToggle(): { on: boolean; available: boolean; set(on: boolean): void } {
+  const api = window.amo?.focus;
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (!api) return;
+    void api.get().then(setOn);
+    return api.onChange(setOn);
+  }, [api]);
+  return { on, available: !!api, set: (next) => void api?.set(next) };
+}
 
 export function App() {
   const host = useHostState();
   const [scope, setScope] = useState<Scope>({ kind: "all" });
   const [view, setView] = useState<View>({ kind: "board" });
+  const focus = useFocusToggle();
+
+  useEffect(
+    () =>
+      window.amo?.onNavigate?.(({ taskId, sessionId }) =>
+        setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}), nav: Date.now() }),
+      ),
+    [],
+  );
 
   if (host.kind !== "ready") {
     return (
       <div className="app">
-        <TopBar onBoard={() => undefined} onCanvas={() => undefined} onNew={() => undefined} needs={0} scopeName="" disabled />
+        <TopBar onBoard={() => undefined} onCanvas={() => undefined} onNew={() => undefined} needs={0} scopeName="" focus={focus} disabled />
         <div className="placeholder" data-testid="host-status">
           {host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}
         </div>
@@ -40,6 +61,7 @@ export function App() {
         onNew={() => setView({ kind: "new" })}
         needs={needs}
         scopeName={scopeName}
+        focus={focus}
         active={view.kind === "canvas" ? "canvas" : view.kind === "new" ? null : "board"}
       />
       <div className="body">
@@ -80,7 +102,7 @@ export function App() {
             if (!task) return <div className="placeholder">任务不存在或已被删除。</div>;
             return (
               <TaskPage
-                key={task.id}
+                key={`${task.id}:${view.nav ?? 0}`}
                 link={link}
                 task={task}
                 sessions={state.sessions}
@@ -103,9 +125,11 @@ function TopBar({
   onNew,
   needs,
   scopeName,
+  focus,
   active = "board",
   disabled = false,
 }: {
+  focus: { on: boolean; available: boolean; set(on: boolean): void };
   onBoard(): void;
   onCanvas(): void;
   onNew(): void;
@@ -139,6 +163,17 @@ function TopBar({
         <button type="button" className="needs" onClick={onBoard} data-testid="needs-you">
           <span className="dot" style={{ background: "var(--attention)", width: 7, height: 7 }} />
           需要你 {needs}
+        </button>
+      )}
+      {focus.available && (
+        <button
+          type="button"
+          className="btn-ghost small"
+          aria-pressed={focus.on}
+          title="桌面角落的悬浮窗：只列需要你处理的会话"
+          onClick={() => focus.set(!focus.on)}
+        >
+          Focus {focus.on ? "开" : "关"}
         </button>
       )}
       <button type="button" className="btn-primary" onClick={onNew} disabled={disabled}>

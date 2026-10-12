@@ -80,13 +80,16 @@ export async function launchStudio(options: { mockModel?: boolean; env?: Record<
   };
 }
 
-/** Saves a PNG of the (hidden) main window to studio/screenshots/<stage>/<name>.png. */
-export async function screenshot(app: ElectronApplication, stage: string, name: string, page?: Page): Promise<string> {
+/** Which window: the workbench, or the Focus window (loaded with #focus). */
+export type WindowKind = "main" | "focus";
+
+/** Saves a PNG of the (hidden) main window, or the Focus window, to studio/screenshots/<stage>/<name>.png. */
+export async function screenshot(app: ElectronApplication, stage: string, name: string, page?: Page, which: WindowKind = "main"): Promise<string> {
   if (page) await settlePaint(page);
-  const base64 = await app.evaluate(async ({ BrowserWindow }) => {
-    const win = BrowserWindow.getAllWindows()[0]!;
+  const base64 = await app.evaluate(async ({ BrowserWindow }, kind) => {
+    const win = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#focus") === (kind === "focus"))!;
     return (await win.webContents.capturePage()).toPNG().toString("base64");
-  });
+  }, which);
   const file = join(studioRoot, "screenshots", stage, `${name}.png`);
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, Buffer.from(base64, "base64"));
@@ -94,16 +97,23 @@ export async function screenshot(app: ElectronApplication, stage: string, name: 
 }
 
 /** Window state used to assert the red line: test windows never take focus and stay off every display. */
-export function windowState(app: ElectronApplication) {
-  return app.evaluate(({ BrowserWindow, screen }) => {
-    const win = BrowserWindow.getAllWindows()[0]!;
+export function windowState(app: ElectronApplication, which: WindowKind = "main") {
+  return app.evaluate(({ BrowserWindow, screen }, kind) => {
+    const win = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#focus") === (kind === "focus"))!;
     const b = win.getBounds();
     const onScreen = screen.getAllDisplays().some((d) => {
       const a = d.bounds;
       return b.x < a.x + a.width && b.x + b.width > a.x && b.y < a.y + a.height && b.y + b.height > a.y;
     });
-    return { visible: win.isVisible(), focused: win.isFocused(), anyFocused: BrowserWindow.getFocusedWindow() !== null, onScreen };
-  });
+    return {
+      visible: win.isVisible(),
+      focused: win.isFocused(),
+      anyFocused: BrowserWindow.getFocusedWindow() !== null,
+      onScreen,
+      focusable: win.isFocusable(),
+      alwaysOnTop: win.isAlwaysOnTop(),
+    };
+  }, which);
 }
 
 /** Waits until the renderer has painted the current state, so capturePage does not return a stale frame. */

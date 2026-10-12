@@ -12,6 +12,17 @@ declare global {
       openExternal?(url: string): Promise<void>;
       /** Writes text to the system clipboard (Electron); works without window focus. */
       copyText?(text: string): Promise<void>;
+      /** The Focus window (Electron). */
+      focus?: {
+        get(): Promise<boolean>;
+        set(on: boolean): Promise<void>;
+        onChange(cb: (on: boolean) => void): () => void;
+        setIgnoreMouse(ignore: boolean): void;
+      };
+      /** From Focus: show a task (and session) in the workbench. */
+      openInWorkbench?(target: { taskId: string; sessionId?: string }): Promise<void>;
+      /** Workbench: Focus asked to show a task. */
+      onNavigate?(cb: (target: { taskId: string; sessionId?: string }) => void): () => void;
     };
   }
 }
