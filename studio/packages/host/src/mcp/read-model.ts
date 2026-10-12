@@ -85,6 +85,8 @@ export class ReadModel {
       id: t.id,
       title: t.title || "未命名任务",
       handoff: handoff ? { text: handoff.text, by: author(handoff.sessionId), at: handoff.createdAt } : null,
+      // The steps from the task's template (empty when it has none); tick them with checklist_check.
+      checklist: this.store.listChecklist(t.id).map((i) => ({ id: i.id, text: i.text, done: i.done, ...(i.done ? { by: author(i.doneBySessionId) } : {}) })),
       column: t.column,
       status: this.status(t.id),
       workspace: this.where(t),
@@ -97,6 +99,34 @@ export class ReadModel {
       recentNotes: notes.filter((n) => n.kind === "progress").slice(-5).map((n) => ({ text: n.text, by: author(n.sessionId), at: n.createdAt })),
       sessions: this.live(t.id).map((s) => ({ id: s.id, kind: s.kind, parentId: s.parentId, title: s.title, status: s.status, model: this.model(s.profileId) })),
     };
+  }
+
+  /**
+   * Extension packs of one workspace (id or name) or of all of them: what each offers (documents, task templates,
+   * session presets), not the contents. Packs with errors are listed with their errors.
+   */
+  packList(workspace?: string) {
+    const all = this.store.listWorkspaces();
+    const list = workspace ? all.filter((w) => w.id === this.workspaceId(workspace)) : all;
+    return {
+      packs: list.flatMap((w) =>
+        this.service.packs(w.id).map((p) => ({
+          workspace: { id: w.id, name: w.name },
+          pack: p.dirName,
+          title: p.manifest?.title ?? null,
+          ...(p.manifest?.description ? { description: p.manifest.description } : {}),
+          ...(p.errors.length ? { errors: p.errors } : {}),
+          docs: p.manifest?.docs.map((d) => ({ id: d.id, title: d.title, ...(d.summary ? { summary: d.summary } : {}) })) ?? [],
+          templates: p.manifest?.templates.map((t) => ({ id: t.id, title: t.title, steps: t.steps.length })) ?? [],
+          presets: p.manifest?.presets.map((x) => ({ id: x.id, title: x.title })) ?? [],
+        })),
+      ),
+    };
+  }
+
+  /** One pack document's text. */
+  packDoc(workspace: string, pack: string, doc: string) {
+    return this.service.packDoc(this.workspaceId(workspace), pack, doc);
   }
 
   /** The task's sessions as a tree, each with an excerpt of its latest reply. */

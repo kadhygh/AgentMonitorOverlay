@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { MailMessage, Session, Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
 /** Mail left for a task or any of its sessions, kept live. */
 export function useTaskMail(link: HostLink, task: Task, sessions: readonly Session[]) {
@@ -12,16 +12,16 @@ export function useTaskMail(link: HostLink, task: Task, sessions: readonly Sessi
     let cancelled = false;
     const mine = new Set(sessionIds.split(",").filter(Boolean));
     const forThisTask = (m: MailMessage) => (m.to.kind === "task" ? m.to.taskId === task.id : mine.has(m.to.sessionId));
-    const load = () =>
+    const load = (first = false) =>
       call(link, "GET /api/mail", {}, undefined, { forTask: task.id })
-        .then((list) => !cancelled && setMail(list))
+        .then((list) => !cancelled && setMail((cur) => (first ? mergeFirstLoad(list, cur) : list)))
         .catch(() => undefined);
     const off = onHostEvent((e) => {
       if (e.type !== "mail.upserted" || !forThisTask(e.mail)) return;
       setMail((cur) => (cur.some((m) => m.id === e.mail.id) ? cur.map((m) => (m.id === e.mail.id ? e.mail : m)) : [...cur, e.mail]));
     });
     const offReconnect = onHostReconnect(() => void load());
-    void load();
+    void load(true);
     return () => {
       cancelled = true;
       off();

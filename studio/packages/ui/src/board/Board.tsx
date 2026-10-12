@@ -18,10 +18,12 @@ interface BoardProps {
   /** Unread mail and open decisions per task id. */
   mail?: ReadonlyMap<string, number>;
   decisions?: ReadonlyMap<string, number>;
+  /** Checklist progress per task id (tasks made from a pack template). */
+  checklist?: ReadonlyMap<string, { done: number; total: number }>;
 }
 
 /** Four columns; the person moves cards, agents never do. Cards are entry points and carry no buttons. */
-export function Board({ tasks, sessions, workspaces, scope, onOpen, mail, decisions }: BoardProps) {
+export function Board({ tasks, sessions, workspaces, scope, onOpen, mail, decisions, checklist }: BoardProps) {
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   return (
@@ -44,6 +46,7 @@ export function Board({ tasks, sessions, workspaces, scope, onOpen, mail, decisi
                 onOpen={onOpen}
                 mail={mail?.get(task.id) ?? 0}
                 decisions={decisions?.get(task.id) ?? 0}
+                {...(checklist?.get(task.id) ? { checklist: checklist.get(task.id)! } : {})}
               />
             ))}
             {cards.length === 0 && <div className="empty-col">空</div>}
@@ -62,6 +65,7 @@ function TaskCard({
   onOpen,
   mail = 0,
   decisions = 0,
+  checklist,
 }: {
   task: Task;
   sessions: Session[];
@@ -70,6 +74,7 @@ function TaskCard({
   onOpen(t: Task): void;
   mail?: number;
   decisions?: number;
+  checklist?: { done: number; total: number };
 }) {
   const status = taskStatus(sessions);
   const look = status ? SESSION_LOOK[status] : null;
@@ -79,7 +84,9 @@ function TaskCard({
 
   let where = "";
   if (task.scope.kind === "area" || scope.kind === "all") where = taskWhere(task, sessions, workspaces);
-  const meta = [where, mains.length ? `${mains.length} 个会话` : "还没有会话", branches ? `${branches} 个分支` : ""].filter(Boolean).join(" · ");
+  const meta = [where, mains.length ? `${mains.length} 个会话` : "还没有会话", branches ? `${branches} 个分支` : "", checklist ? `清单 ${checklist.done}/${checklist.total}` : ""]
+    .filter(Boolean)
+    .join(" · ");
   // Collaboration hints are counts in the meta line, not a second status: the dot keeps one status per card.
   const asks = [decisions ? `${decisions} 个待决策` : "", mail ? `${mail} 条留言` : ""].filter(Boolean).join(" · ");
 

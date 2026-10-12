@@ -3,6 +3,7 @@ import type { ModelProfile, Session, Task, TaskScope, Workspace } from "@amo-stu
 import type { Scope } from "../board/Board.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { defaultProfile, lastWorkspace, profileLabel, rememberProfile, rememberWorkspace } from "../lib/profiles.js";
+import { usePacks } from "../packs/usePacks.js";
 
 interface NewTaskPageProps {
   link: HostLink;
@@ -36,6 +37,12 @@ export function NewTaskPage({ link, workspaces, profiles, scope, onBack, onCreat
   const [sessionWs, setSessionWs] = useState(() => (pick?.kind === "workspace" ? pick.id : (workspaces[0]?.id ?? "")));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  // Task templates from the extension packs of the workspace the task (or its first session) is in.
+  const templateWs = pick?.kind === "workspace" ? pick.id : sessionWs;
+  const { packs } = usePacks(link, templateWs ? [templateWs] : []);
+  const templates = packs.flatMap((p) => (p.manifest ? p.manifest.templates.map((t) => ({ key: `${p.dirName}/${t.id}`, pack: p.dirName, packTitle: p.manifest!.title, template: t })) : []));
+  const [templateKey, setTemplateKey] = useState("");
+  const chosen = templates.find((t) => t.key === templateKey) ?? null;
 
   const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? "";
   const hint = !pick
@@ -56,6 +63,7 @@ export function NewTaskPage({ link, workspaces, profiles, scope, onBack, onCreat
         ...(title.trim() ? { title: title.trim() } : {}),
         scope: taskScope,
         firstSession: { profileId, workspaceId: firstWs, ...(message.trim() ? { text: message.trim() } : {}) },
+        ...(chosen ? { template: { workspaceId: templateWs, pack: chosen.pack, template: chosen.template.id } } : {}),
       });
       rememberProfile(profileId);
       rememberWorkspace(firstWs);
@@ -91,6 +99,31 @@ export function NewTaskPage({ link, workspaces, profiles, scope, onBack, onCreat
           </button>
         </div>
         <span className="newtask-hint" data-testid="scope-hint">{hint}</span>
+        {templates.length > 0 && (
+          <div className="newtask-template">
+            <label className="inline-field">
+              流程模板
+              <select value={chosen ? chosen.key : ""} onChange={(e) => setTemplateKey(e.target.value)} aria-label="流程模板">
+                <option value="">不用模板</option>
+                {templates.map((t) => (
+                  <option key={t.key} value={t.key}>
+                    {t.packTitle} · {t.template.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            {chosen && (
+              <>
+                {chosen.template.description && <span>{chosen.template.description}</span>}
+                <ol className="newtask-steps" data-testid="template-steps">
+                  {chosen.template.steps.map((s, i) => (
+                    <li key={i}>{s}</li>
+                  ))}
+                </ol>
+              </>
+            )}
+          </div>
+        )}
       </div>
       <div className="composer-wrap">
         <div className="composer">

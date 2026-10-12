@@ -25,11 +25,19 @@ import type {
   TaskColumn,
   TaskScope,
   Workspace,
+  WorkspacePack,
+  PackDocContent,
+  ChecklistItem,
+  TaskTemplateChoice,
+  PackTemplate,
+  PresetDraft,
 } from "@amo-studio/protocol";
-import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
+import { PACKS_DIR, addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
 import type { TerminalHandle, TerminalLauncher } from "./terminal/launcher.js";
+import { PackError, PackLoader } from "./packs/pack-loader.js";
+import { presetDraft } from "./packs/presets.js";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
@@ -67,6 +75,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   private readonly handoffs = new Map<Id, TerminalHandle>();
   /** One reclaim at a time per session, or the terminal's additions would be imported twice. */
   private readonly reclaiming = new Map<Id, Promise<Session>>();
+  private readonly packLoader = new PackLoader();
 
   constructor(
     readonly store: Store,
@@ -129,13 +138,22 @@ export class HostService extends EventEmitter<HostServiceEvents> {
 
   // Tasks
 
-  async createTask(input: { title?: string; scope: TaskScope; firstSession: NewSessionInput }): Promise<{ task: Task; session: Session }> {
+  async createTask(input: { title?: string; scope: TaskScope; firstSession: NewSessionInput; template?: TaskTemplateChoice }): Promise<{ task: Task; session: Session }> {
     const scope = this.validScope(input.scope);
     const workspace = this.sessionWorkspace(scope, input.firstSession.workspaceId);
     this.requireProfile(input.firstSession.profileId);
-    const title = input.title?.trim() || input.firstSession.text?.trim().slice(0, 60) || "";
+    const template = input.template ? this.packTemplate(scope, input.template) : null;
+    const base = input.title?.trim() || input.firstSession.text?.trim().slice(0, 60) || template?.title || "";
+    const title = template?.titlePrefix && !base.startsWith(template.titlePrefix.trim()) ? `${template.titlePrefix}${base}` : base;
     const task = this.store.createTask({ title, scope, column: "doing" });
     this.publish({ type: "task.upserted", task });
+    if (template && input.template) {
+      template.steps.forEach((text, position) => {
+        const item: ChecklistItem = { id: newId("chk"), taskId: task.id, position, text, done: false, doneBySessionId: null, doneAt: null, source: `${input.template!.pack}/${template.id}` };
+        this.store.putChecklistItem(item);
+        this.publish({ type: "checklist.upserted", item });
+      });
+    }
     const session = await this.startSession(task, workspace, input.firstSession);
     return { task: this.store.getTask(task.id)!, session };
   }
@@ -665,6 +683,69 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const p = this.profiles.find((x) => x.id === id);
     if (!p) throw new HostError("bad_request", `unknown model profile ${id}`);
     return p;
+  }
+
+  checklist(taskId?: Id): ChecklistItem[] {
+    if (taskId) this.requireTask(taskId);
+    return this.store.listChecklist(taskId);
+  }
+
+  /** Ticks or unticks a checklist step; a session may only tick its own task's steps. */
+  setChecklistDone(id: Id, done: unknown, sessionId: Id | null = null): ChecklistItem {
+    const item = this.store.getChecklistItem(id);
+    if (!item) throw new HostError("not_found", `checklist item ${id} not found`);
+    if (typeof done !== "boolean") throw new HostError("bad_request", "done must be true or false");
+    if (sessionId && this.requireSession(sessionId).taskId !== item.taskId) throw new HostError("bad_request", "a session can only tick its own task's checklist");
+    const next: ChecklistItem = { ...item, done, doneBySessionId: done ? sessionId : null, doneAt: done ? new Date().toISOString() : null };
+    this.store.putChecklistItem(next);
+    this.publish({ type: "checklist.upserted", item: next });
+    return next;
+  }
+
+  /** A pack's session preset filled in for a task, for the person to confirm; a workspace task uses its own workspace's packs. */
+  presetDraft(workspaceId: Id, packName: string, presetId: string, taskId: unknown): PresetDraft {
+    if (typeof taskId !== "string") throw new HostError("bad_request", "taskId is required");
+    const task = this.requireTask(taskId);
+    const workspace = this.requireWorkspace(workspaceId);
+    if (task.scope.kind === "workspace" && task.scope.workspaceId !== workspaceId) throw new HostError("bad_request", "a workspace task takes presets from its own workspace");
+    const pack = this.packs(workspaceId).find((p) => p.dirName === packName);
+    if (!pack?.manifest) throw new HostError(pack ? "bad_request" : "not_found", pack ? `扩展包 ${packName} 有错误` : `扩展包 ${packName} 不存在`);
+    const preset = pack.manifest.presets.find((p) => p.id === presetId);
+    if (!preset) throw new HostError("not_found", `扩展包 ${packName} 里没有启动预设 ${presetId}`);
+    // {{pack.dir}} is relative to the workspace (sessions run there), with forward slashes: short and the same on every OS.
+    return presetDraft({ preset, packDir: `${PACKS_DIR}/${pack.dirName}`, workspace, taskTitle: task.title, profileIds: this.profiles.map((p) => p.id) });
+  }
+
+  /** A template of a valid pack; for a workspace task it must come from that workspace. */
+  private packTemplate(scope: TaskScope, choice: TaskTemplateChoice): PackTemplate {
+    const c = choice as Partial<TaskTemplateChoice> | null;
+    if (!c || typeof c.workspaceId !== "string" || typeof c.pack !== "string" || typeof c.template !== "string") throw new HostError("bad_request", "template needs workspaceId, pack and template");
+    if (scope.kind === "workspace" && c.workspaceId !== scope.workspaceId) throw new HostError("bad_request", "a workspace task takes templates from its own workspace");
+    const pack = this.packs(c.workspaceId).find((p) => p.dirName === c.pack);
+    if (!pack?.manifest) throw new HostError("bad_request", pack ? `扩展包 ${c.pack} 有错误` : `扩展包 ${c.pack} 不存在`);
+    const template = pack.manifest.templates.find((t) => t.id === c.template);
+    if (!template) throw new HostError("bad_request", `扩展包 ${c.pack} 里没有模板 ${c.template}`);
+    return template;
+  }
+
+  /** Extension packs found in a workspace (`.amo/packs`), valid or not. */
+  packs(workspaceId: Id): WorkspacePack[] {
+    return this.packLoader.list(this.requireWorkspace(workspaceId).path);
+  }
+
+  packDoc(workspaceId: Id, pack: string, docId: string): PackDocContent {
+    try {
+      return this.packLoader.readDoc(this.requireWorkspace(workspaceId).path, pack, docId);
+    } catch (err) {
+      if (err instanceof PackError) throw new HostError(err.kind, err.message);
+      throw err;
+    }
+  }
+
+  private requireWorkspace(id: Id): Workspace {
+    const ws = this.store.getWorkspace(id);
+    if (!ws) throw new HostError("not_found", `workspace ${id} not found`);
+    return ws;
   }
 
   private requireTask(id: Id): Task {

@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import type { DecisionRequest, Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
 /** Open decision requests across all tasks, kept live. */
 export function useOpenDecisions(link: HostLink) {
   const [open, setOpen] = useState<readonly DecisionRequest[]>([]);
   useEffect(() => {
     let cancelled = false;
-    const load = () =>
+    const load = (first = false) =>
       call(link, "GET /api/decisions", {}, undefined, { state: "open" })
-        .then((list) => !cancelled && setOpen(list))
+        .then((list) => !cancelled && setOpen((cur) => (first ? mergeFirstLoad(list, cur) : list)))
         .catch(() => undefined);
     const off = onHostEvent((e) => {
       if (e.type !== "decision.upserted") return;
@@ -20,7 +20,7 @@ export function useOpenDecisions(link: HostLink) {
       });
     });
     const offReconnect = onHostReconnect(() => void load());
-    void load();
+    void load(true);
     return () => {
       cancelled = true;
       off();

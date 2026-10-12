@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Annotation } from "@amo-studio/protocol";
 import { call, type HostLink } from "./client.js";
-import { onHostEvent, onHostReconnect } from "./events.js";
+import { mergeFirstLoad, onHostEvent, onHostReconnect } from "./events.js";
 
 /** Annotations of one session, kept live from the Host event bus. Ordered by creation. */
 export function useAnnotations(link: HostLink, sessionId: string | null) {
@@ -11,9 +11,9 @@ export function useAnnotations(link: HostLink, sessionId: string | null) {
     setAnnotations([]);
     if (!sessionId) return;
     let cancelled = false;
-    const load = () =>
+    const load = (first = false) =>
       call(link, "GET /api/sessions/:id/annotations", { id: sessionId })
-        .then((list) => !cancelled && setAnnotations(list))
+        .then((list) => !cancelled && setAnnotations((cur) => (first ? mergeFirstLoad(list, cur) : list)))
         .catch(() => undefined);
     const offEvent = onHostEvent((e) => {
       if (e.type === "annotation.upserted" && e.annotation.sessionId === sessionId) {
@@ -29,7 +29,7 @@ export function useAnnotations(link: HostLink, sessionId: string | null) {
       }
     });
     const offReconnect = onHostReconnect(() => void load());
-    void load();
+    void load(true);
     return () => {
       cancelled = true;
       offEvent();

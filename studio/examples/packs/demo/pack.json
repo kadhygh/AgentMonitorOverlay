@@ -1,0 +1,35 @@
+{
+  "schemaVersion": 1,
+  "name": "demo",
+  "title": "示例：小游戏玩法开发",
+  "description": "虚构的示例扩展包，演示规范、流程模板、启动预设和预留的专用工具。不对应任何真实工程。",
+  "docs": [
+    { "id": "conventions", "title": "代码约定", "path": "docs/conventions.md", "summary": "命名、目录和配置表的约定" },
+    { "id": "pitfalls", "title": "常见坑", "path": "docs/pitfalls.md" }
+  ],
+  "templates": [
+    {
+      "id": "gameplay",
+      "title": "新玩法",
+      "titlePrefix": "[玩法]",
+      "description": "从读规范到自查的固定步骤",
+      "steps": ["读代码约定和常见坑", "在配置表里加数据", "实现玩法逻辑", "补单元测试", "对照常见坑自查"]
+    }
+  ],
+  "presets": [
+    {
+      "id": "implement",
+      "title": "按约定实现",
+      "profile": "codex-deepseek-flash",
+      "prompt": "请实现任务「{{task.title}}」。开始前先读 {{pack.dir}}/docs/conventions.md 和 {{pack.dir}}/docs/pitfalls.md，按里面的约定写代码，最后补单元测试。",
+      "contextFiles": ["README.md"]
+    },
+    {
+      "id": "review",
+      "title": "对照常见坑审阅",
+      "profile": "claude-glm",
+      "prompt": "请审阅任务「{{task.title}}」的改动，逐条对照 {{pack.dir}}/docs/pitfalls.md，只列出问题，不要改代码。"
+    }
+  ],
+  "tools": [{ "name": "config_lookup", "description": "预留：按 id 查询配置表的一行" }]
+}

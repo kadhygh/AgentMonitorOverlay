@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TASK_COLUMNS, type Annotation, type ApprovalDecision, type ModelProfile, type Session, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
+import { TASK_COLUMNS, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../host/useAnnotations.js";
@@ -12,6 +12,10 @@ import { AnnotationPanel } from "./AnnotationPanel.js";
 import { MailPanel, useTaskMail } from "./MailPanel.js";
 import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
 import { NotesPanel, useTaskNotes } from "./NotesPanel.js";
+import { PackDocsPanel } from "../packs/PackDocsPanel.js";
+import { ChecklistPanel } from "./ChecklistPanel.js";
+import { usePacks } from "../packs/usePacks.js";
+import { PresetDraftForm } from "../packs/PresetDraftForm.js";
 import type { SelectionAnchor } from "../lib/selection.js";
 
 interface TaskPageProps {
@@ -22,6 +26,8 @@ interface TaskPageProps {
   tasks?: readonly Task[];
   workspaces: readonly Workspace[];
   profiles: readonly ModelProfile[];
+  /** This task's checklist (from a pack template). */
+  checklist?: readonly ChecklistItem[];
   initialSessionId?: string;
   onBack(): void;
 }
@@ -36,7 +42,7 @@ const WRITER = {
 } as const;
 
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
-export function TaskPage({ link, task, sessions, tasks = [task], workspaces, profiles, initialSessionId, onBack }: TaskPageProps) {
+export function TaskPage({ link, task, sessions, tasks = [task], workspaces, profiles, checklist = [], initialSessionId, onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
   const [toast, setToast] = useState<Toast>(null);
@@ -73,6 +79,18 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   const setColumn = (column: TaskColumn) => run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { column }));
   const newSession = (input: { profileId: string; workspaceId?: string }) =>
     run(() => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input), (s) => setSelected(s.id));
+  const openPreset = (key: string) => {
+    const [workspaceId, pack, preset] = key.split("/") as [string, string, string];
+    void run(() => call(link, "POST /api/workspaces/:id/packs/:pack/presets/:preset/draft", { id: workspaceId, pack, preset }, { taskId: task.id }), setDraft);
+  };
+  const startPreset = (d: PresetDraft, input: { profileId: string; text: string }) =>
+    run(
+      () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, { profileId: input.profileId, text: input.text, ...(task.scope.kind === "area" ? { workspaceId: d.workspaceId } : {}) }),
+      (s) => {
+        setDraft(null);
+        setSelected(s.id);
+      },
+    );
   const restore = (id: string) => run(() => call(link, "POST /api/sessions/:id/unarchive", { id }), () => setSelected(id));
   const archive = (id: string) =>
     run(() => call(link, "POST /api/sessions/:id/archive", { id }), () => {
@@ -92,6 +110,13 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   const mail = useTaskMail(link, task, sessions);
   const decisions = useOpenDecisions(link);
   const notes = useTaskNotes(link, task.id);
+  const [draft, setDraft] = useState<PresetDraft | null>(null);
+  // The workspaces whose extension packs apply: the task's own, or for a cross-workspace task those of its sessions.
+  const taskWorkspaceIds = task.scope.kind === "workspace" ? [task.scope.workspaceId] : [...new Set(sessions.filter((s) => s.taskId === task.id).map((s) => s.workspaceId))].sort();
+  const { packs } = usePacks(link, taskWorkspaceIds);
+  const presetChoices = packs.flatMap((p) =>
+    p.manifest ? p.manifest.presets.map((pr) => ({ key: `${p.workspaceId}/${p.dirName}/${pr.id}`, label: `${p.manifest!.title} · ${pr.title}` })) : [],
+  );
   const unread = new Map<string, number>();
   for (const m of mail) if (m.state === "unread" && m.to.kind === "session") unread.set(m.to.sessionId, (unread.get(m.to.sessionId) ?? 0) + 1);
   const forwardMail = (m: { id: string }, sessionId: string) =>
@@ -176,8 +201,21 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
           onNewSession={(input) => void newSession(input)}
           onRestore={(id) => void restore(id)}
           unread={unread}
+          presets={presetChoices}
+          onPreset={openPreset}
         />
         <div className="thread-col">
+          {draft && (
+            <PresetDraftForm
+              key={`${draft.workspaceId}/${draft.presetId}`}
+              draft={draft}
+              profiles={profiles}
+              {...(isArea ? { workspaceName: wsName(draft.workspaceId) } : {})}
+              busy={busy}
+              onStart={(input) => void startPreset(draft, input)}
+              onCancel={() => setDraft(null)}
+            />
+          )}
           {session && (
             <div className="thread-head" data-testid="thread-head">
               <span className="thread-title">{session.title || "新会话"}</span>
@@ -253,7 +291,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
               onForward={(m, sessionId) => void forwardMail(m, sessionId)}
               onDismiss={(m) => void dismissMail(m)}
             />
+            <ChecklistPanel link={link} items={checklist} sessions={sessions} />
             <NotesPanel link={link} taskId={task.id} notes={notes} sessions={sessions} />
+            <PackDocsPanel link={link} packs={packs} />
             </>
           }
           link={link}

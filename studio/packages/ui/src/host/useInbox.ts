@@ -1,16 +1,16 @@
 import { useEffect, useState } from "react";
 import type { Id, MailMessage, Session } from "@amo-studio/protocol";
 import { call, type HostLink } from "./client.js";
-import { onHostEvent, onHostReconnect } from "./events.js";
+import { mergeFirstLoad, onHostEvent, onHostReconnect } from "./events.js";
 
 /** Unread mail across the workbench, kept live (board hints). */
 export function useUnreadMail(link: HostLink) {
   const [unread, setUnread] = useState<readonly MailMessage[]>([]);
   useEffect(() => {
     let cancelled = false;
-    const load = () =>
+    const load = (first = false) =>
       call(link, "GET /api/mail", {}, undefined, { state: "unread" })
-        .then((list) => !cancelled && setUnread(list))
+        .then((list) => !cancelled && setUnread((cur) => (first ? mergeFirstLoad(list, cur) : list)))
         .catch(() => undefined);
     const off = onHostEvent((e) => {
       if (e.type !== "mail.upserted") return;
@@ -20,7 +20,7 @@ export function useUnreadMail(link: HostLink) {
       });
     });
     const offReconnect = onHostReconnect(() => void load());
-    void load();
+    void load(true);
     return () => {
       cancelled = true;
       off();

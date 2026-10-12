@@ -17,10 +17,13 @@ interface SessionTreeProps {
   onRestore(id: string): void;
   /** Unread mail per session id. */
   unread?: ReadonlyMap<string, number>;
+  /** Session presets from the extension packs of the task's workspaces. */
+  presets?: ReadonlyArray<{ key: string; label: string }>;
+  onPreset?(key: string): void;
 }
 
 /** Left column of the task page: session tree (forks and subagents indented), new session, archived area. */
-export function SessionTree({ task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread }: SessionTreeProps) {
+export function SessionTree({ task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset }: SessionTreeProps) {
   const isArea = task.scope.kind === "area";
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
@@ -105,6 +108,19 @@ export function SessionTree({ task, sessions, workspaces, profiles, selected, bu
         >
           + 新会话
         </button>
+        {presets.length > 0 && onPreset && (
+          <label className="stack-field">
+            按预设
+            <select value="" onChange={(e) => e.target.value && onPreset(e.target.value)} disabled={busy} aria-label="按预设新建会话">
+              <option value="">选择启动预设…</option>
+              {presets.map((p) => (
+                <option key={p.key} value={p.key}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
       </div>
 
       {archivedRoots.length > 0 && (
