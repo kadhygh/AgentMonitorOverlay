@@ -1,6 +1,8 @@
 # S1-00 协议补测结论
 
-环境：Codex CLI 0.161.0，app-server 走 WebSocket 加 capability token，模型路由 DeepSeek Flash（`spikes/lib.mjs` 的 `deepseekConfigArgs`）。沙盒工作区在 `%TEMP%\amo-studio-sandbox\` 下。原始记录在 `spikes/results/`。
+> **2026-10-13 更正**：a～d 的脚本用 `spawn("codex")` 拉起 app-server，在这台机器上解析到的是 Codex 桌面版自带的 `codex.exe` **0.144.1**，不是终端里的 npm 版 0.161.0。脚本已改为显式使用 npm 版，c、d 两节的关键结论在 S1-00f 用 0.161 复测。
+
+环境：Codex CLI 0.161.0（实际为 0.144.1，见上方更正），app-server 走 WebSocket 加 capability token，模型路由 DeepSeek Flash（`spikes/lib.mjs` 的 `deepseekConfigArgs`）。沙盒工作区在 `%TEMP%\amo-studio-sandbox\` 下。原始记录在 `spikes/results/`。
 
 ## a. 审批路由（2026-10-12，DeepSeek 2 次）
 

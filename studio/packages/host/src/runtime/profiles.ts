@@ -1,4 +1,4 @@
-import { dirname, join } from "node:path";
+import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ModelProfile } from "@amo-studio/protocol";
 import type { CredentialReader } from "./credentials.js";
@@ -15,7 +15,7 @@ export interface CodexProviderDef {
   wireApi: "responses";
   /** Env var the key is passed through. */
   envKey: string;
-  /** Model catalog file under packages/host/assets/codex, applied only on servers whose default is this provider. */
+  /** Model catalog file (absolute, or relative to packages/host/assets/codex), applied only on servers whose default is this provider. */
   catalog?: string;
 }
 
@@ -104,7 +104,7 @@ export function codexServerSpec(
   if (profile.provider) {
     const def = providers[profile.provider]!;
     configArgs.push(...configArg("model_provider", profile.provider));
-    if (def.catalog) configArgs.push(...configArg("model_catalog_json", join(assetsDir, def.catalog).replaceAll("\\", "/")));
+    if (def.catalog) configArgs.push(...configArg("model_catalog_json", (isAbsolute(def.catalog) ? def.catalog : join(assetsDir, def.catalog)).replaceAll("\\", "/")));
   }
   if (profile.model) configArgs.push(...configArg("model", profile.model), ...configArg("review_model", profile.model));
   if (profile.reasoningEffort) configArgs.push(...configArg("model_reasoning_effort", profile.reasoningEffort));

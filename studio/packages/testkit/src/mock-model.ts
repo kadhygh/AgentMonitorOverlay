@@ -1,8 +1,18 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 
 // Local stand-in for an OpenAI Responses-compatible model, used as a Codex `model_provider` so integration tests run
 // the real `codex app-server` without spending any model budget.
+
+/** Codex model catalog describing `mock-model` (src/ and dist/ sit at the same depth). */
+export const MOCK_MODEL_CATALOG = join(dirname(fileURLToPath(import.meta.url)), "..", "assets", "mock-model.models.json").replaceAll("\\", "/");
+
+/** Codex provider definition pointing at a running mock (shape matches the Host's CodexProviderDef). */
+export function mockCodexProvider(baseUrl: string) {
+  return { name: "Mock", baseUrl, wireApi: "responses" as const, envKey: "AMO_MOCK_API_KEY", catalog: MOCK_MODEL_CATALOG };
+}
 
 /** One model reply: plain text, or a tool call that Codex will execute (and may ask approval for). */
 export type MockReply =

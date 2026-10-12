@@ -97,3 +97,13 @@
 - 验证：`npm run verify` 通过（48 个单元测试）
 - commit：见本次 commit
 - 遗留：发现测试文件此前没有做类型检查（`tsc -b` 排除了 `*.test.ts`，vitest 不做类型检查）。新增 `tsconfig.tests.json` 并加进 `npm run typecheck`，顺手修了已有测试里的 5 处类型错误
+
+## 2026-10-13 00:50 · S1-06b app-server 进程管理
+- 结果：done
+- 改动：`packages/host/src/runtime/codex/{command,server-manager}.ts`、`server-manager.test.ts`；`profiles.ts` 支持绝对路径的模型目录；testkit 导出 `MOCK_MODEL_CATALOG`、`mockCodexProvider`；`spikes/lib.mjs` 改用 npm 版 Codex
+- 验证：`npm run verify` 通过（52 个测试）；进程管理集成测试（真实 app-server + mock 模型）连跑 3 次通过：启动并复用、崩溃后同端口同 token 重启且 thread 可恢复、新 Host 接管仍在运行的 server、停止后端口释放。测试没有留下进程或端口
+- commit：见本次 commit
+- 遗留：
+  - **重要发现**：Node 不经 shell `spawn("codex")` 会找到 Codex 桌面版自带的 `codex.exe` 0.144.1，终端里的 `codex` 是 npm 版 0.161.0。Host 改为通过 `resolveCodexCommand()` 显式运行 npm 包的 `codex.js`（可用 `AMO_STUDIO_CODEX` 覆盖）。S1-00 a～d 实际跑在 0.144.1 上，新增 S1-00f 用 0.161 复测
+  - 结束遗留 pid 前先核对命令行里有我们的 token 文件，避免 pid 复用时误杀别的进程
+  - 新增 `detachAll()`：断开连接但不结束 server，供 Host 退出时保留会话、下次接管

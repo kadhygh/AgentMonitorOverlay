@@ -6,6 +6,7 @@ import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { reserveModelTurn } from "../packages/testkit/dist/budget.js";
+import { resolveCodexCommand } from "../packages/host/dist/runtime/codex/command.js";
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 
@@ -82,8 +83,10 @@ export async function startAppServer({ port, cwd, configArgs = [], env = {}, tok
   const tokenFile = path.join(cwd, `.ws-token-${port}`);
   fs.writeFileSync(tokenFile, token, { mode: 0o600 });
   const url = `ws://127.0.0.1:${port}`;
-  const child = spawn("codex", ["app-server", ...configArgs, "--listen", url, "--ws-auth", "capability-token", "--ws-token-file", tokenFile],
-    { cwd, env: { ...process.env, ...env }, stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
+  // A bare spawn("codex") picks the desktop app's bundled 0.144 binary; use the npm CLI the terminal uses (S1-06b).
+  const cmd = resolveCodexCommand();
+  const child = spawn(cmd.command, [...cmd.prefixArgs, "app-server", ...configArgs, "--listen", url, "--ws-auth", "capability-token", "--ws-token-file", tokenFile],
+    { cwd, env: { ...process.env, ...cmd.env, ...env }, stdio: ["ignore", "ignore", "pipe"], windowsHide: true });
   const state = { stderr: "" };
   child.stderr.on("data", (d) => { state.stderr += d; });
   for (let i = 0; i < 60; i++) {

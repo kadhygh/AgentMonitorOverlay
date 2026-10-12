@@ -20,7 +20,7 @@
 
 状态值：`todo` | `in_progress` | `done` | `blocked`。每个任务完成后，提交一个 commit。
 
-### S1-00 协议补测 · done（拆成 S1-00a～e；e 的用户验证结果回来后补进 RESULTS）
+### S1-00 协议补测 · in_progress（a～e 完成；f 复测待做；e 的用户验证结果回来后补进 RESULTS）
 
 - 依赖：S1-01（真实调用要先经过 `budget.ts` 计数，2026-10-12 调整）
 - 内容：在 `studio/spikes/` 下写脚本，结论记录到 `studio/spikes/RESULTS.md`。
@@ -37,6 +37,7 @@
   - S1-00c 重启重连（顺带测：审批挂起后才订阅的客户端能否补收请求；按 thread 指定 provider 的会话在重启后 `thread/resume` 不带 config 能否恢复路由） · done
   - S1-00d 其他客户端发起的 fork · done
   - S1-00e 准备需要用户配合的 TUI 脚本（`/fork`、side chat、自动重连），写入 NEEDS_YOU · done
+  - S1-00f 用 npm 版 Codex 0.161 复测 b～d（a～d 实际跑在桌面版自带的 0.144.1 上，2026-10-13 发现） · todo
 
 ### S1-01 脚手架 · done
 
@@ -109,7 +110,7 @@
 - 验收：基于 fake app-server 的单元测试和集成测试；基于真实 Codex 加 mock 模型的集成测试。
 - 子任务（2026-10-13 拆分）：
   - S1-06a JSON-RPC 客户端（`runtime/codex/rpc-client.ts`） · done
-  - S1-06b app-server 进程管理：每个 profile 一个进程，端口和 token 存数据目录，崩溃后退避重启并沿用端口和 token · todo
+  - S1-06b app-server 进程管理：每个 profile 一个进程，端口和 token 存数据目录，崩溃后退避重启并沿用端口和 token · done
   - S1-06c 会话操作、事件规范化入库、审批转交、父子关系、provider 不一致告警 · todo
   - S1-06d 集成测试：真实 `codex app-server` 加 mock 模型跑通 start / 审批 / fork / 归档 / 重启恢复 · todo
 
