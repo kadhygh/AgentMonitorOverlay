@@ -12,6 +12,7 @@ import { AnnotationPanel } from "./AnnotationPanel.js";
 import { MailPanel, useTaskMail } from "./MailPanel.js";
 import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
 import { NotesPanel, useTaskNotes } from "./NotesPanel.js";
+import { PackDocsPanel } from "../packs/PackDocsPanel.js";
 import type { SelectionAnchor } from "../lib/selection.js";
 
 interface TaskPageProps {
@@ -92,6 +93,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   const mail = useTaskMail(link, task, sessions);
   const decisions = useOpenDecisions(link);
   const notes = useTaskNotes(link, task.id);
+  // The workspaces whose extension packs apply: the task's own, or for a cross-workspace task those of its sessions.
+  const taskWorkspaceIds = task.scope.kind === "workspace" ? [task.scope.workspaceId] : [...new Set(sessions.filter((s) => s.taskId === task.id).map((s) => s.workspaceId))].sort();
   const unread = new Map<string, number>();
   for (const m of mail) if (m.state === "unread" && m.to.kind === "session") unread.set(m.to.sessionId, (unread.get(m.to.sessionId) ?? 0) + 1);
   const forwardMail = (m: { id: string }, sessionId: string) =>
@@ -254,6 +257,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
               onDismiss={(m) => void dismissMail(m)}
             />
             <NotesPanel link={link} taskId={task.id} notes={notes} sessions={sessions} />
+            <PackDocsPanel link={link} workspaceIds={taskWorkspaceIds} />
             </>
           }
           link={link}

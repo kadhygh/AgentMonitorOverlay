@@ -5,13 +5,14 @@ import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
 import { NewTaskPage } from "./newtask/NewTaskPage.js";
 import { TaskPage } from "./task/TaskPage.js";
+import { PacksPage } from "./packs/PacksPage.js";
 import { CanvasPage } from "./canvas/CanvasPage.js";
 import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
 import { mailByTask, useUnreadMail } from "./host/useInbox.js";
 import { useOpenDecisions } from "./task/DecisionPanel.js";
 
 // `nav` changes when Focus asks for a session, so an already open task page re-opens on that session.
-type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
+type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "packs"; workspaceId: string } | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
 
 /** Focus window on/off, mirrored from the Electron shell (absent in a plain browser). */
 function useFocusToggle(): { on: boolean; available: boolean; set(on: boolean): void } {
@@ -69,10 +70,11 @@ export function App() {
         onBoard={() => setView({ kind: "board" })}
         onCanvas={() => setView({ kind: "canvas" })}
         onNew={() => setView({ kind: "new" })}
+        {...(scope.kind === "workspace" ? { onPacks: () => setView({ kind: "packs", workspaceId: scope.id }) } : {})}
         needs={needs}
         scopeName={scopeName}
         focus={focus}
-        active={view.kind === "canvas" ? "canvas" : view.kind === "new" ? null : "board"}
+        active={view.kind === "canvas" ? "canvas" : view.kind === "packs" ? "packs" : view.kind === "new" ? null : "board"}
       />
       <div className="body">
         <ScopeNav
@@ -107,6 +109,10 @@ export function App() {
               onOpenTask={(taskId) => setView({ kind: "task", taskId })}
             />
           )}
+          {view.kind === "packs" && (() => {
+            const ws = state.workspaces.find((w) => w.id === view.workspaceId);
+            return ws ? <PacksPage key={ws.id} link={link} workspace={ws} profiles={state.profiles} /> : <div className="placeholder">工作区不存在或已被移除。</div>;
+          })()}
           {view.kind === "new" && (
             <NewTaskPage
               link={link}
@@ -143,6 +149,7 @@ export function App() {
 function TopBar({
   onBoard,
   onCanvas,
+  onPacks,
   onNew,
   needs,
   scopeName,
@@ -153,10 +160,12 @@ function TopBar({
   focus: { on: boolean; available: boolean; set(on: boolean): void };
   onBoard(): void;
   onCanvas(): void;
+  /** Only when one workspace is in scope: its extension packs. */
+  onPacks?: () => void;
   onNew(): void;
   needs: number;
   scopeName: string;
-  active?: "board" | "canvas" | null;
+  active?: "board" | "canvas" | "packs" | null;
   disabled?: boolean;
 }) {
   return (
@@ -178,6 +187,11 @@ function TopBar({
         <button type="button" className="view-tab" aria-current={active === "canvas" ? "page" : undefined} onClick={onCanvas} disabled={disabled}>
           画布
         </button>
+        {onPacks && (
+          <button type="button" className="view-tab" aria-current={active === "packs" ? "page" : undefined} onClick={onPacks} disabled={disabled}>
+            扩展包
+          </button>
+        )}
       </nav>
       <div className="spacer" />
       {needs > 0 && (

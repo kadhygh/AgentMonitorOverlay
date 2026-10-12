@@ -32,7 +32,7 @@
 - 内容：扫描工作区的 `.amo/packs/*/pack.json`；接口 `GET /api/workspaces/:id/packs`（列表，含每个包的错误）、`GET /api/workspaces/:id/packs/:pack/docs/:doc`（读一篇文档，限大小）；按修改时间缓存。
 - 验收：接口单测（正常、manifest 写错、文档缺失、超大文档、越界路径、同一工作区多个包）。
 
-### S6-02 工作台显示扩展包 · todo
+### S6-02 工作台显示扩展包 · done
 - 依赖：S6-01
 - 内容：
   - 左栏选中工作区时，可以打开这个工作区的"扩展包"页面：列出扩展包；文档用现有的 markdown 渲染查看；列出流程模板和启动预设；manifest 有错时显示错误；
