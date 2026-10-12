@@ -5,6 +5,7 @@ export * from "./api.js";
 export * from "./canvas.js";
 export * from "./scope.js";
 export * from "./canvas-layout.js";
+export * from "./packs.js";
 export * as codex from "./codex/index.js";
 export { CODEX_PROTOCOL_SOURCE } from "./codex/VERSION.js";
 

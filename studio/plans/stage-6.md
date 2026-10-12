@@ -22,10 +22,10 @@
 
 ## 任务
 
-### S6-00 manifest 格式与校验 · todo
+### S6-00 manifest 格式与校验 · done
 - 依赖：无
 - 内容：protocol 里定义 `PackManifest`（`name`、`title`、`description`、`docs[]`、`templates[]`、`presets[]`、`tools[]`），写校验函数：字段类型、id 唯一、路径安全、数量与长度上限；错误信息写清楚是哪个字段。格式说明写进 `design/pack-format.md`。
-- 验收：单测覆盖正确的 manifest、各类错误、路径越界（`..`、绝对路径、盘符、符号链接）。
+- 验收：单测覆盖正确的 manifest、各类错误、路径越界（`..`、绝对路径、盘符）。符号链接要读文件系统，放在 S6-01 的 Host 加载里检查。
 
 ### S6-01 Host 加载扩展包 · todo
 - 依赖：S6-00

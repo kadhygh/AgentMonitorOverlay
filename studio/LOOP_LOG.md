@@ -754,3 +754,16 @@
 - 默认决定（请你过目）：manifest 用 JSON；扩展包内容按不可信处理（不执行代码、路径不越界、预设提示词经人确认才发出）；专用工具只预留字段
 - NEEDS_YOU：写入"阶段 6 计划"（请你过目）、"第一个真实扩展包放在哪个工程、包含什么"（必须等你，S6-09）
 - 额度：0
+
+## 2026-10-14 07:10 · S6-00 扩展包 manifest 格式与校验
+- 结果：done
+- 改动：
+  - `packages/protocol/src/packs.ts`：`PackManifest` 类型（docs、templates、presets、tools）、`validatePackManifest`（错误信息写明字段，例如 `docs[1].id: 重复的 id "a"`；未知顶层字段只警告）、`safeRelativePath`（拒绝绝对路径、盘符和 `:`、`..`、`~`、UNC）、预设提示词变量 `{{task.title}}`、`{{workspace.path}}`、`{{pack.dir}}`（写了别的变量报错）；
+  - 数量和长度上限：每类 50 项、清单 50 步、提示词 8000 字、上下文文件 20 个；
+  - 格式说明 `design/pack-format.md`
+- 测试：8 个单测（完整与最小 manifest、逐字段错误、9 种越界路径、上限、未知字段、变量替换）
+- 调整：符号链接逃逸要读文件系统，挪到 S6-01 检查，计划已改
+- 默认决定（请你过目）：`tools` 有内容时给出警告"专用工具目前只是预留，不会运行"
+- 验证：`npm run verify` 退出码 0
+- 额度：0
+- commit：见本次 commit
