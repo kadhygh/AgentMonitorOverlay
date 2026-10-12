@@ -9,7 +9,8 @@ import { WebSocketServer, type WebSocket } from "ws";
 // - a client that subscribes while an approval is pending receives that request too;
 // - `thread/started` for a fork reaches subscribers of the parent; forks take the server default provider unless
 //   `modelProvider` is passed;
-// - a thread without turns cannot be resumed by another client ("no rollout found").
+// - a thread without turns cannot be resumed by another client ("no rollout found");
+// - subagents are announced only by a subAgentActivity item on the parent (no thread/started).
 
 export interface FakeThread {
   id: string;
@@ -254,7 +255,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       async subAgent(text) {
         check();
         const child = newThread({ modelProvider: thread.modelProvider, model: thread.model, cwd: thread.cwd }, { parentThreadId: thread.id });
-        notify(thread.id, "thread/started", { thread: threadView(child) });
+        // Like Codex 0.161: no thread/started for subagents, only the subAgentActivity item on the parent.
         emitItem(thread, turn, { type: "subAgentActivity", id: randomUUID(), kind: "started", agentThreadId: child.id, agentPath: "explorer" });
         for (const c of subscribers(thread.id)) c.subscriptions.add(child.id);
         const childTurn: FakeTurn = { id: randomUUID(), status: "inProgress", items: [], steered: [], interrupted: false };

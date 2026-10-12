@@ -23,6 +23,10 @@
 
 结论：a～d 对设计的影响全部成立，S1-06 按原结论实现。差异只有两处：0.161 的 `thread/list` 会列出 fork（Host 仍以自己的会话树为准）；mock 模型已兼容两种 shell 工具格式。fake app-server 已按 0.161 的列表行为调整。
 
+## g. 子 agent 在 0.161 上的事件（2026-10-13，S1-11c 发现，mock 模型）
+
+真实 Codex 0.161 创建子 agent 时**不发 `thread/started`**，只在父 thread 上发 `subAgentActivity`（`kind: started/completed`，带 `agentThreadId` 和 `agentPath`，如 `/root/explorer`）；子 thread 的 turn 与 item 事件在同一连接上推送。子 agent 收到的任务是一条 `agent_message`（`Message Type: NEW_TASK`，任务名明文、内容加密）。Host 改为在收到 `subAgentActivity` 时建子会话；fake app-server 已对齐此行为。插话（`turn/steer`）的内容在下一次模型采样时才作为 userMessage 出现。
+
 ## a. 审批路由（2026-10-12，DeepSeek 2 次）
 
 脚本：`spikes/s1-00a-approval.mjs [1|2]`。A 用 `approvalPolicy: "untrusted"`、`sandbox: "read-only"` 建 thread 并发起一轮对话，B 在 `turn/start` 之后 `thread/resume` 订阅同一 thread。两个客户端都不自动回应。

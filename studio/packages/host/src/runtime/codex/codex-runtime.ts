@@ -286,7 +286,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   }
 
   /** Records a fork or subagent thread as a child session, warns on provider drift, and follows its events. */
-  private adoptThread(thread: ThreadLike, parent: Session, kind: "fork" | "sub", profileId: Id): Session {
+  private adoptThread(thread: ThreadLike, parent: Session, kind: "fork" | "sub", profileId: Id, title?: string): Session {
     const existing = this.findByThread(thread.id);
     if (existing) return existing;
     const session = this.createSession({
@@ -295,7 +295,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       kind,
       profileId,
       workspaceId: parent.workspaceId,
-      title: kind === "sub" ? "子 agent" : `${parent.title || "会话"} · 分支`,
+      title: title ?? (kind === "sub" ? "子 agent" : `${parent.title || "会话"} · 分支`),
       runtimeRef: thread.id,
     });
     const expected = this.profile(parent.profileId).provider;
@@ -371,10 +371,13 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         return;
       }
       case "subAgentActivity": {
+        if (!item.agentThreadId) return;
+        // Codex 0.161 announces subagents only through this item (no thread/started), so this is where the child
+        // session is created; its own turn events follow on the same connection.
+        const name = item.agentPath?.split("/").filter(Boolean).at(-1) ?? "子 agent";
+        const child = this.findByThread(item.agentThreadId) ?? this.adoptThread({ id: item.agentThreadId, parentThreadId: threadId }, s, "sub", s.profileId, name);
         if (item.kind !== "started" || st.items.has(`sub:${item.agentThreadId}`)) return;
-        const child = this.findByThread(item.agentThreadId!);
-        if (!child) return;
-        const created = this.appendItem(s.id, { type: "subagent", childSessionId: child.id, summary: item.agentPath ?? "子 agent" }, raw);
+        const created = this.appendItem(s.id, { type: "subagent", childSessionId: child.id, summary: item.agentPath ?? name }, raw);
         st.items.set(`sub:${item.agentThreadId}`, created.id);
         return;
       }

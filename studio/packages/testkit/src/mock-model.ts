@@ -17,13 +17,15 @@ export function mockCodexProvider(baseUrl: string) {
 /** One model reply: plain text, or a tool call that Codex will execute (and may ask approval for). */
 export type MockReply =
   | { kind: "text"; text: string; chunks?: number; delayMs?: number }
-  | { kind: "function_call"; name: string; arguments: Record<string, unknown> };
+  | { kind: "function_call"; name: string; arguments: Record<string, unknown>; namespace?: string };
 
 export interface MockModelRequest {
   /** Text of the last user message, if any. */
   lastUserText: string;
   /** True when the last input item is a tool result, i.e. Codex is continuing after running a tool. */
   afterToolOutput: boolean;
+  /** Set when this request is a subagent's first turn: the task name from Codex's agent_message (payload is encrypted). */
+  agentTask: string | null;
   /** Names of tools Codex offered. */
   tools: string[];
   body: Record<string, unknown>;
@@ -34,11 +36,14 @@ export type MockScript = (req: MockModelRequest) => MockReply;
 /**
  * Default script. Directives in the user text let tests pick behaviour:
  * - `[[shell: <command>]]` → call the shell tool once, then reply `MOCK-DONE`
+ * - `[[spawn: task_name: message]]` → call Codex's collaboration.spawn_agent once, then reply `MOCK-DONE`;
+ *   the subagent itself replies `MOCK-SUB: /root/<task_name>`
  * - `[[slow]]` → stream the reply in many small chunks with a delay (for steer/interrupt tests)
  * - anything else → `MOCK: <user text>`
  */
 export const defaultScript: MockScript = (req) => {
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
+  if (req.agentTask) return { kind: "text", text: `MOCK-SUB: ${req.agentTask}` };
   const shell = /\[\[shell:\s*([^\]]+)\]\]/.exec(req.lastUserText);
   if (shell) {
     // Codex 0.161 offers exec_command { cmd }; 0.144 offered shell_command { command }; older ones shell { command: [] }.
@@ -46,6 +51,10 @@ export const defaultScript: MockScript = (req) => {
     if (req.tools.includes("exec_command")) return { kind: "function_call", name: "exec_command", arguments: { cmd: command } };
     if (req.tools.includes("shell")) return { kind: "function_call", name: "shell", arguments: { command: ["cmd", "/c", command] } };
     return { kind: "function_call", name: "shell_command", arguments: { command } };
+  }
+  const spawn = /\[\[spawn:\s*([a-z0-9_]+)\s*:\s*([^\]]+)\]\]/.exec(req.lastUserText);
+  if (spawn && req.tools.includes("collaboration.spawn_agent")) {
+    return { kind: "function_call", name: "spawn_agent", namespace: "collaboration", arguments: { task_name: spawn[1]!, message: spawn[2]!.trim(), fork_turns: "none" } };
   }
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
   return { kind: "text", text: `MOCK: ${req.lastUserText}` };
@@ -67,14 +76,22 @@ function textOf(content: unknown): string {
 
 export function parseRequest(body: Record<string, unknown>): MockModelRequest {
   const input = Array.isArray(body.input) ? (body.input as Array<Record<string, unknown>>) : [];
-  const users = input.filter((i) => i.type === "message" && i.role === "user");
+  // Codex injects context blocks (<environment_context>, <user_instructions>…) as user messages; skip them.
+  const users = input.filter((i) => i.type === "message" && i.role === "user" && !/^\s*<[a-z_]+>/.test(textOf(i.content)));
   const last = input.at(-1);
+  // Namespaced tools (e.g. Codex's "collaboration") are listed both by namespace and as "namespace.tool".
   const tools = Array.isArray(body.tools)
-    ? (body.tools as Array<Record<string, unknown>>).map((t) => String(t.name ?? (t.function as { name?: string } | undefined)?.name ?? t.type))
+    ? (body.tools as Array<Record<string, unknown>>).flatMap((t) => {
+        const name = String(t.name ?? (t.function as { name?: string } | undefined)?.name ?? t.type);
+        const nested = Array.isArray(t.tools) ? (t.tools as Array<{ name?: string }>).map((n) => `${name}.${String(n.name)}`) : [];
+        return [name, ...nested];
+      })
     : [];
+  const agentMessage = last?.type === "agent_message" ? textOf(last.content) : "";
   return {
     lastUserText: textOf(users.at(-1)?.content),
     afterToolOutput: last?.type === "function_call_output" || last?.type === "custom_tool_call_output",
+    agentTask: /Task name:\s*(\S+)/.exec(agentMessage)?.[1] ?? null,
     tools,
     body,
   };
@@ -101,7 +118,15 @@ async function streamReply(res: ServerResponse, reply: MockReply, seq: number): 
     }
     item = { type: "message", id: itemId, role: "assistant", status: "completed", content: [{ type: "output_text", text: reply.text, annotations: [] }] };
   } else {
-    item = { type: "function_call", id: `fc_mock_${seq}`, call_id: `call_mock_${seq}`, name: reply.name, arguments: JSON.stringify(reply.arguments), status: "completed" };
+    item = {
+      type: "function_call",
+      id: `fc_mock_${seq}`,
+      call_id: `call_mock_${seq}`,
+      name: reply.name,
+      ...(reply.namespace ? { namespace: reply.namespace } : {}),
+      arguments: JSON.stringify(reply.arguments),
+      status: "completed",
+    };
     send({ type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", arguments: "" } });
   }
   send({ type: "response.output_item.done", output_index: 0, item });

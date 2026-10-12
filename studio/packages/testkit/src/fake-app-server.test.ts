@@ -166,8 +166,8 @@ describe("fake app-server", () => {
     const activity = a.events.filter((e) => e.method === "item/completed" && e.params.item.type === "subAgentActivity").map((e) => e.params.item);
     expect(activity.map((i) => i.kind)).toEqual(["started", "completed"]);
     const childId = activity[0].agentThreadId;
-    const started = a.events.find((e) => e.method === "thread/started" && e.params.thread.id === childId);
-    expect(started!.params.thread.parentThreadId).toBe(threadId);
+    expect(a.events.some((e) => e.method === "thread/started" && e.params.thread.id === childId)).toBe(false);
+    expect(server.threads.get(childId)!.parentThreadId).toBe(threadId);
     expect(a.events.some((e) => e.method === "item/completed" && e.params.threadId === childId && e.params.item.text === "FAKE-SUB-DONE")).toBe(true);
   });
 

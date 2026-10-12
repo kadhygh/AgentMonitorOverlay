@@ -180,3 +180,10 @@
 - 验证：`npm run verify` 通过（90 个测试）；现有 e2e 8/8 通过
 - commit：见本次 commit
 - 遗留：链接只显示文字和目标，不可点击（外链打开方式随阶段 2 审阅一起定）；对话面板的 e2e 在 S1-11c
+
+## 2026-10-13 04:45 · S1-11c 对话面板端到端
+- 结果：done（S1-11 整体完成）
+- 改动：e2e `chat.spec.ts`（界面批准/拒绝命令并看到工具结果、"需要你"随之变化；插话与打断；子 agent 挂在父会话下、"查看"跳转）；mock 模型支持 `[[spawn: 名称: 任务]]`（经 Codex 的 collaboration.spawn_agent）、子 agent 回复 `MOCK-SUB: /root/<名称>`、跳过 Codex 注入的上下文消息；**Host 运行层修复**：Codex 0.161 不为子 agent 发 `thread/started`，改为收到 `subAgentActivity` 时建子会话；fake app-server 对齐；`spikes/RESULTS.md` 新增 g 节
+- 验证：`npm run verify` 通过（91 个测试）；e2e 11/11；截图 `S1-11c-approval.png`、`S1-11c-subagent.png`
+- commit：见本次 commit
+- 遗留：命令的工具卡片排在审批卡片前面（Codex 先发 item/started 再发审批请求），之后考虑合并成一张卡片；插话内容要等当前这次模型输出结束才出现在对话里，这是 Codex 的行为

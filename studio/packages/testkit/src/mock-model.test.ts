@@ -29,7 +29,14 @@ describe("parseRequest", () => {
 });
 
 describe("defaultScript", () => {
-  const req = (text: string, tools = ["shell_command"]) => ({ lastUserText: text, afterToolOutput: false, tools, body: {} });
+  const req = (text: string, tools = ["shell_command"]) => ({ lastUserText: text, afterToolOutput: false, agentTask: null, tools, body: {} });
+
+  it("spawns a subagent through the collaboration namespace and answers as that subagent", () => {
+    expect(defaultScript(req("[[spawn: explorer: map it]]", ["collaboration", "collaboration.spawn_agent"]))).toEqual({
+      kind: "function_call", name: "spawn_agent", namespace: "collaboration", arguments: { task_name: "explorer", message: "map it", fork_turns: "none" },
+    });
+    expect(defaultScript({ ...req(""), agentTask: "/root/explorer" })).toEqual({ kind: "text", text: "MOCK-SUB: /root/explorer" });
+  });
 
   it("echoes plain text", () => {
     expect(defaultScript(req("hi"))).toEqual({ kind: "text", text: "MOCK: hi" });
