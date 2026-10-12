@@ -86,7 +86,7 @@
   - S1-04a mock 模型（`packages/testkit/src/mock-model.ts`，`npm run test:codex-mock` 用真实 app-server 验证） · done
   - S1-04b fake app-server（剧本驱动的 JSON-RPC 子集） · done
 
-### S1-05 凭据与模型路由 · todo
+### S1-05 凭据与模型路由 · done
 
 - 依赖：S1-01
 - 内容：

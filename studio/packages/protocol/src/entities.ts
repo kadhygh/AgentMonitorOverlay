@@ -50,9 +50,10 @@ export interface ModelProfile {
   id: Id;
   label: string;
   runtime: SessionRuntime;
-  /** Codex: the model_provider id defined at app-server launch. Claude: the provider preset id. */
-  provider: string;
-  model: string;
+  /** Codex: the model_provider id defined at app-server launch (null = the user's own Codex config). Claude: the provider preset id. */
+  provider: string | null;
+  /** null = whatever the runtime's own config selects. */
+  model: string | null;
   reasoningEffort?: string;
   /** Credential Manager entry `AgentMonitorOverlay/model-provider/<credentialId>`; absent for subscription logins. */
   credentialId?: string;

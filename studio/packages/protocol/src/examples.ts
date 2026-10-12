@@ -9,7 +9,7 @@ export const exampleWorkspaces: Workspace[] = [
 ];
 
 export const exampleProfiles: ModelProfile[] = [
-  { id: "codex-default", label: "Codex", runtime: "codex", provider: "openai", model: "gpt-5.5" },
+  { id: "codex-default", label: "Codex", runtime: "codex", provider: null, model: null },
   { id: "codex-deepseek-flash", label: "DeepSeek Flash", runtime: "codex", provider: "amo-deepseek", model: "deepseek-flash", reasoningEffort: "low", credentialId: "deepseek-v4" },
 ];
 

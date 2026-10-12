@@ -81,3 +81,12 @@
 - 验证：`npm run verify` 通过（35 个单元测试），testkit 测试连跑 3 次稳定
 - commit：见本次 commit
 - 遗留：fake 的事件字段只覆盖 Host 会用到的部分，类型上没有严格对齐生成的 `ThreadItem`；S1-06 的 runtime 测试会同时用 fake 和"真实 app-server + mock 模型"两条路径，防止 fake 与真实行为偏离
+
+## 2026-10-13 00:10 · S1-05 凭据与模型路由
+- 结果：done
+- 改动：`packages/host/src/runtime/{credentials,profiles}.ts`、`profiles.test.ts`、`scripts/smoke-credentials.mjs`、`assets/codex/deepseek-flash.models.json`；`ModelProfile.provider/model` 改为可空（null = 用户自己的 Codex 配置）
+- 验证：`npm run verify` 通过（42 个单元测试）；冒烟：真实凭据 deepseek-v4 存在（只打印长度），Key 不在启动参数里；两个 profile 的启动参数分别拉起真实 app-server 并 `thread/start` 成功（provider 分别为 openai、amo-deepseek），没有发起对话
+- commit：见本次 commit
+- 遗留：
+  - 凭据脚本改用 `-EncodedCommand`：从 stdin 传脚本时 PowerShell 逐行执行，多行 here-string 会坏掉，读出来为空
+  - 每个 server 只能有一个 `model_catalog_json`，所以只给默认 provider 带目录；Codex 默认 server 上恢复 DeepSeek thread 时没有 deepseek-flash 的元数据，走 Codex 的默认值
