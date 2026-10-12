@@ -99,6 +99,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     route("GET", "/api/todos", () => service.todos()),
     route("POST", "/api/todos", ({ body }) => service.addTodo(obj(body))),
     route("PATCH", "/api/todos/:id", ({ params, body }) => service.updateTodo(params.id!, obj(body))),
+    route("POST", "/api/todos/:id/convert", ({ params, body }) => service.convertTodo(params.id!, obj(body))),
     route("DELETE", "/api/todos/:id", ({ params }) => (service.deleteTodo(params.id!), { ok: true })),
     route("GET", "/api/checklist", ({ query }) => service.checklist(query.get("taskId") ?? undefined)),
     route("PATCH", "/api/checklist/:id", ({ params, body }) => service.setChecklistDone(params.id!, obj(body).done)),

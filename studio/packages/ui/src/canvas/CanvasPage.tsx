@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { taskWhere, type CanvasDoc, type CanvasGroup, type CanvasNode, type Id, type Session, type Task, type Workspace } from "@amo-studio/protocol";
+import { taskWhere, type CanvasDoc, type CanvasGroup, type CanvasNode, type Id, type ModelProfile, type Session, type Task, type Workspace } from "@amo-studio/protocol";
 import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
 import { AgentTab } from "./AgentTab.js";
 import { TodoTab } from "./TodoTab.js";
@@ -70,13 +70,15 @@ export function placeMissing(doc: CanvasDoc, tasks: readonly Task[]): CanvasDoc 
 
 interface CanvasPageProps {
   link: HostLink;
+  /** For "转为任务" (the new task's model). */
+  profiles?: readonly ModelProfile[];
   tasks: readonly Task[];
   sessions: readonly Session[];
   workspaces: readonly Workspace[];
   onOpenTask(taskId: Id): void;
 }
 
-export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: CanvasPageProps) {
+export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], onOpenTask }: CanvasPageProps) {
   const { doc, save, conflict, dismissConflict } = useCanvas(link);
   const [view, setView] = useState<View>(loadView);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -373,7 +375,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
           onClearSelection={() => setSelectionState(null)}
           onOpenTask={onOpenTask}
           newId={newCanvasId}
-          todoTab={<TodoTab link={link} workspaces={workspaces} />}
+          todoTab={<TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} />}
           agentTab={<AgentTab link={link} />}
         />
       )}

@@ -109,6 +109,7 @@ export function App() {
               tasks={state.tasks}
               sessions={state.sessions}
               workspaces={state.workspaces}
+              profiles={state.profiles}
               onOpenTask={(taskId) => setView({ kind: "task", taskId })}
             />
           )}

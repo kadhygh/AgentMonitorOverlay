@@ -358,6 +358,26 @@ describe("Host API", () => {
     expect(after.version).toBe(canvas.version + 2);
   });
 
+  it("turns a todo into a task in the group bound to its workspace", async () => {
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    const canvas = await ok<CanvasDoc>("GET", "/api/canvas");
+    await ok("PUT", "/api/canvas", { ...canvas, groups: [{ id: "g-alpha", title: "alpha 组", workspaceId: ws.id, rect: { x: 0, y: 0, w: 500, h: 320 } }] });
+    const todo = await ok<{ id: string }>("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: ws.id });
+    const converted = await ok<{ todo: { taskId: string; done: boolean }; task: Task; session: Session }>("POST", `/api/todos/${todo.id}/convert`, { profileId: "p-ds" });
+    expect(converted.task).toMatchObject({ title: "统一掉落表格式", scope: { kind: "workspace", workspaceId: ws.id } });
+    expect(converted.todo).toMatchObject({ taskId: converted.task.id, done: true });
+    // No first message, so the session has not started a turn (no model call).
+    expect(converted.session.status).toBe("idle");
+    expect((await ok<SessionItem[]>("GET", `/api/sessions/${converted.session.id}/items`)).filter((i) => i.type === "user")).toEqual([]);
+    expect((await ok<CanvasDoc>("GET", "/api/canvas")).nodes.find((n) => n.kind === "task" && n.taskId === converted.task.id)?.groupId).toBe("g-alpha");
+    expect((await api("POST", `/api/todos/${todo.id}/convert`, { profileId: "p-ds" })).status).toBe(409);
+    // A todo without a workspace needs one; a profile is required.
+    const loose = await ok<{ id: string }>("POST", "/api/todos", { text: "随便看看" });
+    expect((await api("POST", `/api/todos/${loose.id}/convert`, { profileId: "p-ds" })).status).toBe(400);
+    expect((await api("POST", `/api/todos/${loose.id}/convert`, { workspaceId: ws.id })).status).toBe(400);
+    expect((await ok<{ todo: { workspaceId: string } }>("POST", `/api/todos/${loose.id}/convert`, { workspaceId: ws.id, profileId: "p-ds" })).todo.workspaceId).toBe(ws.id);
+  });
+
   it("saves the canvas with optimistic versions and serves its outline", async () => {
     const { task } = await createTask("canvas");
     const empty = await ok<CanvasDoc>("GET", "/api/canvas");

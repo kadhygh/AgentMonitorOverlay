@@ -330,6 +330,31 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return next;
   }
 
+  /**
+   * Turns a todo into a task in its workspace (or the one given), with one session and no first message (no model
+   * call). The task goes into the canvas group bound to that workspace, if any; the todo is done and points at it.
+   */
+  async convertTodo(id: Id, input: { workspaceId?: unknown; profileId?: unknown; text?: unknown }): Promise<{ todo: TodoItem; task: Task; session: Session }> {
+    const todo = this.store.getTodo(id);
+    if (!todo) throw new HostError("not_found", `todo ${id} not found`);
+    if (todo.taskId) throw new HostError("conflict", "this todo is already a task");
+    const workspaceId = this.optionalWorkspace(input?.workspaceId) ?? todo.workspaceId;
+    if (!workspaceId) throw new HostError("bad_request", "choose a workspace for the task");
+    if (typeof input?.profileId !== "string") throw new HostError("bad_request", "profileId is required");
+    const text = typeof input.text === "string" && input.text.trim() ? input.text.trim() : undefined;
+    const { task, session } = await this.createTask({
+      title: todo.text.slice(0, 100),
+      scope: { kind: "workspace", workspaceId },
+      firstSession: { profileId: input.profileId, ...(text ? { text } : {}) },
+    });
+    const group = this.canvas().groups.find((g) => g.workspaceId === workspaceId);
+    if (group) this.canvasPlaceTask(task.id, group.id);
+    const next: TodoItem = { ...todo, workspaceId, taskId: task.id, done: true };
+    this.store.putTodo(next);
+    this.publish({ type: "todo.upserted", todo: next });
+    return { todo: next, task, session };
+  }
+
   deleteTodo(id: Id): void {
     if (!this.store.getTodo(id)) throw new HostError("not_found", `todo ${id} not found`);
     this.store.deleteTodo(id);
