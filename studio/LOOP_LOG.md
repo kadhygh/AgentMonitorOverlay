@@ -50,3 +50,10 @@
 - 验证：`--dry` 模式启动并停止 server 通过，没有调用模型；交互部分要等用户执行
 - commit：见本次 commit
 - 遗留：S1-00 整体完成；用户回复后把 e 的结果补进 `RESULTS.md`
+
+## 2026-10-12 23:10 · S1-02 数据模型与协议类型
+- 结果：done
+- 改动：`packages/protocol/src/{entities,session-tree,api,examples,index}.ts`、`session-tree.test.ts`；`src/codex/`（Codex 0.161.0 生成的绑定，约 740 个文件）与 `scripts/gen-codex.mjs`（`npm run gen:codex -w @amo-studio/protocol`，生成后自动补 `.js` 扩展名）
+- 验证：`npm run verify` 通过（11 个单元测试，生成的绑定也通过 strict 类型检查）
+- commit：见本次 commit
+- 遗留：会话状态在交互说明的五种之外加了 `error`；Host API 先定义了阶段 1 用到的路由，批注和画布的接口留到对应阶段

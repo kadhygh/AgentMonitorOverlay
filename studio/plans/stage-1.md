@@ -49,7 +49,7 @@
   - `studio/budget.json` 计数工具 `packages/testkit/src/budget.ts`：先检查额度再加计数，超出额度时抛错。
 - 验收：在 `studio/` 下 `npm install && npm run verify` 通过，产出空包的构建结果。
 
-### S1-02 数据模型与协议类型 · todo
+### S1-02 数据模型与协议类型 · done
 
 - 依赖：S1-01
 - 内容：

@@ -10,5 +10,8 @@
       "types": "./dist/index.d.ts",
       "default": "./dist/index.js"
     }
+  },
+  "scripts": {
+    "gen:codex": "node scripts/gen-codex.mjs"
   }
 }
