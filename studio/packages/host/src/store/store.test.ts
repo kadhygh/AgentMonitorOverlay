@@ -41,9 +41,9 @@ function seed(store: Store) {
 describe("Store", () => {
   it("applies migrations once", () => {
     const path = tempDbPath();
-    expect(makeStore(path).schemaVersion()).toBe(2);
+    expect(makeStore(path).schemaVersion()).toBe(3);
     open.pop()!.close();
-    expect(makeStore(path).schemaVersion()).toBe(2);
+    expect(makeStore(path).schemaVersion()).toBe(3);
   });
 
   it("creates, reads and updates workspaces, tasks and sessions", () => {

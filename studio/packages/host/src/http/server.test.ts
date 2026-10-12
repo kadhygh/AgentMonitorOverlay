@@ -22,12 +22,13 @@ let root: string;
 let store: Store;
 let servers: FakeServers;
 let http: HostServer;
+let service: HostService;
 
 async function boot() {
   store = new Store(join(root, "studio.db"));
   servers = new FakeServers(PROFILES);
   const runtime = new CodexRuntime({ store, servers, profiles: PROFILES });
-  const service = new HostService(store, runtime, PROFILES);
+  service = new HostService(store, runtime, PROFILES);
   http = await startHostServer({ service, token: TOKEN, allowedOrigins: ["http://127.0.0.1:47901"] });
 }
 
@@ -73,7 +74,8 @@ const until = async (pred: () => Promise<boolean> | boolean, label: string, time
 };
 
 async function createTask(text = "hello") {
-  const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+  const existing = (await ok<StateSnapshot>("GET", "/api/state")).workspaces.find((w) => w.name === "alpha");
+  const ws = existing ?? (await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") }));
   const created = await ok<{ task: Task; session: Session }>("POST", "/api/tasks", {
     scope: { kind: "workspace", workspaceId: ws.id },
     firstSession: { profileId: "p-ds", text },
@@ -213,6 +215,59 @@ describe("Host API", () => {
     } finally {
       await ui.close();
     }
+  });
+
+  it("keeps notes and handoffs on a task, written by the person or by the task's own sessions", async () => {
+    const { task, session } = await createTask("notes");
+    const other = await createTask("other");
+    const note = await ok<{ kind: string; sessionId: string | null; text: string }>("POST", `/api/tasks/${task.id}/notes`, { text: " 先查导入日志 " });
+    expect(note).toMatchObject({ kind: "progress", sessionId: null, text: "先查导入日志" });
+    expect(service.addTaskNote(task.id, { text: "交接：重试已加，测试待补", kind: "handoff" }, session.id)).toMatchObject({ kind: "handoff", sessionId: session.id });
+    expect(() => service.addTaskNote(other.task.id, { text: "x" }, session.id)).toThrow(/its own task/);
+    expect((await ok<Array<{ kind: string }>>("GET", `/api/tasks/${task.id}/notes`)).map((n) => n.kind)).toEqual(["progress", "handoff"]);
+    expect((await api("POST", `/api/tasks/${task.id}/notes`, { text: " " })).status).toBe(400);
+  });
+
+  it("passes mail between sessions and lets the person forward or dismiss it", async () => {
+    const a = await createTask("a");
+    const b = await createTask("b");
+    const toB = service.sendMail(a.session.id, { kind: "session", sessionId: b.session.id }, "接口改好了，你可以接着做导入");
+    expect(toB).toMatchObject({ fromSessionId: a.session.id, fromTaskId: a.task.id, state: "unread" });
+    expect(() => service.sendMail(a.session.id, { kind: "session", sessionId: a.session.id }, "me")).toThrow(/itself/);
+    const toTask = await ok<{ id: string; fromSessionId: string | null }>("POST", "/api/mail", { to: { kind: "task", taskId: b.task.id }, text: "记得更新文档" });
+    expect(toTask.fromSessionId).toBeNull();
+    expect((await api("POST", "/api/mail", { to: { kind: "task", taskId: "nope" }, text: "x" })).status).toBe(404);
+
+    // B's mailbox: its own mail and its task's, oldest first; reading marks them read.
+    expect((await ok<Array<{ id: string }>>("GET", `/api/mail?sessionId=${b.session.id}&taskId=${b.task.id}&state=unread`)).map((m) => m.id)).toEqual([toB.id, toTask.id]);
+    expect(service.readMailFromSession(b.session.id).map((m) => m.state)).toEqual(["read", "read"]);
+    expect(service.readMailFromSession(b.session.id)).toEqual([]);
+
+    // Forwarding puts it into the conversation as a user message marked as AMO mail.
+    const forwarded = await ok<{ state: string }>("POST", `/api/mail/${toB.id}/forward`, {});
+    expect(forwarded.state).toBe("forwarded");
+    expect((await api("POST", `/api/mail/${toB.id}/forward`, {})).status).toBe(409);
+    expect(servers.fakes.get("p-ds")!.calls.filter((c) => c.method === "turn/start").at(-1)?.params).toMatchObject({
+      input: [{ type: "text", text: expect.stringMatching(/^\[AMO 留言\] 来自任务「.*」的会话「a」：\n\n接口改好了/) }],
+    });
+    // Task mail needs a session of that task; dismissing is the other way out.
+    expect((await api("POST", `/api/mail/${toTask.id}/forward`, {})).status).toBe(400);
+    expect((await api("POST", `/api/mail/${toTask.id}/forward`, { sessionId: a.session.id })).status).toBe(400);
+    expect(await ok("PATCH", `/api/mail/${toTask.id}`, { state: "dismissed" })).toMatchObject({ state: "dismissed" });
+  });
+
+  it("answers a decision request and sends the answer back to the asking session", async () => {
+    const { session } = await createTask("decide");
+    const d = service.requestDecisionFromSession(session.id, "掉落表按关卡拆还是按怪物拆？", ["按关卡", "按怪物", " "]);
+    expect(d).toMatchObject({ state: "open", options: ["按关卡", "按怪物"] });
+    expect((await ok<Array<{ id: string }>>("GET", "/api/decisions?state=open")).map((x) => x.id)).toEqual([d.id]);
+    const answered = await ok<{ state: string; answer: string }>("POST", `/api/decisions/${d.id}/answer`, { answer: "按关卡" });
+    expect(answered).toMatchObject({ state: "answered", answer: "按关卡" });
+    expect((await api("POST", `/api/decisions/${d.id}/answer`, { answer: "x" })).status).toBe(409);
+    expect(await ok("GET", "/api/decisions?state=open")).toEqual([]);
+    const mail = service.mail({ sessionId: session.id });
+    expect(mail).toHaveLength(1);
+    expect(mail[0]).toMatchObject({ fromSessionId: null, text: "针对你的问题「掉落表按关卡拆还是按怪物拆？」，我的决定：按关卡" });
   });
 
   it("keeps whole-picture todos", async () => {

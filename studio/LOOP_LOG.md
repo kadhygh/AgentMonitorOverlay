@@ -569,3 +569,19 @@
   - 按协议类型改成 `{ action: "accept", content, _meta }` 后得到结论
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-13 21:20 · S5-01 协作数据
+- 结果：done
+- 改动：
+  - protocol 新增 `TaskNote`（进度备注/交接摘要，作者是人或该任务的会话）、`MailMessage`（发给会话或任务；状态 未读/已读/已转进对话/已忽略）、`DecisionRequest`（问题、选项、答复）；
+  - Store 迁移 v3（`task_notes`、`mail`、`decisions`）；
+  - Host 接口：
+    - 任务备注读写；
+    - 留言列表（按会话、任务、状态筛选）、人发留言、标记已读或忽略、"转进对话"（作为用户消息发出，开头是"[AMO 留言] 来自任务「…」的会话「…」"；发给任务的留言要指定该任务的一个会话）；
+    - 决策列表与回答（答复作为留言回到提问的会话）；
+  - 事件：`task.note.added`、`mail.upserted`、`decision.upserted`；
+  - 服务层预留给 MCP 的入口：`addTaskNote(…, sessionId)`（只能写自己的任务）、`sendMail(fromSessionId, …)`（不能发给自己）、`readMailFromSession`（读自己和所属任务的未读，读后标已读）、`requestDecisionFromSession`
+- 测试：接口测试 3 个（备注与"只能写自己的任务"、留言的发送、筛选、读取、转进对话、忽略、决策回答与回信）；Store 的 schema 版本断言改为 3；接口测试的 `createTask` 改为复用已登记的工作区
+- 验证：`npm run verify` 退出码 0（171 个测试）；e2e 25/25
+- 额度：0
+- commit：见本次 commit

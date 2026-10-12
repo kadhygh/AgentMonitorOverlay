@@ -24,7 +24,7 @@
 - 内容：用 mock 确认 Codex 0.161 能否按会话（thread）给 MCP 带不同的身份，候选做法：`thread/start` 的 `config` 里覆盖 `mcp_servers.amo.http_headers`；按会话下发不同的令牌；或者把会话 id 写进会话的开发者指令里，再由服务端核对。选定做法，写进 `spikes/RESULTS.md`。
 - 验收：结论与 mock 实测结果。
 
-### S5-01 数据：进度备注、交接摘要、留言、决策请求 · todo
+### S5-01 数据：进度备注、交接摘要、留言、决策请求 · done
 - 依赖：无
 - 内容：protocol 实体与 Store 表（迁移 v3），Host 接口与事件。
 - 验收：Store 与接口单测。

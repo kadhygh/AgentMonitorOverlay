@@ -174,3 +174,48 @@ export interface TodoItem {
   taskId: Id | null;
   createdAt: Timestamp;
 }
+
+// Collaboration (stage 5): what sessions leave for people and for each other. Agents write these through the AMO
+// MCP, scoped to the session that calls; people read and act on them in the workbench.
+
+/** A progress note or handoff summary on a task. `sessionId` null: written by the person. */
+export interface TaskNote {
+  id: Id;
+  taskId: Id;
+  sessionId: Id | null;
+  kind: "progress" | "handoff";
+  text: string;
+  createdAt: Timestamp;
+}
+
+export type MailRecipient = { kind: "session"; sessionId: Id } | { kind: "task"; taskId: Id };
+
+/**
+ * A message for another session or task. It never enters a conversation by itself: the person forwards it (or
+ * dismisses it), or the recipient's agent reads it with `mailbox_read` on its next turn.
+ */
+export interface MailMessage {
+  id: Id;
+  /** null: from the person (e.g. the answer to a decision request). */
+  fromSessionId: Id | null;
+  fromTaskId: Id | null;
+  to: MailRecipient;
+  text: string;
+  state: "unread" | "read" | "forwarded" | "dismissed";
+  createdAt: Timestamp;
+  /** When it was read, forwarded or dismissed. */
+  handledAt: Timestamp | null;
+}
+
+/** A question an agent puts to the person; the answer goes back to the asking session as mail. */
+export interface DecisionRequest {
+  id: Id;
+  sessionId: Id;
+  taskId: Id;
+  question: string;
+  options: string[];
+  state: "open" | "answered" | "withdrawn";
+  answer: string | null;
+  createdAt: Timestamp;
+  answeredAt: Timestamp | null;
+}

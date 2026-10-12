@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { Annotation, CanvasDoc, Id, ModelProfile, TodoItem, Session, SessionItem, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
+import type { Annotation, CanvasDoc, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -80,6 +80,19 @@ export interface HostRoutes {
   "POST /api/todos": { req: { text: string; workspaceId?: Id | null }; res: TodoItem };
   "PATCH /api/todos/:id": { req: { text?: string; done?: boolean; workspaceId?: Id | null }; res: TodoItem };
   "DELETE /api/todos/:id": { req: void; res: { ok: true } };
+  /** Progress notes and handoff summaries on a task, oldest first. The person can add notes too. */
+  "GET /api/tasks/:id/notes": { req: void; res: TaskNote[] };
+  "POST /api/tasks/:id/notes": { req: { text: string }; res: TaskNote };
+  /** Mail, filtered by `?sessionId=`, `?taskId=` (either matches) and `?state=` (comma separated). */
+  "GET /api/mail": { req: void; res: MailMessage[] };
+  "POST /api/mail": { req: { to: MailRecipient; text: string }; res: MailMessage };
+  "PATCH /api/mail/:id": { req: { state: "read" | "dismissed" }; res: MailMessage };
+  /** Puts the message into a session's conversation as a user message; for mail to a task, name the session. */
+  "POST /api/mail/:id/forward": { req: { sessionId?: Id }; res: MailMessage };
+  /** Decision requests, `?state=open` for the pending ones. */
+  "GET /api/decisions": { req: void; res: DecisionRequest[] };
+  /** Answers a decision; the answer goes back to the asking session as mail. */
+  "POST /api/decisions/:id/answer": { req: { answer: string }; res: DecisionRequest };
   "GET /api/canvas": { req: void; res: CanvasDoc };
   /** Saves the whole canvas. `version` must equal the stored one (409 otherwise); the response carries the new one. */
   "PUT /api/canvas": { req: CanvasDoc; res: CanvasDoc };
@@ -113,6 +126,9 @@ export type HostEvent = { seq: number } & (
   | { type: "canvas.updated"; canvas: CanvasDoc }
   | { type: "todo.upserted"; todo: TodoItem }
   | { type: "todo.removed"; todoId: Id }
+  | { type: "task.note.added"; note: TaskNote }
+  | { type: "mail.upserted"; mail: MailMessage }
+  | { type: "decision.upserted"; decision: DecisionRequest }
 );
 
 export type HostEventType = HostEvent["type"];
