@@ -8,7 +8,8 @@
 
 | 项目 | 做法 | 说明 |
 |---|---|---|
-| 调用者身份 | 写入类工具都按"调用它的会话"限定范围，不让 agent 自己传会话 id | Claude：每个查询一个进程内 MCP 服务，直接绑定会话。Codex：一个 app-server 上的所有会话共用一份 MCP 配置，按会话区分身份的办法在 S5-00 预研 |
+| 调用者身份 | 写入类工具都按"调用它的会话"限定范围，不让 agent 自己传会话 id | Claude：每个查询一个进程内 MCP 服务，直接绑定会话。Codex：`thread/start` 时带 `mcp_servers.amo.http_headers.X-AMO-Session-Token = <会话的随机令牌>`，重新订阅和 fork 时也带；没有身份的调用只能用只读工具（S5-00） |
+| Codex 写入工具的批准 | 非只读 MCP 工具会触发 `mcpServer/elicitation/request`，`CodexRuntime` 把它转成审批卡片（批准/拒绝），否则回合会卡住 | S5-00 发现 |
 | 写自身 | 只能改自己所属任务：追加进度备注、提交交接摘要；**不能**移动看板列、不能改别的任务 | 列由人调整（interaction-notes 总原则） |
 | 信箱 | agent 给其他会话或任务留言；接收方在工作台里看到"有 N 条留言"，由人决定是否转进对话；agent 下一轮也可以用工具读自己的留言 | 不自动插进对方的对话 |
 | 请求决策 | agent 提出需要人决定的问题（可带选项）；显示在工作台和 Focus；人回答后，答复作为一条留言回到提问的会话 | 不阻塞回合 |
@@ -18,7 +19,7 @@
 
 ## 任务
 
-### S5-00 预研：Codex 会话的调用者身份 · todo
+### S5-00 预研：Codex 会话的调用者身份 · done（结论见 `spikes/RESULTS.md` 第 j 节）
 - 依赖：无
 - 内容：用 mock 确认 Codex 0.161 能否按会话（thread）给 MCP 带不同的身份，候选做法：`thread/start` 的 `config` 里覆盖 `mcp_servers.amo.http_headers`；按会话下发不同的令牌；或者把会话 id 写进会话的开发者指令里，再由服务端核对。选定做法，写进 `spikes/RESULTS.md`。
 - 验收：结论与 mock 实测结果。

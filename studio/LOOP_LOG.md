@@ -552,3 +552,20 @@
   - S5-10 派发评审（必须等你）
 - 已写入 NEEDS_YOU（请你过目）
 - 通知：阶段完成
+
+## 2026-10-13 20:40 · S5-00 预研 Codex 会话的调用者身份
+- 结果：done，结论见 `spikes/RESULTS.md` 第 j 节
+- 做法：
+  - 一个探针 MCP 服务（端口 47970）记录每次工具调用的请求头和 URL；
+  - 一个真实的 Codex app-server（mock 模型、沙箱 `CODEX_HOME`，端口 47912）上开多个会话，各自用 `thread/start` 的 `config` 覆盖 MCP 设置，再调用探针工具
+- 结论：
+  - 点号写法的 `mcp_servers.amo.http_headers` 能按会话带不同的请求头；嵌套写法会替换整张表，不能用；
+  - 会话加载期间身份保留；app-server 重启后需要在 resume 时重新带上；
+  - 定为：每个会话一个随机令牌，放进请求头，Host 映射回会话；重新订阅和 fork 时都带上
+- **新发现**：Codex 调用没有 `readOnlyHint` 的 MCP 工具前，会发 `mcpServer/elicitation/request` 征求批准，`CodexRuntime` 目前不处理它，阶段 5 的写入工具会让回合卡住。已写进计划，S5-02 处理
+- 调试：
+  - 第一次所有变体都没有调用到探针：审批策略设成了 `never`，MCP 工具调用被直接拒绝；
+  - 第二次用了错误的回复格式（`decision`），被当成拒绝；
+  - 按协议类型改成 `{ action: "accept", content, _meta }` 后得到结论
+- 额度：0
+- commit：见本次 commit

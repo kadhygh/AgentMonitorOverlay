@@ -1,0 +1,105 @@
+{
+  "variants": [
+    {
+      "name": "none",
+      "thread": "01a131c5-1c6c-7550-a762-639485681efe",
+      "approvals": [
+        "mcpServer/elicitation/request: Allow the amo MCP server to run tool \"whoami\"?"
+      ],
+      "probeCalls": [
+        {
+          "url": "/mcp",
+          "session": null,
+          "auth": "Bearer server-wide-token"
+        }
+      ],
+      "amoTools": [
+        "mcp__amo",
+        "mcp__amo.whoami"
+      ],
+      "reply": "MOCK-MCP: [{\"type\":\"input_text\",\"text\":\"Wall time: 0.0058 seconds\\nOutput:\"},{\"type\":\"input_text\",\"text\":\"{\\\"url\\\":\\\"/mcp\\\",\\\"session\\\":null,\\\"auth\\\":\\\"Bearer server-wide-token\\\"}\"}]"
+    },
+    {
+      "name": "dotted http_headers",
+      "thread": "01a131c5-1cd4-7160-8bcb-76153130861b",
+      "approvals": [
+        "mcpServer/elicitation/request: Allow the amo MCP server to run tool \"whoami\"?"
+      ],
+      "probeCalls": [
+        {
+          "url": "/mcp",
+          "session": "dotted",
+          "auth": "Bearer server-wide-token"
+        }
+      ],
+      "amoTools": [
+        "mcp__amo",
+        "mcp__amo.whoami"
+      ],
+      "reply": "MOCK-MCP: [{\"type\":\"input_text\",\"text\":\"Wall time: 0.0030 seconds\\nOutput:\"},{\"type\":\"input_text\",\"text\":\"{\\\"url\\\":\\\"/mcp\\\",\\\"session\\\":\\\"dotted\\\",\\\"auth\\\":\\\"Bearer server-wide-token\\\"}\"}]"
+    },
+    {
+      "name": "nested http_headers",
+      "error": "thread/start: {\"code\":-32600,\"message\":\"failed to load configuration: invalid transport\\nin `mcp_servers.amo`\\n\"}"
+    },
+    {
+      "name": "dotted url",
+      "thread": "01a131c5-1d18-7b03-b9c4-2e282a6a3a7b",
+      "approvals": [
+        "mcpServer/elicitation/request: Allow the amo MCP server to run tool \"whoami\"?"
+      ],
+      "probeCalls": [
+        {
+          "url": "/mcp?session=by-url",
+          "session": null,
+          "auth": "Bearer server-wide-token"
+        }
+      ],
+      "amoTools": [
+        "mcp__amo",
+        "mcp__amo.whoami"
+      ],
+      "reply": "MOCK-MCP: [{\"type\":\"input_text\",\"text\":\"Wall time: 0.0031 seconds\\nOutput:\"},{\"type\":\"input_text\",\"text\":\"{\\\"url\\\":\\\"/mcp?session=by-url\\\",\\\"session\\\":null,\\\"auth\\\":\\\"Bearer server-wide-token\\\"}\"}]"
+    },
+    {
+      "name": "resume without config",
+      "probeCalls": [
+        {
+          "url": "/mcp",
+          "session": "dotted",
+          "auth": "Bearer server-wide-token"
+        }
+      ]
+    },
+    {
+      "name": "resume with config",
+      "probeCalls": [
+        {
+          "url": "/mcp",
+          "session": "dotted",
+          "auth": "Bearer server-wide-token"
+        }
+      ]
+    },
+    {
+      "name": "after restart, resume without config",
+      "probeCalls": [
+        {
+          "url": "/mcp",
+          "session": null,
+          "auth": "Bearer server-wide-token"
+        }
+      ]
+    },
+    {
+      "name": "after restart, resume with config",
+      "probeCalls": [
+        {
+          "url": "/mcp",
+          "session": "after-restart",
+          "auth": "Bearer server-wide-token"
+        }
+      ]
+    }
+  ]
+}
