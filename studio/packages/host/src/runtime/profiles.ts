@@ -29,6 +29,9 @@ export const CODEX_PROVIDERS: Record<string, CodexProviderDef> = {
   },
 };
 
+/** Env var that carries the MCP-only token to Codex app-servers. */
+export const AMO_MCP_TOKEN_ENV = "AMO_STUDIO_MCP_TOKEN";
+
 export const BUILTIN_PROFILES: readonly ModelProfile[] = [
   { id: "codex-default", label: "Codex", runtime: "codex", provider: null, model: null },
   {
@@ -75,7 +78,7 @@ export function codexServerSpec(
   profile: ModelProfile,
   profiles: readonly ModelProfile[],
   credentials: CredentialReader,
-  options: { providers?: Record<string, CodexProviderDef>; assetsDir?: string } = {},
+  options: { providers?: Record<string, CodexProviderDef>; assetsDir?: string; mcp?: { url: string; token: string } | null } = {},
 ): CodexServerSpec {
   if (profile.runtime !== "codex") throw new Error(`profile ${profile.id} is not a Codex profile`);
   const providers = options.providers ?? CODEX_PROVIDERS;
@@ -110,6 +113,12 @@ export function codexServerSpec(
   }
   if (profile.model) configArgs.push(...configArg("model", profile.model), ...configArg("review_model", profile.model));
   if (profile.reasoningEffort) configArgs.push(...configArg("model_reasoning_effort", profile.reasoningEffort));
+
+  // The AMO MCP (read-only) for every thread on this server. The token travels in the env, never on the command line.
+  if (options.mcp) {
+    configArgs.push(...configArg("mcp_servers.amo.url", options.mcp.url), ...configArg("mcp_servers.amo.bearer_token_env_var", AMO_MCP_TOKEN_ENV));
+    env[AMO_MCP_TOKEN_ENV] = options.mcp.token;
+  }
 
   return { profileId: profile.id, configArgs, env, missingCredentials };
 }

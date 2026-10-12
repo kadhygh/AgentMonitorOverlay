@@ -29,6 +29,8 @@ export type ClaudeMockReply =
 export interface ClaudeMockRequest {
   /** Text the person typed in the last user message (context blocks such as <system-reminder> are skipped). */
   lastUserText: string;
+  /** Name and result text of the most recent tool call, once its result is in. */
+  lastTool: { name: string; result: string } | null;
   /** True when the last user message carries a tool result, i.e. the CLI is continuing after a tool ran. */
   afterToolOutput: boolean;
   /** Set when this is a subagent's request: the name given in `[[spawn: name: …]]`. */
@@ -53,6 +55,7 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
  * A subagent's message may itself carry `[[shell: …]]`: the subagent then runs that command before replying.
  * - `[[slow]]` → many small chunks with a delay (interrupt/queue tests)
  * - `[[markdown]]` → the same sample as the Responses mock
+ * - `[[mcp: <tool>]]` → calls the AMO MCP tool `mcp__amo__<tool>`, then replies `MOCK-MCP: <start of its result>`
  * - anything else → `MOCK: <user text>`
  * Tool calls are only made when the request offers that tool, so side requests always get text.
  */
@@ -62,7 +65,10 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
     if (shell && !req.afterToolOutput && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: shell[1]!.trim(), description: "mock command" } };
     return { kind: "text", text: `MOCK-SUB: ${req.subagent}` };
   }
+  if (req.afterToolOutput && req.lastTool?.name.startsWith("mcp__")) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.result.slice(0, 200)}` };
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
+  const mcp = /\[\[mcp:\s*([a-z_]+)\s*\]\]/.exec(req.lastUserText);
+  if (mcp && req.tools.includes(`mcp__amo__${mcp[1]}`)) return { kind: "tool_use", name: `mcp__amo__${mcp[1]}`, input: {} };
   // Spawn is checked before shell: the message may contain a nested [[shell: …]] for the subagent, so it runs up to the last "]]".
   const spawn = /\[\[spawn(-bg|-mode-[A-Za-z]+)?:\s*([a-z0-9_-]+)\s*:\s*(.+)\]\]\s*$/.exec(req.lastUserText);
   if (spawn) {
@@ -99,6 +105,18 @@ const personText = (m: Message | undefined) =>
     .join("\n")
     .trim();
 
+function lastToolCall(messages: Message[]): { name: string; result: string } | null {
+  const calls = messages.flatMap((m) => (m.role === "assistant" ? blocksOf(m) : [])).filter((b) => b.type === "tool_use") as Array<Block & { id?: string; name?: string }>;
+  const call = calls.at(-1);
+  if (!call) return null;
+  const result = messages
+    .flatMap((m) => (m.role === "user" ? blocksOf(m) : []))
+    .find((b) => b.type === "tool_result" && (b as { tool_use_id?: string }).tool_use_id === call.id) as { content?: unknown } | undefined;
+  if (!result) return null;
+  const text = typeof result.content === "string" ? result.content : Array.isArray(result.content) ? result.content.map((c: { text?: string }) => c.text ?? "").join("") : "";
+  return { name: String(call.name), result: text };
+}
+
 export function parseClaudeRequest(body: Record<string, unknown>): ClaudeMockRequest {
   const messages = (Array.isArray(body.messages) ? body.messages : []) as Message[];
   const users = messages.filter((m) => m.role === "user");
@@ -114,6 +132,7 @@ export function parseClaudeRequest(body: Record<string, unknown>): ClaudeMockReq
   return {
     lastUserText: lastPerson,
     afterToolOutput: lastToolIndex > lastPersonIndex,
+    lastTool: lastToolCall(messages),
     subagent: /^\[\[subagent:\s*([a-z0-9_-]+)\]\]/.exec(first)?.[1] ?? null,
     tools: Array.isArray(body.tools) ? (body.tools as Array<{ name?: string }>).map((t) => String(t.name)) : [],
     stream: body.stream === true,

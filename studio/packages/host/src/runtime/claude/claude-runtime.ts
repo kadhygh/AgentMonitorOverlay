@@ -2,12 +2,13 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { forkSession, getSessionMessages, query, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, forkSession, getSessionMessages, query, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ApprovalDecision, ApprovalKind, Id, ModelProfile, Session, Workspace } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
 import { RuntimeBase, type SendMode, type SessionRuntimeApi } from "../runtime.js";
 import { claudeEnv, type ClaudeProviderDef } from "./claude-env.js";
+import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
 
 // Drives Claude sessions through the Claude Agent SDK. Behaviour follows spikes/RESULTS.md section h:
 // - permissionMode is always "default" (the CLI otherwise picks "auto", where a classifier approves instead of a person);
@@ -33,6 +34,8 @@ export interface ClaudeRuntimeOptions {
   idleCloseMs?: number;
   /** Variables the child environment starts from (default: process.env). */
   baseEnv?: NodeJS.ProcessEnv;
+  /** The AMO MCP tools, given to every Claude session in-process (no token reaches the CLI). */
+  mcpTools?: () => AmoTool[];
 }
 
 interface PendingApproval {
@@ -299,6 +302,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         includePartialMessages: true,
         canUseTool: (toolName, toolInput, ctx) => this.askPerson(session.id, live, toolName, toolInput, ctx),
         hooks: STRIP_SUBAGENT_MODE,
+        ...this.mcpOptions(),
         // A session that already has a transcript continues it; a new one starts under the id Studio chose.
         ...(this.hasTranscript(ref) ? { resume: ref } : { sessionId: ref }),
       },
@@ -555,6 +559,22 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         this.setStatus(s.id, "idle");
       }
     }
+  }
+
+  /**
+   * The AMO MCP as an in-process SDK server. Its tools only read Studio's own state, so they are allowed up front;
+   * everything else still goes through canUseTool.
+   */
+  private mcpOptions() {
+    const tools = this.options.mcpTools?.() ?? [];
+    if (!tools.length) return {};
+    const server = createSdkMcpServer({
+      name: AMO_MCP_NAME,
+      version: "0.4.0",
+      instructions: AMO_MCP_INSTRUCTIONS,
+      tools: tools.map((t) => tool(t.name, t.description, t.inputSchema, async (args) => t.run(args as Record<string, unknown>), { annotations: { readOnlyHint: true } })),
+    });
+    return { mcpServers: { [AMO_MCP_NAME]: server }, allowedTools: tools.map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
   }
 
   /** In-process SDK helpers (forkSession, getSessionMessages) read CLAUDE_CONFIG_DIR from this process. */

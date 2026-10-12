@@ -59,7 +59,7 @@
 - 定下的做法：挂在 Host 自己的 HTTP 服务上，路径 `/mcp`，Streamable HTTP 无状态模式（每个请求一个 MCP 服务），和 REST 接口用同一个 Host 令牌（`Authorization: Bearer`）。工具名用下划线：`board_list`、`task_get`、`session_tree`、`project_context`、`canvas_read`（部分客户端不接受带点的工具名），都标为只读。
 - 验收：单元测试；用 MCP 客户端读取各工具。
 
-### S4-07 受管会话自动注入 MCP · todo
+### S4-07 受管会话自动注入 MCP · done
 - 依赖：S4-06、S4-02
 - 内容：Codex 和 Claude 的受管会话启动时都带上 AMO MCP；agent 在会话里能调用 `canvas.read` 等工具。
 - 验收：e2e（mock 模型发起 MCP 工具调用，回复里能看到读到的画布大纲）。
@@ -67,6 +67,7 @@
 ### S4-08 GLM 真实冒烟 · todo
 - 依赖：S4-02～S4-07
 - 内容：用 GLM 在沙箱工作区跑一次完整流程：新建 Claude 会话、执行需要审批的命令、分支、调用 `canvas.read`；截图。
+- 追加（S4-07）：再用 DeepSeek Flash 跑一个带 MCP 的 Codex 回合，确认模型目录关掉 `tool_search` 后 DeepSeek 能正常调用 MCP 工具（约 3 次 DeepSeek）。
 - 验收：结果写进日志；GLM 用量记入 `budget.json`。
 
 ### S4-09 阶段验收与收尾 · todo

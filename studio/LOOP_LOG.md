@@ -486,3 +486,21 @@
 - 验证：`npm run verify` 退出码 0（163 个测试）；e2e 24/24
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-13 18:30 · S4-07 受管会话自动注入 MCP
+- 结果：done
+- 做法：
+  - **Codex**：app-server 启动参数加 `mcp_servers.amo.url` 和 `bearer_token_env_var`，令牌只在环境变量里；
+  - **Claude**：SDK 进程内 MCP（`createSdkMcpServer`），不需要令牌；五个只读工具用 `allowedTools` 预先放行，其余工具照常审批；
+  - 工具定义抽到 `mcp/tools.ts`，HTTP 端和 Claude 端共用
+- **MCP 专用令牌**：数据目录新增 `mcp-token`，只能打开 `/mcp`，不能访问 `/api/`。原因：agent 执行的命令可能继承 app-server 的环境变量，不能让它拿到可写接口的 Host 令牌
+- **发现**：Codex 0.161 在模型目录 `supports_search_tool: true` 时会把 MCP 工具藏在 Responses 托管工具 `tool_search` 后面（e2e 第一次失败时，从 mock 收到的请求里看到）。DeepSeek 接口大概率不支持这种托管工具，所以把我们维护的 DeepSeek Flash 和 mock 模型目录改为 `false`，MCP 工具直接作为普通函数提供；S4-08 加一次 DeepSeek 带 MCP 的真实冒烟。详见 `spikes/RESULTS.md` 第 i 节
+- mock：两个 mock 都新增 `[[mcp: <tool>]]` 指令，调用后回复 `MOCK-MCP: <结果开头>`
+- 测试：
+  - e2e `mcp.spec.ts`：Codex 和 Claude 会话各自读画布，回复里出现分组大纲；
+  - 单测：Codex 启动参数里只有令牌所在环境变量的名字、MCP 令牌只能打开 `/mcp`
+- 默认决定（请你过目）：交接到终端的 Claude 不带 AMO MCP
+- 清理：Codex 集成测试又留下 1 个临时目录，已删
+- 验证：`npm run verify` 退出码 0（165 个测试）；e2e 25/25
+- 额度：0
+- commit：见本次 commit

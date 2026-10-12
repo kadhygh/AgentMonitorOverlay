@@ -7,6 +7,8 @@ import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.j
 import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
 import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
+import { ReadModel } from "./mcp/read-model.js";
+import { amoTools } from "./mcp/tools.js";
 import { CodexServerManager } from "./runtime/codex/server-manager.js";
 import { WindowsCredentialReader, type CredentialReader } from "./runtime/credentials.js";
 import { BUILTIN_PROFILES, type CodexProviderDef } from "./runtime/profiles.js";
@@ -62,6 +64,7 @@ export const hostPaths = (dataDir: string) => ({
   lock: join(dataDir, "host.lock"),
   info: join(dataDir, "host.json"),
   token: join(dataDir, "host-token"),
+  mcpToken: join(dataDir, "mcp-token"),
   db: join(dataDir, "studio.db"),
   codex: join(dataDir, "codex"),
   claudeHome: join(dataDir, "claude-home"),
@@ -124,6 +127,9 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
   try {
     const profiles = options.profiles ?? BUILTIN_PROFILES;
     const token = loadOrCreateToken(paths.token);
+    // Agents get a token that opens the read-only MCP only, never the writable REST API.
+    const mcpToken = loadOrCreateToken(paths.mcpToken);
+    let mcp: { url: string; token: string } | null = null;
     store = new Store(paths.db);
     manager = options.servers
       ? undefined
@@ -134,6 +140,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
           cwd: options.dataDir,
           ...(options.codexEnv ? { env: options.codexEnv } : {}),
           ...(options.providers ? { providers: options.providers } : {}),
+          mcp: () => mcp,
         });
     const servers = options.servers ?? manager!;
     const codex = new CodexRuntime({ store, servers, profiles });
@@ -145,16 +152,19 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       credentials: options.credentials ?? new WindowsCredentialReader(),
       claudeHome: paths.claudeHome,
       ...(options.claudeBaseEnv ? { baseEnv: options.claudeBaseEnv } : {}),
+      mcpTools: () => amoTools(new ReadModel(service)),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude });
     const service = new HostService(store, runtime, profiles, { launcher: options.launcher ?? new WindowsTerminalLauncher() });
     http = await startHostServer({
       service,
       token,
+      mcpToken,
       port: options.port ?? HOST_DEFAULT_PORT,
       ...(options.uiDir ? { uiDir: options.uiDir } : {}),
       ...(options.allowedOrigins ? { allowedOrigins: options.allowedOrigins } : {}),
     });
+    mcp = { url: `${http.url}/mcp`, token: mcpToken };
     const info: HostInfo = { url: http.url, port: http.port, pid: process.pid, startedAt: new Date().toISOString() };
     writeFileSync(paths.info, JSON.stringify(info, null, 2));
 

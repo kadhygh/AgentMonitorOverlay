@@ -51,6 +51,8 @@ export interface MockModelRequest {
   agentTask: string | null;
   /** Names of tools Codex offered. */
   tools: string[];
+  /** Name and output of the most recent tool call, once its output is in. */
+  lastTool: { name: string; output: string } | null;
   body: Record<string, unknown>;
 }
 
@@ -63,10 +65,22 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  *   the subagent itself replies `MOCK-SUB: /root/<task_name>`
  * - `[[slow]]` → stream the reply in many small chunks with a delay (for steer/interrupt tests)
  * - `[[markdown]]` → a reply with a table, a nested list, a code block and a link (rendering tests)
+ * - `[[mcp: <tool>]]` → calls the AMO MCP tool of that name (as Codex exposes it), then replies `MOCK-MCP: <start of its output>`
  * - anything else → `MOCK: <user text>`
  */
 export const defaultScript: MockScript = (req) => {
+  if (req.afterToolOutput && req.lastTool && /amo/.test(req.lastTool.name)) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.output.slice(0, 200)}` };
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
+  const mcp = /\[\[mcp:\s*([a-z_]+)\s*\]\]/.exec(req.lastUserText);
+  if (mcp) {
+    const name = req.tools.find((t) => /amo/.test(t) && (t.endsWith(`.${mcp[1]}`) || t.endsWith(`__${mcp[1]}`)));
+    if (name) {
+      const dot = name.lastIndexOf(".");
+      return dot > 0
+        ? { kind: "function_call", name: name.slice(dot + 1), namespace: name.slice(0, dot), arguments: {} }
+        : { kind: "function_call", name, arguments: {} };
+    }
+  }
   if (req.agentTask) return { kind: "text", text: `MOCK-SUB: ${req.agentTask}` };
   const shell = /\[\[shell:\s*([^\]]+)\]\]/.exec(req.lastUserText);
   if (shell) {
@@ -99,6 +113,15 @@ function textOf(content: unknown): string {
   return content.map((part) => (part && typeof part === "object" && "text" in part ? String((part as { text: unknown }).text) : "")).join("");
 }
 
+function lastToolCall(input: Array<Record<string, unknown>>): { name: string; output: string } | null {
+  const call = [...input].reverse().find((i) => i.type === "function_call");
+  if (!call) return null;
+  const out = input.find((i) => (i.type === "function_call_output" || i.type === "custom_tool_call_output") && i.call_id === call.call_id);
+  if (!out) return null;
+  const output = typeof out.output === "string" ? out.output : JSON.stringify(out.output ?? "");
+  return { name: [call.namespace, call.name].filter(Boolean).join("."), output };
+}
+
 export function parseRequest(body: Record<string, unknown>): MockModelRequest {
   const input = Array.isArray(body.input) ? (body.input as Array<Record<string, unknown>>) : [];
   // Codex injects context blocks (<environment_context>, <user_instructions>…) as user messages; skip them.
@@ -116,6 +139,7 @@ export function parseRequest(body: Record<string, unknown>): MockModelRequest {
   return {
     lastUserText: textOf(users.at(-1)?.content),
     afterToolOutput: last?.type === "function_call_output" || last?.type === "custom_tool_call_output",
+    lastTool: lastToolCall(input),
     agentTask: /Task name:\s*(\S+)/.exec(agentMessage)?.[1] ?? null,
     tools,
     body,

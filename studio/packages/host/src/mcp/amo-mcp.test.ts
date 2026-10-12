@@ -16,6 +16,7 @@ import { Store } from "../store/store.js";
 
 const PROFILES: ModelProfile[] = [{ id: "p-ds", label: "DS", runtime: "codex", provider: "amo-ds", model: "ds-model" }];
 const TOKEN = "test-host-token";
+const MCP_TOKEN = "test-mcp-token";
 let root: string;
 let store: Store;
 let servers: FakeServers;
@@ -41,7 +42,7 @@ beforeAll(async () => {
   store = new Store(join(root, "studio.db"));
   servers = new FakeServers(PROFILES);
   service = new HostService(store, new CodexRuntime({ store, servers, profiles: PROFILES }), PROFILES);
-  http = await startHostServer({ service, token: TOKEN });
+  http = await startHostServer({ service, token: TOKEN, mcpToken: MCP_TOKEN });
 
   const alpha = service.addWorkspace({ path: join(root, "alpha") });
   const beta = service.addWorkspace({ path: join(root, "beta") });
@@ -77,6 +78,14 @@ describe("AMO MCP", () => {
     expect(tools.map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "project_context", "session_tree", "task_get"]);
     expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true);
     await client.close();
+  });
+
+  it("opens /mcp, and only /mcp, with the MCP token", async () => {
+    const client = await connect(MCP_TOKEN);
+    expect((await client.listTools()).tools).toHaveLength(5);
+    await client.close();
+    const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
+    expect(res.status).toBe(401);
   });
 
   it("needs the Host token", async () => {

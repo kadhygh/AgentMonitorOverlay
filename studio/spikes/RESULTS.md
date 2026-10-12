@@ -4,6 +4,13 @@
 
 环境：Codex CLI 0.161.0（实际为 0.144.1，见上方更正），app-server 走 WebSocket 加 capability token，模型路由 DeepSeek Flash（`spikes/lib.mjs` 的 `deepseekConfigArgs`）。沙盒工作区在 `%TEMP%\amo-studio-sandbox\` 下。原始记录在 `spikes/results/`。
 
+## i. MCP 注入（2026-10-13，S4-07，mock 模型，不消耗额度）
+
+- **Codex**：app-server 启动时加 `-c mcp_servers.amo.url="<Host>/mcp"` 和 `-c mcp_servers.amo.bearer_token_env_var="AMO_STUDIO_MCP_TOKEN"`，令牌只放在 app-server 的环境变量里。用的是 MCP 专用令牌，只能打开 `/mcp`，打不开可写的 REST 接口（agent 执行的命令可能继承 app-server 的环境变量）。
+- **Codex 0.161 默认把 MCP 工具藏在 `tool_search` 后面**：模型目录里 `supports_search_tool: true` 时，请求只带一个 Responses 托管工具 `{"type":"tool_search","execution":"client"}`，MCP 工具要等模型先搜索才给出。DeepSeek 兼容接口大概率不支持这种托管工具，所以我们自己维护的模型目录（DeepSeek Flash、mock）改成 `supports_search_tool: false`，MCP 工具直接作为普通函数提供。`codex-default` 用 Codex 内置目录，不受影响。DeepSeek 带 MCP 的真实请求在 S4-08 冒烟里验证。
+- **Claude**：没有用 HTTP——SDK 把 `mcpServers` 配置交给 CLI 时可能出现在命令行上（令牌会暴露）。改用 SDK 的进程内服务 `createSdkMcpServer`，工具在 Host 进程里执行，CLI 通过 SDK 的内部通道调用，不需要令牌。这五个工具只读 Studio 自己的状态，用 `allowedTools` 预先放行，其余工具照常走 `canUseTool`。
+- 交接到终端的 Claude（`claude --resume`）不带 AMO MCP（进程内服务只存在于 Host 的 SDK 进程）。
+
 ## h. Claude Agent SDK 在 Windows 上的行为（2026-10-13，S4-00，GLM 12 次）
 
 脚本：`spikes/s4-00-claude-sdk.mjs`（按参数选实验）；原始结果：`spikes/results/s4-00.json`。环境：SDK `@anthropic-ai/claude-agent-sdk` 0.3.296（自带 win32-x64 的 Claude Code 2.1.296，和本机 `claude` 2.1.296 同版本）；GLM 路由沿用旧 AMO 的 glm-5.3 预设（`ANTHROPIC_BASE_URL=https://open.bigmodel.cn/api/anthropic`、`ANTHROPIC_MODEL=glm-5.3[1m]`，密钥放 `ANTHROPIC_AUTH_TOKEN`，凭据 id `glm-5.2`）；`CLAUDE_CONFIG_DIR` 和工作区都在 `%TEMP%\amo-studio-sandbox\s4-00\`；`settingSources: []`。

@@ -14,6 +14,8 @@ import { handleMcpRequest } from "../mcp/amo-mcp.js";
 export interface HostServerOptions {
   service: HostService;
   token: string;
+  /** Opens /mcp only (given to agent processes, which must not reach the writable REST API). */
+  mcpToken?: string;
   port?: number;
   /** Built UI to serve at / (same origin as the API, so no CORS in production). */
   uiDir?: string;
@@ -108,12 +110,13 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     }),
   ];
 
-  const tokenOk = (given: string | null | undefined) => {
-    if (!given) return false;
+  const same = (given: string, expected: string) => {
     const a = Buffer.from(given);
-    const b = Buffer.from(options.token);
+    const b = Buffer.from(expected);
     return a.length === b.length && timingSafeEqual(a, b);
   };
+  const tokenOk = (given: string | null | undefined) => !!given && same(given, options.token);
+  const mcpTokenOk = (given: string | null | undefined) => !!given && (same(given, options.token) || (!!options.mcpToken && same(given, options.mcpToken)));
 
   const allowed = new Set(options.allowedOrigins ?? []);
   const cors = (req: IncomingMessage, res: ServerResponse) => {
@@ -188,7 +191,8 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       return fail(res, 404, "not_found", "not found");
     }
     const auth = req.headers.authorization;
-    if (!tokenOk(auth?.startsWith("Bearer ") ? auth.slice(7) : null)) return fail(res, 401, "bad_request", "missing or invalid host token");
+    const given = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
+    if (!(isMcp ? mcpTokenOk(given) : tokenOk(given))) return fail(res, 401, "bad_request", "missing or invalid host token");
     if (isMcp) {
       // AMO MCP (read-only): the same token as the REST API.
       try {
