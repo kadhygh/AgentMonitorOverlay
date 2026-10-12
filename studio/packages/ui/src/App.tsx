@@ -5,10 +5,11 @@ import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
 import { NewTaskPage } from "./newtask/NewTaskPage.js";
 import { TaskPage } from "./task/TaskPage.js";
+import { CanvasPage } from "./canvas/CanvasPage.js";
 import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
 import "./styles/app.css";
 
-type View = { kind: "board" } | { kind: "new" } | { kind: "task"; taskId: string; sessionId?: string };
+type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "task"; taskId: string; sessionId?: string };
 
 export function App() {
   const host = useHostState();
@@ -18,7 +19,7 @@ export function App() {
   if (host.kind !== "ready") {
     return (
       <div className="app">
-        <TopBar onBoard={() => undefined} onNew={() => undefined} needs={0} scopeName="" disabled />
+        <TopBar onBoard={() => undefined} onCanvas={() => undefined} onNew={() => undefined} needs={0} scopeName="" disabled />
         <div className="placeholder" data-testid="host-status">
           {host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}
         </div>
@@ -35,10 +36,11 @@ export function App() {
     <div className="app">
       <TopBar
         onBoard={() => setView({ kind: "board" })}
+        onCanvas={() => setView({ kind: "canvas" })}
         onNew={() => setView({ kind: "new" })}
         needs={needs}
         scopeName={scopeName}
-        boardActive={view.kind !== "new"}
+        active={view.kind === "canvas" ? "canvas" : view.kind === "new" ? null : "board"}
       />
       <div className="body">
         <ScopeNav
@@ -54,6 +56,15 @@ export function App() {
         />
         <main className="main">
           {view.kind === "board" && <Board tasks={state.tasks} sessions={state.sessions} workspaces={state.workspaces} scope={scope} onOpen={openTask} />}
+          {view.kind === "canvas" && (
+            <CanvasPage
+              link={link}
+              tasks={state.tasks}
+              sessions={state.sessions}
+              workspaces={state.workspaces}
+              onOpenTask={(taskId) => setView({ kind: "task", taskId })}
+            />
+          )}
           {view.kind === "new" && (
             <NewTaskPage
               link={link}
@@ -86,7 +97,23 @@ export function App() {
   );
 }
 
-function TopBar({ onBoard, onNew, needs, scopeName, boardActive = true, disabled = false }: { onBoard(): void; onNew(): void; needs: number; scopeName: string; boardActive?: boolean; disabled?: boolean }) {
+function TopBar({
+  onBoard,
+  onCanvas,
+  onNew,
+  needs,
+  scopeName,
+  active = "board",
+  disabled = false,
+}: {
+  onBoard(): void;
+  onCanvas(): void;
+  onNew(): void;
+  needs: number;
+  scopeName: string;
+  active?: "board" | "canvas" | null;
+  disabled?: boolean;
+}) {
   return (
     <header className="topbar">
       <div className="brand">
@@ -100,10 +127,10 @@ function TopBar({ onBoard, onNew, needs, scopeName, boardActive = true, disabled
         )}
       </div>
       <nav className="view-tabs" aria-label="视图">
-        <button type="button" className="view-tab" aria-current={boardActive ? "page" : undefined} onClick={onBoard} disabled={disabled}>
+        <button type="button" className="view-tab" aria-current={active === "board" ? "page" : undefined} onClick={onBoard} disabled={disabled}>
           看板
         </button>
-        <button type="button" className="view-tab" disabled title="画布在阶段 3 实现">
+        <button type="button" className="view-tab" aria-current={active === "canvas" ? "page" : undefined} onClick={onCanvas} disabled={disabled}>
           画布
         </button>
       </nav>
