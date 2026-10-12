@@ -1,11 +1,11 @@
 import { useState } from "react";
+import type { WorkspacePack } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { Markdown } from "../lib/markdown.js";
-import { usePackDoc, usePacks } from "./usePacks.js";
+import { usePackDoc } from "./usePacks.js";
 
 /** "规范" on the task page: the documents of the extension packs in the task's workspaces, readable in place. */
-export function PackDocsPanel({ link, workspaceIds }: { link: HostLink; workspaceIds: readonly string[] }) {
-  const { packs } = usePacks(link, workspaceIds);
+export function PackDocsPanel({ link, packs }: { link: HostLink; packs: ReadonlyArray<WorkspacePack & { workspaceId: string }> }) {
   const [open, setOpen] = useState<{ workspaceId: string; pack: string; doc: string } | null>(null);
   const { doc, error } = usePackDoc(link, open);
   const docs = packs.flatMap((p) => (p.manifest ? p.manifest.docs.map((d) => ({ ...d, workspaceId: p.workspaceId, pack: p.dirName, packTitle: p.manifest!.title })) : []));

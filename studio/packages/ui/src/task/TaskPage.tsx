@@ -293,7 +293,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
             />
             <ChecklistPanel link={link} items={checklist} sessions={sessions} />
             <NotesPanel link={link} taskId={task.id} notes={notes} sessions={sessions} />
-            <PackDocsPanel link={link} workspaceIds={taskWorkspaceIds} />
+            <PackDocsPanel link={link} packs={packs} />
             </>
           }
           link={link}
