@@ -52,7 +52,7 @@
 
 对 S1-06 的影响：
 
-- 采用**每个 Codex home 一个 app-server**，provider 按 thread 指定。模型 profile 落成"`modelProvider` + `config` 片段"，在 `thread/start` 时带上。
+- ~~采用每个 Codex home 一个 app-server~~，已被 d 节修正为"每个模型 profile 一个 app-server"。模型 profile 落成"`modelProvider` + `model` + `config` 片段"，在 `thread/start` 时带上。
 - S1-00c 修正了这一点：provider **定义**必须放在 server 启动参数里，`thread/start` 只做选择，见 c 节。
 
 ## c. 重启重连（2026-10-12，DeepSeek 5 次，其中 1 次是第一版脚本中途失败）
@@ -82,6 +82,32 @@
 - server 端口和 token 固定保存在数据目录，崩溃重启时沿用，客户端断线后自动重连并对已打开的 thread 重新 `thread/resume`。
 - 界面重连后从 resume 补收挂起的审批即可。
 
-## d. 其他客户端发起的 fork
+## d. 其他客户端发起的 fork（2026-10-12，DeepSeek 计数 7 次，其中 2 次实际请求打到了 OpenAI 并 401，没有消耗任何额度）
 
-待测（S1-00d）。
+脚本：`spikes/s1-00d-fork.mjs`（A fork，B 观察），`spikes/s1-00d-fork-provider.mjs`（fork 的 provider 继承）。`CODEX_HOME` 用沙盒空目录。
+
+| 现象 | 结果 |
+|---|---|
+| A `thread/fork` 的响应 | `thread.forkedFromId` 指向父 thread；`thread.turns` 带上父 thread 的历史 |
+| 订阅了父 thread 的 B | 收到 `thread/started`，其中 `thread.forkedFromId` 指向父 thread，另有 `parentThreadId`、`agentRole` 等字段 |
+| B `thread/loaded/list` | 包含 fork 出来的 thread |
+| B `thread/read` fork | 有 `forkedFromId` |
+| B `thread/list`（带 `modelProviders`） | **不包含** fork 出来的 thread，fork 跑过一轮之后也不包含 |
+| A 在 fork 上跑一轮，B 没有订阅 fork | B 只收到这个 thread 的 `thread/status/changed`，收不到 item 事件 |
+| **fork 不指定 `modelProvider`** | **用的是 server 的默认 provider，不继承父 thread 的。** server 没设默认时落到 OpenAI：沙盒里没有登录，所以 401，没有消耗额度；换成用户真实的 `CODEX_HOME`，这一轮就会用掉 GPT 订阅 |
+| fork 显式带 `modelProvider`、`model` | 继承正确，上下文完整（答出 PLUM-3） |
+| server 启动时设了默认 `model_provider` | 不指定的 fork 落到这个默认 provider |
+
+结论：
+
+1. **fork 关系可以实时拿到**：任何客户端只要订阅了父 thread，就能从 `thread/started` 的 `thread.forkedFromId` 得知新 fork，不需要轮询。`thread/list` 不可靠（不列 fork），Host 要以自己记录的会话树为准。
+2. **fork 不继承父 thread 的 provider，这是安全问题**。Host 自己发起的 fork 必须显式带 `modelProvider` 和 `model`；但 `--remote` 接入的 TUI 里执行 `/fork` 或打开 side chat 时，不会带这两个参数。
+3. 观察 fork 内的事件需要单独 `thread/resume` 这个 fork。
+
+对 S1-06 的影响（修正 b 节的结论）：
+
+- **每个模型 profile 一个 app-server**，启动时把该 profile 设为 server 默认（`-c model_provider=... -c model=...`），同时把所有 provider 的定义都传进去。这样 TUI 里的 `/fork`、side chat、子 agent 默认都留在同一个 profile 上，不会意外落到 GPT。thread 按 provider 归到对应的 server。
+- Host 发起的 fork 依然显式带 `modelProvider`、`model`，双重保险。
+- Host 收到 `thread/started` 时检查新 thread 的 `modelProvider` 和父 thread 是否一致；不一致就在界面上标红提醒。
+- 收到带 `forkedFromId` 的 `thread/started` 后，Host 立即写入会话树，并自动 `thread/resume` 订阅这个 fork。
+- 子 agent 的 provider 是否也落到 server 默认，留到 S1-06 用 mock 模型验证。

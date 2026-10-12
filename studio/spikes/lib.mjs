@@ -61,6 +61,16 @@ export function deepseekConfigArgs() {
   return Object.entries(kv).flatMap(([k, v]) => ["-c", `${k}=${JSON.stringify(v)}`]);
 }
 
+// Provider definition passed at app-server launch (S1-00c: definitions passed per thread do not survive a restart).
+export function deepseekProviderArgs(id = "amo-deepseek") {
+  const catalog = path.join(here, "assets", "deepseek-profile-v41-flash-flash-all.models.json").replaceAll("\\", "/");
+  const def = { name: "DeepSeek Flash", base_url: "https://api.deepseek.com/", wire_api: "responses", env_key: "DEEPSEEK_API_KEY" };
+  return [
+    ...Object.entries(def).flatMap(([k, v]) => ["-c", `model_providers.${id}.${k}=${JSON.stringify(v)}`]),
+    "-c", `model_catalog_json=${JSON.stringify(catalog)}`,
+  ];
+}
+
 export function countTurn(note) {
   const r = reserveModelTurn("deepseek", note);
   console.log(`[budget] deepseek ${r.used}/${r.limit}${r.low ? " LOW" : ""} (${note})`);

@@ -36,3 +36,10 @@
 - 验证：真实 DeepSeek 共 5 次（第一版脚本 resume 失败用掉 1 次，两种模式各 2 次）；测试 thread 已归档，端口已释放
 - commit：见本次 commit
 - 遗留：关键结论——provider 定义必须放在 server 启动参数里，按 thread 传入的定义在重启后无法恢复；S1-06 按此设计
+
+## 2026-10-12 22:55 · S1-00d 其他客户端发起的 fork
+- 结果：done
+- 改动：`spikes/s1-00d-fork.mjs`、`spikes/s1-00d-fork-provider.mjs`、`spikes/lib.mjs`（`deepseekProviderArgs`）、`spikes/RESULTS.md`、`spikes/results/s1-00d-*.json`；`plans/stage-1.md` 的 S1-06 进程管理按结论改写
+- 验证：真实 DeepSeek 计数 7 次（其中 2 次 fork 落到 OpenAI 返回 401，没有实际消耗）
+- commit：见本次 commit
+- 遗留：**安全发现**——fork 不继承父 thread 的 provider，会落到 server 默认；改为每个 profile 一个 app-server 并设为默认。TUI `/fork` 的实际表现待 S1-00e 由用户验证

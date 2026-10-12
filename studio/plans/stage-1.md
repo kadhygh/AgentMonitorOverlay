@@ -29,13 +29,13 @@
   - c. **重启重连**：app-server 用同一端口和同一 token 重启后，WS 客户端重新连接并 `thread/resume`，能否继续收到事件。
   - d. **其他客户端发起的 fork**：在客户端 A 上 `thread/fork`，客户端 B 能否收到 `thread/started` 之类的事件，以及能否拿到 `forkedFromId`。
 - 需要用户配合的部分：在 TUI 里输入 `/fork` 或打开 side chat 后，AMO 侧收到的事件，以及 TUI 自动重连后能否回到原 thread。脚本准备好以后，写入 `NEEDS_YOU.md`（请你过目），不阻塞后续任务。
-- 预算：DeepSeek 约 8 次（a～c 实际用了 9 次，d 预计 1～2 次）
+- 预算：DeepSeek 约 8 次（实际 a～d 计数 16 次，其中 2 次请求打到 OpenAI 被 401，未消耗额度）
 - 验收：`RESULTS.md` 对 a～d 各有明确结论，并写清楚对 S1-06 设计的影响。
 - 子任务（2026-10-12 拆分，按顺序做）：
   - S1-00a 审批路由 · done
   - S1-00b 单 server 多 provider · done
   - S1-00c 重启重连（顺带测：审批挂起后才订阅的客户端能否补收请求；按 thread 指定 provider 的会话在重启后 `thread/resume` 不带 config 能否恢复路由） · done
-  - S1-00d 其他客户端发起的 fork · todo
+  - S1-00d 其他客户端发起的 fork · done
   - S1-00e 准备需要用户配合的 TUI 脚本（`/fork`、side chat、自动重连），写入 NEEDS_YOU · todo
 
 ### S1-01 脚手架 · done
@@ -96,7 +96,7 @@
 
 - 依赖：S1-00、S1-03、S1-04、S1-05
 - 内容：
-  - **进程管理**：按 S1-00 的结论，采用一个 server 多 provider，或者每个 provider 一个进程。WS 监听加 capability token，token 文件放在数据目录，权限尽量收紧。崩溃后退避重启，重启后用原端口和原 token。
+  - **进程管理**：按 S1-00 的结论（`spikes/RESULTS.md`）：每个模型 profile 一个 app-server，该 profile 设为 server 默认，所有 provider 定义都在启动参数里；fork 显式带 provider；`thread/started` 的 provider 与父 thread 不一致时告警。WS 监听加 capability token，token 文件放在数据目录，权限尽量收紧。崩溃后退避重启，重启后用原端口和原 token。
   - **JSON-RPC 客户端**。
   - **会话操作**：start、resume、fork、archive，turn 的 start、steer、interrupt。
   - **审批**：把审批请求转给 Host，等待人的决定。

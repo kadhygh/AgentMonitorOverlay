@@ -3,7 +3,7 @@
   "providers": {
     "deepseek": {
       "limit": 100,
-      "used": 9
+      "used": 16
     },
     "glm": {
       "limit": 1000,
@@ -55,6 +55,41 @@
       "at": "2026-10-12T14:25:01.994Z",
       "provider": "deepseek",
       "note": "S1-00c post-restart turn (server)"
+    },
+    {
+      "at": "2026-10-12T14:28:22.957Z",
+      "provider": "deepseek",
+      "note": "S1-00d seed turn"
+    },
+    {
+      "at": "2026-10-12T14:28:25.395Z",
+      "provider": "deepseek",
+      "note": "S1-00d fork turn"
+    },
+    {
+      "at": "2026-10-12T14:28:58.895Z",
+      "provider": "deepseek",
+      "note": "S1-00d seed turn"
+    },
+    {
+      "at": "2026-10-12T14:29:01.588Z",
+      "provider": "deepseek",
+      "note": "S1-00d fork turn"
+    },
+    {
+      "at": "2026-10-12T14:30:26.171Z",
+      "provider": "deepseek",
+      "note": "S1-00d-2 seed"
+    },
+    {
+      "at": "2026-10-12T14:30:27.100Z",
+      "provider": "deepseek",
+      "note": "S1-00d-2 implicit fork turn"
+    },
+    {
+      "at": "2026-10-12T14:30:27.672Z",
+      "provider": "deepseek",
+      "note": "S1-00d-2 explicit fork turn"
     }
   ]
 }
