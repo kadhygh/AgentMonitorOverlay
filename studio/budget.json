@@ -1,8 +1,25 @@
 {
   "unit": "one real model turn (turn/start or one SDK query turn)",
   "providers": {
-    "deepseek": { "limit": 100, "used": 0 },
-    "glm": { "limit": 1000, "used": 0 }
+    "deepseek": {
+      "limit": 100,
+      "used": 2
+    },
+    "glm": {
+      "limit": 1000,
+      "used": 0
+    }
   },
-  "log": []
+  "log": [
+    {
+      "at": "2026-10-12T14:17:53.399Z",
+      "provider": "deepseek",
+      "note": "S1-00a approval turn"
+    },
+    {
+      "at": "2026-10-12T14:18:22.191Z",
+      "provider": "deepseek",
+      "note": "S1-00a approval turn, variant 2"
+    }
+  ]
 }

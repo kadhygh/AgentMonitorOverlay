@@ -1,0 +1,53 @@
+{
+  "scenario": "S1-00a approval routing",
+  "steps": [
+    {
+      "s": "thread started by A; B subscribed after turn/start",
+      "threadId": "01a1307a-228c-7142-b491-e51ca6721485",
+      "resumeTries": 0,
+      "approvalAlreadyAtA": false
+    },
+    {
+      "s": "approval request delivery",
+      "firstTo": "A",
+      "method": "item/commandExecution/requestApproval",
+      "toA": true,
+      "toB": true,
+      "sameRpcId": true,
+      "sameItem": true,
+      "command": "\"C:\\\\Users\\\\Kangaroo\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'cmd /c \"echo approval-probe> probe.txt\"'"
+    },
+    {
+      "s": "after B accepted",
+      "resolvedSeenByA": [
+        {
+          "threadId": "01a1307a-228c-7142-b491-e51ca6721485",
+          "requestId": 0
+        }
+      ],
+      "resolvedSeenByB": [
+        {
+          "threadId": "01a1307a-228c-7142-b491-e51ca6721485",
+          "requestId": 0
+        }
+      ]
+    },
+    {
+      "s": "turn completed",
+      "reply": "DENIED",
+      "probeFileExists": false,
+      "approvalRequestsTotal": {
+        "A": 1,
+        "B": 1,
+        "sum": 2
+      },
+      "errorsOrWarnings": [],
+      "commandItems": [
+        {
+          "status": "failed",
+          "exit": 1
+        }
+      ]
+    }
+  ]
+}

@@ -20,7 +20,7 @@
 
 状态值：`todo` | `in_progress` | `done` | `blocked`。每个任务完成后，提交一个 commit。
 
-### S1-00 协议补测 · todo
+### S1-00 协议补测 · in_progress（拆成 S1-00a～e）
 
 - 依赖：S1-01（真实调用要先经过 `budget.ts` 计数，2026-10-12 调整）
 - 内容：在 `studio/spikes/` 下写脚本，结论记录到 `studio/spikes/RESULTS.md`。
@@ -31,6 +31,12 @@
 - 需要用户配合的部分：在 TUI 里输入 `/fork` 或打开 side chat 后，AMO 侧收到的事件，以及 TUI 自动重连后能否回到原 thread。脚本准备好以后，写入 `NEEDS_YOU.md`（请你过目），不阻塞后续任务。
 - 预算：DeepSeek 约 8 次
 - 验收：`RESULTS.md` 对 a～d 各有明确结论，并写清楚对 S1-06 设计的影响。
+- 子任务（2026-10-12 拆分，按顺序做）：
+  - S1-00a 审批路由 · done
+  - S1-00b 单 server 多 provider · todo
+  - S1-00c 重启重连（顺带测：审批挂起后才订阅的客户端能否补收请求） · todo
+  - S1-00d 其他客户端发起的 fork · todo
+  - S1-00e 准备需要用户配合的 TUI 脚本（`/fork`、side chat、自动重连），写入 NEEDS_YOU · todo
 
 ### S1-01 脚手架 · done
 
