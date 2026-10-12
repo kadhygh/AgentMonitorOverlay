@@ -1,10 +1,11 @@
 import { useEffect, useState } from "react";
-import { TASK_COLUMNS, type ModelProfile, type Session, type SessionItem, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
+import { TASK_COLUMNS, type ApprovalDecision, type ModelProfile, type Session, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { shortModel } from "../lib/profiles.js";
 import { COLUMN_NAMES } from "../lib/status.js";
 import { SessionTree } from "./SessionTree.js";
+import { Thread } from "./Thread.js";
 
 interface TaskPageProps {
   link: HostLink;
@@ -25,7 +26,7 @@ const WRITER = {
   archived: { label: "已归档 · 只读", color: "var(--text-dim)" },
 } as const;
 
-/** Task page: session tree | conversation. The chat panel (composer, cards) is filled in by S1-11b. */
+/** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
 export function TaskPage({ link, task, sessions, workspaces, profiles, initialSessionId, onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
@@ -73,7 +74,19 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
       setToast({ text: "已在新终端窗口接入同一会话。两边实时同步，都可以输入。", command: r.command }),
     );
 
-  const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
+  const approve = (approvalId: string, decision: ApprovalDecision) =>
+    session ? run(() => call(link, "POST /api/approvals/:approvalId", { approvalId }, { sessionId: session.id, decision })) : Promise.resolve();
+  const interrupt = (id: string) => run(() => call(link, "POST /api/sessions/:id/interrupt", { id }));
+  async function send(text: string): Promise<boolean> {
+    if (!session) return false;
+    try {
+      await call(link, "POST /api/sessions/:id/messages", { id: session.id }, { text });
+      return true;
+    } catch (err) {
+      setToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
+      return false;
+    }
+  }
   const writer = session ? WRITER[session.writer] : null;
 
   return (
@@ -156,42 +169,18 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
               )}
             </div>
           )}
-          <div className="thread" data-testid="thread" aria-readonly={readOnly}>
-            {!session && <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>}
-            {items.map((item) => (
-              <ItemView key={item.id} item={item} model={shortModel(session ? profile(session.profileId) : undefined)} />
-            ))}
-          </div>
+          <Thread
+            session={session}
+            items={items}
+            model={shortModel(session ? profile(session.profileId) : undefined)}
+            busy={busy}
+            onApprove={(item, decision) => void approve(item.approvalId, decision)}
+            onJump={setSelected}
+            onSend={send}
+            onInterrupt={() => session && void interrupt(session.id)}
+          />
         </div>
       </div>
     </section>
   );
-}
-
-function ItemView({ item, model }: { item: SessionItem; model: string }) {
-  switch (item.type) {
-    case "user":
-      return (
-        <div className="msg-user" data-testid="msg-user">
-          <span className="msg-who">你</span>
-          <span className="msg-text">{item.text}</span>
-        </div>
-      );
-    case "agent":
-      return (
-        <div className="msg-agent" data-testid="msg-agent">
-          <span className="msg-who">
-            {model}
-            {item.streaming && <span className="streaming"> · 生成中…</span>}
-          </span>
-          <span className="msg-text">{item.markdown}</span>
-        </div>
-      );
-    default:
-      return (
-        <div className="msg-other" data-testid={`msg-${item.type}`}>
-          {item.type === "tool" ? `${item.name}: ${item.summary}` : item.type === "approval" ? `待批准：${item.summary}` : item.type === "error" ? item.message : item.type === "notice" ? item.message : item.summary}
-        </div>
-      );
-  }
 }
