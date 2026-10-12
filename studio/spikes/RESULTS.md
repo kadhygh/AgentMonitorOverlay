@@ -20,6 +20,8 @@
 另外两点：
 - Codex 0.161 调用**没有 `readOnlyHint` 的 MCP 工具前，会发 `mcpServer/elicitation/request`** 征求批准（"Allow the amo MCP server to run tool …?"），回复 `{ action: "accept" | "decline", content, _meta }`；审批策略为 `never` 时直接拒绝。阶段 4 的工具都标了只读，所以没有出现。阶段 5 的写入工具会触发它，`CodexRuntime` 必须把它转成审批卡片，否则回合会一直等。
 - 带 `readOnlyHint: true` 的工具在 `on-request` 下不征求批准。
+- MCP 工具审批模式（S5-02 `spikes/s5-02-approval-mode.mjs`）：`auto`/`prompt`/`writes`/`approve`，可以设给整个服务器（`mcp_servers.<名>.default_tools_approval_mode`），也可以设给单个工具（`mcp_servers.<名>.tools.<工具>.approval_mode`）。对没有任何标注的工具，只有 `approve` 不征求批准。
+- **S5-05 补充**：默认的 `auto` 对标注了 `destructiveHint: false` 的工具也不征求批准（画布写入工具第一次就这样直接执行了）。所以需要人批准的写入工具必须显式设为 `prompt`，不能依赖默认值。
 
 结论（写进阶段 5 的做法）：
 - 每个 Codex 会话在 `thread/start` 时带 `mcp_servers.amo.http_headers.X-AMO-Session-Token = <这个会话的随机令牌>`；Host 把令牌映射回会话。令牌经 WebSocket RPC 传递，不进命令行；agent 的命令环境里没有 MCP 服务令牌（阶段 4 已排除），伪造不了别的会话。

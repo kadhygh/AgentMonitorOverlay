@@ -658,3 +658,20 @@
 - 验证：`npm run verify` 退出码 0（175 个测试）；e2e 28/28
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 01:05 · S5-05 画布写入
+- 结果：done
+- 改动：
+  - protocol `canvas-layout.ts`（纯函数，agent 不写坐标，Studio 排）：新分组放在所有内容右边；任务放进分组按网格排，放不下时分组拉高；移出分组放到最下面；没在画布上的任务自动建卡片；加依赖时拒绝指向自己、重复和成环；
+  - Host：`canvasCreateGroup`（可按名字或 id 绑定工作区）、`canvasAddDependency`、`canvasPlaceTask`，都是同步的读出、修改、保存，经已有的 `canvas.updated` 事件推给画布页；
+  - MCP 工具 `canvas_group_create`、`canvas_depend`、`canvas_place`：**需要人批准**——Codex 走 MCP 批准请求，Claude 走 `canUseTool`，两边都显示成同样的审批卡片
+- **发现**：第一次跑 e2e 时，Codex 没有征求批准就建了组。原来 Codex 默认的 `auto` 对标注 `destructiveHint: false` 的工具也直接执行。改为在 app-server 启动参数里把这三个工具显式设为 `prompt`。已补进 `spikes/RESULTS.md` 第 j 节
+- 测试：
+  - 布局单测 4 个；
+  - MCP 单测：建组（含绑定工作区、找不到工作区时报错）、成环依赖被拒、放进分组、没有身份时拒绝；
+  - Codex 启动参数里画布工具是 `prompt`；
+  - e2e：Codex 和 Claude 会话各建一个组，都先出审批卡片、批准前画布没变、批准后出现在画布上；
+  - 截图 `screenshots/stage-5/S5-05-canvas-writes.png`
+- 验证：`npm run verify` 退出码 0（180 个测试）；e2e 29/29
+- 额度：0
+- commit：见本次 commit

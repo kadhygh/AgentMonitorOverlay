@@ -79,10 +79,13 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists five read-only tools and five that write for the caller", async () => {
+  it("lists five read-only tools and eight that write for the caller", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "decision_request", "handoff_submit", "mailbox_read", "mailbox_send", "project_context", "session_tree", "task_get", "task_note_add"]);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "board_list", "canvas_depend", "canvas_group_create", "canvas_place", "canvas_read", "decision_request", "handoff_submit",
+      "mailbox_read", "mailbox_send", "project_context", "session_tree", "task_get", "task_note_add",
+    ]);
     expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "project_context", "session_tree", "task_get"]);
     await client.close();
   });
@@ -128,7 +131,7 @@ describe("AMO MCP", () => {
 
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(10);
+    expect((await client.listTools()).tools).toHaveLength(13);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);
@@ -184,6 +187,22 @@ describe("AMO MCP", () => {
     const read = (await call(client, "mailbox_read")).data as { messages: Array<{ text: string; from: unknown }> };
     expect(read.messages).toMatchObject([{ text: "针对你的问题「重试几次？」，我的决定：3 次", from: "person" }]);
     await client.close();
+  });
+
+  it("arranges the canvas for an identified caller: groups, dependencies, placement", async () => {
+    const client = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
+    const made = (await call(client, "canvas_group_create", { title: "配置", workspace: "beta" })).data as { groupId: string };
+    expect((await call(client, "canvas_group_create", { title: "x", workspace: "nope" })).isError).toBe(true);
+    // configTask already depends on nothing; importTask depends on configTask (seeded), so the reverse would cycle.
+    expect((await call(client, "canvas_depend", { fromTaskId: importTask.id, toTaskId: configTask.id })).content[0]!.text).toMatch(/cycle/);
+    expect((await call(client, "canvas_place", { taskId: configTask.id, groupId: made.groupId })).data).toMatchObject({ groupId: made.groupId });
+    const canvas = service.canvas();
+    expect(canvas.groups.find((g) => g.id === made.groupId)).toMatchObject({ title: "配置", workspaceId: expect.any(String) });
+    expect(canvas.nodes.find((n) => n.kind === "task" && n.taskId === configTask.id)).toMatchObject({ groupId: made.groupId });
+    await client.close();
+    const anonymous = await connect(MCP_TOKEN);
+    expect((await call(anonymous, "canvas_group_create", { title: "y" })).isError).toBe(true);
+    await anonymous.close();
   });
 
   it("answers an unknown id with a readable tool error", async () => {

@@ -62,3 +62,34 @@ test("Codex and Claude sessions record progress on their own task through the AM
     expect(items.some((i) => i.type === "approval")).toBe(false);
   }
 });
+
+test("canvas changes from Codex and Claude sessions wait for the person's approval", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const groups = async () => (await studio!.api<CanvasDoc>("GET", "/api/canvas")).groups.map((g) => g.title);
+  for (const [profileId, title] of [
+    ["codex-mock", "Codex 建的组"],
+    ["claude-mock", "Claude 建的组"],
+  ] as const) {
+    await studio.api("POST", "/api/tasks", {
+      title,
+      scope: { kind: "workspace", workspaceId: ws.id },
+      firstSession: { profileId, text: `[[mcp: canvas_group_create {"title":"${title}"}]]` },
+    });
+    await page.getByRole("button", { name: "← 看板" }).click().catch(() => undefined);
+    await page.getByTestId("task-card").filter({ hasText: title }).click();
+    // Codex asks through an MCP elicitation, Claude through canUseTool: both become the same approval card.
+    const card = page.getByTestId("approval").last();
+    await expect(card).toHaveAttribute("data-state", "pending", { timeout: 60_000 });
+    await expect(card).toContainText("canvas_group_create");
+    expect(await groups()).not.toContain(title);
+    await card.getByRole("button", { name: "批准" }).click();
+    await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-MCP:", { timeout: 60_000 });
+    expect(await groups()).toContain(title);
+  }
+  await page.getByRole("button", { name: "画布", exact: true }).click();
+  await expect(page.locator(".group-title", { hasText: "Claude 建的组" })).toBeVisible();
+  await expect(page.locator(".group-title", { hasText: "Codex 建的组" })).toBeVisible();
+  await screenshot(studio.app, "stage-5", "S5-05-canvas-writes", page);
+});

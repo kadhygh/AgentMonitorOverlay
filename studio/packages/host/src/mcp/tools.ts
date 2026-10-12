@@ -10,7 +10,7 @@ import { NotFoundError, ReadModel } from "./read-model.js";
 
 export const AMO_MCP_NAME = "amo";
 export const AMO_MCP_INSTRUCTIONS =
-  "AMO Studio workbench. Read the board, tasks, session trees, workspaces and the canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions (the person decides when mail enters a conversation); ask the person for a decision (the answer comes back as mail).";
+  "AMO Studio workbench. Read the board, tasks, session trees, workspaces and the canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions (the person decides when mail enters a conversation); ask the person for a decision (the answer comes back as mail); arrange the canvas (groups, dependencies, which group a task is in) with the person's approval.";
 
 /** The session a tool call comes from, if Studio could tell. */
 export interface McpCaller {
@@ -105,6 +105,33 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
           const m = service.sendMail(c.sessionId, to, args.text);
           return { id: m.id, to: m.to, state: m.state };
         }),
+    },
+    {
+      name: "canvas_group_create",
+      title: "画布建组",
+      description: "Create a group on the AMO canvas (optionally bound to a workspace, by id or name). Studio places it; the person approves first.",
+      inputSchema: { title: z.string(), workspace: z.string().optional() },
+      readOnly: false,
+      autoApprove: false,
+      run: (args) => write(caller, () => service.canvasCreateGroup(args)),
+    },
+    {
+      name: "canvas_depend",
+      title: "画布连依赖",
+      description: "Record on the AMO canvas that toTaskId depends on fromTaskId (fromTaskId must finish first). Refused if it would make a cycle. The person approves first.",
+      inputSchema: { fromTaskId: z.string(), toTaskId: z.string() },
+      readOnly: false,
+      autoApprove: false,
+      run: (args) => write(caller, () => service.canvasAddDependency(args.fromTaskId, args.toTaskId)),
+    },
+    {
+      name: "canvas_place",
+      title: "画布归组",
+      description: "Put a task's card into a canvas group (groupId), or take it out of its group (omit groupId). Studio picks the position; the person approves first.",
+      inputSchema: { taskId: z.string(), groupId: z.string().optional() },
+      readOnly: false,
+      autoApprove: false,
+      run: (args) => write(caller, () => service.canvasPlaceTask(args.taskId, args.groupId ?? null)),
     },
     {
       name: "decision_request",

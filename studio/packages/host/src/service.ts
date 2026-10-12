@@ -26,7 +26,7 @@ import type {
   TaskScope,
   Workspace,
 } from "@amo-studio/protocol";
-import { canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
+import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
 import type { TerminalHandle, TerminalLauncher } from "./terminal/launcher.js";
@@ -477,6 +477,49 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     this.store.putCanvas(next);
     this.publish({ type: "canvas.updated", canvas: next });
     return next;
+  }
+
+  // Canvas changes asked for by agents (AMO MCP): structure only, Studio lays out.
+
+  canvasCreateGroup(input: { title?: unknown; workspace?: unknown }): { groupId: Id; title: string } {
+    const title = typeof input.title === "string" ? input.title.trim() : "";
+    if (!title) throw new HostError("bad_request", "title is required");
+    let workspaceId: Id | null = null;
+    if (typeof input.workspace === "string" && input.workspace) {
+      const ws = this.store.listWorkspaces().find((w) => w.id === input.workspace || w.name === input.workspace);
+      if (!ws) throw new HostError("bad_request", `workspace ${input.workspace} not found`);
+      workspaceId = ws.id;
+    }
+    const id = newId("g");
+    this.mutateCanvas((doc) => addGroupAuto(doc, { id, title, workspaceId }));
+    return { groupId: id, title };
+  }
+
+  canvasAddDependency(fromTaskId: unknown, toTaskId: unknown): { from: Id; to: Id } {
+    const from = this.requireTask(String(fromTaskId)).id;
+    const to = this.requireTask(String(toTaskId)).id;
+    this.mutateCanvas((doc) => addDependency(doc, from, to, newId("e")));
+    return { from, to };
+  }
+
+  canvasPlaceTask(taskId: unknown, groupId: unknown): { taskId: Id; groupId: Id | null } {
+    const task = this.requireTask(String(taskId)).id;
+    const group = typeof groupId === "string" && groupId ? groupId : null;
+    this.mutateCanvas((doc) => placeTask(doc, task, group, newId("n")));
+    return { taskId: task, groupId: group };
+  }
+
+  /** Applies a change to the latest canvas and saves it (one synchronous read-modify-write, so no version race here). */
+  private mutateCanvas(change: (doc: CanvasDoc) => CanvasDoc): CanvasDoc {
+    const current = this.canvas();
+    let next: CanvasDoc;
+    try {
+      next = change(current);
+    } catch (err) {
+      if (err instanceof CanvasLayoutError) throw new HostError("bad_request", err.message);
+      throw err;
+    }
+    return this.saveCanvas({ ...next, version: current.version });
   }
 
   canvasOutline() {

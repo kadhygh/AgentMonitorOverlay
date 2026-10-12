@@ -44,7 +44,7 @@
 - 内容：`decision_request`（问题与可选项）；工作台和 Focus 显示待决策，人选择或输入答复，答复作为留言回到提问的会话。
 - 验收：e2e（含 Focus 窗口）。
 
-### S5-05 画布写入 · todo
+### S5-05 画布写入 · done
 - 依赖：S5-00
 - 内容：`canvas_group_create`、`canvas_depend`（拒绝成环）、`canvas_place`（把任务放进分组，坐标自动排）；画布版本冲突时重试。
 - 验收：单测与 e2e。
