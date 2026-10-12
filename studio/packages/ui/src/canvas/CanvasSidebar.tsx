@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { wouldCycle, type CanvasDoc, type CanvasEdge, type Id, type Session, type Task, type Workspace } from "@amo-studio/protocol";
+import { taskWhere, wouldCycle, type CanvasDoc, type CanvasEdge, type Id, type Session, type Task, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { deleteGroup, updateGroup } from "./geometry.js";
 
@@ -140,7 +140,7 @@ function DetailTab({ doc, selection, tasks, sessions, workspaces, onChange, onCl
       <span className="side-heading">{task.title || "未命名任务"}</span>
       <span className="side-note">
         {COLUMN_NAMES[task.column]} · <span style={{ color: look?.text }}>{look?.label ?? "未开始"}</span> ·{" "}
-        {task.scope.kind === "area" ? "跨工作区" : (workspaces.find((w) => w.id === (task.scope as { workspaceId: string }).workspaceId)?.name ?? "")}
+        {taskWhere(task, sessions, workspaces)}
       </span>
       <button type="button" className="btn-ghost small" onClick={() => onOpenTask(task.id)}>
         打开任务

@@ -74,12 +74,12 @@ describe("canvasOutline", () => {
         id: "g1",
         title: "导入",
         workspace: "alpha",
-        tasks: [{ id: "task-1", title: "Add retry to the importer", column: "doing", status: "awaiting-approval", workspace: "alpha", dependsOn: ["task-2"] }],
+        tasks: [{ id: "task-1", title: "Add retry to the importer", column: "doing", status: "awaiting-approval", workspace: "alpha", workspaces: ["alpha"], dependsOn: ["task-2"] }],
         notes: ["先问策划"],
       },
     ]);
     expect(json.ungrouped).toEqual({ tasks: [], notes: ["零散想法"] });
-    expect(json.unplaced.map((t) => t.id)).toEqual(["task-2"]);
+    expect(json.unplaced.map((t) => [t.id, t.workspace])).toEqual([["task-2", "跨工作区"]]);
     expect(json.dependencies).toEqual([{ from: "task-2", to: "task-1" }]);
     expect(outline).toContain("分组「导入」（工作区 alpha）");
     expect(outline).toContain("Add retry to the importer（doing · awaiting-approval · alpha）；依赖：Align config keys across projects");

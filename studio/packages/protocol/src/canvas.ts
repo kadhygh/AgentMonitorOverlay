@@ -1,4 +1,5 @@
 import type { CanvasDoc, Id, Session, SessionStatus, Task, Workspace } from "./entities.js";
+import { taskWhere, taskWorkspaceNames } from "./scope.js";
 
 // Canvas rules shared by Host (validation on save), UI ("agent 视角") and the read-only MCP in stage 4.
 // Coordinates are presentation only: the outline below describes structure (groups, tasks, notes, dependencies).
@@ -95,7 +96,10 @@ export interface OutlineTask {
   title: string;
   column: Task["column"];
   status: SessionStatus | null;
+  /** "alpha", or "跨工作区（alpha、beta）". */
   workspace: string | null;
+  /** Workspaces the task touches (for a cross-workspace task: where its sessions run). */
+  workspaces: string[];
   dependsOn: Id[];
 }
 
@@ -128,7 +132,8 @@ export function canvasOutline(
       title: task.title || "未命名任务",
       column: task.column,
       status: URGENCY.find((u) => live.some((s) => s.status === u)) ?? null,
-      workspace: task.scope.kind === "area" ? "跨工作区" : wsName(task.scope.workspaceId),
+      workspace: taskWhere(task, sessions, workspaces),
+      workspaces: taskWorkspaceNames(task, sessions, workspaces),
       dependsOn: deps.filter((d) => d.to === task.id).map((d) => d.from),
     };
   };

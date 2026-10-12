@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import type { CanvasDoc, CanvasGroup, CanvasNode, Id, Session, Task, Workspace } from "@amo-studio/protocol";
+import { taskWhere, type CanvasDoc, type CanvasGroup, type CanvasNode, type Id, type Session, type Task, type Workspace } from "@amo-studio/protocol";
 import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
 import { AgentTab } from "./AgentTab.js";
 import { TodoTab } from "./TodoTab.js";
@@ -309,7 +309,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, onOpenTask }: Ca
             const status = taskStatus(own);
             const look = status ? SESSION_LOOK[status] : null;
             const live = own.filter((s) => !s.archivedAt).length;
-            const where = task.scope.kind === "area" ? "跨工作区" : wsName(task.scope.workspaceId);
+            const where = taskWhere(task, sessions, workspaces);
             const isSelected = selection?.kind === "node" && selection.id === node.id;
             return (
               <div

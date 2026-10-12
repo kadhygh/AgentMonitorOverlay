@@ -300,3 +300,11 @@
 - 默认决定（请你过目）：待办"转为任务""交给调度 agent"留到阶段 7；"复制"按钮测试里不点（测试不碰剪贴板）
 - 验证：`npm run verify` 退出码 0（119 个测试）；e2e 20/20；截图 `screenshots/stage-3/S3-05-todos.png`、`S3-05-agent-view.png`
 - commit：见本次 commit
+
+## 2026-10-13 10:25 · S3-06 跨工作区任务补全
+- 结果：done
+- 对照 interaction-notes 检查：新建时选"跨工作区"+首个会话所在工作区、会话列表显示工作区、新会话选工作区、对话顶部显示工作区、看板卡片列出工作区、左栏"跨工作区"范围——这些在阶段 1/2 已经有了。缺口：画布卡片、侧栏详情、agent 大纲只写"跨工作区"，不列涉及的工作区
+- 改动：protocol 新增 `scope.ts`（`taskWorkspaceNames`/`taskWhere`：跨工作区任务按会话首次使用顺序列出工作区，忽略已归档会话），看板卡片、画布卡片、侧栏详情、agent 大纲统一使用；大纲 JSON 每个任务多一个 `workspaces` 数组；单测 2 个、e2e `crossws.spec.ts`（界面新建跨工作区任务，首个会话在 beta，再在 alpha 开会话，检查任务页、看板、范围筛选、画布、详情、agent 视角）
+- 默认决定（请你过目）：画布是全局的一张，不受左栏范围筛选影响（左栏选了 alpha，画布仍显示全部任务）
+- 验证：`npm run verify` 退出码 0（121 个测试）；e2e 21/21；截图 `screenshots/stage-3/S3-06-cross-workspace.png`
+- commit：见本次 commit

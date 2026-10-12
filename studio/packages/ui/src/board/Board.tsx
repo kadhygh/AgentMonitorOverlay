@@ -1,4 +1,4 @@
-import { TASK_COLUMNS, type Session, type Task, type Workspace } from "@amo-studio/protocol";
+import { TASK_COLUMNS, taskWhere, type Session, type Task, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 
 export type Scope = { kind: "all" } | { kind: "area" } | { kind: "workspace"; id: string };
@@ -20,7 +20,6 @@ interface BoardProps {
 /** Four columns; the person moves cards, agents never do. Cards are entry points and carry no buttons. */
 export function Board({ tasks, sessions, workspaces, scope, onOpen }: BoardProps) {
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? "未知工作区";
 
   return (
     <section className="board" aria-label="看板">
@@ -33,7 +32,7 @@ export function Board({ tasks, sessions, workspaces, scope, onOpen }: BoardProps
               <span className="column-count">{cards.length}</span>
             </div>
             {cards.map((task) => (
-              <TaskCard key={task.id} task={task} sessions={taskSessions(task, sessions)} scope={scope} wsName={wsName} onOpen={onOpen} />
+              <TaskCard key={task.id} task={task} sessions={taskSessions(task, sessions)} scope={scope} workspaces={workspaces} onOpen={onOpen} />
             ))}
             {cards.length === 0 && <div className="empty-col">空</div>}
           </div>
@@ -43,7 +42,7 @@ export function Board({ tasks, sessions, workspaces, scope, onOpen }: BoardProps
   );
 }
 
-function TaskCard({ task, sessions, scope, wsName, onOpen }: { task: Task; sessions: Session[]; scope: Scope; wsName(id: string): string; onOpen(t: Task): void }) {
+function TaskCard({ task, sessions, scope, workspaces, onOpen }: { task: Task; sessions: Session[]; scope: Scope; workspaces: readonly Workspace[]; onOpen(t: Task): void }) {
   const status = taskStatus(sessions);
   const look = status ? SESSION_LOOK[status] : null;
   const live = sessions.filter((s) => !s.archivedAt);
@@ -51,12 +50,7 @@ function TaskCard({ task, sessions, scope, wsName, onOpen }: { task: Task; sessi
   const branches = live.length - mains.length;
 
   let where = "";
-  if (task.scope.kind === "area") {
-    const names = [...new Set(mains.map((s) => wsName(s.workspaceId)))];
-    where = `跨工作区${names.length ? `（${names.join("、")}）` : ""}`;
-  } else if (scope.kind === "all") {
-    where = wsName(task.scope.workspaceId);
-  }
+  if (task.scope.kind === "area" || scope.kind === "all") where = taskWhere(task, sessions, workspaces);
   const meta = [where, mains.length ? `${mains.length} 个会话` : "还没有会话", branches ? `${branches} 个分支` : ""].filter(Boolean).join(" · ");
 
   return (
