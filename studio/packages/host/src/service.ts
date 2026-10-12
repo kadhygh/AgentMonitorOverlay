@@ -49,6 +49,19 @@ export interface HostServiceEvents {
   event: [HostEvent];
 }
 
+// Agents write notes, mail and questions through the AMO MCP; a runaway turn must not fill the store or the Focus
+// window, so these texts are bounded (a handoff summary fits easily).
+const MAX_NOTE_CHARS = 8000;
+const MAX_QUESTION_CHARS = 2000;
+const MAX_OPTION_CHARS = 200;
+
+function boundedText(value: unknown, field: string, max: number): string {
+  const text = typeof value === "string" ? value.trim() : "";
+  if (!text) throw new HostError("bad_request", `${field} is required`);
+  if (text.length > max) throw new HostError("bad_request", `${field} is too long (${text.length} characters; at most ${max})`);
+  return text;
+}
+
 export class HostService extends EventEmitter<HostServiceEvents> {
   /** Terminals that hold a Claude session (handoff); closing one gives the session back. */
   private readonly handoffs = new Map<Id, TerminalHandle>();
@@ -322,8 +335,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   /** A note on a task, by the person (`sessionId` null) or by a session of that task. */
   addTaskNote(taskId: Id, input: { text?: unknown; kind?: TaskNote["kind"] }, sessionId: Id | null = null): TaskNote {
     this.requireTask(taskId);
-    const text = typeof input?.text === "string" ? input.text.trim() : "";
-    if (!text) throw new HostError("bad_request", "text is required");
+    const text = boundedText(input?.text, "text", MAX_NOTE_CHARS);
     if (sessionId && this.requireSession(sessionId).taskId !== taskId) throw new HostError("bad_request", "a session can only write to its own task");
     const note: TaskNote = { id: newId("note"), taskId, sessionId, kind: input.kind === "handoff" ? "handoff" : "progress", text, createdAt: new Date().toISOString() };
     this.store.addTaskNote(note);
@@ -343,8 +355,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
 
   /** Leaves a message for a session or a task. `fromSessionId` null: from the person. */
   sendMail(fromSessionId: Id | null, to: unknown, textIn: unknown): MailMessage {
-    const text = typeof textIn === "string" ? textIn.trim() : "";
-    if (!text) throw new HostError("bad_request", "text is required");
+    const text = boundedText(textIn, "text", MAX_NOTE_CHARS);
     const recipient = this.validRecipient(to);
     const from = fromSessionId ? this.requireSession(fromSessionId) : null;
     if (from && recipient.kind === "session" && recipient.sessionId === from.id) throw new HostError("bad_request", "a session cannot leave mail for itself");
@@ -393,9 +404,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
 
   requestDecisionFromSession(sessionId: Id, questionIn: unknown, optionsIn: unknown): DecisionRequest {
     const s = this.requireSession(sessionId);
-    const question = typeof questionIn === "string" ? questionIn.trim() : "";
-    if (!question) throw new HostError("bad_request", "question is required");
-    const options = Array.isArray(optionsIn) ? optionsIn.filter((o): o is string => typeof o === "string" && !!o.trim()).map((o) => o.trim()).slice(0, 6) : [];
+    const question = boundedText(questionIn, "question", MAX_QUESTION_CHARS);
+    const options = Array.isArray(optionsIn) ? optionsIn.filter((o): o is string => typeof o === "string" && !!o.trim()).map((o) => o.trim().slice(0, MAX_OPTION_CHARS)).slice(0, 6) : [];
     const d: DecisionRequest = { id: newId("dec"), sessionId, taskId: s.taskId, question, options, state: "open", answer: null, createdAt: new Date().toISOString(), answeredAt: null };
     this.store.putDecision(d);
     this.publish({ type: "decision.upserted", decision: d });
@@ -406,8 +416,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const d = this.store.getDecision(id);
     if (!d) throw new HostError("not_found", `decision ${id} not found`);
     if (d.state !== "open") throw new HostError("conflict", "this decision was already answered");
-    const answer = typeof answerIn === "string" ? answerIn.trim() : "";
-    if (!answer) throw new HostError("bad_request", "answer is required");
+    const answer = boundedText(answerIn, "answer", MAX_QUESTION_CHARS);
     const next: DecisionRequest = { ...d, state: "answered", answer, answeredAt: new Date().toISOString() };
     this.store.putDecision(next);
     this.publish({ type: "decision.upserted", decision: next });

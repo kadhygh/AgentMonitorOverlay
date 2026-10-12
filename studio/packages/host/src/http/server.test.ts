@@ -226,6 +226,7 @@ describe("Host API", () => {
     expect(() => service.addTaskNote(other.task.id, { text: "x" }, session.id)).toThrow(/its own task/);
     expect((await ok<Array<{ kind: string }>>("GET", `/api/tasks/${task.id}/notes`)).map((n) => n.kind)).toEqual(["progress", "handoff"]);
     expect((await api("POST", `/api/tasks/${task.id}/notes`, { text: " " })).status).toBe(400);
+    expect((await api("POST", `/api/tasks/${task.id}/notes`, { text: "x".repeat(8001) })).status).toBe(400);
   });
 
   it("passes mail between sessions and lets the person forward or dismiss it", async () => {
@@ -237,6 +238,7 @@ describe("Host API", () => {
     const toTask = await ok<{ id: string; fromSessionId: string | null }>("POST", "/api/mail", { to: { kind: "task", taskId: b.task.id }, text: "记得更新文档" });
     expect(toTask.fromSessionId).toBeNull();
     expect((await api("POST", "/api/mail", { to: { kind: "task", taskId: "nope" }, text: "x" })).status).toBe(404);
+    expect((await api("POST", "/api/mail", { to: { kind: "task", taskId: b.task.id }, text: "x".repeat(8001) })).status).toBe(400);
 
     // B's mailbox: its own mail and its task's, oldest first; reading marks them read.
     expect((await ok<Array<{ id: string }>>("GET", `/api/mail?sessionId=${b.session.id}&taskId=${b.task.id}&state=unread`)).map((m) => m.id)).toEqual([toB.id, toTask.id]);
