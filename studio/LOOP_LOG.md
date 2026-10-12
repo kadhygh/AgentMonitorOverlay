@@ -527,3 +527,18 @@
   - DeepSeek 3 次（22/1000），其中 2 次是上面无效的那两次
 - 没有截图：冒烟是脚本直接调接口；界面截图用的是 S4-04、S4-07 的 mock 版本
 - commit：见本次 commit
+
+## 2026-10-13 19:55 · S4-09 阶段 4 收尾
+- 结果：done
+- 自查（`/code-review` 只能由用户触发）：阶段 4 共 39 个文件、约 2700 行。重点查"密钥会不会进到 agent 执行的命令里"，用 mock 实测，查出两处并修复（commit 1c23cfc）：
+  - **Codex**：0.161 把 app-server 的环境变量原样传给 agent 执行的命令，`cmd /c echo %AMO_MOCK_API_KEY%` 能打印出密钥。也就是说从阶段 1 起，DeepSeek 会话里的命令就能读到 `DEEPSEEK_API_KEY`，MCP 令牌同理。修法：app-server 启动参数加 `shell_environment_policy.ignore_default_excludes=false` 和 `shell_environment_policy.exclude=[各提供方的密钥变量, AMO_STUDIO_MCP_TOKEN]`；
+  - **Claude**：Claude Code 的 `Bash` 继承 `ANTHROPIC_AUTH_TOKEN`，`env` 会把 GLM 密钥打印进会话记录。修法：子进程环境加 `CLAUDE_CODE_SUBPROCESS_ENV_SCRUB=1`（交接终端用同一份环境，也已覆盖）；
+  - 回归测试只打印相关变量：工具输出会截到最后 4000 字，打印完整的 `env` 时，"不包含密钥"的断言并不可靠
+- 防偏离自查：
+  - 没有自动审批：Claude 始终用 "default"，预先放行的只有 Studio 自己的只读 MCP 工具；
+  - 交接终端的交互（只读、提示条、立即收回）与 interaction-notes 一致；
+  - 没有越过"派发"（阶段 5 单独评审）
+- 完整验证：`npm run verify` 退出码 0（168 个测试），e2e 25/25
+- 遗留：`server-manager` 和 Codex 集成测试的临时目录在加载时创建，偶尔留下，已删除，仍记为待办
+- NEEDS_YOU：写入"阶段 4 完成"（请你过目），其中特别说明了安全修复，以及旧 AMO 可能有同样问题
+- 合并：`studio/stage-4` 用 `--no-ff` 合并到 `studio/main`（见下一条）

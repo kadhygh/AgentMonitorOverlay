@@ -70,7 +70,7 @@
 - 追加（S4-07）：再用 DeepSeek Flash 跑一个带 MCP 的 Codex 回合，确认模型目录关掉 `tool_search` 后 DeepSeek 能正常调用 MCP 工具（约 3 次 DeepSeek）。
 - 验收：结果写进日志；GLM 用量记入 `budget.json`。
 
-### S4-09 阶段验收与收尾 · todo
+### S4-09 阶段验收与收尾 · done
 - 依赖：S4-00～S4-08
 - 内容：完整 e2e 与截图；`LOOP_RULES` 第 6 节收尾；"请你过目"附截图与试用方式。
 - 验收：ROADMAP 阶段 4 的验收通过。
