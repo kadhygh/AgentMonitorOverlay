@@ -419,3 +419,18 @@
 - 验证：`npm run verify` 退出码 0（156 个测试）；e2e 22/22；没有遗留的临时目录和 SDK 进程
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-13 16:05 · S4-04 Claude 模型配置与界面
+- 结果：done
+- 改动：
+  - 内置模型配置新增 "Claude · GLM-5.3"（`claude-glm`：provider `glm`、模型 `glm-5.3[1m]`、凭据 `glm-5.2`），新建任务和新会话都能选；
+  - 测试模式：`AMO_STUDIO_TEST_CLAUDE_URL` 加一个指向 mock Anthropic 的 `claude-mock` 配置；e2e 的 `launchStudio` 同时启动 mock Anthropic；
+  - 对话区：
+    - Claude 会话生成中时，按钮显示"排队"、提示"生成中：发送会排到下一轮"、输入框占位文字也相应改写（Codex 仍是"插话"）；
+    - Claude 子 agent 会话的输入框只读，并说明原因，也不显示"分支"
+- 测试：e2e `claude.spec.ts`（新建 Claude 任务、批准命令并确认目录创建、生成中排队、分支带上下文、子 agent 摘要与"查看"、子会话只读、会话记录写在测试数据目录的 `claude-home`）；内置配置变成 3 个后，profiles 单测改为只遍历 Codex 配置，shell.spec 改为检查配置 id 列表
+- 截图：`screenshots/stage-4/S4-04-claude-approval.png`、`S4-04-claude-subagent.png`
+- 清理：`%TEMP%` 下 7 个 `amo-studio-e2e-*` 是之前几轮 e2e 失败时留下的（10-12 23:47 到 10-13 02:06），已删除
+- 验证：`npm run verify` 退出码 0（156 个测试）；e2e 23/23（全量一次 22/23，失败的 shell.spec 改完预期后单独重跑通过）
+- 额度：0
+- commit：见本次 commit

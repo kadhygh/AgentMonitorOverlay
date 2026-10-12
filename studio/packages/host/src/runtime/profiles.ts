@@ -40,6 +40,8 @@ export const BUILTIN_PROFILES: readonly ModelProfile[] = [
     reasoningEffort: "low",
     credentialId: "deepseek-v4",
   },
+  // Claude Code routed to GLM (old AMO's glm-5.3 preset; the key is the Coding Plan key stored as glm-5.2).
+  { id: "claude-glm", label: "GLM-5.3", runtime: "claude", provider: "glm", model: "glm-5.3[1m]", credentialId: "glm-5.2" },
 ];
 
 // src/ and dist/ sit at the same depth under packages/host.

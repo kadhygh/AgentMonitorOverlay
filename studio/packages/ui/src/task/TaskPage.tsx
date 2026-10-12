@@ -174,7 +174,7 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
                   在终端打开
                 </button>
               )}
-              {!session.archivedAt && (
+              {!session.archivedAt && !(session.runtime === "claude" && session.kind === "sub") && (
                 <button type="button" className="btn-ghost small dim" disabled={busy || !session.runtimeRef} onClick={() => void fork(session.id)}>
                   分支
                 </button>

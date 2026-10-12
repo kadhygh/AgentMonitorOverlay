@@ -43,7 +43,7 @@
 - 内容：`canUseTool` 转成审批卡片；分支（从某条回复分支用 `forkSession(id, { upToMessageId })`，不调模型）进入会话树；子 agent 按 `parent_tool_use_id` 归组显示为摘要——它没有独立 session id，"查看"展开父会话里那段内容。
 - 验收：集成测试覆盖批准、拒绝、分支、子 agent。
 
-### S4-04 模型配置与新建会话 · todo
+### S4-04 模型配置与新建会话 · done
 - 依赖：S4-02
 - 内容：模型配置里加入 Claude 运行时的配置（GLM、mock）；新建任务和新会话时可以选到；会话标题栏显示运行时和模型。
 - 验收：e2e：用 mock 的 Claude 配置新建任务、对话、批准。

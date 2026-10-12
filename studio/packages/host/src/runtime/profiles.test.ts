@@ -37,7 +37,7 @@ describe("codexServerSpec", () => {
   });
 
   it("never emits agents.* overrides (rejected by Codex 0.161)", () => {
-    for (const profile of BUILTIN_PROFILES) {
+    for (const profile of BUILTIN_PROFILES.filter((p) => p.runtime === "codex")) {
       expect(Object.keys(config(codexServerSpec(profile, BUILTIN_PROFILES, creds).configArgs)).some((k) => k.startsWith("agents."))).toBe(false);
     }
   });

@@ -8,7 +8,8 @@ import { RecordingTerminalLauncher } from "./terminal/launcher.js";
 // Env: AMO_STUDIO_DATA_DIR (default studio/.data), AMO_STUDIO_PORT (default 47900), AMO_STUDIO_UI_DIR,
 // AMO_STUDIO_DEV_ORIGIN (allowed CORS origin for the Vite dev server).
 // Test-only: AMO_STUDIO_TEST_PROVIDER_URL (+ AMO_STUDIO_TEST_CATALOG, AMO_STUDIO_TEST_CODEX_HOME) replaces every model
-// profile with one mock profile, so end-to-end tests never reach a real model or the user's Codex home.
+// profile with one mock profile, so end-to-end tests never reach a real model or the user's Codex home;
+// AMO_STUDIO_TEST_CLAUDE_URL adds a Claude profile routed to the mock Anthropic API.
 
 const studioRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..");
 const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
@@ -16,8 +17,13 @@ const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
 function testModelOptions(): Partial<StartHostOptions> {
   const url = process.env.AMO_STUDIO_TEST_PROVIDER_URL;
   if (!url) return {};
+  const claudeUrl = process.env.AMO_STUDIO_TEST_CLAUDE_URL;
   return {
-    profiles: [{ id: "codex-mock", label: "Mock 模型", runtime: "codex", provider: "amo-mock", model: "mock-model", credentialId: "mock" }],
+    profiles: [
+      { id: "codex-mock", label: "Mock 模型", runtime: "codex", provider: "amo-mock", model: "mock-model", credentialId: "mock" },
+      ...(claudeUrl ? [{ id: "claude-mock", label: "Mock Claude", runtime: "claude" as const, provider: "mock", model: "mock-claude", credentialId: "mock" }] : []),
+    ],
+    ...(claudeUrl ? { claudeProviders: { mock: { baseUrl: claudeUrl } } } : {}),
     providers: {
       "amo-mock": {
         name: "Mock",
