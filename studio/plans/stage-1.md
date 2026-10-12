@@ -111,7 +111,7 @@
 - 子任务（2026-10-13 拆分）：
   - S1-06a JSON-RPC 客户端（`runtime/codex/rpc-client.ts`） · done
   - S1-06b app-server 进程管理：每个 profile 一个进程，端口和 token 存数据目录，崩溃后退避重启并沿用端口和 token · done
-  - S1-06c 会话操作、事件规范化入库、审批转交、父子关系、provider 不一致告警 · todo
+  - S1-06c 会话操作、事件规范化入库、审批转交、父子关系、provider 不一致告警 · done
   - S1-06d 集成测试：真实 `codex app-server` 加 mock 模型跑通 start / 审批 / fork / 归档 / 重启恢复 · todo
 
 ### S1-07 Host API · todo

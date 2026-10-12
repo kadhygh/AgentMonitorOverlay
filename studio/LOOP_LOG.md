@@ -114,3 +114,10 @@
 - 验证：复测脚本用 mock 模型在 0.161 上跑完 a～d 全部检查，结论与 0.144 一致，唯一差异是 `thread/list` 现在会列出 fork；`verify-mock-codex` 在 0.161 上 PASS（含审批）；`npm run verify` 通过（52 个测试）。没有消耗额度
 - commit：见本次 commit
 - 遗留：同一端口在几秒内连续起两次 app-server 偶尔会 10048（端口仍被占用）；Host 的进程管理器已有重试，只影响 spikes 脚本
+
+## 2026-10-13 01:35 · S1-06c 会话运行层
+- 结果：done
+- 改动：`packages/host/src/runtime/codex/codex-runtime.ts`（开会话、发消息或插话、打断、显式 provider 的 fork、连同子孙归档与恢复、审批转交与"已在别处处理"、子 agent 与外部 fork 自动入树、provider 漂移告警、重连后重新订阅、事件规范化为 user/agent/tool/approval/subagent/error/notice 并发布 HostEvent）、`codex-runtime.test.ts`（9 个场景，基于 fake app-server）；fake app-server 增加 `thread/unarchive`
+- 验证：`npm run verify` 通过（61 个测试），运行层测试连跑 3 次稳定
+- commit：见本次 commit
+- 遗留：短回合可能在 `turn/start` 响应之前就结束，所以状态和活动 turn 只认 `turn/started` / `turn/completed` 通知；item 的 codex id 映射只在内存里，Host 重启后正在流式输出的回复会以新 item 继续（S1-06d 用真实 app-server 再验证）

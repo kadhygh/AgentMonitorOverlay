@@ -328,6 +328,12 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       notify(t.id, "thread/archived", { threadId: t.id });
       return {};
     },
+    "thread/unarchive": (_client, params) => {
+      const t = requireThread(params);
+      t.archived = false;
+      notify(t.id, "thread/unarchived", { threadId: t.id });
+      return { thread: threadView(t) };
+    },
     "thread/read": (_client, params) => ({ thread: threadView(requireThread(params), params.includeTurns !== false) }),
     "thread/list": (_client, params) => {
       const providers = (params.modelProviders as string[] | undefined) ?? [defaultProvider];
