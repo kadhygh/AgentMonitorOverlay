@@ -1,9 +1,10 @@
 import { useEffect, useState } from "react";
-import type { ModelProfile, Session, SessionItem, Task, Workspace } from "@amo-studio/protocol";
-import type { HostLink } from "../host/client.js";
+import { TASK_COLUMNS, type ModelProfile, type Session, type SessionItem, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
+import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { shortModel } from "../lib/profiles.js";
-import { SESSION_LOOK } from "../lib/status.js";
+import { COLUMN_NAMES } from "../lib/status.js";
+import { SessionTree } from "./SessionTree.js";
 
 interface TaskPageProps {
   link: HostLink;
@@ -15,17 +16,65 @@ interface TaskPageProps {
   onBack(): void;
 }
 
-/** Task page skeleton: session list and the conversation of the selected session. S1-11 adds the full chat panel. */
+type Toast = { text: string; command?: string; error?: boolean } | null;
+
+const WRITER = {
+  workbench: { label: "仅工作台", color: "var(--text-dim)" },
+  "terminal-shared": { label: "终端已接入 · 共享", color: "var(--running-text)" },
+  "terminal-handoff": { label: "已交给终端 · 只读", color: "var(--attention)" },
+  archived: { label: "已归档 · 只读", color: "var(--text-dim)" },
+} as const;
+
+/** Task page: session tree | conversation. The chat panel (composer, cards) is filled in by S1-11b. */
 export function TaskPage({ link, task, sessions, workspaces, profiles, initialSessionId, onBack }: TaskPageProps) {
-  const own = sessions.filter((s) => s.taskId === task.id && !s.archivedAt);
-  const [selected, setSelected] = useState<string | null>(initialSessionId ?? own[0]?.id ?? null);
+  const own = sessions.filter((s) => s.taskId === task.id);
+  const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
+  const [toast, setToast] = useState<Toast>(null);
+  const [busy, setBusy] = useState(false);
+
   useEffect(() => {
-    if (!selected && own[0]) setSelected(own[0].id);
+    if (!selected || !own.some((s) => s.id === selected)) {
+      const first = own.find((s) => !s.archivedAt);
+      if (first) setSelected(first.id);
+    }
   }, [selected, own]);
+
   const session = own.find((s) => s.id === selected) ?? null;
   const { items } = useSessionItems(link, session?.id ?? null);
   const profile = (id: string) => profiles.find((p) => p.id === id);
-  const scope = task.scope.kind === "area" ? "跨工作区" : (workspaces.find((w) => w.id === (task.scope as { workspaceId: string }).workspaceId)?.name ?? "");
+  const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? "";
+  const isArea = task.scope.kind === "area";
+  const scopeLabel = task.scope.kind === "area" ? "跨工作区" : wsName(task.scope.workspaceId);
+
+  async function run<T>(fn: () => Promise<T>, onDone?: (value: T) => void) {
+    setBusy(true);
+    try {
+      const value = await fn();
+      onDone?.(value);
+    } catch (err) {
+      setToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  const setColumn = (column: TaskColumn) => run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { column }));
+  const newSession = (input: { profileId: string; workspaceId?: string }) =>
+    run(() => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input), (s) => setSelected(s.id));
+  const restore = (id: string) => run(() => call(link, "POST /api/sessions/:id/unarchive", { id }), () => setSelected(id));
+  const archive = (id: string) =>
+    run(() => call(link, "POST /api/sessions/:id/archive", { id }), () => {
+      const next = own.find((s) => !s.archivedAt && s.id !== id && s.parentId !== id);
+      setSelected(next?.id ?? null);
+    });
+  const fork = (id: string) => run(() => call(link, "POST /api/sessions/:id/fork", { id }, {}), (s) => setSelected(s.id));
+  const openTerminal = (id: string) =>
+    run(() => call(link, "POST /api/sessions/:id/terminal", { id }, { launch: true }), (r) =>
+      setToast({ text: "已在新终端窗口接入同一会话。两边实时同步，都可以输入。", command: r.command }),
+    );
+
+  const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
+  const writer = session ? WRITER[session.writer] : null;
 
   return (
     <section className="taskpage" aria-label="任务">
@@ -36,29 +85,83 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
         <h1 className="task-title" data-testid="task-title">
           {task.title || "未命名任务"}
         </h1>
-        <span className="page-crumb">{scope}</span>
+        <span className="page-crumb">{scopeLabel}</span>
+        <span className="spacer" />
+        <label className="inline-field">
+          任务状态
+          <select value={task.column} onChange={(e) => void setColumn(e.target.value as TaskColumn)} data-testid="task-column">
+            {TASK_COLUMNS.map((c) => (
+              <option key={c} value={c}>
+                {COLUMN_NAMES[c]}
+              </option>
+            ))}
+          </select>
+        </label>
       </div>
+
+      {toast && (
+        <div role="status" className={toast.error ? "toast toast-error" : "toast"} data-testid="toast">
+          <span>{toast.text}</span>
+          {toast.command && <code>{toast.command}</code>}
+          <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => setToast(null)}>
+            ×
+          </button>
+        </div>
+      )}
+
       <div className="task-body">
-        <aside className="session-list" aria-label="会话">
-          <div className="nav-label">会话 {own.length}</div>
-          {own.map((s) => {
-            const look = SESSION_LOOK[s.status];
-            return (
-              <button key={s.id} type="button" className="nav-row session-row" aria-current={s.id === selected} onClick={() => setSelected(s.id)}>
-                <span className="dot" style={{ background: look.dot }} />
-                <span className="session-text">
-                  <span className="name">{s.title || "新会话"}</span>
-                  <span className="session-kind">{shortModel(profile(s.profileId))}</span>
+        <SessionTree
+          task={task}
+          sessions={own}
+          workspaces={workspaces}
+          profiles={profiles}
+          selected={selected}
+          busy={busy}
+          onSelect={setSelected}
+          onNewSession={(input) => void newSession(input)}
+          onRestore={(id) => void restore(id)}
+        />
+        <div className="thread-col">
+          {session && (
+            <div className="thread-head" data-testid="thread-head">
+              <span className="thread-title">{session.title || "新会话"}</span>
+              <span className="page-crumb">
+                {shortModel(profile(session.profileId))}
+                {isArea ? ` · ${wsName(session.workspaceId)}` : ""}
+              </span>
+              <span className="spacer" />
+              {writer && (
+                <span className="writer" style={{ color: writer.color }} data-testid="writer">
+                  {writer.label}
                 </span>
-              </button>
-            );
-          })}
-        </aside>
-        <div className="thread" data-testid="thread">
-          {!session && <div className="thread-empty">这个任务还没有会话。</div>}
-          {items.map((item) => (
-            <ItemView key={item.id} item={item} model={shortModel(session ? profile(session.profileId) : undefined)} />
-          ))}
+              )}
+              {!session.archivedAt && session.runtime === "codex" && (
+                <button type="button" className="btn-ghost small" disabled={busy || !session.runtimeRef} onClick={() => void openTerminal(session.id)}>
+                  在终端打开
+                </button>
+              )}
+              {!session.archivedAt && (
+                <button type="button" className="btn-ghost small dim" disabled={busy || !session.runtimeRef} onClick={() => void fork(session.id)}>
+                  分支
+                </button>
+              )}
+              {!session.archivedAt ? (
+                <button type="button" className="btn-ghost small dim" disabled={busy} onClick={() => void archive(session.id)}>
+                  归档
+                </button>
+              ) : (
+                <button type="button" className="btn-ghost small primary" disabled={busy} onClick={() => void restore(session.id)}>
+                  恢复
+                </button>
+              )}
+            </div>
+          )}
+          <div className="thread" data-testid="thread" aria-readonly={readOnly}>
+            {!session && <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>}
+            {items.map((item) => (
+              <ItemView key={item.id} item={item} model={shortModel(session ? profile(session.profileId) : undefined)} />
+            ))}
+          </div>
         </div>
       </div>
     </section>

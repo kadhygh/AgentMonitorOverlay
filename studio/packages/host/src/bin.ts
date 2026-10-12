@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostAlreadyRunningError, startHost, type StartHostOptions } from "./host-process.js";
 import { StaticCredentialReader } from "./runtime/credentials.js";
+import { RecordingTerminalLauncher } from "./terminal/launcher.js";
 
 // Command-line entry: `node packages/host/dist/bin.js`. The Electron shell starts it the same way (S1-08).
 // Env: AMO_STUDIO_DATA_DIR (default studio/.data), AMO_STUDIO_PORT (default 47900), AMO_STUDIO_UI_DIR,
@@ -38,6 +39,8 @@ try {
     ...(process.env.AMO_STUDIO_UI_DIR ? { uiDir: process.env.AMO_STUDIO_UI_DIR } : {}),
     ...(process.env.AMO_STUDIO_DEV_ORIGIN ? { allowedOrigins: [process.env.AMO_STUDIO_DEV_ORIGIN] } : {}),
     ...testModelOptions(),
+    // Test runs never open terminal windows (LOOP_RULES red line 7); launches are only recorded.
+    ...(process.env.AMO_STUDIO_TEST === "1" ? { launcher: new RecordingTerminalLauncher() } : {}),
   });
   console.log(`AMO Studio Host listening on ${host.info.url} (data: ${dataDir})`);
   const stop = (keepServers: boolean) => {
