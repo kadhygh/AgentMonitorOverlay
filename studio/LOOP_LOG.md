@@ -321,3 +321,10 @@
 - 验证：`npm run verify` 退出码 0（123 个测试）；e2e 22/22；截图 `screenshots/stage-3/S3-07-focus.png`
 - 真机观感（贴角位置、透明、穿透）测试里看不到，阶段收尾时写进"请你过目"
 - commit：见本次 commit
+
+## 2026-10-13 11:30 · S3-08 多显示器与 DPI
+- 结果：done
+- 改动：`packages/app/src/placement.ts`（纯函数，坐标统一用 Electron 的 DIP，混合缩放无需换算：`displayFor`、`clampInto`、`cornerOf`、`placeFocus`、`refitFocus`、`placeMain`）与 10 个单测（三屏：主屏 100%、左侧 4K 150% 负坐标、右侧 125%；默认贴角、记住的位置、半出界拉回、显示器拔掉回主屏角落、改缩放后拉回、主窗口居中/恢复/标题栏出界拉回/放不下时缩小）；Electron 接入：Focus 标题行可拖动（`-webkit-app-region: drag`），拖完记住位置；主窗口关闭时记住正常尺寸位置和是否最大化，启动时按 `placeMain` 恢复；`display-added/removed/metrics-changed` 时两个窗口都重新校正；都记在数据目录 `shell-prefs.json`；测试模式下全部跳过（窗口始终在屏幕外）
+- 验证：`npm run verify` 退出码 0（133 个测试）；e2e 22/22
+- 请你过目（真机）：Focus 贴角位置、拖动标题行移动、拔插显示器/改缩放后的位置——测试环境无法观察，阶段收尾时写进 NEEDS_YOU
+- commit：见本次 commit

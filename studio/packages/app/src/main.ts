@@ -1,8 +1,8 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, shell } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, stopHost, type HostConnection } from "./host-link.js";
-import { createFocusWindow, ShellPrefs } from "./focus-window.js";
+import { createFocusWindow, mainBounds, refitFocusWindow, ShellPrefs } from "./focus-window.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
@@ -25,7 +25,13 @@ const prefs = new ShellPrefs(dataDir);
 function setFocusVisible(on: boolean): void {
   prefs.setFocus(on);
   if (on && !focusWindow && host) {
-    focusWindow = createFocusWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), testMode });
+    focusWindow = createFocusWindow({
+      url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`,
+      preload: join(here, "preload.cjs"),
+      testMode,
+      saved: prefs.focusPos(),
+      onMoved: (pos) => prefs.setFocusPos(pos),
+    });
     focusWindow.on("closed", () => (focusWindow = null));
   } else if (!on && focusWindow) {
     focusWindow.destroy();
@@ -105,6 +111,20 @@ if (!app.requestSingleInstanceLock()) {
         focusWindow?.destroy();
       });
       if (prefs.focus(!testMode)) setFocusVisible(true);
+      if (!testMode) {
+        // Displays unplugged, rearranged or rescaled: keep both windows reachable.
+        const refit = () => {
+          if (focusWindow) refitFocusWindow(focusWindow);
+          if (mainWindow && !mainWindow.isMaximized() && !mainWindow.isFullScreen()) {
+            const current = mainWindow.getBounds();
+            const next = mainBounds(current, current);
+            if (next.x !== current.x || next.y !== current.y || next.width !== current.width || next.height !== current.height) mainWindow.setBounds(next);
+          }
+        };
+        screen.on("display-added", refit);
+        screen.on("display-removed", refit);
+        screen.on("display-metrics-changed", refit);
+      }
     })
     .catch((err: unknown) => {
       console.error("AMO Studio failed to start:", err);
@@ -124,9 +144,11 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function createMainWindow(conn: HostConnection): BrowserWindow {
+  // Remembered bounds, pulled back onto a display if that display is gone (tests always sit off-screen).
+  const saved = testMode ? null : prefs.main();
+  const bounds = testMode ? { width: 1440, height: 900 } : mainBounds(saved?.bounds ?? null, { width: 1440, height: 900 });
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    ...bounds,
     minWidth: 960,
     minHeight: 600,
     title: "AMO Studio",
@@ -152,8 +174,12 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
   });
   win.once("ready-to-show", () => {
     if (testMode) win.showInactive();
-    else win.show();
+    else {
+      if (saved?.maximized) win.maximize();
+      win.show();
+    }
   });
+  if (!testMode) win.on("close", () => prefs.setMain({ bounds: win.getNormalBounds(), maximized: win.isMaximized() }));
   void win.loadURL(process.env.AMO_STUDIO_DEV_URL ?? `${conn.url}/`);
   return win;
 }

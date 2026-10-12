@@ -27,3 +27,7 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 .focus-approve { height: 30px; padding: 0 14px; border-radius: 7px; border: none; background: var(--attention); color: #1e1606; font-weight: 600; cursor: pointer; }
 .focus-approve:disabled { opacity: 0.6; cursor: default; }
 .focus-btn { height: 30px; padding: 0 12px; border-radius: 7px; border: 1px solid #2b3036; background: transparent; color: var(--text); cursor: pointer; }
+
+/* S3-08: drag the Focus window by its title row */
+.focus-head { -webkit-app-region: drag; user-select: none; }
+.focus-head button { -webkit-app-region: no-drag; }
