@@ -63,7 +63,7 @@
   - 生成 Codex app-server 的 TS 绑定（`codex app-server generate-ts`，版本号写进文件头），放在 `packages/protocol/src/codex/`，并提供重新生成的脚本。
 - 验收：类型检查通过；为实体编写示例数据的单元测试。
 
-### S1-03 存储 · todo
+### S1-03 存储 · done
 
 - 依赖：S1-02
 - 内容：

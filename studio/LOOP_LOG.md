@@ -57,3 +57,13 @@
 - 验证：`npm run verify` 通过（11 个单元测试，生成的绑定也通过 strict 类型检查）
 - commit：见本次 commit
 - 遗留：会话状态在交互说明的五种之外加了 `error`；Host API 先定义了阶段 1 用到的路由，批注和画布的接口留到对应阶段
+
+## 2026-10-12 23:25 · S1-03 存储
+- 结果：done
+- 改动：`packages/host/src/store/{store,migrations}.ts`、`store.test.ts`；`packages/host/src/index.ts` 导出
+- 验证：`npm run verify` 通过（19 个单元测试，含重启后数据仍在、会话子树归档与恢复）。`node:sqlite` 在 Node 24.13（SQLite 3.50.4）和 Electron 44.7 自带的 Node 24.21（SQLite 3.53.4）里都可用，不需要备选方案
+- commit：见本次 commit
+- 遗留：
+  - "session item 只追加"落实为：item 不删除、seq 不复用；正文可以原地替换（流式结束、审批结果），避免为每次状态变化多存一行
+  - npm install 当时没下载 Electron 二进制，本轮手动执行 `node node_modules/electron/install.js` 补上；S1-08 需要确认 `npm install` 之后二进制是否存在
+  - 用户中途把额度调为 DeepSeek 1000、GLM 5000（已提交 2cb5377）；用户说明 NEEDS_YOU 会很久没空处理，要求尽量推进。我尝试改写 ROADMAP/LOOP_RULES 的"必须等你"关卡，被自动模式拦截（属于修改 loop 自身规则），已在对话里请用户确认；阶段 1 没有"必须等你"关卡，不影响当前进度
