@@ -194,3 +194,12 @@
 - 验证：真实 DeepSeek 3 次（19/1000）。沙盒 CODEX_HOME 和工作区：第一轮回复 OK，第二轮答出暗号 LIME-4（上下文保留）；真实 Codex TUI（npm 0.161）用生成的 `codex --remote … resume` 在隐藏控制台启动，和 app-server 端口建立 1 条连接并持续运行，命令行不含 token；Host 以保留 app-server 的方式重启后，任务、会话和 4 条记录都在，第三轮回复 STILL-HERE；测试会话已归档，没有残留进程和端口
 - commit：见本次 commit
 - 遗留：TUI 的交互（在 TUI 里打字、`/fork`）仍需要用户在真实终端里看一眼，已在 NEEDS_YOU 的 S1-00e 一条里
+
+## 2026-10-13 05:30 · S1-12b 阶段 1 收尾
+- 结果：done（阶段 1 完成）
+- 代码审查：`/code-review` 是用户触发的命令，loop 里无法调用，改为由我对整个阶段的改动做审查，重点看安全与异常路径。修了三处：静态文件路径里畸形的 `%` 编码会让请求处理抛出未捕获异常（可能让 Host 崩溃）；Electron 窗口没有禁止新开窗口和跳转到外部页面；连接断开时挂起的审批永远停在"待批准"、重连后会话状态不按服务端校正。各补了回归测试
+- 防偏离自查：对照架构文档"明确不做"——没有强制 worktree（会话在登记的工程目录里运行）；对话面板不追求与 CLI 对齐，CLI 能力通过"在终端打开"接原版 TUI；没有自动审批（默认 approvalPolicy on-request，高风险操作仍需人批准，与平时用 Codex 一致）；runtime 与 server 管理都做了抽象，没有绑死单一厂商。对照 interaction-notes：与已确认交互没有冲突，新增的默认决定已列入 NEEDS_YOU 供推翻
+- 完整验证：`npm run verify` 93 个测试通过；e2e 11/11；真实冒烟（S1-12a）通过
+- 其他：新增 `npm start`（构建并打开 Studio）、`npm run host:stop`（核对命令行后停止常驻 Host 及其 app-server）
+- 合并：`studio/stage-1` 以 `--no-ff` 合并回 `studio/main`；新建 `studio/stage-2`，写 `plans/stage-2.md`
+- 遗留：TUI 里的交互（打字、`/fork`）仍等用户在真实终端看一眼（NEEDS_YOU S1-00e）
