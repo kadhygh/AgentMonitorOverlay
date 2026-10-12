@@ -13,12 +13,17 @@ class TestClient {
   constructor(private readonly server: FakeAppServer, private readonly token = server.token) {}
 
   async connect() {
-    // Node's WebSocket (undici) accepts headers as a non-standard option.
-    this.ws = new WebSocket(this.server.url, { headers: { Authorization: `Bearer ${this.token}` } } as unknown as string[]);
-    await new Promise<void>((res, rej) => {
-      this.ws.onopen = () => res();
-      this.ws.onerror = () => rej(new Error("ws error"));
-    });
+    // Under a full parallel run the handshake occasionally failed on Windows with a bare "ws error"; retry a couple of
+    // times and keep the underlying error if it still fails.
+    for (let attempt = 1; ; attempt++) {
+      try {
+        await this.open();
+        break;
+      } catch (err) {
+        if (attempt >= 3) throw err;
+        await new Promise((r) => setTimeout(r, 100 * attempt));
+      }
+    }
     this.ws.onmessage = (ev) => {
       const msg = JSON.parse(String(ev.data));
       if (msg.id !== undefined && !msg.method) {
@@ -32,6 +37,17 @@ class TestClient {
       if (msg.id !== undefined && this.autoDecision) this.respond(msg.id, this.autoDecision);
     };
     await this.request("initialize", { clientInfo: { name: "test", version: "0" } });
+  }
+  private open(): Promise<void> {
+    // Node's WebSocket (undici) accepts headers as a non-standard option.
+    this.ws = new WebSocket(this.server.url, { headers: { Authorization: `Bearer ${this.token}` } } as unknown as string[]);
+    return new Promise<void>((res, rej) => {
+      this.ws.onopen = () => res();
+      this.ws.onerror = (ev) => {
+        const cause = (ev as unknown as { error?: unknown }).error;
+        rej(new Error(`ws error${cause instanceof Error ? `: ${cause.message}` : ""}`));
+      };
+    });
   }
   request(method: string, params: unknown): Promise<any> {
     const id = this.nextId++;
