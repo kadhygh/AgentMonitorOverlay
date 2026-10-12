@@ -52,7 +52,7 @@
 | 分支 | `resume` + `forkSession: true` 得到新 session id，带着原会话上下文回复。另有不调模型的 `forkSession(sessionId, { upToMessageId })` 函数，可以只复制到某条消息为止——适合"从这条回复分支"；但它在 Host 进程里运行，读的是**进程自己的** `CLAUDE_CONFIG_DIR`，不认 `options.env`。 |
 | 子 agent | 工具名 `Agent`。子 agent 的消息带 `parent_tool_use_id`（等于父会话里那次 `Agent` 调用的 id），session id 和父会话相同；另有 `system:task_started` / `task_updated` / `task_notification` 事件。 |
 | 打断 | `query.interrupt()` 后结果为 `error_during_execution`，随后迭代器**抛出异常**（`Claude Code returned an error result`）。 |
-| 插话 | 流式输入里在生成中途推入第二条消息，**不会**插进当前回合：第一轮照常数到 40 结束，第二条作为下一轮处理（共两个 `result`）。 |
+| 插话 | 流式输入里在生成中途推入第二条消息：回合里**没有工具调用**时不会插进当前回合，第一轮照常数到 40 结束，第二条作为下一轮处理（共两个 `result`）。**S5-07 补充**：回合里**有**工具调用时，它会在下一次工具调用结束后，和工具结果放在同一条用户消息里并进当前回合。 |
 | 真实 CLI 接续 | 同一 `CLAUDE_CONFIG_DIR` 下 `claude -p --resume <id>` 接上 SDK 创建的会话，session id 相同，记得上文。 |
 | 共享方式 | `claude --help` 里有 `--bg`（后台会话）、`claude attach <id>`、`agents`、`logs`、`stop`。未实测，S4-05 再评估能否用作共享。 |
 

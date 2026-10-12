@@ -44,7 +44,7 @@ test("a Claude session: approve a command, queue a message, branch, follow a sub
   await composer.fill("[[slow]]");
   await composer.press("Enter");
   await expect(page.getByRole("button", { name: "排队" })).toBeVisible({ timeout: 30_000 });
-  await expect(page.locator(".composer-hint")).toHaveText("生成中：发送会排到下一轮");
+  await expect(page.locator(".composer-hint")).toHaveText("生成中：工具调用后或本轮结束后读到");
   await composer.fill("after the slow one");
   await page.getByRole("button", { name: "排队" }).click();
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: after the slow one", { timeout: 60_000 });

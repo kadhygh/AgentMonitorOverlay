@@ -122,7 +122,9 @@ export function parseClaudeRequest(body: Record<string, unknown>): ClaudeMockReq
   const messages = (Array.isArray(body.messages) ? body.messages : []) as Message[];
   const users = messages.filter((m) => m.role === "user");
   const hasToolResult = (m: Message) => m.role === "user" && blocksOf(m).some((b) => b.type === "tool_result");
-  const isPerson = (m: Message) => m.role === "user" && !hasToolResult(m) && !!personText(m);
+  // A message sent while a turn runs is folded in after the next tool call: it shares the user message with the tool
+  // result, and is then what the person last said (so it wins over "continuing after a tool").
+  const isPerson = (m: Message) => m.role === "user" && !!personText(m);
   // The CLI may append context messages after a tool result, so "continuing after a tool" means: a tool result came
   // after the last thing the person said, not that the very last message is one.
   const lastPersonIndex = messages.findLastIndex(isPerson);

@@ -69,7 +69,7 @@ export function Thread({ session, items, annotations, model, busy, onApprove, on
   const claudeSub = session?.runtime === "claude" && session.kind === "sub";
   const readOnly = !session || claudeSub || session.writer === "archived" || session.writer === "terminal-handoff";
   const generating = !!session && (session.status === "running" || session.status === "awaiting-approval");
-  // Codex folds a message into the running turn; Claude runs it as the next turn.
+  // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn.
   const queues = session?.runtime === "claude";
   const placeholder = readOnly
     ? claudeSub
@@ -79,14 +79,17 @@ export function Thread({ session, items, annotations, model, busy, onApprove, on
         : "会话已交给终端，工作台暂时只读。"
     : generating
       ? queues
-        ? "回复生成中，输入的内容会排到下一轮"
+        ? "回复生成中，发出的内容会在下一次工具调用后或本轮结束后被读到"
         : "回复生成中，输入的内容会作为插话发出"
       : "继续推进这个会话，回车发送，Shift+回车换行";
 
   async function send() {
     const text = draft.trim();
     if (!text || readOnly) return;
-    if (await onSend(text)) setDraft("");
+    // Clear at once so the next message can be typed while this one is on its way; put it back if sending failed
+    // (and nothing new was typed meanwhile). Clearing after the request would wipe what was typed in between.
+    setDraft("");
+    if (!(await onSend(text))) setDraft((d) => (d.trim() ? d : text));
   }
 
   return (
@@ -177,7 +180,7 @@ export function Thread({ session, items, annotations, model, busy, onApprove, on
             />
           </label>
           <div className="composer-bar">
-            <span className="composer-hint">{generating && !readOnly ? (queues ? "生成中：发送会排到下一轮" : "生成中：发送会插入到当前回合") : ""}</span>
+            <span className="composer-hint">{generating && !readOnly ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : ""}</span>
             <span className="spacer" />
             {generating && !readOnly && (
               <button type="button" className="btn-ghost" onClick={onInterrupt}>

@@ -185,7 +185,7 @@ export function amoTools(model: ReadModel): AmoTool[] {
     {
       name: "task_get",
       title: "任务详情",
-      description: "One task: column, status, workspace, the tasks it depends on and that depend on it, its canvas group and its sessions (no transcripts).",
+      description: "One task: its latest handoff summary, column, status, workspace, the tasks it depends on and that depend on it, its canvas group, recent progress notes and its sessions (no transcripts).",
       inputSchema: { taskId: z.string() },
       readOnly: true,
       autoApprove: true,
