@@ -16,6 +16,11 @@ const studioRoot = resolve(here, "..", "..", "..");
 const testMode = process.env.AMO_STUDIO_TEST === "1";
 const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
 
+// Chromium's profile (localStorage, caches) and the single-instance lock live in userData. Without this it is the
+// generic %APPDATA%\Electron, shared by every run: tests saw each other's remembered model, and a test run could
+// collide with a Studio the person has open. Keep it with the data dir instead (set before the lock is taken).
+app.setPath("userData", join(dataDir, "electron"));
+
 let host: HostConnection | null = null;
 let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;

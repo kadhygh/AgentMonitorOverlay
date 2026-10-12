@@ -1,14 +1,14 @@
 import { useEffect, useState } from "react";
 import type { TodoItem, Workspace } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
 function useTodos(link: HostLink) {
   const [todos, setTodos] = useState<readonly TodoItem[]>([]);
   const [reload, setReload] = useState(0);
   useEffect(() => {
     let cancelled = false;
-    const load = () => call(link, "GET /api/todos").then((t) => !cancelled && setTodos(t));
+    const load = (first = false) => call(link, "GET /api/todos").then((t) => !cancelled && setTodos((cur) => (first ? mergeFirstLoad(t, cur) : t)));
     const off = onHostEvent((e) => {
       if (e.type === "todo.upserted") {
         setTodos((cur) => (cur.some((t) => t.id === e.todo.id) ? cur.map((t) => (t.id === e.todo.id ? e.todo : t)) : [...cur, e.todo]));
@@ -17,7 +17,7 @@ function useTodos(link: HostLink) {
       }
     });
     const offReconnect = onHostReconnect(() => void load());
-    void load();
+    void load(true);
     return () => {
       cancelled = true;
       off();

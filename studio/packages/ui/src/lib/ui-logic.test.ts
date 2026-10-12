@@ -3,6 +3,7 @@ import { exampleItems, exampleSessions, type HostEvent, type SessionItem } from 
 import { applyItemEvent } from "../host/useSessionItems.js";
 import { applyEvent } from "../host/useHostState.js";
 import { relativeTime, taskStatus } from "./status.js";
+import { mergeFirstLoad } from "../host/events.js";
 
 describe("taskStatus", () => {
   it("picks the most urgent live session status", () => {
@@ -54,5 +55,14 @@ describe("applyEvent", () => {
     const next = applyEvent(state, { seq: 9, type: "session.upserted", session: { ...exampleSessions[0]!, status: "idle" } });
     expect(next.sessions[0]!.status).toBe("idle");
     expect(next.eventSeq).toBe(9);
+  });
+});
+
+describe("mergeFirstLoad", () => {
+  it("keeps items and changes that events delivered before the first snapshot arrived", () => {
+    const loaded = [{ id: "a", v: 1 }, { id: "b", v: 1 }];
+    const live = [{ id: "b", v: 2 }, { id: "c", v: 1 }];
+    expect(mergeFirstLoad(loaded, live)).toEqual([{ id: "a", v: 1 }, { id: "b", v: 2 }, { id: "c", v: 1 }]);
+    expect(mergeFirstLoad(loaded, [])).toEqual(loaded);
   });
 });
