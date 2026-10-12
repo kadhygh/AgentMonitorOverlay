@@ -56,7 +56,7 @@ export function TodoTab({ link, workspaces }: { link: HostLink; workspaces: read
         <input type="checkbox" checked={t.done} onChange={(e) => setDone(t.id, e.target.checked)} aria-label={`完成 ${t.text}`} />
         <span className="todo-text">{t.text}</span>
       </label>
-      {t.workspaceId && <span className="side-note">适合：{wsName(t.workspaceId)}</span>}
+      {t.workspaceId && wsName(t.workspaceId) && <span className="side-note">适合：{wsName(t.workspaceId)}</span>}
       <button type="button" className="link-btn" aria-label={`删除待办 ${t.text}`} onClick={() => void call(link, "DELETE /api/todos/:id", { id: t.id })}>
         删除
       </button>

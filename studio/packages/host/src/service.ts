@@ -86,6 +86,23 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       throw new HostError("conflict", (err as Error).message);
     }
     this.publish({ type: "workspace.removed", workspaceId: id });
+    // Todos and canvas groups only point at a workspace as a hint; drop the hint rather than leave it dangling.
+    for (const todo of this.store.listTodos().filter((t) => t.workspaceId === id)) {
+      const next = { ...todo, workspaceId: null };
+      this.store.putTodo(next);
+      this.publish({ type: "todo.upserted", todo: next });
+    }
+    const canvas = this.canvas();
+    if (canvas.groups.some((g) => g.workspaceId === id)) {
+      const next: CanvasDoc = {
+        ...canvas,
+        version: canvas.version + 1,
+        groups: canvas.groups.map((g) => (g.workspaceId === id ? { ...g, workspaceId: null } : g)),
+        updatedAt: new Date().toISOString(),
+      };
+      this.store.putCanvas(next);
+      this.publish({ type: "canvas.updated", canvas: next });
+    }
   }
 
   // Tasks

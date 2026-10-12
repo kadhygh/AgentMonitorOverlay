@@ -41,6 +41,7 @@ beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), "amo-studio-test-api-"));
   mkdirSync(join(root, "alpha"));
   mkdirSync(join(root, "beta"));
+  mkdirSync(join(root, "spare"));
   await boot();
 });
 
@@ -225,6 +226,18 @@ describe("Host API", () => {
     expect(await ok("DELETE", `/api/todos/${todo.id}`)).toEqual({ ok: true });
     expect((await api("DELETE", `/api/todos/${todo.id}`)).status).toBe(404);
     expect(await ok("GET", "/api/todos")).toEqual([]);
+  });
+
+  it("drops todo and group hints when their workspace is removed", async () => {
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "spare") });
+    const todo = await ok<{ id: string }>("POST", "/api/todos", { text: "x", workspaceId: ws.id });
+    const canvas = await ok<CanvasDoc>("GET", "/api/canvas");
+    await ok("PUT", "/api/canvas", { ...canvas, groups: [{ id: "g1", title: "备用", workspaceId: ws.id, rect: { x: 0, y: 0, w: 300, h: 200 } }] });
+    expect(await ok("DELETE", `/api/workspaces/${ws.id}`)).toEqual({ ok: true });
+    expect((await ok<Array<{ id: string; workspaceId: string | null }>>("GET", "/api/todos")).find((t) => t.id === todo.id)?.workspaceId).toBeNull();
+    const after = await ok<CanvasDoc>("GET", "/api/canvas");
+    expect(after.groups[0]?.workspaceId).toBeNull();
+    expect(after.version).toBe(canvas.version + 2);
   });
 
   it("saves the canvas with optimistic versions and serves its outline", async () => {
