@@ -29,7 +29,7 @@ export interface PackPreset {
   title: string;
   /** A model profile id; Studio falls back to the default profile when it is unknown. */
   profile?: string;
-  /** The first message; may use the variables in PRESET_VARIABLES. */
+  /** The first message; may use the variables in PRESET_VARIABLES ({{pack.dir}} is relative to the workspace). */
   prompt: string;
   /** Relative to the workspace; listed in the prompt for the agent to read. */
   contextFiles?: string[];
@@ -243,4 +243,18 @@ export interface PackDocContent {
   title: string;
   path: string;
   text: string;
+}
+
+/** A session preset filled in for one task: what the new-session form is prefilled with, for the person to confirm. */
+export interface PresetDraft {
+  presetId: string;
+  title: string;
+  /** The workspace the session would run in (where the pack is). */
+  workspaceId: string;
+  /** The preset's model profile, or null to use the default (none given, or unknown here). */
+  profileId: string | null;
+  /** The prompt with variables filled in, followed by the context files to read. */
+  text: string;
+  contextFiles: string[];
+  warnings: string[];
 }

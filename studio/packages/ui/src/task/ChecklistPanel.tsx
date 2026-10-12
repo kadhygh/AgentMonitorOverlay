@@ -1,23 +1,23 @@
 import { useEffect, useState } from "react";
 import type { ChecklistItem, Id, Session } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
-import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
 /** Every checklist item (they are few: one list per templated task), kept live. */
 export function useChecklist(link: HostLink) {
   const [items, setItems] = useState<readonly ChecklistItem[]>([]);
   useEffect(() => {
     let cancelled = false;
-    const load = () =>
+    const load = (first = false) =>
       call(link, "GET /api/checklist")
-        .then((list) => !cancelled && setItems(list))
+        .then((list) => !cancelled && setItems((cur) => (first ? mergeFirstLoad(list, cur) : list)))
         .catch(() => undefined);
     const off = onHostEvent((e) => {
       if (e.type !== "checklist.upserted") return;
       setItems((cur) => (cur.some((i) => i.id === e.item.id) ? cur.map((i) => (i.id === e.item.id ? e.item : i)) : [...cur, e.item]));
     });
     const offReconnect = onHostReconnect(() => void load());
-    void load();
+    void load(true);
     return () => {
       cancelled = true;
       off();

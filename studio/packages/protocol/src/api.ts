@@ -61,6 +61,8 @@ export interface HostRoutes {
   /** Extension packs in the workspace's `.amo/packs`, valid or not (design/pack-format.md). */
   "GET /api/workspaces/:id/packs": { req: void; res: import("./packs.js").WorkspacePack[] };
   "GET /api/workspaces/:id/packs/:pack/docs/:doc": { req: void; res: import("./packs.js").PackDocContent };
+  /** Fills a pack's session preset in for a task; nothing is started (the person confirms in the new-session form). */
+  "POST /api/workspaces/:id/packs/:pack/presets/:preset/draft": { req: { taskId: Id }; res: import("./packs.js").PresetDraft };
   /** `template`: a task template from an extension pack; the task gets its title prefix and its steps as a checklist. */
   "POST /api/tasks": { req: { title?: string; scope: TaskScope; firstSession: NewSessionInput; template?: TaskTemplateChoice }; res: { task: Task; session: Session } };
   "PATCH /api/tasks/:id": { req: { title?: string; column?: TaskColumn }; res: Task };

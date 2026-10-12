@@ -30,12 +30,14 @@ import type {
   ChecklistItem,
   TaskTemplateChoice,
   PackTemplate,
+  PresetDraft,
 } from "@amo-studio/protocol";
-import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
+import { PACKS_DIR, addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
 import type { TerminalHandle, TerminalLauncher } from "./terminal/launcher.js";
 import { PackError, PackLoader } from "./packs/pack-loader.js";
+import { presetDraft } from "./packs/presets.js";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
@@ -698,6 +700,20 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     this.store.putChecklistItem(next);
     this.publish({ type: "checklist.upserted", item: next });
     return next;
+  }
+
+  /** A pack's session preset filled in for a task, for the person to confirm; a workspace task uses its own workspace's packs. */
+  presetDraft(workspaceId: Id, packName: string, presetId: string, taskId: unknown): PresetDraft {
+    if (typeof taskId !== "string") throw new HostError("bad_request", "taskId is required");
+    const task = this.requireTask(taskId);
+    const workspace = this.requireWorkspace(workspaceId);
+    if (task.scope.kind === "workspace" && task.scope.workspaceId !== workspaceId) throw new HostError("bad_request", "a workspace task takes presets from its own workspace");
+    const pack = this.packs(workspaceId).find((p) => p.dirName === packName);
+    if (!pack?.manifest) throw new HostError(pack ? "bad_request" : "not_found", pack ? `扩展包 ${packName} 有错误` : `扩展包 ${packName} 不存在`);
+    const preset = pack.manifest.presets.find((p) => p.id === presetId);
+    if (!preset) throw new HostError("not_found", `扩展包 ${packName} 里没有启动预设 ${presetId}`);
+    // {{pack.dir}} is relative to the workspace (sessions run there), with forward slashes: short and the same on every OS.
+    return presetDraft({ preset, packDir: `${PACKS_DIR}/${pack.dirName}`, workspace, taskTitle: task.title, profileIds: this.profiles.map((p) => p.id) });
   }
 
   /** A template of a valid pack; for a workspace task it must come from that workspace. */

@@ -105,3 +105,43 @@ test("task templates: a task made from a template carries its steps as a checkli
   await page.getByRole("button", { name: "← 看板" }).click();
   await expect(page.getByTestId("task-card").filter({ hasText: "冲刺技能" })).toContainText("清单 1/5");
 });
+
+test("session presets: a preset fills the new-session form and starts only when confirmed", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const path = studio.workspace("alpha");
+  cpSync(EXAMPLE, join(path, ".amo", "packs", "demo"), { recursive: true });
+  writeFileSync(join(path, "README.md"), "# alpha\n");
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path });
+  const { task } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+    title: "冲刺技能",
+    scope: { kind: "workspace", workspaceId: ws.id },
+    firstSession: { profileId: "codex-mock" },
+  });
+  await page.getByTestId("task-card").filter({ hasText: task.title }).click();
+  const sessionCount = async () => (await studio!.api<{ sessions: Session[] }>("GET", "/api/state")).sessions.filter((s) => s.taskId === task.id).length;
+  expect(await sessionCount()).toBe(1);
+
+  // Picking a preset only prefills: the prompt with the task's title, the files to read, and why the model fell back
+  // (the example names a DeepSeek profile that the test setup does not have).
+  await page.getByLabel("按预设新建会话").selectOption({ label: "示例：小游戏玩法开发 · 按约定实现" });
+  const form = page.getByTestId("preset-draft");
+  await expect(form.getByLabel("预设提示词")).toHaveValue(/请实现任务「冲刺技能」。开始前先读 \.amo\/packs\/demo\/docs\/conventions\.md/);
+  await expect(form.getByLabel("预设提示词")).toHaveValue(/相关文件（开始前请先阅读）：\n- README\.md$/);
+  await expect(form.getByTestId("preset-warnings")).toContainText("没有模型配置 codex-deepseek-flash，改用默认模型");
+  await screenshot(studio.app, "stage-6", "S6-04-preset-draft", page);
+  expect(await sessionCount()).toBe(1);
+
+  // Cancel leaves nothing behind; confirming starts the session with the (edited) prompt.
+  await form.getByRole("button", { name: "取消" }).click();
+  await expect(form).toHaveCount(0);
+  await page.getByLabel("按预设新建会话").selectOption({ label: "示例：小游戏玩法开发 · 按约定实现" });
+  await form.getByLabel("预设模型").selectOption({ label: "Codex · Mock 模型" });
+  const text = await form.getByLabel("预设提示词").inputValue();
+  await form.getByLabel("预设提示词").fill(`${text}\n先只读代码，不要改。`);
+  await form.getByRole("button", { name: "开始" }).click();
+  await expect(form).toHaveCount(0);
+  await expect.poll(sessionCount).toBe(2);
+  await expect(page.getByTestId("msg-user").last()).toContainText("先只读代码，不要改。");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 请实现任务「冲刺技能」", { timeout: 60_000 });
+});

@@ -467,3 +467,7 @@ a.md-link { cursor: pointer; }
 .newtask-template { display: flex; flex-direction: column; gap: 6px; align-items: center; font-size: 12px; color: var(--text-dim); max-width: 520px; }
 .newtask-template select { height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
 .newtask-steps { margin: 0; padding-left: 18px; text-align: left; }
+
+/* Session presets (S6-04) */
+.preset-draft { margin: 12px 20px 0; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--primary); background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+.preset-text { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg, var(--panel-raised)); color: var(--text); font: inherit; font-size: 13px; resize: vertical; }

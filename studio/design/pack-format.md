@@ -44,7 +44,7 @@
 | `presets[]` | 否 | 启动预设：`id`、`title`、`profile`（模型配置 id，不存在时用默认模型）、`prompt`（第一条消息）、`contextFiles`（相对工作区，列在提示词里让 agent 自己读） |
 | `tools[]` | 否 | 专用工具：**只是预留**，列出来但不会运行 |
 
-提示词里可用的变量：`{{task.title}}`、`{{workspace.path}}`、`{{pack.dir}}`。写了其他变量会报错。
+提示词里可用的变量：`{{task.title}}`（任务标题）、`{{workspace.path}}`（工作区的绝对路径）、`{{pack.dir}}`（扩展包目录，相对工作区，例如 `.amo/packs/demo`；会话就在工作区里运行）。写了其他变量会报错。
 
 ## 限制（按不可信内容处理）
 

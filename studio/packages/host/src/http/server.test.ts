@@ -315,6 +315,24 @@ describe("Host API", () => {
     expect(() => service.setChecklistDone(items[0]!.id, true, session.id)).toThrow("a session can only tick its own task's checklist");
   });
 
+  it("fills a pack's session preset in for a task without starting anything", async () => {
+    const path = join(root, "preset");
+    const dir = join(path, ".amo", "packs", "demo");
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(join(dir, "pack.json"), JSON.stringify({ schemaVersion: 1, name: "demo", title: "示例", presets: [{ id: "impl", title: "实现", profile: "p-ds", prompt: "实现「{{task.title}}」" }] }));
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path });
+    const { task } = await ok<{ task: Task }>("POST", "/api/tasks", { title: "冲刺", scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "p-ds" } });
+    const sessionsBefore = (await ok<StateSnapshot>("GET", "/api/state")).sessions.length;
+    const draft = await ok("POST", `/api/workspaces/${ws.id}/packs/demo/presets/impl/draft`, { taskId: task.id });
+    expect(draft).toEqual({ presetId: "impl", title: "实现", workspaceId: ws.id, profileId: "p-ds", text: "实现「冲刺」", contextFiles: [], warnings: [] });
+    expect((await ok<StateSnapshot>("GET", "/api/state")).sessions.length).toBe(sessionsBefore);
+    expect((await api("POST", `/api/workspaces/${ws.id}/packs/demo/presets/nope/draft`, { taskId: task.id })).status).toBe(404);
+    expect((await api("POST", `/api/workspaces/${ws.id}/packs/demo/presets/impl/draft`, {})).status).toBe(400);
+    // A workspace task takes presets from its own workspace only.
+    const { task: elsewhere } = await createTask("elsewhere");
+    expect((await api("POST", `/api/workspaces/${ws.id}/packs/demo/presets/impl/draft`, { taskId: elsewhere.id })).status).toBe(400);
+  });
+
   it("keeps whole-picture todos", async () => {
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
     expect(await ok("GET", "/api/todos")).toEqual([]);
