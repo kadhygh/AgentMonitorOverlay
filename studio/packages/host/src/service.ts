@@ -25,11 +25,14 @@ import type {
   TaskColumn,
   TaskScope,
   Workspace,
+  WorkspacePack,
+  PackDocContent,
 } from "@amo-studio/protocol";
 import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
 import type { TerminalHandle, TerminalLauncher } from "./terminal/launcher.js";
+import { PackError, PackLoader } from "./packs/pack-loader.js";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
@@ -67,6 +70,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   private readonly handoffs = new Map<Id, TerminalHandle>();
   /** One reclaim at a time per session, or the terminal's additions would be imported twice. */
   private readonly reclaiming = new Map<Id, Promise<Session>>();
+  private readonly packLoader = new PackLoader();
 
   constructor(
     readonly store: Store,
@@ -665,6 +669,26 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const p = this.profiles.find((x) => x.id === id);
     if (!p) throw new HostError("bad_request", `unknown model profile ${id}`);
     return p;
+  }
+
+  /** Extension packs found in a workspace (`.amo/packs`), valid or not. */
+  packs(workspaceId: Id): WorkspacePack[] {
+    return this.packLoader.list(this.requireWorkspace(workspaceId).path);
+  }
+
+  packDoc(workspaceId: Id, pack: string, docId: string): PackDocContent {
+    try {
+      return this.packLoader.readDoc(this.requireWorkspace(workspaceId).path, pack, docId);
+    } catch (err) {
+      if (err instanceof PackError) throw new HostError(err.kind, err.message);
+      throw err;
+    }
+  }
+
+  private requireWorkspace(id: Id): Workspace {
+    const ws = this.store.getWorkspace(id);
+    if (!ws) throw new HostError("not_found", `workspace ${id} not found`);
+    return ws;
   }
 
   private requireTask(id: Id): Task {

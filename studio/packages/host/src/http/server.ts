@@ -79,6 +79,8 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       return service.addWorkspace({ path: str(b.path, "path"), ...(typeof b.name === "string" ? { name: b.name } : {}) });
     }),
     route("DELETE", "/api/workspaces/:id", ({ params }) => (service.removeWorkspace(params.id!), { ok: true })),
+    route("GET", "/api/workspaces/:id/packs", ({ params }) => service.packs(params.id!)),
+    route("GET", "/api/workspaces/:id/packs/:pack/docs/:doc", ({ params }) => service.packDoc(params.id!, params.pack!, params.doc!)),
     route("POST", "/api/tasks", ({ body }) => service.createTask(obj(body) as never)),
     route("PATCH", "/api/tasks/:id", ({ params, body }) => service.updateTask(params.id!, obj(body) as never)),
     route("POST", "/api/tasks/:id/sessions", ({ params, body }) => service.addSession(params.id!, obj(body) as never)),

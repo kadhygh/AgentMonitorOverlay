@@ -27,7 +27,7 @@
 - 内容：protocol 里定义 `PackManifest`（`name`、`title`、`description`、`docs[]`、`templates[]`、`presets[]`、`tools[]`），写校验函数：字段类型、id 唯一、路径安全、数量与长度上限；错误信息写清楚是哪个字段。格式说明写进 `design/pack-format.md`。
 - 验收：单测覆盖正确的 manifest、各类错误、路径越界（`..`、绝对路径、盘符）。符号链接要读文件系统，放在 S6-01 的 Host 加载里检查。
 
-### S6-01 Host 加载扩展包 · todo
+### S6-01 Host 加载扩展包 · done
 - 依赖：S6-00
 - 内容：扫描工作区的 `.amo/packs/*/pack.json`；接口 `GET /api/workspaces/:id/packs`（列表，含每个包的错误）、`GET /api/workspaces/:id/packs/:pack/docs/:doc`（读一篇文档，限大小）；按修改时间缓存。
 - 验收：接口单测（正常、manifest 写错、文档缺失、超大文档、越界路径、同一工作区多个包）。

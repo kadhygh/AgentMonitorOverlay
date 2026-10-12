@@ -51,6 +51,9 @@ export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
   "POST /api/workspaces": { req: { path: string; name?: string }; res: Workspace };
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
+  /** Extension packs in the workspace's `.amo/packs`, valid or not (design/pack-format.md). */
+  "GET /api/workspaces/:id/packs": { req: void; res: import("./packs.js").WorkspacePack[] };
+  "GET /api/workspaces/:id/packs/:pack/docs/:doc": { req: void; res: import("./packs.js").PackDocContent };
   "POST /api/tasks": { req: { title?: string; scope: TaskScope; firstSession: NewSessionInput }; res: { task: Task; session: Session } };
   "PATCH /api/tasks/:id": { req: { title?: string; column?: TaskColumn }; res: Task };
   "POST /api/tasks/:id/sessions": { req: NewSessionInput; res: Session };

@@ -272,6 +272,21 @@ describe("Host API", () => {
     expect(mail[0]).toMatchObject({ fromSessionId: null, text: "针对你的问题「掉落表按关卡拆还是按怪物拆？」，我的决定：按关卡" });
   });
 
+  it("lists a workspace's extension packs and reads their documents", async () => {
+    const path = join(root, "packed");
+    const dir = join(path, ".amo", "packs", "demo");
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "pack.json"), JSON.stringify({ schemaVersion: 1, name: "demo", title: "示例", docs: [{ id: "style", title: "规范", path: "docs/style.md" }] }));
+    writeFileSync(join(dir, "docs", "style.md"), "# 规范");
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path });
+    const packs = await ok<Array<{ dirName: string; manifest: { title: string } | null; errors: string[] }>>("GET", `/api/workspaces/${ws.id}/packs`);
+    expect(packs.map((p) => [p.dirName, p.manifest?.title, p.errors])).toEqual([["demo", "示例", []]]);
+    expect(await ok("GET", `/api/workspaces/${ws.id}/packs/demo/docs/style`)).toMatchObject({ pack: "demo", id: "style", text: "# 规范" });
+    expect((await api("GET", `/api/workspaces/${ws.id}/packs/demo/docs/nope`)).status).toBe(404);
+    expect((await api("GET", `/api/workspaces/${ws.id}/packs/${encodeURIComponent("..")}/docs/style`)).status).toBe(404);
+    expect((await api("GET", "/api/workspaces/nope/packs")).status).toBe(404);
+  });
+
   it("keeps whole-picture todos", async () => {
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
     expect(await ok("GET", "/api/todos")).toEqual([]);

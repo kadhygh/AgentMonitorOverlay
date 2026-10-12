@@ -65,6 +65,10 @@ export const PACK_LIMITS = {
   step: 500,
   prompt: 8000,
   path: 260,
+  // Read by the Host:
+  packs: 20,
+  manifestBytes: 256 * 1024,
+  docBytes: 512 * 1024,
 } as const;
 
 const ID = /^[a-z0-9][a-z0-9_-]{0,39}$/;
@@ -219,4 +223,24 @@ export function validatePackManifest(raw: unknown): PackValidation {
 
   if (c.errors.length || !name || !title) return { ok: false, errors: c.errors, warnings: c.warnings };
   return { ok: true, manifest: { schemaVersion: 1, name, title, ...(description ? { description } : {}), docs, templates, presets, tools }, warnings: c.warnings };
+}
+
+/** A pack as the Host found it in a workspace: the manifest when it is valid, its problems otherwise. */
+export interface WorkspacePack {
+  /** The directory name under .amo/packs. */
+  dirName: string;
+  /** Absolute directory of the pack. */
+  dir: string;
+  manifest: PackManifest | null;
+  errors: string[];
+  warnings: string[];
+}
+
+/** One pack document, read. */
+export interface PackDocContent {
+  pack: string;
+  id: string;
+  title: string;
+  path: string;
+  text: string;
 }

@@ -767,3 +767,15 @@
 - 验证：`npm run verify` 退出码 0
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 07:30 · S6-01 Host 加载扩展包
+- 结果：done
+- 改动：
+  - `packages/host/src/packs/pack-loader.ts`：扫描工作区 `.amo/packs/*/pack.json`（最多 20 个包）；manifest 最大 256 KB，按修改时间和大小缓存；文档每次现读，最大 512 KB；
+  - 所有路径都先解析符号链接再检查：`.amo` 本身、包目录、`pack.json`、文档，只要指到外面就不读（包目录指到外面的直接跳过）；
+  - 一个包写错（不是 JSON、缺字段、缺 `pack.json`）只显示在它自己的条目上，不影响其他包；文档缺失、`name` 和目录名不同记为警告；
+  - 接口：`GET /api/workspaces/:id/packs`、`GET /api/workspaces/:id/packs/:pack/docs/:doc`
+- 测试：加载器 7 个单测（无扩展包、好坏混在一起、警告、读文档与各种拒绝、符号链接逃逸三种情况、修改后重读、`resolveInside`），接口测试 1 个
+- 验证：`npm run verify` 退出码 0
+- 额度：0
+- commit：见本次 commit
