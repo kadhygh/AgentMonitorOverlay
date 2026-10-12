@@ -74,3 +74,10 @@
 - 验证：`npm run verify` 通过（25 个单元测试）；`verify-mock-codex.mjs` 用真实 `codex app-server` 0.161 跑通两轮：纯文本（3 个 delta）和"审批 → 执行 `cmd /c echo` → 回复 MOCK-DONE"，没有消耗额度
 - commit：见本次 commit
 - 遗留：Codex 给模型的 shell 工具名是 `shell_command`，参数为 `{ command: string }`；`echo` 这类安全命令在 untrusted 下不会触发审批，测试审批要用 `cmd /c …`
+
+## 2026-10-12 23:55 · S1-04b fake app-server
+- 结果：done
+- 改动：`packages/testkit/src/fake-app-server.ts`（WebSocket JSON-RPC，capability token 校验；thread start/resume/fork/archive/read/list/loaded，turn start/steer/interrupt；审批广播、先答先得、晚订阅补发；fork 默认落到 server 默认 provider；子 agent；剧本可替换）、`fake-app-server.test.ts`（10 个场景）；testkit 新增依赖 `ws@8.21.3`、`@types/ws@8.18.2`
+- 验证：`npm run verify` 通过（35 个单元测试），testkit 测试连跑 3 次稳定
+- commit：见本次 commit
+- 遗留：fake 的事件字段只覆盖 Host 会用到的部分，类型上没有严格对齐生成的 `ThreadItem`；S1-06 的 runtime 测试会同时用 fake 和"真实 app-server + mock 模型"两条路径，防止 fake 与真实行为偏离
