@@ -43,3 +43,10 @@
 - 验证：真实 DeepSeek 计数 7 次（其中 2 次 fork 落到 OpenAI 返回 401，没有实际消耗）
 - commit：见本次 commit
 - 遗留：**安全发现**——fork 不继承父 thread 的 provider，会落到 server 默认；改为每个 profile 一个 app-server 并设为默认。TUI `/fork` 的实际表现待 S1-00e 由用户验证
+
+## 2026-10-12 23:00 · S1-00e TUI 配合脚本
+- 结果：done
+- 改动：`spikes/s1-00e-tui.mjs`、`NEEDS_YOU.md`（请你过目）
+- 验证：`--dry` 模式启动并停止 server 通过，没有调用模型；交互部分要等用户执行
+- commit：见本次 commit
+- 遗留：S1-00 整体完成；用户回复后把 e 的结果补进 `RESULTS.md`

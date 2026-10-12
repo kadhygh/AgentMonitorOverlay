@@ -9,6 +9,11 @@
 附件：`docs/deepseek-routing-sop.md`
 回复：
 
+### [请你过目] 用真实 TUI 验证 /fork、side chat 和重连（2026-10-12，阶段 1，S1-00e）
+需要你在终端里操作一次，大约 5 分钟，DeepSeek 大约用 5～8 次。在 `G:\PROJECT\AgentMonitorOverlay-studio` 下执行 `node studio/spikes/s1-00e-tui.mjs`，按它打印的步骤做：在另一个窗口粘贴接入命令，TUI 里说一句话、执行 `/fork`（有 side chat 也开一次），再发一句含 AMO-RESTART 的话让脚本重启 server，等 TUI 重连后再说一句，最后 Ctrl+C。server 用沙盒的 CODEX_HOME，默认 provider 是 DeepSeek，不会用到 GPT。做完回复"已做"即可，结果在 `studio/spikes/results/s1-00e.log`，下一轮我来分析。不做也不挡后续开发。
+附件：`studio/spikes/RESULTS.md`（a～d 的结论）
+回复：
+
 ## 已处理
 
 （暂无）

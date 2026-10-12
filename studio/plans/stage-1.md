@@ -20,7 +20,7 @@
 
 状态值：`todo` | `in_progress` | `done` | `blocked`。每个任务完成后，提交一个 commit。
 
-### S1-00 协议补测 · in_progress（拆成 S1-00a～e）
+### S1-00 协议补测 · done（拆成 S1-00a～e；e 的用户验证结果回来后补进 RESULTS）
 
 - 依赖：S1-01（真实调用要先经过 `budget.ts` 计数，2026-10-12 调整）
 - 内容：在 `studio/spikes/` 下写脚本，结论记录到 `studio/spikes/RESULTS.md`。
@@ -36,7 +36,7 @@
   - S1-00b 单 server 多 provider · done
   - S1-00c 重启重连（顺带测：审批挂起后才订阅的客户端能否补收请求；按 thread 指定 provider 的会话在重启后 `thread/resume` 不带 config 能否恢复路由） · done
   - S1-00d 其他客户端发起的 fork · done
-  - S1-00e 准备需要用户配合的 TUI 脚本（`/fork`、side chat、自动重连），写入 NEEDS_YOU · todo
+  - S1-00e 准备需要用户配合的 TUI 脚本（`/fork`、side chat、自动重连），写入 NEEDS_YOU · done
 
 ### S1-01 脚手架 · done
 
