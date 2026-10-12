@@ -1,43 +1,14 @@
-import { EventEmitter } from "node:events";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { HostEvent, ModelProfile, Session, SessionItem, Workspace } from "@amo-studio/protocol";
-import { startFakeAppServer, type FakeAppServer } from "@amo-studio/testkit";
 import { Store } from "../../store/store.js";
-import { CodexRuntime, type CodexServers } from "./codex-runtime.js";
+import { CodexRuntime } from "./codex-runtime.js";
+import { FakeServers } from "./fake-servers.test-support.js";
 import { CodexRpcClient } from "./rpc-client.js";
-import type { CodexServerHandle } from "./server-manager.js";
 
 const PROFILES: ModelProfile[] = [
   { id: "p-ds", label: "DS", runtime: "codex", provider: "amo-ds", model: "ds-model" },
   { id: "p-default", label: "Default", runtime: "codex", provider: null, model: null },
 ];
-
-/** One fake app-server per profile, with the profile's provider as server default (as the real manager does). */
-class FakeServers extends EventEmitter<{ ready: [CodexServerHandle] }> implements CodexServers {
-  fakes = new Map<string, FakeAppServer>();
-  handles = new Map<string, CodexServerHandle>();
-
-  async ensure(profileId: string): Promise<CodexServerHandle> {
-    const known = this.handles.get(profileId);
-    if (known?.client.isOpen) return known;
-    let fake = this.fakes.get(profileId);
-    if (!fake) {
-      const profile = PROFILES.find((p) => p.id === profileId)!;
-      fake = await startFakeAppServer({ defaultProvider: profile.provider ?? "openai" });
-      this.fakes.set(profileId, fake);
-    }
-    const client = await CodexRpcClient.connect({ url: fake.url, token: fake.token });
-    const handle: CodexServerHandle = { profileId, url: fake.url, port: fake.port, token: fake.token, client };
-    this.handles.set(profileId, handle);
-    this.emit("ready", handle);
-    return handle;
-  }
-
-  async close() {
-    for (const h of this.handles.values()) h.client.close();
-    for (const f of this.fakes.values()) await f.close();
-  }
-}
 
 let store: Store;
 let servers: FakeServers;
@@ -48,7 +19,7 @@ let taskId: string;
 
 beforeEach(() => {
   store = new Store(":memory:");
-  servers = new FakeServers();
+  servers = new FakeServers(PROFILES);
   runtime = new CodexRuntime({ store, servers, profiles: PROFILES });
   events = [];
   runtime.on("event", (e) => events.push(e));

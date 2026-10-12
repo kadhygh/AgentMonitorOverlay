@@ -128,3 +128,10 @@
 - 验证：集成测试连跑 3 次 6/6 通过；`npm run verify` 通过（67 个测试）。没有消耗额度
 - commit：见本次 commit
 - 遗留：被结束的 codex 进程有时要十几秒才从端口监听表里消失，临时目录的文件也会被占用一会儿；测试清理改为重试后放弃，不让测试失败
+
+## 2026-10-13 02:10 · S1-07a Host API：REST 与事件流
+- 结果：done
+- 改动：`packages/host/src/service.ts`（工作区登记与路径校验、建任务并开首个会话、跨工作区任务按会话选工作区、移动看板列、加会话、消息/插话、打断、fork、归档/恢复、审批；错误统一为 HostError）、`http/server.ts`（127.0.0.1、`Authorization: Bearer` 校验 Host token、WS `/api/events?token=&since=` 先补发再推实时、delta 只推实时、CORS 白名单、可同源托管 UI 静态文件）、`server.test.ts`（9 个场景）；`FakeServers` 抽到 `fake-servers.test-support.ts`（不进构建）
+- 验证：`npm run verify` 通过（76 个测试），API 测试连跑 3 次稳定
+- commit：见本次 commit
+- 遗留：默认决定——带首条消息新建的任务直接放在"进行中"列（人随即开始推进，不算 agent 移卡）；Host 只监听本机，但所有 /api 都要 token，防止本机其他程序驱动会话

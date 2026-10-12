@@ -114,7 +114,7 @@
   - S1-06c 会话操作、事件规范化入库、审批转交、父子关系、provider 不一致告警 · done
   - S1-06d 集成测试：真实 `codex app-server` 加 mock 模型跑通 start / 审批 / fork / 归档 / 重启恢复 · done
 
-### S1-07 Host API · todo
+### S1-07 Host API · in_progress（拆成 a、b）
 
 - 依赖：S1-06
 - 内容：
@@ -123,6 +123,9 @@
   - 终端接入：生成 `codex --remote <ws> --remote-auth-token-env <ENV> resume <threadId>`，并在新的终端窗口里执行（token 只通过环境变量传递）。测试模式下只返回命令，不打开窗口。
   - 会话的写入状态。
 - 验收：API 集成测试（基于 fake app-server）；Host 重启后数据恢复。
+- 子任务（2026-10-13 拆分）：
+  - S1-07a 业务层 `HostService`、REST 路由、WS 事件流（`?since=` 补发）、Host token、CORS 白名单、同源托管 UI · done
+  - S1-07b 终端接入（生成并在新窗口执行 `codex --remote … resume`，token 只走环境变量；写入状态）、Host 进程入口（数据目录、单实例锁、端口文件、token 文件） · todo
 
 ### S1-08 Electron 外壳 · todo
 
