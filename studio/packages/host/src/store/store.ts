@@ -320,6 +320,15 @@ export class Store {
       .run(a.id, a.sessionId, a.itemId, JSON.stringify(a), a.createdAt);
   }
 
+  getAnnotation(id: Id): Annotation | undefined {
+    const r = this.db.prepare("SELECT body FROM annotations WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as Annotation);
+  }
+
+  deleteAnnotation(id: Id): void {
+    this.db.prepare("DELETE FROM annotations WHERE id = ?").run(id);
+  }
+
   listAnnotations(sessionId: Id): Annotation[] {
     return (this.db.prepare("SELECT body FROM annotations WHERE session_id = ? ORDER BY created_at, id").all(sessionId) as Row[]).map(
       (r) => JSON.parse(str(r.body)) as Annotation,

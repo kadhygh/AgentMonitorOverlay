@@ -23,7 +23,7 @@
 - 内容：表格、嵌套列表、代码块语言标签与"复制"按钮、http/https 链接用系统浏览器打开（preload `openExternal`，主进程只放行 http/https）；渲染块带源文本区间（`data-src-start`/`data-src-end`）。
 - 验收：单元测试覆盖解析（含表格、嵌套列表、未闭合代码块）；e2e 截图一条含表格和代码的回复。
 
-### S2-02 批注 API · todo
+### S2-02 批注 API · done
 - 依赖：无
 - 内容：Host 路由：列出会话批注、新建、修改备注、删除、"汇总发回"（按回复顺序拼成一条用户消息发出，并给这些批注写 `sentAt`）；HostEvent 增加 `annotation.upserted`、`annotation.removed`；protocol 的 `Annotation` 增加上下文字段。
 - 验收：API 集成测试（fake app-server）：建批注 → 汇总发回 → 会话收到一条包含所有批注的用户消息，批注标记为已发送。

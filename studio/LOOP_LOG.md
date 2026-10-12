@@ -210,3 +210,10 @@
 - 验证：`npm run verify` 通过；e2e 12/12；截图 `screenshots/stage-2/S2-01-markdown.png`
 - commit：见本次 commit
 - 遗留：无
+
+## 2026-10-13 06:05 · S2-02 批注 API
+- 结果：done
+- 改动：protocol 的 `Annotation` 增加 `prefix`/`suffix`；新增 `NewAnnotationInput`、5 条批注路由、`annotation.upserted`/`annotation.removed` 事件、共享的 `composeAnnotationMessage`（Host 发送和 UI 预览用同一份格式）；Store 增加 `getAnnotation`、`deleteAnnotation`；HostService 增加列出/新建/修改/删除/汇总发回（只能批注 agent 回复、备注与原文不能为空、区间必须有效；按回复顺序和段内位置排序；发出后写 `sentAt`，已发送的批注不能再改）
+- 验证：`npm run verify` 通过；API 测试新增"建批注 → 改 → 删 → 汇总发回 → 会话收到一条按顺序拼好的用户消息、批注标记已发送"
+- commit：见本次 commit
+- 遗留：汇总消息的格式是"针对你上面的回复，我有 N 条批注："+ 每条"> 原文 / 备注"，原文超过 300 字截断；用户可在阶段 2 的请你过目里提意见

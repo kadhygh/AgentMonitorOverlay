@@ -110,8 +110,8 @@ describe("Store", () => {
     const store = makeStore();
     const { main } = seed(store);
     const at = "2026-10-12T10:00:00.000Z";
-    store.putAnnotation({ id: "a1", sessionId: main.id, itemId: "i", quote: "q", start: 0, end: 1, note: "n", createdAt: at, sentAt: null });
-    store.putAnnotation({ id: "a1", sessionId: main.id, itemId: "i", quote: "q", start: 0, end: 1, note: "edited", createdAt: at, sentAt: null });
+    store.putAnnotation({ id: "a1", sessionId: main.id, itemId: "i", quote: "q", start: 0, end: 1, prefix: "", suffix: "", note: "n", createdAt: at, sentAt: null });
+    store.putAnnotation({ id: "a1", sessionId: main.id, itemId: "i", quote: "q", start: 0, end: 1, prefix: "", suffix: "", note: "edited", createdAt: at, sentAt: null });
     expect(store.listAnnotations(main.id).map((a) => a.note)).toEqual(["edited"]);
     const canvas = { id: "main", groups: [], nodes: [{ id: "n1", kind: "note" as const, text: "x", groupId: null, pos: { x: 1, y: 2 } }], edges: [], updatedAt: at };
     store.putCanvas(canvas);
