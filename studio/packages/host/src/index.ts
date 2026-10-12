@@ -10,5 +10,7 @@ export * from "./runtime/codex/server-manager.js";
 export * from "./runtime/codex/codex-runtime.js";
 export * from "./service.js";
 export * from "./http/server.js";
+export * from "./host-process.js";
+export * from "./terminal/launcher.js";
 
 export const HOST_PROTOCOL_VERSION = PROTOCOL_VERSION;

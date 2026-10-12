@@ -172,6 +172,21 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     if (this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, "running");
   }
 
+  /** Where an attached terminal should connect. The token must only travel through an env var. */
+  async attachInfo(sessionId: Id): Promise<{ url: string; token: string; threadId: string }> {
+    const s = this.requireSession(sessionId);
+    if (!s.runtimeRef) throw new Error(`session ${sessionId} has no thread yet`);
+    const handle = await this.handleFor(s.profileId);
+    // Make sure the thread is loaded on this server so `codex --remote … resume` finds it.
+    await handle.client.request("thread/resume", { threadId: s.runtimeRef } as never).catch(() => undefined);
+    return { url: handle.url, token: handle.token, threadId: s.runtimeRef };
+  }
+
+  /** Records who may write; used by terminal attach and reclaim. */
+  setWriter(sessionId: Id, writer: Session["writer"]): Session {
+    return this.updateSession(sessionId, { writer });
+  }
+
   pendingApprovals(sessionId: Id): string[] {
     return [...this.approvals.values()].filter((a) => a.sessionId === sessionId).map((a) => String(a.requestId));
   }

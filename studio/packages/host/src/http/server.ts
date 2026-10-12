@@ -84,6 +84,8 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     }),
     route("POST", "/api/sessions/:id/archive", ({ params }) => service.archive(params.id!)),
     route("POST", "/api/sessions/:id/unarchive", ({ params }) => service.unarchive(params.id!)),
+    route("POST", "/api/sessions/:id/terminal", ({ params, body }) => service.terminal(params.id!, obj(body).launch === true)),
+    route("POST", "/api/sessions/:id/reclaim", ({ params }) => service.reclaim(params.id!)),
     route("POST", "/api/approvals/:approvalId", async ({ params, body }) => {
       const b = obj(body);
       await service.respondApproval(str(b.sessionId, "sessionId"), params.approvalId!, b.decision as never);

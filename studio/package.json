@@ -16,7 +16,8 @@
     "test": "vitest run",
     "build": "tsc -b && npm run build -w @amo-studio/ui",
     "verify": "npm run typecheck && npm run test && npm run build",
-    "test:codex-mock": "tsc -b && node packages/testkit/scripts/verify-mock-codex.mjs"
+    "test:codex-mock": "tsc -b && node packages/testkit/scripts/verify-mock-codex.mjs",
+    "host": "tsc -b && node packages/host/dist/bin.js"
   },
   "devDependencies": {
     "@types/node": "24.19.2",

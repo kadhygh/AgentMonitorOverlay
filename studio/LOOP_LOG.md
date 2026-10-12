@@ -135,3 +135,10 @@
 - 验证：`npm run verify` 通过（76 个测试），API 测试连跑 3 次稳定
 - commit：见本次 commit
 - 遗留：默认决定——带首条消息新建的任务直接放在"进行中"列（人随即开始推进，不算 agent 移卡）；Host 只监听本机，但所有 /api 都要 token，防止本机其他程序驱动会话
+
+## 2026-10-13 02:30 · S1-07b 终端接入与 Host 进程入口
+- 结果：done（S1-07 整体完成）
+- 改动：`service.ts` 新增 `terminal()`（生成 `codex --remote <ws> --remote-auth-token-env AMO_STUDIO_CODEX_TOKEN resume <thread>`，token 只放进新窗口的环境变量；launch 时写入状态改为 terminal-shared）与 `reclaim()`；`terminal/launcher.ts`（Windows 用 `cmd /c start` 开 PowerShell 新窗口；测试用 RecordingTerminalLauncher，不开窗口）；`host-process.ts`（数据目录、`host.lock` 单实例锁并清理死进程留下的锁、`host-token`、`host.json`、关闭时可选择保留 app-server）；`bin.ts`（命令行入口，环境变量配置，IPC `shutdown`/`restart`）；根目录 `npm run host`；runtime 新增 `attachInfo`、`setWriter`
+- 验证：`npm run verify` 通过（81 个测试）；真实 `bin.js` 冒烟：启动在 47905，带 token 200、不带 401，IPC 关闭后锁和 host.json 都已清理，端口释放
+- commit：见本次 commit
+- 遗留：默认决定——正常退出 Host 会停掉 app-server（restart 时保留）；Codex 终端共享时工作台仍可写，"收回"只更新显示状态。真实开窗口只在用户点击时发生，loop 测试不开窗口

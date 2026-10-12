@@ -12,6 +12,7 @@ import type {
   SessionItem,
   StateSnapshot,
   Task,
+  TerminalAttach,
   TaskColumn,
   TaskScope,
   Workspace,
@@ -19,6 +20,10 @@ import type {
 import { TASK_COLUMNS } from "@amo-studio/protocol";
 import type { HostEventInput, Store } from "./store/store.js";
 import type { CodexRuntime } from "./runtime/codex/codex-runtime.js";
+import type { TerminalLauncher } from "./terminal/launcher.js";
+
+/** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
+export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
 
 // Application layer behind the Host API. HTTP handlers stay thin and call into this.
 
@@ -38,6 +43,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     readonly store: Store,
     readonly runtime: CodexRuntime,
     readonly profiles: readonly ModelProfile[],
+    private readonly options: { launcher?: TerminalLauncher } = {},
   ) {
     super();
     runtime.on("event", (e) => this.emit("event", e));
@@ -145,6 +151,37 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     this.requireSession(sessionId);
     if (decision !== "accept" && decision !== "decline") throw new HostError("bad_request", `unknown decision ${String(decision)}`);
     await this.wrap(() => this.runtime.respondApproval(sessionId, approvalId, decision), "conflict");
+  }
+
+  /**
+   * Codex: opens the real TUI on the same app-server (`codex --remote … resume`). Both sides keep writing, so the
+   * session becomes "terminal-shared". With `launch: false` only the command is returned (tests, copy to clipboard).
+   */
+  async terminal(sessionId: Id, launch: boolean): Promise<TerminalAttach> {
+    const s = this.requireSession(sessionId);
+    if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be opened in a terminal");
+    if (s.runtime !== "codex") throw new HostError("bad_request", "only Codex sessions can be attached in stage 1");
+    const info = await this.wrap(() => this.runtime.attachInfo(sessionId));
+    const command = `codex --remote ${info.url} --remote-auth-token-env ${TERMINAL_TOKEN_ENV} resume ${info.threadId}`;
+    if (launch) {
+      if (!this.options.launcher) throw new HostError("bad_request", "no terminal launcher configured");
+      const ws = this.store.getWorkspace(s.workspaceId);
+      this.options.launcher.launch({
+        command,
+        cwd: ws?.path ?? process.cwd(),
+        env: { [TERMINAL_TOKEN_ENV]: info.token },
+        title: `AMO Studio · ${s.title || "会话"}`,
+      });
+      this.runtime.setWriter(sessionId, "terminal-shared");
+    }
+    return { command, envVar: TERMINAL_TOKEN_ENV, launched: launch };
+  }
+
+  /** Back to workbench-only writing (after closing the terminal, or taking a Claude handoff back in stage 4). */
+  reclaim(sessionId: Id): Session {
+    const s = this.requireSession(sessionId);
+    if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be reclaimed");
+    return this.runtime.setWriter(sessionId, "workbench");
   }
 
   // Helpers
