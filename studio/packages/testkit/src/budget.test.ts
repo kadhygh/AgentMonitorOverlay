@@ -1,11 +1,18 @@
 import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { BudgetExceededError, DEFAULT_BUDGET_PATH, readBudget, reserveModelTurn } from "./budget.js";
+import { removeTempDir } from "./temp.js";
+
+const dirs: string[] = [];
+afterEach(() => {
+  while (dirs.length) removeTempDir(dirs.pop()!);
+});
 
 function tempBudget(used: number, limit: number): string {
   const dir = mkdtempSync(join(tmpdir(), "amo-studio-test-budget-"));
+  dirs.push(dir);
   const path = join(dir, "budget.json");
   writeFileSync(path, JSON.stringify({ unit: "turn", providers: { deepseek: { limit, used }, glm: { limit: 1000, used: 0 } }, log: [] }));
   return path;

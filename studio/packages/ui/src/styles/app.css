@@ -407,3 +407,7 @@ a.md-link { cursor: pointer; }
 .side-tabs.small .side-tab { height: 24px; padding: 0 12px; }
 .side-tab[aria-pressed="true"] { background: var(--border); color: var(--text); }
 .agent-view { margin: 0; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: #0c0e10; font-family: var(--font-code); font-size: 12px; color: #d7dce2; white-space: pre-wrap; word-break: break-word; max-height: 60vh; overflow: auto; }
+
+/* Claude handed to a terminal (S4-05) */
+.handoff-banner { display: flex; align-items: center; gap: 12px; margin: 0 16px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--attention-border); background: var(--attention-bg); color: var(--attention); font-size: 13px; }
+.handoff-banner span { flex: 1; }

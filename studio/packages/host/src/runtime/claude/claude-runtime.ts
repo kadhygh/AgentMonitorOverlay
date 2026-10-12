@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { createRequire } from "node:module";
 import { existsSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { forkSession, query, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { dirname, join } from "node:path";
+import { forkSession, getSessionMessages, query, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ApprovalDecision, ApprovalKind, Id, ModelProfile, Session, Workspace } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
@@ -17,7 +18,8 @@ import { claudeEnv, type ClaudeProviderDef } from "./claude-env.js";
 // - a subagent has no session of its own in Claude: its messages carry parent_tool_use_id. Studio still gives each
 //   Agent call a child session ("sub") so the tree and "查看" work as for Codex; it cannot take messages itself;
 // - forks copy the transcript with forkSession() (no model call).
-// Terminal handoff comes in S4-05.
+// - "在终端打开" hands the session to `claude --resume` in a terminal: Studio closes its own process first (one
+//   process per session id), stays read-only meanwhile, and on reclaim imports what the terminal added.
 
 export interface ClaudeRuntimeOptions {
   store: Store;
@@ -154,16 +156,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (!workspace || !parent.runtimeRef) throw new Error(`session ${sessionId} cannot be forked`);
     if (!this.hasTranscript(parent.runtimeRef)) throw Object.assign(new Error("这个会话还没有对话内容，不能分支"), { code: "conflict" });
     const title = `${parent.title || "会话"} · 分支`;
-    // forkSession runs in this process and reads CLAUDE_CONFIG_DIR from it, not from the child env.
-    const previous = process.env.CLAUDE_CONFIG_DIR;
-    process.env.CLAUDE_CONFIG_DIR = this.options.claudeHome;
-    let forked: { sessionId: string };
-    try {
-      forked = await forkSession(parent.runtimeRef, { dir: workspace.path, title });
-    } finally {
-      if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
-      else process.env.CLAUDE_CONFIG_DIR = previous;
-    }
+    const forked = await this.withConfigDir(() => forkSession(parent.runtimeRef!, { dir: workspace.path, title }));
     return this.createSession({
       taskId: parent.taskId,
       parentId: parent.id,
@@ -197,6 +190,42 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     pending.resolve(decision === "accept" ? { behavior: "allow", updatedInput: pending.input } : { behavior: "deny", message: DECLINED });
     this.updateItem(pending.itemId, (item) => (item.type === "approval" ? { ...item, state: decision === "accept" ? "accepted" : "declined" } : item));
     if (live.running && live.approvals.size === 0) this.setStatus(sessionId, "running");
+  }
+
+  /**
+   * Hands the session to a terminal: closes Studio's own process for it, remembers how far the transcript went, and
+   * marks the session read-only. Returns what the terminal should run; the key is only in `env`.
+   */
+  async handoff(sessionId: Id): Promise<{ command: string; cwd: string; env: Record<string, string> }> {
+    const session = this.writable(sessionId);
+    if (this.live.get(sessionId)?.running) throw Object.assign(new Error("回复还在生成，等这一轮结束或先打断，再交给终端"), { code: "conflict" });
+    const workspace = this.store.getWorkspace(session.workspaceId);
+    if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
+    const env = claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv);
+    await this.close(sessionId);
+    const ref = session.runtimeRef!;
+    const seen = this.hasTranscript(ref) ? (await this.transcript(ref, workspace.path)).length : 0;
+    this.store.setKv(handoffKey(sessionId), String(seen));
+    this.updateSession(sessionId, { writer: "terminal-handoff" });
+    // The same Claude Code build as the SDK, so the transcript format always matches; never the "auto" permission mode.
+    const resume = this.hasTranscript(ref) ? `--resume ${ref}` : `--session-id ${ref}`;
+    return { command: `& '${bundledClaudeExe()}' ${resume} --permission-mode default`, cwd: workspace.path, env };
+  }
+
+  /** Takes a handed-off session back and imports what the terminal added to the transcript. */
+  async reclaim(sessionId: Id): Promise<Session> {
+    const session = this.requireSession(sessionId);
+    if (session.writer !== "terminal-handoff") return session;
+    const workspace = this.store.getWorkspace(session.workspaceId);
+    const seen = Number(this.store.getKv(handoffKey(sessionId))?.value ?? "0") || 0;
+    let added = 0;
+    if (workspace && session.runtimeRef && this.hasTranscript(session.runtimeRef)) {
+      const messages = await this.transcript(session.runtimeRef, workspace.path);
+      added = this.importTranscript(sessionId, messages.slice(seen));
+    }
+    this.store.setKv(handoffKey(sessionId), "");
+    this.appendItem(sessionId, { type: "notice", level: "info", message: added ? `已从终端收回，导入了终端里新增的 ${added} 条内容。` : "已从终端收回。" });
+    return this.updateSession(sessionId, { writer: "workbench" });
   }
 
   async attachInfo(): Promise<{ url: string; token: string; threadId: string }> {
@@ -528,6 +557,50 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
   }
 
+  /** In-process SDK helpers (forkSession, getSessionMessages) read CLAUDE_CONFIG_DIR from this process. */
+  private async withConfigDir<T>(fn: () => Promise<T>): Promise<T> {
+    const previous = process.env.CLAUDE_CONFIG_DIR;
+    process.env.CLAUDE_CONFIG_DIR = this.options.claudeHome;
+    try {
+      return await fn();
+    } finally {
+      if (previous === undefined) delete process.env.CLAUDE_CONFIG_DIR;
+      else process.env.CLAUDE_CONFIG_DIR = previous;
+    }
+  }
+
+  private transcript(ref: string, dir: string) {
+    return this.withConfigDir(() => getSessionMessages(ref, { dir }));
+  }
+
+  /** Turns transcript messages (written by a terminal) into items; returns how many were added. */
+  private importTranscript(sessionId: Id, messages: Array<{ type: string; message: unknown }>): number {
+    let added = 0;
+    const tools = new Map<string, Id>();
+    for (const m of messages) {
+      const content = (m.message as { content?: unknown })?.content;
+      const blocks: Array<Record<string, unknown>> = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : [];
+      for (const b of blocks) {
+        if (m.type === "user" && b.type === "text" && typeof b.text === "string" && !/^\s*(<[a-z-]+>|\[Request interrupted)/.test(b.text)) {
+          this.appendItem(sessionId, { type: "user", text: b.text }, { method: "transcript" });
+          added++;
+        } else if (m.type === "user" && b.type === "tool_result") {
+          const itemId = tools.get(String(b.tool_use_id));
+          const detail = toolResultText(b.content);
+          if (itemId) this.updateItem(itemId, (it) => (it.type === "tool" ? { ...it, status: b.is_error ? "failed" : "completed", ...(detail ? { detail: detail.slice(-4000) } : {}) } : it));
+        } else if (m.type === "assistant" && b.type === "text" && typeof b.text === "string" && b.text.trim()) {
+          this.appendItem(sessionId, { type: "agent", markdown: b.text, streaming: false }, { method: "transcript" });
+          added++;
+        } else if (m.type === "assistant" && b.type === "tool_use") {
+          const created = this.appendItem(sessionId, { type: "tool", ...describeToolUse(String(b.name), (b.input ?? {}) as Record<string, unknown>), status: "completed" }, { method: "transcript", itemId: String(b.id) });
+          tools.set(String(b.id), created.id);
+          added++;
+        }
+      }
+    }
+    return added;
+  }
+
   private hasTranscript(ref: string): boolean {
     const projects = join(this.options.claudeHome, "projects");
     if (!existsSync(projects)) return false;
@@ -561,6 +634,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (!s.runtimeRef) throw new Error(`session ${id} has no Claude session id`);
     return s;
   }
+}
+
+const handoffKey = (sessionId: Id) => `claude-handoff-seen:${sessionId}`;
+
+/** The Claude Code executable that ships with the SDK (same version as the SDK's own processes). */
+function bundledClaudeExe(): string {
+  const require = createRequire(import.meta.url);
+  return join(dirname(require.resolve("@anthropic-ai/claude-agent-sdk-win32-x64/package.json")), "claude.exe");
 }
 
 const firstLine = (err: unknown) => String((err as Error)?.message ?? err).split(/\r?\n/)[0]!.slice(0, 300);

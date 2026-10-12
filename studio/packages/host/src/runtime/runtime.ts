@@ -25,6 +25,10 @@ export interface SessionRuntimeApi {
   /** Codex only: where an attached TUI connects. */
   attachInfo(sessionId: Id): Promise<{ url: string; token: string; threadId: string }>;
   setWriter(sessionId: Id, writer: Session["writer"]): Session;
+  /** Claude only: hand the session to `claude --resume` in a terminal (Studio read-only meanwhile). */
+  handoff?(sessionId: Id): Promise<{ command: string; cwd: string; env: Record<string, string> }>;
+  /** Claude only: take a handed-off session back, importing what the terminal added. */
+  reclaim?(sessionId: Id): Promise<Session>;
   on(event: "event", listener: (e: HostEvent) => void): unknown;
   on(event: "log", listener: (line: string) => void): unknown;
 }
@@ -83,6 +87,15 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   }
   setWriter(sessionId: Id, writer: Session["writer"]) {
     return this.forSession(sessionId).setWriter(sessionId, writer);
+  }
+  handoff(sessionId: Id) {
+    const r = this.forSession(sessionId);
+    if (!r.handoff) throw new Error("this runtime does not hand sessions to a terminal");
+    return r.handoff(sessionId);
+  }
+  async reclaim(sessionId: Id): Promise<Session> {
+    const r = this.forSession(sessionId);
+    return r.reclaim ? r.reclaim(sessionId) : r.setWriter(sessionId, "workbench");
   }
 }
 

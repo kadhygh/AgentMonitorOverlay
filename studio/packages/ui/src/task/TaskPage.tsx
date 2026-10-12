@@ -75,10 +75,15 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
       setSelected(next?.id ?? null);
     });
   const fork = (id: string) => run(() => call(link, "POST /api/sessions/:id/fork", { id }, {}), (s) => setSelected(s.id));
-  const openTerminal = (id: string) =>
-    run(() => call(link, "POST /api/sessions/:id/terminal", { id }, { launch: true }), (r) =>
-      setToast({ text: "已在新终端窗口接入同一会话。两边实时同步，都可以输入。", command: r.command }),
+  const openTerminal = (s: Session) =>
+    run(() => call(link, "POST /api/sessions/:id/terminal", { id: s.id }, { launch: true }), (r) =>
+      setToast(
+        s.runtime === "claude"
+          ? { text: "已交给新终端窗口里的 Claude。工作台暂时只读，关闭终端后会自动收回。" }
+          : { text: "已在新终端窗口接入同一会话。两边实时同步，都可以输入。", command: r.command },
+      ),
     );
+  const reclaim = (id: string) => run(() => call(link, "POST /api/sessions/:id/reclaim", { id }));
 
   const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
 
@@ -169,8 +174,13 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
                   {writer.label}
                 </span>
               )}
-              {!session.archivedAt && session.runtime === "codex" && (
-                <button type="button" className="btn-ghost small" disabled={busy || !session.runtimeRef} onClick={() => void openTerminal(session.id)}>
+              {!session.archivedAt && session.writer !== "terminal-handoff" && !(session.runtime === "claude" && session.kind === "sub") && (
+                <button
+                  type="button"
+                  className="btn-ghost small"
+                  disabled={busy || !session.runtimeRef || (session.runtime === "claude" && session.status === "running")}
+                  onClick={() => void openTerminal(session)}
+                >
                   在终端打开
                 </button>
               )}
@@ -188,6 +198,16 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
                   恢复
                 </button>
               )}
+            </div>
+          )}
+          {session?.writer === "terminal-handoff" && (
+            <div className="handoff-banner" role="status" data-testid="handoff-banner">
+              <span>
+                这个会话正在终端里的 Claude 中继续。为避免两边同时写入丢失内容，工作台暂时只读；关闭终端后会自动收回，并带回终端里的新内容。
+              </span>
+              <button type="button" className="btn-outline-attention" disabled={busy} onClick={() => void reclaim(session.id)}>
+                立即收回
+              </button>
             </div>
           )}
           <Thread

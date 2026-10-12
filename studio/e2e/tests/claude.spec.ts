@@ -79,3 +79,29 @@ test("a Claude session: approve a command, queue a message, branch, follow a sub
   expect(state.sessions.filter((s) => s.runtime === "claude").map((s) => s.kind).sort()).toEqual(["fork", "main", "sub"]);
   expect(existsSync(join(studio.dataDir, "claude-home", "projects"))).toBe(true);
 });
+
+test("hands a Claude session to a terminal and takes it back", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api("POST", "/api/tasks", { title: "交接", scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "claude-mock", text: "hello" } });
+  await page.getByTestId("task-card").first().click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: hello", { timeout: 60_000 });
+
+  // Test mode records the launch instead of opening a window (red line 7).
+  await page.getByRole("button", { name: "在终端打开" }).click();
+  const banner = page.getByTestId("handoff-banner");
+  await expect(banner).toContainText("工作台暂时只读");
+  await expect(page.getByTestId("writer")).toHaveText("已交给终端 · 只读");
+  await expect(page.getByLabel("输入消息")).toBeDisabled();
+  await expect(page.getByRole("button", { name: "在终端打开" })).toHaveCount(0);
+  await screenshot(studio.app, "stage-4", "S4-05-handoff", page);
+
+  await banner.getByRole("button", { name: "立即收回" }).click();
+  await expect(banner).toHaveCount(0);
+  await expect(page.getByLabel("输入消息")).toBeEnabled();
+  await expect(page.getByText("已从终端收回。")).toBeVisible();
+  await page.getByLabel("输入消息").fill("after reclaim");
+  await page.getByLabel("输入消息").press("Enter");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: after reclaim", { timeout: 60_000 });
+});
