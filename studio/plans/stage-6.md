@@ -59,7 +59,7 @@
 - 内容：`studio/examples/packs/demo/`（虚构内容：一份规范、一个流程模板、一个启动预设，`tools` 里有一条预留项）；e2e 把它复制进沙箱工作区，走通：加载 → 查看规范 → 按模板建任务 → 按预设启动会话 → agent 用 MCP 读规范并勾选清单。
 - 验收：e2e 与截图 `screenshots/stage-6/`。
 
-### S6-07 真实冒烟 · todo
+### S6-07 真实冒烟 · done
 - 依赖：S6-06
 - 内容：沙箱工作区放示例扩展包；GLM（Claude 会话）和 DeepSeek（Codex 会话）各自按预设启动，用 `pack_doc` 读规范、用 `checklist_check` 勾一项。
 - 验收：结果写进 `spikes/results/s6-07-smoke.json`；计入额度。

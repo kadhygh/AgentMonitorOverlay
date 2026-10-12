@@ -845,3 +845,12 @@
 - 验证：`npm run verify` 退出码 0（204 个测试）；e2e 35/35
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 11:00 · S6-07 真实冒烟
+- 结果：done
+- 脚本 `scripts/smoke-stage6.mjs`（`npm run smoke:stage6`）：沙箱工作区放入示例扩展包，Host 端口 47962、独立 CODEX_HOME；除 MCP 工具外的审批一律拒绝（实际没有出现）；结束后归档会话、删除沙箱目录。结果在 `spikes/results/s6-07-smoke.json`
+- 每个模型：按模板建任务（标题带"[玩法]"，5 步清单）→ 取预设草稿（模型取自预设；DeepSeek 的预设带 README.md）→ 用"草稿 + 一段冒烟说明"建会话（相当于人在草稿里改了提示词）
+- GLM（Claude 会话，预设"对照常见坑审阅"）：`pack_doc` 读到"常见坑"，答出第一条（冷却时间写成秒）；`checklist_check` 勾了第一步，记为这个会话勾的
+- DeepSeek（Codex 会话，预设"按约定实现"）：同样两步都通过
+- 额度：GLM +2（22/5000），DeepSeek +2（27/1000），低于计划的 4/2
+- commit：见本次 commit

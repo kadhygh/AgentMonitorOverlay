@@ -3,11 +3,11 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 25
+      "used": 27
     },
     "glm": {
       "limit": 5000,
-      "used": 20
+      "used": 22
     }
   },
   "log": [
@@ -235,6 +235,26 @@
       "at": "2026-10-12T22:00:25.551Z",
       "provider": "deepseek",
       "note": "S5-08 DeepSeek canvas (elicitation)"
+    },
+    {
+      "at": "2026-10-12T23:33:39.604Z",
+      "provider": "glm",
+      "note": "S6-07 GLM pack_doc"
+    },
+    {
+      "at": "2026-10-12T23:33:52.725Z",
+      "provider": "glm",
+      "note": "S6-07 GLM checklist_check"
+    },
+    {
+      "at": "2026-10-12T23:34:02.726Z",
+      "provider": "deepseek",
+      "note": "S6-07 DeepSeek pack_doc"
+    },
+    {
+      "at": "2026-10-12T23:34:04.782Z",
+      "provider": "deepseek",
+      "note": "S6-07 DeepSeek checklist_check"
     }
   ]
 }
