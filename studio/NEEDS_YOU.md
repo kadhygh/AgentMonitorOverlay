@@ -81,6 +81,20 @@ Studio 现在能在工作台里用 Codex（含 DeepSeek 路由）推进任务：
 等你回复期间，loop 会继续推进阶段 4。
 回复：
 
+### [请你过目] 阶段 4 计划（2026-10-13，阶段 4）
+阶段 4 把 Claude 会话接进工作台，并让 agent 能读取工作台。
+- **Claude 会话**：用 Claude Agent SDK 实现，和 Codex 会话进同一棵会话树，支持审批、分支、子 agent。
+- **交接终端**：Claude 会话可以"在终端打开"，这期间工作台只读，终端退出后自动收回。
+- **只读 MCP**：agent 能读看板、任务、会话树摘要、项目信息和画布（`canvas.read`）；受管会话启动时自动带上。
+
+按默认推进的几处：
+- 受管的 Claude 会话用 Studio 自己的 `CLAUDE_CONFIG_DIR`，不碰你的 `~/.claude`；
+- loop 只用 GLM 和 mock，不调用 Claude 订阅；
+- 预计用 GLM 约 40 次，DeepSeek 0 次。
+
+附件：`studio/plans/stage-4.md`
+回复：
+
 ## 已处理
 
 （暂无）

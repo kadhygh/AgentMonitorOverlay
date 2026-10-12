@@ -342,3 +342,9 @@
   - 修完后 `npm run verify` 退出码 0（134 个测试），e2e 22/22（截图同时重新生成，阶段 1、2 的截图顶栏多了"Focus"按钮）
 - NEEDS_YOU：写入"阶段 3 完成"（请你过目）、"是否切换为日常工具、何时删除旧 AMO"（必须等你，S3-10）
 - 合并：`studio/stage-3` 用 `--no-ff` 合并到 `studio/main`（见下一条）
+
+## 2026-10-13 12:25 · 阶段 3 合并，开始阶段 4
+- 合并：`studio/stage-3` 用 `--no-ff` 合并到 `studio/main`（f0ea8bc）；新建 `studio/stage-4`
+- 计划：`plans/stage-4.md`（10 个任务：S4-00 预研、mock Anthropic 接口、ClaudeRuntime、审批/分支/子 agent、模型配置、交接终端、只读 MCP、自动注入、GLM 冒烟、收尾）；写入 NEEDS_YOU（请你过目）
+- 关键约束：受管 Claude 会话用 Studio 自己的 `CLAUDE_CONFIG_DIR`（红线 2）；只用 GLM 和 mock；本机 Claude Code 2.1.296，SDK 最新 0.3.296，版本在预研后锁定
+- 通知：阶段完成 + 新的"必须等你"
