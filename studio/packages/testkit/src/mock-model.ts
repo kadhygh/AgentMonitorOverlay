@@ -41,9 +41,11 @@ export const defaultScript: MockScript = (req) => {
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
   const shell = /\[\[shell:\s*([^\]]+)\]\]/.exec(req.lastUserText);
   if (shell) {
-    const tool = req.tools.find((t) => t === "shell_command") ?? req.tools.find((t) => /shell|exec/.test(t)) ?? "shell_command";
+    // Codex 0.161 offers exec_command { cmd }; 0.144 offered shell_command { command }; older ones shell { command: [] }.
     const command = shell[1]!.trim();
-    return { kind: "function_call", name: tool, arguments: tool === "shell" ? { command: ["cmd", "/c", command] } : { command } };
+    if (req.tools.includes("exec_command")) return { kind: "function_call", name: "exec_command", arguments: { cmd: command } };
+    if (req.tools.includes("shell")) return { kind: "function_call", name: "shell", arguments: { command: ["cmd", "/c", command] } };
+    return { kind: "function_call", name: "shell_command", arguments: { command } };
   }
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
   return { kind: "text", text: `MOCK: ${req.lastUserText}` };

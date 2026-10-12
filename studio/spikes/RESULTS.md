@@ -4,6 +4,25 @@
 
 环境：Codex CLI 0.161.0（实际为 0.144.1，见上方更正），app-server 走 WebSocket 加 capability token，模型路由 DeepSeek Flash（`spikes/lib.mjs` 的 `deepseekConfigArgs`）。沙盒工作区在 `%TEMP%\amo-studio-sandbox\` 下。原始记录在 `spikes/results/`。
 
+## f. 用 npm 版 Codex 0.161 复测（2026-10-13，mock 模型，不消耗额度）
+
+脚本：`spikes/s1-00f-recheck.mjs`，原始记录 `spikes/results/s1-00f.json`。a～d 的检查项改用本地 mock 模型（`packages/testkit` 的 `startMockModel`）在 0.161 上重跑，检查的是协议行为，与模型无关。
+
+| 检查项 | 0.144.1（a～d 当时） | 0.161.0 |
+|---|---|---|
+| 审批广播给所有订阅者、先到先得、广播 `serverRequest/resolved` | 是 | 是 |
+| 审批挂起后才订阅的客户端补收请求 | 是 | 是 |
+| 一个 server 按 thread 指定多个 provider | 是 | 是 |
+| `thread/list` 不带 `modelProviders` 只列默认 provider | 是 | 是 |
+| 按 thread 传入的 provider 定义，重启后 resume 不带 config | 失败 | 失败（同样的报错） |
+| provider 定义在 server 启动参数里，重启后 resume 不带 config | 成功 | 成功，并能继续对话 |
+| fork 不带 `modelProvider` 时落到 server 默认 provider | 是 | 是 |
+| 订阅父 thread 的客户端收到带 `forkedFromId` 的 `thread/started` | 是 | 是 |
+| `thread/list` 列出 fork | **否** | **是** |
+| 给模型的 shell 工具 | `shell_command { command }` | `exec_command { cmd }` |
+
+结论：a～d 对设计的影响全部成立，S1-06 按原结论实现。差异只有两处：0.161 的 `thread/list` 会列出 fork（Host 仍以自己的会话树为准）；mock 模型已兼容两种 shell 工具格式。fake app-server 已按 0.161 的列表行为调整。
+
 ## a. 审批路由（2026-10-12，DeepSeek 2 次）
 
 脚本：`spikes/s1-00a-approval.mjs [1|2]`。A 用 `approvalPolicy: "untrusted"`、`sandbox: "read-only"` 建 thread 并发起一轮对话，B 在 `turn/start` 之后 `thread/resume` 订阅同一 thread。两个客户端都不自动回应。

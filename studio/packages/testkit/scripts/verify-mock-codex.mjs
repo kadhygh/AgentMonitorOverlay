@@ -57,7 +57,7 @@ try {
   client.close();
   await server.stop();
   await mock.close();
-  fs.rmSync(codexHome, { recursive: true, force: true });
+  fs.rmSync(codexHome, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
 }
 console.log(ok ? "PASS: real codex app-server ran against the mock model" : "FAIL");
 process.exit(ok ? 0 : 1);

@@ -2,6 +2,7 @@
 import { execFileSync, spawn } from "node:child_process";
 import crypto from "node:crypto";
 import fs from "node:fs";
+import net from "node:net";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -98,6 +99,12 @@ export async function startAppServer({ port, cwd, configArgs = [], env = {}, tok
       // codex spawns via a .cmd shim on Windows; kill the whole tree.
       try { execFileSync("taskkill", ["/pid", String(child.pid), "/T", "/F"], { stdio: "ignore" }); } catch {}
       await new Promise((r) => (child.exitCode !== null ? r() : child.once("exit", r)));
+    }
+    // The node launcher exits before codex.exe releases the socket; wait until the port refuses connections.
+    for (let i = 0; i < 50; i++) {
+      const open = await new Promise((r) => { const s = net.connect({ port, host: "127.0.0.1" }); s.once("connect", () => { s.destroy(); r(true); }); s.once("error", () => r(false)); });
+      if (!open) break;
+      await sleep(100);
     }
     fs.rmSync(tokenFile, { force: true });
   };

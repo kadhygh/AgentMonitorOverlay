@@ -332,7 +332,8 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
     "thread/list": (_client, params) => {
       const providers = (params.modelProviders as string[] | undefined) ?? [defaultProvider];
       const data = [...threads.values()]
-        .filter((t) => !t.archived && !t.forkedFromId && !t.parentThreadId && providers.includes(t.modelProvider))
+        // Codex 0.161 lists forks (0.144 did not); subagent threads stay out of the list.
+        .filter((t) => !t.archived && !t.parentThreadId && providers.includes(t.modelProvider))
         .map((t) => threadView(t, false));
       return { data, nextCursor: null };
     },

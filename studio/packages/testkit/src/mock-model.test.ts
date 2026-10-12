@@ -36,6 +36,7 @@ describe("defaultScript", () => {
   });
 
   it("turns a shell directive into a tool call for the offered shell tool", () => {
+    expect(defaultScript(req("[[shell: dir]]", ["exec_command", "write_stdin"]))).toEqual({ kind: "function_call", name: "exec_command", arguments: { cmd: "dir" } });
     expect(defaultScript(req("[[shell: cmd /c echo x]]"))).toEqual({ kind: "function_call", name: "shell_command", arguments: { command: "cmd /c echo x" } });
     expect(defaultScript(req("[[shell: ls]]", ["shell"]))).toEqual({ kind: "function_call", name: "shell", arguments: { command: ["cmd", "/c", "ls"] } });
   });

@@ -40,7 +40,7 @@ for (const profile of BUILTIN_PROFILES) {
   } finally {
     client.close();
     await server.stop();
-    fs.rmSync(codexHome, { recursive: true, force: true });
+    fs.rmSync(codexHome, { recursive: true, force: true, maxRetries: 20, retryDelay: 250 });
   }
 }
 console.log(ok ? "PASS" : "FAIL");

@@ -107,3 +107,10 @@
   - **重要发现**：Node 不经 shell `spawn("codex")` 会找到 Codex 桌面版自带的 `codex.exe` 0.144.1，终端里的 `codex` 是 npm 版 0.161.0。Host 改为通过 `resolveCodexCommand()` 显式运行 npm 包的 `codex.js`（可用 `AMO_STUDIO_CODEX` 覆盖）。S1-00 a～d 实际跑在 0.144.1 上，新增 S1-00f 用 0.161 复测
   - 结束遗留 pid 前先核对命令行里有我们的 token 文件，避免 pid 复用时误杀别的进程
   - 新增 `detachAll()`：断开连接但不结束 server，供 Host 退出时保留会话、下次接管
+
+## 2026-10-13 01:15 · S1-00f 用 Codex 0.161 复测
+- 结果：done
+- 改动：`spikes/s1-00f-recheck.mjs`、`spikes/results/s1-00f.json`、`spikes/RESULTS.md`（f 节与更正说明）；mock 模型支持 0.161 的 `exec_command { cmd }`；fake app-server 的 `thread/list` 按 0.161 列出 fork；`spikes/lib.mjs` 停止时等端口关闭；脚本删除临时目录时加重试
+- 验证：复测脚本用 mock 模型在 0.161 上跑完 a～d 全部检查，结论与 0.144 一致，唯一差异是 `thread/list` 现在会列出 fork；`verify-mock-codex` 在 0.161 上 PASS（含审批）；`npm run verify` 通过（52 个测试）。没有消耗额度
+- commit：见本次 commit
+- 遗留：同一端口在几秒内连续起两次 app-server 偶尔会 10048（端口仍被占用）；Host 的进程管理器已有重试，只影响 spikes 脚本

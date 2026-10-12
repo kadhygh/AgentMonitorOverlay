@@ -154,7 +154,7 @@ describe("fake app-server", () => {
     const started = await b.waitFor((e) => e.method === "thread/started" && e.params.thread.id === implicit.thread.id);
     expect(started.params.thread.forkedFromId).toBe(threadId);
     const list = await b.request("thread/list", { modelProviders: ["amo-ds", "server-default"] });
-    expect(list.data.map((t: any) => t.id)).toEqual([threadId]);
+    expect(list.data.map((t: any) => t.id).sort()).toEqual([threadId, implicit.thread.id, explicit.thread.id].sort());
   });
 
   it("reports subagents with their own thread and events", async () => {
