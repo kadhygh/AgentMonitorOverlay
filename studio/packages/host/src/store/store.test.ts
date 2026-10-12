@@ -36,9 +36,9 @@ function seed(store: Store) {
 describe("Store", () => {
   it("applies migrations once", () => {
     const path = tempDbPath();
-    expect(makeStore(path).schemaVersion()).toBe(1);
+    expect(makeStore(path).schemaVersion()).toBe(2);
     open.pop()!.close();
-    expect(makeStore(path).schemaVersion()).toBe(1);
+    expect(makeStore(path).schemaVersion()).toBe(2);
   });
 
   it("creates, reads and updates workspaces, tasks and sessions", () => {
@@ -118,6 +118,15 @@ describe("Store", () => {
     expect(store.getCanvas("main")).toEqual(canvas);
     store.putTodo({ id: "t1", text: "later", done: false, workspaceId: null, taskId: null, createdAt: at });
     expect(store.listTodos()).toHaveLength(1);
+  });
+
+  it("stores key/value settings", () => {
+    const store = makeStore();
+    expect(store.getKv("scratchpad")).toBeUndefined();
+    store.setKv("scratchpad", "first");
+    const second = store.setKv("scratchpad", "second");
+    expect(store.getKv("scratchpad")).toEqual(second);
+    expect(second.value).toBe("second");
   });
 
   it("keeps data across a restart", () => {

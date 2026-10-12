@@ -231,3 +231,10 @@
 - 验证：`npm run verify` 通过；e2e 14/14（新增：选中 → 右键批注 ×3 → 编辑 → 删除 → 高亮与定位 → 汇总发回 → 会话收到按顺序拼好的消息并得到回复 → 批注收进已发送）；截图 `S2-04-annotations.png`、`S2-04-sent.png`
 - commit：见本次 commit
 - 遗留：高亮粒度是"块"（段落、表格、列表），不是精确到选中的那几个字；精确高亮要在渲染时切分文本节点，先不做
+
+## 2026-10-13 07:10 · S2-05 草稿区
+- 结果：done
+- 改动：Store 迁移 2（`kv` 表）与 `getKv`/`setKv`；protocol 新增 `Scratchpad`、`GET/PUT /api/scratchpad`、`scratchpad.updated` 事件；HostService 读写草稿（必须是字符串，上限 20 万字）；`packages/ui/src/task/Scratchpad.tsx`（右栏底部，全局一份；停止输入 0.5 秒或失焦时保存，显示"保存中…/已保存"；其他窗口实时同步，本窗口有未保存输入时不覆盖）；e2e 助手支持复用数据目录重启应用；e2e `scratchpad.spec.ts`
+- 验证：`npm run verify` 通过（schema 版本 2、kv 读写、草稿 API 与事件、Host 重启后仍在）；e2e 15/15（输入 → 已保存 → 重启应用 → 仍在）；截图 `S2-05-scratchpad.png`
+- commit：见本次 commit
+- 遗留：写 e2e 时一度用了"不接 mock 模型 + DeepSeek 配置"建任务，那样会在用户真实的 ~/.codex 里建线程（虽然不发对话）。运行前已改为 mock 模型和沙盒 CODEX_HOME，并检查了其他用例：凡是 `mockModel: false` 的用例都不建会话

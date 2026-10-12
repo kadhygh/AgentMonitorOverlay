@@ -206,6 +206,7 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
           />
         </div>
         <AnnotationPanel
+          link={link}
           annotations={annotations}
           pending={pendingAnnotation}
           busy={busy}

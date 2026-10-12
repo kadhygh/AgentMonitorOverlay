@@ -312,6 +312,21 @@ export class Store {
     return Number(row.m);
   }
 
+  // Key/value settings
+
+  getKv(key: string): { value: string; updatedAt: string } | undefined {
+    const r = this.db.prepare("SELECT value, updated_at FROM kv WHERE key = ?").get(key) as Row | undefined;
+    return r && { value: str(r.value), updatedAt: str(r.updated_at) };
+  }
+
+  setKv(key: string, value: string): { value: string; updatedAt: string } {
+    const updatedAt = this.timestamp();
+    this.db
+      .prepare("INSERT INTO kv (key, value, updated_at) VALUES (?, ?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = excluded.updated_at")
+      .run(key, value, updatedAt);
+    return { value, updatedAt };
+  }
+
   // Annotations, canvas and todos: structure only in stage 1, UI comes later.
 
   putAnnotation(a: Annotation): void {

@@ -10,6 +10,7 @@ import type {
   ModelProfile,
   NewAnnotationInput,
   NewSessionInput,
+  Scratchpad,
   Session,
   SessionItem,
   StateSnapshot,
@@ -26,6 +27,8 @@ import type { TerminalLauncher } from "./terminal/launcher.js";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
+
+const SCRATCHPAD_KEY = "scratchpad";
 
 // Application layer behind the Host API. HTTP handlers stay thin and call into this.
 
@@ -184,6 +187,22 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be reclaimed");
     return this.runtime.setWriter(sessionId, "workbench");
+  }
+
+  // Scratchpad (global)
+
+  scratchpad(): Scratchpad {
+    const kv = this.store.getKv(SCRATCHPAD_KEY);
+    return { text: kv?.value ?? "", updatedAt: kv?.updatedAt ?? null };
+  }
+
+  saveScratchpad(text: unknown): Scratchpad {
+    if (typeof text !== "string") throw new HostError("bad_request", "text must be a string");
+    if (text.length > 200_000) throw new HostError("bad_request", "scratchpad is limited to 200000 characters");
+    const kv = this.store.setKv(SCRATCHPAD_KEY, text);
+    const scratchpad = { text: kv.value, updatedAt: kv.updatedAt };
+    this.publish({ type: "scratchpad.updated", scratchpad });
+    return scratchpad;
   }
 
   // Annotations (stage 2 review loop)

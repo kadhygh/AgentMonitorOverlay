@@ -1,8 +1,11 @@
 import { useEffect, useRef, useState } from "react";
 import { composeAnnotationMessage, type Annotation } from "@amo-studio/protocol";
 import type { SelectionAnchor } from "../lib/selection.js";
+import type { HostLink } from "../host/client.js";
+import { Scratchpad } from "./Scratchpad.js";
 
 interface AnnotationPanelProps {
+  link: HostLink;
   annotations: readonly Annotation[];
   /** Selection waiting for a note ("添加批注"). */
   pending: SelectionAnchor | null;
@@ -18,7 +21,7 @@ interface AnnotationPanelProps {
 }
 
 /** Right column of the task page: new annotation, unsent annotations, send-all, and the sent ones folded away. */
-export function AnnotationPanel({ annotations, pending, busy, canSend, onSave, onCancel, onEdit, onDelete, onLocate, onSendAll }: AnnotationPanelProps) {
+export function AnnotationPanel({ link, annotations, pending, busy, canSend, onSave, onCancel, onEdit, onDelete, onLocate, onSendAll }: AnnotationPanelProps) {
   const [note, setNote] = useState("");
   const [showSent, setShowSent] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
@@ -93,6 +96,8 @@ export function AnnotationPanel({ annotations, pending, busy, canSend, onSave, o
             ))}
         </div>
       )}
+
+      <Scratchpad link={link} />
     </aside>
   );
 }

@@ -26,11 +26,12 @@ export interface Studio {
   workspace(name: string): string;
   /** Calls the Host API directly (setup and assertions), with the token from the data dir. */
   api<T = unknown>(method: string, path: string, body?: unknown): Promise<T>;
-  close(): Promise<void>;
+  /** `keepData` leaves the temp root in place so a second launch can reuse it (`launchStudio({ root })`). */
+  close(options?: { keepData?: boolean }): Promise<void>;
 }
 
-export async function launchStudio(options: { mockModel?: boolean; env?: Record<string, string> } = {}): Promise<Studio> {
-  const root = mkdtempSync(join(tmpdir(), "amo-studio-e2e-"));
+export async function launchStudio(options: { mockModel?: boolean; env?: Record<string, string>; root?: string } = {}): Promise<Studio> {
+  const root = options.root ?? mkdtempSync(join(tmpdir(), "amo-studio-e2e-"));
   const dataDir = join(root, "data");
   const codexHome = join(root, "codex-home");
   mkdirSync(dataDir, { recursive: true });
@@ -71,10 +72,10 @@ export async function launchStudio(options: { mockModel?: boolean; env?: Record<
       return dir;
     },
     api,
-    close: async () => {
+    close: async ({ keepData = false } = {}) => {
       await app.close();
       await mock?.close();
-      removeTempDir(root);
+      if (!keepData) removeTempDir(root);
     },
   };
 }

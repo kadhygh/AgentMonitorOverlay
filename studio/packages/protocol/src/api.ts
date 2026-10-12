@@ -22,6 +22,12 @@ export interface NewSessionInput {
 
 export type ApprovalDecision = "accept" | "decline";
 
+export interface Scratchpad {
+  text: string;
+  /** Null until first saved. */
+  updatedAt: string | null;
+}
+
 export interface NewAnnotationInput {
   itemId: Id;
   quote: string;
@@ -65,6 +71,9 @@ export interface HostRoutes {
   "DELETE /api/annotations/:id": { req: void; res: { ok: true } };
   /** Sends every unsent annotation of the session as one user message, in reply order, then marks them sent. */
   "POST /api/sessions/:id/annotations/send": { req: void; res: { mode: "start" | "steer"; sent: Annotation[] } };
+  /** The global scratchpad (interaction-notes: one shared draft area until the user asks for per-task ones). */
+  "GET /api/scratchpad": { req: void; res: Scratchpad };
+  "PUT /api/scratchpad": { req: { text: string }; res: Scratchpad };
 }
 
 export type HostRoute = keyof HostRoutes;
@@ -89,6 +98,7 @@ export type HostEvent = { seq: number } & (
   | { type: "item.delta"; sessionId: Id; itemId: Id; append: string }
   | { type: "annotation.upserted"; annotation: Annotation }
   | { type: "annotation.removed"; sessionId: Id; annotationId: Id }
+  | { type: "scratchpad.updated"; scratchpad: Scratchpad }
 );
 
 export type HostEventType = HostEvent["type"];

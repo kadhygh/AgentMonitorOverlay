@@ -86,6 +86,8 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     route("POST", "/api/sessions/:id/unarchive", ({ params }) => service.unarchive(params.id!)),
     route("POST", "/api/sessions/:id/terminal", ({ params, body }) => service.terminal(params.id!, obj(body).launch === true)),
     route("POST", "/api/sessions/:id/reclaim", ({ params }) => service.reclaim(params.id!)),
+    route("GET", "/api/scratchpad", () => service.scratchpad()),
+    route("PUT", "/api/scratchpad", ({ body }) => service.saveScratchpad(obj(body).text)),
     route("GET", "/api/sessions/:id/annotations", ({ params }) => service.annotations(params.id!)),
     route("POST", "/api/sessions/:id/annotations/send", ({ params }) => service.sendAnnotations(params.id!)),
     route("POST", "/api/sessions/:id/annotations", ({ params, body }) => service.addAnnotation(params.id!, obj(body) as never)),
@@ -111,7 +113,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     if (origin && allowed.has(origin)) {
       res.setHeader("Access-Control-Allow-Origin", origin);
       res.setHeader("Access-Control-Allow-Headers", "authorization, content-type");
-      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS");
+      res.setHeader("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS");
       res.setHeader("Vary", "Origin");
     }
   };
