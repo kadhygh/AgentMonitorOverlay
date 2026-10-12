@@ -253,3 +253,10 @@
 - 完整验证：`npm run verify` 105 个测试通过；e2e 16/16
 - 合并：`studio/stage-2` 以 `--no-ff` 合并回 `studio/main`；新建 `studio/stage-3`，写 `plans/stage-3.md`
 - 遗留：无
+
+## 2026-10-13 08:00 · S3-01 画布数据与接口
+- 结果：done
+- 改动：protocol 的 `CanvasDoc` 增加 `version`；新增 `canvas.ts`（`emptyCanvas`、`validateCanvas`：id 唯一、分组/任务引用存在、几何有效、一个任务只放一次、依赖两端是任务、不自环、不重复、不成环；`findCycle`/`wouldCycle`；`canvasOutline`：不含坐标的大纲文本与 JSON，含分组、未分组、还没放上画布的任务、依赖与会话状态）；`GET/PUT /api/canvas`（版本不符 409，校验失败 400）、`GET /api/canvas/outline`、`canvas.updated` 事件
+- 验证：`npm run verify` 通过（新增画布单元测试 6 个、API 测试 1 个，覆盖版本冲突、非法引用、大纲、重启后仍在）
+- commit：见本次 commit
+- 遗留：任务目前不会被删除，所以"任务删除后节点保留但标记"暂不需要；大纲会把没放上画布的任务单独列出，界面在 S3-02 决定是否自动放置

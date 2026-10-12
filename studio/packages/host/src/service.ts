@@ -3,6 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type {
   Annotation,
+  CanvasDoc,
   ApprovalDecision,
   HostErrorCode,
   HostEvent,
@@ -20,7 +21,7 @@ import type {
   TaskScope,
   Workspace,
 } from "@amo-studio/protocol";
-import { composeAnnotationMessage, TASK_COLUMNS } from "@amo-studio/protocol";
+import { canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { CodexRuntime } from "./runtime/codex/codex-runtime.js";
 import type { TerminalLauncher } from "./terminal/launcher.js";
@@ -187,6 +188,40 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be reclaimed");
     return this.runtime.setWriter(sessionId, "workbench");
+  }
+
+  // Canvas (one global document)
+
+  canvas(): CanvasDoc {
+    return this.store.getCanvas(MAIN_CANVAS_ID) ?? emptyCanvas();
+  }
+
+  saveCanvas(input: unknown): CanvasDoc {
+    const doc = input as CanvasDoc;
+    if (!doc || typeof doc !== "object" || !Array.isArray(doc.groups) || !Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) {
+      throw new HostError("bad_request", "canvas needs groups, nodes and edges arrays");
+    }
+    const current = this.canvas();
+    if (doc.version !== current.version) {
+      throw new HostError("conflict", `canvas changed elsewhere (version ${current.version}, yours ${String(doc.version)}); reload and retry`);
+    }
+    const errors = validateCanvas(doc, new Set(this.store.listTasks().map((t) => t.id)));
+    if (errors.length) throw new HostError("bad_request", errors.slice(0, 5).join("; "));
+    const next: CanvasDoc = {
+      id: MAIN_CANVAS_ID,
+      version: current.version + 1,
+      groups: doc.groups,
+      nodes: doc.nodes,
+      edges: doc.edges,
+      updatedAt: new Date().toISOString(),
+    };
+    this.store.putCanvas(next);
+    this.publish({ type: "canvas.updated", canvas: next });
+    return next;
+  }
+
+  canvasOutline() {
+    return canvasOutline(this.canvas(), this.store.listTasks(), this.store.listWorkspaces(), this.store.listSessions());
   }
 
   // Scratchpad (global)

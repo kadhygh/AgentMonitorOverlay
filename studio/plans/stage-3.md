@@ -19,7 +19,7 @@
 
 ## 任务
 
-### S3-01 画布数据与接口 · todo
+### S3-01 画布数据与接口 · done
 - 内容：Host 路由 `GET /api/canvas`、`PUT /api/canvas`（带 `version`，版本不符返回 409）；校验（节点引用的任务存在、分组存在、依赖无环、边两端是任务）；任务删除或归档时画布节点保留但标记；`canvas.updated` 事件；protocol 的 `canvasOutline()`（大纲文本与结构化 JSON）。
 - 验收：单元测试覆盖校验、环检测、大纲生成；API 测试覆盖版本冲突。
 

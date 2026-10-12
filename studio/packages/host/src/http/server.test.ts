@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { composeAnnotationMessage, type Annotation, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type Task, type Workspace } from "@amo-studio/protocol";
+import { composeAnnotationMessage, type Annotation, type CanvasDoc, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type Task, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../runtime/codex/fake-servers.test-support.js";
@@ -208,6 +208,32 @@ describe("Host API", () => {
     } finally {
       await ui.close();
     }
+  });
+
+  it("saves the canvas with optimistic versions and serves its outline", async () => {
+    const { task } = await createTask("canvas");
+    const empty = await ok<CanvasDoc>("GET", "/api/canvas");
+    expect(empty).toMatchObject({ id: "main", version: 0, groups: [], nodes: [], edges: [] });
+
+    const draft: CanvasDoc = {
+      ...empty,
+      groups: [{ id: "g1", title: "导入", workspaceId: null, rect: { x: 0, y: 0, w: 400, h: 300 } }],
+      nodes: [{ id: "n1", kind: "task", taskId: task.id, groupId: "g1", pos: { x: 10, y: 10 } }],
+    };
+    const saved = await ok<CanvasDoc>("PUT", "/api/canvas", draft);
+    expect(saved.version).toBe(1);
+    expect((await api("PUT", "/api/canvas", draft)).status).toBe(409); // still based on version 0
+    const bad = await api<{ error: { message: string } }>("PUT", "/api/canvas", { ...saved, nodes: [{ id: "n9", kind: "task", taskId: "missing", groupId: null, pos: { x: 0, y: 0 } }] });
+    expect(bad.status).toBe(400);
+    expect(bad.data.error.message).toMatch(/missing task/);
+
+    const { outline, json } = await ok<{ outline: string; json: { groups: Array<{ tasks: Array<{ id: string }> }> } }>("GET", "/api/canvas/outline");
+    expect(json.groups[0]!.tasks.map((t) => t.id)).toEqual([task.id]);
+    expect(outline).toContain("分组「导入」");
+
+    await shutdown();
+    await boot();
+    expect((await ok<CanvasDoc>("GET", "/api/canvas")).version).toBe(1);
   });
 
   it("reads and writes the global scratchpad, announcing changes", async () => {
