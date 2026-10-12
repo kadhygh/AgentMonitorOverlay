@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { copyText } from "../host/client.js";
 
 // Safe markdown for agent replies: fenced code, headings, nested lists, tables, quotes, paragraphs, and inline
 // code / bold / italic / links. Everything is rendered as React text, never as HTML. Every block carries its
@@ -211,7 +212,7 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
           type="button"
           className="md-copy"
           onClick={() => {
-            void navigator.clipboard?.writeText(text).then(() => {
+            void copyText(text).then(() => {
               setCopied(true);
               setTimeout(() => setCopied(false), 1200);
             });

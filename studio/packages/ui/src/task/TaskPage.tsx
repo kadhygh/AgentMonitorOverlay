@@ -6,6 +6,8 @@ import { shortModel } from "../lib/profiles.js";
 import { COLUMN_NAMES } from "../lib/status.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
+import { AnnotationPanel } from "./AnnotationPanel.js";
+import type { SelectionAnchor } from "../lib/selection.js";
 
 interface TaskPageProps {
   link: HostLink;
@@ -32,6 +34,7 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
   const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
+  const [pendingAnnotation, setPendingAnnotation] = useState<SelectionAnchor | null>(null);
 
   useEffect(() => {
     if (!selected || !own.some((s) => s.id === selected)) {
@@ -178,8 +181,22 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
             onJump={setSelected}
             onSend={send}
             onInterrupt={() => session && void interrupt(session.id)}
+            onAnnotate={setPendingAnnotation}
           />
         </div>
+        <AnnotationPanel
+          pending={pendingAnnotation}
+          busy={busy}
+          onCancel={() => setPendingAnnotation(null)}
+          onSave={(note) => {
+            if (!session || !pendingAnnotation) return;
+            const anchor = pendingAnnotation;
+            void run(() => call(link, "POST /api/sessions/:id/annotations", { id: session.id }, { ...anchor, note }), () => {
+              setPendingAnnotation(null);
+              setToast({ text: "已添加批注。" });
+            });
+          }}
+        />
       </div>
     </section>
   );

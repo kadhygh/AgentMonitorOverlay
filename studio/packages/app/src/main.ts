@@ -1,4 +1,4 @@
-import { app, BrowserWindow, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, stopHost, type HostConnection } from "./host-link.js";
@@ -31,6 +31,13 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   ipcMain.handle("amo:host", () => (host ? { url: host.url, token: host.token } : null));
+  // Copy through the main process: navigator.clipboard needs a focused document, which is not always the case.
+  // Tests never touch the user's clipboard; they read the recorded text instead.
+  ipcMain.handle("amo:copy", (_event, text: unknown) => {
+    if (typeof text !== "string") return;
+    if (testMode) ((globalThis as { __amoCopied?: string[] }).__amoCopied ??= []).push(text);
+    else clipboard.writeText(text);
+  });
   // Links in replies open in the system browser; only http(s) is allowed through.
   ipcMain.handle("amo:open-external", async (_event, url: unknown) => {
     if (typeof url !== "string" || !/^https?:\/\//i.test(url)) return;

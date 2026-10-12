@@ -10,6 +10,8 @@ declare global {
       pickDirectory?(): Promise<string | null>;
       /** Opens an http(s) link in the system browser (Electron); absent in a plain browser. */
       openExternal?(url: string): Promise<void>;
+      /** Writes text to the system clipboard (Electron); works without window focus. */
+      copyText?(text: string): Promise<void>;
     };
   }
 }
@@ -53,3 +55,9 @@ export async function call<R extends HostRoute>(
 }
 
 export const loadState = (link: HostLink): Promise<StateSnapshot> => call(link, "GET /api/state");
+
+/** Copies text, preferring the Electron bridge (no focus needed) over navigator.clipboard. */
+export async function copyText(text: string): Promise<void> {
+  if (window.amo?.copyText) return window.amo.copyText(text);
+  await navigator.clipboard?.writeText(text);
+}

@@ -36,6 +36,7 @@ test("renders tables, nested lists, code with copy, and opens links outside the 
 
   await reply.getByRole("button", { name: "复制" }).click();
   await expect(reply.getByRole("button", { name: "已复制" })).toBeVisible();
+  expect(await app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied)).toEqual(["DropTable.Normalize(table);"]);
 
   // Test mode records the URL instead of opening the system browser.
   await reply.getByRole("link", { name: "掉落表规范" }).click();

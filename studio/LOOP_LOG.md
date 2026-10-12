@@ -217,3 +217,10 @@
 - 验证：`npm run verify` 通过；API 测试新增"建批注 → 改 → 删 → 汇总发回 → 会话收到一条按顺序拼好的用户消息、批注标记已发送"
 - commit：见本次 commit
 - 遗留：汇总消息的格式是"针对你上面的回复，我有 N 条批注："+ 每条"> 原文 / 备注"，原文超过 300 字截断；用户可在阶段 2 的请你过目里提意见
+
+## 2026-10-13 06:30 · S2-03 选中文字的右键菜单
+- 结果：done
+- 改动：`packages/ui/src/lib/selection.ts`（选区必须落在同一条 agent 回复里；按触到的渲染块在源文本中查找原文，渲染后丢掉的 markdown 符号用宽松匹配，找不到就退回块的区间；前后各 24 字上下文）、`selection.test.ts`；Thread 增加自定义右键菜单（添加批注 / 引用到输入框 / 复制；Esc、点外面、滚动时关闭；只读会话不能引用到输入框）；`task/AnnotationPanel.tsx`（任务页右栏，先做批注草稿卡，S2-04 补列表等）；新增 `amo:copy`（主进程写剪贴板，不依赖页面焦点；代码块"复制"也改走这里）；e2e `context-menu.spec.ts` 与选区助手 `selection.ts`
+- 验证：`npm run verify` 通过；e2e 13/13；截图 `screenshots/stage-2/S2-03-context-menu.png`
+- commit：见本次 commit
+- 遗留：测试模式下"复制"只记录、不写系统剪贴板（这台机器上 e2e 里系统剪贴板读写都不可靠，而且测试不应改用户的剪贴板）。排查时曾在主进程直接调用过一次 `clipboard.writeText("direct-1")`，回读为空，大概率没有写进去；如果写进去了，用户剪贴板内容在 06:25 左右被覆盖过一次
