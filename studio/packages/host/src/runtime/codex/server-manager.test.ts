@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs";
+import { mkdirSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ModelProfile } from "@amo-studio/protocol";
-import { mockCodexProvider, startMockModel, type MockModelServer } from "@amo-studio/testkit";
+import { mockCodexProvider, removeTempDir, startMockModel, type MockModelServer } from "@amo-studio/testkit";
 import { StaticCredentialReader } from "../credentials.js";
 import { CodexServerManager, type CodexServerHandle } from "./server-manager.js";
 
@@ -49,7 +49,7 @@ beforeAll(async () => {
 afterAll(async () => {
   for (const m of managers) await m.stopAll();
   await mock.close();
-  rmSync(root, { recursive: true, force: true });
+  removeTempDir(root);
 });
 
 describe("CodexServerManager", () => {

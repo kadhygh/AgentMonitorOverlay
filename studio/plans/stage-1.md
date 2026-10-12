@@ -96,7 +96,7 @@
   - Key 只放进子进程的环境变量。
 - 验收：单元测试中凭据读取用 mock；用真实凭据做一次只检查长度的冒烟测试，不打印 Key。
 
-### S1-06 Codex runtime · in_progress（拆成 a～d）
+### S1-06 Codex runtime · done（拆成 a～d）
 
 - 依赖：S1-00、S1-03、S1-04、S1-05
 - 内容：
@@ -112,7 +112,7 @@
   - S1-06a JSON-RPC 客户端（`runtime/codex/rpc-client.ts`） · done
   - S1-06b app-server 进程管理：每个 profile 一个进程，端口和 token 存数据目录，崩溃后退避重启并沿用端口和 token · done
   - S1-06c 会话操作、事件规范化入库、审批转交、父子关系、provider 不一致告警 · done
-  - S1-06d 集成测试：真实 `codex app-server` 加 mock 模型跑通 start / 审批 / fork / 归档 / 重启恢复 · todo
+  - S1-06d 集成测试：真实 `codex app-server` 加 mock 模型跑通 start / 审批 / fork / 归档 / 重启恢复 · done
 
 ### S1-07 Host API · todo
 

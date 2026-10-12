@@ -121,3 +121,10 @@
 - 验证：`npm run verify` 通过（61 个测试），运行层测试连跑 3 次稳定
 - commit：见本次 commit
 - 遗留：短回合可能在 `turn/start` 响应之前就结束，所以状态和活动 turn 只认 `turn/started` / `turn/completed` 通知；item 的 codex id 映射只在内存里，Host 重启后正在流式输出的回复会以新 item 继续（S1-06d 用真实 app-server 再验证）
+
+## 2026-10-13 01:55 · S1-06d 真实 app-server 集成测试
+- 结果：done（S1-06 整体完成）
+- 改动：`packages/host/src/runtime/codex/codex-runtime.integration.test.ts`（Store + CodexServerManager + CodexRuntime 对真实 `codex app-server` 0.161 与 mock 模型：开会话流式回复、命令审批与工具结果、同 provider fork 保留上下文、app-server 崩溃后继续对话、Host 重启后数据重载并接管原 server 继续对话、归档连同 fork 与只读、恢复后继续对话）；testkit 新增 `removeTempDir`
+- 验证：集成测试连跑 3 次 6/6 通过；`npm run verify` 通过（67 个测试）。没有消耗额度
+- commit：见本次 commit
+- 遗留：被结束的 codex 进程有时要十几秒才从端口监听表里消失，临时目录的文件也会被占用一会儿；测试清理改为重试后放弃，不让测试失败
