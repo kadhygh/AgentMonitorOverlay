@@ -55,7 +55,7 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
  * A subagent's message may itself carry `[[shell: …]]`: the subagent then runs that command before replying.
  * - `[[slow]]` → many small chunks with a delay (interrupt/queue tests)
  * - `[[markdown]]` → the same sample as the Responses mock
- * - `[[mcp: <tool>]]` → calls the AMO MCP tool `mcp__amo__<tool>`, then replies `MOCK-MCP: <start of its result>`
+ * - `[[mcp: <tool> {json args}]]` → calls the AMO MCP tool `mcp__amo__<tool>`, then replies `MOCK-MCP: <start of its result>`
  * - anything else → `MOCK: <user text>`
  * Tool calls are only made when the request offers that tool, so side requests always get text.
  */
@@ -67,8 +67,8 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
   }
   if (req.afterToolOutput && req.lastTool?.name.startsWith("mcp__")) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.result.slice(0, 200)}` };
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
-  const mcp = /\[\[mcp:\s*([a-z_]+)\s*\]\]/.exec(req.lastUserText);
-  if (mcp && req.tools.includes(`mcp__amo__${mcp[1]}`)) return { kind: "tool_use", name: `mcp__amo__${mcp[1]}`, input: {} };
+  const mcp = /\[\[mcp:\s*([a-z_]+)\s*(\{.*?\})?\s*\]\]/.exec(req.lastUserText);
+  if (mcp && req.tools.includes(`mcp__amo__${mcp[1]}`)) return { kind: "tool_use", name: `mcp__amo__${mcp[1]}`, input: mcp[2] ? (JSON.parse(mcp[2]) as Record<string, unknown>) : {} };
   // Spawn is checked before shell: the message may contain a nested [[shell: …]] for the subagent, so it runs up to the last "]]".
   const spawn = /\[\[spawn(-bg|-mode-[A-Za-z]+)?:\s*([a-z0-9_-]+)\s*:\s*(.+)\]\]\s*$/.exec(req.lastUserText);
   if (spawn) {

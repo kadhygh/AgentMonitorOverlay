@@ -2,6 +2,7 @@ import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ModelProfile } from "@amo-studio/protocol";
 import type { CredentialReader } from "./credentials.js";
+import { AUTO_APPROVED_WRITE_TOOLS } from "../mcp/names.js";
 
 // Model profiles and how they turn into `codex app-server` launch options. Rules from studio/spikes/RESULTS.md:
 // - provider definitions must be passed at server launch (per-thread definitions do not survive a restart);
@@ -117,6 +118,8 @@ export function codexServerSpec(
   // The AMO MCP (read-only) for every thread on this server. The token travels in the env, never on the command line.
   if (options.mcp) {
     configArgs.push(...configArg("mcp_servers.amo.url", options.mcp.url), ...configArg("mcp_servers.amo.bearer_token_env_var", AMO_MCP_TOKEN_ENV));
+    // Writes to the caller's own task run without asking; any other non-read-only tool asks (mcpServer/elicitation).
+    for (const name of AUTO_APPROVED_WRITE_TOOLS) configArgs.push(...configArg(`mcp_servers.amo.tools.${name}.approval_mode`, "approve"));
     env[AMO_MCP_TOKEN_ENV] = options.mcp.token;
   }
 

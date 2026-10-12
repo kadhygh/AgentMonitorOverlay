@@ -11,6 +11,7 @@ import { CodexRuntime } from "../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../runtime/codex/fake-servers.test-support.js";
 import { HostService } from "../service.js";
 import { Store } from "../store/store.js";
+import { McpIdentities, MCP_SESSION_HEADER } from "./identity.js";
 
 // The AMO MCP over HTTP with the official MCP client: tools, read-only annotations, auth, and what each tool returns.
 
@@ -24,10 +25,13 @@ let http: HostServer;
 let service: HostService;
 let importTask: Task;
 let configTask: Task;
+let identities: McpIdentities;
+let mainSessionId: string;
 
-async function connect(token = TOKEN): Promise<Client> {
+async function connect(token = TOKEN, sessionToken?: string): Promise<Client> {
   const client = new Client({ name: "amo-test", version: "0" });
-  await client.connect(new StreamableHTTPClientTransport(new URL(`${http.url}/mcp`), { requestInit: { headers: { authorization: `Bearer ${token}` } } }));
+  const headers: Record<string, string> = { authorization: `Bearer ${token}`, ...(sessionToken ? { [MCP_SESSION_HEADER]: sessionToken } : {}) };
+  await client.connect(new StreamableHTTPClientTransport(new URL(`${http.url}/mcp`), { requestInit: { headers } }));
   return client;
 }
 const call = async (client: Client, name: string, args: Record<string, unknown> = {}) => {
@@ -42,13 +46,15 @@ beforeAll(async () => {
   store = new Store(join(root, "studio.db"));
   servers = new FakeServers(PROFILES);
   service = new HostService(store, new CodexRuntime({ store, servers, profiles: PROFILES }), PROFILES);
-  http = await startHostServer({ service, token: TOKEN, mcpToken: MCP_TOKEN });
+  identities = new McpIdentities(store);
+  http = await startHostServer({ service, token: TOKEN, mcpToken: MCP_TOKEN, mcpIdentities: identities });
 
   const alpha = service.addWorkspace({ path: join(root, "alpha") });
   const beta = service.addWorkspace({ path: join(root, "beta") });
   importTask = store.createTask({ title: "导入重试", scope: { kind: "workspace", workspaceId: alpha.id } });
   configTask = store.createTask({ title: "统一配置键", scope: { kind: "area" }, column: "doing" });
   const main = store.createSession({ taskId: importTask.id, parentId: null, kind: "main", runtime: "codex", profileId: "p-ds", workspaceId: alpha.id, title: "计划", status: "awaiting-approval", writer: "workbench", runtimeRef: "t1" });
+  mainSessionId = main.id;
   store.createSession({ taskId: importTask.id, parentId: main.id, kind: "fork", runtime: "codex", profileId: "p-ds", workspaceId: alpha.id, title: "退避方案", status: "idle", writer: "workbench", runtimeRef: "t2" });
   store.appendItem({ id: "i1", sessionId: main.id, createdAt: new Date().toISOString(), type: "agent", markdown: "x".repeat(400), streaming: false });
   store.createSession({ taskId: configTask.id, parentId: null, kind: "main", runtime: "codex", profileId: "p-ds", workspaceId: beta.id, title: "", status: "idle", writer: "workbench", runtimeRef: "t3" });
@@ -72,17 +78,39 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists five read-only tools", async () => {
+  it("lists five read-only tools and two that write to the caller's own task", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "project_context", "session_tree", "task_get"]);
-    expect(tools.every((t) => t.annotations?.readOnlyHint === true)).toBe(true);
+    expect(tools.map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "handoff_submit", "project_context", "session_tree", "task_get", "task_note_add"]);
+    expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "project_context", "session_tree", "task_get"]);
+    await client.close();
+  });
+
+  it("writes only for an identified caller, and only to the caller's own task", async () => {
+    const anonymous = await connect(MCP_TOKEN);
+    const refused = await call(anonymous, "task_note_add", { text: "x" });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toMatch(/没有 AMO 会话身份/);
+    await anonymous.close();
+    expect((await call(await connect(MCP_TOKEN, "not-a-session-token"), "task_note_add", { text: "x" })).isError).toBe(true);
+
+    const token = identities.tokenFor(mainSessionId);
+    expect(identities.tokenFor(mainSessionId)).toBe(token);
+    expect(identities.sessionFor(token)).toBe(mainSessionId);
+    const client = await connect(MCP_TOKEN, token);
+    const note = (await call(client, "task_note_add", { text: "重试已加上，还差测试" })).data;
+    expect(note).toMatchObject({ taskId: importTask.id, sessionId: mainSessionId, kind: "progress" });
+    const handoff = (await call(client, "handoff_submit", { summary: "交接：importer.ts 已改，测试在 tests/import" })).data;
+    expect(handoff).toMatchObject({ taskId: importTask.id, kind: "handoff" });
+    expect((await call(client, "task_note_add", { text: " " })).isError).toBe(true);
+    expect(service.taskNotes(importTask.id).map((n) => n.kind)).toEqual(["progress", "handoff"]);
+    expect(service.taskNotes(configTask.id)).toEqual([]);
     await client.close();
   });
 
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(5);
+    expect((await client.listTools()).tools).toHaveLength(7);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);

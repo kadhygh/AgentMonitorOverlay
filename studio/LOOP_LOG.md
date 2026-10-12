@@ -585,3 +585,23 @@
 - 验证：`npm run verify` 退出码 0（171 个测试）；e2e 25/25
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-13 22:30 · S5-02 写自身的 MCP 工具
+- 结果：done
+- 预研（mock，`spikes/s5-02-approval-mode.mjs`）：Codex 的 MCP 工具审批模式有 `auto`/`prompt`/`writes`/`approve` 四种，可以设给整个服务器（`default_tools_approval_mode`），也可以设给单个工具（`tools.<名字>.approval_mode`）。对没有只读标注的工具，只有 `approve` 不征求批准，其余三种都会发 `mcpServer/elicitation/request`
+- 改动：
+  - **调用者身份**：`mcp/identity.ts`（`McpIdentities`，每个会话一个随机令牌，存在 kv 里，Host 重启后仍能认出被接管的 app-server 里的会话）。`CodexRuntime` 在 `thread/start`、`thread/fork` 时发新令牌并绑定到会话，在 `thread/resume`（重新订阅、取消归档、终端接入）时带上该会话的令牌；`/mcp` 从 `X-AMO-Session-Token` 请求头认出调用者。Claude 的进程内 MCP 直接绑定到它所属的会话；
+  - **写入工具**：`task_note_add`（进度备注）、`handoff_submit`（交接摘要），只写调用者自己所属的任务；没有身份的调用（例如 Codex 自己派生的子 agent）只能用只读工具，写入时返回可读的错误；
+  - **免审批**：这两个工具在 Codex 服务配置里设为 `approve`、在 Claude 里加入 `allowedTools`；其余非只读工具照常审批；
+  - **Codex 的 MCP 批准请求**：`CodexRuntime` 把 `mcpServer/elicitation/request` 转成审批卡片，按 `{ action, content, _meta }` 回复，回合不再卡住；fake app-server 增加 `[[elicit]]` 用于测试
+- 测试：
+  - 单测：身份映射、无身份或身份无效时拒绝写入、只写自己的任务、Codex 启动参数里两个工具是 `approve`、批准请求转成审批卡片（批准和拒绝各一次）；
+  - e2e：Codex 和 Claude 会话各自通过 MCP 记进度，备注记在自己的任务上、作者是该会话、没有弹审批；
+  - 两个 mock 的 `[[mcp: …]]` 支持 JSON 参数
+- 默认决定（请你过目）：
+  - 写自己任务的备注和交接不弹审批；
+  - 之后的画布写入工具会照常弹审批
+- 清理：e2e 留下 1 个临时目录，删除时报 EPERM（测试结束时还有进程占着，大概率是 Codex app-server 还没退干净），已手动删除，记为待办
+- 验证：`npm run verify` 退出码 0（173 个测试）；e2e 26/26
+- 额度：0
+- commit：见本次 commit

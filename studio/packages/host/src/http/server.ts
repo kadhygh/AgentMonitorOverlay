@@ -7,6 +7,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import type { HostErrorBody, HostEvent } from "@amo-studio/protocol";
 import { HostError, type HostService } from "../service.js";
 import { handleMcpRequest } from "../mcp/amo-mcp.js";
+import type { McpIdentities } from "../mcp/identity.js";
 
 // Host API over HTTP (REST) and WebSocket (events). Binds 127.0.0.1 only; every /api call needs the host token
 // (Authorization: Bearer for REST, ?token= for the event socket since browsers cannot set WS headers).
@@ -16,6 +17,8 @@ export interface HostServerOptions {
   token: string;
   /** Opens /mcp only (given to agent processes, which must not reach the writable REST API). */
   mcpToken?: string;
+  /** Maps the per-thread session header on /mcp back to a session (stage 5 writes). */
+  mcpIdentities?: McpIdentities;
   port?: number;
   /** Built UI to serve at / (same origin as the API, so no CORS in production). */
   uiDir?: string;
@@ -210,7 +213,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     if (isMcp) {
       // AMO MCP (read-only): the same token as the REST API.
       try {
-        return await handleMcpRequest(options.service, req, res, req.method === "POST" ? await readBody(req) : undefined);
+        return await handleMcpRequest(options.service, req, res, req.method === "POST" ? await readBody(req) : undefined, options.mcpIdentities);
       } catch (err) {
         if (!res.headersSent) return fail(res, err instanceof HostError ? statusOf[err.code] : 500, err instanceof HostError ? err.code : "internal", String((err as Error).message ?? err));
         return;

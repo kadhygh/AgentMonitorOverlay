@@ -1,0 +1,52 @@
+{
+  "variants": [
+    {
+      "mode": "auto",
+      "scope": "server",
+      "asked": 1,
+      "ran": true
+    },
+    {
+      "mode": "auto",
+      "scope": "tool",
+      "asked": 1,
+      "ran": true
+    },
+    {
+      "mode": "prompt",
+      "scope": "server",
+      "asked": 1,
+      "ran": true
+    },
+    {
+      "mode": "prompt",
+      "scope": "tool",
+      "asked": 1,
+      "ran": true
+    },
+    {
+      "mode": "writes",
+      "scope": "server",
+      "asked": 1,
+      "ran": true
+    },
+    {
+      "mode": "writes",
+      "scope": "tool",
+      "asked": 1,
+      "ran": true
+    },
+    {
+      "mode": "approve",
+      "scope": "server",
+      "asked": 0,
+      "ran": true
+    },
+    {
+      "mode": "approve",
+      "scope": "tool",
+      "asked": 0,
+      "ran": true
+    }
+  ]
+}

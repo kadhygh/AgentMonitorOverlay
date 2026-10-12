@@ -41,3 +41,24 @@ test("Codex and Claude sessions read the canvas through the AMO MCP", async () =
   }
   await screenshot(studio.app, "stage-4", "S4-07-mcp-canvas", page);
 });
+
+test("Codex and Claude sessions record progress on their own task through the AMO MCP", async () => {
+  studio = await launchStudio();
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  for (const [profileId, title] of [
+    ["codex-mock", "Codex 记进度"],
+    ["claude-mock", "Claude 记进度"],
+  ] as const) {
+    const { task, session } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+      title,
+      scope: { kind: "workspace", workspaceId: ws.id },
+      firstSession: { profileId, text: `[[mcp: task_note_add {"text":"${title}：导入已改完"}]]` },
+    });
+    // Writing to its own task needs no approval; the note carries the session that wrote it.
+    await expect
+      .poll(async () => (await studio!.api<Array<{ sessionId: string | null; text: string }>>("GET", `/api/tasks/${task.id}/notes`)).map((n) => [n.sessionId, n.text]), { timeout: 60_000 })
+      .toEqual([[session.id, `${title}：导入已改完`]]);
+    const items = await studio.api<Array<{ type: string }>>("GET", `/api/sessions/${session.id}/items`);
+    expect(items.some((i) => i.type === "approval")).toBe(false);
+  }
+});

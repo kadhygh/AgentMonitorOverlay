@@ -71,6 +71,22 @@ describe("CodexRuntime", () => {
     await expect(runtime.respondApproval(s.id, "0", "decline")).rejects.toThrow(/not pending/);
   });
 
+  it("turns an MCP tool elicitation into an approval card and answers with an action", async () => {
+    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "[[elicit]]" });
+    await until(() => session(s.id).status === "awaiting-approval", "awaiting-approval");
+    const approval = items(s.id).find((i) => i.type === "approval") as Extract<SessionItem, { type: "approval" }>;
+    expect(approval).toMatchObject({ kind: "permissions", summary: 'Allow the amo MCP server to run tool "canvas_group_create"?', detail: "MCP：amo", state: "pending" });
+    await runtime.respondApproval(s.id, approval.approvalId, "accept");
+    await until(idle(s.id), "idle");
+    expect(lastAgent(s.id)!.markdown).toBe("FAKE-ELICITED: accept");
+
+    await runtime.sendMessage(s.id, "[[elicit]]");
+    await until(() => items(s.id).filter((i) => i.type === "approval").length === 2 && session(s.id).status === "awaiting-approval", "second elicitation");
+    const second = items(s.id).filter((i) => i.type === "approval").at(-1) as Extract<SessionItem, { type: "approval" }>;
+    await runtime.respondApproval(s.id, second.approvalId, "decline");
+    await until(() => lastAgent(s.id)?.markdown === "FAKE-ELICITED: decline" && idle(s.id)(), "declined");
+  });
+
   it("marks an approval answered by another client (e.g. the attached TUI) as resolved elsewhere", async () => {
     const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "seed" });
     await until(idle(s.id), "seed");
