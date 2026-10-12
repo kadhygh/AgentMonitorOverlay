@@ -55,7 +55,11 @@ export function ChecklistPanel({ link, items, sessions }: { link: HostLink; item
         <label key={i.id} className={i.done ? "check-row done" : "check-row"} data-testid="checklist-item">
           <input type="checkbox" checked={i.done} onChange={(e) => void call(link, "PATCH /api/checklist/:id", { id: i.id }, { done: e.target.checked }).catch(() => undefined)} />
           <span className="check-text">{i.text}</span>
-          {i.done && <span className="check-by">{by(i)}</span>}
+          {i.done && (
+            <span className="check-by" title={by(i)}>
+              {by(i)}
+            </span>
+          )}
         </label>
       ))}
     </section>
