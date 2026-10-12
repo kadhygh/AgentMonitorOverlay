@@ -187,3 +187,10 @@
 - 验证：`npm run verify` 通过（91 个测试）；e2e 11/11；截图 `S1-11c-approval.png`、`S1-11c-subagent.png`
 - commit：见本次 commit
 - 遗留：命令的工具卡片排在审批卡片前面（Codex 先发 item/started 再发审批请求），之后考虑合并成一张卡片；插话内容要等当前这次模型输出结束才出现在对话里，这是 Codex 的行为
+
+## 2026-10-13 05:00 · S1-12a 真实 DeepSeek 冒烟
+- 结果：done
+- 改动：`scripts/smoke-stage1.mjs`、根目录 `npm run smoke:stage1`、`spikes/results/s1-12-smoke.json`
+- 验证：真实 DeepSeek 3 次（19/1000）。沙盒 CODEX_HOME 和工作区：第一轮回复 OK，第二轮答出暗号 LIME-4（上下文保留）；真实 Codex TUI（npm 0.161）用生成的 `codex --remote … resume` 在隐藏控制台启动，和 app-server 端口建立 1 条连接并持续运行，命令行不含 token；Host 以保留 app-server 的方式重启后，任务、会话和 4 条记录都在，第三轮回复 STILL-HERE；测试会话已归档，没有残留进程和端口
+- commit：见本次 commit
+- 遗留：TUI 的交互（在 TUI 里打字、`/fork`）仍需要用户在真实终端里看一眼，已在 NEEDS_YOU 的 S1-00e 一条里

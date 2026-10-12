@@ -3,7 +3,7 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 16
+      "used": 19
     },
     "glm": {
       "limit": 5000,
@@ -90,6 +90,21 @@
       "at": "2026-10-12T14:30:27.672Z",
       "provider": "deepseek",
       "note": "S1-00d-2 explicit fork turn"
+    },
+    {
+      "at": "2026-10-12T16:24:07.258Z",
+      "provider": "deepseek",
+      "note": "S1-12 turn 1"
+    },
+    {
+      "at": "2026-10-12T16:24:09.279Z",
+      "provider": "deepseek",
+      "note": "S1-12 turn 2"
+    },
+    {
+      "at": "2026-10-12T16:24:16.679Z",
+      "provider": "deepseek",
+      "note": "S1-12 turn 3"
     }
   ]
 }
