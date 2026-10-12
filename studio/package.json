@@ -1,0 +1,25 @@
+{
+  "name": "amo-studio",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "workspaces": [
+    "packages/protocol",
+    "packages/testkit",
+    "packages/host",
+    "packages/app",
+    "packages/ui"
+  ],
+  "scripts": {
+    "dev": "npm run dev -w @amo-studio/ui",
+    "typecheck": "tsc -b && tsc -p packages/ui --noEmit",
+    "test": "vitest run",
+    "build": "tsc -b && npm run build -w @amo-studio/ui",
+    "verify": "npm run typecheck && npm run test && npm run build"
+  },
+  "devDependencies": {
+    "@types/node": "24.19.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.11"
+  }
+}

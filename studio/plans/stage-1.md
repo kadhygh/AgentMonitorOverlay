@@ -22,7 +22,7 @@
 
 ### S1-00 协议补测 · todo
 
-- 依赖：无
+- 依赖：S1-01（真实调用要先经过 `budget.ts` 计数，2026-10-12 调整）
 - 内容：在 `studio/spikes/` 下写脚本，结论记录到 `studio/spikes/RESULTS.md`。
   - a. **审批路由**：两个客户端同时订阅一个 thread，用 `approvalPolicy` 让模型请求执行命令。观察审批请求发给了哪个客户端，先回应的是否生效，另一方收到什么。
   - b. **单 server 多 provider**：同一个 app-server，不带 provider 启动参数，在 `thread/start` 时通过 `modelProvider` 加 `config` 指定 DeepSeek，看能否运行，从而决定是"一个 server 多 provider"还是"每个 provider 一个进程"。
@@ -32,7 +32,7 @@
 - 预算：DeepSeek 约 8 次
 - 验收：`RESULTS.md` 对 a～d 各有明确结论，并写清楚对 S1-06 设计的影响。
 
-### S1-01 脚手架 · todo
+### S1-01 脚手架 · done
 
 - 依赖：无
 - 内容：
