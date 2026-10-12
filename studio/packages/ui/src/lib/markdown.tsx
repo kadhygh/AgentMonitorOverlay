@@ -226,11 +226,15 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
   );
 }
 
-export function Markdown({ source }: { source: string }) {
+/** Ranges in the source to mark as annotated (blocks overlapping any of them get `md-annotated`). */
+export type Highlight = { start: number; end: number };
+
+export function Markdown({ source, highlights = [] }: { source: string; highlights?: readonly Highlight[] }) {
   return (
     <div className="md">
       {parseBlocks(source).map((b) => {
-        const range = { "data-src-start": b.start, "data-src-end": b.end };
+        const marked = highlights.some((h) => h.start < b.end && h.end > b.start);
+        const range = { "data-src-start": b.start, "data-src-end": b.end, ...(marked ? { "data-annotated": "" } : {}) };
         const key = `${b.start}-${b.kind}`;
         switch (b.kind) {
           case "code":

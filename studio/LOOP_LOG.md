@@ -224,3 +224,10 @@
 - 验证：`npm run verify` 通过；e2e 13/13；截图 `screenshots/stage-2/S2-03-context-menu.png`
 - commit：见本次 commit
 - 遗留：测试模式下"复制"只记录、不写系统剪贴板（这台机器上 e2e 里系统剪贴板读写都不可靠，而且测试不应改用户的剪贴板）。排查时曾在主进程直接调用过一次 `clipboard.writeText("direct-1")`，回读为空，大概率没有写进去；如果写进去了，用户剪贴板内容在 06:25 左右被覆盖过一次
+
+## 2026-10-13 06:50 · S2-04 批注栏
+- 结果：done（ROADMAP 阶段 2 的核心验收流程已打通）
+- 改动：`packages/ui/src/task/AnnotationPanel.tsx`（未发送批注卡片：原文、备注、编辑、删除，点原文定位；"汇总发回会话（n）"，悬停可预览拼好的消息，会话只读时不可用；已发送的收进"▸ 已发送 n"）、`host/useAnnotations.ts`（加载 + 事件实时更新）、Markdown 的 `highlights`（与未发送批注重叠的块标记 `data-annotated` 并高亮）、TaskPage 的定位与闪烁、样式；e2e `review.spec.ts`
+- 验证：`npm run verify` 通过；e2e 14/14（新增：选中 → 右键批注 ×3 → 编辑 → 删除 → 高亮与定位 → 汇总发回 → 会话收到按顺序拼好的消息并得到回复 → 批注收进已发送）；截图 `S2-04-annotations.png`、`S2-04-sent.png`
+- commit：见本次 commit
+- 遗留：高亮粒度是"块"（段落、表格、列表），不是精确到选中的那几个字；精确高亮要在渲染时切分文本节点，先不做

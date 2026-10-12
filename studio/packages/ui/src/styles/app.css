@@ -304,3 +304,18 @@ a.md-link { cursor: pointer; }
 .anno-quote { margin: 0; font-size: 12px; color: var(--primary-hover); display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .anno-draft textarea { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--primary); background: var(--bg); color: var(--text); font-size: 13px; resize: vertical; }
 .anno-empty { font-size: 12.5px; color: var(--text-dim); }
+
+/* Annotation panel and highlights (S2-04) */
+.md-block[data-annotated] { padding: 4px 8px; margin: 0 -8px; border-radius: 8px; background: #1b2633; box-shadow: inset 0 0 0 1px var(--selection); }
+@keyframes md-flash { 0% { box-shadow: inset 0 0 0 2px var(--primary); background: #22324a; } 100% { box-shadow: inset 0 0 0 1px transparent; } }
+.md-flash { animation: md-flash 1.5s ease-out; border-radius: 8px; }
+.anno-count { font-size: 12px; color: var(--text-dim); }
+.anno-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); text-align: left; color: var(--text); font-size: 13px; }
+.anno-card.sent { cursor: pointer; opacity: 0.75; }
+.anno-quote-btn { text-align: left; padding: 0; border: none; background: transparent; color: var(--primary-hover); font-size: 12px; cursor: pointer; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.anno-note { white-space: pre-wrap; }
+.anno-actions { display: flex; gap: 4px; justify-content: flex-end; }
+.anno-edit { display: flex; flex-direction: column; gap: 6px; }
+.anno-edit textarea { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--primary); background: var(--bg); color: var(--text); font-size: 13px; resize: vertical; }
+.anno-send { width: 100%; }
+.anno-sent { display: flex; flex-direction: column; gap: 6px; }
