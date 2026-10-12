@@ -4,7 +4,11 @@ import type { HostErrorBody, HostRoute, RouteRequest, RouteResponse, StateSnapsh
 
 declare global {
   interface Window {
-    amo?: { host(): Promise<{ url: string; token: string } | null> };
+    amo?: {
+      host(): Promise<{ url: string; token: string } | null>;
+      /** Native folder picker (Electron); absent in a plain browser. */
+      pickDirectory?(): Promise<string | null>;
+    };
   }
 }
 

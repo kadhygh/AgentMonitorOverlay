@@ -149,3 +149,13 @@
 - 验证：`npm run verify` 通过（81 个测试）；e2e 连跑 2 次 2/2：Host 拉起并连上、窗口不可见且无焦点、URL 不含 token、退出后锁释放；截图 `screenshots/stage-1/S1-08-shell.png`
 - commit：见本次 commit
 - 遗留：e2e 里的 Host 用真实的 app-server 管理器，S1-09 起需要建会话的用例要让 Host 支持测试用 provider（mock 模型），计划在 S1-10 前补上
+
+## 2026-10-13 03:15 · S1-09 界面基础
+- 结果：done
+- 改动：`packages/ui/src/styles/app.css`（交互说明里的颜色 token）、`board/Board.tsx`（四列看板，卡片显示状态点、状态词、更新时间、范围与会话/分支数，卡片上没有按钮）、`board/ScopeNav.tsx`（全部、跨工作区、各工作区；登记工作区：原生选文件夹或输入路径）、`host/useHostState.ts`（快照加 WS 事件实时更新，断线重连）、`lib/status.ts`（任务状态由会话汇总：待批准 > 待审阅 > 出错 > 运行中 > 空闲 > 已完成）、`App.tsx`（顶栏：看板、画布占位、"需要你"计数、"+ 新任务"）；preload/main 增加 `pickDirectory`；host `bin.ts` 增加测试开关 `AMO_STUDIO_TEST_PROVIDER_URL`（只换成 mock 模型配置和沙盒 CODEX_HOME）；e2e 助手支持 mock 模型、直接调用 API、建沙盒工作区
+- 验证：`npm run verify` 通过（81 个测试）；e2e 4/4 连跑 2 次（登记沙盒工作区 → 看板显示两张卡片、待批准与空闲、"需要你 1"、范围过滤；非法路径报错）；截图 `screenshots/stage-1/S1-09-board.png`
+- commit：见本次 commit
+- 遗留：
+  - 隐藏窗口不重绘，capturePage 会拿到旧画面。测试模式改为把窗口放到屏幕外、不进任务栏、`showInactive()` 且不可聚焦；e2e 断言改为"无焦点且不在任何显示器上"
+  - 字体暂用本机回退（不连 Google Fonts），打包时再决定是否内置 IBM Plex Sans / Noto Sans SC
+  - 默认决定：会话状态"出错"用红色（原型里没有）；卡片没有会话时显示"未开始"

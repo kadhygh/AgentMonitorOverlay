@@ -1,4 +1,4 @@
-import { app, BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, dialog, ipcMain } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, stopHost, type HostConnection } from "./host-link.js";
@@ -31,6 +31,11 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   ipcMain.handle("amo:host", () => (host ? { url: host.url, token: host.token } : null));
+  ipcMain.handle("amo:pick-directory", async () => {
+    const options = { title: "选择工作区文件夹", properties: ["openDirectory" as const] };
+    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+    return result.canceled ? null : (result.filePaths[0] ?? null);
+  });
 
   app
     .whenReady()
@@ -69,8 +74,10 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
     minHeight: 600,
     title: "AMO Studio",
     backgroundColor: "#111316",
-    // Test windows stay hidden and never take focus (LOOP_RULES red line 7); screenshots use capturePage.
+    // Test windows sit off-screen, out of the taskbar, and are shown without activation so they keep painting for
+    // capturePage but never take focus (LOOP_RULES red line 7).
     show: false,
+    ...(testMode ? { x: -32000, y: -32000, skipTaskbar: true, focusable: false } : {}),
     paintWhenInitiallyHidden: true,
     webPreferences: {
       preload: join(here, "preload.cjs"),
@@ -81,7 +88,8 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
     },
   });
   win.once("ready-to-show", () => {
-    if (!testMode) win.show();
+    if (testMode) win.showInactive();
+    else win.show();
   });
   void win.loadURL(process.env.AMO_STUDIO_DEV_URL ?? `${conn.url}/`);
   return win;

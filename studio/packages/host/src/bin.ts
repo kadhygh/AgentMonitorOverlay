@@ -1,13 +1,35 @@
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { HostAlreadyRunningError, startHost } from "./host-process.js";
+import { HostAlreadyRunningError, startHost, type StartHostOptions } from "./host-process.js";
+import { StaticCredentialReader } from "./runtime/credentials.js";
 
 // Command-line entry: `node packages/host/dist/bin.js`. The Electron shell starts it the same way (S1-08).
 // Env: AMO_STUDIO_DATA_DIR (default studio/.data), AMO_STUDIO_PORT (default 47900), AMO_STUDIO_UI_DIR,
 // AMO_STUDIO_DEV_ORIGIN (allowed CORS origin for the Vite dev server).
+// Test-only: AMO_STUDIO_TEST_PROVIDER_URL (+ AMO_STUDIO_TEST_CATALOG, AMO_STUDIO_TEST_CODEX_HOME) replaces every model
+// profile with one mock profile, so end-to-end tests never reach a real model or the user's Codex home.
 
 const studioRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..");
 const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
+
+function testModelOptions(): Partial<StartHostOptions> {
+  const url = process.env.AMO_STUDIO_TEST_PROVIDER_URL;
+  if (!url) return {};
+  return {
+    profiles: [{ id: "codex-mock", label: "Mock 模型", runtime: "codex", provider: "amo-mock", model: "mock-model", credentialId: "mock" }],
+    providers: {
+      "amo-mock": {
+        name: "Mock",
+        baseUrl: url,
+        wireApi: "responses",
+        envKey: "AMO_MOCK_API_KEY",
+        ...(process.env.AMO_STUDIO_TEST_CATALOG ? { catalog: process.env.AMO_STUDIO_TEST_CATALOG } : {}),
+      },
+    },
+    credentials: new StaticCredentialReader({ mock: "mock-key" }),
+    ...(process.env.AMO_STUDIO_TEST_CODEX_HOME ? { codexEnv: { CODEX_HOME: process.env.AMO_STUDIO_TEST_CODEX_HOME } } : {}),
+  };
+}
 
 try {
   const host = await startHost({
@@ -15,6 +37,7 @@ try {
     ...(process.env.AMO_STUDIO_PORT ? { port: Number(process.env.AMO_STUDIO_PORT) } : {}),
     ...(process.env.AMO_STUDIO_UI_DIR ? { uiDir: process.env.AMO_STUDIO_UI_DIR } : {}),
     ...(process.env.AMO_STUDIO_DEV_ORIGIN ? { allowedOrigins: [process.env.AMO_STUDIO_DEV_ORIGIN] } : {}),
+    ...testModelOptions(),
   });
   console.log(`AMO Studio Host listening on ${host.info.url} (data: ${dataDir})`);
   const stop = (keepServers: boolean) => {
