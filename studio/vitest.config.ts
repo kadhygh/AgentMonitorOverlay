@@ -1,0 +1,17 @@
+import { fileURLToPath } from "node:url";
+import { defineConfig } from "vitest/config";
+
+const src = (name: string) => fileURLToPath(new URL(`./packages/${name}/src/index.ts`, import.meta.url));
+
+export default defineConfig({
+  resolve: {
+    alias: {
+      "@amo-studio/protocol": src("protocol"),
+      "@amo-studio/testkit": src("testkit"),
+      "@amo-studio/host": src("host"),
+    },
+  },
+  test: {
+    include: ["packages/*/src/**/*.test.ts"],
+  },
+});

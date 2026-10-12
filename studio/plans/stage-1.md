@@ -20,19 +20,26 @@
 
 状态值：`todo` | `in_progress` | `done` | `blocked`。每个任务完成后，提交一个 commit。
 
-### S1-00 协议补测 · todo
+### S1-00 协议补测 · done（a～f；e 的用户验证结果回来后补进 RESULTS）
 
-- 依赖：无
+- 依赖：S1-01（真实调用要先经过 `budget.ts` 计数，2026-10-12 调整）
 - 内容：在 `studio/spikes/` 下写脚本，结论记录到 `studio/spikes/RESULTS.md`。
   - a. **审批路由**：两个客户端同时订阅一个 thread，用 `approvalPolicy` 让模型请求执行命令。观察审批请求发给了哪个客户端，先回应的是否生效，另一方收到什么。
   - b. **单 server 多 provider**：同一个 app-server，不带 provider 启动参数，在 `thread/start` 时通过 `modelProvider` 加 `config` 指定 DeepSeek，看能否运行，从而决定是"一个 server 多 provider"还是"每个 provider 一个进程"。
   - c. **重启重连**：app-server 用同一端口和同一 token 重启后，WS 客户端重新连接并 `thread/resume`，能否继续收到事件。
   - d. **其他客户端发起的 fork**：在客户端 A 上 `thread/fork`，客户端 B 能否收到 `thread/started` 之类的事件，以及能否拿到 `forkedFromId`。
 - 需要用户配合的部分：在 TUI 里输入 `/fork` 或打开 side chat 后，AMO 侧收到的事件，以及 TUI 自动重连后能否回到原 thread。脚本准备好以后，写入 `NEEDS_YOU.md`（请你过目），不阻塞后续任务。
-- 预算：DeepSeek 约 8 次
+- 预算：DeepSeek 约 8 次（实际 a～d 计数 16 次，其中 2 次请求打到 OpenAI 被 401，未消耗额度）
 - 验收：`RESULTS.md` 对 a～d 各有明确结论，并写清楚对 S1-06 设计的影响。
+- 子任务（2026-10-12 拆分，按顺序做）：
+  - S1-00a 审批路由 · done
+  - S1-00b 单 server 多 provider · done
+  - S1-00c 重启重连（顺带测：审批挂起后才订阅的客户端能否补收请求；按 thread 指定 provider 的会话在重启后 `thread/resume` 不带 config 能否恢复路由） · done
+  - S1-00d 其他客户端发起的 fork · done
+  - S1-00e 准备需要用户配合的 TUI 脚本（`/fork`、side chat、自动重连），写入 NEEDS_YOU · done
+  - S1-00f 用 npm 版 Codex 0.161 复测 b～d（a～d 实际跑在桌面版自带的 0.144.1 上，2026-10-13 发现） · done
 
-### S1-01 脚手架 · todo
+### S1-01 脚手架 · done
 
 - 依赖：无
 - 内容：
@@ -43,7 +50,7 @@
   - `studio/budget.json` 计数工具 `packages/testkit/src/budget.ts`：先检查额度再加计数，超出额度时抛错。
 - 验收：在 `studio/` 下 `npm install && npm run verify` 通过，产出空包的构建结果。
 
-### S1-02 数据模型与协议类型 · todo
+### S1-02 数据模型与协议类型 · done
 
 - 依赖：S1-01
 - 内容：
@@ -57,7 +64,7 @@
   - 生成 Codex app-server 的 TS 绑定（`codex app-server generate-ts`，版本号写进文件头），放在 `packages/protocol/src/codex/`，并提供重新生成的脚本。
 - 验收：类型检查通过；为实体编写示例数据的单元测试。
 
-### S1-03 存储 · todo
+### S1-03 存储 · done
 
 - 依赖：S1-02
 - 内容：
@@ -67,7 +74,7 @@
   - 确认 `node:sqlite` 在当前 Node 和 Electron 环境下可用，不可用则退回备选方案，并在日志里写明。
 - 验收：单元测试覆盖增删改查、会话树查询（含归档时连同子孙一起归档）、重启后数据仍在。
 
-### S1-04 测试工具：fake app-server 与 mock 模型 · todo
+### S1-04 测试工具：fake app-server 与 mock 模型 · done（拆成 a、b）
 
 - 依赖：S1-02
 - 内容：
@@ -76,8 +83,11 @@
 - 验收：
   - fake app-server 的剧本测试通过；
   - 真实 Codex 加 mock 模型完成一轮对话，不消耗额度。
+- 子任务（2026-10-12 拆分）：
+  - S1-04a mock 模型（`packages/testkit/src/mock-model.ts`，`npm run test:codex-mock` 用真实 app-server 验证） · done
+  - S1-04b fake app-server（剧本驱动的 JSON-RPC 子集） · done
 
-### S1-05 凭据与模型路由 · todo
+### S1-05 凭据与模型路由 · done
 
 - 依赖：S1-01
 - 内容：
@@ -86,11 +96,11 @@
   - Key 只放进子进程的环境变量。
 - 验收：单元测试中凭据读取用 mock；用真实凭据做一次只检查长度的冒烟测试，不打印 Key。
 
-### S1-06 Codex runtime · todo
+### S1-06 Codex runtime · done（拆成 a～d）
 
 - 依赖：S1-00、S1-03、S1-04、S1-05
 - 内容：
-  - **进程管理**：按 S1-00 的结论，采用一个 server 多 provider，或者每个 provider 一个进程。WS 监听加 capability token，token 文件放在数据目录，权限尽量收紧。崩溃后退避重启，重启后用原端口和原 token。
+  - **进程管理**：按 S1-00 的结论（`spikes/RESULTS.md`）：每个模型 profile 一个 app-server，该 profile 设为 server 默认，所有 provider 定义都在启动参数里；fork 显式带 provider；`thread/started` 的 provider 与父 thread 不一致时告警。WS 监听加 capability token，token 文件放在数据目录，权限尽量收紧。崩溃后退避重启，重启后用原端口和原 token。
   - **JSON-RPC 客户端**。
   - **会话操作**：start、resume、fork、archive，turn 的 start、steer、interrupt。
   - **审批**：把审批请求转给 Host，等待人的决定。
@@ -98,8 +108,13 @@
   - **父子关系**：fork 时从响应里的 `forkedFromId` 获得；子 agent 从 `subAgentActivity.agentThreadId` 获得。创建时就写入会话树。
   - 列表查询要带上 `modelProviders`。
 - 验收：基于 fake app-server 的单元测试和集成测试；基于真实 Codex 加 mock 模型的集成测试。
+- 子任务（2026-10-13 拆分）：
+  - S1-06a JSON-RPC 客户端（`runtime/codex/rpc-client.ts`） · done
+  - S1-06b app-server 进程管理：每个 profile 一个进程，端口和 token 存数据目录，崩溃后退避重启并沿用端口和 token · done
+  - S1-06c 会话操作、事件规范化入库、审批转交、父子关系、provider 不一致告警 · done
+  - S1-06d 集成测试：真实 `codex app-server` 加 mock 模型跑通 start / 审批 / fork / 归档 / 重启恢复 · done
 
-### S1-07 Host API · todo
+### S1-07 Host API · done（拆成 a、b）
 
 - 依赖：S1-06
 - 内容：
@@ -108,8 +123,11 @@
   - 终端接入：生成 `codex --remote <ws> --remote-auth-token-env <ENV> resume <threadId>`，并在新的终端窗口里执行（token 只通过环境变量传递）。测试模式下只返回命令，不打开窗口。
   - 会话的写入状态。
 - 验收：API 集成测试（基于 fake app-server）；Host 重启后数据恢复。
+- 子任务（2026-10-13 拆分）：
+  - S1-07a 业务层 `HostService`、REST 路由、WS 事件流（`?since=` 补发）、Host token、CORS 白名单、同源托管 UI · done
+  - S1-07b 终端接入（生成并在新窗口执行 `codex --remote … resume`，token 只走环境变量；写入状态）、Host 进程入口（数据目录、单实例锁、端口文件、token 文件） · done
 
-### S1-08 Electron 外壳 · todo
+### S1-08 Electron 外壳 · done
 
 - 依赖：S1-01
 - 内容：
@@ -119,7 +137,7 @@
   - 测试模式下窗口不抢焦点（红线第 7 条）。
 - 验收：Playwright 能启动应用并截图，窗口不跳到前台。
 
-### S1-09 界面基础 · todo
+### S1-09 界面基础 · done
 
 - 依赖：S1-07、S1-08
 - 内容：
@@ -131,7 +149,7 @@
   严格按 `design/prototype/Main.dc.html` 和 `interaction-notes` 实现。
 - 验收：端到端测试：登记沙盒工作区 → 看板显示；截图。
 
-### S1-10 新建任务页 · todo
+### S1-10 新建任务页 · done
 
 - 依赖：S1-09
 - 内容：DSH 式空白任务页，布局见 `interaction-notes` 的"新建任务"一节：
@@ -140,7 +158,7 @@
   - 底部输入框和模型选择。
 - 验收：端到端测试：新建任务 → 进入任务页，第一个会话开始流式回复（fake app-server）。
 
-### S1-11 任务页与对话面板 · todo
+### S1-11 任务页与对话面板 · done（拆成 a～c）
 
 - 依赖：S1-10
 - 内容：
@@ -151,8 +169,12 @@
   - 归档与恢复；
   - 任务状态下拉框。
 - 验收：端到端测试覆盖审批、插话与打断、fork 和子 agent 的父子关系展示、归档与恢复、终端命令；截图。
+- 子任务（2026-10-13 拆分）：
+  - S1-11a 页面结构：会话树缩进、+新会话（跨工作区选工作区）、归档区（查看只读、恢复）、任务状态下拉框、会话顶栏（写入状态、在终端打开、分支、归档/恢复）、提示条 · done
+  - S1-11b 对话面板：markdown 基础渲染、工具卡片折叠、审批卡片、子 agent 摘要与跳转、错误与提示、输入框（发送 / 插话 / 打断）、只读时禁用 · done
+  - S1-11c 端到端：审批、插话与打断、子 agent 父子展示（mock 模型能否触发真实 Codex 的子 agent，不能则用 fake app-server 的 Host 测试模式）；截图 · done
 
-### S1-12 真实冒烟与阶段验收 · todo
+### S1-12 真实冒烟与阶段验收 · done（拆成 a、b）
 
 - 依赖：S1-11
 - 内容：
@@ -163,6 +185,9 @@
 - 验收：`ROADMAP` 阶段 1 的验收全部通过。写入 `NEEDS_YOU.md`（请你过目）：
   - 截图；
   - 试用说明：如何启动、如何登记一个真实工作区并用一天。登记真实工作区由用户自己操作。
+- 子任务（2026-10-13 拆分）：
+  - S1-12a 真实冒烟（`npm run smoke:stage1`）：DeepSeek 两轮对话保留上下文、真实 TUI 以 `--remote` 在隐藏控制台连上、Host 重启后数据恢复并继续对话 · done
+  - S1-12b 阶段收尾：代码审查、防偏离自查、完整验证、合并回 studio/main、请你过目与试用说明、准备阶段 2 · done
 
 ## 预算预估
 

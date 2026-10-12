@@ -1,0 +1,43 @@
+{
+  "scenario": "S1-00f recheck on npm Codex with mock model",
+  "codexVersion": "codex-cli 0.161.0",
+  "checks": {
+    "a.approval": {
+      "bothReceived": true,
+      "firstAnswerWins": true,
+      "resolvedBroadcast": true,
+      "lateSubscriberGetsPending": true
+    },
+    "b.perThread.amo-mock-a": {
+      "provider": "amo-mock-a",
+      "turn": "completed",
+      "reply": "MOCK: hello amo-mock-a"
+    },
+    "b.perThread.amo-mock-b": {
+      "provider": "amo-mock-b",
+      "turn": "completed",
+      "reply": "MOCK: hello amo-mock-b"
+    },
+    "b.list": {
+      "withFilter": 2,
+      "withoutFilter": 0
+    },
+    "c.threadMode.resumeWithoutConfig": {
+      "ok": false,
+      "error": "thread/resume: {\"code\":-32600,\"message\":\"failed to load configuration: Model provider `amo-mock-a` not found\"}"
+    },
+    "d.fork": {
+      "implicitProvider": "amo-mock-x",
+      "explicitProvider": "amo-mock-p",
+      "forkedFromId": true,
+      "parentSubscriberSawThreadStarted": true,
+      "implicitTurn": "completed",
+      "listIncludesFork": true
+    },
+    "c.serverMode.resumeWithoutConfig": {
+      "ok": true,
+      "provider": "amo-mock-p",
+      "turn": "completed"
+    }
+  }
+}

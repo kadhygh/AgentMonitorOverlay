@@ -1,0 +1,15 @@
+{
+  "extends": "./tsconfig.base.json",
+  "compilerOptions": {
+    "composite": false,
+    "declaration": false,
+    "declarationMap": false,
+    "noEmit": true,
+    "paths": {
+      "@amo-studio/protocol": ["./packages/protocol/src/index.ts"],
+      "@amo-studio/testkit": ["./packages/testkit/src/index.ts"],
+      "@amo-studio/host": ["./packages/host/src/index.ts"]
+    }
+  },
+  "include": ["packages/protocol/src", "packages/testkit/src", "packages/host/src", "packages/app/src", "e2e", "vitest.config.ts"]
+}

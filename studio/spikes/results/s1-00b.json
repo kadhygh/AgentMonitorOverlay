@@ -1,0 +1,54 @@
+{
+  "scenario": "S1-00b one server, provider per thread",
+  "steps": [
+    {
+      "s": "thread/start with provider amo-ds-a",
+      "threadId": "01a1307d-8762-7882-99f7-276105233080",
+      "model": "deepseek-flash",
+      "modelProvider": "amo-ds-a",
+      "threadProvider": "amo-ds-a"
+    },
+    {
+      "s": "thread/start with provider amo-ds-b",
+      "threadId": "01a1307d-877e-7ed1-a801-0469e7051e51",
+      "model": "deepseek-flash",
+      "modelProvider": "amo-ds-b",
+      "threadProvider": "amo-ds-b"
+    },
+    {
+      "s": "concurrent turns",
+      "turns": [
+        {
+          "provider": "amo-ds-a",
+          "status": "completed",
+          "error": null,
+          "reply": "ALPHA-OK"
+        },
+        {
+          "provider": "amo-ds-b",
+          "status": "completed",
+          "error": null,
+          "reply": "BRAVO-OK"
+        }
+      ]
+    },
+    {
+      "s": "thread/list",
+      "withProviders": [
+        [
+          "01a1307d-877e-7ed1-a801-0469e7051e51",
+          "amo-ds-b"
+        ],
+        [
+          "01a1307d-8762-7882-99f7-276105233080",
+          "amo-ds-a"
+        ]
+      ],
+      "withoutFilter": []
+    },
+    {
+      "s": "thread/read B",
+      "modelProvider": "amo-ds-b"
+    }
+  ]
+}

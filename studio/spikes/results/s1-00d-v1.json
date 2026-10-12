@@ -1,0 +1,123 @@
+{
+  "scenario": "S1-00d fork from another client",
+  "steps": [
+    {
+      "s": "A forked",
+      "parentId": "01a13084-4b46-71d1-b9d4-8a91938407ee",
+      "forkId": "01a13084-4ffa-7740-98c0-b8d9a405ad9e",
+      "forkedFromIdInResponse": "01a13084-4b46-71d1-b9d4-8a91938407ee",
+      "forkTurns": 1
+    },
+    {
+      "s": "B events during fork",
+      "events": [
+        [
+          "thread/started",
+          "01a13084-4ffa-7740-98c0-b8d9a405ad9e"
+        ]
+      ],
+      "threadStartedParams": [
+        {
+          "id": "01a13084-4ffa-7740-98c0-b8d9a405ad9e",
+          "forkedFromId": "01a13084-4b46-71d1-b9d4-8a91938407ee",
+          "keys": [
+            "id",
+            "extra",
+            "sessionId",
+            "forkedFromId",
+            "parentThreadId",
+            "preview",
+            "ephemeral",
+            "historyMode",
+            "modelProvider",
+            "createdAt",
+            "updatedAt",
+            "recencyAt",
+            "status",
+            "path",
+            "cwd",
+            "cliVersion",
+            "source",
+            "threadSource",
+            "agentNickname",
+            "agentRole",
+            "gitInfo",
+            "name",
+            "turns"
+          ]
+        }
+      ]
+    },
+    {
+      "s": "B queries",
+      "loadedHasFork": true,
+      "loaded": [
+        "01a13084-4b46-71d1-b9d4-8a91938407ee",
+        "01a13084-4ffa-7740-98c0-b8d9a405ad9e"
+      ],
+      "readForkedFromId": "01a13084-4b46-71d1-b9d4-8a91938407ee",
+      "listHasFork": false,
+      "listForkedFromId": "absent"
+    },
+    {
+      "s": "thread/list after fork turn",
+      "listHasFork": false
+    },
+    {
+      "s": "turn on fork",
+      "status": "failed",
+      "error": {
+        "message": "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: https://api.openai.com/v1/responses, cf-ray: a496cbcfef8b81f0-SIN, request id: req_bca3302aa5494b1e8d30fa393e8e64a7",
+        "codexErrorInfo": "other",
+        "additionalDetails": null
+      },
+      "reply": "",
+      "aItemTypes": [
+        "userMessage"
+      ],
+      "aErrors": [
+        {
+          "error": {
+            "message": "Reconnecting... 2/5",
+            "codexErrorInfo": {
+              "responseStreamDisconnected": {
+                "httpStatusCode": 401
+              }
+            },
+            "additionalDetails": "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses, cf-ray: a496cb606a330bfb-SIN"
+          },
+          "willRetry": true,
+          "threadId": "01a13084-4ffa-7740-98c0-b8d9a405ad9e",
+          "turnId": "01a13084-5617-7793-9576-04e3c74be6c6"
+        },
+        {
+          "error": {
+            "message": "Reconnecting... 3/5",
+            "codexErrorInfo": {
+              "responseStreamDisconnected": {
+                "httpStatusCode": 401
+              }
+            },
+            "additionalDetails": "unexpected status 401 Unauthorized: Missing bearer or basic authentication in header, url: wss://api.openai.com/v1/responses, cf-ray: a496cb652ec23883-SIN"
+          },
+          "willRetry": true,
+          "threadId": "01a13084-4ffa-7740-98c0-b8d9a405ad9e",
+          "turnId": "01a13084-5617-7793-9576-04e3c74be6c6"
+        }
+      ],
+      "bForkEventKinds": [
+        "thread/status/changed"
+      ],
+      "bSawForkEventsWithoutSubscribing": 2,
+      "bEventKinds": [
+        "thread/status/changed"
+      ]
+    }
+  ],
+  "listRaw": [
+    {
+      "id": "01a13084-4b46-71d1-b9d4-8a91938407ee",
+      "forkedFromId": null
+    }
+  ]
+}

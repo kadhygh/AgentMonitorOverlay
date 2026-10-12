@@ -1,0 +1,59 @@
+{
+  "scenario": "S1-00a approval routing, variant 2",
+  "steps": [
+    {
+      "s": "thread started by A; B subscribed after turn/start",
+      "threadId": "01a1307a-9358-7241-8b0f-f4295e7a8e9f",
+      "resumeTries": 0,
+      "approvalAlreadyAtA": false
+    },
+    {
+      "s": "approval request delivery",
+      "firstTo": "B",
+      "method": "item/commandExecution/requestApproval",
+      "toA": true,
+      "toB": true,
+      "sameRpcId": true,
+      "sameItem": true,
+      "command": "\"C:\\\\Users\\\\Kangaroo\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'cmd /c echo approval-probe-2'"
+    },
+    {
+      "s": "after A answered decline",
+      "resolvedSeenByA": [
+        {
+          "threadId": "01a1307a-9358-7241-8b0f-f4295e7a8e9f",
+          "requestId": 0
+        }
+      ],
+      "resolvedSeenByB": [
+        {
+          "threadId": "01a1307a-9358-7241-8b0f-f4295e7a8e9f",
+          "requestId": 0
+        }
+      ]
+    },
+    {
+      "s": "turn completed",
+      "reply": "DENIED",
+      "probeFileExists": false,
+      "approvalRequestsTotal": {
+        "A": 1,
+        "B": 1,
+        "sum": 2
+      },
+      "errorsOrWarnings": [],
+      "commandItems": [
+        {
+          "status": "declined",
+          "exit": null,
+          "output": ""
+        },
+        {
+          "status": "declined",
+          "exit": -1,
+          "output": "exec command rejected by user"
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,36 @@
+{
+  "scenario": "S1-00d fork provider inheritance",
+  "steps": [
+    {
+      "s": "parent",
+      "modelProvider": "amo-ds-p",
+      "seed": {
+        "status": "completed",
+        "error": null,
+        "reply": "OK"
+      }
+    },
+    {
+      "s": "implicit fork",
+      "modelProvider": "amo-ds-x",
+      "threadProvider": "amo-ds-x",
+      "model": "deepseek-flash",
+      "turn": {
+        "status": "completed",
+        "error": null,
+        "reply": "PLUM-3"
+      }
+    },
+    {
+      "s": "explicit fork",
+      "modelProvider": "amo-ds-p",
+      "threadProvider": "amo-ds-p",
+      "forkedFromId": "01a13085-a033-7423-9edc-ebb2c6bf77ca",
+      "turn": {
+        "status": "completed",
+        "error": null,
+        "reply": "PLUM-3"
+      }
+    }
+  ]
+}

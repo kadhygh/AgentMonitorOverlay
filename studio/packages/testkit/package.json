@@ -1,0 +1,19 @@
+{
+  "name": "@amo-studio/testkit",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "dependencies": {
+    "@amo-studio/protocol": "0.0.0",
+    "@types/ws": "8.18.2",
+    "ws": "8.21.3"
+  }
+}

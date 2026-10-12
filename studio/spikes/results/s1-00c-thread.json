@@ -1,0 +1,48 @@
+{
+  "scenario": "S1-00c restart, resume, late subscriber (mode thread)",
+  "steps": [
+    {
+      "s": "seeded",
+      "threadId": "01a13080-74c3-73a3-a414-e02386e9ac85",
+      "reply": "OK"
+    },
+    {
+      "s": "restarted server on same port/token",
+      "a1SawClose": true
+    },
+    {
+      "s": "resume without config failed",
+      "error": "thread/resume: {\"code\":-32600,\"message\":\"failed to load configuration: Model provider `amo-ds-c` not found\"}"
+    },
+    {
+      "s": "resume with config",
+      "loadedBefore": {
+        "data": [],
+        "nextCursor": null
+      },
+      "model": "deepseek-flash",
+      "modelProvider": "amo-ds-c",
+      "threadProvider": "amo-ds-c",
+      "turns": 1
+    },
+    {
+      "s": "late subscriber while approval pending",
+      "bGotPendingRequest": true,
+      "sameId": true,
+      "method": "item/commandExecution/requestApproval"
+    },
+    {
+      "s": "post-restart turn",
+      "status": "completed",
+      "error": null,
+      "reply": "KIWI-7",
+      "cmd": [
+        {
+          "status": "completed",
+          "output": "late-subscriber"
+        }
+      ],
+      "bSawTurnDone": true
+    }
+  ]
+}

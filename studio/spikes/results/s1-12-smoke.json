@@ -1,0 +1,33 @@
+{
+  "startedAt": "2026-10-12T16:24:07.205Z",
+  "steps": [
+    {
+      "name": "turn1",
+      "reply": "OK",
+      "status": "idle"
+    },
+    {
+      "name": "turn2",
+      "reply": "LIME-4",
+      "keptContext": true
+    },
+    {
+      "name": "tui-remote",
+      "connectedSockets": 1,
+      "stillRunningAfterConnect": true,
+      "commandHasToken": false
+    },
+    {
+      "name": "host-restart",
+      "tasks": 1,
+      "sessionsBack": true,
+      "itemsBack": 4
+    },
+    {
+      "name": "turn3-after-restart",
+      "reply": "STILL-HERE"
+    }
+  ],
+  "ok": true,
+  "finishedAt": "2026-10-12T16:24:18.967Z"
+}
