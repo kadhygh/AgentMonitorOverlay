@@ -822,3 +822,17 @@
 - 验证：`npm run verify` 退出码 0（203 个测试）；e2e 34/34
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 10:10 · S6-05 MCP 读取扩展包
+- 结果：done
+- 改动（`packages/host/src/mcp/`）：
+  - 只读工具 `pack_list`（某个工作区或全部工作区的扩展包：文档、模板、预设的目录，不含内容；有错误的包带上错误）、`pack_doc`（读一篇文档）；
+  - `task_get` 多返回 `checklist`（每项的 id、内容、是否完成、谁勾的）；
+  - 写自身工具 `checklist_check`：勾选或取消勾选自己任务的清单项，和记进度一样不弹审批（Codex 设为 `approve`，Claude 预先放行）；勾别的任务会被拒绝；
+  - 只读工具里 Studio 自己的拒绝（例如文档不存在）现在作为工具错误返回给 agent，而不是协议错误
+- 测试：MCP 单测（工具清单变为 7 个只读、9 个写入；读扩展包与文档；`task_get` 带清单；勾选与取消；勾别人的被拒绝）；Codex 启动参数里 `checklist_check` 是 `approve`
+- 计划调整：mock 会话里调用这几个工具放进 S6-06 的验收 e2e 一起做
+- 默认决定（请你过目）：`checklist_check` 不弹审批（只改自己任务的清单，和记进度同级）
+- 验证：`npm run verify` 退出码 0（204 个测试）；e2e 34/34
+- 额度：0
+- commit：见本次 commit

@@ -10,7 +10,7 @@ import { NotFoundError, ReadModel } from "./read-model.js";
 
 export const AMO_MCP_NAME = "amo";
 export const AMO_MCP_INSTRUCTIONS =
-  "AMO Studio workbench. Read the board, tasks, session trees, workspaces and the canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions (the person decides when mail enters a conversation); ask the person for a decision (the answer comes back as mail); arrange the canvas (groups, dependencies, which group a task is in) with the person's approval.";
+  "AMO Studio workbench. Read the board, tasks, session trees, workspaces and the canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions (the person decides when mail enters a conversation); ask the person for a decision (the answer comes back as mail); arrange the canvas (groups, dependencies, which group a task is in) with the person's approval; read the project's extension packs (conventions, templates) and tick your own task's checklist.";
 
 /** The session a tool call comes from, if Studio could tell. */
 export interface McpCaller {
@@ -45,7 +45,7 @@ function answer(read: () => unknown): ToolResult {
   try {
     return json(read());
   } catch (err) {
-    if (err instanceof NotFoundError) return { content: [{ type: "text", text: err.message }], isError: true };
+    if (err instanceof NotFoundError || err instanceof HostError) return { content: [{ type: "text", text: err.message }], isError: true };
     throw err;
   }
 }
@@ -134,6 +134,19 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       run: (args) => write(caller, () => service.canvasPlaceTask(args.taskId, args.groupId ?? null)),
     },
     {
+      name: "checklist_check",
+      title: "勾清单",
+      description: "Tick (or untick with done=false) a step of your own task's checklist; find the item ids with task_get. The person sees who ticked it.",
+      inputSchema: { itemId: z.string(), done: z.boolean().optional() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) =>
+        write(caller, (c) => {
+          const item = service.setChecklistDone(String(args.itemId), args.done !== false, c.sessionId);
+          return { id: item.id, text: item.text, done: item.done };
+        }),
+    },
+    {
       name: "decision_request",
       title: "请求决策",
       description:
@@ -208,6 +221,25 @@ export function amoTools(model: ReadModel): AmoTool[] {
       readOnly: true,
       autoApprove: true,
       run: (args) => answer(() => model.projectContext(args.workspace === undefined ? undefined : String(args.workspace))),
+    },
+    {
+      name: "pack_list",
+      title: "扩展包",
+      description:
+        "The project's extension packs (.amo/packs in a workspace, id or name; all workspaces when omitted): their documents (conventions, pitfalls), task templates and session presets. Read a document with pack_doc.",
+      inputSchema: { workspace: z.string().optional() },
+      readOnly: true,
+      autoApprove: true,
+      run: (args) => answer(() => model.packList(args.workspace === undefined ? undefined : String(args.workspace))),
+    },
+    {
+      name: "pack_doc",
+      title: "扩展包文档",
+      description: "One document of an extension pack (ids from pack_list), as markdown.",
+      inputSchema: { workspace: z.string(), pack: z.string(), doc: z.string() },
+      readOnly: true,
+      autoApprove: true,
+      run: (args) => answer(() => model.packDoc(String(args.workspace), String(args.pack), String(args.doc))),
     },
     {
       name: "canvas_read",

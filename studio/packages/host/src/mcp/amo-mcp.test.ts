@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
@@ -79,14 +79,14 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists five read-only tools and eight that write for the caller", async () => {
+  it("lists seven read-only tools and nine that write for the caller", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "board_list", "canvas_depend", "canvas_group_create", "canvas_place", "canvas_read", "decision_request", "handoff_submit",
-      "mailbox_read", "mailbox_send", "project_context", "session_tree", "task_get", "task_note_add",
+      "board_list", "canvas_depend", "canvas_group_create", "canvas_place", "canvas_read", "checklist_check", "decision_request", "handoff_submit",
+      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "session_tree", "task_get", "task_note_add",
     ]);
-    expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "project_context", "session_tree", "task_get"]);
+    expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "pack_doc", "pack_list", "project_context", "session_tree", "task_get"]);
     await client.close();
   });
 
@@ -131,7 +131,7 @@ describe("AMO MCP", () => {
 
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(13);
+    expect((await client.listTools()).tools).toHaveLength(16);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);
@@ -174,6 +174,38 @@ describe("AMO MCP", () => {
     expect(canvas.content[0]!.text).toContain("分组「导入」（工作区 alpha）");
     expect(JSON.parse(canvas.content[1]!.text).dependencies).toEqual([{ from: configTask.id, to: importTask.id }]);
     expect(canvas.content[1]!.text).not.toMatch(/"pos"|"rect"/);
+    await client.close();
+  });
+
+  it("reads extension packs and ticks the caller's own checklist", async () => {
+    const alpha = store.listWorkspaces().find((w) => w.name === "alpha")!;
+    const dir = join(alpha.path, ".amo", "packs", "demo");
+    mkdirSync(join(dir, "docs"), { recursive: true });
+    writeFileSync(join(dir, "pack.json"), JSON.stringify({ schemaVersion: 1, name: "demo", title: "示例", docs: [{ id: "style", title: "规范", path: "docs/style.md" }], templates: [{ id: "t", title: "流程", steps: ["读规范", "实现"] }] }));
+    writeFileSync(join(dir, "docs", "style.md"), "# 规范\n\n用驼峰。");
+    const client = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
+    const list = (await call(client, "pack_list", { workspace: "alpha" })).data as { packs: Array<Record<string, unknown>> };
+    expect(list.packs).toEqual([
+      { workspace: { id: alpha.id, name: "alpha" }, pack: "demo", title: "示例", docs: [{ id: "style", title: "规范" }], templates: [{ id: "t", title: "流程", steps: 2 }], presets: [] },
+    ]);
+    expect(((await call(client, "pack_list")).data as { packs: unknown[] }).packs).toHaveLength(1);
+    expect((await call(client, "pack_doc", { workspace: "alpha", pack: "demo", doc: "style" })).data).toMatchObject({ text: "# 规范\n\n用驼峰。" });
+    const missing = await call(client, "pack_doc", { workspace: "alpha", pack: "demo", doc: "nope" });
+    expect(missing.isError).toBe(true);
+    expect(missing.content[0]!.text).toBe("扩展包 demo 里没有文档 nope");
+
+    // A checklist on the caller's task (as a template would make it): task_get shows it, checklist_check ticks it.
+    for (const [position, text] of ["读规范", "实现"].entries()) {
+      store.putChecklistItem({ id: `chk-${position}`, taskId: importTask.id, position, text, done: false, doneBySessionId: null, doneAt: null, source: "demo/t" });
+    }
+    store.putChecklistItem({ id: "chk-other", taskId: configTask.id, position: 0, text: "别人的", done: false, doneBySessionId: null, doneAt: null, source: "demo/t" });
+    expect((await call(client, "checklist_check", { itemId: "chk-0" })).data).toEqual({ id: "chk-0", text: "读规范", done: true });
+    const task = (await call(client, "task_get", { taskId: importTask.id })).data as { checklist: unknown };
+    expect(task.checklist).toEqual([{ id: "chk-0", text: "读规范", done: true, by: "计划" }, { id: "chk-1", text: "实现", done: false }]);
+    expect((await call(client, "checklist_check", { itemId: "chk-0", done: false })).data).toMatchObject({ done: false });
+    const refused = await call(client, "checklist_check", { itemId: "chk-other" });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toBe("a session can only tick its own task's checklist");
     await client.close();
   });
 
