@@ -3,11 +3,11 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 19
+      "used": 22
     },
     "glm": {
       "limit": 5000,
-      "used": 12
+      "used": 16
     }
   },
   "log": [
@@ -165,6 +165,41 @@
       "at": "2026-10-12T18:31:08.665Z",
       "provider": "glm",
       "note": "S4-00 cli resume"
+    },
+    {
+      "at": "2026-10-12T20:00:48.234Z",
+      "provider": "glm",
+      "note": "S4-08 GLM approval"
+    },
+    {
+      "at": "2026-10-12T20:01:00.664Z",
+      "provider": "glm",
+      "note": "S4-08 GLM mcp"
+    },
+    {
+      "at": "2026-10-12T20:01:10.724Z",
+      "provider": "glm",
+      "note": "S4-08 GLM fork"
+    },
+    {
+      "at": "2026-10-12T20:01:16.788Z",
+      "provider": "glm",
+      "note": "S4-08 GLM subagent"
+    },
+    {
+      "at": "2026-10-12T20:01:32.863Z",
+      "provider": "deepseek",
+      "note": "S4-08 DeepSeek mcp"
+    },
+    {
+      "at": "2026-10-12T20:01:53.744Z",
+      "provider": "deepseek",
+      "note": "S4-08 DeepSeek mcp"
+    },
+    {
+      "at": "2026-10-12T20:02:15.328Z",
+      "provider": "deepseek",
+      "note": "S4-08 DeepSeek mcp"
     }
   ]
 }

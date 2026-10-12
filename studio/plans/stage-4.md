@@ -64,7 +64,7 @@
 - 内容：Codex 和 Claude 的受管会话启动时都带上 AMO MCP；agent 在会话里能调用 `canvas.read` 等工具。
 - 验收：e2e（mock 模型发起 MCP 工具调用，回复里能看到读到的画布大纲）。
 
-### S4-08 GLM 真实冒烟 · todo
+### S4-08 GLM 真实冒烟 · done
 - 依赖：S4-02～S4-07
 - 内容：用 GLM 在沙箱工作区跑一次完整流程：新建 Claude 会话、执行需要审批的命令、分支、调用 `canvas.read`；截图。
 - 追加（S4-07）：再用 DeepSeek Flash 跑一个带 MCP 的 Codex 回合，确认模型目录关掉 `tool_search` 后 DeepSeek 能正常调用 MCP 工具（约 3 次 DeepSeek）。

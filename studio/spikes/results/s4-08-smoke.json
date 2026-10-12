@@ -1,0 +1,88 @@
+{
+  "runs": [
+    {
+      "label": "full run",
+      "budget": "glm 13-16, deepseek 20",
+      "note": "Full run (GLM + DeepSeek). Copied from the console output: the results file of this run was overwritten by the DeepSeek-only re-run below. Its DeepSeek step was not valid (the script stopped waiting before Codex reported turn/started).",
+      "steps": [
+        {
+          "name": "glm-approval",
+          "status": "idle",
+          "approved": 1,
+          "reply": "DONE",
+          "tools": [
+            "shell:mkdir smoke-approved:completed"
+          ],
+          "errors": [],
+          "dirCreated": true
+        },
+        {
+          "name": "glm-mcp",
+          "status": "idle",
+          "approved": 0,
+          "reply": "掉落表校验",
+          "tools": [
+            "shell:mkdir smoke-approved:completed",
+            "mcp__amo__canvas_read::completed"
+          ],
+          "errors": []
+        },
+        {
+          "name": "glm-fork",
+          "status": "idle",
+          "approved": 0,
+          "reply": "I created a folder named `smoke-approved` in the current working directory.",
+          "tools": [],
+          "errors": []
+        },
+        {
+          "name": "glm-subagent",
+          "status": "idle",
+          "approved": 0,
+          "reply": "The subagent returned exactly: **SUB-OK**",
+          "subSessions": [
+            {
+              "title": "Reply with SUB-OK",
+              "status": "completed",
+              "items": [
+                "user",
+                "agent"
+              ]
+            }
+          ]
+        },
+        {
+          "name": "deepseek-mcp",
+          "invalid": true,
+          "status": "idle",
+          "reply": null,
+          "note": "returned before the turn started"
+        }
+      ]
+    },
+    {
+      "label": "SMOKE_ONLY=deepseek, after fixing the wait",
+      "budget": "deepseek 22 (deepseek 21 was another invalid wait)",
+      "startedAt": "2026-10-12T20:02:15.262Z",
+      "steps": [
+        {
+          "name": "deepseek-mcp",
+          "status": "idle",
+          "approved": 0,
+          "reply": "掉落表校验",
+          "tools": [
+            "amo.canvas_read:canvas_read:completed"
+          ],
+          "errors": [],
+          "itemTypes": [
+            "user",
+            "tool",
+            "agent"
+          ]
+        }
+      ],
+      "taskId": "task-9df04dae-fcf9-41ea-aa5b-c3019b746a03",
+      "finishedAt": "2026-10-12T20:02:18.766Z"
+    }
+  ]
+}

@@ -10,6 +10,10 @@
 - **Codex 0.161 默认把 MCP 工具藏在 `tool_search` 后面**：模型目录里 `supports_search_tool: true` 时，请求只带一个 Responses 托管工具 `{"type":"tool_search","execution":"client"}`，MCP 工具要等模型先搜索才给出。DeepSeek 兼容接口大概率不支持这种托管工具，所以我们自己维护的模型目录（DeepSeek Flash、mock）改成 `supports_search_tool: false`，MCP 工具直接作为普通函数提供。`codex-default` 用 Codex 内置目录，不受影响。DeepSeek 带 MCP 的真实请求在 S4-08 冒烟里验证。
 - **Claude**：没有用 HTTP——SDK 把 `mcpServers` 配置交给 CLI 时可能出现在命令行上（令牌会暴露）。改用 SDK 的进程内服务 `createSdkMcpServer`，工具在 Host 进程里执行，CLI 通过 SDK 的内部通道调用，不需要令牌。这五个工具只读 Studio 自己的状态，用 `allowedTools` 预先放行，其余工具照常走 `canUseTool`。
 - 交接到终端的 Claude（`claude --resume`）不带 AMO MCP（进程内服务只存在于 Host 的 SDK 进程）。
+- S4-08 真实冒烟（`scripts/smoke-stage4.mjs`，结果 `spikes/results/s4-08-smoke.json`）：
+  - GLM 通过 Claude 会话调用 `mcp__amo__canvas_read`，正确答出分组名；
+  - DeepSeek Flash 通过 Codex 会话调用 MCP 工具（Codex 里的名字是 `amo.canvas_read`），正确答出分组名——关掉 `tool_search` 后 DeepSeek 可以直接调用 MCP 工具；
+  - SDK 会对 `allowedTools` 打出警告 `CLAUDE_SDK_CAN_USE_TOOL_SHADOWED`（这五个工具不再经过 `canUseTool`），这是有意为之。
 
 ## h. Claude Agent SDK 在 Windows 上的行为（2026-10-13，S4-00，GLM 12 次）
 

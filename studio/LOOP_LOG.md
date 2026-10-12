@@ -504,3 +504,26 @@
 - 验证：`npm run verify` 退出码 0（165 个测试）；e2e 25/25
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-13 19:05 · S4-08 GLM 与 DeepSeek 真实冒烟
+- 结果：done
+- 脚本：`scripts/smoke-stage4.mjs`（`npm run smoke:stage4`）
+  - Host 跑在沙箱数据目录，端口 47960；
+  - Codex 的 home 和工作区都在 `%TEMP%\amo-studio-sandbox\smoke-stage4-*`；
+  - 每个回合记入额度；结束时归档会话、删除沙箱目录
+- GLM（Claude 会话）全部通过：
+  - `mkdir` 等人批准后才执行，目录确实创建；
+  - 通过 MCP 读画布，答出分组名"掉落表校验"；
+  - 分支里记得之前建的文件夹；
+  - 子 agent 回复 SUB-OK，子会话生成并完成
+- DeepSeek（Codex 会话）通过 MCP（`amo.canvas_read`）读画布，答出分组名。确认模型目录关掉 `tool_search` 后，DeepSeek 能直接调用 MCP 工具
+- 过程问题：
+  - 第一次完整运行时，DeepSeek 一步的结果无效：Codex 会话在 `turn/started` 到达前一直显示"空闲"，脚本的等待函数第一次轮询就返回了；
+  - 加了只跑 DeepSeek 的开关后又跑了一次，同样无效；
+  - 改成"出现新回复且不在运行中"才算结束后，第三次有效；
+  - 结果文件被只跑 DeepSeek 的那次覆盖了，GLM 的结果按控制台输出写回，文件里注明了来源
+- 额度：
+  - GLM 4 次（16/5000）；
+  - DeepSeek 3 次（22/1000），其中 2 次是上面无效的那两次
+- 没有截图：冒烟是脚本直接调接口；界面截图用的是 S4-04、S4-07 的 mock 版本
+- commit：见本次 commit
