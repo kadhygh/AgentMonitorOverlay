@@ -2,7 +2,7 @@ import { mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import type { Session } from "@amo-studio/protocol";
+import type { Session, SessionItem } from "@amo-studio/protocol";
 import { Store } from "./store.js";
 
 const open: Store[] = [];
@@ -88,7 +88,7 @@ describe("Store", () => {
     const c = store.appendItem({ id: "i-c", sessionId: fork.id, createdAt: at, type: "user", text: "fork" });
     expect([a.seq, b.seq, c.seq]).toEqual([1, 2, 1]);
 
-    const done = store.replaceItem({ ...b, markdown: "hello", streaming: false });
+    const done = store.replaceItem({ ...(b as Extract<SessionItem, { type: "agent" }>), markdown: "hello", streaming: false });
     expect(done.seq).toBe(2);
     expect(store.listItems(main.id)).toEqual([a, done]);
     expect(store.listItems(main.id, 1)).toEqual([done]);

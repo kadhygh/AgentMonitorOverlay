@@ -121,7 +121,7 @@ describe("fake app-server", () => {
     // Each socket delivers independently, so wait on both rather than checking B after A's turn ends.
     await Promise.all([a, b].map((c) => c.waitFor((e) => e.method === "serverRequest/resolved" && e.params.requestId === reqA.id)));
     const cmd = a.events.find((e) => e.method === "item/completed" && e.params.item.type === "commandExecution");
-    expect(cmd.params.item.status).toBe("declined");
+    expect(cmd!.params.item.status).toBe("declined");
   });
 
   it("replays a pending approval to a late subscriber", async () => {
@@ -137,7 +137,7 @@ describe("fake app-server", () => {
     late.respond(replayed.id, "accept");
     await a.waitFor(turnDone(turn.id));
     const reply = a.events.filter((e) => e.method === "item/completed" && e.params.item.type === "agentMessage").at(-1);
-    expect(reply.params.item.text).toBe("FAKE-RAN");
+    expect(reply!.params.item.text).toBe("FAKE-RAN");
   });
 
   it("announces forks to parent subscribers and defaults their provider to the server's", async () => {
@@ -167,7 +167,7 @@ describe("fake app-server", () => {
     expect(activity.map((i) => i.kind)).toEqual(["started", "completed"]);
     const childId = activity[0].agentThreadId;
     const started = a.events.find((e) => e.method === "thread/started" && e.params.thread.id === childId);
-    expect(started.params.thread.parentThreadId).toBe(threadId);
+    expect(started!.params.thread.parentThreadId).toBe(threadId);
     expect(a.events.some((e) => e.method === "item/completed" && e.params.threadId === childId && e.params.item.text === "FAKE-SUB-DONE")).toBe(true);
   });
 
@@ -180,7 +180,7 @@ describe("fake app-server", () => {
     expect(await a.request("turn/steer", { threadId, expectedTurnId: turn.id, input: text("also this") })).toEqual({ turnId: turn.id });
     await a.waitFor(turnDone(turn.id));
     const last = a.events.filter((e) => e.method === "item/completed" && e.params.item.type === "agentMessage").at(-1);
-    expect(last.params.item.text).toBe("FAKE-STEERED: also this");
+    expect(last!.params.item.text).toBe("FAKE-STEERED: also this");
   });
 
   it("interrupts a running turn", async () => {

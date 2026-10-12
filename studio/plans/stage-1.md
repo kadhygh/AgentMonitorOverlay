@@ -95,7 +95,7 @@
   - Key 只放进子进程的环境变量。
 - 验收：单元测试中凭据读取用 mock；用真实凭据做一次只检查长度的冒烟测试，不打印 Key。
 
-### S1-06 Codex runtime · todo
+### S1-06 Codex runtime · in_progress（拆成 a～d）
 
 - 依赖：S1-00、S1-03、S1-04、S1-05
 - 内容：
@@ -107,6 +107,11 @@
   - **父子关系**：fork 时从响应里的 `forkedFromId` 获得；子 agent 从 `subAgentActivity.agentThreadId` 获得。创建时就写入会话树。
   - 列表查询要带上 `modelProviders`。
 - 验收：基于 fake app-server 的单元测试和集成测试；基于真实 Codex 加 mock 模型的集成测试。
+- 子任务（2026-10-13 拆分）：
+  - S1-06a JSON-RPC 客户端（`runtime/codex/rpc-client.ts`） · done
+  - S1-06b app-server 进程管理：每个 profile 一个进程，端口和 token 存数据目录，崩溃后退避重启并沿用端口和 token · todo
+  - S1-06c 会话操作、事件规范化入库、审批转交、父子关系、provider 不一致告警 · todo
+  - S1-06d 集成测试：真实 `codex app-server` 加 mock 模型跑通 start / 审批 / fork / 归档 / 重启恢复 · todo
 
 ### S1-07 Host API · todo
 

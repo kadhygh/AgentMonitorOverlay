@@ -12,6 +12,11 @@
     }
   },
   "dependencies": {
-    "@amo-studio/protocol": "0.0.0"
+    "@amo-studio/protocol": "0.0.0",
+    "@types/ws": "8.18.2",
+    "ws": "8.21.3"
+  },
+  "devDependencies": {
+    "@amo-studio/testkit": "0.0.0"
   }
 }

@@ -7,5 +7,6 @@
 - **已完成**：阶段 0（协议验证、设计预览、路线图与 loop 规则）
 - **在等你**：见 `NEEDS_YOU.md`，目前 2 项，都不阻塞 Studio
 - **已完成任务**：S1-01 脚手架、S1-00 协议补测（a～e，结论见 `spikes/RESULTS.md`）、S1-02 数据模型与协议类型、S1-03 存储、S1-04 测试工具（mock 模型、fake app-server）、S1-05 凭据与模型路由
-- **下一步**：S1-06 Codex runtime（可能拆成多个子任务）
+- **进行中**：S1-06 Codex runtime（a JSON-RPC 客户端已完成）
+- **下一步**：S1-06b app-server 进程管理
 - **模型调用额度**：DeepSeek 16 / 1000，GLM 0 / 5000

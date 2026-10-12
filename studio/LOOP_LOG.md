@@ -90,3 +90,10 @@
 - 遗留：
   - 凭据脚本改用 `-EncodedCommand`：从 stdin 传脚本时 PowerShell 逐行执行，多行 here-string 会坏掉，读出来为空
   - 每个 server 只能有一个 `model_catalog_json`，所以只给默认 provider 带目录；Codex 默认 server 上恢复 DeepSeek thread 时没有 deepseek-flash 的元数据，走 Codex 的默认值
+
+## 2026-10-13 00:25 · S1-06a JSON-RPC 客户端
+- 结果：done
+- 改动：`packages/host/src/runtime/codex/rpc-client.ts`（`ws` 连接 + capability token；方法名和参数用生成的 `ClientRequest` 约束，常用方法的返回值有类型；通知、服务端请求、关闭事件；超时；断开时拒绝所有挂起请求）、`rpc-client.test.ts`（6 个场景）；host 新增依赖 `ws@8.21.3`、`@types/ws@8.18.2`，devDependency `@amo-studio/testkit`
+- 验证：`npm run verify` 通过（48 个单元测试）
+- commit：见本次 commit
+- 遗留：发现测试文件此前没有做类型检查（`tsc -b` 排除了 `*.test.ts`，vitest 不做类型检查）。新增 `tsconfig.tests.json` 并加进 `npm run typecheck`，顺手修了已有测试里的 5 处类型错误
