@@ -3,6 +3,7 @@ import type { Annotation, ApprovalDecision, Session, SessionItem } from "@amo-st
 import { Markdown } from "../lib/markdown.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { copyText } from "../host/client.js";
+import { ReplyNav } from "./ReplyNav.js";
 
 type Approval = Extract<SessionItem, { type: "approval" }>;
 type Tool = Extract<SessionItem, { type: "tool" }>;
@@ -82,6 +83,8 @@ export function Thread({ session, items, annotations, model, busy, onApprove, on
 
   return (
     <>
+      <div className="thread-wrap">
+      <ReplyNav scroller={scroller} itemCount={items.length} />
       <div
         className="thread"
         data-testid="thread"
@@ -110,6 +113,7 @@ export function Thread({ session, items, annotations, model, busy, onApprove, on
             highlights={annotations.filter((a) => a.itemId === item.id && !a.sentAt)}
           />
         ))}
+      </div>
       </div>
       {menu && (
         <div className="ctx-menu" role="menu" aria-label="选中文字" style={{ left: menu.x, top: menu.y }}>

@@ -7,6 +7,7 @@ import { shortModel } from "../lib/profiles.js";
 import { COLUMN_NAMES } from "../lib/status.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
+import { flash } from "./ReplyNav.js";
 import { AnnotationPanel } from "./AnnotationPanel.js";
 import type { SelectionAnchor } from "../lib/selection.js";
 
@@ -91,10 +92,7 @@ export function TaskPage({ link, task, sessions, workspaces, profiles, initialSe
       blocks.find((b) => b.textContent?.includes(a.quote)) ??
       reply;
     target.scrollIntoView({ block: "center" });
-    target.classList.remove("md-flash");
-    void target.offsetWidth; // restart the animation when clicked twice
-    target.classList.add("md-flash");
-    setTimeout(() => target.classList.remove("md-flash"), 1600);
+    flash(target);
   }
 
   const approve = (approvalId: string, decision: ApprovalDecision) =>

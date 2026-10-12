@@ -319,3 +319,16 @@ a.md-link { cursor: pointer; }
 .anno-edit textarea { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--primary); background: var(--bg); color: var(--text); font-size: 13px; resize: vertical; }
 .anno-send { width: 100%; }
 .anno-sent { display: flex; flex-direction: column; gap: 6px; }
+
+/* Reply jumps (S2-06) */
+.thread-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.reply-nav {
+  position: absolute; top: 8px; right: 14px; z-index: 5; display: flex; align-items: center; gap: 2px;
+  padding: 2px; border-radius: 8px; border: 1px solid var(--border); background: rgba(24, 27, 31, 0.92);
+}
+.reply-nav button { width: 26px; height: 24px; border: none; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.reply-nav button:hover { background: var(--panel-raised); color: var(--text); }
+.reply-pos { font-size: 11.5px; color: var(--text-dim); padding: 0 4px; font-variant-numeric: tabular-nums; }
+.msg-agent.md-flash { border-radius: 8px; }
+.thread-wrap { overflow: hidden; }
+.thread-wrap > .thread { flex: 1; min-height: 0; }

@@ -238,3 +238,10 @@
 - 验证：`npm run verify` 通过（schema 版本 2、kv 读写、草稿 API 与事件、Host 重启后仍在）；e2e 15/15（输入 → 已保存 → 重启应用 → 仍在）；截图 `S2-05-scratchpad.png`
 - commit：见本次 commit
 - 遗留：写 e2e 时一度用了"不接 mock 模型 + DeepSeek 配置"建任务，那样会在用户真实的 ~/.codex 里建线程（虽然不发对话）。运行前已改为 mock 模型和沙盒 CODEX_HOME，并检查了其他用例：凡是 `mockModel: false` 的用例都不建会话
+
+## 2026-10-13 07:25 · S2-06 快速跳转
+- 结果：done
+- 改动：`packages/ui/src/task/ReplyNav.tsx`（对话区右上角浮动的"↑ n / N ↓"；`Alt+↑/↓`；跳到的回复闪一下；"当前回复"取最后一个越过顶边的回复，顶部时取第一条可见回复，滚到底时取最后一条；在长回复中间往上跳先回到这条的开头）；批注定位改用同一个 `flash`；`thread-wrap` 容器与样式；e2e `jumps.spec.ts`
+- 验证：`npm run verify` 通过；e2e 16/16；截图 `S2-06-jumps.png`
+- commit：见本次 commit
+- 遗留：对话区外包了一层容器后要给内部滚动区 `min-height: 0`，否则内容会把它撑开、无法滚动
