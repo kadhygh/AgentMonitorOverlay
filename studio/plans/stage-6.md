@@ -64,7 +64,7 @@
 - 内容：沙箱工作区放示例扩展包；GLM（Claude 会话）和 DeepSeek（Codex 会话）各自按预设启动，用 `pack_doc` 读规范、用 `checklist_check` 勾一项。
 - 验收：结果写进 `spikes/results/s6-07-smoke.json`；计入额度。
 
-### S6-08 阶段验收与收尾 · todo
+### S6-08 阶段验收与收尾 · done
 - 依赖：S6-00～S6-07
 - 内容：`LOOP_RULES` 第 6 节收尾；"请你过目"附截图、示例扩展包和写扩展包的方法。
 
