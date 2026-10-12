@@ -3,6 +3,7 @@ import { existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type {
   Annotation,
+  CanvasDoc,
   ApprovalDecision,
   HostErrorCode,
   HostEvent,
@@ -11,6 +12,7 @@ import type {
   NewAnnotationInput,
   NewSessionInput,
   Scratchpad,
+  TodoItem,
   Session,
   SessionItem,
   StateSnapshot,
@@ -20,7 +22,7 @@ import type {
   TaskScope,
   Workspace,
 } from "@amo-studio/protocol";
-import { composeAnnotationMessage, TASK_COLUMNS } from "@amo-studio/protocol";
+import { canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { CodexRuntime } from "./runtime/codex/codex-runtime.js";
 import type { TerminalLauncher } from "./terminal/launcher.js";
@@ -84,6 +86,23 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       throw new HostError("conflict", (err as Error).message);
     }
     this.publish({ type: "workspace.removed", workspaceId: id });
+    // Todos and canvas groups only point at a workspace as a hint; drop the hint rather than leave it dangling.
+    for (const todo of this.store.listTodos().filter((t) => t.workspaceId === id)) {
+      const next = { ...todo, workspaceId: null };
+      this.store.putTodo(next);
+      this.publish({ type: "todo.upserted", todo: next });
+    }
+    const canvas = this.canvas();
+    if (canvas.groups.some((g) => g.workspaceId === id)) {
+      const next: CanvasDoc = {
+        ...canvas,
+        version: canvas.version + 1,
+        groups: canvas.groups.map((g) => (g.workspaceId === id ? { ...g, workspaceId: null } : g)),
+        updatedAt: new Date().toISOString(),
+      };
+      this.store.putCanvas(next);
+      this.publish({ type: "canvas.updated", canvas: next });
+    }
   }
 
   // Tasks
@@ -187,6 +206,83 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be reclaimed");
     return this.runtime.setWriter(sessionId, "workbench");
+  }
+
+  // Whole-picture todos
+
+  todos(): TodoItem[] {
+    return this.store.listTodos();
+  }
+
+  addTodo(input: { text?: unknown; workspaceId?: unknown }): TodoItem {
+    const text = typeof input?.text === "string" ? input.text.trim() : "";
+    if (!text) throw new HostError("bad_request", "text is required");
+    const todo: TodoItem = { id: newId("td"), text, done: false, workspaceId: this.optionalWorkspace(input.workspaceId), taskId: null, createdAt: new Date().toISOString() };
+    this.store.putTodo(todo);
+    this.publish({ type: "todo.upserted", todo });
+    return todo;
+  }
+
+  updateTodo(id: Id, patch: { text?: unknown; done?: unknown; workspaceId?: unknown }): TodoItem {
+    const current = this.store.getTodo(id);
+    if (!current) throw new HostError("not_found", `todo ${id} not found`);
+    const next: TodoItem = { ...current };
+    if (patch.text !== undefined) {
+      const text = typeof patch.text === "string" ? patch.text.trim() : "";
+      if (!text) throw new HostError("bad_request", "text is required");
+      next.text = text;
+    }
+    if (patch.done !== undefined) next.done = patch.done === true;
+    if (patch.workspaceId !== undefined) next.workspaceId = this.optionalWorkspace(patch.workspaceId);
+    this.store.putTodo(next);
+    this.publish({ type: "todo.upserted", todo: next });
+    return next;
+  }
+
+  deleteTodo(id: Id): void {
+    if (!this.store.getTodo(id)) throw new HostError("not_found", `todo ${id} not found`);
+    this.store.deleteTodo(id);
+    this.publish({ type: "todo.removed", todoId: id });
+  }
+
+  private optionalWorkspace(value: unknown): Id | null {
+    if (value === undefined || value === null || value === "") return null;
+    if (typeof value !== "string" || !this.store.getWorkspace(value)) throw new HostError("bad_request", `workspace ${String(value)} not found`);
+    return value;
+  }
+
+  // Canvas (one global document)
+
+  canvas(): CanvasDoc {
+    return this.store.getCanvas(MAIN_CANVAS_ID) ?? emptyCanvas();
+  }
+
+  saveCanvas(input: unknown): CanvasDoc {
+    const doc = input as CanvasDoc;
+    if (!doc || typeof doc !== "object" || !Array.isArray(doc.groups) || !Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) {
+      throw new HostError("bad_request", "canvas needs groups, nodes and edges arrays");
+    }
+    const current = this.canvas();
+    if (doc.version !== current.version) {
+      throw new HostError("conflict", `canvas changed elsewhere (version ${current.version}, yours ${String(doc.version)}); reload and retry`);
+    }
+    const errors = validateCanvas(doc, new Set(this.store.listTasks().map((t) => t.id)));
+    if (errors.length) throw new HostError("bad_request", errors.slice(0, 5).join("; "));
+    const next: CanvasDoc = {
+      id: MAIN_CANVAS_ID,
+      version: current.version + 1,
+      groups: doc.groups,
+      nodes: doc.nodes,
+      edges: doc.edges,
+      updatedAt: new Date().toISOString(),
+    };
+    this.store.putCanvas(next);
+    this.publish({ type: "canvas.updated", canvas: next });
+    return next;
+  }
+
+  canvasOutline() {
+    return canvasOutline(this.canvas(), this.store.listTasks(), this.store.listWorkspaces(), this.store.listSessions());
   }
 
   // Scratchpad (global)

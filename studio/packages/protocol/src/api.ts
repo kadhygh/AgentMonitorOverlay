@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { Annotation, Id, ModelProfile, Session, SessionItem, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
+import type { Annotation, CanvasDoc, Id, ModelProfile, TodoItem, Session, SessionItem, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -74,6 +74,16 @@ export interface HostRoutes {
   /** The global scratchpad (interaction-notes: one shared draft area until the user asks for per-task ones). */
   "GET /api/scratchpad": { req: void; res: Scratchpad };
   "PUT /api/scratchpad": { req: { text: string }; res: Scratchpad };
+  /** Whole-picture todos (global, not tied to a task until converted in stage 7). */
+  "GET /api/todos": { req: void; res: TodoItem[] };
+  "POST /api/todos": { req: { text: string; workspaceId?: Id | null }; res: TodoItem };
+  "PATCH /api/todos/:id": { req: { text?: string; done?: boolean; workspaceId?: Id | null }; res: TodoItem };
+  "DELETE /api/todos/:id": { req: void; res: { ok: true } };
+  "GET /api/canvas": { req: void; res: CanvasDoc };
+  /** Saves the whole canvas. `version` must equal the stored one (409 otherwise); the response carries the new one. */
+  "PUT /api/canvas": { req: CanvasDoc; res: CanvasDoc };
+  /** Structure without coordinates, for agents (`canvas.read`) and the "agent 视角" tab. */
+  "GET /api/canvas/outline": { req: void; res: { outline: string; json: import("./canvas.js").CanvasOutline } };
 }
 
 export type HostRoute = keyof HostRoutes;
@@ -99,6 +109,9 @@ export type HostEvent = { seq: number } & (
   | { type: "annotation.upserted"; annotation: Annotation }
   | { type: "annotation.removed"; sessionId: Id; annotationId: Id }
   | { type: "scratchpad.updated"; scratchpad: Scratchpad }
+  | { type: "canvas.updated"; canvas: CanvasDoc }
+  | { type: "todo.upserted"; todo: TodoItem }
+  | { type: "todo.removed"; todoId: Id }
 );
 
 export type HostEventType = HostEvent["type"];

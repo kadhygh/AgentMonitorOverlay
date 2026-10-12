@@ -7,4 +7,21 @@ electron.contextBridge.exposeInMainWorld("amo", {
   pickDirectory: (): Promise<string | null> => electron.ipcRenderer.invoke("amo:pick-directory"),
   openExternal: (url: string): Promise<void> => electron.ipcRenderer.invoke("amo:open-external", url),
   copyText: (text: string): Promise<void> => electron.ipcRenderer.invoke("amo:copy", text),
+  focus: {
+    get: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:focus-get"),
+    set: (on: boolean): Promise<void> => electron.ipcRenderer.invoke("amo:focus-set", on),
+    onChange: (cb: (on: boolean) => void): (() => void) => {
+      const listener = (_event: unknown, on: boolean) => cb(on);
+      electron.ipcRenderer.on("amo:focus-changed", listener);
+      return () => electron.ipcRenderer.removeListener("amo:focus-changed", listener);
+    },
+    /** Focus window only: let clicks through (true) or catch them (false). */
+    setIgnoreMouse: (ignore: boolean): void => electron.ipcRenderer.send("amo:focus-mouse", ignore),
+  },
+  openInWorkbench: (target: { taskId: string; sessionId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-in-workbench", target),
+  onNavigate: (cb: (target: { taskId: string; sessionId?: string }) => void): (() => void) => {
+    const listener = (_event: unknown, target: { taskId: string; sessionId?: string }) => cb(target);
+    electron.ipcRenderer.on("amo:navigate", listener);
+    return () => electron.ipcRenderer.removeListener("amo:navigate", listener);
+  },
 });

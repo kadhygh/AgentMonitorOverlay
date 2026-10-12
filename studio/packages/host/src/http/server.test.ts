@@ -3,13 +3,17 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { composeAnnotationMessage, type Annotation, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type Task, type Workspace } from "@amo-studio/protocol";
+import { composeAnnotationMessage, type Annotation, type CanvasDoc, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type Task, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../runtime/codex/fake-servers.test-support.js";
 import { HostService } from "../service.js";
 import { Store } from "../store/store.js";
 import { startHostServer, type HostServer } from "./server.js";
+
+// Each test boots a fresh server, and the OS may hand out a port that a closed server just used. A pooled keep-alive
+// socket to that old server would then fail ("fetch failed"), so test requests never reuse connections.
+const fetch = (url: string, init: RequestInit = {}) => globalThis.fetch(url, { ...init, headers: { connection: "close", ...(init.headers as Record<string, string> | undefined) } });
 
 const PROFILES: ModelProfile[] = [{ id: "p-ds", label: "DS", runtime: "codex", provider: "amo-ds", model: "ds-model" }];
 const TOKEN = "test-host-token";
@@ -37,6 +41,7 @@ beforeEach(async () => {
   root = mkdtempSync(join(tmpdir(), "amo-studio-test-api-"));
   mkdirSync(join(root, "alpha"));
   mkdirSync(join(root, "beta"));
+  mkdirSync(join(root, "spare"));
   await boot();
 });
 
@@ -208,6 +213,57 @@ describe("Host API", () => {
     } finally {
       await ui.close();
     }
+  });
+
+  it("keeps whole-picture todos", async () => {
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    expect(await ok("GET", "/api/todos")).toEqual([]);
+    const todo = await ok<{ id: string; text: string; done: boolean; workspaceId: string | null }>("POST", "/api/todos", { text: " 统一掉落表格式 ", workspaceId: ws.id });
+    expect(todo).toMatchObject({ text: "统一掉落表格式", done: false, workspaceId: ws.id });
+    expect((await api("POST", "/api/todos", { text: "  " })).status).toBe(400);
+    expect((await api("POST", "/api/todos", { text: "x", workspaceId: "nope" })).status).toBe(400);
+    expect(await ok("PATCH", `/api/todos/${todo.id}`, { done: true, workspaceId: null })).toMatchObject({ done: true, workspaceId: null });
+    expect(await ok("DELETE", `/api/todos/${todo.id}`)).toEqual({ ok: true });
+    expect((await api("DELETE", `/api/todos/${todo.id}`)).status).toBe(404);
+    expect(await ok("GET", "/api/todos")).toEqual([]);
+  });
+
+  it("drops todo and group hints when their workspace is removed", async () => {
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "spare") });
+    const todo = await ok<{ id: string }>("POST", "/api/todos", { text: "x", workspaceId: ws.id });
+    const canvas = await ok<CanvasDoc>("GET", "/api/canvas");
+    await ok("PUT", "/api/canvas", { ...canvas, groups: [{ id: "g1", title: "备用", workspaceId: ws.id, rect: { x: 0, y: 0, w: 300, h: 200 } }] });
+    expect(await ok("DELETE", `/api/workspaces/${ws.id}`)).toEqual({ ok: true });
+    expect((await ok<Array<{ id: string; workspaceId: string | null }>>("GET", "/api/todos")).find((t) => t.id === todo.id)?.workspaceId).toBeNull();
+    const after = await ok<CanvasDoc>("GET", "/api/canvas");
+    expect(after.groups[0]?.workspaceId).toBeNull();
+    expect(after.version).toBe(canvas.version + 2);
+  });
+
+  it("saves the canvas with optimistic versions and serves its outline", async () => {
+    const { task } = await createTask("canvas");
+    const empty = await ok<CanvasDoc>("GET", "/api/canvas");
+    expect(empty).toMatchObject({ id: "main", version: 0, groups: [], nodes: [], edges: [] });
+
+    const draft: CanvasDoc = {
+      ...empty,
+      groups: [{ id: "g1", title: "导入", workspaceId: null, rect: { x: 0, y: 0, w: 400, h: 300 } }],
+      nodes: [{ id: "n1", kind: "task", taskId: task.id, groupId: "g1", pos: { x: 10, y: 10 } }],
+    };
+    const saved = await ok<CanvasDoc>("PUT", "/api/canvas", draft);
+    expect(saved.version).toBe(1);
+    expect((await api("PUT", "/api/canvas", draft)).status).toBe(409); // still based on version 0
+    const bad = await api<{ error: { message: string } }>("PUT", "/api/canvas", { ...saved, nodes: [{ id: "n9", kind: "task", taskId: "missing", groupId: null, pos: { x: 0, y: 0 } }] });
+    expect(bad.status).toBe(400);
+    expect(bad.data.error.message).toMatch(/missing task/);
+
+    const { outline, json } = await ok<{ outline: string; json: { groups: Array<{ tasks: Array<{ id: string }> }> } }>("GET", "/api/canvas/outline");
+    expect(json.groups[0]!.tasks.map((t) => t.id)).toEqual([task.id]);
+    expect(outline).toContain("分组「导入」");
+
+    await shutdown();
+    await boot();
+    expect((await ok<CanvasDoc>("GET", "/api/canvas")).version).toBe(1);
   });
 
   it("reads and writes the global scratchpad, announcing changes", async () => {

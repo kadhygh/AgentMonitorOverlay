@@ -1,7 +1,8 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, shell } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, stopHost, type HostConnection } from "./host-link.js";
+import { createFocusWindow, mainBounds, refitFocusWindow, ShellPrefs } from "./focus-window.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
@@ -17,6 +18,27 @@ const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
 
 let host: HostConnection | null = null;
 let mainWindow: BrowserWindow | null = null;
+let focusWindow: BrowserWindow | null = null;
+const prefs = new ShellPrefs(dataDir);
+
+/** Focus is on by default for people and off in tests unless a test turns it on. */
+function setFocusVisible(on: boolean): void {
+  prefs.setFocus(on);
+  if (on && !focusWindow && host) {
+    focusWindow = createFocusWindow({
+      url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`,
+      preload: join(here, "preload.cjs"),
+      testMode,
+      saved: prefs.focusPos(),
+      onMoved: (pos) => prefs.setFocusPos(pos),
+    });
+    focusWindow.on("closed", () => (focusWindow = null));
+  } else if (!on && focusWindow) {
+    focusWindow.destroy();
+    focusWindow = null;
+  }
+  mainWindow?.webContents.send("amo:focus-changed", on);
+}
 
 if (!app.requestSingleInstanceLock()) {
   app.quit();
@@ -48,6 +70,24 @@ if (!app.requestSingleInstanceLock()) {
     }
     await shell.openExternal(url);
   });
+  ipcMain.handle("amo:focus-get", () => focusWindow !== null);
+  ipcMain.handle("amo:focus-set", (_event, on: unknown) => setFocusVisible(on === true));
+  // Only the Focus window may switch its own click-through.
+  ipcMain.on("amo:focus-mouse", (event, ignore: unknown) => {
+    if (!focusWindow || event.sender !== focusWindow.webContents) return;
+    focusWindow.setIgnoreMouseEvents(ignore === true, { forward: true });
+    if (testMode) (globalThis as { __amoFocusIgnore?: boolean }).__amoFocusIgnore = ignore === true;
+  });
+  // "在工作台打开" from Focus: the workbench shows that task and session (and comes forward, except in tests).
+  ipcMain.handle("amo:open-in-workbench", (_event, target: unknown) => {
+    const t = target as { taskId?: unknown; sessionId?: unknown } | null;
+    if (!mainWindow || typeof t?.taskId !== "string") return;
+    mainWindow.webContents.send("amo:navigate", { taskId: t.taskId, ...(typeof t.sessionId === "string" ? { sessionId: t.sessionId } : {}) });
+    if (testMode) return;
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  });
   ipcMain.handle("amo:pick-directory", async () => {
     const options = { title: "选择工作区文件夹", properties: ["openDirectory" as const] };
     const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
@@ -65,6 +105,26 @@ if (!app.requestSingleInstanceLock()) {
         attached: testMode,
       });
       mainWindow = createMainWindow(host);
+      mainWindow.on("closed", () => {
+        mainWindow = null;
+        // Focus lives with the workbench window.
+        focusWindow?.destroy();
+      });
+      if (prefs.focus(!testMode)) setFocusVisible(true);
+      if (!testMode) {
+        // Displays unplugged, rearranged or rescaled: keep both windows reachable.
+        const refit = () => {
+          if (focusWindow) refitFocusWindow(focusWindow);
+          if (mainWindow && !mainWindow.isMaximized() && !mainWindow.isFullScreen()) {
+            const current = mainWindow.getBounds();
+            const next = mainBounds(current, current);
+            if (next.x !== current.x || next.y !== current.y || next.width !== current.width || next.height !== current.height) mainWindow.setBounds(next);
+          }
+        };
+        screen.on("display-added", refit);
+        screen.on("display-removed", refit);
+        screen.on("display-metrics-changed", refit);
+      }
     })
     .catch((err: unknown) => {
       console.error("AMO Studio failed to start:", err);
@@ -84,9 +144,11 @@ if (!app.requestSingleInstanceLock()) {
 }
 
 function createMainWindow(conn: HostConnection): BrowserWindow {
+  // Remembered bounds, pulled back onto a display if that display is gone (tests always sit off-screen).
+  const saved = testMode ? null : prefs.main();
+  const bounds = testMode ? { width: 1440, height: 900 } : mainBounds(saved?.bounds ?? null, { width: 1440, height: 900 });
   const win = new BrowserWindow({
-    width: 1440,
-    height: 900,
+    ...bounds,
     minWidth: 960,
     minHeight: 600,
     title: "AMO Studio",
@@ -112,8 +174,12 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
   });
   win.once("ready-to-show", () => {
     if (testMode) win.showInactive();
-    else win.show();
+    else {
+      if (saved?.maximized) win.maximize();
+      win.show();
+    }
   });
+  if (!testMode) win.on("close", () => prefs.setMain({ bounds: win.getNormalBounds(), maximized: win.isMaximized() }));
   void win.loadURL(process.env.AMO_STUDIO_DEV_URL ?? `${conn.url}/`);
   return win;
 }

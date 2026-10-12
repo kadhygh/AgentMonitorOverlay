@@ -137,6 +137,8 @@ export interface Point { x: number; y: number }
 /** Infinite canvas. Coordinates are presentation only; structure lives in groups, nodes and edges. */
 export interface CanvasDoc {
   id: Id;
+  /** Bumped on every save; a save must name the version it was based on (optimistic concurrency). */
+  version: number;
   groups: CanvasGroup[];
   nodes: CanvasNode[];
   edges: CanvasEdge[];

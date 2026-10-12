@@ -9,6 +9,10 @@ import { FakeServers } from "./runtime/codex/fake-servers.test-support.js";
 import { TERMINAL_TOKEN_ENV } from "./service.js";
 import { RecordingTerminalLauncher } from "./terminal/launcher.js";
 
+// Each test boots a fresh server, and the OS may hand out a port that a closed server just used. A pooled keep-alive
+// socket to that old server would then fail ("fetch failed"), so test requests never reuse connections.
+const fetch = (url: string, init: RequestInit = {}) => globalThis.fetch(url, { ...init, headers: { connection: "close", ...(init.headers as Record<string, string> | undefined) } });
+
 const PROFILES: ModelProfile[] = [{ id: "p-ds", label: "DS", runtime: "codex", provider: "amo-ds", model: "ds-model" }];
 
 let root: string;

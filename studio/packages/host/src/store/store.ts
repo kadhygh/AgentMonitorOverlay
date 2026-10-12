@@ -367,6 +367,15 @@ export class Store {
       .run(todo.id, JSON.stringify(todo), todo.createdAt);
   }
 
+  getTodo(id: Id): TodoItem | undefined {
+    const r = this.db.prepare("SELECT body FROM todos WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as TodoItem);
+  }
+
+  deleteTodo(id: Id): void {
+    this.db.prepare("DELETE FROM todos WHERE id = ?").run(id);
+  }
+
   listTodos(): TodoItem[] {
     return (this.db.prepare("SELECT body FROM todos ORDER BY created_at, id").all() as Row[]).map((r) => JSON.parse(str(r.body)) as TodoItem);
   }

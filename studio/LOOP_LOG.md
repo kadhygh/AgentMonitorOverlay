@@ -253,3 +253,92 @@
 - 完整验证：`npm run verify` 105 个测试通过；e2e 16/16
 - 合并：`studio/stage-2` 以 `--no-ff` 合并回 `studio/main`；新建 `studio/stage-3`，写 `plans/stage-3.md`
 - 遗留：无
+
+## 2026-10-13 08:00 · S3-01 画布数据与接口
+- 结果：done
+- 改动：protocol 的 `CanvasDoc` 增加 `version`；新增 `canvas.ts`（`emptyCanvas`、`validateCanvas`：id 唯一、分组/任务引用存在、几何有效、一个任务只放一次、依赖两端是任务、不自环、不重复、不成环；`findCycle`/`wouldCycle`；`canvasOutline`：不含坐标的大纲文本与 JSON，含分组、未分组、还没放上画布的任务、依赖与会话状态）；`GET/PUT /api/canvas`（版本不符 409，校验失败 400）、`GET /api/canvas/outline`、`canvas.updated` 事件
+- 验证：`npm run verify` 通过（新增画布单元测试 6 个、API 测试 1 个，覆盖版本冲突、非法引用、大纲、重启后仍在）
+- commit：见本次 commit
+- 遗留：任务目前不会被删除，所以"任务删除后节点保留但标记"暂不需要；大纲会把没放上画布的任务单独列出，界面在 S3-02 决定是否自动放置
+
+## 2026-10-13 08:20 · S3-02 画布视图
+- 结果：done
+- 改动：`packages/ui/src/canvas/CanvasPage.tsx`（顶栏"画布"可用；拖空白处平移、滚轮以指针为中心缩放、按钮缩放、复位，视图位置按本机记住；任务卡片与看板一致的状态点和状态词；拖卡片移动并保存；双击或回车打开任务；还没放上画布的任务自动排到未分组区域）、`canvas/useCanvas.ts`（整份文档乐观保存，版本冲突时重新载入并提示）、样式；e2e `canvas.spec.ts`
+- 验证：`npm run verify` 通过；e2e 17/17；截图 `screenshots/stage-3/S3-02-canvas.png`
+- commit：见本次 commit
+- 遗留：默认决定——新任务自动放进画布的未分组区域（interaction-notes 写的是"新任务默认放在未分组区域"）；两个窗口同时拖动时后保存的一方会收到冲突提示并载入最新内容
+
+## 2026-10-13 08:55 · S3-03 自由分组
+- 结果：done
+- 改动：`packages/ui/src/canvas/geometry.ts`（纯函数：按中心点判定归属、整组移动、调整大小带最小尺寸、改名与绑定、删除分组保留卡片）与单元测试；CanvasPage 增加分组（"+ 分组"建在视野中央；拖标题栏整组移动；拖右下角调整大小；双击标题或在设置面板改名；绑定工作区；删除分组保留卡片；卡片拖进拖出自动归属），拖动时先画预览、松手再保存；`useCanvas` 改为保存排队，并把基于本窗口上一次保存之前版本的编辑接到新版本上（别的窗口的改动仍会 409）；e2e `groups.spec.ts`
+- 验证：`npm run verify` 通过；e2e 18/18；截图 `screenshots/stage-3/S3-03-groups.png`
+- commit：见本次 commit
+- 遗留：
+  - 两个坑：同一窗口连续两次编辑（改名后马上绑定）会用旧版本号发出第二次保存而被判冲突，已用"本窗口续版"解决；页面上残留的文字选区会让拖动变成浏览器原生拖拽、吞掉后续鼠标事件，已在开始拖动时 `preventDefault`
+  - 拖动监听改为 layout effect，确保快速拖动的第一下就有监听
+  - 分组设置先放在画布右上角的浮层里，S3-05 搬进侧栏"详情"
+
+## 2026-10-13 09:20 · S3-04 依赖与便签
+- 结果：done
+- 改动：`packages/ui/src/canvas/CanvasSidebar.tsx`（画布右侧栏：整体待办 / 详情 / agent 视角三个标签页，本任务先做"详情"——任务：状态、打开任务、前置任务列表可移除、添加前置任务时用 `wouldCycle` 排除会成环的；分组：名称、绑定工作区、删除（从画布浮层搬过来）；便签：编辑与删除）；CanvasPage 增加 SVG 依赖箭头（从前置任务指向后续任务，裁到卡片边框）、"+ 便签"（建在视野中央，可拖动、可进出分组）；geometry 增加 `borderPoint`/`arrowBetween` 与测试；e2e `deps.spec.ts`，groups 用例改为在侧栏操作
+- 验证：`npm run verify` 通过；e2e 19/19；截图 `screenshots/stage-3/S3-04-deps-notes.png`
+- commit：见本次 commit
+- 遗留：自动摆放的起始高度下移到工具条下方
+
+## 2026-10-13 09:30 · 修复：Host 测试偶发 "fetch failed"
+- 结果：done
+- 原因：S3-04 的完整验证里 CORS 用例偶发 `fetch failed`，单独重跑 4 次都通过。每个用例都会新起一个 Host，系统可能把刚关闭的端口号再分出去，Node fetch 连接池里指向旧服务端的 keep-alive 连接就会失败
+- 改动：`server.test.ts`、`host-process.test.ts` 的请求一律带 `connection: close`，不复用连接
+- 验证：`npm run test` 连跑 2 次、`npm run verify` 均通过（118 个测试）
+- 过程问题：S3-04 那次提交（161a8d2）是在这条用例失败的情况下提交的——命令里用 grep 过滤输出，没有让失败中断提交。之后验证改为先看 `npm run verify` 的退出码再提交
+- commit：见本次 commit
+
+## 2026-10-13 09:55 · S3-05 侧栏：整体待办、agent 视角
+- 结果：done
+- 改动：Host 增加待办接口 `GET/POST /api/todos`、`PATCH/DELETE /api/todos/:id` 与事件 `todo.upserted`/`todo.removed`（文本必填、工作区须存在）；侧栏"整体待办"（新增时可选适合的工作区、勾选完成（乐观更新，失败时重新加载）、删除、已完成折到下面）；"agent 视角"（`/api/canvas/outline` 的大纲 / JSON 切换、复制，画布/任务/会话变化后 150ms 合并刷新）；接口单测 1 个、e2e `sidebar.spec.ts`
+- 调试：连续回车添加两条时第二条丢失——输入框原先等保存返回才清空，第二次输入被覆盖；改为立即清空、失败时还原。勾选完成原先等事件回来才变，Playwright 判定"点击没改变状态"；改为乐观更新
+- 默认决定（请你过目）：待办"转为任务""交给调度 agent"留到阶段 7；"复制"按钮测试里不点（测试不碰剪贴板）
+- 验证：`npm run verify` 退出码 0（119 个测试）；e2e 20/20；截图 `screenshots/stage-3/S3-05-todos.png`、`S3-05-agent-view.png`
+- commit：见本次 commit
+
+## 2026-10-13 10:25 · S3-06 跨工作区任务补全
+- 结果：done
+- 对照 interaction-notes 检查：新建时选"跨工作区"+首个会话所在工作区、会话列表显示工作区、新会话选工作区、对话顶部显示工作区、看板卡片列出工作区、左栏"跨工作区"范围——这些在阶段 1/2 已经有了。缺口：画布卡片、侧栏详情、agent 大纲只写"跨工作区"，不列涉及的工作区
+- 改动：protocol 新增 `scope.ts`（`taskWorkspaceNames`/`taskWhere`：跨工作区任务按会话首次使用顺序列出工作区，忽略已归档会话），看板卡片、画布卡片、侧栏详情、agent 大纲统一使用；大纲 JSON 每个任务多一个 `workspaces` 数组；单测 2 个、e2e `crossws.spec.ts`（界面新建跨工作区任务，首个会话在 beta，再在 alpha 开会话，检查任务页、看板、范围筛选、画布、详情、agent 视角）
+- 默认决定（请你过目）：画布是全局的一张，不受左栏范围筛选影响（左栏选了 alpha，画布仍显示全部任务）
+- 验证：`npm run verify` 退出码 0（121 个测试）；e2e 21/21；截图 `screenshots/stage-3/S3-06-cross-workspace.png`
+- commit：见本次 commit
+
+## 2026-10-13 11:05 · S3-07 Focus 悬浮窗
+- 结果：done
+- 改动：
+  - Electron：`packages/app/src/focus-window.ts`（无边框、透明、置顶 floating、不可获得焦点、不进任务栏、不可调整大小，默认贴主显示器工作区右下角，测试模式放 -32000；透明区域默认点击穿透 `setIgnoreMouseEvents(true, {forward})`）；`ShellPrefs` 把 Focus 开关记在数据目录 `shell-prefs.json`；IPC：`amo:focus-get/set`、`amo:focus-changed`、`amo:focus-mouse`（只接受 Focus 窗口自己发来的）、`amo:open-in-workbench` → 主窗口收到 `amo:navigate`
+  - 界面：同一个 bundle，`#focus` 时渲染 `FocusApp`。标题行"需要你 n · 运行中 m"、收起/展开；列表只列待批准、待审阅的未归档会话，最新的在前；默认展开第一条，显示待批准的命令或最近一条回复（截到 300 字）；待批准可"批准"；"在工作台打开"跳到对应任务和会话（同一任务已打开时也会切到那个会话）；鼠标进入面板时关闭穿透、离开时恢复
+  - 工作台顶栏增加"Focus 开/关"按钮
+  - 测试辅助：`screenshot`/`windowState` 按 URL 区分主窗口和 Focus 窗口（原先取第一个窗口，两个窗口时不可靠），`windowState` 多返回 focusable、alwaysOnTop；测试模式记录最近一次穿透开关值
+  - 单测 2 个、e2e `focus.spec.ts`（打开 Focus、窗口状态（屏幕外、未聚焦、不可聚焦、置顶）、条目与命令、悬停切换穿透、在工作台打开、就地批准后条目消失、关闭 Focus）
+- 默认决定（请你过目）：Focus 平时默认开启、测试默认关闭，开关按本机记住；列表不放运行中的会话（原型里有，按阶段计划只列待你处理的，运行中只计数）；Focus 里只有"批准"，"拒绝"和"终端"回工作台做；暂不做托盘，开关在工作台顶栏
+- 验证：`npm run verify` 退出码 0（123 个测试）；e2e 22/22；截图 `screenshots/stage-3/S3-07-focus.png`
+- 真机观感（贴角位置、透明、穿透）测试里看不到，阶段收尾时写进"请你过目"
+- commit：见本次 commit
+
+## 2026-10-13 11:30 · S3-08 多显示器与 DPI
+- 结果：done
+- 改动：`packages/app/src/placement.ts`（纯函数，坐标统一用 Electron 的 DIP，混合缩放无需换算：`displayFor`、`clampInto`、`cornerOf`、`placeFocus`、`refitFocus`、`placeMain`）与 10 个单测（三屏：主屏 100%、左侧 4K 150% 负坐标、右侧 125%；默认贴角、记住的位置、半出界拉回、显示器拔掉回主屏角落、改缩放后拉回、主窗口居中/恢复/标题栏出界拉回/放不下时缩小）；Electron 接入：Focus 标题行可拖动（`-webkit-app-region: drag`），拖完记住位置；主窗口关闭时记住正常尺寸位置和是否最大化，启动时按 `placeMain` 恢复；`display-added/removed/metrics-changed` 时两个窗口都重新校正；都记在数据目录 `shell-prefs.json`；测试模式下全部跳过（窗口始终在屏幕外）
+- 验证：`npm run verify` 退出码 0（133 个测试）；e2e 22/22
+- 请你过目（真机）：Focus 贴角位置、拖动标题行移动、拔插显示器/改缩放后的位置——测试环境无法观察，阶段收尾时写进 NEEDS_YOU
+- commit：见本次 commit
+
+## 2026-10-13 12:10 · S3-09 阶段 3 收尾
+- 结果：done
+- 代码审查：`/code-review` 只能由用户触发，loop 调不了，改为自查阶段 3 的全部改动（40 个文件，约 2600 行）。查出并修复：删除工作区后，待办和画布分组里还留着它的 id，界面上会显示"适合："加空白——现在删除工作区时一起清掉这些引用（各自发 `todo.upserted` / `canvas.updated` 事件），并补了接口测试（commit 6245ab2）。确认服务端会拒绝成环的依赖、类型不对的连线、指向不存在任务的节点
+- 防偏离自查：
+  - 对照"明确不做"：没有引入 worktree 流程；没有自动审批（Focus 的批准也要人点）；没有绑定单一运行时；
+  - 对照 interaction-notes：画布、侧栏三个标签页、依赖、便签、Focus "只回答现在有什么要我处理"都一致；
+  - 和原型不一致的一处：原型里 Focus 列表也放运行中的会话，这里按阶段计划只计数，已写进"请你过目"
+- 完整验证：
+  - 第一次 `npm run verify` 失败，testkit 的 fake app-server 用例偶发 `ws error`；单独连跑 5 次、不改代码再跑两次完整验证都通过，只在整套并行跑时偶发；
+  - 修法：测试客户端连接失败时最多重试 3 次，错误信息带上底层原因；
+  - 修完后 `npm run verify` 退出码 0（134 个测试），e2e 22/22（截图同时重新生成，阶段 1、2 的截图顶栏多了"Focus"按钮）
+- NEEDS_YOU：写入"阶段 3 完成"（请你过目）、"是否切换为日常工具、何时删除旧 AMO"（必须等你，S3-10）
+- 合并：`studio/stage-3` 用 `--no-ff` 合并到 `studio/main`（见下一条）
