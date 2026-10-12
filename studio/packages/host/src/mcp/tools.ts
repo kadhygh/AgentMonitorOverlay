@@ -10,7 +10,7 @@ import { NotFoundError, ReadModel } from "./read-model.js";
 
 export const AMO_MCP_NAME = "amo";
 export const AMO_MCP_INSTRUCTIONS =
-  "AMO Studio workbench. Read the board, tasks, session trees, workspaces and the canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions (the person decides when mail enters a conversation).";
+  "AMO Studio workbench. Read the board, tasks, session trees, workspaces and the canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions (the person decides when mail enters a conversation); ask the person for a decision (the answer comes back as mail).";
 
 /** The session a tool call comes from, if Studio could tell. */
 export interface McpCaller {
@@ -104,6 +104,20 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
           if (!to) throw new HostError("bad_request", "give toSessionId or toTaskId");
           const m = service.sendMail(c.sessionId, to, args.text);
           return { id: m.id, to: m.to, state: m.state };
+        }),
+    },
+    {
+      name: "decision_request",
+      title: "请求决策",
+      description:
+        "Ask the person to decide something you should not decide alone (offer short options when you can). It is shown in the AMO workbench and the Focus window; it does not block your turn. The answer comes back to you as mail (mailbox_read).",
+      inputSchema: { question: z.string(), options: z.array(z.string()).optional() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) =>
+        write(caller, (c) => {
+          const d = service.requestDecisionFromSession(c.sessionId, args.question, args.options);
+          return { id: d.id, state: d.state, note: "The answer will arrive as mail; read it with mailbox_read." };
         }),
     },
     {

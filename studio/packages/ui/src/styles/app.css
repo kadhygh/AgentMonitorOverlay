@@ -419,3 +419,12 @@ a.md-link { cursor: pointer; }
 .mail-route { font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .mail-text { font-size: 13px; white-space: pre-wrap; word-break: break-word; }
 .mail-actions { display: flex; align-items: center; gap: 10px; }
+
+/* Decision requests (S5-04) */
+.decision-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: 10px; border: 1px solid var(--attention-border); background: var(--attention-bg); }
+.decision-from { font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.decision-question { font-size: 13.5px; color: var(--text); white-space: pre-wrap; word-break: break-word; }
+.decision-options { display: flex; flex-wrap: wrap; gap: 6px; }
+.decision-answer { display: flex; gap: 6px; }
+.decision-answer .field { flex: 1; min-width: 0; }
+.focus-decision { padding-top: 10px; }

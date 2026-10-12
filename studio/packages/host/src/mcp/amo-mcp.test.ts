@@ -79,10 +79,10 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists five read-only tools and four that write for the caller", async () => {
+  it("lists five read-only tools and five that write for the caller", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "handoff_submit", "mailbox_read", "mailbox_send", "project_context", "session_tree", "task_get", "task_note_add"]);
+    expect(tools.map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "decision_request", "handoff_submit", "mailbox_read", "mailbox_send", "project_context", "session_tree", "task_get", "task_note_add"]);
     expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual(["board_list", "canvas_read", "project_context", "session_tree", "task_get"]);
     await client.close();
   });
@@ -128,7 +128,7 @@ describe("AMO MCP", () => {
 
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(9);
+    expect((await client.listTools()).tools).toHaveLength(10);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);
@@ -171,6 +171,18 @@ describe("AMO MCP", () => {
     expect(canvas.content[0]!.text).toContain("分组「导入」（工作区 alpha）");
     expect(JSON.parse(canvas.content[1]!.text).dependencies).toEqual([{ from: configTask.id, to: importTask.id }]);
     expect(canvas.content[1]!.text).not.toMatch(/"pos"|"rect"/);
+    await client.close();
+  });
+
+  it("asks the person for a decision; the answer comes back as mail", async () => {
+    const client = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
+    const asked = (await call(client, "decision_request", { question: "重试几次？", options: ["3 次", "5 次"] })).data;
+    expect(asked).toMatchObject({ state: "open" });
+    expect(service.decisions({ state: "open" })).toMatchObject([{ id: asked.id, sessionId: mainSessionId, taskId: importTask.id, options: ["3 次", "5 次"] }]);
+    expect((await call(client, "decision_request", { question: " " })).isError).toBe(true);
+    service.answerDecision(asked.id, "3 次");
+    const read = (await call(client, "mailbox_read")).data as { messages: Array<{ text: string; from: unknown }> };
+    expect(read.messages).toMatchObject([{ text: "针对你的问题「重试几次？」，我的决定：3 次", from: "person" }]);
     await client.close();
   });
 

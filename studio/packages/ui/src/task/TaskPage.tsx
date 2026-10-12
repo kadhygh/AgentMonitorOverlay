@@ -10,6 +10,7 @@ import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
 import { AnnotationPanel } from "./AnnotationPanel.js";
 import { MailPanel, useTaskMail } from "./MailPanel.js";
+import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
 import type { SelectionAnchor } from "../lib/selection.js";
 
 interface TaskPageProps {
@@ -88,6 +89,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
     );
   const reclaim = (id: string) => run(() => call(link, "POST /api/sessions/:id/reclaim", { id }));
   const mail = useTaskMail(link, task, sessions);
+  const decisions = useOpenDecisions(link);
   const unread = new Map<string, number>();
   for (const m of mail) if (m.state === "unread" && m.to.kind === "session") unread.set(m.to.sessionId, (unread.get(m.to.sessionId) ?? 0) + 1);
   const forwardMail = (m: { id: string }, sessionId: string) =>
@@ -238,6 +240,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
         </div>
         <AnnotationPanel
           header={
+            <>
+            <DecisionPanel link={link} decisions={decisions} task={task} sessionTitle={(id) => sessions.find((s) => s.id === id)?.title || "会话"} />
             <MailPanel
               mail={mail}
               sessions={sessions}
@@ -247,6 +251,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
               onForward={(m, sessionId) => void forwardMail(m, sessionId)}
               onDismiss={(m) => void dismissMail(m)}
             />
+            </>
           }
           link={link}
           annotations={annotations}
