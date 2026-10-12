@@ -17,9 +17,11 @@
     "build": "tsc -b && npm run build -w @amo-studio/ui",
     "verify": "npm run typecheck && npm run test && npm run build",
     "test:codex-mock": "tsc -b && node packages/testkit/scripts/verify-mock-codex.mjs",
-    "host": "tsc -b && node packages/host/dist/bin.js"
+    "host": "tsc -b && node packages/host/dist/bin.js",
+    "e2e": "npm run build && playwright test -c e2e/playwright.config.ts"
   },
   "devDependencies": {
+    "@playwright/test": "1.63.0",
     "@types/node": "24.19.2",
     "typescript": "6.0.3",
     "vitest": "4.1.11"

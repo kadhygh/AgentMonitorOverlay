@@ -142,3 +142,10 @@
 - 验证：`npm run verify` 通过（81 个测试）；真实 `bin.js` 冒烟：启动在 47905，带 token 200、不带 401，IPC 关闭后锁和 host.json 都已清理，端口释放
 - commit：见本次 commit
 - 遗留：默认决定——正常退出 Host 会停掉 app-server（restart 时保留）；Codex 终端共享时工作台仍可写，"收回"只更新显示状态。真实开窗口只在用户点击时发生，loop 测试不开窗口
+
+## 2026-10-13 02:50 · S1-08 Electron 外壳
+- 结果：done
+- 改动：`packages/app/src/{main,host-link}.ts`、`preload.cts`（单实例；找到运行中的 Host 或用 Electron 自带 Node 拉起 `host/dist/bin.js`；Host 默认常驻、detached，测试模式下随应用退出；窗口加载 Host 同源托管的 UI，或 `AMO_STUDIO_DEV_URL`；preload 只暴露 `window.amo.host()`，token 不进 URL 和命令行；测试模式窗口不显示、不抢焦点）；`packages/ui/src/host/client.ts`（按路由键调用的类型化客户端）与 App 连接状态；`e2e/`（Playwright 1.63.0 驱动 Electron 的启动助手与 2 个用例）；根目录 `npm run e2e`
+- 验证：`npm run verify` 通过（81 个测试）；e2e 连跑 2 次 2/2：Host 拉起并连上、窗口不可见且无焦点、URL 不含 token、退出后锁释放；截图 `screenshots/stage-1/S1-08-shell.png`
+- commit：见本次 commit
+- 遗留：e2e 里的 Host 用真实的 app-server 管理器，S1-09 起需要建会话的用例要让 Host 支持测试用 provider（mock 模型），计划在 S1-10 前补上

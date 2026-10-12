@@ -127,7 +127,7 @@
   - S1-07a 业务层 `HostService`、REST 路由、WS 事件流（`?since=` 补发）、Host token、CORS 白名单、同源托管 UI · done
   - S1-07b 终端接入（生成并在新窗口执行 `codex --remote … resume`，token 只走环境变量；写入状态）、Host 进程入口（数据目录、单实例锁、端口文件、token 文件） · done
 
-### S1-08 Electron 外壳 · todo
+### S1-08 Electron 外壳 · done
 
 - 依赖：S1-01
 - 内容：

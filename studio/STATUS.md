@@ -2,10 +2,10 @@
 
 更新：2026-10-12
 
-- **当前阶段**：阶段 1 · 地基（进行中，8/13）
+- **当前阶段**：阶段 1 · 地基（进行中，9/13）
 - **分支**：`studio/stage-1`
 - **已完成**：阶段 0（协议验证、设计预览、路线图与 loop 规则）
 - **在等你**：见 `NEEDS_YOU.md`，目前 2 项，都不阻塞 Studio
-- **已完成任务**：S1-01 脚手架、S1-00 协议补测（a～e，结论见 `spikes/RESULTS.md`）、S1-02 数据模型与协议类型、S1-03 存储、S1-04 测试工具（mock 模型、fake app-server）、S1-05 凭据与模型路由、S1-06 Codex runtime、S1-07 Host API
-- **下一步**：S1-08 Electron 外壳
+- **已完成任务**：S1-01 脚手架、S1-00 协议补测（a～e，结论见 `spikes/RESULTS.md`）、S1-02 数据模型与协议类型、S1-03 存储、S1-04 测试工具（mock 模型、fake app-server）、S1-05 凭据与模型路由、S1-06 Codex runtime、S1-07 Host API、S1-08 Electron 外壳
+- **下一步**：S1-09 界面基础（看板）
 - **模型调用额度**：DeepSeek 16 / 1000，GLM 0 / 5000
