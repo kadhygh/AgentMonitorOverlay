@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ModelProfile, TodoItem, Workspace } from "@amo-studio/protocol";
+import type { ModelProfile, TodoItem, Workspace, WorkspaceActivity } from "@amo-studio/protocol";
 import { defaultProfile, profileLabel, rememberProfile } from "../lib/profiles.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
@@ -40,18 +40,23 @@ export function TodoTab({
   workspaces,
   profiles = [],
   onOpenTask,
+  activity,
 }: {
   link: HostLink;
   workspaces: readonly Workspace[];
   profiles?: readonly ModelProfile[];
   onOpenTask?(taskId: string): void;
+  /** Whether each workspace is free: open todos for free projects come first and say so. */
+  activity?: ReadonlyMap<string, WorkspaceActivity>;
 }) {
   const { todos, setDone } = useTodos(link);
   const [converting, setConverting] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [workspaceId, setWorkspaceId] = useState("");
   const wsName = (id: string | null) => (id ? (workspaces.find((w) => w.id === id)?.name ?? "") : "");
-  const open = todos.filter((t) => !t.done);
+  // Todos whose project is free now come first (stable otherwise: oldest first).
+  const free = (t: TodoItem) => (t.workspaceId && activity?.get(t.workspaceId)?.idle ? 0 : 1);
+  const open = todos.filter((t) => !t.done).sort((a, b) => free(a) - free(b));
   const done = todos.filter((t) => t.done);
 
   const add = () => {
@@ -68,7 +73,14 @@ export function TodoTab({
         <input type="checkbox" checked={t.done} onChange={(e) => setDone(t.id, e.target.checked)} aria-label={`完成 ${t.text}`} />
         <span className="todo-text">{t.text}</span>
       </label>
-      {t.workspaceId && wsName(t.workspaceId) && <span className="side-note">适合：{wsName(t.workspaceId)}</span>}
+      {t.workspaceId && wsName(t.workspaceId) && (
+        <span className="side-note">
+          适合：{wsName(t.workspaceId)}
+          {!t.done && activity?.get(t.workspaceId) && (
+            <span className={activity.get(t.workspaceId)!.idle ? "todo-activity idle" : "todo-activity"}>{activity.get(t.workspaceId)!.idle ? " · 现在空闲" : " · 忙碌"}</span>
+          )}
+        </span>
+      )}
       <div className="todo-actions">
       {t.taskId ? (
         <button type="button" className="link-btn primary" onClick={() => onOpenTask?.(t.taskId!)} aria-label={`打开任务 ${t.text}`}>

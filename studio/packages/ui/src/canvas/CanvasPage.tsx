@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { taskWhere, type CanvasDoc, type CanvasGroup, type CanvasNode, type Id, type ModelProfile, type Session, type Task, type Workspace } from "@amo-studio/protocol";
+import { taskWhere, workspacesActivity, type CanvasDoc, type CanvasGroup, type CanvasNode, type Id, type ModelProfile, type Session, type Task, type Workspace } from "@amo-studio/protocol";
 import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
 import { AgentTab } from "./AgentTab.js";
 import { TodoTab } from "./TodoTab.js";
@@ -220,6 +220,8 @@ export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], o
 
   const taskById = new Map(tasks.map((t) => [t.id, t]));
   const wsName = (id: Id | null) => (id ? (workspaces.find((w) => w.id === id)?.name ?? "") : "");
+  // Whether each bound project is free (design/scheduler.md): the scheduler only proposes work for free ones.
+  const activity = workspacesActivity(workspaces, sessions);
   const cardOf = new Map(
     (shown?.nodes ?? []).filter((n) => n.kind === "task").map((n) => [(n as { taskId: Id }).taskId, { x: n.pos.x, y: n.pos.y, w: CARD_W, h: CARD_H }]),
   );
@@ -270,6 +272,11 @@ export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], o
                   <span className="group-title">{g.title}</span>
                 )}
                 {g.workspaceId && <span className="group-ws">· {wsName(g.workspaceId)}</span>}
+                {g.workspaceId && activity.get(g.workspaceId) && (
+                  <span className={activity.get(g.workspaceId)!.idle ? "group-activity idle" : "group-activity busy"} data-testid="group-activity">
+                    {activity.get(g.workspaceId)!.idle ? "空闲" : `忙碌 · ${activity.get(g.workspaceId)!.busy} 个会话`}
+                  </span>
+                )}
               </div>
               <div className="canvas-group-resize" aria-label="调整分组大小" onMouseDown={(e) => startDrag(e, "group-resize", g.id)} />
             </div>
@@ -375,7 +382,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], o
           onClearSelection={() => setSelectionState(null)}
           onOpenTask={onOpenTask}
           newId={newCanvasId}
-          todoTab={<TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} />}
+          todoTab={<TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} activity={activity} />}
           agentTab={<AgentTab link={link} />}
         />
       )}

@@ -43,3 +43,35 @@ test("a todo becomes a task in the group bound to its workspace", async () => {
   await todos.getByRole("button", { name: "打开任务 统一掉落表格式" }).click();
   await expect(page.locator(".page-head")).toContainText("统一掉落表格式");
 });
+
+test("canvas groups bound to a workspace say whether the project is free", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const alpha = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const beta = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("beta") });
+  const canvas = await studio.api<CanvasDoc>("GET", "/api/canvas");
+  await studio.api("PUT", "/api/canvas", {
+    ...canvas,
+    groups: [
+      { id: "g-alpha", title: "alpha 玩法", workspaceId: alpha.id, rect: { x: 40, y: 60, w: 420, h: 260 } },
+      { id: "g-beta", title: "beta 工具", workspaceId: beta.id, rect: { x: 500, y: 60, w: 420, h: 260 } },
+    ],
+  });
+  await studio.api<TodoItem>("POST", "/api/todos", { text: "alpha 的事", workspaceId: alpha.id });
+  await studio.api<TodoItem>("POST", "/api/todos", { text: "beta 的事", workspaceId: beta.id });
+  // A slow turn keeps alpha busy for a while.
+  await studio.api("POST", "/api/tasks", { title: "跑着的", scope: { kind: "workspace", workspaceId: alpha.id }, firstSession: { profileId: "codex-mock", text: "慢慢来 [[slow]]" } });
+
+  await page.getByRole("button", { name: "画布", exact: true }).click();
+  const group = (title: string) => page.locator(".canvas-group").filter({ hasText: title }).getByTestId("group-activity");
+  await expect(group("alpha 玩法")).toHaveText("忙碌 · 1 个会话");
+  await expect(group("beta 工具")).toHaveText("空闲");
+  // Todos for a free project come first.
+  await page.getByRole("tab", { name: "整体待办" }).click();
+  const todos = page.getByRole("group", { name: "整体待办" }).getByTestId("todo");
+  await expect(todos.first()).toContainText("beta 的事");
+  await expect(todos.first()).toContainText("现在空闲");
+  await screenshot(studio.app, "stage-7", "S7-02-activity", page);
+  // When the turn ends, alpha is free again.
+  await expect(group("alpha 玩法")).toHaveText("空闲", { timeout: 60_000 });
+});
