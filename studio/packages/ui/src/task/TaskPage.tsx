@@ -162,10 +162,10 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const approve = (approvalId: string, decision: ApprovalDecision) =>
     session ? run(() => call(link, "POST /api/approvals/:approvalId", { approvalId }, { sessionId: session.id, decision })) : Promise.resolve();
   const interrupt = (id: string) => run(() => call(link, "POST /api/sessions/:id/interrupt", { id }));
-  async function send(text: string): Promise<boolean> {
+  async function send(text: string, attachments: string[]): Promise<boolean> {
     if (!session) return false;
     try {
-      await call(link, "POST /api/sessions/:id/messages", { id: session.id }, { text });
+      await call(link, "POST /api/sessions/:id/messages", { id: session.id }, { text, ...(attachments.length ? { attachments } : {}) });
       return true;
     } catch (err) {
       setToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });

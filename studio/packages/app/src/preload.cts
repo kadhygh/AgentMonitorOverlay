@@ -42,4 +42,6 @@ electron.contextBridge.exposeInMainWorld("amo", {
     electron.ipcRenderer.on("amo:navigate", listener);
     return () => electron.ipcRenderer.removeListener("amo:navigate", listener);
   },
+  /** The real path of a dropped or picked file (File.path is gone in recent Electron); "" for in-memory files. */
+  pathForFile: (file: File): string => electron.webUtils.getPathForFile(file),
 });

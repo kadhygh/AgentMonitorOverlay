@@ -1,0 +1,77 @@
+/* Attachments and references (stage 11): the composer's tray of images and file chips, the drop highlight, the images
+   and files on a person's message, and the large view. Warm sand for "something is coming in", like the selection. */
+
+/* ---- composer ------------------------------------------------------------------------------------------------- */
+
+.attach-tray { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 12px 6px; }
+.attach-thumb {
+  position: relative; width: 56px; height: 56px; flex: none; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel-raised);
+}
+.attach-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.attach-thumb[data-state="uploading"] img { opacity: 0.45; }
+.attach-thumb[data-state="failed"] { border-color: var(--error); }
+.attach-thumb[data-state="failed"] img { opacity: 0.35; }
+.attach-thumb-state {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 1px 0; text-align: center;
+  font-size: 10.5px; color: var(--text); background: var(--overlay);
+}
+.attach-thumb[data-state="failed"] .attach-thumb-state { color: var(--error-text); }
+.attach-x {
+  position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 50%; background: var(--overlay-strong); color: var(--text);
+}
+.attach-x:hover { border-color: var(--border-strong); }
+.attach-x.inline { position: static; border: none; background: transparent; color: var(--text-faint); }
+.attach-x.inline:hover { color: var(--text); }
+.attach-notice { font-size: 12px; color: var(--attention); }
+
+.round-btn.attach { background: transparent; color: var(--chat-dim); }
+.round-btn.attach:hover:not(:disabled) { background: var(--chat-hover); color: var(--chat-label); }
+.round-btn.attach:disabled { cursor: default; opacity: 0.5; }
+
+/* Something is being dragged over the conversation: the composer is where it lands. */
+.composer-card.dropping {
+  border-style: dashed; border-color: var(--attention-border);
+  background: color-mix(in srgb, var(--selection) 40%, var(--chat-input-bg));
+}
+.thread-wrap[data-dragging]::after {
+  content: "松开即可加入输入框"; position: absolute; inset: 8px; z-index: 6; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: var(--fs-sm);
+  border: 2px dashed var(--attention-border); border-radius: var(--r-l);
+  background: color-mix(in srgb, var(--selection) 30%, transparent);
+}
+
+/* ---- file chips (composer and transcript) --------------------------------------------------------------------- */
+
+.file-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 24px; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: var(--r-m); background: var(--chip); color: var(--text);
+  font-size: 12px; white-space: nowrap; overflow: hidden;
+}
+.file-chip svg { flex: none; color: var(--text-dim); }
+.file-chip-name { flex: 0 1 auto; max-width: 260px; font-family: var(--font-code); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.file-chip-dir { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); font-size: 11px; direction: rtl; text-align: left; }
+button.file-chip { cursor: pointer; font: inherit; font-size: 12px; }
+button.file-chip:hover { border-color: var(--border-strong); }
+
+/* ---- on a person's message ------------------------------------------------------------------------------------ */
+
+.msg-images { display: flex; flex-wrap: wrap; gap: 6px; }
+.msg-images + .msg-text, .msg-text + .msg-files, .msg-images + .msg-files { display: block; margin-top: 8px; }
+.msg-image { padding: 0; border: none; background: none; cursor: zoom-in; border-radius: var(--r-m); }
+.msg-image img {
+  display: block; max-width: 240px; max-height: 160px; min-width: 40px; min-height: 40px; object-fit: contain; border-radius: var(--r-m);
+  border: 1px solid var(--chat-hairline); background: var(--panel);
+}
+.msg-files { display: flex; flex-wrap: wrap; gap: 6px; white-space: normal; }
+.msg-user .file-chip { max-width: 100%; background: color-mix(in srgb, var(--panel) 55%, transparent); }
+
+/* ---- large view ----------------------------------------------------------------------------------------------- */
+
+.lightbox {
+  position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center;
+  background: rgba(20, 18, 15, 0.72); cursor: zoom-out;
+}
+.lightbox img { max-width: 92vw; max-height: 90vh; border-radius: var(--r-m); box-shadow: 0 14px 36px var(--shadow); background: var(--panel); }

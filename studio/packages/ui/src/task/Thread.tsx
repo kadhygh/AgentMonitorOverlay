@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
 import type { Annotation, ApprovalDecision, ModelProfile, Session, SessionItem, SessionPreset, Task } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
@@ -10,6 +10,11 @@ import { Transcript } from "../chat/Transcript.js";
 import { useTranscriptView } from "../chat/prefs.js";
 import { IconArrowDown, IconArrowUp, IconStop } from "../chat/icons.js";
 import { formatTokens, sessionStats, type ApprovalItem } from "../chat/turns.js";
+import { useAttachments } from "../attach/useAttachments.js";
+import { AttachTray } from "../attach/AttachTray.js";
+import { AttachLink } from "../attach/MessageAttachments.js";
+import { IconPaperclip } from "../attach/icons.js";
+import { withFileRefs } from "../attach/refs.js";
 
 interface ThreadProps {
   link: HostLink;
@@ -27,7 +32,8 @@ interface ThreadProps {
   busy: boolean;
   onApprove(item: ApprovalItem, decision: ApprovalDecision): void;
   onJump(sessionId: string): void;
-  onSend(text: string): Promise<boolean>;
+  /** `attachments`: ids of uploaded images sent along. */
+  onSend(text: string, attachments: string[]): Promise<boolean>;
   onInterrupt(): void;
   /** "添加批注" from the selection menu. */
   onAnnotate(anchor: SelectionAnchor): void;
@@ -45,6 +51,11 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
   const view = useTranscriptView();
   useEffect(() => setDraft(""), [session?.id]);
   const taskMentions = useTaskMentions({ text: draft, setText: setDraft, tasks });
+  const attach = useAttachments(link);
+  const resetAttach = attach.reset;
+  useEffect(() => resetAttach(), [session?.id, resetAttach]);
+  const [dragging, setDragging] = useState(false);
+  const picker = useRef<HTMLInputElement>(null);
 
   // The selection menu closes on Escape, on any click outside it, and when the thread scrolls.
   useEffect(() => {
@@ -102,21 +113,47 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
       : "继续推进这个会话，回车发送，Shift+回车换行";
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
+  // Images must finish uploading (or be removed when they failed) before the message can go.
+  const attachHold = attach.uploading ? "图片上传中…" : attach.failed ? "有图片上传失败，移除后再发送" : "";
+  const canSend = !readOnly && !attachHold && (!!draft.trim() || !attach.empty);
 
   async function send() {
     const text = draft.trim();
-    if (!text || readOnly) return;
+    if (!canSend) return;
     // Clear at once so the next message can be typed while this one is on its way; put it back if sending failed
     // (and nothing new was typed meanwhile). Clearing after the request would wipe what was typed in between.
     setDraft("");
+    const sent = attach.take();
     stick.current = true;
     setAtBottom(true);
-    if (!(await onSend(taskMentions.expand(text)))) setDraft((d) => (d.trim() ? d : text));
+    const message = withFileRefs(text ? taskMentions.expand(text) : "", sent.files);
+    const ids = sent.images.flatMap((i) => (i.id ? [i.id] : []));
+    if (await onSend(message, ids)) attach.release(sent);
+    else {
+      setDraft((d) => (d.trim() ? d : text));
+      attach.restore(sent);
+    }
   }
+
+  // Files dragged in from Explorer (or anywhere) over the conversation or the composer.
+  const dropTarget = readOnly
+    ? {}
+    : {
+        onDragOver: (e: DragEvent) => {
+          if (attach.onDragOver(e)) setDragging(true);
+        },
+        onDragLeave: (e: DragEvent) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+        },
+        onDrop: (e: DragEvent) => {
+          setDragging(false);
+          attach.onDrop(e);
+        },
+      };
 
   return (
     <>
-      <div className="thread-wrap">
+      <div className="thread-wrap" data-dragging={dragging || undefined} {...dropTarget}>
         <ReplyNav scroller={scroller} itemCount={items.length} />
         <div
           className="thread"
@@ -139,7 +176,9 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
         >
           <div className="thread-inner">
             {!session && <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>}
-            <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy} view={view} onApprove={onApprove} onJump={onJump} />
+            <AttachLink.Provider value={link}>
+              <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy} view={view} onApprove={onApprove} onJump={onJump} />
+            </AttachLink.Provider>
           </div>
         </div>
         {!atBottom && (
@@ -196,8 +235,9 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
         </div>
       )}
       {session && (
-        <div className="composer-dock">
-          <div className={`composer-card${readOnly ? " disabled" : ""}`}>
+        <div className="composer-dock" {...dropTarget}>
+          <div className={`composer-card${readOnly ? " disabled" : ""}${dragging ? " dropping" : ""}`}>
+            <AttachTray attach={attach} disabled={readOnly} />
             <label className="chat-input">
               <span className="sr-only">输入消息</span>
               <textarea
@@ -207,6 +247,7 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
                   taskMentions.track(e.target);
                 }}
                 onSelect={(e) => taskMentions.track(e.currentTarget)}
+                onPaste={readOnly ? undefined : attach.onPaste}
                 disabled={readOnly}
                 rows={2}
                 placeholder={placeholder}
@@ -221,8 +262,29 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
             </label>
             <SuggestList mentions={taskMentions} />
             <div className="chat-bar">
+              <button
+                type="button"
+                className="round-btn attach"
+                aria-label="添加图片或文件"
+                title="添加图片或文件（也可以粘贴或拖进来）"
+                disabled={readOnly}
+                onClick={() => picker.current?.click()}
+              >
+                <IconPaperclip />
+              </button>
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                data-testid="attach-input"
+                onChange={(e) => {
+                  attach.addDropped([...(e.currentTarget.files ?? [])]);
+                  e.currentTarget.value = "";
+                }}
+              />
               <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly} />
-              <span className="composer-hint">{generating && !readOnly ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : ""}</span>
+              <span className="composer-hint">{attachHold || (generating && !readOnly ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && (
                 <button type="button" className="round-btn stop" onClick={onInterrupt} aria-label="打断" title="停止生成">
@@ -233,7 +295,7 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
                 type="button"
                 className="round-btn send"
                 onClick={() => void send()}
-                disabled={readOnly || !draft.trim()}
+                disabled={!canSend}
                 aria-label={sendLabel}
                 title={generating ? (queues ? "排队发送" : "插话发送") : "发送消息"}
               >
