@@ -181,7 +181,9 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
       entry.pid = null;
     }
     for (let attempt = 1; ; attempt++) {
-      if (!entry.port || !(await portFree(entry.port))) entry.port = await this.pickPort(entry.profileId);
+      // Keep the address when we can: attached TUIs reconnect to it. A killed server's socket can take a moment to be
+      // released (seen under load), so wait briefly for it before moving to another port.
+      if (!entry.port || !(await portFreeWithin(entry.port, attempt === 1 ? PORT_RELEASE_WAIT_MS : 0))) entry.port = await this.pickPort(entry.profileId);
       this.spawnServer(entry);
       this.persist();
       try {
@@ -356,6 +358,17 @@ async function waitPortClosed(port: number, timeoutMs: number): Promise<void> {
       socket.once("error", () => resolve(false));
     });
     if (!open) return;
+    await new Promise((r) => setTimeout(r, 100));
+  }
+}
+
+const PORT_RELEASE_WAIT_MS = 3000;
+
+async function portFreeWithin(port: number, waitMs: number): Promise<boolean> {
+  const until = Date.now() + waitMs;
+  for (;;) {
+    if (await portFree(port)) return true;
+    if (Date.now() >= until) return false;
     await new Promise((r) => setTimeout(r, 100));
   }
 }
