@@ -1,25 +1,33 @@
-import { Fragment, useEffect, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
 import type { GitFileDiff, GitReviewComment } from "@amo-studio/protocol";
 import { commentWhere } from "@amo-studio/protocol";
+import { CodeTokens } from "../lib/CodeTokens.js";
 import type { DiffRow } from "./logic.js";
+import { splitRows, tokensOf, type DiffTokens, type LineRow, type SideCell } from "./splitview.js";
 
-// The right side of the review window: one file's rows ("只看改动" or "完整文件"), a "+" on each line to comment,
-// and the comments under their lines.
+// The right side of the review window: one file's rows ("只看改动" or "完整文件"), in one column or side by side
+// ("左右对照"), syntax-coloured, a "+" on each line to comment, and the comments under their lines.
 
 interface DiffViewProps {
   diff: GitFileDiff;
   rows: readonly DiffRow[];
+  /** "左右对照": old on the left, new on the right. */
+  split: boolean;
+  /** Syntax colours by line number (null: plain text). */
+  tokens: DiffTokens | null;
   placed: ReadonlyMap<string, GitReviewComment[]>;
   /** Comments of this file that sit on no shown line. */
   elsewhere: readonly GitReviewComment[];
   showSent: boolean;
   /** The row key a new comment is being written for. */
   draftAt: string | null;
-  /** Row index n / p moved to. */
+  /** Row index n / p moved to, or the line clicked. */
   active: number | null;
   busy: boolean;
   onDraft(key: string | null): void;
-  onAdd(row: Extract<DiffRow, { kind: "line" }>, note: string): void;
+  /** A click on a line makes it the active one (VS Code opens there). */
+  onActivate(index: number): void;
+  onAdd(row: LineRow, note: string): void;
   onEdit(id: string, note: string): void;
   onDelete(id: string): void;
   /** Shows a comment's line in "完整文件". */
@@ -28,7 +36,11 @@ interface DiffViewProps {
 
 const MARK = { add: "+", del: "−", context: " " } as const;
 
-export function DiffView({ diff, rows, placed, elsewhere, showSent, draftAt, active, busy, onDraft, onAdd, onEdit, onDelete, onLocate }: DiffViewProps) {
+/** Clicks on a line's buttons (or inside a comment) do not move the active line. */
+const plainClick = (e: MouseEvent) => !(e.target as Element).closest("button, textarea, a");
+
+export function DiffView(props: DiffViewProps) {
+  const { diff, rows, split, placed, elsewhere, showSent, busy, onEdit, onDelete, onLocate } = props;
   const visible = (list: readonly GitReviewComment[]) => list.filter((c) => showSent || c.state === "draft");
   const others = visible(elsewhere);
 
@@ -46,42 +58,123 @@ export function DiffView({ diff, rows, placed, elsewhere, showSent, draftAt, act
         </div>
       )}
       {!rows.length && <div className="gr-notice">{diff.lines.length ? "没有文字改动。" : "空文件。"}</div>}
-      <div className="gr-lines" data-testid="diff-lines">
-        {rows.map((r, i) =>
-          r.kind === "hunk" ? (
-            <div key={r.key} className="gr-hunk" data-testid="diff-hunk">
-              {r.hidden > 0 && <span className="gr-hidden">⋯ {r.hidden} 行未改动</span>}
-              <span>{r.header}</span>
-            </div>
-          ) : (
-            <Fragment key={r.key}>
-              <div className={`gr-line ${r.line.kind}${active === i ? " active" : ""}`} data-row={i} data-line={r.key} data-testid="diff-line">
-                <span className="gr-no">{r.line.oldLine ?? ""}</span>
-                <span className="gr-no">{r.line.newLine ?? ""}</span>
-                <button
-                  type="button"
-                  className="gr-add"
-                  aria-label={`给第 ${r.number} 行加批注`}
-                  title="加批注"
-                  onClick={() => onDraft(draftAt === r.key ? null : r.key)}
-                  data-testid="add-comment"
-                >
-                  +
-                </button>
-                <span className="gr-mark" aria-hidden="true">
-                  {MARK[r.line.kind]}
-                </span>
-                <span className="gr-text">{r.line.text}</span>
-              </div>
-              {visible(placed.get(r.key) ?? []).map((c) => (
-                <CommentCard key={c.id} comment={c} busy={busy} onEdit={onEdit} onDelete={onDelete} />
-              ))}
-              {draftAt === r.key && <CommentDraft busy={busy} onSave={(note) => onAdd(r, note)} onCancel={() => onDraft(null)} />}
-            </Fragment>
-          ),
-        )}
-      </div>
+      {split ? <SplitLines {...props} visible={visible} /> : <UnifiedLines {...props} visible={visible} />}
     </>
+  );
+}
+
+type LinesProps = DiffViewProps & { visible(list: readonly GitReviewComment[]): GitReviewComment[] };
+
+function Hunk({ header, hidden }: { header: string; hidden: number }) {
+  return (
+    <div className="gr-hunk" data-testid="diff-hunk">
+      {hidden > 0 && <span className="gr-hidden">⋯ {hidden} 行未改动</span>}
+      <span>{header}</span>
+    </div>
+  );
+}
+
+function AddButton({ row, open, onDraft }: { row: LineRow; open: boolean; onDraft(key: string | null): void }) {
+  return (
+    <button type="button" className="gr-add" aria-label={`给第 ${row.number} 行加批注`} title="加批注" onClick={() => onDraft(open ? null : row.key)} data-testid="add-comment">
+      +
+    </button>
+  );
+}
+
+/** The comments under a line and the draft being written for it. */
+function Notes({ row, props }: { row: LineRow; props: LinesProps }) {
+  const { placed, visible, draftAt, busy, onEdit, onDelete, onAdd, onDraft } = props;
+  return (
+    <>
+      {visible(placed.get(row.key) ?? []).map((c) => (
+        <CommentCard key={c.id} comment={c} busy={busy} onEdit={onEdit} onDelete={onDelete} />
+      ))}
+      {draftAt === row.key && <CommentDraft busy={busy} onSave={(note) => onAdd(row, note)} onCancel={() => onDraft(null)} />}
+    </>
+  );
+}
+
+function UnifiedLines(props: LinesProps) {
+  const { rows, tokens, draftAt, active, onDraft, onActivate } = props;
+  return (
+    <div className="gr-lines" data-testid="diff-lines">
+      {rows.map((r, i) =>
+        r.kind === "hunk" ? (
+          <Hunk key={r.key} header={r.header} hidden={r.hidden} />
+        ) : (
+          <Fragment key={r.key}>
+            <div className={`gr-line ${r.line.kind}${active === i ? " active" : ""}`} data-row={i} data-line={r.key} data-testid="diff-line" onClick={(e) => plainClick(e) && onActivate(i)}>
+              <span className="gr-no">{r.line.oldLine ?? ""}</span>
+              <span className="gr-no">{r.line.newLine ?? ""}</span>
+              <AddButton row={r} open={draftAt === r.key} onDraft={onDraft} />
+              <span className="gr-mark" aria-hidden="true">
+                {MARK[r.line.kind]}
+              </span>
+              <span className="gr-text">
+                <CodeTokens tokens={tokensOf(tokens, r.line)} text={r.line.text} />
+              </span>
+            </div>
+            <Notes row={r} props={props} />
+          </Fragment>
+        ),
+      )}
+    </div>
+  );
+}
+
+/** "左右对照": one scroll container, two columns per row, so both sides scroll together and stay aligned. */
+function SplitLines(props: LinesProps) {
+  const { rows, active, placed, visible, draftAt } = props;
+  const pairs = useMemo(() => splitRows(rows), [rows]);
+  // Deleted lines take their comments on the left; unchanged and added lines on the right.
+  const owns = (cell: SideCell | null, side: "old" | "new"): cell is SideCell => !!cell && (side === "old" ? cell.row.line.kind === "del" : cell.row.line.kind !== "del");
+  const hasNotes = (cell: SideCell | null, side: "old" | "new") => owns(cell, side) && (draftAt === cell.row.key || visible(placed.get(cell.row.key) ?? []).length > 0);
+  return (
+    <div className="gr-lines gr-split" data-testid="diff-split">
+      {pairs.map((p) =>
+        p.kind === "hunk" ? (
+          <Hunk key={p.key} header={p.header} hidden={p.hidden} />
+        ) : (
+          <Fragment key={p.key}>
+            <div className={`gr-pair${active !== null && (p.left?.index === active || p.right?.index === active) ? " active" : ""}`} data-testid="diff-pair">
+              <Cell cell={p.left} side="old" commentable={owns(p.left, "old")} props={props} />
+              <Cell cell={p.right} side="new" commentable={owns(p.right, "new")} props={props} />
+            </div>
+            {(hasNotes(p.left, "old") || hasNotes(p.right, "new")) && (
+              <div className="gr-pair-notes">
+                <div>{owns(p.left, "old") && <Notes row={p.left.row} props={props} />}</div>
+                <div>{owns(p.right, "new") && <Notes row={p.right.row} props={props} />}</div>
+              </div>
+            )}
+          </Fragment>
+        ),
+      )}
+    </div>
+  );
+}
+
+function Cell({ cell, side, commentable, props }: { cell: SideCell | null; side: "old" | "new"; commentable: boolean; props: LinesProps }) {
+  if (!cell) return <div className={`gr-cell blank ${side}`} aria-hidden="true" />;
+  const { row, index } = cell;
+  const kind = row.line.kind === "context" ? "context" : row.line.kind;
+  return (
+    <div
+      className={`gr-cell ${side} ${kind}`}
+      data-row={index}
+      {...(commentable ? { "data-line": row.key } : {})}
+      data-testid={`diff-cell-${side}`}
+      onClick={(e) => plainClick(e) && props.onActivate(index)}
+    >
+      <span className="gr-no">{(side === "old" ? row.line.oldLine : row.line.newLine) ?? ""}</span>
+      {commentable ? <AddButton row={row} open={props.draftAt === row.key} onDraft={props.onDraft} /> : <span />}
+      <span className="gr-mark" aria-hidden="true">
+        {MARK[kind]}
+      </span>
+      <span className="gr-text">
+        <CodeTokens tokens={tokensOf(props.tokens, row.line, side)} text={row.line.text} />
+      </span>
+    </div>
   );
 }
 

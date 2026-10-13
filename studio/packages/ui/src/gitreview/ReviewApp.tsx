@@ -1,9 +1,14 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
-import { composeGitReviewMessage, GIT_RANGES, type GitChanges, type GitFileDiff, type GitRange, type GitReviewComment, type StateSnapshot, type Workspace } from "@amo-studio/protocol";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { composeGitReviewMessage, GIT_RANGES, type GitChangedFile, type GitChanges, type GitFileDiff, type GitRange, type GitReviewComment, type StateSnapshot, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
+import { highlightLines, languageForPath, useGrammarLoads } from "../lib/highlight.js";
+import { openInApps, openInEditor, revealInExplorer } from "../lib/openin.js";
 import { DiffView } from "./DiffView.js";
-import { changeStarts, countLabel, diffRows, draftCounts, groupByFolder, listOrder, parseReviewHash, placeComments, sessionChoices, STATUS_LETTER, STATUS_NAME, step, type DiffMode, type ReviewTarget } from "./logic.js";
+import { FileList, FileMenu, Splitter, type FileMenuAt } from "./FileList.js";
+import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type ReviewPrefs } from "./filetree.js";
+import { changeStarts, countLabel, diffRows, draftCounts, parseReviewHash, placeComments, sessionChoices, STATUS_NAME, step, type DiffMode, type ReviewTarget } from "./logic.js";
+import { diffTokens, editorLine } from "./splitview.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
 // the right, comments on lines, and "发给会话" to send the drafts to a session as one message.
@@ -31,11 +36,31 @@ const MODES: { id: DiffMode; label: string }[] = [
   { id: "full", label: "完整文件" },
 ];
 
+const LAYOUTS: { split: boolean; label: string; hint: string }[] = [
+  { split: false, label: "单栏", hint: "新旧行上下排在一栏里" },
+  { split: true, label: "左右对照", hint: "左边旧版，右边新版，两边一起滚动" },
+];
+
+const LIST_LAYOUTS: { id: ListLayout; label: string }[] = [
+  { id: "tree", label: "目录树" },
+  { id: "flat", label: "平铺" },
+];
+
 const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "");
 
 function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; state: StateSnapshot; workspace: Workspace; sessionId: string | null }) {
   const [range, setRange] = useState<GitRange>("working");
-  const [mode, setMode] = useState<DiffMode>("changes");
+  // The view choices (list width and layout, 单栏 / 左右对照, 只看改动 / 完整文件) stay on this machine.
+  const [prefs, setPrefs] = useState<ReviewPrefs>(readPrefs);
+  const prefsRef = useRef(prefs);
+  prefsRef.current = prefs;
+  useEffect(() => writePrefs(prefs), [prefs]);
+  const pref = useCallback(<K extends keyof ReviewPrefs>(key: K, value: ReviewPrefs[K]) => setPrefs((p) => ({ ...p, [key]: value })), []);
+  const mode = prefs.mode;
+  const setMode = (m: DiffMode) => pref("mode", m);
+  const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
+  const [menu, setMenu] = useState<FileMenuAt | null>(null);
+  const [vscode, setVscode] = useState(false);
   const [changes, setChanges] = useState<GitChanges | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<GitFileDiff | null>(null);
@@ -53,7 +78,37 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
     document.title = `Git Review · ${workspace.name}`;
   }, [workspace.name]);
 
-  const fail = (err: unknown) => setToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
+  const fail = (err: unknown, prefix = "") => setToast({ text: prefix + (err instanceof HostApiError ? err.message : String(err)), error: true });
+
+  // "VS Code 打开" shows only when the machine has VS Code.
+  useEffect(() => {
+    let live = true;
+    openInApps(link)
+      .then((a) => live && setVscode(a.vscode))
+      .catch(() => live && setVscode(false));
+    return () => {
+      live = false;
+    };
+  }, [link]);
+  const openFile = (f: GitChangedFile, app: "vscode" | "explorer", line?: number) => {
+    const ref = { path: f.path, workspaceId: workspace.id };
+    (app === "vscode" ? openInEditor(link, ref, line) : revealInExplorer(link, ref)).catch((err: unknown) => fail(err, app === "vscode" ? "VS Code 打开失败：" : "在资源管理器中显示失败："));
+  };
+
+  // The selected file's folders open (j / k may walk into a folded one).
+  useEffect(() => {
+    if (!selected) return;
+    setClosed((c) => {
+      const up = ancestors(selected).filter((a) => c.has(a));
+      return up.length ? new Set([...c].filter((x) => !up.includes(x))) : c;
+    });
+  }, [selected]);
+  const toggleFolder = (folder: string) =>
+    setClosed((c) => {
+      const next = new Set(c);
+      if (!next.delete(folder)) next.add(folder);
+      return next;
+    });
 
   // The changed files of the range; the selection stays on its file when it is still changed.
   useEffect(() => {
@@ -62,7 +117,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
       .then((c) => {
         if (!live) return;
         setChanges(c);
-        setSelected((cur) => (cur && c.files.some((f) => f.path === cur) ? cur : (listOrder(c.files)[0]?.path ?? null)));
+        setSelected((cur) => (cur && c.files.some((f) => f.path === cur) ? cur : (fileOrder(c.files, prefsRef.current.layout)[0]?.path ?? null)));
       })
       .catch((err: unknown) => live && fail(err));
     return () => {
@@ -117,7 +172,11 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   const rows = useMemo(() => (shown ? diffRows(shown, mode) : []), [shown, mode]);
   const changeRows = useMemo(() => changeStarts(rows), [rows]);
   const { placed, elsewhere } = useMemo(() => placeComments(comments, selected ?? "", range, rows), [comments, selected, range, rows]);
-  const order = useMemo(() => listOrder(changes?.files ?? []), [changes]);
+  const order = useMemo(() => fileOrder(changes?.files ?? [], prefs.layout), [changes, prefs.layout]);
+  // Syntax colours of both versions, worked out once per file (and again when its grammar finishes loading).
+  const grammarLoads = useGrammarLoads();
+  const lang = shown ? languageForPath(shown.path) : null;
+  const tokens = useMemo(() => (shown && lang ? diffTokens(shown.lines, (code) => highlightLines(code, lang)) : null), [shown, lang, grammarLoads]);
   const drafts = comments.filter((c) => c.state === "draft");
   const sentCount = comments.length - drafts.length;
   const perFile = draftCounts(comments);
@@ -159,6 +218,10 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   }, [order, selected, changeRows, active, rows.length]);
 
   const status = changes?.status;
+  // VS Code opens at the line n / p moved to (or that was clicked), else at the line being commented, else at the top.
+  const draftRow = draftAt ? rows.findIndex((r) => r.key === draftAt) : -1;
+  const openLine = editorLine(rows, active ?? (draftRow >= 0 ? draftRow : null));
+  const closeMenu = useCallback(() => setMenu(null), []);
   const send = () =>
     run(async () => {
       const r = await call(link, "POST /api/workspaces/:id/review-comments/send", { id: workspace.id }, { sessionId: chosen });
@@ -192,6 +255,13 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
             </button>
           ))}
         </div>
+        <div className="gr-seg" role="group" aria-label="版式">
+          {LAYOUTS.map((l) => (
+            <button key={l.label} type="button" aria-pressed={prefs.split === l.split} title={l.hint} onClick={() => pref("split", l.split)}>
+              {l.label}
+            </button>
+          ))}
+        </div>
         <button type="button" className="btn-ghost small" onClick={() => setReload((n) => n + 1)} title="重新读取改动">
           刷新
         </button>
@@ -212,45 +282,35 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
         </div>
       ) : (
         <div className="gr-body">
-          <nav className="gr-files" aria-label="改动的文件">
+          <nav className="gr-files" aria-label="改动的文件" style={{ width: prefs.listWidth }}>
             <div className="gr-files-head">
-              {changes ? `${changes.files.length} 个文件` : "正在读取…"}
-              <span className="gr-dim"> · j / k 切换文件，n / p 跳到改动</span>
-            </div>
-            {changes && !changes.files.length && <div className="gr-empty">这个范围没有改动。</div>}
-            {changes?.truncated && <div className="gr-empty">改动的文件太多，只列出前 {changes.files.length} 个。</div>}
-            {groupByFolder(changes?.files ?? []).map((g) => (
-              <div key={g.folder} className="gr-group">
-                {g.folder && <div className="gr-folder">{g.folder}/</div>}
-                {g.files.map(({ file: f, name }) => (
-                  <button
-                    key={f.path}
-                    type="button"
-                    className="gr-file"
-                    aria-current={f.path === selected}
-                    onClick={() => setSelected(f.path)}
-                    title={f.oldPath ? `${f.oldPath} → ${f.path}` : f.path}
-                    data-testid="review-file"
-                  >
-                    <span className={`gr-status ${f.status}${f.untracked ? " untracked" : ""}`} title={f.untracked ? "未跟踪的新文件" : STATUS_NAME[f.status]}>
-                      {STATUS_LETTER[f.status]}
-                    </span>
-                    <span className="gr-name">{name}</span>
-                    {perFile.get(f.path) ? <span className="gr-badge">{perFile.get(f.path)}</span> : null}
-                    <span className="gr-count">
-                      {f.binary ? (
-                        "二进制"
-                      ) : (
-                        <>
-                          <span className="add">+{f.additions}</span> <span className="del">−{f.deletions}</span>
-                        </>
-                      )}
-                    </span>
+              <span>{changes ? `${changes.files.length} 个文件` : "正在读取…"}</span>
+              <span className="spacer" />
+              <div className="gr-seg small" role="group" aria-label="列表方式">
+                {LIST_LAYOUTS.map((l) => (
+                  <button key={l.id} type="button" aria-pressed={prefs.layout === l.id} onClick={() => pref("layout", l.id)}>
+                    {l.label}
                   </button>
                 ))}
               </div>
-            ))}
+            </div>
+            <div className="gr-files-hint gr-dim">j / k 切换文件，n / p 跳到改动</div>
+            {changes && !changes.files.length && <div className="gr-empty">这个范围没有改动。</div>}
+            {changes?.truncated && <div className="gr-empty">改动的文件太多，只列出前 {changes.files.length} 个。</div>}
+            {changes && (
+              <FileList
+                files={changes.files}
+                layout={prefs.layout}
+                selected={selected}
+                perFile={perFile}
+                closed={closed}
+                onToggle={toggleFolder}
+                onSelect={setSelected}
+                onMenu={(f, x, y) => setMenu({ file: f, x, y })}
+              />
+            )}
           </nav>
+          <Splitter width={prefs.listWidth} onChange={(w) => pref("listWidth", w)} />
 
           <section className="gr-diff" aria-label="文件改动">
             {file && (
@@ -259,6 +319,28 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
                 <span className="gr-dim">{file.untracked ? "未跟踪的新文件" : STATUS_NAME[file.status]}</span>
                 <span className="spacer" />
                 <span className="gr-dim">{countLabel(file)}</span>
+                {vscode && (
+                  <button
+                    type="button"
+                    className="btn-ghost small"
+                    disabled={file.status === "deleted"}
+                    title={file.status === "deleted" ? "文件已删除" : `在 VS Code 里打开到第 ${openLine} 行`}
+                    onClick={() => openFile(file, "vscode", openLine)}
+                    data-testid="review-open-vscode"
+                  >
+                    VS Code 打开
+                  </button>
+                )}
+                <button
+                  type="button"
+                  className="btn-ghost small"
+                  disabled={file.status === "deleted"}
+                  title={file.status === "deleted" ? "文件已删除" : "在资源管理器里选中这个文件"}
+                  onClick={() => openFile(file, "explorer")}
+                  data-testid="review-reveal"
+                >
+                  在资源管理器中显示
+                </button>
               </div>
             )}
             <div className="gr-scroll">
@@ -268,6 +350,8 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
                 <DiffView
                   diff={shown}
                   rows={rows}
+                  split={prefs.split}
+                  tokens={tokens}
                   placed={placed}
                   elsewhere={elsewhere}
                   showSent={showSent}
@@ -275,6 +359,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
                   active={active}
                   busy={busy}
                   onDraft={setDraftAt}
+                  onActivate={setActive}
                   onAdd={(row, note) =>
                     run(async () => {
                       await call(link, "POST /api/workspaces/:id/review-comments", { id: workspace.id }, { range, path: file.path, side: row.side, line: row.number, lineText: row.line.text, note });
@@ -294,6 +379,8 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
           </section>
         </div>
       )}
+
+      {menu && <FileMenu at={menu} vscode={vscode} onOpen={(app) => openFile(menu.file, app)} onClose={closeMenu} />}
 
       <footer className="gr-bar">
         <span data-testid="review-draft-count">草稿批注 {drafts.length} 条</span>

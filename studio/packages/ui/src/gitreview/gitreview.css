@@ -15,8 +15,15 @@
 .gr-dim { color: var(--text-faint); font-size: var(--fs-cap); }
 
 /* File list */
-.gr-files { flex: 0 0 280px; overflow-y: auto; border-right: 1px solid var(--border); background: var(--bg-nav); padding: 8px 8px 16px; }
-.gr-files-head { padding: 4px 6px 8px; font-size: var(--fs-cap); color: var(--text-dim); }
+.gr-files { flex: none; min-width: 0; overflow-y: auto; border-right: 1px solid var(--border); background: var(--bg-nav); padding: 8px 8px 16px; }
+.gr-files-head { display: flex; align-items: center; gap: 8px; padding: 0 2px 4px 6px; font-size: var(--fs-cap); color: var(--text-dim); }
+.gr-files-hint { padding: 0 6px 8px; }
+.gr-seg.small button { height: 22px; padding: 0 8px; font-size: 11.5px; }
+/* The bar that sizes the list (S12-A): a thin hit area over the list's border. */
+.gr-splitter { flex: none; position: relative; z-index: 2; width: 7px; margin: 0 -4px 0 -3px; cursor: col-resize; touch-action: none; }
+.gr-splitter::after { content: ""; position: absolute; inset: 0 3px 0 3px; transition: background-color 0.12s; }
+.gr-splitter:hover::after, .gr-splitter:active::after, .gr-splitter:focus-visible::after { background: var(--border-strong); }
+.gr-splitter:focus-visible { outline: none; }
 .gr-empty { padding: 8px 6px; font-size: var(--fs-cap); color: var(--text-faint); }
 .gr-group + .gr-group { margin-top: 6px; }
 .gr-folder { padding: 4px 6px 2px; font-family: var(--font-code); font-size: 11.5px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
@@ -29,7 +36,18 @@
 .gr-status.modified { color: var(--attention); }
 .gr-status.renamed { color: var(--text-dim); }
 .gr-status.untracked { font-style: italic; opacity: 0.8; }
-.gr-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+/* Names keep their end: the head shrinks with "…", the tail (end of the name, extension) always shows. */
+.gr-name { flex: 1; min-width: 0; display: flex; overflow: hidden; white-space: nowrap; }
+.gr-name-head { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.gr-name-tail { flex: none; }
+.gr-dir { width: 100%; height: 26px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text-dim); font-family: var(--font-code); font-size: 11.5px; text-align: left; cursor: pointer; }
+.gr-dir:hover { background: var(--chip); color: var(--text); }
+.gr-chev { flex: none; width: 10px; font-size: 10px; color: var(--text-faint); }
+.gr-dir-count { flex: none; font-size: 10.5px; color: var(--text-faint); }
+.gr-file.flat { height: auto; min-height: 28px; padding-block: 3px; }
+.gr-flat-names { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+.gr-flat-names .gr-name { flex: none; }
+.gr-name-folder { font-family: var(--font-code); font-size: 11px; font-weight: 400; color: var(--text-faint); }
 .gr-badge { flex: none; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--tint-strong); color: var(--text); font-size: 10.5px; line-height: 16px; text-align: center; font-weight: 600; }
 .gr-count { flex: none; font-family: var(--font-code); font-size: 11px; color: var(--text-faint); font-weight: 400; }
 .gr-count .add { color: var(--chat-diff-add-mark); }
@@ -74,3 +92,23 @@
 .gr-bar { display: flex; align-items: center; gap: 14px; padding: 8px 18px; border-top: 1px solid var(--border); background: var(--bg-header); font-size: var(--fs-sm); }
 .gr-check { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); font-size: var(--fs-cap); cursor: pointer; }
 .gr-bar .inline-field select { max-width: 340px; }
+
+/* 左右对照 (S12-A): one scroll container, each row two equal columns, long lines wrap so the sides stay aligned. */
+.gr-split { min-width: 0; }
+.gr-split .gr-hunk { padding-left: 64px; }
+.gr-pair { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+/* On the left cell: the cells' tints would paint over a shadow on the row. */
+.gr-pair.active > .gr-cell:first-child { box-shadow: inset 3px 0 0 var(--attention); }
+.gr-cell { min-width: 0; display: grid; grid-template-columns: 44px 20px 18px minmax(0, 1fr); align-items: start; }
+.gr-cell.old { border-right: 0.5px solid var(--chat-hairline); }
+.gr-cell:hover { background: var(--tint); }
+.gr-cell.add { background: var(--chat-diff-add-bg); }
+.gr-cell.del { background: var(--chat-diff-del-bg); }
+.gr-cell.blank { background: repeating-linear-gradient(135deg, transparent 0 6px, var(--chat-hairline) 6px 7px), var(--chat-code-banner); }
+.gr-cell.add .gr-mark { color: var(--chat-diff-add-mark); }
+.gr-cell.del .gr-mark { color: var(--chat-diff-del-mark); }
+.gr-cell .gr-text { white-space: pre-wrap; overflow-wrap: anywhere; padding-right: 12px; }
+.gr-cell:hover .gr-add { opacity: 1; }
+.gr-pair-notes { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+.gr-pair-notes > div { min-width: 0; }
+.gr-pair-notes .gr-comment, .gr-pair-notes .gr-draft { margin: 4px 16px 6px 64px; }

@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { Session, Task, Workspace } from "@amo-studio/protocol";
@@ -156,4 +156,157 @@ test("review a project's changes, comment a line and send it to the session", as
 
   // A plain folder: the Host says why.
   expect((await studio.api<{ repo: boolean; reason?: string }>("GET", `/api/workspaces/${plain.id}/git/status`)).reason).toBe("不是 git 仓库");
+});
+
+/** S12-A: a repository with nested folders, a C# file with a long name and a block comment, a deleted file. */
+function makeNestedRepo(dir: string): { cs: string } {
+  const cs = "Assets/Scripts/Player/PlayerInventoryControllerWithAVeryLongName.cs";
+  const csLines = (name: string, slots: number, gold: boolean, tail: boolean) =>
+    [
+      "using System;",
+      "/* Inventory rules:",
+      "   public class NotCode {} stays a comment */",
+      "public class PlayerInventory",
+      "{",
+      `    private const string Name = "${name}";`,
+      `    public int Slots = ${slots};`,
+      ...(gold ? ["    public int Gold = 0;"] : []),
+      "    public void Clear() { }",
+      ...(tail ? ["    // added"] : []),
+      "}",
+      "",
+    ].join("\n");
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "config", "core.autocrlf", "false");
+  mkdirSync(join(dir, "Assets", "Scripts", "Player"), { recursive: true });
+  mkdirSync(join(dir, "src", "game", "drop"), { recursive: true });
+  writeFileSync(join(dir, cs), csLines("bag", 10, true, false));
+  writeFileSync(join(dir, "src", "game", "drop", "table.lua"), "return { rate = 0.1 }\n");
+  writeFileSync(join(dir, "README.md"), "# Game\n");
+  writeFileSync(join(dir, "old.txt"), "to be removed\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "base");
+  writeFileSync(join(dir, cs), csLines("backpack", 12, false, true));
+  writeFileSync(join(dir, "src", "game", "drop", "table.lua"), "return { rate = 0.25 }\n");
+  writeFileSync(join(dir, "README.md"), "# Game\n\nTuned.\n");
+  git(dir, "rm", "-q", "old.txt");
+  return { cs };
+}
+
+test("S12-A: file tree, syntax colours, side by side and opening files", async () => {
+  studio = await launchStudio();
+  const { app, page } = studio;
+  const dir = studio.workspace("unity");
+  const { cs } = makeNestedRepo(dir);
+  await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+  const apps = await studio.api<{ vscode: boolean }>("GET", "/api/open-in/apps");
+
+  const opened = app.waitForEvent("window");
+  await page.getByTestId("scope-ws-unity").click({ button: "right" });
+  await page.getByRole("menu", { name: "项目" }).getByRole("menuitem", { name: "Git Review" }).click();
+  const review = await opened;
+  await review.waitForLoadState("domcontentloaded");
+
+  // 目录树 by default: folders first, lone-folder chains in one row; the long name keeps its extension and end.
+  const files = review.getByTestId("review-file");
+  const folders = review.getByTestId("review-folder");
+  await expect(files).toHaveCount(4);
+  await expect(folders).toHaveText([/^▾Assets\/Scripts\/Player1$/, /^▾src\/game\/drop1$/]);
+  await expect(files.nth(0)).toHaveAttribute("title", cs);
+  await expect(files.nth(0).locator(".gr-name-tail")).toHaveText("ngName.cs");
+  await expect(files.nth(2)).toContainText("old.txt");
+  await expect(files.nth(3)).toContainText("README.md");
+  await expect(review.getByTestId("review-file-head")).toContainText(cs);
+
+  // C# colours, with the block comment coloured on its second line too.
+  await expect(review.locator('[data-line="new:3"] span[style*="--shiki-token-comment"]').first()).toContainText("NotCode");
+  expect(await review.locator('[data-line="new:4"] span[style*="--shiki-token-"]').count()).toBeGreaterThan(0);
+  await expect(review.locator('[data-line="old:8"]')).toContainText("Gold");
+  await screenshot(app, "stage-12", "S12-A-tree-colours", review, "review");
+
+  // Folding a folder hides its file; j walks into it and the folder opens again.
+  await folders.nth(1).click();
+  await expect(folders.nth(1)).toHaveAttribute("aria-expanded", "false");
+  await expect(files).toHaveCount(3);
+  await review.locator("body").press("j");
+  await expect(review.getByTestId("review-file-head")).toContainText("src/game/drop/table.lua");
+  await expect(files).toHaveCount(4);
+  await review.locator("body").press("k");
+  await expect(review.getByTestId("review-file-head")).toContainText(cs);
+
+  // 左右对照: old left, new right; three deleted lines pair with two added ones, the added tail has a blank on the left.
+  await review.getByRole("button", { name: "左右对照" }).click();
+  await expect(review.getByTestId("diff-split")).toBeVisible();
+  const pairOf = (line: string) => review.getByTestId("diff-pair").filter({ has: review.locator(`[data-line="${line}"]`) });
+  await expect(pairOf("old:6").getByTestId("diff-cell-new")).toContainText('"backpack"');
+  await expect(pairOf("old:8").locator(".gr-cell.blank.new")).toHaveCount(1);
+  await expect(pairOf("new:9").locator(".gr-cell.blank.old")).toHaveCount(1);
+  expect(await review.locator('[data-line="old:8"] span[style*="--shiki-token-"]').count()).toBeGreaterThan(0);
+  // Comments: a deleted line's on the left, an added line's on the right.
+  await review.locator('[data-line="old:8"]').hover();
+  await review.locator('[data-line="old:8"]').getByTestId("add-comment").click();
+  await review.getByLabel("批注内容").fill("Gold 字段为什么去掉");
+  await review.getByLabel("批注内容").press("Control+Enter");
+  await expect(review.locator(".gr-pair-notes > div:first-child").getByTestId("review-comment")).toContainText("Gold 字段");
+  await review.locator('[data-line="new:9"]').hover();
+  await review.locator('[data-line="new:9"]').getByTestId("add-comment").click();
+  await review.getByLabel("批注内容").fill("注释写清楚一点");
+  await review.getByLabel("批注内容").press("Control+Enter");
+  await expect(review.locator(".gr-pair-notes > div:last-child").getByTestId("review-comment")).toContainText("注释写清楚");
+  await expect(review.getByTestId("review-draft-count")).toHaveText("草稿批注 2 条");
+  await review.locator("body").press("n");
+  await expect(review.locator(".gr-pair.active")).toHaveCount(1);
+  await screenshot(app, "stage-12", "S12-A-side-by-side", review, "review");
+
+  // Open in: VS Code at the active change's new line (when this machine has VS Code), Explorer always; test runs only record.
+  const posted = () => review.waitForResponse((r) => r.url().endsWith("/api/open-in") && r.request().method() === "POST");
+  const vscode = review.getByTestId("review-open-vscode");
+  await expect(vscode).toHaveCount(apps.vscode ? 1 : 0);
+  if (apps.vscode) {
+    const res = posted();
+    await vscode.click();
+    const r = await res;
+    expect(r.request().postDataJSON()).toMatchObject({ path: cs, app: "vscode", line: 6 });
+    expect(await r.json()).toMatchObject({ app: "vscode", dryRun: true });
+  }
+  let res = posted();
+  await review.getByTestId("review-reveal").click();
+  expect(await (await res).json()).toMatchObject({ app: "explorer", dryRun: true });
+  // The file list's right-click menu does the same; a deleted file has nothing to open.
+  await files.filter({ hasText: "table.lua" }).click({ button: "right" });
+  const menu = review.getByRole("menu", { name: "文件" });
+  await expect(menu.getByRole("menuitem")).toHaveText(apps.vscode ? ["VS Code 打开", "在资源管理器中显示"] : ["在资源管理器中显示"]);
+  await expect(review.getByTestId("diff-cell-new").first()).toContainText("return");
+  await screenshot(app, "stage-12", "S12-A-file-menu", review, "review");
+  res = posted();
+  await menu.getByRole("menuitem", { name: "在资源管理器中显示" }).click();
+  expect((await res).request().postDataJSON()).toMatchObject({ path: "src/game/drop/table.lua", app: "explorer" });
+  await expect(menu).toHaveCount(0);
+  await files.filter({ hasText: "old.txt" }).click({ button: "right" });
+  await expect(menu.getByRole("menuitem", { name: "在资源管理器中显示" })).toBeDisabled();
+  await review.keyboard.press("Escape");
+  await expect(review.getByTestId("review-reveal")).toBeDisabled();
+
+  // The list is as wide as dragged (180–600) and 平铺 shows the folder under each name; both stay after a reload.
+  const nav = review.locator("nav.gr-files");
+  const before = (await nav.boundingBox())!.width;
+  const bar = (await review.getByTestId("review-splitter").boundingBox())!;
+  await review.mouse.move(bar.x + bar.width / 2, bar.y + 200);
+  await review.mouse.down();
+  await review.mouse.move(bar.x + bar.width / 2 + 120, bar.y + 200, { steps: 4 });
+  await review.mouse.up();
+  await expect.poll(async () => Math.round((await nav.boundingBox())!.width)).toBe(Math.round(before + 120));
+  await review.getByRole("button", { name: "平铺" }).click();
+  await expect(folders).toHaveCount(0);
+  await expect(files.filter({ hasText: "table.lua" }).locator(".gr-name-folder")).toHaveText("src/game/drop");
+  await files.filter({ hasText: "PlayerInventory" }).click();
+  await expect(review.locator('[data-line="new:9"]')).toBeVisible();
+  await review.mouse.move(0, 0);
+  await screenshot(app, "stage-12", "S12-A-flat-wide", review, "review");
+  await review.reload();
+  await review.waitForLoadState("domcontentloaded");
+  await expect(review.getByRole("button", { name: "平铺" })).toHaveAttribute("aria-pressed", "true");
+  await expect(review.getByRole("button", { name: "左右对照" })).toHaveAttribute("aria-pressed", "true");
+  await expect(review.getByTestId("diff-split")).toBeVisible();
+  await expect.poll(async () => Math.round((await nav.boundingBox())!.width)).toBe(Math.round(before + 120));
 });
