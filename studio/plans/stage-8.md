@@ -53,11 +53,11 @@
 ### S8-05 删除旧 AMO 的清单（不删） · done（`plans/remove-old-amo.md`）
 - 内容：`plans/remove-old-amo.md`：列出旧 AMO 的目录和文件、它们和 Studio 的对应关系、删除后 master 上剩什么；等你回复 S3-10 后才执行。
 
-### S8-06 全面自查与合并准备 · todo
+### S8-06 全面自查与合并准备 · done（`plans/merge-to-master.md`）
 - 依赖：S8-01～S8-05
 - 内容：跨阶段的自查（安全、红线、遗留待办）；完整验证；列出合并到 master 的检查单（会带进 master 的文件、和 master 现有内容的冲突、`studio/.data` 等不进 git 的确认）。
 
-### S8-07 【必须等你】合并到 master · 等你（S8-06 完成后写入 NEEDS_YOU）
+### S8-07 【必须等你】合并到 master · 等你（已写入 NEEDS_YOU）
 - 内容：S8-06 完成后写进 NEEDS_YOU。你回复"同意合并"之前，loop 不合并、不推送。
 
 ### S8-08 【必须等你】删除旧 AMO · 等你（即 S3-10）

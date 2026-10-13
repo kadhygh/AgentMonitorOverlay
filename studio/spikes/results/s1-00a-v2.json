@@ -15,7 +15,7 @@
       "toB": true,
       "sameRpcId": true,
       "sameItem": true,
-      "command": "\"C:\\\\Users\\\\Kangaroo\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'cmd /c echo approval-probe-2'"
+      "command": "\"%USERPROFILE%\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'cmd /c echo approval-probe-2'"
     },
     {
       "s": "after A answered decline",

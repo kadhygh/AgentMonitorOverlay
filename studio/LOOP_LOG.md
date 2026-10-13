@@ -1036,3 +1036,18 @@
   - 旧 AMO 的"Git exclude"会排除 `.amo/`，导致 Studio 的扩展包 `.amo/packs/` 默认不进提交；处理办法写进了 `design/pack-format.md`
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 19:10 · S8-06 全面自查与合并准备；阶段 8 收尾
+- 结果：done
+- 自查（跨阶段）：
+  - 密钥扫描：`studio/` 下被跟踪的文本文件里没有密钥、令牌、私钥；
+  - 不该进 git 的：`.data/`、`release/`、`node_modules/`、`test-results/` 都没有被跟踪；
+  - 个人信息：三个早期预研结果（`s1-00a-v1/v2.json`、`s4-00.json`）里有 Windows 用户名，已换成 `%USERPROFILE%`；`S8-02-setup.png` 截图里能看到含用户名的临时路径，列进检查单由你决定；
+  - 和 master 的关系：`studio/main` 领先 `master` 115 个提交、master 没有新提交，合并无冲突；**注意 `75ac787`（旧 AMO 的 DeepSeek 修复，还在等你验证）也在这条历史里**，已写进检查单；
+  - 红线复核：测试都在 `%TEMP%` 沙箱、端口只用 47900–47999、测试窗口不抢焦点、没有碰全局配置和旧 AMO
+- 合并检查单：`plans/merge-to-master.md`
+- 完整验证：`npm run verify` 退出码 0（219 个测试）；e2e 40/40；Portable 冒烟（S8-03）通过
+- 合并：`studio/stage-8` 用 `--no-ff` 合并进 `studio/main`（**没有合并到 master**）
+- NEEDS_YOU：写入"阶段 8 完成"（请你过目）、"是否把 Studio 合并到 master"（必须等你，S8-07）
+- 之后：ROADMAP 的阶段都做完了，剩下的都在等你。loop 接下来只做带过来的小修（`plans/maintenance.md`），做完就改成每小时看一次 NEEDS_YOU
+- 额度：0
