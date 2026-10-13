@@ -9,7 +9,7 @@ import { Feature } from "../../core/feature.js";
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
 export class ConfigFeature extends Feature {
   settings(): StudioSettings {
-    return { commonWorkspace: this.commonWorkspace(), presets: this.presets(), disabledFeatures: this.disabledFeatures() };
+    return { commonWorkspace: this.commonWorkspace(), presets: this.presets(), disabledFeatures: this.disabledFeatures(), scratchpadShortcut: this.f.scratchpad.shortcut() };
   }
 
   /** Optional features the person turned off (设置 → 功能). */
@@ -38,8 +38,12 @@ export class ConfigFeature extends Feature {
     }
   }
 
-  /** Moves the common space to another folder, replaces the 常用预设 list and/or turns optional features on or off. */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown }): StudioSettings {
+  /**
+   * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off and/or sets
+   * the scratchpad shortcut (便签).
+   */
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown }): StudioSettings {
+    if (input.scratchpadShortcut !== undefined) this.f.scratchpad.setShortcut(input.scratchpadShortcut);
     if (input.disabledFeatures !== undefined) {
       const known = OPTIONAL_FEATURES.map((f) => f.id);
       const ids = input.disabledFeatures;

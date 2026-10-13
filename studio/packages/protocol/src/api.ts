@@ -65,8 +65,20 @@ export interface SessionPreset {
 
 export type ApprovalDecision = "accept" | "decline";
 
-export interface Scratchpad {
+/** One page of the scratchpad: its text and the images pasted into it (attachment ids, in order). */
+export interface ScratchpadPage {
   text: string;
+  attachments: string[];
+}
+
+/** The scratchpad (便签, stage 11): numbered pages shared by every window, kept by the Host. */
+export interface Scratchpad {
+  /** The pages shown; `pages.length` is the page count (1–9). */
+  pages: ScratchpadPage[];
+  /** Index into `pages` of the page every window shows. */
+  activePage: number;
+  /** Pages beyond the count that still hold something (1-based): lowering the count hides pages, never deletes them. */
+  keptPages: number[];
   /** Null until first saved. */
   updatedAt: string | null;
 }
@@ -133,6 +145,8 @@ export interface StudioSettings {
   presets: SessionPreset[];
   /** Optional features turned off. */
   disabledFeatures: OptionalFeature[];
+  /** Global shortcut that shows and hides the scratchpad window, as an Electron accelerator; "" when off. */
+  scratchpadShortcut: string;
 }
 
 /** A model credential the profiles use: whether it is stored, never its value. */
@@ -161,7 +175,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[] }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };
@@ -221,9 +235,12 @@ export interface HostRoutes {
   "DELETE /api/annotations/:id": { req: void; res: { ok: true } };
   /** Sends every unsent annotation of the session as one user message, in reply order, then marks them sent. */
   "POST /api/sessions/:id/annotations/send": { req: void; res: { mode: "start" | "steer" | "queue"; sent: Annotation[] } };
-  /** The global scratchpad (interaction-notes: one shared draft area until the user asks for per-task ones). */
+  /** The global scratchpad (便签): one shared document of pages; the text of stage 2's draft area is its page 1. */
   "GET /api/scratchpad": { req: void; res: Scratchpad };
-  "PUT /api/scratchpad": { req: { text: string }; res: Scratchpad };
+  /** Switches the page every window shows (0-based) and/or sets the page count (1–9). */
+  "PATCH /api/scratchpad": { req: { activePage?: number; pageCount?: number }; res: Scratchpad };
+  /** Replaces a page's text and/or its images (`:page` is 1-based; pages beyond the count can be written too). */
+  "PUT /api/scratchpad/pages/:page": { req: { text?: string; attachments?: string[] }; res: Scratchpad };
   /** Whole-picture todos (global, not tied to a task until converted in stage 7). */
   "GET /api/todos": { req: void; res: TodoItem[] };
   "POST /api/todos": { req: { text: string; workspaceId?: Id | null }; res: TodoItem };

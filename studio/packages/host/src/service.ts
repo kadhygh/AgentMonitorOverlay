@@ -16,6 +16,7 @@ import { CanvasFeature } from "./features/canvas/service.js";
 import { ReviewFeature } from "./features/review/service.js";
 import { PacksFeature } from "./features/packs/service.js";
 import { AttachmentsFeature } from "./features/attachments/service.js";
+import { ScratchpadFeature } from "./features/scratchpad/service.js";
 import { HostError, type HostServiceEvents } from "./core/shared.js";
 
 // The composition root behind the Host API: the store, the runtimes and the event stream, the helpers every feature
@@ -35,6 +36,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly review = new ReviewFeature(this);
   readonly extensions = new PacksFeature(this);
   readonly attachments = new AttachmentsFeature(this);
+  readonly scratchpad = new ScratchpadFeature(this);
 
   constructor(
     readonly store: Store,

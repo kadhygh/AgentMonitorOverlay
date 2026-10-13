@@ -1,8 +1,10 @@
 import { useEffect, useRef, useState } from "react";
+import type { Scratchpad as ScratchpadDoc } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { onHostEvent, onHostReconnect } from "../host/events.js";
 
 const SAVE_DELAY_MS = 500;
+const activeText = (s: ScratchpadDoc) => s.pages[0]?.text ?? "";
 
 type SaveState = "idle" | "dirty" | "saving" | "saved" | "error";
 
@@ -18,12 +20,12 @@ export function Scratchpad({ link }: { link: HostLink }) {
     const load = () =>
       call(link, "GET /api/scratchpad")
         .then((s) => {
-          if (!cancelled && !dirty.current) setText(s.text);
+          if (!cancelled && !dirty.current) setText(activeText(s));
         })
         .catch(() => undefined);
     // Edits from another window replace the text unless this one has unsaved typing.
     const offEvent = onHostEvent((e) => {
-      if (e.type === "scratchpad.updated" && !dirty.current) setText(e.scratchpad.text);
+      if (e.type === "scratchpad.updated" && !dirty.current) setText(activeText(e.scratchpad));
     });
     const offReconnect = onHostReconnect(() => void load());
     void load();
@@ -36,7 +38,7 @@ export function Scratchpad({ link }: { link: HostLink }) {
 
   function save(value: string) {
     setState("saving");
-    call(link, "PUT /api/scratchpad", {}, { text: value })
+    call(link, "PUT /api/scratchpad/pages/:page", { page: "1" }, { text: value })
       .then(() => {
         dirty.current = false;
         setState("saved");
@@ -50,7 +52,7 @@ export function Scratchpad({ link }: { link: HostLink }) {
   useEffect(
     () => () => {
       if (timer.current) clearTimeout(timer.current);
-      if (dirty.current) void call(link, "PUT /api/scratchpad", {}, { text: latest.current }).catch(() => undefined);
+      if (dirty.current) void call(link, "PUT /api/scratchpad/pages/:page", { page: "1" }, { text: latest.current }).catch(() => undefined);
     },
     [link],
   );

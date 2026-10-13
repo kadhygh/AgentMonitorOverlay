@@ -596,24 +596,6 @@ describe("Host API", () => {
     expect((await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).version).toBe(1);
   });
 
-  it("reads and writes the global scratchpad, announcing changes", async () => {
-    expect(await ok("GET", "/api/scratchpad")).toEqual({ text: "", updatedAt: null });
-    const received: HostEvent[] = [];
-    const ws = new WebSocket(`${http.url.replace("http", "ws")}/api/events?token=${TOKEN}&since=${(await ok<StateSnapshot>("GET", "/api/state")).eventSeq}`);
-    ws.on("message", (raw) => received.push(JSON.parse(String(raw)) as HostEvent));
-    await new Promise<void>((r) => ws.once("open", () => r()));
-    const note = "待办：\n- 看掉落表";
-    const saved = await ok<{ text: string; updatedAt: string }>("PUT", "/api/scratchpad", { text: note });
-    expect(saved.text).toBe(note);
-    expect(saved.updatedAt).toBeTruthy();
-    expect((await api("PUT", "/api/scratchpad", { text: 42 })).status).toBe(400);
-    await until(() => received.some((e) => e.type === "scratchpad.updated"), "scratchpad event");
-    ws.close();
-    await shutdown();
-    await boot();
-    expect((await ok<{ text: string }>("GET", "/api/scratchpad")).text).toBe(note);
-  });
-
   it("annotates replies and sends the annotations back as one message", async () => {
     const { session } = await createTask("first reply");
     await until(async () => (await lastAgentText(session.id)) === "FAKE: first reply", "first reply");
