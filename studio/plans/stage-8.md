@@ -47,7 +47,7 @@
 - 内容：`npm run package:portable` 生成 zip；`release/` 进 `.gitignore`；脚本把 zip 解到沙箱目录，用 mock 模型跑一遍：启动 → 首次设置 → 新建任务 → 对话 → 退出，确认没有写到沙箱以外。
 - 验收：脚本输出与截图。
 
-### S8-04 文档 · todo
+### S8-04 文档 · done
 - 内容：`studio/README.md` 改成使用说明（下载解压、首次设置、和旧 AMO 的对应关系、常见问题）；`docs/` 里的架构说明更新到实际实现。
 
 ### S8-05 删除旧 AMO 的清单（不删） · todo

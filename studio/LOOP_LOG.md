@@ -1016,3 +1016,13 @@
 - 验证：`npm run verify` 退出码 0（219 个测试）；e2e 40/40
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 18:10 · S8-04 文档
+- 结果：done
+- `studio/README.md` 改成使用说明：Portable 安装与首次启动、日常怎么用（按"想做的事 → 在哪里"列）、agent 通过 MCP 能做什么、和旧 AMO 的对应关系（旧 AMO 的 Hook、任务卡片、Obsidian 审阅与 Canvas、Focus Panel、Scratchpad、路由、Workspace Center 各对应到哪里，哪些暂不支持）、常见问题；原来的开发者文件导航保留在后面
+- 新增 `design/architecture.md`：现在代码里的进程结构、各个包、数据目录里有什么、累积的安全边界、测试方式
+- 没有改 `docs/` 下的愿景文档（它写的是目标，实际实现另写一份，避免两边不一致）
+- 默认决定（请你过目）：旧 AMO 的 Grok Build、ChatGPT 桌面端 Target、鼠标侧键快捷键在对应表里写成"暂不支持/暂未实现"
+- 验证：只改文档，没有跑测试
+- 额度：0
+- commit：见本次 commit
