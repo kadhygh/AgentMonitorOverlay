@@ -34,6 +34,14 @@ test("creates a task from the blank task page and streams the first reply", asyn
   const tile = page.getByRole("group", { name: "模型" }).getByTestId("model-tile").filter({ hasText: "Mock 模型" });
   await tile.click();
   await expect(tile).toHaveAttribute("aria-pressed", "true");
+  // Right click on a tile: that account's own models in a small menu.
+  await page.getByRole("group", { name: "模型" }).getByTestId("model-tile").filter({ hasText: "Mock Claude" }).click({ button: "right" });
+  const menu = page.getByTestId("model-menu");
+  await expect(menu.getByRole("menuitemradio")).toHaveText(["mock-claude", "mock-claude-b"]);
+  await menu.getByRole("menuitemradio", { name: "mock-claude-b" }).click();
+  await expect(menu).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "模型" }).locator('[data-testid="model-tile"][aria-pressed="true"]')).toContainText("mock-claude-b");
+  await tile.click();
   await page.getByTestId("effort").getByRole("button", { name: "低" }).click();
   await expect(page.getByTestId("effort-label")).toHaveText("低");
   await expect(page.getByRole("group", { name: "权限" }).getByRole("button", { name: "逐条询问" })).toHaveAttribute("aria-pressed", "true");

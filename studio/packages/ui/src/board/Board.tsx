@@ -1,4 +1,5 @@
-import { TASK_COLUMNS, taskProject, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { useState } from "react";
+import { TASK_COLUMNS, taskProject, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 
 /** What the board shows: everything, one topic's tasks, or one project's. Archived tasks are never on the board. */
@@ -18,6 +19,8 @@ interface BoardProps {
   topics: readonly Topic[];
   scope: Scope;
   onOpen(task: Task): void;
+  /** A card dropped on another column (the person moves cards; agents never do). */
+  onMove?(task: Task, column: TaskColumn): void;
   /** Unread mail and open decisions per task id. */
   mail?: ReadonlyMap<string, number>;
   decisions?: ReadonlyMap<string, number>;
@@ -25,16 +28,37 @@ interface BoardProps {
   checklist?: ReadonlyMap<string, { done: number; total: number }>;
 }
 
-/** Four columns; the person moves cards, agents never do. Cards are entry points and carry no buttons. */
-export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, mail, decisions, checklist }: BoardProps) {
+/** Four columns; the person moves cards (drag a card onto another column), agents never do. Cards carry no buttons. */
+export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMove, mail, decisions, checklist }: BoardProps) {
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const [dragging, setDragging] = useState<Task | null>(null);
+  const [over, setOver] = useState<TaskColumn | null>(null);
 
   return (
     <section className="board" aria-label="看板">
       {TASK_COLUMNS.map((col) => {
         const cards = visible.filter((t) => t.column === col);
         return (
-          <div className="column" key={col} data-testid={`column-${col}`}>
+          <div
+            className={over === col && dragging && dragging.column !== col ? "column drop" : "column"}
+            key={col}
+            data-testid={`column-${col}`}
+            onDragOver={(e) => {
+              if (!dragging || !onMove) return;
+              e.preventDefault();
+              e.dataTransfer.dropEffect = "move";
+              if (over !== col) setOver(col);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((o) => (o === col ? null : o));
+            }}
+            onDrop={(e) => {
+              e.preventDefault();
+              if (dragging && onMove && dragging.column !== col) onMove(dragging, col);
+              setDragging(null);
+              setOver(null);
+            }}
+          >
             <div className="column-head">
               <span className="column-name">{COLUMN_NAMES[col]}</span>
               <span className="column-count">{cards.length}</span>
@@ -48,6 +72,12 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, mail
                 workspaces={workspaces}
                 topics={topics}
                 onOpen={onOpen}
+                draggable={!!onMove}
+                onDragStart={() => setDragging(task)}
+                onDragEnd={() => {
+                  setDragging(null);
+                  setOver(null);
+                }}
                 mail={mail?.get(task.id) ?? 0}
                 decisions={decisions?.get(task.id) ?? 0}
                 {...(checklist?.get(task.id) ? { checklist: checklist.get(task.id)! } : {})}
@@ -68,6 +98,9 @@ function TaskCard({
   workspaces,
   topics,
   onOpen,
+  draggable = false,
+  onDragStart,
+  onDragEnd,
   mail = 0,
   decisions = 0,
   checklist,
@@ -78,6 +111,9 @@ function TaskCard({
   workspaces: readonly Workspace[];
   topics: readonly Topic[];
   onOpen(t: Task): void;
+  draggable?: boolean;
+  onDragStart?(): void;
+  onDragEnd?(): void;
   mail?: number;
   decisions?: number;
   checklist?: { done: number; total: number };
@@ -98,7 +134,20 @@ function TaskCard({
   const asks = [decisions ? `${decisions} 个待决策` : "", mail ? `${mail} 条留言` : ""].filter(Boolean).join(" · ");
 
   return (
-    <button type="button" className="card" onClick={() => onOpen(task)} data-testid="task-card">
+    <button
+      type="button"
+      className="card"
+      onClick={() => onOpen(task)}
+      draggable={draggable}
+      onDragStart={(e) => {
+        e.dataTransfer.effectAllowed = "move";
+        e.dataTransfer.setData("text/plain", task.id);
+        onDragStart?.();
+      }}
+      onDragEnd={onDragEnd}
+      data-testid="task-card"
+      data-task-id={task.id}
+    >
       <span className="card-title">{task.title || "未命名任务"}</span>
       <span className="card-status">
         {look ? (

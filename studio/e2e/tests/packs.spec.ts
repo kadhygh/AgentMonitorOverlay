@@ -124,6 +124,7 @@ test("session presets: a preset fills the new-session form and starts only when 
 
   // Picking a preset only prefills: the prompt with the task's title, the files to read, and why the model fell back
   // (the example names a DeepSeek profile that the test setup does not have).
+  if (!(await page.getByLabel("按预设新建会话").isVisible())) await page.getByTestId("new-session-toggle").click();
   await page.getByLabel("按预设新建会话").selectOption({ label: "示例：小游戏玩法开发 · 按约定实现" });
   const form = page.getByTestId("preset-draft");
   await expect(form.getByLabel("预设提示词")).toHaveValue(/请实现任务「冲刺技能」。开始前先读 \.amo\/packs\/demo\/docs\/conventions\.md/);
@@ -135,6 +136,7 @@ test("session presets: a preset fills the new-session form and starts only when 
   // Cancel leaves nothing behind; confirming starts the session with the (edited) prompt.
   await form.getByRole("button", { name: "取消" }).click();
   await expect(form).toHaveCount(0);
+  if (!(await page.getByLabel("按预设新建会话").isVisible())) await page.getByTestId("new-session-toggle").click();
   await page.getByLabel("按预设新建会话").selectOption({ label: "示例：小游戏玩法开发 · 按约定实现" });
   await form.getByLabel("预设模型").selectOption({ label: "Codex · Mock 模型" });
   const text = await form.getByLabel("预设提示词").inputValue();

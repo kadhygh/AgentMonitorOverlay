@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, screen, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, shell } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, stopHost, type HostConnection } from "./host-link.js";
@@ -70,6 +70,13 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   ipcMain.handle("amo:host", () => (host ? { url: host.url, token: host.token } : null));
+  // The page draws its own title bar; the window controls follow its colours (theme changes included).
+  ipcMain.on("amo:title-bar", (event, colors: unknown) => {
+    const c = colors as { color?: unknown; symbolColor?: unknown } | null;
+    if (!mainWindow || event.sender !== mainWindow.webContents || typeof c?.color !== "string" || typeof c.symbolColor !== "string") return;
+    if (!/^#[0-9a-f]{6}$/i.test(c.color) || !/^#[0-9a-f]{6}$/i.test(c.symbolColor)) return;
+    mainWindow.setTitleBarOverlay({ color: c.color, symbolColor: c.symbolColor, height: TITLE_BAR_HEIGHT });
+  });
   // Copy through the main process: navigator.clipboard needs a focused document, which is not always the case.
   // Tests never touch the user's clipboard; they read the recorded text instead.
   ipcMain.handle("amo:copy", (_event, text: unknown) => {
@@ -180,7 +187,12 @@ function safeList(dir: string): string[] {
   }
 }
 
+/** Height of the page's top bar, which doubles as the window's title bar (window controls drawn over its right end). */
+const TITLE_BAR_HEIGHT = 54;
+
 function createMainWindow(conn: HostConnection): BrowserWindow {
+  // No menu bar (File / Edit / View…): everything lives in the page. Reload and DevTools stay on their keys below.
+  Menu.setApplicationMenu(null);
   // Remembered bounds, pulled back onto a display if that display is gone (tests always sit off-screen).
   const saved = testMode ? null : prefs.main();
   const bounds = testMode ? { width: 1440, height: 900 } : mainBounds(saved?.bounds ?? null, { width: 1440, height: 900 });
@@ -190,8 +202,11 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
     minHeight: 600,
     title: "AMO Studio",
     icon: APP_ICON,
-    // Before the page paints (the page then applies the chosen theme).
-    backgroundColor: nativeTheme.shouldUseDarkColors ? "#111316" : "#f5f6f8",
+    // Before the page paints: the light (editorial) theme is the default.
+    backgroundColor: "#efede8",
+    // The page's top bar is the title bar; Windows draws the window controls over its right end.
+    titleBarStyle: "hidden",
+    titleBarOverlay: { color: "#f8f7f3", symbolColor: "#22201c", height: TITLE_BAR_HEIGHT },
     // Test windows sit off-screen, out of the taskbar, and are shown without activation so they keep painting for
     // capturePage but never take focus (LOOP_RULES red line 7).
     show: false,
@@ -204,6 +219,18 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
       sandbox: true,
       backgroundThrottling: !testMode,
     },
+  });
+  // Without a menu, the usual keys: F5 / Ctrl+R reload, F12 / Ctrl+Shift+I DevTools.
+  win.webContents.on("before-input-event", (event, input) => {
+    if (input.type !== "keyDown") return;
+    const key = input.key.toLowerCase();
+    if (key === "f5" || (input.control && !input.shift && key === "r")) {
+      event.preventDefault();
+      win.webContents.reload();
+    } else if (key === "f12" || (input.control && input.shift && key === "i")) {
+      event.preventDefault();
+      win.webContents.toggleDevTools();
+    }
   });
   // The workbench never opens other windows or navigates away from the Host / dev server origin.
   const allowedOrigin = new URL(process.env.AMO_STUDIO_DEV_URL ?? conn.url).origin;

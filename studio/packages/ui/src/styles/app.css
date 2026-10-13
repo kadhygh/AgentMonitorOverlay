@@ -84,7 +84,7 @@
   --panel: #fbfaf7;
   --panel-raised: #f4f2ed;
   --chip: #e7e3db;
-  --selected: #dde4ee;
+  --selected: #e7dfcd;
   --border: #d9d3c7;
   --border-strong: #2a2723;
   --text: #22201c;
@@ -101,11 +101,11 @@
   --muted-dot: #8d877c;
   --error: #a3302b;
   --error-text: #a3302b;
-  --selection: #c9d5e6;
+  --selection: #ead9b5;
   --error-bg: #f3dfdb;
   --error-border: #e0b4ad;
-  --tint: #e1e6ed;
-  --tint-strong: #cfd9e6;
+  --tint: #efe7d6;
+  --tint-strong: #e4d6b8;
   --code-bg: #f1eee7;
   --code-text: #22201c;
   --code-text-dim: #4a4640;
@@ -138,7 +138,7 @@
     --panel: #fbfaf7;
     --panel-raised: #f4f2ed;
     --chip: #e7e3db;
-    --selected: #dde4ee;
+    --selected: #e7dfcd;
     --border: #d9d3c7;
     --border-strong: #2a2723;
     --text: #22201c;
@@ -155,11 +155,11 @@
     --muted-dot: #8d877c;
     --error: #a3302b;
     --error-text: #a3302b;
-    --selection: #c9d5e6;
+    --selection: #ead9b5;
     --error-bg: #f3dfdb;
     --error-border: #e0b4ad;
-    --tint: #e1e6ed;
-    --tint-strong: #cfd9e6;
+    --tint: #efe7d6;
+    --tint-strong: #e4d6b8;
     --code-bg: #f1eee7;
     --code-text: #22201c;
     --code-text-dim: #4a4640;
@@ -201,7 +201,14 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .app { height: 100%; display: flex; flex-direction: column; }
 
 /* Top bar */
-.topbar { height: var(--topbar-h); flex: none; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-bottom: 2px solid var(--border-strong); background: var(--bg-header); }
+/* The top bar is also the window's title bar: it drags the window, and its right end leaves room for the window
+   controls Windows draws over it (env(titlebar-area-*) is set while they are shown; plain browsers fall back to 16px). */
+.topbar {
+  height: var(--topbar-h); flex: none; display: flex; align-items: center; gap: 16px; border-bottom: 2px solid var(--border-strong); background: var(--bg-header);
+  padding: 0 max(16px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 12px)) 0 16px;
+  -webkit-app-region: drag; user-select: none;
+}
+.topbar button, .topbar input, .topbar a, .topbar select { -webkit-app-region: no-drag; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: calc(var(--nav-w) - 32px); }
 /* The robot mark (design/icon/robot.svg); the tile is part of the drawing. */
 .brand-mark { width: 28px; height: 28px; display: block; flex: none; }
@@ -605,3 +612,8 @@ a.md-link { cursor: pointer; }
 }
 .new-session .options-picker { font-size: 12px; }
 .new-session .options-picker select { max-width: 130px; }
+
+/* Board drag and drop: the column a card is dragged over */
+.card[draggable="true"] { cursor: grab; }
+.card[draggable="true"]:active { cursor: grabbing; }
+.column.drop { border-radius: var(--r-l); background: var(--selected); box-shadow: 0 0 0 6px var(--selected); }

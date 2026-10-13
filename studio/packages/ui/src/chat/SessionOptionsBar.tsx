@@ -133,6 +133,11 @@ export function SessionOptionsBar({
           aria-expanded={tray === "model"}
           disabled={disabled || !choices}
           onClick={() => setTray((t) => (t === "model" ? null : "model"))}
+          onContextMenu={(e) => {
+            // Right click: the same models, as on the tiles elsewhere.
+            e.preventDefault();
+            setTray("model");
+          }}
           data-testid="switch-model"
         >
           <Mark profile={profile} small />

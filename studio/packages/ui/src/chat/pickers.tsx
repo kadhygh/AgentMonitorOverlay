@@ -1,3 +1,4 @@
+import { useEffect, type MouseEvent } from "react";
 import type { ModelOption, ModelProfile, PermissionOption, ProfileChoices } from "@amo-studio/protocol";
 import { effortLabel } from "../lib/choices.js";
 
@@ -38,6 +39,7 @@ export function ModelTile({
   small = false,
   shortcut,
   onClick,
+  onContextMenu,
 }: {
   profile: ModelProfile | undefined;
   label: { main: string; sub: string | null };
@@ -47,6 +49,8 @@ export function ModelTile({
   /** Shown as a hint, e.g. "Alt 1". */
   shortcut?: string;
   onClick(): void;
+  /** Right click: the account's models in a small menu. */
+  onContextMenu?(e: MouseEvent<HTMLButtonElement>): void;
 }) {
   return (
     <button
@@ -55,7 +59,8 @@ export function ModelTile({
       aria-pressed={pressed}
       disabled={disabled}
       onClick={onClick}
-      title={[label.sub ? `${label.sub} · ${label.main}` : label.main, shortcut].filter(Boolean).join(" · ")}
+      {...(onContextMenu ? { onContextMenu } : {})}
+      title={[label.sub ? `${label.sub} · ${label.main}` : label.main, shortcut, onContextMenu ? "右键选具体型号" : ""].filter(Boolean).join(" · ")}
       data-testid="model-tile"
     >
       <Mark profile={profile} small={small} />
@@ -213,6 +218,65 @@ export function PermissionTiles({ choices, value, onChange, disabled }: { choice
           <span>{p.unavailable ?? SHORT[p.id] ?? p.description}</span>
         </button>
       ))}
+    </div>
+  );
+}
+
+/**
+ * Right-click menu on a model tile: the account's own models, one click each (the tile's account stays). Closes on
+ * a pick, Escape or a click elsewhere.
+ */
+export function ModelMenu({
+  x,
+  y,
+  profile,
+  models,
+  current,
+  onPick,
+  onClose,
+}: {
+  x: number;
+  y: number;
+  profile: ModelProfile | undefined;
+  /** null while the list is loading. */
+  models: readonly ModelOption[] | null;
+  /** The model picked now (null: the account's default; undefined: this account is not the one picked). */
+  current: string | null | undefined;
+  onPick(model: ModelOption): void;
+  onClose(): void;
+}) {
+  useEffect(() => {
+    const close = (e: Event) => {
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !(e.target as Element | null)?.closest?.(".model-menu")) onClose();
+    };
+    window.addEventListener("keydown", close);
+    window.addEventListener("mousedown", close);
+    window.addEventListener("blur", onClose);
+    return () => {
+      window.removeEventListener("keydown", close);
+      window.removeEventListener("mousedown", close);
+      window.removeEventListener("blur", onClose);
+    };
+  }, [onClose]);
+  // Keep the menu on screen.
+  const left = Math.min(x, window.innerWidth - 240);
+  const top = Math.min(y, window.innerHeight - 40 - (models?.length ?? 1) * 32);
+  return (
+    <div className="model-menu ctx-menu" role="menu" aria-label={`${profile?.label ?? "模型"} 的型号`} style={{ left, top }} data-testid="model-menu">
+      <span className="model-menu-h">
+        <Mark profile={profile} small />
+        {profile?.label ?? "模型"}
+      </span>
+      {models === null && <span className="model-menu-note">正在读取…</span>}
+      {models?.map((m) => {
+        const on = current !== undefined && (current === m.id || (current === null && !!m.isDefault));
+        return (
+          <button key={m.id} type="button" role="menuitemradio" aria-checked={on} title={m.description} onClick={() => onPick(m)}>
+            <span className="model-menu-check">{on ? "✓" : ""}</span>
+            {m.label}
+          </button>
+        );
+      })}
     </div>
   );
 }

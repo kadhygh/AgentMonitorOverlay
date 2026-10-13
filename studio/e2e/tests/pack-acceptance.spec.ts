@@ -45,6 +45,7 @@ test("stage 6 acceptance: an example pack from loading to an agent ticking its c
 
   // 3. A session from the preset: the person checks the prompt and adds an instruction (here, the mock's directive to
   //    read the conventions through the AMO MCP) before starting it.
+  if (!(await page.getByLabel("按预设新建会话").isVisible())) await page.getByTestId("new-session-toggle").click();
   await page.getByLabel("按预设新建会话").selectOption({ label: "示例：小游戏玩法开发 · 按约定实现" });
   const form = page.getByTestId("preset-draft");
   await expect(form.getByLabel("预设提示词")).toHaveValue(/请实现任务「\[玩法\] 冲刺技能」/);

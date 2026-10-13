@@ -22,6 +22,7 @@ declare global {
       /** From Focus: show a task (and session) in the workbench. */
       /** A task (and session); without a task (a topic session) the workbench shows the board. */
       openInWorkbench?(target: { taskId?: string; sessionId?: string }): Promise<void>;
+      setTitleBarColors?(colors: { color: string; symbolColor: string }): void;
       /** Workbench: Focus asked to show a task. */
       onNavigate?(cb: (target: { taskId: string; sessionId?: string }) => void): () => void;
     };

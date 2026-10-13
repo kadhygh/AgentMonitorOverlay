@@ -3,6 +3,7 @@ import { workspacesActivity, type Task } from "@amo-studio/protocol";
 import { Board, type Scope } from "./board/Board.js";
 import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
+import { call } from "./host/client.js";
 import { NewTaskPage } from "./newtask/NewTaskPage.js";
 import { QuickStart } from "./newtask/QuickStart.js";
 import { TaskPage } from "./task/TaskPage.js";
@@ -141,6 +142,7 @@ export function App() {
               topics={state.topics}
               scope={scope}
               onOpen={openTask}
+              onMove={(task, column) => void call(link, "PATCH /api/tasks/:id", { id: task.id }, { column }).catch(() => undefined)}
               mail={mailByTask(unreadMail, state.sessions)}
               decisions={decisionsByTask}
               checklist={checklistByTask(checklist)}

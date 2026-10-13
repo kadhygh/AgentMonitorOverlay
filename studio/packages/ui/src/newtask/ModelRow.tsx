@@ -1,8 +1,9 @@
+import { useState } from "react";
 import type { ModelProfile } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { useChoicesFor } from "../lib/choices.js";
 import { commonPicks, samePick, type ModelPick } from "../lib/recents.js";
-import { Mark, ModelTile, pickLabel } from "../chat/pickers.js";
+import { Mark, ModelMenu, ModelTile, pickLabel } from "../chat/pickers.js";
 
 /** The 常用 tiles: recent picks first; the current pick always among them. */
 export function tilePicks(profiles: readonly ModelProfile[], current: ModelPick, count = 4): ModelPick[] {
@@ -29,9 +30,13 @@ export function ModelRow({
   onToggleDrawer?: () => void;
   small?: boolean;
 }) {
-  const tiles = tilePicks(profiles, pick, small ? 4 : 4);
-  // Model names for tiles that name a model, and every model when the drawer is open.
-  const choices = useChoicesFor(link, drawer ? profiles.map((p) => p.id) : tiles.filter((t) => t.model).map((t) => t.profileId));
+  const tiles = tilePicks(profiles, pick);
+  const [menu, setMenu] = useState<{ x: number; y: number; profileId: string } | null>(null);
+  // Model names for tiles that name a model, every model when the drawer is open, and the right-clicked account's.
+  const choices = useChoicesFor(link, [
+    ...(drawer ? profiles.map((p) => p.id) : tiles.filter((t) => t.model).map((t) => t.profileId)),
+    ...(menu ? [menu.profileId] : []),
+  ]);
   const profile = (id: string) => profiles.find((p) => p.id === id);
   return (
     <>
@@ -45,6 +50,10 @@ export function ModelRow({
             small={small}
             shortcut={`Alt ${i + 1}`}
             onClick={() => onPick(t)}
+            onContextMenu={(e) => {
+              e.preventDefault();
+              setMenu({ x: e.clientX, y: e.clientY, profileId: t.profileId });
+            }}
           />
         ))}
         {onToggleDrawer && (
@@ -53,6 +62,20 @@ export function ModelRow({
           </button>
         )}
       </div>
+      {menu && (
+        <ModelMenu
+          x={menu.x}
+          y={menu.y}
+          profile={profile(menu.profileId)}
+          models={choices.get(menu.profileId)?.models ?? (choices.has(menu.profileId) ? [] : null)}
+          current={pick.profileId === menu.profileId ? pick.model : undefined}
+          onPick={(m) => {
+            onPick({ profileId: menu.profileId, model: m.isDefault ? null : m.id });
+            setMenu(null);
+          }}
+          onClose={() => setMenu(null)}
+        />
+      )}
       {drawer && (
         <div className="model-drawer" data-testid="model-drawer">
           {profiles.map((p) => {

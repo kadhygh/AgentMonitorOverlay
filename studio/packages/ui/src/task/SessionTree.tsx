@@ -6,7 +6,8 @@ import { activeModel, useProfileChoices } from "../lib/choices.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
 import { EffortBars } from "../chat/pickers.js";
 import { ModelRow } from "../newtask/ModelRow.js";
-import { SESSION_LOOK } from "../lib/status.js";
+import { relativeTime, SESSION_LOOK } from "../lib/status.js";
+import { Mark } from "../chat/pickers.js";
 
 const KIND = { main: "会话", fork: "分支", sub: "子 agent" } as const;
 
@@ -39,6 +40,9 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   const { choices } = useProfileChoices(link, pick.profileId);
   const model = choices ? activeModel(choices, pick.model ? { model: pick.model } : {}) : undefined;
   const [showArchived, setShowArchived] = useState(false);
+  // The new-session form opens on demand (and when the task has no live session yet).
+  const [creating, setCreating] = useState(false);
+  const formOpen = creating || live.length === 0;
   const profile = (id: string) => profiles.find((p) => p.id === id);
 
   const rows: Array<{ node: SessionNode; depth: number }> = [];
@@ -52,76 +56,90 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
 
   return (
     <aside className="session-list" aria-label="会话">
-      <div className="nav-label">会话 {live.length}</div>
-      {rows.map(({ node, depth }, idx) => {
-        const s = node.session;
-        const look = SESSION_LOOK[s.status];
-        const letters = unread?.get(s.id) ?? 0;
-        const kind = [KIND[s.kind], shortModel(profile(s.profileId)), s.writer === "terminal-shared" ? "终端" : "", letters ? `${letters} 条留言` : ""]
-          .filter(Boolean)
-          .join(" · ");
-        return (
-          <button
-            key={s.id}
-            type="button"
-            className="nav-row session-row"
-            aria-current={s.id === selected}
-            onClick={() => onSelect(s.id)}
-            style={{ paddingLeft: 8 + depth * 16, marginTop: depth === 0 && idx > 0 ? 8 : 0 }}
-            data-testid="session-row"
-            data-kind={s.kind}
-            data-depth={depth}
-          >
-            <span className="dot" style={{ background: look.dot }} title={look.label} />
-            <span className="session-text">
-              <span className="name">{s.title || "新会话"}</span>
-              <span className="session-kind">{kind}</span>
-            </span>
-          </button>
-        );
-      })}
-
-      <div className="new-session" aria-label="新会话">
-        <span className="pick-lab">新会话</span>
-        <ModelRow
-          link={link}
-          profiles={profiles}
-          pick={pick}
-          onPick={(next) => {
-            setPick(next);
-            setEffort(null);
-          }}
-          drawer={drawer}
-          onToggleDrawer={() => setDrawer((v) => !v)}
-          small
-        />
-        {model && model.efforts.length > 0 && <EffortBars efforts={model.efforts} value={effort} fallback={model.defaultEffort} onChange={setEffort} small />}
-        <button
-          type="button"
-          className="add-ws-toggle"
-          disabled={busy || !pick.profileId}
-          onClick={() => {
-            rememberProfile(pick.profileId);
-            rememberPick(pick);
-            const options: SessionOptions = { ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) };
-            onNewSession({ profileId: pick.profileId, ...(Object.keys(options).length ? { options } : {}) });
-          }}
-        >
-          + 新会话
+      <div className="slist-head">
+        <span className="nav-label">会话 {live.length}</span>
+        <button type="button" className="btn-ghost small" aria-expanded={formOpen} onClick={() => setCreating((v) => !v)} data-testid="new-session-toggle">
+          {formOpen && live.length > 0 ? "收起" : "+ 新会话"}
         </button>
-        {presets.length > 0 && onPreset && (
-          <label className="stack-field">
-            按预设
-            <select value="" onChange={(e) => e.target.value && onPreset(e.target.value)} disabled={busy} aria-label="按预设新建会话">
-              <option value="">选择启动预设…</option>
-              {presets.map((p) => (
-                <option key={p.key} value={p.key}>
-                  {p.label}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
+      </div>
+
+      {formOpen && (
+        <div className="new-session" aria-label="新会话">
+          <ModelRow
+            link={link}
+            profiles={profiles}
+            pick={pick}
+            onPick={(next) => {
+              setPick(next);
+              setEffort(null);
+            }}
+            drawer={drawer}
+            onToggleDrawer={() => setDrawer((v) => !v)}
+            small
+          />
+          {model && model.efforts.length > 0 && <EffortBars efforts={model.efforts} value={effort} fallback={model.defaultEffort} onChange={setEffort} small />}
+          <button
+            type="button"
+            className="btn-primary small"
+            disabled={busy || !pick.profileId}
+            onClick={() => {
+              rememberProfile(pick.profileId);
+              rememberPick(pick);
+              const options: SessionOptions = { ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) };
+              onNewSession({ profileId: pick.profileId, ...(Object.keys(options).length ? { options } : {}) });
+              setCreating(false);
+            }}
+          >
+            开始新会话
+          </button>
+          {presets.length > 0 && onPreset && (
+            <label className="stack-field">
+              按扩展包预设
+              <select value="" onChange={(e) => e.target.value && onPreset(e.target.value)} disabled={busy} aria-label="按预设新建会话">
+                <option value="">选择启动预设…</option>
+                {presets.map((p) => (
+                  <option key={p.key} value={p.key}>
+                    {p.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+        </div>
+      )}
+
+      <div className="slist">
+        {rows.map(({ node, depth }) => {
+          const s = node.session;
+          const look = SESSION_LOOK[s.status];
+          const letters = unread?.get(s.id) ?? 0;
+          const p = profile(s.profileId);
+          const meta = [s.kind === "main" ? "" : KIND[s.kind], shortModel(p), look.label, s.writer === "terminal-shared" ? "终端已接入" : ""].filter(Boolean).join(" · ");
+          return (
+            <button
+              key={s.id}
+              type="button"
+              className={depth > 0 ? "srow child" : "srow"}
+              aria-current={s.id === selected}
+              onClick={() => onSelect(s.id)}
+              style={{ marginLeft: depth * 14 }}
+              data-testid="session-row"
+              data-kind={s.kind}
+              data-depth={depth}
+            >
+              <span className="srow-top">
+                <span className="dot" style={{ background: look.dot }} title={look.label} />
+                <span className="srow-title">{s.title || "新会话"}</span>
+                <span className="srow-time">{relativeTime(s.updatedAt)}</span>
+              </span>
+              <span className="srow-meta">
+                <Mark profile={p} small />
+                <span className="srow-meta-text">{meta}</span>
+                {letters > 0 && <span className="srow-mail">{letters} 条留言</span>}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {archivedRoots.length > 0 && (

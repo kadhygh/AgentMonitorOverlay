@@ -43,7 +43,8 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   await expect(rows.nth(1)).toContainText("分支 · Mock 模型");
 
   // A second independent session in the same task.
-  await page.getByRole("button", { name: "+ 新会话" }).click();
+  await page.getByTestId("new-session-toggle").click();
+  await page.getByRole("button", { name: "开始新会话" }).click();
   await expect(rows).toHaveCount(3);
   await expect(rows.nth(2)).toHaveAttribute("data-depth", "0");
 

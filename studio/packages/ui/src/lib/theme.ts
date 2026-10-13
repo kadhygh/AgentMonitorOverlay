@@ -17,6 +17,22 @@ export function themePref(): ThemePref {
 export function applyTheme(pref: ThemePref = themePref()): void {
   if (pref === "system") delete document.documentElement.dataset.theme;
   else document.documentElement.dataset.theme = pref;
+  syncTitleBar();
+}
+
+/** "#rrggbb" for a colour token, or null when it is not a plain hex colour. */
+function tokenHex(name: string): string | null {
+  const v = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+  return /^#[0-9a-f]{6}$/i.test(v) ? v : null;
+}
+
+/** The window controls over the top bar take the bar's colours (Electron workbench window only). */
+export function syncTitleBar(): void {
+  const set = window.amo?.setTitleBarColors;
+  if (!set) return;
+  const color = tokenHex("--bg-header");
+  const symbolColor = tokenHex("--text");
+  if (color && symbolColor) set({ color, symbolColor });
 }
 
 export function setThemePref(pref: ThemePref): void {
@@ -33,8 +49,15 @@ export function followThemeChanges(): () => void {
   const onStorage = (e: StorageEvent) => {
     if (e.key === KEY) applyTheme();
   };
+  // "跟随系统": the system switching between light and dark changes the bar's colours too.
+  const media = window.matchMedia("(prefers-color-scheme: dark)");
+  const onMedia = () => syncTitleBar();
   window.addEventListener("storage", onStorage);
-  return () => window.removeEventListener("storage", onStorage);
+  media.addEventListener("change", onMedia);
+  return () => {
+    window.removeEventListener("storage", onStorage);
+    media.removeEventListener("change", onMedia);
+  };
 }
 
 export const THEME_LABELS: Record<ThemePref, string> = { system: "跟随系统", light: "浅色", dark: "深色" };
