@@ -174,4 +174,13 @@ test("a finished turn lists the files it changed; each opens its diff, then the 
   await edit.locator(".pr-title").click();
   await expect(edit.locator(".pr-diff-head").getByTestId("file-link")).toHaveText(DEMO_FILE);
   await screenshot(app, "stage-12", "S12-C-tool-rows", page);
+
+  // The dark theme, with the turn's diff open again.
+  await page.getByRole("button", { name: "设置" }).click();
+  await page.getByRole("dialog", { name: "设置" }).getByRole("radio", { name: "深色" }).click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByRole("dialog", { name: "设置" })).toHaveCount(0);
+  await row.click();
+  await expect(diff).toBeVisible();
+  await screenshot(app, "stage-12", "S12-C-turn-changes-dark", page);
 });
