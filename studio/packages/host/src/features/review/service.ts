@@ -1,26 +1,12 @@
-import type { Annotation, Id, NewAnnotationInput, Scratchpad } from "@amo-studio/protocol";
+import type { Annotation, Id, NewAnnotationInput } from "@amo-studio/protocol";
 import { composeAnnotationMessage } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import type { SendMode } from "../../runtime/runtime.js";
-import { HostError, SCRATCHPAD_KEY } from "../../core/shared.js";
+import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
-/** Review (stage 2): the scratchpad and annotations sent back to a session. */
+/** Review (stage 2): annotations sent back to a session. The scratchpad has its own feature since stage 11. */
 export class ReviewFeature extends Feature {
-  scratchpad(): Scratchpad {
-    const kv = this.store.getKv(SCRATCHPAD_KEY);
-    return { text: kv?.value ?? "", updatedAt: kv?.updatedAt ?? null };
-  }
-
-  saveScratchpad(text: unknown): Scratchpad {
-    if (typeof text !== "string") throw new HostError("bad_request", "text must be a string");
-    if (text.length > 200_000) throw new HostError("bad_request", "scratchpad is limited to 200000 characters");
-    const kv = this.store.setKv(SCRATCHPAD_KEY, text);
-    const scratchpad = { text: kv.value, updatedAt: kv.updatedAt };
-    this.publish({ type: "scratchpad.updated", scratchpad });
-    return scratchpad;
-  }
-
   annotations(sessionId: Id): Annotation[] {
     this.requireSession(sessionId);
     return this.store.listAnnotations(sessionId);

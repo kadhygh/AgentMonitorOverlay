@@ -6,6 +6,7 @@ import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/th
 import { CredentialsSection } from "./CredentialsSection.js";
 import { PresetsSection } from "./PresetsSection.js";
 import { FeaturesSection } from "./FeaturesSection.js";
+import { ShortcutSection } from "../scratchpad/ShortcutSection.js";
 import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 
 /** Studio-wide settings from the Host, kept live. */
@@ -144,6 +145,7 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
         </section>
         <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} />
         <PresetsSection link={link} presets={settings?.presets ?? []} />
+        <ShortcutSection link={link} shortcut={settings?.scratchpadShortcut ?? ""} />
         <CredentialsSection link={link} />
       </div>
     </div>

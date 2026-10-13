@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from "react";
 import { composeAnnotationMessage, type Annotation } from "@amo-studio/protocol";
 import type { SelectionAnchor } from "../lib/selection.js";
 import type { HostLink } from "../host/client.js";
-import { Scratchpad } from "./Scratchpad.js";
+import { ScratchpadEntry } from "../scratchpad/ScratchpadEntry.js";
 
 interface AnnotationPanelProps {
   link: HostLink;
@@ -100,7 +100,7 @@ export function AnnotationPanel({ link, annotations, pending, busy, canSend, onS
         </div>
       )}
 
-      <Scratchpad link={link} />
+      <ScratchpadEntry link={link} />
     </aside>
   );
 }

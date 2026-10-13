@@ -7,6 +7,7 @@ import { readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
+import { installScratchpad } from "./scratchpad-window.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
@@ -148,6 +149,8 @@ if (!app.requestSingleInstanceLock()) {
         focusWindow?.destroy();
       });
       if (prefs.focus(!testMode)) setFocusVisible(true);
+      // The scratchpad window (便签) and its global shortcut.
+      installScratchpad({ host, url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, dataDir, mainWindow });
       if (!testMode) {
         // Displays unplugged, rearranged or rescaled: keep both windows reachable.
         const refit = () => {
