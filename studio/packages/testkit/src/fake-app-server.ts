@@ -55,6 +55,10 @@ export interface TurnContext {
   mcpForm(message: string, requestedSchema: Record<string, unknown>, serverName?: string): Promise<Record<string, unknown>>;
   /** request_user_input (`item/tool/requestUserInput`); resolves with the client's response ({ answers }). */
   requestUserInput(questions: Array<Record<string, unknown>>): Promise<Record<string, unknown>>;
+  /** Emits a notification about this turn (`threadId` and `turnId` are filled in). */
+  notify(method: string, params?: Record<string, unknown>): void;
+  /** Emits item/started, then item/completed (with `done` merged in, e.g. a final status). */
+  item(item: Record<string, unknown>, done?: Record<string, unknown>): void;
   sleep(ms: number): Promise<void>;
 }
 
@@ -67,7 +71,10 @@ export class TurnInterrupted extends Error {}
  * `[[shell: cmd]]` approval + command, `[[slow]]` slow stream, `[[subagent]]` spawns a subagent, `[[fail]]` fails the turn,
  * `[[elicit]]` an MCP tool approval (replies `FAKE-ELICITED: <action>`), `[[ask]]` request_user_input with FAKE_QUESTIONS
  * (replies `FAKE-ANSWERS: <response JSON>`), `[[form]]` an MCP form with FAKE_FORM_SCHEMA (replies `FAKE-FORM: <response
- * JSON>`), otherwise replies `FAKE: <text>` (plus
+ * JSON>`), `[[retry]]` two retried errors before the reply, `[[notices]]` the warnings Codex sends about a turn,
+ * `[[items]]` the item types without a row of their own (image view and generation, hook prompt, collab call, sleep,
+ * function output), `[[progress]]` an MCP call with progress and a command that is typed into, otherwise replies
+ * `FAKE: <text>` (plus
  * ` [images: N]` when it carried images). Steered input
  * is acknowledged in the reply.
  */
@@ -92,6 +99,46 @@ export const defaultTurnScript: TurnScript = async (ctx) => {
   if (ctx.userText.includes("[[form]]")) {
     const response = await ctx.mcpForm("请填写发布信息", FAKE_FORM_SCHEMA);
     await ctx.agentMessage(`FAKE-FORM: ${JSON.stringify(response)}`);
+    return;
+  }
+  if (ctx.userText.includes("[[retry]]")) {
+    for (const n of [1, 2]) {
+      ctx.notify("error", { error: { message: `Reconnecting... ${n}/5`, codexErrorInfo: { responseStreamDisconnected: { httpStatusCode: null } }, additionalDetails: "stream disconnected before completion" }, willRetry: true });
+      await ctx.sleep(80);
+    }
+    await ctx.agentMessage("FAKE-RETRIED");
+    return;
+  }
+  if (ctx.userText.includes("[[notices]]")) {
+    ctx.notify("model/rerouted", { fromModel: "gpt-5.5", toModel: "gpt-5.5-mini", reason: "highRiskCyberActivity" });
+    ctx.notify("warning", { message: "Heads up: long threads can be less accurate." });
+    ctx.notify("warning", { message: "Heads up: long threads can be less accurate." });
+    ctx.notify("guardianWarning", { message: "The guardian blocked a risky command." });
+    ctx.notify("mcpServer/startupStatus/updated", { name: "docs", status: "failed", error: "spawn docs-mcp ENOENT\nmore", failureReason: null });
+    ctx.notify("hook/completed", { run: { eventName: "preToolUse", status: "blocked", statusMessage: "rm is not allowed", sourcePath: "C:\\hooks\\guard.ps1", entries: [] } });
+    ctx.notify("hook/completed", { run: { eventName: "postToolUse", status: "completed", statusMessage: null, sourcePath: "C:\\hooks\\fmt.ps1", entries: [] } });
+    await ctx.agentMessage("FAKE-NOTICED");
+    return;
+  }
+  if (ctx.userText.includes("[[items]]")) {
+    ctx.item({ type: "imageView", id: randomUUID(), path: "C:\\work\\shot.png" });
+    ctx.item({ type: "imageGeneration", id: randomUUID(), status: "generating", revisedPrompt: "a red cube", result: "", failure: null }, { status: "completed", savedPath: "C:\\work\\cube.png" });
+    ctx.item({ type: "hookPrompt", id: randomUUID(), fragments: [{ text: "Remember the style guide.", hookRunId: "h1" }] });
+    ctx.item({ type: "collabAgentToolCall", id: randomUUID(), tool: "wait", status: "inProgress", senderThreadId: ctx.thread.id, receiverThreadIds: ["t-1", "t-2"], prompt: null, model: null, reasoningEffort: null, agentsStates: {} }, { status: "completed" });
+    ctx.item({ type: "sleep", id: randomUUID(), durationMs: 3000 });
+    ctx.item({ type: "functionCallOutput", id: randomUUID(), name: "lookup", namespace: "tools", output: "42" });
+    await ctx.agentMessage("FAKE-ITEMS");
+    return;
+  }
+  if (ctx.userText.includes("[[progress]]")) {
+    const mcpId = randomUUID();
+    ctx.notify("item/started", { item: { type: "mcpToolCall", id: mcpId, server: "docs", tool: "index", status: "inProgress", arguments: {}, result: null, error: null, durationMs: null } });
+    ctx.notify("item/mcpToolCall/progress", { itemId: mcpId, message: "indexed 40 of 120 files" });
+    const cmdId = randomUUID();
+    ctx.notify("item/started", { item: { type: "commandExecution", id: cmdId, command: "python setup.py", cwd: ctx.thread.cwd, status: "inProgress", commandActions: [], aggregatedOutput: null, exitCode: null, durationMs: null } });
+    ctx.notify("item/commandExecution/terminalInteraction", { itemId: cmdId, processId: "p1", stdin: "y\n" });
+    ctx.notify("item/commandExecution/terminalInteraction", { itemId: cmdId, processId: "p1", stdin: "" });
+    await ctx.agentMessage("FAKE-PROGRESS");
     return;
   }
   if (ctx.userText.includes("[[subagent]]")) {
@@ -276,6 +323,15 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       userText,
       images,
       sleep,
+      notify(method, params = {}) {
+        notify(thread.id, method, { threadId: thread.id, turnId: turn.id, ...params });
+      },
+      item(item, done = {}) {
+        notify(thread.id, "item/started", { item, threadId: thread.id, turnId: turn.id, startedAtMs: Date.now() });
+        const final = { ...item, ...done };
+        turn.items.push(final);
+        notify(thread.id, "item/completed", { item: final, threadId: thread.id, turnId: turn.id, completedAtMs: Date.now() });
+      },
       async agentMessage(text, opts = {}) {
         check();
         const itemId = randomUUID();
@@ -480,6 +536,71 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       emitItem(t, t.activeTurn, { type: "userMessage", id: randomUUID(), clientId: null, content: params.input });
       return { turnId: t.activeTurn.id };
     },
+    // Compaction runs as a turn of its own with a contextCompaction item, then a warning (as Codex 0.162 does).
+    "thread/compact/start": (_client, params) => {
+      const t = requireThread(params);
+      if (t.activeTurn) throw rpcError(-32600, "a turn is already active");
+      const turn: FakeTurn = { id: randomUUID(), status: "inProgress", items: [], steered: [], interrupted: false };
+      t.turns.push(turn);
+      t.activeTurn = turn;
+      setTimeout(() => {
+        notify(t.id, "turn/started", { threadId: t.id, turn: { ...turnView(turn), rootTurnId: turn.id } });
+        const item = { type: "contextCompaction", id: randomUUID() };
+        notify(t.id, "item/started", { item, threadId: t.id, turnId: turn.id, startedAtMs: Date.now() });
+        notify(t.id, "thread/tokenUsage/updated", { threadId: t.id, turnId: turn.id, tokenUsage: { total: { totalTokens: 9000, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 }, last: { totalTokens: 1781, inputTokens: 0, cachedInputTokens: 0, outputTokens: 0, reasoningOutputTokens: 0 }, modelContextWindow: 200000 } });
+        notify(t.id, "item/completed", { item, threadId: t.id, turnId: turn.id, completedAtMs: Date.now() });
+        notify(t.id, "warning", { threadId: t.id, message: "Heads up: Long threads and multiple compactions can cause the model to be less accurate." });
+        turn.status = "completed";
+        t.activeTurn = null;
+        notify(t.id, "turn/completed", { threadId: t.id, turn: turnView(turn) });
+      }, 20);
+      return {};
+    },
+    // Review mode, with Codex 0.162's turn ids: the items and turn/completed carry the review's id, turn/started
+    // another one with the review's as rootTurnId; the review's own message streams and is never completed.
+    "review/start": (_client, params) => {
+      const t = requireThread(params);
+      if (t.activeTurn) throw rpcError(-32600, "a turn is already active");
+      const root: FakeTurn = { id: randomUUID(), status: "inProgress", items: [], steered: [], interrupted: false };
+      t.turns.push(root);
+      t.activeTurn = root;
+      const target = params.target as { type: string; instructions?: string };
+      const review = target.type === "custom" ? String(target.instructions) : "current changes";
+      const findings = `FAKE-REVIEW: ${review}`;
+      setTimeout(() => {
+        const at = { threadId: t.id, turnId: root.id };
+        const entered = { type: "enteredReviewMode", id: randomUUID(), review };
+        notify(t.id, "item/started", { item: entered, ...at });
+        notify(t.id, "item/completed", { item: entered, ...at });
+        notify(t.id, "turn/started", { threadId: t.id, turn: { ...turnView({ ...root, id: randomUUID() }), rootTurnId: root.id } });
+        const prompt = { type: "userMessage", id: randomUUID(), clientId: null, content: [{ type: "text", text: "Review the current code changes and provide prioritized findings.", text_elements: [] }] };
+        notify(t.id, "item/started", { item: prompt, ...at });
+        notify(t.id, "item/completed", { item: prompt, ...at });
+        const raw = randomUUID();
+        notify(t.id, "item/started", { item: { type: "agentMessage", id: raw, text: "" }, ...at });
+        notify(t.id, "item/agentMessage/delta", { ...at, itemId: raw, delta: "{\"findings\":[]}" });
+        const exited = { type: "exitedReviewMode", id: randomUUID(), review: findings };
+        notify(t.id, "item/started", { item: exited, ...at });
+        notify(t.id, "item/completed", { item: exited, ...at });
+        const echo = { type: "agentMessage", id: randomUUID(), text: findings, phase: null };
+        notify(t.id, "item/started", { item: { ...echo, text: "" }, ...at });
+        notify(t.id, "item/completed", { item: echo, ...at });
+        root.status = "completed";
+        t.activeTurn = null;
+        notify(t.id, "turn/completed", { threadId: t.id, turn: turnView(root) });
+      }, 20);
+      return { turn: turnView(root), reviewThreadId: t.id };
+    },
+    "skills/list": (_client, params) => ({
+      data: ((params.cwds as string[] | undefined) ?? [process.cwd()]).map((cwd) => ({
+        cwd,
+        skills: [
+          { name: "release-notes", description: "Write release notes from the changes", shortDescription: "写发布说明", path: `${cwd}\\.agents\\skills\\release-notes\\SKILL.md`, scope: "repo", enabled: true, pluginId: null },
+          { name: "disabled-skill", description: "Off", path: `${cwd}\\.agents\\skills\\off\\SKILL.md`, scope: "repo", enabled: false, pluginId: null },
+        ],
+        errors: [],
+      })),
+    }),
     "turn/interrupt": (_client, params) => {
       const t = requireThread(params);
       if (t.activeTurn && t.activeTurn.id === params.turnId) t.activeTurn.interrupted = true;

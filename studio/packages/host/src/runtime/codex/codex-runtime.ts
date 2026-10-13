@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { codexAnswers, elicitationForm, formContent, storedAnswers, type ApprovalDecision, type Attachment, type HostEvent, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionPrompt, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SessionStatus, type ToolFields, type ToolKind, type ToolStatus, type TurnState, type TurnUsage, type Workspace, type AccountUsage } from "@amo-studio/protocol";
+import { codexAnswers, elicitationForm, formContent, storedAnswers, type ApprovalDecision, type Attachment, type HostEvent, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionPrompt, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SessionStatus, type SlashCommand, type SlashCommandList, type SlashCommandResult, type ToolFields, type ToolKind, type ToolStatus, type TurnRetry, type TurnState, type TurnUsage, type Workspace, type AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
@@ -52,6 +52,15 @@ interface SessionState {
   turns: Map<string, Id>;
   /** reasoning items: which stream they show (summary or raw content) and when they started */
   reasoning: Map<string, { channel?: "summary" | "content"; startedAt: number }>;
+  /**
+   * Turns in review mode (review/start). Their items carry the review's own turn id, which is also what turn/completed
+   * names, while turn/started names another one with it as `rootTurnId` (Codex 0.162; spikes/s12-e-codex-cli.mjs).
+   */
+  reviewTurns: Set<string>;
+  /** notice key -> its item, for the turn in progress (repeats update the row) */
+  notices: Map<string, Id>;
+  /** The turn whose item shows a retry (cleared when the model answers). */
+  retrying: string | null;
 }
 
 interface PendingApproval {
@@ -89,6 +98,10 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   private readonly attached = new WeakSet<CodexServerHandle["client"]>();
   private readonly usageCache = new Map<Id, AccountUsage>();
   private readonly modelCache = new Map<Id, { at: number; models: ModelOption[] }>();
+  /** Notices a server sent for no thread (config warnings, deprecations, MCP start-up): shown in the next turn. */
+  private readonly serverNotices = new Map<Id, Array<{ level: "info" | "warning"; message: string; key: string }>>();
+  /** skills/list per profile and folder. */
+  private readonly skillCache = new Map<string, { at: number; skills: CodexSkill[] }>();
 
   constructor(private readonly options: CodexRuntimeOptions) {
     super();
@@ -132,11 +145,11 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   }
 
   /** Starts a turn, or steers the running one; images go as `localImage` input (app-server reads the file). */
-  async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []): Promise<{ mode: "start" | "steer" }> {
+  async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = [], extra: ReadonlyArray<Record<string, unknown>> = []): Promise<{ mode: "start" | "steer" }> {
     const session = this.writable(sessionId);
     const handle = await this.handleFor(session.profileId);
     const st = this.sessionState(sessionId);
-    const input = [...(text ? [{ type: "text", text, text_elements: [] }] : []), ...images.map((a) => ({ type: "localImage", path: a.path }))];
+    const input = [...(text ? [{ type: "text", text, text_elements: [] }] : []), ...images.map((a) => ({ type: "localImage", path: a.path })), ...extra];
     if (!session.title) this.updateSession(sessionId, { title: (text || "图片").slice(0, 60) });
     if (st.activeTurnId) {
       await handle.client.request("turn/steer", { threadId: session.runtimeRef!, expectedTurnId: st.activeTurnId, input } as never);
@@ -297,6 +310,119 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     this.afterAnswer(sessionId);
   }
 
+  // ---- CLI features (stage 12, S12-E) -------------------------------------------------------------------------------
+
+  /**
+   * Codex has no command line in app-server: its `/` commands are requests. Offered: review mode (review/start) and the
+   * project's skills (skills/list); `compact` is Studio's own and maps to thread/compact/start.
+   */
+  async listCommands(sessionId: Id): Promise<SlashCommandList> {
+    const session = this.requireSession(sessionId);
+    const commands: SlashCommand[] = [
+      {
+        name: "code-review",
+        description: "让 Codex 审查改动：默认审查未提交的改动，也可以写 base <分支>、commit <提交> 或你的审查要求",
+        argumentHint: "[base <分支> | commit <提交> | 要求]",
+        group: "runtime",
+      },
+    ];
+    try {
+      for (const skill of await this.skills(session)) {
+        commands.push({ name: skill.name, description: (skill.shortDescription || skill.description).replace(/\s+/g, " ").trim(), group: "skill" });
+      }
+      return { commands };
+    } catch (err) {
+      this.emit("log", `skills/list failed for ${sessionId}: ${String(err)}`);
+      return { commands, note: `读不到 Codex 的 skills：${String((err as Error).message ?? err)}` };
+    }
+  }
+
+  private async skills(session: Session): Promise<CodexSkill[]> {
+    const cwd = this.store.getWorkspace(session.workspaceId)?.path;
+    if (!cwd) return [];
+    const key = `${session.profileId}|${cwd}`;
+    const cached = this.skillCache.get(key);
+    if (cached && Date.now() - cached.at < 60_000) return cached.skills;
+    const handle = await this.handleFor(session.profileId);
+    const r = (await handle.client.request("skills/list", { cwds: [cwd] } as never)) as unknown as { data: Array<{ skills: CodexSkill[] }> };
+    const skills = r.data.flatMap((e) => e.skills).filter((s) => s.enabled !== false);
+    this.skillCache.set(key, { at: Date.now(), skills });
+    return skills;
+  }
+
+  /**
+   * `compact` → thread/compact/start, `code-review` → review/start (inline), a skill → a turn with the `skill` input
+   * (the text says `$name args`, as the Codex TUI writes it). Compaction and review start turns of their own, so they
+   * wait for the running turn to end.
+   */
+  async runCommand(sessionId: Id, name: string, args: string): Promise<SlashCommandResult> {
+    const session = this.writable(sessionId);
+    const st = this.sessionState(sessionId);
+    if (name === "compact" || name === "code-review") {
+      if (st.activeTurnId) throw Object.assign(new Error("回复还在生成，这一轮结束后再运行这个命令"), { code: "conflict" });
+      const handle = await this.handleFor(session.profileId);
+      // The person's command opens the turn in the conversation (Codex writes no message of its own for it).
+      this.appendItem(sessionId, { type: "user", text: `/${name}${args ? ` ${args}` : ""}` }, { method: "command" });
+      if (name === "compact") {
+        await handle.client.request("thread/compact/start", { threadId: session.runtimeRef! } as never);
+      } else {
+        const r = (await handle.client.request("review/start", { threadId: session.runtimeRef!, target: reviewTarget(args), delivery: "inline" } as never)) as unknown as { turn: { id: string } };
+        st.reviewTurns.add(r.turn.id);
+      }
+      return { mode: "start" };
+    }
+    const skill = (await this.skills(session)).find((s) => s.name === name);
+    if (!skill) throw Object.assign(new Error(`Codex 没有 /${name} 这个命令`), { code: "bad_request" });
+    const sent = await this.sendMessage(sessionId, `$${skill.name}${args ? ` ${args}` : ""}`, [], [{ type: "skill", name: skill.name, path: skill.path }]);
+    return { mode: sent.mode };
+  }
+
+  /** A notice row; the same key again in this turn updates that row (with a count) instead of adding another. */
+  private notice(sessionId: Id, level: "info" | "warning", message: string, key: string, turnId?: string): void {
+    const st = this.sessionState(sessionId);
+    const known = st.notices.get(key);
+    const current = known ? this.store.getItem(known) : undefined;
+    if (current?.type === "notice") {
+      this.updateItem(current.id, (it) => (it.type === "notice" ? { ...it, level, message, count: (it.count ?? 1) + 1 } : it));
+      return;
+    }
+    st.notices.set(key, this.appendItem(sessionId, { type: "notice", level, message, key }, { method: "notice", ...(turnId ? { turnId } : {}) }).id);
+  }
+
+  /** A notice for no thread: into the profile's sessions that are working now, or the next one that starts a turn. */
+  private serverNotice(profileId: Id, level: "info" | "warning", message: string, key: string): void {
+    const running = this.store.listSessions().filter((s) => s.profileId === profileId && s.runtime === "codex" && this.state.get(s.id)?.activeTurnId);
+    if (running.length) {
+      for (const s of running) this.notice(s.id, level, message, key, this.state.get(s.id)!.activeTurnId!);
+      return;
+    }
+    const queued = this.serverNotices.get(profileId) ?? [];
+    if (!queued.some((n) => n.key === key)) queued.push({ level, message, key });
+    this.serverNotices.set(profileId, queued);
+  }
+
+  private setRetry(sessionId: Id, turnId: string, retry: TurnRetry | null): void {
+    const st = this.sessionState(sessionId);
+    if (!retry && st.retrying !== turnId) return;
+    const id = this.turnItemId(sessionId, turnId);
+    if (!id) return;
+    st.retrying = retry ? turnId : null;
+    this.updateItem(id, (it) => {
+      if (it.type !== "turn") return it;
+      if (retry) return { ...it, retry };
+      if (!it.retry) return it;
+      const { retry: _gone, ...rest } = it;
+      return rest;
+    });
+  }
+
+  /** The context the session had before compacting: what its latest turn left. */
+  private lastContext(sessionId: Id): number | undefined {
+    const turns = this.store.listItems(sessionId).filter((i) => i.type === "turn" && i.usage?.context);
+    const last = turns.at(-1);
+    return last?.type === "turn" ? last.usage?.context : undefined;
+  }
+
   /** Where an attached terminal should connect. The token must only travel through an env var. */
   async attachInfo(sessionId: Id): Promise<{ url: string; token: string; threadId: string }> {
     const s = this.requireSession(sessionId);
@@ -406,21 +532,32 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       case "turn/started": {
         const s = this.findByThread(n.params.threadId);
         if (!s) return;
-        this.sessionState(s.id).activeTurnId = n.params.turn.id;
-        this.openTurn(s.id, n.params.turn.id, n.params.turn.startedAt);
+        const st = this.sessionState(s.id);
+        const turnId = turnKey(st, n.params.turn as { id: string; rootTurnId?: string | null });
+        st.activeTurnId = turnId;
+        st.notices.clear();
+        this.openTurn(s.id, turnId, n.params.turn.startedAt);
         this.setStatus(s.id, "running");
+        const queued = this.serverNotices.get(handle.profileId);
+        if (queued?.length) {
+          this.serverNotices.delete(handle.profileId);
+          for (const q of queued) this.notice(s.id, q.level, q.message, q.key, turnId);
+        }
         return;
       }
       case "turn/completed": {
         const s = this.findByThread(n.params.threadId);
         if (!s) return;
         const st = this.sessionState(s.id);
-        if (st.activeTurnId === n.params.turn.id) st.activeTurnId = null;
-        const turn = n.params.turn as { id: string; status: string; error?: { message: string } | null; startedAt?: number | null; completedAt?: number | null };
+        const turnId = turnKey(st, n.params.turn as { id: string; rootTurnId?: string | null });
+        if (st.activeTurnId === turnId || st.activeTurnId === n.params.turn.id) st.activeTurnId = null;
+        this.setRetry(s.id, turnId, null);
+        st.reviewTurns.delete(turnId);
+        const turn = { ...(n.params.turn as { id: string; status: string; error?: { message: string } | null; startedAt?: number | null; completedAt?: number | null }), id: turnId };
         for (const q of [...this.questions.values()]) if (q.sessionId === s.id) this.closeQuestion(q, "cancelled");
         this.closeTurn(s.id, turn);
         if (turn.status === "failed") {
-          this.appendItem(s.id, { type: "error", message: turn.error?.message ?? "turn failed" }, { method: n.method, turnId: n.params.turn.id });
+          this.appendItem(s.id, { type: "error", message: turn.error?.message ?? "turn failed" }, { method: n.method, turnId });
           this.setStatus(s.id, "error");
         } else {
           this.setStatus(s.id, s.kind === "sub" ? "completed" : "idle");
@@ -434,6 +571,8 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         const s = this.findByThread(n.params.threadId);
         if (!s) return;
         const st = this.sessionState(s.id);
+        // A review's own messages are its raw findings; exitedReviewMode brings the review as written for people.
+        if (st.reviewTurns.has(n.params.turnId)) return;
         const itemId = this.ensureAgentItem(s.id, n.params.itemId, n.params.turnId);
         st.text.set(n.params.itemId, (st.text.get(n.params.itemId) ?? "") + n.params.delta);
         this.emitTransient({ type: "item.delta", sessionId: s.id, itemId, append: n.params.delta });
@@ -514,10 +653,81 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       }
       case "error": {
         const s = this.findByThread(n.params.threadId);
-        if (s && !n.params.willRetry) this.appendItem(s.id, { type: "error", message: n.params.error.message }, { method: n.method, turnId: n.params.turnId });
+        if (!s) return;
+        // A retry shows in the running status line (and goes away when the model answers), not as a row.
+        if (n.params.willRetry) this.setRetry(s.id, n.params.turnId, codexRetry(n.params.error as CodexTurnError));
+        else this.appendItem(s.id, { type: "error", message: n.params.error.message }, { method: n.method, turnId: n.params.turnId });
+        return;
+      }
+      case "thread/compacted": {
+        // Deprecated in favour of the contextCompaction item (Codex 0.162 sends only the item); kept for older servers.
+        const s = this.findByThread(n.params.threadId);
+        if (!s) return;
+        if (this.store.listItems(s.id).some((i) => i.type === "compaction" && i.raw?.turnId === n.params.turnId)) return;
+        const before = this.lastContext(s.id);
+        this.appendItem(s.id, { type: "compaction", state: "completed", ...(before ? { beforeTokens: before } : {}) }, { method: n.method, turnId: n.params.turnId });
+        return;
+      }
+      case "model/rerouted": {
+        const s = this.findByThread(n.params.threadId);
+        const why = n.params.reason === "highRiskCyberActivity" ? "（涉及高风险网络安全内容）" : "";
+        if (s) this.notice(s.id, "warning", `这一轮改用了 ${n.params.toModel}，不是 ${n.params.fromModel}${why}。`, "rerouted", n.params.turnId);
+        return;
+      }
+      case "warning":
+      case "guardianWarning": {
+        const p = n.params as { threadId: string | null; message: string };
+        const s = p.threadId ? this.findByThread(p.threadId) : undefined;
+        const level = n.method === "guardianWarning" ? "warning" : "info";
+        if (s) this.notice(s.id, level, p.message, `${n.method}:${p.message}`, this.state.get(s.id)?.activeTurnId ?? undefined);
+        else if (!p.threadId) this.serverNotice(handle.profileId, level, p.message, `${n.method}:${p.message}`);
+        return;
+      }
+      case "configWarning": {
+        const p = n.params as { summary: string; details: string | null; path?: string };
+        const message = `Codex 配置有问题：${p.summary}${p.details ? `（${p.details}）` : ""}${p.path ? ` · ${p.path}` : ""}`;
+        this.serverNotice(handle.profileId, "warning", message, `${n.method}:${p.summary}`);
+        return;
+      }
+      case "deprecationNotice": {
+        // About how Studio calls app-server (e.g. full-history thread/resume in 0.162), not about the person's work.
+        const p = n.params as { summary: string; details: string | null };
+        this.emit("log", `codex deprecation (${handle.profileId}): ${p.summary}${p.details ? ` (${p.details})` : ""}`);
+        return;
+      }
+      case "mcpServer/startupStatus/updated": {
+        const p = n.params as { threadId: string | null; name: string; status: string; error: string | null; failureReason: string | null };
+        if (p.status !== "failed") return;
+        const message = `MCP 服务 ${p.name} 没能启动${p.failureReason === "reauthenticationRequired" ? "：需要重新登录" : p.error ? `：${firstLineOf(p.error)}` : "。"}`;
+        const s = p.threadId ? this.findByThread(p.threadId) : undefined;
+        if (s) this.notice(s.id, "warning", message, `mcp:${p.name}`, this.state.get(s.id)?.activeTurnId ?? undefined);
+        else this.serverNotice(handle.profileId, "warning", message, `mcp:${p.name}`);
+        return;
+      }
+      case "hook/completed": {
+        // Hooks only show when they fail or block.
+        const p = n.params as { threadId: string; turnId: string | null; run: { eventName: string; status: string; statusMessage: string | null; sourcePath: string; entries: Array<{ text: string }> } };
+        if (p.run.status !== "failed" && p.run.status !== "blocked") return;
+        const s = this.findByThread(p.threadId);
+        const detail = p.run.statusMessage || p.run.entries.map((e) => e.text).find(Boolean) || "";
+        const name = p.run.sourcePath.split(/[\\/]/).at(-1) || p.run.eventName;
+        if (s) this.notice(s.id, "warning", `Hook ${name}（${p.run.eventName}）${p.run.status === "blocked" ? "拦截了这一步" : "运行失败"}${detail ? `：${firstLineOf(detail)}` : "。"}`, `hook:${name}`, p.turnId ?? undefined);
+        return;
+      }
+      case "item/mcpToolCall/progress":
+      case "item/commandExecution/terminalInteraction": {
+        const p = n.params as { threadId: string; itemId: string; message?: string; stdin?: string };
+        const s = this.findByThread(p.threadId);
+        const itemId = s ? this.sessionState(s.id).items.get(p.itemId) : undefined;
+        // Input the agent typed into a running command; an empty write only reads its output.
+        const progress = n.method === "item/mcpToolCall/progress" ? p.message?.trim() : p.stdin?.trim() ? `已向命令输入：${p.stdin.trim().slice(0, 200)}` : "";
+        if (itemId && progress) this.updateItem(itemId, (it) => (it.type === "tool" ? { ...it, progress } : it));
         return;
       }
       default:
+        // Not shown: turn/diff/updated (the turn's changed files come from its edit items), item/fileChange/outputDelta
+        // (no longer sent), process/* and command/exec/* (only for processes a client starts), realtime, account
+        // and login, fuzzy file search, thread metadata.
         return;
     }
   }
@@ -618,9 +828,13 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     const st = this.sessionState(s.id);
     const raw = { method, itemId: item.id, turnId };
     const done = method === "item/completed";
+    const review = st.reviewTurns.has(turnId);
+    // The model answered: a retry it was making is over.
+    if (item.type !== "userMessage" && st.retrying === turnId) this.setRetry(s.id, turnId, null);
     switch (item.type) {
       case "userMessage": {
-        if (!done) return;
+        // In review mode the message is Codex's own review prompt (the person's /code-review opened the turn).
+        if (!done || review) return;
         const content = (item.content ?? []) as Array<{ type?: string; text?: unknown; path?: unknown }>;
         const text = content.map((c) => (c && typeof c === "object" && typeof c.text === "string" ? c.text : "")).join("");
         const images = content.filter((c) => c?.type === "localImage" && typeof c.path === "string").map((c) => messageImage(c.path as string));
@@ -642,6 +856,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         return;
       }
       case "agentMessage": {
+        if (review) return;
         const itemId = this.ensureAgentItem(s.id, item.id, turnId);
         if (done) {
           this.updateItem(itemId, (it) => (it.type === "agent" ? { ...it, markdown: item.text ?? st.text.get(item.id) ?? "", streaming: false } : it));
@@ -649,12 +864,42 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         }
         return;
       }
+      case "contextCompaction": {
+        const existing = st.items.get(item.id);
+        if (!existing) {
+          const before = this.lastContext(s.id);
+          st.items.set(item.id, this.appendItem(s.id, { type: "compaction", state: done ? "completed" : "running", ...(before ? { beforeTokens: before } : {}) }, raw).id);
+        } else if (done) {
+          this.updateItem(existing, (it) => (it.type === "compaction" ? { ...it, state: "completed" } : it));
+        }
+        return;
+      }
+      case "enteredReviewMode": {
+        st.reviewTurns.add(turnId);
+        if (!done || st.items.has(item.id)) return;
+        this.openTurn(s.id, turnId, null);
+        const what = item.review && item.review !== "current changes" ? item.review : "当前未提交的改动";
+        st.items.set(item.id, this.appendItem(s.id, { type: "notice", level: "info", message: `Codex 开始审查：${what}` }, raw).id);
+        return;
+      }
+      case "exitedReviewMode": {
+        // The review as written for people: the turn's answer.
+        if (!done || st.items.has(item.id)) return;
+        st.items.set(item.id, this.appendItem(s.id, { type: "agent", markdown: item.review?.trim() || "（审查没有给出结论）", streaming: false }, raw).id);
+        return;
+      }
       case "commandExecution":
       case "fileChange":
       case "mcpToolCall":
       case "dynamicToolCall":
-      case "webSearch": {
-        const tool = describeTool(item, this.store.getWorkspace(s.workspaceId)?.path);
+      case "webSearch":
+      case "imageView":
+      case "imageGeneration":
+      case "hookPrompt":
+      case "collabAgentToolCall":
+      case "sleep":
+      case "functionCallOutput": {
+        const tool = describeTool(item, this.store.getWorkspace(s.workspaceId)?.path, done);
         const existing = st.items.get(item.id);
         if (!existing) {
           const created = this.appendItem(s.id, { type: "tool", ...tool }, raw);
@@ -676,6 +921,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         return;
       }
       default:
+        // userMessage aside, the remaining types (plan text, reasoning) are handled above or by their own events.
         return;
     }
   }
@@ -816,7 +1062,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   private sessionState(id: Id): SessionState {
     let st = this.state.get(id);
     if (!st) {
-      st = { activeTurnId: null, items: new Map(), text: new Map(), turns: new Map(), reasoning: new Map() };
+      st = { activeTurnId: null, items: new Map(), text: new Map(), turns: new Map(), reasoning: new Map(), reviewTurns: new Set(), notices: new Map(), retrying: null };
       this.state.set(id, st);
     }
     return st;
@@ -944,6 +1190,17 @@ interface CodexItem {
   kind?: string;
   agentThreadId?: string;
   agentPath?: string;
+  // stage 12, S12-E: the remaining item types
+  path?: string;
+  savedPath?: string;
+  revisedPrompt?: string | null;
+  failure?: { type: string } | null;
+  fragments?: Array<{ text: string }>;
+  receiverThreadIds?: string[];
+  prompt?: string | null;
+  name?: string;
+  output?: unknown;
+  review?: string;
 }
 
 type CommandAction =
@@ -956,9 +1213,12 @@ function toolStatus(status: string | undefined): ToolStatus {
   return status === "completed" ? "completed" : status === "failed" ? "failed" : status === "declined" ? "declined" : "running";
 }
 
-/** Row fields for a Codex item; `workspace` is the session's folder (paths inside it are shown relative). */
-export function describeTool(item: CodexItem, workspace?: string): ToolFields {
-  const status = toolStatus(item.status);
+/**
+ * Row fields for a Codex item; `workspace` is the session's folder (paths inside it are shown relative). `done`: the
+ * item is complete (items without a status of their own are then completed).
+ */
+export function describeTool(item: CodexItem, workspace?: string, done = true): ToolFields {
+  const status = item.status === undefined ? (done ? "completed" : "running") : toolStatus(item.status);
   const base = item.cwd ?? workspace;
   const timing = item.durationMs != null ? { durationMs: item.durationMs } : {};
   switch (item.type) {
@@ -1030,10 +1290,92 @@ export function describeTool(item: CodexItem, workspace?: string): ToolFields {
       // Web search items carry no status: started means running, completed means done.
       return { name: a?.type === "openPage" ? "web_fetch" : "web_search", kind: "web", summary, status: item.status ? status : "running" };
     }
+    case "imageView": {
+      const path = item.path ?? "";
+      return { name: "view_image", kind: "read", summary: shortPath(path, base), ...(path ? { images: [{ id: null, path }] } : {}), status: done ? "completed" : "running" };
+    }
+    case "imageGeneration": {
+      // `result` is the image itself (base64); only a saved file is shown.
+      const failed = !!item.failure;
+      return {
+        name: "image_generation",
+        kind: "other",
+        summary: item.revisedPrompt?.trim() || "生成图片",
+        ...(item.savedPath ? { images: [{ id: null, path: item.savedPath }] } : {}),
+        ...(failed ? { detail: item.failure!.type === "usageLimitExceeded" ? "生成图片的额度用完了" : item.failure!.type } : {}),
+        status: failed ? "failed" : done ? "completed" : "running",
+      };
+    }
+    case "hookPrompt": {
+      const text = (item.fragments ?? []).map((f) => f.text).filter(Boolean).join("\n\n");
+      return { name: "hook_prompt", kind: "other", summary: "Hook 补充了提示", ...(text ? { detail: tail(text) } : {}), status: "completed" };
+    }
+    case "collabAgentToolCall": {
+      const receivers = item.receiverThreadIds?.length ?? 0;
+      const summary = item.prompt?.trim().split("\n")[0]?.slice(0, 120) || (receivers ? `${receivers} 个子 agent` : "");
+      const s = item.status === "inProgress" ? "running" : item.status === "failed" ? "failed" : item.status === "interrupted" ? "declined" : done ? "completed" : "running";
+      return { name: `collab.${item.tool ?? ""}`, kind: "subagent", summary, ...(item.prompt ? { input: item.prompt } : {}), status: s };
+    }
+    case "sleep":
+      return { name: "sleep", kind: "other", summary: `等待 ${Math.max(1, Math.round((item.durationMs ?? 0) / 1000))} 秒`, ...timing, status: done ? "completed" : "running" };
+    case "functionCallOutput": {
+      const output = typeof item.output === "string" ? item.output : contentText(item.output);
+      return { name: [item.namespace, item.name].filter(Boolean).join(".") || "function", kind: "other", summary: "", ...(output ? { detail: tail(output) } : {}), status: "completed" };
+    }
     default:
       return { name: item.tool ?? item.type, kind: "other", summary: "", status };
   }
 }
+
+/** The turn a turn event belongs to: a review's follow-up turn counts as the review's own (see reviewTurns). */
+function turnKey(st: { reviewTurns: Set<string> }, turn: { id: string; rootTurnId?: string | null }): string {
+  return turn.rootTurnId && turn.rootTurnId !== turn.id && st.reviewTurns.has(turn.rootTurnId) ? turn.rootTurnId : turn.id;
+}
+
+/** A skill as skills/list describes it (the fields the runtime reads). */
+interface CodexSkill {
+  name: string;
+  description: string;
+  shortDescription?: string;
+  path: string;
+  enabled?: boolean;
+}
+
+/** `/code-review` arguments: nothing (uncommitted changes), `base <branch>`, `commit <sha>`, or review instructions. */
+export function reviewTarget(args: string): Record<string, unknown> {
+  const text = args.trim();
+  const base = /^base\s+(\S+)$/i.exec(text);
+  if (base) return { type: "baseBranch", branch: base[1] };
+  const commit = /^commit\s+([0-9a-f]{4,40})$/i.exec(text);
+  if (commit) return { type: "commit", sha: commit[1], title: null };
+  return text ? { type: "custom", instructions: text } : { type: "uncommittedChanges" };
+}
+
+interface CodexTurnError {
+  message: string;
+  codexErrorInfo?: unknown;
+  additionalDetails?: string | null;
+}
+
+const RETRY_REASONS: Record<string, string> = {
+  responseStreamDisconnected: "连接中断",
+  responseStreamConnectionFailed: "连接失败",
+  httpConnectionFailed: "连接失败",
+  serverOverloaded: "服务繁忙",
+  rateLimitExceeded: "触发限流",
+  internalServerError: "服务出错",
+};
+
+/** An `error` with willRetry: "Reconnecting... 2/5" and why. */
+export function codexRetry(error: CodexTurnError): TurnRetry {
+  const m = /(\d+)\s*\/\s*(\d+)/.exec(error.message);
+  const info = error.codexErrorInfo;
+  const code = typeof info === "string" ? info : info && typeof info === "object" ? Object.keys(info)[0] : undefined;
+  const reason = (code && RETRY_REASONS[code]) || firstLineOf(error.additionalDetails || error.message);
+  return { attempt: m ? Number(m[1]) : 1, ...(m ? { max: Number(m[2]) } : {}), reason };
+}
+
+const firstLineOf = (text: string) => text.split(/\r?\n/)[0]!.trim().slice(0, 200);
 
 interface CodexReview {
   startedAtMs: number;
@@ -1088,13 +1430,14 @@ export function describePlan(plan: Array<{ step: string; status: string }>, expl
 }
 
 /** Adds one model call (`last`) to the turn's usage; the context is what that call left in it. */
-function addUsage(prev: TurnUsage | undefined, last: { inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningOutputTokens: number }, window: number | null): TurnUsage {
+function addUsage(prev: TurnUsage | undefined, last: { inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningOutputTokens: number; totalTokens?: number }, window: number | null): TurnUsage {
   return {
     input: (prev?.input ?? 0) + last.inputTokens,
     cachedInput: (prev?.cachedInput ?? 0) + last.cachedInputTokens,
     output: (prev?.output ?? 0) + last.outputTokens,
     reasoning: (prev?.reasoning ?? 0) + last.reasoningOutputTokens,
-    context: last.inputTokens + last.outputTokens,
+    // A compaction's call reports no input or output, only the size of what it left.
+    context: last.inputTokens + last.outputTokens || (last.totalTokens ?? 0),
     ...(window ? { contextWindow: window } : {}),
   };
 }

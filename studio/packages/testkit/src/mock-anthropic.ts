@@ -6,6 +6,9 @@ import { MOCK_ASK_QUESTIONS, MOCK_MARKDOWN, MOCK_PLAN } from "./mock-model.js";
 // Local stand-in for the Anthropic Messages API, used as ANTHROPIC_BASE_URL so the Claude Agent SDK (and the Claude
 // Code CLI it runs) can be exercised end to end without spending model budget. Same directives as the Responses mock.
 
+/** What `[[suggest]]` makes Claude Code suggest as the person's next message. */
+export const MOCK_SUGGESTION = "再跑一遍测试";
+
 /** Model name to use against the mock (any name is accepted when ANTHROPIC_BASE_URL points here). */
 export const MOCK_CLAUDE_MODEL = "mock-claude";
 
@@ -23,10 +26,14 @@ export function mockClaudeEnv(baseUrl: string): Record<string, string> {
   };
 }
 
-export type ClaudeMockReply = (
-  | { kind: "text"; text: string; chunks?: number; delayMs?: number }
-  | { kind: "tool_use"; name: string; input: Record<string, unknown> }
-) & { thinking?: string };
+export type ClaudeMockReply =
+  | ((
+      /** `refuse`: the reply ends with stop_reason "refusal". */
+      | { kind: "text"; text: string; chunks?: number; delayMs?: number; refuse?: boolean }
+      | { kind: "tool_use"; name: string; input: Record<string, unknown> }
+    ) & { thinking?: string })
+  /** The API fails the request with this HTTP status (Claude Code retries 429/5xx, reporting api_retry). */
+  | { kind: "error"; status: number; type: string; message: string };
 
 export interface ClaudeMockRequest {
   /** Text the person typed in the last user message (context blocks such as <system-reminder> are skipped). */
@@ -41,6 +48,8 @@ export interface ClaudeMockRequest {
   subagent: string | null;
   /** Names of the tools offered. Side requests (titles, summaries) offer none. */
   tools: string[];
+  /** How many requests before this one had the same last user text and tool progress (0 on the first try). */
+  attempt: number;
   stream: boolean;
   body: Record<string, unknown>;
 }
@@ -63,10 +72,24 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
  * - `[[ask]]` → calls AskUserQuestion with MOCK_ASK_QUESTIONS, then replies `MOCK-ANSWERED: <the tool result>`
  * - `[[plan]]` (in plan mode) → writes MOCK_PLAN to the plan file the CLI names, calls ExitPlanMode, then replies
  *   `MOCK-PLAN: <the tool result>`
+ * - `[[bg: <command>]]` → one Bash call with run_in_background, then `MOCK-DONE` (and again when the command ends)
+ * - `[[read-image: <absolute path>]]` → one Read call on that image file, then `MOCK-DONE`
+ * - `[[retry]]` → the first two tries fail with 529 (overloaded), the third answers `MOCK: …`
+ * - `[[suggest]]` anywhere in the conversation → prompt-suggestion requests get `MOCK_SUGGESTION`; otherwise they get
+ *   an empty reply, so no suggestion is made
+ * - `[[refuse]]` → the model refuses (stop_reason "refusal")
  * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
  * Tool calls are only made when the request offers that tool, so side requests always get text.
  */
 export const defaultClaudeScript: ClaudeMockScript = (req) => {
+  // Claude Code's prompt-suggestion side request ("[SUGGESTION MODE: …]" as the last user text).
+  if (req.lastUserText.startsWith("[SUGGESTION MODE")) return { kind: "text", text: JSON.stringify(req.body.messages ?? "").includes("[[suggest]]") ? MOCK_SUGGESTION : "" };
+  if (req.lastUserText.includes("[[retry]]") && !req.afterToolOutput && req.attempt < 2) return { kind: "error", status: 529, type: "overloaded_error", message: "Overloaded" };
+  if (req.lastUserText.includes("[[refuse]]") && req.tools.length > 0) return { kind: "text", text: "", refuse: true };
+  const bg = /\[\[bg:\s*([^\]]+)\]\]/.exec(req.lastUserText);
+  if (bg && !req.afterToolOutput && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: bg[1]!.trim(), description: "mock background command", run_in_background: true } };
+  const image = /\[\[read-image:\s*([^\]]+)\]\]/.exec(req.lastUserText);
+  if (image && !req.afterToolOutput && req.tools.includes("Read")) return { kind: "tool_use", name: "Read", input: { file_path: image[1]!.trim() } };
   const shell = /\[\[shell:\s*([^\]]+)\]\]/.exec(req.lastUserText);
   if (req.subagent) {
     if (shell && !req.afterToolOutput && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: shell[1]!.trim(), description: "mock command" } };
@@ -175,6 +198,7 @@ export function parseClaudeRequest(body: Record<string, unknown>): ClaudeMockReq
     lastTool: lastToolCall(messages),
     subagent: /^\[\[subagent:\s*([a-z0-9_-]+)\]\]/.exec(first)?.[1] ?? null,
     tools: Array.isArray(body.tools) ? (body.tools as Array<{ name?: string }>).map((t) => String(t.name)) : [],
+    attempt: 0,
     stream: body.stream === true,
     body,
   };
@@ -182,7 +206,9 @@ export function parseClaudeRequest(body: Record<string, unknown>): ClaudeMockReq
 
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
-function messageOf(reply: ClaudeMockReply, seq: number, model: string) {
+type ClaudeMockAnswer = Exclude<ClaudeMockReply, { kind: "error" }>;
+
+function messageOf(reply: ClaudeMockAnswer, seq: number, model: string) {
   const content = [
     ...(reply.thinking ? [{ type: "thinking", thinking: reply.thinking, signature: "mock" }] : []),
     reply.kind === "text" ? { type: "text", text: reply.text } : { type: "tool_use", id: `toolu_mock_${seq}`, name: reply.name, input: reply.input },
@@ -193,13 +219,13 @@ function messageOf(reply: ClaudeMockReply, seq: number, model: string) {
     role: "assistant",
     model,
     content,
-    stop_reason: reply.kind === "text" ? "end_turn" : "tool_use",
+    stop_reason: reply.kind === "text" ? (reply.refuse ? "refusal" : "end_turn") : "tool_use",
     stop_sequence: null,
     usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
   };
 }
 
-async function streamReply(res: ServerResponse, reply: ClaudeMockReply, seq: number, model: string): Promise<void> {
+async function streamReply(res: ServerResponse, reply: ClaudeMockAnswer, seq: number, model: string): Promise<void> {
   const send = (data: Record<string, unknown>) => res.write(`event: ${String(data.type)}\ndata: ${JSON.stringify(data)}\n\n`);
   const full = messageOf(reply, seq, model);
   send({ type: "message_start", message: { ...full, content: [], stop_reason: null, usage: { ...full.usage, output_tokens: 1 } } });
@@ -270,8 +296,13 @@ export async function startMockAnthropic(options: { port?: number; script?: Clau
       }
       const body = JSON.parse(await readBody(req)) as Record<string, unknown>;
       const parsed = parseClaudeRequest(body);
+      parsed.attempt = requests.filter((r) => r.lastUserText === parsed.lastUserText && r.afterToolOutput === parsed.afterToolOutput && r.lastTool?.name === parsed.lastTool?.name).length;
       requests.push(parsed);
       const reply = script(parsed);
+      if (reply.kind === "error") {
+        res.writeHead(reply.status, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: reply.type, message: reply.message } }));
+        return;
+      }
       const model = String(body.model ?? MOCK_CLAUDE_MODEL);
       if (!parsed.stream) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(messageOf(reply, ++seq, model)));

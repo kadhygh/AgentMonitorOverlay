@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, Attachment, HostEvent, Id, ModelProfile, ProfileChoices, QuestionReply, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, Workspace, AccountUsage } from "@amo-studio/protocol";
+import type { ApprovalDecision, Attachment, ChatSettings, HostEvent, Id, ModelProfile, ProfileChoices, QuestionReply, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, SlashCommandList, SlashCommandResult, Workspace, AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../store/store.js";
 
 // What HostService needs from a runtime, and a router that sends each call to the runtime a session (or profile)
@@ -45,6 +45,14 @@ export interface SessionRuntimeApi {
   handoff?(sessionId: Id): Promise<{ command: string; cwd: string; env: Record<string, string> }>;
   /** Claude only: take a handed-off session back, importing what the terminal added. */
   reclaim?(sessionId: Id): Promise<Session>;
+  /** The runtime's own `/` commands and skills for the session (stage 12, S12-E); Studio's are added by the Host. */
+  listCommands?(sessionId: Id): Promise<SlashCommandList>;
+  /** Runs one (`compact` included); see `POST /api/sessions/:id/commands`. */
+  runCommand?(sessionId: Id, name: string, args: string): Promise<SlashCommandResult>;
+  /** Stops a background command (Claude only). */
+  stopBackground?(sessionId: Id, taskId: string): Promise<void>;
+  /** The conversation settings changed: running sessions follow where the runtime can. */
+  applyChatSettings?(settings: ChatSettings): void;
   on(event: "event", listener: (e: HostEvent) => void): unknown;
   on(event: "log", listener: (line: string) => void): unknown;
 }
@@ -131,6 +139,23 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   async reclaim(sessionId: Id): Promise<Session> {
     const r = this.forSession(sessionId);
     return r.reclaim ? r.reclaim(sessionId) : r.setWriter(sessionId, "workbench");
+  }
+  async listCommands(sessionId: Id): Promise<SlashCommandList> {
+    const r = this.forSession(sessionId);
+    return r.listCommands ? r.listCommands(sessionId) : { commands: [] };
+  }
+  runCommand(sessionId: Id, name: string, args: string): Promise<SlashCommandResult> {
+    const r = this.forSession(sessionId);
+    if (!r.runCommand) throw new Error("this runtime has no commands");
+    return r.runCommand(sessionId, name, args);
+  }
+  stopBackground(sessionId: Id, taskId: string): Promise<void> {
+    const r = this.forSession(sessionId);
+    if (!r.stopBackground) throw new Error("this runtime has no background commands");
+    return r.stopBackground(sessionId, taskId);
+  }
+  applyChatSettings(settings: ChatSettings): void {
+    for (const r of Object.values(this.runtimes)) r.applyChatSettings?.(settings);
   }
 }
 
