@@ -36,6 +36,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
     /** Focus window only: let clicks through (true) or catch them (false). */
     setIgnoreMouse: (ignore: boolean): void => electron.ipcRenderer.send("amo:focus-mouse", ignore),
   },
+  /** The project's Git Review window (one per project). */
+  openReview: (target: { workspaceId: string; sessionId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-review", target),
   openInWorkbench: (target: { taskId?: string; sessionId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-in-workbench", target),
   onNavigate: (cb: (target: { taskId: string; sessionId?: string }) => void): (() => void) => {
     const listener = (_event: unknown, target: { taskId: string; sessionId?: string }) => cb(target);

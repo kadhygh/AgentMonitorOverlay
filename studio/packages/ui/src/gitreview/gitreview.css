@@ -1,0 +1,76 @@
+/* Git Review window (S11-D): file list | diff, comments under their lines, the send bar at the bottom. The diff
+   colours are the chat's diff card ones (chat.css); selections use the warm sand tints, never blue. */
+.gr-app { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
+.gr-head { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--bg-header); flex-wrap: wrap; }
+.gr-title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); }
+.gr-project { font-weight: 600; }
+.gr-branch { font-family: var(--font-code); font-size: var(--fs-cap); color: var(--text-dim); }
+.gr-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r-btn); overflow: hidden; }
+.gr-seg button { height: var(--ctl-s); padding: 0 10px; border: none; background: var(--panel); color: var(--text-dim); font-size: var(--fs-cap); cursor: pointer; }
+.gr-seg button + button { border-left: 1px solid var(--border); }
+.gr-seg button:hover { color: var(--text); background: var(--panel-raised); }
+.gr-seg button[aria-pressed="true"] { background: var(--selected); color: var(--text); font-weight: 600; }
+.gr-app > .toast { margin: 8px 18px 0; }
+.gr-body { flex: 1; min-height: 0; display: flex; }
+.gr-dim { color: var(--text-faint); font-size: var(--fs-cap); }
+
+/* File list */
+.gr-files { flex: 0 0 280px; overflow-y: auto; border-right: 1px solid var(--border); background: var(--bg-nav); padding: 8px 8px 16px; }
+.gr-files-head { padding: 4px 6px 8px; font-size: var(--fs-cap); color: var(--text-dim); }
+.gr-empty { padding: 8px 6px; font-size: var(--fs-cap); color: var(--text-faint); }
+.gr-group + .gr-group { margin-top: 6px; }
+.gr-folder { padding: 4px 6px 2px; font-family: var(--font-code); font-size: 11.5px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.gr-file { width: 100%; height: 28px; display: flex; align-items: center; gap: 8px; padding: 0 6px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.gr-file:hover { background: var(--chip); }
+.gr-file[aria-current="true"] { background: var(--selected); font-weight: 600; }
+.gr-status { flex: none; width: 16px; text-align: center; font-family: var(--font-code); font-size: 11.5px; font-weight: 600; }
+.gr-status.added { color: var(--chat-diff-add-mark); }
+.gr-status.deleted { color: var(--chat-diff-del-mark); }
+.gr-status.modified { color: var(--attention); }
+.gr-status.renamed { color: var(--text-dim); }
+.gr-status.untracked { font-style: italic; opacity: 0.8; }
+.gr-name { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gr-badge { flex: none; min-width: 16px; height: 16px; padding: 0 4px; border-radius: 8px; background: var(--tint-strong); color: var(--text); font-size: 10.5px; line-height: 16px; text-align: center; font-weight: 600; }
+.gr-count { flex: none; font-family: var(--font-code); font-size: 11px; color: var(--text-faint); font-weight: 400; }
+.gr-count .add { color: var(--chat-diff-add-mark); }
+.gr-count .del { color: var(--chat-diff-del-mark); }
+
+/* Diff */
+.gr-diff { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--panel); }
+.gr-file-head { display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: var(--chat-code-banner); border-bottom: 0.5px solid var(--chat-hairline); }
+.gr-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); font-size: 12.5px; color: var(--chat-label); }
+.gr-scroll { flex: 1; min-height: 0; overflow: auto; }
+.gr-notice { padding: 24px; color: var(--text-dim); font-size: var(--fs-sm); }
+.gr-lines { min-width: max-content; padding: 4px 0 40px; font-family: var(--font-code); font-size: 12.5px; line-height: 20px; background: var(--chat-code-bg); }
+.gr-hunk { display: flex; gap: 12px; padding: 4px 16px 4px 112px; color: var(--chat-caption); background: var(--chat-code-banner); border-block: 0.5px solid var(--chat-hairline); }
+.gr-hunk:first-child { border-top: none; }
+.gr-hidden { color: var(--text-faint); }
+.gr-line { display: grid; grid-template-columns: 44px 44px 20px 18px 1fr; align-items: start; }
+.gr-line:hover { background: var(--tint); }
+.gr-line.add { background: var(--chat-diff-add-bg); }
+.gr-line.del { background: var(--chat-diff-del-bg); }
+.gr-line.active { box-shadow: inset 3px 0 0 var(--attention); }
+.gr-no { padding-right: 8px; text-align: right; color: var(--chat-caption); user-select: none; }
+.gr-mark { text-align: center; user-select: none; color: var(--chat-caption); }
+.gr-line.add .gr-mark { color: var(--chat-diff-add-mark); }
+.gr-line.del .gr-mark { color: var(--chat-diff-del-mark); }
+.gr-text { white-space: pre; padding-right: 24px; color: var(--chat-label); }
+.gr-add { width: 18px; height: 18px; margin-top: 1px; padding: 0; border: 1px solid var(--attention-border); border-radius: var(--r-s); background: var(--attention-bg); color: var(--attention); font-size: 13px; line-height: 14px; cursor: pointer; opacity: 0; }
+.gr-line:hover .gr-add, .gr-add:focus-visible { opacity: 1; }
+
+/* Comments */
+.gr-comment, .gr-draft { margin: 4px 24px 6px 108px; max-width: 640px; padding: 8px 12px; border-radius: var(--r-l); border: 1px solid var(--selection); background: var(--tint); font-family: var(--font-ui); font-size: var(--fs-sm); line-height: var(--lh); color: var(--text); display: flex; flex-direction: column; gap: 6px; }
+.gr-comment.sent { opacity: 0.7; background: var(--panel-raised); border-color: var(--border); }
+.gr-comment-note { white-space: pre-wrap; }
+.gr-comment-sent { margin-right: auto; font-size: var(--fs-cap); color: var(--text-faint); }
+.gr-comment-where { display: flex; flex-direction: column; gap: 2px; font-size: var(--fs-cap); color: var(--text-dim); }
+.gr-comment-where code { font-family: var(--font-code); white-space: pre; overflow: hidden; text-overflow: ellipsis; color: var(--text); }
+.gr-draft textarea { padding: 6px 8px; border-radius: var(--r-m); border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); font-size: var(--fs-sm); resize: vertical; }
+.gr-elsewhere { padding: 10px 0 6px; border-bottom: 1px solid var(--border); background: var(--panel-raised); }
+.gr-elsewhere-head { padding: 0 16px 4px; font-size: var(--fs-cap); color: var(--text-dim); }
+.gr-elsewhere .gr-comment { margin-left: 16px; }
+
+/* Send bar */
+.gr-bar { display: flex; align-items: center; gap: 14px; padding: 8px 18px; border-top: 1px solid var(--border); background: var(--bg-header); font-size: var(--fs-sm); }
+.gr-check { display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); font-size: var(--fs-cap); cursor: pointer; }
+.gr-bar .inline-field select { max-width: 340px; }
