@@ -62,6 +62,11 @@ export function addDependency(doc: CanvasDoc, from: Id, to: Id, edgeId: Id): Can
   return { ...doc, edges: [...doc.edges, { id: edgeId, kind: "depends", from, to }] };
 }
 
+/** Hides a task of the topic from its canvas: only its card goes; its dependencies stay (the task is still in the topic). */
+export function unplaceTask(doc: CanvasDoc, taskId: Id): CanvasDoc {
+  return { ...doc, nodes: doc.nodes.filter((n) => !(n.kind === "task" && n.taskId === taskId)) };
+}
+
 /** Takes a task off a canvas: its card and every dependency it is part of (when it leaves the topic). */
 export function removeTask(doc: CanvasDoc, taskId: Id): CanvasDoc {
   return {

@@ -42,8 +42,8 @@ export class PlanningFeature extends Feature {
 
   /**
    * Turns a todo into a task in its workspace (or the one given; the common space when neither), with one session and
-   * no first message (no model call). Converted on a topic's canvas, the task joins that topic, in the group bound to
-   * its workspace if there is one. The todo is done and points at it.
+   * no first message (no model call). Converted on a topic's canvas, the task joins that topic and is placed on it, in
+   * the group bound to its workspace if there is one (else ungrouped). The todo is done and points at it.
    */
   async convertTodo(id: Id, input: { workspaceId?: unknown; profileId?: unknown; text?: unknown; topicId?: unknown }): Promise<{ todo: TodoItem; task: Task; session: Session }> {
     const todo = this.store.getTodo(id);
@@ -70,8 +70,9 @@ export class PlanningFeature extends Feature {
       topicId,
       firstSession: { profileId, ...(text ? { text } : {}) },
     });
+    // Created on the canvas: always shown there.
     const group = topicId ? this.f.canvases.canvas(topicId).groups.find((g) => g.workspaceId === workspaceId) : undefined;
-    if (group) this.f.canvases.canvasPlaceTask(task.id, group.id);
+    if (topicId) this.f.canvases.canvasPlaceTask(task.id, group?.id ?? null);
     const next: TodoItem = { ...todo, workspaceId, taskId: task.id, done: true };
     this.store.putTodo(next);
     this.publish({ type: "todo.upserted", todo: next });

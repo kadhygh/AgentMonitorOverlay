@@ -83,8 +83,11 @@ export function useTaskDraft(profiles: readonly ModelProfile[]) {
   return { draft, update, reset };
 }
 
-/** Creates the task: `file` only files it in 待办 (no session, no model call); otherwise its first session starts. */
-export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolean, template?: TaskTemplateChoice): Promise<{ task: Task; session: Session | null }> {
+/**
+ * Creates the task: `file` only files it in 待办 (no session, no model call); otherwise its first session starts.
+ * `onCanvas`: a task in a topic also goes on that topic's canvas ("显示在画布上").
+ */
+export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolean, template?: TaskTemplateChoice, onCanvas = false): Promise<{ task: Task; session: Session | null }> {
   const text = draft.text.trim();
   const options: SessionOptions = { ...draft.options, ...(draft.pick.model ? { model: draft.pick.model } : {}) };
   const created = await call(link, "POST /api/tasks", {}, {
@@ -99,6 +102,7 @@ export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolea
     rememberPick(draft.pick);
   }
   if (draft.projectId) rememberWorkspace(draft.projectId);
+  if (onCanvas && created.task.topicId) await call(link, "PUT /api/tasks/:id/canvas", { id: created.task.id }, { onCanvas: true });
   return created;
 }
 

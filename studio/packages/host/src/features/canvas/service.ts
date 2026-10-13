@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { CanvasDoc, Id, Task } from "@amo-studio/protocol";
-import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, emptyCanvas, isCommon, placeTask, removeTask, validateCanvas } from "@amo-studio/protocol";
+import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, emptyCanvas, isCommon, placeTask, removeTask, unplaceTask, validateCanvas } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -82,6 +82,19 @@ export class CanvasFeature extends Feature {
     const group = typeof groupId === "string" && groupId ? groupId : null;
     this.mutateCanvas(task.topicId, (doc) => placeTask(doc, task.id, group, newId("n")));
     return { taskId: task.id, groupId: group };
+  }
+
+  /**
+   * Shows or hides a task's card on its topic's canvas ("显示在画布上"). Shown, a task not on the canvas yet goes below
+   * everything ungrouped; hidden, only its card goes (it stays in the topic, with its dependencies).
+   */
+  setTaskOnCanvas(taskId: Id, input: { onCanvas?: unknown }): CanvasDoc {
+    const task = this.requireTask(taskId);
+    if (!task.topicId) throw new HostError("bad_request", "the task is not in a topic, so it has no canvas");
+    if (typeof input.onCanvas !== "boolean") throw new HostError("bad_request", "onCanvas must be true or false");
+    const placed = this.canvas(task.topicId).nodes.some((n) => n.kind === "task" && n.taskId === task.id);
+    if (placed === input.onCanvas) return this.canvas(task.topicId);
+    return this.mutateCanvas(task.topicId, (doc) => (input.onCanvas ? placeTask(doc, task.id, null, newId("n")) : unplaceTask(doc, task.id)));
   }
 
   /** Applies a change to the latest canvas and saves it (one synchronous read-modify-write, so no version race here). */

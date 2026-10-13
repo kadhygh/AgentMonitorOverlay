@@ -52,23 +52,6 @@ function saveView(v: View) {
 let idCounter = 0;
 export const newCanvasId = (prefix: string) => `${prefix}-${Date.now().toString(36)}-${(idCounter++).toString(36)}`;
 
-/** Places tasks that are not on the canvas yet in a grid below everything else (ungrouped). */
-export function placeMissing(doc: CanvasDoc, tasks: readonly Task[]): CanvasDoc | null {
-  const placed = new Set(doc.nodes.filter((n) => n.kind === "task").map((n) => (n as { taskId: Id }).taskId));
-  const missing = tasks.filter((t) => !placed.has(t.id));
-  if (!missing.length) return null;
-  const bottoms = [...doc.nodes.map((n) => n.pos.y + CARD_H), ...doc.groups.map((g) => g.rect.y + g.rect.h)];
-  const baseY = bottoms.length ? Math.max(...bottoms) + 40 : 64; // start below the toolbar
-  const added: CanvasNode[] = missing.map((t, i) => ({
-    id: newCanvasId("n"),
-    kind: "task",
-    taskId: t.id,
-    groupId: null,
-    pos: { x: 40 + (i % 4) * (CARD_W + 24), y: baseY + Math.floor(i / 4) * (CARD_H + 24) },
-  }));
-  return { ...doc, nodes: [...doc.nodes, ...added] };
-}
-
 interface CanvasPageProps {
   link: HostLink;
   /** For "转为任务" (the new task's model). */
@@ -102,7 +85,6 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
   };
   const [renaming, setRenaming] = useState<Id | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
-  const placing = useRef(false);
 
   useEffect(() => saveView(view), [view]);
 
@@ -127,19 +109,6 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [doc, selection, persist]);
-
-  // New tasks appear on the canvas automatically, ungrouped.
-  useEffect(() => {
-    if (!doc || doc.id !== topic.id || placing.current || drag) return;
-    const next = placeMissing(doc, tasks);
-    if (!next) return;
-    placing.current = true;
-    void save(next)
-      .catch(() => undefined)
-      .finally(() => {
-        placing.current = false;
-      });
-  }, [doc, tasks, save, drag, topic.id]);
 
   const zoomAt = useCallback((px: number, py: number, factor: number) => {
     setView((v) => {

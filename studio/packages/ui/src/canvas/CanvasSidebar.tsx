@@ -146,6 +146,17 @@ function DetailTab({ doc, selection, tasks, sessions, workspaces, onChange, onCl
       <button type="button" className="btn-ghost small" onClick={() => onOpenTask(task.id)}>
         打开任务
       </button>
+      <button
+        type="button"
+        className="btn-ghost small dim"
+        title="只拿掉卡片：任务仍在专题里，依赖也保留；在任务页可以再放回来"
+        onClick={() => {
+          onChange({ ...doc, nodes: doc.nodes.filter((n) => n.id !== node.id) });
+          onClearSelection();
+        }}
+      >
+        从画布上拿掉（任务不变）
+      </button>
       <span className="side-subheading">前置任务</span>
       {before.length === 0 && <span className="side-note">没有前置任务。</span>}
       {before.map((e) => (

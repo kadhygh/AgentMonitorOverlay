@@ -14,6 +14,7 @@ export const newTaskView: ViewDef<"new"> = {
         tasks={state.tasks}
         profiles={state.profiles}
         scope={view.topicId ? { kind: "topic", id: view.topicId } : scope}
+        {...(view.back?.kind === "canvas" && view.topicId ? { canvasTopicId: view.topicId } : {})}
         backLabel={back.label}
         onBack={() => setView(back.view)}
         // The task page returns to the same place; a task only filed goes back there right away.

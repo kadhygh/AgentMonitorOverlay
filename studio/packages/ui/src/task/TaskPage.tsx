@@ -21,6 +21,7 @@ import { usePacks } from "../packs/usePacks.js";
 import { useFeature } from "../lib/features.js";
 import { PresetDraftForm } from "../packs/PresetDraftForm.js";
 import type { SelectionAnchor } from "../lib/selection.js";
+import { OnCanvasToggle } from "../canvas/OnCanvasToggle.js";
 
 interface TaskPageProps {
   link: HostLink;
@@ -211,6 +212,16 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             ))}
           </select>
         </label>
+        {task.topicId && (
+          <OnCanvasToggle
+            key={task.topicId}
+            link={link}
+            taskId={task.id}
+            topicId={task.topicId}
+            disabled={!!task.archivedAt}
+            onError={(text) => setToast({ text, error: true })}
+          />
+        )}
         <button type="button" className="btn-ghost small" onClick={() => void archiveTask()} disabled={busy} data-testid="task-archive">
           {task.archivedAt ? "恢复任务" : "归档任务"}
         </button>

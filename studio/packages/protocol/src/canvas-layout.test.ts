@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { addDependency, addGroupAuto, CanvasLayoutError, LAYOUT, placeNewGroup, placeTask } from "./canvas-layout.js";
+import { addDependency, addGroupAuto, CanvasLayoutError, LAYOUT, placeNewGroup, placeTask, removeTask, unplaceTask } from "./canvas-layout.js";
 import { emptyCanvas } from "./canvas.js";
 import type { CanvasDoc } from "./entities.js";
 
@@ -32,6 +32,17 @@ describe("canvas layout for agent changes", () => {
     expect(d.nodes).toHaveLength(1);
     expect(d.nodes[0]).toMatchObject({ id: "n-a", groupId: null, pos: { x: 40, y: 64 + 320 + 40 } });
     expect(() => placeTask(d, "a", "nope", "n")).toThrow(CanvasLayoutError);
+  });
+
+  it("hides a card but keeps its dependencies; leaving the topic takes both", () => {
+    let d = placeTask(placeTask(doc(), "a", null, "n-a"), "b", null, "n-b");
+    d = addDependency(d, "a", "b", "e1");
+    const hidden = unplaceTask(d, "a");
+    expect(hidden.nodes.map((n) => n.id)).toEqual(["n-b"]);
+    expect(hidden.edges).toHaveLength(1);
+    const gone = removeTask(d, "a");
+    expect(gone.nodes.map((n) => n.id)).toEqual(["n-b"]);
+    expect(gone.edges).toEqual([]);
   });
 
   it("adds dependencies but refuses itself, duplicates and cycles", () => {

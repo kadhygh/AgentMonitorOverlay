@@ -39,6 +39,7 @@
 .draft-where { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
 .pick-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .pick-lab { width: 44px; flex: none; font-size: var(--fs-cap); color: var(--text-faint); letter-spacing: 0.06em; }
+.draft-oncanvas { font-size: var(--fs-sm); color: var(--text-dim); cursor: pointer; }
 .draft-steps { margin: 0 0 0 50px; padding-left: 18px; font-size: var(--fs-sm); color: var(--text-dim); }
 .draft-composer {
   position: relative; border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel);

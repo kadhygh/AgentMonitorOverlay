@@ -602,6 +602,31 @@ describe("Host API", () => {
     expect((await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).version).toBe(2);
   });
 
+  it("shows or hides a task on its topic's canvas; hidden tasks are listed as not placed", async () => {
+    const { ws } = await createTask("canvas");
+    const topic = await ok<Topic>("POST", "/api/topics", { title: "导入" });
+    const a = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "改导入", workspaceId: ws.id, topicId: topic.id })).task;
+    const b = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "跑校验", workspaceId: ws.id, topicId: topic.id })).task;
+    // Created outside the canvas: not placed until asked.
+    expect((await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).nodes).toEqual([]);
+    let doc = await ok<CanvasDoc>("PUT", `/api/tasks/${a.id}/canvas`, { onCanvas: true });
+    doc = await ok<CanvasDoc>("PUT", `/api/tasks/${b.id}/canvas`, { onCanvas: true });
+    expect(doc.nodes.map((n) => n.kind === "task" && n.taskId)).toEqual([a.id, b.id]);
+    expect((await ok<CanvasDoc>("PUT", `/api/tasks/${a.id}/canvas`, { onCanvas: true })).version).toBe(doc.version); // already there
+    doc = await ok<CanvasDoc>("PUT", `/api/topics/${topic.id}/canvas`, { ...doc, edges: [{ id: "e1", kind: "depends", from: a.id, to: b.id }] });
+
+    // Hidden: the card goes, the dependency stays, and the outline lists the task as not placed.
+    doc = await ok<CanvasDoc>("PUT", `/api/tasks/${a.id}/canvas`, { onCanvas: false });
+    expect(doc.nodes.map((n) => n.kind === "task" && n.taskId)).toEqual([b.id]);
+    expect(doc.edges).toHaveLength(1);
+    const { json } = await ok<{ json: { unplaced: Array<{ id: string }> } }>("GET", `/api/topics/${topic.id}/canvas/outline`);
+    expect(json.unplaced.map((t) => t.id)).toEqual([a.id]);
+
+    const loose = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "不在专题里" })).task;
+    expect((await api("PUT", `/api/tasks/${loose.id}/canvas`, { onCanvas: true })).status).toBe(400);
+    expect((await api("PUT", `/api/tasks/${a.id}/canvas`, {})).status).toBe(400);
+  });
+
   it("reads and writes the global scratchpad, announcing changes", async () => {
     expect(await ok("GET", "/api/scratchpad")).toEqual({ text: "", updatedAt: null });
     const received: HostEvent[] = [];
