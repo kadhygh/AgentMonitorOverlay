@@ -8,6 +8,7 @@ import { PresetsSection } from "./PresetsSection.js";
 import { FeaturesSection } from "./FeaturesSection.js";
 import { ShortcutSection } from "../scratchpad/ShortcutSection.js";
 import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
+import { useChatSettings } from "../chat/cli/chatSettings.js";
 
 /** Studio-wide settings from the Host, kept live. */
 export function useSettings(link: HostLink): StudioSettings | null {
@@ -35,6 +36,7 @@ export function useSettings(link: HostLink): StudioSettings | null {
 export function SettingsDialog({ link, settings, onClose }: { link: HostLink; settings: StudioSettings | null; onClose(): void }) {
   const [theme, setTheme] = useState<ThemePref>(themePref);
   const view = useTranscriptView();
+  const chat = useChatSettings(link);
   const [dir, setDir] = useState(settings?.commonWorkspace?.path ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
@@ -119,6 +121,25 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
             </div>
           </div>
           <span className="settings-hint">{TRANSCRIPT_VIEW_HINTS[view]}。</span>
+          <div className="settings-row">
+            <span className="settings-label">建议的下一句</span>
+            <div role="radiogroup" aria-label="建议的下一句" className="chips">
+              {([true, false] as const).map((on) => (
+                <button
+                  key={String(on)}
+                  type="button"
+                  role="radio"
+                  className="chip"
+                  aria-checked={chat.settings.promptSuggestions === on}
+                  aria-pressed={chat.settings.promptSuggestions === on}
+                  onClick={() => void chat.update({ promptSuggestions: on }).catch((err: unknown) => setMessage({ text: err instanceof HostApiError ? err.message : String(err), error: true }))}
+                >
+                  {on ? "显示" : "关闭"}
+                </button>
+              ))}
+            </div>
+          </div>
+          <span className="settings-hint">Claude 会话每轮回答后，在输入框上方给出建议的下一句，点一下填进输入框（每轮多一次很小的模型请求）。</span>
         </section>
 
         <section className="settings-section" aria-label="公共目录">

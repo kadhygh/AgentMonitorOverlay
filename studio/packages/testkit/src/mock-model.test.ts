@@ -39,7 +39,18 @@ describe("parseRequest", () => {
 });
 
 describe("defaultScript", () => {
-  const req = (text: string, tools = ["shell_command"]) => ({ lastUserText: text, images: 0, afterToolOutput: false, agentTask: null, tools, lastTool: null, toolOutputsSinceUser: 0, body: {} });
+  const req = (text: string, tools = ["shell_command"], attempt = 0) => ({ lastUserText: text, images: 0, afterToolOutput: false, agentTask: null, tools, lastTool: null, toolOutputsSinceUser: 0, attempt, body: {} });
+
+  it("disconnects the first tries of [[retry]] (two, or N with [[retry:N]]), then answers", () => {
+    expect(defaultScript(req("[[retry]] go", [], 0))).toEqual({ kind: "disconnect" });
+    expect(defaultScript(req("[[retry]] go", [], 1))).toEqual({ kind: "disconnect" });
+    expect(defaultScript(req("[[retry]] go", [], 2))).toEqual({ kind: "text", text: "MOCK: [[retry]] go" });
+    expect(defaultScript(req("[[retry:1]] go", [], 1))).toEqual({ kind: "text", text: "MOCK: [[retry:1]] go" });
+  });
+
+  it("views an image file when view_image is offered", () => {
+    expect(defaultScript(req("[[view-image: C:\w\a.png]]", ["view_image"]))).toEqual({ kind: "function_call", name: "view_image", arguments: { path: "C:\w\a.png" } });
+  });
 
   it("spawns a subagent through the collaboration namespace and answers as that subagent", () => {
     expect(defaultScript(req("[[spawn: explorer: map it]]", ["collaboration", "collaboration.spawn_agent"]))).toEqual({

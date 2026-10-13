@@ -74,7 +74,7 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
  *   `MOCK-PLAN: <the tool result>`
  * - `[[bg: <command>]]` → one Bash call with run_in_background, then `MOCK-DONE` (and again when the command ends)
  * - `[[read-image: <absolute path>]]` → one Read call on that image file, then `MOCK-DONE`
- * - `[[retry]]` → the first two tries fail with 529 (overloaded), the third answers `MOCK: …`
+ * - `[[retry]]` → the first two tries fail with 529 (overloaded), the third answers `MOCK: …`; `[[retry:N]]` fails N
  * - `[[suggest]]` anywhere in the conversation → prompt-suggestion requests get `MOCK_SUGGESTION`; otherwise they get
  *   an empty reply, so no suggestion is made
  * - `[[refuse]]` → the model refuses (stop_reason "refusal")
@@ -84,7 +84,8 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
 export const defaultClaudeScript: ClaudeMockScript = (req) => {
   // Claude Code's prompt-suggestion side request ("[SUGGESTION MODE: …]" as the last user text).
   if (req.lastUserText.startsWith("[SUGGESTION MODE")) return { kind: "text", text: JSON.stringify(req.body.messages ?? "").includes("[[suggest]]") ? MOCK_SUGGESTION : "" };
-  if (req.lastUserText.includes("[[retry]]") && !req.afterToolOutput && req.attempt < 2) return { kind: "error", status: 529, type: "overloaded_error", message: "Overloaded" };
+  const retry = /\[\[retry(?::(\d+))?\]\]/.exec(req.lastUserText);
+  if (retry && !req.afterToolOutput && req.attempt < Number(retry[1] ?? 2)) return { kind: "error", status: 529, type: "overloaded_error", message: "Overloaded" };
   if (req.lastUserText.includes("[[refuse]]") && req.tools.length > 0) return { kind: "text", text: "", refuse: true };
   const bg = /\[\[bg:\s*([^\]]+)\]\]/.exec(req.lastUserText);
   if (bg && !req.afterToolOutput && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: bg[1]!.trim(), description: "mock background command", run_in_background: true } };

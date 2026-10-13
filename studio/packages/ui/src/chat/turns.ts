@@ -35,8 +35,14 @@ export const turnIdOf = (item: SessionItem): string | undefined => (item.type ==
 const isMember = (item: SessionItem): item is ProcessMember =>
   item.type === "reasoning" || item.type === "tool" || item.type === "subagent" || (item.type === "approval" && item.state !== "pending");
 
-/** Thinking that ended with no visible text (encrypted reasoning) has nothing to show. */
-const isEmpty = (item: SessionItem) => item.type === "reasoning" && !item.streaming && !item.text.trim();
+/** Thinking that ended with no visible text (encrypted reasoning), or an empty reply, has nothing to show. */
+const isEmpty = (item: SessionItem) => (item.type === "reasoning" && !item.streaming && !item.text.trim()) || (item.type === "agent" && !item.streaming && !item.markdown.trim());
+
+/** Items that are not rows: a turn's metadata, background commands (listed above the composer), suggestions. */
+const isRowless = (item: SessionItem) => item.type === "turn" || item.type === "background" || item.type === "suggestion";
+
+/** What always shows at the end of a turn, folded or not: errors, notices, a compaction, a command's output. */
+const isTail = (item: SessionItem) => item.type === "error" || item.type === "notice" || item.type === "compaction" || item.type === "command";
 
 export function buildTranscript(items: readonly SessionItem[], sessionRunning: boolean): Segment[] {
   const turns = new Map<string, TurnItem>();
@@ -47,7 +53,7 @@ export function buildTranscript(items: readonly SessionItem[], sessionRunning: b
   const parts: Array<{ turnId: string | undefined; items: SessionItem[] }> = [];
   let cur: (typeof parts)[number] | null = null;
   for (const item of items) {
-    if (item.type === "turn") continue;
+    if (isRowless(item)) continue;
     const tid = turnIdOf(item);
     const fresh =
       !cur ||
@@ -68,7 +74,7 @@ export function buildTranscript(items: readonly SessionItem[], sessionRunning: b
     const inputs = part.items.slice(0, start);
     const body = part.items.slice(start).filter((i) => !isEmpty(i));
     let end = body.length;
-    while (end > 0 && (body[end - 1]!.type === "error" || body[end - 1]!.type === "notice")) end--;
+    while (end > 0 && isTail(body[end - 1]!)) end--;
     const tail = body.slice(end);
     const work = body.slice(0, end);
     const answer = work.at(-1)?.type === "agent" ? (work.pop() as AgentItem) : null;

@@ -833,6 +833,17 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       case "result": {
         live.running = false;
         this.clearRetry(live);
+        // A stream the CLI never completed (a refused response is withheld) ends with the turn.
+        for (const id of live.streaming.splice(0)) {
+          const text = live.text.get(id) ?? "";
+          live.text.delete(id);
+          this.updateItem(id, (it) => (it.type === "agent" ? { ...it, markdown: it.markdown || text, streaming: false } : it));
+        }
+        for (const t of live.thinking.splice(0)) {
+          const text = live.text.get(t.itemId) ?? "";
+          live.text.delete(t.itemId);
+          this.updateItem(t.itemId, (it) => (it.type === "reasoning" ? { ...it, text: it.text || text, streaming: false } : it));
+        }
         const usage = (m as { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } }).usage;
         // The largest context among the models the turn used (subagents may use smaller ones).
         const windows = Object.values((m as { modelUsage?: Record<string, { contextWindow?: number }> }).modelUsage ?? {}).map((u) => u.contextWindow ?? 0);
