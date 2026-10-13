@@ -53,11 +53,23 @@ export interface TaskTemplateChoice {
   template: string;
 }
 
+/** Studio-wide settings kept by the Host (the look of the UI is per install, in the UI itself). */
+export interface StudioSettings {
+  /**
+   * The common space: a registered workspace for sessions that belong to no single project (the scheduler, and the
+   * default for cross-workspace sessions). Null until the person picks a folder.
+   */
+  commonWorkspace: Workspace | null;
+}
+
 /** Every REST route as `"METHOD /path"` with its request body and response. `:id` segments are path params. */
 export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
   "POST /api/workspaces": { req: { path: string; name?: string }; res: Workspace };
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
+  "GET /api/settings": { req: void; res: StudioSettings };
+  /** `commonDir`: a folder for the common space (registered as a workspace if needed, created if missing); null clears it. */
+  "PUT /api/settings": { req: { commonDir: string | null }; res: StudioSettings };
   /** Extension packs in the workspace's `.amo/packs`, valid or not (design/pack-format.md). */
   "GET /api/workspaces/:id/packs": { req: void; res: import("./packs.js").WorkspacePack[] };
   "GET /api/workspaces/:id/packs/:pack/docs/:doc": { req: void; res: import("./packs.js").PackDocContent };
@@ -163,6 +175,7 @@ export type HostEvent = { seq: number } & (
   | { type: "decision.upserted"; decision: DecisionRequest }
   | { type: "checklist.upserted"; item: ChecklistItem }
   | { type: "proposal.upserted"; proposal: ScheduleProposal }
+  | { type: "settings.updated"; settings: StudioSettings }
 );
 
 export type HostEventType = HostEvent["type"];

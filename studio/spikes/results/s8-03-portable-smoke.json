@@ -1,11 +1,11 @@
 {
-  "startedAt": "2026-10-13T01:19:46.209Z",
+  "startedAt": "2026-10-13T04:03:32.914Z",
   "archive": "studio\\release\\AMO-Studio-0.8.0-portable.zip",
   "zipMB": 264,
   "steps": [
     {
       "name": "unzipped",
-      "seconds": 9,
+      "seconds": 11,
       "exe": true
     },
     {
@@ -39,5 +39,5 @@
       "appdataStudio": false
     }
   ],
-  "finishedAt": "2026-10-13T01:19:58.474Z"
+  "finishedAt": "2026-10-13T04:03:46.913Z"
 }

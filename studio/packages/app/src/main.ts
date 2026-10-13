@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, screen, shell } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, stopHost, type HostConnection } from "./host-link.js";
@@ -20,6 +20,8 @@ import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 const here = dirname(fileURLToPath(import.meta.url));
 const studioRoot = resolve(here, "..", "..", "..");
 const testMode = process.env.AMO_STUDIO_TEST === "1";
+/** Window and taskbar icon (the exe's own icon is set when packaging). */
+const APP_ICON = join(here, "..", "assets", "icon.png");
 // The portable build is Electron itself with Studio in resources/app; the exe's folder is the portable root.
 const portableDir = process.env.AMO_STUDIO_PORTABLE_DIR ?? (app.isPackaged ? dirname(process.execPath) : null);
 const dataChoice = resolveDataDir({ env: process.env, portableDir, studioRoot });
@@ -114,7 +116,7 @@ if (!app.requestSingleInstanceLock()) {
     .whenReady()
     .then(async () => {
       if (dataChoice.firstRun) {
-        const chosen = await runSetup({ portableDir: portableDir!, configPath: dataChoice.configPath!, defaultDir: dataDir, preload: join(here, "preload.cjs"), testMode });
+        const chosen = await runSetup({ portableDir: portableDir!, configPath: dataChoice.configPath!, defaultDir: dataDir, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode });
         // Start again with the saved choice (data dir, profile and lock all follow it). Tests just end here: a relaunched
         // process would escape the test harness.
         if (chosen && !testMode) app.relaunch();
@@ -186,7 +188,9 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
     minWidth: 960,
     minHeight: 600,
     title: "AMO Studio",
-    backgroundColor: "#111316",
+    icon: APP_ICON,
+    // Before the page paints (the page then applies the chosen theme).
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#111316" : "#f5f6f8",
     // Test windows sit off-screen, out of the taskbar, and are shown without activation so they keep painting for
     // capturePage but never take focus (LOOP_RULES red line 7).
     show: false,

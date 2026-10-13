@@ -11,6 +11,8 @@ interface NewTaskPageProps {
   profiles: readonly ModelProfile[];
   /** Scope selected in the left column; preselects the task's scope. */
   scope: Scope;
+  /** The common space (设置): the default workspace for a cross-workspace task's first session. */
+  commonWorkspaceId?: string;
   onBack(): void;
   onCreated(task: Task, session: Session): void;
 }
@@ -21,7 +23,7 @@ type Pick = { kind: "workspace"; id: string } | { kind: "area" };
  * DSH-style blank task page (interaction-notes "新建任务"): "要推进什么？", the title field below it (may stay empty),
  * scope chips including cross-workspace, a one-line scope hint, and the composer with model picker at the bottom.
  */
-export function NewTaskPage({ link, workspaces, profiles, scope, onBack, onCreated }: NewTaskPageProps) {
+export function NewTaskPage({ link, workspaces, profiles, scope, commonWorkspaceId, onBack, onCreated }: NewTaskPageProps) {
   const initial = useMemo<Pick | null>(() => {
     if (scope.kind === "workspace") return { kind: "workspace", id: scope.id };
     if (scope.kind === "area") return { kind: "area" };
@@ -34,7 +36,7 @@ export function NewTaskPage({ link, workspaces, profiles, scope, onBack, onCreat
   const [pick, setPick] = useState<Pick | null>(initial);
   const [message, setMessage] = useState("");
   const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
-  const [sessionWs, setSessionWs] = useState(() => (pick?.kind === "workspace" ? pick.id : (workspaces[0]?.id ?? "")));
+  const [sessionWs, setSessionWs] = useState(() => (pick?.kind === "workspace" ? pick.id : (commonWorkspaceId ?? workspaces[0]?.id ?? "")));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   // Task templates from the extension packs of the workspace the task (or its first session) is in.
@@ -94,7 +96,11 @@ export function NewTaskPage({ link, workspaces, profiles, scope, onBack, onCreat
               {w.name}
             </button>
           ))}
-          <button type="button" className="chip" aria-pressed={pick?.kind === "area"} onClick={() => setPick({ kind: "area" })} disabled={!workspaces.length}>
+          <button type="button" className="chip" aria-pressed={pick?.kind === "area"} onClick={() => {
+              setPick({ kind: "area" });
+              // Cross-workspace work starts in the common space when there is one (设置 → 公共空间).
+              if (commonWorkspaceId) setSessionWs(commonWorkspaceId);
+            }} disabled={!workspaces.length}>
             跨工作区
           </button>
         </div>

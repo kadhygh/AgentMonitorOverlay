@@ -43,6 +43,8 @@ for (const [name, dir] of Object.entries(own)) {
   cpSync(join(from, "dist"), join(app, dir, "dist"), { recursive: true });
   if (name !== "ui") cpSync(join(from, "package.json"), join(app, dir, "package.json"));
 }
+// The shell's window icon lives in packages/app/assets.
+cpSync(join(studio, own.app, "assets"), join(app, own.app, "assets"), { recursive: true });
 // The Host reads the Codex model catalogue from assets/ next to dist/.
 cpSync(join(studio, own.host, "assets"), join(app, own.host, "assets"), { recursive: true });
 // Workspace links become plain copies, so `@amo-studio/protocol` resolves from resources/app/node_modules.
@@ -50,6 +52,18 @@ for (const name of ["protocol", "host"]) {
   cpSync(join(studio, own[name], "dist"), join(app, "node_modules", "@amo-studio", name, "dist"), { recursive: true });
   cpSync(join(studio, own[name], "package.json"), join(app, "node_modules", "@amo-studio", name, "package.json"));
 }
+// The exe's own icon and version info (Explorer, taskbar pin), with rcedit from devDependencies.
+const rcedit = join(studio, "node_modules", "rcedit", "bin", "rcedit-x64.exe");
+execFileSync(rcedit, [
+  join(target, `${appName}.exe`),
+  "--set-icon", join(studio, own.app, "assets", "icon.ico"),
+  "--set-version-string", "ProductName", appName,
+  "--set-version-string", "FileDescription", appName,
+  "--set-version-string", "CompanyName", "AMO",
+  "--set-version-string", "OriginalFilename", `${appName}.exe`,
+  "--set-file-version", version,
+  "--set-product-version", version,
+]);
 writeFileSync(join(app, "package.json"), JSON.stringify({ name: "amo-studio", productName: appName, version, type: "module", main: "packages/app/dist/main.js" }, null, 2));
 
 // 3. Production dependencies of host and app, with their dependency closure, copied from the installed tree. A package

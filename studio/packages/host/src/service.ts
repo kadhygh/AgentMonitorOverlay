@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { existsSync, statSync } from "node:fs";
+import { existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type {
   Annotation,
@@ -32,6 +32,7 @@ import type {
   PackTemplate,
   PresetDraft,
   ScheduleProposal,
+  StudioSettings,
 } from "@amo-studio/protocol";
 import { PACKS_DIR, workspacesActivity, addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
@@ -45,6 +46,7 @@ import { schedulerBrief } from "./scheduler/brief.js";
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
 
 const SCRATCHPAD_KEY = "scratchpad";
+const COMMON_WORKSPACE_KEY = "settings:common-workspace";
 
 // Application layer behind the Host API. HTTP handlers stay thin and call into this.
 
@@ -116,6 +118,29 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return ws;
   }
 
+  settings(): StudioSettings {
+    const id = this.store.getKv(COMMON_WORKSPACE_KEY)?.value;
+    return { commonWorkspace: (id && this.store.getWorkspace(id)) || null };
+  }
+
+  /** Sets (or clears) the common space's folder; it becomes a registered workspace so sessions can run there. */
+  updateSettings(input: { commonDir?: unknown }): StudioSettings {
+    if (input.commonDir !== undefined) {
+      if (input.commonDir === null || input.commonDir === "") this.store.setKv(COMMON_WORKSPACE_KEY, "");
+      else {
+        if (typeof input.commonDir !== "string") throw new HostError("bad_request", "commonDir must be a folder path or null");
+        const path = resolve(input.commonDir.trim());
+        if (existsSync(path) && !statSync(path).isDirectory()) throw new HostError("bad_request", `not a directory: ${path}`);
+        mkdirSync(path, { recursive: true });
+        const ws = this.store.findWorkspaceByPath(path) ?? this.addWorkspace({ path, name: "公共空间" });
+        this.store.setKv(COMMON_WORKSPACE_KEY, ws.id);
+      }
+    }
+    const settings = this.settings();
+    this.publish({ type: "settings.updated", settings });
+    return settings;
+  }
+
   removeWorkspace(id: Id): void {
     if (!this.store.getWorkspace(id)) throw new HostError("not_found", `workspace ${id} not found`);
     try {
@@ -124,6 +149,10 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       throw new HostError("conflict", (err as Error).message);
     }
     this.publish({ type: "workspace.removed", workspaceId: id });
+    if (this.store.getKv(COMMON_WORKSPACE_KEY)?.value === id) {
+      this.store.setKv(COMMON_WORKSPACE_KEY, "");
+      this.publish({ type: "settings.updated", settings: this.settings() });
+    }
     // Todos and canvas groups only point at a workspace as a hint; drop the hint rather than leave it dangling.
     for (const todo of this.store.listTodos().filter((t) => t.workspaceId === id)) {
       const next = { ...todo, workspaceId: null };
@@ -425,9 +454,10 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     if (typeof input?.profileId !== "string") throw new HostError("bad_request", "profileId is required");
     this.requireProfile(input.profileId);
     const workspaces = this.store.listWorkspaces();
-    // A session needs a working directory; the scheduler only reads Studio through the MCP and is told not to touch
-    // files, so the first registered workspace serves.
+    // A session needs a working directory: the common space when set (设置 → 公共空间), else the first registered
+    // workspace (the scheduler only reads Studio through the MCP and is told not to touch files).
     if (!workspaces.length) throw new HostError("bad_request", "register a workspace first");
+    const cwd = this.settings().commonWorkspace ?? workspaces[0]!;
     const task = this.schedulerTask();
     const text = schedulerBrief({
       todos: this.store.listTodos(),
@@ -437,7 +467,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       packs: workspaces.flatMap((w) => this.packs(w.id).map((p) => ({ ...p, workspaceId: w.id }))),
       perRound: PROPOSALS_PER_ROUND,
     });
-    const session = await this.addSession(task.id, { profileId: input.profileId, workspaceId: workspaces[0]!.id, text });
+    const session = await this.addSession(task.id, { profileId: input.profileId, workspaceId: cwd.id, text });
     return { task: this.store.getTask(task.id)!, session };
   }
 
