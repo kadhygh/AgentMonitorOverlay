@@ -13,6 +13,8 @@ interface ScopeNavProps {
   tasks: readonly Task[];
   scope: Scope;
   live: boolean;
+  /** Opens the settings (the button under the Host status). */
+  onSettings?: () => void;
   onScope(scope: Scope): void;
 }
 
@@ -33,7 +35,7 @@ function readFolded(): Record<PinKind, boolean> {
  * pinned (they come first, here and wherever they are picked) and each section folds down to its pinned entries. The
  * lists scroll between the fixed top and the Host / usage footer.
  */
-export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope }: ScopeNavProps) {
+export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope, onSettings }: ScopeNavProps) {
   const [adding, setAdding] = useState(false);
   const [newTopic, setNewTopic] = useState<string | null>(null);
   const [path, setPath] = useState("");
@@ -238,6 +240,15 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
       </div>
 
       <UsageFooter link={link} live={live} />
+      {onSettings && (
+        <button type="button" className="nav-settings" onClick={onSettings} aria-label="设置" title="设置：界面主题、公共目录、模型、便签、功能">
+          <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M6.9 1.5h2.2l.4 1.8 1.2.5 1.6-1 1.5 1.5-1 1.6.5 1.2 1.8.4v2.2l-1.8.4-.5 1.2 1 1.6-1.5 1.5-1.6-1-1.2.5-.4 1.8H6.9l-.4-1.8-1.2-.5-1.6 1-1.5-1.5 1-1.6-.5-1.2-1.8-.4V6.9l1.8-.4.5-1.2-1-1.6 1.5-1.5 1.6 1 1.2-.5Z" />
+            <circle cx="8" cy="8" r="2.2" />
+          </svg>
+          设置
+        </button>
+      )}
       {menu && <ProjectReviewMenu link={link} at={menu} onClose={() => setMenu(null)} />}
     </nav>
   );

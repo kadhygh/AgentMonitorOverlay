@@ -46,3 +46,11 @@
 .usage-bar span.hot { background: var(--error); }
 .usage-note { font-size: 11px; color: var(--text-faint); }
 .usage-list .link-btn { align-self: flex-start; padding: 0; }
+
+/* Settings, under the Host status (stage 12). */
+.nav-settings {
+  display: flex; align-items: center; gap: 8px; width: 100%; padding: 9px 14px; border: none; border-top: 1px solid var(--border);
+  background: var(--bg-nav); color: var(--text-dim); font-size: var(--fs-sm); text-align: left; cursor: pointer;
+}
+.nav-settings svg { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; }
+.nav-settings:hover { background: var(--chip); color: var(--text); }

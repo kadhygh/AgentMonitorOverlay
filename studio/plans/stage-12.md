@@ -85,8 +85,8 @@
 
 | 项 | 状态 |
 |---|---|
-| S12-0 公共底座 | 进行中 |
-| S12-A Review 补强 | 未开始 |
-| S12-B 提问和计划确认 | 未开始 |
-| S12-C 对话里的文件 | 未开始 |
-| S12-D 文件标记 | 未开始 |
+| S12-0 公共底座 | ✅ `d319e28`：`lib/highlight.ts`（Shiki 4.4.3，C#/TS/JSON 先加载，其余按需）、`styles/code.css`、Host `features/openin/`（VS Code 通过安装目录里 `bin/code.cmd` 指向的 CLI 脚本启动，`--goto 文件:行:列`；资源管理器 `/select,`；默认程序）、`/api/fs/text`、`/api/fs/raw`、界面 `lib/openin.ts` |
+| S12-A Review 补强 | 进行中（工作树 `AgentMonitorOverlay-s12-*`） |
+| S12-B 提问和计划确认 | 进行中（工作树 `AgentMonitorOverlay-s12-*`） |
+| S12-C 对话里的文件 | 进行中（工作树 `AgentMonitorOverlay-s12-*`） |
+| S12-D 文件标记 | 进行中（工作树 `AgentMonitorOverlay-s12-*`） |

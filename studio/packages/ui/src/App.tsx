@@ -10,7 +10,7 @@ import { useChecklist } from "./collab/ChecklistPanel.js";
 import { usePendingProposals } from "./planning/ProposalsPanel.js";
 import { useTodos } from "./planning/TodoTab.js";
 import { SettingsDialog, useSettings } from "./settings/SettingsDialog.js";
-import { TopBar, useFocusToggle } from "./shell/TopBar.js";
+import { TopBar, useFocusToggle, ViewBar } from "./shell/TopBar.js";
 import type { View, ViewContext, ViewDef } from "./shell/views.js";
 import { VIEWS } from "./features.js";
 import { featureOn, FeaturesProvider } from "./lib/features.js";
@@ -61,7 +61,8 @@ export function App() {
   if (host.kind !== "ready") {
     return (
       <div className="app">
-        <TopBar views={VIEWS} view={view} scope={scope} onView={() => undefined} onNew={() => undefined} needs={0} scopeName="" focus={focus} disabled />
+        <TopBar onView={() => undefined} needs={0} scopeName="" focus={focus} />
+        <ViewBar views={VIEWS} view={view} scope={scope} onView={() => undefined} onNew={() => undefined} disabled />
         <div className="placeholder" data-testid="host-status">
           {host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}
         </div>
@@ -97,17 +98,7 @@ export function App() {
   return (
     <FeaturesProvider disabled={disabled}>
     <div className="app">
-      <TopBar
-        views={views}
-        view={shown}
-        scope={scope}
-        onView={setView}
-        onNew={() => setView({ kind: "new" })}
-        onSettings={() => setSettingsOpen(true)}
-        needs={needs}
-        scopeName={scopeName}
-        focus={focus}
-      />
+      <TopBar onView={setView} needs={needs} scopeName={scopeName} focus={focus} />
       <div className="body">
         <ScopeNav
           link={link}
@@ -120,8 +111,12 @@ export function App() {
             setScope(s);
             setView({ kind: "board" });
           }}
+          onSettings={() => setSettingsOpen(true)}
         />
-        <main className="main">{def?.render(shown as never, ctx)}</main>
+        <div className="main-col">
+          <ViewBar views={views} view={shown} scope={scope} onView={setView} onNew={() => setView({ kind: "new" })} />
+          <main className="main">{def?.render(shown as never, ctx)}</main>
+        </div>
       </div>
       {settingsOpen && <SettingsDialog link={link} settings={settings} onClose={() => setSettingsOpen(false)} />}
       {quickOpen && (

@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Scope } from "../board/Board.js";
+import { scratchpadBridge } from "../scratchpad/bridge.js";
 import type { AnyViewDef, View } from "./views.js";
 
 /** Focus window on/off, mirrored from the Electron shell (absent in a plain browser). */
@@ -14,30 +15,12 @@ export function useFocusToggle(): { on: boolean; available: boolean; set(on: boo
   return { on, available: !!api, set: (next) => void api?.set(next) };
 }
 
-/** The top bar, which is also the window's title bar: brand and scope, the views' tabs, what needs the person, actions. */
-export function TopBar({
-  views,
-  view,
-  scope,
-  onView,
-  onNew,
-  onSettings,
-  needs,
-  scopeName,
-  focus,
-  disabled = false,
-}: {
-  views: readonly AnyViewDef[];
-  view: View | null;
-  scope: Scope;
-  onView(view: View): void;
-  focus: { on: boolean; available: boolean; set(on: boolean): void };
-  onNew(): void;
-  onSettings?: () => void;
-  needs: number;
-  scopeName: string;
-  disabled?: boolean;
-}) {
+/**
+ * The top bar, which is also the window's title bar: brand and scope, what needs the person, the scratchpad and Focus
+ * windows, and the window buttons. The views' tabs and "+ 新任务" sit in the row below (ViewBar).
+ */
+export function TopBar({ onView, needs, scopeName, focus }: { onView(view: View): void; focus: { on: boolean; available: boolean; set(on: boolean): void }; needs: number; scopeName: string }) {
+  const scratchpad = scratchpadBridge();
   return (
     <header className="topbar">
       <div className="brand">
@@ -50,6 +33,63 @@ export function TopBar({
           </>
         )}
       </div>
+      <div className="spacer" />
+      {needs > 0 && (
+        <button type="button" className="needs" onClick={() => onView({ kind: "board" })} data-testid="needs-you">
+          <span className="dot" style={{ background: "var(--attention)", width: 7, height: 7 }} />
+          需要你 {needs}
+        </button>
+      )}
+      {scratchpad && (
+        <button type="button" className="tb-btn" title="打开便签小窗（也可以用设置 → 便签里的全局快捷键）" onClick={() => void scratchpad.open()} data-testid="open-scratchpad">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M3 2.5h10a.5.5 0 0 1 .5.5v6.3L9.3 13.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z" />
+            <path d="M13.5 9.3H10a.7.7 0 0 0-.7.7v3.5M5 5.5h6M5 8h3.5" />
+          </svg>
+          便签
+        </button>
+      )}
+      {focus.available && (
+        <button
+          type="button"
+          className="tb-btn focus-toggle"
+          aria-pressed={focus.on}
+          title={focus.on ? "Focus 已开：桌面角落的悬浮窗，只列需要你处理的会话。点击关闭" : "打开 Focus：桌面角落的悬浮窗，只列需要你处理的会话"}
+          onClick={() => focus.set(!focus.on)}
+          data-testid="focus-toggle"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <rect x="1.5" y="2.5" width="13" height="10" rx="1.5" />
+            <rect className="fill" x="8.3" y="4.3" width="4.4" height="3.4" rx="0.7" />
+            <path d="M5.5 14.5h5" />
+          </svg>
+          Focus
+          <span className="focus-state" aria-hidden="true" />
+        </button>
+      )}
+      <WindowControls />
+    </header>
+  );
+}
+
+/** The row under the title bar: the views' tabs on the left, "+ 新任务" on the right. */
+export function ViewBar({
+  views,
+  view,
+  scope,
+  onView,
+  onNew,
+  disabled = false,
+}: {
+  views: readonly AnyViewDef[];
+  view: View | null;
+  scope: Scope;
+  onView(view: View): void;
+  onNew(): void;
+  disabled?: boolean;
+}) {
+  return (
+    <div className="viewbar">
       <nav className="view-tabs" aria-label="视图">
         {views.map((def) => {
           const target = def.tab?.open(scope);
@@ -65,33 +105,10 @@ export function TopBar({
         })}
       </nav>
       <div className="spacer" />
-      {needs > 0 && (
-        <button type="button" className="needs" onClick={() => onView({ kind: "board" })} data-testid="needs-you">
-          <span className="dot" style={{ background: "var(--attention)", width: 7, height: 7 }} />
-          需要你 {needs}
-        </button>
-      )}
-      {focus.available && (
-        <button
-          type="button"
-          className="btn-ghost small"
-          aria-pressed={focus.on}
-          title="桌面角落的悬浮窗：只列需要你处理的会话"
-          onClick={() => focus.set(!focus.on)}
-        >
-          Focus {focus.on ? "开" : "关"}
-        </button>
-      )}
-      {onSettings && (
-        <button type="button" className="btn-ghost small" onClick={onSettings} aria-label="设置" title="设置：界面主题、公共目录、模型">
-          设置
-        </button>
-      )}
       <button type="button" className="btn-primary" onClick={onNew} disabled={disabled} title="新建任务（Ctrl N 在任何页面打开快速启动条）">
         + 新任务
       </button>
-      <WindowControls />
-    </header>
+    </div>
   );
 }
 
