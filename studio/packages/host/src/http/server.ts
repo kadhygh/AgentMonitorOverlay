@@ -8,6 +8,10 @@ import type { HostErrorBody, HostEvent } from "@amo-studio/protocol";
 import { HostError, type HostService } from "../service.js";
 import { handleMcpRequest } from "../mcp/amo-mcp.js";
 import { listenInStudioRange } from "../net.js";
+import { FEATURES } from "../features/index.js";
+import { route, str, obj, type Route, type RouteContext } from "./route.js";
+
+export type { RouteContext } from "./route.js";
 import type { McpIdentities } from "../mcp/identity.js";
 
 // Host API over HTTP (REST) and WebSocket (events). Binds 127.0.0.1 only; every /api call needs the host token
@@ -29,13 +33,6 @@ export interface HostServerOptions {
   extraRoutes?: RouteHandler[];
 }
 
-export interface RouteContext {
-  method: string;
-  path: string;
-  params: Record<string, string>;
-  query: URLSearchParams;
-  body: unknown;
-}
 
 export type RouteHandler = (ctx: RouteContext) => Promise<unknown | typeof NOT_MATCHED> | unknown | typeof NOT_MATCHED;
 export const NOT_MATCHED = Symbol("not matched");
@@ -46,13 +43,6 @@ export interface HostServer {
   close(): Promise<void>;
 }
 
-type Route = { method: string; pattern: RegExp; keys: string[]; handle: (ctx: RouteContext) => unknown };
-
-function route(method: string, path: string, handle: (ctx: RouteContext) => unknown): Route {
-  const keys: string[] = [];
-  const pattern = new RegExp(`^${path.replace(/:([A-Za-z]+)/g, (_, k: string) => (keys.push(k), "([^/]+)"))}$`);
-  return { method, pattern, keys, handle };
-}
 
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
@@ -66,96 +56,10 @@ const MIME: Record<string, string> = {
 
 export async function startHostServer(options: HostServerOptions): Promise<HostServer> {
   const { service } = options;
-  const str = (v: unknown, name: string) => {
-    if (typeof v !== "string") throw new HostError("bad_request", `${name} must be a string`);
-    return v;
-  };
-  const obj = (v: unknown) => (v && typeof v === "object" ? (v as Record<string, unknown>) : {});
 
   const routes: Route[] = [
     route("GET", "/api/state", () => service.snapshot()),
-    route("POST", "/api/workspaces", ({ body }) => {
-      const b = obj(body);
-      return service.projects.addWorkspace({ path: str(b.path, "path"), ...(typeof b.name === "string" ? { name: b.name } : {}) });
-    }),
-    route("DELETE", "/api/workspaces/:id", ({ params }) => (service.projects.removeWorkspace(params.id!), { ok: true })),
-    route("GET", "/api/settings", () => service.config.settings()),
-    route("GET", "/api/usage", ({ query }) => service.config.usage(query.get("refresh") === "1")),
-    route("PUT", "/api/settings", ({ body }) => service.config.updateSettings(obj(body))),
-    route("GET", "/api/profiles/:id/choices", ({ params }) => service.config.choices(params.id!)),
-    route("PATCH", "/api/sessions/:id/options", ({ params, body }) => service.sessions.updateSessionOptions(params.id!, body)),
-    route("PATCH", "/api/sessions/:id", ({ params, body }) => service.sessions.renameSession(params.id!, obj(body).title)),
-    route("GET", "/api/credentials", () => service.config.credentials()),
-    route("PUT", "/api/credentials/:id", ({ params, body }) => service.config.saveCredential(params.id!, obj(body).secret)),
-    route("DELETE", "/api/credentials/:id", ({ params }) => service.config.removeCredential(params.id!)),
-    route("GET", "/api/workspaces/:id/packs", ({ params }) => service.extensions.packs(params.id!)),
-    route("GET", "/api/workspaces/:id/packs/:pack/docs/:doc", ({ params }) => service.extensions.packDoc(params.id!, params.pack!, params.doc!)),
-    route("POST", "/api/workspaces/:id/packs/:pack/presets/:preset/draft", ({ params, body }) => service.extensions.presetDraft(params.id!, params.pack!, params.preset!, obj(body).taskId)),
-    route("POST", "/api/tasks", ({ body }) => service.tasks.createTask(obj(body) as never)),
-    route("PATCH", "/api/tasks/:id", ({ params, body }) => service.tasks.updateTask(params.id!, obj(body) as never)),
-    route("POST", "/api/tasks/:id/sessions", ({ params, body }) => service.tasks.addSession(params.id!, obj(body) as never)),
-    route("POST", "/api/tasks/:id/archive", ({ params }) => service.tasks.archiveTask(params.id!)),
-    route("POST", "/api/tasks/:id/unarchive", ({ params }) => service.tasks.unarchiveTask(params.id!)),
-    route("POST", "/api/topics", ({ body }) => service.topics.createTopic(obj(body))),
-    route("PATCH", "/api/topics/:id", ({ params, body }) => service.topics.updateTopic(params.id!, obj(body))),
-    route("POST", "/api/topics/:id/archive", ({ params }) => service.topics.archiveTopic(params.id!)),
-    route("POST", "/api/topics/:id/unarchive", ({ params }) => service.topics.unarchiveTopic(params.id!)),
-    route("POST", "/api/topics/:id/sessions", ({ params, body }) => service.topics.addTopicSession(params.id!, obj(body) as never)),
-    route("GET", "/api/topics/:id/canvas", ({ params }) => service.canvases.canvas(params.id!)),
-    route("PUT", "/api/topics/:id/canvas", ({ params, body }) => service.canvases.saveCanvas(params.id!, body)),
-    route("GET", "/api/topics/:id/canvas/outline", ({ params }) => service.canvases.canvasOutline(params.id!)),
-    route("GET", "/api/sessions/:id/items", ({ params, query }) => service.sessions.items(params.id!, Number(query.get("after") ?? 0) || 0)),
-    route("POST", "/api/sessions/:id/messages", ({ params, body }) => service.sessions.sendMessage(params.id!, str(obj(body).text, "text"))),
-    route("POST", "/api/sessions/:id/interrupt", async ({ params }) => (await service.sessions.interrupt(params.id!), { ok: true })),
-    route("POST", "/api/sessions/:id/fork", ({ params, body }) => {
-      const p = obj(body).profileId;
-      return service.sessions.fork(params.id!, typeof p === "string" ? p : undefined);
-    }),
-    route("POST", "/api/sessions/:id/archive", ({ params }) => service.sessions.archive(params.id!)),
-    route("POST", "/api/sessions/:id/unarchive", ({ params }) => service.sessions.unarchive(params.id!)),
-    route("POST", "/api/sessions/:id/terminal", ({ params, body }) => service.sessions.terminal(params.id!, obj(body).launch === true)),
-    route("POST", "/api/sessions/:id/reclaim", ({ params }) => service.sessions.reclaim(params.id!)),
-    route("GET", "/api/todos", () => service.planning.todos()),
-    route("POST", "/api/todos", ({ body }) => service.planning.addTodo(obj(body))),
-    route("PATCH", "/api/todos/:id", ({ params, body }) => service.planning.updateTodo(params.id!, obj(body))),
-    route("POST", "/api/todos/:id/convert", ({ params, body }) => service.planning.convertTodo(params.id!, obj(body))),
-    route("DELETE", "/api/todos/:id", ({ params }) => (service.planning.deleteTodo(params.id!), { ok: true })),
-    route("GET", "/api/checklist", ({ query }) => service.collab.checklist(query.get("taskId") ?? undefined)),
-    route("PATCH", "/api/checklist/:id", ({ params, body }) => service.collab.setChecklistDone(params.id!, obj(body).done)),
-    route("GET", "/api/tasks/:id/notes", ({ params }) => service.collab.taskNotes(params.id!)),
-    route("POST", "/api/tasks/:id/notes", ({ params, body }) => service.collab.addTaskNote(params.id!, obj(body))),
-    route("GET", "/api/mail", ({ query }) =>
-      service.collab.mail({
-        ...(query.get("sessionId") ? { sessionId: query.get("sessionId")! } : {}),
-        ...(query.get("taskId") ? { taskId: query.get("taskId")! } : {}),
-        ...(query.get("topicId") ? { topicId: query.get("topicId")! } : {}),
-        ...(query.get("forTask") ? { forTaskId: query.get("forTask")! } : {}),
-        ...(query.get("forTopic") ? { forTopicId: query.get("forTopic")! } : {}),
-        ...(query.get("state") ? { states: query.get("state")!.split(",") as never } : {}),
-      }),
-    ),
-    route("POST", "/api/mail", ({ body }) => service.collab.sendMail(null, obj(body).to, obj(body).text)),
-    route("PATCH", "/api/mail/:id", ({ params, body }) => service.collab.updateMail(params.id!, obj(body).state)),
-    route("POST", "/api/mail/:id/forward", ({ params, body }) => service.collab.forwardMail(params.id!, obj(body))),
-    route("GET", "/api/decisions", ({ query }) => service.collab.decisions(query.get("state") ? { state: query.get("state") as never } : {})),
-    route("POST", "/api/decisions/:id/answer", ({ params, body }) => service.collab.answerDecision(params.id!, obj(body).answer)),
-    route("POST", "/api/scheduler/run", ({ body }) => service.planning.runScheduler(obj(body))),
-    route("GET", "/api/proposals", ({ query }) => service.planning.proposals(query.get("state") ? { state: query.get("state") as never } : {})),
-    route("POST", "/api/proposals", ({ body }) => service.planning.propose(obj(body))),
-    route("POST", "/api/proposals/:id/approve", ({ params, body }) => service.planning.approveProposal(params.id!, obj(body))),
-    route("POST", "/api/proposals/:id/reject", ({ params }) => service.planning.rejectProposal(params.id!)),
-    route("GET", "/api/scratchpad", () => service.review.scratchpad()),
-    route("PUT", "/api/scratchpad", ({ body }) => service.review.saveScratchpad(obj(body).text)),
-    route("GET", "/api/sessions/:id/annotations", ({ params }) => service.review.annotations(params.id!)),
-    route("POST", "/api/sessions/:id/annotations/send", ({ params }) => service.review.sendAnnotations(params.id!)),
-    route("POST", "/api/sessions/:id/annotations", ({ params, body }) => service.review.addAnnotation(params.id!, obj(body) as never)),
-    route("PATCH", "/api/annotations/:id", ({ params, body }) => service.review.updateAnnotation(params.id!, obj(body).note as string)),
-    route("DELETE", "/api/annotations/:id", ({ params }) => (service.review.deleteAnnotation(params.id!), { ok: true })),
-    route("POST", "/api/approvals/:approvalId", async ({ params, body }) => {
-      const b = obj(body);
-      await service.sessions.respondApproval(str(b.sessionId, "sessionId"), params.approvalId!, b.decision as never);
-      return { ok: true };
-    }),
+    ...FEATURES.flatMap((f) => f.routes(service)),
   ];
 
   const same = (given: string, expected: string) => {
