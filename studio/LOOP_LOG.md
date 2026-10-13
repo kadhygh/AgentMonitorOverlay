@@ -964,3 +964,11 @@
 - 合并：`studio/stage-7` 用 `--no-ff` 合并进 `studio/main`
 - NEEDS_YOU：写入"阶段 7 完成"（请你过目）；"调度 agent 的权限与频率"（必须等你）仍在等待
 - 额度：0
+
+## 2026-10-14 15:45 · 阶段 8 计划
+- 结果：done
+- 新建分支 `studio/stage-8`（从 `studio/main`）
+- 计划：`plans/stage-8.md`（9 个任务：S8-00 预研打包、S8-01 打包后的运行路径、S8-02 首次启动设置、S8-03 打包脚本与产物冒烟、S8-04 文档、S8-05 删除旧 AMO 的清单（不删）、S8-06 全面自查与合并准备、S8-07 合并 master【必须等你】、S8-08 删除旧 AMO【必须等你，即 S3-10】）
+- 默认决定（请你过目）：Portable zip、数据默认在 exe 旁边 `data/`、选择记在 `amo-studio.json`；版本号 0.8.0；产物放 `studio/release/` 不进 git
+- NEEDS_YOU：写入"阶段 8 计划"（请你过目）；合并 master 的"必须等你"在 S8-06 完成后写入
+- 额度：0
