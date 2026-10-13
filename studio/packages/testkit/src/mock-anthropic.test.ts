@@ -7,7 +7,7 @@ const tools = [{ name: "Bash" }, { name: "Agent" }];
 describe("mock Anthropic request parsing", () => {
   it("counts image blocks, and takes a message with only an image (and the CLI's note) as the person's", () => {
     const image = { type: "image", source: { type: "base64", media_type: "image/png", data: "AA" } };
-    const req = parseClaudeRequest({ stream: true, tools, messages: [{ role: "user", content: [reminder, image, { type: "text", text: "[Image: source: C:\t\1.png]" }] }] });
+    const req = parseClaudeRequest({ stream: true, tools, messages: [{ role: "user", content: [reminder, image, { type: "text", text: "[Image: source: /tmp/claude/images/1.png]" }] }] });
     expect(req).toMatchObject({ lastUserText: "", images: 1 });
     expect(defaultClaudeScript(req)).toEqual({ kind: "text", text: "MOCK:  [images: 1]" });
   });
