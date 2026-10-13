@@ -1,0 +1,1079 @@
+<title>AMO Studio 界面方向</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Archivo:wght@400;600;800;900&family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700;900&family=Noto+Serif+SC:wght@500;600;700&family=Nunito:wght@400;600;700;800&display=swap">
+<style>
+/* Layout: a preview toolbar on top, then the app at 1:1 (1400×860) inside its own scroll box, so every size is real. */
+
+/* ---- Preview chrome (not part of any direction) ---- */
+:root {
+  --pv-bg: #e9eaec;
+  --pv-fg: #1d1f23;
+  --pv-dim: #61666f;
+  --pv-line: #cfd2d7;
+  --pv-on: #1d1f23;
+  --pv-on-fg: #ffffff;
+  --pv-card: #f7f7f8;
+  color-scheme: light;
+}
+html, body { background: var(--pv-bg); color: var(--pv-fg); }
+body { font-family: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif; font-size: 14px; padding: 16px; padding-block: 16px 40px; }
+.pv-top { display: flex; flex-direction: column; gap: 12px; max-width: 1400px; margin: 0 auto 14px; }
+.pv-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.pv-head h1 { font-size: 20px; margin: 0; font-weight: 700; }
+.pv-head p { margin: 0; color: var(--pv-dim); font-size: 13px; }
+.pv-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pv-tab { font: inherit; font-size: 13px; border: 1px solid var(--pv-line); background: var(--pv-card); color: var(--pv-fg); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.pv-tab b { font-weight: 700; margin-right: 6px; }
+.pv-tab[aria-pressed="true"] { background: var(--pv-on); color: var(--pv-on-fg); border-color: var(--pv-on); }
+.pv-tab:focus-visible { outline: 2px solid #2b6cd6; outline-offset: 2px; }
+.pv-note { background: var(--pv-card); border: 1px solid var(--pv-line); border-radius: 8px; padding: 10px 14px; font-size: 13px; line-height: 1.6; color: var(--pv-dim); }
+.pv-note strong { color: var(--pv-fg); }
+.pv-stage { max-width: 1400px; margin: 0 auto; overflow-x: auto; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 12px 40px rgba(0,0,0,.12); }
+
+/* ---- Direction tokens. The app reads only these. ---- */
+.app {
+  /* Direction B is the fallback so nothing is ever undefined. */
+  --font-ui: "IBM Plex Sans", "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --font-display: var(--font-ui);
+  --font-mono: "IBM Plex Mono", "JetBrains Mono", Consolas, monospace;
+  --fs-cap: 11px; --fs-sm: 12px; --fs-body: 13px; --fs-title: 14px; --fs-h2: 16px; --fs-h1: 18px;
+  --lh: 1.5; --fw-display: 600; --fw-strong: 600; --ls-display: 0; --ls-label: .04em;
+  --r-s: 4px; --r-m: 6px; --r-l: 8px; --r-btn: 6px;
+  --ctl-s: 24px; --ctl: 28px; --ctl-l: 32px; --ctl-px: 10px;
+  --sp: 4px; --topbar-h: 48px; --nav-w: 216px; --bw: 1px;
+  --bg: #f7f8fa; --header: #ffffff; --nav: #f2f4f7; --surface: #ffffff; --surface-2: #f7f8fa; --sunken: #eef0f3;
+  --line: #e3e6eb; --line-strong: #c9ced6;
+  --text: #14171c; --text-2: #5a616d; --text-3: #8a919c;
+  --accent: #3e55d8; --accent-hover: #3146c0; --on-accent: #ffffff; --accent-soft: #eceffd;
+  --attn: #a86200; --attn-soft: #fff4e0; --attn-line: #f1d6a6;
+  --ok: #18915a; --ok-soft: #e3f5ec; --err: #c93434; --err-soft: #fde9e9;
+  --sel: #e6eafc; --canvas: #f3f4f7; --dot: #d5d9e0; --code-bg: #f5f6f8;
+  --shadow-1: 0 1px 2px rgba(20,23,28,.06); --shadow-2: 0 12px 32px rgba(20,23,28,.14);
+  --scrim: rgba(20,23,28,.32);
+}
+.app[data-dir="a"] {
+  --font-ui: "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --font-display: "Noto Serif SC", "Songti SC", serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+  --fs-cap: 12px; --fs-sm: 13px; --fs-body: 14px; --fs-title: 16px; --fs-h2: 19px; --fs-h1: 24px;
+  --lh: 1.6; --fw-display: 700; --fw-strong: 600; --ls-display: .01em; --ls-label: .1em;
+  --r-s: 2px; --r-m: 3px; --r-l: 4px; --r-btn: 3px;
+  --ctl-s: 26px; --ctl: 30px; --ctl-l: 36px; --ctl-px: 12px;
+  --sp: 4px; --topbar-h: 54px; --nav-w: 224px;
+  --bg: #efede8; --header: #f8f7f3; --nav: #efede8; --surface: #fbfaf7; --surface-2: #f4f2ed; --sunken: #e7e3db;
+  --line: #d9d3c7; --line-strong: #2a2723;
+  --text: #22201c; --text-2: #5d5850; --text-3: #8d877c;
+  --accent: #23436f; --accent-hover: #182f50; --on-accent: #fbfaf7; --accent-soft: #e1e6ed;
+  --attn: #93570a; --attn-soft: #f4e7cd; --attn-line: #dcc08a;
+  --ok: #3b7a4f; --ok-soft: #e1ece2; --err: #a3302b; --err-soft: #f3dfdb;
+  --sel: #dde4ee; --canvas: #ebe8e1; --dot: #cbc4b6; --code-bg: #f1eee7;
+  --shadow-1: 0 1px 0 rgba(34,32,28,.07); --shadow-2: 0 14px 36px rgba(34,32,28,.16);
+  --scrim: rgba(34,32,28,.30);
+}
+.app[data-dir="b"] { /* uses the fallback values above */ }
+.app[data-dir="c"] {
+  --font-ui: "Nunito", "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --font-display: "Nunito", "Noto Sans SC", sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+  --fs-cap: 12px; --fs-sm: 13px; --fs-body: 14px; --fs-title: 16px; --fs-h2: 19px; --fs-h1: 23px;
+  --lh: 1.6; --fw-display: 800; --fw-strong: 700; --ls-display: 0; --ls-label: .02em;
+  --r-s: 8px; --r-m: 12px; --r-l: 18px; --r-btn: 999px;
+  --ctl-s: 28px; --ctl: 34px; --ctl-l: 40px; --ctl-px: 15px;
+  --sp: 5px; --topbar-h: 56px; --nav-w: 228px;
+  --bg: #f3f2f7; --header: #f3f2f7; --nav: #f3f2f7; --surface: #ffffff; --surface-2: #f8f7fb; --sunken: #eae8f1;
+  --line: #e5e3ec; --line-strong: #cfcbdc;
+  --text: #27253a; --text-2: #625f79; --text-3: #9794ac;
+  --accent: #3b8a82; --accent-hover: #2e726b; --on-accent: #ffffff; --accent-soft: #dff0ec;
+  --attn: #b9583a; --attn-soft: #fbe8df; --attn-line: #f0c6b4;
+  --ok: #3c8a59; --ok-soft: #e2f2e7; --err: #c2435a; --err-soft: #fae3e7;
+  --sel: #e9e5f7; --canvas: #efedf5; --dot: #d6d2e3; --code-bg: #f6f5fa;
+  --shadow-1: 0 1px 2px rgba(39,37,58,.05), 0 3px 10px rgba(39,37,58,.05); --shadow-2: 0 20px 44px rgba(39,37,58,.16);
+  --scrim: rgba(39,37,58,.28);
+}
+.app[data-dir="d"] {
+  --font-ui: "Archivo", "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --font-display: "Archivo", "Noto Sans SC", sans-serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+  --fs-cap: 11px; --fs-sm: 13px; --fs-body: 14px; --fs-title: 16px; --fs-h2: 21px; --fs-h1: 30px;
+  --lh: 1.5; --fw-display: 900; --fw-strong: 700; --ls-display: -.01em; --ls-label: .12em;
+  --r-s: 0px; --r-m: 0px; --r-l: 0px; --r-btn: 0px;
+  --ctl-s: 26px; --ctl: 32px; --ctl-l: 40px; --ctl-px: 14px;
+  --sp: 4px; --topbar-h: 56px; --nav-w: 224px;
+  --bg: #ffffff; --header: #ffffff; --nav: #ffffff; --surface: #ffffff; --surface-2: #f5f5f3; --sunken: #ececea;
+  --line: #d9d9d5; --line-strong: #111111;
+  --text: #111111; --text-2: #4b4b48; --text-3: #8b8b86;
+  --accent: #111111; --accent-hover: #3a3a3a; --on-accent: #ffffff; --accent-soft: #fff3b0;
+  --attn: #111111; --attn-soft: #ffd60a; --attn-line: #111111;
+  --ok: #17803b; --ok-soft: #e2f1e6; --err: #df2f1c; --err-soft: #fde3df;
+  --sel: #fff3b0; --canvas: #fafaf8; --dot: #e4e4e0; --code-bg: #f5f5f3;
+  --shadow-1: none; --shadow-2: 6px 6px 0 #111111;
+  --scrim: rgba(255,255,255,.72);
+}
+.app[data-dir="e"] {
+  --font-ui: "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --font-display: "Noto Serif SC", "Songti SC", serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+  --fs-cap: 12px; --fs-sm: 13px; --fs-body: 14px; --fs-title: 16px; --fs-h2: 20px; --fs-h1: 26px;
+  --lh: 1.8; --fw-display: 600; --fw-strong: 500; --ls-display: .08em; --ls-label: .16em;
+  --r-s: 2px; --r-m: 2px; --r-l: 3px; --r-btn: 2px;
+  --ctl-s: 28px; --ctl: 32px; --ctl-l: 38px; --ctl-px: 16px;
+  --sp: 5px; --topbar-h: 58px; --nav-w: 232px;
+  --bg: #f6f6f2; --header: #f6f6f2; --nav: #f6f6f2; --surface: #fdfdfb; --surface-2: #f1f1ec; --sunken: #eaeae4;
+  --line: #e1e0d8; --line-strong: #b7b5aa;
+  --text: #262624; --text-2: #65645d; --text-3: #9c9a90;
+  --accent: #262624; --accent-hover: #000000; --on-accent: #fdfdfb; --accent-soft: #ebeae4;
+  --attn: #b2392d; --attn-soft: #f6e6e2; --attn-line: #e6bdb6;
+  --ok: #4b7a5c; --ok-soft: #e5eee7; --err: #8e2b22; --err-soft: #f3e2df;
+  --sel: #eceadf; --canvas: #f3f3ef; --dot: #dcdbd2; --code-bg: #f1f1ec;
+  --shadow-1: none; --shadow-2: 0 24px 60px rgba(38,38,36,.12);
+  --scrim: rgba(246,246,242,.70);
+}
+
+/* ---- App shell ---- */
+.app { width: 1400px; height: 860px; position: relative; overflow: hidden; display: grid; grid-template-rows: var(--topbar-h) 1fr; grid-template-columns: var(--nav-w) 1fr;
+  background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: var(--fs-body); line-height: var(--lh); -webkit-font-smoothing: antialiased; }
+.app *, .app *::before, .app *::after { box-sizing: border-box; }
+.app :where(button, input, textarea, select) { font: inherit; color: inherit; }
+.app .mono, .app .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.app .num { font-size: .92em; }
+
+.topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: calc(var(--sp) * 4); padding: 0 calc(var(--sp) * 4); background: var(--header); border-bottom: var(--bw) solid var(--line); }
+.brand { display: flex; align-items: center; gap: 10px; width: calc(var(--nav-w) - var(--sp) * 4); }
+.brand-name { font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-title); letter-spacing: var(--ls-display); }
+.logo { width: 28px; height: 28px; flex: none; color: var(--accent); }
+.seg { display: inline-flex; background: var(--sunken); border-radius: calc(var(--r-btn) + 2px); padding: 2px; gap: 2px; }
+.seg button { height: calc(var(--ctl) - 4px); padding: 0 var(--ctl-px); border: 0; background: transparent; border-radius: var(--r-btn); font-size: var(--fs-sm); color: var(--text-2); cursor: pointer; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: var(--fw-strong); box-shadow: var(--shadow-1); }
+.spacer { flex: 1; }
+.search { display: flex; align-items: center; gap: 8px; height: var(--ctl); width: 260px; padding: 0 10px; border: var(--bw) solid var(--line); border-radius: var(--r-btn); background: var(--surface); color: var(--text-3); font-size: var(--fs-sm); }
+.search kbd, .kbd { margin-left: auto; font-family: var(--font-mono); font-size: var(--fs-cap); color: var(--text-3); border: var(--bw) solid var(--line); border-radius: var(--r-s); padding: 0 5px; line-height: 18px; background: var(--surface-2); }
+
+/* Buttons: four kinds, three sizes. Every size and color comes from tokens. */
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: var(--bw) solid var(--line-strong);
+  background: var(--surface); color: var(--text); font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; cursor: pointer; line-height: 1; }
+.btn:hover { background: var(--surface-2); }
+.btn:focus-visible, .seg button:focus-visible, .nav-row:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: var(--fw-strong); }
+.btn.primary:hover { background: var(--accent-hover); border-color: var(--accent-hover); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text-2); }
+.btn.ghost:hover { background: var(--sunken); color: var(--text); }
+.btn.danger { background: transparent; border-color: transparent; color: var(--err); }
+.btn.danger:hover { background: var(--err-soft); }
+.btn.s { height: var(--ctl-s); padding: 0 calc(var(--ctl-px) - 3px); font-size: var(--fs-cap); }
+.btn.l { height: var(--ctl-l); padding: 0 calc(var(--ctl-px) + 4px); font-size: var(--fs-body); }
+.btn svg { width: 14px; height: 14px; }
+.btn.icon { width: var(--ctl); padding: 0; }
+
+/* ---- Left nav ---- */
+.nav { background: var(--nav); border-right: var(--bw) solid var(--line); padding: calc(var(--sp) * 3) calc(var(--sp) * 2.5); display: flex; flex-direction: column; gap: 2px; overflow: hidden; }
+.nav-label { font-size: var(--fs-cap); color: var(--text-3); letter-spacing: var(--ls-label); padding: calc(var(--sp) * 3) 8px calc(var(--sp) * 1.5); display: flex; align-items: center; }
+.nav-label:first-child { padding-top: 0; }
+.nav-label .add { margin-left: auto; color: var(--text-3); font-size: 15px; line-height: 1; }
+.nav-row { display: flex; align-items: center; gap: 8px; width: 100%; height: calc(var(--ctl) + 2px); padding: 0 8px; border: 0; border-radius: var(--r-m); background: transparent; text-align: left; cursor: pointer; color: var(--text); font-size: var(--fs-body); }
+.nav-row:hover { background: var(--sunken); }
+.nav-row[aria-current="true"] { background: var(--sel); font-weight: var(--fw-strong); }
+.nav-row .count { margin-left: auto; color: var(--text-3); font-size: var(--fs-cap); font-family: var(--font-mono); }
+.nav-row .glyph { width: 16px; height: 16px; color: var(--text-3); flex: none; }
+.nav-row.attn .count { color: var(--attn); font-weight: 700; }
+.nav-foot { margin-top: auto; border-top: var(--bw) solid var(--line); padding: calc(var(--sp) * 3) 8px 0; font-size: var(--fs-cap); color: var(--text-3); display: flex; align-items: center; gap: 6px; }
+
+/* ---- Status ---- */
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); flex: none; display: inline-block; }
+.dot.run { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.dot.attn { background: var(--attn); box-shadow: 0 0 0 3px var(--attn-soft); }
+.dot.err { background: var(--err); }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 999px; font-size: var(--fs-cap); background: var(--sunken); color: var(--text-2); white-space: nowrap; }
+.pill.run { background: var(--ok-soft); color: var(--ok); }
+.pill.attn { background: var(--attn-soft); color: var(--attn); font-weight: 600; }
+.pill.err { background: var(--err-soft); color: var(--err); }
+.tag { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: var(--r-s); border: var(--bw) solid var(--line); font-size: var(--fs-cap); color: var(--text-2); background: var(--surface); white-space: nowrap; }
+.tag.topic { border-style: dashed; }
+.tag svg { width: 11px; height: 11px; }
+
+/* ---- Main area ---- */
+.main { overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.screen { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.app[data-screen="board"] .screen.board, .app[data-screen="newtask"] .screen.board,
+.app[data-screen="topic"] .screen.topic, .app[data-screen="task"] .screen.task,
+.app[data-screen="settings"] .screen.board, .app[data-screen="spec"] .screen.spec { display: flex; }
+.app[data-screen="focus"] .topbar, .app[data-screen="focus"] .nav, .app[data-screen="focus"] .main { display: none; }
+
+.pagebar { display: flex; align-items: center; gap: calc(var(--sp) * 3); padding: calc(var(--sp) * 3.5) calc(var(--sp) * 6) calc(var(--sp) * 3); }
+.pagebar h2 { margin: 0; font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-h1); letter-spacing: var(--ls-display); line-height: 1.2; }
+.pagebar .sub { color: var(--text-3); font-size: var(--fs-sm); }
+.filters { display: flex; gap: 6px; align-items: center; }
+.chip { display: inline-flex; align-items: center; gap: 6px; height: var(--ctl-s); padding: 0 10px; border-radius: 999px; border: var(--bw) solid var(--line); background: var(--surface); font-size: var(--fs-sm); color: var(--text-2); cursor: pointer; }
+.chip[aria-pressed="true"] { border-color: var(--text); color: var(--text); font-weight: var(--fw-strong); }
+.chip svg { width: 12px; height: 12px; }
+
+/* ---- Board ---- */
+.columns { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: calc(var(--sp) * 4); padding: 0 calc(var(--sp) * 6) calc(var(--sp) * 5); }
+.col { display: flex; flex-direction: column; gap: calc(var(--sp) * 2.5); min-width: 0; }
+.col-head { display: flex; align-items: baseline; gap: 8px; padding: 0 2px calc(var(--sp) * 1); font-weight: var(--fw-strong); font-size: var(--fs-sm); }
+.col-head .n { color: var(--text-3); font-family: var(--font-mono); font-weight: 400; font-size: var(--fs-cap); }
+.card { background: var(--surface); border: var(--bw) solid var(--line); border-radius: var(--r-l); padding: calc(var(--sp) * 3) calc(var(--sp) * 3.5); display: flex; flex-direction: column; gap: calc(var(--sp) * 2); box-shadow: var(--shadow-1); cursor: pointer; }
+.card:hover { border-color: var(--line-strong); }
+.card.attn { border-color: var(--attn-line); box-shadow: inset 3px 0 0 var(--attn), var(--shadow-1); }
+.card-title { font-weight: var(--fw-strong); font-size: var(--fs-title); line-height: 1.35; }
+.card-status { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text-2); }
+.card-status .when { margin-left: auto; color: var(--text-3); font-size: var(--fs-cap); }
+.card-meta { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; font-size: var(--fs-cap); color: var(--text-3); }
+.card-meta .sessions { margin-left: auto; }
+.card-quote { font-size: var(--fs-sm); color: var(--text-2); background: var(--attn-soft); border-radius: var(--r-s); padding: 6px 8px; font-family: var(--font-mono); font-size: var(--fs-cap); overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.col-add { height: var(--ctl); border: var(--bw) dashed var(--line-strong); border-radius: var(--r-l); background: transparent; color: var(--text-3); font-size: var(--fs-sm); cursor: pointer; }
+
+/* ---- Topic (canvas) ---- */
+.topic-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 1fr 320px; border-top: var(--bw) solid var(--line); }
+.canvas { position: relative; overflow: hidden; background-color: var(--canvas); background-image: radial-gradient(var(--dot) 1px, transparent 1.4px); background-size: 20px 20px; }
+.canvas-tools { position: absolute; top: 14px; left: 14px; display: flex; gap: 6px; z-index: 2; }
+.canvas-zoom { position: absolute; right: 14px; bottom: 14px; display: flex; align-items: center; gap: 2px; background: var(--surface); border: var(--bw) solid var(--line); border-radius: var(--r-m); padding: 2px; z-index: 2; font-size: var(--fs-cap); }
+.canvas-zoom span { padding: 0 8px; color: var(--text-2); font-family: var(--font-mono); }
+.group { position: absolute; border: var(--bw) solid var(--line-strong); border-radius: var(--r-l); background: color-mix(in srgb, var(--surface) 55%, transparent); }
+.group-bar { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-bottom: var(--bw) solid var(--line); font-weight: var(--fw-strong); font-size: var(--fs-sm); }
+.group-bar .tag { margin-left: auto; }
+.node { position: absolute; width: 236px; }
+.node .card { gap: 6px; padding: 10px 12px; }
+.node .card-title { font-size: var(--fs-body); }
+.sticky { position: absolute; width: 190px; padding: 10px 12px; background: var(--attn-soft); border: var(--bw) solid var(--attn-line); border-radius: var(--r-s); font-size: var(--fs-sm); color: var(--text); line-height: 1.55; }
+.edges { position: absolute; inset: 0; pointer-events: none; }
+.edges path { fill: none; stroke: var(--text-2); stroke-width: 1.5; }
+.edges .arrow { fill: var(--text-2); }
+
+.side { background: var(--surface); border-left: var(--bw) solid var(--line); display: flex; flex-direction: column; min-height: 0; }
+.side-tabs { display: flex; gap: 2px; padding: 10px 12px 0; border-bottom: var(--bw) solid var(--line); }
+.side-tabs button { border: 0; background: none; padding: 8px 10px; font-size: var(--fs-sm); color: var(--text-2); border-bottom: 2px solid transparent; margin-bottom: -1px; cursor: pointer; }
+.side-tabs button[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--text); font-weight: var(--fw-strong); }
+.side-tabs .badge { display: inline-block; min-width: 16px; height: 16px; line-height: 16px; border-radius: 8px; background: var(--attn); color: var(--surface); font-size: 10px; text-align: center; margin-left: 4px; padding: 0 4px; }
+.side-body { padding: calc(var(--sp) * 3.5); display: flex; flex-direction: column; gap: calc(var(--sp) * 3); overflow: hidden; }
+.sess { display: flex; flex-direction: column; gap: 4px; padding: 10px 12px; border: var(--bw) solid var(--line); border-radius: var(--r-m); background: var(--surface); }
+.sess.cur { border-color: var(--line-strong); background: var(--surface-2); }
+.sess-top { display: flex; align-items: center; gap: 8px; font-weight: var(--fw-strong); font-size: var(--fs-body); }
+.sess-sub { font-size: var(--fs-cap); color: var(--text-3); display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.side h4 { margin: 0; font-size: var(--fs-cap); font-weight: 600; color: var(--text-3); letter-spacing: var(--ls-label); }
+
+/* ---- Task ---- */
+.taskbar { display: flex; align-items: center; gap: calc(var(--sp) * 3); padding: calc(var(--sp) * 2.5) calc(var(--sp) * 5); border-bottom: var(--bw) solid var(--line); background: var(--header); }
+.taskbar h2 { margin: 0; font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-h2); letter-spacing: var(--ls-display); }
+.select { display: inline-flex; align-items: center; gap: 8px; height: var(--ctl); padding: 0 10px; border: var(--bw) solid var(--line-strong); border-radius: var(--r-btn); background: var(--surface); font-size: var(--fs-sm); }
+.select svg { width: 12px; height: 12px; color: var(--text-3); }
+.task-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 236px 1fr 300px; }
+.tree { border-right: var(--bw) solid var(--line); padding: calc(var(--sp) * 3); display: flex; flex-direction: column; gap: 4px; background: var(--surface-2); }
+.tree-row { display: flex; flex-direction: column; gap: 2px; padding: 7px 10px; border-radius: var(--r-m); cursor: pointer; }
+.tree-row:hover { background: var(--sunken); }
+.tree-row[aria-current="true"] { background: var(--sel); }
+.tree-row .t { display: flex; align-items: center; gap: 8px; font-size: var(--fs-body); font-weight: 500; }
+.tree-row .m { font-size: var(--fs-cap); color: var(--text-3); padding-left: 15px; }
+.tree-row.l1 { margin-left: 16px; border-left: var(--bw) solid var(--line); border-radius: 0 var(--r-m) var(--r-m) 0; }
+.tree .btn { margin-top: 6px; }
+
+.chat { display: flex; flex-direction: column; min-width: 0; min-height: 0; background: var(--surface); }
+.chat-head { display: flex; align-items: center; gap: 10px; padding: 10px 24px; border-bottom: var(--bw) solid var(--line); font-size: var(--fs-sm); }
+.chat-head b { font-size: var(--fs-body); font-weight: var(--fw-strong); }
+.chat-head .who { color: var(--text-3); }
+.chat-scroll { flex: 1; min-height: 0; overflow-y: auto; padding: 18px 0 16px; }
+.thread { width: min(680px, 100% - 48px); margin: 0 auto; display: flex; flex-direction: column; gap: 12px; }
+.u { align-self: flex-end; max-width: 78%; background: var(--sel); padding: 9px 14px; border-radius: var(--r-l); font-size: var(--fs-body); }
+.fold { display: flex; align-items: center; gap: 6px; color: var(--text-3); font-size: var(--fs-sm); }
+.fold svg { width: 12px; height: 12px; }
+.md { font-size: var(--fs-body); line-height: var(--lh); }
+.md p { margin: 0 0 8px; }
+.md table { border-collapse: collapse; font-size: var(--fs-sm); margin: 4px 0 10px; }
+.md th, .md td { border: var(--bw) solid var(--line); padding: 5px 12px; text-align: left; }
+.md th { background: var(--surface-2); font-weight: var(--fw-strong); }
+.md td.num { text-align: right; }
+.md .neg { color: var(--err); }
+.md .pos { color: var(--attn); }
+.md code { font-family: var(--font-mono); font-size: .88em; background: var(--code-bg); border: var(--bw) solid var(--line); border-radius: var(--r-s); padding: 0 4px; }
+.md ol { margin: 0 0 6px; padding-left: 22px; }
+.foot { display: flex; gap: 14px; align-items: center; font-size: var(--fs-cap); color: var(--text-3); }
+.group-run { border: var(--bw) solid var(--line); border-radius: var(--r-m); overflow: hidden; }
+.group-run .gh { display: flex; align-items: center; gap: 8px; padding: 7px 12px; font-size: var(--fs-sm); color: var(--text-2); background: var(--surface-2); }
+.group-run .gh .dot { margin-right: 2px; }
+.tool { display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-top: var(--bw) solid var(--line); font-size: var(--fs-sm); }
+.tool .k { color: var(--text-3); width: 34px; flex: none; }
+.tool .p { font-family: var(--font-mono); font-size: var(--fs-cap); color: var(--text); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tool .add { color: var(--ok); font-family: var(--font-mono); font-size: var(--fs-cap); }
+.tool .del { color: var(--err); font-family: var(--font-mono); font-size: var(--fs-cap); }
+.term { margin: 0; border-top: var(--bw) solid var(--line); background: var(--code-bg); padding: 8px 12px; font-family: var(--font-mono); font-size: 12px; line-height: 1.6; color: var(--text-2); white-space: pre; overflow: hidden; }
+.term .cmd { color: var(--text); }
+.term .okline { color: var(--ok); }
+.approve { border: var(--bw) solid var(--attn-line); background: var(--attn-soft); border-radius: var(--r-l); padding: 12px 14px; display: flex; flex-direction: column; gap: 10px; }
+.approve-h { display: flex; align-items: center; gap: 8px; font-weight: var(--fw-strong); font-size: var(--fs-body); color: var(--attn); }
+.approve-h svg { width: 15px; height: 15px; }
+.approve pre { margin: 0; font-family: var(--font-mono); font-size: 12px; background: var(--surface); border: var(--bw) solid var(--line); border-radius: var(--r-s); padding: 8px 10px; color: var(--text); white-space: pre-wrap; }
+.approve-actions { display: flex; gap: 8px; align-items: center; }
+.approve-actions .hint { margin-left: auto; font-size: var(--fs-cap); color: var(--text-3); }
+.composer-wrap { padding: 10px 24px 10px; }
+.composer { width: min(700px, 100%); margin: 0 auto; border: var(--bw) solid var(--line-strong); border-radius: calc(var(--r-l) + 4px); background: var(--surface); box-shadow: var(--shadow-1); padding: 10px 12px 8px; display: flex; flex-direction: column; gap: 8px; }
+.composer .ph { color: var(--text-3); font-size: var(--fs-body); min-height: 22px; }
+.composer-row { display: flex; align-items: center; gap: 8px; }
+.opt { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 9px; border-radius: 999px; background: var(--sunken); font-size: var(--fs-cap); color: var(--text-2); }
+.send { margin-left: auto; width: 30px; height: 30px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; }
+.app[data-dir="d"] .send { border-radius: 0; }
+.send svg { width: 14px; height: 14px; }
+.stats { text-align: center; font-size: var(--fs-cap); color: var(--text-3); margin-top: 6px; }
+
+.panel { border-left: var(--bw) solid var(--line); padding: calc(var(--sp) * 3.5); display: flex; flex-direction: column; gap: calc(var(--sp) * 4); background: var(--surface-2); overflow: hidden; }
+.panel section { display: flex; flex-direction: column; gap: 8px; }
+.ph-row { display: flex; align-items: baseline; gap: 8px; }
+.ph-row h3 { margin: 0; font-size: var(--fs-sm); font-weight: var(--fw-strong); }
+.ph-row .n { color: var(--text-3); font-size: var(--fs-cap); font-family: var(--font-mono); }
+.ph-row .more { margin-left: auto; font-size: var(--fs-cap); color: var(--text-3); }
+.note { font-size: var(--fs-sm); line-height: 1.5; display: flex; flex-direction: column; gap: 2px; }
+.note small { color: var(--text-3); font-size: var(--fs-cap); }
+.mail { background: var(--surface); border: var(--bw) solid var(--line); border-radius: var(--r-m); padding: 10px 12px; font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 8px; line-height: 1.5; }
+.mail .from { font-size: var(--fs-cap); color: var(--text-3); display: flex; gap: 6px; align-items: center; }
+.mail .acts { display: flex; gap: 6px; }
+.input { height: var(--ctl); border: var(--bw) solid var(--line-strong); border-radius: var(--r-btn); background: var(--surface); padding: 0 10px; font-size: var(--fs-sm); display: flex; align-items: center; color: var(--text-3); }
+.input.filled { color: var(--text); }
+.hint { font-size: var(--fs-cap); color: var(--text-3); line-height: 1.5; }
+
+/* ---- Dialogs ---- */
+.scrim { position: absolute; inset: 0; background: var(--scrim); display: none; align-items: flex-start; justify-content: center; padding-top: 70px; z-index: 20; }
+.app[data-dir="a"] .scrim, .app[data-dir="b"] .scrim, .app[data-dir="c"] .scrim { backdrop-filter: blur(1.5px); }
+.app[data-screen="newtask"] .scrim.newtask, .app[data-screen="settings"] .scrim.settings { display: flex; }
+.dialog { background: var(--surface); border: var(--bw) solid var(--line-strong); border-radius: calc(var(--r-l) + 4px); box-shadow: var(--shadow-2); display: flex; flex-direction: column; }
+.dialog-h { display: flex; align-items: center; gap: 10px; padding: 16px 20px 6px; }
+.dialog-h h3 { margin: 0; font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-h2); letter-spacing: var(--ls-display); }
+.dialog-h .x { margin-left: auto; }
+.dialog-b { padding: 10px 20px 4px; display: flex; flex-direction: column; gap: 16px; }
+.dialog-f { display: flex; align-items: center; gap: 8px; padding: 14px 20px 18px; }
+.dialog-f .left { margin-right: auto; font-size: var(--fs-cap); color: var(--text-3); }
+.field { display: flex; flex-direction: column; gap: 6px; }
+.field > label, .field > .lab { font-size: var(--fs-sm); font-weight: var(--fw-strong); display: flex; align-items: baseline; gap: 8px; }
+.field > .lab .opt-label { font-weight: 400; color: var(--text-3); font-size: var(--fs-cap); }
+.textarea { border: var(--bw) solid var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); border-radius: var(--r-m); padding: 10px 12px; min-height: 92px; font-size: var(--fs-body); line-height: 1.6; background: var(--surface); }
+.textarea .caret { display: inline-block; width: 1px; height: 1.1em; background: var(--text); vertical-align: text-bottom; animation: blink 1s steps(1) infinite; }
+@keyframes blink { 50% { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .textarea .caret, .dot.run { animation: none; } }
+.row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.row3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+.select.block { width: 100%; justify-content: space-between; }
+.select .muted { color: var(--text-3); }
+.presets { display: flex; gap: 6px; flex-wrap: wrap; }
+.preset { height: var(--ctl-s); padding: 0 10px; border: var(--bw) solid var(--line); border-radius: var(--r-btn); background: var(--surface); font-size: var(--fs-cap); color: var(--text-2); display: inline-flex; align-items: center; gap: 6px; }
+.preset[aria-pressed="true"] { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); font-weight: 600; }
+.app[data-dir="d"] .preset[aria-pressed="true"] { color: var(--text); border-color: var(--text); }
+.app[data-dir="e"] .preset[aria-pressed="true"] { color: var(--text); border-color: var(--text); }
+
+.settings-wrap { display: grid; grid-template-columns: 180px 1fr; min-height: 470px; }
+.settings-nav { border-right: var(--bw) solid var(--line); padding: 14px 10px; display: flex; flex-direction: column; gap: 2px; background: var(--surface-2); border-radius: calc(var(--r-l) + 4px) 0 0 calc(var(--r-l) + 4px); }
+.settings-nav h3 { margin: 4px 8px 12px; font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-h2); letter-spacing: var(--ls-display); }
+.settings-main { display: flex; flex-direction: column; }
+.set-row { display: grid; grid-template-columns: 1fr auto; gap: 4px 24px; align-items: center; padding: 14px 0; border-bottom: var(--bw) solid var(--line); }
+.set-row:last-child { border-bottom: 0; }
+.set-row .t { font-size: var(--fs-body); font-weight: 500; }
+.set-row .d { grid-column: 1; font-size: var(--fs-cap); color: var(--text-3); }
+.set-row .c { grid-row: 1 / span 2; grid-column: 2; display: flex; align-items: center; gap: 8px; }
+.stepper { display: inline-flex; align-items: center; border: var(--bw) solid var(--line-strong); border-radius: var(--r-btn); height: var(--ctl); overflow: hidden; background: var(--surface); }
+.stepper button { width: var(--ctl); height: 100%; border: 0; background: transparent; color: var(--text-2); font-size: 16px; cursor: pointer; }
+.stepper span { min-width: 38px; text-align: center; font-family: var(--font-mono); font-size: var(--fs-body); border-left: var(--bw) solid var(--line); border-right: var(--bw) solid var(--line); line-height: calc(var(--ctl) - 2px); }
+.recorder { display: inline-flex; align-items: center; gap: 4px; height: var(--ctl); padding: 0 6px 0 8px; border: var(--bw) dashed var(--accent); border-radius: var(--r-btn); background: var(--accent-soft); font-size: var(--fs-sm); color: var(--text); }
+.app[data-dir="d"] .recorder, .app[data-dir="e"] .recorder { border-color: var(--text); }
+.recorder .kbd { margin: 0; background: var(--surface); color: var(--text); }
+.toggle { width: 36px; height: 20px; border-radius: 999px; background: var(--accent); position: relative; flex: none; }
+.toggle::after { content: ""; position: absolute; top: 2px; right: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--on-accent); }
+.toggle.off { background: color-mix(in srgb, var(--text-3) 55%, var(--surface)); }
+.toggle.off::after { right: auto; left: 2px; background: var(--surface); }
+.app[data-dir="d"] .toggle, .app[data-dir="d"] .toggle::after { border-radius: 0; }
+
+/* ---- Focus + scratchpad (on a stand-in desktop) ---- */
+.desk { display: none; position: absolute; inset: 0; background: #cfd3d8; overflow: hidden; }
+.app[data-screen="focus"] .desk { display: block; }
+.desk-ide { position: absolute; left: 28px; top: 24px; right: 28px; bottom: 56px; background: #fafafa; border: 1px solid #bfc4ca; border-radius: 8px; overflow: hidden; display: grid; grid-template-rows: 32px 1fr; }
+.desk-ide .bar { background: #eceef1; border-bottom: 1px solid #d4d8dd; display: flex; align-items: center; gap: 8px; padding: 0 12px; font: 12px "JetBrains Mono", Consolas, monospace; color: #5b6168; }
+.desk-ide pre { margin: 0; padding: 14px 18px; font: 13px/1.7 "JetBrains Mono", Consolas, monospace; color: #3b4148; white-space: pre; }
+.desk-ide .kw { color: #7a4fb0; } .desk-ide .ty { color: #1d6f8f; } .desk-ide .st { color: #8a5a12; } .desk-ide .cm { color: #8b939b; }
+.desk-task { position: absolute; left: 0; right: 0; bottom: 0; height: 44px; background: #e4e7eb; border-top: 1px solid #c3c8ce; }
+.focus { position: absolute; top: 40px; right: 44px; width: 340px; background: color-mix(in srgb, var(--surface) 94%, transparent); border: var(--bw) solid var(--line-strong); border-radius: var(--r-l); box-shadow: var(--shadow-2); backdrop-filter: blur(10px); font-family: var(--font-ui); color: var(--text); font-size: var(--fs-sm); line-height: var(--lh); }
+.focus-h { display: flex; align-items: center; gap: 8px; padding: 9px 12px; border-bottom: var(--bw) solid var(--line); font-weight: var(--fw-strong); }
+.focus-h .logo { width: 20px; height: 20px; }
+.focus-h .n { color: var(--attn); font-family: var(--font-mono); font-size: var(--fs-cap); }
+.focus-h .btn { margin-left: auto; }
+.f-item { padding: 10px 12px; border-bottom: var(--bw) solid var(--line); display: flex; flex-direction: column; gap: 7px; }
+.f-item:last-child { border-bottom: 0; }
+.f-kind { display: flex; align-items: center; gap: 6px; font-size: var(--fs-cap); color: var(--text-3); }
+.f-kind .pill { height: 18px; }
+.f-title { font-weight: var(--fw-strong); font-size: var(--fs-sm); }
+.f-code { font-family: var(--font-mono); font-size: 11.5px; background: var(--code-bg); border: var(--bw) solid var(--line); border-radius: var(--r-s); padding: 5px 8px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.f-acts { display: flex; gap: 6px; }
+.f-run { display: flex; align-items: center; gap: 8px; font-size: var(--fs-cap); color: var(--text-2); }
+.f-run .t { margin-left: auto; font-family: var(--font-mono); color: var(--text-3); }
+.pad { position: absolute; left: 120px; top: 150px; width: 460px; height: 380px; background: var(--surface); border: var(--bw) solid var(--line-strong); border-radius: var(--r-l); box-shadow: var(--shadow-2); display: flex; flex-direction: column; font-family: var(--font-ui); color: var(--text); }
+.pad-h { display: flex; align-items: center; gap: 4px; padding: 8px 8px 0 12px; border-bottom: var(--bw) solid var(--line); }
+.pad-h .title { font-family: var(--font-display); font-weight: var(--fw-display); letter-spacing: var(--ls-display); font-size: var(--fs-title); margin-right: 10px; padding-bottom: 8px; }
+.pad-tab { height: 28px; min-width: 30px; padding: 0 8px; border: 0; background: transparent; font-family: var(--font-mono); font-size: var(--fs-sm); color: var(--text-3); border-bottom: 2px solid transparent; margin-bottom: -1px; }
+.pad-tab[aria-pressed="true"] { color: var(--text); border-bottom-color: var(--accent); font-weight: 600; }
+.app[data-dir="d"] .pad-tab[aria-pressed="true"], .app[data-dir="e"] .pad-tab[aria-pressed="true"] { border-bottom-color: var(--text); }
+.pad-h .btn { margin-left: auto; margin-bottom: 6px; }
+.pad-b { flex: 1; padding: 14px 16px; font-size: var(--fs-body); line-height: 1.75; white-space: pre-wrap; }
+.pad-f { display: flex; align-items: center; gap: 8px; padding: 8px 12px; border-top: var(--bw) solid var(--line); font-size: var(--fs-cap); color: var(--text-3); }
+.pad-f .kbd { margin-left: auto; }
+
+/* ---- Spec ---- */
+.spec { overflow: auto; padding: 22px 28px 40px; gap: 26px; }
+.spec section { display: flex; flex-direction: column; gap: 12px; }
+.spec h3 { margin: 0; font-family: var(--font-display); font-weight: var(--fw-display); font-size: var(--fs-h2); letter-spacing: var(--ls-display); }
+.spec .lead { font-size: var(--fs-sm); color: var(--text-2); margin: -4px 0 0; }
+.type-row { display: grid; grid-template-columns: 120px 190px 1fr; align-items: baseline; gap: 16px; padding: 8px 0; border-bottom: var(--bw) solid var(--line); }
+.type-row .k { font-size: var(--fs-cap); color: var(--text-3); font-family: var(--font-mono); }
+.type-row .v { font-size: var(--fs-cap); color: var(--text-2); font-family: var(--font-mono); }
+.btn-grid { display: grid; grid-template-columns: 110px repeat(4, max-content); gap: 12px 16px; align-items: center; }
+.btn-grid .k { font-size: var(--fs-cap); color: var(--text-3); font-family: var(--font-mono); }
+.btn-grid .v { grid-column: 2 / -1; font-size: var(--fs-cap); color: var(--text-3); font-family: var(--font-mono); margin-top: -6px; }
+.spec-row { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.swatches { display: grid; grid-template-columns: repeat(8, 1fr); gap: 10px; }
+.sw { display: flex; flex-direction: column; gap: 4px; font-size: var(--fs-cap); }
+.sw i { display: block; height: 44px; border-radius: var(--r-m); border: var(--bw) solid var(--line); }
+.sw b { font-weight: 600; }
+.sw span { font-family: var(--font-mono); color: var(--text-3); }
+.metrics { display: grid; grid-template-columns: repeat(6, 1fr); gap: 10px; }
+.metric { border: var(--bw) solid var(--line); border-radius: var(--r-m); padding: 10px 12px; background: var(--surface); }
+.metric .k { font-size: var(--fs-cap); color: var(--text-3); }
+.metric .v { font-family: var(--font-mono); font-size: var(--fs-title); }
+
+/* ---- Per-direction character (kept small; tokens do most of the work) ---- */
+/* A: newsprint — serif section heads with a heavy rule under them. */
+.app[data-dir="a"] .col-head { font-family: var(--font-display); font-size: var(--fs-title); font-weight: 700; border-bottom: 2px solid var(--line-strong); padding-bottom: 6px; }
+.app[data-dir="a"] .nav-label { font-family: var(--font-display); font-weight: 600; color: var(--text-2); }
+.app[data-dir="a"] .card { box-shadow: none; }
+.app[data-dir="a"] .card-title, .app[data-dir="a"] .sess-top, .app[data-dir="a"] .f-title { font-family: var(--font-display); }
+.app[data-dir="a"] .topbar { border-bottom: 2px solid var(--line-strong); }
+.app[data-dir="a"] .side-tabs button[aria-pressed="true"] { border-bottom-color: var(--accent); }
+/* B: precision — tight rows, numbers in mono everywhere. */
+.app[data-dir="b"] .card { padding: 10px 12px; gap: 6px; }
+.app[data-dir="b"] .col-head { text-transform: none; color: var(--text-2); }
+/* C: soft studio — no hard borders on surfaces, tinted columns. */
+.app[data-dir="c"] .topbar { border-bottom: 0; }
+.app[data-dir="c"] .nav { border-right: 0; }
+.app[data-dir="c"] .card { border-color: transparent; }
+.app[data-dir="c"] .card.attn { border-color: var(--attn-line); box-shadow: var(--shadow-1); background: linear-gradient(var(--attn-soft), var(--attn-soft)) top / 100% 4px no-repeat, var(--surface); }
+.app[data-dir="c"] .col { background: var(--sunken); border-radius: var(--r-l); padding: 10px; }
+.app[data-dir="c"] .columns { padding-top: 2px; }
+.app[data-dir="c"] .main { background: var(--bg); }
+.app[data-dir="c"] .screen.task, .app[data-dir="c"] .screen.topic { margin: 0 14px 14px 0; border-radius: var(--r-l); overflow: hidden; background: var(--surface); box-shadow: var(--shadow-1); }
+.app[data-dir="c"] .u { border-radius: 18px 18px 6px 18px; }
+.app[data-dir="c"] .logo { color: var(--accent); }
+/* D: Swiss — black rules, heavy display, yellow only for what needs you. */
+.app[data-dir="d"] .topbar { border-bottom: 2px solid var(--line-strong); }
+.app[data-dir="d"] .nav { border-right: 2px solid var(--line-strong); }
+.app[data-dir="d"] .nav-row[aria-current="true"] { background: var(--text); color: var(--surface); }
+.app[data-dir="d"] .nav-row[aria-current="true"] .count, .app[data-dir="d"] .nav-row[aria-current="true"] .glyph { color: var(--surface); }
+.app[data-dir="d"] .nav-row.attn .count { background: var(--attn-soft); color: var(--text); padding: 0 5px; }
+.app[data-dir="d"] .nav-label { text-transform: uppercase; font-weight: 700; color: var(--text); }
+.app[data-dir="d"] .col-head { border-top: 4px solid var(--line-strong); padding-top: 8px; font-size: var(--fs-title); font-weight: 900; }
+.app[data-dir="d"] .card { border-color: var(--line-strong); }
+.app[data-dir="d"] .card.attn { box-shadow: none; border-width: 2px; background: var(--surface); }
+.app[data-dir="d"] .card.attn .pill.attn { background: var(--attn-soft); color: var(--text); }
+.app[data-dir="d"] .seg { background: transparent; border: var(--bw) solid var(--line-strong); padding: 0; gap: 0; }
+.app[data-dir="d"] .seg button[aria-pressed="true"] { background: var(--text); color: var(--surface); box-shadow: none; }
+.app[data-dir="d"] .pill { border-radius: 0; }
+.app[data-dir="d"] .dot { border-radius: 0; }
+.app[data-dir="d"] .dot.attn { background: var(--attn-soft); box-shadow: 0 0 0 1px var(--text); }
+.app[data-dir="d"] .approve { border: 2px solid var(--line-strong); background: var(--surface); }
+.app[data-dir="d"] .approve-h { background: var(--attn-soft); margin: -12px -14px 0; padding: 8px 14px; color: var(--text); }
+.app[data-dir="d"] .canvas { background-image: linear-gradient(var(--dot) 1px, transparent 1px), linear-gradient(90deg, var(--dot) 1px, transparent 1px); background-size: 40px 40px; }
+.app[data-dir="d"] .group { border-width: 2px; }
+.app[data-dir="d"] .chip, .app[data-dir="d"] .opt { border-radius: 0; }
+.app[data-dir="d"] .chip[aria-pressed="true"] { background: var(--text); color: var(--surface); }
+.app[data-dir="d"] .pagebar h2 { text-transform: none; }
+.app[data-dir="d"] .side-tabs .badge, .app[data-dir="d"] .tab-badge { background: var(--attn-soft); color: var(--text); border-radius: 0; }
+.app[data-dir="d"] .sticky { background: var(--attn-soft); border-color: var(--text); }
+.app[data-dir="d"] .card-quote { background: var(--surface-2); }
+/* E: ink and space — hairlines, wide tracking on headings, a red seal only where you are needed. */
+.app[data-dir="e"] .card { box-shadow: none; }
+.app[data-dir="e"] .col-head { font-family: var(--font-display); letter-spacing: var(--ls-display); font-weight: 600; font-size: var(--fs-title); }
+.app[data-dir="e"] .card-title, .app[data-dir="e"] .sess-top, .app[data-dir="e"] .f-title { font-family: var(--font-display); font-weight: 600; letter-spacing: .02em; }
+.app[data-dir="e"] .nav-row[aria-current="true"] { background: transparent; box-shadow: inset 2px 0 0 var(--text); border-radius: 0; }
+.app[data-dir="e"] .card.attn { box-shadow: none; border-color: var(--attn-line); }
+.app[data-dir="e"] .seal { display: inline-grid; }
+.app[data-dir="e"] .pill.attn { background: transparent; border: var(--bw) solid var(--attn); border-radius: 2px; }
+.app[data-dir="e"] .u { background: var(--surface-2); border: var(--bw) solid var(--line); }
+.app[data-dir="e"] .side-tabs button[aria-pressed="true"] { border-bottom-width: 1px; }
+.seal { display: none; width: 18px; height: 18px; place-items: center; background: var(--attn); color: var(--surface); font-family: var(--font-display); font-size: 11px; border-radius: 2px; margin-left: 8px; }
+.card { position: relative; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-robot" viewBox="0 0 32 32"><rect x="5" y="9" width="22" height="18" rx="6" fill="currentColor"/><rect x="9" y="14" width="14" height="8" rx="4" fill="#fff" opacity=".95"/><circle cx="13" cy="18" r="1.8" fill="currentColor"/><circle cx="19" cy="18" r="1.8" fill="currentColor"/><path d="M16 9V5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="4" r="2" fill="currentColor"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-search" viewBox="0 0 16 16"><circle cx="7" cy="7" r="4.5" stroke="currentColor" stroke-width="1.5" fill="none"/><path d="M10.5 10.5 14 14" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-down" viewBox="0 0 16 16"><path d="m4 6 4 4 4-4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-right" viewBox="0 0 16 16"><path d="m6 4 4 4-4 4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-left" viewBox="0 0 16 16"><path d="m10 4-4 4 4 4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-x" viewBox="0 0 16 16"><path d="m4 4 8 8M12 4l-8 8" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 16 16"><path d="M8 1.8 13 4v3.6c0 3-2.1 5.4-5 6.6-2.9-1.2-5-3.6-5-6.6V4z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/><path d="M8 5v3.4M8 10.6v.1" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16"><path d="M2 4.5c0-.6.4-1 1-1h3.2l1.4 1.5H13c.6 0 1 .4 1 1V12c0 .6-.4 1-1 1H3c-.6 0-1-.4-1-1z" stroke="currentColor" stroke-width="1.3" fill="none"/></symbol>
+  <symbol id="i-topic" viewBox="0 0 16 16"><rect x="2" y="2.5" width="5" height="4" rx="1" stroke="currentColor" stroke-width="1.3" fill="none"/><rect x="9" y="9.5" width="5" height="4" rx="1" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M4.5 6.5v4.5H9" stroke="currentColor" stroke-width="1.3" fill="none"/></symbol>
+  <symbol id="i-inbox" viewBox="0 0 16 16"><path d="M2 9h3.5l1 2h3l1-2H14M3.5 3.5h9L14 9v3.5H2V9z" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/></symbol>
+  <symbol id="i-list" viewBox="0 0 16 16"><path d="M3 4h10M3 8h10M3 12h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-term" viewBox="0 0 16 16"><path d="m3 4.5 3 3-3 3M8 11.5h5" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-copy" viewBox="0 0 16 16"><rect x="5" y="5" width="8" height="8" rx="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M3 10.5V4c0-.6.4-1 1-1h6.5" stroke="currentColor" stroke-width="1.3" fill="none"/></symbol>
+  <symbol id="i-pin" viewBox="0 0 16 16"><path d="M6 2.5h4l-.6 4 2.6 2.2H4l2.6-2.2zM8 8.7V14" stroke="currentColor" stroke-width="1.3" fill="none" stroke-linejoin="round"/></symbol>
+</svg>
+
+<div class="pv-top">
+  <div class="pv-head">
+    <h1>AMO Studio 界面方向</h1>
+    <p>5 套浅色方向，同一组页面、同一套结构，只换设计变量。画面按 1:1 显示（1400 × 860），字号和按钮尺寸就是实际尺寸。</p>
+  </div>
+  <div class="pv-row" role="group" aria-label="方向">
+    <button class="pv-tab" data-dir="a" aria-pressed="false"><b>A</b>纸感编辑部</button>
+    <button class="pv-tab" data-dir="b" aria-pressed="true"><b>B</b>精密工具</button>
+    <button class="pv-tab" data-dir="c" aria-pressed="false"><b>C</b>柔和工作室</button>
+    <button class="pv-tab" data-dir="d" aria-pressed="false"><b>D</b>瑞士网格</button>
+    <button class="pv-tab" data-dir="e" aria-pressed="false"><b>E</b>东方留白</button>
+  </div>
+  <div class="pv-row" role="group" aria-label="页面">
+    <button class="pv-tab" data-screen="board" aria-pressed="true">看板</button>
+    <button class="pv-tab" data-screen="topic" aria-pressed="false">专题画布</button>
+    <button class="pv-tab" data-screen="task" aria-pressed="false">任务与对话</button>
+    <button class="pv-tab" data-screen="newtask" aria-pressed="false">新建任务</button>
+    <button class="pv-tab" data-screen="settings" aria-pressed="false">设置 · 草稿区</button>
+    <button class="pv-tab" data-screen="focus" aria-pressed="false">Focus 与草稿区</button>
+    <button class="pv-tab" data-screen="spec" aria-pressed="false">规范</button>
+  </div>
+  <div class="pv-note" id="pv-note"></div>
+</div>
+
+<div class="pv-stage">
+<div class="app" id="app" data-dir="b" data-screen="board">
+
+  <header class="topbar">
+    <div class="brand"><svg class="logo"><use href="#i-robot"/></svg><span class="brand-name">AMO Studio</span></div>
+    <div class="seg" role="group" aria-label="视图">
+      <button aria-pressed="true" data-go="board">看板</button>
+      <button aria-pressed="false" data-go="topic">专题</button>
+    </div>
+    <div class="search"><svg width="14" height="14"><use href="#i-search"/></svg>搜索任务、会话、留言<kbd>Ctrl K</kbd></div>
+    <div class="spacer"></div>
+    <button class="btn ghost">Focus 开</button>
+    <button class="btn" data-go="settings">设置</button>
+    <button class="btn primary" data-go="newtask"><svg><use href="#i-plus"/></svg>新任务</button>
+  </header>
+
+  <aside class="nav" aria-label="导航">
+    <div class="nav-label">视图</div>
+    <button class="nav-row" aria-current="true" data-go="board"><svg class="glyph"><use href="#i-list"/></svg>全部任务<span class="count">9</span></button>
+    <button class="nav-row attn"><svg class="glyph"><use href="#i-inbox"/></svg>需要我处理<span class="count">2</span></button>
+    <div class="nav-label">专题<span class="add">+</span></div>
+    <button class="nav-row" data-go="topic"><svg class="glyph"><use href="#i-topic"/></svg>掉落表重构<span class="count">4</span></button>
+    <button class="nav-row"><svg class="glyph"><use href="#i-topic"/></svg>武器 v2<span class="count">2</span></button>
+    <div class="nav-label">项目<span class="add">+</span></div>
+    <button class="nav-row"><svg class="glyph"><use href="#i-folder"/></svg>mining-a<span class="count">3</span></button>
+    <button class="nav-row"><svg class="glyph"><use href="#i-folder"/></svg>mining-b<span class="count">2</span></button>
+    <button class="nav-row"><svg class="glyph"><use href="#i-folder"/></svg>mining-c<span class="count">1</span></button>
+    <button class="nav-row"><svg class="glyph"><use href="#i-folder"/></svg>weapon-lab<span class="count">2</span></button>
+    <div class="nav-foot"><span class="dot run"></span>Host 运行中 · <span class="mono">47900</span></div>
+  </aside>
+
+  <main class="main">
+
+    <!-- 看板 -->
+    <div class="screen board">
+      <div class="pagebar">
+        <h2>全部任务</h2><span class="sub">9 个任务 · 2 个需要你处理</span>
+        <div class="spacer"></div>
+        <div class="filters">
+          <button class="chip" aria-pressed="true">全部</button>
+          <button class="chip">mining-a</button>
+          <button class="chip">mining-b</button>
+          <button class="chip">weapon-lab</button>
+          <button class="chip">未选项目</button>
+          <button class="chip"><svg><use href="#i-topic"/></svg>专题<svg><use href="#i-down"/></svg></button>
+        </div>
+      </div>
+      <div class="columns">
+        <div class="col">
+          <div class="col-head">待办<span class="n">3</span></div>
+          <div class="card">
+            <div class="card-title">Elite 掉落表补单元测试</div>
+            <div class="card-status"><span class="dot"></span>还没有会话</div>
+            <div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>mining-b</span><span class="tag topic"><svg><use href="#i-topic"/></svg>掉落表重构</span></div>
+          </div>
+          <div class="card">
+            <div class="card-title">整理武器配置 README</div>
+            <div class="card-status"><span class="dot"></span>空闲<span class="when">昨天</span></div>
+            <div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>weapon-lab</span><span class="sessions">1 个会话</span></div>
+          </div>
+          <div class="card">
+            <div class="card-title">Rust 生命周期报错怎么理解</div>
+            <div class="card-status"><span class="dot"></span>空闲<span class="when">2 小时前</span></div>
+            <div class="card-meta"><span class="sessions">1 个会话</span></div>
+          </div>
+          <button class="col-add">+ 添加待办</button>
+        </div>
+        <div class="col">
+          <div class="col-head">进行中<span class="n">3</span></div>
+          <div class="card attn" data-go="task">
+            <div class="card-title">掉落表概率校验</div>
+            <div class="card-status"><span class="pill attn"><span class="dot attn"></span>等待批准</span><span class="when">1 分钟前</span><span class="seal">待</span></div>
+            <div class="card-quote">git commit -m "fix: normalize drop tables"</div>
+            <div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>mining-a</span><span class="tag topic"><svg><use href="#i-topic"/></svg>掉落表重构</span><span class="sessions">3 个会话</span></div>
+          </div>
+          <div class="card">
+            <div class="card-title">导入器加上失败重试</div>
+            <div class="card-status"><span class="pill run"><span class="dot run"></span>运行中</span><span class="when">3 分 12 秒</span></div>
+            <div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>mining-c</span><span class="sessions">2 个会话</span></div>
+          </div>
+          <div class="card attn">
+            <div class="card-title">武器后坐力曲线</div>
+            <div class="card-status"><span class="pill attn"><span class="dot attn"></span>请你决定</span><span class="when">6 分钟前</span><span class="seal">待</span></div>
+            <div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>weapon-lab</span><span class="tag topic"><svg><use href="#i-topic"/></svg>武器 v2</span><span class="sessions">1 个会话</span></div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="col-head">待审阅<span class="n">2</span></div>
+          <div class="card">
+            <div class="card-title">CI 缓存失效修复</div>
+            <div class="card-status"><span class="dot"></span>已完成，等你看<span class="when">20 分钟前</span></div>
+            <div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>mining-b</span><span class="tag topic"><svg><use href="#i-topic"/></svg>掉落表重构</span><span class="sessions">3 个会话</span></div>
+          </div>
+          <div class="card">
+            <div class="card-title">换弹动画事件对齐</div>
+            <div class="card-status"><span class="dot"></span>已完成，等你看<span class="when">1 小时前</span></div>
+            <div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>weapon-lab</span><span class="tag topic"><svg><use href="#i-topic"/></svg>武器 v2</span><span class="sessions">2 个会话</span></div>
+          </div>
+        </div>
+        <div class="col">
+          <div class="col-head">完成<span class="n">1</span></div>
+          <div class="card">
+            <div class="card-title">日志降噪</div>
+            <div class="card-status"><span class="dot"></span>完成<span class="when">昨天</span></div>
+            <div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>mining-a</span><span class="sessions">1 个会话</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 专题 -->
+    <div class="screen topic">
+      <div class="pagebar">
+        <h2>掉落表重构</h2>
+        <span class="tag"><svg><use href="#i-folder"/></svg>mining-a</span><span class="tag"><svg><use href="#i-folder"/></svg>mining-b</span><span class="tag"><svg><use href="#i-folder"/></svg>mining-c</span>
+        <button class="btn ghost s">+ 加入项目</button>
+        <div class="spacer"></div>
+        <button class="btn">转移任务</button>
+        <button class="btn danger">归档专题</button>
+        <button class="btn primary"><svg><use href="#i-plus"/></svg>在专题里新建任务</button>
+      </div>
+      <div class="topic-body">
+        <div class="canvas">
+          <div class="canvas-tools"><button class="btn s">+ 分组</button><button class="btn s">+ 便签</button></div>
+          <svg class="edges" viewBox="0 0 1060 760" preserveAspectRatio="none" style="width:1060px;height:760px">
+            <path d="M308 148 C 380 148, 380 148, 446 148"/>
+            <path class="arrow" d="M446 148 l-8 -4.5 v9 z"/>
+            <path d="M190 296 C 190 340, 300 380, 446 380" stroke-dasharray="4 4"/>
+            <path class="arrow" d="M446 380 l-8 -4.5 v9 z"/>
+          </svg>
+          <div class="group" style="left:40px;top:62px;width:300px;height:290px"><div class="group-bar">数据层<span class="tag">mining-a</span></div></div>
+          <div class="group" style="left:420px;top:62px;width:300px;height:400px"><div class="group-bar">验证<span class="tag">mining-b</span></div></div>
+          <div class="node" style="left:72px;top:120px">
+            <div class="card attn"><div class="card-title">掉落表概率校验</div><div class="card-status"><span class="pill attn"><span class="dot attn"></span>等待批准</span><span class="seal">待</span></div><div class="card-meta">3 个会话</div></div>
+          </div>
+          <div class="node" style="left:72px;top:236px">
+            <div class="card"><div class="card-title">Drop 表结构迁移</div><div class="card-status"><span class="dot"></span>完成</div><div class="card-meta">1 个会话</div></div>
+          </div>
+          <div class="node" style="left:452px;top:120px">
+            <div class="card"><div class="card-title">Elite 掉落表补单元测试</div><div class="card-status"><span class="dot"></span>还没有会话</div><div class="card-meta">等「掉落表概率校验」完成</div></div>
+          </div>
+          <div class="node" style="left:452px;top:236px">
+            <div class="card"><div class="card-title">CI 缓存失效修复</div><div class="card-status"><span class="dot"></span>待审阅</div><div class="card-meta">3 个会话</div></div>
+          </div>
+          <div class="node" style="left:452px;top:352px">
+            <div class="card"><div class="card-title">三个副本同步到 main</div><div class="card-status"><span class="dot"></span>待办</div><div class="card-meta">mining-c</div></div>
+          </div>
+          <div class="sticky" style="left:56px;top:420px">合并顺序：a → b → c。<br>c 上的导入器改动先别动。</div>
+          <div class="canvas-zoom"><button class="btn ghost s">−</button><span>100%</span><button class="btn ghost s">+</button><button class="btn ghost s">复位</button></div>
+        </div>
+        <div class="side">
+          <div class="side-tabs">
+            <button aria-pressed="true">专题会话</button>
+            <button aria-pressed="false">留言<span class="badge tab-badge">1</span></button>
+            <button aria-pressed="false">agent 视角</button>
+          </div>
+          <div class="side-body">
+            <p class="hint" style="margin:0">专题会话用来统筹：能读到专题里所有任务的进度，给它们留言。</p>
+            <div class="sess cur">
+              <div class="sess-top"><span class="dot"></span>统筹</div>
+              <div class="sess-sub">Claude 订阅 · 空闲 · 在 <span class="mono">mining-a</span></div>
+            </div>
+            <div class="sess">
+              <div class="sess-top"><span class="dot run"></span>对比三个副本的 Drop 结构</div>
+              <div class="sess-sub">DeepSeek Flash · 运行中 · 在 <span class="mono">mining-c</span></div>
+            </div>
+            <button class="btn"><svg><use href="#i-plus"/></svg>新建专题会话</button>
+            <h4>专题里的任务</h4>
+            <div class="note">5 个任务：1 个等你批准，1 个待审阅，1 个完成<small>依赖 1 条 · 便签 1 张</small></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 任务 -->
+    <div class="screen task">
+      <div class="taskbar">
+        <button class="btn ghost" data-go="board"><svg><use href="#i-left"/></svg>看板</button>
+        <h2>掉落表概率校验</h2>
+        <span class="tag"><svg><use href="#i-folder"/></svg>mining-a</span>
+        <span class="tag topic"><svg><use href="#i-topic"/></svg>掉落表重构</span>
+        <div class="spacer"></div>
+        <span class="hint">看板列</span>
+        <span class="select">进行中<svg><use href="#i-down"/></svg></span>
+        <button class="btn ghost">转移…</button>
+      </div>
+      <div class="task-body">
+        <div class="tree">
+          <h4 class="nav-label" style="padding:0 6px 6px">会话 3</h4>
+          <div class="tree-row" aria-current="true"><span class="t"><span class="dot attn"></span>校验所有掉落表</span><span class="m">主会话 · DeepSeek Flash</span></div>
+          <div class="tree-row l1"><span class="t"><span class="dot"></span>读取配置结构</span><span class="m">子 agent · 完成</span></div>
+          <div class="tree-row"><span class="t"><span class="dot"></span>只修 Boss 表</span><span class="m">分支 · Claude 订阅</span></div>
+          <button class="btn"><svg><use href="#i-plus"/></svg>新会话</button>
+        </div>
+        <div class="chat">
+          <div class="chat-head"><b>校验所有掉落表</b><span class="who">DeepSeek Flash · 逐条询问</span><div class="spacer"></div><button class="btn s"><svg><use href="#i-term"/></svg>在终端打开</button><button class="btn s">分支</button><button class="btn ghost s">归档</button></div>
+          <div class="chat-scroll">
+            <div class="thread">
+              <div class="u">检查 Assets/Config/Drop 下所有掉落表，概率和不为 1 的列出来，先别改。</div>
+              <div class="fold"><svg><use href="#i-right"/></svg>已完成，用时 38 秒 · 读取 12 个文件 · 运行 1 条命令</div>
+              <div class="md">
+                <p>发现 <b>3</b> 张表的概率和不为 1：</p>
+                <table><thead><tr><th>表</th><th>概率和</th><th>差值</th></tr></thead>
+                  <tbody><tr><td>Boss_Lv20</td><td class="num">0.970</td><td class="num neg">−0.030</td></tr>
+                  <tr><td>Chest_Rare</td><td class="num">1.040</td><td class="num pos">+0.040</td></tr>
+                  <tr><td>Elite_Mine_07</td><td class="num">0.995</td><td class="num neg">−0.005</td></tr></tbody></table>
+                <p>建议把差值补到权重最大的一项上，再跑一次 <code>ValidateDropTables</code>。</p>
+              </div>
+              <div class="foot"><svg width="13" height="13"><use href="#i-copy"/></svg><span class="num">17:09</span><span>用量 <span class="num">8.4k</span></span></div>
+              <div class="u">按建议修正，修完跑一次校验。</div>
+              <div class="group-run">
+                <div class="gh"><span class="dot run"></span>进行中 · 编辑 2 个文件 · 运行 1 条命令</div>
+                <div class="tool"><span class="k">编辑</span><span class="p">Assets/Config/Drop/Boss_Lv20.asset</span><span class="add">+1</span><span class="del">−1</span></div>
+                <div class="tool"><span class="k">编辑</span><span class="p">Assets/Config/Drop/Chest_Rare.asset</span><span class="add">+2</span><span class="del">−2</span></div>
+                <div class="tool"><span class="k">命令</span><span class="p">dotnet test Tools/DropValidation --filter ValidateDropTables</span><span class="num" style="color:var(--text-3)">4.2s</span></div>
+<pre class="term"><span class="cmd">&gt; dotnet test Tools/DropValidation --filter ValidateDropTables</span>
+  已通过 ValidateDropTables(Boss_Lv20)      [12 ms]
+  已通过 ValidateDropTables(Chest_Rare)     [9 ms]
+<span class="okline">测试运行成功：通过 48，失败 0，跳过 0</span></pre>
+              </div>
+              <div class="approve">
+                <div class="approve-h"><svg><use href="#i-shield"/></svg>需要你批准：运行命令</div>
+                <pre>git add Assets/Config/Drop &amp;&amp; git commit -m "fix: normalize drop tables"</pre>
+                <div class="approve-actions">
+                  <button class="btn primary">批准</button>
+                  <button class="btn">本会话都批准</button>
+                  <button class="btn danger">拒绝</button>
+                  <span class="hint">也可以在 Focus 里批准</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="composer-wrap">
+            <div class="composer">
+              <div class="ph">继续推进这个会话，回车发送，Shift+回车换行</div>
+              <div class="composer-row"><span class="opt">DeepSeek Flash · 高 · 逐条询问<svg width="10" height="10"><use href="#i-down"/></svg></span><button class="send" aria-label="发送"><svg><use href="#i-up"/></svg></button></div>
+            </div>
+            <div class="stats">2 轮 9 步 · 用量 <span class="num">14.2k</span> · 缓存命中 <span class="num">71%</span></div>
+          </div>
+        </div>
+        <div class="panel">
+          <section>
+            <div class="ph-row"><h3>留言</h3><span class="n">1 条未读</span></div>
+            <div class="mail">
+              <div class="from"><svg width="12" height="12"><use href="#i-topic"/></svg>专题会话「统筹」· 3 分钟前</div>
+              mining-b 改了 Drop 表结构，提交前先 rebase 到最新的 main。
+              <div class="acts"><button class="btn s primary">转进对话</button><button class="btn s ghost">标为已读</button></div>
+            </div>
+          </section>
+          <section>
+            <div class="ph-row"><h3>进度</h3><span class="n">2</span></div>
+            <div class="note">定位到 3 张概率和不为 1 的表<small>主会话 · 17:09</small></div>
+            <div class="note">Boss_Lv20、Chest_Rare 已修正，校验通过<small>主会话 · 17:14</small></div>
+            <div class="input">记一笔进度</div>
+          </section>
+          <section>
+            <div class="ph-row"><h3>批注</h3><span class="n">0</span></div>
+            <p class="hint" style="margin:0">选中回复里的文字后右键，就能加批注，攒够了一起发回会话。</p>
+          </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- 规范 -->
+    <div class="screen spec" id="spec">
+      <section>
+        <h3>字号</h3>
+        <p class="lead">右侧数值是浏览器实际算出来的，改设计变量后自动更新。</p>
+        <div id="spec-type"></div>
+      </section>
+      <section>
+        <h3>按钮</h3>
+        <div class="btn-grid" id="spec-btn"></div>
+      </section>
+      <section>
+        <h3>输入与选择</h3>
+        <div class="spec-row">
+          <div class="input" style="width:220px">记一笔进度</div>
+          <span class="select">进行中<svg><use href="#i-down"/></svg></span>
+          <div class="seg" role="group"><button aria-pressed="true">简洁</button><button aria-pressed="false">标准</button><button aria-pressed="false">详细</button></div>
+          <span class="stepper"><button>−</button><span>4</span><button>+</button></span>
+          <span class="toggle"></span><span class="toggle off"></span>
+          <span class="recorder"><span class="kbd">Ctrl</span>+<span class="kbd">鼠标侧键 1</span></span>
+        </div>
+      </section>
+      <section>
+        <h3>状态与标签</h3>
+        <div class="spec-row">
+          <span class="pill run"><span class="dot run"></span>运行中</span>
+          <span class="pill attn"><span class="dot attn"></span>等待批准</span>
+          <span class="pill"><span class="dot"></span>空闲</span>
+          <span class="pill err"><span class="dot err"></span>出错</span>
+          <span class="tag"><svg><use href="#i-folder"/></svg>mining-a</span>
+          <span class="tag topic"><svg><use href="#i-topic"/></svg>掉落表重构</span>
+          <span class="opt">DeepSeek Flash · 高 · 逐条询问</span>
+          <span class="kbd">Ctrl K</span>
+        </div>
+      </section>
+      <section>
+        <h3>尺寸</h3>
+        <div class="metrics" id="spec-metrics"></div>
+      </section>
+      <section>
+        <h3>颜色</h3>
+        <div class="swatches" id="spec-colors"></div>
+      </section>
+    </div>
+
+    <!-- 新建任务 -->
+    <div class="scrim newtask">
+      <div class="dialog" style="width:600px" role="dialog" aria-label="新建任务">
+        <div class="dialog-h"><h3>新建任务</h3><button class="btn ghost icon x" aria-label="关闭"><svg><use href="#i-x"/></svg></button></div>
+        <div class="dialog-b">
+          <div class="field">
+            <label>第一句话</label>
+            <div class="textarea">mining-c 的导入器遇到网络错误直接崩，给 fetch 加上失败重试，最多 3 次，退避翻倍<span class="caret"></span></div>
+            <span class="hint">标题会从这句话里取，之后可以改。</span>
+          </div>
+          <div class="row2">
+            <div class="field">
+              <div class="lab">项目<span class="opt-label">可不选</span></div>
+              <span class="select block">mining-c<svg><use href="#i-down"/></svg></span>
+            </div>
+            <div class="field">
+              <div class="lab">专题<span class="opt-label">可不选</span></div>
+              <span class="select block"><span class="muted">不放进专题</span><svg><use href="#i-down"/></svg></span>
+            </div>
+          </div>
+          <div class="field">
+            <div class="lab">模型</div>
+            <div class="presets">
+              <span class="preset" aria-pressed="true">DeepSeek Flash</span>
+              <span class="preset">GPT 订阅</span>
+              <span class="preset">Claude 订阅</span>
+              <span class="preset">GLM</span>
+            </div>
+          </div>
+          <div class="row3">
+            <div class="field"><div class="lab">型号</div><span class="select block">默认<svg><use href="#i-down"/></svg></span></div>
+            <div class="field"><div class="lab">思考强度</div><span class="select block">高<svg><use href="#i-down"/></svg></span></div>
+            <div class="field"><div class="lab">权限</div><span class="select block">逐条询问<svg><use href="#i-down"/></svg></span></div>
+          </div>
+        </div>
+        <div class="dialog-f">
+          <span class="left">不选项目时，会话在公共目录里运行。</span>
+          <button class="btn ghost" data-go="board">取消</button>
+          <button class="btn">只建任务</button>
+          <button class="btn primary">创建并开始</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 设置 -->
+    <div class="scrim settings">
+      <div class="dialog" style="width:780px" role="dialog" aria-label="设置">
+        <div class="settings-wrap">
+          <div class="settings-nav">
+            <h3>设置</h3>
+            <button class="nav-row">通用</button>
+            <button class="nav-row">模型凭据</button>
+            <button class="nav-row">常用预设</button>
+            <button class="nav-row" aria-current="true">草稿区</button>
+            <button class="nav-row">快捷键</button>
+          </div>
+          <div class="settings-main">
+            <div class="dialog-h"><h3>草稿区</h3><button class="btn ghost icon x" aria-label="关闭" data-go="board"><svg><use href="#i-x"/></svg></button></div>
+            <div class="dialog-b" style="gap:0">
+              <div class="set-row"><span class="t">页数</span><span class="d">每页单独保存，在草稿区顶部切换。</span><span class="c"><span class="stepper"><button>−</button><span>4</span><button>+</button></span></span></div>
+              <div class="set-row"><span class="t">呼出快捷键</span><span class="d">点"重新录制"后按下想用的组合，支持鼠标侧键。</span><span class="c"><span class="recorder"><span class="kbd">Ctrl</span>+<span class="kbd">鼠标侧键 1</span></span><button class="btn s">重新录制</button></span></div>
+              <div class="set-row"><span class="t">在鼠标位置打开</span><span class="d">关掉后固定在上次关闭的位置。</span><span class="c"><span class="toggle"></span></span></div>
+              <div class="set-row"><span class="t">保持在最前</span><span class="d">切到别的窗口时草稿区不被盖住。</span><span class="c"><span class="toggle off"></span></span></div>
+              <div class="set-row"><span class="t">字号</span><span class="d">只影响草稿区。</span><span class="c"><div class="seg" role="group"><button aria-pressed="false">小</button><button aria-pressed="true">标准</button><button aria-pressed="false">大</button></div></span></div>
+            </div>
+            <div class="dialog-f" style="margin-top:auto"><span class="left">改动立即生效</span><button class="btn" data-go="board">完成</button></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- Focus 与草稿区：放在一个代替桌面的编辑器画面上 -->
+  <div class="desk">
+    <div class="desk-ide">
+      <div class="bar">DropTableValidator.cs — mining-a</div>
+<pre><span class="kw">public static class</span> <span class="ty">DropTableValidator</span>
+{
+    <span class="cm">// 概率和允许的误差</span>
+    <span class="kw">const float</span> Epsilon = <span class="st">0.0001f</span>;
+
+    <span class="kw">public static</span> <span class="ty">IEnumerable</span>&lt;<span class="ty">string</span>&gt; FindInvalid(<span class="ty">DropTable</span>[] tables)
+    {
+        <span class="kw">foreach</span> (<span class="kw">var</span> table <span class="kw">in</span> tables)
+        {
+            <span class="kw">var</span> sum = table.Entries.Sum(e =&gt; e.Weight);
+            <span class="kw">if</span> (<span class="ty">Mathf</span>.Abs(sum - <span class="st">1f</span>) &gt; Epsilon)
+                <span class="kw">yield return</span> <span class="st">$"{table.name}: {sum:0.000}"</span>;
+        }
+    }
+}</pre>
+    </div>
+    <div class="desk-task"></div>
+
+    <div class="pad" role="dialog" aria-label="草稿区">
+      <div class="pad-h">
+        <span class="title">草稿</span>
+        <button class="pad-tab" aria-pressed="false">1</button>
+        <button class="pad-tab" aria-pressed="true">2</button>
+        <button class="pad-tab" aria-pressed="false">3</button>
+        <button class="pad-tab" aria-pressed="false">4</button>
+        <button class="btn ghost s icon" aria-label="固定"><svg><use href="#i-pin"/></svg></button>
+      </div>
+      <div class="pad-b">Boss_Lv20 掉率改完后要通知策划确认
+Chest_Rare 超了 0.04，问一下是不是故意的
+
+明天：
+- mining-b rebase 后再跑 CI
+- 后坐力曲线等策划给数据</div>
+      <div class="pad-f"><span>已保存</span><span class="kbd">Ctrl + 鼠标侧键 1</span><span>呼出 / 隐藏</span></div>
+    </div>
+
+    <div class="focus" aria-label="Focus">
+      <div class="focus-h"><svg class="logo"><use href="#i-robot"/></svg>需要你处理<span class="n">2</span><button class="btn ghost s icon" aria-label="收起"><svg><use href="#i-down"/></svg></button></div>
+      <div class="f-item">
+        <div class="f-kind"><span class="pill attn">等待批准</span>掉落表概率校验 · mining-a</div>
+        <div class="f-code">git commit -m "fix: normalize drop tables"</div>
+        <div class="f-acts"><button class="btn s primary">批准</button><button class="btn s">本会话都批准</button><button class="btn s danger">拒绝</button></div>
+      </div>
+      <div class="f-item">
+        <div class="f-kind"><span class="pill attn">请你决定</span>武器后坐力曲线 · weapon-lab</div>
+        <div class="f-title">后坐力曲线用线性插值还是贝塞尔？</div>
+        <div class="f-acts"><button class="btn s">线性插值</button><button class="btn s">贝塞尔</button><button class="btn s ghost">打开任务</button></div>
+      </div>
+      <div class="f-item">
+        <div class="f-kind">运行中 2</div>
+        <div class="f-run"><span class="dot run"></span>导入器加上失败重试<span class="t">3:12</span></div>
+        <div class="f-run"><span class="dot run"></span>对比三个副本的 Drop 结构<span class="t">0:48</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(function () {
+  var app = document.getElementById("app");
+  var note = document.getElementById("pv-note");
+  var NOTES = {
+    a: "<strong>A 纸感编辑部</strong>：新闻纸底色，宋体标题，墨蓝强调色。栏目标题下有一条粗线，像排好版的工作日报。正文 14px，按钮 30px 高，圆角 3px。",
+    b: "<strong>B 精密工具</strong>：中性冷灰，13px 紧凑正文，数字一律用等宽字体。按钮 28px 高，信息密度最高，最接近现在的版本。",
+    c: "<strong>C 柔和工作室</strong>：低饱和底色，看板列和内容区是浮起的圆角块，按钮是胶囊形，34px 高。延续机器人图标的气质。",
+    d: "<strong>D 瑞士网格</strong>：纯白配黑线，标题用粗体，没有圆角和阴影。只有需要你处理的事才用黄色标出来。",
+    e: "<strong>E 东方留白</strong>：宣纸白，细线，宋体标题加宽字距，行高 1.8。主色是墨黑，朱红只用在需要你的地方（带「待」字印章）。"
+  };
+  var store = {
+    get: function (k) { try { return localStorage.getItem(k); } catch (e) { return null; } },
+    set: function (k, v) { try { localStorage.setItem(k, v); } catch (e) {} }
+  };
+  function press(attr, value) {
+    document.querySelectorAll(".pv-tab[data-" + attr + "]").forEach(function (b) {
+      b.setAttribute("aria-pressed", String(b.getAttribute("data-" + attr) === value));
+    });
+  }
+  function setDir(d) {
+    app.setAttribute("data-dir", d); press("dir", d); note.innerHTML = NOTES[d]; store.set("amo-pv-dir", d);
+    if (app.getAttribute("data-screen") === "spec") fillSpec();
+  }
+  function setScreen(s) {
+    app.setAttribute("data-screen", s); press("screen", s); store.set("amo-pv-screen", s);
+    var topSeg = app.querySelectorAll(".topbar .seg button");
+    topSeg[0].setAttribute("aria-pressed", String(s !== "topic"));
+    topSeg[1].setAttribute("aria-pressed", String(s === "topic"));
+    var navRows = app.querySelectorAll(".nav > .nav-row");
+    navRows.forEach(function (r) { r.setAttribute("aria-current", "false"); });
+    navRows[s === "topic" ? 2 : 0].setAttribute("aria-current", "true");
+    if (s === "spec") fillSpec();
+    if (s === "task") { var cs = app.querySelector(".chat-scroll"); cs.scrollTop = cs.scrollHeight; }
+  }
+  document.querySelectorAll(".pv-tab[data-dir]").forEach(function (b) { b.addEventListener("click", function () { setDir(b.getAttribute("data-dir")); }); });
+  document.querySelectorAll(".pv-tab[data-screen]").forEach(function (b) { b.addEventListener("click", function () { setScreen(b.getAttribute("data-screen")); }); });
+  app.addEventListener("click", function (e) {
+    var t = e.target.closest("[data-go]");
+    if (t) setScreen(t.getAttribute("data-go"));
+  });
+
+  function px(v) { var n = parseFloat(v); return isNaN(n) ? v : (Math.round(n * 10) / 10) + "px"; }
+  function hex(c) {
+    var m = c.match(/rgba?\(([^)]+)\)/); if (!m) return c;
+    var p = m[1].split(/[ ,\/]+/).filter(Boolean).map(Number);
+    var h = "#" + p.slice(0, 3).map(function (x) { return ("0" + Math.round(x).toString(16)).slice(-2); }).join("");
+    return p.length > 3 && p[3] < 1 ? h + " · " + Math.round(p[3] * 100) + "%" : h;
+  }
+  function fillSpec() {
+    var cs = getComputedStyle(app);
+    var tv = function (n) { return cs.getPropertyValue(n).trim(); };
+    var type = [
+      ["--fs-h1", "页面标题", "掉落表重构 Drop 2026", "display"],
+      ["--fs-h2", "弹窗 / 任务标题", "新建任务 · 掉落表概率校验", "display"],
+      ["--fs-title", "卡片标题", "导入器加上失败重试", "strong"],
+      ["--fs-body", "正文", "发现 3 张表的概率和不为 1，建议补到权重最大的一项。", ""],
+      ["--fs-sm", "次要文字 / 按钮", "运行中 · 3 分 12 秒 · 用量 8.4k", ""],
+      ["--fs-cap", "说明 / 标签", "主会话 · DeepSeek Flash · 17:09", ""]
+    ];
+    var face = { display: "var(--font-display)", strong: "var(--font-ui)", "": "var(--font-ui)" };
+    var weight = { display: "var(--fw-display)", strong: "var(--fw-strong)", "": "400" };
+    document.getElementById("spec-type").innerHTML = type.map(function (t) {
+      return '<div class="type-row"><span class="k">' + t[0] + '</span><span class="v">' + t[1] + " · " + px(tv(t[0])) + '</span><span style="font-size:var(' + t[0] + ');font-family:' + face[t[3]] + ';font-weight:' + weight[t[3]] + ';letter-spacing:' + (t[3] === "display" ? "var(--ls-display)" : "0") + '">' + t[2] + "</span></div>";
+    }).join("");
+    var kinds = [["primary", "主要"], ["", "次要"], ["ghost", "幽灵"], ["danger", "危险"]];
+    var sizes = [["s", "小", "--ctl-s"], ["", "标准", "--ctl"], ["l", "大", "--ctl-l"]];
+    var html = "";
+    sizes.forEach(function (s) {
+      html += '<span class="k">' + s[1] + " · " + px(tv(s[2])) + "</span>";
+      kinds.forEach(function (k) { html += '<button class="btn ' + k[0] + " " + s[0] + '">' + k[1] + "</button>"; });
+    });
+    document.getElementById("spec-btn").innerHTML = html;
+    var probe = document.querySelector("#spec-btn .btn");
+    var pcs = getComputedStyle(probe);
+    var metrics = [
+      ["正文行高", tv("--lh")], ["圆角 小 / 中 / 大", [tv("--r-s"), tv("--r-m"), tv("--r-l")].map(px).join(" / ")], ["按钮圆角", px(tv("--r-btn")) === "999px" ? "胶囊" : px(tv("--r-btn"))],
+      ["按钮左右内边距", px(tv("--ctl-px"))], ["间距单位", px(tv("--sp"))], ["顶栏 / 侧栏", px(tv("--topbar-h")) + " / " + px(tv("--nav-w"))],
+      ["界面字体", tv("--font-ui").split(",")[0].replace(/"/g, "")], ["标题字体", tv("--font-display").split(",")[0].replace(/"/g, "")], ["等宽字体", tv("--font-mono").split(",")[0].replace(/"/g, "")],
+      ["标题字重", tv("--fw-display")], ["强调字重", tv("--fw-strong")], ["小按钮字号", px(pcs.fontSize)]
+    ];
+    document.getElementById("spec-metrics").innerHTML = metrics.map(function (m) { return '<div class="metric"><div class="k">' + m[0] + '</div><div class="v">' + m[1] + "</div></div>"; }).join("");
+    var colors = [["--bg", "底色"], ["--surface", "面板"], ["--sunken", "凹陷"], ["--line", "分隔线"], ["--line-strong", "强线"], ["--text", "文字"], ["--text-2", "次要文字"], ["--text-3", "说明文字"],
+      ["--accent", "主色"], ["--accent-soft", "主色浅"], ["--sel", "选中"], ["--attn", "需要你"], ["--attn-soft", "需要你·浅"], ["--ok", "运行 / 成功"], ["--err", "错误"], ["--code-bg", "代码底"]];
+    document.getElementById("spec-colors").innerHTML = colors.map(function (c) {
+      var probeEl = document.createElement("i"); probeEl.style.color = "var(" + c[0] + ")"; app.appendChild(probeEl);
+      var v = hex(getComputedStyle(probeEl).color); app.removeChild(probeEl);
+      return '<div class="sw"><i style="background:var(' + c[0] + ')"></i><b>' + c[1] + "</b><span>" + v + "</span></div>";
+    }).join("");
+  }
+
+  var d = store.get("amo-pv-dir"), s = store.get("amo-pv-screen");
+  setDir(NOTES[d] ? d : "b");
+  setScreen(s && document.querySelector('.pv-tab[data-screen="' + s + '"]') ? s : "board");
+  if (document.fonts && document.fonts.ready) document.fonts.ready.then(function () { if (app.getAttribute("data-screen") === "spec") fillSpec(); });
+})();
+</script>
