@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState, type ClipboardEvent, type DragEvent } from "react";
 import type { HostLink } from "../host/client.js";
-import { attachable, imagesOf, uploadAttachment } from "../lib/attachments.js";
+import { attachable, uploadAttachment } from "../lib/attachments.js";
 
 // What the composer holds besides its text: images pasted or dropped in (uploaded at once, sent by id) and file
 // references (paths, sent as a block at the end of the message).
@@ -139,12 +139,15 @@ export function useAttachments(link: HostLink) {
     restore,
     release,
     reset,
-    /** Ctrl+V: pasted images are attached; text still pastes as usual. */
+    /**
+     * Ctrl+V: a screenshot (or copied image) is attached; files copied in Explorer are taken like a drop. Text still
+     * pastes as usual.
+     */
     onPaste(e: ClipboardEvent) {
-      const pics = imagesOf(e.clipboardData);
-      if (!pics.length) return;
+      const pasted = [...e.clipboardData.files];
+      if (!pasted.length) return;
       if (!e.clipboardData.types.includes("text/plain")) e.preventDefault();
-      addImages(pics);
+      addDropped(pasted);
     },
     onDragOver(e: DragEvent): boolean {
       if (!dragHasFiles(e)) return false;
