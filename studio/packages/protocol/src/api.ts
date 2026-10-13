@@ -202,7 +202,11 @@ export interface HostRoutes {
   "GET /api/sessions/:id/items": { req: void; res: SessionItem[] };
   /** Starts a turn when idle, steers the running turn otherwise. */
   /** `queue`: a Claude session was mid-turn; the message runs as the next turn. Codex steers the running turn instead. */
-  "POST /api/sessions/:id/messages": { req: { text: string }; res: { mode: "start" | "steer" | "queue" } };
+  /**
+   * `attachments`: ids of images uploaded with POST /api/attachments, sent along (Codex `localImage`, Claude image
+   * blocks); `text` may then be empty. Steered and queued messages carry them too.
+   */
+  "POST /api/sessions/:id/messages": { req: { text: string; attachments?: Id[] }; res: { mode: "start" | "steer" | "queue" } };
   "POST /api/sessions/:id/interrupt": { req: void; res: { ok: true } };
   "POST /api/sessions/:id/fork": { req: { profileId?: Id }; res: Session };
   /** Switches the session's model, effort or permissions (null clears back to the default). Codex: from the next turn. */

@@ -5,6 +5,9 @@ import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
+/** Most images one message can carry. */
+const MAX_MESSAGE_IMAGES = 10;
+
 /** Sessions: conversation, approvals, branches, archive, names and options, terminals. */
 export class SessionsFeature extends Feature {
   /** Terminals that hold a Claude session (handoff); closing one gives the session back. */
@@ -41,10 +44,19 @@ export class SessionsFeature extends Feature {
     return this.store.listItems(sessionId, afterSeq);
   }
 
-  async sendMessage(sessionId: Id, text: string): Promise<{ mode: SendMode }> {
+  /** `attachments`: ids of uploaded images to send along; with some, the text may be empty. */
+  async sendMessage(sessionId: Id, text: string, attachments: readonly Id[] = []): Promise<{ mode: SendMode }> {
     this.requireSession(sessionId);
-    if (!text?.trim()) throw new HostError("bad_request", "text is required");
-    return this.wrap(() => this.runtime.sendMessage(sessionId, text));
+    if (attachments.length > MAX_MESSAGE_IMAGES) throw new HostError("bad_request", `at most ${MAX_MESSAGE_IMAGES} images per message`);
+    const images = [...new Set(attachments)].map((id) => {
+      try {
+        return this.f.attachments.get(id);
+      } catch {
+        throw new HostError("bad_request", `attachment ${id} not found`);
+      }
+    });
+    if (!text?.trim() && !images.length) throw new HostError("bad_request", "text is required");
+    return this.wrap(() => this.runtime.sendMessage(sessionId, text ?? "", images));
   }
 
   async interrupt(sessionId: Id): Promise<void> {

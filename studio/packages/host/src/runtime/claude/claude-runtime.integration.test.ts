@@ -1,9 +1,9 @@
-import { existsSync, mkdirSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ModelProfile, SessionItem, Task, Workspace } from "@amo-studio/protocol";
-import { MOCK_CLAUDE_MODEL, removeTempDir, startMockAnthropic, type ClaudeMockServer } from "@amo-studio/testkit";
+import { MOCK_CLAUDE_MODEL, TINY_PNG_BASE64, removeTempDir, startMockAnthropic, type ClaudeMockServer } from "@amo-studio/testkit";
 import { Store } from "../../store/store.js";
 import { StaticCredentialReader } from "../credentials.js";
 import { ClaudeRuntime } from "./claude-runtime.js";
@@ -140,6 +140,26 @@ describe("ClaudeRuntime", () => {
     // The session goes on afterwards (a new query resumes it).
     await runtime.sendMessage(s.id, "after interrupt");
     await until(() => agentTexts(s.id).includes("MOCK: after interrupt"), "reply after interrupt");
+  }, 180_000);
+
+  it("sends images as image blocks, with or without text, also when queued", async () => {
+    const id = "att-00000000-0000-4000-8000-000000000002";
+    const path = join(root, `${id}.png`);
+    writeFileSync(path, Buffer.from(TINY_PNG_BASE64, "base64"));
+    const image = { id, name: "dot.png", mime: "image/png", size: 68, path, createdAt: "" };
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace });
+    await runtime.sendMessage(s.id, "", [image]);
+    await until(() => agentTexts(s.id).includes("MOCK:  [images: 1]") && status(s.id) === "idle", "reply to the image");
+    expect(store.getSession(s.id)!.title).toBe("图片");
+    expect(items(s.id).find((i) => i.type === "user")).toMatchObject({ text: "", images: [{ id, path }] });
+    const sent = mock.requests.filter((r) => r.images === 1 && r.tools.length).at(-1)!.body as { messages: Array<{ content: unknown }> };
+    expect(JSON.stringify(sent.messages)).toContain(TINY_PNG_BASE64);
+
+    await runtime.sendMessage(s.id, "[[slow]]");
+    await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent" && i.streaming), "slow reply");
+    expect((await runtime.sendMessage(s.id, "this too", [image])).mode).toBe("queue");
+    await until(() => agentTexts(s.id).includes("MOCK: this too [images: 1]") && status(s.id) === "idle", "queued image answered");
+    expect(items(s.id).filter((i) => i.type === "user").at(-1)).toMatchObject({ text: "this too", images: [{ id }] });
   }, 180_000);
 
   it("forks a session: the branch carries the context and goes its own way", async () => {

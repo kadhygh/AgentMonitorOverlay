@@ -673,4 +673,18 @@ describe("Host API", () => {
     expect(text.status).toBe(400);
     expect((await api("GET", "/api/attachments/att-..%2F..%2Fstudio.db")).status).toBe(404);
   });
+
+  it("sends a message with images by attachment id, text optional", async () => {
+    const { session } = await createTask();
+    await until(async () => (await lastAgentText(session.id)) === "FAKE: hello", "first reply");
+    const up = await fetch(`${http.url}/api/attachments?type=image/png`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/png" }, body: Buffer.from("png") });
+    const a = (await up.json()) as { id: string; path: string };
+    expect(await ok("POST", `/api/sessions/${session.id}/messages`, { attachments: [a.id] })).toEqual({ mode: "start" });
+    await until(async () => (await lastAgentText(session.id)) === "FAKE:  [images: 1]", "reply to the image");
+    expect((await items(session.id)).filter((i) => i.type === "user").at(-1)).toMatchObject({ text: "", images: [{ id: a.id, path: a.path }] });
+    // Unknown ids, a bad list, or nothing at all are refused before anything is sent.
+    expect((await api("POST", `/api/sessions/${session.id}/messages`, { text: "x", attachments: ["att-00000000-0000-4000-8000-000000000000"] })).status).toBe(400);
+    expect((await api("POST", `/api/sessions/${session.id}/messages`, { text: "x", attachments: "nope" })).status).toBe(400);
+    expect((await api("POST", `/api/sessions/${session.id}/messages`, { text: " ", attachments: [] })).status).toBe(400);
+  });
 });

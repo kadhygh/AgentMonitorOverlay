@@ -1,9 +1,9 @@
 import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createSdkMcpServer, forkSession, getSessionMessages, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ApprovalDecision, ApprovalKind, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, ToolFields, TurnState, Workspace, AccountUsage, UsageWindow } from "@amo-studio/protocol";
+import type { ApprovalDecision, ApprovalKind, Attachment, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, ToolFields, TurnState, Workspace, AccountUsage, UsageWindow } from "@amo-studio/protocol";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
@@ -52,7 +52,7 @@ interface Live {
   q: Query;
   /** Settles when the query has ended and its process is gone. */
   done: Promise<void>;
-  push(text: string): void;
+  push(content: SDKUserMessage["message"]["content"]): void;
   end(): void;
   running: boolean;
   interrupted: boolean;
@@ -139,16 +139,20 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return this.store.getSession(session.id)!;
   }
 
-  async sendMessage(sessionId: Id, text: string): Promise<{ mode: SendMode }> {
+  /** Images go as base64 image blocks before the text (the CLI keeps them in the transcript). */
+  async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
     const session = this.writable(sessionId);
-    if (!session.title) this.updateSession(sessionId, { title: text.slice(0, 60) });
+    // Read the images first: a missing file fails the send before anything is shown or queued.
+    const blocks = images.map((a) => ({ type: "image" as const, source: { type: "base64" as const, media_type: a.mime as "image/png", data: readFileSync(a.path).toString("base64") } }));
+    if (!session.title) this.updateSession(sessionId, { title: (text || "图片").slice(0, 60) });
     await this.closing.get(sessionId);
     const live = this.ensureLive(session);
     const mode: SendMode = live.running ? "queue" : "start";
     if (!live.running) this.turnStarted(sessionId, live);
-    this.appendItem(sessionId, { type: "user", text }, { method: mode === "queue" ? "user/queued" : "user" });
+    const shown = images.map((a) => ({ id: a.id, path: a.path }));
+    this.appendItem(sessionId, { type: "user", text, ...(shown.length ? { images: shown } : {}) }, { method: mode === "queue" ? "user/queued" : "user" });
     this.clearIdle(live);
-    live.push(text);
+    live.push(blocks.length ? [...blocks, ...(text ? [{ type: "text" as const, text }] : [])] : text);
     return { mode };
   }
 
@@ -367,7 +371,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
     const ref = session.runtimeRef!;
 
-    const queue: string[] = [];
+    const queue: Array<SDKUserMessage["message"]["content"]> = [];
     let wake: (() => void) | null = null;
     let ended = false;
     async function* input(): AsyncGenerator<SDKUserMessage> {
@@ -382,8 +386,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const live: Live = {
       q: null as unknown as Query,
       done: Promise.resolve(),
-      push: (text) => {
-        queue.push(text);
+      push: (content) => {
+        queue.push(content);
         wake?.();
       },
       end: () => {
@@ -788,7 +792,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       const content = (m.message as { content?: unknown })?.content;
       const blocks: Array<Record<string, unknown>> = typeof content === "string" ? [{ type: "text", text: content }] : Array.isArray(content) ? content : [];
       for (const b of blocks) {
-        if (m.type === "user" && b.type === "text" && typeof b.text === "string" && !/^\s*(<[a-z-]+>|\[Request interrupted)/.test(b.text)) {
+        if (m.type === "user" && b.type === "text" && typeof b.text === "string" && !/^\s*(<[a-z-]+>|\[Request interrupted|\[Image: source:)/.test(b.text)) {
           this.appendItem(sessionId, { type: "user", text: b.text }, { method: "transcript" });
           added++;
         } else if (m.type === "user" && b.type === "tool_result") {
