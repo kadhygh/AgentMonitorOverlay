@@ -256,3 +256,25 @@ S4-01 用 mock Anthropic 接口补充发现（不消耗额度）：
 | `elevated` | 没测：第一次可能要管理员权限（会弹 UAC） |
 
 用户决定（2026-10-13）：**Studio 内的 Codex 会话不用沙箱，命令逐条问**。实现：CodexRuntime 默认 `approvalPolicy: "untrusted"`、`sandbox: "danger-full-access"`，并在 resume 和每个 turn/start 上重复传，旧会话也跟着生效；不改用户的 `~/.codex`。
+
+## s9-03 · 型号、思考强度、权限：每个模型能选什么，选了是否真的生效（2026-10-13，GLM 3 次、GPT 1 次）
+
+`spikes/s9-03-choices.mjs`（列表部分不调用模型；`turns` 才发真实请求）。
+
+| 模型配置 | 型号（来源） | 思考强度 | 权限 |
+|---|---|---|---|
+| GPT 订阅 | Codex `model/list`：gpt-6.1-sol（默认）、gpt-6-astra、gpt-6-sol、gpt-6-luna、gpt-5.6-sol/terra/luna | low…max，部分型号还有 ultra | 逐条询问 / 需要时询问 / 完全访问；工作区可写、只读两个沙箱档在 unelevated 沙箱下标为不可用 |
+| DeepSeek Flash | Codex `model/list`（模型目录）：deepseek-flash | low / high / max | 同上 |
+| GLM-5.3 | 内置（Claude Code 的列表只认 Claude 型号）：glm-5.3[1m]、glm-5.3、glm-5.2、glm-4.7 | low…max | 每次询问 / 自动接受编辑 / 只做计划 / 全部允许 |
+| Claude 订阅 | Claude Code `supportedModels()`（启动 CLI 不发 prompt，约 0.6 秒，不调用模型）；还没保存令牌时退回内置别名 default/opus/sonnet/fable/haiku | low…max | 同上 |
+
+真实请求（同一道需要推算的题）：
+
+| 设置 | 用时 | 思考字数 | 输出 token |
+|---|---|---|---|
+| GLM，强度 low | 9.8 秒 | 269 | 304 |
+| GLM，强度 max | 17.7 秒 | 822 | 506 |
+| GLM，型号切到 glm-4.7 | 28.7 秒 | 1564 | 839 |
+| GPT，强度 high | 11 秒 | 443（摘要） | 212（推理 49） |
+
+结论：Claude Code 把强度作为 `output_config.effort` 发给 GLM，GLM 会照着调整思考量；切型号直接生效。Codex 每个 turn/start 都带 model 和 effort（mock 集成测试里核对了请求体）。Claude 的会话在运行中切换时立即生效（setModel / setPermissionMode / applyFlagSettings），Codex 从下一轮生效。

@@ -20,7 +20,7 @@ export const exampleTasks: Task[] = [
 
 const session = (over: Partial<Session> & Pick<Session, "id" | "createdAt">): Session => ({
   taskId: "task-1", parentId: null, kind: "main", runtime: "codex", profileId: "codex-deepseek-flash", workspaceId: "ws-alpha",
-  title: "", status: "idle", writer: "workbench", runtimeRef: null, updatedAt: over.createdAt, archivedAt: null, ...over,
+  title: "", status: "idle", writer: "workbench", runtimeRef: null, options: {}, updatedAt: over.createdAt, archivedAt: null, ...over,
 });
 
 export const exampleSessions: Session[] = [

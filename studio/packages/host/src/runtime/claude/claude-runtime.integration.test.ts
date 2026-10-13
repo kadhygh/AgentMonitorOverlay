@@ -63,6 +63,19 @@ afterAll(async () => {
 });
 
 describe("ClaudeRuntime", () => {
+  it("starts with the chosen model and effort, and switches them in a running session", async () => {
+    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "opts one", options: { model: "mock-claude-b", effort: "high" } });
+    await until(() => agentTexts(s.id).includes("MOCK: opts one") && status(s.id) === "idle", "first reply");
+    const first = mock.requests.filter((r) => r.lastUserText === "opts one" && r.tools.length).at(-1)!.body as Record<string, unknown>;
+    // Claude Code sends the effort as output_config.effort.
+    expect(first).toMatchObject({ model: "mock-claude-b", output_config: { effort: "high" } });
+    await runtime.setOptions(s.id, { model: "mock-claude-c", effort: "low", permission: "plan" });
+    await runtime.sendMessage(s.id, "opts two");
+    await until(() => agentTexts(s.id).includes("MOCK: opts two") && status(s.id) === "idle", "second reply");
+    const second = mock.requests.filter((r) => r.lastUserText === "opts two" && r.tools.length).at(-1)!.body as Record<string, unknown>;
+    expect(second).toMatchObject({ model: "mock-claude-c", output_config: { effort: "low" } });
+  }, 120_000);
+
   it("runs a turn and continues the same Claude session on the next message", async () => {
     const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "hello" });
     expect(s).toMatchObject({ runtime: "claude", kind: "main", title: "hello" });

@@ -59,6 +59,16 @@ export interface ModelProfile {
   credentialId?: string;
 }
 
+/**
+ * A session's choices on top of its profile, as each CLI offers them: the model, the reasoning effort and the
+ * permissions (ids from the profile's `ProfileChoices`). Absent fields use the profile's defaults.
+ */
+export interface SessionOptions {
+  model?: string;
+  effort?: string;
+  permission?: string;
+}
+
 export interface Session {
   id: Id;
   taskId: Id;
@@ -74,6 +84,8 @@ export interface Session {
   writer: WriterState;
   /** Codex thread id or Claude session id; null until the runtime has created it. */
   runtimeRef: string | null;
+  /** Model, effort and permissions chosen for this session (switchable while it lives). */
+  options: SessionOptions;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   archivedAt: Timestamp | null;

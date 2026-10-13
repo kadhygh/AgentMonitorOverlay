@@ -1,6 +1,9 @@
 import { useState } from "react";
-import { buildSessionTree, type ModelProfile, type Session, type SessionNode, type Task, type Workspace } from "@amo-studio/protocol";
+import { buildSessionTree, type ModelProfile, type Session, type SessionNode, type SessionOptions, type Task, type Workspace } from "@amo-studio/protocol";
 import { defaultProfile, profileLabel, rememberProfile, shortModel } from "../lib/profiles.js";
+import type { HostLink } from "../host/client.js";
+import { useProfileChoices } from "../lib/choices.js";
+import { OptionsPicker } from "../chat/OptionsPicker.js";
 import { SESSION_LOOK } from "../lib/status.js";
 
 const KIND = { main: "会话", fork: "分支", sub: "子 agent" } as const;
@@ -13,7 +16,8 @@ interface SessionTreeProps {
   selected: string | null;
   busy: boolean;
   onSelect(id: string): void;
-  onNewSession(input: { profileId: string; workspaceId?: string }): void;
+  onNewSession(input: { profileId: string; workspaceId?: string; options?: SessionOptions }): void;
+  link: HostLink;
   onRestore(id: string): void;
   /** Unread mail per session id. */
   unread?: ReadonlyMap<string, number>;
@@ -23,12 +27,14 @@ interface SessionTreeProps {
 }
 
 /** Left column of the task page: session tree (forks and subagents indented), new session, archived area. */
-export function SessionTree({ task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset }: SessionTreeProps) {
+export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset }: SessionTreeProps) {
   const isArea = task.scope.kind === "area";
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
   const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
+  const [options, setOptions] = useState<SessionOptions>({});
+  const { choices } = useProfileChoices(link, profileId);
   const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
   const [showArchived, setShowArchived] = useState(false);
   const profile = (id: string) => profiles.find((p) => p.id === id);
@@ -77,7 +83,13 @@ export function SessionTree({ task, sessions, workspaces, profiles, selected, bu
       <div className="new-session">
         <label className="stack-field">
           新会话模型
-          <select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+          <select
+            value={profileId}
+            onChange={(e) => {
+              setProfileId(e.target.value);
+              setOptions({});
+            }}
+          >
             {profiles.map((p) => (
               <option key={p.id} value={p.id}>
                 {profileLabel(p)}
@@ -85,6 +97,7 @@ export function SessionTree({ task, sessions, workspaces, profiles, selected, bu
             ))}
           </select>
         </label>
+        <OptionsPicker choices={choices} value={options} onChange={setOptions} layout="stack" />
         {isArea && (
           <label className="stack-field">
             所在工作区
@@ -103,7 +116,7 @@ export function SessionTree({ task, sessions, workspaces, profiles, selected, bu
           disabled={busy || !profileId}
           onClick={() => {
             rememberProfile(profileId);
-            onNewSession({ profileId, ...(isArea ? { workspaceId } : {}) });
+            onNewSession({ profileId, ...(isArea ? { workspaceId } : {}), ...(Object.keys(options).length ? { options } : {}) });
           }}
         >
           + 新会话

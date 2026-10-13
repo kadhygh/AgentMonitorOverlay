@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, HostEvent, Id, ModelProfile, Session, SessionItem, SessionRuntime, SessionStatus, Workspace } from "@amo-studio/protocol";
+import type { ApprovalDecision, HostEvent, Id, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, Workspace } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../store/store.js";
 
 // What HostService needs from a runtime, and a router that sends each call to the runtime a session (or profile)
@@ -14,7 +14,11 @@ export interface RuntimeEvents {
 }
 
 export interface SessionRuntimeApi {
-  startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string }): Promise<Session>;
+  startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session>;
+  /** Models (with efforts) and permission settings the profile's CLI offers. */
+  choices(profileId: Id): Promise<ProfileChoices>;
+  /** Switches the session's model, effort or permissions (Claude: at once; Codex: from the next turn). */
+  setOptions(sessionId: Id, options: SessionOptions): Promise<Session>;
   /** Starts a turn; while one runs, Codex steers it and Claude queues the message for the next turn. */
   sendMessage(sessionId: Id, text: string): Promise<{ mode: SendMode }>;
   interrupt(sessionId: Id): Promise<void>;
@@ -67,6 +71,14 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   sendMessage(sessionId: Id, text: string) {
     return this.forSession(sessionId).sendMessage(sessionId, text);
   }
+  choices(profileId: Id) {
+    const profile = this.profiles.find((p) => p.id === profileId);
+    if (!profile) throw new Error(`unknown profile ${profileId}`);
+    return this.byRuntime(profile.runtime).choices(profileId);
+  }
+  setOptions(sessionId: Id, options: SessionOptions) {
+    return this.forSession(sessionId).setOptions(sessionId, options);
+  }
   interrupt(sessionId: Id) {
     return this.forSession(sessionId).interrupt(sessionId);
   }
@@ -118,7 +130,7 @@ export abstract class RuntimeBase extends EventEmitter<RuntimeEvents> {
     return s;
   }
 
-  protected createSession(input: { taskId: Id; parentId: Id | null; kind: Session["kind"]; profileId: Id; workspaceId: Id; title: string; runtimeRef: string }): Session {
+  protected createSession(input: { taskId: Id; parentId: Id | null; kind: Session["kind"]; profileId: Id; workspaceId: Id; title: string; runtimeRef: string; options?: SessionOptions }): Session {
     const s = this.store.createSession({ ...input, runtime: this.runtimeName, status: "idle", writer: "workbench" });
     this.publish({ type: "session.upserted", session: s });
     return s;

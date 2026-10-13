@@ -152,6 +152,30 @@ describe("Codex runtime against the real app-server", () => {
     expect(lastAgent(mainId)!.markdown).toContain("| `retries` | 3 |");
   }, 90_000);
 
+  it("lists the profile's models with their efforts, and switches effort and permissions per session", async () => {
+    const choices = await host.runtime.choices("codex-mock");
+    const mockModel = choices.models.find((m) => m.id === "mock-model")!;
+    expect(mockModel.efforts).toEqual(expect.arrayContaining(["low", "high", "max"]));
+    expect(choices.permissions.map((p) => p.id)).toEqual(["ask", "on-request", "full-auto", "workspace-write", "read-only"]);
+
+    // The runtime here is fixed to untrusted/read-only by the test setup, so only model and effort are checked against
+    // the requests; the permission mapping itself is covered by the unit tests.
+    await host.runtime.setOptions(mainId, { model: "mock-model", effort: "max" });
+    expect(host.store.getSession(mainId)!.options).toEqual({ model: "mock-model", effort: "max" });
+    const before = mock.requests.length;
+    await host.runtime.sendMessage(mainId, "effort check");
+    await until(() => lastAgent(mainId)?.markdown === "MOCK: effort check" && settled(mainId)(), "reply");
+    const body = mock.requests[before]!.body as { model?: string; reasoning?: { effort?: string } };
+    expect(body.model).toBe("mock-model");
+    expect(body.reasoning?.effort).toBe("max");
+
+    await host.runtime.setOptions(mainId, { effort: "low" });
+    const next = mock.requests.length;
+    await host.runtime.sendMessage(mainId, "effort low");
+    await until(() => lastAgent(mainId)?.markdown === "MOCK: effort low" && settled(mainId)(), "reply");
+    expect((mock.requests[next]!.body as { reasoning?: { effort?: string } }).reasoning?.effort).toBe("low");
+  }, 60_000);
+
   it("forks on the same provider and keeps context", async () => {
     const fork = await host.runtime.fork(mainId);
     expect(fork).toMatchObject({ kind: "fork", parentId: mainId });

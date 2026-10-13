@@ -1,8 +1,9 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, HostEvent, Id, ModelProfile, Session, SessionItem, SessionStatus, ToolFields, ToolKind, ToolStatus, TurnState, TurnUsage, Workspace } from "@amo-studio/protocol";
+import type { ApprovalDecision, HostEvent, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionStatus, ToolFields, ToolKind, ToolStatus, TurnState, TurnUsage, Workspace } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
+import { CODEX_DEFAULT_PERMISSION, codexPermission, codexPermissions } from "../choices.js";
 import { classifyCommand, contentText, fileDiff, formatInput, shortPath, tail } from "../items.js";
 import type { ServerNotification, ServerRequest } from "./rpc-client.js";
 import type { CodexServerHandle } from "./server-manager.js";
@@ -24,9 +25,10 @@ export interface CodexRuntimeOptions {
   profiles: readonly ModelProfile[];
   now?: () => Date;
   /**
-   * How commands run. Default: outside the Windows sandbox, and every command except known-safe reads waits for the
-   * person (user decision 2026-10-13, spikes/RESULTS.md s9-02: with the person's `[windows] sandbox = "unelevated"`
-   * every sandboxed command failed). Applied at thread start, on resume and on every turn, so older threads follow it.
+   * Tests only: fixed approval policy and sandbox for every session. Otherwise each session's permission option
+   * decides (choices.ts; default "ask": outside the Windows sandbox, every command except known-safe reads waits for
+   * the person — user decision 2026-10-13, spikes/RESULTS.md s9-02). Applied at thread start, on resume and on every
+   * turn, so older threads and switched options follow it.
    */
   approvalPolicy?: "untrusted" | "on-request" | "never";
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
@@ -72,6 +74,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   private readonly state = new Map<Id, SessionState>();
   private readonly approvals = new Map<string, PendingApproval>();
   private readonly attached = new WeakSet<CodexServerHandle["client"]>();
+  private readonly modelCache = new Map<Id, { at: number; models: ModelOption[] }>();
 
   constructor(private readonly options: CodexRuntimeOptions) {
     super();
@@ -86,14 +89,16 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   // ---- operations -------------------------------------------------------------------------------------------------
 
   /** Creates a main session in a task and starts its Codex thread; sends `text` as the first turn when given. */
-  async startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string }): Promise<Session> {
+  async startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
     const profile = this.profile(input.profileId);
     const handle = await this.handleFor(profile.id);
     const token = this.options.identities?.issue();
+    const options = input.options ?? {};
     const started = await handle.client.request("thread/start", {
       cwd: input.workspace.path,
-      ...this.permissions(),
+      ...this.permissions(options),
       ...this.threadParams(profile, token),
+      ...(options.model ? { model: options.model } : {}),
     } as never);
     const session = this.findByThread(started.thread.id) ?? this.createSession({
       taskId: input.taskId,
@@ -103,6 +108,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       workspaceId: input.workspace.id,
       title: input.title ?? "",
       runtimeRef: started.thread.id,
+      options,
     });
     if (token) this.options.identities!.bind(token, session.id);
     if (input.text) await this.sendMessage(session.id, input.text);
@@ -122,8 +128,30 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     }
     // Status and the active turn come from turn/started and turn/completed: a short turn can finish before this
     // response arrives, so setting them here would leave the session stuck in "running".
-    await handle.client.request("turn/start", { threadId: session.runtimeRef!, input, ...this.turnPermissions() } as never);
+    await handle.client.request("turn/start", { threadId: session.runtimeRef!, input, ...this.turnOptions(session.options) } as never);
     return { mode: "start" };
+  }
+
+  /** Switches model, effort or permissions; Codex applies them from the next turn (a running turn keeps its own). */
+  async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
+    this.requireSession(sessionId);
+    return this.updateSession(sessionId, { options });
+  }
+
+  /** Models (from the profile's app-server, `model/list`) and permission settings. */
+  async choices(profileId: Id): Promise<ProfileChoices> {
+    const profile = this.profile(profileId);
+    const cached = this.modelCache.get(profileId);
+    let models = cached && Date.now() - cached.at < 10 * 60_000 ? cached.models : null;
+    if (!models) {
+      const handle = await this.handleFor(profileId);
+      const r = (await handle.client.request("model/list", { includeHidden: false } as never)) as unknown as { data: CodexModel[] };
+      models = r.data.map((m) => toModelOption(m, profile));
+      // A profile pinned to a model the list does not show (hidden, or a custom catalog) still offers it.
+      if (profile.model && !models.some((m) => m.id === profile.model)) models.unshift({ id: profile.model, label: profile.model, efforts: [], isDefault: true });
+      this.modelCache.set(profileId, { at: Date.now(), models });
+    }
+    return { profileId, models, permissions: codexPermissions(), defaultPermission: CODEX_DEFAULT_PERMISSION, source: "cli" };
   }
 
   async interrupt(sessionId: Id): Promise<void> {
@@ -172,7 +200,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       try {
         const handle = await this.handleFor(s.profileId);
         await handle.client.request("thread/unarchive", { threadId: s.runtimeRef } as never);
-        await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id), ...this.permissions() } as never);
+        await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id), ...this.permissions(s.options) } as never);
       } catch (err) {
         this.emit("log", `thread/unarchive failed for ${s.id}: ${String(err)}`);
       }
@@ -200,7 +228,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     if (!s.runtimeRef) throw new Error(`session ${sessionId} has no thread yet`);
     const handle = await this.handleFor(s.profileId);
     // Make sure the thread is loaded on this server so `codex --remote … resume` finds it.
-    await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id), ...this.permissions() } as never).catch(() => undefined);
+    await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id), ...this.permissions(s.options) } as never).catch(() => undefined);
     return { url: handle.url, token: handle.token, threadId: s.runtimeRef };
   }
 
@@ -247,7 +275,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       if (s.profileId !== handle.profileId || !s.runtimeRef || s.archivedAt || s.kind === "sub") continue;
       try {
         // A restarted app-server loads the thread again; only then does the identity header need setting again.
-        const r = await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id), ...this.permissions() } as never);
+        const r = await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id), ...this.permissions(s.options) } as never);
         // Turn events may have been missed while disconnected; take the status from the server's view.
         const active = (r.thread as { status?: { type?: string } }).status?.type === "active";
         const st = this.sessionState(s.id);
@@ -387,6 +415,8 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       workspaceId: parent.workspaceId,
       title: title ?? (kind === "sub" ? "子 agent" : `${parent.title || "会话"} · 分支`),
       runtimeRef: thread.id,
+      // Forks and subagents start with the parent's model, effort and permissions.
+      options: parent.options,
     });
     const expected = this.profile(parent.profileId).provider;
     if (expected && thread.modelProvider && thread.modelProvider !== expected) {
@@ -553,16 +583,37 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
    * Who answers approvals and how commands run, for thread/start and thread/resume. Approvals always go to the person,
    * whatever `approvals_reviewer` their own Codex config sets (an automatic reviewer would answer instead).
    */
-  private permissions() {
-    return { approvalPolicy: this.options.approvalPolicy ?? "untrusted", approvalsReviewer: "user", sandbox: this.options.sandbox ?? "danger-full-access" };
+  private permissions(options: SessionOptions) {
+    const p = this.permissionOf(options);
+    return { approvalPolicy: p.approvalPolicy, approvalsReviewer: "user", sandbox: p.sandbox };
   }
 
-  /** The same for turn/start (a turn takes a sandbox policy object rather than a mode), plus reasoning summaries. */
-  private turnPermissions() {
-    const sandbox = this.options.sandbox ?? "danger-full-access";
-    const sandboxPolicy = sandbox === "danger-full-access" ? { type: "dangerFullAccess" } : sandbox === "read-only" ? { type: "readOnly", networkAccess: false } : undefined;
-    // Reasoning summaries: models that keep their thinking private (GPT) still show what they thought about.
-    return { approvalPolicy: this.options.approvalPolicy ?? "untrusted", approvalsReviewer: "user", ...(sandboxPolicy ? { sandboxPolicy } : {}), summary: "auto" };
+  private permissionOf(options: SessionOptions) {
+    const p = codexPermission(options.permission);
+    return { approvalPolicy: this.options.approvalPolicy ?? p.approvalPolicy, sandbox: this.options.sandbox ?? p.sandbox };
+  }
+
+  /**
+   * turn/start overrides: permissions (a turn takes a sandbox policy object rather than a mode), the chosen model and
+   * effort (they stick for later turns too), and reasoning summaries — models that keep their thinking private (GPT)
+   * still show what they thought about.
+   */
+  private turnOptions(options: SessionOptions) {
+    const { approvalPolicy, sandbox } = this.permissionOf(options);
+    const sandboxPolicy =
+      sandbox === "danger-full-access"
+        ? { type: "dangerFullAccess" }
+        : sandbox === "read-only"
+          ? { type: "readOnly", networkAccess: false }
+          : { type: "workspaceWrite", writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
+    return {
+      approvalPolicy,
+      approvalsReviewer: "user",
+      sandboxPolicy,
+      summary: "auto",
+      ...(options.model ? { model: options.model } : {}),
+      ...(options.effort ? { effort: options.effort } : {}),
+    };
   }
 
   /** thread/start and thread/fork parameters: explicit provider and model, plus the AMO MCP identity header. */
@@ -616,7 +667,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     return st;
   }
 
-  private createSession(input: { taskId: Id; parentId: Id | null; kind: Session["kind"]; profileId: Id; workspaceId: Id; title: string; runtimeRef: string }): Session {
+  private createSession(input: { taskId: Id; parentId: Id | null; kind: Session["kind"]; profileId: Id; workspaceId: Id; title: string; runtimeRef: string; options?: SessionOptions }): Session {
     const s = this.store.createSession({ ...input, runtime: "codex", status: "idle", writer: "workbench" });
     this.publish({ type: "session.upserted", session: s });
     return s;
@@ -667,6 +718,28 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 const approvalKey = (sessionId: Id, approvalId: string) => `${sessionId}:${approvalId}`;
+
+/** The fields of a `model/list` entry the runtime reads. */
+interface CodexModel {
+  model: string;
+  displayName: string;
+  description: string;
+  hidden: boolean;
+  supportedReasoningEfforts: Array<{ reasoningEffort: string }>;
+  defaultReasoningEffort: string;
+  isDefault: boolean;
+}
+
+function toModelOption(m: CodexModel, profile: ModelProfile): ModelOption {
+  return {
+    id: m.model,
+    label: m.displayName || m.model,
+    ...(m.description ? { description: m.description } : {}),
+    efforts: m.supportedReasoningEfforts.map((e) => e.reasoningEffort),
+    defaultEffort: m.model === profile.model && profile.reasoningEffort ? profile.reasoningEffort : m.defaultReasoningEffort,
+    ...((profile.model ? m.model === profile.model : m.isDefault) ? { isDefault: true } : {}),
+  };
+}
 
 /** The subset of Codex ThreadItem fields the runtime reads. */
 interface CodexItem {

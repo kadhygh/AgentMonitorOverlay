@@ -140,4 +140,8 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX proposals_state ON proposals(state, created_at);
   `,
+  // 6: per-session model, reasoning effort and permissions (stage 9), as JSON
+  `
+  ALTER TABLE sessions ADD COLUMN options TEXT NOT NULL DEFAULT '{}';
+  `,
 ];

@@ -1,0 +1,138 @@
+{
+  "choices": {
+    "codex-default": {
+      "source": "cli",
+      "models": [
+        "gpt-6.1-sol* [low,medium,high,xhigh,max,ultra] default=low",
+        "gpt-6-astra [low,medium,high,xhigh,max,ultra] default=medium",
+        "gpt-6-sol [low,medium,high,xhigh,max,ultra] default=medium",
+        "gpt-6-luna [low,medium,high,xhigh,max] default=medium",
+        "gpt-5.6-sol [low,medium,high,xhigh,max,ultra] default=low",
+        "gpt-5.6-terra [low,medium,high,xhigh,max,ultra] default=medium",
+        "gpt-5.6-luna [low,medium,high,xhigh,max] default=medium"
+      ],
+      "permissions": [
+        "ask",
+        "on-request",
+        "full-auto",
+        "workspace-write(unavailable)",
+        "read-only(unavailable)"
+      ]
+    },
+    "codex-deepseek-flash": {
+      "source": "cli",
+      "models": [
+        "deepseek-flash* [low,high,max] default=low"
+      ],
+      "permissions": [
+        "ask",
+        "on-request",
+        "full-auto",
+        "workspace-write(unavailable)",
+        "read-only(unavailable)"
+      ]
+    },
+    "claude-glm": {
+      "source": "builtin",
+      "models": [
+        "glm-5.3[1m]* [low,medium,high,xhigh,max]",
+        "glm-5.3 [low,medium,high,xhigh,max]",
+        "glm-5.2 [low,medium,high,xhigh,max]",
+        "glm-4.7 [low,medium,high,xhigh,max]"
+      ],
+      "permissions": [
+        "default",
+        "acceptEdits",
+        "plan",
+        "bypassPermissions"
+      ]
+    },
+    "claude-subscription": {
+      "source": "builtin",
+      "models": [
+        "default* [low,medium,high,xhigh,max]",
+        "opus [low,medium,high,xhigh,max]",
+        "sonnet [low,medium,high,xhigh,max]",
+        "fable [low,medium,high,xhigh,max]",
+        "haiku [low,medium,high,xhigh,max]"
+      ],
+      "permissions": [
+        "default",
+        "acceptEdits",
+        "plan",
+        "bypassPermissions"
+      ]
+    }
+  },
+  "turns": [
+    {
+      "note": "S9-03 GLM effort low",
+      "options": {
+        "effort": "low"
+      },
+      "state": "completed",
+      "seconds": 9.847,
+      "usage": {
+        "input": 17905,
+        "cachedInput": 192,
+        "output": 304,
+        "reasoning": 0
+      },
+      "thinkingChars": 269,
+      "answerChars": 281,
+      "errors": []
+    },
+    {
+      "note": "S9-03 GLM effort max",
+      "options": {
+        "effort": "max"
+      },
+      "state": "completed",
+      "seconds": 17.675,
+      "usage": {
+        "input": 17905,
+        "cachedInput": 3968,
+        "output": 506,
+        "reasoning": 0
+      },
+      "thinkingChars": 822,
+      "answerChars": 405,
+      "errors": []
+    },
+    {
+      "note": "S9-03 GLM model glm-4.7",
+      "options": {
+        "model": "glm-4.7"
+      },
+      "state": "completed",
+      "seconds": 28.723,
+      "usage": {
+        "input": 17910,
+        "cachedInput": 576,
+        "output": 839,
+        "reasoning": 0
+      },
+      "thinkingChars": 1564,
+      "answerChars": 467,
+      "errors": []
+    },
+    {
+      "note": "S9-03 GPT effort high",
+      "options": {
+        "effort": "high"
+      },
+      "state": "completed",
+      "seconds": 11,
+      "usage": {
+        "input": 17520,
+        "cachedInput": 13440,
+        "output": 212,
+        "reasoning": 49,
+        "contextWindow": 828400
+      },
+      "thinkingChars": 443,
+      "answerChars": 236,
+      "errors": []
+    }
+  ]
+}

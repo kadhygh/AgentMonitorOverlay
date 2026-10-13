@@ -10,6 +10,7 @@ import {
   type Id,
   type Session,
   type SessionItem,
+  type SessionOptions,
   type Task,
   type TaskColumn,
   type TodoItem,
@@ -64,10 +65,23 @@ function toSession(r: Row): Session {
     status: str(r.status) as Session["status"],
     writer: str(r.writer) as Session["writer"],
     runtimeRef: strOrNull(r.runtime_ref),
+    options: parseOptions(r.options),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
     archivedAt: strOrNull(r.archived_at),
   };
+}
+
+function parseOptions(v: unknown): SessionOptions {
+  if (typeof v !== "string" || !v) return {};
+  try {
+    const o = JSON.parse(v) as Record<string, unknown>;
+    const out: SessionOptions = {};
+    for (const k of ["model", "effort", "permission"] as const) if (typeof o[k] === "string" && o[k]) out[k] = o[k] as string;
+    return out;
+  } catch {
+    return {};
+  }
 }
 
 function toItem(r: Row): SessionItem {
@@ -188,15 +202,15 @@ export class Store {
 
   // Sessions
 
-  createSession(input: Omit<Session, "id" | "createdAt" | "updatedAt" | "archivedAt"> & { id?: Id }): Session {
+  createSession(input: Omit<Session, "id" | "createdAt" | "updatedAt" | "archivedAt" | "options"> & { id?: Id; options?: SessionOptions }): Session {
     const at = this.timestamp();
-    const s: Session = { ...input, id: input.id ?? newId("s"), createdAt: at, updatedAt: at, archivedAt: null };
+    const s: Session = { ...input, options: input.options ?? {}, id: input.id ?? newId("s"), createdAt: at, updatedAt: at, archivedAt: null };
     this.db
       .prepare(
-        `INSERT INTO sessions (id, task_id, parent_id, kind, runtime, profile_id, workspace_id, title, status, writer, runtime_ref, created_at, updated_at, archived_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        `INSERT INTO sessions (id, task_id, parent_id, kind, runtime, profile_id, workspace_id, title, status, writer, runtime_ref, options, created_at, updated_at, archived_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       )
-      .run(s.id, s.taskId, s.parentId, s.kind, s.runtime, s.profileId, s.workspaceId, s.title, s.status, s.writer, s.runtimeRef, at, at);
+      .run(s.id, s.taskId, s.parentId, s.kind, s.runtime, s.profileId, s.workspaceId, s.title, s.status, s.writer, s.runtimeRef, JSON.stringify(s.options), at, at);
     return s;
   }
 
@@ -217,13 +231,13 @@ export class Store {
     return (rows as Row[]).map(toSession);
   }
 
-  updateSession(id: Id, patch: Partial<Pick<Session, "title" | "status" | "writer" | "runtimeRef" | "profileId">>): Session {
+  updateSession(id: Id, patch: Partial<Pick<Session, "title" | "status" | "writer" | "runtimeRef" | "profileId" | "options">>): Session {
     const s = this.getSession(id);
     if (!s) throw new Error(`session ${id} not found`);
     const next: Session = { ...s, ...patch, updatedAt: this.timestamp() };
     this.db
-      .prepare("UPDATE sessions SET title = ?, status = ?, writer = ?, runtime_ref = ?, profile_id = ?, updated_at = ? WHERE id = ?")
-      .run(next.title, next.status, next.writer, next.runtimeRef, next.profileId, next.updatedAt, id);
+      .prepare("UPDATE sessions SET title = ?, status = ?, writer = ?, runtime_ref = ?, profile_id = ?, options = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, next.status, next.writer, next.runtimeRef, next.profileId, JSON.stringify(next.options), next.updatedAt, id);
     return next;
   }
 

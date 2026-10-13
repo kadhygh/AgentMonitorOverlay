@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TASK_COLUMNS, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
+import { TASK_COLUMNS, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../host/useAnnotations.js";
@@ -9,6 +9,7 @@ import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
 import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
+import { useSettings } from "../settings/SettingsDialog.js";
 import { AnnotationPanel } from "./AnnotationPanel.js";
 import { MailPanel, useTaskMail } from "./MailPanel.js";
 import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
@@ -58,6 +59,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   }, [selected, own]);
 
   const session = own.find((s) => s.id === selected) ?? null;
+  const settings = useSettings(link);
   const { items } = useSessionItems(link, session?.id ?? null);
   const annotations = useAnnotations(link, session?.id ?? null);
   const profile = (id: string) => profiles.find((p) => p.id === id);
@@ -78,7 +80,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   }
 
   const setColumn = (column: TaskColumn) => run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { column }));
-  const newSession = (input: { profileId: string; workspaceId?: string }) =>
+  const newSession = (input: { profileId: string; workspaceId?: string; options?: SessionOptions }) =>
     run(() => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input), (s) => setSelected(s.id));
   const openPreset = (key: string) => {
     const [workspaceId, pack, preset] = key.split("/") as [string, string, string];
@@ -198,6 +200,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
 
       <div className="task-body">
         <SessionTree
+          link={link}
           task={task}
           sessions={own}
           workspaces={workspaces}
@@ -273,6 +276,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
             </div>
           )}
           <Thread
+            link={link}
+            presets={settings?.presets ?? []}
             session={session}
             items={items}
             model={shortModel(session ? profile(session.profileId) : undefined)}

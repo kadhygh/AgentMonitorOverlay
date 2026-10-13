@@ -3,7 +3,8 @@ import { createRequire } from "node:module";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createSdkMcpServer, forkSession, getSessionMessages, query, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ApprovalDecision, ApprovalKind, Id, ModelProfile, Session, SessionItem, ToolFields, TurnState, Workspace } from "@amo-studio/protocol";
+import type { ApprovalDecision, ApprovalKind, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, ToolFields, TurnState, Workspace } from "@amo-studio/protocol";
+import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
 import { RuntimeBase, type NewItemBody, type SendMode, type SessionRuntimeApi } from "../runtime.js";
@@ -104,6 +105,7 @@ const DECLINED = "The person declined this in AMO Studio.";
 
 export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly live = new Map<Id, Live>();
+  private readonly modelCache = new Map<Id, { at: number; models: ModelOption[] }>();
   /** Queries being closed: a new one for the same session must wait, or the CLI says the session id is in use. */
   private readonly closing = new Map<Id, Promise<void>>();
 
@@ -114,7 +116,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   // ---- operations -------------------------------------------------------------------------------------------------
 
-  async startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string }): Promise<Session> {
+  async startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
     const profile = this.profile(input.profileId);
     // Fail early (missing provider or key) rather than on the first message.
     claudeEnv(profile, this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv);
@@ -127,6 +129,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       workspaceId: input.workspace.id,
       title: input.title ?? "",
       runtimeRef: randomUUID(),
+      options: input.options ?? {},
     });
     if (input.text) await this.sendMessage(session.id, input.text);
     return this.store.getSession(session.id)!;
@@ -175,7 +178,67 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       workspaceId: parent.workspaceId,
       title,
       runtimeRef: forked.sessionId,
+      options: parent.options,
     });
+  }
+
+  /** Switches model, effort or permissions; a running Claude Code process takes them at once. */
+  async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
+    this.requireSession(sessionId);
+    const session = this.updateSession(sessionId, { options });
+    const live = this.live.get(sessionId);
+    if (live) {
+      try {
+        await live.q.setModel(options.model ?? this.profile(session.profileId).model ?? undefined);
+        await live.q.setPermissionMode(claudePermissionMode(options.permission));
+        await live.q.applyFlagSettings({ effortLevel: (options.effort as never) ?? null });
+      } catch (err) {
+        this.emit("log", `could not switch options of ${sessionId}: ${String(err)}`);
+      }
+    }
+    return session;
+  }
+
+  /** Models: the provider's own list (GLM), or Claude Code's list for the account (asked without a model call). */
+  async choices(profileId: Id): Promise<ProfileChoices> {
+    const profile = this.profile(profileId);
+    const base = { profileId, permissions: CLAUDE_PERMISSIONS, defaultPermission: CLAUDE_DEFAULT_PERMISSION };
+    const provider = profile.provider ? this.options.providers[profile.provider] : undefined;
+    if (provider?.models) return { ...base, models: provider.models.map((m) => ({ ...m, ...(m.id === profile.model ? { isDefault: true } : {}) })), source: "builtin" };
+    const cached = this.modelCache.get(profileId);
+    if (cached && Date.now() - cached.at < 10 * 60_000) return { ...base, models: cached.models, source: "cli" };
+    try {
+      const models = await this.askModels(profile);
+      this.modelCache.set(profileId, { at: Date.now(), models });
+      return { ...base, models, source: "cli" };
+    } catch (err) {
+      this.emit("log", `could not ask Claude Code for its models (${profileId}): ${firstLine(err)}`);
+      return { ...base, models: CLAUDE_BUILTIN_MODELS, source: "builtin" };
+    }
+  }
+
+  /** Starts Claude Code with no prompt just to read its model list (no model request is made), then closes it. */
+  private async askModels(profile: ModelProfile): Promise<ModelOption[]> {
+    const env = claudeEnv(profile, this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    async function* none(): AsyncGenerator<SDKUserMessage> {
+      await gate;
+    }
+    const q = query({ prompt: none(), options: { cwd: this.options.claudeHome, env, settingSources: [], permissionMode: "default" } });
+    try {
+      const list = await Promise.race([q.supportedModels(), new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out")), 20_000))]);
+      return list.map((m) => ({
+        id: m.value,
+        label: m.value === "default" ? `默认（${m.resolvedModel ?? m.displayName}）` : m.displayName,
+        ...(m.description ? { description: m.description } : {}),
+        efforts: m.supportedEffortLevels ?? [],
+        ...((profile.model ? m.value === profile.model : m.value === "default") ? { isDefault: true } : {}),
+      }));
+    } finally {
+      release();
+      q.close();
+    }
   }
 
   async archive(sessionId: Id): Promise<Session[]> {
@@ -308,7 +371,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         cwd: workspace.path,
         env: claudeEnv(profile, this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv),
         settingSources: [],
-        permissionMode: "default",
+        permissionMode: claudePermissionMode(session.options.permission),
+        // Lets the person switch to 全部允许 mid-session; the mode itself stays what the session chose.
+        allowDangerouslySkipPermissions: true,
+        ...(session.options.model ? { model: session.options.model } : {}),
+        ...(session.options.effort ? { effort: session.options.effort as never } : {}),
         includePartialMessages: true,
         canUseTool: (toolName, toolInput, ctx) => this.askPerson(session.id, live, toolName, toolInput, ctx),
         hooks: STRIP_SUBAGENT_MODE,
@@ -502,6 +569,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       workspaceId: parent.workspaceId,
       title: name,
       runtimeRef: `${parent.runtimeRef}/agent/${toolUseId}`,
+      options: parent.options,
     });
     this.setStatus(child.id, "running");
     if (typeof input.prompt === "string" && input.prompt) this.appendItem(child.id, { type: "user", text: input.prompt }, { method: "agent/prompt", itemId: toolUseId });

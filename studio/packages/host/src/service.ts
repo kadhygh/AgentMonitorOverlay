@@ -3,6 +3,9 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type {
   CredentialStatus,
+  ProfileChoices,
+  SessionOptions,
+  SessionPreset,
   Annotation,
   CanvasDoc,
   ApprovalDecision,
@@ -50,6 +53,28 @@ export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
 
 const SCRATCHPAD_KEY = "scratchpad";
 const COMMON_WORKSPACE_KEY = "settings:common-workspace";
+const PRESETS_KEY = "settings:presets";
+const MAX_PRESETS = 30;
+
+/** Checks one option value: a short CLI id (model names like "glm-5.3[1m]" included). */
+function optionValue(v: unknown, field: string): string | undefined {
+  if (v === undefined || v === null || v === "") return undefined;
+  if (typeof v !== "string" || v.length > 100 || !/^[\w.:\-[\]/ ]+$/.test(v)) throw new HostError("bad_request", `${field} is not a valid value`);
+  return v;
+}
+
+/** Session options from a request body; unknown keys are ignored. */
+function sessionOptions(v: unknown): SessionOptions {
+  const o = v && typeof v === "object" ? (v as Record<string, unknown>) : {};
+  const out: SessionOptions = {};
+  const model = optionValue(o.model, "model");
+  const effort = optionValue(o.effort, "effort");
+  const permission = optionValue(o.permission, "permission");
+  if (model) out.model = model;
+  if (effort) out.effort = effort;
+  if (permission) out.permission = permission;
+  return out;
+}
 
 // Application layer behind the Host API. HTTP handlers stay thin and call into this.
 
@@ -126,11 +151,39 @@ export class HostService extends EventEmitter<HostServiceEvents> {
 
   settings(): StudioSettings {
     const id = this.store.getKv(COMMON_WORKSPACE_KEY)?.value;
-    return { commonWorkspace: (id && this.store.getWorkspace(id)) || null };
+    return { commonWorkspace: (id && this.store.getWorkspace(id)) || null, presets: this.presets() };
   }
 
-  /** Sets (or clears) the common space's folder; it becomes a registered workspace so sessions can run there. */
-  updateSettings(input: { commonDir?: unknown }): StudioSettings {
+  private presets(): SessionPreset[] {
+    const raw = this.store.getKv(PRESETS_KEY)?.value;
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw) as SessionPreset[];
+    } catch {
+      return [];
+    }
+  }
+
+  /**
+   * Sets (or clears) the common space's folder — it becomes a registered workspace so sessions can run there — and/or
+   * replaces the 常用预设 list.
+   */
+  updateSettings(input: { commonDir?: unknown; presets?: unknown }): StudioSettings {
+    if (input.presets !== undefined) {
+      if (!Array.isArray(input.presets) || input.presets.length > MAX_PRESETS) throw new HostError("bad_request", `presets must be a list of at most ${MAX_PRESETS}`);
+      const presets: SessionPreset[] = input.presets.map((p: unknown) => {
+        const o = p && typeof p === "object" ? (p as Record<string, unknown>) : {};
+        const profileId = typeof o.profileId === "string" ? o.profileId : "";
+        if (!this.profiles.some((x) => x.id === profileId)) throw new HostError("bad_request", `unknown profile ${profileId}`);
+        return {
+          id: typeof o.id === "string" && o.id ? o.id.slice(0, 64) : newId("pre"),
+          name: boundedText(o.name, "name", 40),
+          profileId,
+          options: sessionOptions(o.options),
+        };
+      });
+      this.store.setKv(PRESETS_KEY, JSON.stringify(presets));
+    }
     if (input.commonDir !== undefined) {
       if (input.commonDir === null || input.commonDir === "") this.store.setKv(COMMON_WORKSPACE_KEY, "");
       else {
@@ -145,6 +198,28 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const settings = this.settings();
     this.publish({ type: "settings.updated", settings });
     return settings;
+  }
+
+  // ---- models, efforts and permissions ----------------------------------------------------------------------------
+
+  choices(profileId: Id): Promise<ProfileChoices> {
+    if (!this.profiles.some((p) => p.id === profileId)) throw new HostError("not_found", `profile ${profileId} not found`);
+    return this.wrap(() => this.runtime.choices(profileId));
+  }
+
+  /** Changes some of the session's options; null (or "") clears one back to the profile's default. */
+  updateSessionOptions(sessionId: Id, patch: unknown): Promise<Session> {
+    const s = this.store.getSession(sessionId);
+    if (!s) throw new HostError("not_found", `session ${sessionId} not found`);
+    const p = patch && typeof patch === "object" ? (patch as Record<string, unknown>) : {};
+    const next: SessionOptions = { ...s.options };
+    for (const key of ["model", "effort", "permission"] as const) {
+      if (!(key in p)) continue;
+      const value = optionValue(p[key], key);
+      if (value) next[key] = value;
+      else delete next[key];
+    }
+    return this.wrap(() => this.runtime.setOptions(sessionId, next));
   }
 
   // ---- model credentials ----------------------------------------------------------------------------------------
@@ -870,7 +945,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
 
   private async startSession(task: Task, workspace: Workspace, input: NewSessionInput): Promise<Session> {
     const session = await this.wrap(() =>
-      this.runtime.startSession({ taskId: task.id, profileId: input.profileId, workspace, ...(input.text ? { text: input.text } : {}) }),
+      this.runtime.startSession({ taskId: task.id, profileId: input.profileId, workspace, ...(input.text ? { text: input.text } : {}), options: sessionOptions(input.options) }),
     );
     // The task's updatedAt moves with its sessions so the board can sort by activity.
     this.publish({ type: "task.upserted", task: this.store.updateTask(task.id, {}) });

@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
+import type { Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -18,6 +18,47 @@ export interface NewSessionInput {
   workspaceId?: Id;
   /** First user message; when present the session starts a turn right away. */
   text?: string;
+  /** Model, effort and permissions; the profile's defaults otherwise. */
+  options?: SessionOptions;
+}
+
+/** A model a profile can run, as its CLI lists it. */
+export interface ModelOption {
+  id: string;
+  label: string;
+  description?: string;
+  /** Reasoning efforts this model takes (CLI values: low, medium, high, xhigh, max…); empty when it has none. */
+  efforts: string[];
+  defaultEffort?: string;
+  /** What the profile runs when no model is chosen. */
+  isDefault?: boolean;
+}
+
+/** One permission setting, as the runtime's CLI names it. */
+export interface PermissionOption {
+  id: string;
+  label: string;
+  description: string;
+  /** Set when it cannot work on this machine (e.g. a Codex sandbox mode under an unusable Windows sandbox). */
+  unavailable?: string;
+}
+
+/** What a profile offers: its models (with efforts) and its permission settings. */
+export interface ProfileChoices {
+  profileId: Id;
+  models: ModelOption[];
+  permissions: PermissionOption[];
+  defaultPermission: string;
+  /** Where the model list came from ("cli", or "builtin" when the CLI could not be asked). */
+  source: "cli" | "builtin";
+}
+
+/** A saved combination for one-click switching: a profile plus its model, effort and permissions. */
+export interface SessionPreset {
+  id: Id;
+  name: string;
+  profileId: Id;
+  options: SessionOptions;
 }
 
 export type ApprovalDecision = "accept" | "decline";
@@ -60,6 +101,8 @@ export interface StudioSettings {
    * default for cross-workspace sessions). Null until the person picks a folder.
    */
   commonWorkspace: Workspace | null;
+  /** 常用预设: shown next to the composer of sessions on the same profile. */
+  presets: SessionPreset[];
 }
 
 /** A model credential the profiles use: whether it is stored, never its value. */
@@ -79,7 +122,9 @@ export interface HostRoutes {
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
   "GET /api/settings": { req: void; res: StudioSettings };
   /** `commonDir`: a folder for the common space (registered as a workspace if needed, created if missing); null clears it. */
-  "PUT /api/settings": { req: { commonDir: string | null }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string | null; presets?: SessionPreset[] }; res: StudioSettings };
+  /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
+  "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };
   /** Saves a writable credential (the Claude subscription token) in the Windows Credential Manager. */
   "PUT /api/credentials/:id": { req: { secret: string }; res: CredentialStatus[] };
@@ -99,6 +144,8 @@ export interface HostRoutes {
   "POST /api/sessions/:id/messages": { req: { text: string }; res: { mode: "start" | "steer" | "queue" } };
   "POST /api/sessions/:id/interrupt": { req: void; res: { ok: true } };
   "POST /api/sessions/:id/fork": { req: { profileId?: Id }; res: Session };
+  /** Switches the session's model, effort or permissions (null clears back to the default). Codex: from the next turn. */
+  "PATCH /api/sessions/:id/options": { req: { model?: string | null; effort?: string | null; permission?: string | null }; res: Session };
   /** Archives the session together with its forks and subagents; returns every session changed. */
   "POST /api/sessions/:id/archive": { req: void; res: Session[] };
   "POST /api/sessions/:id/unarchive": { req: void; res: Session[] };

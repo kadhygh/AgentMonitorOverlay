@@ -1,4 +1,5 @@
-import type { ModelProfile } from "@amo-studio/protocol";
+import type { ModelOption, ModelProfile } from "@amo-studio/protocol";
+import { GLM_MODELS } from "../choices.js";
 import type { CredentialReader } from "../credentials.js";
 
 // Environment for a managed Claude Code process. The routing for GLM follows old AMO's glm-5.3 preset
@@ -13,6 +14,8 @@ export interface ClaudeProviderDef {
   baseUrl?: string;
   /** "oauth": the profile's credential is a subscription token (CLAUDE_CODE_OAUTH_TOKEN), not an API key. */
   auth?: "oauth";
+  /** Models of a non-Anthropic endpoint (Claude Code's own list only knows Claude models). */
+  models?: ModelOption[];
   /** Extra variables (model mapping, timeouts). The key never goes here; it comes from the profile's credential. */
   env?: Record<string, string>;
 }
@@ -21,6 +24,7 @@ export const BUILTIN_CLAUDE_PROVIDERS: Record<string, ClaudeProviderDef> = {
   anthropic: { auth: "oauth" },
   glm: {
     baseUrl: "https://open.bigmodel.cn/api/anthropic",
+    models: GLM_MODELS,
     env: {
       ANTHROPIC_MODEL: "glm-5.3[1m]",
       ANTHROPIC_DEFAULT_HAIKU_MODEL: "glm-4.7",

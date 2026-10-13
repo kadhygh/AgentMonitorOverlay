@@ -438,8 +438,17 @@ describe("Host API", () => {
     expect((await ok<StateSnapshot>("GET", "/api/state")).tasks.filter((t) => t.title === "双击批准")).toHaveLength(1);
   });
 
+  it("saves 常用预设 and checks them", async () => {
+    const profileId = (await ok<StateSnapshot>("GET", "/api/state")).profiles[0]!.id;
+    const saved = await ok<{ presets: Array<{ id: string; name: string }> }>("PUT", "/api/settings", { presets: [{ name: " 深度 ", profileId, options: { effort: "high", permission: "ask", junk: "x" } }] });
+    expect(saved.presets).toEqual([{ id: expect.stringMatching(/^pre/), name: "深度", profileId, options: { effort: "high", permission: "ask" } }]);
+    expect((await api("PUT", "/api/settings", { presets: [{ name: "x", profileId: "nope", options: {} }] })).status).toBe(400);
+    expect((await api("PUT", "/api/settings", { presets: [{ name: "x", profileId, options: { model: "bad;rm" } }] })).status).toBe(400);
+    expect((await ok<{ presets: unknown[] }>("PUT", "/api/settings", { presets: [] })).presets).toEqual([]);
+  });
+
   it("keeps the common space as a registered workspace the scheduler runs in", async () => {
-    expect(await ok("GET", "/api/settings")).toEqual({ commonWorkspace: null });
+    expect(await ok("GET", "/api/settings")).toEqual({ commonWorkspace: null, presets: [] });
     const dir = join(root, "common", "space");
     const set = await ok<{ commonWorkspace: Workspace }>("PUT", "/api/settings", { commonDir: dir });
     expect(set.commonWorkspace).toMatchObject({ path: dir, name: "公共空间" });
@@ -450,7 +459,7 @@ describe("Host API", () => {
     const round = await ok<{ session: Session }>("POST", "/api/scheduler/run", { profileId: "p-ds" });
     expect(round.session.workspaceId).toBe(set.commonWorkspace.id);
     // Clearing it, or removing that workspace, leaves no common space.
-    expect(await ok("PUT", "/api/settings", { commonDir: null })).toEqual({ commonWorkspace: null });
+    expect(await ok("PUT", "/api/settings", { commonDir: null })).toEqual({ commonWorkspace: null, presets: [] });
     await ok("PUT", "/api/settings", { commonDir: dir });
     writeFileSync(join(root, "a-file"), "x");
     expect((await api("PUT", "/api/settings", { commonDir: join(root, "a-file") })).status).toBe(400);

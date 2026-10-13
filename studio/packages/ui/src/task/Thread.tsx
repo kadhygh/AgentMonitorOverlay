@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Annotation, ApprovalDecision, Session, SessionItem } from "@amo-studio/protocol";
+import type { Annotation, ApprovalDecision, Session, SessionItem, SessionPreset } from "@amo-studio/protocol";
+import type { HostLink } from "../host/client.js";
+import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { copyText } from "../host/client.js";
 import { ReplyNav } from "./ReplyNav.js";
@@ -9,7 +11,10 @@ import { IconArrowDown, IconArrowUp, IconStop } from "../chat/icons.js";
 import { formatTokens, sessionStats, type ApprovalItem } from "../chat/turns.js";
 
 interface ThreadProps {
+  link: HostLink;
   session: Session | null;
+  /** 常用预设, shown as chips for sessions on the same profile. */
+  presets: readonly SessionPreset[];
   items: readonly SessionItem[];
   /** Unsent annotations are highlighted in the replies they point at. */
   annotations: readonly Annotation[];
@@ -26,7 +31,7 @@ interface ThreadProps {
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ session, items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
+export function Thread({ link, presets, session, items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -204,9 +209,7 @@ export function Thread({ session, items, annotations, model, busy, onApprove, on
               />
             </label>
             <div className="chat-bar">
-              <span className="composer-model" title="这个会话使用的模型">
-                {model}
-              </span>
+              <SessionOptionsBar link={link} session={session} presets={presets} disabled={readOnly} />
               <span className="composer-hint">{generating && !readOnly ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : ""}</span>
               <span className="spacer" />
               {generating && !readOnly && (

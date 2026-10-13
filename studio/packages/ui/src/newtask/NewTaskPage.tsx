@@ -1,9 +1,12 @@
 import { useMemo, useState } from "react";
-import type { ModelProfile, Session, Task, TaskScope, Workspace } from "@amo-studio/protocol";
+import type { ModelProfile, Session, SessionOptions, Task, TaskScope, Workspace } from "@amo-studio/protocol";
 import type { Scope } from "../board/Board.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { defaultProfile, lastWorkspace, profileLabel, rememberProfile, rememberWorkspace } from "../lib/profiles.js";
 import { usePacks } from "../packs/usePacks.js";
+import { optionsSummary, sameOptions, useProfileChoices } from "../lib/choices.js";
+import { OptionsPicker } from "../chat/OptionsPicker.js";
+import { useSettings } from "../settings/SettingsDialog.js";
 
 interface NewTaskPageProps {
   link: HostLink;
@@ -36,6 +39,9 @@ export function NewTaskPage({ link, workspaces, profiles, scope, commonWorkspace
   const [pick, setPick] = useState<Pick | null>(initial);
   const [message, setMessage] = useState("");
   const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
+  const [options, setOptions] = useState<SessionOptions>({});
+  const { choices } = useProfileChoices(link, profileId);
+  const presets = useSettings(link)?.presets ?? [];
   const [sessionWs, setSessionWs] = useState(() => (pick?.kind === "workspace" ? pick.id : (commonWorkspaceId ?? workspaces[0]?.id ?? "")));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
@@ -64,7 +70,7 @@ export function NewTaskPage({ link, workspaces, profiles, scope, commonWorkspace
       const created = await call(link, "POST /api/tasks", {}, {
         ...(title.trim() ? { title: title.trim() } : {}),
         scope: taskScope,
-        firstSession: { profileId, workspaceId: firstWs, ...(message.trim() ? { text: message.trim() } : {}) },
+        firstSession: { profileId, workspaceId: firstWs, ...(message.trim() ? { text: message.trim() } : {}), ...(Object.keys(options).length ? { options } : {}) },
         ...(chosen ? { template: { workspaceId: templateWs, pack: chosen.pack, template: chosen.template.id } } : {}),
       });
       rememberProfile(profileId);
@@ -151,7 +157,13 @@ export function NewTaskPage({ link, workspaces, profiles, scope, commonWorkspace
           <div className="composer-bar">
             <label className="inline-field">
               模型
-              <select value={profileId} onChange={(e) => setProfileId(e.target.value)}>
+              <select
+                value={profileId}
+                onChange={(e) => {
+                  setProfileId(e.target.value);
+                  setOptions({});
+                }}
+              >
                 {profiles.map((p) => (
                   <option key={p.id} value={p.id}>
                     {profileLabel(p)}
@@ -180,6 +192,34 @@ export function NewTaskPage({ link, workspaces, profiles, scope, commonWorkspace
             <button type="button" className="btn-primary" onClick={() => void start()} disabled={!pick || busy || !profileId}>
               {busy ? "正在开始…" : "开始"}
             </button>
+          </div>
+          <div className="newtask-options">
+            <OptionsPicker choices={choices} value={options} onChange={setOptions} />
+            {presets.length > 0 && (
+              <div className="preset-row" aria-label="常用预设">
+                {presets
+                  .filter((p) => profiles.some((x) => x.id === p.profileId))
+                  .map((p) => {
+                    const active = p.profileId === profileId && sameOptions(p.options, options);
+                    return (
+                      <button
+                        key={p.id}
+                        type="button"
+                        className={`preset-chip${active ? " active" : ""}`}
+                        aria-pressed={active}
+                        title={`${profileLabel(profiles.find((x) => x.id === p.profileId)!)} · ${optionsSummary(null, p.options)}`}
+                        onClick={() => {
+                          setProfileId(p.profileId);
+                          setOptions(p.options);
+                        }}
+                        data-testid="preset-chip"
+                      >
+                        {p.name}
+                      </button>
+                    );
+                  })}
+              </div>
+            )}
           </div>
         </div>
       </div>

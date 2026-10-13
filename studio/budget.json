@@ -7,11 +7,11 @@
     },
     "glm": {
       "limit": 5000,
-      "used": 25
+      "used": 28
     },
     "gpt": {
       "limit": 50,
-      "used": 3
+      "used": 4
     },
     "claude": {
       "limit": 50,
@@ -303,6 +303,26 @@
       "at": "2026-10-13T07:37:54.259Z",
       "provider": "gpt",
       "note": "S9-01 GPT (Codex default login)"
+    },
+    {
+      "at": "2026-10-13T08:13:27.021Z",
+      "provider": "glm",
+      "note": "S9-03 GLM effort low"
+    },
+    {
+      "at": "2026-10-13T08:13:37.215Z",
+      "provider": "glm",
+      "note": "S9-03 GLM effort max"
+    },
+    {
+      "at": "2026-10-13T08:13:54.941Z",
+      "provider": "glm",
+      "note": "S9-03 GLM model glm-4.7"
+    },
+    {
+      "at": "2026-10-13T08:14:23.916Z",
+      "provider": "gpt",
+      "note": "S9-03 GPT effort high"
     }
   ]
 }
