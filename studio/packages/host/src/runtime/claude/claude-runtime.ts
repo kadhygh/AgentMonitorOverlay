@@ -116,13 +116,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   // ---- operations -------------------------------------------------------------------------------------------------
 
-  async startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
+  async startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
     const profile = this.profile(input.profileId);
     // Fail early (missing provider or key) rather than on the first message.
     claudeEnv(profile, this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv);
     // Studio picks the Claude session id up front (SDK option `sessionId`), so the session is addressable at once.
     const session = this.createSession({
       taskId: input.taskId,
+      topicId: input.topicId,
       parentId: null,
       kind: "main",
       profileId: profile.id,
@@ -172,6 +173,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const forked = await this.withConfigDir(() => forkSession(parent.runtimeRef!, { dir: workspace.path, title }));
     return this.createSession({
       taskId: parent.taskId,
+      topicId: parent.topicId,
       parentId: parent.id,
       kind: "fork",
       profileId: profile.id,
@@ -563,6 +565,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const name = String(input.description ?? input.subagent_type ?? "子 agent");
     const child = this.createSession({
       taskId: parent.taskId,
+      topicId: parent.topicId,
       parentId: parent.id,
       kind: "sub",
       profileId: parent.profileId,

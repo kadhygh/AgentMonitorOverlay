@@ -1,10 +1,12 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
+import type { Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, Topic, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
 export interface StateSnapshot {
+  /** Includes the common space (`builtin: "common"`), which the UI does not list as a project. */
   workspaces: Workspace[];
+  topics: Topic[];
   tasks: Task[];
   sessions: Session[];
   profiles: ModelProfile[];
@@ -14,7 +16,7 @@ export interface StateSnapshot {
 
 export interface NewSessionInput {
   profileId: Id;
-  /** Required for cross-workspace tasks; defaults to the task's workspace otherwise. */
+  /** Topic sessions only: one of the topic's projects; the common space when omitted. Task sessions use the task's. */
   workspaceId?: Id;
   /** First user message; when present the session starts a turn right away. */
   text?: string;
@@ -97,10 +99,10 @@ export interface TaskTemplateChoice {
 /** Studio-wide settings kept by the Host (the look of the UI is per install, in the UI itself). */
 export interface StudioSettings {
   /**
-   * The common space: a registered workspace for sessions that belong to no single project (the scheduler, and the
-   * default for cross-workspace sessions). Null until the person picks a folder.
+   * The common space: the built-in workspace where tasks without a project, the scheduler and topic sessions without
+   * a project run. Always present (by default `common/` in the data folder).
    */
-  commonWorkspace: Workspace | null;
+  commonWorkspace: Workspace;
   /** 常用预设: shown next to the composer of sessions on the same profile. */
   presets: SessionPreset[];
 }
@@ -121,8 +123,8 @@ export interface HostRoutes {
   "POST /api/workspaces": { req: { path: string; name?: string }; res: Workspace };
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
   "GET /api/settings": { req: void; res: StudioSettings };
-  /** `commonDir`: a folder for the common space (registered as a workspace if needed, created if missing); null clears it. */
-  "PUT /api/settings": { req: { commonDir?: string | null; presets?: SessionPreset[] }; res: StudioSettings };
+  /** `commonDir`: moves the common space to this folder (created if missing; it must not be a registered project). */
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };
@@ -134,9 +136,31 @@ export interface HostRoutes {
   "GET /api/workspaces/:id/packs/:pack/docs/:doc": { req: void; res: import("./packs.js").PackDocContent };
   /** Fills a pack's session preset in for a task; nothing is started (the person confirms in the new-session form). */
   "POST /api/workspaces/:id/packs/:pack/presets/:preset/draft": { req: { taskId: Id }; res: import("./packs.js").PresetDraft };
-  /** `template`: a task template from an extension pack; the task gets its title prefix and its steps as a checklist. */
-  "POST /api/tasks": { req: { title?: string; scope: TaskScope; firstSession: NewSessionInput; template?: TaskTemplateChoice }; res: { task: Task; session: Session } };
-  "PATCH /api/tasks/:id": { req: { title?: string; column?: TaskColumn }; res: Task };
+  /**
+   * `workspaceId` null or absent: the common space. `topicId`: put it in that topic. Without `firstSession` the task is
+   * only filed (column `todo` unless given); with it, the first session starts. `template`: a task template from an
+   * extension pack; the task gets its title prefix and its steps as a checklist.
+   */
+  "POST /api/tasks": {
+    req: { title?: string; workspaceId?: Id | null; topicId?: Id | null; column?: TaskColumn; firstSession?: NewSessionInput; template?: TaskTemplateChoice };
+    res: { task: Task; session: Session | null };
+  };
+  /**
+   * `workspaceId` (null: the common space) only while the task has no sessions. `topicId` moves the task to another
+   * topic or out of its topic (null); its place, group and dependencies on the old topic's canvas are removed.
+   */
+  "PATCH /api/tasks/:id": { req: { title?: string; column?: TaskColumn; workspaceId?: Id | null; topicId?: Id | null }; res: Task };
+  /** Archives the task and all its sessions; returns the task. */
+  "POST /api/tasks/:id/archive": { req: void; res: Task };
+  "POST /api/tasks/:id/unarchive": { req: void; res: Task };
+  "POST /api/topics": { req: { title: string; workspaceIds?: Id[] }; res: Topic };
+  "PATCH /api/topics/:id": { req: { title?: string; workspaceIds?: Id[] }; res: Topic };
+  /** Archives the topic with its sessions and all its tasks (and their sessions). */
+  "POST /api/topics/:id/archive": { req: void; res: { topic: Topic; tasks: Task[] } };
+  /** Restores the topic and the tasks that were archived with it. */
+  "POST /api/topics/:id/unarchive": { req: void; res: { topic: Topic; tasks: Task[] } };
+  /** A topic session (专题会话): coordinates the topic's tasks; runs in one of its projects or the common space. */
+  "POST /api/topics/:id/sessions": { req: NewSessionInput; res: Session };
   "POST /api/tasks/:id/sessions": { req: NewSessionInput; res: Session };
   "GET /api/sessions/:id/items": { req: void; res: SessionItem[] };
   /** Starts a turn when idle, steers the running turn otherwise. */
@@ -168,15 +192,15 @@ export interface HostRoutes {
   "DELETE /api/todos/:id": { req: void; res: { ok: true } };
   /**
    * Turns a todo into a task (in its workspace unless one is given) with one session; `text` starts it, otherwise no
-   * model is called. The task goes into the canvas group bound to that workspace; the todo is marked done.
+   * model is called. The todo is marked done.
    */
   "POST /api/todos/:id/convert": { req: { workspaceId?: Id; profileId: Id; text?: string }; res: { todo: TodoItem; task: Task; session: Session } };
   /** Progress notes and handoff summaries on a task, oldest first. The person can add notes too. */
   "GET /api/tasks/:id/notes": { req: void; res: TaskNote[] };
   "POST /api/tasks/:id/notes": { req: { text: string }; res: TaskNote };
   /**
-   * Mail, filtered by `?sessionId=`, `?taskId=` (either matches) and `?state=` (comma separated); `?forTask=` gives
-   * everything left for a task or any of its sessions.
+   * Mail, filtered by `?sessionId=`, `?taskId=`, `?topicId=` (any matches) and `?state=` (comma separated);
+   * `?forTask=` / `?forTopic=` give everything left for a task or topic or any of its own sessions.
    */
   "GET /api/mail": { req: void; res: MailMessage[] };
   "POST /api/mail": { req: { to: MailRecipient; text: string }; res: MailMessage };
@@ -198,11 +222,12 @@ export interface HostRoutes {
   /** Approves (optionally with an edited prompt or model): the todo becomes a task and its first session starts. */
   "POST /api/proposals/:id/approve": { req: { prompt?: string; profileId?: Id }; res: { proposal: ScheduleProposal; task: Task; session: Session } };
   "POST /api/proposals/:id/reject": { req: void; res: ScheduleProposal };
-  "GET /api/canvas": { req: void; res: CanvasDoc };
+  /** A topic's canvas. */
+  "GET /api/topics/:id/canvas": { req: void; res: CanvasDoc };
   /** Saves the whole canvas. `version` must equal the stored one (409 otherwise); the response carries the new one. */
-  "PUT /api/canvas": { req: CanvasDoc; res: CanvasDoc };
-  /** Structure without coordinates, for agents (`canvas.read`) and the "agent 视角" tab. */
-  "GET /api/canvas/outline": { req: void; res: { outline: string; json: import("./canvas.js").CanvasOutline } };
+  "PUT /api/topics/:id/canvas": { req: CanvasDoc; res: CanvasDoc };
+  /** Structure without coordinates, for agents (`canvas_read`) and the "agent 视角" tab. */
+  "GET /api/topics/:id/canvas/outline": { req: void; res: { outline: string; json: import("./canvas.js").CanvasOutline } };
 }
 
 export type HostRoute = keyof HostRoutes;
@@ -219,6 +244,7 @@ export type HostEvent = { seq: number } & (
   | { type: "workspace.upserted"; workspace: Workspace }
   | { type: "workspace.removed"; workspaceId: Id }
   | { type: "task.upserted"; task: Task }
+  | { type: "topic.upserted"; topic: Topic }
   | { type: "session.upserted"; session: Session }
   | { type: "item.appended"; item: SessionItem }
   /** Full replacement, e.g. a finished agent message or an approval that changed state. */

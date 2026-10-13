@@ -1,8 +1,8 @@
 import { useMemo, useState } from "react";
-import type { ModelProfile, Session, SessionOptions, Task, TaskScope, Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, type ModelProfile, type Session, type SessionOptions, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import type { Scope } from "../board/Board.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { defaultProfile, lastWorkspace, profileLabel, rememberProfile, rememberWorkspace } from "../lib/profiles.js";
+import { defaultProfile, profileLabel, rememberProfile, rememberWorkspace } from "../lib/profiles.js";
 import { usePacks } from "../packs/usePacks.js";
 import { optionsSummary, sameOptions, useProfileChoices } from "../lib/choices.js";
 import { OptionsPicker } from "../chat/OptionsPicker.js";
@@ -11,70 +11,70 @@ import { useSettings } from "../settings/SettingsDialog.js";
 interface NewTaskPageProps {
   link: HostLink;
   workspaces: readonly Workspace[];
+  topics: readonly Topic[];
+  tasks: readonly Task[];
   profiles: readonly ModelProfile[];
-  /** Scope selected in the left column; preselects the task's scope. */
+  /** Scope selected in the left column: preselects the project or the topic. */
   scope: Scope;
-  /** The common space (设置): the default workspace for a cross-workspace task's first session. */
-  commonWorkspaceId?: string;
   onBack(): void;
-  onCreated(task: Task, session: Session): void;
+  /** `session` null: the task was only filed (放进待办). */
+  onCreated(task: Task, session: Session | null): void;
 }
 
-type Pick = { kind: "workspace"; id: string } | { kind: "area" };
-
 /**
- * DSH-style blank task page (interaction-notes "新建任务"): "要推进什么？", the title field below it (may stay empty),
- * scope chips including cross-workspace, a one-line scope hint, and the composer with model picker at the bottom.
+ * Blank task page (design/ui-directions/new-task.html, restyled in stage 10): "要推进什么？", the title (may stay
+ * empty), a row of projects and a row of topics (both may stay unpicked: no project runs in the common space), and the
+ * composer. Starting runs the first session; "放进待办" only files the task.
  */
-export function NewTaskPage({ link, workspaces, profiles, scope, commonWorkspaceId, onBack, onCreated }: NewTaskPageProps) {
-  const initial = useMemo<Pick | null>(() => {
-    if (scope.kind === "workspace") return { kind: "workspace", id: scope.id };
-    if (scope.kind === "area") return { kind: "area" };
-    const last = lastWorkspace();
-    const ws = workspaces.find((w) => w.id === last) ?? workspaces[0];
-    return ws ? { kind: "workspace", id: ws.id } : null;
-  }, [scope, workspaces]);
+export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, onBack, onCreated }: NewTaskPageProps) {
+  const projects = projectWorkspaces(workspaces);
+  const liveTopics = topics.filter((t) => !t.archivedAt);
+  const [topicId, setTopicId] = useState<string | null>(scope.kind === "topic" ? scope.id : null);
+  // In a topic, its projects come first (the ones of its tasks and the hand-added ones).
+  const initialProject = useMemo<string | null>(() => (scope.kind === "workspace" ? scope.id : null), [scope]);
+  const [projectId, setProjectId] = useState<string | null>(initialProject);
+  const topicProjects = useMemo(() => {
+    const topic = liveTopics.find((t) => t.id === topicId);
+    if (!topic) return new Set<string>();
+    return new Set([...topic.workspaceIds, ...tasks.filter((t) => t.topicId === topic.id).map((t) => t.workspaceId)]);
+  }, [liveTopics, tasks, topicId]);
+  const orderedProjects = [...projects].sort((a, b) => Number(topicProjects.has(b.id)) - Number(topicProjects.has(a.id)));
 
   const [title, setTitle] = useState("");
-  const [pick, setPick] = useState<Pick | null>(initial);
   const [message, setMessage] = useState("");
   const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
   const [options, setOptions] = useState<SessionOptions>({});
   const { choices } = useProfileChoices(link, profileId);
   const presets = useSettings(link)?.presets ?? [];
-  const [sessionWs, setSessionWs] = useState(() => (pick?.kind === "workspace" ? pick.id : (commonWorkspaceId ?? workspaces[0]?.id ?? "")));
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // Task templates from the extension packs of the workspace the task (or its first session) is in.
-  const templateWs = pick?.kind === "workspace" ? pick.id : sessionWs;
+  // Task templates from the extension packs of the task's project.
+  const templateWs = projectId ?? "";
   const { packs } = usePacks(link, templateWs ? [templateWs] : []);
   const templates = packs.flatMap((p) => (p.manifest ? p.manifest.templates.map((t) => ({ key: `${p.dirName}/${t.id}`, pack: p.dirName, packTitle: p.manifest!.title, template: t })) : []));
   const [templateKey, setTemplateKey] = useState("");
   const chosen = templates.find((t) => t.key === templateKey) ?? null;
 
   const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? "";
-  const hint = !pick
-    ? "先在左栏登记一个工作区。"
-    : pick.kind === "area"
-      ? "跨工作区任务：可以在不同工程里各开会话，统一放在这个任务下管理。以后也会是调度 agent 工作的地方。"
-      : `任务会建在 ${wsName(pick.id)}。说出第一句话即可开始，标题可以之后再改。`;
+  const topicName = liveTopics.find((t) => t.id === topicId)?.title;
+  const hint = `${projectId ? `在 ${wsName(projectId)} 里运行` : "不指定项目：在公共目录里运行"}${topicName ? `，放进专题「${topicName}」` : ""}。说出第一句话即可开始，标题可以之后再改。`;
 
-  async function start() {
-    if (!pick || busy || !profileId) return;
-    const taskScope: TaskScope = pick.kind === "area" ? { kind: "area" } : { kind: "workspace", workspaceId: pick.id };
-    const firstWs = pick.kind === "area" ? sessionWs : pick.id;
-    if (!firstWs) return setError("请选择首个会话所在的工作区。");
+  /** `file`: only file the task (放进待办), no session. */
+  async function start(file = false) {
+    if (busy || (!file && !profileId)) return;
+    if (file && !title.trim() && !message.trim()) return setError("写一句话或一个标题再放进待办。");
     setBusy(true);
     setError("");
     try {
       const created = await call(link, "POST /api/tasks", {}, {
-        ...(title.trim() ? { title: title.trim() } : {}),
-        scope: taskScope,
-        firstSession: { profileId, workspaceId: firstWs, ...(message.trim() ? { text: message.trim() } : {}), ...(Object.keys(options).length ? { options } : {}) },
-        ...(chosen ? { template: { workspaceId: templateWs, pack: chosen.pack, template: chosen.template.id } } : {}),
+        ...(title.trim() ? { title: title.trim() } : file && message.trim() ? { title: message.trim().slice(0, 60) } : {}),
+        workspaceId: projectId,
+        topicId,
+        ...(file ? {} : { firstSession: { profileId, ...(message.trim() ? { text: message.trim() } : {}), ...(Object.keys(options).length ? { options } : {}) } }),
+        ...(chosen && projectId ? { template: { workspaceId: projectId, pack: chosen.pack, template: chosen.template.id } } : {}),
       });
-      rememberProfile(profileId);
-      rememberWorkspace(firstWs);
+      if (!file) rememberProfile(profileId);
+      if (projectId) rememberWorkspace(projectId);
       onCreated(created.task, created.session);
     } catch (err) {
       setError(err instanceof HostApiError ? err.message : String(err));
@@ -96,19 +96,27 @@ export function NewTaskPage({ link, workspaces, profiles, scope, commonWorkspace
           任务标题
           <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="可留空，按第一句话自动命名" />
         </label>
-        <div role="group" aria-label="任务范围" className="chips">
-          {workspaces.map((w) => (
-            <button key={w.id} type="button" className="chip" aria-pressed={pick?.kind === "workspace" && pick.id === w.id} onClick={() => setPick({ kind: "workspace", id: w.id })}>
+        <div role="group" aria-label="项目" className="chips">
+          <span className="chips-label">项目</span>
+          <button type="button" className="chip" aria-pressed={projectId === null} onClick={() => setProjectId(null)}>
+            不指定
+          </button>
+          {orderedProjects.map((w) => (
+            <button key={w.id} type="button" className="chip" aria-pressed={projectId === w.id} onClick={() => setProjectId(w.id)}>
               {w.name}
             </button>
           ))}
-          <button type="button" className="chip" aria-pressed={pick?.kind === "area"} onClick={() => {
-              setPick({ kind: "area" });
-              // Cross-workspace work starts in the common space when there is one (设置 → 公共空间).
-              if (commonWorkspaceId) setSessionWs(commonWorkspaceId);
-            }} disabled={!workspaces.length}>
-            跨工作区
+        </div>
+        <div role="group" aria-label="专题" className="chips">
+          <span className="chips-label">专题</span>
+          <button type="button" className="chip" aria-pressed={topicId === null} onClick={() => setTopicId(null)}>
+            不放进专题
           </button>
+          {liveTopics.map((t) => (
+            <button key={t.id} type="button" className="chip" aria-pressed={topicId === t.id} onClick={() => setTopicId(t.id)}>
+              {t.title}
+            </button>
+          ))}
         </div>
         <span className="newtask-hint" data-testid="scope-hint">{hint}</span>
         {templates.length > 0 && (
@@ -171,25 +179,16 @@ export function NewTaskPage({ link, workspaces, profiles, scope, commonWorkspace
                 ))}
               </select>
             </label>
-            {pick?.kind === "area" && (
-              <label className="inline-field">
-                首个会话在
-                <select value={sessionWs} onChange={(e) => setSessionWs(e.target.value)}>
-                  {workspaces.map((w) => (
-                    <option key={w.id} value={w.id}>
-                      {w.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-            )}
             {error && (
               <span className="form-error" role="alert">
                 {error}
               </span>
             )}
             <span className="spacer" />
-            <button type="button" className="btn-primary" onClick={() => void start()} disabled={!pick || busy || !profileId}>
+            <button type="button" className="btn-ghost" onClick={() => void start(true)} disabled={busy} title="只建任务，放进待办，不开会话">
+              放进待办
+            </button>
+            <button type="button" className="btn-primary" onClick={() => void start()} disabled={busy || !profileId}>
               {busy ? "正在开始…" : "开始"}
             </button>
           </div>

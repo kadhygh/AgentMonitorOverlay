@@ -79,7 +79,7 @@ test("Claude sessions offer Claude Code's models, efforts and permission modes",
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  await studio.api("POST", "/api/tasks", { title: "Claude 选项", scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "claude-mock", text: "hello", options: { effort: "high", permission: "plan" } } });
+  await studio.api("POST", "/api/tasks", { title: "Claude 选项", workspaceId: ws.id, firstSession: { profileId: "claude-mock", text: "hello", options: { effort: "high", permission: "plan" } } });
   await page.getByTestId("task-card").first().click();
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: hello", { timeout: 60_000 });
   const summary = page.getByTestId("session-options");

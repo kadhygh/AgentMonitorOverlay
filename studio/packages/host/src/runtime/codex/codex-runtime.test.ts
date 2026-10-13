@@ -24,7 +24,7 @@ beforeEach(() => {
   events = [];
   runtime.on("event", (e) => events.push(e));
   workspace = store.addWorkspace({ path: "C:/sandbox/ws", name: "ws" });
-  taskId = store.createTask({ title: "t", scope: { kind: "workspace", workspaceId: workspace.id } }).id;
+  taskId = store.createTask({ title: "t", workspaceId: workspace.id }).id;
 });
 
 afterEach(async () => {
@@ -46,7 +46,7 @@ const idle = (id: string) => () => session(id).status === "idle" && !items(id).s
 
 describe("CodexRuntime", () => {
   it("starts a session, streams the reply and settles to idle", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "hello" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "hello" });
     expect(s.runtimeRef).toBeTruthy();
     expect(s.title).toBe("hello");
     await until(idle(s.id), "idle");
@@ -59,7 +59,7 @@ describe("CodexRuntime", () => {
   });
 
   it("routes approvals to the person and records the decision", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "[[shell: cmd /c echo x]]" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[shell: cmd /c echo x]]" });
     await until(() => session(s.id).status === "awaiting-approval", "awaiting-approval");
     const approval = items(s.id).find((i) => i.type === "approval")!;
     expect(approval).toMatchObject({ kind: "command", summary: "cmd /c echo x", state: "pending" });
@@ -72,7 +72,7 @@ describe("CodexRuntime", () => {
   });
 
   it("turns an MCP tool elicitation into an approval card and answers with an action", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "[[elicit]]" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[elicit]]" });
     await until(() => session(s.id).status === "awaiting-approval", "awaiting-approval");
     const approval = items(s.id).find((i) => i.type === "approval") as Extract<SessionItem, { type: "approval" }>;
     expect(approval).toMatchObject({ kind: "permissions", summary: 'Allow the amo MCP server to run tool "canvas_group_create"?', detail: "MCP：amo", state: "pending" });
@@ -88,7 +88,7 @@ describe("CodexRuntime", () => {
   });
 
   it("marks an approval answered by another client (e.g. the attached TUI) as resolved elsewhere", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "seed" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "seed" });
     await until(idle(s.id), "seed");
     const fake = servers.fakes.get("p-ds")!;
     const tui = await CodexRpcClient.connect({ url: fake.url, token: fake.token });
@@ -103,7 +103,7 @@ describe("CodexRuntime", () => {
   });
 
   it("forks with an explicit provider and records the parent once", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "seed" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "seed" });
     await until(idle(s.id), "seed");
     const fork = await runtime.fork(s.id);
     expect(fork).toMatchObject({ kind: "fork", parentId: s.id, profileId: "p-ds" });
@@ -113,7 +113,7 @@ describe("CodexRuntime", () => {
   });
 
   it("adopts a fork made by another client and warns when its provider drifted", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "seed" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "seed" });
     await until(idle(s.id), "seed");
     const fake = servers.fakes.get("p-ds")!;
     const other = await CodexRpcClient.connect({ url: fake.url, token: fake.token });
@@ -127,7 +127,7 @@ describe("CodexRuntime", () => {
   });
 
   it("records subagents as child sessions with a summary item in the parent", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "[[subagent]]" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[subagent]]" });
     await until(idle(s.id), "idle");
     const sub = store.listSessions({ taskId }).find((x) => x.kind === "sub")!;
     expect(sub.parentId).toBe(s.id);
@@ -137,7 +137,7 @@ describe("CodexRuntime", () => {
   });
 
   it("steers a running turn and interrupts it", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "[[slow]]" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[slow]]" });
     await until(() => events.some((e) => e.type === "item.delta"), "streaming");
     expect(await runtime.sendMessage(s.id, "also this")).toEqual({ mode: "steer" });
     await until(idle(s.id), "idle", 8000);
@@ -150,7 +150,7 @@ describe("CodexRuntime", () => {
   });
 
   it("archives with descendants, blocks writes, and restores", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "seed" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "seed" });
     await until(idle(s.id), "seed");
     const fork = await runtime.fork(s.id);
     const archived = await runtime.archive(s.id);
@@ -163,7 +163,7 @@ describe("CodexRuntime", () => {
   });
 
   it("resubscribes live threads after the server connection comes back", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "seed" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "seed" });
     await until(idle(s.id), "seed");
     const fake = servers.fakes.get("p-ds")!;
     servers.handles.get("p-ds")!.client.close();
@@ -175,7 +175,7 @@ describe("CodexRuntime", () => {
   });
 
   it("closes pending approvals when the connection drops and picks up the replay after reconnecting", async () => {
-    const s = await runtime.startSession({ taskId, profileId: "p-ds", workspace, text: "[[shell: cmd /c echo x]]" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[shell: cmd /c echo x]]" });
     await until(() => session(s.id).status === "awaiting-approval", "awaiting-approval");
     const first = items(s.id).find((i) => i.type === "approval")!;
     servers.handles.get("p-ds")!.client.close();

@@ -15,7 +15,7 @@ test("jumps between replies with the buttons and Alt+arrows", async () => {
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   const { session } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "长对话",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock", text: "[[markdown]]" },
   });
   await page.getByTestId("task-card").first().click();

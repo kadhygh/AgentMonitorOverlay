@@ -14,7 +14,7 @@ export interface RuntimeEvents {
 }
 
 export interface SessionRuntimeApi {
-  startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session>;
+  startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session>;
   /** Models (with efforts) and permission settings the profile's CLI offers. */
   choices(profileId: Id): Promise<ProfileChoices>;
   /** Switches the session's model, effort or permissions (Claude: at once; Codex: from the next turn). */
@@ -130,7 +130,7 @@ export abstract class RuntimeBase extends EventEmitter<RuntimeEvents> {
     return s;
   }
 
-  protected createSession(input: { taskId: Id; parentId: Id | null; kind: Session["kind"]; profileId: Id; workspaceId: Id; title: string; runtimeRef: string; options?: SessionOptions }): Session {
+  protected createSession(input: { taskId: Id | null; topicId: Id | null; parentId: Id | null; kind: Session["kind"]; profileId: Id; workspaceId: Id; title: string; runtimeRef: string; options?: SessionOptions }): Session {
     const s = this.store.createSession({ ...input, runtime: this.runtimeName, status: "idle", writer: "workbench" });
     this.publish({ type: "session.upserted", session: s });
     return s;

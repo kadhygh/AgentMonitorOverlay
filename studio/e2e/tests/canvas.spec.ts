@@ -25,7 +25,7 @@ test("canvas: tasks appear, cards move and persist, pan and zoom", async () => {
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   for (const title of ["整理导入流程", "掉落表校验"]) {
-    await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title, scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "codex-mock" } });
+    await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title, workspaceId: ws.id, firstSession: { profileId: "codex-mock" } });
   }
 
   await page.getByRole("button", { name: "画布", exact: true }).click();
@@ -63,7 +63,7 @@ test("canvas: tasks appear, cards move and persist, pan and zoom", async () => {
   await screenshot(studio.app, "stage-3", "S3-02-canvas", page);
 
   // A task created while the canvas is open is placed automatically; double-click opens it.
-  await studio.api("POST", "/api/tasks", { title: "新来的任务", scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "codex-mock" } });
+  await studio.api("POST", "/api/tasks", { title: "新来的任务", workspaceId: ws.id, firstSession: { profileId: "codex-mock" } });
   await expect(cards).toHaveCount(3);
   await cards.filter({ hasText: "新来的任务" }).dblclick();
   await expect(page.getByTestId("task-title")).toHaveText("新来的任务");

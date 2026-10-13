@@ -16,7 +16,7 @@ interface SessionTreeProps {
   selected: string | null;
   busy: boolean;
   onSelect(id: string): void;
-  onNewSession(input: { profileId: string; workspaceId?: string; options?: SessionOptions }): void;
+  onNewSession(input: { profileId: string; options?: SessionOptions }): void;
   link: HostLink;
   onRestore(id: string): void;
   /** Unread mail per session id. */
@@ -28,17 +28,14 @@ interface SessionTreeProps {
 
 /** Left column of the task page: session tree (forks and subagents indented), new session, archived area. */
 export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset }: SessionTreeProps) {
-  const isArea = task.scope.kind === "area";
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
   const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
   const [options, setOptions] = useState<SessionOptions>({});
   const { choices } = useProfileChoices(link, profileId);
-  const [workspaceId, setWorkspaceId] = useState(workspaces[0]?.id ?? "");
   const [showArchived, setShowArchived] = useState(false);
   const profile = (id: string) => profiles.find((p) => p.id === id);
-  const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? "";
 
   const rows: Array<{ node: SessionNode; depth: number }> = [];
   const walk = (nodes: SessionNode[], depth: number) => {
@@ -56,7 +53,7 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
         const s = node.session;
         const look = SESSION_LOOK[s.status];
         const letters = unread?.get(s.id) ?? 0;
-        const kind = [KIND[s.kind], shortModel(profile(s.profileId)), isArea && s.kind === "main" ? wsName(s.workspaceId) : "", s.writer === "terminal-shared" ? "终端" : "", letters ? `${letters} 条留言` : ""]
+        const kind = [KIND[s.kind], shortModel(profile(s.profileId)), s.writer === "terminal-shared" ? "终端" : "", letters ? `${letters} 条留言` : ""]
           .filter(Boolean)
           .join(" · ");
         return (
@@ -98,25 +95,13 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
           </select>
         </label>
         <OptionsPicker choices={choices} value={options} onChange={setOptions} layout="stack" />
-        {isArea && (
-          <label className="stack-field">
-            所在工作区
-            <select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)}>
-              {workspaces.map((w) => (
-                <option key={w.id} value={w.id}>
-                  {w.name}
-                </option>
-              ))}
-            </select>
-          </label>
-        )}
         <button
           type="button"
           className="add-ws-toggle"
           disabled={busy || !profileId}
           onClick={() => {
             rememberProfile(profileId);
-            onNewSession({ profileId, ...(isArea ? { workspaceId } : {}), ...(Object.keys(options).length ? { options } : {}) });
+            onNewSession({ profileId, ...(Object.keys(options).length ? { options } : {}) });
           }}
         >
           + 新会话

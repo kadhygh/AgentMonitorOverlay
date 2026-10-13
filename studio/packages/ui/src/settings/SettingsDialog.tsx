@@ -44,12 +44,12 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
 
-  async function saveCommon(value: string | null) {
+  async function saveCommon(value: string) {
     setBusy(true);
     setMessage(null);
     try {
       const next = await call(link, "PUT /api/settings", {}, { commonDir: value });
-      setMessage({ text: next.commonWorkspace ? `公共空间：${next.commonWorkspace.path}` : "已清除公共空间" });
+      setMessage({ text: `公共目录：${next.commonWorkspace.path}` });
     } catch (err) {
       setMessage({ text: err instanceof HostApiError ? err.message : String(err), error: true });
     } finally {
@@ -119,11 +119,11 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
           <span className="settings-hint">{TRANSCRIPT_VIEW_HINTS[view]}。</span>
         </section>
 
-        <section className="settings-section" aria-label="公共空间">
-          <span className="settings-heading">公共空间</span>
-          <span className="settings-hint">不属于某个工程的会话在这里运行：调度 agent 每一轮的会话，以及跨工作区任务默认的会话目录。选好的文件夹会登记成一个名为"公共空间"的工作区。</span>
+        <section className="settings-section" aria-label="公共目录">
+          <span className="settings-heading">公共目录</span>
+          <span className="settings-hint">没有指定项目的任务、调度 agent，以及没选项目的专题会话都在这个文件夹里运行。默认是数据目录下的 common 文件夹。</span>
           <div className="settings-row">
-            <input className="field" value={dir} onChange={(e) => setDir(e.target.value)} placeholder="例如 D:\AMO\common" aria-label="公共空间目录" />
+            <input className="field" value={dir} onChange={(e) => setDir(e.target.value)} placeholder="例如 D:\AMO\common" aria-label="公共目录" />
             {window.amo?.pickDirectory && (
               <button type="button" className="btn-ghost small" onClick={() => void pick()} disabled={busy}>
                 选择…
@@ -131,11 +131,6 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
             )}
           </div>
           <div className="settings-row end">
-            {settings?.commonWorkspace && (
-              <button type="button" className="btn-ghost small" onClick={() => void saveCommon(null)} disabled={busy}>
-                清除
-              </button>
-            )}
             <button type="button" className="btn-primary small" onClick={() => void saveCommon(dir.trim())} disabled={busy || !dir.trim() || dir.trim() === settings?.commonWorkspace?.path}>
               保存
             </button>

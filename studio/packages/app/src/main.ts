@@ -98,9 +98,10 @@ if (!app.requestSingleInstanceLock()) {
   // "在工作台打开" from Focus: the workbench shows that task and session (and comes forward, except in tests).
   ipcMain.handle("amo:open-in-workbench", (_event, target: unknown) => {
     const t = target as { taskId?: unknown; sessionId?: unknown } | null;
-    // An empty taskId opens the board (Focus: scheduler proposals).
-    if (!mainWindow || typeof t?.taskId !== "string") return;
-    mainWindow.webContents.send("amo:navigate", { taskId: t.taskId, ...(typeof t.sessionId === "string" ? { sessionId: t.sessionId } : {}) });
+    // No (or an empty) taskId opens the board: scheduler proposals, and topic sessions from Focus.
+    if (!mainWindow) return;
+    const taskId = typeof t?.taskId === "string" ? t.taskId : "";
+    mainWindow.webContents.send("amo:navigate", { taskId, ...(taskId && typeof t?.sessionId === "string" ? { sessionId: t.sessionId } : {}) });
     if (testMode) return;
     if (mainWindow.isMinimized()) mainWindow.restore();
     mainWindow.show();

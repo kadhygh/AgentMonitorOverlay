@@ -1,32 +1,26 @@
 import { describe, expect, it } from "vitest";
-import { exampleSessions, exampleTasks, exampleWorkspaces } from "./examples.js";
-import { taskWhere, taskWorkspaceNames } from "./scope.js";
+import type { Task, Topic, Workspace } from "./entities.js";
+import { exampleWorkspaces } from "./examples.js";
+import { projectWorkspaces, taskProject, taskWhere, topicWorkspaceIds } from "./scope.js";
 
-describe("taskWhere", () => {
-  const area = exampleTasks.find((t) => t.scope.kind === "area")!;
-  const own = exampleTasks.find((t) => t.scope.kind === "workspace")!;
-  const session = (id: string, workspaceId: string, createdAt: string, archivedAt: string | null = null) => ({
-    ...exampleSessions[0]!,
-    id,
-    taskId: area.id,
-    workspaceId,
-    createdAt,
-    archivedAt,
+const common: Workspace = { id: "ws-common", name: "公共", path: "C:/data/common", builtin: "common", createdAt: "2026-10-01T00:00:00Z" };
+const workspaces = [...exampleWorkspaces, common];
+const task = (id: string, workspaceId: string, topicId: string | null = null, archivedAt: string | null = null): Task => ({
+  id, title: id, workspaceId, topicId, column: "doing", createdAt: "2026-10-01T00:00:00Z", updatedAt: "2026-10-01T00:00:00Z", archivedAt,
+});
+
+describe("where a task runs", () => {
+  it("names the project, and hides the common space", () => {
+    expect(taskWhere(task("a", "ws-alpha"), workspaces)).toBe("alpha");
+    expect(taskWhere(task("b", "ws-common"), workspaces)).toBe("未指定项目");
+    expect(taskProject(task("b", "ws-common"), workspaces)).toBeNull();
+    expect(taskProject(task("a", "ws-beta"), workspaces)?.name).toBe("beta");
+    expect(projectWorkspaces(workspaces).map((w) => w.id)).toEqual(["ws-alpha", "ws-beta"]);
   });
 
-  it("names a workspace task's own workspace", () => {
-    expect(taskWhere(own, exampleSessions, exampleWorkspaces)).toBe("alpha");
-  });
-
-  it("lists a cross-workspace task's live session workspaces in order of first use", () => {
-    expect(taskWhere(area, [], exampleWorkspaces)).toBe("跨工作区");
-    const sessions = [
-      session("a", "ws-alpha", "2026-10-02T00:00:00Z"),
-      session("b", "ws-beta", "2026-10-01T00:00:00Z"),
-      session("c", "ws-beta", "2026-10-03T00:00:00Z"),
-      session("d", "ws-gone", "2026-10-04T00:00:00Z", "2026-10-05T00:00:00Z"),
-    ];
-    expect(taskWorkspaceNames(area, sessions, exampleWorkspaces)).toEqual(["beta", "alpha"]);
-    expect(taskWhere(area, sessions, exampleWorkspaces)).toBe("跨工作区（beta、alpha）");
+  it("collects a topic's projects from its hand-added ones and its live tasks", () => {
+    const topic: Topic = { id: "tp-1", title: "掉落表重构", workspaceIds: ["ws-beta"], createdAt: "", updatedAt: "", archivedAt: null };
+    const tasks = [task("a", "ws-alpha", "tp-1"), task("b", "ws-common", "tp-1"), task("c", "ws-beta", "tp-1"), task("d", "ws-alpha", "tp-2"), task("e", "ws-gone", "tp-1"), task("f", "ws-alpha", "tp-1", "2026-10-02T00:00:00Z")];
+    expect(topicWorkspaceIds(topic, tasks, workspaces)).toEqual(["ws-beta", "ws-alpha"]);
   });
 });

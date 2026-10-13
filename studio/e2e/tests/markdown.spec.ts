@@ -15,7 +15,7 @@ test("renders tables, nested lists, code with copy, and opens links outside the 
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "渲染检查",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock", text: "[[markdown]]" },
   });
   await page.getByTestId("task-card").first().click();

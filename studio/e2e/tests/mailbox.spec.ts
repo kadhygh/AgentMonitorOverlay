@@ -16,8 +16,8 @@ test("mail between sessions, forwarded or dismissed by the person", async () => 
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const scope = { kind: "workspace", workspaceId: ws.id };
-  const b = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "收件任务", scope, firstSession: { profileId: "claude-mock", text: "hello" } });
+  const scope = { workspaceId: ws.id };
+  const b = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "收件任务", ...scope, firstSession: { profileId: "claude-mock", text: "hello" } });
   const a = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "发件任务",
     scope,

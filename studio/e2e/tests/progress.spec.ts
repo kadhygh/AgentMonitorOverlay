@@ -16,7 +16,7 @@ test("progress on the task page and collaboration hints on the board", async () 
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const scope = { kind: "workspace", workspaceId: ws.id };
+  const scope = { workspaceId: ws.id };
   const a = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "导入重试",
     scope,

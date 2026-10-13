@@ -84,8 +84,8 @@ describe("Codex runtime against the real app-server", () => {
   it("starts a session and gets the streamed reply", async () => {
     host = startHost();
     workspace = host.store.addWorkspace({ path: wsDir, name: "workspace" });
-    taskId = host.store.createTask({ title: "integration", scope: { kind: "workspace", workspaceId: workspace.id } }).id;
-    const s = await host.runtime.startSession({ taskId, profileId: "codex-mock", workspace, text: "hello" });
+    taskId = host.store.createTask({ title: "integration", workspaceId: workspace.id }).id;
+    const s = await host.runtime.startSession({ taskId, topicId: null, profileId: "codex-mock", workspace, text: "hello" });
     mainId = s.id;
     // A new session is idle before its first turn starts, so wait for the reply itself.
     await until(() => lastAgent(mainId)?.markdown === "MOCK: hello" && settled(mainId)(), "first reply");

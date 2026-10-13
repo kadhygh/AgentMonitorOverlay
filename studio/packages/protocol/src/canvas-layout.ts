@@ -61,3 +61,12 @@ export function addDependency(doc: CanvasDoc, from: Id, to: Id, edgeId: Id): Can
   if (wouldCycle(doc.edges, from, to)) throw new CanvasLayoutError("that dependency would make a cycle");
   return { ...doc, edges: [...doc.edges, { id: edgeId, kind: "depends", from, to }] };
 }
+
+/** Takes a task off a canvas: its card and every dependency it is part of (when it leaves the topic). */
+export function removeTask(doc: CanvasDoc, taskId: Id): CanvasDoc {
+  return {
+    ...doc,
+    nodes: doc.nodes.filter((n) => !(n.kind === "task" && n.taskId === taskId)),
+    edges: doc.edges.filter((e) => e.from !== taskId && e.to !== taskId),
+  };
+}

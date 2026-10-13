@@ -68,11 +68,15 @@ export function App() {
 
   const { state, link, live } = host;
   const decisionsByTask = new Map<string, number>();
-  for (const d of openDecisions) decisionsByTask.set(d.taskId, (decisionsByTask.get(d.taskId) ?? 0) + 1);
+  for (const d of openDecisions) if (d.taskId) decisionsByTask.set(d.taskId, (decisionsByTask.get(d.taskId) ?? 0) + 1);
   // A task needs the person when a session waits for approval or review, or an agent asked for a decision.
   // Pending scheduler proposals wait for the person too (one each: they are not tasks yet).
-  const needs = state.tasks.filter((t) => needsPerson(taskStatus(taskSessions(t, state.sessions))) || decisionsByTask.has(t.id)).length + proposals.length;
-  const scopeName = scope.kind === "area" ? "跨工作区" : scope.kind === "workspace" ? (state.workspaces.find((w) => w.id === scope.id)?.name ?? "") : "";
+  const needs = state.tasks.filter((t) => !t.archivedAt).filter((t) => needsPerson(taskStatus(taskSessions(t, state.sessions))) || decisionsByTask.has(t.id)).length + proposals.length;
+  const scopeName =
+    scope.kind === "topic" ? (state.topics.find((t) => t.id === scope.id)?.title ?? "") : scope.kind === "workspace" ? (state.workspaces.find((w) => w.id === scope.id)?.name ?? "") : "";
+  // The canvas tab shows the topic in scope, else the first live topic (each topic has its own canvas).
+  const liveTopics = state.topics.filter((t) => !t.archivedAt);
+  const canvasTopic = (scope.kind === "topic" ? liveTopics.find((t) => t.id === scope.id) : undefined) ?? liveTopics[0];
   const openTask = (task: Task) => setView({ kind: "task", taskId: task.id });
 
   return (
@@ -92,6 +96,7 @@ export function App() {
         <ScopeNav
           link={link}
           workspaces={state.workspaces}
+          topics={state.topics}
           tasks={state.tasks}
           scope={scope}
           live={live}
@@ -117,6 +122,7 @@ export function App() {
               tasks={state.tasks}
               sessions={state.sessions}
               workspaces={state.workspaces}
+              topics={state.topics}
               scope={scope}
               onOpen={openTask}
               mail={mailByTask(unreadMail, state.sessions)}
@@ -124,10 +130,13 @@ export function App() {
               checklist={checklistByTask(checklist)}
             />
           )}
-          {view.kind === "canvas" && (
+          {view.kind === "canvas" && !canvasTopic && <div className="placeholder">还没有专题。在左栏建一个专题，每个专题有一张自己的画布。</div>}
+          {view.kind === "canvas" && canvasTopic && (
             <CanvasPage
+              key={canvasTopic.id}
               link={link}
-              tasks={state.tasks}
+              topic={canvasTopic}
+              tasks={state.tasks.filter((t) => t.topicId === canvasTopic.id && !t.archivedAt)}
               sessions={state.sessions}
               workspaces={state.workspaces}
               profiles={state.profiles}
@@ -142,11 +151,12 @@ export function App() {
             <NewTaskPage
               link={link}
               workspaces={state.workspaces}
+              topics={state.topics}
+              tasks={state.tasks}
               profiles={state.profiles}
               scope={scope}
-              {...(settings?.commonWorkspace ? { commonWorkspaceId: settings.commonWorkspace.id } : {})}
               onBack={() => setView({ kind: "board" })}
-              onCreated={(task, session) => setView({ kind: "task", taskId: task.id, sessionId: session.id })}
+              onCreated={(task, session) => setView(session ? { kind: "task", taskId: task.id, sessionId: session.id } : { kind: "board" })}
             />
           )}
           {view.kind === "task" && (() => {
@@ -160,6 +170,7 @@ export function App() {
                 sessions={state.sessions}
                 tasks={state.tasks}
                 workspaces={state.workspaces}
+                topics={state.topics}
                 profiles={state.profiles}
                 checklist={checklist.filter((i) => i.taskId === task.id)}
                 {...(view.sessionId ? { initialSessionId: view.sessionId } : {})}
@@ -242,7 +253,7 @@ function TopBar({
         </button>
       )}
       {onSettings && (
-        <button type="button" className="btn-ghost small" onClick={onSettings} aria-label="设置" title="设置：界面主题、公共空间">
+        <button type="button" className="btn-ghost small" onClick={onSettings} aria-label="设置" title="设置：界面主题、公共目录、模型">
           设置
         </button>
       )}

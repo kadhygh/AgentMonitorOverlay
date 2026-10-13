@@ -84,7 +84,7 @@ describe("terminal attach", () => {
   async function session(host: RunningHost) {
     const ws = await call<Workspace>(host, "POST", "/api/workspaces", { path: join(root, "ws") });
     return call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", {
-      scope: { kind: "workspace", workspaceId: ws.id },
+      workspaceId: ws.id,
       firstSession: { profileId: "p-ds", text: "seed" },
     });
   }

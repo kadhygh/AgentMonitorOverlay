@@ -51,7 +51,7 @@ describe("applyItemEvent", () => {
 
 describe("applyEvent", () => {
   it("upserts sessions and tracks the event sequence", () => {
-    const state = { workspaces: [], tasks: [], sessions: [exampleSessions[0]!], profiles: [], eventSeq: 3 };
+    const state = { workspaces: [], topics: [], tasks: [], sessions: [exampleSessions[0]!], profiles: [], eventSeq: 3 };
     const next = applyEvent(state, { seq: 9, type: "session.upserted", session: { ...exampleSessions[0]!, status: "idle" } });
     expect(next.sessions[0]!.status).toBe("idle");
     expect(next.eventSeq).toBe(9);

@@ -64,7 +64,7 @@ test("extension packs: browse a workspace's packs and read their documents from 
   // On a task in that workspace, "规范" lists the documents and opens one in place.
   const { task } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "冲刺技能",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock" },
   });
   await page.getByRole("button", { name: "看板", exact: true }).click();
@@ -115,7 +115,7 @@ test("session presets: a preset fills the new-session form and starts only when 
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path });
   const { task } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "冲刺技能",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock" },
   });
   await page.getByTestId("task-card").filter({ hasText: task.title }).click();

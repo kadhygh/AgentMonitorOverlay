@@ -7,7 +7,7 @@ import { onHostEvent } from "../host/events.js";
  * "agent 视角": the canvas as an agent reads it (`canvas.read`): structure without coordinates, as an outline or JSON.
  * Refreshes when the canvas, tasks or sessions change.
  */
-export function AgentTab({ link }: { link: HostLink }) {
+export function AgentTab({ link, topicId }: { link: HostLink; topicId: string }) {
   const [data, setData] = useState<{ outline: string; json: CanvasOutline } | null>(null);
   const [mode, setMode] = useState<"outline" | "json">("outline");
   const [copied, setCopied] = useState(false);
@@ -15,7 +15,7 @@ export function AgentTab({ link }: { link: HostLink }) {
   useEffect(() => {
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
-    const load = () => call(link, "GET /api/canvas/outline").then((d) => !cancelled && setData(d));
+    const load = () => call(link, "GET /api/topics/:id/canvas/outline", { id: topicId }).then((d) => !cancelled && setData(d));
     const off = onHostEvent((e) => {
       if (e.type !== "canvas.updated" && e.type !== "task.upserted" && e.type !== "session.upserted" && e.type !== "workspace.upserted") return;
       if (timer) clearTimeout(timer);
@@ -27,7 +27,7 @@ export function AgentTab({ link }: { link: HostLink }) {
       if (timer) clearTimeout(timer);
       off();
     };
-  }, [link]);
+  }, [link, topicId]);
 
   const text = data ? (mode === "outline" ? data.outline : JSON.stringify(data.json, null, 2)) : "";
 

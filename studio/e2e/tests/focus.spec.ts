@@ -17,7 +17,7 @@ test("Focus lists what needs me, approves in place and opens the workbench", asy
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   const { session } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "掉落表校验",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock", text: "[[shell: cmd /c echo focus-approved]]" },
   });
 

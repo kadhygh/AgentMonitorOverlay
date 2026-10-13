@@ -13,7 +13,7 @@ async function openTaskWithReply(s: Studio) {
   const ws = await s.api<Workspace>("POST", "/api/workspaces", { path: s.workspace("alpha") });
   const created = await s.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "整理导入流程",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock", text: "先看看现状" },
   });
   await s.page.getByTestId("task-card").filter({ hasText: "整理导入流程" }).click();

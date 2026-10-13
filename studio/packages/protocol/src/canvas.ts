@@ -1,13 +1,15 @@
 import type { CanvasDoc, Id, Session, SessionStatus, Task, Workspace } from "./entities.js";
-import { taskWhere, taskWorkspaceNames } from "./scope.js";
+import { taskWhere } from "./scope.js";
 
 // Canvas rules shared by Host (validation on save), UI ("agent 视角") and the read-only MCP in stage 4.
 // Coordinates are presentation only: the outline below describes structure (groups, tasks, notes, dependencies).
 
+/** Id of the single global canvas from before topics; migrated into the first topic (design/structure.md). */
 export const MAIN_CANVAS_ID = "main";
 
-export function emptyCanvas(at = new Date(0).toISOString()): CanvasDoc {
-  return { id: MAIN_CANVAS_ID, version: 0, groups: [], nodes: [], edges: [], updatedAt: at };
+/** An empty canvas for a topic (its id is the topic's id). */
+export function emptyCanvas(id: Id = MAIN_CANVAS_ID, at = new Date(0).toISOString()): CanvasDoc {
+  return { id, version: 0, groups: [], nodes: [], edges: [], updatedAt: at };
 }
 
 const finite = (...n: number[]) => n.every((x) => typeof x === "number" && Number.isFinite(x));
@@ -97,16 +99,15 @@ export interface OutlineTask {
   column: Task["column"];
   status: SessionStatus | null;
   /** "alpha", or "跨工作区（alpha、beta）". */
+  /** The task's project, "未指定项目" for the common space. */
   workspace: string | null;
-  /** Workspaces the task touches (for a cross-workspace task: where its sessions run). */
-  workspaces: string[];
   dependsOn: Id[];
 }
 
 export interface CanvasOutline {
   groups: Array<{ id: Id; title: string; workspace: string | null; tasks: OutlineTask[]; notes: string[] }>;
   ungrouped: { tasks: OutlineTask[]; notes: string[] };
-  /** Tasks that exist but are not placed on the canvas yet. */
+  /** Tasks of the topic that are not placed on its canvas yet. */
   unplaced: OutlineTask[];
   dependencies: Array<{ from: Id; to: Id }>;
 }
@@ -132,8 +133,7 @@ export function canvasOutline(
       title: task.title || "未命名任务",
       column: task.column,
       status: URGENCY.find((u) => live.some((s) => s.status === u)) ?? null,
-      workspace: taskWhere(task, sessions, workspaces),
-      workspaces: taskWorkspaceNames(task, sessions, workspaces),
+      workspace: taskWhere(task, workspaces),
       dependsOn: deps.filter((d) => d.to === task.id).map((d) => d.from),
     };
   };

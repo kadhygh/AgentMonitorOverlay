@@ -15,7 +15,7 @@ test("dependencies from the sidebar and notes on the canvas", async () => {
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   const ids: Record<string, string> = {};
   for (const title of ["拆表", "改导入", "跑校验"]) {
-    const { task } = await studio.api<{ task: Task }>("POST", "/api/tasks", { title, scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "codex-mock" } });
+    const { task } = await studio.api<{ task: Task }>("POST", "/api/tasks", { title, workspaceId: ws.id, firstSession: { profileId: "codex-mock" } });
     ids[title] = task.id;
   }
   const canvas = () => studio!.api<CanvasDoc>("GET", "/api/canvas");

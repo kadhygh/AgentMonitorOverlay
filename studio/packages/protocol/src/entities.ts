@@ -5,11 +5,16 @@ export type Id = string;
 /** ISO-8601 timestamp. */
 export type Timestamp = string;
 
+/**
+ * A project folder on this machine ("项目"). The common space is a built-in workspace (`builtin: "common"`): tasks and
+ * sessions with no project picked run in its folder, and the UI never lists it as a project (design/structure.md).
+ */
 export interface Workspace {
   id: Id;
   name: string;
   /** Absolute path of the project directory. */
   path: string;
+  builtin?: "common";
   createdAt: Timestamp;
 }
 
@@ -17,17 +22,36 @@ export interface Workspace {
 export const TASK_COLUMNS = ["todo", "doing", "review", "done"] as const;
 export type TaskColumn = (typeof TASK_COLUMNS)[number];
 
-/** A task belongs to one workspace, or to the cross-workspace area where each session picks its workspace. */
-export type TaskScope = { kind: "workspace"; workspaceId: Id } | { kind: "area" };
-
+/**
+ * A task runs in exactly one workspace (the common space when no project was picked; fixed once it has sessions) and
+ * sits in at most one topic. See design/structure.md for the rules.
+ */
 export interface Task {
   id: Id;
   /** Empty until named; the UI falls back to the first user message. */
   title: string;
-  scope: TaskScope;
+  workspaceId: Id;
+  /** The topic it belongs to; null when it is in none. */
+  topicId: Id | null;
   column: TaskColumn;
   createdAt: Timestamp;
   updatedAt: Timestamp;
+  /** Archived with its topic (or on its own); read-only while set. */
+  archivedAt: Timestamp | null;
+}
+
+/**
+ * 专题: the level above tasks. Groups tasks (possibly from several projects) on its own canvas and has its own
+ * sessions for coordinating them. Archiving a topic archives its tasks and sessions.
+ */
+export interface Topic {
+  id: Id;
+  title: string;
+  /** Projects added by hand; the topic's projects are these plus its tasks' workspaces. */
+  workspaceIds: Id[];
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+  archivedAt: Timestamp | null;
 }
 
 export type SessionRuntime = "codex" | "claude";
@@ -69,15 +93,22 @@ export interface SessionOptions {
   permission?: string;
 }
 
+/**
+ * Every session has exactly one owner: a task or a topic (never both, never none). Forks and subagents keep their
+ * parent's owner; the owner never changes.
+ */
 export interface Session {
   id: Id;
-  taskId: Id;
+  /** Owner when the session belongs to a task. */
+  taskId: Id | null;
+  /** Owner when the session belongs to a topic (a 专题会话). */
+  topicId: Id | null;
   /** Parent session for forks and subagents; null for main sessions. */
   parentId: Id | null;
   kind: SessionKind;
   runtime: SessionRuntime;
   profileId: Id;
-  /** For cross-workspace tasks each session picks its workspace; otherwise the task's workspace. */
+  /** A task session runs in its task's workspace; a topic session in any of the topic's projects or the common space. */
   workspaceId: Id;
   title: string;
   status: SessionStatus;
@@ -190,8 +221,9 @@ export interface Annotation {
 export interface Rect { x: number; y: number; w: number; h: number }
 export interface Point { x: number; y: number }
 
-/** Infinite canvas. Coordinates are presentation only; structure lives in groups, nodes and edges. */
+/** A topic's infinite canvas. Coordinates are presentation only; structure lives in groups, nodes and edges. */
 export interface CanvasDoc {
+  /** The topic's id. */
   id: Id;
   /** Bumped on every save; a save must name the version it was based on (optimistic concurrency). */
   version: number;
@@ -278,7 +310,7 @@ export interface ChecklistItem {
   source: string;
 }
 
-export type MailRecipient = { kind: "session"; sessionId: Id } | { kind: "task"; taskId: Id };
+export type MailRecipient = { kind: "session"; sessionId: Id } | { kind: "task"; taskId: Id } | { kind: "topic"; topicId: Id };
 
 /**
  * A message for another session or task. It never enters a conversation by itself: the person forwards it (or
@@ -289,6 +321,8 @@ export interface MailMessage {
   /** null: from the person (e.g. the answer to a decision request). */
   fromSessionId: Id | null;
   fromTaskId: Id | null;
+  /** Set when the sender is a topic session (absent on mail from before topics). */
+  fromTopicId?: Id | null;
   to: MailRecipient;
   text: string;
   state: "unread" | "read" | "forwarded" | "dismissed";
@@ -301,7 +335,9 @@ export interface MailMessage {
 export interface DecisionRequest {
   id: Id;
   sessionId: Id;
-  taskId: Id;
+  /** The asking session's owner: its task, or its topic. */
+  taskId: Id | null;
+  topicId?: Id | null;
   question: string;
   options: string[];
   state: "open" | "answered" | "withdrawn";
@@ -309,3 +345,16 @@ export interface DecisionRequest {
   createdAt: Timestamp;
   answeredAt: Timestamp | null;
 }
+
+/** Who owns a session. */
+export type SessionOwner = { kind: "task"; taskId: Id } | { kind: "topic"; topicId: Id };
+
+export function sessionOwner(s: Pick<Session, "taskId" | "topicId">): SessionOwner {
+  if (s.taskId) return { kind: "task", taskId: s.taskId };
+  if (s.topicId) return { kind: "topic", topicId: s.topicId };
+  throw new Error("session has no owner");
+}
+
+/** Sessions with the same owner (a task's or a topic's). */
+export const sameOwner = (a: Pick<Session, "taskId" | "topicId">, b: Pick<Session, "taskId" | "topicId">) =>
+  (a.taskId ?? null) === (b.taskId ?? null) && (a.topicId ?? null) === (b.topicId ?? null);

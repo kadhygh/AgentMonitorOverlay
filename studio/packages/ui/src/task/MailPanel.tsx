@@ -11,7 +11,7 @@ export function useTaskMail(link: HostLink, task: Task, sessions: readonly Sessi
   useEffect(() => {
     let cancelled = false;
     const mine = new Set(sessionIds.split(",").filter(Boolean));
-    const forThisTask = (m: MailMessage) => (m.to.kind === "task" ? m.to.taskId === task.id : mine.has(m.to.sessionId));
+    const forThisTask = (m: MailMessage) => (m.to.kind === "task" ? m.to.taskId === task.id : m.to.kind === "session" && mine.has(m.to.sessionId));
     const load = (first = false) =>
       call(link, "GET /api/mail", {}, undefined, { forTask: task.id })
         .then((list) => !cancelled && setMail((cur) => (first ? mergeFirstLoad(list, cur) : list)))

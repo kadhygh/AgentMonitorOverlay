@@ -25,7 +25,7 @@ test("Codex and Claude sessions read the canvas through the AMO MCP", async () =
   ] as const) {
     await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
       title,
-      scope: { kind: "workspace", workspaceId: ws.id },
+      workspaceId: ws.id,
       firstSession: { profileId, text: "[[mcp: canvas_read]]" },
     });
     await page.getByRole("button", { name: "← 看板" }).click().catch(() => undefined);
@@ -51,7 +51,7 @@ test("Codex and Claude sessions record progress on their own task through the AM
   ] as const) {
     const { task, session } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
       title,
-      scope: { kind: "workspace", workspaceId: ws.id },
+      workspaceId: ws.id,
       firstSession: { profileId, text: `[[mcp: task_note_add {"text":"${title}：导入已改完"}]]` },
     });
     // Writing to its own task needs no approval; the note carries the session that wrote it.
@@ -74,7 +74,7 @@ test("canvas changes from Codex and Claude sessions wait for the person's approv
   ] as const) {
     await studio.api("POST", "/api/tasks", {
       title,
-      scope: { kind: "workspace", workspaceId: ws.id },
+      workspaceId: ws.id,
       firstSession: { profileId, text: `[[mcp: canvas_group_create {"title":"${title}"}]]` },
     });
     await page.getByRole("button", { name: "← 看板" }).click().catch(() => undefined);

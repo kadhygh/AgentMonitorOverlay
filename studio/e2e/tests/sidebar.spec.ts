@@ -13,7 +13,7 @@ test("canvas sidebar: whole-picture todos and the agent view", async () => {
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  await studio.api("POST", "/api/tasks", { title: "整理导入流程", scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "codex-mock" } });
+  await studio.api("POST", "/api/tasks", { title: "整理导入流程", workspaceId: ws.id, firstSession: { profileId: "codex-mock" } });
   await page.getByRole("button", { name: "画布", exact: true }).click();
   await expect(page.getByTestId("canvas-card")).toHaveCount(1);
 

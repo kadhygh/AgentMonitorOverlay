@@ -16,7 +16,7 @@ test("agents ask for decisions; the person answers on the task page and in Focus
   studio = await launchStudio();
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const scope = { kind: "workspace", workspaceId: ws.id };
+  const scope = { workspaceId: ws.id };
   const open = () => studio!.api<DecisionRequest[]>("GET", "/api/decisions?state=open");
 
   // A Codex session asks; the person picks an option on the task page.

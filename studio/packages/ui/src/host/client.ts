@@ -20,7 +20,8 @@ declare global {
         setIgnoreMouse(ignore: boolean): void;
       };
       /** From Focus: show a task (and session) in the workbench. */
-      openInWorkbench?(target: { taskId: string; sessionId?: string }): Promise<void>;
+      /** A task (and session); without a task (a topic session) the workbench shows the board. */
+      openInWorkbench?(target: { taskId?: string; sessionId?: string }): Promise<void>;
       /** Workbench: Focus asked to show a task. */
       onNavigate?(cb: (target: { taskId: string; sessionId?: string }) => void): () => void;
     };

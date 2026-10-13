@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { taskWhere, workspacesActivity, type CanvasDoc, type CanvasGroup, type CanvasNode, type Id, type ModelProfile, type Session, type Task, type Workspace } from "@amo-studio/protocol";
+import { taskWhere, workspacesActivity, type CanvasDoc, type CanvasGroup, type CanvasNode, type Id, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
 import { AgentTab } from "./AgentTab.js";
 import { TodoTab } from "./TodoTab.js";
@@ -72,14 +72,16 @@ interface CanvasPageProps {
   link: HostLink;
   /** For "转为任务" (the new task's model). */
   profiles?: readonly ModelProfile[];
+  /** The topic whose canvas this is; `tasks` are its live tasks. */
+  topic: Topic;
   tasks: readonly Task[];
   sessions: readonly Session[];
   workspaces: readonly Workspace[];
   onOpenTask(taskId: Id, sessionId?: Id): void;
 }
 
-export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], onOpenTask }: CanvasPageProps) {
-  const { doc, save, conflict, dismissConflict } = useCanvas(link);
+export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles = [], onOpenTask }: CanvasPageProps) {
+  const { doc, save, conflict, dismissConflict } = useCanvas(link, topic.id);
   const [view, setView] = useState<View>(loadView);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [preview, setPreviewState] = useState<CanvasDoc | null>(null);
@@ -104,7 +106,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], o
 
   // New tasks appear on the canvas automatically, ungrouped.
   useEffect(() => {
-    if (!doc || placing.current || drag) return;
+    if (!doc || doc.id !== topic.id || placing.current || drag) return;
     const next = placeMissing(doc, tasks);
     if (!next) return;
     placing.current = true;
@@ -113,7 +115,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], o
       .finally(() => {
         placing.current = false;
       });
-  }, [doc, tasks, save, drag]);
+  }, [doc, tasks, save, drag, topic.id]);
 
   const zoomAt = useCallback((px: number, py: number, factor: number) => {
     setView((v) => {
@@ -318,7 +320,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], o
             const status = taskStatus(own);
             const look = status ? SESSION_LOOK[status] : null;
             const live = own.filter((s) => !s.archivedAt).length;
-            const where = taskWhere(task, sessions, workspaces);
+            const where = taskWhere(task, workspaces);
             const isSelected = selection?.kind === "node" && selection.id === node.id;
             return (
               <div
@@ -383,7 +385,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], o
           onOpenTask={onOpenTask}
           newId={newCanvasId}
           todoTab={<TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} activity={activity} />}
-          agentTab={<AgentTab link={link} />}
+          agentTab={<AgentTab link={link} topicId={topic.id} />}
         />
       )}
       </div>

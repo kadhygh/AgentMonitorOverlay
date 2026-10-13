@@ -1,6 +1,7 @@
 import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, statSync } from "node:fs";
-import { basename, resolve } from "node:path";
+import { tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
 import type {
   CredentialStatus,
   ProfileChoices,
@@ -27,7 +28,7 @@ import type {
   Task,
   TerminalAttach,
   TaskColumn,
-  TaskScope,
+  Topic,
   Workspace,
   WorkspacePack,
   PackDocContent,
@@ -38,7 +39,23 @@ import type {
   ScheduleProposal,
   StudioSettings,
 } from "@amo-studio/protocol";
-import { PACKS_DIR, workspacesActivity, addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
+import {
+  PACKS_DIR,
+  workspacesActivity,
+  addDependency,
+  addGroupAuto,
+  CanvasLayoutError,
+  canvasOutline,
+  composeAnnotationMessage,
+  emptyCanvas,
+  isCommon,
+  MAIN_CANVAS_ID,
+  placeTask,
+  removeTask,
+  TASK_COLUMNS,
+  topicWorkspaceIds,
+  validateCanvas,
+} from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
 import type { CredentialReader, CredentialStore } from "./runtime/credentials.js";
@@ -52,7 +69,9 @@ import { schedulerBrief } from "./scheduler/brief.js";
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
 
 const SCRATCHPAD_KEY = "scratchpad";
-const COMMON_WORKSPACE_KEY = "settings:common-workspace";
+/** Before structure v2 the common space was a plain workspace remembered here; now it is marked `builtin`. */
+const LEGACY_COMMON_WORKSPACE_KEY = "settings:common-workspace";
+const COMMON_NAME = "公共";
 const PRESETS_KEY = "settings:presets";
 const MAX_PRESETS = 30;
 
@@ -121,15 +140,22 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     readonly store: Store,
     readonly runtime: SessionRuntimeApi,
     readonly profiles: readonly ModelProfile[],
-    private readonly options: { launcher?: TerminalLauncher; credentials?: CredentialReader | CredentialStore } = {},
+    private readonly options: {
+      launcher?: TerminalLauncher;
+      credentials?: CredentialReader | CredentialStore;
+      /** Where the common space lives when it is first made; default `common/` next to the database. */
+      commonDir?: string;
+    } = {},
   ) {
     super();
     runtime.on("event", (e) => this.emit("event", e));
+    this.ensureStructure();
   }
 
   snapshot(): StateSnapshot {
     return {
       workspaces: this.store.listWorkspaces(),
+      topics: this.store.listTopics(),
       tasks: this.store.listTasks(),
       sessions: this.store.listSessions(),
       profiles: [...this.profiles],
@@ -150,8 +176,81 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   }
 
   settings(): StudioSettings {
-    const id = this.store.getKv(COMMON_WORKSPACE_KEY)?.value;
-    return { commonWorkspace: (id && this.store.getWorkspace(id)) || null, presets: this.presets() };
+    return { commonWorkspace: this.commonWorkspace(), presets: this.presets() };
+  }
+
+  /** The common space: where tasks without a project, the scheduler and topic sessions without a project run. */
+  commonWorkspace(): Workspace {
+    const ws = this.store.listWorkspaces().find(isCommon);
+    if (!ws) throw new HostError("internal", "the common space is missing");
+    return ws;
+  }
+
+  // ---- structure v2 (design/structure.md) -------------------------------------------------------------------------
+
+  /**
+   * Brings data from before structure v2 into shape, once per start (cheap when there is nothing to do): makes sure
+   * the common space exists, gives tasks of the old cross-workspace area a workspace (and a topic when their sessions
+   * ran in several projects), and turns the old global canvas into the first topic.
+   */
+  private ensureStructure(): void {
+    this.store.transaction(() => {
+      this.ensureCommonWorkspace();
+      for (const task of this.store.listTasksWithoutWorkspace()) this.resolveAreaTask(task);
+      this.migrateGlobalCanvas();
+    });
+  }
+
+  private ensureCommonWorkspace(): Workspace {
+    const existing = this.store.listWorkspaces().find(isCommon);
+    if (existing) return existing;
+    const legacyId = this.store.getKv(LEGACY_COMMON_WORKSPACE_KEY)?.value;
+    const legacy = legacyId ? this.store.getWorkspace(legacyId) : undefined;
+    if (legacy) return this.store.setCommonWorkspace(legacy.id);
+    const dbPath = this.store.path;
+    const path = resolve(this.options.commonDir ?? (dbPath === ":memory:" ? join(tmpdir(), "amo-studio-common") : join(dirname(dbPath), "common")));
+    mkdirSync(path, { recursive: true });
+    const taken = this.store.findWorkspaceByPath(path);
+    if (taken) return this.store.setCommonWorkspace(taken.id);
+    return this.store.addWorkspace({ path, name: COMMON_NAME, builtin: "common" });
+  }
+
+  /**
+   * A task from the old cross-workspace area: it takes the workspace of its first session (the common space when it
+   * has none). When its sessions ran in several projects, a topic of the same name takes the task and the session
+   * trees that ran elsewhere become that topic's sessions, so every task session runs in its task's workspace.
+   */
+  private resolveAreaTask(task: Task): void {
+    const sessions = this.store.listSessions({ taskId: task.id });
+    const roots = sessions.filter((s) => !s.parentId);
+    const workspaceId = roots[0]?.workspaceId ?? sessions[0]?.workspaceId ?? this.commonWorkspace().id;
+    const elsewhere = roots.filter((s) => s.workspaceId !== workspaceId);
+    let topicId: Id | null = null;
+    if (elsewhere.length) {
+      const ids = [...new Set(roots.map((s) => s.workspaceId))].filter((id) => !isCommon(this.store.getWorkspace(id)));
+      topicId = this.store.createTopic({ title: task.title || "跨项目任务", workspaceIds: ids }).id;
+      for (const root of elsewhere) this.store.moveSessionTreeToTopic(root.id, topicId);
+    }
+    this.store.updateTask(task.id, { workspaceId, ...(topicId ? { topicId } : {}) });
+  }
+
+  /** The single canvas from before topics becomes a topic holding the tasks placed on it. */
+  private migrateGlobalCanvas(): void {
+    const doc = this.store.getCanvas(MAIN_CANVAS_ID);
+    if (!doc) return;
+    if (doc.groups.length || doc.nodes.length) {
+      const topic = this.store.createTopic({ title: "专题 1" });
+      const placed = doc.nodes.flatMap((n) => (n.kind === "task" ? [n.taskId] : []));
+      let next: CanvasDoc = { ...doc, id: topic.id };
+      for (const taskId of placed) {
+        const task = this.store.getTask(taskId);
+        // A task can be in one topic only; one that already got a topic above leaves this canvas.
+        if (task && !task.topicId) this.store.updateTask(taskId, { topicId: topic.id });
+        else next = removeTask(next, taskId);
+      }
+      this.store.putCanvas(next);
+    }
+    this.store.deleteCanvas(MAIN_CANVAS_ID);
   }
 
   private presets(): SessionPreset[] {
@@ -164,10 +263,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     }
   }
 
-  /**
-   * Sets (or clears) the common space's folder — it becomes a registered workspace so sessions can run there — and/or
-   * replaces the 常用预设 list.
-   */
+  /** Moves the common space to another folder and/or replaces the 常用预设 list. */
   updateSettings(input: { commonDir?: unknown; presets?: unknown }): StudioSettings {
     if (input.presets !== undefined) {
       if (!Array.isArray(input.presets) || input.presets.length > MAX_PRESETS) throw new HostError("bad_request", `presets must be a list of at most ${MAX_PRESETS}`);
@@ -185,15 +281,14 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       this.store.setKv(PRESETS_KEY, JSON.stringify(presets));
     }
     if (input.commonDir !== undefined) {
-      if (input.commonDir === null || input.commonDir === "") this.store.setKv(COMMON_WORKSPACE_KEY, "");
-      else {
-        if (typeof input.commonDir !== "string") throw new HostError("bad_request", "commonDir must be a folder path or null");
-        const path = resolve(input.commonDir.trim());
-        if (existsSync(path) && !statSync(path).isDirectory()) throw new HostError("bad_request", `not a directory: ${path}`);
-        mkdirSync(path, { recursive: true });
-        const ws = this.store.findWorkspaceByPath(path) ?? this.addWorkspace({ path, name: "公共空间" });
-        this.store.setKv(COMMON_WORKSPACE_KEY, ws.id);
-      }
+      if (typeof input.commonDir !== "string" || !input.commonDir.trim()) throw new HostError("bad_request", "commonDir must be a folder path");
+      const path = resolve(input.commonDir.trim());
+      if (existsSync(path) && !statSync(path).isDirectory()) throw new HostError("bad_request", `not a directory: ${path}`);
+      const common = this.commonWorkspace();
+      const taken = this.store.findWorkspaceByPath(path);
+      if (taken && taken.id !== common.id) throw new HostError("conflict", `这个文件夹已经是项目「${taken.name}」，不能再当公共目录`);
+      mkdirSync(path, { recursive: true });
+      this.publish({ type: "workspace.upserted", workspace: this.store.setWorkspacePath(common.id, path) });
     }
     const settings = this.settings();
     this.publish({ type: "settings.updated", settings });
@@ -257,25 +352,25 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   }
 
   removeWorkspace(id: Id): void {
-    if (!this.store.getWorkspace(id)) throw new HostError("not_found", `workspace ${id} not found`);
+    const ws = this.store.getWorkspace(id);
+    if (!ws) throw new HostError("not_found", `workspace ${id} not found`);
+    if (isCommon(ws)) throw new HostError("conflict", "the common space cannot be removed");
     try {
       this.store.removeWorkspace(id);
     } catch (err) {
       throw new HostError("conflict", (err as Error).message);
     }
     this.publish({ type: "workspace.removed", workspaceId: id });
-    if (this.store.getKv(COMMON_WORKSPACE_KEY)?.value === id) {
-      this.store.setKv(COMMON_WORKSPACE_KEY, "");
-      this.publish({ type: "settings.updated", settings: this.settings() });
-    }
-    // Todos and canvas groups only point at a workspace as a hint; drop the hint rather than leave it dangling.
+    // Todos, topics and canvas groups only point at a workspace as a hint; drop the hint rather than leave it dangling.
     for (const todo of this.store.listTodos().filter((t) => t.workspaceId === id)) {
       const next = { ...todo, workspaceId: null };
       this.store.putTodo(next);
       this.publish({ type: "todo.upserted", todo: next });
     }
-    const canvas = this.canvas();
-    if (canvas.groups.some((g) => g.workspaceId === id)) {
+    for (const topic of this.store.listTopics()) {
+      if (topic.workspaceIds.includes(id)) this.publish({ type: "topic.upserted", topic: this.store.updateTopic(topic.id, { workspaceIds: topic.workspaceIds.filter((w) => w !== id) }) });
+      const canvas = this.store.getCanvas(topic.id);
+      if (!canvas?.groups.some((g) => g.workspaceId === id)) continue;
       const next: CanvasDoc = {
         ...canvas,
         version: canvas.version + 1,
@@ -289,14 +384,30 @@ export class HostService extends EventEmitter<HostServiceEvents> {
 
   // Tasks
 
-  async createTask(input: { title?: string; scope: TaskScope; firstSession: NewSessionInput; template?: TaskTemplateChoice }): Promise<{ task: Task; session: Session }> {
-    const scope = this.validScope(input.scope);
-    const workspace = this.sessionWorkspace(scope, input.firstSession.workspaceId);
-    this.requireProfile(input.firstSession.profileId);
-    const template = input.template ? this.packTemplate(scope, input.template) : null;
-    const base = input.title?.trim() || input.firstSession.text?.trim().slice(0, 60) || template?.title || "";
+  /**
+   * A task in a project (the common space when none is given), optionally in a topic. With `firstSession` its first
+   * session starts at once; without, the task is only filed (待办 unless another column is given).
+   */
+  async createTask(input: {
+    title?: string;
+    workspaceId?: Id | null;
+    topicId?: Id | null;
+    column?: TaskColumn;
+    firstSession?: NewSessionInput;
+    template?: TaskTemplateChoice;
+  }): Promise<{ task: Task; session: Session | null }> {
+    const workspace = input.workspaceId ? this.requireWorkspace(input.workspaceId) : this.commonWorkspace();
+    const topic = input.topicId ? this.requireLiveTopic(input.topicId) : null;
+    if (input.firstSession) {
+      this.requireProfile(input.firstSession.profileId);
+      if (input.firstSession.workspaceId && input.firstSession.workspaceId !== workspace.id) throw new HostError("bad_request", "a task's sessions run in the task's own workspace");
+    }
+    if (input.column !== undefined && !TASK_COLUMNS.includes(input.column)) throw new HostError("bad_request", `unknown column ${String(input.column)}`);
+    const template = input.template ? this.packTemplate(workspace.id, input.template) : null;
+    const base = input.title?.trim() || input.firstSession?.text?.trim().slice(0, 60) || template?.title || "";
     const title = template?.titlePrefix && !base.startsWith(template.titlePrefix.trim()) ? `${template.titlePrefix}${base}` : base;
-    const task = this.store.createTask({ title, scope, column: "doing" });
+    const column = input.firstSession ? "doing" : (input.column ?? "todo");
+    const task = this.store.createTask({ title, workspaceId: workspace.id, topicId: topic?.id ?? null, column });
     this.publish({ type: "task.upserted", task });
     if (template && input.template) {
       template.steps.forEach((text, position) => {
@@ -305,26 +416,152 @@ export class HostService extends EventEmitter<HostServiceEvents> {
         this.publish({ type: "checklist.upserted", item });
       });
     }
-    const session = await this.startSession(task, workspace, input.firstSession);
+    const session = input.firstSession ? await this.startSession({ taskId: task.id, topicId: null }, workspace, input.firstSession) : null;
     return { task: this.store.getTask(task.id)!, session };
   }
 
-  updateTask(id: Id, patch: { title?: string; column?: TaskColumn }): Task {
-    this.requireTask(id);
-    if (patch.column !== undefined && !TASK_COLUMNS.includes(patch.column)) throw new HostError("bad_request", `unknown column ${String(patch.column)}`);
-    const clean: { title?: string; column?: TaskColumn } = {};
+  /**
+   * Renames, moves between columns, changes the project (only before the first session) or transfers the task to
+   * another topic (or out of its topic): it leaves the old topic's canvas with its dependencies there.
+   */
+  updateTask(id: Id, patch: { title?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
+    const current = this.requireTask(id);
+    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId">> = {};
     if (patch.title !== undefined) clean.title = String(patch.title).trim();
-    if (patch.column !== undefined) clean.column = patch.column;
+    if (current.archivedAt && (patch.column !== undefined || patch.workspaceId !== undefined || patch.topicId !== undefined)) throw new HostError("read_only", "archived tasks cannot be moved");
+    if (patch.column !== undefined) {
+      if (!TASK_COLUMNS.includes(patch.column as TaskColumn)) throw new HostError("bad_request", `unknown column ${String(patch.column)}`);
+      clean.column = patch.column as TaskColumn;
+    }
+    if (patch.workspaceId !== undefined) {
+      const workspaceId = patch.workspaceId === null || patch.workspaceId === "" ? this.commonWorkspace().id : this.requireWorkspace(String(patch.workspaceId)).id;
+      if (workspaceId !== current.workspaceId && this.store.listSessions({ taskId: id }).length) throw new HostError("conflict", "a task's project cannot change once it has sessions");
+      clean.workspaceId = workspaceId;
+    }
+    if (patch.topicId !== undefined) {
+      const topicId = patch.topicId === null || patch.topicId === "" ? null : this.requireLiveTopic(String(patch.topicId)).id;
+      if (topicId !== current.topicId) {
+        clean.topicId = topicId;
+        if (current.topicId) this.leaveCanvas(current.topicId, id);
+      }
+    }
     const task = this.store.updateTask(id, clean);
     this.publish({ type: "task.upserted", task });
     return task;
   }
 
+  /** Archives the task with all its sessions (forks and subagents included). */
+  async archiveTask(id: Id): Promise<Task> {
+    const task = this.requireTask(id);
+    if (task.archivedAt) return task;
+    const archived = this.store.updateTask(id, { archivedAt: new Date().toISOString() });
+    this.publish({ type: "task.upserted", task: archived });
+    await this.archiveSessions(this.store.listSessions({ taskId: id }));
+    return this.store.getTask(id)!;
+  }
+
+  /** Restores the task and the sessions that were archived with it (not the ones archived earlier on their own). */
+  async unarchiveTask(id: Id): Promise<Task> {
+    const task = this.requireTask(id);
+    if (!task.archivedAt) return task;
+    if (task.topicId && this.store.getTopic(task.topicId)?.archivedAt) throw new HostError("conflict", "its topic is archived; restore the topic or move the task out of it first");
+    const since = task.archivedAt;
+    const restored = this.store.updateTask(id, { archivedAt: null });
+    this.publish({ type: "task.upserted", task: restored });
+    await this.unarchiveSessions(this.store.listSessions({ taskId: id }), since);
+    return this.store.getTask(id)!;
+  }
+
   async addSession(taskId: Id, input: NewSessionInput): Promise<Session> {
     const task = this.requireTask(taskId);
-    const workspace = this.sessionWorkspace(task.scope, input.workspaceId);
+    if (task.archivedAt) throw new HostError("read_only", "archived tasks cannot get new sessions");
+    if (input.workspaceId && input.workspaceId !== task.workspaceId) throw new HostError("bad_request", "a task's sessions run in the task's own workspace");
     this.requireProfile(input.profileId);
-    return this.startSession(task, workspace, input);
+    return this.startSession({ taskId: task.id, topicId: null }, this.requireWorkspace(task.workspaceId), input);
+  }
+
+  // Topics (专题)
+
+  createTopic(input: { title?: unknown; workspaceIds?: unknown }): Topic {
+    const title = boundedText(input?.title, "title", 100);
+    const topic = this.store.createTopic({ title, workspaceIds: this.projectIds(input.workspaceIds) });
+    this.publish({ type: "topic.upserted", topic });
+    return topic;
+  }
+
+  updateTopic(id: Id, patch: { title?: unknown; workspaceIds?: unknown }): Topic {
+    const current = this.requireTopic(id);
+    if (current.archivedAt) throw new HostError("read_only", "archived topics cannot be changed");
+    const clean: Partial<Pick<Topic, "title" | "workspaceIds">> = {};
+    if (patch.title !== undefined) clean.title = boundedText(patch.title, "title", 100);
+    if (patch.workspaceIds !== undefined) clean.workspaceIds = this.projectIds(patch.workspaceIds);
+    const topic = this.store.updateTopic(id, clean);
+    this.publish({ type: "topic.upserted", topic });
+    return topic;
+  }
+
+  /** Archives the topic with its own sessions and all its tasks (and theirs). */
+  async archiveTopic(id: Id): Promise<{ topic: Topic; tasks: Task[] }> {
+    const current = this.requireTopic(id);
+    if (current.archivedAt) return { topic: current, tasks: [] };
+    const topic = this.store.updateTopic(id, { archivedAt: new Date().toISOString() });
+    this.publish({ type: "topic.upserted", topic });
+    await this.archiveSessions(this.store.listSessions({ topicId: id }));
+    const tasks: Task[] = [];
+    for (const t of this.store.listTasks().filter((x) => x.topicId === id && !x.archivedAt)) tasks.push(await this.archiveTask(t.id));
+    return { topic: this.store.getTopic(id)!, tasks };
+  }
+
+  /** Restores the topic, its sessions and the tasks that were archived with it. */
+  async unarchiveTopic(id: Id): Promise<{ topic: Topic; tasks: Task[] }> {
+    const current = this.requireTopic(id);
+    if (!current.archivedAt) return { topic: current, tasks: [] };
+    const since = current.archivedAt;
+    const topic = this.store.updateTopic(id, { archivedAt: null });
+    this.publish({ type: "topic.upserted", topic });
+    await this.unarchiveSessions(this.store.listSessions({ topicId: id }), since);
+    const tasks: Task[] = [];
+    for (const t of this.store.listTasks().filter((x) => x.topicId === id && x.archivedAt && x.archivedAt >= since)) tasks.push(await this.unarchiveTask(t.id));
+    return { topic: this.store.getTopic(id)!, tasks };
+  }
+
+  /** A topic session: runs in one of the topic's projects, or in the common space when none is named. */
+  async addTopicSession(topicId: Id, input: NewSessionInput): Promise<Session> {
+    const topic = this.requireLiveTopic(topicId);
+    this.requireProfile(input.profileId);
+    let workspace = this.commonWorkspace();
+    if (input.workspaceId && input.workspaceId !== workspace.id) {
+      if (!topicWorkspaceIds(topic, this.store.listTasks(), this.store.listWorkspaces()).includes(input.workspaceId)) {
+        throw new HostError("bad_request", "a topic session runs in one of the topic's projects or in the common space");
+      }
+      workspace = this.requireWorkspace(input.workspaceId);
+    }
+    return this.startSession({ taskId: null, topicId: topic.id }, workspace, input);
+  }
+
+  /** The topic a session works for: its own (topic session), or its task's. */
+  topicOfSession(sessionId: Id): Topic | null {
+    const s = this.requireSession(sessionId);
+    const id = s.topicId ?? (s.taskId ? this.store.getTask(s.taskId)?.topicId : null);
+    return (id && this.store.getTopic(id)) || null;
+  }
+
+  private projectIds(value: unknown): Id[] {
+    if (value === undefined || value === null) return [];
+    if (!Array.isArray(value)) throw new HostError("bad_request", "workspaceIds must be a list");
+    const ids = [...new Set(value.map(String))];
+    for (const id of ids) if (isCommon(this.requireWorkspace(id))) throw new HostError("bad_request", "the common space is not a project");
+    return ids;
+  }
+
+  private async archiveSessions(sessions: readonly Session[]): Promise<void> {
+    // Archiving a root takes its forks and subagents with it.
+    for (const s of sessions.filter((x) => !x.parentId && !x.archivedAt)) await this.wrap(() => this.runtime.archive(s.id));
+  }
+
+  /** Restores the sessions archived at or after `since` (by the cascade), root by root. */
+  private async unarchiveSessions(sessions: readonly Session[], since: string): Promise<void> {
+    for (const s of sessions.filter((x) => !x.parentId && x.archivedAt && x.archivedAt >= since)) await this.wrap(() => this.runtime.unarchive(s.id));
   }
 
   // Sessions
@@ -483,15 +720,14 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   }
 
   /**
-   * Turns a todo into a task in its workspace (or the one given), with one session and no first message (no model
-   * call). The task goes into the canvas group bound to that workspace, if any; the todo is done and points at it.
+   * Turns a todo into a task in its workspace (or the one given; the common space when neither), with one session and
+   * no first message (no model call). The todo is done and points at it.
    */
   async convertTodo(id: Id, input: { workspaceId?: unknown; profileId?: unknown; text?: unknown }): Promise<{ todo: TodoItem; task: Task; session: Session }> {
     const todo = this.store.getTodo(id);
     if (!todo) throw new HostError("not_found", `todo ${id} not found`);
     if (todo.taskId) throw new HostError("conflict", "this todo is already a task");
-    const workspaceId = this.optionalWorkspace(input?.workspaceId) ?? todo.workspaceId;
-    if (!workspaceId) throw new HostError("bad_request", "choose a workspace for the task");
+    const workspaceId = this.optionalWorkspace(input?.workspaceId) ?? todo.workspaceId ?? this.commonWorkspace().id;
     if (typeof input?.profileId !== "string") throw new HostError("bad_request", "profileId is required");
     // Starting the session awaits the runtime; a second convert (or approval) meanwhile must not make a second task.
     if (this.converting.has(id)) throw new HostError("conflict", "this todo is being turned into a task");
@@ -507,15 +743,13 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const text = typeof textIn === "string" && textIn.trim() ? textIn.trim() : undefined;
     const { task, session } = await this.createTask({
       title: todo.text.slice(0, 100),
-      scope: { kind: "workspace", workspaceId },
+      workspaceId,
       firstSession: { profileId, ...(text ? { text } : {}) },
     });
-    const group = this.canvas().groups.find((g) => g.workspaceId === workspaceId);
-    if (group) this.canvasPlaceTask(task.id, group.id);
     const next: TodoItem = { ...todo, workspaceId, taskId: task.id, done: true };
     this.store.putTodo(next);
     this.publish({ type: "todo.upserted", todo: next });
-    return { todo: next, task, session };
+    return { todo: next, task, session: session! };
   }
 
   // Scheduler proposals (stage 7, design/scheduler.md): proposed by the scheduler session (or through the API), started
@@ -550,7 +784,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const id = this.store.getKv(SCHEDULER_TASK_KEY)?.value;
     const existing = id ? this.store.getTask(id) : undefined;
     if (existing) return existing;
-    const task = this.store.createTask({ title: "调度", scope: { kind: "area" }, column: "doing" });
+    const task = this.store.createTask({ title: "调度", workspaceId: this.commonWorkspace().id, column: "doing" });
     this.store.setKv(SCHEDULER_TASK_KEY, task.id);
     this.publish({ type: "task.upserted", task });
     return task;
@@ -568,11 +802,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   async runScheduler(input: { profileId?: unknown } = {}): Promise<{ task: Task; session: Session }> {
     if (typeof input?.profileId !== "string") throw new HostError("bad_request", "profileId is required");
     this.requireProfile(input.profileId);
-    const workspaces = this.store.listWorkspaces();
-    // A session needs a working directory: the common space when set (设置 → 公共空间), else the first registered
-    // workspace (the scheduler only reads Studio through the MCP and is told not to touch files).
-    if (!workspaces.length) throw new HostError("bad_request", "register a workspace first");
-    const cwd = this.settings().commonWorkspace ?? workspaces[0]!;
+    const workspaces = this.store.listWorkspaces().filter((w) => !isCommon(w));
+    // The scheduler runs in the common space: it only reads Studio through the MCP and is told not to touch files.
     const task = this.schedulerTask();
     const text = schedulerBrief({
       todos: this.store.listTodos(),
@@ -582,7 +813,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       packs: workspaces.flatMap((w) => this.packs(w.id).map((p) => ({ ...p, workspaceId: w.id }))),
       perRound: PROPOSALS_PER_ROUND,
     });
-    const session = await this.addSession(task.id, { profileId: input.profileId, workspaceId: cwd.id, text });
+    const session = await this.addSession(task.id, { profileId: input.profileId, text });
     return { task: this.store.getTask(task.id)!, session };
   }
 
@@ -648,21 +879,24 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   addTaskNote(taskId: Id, input: { text?: unknown; kind?: TaskNote["kind"] }, sessionId: Id | null = null): TaskNote {
     this.requireTask(taskId);
     const text = boundedText(input?.text, "text", MAX_NOTE_CHARS);
-    if (sessionId && this.requireSession(sessionId).taskId !== taskId) throw new HostError("bad_request", "a session can only write to its own task");
+    if (sessionId && this.requireSession(sessionId).taskId !== taskId) throw new HostError("bad_request", "a session can only write to its own task (topic sessions have none; leave mail instead)");
     const note: TaskNote = { id: newId("note"), taskId, sessionId, kind: input.kind === "handoff" ? "handoff" : "progress", text, createdAt: new Date().toISOString() };
     this.store.addTaskNote(note);
     this.publish({ type: "task.note.added", note });
     return note;
   }
 
-  /** Mail by recipient; `forTaskId`: everything left for that task or for any of its sessions. */
-  mail(filter: { sessionId?: Id; taskId?: Id; forTaskId?: Id; states?: MailMessage["state"][] } = {}): MailMessage[] {
-    const { forTaskId, ...rest } = filter;
-    if (!forTaskId) return this.store.listMail(rest);
-    const sessions = new Set(this.store.listSessions({ taskId: forTaskId }).map((s) => s.id));
+  /**
+   * Mail by recipient; `forTaskId` / `forTopicId`: everything left for that task or topic or for any of its own
+   * sessions.
+   */
+  mail(filter: { sessionId?: Id; taskId?: Id; topicId?: Id; forTaskId?: Id; forTopicId?: Id; states?: MailMessage["state"][] } = {}): MailMessage[] {
+    const { forTaskId, forTopicId, ...rest } = filter;
+    if (!forTaskId && !forTopicId) return this.store.listMail(rest);
+    const sessions = new Set(this.store.listSessions(forTaskId ? { taskId: forTaskId } : { topicId: forTopicId! }).map((s) => s.id));
     return this.store
       .listMail(rest.states ? { states: rest.states } : {})
-      .filter((m) => (m.to.kind === "task" ? m.to.taskId === forTaskId : sessions.has(m.to.sessionId)));
+      .filter((m) => (m.to.kind === "session" ? sessions.has(m.to.sessionId) : m.to.kind === "task" ? m.to.taskId === forTaskId : m.to.topicId === forTopicId));
   }
 
   /** Leaves a message for a session or a task. `fromSessionId` null: from the person. */
@@ -675,6 +909,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       id: newId("mail"),
       fromSessionId: from?.id ?? null,
       fromTaskId: from?.taskId ?? null,
+      fromTopicId: from?.topicId ?? null,
       to: recipient,
       text,
       state: "unread",
@@ -696,17 +931,18 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const mail = this.requireMail(id);
     if (mail.state === "forwarded") throw new HostError("conflict", "this message was already forwarded");
     const target = mail.to.kind === "session" ? mail.to.sessionId : typeof input.sessionId === "string" ? input.sessionId : null;
-    if (!target) throw new HostError("bad_request", "name the session to forward this task message to");
+    if (!target) throw new HostError("bad_request", "name the session to forward this message to");
     const session = this.requireSession(target);
     if (mail.to.kind === "task" && session.taskId !== mail.to.taskId) throw new HostError("bad_request", "that session is not part of the task the message was left for");
+    if (mail.to.kind === "topic" && session.topicId !== mail.to.topicId) throw new HostError("bad_request", "that session is not one of the topic's own sessions");
     await this.sendMessage(target, this.mailAsMessage(mail));
     return this.setMailState(mail, "forwarded");
   }
 
-  /** Mail an agent reads for itself (`mailbox_read`): its own and its task's unread messages, then marked read. */
+  /** Mail an agent reads for itself (`mailbox_read`): its own and its owner's unread messages, then marked read. */
   readMailFromSession(sessionId: Id): MailMessage[] {
     const s = this.requireSession(sessionId);
-    const unread = this.store.listMail({ sessionId, taskId: s.taskId, states: ["unread"] });
+    const unread = this.store.listMail({ sessionId, ...(s.taskId ? { taskId: s.taskId } : { topicId: s.topicId! }), states: ["unread"] });
     return unread.map((m) => this.setMailState(m, "read"));
   }
 
@@ -718,7 +954,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const s = this.requireSession(sessionId);
     const question = boundedText(questionIn, "question", MAX_QUESTION_CHARS);
     const options = Array.isArray(optionsIn) ? optionsIn.filter((o): o is string => typeof o === "string" && !!o.trim()).map((o) => o.trim().slice(0, MAX_OPTION_CHARS)).slice(0, 6) : [];
-    const d: DecisionRequest = { id: newId("dec"), sessionId, taskId: s.taskId, question, options, state: "open", answer: null, createdAt: new Date().toISOString(), answeredAt: null };
+    const d: DecisionRequest = { id: newId("dec"), sessionId, taskId: s.taskId, topicId: s.topicId, question, options, state: "open", answer: null, createdAt: new Date().toISOString(), answeredAt: null };
     this.store.putDecision(d);
     this.publish({ type: "decision.upserted", decision: d });
     return d;
@@ -739,6 +975,10 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   private mailAsMessage(mail: MailMessage): string {
     if (!mail.fromSessionId) return `[AMO 留言] 来自我：\n\n${mail.text}`;
     const from = this.store.getSession(mail.fromSessionId);
+    if (mail.fromTopicId) {
+      const topic = this.store.getTopic(mail.fromTopicId);
+      return `[AMO 留言] 来自专题「${topic?.title || "未命名专题"}」的会话「${from?.title || "会话"}」：\n\n${mail.text}`;
+    }
     const task = mail.fromTaskId ? this.store.getTask(mail.fromTaskId) : undefined;
     return `[AMO 留言] 来自任务「${task?.title || "未命名任务"}」的会话「${from?.title || "会话"}」：\n\n${mail.text}`;
   }
@@ -758,7 +998,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   }
 
   private validRecipient(to: unknown): MailRecipient {
-    const r = to as Partial<{ kind: string; sessionId: string; taskId: string }> | null;
+    const r = to as Partial<{ kind: string; sessionId: string; taskId: string; topicId: string }> | null;
     if (r?.kind === "session" && typeof r.sessionId === "string") {
       this.requireSession(r.sessionId);
       return { kind: "session", sessionId: r.sessionId };
@@ -767,28 +1007,34 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       this.requireTask(r.taskId);
       return { kind: "task", taskId: r.taskId };
     }
-    throw new HostError("bad_request", "to must be { kind: \"session\", sessionId } or { kind: \"task\", taskId }");
+    if (r?.kind === "topic" && typeof r.topicId === "string") {
+      this.requireTopic(r.topicId);
+      return { kind: "topic", topicId: r.topicId };
+    }
+    throw new HostError("bad_request", "to must be { kind: \"session\", sessionId }, { kind: \"task\", taskId } or { kind: \"topic\", topicId }");
   }
 
-  // Canvas (one global document)
+  // Canvas: one per topic, holding that topic's tasks.
 
-  canvas(): CanvasDoc {
-    return this.store.getCanvas(MAIN_CANVAS_ID) ?? emptyCanvas();
+  canvas(topicId: Id): CanvasDoc {
+    this.requireTopic(topicId);
+    return this.store.getCanvas(topicId) ?? emptyCanvas(topicId);
   }
 
-  saveCanvas(input: unknown): CanvasDoc {
+  saveCanvas(topicId: Id, input: unknown): CanvasDoc {
     const doc = input as CanvasDoc;
     if (!doc || typeof doc !== "object" || !Array.isArray(doc.groups) || !Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) {
       throw new HostError("bad_request", "canvas needs groups, nodes and edges arrays");
     }
-    const current = this.canvas();
+    if (this.requireTopic(topicId).archivedAt) throw new HostError("read_only", "the topic is archived");
+    const current = this.canvas(topicId);
     if (doc.version !== current.version) {
       throw new HostError("conflict", `canvas changed elsewhere (version ${current.version}, yours ${String(doc.version)}); reload and retry`);
     }
-    const errors = validateCanvas(doc, new Set(this.store.listTasks().map((t) => t.id)));
+    const errors = validateCanvas(doc, new Set(this.topicTasks(topicId).map((t) => t.id)));
     if (errors.length) throw new HostError("bad_request", errors.slice(0, 5).join("; "));
     const next: CanvasDoc = {
-      id: MAIN_CANVAS_ID,
+      id: topicId,
       version: current.version + 1,
       groups: doc.groups,
       nodes: doc.nodes,
@@ -800,39 +1046,55 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return next;
   }
 
+  /** The topic's live tasks (the ones its canvas may show). */
+  private topicTasks(topicId: Id): Task[] {
+    return this.store.listTasks().filter((t) => t.topicId === topicId && !t.archivedAt);
+  }
+
+  /** A task leaving a topic takes its card and its dependencies off that topic's canvas. */
+  private leaveCanvas(topicId: Id, taskId: Id): void {
+    const current = this.store.getCanvas(topicId);
+    if (!current || !current.nodes.some((n) => n.kind === "task" && n.taskId === taskId)) return;
+    const next: CanvasDoc = { ...removeTask(current, taskId), version: current.version + 1, updatedAt: new Date().toISOString() };
+    this.store.putCanvas(next);
+    this.publish({ type: "canvas.updated", canvas: next });
+  }
+
   // Canvas changes asked for by agents (AMO MCP): structure only, Studio lays out.
 
-  canvasCreateGroup(input: { title?: unknown; workspace?: unknown }): { groupId: Id; title: string } {
+  canvasCreateGroup(topicId: Id, input: { title?: unknown; workspace?: unknown }): { groupId: Id; title: string } {
     const title = typeof input.title === "string" ? input.title.trim() : "";
     if (!title) throw new HostError("bad_request", "title is required");
     let workspaceId: Id | null = null;
     if (typeof input.workspace === "string" && input.workspace) {
-      const ws = this.store.listWorkspaces().find((w) => w.id === input.workspace || w.name === input.workspace);
+      const ws = this.store.listWorkspaces().find((w) => !isCommon(w) && (w.id === input.workspace || w.name === input.workspace));
       if (!ws) throw new HostError("bad_request", `workspace ${input.workspace} not found`);
       workspaceId = ws.id;
     }
     const id = newId("g");
-    this.mutateCanvas((doc) => addGroupAuto(doc, { id, title, workspaceId }));
+    this.mutateCanvas(topicId, (doc) => addGroupAuto(doc, { id, title, workspaceId }));
     return { groupId: id, title };
   }
 
   canvasAddDependency(fromTaskId: unknown, toTaskId: unknown): { from: Id; to: Id } {
-    const from = this.requireTask(String(fromTaskId)).id;
-    const to = this.requireTask(String(toTaskId)).id;
-    this.mutateCanvas((doc) => addDependency(doc, from, to, newId("e")));
-    return { from, to };
+    const from = this.requireTask(String(fromTaskId));
+    const to = this.requireTask(String(toTaskId));
+    if (!from.topicId || from.topicId !== to.topicId) throw new HostError("bad_request", "dependencies connect two tasks of the same topic");
+    this.mutateCanvas(from.topicId, (doc) => addDependency(doc, from.id, to.id, newId("e")));
+    return { from: from.id, to: to.id };
   }
 
   canvasPlaceTask(taskId: unknown, groupId: unknown): { taskId: Id; groupId: Id | null } {
-    const task = this.requireTask(String(taskId)).id;
+    const task = this.requireTask(String(taskId));
+    if (!task.topicId) throw new HostError("bad_request", "the task is not in a topic, so it has no canvas");
     const group = typeof groupId === "string" && groupId ? groupId : null;
-    this.mutateCanvas((doc) => placeTask(doc, task, group, newId("n")));
-    return { taskId: task, groupId: group };
+    this.mutateCanvas(task.topicId, (doc) => placeTask(doc, task.id, group, newId("n")));
+    return { taskId: task.id, groupId: group };
   }
 
   /** Applies a change to the latest canvas and saves it (one synchronous read-modify-write, so no version race here). */
-  private mutateCanvas(change: (doc: CanvasDoc) => CanvasDoc): CanvasDoc {
-    const current = this.canvas();
+  private mutateCanvas(topicId: Id, change: (doc: CanvasDoc) => CanvasDoc): CanvasDoc {
+    const current = this.canvas(topicId);
     let next: CanvasDoc;
     try {
       next = change(current);
@@ -840,11 +1102,11 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       if (err instanceof CanvasLayoutError) throw new HostError("bad_request", err.message);
       throw err;
     }
-    return this.saveCanvas({ ...next, version: current.version });
+    return this.saveCanvas(topicId, { ...next, version: current.version });
   }
 
-  canvasOutline() {
-    return canvasOutline(this.canvas(), this.store.listTasks(), this.store.listWorkspaces(), this.store.listSessions());
+  canvasOutline(topicId: Id) {
+    return canvasOutline(this.canvas(topicId), this.topicTasks(topicId), this.store.listWorkspaces(), this.store.listSessions());
   }
 
   // Scratchpad (global)
@@ -943,34 +1205,14 @@ export class HostService extends EventEmitter<HostServiceEvents> {
 
   // Helpers
 
-  private async startSession(task: Task, workspace: Workspace, input: NewSessionInput): Promise<Session> {
+  private async startSession(owner: { taskId: Id | null; topicId: Id | null }, workspace: Workspace, input: NewSessionInput): Promise<Session> {
     const session = await this.wrap(() =>
-      this.runtime.startSession({ taskId: task.id, profileId: input.profileId, workspace, ...(input.text ? { text: input.text } : {}), options: sessionOptions(input.options) }),
+      this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(input.text ? { text: input.text } : {}), options: sessionOptions(input.options) }),
     );
-    // The task's updatedAt moves with its sessions so the board can sort by activity.
-    this.publish({ type: "task.upserted", task: this.store.updateTask(task.id, {}) });
+    // The owner's updatedAt moves with its sessions so the board can sort by activity.
+    if (owner.taskId) this.publish({ type: "task.upserted", task: this.store.updateTask(owner.taskId, {}) });
+    else if (owner.topicId) this.publish({ type: "topic.upserted", topic: this.store.updateTopic(owner.topicId, {}) });
     return session;
-  }
-
-  private validScope(scope: TaskScope | undefined): TaskScope {
-    if (scope?.kind === "area") return { kind: "area" };
-    if (scope?.kind === "workspace") {
-      if (!this.store.getWorkspace(scope.workspaceId)) throw new HostError("bad_request", `workspace ${scope.workspaceId} not found`);
-      return { kind: "workspace", workspaceId: scope.workspaceId };
-    }
-    throw new HostError("bad_request", "scope must be a workspace or the cross-workspace area");
-  }
-
-  /** Workspace tasks always use their workspace; cross-workspace tasks need one per session. */
-  private sessionWorkspace(scope: TaskScope, requested: Id | undefined): Workspace {
-    const id = scope.kind === "workspace" ? scope.workspaceId : requested;
-    if (!id) throw new HostError("bad_request", "cross-workspace sessions need a workspaceId");
-    if (scope.kind === "workspace" && requested && requested !== scope.workspaceId) {
-      throw new HostError("bad_request", "sessions of a workspace task stay in that workspace");
-    }
-    const ws = this.store.getWorkspace(id);
-    if (!ws) throw new HostError("bad_request", `workspace ${id} not found`);
-    return ws;
   }
 
   private requireProfile(id: Id): ModelProfile {
@@ -1001,7 +1243,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     if (typeof taskId !== "string") throw new HostError("bad_request", "taskId is required");
     const task = this.requireTask(taskId);
     const workspace = this.requireWorkspace(workspaceId);
-    if (task.scope.kind === "workspace" && task.scope.workspaceId !== workspaceId) throw new HostError("bad_request", "a workspace task takes presets from its own workspace");
+    if (task.workspaceId !== workspaceId) throw new HostError("bad_request", "a task takes presets from its own workspace");
     const pack = this.packs(workspaceId).find((p) => p.dirName === packName);
     if (!pack?.manifest) throw new HostError(pack ? "bad_request" : "not_found", pack ? `扩展包 ${packName} 有错误` : `扩展包 ${packName} 不存在`);
     const preset = pack.manifest.presets.find((p) => p.id === presetId);
@@ -1010,11 +1252,11 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return presetDraft({ preset, packDir: `${PACKS_DIR}/${pack.dirName}`, workspace, taskTitle: task.title, profileIds: this.profiles.map((p) => p.id) });
   }
 
-  /** A template of a valid pack; for a workspace task it must come from that workspace. */
-  private packTemplate(scope: TaskScope, choice: TaskTemplateChoice): PackTemplate {
+  /** A template of a valid pack in the task's own workspace. */
+  private packTemplate(workspaceId: Id, choice: TaskTemplateChoice): PackTemplate {
     const c = choice as Partial<TaskTemplateChoice> | null;
     if (!c || typeof c.workspaceId !== "string" || typeof c.pack !== "string" || typeof c.template !== "string") throw new HostError("bad_request", "template needs workspaceId, pack and template");
-    if (scope.kind === "workspace" && c.workspaceId !== scope.workspaceId) throw new HostError("bad_request", "a workspace task takes templates from its own workspace");
+    if (c.workspaceId !== workspaceId) throw new HostError("bad_request", "a task takes templates from its own workspace");
     const pack = this.packs(c.workspaceId).find((p) => p.dirName === c.pack);
     if (!pack?.manifest) throw new HostError("bad_request", pack ? `扩展包 ${c.pack} 有错误` : `扩展包 ${c.pack} 不存在`);
     const template = pack.manifest.templates.find((t) => t.id === c.template);
@@ -1045,6 +1287,18 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   private requireTask(id: Id): Task {
     const t = this.store.getTask(id);
     if (!t) throw new HostError("not_found", `task ${id} not found`);
+    return t;
+  }
+
+  requireTopic(id: Id): Topic {
+    const t = this.store.getTopic(id);
+    if (!t) throw new HostError("not_found", `topic ${id} not found`);
+    return t;
+  }
+
+  private requireLiveTopic(id: Id): Topic {
+    const t = this.requireTopic(id);
+    if (t.archivedAt) throw new HostError("read_only", `topic ${t.title} is archived`);
     return t;
   }
 

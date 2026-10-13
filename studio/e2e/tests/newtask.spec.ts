@@ -61,7 +61,7 @@ test("creates a cross-workspace task with the first session in the chosen worksp
   await expect(page.getByTestId("msg-agent")).toContainText("MOCK: 先列出两边的配置键", { timeout: 30_000 });
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
   const task = state.tasks.find((t) => t.title === "统一配置键名")!;
-  expect(task.scope).toEqual({ kind: "area" });
+  expect(task.topicId).toBeNull(); // TODO(stage 10): this cross-workspace flow is replaced by topics; rewrite with the new task page
   const session = state.sessions.find((s: Session) => s.taskId === task.id)!;
   expect(session.workspaceId).toBe(beta!.id);
 });

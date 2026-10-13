@@ -26,11 +26,11 @@ test("registers a sandbox workspace and shows tasks on the board", async () => {
   const ws = (await studio.api<{ workspaces: Workspace[] }>("GET", "/api/state")).workspaces[0]!;
   const waiting = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "校验掉落表",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock", text: "[[shell: cmd /c echo check]]" },
   });
   const quiet = await studio.api<{ task: Task }>("POST", "/api/tasks", {
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock", text: "整理一下配置项命名" },
   });
   await studio.api("PATCH", `/api/tasks/${quiet.task.id}`, { column: "review" });

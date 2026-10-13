@@ -21,7 +21,7 @@ test("canvas groups: create, rename, bind, move with members, resize, membership
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  await studio.api("POST", "/api/tasks", { title: "整理导入流程", scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "codex-mock" } });
+  await studio.api("POST", "/api/tasks", { title: "整理导入流程", workspaceId: ws.id, firstSession: { profileId: "codex-mock" } });
   const canvas = () => studio!.api<CanvasDoc>("GET", "/api/canvas");
 
   await page.getByRole("button", { name: "画布", exact: true }).click();

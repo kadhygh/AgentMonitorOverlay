@@ -140,7 +140,7 @@ function DetailTab({ doc, selection, tasks, sessions, workspaces, onChange, onCl
       <span className="side-heading">{task.title || "未命名任务"}</span>
       <span className="side-note">
         {COLUMN_NAMES[task.column]} · <span style={{ color: look?.text }}>{look?.label ?? "未开始"}</span> ·{" "}
-        {taskWhere(task, sessions, workspaces)}
+        {taskWhere(task, workspaces)}
       </span>
       <button type="button" className="btn-ghost small" onClick={() => onOpenTask(task.id)}>
         打开任务

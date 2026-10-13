@@ -60,7 +60,7 @@ test("canvas groups bound to a workspace say whether the project is free", async
   await studio.api<TodoItem>("POST", "/api/todos", { text: "alpha 的事", workspaceId: alpha.id });
   await studio.api<TodoItem>("POST", "/api/todos", { text: "beta 的事", workspaceId: beta.id });
   // A slow turn keeps alpha busy for a while.
-  await studio.api("POST", "/api/tasks", { title: "跑着的", scope: { kind: "workspace", workspaceId: alpha.id }, firstSession: { profileId: "codex-mock", text: "慢慢来 [[slow]]" } });
+  await studio.api("POST", "/api/tasks", { title: "跑着的", workspaceId: alpha.id, firstSession: { profileId: "codex-mock", text: "慢慢来 [[slow]]" } });
 
   await page.getByRole("button", { name: "画布", exact: true }).click();
   const group = (title: string) => page.locator(".canvas-group").filter({ hasText: title }).getByTestId("group-activity");

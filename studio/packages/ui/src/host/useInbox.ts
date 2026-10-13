@@ -39,7 +39,8 @@ export function mailByTask(unread: readonly MailMessage[], sessions: readonly Se
   const counts = new Map<Id, number>();
   for (const m of unread) {
     if (!m.fromSessionId) continue;
-    const taskId = m.to.kind === "task" ? m.to.taskId : taskOf.get(m.to.sessionId);
+    // Mail for a topic or its own sessions is not on any task card.
+    const taskId = m.to.kind === "task" ? m.to.taskId : m.to.kind === "session" ? taskOf.get(m.to.sessionId) : null;
     if (taskId) counts.set(taskId, (counts.get(taskId) ?? 0) + 1);
   }
   return counts;

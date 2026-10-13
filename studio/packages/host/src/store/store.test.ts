@@ -29,8 +29,8 @@ function makeStore(path = ":memory:"): Store {
 
 function seed(store: Store) {
   const ws = store.addWorkspace({ path: "C:/sandbox/alpha", name: "alpha" });
-  const task = store.createTask({ title: "Retry", scope: { kind: "workspace", workspaceId: ws.id } });
-  const base = { taskId: task.id, runtime: "codex", profileId: "p", workspaceId: ws.id, title: "", status: "idle", writer: "workbench", runtimeRef: null } as const;
+  const task = store.createTask({ title: "Retry", workspaceId: ws.id });
+  const base = { taskId: task.id, topicId: null, runtime: "codex", profileId: "p", workspaceId: ws.id, title: "", status: "idle", writer: "workbench", runtimeRef: null } as const;
   const main = store.createSession({ ...base, parentId: null, kind: "main" });
   const fork = store.createSession({ ...base, parentId: main.id, kind: "fork" });
   const sub = store.createSession({ ...base, parentId: fork.id, kind: "sub" });
@@ -41,9 +41,9 @@ function seed(store: Store) {
 describe("Store", () => {
   it("applies migrations once", () => {
     const path = tempDbPath();
-    expect(makeStore(path).schemaVersion()).toBe(6);
+    expect(makeStore(path).schemaVersion()).toBe(7);
     open.pop()!.close();
-    expect(makeStore(path).schemaVersion()).toBe(6);
+    expect(makeStore(path).schemaVersion()).toBe(7);
   });
 
   it("creates, reads and updates workspaces, tasks and sessions", () => {
@@ -52,8 +52,10 @@ describe("Store", () => {
     expect(store.findWorkspaceByPath("C:/sandbox/alpha")?.id).toBe(ws.id);
     expect(store.updateTask(task.id, { column: "doing" }).column).toBe("doing");
     expect(store.getTask(task.id)?.column).toBe("doing");
-    const area = store.createTask({ title: "Cross", scope: { kind: "area" } });
-    expect(store.getTask(area.id)?.scope).toEqual({ kind: "area" });
+    const topic = store.createTopic({ title: "掉落表重构", workspaceIds: [ws.id] });
+    expect(store.updateTask(task.id, { topicId: topic.id }).topicId).toBe(topic.id);
+    expect(store.updateTopic(topic.id, { title: "掉落表" })).toMatchObject({ title: "掉落表", workspaceIds: [ws.id], archivedAt: null });
+    expect(store.listTopics().map((t) => t.id)).toEqual([topic.id]);
     store.updateSession(main.id, { status: "running", runtimeRef: "thread-1" });
     expect(store.findSessionByRuntimeRef("codex", "thread-1")?.id).toBe(main.id);
     expect(store.listSessions({ taskId: task.id })).toHaveLength(4);

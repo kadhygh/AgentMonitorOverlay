@@ -52,7 +52,7 @@ beforeAll(async () => {
   store = new Store(join(root, "studio.db"));
   runtime = startRuntime();
   workspace = store.addWorkspace({ path: wsDir, name: "ws" });
-  task = store.createTask({ title: "claude", scope: { kind: "workspace", workspaceId: workspace.id } });
+  task = store.createTask({ title: "claude", workspaceId: workspace.id });
 });
 
 afterAll(async () => {
@@ -64,7 +64,7 @@ afterAll(async () => {
 
 describe("ClaudeRuntime", () => {
   it("starts with the chosen model and effort, and switches them in a running session", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "opts one", options: { model: "mock-claude-b", effort: "high" } });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "opts one", options: { model: "mock-claude-b", effort: "high" } });
     await until(() => agentTexts(s.id).includes("MOCK: opts one") && status(s.id) === "idle", "first reply");
     const first = mock.requests.filter((r) => r.lastUserText === "opts one" && r.tools.length).at(-1)!.body as Record<string, unknown>;
     // Claude Code sends the effort as output_config.effort.
@@ -77,7 +77,7 @@ describe("ClaudeRuntime", () => {
   }, 120_000);
 
   it("runs a turn and continues the same Claude session on the next message", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "hello" });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "hello" });
     expect(s).toMatchObject({ runtime: "claude", kind: "main", title: "hello" });
     expect(s.runtimeRef).toMatch(/^[0-9a-f-]{36}$/);
     await until(() => agentTexts(s.id).includes("MOCK: hello") && status(s.id) === "idle", "first reply");
@@ -92,7 +92,7 @@ describe("ClaudeRuntime", () => {
   }, 120_000);
 
   it("waits for the person on a command, and runs it once approved", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[shell: mkdir approved-dir]]" });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[shell: mkdir approved-dir]]" });
     await until(() => status(s.id) === "awaiting-approval", "approval");
     const approval = items(s.id).find((i) => i.type === "approval")!;
     expect(approval).toMatchObject({ kind: "command", summary: "mkdir approved-dir", state: "pending" });
@@ -105,7 +105,7 @@ describe("ClaudeRuntime", () => {
   }, 120_000);
 
   it("keeps the key out of the agent's commands", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[shell: echo T=$ANTHROPIC_AUTH_TOKEN B=$ANTHROPIC_BASE_URL]]" });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[shell: echo T=$ANTHROPIC_AUTH_TOKEN B=$ANTHROPIC_BASE_URL]]" });
     await until(() => status(s.id) === "awaiting-approval", "approval");
     const approval = items(s.id).find((i) => i.type === "approval") as { approvalId: string };
     await runtime.respondApproval(s.id, approval.approvalId, "accept");
@@ -117,7 +117,7 @@ describe("ClaudeRuntime", () => {
   }, 120_000);
 
   it("does not run a declined command", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[shell: mkdir declined-dir]]" });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[shell: mkdir declined-dir]]" });
     await until(() => status(s.id) === "awaiting-approval", "approval");
     const approval = items(s.id).find((i) => i.type === "approval") as { approvalId: string };
     await runtime.respondApproval(s.id, approval.approvalId, "decline");
@@ -127,7 +127,7 @@ describe("ClaudeRuntime", () => {
   }, 120_000);
 
   it("queues a message sent during a turn, and interrupts a slow reply", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[slow]]" });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]]" });
     await until(() => status(s.id) === "running" && items(s.id).some((i) => i.type === "agent"), "slow reply started");
     expect((await runtime.sendMessage(s.id, "next one")).mode).toBe("queue");
     await until(() => agentTexts(s.id).includes("MOCK: next one") && status(s.id) === "idle", "queued message answered");
@@ -143,7 +143,7 @@ describe("ClaudeRuntime", () => {
   }, 180_000);
 
   it("forks a session: the branch carries the context and goes its own way", async () => {
-    const parent = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "remember the apples" });
+    const parent = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "remember the apples" });
     await until(() => agentTexts(parent.id).includes("MOCK: remember the apples") && status(parent.id) === "idle", "parent reply");
     const branch = await runtime.fork(parent.id);
     expect(branch).toMatchObject({ kind: "fork", parentId: parent.id, runtime: "claude", title: "remember the apples · 分支" });
@@ -152,12 +152,12 @@ describe("ClaudeRuntime", () => {
     await until(() => agentTexts(branch.id).includes("MOCK: in the branch"), "branch reply");
     expect(JSON.stringify(mock.requests.at(-1)!.body.messages)).toContain("MOCK: remember the apples");
     expect(agentTexts(parent.id)).toEqual(["MOCK: remember the apples"]);
-    const fresh = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace });
+    const fresh = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace });
     await expect(runtime.fork(fresh.id)).rejects.toThrow(/还没有对话内容/);
   }, 120_000);
 
   it("groups a subagent's work in a child session under the Agent call", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[spawn: helper: say hi]]" });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[spawn: helper: say hi]]" });
     await until(() => status(s.id) === "idle" && agentTexts(s.id).includes("MOCK-DONE"), "spawn done");
     const line = items(s.id).find((i) => i.type === "subagent") as { childSessionId: string; summary: string } | undefined;
     expect(line?.summary).toBe("helper");
@@ -170,7 +170,7 @@ describe("ClaudeRuntime", () => {
   }, 120_000);
 
   it("asks the person before a subagent's command, even when the Agent call asks to bypass permissions", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[spawn-mode-bypassPermissions: helper: [[shell: mkdir sub-made-dir]]]]" });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[spawn-mode-bypassPermissions: helper: [[shell: mkdir sub-made-dir]]]]" });
     await until(() => status(s.id) === "awaiting-approval", "subagent approval");
     const approval = items(s.id).find((i) => i.type === "approval") as { approvalId: string; summary: string };
     expect(approval.summary).toBe("mkdir sub-made-dir");
@@ -183,7 +183,7 @@ describe("ClaudeRuntime", () => {
   }, 120_000);
 
   it("keeps a background subagent running until its notification arrives", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[spawn-bg: watcher: check later]]" });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[spawn-bg: watcher: check later]]" });
     await until(() => items(s.id).some((i) => i.type === "subagent"), "background subagent");
     const child = (items(s.id).find((i) => i.type === "subagent") as { childSessionId: string }).childSessionId;
     await until(() => status(child) === "completed", "background subagent completed");
@@ -193,7 +193,7 @@ describe("ClaudeRuntime", () => {
 
   it("after a crash, marks turns that were in flight as over", async () => {
     // As a crashed Host leaves it: no process, the session still awaiting approval, a card still pending.
-    const s = store.createSession({ taskId: task.id, parentId: null, kind: "main", runtime: "claude", profileId: "claude-mock", workspaceId: workspace.id, title: "crashed", status: "awaiting-approval", writer: "workbench", runtimeRef: "00000000-0000-4000-8000-000000000000" });
+    const s = store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", runtime: "claude", profileId: "claude-mock", workspaceId: workspace.id, title: "crashed", status: "awaiting-approval", writer: "workbench", runtimeRef: "00000000-0000-4000-8000-000000000000" });
     store.appendItem({ id: "i-crash-approval", sessionId: s.id, createdAt: new Date().toISOString(), type: "approval", approvalId: "t1", kind: "command", summary: "mkdir x", state: "pending" });
     store.appendItem({ id: "i-crash-agent", sessionId: s.id, createdAt: new Date().toISOString(), type: "agent", markdown: "half", streaming: true });
     const recovered = startRuntime();
@@ -207,7 +207,7 @@ describe("ClaudeRuntime", () => {
   });
 
   it("ends in-flight turns when the Host restarts", async () => {
-    const s = await runtime.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[shell: mkdir restart-dir]]" });
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[shell: mkdir restart-dir]]" });
     await until(() => status(s.id) === "awaiting-approval", "approval before restart");
     await runtime.closeAll();
     runtime = startRuntime();

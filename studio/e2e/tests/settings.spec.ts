@@ -18,7 +18,7 @@ test("light theme from the settings dialog, remembered and shared with Focus", a
   studio = await launchStudio();
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "导入重试", scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "codex-mock", text: "[[markdown]]" } });
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "导入重试", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "[[markdown]]" } });
 
   // Explicit dark first (the test machine's own theme must not decide the result).
   await page.getByRole("button", { name: "设置" }).click();
@@ -85,7 +85,7 @@ test("the Claude subscription token is saved in settings, then Claude sessions r
   const start = () =>
     studio!.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
       title: "订阅",
-      scope: { kind: "workspace", workspaceId: ws.id },
+      workspaceId: ws.id,
       firstSession: { profileId: "claude-subscription", text: "hello" },
     });
   // Without a token the session cannot start, and says how to get one.

@@ -13,6 +13,7 @@ import {
   type SessionOptions,
   type Task,
   type TaskColumn,
+  type Topic,
   type TodoItem,
   type TaskNote,
   type ChecklistItem,
@@ -38,24 +39,39 @@ const str = (v: SQLInputValue | undefined): string => v as string;
 const strOrNull = (v: SQLInputValue | undefined): string | null => (v === null || v === undefined ? null : (v as string));
 
 function toWorkspace(r: Row): Workspace {
-  return { id: str(r.id), name: str(r.name), path: str(r.path), createdAt: str(r.created_at) };
+  return { id: str(r.id), name: str(r.name), path: str(r.path), ...(r.builtin === "common" ? { builtin: "common" as const } : {}), createdAt: str(r.created_at) };
 }
 
 function toTask(r: Row): Task {
   return {
     id: str(r.id),
     title: str(r.title),
-    scope: r.scope_kind === "area" ? { kind: "area" } : { kind: "workspace", workspaceId: str(r.workspace_id) },
+    // NULL only for tasks of the old cross-workspace area until the Host resolves them at start-up.
+    workspaceId: strOrNull(r.workspace_id) ?? "",
+    topicId: strOrNull(r.topic_id),
     column: str(r.column_name) as TaskColumn,
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
+    archivedAt: strOrNull(r.archived_at),
   };
+}
+
+function toTopic(r: Row): Topic {
+  let workspaceIds: Id[] = [];
+  try {
+    const parsed = JSON.parse(str(r.workspace_ids)) as unknown;
+    if (Array.isArray(parsed)) workspaceIds = parsed.filter((x): x is string => typeof x === "string");
+  } catch {
+    // a damaged list reads as empty
+  }
+  return { id: str(r.id), title: str(r.title), workspaceIds, createdAt: str(r.created_at), updatedAt: str(r.updated_at), archivedAt: strOrNull(r.archived_at) };
 }
 
 function toSession(r: Row): Session {
   return {
     id: str(r.id),
-    taskId: str(r.task_id),
+    taskId: strOrNull(r.task_id),
+    topicId: strOrNull(r.topic_id),
     parentId: strOrNull(r.parent_id),
     kind: str(r.kind) as Session["kind"],
     runtime: str(r.runtime) as Session["runtime"],
@@ -128,13 +144,25 @@ export class Store {
     this.db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)");
     const row = this.db.prepare("SELECT MAX(version) AS v FROM schema_migrations").get() as Row | undefined;
     const current = Number(row?.v ?? 0);
-    MIGRATIONS.forEach((sql, index) => {
+    MIGRATIONS.forEach((migration, index) => {
       const version = index + 1;
       if (version <= current) return;
-      this.transaction(() => {
-        this.db.exec(sql);
-        this.db.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(version, this.timestamp());
-      });
+      const sql = typeof migration === "string" ? migration : migration.sql;
+      const fkOff = typeof migration !== "string" && migration.foreignKeysOff;
+      // The pragma has no effect inside a transaction, so it is switched around it.
+      if (fkOff) this.db.exec("PRAGMA foreign_keys = OFF");
+      try {
+        this.transaction(() => {
+          this.db.exec(sql);
+          if (fkOff) {
+            const broken = this.db.prepare("PRAGMA foreign_key_check").all();
+            if (broken.length) throw new Error(`migration ${version} broke ${broken.length} foreign keys`);
+          }
+          this.db.prepare("INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)").run(version, this.timestamp());
+        });
+      } finally {
+        if (fkOff) this.db.exec("PRAGMA foreign_keys = ON");
+      }
     });
   }
 
@@ -145,10 +173,24 @@ export class Store {
 
   // Workspaces
 
-  addWorkspace(input: { path: string; name: string }): Workspace {
-    const ws: Workspace = { id: newId("ws"), name: input.name, path: input.path, createdAt: this.timestamp() };
-    this.db.prepare("INSERT INTO workspaces (id, name, path, created_at) VALUES (?, ?, ?, ?)").run(ws.id, ws.name, ws.path, ws.createdAt);
+  addWorkspace(input: { path: string; name: string; builtin?: "common" }): Workspace {
+    const ws: Workspace = { id: newId("ws"), name: input.name, path: input.path, ...(input.builtin ? { builtin: input.builtin } : {}), createdAt: this.timestamp() };
+    this.db.prepare("INSERT INTO workspaces (id, name, path, builtin, created_at) VALUES (?, ?, ?, ?, ?)").run(ws.id, ws.name, ws.path, ws.builtin ?? null, ws.createdAt);
     return ws;
+  }
+
+  /** Marks the common space (only one workspace is it at a time). */
+  setCommonWorkspace(id: Id): Workspace {
+    this.transaction(() => {
+      this.db.prepare("UPDATE workspaces SET builtin = NULL WHERE builtin = 'common' AND id <> ?").run(id);
+      this.db.prepare("UPDATE workspaces SET builtin = 'common' WHERE id = ?").run(id);
+    });
+    return this.getWorkspace(id)!;
+  }
+
+  setWorkspacePath(id: Id, path: string): Workspace {
+    this.db.prepare("UPDATE workspaces SET path = ? WHERE id = ?").run(path, id);
+    return this.getWorkspace(id)!;
   }
 
   getWorkspace(id: Id): Workspace | undefined {
@@ -174,13 +216,18 @@ export class Store {
 
   // Tasks
 
-  createTask(input: { title: string; scope: Task["scope"]; column?: TaskColumn }): Task {
+  createTask(input: { title: string; workspaceId: Id; topicId?: Id | null; column?: TaskColumn }): Task {
     const at = this.timestamp();
-    const task: Task = { id: newId("task"), title: input.title, scope: input.scope, column: input.column ?? "todo", createdAt: at, updatedAt: at };
+    const task: Task = { id: newId("task"), title: input.title, workspaceId: input.workspaceId, topicId: input.topicId ?? null, column: input.column ?? "todo", createdAt: at, updatedAt: at, archivedAt: null };
     this.db
-      .prepare("INSERT INTO tasks (id, title, scope_kind, workspace_id, column_name, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)")
-      .run(task.id, task.title, task.scope.kind, task.scope.kind === "workspace" ? task.scope.workspaceId : null, task.column, at, at);
+      .prepare("INSERT INTO tasks (id, title, workspace_id, topic_id, column_name, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)")
+      .run(task.id, task.title, task.workspaceId, task.topicId, task.column, at, at);
     return task;
+  }
+
+  /** Tasks from the old cross-workspace area that still have no workspace (resolved at Host start-up). */
+  listTasksWithoutWorkspace(): Task[] {
+    return (this.db.prepare("SELECT * FROM tasks WHERE workspace_id IS NULL ORDER BY created_at, id").all() as Row[]).map(toTask);
   }
 
   getTask(id: Id): Task | undefined {
@@ -192,11 +239,43 @@ export class Store {
     return (this.db.prepare("SELECT * FROM tasks ORDER BY created_at, id").all() as Row[]).map(toTask);
   }
 
-  updateTask(id: Id, patch: { title?: string; column?: TaskColumn }): Task {
+  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt">>): Task {
     const task = this.getTask(id);
     if (!task) throw new Error(`task ${id} not found`);
     const next: Task = { ...task, ...patch, updatedAt: this.timestamp() };
-    this.db.prepare("UPDATE tasks SET title = ?, column_name = ?, updated_at = ? WHERE id = ?").run(next.title, next.column, next.updatedAt, id);
+    this.db
+      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, next.updatedAt, id);
+    return next;
+  }
+
+  // Topics
+
+  createTopic(input: { title: string; workspaceIds?: Id[] }): Topic {
+    const at = this.timestamp();
+    const topic: Topic = { id: newId("tp"), title: input.title, workspaceIds: input.workspaceIds ?? [], createdAt: at, updatedAt: at, archivedAt: null };
+    this.db
+      .prepare("INSERT INTO topics (id, title, workspace_ids, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, NULL)")
+      .run(topic.id, topic.title, JSON.stringify(topic.workspaceIds), at, at);
+    return topic;
+  }
+
+  getTopic(id: Id): Topic | undefined {
+    const r = this.db.prepare("SELECT * FROM topics WHERE id = ?").get(id) as Row | undefined;
+    return r && toTopic(r);
+  }
+
+  listTopics(): Topic[] {
+    return (this.db.prepare("SELECT * FROM topics ORDER BY created_at, id").all() as Row[]).map(toTopic);
+  }
+
+  updateTopic(id: Id, patch: Partial<Pick<Topic, "title" | "workspaceIds" | "archivedAt">>): Topic {
+    const topic = this.getTopic(id);
+    if (!topic) throw new Error(`topic ${id} not found`);
+    const next: Topic = { ...topic, ...patch, updatedAt: this.timestamp() };
+    this.db
+      .prepare("UPDATE topics SET title = ?, workspace_ids = ?, archived_at = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, JSON.stringify(next.workspaceIds), next.archivedAt, next.updatedAt, id);
     return next;
   }
 
@@ -207,10 +286,10 @@ export class Store {
     const s: Session = { ...input, options: input.options ?? {}, id: input.id ?? newId("s"), createdAt: at, updatedAt: at, archivedAt: null };
     this.db
       .prepare(
-        `INSERT INTO sessions (id, task_id, parent_id, kind, runtime, profile_id, workspace_id, title, status, writer, runtime_ref, options, created_at, updated_at, archived_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+        `INSERT INTO sessions (id, task_id, topic_id, parent_id, kind, runtime, profile_id, workspace_id, title, status, writer, runtime_ref, options, created_at, updated_at, archived_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       )
-      .run(s.id, s.taskId, s.parentId, s.kind, s.runtime, s.profileId, s.workspaceId, s.title, s.status, s.writer, s.runtimeRef, JSON.stringify(s.options), at, at);
+      .run(s.id, s.taskId, s.topicId, s.parentId, s.kind, s.runtime, s.profileId, s.workspaceId, s.title, s.status, s.writer, s.runtimeRef, JSON.stringify(s.options), at, at);
     return s;
   }
 
@@ -224,11 +303,31 @@ export class Store {
     return r && toSession(r);
   }
 
-  listSessions(filter: { taskId?: Id } = {}): Session[] {
+  /** All sessions, or one owner's (a task's or a topic's). */
+  listSessions(filter: { taskId?: Id; topicId?: Id } = {}): Session[] {
     const rows = filter.taskId
       ? this.db.prepare("SELECT * FROM sessions WHERE task_id = ? ORDER BY created_at, id").all(filter.taskId)
-      : this.db.prepare("SELECT * FROM sessions ORDER BY created_at, id").all();
+      : filter.topicId
+        ? this.db.prepare("SELECT * FROM sessions WHERE topic_id = ? ORDER BY created_at, id").all(filter.topicId)
+        : this.db.prepare("SELECT * FROM sessions ORDER BY created_at, id").all();
     return (rows as Row[]).map(toSession);
+  }
+
+  /** The sessions sharing this session's owner. */
+  private ownerSessions(s: Session): Session[] {
+    return s.taskId ? this.listSessions({ taskId: s.taskId }) : this.listSessions({ topicId: s.topicId! });
+  }
+
+  /**
+   * Moves whole session trees to a topic. Only for resolving tasks from the old cross-workspace area at start-up;
+   * otherwise a session's owner never changes.
+   */
+  moveSessionTreeToTopic(rootId: Id, topicId: Id): void {
+    const root = this.getSession(rootId);
+    if (!root) throw new Error(`session ${rootId} not found`);
+    for (const id of collectSubtreeIds(this.ownerSessions(root), rootId)) {
+      this.db.prepare("UPDATE sessions SET task_id = NULL, topic_id = ? WHERE id = ?").run(topicId, id);
+    }
   }
 
   updateSession(id: Id, patch: Partial<Pick<Session, "title" | "status" | "writer" | "runtimeRef" | "profileId" | "options">>): Session {
@@ -246,7 +345,7 @@ export class Store {
     return this.transaction(() => {
       const root = this.getSession(rootId);
       if (!root) throw new Error(`session ${rootId} not found`);
-      const ids = collectSubtreeIds(this.listSessions({ taskId: root.taskId }), rootId);
+      const ids = collectSubtreeIds(this.ownerSessions(root), rootId);
       const at = this.timestamp();
       const changed: Session[] = [];
       for (const id of ids) {
@@ -264,7 +363,7 @@ export class Store {
     return this.transaction(() => {
       const root = this.getSession(rootId);
       if (!root) throw new Error(`session ${rootId} not found`);
-      const ids = collectSubtreeIds(this.listSessions({ taskId: root.taskId }), rootId);
+      const ids = collectSubtreeIds(this.ownerSessions(root), rootId);
       const at = this.timestamp();
       const changed: Session[] = [];
       for (const id of ids) {
@@ -380,6 +479,10 @@ export class Store {
     return r && (JSON.parse(str(r.body)) as CanvasDoc);
   }
 
+  deleteCanvas(id: Id): void {
+    this.db.prepare("DELETE FROM canvas_docs WHERE id = ?").run(id);
+  }
+
   putTodo(todo: TodoItem): void {
     this.db
       .prepare("INSERT INTO todos (id, body, created_at) VALUES (?, ?, ?) ON CONFLICT(id) DO UPDATE SET body = excluded.body")
@@ -449,8 +552,16 @@ export class Store {
 
   putMail(m: MailMessage): void {
     this.db
-      .prepare("INSERT INTO mail (id, to_session, to_task, state, body, created_at) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body")
-      .run(m.id, m.to.kind === "session" ? m.to.sessionId : null, m.to.kind === "task" ? m.to.taskId : null, m.state, JSON.stringify(m), m.createdAt);
+      .prepare("INSERT INTO mail (id, to_session, to_task, to_topic, state, body, created_at) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body")
+      .run(
+        m.id,
+        m.to.kind === "session" ? m.to.sessionId : null,
+        m.to.kind === "task" ? m.to.taskId : null,
+        m.to.kind === "topic" ? m.to.topicId : null,
+        m.state,
+        JSON.stringify(m),
+        m.createdAt,
+      );
   }
 
   getMail(id: Id): MailMessage | undefined {
@@ -458,13 +569,14 @@ export class Store {
     return r && (JSON.parse(str(r.body)) as MailMessage);
   }
 
-  /** Mail for a session and/or task (either matches), optionally only in some states; oldest first. */
-  listMail(filter: { sessionId?: Id; taskId?: Id; states?: readonly MailMessage["state"][] } = {}): MailMessage[] {
+  /** Mail for a session, task and/or topic (any matches), optionally only in some states; oldest first. */
+  listMail(filter: { sessionId?: Id; taskId?: Id; topicId?: Id; states?: readonly MailMessage["state"][] } = {}): MailMessage[] {
     const where: string[] = [];
     const args: string[] = [];
     const to: string[] = [];
     if (filter.sessionId) (to.push("to_session = ?"), args.push(filter.sessionId));
     if (filter.taskId) (to.push("to_task = ?"), args.push(filter.taskId));
+    if (filter.topicId) (to.push("to_topic = ?"), args.push(filter.topicId));
     if (to.length) where.push(`(${to.join(" OR ")})`);
     if (filter.states?.length) (where.push(`state IN (${filter.states.map(() => "?").join(", ")})`), args.push(...filter.states));
     const sql = `SELECT body FROM mail${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at, id`;

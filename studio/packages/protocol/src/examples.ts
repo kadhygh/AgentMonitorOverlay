@@ -14,12 +14,12 @@ export const exampleProfiles: ModelProfile[] = [
 ];
 
 export const exampleTasks: Task[] = [
-  { id: "task-1", title: "Add retry to the importer", scope: { kind: "workspace", workspaceId: "ws-alpha" }, column: "doing", createdAt: t(1), updatedAt: t(9) },
-  { id: "task-2", title: "Align config keys across projects", scope: { kind: "area" }, column: "todo", createdAt: t(2), updatedAt: t(2) },
+  { id: "task-1", title: "Add retry to the importer", workspaceId: "ws-alpha", topicId: null, column: "doing", createdAt: t(1), updatedAt: t(9), archivedAt: null },
+  { id: "task-2", title: "Align config keys", workspaceId: "ws-beta", topicId: null, column: "todo", createdAt: t(2), updatedAt: t(2), archivedAt: null },
 ];
 
 const session = (over: Partial<Session> & Pick<Session, "id" | "createdAt">): Session => ({
-  taskId: "task-1", parentId: null, kind: "main", runtime: "codex", profileId: "codex-deepseek-flash", workspaceId: "ws-alpha",
+  taskId: "task-1", topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "codex-deepseek-flash", workspaceId: "ws-alpha",
   title: "", status: "idle", writer: "workbench", runtimeRef: null, options: {}, updatedAt: over.createdAt, archivedAt: null, ...over,
 });
 

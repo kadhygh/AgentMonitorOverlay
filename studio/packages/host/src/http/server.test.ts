@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { composeAnnotationMessage, type Annotation, type CanvasDoc, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type Task, type Workspace } from "@amo-studio/protocol";
+import { composeAnnotationMessage, type Annotation, type CanvasDoc, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type StudioSettings, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../runtime/codex/fake-servers.test-support.js";
@@ -77,7 +77,7 @@ async function createTask(text = "hello") {
   const existing = (await ok<StateSnapshot>("GET", "/api/state")).workspaces.find((w) => w.name === "alpha");
   const ws = existing ?? (await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") }));
   const created = await ok<{ task: Task; session: Session }>("POST", "/api/tasks", {
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "p-ds", text },
   });
   return { ws, ...created };
@@ -99,7 +99,9 @@ describe("Host API", () => {
     expect((await api("POST", "/api/workspaces", { path: join(root, "alpha") })).status).toBe(409);
     expect((await api("POST", "/api/workspaces", { path: join(root, "missing") })).status).toBe(400);
     const state = await ok<StateSnapshot>("GET", "/api/state");
-    expect(state.workspaces.map((w) => w.id)).toEqual([ws.id]);
+    expect(state.workspaces.filter((w) => !w.builtin).map((w) => w.id)).toEqual([ws.id]);
+    // The common space is always there, as a built-in workspace the UI does not list.
+    expect(state.workspaces.filter((w) => w.builtin === "common")).toHaveLength(1);
     expect(state.profiles.map((p) => p.id)).toEqual(["p-ds"]);
   });
 
@@ -110,18 +112,98 @@ describe("Host API", () => {
     await until(async () => (await lastAgentText(session.id)) === "FAKE: hello there", "reply");
   });
 
-  it("requires a workspace per session for cross-workspace tasks", async () => {
+  it("files a task without a project in the common space and keeps its sessions in the task's project", async () => {
     const a = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
     const b = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "beta") });
-    const bad = await api("POST", "/api/tasks", { scope: { kind: "area" }, firstSession: { profileId: "p-ds", text: "x" } });
-    expect(bad.status).toBe(400);
-    const { task, session } = await ok<{ task: Task; session: Session }>("POST", "/api/tasks", {
-      scope: { kind: "area" },
-      firstSession: { profileId: "p-ds", workspaceId: a.id, text: "x" },
+    const { commonWorkspace } = await ok<StudioSettings>("GET", "/api/settings");
+    const filed = await ok<{ task: Task; session: Session | null }>("POST", "/api/tasks", { title: "先记下来" });
+    expect(filed.session).toBeNull();
+    expect(filed.task).toMatchObject({ title: "先记下来", workspaceId: commonWorkspace.id, topicId: null, column: "todo", archivedAt: null });
+    // The project can change until the first session starts; then it is fixed.
+    expect((await ok<Task>("PATCH", `/api/tasks/${filed.task.id}`, { workspaceId: a.id })).workspaceId).toBe(a.id);
+    const session = await ok<Session>("POST", `/api/tasks/${filed.task.id}/sessions`, { profileId: "p-ds" });
+    expect(session).toMatchObject({ taskId: filed.task.id, topicId: null, workspaceId: a.id });
+    expect((await api("PATCH", `/api/tasks/${filed.task.id}`, { workspaceId: null })).status).toBe(409);
+    expect((await api("POST", `/api/tasks/${filed.task.id}/sessions`, { profileId: "p-ds", workspaceId: b.id })).status).toBe(400);
+    // Starting at once: no project means the common space.
+    const quick = await ok<{ task: Task; session: Session }>("POST", "/api/tasks", { firstSession: { profileId: "p-ds", text: "问个问题" } });
+    expect(quick.task).toMatchObject({ workspaceId: commonWorkspace.id, column: "doing", title: "问个问题" });
+    expect(quick.session.workspaceId).toBe(commonWorkspace.id);
+  });
+
+  it("keeps topics: tasks in them, transfer between them, topic sessions, archiving with their tasks", async () => {
+    const a = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    const b = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "beta") });
+    const spare = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "spare") });
+    const { commonWorkspace } = await ok<StudioSettings>("GET", "/api/settings");
+    expect((await api("POST", "/api/topics", { title: " " })).status).toBe(400);
+    expect((await api("POST", "/api/topics", { title: "x", workspaceIds: [commonWorkspace.id] })).status).toBe(400);
+    const topic = await ok<Topic>("POST", "/api/topics", { title: "掉落表重构", workspaceIds: [b.id] });
+    const other = await ok<Topic>("POST", "/api/topics", { title: "武器 v2" });
+    const t1 = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "校验", workspaceId: a.id, topicId: topic.id, firstSession: { profileId: "p-ds" } })).task;
+    const t2 = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "补测试", workspaceId: b.id, topicId: topic.id })).task;
+    expect(t1.topicId).toBe(topic.id);
+
+    // Each topic has its own canvas, holding only its own tasks.
+    const empty = await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+    expect(empty).toMatchObject({ id: topic.id, version: 0, nodes: [] });
+    const outsider = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "别处" })).task;
+    const withOutsider = { ...empty, nodes: [{ id: "n9", kind: "task", taskId: outsider.id, groupId: null, pos: { x: 0, y: 0 } }] };
+    expect((await api("PUT", `/api/topics/${topic.id}/canvas`, withOutsider)).status).toBe(400);
+    const saved = await ok<CanvasDoc>("PUT", `/api/topics/${topic.id}/canvas`, {
+      ...empty,
+      nodes: [
+        { id: "n1", kind: "task", taskId: t1.id, groupId: null, pos: { x: 0, y: 0 } },
+        { id: "n2", kind: "task", taskId: t2.id, groupId: null, pos: { x: 300, y: 0 } },
+      ],
+      edges: [{ id: "e1", kind: "depends", from: t1.id, to: t2.id }],
     });
-    expect(session.workspaceId).toBe(a.id);
-    const second = await ok<Session>("POST", `/api/tasks/${task.id}/sessions`, { profileId: "p-ds", workspaceId: b.id });
-    expect(second.workspaceId).toBe(b.id);
+
+    // Transfer: t2 moves to the other topic and leaves the first canvas with its dependency.
+    expect((await ok<Task>("PATCH", `/api/tasks/${t2.id}`, { topicId: other.id })).topicId).toBe(other.id);
+    const after = await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+    expect(after.version).toBe(saved.version + 1);
+    expect(after.nodes.map((n) => n.id)).toEqual(["n1"]);
+    expect(after.edges).toEqual([]);
+
+    // Topic sessions run in one of the topic's projects (hand-added or from its tasks) or in the common space.
+    const coord = await ok<Session>("POST", `/api/topics/${topic.id}/sessions`, { profileId: "p-ds" });
+    expect(coord).toMatchObject({ taskId: null, topicId: topic.id, workspaceId: commonWorkspace.id, kind: "main" });
+    expect((await ok<Session>("POST", `/api/topics/${topic.id}/sessions`, { profileId: "p-ds", workspaceId: a.id })).workspaceId).toBe(a.id);
+    expect((await ok<Session>("POST", `/api/topics/${topic.id}/sessions`, { profileId: "p-ds", workspaceId: b.id })).workspaceId).toBe(b.id);
+    expect((await api("POST", `/api/topics/${topic.id}/sessions`, { profileId: "p-ds", workspaceId: spare.id })).status).toBe(400);
+
+    // Archiving the topic archives its sessions and its tasks with theirs; the moved task is not touched.
+    const archived = await ok<{ topic: Topic; tasks: Task[] }>("POST", `/api/topics/${topic.id}/archive`);
+    expect(archived.topic.archivedAt).not.toBeNull();
+    expect(archived.tasks.map((t) => t.id)).toEqual([t1.id]);
+    let state = await ok<StateSnapshot>("GET", "/api/state");
+    expect(state.tasks.find((t) => t.id === t1.id)?.archivedAt).not.toBeNull();
+    expect(state.tasks.find((t) => t.id === t2.id)?.archivedAt).toBeNull();
+    expect(state.sessions.filter((s) => s.topicId === topic.id || s.taskId === t1.id).every((s) => s.archivedAt)).toBe(true);
+    expect((await api("POST", `/api/tasks/${t1.id}/sessions`, { profileId: "p-ds" })).status).toBe(409);
+    expect((await api("POST", `/api/topics/${topic.id}/sessions`, { profileId: "p-ds" })).status).toBe(409);
+    expect((await api("POST", "/api/tasks", { title: "y", topicId: topic.id })).status).toBe(409);
+    expect((await api("POST", `/api/tasks/${t1.id}/unarchive`)).status).toBe(409); // its topic is archived
+
+    // Restoring the topic brings back its tasks and the sessions archived with them.
+    const restored = await ok<{ topic: Topic; tasks: Task[] }>("POST", `/api/topics/${topic.id}/unarchive`);
+    expect(restored.topic.archivedAt).toBeNull();
+    expect(restored.tasks.map((t) => t.id)).toEqual([t1.id]);
+    state = await ok<StateSnapshot>("GET", "/api/state");
+    expect(state.sessions.filter((s) => s.topicId === topic.id || s.taskId === t1.id).every((s) => !s.archivedAt)).toBe(true);
+    expect(state.topics.map((t) => t.title)).toEqual(["掉落表重构", "武器 v2"]);
+  });
+
+  it("archives a single task with its sessions and restores them", async () => {
+    const { task, session } = await createTask("archive me");
+    const archived = await ok<Task>("POST", `/api/tasks/${task.id}/archive`);
+    expect(archived.archivedAt).not.toBeNull();
+    expect((await ok<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.id === session.id)?.archivedAt).not.toBeNull();
+    expect((await api("PATCH", `/api/tasks/${task.id}`, { column: "done" })).status).toBe(409);
+    const back = await ok<Task>("POST", `/api/tasks/${task.id}/unarchive`);
+    expect(back.archivedAt).toBeNull();
+    expect((await ok<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.id === session.id)?.archivedAt).toBeNull();
   });
 
   it("moves cards between columns only when asked and rejects unknown columns", async () => {
@@ -294,8 +376,8 @@ describe("Host API", () => {
     writeFileSync(join(dir, "pack.json"), JSON.stringify({ schemaVersion: 1, name: "demo", title: "示例", templates: [{ id: "feat", title: "新功能", titlePrefix: "[功能]", steps: ["读规范", "实现", "补测试"] }] }));
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path });
     const other = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
-    const scope = { kind: "workspace", workspaceId: ws.id };
-    const { task } = await ok<{ task: Task }>("POST", "/api/tasks", { title: "冲刺", scope, firstSession: { profileId: "p-ds" }, template: { workspaceId: ws.id, pack: "demo", template: "feat" } });
+    const scope = { workspaceId: ws.id };
+    const { task } = await ok<{ task: Task }>("POST", "/api/tasks", { title: "冲刺", ...scope, firstSession: { profileId: "p-ds" }, template: { workspaceId: ws.id, pack: "demo", template: "feat" } });
     expect(task.title).toBe("[功能] 冲刺");
     const items = await ok<Array<{ id: string; text: string; done: boolean; source: string }>>("GET", `/api/checklist?taskId=${task.id}`);
     expect(items.map((i) => [i.text, i.done, i.source])).toEqual([["读规范", false, "demo/feat"], ["实现", false, "demo/feat"], ["补测试", false, "demo/feat"]]);
@@ -304,7 +386,7 @@ describe("Host API", () => {
     expect((await api("PATCH", `/api/checklist/${items[1]!.id}`, { done: "yes" })).status).toBe(400);
     expect((await api("PATCH", "/api/checklist/nope", { done: true })).status).toBe(404);
     // Without a title the template's title is used; templates come from the task's own workspace; unknown ones fail.
-    const untitled = await ok<{ task: Task }>("POST", "/api/tasks", { scope, firstSession: { profileId: "p-ds" }, template: { workspaceId: ws.id, pack: "demo", template: "feat" } });
+    const untitled = await ok<{ task: Task }>("POST", "/api/tasks", { ...scope, firstSession: { profileId: "p-ds" }, template: { workspaceId: ws.id, pack: "demo", template: "feat" } });
     expect(untitled.task.title).toBe("[功能] 新功能");
     const bad = (template: unknown, s: unknown = scope) => api("POST", "/api/tasks", { scope: s, firstSession: { profileId: "p-ds" }, template }).then((r) => r.status);
     expect(await bad({ workspaceId: ws.id, pack: "demo", template: "nope" })).toBe(400);
@@ -321,7 +403,7 @@ describe("Host API", () => {
     mkdirSync(dir, { recursive: true });
     writeFileSync(join(dir, "pack.json"), JSON.stringify({ schemaVersion: 1, name: "demo", title: "示例", presets: [{ id: "impl", title: "实现", profile: "p-ds", prompt: "实现「{{task.title}}」" }] }));
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path });
-    const { task } = await ok<{ task: Task }>("POST", "/api/tasks", { title: "冲刺", scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "p-ds" } });
+    const { task } = await ok<{ task: Task }>("POST", "/api/tasks", { title: "冲刺", workspaceId: ws.id, firstSession: { profileId: "p-ds" } });
     const sessionsBefore = (await ok<StateSnapshot>("GET", "/api/state")).sessions.length;
     const draft = await ok("POST", `/api/workspaces/${ws.id}/packs/demo/presets/impl/draft`, { taskId: task.id });
     expect(draft).toEqual({ presetId: "impl", title: "实现", workspaceId: ws.id, profileId: "p-ds", text: "实现「冲刺」", contextFiles: [], warnings: [] });
@@ -346,36 +428,38 @@ describe("Host API", () => {
     expect(await ok("GET", "/api/todos")).toEqual([]);
   });
 
-  it("drops todo and group hints when their workspace is removed", async () => {
+  it("drops todo, topic and group hints when their workspace is removed", async () => {
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "spare") });
     const todo = await ok<{ id: string }>("POST", "/api/todos", { text: "x", workspaceId: ws.id });
-    const canvas = await ok<CanvasDoc>("GET", "/api/canvas");
-    await ok("PUT", "/api/canvas", { ...canvas, groups: [{ id: "g1", title: "备用", workspaceId: ws.id, rect: { x: 0, y: 0, w: 300, h: 200 } }] });
+    const topic = await ok<Topic>("POST", "/api/topics", { title: "备用专题", workspaceIds: [ws.id] });
+    const canvas = await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+    await ok("PUT", `/api/topics/${topic.id}/canvas`, { ...canvas, groups: [{ id: "g1", title: "备用", workspaceId: ws.id, rect: { x: 0, y: 0, w: 300, h: 200 } }] });
     expect(await ok("DELETE", `/api/workspaces/${ws.id}`)).toEqual({ ok: true });
     expect((await ok<Array<{ id: string; workspaceId: string | null }>>("GET", "/api/todos")).find((t) => t.id === todo.id)?.workspaceId).toBeNull();
-    const after = await ok<CanvasDoc>("GET", "/api/canvas");
+    const after = await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
     expect(after.groups[0]?.workspaceId).toBeNull();
     expect(after.version).toBe(canvas.version + 2);
+    expect((await ok<StateSnapshot>("GET", "/api/state")).topics[0]?.workspaceIds).toEqual([]);
+    // The common space cannot be removed.
+    const { commonWorkspace } = await ok<StudioSettings>("GET", "/api/settings");
+    expect((await api("DELETE", `/api/workspaces/${commonWorkspace.id}`)).status).toBe(409);
   });
 
-  it("turns a todo into a task in the group bound to its workspace", async () => {
+  it("turns a todo into a task in its workspace, or in the common space", async () => {
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
-    const canvas = await ok<CanvasDoc>("GET", "/api/canvas");
-    await ok("PUT", "/api/canvas", { ...canvas, groups: [{ id: "g-alpha", title: "alpha 组", workspaceId: ws.id, rect: { x: 0, y: 0, w: 500, h: 320 } }] });
     const todo = await ok<{ id: string }>("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: ws.id });
     const converted = await ok<{ todo: { taskId: string; done: boolean }; task: Task; session: Session }>("POST", `/api/todos/${todo.id}/convert`, { profileId: "p-ds" });
-    expect(converted.task).toMatchObject({ title: "统一掉落表格式", scope: { kind: "workspace", workspaceId: ws.id } });
+    expect(converted.task).toMatchObject({ title: "统一掉落表格式", workspaceId: ws.id, topicId: null });
     expect(converted.todo).toMatchObject({ taskId: converted.task.id, done: true });
     // No first message, so the session has not started a turn (no model call).
     expect(converted.session.status).toBe("idle");
     expect((await ok<SessionItem[]>("GET", `/api/sessions/${converted.session.id}/items`)).filter((i) => i.type === "user")).toEqual([]);
-    expect((await ok<CanvasDoc>("GET", "/api/canvas")).nodes.find((n) => n.kind === "task" && n.taskId === converted.task.id)?.groupId).toBe("g-alpha");
     expect((await api("POST", `/api/todos/${todo.id}/convert`, { profileId: "p-ds" })).status).toBe(409);
-    // A todo without a workspace needs one; a profile is required.
+    // A profile is required; a todo without a workspace lands in the common space.
     const loose = await ok<{ id: string }>("POST", "/api/todos", { text: "随便看看" });
-    expect((await api("POST", `/api/todos/${loose.id}/convert`, { profileId: "p-ds" })).status).toBe(400);
     expect((await api("POST", `/api/todos/${loose.id}/convert`, { workspaceId: ws.id })).status).toBe(400);
-    expect((await ok<{ todo: { workspaceId: string } }>("POST", `/api/todos/${loose.id}/convert`, { workspaceId: ws.id, profileId: "p-ds" })).todo.workspaceId).toBe(ws.id);
+    const { commonWorkspace } = await ok<StudioSettings>("GET", "/api/settings");
+    expect((await ok<{ task: Task }>("POST", `/api/todos/${loose.id}/convert`, { profileId: "p-ds" })).task.workspaceId).toBe(commonWorkspace.id);
   });
 
   it("starts a proposal's work only when the person approves it", async () => {
@@ -406,12 +490,12 @@ describe("Host API", () => {
   });
 
   it("runs a scheduler round by hand in the fixed scheduler task", async () => {
-    expect((await api("POST", "/api/scheduler/run", { profileId: "p-ds" })).status).toBe(400);
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
     await ok("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: ws.id });
+    const { commonWorkspace } = await ok<StudioSettings>("GET", "/api/settings");
     const first = await ok<{ task: Task; session: Session }>("POST", "/api/scheduler/run", { profileId: "p-ds" });
-    expect(first.task).toMatchObject({ title: "调度", scope: { kind: "area" } });
-    expect(first.session.workspaceId).toBe(ws.id);
+    expect(first.task).toMatchObject({ title: "调度", workspaceId: commonWorkspace.id, topicId: null });
+    expect(first.session.workspaceId).toBe(commonWorkspace.id);
     await until(async () => (await ok<SessionItem[]>("GET", `/api/sessions/${first.session.id}/items`)).some((i) => i.type === "user"), "brief");
     const brief = (await ok<SessionItem[]>("GET", `/api/sessions/${first.session.id}/items`)).find((i) => i.type === "user") as { text: string };
     expect(brief.text).toContain("统一掉落表格式");
@@ -447,48 +531,54 @@ describe("Host API", () => {
     expect((await ok<{ presets: unknown[] }>("PUT", "/api/settings", { presets: [] })).presets).toEqual([]);
   });
 
-  it("keeps the common space as a registered workspace the scheduler runs in", async () => {
-    expect(await ok("GET", "/api/settings")).toEqual({ commonWorkspace: null, presets: [] });
+  it("keeps the common space next to the data and lets the person move it", async () => {
+    const initial = await ok<StudioSettings>("GET", "/api/settings");
+    expect(initial.commonWorkspace).toMatchObject({ path: join(root, "common"), name: "公共", builtin: "common" });
+    expect(initial.presets).toEqual([]);
     const dir = join(root, "common", "space");
-    const set = await ok<{ commonWorkspace: Workspace }>("PUT", "/api/settings", { commonDir: dir });
-    expect(set.commonWorkspace).toMatchObject({ path: dir, name: "公共空间" });
-    expect((await ok<StateSnapshot>("GET", "/api/state")).workspaces.map((w) => w.path)).toContain(dir);
-    // An already registered folder is reused; the scheduler's round runs in the common space.
-    expect((await ok<{ commonWorkspace: Workspace }>("PUT", "/api/settings", { commonDir: dir })).commonWorkspace.id).toBe(set.commonWorkspace.id);
-    await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
-    const round = await ok<{ session: Session }>("POST", "/api/scheduler/run", { profileId: "p-ds" });
-    expect(round.session.workspaceId).toBe(set.commonWorkspace.id);
-    // Clearing it, or removing that workspace, leaves no common space.
-    expect(await ok("PUT", "/api/settings", { commonDir: null })).toEqual({ commonWorkspace: null, presets: [] });
-    await ok("PUT", "/api/settings", { commonDir: dir });
+    const moved = await ok<StudioSettings>("PUT", "/api/settings", { commonDir: dir });
+    expect(moved.commonWorkspace).toMatchObject({ id: initial.commonWorkspace.id, path: dir });
+    // A registered project cannot become the common space; neither can a file or nothing.
+    const alpha = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    expect((await api("PUT", "/api/settings", { commonDir: alpha.path })).status).toBe(409);
+    expect((await api("PUT", "/api/settings", { commonDir: null })).status).toBe(400);
     writeFileSync(join(root, "a-file"), "x");
     expect((await api("PUT", "/api/settings", { commonDir: join(root, "a-file") })).status).toBe(400);
+    const round = await ok<{ session: Session }>("POST", "/api/scheduler/run", { profileId: "p-ds" });
+    expect(round.session.workspaceId).toBe(initial.commonWorkspace.id);
+    // It survives a restart.
+    await shutdown();
+    await boot();
+    expect((await ok<StudioSettings>("GET", "/api/settings")).commonWorkspace).toMatchObject({ id: initial.commonWorkspace.id, path: dir });
   });
 
-  it("saves the canvas with optimistic versions and serves its outline", async () => {
-    const { task } = await createTask("canvas");
-    const empty = await ok<CanvasDoc>("GET", "/api/canvas");
-    expect(empty).toMatchObject({ id: "main", version: 0, groups: [], nodes: [], edges: [] });
+  it("saves a topic's canvas with optimistic versions and serves its outline", async () => {
+    const { ws } = await createTask("canvas");
+    const topic = await ok<Topic>("POST", "/api/topics", { title: "导入" });
+    const task = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "画布上的任务", workspaceId: ws.id, topicId: topic.id })).task;
+    const empty = await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+    expect(empty).toMatchObject({ id: topic.id, version: 0, groups: [], nodes: [], edges: [] });
 
     const draft: CanvasDoc = {
       ...empty,
       groups: [{ id: "g1", title: "导入", workspaceId: null, rect: { x: 0, y: 0, w: 400, h: 300 } }],
       nodes: [{ id: "n1", kind: "task", taskId: task.id, groupId: "g1", pos: { x: 10, y: 10 } }],
     };
-    const saved = await ok<CanvasDoc>("PUT", "/api/canvas", draft);
+    const saved = await ok<CanvasDoc>("PUT", `/api/topics/${topic.id}/canvas`, draft);
     expect(saved.version).toBe(1);
-    expect((await api("PUT", "/api/canvas", draft)).status).toBe(409); // still based on version 0
-    const bad = await api<{ error: { message: string } }>("PUT", "/api/canvas", { ...saved, nodes: [{ id: "n9", kind: "task", taskId: "missing", groupId: null, pos: { x: 0, y: 0 } }] });
+    expect((await api("PUT", `/api/topics/${topic.id}/canvas`, draft)).status).toBe(409); // still based on version 0
+    const bad = await api<{ error: { message: string } }>("PUT", `/api/topics/${topic.id}/canvas`, { ...saved, nodes: [{ id: "n9", kind: "task", taskId: "missing", groupId: null, pos: { x: 0, y: 0 } }] });
     expect(bad.status).toBe(400);
     expect(bad.data.error.message).toMatch(/missing task/);
+    expect((await api("GET", "/api/topics/nope/canvas")).status).toBe(404);
 
-    const { outline, json } = await ok<{ outline: string; json: { groups: Array<{ tasks: Array<{ id: string }> }> } }>("GET", "/api/canvas/outline");
+    const { outline, json } = await ok<{ outline: string; json: { groups: Array<{ tasks: Array<{ id: string }> }> } }>("GET", `/api/topics/${topic.id}/canvas/outline`);
     expect(json.groups[0]!.tasks.map((t) => t.id)).toEqual([task.id]);
     expect(outline).toContain("分组「导入」");
 
     await shutdown();
     await boot();
-    expect((await ok<CanvasDoc>("GET", "/api/canvas")).version).toBe(1);
+    expect((await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).version).toBe(1);
   });
 
   it("reads and writes the global scratchpad, announcing changes", async () => {

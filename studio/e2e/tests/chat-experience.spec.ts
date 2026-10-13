@@ -34,7 +34,7 @@ test("a working turn folds into one line and opens into thinking, commands and d
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
   await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "导入重试",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock", text: "[[demo]] 给导入器加上重试" },
   });
   await page.getByTestId("task-card").first().click();
@@ -110,7 +110,7 @@ test("Claude thinking shows as its own row", async () => {
   studio = await launchStudio({ transcriptView: "standard" });
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  await studio.api("POST", "/api/tasks", { title: "思考", scope: { kind: "workspace", workspaceId: ws.id }, firstSession: { profileId: "claude-mock", text: "[[think]] hi" } });
+  await studio.api("POST", "/api/tasks", { title: "思考", workspaceId: ws.id, firstSession: { profileId: "claude-mock", text: "[[think]] hi" } });
   await page.getByTestId("task-card").first().click();
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: [[think]] hi", { timeout: 60_000 });
   // The finished turn is folded; its work holds the thought.

@@ -17,7 +17,7 @@ test("a Codex session hands work to a Claude session through AMO mail", async ()
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const scope = { kind: "workspace", workspaceId: ws.id };
+  const scope = { workspaceId: ws.id };
   const summary = "交接：重试已加在 importer.ts，测试还没写，入口 tests/import";
 
   // A finishes its part: a handoff summary on its own task.
@@ -29,7 +29,7 @@ test("a Codex session hands work to a Claude session through AMO mail", async ()
   await expect.poll(async () => (await studio!.api<TaskNote[]>("GET", `/api/tasks/${a.task.id}/notes`)).map((n) => n.kind), { timeout: 60_000 }).toEqual(["handoff"]);
 
   // B exists; A leaves it a message pointing at the handoff.
-  const b = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "补测试", scope, firstSession: { profileId: "claude-mock", text: "待命" } });
+  const b = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "补测试", ...scope, firstSession: { profileId: "claude-mock", text: "待命" } });
   await studio.api("POST", `/api/sessions/${a.session.id}/messages`, {
     text: `[[mcp: mailbox_send {"toSessionId":"${b.session.id}","text":"请接手补测试，交接摘要在任务 ${a.task.id}"}]]`,
   });

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { TASK_COLUMNS, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Workspace } from "@amo-studio/protocol";
+import { TASK_COLUMNS, taskWhere, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../host/useAnnotations.js";
@@ -27,6 +27,7 @@ interface TaskPageProps {
   /** All tasks (mail shows which task it came from). */
   tasks?: readonly Task[];
   workspaces: readonly Workspace[];
+  topics?: readonly Topic[];
   profiles: readonly ModelProfile[];
   /** This task's checklist (from a pack template). */
   checklist?: readonly ChecklistItem[];
@@ -44,7 +45,7 @@ const WRITER = {
 } as const;
 
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
-export function TaskPage({ link, task, sessions, tasks = [task], workspaces, profiles, checklist = [], initialSessionId, onBack }: TaskPageProps) {
+export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
   const [toast, setToast] = useState<Toast>(null);
@@ -63,9 +64,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   const { items } = useSessionItems(link, session?.id ?? null);
   const annotations = useAnnotations(link, session?.id ?? null);
   const profile = (id: string) => profiles.find((p) => p.id === id);
-  const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? "";
-  const isArea = task.scope.kind === "area";
-  const scopeLabel = task.scope.kind === "area" ? "跨工作区" : wsName(task.scope.workspaceId);
+  const scopeLabel = taskWhere(task, workspaces);
+  const liveTopics = topics.filter((t) => !t.archivedAt || t.id === task.topicId);
 
   async function run<T>(fn: () => Promise<T>, onDone?: (value: T) => void) {
     setBusy(true);
@@ -80,7 +80,14 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   }
 
   const setColumn = (column: TaskColumn) => run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { column }));
-  const newSession = (input: { profileId: string; workspaceId?: string; options?: SessionOptions }) =>
+  /** 转移: into another topic, or out of its topic (null). */
+  const setTopic = (topicId: string | null) =>
+    run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { topicId }), () => setToast({ text: topicId ? "已转到这个专题。" : "已移出专题。" }));
+  const archiveTask = () =>
+    run(() => call(link, task.archivedAt ? "POST /api/tasks/:id/unarchive" : "POST /api/tasks/:id/archive", { id: task.id }), (t) =>
+      setToast({ text: t.archivedAt ? "任务和它的会话都已归档。" : "任务已恢复。" }),
+    );
+  const newSession = (input: { profileId: string; options?: SessionOptions }) =>
     run(() => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input), (s) => setSelected(s.id));
   const openPreset = (key: string) => {
     const [workspaceId, pack, preset] = key.split("/") as [string, string, string];
@@ -88,7 +95,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   };
   const startPreset = (d: PresetDraft, input: { profileId: string; text: string }) =>
     run(
-      () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, { profileId: input.profileId, text: input.text, ...(task.scope.kind === "area" ? { workspaceId: d.workspaceId } : {}) }),
+      () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, { profileId: input.profileId, text: input.text }),
       (s) => {
         setDraft(null);
         setSelected(s.id);
@@ -114,9 +121,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   const decisions = useOpenDecisions(link);
   const notes = useTaskNotes(link, task.id);
   const [draft, setDraft] = useState<PresetDraft | null>(null);
-  // The workspaces whose extension packs apply: the task's own, or for a cross-workspace task those of its sessions.
-  const taskWorkspaceIds = task.scope.kind === "workspace" ? [task.scope.workspaceId] : [...new Set(sessions.filter((s) => s.taskId === task.id).map((s) => s.workspaceId))].sort();
-  const { packs } = usePacks(link, taskWorkspaceIds);
+  // The extension packs of the task's own project.
+  const { packs } = usePacks(link, [task.workspaceId]);
   const presetChoices = packs.flatMap((p) =>
     p.manifest ? p.manifest.presets.map((pr) => ({ key: `${p.workspaceId}/${p.dirName}/${pr.id}`, label: `${p.manifest!.title} · ${pr.title}` })) : [],
   );
@@ -175,7 +181,28 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
           {task.title || "未命名任务"}
         </h1>
         <span className="page-crumb">{scopeLabel}</span>
+        {task.archivedAt && <span className="page-crumb">已归档</span>}
         <span className="spacer" />
+        <label className="inline-field">
+          专题
+          <select
+            value={task.topicId ?? ""}
+            onChange={(e) => void setTopic(e.target.value || null)}
+            disabled={!!task.archivedAt || busy}
+            data-testid="task-topic"
+            title="转移：放进另一个专题，或移出专题"
+          >
+            <option value="">不在专题里</option>
+            {liveTopics.map((t) => (
+              <option key={t.id} value={t.id}>
+                {t.title}
+              </option>
+            ))}
+          </select>
+        </label>
+        <button type="button" className="btn-ghost small" onClick={() => void archiveTask()} disabled={busy} data-testid="task-archive">
+          {task.archivedAt ? "恢复任务" : "归档任务"}
+        </button>
         <label className="inline-field">
           任务状态
           <select value={task.column} onChange={(e) => void setColumn(e.target.value as TaskColumn)} data-testid="task-column">
@@ -220,7 +247,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
               key={`${draft.workspaceId}/${draft.presetId}`}
               draft={draft}
               profiles={profiles}
-              {...(isArea ? { workspaceName: wsName(draft.workspaceId) } : {})}
               busy={busy}
               onStart={(input) => void startPreset(draft, input)}
               onCancel={() => setDraft(null)}
@@ -231,7 +257,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
               <span className="thread-title">{session.title || "新会话"}</span>
               <span className="page-crumb">
                 {shortModel(profile(session.profileId))}
-                {isArea ? ` · ${wsName(session.workspaceId)}` : ""}
               </span>
               <span className="spacer" />
               {writer && (

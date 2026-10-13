@@ -89,7 +89,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   // ---- operations -------------------------------------------------------------------------------------------------
 
   /** Creates a main session in a task and starts its Codex thread; sends `text` as the first turn when given. */
-  async startSession(input: { taskId: Id; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
+  async startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
     const profile = this.profile(input.profileId);
     const handle = await this.handleFor(profile.id);
     const token = this.options.identities?.issue();
@@ -102,6 +102,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     } as never);
     const session = this.findByThread(started.thread.id) ?? this.createSession({
       taskId: input.taskId,
+      topicId: input.topicId,
       parentId: null,
       kind: "main",
       profileId: profile.id,
@@ -422,6 +423,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     if (existing) return existing;
     const session = this.createSession({
       taskId: parent.taskId,
+      topicId: parent.topicId,
       parentId: parent.id,
       kind,
       profileId,
@@ -680,7 +682,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     return st;
   }
 
-  private createSession(input: { taskId: Id; parentId: Id | null; kind: Session["kind"]; profileId: Id; workspaceId: Id; title: string; runtimeRef: string; options?: SessionOptions }): Session {
+  private createSession(input: { taskId: Id | null; topicId: Id | null; parentId: Id | null; kind: Session["kind"]; profileId: Id; workspaceId: Id; title: string; runtimeRef: string; options?: SessionOptions }): Session {
     const s = this.store.createSession({ ...input, runtime: "codex", status: "idle", writer: "workbench" });
     this.publish({ type: "session.upserted", session: s });
     return s;

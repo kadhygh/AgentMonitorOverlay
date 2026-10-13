@@ -1,22 +1,25 @@
 import { useState } from "react";
-import type { Task, Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import type { Scope } from "./Board.js";
 
 interface ScopeNavProps {
   link: HostLink;
   workspaces: readonly Workspace[];
+  topics: readonly Topic[];
   tasks: readonly Task[];
   scope: Scope;
   live: boolean;
   onScope(scope: Scope): void;
 }
 
-const isCurrent = (a: Scope, b: Scope) => a.kind === b.kind && (a.kind !== "workspace" || (b.kind === "workspace" && a.id === b.id));
+const isCurrent = (a: Scope, b: Scope) => a.kind === b.kind && (a.kind === "all" || (b.kind !== "all" && a.id === b.id));
 
-/** Left column: scope (all, cross-workspace, each workspace) and registering a workspace. */
-export function ScopeNav({ link, workspaces, tasks, scope, live, onScope }: ScopeNavProps) {
+/** Left column: all tasks, each topic (and making one), each project (and registering one). The common space is not listed. */
+export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope }: ScopeNavProps) {
   const [adding, setAdding] = useState(false);
+  const [newTopic, setNewTopic] = useState<string | null>(null);
+  const live_ = tasks.filter((t) => !t.archivedAt);
   const [path, setPath] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
@@ -52,18 +55,51 @@ export function ScopeNav({ link, workspaces, tasks, scope, live, onScope }: Scop
   return (
     <nav className="scope-nav" aria-label="范围">
       <div className="nav-label">范围</div>
-      {row({ kind: "all" }, "全部", tasks.length, "scope-all")}
-      {row({ kind: "area" }, "跨工作区", tasks.filter((t) => t.scope.kind === "area").length, "scope-area")}
-      <div className="nav-label nav-section">工作区</div>
-      {workspaces.map((w) => (
+      {row({ kind: "all" }, "全部任务", live_.length, "scope-all")}
+      <div className="nav-label nav-section">专题</div>
+      {topics
+        .filter((t) => !t.archivedAt)
+        .map((t) => (
+          <div key={t.id}>{row({ kind: "topic", id: t.id }, t.title, live_.filter((x) => x.topicId === t.id).length, `scope-topic-${t.title}`)}</div>
+        ))}
+      {newTopic === null ? (
+        <button type="button" className="add-ws-toggle" onClick={() => setNewTopic("")} data-testid="new-topic">
+          + 新专题
+        </button>
+      ) : (
+        <form
+          className="add-ws"
+          onSubmit={(e) => {
+            e.preventDefault();
+            const title = newTopic.trim();
+            if (!title) return;
+            void call(link, "POST /api/topics", {}, { title }).then((topic) => {
+              setNewTopic(null);
+              onScope({ kind: "topic", id: topic.id });
+            });
+          }}
+        >
+          <input className="field" autoFocus value={newTopic} onChange={(e) => setNewTopic(e.target.value)} placeholder="专题名称" aria-label="专题名称" />
+          <div className="add-ws-actions">
+            <button type="submit" className="btn-primary" disabled={!newTopic.trim()}>
+              建立
+            </button>
+            <button type="button" className="btn-ghost" onClick={() => setNewTopic(null)}>
+              取消
+            </button>
+          </div>
+        </form>
+      )}
+      <div className="nav-label nav-section">项目</div>
+      {projectWorkspaces(workspaces).map((w) => (
         <div key={w.id} title={w.path}>
-          {row({ kind: "workspace", id: w.id }, w.name, tasks.filter((t) => t.scope.kind === "workspace" && t.scope.workspaceId === w.id).length, `scope-ws-${w.name}`)}
+          {row({ kind: "workspace", id: w.id }, w.name, live_.filter((t) => t.workspaceId === w.id).length, `scope-ws-${w.name}`)}
         </div>
       ))}
       <div className="add-ws">
         {!adding ? (
           <button type="button" className="add-ws-toggle" onClick={() => setAdding(true)}>
-            + 登记工作区
+            + 添加项目
           </button>
         ) : (
           <form
@@ -80,7 +116,7 @@ export function ScopeNav({ link, workspaces, tasks, scope, live, onScope }: Scop
             )}
             <label style={{ display: "flex", flexDirection: "column", gap: 4, fontSize: 12, color: "var(--text-dim)" }}>
               或输入路径
-              <input className="field" value={path} onChange={(e) => setPath(e.target.value)} placeholder="D:\\Projects\\MyGame" aria-label="工作区路径" />
+              <input className="field" value={path} onChange={(e) => setPath(e.target.value)} placeholder="D:\\Projects\\MyGame" aria-label="项目路径" />
             </label>
             {error && <span className="form-error" role="alert">{error}</span>}
             <div className="add-ws-actions">

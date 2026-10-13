@@ -10,7 +10,7 @@ import { NotFoundError, ReadModel } from "./read-model.js";
 
 export const AMO_MCP_NAME = "amo";
 export const AMO_MCP_INSTRUCTIONS =
-  "AMO Studio workbench. Read the board, tasks, session trees, workspaces and the canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions (the person decides when mail enters a conversation); ask the person for a decision (the answer comes back as mail); arrange the canvas (groups, dependencies, which group a task is in) with the person's approval; read the project's extension packs (conventions, templates) and tick your own task's checklist.";
+  "AMO Studio workbench. Work is organised as projects (workspaces), tasks (each in one project, optionally in one topic) and topics (专题: several tasks, possibly across projects, on one canvas, with their own coordinating sessions). Read the board, tasks, topics, session trees, projects and a topic's canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions, tasks and topics (the person decides when mail enters a conversation); ask the person for a decision (the answer comes back as mail); arrange your topic's canvas (groups, dependencies, which group a task is in) with the person's approval; read the project's extension packs (conventions, templates) and tick your own task's checklist.";
 
 /** The session a tool call comes from, if Studio could tell. */
 export interface McpCaller {
@@ -67,7 +67,7 @@ function write(caller: McpCaller | null, run: (caller: McpCaller) => unknown): T
 export function amoToolsFor(service: HostService, caller: McpCaller | null): AmoTool[] {
   // schedule_propose exists only for the scheduler's own sessions.
   const scheduler = caller && service.isSchedulerSession(caller.sessionId) ? [proposeTool(service, caller)] : [];
-  return [...amoTools(new ReadModel(service)), ...writeTools(service, caller), ...scheduler];
+  return [...amoTools(new ReadModel(service, caller)), ...writeTools(service, caller), ...scheduler];
 }
 
 function proposeTool(service: HostService, caller: McpCaller): AmoTool {
@@ -89,7 +89,23 @@ function proposeTool(service: HostService, caller: McpCaller): AmoTool {
 
 
 function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
-  const ownTask = (c: McpCaller) => service.store.getSession(c.sessionId)!.taskId;
+  const ownTask = (c: McpCaller): Id => {
+    const taskId = service.store.getSession(c.sessionId)!.taskId;
+    if (!taskId) throw new HostError("bad_request", "你是专题会话，没有自己的任务：用 mailbox_send 给任务或它们的会话留言。");
+    return taskId;
+  };
+  /** The topic whose canvas the caller may arrange: its own topic, or its task's. */
+  const ownTopic = (c: McpCaller): Id => {
+    const topic = service.topicOfSession(c.sessionId);
+    if (!topic) throw new HostError("bad_request", "你的任务不在任何专题里，没有画布可以整理。");
+    return topic.id;
+  };
+  const inOwnTopic = (c: McpCaller, ...taskIds: unknown[]) => {
+    const topicId = ownTopic(c);
+    for (const id of taskIds) {
+      if (service.store.getTask(String(id))?.topicId !== topicId) throw new HostError("bad_request", `任务 ${String(id)} 不在你所在的专题里`);
+    }
+  };
   return [
     {
       name: "task_note_add",
@@ -113,14 +129,21 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       name: "mailbox_send",
       title: "留言",
       description:
-        "Leave a message for another AMO session (toSessionId) or for a task (toTaskId); find ids with board_list, task_get or session_tree. It does not enter their conversation by itself: the person decides when to forward it, and the recipient can read it with mailbox_read.",
-      inputSchema: { toSessionId: z.string().optional(), toTaskId: z.string().optional(), text: z.string() },
+        "Leave a message for another AMO session (toSessionId), a task (toTaskId) or a topic (toTopicId); find ids with board_list, task_get, topic_get or session_tree. It does not enter their conversation by itself: the person decides when to forward it, and the recipient can read it with mailbox_read.",
+      inputSchema: { toSessionId: z.string().optional(), toTaskId: z.string().optional(), toTopicId: z.string().optional(), text: z.string() },
       readOnly: false,
       autoApprove: true,
       run: (args) =>
         write(caller, (c) => {
-          const to = typeof args.toSessionId === "string" ? { kind: "session", sessionId: args.toSessionId } : typeof args.toTaskId === "string" ? { kind: "task", taskId: args.toTaskId } : null;
-          if (!to) throw new HostError("bad_request", "give toSessionId or toTaskId");
+          const to =
+            typeof args.toSessionId === "string"
+              ? { kind: "session", sessionId: args.toSessionId }
+              : typeof args.toTaskId === "string"
+                ? { kind: "task", taskId: args.toTaskId }
+                : typeof args.toTopicId === "string"
+                  ? { kind: "topic", topicId: args.toTopicId }
+                  : null;
+          if (!to) throw new HostError("bad_request", "give toSessionId, toTaskId or toTopicId");
           const m = service.sendMail(c.sessionId, to, args.text);
           return { id: m.id, to: m.to, state: m.state };
         }),
@@ -128,29 +151,29 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
     {
       name: "canvas_group_create",
       title: "画布建组",
-      description: "Create a group on the AMO canvas (optionally bound to a workspace, by id or name). Studio places it; the person approves first.",
+      description: "Create a group on your topic's canvas (optionally bound to a project, by id or name). Studio places it; the person approves first.",
       inputSchema: { title: z.string(), workspace: z.string().optional() },
       readOnly: false,
       autoApprove: false,
-      run: (args) => write(caller, () => service.canvasCreateGroup(args)),
+      run: (args) => write(caller, (c) => service.canvasCreateGroup(ownTopic(c), args)),
     },
     {
       name: "canvas_depend",
       title: "画布连依赖",
-      description: "Record on the AMO canvas that toTaskId depends on fromTaskId (fromTaskId must finish first). Refused if it would make a cycle. The person approves first.",
+      description: "Record on your topic's canvas that toTaskId depends on fromTaskId (fromTaskId must finish first); both must be tasks of your topic. Refused if it would make a cycle. The person approves first.",
       inputSchema: { fromTaskId: z.string(), toTaskId: z.string() },
       readOnly: false,
       autoApprove: false,
-      run: (args) => write(caller, () => service.canvasAddDependency(args.fromTaskId, args.toTaskId)),
+      run: (args) => write(caller, (c) => (inOwnTopic(c, args.fromTaskId, args.toTaskId), service.canvasAddDependency(args.fromTaskId, args.toTaskId))),
     },
     {
       name: "canvas_place",
       title: "画布归组",
-      description: "Put a task's card into a canvas group (groupId), or take it out of its group (omit groupId). Studio picks the position; the person approves first.",
+      description: "Put a task of your topic into a group on its canvas (groupId), or take it out of its group (omit groupId). Studio picks the position; the person approves first.",
       inputSchema: { taskId: z.string(), groupId: z.string().optional() },
       readOnly: false,
       autoApprove: false,
-      run: (args) => write(caller, () => service.canvasPlaceTask(args.taskId, args.groupId ?? null)),
+      run: (args) => write(caller, (c) => (inOwnTopic(c, args.taskId), service.canvasPlaceTask(args.taskId, args.groupId ?? null))),
     },
     {
       name: "checklist_check",
@@ -182,7 +205,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
     {
       name: "mailbox_read",
       title: "读留言",
-      description: "Read the unread messages left for you or for your task (they are then marked read).",
+      description: "Read the unread messages left for you or for your task or topic (they are then marked read).",
       inputSchema: {},
       readOnly: false,
       autoApprove: true,
@@ -193,7 +216,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
             // The text first: it is what the agent needs, the routing is context.
             messages: service.readMailFromSession(c.sessionId).map((m) => ({
               text: m.text,
-              from: m.fromSessionId ? { sessionId: m.fromSessionId, title: title(m.fromSessionId), taskId: m.fromTaskId } : "person",
+              from: m.fromSessionId ? { sessionId: m.fromSessionId, title: title(m.fromSessionId), taskId: m.fromTaskId, topicId: m.fromTopicId ?? null } : "person",
               to: m.to,
               at: m.createdAt,
             })),
@@ -208,16 +231,34 @@ export function amoTools(model: ReadModel): AmoTool[] {
     {
       name: "board_list",
       title: "看板",
-      description: "Tasks on the AMO board (most recently active first) with their column, status and workspace. Filter by workspace (id or name) or column.",
-      inputSchema: { workspace: z.string().optional(), column: z.enum(["todo", "doing", "review", "done"]).optional() },
+      description: "Tasks on the AMO board (most recently active first, archived ones left out) with their column, status, project and topic. Filter by project (id or name), topic (id or title) or column.",
+      inputSchema: { workspace: z.string().optional(), topic: z.string().optional(), column: z.enum(["todo", "doing", "review", "done"]).optional() },
       readOnly: true,
       autoApprove: true,
-      run: (args) => answer(() => model.boardList(args as { workspace?: string; column?: "todo" | "doing" | "review" | "done" })),
+      run: (args) => answer(() => model.boardList(args as { workspace?: string; topic?: string; column?: "todo" | "doing" | "review" | "done" })),
+    },
+    {
+      name: "topic_list",
+      title: "专题",
+      description: "Topics (专题): each groups tasks, possibly across projects, on its own canvas and has its own coordinating sessions. Archived topics are left out.",
+      inputSchema: {},
+      readOnly: true,
+      autoApprove: true,
+      run: () => answer(() => model.topicList()),
+    },
+    {
+      name: "topic_get",
+      title: "专题详情",
+      description: "One topic (id or title; your own topic when omitted): its projects, its tasks with status, its own sessions with an excerpt of their latest reply, and its canvas as an outline.",
+      inputSchema: { topic: z.string().optional() },
+      readOnly: true,
+      autoApprove: true,
+      run: (args) => answer(() => model.topicGet(args.topic === undefined ? undefined : String(args.topic))),
     },
     {
       name: "task_get",
       title: "任务详情",
-      description: "One task: its latest handoff summary, column, status, workspace, the tasks it depends on and that depend on it, its canvas group, recent progress notes and its sessions (no transcripts).",
+      description: "One task: its latest handoff summary, column, status, project, topic, the tasks it depends on and that depend on it, its canvas group, recent progress notes and its sessions (no transcripts).",
       inputSchema: { taskId: z.string() },
       readOnly: true,
       autoApprove: true,
@@ -235,7 +276,7 @@ export function amoTools(model: ReadModel): AmoTool[] {
     {
       name: "project_context",
       title: "项目信息",
-      description: "Registered workspaces (name, path, open tasks). With a workspace (id or name), that workspace and its open tasks.",
+      description: "Registered projects (name, path, open tasks) and the common folder where work without a project runs. With a project (id or name), that project and its open tasks.",
       inputSchema: { workspace: z.string().optional() },
       readOnly: true,
       autoApprove: true,
@@ -263,13 +304,18 @@ export function amoTools(model: ReadModel): AmoTool[] {
     {
       name: "canvas_read",
       title: "画布",
-      description: "The canvas as structure, without coordinates: groups with their tasks and notes, ungrouped items, tasks not placed yet, and dependencies. Returns a readable outline and the same data as JSON.",
-      inputSchema: {},
+      description: "A topic's canvas as structure, without coordinates (your own topic's when no topic id or title is given): groups with their tasks and notes, ungrouped items, tasks not placed yet, and dependencies. Returns a readable outline and the same data as JSON.",
+      inputSchema: { topic: z.string().optional() },
       readOnly: true,
       autoApprove: true,
-      run: () => {
-        const { outline, json: data } = model.canvasRead();
-        return { content: [{ type: "text", text: outline }, { type: "text", text: JSON.stringify(data, null, 2) }] };
+      run: (args) => {
+        try {
+          const { outline, json: data } = model.canvasRead(args.topic === undefined ? undefined : String(args.topic));
+          return { content: [{ type: "text", text: outline }, { type: "text", text: JSON.stringify(data, null, 2) }] };
+        } catch (err) {
+          if (err instanceof NotFoundError || err instanceof HostError) return fail(err.message);
+          throw err;
+        }
       },
     },
   ];

@@ -66,7 +66,7 @@ beforeAll(async () => {
   launcher = new RecordingTerminalLauncher();
   service = new HostService(store, new RuntimeRouter(store, PROFILES, { claude }), PROFILES, { launcher });
   workspace = store.addWorkspace({ path: join(root, "workspace"), name: "ws" });
-  task = store.createTask({ title: "handoff", scope: { kind: "workspace", workspaceId: workspace.id } });
+  task = store.createTask({ title: "handoff", workspaceId: workspace.id });
 });
 
 afterAll(async () => {
@@ -78,7 +78,7 @@ afterAll(async () => {
 
 describe("Claude terminal handoff", () => {
   it("hands over, stays read-only, and takes back what the terminal added when it closes", async () => {
-    const s = await claude.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "hello" });
+    const s = await claude.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "hello" });
     await until(() => agentTexts(s.id).includes("MOCK: hello") && session(s.id).status === "idle", "first reply");
 
     const attach = await service.terminal(s.id, true);
@@ -107,7 +107,7 @@ describe("Claude terminal handoff", () => {
   }, 180_000);
 
   it("closes the terminal when the person takes the session back at once", async () => {
-    const s = await claude.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "one" });
+    const s = await claude.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "one" });
     await until(() => session(s.id).status === "idle" && agentTexts(s.id).length === 1, "reply");
     await service.terminal(s.id, true);
     const handle = launcher.handles.at(-1)!;
@@ -118,7 +118,7 @@ describe("Claude terminal handoff", () => {
   }, 120_000);
 
   it("refuses while a reply is being generated", async () => {
-    const s = await claude.startSession({ taskId: task.id, profileId: "claude-mock", workspace, text: "[[slow]]" });
+    const s = await claude.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]]" });
     await until(() => session(s.id).status === "running", "slow reply");
     await expect(service.terminal(s.id, true)).rejects.toMatchObject({ code: "conflict" });
     expect(session(s.id).writer).toBe("workbench");

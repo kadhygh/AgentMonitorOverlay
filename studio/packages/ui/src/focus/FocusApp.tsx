@@ -101,7 +101,7 @@ export function FocusApp() {
                     decision={d}
                     sessionTitle={`${title(s)} · ${s.title || "会话"}`}
                     className="focus-detail focus-decision"
-                    onWriteElsewhere={() => void window.amo?.openInWorkbench?.({ taskId: d.taskId, sessionId: d.sessionId })}
+                    onWriteElsewhere={() => void window.amo?.openInWorkbench?.({ ...(d.taskId ? { taskId: d.taskId } : {}), sessionId: d.sessionId })}
                   />
                 </div>
               );
@@ -177,7 +177,11 @@ function FocusDetail({ link, session }: { link: HostLink; session: Session }) {
             批准
           </button>
         )}
-        <button type="button" className="focus-btn" onClick={() => void window.amo?.openInWorkbench?.({ taskId: session.taskId, sessionId: session.id })}>
+        <button
+          type="button"
+          className="focus-btn"
+          onClick={() => void window.amo?.openInWorkbench?.({ ...(session.taskId ? { taskId: session.taskId } : {}), sessionId: session.id })}
+        >
           在工作台打开
         </button>
       </div>

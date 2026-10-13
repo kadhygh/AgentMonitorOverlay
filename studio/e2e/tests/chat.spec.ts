@@ -15,7 +15,7 @@ async function openTask(s: Studio, text: string) {
   const ws = await s.api<Workspace>("POST", "/api/workspaces", { path: s.workspace("alpha") });
   const created = await s.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "对话面板",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock", text },
   });
   await s.page.getByTestId("task-card").first().click();

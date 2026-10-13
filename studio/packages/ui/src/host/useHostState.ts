@@ -28,6 +28,8 @@ export function applyEvent(state: StateSnapshot, e: HostEvent): StateSnapshot {
       return { ...next, workspaces: state.workspaces.filter((w) => w.id !== e.workspaceId) };
     case "task.upserted":
       return { ...next, tasks: upsert(state.tasks, e.task) };
+    case "topic.upserted":
+      return { ...next, topics: upsert(state.topics, e.topic) };
     case "session.upserted":
       return { ...next, sessions: upsert(state.sessions, e.session) };
     default:

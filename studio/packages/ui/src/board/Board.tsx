@@ -1,18 +1,21 @@
-import { TASK_COLUMNS, taskWhere, type Session, type Task, type Workspace } from "@amo-studio/protocol";
+import { TASK_COLUMNS, taskProject, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 
-export type Scope = { kind: "all" } | { kind: "area" } | { kind: "workspace"; id: string };
+/** What the board shows: everything, one topic's tasks, or one project's. Archived tasks are never on the board. */
+export type Scope = { kind: "all" } | { kind: "topic"; id: string } | { kind: "workspace"; id: string };
 
 export function inScope(task: Task, scope: Scope): boolean {
+  if (task.archivedAt) return false;
   if (scope.kind === "all") return true;
-  if (scope.kind === "area") return task.scope.kind === "area";
-  return task.scope.kind === "workspace" && task.scope.workspaceId === scope.id;
+  if (scope.kind === "topic") return task.topicId === scope.id;
+  return task.workspaceId === scope.id;
 }
 
 interface BoardProps {
   tasks: readonly Task[];
   sessions: readonly Session[];
   workspaces: readonly Workspace[];
+  topics: readonly Topic[];
   scope: Scope;
   onOpen(task: Task): void;
   /** Unread mail and open decisions per task id. */
@@ -23,7 +26,7 @@ interface BoardProps {
 }
 
 /** Four columns; the person moves cards, agents never do. Cards are entry points and carry no buttons. */
-export function Board({ tasks, sessions, workspaces, scope, onOpen, mail, decisions, checklist }: BoardProps) {
+export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, mail, decisions, checklist }: BoardProps) {
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 
   return (
@@ -43,6 +46,7 @@ export function Board({ tasks, sessions, workspaces, scope, onOpen, mail, decisi
                 sessions={taskSessions(task, sessions)}
                 scope={scope}
                 workspaces={workspaces}
+                topics={topics}
                 onOpen={onOpen}
                 mail={mail?.get(task.id) ?? 0}
                 decisions={decisions?.get(task.id) ?? 0}
@@ -62,6 +66,7 @@ function TaskCard({
   sessions,
   scope,
   workspaces,
+  topics,
   onOpen,
   mail = 0,
   decisions = 0,
@@ -71,6 +76,7 @@ function TaskCard({
   sessions: Session[];
   scope: Scope;
   workspaces: readonly Workspace[];
+  topics: readonly Topic[];
   onOpen(t: Task): void;
   mail?: number;
   decisions?: number;
@@ -82,9 +88,10 @@ function TaskCard({
   const mains = live.filter((s) => s.kind === "main");
   const branches = live.length - mains.length;
 
-  let where = "";
-  if (task.scope.kind === "area" || scope.kind === "all") where = taskWhere(task, sessions, workspaces);
-  const meta = [where, mains.length ? `${mains.length} 个会话` : "还没有会话", branches ? `${branches} 个分支` : "", checklist ? `清单 ${checklist.done}/${checklist.total}` : ""]
+  // The card names what the current scope does not already say; a task without a project shows none.
+  const project = scope.kind === "workspace" ? null : taskProject(task, workspaces)?.name;
+  const topic = scope.kind === "topic" || !task.topicId ? null : topics.find((t) => t.id === task.topicId)?.title;
+  const meta = [project ?? "", topic ? `专题 ${topic}` : "", mains.length ? `${mains.length} 个会话` : "还没有会话", branches ? `${branches} 个分支` : "", checklist ? `清单 ${checklist.done}/${checklist.total}` : ""]
     .filter(Boolean)
     .join(" · ");
   // Collaboration hints are counts in the meta line, not a second status: the dot keeps one status per card.

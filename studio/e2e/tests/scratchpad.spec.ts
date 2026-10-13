@@ -22,7 +22,7 @@ test("the global scratchpad saves while typing and survives an app restart", asy
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "草稿",
-    scope: { kind: "workspace", workspaceId: ws.id },
+    workspaceId: ws.id,
     firstSession: { profileId: "codex-mock" },
   });
   await studio.page.getByTestId("task-card").first().click();
