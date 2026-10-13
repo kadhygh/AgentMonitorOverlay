@@ -1,0 +1,678 @@
+<title>AMO Studio 新建任务与切换</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&family=Noto+Serif+SC:wght@500;600;700&display=swap">
+<style>
+/* Layout: preview toolbar, then the app at 1:1 (1400×860) in direction A (纸感编辑部). Every control on the page works. */
+:root {
+  --pv-bg: #e9e8e4; --pv-fg: #22201c; --pv-dim: #66615a; --pv-line: #cfcabf; --pv-card: #f7f6f2; --pv-on: #22201c; --pv-on-fg: #fbfaf7;
+  color-scheme: light;
+}
+html, body { background: var(--pv-bg); color: var(--pv-fg); }
+body { font-family: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif; font-size: 14px; padding: 16px; padding-block: 16px 40px; }
+.pv-top { display: flex; flex-direction: column; gap: 12px; max-width: 1400px; margin: 0 auto 14px; }
+.pv-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px 16px; }
+.pv-head h1 { font-size: 20px; margin: 0; font-weight: 700; }
+.pv-head p { margin: 0; color: var(--pv-dim); font-size: 13px; }
+.pv-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.pv-tab { font: inherit; font-size: 13px; border: 1px solid var(--pv-line); background: var(--pv-card); color: var(--pv-fg); border-radius: 6px; padding: 6px 12px; cursor: pointer; }
+.pv-tab[aria-pressed="true"] { background: var(--pv-on); color: var(--pv-on-fg); border-color: var(--pv-on); }
+.pv-tab:focus-visible { outline: 2px solid #23436f; outline-offset: 2px; }
+.pv-note { background: var(--pv-card); border: 1px solid var(--pv-line); border-radius: 8px; padding: 10px 14px; font-size: 13px; line-height: 1.7; color: var(--pv-dim); }
+.pv-note strong { color: var(--pv-fg); }
+.pv-stage { max-width: 1400px; margin: 0 auto; overflow-x: auto; border-radius: 10px; box-shadow: 0 1px 2px rgba(0,0,0,.08), 0 12px 40px rgba(0,0,0,.12); }
+
+/* ---- Direction A tokens (same values as the directions preview) ---- */
+.app {
+  --font-ui: "Noto Sans SC", "Microsoft YaHei UI", sans-serif;
+  --font-display: "Noto Serif SC", "Songti SC", serif;
+  --font-mono: "JetBrains Mono", Consolas, monospace;
+  --fs-cap: 12px; --fs-sm: 13px; --fs-body: 14px; --fs-title: 16px; --fs-h2: 19px; --fs-h1: 24px;
+  --lh: 1.6; --fw-display: 700; --fw-strong: 600; --ls-display: .01em; --ls-label: .1em;
+  --r-s: 2px; --r-m: 3px; --r-l: 4px; --r-btn: 3px;
+  --ctl-s: 26px; --ctl: 30px; --ctl-l: 36px; --ctl-px: 12px;
+  --sp: 4px; --topbar-h: 54px; --nav-w: 224px; --bw: 1px;
+  --bg: #efede8; --header: #f8f7f3; --nav: #efede8; --surface: #fbfaf7; --surface-2: #f4f2ed; --sunken: #e7e3db;
+  --line: #d9d3c7; --line-strong: #2a2723;
+  --text: #22201c; --text-2: #5d5850; --text-3: #8d877c;
+  --accent: #23436f; --accent-hover: #182f50; --on-accent: #fbfaf7; --accent-soft: #e1e6ed;
+  --attn: #93570a; --attn-soft: #f4e7cd; --attn-line: #dcc08a;
+  --ok: #3b7a4f; --ok-soft: #e1ece2; --err: #a3302b; --err-soft: #f3dfdb;
+  --sel: #dde4ee; --code-bg: #f1eee7;
+  --shadow-1: 0 1px 0 rgba(34,32,28,.07); --shadow-2: 0 14px 36px rgba(34,32,28,.16);
+  --scrim: rgba(239,237,232,.66);
+}
+
+.app { width: 1400px; height: 860px; position: relative; overflow: hidden; display: grid; grid-template-rows: var(--topbar-h) 1fr; grid-template-columns: var(--nav-w) 1fr;
+  background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: var(--fs-body); line-height: var(--lh); -webkit-font-smoothing: antialiased; }
+.app *, .app *::before, .app *::after { box-sizing: border-box; }
+.app :where(button, input, textarea) { font: inherit; color: inherit; }
+.mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.spacer { flex: 1; }
+
+.topbar { grid-column: 1 / -1; display: flex; align-items: center; gap: 16px; padding: 0 16px; background: var(--header); border-bottom: 2px solid var(--line-strong); }
+.brand { display: flex; align-items: center; gap: 10px; width: calc(var(--nav-w) - 16px); }
+.brand-name { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-title); }
+.logo { width: 28px; height: 28px; color: var(--accent); flex: none; }
+.seg { display: inline-flex; background: var(--sunken); border-radius: calc(var(--r-btn) + 2px); padding: 2px; gap: 2px; }
+.seg > button { height: calc(var(--ctl) - 4px); padding: 0 var(--ctl-px); border: 0; background: transparent; border-radius: var(--r-btn); font-size: var(--fs-sm); color: var(--text-2); cursor: pointer; }
+.seg > button[aria-pressed="true"] { background: var(--surface); color: var(--text); font-weight: 600; box-shadow: var(--shadow-1); }
+.kbd { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); border: var(--bw) solid var(--line); border-radius: var(--r-s); padding: 0 5px; line-height: 18px; background: var(--surface-2); white-space: nowrap; }
+
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: var(--bw) solid var(--line-strong);
+  background: var(--surface); color: var(--text); font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; cursor: pointer; line-height: 1; }
+.btn:hover { background: var(--surface-2); }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--on-accent); font-weight: 600; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.ghost { background: transparent; border-color: transparent; color: var(--text-2); }
+.btn.ghost:hover { background: var(--sunken); color: var(--text); }
+.btn.s { height: var(--ctl-s); padding: 0 9px; font-size: var(--fs-cap); }
+.btn .kbd { background: transparent; border-color: currentColor; color: inherit; opacity: .7; line-height: 16px; }
+.app button:focus-visible, .app textarea:focus-visible, .app input:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btn svg, .chip svg { width: 13px; height: 13px; flex: none; }
+
+.nav { background: var(--nav); border-right: var(--bw) solid var(--line); padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; }
+.nav-label { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-cap); color: var(--text-2); letter-spacing: var(--ls-label); padding: 12px 8px 6px; }
+.nav-label:first-child { padding-top: 0; }
+.nav-row { display: flex; align-items: center; gap: 8px; height: 32px; padding: 0 8px; border-radius: var(--r-m); font-size: var(--fs-body); }
+.nav-row[aria-current="true"] { background: var(--sel); font-weight: 600; }
+.nav-row .count { margin-left: auto; color: var(--text-3); font-size: var(--fs-cap); font-family: var(--font-mono); }
+.nav-row svg { width: 16px; height: 16px; color: var(--text-3); }
+
+.main { overflow: hidden; display: flex; flex-direction: column; min-width: 0; }
+.screen { display: none; flex: 1; min-height: 0; flex-direction: column; }
+.app[data-screen="draft"] .screen.s-draft, .app[data-screen="session"] .screen.s-session, .app[data-screen="inline"] .screen.s-board, .app[data-screen="quick"] .screen.s-board { display: flex; }
+
+/* ---- Shared picker pieces ---- */
+.chip { display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 11px; border: var(--bw) solid var(--line); border-radius: var(--r-btn); background: var(--surface); color: var(--text-2); font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
+.chip:hover { border-color: var(--text-3); color: var(--text); }
+.chip[aria-pressed="true"] { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.chip.none[aria-pressed="true"] { border-color: var(--line-strong); background: var(--surface); color: var(--text); font-weight: 500; }
+.chip .k { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); margin-left: 2px; }
+.chip.add { border-style: dashed; color: var(--text-3); }
+.chip.s { height: 24px; padding: 0 8px; font-size: var(--fs-cap); }
+.pick-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pick-row > .lab { width: 44px; flex: none; font-size: var(--fs-cap); color: var(--text-3); letter-spacing: .06em; }
+
+/* Model tile: provider mark + model name; one click picks both. */
+.mtile { display: inline-flex; align-items: center; gap: 7px; height: 30px; padding: 0 10px 0 4px; border: var(--bw) solid var(--line); border-radius: var(--r-btn); background: var(--surface); font-size: var(--fs-sm); cursor: pointer; color: var(--text); white-space: nowrap; }
+.mtile:hover { border-color: var(--text-3); }
+.mtile[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.mtile[aria-disabled="true"] { opacity: .45; cursor: not-allowed; }
+.mark { width: 22px; height: 22px; display: grid; place-items: center; border-radius: 2px; font-family: var(--font-mono); font-size: 11px; font-weight: 500; color: var(--surface); flex: none; }
+.mark.ds { background: #3f5f8f; } .mark.gpt { background: #3b6b58; } .mark.cl { background: #9a5b3c; } .mark.glm { background: #5b5470; }
+.mtile .sub { color: var(--text-3); font-size: 11px; }
+
+/* Effort meter: four bars, click a bar to set it. */
+.effort { display: inline-flex; align-items: center; gap: 8px; height: 30px; padding: 0 10px; border: var(--bw) solid var(--line); border-radius: var(--r-btn); background: var(--surface); font-size: var(--fs-sm); }
+.effort .bars { display: inline-flex; align-items: flex-end; gap: 3px; height: 16px; }
+.effort .bars button { width: 7px; padding: 0; border: 0; background: var(--sunken); border-radius: 1px; cursor: pointer; }
+.effort .bars button:nth-child(1) { height: 6px; } .effort .bars button:nth-child(2) { height: 9px; } .effort .bars button:nth-child(3) { height: 12px; } .effort .bars button:nth-child(4) { height: 16px; }
+.effort .bars button.on { background: var(--accent); }
+.effort .bars button:hover { outline: 1px solid var(--text-3); outline-offset: 1px; }
+.effort .lbl { min-width: 2.2em; font-weight: 600; color: var(--accent); }
+.effort .cap { color: var(--text-3); font-size: var(--fs-cap); }
+
+/* Permission: a compact segmented control; the risky choice is marked. */
+.perm { display: inline-flex; border: var(--bw) solid var(--line); border-radius: var(--r-btn); background: var(--surface); height: 30px; overflow: hidden; }
+.perm button { border: 0; border-right: var(--bw) solid var(--line); background: transparent; padding: 0 10px; font-size: var(--fs-cap); color: var(--text-2); cursor: pointer; white-space: nowrap; }
+.perm button:last-child { border-right: 0; }
+.perm button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.perm button.risky[aria-pressed="true"] { background: var(--err-soft); color: var(--err); }
+.perm button.more { color: var(--text-3); }
+
+/* ---- 方案一：草稿任务页 ---- */
+.crumbs { display: flex; align-items: center; gap: 10px; padding: 12px 24px; font-size: var(--fs-sm); color: var(--text-3); }
+.crumbs b { color: var(--text); font-weight: 600; }
+.draft-wrap { flex: 1; display: flex; flex-direction: column; align-items: center; padding: 40px 24px 0; }
+.draft { width: 780px; display: flex; flex-direction: column; gap: 18px; }
+.draft h2 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 30px; letter-spacing: .01em; line-height: 1.25; }
+.draft .lede { margin: -8px 0 0; color: var(--text-2); font-size: var(--fs-body); }
+.where { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: var(--bw) solid var(--line); border-bottom: var(--bw) solid var(--line); }
+.composer { position: relative; border: var(--bw) solid var(--line-strong); border-radius: var(--r-l); background: var(--surface); box-shadow: var(--shadow-1); }
+.composer textarea { display: block; width: 100%; border: 0; resize: none; background: transparent; padding: 14px 16px 6px; font-size: 15px; line-height: 1.7; min-height: 96px; }
+.composer textarea:focus-visible { outline: 0; }
+.composer:focus-within { box-shadow: 0 0 0 3px var(--accent-soft); }
+.tokens { display: flex; gap: 6px; padding: 0 16px; flex-wrap: wrap; }
+.token { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 4px 0 7px; border-radius: var(--r-s); background: var(--accent-soft); color: var(--accent); font-size: var(--fs-cap); font-weight: 600; }
+.token button { border: 0; background: none; padding: 0 2px; color: inherit; opacity: .6; cursor: pointer; line-height: 1; }
+.cbar { display: flex; align-items: center; gap: 8px; padding: 8px 10px 10px; border-top: var(--bw) solid var(--line); margin-top: 8px; flex-wrap: wrap; }
+.cbar .sep { width: 1px; height: 18px; background: var(--line); }
+.more-models { border: 0; background: none; font-size: var(--fs-cap); color: var(--text-3); cursor: pointer; padding: 0 4px; text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--line); }
+.foot-hints { display: flex; gap: 14px; flex-wrap: wrap; font-size: var(--fs-cap); color: var(--text-3); align-items: center; }
+.foot-hints span { display: inline-flex; gap: 5px; align-items: center; }
+
+/* Suggestion list for @ and # */
+.suggest { position: absolute; z-index: 5; min-width: 260px; background: var(--surface); border: var(--bw) solid var(--line-strong); border-radius: var(--r-l); box-shadow: var(--shadow-2); padding: 4px; display: none; }
+.suggest.open { display: block; }
+.suggest .h { font-size: 11px; color: var(--text-3); padding: 4px 8px; letter-spacing: .06em; }
+.suggest button { display: flex; width: 100%; align-items: center; gap: 8px; border: 0; background: transparent; padding: 6px 8px; border-radius: var(--r-s); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.suggest button.hl, .suggest button:hover { background: var(--sel); }
+.suggest button .r { margin-left: auto; font-size: 11px; color: var(--text-3); }
+.suggest svg { width: 14px; height: 14px; color: var(--text-3); }
+
+/* Model drawer: all models, grouped by account, inside the composer (no floating menu). */
+.drawer { display: none; border-top: var(--bw) solid var(--line); background: var(--surface-2); padding: 10px 12px 12px; flex-direction: column; gap: 8px; }
+.drawer.open { display: flex; }
+.drawer .row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.drawer .acct { width: 92px; flex: none; display: flex; align-items: center; gap: 6px; font-size: var(--fs-cap); color: var(--text-2); }
+.drawer .acct .mark { width: 18px; height: 18px; font-size: 10px; }
+.drawer .note { font-size: var(--fs-cap); color: var(--text-3); }
+
+/* ---- 方案二：会话中 ---- */
+.taskbar { display: flex; align-items: center; gap: 12px; padding: 10px 20px; border-bottom: var(--bw) solid var(--line); background: var(--header); }
+.taskbar h2 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--fs-h2); }
+.tag { display: inline-flex; align-items: center; gap: 4px; height: 20px; padding: 0 7px; border-radius: var(--r-s); border: var(--bw) solid var(--line); font-size: var(--fs-cap); color: var(--text-2); background: var(--surface); }
+.tag.topic { border-style: dashed; }
+.tag svg { width: 11px; height: 11px; }
+.chat { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--surface); }
+.thread { flex: 1; min-height: 0; overflow: hidden; width: 740px; margin: 0 auto; padding: 24px 0 8px; display: flex; flex-direction: column; gap: 12px; justify-content: flex-end; }
+.u { align-self: flex-end; max-width: 78%; background: var(--sel); padding: 9px 14px; border-radius: var(--r-l); }
+.a { line-height: 1.7; }
+.a p { margin: 0 0 6px; }
+.a code { font-family: var(--font-mono); font-size: .88em; background: var(--code-bg); border: var(--bw) solid var(--line); border-radius: var(--r-s); padding: 0 4px; }
+.fold { font-size: var(--fs-sm); color: var(--text-3); }
+.sess-comp { width: 760px; margin: 0 auto 8px; }
+.status-line { display: flex; align-items: center; gap: 6px; padding: 6px 8px 8px; flex-wrap: wrap; }
+.seg-btn { display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 9px 0 5px; border: var(--bw) solid transparent; border-radius: var(--r-btn); background: transparent; font-size: var(--fs-sm); cursor: pointer; color: var(--text); }
+.seg-btn:hover { background: var(--surface-2); border-color: var(--line); }
+.seg-btn[aria-expanded="true"] { background: var(--accent-soft); border-color: var(--accent); }
+.seg-btn .mark { width: 18px; height: 18px; font-size: 10px; }
+.seg-btn .dim { color: var(--text-3); font-size: var(--fs-cap); }
+.seg-btn svg { width: 14px; height: 14px; color: var(--text-3); }
+.mini-bars { display: inline-flex; align-items: flex-end; gap: 2px; height: 13px; }
+.mini-bars i { width: 4px; background: var(--sunken); border-radius: 1px; }
+.mini-bars i:nth-child(1) { height: 5px; } .mini-bars i:nth-child(2) { height: 8px; } .mini-bars i:nth-child(3) { height: 10px; } .mini-bars i:nth-child(4) { height: 13px; }
+.mini-bars i.on { background: var(--accent); }
+.send { margin-left: auto; width: 32px; height: 32px; border-radius: 50%; border: 0; background: var(--accent); color: var(--on-accent); display: grid; place-items: center; cursor: pointer; }
+.send svg { width: 14px; height: 14px; }
+.tray { display: none; border-bottom: var(--bw) solid var(--line); background: var(--surface-2); padding: 12px 14px; flex-direction: column; gap: 10px; border-radius: var(--r-l) var(--r-l) 0 0; }
+.tray.open { display: flex; }
+.tray-h { display: flex; align-items: baseline; gap: 10px; font-size: var(--fs-sm); font-weight: 600; }
+.tray-h .note { font-weight: 400; font-size: var(--fs-cap); color: var(--text-3); }
+.tray-h .kbd { margin-left: auto; }
+.tray .row { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.tray .acct { width: 92px; flex: none; display: flex; align-items: center; gap: 6px; font-size: var(--fs-cap); color: var(--text-2); }
+.tray .acct .mark { width: 18px; height: 18px; font-size: 10px; }
+.branch-hint { display: flex; align-items: center; gap: 8px; font-size: var(--fs-cap); color: var(--text-2); background: var(--surface); border: var(--bw) dashed var(--line); border-radius: var(--r-m); padding: 6px 10px; }
+.branch-hint .btn { margin-left: auto; }
+.ptile { display: flex; flex-direction: column; gap: 2px; width: 160px; padding: 8px 10px; border: var(--bw) solid var(--line); border-radius: var(--r-m); background: var(--surface); text-align: left; cursor: pointer; }
+.ptile b { font-size: var(--fs-sm); font-weight: 600; }
+.ptile span { font-size: 11px; color: var(--text-3); line-height: 1.45; }
+.ptile[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.ptile.risky[aria-pressed="true"] { border-color: var(--err); box-shadow: inset 0 0 0 1px var(--err); }
+.ptile.risky b { color: var(--err); }
+.etile { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 92px; padding: 8px 6px; border: var(--bw) solid var(--line); border-radius: var(--r-m); background: var(--surface); cursor: pointer; font-size: var(--fs-sm); }
+.etile[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); color: var(--accent); font-weight: 600; }
+.etile span { font-size: 11px; color: var(--text-3); font-weight: 400; }
+.applied { font-size: var(--fs-cap); color: var(--ok); min-height: 1em; padding: 0 12px 6px; }
+
+/* ---- 方案三：看板里直接加 / 方案四：快速启动条 ---- */
+.pagebar { display: flex; align-items: center; gap: 12px; padding: 14px 24px 12px; }
+.pagebar h2 { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: var(--fs-h1); }
+.pagebar .sub { color: var(--text-3); font-size: var(--fs-sm); }
+.columns { flex: 1; min-height: 0; display: grid; grid-template-columns: repeat(4, 1fr); gap: 16px; padding: 0 24px 20px; }
+.col { display: flex; flex-direction: column; gap: 10px; min-width: 0; }
+.col-head { display: flex; align-items: baseline; gap: 8px; font-family: var(--font-display); font-size: var(--fs-title); font-weight: 700; border-bottom: 2px solid var(--line-strong); padding-bottom: 6px; }
+.col-head .n { color: var(--text-3); font-family: var(--font-mono); font-weight: 400; font-size: var(--fs-cap); }
+.col-head .plus { margin-left: auto; }
+.card { background: var(--surface); border: var(--bw) solid var(--line); border-radius: var(--r-l); padding: 12px 14px; display: flex; flex-direction: column; gap: 8px; }
+.card-title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); line-height: 1.35; }
+.card-status { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); color: var(--text-2); }
+.card-status .when { margin-left: auto; color: var(--text-3); font-size: var(--fs-cap); }
+.card-meta { display: flex; gap: 6px; align-items: center; font-size: var(--fs-cap); color: var(--text-3); flex-wrap: wrap; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--text-3); display: inline-block; flex: none; }
+.dot.run { background: var(--ok); box-shadow: 0 0 0 3px var(--ok-soft); }
+.dot.attn { background: var(--attn); box-shadow: 0 0 0 3px var(--attn-soft); }
+.pill { display: inline-flex; align-items: center; gap: 6px; height: 20px; padding: 0 8px; border-radius: 999px; font-size: var(--fs-cap); background: var(--sunken); color: var(--text-2); }
+.pill.attn { background: var(--attn-soft); color: var(--attn); font-weight: 600; }
+.pill.run { background: var(--ok-soft); color: var(--ok); }
+.inline-new { border: var(--bw) solid var(--line-strong); border-radius: var(--r-l); background: var(--surface); box-shadow: 0 0 0 3px var(--accent-soft); display: flex; flex-direction: column; position: relative; }
+.inline-new textarea { border: 0; resize: none; background: transparent; padding: 10px 12px 4px; font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); line-height: 1.5; min-height: 54px; }
+.inline-new textarea:focus-visible { outline: 0; }
+.inline-new .tokens { padding: 0 12px; }
+.inline-new .bar { display: flex; flex-direction: column; gap: 8px; padding: 8px 12px 10px; border-top: var(--bw) solid var(--line); margin-top: 6px; }
+.inline-new .bar .r { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.inline-new .bar .acts { display: flex; gap: 6px; align-items: center; }
+.inline-new .bar .acts .hint { margin-right: auto; font-size: 11px; color: var(--text-3); }
+.mini-model { display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 8px 0 3px; border: var(--bw) solid var(--line); border-radius: var(--r-btn); background: var(--surface); font-size: var(--fs-cap); cursor: pointer; }
+.mini-model .mark { width: 18px; height: 18px; font-size: 10px; }
+.mini-model[aria-pressed="true"] { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.effort.s { height: 24px; padding: 0 8px; font-size: var(--fs-cap); }
+.effort.s .bars { height: 13px; } .effort.s .bars button { width: 5px; }
+.effort.s .bars button:nth-child(1) { height: 5px; } .effort.s .bars button:nth-child(2) { height: 8px; } .effort.s .bars button:nth-child(3) { height: 10px; } .effort.s .bars button:nth-child(4) { height: 13px; }
+
+.quick-scrim { display: none; position: absolute; inset: 0; background: var(--scrim); z-index: 10; justify-content: center; align-items: flex-start; padding-top: 96px; }
+.app[data-screen="quick"] .quick-scrim { display: flex; }
+.app[data-screen="quick"] .inline-new { display: none; }
+.app[data-screen="inline"] .ghost-add { display: none; }
+.quick { width: 720px; background: var(--surface); border: var(--bw) solid var(--line-strong); border-radius: var(--r-l); box-shadow: var(--shadow-2); position: relative; }
+.quick-in { display: flex; align-items: center; gap: 8px; padding: 0 16px; height: 58px; border-bottom: var(--bw) solid var(--line); }
+.quick-in svg { width: 18px; height: 18px; color: var(--text-3); flex: none; }
+.quick-in input { flex: 1; border: 0; background: transparent; font-size: 17px; height: 100%; min-width: 0; }
+.quick-in input:focus-visible { outline: 0; }
+.quick .tokens { padding: 10px 16px 0; }
+.quick .suggest.inline { position: static; display: block; border: 0; box-shadow: none; padding: 6px 8px; border-radius: 0; }
+.quick-foot { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-top: var(--bw) solid var(--line); background: var(--surface-2); flex-wrap: wrap; }
+.quick-foot .hints { margin-left: auto; display: flex; gap: 10px; font-size: 11px; color: var(--text-3); align-items: center; }
+.quick-foot .hints span { display: inline-flex; gap: 4px; align-items: center; }
+</style>
+
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-robot" viewBox="0 0 32 32"><rect x="5" y="9" width="22" height="18" rx="6" fill="currentColor"/><rect x="9" y="14" width="14" height="8" rx="4" fill="#fff" opacity=".95"/><circle cx="13" cy="18" r="1.8" fill="currentColor"/><circle cx="19" cy="18" r="1.8" fill="currentColor"/><path d="M16 9V5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/><circle cx="16" cy="4" r="2" fill="currentColor"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" fill="none"/></symbol>
+  <symbol id="i-left" viewBox="0 0 16 16"><path d="m10 4-4 4 4 4" stroke="currentColor" stroke-width="1.6" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-up" viewBox="0 0 16 16"><path d="M8 13V3M4 7l4-4 4 4" stroke="currentColor" stroke-width="1.8" fill="none" stroke-linecap="round" stroke-linejoin="round"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16"><path d="M2 4.5c0-.6.4-1 1-1h3.2l1.4 1.5H13c.6 0 1 .4 1 1V12c0 .6-.4 1-1 1H3c-.6 0-1-.4-1-1z" stroke="currentColor" stroke-width="1.3" fill="none"/></symbol>
+  <symbol id="i-topic" viewBox="0 0 16 16"><rect x="2" y="2.5" width="5" height="4" rx="1" stroke="currentColor" stroke-width="1.3" fill="none"/><rect x="9" y="9.5" width="5" height="4" rx="1" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M4.5 6.5v4.5H9" stroke="currentColor" stroke-width="1.3" fill="none"/></symbol>
+  <symbol id="i-list" viewBox="0 0 16 16"><path d="M3 4h10M3 8h10M3 12h6" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/></symbol>
+  <symbol id="i-shield" viewBox="0 0 16 16"><path d="M8 1.8 13 4v3.6c0 3-2.1 5.4-5 6.6-2.9-1.2-5-3.6-5-6.6V4z" stroke="currentColor" stroke-width="1.5" fill="none" stroke-linejoin="round"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 16 16"><path d="M8 2v3M8 11v3M2 8h3M11 8h3M4 4l2 2M10 10l2 2M12 4l-2 2M6 10l-2 2" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"/></symbol>
+  <symbol id="i-branch" viewBox="0 0 16 16"><circle cx="4.5" cy="3.5" r="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/><circle cx="4.5" cy="12.5" r="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/><circle cx="11.5" cy="5.5" r="1.5" stroke="currentColor" stroke-width="1.3" fill="none"/><path d="M4.5 5v6M11.5 7c0 3-7 2-7 4" stroke="currentColor" stroke-width="1.3" fill="none"/></symbol>
+</svg>
+
+<div class="pv-top">
+  <div class="pv-head">
+    <h1>新建任务与切换</h1>
+    <p>编辑部风格，1:1 尺寸。页面上的控件都能点：试试在输入框里打 @ 或 #，点模型、点思考强度的竖条。</p>
+  </div>
+  <div class="pv-row" role="group" aria-label="方案">
+    <button class="pv-tab" data-screen="draft" aria-pressed="true">方案一 · 草稿任务页（推荐）</button>
+    <button class="pv-tab" data-screen="session" aria-pressed="false">会话中切换</button>
+    <button class="pv-tab" data-screen="inline" aria-pressed="false">方案二 · 看板里直接加</button>
+    <button class="pv-tab" data-screen="quick" aria-pressed="false">方案三 · 快速启动条</button>
+  </div>
+  <div class="pv-note" id="pv-note"></div>
+</div>
+
+<div class="pv-stage">
+<div class="app" id="app" data-screen="draft">
+  <header class="topbar">
+    <div class="brand"><svg class="logo"><use href="#i-robot"/></svg><span class="brand-name">AMO Studio</span></div>
+    <div class="seg"><button aria-pressed="true">看板</button><button aria-pressed="false">专题</button></div>
+    <div class="spacer"></div>
+    <button class="btn ghost">Focus 开</button>
+    <button class="btn">设置</button>
+    <button class="btn primary"><svg><use href="#i-plus"/></svg>新任务<span class="kbd">Ctrl N</span></button>
+  </header>
+  <aside class="nav">
+    <div class="nav-label">视图</div>
+    <div class="nav-row" aria-current="true"><svg><use href="#i-list"/></svg>全部任务<span class="count">9</span></div>
+    <div class="nav-row"><svg><use href="#i-list"/></svg>需要我处理<span class="count">2</span></div>
+    <div class="nav-label">专题</div>
+    <div class="nav-row"><svg><use href="#i-topic"/></svg>掉落表重构<span class="count">4</span></div>
+    <div class="nav-row"><svg><use href="#i-topic"/></svg>武器 v2<span class="count">2</span></div>
+    <div class="nav-label">项目</div>
+    <div class="nav-row"><svg><use href="#i-folder"/></svg>mining-a<span class="count">3</span></div>
+    <div class="nav-row"><svg><use href="#i-folder"/></svg>mining-b<span class="count">2</span></div>
+    <div class="nav-row"><svg><use href="#i-folder"/></svg>mining-c<span class="count">1</span></div>
+    <div class="nav-row"><svg><use href="#i-folder"/></svg>weapon-lab<span class="count">2</span></div>
+  </aside>
+
+  <main class="main">
+    <!-- 方案一：草稿任务页 -->
+    <div class="screen s-draft">
+      <div class="crumbs"><button class="btn ghost s"><svg><use href="#i-left"/></svg>看板</button><span>/</span><b>新任务</b><span class="spacer"></span><span>草稿自动保存，离开也不会丢</span></div>
+      <div class="draft-wrap">
+        <div class="draft" data-scope="draft">
+          <h2>要推进什么？</h2>
+          <p class="lede">写下第一句话就能开始。项目、模型和思考强度都在下面一排，点一下就换。</p>
+          <div class="where">
+            <div class="pick-row" data-pick="project">
+              <span class="lab">项目</span>
+              <button class="chip none" data-v="" aria-pressed="true">不指定</button>
+              <button class="chip" data-v="mining-a" aria-pressed="false"><svg><use href="#i-folder"/></svg>mining-a</button>
+              <button class="chip" data-v="mining-b" aria-pressed="false"><svg><use href="#i-folder"/></svg>mining-b</button>
+              <button class="chip" data-v="mining-c" aria-pressed="false"><svg><use href="#i-folder"/></svg>mining-c</button>
+              <button class="chip" data-v="weapon-lab" aria-pressed="false"><svg><use href="#i-folder"/></svg>weapon-lab</button>
+              <button class="chip add">+ 添加项目</button>
+            </div>
+            <div class="pick-row" data-pick="topic">
+              <span class="lab">专题</span>
+              <button class="chip none" data-v="" aria-pressed="true">不放进专题</button>
+              <button class="chip" data-v="掉落表重构" aria-pressed="false"><svg><use href="#i-topic"/></svg>掉落表重构</button>
+              <button class="chip" data-v="武器 v2" aria-pressed="false"><svg><use href="#i-topic"/></svg>武器 v2</button>
+            </div>
+          </div>
+          <div class="composer">
+            <textarea id="draft-input" rows="3" aria-label="第一句话" placeholder="比如：导入器遇到网络错误直接崩，给 fetch 加上失败重试，最多 3 次。打 @ 选项目，# 选专题。"></textarea>
+            <div class="suggest" id="draft-suggest" role="listbox"></div>
+            <div class="cbar">
+              <div class="pick-row" data-pick="model" style="gap:6px">
+                <button class="mtile" data-v="ds-flash" aria-pressed="true"><span class="mark ds">DS</span>DeepSeek Flash</button>
+                <button class="mtile" data-v="gpt" aria-pressed="false"><span class="mark gpt">G</span>GPT-6.1 Sol<span class="sub">订阅</span></button>
+                <button class="mtile" data-v="cl-sonnet" aria-pressed="false"><span class="mark cl">C</span>Sonnet<span class="sub">订阅</span></button>
+                <button class="mtile" data-v="glm" aria-pressed="false"><span class="mark glm">Z</span>GLM-5.3</button>
+              </div>
+              <button class="more-models" data-drawer="draft-drawer" aria-expanded="false">全部型号</button>
+            </div>
+            <div class="drawer" id="draft-drawer">
+              <div class="row" data-pick="model">
+                <span class="acct"><span class="mark ds">DS</span>DeepSeek</span>
+                <button class="chip s" data-v="ds-flash" aria-pressed="true">Flash</button><button class="chip s" data-v="ds-pro" aria-pressed="false">Pro</button>
+              </div>
+              <div class="row" data-pick="model">
+                <span class="acct"><span class="mark gpt">G</span>GPT 订阅</span>
+                <button class="chip s" data-v="gpt" aria-pressed="false">GPT-6.1 Sol</button><button class="chip s" data-v="gpt-mini" aria-pressed="false">GPT-6.1 Mini</button><button class="chip s" data-v="gpt-codex" aria-pressed="false">Codex 专用</button>
+              </div>
+              <div class="row" data-pick="model">
+                <span class="acct"><span class="mark cl">C</span>Claude 订阅</span>
+                <button class="chip s" data-v="cl-opus" aria-pressed="false">Opus</button><button class="chip s" data-v="cl-sonnet" aria-pressed="false">Sonnet</button><button class="chip s" data-v="cl-fable" aria-pressed="false">Fable</button><button class="chip s" data-v="cl-haiku" aria-pressed="false">Haiku</button>
+              </div>
+              <div class="row" data-pick="model">
+                <span class="acct"><span class="mark glm">Z</span>GLM</span>
+                <button class="chip s" data-v="glm" aria-pressed="false">GLM-5.3</button><button class="chip s" data-v="glm-1m" aria-pressed="false">GLM-5.3 · 1M 上下文</button><button class="chip s" data-v="glm-52" aria-pressed="false">GLM-5.2</button>
+              </div>
+              <span class="note">上面一排的四个是"常用"，按你最近用的自动排；在设置 → 常用预设里可以固定。</span>
+            </div>
+            <div class="cbar" style="margin-top:0">
+              <div class="effort" data-effort="3"><span class="cap">思考</span><span class="bars"><button aria-label="低"></button><button aria-label="中"></button><button aria-label="高"></button><button aria-label="超高"></button></span><span class="lbl">高</span></div>
+              <div class="perm" data-pick="perm">
+                <button data-v="ask" aria-pressed="true">逐条询问</button>
+                <button data-v="auto" aria-pressed="false">帮我审批</button>
+                <button data-v="ws" aria-pressed="false">工作区可写</button>
+                <button data-v="full" class="risky" aria-pressed="false">完全访问</button>
+              </div>
+              <span class="spacer"></span>
+              <button class="btn">放进待办<span class="kbd">Ctrl ↵</span></button>
+              <button class="btn primary">开始<span class="kbd">↵</span></button>
+            </div>
+          </div>
+          <div class="foot-hints">
+            <span><span class="kbd">@</span>选项目</span>
+            <span><span class="kbd">#</span>选专题</span>
+            <span><span class="kbd">Alt 1–4</span>换常用模型</span>
+            <span><span class="kbd">Alt E</span>思考强度加一档</span>
+            <span id="draft-summary" style="margin-left:auto"></span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 会话中切换 -->
+    <div class="screen s-session">
+      <div class="taskbar">
+        <button class="btn ghost s"><svg><use href="#i-left"/></svg>看板</button>
+        <h2>导入器加上失败重试</h2>
+        <span class="tag"><svg><use href="#i-folder"/></svg>mining-c</span>
+        <span class="spacer"></span>
+        <span style="font-size:var(--fs-cap);color:var(--text-3)">主会话 · Codex 线程</span>
+      </div>
+      <div class="chat">
+        <div class="thread">
+          <div class="u">导入器遇到网络错误直接崩，给 fetch 加上失败重试，最多 3 次。</div>
+          <div class="fold">› 已完成，用时 52 秒 · 读取 7 个文件 · 编辑 2 个文件 · 运行 1 条命令</div>
+          <div class="a"><p>已经给 <code>fetch</code> 加上重试：最多 3 次，退避从 0.5 秒开始每次翻倍，只重试 <code>RequestException</code>。测试 26 个全部通过。</p>
+            <p>还有一处 <code>ImportQueue.Flush</code> 也直接调了网络，要不要一起改？</p></div>
+          <div class="u">一起改。这次换个更强的模型想清楚再动手。</div>
+        </div>
+        <div class="sess-comp" data-scope="session">
+          <div class="composer">
+            <div class="tray open" id="tray-model" data-tray="model">
+              <div class="tray-h">换型号<span class="note">Codex 下一轮生效</span><span class="kbd">Alt M</span></div>
+              <div class="row" data-pick="model">
+                <span class="acct"><span class="mark ds">DS</span>DeepSeek</span>
+                <button class="mtile" data-v="ds-flash" aria-pressed="true">Flash</button>
+                <button class="mtile" data-v="ds-pro" aria-pressed="false">Pro<span class="sub">更慢、更强</span></button>
+              </div>
+              <div class="row">
+                <span class="acct"><span class="mark cl">C</span>Claude 订阅</span>
+                <button class="mtile" aria-disabled="true">Opus</button><button class="mtile" aria-disabled="true">Sonnet</button>
+              </div>
+              <div class="branch-hint"><svg width="14" height="14"><use href="#i-branch"/></svg>这个会话跑在 DeepSeek 上，不能直接换到别家的模型。可以带着到目前为止的上下文分支出一个新会话。<button class="btn s">用 Claude 分支继续</button></div>
+            </div>
+            <div class="tray" id="tray-effort" data-tray="effort">
+              <div class="tray-h">思考强度<span class="note">也可以直接点输入框下面的竖条</span><span class="kbd">Alt E</span></div>
+              <div class="row" data-pick="effort-tiles">
+                <button class="etile" data-v="1" aria-pressed="false"><span class="mini-bars"><i class="on"></i><i></i><i></i><i></i></span>低<span>最快</span></button>
+                <button class="etile" data-v="2" aria-pressed="false"><span class="mini-bars"><i class="on"></i><i class="on"></i><i></i><i></i></span>中<span>日常</span></button>
+                <button class="etile" data-v="3" aria-pressed="true"><span class="mini-bars"><i class="on"></i><i class="on"></i><i class="on"></i><i></i></span>高<span>默认</span></button>
+                <button class="etile" data-v="4" aria-pressed="false"><span class="mini-bars"><i class="on"></i><i class="on"></i><i class="on"></i><i class="on"></i></span>超高<span>难题再用</span></button>
+              </div>
+            </div>
+            <div class="tray" id="tray-perm" data-tray="perm">
+              <div class="tray-h">权限<span class="note">立即生效</span><span class="kbd">Alt P</span></div>
+              <div class="row" data-pick="perm-tiles">
+                <button class="ptile" data-v="ask" aria-pressed="true"><b>逐条询问</b><span>每条命令都先问你</span></button>
+                <button class="ptile" data-v="auto" aria-pressed="false"><b>帮我审批</b><span>交给审查 agent，拿不准再问你</span></button>
+                <button class="ptile" data-v="ws" aria-pressed="false"><b>工作区可写</b><span>沙箱里只能改这个项目</span></button>
+                <button class="ptile risky" data-v="full" aria-pressed="false"><b>完全访问</b><span>不再询问，命令直接执行</span></button>
+              </div>
+            </div>
+            <textarea rows="2" aria-label="继续对话" placeholder="继续推进这个会话，回车发送，Shift+回车换行" style="min-height:64px"></textarea>
+            <div class="status-line">
+              <button class="seg-btn" data-open="tray-model" aria-expanded="true"><span class="mark ds">DS</span><span data-show="model">Flash</span></button>
+              <span class="effort s" data-effort="3" title="点竖条直接设置"><span class="bars"><button aria-label="低"></button><button aria-label="中"></button><button aria-label="高"></button><button aria-label="超高"></button></span><button class="lbl" data-open="tray-effort" style="border:0;background:none;padding:0;cursor:pointer;font-weight:600;color:var(--accent)">高</button></span>
+              <button class="seg-btn" data-open="tray-perm" aria-expanded="false"><svg><use href="#i-shield"/></svg><span data-show="perm">逐条询问</span></button>
+              <span class="dim" style="font-size:var(--fs-cap);color:var(--text-3);margin-left:6px">2 轮 · 用量 <span class="num">14.2k</span></span>
+              <button class="send" aria-label="发送"><svg><use href="#i-up"/></svg></button>
+            </div>
+            <div class="applied" id="applied"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 方案二 / 方案三 共用的看板 -->
+    <div class="screen s-board">
+      <div class="pagebar"><h2>全部任务</h2><span class="sub">9 个任务 · 2 个需要你处理</span></div>
+      <div class="columns">
+        <div class="col">
+          <div class="col-head">待办<span class="n">3</span><button class="btn ghost s plus ghost-add">+</button></div>
+          <div class="inline-new" data-scope="inline">
+            <textarea id="inline-input" rows="2" aria-label="新任务" placeholder="写一句要做的事，@ 选项目">Elite 掉落表补单元测试</textarea>
+            <div class="suggest" id="inline-suggest" role="listbox"></div>
+            <div class="tokens" id="inline-tokens"></div>
+            <div class="bar">
+              <div class="r" data-pick="model">
+                <button class="mini-model" data-v="ds-flash" aria-pressed="true"><span class="mark ds">DS</span>Flash</button>
+                <button class="mini-model" data-v="gpt" aria-pressed="false"><span class="mark gpt">G</span>GPT</button>
+                <button class="mini-model" data-v="cl-sonnet" aria-pressed="false"><span class="mark cl">C</span>Sonnet</button>
+                <span class="effort s" data-effort="2"><span class="bars"><button aria-label="低"></button><button aria-label="中"></button><button aria-label="高"></button><button aria-label="超高"></button></span><span class="lbl">中</span></span>
+              </div>
+              <div class="acts"><span class="hint">↵ 放进待办 · Ctrl ↵ 开始</span><button class="btn s">放进待办</button><button class="btn s primary">开始</button></div>
+            </div>
+          </div>
+          <div class="card"><div class="card-title">整理武器配置 README</div><div class="card-status"><span class="dot"></span>空闲<span class="when">昨天</span></div><div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>weapon-lab</span></div></div>
+          <div class="card"><div class="card-title">Rust 生命周期报错怎么理解</div><div class="card-status"><span class="dot"></span>空闲<span class="when">2 小时前</span></div><div class="card-meta">1 个会话</div></div>
+        </div>
+        <div class="col">
+          <div class="col-head">进行中<span class="n">3</span></div>
+          <div class="card"><div class="card-title">掉落表概率校验</div><div class="card-status"><span class="pill attn"><span class="dot attn"></span>等待批准</span><span class="when">1 分钟前</span></div><div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>mining-a</span><span class="tag topic"><svg><use href="#i-topic"/></svg>掉落表重构</span></div></div>
+          <div class="card"><div class="card-title">导入器加上失败重试</div><div class="card-status"><span class="pill run"><span class="dot run"></span>运行中</span><span class="when">3 分 12 秒</span></div><div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>mining-c</span></div></div>
+          <div class="card"><div class="card-title">武器后坐力曲线</div><div class="card-status"><span class="pill attn"><span class="dot attn"></span>请你决定</span><span class="when">6 分钟前</span></div><div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>weapon-lab</span><span class="tag topic"><svg><use href="#i-topic"/></svg>武器 v2</span></div></div>
+        </div>
+        <div class="col">
+          <div class="col-head">待审阅<span class="n">2</span></div>
+          <div class="card"><div class="card-title">CI 缓存失效修复</div><div class="card-status"><span class="dot"></span>已完成，等你看<span class="when">20 分钟前</span></div><div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>mining-b</span></div></div>
+          <div class="card"><div class="card-title">换弹动画事件对齐</div><div class="card-status"><span class="dot"></span>已完成，等你看<span class="when">1 小时前</span></div><div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>weapon-lab</span></div></div>
+        </div>
+        <div class="col">
+          <div class="col-head">完成<span class="n">1</span></div>
+          <div class="card"><div class="card-title">日志降噪</div><div class="card-status"><span class="dot"></span>完成<span class="when">昨天</span></div><div class="card-meta"><span class="tag"><svg><use href="#i-folder"/></svg>mining-a</span></div></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 方案三：快速启动条 -->
+  <div class="quick-scrim">
+    <div class="quick" data-scope="quick">
+      <div class="quick-in"><svg><use href="#i-spark"/></svg><input id="quick-input" aria-label="新任务" value="@min" placeholder="一句话开始新任务，@ 选项目，# 选专题"></div>
+      <div class="tokens" id="quick-tokens"></div>
+      <div class="suggest inline" id="quick-suggest" role="listbox"></div>
+      <div class="quick-foot">
+        <div class="pick-row" data-pick="model" style="gap:6px">
+          <button class="mini-model" data-v="ds-flash" aria-pressed="true"><span class="mark ds">DS</span>Flash</button>
+          <button class="mini-model" data-v="gpt" aria-pressed="false"><span class="mark gpt">G</span>GPT</button>
+          <button class="mini-model" data-v="cl-sonnet" aria-pressed="false"><span class="mark cl">C</span>Sonnet</button>
+          <button class="mini-model" data-v="glm" aria-pressed="false"><span class="mark glm">Z</span>GLM</button>
+        </div>
+        <span class="effort s" data-effort="3"><span class="bars"><button aria-label="低"></button><button aria-label="中"></button><button aria-label="高"></button><button aria-label="超高"></button></span><span class="lbl">高</span></span>
+        <div class="hints"><span><span class="kbd">↵</span>开始</span><span><span class="kbd">Ctrl ↵</span>放进待办</span><span><span class="kbd">Tab</span>换模型</span><span><span class="kbd">Esc</span>关闭</span></div>
+      </div>
+    </div>
+  </div>
+</div>
+</div>
+
+<script>
+(function () {
+  var app = document.getElementById("app");
+  var NOTES = {
+    draft: "<strong>方案一 · 草稿任务页（推荐）</strong>：点「新任务」或按 Ctrl N，主区域直接变成一个空任务，没有弹窗。项目和专题是一排平铺的选项，模型是四个常用卡片，思考强度是竖条，权限是分段按钮，全部一次点击。回车就开始；Ctrl+回车只放进待办。输入框和会话里用的是同一个组件，学一次两边都会用。",
+    session: "<strong>会话中切换</strong>：输入框下面一行就是当前的模型、思考强度和权限，点哪个就在输入框上方展开那一组，选完自动收起，不弹下拉菜单。思考强度的竖条可以直接点。会话不能跨模型商换模型，这时给出「分支继续」，带着上下文开一个新会话。",
+    inline: "<strong>方案二 · 看板里直接加</strong>：在待办列顶上展开一张正在写的卡片，适合先记下来、晚点再做。和方案一可以同时存在：列头的 + 走这里，顶栏的「新任务」走方案一。",
+    quick: "<strong>方案三 · 快速启动条</strong>：Ctrl N 在任何页面叫出一条输入框，像启动器一样，一行写完：@ 项目、# 专题、正文；Tab 换模型。比弹窗轻，但仍然是浮层。以后可以接上全局快捷键，在 Studio 外面也能叫出来。"
+  };
+  var PROJECTS = [["mining-a", "最近 · 3 个任务"], ["mining-b", "2 个任务"], ["mining-c", "1 个任务"], ["weapon-lab", "2 个任务"]];
+  var TOPICS = [["掉落表重构", "mining-a · b · c"], ["武器 v2", "weapon-lab"]];
+  var EFFORT = ["", "低", "中", "高", "超高"];
+  var MODEL_NAMES = { "ds-flash": "Flash", "ds-pro": "Pro" };
+
+  function setScreen(s) {
+    app.setAttribute("data-screen", s);
+    document.querySelectorAll(".pv-tab").forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.screen === s)); });
+    document.getElementById("pv-note").innerHTML = NOTES[s];
+    try { localStorage.setItem("amo-nt-screen", s); } catch (e) {}
+    if (s === "quick") runSuggest(document.getElementById("quick-input"));
+  }
+  document.querySelectorAll(".pv-tab").forEach(function (b) { b.addEventListener("click", function () { setScreen(b.dataset.screen); }); });
+
+  // Single-choice groups. A value picked in one row of a scope is reflected in every row of that scope (top tiles and drawer).
+  function pick(scope, name, v) {
+    scope.querySelectorAll('[data-pick="' + name + '"] [data-v]').forEach(function (b) { b.setAttribute("aria-pressed", String(b.dataset.v === v)); });
+    summarize(scope);
+  }
+  app.addEventListener("click", function (e) {
+    var b = e.target.closest("[data-v]");
+    if (b && b.closest("[data-pick]") && b.getAttribute("aria-disabled") !== "true") {
+      var scope = b.closest("[data-scope]") || app;
+      var name = b.closest("[data-pick]").dataset.pick;
+      if (name === "effort-tiles") { setEffort(scope.querySelector(".effort"), +b.dataset.v); scope.querySelectorAll('[data-pick="effort-tiles"] [data-v]').forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); closeTrays(scope, "思考强度改成「" + EFFORT[+b.dataset.v] + "」，下一轮生效"); return; }
+      if (name === "perm-tiles") { scope.querySelectorAll('[data-pick="perm-tiles"] [data-v]').forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); }); scope.querySelector('[data-show="perm"]').textContent = b.querySelector("b").textContent; closeTrays(scope, "权限改成「" + b.querySelector("b").textContent + "」，立即生效"); return; }
+      pick(scope, name, b.dataset.v);
+      if (scope.dataset.scope === "session" && name === "model") { scope.querySelector('[data-show="model"]').textContent = MODEL_NAMES[b.dataset.v] || b.textContent; closeTrays(scope, "型号改成「" + (MODEL_NAMES[b.dataset.v] || b.textContent) + "」，下一轮生效"); }
+      return;
+    }
+    var bar = e.target.closest(".effort .bars button");
+    if (bar) { var ef = bar.closest(".effort"); setEffort(ef, Array.prototype.indexOf.call(bar.parentNode.children, bar) + 1); var sc = ef.closest("[data-scope]"); if (sc) { syncEffortTiles(sc); summarize(sc); } return; }
+    var dr = e.target.closest("[data-drawer]");
+    if (dr) { var d = document.getElementById(dr.dataset.drawer); var open = !d.classList.contains("open"); d.classList.toggle("open", open); dr.setAttribute("aria-expanded", String(open)); dr.textContent = open ? "收起" : "全部型号"; return; }
+    var op = e.target.closest("[data-open]");
+    if (op) {
+      var scope2 = op.closest("[data-scope]"); var t = document.getElementById(op.dataset.open); var willOpen = !t.classList.contains("open");
+      scope2.querySelectorAll(".tray").forEach(function (x) { x.classList.remove("open"); });
+      scope2.querySelectorAll("[data-open]").forEach(function (x) { if (x.hasAttribute("aria-expanded")) x.setAttribute("aria-expanded", "false"); });
+      if (willOpen) { t.classList.add("open"); if (op.hasAttribute("aria-expanded")) op.setAttribute("aria-expanded", "true"); }
+      return;
+    }
+    var tk = e.target.closest(".token button");
+    if (tk) { var scope3 = tk.closest("[data-scope]"); var kind = tk.dataset.kind; delete scope3.dataset[kind === "project" ? "proj" : "topic"]; pick(scope3, kind, ""); return; }
+    var sg = e.target.closest(".suggest button");
+    if (sg) { choose(sg); }
+  });
+
+  function setEffort(ef, n) {
+    if (!ef) return;
+    ef.dataset.effort = n;
+    ef.querySelectorAll(".bars button").forEach(function (b, i) { b.classList.toggle("on", i < n); });
+    var l = ef.querySelector(".lbl"); if (l) l.textContent = EFFORT[n];
+  }
+  function syncEffortTiles(scope) {
+    var n = scope.querySelector(".effort").dataset.effort;
+    scope.querySelectorAll('[data-pick="effort-tiles"] [data-v]').forEach(function (x) { x.setAttribute("aria-pressed", String(x.dataset.v === n)); });
+  }
+  document.querySelectorAll(".effort").forEach(function (ef) { setEffort(ef, +ef.dataset.effort); });
+
+  var appliedTimer;
+  function closeTrays(scope, msg) {
+    scope.querySelectorAll(".tray").forEach(function (x) { x.classList.remove("open"); });
+    scope.querySelectorAll("[data-open][aria-expanded]").forEach(function (x) { x.setAttribute("aria-expanded", "false"); });
+    var a = document.getElementById("applied"); a.textContent = "✓ " + msg;
+    clearTimeout(appliedTimer); appliedTimer = setTimeout(function () { a.textContent = ""; }, 3200);
+  }
+
+  function current(scope, name) { var b = scope.querySelector('[data-pick="' + name + '"] [aria-pressed="true"]'); return b ? b.dataset.v : ""; }
+  function summarize(scope) {
+    if (scope.dataset.scope === "draft") {
+      var p = current(scope, "project"), t = current(scope, "topic");
+      document.getElementById("draft-summary").textContent = (p ? "在 " + p + " 里运行" : "不指定项目：在公共目录里运行") + (t ? " · 放进「" + t + "」" : "");
+    }
+    renderTokens(scope);
+  }
+  // Tokens show what @ and # picked in the inline and quick variants (the draft page shows it on the chips themselves).
+  function renderTokens(scope) {
+    var box = scope.querySelector(".tokens"); if (!box) return;
+    var html = "";
+    var p = scope.dataset.proj || "", t = scope.dataset.topic || "";
+    if (p) html += '<span class="token">@' + p + '<button data-kind="project" aria-label="去掉">×</button></span>';
+    if (t) html += '<span class="token">#' + t + '<button data-kind="topic" aria-label="去掉">×</button></span>';
+    box.innerHTML = html;
+  }
+
+  // @ / # typeahead on the three inputs.
+  var active = null;
+  function runSuggest(input) {
+    var scope = input.closest("[data-scope]");
+    var list = scope.querySelector(".suggest");
+    var before = input.value.slice(0, input.selectionStart == null ? input.value.length : input.selectionStart);
+    if (document.activeElement !== input) before = input.value;
+    var m = before.match(/(^|\s)([@#])([^\s@#]*)$/);
+    if (!m) { list.classList.remove("open"); list.innerHTML = ""; active = null; return; }
+    var src = m[2] === "@" ? PROJECTS : TOPICS;
+    var q = m[3].toLowerCase();
+    var items = src.filter(function (x) { return x[0].toLowerCase().indexOf(q) >= 0; });
+    if (!items.length) { list.classList.remove("open"); list.innerHTML = ""; return; }
+    list.innerHTML = '<div class="h">' + (m[2] === "@" ? "项目" : "专题") + "</div>" + items.map(function (x, i) {
+      return '<button role="option" class="' + (i === 0 ? "hl" : "") + '" data-kind="' + (m[2] === "@" ? "project" : "topic") + '" data-name="' + x[0] + '"><svg><use href="#i-' + (m[2] === "@" ? "folder" : "topic") + '"/></svg>' + x[0] + '<span class="r">' + x[1] + "</span></button>";
+    }).join("");
+    list.classList.add("open");
+    active = { input: input, token: m[2] + m[3], list: list };
+    if (!list.classList.contains("inline")) placeList(input, list);
+  }
+  function placeList(input, list) {
+    list.style.left = "16px"; list.style.top = (input.offsetTop + Math.min(input.scrollHeight, input.offsetHeight) - 4) + "px";
+  }
+  function choose(btn) {
+    if (!active) return;
+    var input = active.input, scope = input.closest("[data-scope]");
+    var kind = btn.dataset.kind, name = btn.dataset.name;
+    var pos = input.value.lastIndexOf(active.token);
+    input.value = (input.value.slice(0, pos) + input.value.slice(pos + active.token.length)).replace(/\s{2,}/g, " ");
+    if (kind === "project") scope.dataset.proj = name; else scope.dataset.topic = name;
+    pick(scope, kind, name);
+    active.list.classList.remove("open"); active.list.innerHTML = ""; active = null;
+    input.focus();
+  }
+  ["draft-input", "inline-input", "quick-input"].forEach(function (id) {
+    var el = document.getElementById(id);
+    el.addEventListener("input", function () { runSuggest(el); });
+    el.addEventListener("keydown", function (e) {
+      if (!active || active.input !== el) return;
+      var opts = Array.prototype.slice.call(active.list.querySelectorAll("button"));
+      var i = opts.findIndex(function (o) { return o.classList.contains("hl"); });
+      if (e.key === "ArrowDown" || e.key === "ArrowUp") { e.preventDefault(); opts[i] && opts[i].classList.remove("hl"); i = (i + (e.key === "ArrowDown" ? 1 : opts.length - 1)) % opts.length; opts[i].classList.add("hl"); }
+      else if (e.key === "Enter" || e.key === "Tab") { e.preventDefault(); choose(opts[Math.max(i, 0)]); }
+      else if (e.key === "Escape") { active.list.classList.remove("open"); active = null; }
+    });
+  });
+
+  // Keyboard shortcuts on the draft page and in the session.
+  document.addEventListener("keydown", function (e) {
+    if (!e.altKey) return;
+    var s = app.getAttribute("data-screen");
+    var scope = app.querySelector('[data-scope="' + (s === "session" ? "session" : s === "draft" ? "draft" : s) + '"]');
+    if (!scope) return;
+    var k = e.key.toLowerCase();
+    if (k === "e") { var ef = scope.querySelector(".effort"); if (ef) { e.preventDefault(); setEffort(ef, (+ef.dataset.effort % 4) + 1); syncEffortTiles(scope); } }
+    if (s === "draft" && /^[1-4]$/.test(k)) { e.preventDefault(); var tiles = scope.querySelectorAll('.cbar [data-pick="model"] .mtile'); pick(scope, "model", tiles[+k - 1].dataset.v); }
+    if (s === "session" && (k === "m" || k === "p")) { e.preventDefault(); scope.querySelector('[data-open="tray-' + (k === "m" ? "model" : "perm") + '"]').click(); }
+  });
+
+  summarize(app.querySelector('[data-scope="draft"]'));
+  var inlineScope = app.querySelector('[data-scope="inline"]'); inlineScope.dataset.proj = "mining-b"; inlineScope.dataset.topic = "掉落表重构"; renderTokens(inlineScope);
+  var saved = null; try { saved = localStorage.getItem("amo-nt-screen"); } catch (e) {}
+  setScreen(NOTES[saved] ? saved : "draft");
+})();
+</script>
