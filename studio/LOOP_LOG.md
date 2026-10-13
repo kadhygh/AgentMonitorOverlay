@@ -964,3 +964,90 @@
 - 合并：`studio/stage-7` 用 `--no-ff` 合并进 `studio/main`
 - NEEDS_YOU：写入"阶段 7 完成"（请你过目）；"调度 agent 的权限与频率"（必须等你）仍在等待
 - 额度：0
+
+## 2026-10-14 15:45 · 阶段 8 计划
+- 结果：done
+- 新建分支 `studio/stage-8`（从 `studio/main`）
+- 计划：`plans/stage-8.md`（9 个任务：S8-00 预研打包、S8-01 打包后的运行路径、S8-02 首次启动设置、S8-03 打包脚本与产物冒烟、S8-04 文档、S8-05 删除旧 AMO 的清单（不删）、S8-06 全面自查与合并准备、S8-07 合并 master【必须等你】、S8-08 删除旧 AMO【必须等你，即 S3-10】）
+- 默认决定（请你过目）：Portable zip、数据默认在 exe 旁边 `data/`、选择记在 `amo-studio.json`；版本号 0.8.0；产物放 `studio/release/` 不进 git
+- NEEDS_YOU：写入"阶段 8 计划"（请你过目）；合并 master 的"必须等你"在 S8-06 完成后写入
+- 额度：0
+
+## 2026-10-14 16:10 · S8-00 预研：打包方式
+- 结果：done（结论见 `spikes/RESULTS.md` 第 k 节）
+- 做法：不引入 electron-builder 之类的打包工具，直接复制 Electron 运行时、改名 exe、Studio 放进 `resources/app/`（不打 asar），依赖从已安装的 `node_modules` 递归拷贝。`scripts/package-portable.mjs`
+- 验证（`spikes/s8-00-portable.mjs`）：打包到沙箱，测试模式启动打包后的 exe（窗口在屏幕外、不抢焦点）：Host 0.9 秒起来、UI 能访问、Claude 和 Codex 的 mock 会话都正常回复；结束后只结束自己启动的进程树
+- 发现：Host 的 `assets/codex` 第一版没拷，补上了；没设数据目录时会落进 `resources/app/.data`，S8-01 处理
+- 大小：解压后 654 MB（Electron 368 MB，其中 exe 235 MB；Agent SDK 自带的 claude.exe 约 250 MB）
+- 默认决定（请你过目）：不新增打包依赖；不打 asar；exe 图标和版本信息暂时沿用 Electron 的
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 16:40 · S8-01 打包后的运行路径
+- 结果：done
+- 改动：`packages/app/src/paths.ts`：数据目录按顺序取 `AMO_STUDIO_DATA_DIR` → 打包版 exe 旁边 `amo-studio.json` 里保存的选择（相对路径按 exe 所在目录算）→ 打包版默认 exe 旁边的 `data/` → 开发时 `studio/.data`；配置文件写坏了当作没有选择。`main.ts` 用它决定数据目录（Electron 的浏览器配置也跟着进数据目录）；测试可以用 `AMO_STUDIO_PORTABLE_DIR` 模拟打包版。Host、UI、preload 的路径在 S8-00 已确认不用改
+- 测试：4 个单测；打包到沙箱后不设数据目录启动：数据（含 `electron/`、`claude-home`、`codex`、数据库）都落在 exe 旁边的 `data/`，Claude 和 Codex 的 mock 会话正常（`spikes/results/s8-01-portable-default.json`）
+- 验证：`npm run verify` 退出码 0（218 个测试）；e2e 39/39
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 17:20 · S8-02 首次启动设置
+- 结果：done
+- 改动（`packages/app/src/setup.ts`）：
+  - 打包版第一次运行（exe 旁边没有 `amo-studio.json`）时，不启动 Host，先开设置窗口：数据目录（默认 exe 旁边的 `data`，可以手填或"选择…"）、环境检查（codex 版本；内置模型用到的凭据有没有——只查有没有，不显示、不保存密钥）、"开始使用"；
+  - 选好后写 `amo-studio.json`（在便携目录里面的路径存成相对路径，拷走仍然有效），然后重启 Studio 用新的数据目录；
+  - 设置窗口用临时的浏览器配置目录，不在默认的 `data/` 里留东西；下一次正常启动时清掉这些临时目录；
+  - 测试模式下不查本机的 codex 和凭据，设置完直接退出（不重启，避免进程脱离测试框架）
+- 测试：`acceptDataDir` 单测（相对与绝对路径）；e2e `portable.spec.ts`（模拟打包版目录：默认值、"测试模式不检查"、空值报错、选相对目录 → 写入配置并退出、默认 `data/` 没有被创建 → 再次启动直接进工作台、数据都在选的目录里）。截图 `screenshots/stage-8/S8-02-setup.png`
+- 其他：`@amo-studio/app` 依赖 `@amo-studio/host`（环境检查用，只在设置时动态加载），`package-lock.json` 用 `npm install --offline` 更新；e2e 启动助手支持模拟打包版
+- 默认决定（请你过目）：设置完自动重启一次；缺 codex 或凭据不阻止使用，只提示
+- 验证：`npm run verify` 退出码 0（219 个测试）；e2e 40/40
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 17:50 · S8-03 打包脚本与产物冒烟
+- 结果：done
+- 改动：
+  - 版本号 0.8.0（`studio/package.json`）；
+  - `npm run package:portable`：构建 → 打包到 `studio/release/AMO Studio/` → 用 Windows 自带的 `tar.exe` 压成 `AMO-Studio-0.8.0-portable.zip`；只保留中英文的 Chromium 语言包。解压后 628 MB，zip 264 MB；
+  - `npm run smoke:portable`（`scripts/smoke-portable.mjs`）：把 zip 解到沙箱 → 第一次运行出设置页、默认数据目录就在 exe 旁边、点"开始使用" → 再启动直接进工作台 → 新建任务、和 mock 模型对话一轮 → 退出；并检查没有写到文件夹以外（`%APPDATA%\Electron` 没被动、`studio/.data` 没被动、`%APPDATA%` 下没有新目录）
+- 结果：全部通过，结果在 `spikes/results/s8-03-portable-smoke.json`，截图 `screenshots/stage-8/S8-03-portable.png`；解压 9 秒
+- 产物：`studio/release/` 里有一份 zip（不进 git），你可以直接拿去试
+- 验证：`npm run verify` 退出码 0（219 个测试）；e2e 40/40
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 18:10 · S8-04 文档
+- 结果：done
+- `studio/README.md` 改成使用说明：Portable 安装与首次启动、日常怎么用（按"想做的事 → 在哪里"列）、agent 通过 MCP 能做什么、和旧 AMO 的对应关系（旧 AMO 的 Hook、任务卡片、Obsidian 审阅与 Canvas、Focus Panel、Scratchpad、路由、Workspace Center 各对应到哪里，哪些暂不支持）、常见问题；原来的开发者文件导航保留在后面
+- 新增 `design/architecture.md`：现在代码里的进程结构、各个包、数据目录里有什么、累积的安全边界、测试方式
+- 没有改 `docs/` 下的愿景文档（它写的是目标，实际实现另写一份，避免两边不一致）
+- 默认决定（请你过目）：旧 AMO 的 Grok Build、ChatGPT 桌面端 Target、鼠标侧键快捷键在对应表里写成"暂不支持/暂未实现"
+- 验证：只改文档，没有跑测试
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 18:30 · S8-05 删除旧 AMO 的清单（不删）
+- 结果：done，`plans/remove-old-amo.md`；**没有删除任何文件**
+- 内容：按 `git ls-files`，`studio/` 以外共 475 个文件，分成"建议删"（`broker/` 157、`overlay/` 177、旧脚本、`tools/canvas-mcp-test`、`examples/`、`amo.ps1`、根 `package.json` 的旧脚本、旧的发布 workflow）、"建议留"（`studio/`、两份新版设计文档、许可证）、"要你定"（其余 97 个旧文档删还是归档、根 README 等改写、目录结构、GitHub Release、本机旧数据）
+- 确认：`studio/` 的代码和脚本没有引用 `broker/`、`overlay/`、根 `scripts/` 里的任何文件
+- 发现并补进文档：
+  - 旧 AMO 部署到工程里的 Hook，删除旧 AMO 后会找不到后台，需要逐个工程清理（loop 不碰真实工程，可以先写只读检查脚本）；
+  - 旧 AMO 的"Git exclude"会排除 `.amo/`，导致 Studio 的扩展包 `.amo/packs/` 默认不进提交；处理办法写进了 `design/pack-format.md`
+- 额度：0
+- commit：见本次 commit
+
+## 2026-10-14 19:10 · S8-06 全面自查与合并准备；阶段 8 收尾
+- 结果：done
+- 自查（跨阶段）：
+  - 密钥扫描：`studio/` 下被跟踪的文本文件里没有密钥、令牌、私钥；
+  - 不该进 git 的：`.data/`、`release/`、`node_modules/`、`test-results/` 都没有被跟踪；
+  - 个人信息：三个早期预研结果（`s1-00a-v1/v2.json`、`s4-00.json`）里有 Windows 用户名，已换成 `%USERPROFILE%`；`S8-02-setup.png` 截图里能看到含用户名的临时路径，列进检查单由你决定；
+  - 和 master 的关系：`studio/main` 领先 `master` 115 个提交、master 没有新提交，合并无冲突；**注意 `75ac787`（旧 AMO 的 DeepSeek 修复，还在等你验证）也在这条历史里**，已写进检查单；
+  - 红线复核：测试都在 `%TEMP%` 沙箱、端口只用 47900–47999、测试窗口不抢焦点、没有碰全局配置和旧 AMO
+- 合并检查单：`plans/merge-to-master.md`
+- 完整验证：`npm run verify` 退出码 0（219 个测试）；e2e 40/40；Portable 冒烟（S8-03）通过
+- 合并：`studio/stage-8` 用 `--no-ff` 合并进 `studio/main`（**没有合并到 master**）
+- NEEDS_YOU：写入"阶段 8 完成"（请你过目）、"是否把 Studio 合并到 master"（必须等你，S8-07）
+- 之后：ROADMAP 的阶段都做完了，剩下的都在等你。loop 接下来只做带过来的小修（`plans/maintenance.md`），做完就改成每小时看一次 NEEDS_YOU
+- 额度：0

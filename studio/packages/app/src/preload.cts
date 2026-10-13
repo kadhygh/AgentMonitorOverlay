@@ -7,6 +7,12 @@ electron.contextBridge.exposeInMainWorld("amo", {
   pickDirectory: (): Promise<string | null> => electron.ipcRenderer.invoke("amo:pick-directory"),
   openExternal: (url: string): Promise<void> => electron.ipcRenderer.invoke("amo:open-external", url),
   copyText: (text: string): Promise<void> => electron.ipcRenderer.invoke("amo:copy", text),
+  /** First-run setup window of the portable build only (the handlers exist only while it is open). */
+  setup: {
+    info: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:setup-info"),
+    pick: (): Promise<string | null> => electron.ipcRenderer.invoke("amo:setup-pick"),
+    done: (dataDir: string): Promise<unknown> => electron.ipcRenderer.invoke("amo:setup-done", dataDir),
+  },
   focus: {
     get: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:focus-get"),
     set: (on: boolean): Promise<void> => electron.ipcRenderer.invoke("amo:focus-set", on),

@@ -4,6 +4,19 @@
 
 环境：Codex CLI 0.161.0（实际为 0.144.1，见上方更正），app-server 走 WebSocket 加 capability token，模型路由 DeepSeek Flash（`spikes/lib.mjs` 的 `deepseekConfigArgs`）。沙盒工作区在 `%TEMP%\amo-studio-sandbox\` 下。原始记录在 `spikes/results/`。
 
+## k. Portable 打包（2026-10-14，S8-00，mock 模型，不消耗额度）
+
+脚本：`scripts/package-portable.mjs`（打包）、`spikes/s8-00-portable.mjs`（启动并验证）；结果：`spikes/results/s8-00-portable.json`。
+
+| 问题 | 结论 |
+|---|---|
+| 打包方式 | **不引入打包工具**：直接复制 `node_modules/electron/dist`，把 `electron.exe` 改名为 `AMO Studio.exe`，删掉 `default_app.asar`，Studio 放在 `resources/app/`（不打 asar）。不需要联网、不新增依赖 |
+| 目录结构 | `resources/app/` 里保留开发时的布局（`packages/{app,host,protocol,ui}/dist`），所以 `main.ts` 里按相对路径找 Host、UI、preload 的代码不用改；`@amo-studio/protocol`、`host` 从工作区链接改成普通拷贝放进 `node_modules`；Host 的 `assets/codex`（模型目录）也要一起拷 |
+| 依赖 | 从已安装的 `node_modules` 按 host、app 的 `dependencies` 递归拷贝（跳过 `@types/*` 和别的平台的可选依赖），共 80 多个包 |
+| 能否运行 | 能。测试模式、沙箱数据目录：Host 0.9 秒起来；UI 由打包后的 Host 提供；Claude（mock）会话回复正常——SDK 自带的 `claude.exe` 在 `node_modules` 里能找到（不打 asar 正是为了这个）；Codex（mock）会话回复正常——仍用你本机 npm 全局的 codex |
+| 大小 | 解压后 654 MB：Electron 368 MB（`AMO Studio.exe` 本身 235 MB、`locales` 49 MB）、Studio 287 MB（几乎都是 Agent SDK 自带的 `claude.exe`，约 250 MB）。可以只保留中英文 `locales` 省约 45 MB |
+| 还要处理 | 没设 `AMO_STUDIO_DATA_DIR` 时数据目录会落在 `resources/app/.data`，要改成 exe 旁边或首次启动选择（S8-01/S8-02）；exe 图标和版本信息仍是 Electron 的（不影响使用，以后再换） |
+
 ## j. Codex 会话的调用者身份（2026-10-13，S5-00，mock 模型，不消耗额度）
 
 脚本：`spikes/s5-00-codex-identity.mjs`；结果：`spikes/results/s5-00.json`。一个 app-server（mock 模型、沙箱 `CODEX_HOME`）上开多个会话，各自在 `thread/start` 的 `config` 里覆盖 AMO MCP 设置，再调用一个记录请求头的探针 MCP 工具。

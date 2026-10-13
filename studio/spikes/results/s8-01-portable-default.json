@@ -1,0 +1,14 @@
+{
+  "startedAt": "2026-10-13T00:57:07.976Z",
+  "exe": "%TEMP%\\amo-studio-sandbox\\s8-01-package\\AMO Studio\\AMO Studio.exe",
+  "dataDir": "%TEMP%\\amo-studio-sandbox\\s8-01-package\\AMO Studio\\data",
+  "hostUpMs": 883,
+  "profiles": [
+    "codex-mock",
+    "claude-mock"
+  ],
+  "claudeReply": "MOCK: hello from portable",
+  "codexReply": "MOCK: hello codex",
+  "uiServed": true,
+  "finishedAt": "2026-10-13T00:57:11.479Z"
+}

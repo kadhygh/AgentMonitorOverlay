@@ -266,6 +266,43 @@ ROADMAP 规定阶段 7 开工前要你确认调度权限与频率。我的做法
 不回复就保持：只手动触发、GLM、每次最多 3 条、批准后立即开工（因为批准本身就是你确认过了）、提案可选任何模型（批准前可改）。
 回复：
 
+### [请你过目] 阶段 8 计划（2026-10-14，阶段 8）
+阶段 8 做发布与收尾：
+- **Portable 打包**：解压即用的 zip，数据默认放在 exe 旁边的 `data/`；
+- **首次启动设置**：选数据目录，检查 codex 和凭据（只读）；
+- **文档**：使用说明、和旧 AMO 的对应关系。
+
+不可逆的两件事 loop 不会自己做：
+- **删除旧 AMO 代码**：等你回复 S3-10。loop 只写一份"要删哪些文件"的清单；
+- **合并到 master**：自查完成后写进 NEEDS_YOU 等你回复。不合并、不推送。
+
+按默认推进的几处：版本号 0.8.0；打包工具只装在 `studio/` 下并锁版本；产物放 `studio/release/`，不进 git；打包产物只在沙箱里、测试模式下启动验证。
+附件：`studio/plans/stage-8.md`
+回复：
+
+### [请你过目] 阶段 8 完成：Portable 版可以用了（2026-10-14，阶段 8）
+- **Portable 版**：`studio/release/AMO-Studio-0.8.0-portable.zip`（264 MB，解压 628 MB）。解压后双击 `AMO Studio.exe`；第一次会让你选数据目录（默认 exe 旁边的 `data/`）并检查 codex 和凭据；之后直接进工作台。重新打包：`studio` 下 `npm run package:portable`。
+- **验证**：zip 解到沙箱完整走过一遍（首次设置 → 工作台 → 新建任务 → 对话 → 退出），确认没有写到文件夹以外。
+- **文档**：`studio/README.md` 改成使用说明，含和旧 AMO 的对应关系；实际实现见 `studio/design/architecture.md`。
+- **删除旧 AMO 的清单**：`studio/plans/remove-old-amo.md`（只列，没有删）。里面有两件删之前要知道的事：工程里旧 AMO 部署的 Hook 要清理；旧 AMO 的"Git exclude"会让 `.amo/packs/` 默认不进提交。
+- **合并 master 的检查单**：`studio/plans/merge-to-master.md`，见下面那条"必须等你"。
+- **本阶段的默认决定（可推翻）**：不引入打包工具（直接用 Electron 运行时）、不打 asar；版本号 0.8.0；只保留中英文语言包；首次设置完自动重启一次；exe 的图标和版本信息暂时还是 Electron 的。
+- 附件：`studio/screenshots/stage-8/`
+回复：
+
+### [必须等你] 是否把 Studio 合并到 master（2026-10-14，阶段 8，S8-07）
+阶段 0–8 都已完成（定时调度等少数几项还在等你）。合并检查单见 `studio/plans/merge-to-master.md`，要点：
+1. **没有冲突**：`master` 上没有新提交。
+2. **会一起带进 master 的旧 AMO 修复**：`75ac787`（DeepSeek 的 `agents.default_subagent`），它还在等你验证（本文件最早那一条）。你可以先验证，或者让我在合并前 `git revert` 掉它。
+3. **个人信息**：预研记录里的用户名已经替换；`S8-02-setup.png` 截图里能看到含用户名的临时路径，如果仓库公开、你介意，我来换掉。
+4. 合并后旧 AMO 代码仍在（删除等 S3-10），新旧互不依赖。
+
+请回复其中一种：
+- "同意合并"（我用 `--no-ff` 合并到本地 master，不推送）；
+- "同意合并并推送"；
+- "先不合并"。
+回复：
+
 ## 已处理
 
 （暂无）

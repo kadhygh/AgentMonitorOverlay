@@ -25,14 +25,14 @@
     "init": {
       "claude_code_version": "2.1.296",
       "model": "glm-5.3[1m]",
-      "cwd": "C:\\Users\\Kangaroo\\AppData\\Local\\Temp\\amo-studio-sandbox\\s4-00\\workspace",
+      "cwd": "%USERPROFILE%\\AppData\\Local\\Temp\\amo-studio-sandbox\\s4-00\\workspace",
       "permissionMode": "default",
       "tools": 22,
       "mcp_servers": [],
       "apiKeySource": "none"
     },
     "transcripts": [
-      "C--Users-Kangaroo-AppData-Local-Temp-amo-studio-sandbox-s4-00-workspace"
+      "C--Users-USER-AppData-Local-Temp-amo-studio-sandbox-s4-00-workspace"
     ]
   },
   "flags": {
@@ -420,7 +420,7 @@
   },
   "cli": {
     "at": "2026-10-12T18:31:13.759Z",
-    "exe": "C:\\Users\\Kangaroo\\.local\\bin\\claude.exe",
+    "exe": "%USERPROFILE%\\.local\\bin\\claude.exe",
     "session_id": "8eff84ea-32b4-4be7-a5b5-a4e8c4073b76",
     "sameSession": true,
     "result": "My first answer was exactly: S4-OK",
