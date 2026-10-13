@@ -72,6 +72,7 @@ test("canvas: the new-task page and the new task's page return to the canvas the
   await page.getByLabel("第一句话").fill("从画布建的任务");
   await page.getByRole("button", { name: "开始" }).click();
   await expect(page.getByTestId("task-title")).toHaveText("从画布建的任务");
+  await expect(page.getByRole("button", { name: "画布", exact: true })).toHaveAttribute("aria-current", "page");
   await screenshot(studio.app, "stage-11", "S11-A-back-to-canvas", page);
   await page.getByRole("button", { name: "← 画布" }).click();
   await expect(page.getByTestId("canvas-viewport")).toBeVisible();
