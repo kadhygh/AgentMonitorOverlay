@@ -36,6 +36,13 @@ electron.contextBridge.exposeInMainWorld("amo", {
     /** Focus window only: let clicks through (true) or catch them (false). */
     setIgnoreMouse: (ignore: boolean): void => electron.ipcRenderer.send("amo:focus-mouse", ignore),
   },
+  /** The scratchpad window (便签): open or bring it forward, hide it (from itself), and its global shortcut. */
+  scratchpad: {
+    open: (): Promise<void> => electron.ipcRenderer.invoke("amo:scratchpad-open"),
+    hide: (): void => electron.ipcRenderer.send("amo:scratchpad-hide"),
+    applyShortcut: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:scratchpad-shortcut-apply"),
+    shortcutStatus: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:scratchpad-shortcut-status"),
+  },
   openInWorkbench: (target: { taskId?: string; sessionId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-in-workbench", target),
   onNavigate: (cb: (target: { taskId: string; sessionId?: string }) => void): (() => void) => {
     const listener = (_event: unknown, target: { taskId: string; sessionId?: string }) => cb(target);
