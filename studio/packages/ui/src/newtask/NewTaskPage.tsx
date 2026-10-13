@@ -21,6 +21,10 @@ interface NewTaskPageProps {
   profiles: readonly ModelProfile[];
   /** Where the page was opened from: preselects the project or the topic of a fresh draft. */
   scope: Scope;
+  /** Opened from this topic's canvas: a task created in that topic always goes on it (S11-A). */
+  canvasTopicId?: string;
+  /** What "←" says: where it returns (看板 or 画布). */
+  backLabel?: string;
   onBack(): void;
   /** `session` null: the task was only filed (放进待办). */
   onCreated(task: Task, session: Session | null): void;
@@ -31,7 +35,7 @@ interface NewTaskPageProps {
  * rows of chips (both may stay unpicked: no project runs in the common folder), the model is a tile, the effort a set
  * of bars, the permissions a segmented control. Enter starts, Ctrl+Enter files the task in 待办. The draft is kept.
  */
-export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, onBack, onCreated }: NewTaskPageProps) {
+export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, canvasTopicId, backLabel = "看板", onBack, onCreated }: NewTaskPageProps) {
   const { draft, update, reset } = useTaskDraft(profiles);
   const projects = projectWorkspaces(workspaces);
   const pins = usePins();
@@ -45,6 +49,8 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [templateKey, setTemplateKey] = useState("");
+  // "显示在画布上" for a task in a topic: off unless the page was opened from that topic's canvas (then always on).
+  const [showOnCanvas, setShowOnCanvas] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const presets = useSettings(link)?.presets ?? [];
   const { choices } = useProfileChoices(link, draft.pick.profileId);
@@ -60,6 +66,8 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
 
   // In a topic, its projects come first.
   const topic = liveTopics.find((t) => t.id === draft.topicId);
+  const fromCanvas = !!topic && topic.id === canvasTopicId;
+  const onCanvas = !!topic && (fromCanvas || showOnCanvas);
   const inTopic = new Set(topic ? [...topic.workspaceIds, ...tasks.filter((t) => t.topicId === topic.id).map((t) => t.workspaceId)] : []);
   const orderedProjects = [...pinnedFirst(projects, pins.project, (w) => w.id)].sort((a, b) => Number(inTopic.has(b.id)) - Number(inTopic.has(a.id)));
 
@@ -87,7 +95,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     setError("");
     try {
       const template = chosenTemplate && draft.projectId ? { workspaceId: draft.projectId, pack: chosenTemplate.pack, template: chosenTemplate.template.id } : undefined;
-      const created = await submitDraft(link, draft, file, template);
+      const created = await submitDraft(link, draft, file, template, onCanvas);
       reset({ projectId: draft.projectId, topicId: draft.topicId });
       onCreated(created.task, created.session);
     } catch (err) {
@@ -131,7 +139,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     <section className="draft-page" aria-label="新任务">
       <div className="page-head">
         <button type="button" className="btn-ghost small" onClick={onBack}>
-          ← 看板
+          ← {backLabel}
         </button>
         <span className="page-crumb">/ 新任务</span>
         <span className="spacer" />
@@ -181,6 +189,14 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
                 </button>
               ))}
             </div>
+            {topic && (
+              <label className="pick-row draft-oncanvas" title="在专题的画布上显示这个任务的卡片；之后在任务页随时可以改">
+                <span className="pick-lab" />
+                <input type="checkbox" checked={onCanvas} disabled={fromCanvas} onChange={(e) => setShowOnCanvas(e.target.checked)} data-testid="draft-on-canvas" />
+                显示在画布上
+                {fromCanvas && <span className="drawer-note">从画布新建，总在画布上</span>}
+              </label>
+            )}
             {templates.length > 0 && (
               <div className="pick-row" role="group" aria-label="流程模板">
                 <span className="pick-lab">模板</span>

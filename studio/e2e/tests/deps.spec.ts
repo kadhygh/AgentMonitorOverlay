@@ -18,6 +18,7 @@ test("dependencies from the sidebar and notes on the canvas", async () => {
   for (const title of ["拆表", "改导入", "跑校验"]) {
     const { task } = await studio.api<{ task: Task }>("POST", "/api/tasks", { title, workspaceId: ws.id, topicId: topic.id, firstSession: { profileId: "codex-mock" } });
     ids[title] = task.id;
+    await studio.api("PUT", `/api/tasks/${task.id}/canvas`, { onCanvas: true }); // shown on the canvas (S11-A: not automatic)
   }
   const canvas = () => studio!.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
 

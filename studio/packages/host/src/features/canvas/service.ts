@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { CanvasDoc, Id, Task } from "@amo-studio/protocol";
-import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, emptyCanvas, isCommon, placeTask, removeTask, validateCanvas } from "@amo-studio/protocol";
+import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, emptyCanvas, isCommon, placeTask, refsToCard, removeTask, unplaceTask, validateCanvas } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -22,7 +22,10 @@ export class CanvasFeature extends Feature {
     if (doc.version !== current.version) {
       throw new HostError("conflict", `canvas changed elsewhere (version ${current.version}, yours ${String(doc.version)}); reload and retry`);
     }
-    const errors = validateCanvas(doc, new Set(this.topicTasks(topicId).map((t) => t.id)));
+    // Archived tasks keep their cards and dependencies (hidden while archived, back on restore), so they count too:
+    // refusing them made every later save of that canvas fail (S11-A: an empty group that would not go away).
+    const known = this.store.listTasks().filter((t) => t.topicId === topicId);
+    const errors = validateCanvas(doc, new Set(known.map((t) => t.id)));
     if (errors.length) throw new HostError("bad_request", errors.slice(0, 5).join("; "));
     const next: CanvasDoc = {
       id: topicId,
@@ -47,6 +50,18 @@ export class CanvasFeature extends Feature {
     const current = this.store.getCanvas(topicId);
     if (!current || !current.nodes.some((n) => n.kind === "task" && n.taskId === taskId)) return;
     const next: CanvasDoc = { ...removeTask(current, taskId), version: current.version + 1, updatedAt: new Date().toISOString() };
+    this.store.putCanvas(next);
+    this.publish({ type: "canvas.updated", canvas: next });
+  }
+
+  /**
+   * A task joining a topic: a reference card to it on that topic's canvas becomes its own card, in the same place (a
+   * reference to one of the topic's own tasks is not allowed); further references to it there go.
+   */
+  joinCanvas(topicId: Id, taskId: Id): void {
+    const current = this.store.getCanvas(topicId);
+    if (!current || !current.nodes.some((n) => n.kind === "ref" && n.taskId === taskId)) return;
+    const next: CanvasDoc = { ...refsToCard(current, taskId), version: current.version + 1, updatedAt: new Date().toISOString() };
     this.store.putCanvas(next);
     this.publish({ type: "canvas.updated", canvas: next });
   }
@@ -81,6 +96,19 @@ export class CanvasFeature extends Feature {
     return { taskId: task.id, groupId: group };
   }
 
+  /**
+   * Shows or hides a task's card on its topic's canvas ("显示在画布上"). Shown, a task not on the canvas yet goes below
+   * everything ungrouped; hidden, only its card goes (it stays in the topic, with its dependencies).
+   */
+  setTaskOnCanvas(taskId: Id, input: { onCanvas?: unknown }): CanvasDoc {
+    const task = this.requireTask(taskId);
+    if (!task.topicId) throw new HostError("bad_request", "the task is not in a topic, so it has no canvas");
+    if (typeof input.onCanvas !== "boolean") throw new HostError("bad_request", "onCanvas must be true or false");
+    const placed = this.canvas(task.topicId).nodes.some((n) => n.kind === "task" && n.taskId === task.id);
+    if (placed === input.onCanvas) return this.canvas(task.topicId);
+    return this.mutateCanvas(task.topicId, (doc) => (input.onCanvas ? placeTask(doc, task.id, null, newId("n")) : unplaceTask(doc, task.id)));
+  }
+
   /** Applies a change to the latest canvas and saves it (one synchronous read-modify-write, so no version race here). */
   private mutateCanvas(topicId: Id, change: (doc: CanvasDoc) => CanvasDoc): CanvasDoc {
     const current = this.canvas(topicId);
@@ -95,6 +123,9 @@ export class CanvasFeature extends Feature {
   }
 
   canvasOutline(topicId: Id) {
-    return canvasOutline(this.canvas(topicId), this.topicTasks(topicId), this.store.listWorkspaces(), this.store.listSessions());
+    return canvasOutline(this.canvas(topicId), this.topicTasks(topicId), this.store.listWorkspaces(), this.store.listSessions(), {
+      tasks: this.store.listTasks(),
+      topics: this.store.listTopics(),
+    });
   }
 }

@@ -15,11 +15,13 @@ export const canvasView: ViewDef<"canvas"> = {
         link={link}
         topic={topic}
         tasks={state.tasks.filter((t) => t.topicId === topic.id && !t.archivedAt)}
+        allTasks={state.tasks}
+        topics={state.topics}
         sessions={state.sessions}
         workspaces={state.workspaces}
         profiles={state.profiles}
-        onOpenTask={(taskId, sessionId) => setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}) })}
-        onNewTask={() => setView({ kind: "new", topicId: topic.id })}
+        onOpenTask={(taskId, sessionId) => setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}), back: { kind: "canvas" } })}
+        onNewTask={() => setView({ kind: "new", topicId: topic.id, back: { kind: "canvas" } })}
       />
     );
   },

@@ -285,6 +285,11 @@ export interface HostRoutes {
   "PUT /api/topics/:id/canvas": { req: CanvasDoc; res: CanvasDoc };
   /** Structure without coordinates, for agents (`canvas_read`) and the "agent 视角" tab. */
   "GET /api/topics/:id/canvas/outline": { req: void; res: { outline: string; json: import("./canvas.js").CanvasOutline } };
+  /**
+   * "显示在画布上": shows (`true`) or hides a task's card on its topic's canvas; returns that canvas. Tasks created on the
+   * canvas are always shown; ones created elsewhere only when the person asks. Hiding keeps the task and its dependencies.
+   */
+  "PUT /api/tasks/:id/canvas": { req: { onCanvas: boolean }; res: CanvasDoc };
 }
 
 export type HostRoute = keyof HostRoutes;

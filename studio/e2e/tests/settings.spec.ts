@@ -19,7 +19,8 @@ test("light theme from the settings dialog, remembered and shared with Focus", a
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
-  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "导入重试", workspaceId: ws.id, topicId: topic.id, firstSession: { profileId: "codex-mock", text: "[[markdown]]" } });
+  const { task } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "导入重试", workspaceId: ws.id, topicId: topic.id, firstSession: { profileId: "codex-mock", text: "[[markdown]]" } });
+  await studio.api("PUT", `/api/tasks/${task.id}/canvas`, { onCanvas: true }); // shown on the canvas (S11-A: not automatic)
 
   // Explicit dark first (the test machine's own theme must not decide the result).
   await page.getByRole("button", { name: "设置" }).click();

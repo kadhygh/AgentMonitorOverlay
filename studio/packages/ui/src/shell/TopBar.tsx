@@ -54,7 +54,9 @@ export function TopBar({
         {views.map((def) => {
           const target = def.tab?.open(scope);
           if (!def.tab || !target) return null;
-          const current = !!view && (view.kind === def.kind || !!def.tab.alsoFor?.includes(view.kind));
+          // A page opened from another one (a task from the canvas) keeps that one's tab current.
+          const from = view && "back" in view ? view.back : undefined;
+          const current = !!view && (view.kind === def.kind || (from ? from.kind === def.kind : !!def.tab.alsoFor?.includes(view.kind)));
           return (
             <button key={def.kind} type="button" className="view-tab" aria-current={current ? "page" : undefined} onClick={() => onView(target)} disabled={disabled}>
               {def.tab.label}

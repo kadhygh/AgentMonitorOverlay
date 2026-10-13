@@ -57,7 +57,8 @@ test("a canvas group is removed from its title bar or with Delete; its cards sta
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
-  await studio.api("POST", "/api/tasks", { title: "整理导入流程", workspaceId: ws.id, topicId: topic.id });
+  const { task } = await studio.api<{ task: { id: string } }>("POST", "/api/tasks", { title: "整理导入流程", workspaceId: ws.id, topicId: topic.id });
+  await studio.api("PUT", `/api/tasks/${task.id}/canvas`, { onCanvas: true }); // shown on the canvas (S11-A: not automatic)
   const canvas = () => studio!.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
   await page.getByRole("button", { name: "画布", exact: true }).click();
   await expect(page.getByTestId("canvas-card")).toHaveCount(1);

@@ -139,8 +139,10 @@ test("stage 7 acceptance: a scheduler round by hand, a proposal, approval, work 
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-MCP:", { timeout: 60_000 });
   await expect(page.getByTestId("needs-you")).toHaveText(/需要你 1/);
 
-  // On the board: approve; the todo's task starts with the proposed prompt.
-  await page.getByRole("button", { name: "← 看板" }).click();
+  // On the board: approve; the todo's task starts with the proposed prompt. (The round was opened from the canvas,
+  // so the task page's "←" goes back there; the board is the top bar's tab.)
+  await page.getByRole("button", { name: "← 画布" }).click();
+  await page.getByRole("button", { name: "看板", exact: true }).click();
   const card = page.getByTestId("proposal-card");
   await expect(card).toContainText("统一掉落表格式");
   await expect(card).toContainText("alpha 空闲");

@@ -62,6 +62,22 @@ export function addDependency(doc: CanvasDoc, from: Id, to: Id, edgeId: Id): Can
   return { ...doc, edges: [...doc.edges, { id: edgeId, kind: "depends", from, to }] };
 }
 
+/** Hides a task of the topic from its canvas: only its card goes; its dependencies stay (the task is still in the topic). */
+export function unplaceTask(doc: CanvasDoc, taskId: Id): CanvasDoc {
+  return { ...doc, nodes: doc.nodes.filter((n) => !(n.kind === "task" && n.taskId === taskId)) };
+}
+
+/** A task joining the topic: its first reference card there becomes its own card (same place); other references go. */
+export function refsToCard(doc: CanvasDoc, taskId: Id): CanvasDoc {
+  const refs = doc.nodes.filter((n) => n.kind === "ref" && n.taskId === taskId);
+  if (!refs.length) return doc;
+  const keep = doc.nodes.some((n) => n.kind === "task" && n.taskId === taskId) ? null : refs[0]!;
+  return {
+    ...doc,
+    nodes: doc.nodes.flatMap((n) => (n === keep ? [{ id: n.id, kind: "task" as const, taskId, groupId: n.groupId, pos: n.pos }] : refs.includes(n) ? [] : [n])),
+  };
+}
+
 /** Takes a task off a canvas: its card and every dependency it is part of (when it leaves the topic). */
 export function removeTask(doc: CanvasDoc, taskId: Id): CanvasDoc {
   return {

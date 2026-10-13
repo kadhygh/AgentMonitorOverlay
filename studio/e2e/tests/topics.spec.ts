@@ -27,12 +27,14 @@ test("a topic gathers tasks from two projects on its own canvas, and a task can 
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await expect(page.getByRole("group", { name: "专题" }).getByRole("button", { name: "掉落表重构" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("group", { name: "项目" }).getByRole("button", { name: "alpha" }).click();
+  await page.getByTestId("draft-on-canvas").check(); // off by default outside the canvas (S11-A)
   await page.getByLabel("第一句话").fill("掉落表概率校验");
   await page.getByLabel("第一句话").press("Enter");
   await expect(page.getByTestId("msg-agent")).toContainText("MOCK: 掉落表概率校验", { timeout: 30_000 });
   await expect(page.locator(".page-head")).toContainText("alpha");
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await page.getByRole("group", { name: "项目" }).getByRole("button", { name: "beta" }).click();
+  await page.getByTestId("draft-on-canvas").check();
   await page.getByLabel("第一句话").fill("Elite 表补测试");
   await page.getByRole("button", { name: "放进待办" }).click();
   await expect(page.getByTestId("task-card")).toHaveCount(2);
