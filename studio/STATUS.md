@@ -1,5 +1,7 @@
 # 状态
 
+> 2026-10-13 之后的进展（对话体验、订阅模型、型号/强度/权限、帮我审批）和下一个会话的起点见 `HANDOFF.md`。
+
 更新：2026-10-14
 
 - **当前阶段**：阶段 0–8 已完成；等你决定合并 master、删除旧 AMO 等（见"在等你"）
@@ -9,4 +11,4 @@
 - **试用**：Portable 版 `studio/release/AMO-Studio-0.8.0-portable.zip`（解压后双击 `AMO Studio.exe`）；开发时 `studio` 下 `npm start`，停止 Host 用 `npm run host:stop`
 - **已完成任务**：S8-00 预研打包方式、S8-01 打包后的数据目录、S8-02 首次启动设置、S8-03 打包与产物冒烟、S8-04 文档、S8-05 删除旧 AMO 的清单、S8-06 自查与合并准备（已合并进 studio/main）
 - **下一步**：所有剩余事项都在等你；loop 每小时查看一次 NEEDS_YOU（遗留小问题的结论见 `plans/maintenance.md`）
-- **模型调用额度**：DeepSeek 27 / 1000，GLM 24 / 5000
+- **模型调用额度**：DeepSeek 29 / 1000，GLM 28 / 5000，GPT 订阅 6 / 50，Claude 订阅 0 / 50
