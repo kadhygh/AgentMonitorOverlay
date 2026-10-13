@@ -2,7 +2,6 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent }
 import type { Annotation, ApprovalDecision, ModelProfile, Session, SessionItem, SessionPreset, Task } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
-import { SuggestList, useTaskMentions } from "../newtask/Suggest.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { copyText } from "../host/client.js";
 import { ReplyNav } from "./ReplyNav.js";
@@ -15,6 +14,8 @@ import { AttachTray } from "../attach/AttachTray.js";
 import { AttachLink } from "../attach/MessageAttachments.js";
 import { IconPaperclip } from "../attach/icons.js";
 import { withFileRefs } from "../attach/refs.js";
+import { MentionList, useComposerMentions } from "../attach/useMentions.js";
+import { FileSelector } from "../attach/FileSelector.js";
 
 interface ThreadProps {
   link: HostLink;
@@ -23,6 +24,8 @@ interface ThreadProps {
   profile?: ModelProfile;
   /** Tasks the composer can @ (the message then says which AMO tasks they are). */
   tasks?: readonly Task[];
+  /** Sessions the composer can @ (those of the same project or topic are offered). */
+  sessions?: readonly Session[];
   /** 常用预设, shown as chips for sessions on the same profile. */
   presets: readonly SessionPreset[];
   items: readonly SessionItem[];
@@ -42,7 +45,7 @@ interface ThreadProps {
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, tasks = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
+export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -50,10 +53,22 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
   const [menu, setMenu] = useState<Menu>(null);
   const view = useTranscriptView();
   useEffect(() => setDraft(""), [session?.id]);
-  const taskMentions = useTaskMentions({ text: draft, setText: setDraft, tasks });
   const attach = useAttachments(link);
+  // 找文件: the selector, opened with Ctrl+P or from the @ list (with what was typed after @).
+  const [finding, setFinding] = useState<{ query: string } | null>(null);
+  const mentions = useComposerMentions({
+    link,
+    text: draft,
+    setText: setDraft,
+    tasks,
+    sessions,
+    current: session,
+    onFile: (path) => attach.addFiles([path]),
+    onFind: (query) => setFinding({ query }),
+  });
   const resetAttach = attach.reset;
   useEffect(() => resetAttach(), [session?.id, resetAttach]);
+  useEffect(() => setFinding(null), [session?.id]);
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
 
@@ -126,7 +141,7 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
     const sent = attach.take();
     stick.current = true;
     setAtBottom(true);
-    const message = withFileRefs(text ? taskMentions.expand(text) : "", sent.files);
+    const message = withFileRefs(text ? mentions.expand(text) : "", sent.files);
     const ids = sent.images.flatMap((i) => (i.id ? [i.id] : []));
     if (await onSend(message, ids)) attach.release(sent);
     else {
@@ -134,6 +149,19 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
       attach.restore(sent);
     }
   }
+
+  // Ctrl+P anywhere on the session's page opens the file selector (not while another dialog holds the keys).
+  useEffect(() => {
+    if (readOnly) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.shiftKey || e.altKey || e.key.toLowerCase() !== "p") return;
+      if (document.querySelector('[role="dialog"]')) return;
+      e.preventDefault();
+      setFinding({ query: "" });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [readOnly]);
 
   // Files dragged in from Explorer (or anywhere) over the conversation or the composer.
   const dropTarget = readOnly
@@ -244,15 +272,15 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
                 value={draft}
                 onChange={(e) => {
                   setDraft(e.target.value);
-                  taskMentions.track(e.target);
+                  mentions.track(e.target);
                 }}
-                onSelect={(e) => taskMentions.track(e.currentTarget)}
+                onSelect={(e) => mentions.track(e.currentTarget)}
                 onPaste={readOnly ? undefined : attach.onPaste}
                 disabled={readOnly}
                 rows={2}
                 placeholder={placeholder}
                 onKeyDown={(e) => {
-                  if (taskMentions.onKeyDown(e)) return;
+                  if (mentions.onKeyDown(e)) return;
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     void send();
@@ -260,7 +288,7 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
                 }}
               />
             </label>
-            <SuggestList mentions={taskMentions} />
+            <MentionList mentions={mentions} />
             <div className="chat-bar">
               <button
                 type="button"
@@ -313,6 +341,18 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
             </div>
           )}
         </div>
+      )}
+      {finding && session && (
+        <FileSelector
+          link={link}
+          workspaceId={session.workspaceId}
+          initialQuery={finding.query}
+          onPick={(path) => attach.addFiles([path])}
+          onClose={() => {
+            setFinding(null);
+            requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".chat-input textarea")?.focus());
+          }}
+        />
       )}
     </>
   );

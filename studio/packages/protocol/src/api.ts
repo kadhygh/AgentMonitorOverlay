@@ -326,3 +326,16 @@ export function composeAnnotationMessage(annotations: ReadonlyArray<{ quote: str
   });
   return `针对你上面的回复，我有 ${annotations.length} 条批注：\n\n${parts.join("\n\n")}`;
 }
+
+// ---- project files (stage 11, S11-B): the file selector and "@ 文件" ----------------------------------------------
+// Declared as a second part of HostRoutes (interfaces merge), so this feature's routes stay together.
+export interface HostRoutes {
+  /**
+   * The project's files: `git ls-files` (tracked and untracked-not-ignored) in a git repository, otherwise a bounded
+   * walk that skips node_modules, .git, dist, build and the like. Listed once and cached briefly. `?q=` filters with
+   * `fuzzyMatch` (best first, with the matched indices); `?limit=` caps the rows (default 50, at most 200).
+   */
+  "GET /api/workspaces/:id/files": { req: void; res: import("./files.js").ProjectFiles };
+  /** Recently changed files: git's working-tree changes, or the newest by modification time. `?limit=` (default 8). */
+  "GET /api/workspaces/:id/files/recent": { req: void; res: import("./files.js").ProjectFiles };
+}

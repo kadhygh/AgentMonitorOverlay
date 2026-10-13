@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baseName, dirName, formatBytes, splitFileRefs, withFileRefs } from "./refs.js";
+import { baseName, dirName, formatBytes, formatWhen, splitFileRefs, withFileRefs } from "./refs.js";
 
 describe("file references in a message", () => {
   it("appends the paths as a block and reads them back", () => {
@@ -32,6 +32,16 @@ describe("path and size labels", () => {
     expect(baseName("C:\\work\\src\\")).toBe("src");
     expect(dirName("C:\\work\\src\\b.ts")).toBe("C:\\work\\src");
     expect(dirName("b.ts")).toBe("");
+  });
+
+  it("says when a file changed", () => {
+    const now = new Date(2026, 9, 13, 22, 0);
+    expect(formatWhen(new Date(2026, 9, 13, 21, 59, 40).toISOString(), now)).toBe("刚刚");
+    expect(formatWhen(new Date(2026, 9, 13, 21, 55).toISOString(), now)).toBe("5 分钟前");
+    expect(formatWhen(new Date(2026, 9, 13, 19, 0).toISOString(), now)).toBe("3 小时前");
+    expect(formatWhen(new Date(2026, 9, 12, 23, 0).toISOString(), now)).toBe("昨天");
+    expect(formatWhen(new Date(2026, 9, 1, 9, 0).toISOString(), now)).toBe("10-01");
+    expect(formatWhen(new Date(2025, 9, 1, 9, 0).toISOString(), now)).toBe("2025-10-01");
   });
 
   it("formats sizes", () => {

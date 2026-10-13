@@ -36,6 +36,20 @@ export function dirName(path: string): string {
   return trimmed.slice(0, Math.max(trimmed.lastIndexOf("/"), trimmed.lastIndexOf("\\"), 0));
 }
 
+/** When a file changed, short: "刚刚", "5 分钟前", "3 小时前", "昨天", "10-12", "2025-10-12". */
+export function formatWhen(iso: string, now = new Date()): string {
+  const t = new Date(iso);
+  const minutes = Math.floor((now.getTime() - t.getTime()) / 60_000);
+  if (minutes < 1) return "刚刚";
+  if (minutes < 60) return `${minutes} 分钟前`;
+  if (minutes < 24 * 60 && t.getDate() === now.getDate()) return `${Math.floor(minutes / 60)} 小时前`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (t.toDateString() === yesterday.toDateString()) return "昨天";
+  const md = `${String(t.getMonth() + 1).padStart(2, "0")}-${String(t.getDate()).padStart(2, "0")}`;
+  return t.getFullYear() === now.getFullYear() ? md : `${t.getFullYear()}-${md}`;
+}
+
 /** "12 KB", "3.4 MB". */
 export function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;

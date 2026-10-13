@@ -26,10 +26,20 @@ describe("parseRequest", () => {
     expect(req.tools).toEqual(["shell_command", "apply_patch"]);
     expect(req.afterToolOutput).toBe(true);
   });
+
+  it("counts the images of the last user message, leaving out the tags Codex puts around them", () => {
+    const req = parseRequest({
+      input: [
+        { type: "message", role: "user", content: [{ type: "input_text", text: "<image name=[Image #1]>" }, { type: "input_image", image_url: "data:image/png;base64,AA" }, { type: "input_text", text: "</image>" }, { type: "input_text", text: "look" }] },
+      ],
+    });
+    expect(req).toMatchObject({ lastUserText: "look", images: 1 });
+    expect(defaultScript(req)).toEqual({ kind: "text", text: "MOCK: look [images: 1]" });
+  });
 });
 
 describe("defaultScript", () => {
-  const req = (text: string, tools = ["shell_command"]) => ({ lastUserText: text, afterToolOutput: false, agentTask: null, tools, lastTool: null, toolOutputsSinceUser: 0, body: {} });
+  const req = (text: string, tools = ["shell_command"]) => ({ lastUserText: text, images: 0, afterToolOutput: false, agentTask: null, tools, lastTool: null, toolOutputsSinceUser: 0, body: {} });
 
   it("spawns a subagent through the collaboration namespace and answers as that subagent", () => {
     expect(defaultScript(req("[[spawn: explorer: map it]]", ["collaboration", "collaboration.spawn_agent"]))).toEqual({
