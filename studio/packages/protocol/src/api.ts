@@ -322,3 +322,26 @@ export function composeAnnotationMessage(annotations: ReadonlyArray<{ quote: str
   });
   return `针对你上面的回复，我有 ${annotations.length} 条批注：\n\n${parts.join("\n\n")}`;
 }
+
+/**
+ * Git Review (S11-D), merged into HostRoutes above. Paths are relative to the project folder; `?range=` is a GitRange
+ * (`working` by default). A folder that is not a git repository answers with `repo: false`, not an error.
+ */
+export interface HostRoutes {
+  "GET /api/workspaces/:id/git/status": { req: void; res: import("./gitreview.js").GitStatus };
+  /** Changed files of a range, sorted by path. */
+  "GET /api/workspaces/:id/git/changes": { req: void; res: import("./gitreview.js").GitChanges };
+  /** One file's diff in a range: `?path=` (and `?oldPath=` for renames). */
+  "GET /api/workspaces/:id/git/diff": { req: void; res: import("./gitreview.js").GitFileDiff };
+  /** Line comments of the project, drafts and sent, oldest first. */
+  "GET /api/workspaces/:id/review-comments": { req: void; res: import("./gitreview.js").GitReviewComment[] };
+  "POST /api/workspaces/:id/review-comments": { req: import("./gitreview.js").NewGitReviewComment; res: import("./gitreview.js").GitReviewComment };
+  /** Drafts only (409 once sent). */
+  "PATCH /api/review-comments/:id": { req: { note: string }; res: import("./gitreview.js").GitReviewComment };
+  "DELETE /api/review-comments/:id": { req: void; res: { ok: true } };
+  /** Sends the drafts (all, or `ids`) to a session as one message grouped by file, then marks them sent. */
+  "POST /api/workspaces/:id/review-comments/send": {
+    req: { sessionId: Id; ids?: Id[] };
+    res: { mode: "start" | "steer" | "queue"; sent: import("./gitreview.js").GitReviewComment[] };
+  };
+}

@@ -20,6 +20,7 @@ import { reviewRoutes } from "./review/routes.js";
 import { packsRoutes } from "./packs/routes.js";
 import { packsTools } from "./packs/mcp.js";
 import { attachmentsRoutes } from "./attachments/routes.js";
+import { gitReviewRoutes } from "./gitreview/routes.js";
 
 /**
  * Every Host feature (features/<name>/): its service class lives on HostService, its routes and MCP tools are listed
@@ -45,4 +46,5 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "review", routes: reviewRoutes },
   { name: "packs", routes: packsRoutes, tools: packsTools },
   { name: "attachments", routes: attachmentsRoutes },
+  { name: "gitreview", routes: gitReviewRoutes },
 ];
