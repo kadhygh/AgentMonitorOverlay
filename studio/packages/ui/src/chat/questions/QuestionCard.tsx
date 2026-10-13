@@ -33,6 +33,10 @@ async function reply(link: HostLink, sessionId: string, itemId: string, body: Qu
 
 const SOURCE_LABEL: Record<QuestionItem["source"], string> = { "claude-ask": "Claude 在问你", "codex-input": "Codex 在问你", "mcp-form": "需要填写", "plan-review": "计划待审" };
 
+/** Drafts survive closing the card (it opens again from the conversation) and are dropped once sent. */
+const savedFlows = new Map<string, Flow>();
+const savedValues = new Map<string, Record<string, unknown>>();
+
 function useSender(link: HostLink, sessionId: string, itemId: string) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -44,6 +48,9 @@ function useSender(link: HostLink, sessionId: string, itemId: string) {
     if (failed) {
       setBusy(false);
       setError(failed);
+    } else {
+      savedFlows.delete(itemId);
+      savedValues.delete(itemId);
     }
   };
   return { busy, error, setError, send };
@@ -72,7 +79,10 @@ function CardHead({ eyebrow, title, minimized, onMinimize, onClose, busy }: { ey
 
 function AskCard({ link, sessionId, item, onClose }: CardProps) {
   const questions = item.questions ?? [];
-  const [flow, setFlow] = useState<Flow>(() => startFlow(questions));
+  const [flow, setFlow] = useState<Flow>(() => savedFlows.get(item.id) ?? startFlow(questions));
+  useEffect(() => {
+    savedFlows.set(item.id, flow);
+  }, [item.id, flow]);
   const [minimized, setMinimized] = useState(false);
   const { busy, error, setError, send } = useSender(link, sessionId, item.id);
   const card = useRef<HTMLElement>(null);
@@ -224,7 +234,10 @@ function AskCard({ link, sessionId, item, onClose }: CardProps) {
 
 function FormCard({ link, sessionId, item, onClose }: CardProps) {
   const fields = item.form ?? [];
-  const [values, setValues] = useState<Record<string, unknown>>(() => Object.fromEntries(fields.map((f) => [f.name, fieldDefault(f)])));
+  const [values, setValues] = useState<Record<string, unknown>>(() => savedValues.get(item.id) ?? Object.fromEntries(fields.map((f) => [f.name, fieldDefault(f)])));
+  useEffect(() => {
+    savedValues.set(item.id, values);
+  }, [item.id, values]);
   const [bad, setBad] = useState<string | null>(null);
   const [minimized, setMinimized] = useState(false);
   const { busy, error, setError, send } = useSender(link, sessionId, item.id);

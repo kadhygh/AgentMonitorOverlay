@@ -151,6 +151,8 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
         : "会话已交给终端，工作台暂时只读。"
     : isRevising
       ? "写下要修改的地方，回车发给 Claude（计划会按你的意见重写）"
+      : planReview
+      ? "计划在等你审阅：可以先在这里写下意见，再点上面的「要修改」"
       : generating
       ? queues
         ? "回复生成中，发出的内容会在下一次工具调用后或本轮结束后被读到"
@@ -387,7 +389,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
                 }}
               />
               <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly} />
-              <span className="composer-hint">{attachHold || (generating && !readOnly && !isRevising ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
+              <span className="composer-hint">{attachHold || (generating && !readOnly && !planReview ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && (
                 <button type="button" className="round-btn stop" onClick={onInterrupt} aria-label="打断" title="停止生成">

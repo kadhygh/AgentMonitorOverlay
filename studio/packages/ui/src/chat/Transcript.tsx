@@ -129,6 +129,8 @@ function TurnView({
           ))}
         </div>
       )}
+      {/* What the person answered stays in sight when the turn's work folds away (like their messages). */}
+      {folded && seg.rows.map((row) => (row.kind === "item" && row.item.type === "question" ? <QuestionRecord key={row.key} item={row.item} /> : null))}
       {seg.answer && <AgentReply item={seg.answer} highlights={highlights(seg.answer.id)} />}
       {seg.tail.map((item) => (
         <StandaloneItem key={item.id} item={item} busy={busy} highlights={highlights} onApprove={onApprove} />

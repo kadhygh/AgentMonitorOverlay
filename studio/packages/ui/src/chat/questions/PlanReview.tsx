@@ -21,7 +21,7 @@ export function PlanCard({ item }: { item: QuestionItem }) {
     <div className="plan-card" data-testid="plan-card" data-state={item.state} data-revised={item.feedback ? "" : undefined}>
       <div className="plan-card-head">
         <IconPlan />
-        <span className="plan-card-title">{planTitle(plan)}</span>
+        <span className="plan-card-title">Claude 的计划</span>
         <span className={`plan-card-state ${item.state}`}>{state}</span>
       </div>
       {plan ? (
