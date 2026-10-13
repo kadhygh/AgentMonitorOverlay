@@ -277,10 +277,9 @@ body { font-family: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
     <p>编辑部风格，1:1 尺寸。页面上的控件都能点：试试在输入框里打 @ 或 #，点模型、点思考强度的竖条。</p>
   </div>
   <div class="pv-row" role="group" aria-label="方案">
-    <button class="pv-tab" data-screen="draft" aria-pressed="true">方案一 · 草稿任务页（推荐）</button>
+    <button class="pv-tab" data-screen="draft" aria-pressed="true">草稿任务页（定稿）</button>
     <button class="pv-tab" data-screen="session" aria-pressed="false">会话中切换</button>
-    <button class="pv-tab" data-screen="inline" aria-pressed="false">方案二 · 看板里直接加</button>
-    <button class="pv-tab" data-screen="quick" aria-pressed="false">方案三 · 快速启动条</button>
+    <button class="pv-tab" data-screen="quick" aria-pressed="false">快速启动条（保留）</button>
   </div>
   <div class="pv-note" id="pv-note"></div>
 </div>
@@ -396,7 +395,7 @@ body { font-family: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
         <h2>导入器加上失败重试</h2>
         <span class="tag"><svg><use href="#i-folder"/></svg>mining-c</span>
         <span class="spacer"></span>
-        <span style="font-size:var(--fs-cap);color:var(--text-3)">主会话 · Codex 线程</span>
+        <span style="font-size:var(--fs-cap);color:var(--text-3)">主会话 · GPT 订阅</span>
       </div>
       <div class="chat">
         <div class="thread">
@@ -409,17 +408,14 @@ body { font-family: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
         <div class="sess-comp" data-scope="session">
           <div class="composer">
             <div class="tray open" id="tray-model" data-tray="model">
-              <div class="tray-h">换型号<span class="note">Codex 下一轮生效</span><span class="kbd">Alt M</span></div>
+              <div class="tray-h">换型号<span class="note">只在同一家里换，上下文不变，下一轮生效</span><span class="kbd">Alt M</span></div>
               <div class="row" data-pick="model">
-                <span class="acct"><span class="mark ds">DS</span>DeepSeek</span>
-                <button class="mtile" data-v="ds-flash" aria-pressed="true">Flash</button>
-                <button class="mtile" data-v="ds-pro" aria-pressed="false">Pro<span class="sub">更慢、更强</span></button>
+                <span class="acct"><span class="mark gpt">G</span>GPT 订阅</span>
+                <button class="mtile" data-v="sol" aria-pressed="true">GPT-6.1 Sol</button>
+                <button class="mtile" data-v="astra" aria-pressed="false">GPT-6.1 Astra<span class="sub">更强、更慢</span></button>
+                <button class="mtile" data-v="mini" aria-pressed="false">GPT-6.1 Mini<span class="sub">最快</span></button>
               </div>
-              <div class="row">
-                <span class="acct"><span class="mark cl">C</span>Claude 订阅</span>
-                <button class="mtile" aria-disabled="true">Opus</button><button class="mtile" aria-disabled="true">Sonnet</button>
-              </div>
-              <div class="branch-hint"><svg width="14" height="14"><use href="#i-branch"/></svg>这个会话跑在 DeepSeek 上，不能直接换到别家的模型。可以带着到目前为止的上下文分支出一个新会话。<button class="btn s">用 Claude 分支继续</button></div>
+              <span class="note" style="font-size:var(--fs-cap);color:var(--text-3)">要换到别家的模型（比如 Claude），新开一个会话。</span>
             </div>
             <div class="tray" id="tray-effort" data-tray="effort">
               <div class="tray-h">思考强度<span class="note">也可以直接点输入框下面的竖条</span><span class="kbd">Alt E</span></div>
@@ -441,7 +437,7 @@ body { font-family: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
             </div>
             <textarea rows="2" aria-label="继续对话" placeholder="继续推进这个会话，回车发送，Shift+回车换行" style="min-height:64px"></textarea>
             <div class="status-line">
-              <button class="seg-btn" data-open="tray-model" aria-expanded="true"><span class="mark ds">DS</span><span data-show="model">Flash</span></button>
+              <button class="seg-btn" data-open="tray-model" aria-expanded="true"><span class="mark gpt">G</span><span data-show="model">GPT-6.1 Sol</span></button>
               <span class="effort s" data-effort="3" title="点竖条直接设置"><span class="bars"><button aria-label="低"></button><button aria-label="中"></button><button aria-label="高"></button><button aria-label="超高"></button></span><button class="lbl" data-open="tray-effort" style="border:0;background:none;padding:0;cursor:pointer;font-weight:600;color:var(--accent)">高</button></span>
               <button class="seg-btn" data-open="tray-perm" aria-expanded="false"><svg><use href="#i-shield"/></svg><span data-show="perm">逐条询问</span></button>
               <span class="dim" style="font-size:var(--fs-cap);color:var(--text-3);margin-left:6px">2 轮 · 用量 <span class="num">14.2k</span></span>
@@ -520,15 +516,15 @@ body { font-family: "Noto Sans SC", "Microsoft YaHei UI", system-ui, sans-serif;
 (function () {
   var app = document.getElementById("app");
   var NOTES = {
-    draft: "<strong>方案一 · 草稿任务页（推荐）</strong>：点「新任务」或按 Ctrl N，主区域直接变成一个空任务，没有弹窗。项目和专题是一排平铺的选项，模型是四个常用卡片，思考强度是竖条，权限是分段按钮，全部一次点击。回车就开始；Ctrl+回车只放进待办。输入框和会话里用的是同一个组件，学一次两边都会用。",
-    session: "<strong>会话中切换</strong>：输入框下面一行就是当前的模型、思考强度和权限，点哪个就在输入框上方展开那一组，选完自动收起，不弹下拉菜单。思考强度的竖条可以直接点。会话不能跨模型商换模型，这时给出「分支继续」，带着上下文开一个新会话。",
-    inline: "<strong>方案二 · 看板里直接加</strong>：在待办列顶上展开一张正在写的卡片，适合先记下来、晚点再做。和方案一可以同时存在：列头的 + 走这里，顶栏的「新任务」走方案一。",
-    quick: "<strong>方案三 · 快速启动条</strong>：Ctrl N 在任何页面叫出一条输入框，像启动器一样，一行写完：@ 项目、# 专题、正文；Tab 换模型。比弹窗轻，但仍然是浮层。以后可以接上全局快捷键，在 Studio 外面也能叫出来。"
+    draft: "<strong>草稿任务页（定稿）</strong>：入口有三个：顶栏「新任务」、专题画布上的「在专题里新建任务」、画布空白处右键「在这里新建任务」。从哪里进来，就预先选好哪里：在专题里预选这个专题，项目只列这个专题里的；在某个项目视图里预选这个项目；从画布右键进来的，建好的卡片就放在点的位置。回车开始，Ctrl+回车只放进待办。",
+    session: "<strong>会话中切换</strong>：模型只在同一家里换（GPT 订阅里的 Sol / Astra / Mini，Claude 里的 Opus / Sonnet / Haiku），上下文不变，下一轮生效。换到别家要新开会话。思考强度随时可换，只列当前型号支持的档位。",
+    inline: "",
+    quick: "<strong>快速启动条（保留）</strong>：Ctrl N 在任何页面叫出来，一行写完：@ 项目、# 专题、正文；Tab 换模型。和草稿任务页用同一份草稿：写到一半想看全，按 Ctrl+Shift+N 展开成草稿任务页。"
   };
   var PROJECTS = [["mining-a", "最近 · 3 个任务"], ["mining-b", "2 个任务"], ["mining-c", "1 个任务"], ["weapon-lab", "2 个任务"]];
   var TOPICS = [["掉落表重构", "mining-a · b · c"], ["武器 v2", "weapon-lab"]];
   var EFFORT = ["", "低", "中", "高", "超高"];
-  var MODEL_NAMES = { "ds-flash": "Flash", "ds-pro": "Pro" };
+  var MODEL_NAMES = { "sol": "GPT-6.1 Sol", "astra": "GPT-6.1 Astra", "mini": "GPT-6.1 Mini" };
 
   function setScreen(s) {
     app.setAttribute("data-screen", s);
