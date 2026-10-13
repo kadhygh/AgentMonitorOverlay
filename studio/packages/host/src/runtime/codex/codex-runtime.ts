@@ -1,8 +1,9 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, HostEvent, Id, ModelProfile, Session, SessionItem, SessionStatus, Workspace } from "@amo-studio/protocol";
+import type { ApprovalDecision, HostEvent, Id, ModelProfile, Session, SessionItem, SessionStatus, ToolFields, ToolKind, ToolStatus, TurnState, TurnUsage, Workspace } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
+import { classifyCommand, contentText, fileDiff, formatInput, shortPath, tail } from "../items.js";
 import type { ServerNotification, ServerRequest } from "./rpc-client.js";
 import type { CodexServerHandle } from "./server-manager.js";
 
@@ -39,8 +40,12 @@ interface SessionState {
   activeTurnId: string | null;
   /** codex item id -> our item id */
   items: Map<string, Id>;
-  /** streaming text per codex agentMessage id */
+  /** streaming text per codex item id (agent messages, reasoning) */
   text: Map<string, string>;
+  /** codex turn id -> our turn item id */
+  turns: Map<string, Id>;
+  /** reasoning items: which stream they show (summary or raw content) and when they started */
+  reasoning: Map<string, { channel?: "summary" | "content"; startedAt: number }>;
 }
 
 interface PendingApproval {
@@ -261,6 +266,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         const s = this.findByThread(n.params.threadId);
         if (!s) return;
         this.sessionState(s.id).activeTurnId = n.params.turn.id;
+        this.openTurn(s.id, n.params.turn.id, n.params.turn.startedAt);
         this.setStatus(s.id, "running");
         return;
       }
@@ -269,7 +275,8 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         if (!s) return;
         const st = this.sessionState(s.id);
         if (st.activeTurnId === n.params.turn.id) st.activeTurnId = null;
-        const turn = n.params.turn as { status: string; error?: { message: string } | null };
+        const turn = n.params.turn as { id: string; status: string; error?: { message: string } | null; startedAt?: number | null; completedAt?: number | null };
+        this.closeTurn(s.id, turn);
         if (turn.status === "failed") {
           this.appendItem(s.id, { type: "error", message: turn.error?.message ?? "turn failed" }, { method: n.method, turnId: n.params.turn.id });
           this.setStatus(s.id, "error");
@@ -288,6 +295,51 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         const itemId = this.ensureAgentItem(s.id, n.params.itemId, n.params.turnId);
         st.text.set(n.params.itemId, (st.text.get(n.params.itemId) ?? "") + n.params.delta);
         this.emitTransient({ type: "item.delta", sessionId: s.id, itemId, append: n.params.delta });
+        return;
+      }
+      case "item/reasoning/summaryTextDelta":
+      case "item/reasoning/textDelta":
+      case "item/reasoning/summaryPartAdded": {
+        const s = this.findByThread(n.params.threadId);
+        if (!s) return;
+        const st = this.sessionState(s.id);
+        const channel = n.method === "item/reasoning/textDelta" ? "content" : "summary";
+        const itemId = this.ensureReasoningItem(s.id, n.params.itemId, n.params.turnId);
+        const r = st.reasoning.get(n.params.itemId)!;
+        // Show one stream: whichever arrives first (raw thinking from DeepSeek-style models, or OpenAI's summaries).
+        if (r.channel && r.channel !== channel) return;
+        r.channel = channel;
+        const sofar = st.text.get(n.params.itemId) ?? "";
+        const append = n.method === "item/reasoning/summaryPartAdded" ? (sofar ? "\n\n" : "") : n.params.delta;
+        if (!append) return;
+        st.text.set(n.params.itemId, sofar + append);
+        this.emitTransient({ type: "item.delta", sessionId: s.id, itemId, append });
+        return;
+      }
+      case "item/commandExecution/outputDelta": {
+        const s = this.findByThread(n.params.threadId);
+        if (!s) return;
+        const itemId = this.sessionState(s.id).items.get(n.params.itemId);
+        if (itemId && n.params.delta) this.emitTransient({ type: "item.delta", sessionId: s.id, itemId, append: n.params.delta });
+        return;
+      }
+      case "thread/tokenUsage/updated": {
+        const s = this.findByThread(n.params.threadId);
+        const id = s && this.turnItemId(s.id, n.params.turnId);
+        if (!id) return;
+        const { last, modelContextWindow } = n.params.tokenUsage;
+        this.updateItem(id, (it) => (it.type === "turn" ? { ...it, usage: addUsage(it.usage, last, modelContextWindow) } : it));
+        return;
+      }
+      case "turn/plan/updated": {
+        const s = this.findByThread(n.params.threadId);
+        if (!s) return;
+        const st = this.sessionState(s.id);
+        const key = `plan:${n.params.turnId}`;
+        const plan = describePlan(n.params.plan, n.params.explanation);
+        const existing = st.items.get(key);
+        if (existing) this.updateItem(existing, (it) => (it.type === "tool" ? { ...it, ...plan } : it));
+        else st.items.set(key, this.appendItem(s.id, { type: "tool", ...plan }, { method: n.method, turnId: n.params.turnId }).id);
         return;
       }
       case "serverRequest/resolved": {
@@ -358,11 +410,15 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     if (this.approvals.has(key)) return; // replayed on resubscribe
     const elicitation = r.method === ELICITATION;
     const kind = elicitation ? "permissions" : r.method.includes("fileChange") || r.method === "applyPatchApproval" ? "fileChange" : r.method.includes("permissions") ? "permissions" : "command";
+    // The tool row the approval is for already has a readable summary (the command without its shell wrapper, the files).
+    const toolItemId = params.itemId ? this.sessionState(s.id).items.get(params.itemId) : undefined;
+    const tool = toolItemId ? this.store.getItem(toolItemId) : undefined;
+    const toolSummary = tool?.type === "tool" ? (kind === "command" ? tool.input : tool.summary) || undefined : undefined;
     const item = this.appendItem(s.id, {
       type: "approval",
       approvalId: String(r.id),
       kind,
-      summary: elicitation ? (params.message ?? `MCP 服务 ${params.serverName ?? ""} 请求批准`) : (params.command ?? params.reason ?? r.method),
+      summary: elicitation ? (params.message ?? `MCP 服务 ${params.serverName ?? ""} 请求批准`) : (toolSummary ?? params.command ?? params.reason ?? r.method),
       ...(elicitation ? (params.serverName ? { detail: `MCP：${params.serverName}` } : {}) : params.cwd ? { detail: params.cwd } : {}),
       state: "pending",
     }, { method: r.method, ...(params.itemId ? { itemId: params.itemId } : {}), ...(params.turnId ? { turnId: params.turnId } : {}) });
@@ -379,8 +435,22 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     switch (item.type) {
       case "userMessage": {
         if (!done) return;
-        const text = (item.content ?? []).map((c) => (typeof c.text === "string" ? c.text : "")).join("");
+        const text = (item.content ?? []).map((c) => (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : "")).join("");
         this.appendItem(s.id, { type: "user", text }, raw);
+        return;
+      }
+      case "reasoning": {
+        const itemId = this.ensureReasoningItem(s.id, item.id, turnId);
+        if (done) {
+          const join = (parts: unknown[] | undefined) => (parts ?? []).filter((p): p is string => typeof p === "string" && p.trim() !== "").join("\n\n");
+          const text = join(item.content) || join(item.summary) || (st.text.get(item.id) ?? "");
+          const startedAt = st.reasoning.get(item.id)?.startedAt;
+          this.updateItem(itemId, (it) =>
+            it.type === "reasoning" ? { ...it, text, streaming: false, ...(startedAt ? { durationMs: this.now().getTime() - startedAt } : {}) } : it,
+          );
+          st.text.delete(item.id);
+          st.reasoning.delete(item.id);
+        }
         return;
       }
       case "agentMessage": {
@@ -396,7 +466,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       case "mcpToolCall":
       case "dynamicToolCall":
       case "webSearch": {
-        const tool = describeTool(item);
+        const tool = describeTool(item, this.store.getWorkspace(s.workspaceId)?.path);
         const existing = st.items.get(item.id);
         if (!existing) {
           const created = this.appendItem(s.id, { type: "tool", ...tool }, raw);
@@ -429,6 +499,49 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     const created = this.appendItem(sessionId, { type: "agent", markdown: "", streaming: true }, { method: "item/started", itemId: codexItemId, turnId });
     st.items.set(codexItemId, created.id);
     return created.id;
+  }
+
+  private ensureReasoningItem(sessionId: Id, codexItemId: string, turnId: string): Id {
+    const st = this.sessionState(sessionId);
+    if (!st.reasoning.has(codexItemId)) st.reasoning.set(codexItemId, { startedAt: this.now().getTime() });
+    const known = st.items.get(codexItemId);
+    if (known) return known;
+    const created = this.appendItem(sessionId, { type: "reasoning", text: "", streaming: true }, { method: "item/started", itemId: codexItemId, turnId });
+    st.items.set(codexItemId, created.id);
+    return created.id;
+  }
+
+  /** The turn item of a Codex turn: known in memory, or (after a Host restart) found among the session's items. */
+  private turnItemId(sessionId: Id, turnId: string): Id | undefined {
+    const st = this.sessionState(sessionId);
+    const known = st.turns.get(turnId);
+    if (known) return known;
+    const found = this.store.listItems(sessionId).find((i) => i.type === "turn" && i.turnId === turnId);
+    if (found) st.turns.set(turnId, found.id);
+    return found?.id;
+  }
+
+  private openTurn(sessionId: Id, turnId: string, startedAt: number | null | undefined): Id {
+    const existing = this.turnItemId(sessionId, turnId);
+    if (existing) return existing;
+    const started = startedAt ? new Date(startedAt * 1000) : this.now();
+    const item = this.appendItem(sessionId, { type: "turn", turnId, state: "running", startedAt: started.toISOString() }, { method: "turn/started", turnId });
+    this.sessionState(sessionId).turns.set(turnId, item.id);
+    return item.id;
+  }
+
+  private closeTurn(sessionId: Id, turn: { id: string; status: string; error?: { message: string } | null; startedAt?: number | null; completedAt?: number | null }): void {
+    const id = this.openTurn(sessionId, turn.id, turn.startedAt);
+    const state: TurnState = turn.status === "failed" ? "failed" : turn.status === "interrupted" ? "interrupted" : "completed";
+    const endedAt = (turn.completedAt ? new Date(turn.completedAt * 1000) : this.now()).toISOString();
+    this.updateItem(id, (it) => (it.type === "turn" ? { ...it, state, endedAt, ...(turn.error?.message ? { error: turn.error.message } : {}) } : it));
+    // Tools still running when the turn ends were cut off; streaming thinking stops with the turn.
+    const from = (this.store.getItem(id)?.seq ?? 1) - 1;
+    for (const item of this.store.listItems(sessionId, from)) {
+      if (item.raw?.turnId !== turn.id) continue;
+      if (item.type === "tool" && item.status === "running") this.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "declined" } : it));
+      if (item.type === "reasoning" && item.streaming) this.updateItem(item.id, (it) => (it.type === "reasoning" ? { ...it, streaming: false } : it));
+    }
   }
 
   // ---- helpers ----------------------------------------------------------------------------------------------------
@@ -478,7 +591,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   private sessionState(id: Id): SessionState {
     let st = this.state.get(id);
     if (!st) {
-      st = { activeTurnId: null, items: new Map(), text: new Map() };
+      st = { activeTurnId: null, items: new Map(), text: new Map(), turns: new Map(), reasoning: new Map() };
       this.state.set(id, st);
     }
     return st;
@@ -541,31 +654,140 @@ interface CodexItem {
   type: string;
   id: string;
   text?: string;
-  content?: Array<{ text?: unknown }>;
+  content?: unknown[];
+  summary?: string[];
   command?: string;
+  cwd?: string;
   status?: string;
   aggregatedOutput?: string | null;
-  changes?: Array<{ path: string }>;
+  exitCode?: number | null;
+  durationMs?: number | null;
+  commandActions?: CommandAction[];
+  changes?: Array<{ path: string; kind?: { type: string; move_path?: string | null }; diff?: string }>;
   server?: string;
+  namespace?: string | null;
   tool?: string;
+  arguments?: unknown;
+  result?: { content?: unknown } | null;
+  error?: { message?: string } | null;
+  contentItems?: unknown;
+  success?: boolean | null;
   query?: string;
+  action?: { type: string; query?: string | null; url?: string | null; pattern?: string | null } | null;
   kind?: string;
   agentThreadId?: string;
   agentPath?: string;
 }
 
-function describeTool(item: CodexItem): { name: string; summary: string; detail?: string; status: "running" | "completed" | "failed" | "declined" } {
-  const status = item.status === "completed" ? "completed" : item.status === "failed" ? "failed" : item.status === "declined" ? "declined" : "running";
+type CommandAction =
+  | { type: "read"; command: string; name: string; path: string }
+  | { type: "listFiles"; command: string; path: string | null }
+  | { type: "search"; command: string; query: string | null; path: string | null }
+  | { type: "unknown"; command: string };
+
+function toolStatus(status: string | undefined): ToolStatus {
+  return status === "completed" ? "completed" : status === "failed" ? "failed" : status === "declined" ? "declined" : "running";
+}
+
+/** Row fields for a Codex item; `workspace` is the session's folder (paths inside it are shown relative). */
+export function describeTool(item: CodexItem, workspace?: string): ToolFields {
+  const status = toolStatus(item.status);
+  const base = item.cwd ?? workspace;
+  const timing = item.durationMs != null ? { durationMs: item.durationMs } : {};
   switch (item.type) {
-    case "commandExecution":
-      return { name: "shell", summary: item.command ?? "", ...(item.aggregatedOutput ? { detail: item.aggregatedOutput.slice(-4000) } : {}), status };
-    case "fileChange":
-      return { name: "edit", summary: (item.changes ?? []).map((c) => c.path).join(", "), status };
-    case "mcpToolCall":
-      return { name: `${item.server ?? "mcp"}.${item.tool ?? ""}`, summary: item.tool ?? "", status };
-    case "webSearch":
-      return { name: "web_search", summary: item.query ?? "", status };
+    case "commandExecution": {
+      const actions = item.commandActions ?? [];
+      const only = actions.length === 1 ? actions[0]! : undefined;
+      const inner = only?.command ?? item.command ?? "";
+      // Codex classifies Unix commands itself; on Windows they come back "unknown", so look at the command.
+      const guess = !only || only.type === "unknown" ? classifyCommand(inner) : null;
+      const kind: ToolKind =
+        only?.type === "read" || guess?.kind === "read" ? "read" : only?.type === "search" || guess?.kind === "search" ? "search" : only?.type === "listFiles" || guess?.kind === "list" ? "list" : "command";
+      const summary =
+        only?.type === "read"
+          ? shortPath(only.path, base)
+          : only?.type === "search"
+            ? [only.query, only.path ? shortPath(only.path, base) : null].filter(Boolean).join(" · ") || only.command
+            : only?.type === "listFiles"
+              ? only.path ? shortPath(only.path, base) : "."
+              : guess
+                ? guess.kind === "search" ? guess.target : shortPath(guess.target, base)
+                : inner;
+      return {
+        name: "shell",
+        kind,
+        summary,
+        input: inner,
+        ...(item.aggregatedOutput ? { detail: tail(item.aggregatedOutput) } : {}),
+        ...(item.exitCode != null ? { exitCode: item.exitCode } : {}),
+        ...(item.cwd ? { cwd: item.cwd } : {}),
+        ...timing,
+        status,
+      };
+    }
+    case "fileChange": {
+      const files = (item.changes ?? []).map((c) =>
+        fileDiff(shortPath(c.path, base), c.kind?.type === "add" ? "add" : c.kind?.type === "delete" ? "delete" : "update", c.diff),
+      );
+      return { name: "edit", kind: "edit", summary: files.map((f) => f.path).join(", "), files, status };
+    }
+    case "mcpToolCall": {
+      const output = item.error?.message ?? contentText(item.result?.content);
+      const input = formatInput(item.arguments);
+      return {
+        name: `${item.server ?? "mcp"}.${item.tool ?? ""}`,
+        kind: "mcp",
+        summary: item.tool ?? "",
+        ...(input ? { input } : {}),
+        ...(output ? { detail: tail(output) } : {}),
+        ...timing,
+        status,
+      };
+    }
+    case "dynamicToolCall": {
+      const output = contentText(item.contentItems);
+      const input = formatInput(item.arguments);
+      return {
+        name: [item.namespace, item.tool].filter(Boolean).join("."),
+        kind: "other",
+        summary: item.tool ?? "",
+        ...(input ? { input } : {}),
+        ...(output ? { detail: tail(output) } : {}),
+        ...timing,
+        status: item.success === false ? "failed" : status,
+      };
+    }
+    case "webSearch": {
+      const a = item.action;
+      const summary = a?.type === "openPage" || a?.type === "findInPage" ? (a.url ?? item.query ?? "") : (a?.query ?? item.query ?? "");
+      // Web search items carry no status: started means running, completed means done.
+      return { name: a?.type === "openPage" ? "web_fetch" : "web_search", kind: "web", summary, status: item.status ? status : "running" };
+    }
     default:
-      return { name: item.tool ?? item.type, summary: "", status };
+      return { name: item.tool ?? item.type, kind: "other", summary: "", status };
   }
+}
+
+/** A plan update (Codex's update_plan) as one tool row per turn. */
+export function describePlan(plan: Array<{ step: string; status: string }>, explanation: string | null): ToolFields {
+  const done = plan.filter((p) => p.status === "completed").length;
+  const mark = (s: string) => (s === "completed" ? "✓" : s === "inProgress" ? "→" : "○");
+  const lines = plan.map((p) => `${mark(p.status)} ${p.step}`);
+  return {
+    name: "update_plan",
+    kind: "plan",
+    summary: `${done}/${plan.length} 已完成`,
+    detail: [explanation, ...lines].filter(Boolean).join("\n"),
+    status: "completed",
+  };
+}
+
+function addUsage(prev: TurnUsage | undefined, last: { inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningOutputTokens: number }, window: number | null): TurnUsage {
+  return {
+    input: (prev?.input ?? 0) + last.inputTokens,
+    cachedInput: (prev?.cachedInput ?? 0) + last.cachedInputTokens,
+    output: (prev?.output ?? 0) + last.outputTokens,
+    reasoning: (prev?.reasoning ?? 0) + last.reasoningOutputTokens,
+    ...(window ? { contextWindow: window } : {}),
+  };
 }

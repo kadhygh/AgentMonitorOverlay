@@ -16,7 +16,14 @@ export function applyItemEvent(items: readonly SessionItem[], e: HostEvent, sess
       return items.map((i) => (i.id === e.item.id ? e.item : i));
     case "item.delta":
       if (e.sessionId !== sessionId) return items;
-      return items.map((i) => (i.id === e.itemId && i.type === "agent" && i.streaming ? { ...i, markdown: i.markdown + e.append } : i));
+      return items.map((i) => {
+        if (i.id !== e.itemId) return i;
+        if (i.type === "agent" && i.streaming) return { ...i, markdown: i.markdown + e.append };
+        if (i.type === "reasoning" && i.streaming) return { ...i, text: i.text + e.append };
+        // A running command's output; the full output arrives with the item's update when it ends.
+        if (i.type === "tool" && i.status === "running") return { ...i, detail: (i.detail ?? "") + e.append };
+        return i;
+      });
     default:
       return items;
   }

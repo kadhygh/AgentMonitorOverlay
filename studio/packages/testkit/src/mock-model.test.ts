@@ -29,7 +29,7 @@ describe("parseRequest", () => {
 });
 
 describe("defaultScript", () => {
-  const req = (text: string, tools = ["shell_command"]) => ({ lastUserText: text, afterToolOutput: false, agentTask: null, tools, lastTool: null, body: {} });
+  const req = (text: string, tools = ["shell_command"]) => ({ lastUserText: text, afterToolOutput: false, agentTask: null, tools, lastTool: null, toolOutputsSinceUser: 0, body: {} });
 
   it("spawns a subagent through the collaboration namespace and answers as that subagent", () => {
     expect(defaultScript(req("[[spawn: explorer: map it]]", ["collaboration", "collaboration.spawn_agent"]))).toEqual({

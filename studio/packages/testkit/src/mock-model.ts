@@ -38,10 +38,57 @@ export const MOCK_MARKDOWN = [
   "参考 [掉落表规范](https://example.com/drop-tables)。",
 ].join("\n");
 
-/** One model reply: plain text, or a tool call that Codex will execute (and may ask approval for). */
-export type MockReply =
+/** File the `[[demo]]` turn reads and edits (tests create it in the workspace first). */
+export const DEMO_FILE = "importer.py";
+export const DEMO_FILE_TEXT = ["import requests", "", "", "def fetch(url):", "    response = requests.get(url, timeout=10)", "    response.raise_for_status()", "    return response.json()", ""].join("\n");
+const DEMO_PATCH = [
+  "*** Begin Patch",
+  `*** Update File: ${DEMO_FILE}`,
+  "@@",
+  "-import requests",
+  "+import time",
+  "+",
+  "+import requests",
+  "@@",
+  "-def fetch(url):",
+  "-    response = requests.get(url, timeout=10)",
+  "-    response.raise_for_status()",
+  "-    return response.json()",
+  "+def fetch(url, retries=3, backoff=0.5):",
+  "+    for attempt in range(retries):",
+  "+        try:",
+  "+            response = requests.get(url, timeout=10)",
+  "+            response.raise_for_status()",
+  "+            return response.json()",
+  "+        except requests.RequestException:",
+  "+            if attempt == retries - 1:",
+  "+                raise",
+  "+            time.sleep(backoff * 2 ** attempt)",
+  "*** End Patch",
+].join("\n");
+/** Final answer of the `[[demo]]` turn. */
+export const DEMO_ANSWER = [
+  "已经给 `fetch` 加上了失败重试：",
+  "",
+  "| 参数 | 默认值 | 说明 |",
+  "| --- | ---: | --- |",
+  "| `retries` | 3 | 最多尝试次数 |",
+  "| `backoff` | 0.5 | 退避基数（秒），每次翻倍 |",
+  "",
+  "- 只重试 `requests.RequestException`，其他异常照常抛出",
+  "- 最后一次仍失败时把原异常抛给调用方",
+  "",
+  "```python",
+  "data = fetch(url, retries=5)",
+  "```",
+].join("\n");
+
+/** One model reply: plain text, or a tool call that Codex will execute (and may ask approval for); `reasoning` comes first. */
+export type MockReply = (
   | { kind: "text"; text: string; chunks?: number; delayMs?: number }
-  | { kind: "function_call"; name: string; arguments: Record<string, unknown>; namespace?: string };
+  | { kind: "function_call"; name: string; arguments: Record<string, unknown>; namespace?: string }
+  | { kind: "custom_tool_call"; name: string; input: string }
+) & { reasoning?: string };
 
 export interface MockModelRequest {
   /** Text of the last user message, if any. */
@@ -54,6 +101,8 @@ export interface MockModelRequest {
   tools: string[];
   /** Name and output of the most recent tool call, once its output is in. */
   lastTool: { name: string; output: string } | null;
+  /** Tool outputs since the person's last message: how far a multi-step turn has got. */
+  toolOutputsSinceUser: number;
   body: Record<string, unknown>;
 }
 
@@ -68,9 +117,12 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  * - `[[markdown]]` → a reply with a table, a nested list, a code block and a link (rendering tests)
  * - `[[mcp: <tool> {json args}]]` → calls the AMO MCP tool of that name (as Codex exposes it), then replies
  *   `MOCK-MCP: <start of its output>`
+ * - `[[think]]` → thinks first, then replies `MOCK: <user text>`
+ * - `[[demo]]` → a whole working turn: think, read `importer.py`, patch it, run a check, answer with a table
  * - anything else → `MOCK: <user text>`
  */
 export const defaultScript: MockScript = (req) => {
+  if (req.lastUserText.includes("[[demo]]")) return demoStep(req);
   if (req.afterToolOutput && req.lastTool && /amo/.test(req.lastTool.name)) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.output.slice(0, 200)}` };
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
   const mcp = /\[\[mcp:\s*([a-z_]+)\s*(\{.*?\})?\s*\]\]/.exec(req.lastUserText);
@@ -99,8 +151,26 @@ export const defaultScript: MockScript = (req) => {
   }
   if (req.lastUserText.includes("[[markdown]]")) return { kind: "text", text: MOCK_MARKDOWN };
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
+  if (req.lastUserText.includes("[[think]]")) return { kind: "text", text: `MOCK: ${req.lastUserText}`, reasoning: "先想一想用户要什么。\n这是一条测试消息，照原样回复即可。" };
   return { kind: "text", text: `MOCK: ${req.lastUserText}` };
 };
+
+function demoStep(req: MockModelRequest): MockReply {
+  const shell = (command: string): MockReply =>
+    req.tools.includes("exec_command") ? { kind: "function_call", name: "exec_command", arguments: { cmd: command } } : { kind: "function_call", name: "shell_command", arguments: { command } };
+  switch (req.toolOutputsSinceUser) {
+    case 0:
+      return { ...shell(`cat ${DEMO_FILE}`), reasoning: "用户想给导入器加上失败重试。\n先读一下 importer.py，看看现在的请求是怎么发的。" };
+    case 1:
+      return req.tools.includes("apply_patch")
+        ? { kind: "custom_tool_call", name: "apply_patch", input: DEMO_PATCH, reasoning: "fetch 只请求一次，失败直接抛出。\n加一个带指数退避的循环，只重试网络错误。" }
+        : { ...shell("cmd /c echo patched"), reasoning: "加一个带指数退避的循环。" };
+    case 2:
+      return { ...shell("cmd /c echo 3 passed in 0.12s"), reasoning: "改好了，跑一下检查，确认原有行为没有被破坏。" };
+    default:
+      return { kind: "text", text: DEMO_ANSWER, chunks: 8, reasoning: "检查通过，整理一下改动给用户。" };
+  }
+}
 
 export interface MockModelServer {
   /** Base URL to put in `model_providers.<id>.base_url`. */
@@ -139,10 +209,13 @@ export function parseRequest(body: Record<string, unknown>): MockModelRequest {
       })
     : [];
   const agentMessage = last?.type === "agent_message" ? textOf(last.content) : "";
+  const lastUser = input.lastIndexOf(users.at(-1)!);
+  const outputs = input.slice(lastUser + 1).filter((i) => i.type === "function_call_output" || i.type === "custom_tool_call_output").length;
   return {
     lastUserText: textOf(users.at(-1)?.content),
     afterToolOutput: last?.type === "function_call_output" || last?.type === "custom_tool_call_output",
     lastTool: lastToolCall(input),
+    toolOutputsSinceUser: outputs,
     agentTask: /Task name:\s*(\S+)/.exec(agentMessage)?.[1] ?? null,
     tools,
     body,
@@ -154,21 +227,41 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function streamReply(res: ServerResponse, reply: MockReply, seq: number): Promise<void> {
   const responseId = `resp_mock_${seq}`;
   const send = (data: Record<string, unknown>) => res.write(`event: ${String(data.type)}\ndata: ${JSON.stringify(data)}\n\n`);
-  const usage = { input_tokens: 10, input_tokens_details: { cached_tokens: 0 }, output_tokens: 5, output_tokens_details: { reasoning_tokens: 0 }, total_tokens: 15 };
+  const usage = { input_tokens: 1200 + seq * 300, input_tokens_details: { cached_tokens: 800 + seq * 250 }, output_tokens: 160, output_tokens_details: { reasoning_tokens: reply.reasoning ? 60 : 0 }, total_tokens: 1360 + seq * 300 };
   send({ type: "response.created", response: { id: responseId, object: "response", status: "in_progress", output: [] } });
+
+  const output: Array<Record<string, unknown>> = [];
+  if (reply.reasoning) {
+    // Raw reasoning content, the way DeepSeek-style models stream their thinking.
+    const id = `rs_mock_${seq}`;
+    send({ type: "response.output_item.added", output_index: 0, item: { type: "reasoning", id, summary: [], content: [] } });
+    const parts = reply.reasoning.match(/[\s\S]{1,12}/g) ?? [];
+    for (const delta of parts) {
+      if (res.destroyed) return;
+      send({ type: "response.reasoning_text.delta", item_id: id, output_index: 0, content_index: 0, delta });
+      await sleep(15);
+    }
+    const item = { type: "reasoning", id, summary: [], content: [{ type: "reasoning_text", text: reply.reasoning }], encrypted_content: null };
+    send({ type: "response.output_item.done", output_index: 0, item });
+    output.push(item);
+  }
+  const index = output.length;
 
   let item: Record<string, unknown>;
   if (reply.kind === "text") {
     const itemId = `msg_mock_${seq}`;
-    send({ type: "response.output_item.added", output_index: 0, item: { type: "message", id: itemId, role: "assistant", status: "in_progress", content: [] } });
+    send({ type: "response.output_item.added", output_index: index, item: { type: "message", id: itemId, role: "assistant", status: "in_progress", content: [] } });
     const chunks = Math.max(1, reply.chunks ?? 3);
     const size = Math.ceil(reply.text.length / chunks);
     for (let i = 0; i < reply.text.length; i += size) {
       if (res.destroyed) return;
-      send({ type: "response.output_text.delta", item_id: itemId, output_index: 0, content_index: 0, delta: reply.text.slice(i, i + size) });
+      send({ type: "response.output_text.delta", item_id: itemId, output_index: index, content_index: 0, delta: reply.text.slice(i, i + size) });
       if (reply.delayMs) await sleep(reply.delayMs);
     }
     item = { type: "message", id: itemId, role: "assistant", status: "completed", content: [{ type: "output_text", text: reply.text, annotations: [] }] };
+  } else if (reply.kind === "custom_tool_call") {
+    item = { type: "custom_tool_call", id: `ctc_mock_${seq}`, call_id: `call_mock_${seq}`, name: reply.name, input: reply.input, status: "completed" };
+    send({ type: "response.output_item.added", output_index: index, item: { ...item, status: "in_progress", input: "" } });
   } else {
     item = {
       type: "function_call",
@@ -179,10 +272,11 @@ async function streamReply(res: ServerResponse, reply: MockReply, seq: number): 
       arguments: JSON.stringify(reply.arguments),
       status: "completed",
     };
-    send({ type: "response.output_item.added", output_index: 0, item: { ...item, status: "in_progress", arguments: "" } });
+    send({ type: "response.output_item.added", output_index: index, item: { ...item, status: "in_progress", arguments: "" } });
   }
-  send({ type: "response.output_item.done", output_index: 0, item });
-  send({ type: "response.completed", response: { id: responseId, object: "response", status: "completed", output: [item], usage } });
+  send({ type: "response.output_item.done", output_index: index, item });
+  output.push(item);
+  send({ type: "response.completed", response: { id: responseId, object: "response", status: "completed", output, usage } });
   res.end();
 }
 

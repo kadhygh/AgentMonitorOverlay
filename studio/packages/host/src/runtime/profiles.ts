@@ -84,7 +84,8 @@ export function codexServerSpec(
   if (profile.runtime !== "codex") throw new Error(`profile ${profile.id} is not a Codex profile`);
   const providers = options.providers ?? CODEX_PROVIDERS;
   const assetsDir = options.assetsDir ?? ASSETS_DIR;
-  const configArgs: string[] = [];
+  // The model's raw thinking (DeepSeek-style reasoning content) is shown in the conversation, as in DSH.
+  const configArgs: string[] = ["-c", "show_raw_agent_reasoning=true"];
   const env: Record<string, string> = {};
   const missingCredentials: string[] = [];
 

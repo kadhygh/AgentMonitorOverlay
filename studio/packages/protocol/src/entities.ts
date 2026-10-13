@@ -79,7 +79,10 @@ export interface Session {
   archivedAt: Timestamp | null;
 }
 
-/** Pointer back to the runtime event an item was derived from, without copying the payload. */
+/**
+ * Pointer back to the runtime event an item was derived from, without copying the payload. `turnId` also ties an
+ * item to its turn (the `turn` item with the same id carries the turn's timing and usage).
+ */
 export interface RawRef {
   runtime: SessionRuntime;
   method: string;
@@ -100,11 +103,52 @@ export type ApprovalKind = "command" | "fileChange" | "permissions";
 /** `resolved-elsewhere`: another client (e.g. the attached TUI) answered first. */
 export type ApprovalState = "pending" | "accepted" | "declined" | "resolved-elsewhere";
 export type ToolStatus = "running" | "completed" | "failed" | "declined";
+/** What a tool call did, for its row's icon, title and the activity summary of its group. */
+export type ToolKind = "command" | "read" | "search" | "list" | "edit" | "web" | "mcp" | "subagent" | "plan" | "other";
+
+/** One file touched by an edit, with a unified diff when the runtime gave one. */
+export interface FileDiff {
+  path: string;
+  change: "add" | "delete" | "update";
+  added: number;
+  removed: number;
+  diff?: string;
+}
+
+export type TurnState = "running" | "completed" | "failed" | "interrupted";
+
+/** Token usage of one turn (all model calls in it). */
+export interface TurnUsage {
+  input: number;
+  cachedInput: number;
+  output: number;
+  reasoning: number;
+  contextWindow?: number;
+}
+
+export interface ToolFields {
+  name: string;
+  summary: string;
+  /** Output (a command's stdout/stderr, a tool's result), trimmed to its tail. */
+  detail?: string;
+  status: ToolStatus;
+  kind?: ToolKind;
+  /** The call's arguments as text (JSON for MCP and generic tools). */
+  input?: string;
+  exitCode?: number | null;
+  durationMs?: number;
+  cwd?: string;
+  files?: FileDiff[];
+}
 
 export type SessionItem =
   | (ItemBase & { type: "user"; text: string })
   | (ItemBase & { type: "agent"; markdown: string; streaming: boolean })
-  | (ItemBase & { type: "tool"; name: string; summary: string; detail?: string; status: ToolStatus })
+  /** The model's thinking before or between steps. */
+  | (ItemBase & { type: "reasoning"; text: string; streaming: boolean; durationMs?: number })
+  | (ItemBase & { type: "tool" } & ToolFields)
+  /** Metadata of one turn (not shown as a row): when it ran, how it ended, what it used. */
+  | (ItemBase & { type: "turn"; turnId: string; state: TurnState; startedAt: Timestamp; endedAt?: Timestamp; usage?: TurnUsage; error?: string })
   | (ItemBase & { type: "approval"; approvalId: string; kind: ApprovalKind; summary: string; detail?: string; state: ApprovalState })
   | (ItemBase & { type: "subagent"; childSessionId: Id; summary: string })
   | (ItemBase & { type: "error"; message: string })

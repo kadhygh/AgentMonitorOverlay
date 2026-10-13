@@ -50,7 +50,7 @@ describe("CodexRuntime", () => {
     expect(s.runtimeRef).toBeTruthy();
     expect(s.title).toBe("hello");
     await until(idle(s.id), "idle");
-    expect(items(s.id).map((i) => i.type)).toEqual(["user", "agent"]);
+    expect(items(s.id).map((i) => i.type)).toEqual(["turn", "user", "agent"]);
     expect(lastAgent(s.id)).toMatchObject({ markdown: "FAKE: hello", streaming: false });
     const types = new Set(events.map((e) => e.type));
     expect([...types]).toEqual(expect.arrayContaining(["session.upserted", "item.appended", "item.delta", "item.updated"]));

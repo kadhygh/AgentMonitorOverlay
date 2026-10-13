@@ -3,11 +3,11 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 27
+      "used": 29
     },
     "glm": {
       "limit": 5000,
-      "used": 24
+      "used": 25
     }
   },
   "log": [
@@ -265,6 +265,21 @@
       "at": "2026-10-13T00:36:36.526Z",
       "provider": "glm",
       "note": "S7-07 approved proposal first turn"
+    },
+    {
+      "at": "2026-10-13T07:00:55.965Z",
+      "provider": "deepseek",
+      "note": "S9-00 DeepSeek reasoning through Codex"
+    },
+    {
+      "at": "2026-10-13T07:01:04.199Z",
+      "provider": "glm",
+      "note": "S9-00 GLM thinking through Claude"
+    },
+    {
+      "at": "2026-10-13T07:02:02.774Z",
+      "provider": "deepseek",
+      "note": "S9-00 DeepSeek reasoning through Codex"
     }
   ]
 }

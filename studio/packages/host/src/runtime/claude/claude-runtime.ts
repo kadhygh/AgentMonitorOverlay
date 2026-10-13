@@ -3,10 +3,11 @@ import { createRequire } from "node:module";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createSdkMcpServer, forkSession, getSessionMessages, query, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ApprovalDecision, ApprovalKind, Id, ModelProfile, Session, Workspace } from "@amo-studio/protocol";
+import type { ApprovalDecision, ApprovalKind, Id, ModelProfile, Session, SessionItem, ToolFields, TurnState, Workspace } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
-import { RuntimeBase, type SendMode, type SessionRuntimeApi } from "../runtime.js";
+import { RuntimeBase, type NewItemBody, type SendMode, type SessionRuntimeApi } from "../runtime.js";
+import { classifyCommand, fileDiff, formatInput, shortPath, tail, textDiff } from "../items.js";
 import { claudeEnv, type ClaudeProviderDef } from "./claude-env.js";
 import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
 
@@ -58,13 +59,19 @@ interface Live {
   closedByHost: boolean;
   background: Set<string>;
   idleTimer: ReturnType<typeof setTimeout> | null;
+  /** The turn in progress (from the first message of a run to its result). */
+  turn: { id: string; itemId: Id } | null;
   /** Agent items still streaming, oldest first. */
   streaming: Id[];
+  /** Thinking items still streaming, oldest first, with when they started. */
+  thinking: Array<{ itemId: Id; startedAt: number }>;
   text: Map<Id, string>;
   /** stream content-block index -> agent item, for the message being streamed */
   blocks: Map<number, Id>;
   /** tool_use id -> tool item */
   tools: Map<string, Id>;
+  /** tool_use id -> when the call was made */
+  toolStarted: Map<string, number>;
   declinedTools: Set<string>;
   approvals: Map<string, PendingApproval>;
   /** Agent tool_use id -> child session */
@@ -131,8 +138,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     await this.closing.get(sessionId);
     const live = this.ensureLive(session);
     const mode: SendMode = live.running ? "queue" : "start";
-    this.appendItem(sessionId, { type: "user", text }, { method: mode === "queue" ? "user/queued" : "user" });
     if (!live.running) this.turnStarted(sessionId, live);
+    this.appendItem(sessionId, { type: "user", text }, { method: mode === "queue" ? "user/queued" : "user" });
     this.clearIdle(live);
     live.push(text);
     return { mode };
@@ -283,10 +290,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       closedByHost: false,
       background: new Set(),
       idleTimer: null,
+      turn: null,
       streaming: [],
+      thinking: [],
       text: new Map(),
       blocks: new Map(),
       tools: new Map(),
+      toolStarted: new Map(),
       declinedTools: new Set(),
       approvals: new Map(),
       subs: new Map(),
@@ -332,6 +342,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (this.live.get(sessionId) === live) this.live.delete(sessionId);
     this.clearIdle(live);
     for (const id of live.streaming) this.updateItem(id, (it) => (it.type === "agent" ? { ...it, markdown: live.text.get(id) ?? it.markdown, streaming: false } : it));
+    for (const t of live.thinking) this.updateItem(t.itemId, (it) => (it.type === "reasoning" ? { ...it, text: live.text.get(t.itemId) ?? it.text, streaming: false } : it));
+    this.endTurn(live, err && !live.interrupted ? "failed" : "interrupted");
     for (const a of live.approvals.values()) this.updateItem(a.itemId, (it) => (it.type === "approval" && it.state === "pending" ? { ...it, state: "resolved-elsewhere" } : it));
     for (const id of live.tools.values()) this.updateItem(id, (it) => (it.type === "tool" && it.status === "running" ? { ...it, status: "failed" } : it));
     for (const childId of live.subs.values()) {
@@ -369,7 +381,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (parentToolUse) return this.onSubagentMessage(live, parentToolUse, m);
     switch (m.type) {
       case "stream_event": {
-        const e = m.event as { type: string; index?: number; content_block?: { type: string }; delta?: { type: string; text?: string } };
+        const e = m.event as { type: string; index?: number; content_block?: { type: string }; delta?: { type: string; text?: string; thinking?: string } };
         if (e.type === "message_start") {
           if (!live.running) this.turnStarted(sessionId, live);
           live.blocks.clear();
@@ -377,6 +389,15 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
           const item = this.appendItem(sessionId, { type: "agent", markdown: "", streaming: true }, { method: "stream/text" });
           live.blocks.set(e.index ?? 0, item.id);
           live.streaming.push(item.id);
+        } else if (e.type === "content_block_start" && e.content_block?.type === "thinking") {
+          const item = this.appendItem(sessionId, { type: "reasoning", text: "", streaming: true }, { method: "stream/thinking" });
+          live.blocks.set(e.index ?? 0, item.id);
+          live.thinking.push({ itemId: item.id, startedAt: this.now().getTime() });
+        } else if (e.type === "content_block_delta" && e.delta?.type === "thinking_delta" && e.delta.thinking) {
+          const itemId = live.blocks.get(e.index ?? 0);
+          if (!itemId) return;
+          live.text.set(itemId, (live.text.get(itemId) ?? "") + e.delta.thinking);
+          this.emitTransient({ type: "item.delta", sessionId, itemId, append: e.delta.thinking });
         } else if (e.type === "content_block_delta" && e.delta?.type === "text_delta" && e.delta.text) {
           const itemId = live.blocks.get(e.index ?? 0);
           if (!itemId) return;
@@ -388,7 +409,17 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       case "assistant": {
         if (!live.running) this.turnStarted(sessionId, live);
         for (const block of m.message.content) {
-          if (block.type === "text") {
+          if (block.type === "thinking") {
+            // Settles the oldest thinking item still streaming, like text below.
+            const t = live.thinking.shift();
+            const text = block.thinking;
+            if (t) {
+              live.text.delete(t.itemId);
+              this.updateItem(t.itemId, (it) => (it.type === "reasoning" ? { ...it, text, streaming: false, durationMs: this.now().getTime() - t.startedAt } : it));
+            } else if (text.trim()) {
+              this.appendItem(sessionId, { type: "reasoning", text, streaming: false }, { method: "assistant" });
+            }
+          } else if (block.type === "text") {
             // One assistant message per completed block; it settles the oldest text item still streaming.
             const itemId = live.streaming.shift();
             if (itemId) {
@@ -439,6 +470,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       }
       case "result": {
         live.running = false;
+        const usage = (m as { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } }).usage;
+        this.endTurn(live, live.interrupted ? "interrupted" : m.is_error ? "failed" : "completed", usage);
         if (live.interrupted) {
           live.interrupted = false;
           this.setStatus(sessionId, "idle");
@@ -493,8 +526,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private addToolCard(sessionId: Id, live: Live, toolUseId: string, name: string, input: Record<string, unknown>): void {
-    const created = this.appendItem(sessionId, { type: "tool", ...describeToolUse(name, input), status: "running" }, { method: "tool_use", itemId: toolUseId });
+    const created = this.appendItem(sessionId, { type: "tool", ...describeToolUse(name, input, this.cwdOf(sessionId)), status: "running" }, { method: "tool_use", itemId: toolUseId });
     live.tools.set(toolUseId, created.id);
+    live.toolStarted.set(toolUseId, this.now().getTime());
+  }
+
+  private cwdOf(sessionId: Id): string | undefined {
+    const s = this.store.getSession(sessionId);
+    return s ? this.store.getWorkspace(s.workspaceId)?.path : undefined;
   }
 
   private settleToolCard(live: Live, toolUseId: string, content: unknown, isError: boolean): void {
@@ -503,12 +542,45 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     live.tools.delete(toolUseId);
     const declined = live.declinedTools.delete(toolUseId);
     const detail = toolResultText(content);
+    const started = live.toolStarted.get(toolUseId);
+    live.toolStarted.delete(toolUseId);
     this.updateItem(itemId, (it) =>
-      it.type === "tool" ? { ...it, status: declined ? "declined" : isError ? "failed" : "completed", ...(detail ? { detail: detail.slice(-4000) } : {}) } : it,
+      it.type === "tool"
+        ? {
+            ...it,
+            status: declined ? "declined" : isError ? "failed" : "completed",
+            ...(detail ? { detail: tail(detail) } : {}),
+            ...(started ? { durationMs: this.now().getTime() - started } : {}),
+          }
+        : it,
+    );
+  }
+
+  /** Items appended while a turn runs belong to it (the subagent sessions' items do not). */
+  protected override appendItem(sessionId: Id, body: NewItemBody, raw?: { method: string; itemId?: string; turnId?: string }): SessionItem {
+    const turnId = raw?.turnId ?? (body.type === "turn" ? undefined : this.live.get(sessionId)?.turn?.id);
+    return super.appendItem(sessionId, body, turnId ? { method: body.type, ...raw, turnId } : raw);
+  }
+
+  private endTurn(live: Live, state: TurnState, usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null }): void {
+    const turn = live.turn;
+    if (!turn) return;
+    live.turn = null;
+    const read = usage?.cache_read_input_tokens ?? 0;
+    const input = (usage?.input_tokens ?? 0) + read + (usage?.cache_creation_input_tokens ?? 0);
+    this.updateItem(turn.itemId, (it) =>
+      it.type === "turn"
+        ? { ...it, state, endedAt: this.now().toISOString(), ...(usage ? { usage: { input, cachedInput: read, output: usage.output_tokens ?? 0, reasoning: 0 } } : {}) }
+        : it,
     );
   }
 
   private turnStarted(sessionId: Id, live: Live): void {
+    if (!live.turn) {
+      const turnId = randomUUID();
+      const item = this.appendItem(sessionId, { type: "turn", turnId, state: "running", startedAt: this.now().toISOString() }, { method: "turn/start", turnId });
+      live.turn = { id: turnId, itemId: item.id };
+    }
     live.running = true;
     this.clearIdle(live);
     this.setStatus(sessionId, live.approvals.size ? "awaiting-approval" : "running");
@@ -607,12 +679,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         } else if (m.type === "user" && b.type === "tool_result") {
           const itemId = tools.get(String(b.tool_use_id));
           const detail = toolResultText(b.content);
-          if (itemId) this.updateItem(itemId, (it) => (it.type === "tool" ? { ...it, status: b.is_error ? "failed" : "completed", ...(detail ? { detail: detail.slice(-4000) } : {}) } : it));
+          if (itemId) this.updateItem(itemId, (it) => (it.type === "tool" ? { ...it, status: b.is_error ? "failed" : "completed", ...(detail ? { detail: tail(detail) } : {}) } : it));
         } else if (m.type === "assistant" && b.type === "text" && typeof b.text === "string" && b.text.trim()) {
           this.appendItem(sessionId, { type: "agent", markdown: b.text, streaming: false }, { method: "transcript" });
           added++;
         } else if (m.type === "assistant" && b.type === "tool_use") {
-          const created = this.appendItem(sessionId, { type: "tool", ...describeToolUse(String(b.name), (b.input ?? {}) as Record<string, unknown>), status: "completed" }, { method: "transcript", itemId: String(b.id) });
+          const created = this.appendItem(sessionId, { type: "tool", ...describeToolUse(String(b.name), (b.input ?? {}) as Record<string, unknown>, this.cwdOf(sessionId)), status: "completed" }, { method: "transcript", itemId: String(b.id) });
           tools.set(String(b.id), created.id);
           added++;
         }
@@ -677,30 +749,54 @@ function toolResultText(content: unknown): string {
   return content.map((c) => (c && typeof c === "object" && "text" in c ? String((c as { text: unknown }).text) : "")).join("");
 }
 
-/** Tool card name and one-line summary for a Claude tool call. */
-export function describeToolUse(name: string, input: Record<string, unknown>): { name: string; summary: string } {
+/** Row fields for a Claude tool call (everything but its status and result). */
+export function describeToolUse(name: string, input: Record<string, unknown>, cwd?: string): Omit<ToolFields, "status"> {
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  const path = shortPath(str(input.file_path ?? input.notebook_path ?? input.path), cwd);
   switch (name) {
     case "Bash":
-    case "PowerShell":
-      return { name: "shell", summary: String(input.command ?? "") };
-    case "Edit":
+    case "PowerShell": {
+      const command = str(input.command);
+      const guess = classifyCommand(command);
+      const summary = guess ? (guess.kind === "search" ? guess.target : shortPath(guess.target, cwd)) : command;
+      return { name: "shell", kind: guess?.kind ?? "command", summary, input: command, ...(cwd ? { cwd } : {}) };
+    }
+    case "Edit": {
+      const diff = textDiff(str(input.old_string), str(input.new_string));
+      return { name: "edit", kind: "edit", summary: path, files: [fileDiff(path, "update", diff)] };
+    }
+    case "MultiEdit": {
+      const edits = Array.isArray(input.edits) ? (input.edits as Array<Record<string, unknown>>) : [];
+      const diff = edits.map((e) => textDiff(str(e.old_string), str(e.new_string))).join("\n");
+      return { name: "edit", kind: "edit", summary: path, files: [fileDiff(path, "update", diff)] };
+    }
     case "Write":
-    case "MultiEdit":
+      return { name: "write", kind: "edit", summary: path, files: [fileDiff(path, "add", textDiff("", str(input.content)))] };
     case "NotebookEdit":
-      return { name: "edit", summary: String(input.file_path ?? input.notebook_path ?? "") };
+      return { name: "edit", kind: "edit", summary: path, files: [fileDiff(path, "update", textDiff("", str(input.new_source)))] };
     case "Read":
-      return { name: "read", summary: String(input.file_path ?? "") };
+      return { name: "read", kind: "read", summary: path };
+    case "LS":
+      return { name: "ls", kind: "list", summary: path || "." };
     case "Grep":
     case "Glob":
-      return { name: name.toLowerCase(), summary: String(input.pattern ?? "") };
+      return { name: name.toLowerCase(), kind: "search", summary: [str(input.pattern), path].filter(Boolean).join(" · "), ...(formatInput(input) ? { input: formatInput(input)! } : {}) };
     case "WebSearch":
-      return { name: "web_search", summary: String(input.query ?? "") };
+      return { name: "web_search", kind: "web", summary: str(input.query) };
     case "WebFetch":
-      return { name: "web_fetch", summary: String(input.url ?? "") };
+      return { name: "web_fetch", kind: "web", summary: str(input.url) };
+    case "TodoWrite": {
+      const todos = Array.isArray(input.todos) ? (input.todos as Array<Record<string, unknown>>) : [];
+      const done = todos.filter((t) => t.status === "completed").length;
+      const mark = (st: unknown) => (st === "completed" ? "✓" : st === "in_progress" ? "→" : "○");
+      return { name: "update_plan", kind: "plan", summary: `${done}/${todos.length} 已完成`, input: todos.map((t) => `${mark(t.status)} ${str(t.content)}`).join("\n") };
+    }
     case "Agent":
     case "Task":
-      return { name: "agent", summary: String(input.description ?? "") };
-    default:
-      return { name, summary: String(input.description ?? "") };
+      return { name: "agent", kind: "subagent", summary: str(input.description) };
+    default: {
+      const args = formatInput(input);
+      return { name, kind: name.startsWith("mcp__") ? "mcp" : "other", summary: str(input.description), ...(args ? { input: args } : {}) };
+    }
   }
 }

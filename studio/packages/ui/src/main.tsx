@@ -3,6 +3,7 @@ import { createRoot } from "react-dom/client";
 import { App } from "./App.js";
 import { FocusApp } from "./focus/FocusApp.js";
 import "./styles/app.css";
+import "./styles/chat.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 
 // One bundle, two windows: the workbench, and the Focus window (loaded with #focus).

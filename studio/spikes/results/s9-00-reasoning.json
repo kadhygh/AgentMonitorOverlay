@@ -1,0 +1,89 @@
+{
+  "codex": [
+    {
+      "type": "turn",
+      "state": "completed",
+      "usage": {
+        "input": 24119,
+        "cachedInput": 17920,
+        "output": 737,
+        "reasoning": 265,
+        "contextWindow": 996147
+      },
+      "seconds": 7
+    },
+    {
+      "type": "user"
+    },
+    {
+      "type": "reasoning",
+      "chars": 207,
+      "durationMs": 256,
+      "streaming": false
+    },
+    {
+      "type": "reasoning",
+      "chars": 141,
+      "durationMs": 273,
+      "streaming": false
+    },
+    {
+      "type": "reasoning",
+      "chars": 591,
+      "durationMs": 844,
+      "streaming": false
+    },
+    {
+      "type": "reasoning",
+      "chars": 255,
+      "durationMs": 394,
+      "streaming": false
+    },
+    {
+      "type": "agent",
+      "chars": 478
+    }
+  ],
+  "claude": [
+    {
+      "type": "turn",
+      "state": "completed",
+      "usage": {
+        "input": 35846,
+        "cachedInput": 33600,
+        "output": 317,
+        "reasoning": 0
+      },
+      "seconds": 25.919
+    },
+    {
+      "type": "user"
+    },
+    {
+      "type": "reasoning",
+      "chars": 130,
+      "durationMs": 434,
+      "streaming": false
+    },
+    {
+      "type": "tool",
+      "kind": "read",
+      "name": "read",
+      "summary": "importer.py",
+      "status": "completed",
+      "exitCode": null,
+      "outChars": 94,
+      "files": 0
+    },
+    {
+      "type": "reasoning",
+      "chars": 558,
+      "durationMs": 2128,
+      "streaming": false
+    },
+    {
+      "type": "agent",
+      "chars": 270
+    }
+  ]
+}
