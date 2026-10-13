@@ -62,6 +62,6 @@
 | S11-0 附件存储 | 待做 |
 | S11-A 画布管理 | 待做 |
 | S11-B 对话附件与引用 | 待做 |
-| S11-C 便签小窗 | 待做 |
+| S11-C 便签小窗 | 已做（分支 `studio/s11-scratchpad`，待合并）。Host 新功能 `features/scratchpad/`：多页文档（文字 + 图片附件 id、当前页、页数 1–9），存 kv `scratchpad:doc`；旧的单份草稿读作第 1 页（不删旧键）；`GET/PATCH /api/scratchpad`、`PUT /api/scratchpad/pages/:page`，旧的 `PUT /api/scratchpad` 去掉了，调用方都已改；每次改动发 `scratchpad.updated`。小窗 `app/src/scratchpad-window.ts`：无边框置顶，480×320，第一次出现在鼠标旁（旧 AMO 的做法），之后记住位置和大小（`scratchpad-window.json`）；关闭和 Esc 只隐藏。界面 `ui/src/scratchpad/`：页码按钮和 Ctrl+1…9 切页，边打边存，页数 −/+，清空（可撤销）、复制（复制后隐藏，同旧 AMO）；粘贴或拖入图片 → 缩略图，点开看大图，× 移除。任务页右栏改为当前页摘要 +「打开便签」，没有小窗时（普通浏览器）就地编辑。设置 → 便签：按键录入、恢复默认、关闭。**决定**：默认快捷键 `Ctrl+Alt+Space`（旧 AMO 的键盘默认；旧 AMO 的鼠标侧键选项 Electron 做不到，要原生钩子，没做）；默认开启；快捷键被占用时提示，并保留之前能用的那个、设置也退回它；减少页数只隐藏后面的页，内容保留；新文档默认 3 页（同旧 AMO）；移除图片只是从页面拿掉，附件文件留在 `attachments/`（S11-0 没有删除接口）；测试里不注册真实全局快捷键，只记录。测试：Host `features/scratchpad/scratchpad.test.ts`、界面 `scratchpad/logic.test.ts`、`app/src/scratchpad-placement.test.ts`、端到端 `scratchpad.spec.ts`（截图 `screenshots/stage-11/S11-C-*`）。 |
 | S11-D Git Review | 待做 |
 | S11-E 速度与上下文 | 待做 |

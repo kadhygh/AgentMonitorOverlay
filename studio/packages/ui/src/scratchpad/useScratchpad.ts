@@ -29,7 +29,10 @@ const message = (err: unknown) => (err instanceof HostApiError ? err.message : S
  * one has unsaved typing on it.
  */
 export function useScratchpad(link: HostLink): ScratchpadApi {
-  const [doc, setDoc] = useState<Scratchpad | null>(null);
+  const [doc, setDocState] = useState<Scratchpad | null>(null);
+  // Responses can arrive out of order (a page saved just before a page switch): an older document never replaces a
+  // newer one. Events come in order and end on the latest anyway.
+  const setDoc = useCallback((next: Scratchpad) => setDocState((cur) => (!cur?.updatedAt || !next.updatedAt || next.updatedAt >= cur.updatedAt ? next : cur)), []);
   const [state, setState] = useState<SaveState>("idle");
   const [error, setError] = useState<string | null>(null);
   const [, rerender] = useState(0);
@@ -42,7 +45,7 @@ export function useScratchpad(link: HostLink): ScratchpadApi {
     let cancelled = false;
     const load = () =>
       call(link, "GET /api/scratchpad")
-        .then((s) => !cancelled && setDoc(s))
+        .then((s) => !cancelled && setDocState(s))
         .catch(() => undefined);
     const offEvent = onHostEvent((e) => {
       if (e.type === "scratchpad.updated") setDoc(e.scratchpad);
@@ -54,7 +57,7 @@ export function useScratchpad(link: HostLink): ScratchpadApi {
       offEvent();
       offReconnect();
     };
-  }, [link]);
+  }, [link, setDoc]);
 
   const save = useCallback(
     (page: number) => {
@@ -77,7 +80,7 @@ export function useScratchpad(link: HostLink): ScratchpadApi {
           setState("error");
         });
     },
-    [link],
+    [link, setDoc],
   );
 
   // Leaving (or closing the window) right after typing must not drop the last edit.
