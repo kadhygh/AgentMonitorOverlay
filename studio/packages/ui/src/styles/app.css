@@ -485,3 +485,8 @@ a.md-link { cursor: pointer; }
 .group-activity.busy { color: var(--text-dim); }
 .todo-activity { color: var(--text-dim); }
 .todo-activity.idle { color: var(--running-text); }
+
+/* Scheduler proposals (S7-03) */
+.proposals { margin: 16px 20px 0; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--attention-border); background: var(--attention-bg); display: flex; flex-direction: column; gap: 10px; }
+.proposal-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 10px; }
+.proposal-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); }

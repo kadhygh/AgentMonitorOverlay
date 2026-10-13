@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { Annotation, CanvasDoc, ChecklistItem, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
+import type { Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, Task, TaskColumn, TaskScope, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -117,6 +117,12 @@ export interface HostRoutes {
   /** Checklist items, `?taskId=` for one task; ordered by task, then position. */
   "GET /api/checklist": { req: void; res: ChecklistItem[] };
   "PATCH /api/checklist/:id": { req: { done: boolean }; res: ChecklistItem };
+  /** Scheduler proposals, `?state=pending` for the ones waiting for the person. */
+  "GET /api/proposals": { req: void; res: ScheduleProposal[] };
+  "POST /api/proposals": { req: { todoId: Id; workspaceId?: Id; profileId: Id; prompt: string; reason?: string }; res: ScheduleProposal };
+  /** Approves (optionally with an edited prompt or model): the todo becomes a task and its first session starts. */
+  "POST /api/proposals/:id/approve": { req: { prompt?: string; profileId?: Id }; res: { proposal: ScheduleProposal; task: Task; session: Session } };
+  "POST /api/proposals/:id/reject": { req: void; res: ScheduleProposal };
   "GET /api/canvas": { req: void; res: CanvasDoc };
   /** Saves the whole canvas. `version` must equal the stored one (409 otherwise); the response carries the new one. */
   "PUT /api/canvas": { req: CanvasDoc; res: CanvasDoc };
@@ -154,6 +160,7 @@ export type HostEvent = { seq: number } & (
   | { type: "mail.upserted"; mail: MailMessage }
   | { type: "decision.upserted"; decision: DecisionRequest }
   | { type: "checklist.upserted"; item: ChecklistItem }
+  | { type: "proposal.upserted"; proposal: ScheduleProposal }
 );
 
 export type HostEventType = HostEvent["type"];

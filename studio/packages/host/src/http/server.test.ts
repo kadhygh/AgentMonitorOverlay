@@ -378,6 +378,42 @@ describe("Host API", () => {
     expect((await ok<{ todo: { workspaceId: string } }>("POST", `/api/todos/${loose.id}/convert`, { workspaceId: ws.id, profileId: "p-ds" })).todo.workspaceId).toBe(ws.id);
   });
 
+  it("starts a proposal's work only when the person approves it", async () => {
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    const todo = await ok<{ id: string }>("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: ws.id });
+    const p = await ok<{ id: string; state: string; workspaceId: string }>("POST", "/api/proposals", { todoId: todo.id, profileId: "p-ds", prompt: "统一 drops.json 的字段", reason: "alpha 空闲" });
+    expect(p).toMatchObject({ state: "pending", workspaceId: ws.id });
+    expect((await ok<StateSnapshot>("GET", "/api/state")).tasks).toEqual([]);
+    expect((await api("POST", "/api/proposals", { todoId: todo.id, profileId: "p-ds", prompt: "again" })).status).toBe(409);
+    expect((await ok<Array<{ id: string }>>("GET", "/api/proposals?state=pending")).map((x) => x.id)).toEqual([p.id]);
+
+    // Approving with an edited prompt: the todo becomes a task whose first session starts with it.
+    const approved = await ok<{ proposal: { state: string; taskId: string; prompt: string }; task: Task; session: Session }>("POST", `/api/proposals/${p.id}/approve`, { prompt: "统一 drops.json 的字段，先别改 skills" });
+    expect(approved.proposal).toMatchObject({ state: "approved", taskId: approved.task.id, prompt: "统一 drops.json 的字段，先别改 skills" });
+    expect(approved.task.title).toBe("统一掉落表格式");
+    await until(async () => (await ok<SessionItem[]>("GET", `/api/sessions/${approved.session.id}/items`)).some((i) => i.type === "user"), "first message");
+    expect((await ok<Array<{ taskId: string | null; done: boolean }>>("GET", "/api/todos")).find((t) => t.taskId === approved.task.id)?.done).toBe(true);
+    expect((await api("POST", `/api/proposals/${p.id}/approve`, {})).status).toBe(409);
+
+    // Rejecting; deleting a todo expires its pending proposal.
+    const other = await ok<{ id: string }>("POST", "/api/todos", { text: "清理导表脚本", workspaceId: ws.id });
+    const q = await ok<{ id: string }>("POST", "/api/proposals", { todoId: other.id, profileId: "p-ds", prompt: "清理" });
+    expect(await ok("POST", `/api/proposals/${q.id}/reject`)).toMatchObject({ state: "rejected" });
+    const r = await ok<{ id: string }>("POST", "/api/proposals", { todoId: other.id, profileId: "p-ds", prompt: "再试" });
+    await ok("DELETE", `/api/todos/${other.id}`);
+    expect((await ok<Array<{ id: string; state: string }>>("GET", "/api/proposals")).find((x) => x.id === r.id)?.state).toBe("expired");
+    expect((await api("POST", "/api/proposals", { todoId: "nope", profileId: "p-ds", prompt: "x" })).status).toBe(404);
+  });
+
+  it("caps proposals per scheduler round", async () => {
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    const { session } = await createTask("scheduler");
+    const ids: string[] = [];
+    for (let i = 0; i < 4; i++) ids.push((await ok<{ id: string }>("POST", "/api/todos", { text: `待办 ${i}`, workspaceId: ws.id })).id);
+    for (const id of ids.slice(0, 3)) service.propose({ todoId: id, profileId: "p-ds", prompt: "做" }, session.id);
+    expect(() => service.propose({ todoId: ids[3], profileId: "p-ds", prompt: "做" }, session.id)).toThrow("at most 3 proposals per scheduler round");
+  });
+
   it("saves the canvas with optimistic versions and serves its outline", async () => {
     const { task } = await createTask("canvas");
     const empty = await ok<CanvasDoc>("GET", "/api/canvas");

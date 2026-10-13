@@ -5,6 +5,7 @@ import { useHostState } from "../host/useHostState.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { DecisionCard, useOpenDecisions } from "../task/DecisionPanel.js";
+import { usePendingProposals } from "../board/ProposalsPanel.js";
 import "./focus.css";
 
 // The Focus window: "what needs me right now". Lists sessions waiting for approval or review, newest first; one entry
@@ -36,6 +37,7 @@ export function FocusApp() {
   const [compact, setCompact] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const decisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
+  const proposals = usePendingProposals(host.kind === "ready" ? host.link : NO_LINK);
 
   // Clicks pass through the transparent window except over the panel.
   const catchMouse = (on: boolean) => window.amo?.focus?.setIgnoreMouse(!on);
@@ -57,7 +59,7 @@ export function FocusApp() {
   const { state, link } = host;
   const list = needsMe(state);
   const asks = decisions.filter((d) => state.sessions.some((s) => s.id === d.sessionId && !s.archivedAt));
-  const needs = list.length + asks.length;
+  const needs = list.length + asks.length + proposals.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
   const openId = open && list.some((s) => s.id === open) ? open : (list[0]?.id ?? null);
   const title = (s: Session) => state.tasks.find((t) => t.id === s.taskId)?.title || "未命名任务";
@@ -78,6 +80,18 @@ export function FocusApp() {
         </div>
         {!compact && needs > 0 && (
           <div className="focus-list">
+            {proposals.length > 0 && (
+              // A proposal needs its prompt read (and maybe edited): only the count here, handled on the board.
+              <div className="focus-entry" data-testid="focus-proposals">
+                <button type="button" className="focus-row" onClick={() => void window.amo?.openInWorkbench?.({ taskId: "" })}>
+                  <span className="dot" style={{ background: "var(--attention)" }} />
+                  <span className="focus-row-text">
+                    <span className="focus-title">{proposals.length} 条调度提案</span>
+                    <span className="focus-sub">在工作台处理</span>
+                  </span>
+                </button>
+              </div>
+            )}
             {asks.map((d) => {
               const s = state.sessions.find((x) => x.id === d.sessionId)!;
               return (

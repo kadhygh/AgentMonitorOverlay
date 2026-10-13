@@ -4,7 +4,8 @@ import { defaultProfile, profileLabel, rememberProfile } from "../lib/profiles.j
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
-function useTodos(link: HostLink) {
+/** Whole-picture todos, kept live (also used for scheduler proposals on the board). */
+export function useTodos(link: HostLink) {
   const [todos, setTodos] = useState<readonly TodoItem[]>([]);
   const [reload, setReload] = useState(0);
   useEffect(() => {

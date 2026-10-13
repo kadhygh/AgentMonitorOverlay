@@ -75,3 +75,36 @@ test("canvas groups bound to a workspace say whether the project is free", async
   // When the turn ends, alpha is free again.
   await expect(group("alpha 玩法")).toHaveText("空闲", { timeout: 60_000 });
 });
+
+test("scheduler proposals wait on the board until the person approves or rejects them", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const a = await studio.api<TodoItem>("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: ws.id });
+  const b = await studio.api<TodoItem>("POST", "/api/todos", { text: "清理导表脚本", workspaceId: ws.id });
+  await studio.api("POST", "/api/proposals", { todoId: a.id, profileId: "claude-mock", prompt: "统一 drops.json 的字段", reason: "alpha 空闲，这条最早" });
+  await studio.api("POST", "/api/proposals", { todoId: b.id, profileId: "codex-mock", prompt: "删掉 tools/old_export" });
+
+  // The board shows them, and they count as needing the person; nothing has started.
+  const cards = page.getByTestId("proposal-card");
+  await expect(cards).toHaveCount(2);
+  await expect(page.getByTestId("needs-you")).toHaveText(/需要你 2/);
+  await expect(cards.first()).toContainText("在 alpha · 现在空闲 · alpha 空闲，这条最早");
+  expect((await studio.api<{ tasks: Task[] }>("GET", "/api/state")).tasks).toEqual([]);
+
+  // Focus only counts them and sends the person to the board.
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await app.waitForEvent("window");
+  await expect(focus.getByTestId("focus-proposals")).toContainText("2 条调度提案");
+  await screenshot(studio.app, "stage-7", "S7-03-proposals", page);
+
+  // Reject one; approve the other with an edited prompt and model: the task opens and its first turn runs.
+  await cards.filter({ hasText: "清理导表脚本" }).getByRole("button", { name: "拒绝" }).click();
+  await expect(cards).toHaveCount(1);
+  await cards.first().getByLabel("提案提示词").fill("统一 drops.json 的字段，先别改 skills");
+  await cards.first().getByLabel("提案模型").selectOption({ label: "Codex · Mock 模型" });
+  await cards.first().getByRole("button", { name: "批准开工" }).click();
+  await expect(page.locator(".page-head")).toContainText("统一掉落表格式");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 统一 drops.json 的字段，先别改 skills", { timeout: 60_000 });
+  await expect(focus.getByTestId("focus-proposals")).toHaveCount(0);
+});
