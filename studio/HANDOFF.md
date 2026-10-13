@@ -1,6 +1,16 @@
-# 交接：继续开发 AMO Studio（2026-10-13）
+# 交接：继续开发 AMO Studio（2026-10-14）
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
+
+> **2026-10-14 更新：阶段 12 全部做完并合进 `studio/main`，等用户验收。** 计划、调查结果、每条线的做法和取舍都在 `plans/stage-12.md`；截图在 `screenshots/stage-12/`。
+> - Review：代码按语言变色（Shiki，`lib/highlight.ts`）、目录树（宽度可拖）、左右对照（用户确认"diff 模式"就是它）、VS Code 打开 / 在资源管理器中显示（Host `features/openin/`）。
+> - 对话：Claude 提问和计划审阅能回答了（新条目 `question`、状态「等你回答」）；文件路径能点、右侧快速查看、本轮改动的文件；`/` 命令菜单、上下文压缩行和「压缩」按钮、重试和各类提示、后台命令、工具进度和图片、建议的下一句（**默认关**，每轮多一次模型请求）。
+> - 文件标记：独立窗口（标题栏「标记」、Ctrl+Shift+M），`@ 标记的文件`、拖进输入框，迁移 9；agent 可用 MCP `list_file_marks` 读。
+> - 标题栏：标记 / 便签 / Focus（图标）在标题行；看板·画布切换和「+ 新任务」在下一行；设置在左栏底部。
+> - 顺带修了：Claude 会话的权限模式（只做计划 / 自动接受编辑 / 全部允许）以前要中途切换一次才生效。
+> - 五条线在工作树 `G:\PROJECT\AgentMonitorOverlay-s12-{review,questions,chatfiles,marks,cli}` 里并行开发，分支 `studio/s12-*` 保留。阶段 11 的四个工作树也还在，等用户同意再删。
+> - 用户数据迁移前备份在 `.data/backup-before-stage12-20261014/`。
+> - 等用户的：撤销某一轮的文件改动（会回滚项目文件，没做，待定）；跨窗口真实拖动标记要手动试一次；Codex 的提问只在 Codex 计划协作模式下出现，Studio 没开这个模式。
 
 > **2026-10-13 深夜更新：阶段 11 的六项都做完并合进 `studio/main`，等用户验收。** 计划、用户的决定和每项的做法、取舍都在 `plans/stage-11.md`；截图在 `screenshots/stage-11/`。
 > - 画布：引用卡片、每个任务可选是否上画布（**行为变化**：看板里建的专题任务不再自动出现在画布上）、从画布进出返回画布、空分组删不掉的 bug（原因是画布里有已归档任务的卡片）。
@@ -21,7 +31,7 @@
 | 项目 | 内容 |
 |---|---|
 | 开发目录 | `G:\PROJECT\AgentMonitorOverlay-studio\studio`（git worktree） |
-| 分支 | `studio/main`，最新 `c70d51b`。**没有合并到 master，没有推送**；master 仍在 `ac93b81`（等用户决定，见 NEEDS_YOU S8-07） |
+| 分支 | `studio/main`（阶段 12 合并后）。**没有合并到 master，没有推送**；master 仍在 `ac93b81`（等用户决定，见 NEEDS_YOU S8-07） |
 | 主仓库 | `G:\PROJECT\AgentMonitorOverlay`，停在 `chore/next-gen-planning-2026-10`；里面的 `overlay/src-tauri/Cargo.toml` 只有换行符改动，**不要碰** |
 | 开发版 | `npm start`（先 build 再开窗口），数据在 `studio\.data`。Host 常驻在 47900 端口；改了 Host 代码要先 `npm run host:stop` 再 `npm start` |
 | 帮用户重启开发版 | `npm run build` → `npm run host:stop` → 结束 `electron.exe packages/app` 主进程 → `Start-Process node_modules\electron\dist\electron.exe packages/app`（工作目录 `studio`） |
@@ -59,7 +69,7 @@
 | Claude 订阅的真实测试 | 等用户运行 `claude setup-token` 并在 设置 → 模型凭据 保存令牌。之后跑 `node spikes/s9-01-subscriptions.mjs claude`（计 claude 1 次），它还会检查令牌有没有泄露进 agent 的命令环境（期望 `TOKEN-HIDDEN`）；保存令牌后 Claude 订阅的型号列表会来自 Claude Code 本身 |
 | NEEDS_YOU 里 5 项"必须等你" | 合并 master（S8-07）、切换日常工具与删除旧 AMO（S3-10）、是否开放派发（S5-10）、第一个扩展包（S6-09）、调度权限与频率（S7-09）。用户说暂时没空处理，不要催 |
 | 用户暂缓的 | 扩展包 `.amo/packs/` 的实际用法（做到时再说）；清理旧 AMO 在工程里部署的 Hook（用户先体验新版） |
-| DSH 对齐里没做的 | 轮次导航轨道、从某一轮分支对话、图片附件、文件链接在侧栏打开、上下文压缩行 |
+| DSH 对齐里没做的 | 轮次导航轨道、从某一轮分支对话（图片附件、文件链接、上下文压缩已在阶段 11/12 做了） |
 | 可选 | "彻底退出 Host"按钮（Portable）、`npm run dev:studio` 一键热更新脚本 |
 
 ## 5. 已知问题
