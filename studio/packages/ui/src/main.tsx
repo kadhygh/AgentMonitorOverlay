@@ -4,6 +4,7 @@ import { App } from "./App.js";
 import { FocusApp } from "./focus/FocusApp.js";
 import { ScratchpadApp } from "./scratchpad/ScratchpadApp.js";
 import { ReviewApp } from "./gitreview/ReviewApp.js";
+import { MarksApp } from "./marks/MarksApp.js";
 import "@fontsource-variable/noto-sans-sc";
 import "@fontsource-variable/noto-serif-sc";
 import "@fontsource-variable/jetbrains-mono";
@@ -28,6 +29,7 @@ import "./settings/settings.css";
 import "./scratchpad/scratchpad.css";
 import "./gitreview/gitreview.css";
 import "./attach/attach.css";
+import "./marks/marks.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 
 // One bundle, two windows: the workbench, and the Focus window (loaded with #focus).
@@ -42,6 +44,9 @@ if (focus) document.documentElement.classList.add("focus-mode");
 const scratchpad = location.hash === "#scratchpad";
 if (scratchpad) document.documentElement.classList.add("scratchpad-mode");
 
+// The file marks window (文件标记, S12-D), loaded with #marks?workspace=….
+const marks = location.hash.startsWith("#marks");
+
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
-createRoot(root).render(<StrictMode>{focus ? <FocusApp /> : scratchpad ? <ScratchpadApp /> : review ? <ReviewApp /> : <App />}</StrictMode>);
+createRoot(root).render(<StrictMode>{focus ? <FocusApp /> : scratchpad ? <ScratchpadApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : <App />}</StrictMode>);

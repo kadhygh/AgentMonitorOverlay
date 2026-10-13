@@ -16,10 +16,23 @@ export function useFocusToggle(): { on: boolean; available: boolean; set(on: boo
 }
 
 /**
- * The top bar, which is also the window's title bar: brand and scope, what needs the person, the scratchpad and Focus
- * windows, and the window buttons. The views' tabs and "+ 新任务" sit in the row below (ViewBar).
+ * The top bar, which is also the window's title bar: brand and scope, what needs the person, the marks, scratchpad and
+ * Focus windows, and the window buttons. The views' tabs and "+ 新任务" sit in the row below (ViewBar).
  */
-export function TopBar({ onView, needs, scopeName, focus }: { onView(view: View): void; focus: { on: boolean; available: boolean; set(on: boolean): void }; needs: number; scopeName: string }) {
+export function TopBar({
+  onView,
+  onMarks,
+  needs,
+  scopeName,
+  focus,
+}: {
+  onView(view: View): void;
+  focus: { on: boolean; available: boolean; set(on: boolean): void };
+  /** 文件标记 (S12-D): the marks window. */
+  onMarks?: () => void;
+  needs: number;
+  scopeName: string;
+}) {
   const scratchpad = scratchpadBridge();
   return (
     <header className="topbar">
@@ -38,6 +51,14 @@ export function TopBar({ onView, needs, scopeName, focus }: { onView(view: View)
         <button type="button" className="needs" onClick={() => onView({ kind: "board" })} data-testid="needs-you">
           <span className="dot" style={{ background: "var(--attention)", width: 7, height: 7 }} />
           需要你 {needs}
+        </button>
+      )}
+      {onMarks && (
+        <button type="button" className="tb-btn" onClick={onMarks} title="文件标记：标记的文件和说明，可以 @ 或拖进对话（Ctrl+Shift+M）" data-testid="topbar-marks">
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path d="M4.5 2.5h7a.5.5 0 0 1 .5.5v10.6a.3.3 0 0 1-.48.24L8 11.2l-3.52 2.64A.3.3 0 0 1 4 13.6V3a.5.5 0 0 1 .5-.5Z" />
+          </svg>
+          标记
         </button>
       )}
       {scratchpad && (

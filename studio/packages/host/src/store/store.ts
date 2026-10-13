@@ -21,6 +21,7 @@ import {
   type MailMessage,
   type DecisionRequest,
   type GitReviewComment,
+  type FileMark,
   type Workspace,
 } from "@amo-studio/protocol";
 import { MIGRATIONS } from "./migrations.js";
@@ -214,6 +215,8 @@ export class Store {
     if (used) throw new Error(`workspace ${id} is still used by tasks or sessions`);
     // Git Review comments belong to the project and go with it.
     this.db.prepare("DELETE FROM review_comments WHERE workspace_id = ?").run(id);
+    // So do its file marks (S12-D).
+    this.db.prepare("DELETE FROM file_marks WHERE workspace_id = ?").run(id);
     this.db.prepare("DELETE FROM workspaces WHERE id = ?").run(id);
   }
 
@@ -494,6 +497,36 @@ export class Store {
 
   deleteReviewComment(id: Id): void {
     this.db.prepare("DELETE FROM review_comments WHERE id = ?").run(id);
+  }
+
+  // File marks (S12-D)
+
+  putFileMark(m: FileMark): void {
+    this.db
+      .prepare(
+        "INSERT INTO file_marks (id, workspace_id, path, position, created_at, body) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, path = excluded.path, position = excluded.position, body = excluded.body",
+      )
+      .run(m.id, m.workspaceId, m.path, m.order, m.createdAt, JSON.stringify(m));
+  }
+
+  getFileMark(id: Id): FileMark | undefined {
+    const r = this.db.prepare("SELECT body FROM file_marks WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as FileMark);
+  }
+
+  /** All marks (`undefined`), a project's, or those outside every project (`null`); in their order. */
+  listFileMarks(workspaceId?: Id | null): FileMark[] {
+    const rows =
+      workspaceId === undefined
+        ? this.db.prepare("SELECT body FROM file_marks ORDER BY position, created_at DESC, id").all()
+        : workspaceId === null
+          ? this.db.prepare("SELECT body FROM file_marks WHERE workspace_id IS NULL ORDER BY position, created_at DESC, id").all()
+          : this.db.prepare("SELECT body FROM file_marks WHERE workspace_id = ? ORDER BY position, created_at DESC, id").all(workspaceId);
+    return (rows as Row[]).map((r) => JSON.parse(str(r.body)) as FileMark);
+  }
+
+  deleteFileMark(id: Id): void {
+    this.db.prepare("DELETE FROM file_marks WHERE id = ?").run(id);
   }
 
   putCanvas(doc: CanvasDoc): void {

@@ -24,6 +24,7 @@ import type { SelectionAnchor } from "../lib/selection.js";
 import { openReview, useIsGitRepo } from "../gitreview/open.js";
 import { latestMainSession } from "../gitreview/logic.js";
 import { OnCanvasToggle } from "../canvas/OnCanvasToggle.js";
+import { openMarks } from "../marks/open.js";
 
 interface TaskPageProps {
   link: HostLink;
@@ -230,6 +231,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             Review
           </button>
         )}
+        <button type="button" className="btn-ghost small" title="文件标记：这个项目标记的文件（Ctrl+Shift+M）" onClick={() => openMarks({ workspaceId: task.workspaceId })} data-testid="task-marks">
+          标记
+        </button>
         {task.topicId && (
           <OnCanvasToggle
             key={task.topicId}
@@ -317,6 +321,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
                   Review
                 </button>
               )}
+              <button type="button" className="btn-ghost small" title="文件标记：拖进输入框或 @ 引用" onClick={() => openMarks({ workspaceId: session.workspaceId })} data-testid="session-marks">
+                标记
+              </button>
               {!session.archivedAt && session.writer !== "terminal-handoff" && !(session.runtime === "claude" && session.kind === "sub") && (
                 <button
                   type="button"

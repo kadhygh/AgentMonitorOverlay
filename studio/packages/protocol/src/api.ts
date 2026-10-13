@@ -329,6 +329,8 @@ export type HostEvent = { seq: number } & (
   | { type: "checklist.upserted"; item: ChecklistItem }
   | { type: "proposal.upserted"; proposal: ScheduleProposal }
   | { type: "settings.updated"; settings: StudioSettings }
+  /** File marks (S12-D) changed: one was added, edited or removed (`workspaceId` is its project, null for 其他). */
+  | { type: "marks.changed"; markId: Id; workspaceId: Id | null }
 );
 
 export type HostEventType = HostEvent["type"];
@@ -395,4 +397,14 @@ export interface HostRoutes {
   "GET /api/fs/text": { req: void; res: import("./openin.js").TextFile };
   /** An image file itself, for previews (types in PREVIEW_IMAGE_TYPES); also takes `?token=`. */
   "GET /api/fs/raw": { req: void; res: Blob };
+}
+
+// ---- file marks (stage 12, S12-D): files and folders marked with a note, per project --------------------------------
+export interface HostRoutes {
+  /** All marks, or one project's (`?workspace=<id>`, or `?workspace=other` for those outside every project). */
+  "GET /api/file-marks": { req: void; res: import("./marks.js").FileMark[] };
+  /** Marks a file or folder; the same path and line range again returns the existing mark (`created: false`). */
+  "POST /api/file-marks": { req: import("./marks.js").NewFileMark; res: { mark: import("./marks.js").FileMark; created: boolean } };
+  "PATCH /api/file-marks/:id": { req: import("./marks.js").FileMarkPatch; res: import("./marks.js").FileMark };
+  "DELETE /api/file-marks/:id": { req: void; res: { ok: true } };
 }

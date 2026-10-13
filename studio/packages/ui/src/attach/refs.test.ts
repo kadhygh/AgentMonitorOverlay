@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { baseName, dirName, formatBytes, formatWhen, splitFileRefs, withFileRefs } from "./refs.js";
+import { baseName, dirName, formatBytes, formatFileRef, formatWhen, parseFileRef, splitFileRefItems, splitFileRefs, withFileRefs } from "./refs.js";
 
 describe("file references in a message", () => {
   it("appends the paths as a block and reads them back", () => {
@@ -22,6 +22,28 @@ describe("file references in a message", () => {
     expect(splitFileRefs("引用文件：\n").files).toEqual([]);
     // CRLF from a pasted message still reads back.
     expect(splitFileRefs("x\r\n\r\n引用文件：\r\n- a\r\n- b")).toEqual({ text: "x", files: ["a", "b"] });
+  });
+});
+
+describe("marked file references (S12-D)", () => {
+  it("writes a mark's range and note on its line and reads them back", () => {
+    const sent = withFileRefs("改这里", [{ path: "C:\\game\\drop.lua", startLine: 12, endLine: 30, note: "掉落表\n别动 boss" }, "C:\\game\\a.ts", { path: "C:\\game\\b.ts", note: "" }]);
+    expect(sent).toBe("改这里\n\n引用文件：\n- C:\\game\\drop.lua:12-30（说明：掉落表 别动 boss）\n- C:\\game\\a.ts\n- C:\\game\\b.ts");
+    expect(splitFileRefItems(sent)).toEqual({
+      text: "改这里",
+      refs: [{ path: "C:\\game\\drop.lua", startLine: 12, endLine: 30, note: "掉落表 别动 boss" }, { path: "C:\\game\\a.ts" }, { path: "C:\\game\\b.ts" }],
+    });
+    // Paths only, for the readers that do not show notes.
+    expect(splitFileRefs(sent).files).toEqual(["C:\\game\\drop.lua", "C:\\game\\a.ts", "C:\\game\\b.ts"]);
+  });
+
+  it("formats one line, a note with brackets, and leaves drive letters alone", () => {
+    expect(formatFileRef({ path: "D:/x.md", startLine: 3 })).toBe("D:/x.md:3");
+    expect(parseFileRef("D:/x.md:3")).toEqual({ path: "D:/x.md", startLine: 3, endLine: null });
+    expect(parseFileRef("C:\\work（说明：见（附录）里的表）")).toEqual({ path: "C:\\work", note: "见（附录）里的表" });
+    expect(parseFileRef("C:\\work\\a.ts")).toEqual({ path: "C:\\work\\a.ts" });
+    // The same file with the same note is listed once.
+    expect(withFileRefs("", [{ path: "a", note: "x" }, { path: "a", note: "x" }])).toBe("引用文件：\n- a（说明：x）");
   });
 });
 

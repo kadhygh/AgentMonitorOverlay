@@ -16,6 +16,7 @@ import { IconPaperclip } from "../attach/icons.js";
 import { withFileRefs } from "../attach/refs.js";
 import { MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
+import { markFileMessage } from "../marks/open.js";
 
 interface ThreadProps {
   link: HostLink;
@@ -65,6 +66,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     current: session,
     onFile: (path) => attach.addFiles([path]),
     onFind: (query) => setFinding({ query }),
+    onMark: (ref) => attach.addRefs([ref]),
   });
   const resetAttach = attach.reset;
   useEffect(() => resetAttach(), [session?.id, resetAttach]);
@@ -141,7 +143,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     const sent = attach.take();
     stick.current = true;
     setAtBottom(true);
-    const message = withFileRefs(text ? mentions.expand(text) : "", sent.files);
+    const message = withFileRefs(text ? mentions.expand(text) : "", sent.refs);
     const ids = sent.images.flatMap((i) => (i.id ? [i.id] : []));
     if (await onSend(message, ids)) attach.release(sent);
     else {
@@ -358,6 +360,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           workspaceId={session.workspaceId}
           initialQuery={finding.query}
           onPick={(path) => attach.addFiles([path])}
+          onMark={(path) => markFileMessage(link, path)}
           onClose={() => {
             setFinding(null);
             requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".chat-input textarea")?.focus());
