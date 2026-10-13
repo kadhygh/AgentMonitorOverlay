@@ -1,0 +1,51 @@
+[
+  {
+    "shell": null,
+    "command": "\"C:\\\\Users\\\\Kangaroo\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'Get-Content hello.txt'",
+    "status": "failed",
+    "exitCode": -1,
+    "output": "Failed to create unified exec process: CreateProcessAsUserW failed: 5 (拒绝访问。) | cwd=C:\\Users\\Kangaro"
+  },
+  {
+    "shell": "cmd",
+    "command": "\"C:\\\\Windows\\\\system32\\\\cmd.exe\" /c 'type hello.txt'",
+    "status": "completed",
+    "exitCode": 0,
+    "output": "hello from the sandbox\n"
+  },
+  {
+    "shell": "cmd.exe",
+    "command": "\"C:\\\\Windows\\\\system32\\\\cmd.exe\" /c 'type hello.txt'",
+    "status": "completed",
+    "exitCode": 0,
+    "output": "hello from the sandbox\n"
+  },
+  {
+    "shell": "powershell",
+    "command": "\"C:\\\\Users\\\\Kangaroo\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'Get-Content hello.txt'",
+    "status": "failed",
+    "exitCode": -1,
+    "output": "Failed to create unified exec process: CreateProcessAsUserW failed: 5 (拒绝访问。) | cwd=C:\\Users\\Kangaro"
+  },
+  {
+    "shell": "C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\powershell.exe",
+    "command": "\"C:\\\\Users\\\\Kangaroo\\\\AppData\\\\Local\\\\Microsoft\\\\WindowsApps\\\\pwsh.exe\" -Command 'Get-Content hello.txt'",
+    "status": "failed",
+    "exitCode": -1,
+    "output": "Failed to create unified exec process: CreateProcessAsUserW failed: 5 (拒绝访问。) | cwd=C:\\Users\\Kangaro"
+  },
+  {
+    "shell": "no-windowsapps",
+    "command": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content hello.txt'",
+    "status": "completed",
+    "exitCode": 0,
+    "output": "hello from the sandbox\r\n"
+  },
+  {
+    "shell": "no-windowsapps+auto-review",
+    "command": "\"C:\\\\Windows\\\\System32\\\\WindowsPowerShell\\\\v1.0\\\\powershell.exe\" -Command 'Get-Content hello.txt'",
+    "status": "completed",
+    "exitCode": 0,
+    "output": "hello from the sandbox\r\n"
+  }
+]

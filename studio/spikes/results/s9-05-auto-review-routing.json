@@ -1,0 +1,76 @@
+[
+  {
+    "approvalPolicy": "untrusted",
+    "feature": false,
+    "requests": [
+      "item/commandExecution/requestApproval"
+    ],
+    "reviews": [],
+    "completed": true,
+    "command": {
+      "status": "declined",
+      "exitCode": null,
+      "out": ""
+    }
+  },
+  {
+    "approvalPolicy": "untrusted",
+    "feature": true,
+    "requests": [
+      "item/commandExecution/requestApproval"
+    ],
+    "reviews": [],
+    "completed": true,
+    "command": {
+      "status": "declined",
+      "exitCode": null,
+      "out": ""
+    }
+  },
+  {
+    "approvalPolicy": "on-request",
+    "feature": true,
+    "sandbox": "read-only",
+    "requests": [],
+    "reviews": [
+      "item/autoApprovalReview/started:inProgress",
+      "item/autoApprovalReview/completed:denied"
+    ],
+    "completed": true,
+    "command": {
+      "status": "declined",
+      "exitCode": null,
+      "out": ""
+    }
+  },
+  {
+    "approvalPolicy": "on-request",
+    "feature": false,
+    "sandbox": "read-only",
+    "requests": [],
+    "reviews": [
+      "item/autoApprovalReview/started:inProgress",
+      "item/autoApprovalReview/completed:denied"
+    ],
+    "completed": true,
+    "command": {
+      "status": "declined",
+      "exitCode": null,
+      "out": ""
+    }
+  },
+  {
+    "approvalPolicy": "on-request",
+    "feature": false,
+    "sandbox": "workspace-write",
+    "windowsSandbox": "unelevated",
+    "requests": [],
+    "reviews": [],
+    "completed": true,
+    "command": {
+      "status": "failed",
+      "exitCode": -1,
+      "out": "Failed to create unified exec process: CreateProcessAsUserW failed: 5 (拒绝访问。) | cwd=C:\\Users\\Kangaroo\\AppData\\Local\\Temp"
+    }
+  }
+]

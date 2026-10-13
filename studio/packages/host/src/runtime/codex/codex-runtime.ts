@@ -4,7 +4,7 @@ import { newId, type HostEventInput, type SessionItemInput, type Store } from ".
 import { codexThreadParams } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
 import { CODEX_DEFAULT_PERMISSION, codexPermission, codexPermissions } from "../choices.js";
-import { classifyCommand, contentText, fileDiff, formatInput, shortPath, tail } from "../items.js";
+import { classifyCommand, contentText, unwrapShell, fileDiff, formatInput, shortPath, tail } from "../items.js";
 import type { ServerNotification, ServerRequest } from "./rpc-client.js";
 import type { CodexServerHandle } from "./server-manager.js";
 
@@ -362,6 +362,19 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         this.updateItem(id, (it) => (it.type === "turn" ? { ...it, usage: addUsage(it.usage, last, modelContextWindow) } : it));
         return;
       }
+      case "item/autoApprovalReview/started":
+      case "item/autoApprovalReview/completed": {
+        // "Approve for me": Codex's review agent decides an approval request. Shown as a row in the work.
+        const s = this.findByThread(n.params.threadId);
+        if (!s) return;
+        const st = this.sessionState(s.id);
+        const key = `review:${n.params.reviewId}`;
+        const row = describeReview(n.params as unknown as CodexReview, this.store.getWorkspace(s.workspaceId)?.path);
+        const existing = st.items.get(key);
+        if (existing) this.updateItem(existing, (it) => (it.type === "tool" ? { ...it, ...row } : it));
+        else st.items.set(key, this.appendItem(s.id, { type: "tool", ...row }, { method: n.method, turnId: n.params.turnId, itemId: n.params.reviewId }).id);
+        return;
+      }
       case "turn/plan/updated": {
         const s = this.findByThread(n.params.threadId);
         if (!s) return;
@@ -585,12 +598,12 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
    */
   private permissions(options: SessionOptions) {
     const p = this.permissionOf(options);
-    return { approvalPolicy: p.approvalPolicy, approvalsReviewer: "user", sandbox: p.sandbox };
+    return { approvalPolicy: p.approvalPolicy, approvalsReviewer: p.reviewer, sandbox: p.sandbox };
   }
 
   private permissionOf(options: SessionOptions) {
     const p = codexPermission(options.permission);
-    return { approvalPolicy: this.options.approvalPolicy ?? p.approvalPolicy, sandbox: this.options.sandbox ?? p.sandbox };
+    return { approvalPolicy: this.options.approvalPolicy ?? p.approvalPolicy, sandbox: this.options.sandbox ?? p.sandbox, reviewer: p.reviewer };
   }
 
   /**
@@ -599,7 +612,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
    * still show what they thought about.
    */
   private turnOptions(options: SessionOptions) {
-    const { approvalPolicy, sandbox } = this.permissionOf(options);
+    const { approvalPolicy, sandbox, reviewer } = this.permissionOf(options);
     const sandboxPolicy =
       sandbox === "danger-full-access"
         ? { type: "dangerFullAccess" }
@@ -608,7 +621,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
           : { type: "workspaceWrite", writableRoots: [], networkAccess: false, excludeTmpdirEnvVar: false, excludeSlashTmp: false };
     return {
       approvalPolicy,
-      approvalsReviewer: "user",
+      approvalsReviewer: reviewer,
       sandboxPolicy,
       summary: "auto",
       ...(options.model ? { model: options.model } : {}),
@@ -858,6 +871,44 @@ export function describeTool(item: CodexItem, workspace?: string): ToolFields {
     default:
       return { name: item.tool ?? item.type, kind: "other", summary: "", status };
   }
+}
+
+interface CodexReview {
+  startedAtMs: number;
+  completedAtMs?: number;
+  review: { status: string; riskLevel: string | null; rationale: string | null };
+  action: { type: string; command?: string; program?: string; argv?: string[]; files?: string[]; target?: string; server?: string; toolName?: string; reason?: string | null };
+}
+
+const RISK: Record<string, string> = { low: "低风险", medium: "中风险", high: "高风险", critical: "极高风险" };
+const VERDICT: Record<string, string> = { inProgress: "审查中", approved: "已批准", denied: "已拒绝", timedOut: "超时", aborted: "已中止" };
+
+/** One automatic review: what it looked at, its verdict and risk, and its reasons. */
+export function describeReview(r: CodexReview, workspace?: string): ToolFields {
+  const a = r.action;
+  const what =
+    a.type === "command"
+      ? unwrapShell(a.command ?? "")
+      : a.type === "execve"
+        ? [a.program, ...(a.argv ?? []).slice(1)].filter(Boolean).join(" ")
+        : a.type === "applyPatch"
+          ? (a.files ?? []).map((f) => shortPath(f, workspace)).join(", ")
+          : a.type === "networkAccess"
+            ? (a.target ?? "")
+            : a.type === "mcpToolCall"
+              ? `${a.server ?? ""}.${a.toolName ?? ""}`
+              : (a.reason ?? a.type);
+  const status = r.review.status;
+  const verdict = [VERDICT[status] ?? status, r.review.riskLevel ? RISK[r.review.riskLevel] ?? r.review.riskLevel : null].filter(Boolean).join(" · ");
+  return {
+    name: "auto_review",
+    kind: "review",
+    summary: what ? `${verdict} · ${what}` : verdict,
+    input: what,
+    ...(r.review.rationale ? { detail: r.review.rationale } : {}),
+    ...(r.completedAtMs ? { durationMs: r.completedAtMs - r.startedAtMs } : {}),
+    status: status === "inProgress" ? "running" : status === "approved" ? "completed" : status === "denied" ? "declined" : "failed",
+  };
 }
 
 /** A plan update (Codex's update_plan) as one tool row per turn. */

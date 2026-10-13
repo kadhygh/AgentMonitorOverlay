@@ -116,6 +116,8 @@ export function toolTitle(tool: ToolItem): string {
       return tool.name === "web_fetch" ? "网页获取" : "网页搜索";
     case "plan":
       return "更新计划";
+    case "review":
+      return "自动审批";
     case "subagent":
       return "子智能体";
     default:
@@ -130,6 +132,8 @@ function toolSummary(tool: ToolItem): string {
 }
 
 const STATUS_NOTE: Partial<Record<ToolItem["status"], string>> = { failed: "失败", declined: "未执行" };
+/** A review row's summary already says approved / denied. */
+const noteFor = (item: ToolItem) => (toolKind(item) === "review" ? undefined : STATUS_NOTE[item.status]);
 
 function DiffStat({ files }: { files: readonly FileDiff[] }) {
   const added = files.reduce((n, f) => n + f.added, 0);
@@ -150,7 +154,7 @@ export function ToolRow({ item }: { item: ToolItem }) {
   const running = item.status === "running";
   const expandable = !!(item.detail || item.input || item.files?.some((f) => f.diff) || kind === "command");
   const summary = toolSummary(item);
-  const note = STATUS_NOTE[item.status];
+  const note = noteFor(item);
   return (
     <div className="pr pr-tool" data-testid="tool" data-status={item.status} data-kind={kind}>
       <RowButton icon={<Icon />} open={open} expandable={expandable} onToggle={() => setOpen((v) => !v)}>
@@ -160,7 +164,7 @@ export function ToolRow({ item }: { item: ToolItem }) {
         {summary && (
           <>
             <span className="pr-dot" />
-            <span className={`pr-summary${kind === "command" || kind === "search" ? " code" : ""}${item.status === "failed" ? " failed" : ""}`}>{summary}</span>
+            <span className={`pr-summary${kind === "command" || kind === "search" ? " code" : ""}${item.status === "failed" || (kind === "review" && item.status === "declined") ? " failed" : ""}`}>{summary}</span>
           </>
         )}
         {item.files && <DiffStat files={item.files} />}
@@ -176,6 +180,7 @@ function toolBody(item: ToolItem): ReactNode {
   if (kind === "edit" && item.files?.length) return item.files.map((f) => <DiffCard key={f.path} file={f} />);
   if (kind === "command" || kind === "read" || kind === "search" || kind === "list") return <TerminalCard item={item} />;
   if (kind === "plan") return <pre className="pr-plan">{item.input ?? item.detail ?? ""}</pre>;
+  if (kind === "review") return <div className="pr-review">{item.detail || "（审查 agent 没有给出理由）"}</div>;
   return <IoCard input={item.input} output={item.detail} />;
 }
 

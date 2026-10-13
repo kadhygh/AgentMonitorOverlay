@@ -205,7 +205,7 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
     const args = [...cmd.prefixArgs, "app-server", ...spec.configArgs, "--listen", `ws://127.0.0.1:${entry.port}`, "--ws-auth", "capability-token", "--ws-token-file", tokenFile];
     const child = spawn(cmd.command, args, {
       cwd: this.options.cwd,
-      env: { ...process.env, ...cmd.env, ...this.options.env, ...spec.env },
+      env: withoutWindowsApps({ ...process.env, ...cmd.env, ...this.options.env, ...spec.env }),
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });
@@ -396,4 +396,20 @@ async function killTree(child: ChildProcess | null, pid: number | null): Promise
   const exited = child && child.exitCode === null ? new Promise<void>((r) => child.once("exit", () => r())) : Promise.resolve();
   killTreeSync(target);
   await Promise.race([exited, new Promise((r) => setTimeout(r, 5000))]);
+}
+
+/**
+ * The app-server's PATH without WindowsApps. Codex prefers `pwsh` from there (the Store PowerShell 7, an app execution
+ * alias), which cannot start inside Codex's Windows sandbox ("CreateProcessAsUserW failed: 5"); without it Codex uses
+ * Windows PowerShell 5 and sandboxed commands run (spikes/RESULTS.md s9-06). Agent commands then do not see the Store
+ * aliases (pwsh, python3, winget) either.
+ */
+export function withoutWindowsApps(env: NodeJS.ProcessEnv, platform = process.platform): NodeJS.ProcessEnv {
+  if (platform !== "win32") return env;
+  const out: NodeJS.ProcessEnv = { ...env };
+  for (const key of Object.keys(out)) {
+    if (key.toLowerCase() !== "path" || !out[key]) continue;
+    out[key] = out[key]!.split(";").filter((dir) => dir && !/\\WindowsApps(\\|$)/i.test(dir)).join(";");
+  }
+  return out;
 }

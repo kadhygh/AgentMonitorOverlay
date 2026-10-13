@@ -347,3 +347,4 @@
 .round-btn.stop { background: var(--chat-hover); color: var(--chat-label); }
 .round-btn.stop:hover { background: color-mix(in srgb, var(--chat-label) 18%, transparent); }
 .composer-stats { display: flex; gap: 12px; font-size: 11.5px; color: var(--chat-caption); font-variant-numeric: tabular-nums; }
+.pr-review { font-size: 13px; line-height: 21px; color: var(--chat-dim-hover); white-space: pre-wrap; border-left: 2px solid var(--chat-hairline); padding-left: 12px; margin-left: 7px; }

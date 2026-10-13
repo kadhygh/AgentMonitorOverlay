@@ -7,16 +7,17 @@ import { CLAUDE_PERMISSIONS, claudePermissionMode, codexPermission, codexPermiss
 
 describe("Codex permissions", () => {
   it("maps each option to an approval policy and a sandbox, defaulting to ask-every-command", () => {
-    expect(codexPermission(undefined)).toEqual({ approvalPolicy: "untrusted", sandbox: "danger-full-access" });
-    expect(codexPermission("full-auto")).toEqual({ approvalPolicy: "never", sandbox: "danger-full-access" });
-    expect(codexPermission("workspace-write")).toEqual({ approvalPolicy: "on-request", sandbox: "workspace-write" });
+    expect(codexPermission(undefined)).toEqual({ approvalPolicy: "untrusted", sandbox: "danger-full-access", reviewer: "user" });
+    expect(codexPermission("auto-review")).toEqual({ approvalPolicy: "on-request", sandbox: "workspace-write", reviewer: "auto_review" });
+    expect(codexPermission("full-auto")).toEqual({ approvalPolicy: "never", sandbox: "danger-full-access", reviewer: "user" });
+    expect(codexPermission("workspace-write")).toEqual({ approvalPolicy: "on-request", sandbox: "workspace-write", reviewer: "user" });
     expect(codexPermission("nonsense")).toEqual(codexPermission("ask"));
   });
 
-  it("marks the sandboxed options unusable under the unelevated Windows sandbox", () => {
-    const broken = codexPermissions("unelevated");
-    expect(broken.filter((p) => p.unavailable).map((p) => p.id)).toEqual(["workspace-write", "read-only"]);
-    expect(codexPermissions(null).some((p) => p.unavailable)).toBe(false);
+  it("offers every option, noting the unelevated Windows sandbox", () => {
+    const options = codexPermissions("unelevated");
+    expect(options.some((p) => p.unavailable)).toBe(false);
+    expect(options.find((p) => p.id === "workspace-write")!.description).toContain("unelevated");
   });
 
   it("reads [windows] sandbox from a Codex config", () => {
@@ -37,5 +38,14 @@ describe("Claude permissions", () => {
     expect(claudePermissionMode("plan")).toBe("plan");
     expect(claudePermissionMode(undefined)).toBe("default");
     expect(claudePermissionMode("auto")).toBe("default");
+  });
+});
+
+describe("withoutWindowsApps", () => {
+  it("drops WindowsApps directories from PATH on Windows only", async () => {
+    const { withoutWindowsApps } = await import("./codex/server-manager.js");
+    const env = { Path: String.raw`C:\Program Files\WindowsApps\Microsoft.PowerShell_7\;C:\Windows\System32;C:\Users\me\AppData\Local\Microsoft\WindowsApps;E:\Python`, OTHER: "x" };
+    expect(withoutWindowsApps(env, "win32")).toEqual({ Path: String.raw`C:\Windows\System32;E:\Python`, OTHER: "x" });
+    expect(withoutWindowsApps(env, "linux")).toBe(env);
   });
 });

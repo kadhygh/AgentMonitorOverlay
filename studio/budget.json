@@ -11,7 +11,7 @@
     },
     "gpt": {
       "limit": 50,
-      "used": 4
+      "used": 6
     },
     "claude": {
       "limit": 50,
@@ -323,6 +323,16 @@
       "at": "2026-10-13T08:14:23.916Z",
       "provider": "gpt",
       "note": "S9-03 GPT effort high"
+    },
+    {
+      "at": "2026-10-13T08:39:50.988Z",
+      "provider": "gpt",
+      "note": "S9-04 GPT auto-review (Approve for me)"
+    },
+    {
+      "at": "2026-10-13T08:54:38.340Z",
+      "provider": "gpt",
+      "note": "S9-04 GPT auto-review (Approve for me)"
     }
   ]
 }

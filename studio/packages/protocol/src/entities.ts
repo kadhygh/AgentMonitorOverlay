@@ -116,7 +116,7 @@ export type ApprovalKind = "command" | "fileChange" | "permissions";
 export type ApprovalState = "pending" | "accepted" | "declined" | "resolved-elsewhere";
 export type ToolStatus = "running" | "completed" | "failed" | "declined";
 /** What a tool call did, for its row's icon, title and the activity summary of its group. */
-export type ToolKind = "command" | "read" | "search" | "list" | "edit" | "web" | "mcp" | "subagent" | "plan" | "other";
+export type ToolKind = "command" | "read" | "search" | "list" | "edit" | "web" | "mcp" | "subagent" | "plan" | "review" | "other";
 
 /** One file touched by an edit, with a unified diff when the runtime gave one. */
 export interface FileDiff {

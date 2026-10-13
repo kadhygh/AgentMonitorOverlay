@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { HostEvent, ModelProfile, Session, SessionItem, Workspace } from "@amo-studio/protocol";
 import { Store } from "../../store/store.js";
-import { CodexRuntime } from "./codex-runtime.js";
+import { describeReview, CodexRuntime } from "./codex-runtime.js";
 import { FakeServers } from "./fake-servers.test-support.js";
 import { CodexRpcClient } from "./rpc-client.js";
 
@@ -188,5 +188,24 @@ describe("CodexRuntime", () => {
     expect(session(s.id).status).toBe("awaiting-approval");
     await runtime.respondApproval(s.id, replay.approvalId, "accept");
     await until(idle(s.id), "idle after replayed approval");
+  });
+});
+
+describe("describeReview", () => {
+  it("shows the verdict, risk and target of an automatic review, and its reasons when opened", () => {
+    expect(
+      describeReview(
+        { startedAtMs: 1000, completedAtMs: 3500, review: { status: "approved", riskLevel: "low", rationale: "只读命令" }, action: { type: "command", command: "npm test" } },
+        "C:/w",
+      ),
+    ).toEqual({ name: "auto_review", kind: "review", summary: "已批准 · 低风险 · npm test", input: "npm test", detail: "只读命令", durationMs: 2500, status: "completed" });
+    expect(describeReview({ startedAtMs: 0, review: { status: "inProgress", riskLevel: null, rationale: null }, action: { type: "applyPatch", files: ["C:/w/src/a.ts"] } }, "C:/w")).toMatchObject({
+      summary: "审查中 · src/a.ts",
+      status: "running",
+    });
+    expect(describeReview({ startedAtMs: 0, completedAtMs: 1, review: { status: "denied", riskLevel: "high", rationale: "会删文件" }, action: { type: "command", command: "rm -rf x" } })).toMatchObject({
+      summary: "已拒绝 · 高风险 · rm -rf x",
+      status: "declined",
+    });
   });
 });

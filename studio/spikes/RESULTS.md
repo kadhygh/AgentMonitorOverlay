@@ -278,3 +278,20 @@ S4-01 用 mock Anthropic 接口补充发现（不消耗额度）：
 | GPT，强度 high | 11 秒 | 443（摘要） | 212（推理 49） |
 
 结论：Claude Code 把强度作为 `output_config.effort` 发给 GLM，GLM 会照着调整思考量；切型号直接生效。Codex 每个 turn/start 都带 model 和 effort（mock 集成测试里核对了请求体）。Claude 的会话在运行中切换时立即生效（setModel / setPermissionMode / applyFlagSettings），Codex 从下一轮生效。
+
+## s9-04 / s9-05 / s9-06 · "Approve for me"（帮我审批）与 Windows 沙箱的真正原因（2026-10-13，GPT 2 次，其余 mock）
+
+**"Approve for me" 是什么**：Codex CLI 权限菜单（Read Only / Custom permissions / Ask for approval / Approve for me）里的一项，对应 `approvals_reviewer = "auto_review"`：需要批准的请求先交给 Codex 的审查 agent（guardian），由它按风险批准或拒绝。用户的 `~/.codex` 正是这个设置。
+
+**它只审"越出沙箱"的请求**（s9-05，mock）：
+
+| 审批策略 / 沙箱 | 结果 |
+|---|---|
+| untrusted（逐条询问）+ auto_review | 请求仍然发给客户端（人），审查 agent 不参与；不需要 `guardian_approval` 实验开关也一样 |
+| on-request + read-only + auto_review | 审查 agent 接手（`item/autoApprovalReview/started|completed`），没有请求发给人 |
+
+**沙箱失败的真正原因**（s9-06，mock，`windows.sandbox = "unelevated"`）：Codex 优先用 WindowsApps 里的 `pwsh.exe`（应用商店版 PowerShell 7，是个"应用执行别名"），它在 unelevated 沙箱的受限令牌下启动不了；`cmd` 能正常运行。把 WindowsApps 从 app-server 的 PATH 里去掉后，Codex 改用系统自带的 Windows PowerShell 5，沙箱里的命令正常运行，审查也正常。代价：agent 的命令里看不到 WindowsApps 下的别名（pwsh、python3、winget）；本机的 python、node、git 不在那里，不受影响。
+
+**真实 GPT**（s9-04 第 2 次，Studio 实际配置 + 用户的 `~/.codex`）：在工作区里读 importer.py → 沙箱内直接运行成功；在上一级目录写文件 → 越出沙箱 → 审查 agent「已批准 · 低风险」，理由"用户明确要求……单个小型本地文件的可逆写入……"，文件写成，全程没有问人。第 1 次（当时映射成 untrusted + 不进沙箱）请求落到了人这边、无人应答而超时，即上面第一行的情况。
+
+**改动**：Studio 启动的 app-server 的 PATH 去掉 WindowsApps；"帮我审批" = on-request + workspace-write + auto_review；"工作区可写""只读"恢复可用；默认仍是"逐条询问"（用户 2026-10-13 的选择）。审查结果在对话里显示为"自动审批"行（结论 · 风险 · 命令，展开看理由）。

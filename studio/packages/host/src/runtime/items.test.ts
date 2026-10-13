@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { classifyCommand, countDiff, fileDiff, shortPath, tail, textDiff } from "./items.js";
+import { classifyCommand, countDiff, unwrapShell, fileDiff, shortPath, tail, textDiff } from "./items.js";
 
 describe("classifyCommand", () => {
   it("recognises simple reads, searches and listings", () => {
@@ -15,6 +15,12 @@ describe("classifyCommand", () => {
   it("looks inside cmd /c and powershell -Command wrappers", () => {
     expect(classifyCommand("cmd /c type README.md")).toEqual({ kind: "read", target: "README.md" });
     expect(classifyCommand("pwsh -Command 'Get-ChildItem docs'")).toEqual({ kind: "list", target: "docs" });
+  });
+
+  it("unwraps the shell Codex reports, absolute and quoted", () => {
+    expect(unwrapShell(String.raw`"C:\Windows\System32\WindowsPowerShell\v1.0\powershell.exe" -Command 'Set-Content x.txt ok'`)).toBe("Set-Content x.txt ok");
+    expect(unwrapShell(String.raw`"C:\Windows\system32\cmd.exe" /c 'type a.txt'`)).toBe("type a.txt");
+    expect(unwrapShell("npm test")).toBe("npm test");
   });
 
   it("leaves everything else a plain command", () => {

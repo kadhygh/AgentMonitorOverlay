@@ -63,6 +63,12 @@ export const IconSparkle = () => (
     <path d="M8 2.2 9.3 6.7 13.8 8 9.3 9.3 8 13.8 6.7 9.3 2.2 8l4.5-1.3z" />
   </Svg>
 );
+export const IconShield = () => (
+  <Svg>
+    <path d="M8 1.8 13 3.7v4c0 3.1-2.1 5.5-5 6.5-2.9-1-5-3.4-5-6.5v-4z" />
+    <path d="m5.8 8 1.6 1.6 2.9-3" />
+  </Svg>
+);
 export const IconChevronDown = () => (
   <Svg>
     <path d="m4 6 4 4 4-4" />
@@ -126,5 +132,6 @@ export const ACTIVITY_ICON: Record<Activity, () => ReactNode> = {
   webFetch: IconGlobe,
   subagents: IconAgent,
   plan: IconPlan,
+  review: IconShield,
   tools: IconSparkle,
 };

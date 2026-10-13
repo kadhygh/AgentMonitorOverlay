@@ -109,7 +109,7 @@ export function foldable(segment: Segment): boolean {
 
 // ---- activity ---------------------------------------------------------------------------------------------------
 
-export type Activity = "thinking" | "read" | "search" | "edit" | "commands" | "webSearch" | "webFetch" | "subagents" | "plan" | "tools";
+export type Activity = "thinking" | "read" | "search" | "edit" | "commands" | "webSearch" | "webFetch" | "subagents" | "plan" | "review" | "tools";
 
 /** Items recorded before tool kinds existed only have a name. */
 function legacyKind(name: string): ToolKind {
@@ -155,6 +155,8 @@ export function activityOf(member: ProcessMember): Activity | null {
       return "subagents";
     case "plan":
       return "plan";
+    case "review":
+      return "review";
     default:
       return "tools";
   }
@@ -170,6 +172,7 @@ export const LIVE_TITLE: Record<Activity, string> = {
   webFetch: "正在访问网页",
   subagents: "正在协调子智能体",
   plan: "正在更新计划",
+  review: "正在自动审批",
   tools: "正在调用工具",
 };
 
@@ -183,6 +186,7 @@ export const DONE_TITLE: Record<Activity, string> = {
   webFetch: "已访问网页",
   subagents: "已协调子智能体",
   plan: "更新了计划",
+  review: "自动审批了操作",
   tools: "已调用工具",
 };
 

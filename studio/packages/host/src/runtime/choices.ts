@@ -12,14 +12,19 @@ import type { ModelOption, PermissionOption } from "@amo-studio/protocol";
 export interface CodexPermission {
   approvalPolicy: "untrusted" | "on-request" | "never";
   sandbox: "read-only" | "workspace-write" | "danger-full-access";
+  /** Who answers approval requests: the person, or Codex's review agent ("Approve for me" in the Codex CLI). */
+  reviewer: "user" | "auto_review";
 }
 
 const CODEX_PERMISSION_SETTINGS: Record<string, CodexPermission> = {
-  ask: { approvalPolicy: "untrusted", sandbox: "danger-full-access" },
-  "on-request": { approvalPolicy: "on-request", sandbox: "danger-full-access" },
-  "full-auto": { approvalPolicy: "never", sandbox: "danger-full-access" },
-  "workspace-write": { approvalPolicy: "on-request", sandbox: "workspace-write" },
-  "read-only": { approvalPolicy: "on-request", sandbox: "read-only" },
+  ask: { approvalPolicy: "untrusted", sandbox: "danger-full-access", reviewer: "user" },
+  // The Codex CLI's "Approve for me": sandboxed, and what needs to leave the sandbox goes to the review agent (S9-05:
+  // approvals under "untrusted" still go to the person; only escalations are reviewed).
+  "auto-review": { approvalPolicy: "on-request", sandbox: "workspace-write", reviewer: "auto_review" },
+  "on-request": { approvalPolicy: "on-request", sandbox: "danger-full-access", reviewer: "user" },
+  "full-auto": { approvalPolicy: "never", sandbox: "danger-full-access", reviewer: "user" },
+  "workspace-write": { approvalPolicy: "on-request", sandbox: "workspace-write", reviewer: "user" },
+  "read-only": { approvalPolicy: "on-request", sandbox: "read-only", reviewer: "user" },
 };
 
 export const CODEX_DEFAULT_PERMISSION = "ask";
@@ -46,15 +51,23 @@ export function codexWindowsSandbox(codexHome = process.env.CODEX_HOME ?? join(h
   return null;
 }
 
+/**
+ * Codex's permission settings. The sandboxed ones work under the "unelevated" Windows sandbox since Studio hides
+ * WindowsApps from its app-servers (S9-06); `windowsSandbox` is kept for the descriptions.
+ */
 export function codexPermissions(windowsSandbox: string | null = process.platform === "win32" ? codexWindowsSandbox() : null): PermissionOption[] {
-  // Spikes S9-01/S9-02: under the "unelevated" Windows sandbox every sandboxed command fails to start.
-  const broken = windowsSandbox === "unelevated" ? "你的 Codex 配置用的是 unelevated Windows 沙箱，在它里面命令会启动失败" : undefined;
+  const sandboxNote = windowsSandbox === "unelevated" ? "（Windows 沙箱：unelevated，用 Windows PowerShell 5 运行）" : "";
   return [
     { id: "ask", label: "逐条询问", description: "不进沙箱；除了少数已知安全的只读命令，每条命令都先问你（Codex：untrusted）" },
+    {
+      id: "auto-review",
+      label: "帮我审批",
+      description: `在 Codex 沙箱里运行（只能写工作区）；需要越出沙箱时交给 Codex 的审查 agent 按风险批准或拒绝，不再问你（Codex 的 Approve for me）${sandboxNote}`,
+    },
     { id: "on-request", label: "需要时询问", description: "不进沙箱；agent 觉得有风险时才问（Codex：on-request）" },
     { id: "full-auto", label: "完全访问", description: "不进沙箱，也不再询问，命令直接执行（Codex：never + danger-full-access）" },
-    { id: "workspace-write", label: "工作区可写", description: "在 Codex 沙箱里运行，只能写工作区，越界时询问（Codex 的 Auto）", ...(broken ? { unavailable: broken } : {}) },
-    { id: "read-only", label: "只读", description: "在 Codex 沙箱里只读运行，要改东西时询问（Codex 的 Read Only）", ...(broken ? { unavailable: broken } : {}) },
+    { id: "workspace-write", label: "工作区可写", description: `在 Codex 沙箱里运行，只能写工作区，越界时询问（Codex 的 Ask for approval）${sandboxNote}` },
+    { id: "read-only", label: "只读", description: `在 Codex 沙箱里只读运行，要改东西时询问（Codex 的 Read Only）${sandboxNote}` },
   ];
 }
 

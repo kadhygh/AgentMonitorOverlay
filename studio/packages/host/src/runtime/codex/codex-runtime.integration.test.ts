@@ -156,7 +156,7 @@ describe("Codex runtime against the real app-server", () => {
     const choices = await host.runtime.choices("codex-mock");
     const mockModel = choices.models.find((m) => m.id === "mock-model")!;
     expect(mockModel.efforts).toEqual(expect.arrayContaining(["low", "high", "max"]));
-    expect(choices.permissions.map((p) => p.id)).toEqual(["ask", "on-request", "full-auto", "workspace-write", "read-only"]);
+    expect(choices.permissions.map((p) => p.id)).toEqual(["ask", "auto-review", "on-request", "full-auto", "workspace-write", "read-only"]);
 
     // The runtime here is fixed to untrusted/read-only by the test setup, so only model and effort are checked against
     // the requests; the permission mapping itself is covered by the unit tests.

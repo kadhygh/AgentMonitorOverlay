@@ -67,13 +67,21 @@ function words(command: string): string[] {
 }
 
 /**
+ * The command inside a `cmd /c …` or `powershell -Command …` wrapper (the shell path may be quoted and absolute, as
+ * Codex reports it), or the command itself.
+ */
+export function unwrapShell(command: string): string {
+  const cmd = command.trim();
+  const wrapped = /^(?:"[^"]*\\)?(?:cmd(?:\.exe)?"?\s+\/[cs]\s+|(?:pwsh|powershell)(?:\.exe)?"?\s+(?:-NoProfile\s+)?-Command\s+)([\s\S]*)$/i.exec(cmd);
+  return wrapped ? wrapped[1]!.trim().replace(/^(["'])([\s\S]*)\1$/, "$2") : cmd;
+}
+
+/**
  * What a shell command does, when it is one simple read, search or listing (as Codex's commandActions say on Unix;
  * on Windows they come back "unknown"). Pipelines, chains and redirects stay plain commands.
  */
 export function classifyCommand(command: string): { kind: "read" | "search" | "list"; target: string } | null {
-  let cmd = command.trim();
-  const wrapped = /^(?:cmd(?:\.exe)?\s+\/[cs]\s+|(?:pwsh|powershell)(?:\.exe)?\s+(?:-NoProfile\s+)?-Command\s+)(.*)$/i.exec(cmd);
-  if (wrapped) cmd = wrapped[1]!.replace(/^(["'])(.*)\1$/, "$2");
+  const cmd = unwrapShell(command);
   if (!cmd || /[|;&<>`]|\$\(/.test(cmd)) return null;
   const [head, ...args] = words(cmd);
   if (!head) return null;

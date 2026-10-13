@@ -66,7 +66,7 @@ test("the common space: a folder for the scheduler and cross-workspace sessions"
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByLabel("公共空间目录").fill(common);
-  await dialog.getByRole("button", { name: "保存" }).click();
+  await dialog.getByRole("region", { name: "公共空间" }).getByRole("button", { name: "保存" }).click();
   await expect(dialog.getByTestId("settings-message")).toHaveText(`公共空间：${common}`);
   // It is a registered workspace now, shown in the left column.
   await expect(page.getByTestId("scope-ws-公共空间")).toBeVisible();
