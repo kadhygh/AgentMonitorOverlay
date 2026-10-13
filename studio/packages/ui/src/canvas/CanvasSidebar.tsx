@@ -26,8 +26,9 @@ interface CanvasSidebarProps {
 /** Right column of the canvas: whole-picture todos, details of the selection, and the agent's view. */
 export function CanvasSidebar(props: CanvasSidebarProps) {
   const { tab, onTab } = props;
+  // 整体待办 belongs to the planning feature: no tab while it is turned off.
   const tabs: Array<[SidebarTab, string]> = [
-    ["todo", "整体待办"],
+    ...(props.todoTab ? ([["todo", "整体待办"]] as Array<[SidebarTab, string]>) : []),
     ["detail", "详情"],
     ["agent", "agent 视角"],
   ];
@@ -41,7 +42,7 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
         ))}
       </div>
       {tab === "detail" && <DetailTab {...props} />}
-      {tab === "todo" && (props.todoTab ?? <span className="anno-empty">整体待办在 S3-05 实现。</span>)}
+      {tab === "todo" && props.todoTab}
       {tab === "agent" && (props.agentTab ?? <span className="anno-empty">agent 视角在 S3-05 实现。</span>)}
     </aside>
   );

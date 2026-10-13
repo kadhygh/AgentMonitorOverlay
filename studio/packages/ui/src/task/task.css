@@ -1,0 +1,107 @@
+/* Task page */
+.taskpage { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.task-title { margin: 0; font-family: var(--font-display); font-size: var(--fs-h2); font-weight: 700; }
+.task-body { flex: 1; display: flex; min-height: 0; }
+.session-list { flex: 0 0 236px; border-right: 1px solid var(--border); padding: 12px 10px; display: flex; flex-direction: column; gap: 2px; overflow-y: auto; background: var(--panel-raised); }
+.session-row { justify-content: flex-start; gap: 10px; }
+.session-text { display: flex; flex-direction: column; min-width: 0; }
+.session-kind { font-size: 11px; color: var(--text-dim); }
+.thread-empty { color: var(--text-dim); font-size: 13px; }
+
+/* Task page structure (S1-11a) */
+.new-session { margin-top: 10px; padding: 10px 8px 0; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 6px; }
+.stack-field { display: flex; flex-direction: column; gap: 4px; font-size: 11px; color: var(--text-dim); }
+.stack-field select { height: var(--ctl-s); padding: 0 6px; border-radius: var(--r-btn); border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); font-size: var(--fs-cap); }
+.archived { margin-top: 14px; display: flex; flex-direction: column; gap: 2px; }
+.archived-toggle { text-align: left; padding: 4px 8px; border: none; background: transparent; color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.archived-row { display: flex; align-items: center; gap: 8px; padding: 4px 8px; font-size: 12.5px; color: var(--text-dim); }
+.archived-row .name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.link-btn { height: 22px; padding: 0 6px; border: none; border-radius: 5px; background: transparent; color: var(--text-dim); font-size: 12px; cursor: pointer; }
+.link-btn.primary, .btn-ghost.primary { color: var(--primary); }
+.btn-ghost.small { height: var(--ctl-s); padding: 0 9px; font-size: var(--fs-cap); }
+.btn-ghost.dim { color: var(--text-dim); }
+.btn-ghost:disabled { opacity: 0.5; cursor: default; }
+.thread-col { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--panel); }
+.thread-head { display: flex; align-items: center; gap: 10px; padding: 10px 24px; border-bottom: 1px solid var(--border); background: var(--panel); flex-wrap: wrap; }
+.thread-title { font-weight: 600; }
+.writer { font-size: 12px; }
+.toast { margin: 10px 24px 0; padding: 10px 36px 10px 14px; border-radius: var(--r-l); background: var(--tint); border: 1px solid var(--selection); font-size: var(--fs-sm); display: flex; flex-direction: column; gap: 4px; position: relative; }
+.toast code { font-family: var(--font-code); font-size: 12px; color: var(--primary-hover); word-break: break-all; }
+.toast-error { background: var(--error-bg); border-color: var(--error-border); color: var(--error-text); }
+.toast-close { position: absolute; top: 6px; right: 8px; border: none; background: transparent; color: var(--text-dim); font-size: 16px; cursor: pointer; }
+
+/* Chat panel (S1-11b) */
+.thread-col .thread { flex: 1; }
+.md { display: flex; flex-direction: column; gap: 8px; }
+.md-p { margin: 0; white-space: pre-wrap; }
+.md-pre {
+  margin: 0; padding: 10px 12px; border-radius: 8px; background: var(--code-bg); border: 1px solid var(--border);
+  font-family: var(--font-code); font-size: 12.5px; white-space: pre-wrap; color: var(--code-text);
+}
+.md-code { font-family: var(--font-code); font-size: 12.5px; padding: 1px 5px; border-radius: 4px; background: var(--code-bg); border: 1px solid var(--border); }
+.md-h { font-weight: 600; }
+.md-h1 { font-size: 17px; }
+.md-h2 { font-size: 15.5px; }
+.md-h3 { font-size: 14.5px; }
+.md-list { margin: 0; padding-left: 22px; display: flex; flex-direction: column; gap: 2px; }
+.md-quote { margin: 0; padding: 2px 12px; border-left: 3px solid var(--border-strong); color: var(--text-dim); white-space: pre-wrap; }
+.md-link { color: var(--primary); text-decoration: underline; text-decoration-style: dotted; }
+.btn-attention { height: 32px; padding: 0 14px; border-radius: 8px; border: none; background: var(--attention); color: var(--on-attention); font-weight: 600; cursor: pointer; }
+.btn-outline-attention { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--attention-border); background: transparent; color: var(--text); cursor: pointer; }
+.dim { color: var(--text-dim); }
+.link-btn.boxed { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; }
+
+/* Reply jumps (S2-06) */
+.thread-wrap { flex: 1; min-height: 0; position: relative; display: flex; flex-direction: column; }
+.reply-nav {
+  position: absolute; top: 8px; right: 14px; z-index: 5; display: flex; align-items: center; gap: 2px;
+  padding: 2px; border-radius: 8px; border: 1px solid var(--border); background: var(--overlay);
+}
+.reply-nav button { width: 26px; height: 24px; border: none; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; }
+.reply-nav button:hover { background: var(--panel-raised); color: var(--text); }
+.reply-pos { font-size: 11.5px; color: var(--text-dim); padding: 0 4px; font-variant-numeric: tabular-nums; }
+.msg-agent.md-flash { border-radius: 8px; }
+.thread-wrap { overflow: hidden; }
+.thread-wrap > .thread { flex: 1; min-height: 0; }
+
+/* Claude handed to a terminal (S4-05) */
+.handoff-banner { display: flex; align-items: center; gap: 12px; margin: 0 16px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--attention-border); background: var(--attention-bg); color: var(--attention); font-size: 13px; }
+.handoff-banner span { flex: 1; }
+
+/* A session title can be its whole first message: one short line, full text on hover. */
+.check-by { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11.5px; color: var(--text-dim); }
+.newtask-template { display: flex; flex-direction: column; gap: 6px; align-items: center; font-size: 12px; color: var(--text-dim); max-width: 520px; }
+.newtask-template select { height: 30px; padding: 0 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); }
+.newtask-steps { margin: 0; padding-left: 18px; text-align: left; }
+
+/* ---- the task page's session list ------------------------------------------------------------------------------ */
+
+.slist-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 2px 8px 8px; }
+.slist-head .nav-label { padding: 0; }
+.session-list .new-session { margin: 0 0 10px; padding: 10px; border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+.session-list .new-session .model-row { gap: 4px; }
+.slist { display: flex; flex-direction: column; gap: 2px; }
+.srow {
+  position: relative; display: flex; flex-direction: column; gap: 3px; width: auto; min-width: 0; padding: 8px 10px; border: none; border-radius: var(--r-m);
+  background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer;
+}
+.srow:hover { background: var(--chip); }
+.srow[aria-current="true"] { background: var(--selected); box-shadow: inset 2px 0 0 var(--border-strong); }
+.srow.child::before { content: ""; position: absolute; left: -8px; top: 0; bottom: 50%; width: 7px; border-left: 1px solid var(--border); border-bottom: 1px solid var(--border); border-bottom-left-radius: 4px; }
+.srow-top { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.srow-title { flex: 1; min-width: 0; font-size: var(--fs-body); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow[aria-current="true"] .srow-title { font-weight: 600; }
+.srow-time { flex: none; font-size: 11px; color: var(--text-faint); }
+.srow-meta { display: flex; align-items: center; gap: 6px; min-width: 0; padding-left: 15px; font-size: var(--fs-cap); color: var(--text-faint); }
+.srow-meta .mark.small { width: 14px; height: 14px; font-size: 8px; }
+.srow-meta-text { min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.srow-mail { flex: none; padding: 0 6px; border-radius: 999px; background: var(--attention-bg); color: var(--attention); font-weight: 600; }
+
+/* Names edited in place: the task title on its page, a session's title */
+.rename-input {
+  min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--r-btn); background: var(--panel);
+  color: var(--text); font: inherit;
+}
+.task-title-btn { margin: 0; padding: 2px 6px; border: 1px solid transparent; border-radius: var(--r-btn); background: transparent; color: var(--text); cursor: text; text-align: left; }
+.task-title-btn:hover { border-color: var(--border); background: var(--panel); }
+.composer-card .suggest { left: 12px; top: auto; bottom: calc(100% + 6px); }

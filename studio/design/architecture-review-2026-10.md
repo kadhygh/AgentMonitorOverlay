@@ -1,5 +1,7 @@
 # 工程框架评估：增删模块是否方便（2026-10-13）
 
+> 用户 2026-10-13 同意按这份建议重构，分支 `studio/stage-11-modules`。做完的结果见文末"实际做法"。
+
 ## 现状
 
 | 层 | 内容 | 规模 |
@@ -52,3 +54,30 @@ ui/src/features/topics/
 | R4 | 可选功能开关（设置 → 功能），先把扩展包、调度、整体待办做成可关 | 低 |
 
 预计 R1、R2 各半天，R3 一天左右，R4 半天。建议在阶段 10 的界面改版收尾后、开始做新功能之前做，因为 R3 和界面改版会动到同一批文件。
+
+## 实际做法（2026-10-13）
+
+**Host**
+
+- `host/src/service.ts` 只剩组合根（约 130 行）：存储、运行时、事件、各功能共用的查找和校验。业务在 `features/<名字>/service.ts`，10 个功能类：projects、config、tasks、topics、sessions、planning、collab、canvas、review、packs。它们都继承 `core/feature.ts`；跨功能调用写成 `this.f.<功能>.<方法>`，一眼能看出哪里依赖了别的功能。
+- 每个功能的 HTTP 路由在 `features/<名字>/routes.ts`，MCP 工具在 `features/<名字>/mcp.ts`。功能清单 `features/index.ts` 把它们汇总起来，服务器和 MCP 都从清单读取。
+- 存储（`store/`）和迁移没有拆。SQLite 的表之间有外键，迁移要求全局有序，拆开反而更难管。功能的读写仍然通过 `Store`。
+- 协议的路由类型（`protocol/src/api.ts`）暂时没拆。它是 Host 和界面之间的契约，放在一个文件里查起来更方便；等它明显变长再拆。
+
+**界面**
+
+- 页面按功能分目录。原来放在别人目录里的面板搬回了自己的功能目录：`planning/`（整体待办、调度提案）、`collab/`（留言、决策、进度、清单）、`review/`（草稿区、批注）。
+- 每个功能用 `view.tsx` 声明自己的页面和顶栏标签，`ui/src/features.ts` 是界面这边的功能清单。`App.tsx` 只剩外壳：连接、范围、当前页、顶栏、左栏。顶栏标签由清单生成。
+- 样式跟着功能走（`board/board.css`、`canvas/canvas.css`…），`styles/` 只留设计变量、基础控件和 Markdown。整个界面打包成一份样式，所以 `main.tsx` 统一按"基础在前、功能在后"的顺序导入，顺序本身就是层叠顺序。
+- 设置分区没有做成注册表：现有分区（界面、公共目录、预设、凭据）都属于核心，R4 新增"功能"一节。
+
+**增删一个功能现在要动哪里**
+
+| 位置 | 内容 |
+|---|---|
+| `host/src/features/<名字>/` | `service.ts`、`routes.ts`、`mcp.ts` |
+| `host/src/features/index.ts`、`host/src/service.ts` | 各加一行 |
+| `protocol/src/api.ts` | 路由和事件类型 |
+| `store/` | 有新表时加迁移和读写 |
+| `ui/src/<名字>/` | 页面、`view.tsx`、样式 |
+| `ui/src/features.ts`、`ui/src/main.tsx` | 各加一行 |

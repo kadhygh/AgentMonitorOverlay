@@ -1,0 +1,25 @@
+/* 型号 / 思考强度 / 权限 and 常用预设 (stage 9) */
+.options-picker { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.options-picker.stack { flex-direction: column; align-items: stretch; gap: 6px; }
+.options-picker.stack .inline-field { justify-content: space-between; }
+.options-picker select { max-width: 220px; }
+.options-loading { font-size: 12px; color: var(--text-dim); }
+.newtask-options { display: flex; flex-direction: column; gap: 8px; padding: 0 4px 4px; }
+.preset-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.preset-chip { height: var(--ctl-s); padding: 0 10px; border-radius: var(--r-btn); border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); font-size: var(--fs-cap); cursor: pointer; }
+.preset-chip:hover { color: var(--text); border-color: var(--border-strong); }
+.preset-chip.active { color: var(--primary); border-color: var(--primary); background: var(--tint); }
+.preset-chip:disabled { opacity: 0.5; cursor: default; }
+.preset-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.preset-list li { display: flex; align-items: center; gap: 8px; }
+.preset-name { font-weight: 500; }
+.preset-form { display: flex; flex-direction: column; gap: 8px; }
+.session-options .composer-model { border: none; cursor: pointer; max-width: 340px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.session-options .composer-model:hover { color: var(--chat-label); }
+.options-panel {
+  position: absolute; left: 0; bottom: calc(100% + 8px); z-index: 30; width: 300px; padding: 12px 14px; border-radius: 12px;
+  background: var(--chat-panel); border: 0.5px solid var(--chat-input-border); box-shadow: var(--chat-elevation);
+  display: flex; flex-direction: column; gap: 10px;
+}
+.new-session .options-picker { font-size: 12px; }
+.new-session .options-picker select { max-width: 130px; }

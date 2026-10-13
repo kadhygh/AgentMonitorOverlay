@@ -94,6 +94,21 @@ describe("AMO MCP", () => {
     await client.close();
   });
 
+  it("leaves out the tools of a feature turned off in settings, and brings them back", async () => {
+    expect(() => service.config.updateSettings({ disabledFeatures: ["nope"] })).toThrow(/disabledFeatures/);
+    expect(service.config.updateSettings({ disabledFeatures: ["packs"] }).disabledFeatures).toEqual(["packs"]);
+    const client = await connect();
+    const names = (await client.listTools()).tools.map((t) => t.name);
+    expect(names).not.toContain("pack_list");
+    expect(names).not.toContain("pack_doc");
+    expect(names).toContain("board_list");
+    await client.close();
+    expect(service.config.updateSettings({ disabledFeatures: [] }).disabledFeatures).toEqual([]);
+    const again = await connect();
+    expect((await again.listTools()).tools.map((t) => t.name)).toContain("pack_list");
+    await again.close();
+  });
+
   it("writes only for an identified caller, and only to the caller's own task", async () => {
     const anonymous = await connect(MCP_TOKEN);
     const refused = await call(anonymous, "task_note_add", { text: "x" });

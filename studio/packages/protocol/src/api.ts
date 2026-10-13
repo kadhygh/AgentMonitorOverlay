@@ -96,6 +96,14 @@ export interface TaskTemplateChoice {
   template: string;
 }
 
+/** Features the person can turn off (设置 → 功能): their pages, panels and agent tools go away; their data stays. */
+export type OptionalFeature = "packs" | "planning";
+
+export const OPTIONAL_FEATURES: readonly { id: OptionalFeature; label: string; hint: string }[] = [
+  { id: "packs", label: "扩展包", hint: "项目里 .amo/packs 的规范文档、任务模板和会话预设" },
+  { id: "planning", label: "整体待办与调度", hint: "画布侧栏的整体待办、调度 agent 和它的提案" },
+];
+
 /** Studio-wide settings kept by the Host (the look of the UI is per install, in the UI itself). */
 export interface StudioSettings {
   /**
@@ -105,6 +113,8 @@ export interface StudioSettings {
   commonWorkspace: Workspace;
   /** 常用预设: shown next to the composer of sessions on the same profile. */
   presets: SessionPreset[];
+  /** Optional features turned off. */
+  disabledFeatures: OptionalFeature[];
 }
 
 /** A model credential the profiles use: whether it is stored, never its value. */
@@ -129,7 +139,7 @@ export interface HostRoutes {
    */
   "GET /api/usage": { req: void; res: AccountUsage[] };
   /** `commonDir`: moves the common space to this folder (created if missing; it must not be a registered project). */
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[] }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };

@@ -5,6 +5,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { activeModel, sameOptions, useProfileChoices } from "../lib/choices.js";
 import { samePick } from "../lib/recents.js";
 import { usePacks } from "../packs/usePacks.js";
+import { useFeature } from "../lib/features.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { EffortBars, nextEffort, PermissionSegments } from "../chat/pickers.js";
 import { submitDraft, useTaskDraft } from "./draft.js";
@@ -63,7 +64,8 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
   const orderedProjects = [...pinnedFirst(projects, pins.project, (w) => w.id)].sort((a, b) => Number(inTopic.has(b.id)) - Number(inTopic.has(a.id)));
 
   // Task templates from the extension packs of the chosen project.
-  const { packs } = usePacks(link, draft.projectId ? [draft.projectId] : []);
+  const packsOn = useFeature("packs");
+  const { packs } = usePacks(link, packsOn && draft.projectId ? [draft.projectId] : []);
   const templates = packs.flatMap((p) => (p.manifest ? p.manifest.templates.map((t) => ({ key: `${p.dirName}/${t.id}`, pack: p.dirName, title: `${p.manifest!.title} · ${t.title}`, template: t })) : []));
   const chosenTemplate = templates.find((t) => t.key === templateKey) ?? null;
 

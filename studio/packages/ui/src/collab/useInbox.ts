@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Id, MailMessage, Session } from "@amo-studio/protocol";
-import { call, type HostLink } from "./client.js";
-import { mergeFirstLoad, onHostEvent, onHostReconnect } from "./events.js";
+import { call, type HostLink } from "../host/client.js";
+import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
 /** Unread mail across the workbench, kept live (board hints). */
 export function useUnreadMail(link: HostLink) {

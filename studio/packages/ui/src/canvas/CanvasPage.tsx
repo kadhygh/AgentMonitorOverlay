@@ -2,7 +2,8 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEv
 import { taskWhere, workspacesActivity, type CanvasDoc, type CanvasGroup, type CanvasNode, type Id, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
 import { AgentTab } from "./AgentTab.js";
-import { TodoTab } from "./TodoTab.js";
+import { TodoTab } from "../planning/TodoTab.js";
+import { useFeature } from "../lib/features.js";
 import type { HostLink } from "../host/client.js";
 import { SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { addGroup, arrowBetween, deleteGroup, GROUP_HEADER, moveGroup, moveNode, resizeGroup, updateGroup } from "./geometry.js";
@@ -94,6 +95,7 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
   };
   const [selection, setSelectionState] = useState<CanvasSelection>(null);
   const [tab, setTab] = useState<SidebarTab>("detail");
+  const planning = useFeature("planning");
   const setSelection = (next: CanvasSelection) => {
     setSelectionState(next);
     if (next) setTab("detail");
@@ -426,7 +428,7 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
           onClearSelection={() => setSelectionState(null)}
           onOpenTask={onOpenTask}
           newId={newCanvasId}
-          todoTab={<TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} activity={activity} topicId={topic.id} />}
+          todoTab={planning ? <TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} activity={activity} topicId={topic.id} /> : undefined}
           agentTab={<AgentTab link={link} topicId={topic.id} />}
         />
       )}

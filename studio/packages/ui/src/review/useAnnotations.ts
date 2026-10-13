@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import type { Annotation } from "@amo-studio/protocol";
-import { call, type HostLink } from "./client.js";
-import { mergeFirstLoad, onHostEvent, onHostReconnect } from "./events.js";
+import { call, type HostLink } from "../host/client.js";
+import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
 /** Annotations of one session, kept live from the Host event bus. Ordered by creation. */
 export function useAnnotations(link: HostLink, sessionId: string | null) {

@@ -14,9 +14,10 @@ export const AMO_MCP_NAME = "amo";
 export const AMO_MCP_INSTRUCTIONS =
   "AMO Studio workbench. Work is organised as projects (workspaces), tasks (each in one project, optionally in one topic) and topics (专题: several tasks, possibly across projects, on one canvas, with their own coordinating sessions). Read the board, tasks, topics, session trees, projects and a topic's canvas; record progress notes and handoff summaries on your own task; leave and read mail between sessions, tasks and topics (the person decides when mail enters a conversation); ask the person for a decision (the answer comes back as mail); arrange your topic's canvas (groups, dependencies, which group a task is in) with the person's approval; read the project's extension packs (conventions, templates) and tick your own task's checklist.";
 
-/** Every AMO tool for one caller (null: reading only): the features' tools, reading ones first. */
+/** Every AMO tool for one caller (null: reading only): the features' tools, reading ones first; none of a feature turned off. */
 export function amoToolsFor(service: HostService, caller: McpCaller | null): AmoTool[] {
   const ctx = toolContext(service, caller);
-  const tools = FEATURES.flatMap((f) => f.tools?.(ctx) ?? []);
+  const off = new Set<string>(service.config.disabledFeatures());
+  const tools = FEATURES.filter((f) => !off.has(f.name)).flatMap((f) => f.tools?.(ctx) ?? []);
   return [...tools.filter((t) => t.readOnly), ...tools.filter((t) => !t.readOnly)];
 }

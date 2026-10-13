@@ -1,15 +1,31 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import type { AccountUsage, CredentialStatus, ProfileChoices, SessionPreset, Id, StudioSettings } from "@amo-studio/protocol";
+import { OPTIONAL_FEATURES, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type StudioSettings } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
-import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS } from "../../core/shared.js";
+import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
 export class ConfigFeature extends Feature {
   settings(): StudioSettings {
-    return { commonWorkspace: this.commonWorkspace(), presets: this.presets() };
+    return { commonWorkspace: this.commonWorkspace(), presets: this.presets(), disabledFeatures: this.disabledFeatures() };
+  }
+
+  /** Optional features the person turned off (设置 → 功能). */
+  disabledFeatures(): OptionalFeature[] {
+    const raw = this.store.getKv(DISABLED_FEATURES_KEY)?.value;
+    if (!raw) return [];
+    try {
+      const ids = JSON.parse(raw) as unknown;
+      return Array.isArray(ids) ? OPTIONAL_FEATURES.map((f) => f.id).filter((id) => ids.includes(id)) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  featureOn(id: OptionalFeature): boolean {
+    return !this.disabledFeatures().includes(id);
   }
 
   private presets(): SessionPreset[] {
@@ -22,8 +38,14 @@ export class ConfigFeature extends Feature {
     }
   }
 
-  /** Moves the common space to another folder and/or replaces the 常用预设 list. */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown }): StudioSettings {
+  /** Moves the common space to another folder, replaces the 常用预设 list and/or turns optional features on or off. */
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown }): StudioSettings {
+    if (input.disabledFeatures !== undefined) {
+      const known = OPTIONAL_FEATURES.map((f) => f.id);
+      const ids = input.disabledFeatures;
+      if (!Array.isArray(ids) || ids.some((id) => !known.includes(id as OptionalFeature))) throw new HostError("bad_request", `disabledFeatures must list some of: ${known.join(", ")}`);
+      this.store.setKv(DISABLED_FEATURES_KEY, JSON.stringify(known.filter((id) => ids.includes(id))));
+    }
     if (input.presets !== undefined) {
       if (!Array.isArray(input.presets) || input.presets.length > MAX_PRESETS) throw new HostError("bad_request", `presets must be a list of at most ${MAX_PRESETS}`);
       const presets: SessionPreset[] = input.presets.map((p: unknown) => {

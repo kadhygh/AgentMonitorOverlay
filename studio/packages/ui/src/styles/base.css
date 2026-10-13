@@ -1,0 +1,201 @@
+/* Design tokens. Type, sizes, radii and control heights are shared by both themes and follow direction A (纸感编辑部,
+   design/ui-directions/index.html); copy any change there back into that preview so the two stay identical. */
+:root {
+  --font-display: "Noto Serif SC Variable", "Songti SC", "SimSun", serif;
+  --fs-cap: 12px;
+  --fs-sm: 13px;
+  --fs-body: 14px;
+  --fs-title: 16px;
+  --fs-h2: 19px;
+  --fs-h1: 24px;
+  --lh: 1.6;
+  --ls-label: 0.1em;
+  --r-s: 2px;
+  --r-m: 3px;
+  --r-l: 4px;
+  --r-btn: 3px;
+  --ctl-s: 26px;
+  --ctl: 30px;
+  --ctl-l: 36px;
+  --ctl-px: 12px;
+  --topbar-h: 54px;
+  --nav-w: 224px;
+  --text-faint: #7c8590;
+  --bg: #111316;
+  --bg-header: #15181b;
+  --bg-nav: #14171a;
+  --panel: #181b1f;
+  --panel-raised: #1f2328;
+  --chip: #1d2125;
+  --selected: #22272d;
+  --border: #2b3036;
+  --border-strong: #3a414a;
+  --text: #e6e8eb;
+  --text-dim: #a0a8b2;
+  --primary: #7fb2ff;
+  --primary-hover: #a9cbff;
+  --on-primary: #0b1626;
+  --attention: #f2b544;
+  --attention-bg: #2a2416;
+  --attention-border: #5a4a22;
+  --running: #5cc98a;
+  --running-text: #8fddb0;
+  --muted-dot: #6b7480;
+  --error: #e5484d;
+  --error-text: #ff8a8a;
+  --selection: #2d4560;
+  --font-ui: "Noto Sans SC Variable", "Microsoft YaHei UI", "Segoe UI", sans-serif;
+  --font-code: "JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace;
+  --error-bg: #2a1617;
+  --error-border: #5a2a2c;
+  --tint: #1b2633;
+  --tint-strong: #22324a;
+  --code-bg: #0c0e10;
+  --code-text: #d7dce2;
+  --code-text-dim: #c9cfd6;
+  --divider: #22262b;
+  --on-attention: #1e1606;
+  --menu-bg: #20252b;
+  --menu-hover: #2a3038;
+  --shadow: rgba(0, 0, 0, 0.45);
+  --shadow-soft: rgba(0, 0, 0, 0.35);
+  --overlay: rgba(24, 27, 31, 0.92);
+  --overlay-strong: rgba(24, 27, 31, 0.94);
+  --canvas-bg: #0f1114;
+  --canvas-dot: #252a30;
+  --group-border: #2f3640;
+  --group-bg: rgba(32, 38, 46, 0.45);
+  --group-bar: rgba(40, 46, 54, 0.6);
+  --grip: #6e7884;
+  --resize: #4a525c;
+  --panel-float: #1b1f24;
+  --edge: #7c8794;
+  --note-text: #f2d9a0;
+  --focus-border: #2e343b;
+  color-scheme: dark;
+}
+
+/* Light theme: chosen in the top bar (stored per install), or following the system when set to 跟随系统. */
+/* Light theme = direction A, 纸感编辑部 (design/ui-directions/index.html): newsprint ground, ink-blue accent. */
+:root[data-theme="light"] {
+  --bg: #efede8;
+  --bg-header: #f8f7f3;
+  --bg-nav: #efede8;
+  --panel: #fbfaf7;
+  --panel-raised: #f4f2ed;
+  --chip: #e7e3db;
+  --selected: #e7dfcd;
+  --border: #d9d3c7;
+  --border-strong: #2a2723;
+  --text: #22201c;
+  --text-dim: #5d5850;
+  --text-faint: #8d877c;
+  --primary: #23436f;
+  --primary-hover: #182f50;
+  --on-primary: #fbfaf7;
+  --attention: #93570a;
+  --attention-bg: #f4e7cd;
+  --attention-border: #dcc08a;
+  --running: #3b7a4f;
+  --running-text: #3b7a4f;
+  --muted-dot: #8d877c;
+  --error: #a3302b;
+  --error-text: #a3302b;
+  --selection: #ead9b5;
+  --error-bg: #f3dfdb;
+  --error-border: #e0b4ad;
+  --tint: #efe7d6;
+  --tint-strong: #e4d6b8;
+  --code-bg: #f1eee7;
+  --code-text: #22201c;
+  --code-text-dim: #4a4640;
+  --divider: #e3ded4;
+  --on-attention: #fbfaf7;
+  --menu-bg: #fbfaf7;
+  --menu-hover: #ece8e0;
+  --shadow: rgba(34, 32, 28, 0.16);
+  --shadow-soft: rgba(34, 32, 28, 0.08);
+  --overlay: rgba(251, 250, 247, 0.94);
+  --overlay-strong: rgba(251, 250, 247, 0.97);
+  --canvas-bg: #ebe8e1;
+  --canvas-dot: #cbc4b6;
+  --group-border: #bdb5a6;
+  --group-bg: rgba(251, 250, 247, 0.55);
+  --group-bar: rgba(231, 227, 219, 0.9);
+  --grip: #8d877c;
+  --resize: #b5ad9f;
+  --panel-float: #fbfaf7;
+  --edge: #5d5850;
+  --note-text: #5c3a06;
+  --focus-border: #d9d3c7;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+    --bg: #efede8;
+    --bg-header: #f8f7f3;
+    --bg-nav: #efede8;
+    --panel: #fbfaf7;
+    --panel-raised: #f4f2ed;
+    --chip: #e7e3db;
+    --selected: #e7dfcd;
+    --border: #d9d3c7;
+    --border-strong: #2a2723;
+    --text: #22201c;
+    --text-dim: #5d5850;
+    --text-faint: #8d877c;
+    --primary: #23436f;
+    --primary-hover: #182f50;
+    --on-primary: #fbfaf7;
+    --attention: #93570a;
+    --attention-bg: #f4e7cd;
+    --attention-border: #dcc08a;
+    --running: #3b7a4f;
+    --running-text: #3b7a4f;
+    --muted-dot: #8d877c;
+    --error: #a3302b;
+    --error-text: #a3302b;
+    --selection: #ead9b5;
+    --error-bg: #f3dfdb;
+    --error-border: #e0b4ad;
+    --tint: #efe7d6;
+    --tint-strong: #e4d6b8;
+    --code-bg: #f1eee7;
+    --code-text: #22201c;
+    --code-text-dim: #4a4640;
+    --divider: #e3ded4;
+    --on-attention: #fbfaf7;
+    --menu-bg: #fbfaf7;
+    --menu-hover: #ece8e0;
+    --shadow: rgba(34, 32, 28, 0.16);
+    --shadow-soft: rgba(34, 32, 28, 0.08);
+    --overlay: rgba(251, 250, 247, 0.94);
+    --overlay-strong: rgba(251, 250, 247, 0.97);
+    --canvas-bg: #ebe8e1;
+    --canvas-dot: #cbc4b6;
+    --group-border: #bdb5a6;
+    --group-bg: rgba(251, 250, 247, 0.55);
+    --group-bar: rgba(231, 227, 219, 0.9);
+    --grip: #8d877c;
+    --resize: #b5ad9f;
+    --panel-float: #fbfaf7;
+    --edge: #5d5850;
+    --note-text: #5c3a06;
+    --focus-border: #d9d3c7;
+    color-scheme: light;
+  }
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; }
+body { margin: 0; background: var(--bg); color: var(--text); font-family: var(--font-ui); font-size: var(--fs-body); line-height: var(--lh); -webkit-font-smoothing: antialiased; }
+button, input, select, textarea { font-family: inherit; }
+a { color: var(--primary); }
+a:hover { color: var(--primary-hover); }
+::selection { background: var(--selection); }
+button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible, a:focus-visible {
+  outline: 2px solid var(--primary);
+  outline-offset: 2px;
+}
+
+.app { height: 100%; display: flex; flex-direction: column; }

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { TASK_COLUMNS, taskWhere, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
-import { useAnnotations } from "../host/useAnnotations.js";
+import { useAnnotations } from "../review/useAnnotations.js";
 import { shortModel } from "../lib/profiles.js";
 import { COLUMN_NAMES } from "../lib/status.js";
 import { SessionTree } from "./SessionTree.js";
@@ -10,14 +10,15 @@ import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
 import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
 import { useSettings } from "../settings/SettingsDialog.js";
-import { AnnotationPanel } from "./AnnotationPanel.js";
-import { MailPanel, useTaskMail } from "./MailPanel.js";
-import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
-import { NotesPanel, useTaskNotes } from "./NotesPanel.js";
+import { AnnotationPanel } from "../review/AnnotationPanel.js";
+import { MailPanel, useTaskMail } from "../collab/MailPanel.js";
+import { DecisionPanel, useOpenDecisions } from "../collab/DecisionPanel.js";
+import { NotesPanel, useTaskNotes } from "../collab/NotesPanel.js";
 import { PackDocsPanel } from "../packs/PackDocsPanel.js";
-import { ChecklistPanel } from "./ChecklistPanel.js";
+import { ChecklistPanel } from "../collab/ChecklistPanel.js";
 import { EditableName } from "./EditableName.js";
 import { usePacks } from "../packs/usePacks.js";
+import { useFeature } from "../lib/features.js";
 import { PresetDraftForm } from "../packs/PresetDraftForm.js";
 import type { SelectionAnchor } from "../lib/selection.js";
 
@@ -123,7 +124,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const notes = useTaskNotes(link, task.id);
   const [draft, setDraft] = useState<PresetDraft | null>(null);
   // The extension packs of the task's own project.
-  const { packs } = usePacks(link, [task.workspaceId]);
+  const packsOn = useFeature("packs");
+  const { packs } = usePacks(link, packsOn ? [task.workspaceId] : []);
   const presetChoices = packs.flatMap((p) =>
     p.manifest ? p.manifest.presets.map((pr) => ({ key: `${p.workspaceId}/${p.dirName}/${pr.id}`, label: `${p.manifest!.title} · ${pr.title}` })) : [],
   );

@@ -1,0 +1,26 @@
+/* Extension packs (S6-02) */
+.packs { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.packs-body { flex: 1; display: flex; min-height: 0; }
+.packs-list { width: 220px; flex: none; border-right: 1px solid var(--border); padding: 10px 8px; display: flex; flex-direction: column; gap: 2px; overflow: auto; }
+.packs-detail { flex: 1; min-width: 0; overflow: auto; padding: 16px 20px; display: flex; flex-direction: column; gap: 14px; }
+.pack-head { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.pack-title { font-size: 16px; font-weight: 600; }
+.pack-path { font-size: 12px; color: var(--text-dim); font-family: var(--mono, monospace); }
+.pack-desc { margin: 0; color: var(--text-dim); font-size: 13px; }
+.pack-bad { font-size: 11.5px; color: var(--error-text); }
+.pack-problems { margin: 0; padding: 8px 12px 8px 28px; border-radius: 8px; border: 1px solid var(--border); font-size: 12.5px; color: var(--text-dim); }
+.pack-problems.error { border-color: var(--error-border); color: var(--error-text); }
+.pack-section { display: flex; flex-direction: column; gap: 6px; }
+.pack-item { display: flex; flex-direction: column; gap: 3px; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); text-align: left; color: var(--text); font: inherit; }
+.pack-item.clickable { cursor: pointer; }
+.pack-item.clickable:hover, .pack-item[aria-pressed="true"] { border-color: var(--primary); }
+.pack-item-title { font-size: 13px; font-weight: 500; }
+.pack-item-sub { font-size: 12px; color: var(--text-dim); font-weight: 400; }
+.pack-steps { margin: 2px 0 0; padding-left: 20px; font-size: 12.5px; color: var(--text-dim); }
+.pack-prompt { margin: 2px 0 0; padding: 8px 10px; border-radius: 6px; background: var(--panel-raised); font-size: 12px; white-space: pre-wrap; word-break: break-word; }
+.pack-doc { display: flex; flex-direction: column; gap: 8px; padding: 12px 14px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); }
+.pack-doc.compact { max-height: 320px; overflow: auto; font-size: 13px; }
+
+/* Session presets (S6-04) */
+.preset-draft { margin: 12px 20px 0; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--primary); background: var(--panel); display: flex; flex-direction: column; gap: 8px; }
+.preset-text { width: 100%; box-sizing: border-box; padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--bg, var(--panel-raised)); color: var(--text); font: inherit; font-size: 13px; resize: vertical; }

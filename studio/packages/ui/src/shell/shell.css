@@ -1,0 +1,53 @@
+/* Top bar */
+/* The top bar is also the window's title bar: it drags the window and ends with the page's own window buttons. */
+.topbar {
+  height: var(--topbar-h); flex: none; display: flex; align-items: center; gap: 16px; padding: 0 0 0 16px;
+  border-bottom: 2px solid var(--border-strong); background: var(--bg-header); -webkit-app-region: drag; user-select: none;
+}
+.topbar > :last-child:not(.win-controls) { margin-right: 16px; }
+.topbar button, .topbar input, .topbar a, .topbar select { -webkit-app-region: no-drag; }
+.brand { display: flex; align-items: center; gap: 10px; min-width: calc(var(--nav-w) - 32px); }
+/* The viewfinder mark (design/icon/viewfinder.svg). */
+.brand-mark { width: 28px; height: 28px; display: block; flex: none; }
+.brand-name { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-title); }
+.brand-sep { color: var(--text-dim); }
+.view-tabs { display: flex; gap: 2px; padding: 2px; border-radius: calc(var(--r-btn) + 2px); background: var(--chip); }
+.view-tab { height: calc(var(--ctl) - 4px); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: none; cursor: pointer; font-size: var(--fs-sm); color: var(--text-dim); background: transparent; }
+.view-tab:hover { color: var(--text); }
+.view-tab[aria-current="page"] { color: var(--text); background: var(--panel); font-weight: 600; box-shadow: 0 1px 0 var(--shadow-soft); }
+.view-tab:disabled { cursor: default; opacity: 0.55; }
+.spacer { flex: 1; }
+.needs { height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: 1px solid var(--attention-border); background: var(--attention-bg); color: var(--attention); font-size: var(--fs-sm); font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; }
+.btn-primary { height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: 1px solid var(--primary); background: var(--primary); color: var(--on-primary); font-weight: 600; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
+.btn-primary:hover:not(:disabled) { background: var(--primary-hover); border-color: var(--primary-hover); }
+.btn-primary:disabled { opacity: 0.5; cursor: default; }
+.btn-ghost:hover:not(:disabled) { background: var(--panel-raised); }
+.btn-ghost { height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); cursor: pointer; font-size: var(--fs-sm); white-space: nowrap; }
+
+/* Body */
+.body { flex: 1; display: flex; min-height: 0; }
+.scope-nav { flex: 0 0 var(--nav-w); min-height: 0; border-right: 1px solid var(--border); padding: 12px 0 0; background: var(--bg-nav); display: flex; flex-direction: column; overflow: hidden; }
+.nav-label { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-cap); color: var(--text-dim); letter-spacing: var(--ls-label); padding: 0 8px 6px; }
+.nav-label + .nav-label, .nav-section { padding-top: 16px; }
+.nav-row { width: 100%; height: 32px; display: flex; justify-content: space-between; align-items: center; gap: 8px; padding: 0 8px; border: none; border-radius: var(--r-m); cursor: pointer; font-size: var(--fs-body); text-align: left; color: var(--text); background: transparent; }
+.nav-row:hover { background: var(--chip); }
+.nav-row[aria-current="true"] { background: var(--selected); font-weight: 600; }
+.nav-row .count { color: var(--text-faint); font-size: var(--fs-cap); font-family: var(--font-code); font-weight: 400; }
+.nav-row .name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.add-ws { margin-top: 6px; display: flex; flex-direction: column; gap: 6px; padding: 0 4px; }
+.add-ws-toggle { height: var(--ctl); border-radius: var(--r-btn); border: 1px dashed var(--border); background: transparent; color: var(--text-faint); cursor: pointer; font-size: var(--fs-sm); }
+.add-ws-toggle:hover { color: var(--text); }
+.field { height: var(--ctl); padding: 0 10px; border-radius: var(--r-btn); border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); font-size: var(--fs-sm); min-width: 0; }
+.add-ws-actions { display: flex; gap: 6px; }
+.form-error { color: var(--error-text); font-size: 12px; }
+
+.main { flex: 1; min-width: 0; display: flex; flex-direction: column; overflow: auto; }
+
+/* Window buttons: three square cells at the right end of the top bar, in the bar's own colours. */
+.win-controls { align-self: stretch; display: flex; margin-left: 4px; border-left: 1px solid var(--border); }
+.win-btn {
+  width: 46px; height: 100%; display: grid; place-items: center; border: none; background: transparent; color: var(--text-dim); cursor: pointer;
+}
+.win-btn svg { fill: none; stroke: currentColor; stroke-width: 1; shape-rendering: crispEdges; }
+.win-btn:hover { background: var(--chip); color: var(--text); }
+.win-btn.close:hover { background: var(--error); color: #fff; }

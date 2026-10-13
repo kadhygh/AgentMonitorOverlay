@@ -1,0 +1,21 @@
+/* Todo to task (S7-01) */
+.todo-actions { display: flex; justify-content: flex-end; gap: 4px; }
+.todo-convert { flex-basis: 100%; display: flex; flex-direction: column; gap: 6px; padding: 8px; margin-top: 4px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); font-size: 12px; }
+.todo-convert-bar { display: flex; justify-content: flex-end; gap: 6px; }
+
+/* Project activity (S7-02) */
+.group-activity { margin-left: 8px; font-size: 11.5px; padding: 1px 7px; border-radius: 9px; border: 1px solid var(--border); color: var(--text-dim); }
+/* Free projects are what the scheduler looks for; busy stays neutral (yellow means "needs you"). */
+.group-activity.idle { color: var(--running-text); border-color: currentColor; }
+.group-activity.busy { color: var(--text-dim); }
+.todo-activity { color: var(--text-dim); }
+.todo-activity.idle { color: var(--running-text); }
+
+/* Scheduler proposals (S7-03) */
+.proposals { margin: 14px 24px 0; padding: 12px 14px; border-radius: var(--r-l); border: 1px solid var(--attention-border); background: var(--attention-bg); display: flex; flex-direction: column; gap: 10px; }
+.proposal-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 10px; }
+.proposal-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); }
+
+/* Scheduler round (S7-04) */
+.scheduler-run { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.scheduler-run select { flex: 1; min-width: 0; }

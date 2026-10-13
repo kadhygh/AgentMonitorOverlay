@@ -4,8 +4,9 @@ import { call, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
-import { DecisionCard, useOpenDecisions } from "../task/DecisionPanel.js";
-import { usePendingProposals } from "../board/ProposalsPanel.js";
+import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
+import { usePendingProposals } from "../planning/ProposalsPanel.js";
+import { useSettings } from "../settings/SettingsDialog.js";
 import "./focus.css";
 
 // The Focus window: "what needs me right now". Lists sessions waiting for approval or review, newest first; one entry
@@ -37,7 +38,10 @@ export function FocusApp() {
   const [compact, setCompact] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
   const decisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
-  const proposals = usePendingProposals(host.kind === "ready" ? host.link : NO_LINK);
+  const pending = usePendingProposals(host.kind === "ready" ? host.link : NO_LINK);
+  const settings = useSettings(host.kind === "ready" ? host.link : NO_LINK);
+  // Scheduler proposals belong to the planning feature (设置 → 功能).
+  const proposals = settings?.disabledFeatures.includes("planning") ? [] : pending;
 
   // Clicks pass through the transparent window except over the panel.
   const catchMouse = (on: boolean) => window.amo?.focus?.setIgnoreMouse(!on);

@@ -1,0 +1,89 @@
+/* New task (DSH style) */
+.newtask { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.newtask-center { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 18px; padding: 32px 24px; }
+.newtask-ask { font-size: 20px; font-weight: 600; }
+.newtask-title { width: 100%; max-width: 520px; display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-dim); text-align: center; }
+.newtask-title input {
+  height: 40px; padding: 0 14px; border-radius: 10px; border: 1px solid var(--border); background: var(--panel);
+  color: var(--text); font-size: 15px; font-weight: 500; text-align: center;
+}
+.chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: center; }
+.chips-label {
+  align-self: center;
+  margin-right: 4px;
+  font-size: 12px;
+  color: var(--text-dim);
+}
+.chip { height: 28px; padding: 0 11px; border-radius: var(--r-btn); font-size: var(--fs-sm); cursor: pointer; border: 1px solid var(--border); background: var(--panel); color: var(--text-dim); white-space: nowrap; }
+.chip[aria-pressed="true"] { border-color: var(--primary); background: var(--tint); color: var(--primary); font-weight: 600; }
+.chip:disabled { opacity: 0.5; cursor: default; }
+.newtask-hint { font-size: 12.5px; color: var(--text-dim); max-width: 520px; text-align: center; }
+.composer-wrap { padding: 0 24px 20px; display: flex; justify-content: center; }
+.composer {
+  width: 100%; max-width: 760px; border: 1px solid var(--border-strong); border-radius: 14px; background: var(--panel);
+  padding: 12px 14px; display: flex; flex-direction: column; gap: 10px;
+}
+.composer-input { display: flex; }
+.composer-input textarea { flex: 1; border: none; background: transparent; color: var(--text); font-size: 14.5px; resize: none; outline: none; }
+.composer-bar { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.inline-field { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); }
+.inline-field select { height: var(--ctl-s); padding: 0 6px; border-radius: var(--r-btn); border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); font-size: var(--fs-sm); }
+
+/* ---- 草稿任务页 ------------------------------------------------------------------------------------------------- */
+
+.draft-page { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.draft-wrap { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 40px 24px 32px; }
+.draft { width: min(780px, 100%); display: flex; flex-direction: column; gap: 18px; }
+.draft-ask { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 30px; line-height: 1.25; letter-spacing: 0.01em; }
+.draft-lede { margin: -8px 0 0; color: var(--text-dim); }
+.draft-where { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.pick-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pick-lab { width: 44px; flex: none; font-size: var(--fs-cap); color: var(--text-faint); letter-spacing: 0.06em; }
+.draft-steps { margin: 0 0 0 50px; padding-left: 18px; font-size: var(--fs-sm); color: var(--text-dim); }
+.draft-composer {
+  position: relative; border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel);
+  box-shadow: 0 1px 0 var(--shadow-soft);
+}
+.draft-composer:focus-within { box-shadow: 0 0 0 3px var(--tint); }
+.draft-composer textarea {
+  display: block; width: 100%; box-sizing: border-box; min-height: 96px; padding: 14px 16px 6px; border: none; outline: none; resize: none;
+  background: transparent; color: var(--text); font: inherit; font-size: 15px; line-height: 1.7; field-sizing: content; max-height: 320px;
+}
+.draft-composer textarea::placeholder { color: var(--text-faint); }
+.cbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-top: 1px solid var(--border); }
+.cbar.presets { padding-top: 6px; padding-bottom: 8px; }
+.foot-hints { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: var(--fs-cap); color: var(--text-faint); }
+.foot-hints > span { display: inline-flex; align-items: center; gap: 5px; }
+.foot-where { margin-left: auto; color: var(--text-dim); }
+
+/* @ and # suggestions */
+.suggest {
+  position: absolute; left: 16px; top: 64px; z-index: 20; min-width: 280px; max-width: 420px; padding: 4px; border-radius: var(--r-l);
+  border: 1px solid var(--border-strong); background: var(--menu-bg); box-shadow: 0 14px 36px var(--shadow);
+}
+.suggest.inline { position: static; max-width: none; border: none; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; padding: 6px 8px; }
+.suggest-h { padding: 4px 8px; font-size: 11px; color: var(--text-faint); letter-spacing: 0.06em; }
+.suggest button {
+  width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: none; border-radius: var(--r-s);
+  background: transparent; color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer;
+}
+.suggest button.hl, .suggest button:hover { background: var(--selected); }
+.suggest-name { flex: none; }
+.suggest-hint { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); font-size: 11px; }
+
+/* ---- 快速启动条 ------------------------------------------------------------------------------------------------ */
+
+.quick-scrim { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding-top: 96px; background: rgba(239, 237, 232, 0.66); }
+:root[data-theme="dark"] .quick-scrim { background: rgba(0, 0, 0, 0.45); }
+.quick { width: min(720px, calc(100vw - 40px)); border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel); box-shadow: 0 14px 36px var(--shadow); overflow: hidden; }
+.quick-in { display: flex; align-items: center; gap: 10px; height: 58px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+.quick-spark { color: var(--text-faint); font-size: 16px; }
+.quick-in input { flex: 1; min-width: 0; height: 100%; border: none; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 17px; }
+.quick-in input::placeholder { color: var(--text-faint); }
+.quick-tokens { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 0; }
+.token { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 4px 0 7px; border-radius: var(--r-s); background: var(--tint); color: var(--primary); font-size: var(--fs-cap); font-weight: 600; }
+.token button { border: none; background: none; padding: 0 2px; color: inherit; opacity: 0.6; cursor: pointer; }
+.quick-error { display: block; padding: 8px 16px 0; }
+.quick-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--panel-raised); }
+.quick-hints { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-faint); }
+.quick-hints > span, .quick-hints .link-btn { display: inline-flex; align-items: center; gap: 4px; }
