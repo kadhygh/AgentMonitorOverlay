@@ -34,6 +34,8 @@ interface TaskPageProps {
   /** This task's checklist (from a pack template). */
   checklist?: readonly ChecklistItem[];
   initialSessionId?: string;
+  /** What "←" says: where it returns (看板 or 画布). */
+  backLabel?: string;
   onBack(): void;
 }
 
@@ -47,7 +49,7 @@ const WRITER = {
 } as const;
 
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
-export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, onBack }: TaskPageProps) {
+export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, backLabel = "看板", onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
   const [toast, setToast] = useState<Toast>(null);
@@ -178,7 +180,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     <section className="taskpage" aria-label="任务">
       <div className="page-head">
         <button type="button" className="btn-ghost" onClick={onBack}>
-          ← 看板
+          ← {backLabel}
         </button>
         <h1 className="task-title" data-testid="task-title">
           <EditableName

@@ -53,3 +53,34 @@ test("canvas: the last empty group can be deleted, also after its topic's only c
   await studio.api("POST", `/api/tasks/${task.id}/unarchive`);
   await expect(page.getByTestId("canvas-card")).toHaveCount(1);
 });
+
+test("canvas: the new-task page and the new task's page return to the canvas they came from", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api<Topic>("POST", "/api/topics", { title: "回到画布" });
+
+  await page.getByRole("button", { name: "画布", exact: true }).click();
+  await page.getByRole("button", { name: "+ 在专题里新建任务" }).click();
+  await expect(page.getByText("要推进什么？")).toBeVisible();
+  await page.getByRole("button", { name: "← 画布" }).click();
+  await expect(page.getByTestId("canvas-viewport")).toBeVisible();
+
+  // Created from the canvas: the task page opens, and its "←" goes back to the canvas too.
+  await page.getByRole("button", { name: "+ 在专题里新建任务" }).click();
+  await page.getByRole("group", { name: "模型" }).getByTestId("model-tile").filter({ hasText: "Mock 模型" }).click();
+  await page.getByLabel("第一句话").fill("从画布建的任务");
+  await page.getByRole("button", { name: "开始" }).click();
+  await expect(page.getByTestId("task-title")).toHaveText("从画布建的任务");
+  await screenshot(studio.app, "stage-11", "S11-A-back-to-canvas", page);
+  await page.getByRole("button", { name: "← 画布" }).click();
+  await expect(page.getByTestId("canvas-viewport")).toBeVisible();
+
+  // Opened from the board, both pages still go back to the board.
+  await page.getByRole("button", { name: "看板", exact: true }).click();
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.getByTestId("task-card").filter({ hasText: "从画布建的任务" }).click();
+  await page.getByRole("button", { name: "← 看板" }).click();
+  await expect(page.getByTestId("task-card")).toHaveCount(1);
+});

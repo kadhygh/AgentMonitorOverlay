@@ -21,6 +21,8 @@ interface NewTaskPageProps {
   profiles: readonly ModelProfile[];
   /** Where the page was opened from: preselects the project or the topic of a fresh draft. */
   scope: Scope;
+  /** What "←" says: where it returns (看板 or 画布). */
+  backLabel?: string;
   onBack(): void;
   /** `session` null: the task was only filed (放进待办). */
   onCreated(task: Task, session: Session | null): void;
@@ -31,7 +33,7 @@ interface NewTaskPageProps {
  * rows of chips (both may stay unpicked: no project runs in the common folder), the model is a tile, the effort a set
  * of bars, the permissions a segmented control. Enter starts, Ctrl+Enter files the task in 待办. The draft is kept.
  */
-export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, onBack, onCreated }: NewTaskPageProps) {
+export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, backLabel = "看板", onBack, onCreated }: NewTaskPageProps) {
   const { draft, update, reset } = useTaskDraft(profiles);
   const projects = projectWorkspaces(workspaces);
   const pins = usePins();
@@ -131,7 +133,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     <section className="draft-page" aria-label="新任务">
       <div className="page-head">
         <button type="button" className="btn-ghost small" onClick={onBack}>
-          ← 看板
+          ← {backLabel}
         </button>
         <span className="page-crumb">/ 新任务</span>
         <span className="spacer" />

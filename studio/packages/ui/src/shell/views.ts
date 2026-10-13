@@ -7,12 +7,20 @@ import type { Scope } from "../board/Board.js";
 // one, and panels it adds to other pages. The shell keeps the view in state and renders the one in front.
 
 // `nav` changes when Focus asks for a session, so an already open task page re-opens on that session.
+// `back`: the page the new-task or task page was opened from, where its "←" returns (the board when absent).
 export type View =
   | { kind: "board" }
   | { kind: "canvas" }
-  | { kind: "new"; topicId?: string }
+  | { kind: "new"; topicId?: string; back?: View }
   | { kind: "packs"; workspaceId: string }
-  | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
+  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View };
+
+const BACK_LABEL: Partial<Record<View["kind"], string>> = { board: "看板", canvas: "画布" };
+
+/** Where a page's "←" goes and what it says: the page it came from when that is the board or a canvas, else the board. */
+export function backTo(back: View | undefined): { view: View; label: string } {
+  return back && BACK_LABEL[back.kind] ? { view: back, label: BACK_LABEL[back.kind]! } : { view: { kind: "board" }, label: "看板" };
+}
 
 /** Live data several pages share, loaded once by the shell. */
 export interface AppData {
