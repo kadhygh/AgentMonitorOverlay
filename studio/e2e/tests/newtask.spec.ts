@@ -35,10 +35,10 @@ test("creates a task from the blank task page and streams the first reply", asyn
 
   await expect(page.getByTestId("task-title")).toHaveText("列出目录结构 [[slow]]");
   await expect(page.getByTestId("msg-user")).toHaveText(/列出目录结构/);
-  // While streaming, the reply grows and is marked "生成中…"; then it settles.
-  await expect(page.getByTestId("msg-agent")).toContainText("生成中…", { timeout: 30_000 });
+  // While streaming, the reply grows and is marked as streaming (a pulsing dot); then it settles.
+  await expect(page.getByTestId("msg-agent")).toHaveAttribute("data-streaming", "true", { timeout: 30_000 });
   await expect(page.getByTestId("msg-agent")).toContainText("slow slow");
-  await expect(page.getByTestId("msg-agent")).not.toContainText("生成中…", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent")).not.toHaveAttribute("data-streaming", /.+/, { timeout: 30_000 });
   await screenshot(studio.app, "stage-1", "S1-10-first-reply", page);
 
   await page.getByRole("button", { name: "← 看板" }).click();

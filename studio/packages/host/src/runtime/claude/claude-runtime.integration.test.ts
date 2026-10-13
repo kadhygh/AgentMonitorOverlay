@@ -68,7 +68,7 @@ describe("ClaudeRuntime", () => {
     expect(s).toMatchObject({ runtime: "claude", kind: "main", title: "hello" });
     expect(s.runtimeRef).toMatch(/^[0-9a-f-]{36}$/);
     await until(() => agentTexts(s.id).includes("MOCK: hello") && status(s.id) === "idle", "first reply");
-    expect(items(s.id).map((i) => i.type)).toEqual(["user", "agent"]);
+    expect(items(s.id).map((i) => i.type)).toEqual(["turn", "user", "agent"]);
     // The transcript lives in Studio's config dir, under the id Studio chose.
     const sent = await runtime.sendMessage(s.id, "again");
     expect(sent.mode).toBe("start");

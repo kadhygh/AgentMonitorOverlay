@@ -8,6 +8,7 @@ import { COLUMN_NAMES } from "../lib/status.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
+import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
 import { AnnotationPanel } from "./AnnotationPanel.js";
 import { MailPanel, useTaskMail } from "./MailPanel.js";
 import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
@@ -129,9 +130,15 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, pro
   const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
 
   /** Scrolls to the annotated block of a reply and flashes it. */
-  function locate(a: Annotation) {
+  function locate(a: Annotation, retry = true) {
     const reply = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(a.itemId)}"]`);
-    if (!reply) return;
+    if (!reply) {
+      // A reply between steps hides in a folded turn: unfold it, then look again once it has rendered.
+      if (!retry) return;
+      window.dispatchEvent(new CustomEvent(REVEAL_ITEM_EVENT, { detail: a.itemId }));
+      requestAnimationFrame(() => requestAnimationFrame(() => locate(a, false)));
+      return;
+    }
     const blocks = [...reply.querySelectorAll<HTMLElement>("[data-src-start]")];
     const target =
       blocks.find((b) => Number(b.dataset.srcStart) < a.end && Number(b.dataset.srcEnd) > a.start) ??

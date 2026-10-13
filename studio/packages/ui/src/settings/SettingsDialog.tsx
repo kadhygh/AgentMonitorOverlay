@@ -3,6 +3,7 @@ import type { StudioSettings } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/theme.js";
+import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 
 /** Studio-wide settings from the Host, kept live. */
 export function useSettings(link: HostLink): StudioSettings | null {
@@ -29,6 +30,7 @@ export function useSettings(link: HostLink): StudioSettings | null {
  */
 export function SettingsDialog({ link, settings, onClose }: { link: HostLink; settings: StudioSettings | null; onClose(): void }) {
   const [theme, setTheme] = useState<ThemePref>(themePref);
+  const view = useTranscriptView();
   const [dir, setDir] = useState(settings?.commonWorkspace?.path ?? "");
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
@@ -93,6 +95,26 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
             </div>
           </div>
           <span className="settings-hint">只影响这台电脑上的 Studio；Focus 悬浮窗会一起切换。</span>
+          <div className="settings-row">
+            <span className="settings-label">工作步骤展示</span>
+            <div role="radiogroup" aria-label="工作步骤展示" className="chips">
+              {(Object.keys(TRANSCRIPT_VIEW_LABELS) as TranscriptView[]).map((v) => (
+                <button
+                  key={v}
+                  type="button"
+                  role="radio"
+                  className="chip"
+                  aria-checked={view === v}
+                  aria-pressed={view === v}
+                  title={TRANSCRIPT_VIEW_HINTS[v]}
+                  onClick={() => setTranscriptView(v)}
+                >
+                  {TRANSCRIPT_VIEW_LABELS[v]}
+                </button>
+              ))}
+            </div>
+          </div>
+          <span className="settings-hint">{TRANSCRIPT_VIEW_HINTS[view]}。</span>
         </section>
 
         <section className="settings-section" aria-label="公共空间">

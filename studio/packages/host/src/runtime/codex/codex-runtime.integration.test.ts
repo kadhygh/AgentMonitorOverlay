@@ -1,9 +1,9 @@
-import { mkdirSync, mkdtempSync } from "node:fs";
+import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ModelProfile, SessionItem, Workspace } from "@amo-studio/protocol";
-import { mockCodexProvider, removeTempDir, startMockModel, type MockModelServer } from "@amo-studio/testkit";
+import { DEMO_FILE, DEMO_FILE_TEXT, mockCodexProvider, removeTempDir, startMockModel, type MockModelServer } from "@amo-studio/testkit";
 import { Store } from "../../store/store.js";
 import { StaticCredentialReader } from "../credentials.js";
 import { CodexRuntime } from "./codex-runtime.js";
@@ -89,7 +89,12 @@ describe("Codex runtime against the real app-server", () => {
     mainId = s.id;
     // A new session is idle before its first turn starts, so wait for the reply itself.
     await until(() => lastAgent(mainId)?.markdown === "MOCK: hello" && settled(mainId)(), "first reply");
-    expect(items(mainId).map((i) => i.type)).toEqual(["user", "agent"]);
+    expect(items(mainId).map((i) => i.type)).toEqual(["turn", "user", "agent"]);
+    // The turn item ties the items together and records how the turn went and what it used.
+    const turn = items(mainId)[0] as Extract<SessionItem, { type: "turn" }>;
+    expect(turn).toMatchObject({ state: "completed", usage: { input: expect.any(Number), output: expect.any(Number) } });
+    expect(turn.endedAt).toBeTruthy();
+    expect(items(mainId).every((i) => i.raw?.turnId === turn.turnId)).toBe(true);
   }, 60_000);
 
   it("routes a command approval and records the tool result", async () => {
@@ -118,6 +123,34 @@ describe("Codex runtime against the real app-server", () => {
     expect(tool.detail).not.toContain("mock-key");
     expect(tool.detail).not.toContain("mcp-token-in-server-env");
   }, 60_000);
+
+  it("shows a working turn: thinking, reading, editing, running a check, answering", async () => {
+    writeFileSync(join(wsDir, DEMO_FILE), DEMO_FILE_TEXT);
+    const before = items(mainId).length;
+    await host.runtime.sendMessage(mainId, "[[demo]] 给导入器加上重试");
+    // Approve whatever the turn asks for until it is done.
+    const start = Date.now();
+    for (;;) {
+      if (Date.now() - start > 60_000) throw new Error("demo turn did not finish");
+      const pending = items(mainId).find((i): i is Extract<SessionItem, { type: "approval" }> => i.type === "approval" && i.state === "pending");
+      if (pending) await host.runtime.respondApproval(mainId, pending.approvalId, "accept");
+      const turn = items(mainId).slice(before).find((i) => i.type === "turn");
+      if (turn?.type === "turn" && turn.state !== "running" && settled(mainId)()) break;
+      await new Promise((r) => setTimeout(r, 50));
+    }
+    const added = items(mainId).slice(before);
+    const thinking = added.filter((i): i is Extract<SessionItem, { type: "reasoning" }> => i.type === "reasoning");
+    expect(thinking.length).toBeGreaterThan(0);
+    expect(thinking[0]!.text).toContain("importer.py");
+    expect(thinking.every((t) => !t.streaming && typeof t.durationMs === "number")).toBe(true);
+    const tools = added.filter((i): i is Extract<SessionItem, { type: "tool" }> => i.type === "tool");
+    expect(tools.find((t) => t.kind === "read")).toMatchObject({ summary: DEMO_FILE, status: "completed" });
+    const edit = tools.find((t) => t.kind === "edit")!;
+    expect(edit.files?.[0]).toMatchObject({ path: DEMO_FILE, change: "update" });
+    expect(edit.files![0]!.added).toBeGreaterThan(5);
+    expect(tools.find((t) => t.kind === "command")).toMatchObject({ exitCode: 0, status: "completed" });
+    expect(lastAgent(mainId)!.markdown).toContain("| `retries` | 3 |");
+  }, 90_000);
 
   it("forks on the same provider and keeps context", async () => {
     const fork = await host.runtime.fork(mainId);

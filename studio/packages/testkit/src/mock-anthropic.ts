@@ -23,9 +23,10 @@ export function mockClaudeEnv(baseUrl: string): Record<string, string> {
   };
 }
 
-export type ClaudeMockReply =
+export type ClaudeMockReply = (
   | { kind: "text"; text: string; chunks?: number; delayMs?: number }
-  | { kind: "tool_use"; name: string; input: Record<string, unknown> };
+  | { kind: "tool_use"; name: string; input: Record<string, unknown> }
+) & { thinking?: string };
 
 export interface ClaudeMockRequest {
   /** Text the person typed in the last user message (context blocks such as <system-reminder> are skipped). */
@@ -90,6 +91,7 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
   }
   if (shell && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: shell[1]!.trim(), description: "mock command" } };
   if (req.lastUserText.includes("[[markdown]]")) return { kind: "text", text: MOCK_MARKDOWN };
+  if (req.lastUserText.includes("[[think]]")) return { kind: "text", text: `MOCK: ${req.lastUserText}`, thinking: "先想一想用户要什么。\n这是一条测试消息，照原样回复即可。" };
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
   return { kind: "text", text: `MOCK: ${req.lastUserText}` };
 };
@@ -146,10 +148,10 @@ export function parseClaudeRequest(body: Record<string, unknown>): ClaudeMockReq
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 function messageOf(reply: ClaudeMockReply, seq: number, model: string) {
-  const content =
-    reply.kind === "text"
-      ? [{ type: "text", text: reply.text }]
-      : [{ type: "tool_use", id: `toolu_mock_${seq}`, name: reply.name, input: reply.input }];
+  const content = [
+    ...(reply.thinking ? [{ type: "thinking", thinking: reply.thinking, signature: "mock" }] : []),
+    reply.kind === "text" ? { type: "text", text: reply.text } : { type: "tool_use", id: `toolu_mock_${seq}`, name: reply.name, input: reply.input },
+  ];
   return {
     id: `msg_mock_${seq}`,
     type: "message",
@@ -166,20 +168,32 @@ async function streamReply(res: ServerResponse, reply: ClaudeMockReply, seq: num
   const send = (data: Record<string, unknown>) => res.write(`event: ${String(data.type)}\ndata: ${JSON.stringify(data)}\n\n`);
   const full = messageOf(reply, seq, model);
   send({ type: "message_start", message: { ...full, content: [], stop_reason: null, usage: { ...full.usage, output_tokens: 1 } } });
+  let index = 0;
+  if (reply.thinking) {
+    send({ type: "content_block_start", index, content_block: { type: "thinking", thinking: "" } });
+    for (const part of reply.thinking.match(/[\s\S]{1,12}/g) ?? []) {
+      if (res.destroyed) return;
+      send({ type: "content_block_delta", index, delta: { type: "thinking_delta", thinking: part } });
+      await sleep(15);
+    }
+    send({ type: "content_block_delta", index, delta: { type: "signature_delta", signature: "mock" } });
+    send({ type: "content_block_stop", index });
+    index++;
+  }
   if (reply.kind === "text") {
-    send({ type: "content_block_start", index: 0, content_block: { type: "text", text: "" } });
+    send({ type: "content_block_start", index, content_block: { type: "text", text: "" } });
     const chunks = Math.max(1, reply.chunks ?? 3);
     const size = Math.ceil(reply.text.length / chunks) || 1;
     for (let i = 0; i < reply.text.length; i += size) {
       if (res.destroyed) return;
-      send({ type: "content_block_delta", index: 0, delta: { type: "text_delta", text: reply.text.slice(i, i + size) } });
+      send({ type: "content_block_delta", index, delta: { type: "text_delta", text: reply.text.slice(i, i + size) } });
       if (reply.delayMs) await sleep(reply.delayMs);
     }
   } else {
-    send({ type: "content_block_start", index: 0, content_block: { type: "tool_use", id: `toolu_mock_${seq}`, name: reply.name, input: {} } });
-    send({ type: "content_block_delta", index: 0, delta: { type: "input_json_delta", partial_json: JSON.stringify(reply.input) } });
+    send({ type: "content_block_start", index, content_block: { type: "tool_use", id: `toolu_mock_${seq}`, name: reply.name, input: {} } });
+    send({ type: "content_block_delta", index, delta: { type: "input_json_delta", partial_json: JSON.stringify(reply.input) } });
   }
-  send({ type: "content_block_stop", index: 0 });
+  send({ type: "content_block_stop", index });
   send({ type: "message_delta", delta: { stop_reason: full.stop_reason, stop_sequence: null }, usage: { output_tokens: 5 } });
   send({ type: "message_stop" });
   res.end();

@@ -32,7 +32,18 @@ export interface Studio {
 }
 
 export async function launchStudio(
-  options: { mockModel?: boolean; env?: Record<string, string>; root?: string; /** Behave as the portable build in this folder, with its saved data dir. */ portable?: { dir: string; dataDir: string } } = {},
+  options: {
+    mockModel?: boolean;
+    env?: Record<string, string>;
+    root?: string;
+    /** Behave as the portable build in this folder, with its saved data dir. */
+    portable?: { dir: string; dataDir: string };
+    /**
+     * 工作步骤展示. Tests default to "verbose" (every work row shown, turns never fold) so they can reach tool rows and
+     * answered approvals directly; chat-experience.spec.ts covers the folding views.
+     */
+    transcriptView?: "compact" | "standard" | "detailed" | "verbose";
+  } = {},
 ): Promise<Studio> {
   const root = options.root ?? mkdtempSync(join(tmpdir(), "amo-studio-e2e-"));
   const dataDir = options.portable?.dataDir ?? join(root, "data");
@@ -62,6 +73,11 @@ export async function launchStudio(
     },
   });
   const page = await app.firstWindow();
+  await page.waitForLoadState("domcontentloaded");
+  await page.evaluate((view) => {
+    localStorage.setItem("amo.transcriptView", view);
+    window.dispatchEvent(new CustomEvent("amo:transcript-view", { detail: view }));
+  }, options.transcriptView ?? "verbose");
 
   async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
     const info = JSON.parse(readFileSync(join(dataDir, "host.json"), "utf8")) as { url: string };

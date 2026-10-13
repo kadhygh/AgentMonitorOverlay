@@ -223,3 +223,12 @@ S4-01 用 mock Anthropic 接口补充发现（不消耗额度）：
 - Host 收到 `thread/started` 时检查新 thread 的 `modelProvider` 和父 thread 是否一致；不一致就在界面上标红提醒。
 - 收到带 `forkedFromId` 的 `thread/started` 后，Host 立即写入会话树，并自动 `thread/resume` 订阅这个 fork。
 - 子 agent 的 provider 是否也落到 server 默认，留到 S1-06 用 mock 模型验证。
+
+## s9-00 · 真实模型给对话界面的数据（2026-10-13，DeepSeek 2 次、GLM 1 次）
+
+`spikes/s9-00-reasoning.mjs`，结果在 `results/s9-00-reasoning.json`（只记长度和形状，不记内容）。
+
+- **DeepSeek Flash 经 Codex**：app-server 加 `show_raw_agent_reasoning=true` 后，思考以 `item/reasoning/textDelta` 流式到达，一轮里每次模型调用一段（这次 4 段，200–600 字）。`thread/tokenUsage/updated` 每次调用一条，`last` 相加就是本轮用量（含缓存命中）。
+- 命令行：Windows 上 `commandActions` 全是 `unknown`，Studio 自己按命令识别读文件 / 列目录 / 搜索（`Get-Content importer.py` → 读取，`Get-ChildItem` → 查看目录）；退出码、耗时、输出都有。
+- 注意：第一次用 `approvalPolicy: never` + `read-only` 跑，Codex 在执行前就以 "blocked by policy" 拒绝了所有命令，**被拒的命令不产生任何 item**，界面上看不到。Studio 默认是 on-request + workspace-write，不受影响。
+- **GLM 经 Claude**：thinking 块以 `thinking_delta` 流式到达（这次 2 段）；`result.usage` 给出整轮用量，缓存读取占绝大部分；Read 工具正常显示为"读取 importer.py"。
