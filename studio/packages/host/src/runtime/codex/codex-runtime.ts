@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, HostEvent, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionStatus, ToolFields, ToolKind, ToolStatus, TurnState, TurnUsage, Workspace } from "@amo-studio/protocol";
+import type { ApprovalDecision, HostEvent, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionStatus, ToolFields, ToolKind, ToolStatus, TurnState, TurnUsage, Workspace, AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
@@ -74,6 +74,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   private readonly state = new Map<Id, SessionState>();
   private readonly approvals = new Map<string, PendingApproval>();
   private readonly attached = new WeakSet<CodexServerHandle["client"]>();
+  private readonly usageCache = new Map<Id, AccountUsage>();
   private readonly modelCache = new Map<Id, { at: number; models: ModelOption[] }>();
 
   constructor(private readonly options: CodexRuntimeOptions) {
@@ -137,6 +138,25 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
     this.requireSession(sessionId);
     return this.updateSession(sessionId, { options });
+  }
+
+  /**
+   * The ChatGPT login's quota (the profile with no provider of its own): `account/rateLimits/read`, kept up to date by
+   * `account/rateLimits/updated`. Without `refresh` only what was read before (no app-server is started for it).
+   */
+  async usage(profileId: Id, refresh: boolean): Promise<AccountUsage | null> {
+    const profile = this.profile(profileId);
+    if (profile.provider !== null) return null;
+    if (refresh) {
+      try {
+        const handle = await this.handleFor(profileId);
+        const r = (await handle.client.request("account/rateLimits/read", { excludeResetCreditDetails: true } as never)) as unknown as GetAccountRateLimitsResponse;
+        this.usageCache.set(profileId, codexUsage(profile, r.rateLimits));
+      } catch (err) {
+        this.usageCache.set(profileId, { profileId, label: profile.label, windows: [], note: `读不到用量：${String((err as Error).message ?? err)}`, updatedAt: new Date().toISOString() });
+      }
+    }
+    return this.usageCache.get(profileId) ?? { profileId, label: profile.label, windows: [], note: "展开刷新后显示", updatedAt: null };
   }
 
   /** `thread/name/set`: the name the TUI and `codex resume` show as well. */
@@ -304,6 +324,11 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     switch (n.method) {
       case "thread/started":
         return this.onThreadStarted(handle, n.params.thread);
+      case "account/rateLimits/updated": {
+        const profile = this.options.profiles.find((p) => p.id === handle.profileId);
+        if (profile && profile.provider === null) this.usageCache.set(profile.id, codexUsage(profile, n.params.rateLimits));
+        return;
+      }
       case "thread/name/updated": {
         // Renamed here or in an attached TUI: the session follows its thread's name.
         const s = this.findByThread(n.params.threadId);
@@ -952,4 +977,18 @@ function addUsage(prev: TurnUsage | undefined, last: { inputTokens: number; cach
     reasoning: (prev?.reasoning ?? 0) + last.reasoningOutputTokens,
     ...(window ? { contextWindow: window } : {}),
   };
+}
+
+type CodexRateWindow = { usedPercent: number; windowDurationMins: number | null; resetsAt: number | null } | null;
+type GetAccountRateLimitsResponse = { rateLimits: { primary: CodexRateWindow; secondary: CodexRateWindow } };
+
+const windowLabel = (mins: number | null) =>
+  mins === null ? "额度" : mins === 300 ? "5 小时" : mins === 10080 ? "每周" : mins === 1440 ? "每天" : mins % 60 === 0 ? `${mins / 60} 小时` : `${mins} 分钟`;
+
+/** A Codex rate-limit snapshot as the windows Studio shows (resetsAt comes in epoch seconds). */
+export function codexUsage(profile: ModelProfile, limits: { primary: CodexRateWindow; secondary: CodexRateWindow }): AccountUsage {
+  const windows = [limits.primary, limits.secondary]
+    .filter((w): w is NonNullable<CodexRateWindow> => !!w)
+    .map((w) => ({ label: windowLabel(w.windowDurationMins), usedPercent: w.usedPercent, resetsAt: w.resetsAt ? new Date(w.resetsAt * 1000).toISOString() : null }));
+  return { profileId: profile.id, label: profile.label, windows, note: windows.length ? null : "这个账号没有用量限制", updatedAt: new Date().toISOString() };
 }

@@ -348,6 +348,16 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       notify(parent.id, "thread/started", { thread: threadView(t) }, [client]);
       return threadResponse(t);
     },
+    // A ChatGPT login's quota: 5-hour and weekly windows.
+    "account/rateLimits/read": () => ({
+      ordinaryUsageAllowed: true,
+      rateLimits: {
+        limitId: "codex", limitName: null, normalModelSlug: null, credits: null, individualLimit: null, spendControlReached: null, planType: null, rateLimitReachedType: null,
+        primary: { usedPercent: 32, windowDurationMins: 300, resetsAt: 1_800_000_000 },
+        secondary: { usedPercent: 8, windowDurationMins: 10080, resetsAt: 1_800_500_000 },
+      },
+      rateLimitsByLimitId: null, rateLimitResetCredits: null, accountId: null, rateLimitUpsell: null,
+    }),
     "thread/name/set": (_client, params) => {
       const t = requireThread(params);
       notify(t.id, "thread/name/updated", { threadId: t.id, threadName: params.name });

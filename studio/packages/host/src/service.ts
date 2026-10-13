@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import type {
+  AccountUsage,
   CredentialStatus,
   ProfileChoices,
   SessionOptions,
@@ -300,6 +301,16 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   choices(profileId: Id): Promise<ProfileChoices> {
     if (!this.profiles.some((p) => p.id === profileId)) throw new HostError("not_found", `profile ${profileId} not found`);
     return this.wrap(() => this.runtime.choices(profileId));
+  }
+
+  /** Quota use of the subscription profiles (GPT login, Claude token), in profile order. */
+  async usage(refresh: boolean): Promise<AccountUsage[]> {
+    const out: AccountUsage[] = [];
+    for (const p of this.profiles) {
+      const u = this.runtime.usage ? await this.runtime.usage(p.id, refresh).catch(() => null) : null;
+      if (u) out.push(u);
+    }
+    return out;
   }
 
   /** Renames a session in its own runtime (the stored title follows the runtime's name). */

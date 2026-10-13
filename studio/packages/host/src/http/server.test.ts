@@ -206,6 +206,11 @@ describe("Host API", () => {
     expect((await ok<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.id === session.id)?.archivedAt).toBeNull();
   });
 
+  it("reads the subscription quota only when asked to refresh", async () => {
+    // p-ds is routed to its own provider: no ChatGPT quota. A profile on the person's own login has one.
+    expect(await ok("GET", "/api/usage")).toEqual([]);
+  });
+
   it("renames tasks, and sessions in their own runtime", async () => {
     const { task, session } = await createTask("first words");
     expect((await ok<Task>("PATCH", `/api/tasks/${task.id}`, { title: "导入重试" })).title).toBe("导入重试");

@@ -358,3 +358,24 @@ export function sessionOwner(s: Pick<Session, "taskId" | "topicId">): SessionOwn
 /** Sessions with the same owner (a task's or a topic's). */
 export const sameOwner = (a: Pick<Session, "taskId" | "topicId">, b: Pick<Session, "taskId" | "topicId">) =>
   (a.taskId ?? null) === (b.taskId ?? null) && (a.topicId ?? null) === (b.topicId ?? null);
+
+/** One quota window of a subscription (e.g. GPT's 5-hour and weekly limits). */
+export interface UsageWindow {
+  /** "5 小时", "每周", "Opus 每周"… */
+  label: string;
+  /** 0–100; null when the account did not say. */
+  usedPercent: number | null;
+  resetsAt: Timestamp | null;
+}
+
+/** How much of a subscription is used: the person's own GPT (Codex login) or Claude (setup-token) account. */
+export interface AccountUsage {
+  profileId: Id;
+  /** The account's name as the profiles show it ("GPT", "Claude"). */
+  label: string;
+  windows: UsageWindow[];
+  /** Why there is nothing to show (not logged in, no conversation yet…). */
+  note: string | null;
+  /** When these numbers were read; null when never. */
+  updatedAt: Timestamp | null;
+}

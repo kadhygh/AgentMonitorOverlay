@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, Topic, Workspace } from "./entities.js";
+import type { AccountUsage, Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, Topic, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -123,6 +123,11 @@ export interface HostRoutes {
   "POST /api/workspaces": { req: { path: string; name?: string }; res: Workspace };
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
   "GET /api/settings": { req: void; res: StudioSettings };
+  /**
+   * Quota use of the subscriptions (GPT through the Codex login, Claude through its token). `?refresh=1` asks the
+   * accounts now (GPT: may start its app-server); otherwise the last numbers read.
+   */
+  "GET /api/usage": { req: void; res: AccountUsage[] };
   /** `commonDir`: moves the common space to this folder (created if missing; it must not be a registered project). */
   "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */

@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, HostEvent, Id, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, Workspace } from "@amo-studio/protocol";
+import type { ApprovalDecision, HostEvent, Id, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, Workspace, AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../store/store.js";
 
 // What HostService needs from a runtime, and a router that sends each call to the runtime a session (or profile)
@@ -31,6 +31,8 @@ export interface SessionRuntimeApi {
   archive(sessionId: Id): Promise<Session[]>;
   unarchive(sessionId: Id): Promise<Session[]>;
   respondApproval(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void>;
+  /** A subscription's quota use, for profiles that have one; null otherwise. `refresh`: ask the account now. */
+  usage?(profileId: Id, refresh: boolean): Promise<AccountUsage | null>;
   /** Codex only: where an attached TUI connects. */
   attachInfo(sessionId: Id): Promise<{ url: string; token: string; threadId: string }>;
   setWriter(sessionId: Id, writer: Session["writer"]): Session;
@@ -83,6 +85,11 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   }
   setOptions(sessionId: Id, options: SessionOptions) {
     return this.forSession(sessionId).setOptions(sessionId, options);
+  }
+  async usage(profileId: Id, refresh: boolean): Promise<AccountUsage | null> {
+    const profile = this.profiles.find((p) => p.id === profileId);
+    const r = profile ? this.runtimes[profile.runtime] : undefined;
+    return r?.usage ? r.usage(profileId, refresh) : null;
   }
   rename(sessionId: Id, title: string) {
     return this.forSession(sessionId).rename(sessionId, title);

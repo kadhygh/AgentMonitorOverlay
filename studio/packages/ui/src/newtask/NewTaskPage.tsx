@@ -10,6 +10,7 @@ import { EffortBars, nextEffort, PermissionSegments } from "../chat/pickers.js";
 import { submitDraft, useTaskDraft } from "./draft.js";
 import { ModelRow, tilePicks } from "./ModelRow.js";
 import { SuggestList, useMentions } from "./Suggest.js";
+import { pinnedFirst, usePins } from "../lib/pins.js";
 
 interface NewTaskPageProps {
   link: HostLink;
@@ -32,7 +33,12 @@ interface NewTaskPageProps {
 export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, onBack, onCreated }: NewTaskPageProps) {
   const { draft, update, reset } = useTaskDraft(profiles);
   const projects = projectWorkspaces(workspaces);
-  const liveTopics = topics.filter((t) => !t.archivedAt);
+  const pins = usePins();
+  const liveTopics = pinnedFirst(
+    topics.filter((t) => !t.archivedAt),
+    pins.topic,
+    (t) => t.id,
+  );
   const [drawer, setDrawer] = useState(false);
   const [morePerms, setMorePerms] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -54,7 +60,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
   // In a topic, its projects come first.
   const topic = liveTopics.find((t) => t.id === draft.topicId);
   const inTopic = new Set(topic ? [...topic.workspaceIds, ...tasks.filter((t) => t.topicId === topic.id).map((t) => t.workspaceId)] : []);
-  const orderedProjects = [...projects].sort((a, b) => Number(inTopic.has(b.id)) - Number(inTopic.has(a.id)));
+  const orderedProjects = [...pinnedFirst(projects, pins.project, (w) => w.id)].sort((a, b) => Number(inTopic.has(b.id)) - Number(inTopic.has(a.id)));
 
   // Task templates from the extension packs of the chosen project.
   const { packs } = usePacks(link, draft.projectId ? [draft.projectId] : []);

@@ -1,6 +1,7 @@
 import { useMemo, useState, type KeyboardEvent } from "react";
 import type { Task, Topic, Workspace } from "@amo-studio/protocol";
 import { mentionAt, withoutMention } from "./draft.js";
+import { pinnedFirst, usePins } from "../lib/pins.js";
 
 // Typing @ picks a project, # a topic, right in the text field (design/ui-directions/new-task.html).
 
@@ -27,16 +28,17 @@ export function useMentions({
   const [caret, setCaret] = useState<number | null>(null);
   const [highlight, setHighlight] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
+  const pins = usePins();
   const mention = caret === null ? null : mentionAt(text, caret);
   const items = useMemo<Item[]>(() => {
     if (!mention || dismissedAt === mention.start) return [];
     const q = mention.query.toLowerCase();
     const list: Item[] =
       mention.sign === "@"
-        ? projects.map((w) => ({ kind: "project", id: w.id, name: w.name, hint: w.path }))
-        : topics.map((t) => ({ kind: "topic", id: t.id, name: t.title, hint: "专题" }));
+        ? pinnedFirst(projects, pins.project, (w) => w.id).map((w) => ({ kind: "project", id: w.id, name: w.name, hint: pins.has("project", w.id) ? "已置顶" : w.path }))
+        : pinnedFirst(topics, pins.topic, (t) => t.id).map((t) => ({ kind: "topic", id: t.id, name: t.title, hint: pins.has("topic", t.id) ? "已置顶" : "专题" }));
     return list.filter((i) => i.name.toLowerCase().includes(q)).slice(0, 8);
-  }, [mention, dismissedAt, projects, topics]);
+  }, [mention, dismissedAt, projects, topics, pins]);
 
   const choose = (item: Item) => {
     if (!mention) return;
@@ -121,15 +123,19 @@ export function useTaskMentions({ text, setText, tasks }: { text: string; setTex
   const [caret, setCaret] = useState<number | null>(null);
   const [highlight, setHighlight] = useState(0);
   const [picked, setPicked] = useState<ReadonlyMap<string, Task>>(new Map());
+  const pins = usePins();
   const mention = caret === null ? null : mentionAt(text, caret);
   const items = useMemo(() => {
     if (!mention || mention.sign !== "@") return [];
     const q = mention.query.toLowerCase();
-    return tasks
+    // Tasks of pinned topics and projects come first.
+    const pinnedTask = (t: Task) => (t.topicId && pins.has("topic", t.topicId)) || pins.has("project", t.workspaceId);
+    return [...tasks]
+      .sort((a, b) => Number(pinnedTask(b)) - Number(pinnedTask(a)))
       .filter((t) => !t.archivedAt && (t.title || "未命名任务").toLowerCase().includes(q))
       .slice(0, 8)
       .map((t) => ({ id: t.id, name: t.title || "未命名任务", hint: t.column === "done" ? "完成" : "" }));
-  }, [mention, tasks]);
+  }, [mention, tasks, pins]);
 
   const choose = (item: { id: string; name: string }) => {
     if (!mention) return;

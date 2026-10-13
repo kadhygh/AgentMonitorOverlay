@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createSdkMcpServer, forkSession, getSessionMessages, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ApprovalDecision, ApprovalKind, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, ToolFields, TurnState, Workspace } from "@amo-studio/protocol";
+import type { ApprovalDecision, ApprovalKind, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, ToolFields, TurnState, Workspace, AccountUsage, UsageWindow } from "@amo-studio/protocol";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
@@ -105,6 +105,9 @@ const DECLINED = "The person declined this in AMO Studio.";
 
 export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly live = new Map<Id, Live>();
+  /** The subscription's quota windows, from the rate_limit_event messages of its sessions. */
+  private readonly usageCache = new Map<Id, Map<string, UsageWindow>>();
+  private readonly usageAt = new Map<Id, string>();
   private readonly modelCache = new Map<Id, { at: number; models: ModelOption[] }>();
   /** Queries being closed: a new one for the same session must wait, or the CLI says the session id is in use. */
   private readonly closing = new Map<Id, Promise<void>>();
@@ -185,6 +188,29 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   /** Switches model, effort or permissions; a running Claude Code process takes them at once. */
+  /** The Claude subscription's quota, as the last rate_limit_event messages told it (none: no conversation yet). */
+  async usage(profileId: Id): Promise<AccountUsage | null> {
+    const profile = this.profile(profileId);
+    if (profile.provider !== "anthropic") return null;
+    const windows = [...(this.usageCache.get(profileId)?.values() ?? [])];
+    return { profileId, label: profile.label, windows, note: windows.length ? null : "用 Claude 对话一次后显示", updatedAt: this.usageAt.get(profileId) ?? null };
+  }
+
+  private recordRateLimit(sessionId: Id, info: { rateLimitType?: string; utilization?: number; resetsAt?: number }): void {
+    const session = this.store.getSession(sessionId);
+    if (!session || !info.rateLimitType) return;
+    const labels: Record<string, string> = { five_hour: "5 小时", seven_day: "每周", seven_day_opus: "Opus 每周", seven_day_sonnet: "Sonnet 每周", overage: "超额" };
+    const used = typeof info.utilization === "number" ? (info.utilization <= 1 ? info.utilization * 100 : info.utilization) : null;
+    const windows = this.usageCache.get(session.profileId) ?? new Map<string, UsageWindow>();
+    windows.set(info.rateLimitType, {
+      label: labels[info.rateLimitType] ?? info.rateLimitType,
+      usedPercent: used === null ? null : Math.round(used),
+      resetsAt: info.resetsAt ? new Date(info.resetsAt * 1000).toISOString() : null,
+    });
+    this.usageCache.set(session.profileId, windows);
+    this.usageAt.set(session.profileId, new Date().toISOString());
+  }
+
   /** The session's title in its transcript (what `claude --resume` lists); a session without a transcript yet keeps it here only. */
   async rename(sessionId: Id, title: string): Promise<Session> {
     const session = this.requireSession(sessionId);
@@ -463,6 +489,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const parentToolUse = "parent_tool_use_id" in m ? m.parent_tool_use_id : null;
     if (parentToolUse) return this.onSubagentMessage(live, parentToolUse, m);
     switch (m.type) {
+      case "rate_limit_event": {
+        this.recordRateLimit(sessionId, (m as { rate_limit_info: { rateLimitType?: string; utilization?: number; resetsAt?: number } }).rate_limit_info);
+        return;
+      }
       case "stream_event": {
         const e = m.event as { type: string; index?: number; content_block?: { type: string }; delta?: { type: string; text?: string; thinking?: string } };
         if (e.type === "message_start") {

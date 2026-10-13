@@ -80,6 +80,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     }),
     route("DELETE", "/api/workspaces/:id", ({ params }) => (service.removeWorkspace(params.id!), { ok: true })),
     route("GET", "/api/settings", () => service.settings()),
+    route("GET", "/api/usage", ({ query }) => service.usage(query.get("refresh") === "1")),
     route("PUT", "/api/settings", ({ body }) => service.updateSettings(obj(body))),
     route("GET", "/api/profiles/:id/choices", ({ params }) => service.choices(params.id!)),
     route("PATCH", "/api/sessions/:id/options", ({ params, body }) => service.updateSessionOptions(params.id!, body)),

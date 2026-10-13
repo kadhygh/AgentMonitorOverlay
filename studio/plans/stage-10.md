@@ -32,9 +32,9 @@
 | S10-08 | 留言手动转发的完整流程实测（任务 ↔ 专题会话） | 待做 |
 | S10-09 | 草稿区：移植旧 overlay、可改页数、录制快捷键 | 延后 |
 | S10-10 | 窗口与细节（2026-10-13 第二轮反馈）：自绘标题栏和窗口按钮、暖色选中色、会话列表、模型卡片右键选型号、看板拖拽、模型名去掉"订阅/Flash/5.3"、思考条滚轮、画布分组删除、任务名（新建可填、页内改名）、会话改名写进运行时（Codex thread/name/set、Claude renameSession）、对话里 @ 任务 | ✅ |
-| S10-11 | 左栏：专题和项目可以置顶（pin），@ 时置顶的排前；专题、项目两段可折叠（折叠后只留置顶的）；条目多时可滚动 | 待做 |
-| S10-12 | 左栏底部：Host 状态 + Claude / GPT 用量（剩余额度、重置时间），点击展开/收起 | 待做。数据来源已查到：Codex app-server 的 `account/rateLimits/read`（各窗口已用百分比、重置时间）和 `account/rateLimits/updated` 通知；Claude Agent SDK 的 `rate_limit_event` 与 rate_limits 查询（5 小时 / 7 天 / 按型号；API key 和路由的配置没有） |
-| S10-13 | 评估设计和工程框架是否便于管理、增删模块，给出调整建议 | 待做 |
+| S10-11 | 左栏：专题和项目可以置顶（pin），@ 时置顶的排前；专题、项目两段可折叠（折叠后只留置顶的）；条目多时可滚动 | ✅ `lib/pins.ts`、`board/ScopeNav.tsx` |
+| S10-12 | 左栏底部：Host 状态 + Claude / GPT 用量（剩余额度、重置时间），点击展开/收起 | ✅ `GET /api/usage`、`board/UsageFooter.tsx`。数据来源已查到：Codex app-server 的 `account/rateLimits/read`（各窗口已用百分比、重置时间）和 `account/rateLimits/updated` 通知；Claude Agent SDK 的 `rate_limit_event` 与 rate_limits 查询（5 小时 / 7 天 / 按型号；API key 和路由的配置没有） |
+| S10-13 | 评估设计和工程框架是否便于管理、增删模块，给出调整建议 | ✅ `design/architecture-review-2026-10.md`（R1–R4 等用户决定） |
 | S10-14 | 新图标：第四轮方案等用户选（https://claude.ai/artifact/Lhj2xbspsH2EgmqcrWUPsx） | 等用户 |
 
 ## 记录
