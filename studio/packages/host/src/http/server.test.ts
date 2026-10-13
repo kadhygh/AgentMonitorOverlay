@@ -438,6 +438,24 @@ describe("Host API", () => {
     expect((await ok<StateSnapshot>("GET", "/api/state")).tasks.filter((t) => t.title === "双击批准")).toHaveLength(1);
   });
 
+  it("keeps the common space as a registered workspace the scheduler runs in", async () => {
+    expect(await ok("GET", "/api/settings")).toEqual({ commonWorkspace: null });
+    const dir = join(root, "common", "space");
+    const set = await ok<{ commonWorkspace: Workspace }>("PUT", "/api/settings", { commonDir: dir });
+    expect(set.commonWorkspace).toMatchObject({ path: dir, name: "公共空间" });
+    expect((await ok<StateSnapshot>("GET", "/api/state")).workspaces.map((w) => w.path)).toContain(dir);
+    // An already registered folder is reused; the scheduler's round runs in the common space.
+    expect((await ok<{ commonWorkspace: Workspace }>("PUT", "/api/settings", { commonDir: dir })).commonWorkspace.id).toBe(set.commonWorkspace.id);
+    await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    const round = await ok<{ session: Session }>("POST", "/api/scheduler/run", { profileId: "p-ds" });
+    expect(round.session.workspaceId).toBe(set.commonWorkspace.id);
+    // Clearing it, or removing that workspace, leaves no common space.
+    expect(await ok("PUT", "/api/settings", { commonDir: null })).toEqual({ commonWorkspace: null });
+    await ok("PUT", "/api/settings", { commonDir: dir });
+    writeFileSync(join(root, "a-file"), "x");
+    expect((await api("PUT", "/api/settings", { commonDir: join(root, "a-file") })).status).toBe(400);
+  });
+
   it("saves the canvas with optimistic versions and serves its outline", async () => {
     const { task } = await createTask("canvas");
     const empty = await ok<CanvasDoc>("GET", "/api/canvas");

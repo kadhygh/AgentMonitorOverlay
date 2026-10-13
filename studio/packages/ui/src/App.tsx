@@ -13,6 +13,7 @@ import { useOpenDecisions } from "./task/DecisionPanel.js";
 import { checklistByTask, useChecklist } from "./task/ChecklistPanel.js";
 import { ProposalsPanel, usePendingProposals } from "./board/ProposalsPanel.js";
 import { useTodos } from "./canvas/TodoTab.js";
+import { SettingsDialog, useSettings } from "./settings/SettingsDialog.js";
 
 // `nav` changes when Focus asks for a session, so an already open task page re-opens on that session.
 type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "packs"; workspaceId: string } | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
@@ -42,6 +43,8 @@ export function App() {
   const checklist = useChecklist(host.kind === "ready" ? host.link : NO_LINK);
   const proposals = usePendingProposals(host.kind === "ready" ? host.link : NO_LINK);
   const { todos } = useTodos(host.kind === "ready" ? host.link : NO_LINK);
+  const settings = useSettings(host.kind === "ready" ? host.link : NO_LINK);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   useEffect(
     () =>
@@ -78,6 +81,7 @@ export function App() {
         onBoard={() => setView({ kind: "board" })}
         onCanvas={() => setView({ kind: "canvas" })}
         onNew={() => setView({ kind: "new" })}
+        onSettings={() => setSettingsOpen(true)}
         {...(scope.kind === "workspace" ? { onPacks: () => setView({ kind: "packs", workspaceId: scope.id }) } : {})}
         needs={needs}
         scopeName={scopeName}
@@ -140,6 +144,7 @@ export function App() {
               workspaces={state.workspaces}
               profiles={state.profiles}
               scope={scope}
+              {...(settings?.commonWorkspace ? { commonWorkspaceId: settings.commonWorkspace.id } : {})}
               onBack={() => setView({ kind: "board" })}
               onCreated={(task, session) => setView({ kind: "task", taskId: task.id, sessionId: session.id })}
             />
@@ -164,6 +169,7 @@ export function App() {
           })()}
         </main>
       </div>
+      {settingsOpen && <SettingsDialog link={link} settings={settings} onClose={() => setSettingsOpen(false)} />}
     </div>
   );
 }
@@ -173,6 +179,7 @@ function TopBar({
   onCanvas,
   onPacks,
   onNew,
+  onSettings,
   needs,
   scopeName,
   focus,
@@ -185,6 +192,7 @@ function TopBar({
   /** Only when one workspace is in scope: its extension packs. */
   onPacks?: () => void;
   onNew(): void;
+  onSettings?: () => void;
   needs: number;
   scopeName: string;
   active?: "board" | "canvas" | "packs" | null;
@@ -231,6 +239,11 @@ function TopBar({
           onClick={() => focus.set(!focus.on)}
         >
           Focus {focus.on ? "开" : "关"}
+        </button>
+      )}
+      {onSettings && (
+        <button type="button" className="btn-ghost small" onClick={onSettings} aria-label="设置" title="设置：界面主题、公共空间">
+          设置
         </button>
       )}
       <button type="button" className="btn-primary" onClick={onNew} disabled={disabled}>

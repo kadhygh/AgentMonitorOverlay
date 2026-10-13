@@ -48,6 +48,7 @@ h1{font-size:20px;margin:0} .dim{color:#a0a8b2;font-size:13px}
 button{height:34px;padding:0 14px;border-radius:8px;border:1px solid #2b3036;background:#1f2328;color:#e6e8eb;cursor:pointer}
 button.primary{background:#7fb2ff;color:#0b1626;border-color:#7fb2ff;font-weight:600}
 ul{margin:0;padding-left:20px} .ok{color:#8fddb0} .bad{color:#f2b544} #error{color:#ff8a8a}
+@media (prefers-color-scheme: light){body{background:#f5f6f8;color:#1b2027}.dim{color:#5a6572}input{background:#fff;color:#1b2027;border-color:#dbe0e6}button{background:#f2f4f7;color:#1b2027;border-color:#dbe0e6}button.primary{background:#2f6fd6;color:#fff;border-color:#2f6fd6}.ok{color:#1d7645}.bad{color:#b06f08}#error{color:#c22f35}}
 </style></head><body><main>
 <h1>欢迎使用 AMO Studio</h1>
 <div class="dim">这是 Portable 版：程序和数据都可以放在同一个文件夹里，拷走即可带走。</div>

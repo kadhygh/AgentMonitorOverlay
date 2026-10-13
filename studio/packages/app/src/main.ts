@@ -1,4 +1,4 @@
-import { app, BrowserWindow, clipboard, dialog, ipcMain, screen, shell } from "electron";
+import { app, BrowserWindow, clipboard, dialog, ipcMain, nativeTheme, screen, shell } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, stopHost, type HostConnection } from "./host-link.js";
@@ -186,7 +186,8 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
     minWidth: 960,
     minHeight: 600,
     title: "AMO Studio",
-    backgroundColor: "#111316",
+    // Before the page paints (the page then applies the chosen theme).
+    backgroundColor: nativeTheme.shouldUseDarkColors ? "#111316" : "#f5f6f8",
     // Test windows sit off-screen, out of the taskbar, and are shown without activation so they keep painting for
     // capturePage but never take focus (LOOP_RULES red line 7).
     show: false,

@@ -284,7 +284,7 @@ export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], o
           <svg className="canvas-edges" aria-hidden="true">
             <defs>
               <marker id="amo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
-                <path d="M0 0 L10 5 L0 10 Z" fill="#7c8794" />
+                <path d="M0 0 L10 5 L0 10 Z" style={{ fill: "var(--edge)" }} />
               </marker>
             </defs>
             {shown?.edges.map((e) => {
