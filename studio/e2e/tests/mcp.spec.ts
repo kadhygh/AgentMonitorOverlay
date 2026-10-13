@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { CanvasDoc, Session, Task, Workspace } from "@amo-studio/protocol";
+import type { CanvasDoc, Session, Task, Workspace, Topic } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 // Managed sessions get the AMO MCP automatically: a Codex session (over HTTP with an MCP-only token) and a Claude
@@ -16,8 +16,9 @@ test("Codex and Claude sessions read the canvas through the AMO MCP", async () =
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const canvas = await studio.api<CanvasDoc>("GET", "/api/canvas");
-  await studio.api("PUT", "/api/canvas", { ...canvas, groups: [{ id: "g1", title: "掉落表", workspaceId: ws.id, rect: { x: 0, y: 0, w: 400, h: 300 } }] });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
+  const canvas = await studio.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+  await studio.api("PUT", `/api/topics/${topic.id}/canvas`, { ...canvas, groups: [{ id: "g1", title: "掉落表", workspaceId: ws.id, rect: { x: 0, y: 0, w: 400, h: 300 } }] });
 
   for (const [profileId, title] of [
     ["codex-mock", "Codex 读画布"],
@@ -25,7 +26,7 @@ test("Codex and Claude sessions read the canvas through the AMO MCP", async () =
   ] as const) {
     await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
       title,
-      workspaceId: ws.id,
+      workspaceId: ws.id, topicId: topic.id,
       firstSession: { profileId, text: "[[mcp: canvas_read]]" },
     });
     await page.getByRole("button", { name: "← 看板" }).click().catch(() => undefined);
@@ -45,13 +46,14 @@ test("Codex and Claude sessions read the canvas through the AMO MCP", async () =
 test("Codex and Claude sessions record progress on their own task through the AMO MCP", async () => {
   studio = await launchStudio();
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
   for (const [profileId, title] of [
     ["codex-mock", "Codex 记进度"],
     ["claude-mock", "Claude 记进度"],
   ] as const) {
     const { task, session } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
       title,
-      workspaceId: ws.id,
+      workspaceId: ws.id, topicId: topic.id,
       firstSession: { profileId, text: `[[mcp: task_note_add {"text":"${title}：导入已改完"}]]` },
     });
     // Writing to its own task needs no approval; the note carries the session that wrote it.
@@ -67,14 +69,15 @@ test("canvas changes from Codex and Claude sessions wait for the person's approv
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const groups = async () => (await studio!.api<CanvasDoc>("GET", "/api/canvas")).groups.map((g) => g.title);
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
+  const groups = async () => (await studio!.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).groups.map((g) => g.title);
   for (const [profileId, title] of [
     ["codex-mock", "Codex 建的组"],
     ["claude-mock", "Claude 建的组"],
   ] as const) {
     await studio.api("POST", "/api/tasks", {
       title,
-      workspaceId: ws.id,
+      workspaceId: ws.id, topicId: topic.id,
       firstSession: { profileId, text: `[[mcp: canvas_group_create {"title":"${title}"}]]` },
     });
     await page.getByRole("button", { name: "← 看板" }).click().catch(() => undefined);

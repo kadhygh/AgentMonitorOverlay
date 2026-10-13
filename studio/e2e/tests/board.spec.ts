@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Session, Task, Workspace } from "@amo-studio/protocol";
+import type { Session, Task, Topic, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, windowState, type Studio } from "./studio.js";
 
 let studio: Studio | undefined;
@@ -16,14 +16,16 @@ test("registers a sandbox workspace and shows tasks on the board", async () => {
 
   // Register through the UI (path input; the native folder picker is not driven in tests).
   const alpha = studio.workspace("alpha");
-  await page.getByRole("button", { name: "+ 登记工作区" }).click();
-  await page.getByLabel("工作区路径").fill(alpha);
+  await page.getByRole("button", { name: "+ 添加项目" }).click();
+  await page.getByLabel("项目路径").fill(alpha);
   await page.getByRole("button", { name: "登记", exact: true }).click();
   await expect(page.getByTestId("scope-ws-alpha")).toBeVisible();
+  // The common space is a project nobody picks: never listed.
+  await expect(page.locator('[data-testid^="scope-ws-"]')).toHaveCount(1);
   await expect(page.locator(".brand")).toContainText("alpha");
 
   // Tasks are created through the API here; the new-task page arrives in S1-10.
-  const ws = (await studio.api<{ workspaces: Workspace[] }>("GET", "/api/state")).workspaces[0]!;
+  const ws = (await studio.api<{ workspaces: Workspace[] }>("GET", "/api/state")).workspaces.find((w) => !w.builtin)!;
   const waiting = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "校验掉落表",
     workspaceId: ws.id,
@@ -46,11 +48,15 @@ test("registers a sandbox workspace and shows tasks on the board", async () => {
   await expect(page.getByTestId("needs-you")).toHaveText(/需要你 1/);
   await expect(page.getByTestId("column-todo")).toContainText("空");
 
-  // Scope filter: nothing is cross-workspace yet.
-  await page.getByTestId("scope-area").click();
+  // Scope filter: a topic holds only its own tasks.
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "掉落表重构" });
+  await page.getByTestId("scope-topic-掉落表重构").click();
   await expect(page.getByTestId("task-card")).toHaveCount(0);
+  await studio.api("PATCH", `/api/tasks/${quiet.task.id}`, { topicId: topic.id });
+  await expect(page.getByTestId("task-card")).toHaveCount(1);
   await page.getByTestId("scope-all").click();
   await expect(page.getByTestId("task-card")).toHaveCount(2);
+  await expect(page.getByTestId("column-review").getByTestId("task-card")).toContainText("专题 掉落表重构");
 
   expect(waiting.session.kind).toBe("main");
   expect(await windowState(studio.app)).toMatchObject({ focused: false, anyFocused: false, onScreen: false });
@@ -60,8 +66,8 @@ test("registers a sandbox workspace and shows tasks on the board", async () => {
 test("rejects a path that is not a directory", async () => {
   studio = await launchStudio({ mockModel: false });
   const { page } = studio;
-  await page.getByRole("button", { name: "+ 登记工作区" }).click();
-  await page.getByLabel("工作区路径").fill(`${studio.root}\\does-not-exist`);
+  await page.getByRole("button", { name: "+ 添加项目" }).click();
+  await page.getByLabel("项目路径").fill(`${studio.root}\\does-not-exist`);
   await page.getByRole("button", { name: "登记", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("not a directory");
 });

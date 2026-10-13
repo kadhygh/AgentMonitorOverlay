@@ -384,7 +384,7 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
           onClearSelection={() => setSelectionState(null)}
           onOpenTask={onOpenTask}
           newId={newCanvasId}
-          todoTab={<TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} activity={activity} />}
+          todoTab={<TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} activity={activity} topicId={topic.id} />}
           agentTab={<AgentTab link={link} topicId={topic.id} />}
         />
       )}

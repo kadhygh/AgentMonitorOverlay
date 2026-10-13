@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { CanvasDoc, Session, Task, TodoItem, Workspace } from "@amo-studio/protocol";
+import type { CanvasDoc, Session, Task, TodoItem, Workspace, Topic } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 // Stage 7: whole-picture todos become tasks, projects show whether they are free, and the scheduler proposes work
@@ -12,12 +12,13 @@ test.afterEach(async () => {
   studio = undefined;
 });
 
-test("a todo becomes a task in the group bound to its workspace", async () => {
+test("a todo converted on a topic's canvas joins the topic, in the group bound to its workspace", async () => {
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const canvas = await studio.api<CanvasDoc>("GET", "/api/canvas");
-  await studio.api("PUT", "/api/canvas", { ...canvas, groups: [{ id: "g-alpha", title: "alpha 玩法", workspaceId: ws.id, rect: { x: 40, y: 60, w: 520, h: 320 } }] });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
+  const canvas = await studio.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+  await studio.api("PUT", `/api/topics/${topic.id}/canvas`, { ...canvas, groups: [{ id: "g-alpha", title: "alpha 玩法", workspaceId: ws.id, rect: { x: 40, y: 60, w: 520, h: 320 } }] });
   await studio.api<TodoItem>("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: ws.id });
 
   await page.getByRole("button", { name: "画布", exact: true }).click();
@@ -33,7 +34,7 @@ test("a todo becomes a task in the group bound to its workspace", async () => {
   // The new task opens; it sits in the bound group; nothing was sent to a model.
   await expect(page.locator(".page-head")).toContainText("统一掉落表格式");
   const task = (await studio.api<{ tasks: Task[]; sessions: Session[] }>("GET", "/api/state")).tasks.find((t) => t.title === "统一掉落表格式")!;
-  expect((await studio.api<CanvasDoc>("GET", "/api/canvas")).nodes.find((n) => n.kind === "task" && n.taskId === task.id)?.groupId).toBe("g-alpha");
+  expect((await studio.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).nodes.find((n) => n.kind === "task" && n.taskId === task.id)?.groupId).toBe("g-alpha");
   await expect(page.getByTestId("msg-user")).toHaveCount(0);
 
   // Back on the canvas the todo is done and links to its task.
@@ -48,9 +49,10 @@ test("canvas groups bound to a workspace say whether the project is free", async
   studio = await launchStudio();
   const { page } = studio;
   const alpha = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
   const beta = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("beta") });
-  const canvas = await studio.api<CanvasDoc>("GET", "/api/canvas");
-  await studio.api("PUT", "/api/canvas", {
+  const canvas = await studio.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+  await studio.api("PUT", `/api/topics/${topic.id}/canvas`, {
     ...canvas,
     groups: [
       { id: "g-alpha", title: "alpha 玩法", workspaceId: alpha.id, rect: { x: 40, y: 60, w: 420, h: 260 } },
@@ -60,7 +62,7 @@ test("canvas groups bound to a workspace say whether the project is free", async
   await studio.api<TodoItem>("POST", "/api/todos", { text: "alpha 的事", workspaceId: alpha.id });
   await studio.api<TodoItem>("POST", "/api/todos", { text: "beta 的事", workspaceId: beta.id });
   // A slow turn keeps alpha busy for a while.
-  await studio.api("POST", "/api/tasks", { title: "跑着的", workspaceId: alpha.id, firstSession: { profileId: "codex-mock", text: "慢慢来 [[slow]]" } });
+  await studio.api("POST", "/api/tasks", { title: "跑着的", workspaceId: alpha.id, topicId: topic.id, firstSession: { profileId: "codex-mock", text: "慢慢来 [[slow]]" } });
 
   await page.getByRole("button", { name: "画布", exact: true }).click();
   const group = (title: string) => page.locator(".canvas-group").filter({ hasText: title }).getByTestId("group-activity");
@@ -80,6 +82,7 @@ test("scheduler proposals wait on the board until the person approves or rejects
   studio = await launchStudio();
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
   const a = await studio.api<TodoItem>("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: ws.id });
   const b = await studio.api<TodoItem>("POST", "/api/todos", { text: "清理导表脚本", workspaceId: ws.id });
   await studio.api("POST", "/api/proposals", { todoId: a.id, profileId: "claude-mock", prompt: "统一 drops.json 的字段", reason: "alpha 空闲，这条最早" });
@@ -113,8 +116,9 @@ test("stage 7 acceptance: a scheduler round by hand, a proposal, approval, work 
   studio = await launchStudio();
   const { page } = studio;
   const alpha = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const canvas = await studio.api<CanvasDoc>("GET", "/api/canvas");
-  await studio.api("PUT", "/api/canvas", { ...canvas, groups: [{ id: "g-alpha", title: "alpha 玩法", workspaceId: alpha.id, rect: { x: 40, y: 60, w: 520, h: 300 } }] });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
+  const canvas = await studio.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+  await studio.api("PUT", `/api/topics/${topic.id}/canvas`, { ...canvas, groups: [{ id: "g-alpha", title: "alpha 玩法", workspaceId: alpha.id, rect: { x: 40, y: 60, w: 520, h: 300 } }] });
   const todo = await studio.api<TodoItem>("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: alpha.id });
 
   // The person starts one round from the todo tab; the round's session opens in the fixed "调度" task.
@@ -135,7 +139,7 @@ test("stage 7 acceptance: a scheduler round by hand, a proposal, approval, work 
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-MCP:", { timeout: 60_000 });
   await expect(page.getByTestId("needs-you")).toHaveText(/需要你 1/);
 
-  // On the board: approve; the todo's task starts in the bound group with the proposed prompt.
+  // On the board: approve; the todo's task starts with the proposed prompt.
   await page.getByRole("button", { name: "← 看板" }).click();
   const card = page.getByTestId("proposal-card");
   await expect(card).toContainText("统一掉落表格式");
@@ -146,6 +150,7 @@ test("stage 7 acceptance: a scheduler round by hand, a proposal, approval, work 
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 统一 drops.json 的字段", { timeout: 60_000 });
   const state = await studio.api<{ tasks: Task[] }>("GET", "/api/state");
   const task = state.tasks.find((t) => t.title === "统一掉落表格式")!;
-  expect((await studio.api<CanvasDoc>("GET", "/api/canvas")).nodes.find((n) => n.kind === "task" && n.taskId === task.id)?.groupId).toBe("g-alpha");
+  // A proposal is approved on the board, outside any topic: the task joins none.
+  expect(task.topicId).toBeNull();
   expect((await studio.api<TodoItem[]>("GET", "/api/todos")).find((t) => t.id === todo.id)).toMatchObject({ done: true, taskId: task.id });
 });

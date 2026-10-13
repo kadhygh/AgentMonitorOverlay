@@ -192,9 +192,10 @@ export interface HostRoutes {
   "DELETE /api/todos/:id": { req: void; res: { ok: true } };
   /**
    * Turns a todo into a task (in its workspace unless one is given) with one session; `text` starts it, otherwise no
-   * model is called. The todo is marked done.
+   * model is called. With `topicId` (converted on a topic's canvas) the task joins that topic, in the group bound to
+   * its workspace if the canvas has one. The todo is marked done.
    */
-  "POST /api/todos/:id/convert": { req: { workspaceId?: Id; profileId: Id; text?: string }; res: { todo: TodoItem; task: Task; session: Session } };
+  "POST /api/todos/:id/convert": { req: { workspaceId?: Id; profileId: Id; text?: string; topicId?: Id }; res: { todo: TodoItem; task: Task; session: Session } };
   /** Progress notes and handoff summaries on a task, oldest first. The person can add notes too. */
   "GET /api/tasks/:id/notes": { req: void; res: TaskNote[] };
   "POST /api/tasks/:id/notes": { req: { text: string }; res: TaskNote };

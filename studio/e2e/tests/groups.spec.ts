@@ -1,5 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
-import type { CanvasDoc, Workspace } from "@amo-studio/protocol";
+import type { CanvasDoc, Workspace, Topic } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 let studio: Studio | undefined;
@@ -21,8 +21,9 @@ test("canvas groups: create, rename, bind, move with members, resize, membership
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  await studio.api("POST", "/api/tasks", { title: "整理导入流程", workspaceId: ws.id, firstSession: { profileId: "codex-mock" } });
-  const canvas = () => studio!.api<CanvasDoc>("GET", "/api/canvas");
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
+  await studio.api("POST", "/api/tasks", { title: "整理导入流程", workspaceId: ws.id, topicId: topic.id, firstSession: { profileId: "codex-mock" } });
+  const canvas = () => studio!.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
 
   await page.getByRole("button", { name: "画布", exact: true }).click();
   await page.getByRole("button", { name: "复位" }).click();

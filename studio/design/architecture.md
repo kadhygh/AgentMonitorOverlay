@@ -10,7 +10,7 @@ AMO Studio.exe（Electron 主进程，packages/app）
  └─ 启动或连接 Host（同一个 exe，ELECTRON_RUN_AS_NODE；常驻，关窗口不退出）
       Host（packages/host）
        ├─ HTTP + WebSocket API（127.0.0.1，令牌鉴权；端口默认 47900）
-       ├─ Store：node:sqlite，数据目录下 studio.db（迁移 v1–v5）
+       ├─ Store：node:sqlite，数据目录下 studio.db（迁移 v1–v7；v7 是组织结构 v2，见 design/structure.md）
        ├─ Codex 运行时：每个模型配置一个 codex app-server（47910–47949），JSON-RPC over WebSocket
        ├─ Claude 运行时：Claude Agent SDK（自带 claude.exe），每个会话一个查询
        └─ AMO MCP：Codex 走 HTTP /mcp（每个线程带自己的身份请求头），Claude 走进程内 MCP 服务

@@ -721,31 +721,36 @@ export class HostService extends EventEmitter<HostServiceEvents> {
 
   /**
    * Turns a todo into a task in its workspace (or the one given; the common space when neither), with one session and
-   * no first message (no model call). The todo is done and points at it.
+   * no first message (no model call). Converted on a topic's canvas, the task joins that topic, in the group bound to
+   * its workspace if there is one. The todo is done and points at it.
    */
-  async convertTodo(id: Id, input: { workspaceId?: unknown; profileId?: unknown; text?: unknown }): Promise<{ todo: TodoItem; task: Task; session: Session }> {
+  async convertTodo(id: Id, input: { workspaceId?: unknown; profileId?: unknown; text?: unknown; topicId?: unknown }): Promise<{ todo: TodoItem; task: Task; session: Session }> {
     const todo = this.store.getTodo(id);
     if (!todo) throw new HostError("not_found", `todo ${id} not found`);
     if (todo.taskId) throw new HostError("conflict", "this todo is already a task");
     const workspaceId = this.optionalWorkspace(input?.workspaceId) ?? todo.workspaceId ?? this.commonWorkspace().id;
     if (typeof input?.profileId !== "string") throw new HostError("bad_request", "profileId is required");
+    const topicId = typeof input.topicId === "string" && input.topicId ? this.requireLiveTopic(input.topicId).id : null;
     // Starting the session awaits the runtime; a second convert (or approval) meanwhile must not make a second task.
     if (this.converting.has(id)) throw new HostError("conflict", "this todo is being turned into a task");
     this.converting.add(id);
     try {
-      return await this.convertTodoNow(todo, workspaceId, input.profileId, input.text);
+      return await this.convertTodoNow(todo, workspaceId, input.profileId, input.text, topicId);
     } finally {
       this.converting.delete(id);
     }
   }
 
-  private async convertTodoNow(todo: TodoItem, workspaceId: Id, profileId: string, textIn: unknown): Promise<{ todo: TodoItem; task: Task; session: Session }> {
+  private async convertTodoNow(todo: TodoItem, workspaceId: Id, profileId: string, textIn: unknown, topicId: Id | null = null): Promise<{ todo: TodoItem; task: Task; session: Session }> {
     const text = typeof textIn === "string" && textIn.trim() ? textIn.trim() : undefined;
     const { task, session } = await this.createTask({
       title: todo.text.slice(0, 100),
       workspaceId,
+      topicId,
       firstSession: { profileId, ...(text ? { text } : {}) },
     });
+    const group = topicId ? this.canvas(topicId).groups.find((g) => g.workspaceId === workspaceId) : undefined;
+    if (group) this.canvasPlaceTask(task.id, group.id);
     const next: TodoItem = { ...todo, workspaceId, taskId: task.id, done: true };
     this.store.putTodo(next);
     this.publish({ type: "todo.upserted", todo: next });

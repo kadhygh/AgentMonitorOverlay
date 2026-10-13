@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
-import type { Session, Task, Workspace } from "@amo-studio/protocol";
+import type { Session, Task, Workspace, Topic, StateSnapshot, StudioSettings } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 // 设置: the theme (dark, light, or following the system; remembered, shared with Focus) and the common space.
@@ -18,7 +18,8 @@ test("light theme from the settings dialog, remembered and shared with Focus", a
   studio = await launchStudio();
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "导入重试", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "[[markdown]]" } });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "导入重试", workspaceId: ws.id, topicId: topic.id, firstSession: { profileId: "codex-mock", text: "[[markdown]]" } });
 
   // Explicit dark first (the test machine's own theme must not decide the result).
   await page.getByRole("button", { name: "设置" }).click();
@@ -57,35 +58,42 @@ test("light theme from the settings dialog, remembered and shared with Focus", a
   await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
 });
 
-test("the common space: a folder for the scheduler and cross-workspace sessions", async () => {
+test("the common folder: where work without a project runs, moved in settings", async () => {
   studio = await launchStudio();
   const { page } = studio;
   await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  const common = join(studio.root, "common");
+  const elsewhere = join(studio.root, "elsewhere");
 
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
-  await dialog.getByLabel("公共空间目录").fill(common);
-  await dialog.getByRole("region", { name: "公共空间" }).getByRole("button", { name: "保存" }).click();
-  await expect(dialog.getByTestId("settings-message")).toHaveText(`公共空间：${common}`);
-  // It is a registered workspace now, shown in the left column.
-  await expect(page.getByTestId("scope-ws-公共空间")).toBeVisible();
+  // By default it sits in the data folder.
+  await expect(dialog.getByRole("textbox", { name: "公共目录" })).toHaveValue(/common$/);
+  await dialog.getByRole("textbox", { name: "公共目录" }).fill(elsewhere);
+  await dialog.getByRole("region", { name: "公共目录" }).getByRole("button", { name: "保存" }).click();
+  await expect(dialog.getByTestId("settings-message")).toHaveText(`公共目录：${elsewhere}`);
   await page.keyboard.press("Escape");
+  // It is not a project: the left column lists only alpha.
+  await expect(page.locator('[data-testid^="scope-ws-"]')).toHaveCount(1);
 
-  // A cross-workspace task's first session defaults to it.
+  // A task filed without a project runs there.
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await page.getByRole("group", { name: "任务范围" }).getByRole("button", { name: "跨工作区" }).click();
-  await expect(page.getByLabel("首个会话在").locator("option:checked")).toHaveText("公共空间");
+  await page.getByLabel("任务标题").fill("随手记一件事");
+  await page.getByRole("button", { name: "放进待办" }).click();
+  const { commonWorkspace } = await studio.api<StudioSettings>("GET", "/api/settings");
+  expect(commonWorkspace.path).toBe(elsewhere);
+  const state = await studio.api<StateSnapshot>("GET", "/api/state");
+  expect(state.tasks.find((t) => t.title === "随手记一件事")?.workspaceId).toBe(commonWorkspace.id);
 });
 
 test("the Claude subscription token is saved in settings, then Claude sessions run on it", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
   const start = () =>
     studio!.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
       title: "订阅",
-      workspaceId: ws.id,
+      workspaceId: ws.id, topicId: topic.id,
       firstSession: { profileId: "claude-subscription", text: "hello" },
     });
   // Without a token the session cannot start, and says how to get one.

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { CanvasDoc, Task, Workspace } from "@amo-studio/protocol";
+import type { CanvasDoc, Task, Workspace, Topic } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 let studio: Studio | undefined;
@@ -13,12 +13,13 @@ test("dependencies from the sidebar and notes on the canvas", async () => {
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
   const ids: Record<string, string> = {};
   for (const title of ["拆表", "改导入", "跑校验"]) {
-    const { task } = await studio.api<{ task: Task }>("POST", "/api/tasks", { title, workspaceId: ws.id, firstSession: { profileId: "codex-mock" } });
+    const { task } = await studio.api<{ task: Task }>("POST", "/api/tasks", { title, workspaceId: ws.id, topicId: topic.id, firstSession: { profileId: "codex-mock" } });
     ids[title] = task.id;
   }
-  const canvas = () => studio!.api<CanvasDoc>("GET", "/api/canvas");
+  const canvas = () => studio!.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
 
   await page.getByRole("button", { name: "画布", exact: true }).click();
   await page.getByRole("button", { name: "复位" }).click();

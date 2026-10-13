@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { CanvasDoc, TodoItem, Workspace } from "@amo-studio/protocol";
+import type { CanvasDoc, TodoItem, Workspace, Topic } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 let studio: Studio | undefined;
@@ -13,7 +13,8 @@ test("canvas sidebar: whole-picture todos and the agent view", async () => {
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-  await studio.api("POST", "/api/tasks", { title: "整理导入流程", workspaceId: ws.id, firstSession: { profileId: "codex-mock" } });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
+  await studio.api("POST", "/api/tasks", { title: "整理导入流程", workspaceId: ws.id, topicId: topic.id, firstSession: { profileId: "codex-mock" } });
   await page.getByRole("button", { name: "画布", exact: true }).click();
   await expect(page.getByTestId("canvas-card")).toHaveCount(1);
 
@@ -40,7 +41,7 @@ test("canvas sidebar: whole-picture todos and the agent view", async () => {
   await expect(view).toContainText("未分组");
   await expect(view).toContainText("整理导入流程");
   await page.getByRole("button", { name: "+ 分组" }).click();
-  await expect.poll(async () => (await studio!.api<CanvasDoc>("GET", "/api/canvas")).groups.length).toBe(1);
+  await expect.poll(async () => (await studio!.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).groups.length).toBe(1);
   await page.getByRole("tab", { name: "agent 视角" }).click();
   await expect(view).toContainText("分组「新分组」");
   await page.getByRole("button", { name: "JSON" }).click();

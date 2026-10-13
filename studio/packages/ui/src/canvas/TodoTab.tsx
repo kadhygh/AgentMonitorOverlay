@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { ModelProfile, TodoItem, Workspace, WorkspaceActivity } from "@amo-studio/protocol";
+import { projectWorkspaces, type ModelProfile, type TodoItem, type Workspace, type WorkspaceActivity } from "@amo-studio/protocol";
 import { defaultProfile, profileLabel, rememberProfile } from "../lib/profiles.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
@@ -42,15 +42,19 @@ export function TodoTab({
   profiles = [],
   onOpenTask,
   activity,
+  topicId,
 }: {
   link: HostLink;
   workspaces: readonly Workspace[];
   profiles?: readonly ModelProfile[];
   onOpenTask?(taskId: string, sessionId?: string): void;
+  /** The topic whose canvas shows this tab: converted todos join it. */
+  topicId?: string;
   /** Whether each workspace is free: open todos for free projects come first and say so. */
   activity?: ReadonlyMap<string, WorkspaceActivity>;
 }) {
   const { todos, setDone } = useTodos(link);
+  const projects = projectWorkspaces(workspaces);
   const [converting, setConverting] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [workspaceId, setWorkspaceId] = useState("");
@@ -102,8 +106,9 @@ export function TodoTab({
         <ConvertForm
           link={link}
           todo={t}
-          workspaces={workspaces}
+          workspaces={projects}
           profiles={profiles}
+          {...(topicId ? { topicId } : {})}
           onDone={(taskId) => {
             setConverting(null);
             onOpenTask?.(taskId);
@@ -127,7 +132,7 @@ export function TodoTab({
         <input className="field" value={text} onChange={(e) => setText(e.target.value)} placeholder="记一件还没成任务的事，回车添加" aria-label="新待办" />
         <select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} aria-label="适合的工作区">
           <option value="">不限工作区</option>
-          {workspaces.map((w) => (
+          {projects.map((w) => (
             <option key={w.id} value={w.id}>
               {w.name}
             </option>
@@ -148,12 +153,14 @@ function ConvertForm({
   todo,
   workspaces,
   profiles,
+  topicId,
   onDone,
   onCancel,
 }: {
   link: HostLink;
   todo: TodoItem;
   workspaces: readonly Workspace[];
+  topicId?: string;
   profiles: readonly ModelProfile[];
   onDone(taskId: string): void;
   onCancel(): void;
@@ -166,7 +173,7 @@ function ConvertForm({
     setBusy(true);
     setError("");
     try {
-      const r = await call(link, "POST /api/todos/:id/convert", { id: todo.id }, { workspaceId, profileId });
+      const r = await call(link, "POST /api/todos/:id/convert", { id: todo.id }, { workspaceId, profileId, ...(topicId ? { topicId } : {}) });
       rememberProfile(profileId);
       onDone(r.task.id);
     } catch (err) {

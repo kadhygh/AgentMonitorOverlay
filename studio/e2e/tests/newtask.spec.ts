@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Session, StateSnapshot, Workspace } from "@amo-studio/protocol";
+import type { StateSnapshot, StudioSettings, Topic, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 let studio: Studio | undefined;
@@ -23,10 +23,13 @@ test("creates a task from the blank task page and streams the first reply", asyn
 
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await expect(page.getByText("要推进什么？")).toBeVisible();
-  // Title sits below the question and may stay empty; the first workspace is preselected.
+  // Title sits below the question and may stay empty; no project is picked until the person picks one.
   await expect(page.getByLabel("任务标题")).toHaveValue("");
-  await expect(page.getByRole("group", { name: "任务范围" }).getByRole("button", { name: "alpha" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("scope-hint")).toContainText("任务会建在 alpha");
+  const projects = page.getByRole("group", { name: "项目" });
+  await expect(projects.getByRole("button", { name: "不指定" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("scope-hint")).toContainText("不指定项目：在公共目录里运行");
+  await projects.getByRole("button", { name: "alpha" }).click();
+  await expect(page.getByTestId("scope-hint")).toContainText("在 alpha 里运行");
   await expect(page.getByLabel("模型")).toHaveValue("codex-mock");
   await screenshot(studio.app, "stage-1", "S1-10-new-task", page);
 
@@ -45,31 +48,37 @@ test("creates a task from the blank task page and streams the first reply", asyn
   await expect(page.getByTestId("column-doing").getByTestId("task-card")).toHaveCount(1);
 });
 
-test("creates a cross-workspace task with the first session in the chosen workspace", async () => {
+test("files a task into 待办 in the topic in scope, without starting a session", async () => {
   studio = await launchStudio();
   const { page } = studio;
   const [, beta] = await registerWorkspaces(studio, ["alpha", "beta"]);
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "掉落表重构" });
+  await page.getByTestId("scope-topic-掉落表重构").click();
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await page.getByLabel("任务标题").fill("统一配置键名");
-  await page.getByRole("group", { name: "任务范围" }).getByRole("button", { name: "跨工作区" }).click();
-  await expect(page.getByTestId("scope-hint")).toContainText("跨工作区任务");
-  await page.getByLabel("首个会话在").selectOption({ label: "beta" });
-  await page.getByLabel("第一句话").fill("先列出两边的配置键");
-  await page.getByLabel("第一句话").press("Enter");
+  await expect(page.getByRole("group", { name: "专题" }).getByRole("button", { name: "掉落表重构" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("group", { name: "项目" }).getByRole("button", { name: "beta" }).click();
+  await page.getByLabel("任务标题").fill("Elite 掉落表补单元测试");
+  await page.getByRole("button", { name: "放进待办" }).click();
 
-  await expect(page.getByTestId("task-title")).toHaveText("统一配置键名");
-  await expect(page.getByTestId("msg-agent")).toContainText("MOCK: 先列出两边的配置键", { timeout: 30_000 });
+  // Back on the board, in 待办; nothing ran.
+  await expect(page.getByTestId("column-todo").getByTestId("task-card")).toContainText("Elite 掉落表补单元测试");
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
-  const task = state.tasks.find((t) => t.title === "统一配置键名")!;
-  expect(task.topicId).toBeNull(); // TODO(stage 10): this cross-workspace flow is replaced by topics; rewrite with the new task page
-  const session = state.sessions.find((s: Session) => s.taskId === task.id)!;
-  expect(session.workspaceId).toBe(beta!.id);
+  const task = state.tasks.find((t) => t.title === "Elite 掉落表补单元测试")!;
+  expect(task).toMatchObject({ workspaceId: beta!.id, topicId: topic.id, column: "todo" });
+  expect(state.sessions.filter((s) => s.taskId === task.id)).toEqual([]);
 });
 
-test("asks for a workspace before a task can start", async () => {
-  studio = await launchStudio({ mockModel: false });
+test("a task without a project runs in the common folder", async () => {
+  studio = await launchStudio();
   const { page } = studio;
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await expect(page.getByTestId("scope-hint")).toHaveText("先在左栏登记一个工作区。");
-  await expect(page.getByRole("button", { name: "开始" })).toBeDisabled();
+  await page.getByLabel("第一句话").fill("Rust 生命周期报错怎么理解");
+  await page.getByLabel("第一句话").press("Enter");
+  await expect(page.getByTestId("msg-agent")).toContainText("MOCK: Rust 生命周期报错怎么理解", { timeout: 30_000 });
+  const { commonWorkspace } = await studio.api<StudioSettings>("GET", "/api/settings");
+  const state = await studio.api<StateSnapshot>("GET", "/api/state");
+  expect(state.tasks[0]!.workspaceId).toBe(commonWorkspace.id);
+  expect(state.sessions[0]!.workspaceId).toBe(commonWorkspace.id);
+  // The page names no project for it.
+  await expect(page.locator(".page-head")).toContainText("未指定项目");
 });
