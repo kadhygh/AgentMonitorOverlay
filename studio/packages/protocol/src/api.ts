@@ -408,3 +408,9 @@ export interface HostRoutes {
   "PATCH /api/file-marks/:id": { req: import("./marks.js").FileMarkPatch; res: import("./marks.js").FileMark };
   "DELETE /api/file-marks/:id": { req: void; res: { ok: true } };
 }
+
+// ---- files named in a conversation (stage 12, S12-C): which exist, so only those become links -------------------
+export interface HostRoutes {
+  /** Which of the paths exist (at most MAX_EXISTS_PATHS); relative ones resolve against `cwd` or the project. */
+  "POST /api/fs/exists": { req: import("./chatfiles.js").FsExistsRequest; res: import("./chatfiles.js").FsExistsResult };
+}

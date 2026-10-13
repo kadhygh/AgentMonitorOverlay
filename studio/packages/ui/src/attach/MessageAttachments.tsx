@@ -6,6 +6,7 @@ import { copyText } from "../host/client.js";
 import { lineSuffix } from "@amo-studio/protocol";
 import { baseName, dirName, type FileRefItem } from "./refs.js";
 import { IconFile } from "./icons.js";
+import { FileLink } from "../files/FileLinks.js";
 
 // What a person's message carries besides its text, as the transcript shows it: image thumbnails (click for a larger
 // view) and chips of the referenced files.
@@ -38,7 +39,11 @@ export function MessageImages({ images }: { images: readonly MessageImage[] }) {
   );
 }
 
-/** Referenced files: name first (with a marked range), then a marked file's note (S12-D) or the folder dimmed; click copies the path. */
+/**
+ * Referenced files: name first (with a marked range), then a marked file's note (S12-D) or the folder dimmed. In a
+ * conversation with file links (stage 12) a click opens the quick look at the marked line; otherwise, or while the
+ * file is not found, a click copies the path.
+ */
 export function MessageFiles({ files }: { files: readonly (string | FileRefItem)[] }) {
   const [copied, setCopied] = useState<string | null>(null);
   if (!files.length) return null;
@@ -48,24 +53,40 @@ export function MessageFiles({ files }: { files: readonly (string | FileRefItem)
         const ref = typeof file === "string" ? { path: file } : file;
         const path = ref.path;
         const lines = lineSuffix(ref.startLine, ref.endLine);
-        return (
-          <button
-            key={`${path}${lines}`}
-            type="button"
-            className="file-chip"
-            data-testid="msg-file"
-            title={`${path}${lines}${ref.note ? `\n说明：${ref.note}` : ""}\n点击复制路径`}
-            onClick={() => {
-              void copyText(path);
-              setCopied(path);
-              setTimeout(() => setCopied((c) => (c === path ? null : c)), 1200);
-            }}
-          >
+        const tip = `${path}${lines}${ref.note ? `\n说明：${ref.note}` : ""}`;
+        const body = (label: string, extra: boolean) => (
+          <>
             <IconFile />
-            <span className="file-chip-name">{copied === path ? "已复制路径" : `${baseName(path)}${lines}`}</span>
-            {copied !== path && ref.note && <span className="file-chip-note">{ref.note}</span>}
-            {copied !== path && !ref.note && dirName(path) && <span className="file-chip-dir">{dirName(path)}</span>}
-          </button>
+            <span className="file-chip-name">{label}</span>
+            {extra && ref.note && <span className="file-chip-note">{ref.note}</span>}
+            {extra && !ref.note && dirName(path) && <span className="file-chip-dir">{dirName(path)}</span>}
+          </>
+        );
+        return (
+          <FileLink
+            key={`${path}${lines}`}
+            path={path}
+            line={ref.startLine ?? undefined}
+            className="file-chip"
+            testId="msg-file"
+            fallback={
+              <button
+                type="button"
+                className="file-chip"
+                data-testid="msg-file"
+                title={`${tip}\n点击复制路径`}
+                onClick={() => {
+                  void copyText(path);
+                  setCopied(path);
+                  setTimeout(() => setCopied((c) => (c === path ? null : c)), 1200);
+                }}
+              >
+                {body(copied === path ? "已复制路径" : `${baseName(path)}${lines}`, copied !== path)}
+              </button>
+            }
+          >
+            {body(`${baseName(path)}${lines}`, true)}
+          </FileLink>
         );
       })}
     </div>

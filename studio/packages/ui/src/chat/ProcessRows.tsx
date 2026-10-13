@@ -22,6 +22,8 @@ import {
   type ToolItem,
 } from "./turns.js";
 import type { TranscriptView } from "./prefs.js";
+import { FileLink } from "../files/FileLinks.js";
+import { parseInlinePath } from "../files/paths.js";
 
 // Rows of a turn's work, after DSH's ui-chat / ui-tool: a group header summarising the work, and one line per
 // thought or tool call that opens into its detail (thinking text, terminal output, diff, input/output).
@@ -155,6 +157,8 @@ export function ToolRow({ item }: { item: ToolItem }) {
   const expandable = !!(item.detail || item.input || item.files?.some((f) => f.diff) || kind === "command");
   const summary = toolSummary(item);
   const note = noteFor(item);
+  // A read or an edit of one file: its name opens the quick look (stage 12).
+  const mention = kind === "read" || kind === "edit" ? parseInlinePath(summary) : null;
   return (
     <div className="pr pr-tool" data-testid="tool" data-status={item.status} data-kind={kind}>
       <RowButton icon={<Icon />} open={open} expandable={expandable} onToggle={() => setOpen((v) => !v)}>
@@ -164,7 +168,15 @@ export function ToolRow({ item }: { item: ToolItem }) {
         {summary && (
           <>
             <span className="pr-dot" />
-            <span className={`pr-summary${kind === "command" || kind === "search" ? " code" : ""}${item.status === "failed" || (kind === "review" && item.status === "declined") ? " failed" : ""}`}>{summary}</span>
+            <span className={`pr-summary${kind === "command" || kind === "search" ? " code" : ""}${item.status === "failed" || (kind === "review" && item.status === "declined") ? " failed" : ""}`}>
+              {mention ? (
+                <FileLink nested path={mention.path} line={mention.line} cwd={item.cwd}>
+                  {summary}
+                </FileLink>
+              ) : (
+                summary
+              )}
+            </span>
           </>
         )}
         {item.files && <DiffStat files={item.files} />}
@@ -177,7 +189,7 @@ export function ToolRow({ item }: { item: ToolItem }) {
 
 function toolBody(item: ToolItem): ReactNode {
   const kind = toolKind(item);
-  if (kind === "edit" && item.files?.length) return item.files.map((f) => <DiffCard key={f.path} file={f} />);
+  if (kind === "edit" && item.files?.length) return item.files.map((f) => <DiffCard key={f.path} file={f} cwd={item.cwd} />);
   if (kind === "command" || kind === "read" || kind === "search" || kind === "list") return <TerminalCard item={item} />;
   if (kind === "plan") return <pre className="pr-plan">{item.input ?? item.detail ?? ""}</pre>;
   if (kind === "review") return <div className="pr-review">{item.detail || "（审查 agent 没有给出理由）"}</div>;
@@ -226,12 +238,16 @@ function TerminalCard({ item }: { item: ToolItem }) {
 }
 
 /** One file's change, coloured by line (DSH DiffBlock). */
-function DiffCard({ file }: { file: FileDiff }) {
+function DiffCard({ file, cwd }: { file: FileDiff; cwd?: string | undefined }) {
   const lines = (file.diff ?? "").replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
   return (
     <div className="pr-diff">
       <div className="pr-diff-head">
-        <span className="pr-diff-path">{file.path}</span>
+        <span className="pr-diff-path">
+          <FileLink path={file.path} cwd={cwd}>
+            {file.path}
+          </FileLink>
+        </span>
         <span className="pr-diff-change">{file.change === "add" ? "新文件" : file.change === "delete" ? "已删除" : ""}</span>
         <DiffStat files={[file]} />
       </div>

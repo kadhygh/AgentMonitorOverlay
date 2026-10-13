@@ -41,6 +41,19 @@ export const MOCK_MARKDOWN = [
   "参考 [掉落表规范](https://example.com/drop-tables)。",
 ].join("\n");
 
+/** Reply of `[[files]]`: files named the ways replies name them (tests create importer.py and README.md first). */
+export const MOCK_FILES_REPLY = [
+  "入口在 `importer.py:4` 的 `fetch`，说明见 [README](README.md#L2)。",
+  "",
+  "- `missing/nope.ts` 还没有建",
+  "- 改完运行 `npm run verify`",
+  "",
+  "```python",
+  "def fetch(url):",
+  "    return requests.get(url, timeout=10)  # 只请求一次",
+  "```",
+].join("\n");
+
 /** File the `[[demo]]` turn reads and edits (tests create it in the workspace first). */
 export const DEMO_FILE = "importer.py";
 export const DEMO_FILE_TEXT = ["import requests", "", "", "def fetch(url):", "    response = requests.get(url, timeout=10)", "    response.raise_for_status()", "    return response.json()", ""].join("\n");
@@ -123,6 +136,7 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  * - `[[mcp: <tool> {json args}]]` → calls the AMO MCP tool of that name (as Codex exposes it), then replies
  *   `MOCK-MCP: <start of its output>`
  * - `[[think]]` → thinks first, then replies `MOCK: <user text>`
+ * - `[[files]]` → a reply naming files in inline code and a link, plus a code block (file link tests)
  * - `[[demo]]` → a whole working turn: think, read `importer.py`, patch it, run a check, answer with a table
  * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
  */
@@ -155,6 +169,7 @@ export const defaultScript: MockScript = (req) => {
     return { kind: "function_call", name: "spawn_agent", namespace: "collaboration", arguments: { task_name: spawn[1]!, message: spawn[2]!.trim(), fork_turns: "none" } };
   }
   if (req.lastUserText.includes("[[markdown]]")) return { kind: "text", text: MOCK_MARKDOWN };
+  if (req.lastUserText.includes("[[files]]")) return { kind: "text", text: MOCK_FILES_REPLY };
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
   if (req.lastUserText.includes("[[think]]")) return { kind: "text", text: `MOCK: ${req.lastUserText}`, reasoning: "先想一想用户要什么。\n这是一条测试消息，照原样回复即可。" };
   return { kind: "text", text: `MOCK: ${req.lastUserText}${req.images ? ` [images: ${req.images}]` : ""}` };

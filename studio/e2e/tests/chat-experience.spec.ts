@@ -72,7 +72,8 @@ test("a working turn folds into one line and opens into thinking, commands and d
   await expect(read).toContainText(DEMO_FILE);
   const edit = group.locator('[data-testid="tool"][data-kind="edit"]');
   await expect(edit).toContainText("+12");
-  await edit.getByRole("button").first().click();
+  // Its title opens it (the file name in the row is a link to the quick look, stage 12).
+  await edit.locator(".pr-title").click();
   await expect(edit.locator(".pr-diff-line.add").first()).toBeVisible();
   const command = group.locator('[data-testid="tool"][data-kind="command"]');
   await command.getByRole("button").first().click();

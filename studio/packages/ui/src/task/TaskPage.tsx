@@ -25,6 +25,9 @@ import { openReview, useIsGitRepo } from "../gitreview/open.js";
 import { latestMainSession } from "../gitreview/logic.js";
 import { OnCanvasToggle } from "../canvas/OnCanvasToggle.js";
 import { openMarks } from "../marks/open.js";
+import { FileLinks, type PreviewTarget } from "../files/FileLinks.js";
+import { FilePreview } from "../files/FilePreview.js";
+import { WorkdirActions } from "../files/WorkdirActions.js";
 
 interface TaskPageProps {
   link: HostLink;
@@ -59,6 +62,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const [toast, setToast] = useState<Toast>(null);
   const [busy, setBusy] = useState(false);
   const [pendingAnnotation, setPendingAnnotation] = useState<SelectionAnchor | null>(null);
+  // The quick look of a file named in the conversation (stage 12); it takes the right column while open.
+  const [preview, setPreview] = useState<PreviewTarget | null>(null);
 
   useEffect(() => {
     if (!selected || !own.some((s) => s.id === selected)) {
@@ -181,6 +186,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     }
   }
   const writer = session ? WRITER[session.writer] : null;
+  const workdir = session ? workspaces.find((w) => w.id === session.workspaceId)?.path : undefined;
+  const showError = (text: string) => setToast({ text, error: true });
 
   return (
     <section className="taskpage" aria-label="任务">
@@ -310,6 +317,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               <span className="page-crumb">
                 {shortModel(profile(session.profileId))}
               </span>
+              {workdir && <WorkdirActions link={link} path={workdir} onError={showError} />}
               <span className="spacer" />
               {writer && (
                 <span className="writer" style={{ color: writer.color }} data-testid="writer">
@@ -360,24 +368,31 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               </button>
             </div>
           )}
-          <Thread
-            link={link}
-            presets={settings?.presets ?? []}
-            session={session}
-            {...(session && profile(session.profileId) ? { profile: profile(session.profileId)! } : {})}
-            tasks={tasks}
-            sessions={sessions}
-            items={items}
-            model={shortModel(session ? profile(session.profileId) : undefined)}
-            busy={busy}
-            onApprove={(item, decision) => void approve(item.approvalId, decision)}
-            onJump={setSelected}
-            onSend={send}
-            onInterrupt={() => session && void interrupt(session.id)}
-            onAnnotate={setPendingAnnotation}
-            annotations={annotations}
-          />
+          <FileLinks link={link} workspaceId={session?.workspaceId ?? task.workspaceId} sessionId={session?.id ?? null} onPreview={setPreview} onError={showError}>
+            <Thread
+              link={link}
+              presets={settings?.presets ?? []}
+              session={session}
+              {...(session && profile(session.profileId) ? { profile: profile(session.profileId)! } : {})}
+              tasks={tasks}
+              sessions={sessions}
+              items={items}
+              model={shortModel(session ? profile(session.profileId) : undefined)}
+              busy={busy}
+              onApprove={(item, decision) => void approve(item.approvalId, decision)}
+              onJump={setSelected}
+              onSend={send}
+              onInterrupt={() => session && void interrupt(session.id)}
+              onAnnotate={(anchor) => {
+                setPreview(null);
+                setPendingAnnotation(anchor);
+              }}
+              annotations={annotations}
+            />
+          </FileLinks>
         </div>
+        {/* While open, the quick look takes the right column (files.css hides the annotation panel beside it). */}
+        {preview && <FilePreview link={link} file={preview.file} line={preview.line} column={preview.column} diff={preview.diff} onClose={() => setPreview(null)} />}
         <AnnotationPanel
           header={
             <>

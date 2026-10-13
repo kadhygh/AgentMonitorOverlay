@@ -21,6 +21,7 @@ import { GitReviewFeature } from "./features/gitreview/service.js";
 import { FilesFeature } from "./features/files/service.js";
 import { OpenInFeature } from "./features/openin/service.js";
 import { MarksFeature } from "./features/marks/service.js";
+import { ChatFilesFeature } from "./features/chatfiles/service.js";
 import { HostError, type HostServiceEvents } from "./core/shared.js";
 
 // The composition root behind the Host API: the store, the runtimes and the event stream, the helpers every feature
@@ -45,6 +46,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly files = new FilesFeature(this);
   readonly openIn = new OpenInFeature(this);
   readonly marks = new MarksFeature(this);
+  readonly chatFiles = new ChatFilesFeature(this);
 
   constructor(
     readonly store: Store,

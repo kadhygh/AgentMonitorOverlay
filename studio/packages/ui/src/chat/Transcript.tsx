@@ -8,6 +8,7 @@ import { buildTranscript, foldable, formatDuration, formatTokens, outputSpeed, s
 import type { TranscriptView } from "./prefs.js";
 import { MessageFiles, MessageImages } from "../attach/MessageAttachments.js";
 import { splitFileRefItems } from "../attach/refs.js";
+import { TurnChanges } from "../files/ChangedFiles.js";
 
 // The conversation, one turn after another (DSH ui-chat): the person's bubble, the work (folded once the turn is
 // done), the answer, and a footer with copy, time and token usage. A running turn ends with a live status line.
@@ -129,6 +130,7 @@ function TurnView({
         </div>
       )}
       {seg.answer && <AgentReply item={seg.answer} highlights={highlights(seg.answer.id)} />}
+      {finished && <TurnChanges items={segmentMembers(seg)} />}
       {seg.tail.map((item) => (
         <StandaloneItem key={item.id} item={item} busy={busy} highlights={highlights} onApprove={onApprove} />
       ))}

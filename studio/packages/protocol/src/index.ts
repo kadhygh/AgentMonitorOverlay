@@ -16,3 +16,4 @@ export const PROTOCOL_VERSION = 1;
 export * from "./files.js";
 export * from "./openin.js";
 export * from "./marks.js";
+export * from "./chatfiles.js";
