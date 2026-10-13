@@ -8,6 +8,8 @@ import { rememberPick, type ModelPick } from "../lib/recents.js";
 // so leaving the page never loses it.
 
 export interface TaskDraft {
+  /** The task's own name; empty: taken from the first sentence. */
+  title: string;
   text: string;
   /** null: no project (the common folder). */
   projectId: string | null;
@@ -20,7 +22,7 @@ export interface TaskDraft {
 const KEY = "amo.taskDraft";
 
 export function emptyDraft(profiles: readonly ModelProfile[]): TaskDraft {
-  return { text: "", projectId: null, topicId: null, pick: { profileId: defaultProfile(profiles)?.id ?? "", model: null }, options: {} };
+  return { title: "", text: "", projectId: null, topicId: null, pick: { profileId: defaultProfile(profiles)?.id ?? "", model: null }, options: {} };
 }
 
 function load(profiles: readonly ModelProfile[]): TaskDraft {
@@ -30,6 +32,7 @@ function load(profiles: readonly ModelProfile[]): TaskDraft {
     if (!d || typeof d !== "object") return fresh;
     const pick = d.pick && profiles.some((p) => p.id === d.pick!.profileId) ? d.pick : fresh.pick;
     return {
+      title: typeof d.title === "string" ? d.title : "",
       text: typeof d.text === "string" ? d.text : "",
       projectId: typeof d.projectId === "string" ? d.projectId : null,
       topicId: typeof d.topicId === "string" ? d.topicId : null,
@@ -85,7 +88,7 @@ export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolea
   const text = draft.text.trim();
   const options: SessionOptions = { ...draft.options, ...(draft.pick.model ? { model: draft.pick.model } : {}) };
   const created = await call(link, "POST /api/tasks", {}, {
-    ...(file ? { title: text.split("\n")[0]!.slice(0, 60) } : {}),
+    ...(draft.title.trim() ? { title: draft.title.trim() } : file ? { title: text.split("\n")[0]!.slice(0, 60) } : {}),
     workspaceId: draft.projectId,
     topicId: draft.topicId,
     ...(file ? {} : { firstSession: { profileId: draft.pick.profileId, ...(text ? { text } : {}), ...(Object.keys(options).length ? { options } : {}) } }),

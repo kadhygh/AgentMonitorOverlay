@@ -83,6 +83,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     route("PUT", "/api/settings", ({ body }) => service.updateSettings(obj(body))),
     route("GET", "/api/profiles/:id/choices", ({ params }) => service.choices(params.id!)),
     route("PATCH", "/api/sessions/:id/options", ({ params, body }) => service.updateSessionOptions(params.id!, body)),
+    route("PATCH", "/api/sessions/:id", ({ params, body }) => service.renameSession(params.id!, obj(body).title)),
     route("GET", "/api/credentials", () => service.credentials()),
     route("PUT", "/api/credentials/:id", ({ params, body }) => service.saveCredential(params.id!, obj(body).secret)),
     route("DELETE", "/api/credentials/:id", ({ params }) => service.removeCredential(params.id!)),

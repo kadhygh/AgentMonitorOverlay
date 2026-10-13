@@ -1,7 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Annotation, ApprovalDecision, ModelProfile, Session, SessionItem, SessionPreset } from "@amo-studio/protocol";
+import type { Annotation, ApprovalDecision, ModelProfile, Session, SessionItem, SessionPreset, Task } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
+import { SuggestList, useTaskMentions } from "../newtask/Suggest.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { copyText } from "../host/client.js";
 import { ReplyNav } from "./ReplyNav.js";
@@ -15,6 +16,8 @@ interface ThreadProps {
   session: Session | null;
   /** The session's model profile (its account mark and models). */
   profile?: ModelProfile;
+  /** Tasks the composer can @ (the message then says which AMO tasks they are). */
+  tasks?: readonly Task[];
   /** 常用预设, shown as chips for sessions on the same profile. */
   presets: readonly SessionPreset[];
   items: readonly SessionItem[];
@@ -33,7 +36,7 @@ interface ThreadProps {
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
+export function Thread({ link, presets, session, profile, tasks = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -41,6 +44,7 @@ export function Thread({ link, presets, session, profile, items, annotations, mo
   const [menu, setMenu] = useState<Menu>(null);
   const view = useTranscriptView();
   useEffect(() => setDraft(""), [session?.id]);
+  const taskMentions = useTaskMentions({ text: draft, setText: setDraft, tasks });
 
   // The selection menu closes on Escape, on any click outside it, and when the thread scrolls.
   useEffect(() => {
@@ -107,7 +111,7 @@ export function Thread({ link, presets, session, profile, items, annotations, mo
     setDraft("");
     stick.current = true;
     setAtBottom(true);
-    if (!(await onSend(text))) setDraft((d) => (d.trim() ? d : text));
+    if (!(await onSend(taskMentions.expand(text)))) setDraft((d) => (d.trim() ? d : text));
   }
 
   return (
@@ -198,11 +202,16 @@ export function Thread({ link, presets, session, profile, items, annotations, mo
               <span className="sr-only">输入消息</span>
               <textarea
                 value={draft}
-                onChange={(e) => setDraft(e.target.value)}
+                onChange={(e) => {
+                  setDraft(e.target.value);
+                  taskMentions.track(e.target);
+                }}
+                onSelect={(e) => taskMentions.track(e.currentTarget)}
                 disabled={readOnly}
                 rows={2}
                 placeholder={placeholder}
                 onKeyDown={(e) => {
+                  if (taskMentions.onKeyDown(e)) return;
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     void send();
@@ -210,6 +219,7 @@ export function Thread({ link, presets, session, profile, items, annotations, mo
                 }}
               />
             </label>
+            <SuggestList mentions={taskMentions} />
             <div className="chat-bar">
               <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly} />
               <span className="composer-hint">{generating && !readOnly ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : ""}</span>

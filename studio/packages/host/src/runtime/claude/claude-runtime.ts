@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { existsSync, readdirSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createSdkMcpServer, forkSession, getSessionMessages, query, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
+import { createSdkMcpServer, forkSession, getSessionMessages, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
 import type { ApprovalDecision, ApprovalKind, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, ToolFields, TurnState, Workspace } from "@amo-studio/protocol";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
@@ -185,6 +185,20 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   /** Switches model, effort or permissions; a running Claude Code process takes them at once. */
+  /** The session's title in its transcript (what `claude --resume` lists); a session without a transcript yet keeps it here only. */
+  async rename(sessionId: Id, title: string): Promise<Session> {
+    const session = this.requireSession(sessionId);
+    if (session.runtimeRef && this.hasTranscript(session.runtimeRef)) {
+      const dir = this.store.getWorkspace(session.workspaceId)?.path;
+      try {
+        await this.withConfigDir(() => renameSession(session.runtimeRef!, title, dir ? { dir } : {}));
+      } catch (err) {
+        this.emit("log", `could not rename the Claude session of ${sessionId}: ${String(err)}`);
+      }
+    }
+    return this.updateSession(sessionId, { title });
+  }
+
   async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
     this.requireSession(sessionId);
     const session = this.updateSession(sessionId, { options });

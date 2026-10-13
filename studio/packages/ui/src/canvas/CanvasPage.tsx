@@ -5,7 +5,7 @@ import { AgentTab } from "./AgentTab.js";
 import { TodoTab } from "./TodoTab.js";
 import type { HostLink } from "../host/client.js";
 import { SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
-import { addGroup, arrowBetween, GROUP_HEADER, moveGroup, moveNode, resizeGroup, updateGroup } from "./geometry.js";
+import { addGroup, arrowBetween, deleteGroup, GROUP_HEADER, moveGroup, moveNode, resizeGroup, updateGroup } from "./geometry.js";
 import { useCanvas } from "./useCanvas.js";
 
 export const CARD_W = 220;
@@ -105,6 +105,26 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
   useEffect(() => saveView(view), [view]);
 
   const persist = useCallback((next: CanvasDoc) => void save(next).catch(() => undefined), [save]);
+
+  // Delete / Backspace removes the selected group (its cards stay) or note, unless typing somewhere.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if ((e.key !== "Delete" && e.key !== "Backspace") || !doc || !selection) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA" || t.tagName === "SELECT" || t.isContentEditable)) return;
+      if (selection.kind === "group") {
+        e.preventDefault();
+        persist(deleteGroup(doc, selection.id));
+        setSelectionState(null);
+      } else if (doc.nodes.some((n) => n.id === selection.id && n.kind === "note")) {
+        e.preventDefault();
+        persist({ ...doc, nodes: doc.nodes.filter((n) => n.id !== selection.id) });
+        setSelectionState(null);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [doc, selection, persist]);
 
   // New tasks appear on the canvas automatically, ungrouped.
   useEffect(() => {
@@ -281,6 +301,21 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
                     {activity.get(g.workspaceId)!.idle ? "空闲" : `忙碌 · ${activity.get(g.workspaceId)!.busy} 个会话`}
                   </span>
                 )}
+                <button
+                  type="button"
+                  className="group-remove"
+                  aria-label={`删除分组 ${g.title}（保留卡片）`}
+                  title="删除分组（卡片留在画布上）"
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onClick={() => {
+                    if (!doc) return;
+                    persist(deleteGroup(doc, g.id));
+                    if (selection?.kind === "group" && selection.id === g.id) setSelection(null);
+                  }}
+                  data-testid="group-remove"
+                >
+                  ×
+                </button>
               </div>
               <div className="canvas-group-resize" aria-label="调整分组大小" onMouseDown={(e) => startDrag(e, "group-resize", g.id)} />
             </div>

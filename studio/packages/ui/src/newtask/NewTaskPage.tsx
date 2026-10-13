@@ -135,6 +135,17 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
           <p className="draft-lede">写下第一句话就能开始。项目、模型和思考强度都在下面，点一下就换。</p>
 
           <div className="draft-where">
+            <label className="pick-row">
+              <span className="pick-lab">名称</span>
+              <input
+                className="draft-title"
+                value={draft.title}
+                onChange={(e) => update({ title: e.target.value })}
+                placeholder="可不填，用第一句话当名字；之后随时可以改"
+                aria-label="任务名"
+                maxLength={100}
+              />
+            </label>
             <div className="pick-row" role="group" aria-label="项目">
               <span className="pick-lab">项目</span>
               <button type="button" className="chip none" aria-pressed={draft.projectId === null} onClick={() => update({ projectId: null })}>

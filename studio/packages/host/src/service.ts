@@ -302,6 +302,14 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return this.wrap(() => this.runtime.choices(profileId));
   }
 
+  /** Renames a session in its own runtime (the stored title follows the runtime's name). */
+  renameSession(sessionId: Id, titleIn: unknown): Promise<Session> {
+    const s = this.requireSession(sessionId);
+    if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be renamed");
+    const title = boundedText(titleIn, "title", 100);
+    return this.wrap(() => this.runtime.rename(sessionId, title));
+  }
+
   /** Changes some of the session's options; null (or "") clears one back to the profile's default. */
   updateSessionOptions(sessionId: Id, patch: unknown): Promise<Session> {
     const s = this.store.getSession(sessionId);

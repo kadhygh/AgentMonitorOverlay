@@ -38,10 +38,10 @@ export const CLAUDE_SUBSCRIPTION_CREDENTIAL = "claude-subscription";
 
 export const BUILTIN_PROFILES: readonly ModelProfile[] = [
   // The person's own Codex login and default model (a ChatGPT subscription: GPT).
-  { id: "codex-default", label: "GPT 订阅", runtime: "codex", provider: null, model: null },
+  { id: "codex-default", label: "GPT", runtime: "codex", provider: null, model: null },
   {
     id: "codex-deepseek-flash",
-    label: "DeepSeek Flash",
+    label: "DeepSeek",
     runtime: "codex",
     provider: "amo-deepseek",
     model: "deepseek-flash",
@@ -49,9 +49,9 @@ export const BUILTIN_PROFILES: readonly ModelProfile[] = [
     credentialId: "deepseek-v4",
   },
   // Claude Code routed to GLM (old AMO's glm-5.3 preset; the key is the Coding Plan key stored as glm-5.2).
-  { id: "claude-glm", label: "GLM-5.3", runtime: "claude", provider: "glm", model: "glm-5.3[1m]", credentialId: "glm-5.2" },
+  { id: "claude-glm", label: "GLM", runtime: "claude", provider: "glm", model: "glm-5.3[1m]", credentialId: "glm-5.2" },
   // The person's Claude subscription, through a token from `claude setup-token` saved in 设置 → 模型凭据.
-  { id: "claude-subscription", label: "Claude 订阅", runtime: "claude", provider: "anthropic", model: null, credentialId: CLAUDE_SUBSCRIPTION_CREDENTIAL },
+  { id: "claude-subscription", label: "Claude", runtime: "claude", provider: "anthropic", model: null, credentialId: CLAUDE_SUBSCRIPTION_CREDENTIAL },
 ];
 
 // src/ and dist/ sit at the same depth under packages/host.

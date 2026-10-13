@@ -139,6 +139,16 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     return this.updateSession(sessionId, { options });
   }
 
+  /** `thread/name/set`: the name the TUI and `codex resume` show as well. */
+  async rename(sessionId: Id, title: string): Promise<Session> {
+    const session = this.requireSession(sessionId);
+    if (session.runtimeRef) {
+      const handle = await this.handleFor(session.profileId);
+      await handle.client.request("thread/name/set", { threadId: session.runtimeRef, name: title } as never);
+    }
+    return this.updateSession(sessionId, { title });
+  }
+
   /** Models (from the profile's app-server, `model/list`) and permission settings. */
   async choices(profileId: Id): Promise<ProfileChoices> {
     const profile = this.profile(profileId);
@@ -294,6 +304,13 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     switch (n.method) {
       case "thread/started":
         return this.onThreadStarted(handle, n.params.thread);
+      case "thread/name/updated": {
+        // Renamed here or in an attached TUI: the session follows its thread's name.
+        const s = this.findByThread(n.params.threadId);
+        const name = n.params.threadName?.trim();
+        if (s && name && name !== s.title) this.updateSession(s.id, { title: name });
+        return;
+      }
       case "turn/started": {
         const s = this.findByThread(n.params.threadId);
         if (!s) return;

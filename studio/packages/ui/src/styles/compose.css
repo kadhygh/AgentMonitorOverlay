@@ -199,3 +199,18 @@ kbd {
 .model-menu button { display: flex; align-items: center; gap: 6px; }
 .model-menu button[aria-checked="true"] { font-weight: 600; color: var(--primary); }
 .model-menu-check { width: 12px; flex: none; }
+.draft-title {
+  flex: 1; min-width: 0; height: var(--ctl); padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--panel);
+  color: var(--text); font-family: var(--font-display); font-size: var(--fs-title); font-weight: 600;
+}
+.draft-title::placeholder { font-family: var(--font-ui); font-size: var(--fs-sm); font-weight: 400; color: var(--text-faint); }
+.draft-title:focus { outline: none; border-color: var(--border-strong); }
+
+/* Names edited in place: the task title on its page, a session's title */
+.rename-input {
+  min-width: 0; height: 32px; padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--r-btn); background: var(--panel);
+  color: var(--text); font: inherit;
+}
+.task-title-btn { margin: 0; padding: 2px 6px; border: 1px solid transparent; border-radius: var(--r-btn); background: transparent; color: var(--text); cursor: text; text-align: left; }
+.task-title-btn:hover { border-color: var(--border); background: var(--panel); }
+.composer-card .suggest { left: 12px; top: auto; bottom: calc(100% + 6px); }

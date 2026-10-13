@@ -7,8 +7,18 @@ electron.contextBridge.exposeInMainWorld("amo", {
   pickDirectory: (): Promise<string | null> => electron.ipcRenderer.invoke("amo:pick-directory"),
   openExternal: (url: string): Promise<void> => electron.ipcRenderer.invoke("amo:open-external", url),
   copyText: (text: string): Promise<void> => electron.ipcRenderer.invoke("amo:copy", text),
-  /** The window controls drawn over the top bar take these colours (#rrggbb). */
-  setTitleBarColors: (colors: { color: string; symbolColor: string }): void => electron.ipcRenderer.send("amo:title-bar", colors),
+  /** The workbench window's own title bar buttons. */
+  windowControls: {
+    minimize: (): void => electron.ipcRenderer.send("amo:window", "minimize"),
+    toggleMaximize: (): void => electron.ipcRenderer.send("amo:window", "maximize"),
+    close: (): void => electron.ipcRenderer.send("amo:window", "close"),
+    isMaximized: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:window-maximized"),
+    onMaximized: (cb: (maximized: boolean) => void): (() => void) => {
+      const listener = (_event: unknown, maximized: boolean) => cb(maximized);
+      electron.ipcRenderer.on("amo:window-maximized", listener);
+      return () => electron.ipcRenderer.removeListener("amo:window-maximized", listener);
+    },
+  },
   /** First-run setup window of the portable build only (the handlers exist only while it is open). */
   setup: {
     info: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:setup-info"),

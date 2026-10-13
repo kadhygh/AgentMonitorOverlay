@@ -206,6 +206,16 @@ describe("Host API", () => {
     expect((await ok<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.id === session.id)?.archivedAt).toBeNull();
   });
 
+  it("renames tasks, and sessions in their own runtime", async () => {
+    const { task, session } = await createTask("first words");
+    expect((await ok<Task>("PATCH", `/api/tasks/${task.id}`, { title: "导入重试" })).title).toBe("导入重试");
+    const renamed = await ok<Session>("PATCH", `/api/sessions/${session.id}`, { title: "先看看现状" });
+    expect(renamed.title).toBe("先看看现状");
+    // The Codex thread got the name (thread/name/set), so the TUI and `codex resume` show it as well.
+    expect(servers.fakes.get("p-ds")!.calls.some((c) => c.method === "thread/name/set" && (c.params as { name?: string }).name === "先看看现状")).toBe(true);
+    expect((await api("PATCH", `/api/sessions/${session.id}`, { title: " " })).status).toBe(400);
+  });
+
   it("moves cards between columns only when asked and rejects unknown columns", async () => {
     const { task } = await createTask();
     expect((await ok<Task>("PATCH", `/api/tasks/${task.id}`, { column: "review" })).column).toBe("review");

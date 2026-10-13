@@ -11,11 +11,30 @@ export const effortLabel = (e: string) => EFFORT_LABELS[e] ?? e;
 // One request per profile for the page's life; a failed one is asked again next time.
 const cache = new Map<string, Promise<ProfileChoices>>();
 
+// The last answer is also kept per install: asking a CLI can mean starting its app-server (seconds for a cold GPT
+// one), so the pickers show what they knew last time at once and replace it when the fresh list arrives.
+const storedKey = (profileId: string) => `amo.choices.${profileId}`;
+
+export function storedChoices(profileId: string): ProfileChoices | null {
+  try {
+    const c = JSON.parse(localStorage.getItem(storedKey(profileId)) ?? "null") as ProfileChoices | null;
+    return c && c.profileId === profileId && Array.isArray(c.models) && Array.isArray(c.permissions) ? c : null;
+  } catch {
+    return null;
+  }
+}
+
 export function loadChoices(link: HostLink, profileId: string): Promise<ProfileChoices> {
   let p = cache.get(profileId);
   if (!p) {
     p = call(link, "GET /api/profiles/:id/choices", { id: profileId });
-    p.catch(() => cache.delete(profileId));
+    p.then((c) => {
+      try {
+        localStorage.setItem(storedKey(profileId), JSON.stringify(c));
+      } catch {
+        // per-viewer convenience only
+      }
+    }, () => cache.delete(profileId));
     cache.set(profileId, p);
   }
   return p;
@@ -26,7 +45,7 @@ export function useProfileChoices(link: HostLink, profileId: string | null | und
   useEffect(() => {
     if (!profileId) return;
     let cancelled = false;
-    setState({ id: profileId, choices: null, error: null });
+    setState({ id: profileId, choices: storedChoices(profileId), error: null });
     loadChoices(link, profileId)
       .then((choices) => !cancelled && setState({ id: profileId, choices, error: null }))
       .catch((err: unknown) => !cancelled && setState({ id: profileId, choices: null, error: err instanceof HostApiError ? err.message : String(err) }));
@@ -64,9 +83,11 @@ export function useChoicesFor(link: HostLink, profileIds: readonly string[]): Re
   useEffect(() => {
     let cancelled = false;
     for (const id of key.split(",").filter(Boolean)) {
+      const stored = storedChoices(id);
+      if (stored) setLoaded((cur) => (cur.has(id) ? cur : new Map(cur).set(id, stored)));
       loadChoices(link, id)
         .then((c) => !cancelled && setLoaded((cur) => new Map(cur).set(id, c)))
-        .catch(() => !cancelled && setLoaded((cur) => new Map(cur).set(id, null)));
+        .catch(() => !cancelled && setLoaded((cur) => (cur.get(id) ? cur : new Map(cur).set(id, null))));
     }
     return () => {
       cancelled = true;

@@ -37,7 +37,7 @@ test("canvas groups: create, rename, bind, move with members, resize, membership
   await panel.getByLabel("分组名称").fill("导入");
   await panel.getByLabel("分组名称").press("Enter");
   await expect.poll(async () => (await canvas()).groups[0]!.title).toBe("导入");
-  await panel.getByLabel("绑定工作区").selectOption({ label: "alpha" });
+  await panel.getByLabel("绑定项目").selectOption({ label: "alpha" });
   await expect.poll(async () => (await canvas()).groups[0]!.workspaceId).toBe(ws.id);
   await expect(page.getByTestId("canvas-group")).toContainText("导入");
   await expect(page.getByTestId("canvas-group")).toContainText("alpha");

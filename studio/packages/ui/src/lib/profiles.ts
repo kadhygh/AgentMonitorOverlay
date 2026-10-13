@@ -1,6 +1,6 @@
 import type { ModelProfile } from "@amo-studio/protocol";
 
-/** "Codex · DeepSeek Flash", "Codex · GPT 订阅", "Claude · GLM-5.3" — as in the prototype's model pickers. */
+/** "Codex · DeepSeek", "Codex · GPT", "Claude · GLM" — the account behind a model. */
 export function profileLabel(p: ModelProfile): string {
   return `${p.runtime === "codex" ? "Codex" : "Claude"} · ${p.label}`;
 }

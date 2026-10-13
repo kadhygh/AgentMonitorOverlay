@@ -103,10 +103,10 @@ test("the Claude subscription token is saved in settings, then Claude sessions r
   const dialog = page.getByRole("dialog", { name: "设置" });
   const row = dialog.locator('[data-testid="credential"][data-id="claude-subscription"]');
   await expect(row).toContainText("未设置");
-  await row.getByLabel("Claude 订阅 令牌").fill("sk-ant-oat01-e2e");
+  await row.getByLabel("Claude 令牌").fill("sk-ant-oat01-e2e");
   await row.getByRole("button", { name: "保存" }).click();
   await expect(row).toContainText("已保存");
-  await expect(dialog.getByTestId("credential-message")).toHaveText("已保存 Claude 订阅 令牌");
+  await expect(dialog.getByTestId("credential-message")).toHaveText("已保存 Claude 令牌");
   // API keys stored elsewhere are shown, never editable here.
   await expect(dialog.locator('[data-testid="credential"][data-id="mock"]').getByRole("button")).toHaveCount(0);
   await dialog.evaluate((el) => el.scrollTo(0, el.scrollHeight));
@@ -116,5 +116,5 @@ test("the Claude subscription token is saved in settings, then Claude sessions r
   await start();
   await page.getByTestId("task-card").first().click();
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: hello", { timeout: 60_000 });
-  await expect(page.getByTestId("thread-head")).toContainText("Claude 订阅");
+  await expect(page.getByTestId("thread-head")).toContainText("Claude");
 });

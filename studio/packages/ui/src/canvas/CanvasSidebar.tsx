@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { taskWhere, wouldCycle, type CanvasDoc, type CanvasEdge, type Id, type Session, type Task, type Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, taskWhere, wouldCycle, type CanvasDoc, type CanvasEdge, type Id, type Session, type Task, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { deleteGroup, updateGroup } from "./geometry.js";
 
@@ -71,10 +71,10 @@ function DetailTab({ doc, selection, tasks, sessions, workspaces, onChange, onCl
           />
         </label>
         <label className="stack-field">
-          绑定工作区
+          绑定项目
           <select value={group.workspaceId ?? ""} onChange={(e) => onChange(updateGroup(doc, group.id, { workspaceId: e.target.value || null }))}>
             <option value="">不绑定</option>
-            {workspaces.map((w) => (
+            {projectWorkspaces(workspaces).map((w) => (
               <option key={w.id} value={w.id}>
                 {w.name}
               </option>

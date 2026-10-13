@@ -16,6 +16,7 @@ import { DecisionPanel, useOpenDecisions } from "./DecisionPanel.js";
 import { NotesPanel, useTaskNotes } from "./NotesPanel.js";
 import { PackDocsPanel } from "../packs/PackDocsPanel.js";
 import { ChecklistPanel } from "./ChecklistPanel.js";
+import { EditableName } from "./EditableName.js";
 import { usePacks } from "../packs/usePacks.js";
 import { PresetDraftForm } from "../packs/PresetDraftForm.js";
 import type { SelectionAnchor } from "../lib/selection.js";
@@ -178,7 +179,13 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           ← 看板
         </button>
         <h1 className="task-title" data-testid="task-title">
-          {task.title || "未命名任务"}
+          <EditableName
+            value={task.title}
+            placeholder="未命名任务"
+            label="任务名"
+            disabled={!!task.archivedAt}
+            onSave={(title) => void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { title }))}
+          />
         </h1>
         <span className="page-crumb">{scopeLabel}</span>
         {task.archivedAt && <span className="page-crumb">已归档</span>}
@@ -254,7 +261,15 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           )}
           {session && (
             <div className="thread-head" data-testid="thread-head">
-              <span className="thread-title">{session.title || "新会话"}</span>
+              <span className="thread-title">
+                <EditableName
+                  value={session.title}
+                  placeholder="新会话"
+                  label="会话名"
+                  disabled={!!session.archivedAt}
+                  onSave={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: session.id }, { title }))}
+                />
+              </span>
               <span className="page-crumb">
                 {shortModel(profile(session.profileId))}
               </span>
@@ -305,6 +320,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             presets={settings?.presets ?? []}
             session={session}
             {...(session && profile(session.profileId) ? { profile: profile(session.profileId)! } : {})}
+            tasks={tasks}
             items={items}
             model={shortModel(session ? profile(session.profileId) : undefined)}
             busy={busy}

@@ -19,6 +19,11 @@ export interface SessionRuntimeApi {
   choices(profileId: Id): Promise<ProfileChoices>;
   /** Switches the session's model, effort or permissions (Claude: at once; Codex: from the next turn). */
   setOptions(sessionId: Id, options: SessionOptions): Promise<Session>;
+  /**
+   * Renames the session in its runtime (Codex thread name, Claude session title), so the CLI's own resume lists show
+   * it too; the stored title follows.
+   */
+  rename(sessionId: Id, title: string): Promise<Session>;
   /** Starts a turn; while one runs, Codex steers it and Claude queues the message for the next turn. */
   sendMessage(sessionId: Id, text: string): Promise<{ mode: SendMode }>;
   interrupt(sessionId: Id): Promise<void>;
@@ -78,6 +83,9 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   }
   setOptions(sessionId: Id, options: SessionOptions) {
     return this.forSession(sessionId).setOptions(sessionId, options);
+  }
+  rename(sessionId: Id, title: string) {
+    return this.forSession(sessionId).rename(sessionId, title);
   }
   interrupt(sessionId: Id) {
     return this.forSession(sessionId).interrupt(sessionId);

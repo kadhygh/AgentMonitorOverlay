@@ -169,6 +169,8 @@ export interface HostRoutes {
   "POST /api/sessions/:id/interrupt": { req: void; res: { ok: true } };
   "POST /api/sessions/:id/fork": { req: { profileId?: Id }; res: Session };
   /** Switches the session's model, effort or permissions (null clears back to the default). Codex: from the next turn. */
+  /** Renames the session in its runtime too (Codex thread name, Claude session title). */
+  "PATCH /api/sessions/:id": { req: { title: string }; res: Session };
   "PATCH /api/sessions/:id/options": { req: { model?: string | null; effort?: string | null; permission?: string | null }; res: Session };
   /** Archives the session together with its forks and subagents; returns every session changed. */
   "POST /api/sessions/:id/archive": { req: void; res: Session[] };

@@ -201,13 +201,12 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .app { height: 100%; display: flex; flex-direction: column; }
 
 /* Top bar */
-/* The top bar is also the window's title bar: it drags the window, and its right end leaves room for the window
-   controls Windows draws over it (env(titlebar-area-*) is set while they are shown; plain browsers fall back to 16px). */
+/* The top bar is also the window's title bar: it drags the window and ends with the page's own window buttons. */
 .topbar {
-  height: var(--topbar-h); flex: none; display: flex; align-items: center; gap: 16px; border-bottom: 2px solid var(--border-strong); background: var(--bg-header);
-  padding: 0 max(16px, calc(100vw - env(titlebar-area-x, 0px) - env(titlebar-area-width, 100vw) + 12px)) 0 16px;
-  -webkit-app-region: drag; user-select: none;
+  height: var(--topbar-h); flex: none; display: flex; align-items: center; gap: 16px; padding: 0 0 0 16px;
+  border-bottom: 2px solid var(--border-strong); background: var(--bg-header); -webkit-app-region: drag; user-select: none;
 }
+.topbar > :last-child:not(.win-controls) { margin-right: 16px; }
 .topbar button, .topbar input, .topbar a, .topbar select { -webkit-app-region: no-drag; }
 .brand { display: flex; align-items: center; gap: 10px; min-width: calc(var(--nav-w) - 32px); }
 /* The robot mark (design/icon/robot.svg); the tile is part of the drawing. */
@@ -617,3 +616,18 @@ a.md-link { cursor: pointer; }
 .card[draggable="true"] { cursor: grab; }
 .card[draggable="true"]:active { cursor: grabbing; }
 .column.drop { border-radius: var(--r-l); background: var(--selected); box-shadow: 0 0 0 6px var(--selected); }
+.group-remove {
+  margin-left: auto; width: 22px; height: 22px; flex: none; border: none; border-radius: var(--r-s); background: transparent;
+  color: var(--text-faint); font-size: 16px; line-height: 1; cursor: pointer; opacity: 0; transition: opacity 100ms ease;
+}
+.canvas-group:hover .group-remove, .canvas-group.selected .group-remove, .group-remove:focus-visible { opacity: 1; }
+.group-remove:hover { background: var(--error-bg); color: var(--error-text); }
+
+/* Window buttons: three square cells at the right end of the top bar, in the bar's own colours. */
+.win-controls { align-self: stretch; display: flex; margin-left: 4px; border-left: 1px solid var(--border); }
+.win-btn {
+  width: 46px; height: 100%; display: grid; place-items: center; border: none; background: transparent; color: var(--text-dim); cursor: pointer;
+}
+.win-btn svg { fill: none; stroke: currentColor; stroke-width: 1; shape-rendering: crispEdges; }
+.win-btn:hover { background: var(--chip); color: var(--text); }
+.win-btn.close:hover { background: var(--error); color: #fff; }

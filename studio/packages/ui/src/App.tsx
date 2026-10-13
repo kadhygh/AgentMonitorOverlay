@@ -296,6 +296,38 @@ function TopBar({
       <button type="button" className="btn-primary" onClick={onNew} disabled={disabled} title="新建任务（Ctrl N 在任何页面打开快速启动条）">
         + 新任务
       </button>
+      <WindowControls />
     </header>
+  );
+}
+
+/** Minimise, maximise / restore and close, drawn by the page in its own style (the window has no system title bar). */
+function WindowControls() {
+  const api = window.amo?.windowControls;
+  const [maximized, setMaximized] = useState(false);
+  useEffect(() => {
+    if (!api) return;
+    void api.isMaximized().then(setMaximized);
+    return api.onMaximized(setMaximized);
+  }, [api]);
+  if (!api) return null;
+  return (
+    <div className="win-controls" role="group" aria-label="窗口">
+      <button type="button" className="win-btn" aria-label="最小化" title="最小化" onClick={api.minimize}>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M0.5 5.5 H9.5" />
+        </svg>
+      </button>
+      <button type="button" className="win-btn" aria-label={maximized ? "还原" : "最大化"} title={maximized ? "还原" : "最大化"} onClick={api.toggleMaximize}>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          {maximized ? <path d="M2.5 2.5 V0.5 H9.5 V7.5 H7.5 M0.5 2.5 H7.5 V9.5 H0.5 Z" /> : <path d="M0.5 0.5 H9.5 V9.5 H0.5 Z" />}
+        </svg>
+      </button>
+      <button type="button" className="win-btn close" aria-label="关闭" title="关闭" onClick={api.close}>
+        <svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+          <path d="M0.5 0.5 L9.5 9.5 M9.5 0.5 L0.5 9.5" />
+        </svg>
+      </button>
+    </div>
   );
 }

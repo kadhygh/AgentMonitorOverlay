@@ -70,13 +70,14 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   ipcMain.handle("amo:host", () => (host ? { url: host.url, token: host.token } : null));
-  // The page draws its own title bar; the window controls follow its colours (theme changes included).
-  ipcMain.on("amo:title-bar", (event, colors: unknown) => {
-    const c = colors as { color?: unknown; symbolColor?: unknown } | null;
-    if (!mainWindow || event.sender !== mainWindow.webContents || typeof c?.color !== "string" || typeof c.symbolColor !== "string") return;
-    if (!/^#[0-9a-f]{6}$/i.test(c.color) || !/^#[0-9a-f]{6}$/i.test(c.symbolColor)) return;
-    mainWindow.setTitleBarOverlay({ color: c.color, symbolColor: c.symbolColor, height: TITLE_BAR_HEIGHT });
+  // The page draws the title bar and its window buttons (minimise, maximise / restore, close).
+  ipcMain.on("amo:window", (event, action: unknown) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents) return;
+    if (action === "minimize") mainWindow.minimize();
+    else if (action === "maximize") mainWindow.isMaximized() ? mainWindow.unmaximize() : mainWindow.maximize();
+    else if (action === "close") mainWindow.close();
   });
+  ipcMain.handle("amo:window-maximized", (event) => (mainWindow && event.sender === mainWindow.webContents ? mainWindow.isMaximized() : false));
   // Copy through the main process: navigator.clipboard needs a focused document, which is not always the case.
   // Tests never touch the user's clipboard; they read the recorded text instead.
   ipcMain.handle("amo:copy", (_event, text: unknown) => {
@@ -187,9 +188,6 @@ function safeList(dir: string): string[] {
   }
 }
 
-/** Height of the page's top bar, which doubles as the window's title bar (window controls drawn over its right end). */
-const TITLE_BAR_HEIGHT = 54;
-
 function createMainWindow(conn: HostConnection): BrowserWindow {
   // No menu bar (File / Edit / View…): everything lives in the page. Reload and DevTools stay on their keys below.
   Menu.setApplicationMenu(null);
@@ -204,9 +202,8 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
     icon: APP_ICON,
     // Before the page paints: the light (editorial) theme is the default.
     backgroundColor: "#efede8",
-    // The page's top bar is the title bar; Windows draws the window controls over its right end.
+    // No system title bar: the page's top bar is the title bar and draws the window buttons in its own style.
     titleBarStyle: "hidden",
-    titleBarOverlay: { color: "#f8f7f3", symbolColor: "#22201c", height: TITLE_BAR_HEIGHT },
     // Test windows sit off-screen, out of the taskbar, and are shown without activation so they keep painting for
     // capturePage but never take focus (LOOP_RULES red line 7).
     show: false,
@@ -220,6 +217,8 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
       backgroundThrottling: !testMode,
     },
   });
+  win.on("maximize", () => win.webContents.send("amo:window-maximized", true));
+  win.on("unmaximize", () => win.webContents.send("amo:window-maximized", false));
   // Without a menu, the usual keys: F5 / Ctrl+R reload, F12 / Ctrl+Shift+I DevTools.
   win.webContents.on("before-input-event", (event, input) => {
     if (input.type !== "keyDown") return;

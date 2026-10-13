@@ -1,5 +1,5 @@
 import { execFileSync, execSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { join } from "node:path";
 
 // Which Codex binary the Host runs. On this machine a bare `codex` resolves differently per caller: Node's spawn
@@ -31,6 +31,29 @@ function npmGlobalRoot(): string | null {
   }
 }
 
+/** The npm package's own platform binary, as its bin/codex.js would pick it (Windows x64 / arm64 only). */
+const PLATFORM_PACKAGE: Record<string, string> = { "win32-x64": "codex-win32-x64", "win32-arm64": "codex-win32-arm64" };
+const TARGET: Record<string, string> = { "win32-x64": "x86_64-pc-windows-msvc", "win32-arm64": "aarch64-pc-windows-msvc" };
+
+/**
+ * Runs the native codex.exe directly instead of through bin/codex.js: the script spawns the binary without hiding
+ * its window, so from the windowless Host every app-server start flashed a console window. The env matches what the
+ * script sets.
+ */
+export function npmNativeCommand(root: string, key = `${process.platform}-${process.arch}`): CodexCommand | null {
+  const pkg = PLATFORM_PACKAGE[key];
+  const triple = TARGET[key];
+  if (!pkg || !triple) return null;
+  const codexRoot = join(root, "@openai", "codex");
+  for (const base of [join(root, "@openai", pkg), join(codexRoot, "node_modules", "@openai", pkg)]) {
+    const exe = join(base, "vendor", triple, "bin", "codex.exe");
+    if (existsSync(exe)) {
+      return { command: exe, prefixArgs: [], env: { CODEX_MANAGED_PACKAGE_ROOT: existsSync(codexRoot) ? realpathSync(codexRoot) : codexRoot, CODEX_MANAGED_BY_NPM: "1" }, source: "npm-global" };
+    }
+  }
+  return null;
+}
+
 let cached: CodexCommand | undefined;
 
 /**
@@ -43,7 +66,8 @@ export function resolveCodexCommand(env: NodeJS.ProcessEnv = process.env): Codex
   if (cached) return cached;
   const root = npmGlobalRoot();
   const script = root ? join(root, "@openai", "codex", "bin", "codex.js") : null;
-  cached = script && existsSync(script) ? nodeRunner(script, "npm-global") : { command: "codex", prefixArgs: [], env: {}, source: "path" };
+  const native = root && script && existsSync(script) ? npmNativeCommand(root) : null;
+  cached = native ?? (script && existsSync(script) ? nodeRunner(script, "npm-global") : { command: "codex", prefixArgs: [], env: {}, source: "path" });
   return cached;
 }
 

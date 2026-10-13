@@ -1,4 +1,4 @@
-import { useEffect, type MouseEvent } from "react";
+import { useEffect, useRef, type MouseEvent } from "react";
 import type { ModelOption, ModelProfile, PermissionOption, ProfileChoices } from "@amo-studio/protocol";
 import { effortLabel } from "../lib/choices.js";
 
@@ -91,12 +91,29 @@ export function EffortBars({
   small?: boolean;
   showCaption?: boolean;
 }) {
-  if (!efforts.length) return null;
   const current = value ?? fallback ?? null;
   const index = current ? efforts.indexOf(current) : -1;
   const n = efforts.length;
+  // The wheel over the bars steps the effort (up: more). A native listener, so the page does not scroll meanwhile.
+  const box = useRef<HTMLSpanElement>(null);
+  const latest = useRef({ efforts, index, onChange, disabled });
+  latest.current = { efforts, index, onChange, disabled };
+  useEffect(() => {
+    const el = box.current;
+    if (!el) return;
+    const onWheel = (e: WheelEvent) => {
+      const { efforts: list, index: i, onChange: change, disabled: off } = latest.current;
+      if (off || !list.length || e.deltaY === 0) return;
+      e.preventDefault();
+      const next = Math.min(list.length - 1, Math.max(0, (i < 0 ? 0 : i) + (e.deltaY < 0 ? 1 : -1)));
+      if (next !== i) change(list[next]!);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [n > 0]);
+  if (!efforts.length) return null;
   return (
-    <span className={small ? "effort small" : "effort"} role="group" aria-label="思考强度" data-testid="effort">
+    <span ref={box} className={small ? "effort small" : "effort"} role="group" aria-label="思考强度" title="点竖条或滚动鼠标滚轮调整" data-testid="effort">
       {showCaption && !small && <span className="effort-cap">思考</span>}
       <span className="effort-bars">
         {efforts.map((e, i) => (

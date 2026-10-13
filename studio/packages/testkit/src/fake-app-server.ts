@@ -348,6 +348,11 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       notify(parent.id, "thread/started", { thread: threadView(t) }, [client]);
       return threadResponse(t);
     },
+    "thread/name/set": (_client, params) => {
+      const t = requireThread(params);
+      notify(t.id, "thread/name/updated", { threadId: t.id, threadName: params.name });
+      return {};
+    },
     "thread/archive": (_client, params) => {
       const t = requireThread(params);
       t.archived = true;
