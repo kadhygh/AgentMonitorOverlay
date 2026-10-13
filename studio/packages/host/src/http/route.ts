@@ -11,13 +11,34 @@ export interface RouteContext {
   body: unknown;
 }
 
-export type Route = { method: string; pattern: RegExp; keys: string[]; handle: (ctx: RouteContext) => unknown };
+export interface RouteOptions {
+  /** Read the body as raw bytes (ctx.body is a Buffer) up to this many bytes, instead of JSON. */
+  rawBody?: number;
+  /** Also accept the host token as `?token=` (for <img src>); GET only. */
+  queryToken?: boolean;
+}
 
-export function route(method: string, path: string, handle: (ctx: RouteContext) => unknown): Route {
+export type Route = { method: string; pattern: RegExp; keys: string[]; handle: (ctx: RouteContext) => unknown } & RouteOptions;
+
+export function route(method: string, path: string, handle: (ctx: RouteContext) => unknown, options: RouteOptions = {}): Route {
   const keys: string[] = [];
   const pattern = new RegExp(`^${path.replace(/:([A-Za-z]+)/g, (_, k: string) => (keys.push(k), "([^/]+)"))}$`);
-  return { method, pattern, keys, handle };
+  return { method, pattern, keys, handle, ...options };
 }
+
+/** A handler's answer that is a file on disk rather than JSON. */
+export class FileReply {
+  constructor(
+    readonly path: string,
+    readonly mime: string,
+  ) {}
+}
+
+/** The raw body of a `rawBody` route. */
+export const bytes = (v: unknown): Buffer => {
+  if (!Buffer.isBuffer(v)) throw new HostError("bad_request", "the body must be the file itself");
+  return v;
+};
 
 /** A required string field of a request body. */
 export const str = (v: unknown, name: string): string => {

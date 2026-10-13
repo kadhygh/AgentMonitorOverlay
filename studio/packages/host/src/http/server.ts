@@ -9,7 +9,7 @@ import { HostError, type HostService } from "../service.js";
 import { handleMcpRequest } from "../mcp/amo-mcp.js";
 import { listenInStudioRange } from "../net.js";
 import { FEATURES } from "../features/index.js";
-import { route, str, obj, type Route, type RouteContext } from "./route.js";
+import { FileReply, route, str, obj, type Route, type RouteContext } from "./route.js";
 
 export type { RouteContext } from "./route.js";
 import type { McpIdentities } from "../mcp/identity.js";
@@ -61,6 +61,16 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     route("GET", "/api/state", () => service.snapshot()),
     ...FEATURES.flatMap((f) => f.routes(service)),
   ];
+
+  const match = (method: string, path: string): { route: Route; params: Record<string, string> } | undefined => {
+    for (const r of routes) {
+      if (r.method !== method) continue;
+      const m = r.pattern.exec(path);
+      if (!m) continue;
+      return { route: r, params: Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1]!)])) };
+    }
+    return undefined;
+  };
 
   const same = (given: string, expected: string) => {
     const a = Buffer.from(given);
@@ -115,6 +125,29 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       req.on("error", reject);
     });
 
+  const readRaw = (req: IncomingMessage, max: number) =>
+    new Promise<Buffer>((resolveBody, reject) => {
+      const chunks: Buffer[] = [];
+      let size = 0;
+      req.on("data", (c: Buffer) => {
+        size += c.length;
+        if (size > max) {
+          reject(new HostError("bad_request", `file too large (at most ${Math.round(max / 1024 / 1024)} MB)`));
+          req.destroy();
+          return;
+        }
+        chunks.push(c);
+      });
+      req.on("end", () => resolveBody(Buffer.concat(chunks)));
+      req.on("error", reject);
+    });
+
+  const sendFile = (res: ServerResponse, file: FileReply) => {
+    if (!existsSync(file.path)) return fail(res, 404, "not_found", "file not found");
+    res.writeHead(200, { "content-type": file.mime, "cache-control": "private, max-age=31536000, immutable" });
+    createReadStream(file.path).pipe(res);
+  };
+
   const serveUi = (req: IncomingMessage, res: ServerResponse, path: string) => {
     if (!options.uiDir || (req.method !== "GET" && req.method !== "HEAD")) return false;
     const root = resolve(options.uiDir);
@@ -143,7 +176,9 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       return fail(res, 404, "not_found", "not found");
     }
     const auth = req.headers.authorization;
-    const given = auth?.startsWith("Bearer ") ? auth.slice(7) : null;
+    const matched = isMcp ? undefined : match(req.method ?? "GET", url.pathname);
+    // An <img> cannot send a header: routes that allow it take the token from the query (GET only).
+    const given = auth?.startsWith("Bearer ") ? auth.slice(7) : matched?.route.queryToken && req.method === "GET" ? url.searchParams.get("token") : null;
     if (!(isMcp ? mcpTokenOk(given) : tokenOk(given))) return fail(res, 401, "bad_request", "missing or invalid host token");
     if (isMcp) {
       // AMO MCP (read-only): the same token as the REST API.
@@ -155,13 +190,11 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       }
     }
     try {
-      const body = req.method === "GET" || req.method === "DELETE" ? undefined : await readBody(req);
-      for (const r of routes) {
-        if (r.method !== req.method) continue;
-        const m = r.pattern.exec(url.pathname);
-        if (!m) continue;
-        const params = Object.fromEntries(r.keys.map((k, i) => [k, decodeURIComponent(m[i + 1]!)]));
-        return send(res, 200, await r.handle({ method: req.method!, path: url.pathname, params, query: url.searchParams, body }));
+      const body =
+        req.method === "GET" || req.method === "DELETE" ? undefined : matched?.route.rawBody ? await readRaw(req, matched.route.rawBody) : await readBody(req);
+      if (matched) {
+        const out = await matched.route.handle({ method: req.method!, path: url.pathname, params: matched.params, query: url.searchParams, body });
+        return out instanceof FileReply ? sendFile(res, out) : send(res, 200, out);
       }
       for (const extra of options.extraRoutes ?? []) {
         const out = await extra({ method: req.method ?? "GET", path: url.pathname, params: {}, query: url.searchParams, body });

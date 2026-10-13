@@ -650,4 +650,27 @@ describe("Host API", () => {
     expect((await api("PATCH", `/api/annotations/${earlier.id}`, { note: "again" })).status).toBe(409);
     expect((await api("POST", `/api/sessions/${session.id}/annotations/send`)).status).toBe(400);
   });
+  it("keeps attachments: raw image upload, the file back (header or ?token=), images only", async () => {
+    const png = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4c80000000049454e44ae426082", "hex");
+    const up = await fetch(`${http.url}/api/attachments?name=${encodeURIComponent("截图.png")}&type=image/png`, {
+      method: "POST",
+      headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/png" },
+      body: png,
+    });
+    expect(up.status).toBe(200);
+    const a = (await up.json()) as { id: string; name: string; mime: string; size: number; path: string };
+    expect(a).toMatchObject({ name: "截图.png", mime: "image/png", size: png.length });
+    expect(a.path.startsWith(join(root))).toBe(true);
+    const back = await fetch(`${http.url}/api/attachments/${a.id}`, { headers: { authorization: `Bearer ${TOKEN}` } });
+    expect(back.headers.get("content-type")).toBe("image/png");
+    expect(Buffer.from(await back.arrayBuffer()).equals(png)).toBe(true);
+    // An <img> sends the token in the query; that works only on this route and only with the right token.
+    expect((await fetch(`${http.url}/api/attachments/${a.id}?token=${TOKEN}`)).status).toBe(200);
+    expect((await fetch(`${http.url}/api/attachments/${a.id}?token=wrong`)).status).toBe(401);
+    expect((await fetch(`${http.url}/api/state?token=${TOKEN}`)).status).toBe(401);
+    // Images only; unknown ids are 404 (and cannot reach outside the folder).
+    const text = await fetch(`${http.url}/api/attachments?type=text/plain`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}` }, body: "hi" });
+    expect(text.status).toBe(400);
+    expect((await api("GET", "/api/attachments/att-..%2F..%2Fstudio.db")).status).toBe(404);
+  });
 });

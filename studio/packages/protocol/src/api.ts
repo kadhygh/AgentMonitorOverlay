@@ -96,6 +96,24 @@ export interface TaskTemplateChoice {
   template: string;
 }
 
+/**
+ * A file Studio keeps for a conversation or the scratchpad: an image pasted or dropped in, stored in the data folder
+ * (`attachments/`), never in a project. `path` is where agents read it.
+ */
+export interface Attachment {
+  id: string;
+  name: string;
+  mime: string;
+  size: number;
+  path: string;
+  createdAt: string;
+}
+
+/** Image types Studio accepts as attachments. */
+export const ATTACHMENT_MIMES = ["image/png", "image/jpeg", "image/gif", "image/webp"] as const;
+/** Largest attachment, in bytes. */
+export const MAX_ATTACHMENT_BYTES = 20 * 1024 * 1024;
+
 /** Features the person can turn off (设置 → 功能): their pages, panels and agent tools go away; their data stays. */
 export type OptionalFeature = "packs" | "planning";
 
@@ -139,6 +157,10 @@ export interface HostRoutes {
    */
   "GET /api/usage": { req: void; res: AccountUsage[] };
   /** `commonDir`: moves the common space to this folder (created if missing; it must not be a registered project). */
+  /** Raw bytes in the body (not JSON), the type in `content-type`, the file name in `?name=`. */
+  "POST /api/attachments": { req: void; res: Attachment };
+  /** The file itself; also accepts `?token=` so an <img> can load it. */
+  "GET /api/attachments/:id": { req: void; res: Blob };
   "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
