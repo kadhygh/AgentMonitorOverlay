@@ -2,10 +2,10 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
-> **2026-10-13 晚更新：阶段 10 的界面改版和反馈都做完了，正在做模块化重构（分支 `studio/stage-11-modules`，从 `studio/main` 拉出）。**
+> **2026-10-13 晚更新：阶段 10 的界面改版和反馈都做完了，模块化重构也做完并合回了 `studio/main`（`4826929`）。**
 > - 阶段 10：组织结构 v2、编辑部风格界面、草稿任务页、改名、@ 任务、左栏置顶和折叠、订阅用量都已提交到 `studio/main`（最后是 `a847158`，新图标"取景框"）。剩下的见 `plans/stage-10.md`（S10-06 专题页、S10-08 留言实测、S10-09 草稿区）。
 > - 重构：用户同意 `design/architecture-review-2026-10.md` 的 R1–R4，文末"实际做法"写了结果。**代码现在按功能分目录**：Host 在 `packages/host/src/features/<名字>/`（`service.ts`、`routes.ts`、`mcp.ts`），清单 `features/index.ts`；界面在 `packages/ui/src/<名字>/`（页面、`view.tsx`、样式），清单 `ui/src/features.ts`，样式顺序在 `main.tsx`。设置 → 功能 可以关掉扩展包、整体待办与调度。
-> - 重构做完、测完后由用户决定是否合回 `studio/main`。
+> - 重构由用户同意直接合回（2026-10-13），用户之后自己验证，有问题再改。分支 `studio/stage-11-modules` 保留未删。
 > - 图标源文件 `design/icon/viewfinder.svg`，改完运行 `node scripts/make-icons.mjs` 生成应用、窗口和 exe 图标。
 
 ## 1. 在哪、怎么跑
