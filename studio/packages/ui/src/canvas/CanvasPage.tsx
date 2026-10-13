@@ -84,7 +84,7 @@ interface CanvasPageProps {
 }
 
 export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles = [], onOpenTask, onNewTask }: CanvasPageProps) {
-  const { doc, save, conflict, dismissConflict } = useCanvas(link, topic.id);
+  const { doc, save, conflict, dismissConflict, error, dismissError } = useCanvas(link, topic.id);
   const [view, setView] = useState<View>(loadView);
   const [drag, setDrag] = useState<Drag | null>(null);
   const [preview, setPreviewState] = useState<CanvasDoc | null>(null);
@@ -258,6 +258,14 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
         <div role="status" className="toast" data-testid="canvas-conflict">
           <span>画布刚在别处更新过，已载入最新内容，刚才的改动没有保存。</span>
           <button type="button" className="toast-close" aria-label="关闭提示" onClick={dismissConflict}>
+            ×
+          </button>
+        </div>
+      )}
+      {error && (
+        <div role="alert" className="toast toast-error" data-testid="canvas-error">
+          <span>画布没有保存，已载入最新内容：{error}</span>
+          <button type="button" className="toast-close" aria-label="关闭提示" onClick={dismissError}>
             ×
           </button>
         </div>

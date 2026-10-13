@@ -22,7 +22,10 @@ export class CanvasFeature extends Feature {
     if (doc.version !== current.version) {
       throw new HostError("conflict", `canvas changed elsewhere (version ${current.version}, yours ${String(doc.version)}); reload and retry`);
     }
-    const errors = validateCanvas(doc, new Set(this.topicTasks(topicId).map((t) => t.id)));
+    // Archived tasks keep their cards and dependencies (hidden while archived, back on restore), so they count too:
+    // refusing them made every later save of that canvas fail (S11-A: an empty group that would not go away).
+    const known = this.store.listTasks().filter((t) => t.topicId === topicId);
+    const errors = validateCanvas(doc, new Set(known.map((t) => t.id)));
     if (errors.length) throw new HostError("bad_request", errors.slice(0, 5).join("; "));
     const next: CanvasDoc = {
       id: topicId,

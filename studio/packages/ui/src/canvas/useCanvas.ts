@@ -13,6 +13,8 @@ import { onHostEvent, onHostReconnect } from "../host/events.js";
 export function useCanvas(link: HostLink, topicId: string) {
   const [doc, setDoc] = useState<CanvasDoc | null>(null);
   const [conflict, setConflict] = useState(false);
+  /** Why the last save was refused (other than a conflict); the canvas was reloaded. */
+  const [error, setError] = useState("");
   const latest = useRef<CanvasDoc | null>(null);
   latest.current = doc;
   const queue = useRef<Promise<unknown>>(Promise.resolve());
@@ -47,9 +49,11 @@ export function useCanvas(link: HostLink, topicId: string) {
           ownSaves.current.set(version, saved.version);
           setDoc((cur) => (!cur || saved.version >= cur.version ? saved : cur));
           setConflict(false);
+          setError("");
           return saved;
         } catch (err) {
           if (err instanceof HostApiError && err.status === 409) setConflict(true);
+          else setError(err instanceof Error ? err.message : String(err));
           await load();
           throw err;
         }
@@ -61,5 +65,5 @@ export function useCanvas(link: HostLink, topicId: string) {
     [link, load, topicId],
   );
 
-  return { doc, save, conflict, dismissConflict: () => setConflict(false) };
+  return { doc, save, conflict, dismissConflict: () => setConflict(false), error, dismissError: () => setError("") };
 }

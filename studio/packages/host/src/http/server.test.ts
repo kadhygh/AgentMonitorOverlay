@@ -591,9 +591,15 @@ describe("Host API", () => {
     expect(json.groups[0]!.tasks.map((t) => t.id)).toEqual([task.id]);
     expect(outline).toContain("分组「导入」");
 
+    // An archived task keeps its card, and the canvas can still be saved (it used to be refused as a missing task).
+    await ok("POST", `/api/tasks/${task.id}/archive`);
+    const cleared = await ok<CanvasDoc>("PUT", `/api/topics/${topic.id}/canvas`, { ...saved, groups: [], nodes: [{ ...saved.nodes[0]!, groupId: null }] });
+    expect(cleared.nodes.map((n) => n.id)).toEqual(["n1"]);
+    await ok("POST", `/api/tasks/${task.id}/unarchive`);
+
     await shutdown();
     await boot();
-    expect((await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).version).toBe(1);
+    expect((await ok<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`)).version).toBe(2);
   });
 
   it("reads and writes the global scratchpad, announcing changes", async () => {
