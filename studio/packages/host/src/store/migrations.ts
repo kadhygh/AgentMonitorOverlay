@@ -224,4 +224,16 @@ export const MIGRATIONS: readonly Migration[] = [
   CREATE INDEX mail_to_topic ON mail(to_topic, created_at);
   `,
   },
+  // 8: Git Review line comments (stage 11, S11-D), per project; the comment itself is the JSON body.
+  `
+  CREATE TABLE review_comments (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT NOT NULL REFERENCES workspaces(id),
+    path TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX review_comments_workspace ON review_comments(workspace_id, created_at);
+  `,
 ];

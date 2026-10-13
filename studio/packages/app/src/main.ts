@@ -8,6 +8,7 @@ import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 import { installScratchpad } from "./scratchpad-window.js";
+import { setupReviewWindows } from "./review-window.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
@@ -38,6 +39,7 @@ let host: HostConnection | null = null;
 let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;
 const prefs = new ShellPrefs(dataDir);
+const reviews = setupReviewWindows({ url: () => (host ? (process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`) : null), preload: join(here, "preload.cjs"), icon: APP_ICON, testMode });
 
 /** Focus is on by default for people and off in tests unless a test turns it on. */
 function setFocusVisible(on: boolean): void {
@@ -145,8 +147,9 @@ if (!app.requestSingleInstanceLock()) {
       mainWindow = createMainWindow(host);
       mainWindow.on("closed", () => {
         mainWindow = null;
-        // Focus lives with the workbench window.
+        // Focus and the review windows live with the workbench window.
         focusWindow?.destroy();
+        reviews.closeAll();
       });
       if (prefs.focus(!testMode)) setFocusVisible(true);
       // The scratchpad window (便签) and its global shortcut.

@@ -20,6 +20,7 @@ import {
   type ScheduleProposal,
   type MailMessage,
   type DecisionRequest,
+  type GitReviewComment,
   type Workspace,
 } from "@amo-studio/protocol";
 import { MIGRATIONS } from "./migrations.js";
@@ -211,6 +212,8 @@ export class Store {
   removeWorkspace(id: Id): void {
     const used = this.db.prepare("SELECT 1 FROM tasks WHERE workspace_id = ? UNION SELECT 1 FROM sessions WHERE workspace_id = ? LIMIT 1").get(id, id);
     if (used) throw new Error(`workspace ${id} is still used by tasks or sessions`);
+    // Git Review comments belong to the project and go with it.
+    this.db.prepare("DELETE FROM review_comments WHERE workspace_id = ?").run(id);
     this.db.prepare("DELETE FROM workspaces WHERE id = ?").run(id);
   }
 
@@ -466,6 +469,31 @@ export class Store {
     return (this.db.prepare("SELECT body FROM annotations WHERE session_id = ? ORDER BY created_at, id").all(sessionId) as Row[]).map(
       (r) => JSON.parse(str(r.body)) as Annotation,
     );
+  }
+
+  // Git Review line comments (S11-D)
+
+  putReviewComment(c: GitReviewComment): void {
+    this.db
+      .prepare(
+        "INSERT INTO review_comments (id, workspace_id, path, state, created_at, body) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body",
+      )
+      .run(c.id, c.workspaceId, c.path, c.state, c.createdAt, JSON.stringify(c));
+  }
+
+  getReviewComment(id: Id): GitReviewComment | undefined {
+    const r = this.db.prepare("SELECT body FROM review_comments WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as GitReviewComment);
+  }
+
+  listReviewComments(workspaceId: Id): GitReviewComment[] {
+    return (this.db.prepare("SELECT body FROM review_comments WHERE workspace_id = ? ORDER BY created_at, id").all(workspaceId) as Row[]).map(
+      (r) => JSON.parse(str(r.body)) as GitReviewComment,
+    );
+  }
+
+  deleteReviewComment(id: Id): void {
+    this.db.prepare("DELETE FROM review_comments WHERE id = ?").run(id);
   }
 
   putCanvas(doc: CanvasDoc): void {

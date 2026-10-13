@@ -131,14 +131,15 @@ export async function launchFirstRun(portableDir: string): Promise<{ app: Electr
   return { app, page: await app.firstWindow() };
 }
 
-/** Which window: the workbench, the Focus window (loaded with #focus) or the scratchpad window (#scratchpad). */
-export type WindowKind = "main" | "focus" | "scratchpad";
+/** Which window: the workbench, the Focus window (#focus), the scratchpad window (#scratchpad) or a Git Review window (#review?…). */
+export type WindowKind = "main" | "focus" | "scratchpad" | "review";
 
 /** Saves a PNG of the (hidden) main window, or another window, to studio/screenshots/<stage>/<name>.png. */
 export async function screenshot(app: ElectronApplication, stage: string, name: string, page?: Page, which: WindowKind = "main"): Promise<string> {
   if (page) await settlePaint(page);
   const base64 = await app.evaluate(async ({ BrowserWindow }, kind) => {
-    const win = BrowserWindow.getAllWindows().find((w) => (w.webContents.getURL().split("#")[1] ?? "") === (kind === "main" ? "" : kind))!;
+    const kindOf = (url: string) => (url.endsWith("#focus") ? "focus" : url.endsWith("#scratchpad") ? "scratchpad" : url.includes("#review") ? "review" : "main");
+    const win = BrowserWindow.getAllWindows().find((w) => kindOf(w.webContents.getURL()) === kind)!;
     return (await win.webContents.capturePage()).toPNG().toString("base64");
   }, which);
   const file = join(studioRoot, "screenshots", stage, `${name}.png`);
@@ -150,7 +151,8 @@ export async function screenshot(app: ElectronApplication, stage: string, name: 
 /** Window state used to assert the red line: test windows never take focus and stay off every display. */
 export function windowState(app: ElectronApplication, which: WindowKind = "main") {
   return app.evaluate(({ BrowserWindow, screen }, kind) => {
-    const win = BrowserWindow.getAllWindows().find((w) => (w.webContents.getURL().split("#")[1] ?? "") === (kind === "main" ? "" : kind))!;
+    const kindOf = (url: string) => (url.endsWith("#focus") ? "focus" : url.endsWith("#scratchpad") ? "scratchpad" : url.includes("#review") ? "review" : "main");
+    const win = BrowserWindow.getAllWindows().find((w) => kindOf(w.webContents.getURL()) === kind)!;
     const b = win.getBounds();
     const onScreen = screen.getAllDisplays().some((d) => {
       const a = d.bounds;

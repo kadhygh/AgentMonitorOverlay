@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, type MouseEvent } from "react";
 import { projectWorkspaces, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { pinnedFirst, togglePin, usePins, type PinKind } from "../lib/pins.js";
 import type { Scope } from "./Board.js";
 import { UsageFooter } from "./UsageFooter.js";
+import { ProjectReviewMenu, type ProjectMenuAt } from "../gitreview/ProjectReviewMenu.js";
 
 interface ScopeNavProps {
   link: HostLink;
@@ -39,6 +40,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
   const [folded, setFolded] = useState(readFolded);
+  const [menu, setMenu] = useState<ProjectMenuAt | null>(null);
   const pins = usePins();
   const liveTasks = tasks.filter((t) => !t.archivedAt);
 
@@ -53,11 +55,11 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
       return next;
     });
 
-  const row = (kind: PinKind | null, id: string | null, target: Scope, name: string, count: number, testId: string, title?: string) => {
+  const row = (kind: PinKind | null, id: string | null, target: Scope, name: string, count: number, testId: string, title?: string, onMenu?: (e: MouseEvent) => void) => {
     const pinned = !!(kind && id && pins.has(kind, id));
     return (
       <div key={testId} className={pinned ? "nav-item pinned" : "nav-item"} title={title}>
-        <button type="button" className="nav-row" aria-current={isCurrent(scope, target)} onClick={() => onScope(target)} data-testid={testId}>
+        <button type="button" className="nav-row" aria-current={isCurrent(scope, target)} onClick={() => onScope(target)} onContextMenu={onMenu} data-testid={testId}>
           <span className="name">{name}</span>
           <span className="count">{count}</span>
         </button>
@@ -174,7 +176,12 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
 
         <section className="nav-section-box" aria-label="项目">
           {head("project", "项目", projects.length, () => setAdding(true), "添加项目")}
-          {projectRows.map((w) => row("project", w.id, { kind: "workspace", id: w.id }, w.name, liveTasks.filter((t) => t.workspaceId === w.id).length, `scope-ws-${w.name}`, w.path))}
+          {projectRows.map((w) =>
+            row("project", w.id, { kind: "workspace", id: w.id }, w.name, liveTasks.filter((t) => t.workspaceId === w.id).length, `scope-ws-${w.name}`, w.path, (e) => {
+              e.preventDefault();
+              setMenu({ workspaceId: w.id, x: e.clientX, y: e.clientY });
+            }),
+          )}
           {folded.project && projectRows.length < projects.length && (
             <button type="button" className="nav-more" onClick={() => fold("project")}>
               还有 {projects.length - projectRows.length} 个项目
@@ -231,6 +238,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
       </div>
 
       <UsageFooter link={link} live={live} />
+      {menu && <ProjectReviewMenu link={link} at={menu} onClose={() => setMenu(null)} />}
     </nav>
   );
 }

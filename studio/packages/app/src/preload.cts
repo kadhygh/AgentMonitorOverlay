@@ -43,6 +43,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
     applyShortcut: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:scratchpad-shortcut-apply"),
     shortcutStatus: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:scratchpad-shortcut-status"),
   },
+  /** The project's Git Review window (one per project). */
+  openReview: (target: { workspaceId: string; sessionId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-review", target),
   openInWorkbench: (target: { taskId?: string; sessionId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-in-workbench", target),
   onNavigate: (cb: (target: { taskId: string; sessionId?: string }) => void): (() => void) => {
     const listener = (_event: unknown, target: { taskId: string; sessionId?: string }) => cb(target);

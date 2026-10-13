@@ -21,6 +21,8 @@ import { usePacks } from "../packs/usePacks.js";
 import { useFeature } from "../lib/features.js";
 import { PresetDraftForm } from "../packs/PresetDraftForm.js";
 import type { SelectionAnchor } from "../lib/selection.js";
+import { openReview, useIsGitRepo } from "../gitreview/open.js";
+import { latestMainSession } from "../gitreview/logic.js";
 
 interface TaskPageProps {
   link: HostLink;
@@ -68,6 +70,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const profile = (id: string) => profiles.find((p) => p.id === id);
   const scopeLabel = taskWhere(task, workspaces);
   const liveTopics = topics.filter((t) => !t.archivedAt || t.id === task.topicId);
+  // Git Review: only for a project under git.
+  const gitRepo = useIsGitRepo(link, task.workspaceId);
 
   async function run<T>(fn: () => Promise<T>, onDone?: (value: T) => void) {
     setBusy(true);
@@ -209,6 +213,20 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             ))}
           </select>
         </label>
+        {gitRepo && (
+          <button
+            type="button"
+            className="btn-ghost small"
+            title="Git Review：查看项目的改动并逐行批注"
+            onClick={() => {
+              const main = latestMainSession(sessions, task.id);
+              openReview({ workspaceId: task.workspaceId, ...(main ? { sessionId: main.id } : {}) });
+            }}
+            data-testid="task-review"
+          >
+            Review
+          </button>
+        )}
         <button type="button" className="btn-ghost small" onClick={() => void archiveTask()} disabled={busy} data-testid="task-archive">
           {task.archivedAt ? "恢复任务" : "归档任务"}
         </button>
@@ -280,6 +298,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
                 <span className="writer" style={{ color: writer.color }} data-testid="writer">
                   {writer.label}
                 </span>
+              )}
+              {gitRepo && (
+                <button type="button" className="btn-ghost small" title="Git Review：批注发回这个会话" onClick={() => openReview({ workspaceId: session.workspaceId, sessionId: session.id })} data-testid="session-review">
+                  Review
+                </button>
               )}
               {!session.archivedAt && session.writer !== "terminal-handoff" && !(session.runtime === "claude" && session.kind === "sub") && (
                 <button

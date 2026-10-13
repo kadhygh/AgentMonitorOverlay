@@ -63,5 +63,17 @@
 | S11-A 画布管理 | 待做 |
 | S11-B 对话附件与引用 | 待做 |
 | S11-C 便签小窗 | ✅ 已合并到 studio/main。Host 新功能 `features/scratchpad/`：多页文档（文字 + 图片附件 id、当前页、页数 1–9），存 kv `scratchpad:doc`；旧的单份草稿读作第 1 页（不删旧键）；`GET/PATCH /api/scratchpad`、`PUT /api/scratchpad/pages/:page`，旧的 `PUT /api/scratchpad` 去掉了，调用方都已改；每次改动发 `scratchpad.updated`。小窗 `app/src/scratchpad-window.ts`：无边框置顶，480×320，第一次出现在鼠标旁（旧 AMO 的做法），之后记住位置和大小（`scratchpad-window.json`）；关闭和 Esc 只隐藏。界面 `ui/src/scratchpad/`：页码按钮和 Ctrl+1…9 切页，边打边存，页数 −/+，清空（可撤销）、复制（复制后隐藏，同旧 AMO）；粘贴或拖入图片 → 缩略图，点开看大图，× 移除。任务页右栏改为当前页摘要 +「打开便签」，没有小窗时（普通浏览器）就地编辑。设置 → 便签：按键录入、恢复默认、关闭。**决定**：默认快捷键 `Ctrl+Alt+Space`（旧 AMO 的键盘默认；旧 AMO 的鼠标侧键选项 Electron 做不到，要原生钩子，没做）；默认开启；快捷键被占用时提示，并保留之前能用的那个、设置也退回它；减少页数只隐藏后面的页，内容保留；新文档默认 3 页（同旧 AMO）；移除图片只是从页面拿掉，附件文件留在 `attachments/`（S11-0 没有删除接口）；测试里不注册真实全局快捷键，只记录。测试：Host `features/scratchpad/scratchpad.test.ts`、界面 `scratchpad/logic.test.ts`、`app/src/scratchpad-placement.test.ts`、端到端 `scratchpad.spec.ts`（截图 `screenshots/stage-11/S11-C-*`）。 |
-| S11-D Git Review | 待做 |
+| S11-D Git Review | ✅ 已合并到 studio/main。Host `features/gitreview/`：git 用 execFile 在项目文件夹里跑（`--literal-pathspecs`、`core.quotepath=off`、15 秒超时、输出有上限），状态（分支、HEAD、upstream、默认分支、合并基点）、三种范围的改动文件（工作区改动 / 本分支全部 / 已暂存，含增删行数、二进制、改名）、单个文件的整份 diff（新旧行号，"只看改动"的 hunk 由它算出）；批注存在迁移 8 的 `review_comments`，"发给会话"按文件汇总成一条消息。界面 `ui/src/gitreview/`：独立窗口 `#review?workspace=…&session=…`（`app/src/review-window.ts`，每个项目一个，再次打开复用），左边按文件夹分组的文件列表，右边两种视图，行上 "+" 加批注、可编辑删除，底栏选会话发送；j/k、↑/↓ 切文件，n/p 跳改动。入口：任务页顶栏和会话栏的 Review（只在 git 项目显示）、左栏项目右键。截图 `screenshots/stage-11/S11-D-*`。 |
 | S11-E 速度与上下文 | ✅ 每轮页脚和用量面板显示输出速度（tok/s，扣除命令和工具运行时间）；运行中状态行实时显示；输入框下方显示上下文占用（≥80% 变色）。Codex 取最近一次请求的输入+输出，Claude 取最近一条回复的用量和结果里的 contextWindow |
+
+**S11-D 的决定**（用户不在时的保守做法）：
+
+- 项目文件夹在仓库里面时，只看这个文件夹的改动，路径相对项目文件夹（`git diff --relative`），和会话的工作目录一致。
+- "本分支全部"对比的默认分支：origin/HEAD，否则 main、master、origin/main、origin/master，跳过当前分支自己；找不到时等于"工作区改动"，顶栏会说明。另加了"已暂存"范围。
+- 未跟踪的新文件算进"工作区改动"和"本分支全部"（按 .gitignore 过滤），每行都算新增；最多列 3000 个文件，单个文件超过 2 万行或 4 MB 只显示提示。
+- 批注记在新文件的行号上（删除的行记旧行号，并记下当时的范围），也存下那一行的原文；文件后来改了也不自动挪位置。不在当前视图里的批注列在文件顶部，可以"定位"到完整文件。
+- 从任务打开时默认发给任务最近活动的主会话；从会话打开发给这个会话；从项目打开不预选，要自己选（避免发错）。下拉框只列这个项目里没归档的会话。
+- 已发送的批注不能再改，默认隐藏，底栏勾"显示已发送"可以看到。批注随项目一起删除。
+- 没加 Host 事件：批注只在 Review 窗口里改，改完窗口自己重新读取。
+- 没有工作台内的页面：Electron 里总是独立窗口；没有 Electron 时用 `window.open` 打开同一个地址。e2e 用 `app.waitForEvent("window")` 拿到窗口；`e2e/tests/studio.ts` 的截图和窗口状态函数多认一种 `review` 窗口。
+- 窗口用系统标题栏（不像工作台那样自画），关闭工作台时 Review 窗口一起关闭。
