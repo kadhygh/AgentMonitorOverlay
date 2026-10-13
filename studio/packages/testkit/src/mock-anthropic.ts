@@ -31,6 +31,8 @@ export type ClaudeMockReply = (
 export interface ClaudeMockRequest {
   /** Text the person typed in the last user message (context blocks such as <system-reminder> are skipped). */
   lastUserText: string;
+  /** Image blocks in that message. */
+  images: number;
   /** Name and result text of the most recent tool call, once its result is in. */
   lastTool: { name: string; result: string } | null;
   /** True when the last user message carries a tool result, i.e. the CLI is continuing after a tool ran. */
@@ -58,7 +60,7 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
  * - `[[slow]]` → many small chunks with a delay (interrupt/queue tests)
  * - `[[markdown]]` → the same sample as the Responses mock
  * - `[[mcp: <tool> {json args}]]` → calls the AMO MCP tool `mcp__amo__<tool>`, then replies `MOCK-MCP: <start of its result>`
- * - anything else → `MOCK: <user text>`
+ * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
  * Tool calls are only made when the request offers that tool, so side requests always get text.
  */
 export const defaultClaudeScript: ClaudeMockScript = (req) => {
@@ -93,17 +95,20 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
   if (req.lastUserText.includes("[[markdown]]")) return { kind: "text", text: MOCK_MARKDOWN };
   if (req.lastUserText.includes("[[think]]")) return { kind: "text", text: `MOCK: ${req.lastUserText}`, thinking: "先想一想用户要什么。\n这是一条测试消息，照原样回复即可。" };
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
-  return { kind: "text", text: `MOCK: ${req.lastUserText}` };
+  return { kind: "text", text: `MOCK: ${req.lastUserText}${req.images ? ` [images: ${req.images}]` : ""}` };
 };
 
 type Block = { type?: string; text?: string };
 type Message = { role?: string; content?: string | Block[] };
 
 const blocksOf = (m: Message | undefined): Block[] => (typeof m?.content === "string" ? [{ type: "text", text: m.content }] : (m?.content ?? []));
-/** The person's text: text blocks that are not injected context (<system-reminder>…, "[Request interrupted by user]"). */
+/**
+ * The person's text: text blocks that are not injected context (<system-reminder>…, "[Request interrupted by user]",
+ * the "[Image: source: …]" note the CLI adds beside an image).
+ */
 const personText = (m: Message | undefined) =>
   blocksOf(m)
-    .filter((b) => b.type === "text" && typeof b.text === "string" && !/^\s*<[a-z-]+>/.test(b.text) && !/^\s*\[Request interrupted/.test(b.text))
+    .filter((b) => b.type === "text" && typeof b.text === "string" && !/^\s*<[a-z-]+>/.test(b.text) && !/^\s*\[(Request interrupted|Image: source:)/.test(b.text))
     .map((b) => b.text!.trim())
     .join("\n")
     .trim();
@@ -126,7 +131,8 @@ export function parseClaudeRequest(body: Record<string, unknown>): ClaudeMockReq
   const hasToolResult = (m: Message) => m.role === "user" && blocksOf(m).some((b) => b.type === "tool_result");
   // A message sent while a turn runs is folded in after the next tool call: it shares the user message with the tool
   // result, and is then what the person last said (so it wins over "continuing after a tool").
-  const isPerson = (m: Message) => m.role === "user" && !!personText(m);
+  const images = (m: Message | undefined) => blocksOf(m).filter((b) => b.type === "image").length;
+  const isPerson = (m: Message) => m.role === "user" && (!!personText(m) || images(m) > 0);
   // The CLI may append context messages after a tool result, so "continuing after a tool" means: a tool result came
   // after the last thing the person said, not that the very last message is one.
   const lastPersonIndex = messages.findLastIndex(isPerson);
@@ -136,6 +142,7 @@ export function parseClaudeRequest(body: Record<string, unknown>): ClaudeMockReq
   const first = personText(users[0]);
   return {
     lastUserText: lastPerson,
+    images: lastPersonIndex >= 0 ? images(messages[lastPersonIndex]) : 0,
     afterToolOutput: lastToolIndex > lastPersonIndex,
     lastTool: lastToolCall(messages),
     subagent: /^\[\[subagent:\s*([a-z0-9_-]+)\]\]/.exec(first)?.[1] ?? null,

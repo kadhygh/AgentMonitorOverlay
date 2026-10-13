@@ -22,6 +22,7 @@ import { packsTools } from "./packs/mcp.js";
 import { attachmentsRoutes } from "./attachments/routes.js";
 import { scratchpadRoutes } from "./scratchpad/routes.js";
 import { gitReviewRoutes } from "./gitreview/routes.js";
+import { filesRoutes } from "./files/routes.js";
 
 /**
  * Every Host feature (features/<name>/): its service class lives on HostService, its routes and MCP tools are listed
@@ -49,4 +50,5 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "attachments", routes: attachmentsRoutes },
   { name: "scratchpad", routes: scratchpadRoutes },
   { name: "gitreview", routes: gitReviewRoutes },
+  { name: "files", routes: filesRoutes },
 ];

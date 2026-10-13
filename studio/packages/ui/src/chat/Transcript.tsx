@@ -6,6 +6,8 @@ import { IconCheck, IconChevronDown, IconChevronRight, IconCopy, IconEdit, IconT
 import { ProcessGroup, Shimmer, MemberRow } from "./ProcessRows.js";
 import { buildTranscript, foldable, formatDuration, formatTokens, outputSpeed, segmentMembers, turnLabel, type AgentItem, type ApprovalItem, type Row, type Segment, type TurnItem } from "./turns.js";
 import type { TranscriptView } from "./prefs.js";
+import { MessageFiles, MessageImages } from "../attach/MessageAttachments.js";
+import { splitFileRefs } from "../attach/refs.js";
 
 // The conversation, one turn after another (DSH ui-chat): the person's bubble, the work (folded once the turn is
 // done), the answer, and a footer with copy, time and token usage. A running turn ends with a live status line.
@@ -105,7 +107,7 @@ function TurnView({
   const flat = view === "verbose" || (view === "detailed" && seg.running);
   return (
     <section className="turn" data-testid="turn" data-running={seg.running || undefined} data-folded={folded || undefined}>
-      {seg.inputs.map((item) => (item.type === "user" ? <UserBubble key={item.id} text={item.text} /> : null))}
+      {seg.inputs.map((item) => (item.type === "user" ? <UserBubble key={item.id} item={item} /> : null))}
       {finished && seg.rows.length > 0 && (
         <button
           type="button"
@@ -165,7 +167,7 @@ function RowView({
 function StandaloneItem({ item, busy, highlights, onApprove }: { item: SessionItem; busy: boolean; highlights(id: string): Annotation[]; onApprove: TranscriptProps["onApprove"] }) {
   switch (item.type) {
     case "user":
-      return <UserBubble text={item.text} />;
+      return <UserBubble item={item} />;
     case "agent":
       return <AgentReply item={item} highlights={highlights(item.id)} />;
     case "approval":
@@ -190,11 +192,15 @@ function StandaloneItem({ item, busy, highlights, onApprove }: { item: SessionIt
   }
 }
 
-function UserBubble({ text }: { text: string }) {
+/** The person's message: images first, then the text, then the files it referenced (read back from the text). */
+function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) {
+  const { text, files } = splitFileRefs(item.text);
   return (
     <div className="msg-user-row">
       <div className="msg-user" data-testid="msg-user">
-        <span className="msg-text">{text}</span>
+        {item.images?.length ? <MessageImages images={item.images} /> : null}
+        {text && <span className="msg-text">{text}</span>}
+        <MessageFiles files={files} />
       </div>
     </div>
   );

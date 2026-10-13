@@ -1,10 +1,10 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, HostEvent, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionStatus, ToolFields, ToolKind, ToolStatus, TurnState, TurnUsage, Workspace, AccountUsage } from "@amo-studio/protocol";
+import type { ApprovalDecision, Attachment, HostEvent, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionStatus, ToolFields, ToolKind, ToolStatus, TurnState, TurnUsage, Workspace, AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
 import { CODEX_DEFAULT_PERMISSION, codexPermission, codexPermissions } from "../choices.js";
-import { classifyCommand, contentText, unwrapShell, fileDiff, formatInput, shortPath, tail } from "../items.js";
+import { classifyCommand, contentText, messageImage, unwrapShell, fileDiff, formatInput, shortPath, tail } from "../items.js";
 import type { ServerNotification, ServerRequest } from "./rpc-client.js";
 import type { CodexServerHandle } from "./server-manager.js";
 
@@ -117,13 +117,13 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     return this.store.getSession(session.id)!;
   }
 
-  /** Starts a turn, or steers the running one. */
-  async sendMessage(sessionId: Id, text: string): Promise<{ mode: "start" | "steer" }> {
+  /** Starts a turn, or steers the running one; images go as `localImage` input (app-server reads the file). */
+  async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []): Promise<{ mode: "start" | "steer" }> {
     const session = this.writable(sessionId);
     const handle = await this.handleFor(session.profileId);
     const st = this.sessionState(sessionId);
-    const input = [{ type: "text", text, text_elements: [] }];
-    if (!session.title) this.updateSession(sessionId, { title: text.slice(0, 60) });
+    const input = [...(text ? [{ type: "text", text, text_elements: [] }] : []), ...images.map((a) => ({ type: "localImage", path: a.path }))];
+    if (!session.title) this.updateSession(sessionId, { title: (text || "图片").slice(0, 60) });
     if (st.activeTurnId) {
       await handle.client.request("turn/steer", { threadId: session.runtimeRef!, expectedTurnId: st.activeTurnId, input } as never);
       return { mode: "steer" };
@@ -525,8 +525,10 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     switch (item.type) {
       case "userMessage": {
         if (!done) return;
-        const text = (item.content ?? []).map((c) => (c && typeof c === "object" && typeof (c as { text?: unknown }).text === "string" ? (c as { text: string }).text : "")).join("");
-        this.appendItem(s.id, { type: "user", text }, raw);
+        const content = (item.content ?? []) as Array<{ type?: string; text?: unknown; path?: unknown }>;
+        const text = content.map((c) => (c && typeof c === "object" && typeof c.text === "string" ? c.text : "")).join("");
+        const images = content.filter((c) => c?.type === "localImage" && typeof c.path === "string").map((c) => messageImage(c.path as string));
+        this.appendItem(s.id, { type: "user", text, ...(images.length ? { images } : {}) }, raw);
         return;
       }
       case "reasoning": {

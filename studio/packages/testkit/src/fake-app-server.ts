@@ -42,6 +42,8 @@ export interface TurnContext {
   thread: FakeThread;
   turn: FakeTurn;
   userText: string;
+  /** `localImage` inputs of the message that started the turn. */
+  images: number;
   agentMessage(text: string, options?: { chunks?: number; delayMs?: number }): Promise<void>;
   /** Asks for approval and, when accepted, emits a completed commandExecution item with `output`. */
   command(command: string, options?: { output?: string; approval?: boolean }): Promise<ApprovalDecision | "auto">;
@@ -59,7 +61,8 @@ export class TurnInterrupted extends Error {}
 /**
  * Default script, matching the mock model's directives:
  * `[[shell: cmd]]` approval + command, `[[slow]]` slow stream, `[[subagent]]` spawns a subagent, `[[fail]]` fails the turn,
- * `[[elicit]]` an MCP tool approval (replies `FAKE-ELICITED: <action>`), otherwise replies `FAKE: <text>`. Steered input
+ * `[[elicit]]` an MCP tool approval (replies `FAKE-ELICITED: <action>`), otherwise replies `FAKE: <text>` (plus
+ * ` [images: N]` when it carried images). Steered input
  * is acknowledged in the reply.
  */
 export const defaultTurnScript: TurnScript = async (ctx) => {
@@ -83,7 +86,7 @@ export const defaultTurnScript: TurnScript = async (ctx) => {
   if (ctx.userText.includes("[[slow]]")) {
     await ctx.agentMessage("slow ".repeat(30).trim(), { chunks: 30, delayMs: 100 });
   } else {
-    await ctx.agentMessage(`FAKE: ${ctx.userText}`);
+    await ctx.agentMessage(`FAKE: ${ctx.userText}${ctx.images ? ` [images: ${ctx.images}]` : ""}`);
   }
   if (ctx.turn.steered.length) await ctx.agentMessage(`FAKE-STEERED: ${ctx.turn.steered.join(" | ")}`);
 };
@@ -209,7 +212,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
     notify(thread.id, "item/completed", { item, threadId: thread.id, turnId: turn.id, completedAtMs: Date.now() });
   }
 
-  async function runTurn(thread: FakeThread, turn: FakeTurn, userText: string, turnScript: TurnScript) {
+  async function runTurn(thread: FakeThread, turn: FakeTurn, userText: string, images: number, turnScript: TurnScript) {
     const check = () => {
       if (turn.interrupted) throw new TurnInterrupted();
     };
@@ -225,6 +228,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       thread,
       turn,
       userText,
+      images,
       sleep,
       async agentMessage(text, opts = {}) {
         check();
@@ -314,6 +318,8 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
   const textOf = (input: unknown) =>
     Array.isArray(input) ? input.map((i) => (i && typeof i === "object" && "text" in i ? String((i as { text: unknown }).text) : "")).join("") : "";
 
+  const imagesOf = (input: unknown) => (Array.isArray(input) ? input.filter((i) => i && typeof i === "object" && (i as { type?: unknown }).type === "localImage").length : 0);
+
   type Handler = (client: Client, params: Record<string, unknown>) => unknown;
   const requireThread = (params: Record<string, unknown>) => {
     const t = threads.get(String(params.threadId));
@@ -395,7 +401,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       notify(t.id, "thread/status/changed", { threadId: t.id, status: { type: "active", activeFlags: [] } });
       notify(t.id, "turn/started", { threadId: t.id, turn: turnView(turn) });
       emitItem(t, turn, { type: "userMessage", id: randomUUID(), clientId: null, content: params.input });
-      void runTurn(t, turn, userText, script);
+      void runTurn(t, turn, userText, imagesOf(params.input), script);
       return { turn: turnView(turn) };
     },
     "turn/steer": (_client, params) => {

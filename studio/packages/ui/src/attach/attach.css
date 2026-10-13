@@ -1,0 +1,113 @@
+/* Attachments and references (stage 11): the composer's tray of images and file chips, the drop highlight, the images
+   and files on a person's message, and the large view. Warm sand for "something is coming in", like the selection. */
+
+/* ---- composer ------------------------------------------------------------------------------------------------- */
+
+.attach-tray { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; padding: 2px 12px 6px; }
+.attach-thumb {
+  position: relative; width: 56px; height: 56px; flex: none; overflow: hidden;
+  border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel-raised);
+}
+.attach-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.attach-thumb[data-state="uploading"] img { opacity: 0.45; }
+.attach-thumb[data-state="failed"] { border-color: var(--error); }
+.attach-thumb[data-state="failed"] img { opacity: 0.35; }
+.attach-thumb-state {
+  position: absolute; left: 0; right: 0; bottom: 0; padding: 1px 0; text-align: center;
+  font-size: 10.5px; color: var(--text); background: var(--overlay);
+}
+.attach-thumb[data-state="failed"] .attach-thumb-state { color: var(--error-text); }
+.attach-x {
+  position: absolute; top: 3px; right: 3px; width: 16px; height: 16px; padding: 0;
+  display: inline-flex; align-items: center; justify-content: center; cursor: pointer;
+  border: 1px solid var(--border); border-radius: 50%; background: var(--overlay-strong); color: var(--text);
+}
+.attach-x:hover { border-color: var(--border-strong); }
+.attach-x.inline { position: static; border: none; background: transparent; color: var(--text-faint); }
+.attach-x.inline:hover { color: var(--text); }
+.attach-notice { font-size: 12px; color: var(--attention); }
+
+.round-btn.attach { background: transparent; color: var(--chat-dim); }
+.round-btn.attach:hover:not(:disabled) { background: var(--chat-hover); color: var(--chat-label); }
+.round-btn.attach:disabled { cursor: default; opacity: 0.5; }
+
+/* Something is being dragged over the conversation: the composer is where it lands. */
+.composer-card.dropping {
+  border-style: dashed; border-color: var(--attention-border);
+  background: color-mix(in srgb, var(--selection) 40%, var(--chat-input-bg));
+}
+.thread-wrap[data-dragging]::after {
+  content: "松开即可加入输入框"; position: absolute; inset: 8px; z-index: 6; pointer-events: none;
+  display: flex; align-items: center; justify-content: center; color: var(--text-dim); font-size: var(--fs-sm);
+  border: 2px dashed var(--attention-border); border-radius: var(--r-l);
+  background: color-mix(in srgb, var(--selection) 30%, transparent);
+}
+
+/* ---- file chips (composer and transcript) --------------------------------------------------------------------- */
+
+.file-chip {
+  display: inline-flex; align-items: center; gap: 5px; max-width: 100%; height: 24px; padding: 0 8px;
+  border: 1px solid var(--border); border-radius: var(--r-m); background: var(--chip); color: var(--text);
+  font-size: 12px; white-space: nowrap; overflow: hidden;
+}
+.file-chip svg { flex: none; color: var(--text-dim); }
+.file-chip-name { flex: 0 1 auto; max-width: 260px; font-family: var(--font-code); font-size: 11.5px; overflow: hidden; text-overflow: ellipsis; }
+.file-chip-dir { flex: 0 100 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; color: var(--text-faint); font-size: 11px; direction: rtl; text-align: left; }
+button.file-chip { cursor: pointer; font: inherit; font-size: 12px; }
+button.file-chip:hover { border-color: var(--border-strong); }
+
+/* ---- on a person's message ------------------------------------------------------------------------------------ */
+
+.msg-images { display: flex; flex-wrap: wrap; gap: 6px; }
+.msg-images + .msg-text, .msg-text + .msg-files, .msg-images + .msg-files { display: block; margin-top: 8px; }
+.msg-image { padding: 0; border: none; background: none; cursor: zoom-in; border-radius: var(--r-m); }
+.msg-image img {
+  display: block; max-width: 240px; max-height: 160px; min-width: 40px; min-height: 40px; object-fit: contain; border-radius: var(--r-m);
+  border: 1px solid var(--chat-hairline); background: var(--panel);
+}
+.msg-files { display: flex; flex-wrap: wrap; gap: 6px; white-space: normal; }
+.msg-user .file-chip { max-width: 100%; background: color-mix(in srgb, var(--panel) 55%, transparent); }
+
+/* ---- large view ----------------------------------------------------------------------------------------------- */
+
+.lightbox {
+  position: fixed; inset: 0; z-index: 200; display: flex; align-items: center; justify-content: center;
+  background: rgba(20, 18, 15, 0.72); cursor: zoom-out;
+}
+.lightbox img { max-width: 92vw; max-height: 90vh; border-radius: var(--r-m); box-shadow: 0 14px 36px var(--shadow); background: var(--panel); }
+
+/* ---- @ list: groups ------------------------------------------------------------------------------------------- */
+
+.mention-list { max-height: 360px; overflow-y: auto; min-width: 320px; }
+.mention-list .suggest-h:not(:first-child) { margin-top: 4px; border-top: 1px solid var(--divider); padding-top: 8px; }
+.mention-list button[data-kind="file"] .suggest-name { font-family: var(--font-code); font-size: 12px; }
+.mention-list button[data-kind="find"] { margin-top: 4px; border-top: 1px solid var(--divider); border-radius: 0; color: var(--text-dim); }
+.mention-list button[data-kind="find"].hl, .mention-list button[data-kind="find"]:hover { color: var(--text); }
+
+/* ---- 找文件 ---------------------------------------------------------------------------------------------------- */
+
+.file-picker-scrim { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding-top: 88px; background: rgba(239, 237, 232, 0.66); }
+:root[data-theme="dark"] .file-picker-scrim { background: rgba(0, 0, 0, 0.45); }
+.file-picker {
+  width: min(760px, calc(100vw - 40px)); display: flex; flex-direction: column; overflow: hidden;
+  border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel); box-shadow: 0 14px 36px var(--shadow);
+}
+.file-picker-input {
+  height: var(--ctl-l); margin: 10px; padding: 0 var(--ctl-px); border: 1px solid var(--border); border-radius: var(--r-m);
+  background: var(--bg-header); color: var(--text); font: inherit; font-size: var(--fs-body); outline: none;
+}
+.file-picker-input:focus { border-color: var(--border-strong); }
+.file-picker-list { max-height: min(56vh, 480px); overflow-y: auto; padding: 0 6px 6px; }
+.file-picker-list button {
+  width: 100%; display: flex; align-items: center; gap: 12px; padding: 5px 8px; border: none; border-radius: var(--r-s);
+  background: transparent; color: var(--text); text-align: left; cursor: pointer;
+}
+.file-picker-list button.hl { background: var(--selected); }
+.file-row-path { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); font-size: 12.5px; }
+.file-row-path mark { background: transparent; color: var(--attention); font-weight: 600; }
+.file-row-meta { flex: none; width: 64px; text-align: right; color: var(--text-faint); font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.file-row-meta.when { width: 72px; }
+.file-picker-empty { padding: 18px 8px; color: var(--text-faint); font-size: var(--fs-sm); text-align: center; }
+.file-picker-empty.error { color: var(--error-text); }
+.file-picker-foot { display: flex; gap: 14px; padding: 7px 14px; border-top: 1px solid var(--divider); color: var(--text-faint); font-size: 11.5px; }
+.file-picker-foot .spacer { flex: 1; }

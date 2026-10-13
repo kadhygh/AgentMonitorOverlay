@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import type { ModelProfile, SessionItem, Workspace } from "@amo-studio/protocol";
-import { DEMO_FILE, DEMO_FILE_TEXT, mockCodexProvider, removeTempDir, startMockModel, type MockModelServer } from "@amo-studio/testkit";
+import { DEMO_FILE, DEMO_FILE_TEXT, TINY_PNG_BASE64, mockCodexProvider, removeTempDir, startMockModel, type MockModelServer } from "@amo-studio/testkit";
 import { Store } from "../../store/store.js";
 import { StaticCredentialReader } from "../credentials.js";
 import { CodexRuntime } from "./codex-runtime.js";
@@ -95,6 +95,18 @@ describe("Codex runtime against the real app-server", () => {
     expect(turn).toMatchObject({ state: "completed", usage: { input: expect.any(Number), output: expect.any(Number) } });
     expect(turn.endedAt).toBeTruthy();
     expect(items(mainId).every((i) => i.raw?.turnId === turn.turnId)).toBe(true);
+  }, 60_000);
+
+  it("sends a pasted image to the model and shows it on the person's message", async () => {
+    const id = "att-00000000-0000-4000-8000-000000000001";
+    const path = join(dataDir, "attachments", `${id}.png`);
+    mkdirSync(join(dataDir, "attachments"), { recursive: true });
+    writeFileSync(path, Buffer.from(TINY_PNG_BASE64, "base64"));
+    await host.runtime.sendMessage(mainId, "what is this", [{ id, name: "dot.png", mime: "image/png", size: 68, path, createdAt: "" }]);
+    await until(() => lastAgent(mainId)?.markdown === "MOCK: what is this [images: 1]" && settled(mainId)(), "reply about the image");
+    expect(items(mainId).filter((i) => i.type === "user").at(-1)).toMatchObject({ text: "what is this", images: [{ id, path }] });
+    // Codex read the file itself and sent it to the model inline.
+    expect(JSON.stringify(mock.requests.at(-1)!.body)).toContain("data:image/png;base64,");
   }, 60_000);
 
   it("routes a command approval and records the tool result", async () => {

@@ -187,8 +187,18 @@ export interface ToolFields {
   files?: FileDiff[];
 }
 
+/**
+ * An image on a person's message: `id` is set when it is a Studio attachment (the UI loads it from the Host); an image
+ * the runtime reported by path only (e.g. sent from the TUI) has `id: null`.
+ */
+export interface MessageImage {
+  id: Id | null;
+  path: string;
+}
+
 export type SessionItem =
-  | (ItemBase & { type: "user"; text: string })
+  /** `images`: pictures sent with the message (stage 11). */
+  | (ItemBase & { type: "user"; text: string; images?: MessageImage[] })
   | (ItemBase & { type: "agent"; markdown: string; streaming: boolean })
   /** The model's thinking before or between steps. */
   | (ItemBase & { type: "reasoning"; text: string; streaming: boolean; durationMs?: number })

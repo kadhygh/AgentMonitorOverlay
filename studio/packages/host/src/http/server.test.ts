@@ -1,9 +1,10 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { composeAnnotationMessage, type Annotation, type CanvasDoc, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type StudioSettings, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { composeAnnotationMessage, type Annotation, type ProjectFiles, type CanvasDoc, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type StudioSettings, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../runtime/codex/fake-servers.test-support.js";
@@ -724,5 +725,63 @@ describe("Host API", () => {
     const text = await fetch(`${http.url}/api/attachments?type=text/plain`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}` }, body: "hi" });
     expect(text.status).toBe(400);
     expect((await api("GET", "/api/attachments/att-..%2F..%2Fstudio.db")).status).toBe(404);
+  });
+
+  it("sends a message with images by attachment id, text optional", async () => {
+    const { session } = await createTask();
+    await until(async () => (await lastAgentText(session.id)) === "FAKE: hello", "first reply");
+    const up = await fetch(`${http.url}/api/attachments?type=image/png`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/png" }, body: Buffer.from("png") });
+    const a = (await up.json()) as { id: string; path: string };
+    expect(await ok("POST", `/api/sessions/${session.id}/messages`, { attachments: [a.id] })).toEqual({ mode: "start" });
+    await until(async () => (await lastAgentText(session.id)) === "FAKE:  [images: 1]", "reply to the image");
+    expect((await items(session.id)).filter((i) => i.type === "user").at(-1)).toMatchObject({ text: "", images: [{ id: a.id, path: a.path }] });
+    // Unknown ids, a bad list, or nothing at all are refused before anything is sent.
+    expect((await api("POST", `/api/sessions/${session.id}/messages`, { text: "x", attachments: ["att-00000000-0000-4000-8000-000000000000"] })).status).toBe(400);
+    expect((await api("POST", `/api/sessions/${session.id}/messages`, { text: "x", attachments: "nope" })).status).toBe(400);
+    expect((await api("POST", `/api/sessions/${session.id}/messages`, { text: " ", attachments: [] })).status).toBe(400);
+  });
+
+  it("lists a git project's files (tracked and untracked, not ignored) with fuzzy search and recent changes", async () => {
+    const dir = join(root, "alpha");
+    const run = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: dir, stdio: "ignore" });
+    mkdirSync(join(dir, "src", "app"), { recursive: true });
+    mkdirSync(join(dir, "node_modules", "lib"), { recursive: true });
+    writeFileSync(join(dir, "src", "app", "main.ts"), "export {};\n");
+    writeFileSync(join(dir, "README.md"), "# alpha\n");
+    writeFileSync(join(dir, ".gitignore"), "node_modules/\n*.log\n");
+    writeFileSync(join(dir, "node_modules", "lib", "main.js"), "");
+    writeFileSync(join(dir, "debug.log"), "");
+    run("init", "-q");
+    run("add", ".");
+    run("commit", "-q", "-m", "init");
+    writeFileSync(join(dir, "README.md"), "# alpha, changed\n");
+    writeFileSync(join(dir, "src", "app", "new-main.ts"), "");
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: dir });
+
+    const all = await ok<ProjectFiles>("GET", `/api/workspaces/${ws.id}/files`);
+    expect(all).toMatchObject({ root: dir, source: "git", partial: false });
+    expect(all.files.map((f) => f.path).sort()).toEqual([".gitignore", "README.md", "src/app/main.ts", "src/app/new-main.ts"]);
+    expect(all.files.find((f) => f.path === "README.md")).toMatchObject({ size: expect.any(Number), modifiedAt: expect.any(String) });
+
+    const found = await ok<ProjectFiles>("GET", `/api/workspaces/${ws.id}/files?q=main&limit=1`);
+    expect(found.total).toBe(2);
+    expect(found.files).toEqual([expect.objectContaining({ path: "src/app/main.ts", match: [8, 9, 10, 11] })]);
+
+    const recent = await ok<ProjectFiles>("GET", `/api/workspaces/${ws.id}/files/recent`);
+    expect(Object.fromEntries(recent.files.map((f) => [f.path, f.change]))).toEqual({ "README.md": "M", "src/app/new-main.ts": "??" });
+  });
+
+  it("walks a project without git, skipping build output", async () => {
+    const dir = join(root, "beta");
+    mkdirSync(join(dir, "src"), { recursive: true });
+    mkdirSync(join(dir, "dist"), { recursive: true });
+    writeFileSync(join(dir, "src", "index.ts"), "");
+    writeFileSync(join(dir, "dist", "index.js"), "");
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: dir });
+    const all = await ok<ProjectFiles>("GET", `/api/workspaces/${ws.id}/files?q=index`);
+    expect(all).toMatchObject({ source: "walk", total: 1, files: [{ path: "src/index.ts", size: 0 }] });
+    const recent = await ok<ProjectFiles>("GET", `/api/workspaces/${ws.id}/files/recent`);
+    expect(recent.files.map((f) => f.path)).toEqual(["src/index.ts"]);
+    expect((await api("GET", "/api/workspaces/nope/files")).status).toBe(404);
   });
 });

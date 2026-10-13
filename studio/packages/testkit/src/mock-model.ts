@@ -15,6 +15,9 @@ export function mockCodexProvider(baseUrl: string) {
   return { name: "Mock", baseUrl, wireApi: "responses" as const, envKey: "AMO_MOCK_API_KEY", catalog: MOCK_MODEL_CATALOG };
 }
 
+/** A 1×1 PNG (base64), for tests that attach an image. */
+export const TINY_PNG_BASE64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==";
+
 /** Sample reply used by `[[markdown]]`. */
 export const MOCK_MARKDOWN = [
   "## 校验结果",
@@ -93,6 +96,8 @@ export type MockReply = (
 export interface MockModelRequest {
   /** Text of the last user message, if any. */
   lastUserText: string;
+  /** Images in the last user message. */
+  images: number;
   /** True when the last input item is a tool result, i.e. Codex is continuing after running a tool. */
   afterToolOutput: boolean;
   /** Set when this request is a subagent's first turn: the task name from Codex's agent_message (payload is encrypted). */
@@ -119,7 +124,7 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  *   `MOCK-MCP: <start of its output>`
  * - `[[think]]` → thinks first, then replies `MOCK: <user text>`
  * - `[[demo]]` → a whole working turn: think, read `importer.py`, patch it, run a check, answer with a table
- * - anything else → `MOCK: <user text>`
+ * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
  */
 export const defaultScript: MockScript = (req) => {
   if (req.lastUserText.includes("[[demo]]")) return demoStep(req);
@@ -152,7 +157,7 @@ export const defaultScript: MockScript = (req) => {
   if (req.lastUserText.includes("[[markdown]]")) return { kind: "text", text: MOCK_MARKDOWN };
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
   if (req.lastUserText.includes("[[think]]")) return { kind: "text", text: `MOCK: ${req.lastUserText}`, reasoning: "先想一想用户要什么。\n这是一条测试消息，照原样回复即可。" };
-  return { kind: "text", text: `MOCK: ${req.lastUserText}` };
+  return { kind: "text", text: `MOCK: ${req.lastUserText}${req.images ? ` [images: ${req.images}]` : ""}` };
 };
 
 function demoStep(req: MockModelRequest): MockReply {
@@ -180,11 +185,17 @@ export interface MockModelServer {
   close(): Promise<void>;
 }
 
+/** Text of a message; the tags Codex puts around an image (`<image name=…>`, `</image>`) are not the person's text. */
 function textOf(content: unknown): string {
   if (typeof content === "string") return content;
   if (!Array.isArray(content)) return "";
-  return content.map((part) => (part && typeof part === "object" && "text" in part ? String((part as { text: unknown }).text) : "")).join("");
+  return content
+    .map((part) => (part && typeof part === "object" && "text" in part ? String((part as { text: unknown }).text) : ""))
+    .filter((t) => !/^\s*<\/?image\b[^>]*>\s*$/.test(t))
+    .join("");
 }
+
+const imageCount = (content: unknown) => (Array.isArray(content) ? content.filter((p) => p && typeof p === "object" && (p as { type?: unknown }).type === "input_image").length : 0);
 
 function lastToolCall(input: Array<Record<string, unknown>>): { name: string; output: string } | null {
   const call = [...input].reverse().find((i) => i.type === "function_call");
@@ -213,6 +224,7 @@ export function parseRequest(body: Record<string, unknown>): MockModelRequest {
   const outputs = input.slice(lastUser + 1).filter((i) => i.type === "function_call_output" || i.type === "custom_tool_call_output").length;
   return {
     lastUserText: textOf(users.at(-1)?.content),
+    images: imageCount(users.at(-1)?.content),
     afterToolOutput: last?.type === "function_call_output" || last?.type === "custom_tool_call_output",
     lastTool: lastToolCall(input),
     toolOutputsSinceUser: outputs,

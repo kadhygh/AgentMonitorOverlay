@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, HostEvent, Id, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, Workspace, AccountUsage } from "@amo-studio/protocol";
+import type { ApprovalDecision, Attachment, HostEvent, Id, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, Workspace, AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../store/store.js";
 
 // What HostService needs from a runtime, and a router that sends each call to the runtime a session (or profile)
@@ -24,8 +24,11 @@ export interface SessionRuntimeApi {
    * it too; the stored title follows.
    */
   rename(sessionId: Id, title: string): Promise<Session>;
-  /** Starts a turn; while one runs, Codex steers it and Claude queues the message for the next turn. */
-  sendMessage(sessionId: Id, text: string): Promise<{ mode: SendMode }>;
+  /**
+   * Starts a turn; while one runs, Codex steers it and Claude queues the message for the next turn. `images` go along
+   * (Codex reads them from their path, Claude gets them as image blocks); `text` may be empty when there are some.
+   */
+  sendMessage(sessionId: Id, text: string, images?: readonly Attachment[]): Promise<{ mode: SendMode }>;
   interrupt(sessionId: Id): Promise<void>;
   fork(sessionId: Id, profileId?: Id): Promise<Session>;
   archive(sessionId: Id): Promise<Session[]>;
@@ -75,8 +78,8 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
     if (!profile) throw new Error(`unknown profile ${input.profileId}`);
     return this.byRuntime(profile.runtime).startSession(input);
   }
-  sendMessage(sessionId: Id, text: string) {
-    return this.forSession(sessionId).sendMessage(sessionId, text);
+  sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []) {
+    return this.forSession(sessionId).sendMessage(sessionId, text, images);
   }
   choices(profileId: Id) {
     const profile = this.profiles.find((p) => p.id === profileId);

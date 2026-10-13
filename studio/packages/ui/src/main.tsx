@@ -26,6 +26,7 @@ import "./planning/planning.css";
 import "./settings/settings.css";
 import "./scratchpad/scratchpad.css";
 import "./gitreview/gitreview.css";
+import "./attach/attach.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 
 // One bundle, two windows: the workbench, and the Focus window (loaded with #focus).

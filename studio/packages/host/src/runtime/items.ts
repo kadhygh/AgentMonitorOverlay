@@ -1,4 +1,4 @@
-import type { FileDiff } from "@amo-studio/protocol";
+import type { FileDiff, MessageImage } from "@amo-studio/protocol";
 
 // Shared shaping of runtime output into item fields (both runtimes).
 
@@ -92,6 +92,12 @@ export function classifyCommand(command: string): { kind: "read" | "search" | "l
   if (SEARCH.has(name) && plain.length) return { kind: "search", target: plain.join(" · ") };
   if (LIST.has(name)) return { kind: "list", target: plain[0] ?? "." };
   return null;
+}
+
+/** An image on a person's message, by its path: Studio attachments are named `<id>.<ext>`, so their id is known. */
+export function messageImage(path: string): MessageImage {
+  const id = /(?:^|[\\/])(att-[0-9a-f-]{36})\.[a-z]+$/.exec(path)?.[1] ?? null;
+  return { id, path };
 }
 
 /** Text of MCP-style content blocks ([{ type: "text", text }]). */

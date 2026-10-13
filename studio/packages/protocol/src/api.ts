@@ -216,7 +216,11 @@ export interface HostRoutes {
   "GET /api/sessions/:id/items": { req: void; res: SessionItem[] };
   /** Starts a turn when idle, steers the running turn otherwise. */
   /** `queue`: a Claude session was mid-turn; the message runs as the next turn. Codex steers the running turn instead. */
-  "POST /api/sessions/:id/messages": { req: { text: string }; res: { mode: "start" | "steer" | "queue" } };
+  /**
+   * `attachments`: ids of images uploaded with POST /api/attachments, sent along (Codex `localImage`, Claude image
+   * blocks); `text` may then be empty. Steered and queued messages carry them too.
+   */
+  "POST /api/sessions/:id/messages": { req: { text: string; attachments?: Id[] }; res: { mode: "start" | "steer" | "queue" } };
   "POST /api/sessions/:id/interrupt": { req: void; res: { ok: true } };
   "POST /api/sessions/:id/fork": { req: { profileId?: Id }; res: Session };
   /** Switches the session's model, effort or permissions (null clears back to the default). Codex: from the next turn. */
@@ -366,4 +370,17 @@ export interface HostRoutes {
     req: { sessionId: Id; ids?: Id[] };
     res: { mode: "start" | "steer" | "queue"; sent: import("./gitreview.js").GitReviewComment[] };
   };
+}
+
+// ---- project files (stage 11, S11-B): the file selector and "@ 文件" ----------------------------------------------
+// Declared as a second part of HostRoutes (interfaces merge), so this feature's routes stay together.
+export interface HostRoutes {
+  /**
+   * The project's files: `git ls-files` (tracked and untracked-not-ignored) in a git repository, otherwise a bounded
+   * walk that skips node_modules, .git, dist, build and the like. Listed once and cached briefly. `?q=` filters with
+   * `fuzzyMatch` (best first, with the matched indices); `?limit=` caps the rows (default 50, at most 200).
+   */
+  "GET /api/workspaces/:id/files": { req: void; res: import("./files.js").ProjectFiles };
+  /** Recently changed files: git's working-tree changes, or the newest by modification time. `?limit=` (default 8). */
+  "GET /api/workspaces/:id/files/recent": { req: void; res: import("./files.js").ProjectFiles };
 }

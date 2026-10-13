@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { HostEvent, ModelProfile, Session, SessionItem, Workspace } from "@amo-studio/protocol";
+import type { Attachment, HostEvent, ModelProfile, Session, SessionItem, Workspace } from "@amo-studio/protocol";
 import { Store } from "../../store/store.js";
 import { describeReview, CodexRuntime } from "./codex-runtime.js";
 import { FakeServers } from "./fake-servers.test-support.js";
@@ -147,6 +147,24 @@ describe("CodexRuntime", () => {
     await until(() => session(s.id).status === "running", "running");
     await runtime.interrupt(s.id);
     await until(() => session(s.id).status === "idle", "idle after interrupt");
+  });
+
+  it("sends images as localImage input, also when steering, and keeps them on the person's item", async () => {
+    const image = (n: number): Attachment => ({ id: `att-00000000-0000-4000-8000-00000000000${n}`, name: "a.png", mime: "image/png", size: 1, path: `C:/data/attachments/att-00000000-0000-4000-8000-00000000000${n}.png`, createdAt: "" });
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace });
+    await runtime.sendMessage(s.id, "", [image(1)]);
+    await until(() => idle(s.id)() && !!lastAgent(s.id), "image reply");
+    expect(session(s.id).title).toBe("图片");
+    expect(lastAgent(s.id)!.markdown).toBe("FAKE:  [images: 1]");
+    const thread = servers.fakes.get("p-ds")!.threads.get(s.runtimeRef!)!;
+    expect(thread.turns[0]!.items.find((i) => i.type === "userMessage")!.content).toEqual([{ type: "localImage", path: image(1).path }]);
+    expect(items(s.id).find((i) => i.type === "user")).toMatchObject({ text: "", images: [{ id: image(1).id, path: image(1).path }] });
+
+    await runtime.sendMessage(s.id, "[[slow]]");
+    await until(() => session(s.id).status === "running", "running");
+    expect(await runtime.sendMessage(s.id, "and this", [image(2)])).toEqual({ mode: "steer" });
+    await until(idle(s.id), "idle", 8000);
+    expect(items(s.id).filter((i) => i.type === "user").at(-1)).toMatchObject({ text: "and this", images: [{ id: image(2).id }] });
   });
 
   it("archives with descendants, blocks writes, and restores", async () => {
