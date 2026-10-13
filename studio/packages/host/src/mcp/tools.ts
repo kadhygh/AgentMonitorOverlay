@@ -65,7 +65,26 @@ function write(caller: McpCaller | null, run: (caller: McpCaller) => unknown): T
 
 /** Every AMO tool for one caller (null: reading only). */
 export function amoToolsFor(service: HostService, caller: McpCaller | null): AmoTool[] {
-  return [...amoTools(new ReadModel(service)), ...writeTools(service, caller)];
+  // schedule_propose exists only for the scheduler's own sessions.
+  const scheduler = caller && service.isSchedulerSession(caller.sessionId) ? [proposeTool(service, caller)] : [];
+  return [...amoTools(new ReadModel(service)), ...writeTools(service, caller), ...scheduler];
+}
+
+function proposeTool(service: HostService, caller: McpCaller): AmoTool {
+  return {
+    name: "schedule_propose",
+    title: "调度提案",
+    description:
+      "Propose starting work on a whole-picture todo: which workspace (id), which model (profileId), the new session's first message (prompt) and why now (reason). Nothing starts until the person approves; at most 3 proposals per round.",
+    inputSchema: { todoId: z.string(), workspace: z.string().optional(), profileId: z.string(), prompt: z.string(), reason: z.string().optional() },
+    readOnly: false,
+    autoApprove: true,
+    run: (args) =>
+      write(caller, (c) => {
+        const p = service.propose({ todoId: args.todoId, workspaceId: args.workspace, profileId: args.profileId, prompt: args.prompt, reason: args.reason }, c.sessionId);
+        return { id: p.id, state: p.state, note: "Waiting for the person to approve on the board." };
+      }),
+  };
 }
 
 

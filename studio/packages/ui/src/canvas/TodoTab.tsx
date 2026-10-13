@@ -1,9 +1,11 @@
 import { useEffect, useState } from "react";
-import type { TodoItem, Workspace } from "@amo-studio/protocol";
-import { call, type HostLink } from "../host/client.js";
+import type { ModelProfile, TodoItem, Workspace, WorkspaceActivity } from "@amo-studio/protocol";
+import { defaultProfile, profileLabel, rememberProfile } from "../lib/profiles.js";
+import { call, HostApiError, type HostLink } from "../host/client.js";
 import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
-function useTodos(link: HostLink) {
+/** Whole-picture todos, kept live (also used for scheduler proposals on the board). */
+export function useTodos(link: HostLink) {
   const [todos, setTodos] = useState<readonly TodoItem[]>([]);
   const [reload, setReload] = useState(0);
   useEffect(() => {
@@ -34,12 +36,28 @@ function useTodos(link: HostLink) {
 }
 
 /** "整体待办": global todos with an optional workspace they suit. Converting to tasks and the scheduler come in stage 7. */
-export function TodoTab({ link, workspaces }: { link: HostLink; workspaces: readonly Workspace[] }) {
+export function TodoTab({
+  link,
+  workspaces,
+  profiles = [],
+  onOpenTask,
+  activity,
+}: {
+  link: HostLink;
+  workspaces: readonly Workspace[];
+  profiles?: readonly ModelProfile[];
+  onOpenTask?(taskId: string, sessionId?: string): void;
+  /** Whether each workspace is free: open todos for free projects come first and say so. */
+  activity?: ReadonlyMap<string, WorkspaceActivity>;
+}) {
   const { todos, setDone } = useTodos(link);
+  const [converting, setConverting] = useState<string | null>(null);
   const [text, setText] = useState("");
   const [workspaceId, setWorkspaceId] = useState("");
   const wsName = (id: string | null) => (id ? (workspaces.find((w) => w.id === id)?.name ?? "") : "");
-  const open = todos.filter((t) => !t.done);
+  // Todos whose project is free now come first (stable otherwise: oldest first).
+  const free = (t: TodoItem) => (t.workspaceId && activity?.get(t.workspaceId)?.idle ? 0 : 1);
+  const open = todos.filter((t) => !t.done).sort((a, b) => free(a) - free(b));
   const done = todos.filter((t) => t.done);
 
   const add = () => {
@@ -56,15 +74,49 @@ export function TodoTab({ link, workspaces }: { link: HostLink; workspaces: read
         <input type="checkbox" checked={t.done} onChange={(e) => setDone(t.id, e.target.checked)} aria-label={`完成 ${t.text}`} />
         <span className="todo-text">{t.text}</span>
       </label>
-      {t.workspaceId && wsName(t.workspaceId) && <span className="side-note">适合：{wsName(t.workspaceId)}</span>}
+      {t.workspaceId && wsName(t.workspaceId) && (
+        <span className="side-note">
+          适合：{wsName(t.workspaceId)}
+          {!t.done && activity?.get(t.workspaceId) && (
+            <span className={activity.get(t.workspaceId)!.idle ? "todo-activity idle" : "todo-activity"}>{activity.get(t.workspaceId)!.idle ? " · 现在空闲" : " · 忙碌"}</span>
+          )}
+        </span>
+      )}
+      <div className="todo-actions">
+      {t.taskId ? (
+        <button type="button" className="link-btn primary" onClick={() => onOpenTask?.(t.taskId!)} aria-label={`打开任务 ${t.text}`}>
+          已转为任务 →
+        </button>
+      ) : (
+        !t.done && (
+          <button type="button" className="link-btn primary" aria-label={`转为任务 ${t.text}`} aria-expanded={converting === t.id} onClick={() => setConverting(converting === t.id ? null : t.id)}>
+            转为任务
+          </button>
+        )
+      )}
       <button type="button" className="link-btn" aria-label={`删除待办 ${t.text}`} onClick={() => void call(link, "DELETE /api/todos/:id", { id: t.id })}>
         删除
       </button>
+      </div>
+      {converting === t.id && (
+        <ConvertForm
+          link={link}
+          todo={t}
+          workspaces={workspaces}
+          profiles={profiles}
+          onDone={(taskId) => {
+            setConverting(null);
+            onOpenTask?.(taskId);
+          }}
+          onCancel={() => setConverting(null)}
+        />
+      )}
     </div>
   );
 
   return (
     <div className="side-section" role="group" aria-label="整体待办">
+      <SchedulerRun link={link} profiles={profiles} onStarted={(taskId, sessionId) => onOpenTask?.(taskId, sessionId)} disabled={!open.length} />
       <form
         className="todo-add"
         onSubmit={(e) => {
@@ -86,7 +138,110 @@ export function TodoTab({ link, workspaces }: { link: HostLink; workspaces: read
       {open.map(row)}
       {done.length > 0 && <span className="side-subheading">已完成 {done.length}</span>}
       {done.map(row)}
-      <span className="side-note">"转为任务"和"交给调度 agent"在阶段 7 加入。</span>
+    </div>
+  );
+}
+
+/** "转为任务": where the task goes and which model its (empty) first session uses. Nothing is sent to a model. */
+function ConvertForm({
+  link,
+  todo,
+  workspaces,
+  profiles,
+  onDone,
+  onCancel,
+}: {
+  link: HostLink;
+  todo: TodoItem;
+  workspaces: readonly Workspace[];
+  profiles: readonly ModelProfile[];
+  onDone(taskId: string): void;
+  onCancel(): void;
+}) {
+  const [workspaceId, setWorkspaceId] = useState(todo.workspaceId ?? workspaces[0]?.id ?? "");
+  const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function convert() {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await call(link, "POST /api/todos/:id/convert", { id: todo.id }, { workspaceId, profileId });
+      rememberProfile(profileId);
+      onDone(r.task.id);
+    } catch (err) {
+      setError(err instanceof HostApiError ? err.message : String(err));
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="todo-convert" data-testid="todo-convert">
+      <label className="inline-field">
+        工作区
+        <select value={workspaceId} onChange={(e) => setWorkspaceId(e.target.value)} aria-label="任务的工作区">
+          {workspaces.map((w) => (
+            <option key={w.id} value={w.id}>
+              {w.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label className="inline-field">
+        模型
+        <select value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-label="任务的模型">
+          {profiles.map((p) => (
+            <option key={p.id} value={p.id}>
+              {profileLabel(p)}
+            </option>
+          ))}
+        </select>
+      </label>
+      {error && <span className="form-error">{error}</span>}
+      <div className="todo-convert-bar">
+        <button type="button" className="btn-ghost small" onClick={onCancel} disabled={busy}>
+          取消
+        </button>
+        <button type="button" className="btn-primary small" onClick={() => void convert()} disabled={busy || !workspaceId || !profileId}>
+          建任务
+        </button>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * "让调度看一次": one scheduler round, by hand (no timer until the person decides, design/scheduler.md). It opens the
+ * round's session so the person can watch it; proposals then wait on the board.
+ */
+function SchedulerRun({ link, profiles, onStarted, disabled }: { link: HostLink; profiles: readonly ModelProfile[]; onStarted(taskId: string, sessionId: string): void; disabled: boolean }) {
+  const [profileId, setProfileId] = useState(() => (profiles.find((p) => /glm/i.test(p.id)) ?? defaultProfile(profiles))?.id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function run() {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await call(link, "POST /api/scheduler/run", {}, { profileId });
+      onStarted(r.task.id, r.session.id);
+    } catch (err) {
+      setError(err instanceof HostApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="scheduler-run">
+      <select value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-label="调度用的模型">
+        {profiles.map((p) => (
+          <option key={p.id} value={p.id}>
+            {profileLabel(p)}
+          </option>
+        ))}
+      </select>
+      <button type="button" className="btn-ghost small" onClick={() => void run()} disabled={busy || disabled || !profileId} title="调度 agent 看一遍待办和空闲的工程，提出开工提案；你批准后才开工">
+        让调度看一次
+      </button>
+      {error && <span className="form-error">{error}</span>}
     </div>
   );
 }

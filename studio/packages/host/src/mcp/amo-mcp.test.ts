@@ -209,6 +209,27 @@ describe("AMO MCP", () => {
     await client.close();
   });
 
+  it("offers schedule_propose only to the scheduler's sessions", async () => {
+    const alpha = store.listWorkspaces().find((w) => w.name === "alpha")!;
+    const scheduler = service.schedulerTask();
+    const round = store.createSession({ taskId: scheduler.id, parentId: null, kind: "main", runtime: "codex", profileId: "p-ds", workspaceId: alpha.id, title: "调度", status: "idle", writer: "workbench", runtimeRef: "t-sched" });
+    const todo = service.addTodo({ text: "统一掉落表格式", workspaceId: alpha.id });
+
+    const normal = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
+    expect((await normal.listTools()).tools.map((t) => t.name)).not.toContain("schedule_propose");
+    await normal.close();
+
+    const client = await connect(MCP_TOKEN, identities.tokenFor(round.id));
+    expect((await client.listTools()).tools.map((t) => t.name)).toContain("schedule_propose");
+    const made = (await call(client, "schedule_propose", { todoId: todo.id, profileId: "p-ds", prompt: "统一 drops.json", reason: "alpha 空闲" })).data;
+    expect(made).toMatchObject({ state: "pending" });
+    expect(service.proposals({ state: "pending" })).toMatchObject([{ todoId: todo.id, sessionId: round.id, workspaceId: alpha.id, reason: "alpha 空闲" }]);
+    const again = await call(client, "schedule_propose", { todoId: todo.id, profileId: "p-ds", prompt: "再来" });
+    expect(again.isError).toBe(true);
+    expect(again.content[0]!.text).toBe("this todo already has a pending proposal");
+    await client.close();
+  });
+
   it("asks the person for a decision; the answer comes back as mail", async () => {
     const client = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
     const asked = (await call(client, "decision_request", { question: "重试几次？", options: ["3 次", "5 次"] })).data;

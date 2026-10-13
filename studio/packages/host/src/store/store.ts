@@ -15,6 +15,7 @@ import {
   type TodoItem,
   type TaskNote,
   type ChecklistItem,
+  type ScheduleProposal,
   type MailMessage,
   type DecisionRequest,
   type Workspace,
@@ -392,6 +393,26 @@ export class Store {
 
   listTaskNotes(taskId: Id): TaskNote[] {
     return (this.db.prepare("SELECT body FROM task_notes WHERE task_id = ? ORDER BY created_at, id").all(taskId) as Row[]).map((r) => JSON.parse(str(r.body)) as TaskNote);
+  }
+
+  putProposal(p: ScheduleProposal): void {
+    this.db
+      .prepare("INSERT INTO proposals (id, todo_id, state, body, created_at) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body")
+      .run(p.id, p.todoId, p.state, JSON.stringify(p), p.createdAt);
+  }
+
+  getProposal(id: Id): ScheduleProposal | undefined {
+    const r = this.db.prepare("SELECT body FROM proposals WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as ScheduleProposal);
+  }
+
+  listProposals(filter: { state?: ScheduleProposal["state"]; todoId?: Id } = {}): ScheduleProposal[] {
+    const where: string[] = [];
+    const args: string[] = [];
+    if (filter.state) (where.push("state = ?"), args.push(filter.state));
+    if (filter.todoId) (where.push("todo_id = ?"), args.push(filter.todoId));
+    const sql = `SELECT body FROM proposals${where.length ? ` WHERE ${where.join(" AND ")}` : ""} ORDER BY created_at, id`;
+    return (this.db.prepare(sql).all(...args) as Row[]).map((r) => JSON.parse(str(r.body)) as ScheduleProposal);
   }
 
   putChecklistItem(item: ChecklistItem): void {

@@ -188,6 +188,26 @@ export interface TaskNote {
   createdAt: Timestamp;
 }
 
+/**
+ * A scheduler's proposal to start work on a whole-picture todo (stage 7, design/scheduler.md). Nothing starts until the
+ * person approves; approving turns the todo into a task and starts its first session with the prompt.
+ */
+export interface ScheduleProposal {
+  id: Id;
+  todoId: Id;
+  workspaceId: Id;
+  profileId: Id;
+  prompt: string;
+  reason: string;
+  state: "pending" | "approved" | "rejected" | "expired";
+  /** The scheduler session that proposed it; null when made through the API. */
+  sessionId: Id | null;
+  /** The task made on approval. */
+  taskId: Id | null;
+  createdAt: Timestamp;
+  decidedAt: Timestamp | null;
+}
+
 /** One step of a task's checklist, from an extension pack's task template (stage 6). */
 export interface ChecklistItem {
   id: Id;

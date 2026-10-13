@@ -129,4 +129,15 @@ export const MIGRATIONS: readonly string[] = [
   );
   CREATE INDEX checklist_task ON checklist_items(task_id, position);
   `,
+  // 5: scheduler proposals (stage 7)
+  `
+  CREATE TABLE proposals (
+    id TEXT PRIMARY KEY,
+    todo_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    body TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX proposals_state ON proposals(state, created_at);
+  `,
 ];

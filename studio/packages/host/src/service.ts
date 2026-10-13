@@ -31,13 +31,15 @@ import type {
   TaskTemplateChoice,
   PackTemplate,
   PresetDraft,
+  ScheduleProposal,
 } from "@amo-studio/protocol";
-import { PACKS_DIR, addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
+import { PACKS_DIR, workspacesActivity, addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
 import type { TerminalHandle, TerminalLauncher } from "./terminal/launcher.js";
 import { PackError, PackLoader } from "./packs/pack-loader.js";
 import { presetDraft } from "./packs/presets.js";
+import { schedulerBrief } from "./scheduler/brief.js";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
@@ -62,6 +64,9 @@ export interface HostServiceEvents {
 const MAX_NOTE_CHARS = 8000;
 const MAX_QUESTION_CHARS = 2000;
 const MAX_OPTION_CHARS = 200;
+/** Proposals one scheduler session (one round) may make (design/scheduler.md). */
+export const PROPOSALS_PER_ROUND = 3;
+const SCHEDULER_TASK_KEY = "scheduler:task";
 
 function boundedText(value: unknown, field: string, max: number): string {
   const text = typeof value === "string" ? value.trim() : "";
@@ -76,6 +81,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   /** One reclaim at a time per session, or the terminal's additions would be imported twice. */
   private readonly reclaiming = new Map<Id, Promise<Session>>();
   private readonly packLoader = new PackLoader();
+  /** Todos being turned into tasks right now. */
+  private readonly converting = new Set<Id>();
 
   constructor(
     readonly store: Store,
@@ -327,13 +334,155 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     if (patch.workspaceId !== undefined) next.workspaceId = this.optionalWorkspace(patch.workspaceId);
     this.store.putTodo(next);
     this.publish({ type: "todo.upserted", todo: next });
+    if (next.done) this.expireProposals(id);
     return next;
+  }
+
+  /**
+   * Turns a todo into a task in its workspace (or the one given), with one session and no first message (no model
+   * call). The task goes into the canvas group bound to that workspace, if any; the todo is done and points at it.
+   */
+  async convertTodo(id: Id, input: { workspaceId?: unknown; profileId?: unknown; text?: unknown }): Promise<{ todo: TodoItem; task: Task; session: Session }> {
+    const todo = this.store.getTodo(id);
+    if (!todo) throw new HostError("not_found", `todo ${id} not found`);
+    if (todo.taskId) throw new HostError("conflict", "this todo is already a task");
+    const workspaceId = this.optionalWorkspace(input?.workspaceId) ?? todo.workspaceId;
+    if (!workspaceId) throw new HostError("bad_request", "choose a workspace for the task");
+    if (typeof input?.profileId !== "string") throw new HostError("bad_request", "profileId is required");
+    // Starting the session awaits the runtime; a second convert (or approval) meanwhile must not make a second task.
+    if (this.converting.has(id)) throw new HostError("conflict", "this todo is being turned into a task");
+    this.converting.add(id);
+    try {
+      return await this.convertTodoNow(todo, workspaceId, input.profileId, input.text);
+    } finally {
+      this.converting.delete(id);
+    }
+  }
+
+  private async convertTodoNow(todo: TodoItem, workspaceId: Id, profileId: string, textIn: unknown): Promise<{ todo: TodoItem; task: Task; session: Session }> {
+    const text = typeof textIn === "string" && textIn.trim() ? textIn.trim() : undefined;
+    const { task, session } = await this.createTask({
+      title: todo.text.slice(0, 100),
+      scope: { kind: "workspace", workspaceId },
+      firstSession: { profileId, ...(text ? { text } : {}) },
+    });
+    const group = this.canvas().groups.find((g) => g.workspaceId === workspaceId);
+    if (group) this.canvasPlaceTask(task.id, group.id);
+    const next: TodoItem = { ...todo, workspaceId, taskId: task.id, done: true };
+    this.store.putTodo(next);
+    this.publish({ type: "todo.upserted", todo: next });
+    return { todo: next, task, session };
+  }
+
+  // Scheduler proposals (stage 7, design/scheduler.md): proposed by the scheduler session (or through the API), started
+  // only when the person approves.
+
+  proposals(filter: { state?: ScheduleProposal["state"] } = {}): ScheduleProposal[] {
+    return this.store.listProposals(filter);
+  }
+
+  propose(input: { todoId?: unknown; workspaceId?: unknown; profileId?: unknown; prompt?: unknown; reason?: unknown }, sessionId: Id | null = null): ScheduleProposal {
+    const todo = typeof input?.todoId === "string" ? this.store.getTodo(input.todoId) : undefined;
+    if (!todo) throw new HostError("not_found", `todo ${String(input?.todoId)} not found`);
+    if (todo.done || todo.taskId) throw new HostError("conflict", "this todo is already done or a task");
+    if (this.store.listProposals({ state: "pending", todoId: todo.id }).length) throw new HostError("conflict", "this todo already has a pending proposal");
+    if (sessionId && this.store.listProposals().filter((p) => p.sessionId === sessionId).length >= PROPOSALS_PER_ROUND) {
+      throw new HostError("bad_request", `at most ${PROPOSALS_PER_ROUND} proposals per scheduler round`);
+    }
+    const workspaceId = this.optionalWorkspace(input.workspaceId) ?? todo.workspaceId;
+    if (!workspaceId) throw new HostError("bad_request", "workspaceId is required for a todo without one");
+    if (typeof input.profileId !== "string") throw new HostError("bad_request", "profileId is required");
+    this.requireProfile(input.profileId);
+    const prompt = boundedText(input.prompt, "prompt", MAX_NOTE_CHARS);
+    const reason = input.reason === undefined || input.reason === "" ? "" : boundedText(input.reason, "reason", MAX_QUESTION_CHARS);
+    const p: ScheduleProposal = { id: newId("prop"), todoId: todo.id, workspaceId, profileId: input.profileId, prompt, reason, state: "pending", sessionId, taskId: null, createdAt: new Date().toISOString(), decidedAt: null };
+    this.store.putProposal(p);
+    this.publish({ type: "proposal.upserted", proposal: p });
+    return p;
+  }
+
+  /** The fixed cross-workspace task the scheduler's sessions live in (made on first use). */
+  schedulerTask(): Task {
+    const id = this.store.getKv(SCHEDULER_TASK_KEY)?.value;
+    const existing = id ? this.store.getTask(id) : undefined;
+    if (existing) return existing;
+    const task = this.store.createTask({ title: "调度", scope: { kind: "area" }, column: "doing" });
+    this.store.setKv(SCHEDULER_TASK_KEY, task.id);
+    this.publish({ type: "task.upserted", task });
+    return task;
+  }
+
+  isSchedulerSession(sessionId: Id): boolean {
+    const id = this.store.getKv(SCHEDULER_TASK_KEY)?.value;
+    return !!id && this.store.getSession(sessionId)?.taskId === id;
+  }
+
+  /**
+   * One scheduler round, started by the person: a new session in the scheduler task whose first message is the brief
+   * (open todos, which projects are free, models, presets, rules). It can only propose; the person approves.
+   */
+  async runScheduler(input: { profileId?: unknown } = {}): Promise<{ task: Task; session: Session }> {
+    if (typeof input?.profileId !== "string") throw new HostError("bad_request", "profileId is required");
+    this.requireProfile(input.profileId);
+    const workspaces = this.store.listWorkspaces();
+    // A session needs a working directory; the scheduler only reads Studio through the MCP and is told not to touch
+    // files, so the first registered workspace serves.
+    if (!workspaces.length) throw new HostError("bad_request", "register a workspace first");
+    const task = this.schedulerTask();
+    const text = schedulerBrief({
+      todos: this.store.listTodos(),
+      workspaces,
+      activity: workspacesActivity(workspaces, this.store.listSessions()),
+      profiles: this.profiles,
+      packs: workspaces.flatMap((w) => this.packs(w.id).map((p) => ({ ...p, workspaceId: w.id }))),
+      perRound: PROPOSALS_PER_ROUND,
+    });
+    const session = await this.addSession(task.id, { profileId: input.profileId, workspaceId: workspaces[0]!.id, text });
+    return { task: this.store.getTask(task.id)!, session };
+  }
+
+  /** Approves a proposal, with the person's edits: the todo becomes a task and its first session starts with the prompt. */
+  async approveProposal(id: Id, edits: { prompt?: unknown; profileId?: unknown } = {}): Promise<{ proposal: ScheduleProposal; task: Task; session: Session }> {
+    const p = this.pendingProposal(id);
+    const prompt = edits.prompt === undefined ? p.prompt : boundedText(edits.prompt, "prompt", MAX_NOTE_CHARS);
+    const profileId = typeof edits.profileId === "string" ? this.requireProfile(edits.profileId).id : p.profileId;
+    const todo = this.store.getTodo(p.todoId);
+    if (!todo || todo.done || todo.taskId) {
+      this.decideProposal(p, "expired");
+      throw new HostError("conflict", "the todo is gone or already handled; the proposal expired");
+    }
+    const { task, session } = await this.convertTodo(todo.id, { workspaceId: p.workspaceId, profileId, text: prompt });
+    const proposal = this.decideProposal({ ...p, prompt, profileId, taskId: task.id }, "approved");
+    return { proposal, task, session };
+  }
+
+  rejectProposal(id: Id): ScheduleProposal {
+    return this.decideProposal(this.pendingProposal(id), "rejected");
+  }
+
+  private pendingProposal(id: Id): ScheduleProposal {
+    const p = this.store.getProposal(id);
+    if (!p) throw new HostError("not_found", `proposal ${id} not found`);
+    if (p.state !== "pending") throw new HostError("conflict", `this proposal is already ${p.state}`);
+    return p;
+  }
+
+  private decideProposal(p: ScheduleProposal, state: ScheduleProposal["state"]): ScheduleProposal {
+    const next: ScheduleProposal = { ...p, state, decidedAt: new Date().toISOString() };
+    this.store.putProposal(next);
+    this.publish({ type: "proposal.upserted", proposal: next });
+    return next;
+  }
+
+  private expireProposals(todoId: Id): void {
+    for (const p of this.store.listProposals({ state: "pending", todoId })) this.decideProposal(p, "expired");
   }
 
   deleteTodo(id: Id): void {
     if (!this.store.getTodo(id)) throw new HostError("not_found", `todo ${id} not found`);
     this.store.deleteTodo(id);
     this.publish({ type: "todo.removed", todoId: id });
+    this.expireProposals(id);
   }
 
   private optionalWorkspace(value: unknown): Id | null {

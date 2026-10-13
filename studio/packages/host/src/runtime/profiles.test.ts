@@ -52,6 +52,7 @@ describe("codexServerSpec", () => {
       "mcp_servers.amo.tools.task_note_add.approval_mode": "approve",
       "mcp_servers.amo.tools.handoff_submit.approval_mode": "approve",
       "mcp_servers.amo.tools.checklist_check.approval_mode": "approve",
+      "mcp_servers.amo.tools.schedule_propose.approval_mode": "approve",
       "mcp_servers.amo.tools.canvas_group_create.approval_mode": "prompt",
       "mcp_servers.amo.tools.canvas_place.approval_mode": "prompt",
     });

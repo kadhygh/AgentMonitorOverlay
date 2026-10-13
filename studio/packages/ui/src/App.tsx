@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { Task } from "@amo-studio/protocol";
+import { workspacesActivity, type Task } from "@amo-studio/protocol";
 import { Board, type Scope } from "./board/Board.js";
 import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
@@ -11,6 +11,8 @@ import { needsPerson, taskSessions, taskStatus } from "./lib/status.js";
 import { mailByTask, useUnreadMail } from "./host/useInbox.js";
 import { useOpenDecisions } from "./task/DecisionPanel.js";
 import { checklistByTask, useChecklist } from "./task/ChecklistPanel.js";
+import { ProposalsPanel, usePendingProposals } from "./board/ProposalsPanel.js";
+import { useTodos } from "./canvas/TodoTab.js";
 
 // `nav` changes when Focus asks for a session, so an already open task page re-opens on that session.
 type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "packs"; workspaceId: string } | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
@@ -38,11 +40,14 @@ export function App() {
   const unreadMail = useUnreadMail(host.kind === "ready" ? host.link : NO_LINK);
   const openDecisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
   const checklist = useChecklist(host.kind === "ready" ? host.link : NO_LINK);
+  const proposals = usePendingProposals(host.kind === "ready" ? host.link : NO_LINK);
+  const { todos } = useTodos(host.kind === "ready" ? host.link : NO_LINK);
 
   useEffect(
     () =>
+      // From Focus: a task (and session), or the board when no task is named (scheduler proposals).
       window.amo?.onNavigate?.(({ taskId, sessionId }) =>
-        setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}), nav: Date.now() }),
+        setView(taskId ? { kind: "task", taskId, ...(sessionId ? { sessionId } : {}), nav: Date.now() } : { kind: "board" }),
       ),
     [],
   );
@@ -62,7 +67,8 @@ export function App() {
   const decisionsByTask = new Map<string, number>();
   for (const d of openDecisions) decisionsByTask.set(d.taskId, (decisionsByTask.get(d.taskId) ?? 0) + 1);
   // A task needs the person when a session waits for approval or review, or an agent asked for a decision.
-  const needs = state.tasks.filter((t) => needsPerson(taskStatus(taskSessions(t, state.sessions))) || decisionsByTask.has(t.id)).length;
+  // Pending scheduler proposals wait for the person too (one each: they are not tasks yet).
+  const needs = state.tasks.filter((t) => needsPerson(taskStatus(taskSessions(t, state.sessions))) || decisionsByTask.has(t.id)).length + proposals.length;
   const scopeName = scope.kind === "area" ? "跨工作区" : scope.kind === "workspace" ? (state.workspaces.find((w) => w.id === scope.id)?.name ?? "") : "";
   const openTask = (task: Task) => setView({ kind: "task", taskId: task.id });
 
@@ -92,6 +98,17 @@ export function App() {
         />
         <main className="main">
           {view.kind === "board" && (
+            <ProposalsPanel
+              link={link}
+              proposals={proposals}
+              todos={todos}
+              workspaces={state.workspaces}
+              profiles={state.profiles}
+              activity={workspacesActivity(state.workspaces, state.sessions)}
+              onStarted={(taskId, sessionId) => setView({ kind: "task", taskId, sessionId })}
+            />
+          )}
+          {view.kind === "board" && (
             <Board
               tasks={state.tasks}
               sessions={state.sessions}
@@ -109,7 +126,8 @@ export function App() {
               tasks={state.tasks}
               sessions={state.sessions}
               workspaces={state.workspaces}
-              onOpenTask={(taskId) => setView({ kind: "task", taskId })}
+              profiles={state.profiles}
+              onOpenTask={(taskId, sessionId) => setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}) })}
             />
           )}
           {view.kind === "packs" && (() => {
