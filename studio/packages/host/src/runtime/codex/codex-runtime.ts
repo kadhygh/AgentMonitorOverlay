@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, Attachment, HostEvent, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionStatus, ToolFields, ToolKind, ToolStatus, TurnState, TurnUsage, Workspace, AccountUsage } from "@amo-studio/protocol";
+import { codexAnswers, elicitationForm, formContent, storedAnswers, type ApprovalDecision, type Attachment, type HostEvent, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionPrompt, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SessionStatus, type ToolFields, type ToolKind, type ToolStatus, type TurnState, type TurnUsage, type Workspace, type AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
@@ -63,9 +63,20 @@ interface PendingApproval {
   requestId: ServerRequest["id"];
 }
 
+/** request_user_input or an MCP form waiting for the person (a `question` item). */
+interface PendingQuestion {
+  kind: "input" | "form";
+  sessionId: Id;
+  itemId: Id;
+  profileId: string;
+  requestId: ServerRequest["id"];
+  questions: QuestionPrompt[];
+}
+
 type ThreadLike = { id: string; forkedFromId?: string | null; parentThreadId?: string | null; modelProvider?: string };
 
 const ELICITATION = "mcpServer/elicitation/request";
+const USER_INPUT = "item/tool/requestUserInput";
 const isApprovalMethod = (method: string) => method.endsWith("requestApproval") || method === "applyPatchApproval" || method === "execCommandApproval" || method === ELICITATION;
 
 export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
@@ -73,6 +84,8 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   private readonly now: () => Date;
   private readonly state = new Map<Id, SessionState>();
   private readonly approvals = new Map<string, PendingApproval>();
+  /** question item id -> the server request waiting for its answer */
+  private readonly questions = new Map<Id, PendingQuestion>();
   private readonly attached = new WeakSet<CodexServerHandle["client"]>();
   private readonly usageCache = new Map<Id, AccountUsage>();
   private readonly modelCache = new Map<Id, { at: number; models: ModelOption[] }>();
@@ -81,6 +94,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     super();
     this.store = options.store;
     this.now = options.now ?? (() => new Date());
+    this.cancelStaleQuestions();
     options.servers.on("ready", (handle) => {
       this.attach(handle);
       void this.resubscribe(handle).catch((err: unknown) => this.emit("log", `resubscribe failed: ${String(err)}`));
@@ -189,6 +203,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     const session = this.requireSession(sessionId);
     const st = this.sessionState(sessionId);
     if (!st.activeTurnId || !session.runtimeRef) return;
+    for (const q of [...this.questions.values()]) if (q.sessionId === sessionId) this.closeQuestion(q, "cancelled");
     const handle = await this.handleFor(session.profileId);
     await handle.client.request("turn/interrupt", { threadId: session.runtimeRef, turnId: st.activeTurnId } as never);
   }
@@ -250,7 +265,36 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     );
     this.approvals.delete(approvalKey(sessionId, approvalId));
     this.updateItem(pending.itemId, (item) => (item.type === "approval" ? { ...item, state: decision === "accept" ? "accepted" : "declined" } : item));
-    if (this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, "running");
+    this.afterAnswer(sessionId);
+  }
+
+  /**
+   * Answers request_user_input (answers by question id; dismissing answers none) or an MCP form (accept with the
+   * values, or decline). Secret answers go to Codex only; the item keeps them masked.
+   */
+  async answerQuestion(sessionId: Id, itemId: Id, reply: QuestionReply): Promise<void> {
+    const pending = this.questions.get(itemId);
+    if (!pending || pending.sessionId !== sessionId) throw new Error(`question ${itemId} is not pending`);
+    const handle = await this.handleFor(pending.profileId);
+    const item = this.store.getItem(itemId);
+    if (pending.kind === "input") {
+      if (reply.action !== "answer" && reply.action !== "dismiss") throw new Error(`questions take an answer, not ${reply.action}`);
+      const answers = reply.action === "answer" ? reply.answers : [];
+      handle.client.respond(pending.requestId, codexAnswers(pending.questions, answers));
+      this.closeQuestion(pending, reply.action === "answer" ? "answered" : "dismissed", reply.action === "answer" ? { answers: storedAnswers(pending.questions, answers) } : {});
+    } else {
+      if (reply.action === "submit") {
+        const form = item?.type === "question" ? (item.form ?? []) : [];
+        const checked = formContent(form, reply.values);
+        if ("error" in checked) throw new Error(checked.error);
+        handle.client.respond(pending.requestId, { action: "accept", content: checked.content, _meta: null });
+        this.closeQuestion(pending, "answered", { values: checked.content });
+      } else if (reply.action === "dismiss") {
+        handle.client.respond(pending.requestId, { action: "decline", content: null, _meta: null });
+        this.closeQuestion(pending, "dismissed");
+      } else throw new Error(`a form takes its values, not ${reply.action}`);
+    }
+    this.afterAnswer(sessionId);
   }
 
   /** Where an attached terminal should connect. The token must only travel through an env var. */
@@ -266,6 +310,28 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   /** Records who may write; used by terminal attach and reclaim. */
   setWriter(sessionId: Id, writer: Session["writer"]): Session {
     return this.updateSession(sessionId, { writer });
+  }
+
+  /** After an answer: still waiting for another question or approval, or back to running. */
+  private afterAnswer(sessionId: Id): void {
+    if ([...this.questions.values()].some((q) => q.sessionId === sessionId)) this.setStatus(sessionId, "awaiting-answer");
+    else if ([...this.approvals.values()].some((a) => a.sessionId === sessionId)) this.setStatus(sessionId, "awaiting-approval");
+    else if (this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, "running");
+  }
+
+  private closeQuestion(q: PendingQuestion, state: "answered" | "dismissed" | "cancelled", patch: Partial<Extract<SessionItem, { type: "question" }>> = {}): void {
+    this.questions.delete(q.itemId);
+    this.updateItem(q.itemId, (it) => (it.type === "question" && it.state === "pending" ? { ...it, ...patch, state } : it));
+  }
+
+  /** At start-up no request is waiting yet: questions left pending by the last Host are over (servers replay live ones). */
+  private cancelStaleQuestions(): void {
+    for (const s of this.store.listSessions()) {
+      if (s.runtime !== "codex") continue;
+      for (const item of this.store.listItems(s.id)) {
+        if (item.type === "question" && item.state === "pending") this.updateItem(item.id, (it) => (it.type === "question" ? { ...it, state: "cancelled" } : it));
+      }
+    }
   }
 
   pendingApprovals(sessionId: Id): string[] {
@@ -298,6 +364,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       this.approvals.delete(key);
       this.updateItem(a.itemId, (item) => (item.type === "approval" && item.state === "pending" ? { ...item, state: "resolved-elsewhere" } : item));
     }
+    for (const q of [...this.questions.values()]) if (q.profileId === handle.profileId) this.closeQuestion(q, "cancelled");
   }
 
   /** After a (re)connect, subscribe again to every live thread served by this profile's server. */
@@ -312,8 +379,8 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         const st = this.sessionState(s.id);
         if (!active) st.activeTurnId = null;
         const current = this.store.getSession(s.id)!.status;
-        if (active && current !== "awaiting-approval") this.setStatus(s.id, "running");
-        if (!active && (current === "running" || current === "awaiting-approval")) this.setStatus(s.id, "idle");
+        if (active && current !== "awaiting-approval" && current !== "awaiting-answer") this.setStatus(s.id, "running");
+        if (!active && (current === "running" || current === "awaiting-approval" || current === "awaiting-answer")) this.setStatus(s.id, "idle");
       } catch (err) {
         this.emit("log", `thread/resume failed for ${s.id}: ${String(err)}`);
       }
@@ -350,6 +417,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         const st = this.sessionState(s.id);
         if (st.activeTurnId === n.params.turn.id) st.activeTurnId = null;
         const turn = n.params.turn as { id: string; status: string; error?: { message: string } | null; startedAt?: number | null; completedAt?: number | null };
+        for (const q of [...this.questions.values()]) if (q.sessionId === s.id) this.closeQuestion(q, "cancelled");
         this.closeTurn(s.id, turn);
         if (turn.status === "failed") {
           this.appendItem(s.id, { type: "error", message: turn.error?.message ?? "turn failed" }, { method: n.method, turnId: n.params.turn.id });
@@ -436,6 +504,12 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
           this.updateItem(a.itemId, (item) => (item.type === "approval" && item.state === "pending" ? { ...item, state: "resolved-elsewhere" } : item));
           if (this.sessionState(a.sessionId).activeTurnId) this.setStatus(a.sessionId, "running");
         }
+        for (const q of [...this.questions.values()]) {
+          if (q.profileId !== handle.profileId || String(q.requestId) !== String(n.params.requestId)) continue;
+          // Answered in an attached terminal: what it answered is not known here.
+          this.closeQuestion(q, "answered");
+          this.afterAnswer(q.sessionId);
+        }
         return;
       }
       case "error": {
@@ -492,6 +566,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   }
 
   private onServerRequest(handle: CodexServerHandle, r: ServerRequest): void {
+    if (r.method === USER_INPUT || (r.method === ELICITATION && elicitationForm((r.params as { requestedSchema?: unknown }).requestedSchema))) return this.onQuestion(handle, r);
     if (!isApprovalMethod(r.method)) return;
     const params = r.params as { threadId?: string; turnId?: string; itemId?: string; command?: string | null; reason?: string | null; cwd?: string; message?: string; serverName?: string };
     const s = params.threadId ? this.findByThread(params.threadId) : undefined;
@@ -514,6 +589,27 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     }, { method: r.method, ...(params.itemId ? { itemId: params.itemId } : {}), ...(params.turnId ? { turnId: params.turnId } : {}) });
     this.approvals.set(key, { kind: elicitation ? "elicitation" : "approval", sessionId: s.id, itemId: item.id, profileId: handle.profileId, requestId: r.id });
     this.setStatus(s.id, "awaiting-approval");
+  }
+
+  /** request_user_input, or an MCP form with fields to fill in: a question item instead of an approval. */
+  private onQuestion(handle: CodexServerHandle, r: ServerRequest): void {
+    const params = r.params as { threadId?: string; turnId?: string | null; itemId?: string; questions?: unknown; message?: string; serverName?: string; requestedSchema?: unknown };
+    const s = params.threadId ? this.findByThread(params.threadId) : undefined;
+    if (!s) return;
+    // Replayed on resubscribe: the item already stands for it.
+    if ([...this.questions.values()].some((q) => q.profileId === handle.profileId && String(q.requestId) === String(r.id))) return;
+    const raw = { method: r.method, ...(params.itemId ? { itemId: params.itemId } : {}), ...(params.turnId ? { turnId: params.turnId } : {}) };
+    const questions = r.method === USER_INPUT ? inputQuestions(params.questions) : [];
+    const item =
+      r.method === USER_INPUT
+        ? this.appendItem(s.id, { type: "question", source: "codex-input", questions, state: "pending" }, raw)
+        : this.appendItem(
+            s.id,
+            { type: "question", source: "mcp-form", message: params.message ?? "", form: elicitationForm(params.requestedSchema)!, ...(params.serverName ? { serverName: params.serverName } : {}), state: "pending" },
+            raw,
+          );
+    this.questions.set(item.id, { kind: r.method === USER_INPUT ? "input" : "form", sessionId: s.id, itemId: item.id, profileId: handle.profileId, requestId: r.id, questions });
+    this.setStatus(s.id, "awaiting-answer");
   }
 
   private onItem(method: "item/started" | "item/completed", threadId: string, turnId: string, item: CodexItem): void {
@@ -777,6 +873,26 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 
 const approvalKey = (sessionId: Id, approvalId: string) => `${sessionId}:${approvalId}`;
+
+/** request_user_input's questions as Studio shows them: free text when there are no options, or `isOther`. */
+export function inputQuestions(list: unknown): QuestionPrompt[] {
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return (Array.isArray(list) ? (list as Array<Record<string, unknown>>) : [])
+    .filter((q) => q && typeof q === "object" && str(q.id))
+    .map((q) => {
+      const options = (Array.isArray(q.options) ? (q.options as Array<Record<string, unknown>>) : [])
+        .filter((o) => o && typeof o === "object" && str(o.label))
+        .map((o) => ({ label: str(o.label), ...(str(o.description) ? { description: str(o.description) } : {}) }));
+      return {
+        id: str(q.id),
+        question: str(q.question) || str(q.header) || str(q.id),
+        ...(str(q.header) ? { header: str(q.header) } : {}),
+        options,
+        ...(q.isOther === true || !options.length ? { other: true } : {}),
+        ...(q.isSecret === true ? { secret: true } : {}),
+      };
+    });
+}
 
 /** The fields of a `model/list` entry the runtime reads. */
 interface CodexModel {

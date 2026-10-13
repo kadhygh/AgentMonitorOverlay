@@ -13,6 +13,7 @@ export interface StatusLook {
 export const SESSION_LOOK: Record<SessionStatus, StatusLook> = {
   running: { label: "运行中", dot: "var(--running)", text: "var(--running-text)" },
   "awaiting-approval": { label: "待批准", dot: "var(--attention)", text: "var(--attention)" },
+  "awaiting-answer": { label: "等你回答", dot: "var(--attention)", text: "var(--attention)" },
   "awaiting-review": { label: "待审阅", dot: "var(--attention)", text: "var(--attention)" },
   error: { label: "出错", dot: "var(--error)", text: "var(--error-text)" },
   idle: { label: "空闲", dot: "var(--muted-dot)", text: "var(--text-dim)" },
@@ -20,7 +21,7 @@ export const SESSION_LOOK: Record<SessionStatus, StatusLook> = {
 };
 
 /** Most urgent first: a card shows the status that most needs the person. */
-const PRIORITY: SessionStatus[] = ["awaiting-approval", "awaiting-review", "error", "running", "idle", "completed"];
+const PRIORITY: SessionStatus[] = ["awaiting-approval", "awaiting-answer", "awaiting-review", "error", "running", "idle", "completed"];
 
 /** A task's status is derived from its live (non-archived) sessions; the column is separate and set by the person. */
 export function taskStatus(sessions: readonly Session[]): SessionStatus | null {
@@ -29,7 +30,7 @@ export function taskStatus(sessions: readonly Session[]): SessionStatus | null {
   return PRIORITY.find((p) => live.some((s) => s.status === p)) ?? "idle";
 }
 
-export const needsPerson = (status: SessionStatus | null) => status === "awaiting-approval" || status === "awaiting-review";
+export const needsPerson = (status: SessionStatus | null) => status === "awaiting-approval" || status === "awaiting-answer" || status === "awaiting-review";
 
 export function taskSessions(task: Task, sessions: readonly Session[]): Session[] {
   return sessions.filter((s) => s.taskId === task.id);

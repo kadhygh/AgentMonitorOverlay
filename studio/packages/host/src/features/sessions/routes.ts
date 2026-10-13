@@ -23,6 +23,7 @@ export function sessionsRoutes(service: HostService): Route[] {
     route("POST", "/api/sessions/:id/unarchive", ({ params }) => service.sessions.unarchive(params.id!)),
     route("POST", "/api/sessions/:id/terminal", ({ params, body }) => service.sessions.terminal(params.id!, obj(body).launch === true)),
     route("POST", "/api/sessions/:id/reclaim", ({ params }) => service.sessions.reclaim(params.id!)),
+    route("POST", "/api/sessions/:id/questions/:itemId/answer", async ({ params, body }) => (await service.sessions.answerQuestion(params.id!, params.itemId!, body), { ok: true })),
     route("POST", "/api/approvals/:approvalId", async ({ params, body }) => {
       const b = obj(body);
       await service.sessions.respondApproval(str(b.sessionId, "sessionId"), params.approvalId!, b.decision as never);

@@ -4,7 +4,7 @@ import type { Id, Session, SessionStatus, Workspace } from "./entities.js";
 // means someone is at it: a session in that workspace is running, waits for the person (approval or review), or is in a
 // terminal (the person may be typing there while Studio shows it idle).
 
-export const BUSY_STATUSES: readonly SessionStatus[] = ["running", "awaiting-approval", "awaiting-review"];
+export const BUSY_STATUSES: readonly SessionStatus[] = ["running", "awaiting-approval", "awaiting-answer", "awaiting-review"];
 
 export interface WorkspaceActivity {
   workspaceId: Id;

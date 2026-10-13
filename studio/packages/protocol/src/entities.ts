@@ -1,5 +1,6 @@
 // Core entities shared by Host, app and UI. See docs/next-gen-vision-architecture-2026-10.md and
 // studio/design/interaction-notes.md for the meaning of each state.
+import type { QuestionFields } from "./questions.js";
 
 export type Id = string;
 /** ISO-8601 timestamp. */
@@ -57,8 +58,11 @@ export interface Topic {
 export type SessionRuntime = "codex" | "claude";
 export type SessionKind = "main" | "fork" | "sub";
 
-/** Updated automatically from runtime events; independent from the task column. */
-export const SESSION_STATUSES = ["running", "awaiting-approval", "awaiting-review", "idle", "completed", "error"] as const;
+/**
+ * Updated automatically from runtime events; independent from the task column. `awaiting-answer`: the agent asked the
+ * person a question (or for a plan review) and waits (stage 12).
+ */
+export const SESSION_STATUSES = ["running", "awaiting-approval", "awaiting-answer", "awaiting-review", "idle", "completed", "error"] as const;
 export type SessionStatus = (typeof SESSION_STATUSES)[number];
 
 /**
@@ -206,6 +210,8 @@ export type SessionItem =
   /** Metadata of one turn (not shown as a row): when it ran, how it ended, what it used. */
   | (ItemBase & { type: "turn"; turnId: string; state: TurnState; startedAt: Timestamp; endedAt?: Timestamp; usage?: TurnUsage; error?: string })
   | (ItemBase & { type: "approval"; approvalId: string; kind: ApprovalKind; summary: string; detail?: string; state: ApprovalState })
+  /** A question to the person, a form, or a plan to review (stage 12; see questions.ts). */
+  | (ItemBase & { type: "question" } & QuestionFields)
   | (ItemBase & { type: "subagent"; childSessionId: Id; summary: string })
   | (ItemBase & { type: "error"; message: string })
   | (ItemBase & { type: "notice"; level: "info" | "warning"; message: string });

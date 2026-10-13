@@ -95,7 +95,7 @@ export function buildTranscript(items: readonly SessionItem[], sessionRunning: b
     // Only the last group of a running turn is still open; a reply or anything else after a group ends it.
     // (An approval it is waiting on does not end it.)
     const lastGroup = rows.findLastIndex((r) => r.kind === "group");
-    const waiting = rows.slice(lastGroup + 1).every((r) => r.kind === "item" && r.item.type === "approval" && r.item.state === "pending");
+    const waiting = rows.slice(lastGroup + 1).every((r) => r.kind === "item" && (r.item.type === "approval" || r.item.type === "question") && r.item.state === "pending");
     if (running && !answer && lastGroup >= 0 && waiting) (rows[lastGroup] as Extract<Row, { kind: "group" }>).closed = false;
     return { key: part.items[0]!.id, turn, inputs, rows, answer, tail, running, interleaved };
   });

@@ -9,6 +9,7 @@ import type { TranscriptView } from "./prefs.js";
 import { MessageFiles, MessageImages } from "../attach/MessageAttachments.js";
 import { splitFileRefItems } from "../attach/refs.js";
 import { TurnChanges } from "../files/ChangedFiles.js";
+import { QuestionRecord } from "./questions/QuestionRecord.js";
 
 // The conversation, one turn after another (DSH ui-chat): the person's bubble, the work (folded once the turn is
 // done), the answer, and a footer with copy, time and token usage. A running turn ends with a live status line.
@@ -28,7 +29,7 @@ interface TranscriptProps {
 }
 
 export function Transcript({ session, items, annotations, model, busy, view, onApprove, onJump }: TranscriptProps) {
-  const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval";
+  const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
   // Turns the person unfolded (or folded again); finished turns start folded.
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
@@ -74,7 +75,7 @@ export function Transcript({ session, items, annotations, model, busy, view, onA
           onJump={onJump}
         />
       ))}
-      {sessionRunning && <RunningStatus turn={runningTurn} members={last?.running ? segmentMembers(last) : []} awaiting={session?.status === "awaiting-approval"} />}
+      {sessionRunning && <RunningStatus turn={runningTurn} members={last?.running ? segmentMembers(last) : []} awaiting={session?.status === "awaiting-answer" ? "等你回答" : session?.status === "awaiting-approval" ? "等待你的确认" : null} />}
     </>
   );
 }
@@ -129,6 +130,8 @@ function TurnView({
           ))}
         </div>
       )}
+      {/* What the person answered stays in sight when the turn's work folds away (like their messages). */}
+      {folded && seg.rows.map((row) => (row.kind === "item" && row.item.type === "question" ? <QuestionRecord key={row.key} item={row.item} /> : null))}
       {seg.answer && <AgentReply item={seg.answer} highlights={highlights(seg.answer.id)} />}
       {finished && <TurnChanges items={segmentMembers(seg)} />}
       {seg.tail.map((item) => (
@@ -174,6 +177,8 @@ function StandaloneItem({ item, busy, highlights, onApprove }: { item: SessionIt
       return <AgentReply item={item} highlights={highlights(item.id)} />;
     case "approval":
       return <ApprovalCard item={item} busy={busy} onApprove={onApprove} />;
+    case "question":
+      return <QuestionRecord item={item} />;
     case "error":
       return (
         <div className="msg-error" role="alert" data-testid="msg-error">
@@ -346,7 +351,8 @@ function UsageButton({ usage, speed, model }: { usage: TurnUsage; speed: number 
 // ---- running status ---------------------------------------------------------------------------------------------
 
 /** The live line at the bottom while the session works: the robot, the elapsed time and (once known) the speed. */
-function RunningStatus({ turn, members, awaiting }: { turn: TurnItem | null; members: readonly SessionItem[]; awaiting: boolean }) {
+/** `awaiting`: what the session waits for from the person ("等待你的确认", "等你回答"), or null while it works. */
+function RunningStatus({ turn, members, awaiting }: { turn: TurnItem | null; members: readonly SessionItem[]; awaiting: string | null }) {
   const startedAt = turn?.startedAt;
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -356,14 +362,14 @@ function RunningStatus({ turn, members, awaiting }: { turn: TurnItem | null; mem
   const start = startedAt ? Date.parse(startedAt) : NaN;
   const speed = outputSpeed(turn ?? undefined, members, now);
   const label = awaiting
-    ? "等待你的确认"
+    ? awaiting
     : Number.isFinite(start)
       ? `正在工作，用时 ${formatDuration(Math.max(1000, now - start))}${speed !== null ? ` · ${speed} tok/s` : ""} ···`
       : "正在工作";
   return (
     <div className="run-status" data-testid="run-status">
       <span className="sr-only" role="status" aria-live="polite">
-        {awaiting ? "等待你的确认" : "正在工作"}
+        {awaiting ?? "正在工作"}
       </span>
       <img className={`run-bot${awaiting ? " waiting" : ""}`} src="./icon.svg" alt="" aria-hidden="true" />
       <Shimmer active={!awaiting} className="run-text">

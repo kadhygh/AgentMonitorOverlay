@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import type { SessionOptions, ApprovalDecision, Id, Session, SessionItem, TerminalAttach } from "@amo-studio/protocol";
+import { formContent, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -88,6 +88,29 @@ export class SessionsFeature extends Feature {
   }
 
   /**
+   * Answers a pending question item. The reply is checked against the item (its source, its questions, its form)
+   * before the runtime sends it on.
+   */
+  async answerQuestion(sessionId: Id, itemId: Id, body: unknown): Promise<void> {
+    this.requireSession(sessionId);
+    const item = this.store.getItem(itemId);
+    if (!item || item.sessionId !== sessionId || item.type !== "question") throw new HostError("not_found", `question ${itemId} not found`);
+    if (item.state !== "pending") throw new HostError("conflict", `question ${itemId} is no longer pending (${item.state})`);
+    const reply = questionReply(body);
+    const fits =
+      reply.action === "dismiss" ||
+      (reply.action === "answer" && (item.source === "claude-ask" || item.source === "codex-input")) ||
+      (reply.action === "submit" && item.source === "mcp-form") ||
+      ((reply.action === "approve" || reply.action === "revise") && item.source === "plan-review");
+    if (!fits) throw new HostError("bad_request", `a ${item.source} question cannot take "${reply.action}"`);
+    if (reply.action === "submit") {
+      const checked = formContent(item.form ?? [], reply.values);
+      if ("error" in checked) throw new HostError("bad_request", checked.error);
+    }
+    await this.wrap(() => this.runtime.answerQuestion(sessionId, itemId, reply), "conflict");
+  }
+
+  /**
    * Codex: opens the real TUI on the same app-server (`codex --remote … resume`). Both sides keep writing, so the
    * session becomes "terminal-shared". With `launch: false` only the command is returned (tests, copy to clipboard).
    */
@@ -167,5 +190,34 @@ export class SessionsFeature extends Feature {
     } finally {
       this.reclaiming.delete(sessionId);
     }
+  }
+}
+
+/** Checks the shape of a question reply (the answers' sizes are bounded: they go to the model as they are). */
+function questionReply(body: unknown): QuestionReply {
+  const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+  switch (b.action) {
+    case "dismiss":
+    case "approve":
+      return { action: b.action };
+    case "revise":
+      return { action: "revise", feedback: boundedText(b.feedback, "feedback", 20_000) };
+    case "submit":
+      if (!b.values || typeof b.values !== "object" || Array.isArray(b.values)) throw new HostError("bad_request", "values must be an object");
+      return { action: "submit", values: b.values as Record<string, unknown> };
+    case "answer": {
+      if (!Array.isArray(b.answers)) throw new HostError("bad_request", "answers must be a list");
+      const answers: QuestionAnswer[] = b.answers.map((a: unknown) => {
+        const x = a && typeof a === "object" ? (a as Record<string, unknown>) : {};
+        if (typeof x.id !== "string") throw new HostError("bad_request", "every answer needs the id of its question");
+        const selected = Array.isArray(x.selected) ? x.selected.filter((l): l is string => typeof l === "string") : [];
+        const other = typeof x.other === "string" ? x.other : undefined;
+        if (other && other.length > 20_000) throw new HostError("bad_request", "an answer is too long");
+        return { id: x.id, selected, ...(other !== undefined ? { other } : {}), ...(x.skipped === true ? { skipped: true } : {}) };
+      });
+      return { action: "answer", answers };
+    }
+    default:
+      throw new HostError("bad_request", `unknown action ${String(b.action)}`);
   }
 }

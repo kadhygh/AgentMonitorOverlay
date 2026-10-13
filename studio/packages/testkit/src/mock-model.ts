@@ -99,6 +99,57 @@ export const DEMO_ANSWER = [
   "```",
 ].join("\n");
 
+/** Questions of the `[[ask]]` turn (Claude's AskUserQuestion shape): one single choice, one multi-select. */
+export const MOCK_ASK_QUESTIONS = [
+  {
+    header: "重试策略",
+    question: "导入失败时要怎么重试？",
+    multiSelect: false,
+    options: [
+      { label: "指数退避（推荐）", description: "每次等待时间翻倍，最多 3 次" },
+      { label: "固定间隔", description: "每 2 秒重试一次，最多 5 次" },
+      { label: "不重试", description: "失败直接报错，由调用方处理" },
+    ],
+  },
+  {
+    header: "日志",
+    question: "重试时要记录哪些信息？",
+    multiSelect: true,
+    options: [
+      { label: "失败原因", description: "异常类型和消息" },
+      { label: "重试次数", description: "第几次尝试" },
+      { label: "等待时长", description: "下一次重试前等了多久" },
+    ],
+  },
+];
+
+/** Plan of the `[[plan]]` turn (Claude's ExitPlanMode). */
+export const MOCK_PLAN = [
+  "# 给导入器加上失败重试",
+  "",
+  "导入器现在只请求一次，网络抖动就会整批失败。计划在 `fetch` 里加上带指数退避的重试。",
+  "",
+  "## 步骤",
+  "",
+  "1. 在 `importer.py` 的 `fetch` 加 `retries` 和 `backoff` 两个参数",
+  "2. 只重试 `requests.RequestException`，其他异常照常抛出",
+  "3. 每次等待 `backoff * 2 ** attempt` 秒",
+  "4. 最后一次仍失败时把原异常抛给调用方",
+  "5. 补充单元测试：成功、重试后成功、全部失败",
+  "",
+  "## 影响",
+  "",
+  "| 文件 | 改动 |",
+  "| --- | --- |",
+  "| `importer.py` | 重试循环 |",
+  "| `tests/test_importer.py` | 三个新用例 |",
+  "",
+  "## 风险",
+  "",
+  "- 重试会让失败的导入变慢，最多多等 3.5 秒",
+  "- 调用方如果自己也重试，次数会叠加",
+].join("\n");
+
 /** One model reply: plain text, or a tool call that Codex will execute (and may ask approval for); `reasoning` comes first. */
 export type MockReply = (
   | { kind: "text"; text: string; chunks?: number; delayMs?: number }
@@ -138,12 +189,20 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  * - `[[think]]` → thinks first, then replies `MOCK: <user text>`
  * - `[[files]]` → a reply naming files in inline code and a link, plus a code block (file link tests)
  * - `[[demo]]` → a whole working turn: think, read `importer.py`, patch it, run a check, answer with a table
+ * - `[[ask]]` → calls request_user_input with MOCK_ASK_QUESTIONS in Codex's shape (ids `retry`, `logging`),
+ *   then replies `MOCK-ANSWERED: <the tool output>`
  * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
  */
 export const defaultScript: MockScript = (req) => {
   if (req.lastUserText.includes("[[demo]]")) return demoStep(req);
   if (req.afterToolOutput && req.lastTool && /amo/.test(req.lastTool.name)) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.output.slice(0, 200)}` };
+  if (req.afterToolOutput && req.lastTool?.name === "request_user_input") return { kind: "text", text: `MOCK-ANSWERED: ${req.lastTool.output}` };
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
+  if (req.lastUserText.includes("[[ask]]") && req.tools.includes("request_user_input")) {
+    const ids = ["retry", "logging"];
+    const questions = MOCK_ASK_QUESTIONS.map((q, i) => ({ id: ids[i]!, header: q.header, question: q.question, options: q.options }));
+    return { kind: "function_call", name: "request_user_input", arguments: { questions } };
+  }
   const mcp = /\[\[mcp:\s*([a-z_]+)\s*(\{.*?\})?\s*\]\]/.exec(req.lastUserText);
   if (mcp) {
     const name = req.tools.find((t) => /amo/.test(t) && (t.endsWith(`.${mcp[1]}`) || t.endsWith(`__${mcp[1]}`)));

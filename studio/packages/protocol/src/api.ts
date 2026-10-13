@@ -414,3 +414,12 @@ export interface HostRoutes {
   /** Which of the paths exist (at most MAX_EXISTS_PATHS); relative ones resolve against `cwd` or the project. */
   "POST /api/fs/exists": { req: import("./chatfiles.js").FsExistsRequest; res: import("./chatfiles.js").FsExistsResult };
 }
+
+// ---- questions in the conversation (stage 12, S12-B) -----------------------------------------------------------
+export interface HostRoutes {
+  /**
+   * Answers a pending `question` item (by its item id): the answers, the form's values, the plan review's verdict, or
+   * `dismiss` to close it without answering. 409 when it is no longer pending.
+   */
+  "POST /api/sessions/:id/questions/:itemId/answer": { req: import("./questions.js").QuestionReply; res: { ok: true } };
+}

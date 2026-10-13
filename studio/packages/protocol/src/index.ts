@@ -17,3 +17,4 @@ export * from "./files.js";
 export * from "./openin.js";
 export * from "./marks.js";
 export * from "./chatfiles.js";
+export * from "./questions.js";

@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { listenInStudioRange } from "./ports.js";
-import { MOCK_MARKDOWN } from "./mock-model.js";
+import { MOCK_ASK_QUESTIONS, MOCK_MARKDOWN, MOCK_PLAN } from "./mock-model.js";
 
 // Local stand-in for the Anthropic Messages API, used as ANTHROPIC_BASE_URL so the Claude Agent SDK (and the Claude
 // Code CLI it runs) can be exercised end to end without spending model budget. Same directives as the Responses mock.
@@ -60,6 +60,9 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
  * - `[[slow]]` → many small chunks with a delay (interrupt/queue tests)
  * - `[[markdown]]` → the same sample as the Responses mock
  * - `[[mcp: <tool> {json args}]]` → calls the AMO MCP tool `mcp__amo__<tool>`, then replies `MOCK-MCP: <start of its result>`
+ * - `[[ask]]` → calls AskUserQuestion with MOCK_ASK_QUESTIONS, then replies `MOCK-ANSWERED: <the tool result>`
+ * - `[[plan]]` (in plan mode) → writes MOCK_PLAN to the plan file the CLI names, calls ExitPlanMode, then replies
+ *   `MOCK-PLAN: <the tool result>`
  * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
  * Tool calls are only made when the request offers that tool, so side requests always get text.
  */
@@ -70,6 +73,9 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
     return { kind: "text", text: `MOCK-SUB: ${req.subagent}` };
   }
   if (req.afterToolOutput && req.lastTool?.name.startsWith("mcp__")) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.result.slice(0, 200)}` };
+  if (req.afterToolOutput && req.lastTool?.name === "AskUserQuestion") return { kind: "text", text: `MOCK-ANSWERED: ${req.lastTool.result}` };
+  if (req.afterToolOutput && req.lastTool?.name === "Write" && req.lastUserText.includes("[[plan]]")) return { kind: "tool_use", name: "ExitPlanMode", input: {} };
+  if (req.afterToolOutput && req.lastTool?.name === "ExitPlanMode") return { kind: "text", text: `MOCK-PLAN: ${req.lastTool.result.slice(0, 400)}` };
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
   const mcp = /\[\[mcp:\s*([a-z_]+)\s*(\{.*?\})?\s*\]\]/.exec(req.lastUserText);
   if (mcp && req.tools.includes(`mcp__amo__${mcp[1]}`)) return { kind: "tool_use", name: `mcp__amo__${mcp[1]}`, input: mcp[2] ? (JSON.parse(mcp[2]) as Record<string, unknown>) : {} };
@@ -91,12 +97,34 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
       };
     }
   }
+  if (req.lastUserText.includes("[[ask]]") && req.tools.length > 0) return { kind: "tool_use", name: "AskUserQuestion", input: { questions: MOCK_ASK_QUESTIONS } };
+  if (req.lastUserText.includes("[[plan]]") && req.tools.length > 0) {
+    // The CLI reads the plan from its plan file (it hands ExitPlanMode's input the file's text).
+    const file = planFile(req.body);
+    return file ? { kind: "tool_use", name: "Write", input: { file_path: file, content: MOCK_PLAN } } : { kind: "tool_use", name: "ExitPlanMode", input: {} };
+  }
   if (shell && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: shell[1]!.trim(), description: "mock command" } };
   if (req.lastUserText.includes("[[markdown]]")) return { kind: "text", text: MOCK_MARKDOWN };
   if (req.lastUserText.includes("[[think]]")) return { kind: "text", text: `MOCK: ${req.lastUserText}`, thinking: "先想一想用户要什么。\n这是一条测试消息，照原样回复即可。" };
   if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: "slow ".repeat(40).trim(), chunks: 40, delayMs: 150 };
   return { kind: "text", text: `MOCK: ${req.lastUserText}${req.images ? ` [images: ${req.images}]` : ""}` };
 };
+
+/** The plan file Claude Code names in plan mode ("create your plan at …\\plans\\x.md" / "already exists at …"). */
+function planFile(body: unknown): string | null {
+  const texts: string[] = [];
+  const walk = (v: unknown) => {
+    if (typeof v === "string") texts.push(v);
+    else if (Array.isArray(v)) v.forEach(walk);
+    else if (v && typeof v === "object") Object.values(v).forEach(walk);
+  };
+  walk(body);
+  for (const t of texts) {
+    const m = /([A-Za-z]:\\[^\s"]*?\\plans\\[^\s"\\]+\.md|\/[^\s"]*?\/plans\/[^\s"/]+\.md)/.exec(t);
+    if (m) return m[1]!;
+  }
+  return null;
+}
 
 type Block = { type?: string; text?: string };
 type Message = { role?: string; content?: string | Block[] };

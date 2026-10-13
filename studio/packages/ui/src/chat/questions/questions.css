@@ -1,0 +1,128 @@
+/* Questions in the conversation (stage 12, S12-B), after DSH ui-user-questions (MIT): the card that takes the
+   composer's seat, the plan review bar and plan card, and the rows the transcript keeps. Colours come from the chat
+   and base tokens only. */
+
+/* ---- the card in the composer seat ------------------------------------------------------------------------------- */
+
+.qc {
+  width: 100%; max-width: var(--chat-width); max-height: min(60vh, 520px); display: flex; flex-direction: column;
+  border-radius: calc(var(--r-l) + 4px); border: 1px solid var(--chat-input-border); background: var(--chat-input-bg);
+  box-shadow: var(--chat-elevation); color: var(--chat-label); overflow: hidden;
+}
+.qc[data-minimized] { max-height: none; }
+.qc[data-minimized] .qc-head { padding-bottom: 12px; }
+.qc-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 10px 0 18px; }
+.qc-heading { min-width: 0; }
+.qc-eyebrow { margin-bottom: 4px; font-size: 11.5px; line-height: 16px; color: var(--chat-caption); }
+.qc-title { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; color: var(--chat-label); overflow-wrap: anywhere; }
+.qc-head-actions { flex: none; display: flex; gap: 2px; }
+
+.qc-body { flex: 1 1 auto; min-height: 0; overflow-y: auto; overscroll-behavior: contain; }
+.qc-options { display: flex; flex-direction: column; gap: 2px; padding: 8px 10px 2px; }
+.qc-option, .qc-other {
+  flex-shrink: 0; display: flex; align-items: flex-start; gap: 10px; width: 100%; min-height: 40px; padding: 8px 12px 8px 8px;
+  border: 1px solid transparent; border-radius: var(--r-l); background: transparent; color: inherit; font: inherit;
+  text-align: left; cursor: pointer; transition: background-color 120ms ease, border-color 120ms ease;
+}
+.qc-option:hover:not(:disabled), .qc-other:hover, .qc-other:focus-within { background: var(--chat-hover); }
+.qc-option.on[role="radio"], .qc-other.on, .qc-other:focus-within { border-color: var(--chat-hairline); background: var(--chat-hover); }
+.qc-option:disabled { cursor: default; }
+.qc-num, .qc-check {
+  flex: none; display: grid; place-items: center; width: 20px; height: 20px; margin-top: 2px; border-radius: var(--r-s);
+  font-size: 12px; font-weight: 600; line-height: 18px; color: var(--chat-dim);
+}
+.qc-num { background: var(--chat-hover); }
+.qc-option.on .qc-num { background: var(--primary); color: var(--on-primary); }
+.qc-check { border: 1px solid var(--chat-dim); width: 16px; height: 16px; margin: 4px 2px 0; }
+.qc-check.on { border-color: var(--primary); background: var(--primary); color: var(--on-primary); }
+.qc-check svg { width: 12px; height: 12px; }
+.qc-option-copy { min-width: 0; flex: 1; display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.qc-option-label { font-size: 14px; line-height: 24px; font-weight: 500; }
+.qc-option-desc { font-size: 13px; line-height: 24px; color: var(--chat-dim); }
+.qc-preview { flex-basis: 100%; margin: 4px 0 0; padding: 8px 10px; border-radius: var(--r-s); background: var(--chat-code-bg); font-family: var(--font-code); font-size: 12px; line-height: 18px; white-space: pre-wrap; }
+
+.qc-other { cursor: text; }
+.qc-other textarea, .qc-other input {
+  flex: 1; min-width: 0; padding: 0; border: none; outline: none; resize: none; background: transparent; color: var(--chat-label);
+  font: inherit; font-size: 14px; line-height: 24px; field-sizing: content; max-height: 144px;
+}
+.qc-other textarea::placeholder, .qc-other input::placeholder { color: var(--chat-caption); }
+.qc-other.block { margin: 0 2px; padding: 8px 12px; min-height: 64px; border: 1px solid var(--chat-hairline); background: var(--chat-panel); }
+.qc-other.block:focus-within { border-color: color-mix(in srgb, var(--chat-brand) 45%, var(--chat-hairline)); background: var(--chat-panel); }
+
+.qc-foot { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 12px 14px; }
+.qc-pager { display: flex; align-items: center; gap: 2px; }
+.qc-back svg { transform: scaleX(-1); }
+.qc-progress { padding: 0 2px; font-size: 13px; color: var(--chat-dim); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.qc-error { flex: 1; min-width: 0; text-align: right; font-size: 12px; color: var(--error-text); }
+.qc-foot .btn-ghost, .qc-foot .btn-primary { flex: none; }
+
+/* MCP forms */
+.qc-form { padding: 10px 18px 2px; display: flex; flex-direction: column; gap: 14px; }
+.qc-field { display: flex; flex-direction: column; gap: 6px; min-width: 0; margin: 0; padding: 0; border: none; }
+.qc-field legend { padding: 0; margin-bottom: 6px; }
+.qc-field-copy { display: flex; flex-direction: column; gap: 2px; }
+.qc-field-label { font-size: 13px; font-weight: 600; color: var(--chat-label); }
+.qc-required { color: var(--attention); }
+.qc-field-desc { font-size: 12px; color: var(--chat-dim); }
+.qc-input {
+  height: var(--ctl); padding: 0 10px; border: 1px solid var(--chat-hairline); border-radius: var(--r-s); background: var(--chat-panel);
+  color: var(--chat-label); font: inherit; font-size: 14px; outline: none;
+}
+.qc-input:focus { border-color: color-mix(in srgb, var(--chat-brand) 45%, var(--chat-hairline)); }
+.qc-field[data-invalid] .qc-input, .qc-field[data-invalid] .qc-chip { border-color: var(--error-border); }
+.qc-field[data-invalid] .qc-field-label { color: var(--error-text); }
+.qc-field-switch { flex-direction: row; align-items: flex-start; gap: 10px; cursor: pointer; }
+.qc-field-switch input { margin: 3px 0 0; accent-color: var(--primary); }
+.qc-chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.qc-chip {
+  height: 28px; display: inline-flex; align-items: center; gap: 4px; padding: 0 12px; border: 1px solid var(--chat-hairline);
+  border-radius: 999px; background: transparent; color: var(--chat-dim-hover); font: inherit; font-size: 13px; cursor: pointer;
+}
+.qc-chip:hover:not(:disabled) { background: var(--chat-hover); }
+.qc-chip.on { border-color: var(--primary); background: color-mix(in srgb, var(--primary) 14%, transparent); color: var(--chat-label); }
+
+/* ---- rows in the conversation ------------------------------------------------------------------------------------ */
+
+.q-pending { display: flex; align-items: center; gap: 8px; min-width: 0; font-size: 13px; line-height: 24px; color: var(--attention); }
+.q-pending-text { min-width: 0; flex: 0 1 auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--chat-label); }
+.q-pending-hint { flex: none; font-size: 12px; color: var(--chat-dim); }
+.q-pending .btn-ghost { flex: none; }
+
+.q-reply-row { display: flex; justify-content: flex-end; }
+.q-reply { max-width: min(calc(var(--chat-width) * 0.702), 82%); padding: 7px 14px; border-radius: var(--r-l); background: var(--chat-bubble); color: var(--chat-label); }
+.q-reply.muted { background: transparent; border: 1px dashed var(--chat-hairline); color: var(--chat-dim); }
+.q-reply-toggle { display: flex; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; padding: 0; border: none; background: none; color: inherit; font: inherit; font-size: 13.5px; line-height: 22px; text-align: left; cursor: pointer; }
+.q-reply-caret { display: inline-flex; align-self: center; color: var(--chat-dim); }
+.q-reply-label { font-weight: 600; }
+.q-reply-summary { min-width: 0; overflow-wrap: anywhere; }
+.q-reply-details { margin: 8px 0 2px; display: flex; flex-direction: column; gap: 10px; }
+.q-reply-details dt { font-size: 12.5px; line-height: 20px; color: var(--chat-dim-hover); }
+.q-reply-details dd { margin: 2px 0 0; font-size: 14px; line-height: 22px; overflow-wrap: anywhere; }
+.q-reply-header { display: inline-block; margin-right: 6px; padding: 0 6px; border-radius: var(--r-s); background: var(--chat-hover); font-size: 11.5px; }
+
+/* ---- plan review ------------------------------------------------------------------------------------------------- */
+
+.plan-card { display: flex; flex-direction: column; gap: 8px; padding: 12px 16px; border-radius: var(--r-l); border: 1px solid var(--chat-hairline); background: var(--chat-panel); }
+.plan-card[data-state="pending"] { border-color: var(--attention-border); }
+.plan-card-head { display: flex; align-items: center; gap: 8px; min-width: 0; color: var(--chat-dim); }
+.plan-card-title { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; color: var(--chat-label); }
+.plan-card-state { flex: none; padding: 0 8px; border-radius: 999px; font-size: 12px; line-height: 20px; background: var(--chat-hover); color: var(--chat-dim-hover); }
+.plan-card-state.pending { background: var(--attention-bg); color: var(--attention); }
+.plan-card-body { min-width: 0; }
+.plan-card-body.folded { max-height: 260px; overflow: hidden; mask-image: linear-gradient(to bottom, #000 65%, transparent); }
+.plan-card-empty { font-size: 13px; color: var(--chat-dim); }
+.plan-card-toggle { align-self: flex-start; display: inline-flex; align-items: center; gap: 4px; height: 24px; padding: 0; border: none; background: none; color: var(--chat-dim); font: inherit; font-size: 13px; cursor: pointer; }
+.plan-card-toggle:hover { color: var(--chat-dim-hover); }
+.plan-card-feedback { display: flex; flex-direction: column; gap: 2px; padding-left: 10px; border-left: 2px solid var(--attention-border); font-size: 13px; line-height: 21px; }
+.plan-card-feedback-label { font-size: 12px; color: var(--chat-dim); }
+.plan-card-feedback-text { white-space: pre-wrap; overflow-wrap: anywhere; }
+
+.plan-bar {
+  width: 100%; max-width: var(--chat-width); display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px;
+  border-radius: var(--r-l); border: 1px solid var(--attention-border); background: var(--attention-bg); font-size: 13px;
+}
+.plan-bar-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--attention); }
+.plan-bar-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--chat-label); }
+.plan-bar-error { flex: 0 1 auto; min-width: 0; font-size: 12px; color: var(--error-text); }
+.plan-bar .btn-ghost, .plan-bar .btn-primary { flex: none; display: inline-flex; align-items: center; gap: 4px; }

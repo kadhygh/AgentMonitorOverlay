@@ -3,7 +3,8 @@ import type { Session, SessionItem, StateSnapshot } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { useSessionItems } from "../host/useSessionItems.js";
-import { relativeTime, SESSION_LOOK } from "../lib/status.js";
+import { needsPerson, relativeTime, SESSION_LOOK } from "../lib/status.js";
+import { planTitle } from "../chat/questions/flow.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useSettings } from "../settings/SettingsDialog.js";
@@ -17,12 +18,22 @@ const SNIPPET_MAX = 300;
 
 export function needsMe(state: StateSnapshot): Session[] {
   return state.sessions
-    .filter((s) => !s.archivedAt && (s.status === "awaiting-approval" || s.status === "awaiting-review"))
+    .filter((s) => !s.archivedAt && needsPerson(s.status))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-/** Latest content worth showing: the pending approval, else the last agent reply. */
+/** Latest content worth showing: the pending approval, else a pending question (answered in the workbench), else the last agent reply. */
 export function latestSnippet(items: readonly SessionItem[]): { text: string; approval: Approval | null } {
+  const question = items.find((i): i is Extract<SessionItem, { type: "question" }> => i.type === "question" && i.state === "pending");
+  if (question && !items.some((i) => i.type === "approval" && i.state === "pending")) {
+    const text =
+      question.source === "plan-review"
+        ? `计划待审：${planTitle(question.plan ?? "")}`
+        : question.source === "mcp-form"
+          ? `等你填写：${question.message ?? ""}`
+          : (question.questions ?? []).map((q) => q.question).join("\n");
+    return { text: text.length > SNIPPET_MAX ? `${text.slice(0, SNIPPET_MAX)}…` : text, approval: null };
+  }
   const approval = [...items].reverse().find((i): i is Approval => i.type === "approval" && i.state === "pending") ?? null;
   if (approval) return { text: [approval.summary, approval.detail].filter(Boolean).join("\n"), approval };
   const reply = [...items].reverse().find((i) => i.type === "agent");
