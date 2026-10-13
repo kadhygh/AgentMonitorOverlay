@@ -1,5 +1,5 @@
 import { useState, type ReactNode } from "react";
-import { projectWorkspaces, taskWhere, wouldCycle, type CanvasDoc, type CanvasEdge, type Id, type Session, type Task, type Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, taskWhere, wouldCycle, type CanvasDoc, type CanvasEdge, type Id, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { deleteGroup, updateGroup } from "./geometry.js";
 
@@ -10,6 +10,9 @@ interface CanvasSidebarProps {
   doc: CanvasDoc;
   selection: CanvasSelection;
   tasks: readonly Task[];
+  /** Every task and topic, for reference cards. */
+  allTasks?: readonly Task[];
+  topics?: readonly Topic[];
   sessions: readonly Session[];
   workspaces: readonly Workspace[];
   tab: SidebarTab;
@@ -48,7 +51,7 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
   );
 }
 
-function DetailTab({ doc, selection, tasks, sessions, workspaces, onChange, onClearSelection, onOpenTask, newId }: CanvasSidebarProps) {
+function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessions, workspaces, onChange, onClearSelection, onOpenTask, newId }: CanvasSidebarProps) {
   if (!selection) return <span className="anno-empty">在画布上点一个任务、便签，或点分组的标题栏。</span>;
 
   if (selection.kind === "group") {
@@ -123,6 +126,41 @@ function DetailTab({ doc, selection, tasks, sessions, workspaces, onChange, onCl
           }}
         >
           删除便签
+        </button>
+      </div>
+    );
+  }
+
+  if (node.kind === "ref") {
+    const target = allTasks.find((t) => t.id === node.taskId);
+    const refStatus = target && !target.archivedAt ? taskStatus(taskSessions(target, sessions)) : null;
+    const refLook = refStatus ? SESSION_LOOK[refStatus] : null;
+    return (
+      <div className="side-section" role="group" aria-label="引用卡片">
+        <span className="side-heading">{target ? target.title || "未命名任务" : "任务不存在"}</span>
+        {target ? (
+          <span className="side-note">
+            引用 · {target.archivedAt ? "任务已归档" : <span style={{ color: refLook?.text }}>{refLook?.label ?? "未开始"}</span>} · 专题{" "}
+            {topics.find((t) => t.id === target.topicId)?.title ?? "（无）"} · {taskWhere(target, workspaces)}
+          </span>
+        ) : (
+          <span className="side-note">引用的任务已经不在了。</span>
+        )}
+        <span className="side-note">引用卡片只是指向任务：任务的项目和专题不变，删掉卡片也不影响任务。</span>
+        {target && (
+          <button type="button" className="btn-ghost small" onClick={() => onOpenTask(target.id)}>
+            打开任务
+          </button>
+        )}
+        <button
+          type="button"
+          className="btn-ghost small dim"
+          onClick={() => {
+            onChange({ ...doc, nodes: doc.nodes.filter((n) => n.id !== node.id) });
+            onClearSelection();
+          }}
+        >
+          删除引用卡片（任务不变）
         </button>
       </div>
     );

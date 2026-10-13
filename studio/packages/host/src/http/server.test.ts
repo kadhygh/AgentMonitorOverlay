@@ -627,6 +627,45 @@ describe("Host API", () => {
     expect((await api("PUT", `/api/tasks/${a.id}/canvas`, {})).status).toBe(400);
   });
 
+  it("keeps reference cards to other topics' tasks; a referenced task joining the topic gets its own card there", async () => {
+    const { ws } = await createTask("canvas");
+    const here = await ok<Topic>("POST", "/api/topics", { title: "这里" });
+    const there = await ok<Topic>("POST", "/api/topics", { title: "别处" });
+    const own = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "自己的", workspaceId: ws.id, topicId: here.id })).task;
+    const other = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "别处的", workspaceId: ws.id, topicId: there.id })).task;
+    const loose = (await ok<{ task: Task }>("POST", "/api/tasks", { title: "没有专题" })).task;
+    const empty = await ok<CanvasDoc>("GET", `/api/topics/${here.id}/canvas`);
+    const ref = (id: string, taskId: string) => ({ id, kind: "ref", taskId, groupId: null, pos: { x: 0, y: 0 } });
+
+    // A reference to one of the topic's own tasks is refused; others are fine, also on a second canvas.
+    const refused = await api<{ error: { message: string } }>("PUT", `/api/topics/${here.id}/canvas`, { ...empty, nodes: [ref("r0", own.id)] });
+    expect(refused.status).toBe(400);
+    expect(refused.data.error.message).toMatch(/of this topic/);
+    let doc = await ok<CanvasDoc>("PUT", `/api/topics/${here.id}/canvas`, { ...empty, nodes: [ref("r1", other.id), ref("r2", loose.id)] });
+    const elsewhere = await ok<CanvasDoc>("GET", `/api/topics/${there.id}/canvas`);
+    await ok("PUT", `/api/topics/${there.id}/canvas`, { ...elsewhere, nodes: [ref("r3", loose.id)] });
+
+    // The outline names where each referenced task lives; archived ones say so.
+    await ok("POST", `/api/tasks/${loose.id}/archive`);
+    const { outline, json } = await ok<{ outline: string; json: { ungrouped: { refs: Array<{ taskId: string; topic: string | null; gone: string | null }> } } }>(
+      "GET",
+      `/api/topics/${here.id}/canvas/outline`,
+    );
+    expect(json.ungrouped.refs).toMatchObject([
+      { taskId: other.id, topic: "别处", gone: null },
+      { taskId: loose.id, gone: "archived" },
+    ]);
+    expect(outline).toContain("引用：别处的（专题 别处 / 项目 alpha");
+
+    // 别处的 moves here: its reference becomes its own card, in the same place; the task keeps no reference.
+    await ok("PATCH", `/api/tasks/${other.id}`, { topicId: here.id });
+    doc = await ok<CanvasDoc>("GET", `/api/topics/${here.id}/canvas`);
+    expect(doc.nodes.map((n) => [n.id, n.kind])).toEqual([
+      ["r1", "task"],
+      ["r2", "ref"],
+    ]);
+  });
+
   it("reads and writes the global scratchpad, announcing changes", async () => {
     expect(await ok("GET", "/api/scratchpad")).toEqual({ text: "", updatedAt: null });
     const received: HostEvent[] = [];

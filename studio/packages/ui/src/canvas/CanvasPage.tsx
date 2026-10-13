@@ -8,6 +8,7 @@ import type { HostLink } from "../host/client.js";
 import { SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { addGroup, arrowBetween, deleteGroup, GROUP_HEADER, moveGroup, moveNode, resizeGroup, updateGroup } from "./geometry.js";
 import { useCanvas } from "./useCanvas.js";
+import { RefPicker, type RefChoice } from "./RefPicker.js";
 
 export const CARD_W = 220;
 export const CARD_H = 66;
@@ -59,6 +60,9 @@ interface CanvasPageProps {
   /** The topic whose canvas this is; `tasks` are its live tasks. */
   topic: Topic;
   tasks: readonly Task[];
+  /** Every task (archived too) and topic: what reference cards point at, and the "引用任务" list. */
+  allTasks?: readonly Task[];
+  topics?: readonly Topic[];
   sessions: readonly Session[];
   workspaces: readonly Workspace[];
   onOpenTask(taskId: Id, sessionId?: Id): void;
@@ -66,7 +70,7 @@ interface CanvasPageProps {
   onNewTask?(): void;
 }
 
-export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles = [], onOpenTask, onNewTask }: CanvasPageProps) {
+export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [topic], sessions, workspaces, profiles = [], onOpenTask, onNewTask }: CanvasPageProps) {
   const { doc, save, conflict, dismissConflict, error, dismissError } = useCanvas(link, topic.id);
   const [view, setView] = useState<View>(loadView);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -84,13 +88,15 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
     if (next) setTab("detail");
   };
   const [renaming, setRenaming] = useState<Id | null>(null);
+  const [picking, setPicking] = useState(false);
   const viewport = useRef<HTMLDivElement>(null);
 
   useEffect(() => saveView(view), [view]);
 
   const persist = useCallback((next: CanvasDoc) => void save(next).catch(() => undefined), [save]);
 
-  // Delete / Backspace removes the selected group (its cards stay) or note, unless typing somewhere.
+  // Delete / Backspace removes the selected group (its cards stay), note or reference card (never the task itself),
+  // unless typing somewhere.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.key !== "Delete" && e.key !== "Backspace") || !doc || !selection) return;
@@ -100,7 +106,7 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
         e.preventDefault();
         persist(deleteGroup(doc, selection.id));
         setSelectionState(null);
-      } else if (doc.nodes.some((n) => n.id === selection.id && n.kind === "note")) {
+      } else if (doc.nodes.some((n) => n.id === selection.id && (n.kind === "note" || n.kind === "ref"))) {
         e.preventDefault();
         persist({ ...doc, nodes: doc.nodes.filter((n) => n.id !== selection.id) });
         setSelectionState(null);
@@ -122,6 +128,7 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
     const el = viewport.current;
     if (!el) return;
     const onWheel = (e: WheelEvent) => {
+      if ((e.target as HTMLElement | null)?.closest?.(".ref-picker")) return; // the task list scrolls
       e.preventDefault();
       const box = el.getBoundingClientRect();
       zoomAt(e.clientX - box.left, e.clientY - box.top, e.deltaY < 0 ? 1.1 : 1 / 1.1);
@@ -179,6 +186,7 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
     if (e.button !== 0) return;
     e.preventDefault();
     setSelection(null);
+    setPicking(false);
     setDrag({ kind: "pan", sx: e.clientX, sy: e.clientY, vx: view.x, vy: view.y });
   };
 
@@ -213,7 +221,25 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
     setSelection({ kind: "node", id });
   };
 
+  /**
+   * "引用任务": a reference card for another topic's task, or this topic's own task placed as its card, in the middle of
+   * the visible area (moved down while it would cover another card; inside a group if it lands in one).
+   */
+  const addPicked = (choice: RefChoice) => {
+    if (!doc) return;
+    const box = viewport.current?.getBoundingClientRect();
+    const x = Math.round(((box?.width ?? 800) / 2 - view.x) / view.k - CARD_W / 2);
+    let y = Math.round(((box?.height ?? 600) / 2 - view.y) / view.k - CARD_H / 2);
+    for (let i = 0; i < 40 && doc.nodes.some((n) => Math.abs(n.pos.x - x) < CARD_W && Math.abs(n.pos.y - y) < CARD_H); i++) y += CARD_H + 12;
+    const id = newCanvasId("n");
+    const node: CanvasNode = { id, kind: choice.kind === "ref" ? "ref" : "task", taskId: choice.taskId, groupId: null, pos: { x, y } };
+    persist(moveNode({ ...doc, nodes: [...doc.nodes, node] }, id, { x, y }, { w: CARD_W, h: CARD_H }));
+    setPicking(false);
+    setSelection({ kind: "node", id });
+  };
+
   const taskById = new Map(tasks.map((t) => [t.id, t]));
+  const anyTaskById = new Map(allTasks.map((t) => [t.id, t]));
   const wsName = (id: Id | null) => (id ? (workspaces.find((w) => w.id === id)?.name ?? "") : "");
   // Whether each bound project is free (design/scheduler.md): the scheduler only proposes work for free ones.
   const activity = workspacesActivity(workspaces, sessions);
@@ -330,6 +356,41 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
                 </div>
               );
             }
+            if (node.kind === "ref") {
+              const target = anyTaskById.get(node.taskId);
+              const gone = !target ? "任务不存在" : target.archivedAt ? "任务已归档" : "";
+              const refStatus = target && !gone ? taskStatus(taskSessions(target, sessions)) : null;
+              const refLook = refStatus ? SESSION_LOOK[refStatus] : null;
+              const home = target ? `${topics.find((t) => t.id === target.topicId)?.title ?? "不在专题里"} / ${taskWhere(target, workspaces)}` : "";
+              const open = () => target && onOpenTask(target.id);
+              return (
+                <div
+                  key={node.id}
+                  className={`canvas-card canvas-ref${gone ? " gone" : ""}${selection?.kind === "node" && selection.id === node.id ? " selected" : ""}`}
+                  style={{ left: node.pos.x, top: node.pos.y, width: CARD_W }}
+                  role="button"
+                  tabIndex={0}
+                  aria-label={`引用 ${target?.title || "未命名任务"}`}
+                  title={gone ? "引用的任务已不在了；删掉这张卡片即可" : "引用卡片：任务属于别的专题，删掉卡片不影响任务"}
+                  data-testid="canvas-ref"
+                  data-node-id={node.id}
+                  data-group-id={node.groupId ?? ""}
+                  onMouseDown={(e) => startDrag(e, "node", node.id)}
+                  onDoubleClick={open}
+                  onKeyDown={(e) => e.key === "Enter" && open()}
+                >
+                  <span className="canvas-card-title">
+                    <span className="ref-mark">引用</span>
+                    {gone && target ? `${gone} · ${target.title || "未命名任务"}` : gone || target?.title || "未命名任务"}
+                  </span>
+                  <span className="canvas-card-meta">
+                    {!gone && <span className="dot" style={{ background: refLook?.dot ?? "var(--muted-dot)" }} />}
+                    {!gone && <span style={{ color: refLook?.text ?? "var(--text-dim)" }}>{refLook?.label ?? "未开始"}</span>}
+                    <span className="ref-home">{gone ? "可以删掉这张卡片" : `· ${home}`}</span>
+                  </span>
+                </div>
+              );
+            }
             const task = taskById.get(node.taskId);
             if (!task) return null;
             const own = taskSessions(task, sessions);
@@ -373,10 +434,26 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
           <button type="button" className="btn-ghost small" onClick={newGroup} disabled={!doc}>
             + 分组
           </button>
+          <button type="button" className="btn-ghost small" onClick={() => setPicking((v) => !v)} disabled={!doc} aria-expanded={picking}>
+            引用任务
+          </button>
           <button type="button" className="btn-ghost small" onClick={newNote} disabled={!doc}>
             + 便签
           </button>
         </div>
+
+        {picking && doc && (
+          <RefPicker
+            doc={doc}
+            topicId={topic.id}
+            tasks={allTasks}
+            topics={topics}
+            sessions={sessions}
+            workspaces={workspaces}
+            onPick={addPicked}
+            onClose={() => setPicking(false)}
+          />
+        )}
 
         <div className="canvas-zoom" onMouseDown={(e) => e.stopPropagation()}>
           <button type="button" aria-label="缩小" onClick={() => zoomCenter(1 / 1.2)}>
@@ -397,6 +474,8 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
           doc={shown}
           selection={selection}
           tasks={tasks}
+          allTasks={allTasks}
+          topics={topics}
           sessions={sessions}
           workspaces={workspaces}
           tab={tab}

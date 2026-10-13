@@ -112,7 +112,8 @@ export class TasksFeature extends Feature {
 
   /**
    * Renames, moves between columns, changes the project (only before the first session) or transfers the task to
-   * another topic (or out of its topic): it leaves the old topic's canvas with its dependencies there.
+   * another topic (or out of its topic): it leaves the old topic's canvas with its dependencies there, and a reference
+   * card to it on the new topic's canvas becomes its own card.
    */
   updateTask(id: Id, patch: { title?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
     const current = this.requireTask(id);
@@ -137,6 +138,8 @@ export class TasksFeature extends Feature {
     }
     const task = this.store.updateTask(id, clean);
     this.publish({ type: "task.upserted", task });
+    // A reference card to it on its new topic's canvas becomes its own card there.
+    if (clean.topicId) this.f.canvases.joinCanvas(clean.topicId, id);
     return task;
   }
 

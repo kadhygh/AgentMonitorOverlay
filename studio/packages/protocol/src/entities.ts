@@ -240,9 +240,14 @@ export interface CanvasGroup {
   rect: Rect;
 }
 
+/**
+ * `task`: a task of the topic (at most one card each). `ref`: a reference card (S11-A) pointing at a task of another
+ * topic or of none; the task keeps its own project and topic, and deleting the card never changes it.
+ */
 export type CanvasNode =
   | { id: Id; kind: "task"; taskId: Id; groupId: Id | null; pos: Point }
-  | { id: Id; kind: "note"; text: string; groupId: Id | null; pos: Point };
+  | { id: Id; kind: "note"; text: string; groupId: Id | null; pos: Point }
+  | { id: Id; kind: "ref"; taskId: Id; groupId: Id | null; pos: Point };
 
 /** `from` must be finished before `to` can start; both are task ids. */
 export interface CanvasEdge {

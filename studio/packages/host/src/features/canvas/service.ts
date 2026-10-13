@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { CanvasDoc, Id, Task } from "@amo-studio/protocol";
-import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, emptyCanvas, isCommon, placeTask, removeTask, unplaceTask, validateCanvas } from "@amo-studio/protocol";
+import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, emptyCanvas, isCommon, placeTask, refsToCard, removeTask, unplaceTask, validateCanvas } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -50,6 +50,18 @@ export class CanvasFeature extends Feature {
     const current = this.store.getCanvas(topicId);
     if (!current || !current.nodes.some((n) => n.kind === "task" && n.taskId === taskId)) return;
     const next: CanvasDoc = { ...removeTask(current, taskId), version: current.version + 1, updatedAt: new Date().toISOString() };
+    this.store.putCanvas(next);
+    this.publish({ type: "canvas.updated", canvas: next });
+  }
+
+  /**
+   * A task joining a topic: a reference card to it on that topic's canvas becomes its own card, in the same place (a
+   * reference to one of the topic's own tasks is not allowed); further references to it there go.
+   */
+  joinCanvas(topicId: Id, taskId: Id): void {
+    const current = this.store.getCanvas(topicId);
+    if (!current || !current.nodes.some((n) => n.kind === "ref" && n.taskId === taskId)) return;
+    const next: CanvasDoc = { ...refsToCard(current, taskId), version: current.version + 1, updatedAt: new Date().toISOString() };
     this.store.putCanvas(next);
     this.publish({ type: "canvas.updated", canvas: next });
   }
@@ -111,6 +123,9 @@ export class CanvasFeature extends Feature {
   }
 
   canvasOutline(topicId: Id) {
-    return canvasOutline(this.canvas(topicId), this.topicTasks(topicId), this.store.listWorkspaces(), this.store.listSessions());
+    return canvasOutline(this.canvas(topicId), this.topicTasks(topicId), this.store.listWorkspaces(), this.store.listSessions(), {
+      tasks: this.store.listTasks(),
+      topics: this.store.listTopics(),
+    });
   }
 }
