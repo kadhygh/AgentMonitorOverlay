@@ -1,34 +1,46 @@
 import type { HostService } from "../service.js";
 import type { Route } from "../http/route.js";
+import type { AmoTool, ToolContext } from "../mcp/tool-kit.js";
 import { projectsRoutes } from "./projects/routes.js";
+import { projectsTools } from "./projects/mcp.js";
 import { configRoutes } from "./config/routes.js";
 import { tasksRoutes } from "./tasks/routes.js";
+import { tasksTools } from "./tasks/mcp.js";
 import { topicsRoutes } from "./topics/routes.js";
+import { topicsTools } from "./topics/mcp.js";
 import { sessionsRoutes } from "./sessions/routes.js";
+import { sessionsTools } from "./sessions/mcp.js";
 import { planningRoutes } from "./planning/routes.js";
+import { planningTools } from "./planning/mcp.js";
 import { collabRoutes } from "./collab/routes.js";
+import { collabTools } from "./collab/mcp.js";
 import { canvasRoutes } from "./canvas/routes.js";
+import { canvasTools } from "./canvas/mcp.js";
 import { reviewRoutes } from "./review/routes.js";
 import { packsRoutes } from "./packs/routes.js";
+import { packsTools } from "./packs/mcp.js";
 
 /**
- * Every Host feature (features/<name>/): its service class lives on HostService, its routes are listed here. Adding a
- * feature is a new folder plus a line here; removing one is the reverse (its tables stay: migrations are never undone).
+ * Every Host feature (features/<name>/): its service class lives on HostService, its routes and MCP tools are listed
+ * here. Adding a feature is a new folder plus a line here; removing one is the reverse (its tables stay: migrations
+ * are never undone).
  */
 export interface HostFeature {
   name: string;
   routes(service: HostService): Route[];
+  /** Its tools for agents (mcp/tools.ts gathers them). */
+  tools?(ctx: ToolContext): AmoTool[];
 }
 
 export const FEATURES: readonly HostFeature[] = [
-  { name: "projects", routes: projectsRoutes },
+  { name: "projects", routes: projectsRoutes, tools: projectsTools },
   { name: "config", routes: configRoutes },
-  { name: "tasks", routes: tasksRoutes },
-  { name: "topics", routes: topicsRoutes },
-  { name: "sessions", routes: sessionsRoutes },
-  { name: "planning", routes: planningRoutes },
-  { name: "collab", routes: collabRoutes },
-  { name: "canvas", routes: canvasRoutes },
+  { name: "tasks", routes: tasksRoutes, tools: tasksTools },
+  { name: "topics", routes: topicsRoutes, tools: topicsTools },
+  { name: "sessions", routes: sessionsRoutes, tools: sessionsTools },
+  { name: "planning", routes: planningRoutes, tools: planningTools },
+  { name: "collab", routes: collabRoutes, tools: collabTools },
+  { name: "canvas", routes: canvasRoutes, tools: canvasTools },
   { name: "review", routes: reviewRoutes },
-  { name: "packs", routes: packsRoutes },
+  { name: "packs", routes: packsRoutes, tools: packsTools },
 ];
