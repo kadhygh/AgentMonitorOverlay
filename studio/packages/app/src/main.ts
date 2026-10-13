@@ -3,7 +3,10 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, stopHost, type HostConnection } from "./host-link.js";
 import { createFocusWindow, mainBounds, refitFocusWindow, ShellPrefs } from "./focus-window.js";
+import { readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
+import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
@@ -25,7 +28,8 @@ const dataDir = dataChoice.dataDir;
 // Chromium's profile (localStorage, caches) and the single-instance lock live in userData. Without this it is the
 // generic %APPDATA%\Electron, shared by every run: tests saw each other's remembered model, and a test run could
 // collide with a Studio the person has open. Keep it with the data dir instead (set before the lock is taken).
-app.setPath("userData", join(dataDir, "electron"));
+// First run of the portable build: the data dir is not chosen yet, so the setup window gets a throwaway profile.
+app.setPath("userData", dataChoice.firstRun ? SETUP_TEMP_PROFILE(tmpdir()) : join(dataDir, "electron"));
 
 let host: HostConnection | null = null;
 let mainWindow: BrowserWindow | null = null;
@@ -109,6 +113,16 @@ if (!app.requestSingleInstanceLock()) {
   app
     .whenReady()
     .then(async () => {
+      if (dataChoice.firstRun) {
+        const chosen = await runSetup({ portableDir: portableDir!, configPath: dataChoice.configPath!, defaultDir: dataDir, preload: join(here, "preload.cjs"), testMode });
+        // Start again with the saved choice (data dir, profile and lock all follow it). Tests just end here: a relaunched
+        // process would escape the test harness.
+        if (chosen && !testMode) app.relaunch();
+        app.exit(0);
+        return;
+      }
+      // Throwaway profiles of earlier first-run setups (they cannot be removed while their process runs).
+      for (const name of safeList(tmpdir())) if (/^amo-studio-setup-\d+$/.test(name)) rmSync(join(tmpdir(), name), { recursive: true, force: true });
       host = await connectHost({
         dataDir,
         hostBin: join(studioRoot, "packages", "host", "dist", "bin.js"),
@@ -153,6 +167,14 @@ if (!app.requestSingleInstanceLock()) {
     quitting = true;
     void stopHost(host).finally(() => app.quit());
   });
+}
+
+function safeList(dir: string): string[] {
+  try {
+    return readdirSync(dir);
+  } catch {
+    return [];
+  }
 }
 
 function createMainWindow(conn: HostConnection): BrowserWindow {

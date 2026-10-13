@@ -37,7 +37,7 @@
 - 内容：`packages/app` 在打包后找得到 Host、UI、preload；Host 找得到 Agent SDK 的 `claude.exe`；开发模式不受影响。
 - 验收：单测（路径解析）；打包产物在测试模式下启动、Host 回应。
 
-### S8-02 首次启动设置 · todo
+### S8-02 首次启动设置 · done
 - 依赖：S8-01
 - 内容：设置页（数据目录、环境检查），写 `amo-studio.json`；以后启动直接用。
 - 验收：单测；e2e（测试模式下用临时目录模拟 exe 目录）。

@@ -990,3 +990,17 @@
 - 验证：`npm run verify` 退出码 0（218 个测试）；e2e 39/39
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 17:20 · S8-02 首次启动设置
+- 结果：done
+- 改动（`packages/app/src/setup.ts`）：
+  - 打包版第一次运行（exe 旁边没有 `amo-studio.json`）时，不启动 Host，先开设置窗口：数据目录（默认 exe 旁边的 `data`，可以手填或"选择…"）、环境检查（codex 版本；内置模型用到的凭据有没有——只查有没有，不显示、不保存密钥）、"开始使用"；
+  - 选好后写 `amo-studio.json`（在便携目录里面的路径存成相对路径，拷走仍然有效），然后重启 Studio 用新的数据目录；
+  - 设置窗口用临时的浏览器配置目录，不在默认的 `data/` 里留东西；下一次正常启动时清掉这些临时目录；
+  - 测试模式下不查本机的 codex 和凭据，设置完直接退出（不重启，避免进程脱离测试框架）
+- 测试：`acceptDataDir` 单测（相对与绝对路径）；e2e `portable.spec.ts`（模拟打包版目录：默认值、"测试模式不检查"、空值报错、选相对目录 → 写入配置并退出、默认 `data/` 没有被创建 → 再次启动直接进工作台、数据都在选的目录里）。截图 `screenshots/stage-8/S8-02-setup.png`
+- 其他：`@amo-studio/app` 依赖 `@amo-studio/host`（环境检查用，只在设置时动态加载），`package-lock.json` 用 `npm install --offline` 更新；e2e 启动助手支持模拟打包版
+- 默认决定（请你过目）：设置完自动重启一次；缺 codex 或凭据不阻止使用，只提示
+- 验证：`npm run verify` 退出码 0（219 个测试）；e2e 40/40
+- 额度：0
+- commit：见本次 commit

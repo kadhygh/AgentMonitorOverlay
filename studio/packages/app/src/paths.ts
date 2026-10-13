@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { isAbsolute, join, resolve } from "node:path";
+import { accessSync, constants, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { isAbsolute, join, relative, resolve } from "node:path";
 
 // Where Studio keeps its data. Order: AMO_STUDIO_DATA_DIR; in the portable build, the choice saved next to the exe
 // (amo-studio.json), else `data/` next to the exe; in development, studio/.data. A portable copy carries its data with
@@ -50,4 +50,14 @@ export function resolveDataDir(input: DataDirInput): DataDirChoice {
   const saved = readPortableConfig(configPath!);
   if (saved) return { dataDir: isAbsolute(saved.dataDir) ? saved.dataDir : resolve(input.portableDir, saved.dataDir), source: "config", configPath, firstRun: false };
   return { dataDir: join(input.portableDir, "data"), source: "portable-default", configPath, firstRun: true };
+}
+
+/** A data dir the person picked: absolute, writable (created if missing). Saved relative when inside the portable folder. */
+export function acceptDataDir(choice: string, portableDir: string): { dataDir: string; saved: string } {
+  const dataDir = resolve(portableDir, choice.trim());
+  mkdirSync(dataDir, { recursive: true });
+  accessSync(dataDir, constants.W_OK);
+  const rel = relative(portableDir, dataDir);
+  const inside = rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+  return { dataDir, saved: inside ? rel : dataDir };
 }

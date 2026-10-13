@@ -1,9 +1,9 @@
-import { mkdtempSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { removeTempDir } from "@amo-studio/testkit";
-import { readPortableConfig, resolveDataDir, writePortableConfig } from "./paths.js";
+import { acceptDataDir, readPortableConfig, resolveDataDir, writePortableConfig } from "./paths.js";
 
 let root: string | undefined;
 afterEach(() => {
@@ -38,5 +38,19 @@ describe("resolveDataDir", () => {
     expect(resolveDataDir({ env: {}, portableDir: dir, studioRoot: "x" }).firstRun).toBe(true);
     writeFileSync(join(dir, "amo-studio.json"), "\uFEFF{\"dataDir\":\"d\"}");
     expect(readPortableConfig(join(dir, "amo-studio.json"))).toEqual({ dataDir: "d" });
+  });
+});
+
+describe("acceptDataDir", () => {
+  it("creates the dir and saves it relative when it is inside the portable folder", () => {
+    const dir = portable();
+    expect(acceptDataDir(" my-data ", dir)).toEqual({ dataDir: join(dir, "my-data"), saved: "my-data" });
+    expect(existsSync(join(dir, "my-data"))).toBe(true);
+    const outside = `${dir}-outside`;
+    try {
+      expect(acceptDataDir(outside, dir)).toEqual({ dataDir: outside, saved: outside });
+    } finally {
+      removeTempDir(outside);
+    }
   });
 });

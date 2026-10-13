@@ -31,9 +31,11 @@ export interface Studio {
   close(options?: { keepData?: boolean }): Promise<void>;
 }
 
-export async function launchStudio(options: { mockModel?: boolean; env?: Record<string, string>; root?: string } = {}): Promise<Studio> {
+export async function launchStudio(
+  options: { mockModel?: boolean; env?: Record<string, string>; root?: string; /** Behave as the portable build in this folder, with its saved data dir. */ portable?: { dir: string; dataDir: string } } = {},
+): Promise<Studio> {
   const root = options.root ?? mkdtempSync(join(tmpdir(), "amo-studio-e2e-"));
-  const dataDir = join(root, "data");
+  const dataDir = options.portable?.dataDir ?? join(root, "data");
   const codexHome = join(root, "codex-home");
   mkdirSync(dataDir, { recursive: true });
   mkdirSync(codexHome, { recursive: true });
@@ -50,7 +52,14 @@ export async function launchStudio(options: { mockModel?: boolean; env?: Record<
   const app = await _electron.launch({
     executablePath: electronPath,
     args: [join(studioRoot, "packages", "app", "dist", "main.js")],
-    env: { ...process.env, AMO_STUDIO_TEST: "1", AMO_STUDIO_DATA_DIR: dataDir, AMO_STUDIO_PORT: "0", ...mockEnv, ...options.env },
+    env: {
+      ...withoutDataDir(process.env),
+      AMO_STUDIO_TEST: "1",
+      ...(options.portable ? { AMO_STUDIO_PORTABLE_DIR: options.portable.dir } : { AMO_STUDIO_DATA_DIR: dataDir }),
+      AMO_STUDIO_PORT: "0",
+      ...mockEnv,
+      ...options.env,
+    },
   });
   const page = await app.firstWindow();
 
@@ -87,6 +96,23 @@ export async function launchStudio(options: { mockModel?: boolean; env?: Record<
       if (!keepData) removeTempDir(root);
     },
   };
+}
+
+/** The environment without a data dir, so a portable launch picks its own. */
+export function withoutDataDir(env: NodeJS.ProcessEnv): Record<string, string> {
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(env)) if (v !== undefined && k !== "AMO_STUDIO_DATA_DIR") out[k] = v;
+  return out;
+}
+
+/** Launches the app as the portable build's first run (setup window only; it exits once setup is done). */
+export async function launchFirstRun(portableDir: string): Promise<{ app: ElectronApplication; page: Page }> {
+  const app = await _electron.launch({
+    executablePath: electronPath,
+    args: [join(studioRoot, "packages", "app", "dist", "main.js")],
+    env: { ...withoutDataDir(process.env), AMO_STUDIO_TEST: "1", AMO_STUDIO_PORTABLE_DIR: portableDir },
+  });
+  return { app, page: await app.firstWindow() };
 }
 
 /** Which window: the workbench, or the Focus window (loaded with #focus). */

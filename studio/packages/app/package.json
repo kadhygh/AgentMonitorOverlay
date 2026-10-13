@@ -8,6 +8,7 @@
     "start": "electron ."
   },
   "dependencies": {
+    "@amo-studio/host": "0.0.0",
     "@amo-studio/protocol": "0.0.0"
   },
   "devDependencies": {
