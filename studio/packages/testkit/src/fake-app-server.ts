@@ -51,6 +51,10 @@ export interface TurnContext {
   subAgent(text: string): Promise<FakeThread>;
   /** An MCP server asks before a tool runs (`mcpServer/elicitation/request`); resolves with the client's action. */
   mcpElicitation(message: string, serverName?: string): Promise<string>;
+  /** An MCP server asks for a form (`requestedSchema` with properties); resolves with the client's whole response. */
+  mcpForm(message: string, requestedSchema: Record<string, unknown>, serverName?: string): Promise<Record<string, unknown>>;
+  /** request_user_input (`item/tool/requestUserInput`); resolves with the client's response ({ answers }). */
+  requestUserInput(questions: Array<Record<string, unknown>>): Promise<Record<string, unknown>>;
   sleep(ms: number): Promise<void>;
 }
 
@@ -61,7 +65,9 @@ export class TurnInterrupted extends Error {}
 /**
  * Default script, matching the mock model's directives:
  * `[[shell: cmd]]` approval + command, `[[slow]]` slow stream, `[[subagent]]` spawns a subagent, `[[fail]]` fails the turn,
- * `[[elicit]]` an MCP tool approval (replies `FAKE-ELICITED: <action>`), otherwise replies `FAKE: <text>` (plus
+ * `[[elicit]]` an MCP tool approval (replies `FAKE-ELICITED: <action>`), `[[ask]]` request_user_input with FAKE_QUESTIONS
+ * (replies `FAKE-ANSWERS: <response JSON>`), `[[form]]` an MCP form with FAKE_FORM_SCHEMA (replies `FAKE-FORM: <response
+ * JSON>`), otherwise replies `FAKE: <text>` (plus
  * ` [images: N]` when it carried images). Steered input
  * is acknowledged in the reply.
  */
@@ -78,6 +84,16 @@ export const defaultTurnScript: TurnScript = async (ctx) => {
     await ctx.agentMessage(`FAKE-ELICITED: ${action}`);
     return;
   }
+  if (ctx.userText.includes("[[ask]]")) {
+    const response = await ctx.requestUserInput(FAKE_QUESTIONS);
+    await ctx.agentMessage(`FAKE-ANSWERS: ${JSON.stringify(response)}`);
+    return;
+  }
+  if (ctx.userText.includes("[[form]]")) {
+    const response = await ctx.mcpForm("请填写发布信息", FAKE_FORM_SCHEMA);
+    await ctx.agentMessage(`FAKE-FORM: ${JSON.stringify(response)}`);
+    return;
+  }
   if (ctx.userText.includes("[[subagent]]")) {
     await ctx.subAgent("FAKE-SUB-DONE");
     await ctx.agentMessage("FAKE: subagent finished");
@@ -91,6 +107,35 @@ export const defaultTurnScript: TurnScript = async (ctx) => {
   if (ctx.turn.steered.length) await ctx.agentMessage(`FAKE-STEERED: ${ctx.turn.steered.join(" | ")}`);
 };
 
+/** Questions of `[[ask]]`: a choice with "other", and a secret. */
+export const FAKE_QUESTIONS: Array<Record<string, unknown>> = [
+  {
+    id: "target",
+    header: "目标环境",
+    question: "要发布到哪个环境？",
+    isOther: true,
+    isSecret: false,
+    options: [
+      { label: "测试环境", description: "只影响内部测试" },
+      { label: "正式环境", description: "所有玩家都会收到" },
+    ],
+  },
+  { id: "token", header: "令牌", question: "发布令牌是什么？", isOther: false, isSecret: true, options: null },
+];
+
+/** The form of `[[form]]`: every field kind Studio shows. */
+export const FAKE_FORM_SCHEMA: Record<string, unknown> = {
+  type: "object",
+  properties: {
+    version: { type: "string", title: "版本号", description: "例如 1.4.2", minLength: 1 },
+    count: { type: "integer", title: "灰度人数", minimum: 1, maximum: 1000, default: 100 },
+    notify: { type: "boolean", title: "通知玩家", default: true },
+    channel: { type: "string", title: "渠道", oneOf: [{ const: "steam", title: "Steam" }, { const: "taptap", title: "TapTap" }] },
+    regions: { type: "array", title: "地区", items: { anyOf: [{ const: "cn", title: "国服" }, { const: "global", title: "国际服" }] } },
+  },
+  required: ["version", "channel"],
+};
+
 interface Client {
   ws: WebSocket;
   initialized: boolean;
@@ -102,7 +147,8 @@ interface PendingApproval {
   threadId: string;
   method: string;
   params: Record<string, unknown>;
-  resolve: (decision: string) => void;
+  /** Called with the client's response (`{ decision }`, `{ action, content }`, `{ answers }`). */
+  resolve: (result: Record<string, unknown>) => void;
 }
 
 export interface FakeAppServerOptions {
@@ -250,11 +296,33 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
         const requestId = nextRequestId++;
         const params = { threadId: thread.id, turnId: turn.id, serverName, mode: "form", _meta: null, message, requestedSchema: { type: "object", properties: {} } };
         const action = await new Promise<string>((resolve) => {
-          pending.set(requestId, { requestId, threadId: thread.id, method: "mcpServer/elicitation/request", params, resolve });
+          pending.set(requestId, { requestId, threadId: thread.id, method: "mcpServer/elicitation/request", params, resolve: (r) => resolve(String(r.action ?? "decline")) });
           for (const c of subscribers(thread.id)) send(c, { id: requestId, method: "mcpServer/elicitation/request", params });
         });
         check();
         return action;
+      },
+      async mcpForm(message, requestedSchema, serverName = "amo") {
+        check();
+        const requestId = nextRequestId++;
+        const params = { threadId: thread.id, turnId: turn.id, serverName, mode: "form", _meta: null, message, requestedSchema };
+        const response = await new Promise<Record<string, unknown>>((resolve) => {
+          pending.set(requestId, { requestId, threadId: thread.id, method: "mcpServer/elicitation/request", params, resolve });
+          for (const c of subscribers(thread.id)) send(c, { id: requestId, method: "mcpServer/elicitation/request", params });
+        });
+        check();
+        return response;
+      },
+      async requestUserInput(questions) {
+        check();
+        const requestId = nextRequestId++;
+        const params = { threadId: thread.id, turnId: turn.id, itemId: randomUUID(), questions, isBlocking: true, autoResolutionMs: null };
+        const response = await new Promise<Record<string, unknown>>((resolve) => {
+          pending.set(requestId, { requestId, threadId: thread.id, method: "item/tool/requestUserInput", params, resolve });
+          for (const c of subscribers(thread.id)) send(c, { id: requestId, method: "item/tool/requestUserInput", params });
+        });
+        check();
+        return response;
       },
       async command(command, opts = {}) {
         check();
@@ -264,7 +332,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
           const requestId = nextRequestId++;
           const params = { threadId: thread.id, turnId: turn.id, itemId, command, cwd: thread.cwd, reason: null, startedAtMs: Date.now() };
           decision = await new Promise<ApprovalDecision>((resolve) => {
-            pending.set(requestId, { requestId, threadId: thread.id, method: "item/commandExecution/requestApproval", params, resolve: (d) => resolve(d as ApprovalDecision) });
+            pending.set(requestId, { requestId, threadId: thread.id, method: "item/commandExecution/requestApproval", params, resolve: (r) => resolve(String(r.decision ?? "decline") as ApprovalDecision) });
             for (const c of subscribers(thread.id)) send(c, { id: requestId, method: "item/commandExecution/requestApproval", params });
           });
           check();
@@ -415,7 +483,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
     "turn/interrupt": (_client, params) => {
       const t = requireThread(params);
       if (t.activeTurn && t.activeTurn.id === params.turnId) t.activeTurn.interrupted = true;
-      for (const [id, p] of pending) if (p.threadId === t.id) { pending.delete(id); p.resolve("cancel"); }
+      for (const [id, p] of pending) if (p.threadId === t.id) { pending.delete(id); p.resolve({ decision: "cancel", action: "cancel" }); }
       return {};
     },
   };
@@ -443,8 +511,8 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
         if (!p) return;
         pending.delete(msg.id);
         notify(p.threadId, "serverRequest/resolved", { threadId: p.threadId, requestId: msg.id });
-        // Command approvals answer with a decision, MCP elicitations with an action.
-        p.resolve(msg.result.decision ?? msg.result.action ?? "decline");
+        // Approvals answer with a decision, MCP elicitations with an action (and content), request_user_input with answers.
+        p.resolve(msg.result);
       }
     });
   });

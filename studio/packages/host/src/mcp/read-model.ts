@@ -5,7 +5,7 @@ import type { McpCaller } from "./tools.js";
 // What agents read through the AMO MCP: plain structures, no coordinates, no full transcripts. Read-only by design;
 // writing tools come in stage 5.
 
-const URGENCY: SessionStatus[] = ["awaiting-approval", "awaiting-review", "error", "running", "idle", "completed"];
+const URGENCY: SessionStatus[] = ["awaiting-approval", "awaiting-answer", "awaiting-review", "error", "running", "idle", "completed"];
 const EXCERPT = 300;
 
 export class NotFoundError extends Error {}

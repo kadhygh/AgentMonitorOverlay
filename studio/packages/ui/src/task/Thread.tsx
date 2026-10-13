@@ -16,6 +16,10 @@ import { IconPaperclip } from "../attach/icons.js";
 import { withFileRefs } from "../attach/refs.js";
 import { MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
+import { QuestionCard } from "../chat/questions/QuestionCard.js";
+import { PlanReviewBar, sendRevision } from "../chat/questions/PlanReview.js";
+import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
+import { pendingQuestion } from "../chat/questions/flow.js";
 
 interface ThreadProps {
   link: HostLink;
@@ -72,6 +76,30 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
 
+  // A question the agent waits on takes the composer's seat (a plan review sits above the composer instead). Its card
+  // can be closed and opened again from its row in the conversation; "要修改" turns the composer into the feedback box.
+  const asked = useMemo(() => pendingQuestion(items), [items]);
+  const [hiddenCards, setHiddenCards] = useState<ReadonlySet<string>>(new Set());
+  const [revising, setRevising] = useState<string | null>(null);
+  useEffect(() => {
+    setHiddenCards(new Set());
+    setRevising(null);
+  }, [session?.id]);
+  const planReview = asked?.source === "plan-review" ? asked : null;
+  const isRevising = !!planReview && revising === planReview.id;
+  const seat = useMemo(
+    () => ({
+      isOpen: (id: string) => asked?.id === id && asked.source !== "plan-review" && !hiddenCards.has(id),
+      reopen: (id: string) =>
+        setHiddenCards((cur) => {
+          const next = new Set(cur);
+          next.delete(id);
+          return next;
+        }),
+    }),
+    [asked, hiddenCards],
+  );
+
   // The selection menu closes on Escape, on any click outside it, and when the thread scrolls.
   useEffect(() => {
     if (!menu) return;
@@ -112,7 +140,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   // A Claude subagent has no conversation of its own; it is followed from its parent session.
   const claudeSub = session?.runtime === "claude" && session.kind === "sub";
   const readOnly = !session || claudeSub || session.writer === "archived" || session.writer === "terminal-handoff";
-  const generating = !!session && (session.status === "running" || session.status === "awaiting-approval");
+  const generating = !!session && (session.status === "running" || session.status === "awaiting-approval" || session.status === "awaiting-answer");
   // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn.
   const queues = session?.runtime === "claude";
   const placeholder = readOnly
@@ -121,7 +149,9 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
       : session?.writer === "archived"
         ? "已归档的会话只能查看，恢复后才能继续。"
         : "会话已交给终端，工作台暂时只读。"
-    : generating
+    : isRevising
+      ? "写下要修改的地方，回车发给 Claude（计划会按你的意见重写）"
+      : generating
       ? queues
         ? "回复生成中，发出的内容会在下一次工具调用后或本轮结束后被读到"
         : "回复生成中，输入的内容会作为插话发出"
@@ -130,11 +160,25 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // Images must finish uploading (or be removed when they failed) before the message can go.
   const attachHold = attach.uploading ? "图片上传中…" : attach.failed ? "有图片上传失败，移除后再发送" : "";
-  const canSend = !readOnly && !attachHold && (!!draft.trim() || !attach.empty);
+  const canSend = !readOnly && !attachHold && (!!draft.trim() || (!attach.empty && !isRevising));
+
+  /** "要修改": text already typed goes at once; otherwise the composer collects it. */
+  async function revise(feedback: string): Promise<boolean> {
+    if (!session || !planReview) return false;
+    const failed = await sendRevision(link, session.id, planReview.id, feedback);
+    if (failed) return false;
+    setRevising(null);
+    return true;
+  }
 
   async function send() {
     const text = draft.trim();
     if (!canSend) return;
+    if (isRevising) {
+      setDraft("");
+      if (!(await revise(text))) setDraft((d) => (d.trim() ? d : text));
+      return;
+    }
     // Clear at once so the next message can be typed while this one is on its way; put it back if sending failed
     // (and nothing new was typed meanwhile). Clearing after the request would wipe what was typed in between.
     setDraft("");
@@ -205,7 +249,9 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           <div className="thread-inner">
             {!session && <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>}
             <AttachLink.Provider value={link}>
-              <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy} view={view} onApprove={onApprove} onJump={onJump} />
+              <QuestionSeatContext.Provider value={seat}>
+                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy} view={view} onApprove={onApprove} onJump={onJump} />
+              </QuestionSeatContext.Provider>
             </AttachLink.Provider>
           </div>
         </div>
@@ -262,8 +308,32 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           </button>
         </div>
       )}
-      {session && (
+      {session && asked && !readOnly && seat.isOpen(asked.id) && (
+        <div className="composer-dock">
+          <QuestionCard link={link} sessionId={session.id} item={asked} onClose={() => setHiddenCards((cur) => new Set(cur).add(asked.id))} />
+        </div>
+      )}
+      {session && !(asked && !readOnly && seat.isOpen(asked.id)) && (
         <div className="composer-dock" {...dropTarget}>
+          {planReview && !readOnly && (
+            <PlanReviewBar
+              link={link}
+              sessionId={session.id}
+              item={planReview}
+              revising={isRevising}
+              onRevise={() => {
+                const text = draft.trim();
+                if (text) {
+                  setDraft("");
+                  void revise(text).then((ok) => !ok && setDraft((d) => (d.trim() ? d : text)));
+                  return;
+                }
+                setRevising(planReview.id);
+                requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".chat-input textarea")?.focus());
+              }}
+              onCancelRevise={() => setRevising(null)}
+            />
+          )}
           <div className={`composer-card${readOnly ? " disabled" : ""}${dragging ? " dropping" : ""}`}>
             <AttachTray attach={attach} disabled={readOnly} />
             <label className="chat-input">
@@ -281,6 +351,11 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
                 placeholder={placeholder}
                 onKeyDown={(e) => {
                   if (mentions.onKeyDown(e)) return;
+                  if (isRevising && e.key === "Escape") {
+                    e.preventDefault();
+                    setRevising(null);
+                    return;
+                  }
                   if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                     e.preventDefault();
                     void send();
@@ -312,7 +387,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
                 }}
               />
               <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly} />
-              <span className="composer-hint">{attachHold || (generating && !readOnly ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
+              <span className="composer-hint">{attachHold || (generating && !readOnly && !isRevising ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && (
                 <button type="button" className="round-btn stop" onClick={onInterrupt} aria-label="打断" title="停止生成">
@@ -324,8 +399,8 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
                 className="round-btn send"
                 onClick={() => void send()}
                 disabled={!canSend}
-                aria-label={sendLabel}
-                title={generating ? (queues ? "排队发送" : "插话发送") : "发送消息"}
+                aria-label={isRevising ? "发送修改意见" : sendLabel}
+                title={isRevising ? "把修改意见发给 Claude" : generating ? (queues ? "排队发送" : "插话发送") : "发送消息"}
               >
                 <IconArrowUp />
               </button>

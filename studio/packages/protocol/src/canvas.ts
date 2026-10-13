@@ -136,7 +136,7 @@ export interface CanvasOutline {
   dependencies: Array<{ from: Id; to: Id }>;
 }
 
-const URGENCY: SessionStatus[] = ["awaiting-approval", "awaiting-review", "error", "running", "idle", "completed"];
+const URGENCY: SessionStatus[] = ["awaiting-approval", "awaiting-answer", "awaiting-review", "error", "running", "idle", "completed"];
 
 /**
  * The structure an agent needs, without coordinates: groups with their tasks, reference cards and notes, dependencies,

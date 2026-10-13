@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import type { ApprovalDecision, Attachment, HostEvent, Id, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, Workspace, AccountUsage } from "@amo-studio/protocol";
+import type { ApprovalDecision, Attachment, HostEvent, Id, ModelProfile, ProfileChoices, QuestionReply, Session, SessionItem, SessionOptions, SessionRuntime, SessionStatus, Workspace, AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../store/store.js";
 
 // What HostService needs from a runtime, and a router that sends each call to the runtime a session (or profile)
@@ -34,6 +34,8 @@ export interface SessionRuntimeApi {
   archive(sessionId: Id): Promise<Session[]>;
   unarchive(sessionId: Id): Promise<Session[]>;
   respondApproval(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void>;
+  /** Answers a pending `question` item (stage 12): the reply must fit its source (see QuestionReply). */
+  answerQuestion(sessionId: Id, itemId: Id, reply: QuestionReply): Promise<void>;
   /** A subscription's quota use, for profiles that have one; null otherwise. `refresh`: ask the account now. */
   usage?(profileId: Id, refresh: boolean): Promise<AccountUsage | null>;
   /** Codex only: where an attached TUI connects. */
@@ -111,6 +113,9 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   }
   respondApproval(sessionId: Id, approvalId: string, decision: ApprovalDecision) {
     return this.forSession(sessionId).respondApproval(sessionId, approvalId, decision);
+  }
+  answerQuestion(sessionId: Id, itemId: Id, reply: QuestionReply) {
+    return this.forSession(sessionId).answerQuestion(sessionId, itemId, reply);
   }
   attachInfo(sessionId: Id) {
     return this.forSession(sessionId).attachInfo(sessionId);

@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createSdkMcpServer, forkSession, getSessionMessages, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import type { ApprovalDecision, ApprovalKind, Attachment, Id, ModelOption, ModelProfile, ProfileChoices, Session, SessionItem, SessionOptions, ToolFields, TurnState, Workspace, AccountUsage, UsageWindow } from "@amo-studio/protocol";
+import { claudeAnswers, storedAnswers, type ApprovalDecision, type ApprovalKind, type Attachment, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionPrompt, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SessionStatus, type ToolFields, type TurnState, type Workspace, type AccountUsage, type UsageWindow } from "@amo-studio/protocol";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
@@ -47,6 +47,18 @@ interface PendingApproval {
   resolve(result: PermissionResult): void;
 }
 
+/** AskUserQuestion or ExitPlanMode waiting in canUseTool for the person's answer (a `question` item). */
+interface PendingQuestion {
+  itemId: Id;
+  kind: "ask" | "plan";
+  input: Record<string, unknown>;
+  questions: QuestionPrompt[];
+  resolve(result: PermissionResult): void;
+}
+
+/** Tools whose call is the person's to answer: shown as a question item rather than a tool row. */
+const QUESTION_TOOLS = new Set(["AskUserQuestion", "ExitPlanMode"]);
+
 /** One running Claude Code process for a session, fed through a streaming input. */
 interface Live {
   q: Query;
@@ -55,6 +67,8 @@ interface Live {
   push(content: SDKUserMessage["message"]["content"]): void;
   end(): void;
   running: boolean;
+  /** Settles once the session's permission mode is in force (see ensureLive). */
+  ready: Promise<void>;
   interrupted: boolean;
   /** Closed by Studio (idle, archive, Host shutdown) rather than ended by the CLI. */
   closedByHost: boolean;
@@ -77,6 +91,11 @@ interface Live {
   toolStarted: Map<string, number>;
   declinedTools: Set<string>;
   approvals: Map<string, PendingApproval>;
+  /** question item id -> the canUseTool call waiting for its answer */
+  questions: Map<Id, PendingQuestion>;
+  /** AskUserQuestion / ExitPlanMode calls (tool_use id -> name and input), and those that reached the person */
+  questionTools: Map<string, { name: string; input: Record<string, unknown> }>;
+  askedTools: Set<string>;
   /** Agent tool_use id -> child session */
   subs: Map<string, Id>;
   /** Agent calls running in the background (their tool result arrives at once; a task notification ends them) */
@@ -104,6 +123,11 @@ const STRIP_SUBAGENT_MODE: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
 };
 
 const DECLINED = "The person declined this in AMO Studio.";
+const QUESTIONS_DISMISSED =
+  "The user closed these questions in AMO Studio without answering them. Do not ask them again right away: carry on with what you know, stating any assumptions you make, or stop and say what you need from the user.";
+const PLAN_DISMISSED = "The user closed the plan review in AMO Studio without approving the plan. Stay in plan mode: do not edit files or run commands; wait for the user's next message.";
+const planRevision = (feedback: string) =>
+  `The user reviewed the plan in AMO Studio and wants changes before you start:\n\n${feedback}\n\nRevise the plan accordingly and present it again with ExitPlanMode. Stay in plan mode until the user approves.`;
 
 export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly live = new Map<Id, Live>();
@@ -154,6 +178,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const shown = images.map((a) => ({ id: a.id, path: a.path }));
     this.appendItem(sessionId, { type: "user", text, ...(shown.length ? { images: shown } : {}) }, { method: mode === "queue" ? "user/queued" : "user" });
     this.clearIdle(live);
+    await live.ready;
     live.push(blocks.length ? [...blocks, ...(text ? [{ type: "text" as const, text }] : [])] : text);
     return { mode };
   }
@@ -166,6 +191,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       live.approvals.delete(key);
       a.resolve({ behavior: "deny", message: DECLINED, interrupt: true });
       this.updateItem(a.itemId, (item) => (item.type === "approval" && item.state === "pending" ? { ...item, state: "declined" } : item));
+    }
+    for (const [key, question] of live.questions) {
+      live.questions.delete(key);
+      question.resolve({ behavior: "deny", message: DECLINED, interrupt: true });
+      this.cancelQuestion(question.itemId);
     }
     await live.q.interrupt().catch((err: unknown) => this.emit("log", `interrupt failed for ${sessionId}: ${String(err)}`));
   }
@@ -310,7 +340,48 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (decision === "decline" && pending.toolUseId) live.declinedTools.add(pending.toolUseId);
     pending.resolve(decision === "accept" ? { behavior: "allow", updatedInput: pending.input } : { behavior: "deny", message: DECLINED });
     this.updateItem(pending.itemId, (item) => (item.type === "approval" ? { ...item, state: decision === "accept" ? "accepted" : "declined" } : item));
-    if (live.running && live.approvals.size === 0) this.setStatus(sessionId, "running");
+    if (live.running) this.setStatus(sessionId, waitingStatus(live));
+  }
+
+  /**
+   * Answers AskUserQuestion (allowed with the answers filled in, as Claude Code's own dialog does) or the plan review
+   * of ExitPlanMode (approve: allowed, and the session leaves plan mode for 每次询问; revise: denied with the person's
+   * feedback). Dismissing denies with a message that says so, and the model carries on.
+   */
+  async answerQuestion(sessionId: Id, itemId: Id, reply: QuestionReply): Promise<void> {
+    const live = this.live.get(sessionId);
+    const pending = live?.questions.get(itemId);
+    if (!live || !pending) throw new Error(`question ${itemId} is not pending`);
+    const settle = (patch: Partial<Extract<SessionItem, { type: "question" }>>) =>
+      this.updateItem(itemId, (it) => (it.type === "question" && it.state === "pending" ? { ...it, ...patch } : it));
+    if (pending.kind === "ask") {
+      if (reply.action === "answer") {
+        live.questions.delete(itemId);
+        pending.resolve({ behavior: "allow", updatedInput: { ...pending.input, ...claudeAnswers(pending.questions, reply.answers) } });
+        settle({ state: "answered", answers: storedAnswers(pending.questions, reply.answers) });
+      } else if (reply.action === "dismiss") {
+        live.questions.delete(itemId);
+        pending.resolve({ behavior: "deny", message: QUESTIONS_DISMISSED });
+        settle({ state: "dismissed" });
+      } else throw new Error(`questions take an answer, not ${reply.action}`);
+    } else if (reply.action === "approve") {
+      live.questions.delete(itemId);
+      // Leave plan mode before the tool runs (it then finds the mode switched already), and remember the choice so
+      // the permission picker shows it.
+      const session = this.updateSession(sessionId, { options: { ...this.requireSession(sessionId).options, permission: CLAUDE_DEFAULT_PERMISSION } });
+      await live.q.setPermissionMode(claudePermissionMode(session.options.permission)).catch((err: unknown) => this.emit("log", `could not leave plan mode in ${sessionId}: ${String(err)}`));
+      pending.resolve({ behavior: "allow", updatedInput: pending.input });
+      settle({ state: "answered" });
+    } else if (reply.action === "revise") {
+      live.questions.delete(itemId);
+      pending.resolve({ behavior: "deny", message: planRevision(reply.feedback) });
+      settle({ state: "answered", feedback: reply.feedback });
+    } else if (reply.action === "dismiss") {
+      live.questions.delete(itemId);
+      pending.resolve({ behavior: "deny", message: PLAN_DISMISSED });
+      settle({ state: "dismissed" });
+    } else throw new Error(`a plan review takes approve or revise, not ${reply.action}`);
+    if (live.running) this.setStatus(sessionId, waitingStatus(live));
   }
 
   /**
@@ -397,6 +468,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         wake?.();
       },
       running: false,
+      ready: Promise.resolve(),
       interrupted: false,
       closedByHost: false,
       background: new Set(),
@@ -410,6 +482,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       toolStarted: new Map(),
       declinedTools: new Set(),
       approvals: new Map(),
+      questions: new Map(),
+      questionTools: new Map(),
+      askedTools: new Set(),
       subs: new Map(),
       backgroundSubs: new Set(),
     };
@@ -432,6 +507,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         ...(this.hasTranscript(ref) ? { resume: ref } : { sessionId: ref }),
       },
     });
+    // With CLAUDE_CODE_SUBPROCESS_ENV_SCRUB the CLI starts in "default" whatever --permission-mode says (CLI 2.1.296,
+    // checked in S12-B); switching once it runs works, so a session in another mode switches before its first message.
+    const mode = claudePermissionMode(session.options.permission);
+    if (mode !== "default") {
+      live.ready = live.q.setPermissionMode(mode).catch((err: unknown) => {
+        this.emit("log", `could not set the permission mode of ${session.id}: ${String(err)}`);
+      });
+    }
     this.live.set(session.id, live);
     live.done = this.consume(session.id, live);
     return live;
@@ -460,6 +543,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     for (const t of live.thinking) this.updateItem(t.itemId, (it) => (it.type === "reasoning" ? { ...it, text: live.text.get(t.itemId) ?? it.text, streaming: false } : it));
     this.endTurn(live, err && !live.interrupted ? "failed" : "interrupted");
     for (const a of live.approvals.values()) this.updateItem(a.itemId, (it) => (it.type === "approval" && it.state === "pending" ? { ...it, state: "resolved-elsewhere" } : it));
+    for (const question of live.questions.values()) this.cancelQuestion(question.itemId);
+    live.questions.clear();
     for (const id of live.tools.values()) this.updateItem(id, (it) => (it.type === "tool" && it.status === "running" ? { ...it, status: "failed" } : it));
     for (const childId of live.subs.values()) {
       if (this.store.getSession(childId)?.status === "running") this.setStatus(childId, err && !live.interrupted ? "error" : "idle");
@@ -551,6 +636,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
             }
           } else if (block.type === "tool_use") {
             if (block.name === "Agent" || block.name === "Task") this.startSubagent(sessionId, live, block.id, block.input as Record<string, unknown>);
+            // The question item stands for these calls; a row is added only if they never reach the person.
+            else if (QUESTION_TOOLS.has(block.name)) live.questionTools.set(block.id, { name: block.name, input: block.input as Record<string, unknown> });
             else this.addToolCard(sessionId, live, block.id, block.name, block.input as Record<string, unknown>);
           }
         }
@@ -571,6 +658,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
             // A background subagent's result only says it was launched; its task notification ends it.
             if (!live.backgroundSubs.has(block.tool_use_id) || result?.status === "completed") this.setStatus(child, block.is_error ? "error" : "completed");
             continue;
+          }
+          const asked = live.questionTools.get(block.tool_use_id);
+          if (asked) {
+            live.questionTools.delete(block.tool_use_id);
+            if (live.askedTools.delete(block.tool_use_id)) continue;
+            // Rejected before it reached the person (bad input, not in plan mode…): show the call and its error.
+            this.addToolCard(sessionId, live, block.tool_use_id, asked.name, asked.input);
           }
           this.settleToolCard(live, block.tool_use_id, block.content, block.is_error === true);
         }
@@ -725,10 +819,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     live.running = true;
     this.clearIdle(live);
-    this.setStatus(sessionId, live.approvals.size ? "awaiting-approval" : "running");
+    this.setStatus(sessionId, waitingStatus(live));
   }
 
-  /** canUseTool: show an approval card and wait for the person. */
+  /** canUseTool: show an approval card (for questions and plan reviews, a question) and wait for the person. */
   private askPerson(
     sessionId: Id,
     live: Live,
@@ -737,6 +831,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     ctx: { signal: AbortSignal; toolUseID?: string; title?: string; description?: string },
   ): Promise<PermissionResult> {
     const input = toolInput;
+    if (toolName === "AskUserQuestion") {
+      const questions = askedQuestions(input);
+      if (questions.length) return this.askQuestion(sessionId, live, { kind: "ask", input, questions }, { source: "claude-ask", questions }, ctx);
+    }
+    if (toolName === "ExitPlanMode") {
+      // The CLI puts the plan (read from its plan file) into the input.
+      return this.askQuestion(sessionId, live, { kind: "plan", input, questions: [] }, { source: "plan-review", plan: typeof input.plan === "string" ? input.plan : "" }, ctx);
+    }
     const approvalId = ctx.toolUseID ?? randomUUID();
     const kind: ApprovalKind = toolName === "Bash" || toolName === "PowerShell" ? "command" : /^(Edit|Write|MultiEdit|NotebookEdit)$/.test(toolName) ? "fileChange" : "permissions";
     const summary = String(input.command ?? input.file_path ?? input.notebook_path ?? ctx.title ?? toolName);
@@ -757,6 +859,31 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     });
   }
 
+  /** A question item in place of the approval card; the canUseTool call resolves when the person answers. */
+  private askQuestion(
+    sessionId: Id,
+    live: Live,
+    pending: Omit<PendingQuestion, "itemId" | "resolve">,
+    fields: { source: "claude-ask"; questions: QuestionPrompt[] } | { source: "plan-review"; plan: string },
+    ctx: { signal: AbortSignal; toolUseID?: string },
+  ): Promise<PermissionResult> {
+    if (ctx.toolUseID) live.askedTools.add(ctx.toolUseID);
+    const item = this.appendItem(sessionId, { type: "question", ...fields, state: "pending" }, { method: "canUseTool", ...(ctx.toolUseID ? { itemId: ctx.toolUseID } : {}) });
+    return new Promise<PermissionResult>((resolve) => {
+      live.questions.set(item.id, { ...pending, itemId: item.id, resolve });
+      this.setStatus(sessionId, "awaiting-answer");
+      ctx.signal.addEventListener("abort", () => {
+        if (!live.questions.delete(item.id)) return;
+        this.cancelQuestion(item.id);
+        resolve({ behavior: "deny", message: "aborted" });
+      });
+    });
+  }
+
+  private cancelQuestion(itemId: Id): void {
+    this.updateItem(itemId, (it) => (it.type === "question" && it.state === "pending" ? { ...it, state: "cancelled" } : it));
+  }
+
   // ---- helpers ----------------------------------------------------------------------------------------------------
 
   /** After a Host restart no Claude process is running: turns that were in flight are over. */
@@ -765,10 +892,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       if (s.runtime !== "claude") continue;
       for (const item of this.store.listItems(s.id)) {
         if (item.type === "approval" && item.state === "pending") this.updateItem(item.id, (it) => (it.type === "approval" ? { ...it, state: "resolved-elsewhere" } : it));
+        if (item.type === "question" && item.state === "pending") this.cancelQuestion(item.id);
         if (item.type === "agent" && item.streaming) this.updateItem(item.id, (it) => (it.type === "agent" ? { ...it, streaming: false } : it));
         if (item.type === "tool" && item.status === "running") this.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "failed" } : it));
       }
-      if (s.status === "running" || s.status === "awaiting-approval") {
+      if (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer") {
         if (s.kind !== "sub") this.appendItem(s.id, { type: "notice", level: "warning", message: "Host 重启时这条会话的回复被中断了。发一条消息即可接着对话。" });
         this.setStatus(s.id, "idle");
       }
@@ -843,7 +971,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   private scheduleIdle(sessionId: Id, live: Live): void {
     this.clearIdle(live);
-    if (live.background.size || live.approvals.size) return;
+    if (live.background.size || live.approvals.size || live.questions.size) return;
     live.idleTimer = setTimeout(() => {
       if (!live.running && !live.background.size) void this.close(sessionId);
     }, this.options.idleCloseMs ?? 10 * 60_000);
@@ -871,6 +999,30 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 }
 
 const handoffKey = (sessionId: Id) => `claude-handoff-seen:${sessionId}`;
+
+/** What a running session waits for: an answer, an approval, or nothing. */
+function waitingStatus(live: Live): SessionStatus {
+  return live.questions.size ? "awaiting-answer" : live.approvals.size ? "awaiting-approval" : "running";
+}
+
+/** AskUserQuestion's questions (keyed by their text, as Claude keys the answers); malformed entries are left out. */
+export function askedQuestions(input: Record<string, unknown>): QuestionPrompt[] {
+  const list = Array.isArray(input.questions) ? (input.questions as Array<Record<string, unknown>>) : [];
+  const str = (v: unknown) => (typeof v === "string" ? v : "");
+  return list
+    .filter((q) => q && typeof q === "object" && str(q.question))
+    .map((q) => ({
+      id: str(q.question),
+      question: str(q.question),
+      ...(str(q.header) ? { header: str(q.header) } : {}),
+      options: (Array.isArray(q.options) ? (q.options as Array<Record<string, unknown>>) : [])
+        .filter((o) => o && typeof o === "object" && str(o.label))
+        .map((o) => ({ label: str(o.label), ...(str(o.description) ? { description: str(o.description) } : {}), ...(str(o.preview) ? { preview: str(o.preview) } : {}) })),
+      ...(q.multiSelect === true ? { multiSelect: true } : {}),
+      // Claude Code's own dialog always offers "Other" (free text).
+      other: true,
+    }));
+}
 
 /** The Claude Code executable that ships with the SDK (same version as the SDK's own processes). */
 function bundledClaudeExe(): string {

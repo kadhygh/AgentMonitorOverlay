@@ -396,3 +396,12 @@ export interface HostRoutes {
   /** An image file itself, for previews (types in PREVIEW_IMAGE_TYPES); also takes `?token=`. */
   "GET /api/fs/raw": { req: void; res: Blob };
 }
+
+// ---- questions in the conversation (stage 12, S12-B) -----------------------------------------------------------
+export interface HostRoutes {
+  /**
+   * Answers a pending `question` item (by its item id): the answers, the form's values, the plan review's verdict, or
+   * `dismiss` to close it without answering. 409 when it is no longer pending.
+   */
+  "POST /api/sessions/:id/questions/:itemId/answer": { req: import("./questions.js").QuestionReply; res: { ok: true } };
+}
