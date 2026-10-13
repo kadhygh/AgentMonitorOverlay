@@ -74,6 +74,24 @@
 - **入口**：工作台顶栏按钮和快捷键 `Ctrl+Shift+M`（窗口内快捷键，不是全局的）；任务页、会话栏；Review 窗口和找文件弹窗里"标记这个文件"。
 - 决定：标记跟着项目走；项目外的文件归到"其他"。删除项目时一并删除它的标记。
 
+### S12-E CLI 功能补全（用户 2026-10-14 追加：「除了提问以外，还有其他的 cli 功能没能处理，调查一轮然后补完」；线 `studio/s12-cli`，等 S12-B 合并后开始，因为改的是同一批运行时文件）
+
+调查方法：把 Codex app-server 协议里的全部通知、请求和条目类型，以及 Claude Agent SDK 0.3.296 的全部消息类型，逐一对照 Host 运行时的处理。
+
+| 缺口 | Claude | Codex | 做法 |
+|---|---|---|---|
+| **`/` 命令** | SDK `supportedCommands()` 和 `commands_changed`（内置命令、自定义命令、skills），把 `/xxx` 当作 prompt 发出；输出来自 `local_command_output` | 没有命令行：`/compact` → `thread/compact/start`，`/review` → `review/start`，skills → `skills/list` 加输入类型 `skill` | 输入框打 `/` 弹出命令菜单（分组：Studio 自己的 / 运行时的 / skills），带说明；命令输出显示为一条记录。参考 DSH `ui-commands` |
+| **上下文压缩** | `compact_boundary`、`status: compacting` | `thread/compacted`、`contextCompaction` 条目 | 对话里一行「上下文已压缩（之前 … tok）」；压缩进行中的状态；输入框下方的上下文占用旁加「压缩」按钮 |
+| **提示类消息** | `api_retry`、`model_refusal_*`、`permission_denied`、`notification`、`informational` | `model/rerouted`、`configWarning`、`deprecationNotice`、`guardianWarning`、`mcpServer/startupStatus/updated`（MCP 启动失败）、`error` 的 willRetry | 运行中状态行显示「正在重试 2/10」；其余变成 notice 行（同类合并，不刷屏） |
+| **后台命令** | `task_started` / `task_progress` / `task_updated` / `background_tasks_changed`（后台 Bash），`stop_task` | `process/*`、`command/exec/outputDelta` | 会话里列出正在后台运行的命令，能看输出、能停止 |
+| **工具进度** | `tool_progress`（已运行时长）、`tool_use_summary` | `item/mcpToolCall/progress`、`item/commandExecution/terminalInteraction`（命令在等输入）、`item/fileChange/outputDelta` | 工具行显示进度文字；命令等待输入时提示 |
+| **图片结果** | Read 图片时的 image 结果块 | `imageView`、`imageGeneration` 条目 | 工具行里显示图片 |
+| **Codex review 模式** | — | `enteredReviewMode` / `exitedReviewMode` 条目 | 显示审查开始 / 结论（与 `/review` 一起做） |
+| **其他条目** | `hook_started` / `hook_response` | `hook/*`、`hookPrompt`、`collabAgentToolCall`、`sleep`、`turn/diff/updated` | hook 只在失败或拦截时显示；其余条目给一个通用的工具行，不再静默丢掉 |
+| **建议的下一句** | `prompt_suggestion` | — | 回答结束后在输入框上方显示可点的建议（可在设置里关） |
+
+这次不做：撤销某一轮的文件改动（Claude `rewind_files`、Codex `thread/rollback`，涉及文件回滚，另行讨论）；实时语音（`thread/realtime/*`）；账号登录类通知。
+
 ## 怎么并行
 
 - 先在 `studio/main` 上做 **S12-0**，提交后再分四条线，每条线一个 git 工作树和分支（`studio/s12-review`、`studio/s12-questions`、`studio/s12-chatfiles`、`studio/s12-marks`），由各自的 agent 开发。
@@ -86,7 +104,9 @@
 | 项 | 状态 |
 |---|---|
 | S12-0 公共底座 | ✅ `d319e28`：`lib/highlight.ts`（Shiki 4.4.3，C#/TS/JSON 先加载，其余按需）、`styles/code.css`、Host `features/openin/`（VS Code 通过安装目录里 `bin/code.cmd` 指向的 CLI 脚本启动，`--goto 文件:行:列`；资源管理器 `/select,`；默认程序）、`/api/fs/text`、`/api/fs/raw`、界面 `lib/openin.ts` |
-| S12-A Review 补强 | 进行中（工作树 `AgentMonitorOverlay-s12-*`） |
+| S12-A Review 补强 | ✅ 已合并（`81251a2`）。目录树（单子文件夹合并、可折叠）/ 平铺，文件名中间省略保留扩展名；列表宽度可拖（180–600，双击恢复 280）；按扩展名高亮（新旧两份全文各高亮一次再按行号对回，超过 5000 行不高亮）；「单栏 / 左右对照」与「只看改动 / 完整文件」组合，设置记在本机；文件头「VS Code 打开」（当前行）和「在资源管理器中显示」，文件右键同样两项，已删除的文件不可用。决定：j/k 按目录树顺序走全部文件（进入折叠的文件夹时自动展开）；折叠状态不记；左右对照里长行换行以保持对齐；点击行即设为当前行 |
 | S12-B 提问和计划确认 | 进行中（工作树 `AgentMonitorOverlay-s12-*`） |
 | S12-C 对话里的文件 | 进行中（工作树 `AgentMonitorOverlay-s12-*`） |
 | S12-D 文件标记 | 进行中（工作树 `AgentMonitorOverlay-s12-*`） |
+| 标题栏调整 | ✅ `989e2f6`：标题行只留品牌、需要你、便签、Focus（图标 + 状态点）和窗口按钮；看板 / 画布切换和「+ 新任务」挪到下面一行（在左栏右侧，只占内容区宽度）；设置移到左栏底部「Host 运行中」下面 |
+| S12-E CLI 功能补全 | 等 S12-B 合并后开始 |
