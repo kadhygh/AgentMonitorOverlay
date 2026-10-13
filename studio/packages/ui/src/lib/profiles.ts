@@ -1,15 +1,13 @@
 import type { ModelProfile } from "@amo-studio/protocol";
 
-/** "Codex · DeepSeek Flash", "Codex · 默认", "Claude · GLM-5.3" — as in the prototype's model pickers. */
+/** "Codex · DeepSeek Flash", "Codex · GPT 订阅", "Claude · GLM-5.3" — as in the prototype's model pickers. */
 export function profileLabel(p: ModelProfile): string {
-  const runtime = p.runtime === "codex" ? "Codex" : "Claude";
-  return p.provider ? `${runtime} · ${p.label}` : `${runtime} · 默认`;
+  return `${p.runtime === "codex" ? "Codex" : "Claude"} · ${p.label}`;
 }
 
 /** Short model name for session rows and chat headers. */
 export function shortModel(p: ModelProfile | undefined): string {
-  if (!p) return "未知模型";
-  return p.provider ? p.label : p.runtime === "codex" ? "Codex" : "Claude";
+  return p ? p.label : "未知模型";
 }
 
 const LAST_PROFILE_KEY = "amo.lastProfile";

@@ -21,9 +21,15 @@ function testModelOptions(): Partial<StartHostOptions> {
   return {
     profiles: [
       { id: "codex-mock", label: "Mock 模型", runtime: "codex", provider: "amo-mock", model: "mock-model", credentialId: "mock" },
-      ...(claudeUrl ? [{ id: "claude-mock", label: "Mock Claude", runtime: "claude" as const, provider: "mock", model: "mock-claude", credentialId: "mock" }] : []),
+      ...(claudeUrl
+        ? [
+            { id: "claude-mock", label: "Mock Claude", runtime: "claude" as const, provider: "mock", model: "mock-claude", credentialId: "mock" },
+            // Like the Claude subscription: a token saved in 设置 → 模型凭据 (kept in memory here), sent to the mock.
+            { id: "claude-subscription", label: "Claude 订阅", runtime: "claude" as const, provider: "mock-oauth", model: "mock-claude", credentialId: "claude-subscription" },
+          ]
+        : []),
     ],
-    ...(claudeUrl ? { claudeProviders: { mock: { baseUrl: claudeUrl } } } : {}),
+    ...(claudeUrl ? { claudeProviders: { mock: { baseUrl: claudeUrl }, "mock-oauth": { baseUrl: claudeUrl, auth: "oauth" as const } } } : {}),
     providers: {
       "amo-mock": {
         name: "Mock",

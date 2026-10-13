@@ -34,4 +34,14 @@ describe("claudeEnv", () => {
     expect(() => claudeEnv({ ...glm, provider: "nope" }, BUILTIN_CLAUDE_PROVIDERS, credentials, "home", base)).toThrow(/unknown Claude provider/);
     expect(() => claudeEnv(glm, BUILTIN_CLAUDE_PROVIDERS, new StaticCredentialReader({}), "home", base)).toThrow(/not stored/);
   });
+
+  it("uses the subscription token for the Claude subscription, with no endpoint override", () => {
+    const sub: ModelProfile = { id: "claude-subscription", label: "Claude 订阅", runtime: "claude", provider: "anthropic", model: null, credentialId: "claude-subscription" };
+    const env = claudeEnv(sub, BUILTIN_CLAUDE_PROVIDERS, new StaticCredentialReader({ "claude-subscription": "sk-ant-oat-x" }), "home", base);
+    expect(env).toMatchObject({ CLAUDE_CODE_OAUTH_TOKEN: "sk-ant-oat-x", CLAUDE_CONFIG_DIR: "home", CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1" });
+    expect(env.ANTHROPIC_BASE_URL).toBeUndefined();
+    expect(env.ANTHROPIC_AUTH_TOKEN).toBeUndefined();
+    expect(env.ANTHROPIC_MODEL).toBeUndefined();
+    expect(() => claudeEnv(sub, BUILTIN_CLAUDE_PROVIDERS, new StaticCredentialReader({}), "home", base)).toThrow(/claude setup-token/);
+  });
 });

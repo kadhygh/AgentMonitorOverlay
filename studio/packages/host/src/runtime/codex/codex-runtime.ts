@@ -23,7 +23,11 @@ export interface CodexRuntimeOptions {
   servers: CodexServers;
   profiles: readonly ModelProfile[];
   now?: () => Date;
-  /** Thread defaults for new sessions. */
+  /**
+   * How commands run. Default: outside the Windows sandbox, and every command except known-safe reads waits for the
+   * person (user decision 2026-10-13, spikes/RESULTS.md s9-02: with the person's `[windows] sandbox = "unelevated"`
+   * every sandboxed command failed). Applied at thread start, on resume and on every turn, so older threads follow it.
+   */
   approvalPolicy?: "untrusted" | "on-request" | "never";
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   /** Set when app-servers have the AMO MCP: every thread then names its session to it (spikes/RESULTS.md section j). */
@@ -88,8 +92,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     const token = this.options.identities?.issue();
     const started = await handle.client.request("thread/start", {
       cwd: input.workspace.path,
-      approvalPolicy: this.options.approvalPolicy ?? "on-request",
-      sandbox: this.options.sandbox ?? "workspace-write",
+      ...this.permissions(),
       ...this.threadParams(profile, token),
     } as never);
     const session = this.findByThread(started.thread.id) ?? this.createSession({
@@ -119,7 +122,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     }
     // Status and the active turn come from turn/started and turn/completed: a short turn can finish before this
     // response arrives, so setting them here would leave the session stuck in "running".
-    await handle.client.request("turn/start", { threadId: session.runtimeRef!, input } as never);
+    await handle.client.request("turn/start", { threadId: session.runtimeRef!, input, ...this.turnPermissions() } as never);
     return { mode: "start" };
   }
 
@@ -169,7 +172,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       try {
         const handle = await this.handleFor(s.profileId);
         await handle.client.request("thread/unarchive", { threadId: s.runtimeRef } as never);
-        await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id) } as never);
+        await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id), ...this.permissions() } as never);
       } catch (err) {
         this.emit("log", `thread/unarchive failed for ${s.id}: ${String(err)}`);
       }
@@ -197,7 +200,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     if (!s.runtimeRef) throw new Error(`session ${sessionId} has no thread yet`);
     const handle = await this.handleFor(s.profileId);
     // Make sure the thread is loaded on this server so `codex --remote … resume` finds it.
-    await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id) } as never).catch(() => undefined);
+    await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id), ...this.permissions() } as never).catch(() => undefined);
     return { url: handle.url, token: handle.token, threadId: s.runtimeRef };
   }
 
@@ -244,7 +247,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       if (s.profileId !== handle.profileId || !s.runtimeRef || s.archivedAt || s.kind === "sub") continue;
       try {
         // A restarted app-server loads the thread again; only then does the identity header need setting again.
-        const r = await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id) } as never);
+        const r = await handle.client.request("thread/resume", { threadId: s.runtimeRef, ...this.identityConfig(s.id), ...this.permissions() } as never);
         // Turn events may have been missed while disconnected; take the status from the server's view.
         const active = (r.thread as { status?: { type?: string } }).status?.type === "active";
         const st = this.sessionState(s.id);
@@ -545,6 +548,22 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   }
 
   // ---- helpers ----------------------------------------------------------------------------------------------------
+
+  /**
+   * Who answers approvals and how commands run, for thread/start and thread/resume. Approvals always go to the person,
+   * whatever `approvals_reviewer` their own Codex config sets (an automatic reviewer would answer instead).
+   */
+  private permissions() {
+    return { approvalPolicy: this.options.approvalPolicy ?? "untrusted", approvalsReviewer: "user", sandbox: this.options.sandbox ?? "danger-full-access" };
+  }
+
+  /** The same for turn/start (a turn takes a sandbox policy object rather than a mode), plus reasoning summaries. */
+  private turnPermissions() {
+    const sandbox = this.options.sandbox ?? "danger-full-access";
+    const sandboxPolicy = sandbox === "danger-full-access" ? { type: "dangerFullAccess" } : sandbox === "read-only" ? { type: "readOnly", networkAccess: false } : undefined;
+    // Reasoning summaries: models that keep their thinking private (GPT) still show what they thought about.
+    return { approvalPolicy: this.options.approvalPolicy ?? "untrusted", approvalsReviewer: "user", ...(sandboxPolicy ? { sandboxPolicy } : {}), summary: "auto" };
+  }
 
   /** thread/start and thread/fork parameters: explicit provider and model, plus the AMO MCP identity header. */
   private threadParams(profile: ModelProfile, token: string | undefined) {

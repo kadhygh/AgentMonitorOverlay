@@ -5,7 +5,8 @@ import { fileURLToPath } from "node:url";
 // Counts real model turns against studio/budget.json (LOOP_RULES section 4).
 // Call reserveModelTurn() before every real turn/start or SDK query turn.
 
-export type BudgetProvider = "deepseek" | "glm";
+/** gpt and claude are the person's own subscriptions (Codex default login, Claude subscription token). */
+export type BudgetProvider = "deepseek" | "glm" | "gpt" | "claude";
 
 export interface BudgetFile {
   unit: string;

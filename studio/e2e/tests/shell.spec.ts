@@ -13,7 +13,7 @@ test.afterEach(async () => {
 test("starts the Host, connects the UI and never takes focus", async () => {
   studio = await launchStudio({ mockModel: false });
   await expect(studio.page.getByTestId("host-status")).toHaveText("Host 运行中");
-  expect((await studio.api<{ profiles: Array<{ id: string }> }>("GET", "/api/state")).profiles.map((p) => p.id)).toEqual(["codex-default", "codex-deepseek-flash", "claude-glm"]);
+  expect((await studio.api<{ profiles: Array<{ id: string }> }>("GET", "/api/state")).profiles.map((p) => p.id)).toEqual(["codex-default", "codex-deepseek-flash", "claude-glm", "claude-subscription"]);
   expect(await windowState(studio.app)).toMatchObject({ focused: false, anyFocused: false, onScreen: false });
 
   const info = JSON.parse(readFileSync(join(studio.dataDir, "host.json"), "utf8")) as { url: string };

@@ -131,12 +131,14 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     const mcpToken = loadOrCreateToken(paths.mcpToken);
     let mcp: { url: string; token: string } | null = null;
     store = new Store(paths.db);
+    // One reader for everything, so a token saved in 设置 is what the next Claude session reads.
+    const credentials = options.credentials ?? new WindowsCredentialReader();
     manager = options.servers
       ? undefined
       : new CodexServerManager({
           dataDir: paths.codex,
           profiles,
-          credentials: options.credentials ?? new WindowsCredentialReader(),
+          credentials,
           cwd: options.dataDir,
           ...(options.codexEnv ? { env: options.codexEnv } : {}),
           ...(options.providers ? { providers: options.providers } : {}),
@@ -151,13 +153,13 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       store,
       profiles,
       providers: options.claudeProviders ?? BUILTIN_CLAUDE_PROVIDERS,
-      credentials: options.credentials ?? new WindowsCredentialReader(),
+      credentials,
       claudeHome: paths.claudeHome,
       ...(options.claudeBaseEnv ? { baseEnv: options.claudeBaseEnv } : {}),
       mcpTools: (sessionId) => amoToolsFor(service, { sessionId }),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude });
-    const service = new HostService(store, runtime, profiles, { launcher: options.launcher ?? new WindowsTerminalLauncher() });
+    const service = new HostService(store, runtime, profiles, { launcher: options.launcher ?? new WindowsTerminalLauncher(), credentials });
     http = await startHostServer({
       service,
       token,

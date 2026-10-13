@@ -40,3 +40,10 @@
 - 完成上面"做法"表里的全部内容。真实模型验证见 `spikes/RESULTS.md` s9-00：DeepSeek（经 Codex）和 GLM（经 Claude）的思考、工具行、每轮用量都能显示。
 - 测试：单元 + 集成 241 个通过；端到端 44 个通过（新增 `chat-experience.spec.ts`，截图在 `screenshots/stage-9/`）。其他端到端用例默认用"完全展开"，这样能直接看到工具行和已批准的审批。
 - 旧会话没有"轮"记录：按你的消息分段，折叠行只写"已完成"，没有用时和用量。
+
+## 追加：GPT 与 Claude 订阅（2026-10-13）
+
+- 模型列表：`Codex · GPT 订阅`（用户自己的 Codex 登录和默认模型）、`Claude · Claude 订阅`（`claude setup-token` 生成的长期令牌，存在 Windows 凭据管理器 `AgentMonitorOverlay/model-provider/claude-subscription`，Studio 只在启动 Claude 时放进环境变量 `CLAUDE_CODE_OAUTH_TOKEN`）。
+- 设置 → 模型凭据：列出各模型需要的凭据是否已保存；只有 Claude 订阅令牌可以在这里保存 / 删除，其余 Key 仍沿用旧 AMO 保存的那份。
+- Codex 会话的命令权限改为"不用沙箱、逐条问"（见 `spikes/RESULTS.md` s9-02），批准一律给人，不交给自动审核。
+- 真实验证：GPT 3 次（见 s9-01）；Claude 订阅等你保存令牌后再测。

@@ -8,6 +8,14 @@
     "glm": {
       "limit": 5000,
       "used": 25
+    },
+    "gpt": {
+      "limit": 50,
+      "used": 3
+    },
+    "claude": {
+      "limit": 50,
+      "used": 0
     }
   },
   "log": [
@@ -280,6 +288,21 @@
       "at": "2026-10-13T07:02:02.774Z",
       "provider": "deepseek",
       "note": "S9-00 DeepSeek reasoning through Codex"
+    },
+    {
+      "at": "2026-10-13T07:21:42.133Z",
+      "provider": "gpt",
+      "note": "S9-01 GPT (Codex default login)"
+    },
+    {
+      "at": "2026-10-13T07:37:11.396Z",
+      "provider": "gpt",
+      "note": "S9-01 GPT (Codex default login)"
+    },
+    {
+      "at": "2026-10-13T07:37:54.259Z",
+      "provider": "gpt",
+      "note": "S9-01 GPT (Codex default login)"
     }
   ]
 }

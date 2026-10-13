@@ -62,6 +62,16 @@ export interface StudioSettings {
   commonWorkspace: Workspace | null;
 }
 
+/** A model credential the profiles use: whether it is stored, never its value. */
+export interface CredentialStatus {
+  id: string;
+  /** The profiles that use it, e.g. "Claude 订阅". */
+  usedBy: string[];
+  saved: boolean;
+  /** Only the Claude subscription token can be saved from Studio; API keys come from old AMO's settings. */
+  writable: boolean;
+}
+
 /** Every REST route as `"METHOD /path"` with its request body and response. `:id` segments are path params. */
 export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
@@ -70,6 +80,10 @@ export interface HostRoutes {
   "GET /api/settings": { req: void; res: StudioSettings };
   /** `commonDir`: a folder for the common space (registered as a workspace if needed, created if missing); null clears it. */
   "PUT /api/settings": { req: { commonDir: string | null }; res: StudioSettings };
+  "GET /api/credentials": { req: void; res: CredentialStatus[] };
+  /** Saves a writable credential (the Claude subscription token) in the Windows Credential Manager. */
+  "PUT /api/credentials/:id": { req: { secret: string }; res: CredentialStatus[] };
+  "DELETE /api/credentials/:id": { req: void; res: CredentialStatus[] };
   /** Extension packs in the workspace's `.amo/packs`, valid or not (design/pack-format.md). */
   "GET /api/workspaces/:id/packs": { req: void; res: import("./packs.js").WorkspacePack[] };
   "GET /api/workspaces/:id/packs/:pack/docs/:doc": { req: void; res: import("./packs.js").PackDocContent };

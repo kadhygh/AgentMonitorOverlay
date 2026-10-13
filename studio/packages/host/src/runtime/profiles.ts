@@ -33,8 +33,12 @@ export const CODEX_PROVIDERS: Record<string, CodexProviderDef> = {
 /** Env var that carries the MCP-only token to Codex app-servers. */
 export const AMO_MCP_TOKEN_ENV = "AMO_STUDIO_MCP_TOKEN";
 
+/** Credential Manager entry for the Claude subscription token, the only one Studio itself writes (设置 → 模型凭据). */
+export const CLAUDE_SUBSCRIPTION_CREDENTIAL = "claude-subscription";
+
 export const BUILTIN_PROFILES: readonly ModelProfile[] = [
-  { id: "codex-default", label: "Codex", runtime: "codex", provider: null, model: null },
+  // The person's own Codex login and default model (a ChatGPT subscription: GPT).
+  { id: "codex-default", label: "GPT 订阅", runtime: "codex", provider: null, model: null },
   {
     id: "codex-deepseek-flash",
     label: "DeepSeek Flash",
@@ -46,6 +50,8 @@ export const BUILTIN_PROFILES: readonly ModelProfile[] = [
   },
   // Claude Code routed to GLM (old AMO's glm-5.3 preset; the key is the Coding Plan key stored as glm-5.2).
   { id: "claude-glm", label: "GLM-5.3", runtime: "claude", provider: "glm", model: "glm-5.3[1m]", credentialId: "glm-5.2" },
+  // The person's Claude subscription, through a token from `claude setup-token` saved in 设置 → 模型凭据.
+  { id: "claude-subscription", label: "Claude 订阅", runtime: "claude", provider: "anthropic", model: null, credentialId: CLAUDE_SUBSCRIPTION_CREDENTIAL },
 ];
 
 // src/ and dist/ sit at the same depth under packages/host.

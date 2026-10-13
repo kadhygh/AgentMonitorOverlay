@@ -47,7 +47,7 @@ AMO 的下一代：由人主导、agent 也能参与的项目推进工作台。�
 | Obsidian Canvas / Task Canvas | 工作台的**画布**（无限画布，按结构化数据保存，agent 也能读） |
 | Focus Panel | **Focus 悬浮窗**：只列需要你处理的会话、待决策和调度提案 |
 | Scratchpad（三页） | 任务页右栏的**草稿区**（一份全局的） |
-| DeepSeek / GLM 路由 | 模型配置：Codex · DeepSeek、Claude · GLM 等，新建任务或会话时选 |
+| DeepSeek / GLM 路由 | 模型配置：Codex · DeepSeek Flash、Claude · GLM-5.3，以及你自己的订阅 Codex · GPT 订阅、Claude · Claude 订阅，新建任务或会话时选 |
 | Workspace Center 部署、Git exclude | 不需要：Studio 不往工程里写文件（扩展包是你自己放的） |
 | Grok Build、ChatGPT 桌面端 Target | 暂不支持 |
 | 鼠标侧键 / 全局快捷键 | 暂未实现 |
@@ -58,6 +58,8 @@ AMO 的下一代：由人主导、agent 也能参与的项目推进工作台。�
 - **换电脑**：把整个 `AMO Studio` 文件夹拷过去即可；新机器上要有 codex 和对应的凭据。
 - **Host 是什么？** 后台常驻的服务，管会话和数据；关掉窗口它还在，会话不会断。开发时用 `npm run host:stop` 停掉。
 - **密钥放哪？** Windows 凭据管理器。Studio 只读取，并且只传给模型进程，不写日志、不出现在命令行；agent 运行的命令读不到这些密钥。
+- **GPT 订阅** 用你本机 Codex 的登录和默认模型，不用另外设置。**Claude 订阅** 要一个长期令牌：在终端运行 `claude setup-token`，登录后把打印出的令牌粘贴到 设置 → 模型凭据。这是 Studio 唯一会写入凭据管理器的一项，你可以随时在那里删除。
+- **命令权限**：Codex 会话里，agent 要运行的命令（除了少数已知安全的只读命令）都会先弹批准卡片；命令不在 Windows 沙箱里运行（你的 Codex 配置用的 unelevated 沙箱会让命令全部失败）。
 
 ## 开发者文件导航
 

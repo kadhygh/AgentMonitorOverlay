@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
 import type {
+  CredentialStatus,
   Annotation,
   CanvasDoc,
   ApprovalDecision,
@@ -37,6 +38,8 @@ import type {
 import { PACKS_DIR, workspacesActivity, addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
+import type { CredentialReader, CredentialStore } from "./runtime/credentials.js";
+import { CLAUDE_SUBSCRIPTION_CREDENTIAL } from "./runtime/profiles.js";
 import type { TerminalHandle, TerminalLauncher } from "./terminal/launcher.js";
 import { PackError, PackLoader } from "./packs/pack-loader.js";
 import { presetDraft } from "./packs/presets.js";
@@ -77,6 +80,9 @@ function boundedText(value: unknown, field: string, max: number): string {
   return text;
 }
 
+/** The only entry Studio writes: the Claude subscription token the person pastes in 设置 → 模型凭据. */
+const WRITABLE_CREDENTIALS = new Set([CLAUDE_SUBSCRIPTION_CREDENTIAL]);
+
 export class HostService extends EventEmitter<HostServiceEvents> {
   /** Terminals that hold a Claude session (handoff); closing one gives the session back. */
   private readonly handoffs = new Map<Id, TerminalHandle>();
@@ -90,7 +96,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     readonly store: Store,
     readonly runtime: SessionRuntimeApi,
     readonly profiles: readonly ModelProfile[],
-    private readonly options: { launcher?: TerminalLauncher } = {},
+    private readonly options: { launcher?: TerminalLauncher; credentials?: CredentialReader | CredentialStore } = {},
   ) {
     super();
     runtime.on("event", (e) => this.emit("event", e));
@@ -139,6 +145,40 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const settings = this.settings();
     this.publish({ type: "settings.updated", settings });
     return settings;
+  }
+
+  // ---- model credentials ----------------------------------------------------------------------------------------
+
+  /** Which credentials the profiles need, and whether each is stored (the values never leave the Host). */
+  credentials(): CredentialStatus[] {
+    const reader = this.options.credentials;
+    const ids = [...new Set(this.profiles.flatMap((p) => (p.credentialId ? [p.credentialId] : [])))];
+    return ids.map((id) => ({
+      id,
+      usedBy: this.profiles.filter((p) => p.credentialId === id).map((p) => p.label),
+      saved: !!reader?.read(id),
+      writable: WRITABLE_CREDENTIALS.has(id) && !!reader && "write" in reader,
+    }));
+  }
+
+  saveCredential(id: string, secret: unknown): CredentialStatus[] {
+    const store = this.writableStore(id);
+    const value = typeof secret === "string" ? secret.trim() : "";
+    if (!value) throw new HostError("bad_request", "secret is required");
+    if (value.length > 4096 || /\s/.test(value)) throw new HostError("bad_request", "这不像一个令牌：应是一整串不含空格和换行的字符");
+    store.write(id, value);
+    return this.credentials();
+  }
+
+  removeCredential(id: string): CredentialStatus[] {
+    this.writableStore(id).remove(id);
+    return this.credentials();
+  }
+
+  private writableStore(id: string): CredentialStore {
+    const store = this.options.credentials;
+    if (!WRITABLE_CREDENTIALS.has(id) || !store || !("write" in store)) throw new HostError("read_only", `credential ${id} cannot be changed from Studio`);
+    return store;
   }
 
   removeWorkspace(id: Id): void {

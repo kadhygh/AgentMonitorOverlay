@@ -77,3 +77,36 @@ test("the common space: a folder for the scheduler and cross-workspace sessions"
   await page.getByRole("group", { name: "任务范围" }).getByRole("button", { name: "跨工作区" }).click();
   await expect(page.getByLabel("首个会话在").locator("option:checked")).toHaveText("公共空间");
 });
+
+test("the Claude subscription token is saved in settings, then Claude sessions run on it", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const start = () =>
+    studio!.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+      title: "订阅",
+      scope: { kind: "workspace", workspaceId: ws.id },
+      firstSession: { profileId: "claude-subscription", text: "hello" },
+    });
+  // Without a token the session cannot start, and says how to get one.
+  await expect(start()).rejects.toThrow(/claude setup-token/);
+
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  const row = dialog.locator('[data-testid="credential"][data-id="claude-subscription"]');
+  await expect(row).toContainText("未设置");
+  await row.getByLabel("Claude 订阅 令牌").fill("sk-ant-oat01-e2e");
+  await row.getByRole("button", { name: "保存" }).click();
+  await expect(row).toContainText("已保存");
+  await expect(dialog.getByTestId("credential-message")).toHaveText("已保存 Claude 订阅 令牌");
+  // API keys stored elsewhere are shown, never editable here.
+  await expect(dialog.locator('[data-testid="credential"][data-id="mock"]').getByRole("button")).toHaveCount(0);
+  await dialog.evaluate((el) => el.scrollTo(0, el.scrollHeight));
+  await screenshot(app, "settings", "settings-credentials", page);
+  await page.keyboard.press("Escape");
+
+  await start();
+  await page.getByTestId("task-card").first().click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: hello", { timeout: 60_000 });
+  await expect(page.getByTestId("thread-head")).toContainText("Claude 订阅");
+});

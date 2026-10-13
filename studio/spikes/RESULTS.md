@@ -232,3 +232,27 @@ S4-01 用 mock Anthropic 接口补充发现（不消耗额度）：
 - 命令行：Windows 上 `commandActions` 全是 `unknown`，Studio 自己按命令识别读文件 / 列目录 / 搜索（`Get-Content importer.py` → 读取，`Get-ChildItem` → 查看目录）；退出码、耗时、输出都有。
 - 注意：第一次用 `approvalPolicy: never` + `read-only` 跑，Codex 在执行前就以 "blocked by policy" 拒绝了所有命令，**被拒的命令不产生任何 item**，界面上看不到。Studio 默认是 on-request + workspace-write，不受影响。
 - **GLM 经 Claude**：thinking 块以 `thinking_delta` 流式到达（这次 2 段）；`result.usage` 给出整轮用量，缓存读取占绝大部分；Read 工具正常显示为"读取 importer.py"。
+
+## s9-01 · 用户自己的订阅：GPT（Codex 默认登录）与 Claude 订阅（2026-10-13，GPT 3 次）
+
+用户批准 GPT、Claude 订阅各 50 次真实调用（`budget.json` 的 `gpt`、`claude`）。脚本 `spikes/s9-01-subscriptions.mjs gpt|claude`，GPT 用真实的 `~/.codex`（登录在那里，和 Studio 平时一样），工作区在沙箱。
+
+- **GPT 第 1 次**：轮次、用量、回复都正常；但命令全部失败：`CreateProcessAsUserW failed: 5（拒绝访问）`。原因是用户 `~/.codex/config.toml` 里的 `[windows] sandbox = "unelevated"`（见 s9-02）。GPT 随后改用了用户配置里的 node_repl MCP 读文件。
+- 改为"Studio 内不用沙箱、命令逐条问"之后（**GPT 第 2 次**）：搜索、读文件都先弹批准、批准后成功执行。在 Windows 上，`untrusted` 连只读命令也会问（命令都包在 pwsh 里，不算"已知安全"）。
+- **思考**：GPT 不给原始思考；turn/start 带 `summary: "auto"` 后会给思考摘要。简单问题 GPT 不思考（推理 token 为 0）；需要推算的问题（**GPT 第 3 次**）出现了一段 404 字、3.7 秒的思考摘要。
+- 用户配置里 `approvals_reviewer = "auto_review"`（自动审核代替人）。Studio 在 thread/start、thread/resume、turn/start 上都显式传 `approvalsReviewer: "user"`，批准一律回到 Studio 的卡片。
+- Claude 订阅：等用户运行 `claude setup-token` 并在 设置 → 模型凭据 保存令牌后再测。
+
+## s9-02 · Codex 的 Windows 沙箱设置（2026-10-13，mock，不计额度）
+
+`spikes/s9-02-windows-sandbox.mjs`：同一条 PowerShell 命令，在不同 `-c windows.sandbox=…` 下：
+
+| 设置 | 结果 |
+|---|---|
+| 不设置 | 执行成功 |
+| `unelevated`（用户当前配置） | 失败：CreateProcessAsUserW 拒绝访问 |
+| `none` / `disabled` | 不是合法值，app-server 起不来 |
+| `unelevated` + 线程 `danger-full-access` | 执行成功 |
+| `elevated` | 没测：第一次可能要管理员权限（会弹 UAC） |
+
+用户决定（2026-10-13）：**Studio 内的 Codex 会话不用沙箱，命令逐条问**。实现：CodexRuntime 默认 `approvalPolicy: "untrusted"`、`sandbox: "danger-full-access"`，并在 resume 和每个 turn/start 上重复传，旧会话也跟着生效；不改用户的 `~/.codex`。

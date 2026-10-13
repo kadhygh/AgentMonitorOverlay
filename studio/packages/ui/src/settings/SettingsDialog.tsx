@@ -3,6 +3,7 @@ import type { StudioSettings } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/theme.js";
+import { CredentialsSection } from "./CredentialsSection.js";
 import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 
 /** Studio-wide settings from the Host, kept live. */
@@ -144,6 +145,7 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
             </span>
           )}
         </section>
+        <CredentialsSection link={link} />
       </div>
     </div>
   );

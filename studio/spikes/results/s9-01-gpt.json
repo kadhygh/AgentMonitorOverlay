@@ -1,0 +1,30 @@
+{
+  "which": "gpt",
+  "items": [
+    {
+      "type": "turn",
+      "state": "completed",
+      "usage": {
+        "input": 16745,
+        "cachedInput": 0,
+        "output": 460,
+        "reasoning": 50,
+        "contextWindow": 828400
+      },
+      "seconds": 31,
+      "error": null
+    },
+    {
+      "type": "user"
+    },
+    {
+      "type": "reasoning",
+      "chars": 404,
+      "durationMs": 3741
+    },
+    {
+      "type": "agent",
+      "chars": 606
+    }
+  ]
+}

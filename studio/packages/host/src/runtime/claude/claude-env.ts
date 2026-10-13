@@ -4,14 +4,21 @@ import type { CredentialReader } from "../credentials.js";
 // Environment for a managed Claude Code process. The routing for GLM follows old AMO's glm-5.3 preset
 // (broker/lib/claude-provider.js); see spikes/RESULTS.md section h.
 
-/** An Anthropic-compatible endpoint plus the model mapping the CLI should use with it. */
+/**
+ * An Anthropic-compatible endpoint plus the model mapping the CLI should use with it, or (`auth: "oauth"`) the person's
+ * own Claude subscription through a long-lived token from `claude setup-token`.
+ */
 export interface ClaudeProviderDef {
-  baseUrl: string;
+  /** Absent for the subscription: the CLI talks to Anthropic itself. */
+  baseUrl?: string;
+  /** "oauth": the profile's credential is a subscription token (CLAUDE_CODE_OAUTH_TOKEN), not an API key. */
+  auth?: "oauth";
   /** Extra variables (model mapping, timeouts). The key never goes here; it comes from the profile's credential. */
   env?: Record<string, string>;
 }
 
 export const BUILTIN_CLAUDE_PROVIDERS: Record<string, ClaudeProviderDef> = {
+  anthropic: { auth: "oauth" },
   glm: {
     baseUrl: "https://open.bigmodel.cn/api/anthropic",
     env: {
@@ -44,14 +51,20 @@ export function claudeEnv(
   const provider = providers[profile.provider];
   if (!provider) throw new ClaudeProfileError(`unknown Claude provider ${profile.provider}`);
   const key = profile.credentialId ? credentials.read(profile.credentialId) : null;
-  if (profile.credentialId && !key) throw new ClaudeProfileError(`profile ${profile.id} needs credential ${profile.credentialId}, which is not stored`);
+  if (profile.credentialId && !key) {
+    throw new ClaudeProfileError(
+      provider.auth === "oauth"
+        ? "还没有保存 Claude 订阅令牌：在终端运行 claude setup-token，再到 设置 → 模型凭据 里保存"
+        : `profile ${profile.id} needs credential ${profile.credentialId}, which is not stored`,
+    );
+  }
   const inherited = Object.fromEntries(Object.entries(base).filter(([k, v]) => v !== undefined && !/^(ANTHROPIC_|CLAUDE)/i.test(k))) as Record<string, string>;
   return {
     ...inherited,
     ...provider.env,
     ...(profile.model ? { ANTHROPIC_MODEL: profile.model } : {}),
-    ANTHROPIC_BASE_URL: provider.baseUrl,
-    ...(key ? { ANTHROPIC_AUTH_TOKEN: key } : {}),
+    ...(provider.baseUrl ? { ANTHROPIC_BASE_URL: provider.baseUrl } : {}),
+    ...(key ? (provider.auth === "oauth" ? { CLAUDE_CODE_OAUTH_TOKEN: key } : { ANTHROPIC_AUTH_TOKEN: key }) : {}),
     CLAUDE_CONFIG_DIR: claudeHome,
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     // Without this, commands the agent runs (Bash) inherit ANTHROPIC_AUTH_TOKEN, and `env` prints the key into the
