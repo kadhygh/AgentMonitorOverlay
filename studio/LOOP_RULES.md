@@ -103,6 +103,8 @@
 6. **准备下一阶段**：新建 `studio/stage-N+1` 分支，编写 `plans/stage-N+1.md`。计划依据：`ROADMAP.md`、前面阶段的实际结果、用户反馈。写完也放进 `NEEDS_YOU.md`，属于"请你过目"，不等回复，继续推进。
 7. **发送通知**。
 
+**Portable 包只在发布节点出**（用户 2026-10-13 决定）：日常改动不跑 `npm run package:portable` / `smoke:portable`，用 `npm run verify`、端到端测试和开发版（`npm start`）验证。等用户确认要发布某个版本时，才按那个发布节点打包、冒烟、更新 zip。
+
 ## 7. 通知
 
 以下情况用 PushNotification 通知用户：
