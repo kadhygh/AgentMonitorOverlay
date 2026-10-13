@@ -23,15 +23,20 @@ export function AttachTray({ attach, disabled }: { attach: AttachmentsState; dis
           </button>
         </div>
       ))}
-      {attach.files.map((path) => (
-        <span key={path} className="file-chip" data-testid="file-chip" title={path}>
+      {attach.files.map((path) => {
+        // A marked file (S12-D) shows its note too.
+        const note = attach.refOf(path).note;
+        return (
+        <span key={path} className="file-chip" data-testid="file-chip" title={note ? `${path}\n说明：${note}` : path}>
           <IconFile />
           <span className="file-chip-name">{baseName(path)}</span>
+          {note && <span className="file-chip-note">{note}</span>}
           <button type="button" className="attach-x inline" aria-label={`移除引用 ${baseName(path)}`} disabled={disabled} onClick={() => attach.removeFile(path)}>
             <IconClose />
           </button>
         </span>
-      ))}
+        );
+      })}
       {attach.notice && <span className="attach-notice">{attach.notice}</span>}
     </div>
   );

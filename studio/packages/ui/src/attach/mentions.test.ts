@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { Session, Task } from "@amo-studio/protocol";
+import type { FileMark, Session, Task } from "@amo-studio/protocol";
 import { mentionGroups, nearbySessions, withMentionRefs } from "./mentions.js";
 
 const task = (id: string, title: string, extra: Partial<Task> = {}) => ({ id, title, column: "doing", archivedAt: null, workspaceId: "w1", topicId: null, ...extra }) as unknown as Task;
@@ -42,6 +42,32 @@ describe("@ suggestions", () => {
     expect(groups.map((g) => g.kind)).toEqual(["task", "session", "find"]);
     expect(groups[0]!.options.map((o) => o.name)).toEqual(["导入 A", "导入 B"]);
     expect(groups[1]!.options.map((o) => o.id)).toEqual(["s2"]);
+  });
+});
+
+describe("@ 标记的文件 (S12-D)", () => {
+  const mark = (id: string, path: string, note: string, extra: Partial<FileMark> = {}) =>
+    ({ id, path, note, workspaceId: "w1", startLine: null, endLine: null, order: 0, createdAt: "", updatedAt: "", exists: true, folder: false, ...extra }) as FileMark;
+  const marks = [
+    mark("m1", "C:\\game\\drop.lua", "掉落表\n第二行", { startLine: 12, endLine: 30 }),
+    mark("m2", "C:\\game\\docs\\boss.md", ""),
+    mark("m3", "C:\\game\\gone.lua", "掉落", { exists: false }),
+  ];
+  const base = { tasks: [], sessions: [], current: null, files: [] };
+
+  it("lists the project's marks after sessions, with their range and the note's first line", () => {
+    const groups = mentionGroups({ ...base, query: "", marks });
+    expect(groups.map((g) => g.heading)).toEqual(["标记的文件", ""]);
+    expect(groups[0]!.options).toEqual([
+      { kind: "mark", id: "m1", name: "drop.lua:12-30", hint: "掉落表" },
+      { kind: "mark", id: "m2", name: "boss.md", hint: "C:\\game\\docs" },
+    ]);
+  });
+
+  it("matches the query against the path and the note; missing files are left out", () => {
+    expect(mentionGroups({ ...base, query: "掉落", marks })[0]!.options.map((o) => o.id)).toEqual(["m1"]);
+    expect(mentionGroups({ ...base, query: "BOSS", marks })[0]!.options.map((o) => o.id)).toEqual(["m2"]);
+    expect(mentionGroups({ ...base, query: "zzz", marks }).map((g) => g.kind)).toEqual(["find"]);
   });
 });
 

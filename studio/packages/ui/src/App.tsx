@@ -14,6 +14,7 @@ import { TopBar, useFocusToggle } from "./shell/TopBar.js";
 import type { View, ViewContext, ViewDef } from "./shell/views.js";
 import { VIEWS } from "./features.js";
 import { featureOn, FeaturesProvider } from "./lib/features.js";
+import { openMarks, useMarksShortcut } from "./marks/open.js";
 
 // The shell: the Host connection, the scope and the view in front, the top bar and the left column. Pages come from
 // the features (features.ts); the data several of them share is loaded here once.
@@ -48,6 +49,13 @@ export function App() {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, []);
+
+  // 文件标记 (S12-D): the project in front — the task's, or the one the board is scoped to.
+  const marksProject = (): string | null => {
+    if (view.kind === "task" && host.kind === "ready") return host.state.tasks.find((t) => t.id === view.taskId)?.workspaceId ?? null;
+    return scope.kind === "workspace" ? scope.id : null;
+  };
+  useMarksShortcut(marksProject);
 
   useEffect(
     () =>
@@ -104,6 +112,10 @@ export function App() {
         onView={setView}
         onNew={() => setView({ kind: "new" })}
         onSettings={() => setSettingsOpen(true)}
+        onMarks={() => {
+          const ws = marksProject();
+          openMarks(ws ? { workspaceId: ws } : {});
+        }}
         needs={needs}
         scopeName={scopeName}
         focus={focus}

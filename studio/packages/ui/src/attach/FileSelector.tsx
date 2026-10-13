@@ -7,13 +7,32 @@ const LIMIT = 100;
 
 /**
  * 找文件 (Ctrl+P in a session, or "找文件…" in the @ list): fuzzy search over the project's files. Arrow keys move,
- * Enter references the file in the composer, Esc closes.
+ * Enter references the file in the composer, Esc closes. With `onMark`, "标记这个文件" (Ctrl+M) marks the highlighted
+ * file (S12-D) and stays open; `action` names what Enter does ("引用" by default).
  */
-export function FileSelector({ link, workspaceId, initialQuery = "", onPick, onClose }: { link: HostLink; workspaceId: string; initialQuery?: string; onPick(path: string): void; onClose(): void }) {
+export function FileSelector({
+  link,
+  workspaceId,
+  initialQuery = "",
+  action = "引用",
+  onPick,
+  onMark,
+  onClose,
+}: {
+  link: HostLink;
+  workspaceId: string;
+  initialQuery?: string;
+  action?: string;
+  onPick(path: string): void;
+  /** Marks the file; resolves to what to say about it ("已标记" …). */
+  onMark?(path: string): Promise<string>;
+  onClose(): void;
+}) {
   const [query, setQuery] = useState(initialQuery);
   const [result, setResult] = useState<ProjectFiles | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [highlight, setHighlight] = useState(0);
+  const [marked, setMarked] = useState<string | null>(null);
   const list = useRef<HTMLDivElement>(null);
   // The first listing goes at once; typing waits a moment so every key does not ask the Host.
   const first = useRef(true);
@@ -50,6 +69,11 @@ export function FileSelector({ link, workspaceId, initialQuery = "", onPick, onC
     onPick(absolutePath(result.root, f.path));
     onClose();
   };
+  const mark = (i: number) => {
+    const f = files[i];
+    if (!f || !result || !onMark) return;
+    void onMark(absolutePath(result.root, f.path)).then(setMarked);
+  };
 
   return (
     <div className="file-picker-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
@@ -65,6 +89,9 @@ export function FileSelector({ link, workspaceId, initialQuery = "", onPick, onC
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
               if (files.length) setHighlight((h) => (h + (e.key === "ArrowDown" ? 1 : files.length - 1)) % files.length);
+            } else if (onMark && (e.ctrlKey || e.metaKey) && e.key.toLowerCase() === "m") {
+              e.preventDefault();
+              mark(highlight);
             } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
               pick(highlight);
@@ -103,7 +130,15 @@ export function FileSelector({ link, workspaceId, initialQuery = "", onPick, onC
           <span>{result ? (query.trim() ? `${result.total} 个匹配` : `共 ${result.total} 个文件`) : "正在读取文件列表…"}</span>
           {result?.source === "walk" && <span>{result.partial ? "不是 git 仓库，只扫描了一部分文件" : "不是 git 仓库，按目录扫描（跳过 node_modules 等）"}</span>}
           <span className="spacer" />
-          <span>↑↓ 选择 · 回车引用 · Esc 关闭</span>
+          {onMark && (
+            <>
+              {marked && <span data-testid="file-picker-marked">{marked}</span>}
+              <button type="button" className="file-picker-mark" disabled={!files[highlight]} onClick={() => mark(highlight)} data-testid="file-picker-mark">
+                标记这个文件（Ctrl+M）
+              </button>
+            </>
+          )}
+          <span>↑↓ 选择 · 回车{action} · Esc 关闭</span>
         </div>
       </div>
     </div>

@@ -1,13 +1,14 @@
-import type { ProjectFile, Session, Task } from "@amo-studio/protocol";
+import { lineSuffix, type FileMark, type ProjectFile, type Session, type Task } from "@amo-studio/protocol";
+import { baseName, dirName } from "./refs.js";
 
 // "@" in a session's composer (stage 11): grouped suggestions — tasks, sessions of the same project or topic, recently
 // changed files — and a last entry that opens the file selector. Pure logic; the hook and the list live beside it.
 
-export type MentionKind = "task" | "session" | "file" | "find";
+export type MentionKind = "task" | "session" | "mark" | "file" | "find";
 
 export interface MentionOption {
   kind: MentionKind;
-  /** Task or session id, the file's relative path, or "find". */
+  /** Task, session or mark id, the file's relative path, or "find". */
   id: string;
   name: string;
   hint: string;
@@ -41,6 +42,8 @@ export function mentionGroups(input: {
   current: Session | null;
   /** Recent files, or the selector's results for the query (already filtered by the Host). */
   files: readonly ProjectFile[];
+  /** The project's file marks (S12-D), matched against their path and note. */
+  marks?: readonly FileMark[];
 }): MentionGroup[] {
   const q = input.query.toLowerCase();
   const pinned = input.pinnedTask ?? (() => false);
@@ -54,6 +57,10 @@ export function mentionGroups(input: {
     .filter((s) => contains(s.title || "未命名会话", q))
     .slice(0, PER_GROUP)
     .map((s): MentionOption => ({ kind: "session", id: s.id, name: s.title || "未命名会话", hint: s.taskId ? (taskTitle.get(s.taskId) ?? "") : "专题会话" }));
+  const marks = (input.marks ?? [])
+    .filter((m) => m.exists && (contains(m.path, q) || contains(m.note, q)))
+    .slice(0, PER_GROUP)
+    .map((m): MentionOption => ({ kind: "mark", id: m.id, name: `${baseName(m.path)}${lineSuffix(m.startLine, m.endLine)}`, hint: m.note.split("\n")[0] || dirName(m.path) }));
   const files = input.files.slice(0, PER_GROUP).map((f): MentionOption => {
     const slash = f.path.lastIndexOf("/");
     return { kind: "file", id: f.path, name: f.path.slice(slash + 1), hint: slash > 0 ? f.path.slice(0, slash) : "" };
@@ -61,6 +68,7 @@ export function mentionGroups(input: {
   const groups: MentionGroup[] = [
     { kind: "task", heading: "任务", options: tasks },
     { kind: "session", heading: "会话", options: sessions },
+    { kind: "mark", heading: "标记的文件", options: marks },
     { kind: "file", heading: input.query ? "文件" : "最近改动的文件", options: files },
   ];
   return [

@@ -24,6 +24,8 @@ import { scratchpadRoutes } from "./scratchpad/routes.js";
 import { gitReviewRoutes } from "./gitreview/routes.js";
 import { filesRoutes } from "./files/routes.js";
 import { openInRoutes } from "./openin/routes.js";
+import { marksRoutes } from "./marks/routes.js";
+import { marksTools } from "./marks/mcp.js";
 
 /**
  * Every Host feature (features/<name>/): its service class lives on HostService, its routes and MCP tools are listed
@@ -53,4 +55,5 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "gitreview", routes: gitReviewRoutes },
   { name: "files", routes: filesRoutes },
   { name: "openin", routes: openInRoutes },
+  { name: "marks", routes: marksRoutes, tools: marksTools },
 ];

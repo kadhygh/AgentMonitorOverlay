@@ -22,6 +22,7 @@ export function TopBar({
   onView,
   onNew,
   onSettings,
+  onMarks,
   needs,
   scopeName,
   focus,
@@ -34,6 +35,8 @@ export function TopBar({
   focus: { on: boolean; available: boolean; set(on: boolean): void };
   onNew(): void;
   onSettings?: () => void;
+  /** 文件标记 (S12-D): the marks window. */
+  onMarks?: () => void;
   needs: number;
   scopeName: string;
   disabled?: boolean;
@@ -80,6 +83,11 @@ export function TopBar({
           onClick={() => focus.set(!focus.on)}
         >
           Focus {focus.on ? "开" : "关"}
+        </button>
+      )}
+      {onMarks && (
+        <button type="button" className="btn-ghost small" onClick={onMarks} title="文件标记：标记的文件和说明，可以 @ 或拖进对话（Ctrl+Shift+M）" data-testid="topbar-marks">
+          标记
         </button>
       )}
       {onSettings && (

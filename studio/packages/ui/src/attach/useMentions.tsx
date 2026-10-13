@@ -3,12 +3,15 @@ import { absolutePath, type ProjectFile, type Session, type Task } from "@amo-st
 import { call, type HostLink } from "../host/client.js";
 import { mentionAt, withoutMention } from "../newtask/draft.js";
 import { usePins } from "../lib/pins.js";
+import { useFileMarks } from "../marks/useFileMarks.js";
+import type { FileRefItem } from "./refs.js";
 import { mentionGroups, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick } from "./mentions.js";
 
 /**
  * @ in a session's composer: tasks, sessions of the same project or topic, recently changed files (or, once something
- * is typed, the project's files that match), and "找文件…" for the selector. A task or session keeps "@名字" in the
- * text and the message says which one it is; a file becomes a reference chip.
+ * is typed, the project's files that match), the project's marked files (S12-D), and "找文件…" for the selector. A task
+ * or session keeps "@名字" in the text and the message says which one it is; a file becomes a reference chip, a marked
+ * one carrying its range and note.
  */
 export function useComposerMentions(input: {
   link: HostLink;
@@ -21,6 +24,8 @@ export function useComposerMentions(input: {
   onFile(path: string): void;
   /** "找文件…": open the selector with what was typed after @. */
   onFind(query: string): void;
+  /** A marked file was picked (a plain file reference without this). */
+  onMark?(ref: FileRefItem): void;
 }) {
   const { link, text, setText, tasks, sessions, current } = input;
   const [caret, setCaret] = useState<number | null>(null);
@@ -32,6 +37,12 @@ export function useComposerMentions(input: {
   const active = mention?.sign === "@" ? mention : null;
   const query = active?.query ?? null;
   const workspaceId = current?.workspaceId ?? null;
+  // The project's marks, asked for once @ is first typed and kept current after that.
+  const [wantMarks, setWantMarks] = useState(false);
+  useEffect(() => {
+    if (query !== null) setWantMarks(true);
+  }, [query]);
+  const { marks } = useFileMarks(link, workspaceId, wantMarks);
 
   // Files come from the Host: the recent ones for a bare "@", matches once something is typed (debounced).
   useEffect(() => {
@@ -55,19 +66,23 @@ export function useComposerMentions(input: {
   const groups = useMemo<MentionGroup[]>(() => {
     if (query === null) return [];
     const pinnedTask = (t: Task) => (!!t.topicId && pins.has("topic", t.topicId)) || pins.has("project", t.workspaceId);
-    return mentionGroups({ query, tasks, pinnedTask, sessions, current, files: files?.files ?? [] });
-  }, [query, tasks, pins, sessions, current, files]);
+    return mentionGroups({ query, tasks, pinnedTask, sessions, current, files: files?.files ?? [], marks: marks ?? [] });
+  }, [query, tasks, pins, sessions, current, files, marks]);
   const flat = groups.flatMap((g) => g.options);
   const hl = Math.min(highlight, Math.max(flat.length - 1, 0));
 
   const choose = (option: MentionOption) => {
     if (!active) return;
     setHighlight(0);
-    if (option.kind === "file" || option.kind === "find") {
+    if (option.kind === "file" || option.kind === "find" || option.kind === "mark") {
       setText(withoutMention(text, active));
       setCaret(null);
       if (option.kind === "find") input.onFind(active.query);
-      else if (files) input.onFile(absolutePath(files.root, option.id));
+      else if (option.kind === "mark") {
+        const m = marks?.find((x) => x.id === option.id);
+        if (m && input.onMark) input.onMark({ path: m.path, startLine: m.startLine, endLine: m.endLine, note: m.note });
+        else if (m) input.onFile(m.path);
+      } else if (files) input.onFile(absolutePath(files.root, option.id));
       return;
     }
     const inserted = `@${option.name} `;

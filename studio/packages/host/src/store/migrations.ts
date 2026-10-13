@@ -236,4 +236,17 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX review_comments_workspace ON review_comments(workspace_id, created_at);
   `,
+  // 9: file marks (stage 12, S12-D): a marked file or folder with a note; workspace_id NULL for 其他 (outside every
+  // project). The mark itself is the JSON body.
+  `
+  CREATE TABLE file_marks (
+    id TEXT PRIMARY KEY,
+    workspace_id TEXT REFERENCES workspaces(id),
+    path TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX file_marks_workspace ON file_marks(workspace_id, position);
+  `,
 ];
