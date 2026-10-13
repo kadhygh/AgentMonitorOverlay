@@ -72,11 +72,16 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
 
   const file = changes?.files.find((f) => f.path === selected) ?? null;
   const fileKey = file ? `${file.oldPath ?? ""}>${file.path}` : "";
+  // Another file or range: start over. A refresh keeps the page (and a comment being written) until the new diff arrives.
   useEffect(() => {
-    setDiff(null);
     setDraftAt(null);
     setActive(null);
-    if (!file) return;
+  }, [fileKey, range]);
+  useEffect(() => {
+    if (!file) {
+      setDiff(null);
+      return;
+    }
     let live = true;
     call(link, "GET /api/workspaces/:id/git/diff", { id: workspace.id }, undefined, { range, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}) })
       .then((d) => live && setDiff(d))
@@ -107,7 +112,9 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
     }
   }
 
-  const rows = useMemo(() => (diff ? diffRows(diff, mode) : []), [diff, mode]);
+  // The diff of the file and range in front (a refresh or a switch is on its way otherwise).
+  const shown = diff && file && diff.path === file.path && diff.range === range ? diff : null;
+  const rows = useMemo(() => (shown ? diffRows(shown, mode) : []), [shown, mode]);
   const changeRows = useMemo(() => changeStarts(rows), [rows]);
   const { placed, elsewhere } = useMemo(() => placeComments(comments, selected ?? "", range, rows), [comments, selected, range, rows]);
   const order = useMemo(() => listOrder(changes?.files ?? []), [changes]);
@@ -256,10 +263,10 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
             )}
             <div className="gr-scroll">
               {!file && changes && <div className="gr-notice">选择左侧的文件查看改动。</div>}
-              {file && !diff && <div className="gr-notice">正在读取…</div>}
-              {diff && file && diff.path === file.path && (
+              {file && !shown && <div className="gr-notice">正在读取…</div>}
+              {file && shown && (
                 <DiffView
-                  diff={diff}
+                  diff={shown}
                   rows={rows}
                   placed={placed}
                   elsewhere={elsewhere}
