@@ -3,10 +3,13 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, stopHost, type HostConnection } from "./host-link.js";
 import { createFocusWindow, mainBounds, refitFocusWindow, ShellPrefs } from "./focus-window.js";
+import { resolveDataDir } from "./paths.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
-//   AMO_STUDIO_DATA_DIR   data dir (default studio/.data)
+//   AMO_STUDIO_DATA_DIR   data dir (default: studio/.data in development; the portable build's saved choice or
+//                         data/ next to the exe, see paths.ts)
+//   AMO_STUDIO_PORTABLE_DIR  tests: behave as the portable build installed in this folder
 //   AMO_STUDIO_DEV_URL    load the UI from the Vite dev server instead of the Host
 //   AMO_STUDIO_TEST=1     test mode: hidden window that never takes focus, Host stops with the app
 //   AMO_STUDIO_PORT       Host port (tests use 0)
@@ -14,7 +17,10 @@ import { createFocusWindow, mainBounds, refitFocusWindow, ShellPrefs } from "./f
 const here = dirname(fileURLToPath(import.meta.url));
 const studioRoot = resolve(here, "..", "..", "..");
 const testMode = process.env.AMO_STUDIO_TEST === "1";
-const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
+// The portable build is Electron itself with Studio in resources/app; the exe's folder is the portable root.
+const portableDir = process.env.AMO_STUDIO_PORTABLE_DIR ?? (app.isPackaged ? dirname(process.execPath) : null);
+const dataChoice = resolveDataDir({ env: process.env, portableDir, studioRoot });
+const dataDir = dataChoice.dataDir;
 
 // Chromium's profile (localStorage, caches) and the single-instance lock live in userData. Without this it is the
 // generic %APPDATA%\Electron, shared by every run: tests saw each other's remembered model, and a test run could

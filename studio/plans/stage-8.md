@@ -32,7 +32,7 @@
 - 内容：在临时目录里试两种打包方式，看：产物大小；Host 能否用打包后的 Electron 启动；UI 静态文件和 Host 的 dist 怎么放；Agent SDK 自带的 `claude.exe` 能否从 asar 外面找到；启动时间。结论写进 `spikes/RESULTS.md`。
 - 验收：结论与实测数据。
 
-### S8-01 打包后的运行路径 · todo
+### S8-01 打包后的运行路径 · done
 - 依赖：S8-00
 - 内容：`packages/app` 在打包后找得到 Host、UI、preload；Host 找得到 Agent SDK 的 `claude.exe`；开发模式不受影响。
 - 验收：单测（路径解析）；打包产物在测试模式下启动、Host 回应。

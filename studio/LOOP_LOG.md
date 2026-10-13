@@ -982,3 +982,11 @@
 - 默认决定（请你过目）：不新增打包依赖；不打 asar；exe 图标和版本信息暂时沿用 Electron 的
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 16:40 · S8-01 打包后的运行路径
+- 结果：done
+- 改动：`packages/app/src/paths.ts`：数据目录按顺序取 `AMO_STUDIO_DATA_DIR` → 打包版 exe 旁边 `amo-studio.json` 里保存的选择（相对路径按 exe 所在目录算）→ 打包版默认 exe 旁边的 `data/` → 开发时 `studio/.data`；配置文件写坏了当作没有选择。`main.ts` 用它决定数据目录（Electron 的浏览器配置也跟着进数据目录）；测试可以用 `AMO_STUDIO_PORTABLE_DIR` 模拟打包版。Host、UI、preload 的路径在 S8-00 已确认不用改
+- 测试：4 个单测；打包到沙箱后不设数据目录启动：数据（含 `electron/`、`claude-home`、`codex`、数据库）都落在 exe 旁边的 `data/`，Claude 和 Codex 的 mock 会话正常（`spikes/results/s8-01-portable-default.json`）
+- 验证：`npm run verify` 退出码 0（218 个测试）；e2e 39/39
+- 额度：0
+- commit：见本次 commit

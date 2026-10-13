@@ -18,12 +18,15 @@ if (!existsSync(exe)) throw new Error(`${exe} not found`);
 const sandbox = join(tmpdir(), "amo-studio-sandbox");
 mkdirSync(sandbox, { recursive: true });
 const root = mkdtempSync(join(sandbox, "s8-00-run-"));
-const dataDir = join(root, "data");
+// --portable-default: no AMO_STUDIO_DATA_DIR, so the build must pick data/ next to its exe (S8-01).
+const portableDefault = process.argv.includes("--portable-default");
+const dataDir = portableDefault ? join(built, "AMO Studio", "data") : join(root, "data");
 const codexHome = join(root, "codex-home");
 const ws = join(root, "workspace");
 for (const d of [dataDir, codexHome, ws]) mkdirSync(d, { recursive: true });
 
-const results = { startedAt: new Date().toISOString(), exe: exe.replace(tmpdir(), "%TEMP%") };
+const results = { startedAt: new Date().toISOString(), exe: exe.replace(tmpdir(), "%TEMP%"), dataDir: dataDir.replace(tmpdir(), "%TEMP%") };
+if (portableDefault) delete process.env.AMO_STUDIO_DATA_DIR;
 const mock = await startMockModel();
 const claudeMock = await startMockAnthropic();
 const t0 = Date.now();
@@ -31,7 +34,7 @@ const child = spawn(exe, [], {
   env: {
     ...process.env,
     AMO_STUDIO_TEST: "1",
-    AMO_STUDIO_DATA_DIR: dataDir,
+    ...(portableDefault ? {} : { AMO_STUDIO_DATA_DIR: dataDir }),
     AMO_STUDIO_PORT: "0",
     AMO_STUDIO_TEST_PROVIDER_URL: mock.baseUrl,
     AMO_STUDIO_TEST_CATALOG: MOCK_MODEL_CATALOG,
@@ -85,7 +88,7 @@ try {
   await mock.close();
   await claudeMock.close();
   results.finishedAt = new Date().toISOString();
-  writeFileSync(join(here, "results", "s8-00-portable.json"), JSON.stringify(results, null, 2));
+  writeFileSync(join(here, "results", portableDefault ? "s8-01-portable-default.json" : "s8-00-portable.json"), JSON.stringify(results, null, 2));
   console.log(JSON.stringify(results, null, 2));
   await new Promise((r) => setTimeout(r, 1500));
   removeTempDir(root);
