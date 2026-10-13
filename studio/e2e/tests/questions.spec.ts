@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { StateSnapshot, Task, Workspace } from "@amo-studio/protocol";
+import type { StateSnapshot, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 // Stage 12, S12-B: Claude's questions (AskUserQuestion) take the composer's seat and the answers reach the model;
@@ -15,9 +15,8 @@ test.afterEach(async () => {
 
 async function openTask(s: Studio, firstSession: Record<string, unknown>) {
   const ws = await s.api<Workspace>("POST", "/api/workspaces", { path: s.workspace("alpha") });
-  const task = await s.api<Task>("POST", "/api/tasks", { title: "导入器重试", workspaceId: ws.id, firstSession: { profileId: "claude-mock", ...firstSession } });
+  await s.api("POST", "/api/tasks", { title: "导入器重试", workspaceId: ws.id, firstSession: { profileId: "claude-mock", ...firstSession } });
   await s.page.getByTestId("task-card").first().click();
-  return task;
 }
 
 test("answers Claude's questions in the composer seat", async () => {
