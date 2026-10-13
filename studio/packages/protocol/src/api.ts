@@ -117,6 +117,8 @@ export interface HostRoutes {
   /** Checklist items, `?taskId=` for one task; ordered by task, then position. */
   "GET /api/checklist": { req: void; res: ChecklistItem[] };
   "PATCH /api/checklist/:id": { req: { done: boolean }; res: ChecklistItem };
+  /** One scheduler round, started by the person: a session in the "调度" task that may only propose. */
+  "POST /api/scheduler/run": { req: { profileId: Id }; res: { task: Task; session: Session } };
   /** Scheduler proposals, `?state=pending` for the ones waiting for the person. */
   "GET /api/proposals": { req: void; res: ScheduleProposal[] };
   "POST /api/proposals": { req: { todoId: Id; workspaceId?: Id; profileId: Id; prompt: string; reason?: string }; res: ScheduleProposal };

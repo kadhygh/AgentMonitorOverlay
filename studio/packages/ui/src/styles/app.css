@@ -490,3 +490,7 @@ a.md-link { cursor: pointer; }
 .proposals { margin: 16px 20px 0; padding: 12px 14px; border-radius: 10px; border: 1px solid var(--attention-border); background: var(--attention-bg); display: flex; flex-direction: column; gap: 10px; }
 .proposal-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(360px, 1fr)); gap: 10px; }
 .proposal-card { display: flex; flex-direction: column; gap: 6px; padding: 10px 12px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); }
+
+/* Scheduler round (S7-04) */
+.scheduler-run { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding-bottom: 6px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.scheduler-run select { flex: 1; min-width: 0; }

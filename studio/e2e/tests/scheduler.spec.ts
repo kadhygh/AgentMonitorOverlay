@@ -108,3 +108,44 @@ test("scheduler proposals wait on the board until the person approves or rejects
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 统一 drops.json 的字段，先别改 skills", { timeout: 60_000 });
   await expect(focus.getByTestId("focus-proposals")).toHaveCount(0);
 });
+
+test("stage 7 acceptance: a scheduler round by hand, a proposal, approval, work starts", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const alpha = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const canvas = await studio.api<CanvasDoc>("GET", "/api/canvas");
+  await studio.api("PUT", "/api/canvas", { ...canvas, groups: [{ id: "g-alpha", title: "alpha 玩法", workspaceId: alpha.id, rect: { x: 40, y: 60, w: 520, h: 300 } }] });
+  const todo = await studio.api<TodoItem>("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: alpha.id });
+
+  // The person starts one round from the todo tab; the round's session opens in the fixed "调度" task.
+  await page.getByRole("button", { name: "画布", exact: true }).click();
+  await page.getByRole("tab", { name: "整体待办" }).click();
+  const todos = page.getByRole("group", { name: "整体待办" });
+  await expect(todos.getByTestId("todo").first()).toContainText("现在空闲");
+  await todos.getByLabel("调度用的模型").selectOption({ label: "Codex · Mock 模型" });
+  await todos.getByRole("button", { name: "让调度看一次" }).click();
+  await expect(page.locator(".page-head")).toContainText("调度");
+  await expect(page.getByTestId("msg-user").first()).toContainText(`todoId=${todo.id}：统一掉落表格式（适合：alpha）`);
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 你是 AMO Studio 的调度 agent", { timeout: 60_000 });
+
+  // The mock model proposes only when told to: the person asks it to, the way the real model would on its own.
+  const composer = page.getByLabel("输入消息");
+  await composer.fill(`[[mcp: schedule_propose {"todoId":"${todo.id}","workspace":"${alpha.id}","profileId":"codex-mock","prompt":"统一 drops.json 的字段","reason":"alpha 空闲"}]]`);
+  await composer.press("Enter");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-MCP:", { timeout: 60_000 });
+  await expect(page.getByTestId("needs-you")).toHaveText(/需要你 1/);
+
+  // On the board: approve; the todo's task starts in the bound group with the proposed prompt.
+  await page.getByRole("button", { name: "← 看板" }).click();
+  const card = page.getByTestId("proposal-card");
+  await expect(card).toContainText("统一掉落表格式");
+  await expect(card).toContainText("alpha 空闲");
+  await screenshot(studio.app, "stage-7", "S7-05-acceptance", page);
+  await card.getByRole("button", { name: "批准开工" }).click();
+  await expect(page.locator(".page-head")).toContainText("统一掉落表格式");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 统一 drops.json 的字段", { timeout: 60_000 });
+  const state = await studio.api<{ tasks: Task[] }>("GET", "/api/state");
+  const task = state.tasks.find((t) => t.title === "统一掉落表格式")!;
+  expect((await studio.api<CanvasDoc>("GET", "/api/canvas")).nodes.find((n) => n.kind === "task" && n.taskId === task.id)?.groupId).toBe("g-alpha");
+  expect((await studio.api<TodoItem[]>("GET", "/api/todos")).find((t) => t.id === todo.id)).toMatchObject({ done: true, taskId: task.id });
+});

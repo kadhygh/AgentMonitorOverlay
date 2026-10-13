@@ -118,6 +118,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     route("POST", "/api/mail/:id/forward", ({ params, body }) => service.forwardMail(params.id!, obj(body))),
     route("GET", "/api/decisions", ({ query }) => service.decisions(query.get("state") ? { state: query.get("state") as never } : {})),
     route("POST", "/api/decisions/:id/answer", ({ params, body }) => service.answerDecision(params.id!, obj(body).answer)),
+    route("POST", "/api/scheduler/run", ({ body }) => service.runScheduler(obj(body))),
     route("GET", "/api/proposals", ({ query }) => service.proposals(query.get("state") ? { state: query.get("state") as never } : {})),
     route("POST", "/api/proposals", ({ body }) => service.propose(obj(body))),
     route("POST", "/api/proposals/:id/approve", ({ params, body }) => service.approveProposal(params.id!, obj(body))),

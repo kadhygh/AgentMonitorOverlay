@@ -405,6 +405,22 @@ describe("Host API", () => {
     expect((await api("POST", "/api/proposals", { todoId: "nope", profileId: "p-ds", prompt: "x" })).status).toBe(404);
   });
 
+  it("runs a scheduler round by hand in the fixed scheduler task", async () => {
+    expect((await api("POST", "/api/scheduler/run", { profileId: "p-ds" })).status).toBe(400);
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    await ok("POST", "/api/todos", { text: "统一掉落表格式", workspaceId: ws.id });
+    const first = await ok<{ task: Task; session: Session }>("POST", "/api/scheduler/run", { profileId: "p-ds" });
+    expect(first.task).toMatchObject({ title: "调度", scope: { kind: "area" } });
+    expect(first.session.workspaceId).toBe(ws.id);
+    await until(async () => (await ok<SessionItem[]>("GET", `/api/sessions/${first.session.id}/items`)).some((i) => i.type === "user"), "brief");
+    const brief = (await ok<SessionItem[]>("GET", `/api/sessions/${first.session.id}/items`)).find((i) => i.type === "user") as { text: string };
+    expect(brief.text).toContain("统一掉落表格式");
+    expect(service.isSchedulerSession(first.session.id)).toBe(true);
+    const second = await ok<{ task: Task; session: Session }>("POST", "/api/scheduler/run", { profileId: "p-ds" });
+    expect(second.task.id).toBe(first.task.id);
+    expect(second.session.id).not.toBe(first.session.id);
+  });
+
   it("caps proposals per scheduler round", async () => {
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
     const { session } = await createTask("scheduler");

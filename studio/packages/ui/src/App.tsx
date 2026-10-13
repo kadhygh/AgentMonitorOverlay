@@ -127,7 +127,7 @@ export function App() {
               sessions={state.sessions}
               workspaces={state.workspaces}
               profiles={state.profiles}
-              onOpenTask={(taskId) => setView({ kind: "task", taskId })}
+              onOpenTask={(taskId, sessionId) => setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}) })}
             />
           )}
           {view.kind === "packs" && (() => {

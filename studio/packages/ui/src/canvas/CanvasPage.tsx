@@ -75,7 +75,7 @@ interface CanvasPageProps {
   tasks: readonly Task[];
   sessions: readonly Session[];
   workspaces: readonly Workspace[];
-  onOpenTask(taskId: Id): void;
+  onOpenTask(taskId: Id, sessionId?: Id): void;
 }
 
 export function CanvasPage({ link, tasks, sessions, workspaces, profiles = [], onOpenTask }: CanvasPageProps) {

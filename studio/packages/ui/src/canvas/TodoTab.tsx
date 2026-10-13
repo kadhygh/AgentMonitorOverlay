@@ -46,7 +46,7 @@ export function TodoTab({
   link: HostLink;
   workspaces: readonly Workspace[];
   profiles?: readonly ModelProfile[];
-  onOpenTask?(taskId: string): void;
+  onOpenTask?(taskId: string, sessionId?: string): void;
   /** Whether each workspace is free: open todos for free projects come first and say so. */
   activity?: ReadonlyMap<string, WorkspaceActivity>;
 }) {
@@ -116,6 +116,7 @@ export function TodoTab({
 
   return (
     <div className="side-section" role="group" aria-label="整体待办">
+      <SchedulerRun link={link} profiles={profiles} onStarted={(taskId, sessionId) => onOpenTask?.(taskId, sessionId)} disabled={!open.length} />
       <form
         className="todo-add"
         onSubmit={(e) => {
@@ -204,6 +205,43 @@ function ConvertForm({
           建任务
         </button>
       </div>
+    </div>
+  );
+}
+
+/**
+ * "让调度看一次": one scheduler round, by hand (no timer until the person decides, design/scheduler.md). It opens the
+ * round's session so the person can watch it; proposals then wait on the board.
+ */
+function SchedulerRun({ link, profiles, onStarted, disabled }: { link: HostLink; profiles: readonly ModelProfile[]; onStarted(taskId: string, sessionId: string): void; disabled: boolean }) {
+  const [profileId, setProfileId] = useState(() => (profiles.find((p) => /glm/i.test(p.id)) ?? defaultProfile(profiles))?.id ?? "");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+  async function run() {
+    setBusy(true);
+    setError("");
+    try {
+      const r = await call(link, "POST /api/scheduler/run", {}, { profileId });
+      onStarted(r.task.id, r.session.id);
+    } catch (err) {
+      setError(err instanceof HostApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <div className="scheduler-run">
+      <select value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-label="调度用的模型">
+        {profiles.map((p) => (
+          <option key={p.id} value={p.id}>
+            {profileLabel(p)}
+          </option>
+        ))}
+      </select>
+      <button type="button" className="btn-ghost small" onClick={() => void run()} disabled={busy || disabled || !profileId} title="调度 agent 看一遍待办和空闲的工程，提出开工提案；你批准后才开工">
+        让调度看一次
+      </button>
+      {error && <span className="form-error">{error}</span>}
     </div>
   );
 }

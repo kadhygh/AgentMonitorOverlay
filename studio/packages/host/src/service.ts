@@ -33,12 +33,13 @@ import type {
   PresetDraft,
   ScheduleProposal,
 } from "@amo-studio/protocol";
-import { PACKS_DIR, addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
+import { PACKS_DIR, workspacesActivity, addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, composeAnnotationMessage, emptyCanvas, MAIN_CANVAS_ID, placeTask, TASK_COLUMNS, validateCanvas } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type Store } from "./store/store.js";
 import type { SendMode, SessionRuntimeApi } from "./runtime/runtime.js";
 import type { TerminalHandle, TerminalLauncher } from "./terminal/launcher.js";
 import { PackError, PackLoader } from "./packs/pack-loader.js";
 import { presetDraft } from "./packs/presets.js";
+import { schedulerBrief } from "./scheduler/brief.js";
 
 /** Env var that carries the app-server token into an attached terminal; never put the token itself on a command line. */
 export const TERMINAL_TOKEN_ENV = "AMO_STUDIO_CODEX_TOKEN";
@@ -65,6 +66,7 @@ const MAX_QUESTION_CHARS = 2000;
 const MAX_OPTION_CHARS = 200;
 /** Proposals one scheduler session (one round) may make (design/scheduler.md). */
 export const PROPOSALS_PER_ROUND = 3;
+const SCHEDULER_TASK_KEY = "scheduler:task";
 
 function boundedText(value: unknown, field: string, max: number): string {
   const text = typeof value === "string" ? value.trim() : "";
@@ -384,6 +386,46 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     this.store.putProposal(p);
     this.publish({ type: "proposal.upserted", proposal: p });
     return p;
+  }
+
+  /** The fixed cross-workspace task the scheduler's sessions live in (made on first use). */
+  schedulerTask(): Task {
+    const id = this.store.getKv(SCHEDULER_TASK_KEY)?.value;
+    const existing = id ? this.store.getTask(id) : undefined;
+    if (existing) return existing;
+    const task = this.store.createTask({ title: "调度", scope: { kind: "area" }, column: "doing" });
+    this.store.setKv(SCHEDULER_TASK_KEY, task.id);
+    this.publish({ type: "task.upserted", task });
+    return task;
+  }
+
+  isSchedulerSession(sessionId: Id): boolean {
+    const id = this.store.getKv(SCHEDULER_TASK_KEY)?.value;
+    return !!id && this.store.getSession(sessionId)?.taskId === id;
+  }
+
+  /**
+   * One scheduler round, started by the person: a new session in the scheduler task whose first message is the brief
+   * (open todos, which projects are free, models, presets, rules). It can only propose; the person approves.
+   */
+  async runScheduler(input: { profileId?: unknown } = {}): Promise<{ task: Task; session: Session }> {
+    if (typeof input?.profileId !== "string") throw new HostError("bad_request", "profileId is required");
+    this.requireProfile(input.profileId);
+    const workspaces = this.store.listWorkspaces();
+    // A session needs a working directory; the scheduler only reads Studio through the MCP and is told not to touch
+    // files, so the first registered workspace serves.
+    if (!workspaces.length) throw new HostError("bad_request", "register a workspace first");
+    const task = this.schedulerTask();
+    const text = schedulerBrief({
+      todos: this.store.listTodos(),
+      workspaces,
+      activity: workspacesActivity(workspaces, this.store.listSessions()),
+      profiles: this.profiles,
+      packs: workspaces.flatMap((w) => this.packs(w.id).map((p) => ({ ...p, workspaceId: w.id }))),
+      perRound: PROPOSALS_PER_ROUND,
+    });
+    const session = await this.addSession(task.id, { profileId: input.profileId, workspaceId: workspaces[0]!.id, text });
+    return { task: this.store.getTask(task.id)!, session };
   }
 
   /** Approves a proposal, with the person's edits: the todo becomes a task and its first session starts with the prompt. */
