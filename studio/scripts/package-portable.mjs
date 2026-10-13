@@ -1,17 +1,20 @@
 // Portable build: Electron's own runtime with Studio in resources/app, no installer, no asar.
-//   npm run build && node scripts/package-portable.mjs [outDir]
+//   npm run build && node scripts/package-portable.mjs [outDir] [--zip]      (npm run package:portable)
 // Layout (the dev layout is kept inside resources/app, so the app's relative paths still hold):
 //   <out>/AMO Studio/AMO Studio.exe            Electron, renamed
 //   <out>/AMO Studio/resources/app/package.json
 //   <out>/AMO Studio/resources/app/packages/{app,host,protocol,ui}/   package.json + dist
 //   <out>/AMO Studio/resources/app/node_modules/                      production dependencies, copied from studio/node_modules
 // No network: Electron comes from node_modules/electron/dist and dependencies from the installed tree.
-import { cpSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const studio = resolve(dirname(fileURLToPath(import.meta.url)), "..");
-const outRoot = resolve(process.argv[2] ?? join(studio, "release"));
+const args = process.argv.slice(2);
+const outRoot = resolve(studio, args.find((a) => !a.startsWith("--")) ?? "release");
+const zip = args.includes("--zip");
 const appName = "AMO Studio";
 const version = JSON.parse(readFileSync(join(studio, "package.json"), "utf8")).version;
 const target = join(outRoot, appName);
@@ -28,6 +31,9 @@ mkdirSync(outRoot, { recursive: true });
 cpSync(join(studio, "node_modules", "electron", "dist"), target, { recursive: true });
 renameSync(join(target, "electron.exe"), join(target, `${appName}.exe`));
 rmSync(join(resources, "default_app.asar"), { force: true });
+// Chromium UI strings: Studio's own UI is Chinese; keep Chinese and English (saves about 45 MB).
+const KEEP_LOCALES = new Set(["en-US.pak", "zh-CN.pak", "zh-TW.pak"]);
+for (const name of readdirSync(join(target, "locales"))) if (!KEEP_LOCALES.has(name)) rmSync(join(target, "locales", name));
 
 // 2. Studio's own packages (only what runs: package.json and dist).
 const own = { app: "packages/app", host: "packages/host", protocol: "packages/protocol", ui: "packages/ui" };
@@ -81,7 +87,6 @@ function readdirSyncSafe(p) {
     return [];
   }
 }
-import { readdirSync } from "node:fs";
 
 const mb = (n) => `${(n / 1024 / 1024).toFixed(0)} MB`;
 console.log(
@@ -97,3 +102,12 @@ console.log(
     2,
   ),
 );
+
+if (zip) {
+  // Windows' own bsdtar writes zip archives (-a picks the format from the extension); nothing to install.
+  const archive = join(outRoot, `AMO-Studio-${version}-portable.zip`);
+  rmSync(archive, { force: true });
+  const tar = join(process.env.SystemRoot ?? "C:\\Windows", "System32", "tar.exe");
+  execFileSync(tar, ["-a", "-c", "-f", archive, "-C", outRoot, appName], { stdio: "inherit" });
+  console.log(JSON.stringify({ archive, size: mb(statSync(archive).size) }));
+}

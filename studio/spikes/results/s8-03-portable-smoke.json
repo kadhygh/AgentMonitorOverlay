@@ -1,0 +1,43 @@
+{
+  "startedAt": "2026-10-13T01:19:46.209Z",
+  "archive": "studio\\release\\AMO-Studio-0.8.0-portable.zip",
+  "zipMB": 264,
+  "steps": [
+    {
+      "name": "unzipped",
+      "seconds": 9,
+      "exe": true
+    },
+    {
+      "name": "setup",
+      "defaultIsNextToExe": true,
+      "saved": {
+        "dataDir": "data"
+      }
+    },
+    {
+      "name": "chat",
+      "reply": "MOCK: 你好，便携版",
+      "dataEntries": [
+        "claude-home",
+        "codex",
+        "electron",
+        "host-token",
+        "host.json",
+        "host.lock",
+        "host.log",
+        "mcp-token",
+        "studio.db",
+        "studio.db-shm",
+        "studio.db-wal"
+      ]
+    },
+    {
+      "name": "nothing outside the folder",
+      "appdataElectronUnchanged": true,
+      "devDataUnchanged": true,
+      "appdataStudio": false
+    }
+  ],
+  "finishedAt": "2026-10-13T01:19:58.474Z"
+}

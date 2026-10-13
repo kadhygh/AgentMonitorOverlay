@@ -1004,3 +1004,15 @@
 - 验证：`npm run verify` 退出码 0（219 个测试）；e2e 40/40
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 17:50 · S8-03 打包脚本与产物冒烟
+- 结果：done
+- 改动：
+  - 版本号 0.8.0（`studio/package.json`）；
+  - `npm run package:portable`：构建 → 打包到 `studio/release/AMO Studio/` → 用 Windows 自带的 `tar.exe` 压成 `AMO-Studio-0.8.0-portable.zip`；只保留中英文的 Chromium 语言包。解压后 628 MB，zip 264 MB；
+  - `npm run smoke:portable`（`scripts/smoke-portable.mjs`）：把 zip 解到沙箱 → 第一次运行出设置页、默认数据目录就在 exe 旁边、点"开始使用" → 再启动直接进工作台 → 新建任务、和 mock 模型对话一轮 → 退出；并检查没有写到文件夹以外（`%APPDATA%\Electron` 没被动、`studio/.data` 没被动、`%APPDATA%` 下没有新目录）
+- 结果：全部通过，结果在 `spikes/results/s8-03-portable-smoke.json`，截图 `screenshots/stage-8/S8-03-portable.png`；解压 9 秒
+- 产物：`studio/release/` 里有一份 zip（不进 git），你可以直接拿去试
+- 验证：`npm run verify` 退出码 0（219 个测试）；e2e 40/40
+- 额度：0
+- commit：见本次 commit

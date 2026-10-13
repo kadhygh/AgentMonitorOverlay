@@ -1,7 +1,7 @@
 {
   "name": "amo-studio",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.8.0",
   "type": "module",
   "workspaces": [
     "packages/protocol",
@@ -25,7 +25,9 @@
     "smoke:stage6": "npm run build && node scripts/smoke-stage6.mjs",
     "smoke:stage7": "npm run build && node scripts/smoke-stage7.mjs",
     "start": "npm run build && electron packages/app",
-    "host:stop": "node scripts/host-stop.mjs"
+    "host:stop": "node scripts/host-stop.mjs",
+    "package:portable": "npm run build && node scripts/package-portable.mjs release --zip",
+    "smoke:portable": "node scripts/smoke-portable.mjs release"
   },
   "devDependencies": {
     "@playwright/test": "1.63.0",
