@@ -1,0 +1,103 @@
+import { existsSync, mkdirSync, statSync } from "node:fs";
+import { resolve } from "node:path";
+import type { AccountUsage, CredentialStatus, ProfileChoices, SessionPreset, Id, StudioSettings } from "@amo-studio/protocol";
+import { newId } from "../../store/store.js";
+import type { CredentialStore } from "../../runtime/credentials.js";
+import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS } from "../../core/shared.js";
+import { Feature } from "../../core/feature.js";
+
+/** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
+export class ConfigFeature extends Feature {
+  settings(): StudioSettings {
+    return { commonWorkspace: this.commonWorkspace(), presets: this.presets() };
+  }
+
+  private presets(): SessionPreset[] {
+    const raw = this.store.getKv(PRESETS_KEY)?.value;
+    if (!raw) return [];
+    try {
+      return JSON.parse(raw) as SessionPreset[];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Moves the common space to another folder and/or replaces the 常用预设 list. */
+  updateSettings(input: { commonDir?: unknown; presets?: unknown }): StudioSettings {
+    if (input.presets !== undefined) {
+      if (!Array.isArray(input.presets) || input.presets.length > MAX_PRESETS) throw new HostError("bad_request", `presets must be a list of at most ${MAX_PRESETS}`);
+      const presets: SessionPreset[] = input.presets.map((p: unknown) => {
+        const o = p && typeof p === "object" ? (p as Record<string, unknown>) : {};
+        const profileId = typeof o.profileId === "string" ? o.profileId : "";
+        if (!this.profiles.some((x) => x.id === profileId)) throw new HostError("bad_request", `unknown profile ${profileId}`);
+        return {
+          id: typeof o.id === "string" && o.id ? o.id.slice(0, 64) : newId("pre"),
+          name: boundedText(o.name, "name", 40),
+          profileId,
+          options: sessionOptions(o.options),
+        };
+      });
+      this.store.setKv(PRESETS_KEY, JSON.stringify(presets));
+    }
+    if (input.commonDir !== undefined) {
+      if (typeof input.commonDir !== "string" || !input.commonDir.trim()) throw new HostError("bad_request", "commonDir must be a folder path");
+      const path = resolve(input.commonDir.trim());
+      if (existsSync(path) && !statSync(path).isDirectory()) throw new HostError("bad_request", `not a directory: ${path}`);
+      const common = this.commonWorkspace();
+      const taken = this.store.findWorkspaceByPath(path);
+      if (taken && taken.id !== common.id) throw new HostError("conflict", `这个文件夹已经是项目「${taken.name}」，不能再当公共目录`);
+      mkdirSync(path, { recursive: true });
+      this.publish({ type: "workspace.upserted", workspace: this.store.setWorkspacePath(common.id, path) });
+    }
+    const settings = this.settings();
+    this.publish({ type: "settings.updated", settings });
+    return settings;
+  }
+
+  choices(profileId: Id): Promise<ProfileChoices> {
+    if (!this.profiles.some((p) => p.id === profileId)) throw new HostError("not_found", `profile ${profileId} not found`);
+    return this.wrap(() => this.runtime.choices(profileId));
+  }
+
+  /** Quota use of the subscription profiles (GPT login, Claude token), in profile order. */
+  async usage(refresh: boolean): Promise<AccountUsage[]> {
+    const out: AccountUsage[] = [];
+    for (const p of this.profiles) {
+      const u = this.runtime.usage ? await this.runtime.usage(p.id, refresh).catch(() => null) : null;
+      if (u) out.push(u);
+    }
+    return out;
+  }
+
+  /** Which credentials the profiles need, and whether each is stored (the values never leave the Host). */
+  credentials(): CredentialStatus[] {
+    const reader = this.options.credentials;
+    const ids = [...new Set(this.profiles.flatMap((p) => (p.credentialId ? [p.credentialId] : [])))];
+    return ids.map((id) => ({
+      id,
+      usedBy: this.profiles.filter((p) => p.credentialId === id).map((p) => p.label),
+      saved: !!reader?.read(id),
+      writable: WRITABLE_CREDENTIALS.has(id) && !!reader && "write" in reader,
+    }));
+  }
+
+  saveCredential(id: string, secret: unknown): CredentialStatus[] {
+    const store = this.writableStore(id);
+    const value = typeof secret === "string" ? secret.trim() : "";
+    if (!value) throw new HostError("bad_request", "secret is required");
+    if (value.length > 4096 || /\s/.test(value)) throw new HostError("bad_request", "这不像一个令牌：应是一整串不含空格和换行的字符");
+    store.write(id, value);
+    return this.credentials();
+  }
+
+  removeCredential(id: string): CredentialStatus[] {
+    this.writableStore(id).remove(id);
+    return this.credentials();
+  }
+
+  private writableStore(id: string): CredentialStore {
+    const store = this.options.credentials;
+    if (!WRITABLE_CREDENTIALS.has(id) || !store || !("write" in store)) throw new HostError("read_only", `credential ${id} cannot be changed from Studio`);
+    return store;
+  }
+}

@@ -45,7 +45,7 @@ export class ReadModel {
   /** A topic by id or title; the caller's own topic when omitted. */
   private topic(ref?: string): Topic {
     if (ref === undefined || ref === "") {
-      const own = this.caller ? this.service.topicOfSession(this.caller.sessionId) : null;
+      const own = this.caller ? this.service.topics.topicOfSession(this.caller.sessionId) : null;
       if (!own) throw new NotFoundError("name a topic (id or title): you are not working in one");
       return own;
     }
@@ -122,7 +122,7 @@ export class ReadModel {
     const t = this.topic(ref);
     const workspaces = this.store.listWorkspaces();
     const name = (id: Id) => workspaces.find((w) => w.id === id)?.name ?? id;
-    const { outline } = this.service.canvasOutline(t.id);
+    const { outline } = this.service.canvases.canvasOutline(t.id);
     return {
       id: t.id,
       title: t.title,
@@ -149,7 +149,7 @@ export class ReadModel {
     const notes = this.store.listTaskNotes(t.id);
     const author = (sessionId: Id | null) => (sessionId ? this.store.getSession(sessionId)?.title || "会话" : "person");
     const handoff = [...notes].reverse().find((n) => n.kind === "handoff");
-    const canvas = t.topicId ? this.service.canvas(t.topicId) : { nodes: [], groups: [], edges: [] };
+    const canvas = t.topicId ? this.service.canvases.canvas(t.topicId) : { nodes: [], groups: [], edges: [] };
     const title = (id: Id) => this.store.getTask(id)?.title || "未命名任务";
     const node = canvas.nodes.find((n) => n.kind === "task" && n.taskId === t.id);
     const group = node?.groupId ? (canvas.groups.find((g) => g.id === node.groupId)?.title ?? null) : null;
@@ -183,7 +183,7 @@ export class ReadModel {
     const list = workspace ? all.filter((w) => w.id === this.workspaceId(workspace)) : all;
     return {
       packs: list.flatMap((w) =>
-        this.service.packs(w.id).map((p) => ({
+        this.service.extensions.packs(w.id).map((p) => ({
           workspace: { id: w.id, name: w.name },
           pack: p.dirName,
           title: p.manifest?.title ?? null,
@@ -199,7 +199,7 @@ export class ReadModel {
 
   /** One pack document's text. */
   packDoc(workspace: string, pack: string, doc: string) {
-    return this.service.packDoc(this.workspaceId(workspace), pack, doc);
+    return this.service.extensions.packDoc(this.workspaceId(workspace), pack, doc);
   }
 
   /** The task's sessions as a tree, each with an excerpt of its latest reply. */
@@ -247,6 +247,6 @@ export class ReadModel {
 
   /** A topic's canvas as structure: groups, tasks, notes, dependencies; no coordinates. */
   canvasRead(topic?: string) {
-    return this.service.canvasOutline(this.topic(topic).id);
+    return this.service.canvases.canvasOutline(this.topic(topic).id);
   }
 }

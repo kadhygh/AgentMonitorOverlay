@@ -51,9 +51,9 @@ beforeAll(async () => {
   identities = new McpIdentities(store);
   http = await startHostServer({ service, token: TOKEN, mcpToken: MCP_TOKEN, mcpIdentities: identities });
 
-  const alpha = service.addWorkspace({ path: join(root, "alpha") });
-  const beta = service.addWorkspace({ path: join(root, "beta") });
-  topicId = service.createTopic({ title: "导入专题" }).id;
+  const alpha = service.projects.addWorkspace({ path: join(root, "alpha") });
+  const beta = service.projects.addWorkspace({ path: join(root, "beta") });
+  topicId = service.topics.createTopic({ title: "导入专题" }).id;
   importTask = store.createTask({ title: "导入重试", workspaceId: alpha.id, topicId });
   configTask = store.createTask({ title: "统一配置键", workspaceId: beta.id, topicId, column: "doing" });
   const main = store.createSession({ taskId: importTask.id, topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "p-ds", workspaceId: alpha.id, title: "计划", status: "awaiting-approval", writer: "workbench", runtimeRef: "t1" });
@@ -61,8 +61,8 @@ beforeAll(async () => {
   store.createSession({ taskId: importTask.id, topicId: null, parentId: main.id, kind: "fork", runtime: "codex", profileId: "p-ds", workspaceId: alpha.id, title: "退避方案", status: "idle", writer: "workbench", runtimeRef: "t2" });
   store.appendItem({ id: "i1", sessionId: main.id, createdAt: new Date().toISOString(), type: "agent", markdown: "x".repeat(400), streaming: false });
   configSessionId = store.createSession({ taskId: configTask.id, topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "p-ds", workspaceId: beta.id, title: "", status: "idle", writer: "workbench", runtimeRef: "t3" }).id;
-  const canvas = service.canvas(topicId);
-  service.saveCanvas(topicId, {
+  const canvas = service.canvases.canvas(topicId);
+  service.canvases.saveCanvas(topicId, {
     ...canvas,
     groups: [{ id: "g1", title: "导入", workspaceId: alpha.id, rect: { x: 0, y: 0, w: 400, h: 300 } }],
     nodes: [
@@ -111,8 +111,8 @@ describe("AMO MCP", () => {
     const handoff = (await call(client, "handoff_submit", { summary: "交接：importer.ts 已改，测试在 tests/import" })).data;
     expect(handoff).toMatchObject({ taskId: importTask.id, kind: "handoff" });
     expect((await call(client, "task_note_add", { text: " " })).isError).toBe(true);
-    expect(service.taskNotes(importTask.id).map((n) => n.kind)).toEqual(["progress", "handoff"]);
-    expect(service.taskNotes(configTask.id)).toEqual([]);
+    expect(service.collab.taskNotes(importTask.id).map((n) => n.kind)).toEqual(["progress", "handoff"]);
+    expect(service.collab.taskNotes(configTask.id)).toEqual([]);
     await client.close();
   });
 
@@ -129,7 +129,7 @@ describe("AMO MCP", () => {
     expect(read.messages.map((m) => m.text)).toEqual(["导入接口改好了", "记得同步配置键"]);
     expect(read.messages[0]!.from).toMatchObject({ sessionId: mainSessionId, title: "计划" });
     expect(((await call(reader, "mailbox_read")).data as { messages: unknown[] }).messages).toEqual([]);
-    expect(service.mail({ forTaskId: configTask.id }).map((m) => m.state)).toEqual(["read", "read"]);
+    expect(service.collab.mail({ forTaskId: configTask.id }).map((m) => m.state)).toEqual(["read", "read"]);
     await reader.close();
   });
 
@@ -222,9 +222,9 @@ describe("AMO MCP", () => {
 
   it("offers schedule_propose only to the scheduler's sessions", async () => {
     const alpha = store.listWorkspaces().find((w) => w.name === "alpha")!;
-    const scheduler = service.schedulerTask();
+    const scheduler = service.planning.schedulerTask();
     const round = store.createSession({ taskId: scheduler.id, topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "p-ds", workspaceId: alpha.id, title: "调度", status: "idle", writer: "workbench", runtimeRef: "t-sched" });
-    const todo = service.addTodo({ text: "统一掉落表格式", workspaceId: alpha.id });
+    const todo = service.planning.addTodo({ text: "统一掉落表格式", workspaceId: alpha.id });
 
     const normal = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
     expect((await normal.listTools()).tools.map((t) => t.name)).not.toContain("schedule_propose");
@@ -234,7 +234,7 @@ describe("AMO MCP", () => {
     expect((await client.listTools()).tools.map((t) => t.name)).toContain("schedule_propose");
     const made = (await call(client, "schedule_propose", { todoId: todo.id, profileId: "p-ds", prompt: "统一 drops.json", reason: "alpha 空闲" })).data;
     expect(made).toMatchObject({ state: "pending" });
-    expect(service.proposals({ state: "pending" })).toMatchObject([{ todoId: todo.id, sessionId: round.id, workspaceId: alpha.id, reason: "alpha 空闲" }]);
+    expect(service.planning.proposals({ state: "pending" })).toMatchObject([{ todoId: todo.id, sessionId: round.id, workspaceId: alpha.id, reason: "alpha 空闲" }]);
     const again = await call(client, "schedule_propose", { todoId: todo.id, profileId: "p-ds", prompt: "再来" });
     expect(again.isError).toBe(true);
     expect(again.content[0]!.text).toBe("this todo already has a pending proposal");
@@ -245,9 +245,9 @@ describe("AMO MCP", () => {
     const client = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
     const asked = (await call(client, "decision_request", { question: "重试几次？", options: ["3 次", "5 次"] })).data;
     expect(asked).toMatchObject({ state: "open" });
-    expect(service.decisions({ state: "open" })).toMatchObject([{ id: asked.id, sessionId: mainSessionId, taskId: importTask.id, options: ["3 次", "5 次"] }]);
+    expect(service.collab.decisions({ state: "open" })).toMatchObject([{ id: asked.id, sessionId: mainSessionId, taskId: importTask.id, options: ["3 次", "5 次"] }]);
     expect((await call(client, "decision_request", { question: " " })).isError).toBe(true);
-    service.answerDecision(asked.id, "3 次");
+    service.collab.answerDecision(asked.id, "3 次");
     const read = (await call(client, "mailbox_read")).data as { messages: Array<{ text: string; from: unknown }> };
     expect(read.messages).toMatchObject([{ text: "针对你的问题「重试几次？」，我的决定：3 次", from: "person" }]);
     await client.close();
@@ -260,7 +260,7 @@ describe("AMO MCP", () => {
     // configTask already depends on nothing; importTask depends on configTask (seeded), so the reverse would cycle.
     expect((await call(client, "canvas_depend", { fromTaskId: importTask.id, toTaskId: configTask.id })).content[0]!.text).toMatch(/cycle/);
     expect((await call(client, "canvas_place", { taskId: configTask.id, groupId: made.groupId })).data).toMatchObject({ groupId: made.groupId });
-    const canvas = service.canvas(topicId);
+    const canvas = service.canvases.canvas(topicId);
     expect(canvas.groups.find((g) => g.id === made.groupId)).toMatchObject({ title: "配置", workspaceId: expect.any(String) });
     expect(canvas.nodes.find((n) => n.kind === "task" && n.taskId === configTask.id)).toMatchObject({ groupId: made.groupId });
     await client.close();

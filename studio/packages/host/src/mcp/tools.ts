@@ -66,7 +66,7 @@ function write(caller: McpCaller | null, run: (caller: McpCaller) => unknown): T
 /** Every AMO tool for one caller (null: reading only). */
 export function amoToolsFor(service: HostService, caller: McpCaller | null): AmoTool[] {
   // schedule_propose exists only for the scheduler's own sessions.
-  const scheduler = caller && service.isSchedulerSession(caller.sessionId) ? [proposeTool(service, caller)] : [];
+  const scheduler = caller && service.planning.isSchedulerSession(caller.sessionId) ? [proposeTool(service, caller)] : [];
   return [...amoTools(new ReadModel(service, caller)), ...writeTools(service, caller), ...scheduler];
 }
 
@@ -81,7 +81,7 @@ function proposeTool(service: HostService, caller: McpCaller): AmoTool {
     autoApprove: true,
     run: (args) =>
       write(caller, (c) => {
-        const p = service.propose({ todoId: args.todoId, workspaceId: args.workspace, profileId: args.profileId, prompt: args.prompt, reason: args.reason }, c.sessionId);
+        const p = service.planning.propose({ todoId: args.todoId, workspaceId: args.workspace, profileId: args.profileId, prompt: args.prompt, reason: args.reason }, c.sessionId);
         return { id: p.id, state: p.state, note: "Waiting for the person to approve on the board." };
       }),
   };
@@ -96,7 +96,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
   };
   /** The topic whose canvas the caller may arrange: its own topic, or its task's. */
   const ownTopic = (c: McpCaller): Id => {
-    const topic = service.topicOfSession(c.sessionId);
+    const topic = service.topics.topicOfSession(c.sessionId);
     if (!topic) throw new HostError("bad_request", "你的任务不在任何专题里，没有画布可以整理。");
     return topic.id;
   };
@@ -114,7 +114,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       inputSchema: { text: z.string() },
       readOnly: false,
       autoApprove: true,
-      run: (args) => write(caller, (c) => service.addTaskNote(ownTask(c), { text: args.text, kind: "progress" }, c.sessionId)),
+      run: (args) => write(caller, (c) => service.collab.addTaskNote(ownTask(c), { text: args.text, kind: "progress" }, c.sessionId)),
     },
     {
       name: "handoff_submit",
@@ -123,7 +123,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       inputSchema: { summary: z.string() },
       readOnly: false,
       autoApprove: true,
-      run: (args) => write(caller, (c) => service.addTaskNote(ownTask(c), { text: args.summary, kind: "handoff" }, c.sessionId)),
+      run: (args) => write(caller, (c) => service.collab.addTaskNote(ownTask(c), { text: args.summary, kind: "handoff" }, c.sessionId)),
     },
     {
       name: "mailbox_send",
@@ -144,7 +144,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
                   ? { kind: "topic", topicId: args.toTopicId }
                   : null;
           if (!to) throw new HostError("bad_request", "give toSessionId, toTaskId or toTopicId");
-          const m = service.sendMail(c.sessionId, to, args.text);
+          const m = service.collab.sendMail(c.sessionId, to, args.text);
           return { id: m.id, to: m.to, state: m.state };
         }),
     },
@@ -155,7 +155,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       inputSchema: { title: z.string(), workspace: z.string().optional() },
       readOnly: false,
       autoApprove: false,
-      run: (args) => write(caller, (c) => service.canvasCreateGroup(ownTopic(c), args)),
+      run: (args) => write(caller, (c) => service.canvases.canvasCreateGroup(ownTopic(c), args)),
     },
     {
       name: "canvas_depend",
@@ -164,7 +164,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       inputSchema: { fromTaskId: z.string(), toTaskId: z.string() },
       readOnly: false,
       autoApprove: false,
-      run: (args) => write(caller, (c) => (inOwnTopic(c, args.fromTaskId, args.toTaskId), service.canvasAddDependency(args.fromTaskId, args.toTaskId))),
+      run: (args) => write(caller, (c) => (inOwnTopic(c, args.fromTaskId, args.toTaskId), service.canvases.canvasAddDependency(args.fromTaskId, args.toTaskId))),
     },
     {
       name: "canvas_place",
@@ -173,7 +173,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       inputSchema: { taskId: z.string(), groupId: z.string().optional() },
       readOnly: false,
       autoApprove: false,
-      run: (args) => write(caller, (c) => (inOwnTopic(c, args.taskId), service.canvasPlaceTask(args.taskId, args.groupId ?? null))),
+      run: (args) => write(caller, (c) => (inOwnTopic(c, args.taskId), service.canvases.canvasPlaceTask(args.taskId, args.groupId ?? null))),
     },
     {
       name: "checklist_check",
@@ -184,7 +184,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       autoApprove: true,
       run: (args) =>
         write(caller, (c) => {
-          const item = service.setChecklistDone(String(args.itemId), args.done !== false, c.sessionId);
+          const item = service.collab.setChecklistDone(String(args.itemId), args.done !== false, c.sessionId);
           return { id: item.id, text: item.text, done: item.done };
         }),
     },
@@ -198,7 +198,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
       autoApprove: true,
       run: (args) =>
         write(caller, (c) => {
-          const d = service.requestDecisionFromSession(c.sessionId, args.question, args.options);
+          const d = service.collab.requestDecisionFromSession(c.sessionId, args.question, args.options);
           return { id: d.id, state: d.state, note: "The answer will arrive as mail; read it with mailbox_read." };
         }),
     },
@@ -214,7 +214,7 @@ function writeTools(service: HostService, caller: McpCaller | null): AmoTool[] {
           const title = (id: Id | null) => (id ? service.store.getSession(id)?.title || "会话" : "我（人）");
           return {
             // The text first: it is what the agent needs, the routing is context.
-            messages: service.readMailFromSession(c.sessionId).map((m) => ({
+            messages: service.collab.readMailFromSession(c.sessionId).map((m) => ({
               text: m.text,
               from: m.fromSessionId ? { sessionId: m.fromSessionId, title: title(m.fromSessionId), taskId: m.fromTaskId, topicId: m.fromTopicId ?? null } : "person",
               to: m.to,

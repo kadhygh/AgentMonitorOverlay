@@ -107,7 +107,7 @@ describe("structure v2 on older data", () => {
     // The global canvas became "专题 1" with the tasks placed on it, except the one that already got a topic.
     const first = store.listTopics().find((t) => t.title === "专题 1")!;
     expect(store.getTask("t-ws")!.topicId).toBe(first.id);
-    const canvas = service.canvas(first.id);
+    const canvas = service.canvases.canvas(first.id);
     expect(canvas.version).toBe(4);
     expect(canvas.nodes.map((n) => n.id)).toEqual(["n1", "n3"]);
     expect(canvas.edges).toEqual([]);

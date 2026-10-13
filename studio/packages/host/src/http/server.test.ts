@@ -319,8 +319,8 @@ describe("Host API", () => {
     const other = await createTask("other");
     const note = await ok<{ kind: string; sessionId: string | null; text: string }>("POST", `/api/tasks/${task.id}/notes`, { text: " 先查导入日志 " });
     expect(note).toMatchObject({ kind: "progress", sessionId: null, text: "先查导入日志" });
-    expect(service.addTaskNote(task.id, { text: "交接：重试已加，测试待补", kind: "handoff" }, session.id)).toMatchObject({ kind: "handoff", sessionId: session.id });
-    expect(() => service.addTaskNote(other.task.id, { text: "x" }, session.id)).toThrow(/its own task/);
+    expect(service.collab.addTaskNote(task.id, { text: "交接：重试已加，测试待补", kind: "handoff" }, session.id)).toMatchObject({ kind: "handoff", sessionId: session.id });
+    expect(() => service.collab.addTaskNote(other.task.id, { text: "x" }, session.id)).toThrow(/its own task/);
     expect((await ok<Array<{ kind: string }>>("GET", `/api/tasks/${task.id}/notes`)).map((n) => n.kind)).toEqual(["progress", "handoff"]);
     expect((await api("POST", `/api/tasks/${task.id}/notes`, { text: " " })).status).toBe(400);
     expect((await api("POST", `/api/tasks/${task.id}/notes`, { text: "x".repeat(8001) })).status).toBe(400);
@@ -329,9 +329,9 @@ describe("Host API", () => {
   it("passes mail between sessions and lets the person forward or dismiss it", async () => {
     const a = await createTask("a");
     const b = await createTask("b");
-    const toB = service.sendMail(a.session.id, { kind: "session", sessionId: b.session.id }, "接口改好了，你可以接着做导入");
+    const toB = service.collab.sendMail(a.session.id, { kind: "session", sessionId: b.session.id }, "接口改好了，你可以接着做导入");
     expect(toB).toMatchObject({ fromSessionId: a.session.id, fromTaskId: a.task.id, state: "unread" });
-    expect(() => service.sendMail(a.session.id, { kind: "session", sessionId: a.session.id }, "me")).toThrow(/itself/);
+    expect(() => service.collab.sendMail(a.session.id, { kind: "session", sessionId: a.session.id }, "me")).toThrow(/itself/);
     const toTask = await ok<{ id: string; fromSessionId: string | null }>("POST", "/api/mail", { to: { kind: "task", taskId: b.task.id }, text: "记得更新文档" });
     expect(toTask.fromSessionId).toBeNull();
     expect((await api("POST", "/api/mail", { to: { kind: "task", taskId: "nope" }, text: "x" })).status).toBe(404);
@@ -339,8 +339,8 @@ describe("Host API", () => {
 
     // B's mailbox: its own mail and its task's, oldest first; reading marks them read.
     expect((await ok<Array<{ id: string }>>("GET", `/api/mail?sessionId=${b.session.id}&taskId=${b.task.id}&state=unread`)).map((m) => m.id)).toEqual([toB.id, toTask.id]);
-    expect(service.readMailFromSession(b.session.id).map((m) => m.state)).toEqual(["read", "read"]);
-    expect(service.readMailFromSession(b.session.id)).toEqual([]);
+    expect(service.collab.readMailFromSession(b.session.id).map((m) => m.state)).toEqual(["read", "read"]);
+    expect(service.collab.readMailFromSession(b.session.id)).toEqual([]);
 
     // Forwarding puts it into the conversation as a user message marked as AMO mail.
     const forwarded = await ok<{ state: string }>("POST", `/api/mail/${toB.id}/forward`, {});
@@ -357,14 +357,14 @@ describe("Host API", () => {
 
   it("answers a decision request and sends the answer back to the asking session", async () => {
     const { session } = await createTask("decide");
-    const d = service.requestDecisionFromSession(session.id, "掉落表按关卡拆还是按怪物拆？", ["按关卡", "按怪物", " "]);
+    const d = service.collab.requestDecisionFromSession(session.id, "掉落表按关卡拆还是按怪物拆？", ["按关卡", "按怪物", " "]);
     expect(d).toMatchObject({ state: "open", options: ["按关卡", "按怪物"] });
     expect((await ok<Array<{ id: string }>>("GET", "/api/decisions?state=open")).map((x) => x.id)).toEqual([d.id]);
     const answered = await ok<{ state: string; answer: string }>("POST", `/api/decisions/${d.id}/answer`, { answer: "按关卡" });
     expect(answered).toMatchObject({ state: "answered", answer: "按关卡" });
     expect((await api("POST", `/api/decisions/${d.id}/answer`, { answer: "x" })).status).toBe(409);
     expect(await ok("GET", "/api/decisions?state=open")).toEqual([]);
-    const mail = service.mail({ sessionId: session.id });
+    const mail = service.collab.mail({ sessionId: session.id });
     expect(mail).toHaveLength(1);
     expect(mail[0]).toMatchObject({ fromSessionId: null, text: "针对你的问题「掉落表按关卡拆还是按怪物拆？」，我的决定：按关卡" });
   });
@@ -409,7 +409,7 @@ describe("Host API", () => {
     expect(await bad({ workspaceId: ws.id, pack: "demo", template: "feat" }, { kind: "workspace", workspaceId: other.id })).toBe(400);
     // A session ticks only its own task's steps.
     const { session } = await createTask("other task");
-    expect(() => service.setChecklistDone(items[0]!.id, true, session.id)).toThrow("a session can only tick its own task's checklist");
+    expect(() => service.collab.setChecklistDone(items[0]!.id, true, session.id)).toThrow("a session can only tick its own task's checklist");
   });
 
   it("fills a pack's session preset in for a task without starting anything", async () => {
@@ -514,7 +514,7 @@ describe("Host API", () => {
     await until(async () => (await ok<SessionItem[]>("GET", `/api/sessions/${first.session.id}/items`)).some((i) => i.type === "user"), "brief");
     const brief = (await ok<SessionItem[]>("GET", `/api/sessions/${first.session.id}/items`)).find((i) => i.type === "user") as { text: string };
     expect(brief.text).toContain("统一掉落表格式");
-    expect(service.isSchedulerSession(first.session.id)).toBe(true);
+    expect(service.planning.isSchedulerSession(first.session.id)).toBe(true);
     const second = await ok<{ task: Task; session: Session }>("POST", "/api/scheduler/run", { profileId: "p-ds" });
     expect(second.task.id).toBe(first.task.id);
     expect(second.session.id).not.toBe(first.session.id);
@@ -525,14 +525,14 @@ describe("Host API", () => {
     const { session } = await createTask("scheduler");
     const ids: string[] = [];
     for (let i = 0; i < 4; i++) ids.push((await ok<{ id: string }>("POST", "/api/todos", { text: `待办 ${i}`, workspaceId: ws.id })).id);
-    for (const id of ids.slice(0, 3)) service.propose({ todoId: id, profileId: "p-ds", prompt: "做" }, session.id);
-    expect(() => service.propose({ todoId: ids[3], profileId: "p-ds", prompt: "做" }, session.id)).toThrow("at most 3 proposals per scheduler round");
+    for (const id of ids.slice(0, 3)) service.planning.propose({ todoId: id, profileId: "p-ds", prompt: "做" }, session.id);
+    expect(() => service.planning.propose({ todoId: ids[3], profileId: "p-ds", prompt: "做" }, session.id)).toThrow("at most 3 proposals per scheduler round");
   });
 
   it("turns a todo into one task even when asked twice at once", async () => {
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
-    const todo = service.addTodo({ text: "双击批准", workspaceId: ws.id });
-    const both = await Promise.allSettled([service.convertTodo(todo.id, { profileId: "p-ds" }), service.convertTodo(todo.id, { profileId: "p-ds" })]);
+    const todo = service.planning.addTodo({ text: "双击批准", workspaceId: ws.id });
+    const both = await Promise.allSettled([service.planning.convertTodo(todo.id, { profileId: "p-ds" }), service.planning.convertTodo(todo.id, { profileId: "p-ds" })]);
     expect(both.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
     expect((await ok<StateSnapshot>("GET", "/api/state")).tasks.filter((t) => t.title === "双击批准")).toHaveLength(1);
   });

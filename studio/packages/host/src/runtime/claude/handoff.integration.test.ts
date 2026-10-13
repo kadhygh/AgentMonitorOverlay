@@ -81,7 +81,7 @@ describe("Claude terminal handoff", () => {
     const s = await claude.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "hello" });
     await until(() => agentTexts(s.id).includes("MOCK: hello") && session(s.id).status === "idle", "first reply");
 
-    const attach = await service.terminal(s.id, true);
+    const attach = await service.sessions.terminal(s.id, true);
     expect(attach).toMatchObject({ launched: true, envVar: null });
     const launch = launcher.launches[0]!;
     expect(launch).toMatchObject({ track: true, envMode: "replace", cwd: workspace.path });
@@ -90,7 +90,7 @@ describe("Claude terminal handoff", () => {
     expect(launch.env).toMatchObject({ ANTHROPIC_AUTH_TOKEN: "mock-key", ANTHROPIC_BASE_URL: mock.baseUrl, CLAUDE_CONFIG_DIR: join(root, "claude-home") });
     expect(launch.env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(session(s.id).writer).toBe("terminal-handoff");
-    await expect(service.sendMessage(s.id, "from studio")).rejects.toMatchObject({ code: "read_only" });
+    await expect(service.sessions.sendMessage(s.id, "from studio")).rejects.toMatchObject({ code: "read_only" });
 
     await typeInTerminal(0, "from the terminal");
     launcher.handles[0]!.exit();
@@ -101,7 +101,7 @@ describe("Claude terminal handoff", () => {
       ["notice", "已从终端收回，导入了终端里新增的 2 条内容。"],
     ]);
 
-    await service.sendMessage(s.id, "back in studio");
+    await service.sessions.sendMessage(s.id, "back in studio");
     await until(() => agentTexts(s.id).includes("MOCK: back in studio"), "reply after reclaim");
     expect(JSON.stringify(mock.requests.at(-1)!.body.messages)).toContain("MOCK: from the terminal");
   }, 180_000);
@@ -109,9 +109,9 @@ describe("Claude terminal handoff", () => {
   it("closes the terminal when the person takes the session back at once", async () => {
     const s = await claude.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "one" });
     await until(() => session(s.id).status === "idle" && agentTexts(s.id).length === 1, "reply");
-    await service.terminal(s.id, true);
+    await service.sessions.terminal(s.id, true);
     const handle = launcher.handles.at(-1)!;
-    const back = await service.reclaim(s.id);
+    const back = await service.sessions.reclaim(s.id);
     expect(handle.killed).toBe(true);
     expect(back.writer).toBe("workbench");
     expect(items(s.id).at(-1)).toMatchObject({ type: "notice", message: "已从终端收回。" });
@@ -120,7 +120,7 @@ describe("Claude terminal handoff", () => {
   it("refuses while a reply is being generated", async () => {
     const s = await claude.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[slow]]" });
     await until(() => session(s.id).status === "running", "slow reply");
-    await expect(service.terminal(s.id, true)).rejects.toMatchObject({ code: "conflict" });
+    await expect(service.sessions.terminal(s.id, true)).rejects.toMatchObject({ code: "conflict" });
     expect(session(s.id).writer).toBe("workbench");
     await claude.interrupt(s.id);
   }, 120_000);
