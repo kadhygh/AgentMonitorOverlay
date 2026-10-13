@@ -2,6 +2,14 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+> **2026-10-13 深夜更新：阶段 11 的六项都做完并合进 `studio/main`，等用户验收。** 计划、用户的决定和每项的做法、取舍都在 `plans/stage-11.md`；截图在 `screenshots/stage-11/`。
+> - 画布：引用卡片、每个任务可选是否上画布（**行为变化**：看板里建的专题任务不再自动出现在画布上）、从画布进出返回画布、空分组删不掉的 bug（原因是画布里有已归档任务的卡片）。
+> - 对话：粘贴/拖入图片和文件、`@` 分组（任务/会话/最近文件/找文件）、Ctrl+P 找项目文件。
+> - 便签小窗：全局快捷键 Ctrl+Alt+Space，多页、可贴图。Git Review：独立窗口，逐行批注发给会话（迁移 8）。速度 tok/s 和上下文占用。
+> - 四条线是在工作树 `G:\PROJECT\AgentMonitorOverlay-s11-{canvas,attach,scratchpad,gitreview}` 里由子 agent 并行开发的；分支 `studio/s11-*` 保留，工作树可以在用户验收后删除。
+> - 用户数据迁移前备份在 `.data/backup-before-stage11-20261013/`。
+> - 已知：高负载下 e2e 偶尔在关闭应用时超时（测试本身已通过），空闲时全量 60/60 通过。
+
 > **2026-10-13 晚更新：阶段 10 的界面改版和反馈都做完了，模块化重构也做完并合回了 `studio/main`（`4826929`）。**
 > - 阶段 10：组织结构 v2、编辑部风格界面、草稿任务页、改名、@ 任务、左栏置顶和折叠、订阅用量都已提交到 `studio/main`（最后是 `a847158`，新图标"取景框"）。剩下的见 `plans/stage-10.md`（S10-06 专题页、S10-08 留言实测、S10-09 草稿区）。
 > - 重构：用户同意 `design/architecture-review-2026-10.md` 的 R1–R4，文末"实际做法"写了结果。**代码现在按功能分目录**：Host 在 `packages/host/src/features/<名字>/`（`service.ts`、`routes.ts`、`mcp.ts`），清单 `features/index.ts`；界面在 `packages/ui/src/<名字>/`（页面、`view.tsx`、样式），清单 `ui/src/features.ts`，样式顺序在 `main.tsx`。设置 → 功能 可以关掉扩展包、整体待办与调度。
