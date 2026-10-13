@@ -201,7 +201,7 @@ function TopBar({
   return (
     <header className="topbar">
       <div className="brand">
-        <div className="brand-mark" aria-hidden="true">A</div>
+        <img className="brand-mark" src="./icon.svg" alt="" aria-hidden="true" />
         <span className="brand-name">AMO Studio</span>
         {scopeName && (
           <>

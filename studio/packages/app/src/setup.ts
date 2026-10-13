@@ -82,13 +82,14 @@ $("done").onclick = async () => {
  * Shows the setup window and resolves with the chosen data dir once it is saved (amo-studio.json next to the exe), or
  * null if the window is closed first.
  */
-export function runSetup(options: { portableDir: string; configPath: string; defaultDir: string; preload: string; testMode: boolean }): Promise<string | null> {
+export function runSetup(options: { portableDir: string; configPath: string; defaultDir: string; preload: string; icon: string; testMode: boolean }): Promise<string | null> {
   return new Promise((resolveChoice) => {
     let settled = false;
     const win = new BrowserWindow({
       width: 720,
       height: 620,
       title: "AMO Studio · 首次设置",
+      icon: options.icon,
       backgroundColor: "#111316",
       show: false,
       // Like every test window: off-screen, out of the taskbar, never focused (LOOP_RULES red line 7).

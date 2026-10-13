@@ -189,10 +189,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   border-bottom: 1px solid var(--border); background: var(--bg-header);
 }
 .brand { display: flex; align-items: center; gap: 10px; }
-.brand-mark {
-  width: 26px; height: 26px; border-radius: 7px; background: var(--text); color: var(--bg);
-  display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px;
-}
+/* The robot mark (design/icon/robot.svg); the tile is part of the drawing. */
+.brand-mark { width: 28px; height: 28px; display: block; flex: none; }
 .brand-name { font-weight: 600; }
 .brand-sep { color: var(--text-dim); }
 .view-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--chip); margin-left: 12px; }
