@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
-import type { Annotation, ApprovalDecision, Session, SessionItem, SessionPreset } from "@amo-studio/protocol";
+import type { Annotation, ApprovalDecision, ModelProfile, Session, SessionItem, SessionPreset } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
@@ -13,6 +13,8 @@ import { formatTokens, sessionStats, type ApprovalItem } from "../chat/turns.js"
 interface ThreadProps {
   link: HostLink;
   session: Session | null;
+  /** The session's model profile (its account mark and models). */
+  profile?: ModelProfile;
   /** 常用预设, shown as chips for sessions on the same profile. */
   presets: readonly SessionPreset[];
   items: readonly SessionItem[];
@@ -31,7 +33,7 @@ interface ThreadProps {
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
+export function Thread({ link, presets, session, profile, items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -209,7 +211,7 @@ export function Thread({ link, presets, session, items, annotations, model, busy
               />
             </label>
             <div className="chat-bar">
-              <SessionOptionsBar link={link} session={session} presets={presets} disabled={readOnly} />
+              <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly} />
               <span className="composer-hint">{generating && !readOnly ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : ""}</span>
               <span className="spacer" />
               {generating && !readOnly && (

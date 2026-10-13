@@ -56,3 +56,21 @@ export function optionsSummary(choices: ProfileChoices | null, options: SessionO
 }
 
 export const sameOptions = (a: SessionOptions, b: SessionOptions) => (a.model ?? "") === (b.model ?? "") && (a.effort ?? "") === (b.effort ?? "") && (a.permission ?? "") === (b.permission ?? "");
+
+/** Choices of several profiles at once (the model drawer); a profile still loading or failing maps to null. */
+export function useChoicesFor(link: HostLink, profileIds: readonly string[]): ReadonlyMap<string, ProfileChoices | null> {
+  const key = [...new Set(profileIds)].sort().join(",");
+  const [loaded, setLoaded] = useState<ReadonlyMap<string, ProfileChoices | null>>(new Map());
+  useEffect(() => {
+    let cancelled = false;
+    for (const id of key.split(",").filter(Boolean)) {
+      loadChoices(link, id)
+        .then((c) => !cancelled && setLoaded((cur) => new Map(cur).set(id, c)))
+        .catch(() => !cancelled && setLoaded((cur) => new Map(cur).set(id, null)));
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, [link, key]);
+  return loaded;
+}

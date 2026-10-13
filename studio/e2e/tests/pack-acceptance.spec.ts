@@ -34,9 +34,9 @@ test("stage 6 acceptance: an example pack from loading to an agent ticking its c
 
   // 2. A task from the template.
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await page.getByLabel("流程模板").selectOption({ label: "示例：小游戏玩法开发 · 新玩法" });
-  await page.locator(".newtask-title input").fill("冲刺技能");
-  await page.getByLabel("模型").selectOption({ label: "Codex · Mock 模型" });
+  await page.getByRole("group", { name: "流程模板" }).getByRole("button", { name: "示例：小游戏玩法开发 · 新玩法" }).click();
+  await page.getByRole("group", { name: "模型" }).getByTestId("model-tile").filter({ hasText: "Mock 模型" }).click();
+  await page.getByLabel("第一句话").fill("冲刺技能");
   await page.getByRole("button", { name: "开始" }).click();
   await expect(page.locator(".page-head")).toContainText("[玩法] 冲刺技能");
   await expect(page.getByTestId("checklist-count")).toHaveText("0/5");

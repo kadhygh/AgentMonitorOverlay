@@ -28,7 +28,7 @@ test("light theme from the settings dialog, remembered and shared with Focus", a
   expect(await bg(page)).toBe("rgb(17, 19, 22)");
   await dialog.getByRole("radio", { name: "浅色" }).click();
   await expect(page.locator("html")).toHaveAttribute("data-theme", "light");
-  expect(await bg(page)).toBe("rgb(245, 246, 248)");
+  expect(await bg(page)).toBe("rgb(239, 237, 232)");
   await screenshot(app, "settings", "settings-dialog-light", page);
   await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
@@ -77,7 +77,7 @@ test("the common folder: where work without a project runs, moved in settings", 
 
   // A task filed without a project runs there.
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await page.getByLabel("任务标题").fill("随手记一件事");
+  await page.getByLabel("第一句话").fill("随手记一件事");
   await page.getByRole("button", { name: "放进待办" }).click();
   const { commonWorkspace } = await studio.api<StudioSettings>("GET", "/api/settings");
   expect(commonWorkspace.path).toBe(elsewhere);

@@ -1,24 +1,43 @@
 import { useEffect, useRef, useState } from "react";
-import type { Session, SessionOptions, SessionPreset } from "@amo-studio/protocol";
+import type { ModelProfile, Session, SessionOptions, SessionPreset } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { optionsSummary, sameOptions, useProfileChoices } from "../lib/choices.js";
-import { OptionsPicker } from "./OptionsPicker.js";
+import { activeModel, optionsSummary, sameOptions, useProfileChoices } from "../lib/choices.js";
+import { rememberPick } from "../lib/recents.js";
+import { EffortBars, Mark, nextEffort, PermissionTiles, pickLabel } from "./pickers.js";
 
-// In the composer: what the session runs with (型号 · 思考强度 · 权限), a panel to switch them, and the 常用预设 of this
-// session's profile as one-click chips. Codex takes a change from the next turn; Claude at once.
+// Under the composer: what the session runs with — model, effort, permissions — each one click away
+// (design/ui-directions/new-task.html, "会话中切换"). Clicking the model or the permissions opens that group above the
+// composer; the effort bars are clicked directly. Models switch only within the session's own account (the context
+// stays); another account needs a new session. Codex takes a change from the next turn, Claude at once.
 
-export function SessionOptionsBar({ link, session, presets, disabled }: { link: HostLink; session: Session; presets: readonly SessionPreset[]; disabled: boolean }) {
+type Tray = "model" | "permission" | null;
+
+export function SessionOptionsBar({
+  link,
+  session,
+  profile,
+  presets,
+  disabled,
+}: {
+  link: HostLink;
+  session: Session;
+  profile: ModelProfile | undefined;
+  presets: readonly SessionPreset[];
+  disabled: boolean;
+}) {
   const { choices } = useProfileChoices(link, session.profileId);
-  const [open, setOpen] = useState(false);
+  const [tray, setTray] = useState<Tray>(null);
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  const [note, setNote] = useState<{ text: string; error?: boolean } | null>(null);
   const box = useRef<HTMLDivElement>(null);
   const mine = presets.filter((p) => p.profileId === session.profileId);
+  const model = choices ? activeModel(choices, session.options) : undefined;
+  const when = session.runtime === "codex" ? "下一轮生效" : "立即生效";
 
   useEffect(() => {
-    if (!open) return;
+    if (!tray) return;
     const close = (e: Event) => {
-      if (e instanceof KeyboardEvent ? e.key === "Escape" : !box.current?.contains(e.target as Node)) setOpen(false);
+      if (e instanceof KeyboardEvent ? e.key === "Escape" : !box.current?.contains(e.target as Node)) setTray(null);
     };
     window.addEventListener("keydown", close);
     window.addEventListener("mousedown", close);
@@ -26,35 +45,114 @@ export function SessionOptionsBar({ link, session, presets, disabled }: { link: 
       window.removeEventListener("keydown", close);
       window.removeEventListener("mousedown", close);
     };
-  }, [open]);
+  }, [tray]);
 
-  async function apply(next: SessionOptions) {
+  useEffect(() => {
+    if (!note || note.error) return;
+    const t = setTimeout(() => setNote(null), 3200);
+    return () => clearTimeout(t);
+  }, [note]);
+
+  async function apply(next: SessionOptions, what: string) {
     setBusy(true);
-    setError(null);
+    setTray(null);
     try {
       await call(link, "PATCH /api/sessions/:id/options", { id: session.id }, { model: next.model ?? null, effort: next.effort ?? null, permission: next.permission ?? null });
+      setNote({ text: `${what}，${when}` });
     } catch (err) {
-      setError(err instanceof HostApiError ? err.message : String(err));
+      setNote({ text: err instanceof HostApiError ? err.message : String(err), error: true });
     } finally {
       setBusy(false);
     }
   }
 
-  const running = session.status === "running" || session.status === "awaiting-approval";
+  const setModel = (id: string, label: string) => {
+    const next: SessionOptions = { ...session.options, model: id };
+    // An effort the new model does not take falls back to its default.
+    const m = choices?.models.find((x) => x.id === id);
+    if (m && next.effort && !m.efforts.includes(next.effort)) delete next.effort;
+    rememberPick({ profileId: session.profileId, model: m?.isDefault ? null : id });
+    void apply(next, `型号换成「${label}」`);
+  };
+  const setEffort = (effort: string) => void apply({ ...session.options, effort }, "思考强度已改");
+  const setPermission = (id: string) => void apply({ ...session.options, permission: id }, `权限换成「${choices?.permissions.find((p) => p.id === id)?.label ?? id}」`);
+
+  // Alt M: models, Alt P: permissions, Alt E: one effort up.
+  useEffect(() => {
+    if (disabled) return;
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey) return;
+      const k = e.key.toLowerCase();
+      if (k === "m" || k === "p") {
+        e.preventDefault();
+        const want: Tray = k === "m" ? "model" : "permission";
+        setTray((t) => (t === want ? null : want));
+      } else if (k === "e" && model) {
+        e.preventDefault();
+        const next = nextEffort(model.efforts, session.options.effort ?? model.defaultEffort);
+        if (next) setEffort(next);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  });
+
+  const label = pickLabel(profile, model && !model.isDefault ? model.id : (session.options.model ?? null), choices?.models);
+  const permission = choices?.permissions.find((p) => p.id === (session.options.permission ?? choices.defaultPermission));
+
   return (
     <div className="session-options" ref={box}>
-      <button
-        type="button"
-        className="composer-model"
-        aria-expanded={open}
-        aria-label="模型与权限"
-        title="切换型号、思考强度和权限"
-        disabled={disabled}
-        onClick={() => setOpen((v) => !v)}
-        data-testid="session-options"
-      >
-        {optionsSummary(choices, session.options)}
-      </button>
+      {tray && choices && (
+        <div className="tray" role="dialog" aria-label={tray === "model" ? "换型号" : "权限"} data-testid="options-tray">
+          <div className="tray-h">
+            {tray === "model" ? "换型号" : "权限"}
+            <span className="tray-note">{tray === "model" ? `只在 ${profile?.label ?? "同一家"} 里换，上下文不变，${when}` : when}</span>
+            <kbd>{tray === "model" ? "Alt M" : "Alt P"}</kbd>
+          </div>
+          {tray === "model" ? (
+            <>
+              <div className="tray-row" role="group" aria-label="型号">
+                {choices.models.map((m) => (
+                  <button key={m.id} type="button" className="mtile" aria-pressed={model?.id === m.id} disabled={busy} title={m.description} onClick={() => setModel(m.id, m.label)}>
+                    <Mark profile={profile} small />
+                    <span className="mtile-main">{m.label}</span>
+                  </button>
+                ))}
+              </div>
+              <span className="tray-note">要换到别家的模型，新开一个会话。</span>
+            </>
+          ) : (
+            <PermissionTiles choices={choices} value={session.options.permission ?? null} onChange={setPermission} disabled={busy} />
+          )}
+        </div>
+      )}
+      <div className="status-line" data-testid="session-options" title={optionsSummary(choices, session.options)}>
+        <button
+          type="button"
+          className="seg-btn"
+          aria-expanded={tray === "model"}
+          disabled={disabled || !choices}
+          onClick={() => setTray((t) => (t === "model" ? null : "model"))}
+          data-testid="switch-model"
+        >
+          <Mark profile={profile} small />
+          <span>{label.main}</span>
+        </button>
+        {model && model.efforts.length > 0 && (
+          <EffortBars efforts={model.efforts} value={session.options.effort ?? null} fallback={model.defaultEffort} onChange={setEffort} disabled={disabled || busy} small />
+        )}
+        <button
+          type="button"
+          className="seg-btn"
+          aria-expanded={tray === "permission"}
+          disabled={disabled || !choices}
+          onClick={() => setTray((t) => (t === "permission" ? null : "permission"))}
+          data-testid="switch-permission"
+        >
+          <span aria-hidden="true">⛨</span>
+          <span>{permission?.label ?? "默认权限"}</span>
+        </button>
+      </div>
       {mine.map((p) => (
         <button
           key={p.id}
@@ -63,25 +161,16 @@ export function SessionOptionsBar({ link, session, presets, disabled }: { link: 
           aria-pressed={sameOptions(p.options, session.options)}
           disabled={disabled || busy}
           title={optionsSummary(choices, p.options)}
-          onClick={() => void apply(p.options)}
+          onClick={() => void apply(p.options, `已换成预设「${p.name}」`)}
           data-testid="preset-chip"
         >
           {p.name}
         </button>
       ))}
-      {open && (
-        <div className="options-panel" role="dialog" aria-label="模型与权限">
-          <OptionsPicker choices={choices} value={session.options} onChange={(next) => void apply(next)} disabled={busy} layout="stack" />
-          <span className="settings-hint">
-            {session.runtime === "codex" ? (running ? "这一轮已在运行，改动从下一轮开始生效。" : "改动从下一轮开始生效。") : "改动立即生效。"}
-            常用组合可以在 设置 → 常用预设 里保存。
-          </span>
-          {error && (
-            <span className="form-error" role="alert">
-              {error}
-            </span>
-          )}
-        </div>
+      {note && (
+        <span className={note.error ? "form-error" : "applied"} role={note.error ? "alert" : "status"} data-testid="options-note">
+          {note.error ? note.text : `✓ ${note.text}`}
+        </span>
       )}
     </div>
   );

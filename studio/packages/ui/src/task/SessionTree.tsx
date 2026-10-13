@@ -1,9 +1,11 @@
 import { useState } from "react";
 import { buildSessionTree, type ModelProfile, type Session, type SessionNode, type SessionOptions, type Task, type Workspace } from "@amo-studio/protocol";
-import { defaultProfile, profileLabel, rememberProfile, shortModel } from "../lib/profiles.js";
+import { defaultProfile, rememberProfile, shortModel } from "../lib/profiles.js";
 import type { HostLink } from "../host/client.js";
-import { useProfileChoices } from "../lib/choices.js";
-import { OptionsPicker } from "../chat/OptionsPicker.js";
+import { activeModel, useProfileChoices } from "../lib/choices.js";
+import { rememberPick, type ModelPick } from "../lib/recents.js";
+import { EffortBars } from "../chat/pickers.js";
+import { ModelRow } from "../newtask/ModelRow.js";
 import { SESSION_LOOK } from "../lib/status.js";
 
 const KIND = { main: "会话", fork: "分支", sub: "子 agent" } as const;
@@ -31,9 +33,11 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
-  const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
-  const [options, setOptions] = useState<SessionOptions>({});
-  const { choices } = useProfileChoices(link, profileId);
+  const [pick, setPick] = useState<ModelPick>({ profileId: defaultProfile(profiles)?.id ?? "", model: null });
+  const [effort, setEffort] = useState<string | null>(null);
+  const [drawer, setDrawer] = useState(false);
+  const { choices } = useProfileChoices(link, pick.profileId);
+  const model = choices ? activeModel(choices, pick.model ? { model: pick.model } : {}) : undefined;
   const [showArchived, setShowArchived] = useState(false);
   const profile = (id: string) => profiles.find((p) => p.id === id);
 
@@ -77,31 +81,30 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
         );
       })}
 
-      <div className="new-session">
-        <label className="stack-field">
-          新会话模型
-          <select
-            value={profileId}
-            onChange={(e) => {
-              setProfileId(e.target.value);
-              setOptions({});
-            }}
-          >
-            {profiles.map((p) => (
-              <option key={p.id} value={p.id}>
-                {profileLabel(p)}
-              </option>
-            ))}
-          </select>
-        </label>
-        <OptionsPicker choices={choices} value={options} onChange={setOptions} layout="stack" />
+      <div className="new-session" aria-label="新会话">
+        <span className="pick-lab">新会话</span>
+        <ModelRow
+          link={link}
+          profiles={profiles}
+          pick={pick}
+          onPick={(next) => {
+            setPick(next);
+            setEffort(null);
+          }}
+          drawer={drawer}
+          onToggleDrawer={() => setDrawer((v) => !v)}
+          small
+        />
+        {model && model.efforts.length > 0 && <EffortBars efforts={model.efforts} value={effort} fallback={model.defaultEffort} onChange={setEffort} small />}
         <button
           type="button"
           className="add-ws-toggle"
-          disabled={busy || !profileId}
+          disabled={busy || !pick.profileId}
           onClick={() => {
-            rememberProfile(profileId);
-            onNewSession({ profileId, ...(Object.keys(options).length ? { options } : {}) });
+            rememberProfile(pick.profileId);
+            rememberPick(pick);
+            const options: SessionOptions = { ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) };
+            onNewSession({ profileId: pick.profileId, ...(Object.keys(options).length ? { options } : {}) });
           }}
         >
           + 新会话

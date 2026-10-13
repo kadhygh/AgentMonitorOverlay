@@ -304,6 +304,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             link={link}
             presets={settings?.presets ?? []}
             session={session}
+            {...(session && profile(session.profileId) ? { profile: profile(session.profileId)! } : {})}
             items={items}
             model={shortModel(session ? profile(session.profileId) : undefined)}
             busy={busy}

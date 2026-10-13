@@ -36,9 +36,10 @@ test("model, effort and permissions: new task, presets, switching inside a sessi
   await screenshot(app, "stage-9", "options-presets", page);
   await page.keyboard.press("Escape");
 
-  // New task with the highest effort.
+  // New task with the highest effort: one click on the last bar.
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await page.getByLabel("思考强度").selectOption("max");
+  await page.getByRole("group", { name: "模型" }).getByTestId("model-tile").filter({ hasText: "Mock 模型" }).click();
+  await page.getByTestId("effort").getByRole("button", { name: "最高" }).click();
   await expect(page.getByTestId("preset-chip")).toHaveText("快速全自动");
   await screenshot(app, "stage-9", "options-newtask", page);
   await page.getByLabel("第一句话").fill("first effort");
@@ -60,15 +61,17 @@ test("model, effort and permissions: new task, presets, switching inside a sessi
   await expect(page.locator('[data-testid="approval"]')).toHaveCount(0);
   expect(lastBody("[[shell: cmd /c echo auto-run]]")?.reasoning?.effort).toBe("low");
 
-  // The panel: back to high effort and ask-every-command.
-  await summary.click();
-  const panel = page.getByRole("dialog", { name: "模型与权限" });
-  await panel.getByLabel("思考强度").selectOption("high");
-  await expect(summary).toContainText("高");
-  await panel.getByLabel("权限").selectOption("");
-  await expect(summary).toContainText("逐条询问");
+  // Back to high effort (a bar, no panel) and ask-every-command (the permission tray).
+  await summary.getByTestId("effort").getByRole("button", { name: "高", exact: true }).click();
+  await expect(summary.getByTestId("effort-label")).toHaveText("高");
+  await page.getByTestId("switch-permission").click();
+  const tray = page.getByRole("dialog", { name: "权限" });
+  await expect(tray.getByRole("button", { name: /完全访问/ })).toHaveAttribute("aria-pressed", "true");
   await screenshot(app, "stage-9", "options-panel", page);
-  await page.keyboard.press("Escape");
+  await tray.getByRole("button", { name: /逐条询问/ }).click();
+  await expect(tray).toHaveCount(0);
+  await expect(summary).toContainText("逐条询问");
+  await expect(page.getByTestId("options-note")).toContainText("下一轮生效");
   await composer.fill("after switching");
   await composer.press("Enter");
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: after switching", { timeout: 60_000 });
@@ -85,11 +88,21 @@ test("Claude sessions offer Claude Code's models, efforts and permission modes",
   const summary = page.getByTestId("session-options");
   await expect(summary).toContainText("高");
   await expect(summary).toContainText("只做计划");
-  await summary.click();
-  const panel = page.getByRole("dialog", { name: "模型与权限" });
-  await expect(panel.getByLabel("权限").locator("option")).toHaveText(["默认（每次询问）", "每次询问", "自动接受编辑", "只做计划", "全部允许"]);
-  await expect(panel.getByLabel("思考强度").locator("option")).toContainText(["低", "中", "高", "超高", "最高"]);
-  await panel.getByLabel("权限").selectOption("acceptEdits");
+  // Five effort bars, as Claude Code offers them.
+  await expect(summary.getByTestId("effort").getByRole("button")).toHaveCount(5);
+  // Models switch within the same account only.
+  await page.getByTestId("switch-model").click();
+  const models = page.getByRole("dialog", { name: "换型号" });
+  await expect(models.getByRole("group", { name: "型号" }).getByRole("button")).toHaveText(["Mmock-claude", "Mmock-claude-b"]);
+  await expect(models).toContainText("要换到别家的模型，新开一个会话。");
+  await models.getByRole("button", { name: /mock-claude-b/ }).click();
+  await expect(summary).toContainText("mock-claude-b");
+  await expect(page.getByTestId("options-note")).toContainText("立即生效");
+  // Permissions: Claude Code's modes as tiles.
+  await page.getByTestId("switch-permission").click();
+  const tray = page.getByRole("dialog", { name: "权限" });
+  await expect(tray.locator("b")).toHaveText(["每次询问", "自动接受编辑", "只做计划", "全部允许"]);
+  await tray.getByRole("button", { name: /自动接受编辑/ }).click();
   await expect(summary).toContainText("自动接受编辑");
   expect(studio.claudeMock!.requests.filter((r) => r.lastUserText === "hello" && r.tools.length).at(-1)?.body).toMatchObject({ output_config: { effort: "high" } });
 });

@@ -23,14 +23,20 @@ test("creates a task from the blank task page and streams the first reply", asyn
 
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await expect(page.getByText("要推进什么？")).toBeVisible();
-  // Title sits below the question and may stay empty; no project is picked until the person picks one.
-  await expect(page.getByLabel("任务标题")).toHaveValue("");
+  // No dialog: the main area is the draft. No project is picked until the person picks one.
+  await expect(page.getByLabel("第一句话")).toBeFocused();
   const projects = page.getByRole("group", { name: "项目" });
   await expect(projects.getByRole("button", { name: "不指定" })).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("scope-hint")).toContainText("不指定项目：在公共目录里运行");
   await projects.getByRole("button", { name: "alpha" }).click();
   await expect(page.getByTestId("scope-hint")).toContainText("在 alpha 里运行");
-  await expect(page.getByLabel("模型")).toHaveValue("codex-mock");
+  // The model is a tile, one click; the effort is a set of bars; the permissions a segmented control.
+  const tile = page.getByRole("group", { name: "模型" }).getByTestId("model-tile").filter({ hasText: "Mock 模型" });
+  await tile.click();
+  await expect(tile).toHaveAttribute("aria-pressed", "true");
+  await page.getByTestId("effort").getByRole("button", { name: "低" }).click();
+  await expect(page.getByTestId("effort-label")).toHaveText("低");
+  await expect(page.getByRole("group", { name: "权限" }).getByRole("button", { name: "逐条询问" })).toHaveAttribute("aria-pressed", "true");
   await screenshot(studio.app, "stage-1", "S1-10-new-task", page);
 
   await page.getByLabel("第一句话").fill("列出目录结构 [[slow]]");
@@ -57,7 +63,7 @@ test("files a task into 待办 in the topic in scope, without starting a session
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await expect(page.getByRole("group", { name: "专题" }).getByRole("button", { name: "掉落表重构" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("group", { name: "项目" }).getByRole("button", { name: "beta" }).click();
-  await page.getByLabel("任务标题").fill("Elite 掉落表补单元测试");
+  await page.getByLabel("第一句话").fill("Elite 掉落表补单元测试");
   await page.getByRole("button", { name: "放进待办" }).click();
 
   // Back on the board, in 待办; nothing ran.
@@ -81,4 +87,35 @@ test("a task without a project runs in the common folder", async () => {
   expect(state.sessions[0]!.workspaceId).toBe(commonWorkspace.id);
   // The page names no project for it.
   await expect(page.locator(".page-head")).toContainText("未指定项目");
+});
+
+test("@ and # pick the project and topic while typing; Ctrl N opens the quick bar with the same draft", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const [alpha] = await registerWorkspaces(studio, ["alpha", "beta"]);
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "掉落表重构" });
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  const text = page.getByLabel("第一句话");
+  await text.pressSequentially("校验掉落表 @al");
+  await expect(page.getByTestId("suggest")).toContainText("alpha");
+  await text.press("Enter");
+  await text.pressSequentially(" #掉落");
+  await text.press("Enter");
+  await expect(text).toHaveValue("校验掉落表 ");
+  await expect(page.getByRole("group", { name: "项目" }).getByRole("button", { name: "alpha" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("group", { name: "专题" }).getByRole("button", { name: "掉落表重构" })).toHaveAttribute("aria-pressed", "true");
+  await screenshot(studio.app, "stage-10", "S10-draft-page", page);
+
+  // Leave the page: the draft stays; Ctrl N shows it in the quick bar, which files it.
+  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.keyboard.press("Control+N");
+  const quick = page.getByRole("dialog", { name: "快速新任务" });
+  await expect(quick.getByLabel("快速新任务")).toHaveValue("校验掉落表 ");
+  await expect(quick).toContainText("@alpha");
+  await expect(quick).toContainText("#掉落表重构");
+  await screenshot(studio.app, "stage-10", "S10-quick-bar", page);
+  await quick.getByLabel("快速新任务").press("Control+Enter");
+  await expect(quick).toHaveCount(0);
+  const state = await studio.api<StateSnapshot>("GET", "/api/state");
+  expect(state.tasks[0]).toMatchObject({ title: "校验掉落表", workspaceId: alpha!.id, topicId: topic.id, column: "todo" });
 });

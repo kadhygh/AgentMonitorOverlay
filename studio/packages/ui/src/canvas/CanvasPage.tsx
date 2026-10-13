@@ -78,9 +78,11 @@ interface CanvasPageProps {
   sessions: readonly Session[];
   workspaces: readonly Workspace[];
   onOpenTask(taskId: Id, sessionId?: Id): void;
+  /** "在专题里新建任务": the draft task page with this topic picked. */
+  onNewTask?(): void;
 }
 
-export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles = [], onOpenTask }: CanvasPageProps) {
+export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles = [], onOpenTask, onNewTask }: CanvasPageProps) {
   const { doc, save, conflict, dismissConflict } = useCanvas(link, topic.id);
   const [view, setView] = useState<View>(loadView);
   const [drag, setDrag] = useState<Drag | null>(null);
@@ -349,6 +351,11 @@ export function CanvasPage({ link, topic, tasks, sessions, workspaces, profiles 
         </div>
 
         <div className="canvas-tools" onMouseDown={(e) => e.stopPropagation()}>
+          {onNewTask && (
+            <button type="button" className="btn-primary small" onClick={onNewTask}>
+              + 在专题里新建任务
+            </button>
+          )}
           <button type="button" className="btn-ghost small" onClick={newGroup} disabled={!doc}>
             + 分组
           </button>

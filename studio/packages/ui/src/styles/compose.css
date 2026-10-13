@@ -1,0 +1,169 @@
+/* Writing and starting work: the draft task page, the quick bar (Ctrl N) and the session's status line, with the
+   one-click choosers they share (model tiles, effort bars, permission segments). Same structure and values as
+   design/ui-directions/new-task.html. */
+
+kbd {
+  display: inline-block; padding: 0 5px; border: 1px solid var(--border); border-radius: var(--r-s); background: var(--panel-raised);
+  color: var(--text-faint); font-family: var(--font-code); font-size: 11px; line-height: 17px; white-space: nowrap;
+}
+.btn-primary kbd, .btn-ghost kbd { margin-left: 4px; border-color: currentColor; background: transparent; color: inherit; opacity: 0.7; line-height: 15px; }
+
+/* ---- account marks and model tiles ------------------------------------------------------------------------------ */
+
+.mark {
+  width: 22px; height: 22px; flex: none; display: inline-grid; place-items: center; border-radius: var(--r-s);
+  font-family: var(--font-code); font-size: 11px; font-weight: 500; color: #fbfaf7;
+}
+.mark.small { width: 18px; height: 18px; font-size: 10px; }
+.mark-ds { background: #3f5f8f; }
+.mark-gpt { background: #3b6b58; }
+.mark-cl { background: #9a5b3c; }
+.mark-glm { background: #5b5470; }
+.mark-mock { background: #6f6a62; }
+
+.mtile {
+  display: inline-flex; align-items: center; gap: 7px; height: var(--ctl); padding: 0 10px 0 4px; border: 1px solid var(--border);
+  border-radius: var(--r-btn); background: var(--panel); color: var(--text); font-size: var(--fs-sm); white-space: nowrap; cursor: pointer;
+}
+.mtile:hover:not(:disabled) { border-color: var(--text-faint); }
+.mtile[aria-pressed="true"] { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.mtile:disabled { opacity: 0.45; cursor: default; }
+.mtile.small { height: 24px; padding: 0 8px 0 3px; gap: 6px; font-size: var(--fs-cap); }
+.mtile-sub { color: var(--text-faint); font-size: 11px; }
+.model-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; min-width: 0; }
+.more-models {
+  border: none; background: none; padding: 0 4px; color: var(--text-faint); font-size: var(--fs-cap); cursor: pointer;
+  text-decoration: underline; text-underline-offset: 3px; text-decoration-color: var(--border);
+}
+.more-models:hover { color: var(--text); }
+.model-drawer { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px 12px; border-top: 1px solid var(--border); background: var(--panel-raised); }
+.drawer-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.drawer-acct { width: 104px; flex: none; display: flex; align-items: center; gap: 6px; font-size: var(--fs-cap); color: var(--text-dim); }
+.drawer-note { font-size: var(--fs-cap); color: var(--text-faint); }
+.chip.small { height: 24px; padding: 0 8px; font-size: var(--fs-cap); }
+.chip.none[aria-pressed="true"] { border-color: var(--border-strong); background: var(--panel); color: var(--text); font-weight: 500; }
+.chip.add { border-style: dashed; color: var(--text-faint); }
+
+/* ---- effort bars and permission segments ------------------------------------------------------------------------ */
+
+.effort {
+  display: inline-flex; align-items: center; gap: 8px; height: var(--ctl); padding: 0 10px; border: 1px solid var(--border);
+  border-radius: var(--r-btn); background: var(--panel); font-size: var(--fs-sm);
+}
+.effort.small { height: 24px; gap: 6px; padding: 0 7px; font-size: var(--fs-cap); }
+.effort-cap { color: var(--text-faint); font-size: var(--fs-cap); }
+.effort-bars { display: inline-flex; align-items: flex-end; gap: 3px; height: 16px; }
+.effort.small .effort-bars { height: 13px; gap: 2px; }
+.effort-bars button { width: 7px; padding: 0; border: none; border-radius: 1px; background: var(--chip); cursor: pointer; }
+.effort.small .effort-bars button { width: 5px; }
+.effort-bars button.on { background: var(--primary); }
+.effort-bars button:hover:not(:disabled) { outline: 1px solid var(--text-faint); outline-offset: 1px; }
+.effort-bars button:disabled { cursor: default; }
+.effort-label { min-width: 2em; font-weight: 600; color: var(--primary); }
+
+.perm { display: inline-flex; height: var(--ctl); border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--panel); overflow: hidden; }
+.perm button {
+  border: none; border-right: 1px solid var(--border); background: transparent; padding: 0 10px; font-size: var(--fs-cap);
+  color: var(--text-dim); cursor: pointer; white-space: nowrap;
+}
+.perm button:last-child { border-right: none; }
+.perm button:hover:not(:disabled) { color: var(--text); }
+.perm button[aria-pressed="true"] { background: var(--tint); color: var(--primary); font-weight: 600; }
+.perm button.risky[aria-pressed="true"] { background: var(--error-bg); color: var(--error-text); }
+.perm button.more { color: var(--text-faint); }
+.perm button:disabled { opacity: 0.45; cursor: default; }
+
+/* ---- 草稿任务页 ------------------------------------------------------------------------------------------------- */
+
+.draft-page { flex: 1; display: flex; flex-direction: column; min-height: 0; }
+.draft-wrap { flex: 1; overflow-y: auto; display: flex; justify-content: center; padding: 40px 24px 32px; }
+.draft { width: min(780px, 100%); display: flex; flex-direction: column; gap: 18px; }
+.draft-ask { margin: 0; font-family: var(--font-display); font-weight: 700; font-size: 30px; line-height: 1.25; letter-spacing: 0.01em; }
+.draft-lede { margin: -8px 0 0; color: var(--text-dim); }
+.draft-where { display: flex; flex-direction: column; gap: 8px; padding: 12px 0; border-top: 1px solid var(--border); border-bottom: 1px solid var(--border); }
+.pick-row { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.pick-lab { width: 44px; flex: none; font-size: var(--fs-cap); color: var(--text-faint); letter-spacing: 0.06em; }
+.draft-steps { margin: 0 0 0 50px; padding-left: 18px; font-size: var(--fs-sm); color: var(--text-dim); }
+.draft-composer {
+  position: relative; border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel);
+  box-shadow: 0 1px 0 var(--shadow-soft);
+}
+.draft-composer:focus-within { box-shadow: 0 0 0 3px var(--tint); }
+.draft-composer textarea {
+  display: block; width: 100%; box-sizing: border-box; min-height: 96px; padding: 14px 16px 6px; border: none; outline: none; resize: none;
+  background: transparent; color: var(--text); font: inherit; font-size: 15px; line-height: 1.7; field-sizing: content; max-height: 320px;
+}
+.draft-composer textarea::placeholder { color: var(--text-faint); }
+.cbar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 8px 10px; border-top: 1px solid var(--border); }
+.cbar.presets { padding-top: 6px; padding-bottom: 8px; }
+.foot-hints { display: flex; align-items: center; gap: 14px; flex-wrap: wrap; font-size: var(--fs-cap); color: var(--text-faint); }
+.foot-hints > span { display: inline-flex; align-items: center; gap: 5px; }
+.foot-where { margin-left: auto; color: var(--text-dim); }
+
+/* @ and # suggestions */
+.suggest {
+  position: absolute; left: 16px; top: 64px; z-index: 20; min-width: 280px; max-width: 420px; padding: 4px; border-radius: var(--r-l);
+  border: 1px solid var(--border-strong); background: var(--menu-bg); box-shadow: 0 14px 36px var(--shadow);
+}
+.suggest.inline { position: static; max-width: none; border: none; border-top: 1px solid var(--border); border-radius: 0; box-shadow: none; padding: 6px 8px; }
+.suggest-h { padding: 4px 8px; font-size: 11px; color: var(--text-faint); letter-spacing: 0.06em; }
+.suggest button {
+  width: 100%; display: flex; align-items: center; gap: 10px; padding: 6px 8px; border: none; border-radius: var(--r-s);
+  background: transparent; color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer;
+}
+.suggest button.hl, .suggest button:hover { background: var(--selected); }
+.suggest-name { flex: none; }
+.suggest-hint { min-width: 0; margin-left: auto; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-faint); font-size: 11px; }
+
+/* ---- 快速启动条 ------------------------------------------------------------------------------------------------ */
+
+.quick-scrim { position: fixed; inset: 0; z-index: 60; display: flex; align-items: flex-start; justify-content: center; padding-top: 96px; background: rgba(239, 237, 232, 0.66); }
+:root[data-theme="dark"] .quick-scrim { background: rgba(0, 0, 0, 0.45); }
+.quick { width: min(720px, calc(100vw - 40px)); border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel); box-shadow: 0 14px 36px var(--shadow); overflow: hidden; }
+.quick-in { display: flex; align-items: center; gap: 10px; height: 58px; padding: 0 16px; border-bottom: 1px solid var(--border); }
+.quick-spark { color: var(--text-faint); font-size: 16px; }
+.quick-in input { flex: 1; min-width: 0; height: 100%; border: none; outline: none; background: transparent; color: var(--text); font: inherit; font-size: 17px; }
+.quick-in input::placeholder { color: var(--text-faint); }
+.quick-tokens { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 16px 0; }
+.token { display: inline-flex; align-items: center; gap: 5px; height: 22px; padding: 0 4px 0 7px; border-radius: var(--r-s); background: var(--tint); color: var(--primary); font-size: var(--fs-cap); font-weight: 600; }
+.token button { border: none; background: none; padding: 0 2px; color: inherit; opacity: 0.6; cursor: pointer; }
+.quick-error { display: block; padding: 8px 16px 0; }
+.quick-foot { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 10px; padding: 10px 14px; border-top: 1px solid var(--border); background: var(--panel-raised); }
+.quick-hints { margin-left: auto; display: flex; align-items: center; gap: 10px; font-size: 11px; color: var(--text-faint); }
+.quick-hints > span, .quick-hints .link-btn { display: inline-flex; align-items: center; gap: 4px; }
+
+/* ---- the session's status line and its trays ------------------------------------------------------------------- */
+
+.session-options { position: static; display: flex; align-items: center; gap: 6px; min-width: 0; flex-wrap: wrap; }
+.composer-card { position: relative; }
+.status-line { display: flex; align-items: center; gap: 4px; min-width: 0; }
+.seg-btn {
+  display: inline-flex; align-items: center; gap: 7px; height: 28px; padding: 0 9px 0 5px; border: 1px solid transparent;
+  border-radius: var(--r-btn); background: transparent; color: var(--text); font-size: var(--fs-sm); cursor: pointer; white-space: nowrap;
+}
+.seg-btn:hover:not(:disabled) { background: var(--panel-raised); border-color: var(--border); }
+.seg-btn[aria-expanded="true"] { background: var(--tint); border-color: var(--primary); }
+.seg-btn:disabled { color: var(--text-faint); cursor: default; }
+.seg-btn > span[aria-hidden] { color: var(--text-faint); }
+.status-line .effort { border-color: transparent; background: transparent; }
+.status-line .effort:hover { border-color: var(--border); }
+.tray {
+  position: absolute; left: -1px; right: -1px; bottom: calc(100% - 1px); z-index: 25; display: flex; flex-direction: column; gap: 10px;
+  padding: 12px 14px; border: 1px solid var(--border-strong); border-bottom: none; border-radius: var(--r-l) var(--r-l) 0 0;
+  background: var(--panel-raised); box-shadow: 0 -10px 30px var(--shadow-soft);
+}
+.tray-h { display: flex; align-items: baseline; gap: 10px; font-size: var(--fs-sm); font-weight: 600; }
+.tray-h kbd { margin-left: auto; }
+.tray-note { font-size: var(--fs-cap); font-weight: 400; color: var(--text-faint); }
+.tray-row { display: flex; gap: 6px; flex-wrap: wrap; align-items: stretch; }
+.ptile {
+  width: 168px; display: flex; flex-direction: column; gap: 2px; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-m);
+  background: var(--panel); color: var(--text); text-align: left; cursor: pointer;
+}
+.ptile b { font-size: var(--fs-sm); font-weight: 600; }
+.ptile span { font-size: 11px; line-height: 1.45; color: var(--text-faint); }
+.ptile[aria-pressed="true"] { border-color: var(--primary); box-shadow: inset 0 0 0 1px var(--primary); }
+.ptile.risky b { color: var(--error-text); }
+.ptile.risky[aria-pressed="true"] { border-color: var(--error); box-shadow: inset 0 0 0 1px var(--error); }
+.ptile:disabled { opacity: 0.45; cursor: default; }
+.applied { font-size: var(--fs-cap); color: var(--running-text); white-space: nowrap; }

@@ -1,4 +1,4 @@
-// UI theme: dark (the default, as before), light, or following the system. Stored per install (this window profile's localStorage, which the
+// UI theme: light (the default: direction A, 纸感编辑部), dark, or following the system. Stored per install (this window profile's localStorage, which the
 // workbench and Focus windows share); applied as data-theme on <html>, which app.css reads.
 
 export type ThemePref = "system" | "light" | "dark";
@@ -8,9 +8,9 @@ const KEY = "amo.theme";
 export function themePref(): ThemePref {
   try {
     const v = localStorage.getItem(KEY);
-    return v === "light" || v === "dark" || v === "system" ? v : "dark";
+    return v === "light" || v === "dark" || v === "system" ? v : "light";
   } catch {
-    return "dark";
+    return "light";
   }
 }
 

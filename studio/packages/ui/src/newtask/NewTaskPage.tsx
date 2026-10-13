@@ -1,12 +1,15 @@
-import { useMemo, useState } from "react";
-import { projectWorkspaces, type ModelProfile, type Session, type SessionOptions, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { useEffect, useRef, useState } from "react";
+import { projectWorkspaces, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import type { Scope } from "../board/Board.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { defaultProfile, profileLabel, rememberProfile, rememberWorkspace } from "../lib/profiles.js";
+import { activeModel, sameOptions, useProfileChoices } from "../lib/choices.js";
+import { samePick } from "../lib/recents.js";
 import { usePacks } from "../packs/usePacks.js";
-import { optionsSummary, sameOptions, useProfileChoices } from "../lib/choices.js";
-import { OptionsPicker } from "../chat/OptionsPicker.js";
 import { useSettings } from "../settings/SettingsDialog.js";
+import { EffortBars, nextEffort, PermissionSegments } from "../chat/pickers.js";
+import { submitDraft, useTaskDraft } from "./draft.js";
+import { ModelRow, tilePicks } from "./ModelRow.js";
+import { SuggestList, useMentions } from "./Suggest.js";
 
 interface NewTaskPageProps {
   link: HostLink;
@@ -14,7 +17,7 @@ interface NewTaskPageProps {
   topics: readonly Topic[];
   tasks: readonly Task[];
   profiles: readonly ModelProfile[];
-  /** Scope selected in the left column: preselects the project or the topic. */
+  /** Where the page was opened from: preselects the project or the topic of a fresh draft. */
   scope: Scope;
   onBack(): void;
   /** `session` null: the task was only filed (放进待办). */
@@ -22,59 +25,62 @@ interface NewTaskPageProps {
 }
 
 /**
- * Blank task page (design/ui-directions/new-task.html, restyled in stage 10): "要推进什么？", the title (may stay
- * empty), a row of projects and a row of topics (both may stay unpicked: no project runs in the common space), and the
- * composer. Starting runs the first session; "放进待办" only files the task.
+ * 草稿任务页 (design/ui-directions/new-task.html): no dialog, the main area becomes an empty task. Projects and topics are
+ * rows of chips (both may stay unpicked: no project runs in the common folder), the model is a tile, the effort a set
+ * of bars, the permissions a segmented control. Enter starts, Ctrl+Enter files the task in 待办. The draft is kept.
  */
 export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, onBack, onCreated }: NewTaskPageProps) {
+  const { draft, update, reset } = useTaskDraft(profiles);
   const projects = projectWorkspaces(workspaces);
   const liveTopics = topics.filter((t) => !t.archivedAt);
-  const [topicId, setTopicId] = useState<string | null>(scope.kind === "topic" ? scope.id : null);
-  // In a topic, its projects come first (the ones of its tasks and the hand-added ones).
-  const initialProject = useMemo<string | null>(() => (scope.kind === "workspace" ? scope.id : null), [scope]);
-  const [projectId, setProjectId] = useState<string | null>(initialProject);
-  const topicProjects = useMemo(() => {
-    const topic = liveTopics.find((t) => t.id === topicId);
-    if (!topic) return new Set<string>();
-    return new Set([...topic.workspaceIds, ...tasks.filter((t) => t.topicId === topic.id).map((t) => t.workspaceId)]);
-  }, [liveTopics, tasks, topicId]);
-  const orderedProjects = [...projects].sort((a, b) => Number(topicProjects.has(b.id)) - Number(topicProjects.has(a.id)));
-
-  const [title, setTitle] = useState("");
-  const [message, setMessage] = useState("");
-  const [profileId, setProfileId] = useState(defaultProfile(profiles)?.id ?? "");
-  const [options, setOptions] = useState<SessionOptions>({});
-  const { choices } = useProfileChoices(link, profileId);
-  const presets = useSettings(link)?.presets ?? [];
+  const [drawer, setDrawer] = useState(false);
+  const [morePerms, setMorePerms] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  // Task templates from the extension packs of the task's project.
-  const templateWs = projectId ?? "";
-  const { packs } = usePacks(link, templateWs ? [templateWs] : []);
-  const templates = packs.flatMap((p) => (p.manifest ? p.manifest.templates.map((t) => ({ key: `${p.dirName}/${t.id}`, pack: p.dirName, packTitle: p.manifest!.title, template: t })) : []));
   const [templateKey, setTemplateKey] = useState("");
-  const chosen = templates.find((t) => t.key === templateKey) ?? null;
+  const input = useRef<HTMLTextAreaElement>(null);
+  const presets = useSettings(link)?.presets ?? [];
+  const { choices } = useProfileChoices(link, draft.pick.profileId);
+  const model = choices ? activeModel(choices, draft.pick.model ? { model: draft.pick.model } : {}) : undefined;
 
-  const wsName = (id: string) => workspaces.find((w) => w.id === id)?.name ?? "";
-  const topicName = liveTopics.find((t) => t.id === topicId)?.title;
-  const hint = `${projectId ? `在 ${wsName(projectId)} 里运行` : "不指定项目：在公共目录里运行"}${topicName ? `，放进专题「${topicName}」` : ""}。说出第一句话即可开始，标题可以之后再改。`;
+  // A fresh draft starts where the page was opened from; a draft with text keeps its own choices.
+  useEffect(() => {
+    if (!draft.text.trim()) update({ projectId: scope.kind === "workspace" ? scope.id : null, topicId: scope.kind === "topic" ? scope.id : null });
+    input.current?.focus();
+    // Only when the page opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-  /** `file`: only file the task (放进待办), no session. */
-  async function start(file = false) {
-    if (busy || (!file && !profileId)) return;
-    if (file && !title.trim() && !message.trim()) return setError("写一句话或一个标题再放进待办。");
+  // In a topic, its projects come first.
+  const topic = liveTopics.find((t) => t.id === draft.topicId);
+  const inTopic = new Set(topic ? [...topic.workspaceIds, ...tasks.filter((t) => t.topicId === topic.id).map((t) => t.workspaceId)] : []);
+  const orderedProjects = [...projects].sort((a, b) => Number(inTopic.has(b.id)) - Number(inTopic.has(a.id)));
+
+  // Task templates from the extension packs of the chosen project.
+  const { packs } = usePacks(link, draft.projectId ? [draft.projectId] : []);
+  const templates = packs.flatMap((p) => (p.manifest ? p.manifest.templates.map((t) => ({ key: `${p.dirName}/${t.id}`, pack: p.dirName, title: `${p.manifest!.title} · ${t.title}`, template: t })) : []));
+  const chosenTemplate = templates.find((t) => t.key === templateKey) ?? null;
+
+  const mentions = useMentions({
+    text: draft.text,
+    setText: (text) => update({ text }),
+    projects,
+    topics: liveTopics,
+    onPick: (kind, id) => update(kind === "project" ? { projectId: id } : { topicId: id }),
+  });
+
+  const where = `${draft.projectId ? `在 ${projects.find((w) => w.id === draft.projectId)?.name ?? "?"} 里运行` : "不指定项目：在公共目录里运行"}${topic ? ` · 放进「${topic.title}」` : ""}`;
+
+  async function submit(file: boolean) {
+    if (busy) return;
+    if (!draft.text.trim()) return setError(file ? "写一句话再放进待办。" : "写一句话再开始。");
+    if (!file && !draft.pick.profileId) return setError("先选一个模型。");
     setBusy(true);
     setError("");
     try {
-      const created = await call(link, "POST /api/tasks", {}, {
-        ...(title.trim() ? { title: title.trim() } : file && message.trim() ? { title: message.trim().slice(0, 60) } : {}),
-        workspaceId: projectId,
-        topicId,
-        ...(file ? {} : { firstSession: { profileId, ...(message.trim() ? { text: message.trim() } : {}), ...(Object.keys(options).length ? { options } : {}) } }),
-        ...(chosen && projectId ? { template: { workspaceId: projectId, pack: chosen.pack, template: chosen.template.id } } : {}),
-      });
-      if (!file) rememberProfile(profileId);
-      if (projectId) rememberWorkspace(projectId);
+      const template = chosenTemplate && draft.projectId ? { workspaceId: draft.projectId, pack: chosenTemplate.pack, template: chosenTemplate.template.id } : undefined;
+      const created = await submitDraft(link, draft, file, template);
+      reset({ projectId: draft.projectId, topicId: draft.topicId });
       onCreated(created.task, created.session);
     } catch (err) {
       setError(err instanceof HostApiError ? err.message : String(err));
@@ -82,137 +88,160 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     }
   }
 
+  async function addProject() {
+    const dir = await window.amo?.pickDirectory?.();
+    if (!dir) return;
+    try {
+      const ws = await call(link, "POST /api/workspaces", {}, { path: dir });
+      update({ projectId: ws.id });
+    } catch (err) {
+      setError(err instanceof HostApiError ? err.message : String(err));
+    }
+  }
+
+  // Alt 1–4: the 常用 tiles; Alt E: one effort up.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey) return;
+      if (/^[1-4]$/.test(e.key)) {
+        const t = tilePicks(profiles, draft.pick)[Number(e.key) - 1];
+        if (t) {
+          e.preventDefault();
+          update({ pick: t });
+        }
+      } else if (e.key.toLowerCase() === "e" && model) {
+        e.preventDefault();
+        const next = nextEffort(model.efforts, draft.options.effort ?? model.defaultEffort);
+        if (next) update({ options: { ...draft.options, effort: next } });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [profiles, draft, model, update]);
+
   return (
-    <section className="newtask" aria-label="新任务">
+    <section className="draft-page" aria-label="新任务">
       <div className="page-head">
-        <button type="button" className="btn-ghost" onClick={onBack}>
+        <button type="button" className="btn-ghost small" onClick={onBack}>
           ← 看板
         </button>
-        <span className="page-crumb">新任务</span>
+        <span className="page-crumb">/ 新任务</span>
+        <span className="spacer" />
+        <span className="page-crumb">草稿自动保存，离开也不会丢</span>
       </div>
-      <div className="newtask-center">
-        <span className="newtask-ask">要推进什么？</span>
-        <label className="newtask-title">
-          任务标题
-          <input value={title} onChange={(e) => setTitle(e.target.value)} placeholder="可留空，按第一句话自动命名" />
-        </label>
-        <div role="group" aria-label="项目" className="chips">
-          <span className="chips-label">项目</span>
-          <button type="button" className="chip" aria-pressed={projectId === null} onClick={() => setProjectId(null)}>
-            不指定
-          </button>
-          {orderedProjects.map((w) => (
-            <button key={w.id} type="button" className="chip" aria-pressed={projectId === w.id} onClick={() => setProjectId(w.id)}>
-              {w.name}
-            </button>
-          ))}
-        </div>
-        <div role="group" aria-label="专题" className="chips">
-          <span className="chips-label">专题</span>
-          <button type="button" className="chip" aria-pressed={topicId === null} onClick={() => setTopicId(null)}>
-            不放进专题
-          </button>
-          {liveTopics.map((t) => (
-            <button key={t.id} type="button" className="chip" aria-pressed={topicId === t.id} onClick={() => setTopicId(t.id)}>
-              {t.title}
-            </button>
-          ))}
-        </div>
-        <span className="newtask-hint" data-testid="scope-hint">{hint}</span>
-        {templates.length > 0 && (
-          <div className="newtask-template">
-            <label className="inline-field">
-              流程模板
-              <select value={chosen ? chosen.key : ""} onChange={(e) => setTemplateKey(e.target.value)} aria-label="流程模板">
-                <option value="">不用模板</option>
+      <div className="draft-wrap">
+        <div className="draft">
+          <h1 className="draft-ask">要推进什么？</h1>
+          <p className="draft-lede">写下第一句话就能开始。项目、模型和思考强度都在下面，点一下就换。</p>
+
+          <div className="draft-where">
+            <div className="pick-row" role="group" aria-label="项目">
+              <span className="pick-lab">项目</span>
+              <button type="button" className="chip none" aria-pressed={draft.projectId === null} onClick={() => update({ projectId: null })}>
+                不指定
+              </button>
+              {orderedProjects.map((w) => (
+                <button key={w.id} type="button" className="chip" aria-pressed={draft.projectId === w.id} title={w.path} onClick={() => update({ projectId: w.id })}>
+                  {w.name}
+                </button>
+              ))}
+              {window.amo?.pickDirectory && (
+                <button type="button" className="chip add" onClick={() => void addProject()}>
+                  + 添加项目
+                </button>
+              )}
+            </div>
+            <div className="pick-row" role="group" aria-label="专题">
+              <span className="pick-lab">专题</span>
+              <button type="button" className="chip none" aria-pressed={draft.topicId === null} onClick={() => update({ topicId: null })}>
+                不放进专题
+              </button>
+              {liveTopics.map((t) => (
+                <button key={t.id} type="button" className="chip" aria-pressed={draft.topicId === t.id} onClick={() => update({ topicId: t.id })}>
+                  {t.title}
+                </button>
+              ))}
+            </div>
+            {templates.length > 0 && (
+              <div className="pick-row" role="group" aria-label="流程模板">
+                <span className="pick-lab">模板</span>
+                <button type="button" className="chip none" aria-pressed={!chosenTemplate} onClick={() => setTemplateKey("")}>
+                  不用模板
+                </button>
                 {templates.map((t) => (
-                  <option key={t.key} value={t.key}>
-                    {t.packTitle} · {t.template.title}
-                  </option>
+                  <button key={t.key} type="button" className="chip" aria-pressed={chosenTemplate?.key === t.key} title={t.template.description} onClick={() => setTemplateKey(t.key)}>
+                    {t.title}
+                  </button>
                 ))}
-              </select>
-            </label>
-            {chosen && (
-              <>
-                {chosen.template.description && <span>{chosen.template.description}</span>}
-                <ol className="newtask-steps" data-testid="template-steps">
-                  {chosen.template.steps.map((s, i) => (
-                    <li key={i}>{s}</li>
-                  ))}
-                </ol>
-              </>
+              </div>
+            )}
+            {chosenTemplate && (
+              <ol className="draft-steps" data-testid="template-steps">
+                {chosenTemplate.template.steps.map((s, i) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ol>
             )}
           </div>
-        )}
-      </div>
-      <div className="composer-wrap">
-        <div className="composer">
-          <label className="composer-input">
-            <span className="sr-only">第一句话</span>
+
+          <div className="draft-composer">
             <textarea
-              value={message}
-              onChange={(e) => setMessage(e.target.value)}
+              ref={input}
+              value={draft.text}
               rows={3}
-              placeholder="描述问题和约束，回车发送，Shift+回车换行"
+              aria-label="第一句话"
+              placeholder="比如：导入器遇到网络错误直接崩，给 fetch 加上失败重试，最多 3 次。打 @ 选项目，# 选专题。"
+              onChange={(e) => {
+                update({ text: e.target.value });
+                mentions.track(e.target);
+              }}
+              onSelect={(e) => mentions.track(e.currentTarget)}
               onKeyDown={(e) => {
+                if (mentions.onKeyDown(e)) return;
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
                   e.preventDefault();
-                  void start();
+                  void submit(e.ctrlKey || e.metaKey);
                 }
               }}
             />
-          </label>
-          <div className="composer-bar">
-            <label className="inline-field">
-              模型
-              <select
-                value={profileId}
-                onChange={(e) => {
-                  setProfileId(e.target.value);
-                  setOptions({});
-                }}
-              >
-                {profiles.map((p) => (
-                  <option key={p.id} value={p.id}>
-                    {profileLabel(p)}
-                  </option>
-                ))}
-              </select>
-            </label>
-            {error && (
-              <span className="form-error" role="alert">
-                {error}
-              </span>
-            )}
-            <span className="spacer" />
-            <button type="button" className="btn-ghost" onClick={() => void start(true)} disabled={busy} title="只建任务，放进待办，不开会话">
-              放进待办
-            </button>
-            <button type="button" className="btn-primary" onClick={() => void start()} disabled={busy || !profileId}>
-              {busy ? "正在开始…" : "开始"}
-            </button>
-          </div>
-          <div className="newtask-options">
-            <OptionsPicker choices={choices} value={options} onChange={setOptions} />
+            <SuggestList mentions={mentions} />
+            <div className="cbar">
+              <ModelRow link={link} profiles={profiles} pick={draft.pick} onPick={(pick) => update({ pick })} drawer={drawer} onToggleDrawer={() => setDrawer((v) => !v)} />
+            </div>
+            <div className="cbar">
+              {model && model.efforts.length > 0 && (
+                <EffortBars efforts={model.efforts} value={draft.options.effort ?? null} fallback={model.defaultEffort} onChange={(effort) => update({ options: { ...draft.options, effort } })} />
+              )}
+              {choices ? (
+                <PermissionSegments
+                  choices={choices}
+                  value={draft.options.permission ?? null}
+                  onChange={(permission) => update({ options: { ...draft.options, permission } })}
+                  expanded={morePerms}
+                  onExpand={() => setMorePerms(true)}
+                />
+              ) : (
+                <span className="drawer-note">正在读取这个模型的选项…</span>
+              )}
+              <span className="spacer" />
+              <button type="button" className="btn-ghost" onClick={() => void submit(true)} disabled={busy} title="只建任务，放进待办，不开会话">
+                放进待办 <kbd>Ctrl ↵</kbd>
+              </button>
+              <button type="button" className="btn-primary" onClick={() => void submit(false)} disabled={busy || !draft.pick.profileId}>
+                {busy ? "正在开始…" : "开始"} <kbd>↵</kbd>
+              </button>
+            </div>
             {presets.length > 0 && (
-              <div className="preset-row" aria-label="常用预设">
+              <div className="cbar presets" role="group" aria-label="常用预设">
+                <span className="pick-lab">预设</span>
                 {presets
                   .filter((p) => profiles.some((x) => x.id === p.profileId))
                   .map((p) => {
-                    const active = p.profileId === profileId && sameOptions(p.options, options);
+                    const pick = { profileId: p.profileId, model: p.options.model ?? null };
+                    const { model: _model, ...rest } = p.options;
+                    const active = samePick(pick, draft.pick) && sameOptions(rest, draft.options);
                     return (
-                      <button
-                        key={p.id}
-                        type="button"
-                        className={`preset-chip${active ? " active" : ""}`}
-                        aria-pressed={active}
-                        title={`${profileLabel(profiles.find((x) => x.id === p.profileId)!)} · ${optionsSummary(null, p.options)}`}
-                        onClick={() => {
-                          setProfileId(p.profileId);
-                          setOptions(p.options);
-                        }}
-                        data-testid="preset-chip"
-                      >
+                      <button key={p.id} type="button" className="chip small" aria-pressed={active} onClick={() => update({ pick, options: rest })} data-testid="preset-chip">
                         {p.name}
                       </button>
                     );
@@ -220,6 +249,29 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
               </div>
             )}
           </div>
+
+          <div className="foot-hints">
+            <span>
+              <kbd>@</kbd>选项目
+            </span>
+            <span>
+              <kbd>#</kbd>选专题
+            </span>
+            <span>
+              <kbd>Alt 1–4</kbd>换常用模型
+            </span>
+            <span>
+              <kbd>Alt E</kbd>思考强度加一档
+            </span>
+            <span className="foot-where" data-testid="scope-hint">
+              {where}
+            </span>
+          </div>
+          {error && (
+            <span className="form-error" role="alert">
+              {error}
+            </span>
+          )}
         </div>
       </div>
     </section>

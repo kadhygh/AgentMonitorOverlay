@@ -4,6 +4,7 @@ import { Board, type Scope } from "./board/Board.js";
 import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
 import { NewTaskPage } from "./newtask/NewTaskPage.js";
+import { QuickStart } from "./newtask/QuickStart.js";
 import { TaskPage } from "./task/TaskPage.js";
 import { PacksPage } from "./packs/PacksPage.js";
 import { CanvasPage } from "./canvas/CanvasPage.js";
@@ -16,7 +17,7 @@ import { useTodos } from "./canvas/TodoTab.js";
 import { SettingsDialog, useSettings } from "./settings/SettingsDialog.js";
 
 // `nav` changes when Focus asks for a session, so an already open task page re-opens on that session.
-type View = { kind: "board" } | { kind: "canvas" } | { kind: "new" } | { kind: "packs"; workspaceId: string } | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
+type View = { kind: "board" } | { kind: "canvas" } | { kind: "new"; topicId?: string } | { kind: "packs"; workspaceId: string } | { kind: "task"; taskId: string; sessionId?: string; nav?: number };
 
 /** Focus window on/off, mirrored from the Electron shell (absent in a plain browser). */
 function useFocusToggle(): { on: boolean; available: boolean; set(on: boolean): void } {
@@ -45,6 +46,21 @@ export function App() {
   const { todos } = useTodos(host.kind === "ready" ? host.link : NO_LINK);
   const settings = useSettings(host.kind === "ready" ? host.link : NO_LINK);
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quickOpen, setQuickOpen] = useState(false);
+
+  // Ctrl N: the quick bar from anywhere; Ctrl Shift N: the draft task page.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.key.toLowerCase() !== "n") return;
+      e.preventDefault();
+      if (e.shiftKey) {
+        setQuickOpen(false);
+        setView({ kind: "new" });
+      } else setQuickOpen(true);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, []);
 
   useEffect(
     () =>
@@ -141,6 +157,7 @@ export function App() {
               workspaces={state.workspaces}
               profiles={state.profiles}
               onOpenTask={(taskId, sessionId) => setView({ kind: "task", taskId, ...(sessionId ? { sessionId } : {}) })}
+              onNewTask={() => setView({ kind: "new", topicId: canvasTopic.id })}
             />
           )}
           {view.kind === "packs" && (() => {
@@ -154,7 +171,7 @@ export function App() {
               topics={state.topics}
               tasks={state.tasks}
               profiles={state.profiles}
-              scope={scope}
+              scope={view.topicId ? { kind: "topic", id: view.topicId } : scope}
               onBack={() => setView({ kind: "board" })}
               onCreated={(task, session) => setView(session ? { kind: "task", taskId: task.id, sessionId: session.id } : { kind: "board" })}
             />
@@ -181,6 +198,23 @@ export function App() {
         </main>
       </div>
       {settingsOpen && <SettingsDialog link={link} settings={settings} onClose={() => setSettingsOpen(false)} />}
+      {quickOpen && (
+        <QuickStart
+          link={link}
+          workspaces={state.workspaces}
+          topics={state.topics}
+          profiles={state.profiles}
+          onClose={() => setQuickOpen(false)}
+          onExpand={() => {
+            setQuickOpen(false);
+            setView({ kind: "new" });
+          }}
+          onCreated={(task, session) => {
+            setQuickOpen(false);
+            setView(session ? { kind: "task", taskId: task.id, sessionId: session.id } : { kind: "board" });
+          }}
+        />
+      )}
     </div>
   );
 }
@@ -257,7 +291,7 @@ function TopBar({
           设置
         </button>
       )}
-      <button type="button" className="btn-primary" onClick={onNew} disabled={disabled}>
+      <button type="button" className="btn-primary" onClick={onNew} disabled={disabled} title="新建任务（Ctrl N 在任何页面打开快速启动条）">
         + 新任务
       </button>
     </header>

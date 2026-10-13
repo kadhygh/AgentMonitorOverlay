@@ -84,9 +84,9 @@ test("task templates: a task made from a template carries its steps as a checkli
 
   await page.getByTestId("scope-ws-alpha").click();
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await page.getByLabel("流程模板").selectOption({ label: "示例：小游戏玩法开发 · 新玩法" });
+  await page.getByRole("group", { name: "流程模板" }).getByRole("button", { name: "示例：小游戏玩法开发 · 新玩法" }).click();
   await expect(page.getByTestId("template-steps").locator("li")).toHaveCount(5);
-  await page.locator(".newtask-title input").fill("冲刺技能");
+  await page.getByLabel("第一句话").fill("冲刺技能");
   await screenshot(studio.app, "stage-6", "S6-03-new-from-template", page);
   await page.getByRole("button", { name: "开始" }).click();
 

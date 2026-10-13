@@ -27,14 +27,13 @@ test("a topic gathers tasks from two projects on its own canvas, and a task can 
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await expect(page.getByRole("group", { name: "专题" }).getByRole("button", { name: "掉落表重构" })).toHaveAttribute("aria-pressed", "true");
   await page.getByRole("group", { name: "项目" }).getByRole("button", { name: "alpha" }).click();
-  await page.getByLabel("任务标题").fill("掉落表概率校验");
-  await page.getByLabel("第一句话").fill("先列出所有掉落表");
+  await page.getByLabel("第一句话").fill("掉落表概率校验");
   await page.getByLabel("第一句话").press("Enter");
-  await expect(page.getByTestId("msg-agent")).toContainText("MOCK: 先列出所有掉落表", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent")).toContainText("MOCK: 掉落表概率校验", { timeout: 30_000 });
   await expect(page.locator(".page-head")).toContainText("alpha");
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await page.getByRole("group", { name: "项目" }).getByRole("button", { name: "beta" }).click();
-  await page.getByLabel("任务标题").fill("Elite 表补测试");
+  await page.getByLabel("第一句话").fill("Elite 表补测试");
   await page.getByRole("button", { name: "放进待办" }).click();
   await expect(page.getByTestId("task-card")).toHaveCount(2);
 
@@ -47,6 +46,10 @@ test("a topic gathers tasks from two projects on its own canvas, and a task can 
   await page.getByRole("tab", { name: "agent 视角" }).click();
   await expect(page.getByTestId("agent-view")).toContainText("Elite 表补测试");
   await screenshot(studio.app, "stage-10", "S10-topic-canvas", page);
+
+  // The canvas has its own way into the draft page, with the topic picked.
+  await page.getByRole("button", { name: "+ 在专题里新建任务" }).click();
+  await expect(page.getByRole("group", { name: "专题" }).getByRole("button", { name: "掉落表重构" })).toHaveAttribute("aria-pressed", "true");
 
   // Transfer: the filed task leaves the topic from its task page, and leaves the canvas with it.
   await page.getByRole("button", { name: "看板", exact: true }).click();
