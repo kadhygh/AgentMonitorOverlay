@@ -8,5 +8,5 @@
 - **在等你**：见 `NEEDS_YOU.md`，17 项"请你过目"（都不阻塞）、5 项"必须等你"：是否合并到 master；是否切换为日常工具、何时删除旧 AMO；是否开放"派发"（不回复就保持不开放）；第一个真实扩展包的内容；调度 agent 的权限与频率（不回复就只手动触发）。等待期间继续推进
 - **试用**：Portable 版 `studio/release/AMO-Studio-0.8.0-portable.zip`（解压后双击 `AMO Studio.exe`）；开发时 `studio` 下 `npm start`，停止 Host 用 `npm run host:stop`
 - **已完成任务**：S8-00 预研打包方式、S8-01 打包后的数据目录、S8-02 首次启动设置、S8-03 打包与产物冒烟、S8-04 文档、S8-05 删除旧 AMO 的清单、S8-06 自查与合并准备（已合并进 studio/main）
-- **下一步**：带过来的小修（`plans/maintenance.md`），之后每小时查看一次 NEEDS_YOU
+- **下一步**：所有剩余事项都在等你；loop 每小时查看一次 NEEDS_YOU（遗留小问题的结论见 `plans/maintenance.md`）
 - **模型调用额度**：DeepSeek 27 / 1000，GLM 24 / 5000
