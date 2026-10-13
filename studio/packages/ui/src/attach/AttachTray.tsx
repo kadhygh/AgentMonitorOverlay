@@ -1,6 +1,7 @@
 import type { AttachmentsState } from "./useAttachments.js";
 import { baseName } from "./refs.js";
 import { IconClose, IconFile } from "./icons.js";
+import { FileLink } from "../files/FileLinks.js";
 
 /** Above the composer's text: thumbnails of the images and chips of the referenced files, each with a remove ×. */
 export function AttachTray({ attach, disabled }: { attach: AttachmentsState; disabled?: boolean }) {
@@ -26,7 +27,9 @@ export function AttachTray({ attach, disabled }: { attach: AttachmentsState; dis
       {attach.files.map((path) => (
         <span key={path} className="file-chip" data-testid="file-chip" title={path}>
           <IconFile />
-          <span className="file-chip-name">{baseName(path)}</span>
+          <FileLink path={path}>
+            <span className="file-chip-name">{baseName(path)}</span>
+          </FileLink>
           <button type="button" className="attach-x inline" aria-label={`移除引用 ${baseName(path)}`} disabled={disabled} onClick={() => attach.removeFile(path)}>
             <IconClose />
           </button>

@@ -1,0 +1,92 @@
+/* Files in the conversation (stage 12, S12-C): file links, the quick look beside the conversation, a turn's changed
+   files and the working directory in the session header. */
+
+/* ---- links ---- */
+.file-link { cursor: pointer; color: inherit; text-decoration: underline dotted; text-decoration-color: var(--chat-dim, var(--text-dim)); text-underline-offset: 3px; }
+.file-link:hover { text-decoration-style: solid; text-decoration-color: currentColor; }
+.file-link:focus-visible { outline: 2px solid var(--attention); outline-offset: 1px; border-radius: 3px; }
+a.file-link-code { text-decoration: none; }
+a.file-link-code .md-code { text-decoration: underline dotted; text-decoration-color: var(--chat-dim, var(--text-dim)); text-underline-offset: 3px; }
+a.file-link-code:hover .md-code { background: var(--chat-hover, var(--selected)); text-decoration-style: solid; text-decoration-color: currentColor; }
+a.file-link.md-link { color: var(--chat-brand, var(--primary)); }
+a.file-link.file-chip { text-decoration: none; }
+a.file-link.file-chip:hover { border-color: var(--border-strong); }
+a.file-link.file-chip:hover .file-chip-name { text-decoration: underline; text-underline-offset: 3px; }
+.attach-tray .file-link { text-decoration: none; }
+.attach-tray .file-link:hover .file-chip-name { text-decoration: underline; text-underline-offset: 3px; }
+.pr-summary .file-link { text-decoration: none; }
+.pr-summary .file-link:hover { text-decoration: underline; text-underline-offset: 3px; color: var(--chat-label, var(--text)); }
+.pr-diff-path .file-link { text-decoration: none; }
+.pr-diff-path .file-link:hover { text-decoration: underline; text-underline-offset: 3px; }
+
+/* ---- the quick look ---- */
+.file-preview { position: relative; flex: 0 0 auto; min-width: 320px; max-width: calc(100vw - 420px); display: flex; flex-direction: column; min-height: 0; border-left: 1px solid var(--border); background: var(--panel-raised); }
+/* It takes the task page's right column while open. */
+.file-preview ~ .anno-panel { display: none; }
+.fp-resize { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
+.fp-resize:hover, .fp-resize:active { background: var(--resize); }
+.fp-head { display: flex; align-items: flex-start; gap: 8px; padding: 12px 10px 2px 14px; }
+.fp-title { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.fp-name { font-family: var(--font-code); font-size: 13px; font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.fp-line-no { font-weight: 400; color: var(--text-dim); }
+.fp-dir { font-size: 11.5px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
+.fp-close { flex: none; width: 26px; height: 26px; font-size: 18px; line-height: 1; }
+.fp-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 2px; padding: 4px 8px 8px; border-bottom: 1px solid var(--border); }
+.fp-modes { display: flex; flex-wrap: wrap; gap: 10px; padding: 7px 14px; border-bottom: 1px solid var(--border); }
+.fp-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r-btn); overflow: hidden; }
+.fp-seg button { border: none; background: transparent; padding: 3px 12px; font: inherit; font-size: 12px; color: var(--text-dim); cursor: pointer; }
+.fp-seg button + button { border-left: 1px solid var(--border-strong); }
+.fp-seg button[aria-pressed="true"] { background: var(--selected); color: var(--text); }
+.fp-seg button:disabled { color: var(--text-faint); cursor: default; }
+.fp-notice { margin: 8px 12px 0; padding: 6px 10px; border-radius: var(--r-l); background: var(--error-bg); border: 1px solid var(--error-border); color: var(--error-text); font-size: 12px; }
+.fp-body { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--chat-code-bg, var(--code-bg)); }
+.fp-empty { padding: 24px 16px; color: var(--text-dim); font-size: 13px; line-height: var(--lh); }
+
+.fp-code { flex: 1; min-height: 0; overflow: auto; font-family: var(--font-code); font-size: 12.5px; }
+.fp-code-inner { position: relative; min-width: max-content; }
+.fp-row { display: flex; line-height: 20px; white-space: pre; }
+.fp-gutter { flex: none; position: sticky; left: 0; box-sizing: content-box; padding: 0 12px 0 8px; text-align: right; color: var(--text-faint); background: var(--chat-code-bg, var(--code-bg)); user-select: none; }
+.fp-text { padding-right: 18px; color: var(--chat-label, var(--code-text)); }
+.fp-row.marked { background: var(--attention-bg); }
+.fp-row.marked .fp-gutter { color: var(--attention); background: var(--attention-bg); box-shadow: inset 2px 0 var(--attention); }
+
+.fp-image { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 16px; }
+.fp-image img { max-width: 100%; height: auto; border: 1px solid var(--border); background: var(--panel); }
+.fp-md { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px 24px; background: var(--panel); font-size: var(--fs-sm); line-height: var(--lh); }
+
+.fp-diff { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; font-family: var(--font-code); font-size: 12.5px; }
+.fp-diff-stat { position: sticky; top: 0; left: 0; z-index: 1; padding: 6px 12px; font-family: var(--font-ui); font-size: 12px; color: var(--text-dim); background: var(--chat-code-banner, var(--panel-raised)); border-bottom: 0.5px solid var(--chat-hairline, var(--border)); }
+.fp-diff-stat .add { color: var(--chat-success, var(--running)); }
+.fp-diff-stat .del { color: var(--chat-error, var(--error)); }
+.fp-diff-row { display: flex; min-width: max-content; line-height: 20px; white-space: pre; }
+.fp-diff-row .fp-gutter { background: transparent; position: static; min-width: 3ch; }
+.fp-diff-row.add { background: var(--chat-diff-add-bg); }
+.fp-diff-row.del { background: var(--chat-diff-del-bg); }
+.fp-diff-row.hunk { color: var(--text-faint); }
+.fp-diff-row.hunk .fp-text { color: var(--text-faint); padding-left: 8px; }
+.fp-diff-row.jump { cursor: pointer; }
+.fp-diff-row.jump:hover .fp-gutter { color: var(--attention); }
+.fp-diff-mark { flex: none; width: 18px; text-align: center; user-select: none; }
+.fp-diff-row.add .fp-diff-mark { color: var(--chat-diff-add-mark); }
+.fp-diff-row.del .fp-diff-mark { color: var(--chat-diff-del-mark); }
+
+/* ---- a turn's changed files ---- */
+.turn-changes { margin-top: 12px; border: 0.5px solid var(--chat-hairline); border-radius: 8px; background: var(--chat-code-bg); overflow: hidden; font-size: 12.5px; }
+.tc-head { display: flex; align-items: center; gap: 8px; padding: 7px 12px; background: var(--chat-code-banner); color: var(--chat-label); }
+.tc-title { font-weight: 500; }
+.tc-stat, .tc-row-stat { font-family: var(--font-code); font-size: 11.5px; }
+.turn-changes .add { color: var(--chat-success); }
+.turn-changes .del { color: var(--chat-error); }
+.tc-review { border: none; background: transparent; padding: 0; color: var(--chat-dim); font: inherit; font-size: 12px; cursor: pointer; }
+.tc-review:hover { color: var(--chat-label); text-decoration: underline; text-underline-offset: 3px; }
+.tc-row { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 12px; border: none; border-top: 0.5px solid var(--chat-hairline); background: transparent; color: var(--chat-label); text-align: left; font: inherit; font-size: 12.5px; cursor: pointer; }
+.tc-row:hover { background: var(--chat-hover); }
+.tc-row svg { flex: none; color: var(--chat-dim); }
+.tc-name { flex: none; font-family: var(--font-code); }
+.tc-dir { flex: 0 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; color: var(--chat-caption); font-size: 11.5px; }
+.tc-tag { flex: none; color: var(--chat-caption); font-size: 11px; }
+.tc-row-stat { margin-left: auto; flex: none; }
+
+/* ---- the session header ---- */
+.workdir { display: inline-flex; align-items: center; gap: 2px; min-width: 0; }
+.workdir-path { min-width: 0; max-width: 320px; margin-right: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); font-size: 11.5px; color: var(--text-faint); }

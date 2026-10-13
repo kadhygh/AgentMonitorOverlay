@@ -5,6 +5,7 @@ import { attachmentUrl } from "../lib/attachments.js";
 import { copyText } from "../host/client.js";
 import { baseName, dirName } from "./refs.js";
 import { IconFile } from "./icons.js";
+import { FileLink } from "../files/FileLinks.js";
 
 // What a person's message carries besides its text, as the transcript shows it: image thumbnails (click for a larger
 // view) and chips of the referenced files.
@@ -37,29 +38,46 @@ export function MessageImages({ images }: { images: readonly MessageImage[] }) {
   );
 }
 
-/** Referenced files: name first, folder dimmed; click copies the path. */
+/**
+ * Referenced files: name first, folder dimmed. In a conversation with file links (stage 12) a click opens the quick
+ * look; otherwise, or while the file is not found, a click copies the path.
+ */
 export function MessageFiles({ files }: { files: readonly string[] }) {
   const [copied, setCopied] = useState<string | null>(null);
   if (!files.length) return null;
+  const chip = (path: string, label: string, dir: boolean) => (
+    <>
+      <IconFile />
+      <span className="file-chip-name">{label}</span>
+      {dir && dirName(path) && <span className="file-chip-dir">{dirName(path)}</span>}
+    </>
+  );
   return (
     <div className="msg-files" data-testid="msg-files">
       {files.map((path) => (
-        <button
+        <FileLink
           key={path}
-          type="button"
+          path={path}
           className="file-chip"
-          data-testid="msg-file"
-          title={`${path}\n点击复制路径`}
-          onClick={() => {
-            void copyText(path);
-            setCopied(path);
-            setTimeout(() => setCopied((c) => (c === path ? null : c)), 1200);
-          }}
+          testId="msg-file"
+          fallback={
+            <button
+              type="button"
+              className="file-chip"
+              data-testid="msg-file"
+              title={`${path}\n点击复制路径`}
+              onClick={() => {
+                void copyText(path);
+                setCopied(path);
+                setTimeout(() => setCopied((c) => (c === path ? null : c)), 1200);
+              }}
+            >
+              {chip(path, copied === path ? "已复制路径" : baseName(path), copied !== path)}
+            </button>
+          }
         >
-          <IconFile />
-          <span className="file-chip-name">{copied === path ? "已复制路径" : baseName(path)}</span>
-          {copied !== path && dirName(path) && <span className="file-chip-dir">{dirName(path)}</span>}
-        </button>
+          {chip(path, baseName(path), true)}
+        </FileLink>
       ))}
     </div>
   );

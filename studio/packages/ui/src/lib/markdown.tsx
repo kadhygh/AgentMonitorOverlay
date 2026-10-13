@@ -1,5 +1,7 @@
-import { useState, type ReactNode } from "react";
+import { createContext, Fragment, useContext, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { copyText } from "../host/client.js";
+import { highlightLines, languageForFence, useGrammarLoads } from "./highlight.js";
+import { CodeTokens } from "./CodeTokens.js";
 
 // Safe markdown for agent replies: fenced code, headings, nested lists, tables, quotes, paragraphs, and inline
 // code / bold / italic / links. Everything is rendered as React text, never as HTML. Every block carries its
@@ -141,9 +143,28 @@ export function parseBlocks(source: string): Block[] {
 
 const INLINE = /(`[^`]+`)|(\*\*[^*]+\*\*)|(\*[^*\s][^*]*\*)|(\[[^\]]+\]\([^)\s]+\))|(https?:\/\/[^\s<>()]+[^\s<>().,;:!?'"])/g;
 
+/**
+ * Turns inline code and links to local paths into file links where the page provides one (the conversation, stage
+ * 12): `target` is the code or the link's destination, `fallback` what shows when it names no file.
+ */
+export const MarkdownFileLinks = createContext<ComponentType<{ kind: "code" | "link"; target: string; children: ReactNode; fallback: ReactNode }> | null>(null);
+
+function InlineCode({ text }: { text: string }) {
+  const FileLink = useContext(MarkdownFileLinks);
+  const code = <code className="md-code">{text}</code>;
+  return FileLink ? (
+    <FileLink kind="code" target={text} fallback={code}>
+      {code}
+    </FileLink>
+  ) : (
+    code
+  );
+}
+
 function ExternalLink({ href, children }: { href: string; children: ReactNode }) {
   const safe = /^https?:\/\//i.test(href);
-  return (
+  const FileLink = useContext(MarkdownFileLinks);
+  const link = (
     <a
       href={safe ? href : undefined}
       className="md-link"
@@ -156,6 +177,13 @@ function ExternalLink({ href, children }: { href: string; children: ReactNode })
       {children}
     </a>
   );
+  return FileLink && !safe ? (
+    <FileLink kind="link" target={href} fallback={link}>
+      {children}
+    </FileLink>
+  ) : (
+    link
+  );
 }
 
 export function renderInline(text: string): ReactNode[] {
@@ -165,7 +193,7 @@ export function renderInline(text: string): ReactNode[] {
   for (const m of text.matchAll(INLINE)) {
     if (m.index > last) out.push(text.slice(last, m.index));
     const token = m[0];
-    if (m[1]) out.push(<code key={key++} className="md-code">{token.slice(1, -1)}</code>);
+    if (m[1]) out.push(<InlineCode key={key++} text={token.slice(1, -1)} />);
     else if (m[2]) out.push(<strong key={key++}>{token.slice(2, -2)}</strong>);
     else if (m[3]) out.push(<em key={key++}>{token.slice(1, -1)}</em>);
     else if (m[4]) {
@@ -204,6 +232,9 @@ function ListView({ list }: { list: ListNode }) {
 
 function CodeBlock({ lang, text }: { lang: string; text: string }) {
   const [copied, setCopied] = useState(false);
+  // Syntax colours (stage 12); plain until the grammar has loaded.
+  const loads = useGrammarLoads();
+  const lines = useMemo(() => highlightLines(text, languageForFence(lang)), [text, lang, loads]); // eslint-disable-line react-hooks/exhaustive-deps
   return (
     <div className="md-codeblock">
       <div className="md-code-head">
@@ -221,7 +252,16 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
           {copied ? "已复制" : "复制"}
         </button>
       </div>
-      <pre className="md-pre">{text}</pre>
+      <pre className="md-pre" data-lang={lines ? (languageForFence(lang) ?? undefined) : undefined}>
+        {lines
+          ? text.replace(/\r\n?/g, "\n").split("\n").map((line, i, all) => (
+              <Fragment key={i}>
+                <CodeTokens tokens={lines[i]} text={line} />
+                {i < all.length - 1 ? "\n" : null}
+              </Fragment>
+            ))
+          : text}
+      </pre>
     </div>
   );
 }

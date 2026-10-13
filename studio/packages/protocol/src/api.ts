@@ -396,3 +396,9 @@ export interface HostRoutes {
   /** An image file itself, for previews (types in PREVIEW_IMAGE_TYPES); also takes `?token=`. */
   "GET /api/fs/raw": { req: void; res: Blob };
 }
+
+// ---- files named in a conversation (stage 12, S12-C): which exist, so only those become links -------------------
+export interface HostRoutes {
+  /** Which of the paths exist (at most MAX_EXISTS_PATHS); relative ones resolve against `cwd` or the project. */
+  "POST /api/fs/exists": { req: import("./chatfiles.js").FsExistsRequest; res: import("./chatfiles.js").FsExistsResult };
+}
