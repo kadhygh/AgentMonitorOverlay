@@ -9,6 +9,7 @@ import { FileList, FileMenu, Splitter, type FileMenuAt } from "./FileList.js";
 import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type ReviewPrefs } from "./filetree.js";
 import { changeStarts, countLabel, diffRows, draftCounts, parseReviewHash, placeComments, sessionChoices, STATUS_NAME, step, type DiffMode, type ReviewTarget } from "./logic.js";
 import { diffTokens, editorLine } from "./splitview.js";
+import { MarkButton } from "../marks/MarkButton.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
 // the right, comments on lines, and "发给会话" to send the drafts to a session as one message.
@@ -341,6 +342,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
                 >
                   在资源管理器中显示
                 </button>
+                {file.status !== "deleted" && <MarkButton link={link} file={{ path: file.path, workspaceId: workspace.id }} line={active !== null ? openLine : null} />}
               </div>
             )}
             <div className="gr-scroll">

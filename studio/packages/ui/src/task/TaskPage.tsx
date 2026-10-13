@@ -25,6 +25,7 @@ import { openReview, useIsGitRepo } from "../gitreview/open.js";
 import { latestMainSession } from "../gitreview/logic.js";
 import { OnCanvasToggle } from "../canvas/OnCanvasToggle.js";
 import { openMarks } from "../marks/open.js";
+import { MarkButton } from "../marks/MarkButton.js";
 import { FileLinks, type PreviewTarget } from "../files/FileLinks.js";
 import { FilePreview } from "../files/FilePreview.js";
 import { WorkdirActions } from "../files/WorkdirActions.js";
@@ -392,7 +393,17 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           </FileLinks>
         </div>
         {/* While open, the quick look takes the right column (files.css hides the annotation panel beside it). */}
-        {preview && <FilePreview link={link} file={preview.file} line={preview.line} column={preview.column} diff={preview.diff} onClose={() => setPreview(null)} />}
+        {preview && (
+          <FilePreview
+            link={link}
+            file={preview.file}
+            line={preview.line}
+            column={preview.column}
+            diff={preview.diff}
+            onClose={() => setPreview(null)}
+            extraActions={<MarkButton link={link} file={preview.file} line={preview.line} className="btn-ghost small" />}
+          />
+        )}
         <AnnotationPanel
           header={
             <>

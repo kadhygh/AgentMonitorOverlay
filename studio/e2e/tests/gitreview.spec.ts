@@ -272,6 +272,8 @@ test("S12-A: file tree, syntax colours, side by side and opening files", async (
   let res = posted();
   await review.getByTestId("review-reveal").click();
   expect(await (await res).json()).toMatchObject({ app: "explorer", dryRun: true });
+  await review.getByTestId("mark-file").click();
+  await expect(review.getByTestId("mark-file")).toHaveText("已标记");
   // The file list's right-click menu does the same; a deleted file has nothing to open.
   await files.filter({ hasText: "table.lua" }).click({ button: "right" });
   const menu = review.getByRole("menu", { name: "文件" });
