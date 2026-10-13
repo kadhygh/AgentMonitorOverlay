@@ -1,47 +1,23 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="24 24 464 464" width="512" height="512">
+  <!-- AMO Studio: 取景框. Focus keeps an eye on the agents: four viewfinder corners around an ink-blue face, a red
+       recording dot. The paper halo under the corners keeps them readable on a dark taskbar. -->
   <defs>
-    <linearGradient id="bg" x1="0" y1="0" x2="1" y2="1">
-      <stop offset="0" stop-color="#8cc0ff"/>
-      <stop offset="1" stop-color="#4a7fe8"/>
-    </linearGradient>
-    <linearGradient id="head" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#ffffff"/>
-      <stop offset="1" stop-color="#e3ecfb"/>
-    </linearGradient>
-    <linearGradient id="visor" x1="0" y1="0" x2="0" y2="1">
-      <stop offset="0" stop-color="#26324f"/>
-      <stop offset="1" stop-color="#1a2238"/>
-    </linearGradient>
-    <radialGradient id="eye" cx="0.5" cy="0.45" r="0.6">
-      <stop offset="0" stop-color="#b9fff0"/>
-      <stop offset="0.7" stop-color="#5fe3c4"/>
-      <stop offset="1" stop-color="#37c7a6"/>
-    </radialGradient>
+    <filter id="sh" x="-20%" y="-20%" width="140%" height="150%"><feDropShadow dx="0" dy="10" stdDeviation="10" flood-color="#22201c" flood-opacity="0.28"/></filter>
+    <linearGradient id="blue" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2f5a92"/><stop offset="1" stop-color="#1b3557"/></linearGradient>
   </defs>
-  <!-- app tile -->
-  <rect x="16" y="16" width="480" height="480" rx="116" fill="url(#bg)"/>
-  <!-- antenna -->
-  <path d="M256 150 C256 124 262 108 276 96" fill="none" stroke="#e3ecfb" stroke-width="14" stroke-linecap="round"/>
-  <circle cx="282" cy="88" r="24" fill="#ffd166"/>
-  <circle cx="275" cy="80" r="8" fill="#fff4cf"/>
-  <!-- ears -->
-  <rect x="70" y="250" width="44" height="88" rx="22" fill="#ffd166"/>
-  <rect x="398" y="250" width="44" height="88" rx="22" fill="#ffd166"/>
-  <!-- head -->
-  <rect x="96" y="146" width="320" height="276" rx="120" fill="url(#head)"/>
-  <rect x="96" y="146" width="320" height="276" rx="120" fill="none" stroke="#c9d8f3" stroke-width="6"/>
-  <!-- visor -->
-  <rect x="134" y="200" width="244" height="162" rx="81" fill="url(#visor)"/>
-  <!-- eyes -->
-  <ellipse cx="204" cy="276" rx="30" ry="34" fill="url(#eye)"/>
-  <ellipse cx="308" cy="276" rx="30" ry="34" fill="url(#eye)"/>
-  <circle cx="214" cy="262" r="10" fill="#ffffff"/>
-  <circle cx="318" cy="262" r="10" fill="#ffffff"/>
-  <circle cx="196" cy="290" r="4.5" fill="#ffffff" opacity="0.8"/>
-  <circle cx="300" cy="290" r="4.5" fill="#ffffff" opacity="0.8"/>
-  <!-- smile -->
-  <path d="M236 326 Q256 342 276 326" fill="none" stroke="#5fe3c4" stroke-width="9" stroke-linecap="round"/>
-  <!-- cheeks -->
-  <ellipse cx="150" cy="378" rx="22" ry="13" fill="#ff9fb8" opacity="0.75"/>
-  <ellipse cx="362" cy="378" rx="22" ry="13" fill="#ff9fb8" opacity="0.75"/>
+  <g fill="none" stroke-linecap="round" stroke-linejoin="round">
+    <g stroke="#fbfaf7" stroke-width="44" opacity="0.9">
+      <path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/>
+      <path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/>
+    </g>
+    <g stroke="#22201c" stroke-width="28">
+      <path d="M80 168 V96 Q80 80 96 80 H168"/><path d="M344 80 H416 Q432 80 432 96 V168"/>
+      <path d="M432 344 V416 Q432 432 416 432 H344"/><path d="M168 432 H96 Q80 432 80 416 V344"/>
+    </g>
+  </g>
+  <g filter="url(#sh)"><rect x="156" y="168" width="200" height="176" rx="56" fill="url(#blue)"/></g>
+  <rect x="174" y="180" width="164" height="40" rx="20" fill="#fff" opacity="0.14"/>
+  <circle cx="220" cy="252" r="17" fill="#fbfaf7"/><circle cx="292" cy="252" r="17" fill="#fbfaf7"/>
+  <path d="M226 298 Q256 318 286 298" fill="none" stroke="#fbfaf7" stroke-width="12" stroke-linecap="round"/>
+  <circle cx="140" cy="140" r="16" fill="#b2392d"/>
 </svg>
