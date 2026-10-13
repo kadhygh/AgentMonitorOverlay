@@ -4,7 +4,7 @@ import { Markdown } from "../lib/markdown.js";
 import { copyText } from "../host/client.js";
 import { IconCheck, IconChevronDown, IconChevronRight, IconCopy, IconEdit, IconTerminal, IconSparkle } from "./icons.js";
 import { ProcessGroup, Shimmer, MemberRow } from "./ProcessRows.js";
-import { buildTranscript, foldable, formatDuration, formatTokens, turnLabel, type AgentItem, type ApprovalItem, type Row, type Segment } from "./turns.js";
+import { buildTranscript, foldable, formatDuration, formatTokens, outputSpeed, segmentMembers, turnLabel, type AgentItem, type ApprovalItem, type Row, type Segment, type TurnItem } from "./turns.js";
 import type { TranscriptView } from "./prefs.js";
 
 // The conversation, one turn after another (DSH ui-chat): the person's bubble, the work (folded once the turn is
@@ -44,7 +44,8 @@ export function Transcript({ session, items, annotations, model, busy, view, onA
   }, []);
 
   const highlights = (id: string) => annotations.filter((a) => a.itemId === id && !a.sentAt);
-  const runningTurn = segments.at(-1)?.running ? segments.at(-1)!.turn : null;
+  const last = segments.at(-1);
+  const runningTurn = last?.running ? last.turn : null;
 
   return (
     <>
@@ -70,7 +71,7 @@ export function Transcript({ session, items, annotations, model, busy, view, onA
           onJump={onJump}
         />
       ))}
-      {sessionRunning && <RunningStatus startedAt={runningTurn?.startedAt} awaiting={session?.status === "awaiting-approval"} />}
+      {sessionRunning && <RunningStatus turn={runningTurn} members={last?.running ? segmentMembers(last) : []} awaiting={session?.status === "awaiting-approval"} />}
     </>
   );
 }
@@ -129,7 +130,9 @@ function TurnView({
       {seg.tail.map((item) => (
         <StandaloneItem key={item.id} item={item} busy={busy} highlights={highlights} onApprove={onApprove} />
       ))}
-      {finished && seg.answer && !seg.answer.streaming && <TurnFooter answer={seg.answer} usage={seg.turn?.usage} endedAt={seg.turn?.endedAt} model={model} always={latest} />}
+      {finished && seg.answer && !seg.answer.streaming && (
+        <TurnFooter answer={seg.answer} usage={seg.turn?.usage} speed={outputSpeed(seg.turn ?? undefined, segmentMembers(seg))} endedAt={seg.turn?.endedAt} model={model} always={latest} />
+      )}
     </section>
   );
 }
@@ -238,7 +241,7 @@ const clock = (iso: string) => {
   return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 };
 
-function TurnFooter({ answer, usage, endedAt, model, always }: { answer: AgentItem; usage?: TurnUsage; endedAt?: string; model: string; always: boolean }) {
+function TurnFooter({ answer, usage, speed, endedAt, model, always }: { answer: AgentItem; usage?: TurnUsage; speed: number | null; endedAt?: string; model: string; always: boolean }) {
   const [copied, setCopied] = useState(false);
   useEffect(() => {
     if (!copied) return;
@@ -257,14 +260,19 @@ function TurnFooter({ answer, usage, endedAt, model, always }: { answer: AgentIt
         {copied ? <IconCheck /> : <IconCopy />}
       </button>
       <span className="turn-foot-time">{clock(endedAt ?? answer.createdAt)}</span>
-      {usage && <UsageButton usage={usage} model={model} />}
+      {usage && <UsageButton usage={usage} speed={speed} model={model} />}
+      {speed !== null && (
+        <span className="turn-foot-speed" title="输出 token ÷ 生成用时（不含命令和工具运行的时间）" data-testid="turn-speed">
+          {speed} tok/s
+        </span>
+      )}
     </div>
   );
 }
 
 const n = (v: number) => v.toLocaleString("en-US");
 
-function UsageButton({ usage, model }: { usage: TurnUsage; model: string }) {
+function UsageButton({ usage, speed, model }: { usage: TurnUsage; speed: number | null; model: string }) {
   const [open, setOpen] = useState(false);
   const box = useRef<HTMLSpanElement>(null);
   useEffect(() => {
@@ -305,6 +313,21 @@ function UsageButton({ usage, model }: { usage: TurnUsage; model: string }) {
             <dd>
               {n(usage.output)} tok{usage.reasoning ? `（其中推理 ${n(usage.reasoning)}）` : ""}
             </dd>
+            {speed !== null && (
+              <>
+                <dt>输出速度</dt>
+                <dd>{speed} tok/s</dd>
+              </>
+            )}
+            {usage.context !== undefined && (
+              <>
+                <dt>上下文</dt>
+                <dd>
+                  {formatTokens(usage.context)}
+                  {usage.contextWindow ? ` / ${formatTokens(usage.contextWindow)} · ${Math.round((usage.context / usage.contextWindow) * 100)}%` : " tok"}
+                </dd>
+              </>
+            )}
           </dl>
         </div>
       )}
@@ -314,15 +337,21 @@ function UsageButton({ usage, model }: { usage: TurnUsage; model: string }) {
 
 // ---- running status ---------------------------------------------------------------------------------------------
 
-/** The live line at the bottom while the session works: the robot and the elapsed time of the turn. */
-function RunningStatus({ startedAt, awaiting }: { startedAt?: string; awaiting: boolean }) {
+/** The live line at the bottom while the session works: the robot, the elapsed time and (once known) the speed. */
+function RunningStatus({ turn, members, awaiting }: { turn: TurnItem | null; members: readonly SessionItem[]; awaiting: boolean }) {
+  const startedAt = turn?.startedAt;
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
     const t = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(t);
   }, []);
   const start = startedAt ? Date.parse(startedAt) : NaN;
-  const label = awaiting ? "等待你的确认" : Number.isFinite(start) ? `正在工作，用时 ${formatDuration(Math.max(1000, now - start))} ···` : "正在工作";
+  const speed = outputSpeed(turn ?? undefined, members, now);
+  const label = awaiting
+    ? "等待你的确认"
+    : Number.isFinite(start)
+      ? `正在工作，用时 ${formatDuration(Math.max(1000, now - start))}${speed !== null ? ` · ${speed} tok/s` : ""} ···`
+      : "正在工作";
   return (
     <div className="run-status" data-testid="run-status">
       <span className="sr-only" role="status" aria-live="polite">

@@ -248,6 +248,16 @@ export function Thread({ link, presets, session, profile, tasks = [], items, ann
               </span>
               {stats.tokens > 0 && <span>用量 {formatTokens(stats.tokens)}</span>}
               {stats.cacheHit !== null && <span>缓存命中 {stats.cacheHit}%</span>}
+              {stats.context && (
+                <span
+                  className={`context-use${stats.context.percent !== null && stats.context.percent >= 80 ? " high" : ""}`}
+                  title="当前上下文 / 模型最大上下文（最近一轮结束时）"
+                  data-testid="context-use"
+                >
+                  上下文 {formatTokens(stats.context.used)}
+                  {stats.context.window ? ` / ${formatTokens(stats.context.window)} · ${stats.context.percent}%` : ""}
+                </span>
+              )}
             </div>
           )}
         </div>

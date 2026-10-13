@@ -60,6 +60,8 @@ interface Live {
   closedByHost: boolean;
   background: Set<string>;
   idleTimer: ReturnType<typeof setTimeout> | null;
+  /** Tokens in the context after the latest model call of this turn (from the assistant messages' usage). */
+  context?: number;
   /** The turn in progress (from the first message of a run to its result). */
   turn: { id: string; itemId: Id } | null;
   /** Agent items still streaming, oldest first. */
@@ -521,6 +523,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       }
       case "assistant": {
         if (!live.running) this.turnStarted(sessionId, live);
+        const used = (m.message as { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } }).usage;
+        if (used) live.context = (used.input_tokens ?? 0) + (used.cache_read_input_tokens ?? 0) + (used.cache_creation_input_tokens ?? 0) + (used.output_tokens ?? 0);
         for (const block of m.message.content) {
           if (block.type === "thinking") {
             // Settles the oldest thinking item still streaming, like text below.
@@ -584,7 +588,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       case "result": {
         live.running = false;
         const usage = (m as { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } }).usage;
-        this.endTurn(live, live.interrupted ? "interrupted" : m.is_error ? "failed" : "completed", usage);
+        // The largest context among the models the turn used (subagents may use smaller ones).
+        const windows = Object.values((m as { modelUsage?: Record<string, { contextWindow?: number }> }).modelUsage ?? {}).map((u) => u.contextWindow ?? 0);
+        const contextWindow = windows.length ? Math.max(...windows) : 0;
+        this.endTurn(live, live.interrupted ? "interrupted" : m.is_error ? "failed" : "completed", usage, contextWindow || undefined);
         if (live.interrupted) {
           live.interrupted = false;
           this.setStatus(sessionId, "idle");
@@ -677,7 +684,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return super.appendItem(sessionId, body, turnId ? { method: body.type, ...raw, turnId } : raw);
   }
 
-  private endTurn(live: Live, state: TurnState, usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null }): void {
+  private endTurn(live: Live, state: TurnState, usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null }, contextWindow?: number): void {
     const turn = live.turn;
     if (!turn) return;
     live.turn = null;
@@ -685,7 +692,23 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const input = (usage?.input_tokens ?? 0) + read + (usage?.cache_creation_input_tokens ?? 0);
     this.updateItem(turn.itemId, (it) =>
       it.type === "turn"
-        ? { ...it, state, endedAt: this.now().toISOString(), ...(usage ? { usage: { input, cachedInput: read, output: usage.output_tokens ?? 0, reasoning: 0 } } : {}) }
+        ? {
+            ...it,
+            state,
+            endedAt: this.now().toISOString(),
+            ...(usage
+              ? {
+                  usage: {
+                    input,
+                    cachedInput: read,
+                    output: usage.output_tokens ?? 0,
+                    reasoning: 0,
+                    ...(live.context ? { context: live.context } : {}),
+                    ...(contextWindow ? { contextWindow } : {}),
+                  },
+                }
+              : {}),
+          }
         : it,
     );
   }

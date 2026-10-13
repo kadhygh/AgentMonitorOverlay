@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionItem } from "@amo-studio/protocol";
-import { buildTranscript, closedTitle, foldable, formatDuration, formatTokens, liveTitle, sessionStats, turnLabel, type ProcessMember } from "./turns.js";
+import { buildTranscript, closedTitle, foldable, formatDuration, formatTokens, liveTitle, outputSpeed, sessionStats, turnLabel, type ProcessMember } from "./turns.js";
 
 let seq = 0;
 const base = (turnId?: string) => ({ id: `i${++seq}`, sessionId: "s", seq, createdAt: "2026-10-13T00:00:00.000Z", ...(turnId ? { raw: { runtime: "codex" as const, method: "x", turnId } } : {}) });
@@ -133,6 +133,22 @@ describe("titles", () => {
   });
 
   it("sums the session's statistics", () => {
-    expect(sessionStats([turn("a"), turn("b"), tool("read", "x"), tool("command", "y")])).toEqual({ turns: 2, steps: 2, tokens: 2400, cacheHit: 80 });
+    expect(sessionStats([turn("a"), turn("b"), tool("read", "x"), tool("command", "y")])).toEqual({ turns: 2, steps: 2, tokens: 2400, cacheHit: 80, context: null });
+    // Context use comes from the latest turn that reported it.
+    const withContext = (id: string, context: number, contextWindow?: number): SessionItem => {
+      const t = turn(id) as Extract<SessionItem, { type: "turn" }>;
+      return { ...t, usage: { ...t.usage!, context, ...(contextWindow ? { contextWindow } : {}) } };
+    };
+    expect(sessionStats([withContext("a", 20_000, 200_000), withContext("b", 170_000, 200_000)]).context).toEqual({ used: 170_000, window: 200_000, percent: 85 });
+    expect(sessionStats([withContext("a", 5000)]).context).toEqual({ used: 5000, window: null, percent: null });
+  });
+
+  it("measures output speed without the time tools ran", () => {
+    // 200 output tokens over 72 s, of which a command ran 62 s: 10 s of generating, 20 tok/s.
+    const cmd = { ...(tool("command", "npm test") as Extract<SessionItem, { type: "tool" }>), durationMs: 62_000 };
+    expect(outputSpeed(turn("t") as never, [cmd])).toBe(20);
+    expect(outputSpeed(turn("t") as never, [])).toBe(3);
+    expect(outputSpeed(turn("t", "completed", 0) as never, [])).toBeNull();
+    expect(outputSpeed(undefined, [])).toBeNull();
   });
 });

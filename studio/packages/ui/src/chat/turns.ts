@@ -259,13 +259,22 @@ export function turnLabel(turn: TurnItem | null): string {
 
 export const totalTokens = (u: TurnUsage) => u.input + u.output;
 
-/** Session statistics under the composer: turns, tool calls, tokens and cache hits. */
-export function sessionStats(items: readonly SessionItem[]): { turns: number; steps: number; tokens: number; cacheHit: number | null } {
+/** How full the session's context is: after the latest turn that reported it. */
+export interface ContextUse {
+  used: number;
+  window: number | null;
+  /** Share of the window in use (0-100), when the window is known. */
+  percent: number | null;
+}
+
+/** Session statistics under the composer: turns, tool calls, tokens, cache hits and context use. */
+export function sessionStats(items: readonly SessionItem[]): { turns: number; steps: number; tokens: number; cacheHit: number | null; context: ContextUse | null } {
   let turns = 0;
   let steps = 0;
   let input = 0;
   let cached = 0;
   let tokens = 0;
+  let context: ContextUse | null = null;
   for (const i of items) {
     if (i.type === "turn") {
       turns++;
@@ -273,8 +282,28 @@ export function sessionStats(items: readonly SessionItem[]): { turns: number; st
         input += i.usage.input;
         cached += i.usage.cachedInput;
         tokens += totalTokens(i.usage);
+        if (i.usage.context) {
+          const window = i.usage.contextWindow ?? null;
+          context = { used: i.usage.context, window, percent: window ? Math.min(100, Math.round((i.usage.context / window) * 100)) : null };
+        }
       }
     } else if (i.type === "tool") steps++;
   }
-  return { turns, steps, tokens, cacheHit: input ? Math.round((cached / input) * 100) : null };
+  return { turns, steps, tokens, cacheHit: input ? Math.round((cached / input) * 100) : null, context };
+}
+
+/** Every item of a segment's work (inside groups too). */
+export const segmentMembers = (seg: Segment): SessionItem[] => seg.rows.flatMap((r) => (r.kind === "group" ? r.members : [r.item]));
+
+/**
+ * Output speed of a turn in tokens per second: output tokens over the time the model was generating, i.e. the turn's
+ * time minus the time its commands and tools ran. Null when there is too little to tell.
+ */
+export function outputSpeed(turn: TurnItem | undefined, members: readonly SessionItem[], now = Date.now()): number | null {
+  if (!turn?.usage?.output) return null;
+  const end = turn.endedAt ? Date.parse(turn.endedAt) : now;
+  let ms = end - Date.parse(turn.startedAt);
+  for (const m of members) if (m.type === "tool" && m.durationMs) ms -= m.durationMs;
+  if (!(ms >= 500)) return null;
+  return Math.round((turn.usage.output / ms) * 1000);
 }

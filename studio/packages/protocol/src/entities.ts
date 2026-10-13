@@ -166,7 +166,10 @@ export interface TurnUsage {
   cachedInput: number;
   output: number;
   reasoning: number;
+  /** The model's largest context, when the runtime tells. */
   contextWindow?: number;
+  /** Tokens in the context after the turn's latest model call (its input plus output). */
+  context?: number;
 }
 
 export interface ToolFields {

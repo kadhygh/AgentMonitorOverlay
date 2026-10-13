@@ -84,6 +84,9 @@ test("a working turn folds into one line and opens into thinking, commands and d
   // Usage of the turn.
   await turn.getByTestId("turn-foot").getByRole("button", { name: /^用量 / }).click();
   await expect(page.getByRole("dialog", { name: "本轮用量" })).toContainText("缓存命中");
+  // Context use (stage 11): in the turn's usage and, for the session, under the composer.
+  await expect(page.getByRole("dialog", { name: "本轮用量" })).toContainText("上下文");
+  await expect(page.getByTestId("context-use")).toContainText(/上下文 [\d.]+k? \/ [\d.]+[kM] · \d+%/);
   await screenshot(app, "stage-9", "chat-usage", page);
   await page.keyboard.press("Escape");
 

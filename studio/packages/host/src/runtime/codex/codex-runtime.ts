@@ -969,12 +969,14 @@ export function describePlan(plan: Array<{ step: string; status: string }>, expl
   };
 }
 
+/** Adds one model call (`last`) to the turn's usage; the context is what that call left in it. */
 function addUsage(prev: TurnUsage | undefined, last: { inputTokens: number; cachedInputTokens: number; outputTokens: number; reasoningOutputTokens: number }, window: number | null): TurnUsage {
   return {
     input: (prev?.input ?? 0) + last.inputTokens,
     cachedInput: (prev?.cachedInput ?? 0) + last.cachedInputTokens,
     output: (prev?.output ?? 0) + last.outputTokens,
     reasoning: (prev?.reasoning ?? 0) + last.reasoningOutputTokens,
+    context: last.inputTokens + last.outputTokens,
     ...(window ? { contextWindow: window } : {}),
   };
 }
