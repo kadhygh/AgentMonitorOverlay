@@ -939,3 +939,12 @@
 - 验证：`npm run verify` 退出码 0（213 个测试）；e2e 39/39
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 15:00 · S7-07 真实冒烟
+- 结果：done
+- 脚本 `scripts/smoke-stage7.mjs`（`npm run smoke:stage7`）：沙箱里两个工作区（alpha、beta）、三条待办（两条带工作区、一条不带）；Host 端口 47963；审批卡片一律拒绝（实际没有出现）；结束后归档会话、删除沙箱目录。结果在 `spikes/results/s7-07-smoke.json`
+- GLM 调度一轮：先用 `pack_list`、`project_context`、`board_list` 看了情况，再提了 2 条提案（alpha：统一 drops.json 字段命名；beta：清理旧导表脚本），每条都写了具体步骤和理由；没给"整理文档目录"提案，理由是它没指定工程、两个空闲工程已各安排一条——符合规则
+- 批准第一条（模型改为 GLM，提示词后加冒烟说明）：待办转成任务、标为完成，新会话第一轮复述了计划，没有动文件
+- 发现：提案里 GLM 给 alpha 那条选了 `codex-default`（你的订阅模型）。现在提案可以选任何模型、批准前人可以改；已补进 NEEDS_YOU 的 S7-09 第 6 问"提案能用哪些模型"，不回复就保持现状
+- 额度：GLM +2（24/5000），低于计划的约 4
+- commit：见本次 commit
