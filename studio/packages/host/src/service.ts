@@ -81,6 +81,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   /** One reclaim at a time per session, or the terminal's additions would be imported twice. */
   private readonly reclaiming = new Map<Id, Promise<Session>>();
   private readonly packLoader = new PackLoader();
+  /** Todos being turned into tasks right now. */
+  private readonly converting = new Set<Id>();
 
   constructor(
     readonly store: Store,
@@ -347,11 +349,22 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     const workspaceId = this.optionalWorkspace(input?.workspaceId) ?? todo.workspaceId;
     if (!workspaceId) throw new HostError("bad_request", "choose a workspace for the task");
     if (typeof input?.profileId !== "string") throw new HostError("bad_request", "profileId is required");
-    const text = typeof input.text === "string" && input.text.trim() ? input.text.trim() : undefined;
+    // Starting the session awaits the runtime; a second convert (or approval) meanwhile must not make a second task.
+    if (this.converting.has(id)) throw new HostError("conflict", "this todo is being turned into a task");
+    this.converting.add(id);
+    try {
+      return await this.convertTodoNow(todo, workspaceId, input.profileId, input.text);
+    } finally {
+      this.converting.delete(id);
+    }
+  }
+
+  private async convertTodoNow(todo: TodoItem, workspaceId: Id, profileId: string, textIn: unknown): Promise<{ todo: TodoItem; task: Task; session: Session }> {
+    const text = typeof textIn === "string" && textIn.trim() ? textIn.trim() : undefined;
     const { task, session } = await this.createTask({
       title: todo.text.slice(0, 100),
       scope: { kind: "workspace", workspaceId },
-      firstSession: { profileId: input.profileId, ...(text ? { text } : {}) },
+      firstSession: { profileId, ...(text ? { text } : {}) },
     });
     const group = this.canvas().groups.find((g) => g.workspaceId === workspaceId);
     if (group) this.canvasPlaceTask(task.id, group.id);

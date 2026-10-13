@@ -430,6 +430,14 @@ describe("Host API", () => {
     expect(() => service.propose({ todoId: ids[3], profileId: "p-ds", prompt: "做" }, session.id)).toThrow("at most 3 proposals per scheduler round");
   });
 
+  it("turns a todo into one task even when asked twice at once", async () => {
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "alpha") });
+    const todo = service.addTodo({ text: "双击批准", workspaceId: ws.id });
+    const both = await Promise.allSettled([service.convertTodo(todo.id, { profileId: "p-ds" }), service.convertTodo(todo.id, { profileId: "p-ds" })]);
+    expect(both.map((r) => r.status).sort()).toEqual(["fulfilled", "rejected"]);
+    expect((await ok<StateSnapshot>("GET", "/api/state")).tasks.filter((t) => t.title === "双击批准")).toHaveLength(1);
+  });
+
   it("saves the canvas with optimistic versions and serves its outline", async () => {
     const { task } = await createTask("canvas");
     const empty = await ok<CanvasDoc>("GET", "/api/canvas");
