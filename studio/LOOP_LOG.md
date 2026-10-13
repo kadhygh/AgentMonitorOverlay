@@ -972,3 +972,13 @@
 - 默认决定（请你过目）：Portable zip、数据默认在 exe 旁边 `data/`、选择记在 `amo-studio.json`；版本号 0.8.0；产物放 `studio/release/` 不进 git
 - NEEDS_YOU：写入"阶段 8 计划"（请你过目）；合并 master 的"必须等你"在 S8-06 完成后写入
 - 额度：0
+
+## 2026-10-14 16:10 · S8-00 预研：打包方式
+- 结果：done（结论见 `spikes/RESULTS.md` 第 k 节）
+- 做法：不引入 electron-builder 之类的打包工具，直接复制 Electron 运行时、改名 exe、Studio 放进 `resources/app/`（不打 asar），依赖从已安装的 `node_modules` 递归拷贝。`scripts/package-portable.mjs`
+- 验证（`spikes/s8-00-portable.mjs`）：打包到沙箱，测试模式启动打包后的 exe（窗口在屏幕外、不抢焦点）：Host 0.9 秒起来、UI 能访问、Claude 和 Codex 的 mock 会话都正常回复；结束后只结束自己启动的进程树
+- 发现：Host 的 `assets/codex` 第一版没拷，补上了；没设数据目录时会落进 `resources/app/.data`，S8-01 处理
+- 大小：解压后 654 MB（Electron 368 MB，其中 exe 235 MB；Agent SDK 自带的 claude.exe 约 250 MB）
+- 默认决定（请你过目）：不新增打包依赖；不打 asar；exe 图标和版本信息暂时沿用 Electron 的
+- 额度：0
+- commit：见本次 commit

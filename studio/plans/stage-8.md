@@ -18,7 +18,7 @@
 
 | 项目 | 做法 | 说明 |
 |---|---|---|
-| 打包方式 | S8-00 预研后定：候选 `electron-builder` 的 `portable`/`dir` 目标，或 `@electron/packager` + 自己压 zip | 不做安装包、不签名 |
+| 打包方式 | 不引入打包工具：复制 Electron 运行时、改名 exe、Studio 放在 `resources/app/`（不打 asar），依赖从已安装的 `node_modules` 拷贝（S8-00） | 不做安装包、不签名、不联网 |
 | 产物 | `AMO-Studio-<版本>-portable.zip`，解压即用；里面是 `AMO Studio.exe` 和资源 | |
 | 数据目录 | 默认放在 exe 旁边的 `data/`（便携：整个目录拷走就带走数据）；首次启动时可以改到别处，选择记在 exe 旁边的 `amo-studio.json` | 开发模式仍用 `studio/.data` |
 | 首次启动 | 没有 `amo-studio.json` 时先进设置页：选数据目录；检查 `codex` 是否在 PATH、凭据管理器里有没有 DeepSeek/GLM 的条目（只读，不显示密钥）；然后才启动 Host | |
@@ -27,7 +27,7 @@
 
 ## 任务
 
-### S8-00 预研：打包方式 · todo
+### S8-00 预研：打包方式 · done（结论见 `spikes/RESULTS.md` 第 k 节）
 - 依赖：无
 - 内容：在临时目录里试两种打包方式，看：产物大小；Host 能否用打包后的 Electron 启动；UI 静态文件和 Host 的 dist 怎么放；Agent SDK 自带的 `claude.exe` 能否从 asar 外面找到；启动时间。结论写进 `spikes/RESULTS.md`。
 - 验收：结论与实测数据。

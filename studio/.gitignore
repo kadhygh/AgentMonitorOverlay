@@ -6,3 +6,4 @@ out/
 screenshots/**/tmp-*
 test-results/
 playwright-report/
+release/
