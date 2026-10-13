@@ -70,7 +70,8 @@ let repo: string;
 const run = (cwd: string, ...args: string[]) =>
   execFileSync("git", ["-c", "user.name=AMO Test", "-c", "user.email=amo@test.invalid", "-c", "commit.gpgsign=false", ...args], { cwd, encoding: "utf8", windowsHide: true });
 
-describe("a repository with a branch and working changes", () => {
+// git is a process per call: slow on a loaded machine (the whole suite runs in parallel).
+describe("a repository with a branch and working changes", { timeout: 30_000 }, () => {
   beforeAll(() => {
     root = mkdtempSync(join(tmpdir(), "amo-studio-test-git-"));
     repo = join(root, "repo");
@@ -98,7 +99,7 @@ describe("a repository with a branch and working changes", () => {
     writeFileSync(join(repo, "notes 中文.txt"), "first\nsecond\n");
     run(repo, "add", "src/app.ts");
     writeFileSync(join(repo, "src", "app.ts"), "const a = 1;\nconst b = 20;\nconst c = 3;\nconst d = 4;\nconst e = 5;\n");
-  });
+  }, 60_000);
 
   afterAll(() => removeTempDir(root));
 

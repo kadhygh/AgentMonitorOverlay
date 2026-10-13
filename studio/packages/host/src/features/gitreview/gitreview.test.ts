@@ -72,7 +72,8 @@ function makeRepo(): string {
   return dir;
 }
 
-describe("Git Review API", () => {
+// git is a process per call: slow on a loaded machine (the whole suite runs in parallel).
+describe("Git Review API", { timeout: 30_000 }, () => {
   it("answers status, changes and diffs; a folder without git is not an error", async () => {
     const ws = await ok<Workspace>("POST", "/api/workspaces", { path: makeRepo() });
     const status = await ok<GitStatus>("GET", `/api/workspaces/${ws.id}/git/status`);

@@ -39,9 +39,9 @@
 .gr-diff { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--panel); }
 .gr-file-head { display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: var(--chat-code-banner); border-bottom: 0.5px solid var(--chat-hairline); }
 .gr-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); font-size: 12.5px; color: var(--chat-label); }
-.gr-scroll { flex: 1; min-height: 0; overflow: auto; }
+.gr-scroll { flex: 1; min-height: 0; overflow: auto; background: var(--chat-code-bg); }
 .gr-notice { padding: 24px; color: var(--text-dim); font-size: var(--fs-sm); }
-.gr-lines { min-width: max-content; padding: 4px 0 40px; font-family: var(--font-code); font-size: 12.5px; line-height: 20px; background: var(--chat-code-bg); }
+.gr-lines { min-width: max-content; padding: 4px 0 40px; font-family: var(--font-code); font-size: 12.5px; line-height: 20px; }
 .gr-hunk { display: flex; gap: 12px; padding: 4px 16px 4px 112px; color: var(--chat-caption); background: var(--chat-code-banner); border-block: 0.5px solid var(--chat-hairline); }
 .gr-hunk:first-child { border-top: none; }
 .gr-hidden { color: var(--text-faint); }
