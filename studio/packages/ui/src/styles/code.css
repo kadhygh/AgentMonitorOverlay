@@ -1,0 +1,39 @@
+/* Syntax colours (stage 12, lib/highlight.ts): Shiki's CSS-variables theme reads these. Muted, warm, readable on the
+   code panels (--chat-code-bg) and under the diff tints; dark first, then light (chosen, or following the system). */
+:root {
+  --shiki-foreground: var(--chat-label, var(--text));
+  --shiki-background: transparent;
+  --shiki-token-keyword: #e0957f;
+  --shiki-token-constant: #dcae68;
+  --shiki-token-string: #a9c67f;
+  --shiki-token-string-expression: #a9c67f;
+  --shiki-token-comment: #8d867b;
+  --shiki-token-function: #8fb7dc;
+  --shiki-token-parameter: #dcc8a3;
+  --shiki-token-punctuation: #b5ac9f;
+  --shiki-token-link: #8fb7dc;
+}
+:root[data-theme="light"] {
+  --shiki-token-keyword: #a3402b;
+  --shiki-token-constant: #93560f;
+  --shiki-token-string: #456f23;
+  --shiki-token-string-expression: #456f23;
+  --shiki-token-comment: #8a8378;
+  --shiki-token-function: #285a8c;
+  --shiki-token-parameter: #6a5634;
+  --shiki-token-punctuation: #6c645a;
+  --shiki-token-link: #285a8c;
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]):not([data-theme="light"]) {
+    --shiki-token-keyword: #a3402b;
+    --shiki-token-constant: #93560f;
+    --shiki-token-string: #456f23;
+    --shiki-token-string-expression: #456f23;
+    --shiki-token-comment: #8a8378;
+    --shiki-token-function: #285a8c;
+    --shiki-token-parameter: #6a5634;
+    --shiki-token-punctuation: #6c645a;
+    --shiki-token-link: #285a8c;
+  }
+}

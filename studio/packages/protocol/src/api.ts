@@ -384,3 +384,15 @@ export interface HostRoutes {
   /** Recently changed files: git's working-tree changes, or the newest by modification time. `?limit=` (default 8). */
   "GET /api/workspaces/:id/files/recent": { req: void; res: import("./files.js").ProjectFiles };
 }
+
+// ---- files outside Studio (stage 12, S12-0): open in an editor or the file manager, quick looks -----------------
+export interface HostRoutes {
+  /** Which editors this machine has. */
+  "GET /api/open-in/apps": { req: void; res: import("./openin.js").OpenInApps };
+  /** Opens an existing file or folder (404 when it does not exist). */
+  "POST /api/open-in": { req: import("./openin.js").OpenInRequest; res: import("./openin.js").OpenInResult };
+  /** Reads a text file for a quick look: `?path=` (absolute, or relative with `?workspaceId=`). */
+  "GET /api/fs/text": { req: void; res: import("./openin.js").TextFile };
+  /** An image file itself, for previews (types in PREVIEW_IMAGE_TYPES); also takes `?token=`. */
+  "GET /api/fs/raw": { req: void; res: Blob };
+}

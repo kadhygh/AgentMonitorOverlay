@@ -14,3 +14,4 @@ export { CODEX_PROTOCOL_SOURCE } from "./codex/VERSION.js";
 
 export const PROTOCOL_VERSION = 1;
 export * from "./files.js";
+export * from "./openin.js";

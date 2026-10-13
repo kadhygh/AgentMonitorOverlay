@@ -10,6 +10,7 @@ import "@fontsource-variable/jetbrains-mono";
 // Styles live with their features; one bundle, so the order here is the cascade: base first, then the features.
 import "./styles/base.css";
 import "./styles/markdown.css";
+import "./styles/code.css";
 import "./shell/shell.css";
 import "./board/board.css";
 import "./board/nav.css";
