@@ -1026,3 +1026,13 @@
 - 验证：只改文档，没有跑测试
 - 额度：0
 - commit：见本次 commit
+
+## 2026-10-14 18:30 · S8-05 删除旧 AMO 的清单（不删）
+- 结果：done，`plans/remove-old-amo.md`；**没有删除任何文件**
+- 内容：按 `git ls-files`，`studio/` 以外共 475 个文件，分成"建议删"（`broker/` 157、`overlay/` 177、旧脚本、`tools/canvas-mcp-test`、`examples/`、`amo.ps1`、根 `package.json` 的旧脚本、旧的发布 workflow）、"建议留"（`studio/`、两份新版设计文档、许可证）、"要你定"（其余 97 个旧文档删还是归档、根 README 等改写、目录结构、GitHub Release、本机旧数据）
+- 确认：`studio/` 的代码和脚本没有引用 `broker/`、`overlay/`、根 `scripts/` 里的任何文件
+- 发现并补进文档：
+  - 旧 AMO 部署到工程里的 Hook，删除旧 AMO 后会找不到后台，需要逐个工程清理（loop 不碰真实工程，可以先写只读检查脚本）；
+  - 旧 AMO 的"Git exclude"会排除 `.amo/`，导致 Studio 的扩展包 `.amo/packs/` 默认不进提交；处理办法写进了 `design/pack-format.md`
+- 额度：0
+- commit：见本次 commit
