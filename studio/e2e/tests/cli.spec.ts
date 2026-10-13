@@ -108,6 +108,8 @@ test("Claude: commands, a background command, retries, notices, images and sugge
   const dir = studio.workspace("beta");
   const picture = join(dir, "logo.png");
   copyFileSync(join(studioRoot, "design", "icon", "viewfinder-512.png"), picture);
+  // Suggestions are off by default (one more model request per turn); this test turns them on.
+  await studio.api("PUT", "/api/settings/chat", { promptSuggestions: true });
   await openTask(studio, dir, { profileId: "claude-mock", text: "[[suggest]] 你好" });
   await reply(page, "MOCK: [[suggest]] 你好");
   await idle(page);

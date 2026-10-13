@@ -92,8 +92,9 @@ describe("background output", () => {
 });
 
 describe("chat settings", () => {
-  it("keeps prompt suggestions on by default and remembers the choice", async () => {
-    expect((await api<ChatSettings>("GET", "/api/settings/chat")).data).toEqual({ promptSuggestions: true });
+  it("keeps prompt suggestions off by default and remembers the choice", async () => {
+    expect((await api<ChatSettings>("GET", "/api/settings/chat")).data).toEqual({ promptSuggestions: false });
+    expect((await api<ChatSettings>("PUT", "/api/settings/chat", { promptSuggestions: true })).data).toEqual({ promptSuggestions: true });
     expect((await api("PUT", "/api/settings/chat", { promptSuggestions: "no" })).status).toBe(400);
     expect((await api<ChatSettings>("PUT", "/api/settings/chat", { promptSuggestions: false })).data).toEqual({ promptSuggestions: false });
     expect((await api<ChatSettings>("GET", "/api/settings/chat")).data).toEqual({ promptSuggestions: false });

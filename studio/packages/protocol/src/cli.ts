@@ -54,7 +54,8 @@ export interface ChatSettings {
   promptSuggestions: boolean;
 }
 
-export const DEFAULT_CHAT_SETTINGS: ChatSettings = { promptSuggestions: true };
+// Off by default: each suggestion is one more model request per turn, and the subscriptions have budgets.
+export const DEFAULT_CHAT_SETTINGS: ChatSettings = { promptSuggestions: false };
 
 /** Most bytes of a background command's output the Host returns. */
 export const BACKGROUND_OUTPUT_LIMIT = 8_000;

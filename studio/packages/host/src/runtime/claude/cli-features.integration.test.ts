@@ -148,7 +148,8 @@ describe("Claude Code CLI features", () => {
     expect(ofType(s.id, "error")).toHaveLength(0);
   }, 90_000);
 
-  it("offers Claude's suggested next message after a reply, unless turned off", async () => {
+  it("offers Claude's suggested next message after a reply when turned on (off by default)", async () => {
+    writeChatSettings(store, { promptSuggestions: true });
     const s = await start("[[suggest]] first");
     await until(() => idle(s.id) && ofType(s.id, "agent").length === 1, "first reply");
     await runtime.sendMessage(s.id, "second");
@@ -164,7 +165,7 @@ describe("Claude Code CLI features", () => {
       await new Promise((r) => setTimeout(r, 1500));
       expect(ofType(off.id, "suggestion")).toHaveLength(0);
     } finally {
-      writeChatSettings(store, { promptSuggestions: true });
+      writeChatSettings(store, { promptSuggestions: false });
     }
   }, 120_000);
 });

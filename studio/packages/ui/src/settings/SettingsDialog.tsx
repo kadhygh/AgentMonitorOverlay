@@ -139,7 +139,7 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
               ))}
             </div>
           </div>
-          <span className="settings-hint">Claude 会话每轮回答后，在输入框上方给出建议的下一句，点一下填进输入框（每轮多一次很小的模型请求）。</span>
+          <span className="settings-hint">Claude 会话每轮回答后，在输入框上方给出建议的下一句，点一下填进输入框。默认关闭：每轮会多一次很小的模型请求。</span>
         </section>
 
         <section className="settings-section" aria-label="公共目录">
