@@ -26,6 +26,21 @@ const tool = (kind: "read" | "command" | "edit" | "search", summary: string, t?:
 });
 
 describe("buildTranscript", () => {
+  it("keeps CLI records in sight: compaction and command output at the end, no rows for background commands or suggestions", () => {
+    const compaction: SessionItem = { ...base("t2"), type: "compaction", state: "completed", beforeTokens: 12000 };
+    const output: SessionItem = { ...base("t3"), type: "command", name: "cost", output: "Total cost: $0" };
+    const background: SessionItem = { ...base("t1"), type: "background", taskId: "b1", command: "npm run dev", state: "running", startedAt: "2026-10-13T00:00:00.000Z" };
+    const suggestion: SessionItem = { ...base(), type: "suggestion", text: "再跑一遍测试" };
+    const items = [turn("t1"), user("go", "t1"), tool("command", "npm run dev", "t1"), background, agent("", "t1"), agent("started", "t1"), suggestion, user("/compact"), turn("t2"), compaction, user("/cost"), turn("t3"), output];
+    const segs = buildTranscript(items, false);
+    expect(segs).toHaveLength(3);
+    expect(segs[0]!.rows.flatMap((r) => (r.kind === "group" ? r.members : [r.item])).map((i) => i.type)).toEqual(["tool"]);
+    expect(segs[0]!.answer).toMatchObject({ markdown: "started" });
+    expect(segs[1]!.tail).toEqual([compaction]);
+    expect(segs[1]!.rows).toEqual([]);
+    expect(segs[2]!.tail).toEqual([output]);
+  });
+
   it("splits a turn into the message, the work, the answer", () => {
     const items = [turn("t1"), user("加重试", "t1"), think("先读文件", "t1"), tool("read", "importer.py", "t1"), tool("command", "npm test", "t1"), agent("改好了", "t1")];
     const [seg] = buildTranscript(items, false);

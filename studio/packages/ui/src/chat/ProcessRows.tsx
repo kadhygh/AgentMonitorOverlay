@@ -23,6 +23,7 @@ import {
 } from "./turns.js";
 import type { TranscriptView } from "./prefs.js";
 import { FileLink } from "../files/FileLinks.js";
+import { Elapsed, ToolImages } from "./cli/CliRows.js";
 import { parseInlinePath } from "../files/paths.js";
 
 // Rows of a turn's work, after DSH's ui-chat / ui-tool: a group header summarising the work, and one line per
@@ -180,8 +181,15 @@ export function ToolRow({ item }: { item: ToolItem }) {
           </>
         )}
         {item.files && <DiffStat files={item.files} />}
+        {item.progress && (
+          <span className="pr-progress" data-testid="tool-progress" title={item.progress}>
+            {item.progress}
+          </span>
+        )}
+        {running && <Elapsed since={item.createdAt} />}
         {note && <span className={`pr-note ${item.status}`}>{note}</span>}
       </RowButton>
+      {item.images?.length ? <ToolImages images={item.images} /> : null}
       {open && <div className="pr-body">{toolBody(item)}</div>}
     </div>
   );

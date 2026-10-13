@@ -388,6 +388,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
                 setPreview(null);
                 setPendingAnnotation(anchor);
               }}
+              onError={showError}
               annotations={annotations}
             />
           </FileLinks>

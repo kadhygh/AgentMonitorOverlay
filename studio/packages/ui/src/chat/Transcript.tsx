@@ -10,6 +10,7 @@ import { MessageFiles, MessageImages } from "../attach/MessageAttachments.js";
 import { splitFileRefItems } from "../attach/refs.js";
 import { TurnChanges } from "../files/ChangedFiles.js";
 import { QuestionRecord } from "./questions/QuestionRecord.js";
+import { CommandRecord, CompactionRow, NoticeRow } from "./cli/CliRows.js";
 
 // The conversation, one turn after another (DSH ui-chat): the person's bubble, the work (folded once the turn is
 // done), the answer, and a footer with copy, time and token usage. A running turn ends with a live status line.
@@ -75,7 +76,14 @@ export function Transcript({ session, items, annotations, model, busy, view, onA
           onJump={onJump}
         />
       ))}
-      {sessionRunning && <RunningStatus turn={runningTurn} members={last?.running ? segmentMembers(last) : []} awaiting={session?.status === "awaiting-answer" ? "等你回答" : session?.status === "awaiting-approval" ? "等待你的确认" : null} />}
+      {sessionRunning && (
+        <RunningStatus
+          turn={runningTurn}
+          members={last?.running ? segmentMembers(last) : []}
+          compacting={!!last?.running && [...segmentMembers(last), ...last.tail].some((i) => i.type === "compaction" && i.state === "running")}
+          awaiting={session?.status === "awaiting-answer" ? "等你回答" : session?.status === "awaiting-approval" ? "等待你的确认" : null}
+        />
+      )}
     </>
   );
 }
@@ -131,7 +139,14 @@ function TurnView({
         </div>
       )}
       {/* What the person answered stays in sight when the turn's work folds away (like their messages). */}
-      {folded && seg.rows.map((row) => (row.kind === "item" && row.item.type === "question" ? <QuestionRecord key={row.key} item={row.item} /> : null))}
+      {folded &&
+        seg.rows.map((row) =>
+          row.kind === "item" && row.item.type === "question" ? (
+            <QuestionRecord key={row.key} item={row.item} />
+          ) : row.kind === "item" && row.item.type === "compaction" ? (
+            <CompactionRow key={row.key} item={row.item} />
+          ) : null,
+        )}
       {seg.answer && <AgentReply item={seg.answer} highlights={highlights(seg.answer.id)} />}
       {finished && <TurnChanges items={segmentMembers(seg)} />}
       {seg.tail.map((item) => (
@@ -188,12 +203,11 @@ function StandaloneItem({ item, busy, highlights, onApprove }: { item: SessionIt
         </div>
       );
     case "notice":
-      return (
-        <div className={item.level === "warning" ? "msg-notice warning" : "msg-notice"} data-testid="msg-notice">
-          <span className={`state-dot ${item.level === "warning" ? "warn" : "info"}`} aria-hidden="true" />
-          <span>{item.message}</span>
-        </div>
-      );
+      return <NoticeRow item={item} />;
+    case "compaction":
+      return <CompactionRow item={item} />;
+    case "command":
+      return <CommandRecord item={item} />;
     default:
       return null;
   }
@@ -350,9 +364,12 @@ function UsageButton({ usage, speed, model }: { usage: TurnUsage; speed: number 
 
 // ---- running status ---------------------------------------------------------------------------------------------
 
-/** The live line at the bottom while the session works: the robot, the elapsed time and (once known) the speed. */
-/** `awaiting`: what the session waits for from the person ("等待你的确认", "等你回答"), or null while it works. */
-function RunningStatus({ turn, members, awaiting }: { turn: TurnItem | null; members: readonly SessionItem[]; awaiting: string | null }) {
+/**
+ * The live line at the bottom while the session works: the robot, the elapsed time and (once known) the speed.
+ * `awaiting`: what the session waits for from the person ("等待你的确认", "等你回答"), or null while it works. While the
+ * CLI retries a model request or compacts the context, the line says so instead (stage 12, S12-E).
+ */
+function RunningStatus({ turn, members, awaiting, compacting }: { turn: TurnItem | null; members: readonly SessionItem[]; awaiting: string | null; compacting: boolean }) {
   const startedAt = turn?.startedAt;
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -361,13 +378,18 @@ function RunningStatus({ turn, members, awaiting }: { turn: TurnItem | null; mem
   }, []);
   const start = startedAt ? Date.parse(startedAt) : NaN;
   const speed = outputSpeed(turn ?? undefined, members, now);
+  const retry = turn?.retry;
   const label = awaiting
     ? awaiting
-    : Number.isFinite(start)
+    : retry
+      ? `正在重试 ${retry.attempt}${retry.max ? `/${retry.max}` : ""} · ${retry.reason}`
+      : compacting
+        ? "正在压缩上下文…"
+        : Number.isFinite(start)
       ? `正在工作，用时 ${formatDuration(Math.max(1000, now - start))}${speed !== null ? ` · ${speed} tok/s` : ""} ···`
       : "正在工作";
   return (
-    <div className="run-status" data-testid="run-status">
+    <div className="run-status" data-testid="run-status" data-retrying={retry ? "" : undefined}>
       <span className="sr-only" role="status" aria-live="polite">
         {awaiting ?? "正在工作"}
       </span>

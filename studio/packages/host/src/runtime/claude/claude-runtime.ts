@@ -2,8 +2,9 @@ import { randomUUID } from "node:crypto";
 import { createRequire } from "node:module";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { createSdkMcpServer, forkSession, getSessionMessages, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage } from "@anthropic-ai/claude-agent-sdk";
-import { claudeAnswers, storedAnswers, type ApprovalDecision, type ApprovalKind, type Attachment, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionPrompt, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SessionStatus, type ToolFields, type TurnState, type Workspace, type AccountUsage, type UsageWindow } from "@amo-studio/protocol";
+import { createSdkMcpServer, forkSession, getSessionMessages, query, renameSession, tool, type HookCallbackMatcher, type HookEvent, type PermissionResult, type Query, type SDKMessage, type SDKUserMessage, type SlashCommand as SdkSlashCommand } from "@anthropic-ai/claude-agent-sdk";
+import { claudeAnswers, parseSlashCommand, storedAnswers, type ApprovalDecision, type ApprovalKind, type Attachment, type BackgroundState, type ChatSettings, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionPrompt, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SessionStatus, type SlashCommand, type SlashCommandList, type SlashCommandResult, type ToolFields, type TurnRetry, type TurnState, type Workspace, type AccountUsage, type UsageWindow } from "@amo-studio/protocol";
+import { readChatSettings } from "../chat-settings.js";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_DEFAULT_PERMISSION, CLAUDE_PERMISSIONS, claudePermissionMode } from "../choices.js";
 import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
@@ -100,7 +101,44 @@ interface Live {
   subs: Map<string, Id>;
   /** Agent calls running in the background (their tool result arrives at once; a task notification ends them) */
   backgroundSubs: Set<string>;
+  // ---- stage 12, S12-E ----
+  /** tool_use id -> the call's name and input (kept for the turn: background commands, images read, summaries) */
+  calls: Map<string, { name: string; input: Record<string, unknown>; itemId?: Id }>;
+  /** CLI task id -> its tool_use id and description (every Bash or agent task, foreground or not) */
+  tasks: Map<string, { toolUseId?: string; description: string; type?: string }>;
+  /** background command (task id) -> its `background` item */
+  bgItems: Map<string, Id>;
+  /** The compaction in progress (its item), between status "compacting" and compact_boundary. */
+  compaction: Id | null;
+  /** A retry is shown on the turn (cleared when the model answers). */
+  retrying: boolean;
+  /** notice key -> its item, for the turn in progress (repeats update the row instead of adding one) */
+  notices: Map<string, Id>;
+  /** The command list as the CLI last pushed it (commands_changed), newest first. */
+  commands: SdkSlashCommand[] | null;
+  /** Tools the person declined in Studio (a permission_denied for them needs no notice). */
+  declinedByPerson: Set<string>;
 }
+
+/**
+ * Claude Code commands left out of the `/` menu (stage 12, S12-E): they would change what Studio keeps for the session
+ * (its conversation, model, effort, name) behind its back, only make sense in the terminal UI, or are internal.
+ * `compact` is offered as Studio's own. The ones in BLOCKED_COMMANDS are refused when typed.
+ */
+const HIDDEN_COMMANDS = new Set(["compact", "clear", "model", "effort", "fast", "rename", "config", "color", "focus", "heapdump", "auto-mode-setup", "autocompact", "resume", "exit", "quit", "login", "logout", "workflow-launch-exec"]);
+const BLOCKED_COMMANDS: Record<string, string> = {
+  clear: "Studio 里不能用 /clear 清空会话：请新建一个会话。",
+  reset: "Studio 里不能用 /reset 清空会话：请新建一个会话。",
+  new: "Studio 里不能用 /new：请新建一个会话。",
+  model: "请用输入框左下角的「型号」切换模型。",
+  effort: "请用输入框左下角切换思考强度。",
+  rename: "请在会话标题上改名。",
+  resume: "Studio 里不能切换到别的 Claude 会话。",
+  exit: "Studio 里不需要 /exit。",
+  quit: "Studio 里不需要 /quit。",
+  login: "请在 设置 → 模型凭据 里保存令牌。",
+  logout: "请在 设置 → 模型凭据 里删除令牌。",
+};
 
 /**
  * Defence in depth: an Agent call may ask for a permission `mode` (bypassPermissions, auto, dontAsk…) for its
@@ -137,6 +175,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly modelCache = new Map<Id, { at: number; models: ModelOption[] }>();
   /** Queries being closed: a new one for the same session must wait, or the CLI says the session id is in use. */
   private readonly closing = new Map<Id, Promise<void>>();
+  /** Skill names per profile, from the CLI's init message (its command list does not tell skills apart). */
+  private readonly skillNames = new Map<Id, Set<string>>();
+  /** Command lists asked without a session (profile and folder -> list). */
+  private readonly commandCache = new Map<string, { at: number; list: SdkSlashCommand[] }>();
+  /** The `/` command a session was last sent, to name the output of a command that runs without the model. */
+  private readonly lastCommand = new Map<Id, string>();
 
   constructor(private readonly options: ClaudeRuntimeOptions) {
     super(options.store, "claude", options.now);
@@ -168,6 +212,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** Images go as base64 image blocks before the text (the CLI keeps them in the transcript). */
   async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
     const session = this.writable(sessionId);
+    const slash = parseSlashCommand(text);
+    const blocked = slash ? BLOCKED_COMMANDS[slash.name.toLowerCase()] : undefined;
+    if (blocked) throw Object.assign(new Error(blocked), { code: "bad_request" });
+    if (slash) this.lastCommand.set(sessionId, slash.name);
     // Read the images first: a missing file fails the send before anything is shown or queued.
     const blocks = images.map((a) => ({ type: "image" as const, source: { type: "base64" as const, media_type: a.mime as "image/png", data: readFileSync(a.path).toString("base64") } }));
     if (!session.title) this.updateSession(sessionId, { title: (text || "图片").slice(0, 60) });
@@ -337,7 +385,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const pending = live?.approvals.get(approvalId);
     if (!live || !pending) throw new Error(`approval ${approvalId} is not pending`);
     live.approvals.delete(approvalId);
-    if (decision === "decline" && pending.toolUseId) live.declinedTools.add(pending.toolUseId);
+    if (decision === "decline" && pending.toolUseId) {
+      live.declinedTools.add(pending.toolUseId);
+      live.declinedByPerson.add(pending.toolUseId);
+    }
     pending.resolve(decision === "accept" ? { behavior: "allow", updatedInput: pending.input } : { behavior: "deny", message: DECLINED });
     this.updateItem(pending.itemId, (item) => (item.type === "approval" ? { ...item, state: decision === "accept" ? "accepted" : "declined" } : item));
     if (live.running) this.setStatus(sessionId, waitingStatus(live));
@@ -434,6 +485,71 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     await Promise.all([...this.closing.values()]);
   }
 
+  // ---- CLI features (stage 12, S12-E) -------------------------------------------------------------------------------
+
+  /**
+   * Claude Code's commands and skills for the session: from its running process, or else from a process started in
+   * the project folder just to ask (no model request), kept for a while per profile and folder.
+   */
+  async listCommands(sessionId: Id): Promise<SlashCommandList> {
+    const session = this.requireSession(sessionId);
+    const profile = this.profile(session.profileId);
+    const live = this.live.get(sessionId);
+    try {
+      const list = live?.commands ?? (live ? await withTimeout(live.q.supportedCommands(), 15_000) : await this.probeCommands(session));
+      return { commands: claudeCommands(list, this.skillNames.get(profile.id)) };
+    } catch (err) {
+      this.emit("log", `could not ask Claude Code for its commands (${sessionId}): ${firstLine(err)}`);
+      return { commands: [], note: `读不到 Claude Code 的命令列表：${firstLine(err)}` };
+    }
+  }
+
+  private async probeCommands(session: Session): Promise<SdkSlashCommand[]> {
+    const workspace = this.store.getWorkspace(session.workspaceId);
+    if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
+    const key = `${session.profileId}|${workspace.path}`;
+    const cached = this.commandCache.get(key);
+    if (cached && Date.now() - cached.at < 10 * 60_000) return cached.list;
+    const env = claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv);
+    let release!: () => void;
+    const gate = new Promise<void>((r) => (release = r));
+    async function* none(): AsyncGenerator<SDKUserMessage> {
+      await gate;
+    }
+    const q = query({ prompt: none(), options: { cwd: workspace.path, env, settingSources: [], permissionMode: "default" } });
+    try {
+      const list = await withTimeout(q.supportedCommands(), 20_000);
+      this.commandCache.set(key, { at: Date.now(), list });
+      return list;
+    } finally {
+      release();
+      q.close();
+    }
+  }
+
+  /** Every command goes to Claude Code as the text `/name args` (compact included); it answers as for a message. */
+  async runCommand(sessionId: Id, name: string, args: string): Promise<SlashCommandResult> {
+    const sent = await this.sendMessage(sessionId, `/${name}${args ? ` ${args}` : ""}`);
+    return { mode: sent.mode };
+  }
+
+  async stopBackground(sessionId: Id, taskId: string): Promise<void> {
+    const live = this.live.get(sessionId);
+    const item = this.store.listItems(sessionId).find((i) => i.type === "background" && i.taskId === taskId);
+    if (!item || item.type !== "background") throw Object.assign(new Error(`background command ${taskId} not found`), { code: "not_found" });
+    if (item.state !== "running") return;
+    // Without its process the command is gone already.
+    if (!live?.bgItems.has(taskId)) return this.settleBackground(item.id, "stopped");
+    await live.q.stopTask(taskId);
+  }
+
+  /** Prompt suggestions follow the setting in running sessions too (the CLI's own setting of that name). */
+  applyChatSettings(settings: ChatSettings): void {
+    for (const [id, live] of this.live) {
+      void live.q.applyFlagSettings({ promptSuggestionEnabled: settings.promptSuggestions } as never).catch((err: unknown) => this.emit("log", `could not apply chat settings to ${id}: ${firstLine(err)}`));
+    }
+  }
+
   // ---- the query ----------------------------------------------------------------------------------------------------
 
   private ensureLive(session: Session): Live {
@@ -487,6 +603,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       askedTools: new Set(),
       subs: new Map(),
       backgroundSubs: new Set(),
+      calls: new Map(),
+      tasks: new Map(),
+      bgItems: new Map(),
+      compaction: null,
+      retrying: false,
+      notices: new Map(),
+      commands: null,
+      declinedByPerson: new Set(),
     };
     live.q = query({
       prompt: input(),
@@ -500,6 +624,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         ...(session.options.model ? { model: session.options.model } : {}),
         ...(session.options.effort ? { effort: session.options.effort as never } : {}),
         includePartialMessages: true,
+        promptSuggestions: readChatSettings(this.store).promptSuggestions,
         canUseTool: (toolName, toolInput, ctx) => this.askPerson(session.id, live, toolName, toolInput, ctx),
         hooks: STRIP_SUBAGENT_MODE,
         ...this.mcpOptions(session.id),
@@ -546,6 +671,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     for (const question of live.questions.values()) this.cancelQuestion(question.itemId);
     live.questions.clear();
     for (const id of live.tools.values()) this.updateItem(id, (it) => (it.type === "tool" && it.status === "running" ? { ...it, status: "failed" } : it));
+    // Background commands end with their Claude Code process.
+    for (const id of live.bgItems.values()) this.settleBackground(id, "stopped");
+    if (live.compaction) this.updateItem(live.compaction, (it) => (it.type === "compaction" && it.state === "running" ? { ...it, state: "failed" } : it));
     for (const childId of live.subs.values()) {
       if (this.store.getSession(childId)?.status === "running") this.setStatus(childId, err && !live.interrupted ? "error" : "idle");
     }
@@ -588,6 +716,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         const e = m.event as { type: string; index?: number; content_block?: { type: string }; delta?: { type: string; text?: string; thinking?: string } };
         if (e.type === "message_start") {
           if (!live.running) this.turnStarted(sessionId, live);
+          this.clearRetry(live);
           live.blocks.clear();
         } else if (e.type === "content_block_start" && e.content_block?.type === "text") {
           const item = this.appendItem(sessionId, { type: "agent", markdown: "", streaming: true }, { method: "stream/text" });
@@ -612,6 +741,15 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       }
       case "assistant": {
         if (!live.running) this.turnStarted(sessionId, live);
+        this.clearRetry(live);
+        // A command that runs without the model (/cost, /context…): its output comes as an assistant message marked
+        // with the stdout it was made from (CLI 2.1.296; spikes/s12-e-claude-cli.mjs).
+        if ((m as { local_command_source?: unknown }).local_command_source !== undefined) {
+          const output = m.message.content.map((b) => (b.type === "text" ? b.text : "")).join("\n");
+          const name = this.lastCommand.get(sessionId) ?? "";
+          this.appendItem(sessionId, { type: "command", name, output: localCommandText(output) }, { method: "local_command" });
+          return;
+        }
         const used = (m.message as { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } }).usage;
         if (used) live.context = (used.input_tokens ?? 0) + (used.cache_read_input_tokens ?? 0) + (used.cache_creation_input_tokens ?? 0) + (used.output_tokens ?? 0);
         for (const block of m.message.content) {
@@ -635,10 +773,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
               this.appendItem(sessionId, { type: "agent", markdown: block.text, streaming: false }, { method: "assistant" });
             }
           } else if (block.type === "tool_use") {
-            if (block.name === "Agent" || block.name === "Task") this.startSubagent(sessionId, live, block.id, block.input as Record<string, unknown>);
+            const input = block.input as Record<string, unknown>;
+            live.calls.set(block.id, { name: block.name, input });
+            if (block.name === "Agent" || block.name === "Task") this.startSubagent(sessionId, live, block.id, input);
             // The question item stands for these calls; a row is added only if they never reach the person.
-            else if (QUESTION_TOOLS.has(block.name)) live.questionTools.set(block.id, { name: block.name, input: block.input as Record<string, unknown> });
-            else this.addToolCard(sessionId, live, block.id, block.name, block.input as Record<string, unknown>);
+            else if (QUESTION_TOOLS.has(block.name)) live.questionTools.set(block.id, { name: block.name, input });
+            else this.addToolCard(sessionId, live, block.id, block.name, input);
           }
         }
         return;
@@ -667,24 +807,43 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
             this.addToolCard(sessionId, live, block.tool_use_id, asked.name, asked.input);
           }
           this.settleToolCard(live, block.tool_use_id, block.content, block.is_error === true);
+          // A command sent to the background: its result names the file its output goes to.
+          const bg = [...live.tasks].find(([, t]) => t.toolUseId === block.tool_use_id);
+          const bgItem = bg ? live.bgItems.get(bg[0]) : undefined;
+          const outputFile = /Output is being written to:\s*(\S.*?\.output)\b/.exec(toolResultText(block.content))?.[1];
+          if (bgItem && outputFile) this.updateItem(bgItem, (it) => (it.type === "background" && !it.outputFile ? { ...it, outputFile } : it));
         }
         return;
       }
-      case "system": {
-        const s = m as { subtype: string; task_id?: string; tool_use_id?: string; status?: string };
-        if (s.subtype === "task_started" && s.task_id) {
-          live.background.add(s.task_id);
-          if (s.tool_use_id && live.subs.has(s.tool_use_id)) live.backgroundSubs.add(s.tool_use_id);
-        }
-        if (s.subtype === "task_notification" && s.task_id) {
-          live.background.delete(s.task_id);
-          const child = s.tool_use_id ? live.subs.get(s.tool_use_id) : undefined;
-          if (child) this.setStatus(child, s.status === "completed" ? "completed" : s.status === "stopped" ? "idle" : "error");
-        }
+      case "system":
+        return this.onSystem(sessionId, live, m);
+      case "prompt_suggestion": {
+        const text = (m as { suggestion?: string }).suggestion?.trim();
+        if (text && readChatSettings(this.store).promptSuggestions) this.appendItem(sessionId, { type: "suggestion", text: text.slice(0, 500) }, { method: "prompt_suggestion" });
+        return;
+      }
+      case "tool_use_summary": {
+        // The CLI's one-line summary of the calls before it: shown on the last of them.
+        const ids = (m as { preceding_tool_use_ids?: string[] }).preceding_tool_use_ids ?? [];
+        const summary = (m as { summary?: string }).summary?.trim();
+        const itemId = [...ids].reverse().map((id) => live.calls.get(id)?.itemId).find(Boolean);
+        if (summary && itemId) this.updateItem(itemId, (it) => (it.type === "tool" ? { ...it, progress: summary } : it));
         return;
       }
       case "result": {
         live.running = false;
+        this.clearRetry(live);
+        // A stream the CLI never completed (a refused response is withheld) ends with the turn.
+        for (const id of live.streaming.splice(0)) {
+          const text = live.text.get(id) ?? "";
+          live.text.delete(id);
+          this.updateItem(id, (it) => (it.type === "agent" ? { ...it, markdown: it.markdown || text, streaming: false } : it));
+        }
+        for (const t of live.thinking.splice(0)) {
+          const text = live.text.get(t.itemId) ?? "";
+          live.text.delete(t.itemId);
+          this.updateItem(t.itemId, (it) => (it.type === "reasoning" ? { ...it, text: it.text || text, streaming: false } : it));
+        }
         const usage = (m as { usage?: { input_tokens?: number; output_tokens?: number; cache_read_input_tokens?: number | null; cache_creation_input_tokens?: number | null } }).usage;
         // The largest context among the models the turn used (subagents may use smaller ones).
         const windows = Object.values((m as { modelUsage?: Record<string, { contextWindow?: number }> }).modelUsage ?? {}).map((u) => u.contextWindow ?? 0);
@@ -695,7 +854,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
           this.setStatus(sessionId, "idle");
         } else if (m.is_error) {
           const errors = (m as { errors?: string[] }).errors;
-          this.appendItem(sessionId, { type: "error", message: errors?.join("\n") || `回合出错（${m.subtype}）` }, { method: "result" });
+          // A refusal has said so already (its notices and the CLI's own message).
+          const refused = (m as { stop_reason?: string | null }).stop_reason === "refusal";
+          if (!refused || errors?.length) this.appendItem(sessionId, { type: "error", message: errors?.join("\n") || `回合出错（${m.subtype}）` }, { method: "result" });
           this.setStatus(sessionId, "error");
         } else {
           this.setStatus(sessionId, "idle");
@@ -704,8 +865,182 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         return;
       }
       default:
+        // Not shown: tool_progress (a running row shows its own elapsed time), auth_status, hook_progress,
+        // thinking-token counts, conversation_reset (/clear is refused), worker_shutting_down.
         return;
     }
+  }
+
+  /** System messages: tasks (subagents, background commands), compaction, retries, notices, the command list. */
+  private onSystem(sessionId: Id, live: Live, m: SDKMessage): void {
+    const s = m as unknown as Record<string, unknown> & { subtype: string };
+    const str = (v: unknown) => (typeof v === "string" ? v : "");
+    switch (s.subtype) {
+      case "init": {
+        const session = this.store.getSession(sessionId);
+        if (session && Array.isArray(s.skills)) this.skillNames.set(session.profileId, new Set((s.skills as unknown[]).filter((x): x is string => typeof x === "string")));
+        return;
+      }
+      case "commands_changed": {
+        if (Array.isArray(s.commands)) live.commands = s.commands as SdkSlashCommand[];
+        return;
+      }
+      case "task_started": {
+        const taskId = str(s.task_id);
+        if (!taskId) return;
+        const toolUseId = str(s.tool_use_id) || undefined;
+        live.background.add(taskId);
+        live.tasks.set(taskId, { ...(toolUseId ? { toolUseId } : {}), description: str(s.description), ...(str(s.task_type) ? { type: str(s.task_type) } : {}) });
+        if (toolUseId && live.subs.has(toolUseId)) live.backgroundSubs.add(toolUseId);
+        if (s.is_backgrounded === true) this.startBackground(sessionId, live, taskId);
+        return;
+      }
+      case "task_updated": {
+        const taskId = str(s.task_id);
+        const patch = (s.patch ?? {}) as { status?: string; is_backgrounded?: boolean; error?: string };
+        // A foreground command sent to the background while it ran.
+        if (patch.is_backgrounded === true && !live.bgItems.has(taskId)) this.startBackground(sessionId, live, taskId);
+        const itemId = live.bgItems.get(taskId);
+        const state: BackgroundState | null = patch.status === "completed" ? "completed" : patch.status === "failed" ? "failed" : patch.status === "killed" ? "stopped" : null;
+        if (itemId && state) this.settleBackground(itemId, state, patch.error);
+        return;
+      }
+      case "task_notification": {
+        const taskId = str(s.task_id);
+        if (!taskId) return;
+        live.background.delete(taskId);
+        const toolUseId = str(s.tool_use_id);
+        const child = toolUseId ? live.subs.get(toolUseId) : undefined;
+        if (child) this.setStatus(child, s.status === "completed" ? "completed" : s.status === "stopped" ? "idle" : "error");
+        const itemId = live.bgItems.get(taskId);
+        if (itemId) {
+          const state: BackgroundState = s.status === "completed" ? "completed" : s.status === "stopped" ? "stopped" : "failed";
+          // task_updated may have ended it already; the notification still brings the summary and the output file.
+          this.updateItem(itemId, (it) =>
+            it.type === "background"
+              ? {
+                  ...it,
+                  ...(it.state === "running" ? { state, endedAt: this.now().toISOString() } : {}),
+                  ...(str(s.summary) ? { summary: str(s.summary) } : {}),
+                  ...(str(s.output_file) && !it.outputFile ? { outputFile: str(s.output_file) } : {}),
+                }
+              : it,
+          );
+          live.bgItems.delete(taskId);
+        }
+        live.tasks.delete(taskId);
+        return;
+      }
+      case "status": {
+        if (s.status === "compacting" && !live.compaction) {
+          if (!live.running) this.turnStarted(sessionId, live);
+          live.compaction = this.appendItem(sessionId, { type: "compaction", state: "running" }, { method: "status/compacting" }).id;
+        } else if (s.compact_result === "failed") {
+          const error = str(s.compact_error);
+          const failed = { state: "failed" as const, ...(error ? { error } : {}) };
+          if (live.compaction) this.updateItem(live.compaction, (it) => (it.type === "compaction" ? { ...it, ...failed } : it));
+          else this.appendItem(sessionId, { type: "compaction", ...failed }, { method: "status/compact_failed" });
+          live.compaction = null;
+        }
+        return;
+      }
+      case "compact_boundary": {
+        const meta = (s.compact_metadata ?? {}) as { trigger?: "manual" | "auto"; pre_tokens?: number; post_tokens?: number };
+        const fields = {
+          state: "completed" as const,
+          ...(meta.trigger ? { trigger: meta.trigger } : {}),
+          ...(typeof meta.pre_tokens === "number" ? { beforeTokens: meta.pre_tokens } : {}),
+          ...(typeof meta.post_tokens === "number" ? { afterTokens: meta.post_tokens } : {}),
+        };
+        if (live.compaction) this.updateItem(live.compaction, (it) => (it.type === "compaction" ? { ...it, ...fields } : it));
+        else this.appendItem(sessionId, { type: "compaction", ...fields }, { method: "compact_boundary" });
+        live.compaction = null;
+        // The context readout follows what is left after compacting.
+        if (typeof meta.post_tokens === "number") live.context = meta.post_tokens;
+        return;
+      }
+      case "api_retry": {
+        const reason = retryReason(str(s.error), typeof s.error_status === "number" ? s.error_status : null);
+        this.setRetry(live, { attempt: Number(s.attempt) || 1, ...(typeof s.max_retries === "number" ? { max: s.max_retries } : {}), reason });
+        return;
+      }
+      case "model_refusal_fallback":
+        return this.notice(sessionId, live, "warning", `模型 ${str(s.original_model)} 拒绝了这次请求，已改用 ${str(s.fallback_model)}。`, "refusal");
+      case "model_refusal_no_fallback": {
+        const why = str(s.api_refusal_explanation);
+        return this.notice(sessionId, live, "warning", `模型 ${str(s.original_model)} 拒绝了这次请求${why ? `：${why}` : "。"}`, "refusal");
+      }
+      case "permission_denied": {
+        if (live.declinedByPerson.has(str(s.tool_use_id))) return;
+        const message = str(s.message) || str(s.decision_reason);
+        return this.notice(sessionId, live, "warning", `${str(s.tool_name)} 没有获准运行${message ? `：${message}` : "。"}`, `denied:${str(s.tool_name)}`);
+      }
+      case "notification": {
+        // Low-priority ones are the terminal UI's hints.
+        if (s.priority === "low" || !str(s.text)) return;
+        return this.notice(sessionId, live, s.priority === "high" || s.priority === "immediate" ? "warning" : "info", str(s.text), `notification:${str(s.key)}`);
+      }
+      case "informational": {
+        if (s.level === "suggestion" || !str(s.content)) return;
+        return this.notice(sessionId, live, s.level === "warning" ? "warning" : "info", str(s.content), `informational:${str(s.tag) || str(s.content)}`);
+      }
+      case "hook_response": {
+        // Hooks only show when they fail or block (exit code 2).
+        const blocked = s.exit_code === 2;
+        if (s.outcome !== "error" && !blocked) return;
+        const detail = firstLine(str(s.stderr) || str(s.output) || str(s.stdout));
+        return this.notice(sessionId, live, "warning", `Hook ${str(s.hook_name)}（${str(s.hook_event)}）${blocked ? "拦截了这一步" : "运行失败"}${detail ? `：${detail}` : "。"}`, `hook:${str(s.hook_name)}`);
+      }
+      default:
+        // hook_started, session_state_changed, files_persisted, memory_recall, mirror_error… are not shown.
+        return;
+    }
+  }
+
+  /** A background command: a `background` item the composer lists until it ends. */
+  private startBackground(sessionId: Id, live: Live, taskId: string): void {
+    const task = live.tasks.get(taskId);
+    // Subagents sent to the background stay in the session tree; only commands are listed.
+    if (!task || (task.type && task.type !== "local_bash") || (task.toolUseId && live.subs.has(task.toolUseId))) return;
+    const call = task.toolUseId ? live.calls.get(task.toolUseId) : undefined;
+    const command = typeof call?.input.command === "string" ? call.input.command : task.description;
+    const item = this.appendItem(
+      sessionId,
+      { type: "background", taskId, command, ...(task.description && task.description !== command ? { description: task.description } : {}), state: "running", startedAt: this.now().toISOString() },
+      { method: "task_started", ...(task.toolUseId ? { itemId: task.toolUseId } : {}) },
+    );
+    live.bgItems.set(taskId, item.id);
+  }
+
+  private settleBackground(itemId: Id, state: BackgroundState, summary?: string): void {
+    this.updateItem(itemId, (it) => (it.type === "background" && it.state === "running" ? { ...it, state, endedAt: this.now().toISOString(), ...(summary ? { summary } : {}) } : it));
+  }
+
+  /** A notice row; the same key again in this turn updates that row (with a count) instead of adding another. */
+  private notice(sessionId: Id, live: Live, level: "info" | "warning", message: string, key: string): void {
+    const known = live.notices.get(key);
+    const current = known ? this.store.getItem(known) : undefined;
+    if (current?.type === "notice") {
+      this.updateItem(current.id, (it) => (it.type === "notice" ? { ...it, level, message, count: (it.count ?? 1) + 1 } : it));
+      return;
+    }
+    live.notices.set(key, this.appendItem(sessionId, { type: "notice", level, message, key }, { method: "notice" }).id);
+  }
+
+  private setRetry(live: Live, retry: TurnRetry): void {
+    if (!live.turn) return;
+    live.retrying = true;
+    this.updateItem(live.turn.itemId, (it) => (it.type === "turn" ? { ...it, retry } : it));
+  }
+
+  private clearRetry(live: Live): void {
+    if (!live.retrying || !live.turn) return;
+    live.retrying = false;
+    this.updateItem(live.turn.itemId, (it) => {
+      if (it.type !== "turn" || !it.retry) return it;
+      const { retry: _gone, ...rest } = it;
+      return rest;
+    });
   }
 
   /** An Agent call: a child session in the tree and a summary line in the parent, instead of a tool card. */
@@ -748,6 +1083,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private addToolCard(sessionId: Id, live: Live, toolUseId: string, name: string, input: Record<string, unknown>): void {
     const created = this.appendItem(sessionId, { type: "tool", ...describeToolUse(name, input, this.cwdOf(sessionId)), status: "running" }, { method: "tool_use", itemId: toolUseId });
     live.tools.set(toolUseId, created.id);
+    live.calls.set(toolUseId, { name, input, itemId: created.id });
     live.toolStarted.set(toolUseId, this.now().getTime());
   }
 
@@ -764,6 +1100,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const detail = toolResultText(content);
     const started = live.toolStarted.get(toolUseId);
     live.toolStarted.delete(toolUseId);
+    // An image file read comes back as an image block: the row shows the file (the block itself is not kept).
+    const call = live.calls.get(toolUseId);
+    const path = call && typeof call.input.file_path === "string" ? call.input.file_path : "";
+    const images = path && hasImageBlock(content) ? [{ id: null, path }] : [];
     this.updateItem(itemId, (it) =>
       it.type === "tool"
         ? {
@@ -771,6 +1111,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
             status: declined ? "declined" : isError ? "failed" : "completed",
             ...(detail ? { detail: tail(detail) } : {}),
             ...(started ? { durationMs: this.now().getTime() - started } : {}),
+            ...(images.length ? { images } : {}),
           }
         : it,
     );
@@ -813,6 +1154,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   private turnStarted(sessionId: Id, live: Live): void {
     if (!live.turn) {
+      live.notices.clear();
       const turnId = randomUUID();
       const item = this.appendItem(sessionId, { type: "turn", turnId, state: "running", startedAt: this.now().toISOString() }, { method: "turn/start", turnId });
       live.turn = { id: turnId, itemId: item.id };
@@ -895,6 +1237,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         if (item.type === "question" && item.state === "pending") this.cancelQuestion(item.id);
         if (item.type === "agent" && item.streaming) this.updateItem(item.id, (it) => (it.type === "agent" ? { ...it, streaming: false } : it));
         if (item.type === "tool" && item.status === "running") this.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "failed" } : it));
+        if (item.type === "background" && item.state === "running") this.updateItem(item.id, (it) => (it.type === "background" ? { ...it, state: "stopped" } : it));
+        if (item.type === "compaction" && item.state === "running") this.updateItem(item.id, (it) => (it.type === "compaction" ? { ...it, state: "failed" } : it));
       }
       if (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer") {
         if (s.kind !== "sub") this.appendItem(s.id, { type: "notice", level: "warning", message: "Host 重启时这条会话的回复被中断了。发一条消息即可接着对话。" });
@@ -1030,11 +1374,66 @@ function bundledClaudeExe(): string {
   return join(dirname(require.resolve("@anthropic-ai/claude-agent-sdk-win32-x64/package.json")), "claude.exe");
 }
 
+function withTimeout<T>(p: Promise<T>, ms: number): Promise<T> {
+  return Promise.race([p, new Promise<never>((_, reject) => setTimeout(() => reject(new Error("timed out")), ms).unref?.())]);
+}
+
 const firstLine = (err: unknown) => String((err as Error)?.message ?? err).split(/\r?\n/)[0]!.slice(0, 300);
 
 function withoutKey(o: Record<string, unknown>, key: string): Record<string, unknown> {
   const { [key]: _dropped, ...rest } = o;
   return rest;
+}
+
+/** Whether a tool result carries an image block (Read of an image file). */
+function hasImageBlock(content: unknown): boolean {
+  return Array.isArray(content) && content.some((c) => c && typeof c === "object" && (c as { type?: unknown }).type === "image");
+}
+
+/** A local command's output without the CLI's stdout/stderr tags. */
+export function localCommandText(text: string): string {
+  return text.replace(/<\/?local-command-(?:stdout|stderr)>/g, "").trim();
+}
+
+const RETRY_REASONS: Record<string, string> = {
+  rate_limit: "触发限流",
+  overloaded: "服务繁忙",
+  server_error: "服务出错",
+  authentication_failed: "认证失败",
+  billing_error: "账户额度不足",
+  invalid_request: "请求无效",
+  model_not_found: "找不到模型",
+  max_output_tokens: "输出超长",
+  unknown: "请求失败",
+};
+
+/** Why Claude Code retries a model request, as the running status line says it ("服务繁忙（529）"). */
+export function retryReason(error: string, status: number | null): string {
+  const what = RETRY_REASONS[error] ?? (error || "请求失败");
+  return status ? `${what}（${status}）` : what;
+}
+
+/**
+ * The runtime's rows of the `/` menu from Claude Code's command list: commands that would undo what Studio keeps for
+ * the session are left out (HIDDEN_COMMANDS), removed and internal ones too; skills are told apart by name.
+ */
+export function claudeCommands(list: readonly SdkSlashCommand[], skills: ReadonlySet<string> = new Set()): SlashCommand[] {
+  const seen = new Map<string, SlashCommand>();
+  for (const c of list) {
+    const name = c.name.trim();
+    if (!name || name.startsWith("_") || HIDDEN_COMMANDS.has(name) || /^\(removed\)/.test(c.description ?? "")) continue;
+    // Rows can share a name: Claude Code's own wins (it is the one /name runs).
+    if (seen.has(name) && !c.builtin) continue;
+    const description = (c.description ?? "").replace(/\s+/g, " ").trim();
+    seen.set(name, {
+      name,
+      description,
+      ...(c.argumentHint?.trim() ? { argumentHint: c.argumentHint.trim() } : {}),
+      group: skills.has(name) ? "skill" : c.builtin ? "runtime" : "custom",
+      ...(c.aliases?.length ? { aliases: c.aliases.filter((a) => !HIDDEN_COMMANDS.has(a)) } : {}),
+    });
+  }
+  return [...seen.values()];
 }
 
 function toolResultText(content: unknown): string {

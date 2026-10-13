@@ -189,7 +189,24 @@ export interface ToolFields {
   durationMs?: number;
   cwd?: string;
   files?: FileDiff[];
+  /**
+   * What the call is doing now (stage 12, S12-E): an MCP tool's progress message, input sent to a running command, a
+   * retry; or, once done, the CLI's one-line summary of it.
+   */
+  progress?: string;
+  /** Images the call showed (an image file read, viewed or generated), by path. */
+  images?: MessageImage[];
 }
+
+/** The runtime is retrying a model request that failed (overloaded, disconnected…); cleared once it goes on. */
+export interface TurnRetry {
+  attempt: number;
+  /** Most attempts it will make, when known. */
+  max?: number;
+  reason: string;
+}
+
+export type BackgroundState = "running" | "completed" | "failed" | "stopped";
 
 /**
  * An image on a person's message: `id` is set when it is a Studio attachment (the UI loads it from the Host); an image
@@ -208,13 +225,28 @@ export type SessionItem =
   | (ItemBase & { type: "reasoning"; text: string; streaming: boolean; durationMs?: number })
   | (ItemBase & { type: "tool" } & ToolFields)
   /** Metadata of one turn (not shown as a row): when it ran, how it ended, what it used. */
-  | (ItemBase & { type: "turn"; turnId: string; state: TurnState; startedAt: Timestamp; endedAt?: Timestamp; usage?: TurnUsage; error?: string })
+  | (ItemBase & { type: "turn"; turnId: string; state: TurnState; startedAt: Timestamp; endedAt?: Timestamp; usage?: TurnUsage; error?: string; retry?: TurnRetry })
   | (ItemBase & { type: "approval"; approvalId: string; kind: ApprovalKind; summary: string; detail?: string; state: ApprovalState })
   /** A question to the person, a form, or a plan to review (stage 12; see questions.ts). */
   | (ItemBase & { type: "question" } & QuestionFields)
   | (ItemBase & { type: "subagent"; childSessionId: Id; summary: string })
   | (ItemBase & { type: "error"; message: string })
-  | (ItemBase & { type: "notice"; level: "info" | "warning"; message: string });
+  /** `key`: notices with the same key (and runtime-repeated ones) update one row; `count` says how often it came. */
+  | (ItemBase & { type: "notice"; level: "info" | "warning"; message: string; key?: string; count?: number })
+  /**
+   * The conversation's context was summarised to free room (stage 12, S12-E): Claude's compact_boundary, Codex's
+   * contextCompaction. `beforeTokens`: the context before it, when known.
+   */
+  | (ItemBase & { type: "compaction"; state: "running" | "completed" | "failed"; trigger?: "manual" | "auto"; beforeTokens?: number; afterTokens?: number; error?: string })
+  /** Output of a CLI command that ran without the model (Claude's /cost, /context…). */
+  | (ItemBase & { type: "command"; name: string; output: string })
+  /**
+   * A command the agent left running in the background (Claude's background Bash). Not a row of its own: the composer
+   * lists the running ones; `outputFile` is where the CLI writes its output.
+   */
+  | (ItemBase & { type: "background"; taskId: string; command: string; description?: string; state: BackgroundState; startedAt: Timestamp; endedAt?: Timestamp; outputFile?: string; summary?: string })
+  /** A predicted next message from the person (Claude's prompt suggestions), offered above the composer. */
+  | (ItemBase & { type: "suggestion"; text: string });
 
 export type SessionItemType = SessionItem["type"];
 

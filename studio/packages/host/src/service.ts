@@ -22,6 +22,7 @@ import { FilesFeature } from "./features/files/service.js";
 import { OpenInFeature } from "./features/openin/service.js";
 import { MarksFeature } from "./features/marks/service.js";
 import { ChatFilesFeature } from "./features/chatfiles/service.js";
+import { CliFeature } from "./features/cli/service.js";
 import { HostError, type HostServiceEvents } from "./core/shared.js";
 
 // The composition root behind the Host API: the store, the runtimes and the event stream, the helpers every feature
@@ -47,6 +48,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly openIn = new OpenInFeature(this);
   readonly marks = new MarksFeature(this);
   readonly chatFiles = new ChatFilesFeature(this);
+  readonly cli = new CliFeature(this);
 
   constructor(
     readonly store: Store,
@@ -130,7 +132,9 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     } catch (err) {
       if (err instanceof HostError) throw err;
       const e = err as { code?: string; message?: string };
-      throw new HostError(e.code === "read_only" ? "read_only" : fallback, e.message ?? String(err));
+      // Runtimes mark the errors that are the caller's (a command Studio refuses, a background command not found).
+      const code: HostErrorCode = e.code === "read_only" || e.code === "bad_request" || e.code === "not_found" ? e.code : fallback;
+      throw new HostError(code, e.message ?? String(err));
     }
   }
 

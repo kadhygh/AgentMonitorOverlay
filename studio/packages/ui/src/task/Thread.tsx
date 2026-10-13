@@ -1,9 +1,8 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import type { Annotation, ApprovalDecision, ModelProfile, Session, SessionItem, SessionPreset, Task } from "@amo-studio/protocol";
-import type { HostLink } from "../host/client.js";
+import type { Annotation, ApprovalDecision, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, Task } from "@amo-studio/protocol";
+import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
-import { copyText } from "../host/client.js";
 import { ReplyNav } from "./ReplyNav.js";
 import { Transcript } from "../chat/Transcript.js";
 import { useTranscriptView } from "../chat/prefs.js";
@@ -21,6 +20,13 @@ import { QuestionCard } from "../chat/questions/QuestionCard.js";
 import { PlanReviewBar, sendRevision } from "../chat/questions/PlanReview.js";
 import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
+import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
+import { BackgroundTasks, latestSuggestion, SuggestionChips } from "../chat/cli/ComposerExtras.js";
+import { useChatSettings } from "../chat/cli/chatSettings.js";
+import { openReview } from "../gitreview/open.js";
+
+/** Studio's /compact, as the 压缩 button runs it. */
+const COMPACT: SlashCommand = { name: "compact", description: "", group: "studio" };
 
 interface ThreadProps {
   link: HostLink;
@@ -45,12 +51,14 @@ interface ThreadProps {
   onInterrupt(): void;
   /** "添加批注" from the selection menu. */
   onAnnotate(anchor: SelectionAnchor): void;
+  /** A command or another action of the composer failed (stage 12, S12-E). */
+  onError?(text: string): void;
 }
 
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate }: ThreadProps) {
+export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate, onError }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -72,6 +80,11 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     onFind: (query) => setFinding({ query }),
     onMark: (ref) => attach.addRefs([ref]),
   });
+  // `/` at the start: the command menu (stage 12, S12-E).
+  const slash = useSlashCommands({ link, session, text: draft, setText: setDraft, onRun: (command, args) => void runCommand(command, args) });
+  const chat = useChatSettings(link);
+  const suggestion = useMemo(() => latestSuggestion(items), [items]);
+  const compacting = useMemo(() => items.some((i) => i.type === "compaction" && i.state === "running"), [items]);
   const resetAttach = attach.reset;
   useEffect(() => resetAttach(), [session?.id, resetAttach]);
   useEffect(() => setFinding(null), [session?.id]);
@@ -159,7 +172,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
       ? queues
         ? "回复生成中，发出的内容会在下一次工具调用后或本轮结束后被读到"
         : "回复生成中，输入的内容会作为插话发出"
-      : "继续推进这个会话，回车发送，Shift+回车换行";
+      : "继续推进这个会话，回车发送，Shift+回车换行，输入 / 看命令";
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // Images must finish uploading (or be removed when they failed) before the message can go.
@@ -175,12 +188,41 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     return true;
   }
 
+  /** Runs a `/` command: Studio's own here (open the Review window), the rest through the Host. */
+  async function runCommand(command: SlashCommand, args: string): Promise<boolean> {
+    if (!session) return false;
+    if (command.local === "open-review") {
+      openReview({ workspaceId: session.workspaceId, sessionId: session.id });
+      return true;
+    }
+    stick.current = true;
+    setAtBottom(true);
+    try {
+      await call(link, "POST /api/sessions/:id/commands", { id: session.id }, { name: command.name, ...(args ? { args } : {}) });
+      return true;
+    } catch (err) {
+      onError?.(err instanceof HostApiError ? err.message : String(err));
+      return false;
+    }
+  }
+
   async function send() {
     const text = draft.trim();
     if (!canSend) return;
     if (isRevising) {
       setDraft("");
       if (!(await revise(text))) setDraft((d) => (d.trim() ? d : text));
+      return;
+    }
+    // A message that starts with a known command runs it; any other text (an unknown /name, a path) is a message.
+    const command = text.startsWith("/") ? await slash.match(text) : null;
+    if (command) {
+      if (!attach.empty) {
+        onError?.("命令不能带图片或文件，先移除它们再运行。");
+        return;
+      }
+      setDraft("");
+      if (!(await runCommand(command.command, command.args))) setDraft((d) => (d.trim() ? d : text));
       return;
     }
     // Clear at once so the next message can be typed while this one is on its way; put it back if sending failed
@@ -338,6 +380,16 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
               onCancelRevise={() => setRevising(null)}
             />
           )}
+          <BackgroundTasks link={link} sessionId={session.id} items={items} readOnly={readOnly} onError={(text) => onError?.(text)} />
+          {suggestion && chat.settings.promptSuggestions && !generating && !readOnly && !planReview && !draft.trim() && (
+            <SuggestionChips
+              text={suggestion}
+              onPick={(text) => {
+                setDraft(text);
+                requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".chat-input textarea")?.focus());
+              }}
+            />
+          )}
           <div className={`composer-card${readOnly ? " disabled" : ""}${dragging ? " dropping" : ""}`}>
             <AttachTray attach={attach} disabled={readOnly} />
             <label className="chat-input">
@@ -347,13 +399,18 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
                 onChange={(e) => {
                   setDraft(e.target.value);
                   mentions.track(e.target);
+                  slash.track(e.target);
                 }}
-                onSelect={(e) => mentions.track(e.currentTarget)}
+                onSelect={(e) => {
+                  mentions.track(e.currentTarget);
+                  slash.track(e.currentTarget);
+                }}
                 onPaste={readOnly ? undefined : attach.onPaste}
                 disabled={readOnly}
                 rows={2}
                 placeholder={placeholder}
                 onKeyDown={(e) => {
+                  if (slash.onKeyDown(e)) return;
                   if (mentions.onKeyDown(e)) return;
                   if (isRevising && e.key === "Escape") {
                     e.preventDefault();
@@ -368,6 +425,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
               />
             </label>
             <MentionList mentions={mentions} />
+            <SlashMenu slash={slash} />
             <div className="chat-bar">
               <button
                 type="button"
@@ -426,6 +484,18 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
                   上下文 {formatTokens(stats.context.used)}
                   {stats.context.window ? ` / ${formatTokens(stats.context.window)} · ${stats.context.percent}%` : ""}
                 </span>
+              )}
+              {!readOnly && (
+                <button
+                  type="button"
+                  className="link-btn compact-btn"
+                  data-testid="compact-button"
+                  disabled={generating || compacting}
+                  title="压缩上下文：把之前的对话总结成摘要，腾出上下文空间（等这一轮结束后可用）"
+                  onClick={() => void runCommand(COMPACT, "")}
+                >
+                  {compacting ? "压缩中…" : "压缩"}
+                </button>
               )}
             </div>
           )}

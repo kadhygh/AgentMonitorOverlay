@@ -150,12 +150,17 @@ export const MOCK_PLAN = [
   "- 调用方如果自己也重试，次数会叠加",
 ].join("\n");
 
-/** One model reply: plain text, or a tool call that Codex will execute (and may ask approval for); `reasoning` comes first. */
-export type MockReply = (
-  | { kind: "text"; text: string; chunks?: number; delayMs?: number }
-  | { kind: "function_call"; name: string; arguments: Record<string, unknown>; namespace?: string }
-  | { kind: "custom_tool_call"; name: string; input: string }
-) & { reasoning?: string };
+/**
+ * One model reply: plain text, or a tool call that Codex will execute (and may ask approval for); `reasoning` comes
+ * first. `disconnect`: the stream ends before the response completes (Codex retries, reporting `error` willRetry).
+ */
+export type MockReply =
+  | ((
+      | { kind: "text"; text: string; chunks?: number; delayMs?: number }
+      | { kind: "function_call"; name: string; arguments: Record<string, unknown>; namespace?: string }
+      | { kind: "custom_tool_call"; name: string; input: string }
+    ) & { reasoning?: string })
+  | { kind: "disconnect" };
 
 export interface MockModelRequest {
   /** Text of the last user message, if any. */
@@ -172,6 +177,8 @@ export interface MockModelRequest {
   lastTool: { name: string; output: string } | null;
   /** Tool outputs since the person's last message: how far a multi-step turn has got. */
   toolOutputsSinceUser: number;
+  /** How many requests before this one had the same last user text and tool progress (0 on the first try). */
+  attempt: number;
   body: Record<string, unknown>;
 }
 
@@ -191,9 +198,15 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  * - `[[demo]]` → a whole working turn: think, read `importer.py`, patch it, run a check, answer with a table
  * - `[[ask]]` → calls request_user_input with MOCK_ASK_QUESTIONS in Codex's shape (ids `retry`, `logging`),
  *   then replies `MOCK-ANSWERED: <the tool output>`
+ * - `[[retry]]` → the first two tries disconnect before completing (Codex retries), then `MOCK: …`; `[[retry:N]]` N
+ * - `[[view-image: <absolute path>]]` → calls view_image on that file, then replies `MOCK-DONE`
  * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
  */
 export const defaultScript: MockScript = (req) => {
+  const retry = /\[\[retry(?::(\d+))?\]\]/.exec(req.lastUserText);
+  if (retry && !req.afterToolOutput && req.attempt < Number(retry[1] ?? 2)) return { kind: "disconnect" };
+  const view = /\[\[view-image:\s*([^\]]+)\]\]/.exec(req.lastUserText);
+  if (view && !req.afterToolOutput && req.tools.includes("view_image")) return { kind: "function_call", name: "view_image", arguments: { path: view[1]!.trim() } };
   if (req.lastUserText.includes("[[demo]]")) return demoStep(req);
   if (req.afterToolOutput && req.lastTool && /amo/.test(req.lastTool.name)) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.output.slice(0, 200)}` };
   if (req.afterToolOutput && req.lastTool?.name === "request_user_input") return { kind: "text", text: `MOCK-ANSWERED: ${req.lastTool.output}` };
@@ -235,7 +248,7 @@ export const defaultScript: MockScript = (req) => {
 };
 
 function demoStep(req: MockModelRequest): MockReply {
-  const shell = (command: string): MockReply =>
+  const shell = (command: string): Exclude<MockReply, { kind: "disconnect" }> =>
     req.tools.includes("exec_command") ? { kind: "function_call", name: "exec_command", arguments: { cmd: command } } : { kind: "function_call", name: "shell_command", arguments: { command } };
   switch (req.toolOutputsSinceUser) {
     case 0:
@@ -302,6 +315,7 @@ export function parseRequest(body: Record<string, unknown>): MockModelRequest {
     afterToolOutput: last?.type === "function_call_output" || last?.type === "custom_tool_call_output",
     lastTool: lastToolCall(input),
     toolOutputsSinceUser: outputs,
+    attempt: 0,
     agentTask: /Task name:\s*(\S+)/.exec(agentMessage)?.[1] ?? null,
     tools,
     body,
@@ -313,6 +327,11 @@ const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 async function streamReply(res: ServerResponse, reply: MockReply, seq: number): Promise<void> {
   const responseId = `resp_mock_${seq}`;
   const send = (data: Record<string, unknown>) => res.write(`event: ${String(data.type)}\ndata: ${JSON.stringify(data)}\n\n`);
+  if (reply.kind === "disconnect") {
+    send({ type: "response.created", response: { id: responseId, object: "response", status: "in_progress", output: [] } });
+    res.end();
+    return;
+  }
   const usage = { input_tokens: 1200 + seq * 300, input_tokens_details: { cached_tokens: 800 + seq * 250 }, output_tokens: 160, output_tokens_details: { reasoning_tokens: reply.reasoning ? 60 : 0 }, total_tokens: 1360 + seq * 300 };
   send({ type: "response.created", response: { id: responseId, object: "response", status: "in_progress", output: [] } });
 
@@ -392,6 +411,7 @@ export async function startMockModel(options: { port?: number; script?: MockScri
         return;
       }
       const parsed = parseRequest(JSON.parse(await readBody(req)) as Record<string, unknown>);
+      parsed.attempt = requests.filter((r) => r.lastUserText === parsed.lastUserText && r.toolOutputsSinceUser === parsed.toolOutputsSinceUser).length;
       requests.push(parsed);
       res.writeHead(200, { "content-type": "text/event-stream", "cache-control": "no-cache", connection: "keep-alive" });
       await streamReply(res, script(parsed), ++seq);

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { defaultClaudeScript, parseClaudeRequest } from "./mock-anthropic.js";
+import { MOCK_SUGGESTION, defaultClaudeScript, parseClaudeRequest } from "./mock-anthropic.js";
 
 const reminder = { type: "text", text: "<system-reminder>context</system-reminder>" };
 const tools = [{ name: "Bash" }, { name: "Agent" }];
@@ -69,5 +69,31 @@ describe("mock Anthropic request parsing", () => {
     expect(defaultClaudeScript(parent)).toMatchObject({ name: "Agent", input: { mode: "bypassPermissions", prompt: "[[subagent: h]] [[shell: mkdir x]]" } });
     const sub = parseClaudeRequest({ tools, messages: [{ role: "user", content: "[[subagent: h]] [[shell: mkdir x]]" }] });
     expect(defaultClaudeScript(sub)).toMatchObject({ kind: "tool_use", name: "Bash", input: { command: "mkdir x" } });
+  });
+});
+
+describe("mock Anthropic directives (stage 12, S12-E)", () => {
+  const ask = (text: string, attempt = 0, extra: Record<string, unknown>[] = []) => {
+    const req = parseClaudeRequest({ stream: true, tools: [{ name: "Bash" }, { name: "Read" }], messages: [...extra, { role: "user", content: [{ type: "text", text }] }] });
+    req.attempt = attempt;
+    return defaultClaudeScript(req);
+  };
+
+  it("fails the first tries of [[retry]] with 529", () => {
+    expect(ask("[[retry]] go", 0)).toMatchObject({ kind: "error", status: 529 });
+    expect(ask("[[retry:3]] go", 2)).toMatchObject({ kind: "error", status: 529 });
+    expect(ask("[[retry]] go", 2)).toEqual({ kind: "text", text: "MOCK: [[retry]] go" });
+  });
+
+  it("answers prompt-suggestion requests only in conversations that asked for it", () => {
+    const earlier = [{ role: "user", content: [{ type: "text", text: "[[suggest]] hi" }] }, { role: "assistant", content: [{ type: "text", text: "MOCK" }] }];
+    expect(ask("[SUGGESTION MODE: Suggest what the user might type next]", 0, earlier)).toEqual({ kind: "text", text: MOCK_SUGGESTION });
+    expect(ask("[SUGGESTION MODE: Suggest what the user might type next]")).toEqual({ kind: "text", text: "" });
+  });
+
+  it("runs a background command, reads an image, refuses", () => {
+    expect(ask("[[bg: npm run dev]]")).toEqual({ kind: "tool_use", name: "Bash", input: { command: "npm run dev", description: "mock background command", run_in_background: true } });
+    expect(ask("[[read-image: C:\w\a.png]]")).toEqual({ kind: "tool_use", name: "Read", input: { file_path: "C:\w\a.png" } });
+    expect(ask("[[refuse]]")).toEqual({ kind: "text", text: "", refuse: true });
   });
 });
