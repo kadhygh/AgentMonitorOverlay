@@ -7,7 +7,7 @@
 > - S13-B：闪烁原因是整份文件一次画出来，改成 64 行一块 + `content-visibility: auto`（真窗口拖动需用户确认）；总览条；「历史」选提交，另开只读的提交窗口（`#review?workspace=…&commit=…`，窗口按 项目@提交 区分）。
 > - S13-C：GPT Fast（真实 `model/list`：GPT 订阅各型号都有 id `priority`、名字 Fast 的档，说明因型号而异，见 `spikes/RESULTS.md` s13-00）；批注用 CSS Custom Highlight 只高亮选中文字；Focus 慢的真正原因是 Codex 异步提问要等一轮结束才标「等你回答」，现在问题一到就标。
 > - 三个工作树 `G:\PROJECT\AgentMonitorOverlay-s13-{viewer,review,chat}` 还在，等用户同意再删。
-> - **要用户重启开发版才看得到**：这次改了 Host 和 Electron 外壳，要 `host:stop` 后重开（会停掉正在跑的会话），先问用户挑空档。
+> - 开发版已按用户要求在 10-14 19:43 重启（Host 和窗口都是阶段 13 的）。验收清单网页同一个链接已换成阶段 13（23 条，每条有「怎么做 / 期望」），结果在 db 集合 `s13`；阶段 12 的结果仍在集合 `results`。
 >
 > **2026-10-14 傍晚更新：用户验收了阶段 12（27 通过、5 有问题、4 跳过），开始阶段 13。** 计划和用户的决定在 `plans/stage-13.md`。S13-0（Codex `/G:/` 链接点不开、Review 列表可以拖得更宽、标记按钮显示「已标记」并跳到那条）已提交（`8c62308`）。下一步是三条线：S13-A 查看器（独立窗口，没固定的那个被复用，只有点「固定」才保留；对话里单击文件链接打开查看器，右栏快速查看挪进右键菜单）、S13-B Review 补强（竖向调整窗口闪烁、总览条、提交历史）、S13-C 对话（GPT Fast 开关、批注只高亮选中的文字、Focus 响应慢）。阶段 11、12 的工作树已按用户同意删除，分支保留。验收清单网页：https://claude.ai/artifact/CsZnNKcuGnjQxX7W1XtVr2 （结果在它的 db 集合 `results` 里）。
 >
