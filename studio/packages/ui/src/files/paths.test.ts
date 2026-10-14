@@ -6,8 +6,10 @@ describe("parseInlinePath", () => {
     expect(parseInlinePath("src/a.cs")).toEqual({ path: "src/a.cs" });
     expect(parseInlinePath("importer.py:4")).toEqual({ path: "importer.py", line: 4 });
     expect(parseInlinePath("src\\Player.cs:12:5")).toEqual({ path: "src\\Player.cs", line: 12, column: 5 });
-    expect(parseInlinePath("a.ts:24-30")).toEqual({ path: "a.ts", line: 24 });
-    expect(parseInlinePath("a.ts:24–30")).toEqual({ path: "a.ts", line: 24 });
+    expect(parseInlinePath("a.ts:24-30")).toEqual({ path: "a.ts", line: 24, endLine: 30 });
+    expect(parseInlinePath("a.ts:24–30")).toEqual({ path: "a.ts", line: 24, endLine: 30 });
+    expect(parseInlinePath("a.ts:30-24")).toEqual({ path: "a.ts", line: 30 });
+    expect(parseInlinePath("a.ts#L7-L9")).toEqual({ path: "a.ts", line: 7, endLine: 9 });
     expect(parseInlinePath("a.ts#L7")).toEqual({ path: "a.ts", line: 7 });
     expect(parseInlinePath("Foo.cs(12,3)")).toEqual({ path: "Foo.cs", line: 12, column: 3 });
     expect(parseInlinePath("G:\\PROJECT\\My Game\\Assets\\Player.cs:3")).toEqual({ path: "G:\\PROJECT\\My Game\\Assets\\Player.cs", line: 3 });
@@ -58,7 +60,9 @@ describe("parseLinkTarget", () => {
   it("reads local destinations", () => {
     expect(parseLinkTarget("src/a.cs")).toEqual({ path: "src/a.cs" });
     expect(parseLinkTarget("src/a.cs#L12")).toEqual({ path: "src/a.cs", line: 12 });
-    expect(parseLinkTarget("src/a.cs#L12-L20")).toEqual({ path: "src/a.cs", line: 12 });
+    expect(parseLinkTarget("src/a.cs#L12-L20")).toEqual({ path: "src/a.cs", line: 12, endLine: 20 });
+    expect(parseLinkTarget("src/a.cs#L12-20")).toEqual({ path: "src/a.cs", line: 12, endLine: 20 });
+    expect(parseLinkTarget("src/a.cs:12-20")).toEqual({ path: "src/a.cs", line: 12, endLine: 20 });
     expect(parseLinkTarget("src/a.cs:12")).toEqual({ path: "src/a.cs", line: 12 });
     expect(parseLinkTarget("<docs/My Notes.md>")).toEqual({ path: "docs/My Notes.md" });
     expect(parseLinkTarget("docs/My%20Notes.md")).toEqual({ path: "docs/My Notes.md" });

@@ -2,16 +2,20 @@
 // (`src/a.cs`, `a.cs:12`, `G:\p\a.cs:12:5`), Markdown links to local paths (`[x](src/a.cs#L12)`, `file:///…`) and
 // tool rows. Only a guess: the Host says whether the file exists before anything becomes a link.
 
-/** A file named in the conversation: the path as written (no line suffix), and the line / column when given. */
+/**
+ * A file named in the conversation: the path as written (no line suffix), and the line / column when given. A range
+ * (`:12-20`, `#L12-L20`) opens at its first line; `endLine` is its last (stage 13: the viewer marks the whole range).
+ */
 export interface FileMention {
   path: string;
   line?: number;
+  endLine?: number;
   column?: number;
 }
 
 const MAX_PATH = 300;
-/** `:12`, `:12:5`, `:12-20`, `:12–20` (a range opens at its first line), `#L12`, `#L12C5`, `#L12-L20`, `(12)`, `(12,5)`. */
-const LINE_SUFFIX = /(?::(\d+)(?:[-–]\d+)?(?::(\d+))?|#L(\d+)(?:C(\d+))?(?:-L?\d+)?|\((\d+)(?:,\s*(\d+))?\))$/;
+/** `:12`, `:12:5`, `:12-20`, `:12–20`, `#L12`, `#L12C5`, `#L12-L20`, `(12)`, `(12,5)`. */
+const LINE_SUFFIX = /(?::(\d+)(?:[-–](\d+))?(?::(\d+))?|#L(\d+)(?:C(\d+))?(?:-L?(\d+))?|\((\d+)(?:,\s*(\d+))?\))$/;
 /** A drive-absolute Windows path (`G:\…` or `G:/…`), the only kind that may contain spaces. */
 const DRIVE = /^[a-z]:[\\/]/i;
 /** Characters a path in a reply does not have (commands, calls, globs, expressions). */
@@ -30,10 +34,15 @@ const int = (s: string | undefined): number | undefined => {
 export function splitLine(written: string): FileMention {
   const m = LINE_SUFFIX.exec(written);
   if (!m || m.index === 0) return { path: written };
-  const line = int(m[1] ?? m[3] ?? m[5]);
-  const column = int(m[2] ?? m[4] ?? m[6]);
-  return { path: written.slice(0, m.index), ...(line ? { line } : {}), ...(line && column ? { column } : {}) };
+  const line = int(m[1] ?? m[4] ?? m[7]);
+  const end = int(m[2] ?? m[6]);
+  const column = int(m[3] ?? m[5] ?? m[8]);
+  return { path: written.slice(0, m.index), ...lines(line, end), ...(line && column ? { column } : {}) };
 }
+
+/** `{ line, endLine }` with the end only when it is after the start. */
+const lines = (line: number | undefined, end: number | undefined): Pick<FileMention, "line" | "endLine"> =>
+  line ? { line, ...(end && end > line ? { endLine: end } : {}) } : {};
 
 /** `/G:/a.cs` (Codex writes local links this way) → `G:/a.cs`; other text unchanged. */
 const dropDriveSlash = (p: string): string => (/^\/[a-z]:[\\/]/i.test(p) ? p.slice(1) : p);
@@ -84,12 +93,14 @@ export function parseLinkTarget(href: string): FileMention | null {
   if (!target || target.startsWith("#") || /^[a-z][a-z\d+.-]*:/i.test(target) && !DRIVE.test(target) && !/^file:\/\//i.test(target)) return null;
   const hash = target.indexOf("#");
   let line: number | undefined;
+  let end: number | undefined;
   let column: number | undefined;
   if (hash >= 0) {
-    const frag = /^L(\d+)(?:C(\d+))?(?:-L?\d+)?$/.exec(target.slice(hash + 1));
+    const frag = /^L(\d+)(?:C(\d+))?(?:-L?(\d+))?$/.exec(target.slice(hash + 1));
     if (!frag) return null;
     line = int(frag[1]);
     column = int(frag[2]);
+    end = int(frag[3]);
     target = target.slice(0, hash);
   }
   if (target.includes("?")) return null;
@@ -106,10 +117,11 @@ export function parseLinkTarget(href: string): FileMention | null {
     const split = splitLine(path);
     path = split.path;
     line = split.line;
+    end = split.endLine;
     column = split.column;
   }
   if (!path || path.length > MAX_PATH || /^[\\/]{2}/.test(path) || /[\r\n]/.test(path)) return null;
-  return { path, ...(line ? { line } : {}), ...(line && column ? { column } : {}) };
+  return { path, ...lines(line, end), ...(line && column ? { column } : {}) };
 }
 
 /** The last part of a path (either slash). */

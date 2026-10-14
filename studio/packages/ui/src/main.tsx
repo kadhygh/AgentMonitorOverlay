@@ -5,6 +5,7 @@ import { FocusApp } from "./focus/FocusApp.js";
 import { ScratchpadApp } from "./scratchpad/ScratchpadApp.js";
 import { ReviewApp } from "./gitreview/ReviewApp.js";
 import { MarksApp } from "./marks/MarksApp.js";
+import { ViewerApp } from "./viewer/ViewerApp.js";
 import "@fontsource-variable/noto-sans-sc";
 import "@fontsource-variable/noto-serif-sc";
 import "@fontsource-variable/jetbrains-mono";
@@ -33,6 +34,7 @@ import "./marks/marks.css";
 import "./files/files.css";
 import "./chat/questions/questions.css";
 import "./chat/cli/cli.css";
+import "./viewer/viewer.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 import { Toaster } from "./lib/toast.js";
@@ -51,13 +53,15 @@ if (scratchpad) document.documentElement.classList.add("scratchpad-mode");
 
 // The file marks window (文件标记, S12-D), loaded with #marks?workspace=….
 const marks = location.hash.startsWith("#marks");
+// The viewer window (查看器, stage 13), loaded with #viewer?path=….
+const viewer = location.hash.startsWith("#viewer");
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
     <WindowBoundary>
-      {focus ? <FocusApp /> : scratchpad ? <ScratchpadApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : <App />}
+      {focus ? <FocusApp /> : scratchpad ? <ScratchpadApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : <App />}
       <Toaster />
     </WindowBoundary>
   </StrictMode>,

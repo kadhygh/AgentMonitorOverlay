@@ -13,12 +13,24 @@ export interface ReviewWindowOptions {
 
 const ID = /^[\w-]{1,80}$/;
 
-/** `#review?workspace=…&session=…` for a valid target, null otherwise. */
+let opened = 0;
+
+/**
+ * `#review?workspace=…&session=…` for a valid target, null otherwise. Stage 13: `file` (absolute, or relative to the
+ * project) selects that file (用 git diff 看), with a nonce `n` so asking for it again still reaches the page.
+ */
 export function reviewHash(target: unknown): { workspaceId: string; hash: string } | null {
-  const t = target as { workspaceId?: unknown; sessionId?: unknown } | null;
+  const t = target as { workspaceId?: unknown; sessionId?: unknown; file?: unknown } | null;
   if (typeof t?.workspaceId !== "string" || !ID.test(t.workspaceId)) return null;
   const session = typeof t.sessionId === "string" && ID.test(t.sessionId) ? t.sessionId : null;
-  return { workspaceId: t.workspaceId, hash: `#review?workspace=${t.workspaceId}${session ? `&session=${session}` : ""}` };
+  const file = typeof t.file === "string" && t.file && t.file.length <= 1000 && !/[\0\r\n]/.test(t.file) ? t.file : null;
+  const q = new URLSearchParams({ workspace: t.workspaceId });
+  if (session) q.set("session", session);
+  if (file) {
+    q.set("file", file);
+    q.set("n", String(++opened));
+  }
+  return { workspaceId: t.workspaceId, hash: `#review?${q.toString()}` };
 }
 
 /** Handles `amo:open-review` from the pages; returns what the main window needs to close the reviews with it. */

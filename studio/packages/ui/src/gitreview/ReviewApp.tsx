@@ -12,6 +12,8 @@ import { editorLine } from "./splitview.js";
 import { DiffCache, type DiffRequest } from "./diffcache.js";
 import { diffTokensFor, useDiffTokens } from "./tokens.js";
 import { MarkButton } from "../marks/MarkButton.js";
+import { findChangedFile } from "../viewer/logic.js";
+import { openViewer } from "../viewer/open.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
 // the right, comments on lines, and "发给会话" to send the drafts to a session as one message.
@@ -29,7 +31,24 @@ export function ReviewApp() {
   if (host.kind !== "ready") return <div className="placeholder">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</div>;
   const ws = target && host.state.workspaces.find((w) => w.id === target.workspaceId);
   if (!target || !ws) return <div className="placeholder">项目不存在或已移除。</div>;
-  return <ReviewPage key={ws.id} link={host.link} state={host.state} workspace={ws} sessionId={target.sessionId ?? null} />;
+  return (
+    <ReviewPage
+      key={ws.id}
+      link={host.link}
+      state={host.state}
+      workspace={ws}
+      sessionId={target.sessionId ?? null}
+      select={target.file ? { path: target.file, nonce: target.nonce ?? "" } : null}
+    />
+  );
+}
+
+/** A file the page was asked to show (stage 13: 用 git diff 看, and the viewer's 改动 mode). */
+export interface ReviewSelect {
+  /** Absolute, or relative to the project. */
+  path: string;
+  /** A new value asks again (the same file opened twice). */
+  nonce: string;
 }
 
 type Toast = { text: string; error?: boolean } | null;
@@ -51,7 +70,22 @@ const LIST_LAYOUTS: { id: ListLayout; label: string }[] = [
 
 const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "");
 
-function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; state: StateSnapshot; workspace: Workspace; sessionId: string | null }) {
+export function ReviewPage({
+  link,
+  state,
+  workspace,
+  sessionId,
+  select = null,
+  embedded = false,
+}: {
+  link: HostLink;
+  state: StateSnapshot;
+  workspace: Workspace;
+  sessionId: string | null;
+  select?: ReviewSelect | null;
+  /** Inside the viewer window (its 改动 mode): the viewer names the window. */
+  embedded?: boolean;
+}) {
   const [range, setRange] = useState<GitRange>("working");
   // The view choices (list width and layout, 单栏 / 左右对照, 只看改动 / 完整文件) stay on this machine.
   const [prefs, setPrefs] = useState<ReviewPrefs>(readPrefs);
@@ -96,8 +130,8 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
 
   useEffect(() => setTarget(sessionId ?? ""), [sessionId]);
   useEffect(() => {
-    document.title = `Git Review · ${workspace.name}`;
-  }, [workspace.name]);
+    if (!embedded) document.title = `Git Review · ${workspace.name}`;
+  }, [workspace.name, embedded]);
 
   const fail = (err: unknown, prefix = "") => setToast({ text: prefix + (err instanceof HostApiError ? err.message : String(err)), error: true });
 
@@ -145,6 +179,24 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
       live = false;
     };
   }, [link, workspace.id, range, reload]);
+
+  // Asked for a file (用 git diff 看): the uncommitted changes, read again, then that file, or a word that it has none.
+  const wanted = useRef<ReviewSelect | null>(null);
+  useEffect(() => {
+    if (!select) return;
+    wanted.current = select;
+    cache.clear();
+    setRange("working");
+    setReload((n) => n + 1);
+  }, [select?.path, select?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    const want = wanted.current;
+    if (!want || !changes || changes.range !== "working") return;
+    wanted.current = null;
+    const hit = findChangedFile(changes.files, want.path, workspace.path);
+    if (hit) setSelected(hit.path);
+    else if (changes.status.repo) setToast({ text: "这个文件没有未提交的改动" });
+  }, [changes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const file = changes?.files.find((f) => f.path === selected) ?? null;
   const fileKey = file ? `${file.oldPath ?? ""}>${file.path}` : "";
@@ -386,6 +438,17 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
                 >
                   在资源管理器中显示
                 </button>
+                {file.status !== "deleted" && (
+                  <button
+                    type="button"
+                    className="btn-ghost small"
+                    title={`在查看器里看这个文件现在的样子（第 ${openLine} 行）`}
+                    onClick={() => openViewer({ path: file.path, workspaceId: workspace.id, line: openLine })}
+                    data-testid="review-open-viewer"
+                  >
+                    查看文件
+                  </button>
+                )}
                 {file.status !== "deleted" && <MarkButton link={link} file={{ path: file.path, workspaceId: workspace.id }} line={active !== null ? openLine : null} />}
               </div>
             )}
