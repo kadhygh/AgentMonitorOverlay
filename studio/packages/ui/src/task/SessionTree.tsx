@@ -234,7 +234,7 @@ ${formatDay(s.archivedAt)} 归档` : ""}`}
 export function FoldIcon({ dir }: { dir: "left" | "right" }) {
   return (
     <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" className="fold-icon">
-      <path d={dir === "left" ? "M10 3 5 8l5 5M13 3v10" : "M6 3l5 5-5 5M3 3v10"} />
+      <path d={dir === "left" ? "M10 3 5 8l5 5" : "M6 3l5 5-5 5"} />
     </svg>
   );
 }
