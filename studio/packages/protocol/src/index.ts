@@ -19,3 +19,4 @@ export * from "./marks.js";
 export * from "./chatfiles.js";
 export * from "./questions.js";
 export * from "./cli.js";
+export * from "./datamgmt.js";

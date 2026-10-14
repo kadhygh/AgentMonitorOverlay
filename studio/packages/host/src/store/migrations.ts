@@ -249,4 +249,8 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX file_marks_workspace ON file_marks(workspace_id, position);
   `,
+  // 10: archived projects (2026-10-14): hidden from every list until restored; permanent deletion only once archived.
+  `
+  ALTER TABLE workspaces ADD COLUMN archived_at TEXT;
+  `,
 ];

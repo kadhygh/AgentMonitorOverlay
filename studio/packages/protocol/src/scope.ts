@@ -4,8 +4,8 @@ import type { Id, Task, Topic, Workspace } from "./entities.js";
 
 export const isCommon = (ws: Pick<Workspace, "builtin"> | undefined | null): boolean => ws?.builtin === "common";
 
-/** Workspaces a person picks from: the projects, without the common space. */
-export const projectWorkspaces = (workspaces: readonly Workspace[]): Workspace[] => workspaces.filter((w) => !isCommon(w));
+/** Workspaces a person picks from: the projects, without the common space and archived ones. */
+export const projectWorkspaces = (workspaces: readonly Workspace[]): Workspace[] => workspaces.filter((w) => !isCommon(w) && !w.archivedAt);
 
 /** The project a task runs in, or null for the common space (the UI then shows no project at all). */
 export function taskProject(task: Pick<Task, "workspaceId">, workspaces: readonly Workspace[]): Workspace | null {

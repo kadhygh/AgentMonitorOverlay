@@ -23,6 +23,7 @@ import { OpenInFeature } from "./features/openin/service.js";
 import { MarksFeature } from "./features/marks/service.js";
 import { ChatFilesFeature } from "./features/chatfiles/service.js";
 import { CliFeature } from "./features/cli/service.js";
+import { DataFeature } from "./features/datamgmt/service.js";
 import { HostError, type HostServiceEvents } from "./core/shared.js";
 
 // The composition root behind the Host API: the store, the runtimes and the event stream, the helpers every feature
@@ -49,6 +50,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly marks = new MarksFeature(this);
   readonly chatFiles = new ChatFilesFeature(this);
   readonly cli = new CliFeature(this);
+  readonly data = new DataFeature(this);
 
   constructor(
     readonly store: Store,
@@ -101,6 +103,13 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   requireWorkspace(id: Id): Workspace {
     const ws = this.store.getWorkspace(id);
     if (!ws) throw new HostError("not_found", `workspace ${id} not found`);
+    return ws;
+  }
+
+  /** A project new work can go to: not archived. */
+  requireLiveWorkspace(id: Id): Workspace {
+    const ws = this.requireWorkspace(id);
+    if (ws.archivedAt) throw new HostError("read_only", `project ${ws.name} is archived`);
     return ws;
   }
 

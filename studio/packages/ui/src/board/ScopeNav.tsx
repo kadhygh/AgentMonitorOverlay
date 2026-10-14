@@ -1,10 +1,15 @@
-import { useState, type MouseEvent } from "react";
+import { useEffect, useState, type MouseEvent } from "react";
 import { projectWorkspaces, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { pinnedFirst, togglePin, usePins, type PinKind } from "../lib/pins.js";
 import type { Scope } from "./Board.js";
 import { UsageFooter } from "./UsageFooter.js";
 import { ProjectReviewMenu, type ProjectMenuAt } from "../gitreview/ProjectReviewMenu.js";
+import { ConfirmDialog } from "../lib/ConfirmDialog.js";
+import { showToast } from "../lib/toast.js";
+
+/** A project or topic about to be archived from its right-click menu. */
+type Archiving = { kind: "workspace" | "topic"; id: string; name: string };
 
 interface ScopeNavProps {
   link: HostLink;
@@ -43,6 +48,9 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const [busy, setBusy] = useState(false);
   const [folded, setFolded] = useState(readFolded);
   const [menu, setMenu] = useState<ProjectMenuAt | null>(null);
+  const [topicMenu, setTopicMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [archiving, setArchiving] = useState<Archiving | null>(null);
+  const [archiveBusy, setArchiveBusy] = useState(false);
   const pins = usePins();
   const liveTasks = tasks.filter((t) => !t.archivedAt);
 
@@ -110,6 +118,20 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
     </div>
   );
 
+  async function archive(target: Archiving) {
+    setArchiveBusy(true);
+    try {
+      if (target.kind === "workspace") await call(link, "POST /api/workspaces/:id/archive", { id: target.id });
+      else await call(link, "POST /api/topics/:id/archive", { id: target.id });
+      if (scope.kind === (target.kind === "workspace" ? "workspace" : "topic") && scope.id === target.id) onScope({ kind: "all" });
+      setArchiving(null);
+    } catch (err) {
+      showToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
+    } finally {
+      setArchiveBusy(false);
+    }
+  }
+
   async function register(dir: string) {
     if (!dir.trim()) return;
     setBusy(true);
@@ -138,7 +160,12 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
       <div className="nav-scroll">
         <section className="nav-section-box" aria-label="专题">
           {head("topic", "专题", liveTopics.length, () => setNewTopic(""), "新专题")}
-          {topicRows.map((t) => row("topic", t.id, { kind: "topic", id: t.id }, t.title, liveTasks.filter((x) => x.topicId === t.id).length, `scope-topic-${t.title}`))}
+          {topicRows.map((t) =>
+            row("topic", t.id, { kind: "topic", id: t.id }, t.title, liveTasks.filter((x) => x.topicId === t.id).length, `scope-topic-${t.title}`, undefined, (e) => {
+              e.preventDefault();
+              setTopicMenu({ id: t.id, x: e.clientX, y: e.clientY });
+            }),
+          )}
           {folded.topic && topicRows.length < liveTopics.length && (
             <button type="button" className="nav-more" onClick={() => fold("topic")}>
               还有 {liveTopics.length - topicRows.length} 个专题
@@ -241,7 +268,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
 
       <UsageFooter link={link} live={live} />
       {onSettings && (
-        <button type="button" className="nav-settings" onClick={onSettings} aria-label="设置" title="设置：界面主题、公共目录、模型、便签、功能">
+        <button type="button" className="nav-settings" onClick={onSettings} aria-label="设置" title="设置：界面主题、公共目录、模型、便签、功能、数据管理">
           <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M6.9 1.5h2.2l.4 1.8 1.2.5 1.6-1 1.5 1.5-1 1.6.5 1.2 1.8.4v2.2l-1.8.4-.5 1.2 1 1.6-1.5 1.5-1.6-1-1.2.5-.4 1.8H6.9l-.4-1.8-1.2-.5-1.6 1-1.5-1.5 1-1.6-.5-1.2-1.8-.4V6.9l1.8-.4.5-1.2-1-1.6 1.5-1.5 1.6 1 1.2-.5Z" />
             <circle cx="8" cy="8" r="2.2" />
@@ -249,7 +276,77 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
           设置
         </button>
       )}
-      {menu && <ProjectReviewMenu link={link} at={menu} onClose={() => setMenu(null)} />}
+      {menu && (
+        <ProjectReviewMenu
+          link={link}
+          at={menu}
+          onClose={() => setMenu(null)}
+          onArchive={() => {
+            const w = workspaces.find((x) => x.id === menu.workspaceId);
+            if (w) setArchiving({ kind: "workspace", id: w.id, name: w.name });
+          }}
+        />
+      )}
+      {topicMenu && (
+        <TopicMenu
+          at={topicMenu}
+          onClose={() => setTopicMenu(null)}
+          onArchive={() => {
+            const t = topics.find((x) => x.id === topicMenu.id);
+            if (t) setArchiving({ kind: "topic", id: t.id, name: t.title });
+          }}
+        />
+      )}
+      {archiving && (
+        <ConfirmDialog
+          title={archiving.kind === "workspace" ? `归档项目「${archiving.name}」？` : `归档专题「${archiving.name}」？`}
+          action={archiving.kind === "workspace" ? "归档项目" : "归档专题"}
+          busy={archiveBusy}
+          onCancel={() => setArchiving(null)}
+          onConfirm={() => void archive(archiving)}
+          testId="archive-scope-confirm"
+        >
+          <ul className="confirm-risks">
+            {archiving.kind === "workspace" ? (
+              <li>项目从左栏和所有选择列表里消失；它的 {liveTasks.filter((t) => t.workspaceId === archiving.id).length} 个任务和它们的会话一起归档，只能查看。</li>
+            ) : (
+              <li>专题和它的画布、{liveTasks.filter((t) => t.topicId === archiving.id).length} 个任务以及这些任务和专题自己的会话一起归档，只能查看。</li>
+            )}
+            {archiving.kind === "workspace" && <li>项目文件夹里的文件不受影响。</li>}
+            <li>可以在 设置 → 数据管理 里恢复，或者彻底删除。</li>
+          </ul>
+        </ConfirmDialog>
+      )}
     </nav>
+  );
+}
+
+/** Right-click menu of a topic in the left column. */
+function TopicMenu({ at, onClose, onArchive }: { at: { x: number; y: number }; onClose(): void; onArchive(): void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onDown = (e: globalThis.MouseEvent) => !(e.target as Element | null)?.closest?.(".ctx-menu") && onClose();
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [onClose]);
+  return (
+    <div className="ctx-menu" role="menu" aria-label="专题" style={{ left: at.x, top: at.y }}>
+      <button
+        type="button"
+        role="menuitem"
+        title="专题、画布和它的任务、会话一起归档，从列表里隐藏；可以在 设置 → 数据管理 里恢复"
+        onClick={() => {
+          onArchive();
+          onClose();
+        }}
+        data-testid="archive-topic"
+      >
+        归档专题…
+      </button>
+    </div>
   );
 }

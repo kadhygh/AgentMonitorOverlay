@@ -194,6 +194,10 @@ export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
   "POST /api/workspaces": { req: { path: string; name?: string }; res: Workspace };
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
+  /** Archives the project with all its tasks (and their sessions); the common space cannot be archived. */
+  "POST /api/workspaces/:id/archive": { req: void; res: { workspace: Workspace; tasks: Task[] } };
+  /** Restores the project and the tasks that were archived with it. */
+  "POST /api/workspaces/:id/unarchive": { req: void; res: { workspace: Workspace; tasks: Task[] } };
   "GET /api/settings": { req: void; res: StudioSettings };
   /**
    * Quota use of the subscriptions (GPT through the Codex login, Claude through its token). `?refresh=1` asks the
@@ -363,6 +367,8 @@ export type HostEvent = { seq: number } & (
   | { type: "marks.changed"; markId: Id; workspaceId: Id | null }
   /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
   | { type: "host.error"; message: string }
+  /** Deleted for good from 设置 → 数据管理: drop them from every list. */
+  | { type: "data.purged"; workspaceIds: Id[]; topicIds: Id[]; taskIds: Id[]; sessionIds: Id[] }
 );
 
 export type HostEventType = HostEvent["type"];
@@ -485,4 +491,14 @@ export interface HostRoutes {
   "GET /api/workspaces/:id/git/commit": { req: void; res: import("./gitreview.js").GitCommitChanges };
   /** One file of a commit: `?sha=` and `?base=` (full ids, from the commit's listing), `?path=` (and `?oldPath=`). One git call. */
   "GET /api/workspaces/:id/git/commit-diff": { req: void; res: import("./gitreview.js").GitFileDiff };
+}
+
+// ---- 设置 → 数据管理 (2026-10-14): archived things and deleting them for good (datamgmt.ts) -----------------------
+export interface HostRoutes {
+  /** Archived projects, topics, tasks and sessions (top level only), most recently archived first. */
+  "GET /api/data/archived": { req: void; res: import("./datamgmt.js").ArchivedEntry[] };
+  /** What deleting `?kind=&id=` would take with it; 409 when it is not archived or something live hangs on it. */
+  "GET /api/data/purge": { req: void; res: import("./datamgmt.js").PurgeSummary };
+  /** Deletes it for good. */
+  "POST /api/data/purge": { req: { kind: import("./datamgmt.js").DataKind; id: Id }; res: import("./datamgmt.js").PurgeSummary };
 }

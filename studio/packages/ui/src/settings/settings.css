@@ -69,3 +69,14 @@
 .model-default { flex: none; margin-left: auto; height: var(--ctl-s); padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--r-btn); background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-cap); cursor: pointer; }
 .model-default:hover { color: var(--text); }
 .model-default[aria-pressed="true"] { border-color: var(--primary); background: var(--tint); color: var(--primary); font-weight: 600; cursor: default; }
+
+/* 设置 → 数据管理: archived things, restored or deleted for good. */
+.data-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.data-row { display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel); }
+.data-kind { flex: none; min-width: 32px; padding: 1px 6px; border-radius: 4px; background: var(--panel-raised); color: var(--text-dim); font-size: var(--fs-cap); text-align: center; }
+.data-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.data-title { font-size: var(--fs-sm); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.data-meta { font-size: var(--fs-cap); color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.data-actions { flex: none; display: flex; gap: 4px; }
+.btn-ghost.danger { color: var(--error); }
+.btn-ghost.danger:hover:not(:disabled) { border-color: var(--error); }

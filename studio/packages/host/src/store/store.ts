@@ -38,10 +38,18 @@ export function newId(prefix: string): Id {
 type Row = Record<string, SQLInputValue>;
 
 const str = (v: SQLInputValue | undefined): string => v as string;
+const ATTACHMENT_ID = /att-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/g;
 const strOrNull = (v: SQLInputValue | undefined): string | null => (v === null || v === undefined ? null : (v as string));
 
 function toWorkspace(r: Row): Workspace {
-  return { id: str(r.id), name: str(r.name), path: str(r.path), ...(r.builtin === "common" ? { builtin: "common" as const } : {}), createdAt: str(r.created_at) };
+  return {
+    id: str(r.id),
+    name: str(r.name),
+    path: str(r.path),
+    ...(r.builtin === "common" ? { builtin: "common" as const } : {}),
+    createdAt: str(r.created_at),
+    ...(typeof r.archived_at === "string" ? { archivedAt: r.archived_at } : {}),
+  };
 }
 
 function toTask(r: Row): Task {
@@ -208,6 +216,11 @@ export class Store {
 
   listWorkspaces(): Workspace[] {
     return (this.db.prepare("SELECT * FROM workspaces ORDER BY created_at, id").all() as Row[]).map(toWorkspace);
+  }
+
+  setWorkspaceArchived(id: Id, archivedAt: string | null): Workspace {
+    this.db.prepare("UPDATE workspaces SET archived_at = ? WHERE id = ?").run(archivedAt, id);
+    return this.getWorkspace(id)!;
   }
 
   /** Only workspaces without tasks or sessions can be removed. */
@@ -381,6 +394,84 @@ export class Store {
       }
       return changed;
     });
+  }
+
+  // Permanent deletion (数据管理, 2026-10-14)
+
+  /**
+   * How much a deletion takes with it: messages (items) of the sessions and the attachment ids they mention. The
+   * caller has already gathered the sessions and tasks.
+   */
+  countItems(sessionIds: readonly Id[]): { items: number; attachmentIds: string[] } {
+    let items = 0;
+    const attachments = new Set<string>();
+    for (const id of sessionIds) {
+      for (const r of this.db.prepare("SELECT body FROM items WHERE session_id = ?").all(id) as Row[]) {
+        items++;
+        for (const m of str(r.body).matchAll(ATTACHMENT_ID)) attachments.add(m[0]);
+      }
+    }
+    return { items, attachmentIds: [...attachments] };
+  }
+
+  /**
+   * Deletes sessions, tasks, topics and workspaces for good, with everything that belongs only to them: items,
+   * annotations, decisions, task notes, checklists, mail to them, scheduler proposals about them, their topics'
+   * canvases, their cards and dependencies on other canvases, and the events that carried them. Mail they sent to
+   * others stays with the recipient; todos keep their text and lose the link. One transaction: all or nothing.
+   */
+  purge(ids: { sessionIds: readonly Id[]; taskIds: readonly Id[]; topicIds: readonly Id[]; workspaceIds: readonly Id[] }): void {
+    const sessions = new Set(ids.sessionIds);
+    const tasks = new Set(ids.taskIds);
+    const topics = new Set(ids.topicIds);
+    const each = (list: Iterable<Id>, sql: string) => {
+      const stmt = this.db.prepare(sql);
+      for (const id of list) stmt.run(id);
+    };
+    this.transaction(() => {
+      each(sessions, "DELETE FROM items WHERE session_id = ?");
+      each(sessions, "DELETE FROM annotations WHERE session_id = ?");
+      each(sessions, "DELETE FROM decisions WHERE session_id = ?");
+      each(tasks, "DELETE FROM decisions WHERE task_id = ?");
+      each(sessions, "DELETE FROM mail WHERE to_session = ?");
+      each(tasks, "DELETE FROM mail WHERE to_task = ?");
+      each(topics, "DELETE FROM mail WHERE to_topic = ?");
+      each(tasks, "DELETE FROM task_notes WHERE task_id = ?");
+      each(tasks, "DELETE FROM checklist_items WHERE task_id = ?");
+      for (const p of this.listProposals()) if ((p.taskId && tasks.has(p.taskId)) || (p.sessionId && sessions.has(p.sessionId))) this.db.prepare("DELETE FROM proposals WHERE id = ?").run(p.id);
+      for (const t of this.listTodos()) if (t.taskId && tasks.has(t.taskId)) this.putTodo({ ...t, taskId: null });
+      // Forks point at their parents: one statement per owner set is checked at its end, so order does not matter.
+      if (sessions.size) this.db.prepare(`DELETE FROM sessions WHERE id IN (${[...sessions].map(() => "?").join(", ")})`).run(...sessions);
+      each(tasks, "DELETE FROM tasks WHERE id = ?");
+      each(topics, "DELETE FROM canvas_docs WHERE id = ?");
+      // Cards and dependencies of the deleted tasks on the canvases that stay.
+      for (const r of this.db.prepare("SELECT body FROM canvas_docs").all() as Row[]) {
+        const doc = JSON.parse(str(r.body)) as CanvasDoc;
+        if (!doc.nodes.some((n) => n.kind !== "note" && tasks.has(n.taskId))) continue;
+        this.putCanvas({
+          ...doc,
+          version: doc.version + 1,
+          nodes: doc.nodes.filter((n) => n.kind === "note" || !tasks.has(n.taskId)),
+          edges: doc.edges.filter((e) => !tasks.has(e.from) && !tasks.has(e.to)),
+          updatedAt: this.timestamp(),
+        });
+      }
+      each(topics, "DELETE FROM topics WHERE id = ?");
+      for (const id of ids.workspaceIds) this.removeWorkspace(id);
+      // The event log is only for catching up after a reconnect; events about what is gone would bring it back.
+      const gone = [...sessions, ...tasks, ...topics];
+      for (let i = 0; i < gone.length; i += 50) {
+        const chunk = gone.slice(i, i + 50);
+        this.db.prepare(`DELETE FROM events WHERE ${chunk.map(() => "instr(payload, ?) > 0").join(" OR ")}`).run(...chunk);
+      }
+    });
+  }
+
+  /** Whether any item or kv value (the scratchpad) still mentions this attachment. */
+  attachmentInUse(id: string): boolean {
+    return !!(
+      this.db.prepare("SELECT 1 FROM items WHERE instr(body, ?) > 0 LIMIT 1").get(id) ?? this.db.prepare("SELECT 1 FROM kv WHERE instr(value, ?) > 0 LIMIT 1").get(id)
+    );
   }
 
   // Items

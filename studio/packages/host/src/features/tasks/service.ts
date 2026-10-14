@@ -87,7 +87,7 @@ export class TasksFeature extends Feature {
     firstSession?: NewSessionInput;
     template?: TaskTemplateChoice;
   }): Promise<{ task: Task; session: Session | null }> {
-    const workspace = input.workspaceId ? this.requireWorkspace(input.workspaceId) : this.commonWorkspace();
+    const workspace = input.workspaceId ? this.requireLiveWorkspace(input.workspaceId) : this.commonWorkspace();
     const topic = input.topicId ? this.requireLiveTopic(input.topicId) : null;
     if (input.firstSession) {
       this.requireProfile(input.firstSession.profileId);
@@ -126,7 +126,7 @@ export class TasksFeature extends Feature {
       clean.column = patch.column as TaskColumn;
     }
     if (patch.workspaceId !== undefined) {
-      const workspaceId = patch.workspaceId === null || patch.workspaceId === "" ? this.commonWorkspace().id : this.requireWorkspace(String(patch.workspaceId)).id;
+      const workspaceId = patch.workspaceId === null || patch.workspaceId === "" ? this.commonWorkspace().id : this.requireLiveWorkspace(String(patch.workspaceId)).id;
       if (workspaceId !== current.workspaceId && this.store.listSessions({ taskId: id }).length) throw new HostError("conflict", "a task's project cannot change once it has sessions");
       clean.workspaceId = workspaceId;
     }

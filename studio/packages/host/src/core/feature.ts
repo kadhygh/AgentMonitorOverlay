@@ -46,6 +46,9 @@ export abstract class Feature {
   protected requireWorkspace(id: Id): Workspace {
     return this.host.requireWorkspace(id);
   }
+  protected requireLiveWorkspace(id: Id): Workspace {
+    return this.host.requireLiveWorkspace(id);
+  }
   protected requireTask(id: Id): Task {
     return this.host.requireTask(id);
   }

@@ -9,8 +9,11 @@ export interface ProjectMenuAt {
   y: number;
 }
 
-/** Right-click menu of a project in the left column: Git Review (only when the folder is a git repository). */
-export function ProjectReviewMenu({ link, at, onClose }: { link: HostLink; at: ProjectMenuAt; onClose(): void }) {
+/**
+ * Right-click menu of a project in the left column: Git Review (only when the folder is a git repository), and
+ * 归档项目 when the caller offers it.
+ */
+export function ProjectReviewMenu({ link, at, onClose, onArchive }: { link: HostLink; at: ProjectMenuAt; onClose(): void; onArchive?: () => void }) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   useEffect(() => {
     let live = true;
@@ -49,6 +52,20 @@ export function ProjectReviewMenu({ link, at, onClose }: { link: HostLink; at: P
       >
         Git Review{notGit ? `（${status.reason ?? "不是 git 仓库"}）` : ""}
       </button>
+      {onArchive && (
+        <button
+          type="button"
+          role="menuitem"
+          title="项目和它的任务、会话一起归档，从列表里隐藏；可以在 设置 → 数据管理 里恢复"
+          onClick={() => {
+            onArchive();
+            onClose();
+          }}
+          data-testid="archive-project"
+        >
+          归档项目…
+        </button>
+      )}
     </div>
   );
 }

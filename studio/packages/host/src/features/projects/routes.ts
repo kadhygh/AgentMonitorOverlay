@@ -9,5 +9,7 @@ export function projectsRoutes(service: HostService): Route[] {
       return service.projects.addWorkspace({ path: str(b.path, "path"), ...(typeof b.name === "string" ? { name: b.name } : {}) });
     }),
     route("DELETE", "/api/workspaces/:id", ({ params }) => (service.projects.removeWorkspace(params.id!), { ok: true })),
+    route("POST", "/api/workspaces/:id/archive", ({ params }) => service.projects.archiveWorkspace(params.id!)),
+    route("POST", "/api/workspaces/:id/unarchive", ({ params }) => service.projects.unarchiveWorkspace(params.id!)),
   ];
 }

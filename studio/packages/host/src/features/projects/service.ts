@@ -1,20 +1,55 @@
 import { existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import type { CanvasDoc, Id, Workspace } from "@amo-studio/protocol";
+import type { CanvasDoc, Id, Task, Workspace } from "@amo-studio/protocol";
 import { isCommon } from "@amo-studio/protocol";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
-/** Projects (workspaces): registering and removing them. */
+/** Projects (workspaces): registering, archiving and removing them. */
 export class ProjectsFeature extends Feature {
   addWorkspace(input: { path: string; name?: string }): Workspace {
     if (!input.path?.trim()) throw new HostError("bad_request", "path is required");
     const path = resolve(input.path.trim());
     if (!existsSync(path) || !statSync(path).isDirectory()) throw new HostError("bad_request", `not a directory: ${path}`);
-    if (this.store.findWorkspaceByPath(path)) throw new HostError("conflict", `workspace already registered: ${path}`);
+    const known = this.store.findWorkspaceByPath(path);
+    if (known?.archivedAt) throw new HostError("conflict", `这个文件夹是已归档的项目「${known.name}」，到 设置 → 数据管理 里恢复它`);
+    if (known) throw new HostError("conflict", `workspace already registered: ${path}`);
     const ws = this.store.addWorkspace({ path, name: input.name?.trim() || basename(path) || path });
     this.publish({ type: "workspace.upserted", workspace: ws });
     return ws;
+  }
+
+  /**
+   * Archives the project: it leaves every list, its tasks are archived with their sessions, and so are topic sessions
+   * that run in it. Restoring brings back what was archived with it.
+   */
+  async archiveWorkspace(id: Id): Promise<{ workspace: Workspace; tasks: Task[] }> {
+    const ws = this.requireWorkspace(id);
+    if (isCommon(ws)) throw new HostError("conflict", "the common space cannot be archived");
+    if (ws.archivedAt) return { workspace: ws, tasks: [] };
+    const workspace = this.store.setWorkspaceArchived(id, new Date().toISOString());
+    this.publish({ type: "workspace.upserted", workspace });
+    const tasks: Task[] = [];
+    for (const t of this.store.listTasks().filter((x) => x.workspaceId === id && !x.archivedAt)) tasks.push(await this.f.tasks.archiveTask(t.id));
+    await this.f.tasks.archiveSessions(this.store.listSessions().filter((s) => s.topicId && s.workspaceId === id));
+    return { workspace: this.store.getWorkspace(id)!, tasks };
+  }
+
+  async unarchiveWorkspace(id: Id): Promise<{ workspace: Workspace; tasks: Task[] }> {
+    const ws = this.requireWorkspace(id);
+    if (!ws.archivedAt) return { workspace: ws, tasks: [] };
+    const since = ws.archivedAt;
+    const workspace = this.store.setWorkspaceArchived(id, null);
+    this.publish({ type: "workspace.upserted", workspace });
+    const tasks: Task[] = [];
+    for (const t of this.store.listTasks().filter((x) => x.workspaceId === id && x.archivedAt && x.archivedAt >= since)) {
+      // A task whose topic is archived stays archived until the topic is restored.
+      if (t.topicId && this.store.getTopic(t.topicId)?.archivedAt) continue;
+      tasks.push(await this.f.tasks.unarchiveTask(t.id));
+    }
+    const topicSessions = this.store.listSessions().filter((s) => s.topicId && s.workspaceId === id && !this.store.getTopic(s.topicId)?.archivedAt);
+    await this.f.tasks.unarchiveSessions(topicSessions, since);
+    return { workspace: this.store.getWorkspace(id)!, tasks };
   }
 
   removeWorkspace(id: Id): void {
@@ -27,7 +62,11 @@ export class ProjectsFeature extends Feature {
       throw new HostError("conflict", (err as Error).message);
     }
     this.publish({ type: "workspace.removed", workspaceId: id });
-    // Todos, topics and canvas groups only point at a workspace as a hint; drop the hint rather than leave it dangling.
+    this.dropHints(id);
+  }
+
+  /** Todos, topics and canvas groups only point at a workspace as a hint; drop the hint rather than leave it dangling. */
+  dropHints(id: Id): void {
     for (const todo of this.store.listTodos().filter((t) => t.workspaceId === id)) {
       const next = { ...todo, workspaceId: null };
       this.store.putTodo(next);

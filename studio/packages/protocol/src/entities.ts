@@ -17,6 +17,8 @@ export interface Workspace {
   path: string;
   builtin?: "common";
   createdAt: Timestamp;
+  /** Set while the project is archived: hidden from every list, its tasks archived with it. */
+  archivedAt?: Timestamp;
 }
 
 /** Board columns. Moved by the person only; agents never move cards. */

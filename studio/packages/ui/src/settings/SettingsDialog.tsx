@@ -6,6 +6,7 @@ import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/th
 import { ModelsPage } from "./ModelsPage.js";
 import { FeaturesSection } from "./FeaturesSection.js";
 import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
+import { DataPage } from "./DataPage.js";
 import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 
@@ -35,6 +36,7 @@ const PAGES = [
   { id: "common", label: "公共目录" },
   { id: "features", label: "功能" },
   { id: "scratchpad", label: "便签" },
+  { id: "data", label: "数据管理" },
 ] as const;
 type SettingsPage = (typeof PAGES)[number]["id"];
 
@@ -221,6 +223,7 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
             )}
             {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} />}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
+            {page === "data" && <DataPage link={link} />}
           </div>
         </div>
       </div>

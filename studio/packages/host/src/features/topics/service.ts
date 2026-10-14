@@ -57,7 +57,7 @@ export class TopicsFeature extends Feature {
       if (!topicWorkspaceIds(topic, this.store.listTasks(), this.store.listWorkspaces()).includes(input.workspaceId)) {
         throw new HostError("bad_request", "a topic session runs in one of the topic's projects or in the common space");
       }
-      workspace = this.requireWorkspace(input.workspaceId);
+      workspace = this.requireLiveWorkspace(input.workspaceId);
     }
     return this.f.tasks.startSession({ taskId: null, topicId: topic.id }, workspace, input);
   }
