@@ -138,7 +138,10 @@ test("reviews a plan: changes from the composer, then approve and leave plan mod
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
   expect(state.sessions.find((s) => s.runtime === "claude")!.options.permission).toBe("default");
   // Scroll the thread (it follows the bottom until the person scrolls) so the approved plan shows.
-  await second.evaluate((el) => {
+  // Under load the answered card can still be leaving the popup: wait for the one in the thread.
+  const approved = page.getByTestId("thread").getByTestId("plan-card").filter({ hasText: "已批准" }).last();
+  await expect(approved).toBeVisible();
+  await approved.evaluate((el) => {
     const thread = el.closest<HTMLElement>('[data-testid="thread"]')!;
     thread.scrollTop += el.getBoundingClientRect().top - thread.getBoundingClientRect().top - 120;
   });
