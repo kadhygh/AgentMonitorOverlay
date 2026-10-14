@@ -1,9 +1,26 @@
-import { composeGitReviewMessage, isGitRange, isObjectId, rangeBase, sortComments, type GitChanges, type GitFileDiff, type GitRange, type GitReviewComment, type GitStatus, type Id, type NewGitReviewComment } from "@amo-studio/protocol";
+import {
+  composeGitReviewMessage,
+  GIT_LOG_MAX,
+  isCommitRef,
+  isGitRange,
+  isObjectId,
+  rangeBase,
+  sortComments,
+  type GitChanges,
+  type GitCommitChanges,
+  type GitFileDiff,
+  type GitLog,
+  type GitRange,
+  type GitReviewComment,
+  type GitStatus,
+  type Id,
+  type NewGitReviewComment,
+} from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
-import { GitError, readChanges, readFileDiff, readStatus } from "./git.js";
+import { GitError, readChanges, readCommit, readCommitFileDiff, readFileDiff, readLog, readStatus } from "./git.js";
 
 const NOTE_MAX = 10_000;
 const LINE_TEXT_MAX = 2_000;
@@ -44,6 +61,33 @@ export class GitReviewFeature extends Feature {
       }
       return readFileDiff(dir, r, base, path, typeof oldPath === "string" && oldPath ? oldPath : undefined, untracked);
     });
+  }
+
+  /** HEAD's history, newest first (S13-B). */
+  async log(workspaceId: Id, limit?: unknown): Promise<GitLog> {
+    const n = limit === undefined || limit === null || limit === "" ? GIT_LOG_MAX : Number(limit);
+    if (!Number.isInteger(n) || n < 1) throw new HostError("bad_request", "limit must be a positive whole number");
+    const dir = this.requireWorkspace(workspaceId).path;
+    return this.git(async () => {
+      const status = await readStatus(dir);
+      if (!status.repo) throw new HostError("bad_request", status.reason ?? "不是 git 仓库");
+      return readLog(dir, n);
+    });
+  }
+
+  /** One commit's changed files against its first parent (S13-B). */
+  async commit(workspaceId: Id, sha: unknown): Promise<GitCommitChanges> {
+    if (!isCommitRef(sha)) throw new HostError("bad_request", "sha must be 7 to 64 hex digits");
+    const dir = this.requireWorkspace(workspaceId).path;
+    return this.git(() => readCommit(dir, sha));
+  }
+
+  /** One file of a commit, against the base its listing gave (S13-B). */
+  async commitDiff(workspaceId: Id, sha: unknown, base: unknown, path: unknown, oldPath?: unknown): Promise<GitFileDiff> {
+    if (!isObjectId(sha) || !isObjectId(base)) throw new HostError("bad_request", "sha and base must be full commit ids");
+    if (typeof path !== "string" || !path) throw new HostError("bad_request", "path is required");
+    const dir = this.requireWorkspace(workspaceId).path;
+    return this.git(() => readCommitFileDiff(dir, base, sha, path, typeof oldPath === "string" && oldPath ? oldPath : undefined));
   }
 
   comments(workspaceId: Id): GitReviewComment[] {
@@ -138,7 +182,10 @@ export class GitReviewFeature extends Feature {
       return await fn();
     } catch (err) {
       if (err instanceof HostError) throw err;
-      if (err instanceof GitError) throw new HostError(err.kind === "failed" && /path/.test(err.message) ? "bad_request" : "runtime_error", err.message);
+      if (err instanceof GitError) {
+        if (err.kind === "failed" && / not found$/.test(err.message)) throw new HostError("not_found", err.message);
+        throw new HostError(err.kind === "failed" && /path|bad commit|full commit/.test(err.message) ? "bad_request" : "runtime_error", err.message);
+      }
       if ((err as NodeJS.ErrnoException).code === "ENOENT") throw new HostError("not_found", "file not found");
       throw new HostError("runtime_error", (err as Error).message ?? String(err));
     }

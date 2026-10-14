@@ -3,7 +3,21 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { composeGitReviewMessage, rangeBase, type GitChanges, type GitFileDiff, type GitReviewComment, type GitStatus, type ModelProfile, type Session, type SessionItem, type Task, type Workspace } from "@amo-studio/protocol";
+import {
+  composeGitReviewMessage,
+  rangeBase,
+  type GitChanges,
+  type GitCommitChanges,
+  type GitFileDiff,
+  type GitLog,
+  type GitReviewComment,
+  type GitStatus,
+  type ModelProfile,
+  type Session,
+  type SessionItem,
+  type Task,
+  type Workspace,
+} from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
@@ -134,5 +148,34 @@ describe("Git Review API", { timeout: 30_000 }, () => {
     expect((await api("PATCH", `/api/review-comments/${rate.id}`, { note: "again" })).status).toBe(409);
     expect((await api("POST", `${base}/send`, { sessionId: session.id })).status).toBe(400);
     expect((await ok<GitReviewComment[]>("GET", base)).every((c) => c.state === "sent")).toBe(true);
+  });
+});
+
+describe("commit history API (S13-B)", { timeout: 30_000 }, () => {
+  it("lists commits, one commit's files and one file of a commit; refuses other names", async () => {
+    const dir = makeRepo();
+    run(dir, "commit", "-q", "-am", "tune");
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: dir });
+    const log = await ok<GitLog>("GET", `/api/workspaces/${ws.id}/git/log`);
+    expect(log.commits.map((c) => c.subject)).toEqual(["tune", "base"]);
+    expect((await ok<GitLog>("GET", `/api/workspaces/${ws.id}/git/log?limit=1`)).truncated).toBe(true);
+    const tune = log.commits[0]!;
+    const changes = await ok<GitCommitChanges>("GET", `/api/workspaces/${ws.id}/git/commit?sha=${tune.sha.slice(0, 8)}`);
+    expect(changes).toMatchObject({ commit: { sha: tune.sha }, base: log.commits[1]!.sha, truncated: false });
+    expect(changes.files).toEqual([{ path: "drop.lua", status: "modified", additions: 1, deletions: 2, binary: false }]);
+    const diff = await ok<GitFileDiff>("GET", `/api/workspaces/${ws.id}/git/commit-diff?sha=${tune.sha}&base=${changes.base}&path=drop.lua`);
+    expect(diff.commit).toBe(tune.sha);
+    expect(diff.lines.map((l) => l.kind)).toEqual(["del", "del", "add", "context"]);
+
+    for (const sha of ["HEAD", "abc", "--all", "abc1234..HEAD"]) expect((await api("GET", `/api/workspaces/${ws.id}/git/commit?sha=${encodeURIComponent(sha)}`)).status).toBe(400);
+    expect((await api("GET", `/api/workspaces/${ws.id}/git/commit?sha=0000000`)).status).toBe(404);
+    expect((await api("GET", `/api/workspaces/${ws.id}/git/commit-diff?sha=${tune.sha.slice(0, 7)}&base=${changes.base}&path=drop.lua`)).status).toBe(400);
+    expect((await api("GET", `/api/workspaces/${ws.id}/git/commit-diff?sha=${tune.sha}&base=${changes.base}&path=..%2Fx`)).status).toBe(400);
+    expect((await api("GET", `/api/workspaces/${ws.id}/git/log?limit=0`)).status).toBe(400);
+
+    mkdirSync(join(root, "plain"));
+    const plain = await ok<Workspace>("POST", "/api/workspaces", { path: join(root, "plain") });
+    const none = await ok<GitStatus>("GET", `/api/workspaces/${plain.id}/git/status`);
+    if (!none.repo) expect((await api("GET", `/api/workspaces/${plain.id}/git/log`)).status).toBe(400);
   });
 });
