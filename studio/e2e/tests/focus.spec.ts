@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Session, StateSnapshot, Task, Workspace } from "@amo-studio/protocol";
+import type { Session, SessionItem, StateSnapshot, Task, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, windowState, type Studio } from "./studio.js";
 
 let studio: Studio | undefined;
@@ -67,4 +67,30 @@ test("Focus lists what needs me, approves in place and opens the workbench", asy
   await closed;
   await expect(toggle).toHaveAttribute("aria-pressed", "false");
   expect((await windowState(app)).anyFocused).toBe(false);
+});
+
+test("Focus shows a Codex async question at once, while the model is still working (stage 13)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const opened = app.waitForEvent("window");
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await opened;
+  await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理", { timeout: 30_000 });
+
+  // request_user_input_async: the model asks, then goes on for about three seconds ([[slow]]).
+  const { session } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+    title: "季节",
+    workspaceId: ws.id,
+    firstSession: { profileId: "codex-mock", text: "[[ask-async]] [[slow]] 问我一个" },
+  });
+  await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1", { timeout: 30_000 });
+  await expect(focus.getByTestId("focus-snippet")).toContainText("你最喜欢哪个季节？");
+  // Before stage 13 this waited for the end of the turn; now the turn is still running.
+  const items = await studio.api<SessionItem[]>("GET", `/api/sessions/${session.id}/items`);
+  expect(items.some((i) => i.type === "turn" && i.state === "running")).toBe(true);
+  await screenshot(app, "stage-13", "S13-C-focus-async-question", focus, "focus");
+  // When the turn ends the question is still open: still waiting for the person.
+  await expect.poll(async () => (await studio!.api<SessionItem[]>("GET", `/api/sessions/${session.id}/items`)).some((i) => i.type === "turn" && i.state === "running"), { timeout: 30_000 }).toBe(false);
+  await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1");
 });

@@ -93,8 +93,11 @@ export const defaultTurnScript: TurnScript = async (ctx) => {
     await ctx.agentMessage(`FAKE-ELICITED: ${action}`);
     return;
   }
-  if (ctx.userText.includes("[[ask-async]]")) {
+  const askAsync = /\[\[ask-async(?::(\d+))?\]\]/.exec(ctx.userText);
+  if (askAsync) {
     ctx.item({ type: "agentMessage", id: `call_${randomUUID()}`, text: "你最喜欢哪个季节？\n- 春天\n- 夏天\n- 秋天", phase: "final_answer", memoryCitation: null, delivery: "async", questions: [{ title: "你最喜欢哪个季节？", options: ["春天", "夏天", "秋天"] }] });
+    // `[[ask-async:N]]`: the model goes on working N ms before it replies (the turn is still running meanwhile).
+    if (askAsync[1]) await new Promise((r) => setTimeout(r, Number(askAsync[1])));
     await ctx.agentMessage("FAKE-ASKED");
     return;
   }

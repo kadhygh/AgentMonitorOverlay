@@ -164,6 +164,8 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     this.closeAsyncQuestions(sessionId);
     if (st.activeTurnId) {
       await handle.client.request("turn/steer", { threadId: session.runtimeRef!, expectedTurnId: st.activeTurnId, input } as never);
+      // An async question answered while its turn still runs: the session runs again (unless something else waits).
+      if (this.store.getSession(sessionId)?.status === "awaiting-answer") this.afterAnswer(sessionId);
       return { mode: "steer" };
     }
     // Status and the active turn come from turn/started and turn/completed: a short turn can finish before this
@@ -306,7 +308,9 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
           ? { ...it, state: reply.action === "answer" ? "answered" : "dismissed", ...(reply.action === "answer" ? { answers: storedAnswers(it.questions ?? [], reply.answers) } : {}) }
           : it,
       );
-      if (reply.action === "dismiss" && this.store.getSession(sessionId)?.status === "awaiting-answer" && !this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, "idle");
+      // Asked mid-turn (stage 13: the session waits for the person at once): the turn may still be going.
+      if (this.sessionState(sessionId).activeTurnId) this.afterAnswer(sessionId);
+      else if (reply.action === "dismiss" && this.store.getSession(sessionId)?.status === "awaiting-answer" && !this.openAsyncQuestions(sessionId).length) this.setStatus(sessionId, "idle");
       return;
     }
     const pending = this.questions.get(itemId);
@@ -461,11 +465,11 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     return this.updateSession(sessionId, { writer });
   }
 
-  /** After an answer: still waiting for another question or approval, or back to running. */
+  /** After an answer: still waiting for another question or approval (an open async question too), or back to running. */
   private afterAnswer(sessionId: Id): void {
     if ([...this.questions.values()].some((q) => q.sessionId === sessionId)) this.setStatus(sessionId, "awaiting-answer");
     else if ([...this.approvals.values()].some((a) => a.sessionId === sessionId)) this.setStatus(sessionId, "awaiting-approval");
-    else if (this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, "running");
+    else if (this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, this.openAsyncQuestions(sessionId).length ? "awaiting-answer" : "running");
   }
 
   private closeQuestion(q: PendingQuestion, state: "answered" | "dismissed" | "cancelled", patch: Partial<Extract<SessionItem, { type: "question" }>> = {}): void {
@@ -731,7 +735,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
           if (a.profileId !== handle.profileId || String(a.requestId) !== String(n.params.requestId)) continue;
           this.approvals.delete(key);
           this.updateItem(a.itemId, (item) => (item.type === "approval" && item.state === "pending" ? { ...item, state: "resolved-elsewhere" } : item));
-          if (this.sessionState(a.sessionId).activeTurnId) this.setStatus(a.sessionId, "running");
+          if (this.sessionState(a.sessionId).activeTurnId) this.afterAnswer(a.sessionId);
         }
         for (const q of [...this.questions.values()]) {
           if (q.profileId !== handle.profileId || String(q.requestId) !== String(n.params.requestId)) continue;
@@ -950,7 +954,12 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         // request_user_input_async: the model asks and carries on; the questions become a card, the answer a message.
         const asked = item.delivery === "async" ? asyncPrompts(item.questions) : [];
         if (asked.length) {
-          if (!st.items.has(item.id)) st.items.set(item.id, this.appendItem(s.id, { type: "question", source: "codex-async", state: "pending", questions: asked }, raw).id);
+          if (!st.items.has(item.id)) {
+            st.items.set(item.id, this.appendItem(s.id, { type: "question", source: "codex-async", state: "pending", questions: asked }, raw).id);
+            // The person is wanted now, not when the turn ends (stage 13: Focus and the board showed it seconds late).
+            // A pending approval stays first: it blocks the turn.
+            if (s.kind !== "sub" && s.status === "running") this.setStatus(s.id, "awaiting-answer");
+          }
           return;
         }
         const itemId = this.ensureAgentItem(s.id, item.id, turnId);
