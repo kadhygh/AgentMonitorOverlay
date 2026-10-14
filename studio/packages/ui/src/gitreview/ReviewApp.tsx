@@ -12,6 +12,9 @@ import { editorLine } from "./splitview.js";
 import { DiffCache, type DiffRequest } from "./diffcache.js";
 import { diffTokensFor, useDiffTokens } from "./tokens.js";
 import { MarkButton } from "../marks/MarkButton.js";
+import { OverviewRuler } from "./OverviewRuler.js";
+import { pairKinds, rowKinds } from "./overview.js";
+import { splitRows } from "./splitview.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
 // the right, comments on lines, and "发给会话" to send the drafts to a session as one message.
@@ -203,6 +206,9 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   const shown = diff && file && diff.path === file.path && diff.range === range ? diff : null;
   const rows = useMemo(() => (shown ? diffRows(shown, mode) : []), [shown, mode]);
   const changeRows = useMemo(() => changeStarts(rows), [rows]);
+  // The overview ruler's items: rows, or side-by-side pairs.
+  const rulerKinds = useMemo(() => (prefs.split ? pairKinds(splitRows(rows)) : rowKinds(rows)), [rows, prefs.split]);
+  const scroller = useRef<HTMLDivElement>(null);
   const { placed, elsewhere } = useMemo(() => placeComments(comments, selected ?? "", range, rows), [comments, selected, range, rows]);
   const order = useMemo(() => fileOrder(changes?.files ?? [], prefs.layout), [changes, prefs.layout]);
   // Syntax colours of both versions, from the highlight worker; plain text until they arrive.
@@ -389,38 +395,41 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
                 {file.status !== "deleted" && <MarkButton link={link} file={{ path: file.path, workspaceId: workspace.id }} line={active !== null ? openLine : null} />}
               </div>
             )}
-            <div className="gr-scroll">
-              {!file && changes && <div className="gr-notice">选择左侧的文件查看改动。</div>}
-              {file && !shown && <div className="gr-notice gr-loading">正在读取…</div>}
-              {file && shown && (
-                <DiffView
-                  diff={shown}
-                  rows={rows}
-                  split={prefs.split}
-                  tokens={tokens}
-                  placed={placed}
-                  elsewhere={elsewhere}
-                  showSent={showSent}
-                  draftAt={draftAt}
-                  active={active}
-                  busy={busy}
-                  onDraft={setDraftAt}
-                  onActivate={setActive}
-                  onAdd={(row, note) =>
-                    run(async () => {
-                      await call(link, "POST /api/workspaces/:id/review-comments", { id: workspace.id }, { range, path: file.path, side: row.side, line: row.number, lineText: row.line.text, note });
-                      setDraftAt(null);
-                      await loadComments();
-                    })
-                  }
-                  onEdit={(id, note) => run(async () => (await call(link, "PATCH /api/review-comments/:id", { id }, { note }), await loadComments()))}
-                  onDelete={(id) => run(async () => (await call(link, "DELETE /api/review-comments/:id", { id }), await loadComments()))}
-                  onLocate={(c) => {
-                    setMode("full");
-                    setScrollTo(`[data-line="${c.side}:${c.line}"]`);
-                  }}
-                />
-              )}
+            <div className="gr-scroll-wrap">
+              <div className="gr-scroll" ref={scroller}>
+                {!file && changes && <div className="gr-notice">选择左侧的文件查看改动。</div>}
+                {file && !shown && <div className="gr-notice gr-loading">正在读取…</div>}
+                {file && shown && (
+                  <DiffView
+                    diff={shown}
+                    rows={rows}
+                    split={prefs.split}
+                    tokens={tokens}
+                    placed={placed}
+                    elsewhere={elsewhere}
+                    showSent={showSent}
+                    draftAt={draftAt}
+                    active={active}
+                    busy={busy}
+                    onDraft={setDraftAt}
+                    onActivate={setActive}
+                    onAdd={(row, note) =>
+                      run(async () => {
+                        await call(link, "POST /api/workspaces/:id/review-comments", { id: workspace.id }, { range, path: file.path, side: row.side, line: row.number, lineText: row.line.text, note });
+                        setDraftAt(null);
+                        await loadComments();
+                      })
+                    }
+                    onEdit={(id, note) => run(async () => (await call(link, "PATCH /api/review-comments/:id", { id }, { note }), await loadComments()))}
+                    onDelete={(id) => run(async () => (await call(link, "DELETE /api/review-comments/:id", { id }), await loadComments()))}
+                    onLocate={(c) => {
+                      setMode("full");
+                      setScrollTo(`[data-line="${c.side}:${c.line}"]`);
+                    }}
+                  />
+                )}
+              </div>
+              {file && shown && rows.length > 0 && <OverviewRuler scroller={scroller} kinds={rulerKinds} />}
             </div>
           </section>
         </div>

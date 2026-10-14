@@ -66,9 +66,9 @@ describe("ruler geometry", () => {
     expect(itemTop(15, chunks)).toBe(604);
     expect(itemTop(3, [])).toBe(0);
   });
-  it("scales runs to the ruler, at least 2px", () => {
+  it("scales runs to the ruler, at least 3px", () => {
     expect(rulerMarks([{ kind: "add", from: 10, to: 15 }], chunks, 644, 322)).toEqual([{ kind: "add", top: 102, height: 200 }]);
-    expect(rulerMarks([{ kind: "del", from: 0, to: 0 }], chunks, 644, 322)[0]).toEqual({ kind: "del", top: 2, height: 2 });
+    expect(rulerMarks([{ kind: "del", from: 0, to: 0 }], chunks, 644, 322)[0]).toEqual({ kind: "del", top: 2, height: 3 });
     expect(rulerMarks([{ kind: "add", from: 0, to: 1 }], chunks, 0, 322)).toEqual([]);
   });
   it("draws the visible box and maps a point back to a scroll position", () => {

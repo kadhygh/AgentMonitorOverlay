@@ -81,7 +81,17 @@
 .gr-diff { flex: 1; min-width: 0; display: flex; flex-direction: column; background: var(--panel); }
 .gr-file-head { display: flex; align-items: center; gap: 10px; padding: 8px 16px; background: var(--chat-code-banner); border-bottom: 0.5px solid var(--chat-hairline); }
 .gr-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: var(--font-code); font-size: 12.5px; color: var(--chat-label); }
-.gr-scroll { flex: 1; min-height: 0; overflow: auto; background: var(--chat-code-bg); }
+.gr-scroll-wrap { flex: 1; min-height: 0; position: relative; display: flex; }
+.gr-scroll { flex: 1; min-width: 0; min-height: 0; overflow: auto; background: var(--chat-code-bg); }
+/* The overview ruler (S13-B), just inside the scrollbar: where the changes are, and the part on screen. The lines keep
+   clear of it on the right. */
+.gr-ruler { position: absolute; top: 0; right: 0; bottom: 0; z-index: 3; width: 12px; cursor: pointer; touch-action: none; background: var(--chat-code-banner); border-left: 0.5px solid var(--chat-hairline); }
+.gr-ruler-mark { position: absolute; left: 1px; right: 1px; border-radius: 1px; pointer-events: none; }
+.gr-ruler-mark.add { background: var(--gr-st-added); }
+.gr-ruler-mark.del { background: var(--gr-st-deleted); }
+.gr-ruler-mark.mod { background: var(--gr-st-modified); }
+.gr-ruler-view { position: absolute; left: 0; right: 0; pointer-events: none; background: color-mix(in srgb, var(--text) 9%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 30%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--text) 30%, transparent); }
+.gr-scroll-wrap .gr-lines { padding-right: 12px; }
 .gr-notice { padding: 24px; color: var(--text-dim); font-size: var(--fs-sm); }
 /* Most diffs arrive within a blink: the notice only shows for a slow one. */
 .gr-loading { animation: gr-appear 0s linear 0.3s both; }

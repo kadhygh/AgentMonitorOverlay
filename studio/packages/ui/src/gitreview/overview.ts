@@ -110,8 +110,8 @@ export interface RulerMark {
   height: number;
 }
 
-/** Marks for the runs on a ruler `rulerHeight` tall that stands for `contentHeight` of scrolled content; at least `min` px each. */
-export function rulerMarks(runs: readonly ChangeRun[], chunks: readonly ChunkBox[], contentHeight: number, rulerHeight: number, min = 2): RulerMark[] {
+/** Marks for the runs on a ruler `rulerHeight` tall that stands for `contentHeight` of scrolled content; at least `min` px each (3: a one-line change stays visible). */
+export function rulerMarks(runs: readonly ChangeRun[], chunks: readonly ChunkBox[], contentHeight: number, rulerHeight: number, min = 3): RulerMark[] {
   if (contentHeight <= 0 || rulerHeight <= 0) return [];
   const scale = rulerHeight / contentHeight;
   return runs.map((r) => {
