@@ -94,8 +94,9 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   const [dragging, setDragging] = useState(false);
   const picker = useRef<HTMLInputElement>(null);
 
-  // A question the agent waits on takes the composer's seat (a plan review sits above the composer instead). Its card
-  // can be closed and opened again from its row in the conversation; "要修改" turns the composer into the feedback box.
+  // A question the agent waits on opens as a card over the conversation (a second-level popup: the conversation and
+  // the composer keep their place; a plan review sits above the composer instead). It can be folded to a strip, or
+  // closed and opened again from its row in the conversation; "要修改" turns the composer into the feedback box.
   const asked = useMemo(() => pendingQuestion(items), [items]);
   const [hiddenCards, setHiddenCards] = useState<ReadonlySet<string>>(new Set());
   const [revising, setRevising] = useState<string | null>(null);
@@ -322,6 +323,11 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             <IconArrowDown />
           </button>
         )}
+        {session && asked && !readOnly && seat.isOpen(asked.id) && (
+          <div className="q-popup" data-testid="question-popup">
+            <QuestionCard link={link} sessionId={session.id} item={asked} onClose={() => setHiddenCards((cur) => new Set(cur).add(asked.id))} />
+          </div>
+        )}
       </div>
       {menu && (
         <div className="ctx-menu" role="menu" aria-label="选中文字" style={{ left: menu.x, top: menu.y }}>
@@ -358,12 +364,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           </button>
         </div>
       )}
-      {session && asked && !readOnly && seat.isOpen(asked.id) && (
-        <div className="composer-dock">
-          <QuestionCard link={link} sessionId={session.id} item={asked} onClose={() => setHiddenCards((cur) => new Set(cur).add(asked.id))} />
-        </div>
-      )}
-      {session && !(asked && !readOnly && seat.isOpen(asked.id)) && (
+      {session && (
         <div className="composer-dock" {...dropTarget}>
           {planReview && !readOnly && (
             <PlanReviewBar

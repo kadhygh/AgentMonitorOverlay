@@ -3,8 +3,8 @@ import { IconChevronDown, IconChevronRight, IconSparkle } from "../icons.js";
 import { answersSummary, answerText, formValueText, type QuestionItem } from "./flow.js";
 import { PlanCard } from "./PlanReview.js";
 
-// A question in the conversation. While pending: a row that says the agent waits, with "回答" to bring the card back
-// to the composer seat. Once answered: a compact reply (after DSH's question-reply bubble, MIT) that opens to show
+// A question in the conversation. While pending: a row that says the agent waits, with "回答" to open its card again
+// over the conversation. Once answered: a compact reply (after DSH's question-reply bubble, MIT) that opens to show
 // each question and its answer.
 
 /** What the composer offers the transcript: whether a question's card is showing, and showing it again. */
@@ -31,7 +31,7 @@ function PendingRow({ item }: { item: QuestionItem }) {
         {item.source === "mcp-form" ? `等你填写：${item.message || "表单"}` : `等你回答${count > 1 ? ` ${count} 个问题` : ""}：${item.questions?.[0]?.question ?? ""}`}
       </span>
       {open ? (
-        <span className="q-pending-hint">在输入框处回答</span>
+        <span className="q-pending-hint">在弹出的卡片里回答</span>
       ) : (
         <button type="button" className="btn-ghost small" onClick={() => seat?.reopen(item.id)}>
           回答

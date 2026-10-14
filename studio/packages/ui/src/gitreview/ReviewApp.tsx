@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { showToast } from "../lib/toast.js";
 import { composeGitReviewMessage, GIT_RANGES, rangeBase, type GitChangedFile, type GitChanges, type GitFileDiff, type GitRange, type GitReviewComment, type StateSnapshot, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
@@ -73,7 +74,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   const [active, setActive] = useState<number | null>(null);
   const [reload, setReload] = useState(0);
   const [busy, setBusy] = useState(false);
-  const [toast, setToast] = useState<Toast>(null);
+  const setToast = (t: Toast) => void (t && showToast(t));
 
   // Diffs once read stay (刷新 forgets them); neighbours and the file under the pointer are read ahead, and their
   // colours worked out ahead in the highlight worker.
@@ -318,14 +319,6 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
         </button>
       </header>
 
-      {toast && (
-        <div role="status" className={toast.error ? "toast toast-error" : "toast"} data-testid="toast">
-          <span>{toast.text}</span>
-          <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => setToast(null)}>
-            ×
-          </button>
-        </div>
-      )}
 
       {status && !status.repo ? (
         <div className="placeholder" data-testid="review-not-git">

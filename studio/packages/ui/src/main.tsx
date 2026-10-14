@@ -35,6 +35,7 @@ import "./chat/questions/questions.css";
 import "./chat/cli/cli.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
+import { Toaster } from "./lib/toast.js";
 
 // One bundle, two windows: the workbench, and the Focus window (loaded with #focus).
 const focus = location.hash === "#focus";
@@ -55,6 +56,9 @@ const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
-    <WindowBoundary>{focus ? <FocusApp /> : scratchpad ? <ScratchpadApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : <App />}</WindowBoundary>
+    <WindowBoundary>
+      {focus ? <FocusApp /> : scratchpad ? <ScratchpadApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : <App />}
+      <Toaster />
+    </WindowBoundary>
   </StrictMode>,
 );

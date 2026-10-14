@@ -2,7 +2,7 @@ import { expect, test } from "@playwright/test";
 import type { StateSnapshot, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
-// Stage 12, S12-B: Claude's questions (AskUserQuestion) take the composer's seat and the answers reach the model;
+// Stage 12, S12-B: Claude's questions (AskUserQuestion) open as a popup over the conversation and the answers reach the model;
 // a plan written in 只做计划 is reviewed in the conversation (要修改 sends the composer's text back, 批准并开始 leaves
 // plan mode). Real Claude Agent SDK against the mock Anthropic API; no model budget.
 
@@ -19,14 +19,18 @@ async function openTask(s: Studio, firstSession: Record<string, unknown>) {
   await s.page.getByTestId("task-card").first().click();
 }
 
-test("answers Claude's questions in the composer seat", async () => {
+test("answers Claude's questions in a popup over the conversation", async () => {
   studio = await launchStudio({ transcriptView: "standard" });
   const { page, app } = studio;
   await openTask(studio, { text: "[[ask]] 给导入器加上重试" });
 
   const card = page.getByTestId("question-card");
   await expect(card).toBeVisible({ timeout: 60_000 });
-  await expect(page.getByLabel("输入消息")).toHaveCount(0);
+  // A popup: over the conversation, which keeps its size; the composer stays in place.
+  const popup = page.getByTestId("question-popup");
+  const thread = page.getByTestId("thread");
+  expect((await popup.boundingBox())!.height).toBeGreaterThanOrEqual((await thread.boundingBox())!.height - 1);
+  await expect(page.getByLabel("输入消息")).toBeVisible();
   await expect(card.locator(".qc-eyebrow")).toHaveText("Claude 在问你 · 重试策略");
   await expect(card.getByRole("heading")).toHaveText("导入失败时要怎么重试？");
   await expect(card.getByRole("radio")).toHaveCount(3);
@@ -43,6 +47,13 @@ test("answers Claude's questions in the composer seat", async () => {
   await card.getByRole("checkbox", { name: /等待时长/ }).click();
   await card.getByPlaceholder("其他：写下你的答案").fill("请求的 URL");
   await screenshot(app, "stage-12", "S12-B-question-multi", page);
+
+  // Folded: a strip at the bottom, the conversation readable again; unfolded it is the popup again.
+  await card.getByRole("button", { name: "收起问题卡片" }).click();
+  expect((await popup.boundingBox())!.height).toBeLessThan(120);
+  await screenshot(app, "stage-12", "S12-K-question-folded", page);
+  await card.getByRole("button", { name: "展开问题卡片" }).click();
+  await expect(card.locator(".qc-progress")).toHaveText("2 / 2");
 
   // Closing only hides the card: the conversation offers it again, drafts intact.
   await card.getByRole("button", { name: "关闭问题卡片" }).click();

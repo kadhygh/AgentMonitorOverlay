@@ -1,4 +1,5 @@
 import { Component, useEffect, useState, type ErrorInfo, type ReactNode } from "react";
+import { showToast } from "./toast.js";
 import { onHostEvent } from "../host/events.js";
 
 // Keeps a rendering failure to the part that failed (one conversation row, one turn, one page, one window) instead of
@@ -108,16 +109,8 @@ export function WindowBoundary({ children }: { children: ReactNode }) {
  * toast, the latest one.
  */
 export function HostErrorToast() {
-  const [message, setMessage] = useState<string | null>(null);
-  useEffect(() => onHostEvent((e) => e.type === "host.error" && setMessage(`Host 内部出错，已记录到 host.log，会话照常运行：${e.message}`)), []);
-  useEffect(() => window.amo?.onHostRestarted?.(() => setMessage("Host 意外退出，已自动重新启动。Codex 会话会接着运行；Claude 会话正在进行的回复被中断了，发一条消息即可继续。")), []);
-  if (!message) return null;
-  return (
-    <div role="status" className="toast toast-error host-error-toast" data-testid="host-error">
-      <span>{message}</span>
-      <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => setMessage(null)}>
-        ×
-      </button>
-    </div>
-  );
+  const show = (text: string, sticky = false) => showToast({ text, error: true, key: "host-error", testId: "host-error", sticky });
+  useEffect(() => onHostEvent((e) => e.type === "host.error" && show(`Host 内部出错，已记录到 host.log，会话照常运行：${e.message}`)), []);
+  useEffect(() => window.amo?.onHostRestarted?.(() => show("Host 意外退出，已自动重新启动。Codex 会话会接着运行；Claude 会话正在进行的回复被中断了，发一条消息即可继续。", true)), []);
+  return null;
 }

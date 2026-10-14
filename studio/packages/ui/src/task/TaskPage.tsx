@@ -11,6 +11,7 @@ import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
 import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
 import { useSettings } from "../settings/SettingsDialog.js";
+import { showToast } from "../lib/toast.js";
 import { AnnotationPanel } from "../review/AnnotationPanel.js";
 import { MailPanel, useTaskMail } from "../collab/MailPanel.js";
 import { DecisionPanel, useOpenDecisions } from "../collab/DecisionPanel.js";
@@ -61,7 +62,8 @@ const WRITER = {
 export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, backLabel = "看板", onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
-  const [toast, setToast] = useState<Toast>(null);
+  // Notices float over the window (lib/toast); null clears nothing, they go away by themselves.
+  const setToast = (t: Toast) => void (t && showToast(t));
   const [busy, setBusy] = useState(false);
   const [pendingAnnotation, setPendingAnnotation] = useState<SelectionAnchor | null>(null);
   // The quick look of a file named in the conversation (stage 12); it takes the right column while open.
@@ -270,16 +272,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           </select>
         </label>
       </div>
-
-      {toast && (
-        <div role="status" className={toast.error ? "toast toast-error" : "toast"} data-testid="toast">
-          <span>{toast.text}</span>
-          {toast.command && <code>{toast.command}</code>}
-          <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => setToast(null)}>
-            ×
-          </button>
-        </div>
-      )}
 
       <div className="task-body">
         <SessionTree

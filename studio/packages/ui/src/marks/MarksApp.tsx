@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState, type DragEvent } from "react";
+import { showToast } from "../lib/toast.js";
 import { isCommon, lineLabel, lineSuffix, type FileMark, type StateSnapshot, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
@@ -40,18 +41,11 @@ function MarksPage({ link, state, currentId }: { link: HostLink; state: StateSna
   const { marks } = useFileMarks(link);
   const [query, setQuery] = useState("");
   const [pasted, setPasted] = useState("");
-  const [toast, setToast] = useState<Toast>(null);
+  const setToast = useCallback((t: Toast) => void (t && showToast(t)), []);
   const [picking, setPicking] = useState<Workspace | null>(null);
   const [looking, setLooking] = useState<FileMark | null>(null);
   const [dropping, setDropping] = useState(false);
   const [vscode, setVscode] = useState(false);
-
-  // Good news goes away by itself; errors stay until closed.
-  useEffect(() => {
-    if (!toast || toast.error) return;
-    const t = setTimeout(() => setToast((cur) => (cur === toast ? null : cur)), 4000);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   useEffect(() => {
     void openInApps(link)
@@ -162,14 +156,6 @@ function MarksPage({ link, state, currentId }: { link: HostLink; state: StateSna
           + 标记文件
         </button>
       </header>
-      {toast && (
-        <div role="status" className={toast.error ? "toast toast-error" : "toast"} data-testid="toast">
-          <span>{toast.text}</span>
-          <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => setToast(null)}>
-            ×
-          </button>
-        </div>
-      )}
       <div className="mk-body">
         {marks === null && <div className="mk-empty">正在读取…</div>}
         {marks !== null && !total && (

@@ -249,6 +249,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
 
   return (
     <section className="canvas-page" aria-label="画布">
+      <div className="toaster">
       {conflict && (
         <div role="status" className="toast" data-testid="canvas-conflict">
           <span>画布刚在别处更新过，已载入最新内容，刚才的改动没有保存。</span>
@@ -265,6 +266,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
           </button>
         </div>
       )}
+      </div>
       <div className="canvas-row">
       <div className={drag?.kind === "pan" ? "canvas-viewport panning" : "canvas-viewport"} ref={viewport} onMouseDown={startPan} data-testid="canvas-viewport">
         <div className="canvas-world" data-testid="canvas-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>

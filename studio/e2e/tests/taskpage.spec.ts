@@ -40,7 +40,7 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   await expect(rows.nth(1)).toHaveAttribute("data-kind", "fork");
   await expect(rows.nth(1)).toHaveAttribute("data-depth", "1");
   await expect(rows.nth(1)).toHaveAttribute("aria-current", "true");
-  await expect(rows.nth(1)).toContainText("分支 · Mock 模型");
+  await expect(rows.nth(1)).toContainText("分支 · Mock Model");
 
   // A second independent session in the same task.
   await page.getByTestId("new-session-toggle").click();

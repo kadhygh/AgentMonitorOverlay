@@ -206,4 +206,3 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .render-error.window { margin: 48px auto; max-width: 560px; }
 .render-error-actions { display: flex; gap: 8px; }
 .render-error-note { color: var(--text-dim); font-size: var(--fs-cap); }
-.host-error-toast { position: fixed; right: 18px; bottom: 18px; z-index: 50; max-width: 520px; }

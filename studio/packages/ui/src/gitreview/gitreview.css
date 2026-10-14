@@ -32,7 +32,6 @@
 .gr-seg button + button { border-left: 1px solid var(--border); }
 .gr-seg button:hover { color: var(--text); background: var(--panel-raised); }
 .gr-seg button[aria-pressed="true"] { background: var(--selected); color: var(--text); font-weight: 600; }
-.gr-app > .toast { margin: 8px 18px 0; }
 .gr-body { flex: 1; min-height: 0; display: flex; }
 .gr-dim { color: var(--text-faint); font-size: var(--fs-cap); }
 
