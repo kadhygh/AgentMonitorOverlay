@@ -56,5 +56,6 @@
 | 项 | 状态 |
 |---|---|
 | S14-A | 进行中 |
-| S14-B | 进行中 |
+| S14-B | ✅ 分支 `studio/s14-pad`。**设置 → 便签**（`scratchpad/ScratchpadSettings.tsx`）分三块：快捷键（原样）、页数（−/+，最多 9 页；写明减少页数不删内容，有藏起来的页时列出「第 N 页还有内容，现在藏着」）、复制（「复制时的换行：常规换行 / 安全换行」，默认常规）。**换行**：`StudioSettings.scratchpadSafeNewlines`（Host kv `settings:scratchpad-safe-newlines`，`PUT /api/settings` 收布尔值，别的值 400，改了发 `settings.updated`）；`scratchpad/logic.ts` 的 `clipboardText` 同旧 AMO `toCliPasteClipboardText`：去行尾空格和末尾空行，常规用 `
+`，安全换行把多行用空格合成一行。便签窗口点「复制」时现读一次设置（读不到按常规），安全换行时状态写「已复制（安全换行）」。**便签窗口**：去掉页底的页数控件；标题「便签」前加便签图标（和标题栏「便签」按钮同一个图形，主色）；藏起来的页有内容时，状态的悬停提示改为「在设置 → 便签里增加页数就能看到」。**任务页**：右栏不再有便签（`AnnotationPanel` 去掉 `ScratchpadEntry` 和不再用的 `link` 参数）；快捷键关闭时的提示改为「可以点标题栏的『便签』打开」。纯浏览器（没有便签小窗）时，设置 → 便签最下面多一块「便签内容」可以直接编辑（`ScratchpadEntry` 改成只做这件事，去掉了只给预览用的 `previewText`）。**测试**：单测 `clipboardText`、Host 设置读写；e2e `scratchpad.spec.ts` 改为从标题栏打开、任务页没有便签、窗口标题有图标且没有页数、设置里调页数（窗口跟着变、藏起来的页回来）、两种换行的「复制」结果（测试模式下记录、不碰剪贴板）、快捷键。截图 `S14-B-scratchpad-window.png`、`S14-B-scratchpad-settings.png`。**没做**：标题栏「便签」按钮的图标没改成共用 `ScratchpadIcon`（标题栏归 S14-C，合并后可以顺手换）；Electron 窗口本身的任务栏图标不涉及（便签窗口不在任务栏） |
 | S14-C | 进行中 |

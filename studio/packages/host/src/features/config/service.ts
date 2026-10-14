@@ -17,6 +17,7 @@ export class ConfigFeature extends Feature {
       presets: this.presets(),
       disabledFeatures: this.disabledFeatures(),
       scratchpadShortcut: this.f.scratchpad.shortcut(),
+      scratchpadSafeNewlines: this.f.scratchpad.safeNewlines(),
       claudeLogin: readClaudeLogin(this.store),
       claudeLocal: { dir, signedIn: localClaudeSignedIn(dir) },
       modelPrefs: readModelPrefs(this.store),
@@ -53,13 +54,14 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown }): StudioSettings {
     if (input.modelPrefs !== undefined) writeModelPrefs(this.store, this.profiles.map((p) => p.id), input.modelPrefs);
     if (input.claudeLogin !== undefined) {
       if (input.claudeLogin !== "token" && input.claudeLogin !== "local") throw new HostError("bad_request", "claudeLogin must be token or local");
       writeClaudeLogin(this.store, input.claudeLogin);
     }
     if (input.scratchpadShortcut !== undefined) this.f.scratchpad.setShortcut(input.scratchpadShortcut);
+    if (input.scratchpadSafeNewlines !== undefined) this.f.scratchpad.setSafeNewlines(input.scratchpadSafeNewlines);
     if (input.disabledFeatures !== undefined) {
       const known = OPTIONAL_FEATURES.map((f) => f.id);
       const ids = input.disabledFeatures;

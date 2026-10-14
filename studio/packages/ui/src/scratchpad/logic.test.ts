@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { pageFromKey, previewText, shortcutFromKey, shortcutLabel } from "./logic.js";
+import { clipboardText, pageFromKey, shortcutFromKey, shortcutLabel } from "./logic.js";
 
 const key = (code: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; shiftKey: boolean; metaKey: boolean }> = {}, k = code) => ({
   ctrlKey: false,
@@ -48,11 +48,18 @@ describe("shortcutLabel", () => {
   });
 });
 
-describe("previewText", () => {
-  it("keeps the first lines and marks what is cut", () => {
-    expect(previewText("a\nb\n\n")).toBe("a\nb");
-    expect(previewText("1\n2\n3\n4", 2)).toBe("1\n2…");
-    expect(previewText("x".repeat(10), 6, 4)).toBe("xxxx…");
-    expect(previewText("")).toBe("");
+describe("clipboardText", () => {
+  const page = "回复要点：  \r\n- 掉落表按权重\t\n\n- 周五发版\n\n\n";
+  it("keeps the lines with Windows line breaks by default", () => {
+    expect(clipboardText(page, false)).toBe("回复要点：\r\n- 掉落表按权重\r\n\r\n- 周五发版");
+  });
+  it("joins the lines into one with 安全换行", () => {
+    expect(clipboardText(page, true)).toBe("回复要点： - 掉落表按权重 - 周五发版");
+    expect(clipboardText("  缩进\n    下一行", true)).toBe("  缩进 下一行");
+  });
+  it("leaves a single line alone", () => {
+    expect(clipboardText("一行", false)).toBe("一行");
+    expect(clipboardText("一行", true)).toBe("一行");
   });
 });
+

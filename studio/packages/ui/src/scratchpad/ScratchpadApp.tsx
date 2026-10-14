@@ -1,16 +1,35 @@
 import { useEffect, useRef, useState } from "react";
-import { SCRATCHPAD_MAX_PAGES } from "@amo-studio/protocol";
-import { copyText, type HostLink } from "../host/client.js";
+import { call, copyText, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { imagesOf } from "../lib/attachments.js";
 import { scratchpadBridge } from "./bridge.js";
-import { pageFromKey } from "./logic.js";
+import { clipboardText, pageFromKey } from "./logic.js";
 import { PadImages, PadImageViewer } from "./PadImages.js";
 import { SAVE_LABELS, useScratchpad } from "./useScratchpad.js";
 
 // The scratchpad window (loaded with #scratchpad; after old AMO's ScratchpadApp): numbered pages, Ctrl+1…9 to switch,
-// text that saves as you type, pasted or dropped images under it. Esc or × hides the window; 复制 copies the page and
-// hides it, as old AMO did.
+// text that saves as you type, pasted or dropped images under it. Esc or × hides the window; 复制 copies the page (line
+// breaks as 设置 → 便签 says) and hides it, as old AMO did. The page count is set in 设置 → 便签 (S14-B).
+
+/** The scratchpad's mark, as on the title bar's 便签 button. */
+export function ScratchpadIcon({ size = 16 }: { size?: number }) {
+  return (
+    <svg className="pad-mark" width={size} height={size} viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 2.5h10a.5.5 0 0 1 .5.5v6.3L9.3 13.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z" />
+      <path d="M13.5 9.3H10a.7.7 0 0 0-.7.7v3.5M5 5.5h6M5 8h3.5" />
+    </svg>
+  );
+}
+
+/** The window's name, with its mark. */
+function PadName() {
+  return (
+    <span className="pad-name">
+      <ScratchpadIcon />
+      便签
+    </span>
+  );
+}
 
 export function ScratchpadApp() {
   const host = useHostState();
@@ -18,7 +37,7 @@ export function ScratchpadApp() {
     return (
       <div className="pad-root">
         <header className="pad-head">
-          <span className="pad-name">便签</span>
+          <PadName />
         </header>
         <div className="pad-empty">{host.kind === "connecting" ? "正在连接 Host…" : host.reason}</div>
       </div>
@@ -35,7 +54,6 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
   const [note, setNote] = useState<string | null>(null);
   const { doc } = pad;
   const active = doc?.activePage ?? 0;
-  const count = doc?.pages.length ?? 0;
 
   // Switching pages puts the caret in the page, like old AMO.
   useEffect(() => {
@@ -67,7 +85,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
     return (
       <div className="pad-root">
         <header className="pad-head">
-          <span className="pad-name">便签</span>
+          <PadName />
         </header>
         <div className="pad-empty">正在读取…</div>
       </div>
@@ -90,8 +108,12 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
       area.current?.focus();
       return;
     }
-    await copyText(text);
-    setNote("已复制");
+    // The setting as it is now (it may have changed in 设置 since this window opened); lines kept if it cannot be read.
+    const safe = await call(link, "GET /api/settings")
+      .then((s) => s.scratchpadSafeNewlines)
+      .catch(() => false);
+    await copyText(clipboardText(text, safe));
+    setNote(safe ? "已复制（安全换行）" : "已复制");
     bridge?.hide();
   }
 
@@ -106,7 +128,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
   }
 
   const status = pad.state === "error" ? (pad.error ?? SAVE_LABELS.error) : (note ?? SAVE_LABELS[pad.state]);
-  const kept = doc.keptPages.length ? `第 ${doc.keptPages.join("、")} 页还有内容，增加页数就能看到` : "";
+  const kept = doc.keptPages.length ? `第 ${doc.keptPages.join("、")} 页还有内容，在设置 → 便签里增加页数就能看到` : "";
 
   return (
     <div
@@ -121,7 +143,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
       }}
     >
       <header className="pad-head">
-        <span className="pad-name">便签</span>
+        <PadName />
         <nav className="pad-pages" aria-label="便签页">
           {doc.pages.map((p, i) => (
             <button
@@ -165,16 +187,6 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
           {text.length} 字{status ? ` · ${status}` : ""}
         </span>
         <span className="spacer" />
-        <span className="pad-count" title={kept || "页数（减少页数不会删掉内容）"}>
-          页数
-          <button type="button" className="pad-step" aria-label="减少页数" disabled={count <= 1} onClick={() => pad.setPageCount(count - 1)}>
-            −
-          </button>
-          <span data-testid="pad-page-count">{count}</span>
-          <button type="button" className="pad-step" aria-label="增加页数" disabled={count >= SCRATCHPAD_MAX_PAGES} onClick={() => pad.setPageCount(count + 1)}>
-            +
-          </button>
-        </span>
         <button type="button" className="btn-ghost small" onClick={clear}>
           清空
         </button>

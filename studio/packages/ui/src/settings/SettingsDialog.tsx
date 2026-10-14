@@ -5,7 +5,7 @@ import { onHostEvent } from "../host/events.js";
 import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/theme.js";
 import { ModelsPage } from "./ModelsPage.js";
 import { FeaturesSection } from "./FeaturesSection.js";
-import { ShortcutSection } from "../scratchpad/ShortcutSection.js";
+import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
 import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 
@@ -220,7 +220,7 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
               </section>
             )}
             {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} />}
-            {page === "scratchpad" && <ShortcutSection link={link} shortcut={settings?.scratchpadShortcut ?? ""} />}
+            {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
           </div>
         </div>
       </div>
