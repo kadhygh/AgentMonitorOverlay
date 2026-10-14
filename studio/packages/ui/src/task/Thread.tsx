@@ -20,6 +20,7 @@ import { QuestionCard } from "../chat/questions/QuestionCard.js";
 import { SessionDecisions } from "../collab/DecisionPanel.js";
 import { PlanReviewBar, sendRevision } from "../chat/questions/PlanReview.js";
 import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
+import { AnnotationBubble, contentRect, SelectionBar, type BubbleTarget, type ContentRect } from "../review/AnnotationBubble.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
 import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
 import { BackgroundTasks, latestSuggestion, SuggestionChips } from "../chat/cli/ComposerExtras.js";
@@ -50,8 +51,10 @@ interface ThreadProps {
   /** `attachments`: ids of uploaded images sent along. */
   onSend(text: string, attachments: string[]): Promise<boolean>;
   onInterrupt(): void;
-  /** "添加批注" from the selection menu. */
-  onAnnotate(anchor: SelectionAnchor): void;
+  /** Annotating in place (the bubble by the selection): resolve true once saved. */
+  onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
+  onEditAnnotation(id: string, note: string): Promise<boolean>;
+  onDeleteAnnotation(id: string): void;
   /** A command or another action of the composer failed (stage 12, S12-E). */
   onError?(text: string): void;
   /** Open decisions of this session (AMO decision_request), pinned above the conversation. */
@@ -61,7 +64,7 @@ interface ThreadProps {
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate, onError, decisions = [] }: ThreadProps) {
+export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onError, decisions = [] }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -118,6 +121,23 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     }),
     [asked, hiddenCards],
   );
+
+  // Annotating in place: a bar by a fresh selection in a reply, then the bubble to write in (or to change a note, from
+  // its highlighted passage).
+  const [bar, setBar] = useState<{ anchor: SelectionAnchor; at: ContentRect } | null>(null);
+  const [bubble, setBubble] = useState<BubbleTarget | null>(null);
+  useEffect(() => {
+    setBar(null);
+    setBubble(null);
+  }, [session?.id]);
+  const selectionRect = (): ContentRect | null => {
+    const sel = window.getSelection();
+    const el = scroller.current;
+    if (!el || !sel || sel.rangeCount === 0) return null;
+    const r = sel.getRangeAt(0).getBoundingClientRect();
+    return r.width || r.height ? contentRect(el, r) : null;
+  };
+  const inBubble = (t: EventTarget | null) => t instanceof Element && !!t.closest(".anno-bubble, .sel-bar");
 
   // The selection menu closes on Escape, on any click outside it, and when the thread scrolls.
   useEffect(() => {
@@ -291,10 +311,35 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             if (menu) setMenu(null);
           }}
           onContextMenu={(e) => {
+            if (inBubble(e.target)) return;
             const anchor = readSelection(sources);
             if (!anchor) return setMenu(null);
             e.preventDefault();
+            setBar(null);
             setMenu({ x: e.clientX, y: e.clientY, anchor });
+          }}
+          onMouseDown={(e) => {
+            if (!inBubble(e.target)) setBar(null);
+          }}
+          onMouseUp={(e) => {
+            if (inBubble(e.target) || e.button !== 0) return;
+            // After the browser has settled the selection.
+            requestAnimationFrame(() => {
+              const anchor = readSelection(sources);
+              const at = anchor && selectionRect();
+              setBar(anchor && at && !bubble ? { anchor, at } : null);
+            });
+          }}
+          onClick={(e) => {
+            // A highlighted passage opens its note (when nothing is being selected).
+            if (inBubble(e.target) || !window.getSelection()?.isCollapsed) return;
+            const block = (e.target as Element).closest<HTMLElement>("[data-annotated]");
+            const itemId = block?.closest<HTMLElement>("[data-item-id]")?.dataset.itemId;
+            if (!block || !itemId || !scroller.current) return;
+            const from = Number(block.dataset.srcStart);
+            const to = Number(block.dataset.srcEnd);
+            const annotation = annotations.find((a) => a.itemId === itemId && !a.sentAt && a.start < to && a.end > from);
+            if (annotation) setBubble({ kind: "edit", annotation, at: contentRect(scroller.current, block.getBoundingClientRect()) });
           }}
         >
           <div className="thread-inner">
@@ -305,6 +350,41 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>
           </div>
+          {bar && !bubble && (
+            <SelectionBar
+              scroller={scroller}
+              at={bar.at}
+              canQuote={!readOnly}
+              onAnnotate={() => {
+                setBubble({ kind: "new", anchor: bar.anchor, at: bar.at });
+                setBar(null);
+              }}
+              onQuote={() => {
+                quoteToDraft(bar.anchor.quote);
+                setBar(null);
+              }}
+            />
+          )}
+          {bubble && (
+            <AnnotationBubble
+              key={bubble.kind === "edit" ? bubble.annotation.id : `${bubble.anchor.itemId}:${bubble.anchor.start}`}
+              scroller={scroller}
+              target={bubble}
+              onSave={(note) => (bubble.kind === "edit" ? onEditAnnotation(bubble.annotation.id, note) : onSaveAnnotation(bubble.anchor, note))}
+              {...(bubble.kind === "edit"
+                ? {
+                    onDelete: () => {
+                      onDeleteAnnotation(bubble.annotation.id);
+                      setBubble(null);
+                    },
+                  }
+                : {})}
+              onClose={() => {
+                setBubble(null);
+                window.getSelection()?.removeAllRanges();
+              }}
+            />
+          )}
         </div>
         {!atBottom && (
           <button
@@ -335,7 +415,8 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             type="button"
             role="menuitem"
             onClick={() => {
-              onAnnotate(menu.anchor);
+              const at = selectionRect() ?? (scroller.current ? contentRect(scroller.current, new DOMRect(menu.x, menu.y, 1, 1)) : null);
+              if (at) setBubble({ kind: "new", anchor: menu.anchor, at });
               setMenu(null);
             }}
           >

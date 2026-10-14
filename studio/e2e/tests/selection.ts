@@ -3,7 +3,21 @@ import type { Locator, Page } from "@playwright/test";
 
 /** Selects `text` inside `scope` (first match, may span inline elements) and right-clicks on the selection. */
 export async function selectAndRightClick(page: Page, scope: Locator, text: string): Promise<void> {
-  const box = await scope.evaluate((root, wanted) => {
+  const box = await select(scope, text);
+  await page.mouse.click(box.x, box.y, { button: "right" });
+}
+
+/** Selects `text` as a mouse drag would end: the selection, then the button released over it (the bar appears). */
+export async function selectAndRelease(scope: Locator, text: string): Promise<void> {
+  await select(scope, text);
+  await scope.evaluate((root) => {
+    const r = window.getSelection()!.getRangeAt(0).getBoundingClientRect();
+    root.dispatchEvent(new MouseEvent("mouseup", { bubbles: true, button: 0, clientX: r.right, clientY: r.bottom }));
+  });
+}
+
+async function select(scope: Locator, text: string): Promise<{ x: number; y: number }> {
+  return scope.evaluate((root, wanted) => {
     const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
     const nodes: Text[] = [];
     let all = "";
@@ -34,5 +48,4 @@ export async function selectAndRightClick(page: Page, scope: Locator, text: stri
     const r = range.getBoundingClientRect();
     return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
   }, text);
-  await page.mouse.click(box.x, box.y, { button: "right" });
 }

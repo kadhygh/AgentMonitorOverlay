@@ -1,19 +1,14 @@
-import { useEffect, useRef, useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import { composeAnnotationMessage, type Annotation } from "@amo-studio/protocol";
-import type { SelectionAnchor } from "../lib/selection.js";
 import type { HostLink } from "../host/client.js";
 import { ScratchpadEntry } from "../scratchpad/ScratchpadEntry.js";
 
 interface AnnotationPanelProps {
   link: HostLink;
   annotations: readonly Annotation[];
-  /** Selection waiting for a note ("添加批注"). */
-  pending: SelectionAnchor | null;
   busy: boolean;
   /** False when the session is archived or handed off: nothing can be sent. */
   canSend: boolean;
-  onSave(note: string): void;
-  onCancel(): void;
   onEdit(id: string, note: string): void;
   onDelete(id: string): void;
   onLocate(annotation: Annotation): void;
@@ -22,15 +17,12 @@ interface AnnotationPanelProps {
   header?: ReactNode;
 }
 
-/** Right column of the task page: new annotation, unsent annotations, send-all, and the sent ones folded away. */
-export function AnnotationPanel({ link, annotations, pending, busy, canSend, onSave, onCancel, onEdit, onDelete, onLocate, onSendAll, header }: AnnotationPanelProps) {
-  const [note, setNote] = useState("");
+/**
+ * Right column of the task page: the unsent annotations (written in the bubble by the selection), send-all, and the
+ * sent ones folded away.
+ */
+export function AnnotationPanel({ link, annotations, busy, canSend, onEdit, onDelete, onLocate, onSendAll, header }: AnnotationPanelProps) {
   const [showSent, setShowSent] = useState(false);
-  const input = useRef<HTMLTextAreaElement>(null);
-  useEffect(() => {
-    setNote("");
-    if (pending) input.current?.focus();
-  }, [pending]);
 
   const unsent = annotations.filter((a) => !a.sentAt);
   const sent = annotations.filter((a) => a.sentAt);
@@ -45,29 +37,7 @@ export function AnnotationPanel({ link, annotations, pending, busy, canSend, onS
         </span>
       </div>
 
-      {pending && (
-        <form
-          className="anno-draft"
-          data-testid="annotation-draft"
-          onSubmit={(e) => {
-            e.preventDefault();
-            if (note.trim()) onSave(note.trim());
-          }}
-        >
-          <blockquote className="anno-quote">「{pending.quote}」</blockquote>
-          <textarea ref={input} value={note} onChange={(e) => setNote(e.target.value)} rows={3} placeholder="对这段的意见或问题" aria-label="批注内容" />
-          <div className="add-ws-actions">
-            <button type="submit" className="btn-primary" disabled={busy || !note.trim()}>
-              保存
-            </button>
-            <button type="button" className="btn-ghost" onClick={onCancel}>
-              取消
-            </button>
-          </div>
-        </form>
-      )}
-
-      {!pending && !annotations.length && <div className="anno-empty">选中回复里的文字后右键，即可添加批注。</div>}
+      {!annotations.length && <div className="anno-empty">选中回复里的文字，点旁边的「批注」即可添加；点高亮的段落可以修改。</div>}
 
       {unsent.map((a) => (
         <AnnotationCard key={a.id} annotation={a} busy={busy} onEdit={onEdit} onDelete={onDelete} onLocate={onLocate} />

@@ -25,3 +25,18 @@
 .anno-edit textarea { padding: 6px 8px; border-radius: 6px; border: 1px solid var(--primary); background: var(--bg); color: var(--text); font-size: 13px; resize: vertical; }
 .anno-send { width: 100%; }
 .anno-sent { display: flex; flex-direction: column; gap: 6px; }
+
+/* Annotating in place: the bar by a fresh selection and the bubble to write in (review/AnnotationBubble.tsx). They sit
+   in the conversation's scroller and move with the text. */
+.thread { position: relative; }
+.thread [data-item-type="agent"] [data-annotated] { cursor: pointer; }
+.sel-bar { position: absolute; z-index: 15; display: flex; gap: 2px; padding: 3px; border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--menu-bg); box-shadow: 0 6px 18px var(--shadow); animation: toast-in 0.12s ease-out; }
+.sel-bar button { flex: 1; height: 26px; padding: 0 10px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-cap); cursor: pointer; white-space: nowrap; }
+.sel-bar button:hover:not(:disabled) { background: var(--menu-hover); }
+.sel-bar button:disabled { color: var(--text-faint); cursor: default; }
+.anno-bubble { position: absolute; z-index: 16; display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border-strong); border-radius: calc(var(--r-l) + 2px); background: var(--panel); box-shadow: 0 12px 32px var(--shadow); animation: toast-in 0.12s ease-out; }
+.anno-bubble-quote { margin: 0; padding: 2px 0 2px 8px; border-left: 3px solid var(--attention); color: var(--text-dim); font-size: var(--fs-cap); line-height: 1.5; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; overflow-wrap: anywhere; }
+.anno-bubble textarea { width: 100%; min-height: 64px; resize: vertical; padding: 6px 8px; border: 1px solid var(--border-strong); border-radius: var(--r-m); background: var(--bg); color: var(--text); font: inherit; font-size: var(--fs-sm); line-height: var(--lh); }
+.anno-bubble textarea:focus { outline: none; border-color: var(--primary); }
+.anno-bubble-actions { display: flex; align-items: center; gap: 6px; }
+.anno-bubble-actions .link-btn.danger { color: var(--error-text); }

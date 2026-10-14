@@ -22,7 +22,6 @@ import { EditableName } from "./EditableName.js";
 import { usePacks } from "../packs/usePacks.js";
 import { useFeature } from "../lib/features.js";
 import { PresetDraftForm } from "../packs/PresetDraftForm.js";
-import type { SelectionAnchor } from "../lib/selection.js";
 import { openReview, useIsGitRepo } from "../gitreview/open.js";
 import { latestMainSession } from "../gitreview/logic.js";
 import { OnCanvasToggle } from "../canvas/OnCanvasToggle.js";
@@ -65,7 +64,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // Notices float over the window (lib/toast); null clears nothing, they go away by themselves.
   const setToast = (t: Toast) => void (t && showToast(t));
   const [busy, setBusy] = useState(false);
-  const [pendingAnnotation, setPendingAnnotation] = useState<SelectionAnchor | null>(null);
   // The quick look of a file named in the conversation (stage 12); it takes the right column while open.
   const [preview, setPreview] = useState<PreviewTarget | null>(null);
 
@@ -88,6 +86,17 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const liveTopics = topics.filter((t) => !t.archivedAt || t.id === task.topicId);
   // Git Review: only for a project under git.
   const gitRepo = useIsGitRepo(link, task.workspaceId);
+
+  /** A save from the annotation bubble: true once stored, else the error as a notice (the bubble keeps the draft). */
+  async function annotationCall(fn: () => Promise<unknown>): Promise<boolean> {
+    try {
+      await fn();
+      return true;
+    } catch (err) {
+      setToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
+      return false;
+    }
+  }
 
   async function run<T>(fn: () => Promise<T>, onDone?: (value: T) => void) {
     setBusy(true);
@@ -380,10 +389,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onJump={setSelected}
               onSend={send}
               onInterrupt={() => session && void interrupt(session.id)}
-              onAnnotate={(anchor) => {
-                setPreview(null);
-                setPendingAnnotation(anchor);
-              }}
+              onSaveAnnotation={(anchor, note) => annotationCall(() => call(link, "POST /api/sessions/:id/annotations", { id: session!.id }, { ...anchor, note }))}
+              onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
+              onDeleteAnnotation={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}
               onError={showError}
               annotations={annotations}
               decisions={session ? decisions.filter((d) => d.sessionId === session.id) : []}
@@ -422,7 +430,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           }
           link={link}
           annotations={annotations}
-          pending={pendingAnnotation}
           busy={busy}
           canSend={!readOnly}
           onEdit={(id, note) => void run(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
@@ -433,14 +440,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             void run(() => call(link, "POST /api/sessions/:id/annotations/send", { id: session.id }), (r) =>
               setToast({ text: `已把 ${r.sent.length} 条批注汇总发回会话。` }),
             );
-          }}
-          onCancel={() => setPendingAnnotation(null)}
-          onSave={(note) => {
-            if (!session || !pendingAnnotation) return;
-            const anchor = pendingAnnotation;
-            void run(() => call(link, "POST /api/sessions/:id/annotations", { id: session.id }, { ...anchor, note }), () => {
-              setPendingAnnotation(null);
-            });
           }}
         />
       </div>

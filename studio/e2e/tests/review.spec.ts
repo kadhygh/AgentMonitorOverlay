@@ -1,9 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 import type { Session, Task, Workspace } from "@amo-studio/protocol";
-import { selectAndRightClick } from "./selection.js";
+import { selectAndRelease } from "./selection.js";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
-// Stage 2 acceptance: select → right-click annotate → send the summary back → the session receives it.
+// Stage 2 acceptance: select → annotate in the bubble by the selection → send the summary back → the session receives
+// it. (Stage 12: the bar and bubble by the selection, after the ChatGPT app; a highlighted passage opens its note.)
 
 let studio: Studio | undefined;
 
@@ -14,12 +15,14 @@ test.afterEach(async () => {
 
 async function annotate(page: Page, quote: string, note: string) {
   const reply = page.getByTestId("msg-agent").first();
-  await selectAndRightClick(page, reply, quote);
-  await page.getByRole("menu", { name: "选中文字" }).getByRole("menuitem", { name: "添加批注" }).click();
-  const draft = page.getByTestId("annotation-draft");
-  await draft.getByLabel("批注内容").fill(note);
-  await draft.getByRole("button", { name: "保存" }).click();
-  await expect(draft).toHaveCount(0);
+  await selectAndRelease(reply, quote);
+  await page.getByTestId("selection-bar").getByRole("button", { name: "批注" }).click();
+  const bubble = page.getByTestId("annotation-bubble");
+  await expect(bubble.locator(".anno-bubble-quote")).toHaveText(quote);
+  await expect(bubble.getByLabel("批注内容")).toBeFocused();
+  await bubble.getByLabel("批注内容").fill(note);
+  await bubble.getByLabel("批注内容").press("Control+Enter");
+  await expect(bubble).toHaveCount(0);
 }
 
 test("annotate replies, edit, locate and send the summary back", async () => {
@@ -35,7 +38,15 @@ test("annotate replies, edit, locate and send the summary back", async () => {
   const reply = page.getByTestId("msg-agent").first();
   await expect(reply.locator("table.md-table")).toBeVisible({ timeout: 30_000 });
 
-  await annotate(page, "发现 3 张表", "说明是哪三张");
+  // Selecting shows the bar by the selection; 批注 turns it into the bubble.
+  await selectAndRelease(reply, "发现 3 张表");
+  await expect(page.getByTestId("selection-bar")).toBeVisible();
+  await screenshot(studio.app, "stage-12", "S12-N-selection-bar", page);
+  await page.getByTestId("selection-bar").getByRole("button", { name: "批注" }).click();
+  await page.getByTestId("annotation-bubble").getByLabel("批注内容").fill("说明是哪三张");
+  await screenshot(studio.app, "stage-12", "S12-N-annotation-bubble", page);
+  await page.getByTestId("annotation-bubble").getByRole("button", { name: "保存" }).click();
+  await expect(page.getByTestId("annotation-bubble")).toHaveCount(0);
   await annotate(page, "先修正概率", "先确认策划的意图");
   await annotate(page, "Boss_Lv20", "这条删掉");
   const cards = page.getByTestId("annotation");
@@ -43,7 +54,16 @@ test("annotate replies, edit, locate and send the summary back", async () => {
   await expect(page.getByTestId("annotation-count")).toHaveText("3");
   await expect(reply.locator("[data-annotated]")).toHaveCount(3);
 
-  // Edit and delete.
+  // A highlighted passage opens its note in the bubble, to change it there.
+  await reply.locator("[data-annotated]").filter({ hasText: "先修正概率" }).click();
+  const bubble = page.getByTestId("annotation-bubble");
+  await expect(bubble.getByLabel("批注内容")).toHaveValue("先确认策划的意图");
+  await screenshot(studio.app, "stage-12", "S12-N-annotation-bubble-edit", page);
+  await bubble.getByLabel("批注内容").fill("先确认策划的意图（改过）");
+  await bubble.getByRole("button", { name: "保存" }).click();
+  await expect(cards.nth(1)).toContainText("先确认策划的意图（改过）");
+
+  // Edit and delete from the panel.
   await cards.nth(1).getByRole("button", { name: "编辑" }).click();
   await cards.nth(1).getByLabel("修改批注").fill("先和策划确认意图再改");
   await cards.nth(1).getByRole("button", { name: "保存" }).click();

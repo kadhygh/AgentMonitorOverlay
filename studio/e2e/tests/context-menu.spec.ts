@@ -29,14 +29,14 @@ test("selection menu: annotate, quote into the composer, copy", async () => {
   const { reply, session } = await openMarkdownReply(studio);
   const menu = page.getByRole("menu", { name: "选中文字" });
 
-  // 添加批注: the draft card shows the quote; saving stores it with its source range and context.
+  // 添加批注: the bubble by the selection shows the quote; saving stores it with its source range and context.
   await selectAndRightClick(page, reply, "发现 3 张表");
   await expect(menu).toBeVisible();
   await screenshot(studio.app, "stage-2", "S2-03-context-menu", page);
   await menu.getByRole("menuitem", { name: "添加批注" }).click();
   await expect(menu).toHaveCount(0);
-  const draft = page.getByTestId("annotation-draft");
-  await expect(draft).toContainText("「发现 3 张表」");
+  const draft = page.getByTestId("annotation-bubble");
+  await expect(draft).toContainText("发现 3 张表");
   await draft.getByLabel("批注内容").fill("这里应该说明是哪三张");
   await draft.getByRole("button", { name: "保存" }).click();
   await expect(draft).toHaveCount(0);

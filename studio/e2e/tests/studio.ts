@@ -137,6 +137,11 @@ export type WindowKind = "main" | "focus" | "scratchpad" | "review" | "marks";
 /** Saves a PNG of the (hidden) main window, or another window, to studio/screenshots/<stage>/<name>.png. */
 export async function screenshot(app: ElectronApplication, stage: string, name: string, page?: Page, which: WindowKind = "main"): Promise<string> {
   if (page) await settlePaint(page);
+  // Entrance animations (popups, notices) finish first; endless ones (spinners) are left alone.
+  if (page)
+    await page.evaluate(() =>
+      Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))),
+    );
   const base64 = await app.evaluate(async ({ BrowserWindow }, kind) => {
     const kindOf = (url: string) => (url.endsWith("#focus") ? "focus" : url.endsWith("#scratchpad") ? "scratchpad" : url.includes("#review") ? "review" : url.includes("#marks") ? "marks" : "main");
     const win = BrowserWindow.getAllWindows().find((w) => kindOf(w.webContents.getURL()) === kind)!;
