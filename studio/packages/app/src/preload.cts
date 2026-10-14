@@ -59,6 +59,6 @@ electron.contextBridge.exposeInMainWorld("amo", {
     electron.ipcRenderer.on("amo:host-restarted", listener);
     return () => electron.ipcRenderer.removeListener("amo:host-restarted", listener);
   },
-  /** The file marks window (文件标记, one for all projects), showing a project first. */
-  openMarks: (target: { workspaceId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-marks", target),
+  /** The file marks window (文件标记, one for all projects), showing a project first, or one mark (its note in focus). */
+  openMarks: (target: { workspaceId?: string; markId?: string; edit?: boolean }): Promise<void> => electron.ipcRenderer.invoke("amo:open-marks", target),
 });

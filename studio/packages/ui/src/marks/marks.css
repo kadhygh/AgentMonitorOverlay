@@ -29,8 +29,13 @@
 .mk-tag { padding: 0 6px; border-radius: var(--r-s); background: var(--attention-bg); border: 1px solid var(--attention-border); color: var(--text); font-size: 11px; line-height: 18px; }
 .mk-group-empty { padding: 6px 4px 2px; color: var(--text-faint); font-size: var(--fs-cap); }
 
-.mk-row { border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel); }
+.mk-row { border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel); transition: border-color 0.3s, box-shadow 0.3s; }
 .mk-row + .mk-row { margin-top: 8px; }
+.mk-row[data-flash] { border-color: var(--primary); box-shadow: 0 0 0 2px color-mix(in srgb, var(--primary) 25%, transparent); }
+@media (prefers-reduced-motion: reduce) { .mk-row { transition: none; } }
+/* The 标记 button elsewhere (quick look, Review) once the file is marked (stage 13). */
+button[data-marked] { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, transparent); background: color-mix(in srgb, var(--primary) 10%, transparent); }
+button[data-marked]:hover { background: color-mix(in srgb, var(--primary) 16%, transparent); }
 .mk-row-head { display: flex; align-items: center; gap: 7px; padding: 7px 10px 4px; cursor: grab; user-select: none; min-width: 0; }
 .mk-row-head:active { cursor: grabbing; }
 .mk-row-head svg { flex: none; color: var(--text-dim); }

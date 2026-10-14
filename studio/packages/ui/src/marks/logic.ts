@@ -5,17 +5,54 @@ import { FILE_MARK_MIME, isCommon, lineSuffix, type FileMark, type FileMarkDrag,
 export interface MarksTarget {
   /** The project shown first (and the one "+ 标记文件" picks from); none opens on all projects. */
   workspaceId?: string;
+  /** The mark to scroll to and flash (stage 13: the 标记 button of a file already marked). */
+  markId?: string;
+  /** With `markId`: put the cursor in its note (a mark just made from the 标记 button). */
+  edit?: boolean;
+  /** Changes on every open, so opening the same mark twice still moves the window. */
+  nonce?: string;
 }
 
-/** The window's address: `#marks?workspace=…`. */
+/** The window's address: `#marks?workspace=…&mark=…&edit=1&n=…`. */
 export function marksHash(t: MarksTarget = {}): string {
-  return t.workspaceId ? `#marks?${new URLSearchParams({ workspace: t.workspaceId }).toString()}` : "#marks";
+  const q = new URLSearchParams();
+  if (t.workspaceId) q.set("workspace", t.workspaceId);
+  if (t.markId) q.set("mark", t.markId);
+  if (t.markId && t.edit) q.set("edit", "1");
+  if (t.nonce) q.set("n", t.nonce);
+  const s = q.toString();
+  return s ? `#marks?${s}` : "#marks";
 }
 
 export function parseMarksHash(hash: string): MarksTarget | null {
   if (!hash.startsWith("#marks")) return null;
-  const workspaceId = new URLSearchParams(hash.slice("#marks".length).replace(/^\?/, "")).get("workspace");
-  return workspaceId ? { workspaceId } : {};
+  const q = new URLSearchParams(hash.slice("#marks".length).replace(/^\?/, ""));
+  const workspaceId = q.get("workspace");
+  const markId = q.get("mark");
+  const nonce = q.get("n");
+  return {
+    ...(workspaceId ? { workspaceId } : {}),
+    ...(markId ? { markId, ...(q.get("edit") === "1" ? { edit: true } : {}) } : {}),
+    ...(nonce ? { nonce } : {}),
+  };
+}
+
+const norm = (p: string) => p.replace(/\\/g, "/").replace(/\/+$/, "").toLowerCase();
+
+/**
+ * The mark for a file shown elsewhere (quick look, Review), or null. `path` is absolute, or relative to the project
+ * `workspaceId` names (marks are always absolute, so a relative path matches the end of a mark in that project). A
+ * mark at `line` wins over one for the whole file, which wins over another range.
+ */
+export function findMark(marks: readonly FileMark[], file: { path: string; workspaceId?: string | null }, line?: number | null): FileMark | null {
+  const want = norm(file.path).replace(/^\.\//, "");
+  const absolute = /^[a-z]:\//.test(want) || want.startsWith("/");
+  const same = marks.filter((m) => {
+    const have = norm(m.path);
+    if (absolute) return have === want;
+    return (!file.workspaceId || m.workspaceId === file.workspaceId) && have.endsWith(`/${want}`);
+  });
+  return same.find((m) => line && m.startLine === line) ?? same.find((m) => m.startLine === null) ?? same[0] ?? null;
 }
 
 export interface MarkGroup {

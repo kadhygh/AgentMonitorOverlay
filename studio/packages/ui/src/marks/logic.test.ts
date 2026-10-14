@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FILE_MARK_MIME, parseFileMarkDrag, type FileMark, type Workspace } from "@amo-studio/protocol";
-import { filterGroups, groupMarks, markDragData, marksHash, matchMark, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo } from "./logic.js";
+import { filterGroups, findMark, groupMarks, markDragData, marksHash, matchMark, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo } from "./logic.js";
 
 const ws = (id: string, name: string, path: string, extra: Partial<Workspace> = {}): Workspace => ({ id, name, path, createdAt: "", ...extra });
 const mark = (id: string, path: string, workspaceId: string | null, note = "", extra: Partial<FileMark> = {}): FileMark => ({
@@ -25,6 +25,34 @@ describe("the marks window's address", () => {
     expect(parseMarksHash("#marks?workspace=ws-1")).toEqual({ workspaceId: "ws-1" });
     expect(parseMarksHash("#marks")).toEqual({});
     expect(parseMarksHash("#review?workspace=ws-1")).toBeNull();
+  });
+
+  it("round-trips the mark to show, and whether to edit its note", () => {
+    const t = { workspaceId: "ws-1", markId: "m-1", edit: true, nonce: "7" };
+    expect(parseMarksHash(marksHash(t))).toEqual(t);
+    expect(parseMarksHash(marksHash({ markId: "m-1" }))).toEqual({ markId: "m-1" });
+    expect(marksHash({ edit: true })).toBe("#marks");
+  });
+});
+
+describe("findMark", () => {
+  const marks = [
+    mark("whole", "G:\\game\\src\\Drop.cs", "w1"),
+    mark("ranged", "G:\\game\\src\\Drop.cs", "w1", "", { startLine: 40, endLine: 60 }),
+    mark("other", "G:\\other\\src\\Drop.cs", "w2"),
+  ];
+  it("matches absolute paths whatever the slashes and case", () => {
+    expect(findMark(marks, { path: "g:/GAME/src/drop.cs" })?.id).toBe("whole");
+    expect(findMark(marks, { path: "G:\\game\\src\\Nope.cs" })).toBeNull();
+  });
+  it("matches a project-relative path inside that project only", () => {
+    expect(findMark(marks, { path: "src/Drop.cs", workspaceId: "w2" })?.id).toBe("other");
+    expect(findMark(marks, { path: "./src/Drop.cs", workspaceId: "w1" })?.id).toBe("whole");
+    expect(findMark(marks, { path: "rc/Drop.cs", workspaceId: "w1" })).toBeNull();
+  });
+  it("prefers the mark at the line", () => {
+    expect(findMark(marks, { path: "G:/game/src/Drop.cs" }, 40)?.id).toBe("ranged");
+    expect(findMark(marks, { path: "G:/game/src/Drop.cs" }, 3)?.id).toBe("whole");
   });
 });
 

@@ -30,16 +30,23 @@ export function MarksApp() {
   }, []);
 
   if (host.kind !== "ready") return <div className="placeholder">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</div>;
-  return <MarksPage link={host.link} state={host.state} currentId={target.workspaceId ?? null} />;
+  return <MarksPage link={host.link} state={host.state} currentId={target.workspaceId ?? null} focus={target.markId ? target : null} />;
 }
+
+/** The mark the window was opened at: scrolled to and flashed, its note focused when `edit`. */
+type Focus = Pick<MarksTarget, "markId" | "edit" | "nonce">;
 
 type Toast = { text: string; error?: boolean } | null;
 
 const message = (err: unknown) => (err instanceof HostApiError ? err.message : String(err));
 
-function MarksPage({ link, state, currentId }: { link: HostLink; state: StateSnapshot; currentId: string | null }) {
+function MarksPage({ link, state, currentId, focus }: { link: HostLink; state: StateSnapshot; currentId: string | null; focus: Focus | null }) {
   const { marks } = useFileMarks(link);
   const [query, setQuery] = useState("");
+  // Opened at a mark: a search that hides it goes.
+  useEffect(() => {
+    if (focus?.markId) setQuery("");
+  }, [focus?.markId, focus?.nonce]);
   const [pasted, setPasted] = useState("");
   const setToast = useCallback((t: Toast) => void (t && showToast(t)), []);
   const [picking, setPicking] = useState<Workspace | null>(null);
@@ -176,6 +183,7 @@ function MarksPage({ link, state, currentId }: { link: HostLink; state: StateSna
             onPick={g.workspaceId ? () => setPicking(projects.find((w) => w.id === g.workspaceId) ?? null) : undefined}
             onLook={setLooking}
             onToast={setToast}
+            focus={focus}
           />
         ))}
       </div>
@@ -210,6 +218,7 @@ function Group({
   onPick,
   onLook,
   onToast,
+  focus,
 }: {
   group: MarkGroup;
   current: boolean;
@@ -218,6 +227,7 @@ function Group({
   onPick?: () => void;
   onLook(mark: FileMark): void;
   onToast(t: Toast): void;
+  focus: Focus | null;
 }) {
   return (
     <section className="mk-group" data-testid="marks-group" data-current={current || undefined}>
@@ -237,7 +247,16 @@ function Group({
       </div>
       {!group.marks.length && <div className="mk-group-empty">这个项目还没有标记。</div>}
       {group.marks.map((m) => (
-        <MarkRow key={m.id} mark={m} folder={group.path} link={link} vscode={vscode} onLook={() => onLook(m)} onToast={onToast} />
+        <MarkRow
+          key={m.id}
+          mark={m}
+          folder={group.path}
+          link={link}
+          vscode={vscode}
+          onLook={() => onLook(m)}
+          onToast={onToast}
+          focus={focus?.markId === m.id ? focus : null}
+        />
       ))}
     </section>
   );
@@ -245,7 +264,35 @@ function Group({
 
 const SAVE_DELAY_MS = 600;
 
-function MarkRow({ mark, folder, link, vscode, onLook, onToast }: { mark: FileMark; folder: string; link: HostLink; vscode: boolean; onLook(): void; onToast(t: Toast): void }) {
+function MarkRow({
+  mark,
+  folder,
+  link,
+  vscode,
+  onLook,
+  onToast,
+  focus,
+}: {
+  mark: FileMark;
+  folder: string;
+  link: HostLink;
+  vscode: boolean;
+  onLook(): void;
+  onToast(t: Toast): void;
+  focus: Focus | null;
+}) {
+  const rowRef = useRef<HTMLElement>(null);
+  const noteRef = useRef<HTMLTextAreaElement>(null);
+  const [flash, setFlash] = useState(false);
+  // Opened at this mark (the 标记 button elsewhere): bring it into view, flash it, and for a new one, the note.
+  useEffect(() => {
+    if (!focus) return;
+    rowRef.current?.scrollIntoView({ block: "center" });
+    if (focus.edit) noteRef.current?.focus();
+    setFlash(true);
+    const t = setTimeout(() => setFlash(false), 1600);
+    return () => clearTimeout(t);
+  }, [focus, focus?.nonce]);
   const [note, setNote] = useState(mark.note);
   const [saving, setSaving] = useState<"idle" | "dirty" | "saving" | "saved">("idle");
   const [range, setRange] = useState(rangeText(mark));
@@ -308,7 +355,15 @@ function MarkRow({ mark, folder, link, vscode, onLook, onToast }: { mark: FileMa
   const where = rel ? dirName(rel) : dirName(mark.path);
 
   return (
-    <article className="mk-row" data-testid="mark-row" data-missing={!mark.exists || undefined} data-path={mark.path}>
+    <article
+      ref={rowRef}
+      className="mk-row"
+      data-testid="mark-row"
+      data-missing={!mark.exists || undefined}
+      data-flash={flash || undefined}
+      data-mark-id={mark.id}
+      data-path={mark.path}
+    >
       <div
         className="mk-row-head"
         draggable
@@ -330,6 +385,7 @@ function MarkRow({ mark, folder, link, vscode, onLook, onToast }: { mark: FileMa
       </div>
       <div className="mk-row-body">
         <textarea
+          ref={noteRef}
           className="mk-note"
           value={note}
           rows={Math.min(6, Math.max(1, note.split("\n").length))}

@@ -89,12 +89,15 @@ describe("review file tree", () => {
 
   it("clamps the list width and reads remembered choices defensively", () => {
     expect(clampWidth(100)).toBe(180);
-    expect(clampWidth(900)).toBe(600);
+    expect(clampWidth(900)).toBe(900);
+    expect(clampWidth(9000)).toBe(2400);
+    expect(clampWidth(1200, 1280)).toBe(896); // 70% of the window
+    expect(clampWidth(100, 200)).toBe(180);
     expect(clampWidth(Number.NaN)).toBe(340);
     expect(parsePrefs(null)).toEqual({ listWidth: 340, layout: "flat", split: false, mode: "changes" });
     expect(parsePrefs("{bad json")).toEqual({ listWidth: 340, layout: "flat", split: false, mode: "changes" });
     expect(parsePrefs(JSON.stringify({ listWidth: 420, layout: "flat", split: true, mode: "full" }))).toEqual({ listWidth: 420, layout: "flat", split: true, mode: "full" });
-    expect(parsePrefs(JSON.stringify({ listWidth: 5000, layout: "x", split: "yes" }))).toEqual({ listWidth: 600, layout: "flat", split: false, mode: "changes" });
+    expect(parsePrefs(JSON.stringify({ listWidth: 5000, layout: "x", split: "yes" }))).toEqual({ listWidth: 2400, layout: "flat", split: false, mode: "changes" });
     // 目录树 was the default before version 2: only a tree chosen since then stays.
     expect(parsePrefs(JSON.stringify({ layout: "tree" })).layout).toBe("flat");
     expect(parsePrefs(JSON.stringify({ layout: "tree", v: 2 })).layout).toBe("tree");

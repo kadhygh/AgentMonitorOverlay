@@ -122,9 +122,17 @@ export function splitFolder(folder: string): { head: string; tail: string } {
   return cut < 0 ? { head: "", tail: folder } : { head: folder.slice(0, cut + 1), tail: folder.slice(cut + 1) };
 }
 
-export const LIST_WIDTH = { min: 180, max: 600, initial: 340 } as const;
+/** `max` is a hard cap; while dragging, the list also stops at `share` of the window (stage 13: 600 was too narrow). */
+export const LIST_WIDTH = { min: 180, max: 2400, share: 0.7, initial: 340 } as const;
 
-export const clampWidth = (w: number) => Math.round(Math.min(LIST_WIDTH.max, Math.max(LIST_WIDTH.min, Number.isFinite(w) ? w : LIST_WIDTH.initial)));
+export const clampWidth = (w: number, windowWidth = Infinity) =>
+  Math.round(
+    Math.min(
+      LIST_WIDTH.max,
+      Math.max(LIST_WIDTH.min, windowWidth * LIST_WIDTH.share),
+      Math.max(LIST_WIDTH.min, Number.isFinite(w) ? w : LIST_WIDTH.initial),
+    ),
+  );
 
 // The window's view choices, remembered on this machine (a per-viewer convenience: storage may be missing).
 const PREFS_KEY = "amo.gitreview.prefs";

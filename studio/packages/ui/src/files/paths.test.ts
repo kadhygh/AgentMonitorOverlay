@@ -64,6 +64,10 @@ describe("parseLinkTarget", () => {
     expect(parseLinkTarget("docs/My%20Notes.md")).toEqual({ path: "docs/My Notes.md" });
     expect(parseLinkTarget("file:///G:/x/y.ts#L3")).toEqual({ path: "G:/x/y.ts", line: 3 });
     expect(parseLinkTarget("G:\\x\\y.ts")).toEqual({ path: "G:\\x\\y.ts" });
+    // Codex writes absolute links with a slash before the drive.
+    expect(parseLinkTarget("/G:/PROJECT/p/AGENTS.md")).toEqual({ path: "G:/PROJECT/p/AGENTS.md" });
+    expect(parseLinkTarget("/G:/PROJECT/p/a.cs:12")).toEqual({ path: "G:/PROJECT/p/a.cs", line: 12 });
+    expect(parseInlinePath("/G:/PROJECT/p/a.cs")).toEqual({ path: "G:/PROJECT/p/a.cs" });
   });
 
   it("refuses web links, anchors, queries and other schemes", () => {

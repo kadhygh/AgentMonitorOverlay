@@ -15,10 +15,22 @@ export interface MarksWindowOptions {
 
 const ID = /^[\w-]{1,80}$/;
 
-/** `#marks` or `#marks?workspace=…` for what the page asked (an invalid project id is dropped). */
+let opened = 0;
+
+/**
+ * `#marks?workspace=…&mark=…&edit=1&n=…` for what the page asked (invalid ids are dropped). `n` changes on every open,
+ * so asking for the same mark again still reaches the page as a hash change.
+ */
 export function marksHash(target: unknown): string {
-  const t = target as { workspaceId?: unknown } | null;
-  return typeof t?.workspaceId === "string" && ID.test(t.workspaceId) ? `#marks?workspace=${t.workspaceId}` : "#marks";
+  const t = target as { workspaceId?: unknown; markId?: unknown; edit?: unknown } | null;
+  const q: string[] = [];
+  if (typeof t?.workspaceId === "string" && ID.test(t.workspaceId)) q.push(`workspace=${t.workspaceId}`);
+  if (typeof t?.markId === "string" && ID.test(t.markId)) {
+    q.push(`mark=${t.markId}`);
+    if (t.edit === true) q.push("edit=1");
+    q.push(`n=${++opened}`);
+  }
+  return q.length ? `#marks?${q.join("&")}` : "#marks";
 }
 
 /** Handles `amo:open-marks` from the pages; call once, after the workbench window exists. */

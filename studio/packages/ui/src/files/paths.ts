@@ -35,12 +35,14 @@ export function splitLine(written: string): FileMention {
   return { path: written.slice(0, m.index), ...(line ? { line } : {}), ...(line && column ? { column } : {}) };
 }
 
+/** `/G:/a.cs` (Codex writes local links this way) → `G:/a.cs`; other text unchanged. */
+const dropDriveSlash = (p: string): string => (/^\/[a-z]:[\\/]/i.test(p) ? p.slice(1) : p);
+
 /** `file:///G:/a%20b.cs` → `G:/a b.cs`; other text unchanged; null for a malformed escape. */
 function fromFileUrl(s: string): string | null {
   if (!/^file:\/\//i.test(s)) return s;
   try {
-    const p = decodeURIComponent(s.replace(/^file:\/\//i, ""));
-    return /^\/[a-z]:[\\/]/i.test(p) ? p.slice(1) : p;
+    return dropDriveSlash(decodeURIComponent(s.replace(/^file:\/\//i, "")));
   } catch {
     return null;
   }
@@ -68,7 +70,7 @@ export function parseInlinePath(code: string): FileMention | null {
   if (!text || text.length > MAX_PATH) return null;
   const url = fromFileUrl(text);
   if (url === null) return null;
-  const mention = splitLine(url);
+  const mention = splitLine(dropDriveSlash(url));
   return looksLikeFilePath(mention.path) ? mention : null;
 }
 
@@ -95,7 +97,7 @@ export function parseLinkTarget(href: string): FileMention | null {
   if (path === null) return null;
   if (!/^file:/i.test(target)) {
     try {
-      path = decodeURIComponent(path);
+      path = dropDriveSlash(decodeURIComponent(path));
     } catch {
       return null;
     }

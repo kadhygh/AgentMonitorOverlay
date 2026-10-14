@@ -88,12 +88,13 @@ test("names of existing files in a reply open the quick look, VS Code and Explor
   const reveal = await nextOpenIn(page, () => preview.getByRole("button", { name: "在资源管理器中显示" }).click());
   expect(reveal.asked).toMatchObject({ path: join(dir, DEMO_FILE), app: "explorer" });
   expect(reveal.result).toMatchObject({ app: "explorer", dryRun: true });
-  // 标记 (S12-D) from the quick look: marks the file at the line, once.
+  // 标记 (S12-D) from the quick look: marks the file at the line; stage 13: then it stays "已标记" (accent), and a
+  // second click opens the marks window at that mark instead of marking again.
   await preview.getByTestId("mark-file").click();
   await expect(preview.getByTestId("mark-file")).toHaveText("已标记");
-  await expect(preview.getByTestId("mark-file")).toHaveText("标记", { timeout: 5000 });
+  await expect(preview.getByTestId("mark-file")).toHaveAttribute("data-marked", "");
   await preview.getByTestId("mark-file").click();
-  await expect(preview.getByTestId("mark-file")).toHaveText("已标记过");
+  await expect(preview.getByTestId("mark-file")).toHaveText("已标记");
 
   // Esc closes it; the right column comes back.
   await page.keyboard.press("Escape");

@@ -36,7 +36,7 @@
 .gr-dim { color: var(--text-faint); font-size: var(--fs-cap); }
 
 /* File list */
-.gr-files { flex: none; min-width: 0; overflow-y: auto; border-right: 1px solid var(--border); background: var(--bg-nav); padding: 8px 8px 16px; }
+.gr-files { flex: none; min-width: 0; max-width: 70vw; overflow-y: auto; border-right: 1px solid var(--border); background: var(--bg-nav); padding: 8px 8px 16px; }
 .gr-files-head { display: flex; align-items: center; gap: 8px; padding: 0 2px 4px 6px; font-size: var(--fs-cap); color: var(--text-dim); }
 .gr-files-hint { padding: 0 6px 8px; }
 .gr-seg.small button { height: 22px; padding: 0 8px; font-size: 11.5px; }

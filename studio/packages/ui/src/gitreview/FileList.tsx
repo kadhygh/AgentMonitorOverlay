@@ -124,7 +124,7 @@ export function Splitter({ width, onChange }: { width: number; onChange(width: n
       aria-orientation="vertical"
       aria-label="文件列表宽度"
       aria-valuemin={LIST_WIDTH.min}
-      aria-valuemax={LIST_WIDTH.max}
+      aria-valuemax={clampWidth(LIST_WIDTH.max, window.innerWidth)}
       aria-valuenow={width}
       tabIndex={0}
       title="拖动调整文件列表宽度，双击恢复"
@@ -135,7 +135,7 @@ export function Splitter({ width, onChange }: { width: number; onChange(width: n
         e.currentTarget.setPointerCapture(e.pointerId);
         drag.current = { x: e.clientX, width };
       }}
-      onPointerMove={(e) => drag.current && onChange(clampWidth(drag.current.width + e.clientX - drag.current.x))}
+      onPointerMove={(e) => drag.current && onChange(clampWidth(drag.current.width + e.clientX - drag.current.x, window.innerWidth))}
       onPointerUp={() => (drag.current = null)}
       onLostPointerCapture={() => (drag.current = null)}
       onDoubleClick={() => onChange(LIST_WIDTH.initial)}
@@ -143,7 +143,7 @@ export function Splitter({ width, onChange }: { width: number; onChange(width: n
         if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
         e.preventDefault();
         e.stopPropagation();
-        onChange(clampWidth(width + (e.key === "ArrowLeft" ? -16 : 16)));
+        onChange(clampWidth(width + (e.key === "ArrowLeft" ? -16 : 16), window.innerWidth));
       }}
     />
   );
