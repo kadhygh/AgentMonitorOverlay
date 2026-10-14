@@ -176,6 +176,15 @@ export interface TurnUsage {
   context?: number;
 }
 
+/**
+ * Generation of a turn's model calls, for its speed (as DSH measures it): per call, the time from its first output
+ * token to its end, and its output tokens; summed. Waiting for the first token, tools and approvals are not in it.
+ */
+export interface TurnDecode {
+  ms: number;
+  tokens: number;
+}
+
 export interface ToolFields {
   name: string;
   summary: string;
@@ -225,7 +234,7 @@ export type SessionItem =
   | (ItemBase & { type: "reasoning"; text: string; streaming: boolean; durationMs?: number })
   | (ItemBase & { type: "tool" } & ToolFields)
   /** Metadata of one turn (not shown as a row): when it ran, how it ended, what it used. */
-  | (ItemBase & { type: "turn"; turnId: string; state: TurnState; startedAt: Timestamp; endedAt?: Timestamp; usage?: TurnUsage; error?: string; retry?: TurnRetry })
+  | (ItemBase & { type: "turn"; turnId: string; state: TurnState; startedAt: Timestamp; endedAt?: Timestamp; usage?: TurnUsage; decode?: TurnDecode; error?: string; retry?: TurnRetry })
   | (ItemBase & { type: "approval"; approvalId: string; kind: ApprovalKind; summary: string; detail?: string; state: ApprovalState })
   /** A question to the person, a form, or a plan to review (stage 12; see questions.ts). */
   | (ItemBase & { type: "question" } & QuestionFields)

@@ -83,6 +83,8 @@ interface Live {
   idleTimer: ReturnType<typeof setTimeout> | null;
   /** Tokens in the context after the latest model call of this turn (from the assistant messages' usage). */
   context?: number;
+  /** The model call streaming now: when its first output came and its output tokens so far (the turn's speed). */
+  call?: { firstAt: number | null; tokens: number } | null;
   /** The turn in progress (from the first message of a run to its result). */
   turn: { id: string; itemId: Id } | null;
   /** Agent items still streaming, oldest first. */
@@ -774,7 +776,16 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         return;
       }
       case "stream_event": {
-        const e = m.event as { type: string; index?: number; content_block?: { type: string }; delta?: { type: string; text?: string; thinking?: string } };
+        const e = m.event as { type: string; index?: number; content_block?: { type: string }; delta?: { type: string; text?: string; thinking?: string }; usage?: { output_tokens?: number } };
+        // The speed: each model call from its first output (any block) to its end, with its output tokens.
+        if (e.type === "message_start") live.call = { firstAt: null, tokens: 0 };
+        else if (live.call && live.call.firstAt === null && (e.type === "content_block_start" || e.type === "content_block_delta")) live.call.firstAt = this.now().getTime();
+        else if (live.call && e.type === "message_delta" && typeof e.usage?.output_tokens === "number") live.call.tokens = e.usage.output_tokens;
+        else if (live.call && e.type === "message_stop") {
+          const call = live.call;
+          live.call = null;
+          if (call.firstAt !== null && call.tokens > 0 && live.turn) this.addDecode(live.turn.itemId, this.now().getTime() - call.firstAt, call.tokens);
+        }
         if (e.type === "message_start") {
           if (!live.running) this.turnStarted(sessionId, live);
           this.clearRetry(live);
@@ -1211,6 +1222,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
           }
         : it,
     );
+  }
+
+  private addDecode(turnItemId: Id, ms: number, tokens: number): void {
+    this.updateItem(turnItemId, (it) => (it.type === "turn" ? { ...it, decode: { ms: (it.decode?.ms ?? 0) + Math.max(0, ms), tokens: (it.decode?.tokens ?? 0) + tokens } } : it));
   }
 
   private turnStarted(sessionId: Id, live: Live): void {

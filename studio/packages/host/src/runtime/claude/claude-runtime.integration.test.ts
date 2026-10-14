@@ -83,6 +83,10 @@ describe("ClaudeRuntime", () => {
     expect(s.runtimeRef).toMatch(/^[0-9a-f-]{36}$/);
     await until(() => agentTexts(s.id).includes("MOCK: hello") && status(s.id) === "idle", "first reply");
     expect(items(s.id).map((i) => i.type)).toEqual(["turn", "user", "agent"]);
+    // The speed's measure: the model call's output tokens and its time from first output to end (as DSH).
+    const turnItem = items(s.id).find((i) => i.type === "turn") as Extract<SessionItem, { type: "turn" }>;
+    expect(turnItem.decode?.tokens).toBe(5);
+    expect(turnItem.decode?.ms).toBeGreaterThanOrEqual(0);
     // The transcript lives in Studio's config dir, under the id Studio chose.
     const sent = await runtime.sendMessage(s.id, "again");
     expect(sent.mode).toBe("start");

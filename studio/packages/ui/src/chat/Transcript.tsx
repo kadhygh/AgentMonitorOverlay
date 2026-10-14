@@ -82,7 +82,6 @@ export function Transcript({ session, items, annotations, model, busy, view, onA
       {sessionRunning && (
         <RunningStatus
           turn={runningTurn}
-          members={last?.running ? segmentMembers(last) : []}
           compacting={!!last?.running && [...segmentMembers(last), ...last.tail].some((i) => i.type === "compaction" && i.state === "running")}
           awaiting={session?.status === "awaiting-answer" ? "等你回答" : session?.status === "awaiting-approval" ? "等待你的确认" : null}
         />
@@ -160,7 +159,7 @@ function TurnView({
         </RowBoundary>
       ))}
       {finished && seg.answer && !seg.answer.streaming && (
-        <TurnFooter answer={seg.answer} usage={seg.turn?.usage} speed={outputSpeed(seg.turn ?? undefined, segmentMembers(seg))} endedAt={seg.turn?.endedAt} model={model} always={latest} />
+        <TurnFooter answer={seg.answer} usage={seg.turn?.usage} speed={outputSpeed(seg.turn ?? undefined)} endedAt={seg.turn?.endedAt} model={model} always={latest} />
       )}
     </section>
   );
@@ -296,7 +295,7 @@ function TurnFooter({ answer, usage, speed, endedAt, model, always }: { answer: 
       <span className="turn-foot-time">{clock(endedAt ?? answer.createdAt)}</span>
       {usage && <UsageButton usage={usage} speed={speed} model={model} />}
       {speed !== null && (
-        <span className="turn-foot-speed" title="输出 token ÷ 生成用时（不含命令和工具运行的时间）" data-testid="turn-speed">
+        <span className="turn-foot-speed" title="输出 token ÷ 生成用时：每次模型调用从第一个输出 token 到结束（不含等首个 token、命令、工具和等你确认的时间，和 DSH 一样）" data-testid="turn-speed">
           {speed} tok/s
         </span>
       )}
@@ -376,7 +375,7 @@ function UsageButton({ usage, speed, model }: { usage: TurnUsage; speed: number 
  * `awaiting`: what the session waits for from the person ("等待你的确认", "等你回答"), or null while it works. While the
  * CLI retries a model request or compacts the context, the line says so instead (stage 12, S12-E).
  */
-function RunningStatus({ turn, members, awaiting, compacting }: { turn: TurnItem | null; members: readonly SessionItem[]; awaiting: string | null; compacting: boolean }) {
+function RunningStatus({ turn, awaiting, compacting }: { turn: TurnItem | null; awaiting: string | null; compacting: boolean }) {
   const startedAt = turn?.startedAt;
   const [now, setNow] = useState(Date.now);
   useEffect(() => {
@@ -384,7 +383,7 @@ function RunningStatus({ turn, members, awaiting, compacting }: { turn: TurnItem
     return () => clearInterval(t);
   }, []);
   const start = startedAt ? Date.parse(startedAt) : NaN;
-  const speed = outputSpeed(turn ?? undefined, members, now);
+  const speed = outputSpeed(turn ?? undefined);
   const retry = turn?.retry;
   const label = awaiting
     ? awaiting

@@ -61,6 +61,11 @@ interface SessionState {
   notices: Map<string, Id>;
   /** The turn whose item shows a retry (cleared when the model answers). */
   retrying: string | null;
+  /**
+   * When the model call streaming now gave its first output (a reasoning or message item, or their text): its end is
+   * the token usage it reports; the time between, with its output tokens, is the turn's speed (as DSH measures it).
+   */
+  callFirstAt: number | null;
 }
 
 interface PendingApproval {
@@ -601,6 +606,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         const turnId = turnKey(st, n.params.turn as { id: string; rootTurnId?: string | null });
         st.activeTurnId = turnId;
         st.notices.clear();
+        st.callFirstAt = null;
         this.openTurn(s.id, turnId, n.params.turn.startedAt);
         this.setStatus(s.id, "running");
         const queued = this.serverNotices.get(handle.profileId);
@@ -632,12 +638,16 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         return;
       }
       case "item/started":
-      case "item/completed":
+      case "item/completed": {
+        const type = (n.params.item as { type?: string }).type;
+        if (n.method === "item/started" && (type === "reasoning" || type === "agentMessage")) this.callOutput(n.params.threadId);
         return this.onItem(n.method, n.params.threadId, n.params.turnId, n.params.item as unknown as CodexItem);
+      }
       case "item/agentMessage/delta": {
         const s = this.findByThread(n.params.threadId);
         if (!s) return;
         const st = this.sessionState(s.id);
+        this.callOutput(n.params.threadId);
         // A review's own messages are its raw findings; exitedReviewMode brings the review as written for people.
         if (st.reviewTurns.has(n.params.turnId)) return;
         const itemId = this.ensureAgentItem(s.id, n.params.itemId, n.params.turnId);
@@ -651,6 +661,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         const s = this.findByThread(n.params.threadId);
         if (!s) return;
         const st = this.sessionState(s.id);
+        this.callOutput(n.params.threadId);
         const channel = n.method === "item/reasoning/textDelta" ? "content" : "summary";
         const itemId = this.ensureReasoningItem(s.id, n.params.itemId, n.params.turnId);
         const r = st.reasoning.get(n.params.itemId)!;
@@ -676,7 +687,19 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         const id = s && this.turnItemId(s.id, n.params.turnId);
         if (!id) return;
         const { last, modelContextWindow } = n.params.tokenUsage;
-        this.updateItem(id, (it) => (it.type === "turn" ? { ...it, usage: addUsage(it.usage, last, modelContextWindow) } : it));
+        const st = this.sessionState(s.id);
+        const firstAt = st.callFirstAt;
+        st.callFirstAt = null;
+        const ms = firstAt === null ? 0 : Date.now() - firstAt;
+        this.updateItem(id, (it) =>
+          it.type === "turn"
+            ? {
+                ...it,
+                usage: addUsage(it.usage, last, modelContextWindow),
+                ...(firstAt !== null && last.outputTokens > 0 ? { decode: { ms: (it.decode?.ms ?? 0) + ms, tokens: (it.decode?.tokens ?? 0) + last.outputTokens } } : {}),
+              }
+            : it,
+        );
         return;
       }
       case "item/autoApprovalReview/started":
@@ -1132,10 +1155,18 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     return this.store.findSessionByRuntimeRef("codex", threadId);
   }
 
+  /** The model call streaming in this thread gave output: its first one starts its generation time. */
+  private callOutput(threadId: string): void {
+    const s = this.findByThread(threadId);
+    if (!s) return;
+    const st = this.sessionState(s.id);
+    if (st.callFirstAt === null) st.callFirstAt = Date.now();
+  }
+
   private sessionState(id: Id): SessionState {
     let st = this.state.get(id);
     if (!st) {
-      st = { activeTurnId: null, items: new Map(), text: new Map(), turns: new Map(), reasoning: new Map(), reviewTurns: new Set(), notices: new Map(), retrying: null };
+      st = { activeTurnId: null, items: new Map(), text: new Map(), turns: new Map(), reasoning: new Map(), reviewTurns: new Set(), notices: new Map(), retrying: null, callFirstAt: null };
       this.state.set(id, st);
     }
     return st;

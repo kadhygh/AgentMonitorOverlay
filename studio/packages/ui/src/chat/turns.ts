@@ -302,14 +302,12 @@ export function sessionStats(items: readonly SessionItem[]): { turns: number; st
 export const segmentMembers = (seg: Segment): SessionItem[] => seg.rows.flatMap((r) => (r.kind === "group" ? r.members : [r.item]));
 
 /**
- * Output speed of a turn in tokens per second: output tokens over the time the model was generating, i.e. the turn's
- * time minus the time its commands and tools ran. Null when there is too little to tell.
+ * Output speed of a turn in tokens per second, as DSH measures it: the output tokens of its model calls over the time
+ * each call spent generating (first output token to its end). Waiting for the first token, tools and approvals are not
+ * in it. Null when there is too little to tell, and for turns recorded before Studio measured it.
  */
-export function outputSpeed(turn: TurnItem | undefined, members: readonly SessionItem[], now = Date.now()): number | null {
-  if (!turn?.usage?.output) return null;
-  const end = turn.endedAt ? Date.parse(turn.endedAt) : now;
-  let ms = end - Date.parse(turn.startedAt);
-  for (const m of members) if (m.type === "tool" && m.durationMs) ms -= m.durationMs;
-  if (!(ms >= 500)) return null;
-  return Math.round((turn.usage.output / ms) * 1000);
+export function outputSpeed(turn: TurnItem | undefined): number | null {
+  const d = turn?.decode;
+  if (!d || !d.tokens || !(d.ms >= 300)) return null;
+  return Math.round((d.tokens / d.ms) * 1000);
 }

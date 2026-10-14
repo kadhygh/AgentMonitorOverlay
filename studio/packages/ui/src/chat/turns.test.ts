@@ -158,12 +158,14 @@ describe("titles", () => {
     expect(sessionStats([withContext("a", 5000)]).context).toEqual({ used: 5000, window: null, percent: null });
   });
 
-  it("measures output speed without the time tools ran", () => {
-    // 200 output tokens over 72 s, of which a command ran 62 s: 10 s of generating, 20 tok/s.
-    const cmd = { ...(tool("command", "npm test") as Extract<SessionItem, { type: "tool" }>), durationMs: 62_000 };
-    expect(outputSpeed(turn("t") as never, [cmd])).toBe(20);
-    expect(outputSpeed(turn("t") as never, [])).toBe(3);
-    expect(outputSpeed(turn("t", "completed", 0) as never, [])).toBeNull();
-    expect(outputSpeed(undefined, [])).toBeNull();
+  it("measures output speed over the model calls' generating time only (as DSH)", () => {
+    // 400 tokens generated over 10 s in all (the turn itself took longer: first tokens, a command, an approval).
+    const t = { ...(turn("t") as Extract<SessionItem, { type: "turn" }>), decode: { ms: 10_000, tokens: 400 } };
+    expect(outputSpeed(t)).toBe(40);
+    expect(outputSpeed({ ...t, decode: { ms: 100, tokens: 5 } })).toBeNull();
+    expect(outputSpeed({ ...t, decode: { ms: 5000, tokens: 0 } })).toBeNull();
+    // Turns recorded before the measure: no number rather than a wrong one.
+    expect(outputSpeed(turn("t") as never)).toBeNull();
+    expect(outputSpeed(undefined)).toBeNull();
   });
 });

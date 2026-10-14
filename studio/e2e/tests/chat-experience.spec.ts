@@ -88,6 +88,8 @@ test("a working turn folds into one line and opens into thinking, commands and d
   // Context use (stage 11): in the turn's usage and, for the session, under the composer.
   await expect(page.getByRole("dialog", { name: "本轮用量" })).toContainText("上下文");
   await expect(page.getByTestId("context-use")).toContainText(/上下文 [\d.]+k? \/ [\d.]+[kM] · \d+%/);
+  // The speed counts only the model calls' generating time (as DSH): Codex reports each call's tokens.
+  await expect(turn.getByTestId("turn-speed")).toHaveText(/^\d+ tok\/s$/);
   await screenshot(app, "stage-9", "chat-usage", page);
   await page.keyboard.press("Escape");
 
