@@ -45,9 +45,15 @@ type Menu = { x: number; y: number; target: PreviewTarget } | null;
 const message = (err: unknown) => (err instanceof HostApiError ? err.message : String(err));
 
 /** The viewer window at the file (and its line or range); relative names start from `workspaceId`'s folder. */
-export function viewFile(t: PreviewTarget, workspaceId: string | null): void {
+export function viewFile(t: PreviewTarget, workspaceId: string | null, sessionId: string | null = null): void {
   const ws = t.file.workspaceId ?? workspaceId;
-  openViewer({ path: t.file.path, ...(ws ? { workspaceId: ws } : {}), ...(t.line ? { line: t.line, ...(t.endLine ? { endLine: t.endLine } : {}) } : {}) });
+  openViewer({
+    path: t.file.path,
+    ...(ws ? { workspaceId: ws } : {}),
+    ...(t.line ? { line: t.line, ...(t.endLine ? { endLine: t.endLine } : {}) } : {}),
+    // The conversation it was opened from: comments written in the viewer go back there by default (S14-A).
+    ...(sessionId ? { sessionId } : {}),
+  });
 }
 
 /** Whether this machine has VS Code (false until known). */
@@ -89,12 +95,12 @@ export function FileLinks({
   const fail = useCallback((err: unknown) => onError?.(message(err)), [onError]);
   const editor = useCallback(
     (t: PreviewTarget) => {
-      if (!vscode) return viewFile(t, workspaceId);
+      if (!vscode) return viewFile(t, workspaceId, sessionId);
       openInEditor(link, t.file, t.line, t.column).catch(fail);
     },
-    [vscode, link, workspaceId, fail],
+    [vscode, link, workspaceId, sessionId, fail],
   );
-  const open = useCallback((t: PreviewTarget) => (t.diff ? onPreview(t) : viewFile(t, workspaceId)), [onPreview, workspaceId]);
+  const open = useCallback((t: PreviewTarget) => (t.diff ? onPreview(t) : viewFile(t, workspaceId, sessionId)), [onPreview, workspaceId, sessionId]);
   const value = useMemo<FileLinksValue>(
     () => ({ link, workspaceId, sessionId, vscode, open, preview: onPreview, editor, menu: (e, target) => setMenu({ x: e.clientX, y: e.clientY, target }) }),
     [link, workspaceId, sessionId, vscode, open, onPreview, editor],
@@ -133,7 +139,7 @@ export function FileLinks({
       <MarkdownFileLinks.Provider value={MentionLink}>{children}</MarkdownFileLinks.Provider>
       {menu && (
         <div className="ctx-menu file-menu" role="menu" aria-label="文件" style={{ left: menu.x, top: menu.y }} data-testid="file-menu">
-          <button type="button" role="menuitem" onClick={act((t) => viewFile(t, workspaceId))}>
+          <button type="button" role="menuitem" onClick={act((t) => viewFile(t, workspaceId, sessionId))}>
             查看器打开
           </button>
           <button type="button" role="menuitem" onClick={act(onPreview)}>

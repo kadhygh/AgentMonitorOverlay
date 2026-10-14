@@ -84,9 +84,9 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   const viewer = await nextWindow(app, () => links.first().click());
   await expect(viewer.getByTestId("viewer-name")).toHaveText(DEMO_FILE);
   await expect(viewer.getByTestId("viewer-lines")).toHaveText("第 4 行");
-  await expect(viewer.getByTestId("file-preview-code")).toHaveAttribute("data-highlighted", "");
-  await expect(viewer.locator(".fp-row.marked")).toHaveAttribute("data-line", "4");
-  await expect(viewer.locator(".fp-row.marked")).toContainText("def fetch(url):");
+  await expect(viewer.getByTestId("viewer-code")).toHaveAttribute("data-highlighted", "");
+  await expect(viewer.locator(".gr-line.marked")).toHaveAttribute("data-line", "new:4");
+  await expect(viewer.locator(".gr-line.marked")).toContainText("def fetch(url):");
   await expect(page.getByTestId("file-preview")).toHaveCount(0);
   await expect(page.getByRole("complementary", { name: "批注" })).toBeVisible();
   await screenshot(app, "stage-13", "S13-A-viewer-code", viewer, "viewer");
@@ -106,7 +106,7 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   // The README link (#L2) goes to the same window: the source with line 2 marked, then rendered.
   await links.last().click();
   await expect(viewer.getByTestId("viewer-name")).toHaveText("README.md");
-  await expect(viewer.locator(".fp-row.marked")).toHaveAttribute("data-line", "2");
+  await expect(viewer.locator(".gr-line.marked")).toHaveAttribute("data-line", "new:2");
   await viewer.getByRole("button", { name: "渲染" }).click();
   await expect(viewer.locator(".fp-md strong")).toHaveText("失败时重试");
   expect(viewers(app)).toHaveLength(1);
@@ -209,7 +209,7 @@ test("a finished turn lists the files it changed; each opens its diff, then the 
   const read = turn.locator('[data-testid="tool"][data-kind="read"]');
   const viewer = await nextWindow(app, () => read.getByTestId("file-link").click());
   await expect(viewer.getByTestId("viewer-name")).toHaveText(DEMO_FILE);
-  await expect(viewer.getByTestId("file-preview-code")).toContainText("def fetch(url, retries=3, backoff=0.5):");
+  await expect(viewer.getByTestId("viewer-code")).toContainText("def fetch(url, retries=3, backoff=0.5):");
   const edit = turn.locator('[data-testid="tool"][data-kind="edit"]');
   await edit.locator(".pr-title").click();
   await expect(edit.locator(".pr-diff-head").getByTestId("file-link")).toHaveText(DEMO_FILE);
@@ -221,7 +221,7 @@ test("a finished turn lists the files it changed; each opens its diff, then the 
   await expect(viewer.locator(".gr-line.add").filter({ hasText: "retries=3" }).first()).toBeVisible();
   await screenshot(app, "stage-13", "S13-A-viewer-changes", viewer, "viewer");
   await viewer.getByTestId("viewer-mode-file").click();
-  await expect(viewer.getByTestId("file-preview-code")).toBeVisible();
+  await expect(viewer.getByTestId("viewer-code")).toBeVisible();
 
   // 用 git diff 看 (right click): the project's Review window, at the file.
   await read.getByTestId("file-link").click({ button: "right" });

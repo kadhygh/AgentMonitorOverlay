@@ -12,6 +12,8 @@ export interface ViewerTarget {
   line?: number;
   endLine?: number;
   mode?: ViewerMode;
+  /** The session whose conversation opened it (S14-A): where comments written here go by default. */
+  sessionId?: string;
   /** Changes on every open (the shell sets it), so the same file opened again scrolls back to its line. */
   nonce?: string;
 }
@@ -21,7 +23,7 @@ const int = (s: string | null): number | undefined => {
   return Number.isSafeInteger(n) && n > 0 ? n : undefined;
 };
 
-/** The window's address: `#viewer?path=…&workspace=…&line=…&end=…&mode=…&n=…` (as the shell builds it). */
+/** The window's address: `#viewer?path=…&workspace=…&line=…&end=…&mode=…&session=…&n=…` (as the shell builds it). */
 export function viewerHash(t: ViewerTarget): string {
   const q = new URLSearchParams({ path: t.path });
   if (t.workspaceId) q.set("workspace", t.workspaceId);
@@ -30,6 +32,7 @@ export function viewerHash(t: ViewerTarget): string {
     if (t.endLine && t.endLine > t.line) q.set("end", String(t.endLine));
   }
   if (t.mode === "changes") q.set("mode", "changes");
+  if (t.sessionId) q.set("session", t.sessionId);
   if (t.nonce) q.set("n", t.nonce);
   return `#viewer?${q.toString()}`;
 }
@@ -43,11 +46,13 @@ export function parseViewerHash(hash: string): ViewerTarget | null {
   const line = int(q.get("line"));
   const end = int(q.get("end"));
   const nonce = q.get("n");
+  const sessionId = q.get("session");
   return {
     path,
     ...(workspaceId ? { workspaceId } : {}),
     ...(line ? { line, ...(end && end > line ? { endLine: end } : {}) } : {}),
     ...(q.get("mode") === "changes" ? { mode: "changes" as const } : {}),
+    ...(sessionId ? { sessionId } : {}),
     ...(nonce ? { nonce } : {}),
   };
 }

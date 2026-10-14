@@ -7,6 +7,7 @@ import {
   rangeBase,
   sortComments,
   type GitChanges,
+  type GitCommentRange,
   type GitCommitChanges,
   type GitFileDiff,
   type GitLog,
@@ -97,10 +98,12 @@ export class GitReviewFeature extends Feature {
 
   addComment(workspaceId: Id, input: NewGitReviewComment): GitReviewComment {
     this.requireWorkspace(workspaceId);
-    const range = this.range(input?.range);
+    const range = this.commentRange(input?.range);
     const path = typeof input.path === "string" ? input.path.trim() : "";
     if (!path || path.length > 1000) throw new HostError("bad_request", "path is required");
     if (input.side !== "new" && input.side !== "old") throw new HostError("bad_request", "side must be new or old");
+    // The viewer's 文件 mode (S14-A) shows the file as it is now: there is no old side.
+    if (range === "file" && input.side !== "new") throw new HostError("bad_request", "a file comment is on the new side");
     const line = Number(input.line);
     if (!Number.isInteger(line) || line < 1) throw new HostError("bad_request", "line must be a line number");
     const note = this.note(input.note);
@@ -161,6 +164,11 @@ export class GitReviewFeature extends Feature {
     if (v === undefined || v === null || v === "") return "working";
     if (!isGitRange(v)) throw new HostError("bad_request", `unknown range ${String(v)}`);
     return v;
+  }
+
+  /** A comment's range: a Git Review range, or `file` (the viewer's 文件 mode, S14-A). */
+  private commentRange(v: unknown): GitCommentRange {
+    return v === "file" ? "file" : this.range(v);
   }
 
   private note(v: unknown): string {

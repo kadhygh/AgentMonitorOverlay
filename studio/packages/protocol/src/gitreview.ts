@@ -18,6 +18,14 @@ export const GIT_RANGES: readonly { id: GitRange; label: string; hint: string }[
 
 export const isGitRange = (v: unknown): v is GitRange => GIT_RANGES.some((r) => r.id === v);
 
+/**
+ * Where a comment was written: a range of Git Review, or `file` (stage 14, S14-A): the viewer's 文件 mode, the file as
+ * it is now, no diff; its lines are the file's (they show as new-side lines in Review too).
+ */
+export type GitCommentRange = GitRange | "file";
+
+export const isCommentRange = (v: unknown): v is GitCommentRange => v === "file" || isGitRange(v);
+
 /** A project folder as git sees it. Paths in a review are relative to the project folder, which may sit inside the repository. */
 export interface GitStatus {
   repo: boolean;
@@ -147,8 +155,8 @@ export type GitLineSide = "new" | "old";
 export interface GitReviewComment {
   id: Id;
   workspaceId: Id;
-  /** The range it was written in (old-side line numbers depend on it). */
-  range: GitRange;
+  /** The range it was written in (old-side line numbers depend on it); `file` in the viewer (always new side). */
+  range: GitCommentRange;
   path: string;
   side: GitLineSide;
   line: number;
@@ -164,7 +172,7 @@ export interface GitReviewComment {
 }
 
 export interface NewGitReviewComment {
-  range: GitRange;
+  range: GitCommentRange;
   path: string;
   side: GitLineSide;
   line: number;
@@ -190,7 +198,10 @@ export function sortComments<T extends Pick<GitReviewComment, "path" | "side" | 
  * The user message that sends Git Review comments to a session, grouped by file. Shared by Host (sending) and UI
  * (preview). `project` names the reviewed project.
  */
-export function composeGitReviewMessage(comments: ReadonlyArray<Pick<GitReviewComment, "path" | "side" | "line" | "lineText" | "note" | "createdAt">>, project?: string): string {
+export function composeGitReviewMessage(
+  comments: ReadonlyArray<Pick<GitReviewComment, "path" | "side" | "line" | "lineText" | "note" | "createdAt"> & { range?: GitCommentRange }>,
+  project?: string,
+): string {
   const files = new Map<string, typeof comments[number][]>();
   for (const c of sortComments(comments)) files.set(c.path, [...(files.get(c.path) ?? []), c]);
   const parts = [...files].map(([path, list]) => {
@@ -201,6 +212,11 @@ export function composeGitReviewMessage(comments: ReadonlyArray<Pick<GitReviewCo
     });
     return `### ${path}\n\n${body.join("\n\n")}`;
   });
+  // Only comments written in the viewer's 文件 mode (S14-A): they are on files, not on changes.
+  if (comments.length && comments.every((c) => c.range === "file")) {
+    const files = project ? `「${project}」的文件` : "文件";
+    return `文件批注：我看了${files}，有 ${comments.length} 条批注。\n\n${parts.join("\n\n")}`;
+  }
   const where = project ? `「${project}」的改动` : "改动";
   return `Git Review 批注：我看了${where}，有 ${comments.length} 条批注。\n\n${parts.join("\n\n")}`;
 }

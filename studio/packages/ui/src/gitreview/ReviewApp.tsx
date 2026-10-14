@@ -1,7 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { showToast } from "../lib/toast.js";
 import {
-  composeGitReviewMessage,
   GIT_RANGES,
   rangeBase,
   type GitChangedFile,
@@ -9,7 +8,6 @@ import {
   type GitCommitChanges,
   type GitFileDiff,
   type GitRange,
-  type GitReviewComment,
   type StateSnapshot,
   type Workspace,
 } from "@amo-studio/protocol";
@@ -19,7 +17,11 @@ import { openInApps, openInEditor, revealInExplorer } from "../lib/openin.js";
 import { DiffView } from "./DiffView.js";
 import { FileList, FileMenu, Splitter, type FileMenuAt } from "./FileList.js";
 import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type ReviewPrefs } from "./filetree.js";
-import { changeStarts, countLabel, diffRows, draftCounts, parseReviewHash, placeComments, sessionChoices, STATUS_NAME, step, type DiffMode, type ReviewTarget } from "./logic.js";
+import { changeStarts, countLabel, diffRows, draftCounts, parseReviewHash, placeComments, STATUS_NAME, step, type DiffMode, type DiffRow, type ReviewTarget } from "./logic.js";
+import { captureAnchor, restoreAnchor, type ViewAnchor } from "./anchor.js";
+import { commentsChanged, SendBar, useReviewComments } from "./comments.js";
+import { dropDraft, editDraftKey, newDraftKey } from "./drafts.js";
+import { FindBar } from "./FindBar.js";
 import { editorLine } from "./splitview.js";
 import { DiffCache, type DiffRequest } from "./diffcache.js";
 import { diffTokensFor, useDiffTokens } from "./tokens.js";
@@ -98,6 +100,7 @@ export function ReviewPage({
   commit = null,
   select = null,
   embedded = false,
+  inactive = false,
 }: {
   link: HostLink;
   state: StateSnapshot;
@@ -108,6 +111,8 @@ export function ReviewPage({
   select?: ReviewSelect | null;
   /** Inside the viewer window (its 改动 mode): the viewer names the window. */
   embedded?: boolean;
+  /** Kept but not in front (the viewer's 文件 mode): keys are not its own. */
+  inactive?: boolean;
 }) {
   const [range, setRange] = useState<GitRange>("working");
   // The view choices (list width and layout, 单栏 / 左右对照, 只看改动 / 完整文件) stay on this machine.
@@ -117,7 +122,24 @@ export function ReviewPage({
   useEffect(() => writePrefs(prefs), [prefs]);
   const pref = useCallback(<K extends keyof ReviewPrefs>(key: K, value: ReviewPrefs[K]) => setPrefs((p) => ({ ...p, [key]: value })), []);
   const mode = prefs.mode;
-  const setMode = (m: DiffMode) => pref("mode", m);
+  // A switch of view keeps the line being commented (or the one at the top) where it was on screen (S14-A).
+  const scroller = useRef<HTMLDivElement>(null);
+  const pendingAnchor = useRef<ViewAnchor | null>(null);
+  const rowsRef = useRef<readonly DiffRow[]>([]);
+  const keepPlace = () => {
+    const el = scroller.current;
+    pendingAnchor.current = el ? captureAnchor(el, rowsRef.current) : null;
+  };
+  const setMode = (m: DiffMode) => {
+    if (m === mode) return;
+    keepPlace();
+    pref("mode", m);
+  };
+  const setSplit = (split: boolean) => {
+    if (split === prefs.split) return;
+    keepPlace();
+    pref("split", split);
+  };
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
   const [menu, setMenu] = useState<FileMenuAt | null>(null);
   const [vscode, setVscode] = useState(false);
@@ -128,7 +150,6 @@ export function ReviewPage({
   const [commitError, setCommitError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<GitFileDiff | null>(null);
-  const [comments, setComments] = useState<readonly GitReviewComment[]>([]);
   const [target, setTarget] = useState<string>(sessionId ?? "");
   const [showSent, setShowSent] = useState(false);
   const [draftAt, setDraftAt] = useState<string | null>(null);
@@ -281,17 +302,9 @@ export function ReviewPage({
     // The file object changes on every reload; its identity is its path and old path.
   }, [cache, request, fileKey, reload]);
 
-  // A commit's window is read-only: no comments there.
-  const loadComments = useCallback(
-    () =>
-      commit
-        ? Promise.resolve()
-        : call(link, "GET /api/workspaces/:id/review-comments", { id: workspace.id })
-            .then(setComments)
-            .catch(fail),
-    [link, workspace.id, commit],
-  );
-  useEffect(() => void loadComments(), [loadComments]);
+  // A commit's window is read-only: no comments there. Shared with the window's other views of them (the viewer).
+  const comments = useReviewComments(link, workspace.id, !commit);
+  const loadComments = () => commentsChanged(workspace.id);
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);
@@ -310,7 +323,12 @@ export function ReviewPage({
   const changeRows = useMemo(() => changeStarts(rows), [rows]);
   // The overview ruler's items: rows, or side-by-side pairs.
   const rulerKinds = useMemo(() => (prefs.split ? pairKinds(splitRows(rows)) : rowKinds(rows)), [rows, prefs.split]);
-  const scroller = useRef<HTMLDivElement>(null);
+  rowsRef.current = rows;
+  useLayoutEffect(() => {
+    const anchor = pendingAnchor.current;
+    pendingAnchor.current = null;
+    if (anchor && scroller.current) restoreAnchor(scroller.current, rows, anchor);
+  }, [rows, prefs.split]);
   const { placed, elsewhere } = useMemo(() => placeComments(comments, selected ?? "", range, rows), [comments, selected, range, rows]);
   const order = useMemo(() => fileOrder(listed?.files ?? [], prefs.layout), [listed, prefs.layout]);
   // Syntax colours of both versions, from the highlight worker; plain text until they arrive.
@@ -332,10 +350,6 @@ export function ReviewPage({
   const drafts = comments.filter((c) => c.state === "draft");
   const sentCount = comments.length - drafts.length;
   const perFile = draftCounts(comments);
-  const choices = sessionChoices(state, workspace.id);
-  // The session named by the window's address only counts while it is a live session of this project.
-  const chosen = choices.some((c) => c.id === target) ? target : "";
-  const targetLabel = choices.find((c) => c.id === chosen)?.label ?? "";
 
   // A row n / p moved to, or a located comment, scrolls into view once drawn.
   const [scrollTo, setScrollTo] = useState<string | null>(null);
@@ -347,6 +361,7 @@ export function ReviewPage({
 
   // j / k (or ↓ / ↑) between files, n / p between changes; not while typing.
   useEffect(() => {
+    if (inactive) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
@@ -367,19 +382,15 @@ export function ReviewPage({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [order, selected, changeRows, active, rows.length]);
+  }, [order, selected, changeRows, active, rows.length, inactive]);
 
   const status = changes?.status;
   // VS Code opens at the line n / p moved to (or that was clicked), else at the line being commented, else at the top.
   const draftRow = draftAt ? rows.findIndex((r) => r.key === draftAt) : -1;
   const openLine = editorLine(rows, active ?? (draftRow >= 0 ? draftRow : null));
   const closeMenu = useCallback(() => setMenu(null), []);
-  const send = () =>
-    run(async () => {
-      const r = await call(link, "POST /api/workspaces/:id/review-comments/send", { id: workspace.id }, { sessionId: chosen });
-      setToast({ text: `已把 ${r.sent.length} 条批注发给「${targetLabel}」。` });
-      await loadComments();
-    });
+  // Ctrl+F: the rows' text (hunk headers are not searched).
+  const findTexts = useMemo(() => rows.map((r) => (r.kind === "line" ? r.line.text : "")), [rows]);
 
   return (
     <div className="gr-app">
@@ -430,7 +441,7 @@ export function ReviewPage({
         </div>
         <div className="gr-seg" role="group" aria-label="版式">
           {LAYOUTS.map((l) => (
-            <button key={l.label} type="button" aria-pressed={prefs.split === l.split} title={l.hint} onClick={() => pref("split", l.split)}>
+            <button key={l.label} type="button" aria-pressed={prefs.split === l.split} title={l.hint} onClick={() => setSplit(l.split)}>
               {l.label}
             </button>
           ))}
@@ -536,7 +547,22 @@ export function ReviewPage({
               </div>
             )}
             <div className="gr-scroll-wrap">
-              <div className="gr-scroll" ref={scroller}>
+              {file && shown && (
+                <FindBar
+                  active={!inactive}
+                  container={scroller}
+                  texts={findTexts}
+                  rowSelector={(row) => `[data-row="${row}"] .gr-text`}
+                  fromRow={() => {
+                    const el = scroller.current;
+                    const a = el && captureAnchor(el, rows);
+                    return a ? Math.max(0, rows.findIndex((r) => r.kind === "line" && r.side === a.side && r.number === a.number)) : 0;
+                  }}
+                  onCurrent={setActive}
+                />
+              )}
+              {/* With the overview ruler, the ruler is the vertical scrollbar (B2). */}
+              <div className={file && shown && rows.length > 0 ? "gr-scroll ruled" : "gr-scroll"} ref={scroller}>
                 {!file && listed && <div className="gr-notice">选择左侧的文件查看改动。</div>}
                 {file && !shown && <div className="gr-notice gr-loading">正在读取…</div>}
                 {file && shown && (
@@ -552,19 +578,33 @@ export function ReviewPage({
                     active={active}
                     busy={busy}
                     readOnly={!!commit}
+                    draftKey={(rowKey) => newDraftKey(workspace.id, file.path, rowKey)}
                     onDraft={setDraftAt}
                     onActivate={setActive}
                     onAdd={(row, note) =>
                       run(async () => {
                         await call(link, "POST /api/workspaces/:id/review-comments", { id: workspace.id }, { range, path: file.path, side: row.side, line: row.number, lineText: row.line.text, note });
+                        dropDraft(newDraftKey(workspace.id, file.path, row.key));
                         setDraftAt(null);
-                        await loadComments();
+                        loadComments();
                       })
                     }
-                    onEdit={(id, note) => run(async () => (await call(link, "PATCH /api/review-comments/:id", { id }, { note }), await loadComments()))}
-                    onDelete={(id) => run(async () => (await call(link, "DELETE /api/review-comments/:id", { id }), await loadComments()))}
+                    onEdit={(id, note) =>
+                      run(async () => {
+                        await call(link, "PATCH /api/review-comments/:id", { id }, { note });
+                        dropDraft(editDraftKey(id));
+                        loadComments();
+                      })
+                    }
+                    onDelete={(id) =>
+                      run(async () => {
+                        await call(link, "DELETE /api/review-comments/:id", { id });
+                        dropDraft(editDraftKey(id));
+                        loadComments();
+                      })
+                    }
                     onLocate={(c) => {
-                      setMode("full");
+                      pref("mode", "full");
                       setScrollTo(`[data-line="${c.side}:${c.line}"]`);
                     }}
                   />
@@ -581,37 +621,14 @@ export function ReviewPage({
       {commit ? (
         <footer className="gr-bar gr-dim">只读：这个提交的改动，对比它的{shownCommit?.commit.parents.length ? "第一个父提交" : "空仓库"}。批注请在工作区改动里写。</footer>
       ) : (
-        <footer className="gr-bar">
-          <span data-testid="review-draft-count">草稿批注 {drafts.length} 条</span>
+        <SendBar link={link} state={state} workspace={workspace} comments={comments} target={target} onTarget={setTarget} busy={busy} run={run}>
           {sentCount > 0 && (
             <label className="gr-check">
               <input type="checkbox" checked={showSent} onChange={(e) => setShowSent(e.target.checked)} />
               显示已发送（{sentCount}）
             </label>
           )}
-          <span className="spacer" />
-          <label className="inline-field">
-            发给
-            <select value={chosen} onChange={(e) => setTarget(e.target.value)} data-testid="review-session" aria-label="发给哪个会话">
-              <option value="">选择会话…</option>
-              {choices.map((c) => (
-                <option key={c.id} value={c.id}>
-                  {c.label}
-                </option>
-              ))}
-            </select>
-          </label>
-          <button
-            type="button"
-            className="btn-primary"
-            disabled={busy || !drafts.length || !chosen}
-            title={drafts.length ? composeGitReviewMessage(drafts, workspace.name) : "还没有草稿批注"}
-            onClick={() => void send()}
-            data-testid="review-send"
-          >
-            发给会话{drafts.length ? `（${drafts.length}）` : ""}
-          </button>
-        </footer>
+        </SendBar>
       )}
 
       {picking && <CommitPicker link={link} workspaceId={workspace.id} onPick={(c) => openReview({ workspaceId: workspace.id, commit: c })} onClose={() => setPicking(false)} />}

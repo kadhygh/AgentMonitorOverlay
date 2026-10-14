@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { composeGitReviewMessage, diffHunks, type GitChangedFile, type GitDiffLine, type GitReviewComment, type Session } from "@amo-studio/protocol";
-import { changeStarts, diffRows, draftCounts, latestMainSession, listOrder, parseReviewHash, placeComments, reviewHash, sessionChoices, step } from "./logic.js";
+import { anchorRow, changeStarts, diffRows, draftCounts, latestMainSession, listOrder, parseReviewHash, parseRowKey, placeComments, reviewHash, sessionChoices, step } from "./logic.js";
 
 const file = (path: string, extra: Partial<GitChangedFile> = {}): GitChangedFile => ({ path, status: "modified", additions: 1, deletions: 0, binary: false, ...extra });
 
@@ -129,5 +129,35 @@ describe("Git Review window logic", () => {
     expect(text).toBe(
       "Git Review 批注：我看了改动，有 3 条批注。\n\n### a.ts\n\na.ts（旧版第 1 行，已删除）\n> gone()\n为什么删\n\na.ts:9\n> （空行）\n空行也能批\n\n### b.ts\n\nb.ts:3\n> x\n第二个文件",
     );
+  });
+});
+
+describe("keeping the place across views (S14-A)", () => {
+  it("reads row keys", () => {
+    expect(parseRowKey("new:12")).toEqual({ side: "new", number: 12 });
+    expect(parseRowKey("old:3")).toEqual({ side: "old", number: 3 });
+    expect(parseRowKey("hunk:0")).toBeNull();
+  });
+
+  it("finds the same line, or the nearest one of that version", () => {
+    const full = diffRows(diff, "full");
+    const changes = diffRows(diff, "changes");
+    // Line 6 of the new file is drawn in 完整文件 only; in 只看改动 the nearest drawn new line stands in.
+    expect(full[anchorRow(full, { side: "new", number: 6 })!]).toMatchObject({ key: "new:6" });
+    const near = changes[anchorRow(changes, { side: "new", number: 6 })!]!;
+    expect(near.kind === "line" && Math.abs(near.line.newLine! - 6)).toBe(1);
+    expect(changes[anchorRow(changes, { side: "old", number: 2 })!]).toMatchObject({ key: "old:2" });
+    expect(anchorRow([], { side: "new", number: 1 })).toBeNull();
+  });
+
+  it("places a viewer comment (range file) on its line in Review too", () => {
+    const onFile = comment({ id: "f", range: "file", line: 10 });
+    expect([...placeComments([onFile], "src/a.ts", "working", diffRows(diff, "full")).placed.keys()]).toEqual(["new:10"]);
+  });
+
+  it("names comments on files apart from comments on changes", () => {
+    const text = composeGitReviewMessage([{ ...comment({ range: "file", path: "a.ts", line: 4, lineText: "x()", note: "为什么" }) }], "game");
+    expect(text).toBe("文件批注：我看了「game」的文件，有 1 条批注。\n\n### a.ts\n\na.ts:4\n> x()\n为什么");
+    expect(composeGitReviewMessage([comment({ range: "file" }), comment({ id: "b" })], "game").startsWith("Git Review 批注")).toBe(true);
   });
 });

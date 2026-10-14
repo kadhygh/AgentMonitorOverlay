@@ -3,14 +3,14 @@ import { viewerHash, ViewerSet } from "./viewer-rules.js";
 
 describe("viewerHash", () => {
   it("carries the file, its project, the lines, the mode and a nonce", () => {
-    const h = viewerHash({ path: "G:\\game\\src\\Drop.cs", workspaceId: "ws-1", line: 12, endLine: 20, mode: "changes" }, 3)!;
+    const h = viewerHash({ path: "G:\\game\\src\\Drop.cs", workspaceId: "ws-1", line: 12, endLine: 20, mode: "changes", sessionId: "s-2" }, 3)!;
     const q = new URLSearchParams(h.slice("#viewer?".length));
     expect(h.startsWith("#viewer?")).toBe(true);
-    expect(Object.fromEntries(q)).toEqual({ path: "G:\\game\\src\\Drop.cs", workspace: "ws-1", line: "12", end: "20", mode: "changes", n: "3" });
+    expect(Object.fromEntries(q)).toEqual({ path: "G:\\game\\src\\Drop.cs", workspace: "ws-1", line: "12", end: "20", mode: "changes", session: "s-2", n: "3" });
   });
 
   it("drops what is not valid, and refuses a missing path", () => {
-    const q = new URLSearchParams(viewerHash({ path: "a.md", workspaceId: "bad id!", line: 0, endLine: 5, mode: "x" }, 1)!.slice(8));
+    const q = new URLSearchParams(viewerHash({ path: "a.md", workspaceId: "bad id!", line: 0, endLine: 5, mode: "x", sessionId: "s&x=1" }, 1)!.slice(8));
     expect(Object.fromEntries(q)).toEqual({ path: "a.md", n: "1" });
     expect(new URLSearchParams(viewerHash({ path: "a.md", line: 9, endLine: 4 }, 1)!.slice(8)).get("end")).toBeNull();
     for (const bad of [null, {}, { path: "" }, { path: 3 }, { path: "a\nb" }, { path: "x".repeat(1001) }]) expect(viewerHash(bad, 1)).toBeNull();

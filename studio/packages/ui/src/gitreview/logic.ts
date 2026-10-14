@@ -1,4 +1,4 @@
-import { isCommitRef, type GitChangedFile, type GitDiffLine, type GitFileDiff, type GitFileStatus, type GitLineSide, type GitRange, type GitReviewComment, type Session, type StateSnapshot } from "@amo-studio/protocol";
+import { isCommitRef, type GitChangedFile, type GitCommentRange, type GitDiffLine, type GitFileDiff, type GitFileStatus, type GitLineSide, type GitReviewComment, type Session, type StateSnapshot } from "@amo-studio/protocol";
 
 // Pure logic of the Git Review window: its address, the file list, the rows of a diff, where comments sit, and the
 // session the comments go to by default.
@@ -108,7 +108,7 @@ export function step(list: readonly number[], current: number, dir: 1 | -1): num
  * Comments of one file split into the ones that sit under a shown row and the rest (lines outside the shown hunks, or
  * deleted lines commented in another range: their numbers belong to another old version).
  */
-export function placeComments(comments: readonly GitReviewComment[], path: string, range: GitRange, rows: readonly DiffRow[]) {
+export function placeComments(comments: readonly GitReviewComment[], path: string, range: GitCommentRange, rows: readonly DiffRow[]) {
   const keys = new Set(rows.filter((r) => r.kind === "line").map((r) => r.key));
   const placed = new Map<string, GitReviewComment[]>();
   const elsewhere: GitReviewComment[] = [];
@@ -150,3 +150,39 @@ export function latestMainSession(sessions: readonly Session[], taskId: string):
 
 /** "+12 −3", or the binary mark. */
 export const countLabel = (f: Pick<GitChangedFile, "additions" | "deletions" | "binary">) => (f.binary ? "二进制" : `+${f.additions} −${f.deletions}`);
+
+/** A line to keep in place when the rows are drawn another way (S14-A): which version, and its number there. */
+export interface RowAnchor {
+  side: GitLineSide;
+  number: number;
+}
+
+/** `side:number` keys ("new:12") back to an anchor. */
+export function parseRowKey(key: string): RowAnchor | null {
+  const m = /^(new|old):(\d+)$/.exec(key);
+  return m ? { side: m[1] as GitLineSide, number: Number(m[2]) } : null;
+}
+
+/**
+ * The row to show the anchor at after 只看改动 / 完整文件 or 单栏 / 左右对照 (S14-A): the same line when it is drawn,
+ * else the nearest drawn line of that version (a line outside the hunks lands on the closest one); null without lines.
+ */
+export function anchorRow(rows: readonly DiffRow[], anchor: RowAnchor): number | null {
+  const key = `${anchor.side}:${anchor.number}`;
+  let best: number | null = null;
+  let distance = Infinity;
+  for (let i = 0; i < rows.length; i++) {
+    const r = rows[i]!;
+    if (r.kind !== "line") continue;
+    if (r.key === key) return i;
+    // Old-side numbers only mean something next to other old numbers; new-side ones against the new file.
+    const n = anchor.side === "old" ? r.line.oldLine : r.line.newLine;
+    if (n === null) continue;
+    const d = Math.abs(n - anchor.number);
+    if (d < distance) {
+      distance = d;
+      best = i;
+    }
+  }
+  return best;
+}

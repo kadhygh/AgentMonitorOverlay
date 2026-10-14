@@ -148,6 +148,16 @@ describe("Git Review API", { timeout: 30_000 }, () => {
     expect((await api("PATCH", `/api/review-comments/${rate.id}`, { note: "again" })).status).toBe(409);
     expect((await api("POST", `${base}/send`, { sessionId: session.id })).status).toBe(400);
     expect((await ok<GitReviewComment[]>("GET", base)).every((c) => c.state === "sent")).toBe(true);
+
+    // The viewer's 文件 mode (S14-A): comments on the file as it is now, new side only; sent with the same bar.
+    expect((await api("POST", base, { range: "file", path: "drop.lua", side: "old", line: 1, lineText: "", note: "x" })).status).toBe(400);
+    expect((await api("POST", base, { range: "staged-ish", path: "drop.lua", side: "new", line: 1, lineText: "", note: "x" })).status).toBe(400);
+    const onFile = await ok<GitReviewComment>("POST", base, { range: "file", path: "drop.lua", side: "new", line: 1, lineText: "local rate = 0.25", note: "这一行的来历？" });
+    expect(onFile).toMatchObject({ range: "file", side: "new", state: "draft" });
+    await ok("POST", `${base}/send`, { sessionId: session.id });
+    const fileMessage = "文件批注：我看了「game」的文件，有 1 条批注。\n\n### drop.lua\n\ndrop.lua:1\n> local rate = 0.25\n这一行的来历？";
+    expect(composeGitReviewMessage([onFile], "game")).toBe(fileMessage);
+    await until(async () => (await items()).some((i) => i.type === "user" && i.text === fileMessage), "file comments message");
   });
 });
 

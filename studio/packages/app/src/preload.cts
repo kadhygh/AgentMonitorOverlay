@@ -50,7 +50,7 @@ electron.contextBridge.exposeInMainWorld("amo", {
   openReview: (target: { workspaceId: string; sessionId?: string; file?: string; commit?: string }): Promise<void> =>
     electron.ipcRenderer.invoke("amo:open-review", target),
   /** The viewer (查看器, stage 13): a file in the preview window (reused until 固定), at a line or range. */
-  openViewer: (target: { path: string; workspaceId?: string; line?: number; endLine?: number; mode?: "file" | "changes" }): Promise<void> =>
+  openViewer: (target: { path: string; workspaceId?: string; line?: number; endLine?: number; mode?: "file" | "changes"; sessionId?: string }): Promise<void> =>
     electron.ipcRenderer.invoke("amo:open-viewer", target),
   /** Viewer windows only: 固定 this window (the next file opens another), and whether it is. */
   pinViewer: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:viewer-pin"),
