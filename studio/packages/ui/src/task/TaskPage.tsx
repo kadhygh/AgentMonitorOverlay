@@ -31,6 +31,7 @@ import { FileLinks, type PreviewTarget } from "../files/FileLinks.js";
 import { FilePreview } from "../files/FilePreview.js";
 import { WorkdirActions } from "../files/WorkdirActions.js";
 import { ArchiveIcon, formatDay, TaskArchivedDialog } from "./Archived.js";
+import { BackButton } from "../shell/BackButton.js";
 import { PopMenu, StatusMenu, TaskMeta, TopicPicker, below, useGitBranch, type Anchor } from "./TaskHead.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
@@ -64,6 +65,8 @@ interface TaskPageProps {
   /** This task's checklist (from a pack template). */
   checklist?: readonly ChecklistItem[];
   initialSessionId?: string;
+  /** Opened right after the task was made: the session list starts folded (2026-10-15). */
+  justCreated?: boolean;
   /** What "←" says: where it returns (看板 or 画布). */
   backLabel?: string;
   onBack(): void;
@@ -79,7 +82,7 @@ const WRITER = {
 } as const;
 
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
-export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, backLabel = "看板", onBack }: TaskPageProps) {
+export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, justCreated = false, backLabel = "看板", onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   // The first live session; in an archived task (or one whose sessions are all archived), the latest archived one.
   const firstSession = () => own.find((s) => !s.archivedAt) ?? [...own].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
@@ -119,7 +122,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     setSidebarState(on);
     writeFlag(SIDEBAR_KEY, on);
   };
-  const [sessionsFolded, setSessionsFoldedState] = useState(() => readFlag(SESSIONS_KEY));
+  // A task just made opens with its list folded (it has one session: nothing to choose between); otherwise the list is
+  // as the person last left it. The page is keyed by task, so this is read once per task opened.
+  const [sessionsFolded, setSessionsFoldedState] = useState(() => justCreated || readFlag(SESSIONS_KEY));
   const setSessionsFolded = (on: boolean) => {
     setSessionsFoldedState(on);
     writeFlag(SESSIONS_KEY, on);
@@ -261,9 +266,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   return (
     <section className="taskpage" aria-label="任务">
       <div className="page-head task-head">
-        <button type="button" className="btn-ghost" onClick={onBack}>
-          ← {backLabel}
-        </button>
+        <BackButton label={backLabel} onClick={onBack} />
         <div className="task-head-main">
           <h1 className="task-title" data-testid="task-title">
             <EditableName

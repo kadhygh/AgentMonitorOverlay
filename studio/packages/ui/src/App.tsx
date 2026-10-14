@@ -180,7 +180,7 @@ export function App() {
           onCreated={(task, session) => {
             setQuickOpen(false);
             // A task only filed leaves the person where they were.
-            if (session) setView({ kind: "task", taskId: task.id, sessionId: session.id });
+            if (session) setView({ kind: "task", taskId: task.id, sessionId: session.id, created: true });
           }}
         />
       )}

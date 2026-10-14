@@ -18,7 +18,7 @@ export const newTaskView: ViewDef<"new"> = {
         backLabel={back.label}
         onBack={() => setView(back.view)}
         // The task page returns to the same place; a task only filed goes back there right away.
-        onCreated={(task, session) => setView(session ? { kind: "task", taskId: task.id, sessionId: session.id, ...(view.back ? { back: view.back } : {}) } : back.view)}
+        onCreated={(task, session) => setView(session ? { kind: "task", taskId: task.id, sessionId: session.id, created: true, ...(view.back ? { back: view.back } : {}) } : back.view)}
       />
     );
   },

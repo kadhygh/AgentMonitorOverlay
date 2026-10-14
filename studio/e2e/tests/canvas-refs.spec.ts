@@ -63,7 +63,7 @@ test("canvas: the new-task page and the new task's page return to the canvas the
   await page.getByRole("button", { name: "画布", exact: true }).click();
   await page.getByRole("button", { name: "+ 在专题里新建任务" }).click();
   await expect(page.getByText("要推进什么？")).toBeVisible();
-  await page.getByRole("button", { name: "← 画布" }).click();
+  await page.getByRole("button", { name: "返回画布" }).click();
   await expect(page.getByTestId("canvas-viewport")).toBeVisible();
 
   // Created from the canvas: the task page opens, and its "←" goes back to the canvas too.
@@ -74,15 +74,15 @@ test("canvas: the new-task page and the new task's page return to the canvas the
   await expect(page.getByTestId("task-title")).toHaveText("从画布建的任务");
   await expect(page.getByRole("button", { name: "画布", exact: true })).toHaveAttribute("aria-current", "page");
   await screenshot(studio.app, "stage-11", "S11-A-back-to-canvas", page);
-  await page.getByRole("button", { name: "← 画布" }).click();
+  await page.getByRole("button", { name: "返回画布" }).click();
   await expect(page.getByTestId("canvas-viewport")).toBeVisible();
 
   // Opened from the board, both pages still go back to the board.
   await page.getByRole("button", { name: "看板", exact: true }).click();
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.getByRole("button", { name: "返回看板" }).click();
   await page.getByTestId("task-card").filter({ hasText: "从画布建的任务" }).click();
-  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.getByRole("button", { name: "返回看板" }).click();
   await expect(page.getByTestId("task-card")).toHaveCount(1);
 });
 
@@ -218,7 +218,7 @@ test("canvas: reference cards point at other topics' tasks, show their live stat
   // Double-click opens the task; "←" comes back.
   await refs.filter({ hasText: "乙的任务" }).dblclick();
   await expect(page.getByTestId("task-title")).toHaveText("乙的任务");
-  await page.getByRole("button", { name: "← 画布" }).click();
+  await page.getByRole("button", { name: "返回画布" }).click();
 
   // Delete removes the card, never the task.
   await refs.filter({ hasText: "乙的任务" }).click();

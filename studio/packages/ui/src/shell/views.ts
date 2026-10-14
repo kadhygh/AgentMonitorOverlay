@@ -13,7 +13,8 @@ export type View =
   | { kind: "canvas" }
   | { kind: "new"; topicId?: string; back?: View }
   | { kind: "packs"; workspaceId: string }
-  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View };
+  /** `created`: opened right after the task was made (its session list starts folded). */
+  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean };
 
 const BACK_LABEL: Partial<Record<View["kind"], string>> = { board: "看板", canvas: "画布" };
 

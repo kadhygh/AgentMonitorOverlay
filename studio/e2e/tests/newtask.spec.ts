@@ -52,13 +52,16 @@ test("creates a task from the blank task page and streams the first reply", asyn
 
   await expect(page.getByTestId("task-title")).toHaveText("列出目录结构 [[slow]]");
   await expect(page.getByTestId("msg-user")).toHaveText(/列出目录结构/);
+  // Just made, the task opens with its session list folded (one session: nothing to choose between).
+  await expect(page.getByTestId("sessions-expand")).toBeVisible();
+  await expect(page.getByTestId("session-row")).toHaveCount(0);
   // While streaming, the reply grows and is marked as streaming (a pulsing dot); then it settles.
   await expect(page.getByTestId("msg-agent")).toHaveAttribute("data-streaming", "true", { timeout: 30_000 });
   await expect(page.getByTestId("msg-agent")).toContainText("slow slow");
   await expect(page.getByTestId("msg-agent")).not.toHaveAttribute("data-streaming", /.+/, { timeout: 30_000 });
   await screenshot(studio.app, "stage-1", "S1-10-first-reply", page);
 
-  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.getByRole("button", { name: "返回看板" }).click();
   await expect(page.getByTestId("column-doing").getByTestId("task-card")).toHaveCount(1);
 });
 
@@ -115,7 +118,7 @@ test("@ and # pick the project and topic while typing; Ctrl N opens the quick ba
   await screenshot(studio.app, "stage-10", "S10-draft-page", page);
 
   // Leave the page: the draft stays; Ctrl N shows it in the quick bar, which files it.
-  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.getByRole("button", { name: "返回看板" }).click();
   await page.keyboard.press("Control+N");
   const quick = page.getByRole("dialog", { name: "快速新任务" });
   await expect(quick.getByLabel("快速新任务")).toHaveValue("校验掉落表 ");

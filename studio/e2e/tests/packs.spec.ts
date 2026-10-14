@@ -102,7 +102,7 @@ test("task templates: a task made from a template carries its steps as a checkli
   await screenshot(studio.app, "stage-6", "S6-03-checklist", page);
 
   // The board card shows the progress in its meta line.
-  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.getByRole("button", { name: "返回看板" }).click();
   await expect(page.getByTestId("task-card").filter({ hasText: "冲刺技能" })).toContainText("清单 1/5");
 });
 

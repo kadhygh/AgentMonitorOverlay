@@ -69,6 +69,6 @@ test("stage 6 acceptance: an example pack from loading to an agent ticking its c
   await screenshot(studio.app, "stage-6", "S6-06-acceptance", page);
 
   // The board card shows the progress.
-  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.getByRole("button", { name: "返回看板" }).click();
   await expect(page.getByTestId("task-card").filter({ hasText: "冲刺技能" })).toContainText("清单 1/5");
 });

@@ -40,7 +40,7 @@ test("pin, fold and scroll the left column; open the usage footer", async () => 
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await page.getByLabel("第一句话").pressSequentially("#专题");
   await expect(page.getByTestId("suggest").getByRole("option").first()).toContainText("专题 24");
-  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.getByRole("button", { name: "返回看板" }).click();
 
   // Usage: the test Claude subscription runs on a token, which cannot read the account's quota; the panel says so
   // instead of showing numbers it does not have.

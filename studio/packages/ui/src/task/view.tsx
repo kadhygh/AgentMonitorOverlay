@@ -20,6 +20,7 @@ export const taskView: ViewDef<"task"> = {
         profiles={state.profiles}
         checklist={data.checklist.filter((i) => i.taskId === task.id)}
         {...(view.sessionId ? { initialSessionId: view.sessionId } : {})}
+        justCreated={!!view.created}
         backLabel={back.label}
         onBack={() => setView(back.view)}
       />

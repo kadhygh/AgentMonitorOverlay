@@ -29,7 +29,7 @@ test("Codex and Claude sessions read the canvas through the AMO MCP", async () =
       workspaceId: ws.id, topicId: topic.id,
       firstSession: { profileId, text: "[[mcp: canvas_read]]" },
     });
-    await page.getByRole("button", { name: "← 看板" }).click().catch(() => undefined);
+    await page.getByRole("button", { name: "返回看板" }).click().catch(() => undefined);
     await page.getByTestId("task-card").filter({ hasText: title }).click();
     try {
       await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-MCP:", { timeout: 60_000 });
@@ -80,7 +80,7 @@ test("canvas changes from Codex and Claude sessions wait for the person's approv
       workspaceId: ws.id, topicId: topic.id,
       firstSession: { profileId, text: `[[mcp: canvas_group_create {"title":"${title}"}]]` },
     });
-    await page.getByRole("button", { name: "← 看板" }).click().catch(() => undefined);
+    await page.getByRole("button", { name: "返回看板" }).click().catch(() => undefined);
     await page.getByTestId("task-card").filter({ hasText: title }).click();
     // Codex asks through an MCP elicitation, Claude through canUseTool: both become the same approval card.
     const card = page.getByTestId("approval").last();

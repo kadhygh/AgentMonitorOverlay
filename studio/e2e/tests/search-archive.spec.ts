@@ -52,7 +52,7 @@ test("search: Ctrl K, every word, archived last; it opens a task or a session an
   await expect(page.getByTestId("task-title")).toHaveText("掉落表调整");
   await expect(page.getByTestId("thread-head")).toContainText("检查掉落概率");
   await expect(input).toHaveValue("");
-  await page.getByRole("button", { name: "← 看板" }).click();
+  await page.getByRole("button", { name: "返回看板" }).click();
   await expect(page.getByTestId("task-card").first()).toBeVisible();
 
   // From the canvas: the task found returns to the canvas, as does a task made with "+ 新任务" there.
@@ -62,11 +62,11 @@ test("search: Ctrl K, every word, archived last; it opens a task or a session an
   await input.fill("导表");
   await rows.first().click();
   await expect(page.getByTestId("task-title")).toHaveText("导表工具");
-  await page.getByRole("button", { name: "← 画布" }).click();
+  await page.getByRole("button", { name: "返回画布" }).click();
   await expect(page.getByTestId("canvas-card")).toHaveCount(2);
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await expect(page.getByRole("group", { name: "专题" }).getByRole("button", { name: "数值平衡" })).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "← 画布" }).click();
+  await page.getByRole("button", { name: "返回画布" }).click();
   await expect(page.getByTestId("canvas-viewport")).toBeVisible();
 
   // Esc clears, then leaves.
@@ -135,7 +135,7 @@ test("归档任务: a box says what was archived and returns to the canvas or bo
   await expect(page.locator(".chat-input textarea")).toBeEnabled();
 
   // Opened from the board: 返回看板, or 关闭 to stay on the read-only page.
-  await page.getByRole("button", { name: "← 画布" }).click();
+  await page.getByRole("button", { name: "返回画布" }).click();
   await page.getByRole("button", { name: "看板", exact: true }).click();
   await page.getByTestId("task-card").filter({ hasText: "掉落表调整" }).click();
   await page.getByTestId("task-more").click();

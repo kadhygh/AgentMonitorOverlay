@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { BackButton } from "../shell/BackButton.js";
 import { projectWorkspaces, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import type { Scope } from "../board/Board.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
@@ -138,9 +139,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
   return (
     <section className="draft-page" aria-label="新任务">
       <div className="page-head">
-        <button type="button" className="btn-ghost small" onClick={onBack}>
-          ← {backLabel}
-        </button>
+        <BackButton label={backLabel} onClick={onBack} />
         <span className="page-crumb">/ 新任务</span>
         <span className="spacer" />
         <span className="page-crumb">草稿自动保存，离开也不会丢</span>

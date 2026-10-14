@@ -94,3 +94,10 @@
 .search-where { font-size: var(--fs-cap); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .search-side { flex: none; font-size: 11px; color: var(--text-faint); }
 .search-empty { padding: 12px 10px; font-size: var(--fs-sm); color: var(--text-dim); }
+
+/* The way back from a task or new-task page (2026-10-15): chevron, where it returns, its name. */
+.back-btn { height: 30px; padding: 0 10px 0 6px; border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--panel); color: var(--text); font: inherit; font-size: var(--fs-sm); display: inline-flex; align-items: center; gap: 5px; cursor: pointer; flex: none; }
+.back-btn:hover { border-color: var(--border-strong); background: var(--panel-raised); }
+.back-btn svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+.back-btn .back-chevron { color: var(--text-dim); margin-right: -1px; }
+.back-btn:hover .back-chevron { color: var(--text); transform: translateX(-1px); }

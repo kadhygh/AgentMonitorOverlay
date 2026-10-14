@@ -141,7 +141,7 @@ test("stage 7 acceptance: a scheduler round by hand, a proposal, approval, work 
 
   // On the board: approve; the todo's task starts with the proposed prompt. (The round was opened from the canvas,
   // so the task page's "←" goes back there; the board is the top bar's tab.)
-  await page.getByRole("button", { name: "← 画布" }).click();
+  await page.getByRole("button", { name: "返回画布" }).click();
   await page.getByRole("button", { name: "看板", exact: true }).click();
   const card = page.getByTestId("proposal-card");
   await expect(card).toContainText("统一掉落表格式");
