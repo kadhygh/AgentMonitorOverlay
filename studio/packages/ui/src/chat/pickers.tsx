@@ -137,6 +137,47 @@ export function EffortBars({
   );
 }
 
+/**
+ * 「Fast」 (stage 13): the model's fast speed tier, on or off. Only for models that have one (GPT through the Codex
+ * login); Codex's own note on it ("2x speed, increased usage") is the tooltip. Off when never chosen.
+ */
+export function FastToggle({
+  fast,
+  value,
+  onChange,
+  disabled,
+  small = false,
+  when,
+}: {
+  fast: ModelOption["fast"];
+  value: boolean | undefined;
+  onChange(on: boolean): void;
+  disabled?: boolean;
+  small?: boolean;
+  /** "下一轮生效" and the like, added to the tooltip. */
+  when?: string;
+}) {
+  if (!fast) return null;
+  const on = value === true;
+  const note = fast.description ? `Codex：${fast.description}` : "更快的响应速度";
+  return (
+    <button
+      type="button"
+      className={small ? "fast-toggle small" : "fast-toggle"}
+      aria-pressed={on}
+      disabled={disabled}
+      title={`Fast ${on ? "已开" : "已关"}：${note}${when ? `。${when}` : ""}`}
+      onClick={() => onChange(!on)}
+      data-testid="fast-toggle"
+    >
+      <svg viewBox="0 0 12 12" width="11" height="11" aria-hidden="true">
+        <path d="M7 1 2.5 7H6l-1 4 4.5-6H6z" fill="currentColor" />
+      </svg>
+      Fast
+    </button>
+  );
+}
+
 /** The next effort up (wrapping), for Alt+E. */
 export function nextEffort(efforts: readonly string[], current: string | null | undefined): string | undefined {
   if (!efforts.length) return undefined;

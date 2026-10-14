@@ -66,6 +66,16 @@
       "experimental_supported_tools": ["send_user_message_async"],
       "supports_search_tool": false,
       "default_service_tier": null,
+      "service_tiers": [
+        {
+          "id": "priority",
+          "name": "Fast",
+          "description": "2x speed, increased usage"
+        }
+      ],
+      "additional_speed_tiers": [
+        "fast"
+      ],
       "base_instructions": "You are Codex, an agentic coding assistant working with the user in a shared repository.\n\nInspect the relevant code before changing it, preserve unrelated user work, and make scoped edits that directly satisfy the request.\n\nUse the available tools to investigate and implement changes, communicate material progress, and verify the result with appropriate tests or builds before handing it back.\n\nTreat credentials and destructive operations carefully. Never expose secrets, and ask before taking an action that materially exceeds the user's requested scope.\n\nAMO DeepSeek routing mode: flash-all. Use deepseek-flash for all work, reviews, and every subagent. Do not select another model within this preset."
     }
   ]

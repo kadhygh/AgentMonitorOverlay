@@ -216,6 +216,8 @@ export interface FakeAppServerOptions {
   defaultProvider?: string;
   defaultModel?: string;
   script?: TurnScript;
+  /** Whether model/list offers a fast speed tier (stage 13). Default: only on the ChatGPT login ("openai"), as Codex does. */
+  speedTiers?: boolean;
 }
 
 export interface FakeAppServer {
@@ -234,6 +236,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
   const token = options.token ?? randomUUID();
   const defaultProvider = options.defaultProvider ?? "openai";
   const defaultModel = options.defaultModel ?? "fake-model";
+  const speedTiers = options.speedTiers ?? defaultProvider === "openai";
   const script = options.script ?? defaultTurnScript;
   const threads = new Map<string, FakeThread>();
   const clients = new Set<Client>();
@@ -490,6 +493,21 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       notify(parent.id, "thread/started", { thread: threadView(t) }, [client]);
       return threadResponse(t);
     },
+    // Two models as codex-cli 0.162 lists them: the default with a fast tier (as GPT models have), one without.
+    "model/list": () => ({
+      data: [
+        {
+          model: defaultModel, displayName: "Fake Model", description: "", hidden: false, isDefault: true,
+          supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "high" }], defaultReasoningEffort: "high",
+          serviceTiers: speedTiers ? [{ id: "priority", name: "Fast", description: "2x speed, increased usage" }] : [], defaultServiceTier: null,
+        },
+        {
+          model: "fake-slow", displayName: "Fake Slow", description: "", hidden: false, isDefault: false,
+          supportedReasoningEfforts: [], defaultReasoningEffort: "medium", serviceTiers: [], defaultServiceTier: null,
+        },
+      ],
+      nextCursor: null,
+    }),
     // A ChatGPT login's quota: 5-hour and weekly windows.
     "account/rateLimits/read": () => ({
       ordinaryUsageAllowed: true,

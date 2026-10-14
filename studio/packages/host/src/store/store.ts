@@ -96,6 +96,7 @@ function parseOptions(v: unknown): SessionOptions {
     const o = JSON.parse(v) as Record<string, unknown>;
     const out: SessionOptions = {};
     for (const k of ["model", "effort", "permission"] as const) if (typeof o[k] === "string" && o[k]) out[k] = o[k] as string;
+    if (typeof o.fast === "boolean") out.fast = o.fast;
     return out;
   } catch {
     return {};

@@ -3,7 +3,7 @@ import type { ModelProfile, Session, SessionOptions, SessionPreset } from "@amo-
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { activeModel, optionsSummary, sameOptions, useProfileChoices } from "../lib/choices.js";
 import { rememberPick } from "../lib/recents.js";
-import { EffortBars, Mark, nextEffort, PermissionTiles, pickLabel } from "./pickers.js";
+import { EffortBars, FastToggle, Mark, nextEffort, PermissionTiles, pickLabel } from "./pickers.js";
 
 // Under the composer: what the session runs with — model, effort, permissions — each one click away
 // (design/ui-directions/new-task.html, "会话中切换"). Clicking the model or the permissions opens that group above the
@@ -53,11 +53,17 @@ export function SessionOptionsBar({
     return () => clearTimeout(t);
   }, [note]);
 
-  async function apply(next: SessionOptions, what: string) {
+  // Fast is sent only when it is what changed: presets carry model, effort and permissions, not speed.
+  async function apply(next: SessionOptions, what: string, fast?: boolean) {
     setBusy(true);
     setTray(null);
     try {
-      await call(link, "PATCH /api/sessions/:id/options", { id: session.id }, { model: next.model ?? null, effort: next.effort ?? null, permission: next.permission ?? null });
+      await call(
+        link,
+        "PATCH /api/sessions/:id/options",
+        { id: session.id },
+        fast === undefined ? { model: next.model ?? null, effort: next.effort ?? null, permission: next.permission ?? null } : { fast },
+      );
       setNote({ text: `${what}，${when}` });
     } catch (err) {
       setNote({ text: err instanceof HostApiError ? err.message : String(err), error: true });
@@ -75,6 +81,7 @@ export function SessionOptionsBar({
     void apply(next, `型号换成「${label}」`);
   };
   const setEffort = (effort: string) => void apply({ ...session.options, effort }, "思考强度已改");
+  const setFast = (on: boolean) => void apply(session.options, on ? "Fast 已开" : "Fast 已关", on);
   const setPermission = (id: string) => void apply({ ...session.options, permission: id }, `权限换成「${choices?.permissions.find((p) => p.id === id)?.label ?? id}」`);
 
   // Alt M: models, Alt P: permissions, Alt E: one effort up.
@@ -147,6 +154,7 @@ export function SessionOptionsBar({
         {model && model.efforts.length > 0 && (
           <EffortBars efforts={model.efforts} value={session.options.effort ?? null} fallback={model.defaultEffort} onChange={setEffort} disabled={disabled || busy} small />
         )}
+        {session.runtime === "codex" && <FastToggle fast={model?.fast} value={session.options.fast} onChange={setFast} disabled={disabled || busy} small when={when} />}
         <button
           type="button"
           className="seg-btn"

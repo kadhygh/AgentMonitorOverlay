@@ -95,6 +95,11 @@ export interface SessionOptions {
   model?: string;
   effort?: string;
   permission?: string;
+  /**
+   * Codex: run at the model's fast speed tier (stage 13, 「Fast」; `ModelOption.fast`). Absent = never chosen (the
+   * person's own Codex config applies); false = chosen off (standard speed is sent). Ignored by other runtimes.
+   */
+  fast?: boolean;
 }
 
 /**

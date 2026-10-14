@@ -5,7 +5,7 @@ import { sessionModelName, storedChoices } from "../lib/choices.js";
 import type { HostLink } from "../host/client.js";
 import { activeModel, useProfileChoices } from "../lib/choices.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
-import { EffortBars } from "../chat/pickers.js";
+import { EffortBars, FastToggle } from "../chat/pickers.js";
 import { ModelRow } from "../newtask/ModelRow.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { Mark } from "../chat/pickers.js";
@@ -37,6 +37,7 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
   const [pick, setPick] = useState<ModelPick>({ profileId: defaultProfile(profiles)?.id ?? "", model: null });
   const [effort, setEffort] = useState<string | null>(null);
+  const [fast, setFast] = useState<boolean | undefined>(undefined);
   const [drawer, setDrawer] = useState(false);
   const { choices } = useProfileChoices(link, pick.profileId);
   const model = choices ? activeModel(choices, pick.model ? { model: pick.model } : {}) : undefined;
@@ -73,12 +74,14 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
             onPick={(next) => {
               setPick(next);
               setEffort(null);
+              setFast(undefined);
             }}
             drawer={drawer}
             onToggleDrawer={() => setDrawer((v) => !v)}
             small
           />
           {model && model.efforts.length > 0 && <EffortBars efforts={model.efforts} value={effort} fallback={model.defaultEffort} onChange={setEffort} small />}
+          <FastToggle fast={model?.fast} value={fast} onChange={setFast} small />
           <button
             type="button"
             className="btn-primary small"
@@ -86,7 +89,7 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
             onClick={() => {
               rememberProfile(pick.profileId);
               rememberPick(pick);
-              const options: SessionOptions = { ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}) };
+              const options: SessionOptions = { ...(pick.model ? { model: pick.model } : {}), ...(effort ? { effort } : {}), ...(fast !== undefined && model?.fast ? { fast } : {}) };
               onNewSession({ profileId: pick.profileId, ...(Object.keys(options).length ? { options } : {}) });
               setCreating(false);
             }}

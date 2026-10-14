@@ -34,6 +34,11 @@ export interface ModelOption {
   defaultEffort?: string;
   /** What the profile runs when no model is chosen. */
   isDefault?: boolean;
+  /**
+   * Codex models with a fast speed tier (stage 13): the tier id to send (`priority`) and Codex's own note on it
+   * ("2x speed, increased usage"). Absent when the model has none (DeepSeek, GLM, Claude).
+   */
+  fast?: { tier: string; description?: string };
 }
 
 /** One permission setting, as the runtime's CLI names it. */
@@ -246,7 +251,7 @@ export interface HostRoutes {
   /** Switches the session's model, effort or permissions (null clears back to the default). Codex: from the next turn. */
   /** Renames the session in its runtime too (Codex thread name, Claude session title). */
   "PATCH /api/sessions/:id": { req: { title: string }; res: Session };
-  "PATCH /api/sessions/:id/options": { req: { model?: string | null; effort?: string | null; permission?: string | null }; res: Session };
+  "PATCH /api/sessions/:id/options": { req: { model?: string | null; effort?: string | null; permission?: string | null; fast?: boolean | null }; res: Session };
   /** Archives the session together with its forks and subagents; returns every session changed. */
   "POST /api/sessions/:id/archive": { req: void; res: Session[] };
   "POST /api/sessions/:id/unarchive": { req: void; res: Session[] };

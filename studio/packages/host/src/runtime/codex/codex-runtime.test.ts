@@ -58,6 +58,36 @@ describe("CodexRuntime", () => {
     expect(fake.threads.get(s.runtimeRef!)!.modelProvider).toBe("amo-ds");
   });
 
+  it("lists a model's fast tier and sends it as serviceTier only when Fast is chosen (stage 13)", async () => {
+    const c = await runtime.choices("p-default");
+    expect(c.models.find((m) => m.id === "fake-model")).toMatchObject({ isDefault: true, fast: { tier: "priority", description: "2x speed, increased usage" } });
+    expect(c.models.find((m) => m.id === "fake-slow")!.fast).toBeUndefined();
+
+    const tiers = () => servers.fakes.get("p-default")!.calls.filter((x) => x.method === "turn/start").map((x) => (x.params as { serviceTier?: string }).serviceTier ?? "(inherit)");
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-default", workspace, text: "one" });
+    await until(idle(s.id), "idle 1");
+    await runtime.setOptions(s.id, { fast: true });
+    await runtime.sendMessage(s.id, "two");
+    await until(() => tiers().length === 2 && idle(s.id)(), "idle 2");
+    await runtime.setOptions(s.id, { fast: false });
+    await runtime.sendMessage(s.id, "three");
+    await until(() => tiers().length === 3 && idle(s.id)(), "idle 3");
+    // Fast on a model without a fast tier runs at standard speed.
+    await runtime.setOptions(s.id, { fast: true, model: "fake-slow" });
+    await runtime.sendMessage(s.id, "four");
+    await until(() => tiers().length === 4 && idle(s.id)(), "idle 4");
+    expect(tiers()).toEqual(["(inherit)", "priority", "default", "default"]);
+    expect(session(s.id).options).toEqual({ fast: true, model: "fake-slow" });
+  });
+
+  it("never sends a speed tier on a profile whose models have none (DeepSeek)", async () => {
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "one", options: { fast: true } });
+    await until(idle(s.id), "idle");
+    expect((await runtime.choices("p-ds")).models.some((m) => m.fast)).toBe(false);
+    const sent = servers.fakes.get("p-ds")!.calls.find((x) => x.method === "turn/start")!.params as Record<string, unknown>;
+    expect("serviceTier" in sent).toBe(false);
+  });
+
   it("routes approvals to the person and records the decision", async () => {
     const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[shell: cmd /c echo x]]" });
     await until(() => session(s.id).status === "awaiting-approval", "awaiting-approval");

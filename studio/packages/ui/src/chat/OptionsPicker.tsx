@@ -22,9 +22,10 @@ export function OptionsPicker({
   const fallback = defaultModel(choices);
   const efforts = model?.efforts ?? [];
   const permissionDefault = choices.permissions.find((p) => p.id === choices.defaultPermission);
-  const set = (patch: Partial<Record<keyof SessionOptions, string>>) => {
+  type Field = "model" | "effort" | "permission";
+  const set = (patch: Partial<Record<Field, string>>) => {
     const next: SessionOptions = { ...value };
-    for (const [k, v] of Object.entries(patch) as Array<[keyof SessionOptions, string]>) {
+    for (const [k, v] of Object.entries(patch) as Array<[Field, string]>) {
       if (v) next[k] = v;
       else delete next[k];
     }

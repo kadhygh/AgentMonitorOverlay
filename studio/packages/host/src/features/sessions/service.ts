@@ -36,6 +36,11 @@ export class SessionsFeature extends Feature {
       if (value) next[key] = value;
       else delete next[key];
     }
+    if ("fast" in p) {
+      if (typeof p.fast === "boolean") next.fast = p.fast;
+      else if (p.fast === null) delete next.fast;
+      else throw new HostError("bad_request", "fast must be true, false or null");
+    }
     return this.wrap(() => this.runtime.setOptions(sessionId, next));
   }
 
