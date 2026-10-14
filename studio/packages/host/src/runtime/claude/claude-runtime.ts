@@ -13,6 +13,7 @@ import { classifyCommand, fileDiff, formatInput, shortPath, tail, textDiff } fro
 import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
 import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLogin } from "./claude-login.js";
 import { CLAUDE_USAGE_LABELS, ClaudeUsageError, fetchClaudeUsage, localAccessToken } from "./claude-usage.js";
+import { studioInstructions } from "../studio-prompt.js";
 import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
 
 // Drives Claude sessions through the Claude Agent SDK. Behaviour follows spikes/RESULTS.md section h:
@@ -674,6 +675,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         cwd: workspace.path,
         env: claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv),
         settingSources: [],
+        // Claude Code's own system prompt (the SDK sends almost none without it) plus what Studio tells every session.
+        systemPrompt: { type: "preset", preset: "claude_code", append: studioInstructions("claude") },
         permissionMode: claudePermissionMode(session.options.permission),
         // Lets the person switch to 全部允许 mid-session; the mode itself stays what the session chose.
         allowDangerouslySkipPermissions: true,

@@ -2,6 +2,7 @@ import { EventEmitter } from "node:events";
 import { asyncPrompts, codexAnswers, elicitationForm, formContent, storedAnswers, type ApprovalDecision, type Attachment, type HostEvent, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionPrompt, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SessionStatus, type SlashCommand, type SlashCommandList, type SlashCommandResult, type ToolFields, type ToolKind, type ToolStatus, type TurnRetry, type TurnState, type TurnUsage, type Workspace, type AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
+import { studioInstructions } from "../studio-prompt.js";
 import { McpIdentities } from "../../mcp/identity.js";
 import { CODEX_DEFAULT_PERMISSION, codexPermission, codexPermissions } from "../choices.js";
 import { classifyCommand, contentText, messageImage, unwrapShell, fileDiff, formatInput, shortPath, tail } from "../items.js";
@@ -1114,8 +1115,9 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   }
 
   /** thread/start and thread/fork parameters: explicit provider and model, plus the AMO MCP identity header. */
+  /** A new or forked thread: the profile's provider and model, what Studio tells every session, the AMO identity. */
   private threadParams(profile: ModelProfile, token: string | undefined) {
-    const base = codexThreadParams(profile);
+    const base = { ...codexThreadParams(profile), developerInstructions: studioInstructions("codex") };
     if (!token) return base;
     return { ...base, config: { ...(base.config ?? {}), ...McpIdentities.threadConfig(token) } };
   }

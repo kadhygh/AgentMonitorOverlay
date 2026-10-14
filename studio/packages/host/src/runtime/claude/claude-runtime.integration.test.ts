@@ -94,6 +94,11 @@ describe("ClaudeRuntime", () => {
     const last = mock.requests.at(-1)!;
     expect(JSON.stringify(last.body.messages)).toContain("MOCK: hello"); // same conversation
     expect(existsSync(join(claudeHome, "projects"))).toBe(true);
+    // Claude Code's own system prompt, with what Studio tells every session after it.
+    const system = JSON.stringify(last.body.system);
+    expect(system).toContain("AMO Studio");
+    expect(system).toContain("AskUserQuestion");
+    expect(system.length).toBeGreaterThan(3000);
   }, 120_000);
 
   it("waits for the person on a command, and runs it once approved", async () => {

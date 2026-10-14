@@ -47,6 +47,8 @@ test("model, effort and permissions: new task, presets, switching inside a sessi
   await page.getByRole("button", { name: "开始" }).click();
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: first effort", { timeout: 60_000 });
   expect(lastBody("first effort")?.reasoning?.effort).toBe("max");
+  // Codex's own instructions, plus what Studio tells every session (developer instructions).
+  expect(JSON.stringify(lastBody("first effort"))).toContain("You are running inside AMO Studio");
   const summary = page.getByTestId("session-options");
   await expect(summary).toContainText("最高");
   await expect(summary).toContainText("逐条询问");
