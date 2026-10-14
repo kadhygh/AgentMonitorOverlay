@@ -271,6 +271,14 @@ function readBody(req: IncomingMessage): Promise<string> {
   });
 }
 
+/** What the mock's /api/oauth/usage answers: 5 小时 37.4% (resets in 94 minutes), 每周 12% (in 3 days and a bit). */
+export const MOCK_CLAUDE_USAGE = (now = Date.now()) => ({
+  five_hour: { utilization: 37.4, resets_at: new Date(now + 94 * 60_000 + 30_000).toISOString() },
+  seven_day: { utilization: 12, resets_at: new Date(now + (3 * 24 * 60 + 125) * 60_000 + 30_000).toISOString() },
+  seven_day_opus: null,
+  seven_day_sonnet: null,
+});
+
 export interface ClaudeMockServer {
   /** Value for ANTHROPIC_BASE_URL. */
   baseUrl: string;
@@ -289,6 +297,17 @@ export async function startMockAnthropic(options: { port?: number; script?: Clau
       const path = (req.url ?? "").split("?")[0]!;
       if (req.method === "POST" && path === "/v1/messages/count_tokens") {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ input_tokens: 10 }));
+        return;
+      }
+      // The subscription's quota (Claude Code's /usage). Like Anthropic: a login token may read it, a setup-token may not
+      // (mock: a token with "local" in it stands for a Claude Code login).
+      if (req.method === "GET" && path === "/api/oauth/usage") {
+        const auth = String(req.headers.authorization ?? "");
+        if (!auth.includes("local")) {
+          res.writeHead(403, { "content-type": "application/json" }).end(JSON.stringify({ type: "error", error: { type: "permission_error", message: "OAuth token does not meet scope requirement user:profile" } }));
+          return;
+        }
+        res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify(MOCK_CLAUDE_USAGE()));
         return;
       }
       if (req.method !== "POST" || path !== "/v1/messages") {

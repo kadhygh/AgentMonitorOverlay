@@ -39,8 +39,10 @@
 .usage-acct { display: flex; flex-direction: column; gap: 6px; }
 .usage-acct-h { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-sm); }
 .usage-win { display: flex; flex-direction: column; gap: 3px; }
-.usage-win-line { display: flex; justify-content: space-between; font-size: var(--fs-cap); color: var(--text-dim); }
-.usage-left { font-family: var(--font-code); color: var(--text); }
+.usage-win-line { display: flex; align-items: center; gap: 8px; font-size: var(--fs-cap); color: var(--text-dim); }
+.usage-left { margin-left: auto; font-family: var(--font-code); color: var(--text); }
+.usage-reset { display: inline-flex; align-items: center; gap: 3px; min-width: 72px; justify-content: flex-end; font-family: var(--font-code); color: var(--text-dim); }
+.usage-reset svg { flex: none; width: 12px; height: 12px; }
 .usage-bar { height: 5px; border-radius: 3px; background: var(--chip); overflow: hidden; }
 .usage-bar span { display: block; height: 100%; background: var(--primary); }
 .usage-bar span.hot { background: var(--error); }

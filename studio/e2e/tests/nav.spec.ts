@@ -42,7 +42,8 @@ test("pin, fold and scroll the left column; open the usage footer", async () => 
   await expect(page.getByTestId("suggest").getByRole("option").first()).toContainText("专题 24");
   await page.getByRole("button", { name: "← 看板" }).click();
 
-  // Usage: the test profiles are not subscriptions, so the panel says so.
+  // Usage: the test Claude subscription runs on a token, which cannot read the account's quota; the panel says so
+  // instead of showing numbers it does not have.
   await page.getByTestId("host-status").click();
-  await expect(page.getByTestId("usage-list")).toContainText("没有订阅账号的用量可看");
+  await expect(page.getByTestId("usage-account")).toContainText("查不到用量百分比");
 });

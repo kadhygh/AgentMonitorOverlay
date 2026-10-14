@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import type { AccountUsage } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
+import { IconClock } from "../chat/icons.js";
 
 // Bottom of the left column: whether the Host runs, and how much of the GPT and Claude subscriptions is used. One
 // line folded (the highest use of each account); click for every window with what is left and when it resets.
@@ -18,18 +19,33 @@ function readStored(): AccountUsage[] {
   }
 }
 
-/** "3 小时后", "明天 09:00", "10/20 09:00". */
+/** Time until a reset, to the minute: "34m", "1h 34m", "3d 2h 5m"; "已重置" once past. */
 export function resetIn(iso: string, now = new Date()): string {
-  const at = new Date(iso);
-  const mins = Math.round((at.getTime() - now.getTime()) / 60_000);
+  const mins = Math.ceil((new Date(iso).getTime() - now.getTime()) / 60_000);
   if (mins <= 0) return "已重置";
-  if (mins < 60) return `${mins} 分钟后`;
-  if (mins < 24 * 60) return `${Math.round(mins / 60)} 小时后`;
-  const hm = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
-  return `${at.getMonth() + 1}/${at.getDate()} ${hm}`;
+  const d = Math.floor(mins / (24 * 60));
+  const h = Math.floor((mins % (24 * 60)) / 60);
+  const m = mins % 60;
+  return [d ? `${d}d` : "", d || h ? `${h}h` : "", `${m}m`].filter(Boolean).join(" ");
 }
 
-const peak = (u: AccountUsage) => (u.windows.length ? Math.max(...u.windows.map((w) => w.usedPercent ?? 0)) : null);
+/** The highest known use of an account; null when it told no percentages. */
+const peak = (u: AccountUsage) => {
+  const known = u.windows.flatMap((w) => (w.usedPercent === null ? [] : [w.usedPercent]));
+  return known.length ? Math.max(...known) : null;
+};
+
+/** The time now, again every 30 seconds (the countdowns go to the minute). */
+function useNow(on: boolean): Date {
+  const [now, setNow] = useState(() => new Date());
+  useEffect(() => {
+    if (!on) return;
+    setNow(new Date());
+    const t = setInterval(() => setNow(new Date()), 30_000);
+    return () => clearInterval(t);
+  }, [on]);
+  return now;
+}
 
 export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
   const [open, setOpen] = useState(() => {
@@ -41,6 +57,7 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
   });
   const [usage, setUsage] = useState<AccountUsage[]>(readStored);
   const [loading, setLoading] = useState(false);
+  const now = useNow(open);
 
   const load = useCallback(
     (refresh: boolean) => {
@@ -94,17 +111,24 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
                 <b>{u.label}</b>
               </div>
               {u.windows.map((w) => {
-                const used = w.usedPercent ?? 0;
+                const used = w.usedPercent;
                 return (
-                  <div key={w.label} className="usage-win">
+                  <div key={w.label} className="usage-win" data-testid="usage-window">
                     <div className="usage-win-line">
                       <span>{w.label}</span>
-                      <span className="usage-left">剩 {Math.max(0, 100 - used)}%</span>
+                      <span className="usage-left" title={used === null ? "账号没有告诉用了多少" : `已用 ${used}%`}>
+                        {used === null ? "剩 —" : `剩 ${Math.max(0, 100 - used)}%`}
+                      </span>
+                      {w.resetsAt && (
+                        <span className="usage-reset" title={`${new Date(w.resetsAt).toLocaleString()} 重置`} data-testid="usage-reset">
+                          <IconClock />
+                          {resetIn(w.resetsAt, now)}
+                        </span>
+                      )}
                     </div>
-                    <div className="usage-bar" aria-label={`${w.label} 已用 ${used}%`}>
-                      <span className={used >= 80 ? "hot" : undefined} style={{ width: `${Math.min(100, used)}%` }} />
+                    <div className="usage-bar" aria-label={used === null ? `${w.label} 用量未知` : `${w.label} 已用 ${used}%`}>
+                      {used !== null && <span className={used >= 80 ? "hot" : undefined} style={{ width: `${Math.min(100, used)}%` }} />}
                     </div>
-                    {w.resetsAt && <span className="usage-note">{resetIn(w.resetsAt)}重置</span>}
                   </div>
                 );
               })}

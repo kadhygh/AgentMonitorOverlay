@@ -4,9 +4,10 @@ import type { ClaudeLogin, CredentialStatus, StudioSettings } from "@amo-studio/
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { CredentialMessage, CredentialRow, CredentialsSection, useCredentials, type SettingsMessage } from "./CredentialsSection.js";
 import { PresetsSection } from "./PresetsSection.js";
+import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
 
 // 设置 → 模型: how the Claude subscription signs in (a token, or the person's own Claude Code login after a warning),
-// the other models' keys, and the 常用预设.
+// the order and defaults of each profile's models, the other models' keys, and the 常用预设.
 
 const CLAUDE_CREDENTIAL = "claude-subscription";
 
@@ -17,6 +18,7 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
   return (
     <>
       {claude && settings && <ClaudeLoginSection link={link} settings={settings} credential={claude} onCredentials={setList} />}
+      <ModelDefaultsSection link={link} settings={settings} />
       <CredentialsSection link={link} list={others} onChange={setList} />
       <PresetsSection link={link} presets={settings?.presets ?? []} />
     </>
@@ -25,7 +27,7 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
 
 const LOGINS: Array<{ id: ClaudeLogin; label: string; hint: string }> = [
   { id: "token", label: "令牌（推荐）", hint: "用 claude setup-token 生成的长期令牌。Studio 用自己的配置目录，和你终端里的 Claude Code 互不影响。" },
-  { id: "local", label: "本机 Claude Code 的登录", hint: "和终端里的 claude 用同一个登录，不用另外弄令牌。" },
+  { id: "local", label: "本机 Claude Code 的登录", hint: "和终端里的 claude 用同一个登录，不用另外弄令牌；左下角能看到 Claude 的用量百分比。" },
 ];
 
 function ClaudeLoginSection({ link, settings, credential, onCredentials }: { link: HostLink; settings: StudioSettings; credential: CredentialStatus; onCredentials(list: CredentialStatus[]): void }) {
@@ -127,6 +129,7 @@ function LocalLoginConfirm({ dir, signedIn, onCancel, onConfirm }: { dir: string
             Studio 的 Claude 会话会用你本机 Claude Code 的登录和数据目录 <code>{dir}</code>。
           </li>
           <li>和终端里的 claude 共用同一个账号和用量额度。在终端退出登录、换账号或登录过期，Studio 里的 Claude 也会一起断掉。</li>
+          <li>左下角的 Claude 用量会读取那里的登录信息去查账号额度（只读，不修改）。</li>
           <li>
             Studio 的对话记录会写进 <code>{dir}\projects</code>，和你终端的会话放在一起，<code>claude --resume</code> 的列表里也会看到。
           </li>

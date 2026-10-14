@@ -175,6 +175,17 @@ test("the Claude subscription on the local Claude Code login: a warning first, t
   expect(readdirSync(join(mine, "projects")).length).toBeGreaterThan(0);
   expect(existsSync(join(studio.dataDir, "claude-home", "projects"))).toBe(false);
 
+  // The local login can read the account's quota (as Claude Code's /usage): what is left and when it resets.
+  await page.getByTestId("host-status").click();
+  const windows = page.getByTestId("usage-account").getByTestId("usage-window");
+  await expect(windows.nth(0)).toContainText("5 小时");
+  await expect(windows.nth(0)).toContainText("剩 63%");
+  await expect(windows.nth(0).getByTestId("usage-reset")).toHaveText(/^1h 3[45]m$/);
+  await expect(windows.nth(1)).toContainText("剩 88%");
+  await expect(windows.nth(1).getByTestId("usage-reset")).toHaveText(/^3d 2h [56]m$/);
+  await screenshot(app, "stage-12", "S12-J-claude-usage", page);
+  await page.getByTestId("host-status").click();
+
   // Back to the token: no second dialog.
   await page.getByRole("button", { name: "设置" }).click();
   await dialog.getByRole("radio", { name: /令牌/ }).click();

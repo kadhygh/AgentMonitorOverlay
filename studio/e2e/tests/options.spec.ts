@@ -107,3 +107,43 @@ test("Claude sessions offer Claude Code's models, efforts and permission modes",
   await expect(summary).toContainText("自动接受编辑");
   expect(studio.claudeMock!.requests.filter((r) => r.lastUserText === "hello" && r.tools.length).at(-1)?.body).toMatchObject({ output_config: { effort: "high" } });
 });
+
+test("设置 → 模型: models in the person's order, their default model, effort and permissions for new sessions", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const mock = studio.claudeMock!;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "模型" }).click();
+  const section = dialog.getByRole("region", { name: "型号顺序和默认" });
+  await section.getByLabel("要设置的模型").selectOption("claude-mock");
+  const rows = section.getByTestId("model-order-row");
+  await expect(rows.locator(".model-order-name")).toHaveText(["mock-claude", "mock-claude-b"]);
+
+  // Reorder (the keyboard way of the drag), then make the second one the default.
+  await rows.first().focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect(rows.locator(".model-order-name")).toHaveText(["mock-claude-b", "mock-claude"]);
+  await rows.nth(1).dragTo(rows.nth(0), { targetPosition: { x: 20, y: 2 } });
+  await expect(rows.locator(".model-order-name")).toHaveText(["mock-claude", "mock-claude-b"]);
+  await rows.nth(1).getByRole("button", { name: "设为默认" }).click();
+  await expect(rows.nth(1).getByRole("button", { name: "默认" })).toHaveAttribute("aria-pressed", "true");
+  await section.getByLabel("默认思考强度").selectOption("high");
+  await section.getByLabel("默认权限").selectOption("plan");
+  await expect.poll(async () => (await studio!.api<{ modelPrefs: Record<string, unknown> }>("GET", "/api/settings")).modelPrefs["claude-mock"]).toEqual({ order: ["mock-claude", "mock-claude-b"], model: "mock-claude-b", effort: "high", permission: "plan" });
+  await screenshot(app, "stage-12", "S12-J-model-defaults", page);
+  await page.keyboard.press("Escape");
+
+  // A new session with nothing chosen gets them, and says which model it runs by name.
+  await studio.api("POST", "/api/tasks", { title: "默认选项", workspaceId: ws.id, firstSession: { profileId: "claude-mock", text: "defaults please" } });
+  await page.getByTestId("task-card").first().click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: defaults please", { timeout: 60_000 });
+  await expect(page.getByTestId("thread-model")).toHaveText("Mock Claude · mock-claude-b");
+  const summary = page.getByTestId("session-options");
+  await expect(summary).toContainText("mock-claude-b");
+  await expect(summary).toContainText("只做计划");
+  const body = mock.requests.filter((r) => r.lastUserText === "defaults please" && r.tools.length).at(-1)!.body as Record<string, unknown>;
+  expect(body).toMatchObject({ model: "mock-claude-b", output_config: { effort: "high" } });
+});

@@ -4,6 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
 import { shortModel } from "../lib/profiles.js";
+import { sessionModelName, useProfileChoices } from "../lib/choices.js";
 import { COLUMN_NAMES } from "../lib/status.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
@@ -77,6 +78,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const settings = useSettings(link);
   const { items } = useSessionItems(link, session?.id ?? null);
   const annotations = useAnnotations(link, session?.id ?? null);
+  // The model by name ("GPT-6.1 Sol", "Opus 5.5"), also when it is the profile's default.
+  const { choices: sessionChoices } = useProfileChoices(link, session?.profileId);
+  const modelText = session ? sessionModelName(sessionChoices, session.options) : null;
   const profile = (id: string) => profiles.find((p) => p.id === id);
   const scopeLabel = taskWhere(task, workspaces);
   const liveTopics = topics.filter((t) => !t.archivedAt || t.id === task.topicId);
@@ -315,8 +319,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
                   onSave={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: session.id }, { title }))}
                 />
               </span>
-              <span className="page-crumb">
-                {shortModel(profile(session.profileId))}
+              <span className="page-crumb" data-testid="thread-model">
+                {[shortModel(profile(session.profileId)), modelText].filter(Boolean).join(" · ")}
               </span>
               {workdir && <WorkdirActions link={link} path={workdir} onError={showError} />}
               <span className="spacer" />
@@ -378,7 +382,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               tasks={tasks}
               sessions={sessions}
               items={items}
-              model={shortModel(session ? profile(session.profileId) : undefined)}
+              model={modelText ?? shortModel(session ? profile(session.profileId) : undefined)}
               busy={busy}
               onApprove={(item, decision) => void approve(item.approvalId, decision)}
               onJump={setSelected}

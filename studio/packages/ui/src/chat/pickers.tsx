@@ -1,6 +1,6 @@
 import { useEffect, useRef, type MouseEvent } from "react";
 import type { ModelOption, ModelProfile, PermissionOption, ProfileChoices } from "@amo-studio/protocol";
-import { effortLabel } from "../lib/choices.js";
+import { effortLabel, modelName } from "../lib/choices.js";
 
 // One-click choosers for 型号 / 思考强度 / 权限 (design/ui-directions/new-task.html), shared by the new-task page, the
 // quick bar and the session composer. No dropdowns: everything that can be picked is on screen.
@@ -28,7 +28,7 @@ export function Mark({ profile, small = false }: { profile: ModelProfile | undef
 export function pickLabel(profile: ModelProfile | undefined, model: string | null, models?: readonly ModelOption[]): { main: string; sub: string | null } {
   if (!profile) return { main: "未知模型", sub: null };
   if (!model) return { main: profile.label, sub: null };
-  return { main: models?.find((m) => m.id === model)?.label ?? model, sub: profile.label };
+  return { main: modelName(models?.find((m) => m.id === model)) ?? model, sub: profile.label };
 }
 
 export function ModelTile({

@@ -97,7 +97,8 @@ export function SessionOptionsBar({
     return () => window.removeEventListener("keydown", onKey);
   });
 
-  const label = pickLabel(profile, model && !model.isDefault ? model.id : (session.options.model ?? null), choices?.models);
+  // The model by name also when it is the profile's default ("Opus 5.5", not just "Claude").
+  const label = pickLabel(profile, model?.id ?? session.options.model ?? null, choices?.models);
   const permission = choices?.permissions.find((p) => p.id === (session.options.permission ?? choices.defaultPermission));
 
   return (

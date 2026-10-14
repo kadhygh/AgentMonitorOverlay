@@ -1,11 +1,12 @@
 import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
-import type { CanvasDoc, Id, NewSessionInput, Session, Task, TaskColumn, Workspace, ChecklistItem, TaskTemplateChoice } from "@amo-studio/protocol";
+import type { CanvasDoc, Id, NewSessionInput, Session, SessionOptions, Task, TaskColumn, Workspace, ChecklistItem, TaskTemplateChoice } from "@amo-studio/protocol";
 import { isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
+import { fillDefaults, readModelPrefs } from "../../core/model-prefs.js";
 
 /** Tasks: creating, renaming, moving, archiving, their sessions; bringing older data into structure v2. */
 export class TasksFeature extends Feature {
@@ -173,6 +174,18 @@ export class TasksFeature extends Feature {
     return this.startSession({ taskId: task.id, topicId: null }, this.requireWorkspace(task.workspaceId), input);
   }
 
+  /** What nothing was chosen for, from 设置 → 模型 (the CLI's own defaults when the person set none). */
+  private async withDefaults(profileId: Id, options: SessionOptions): Promise<SessionOptions> {
+    const prefs = readModelPrefs(this.store)[profileId];
+    if (!prefs || (options.model && options.effort && options.permission)) return options;
+    try {
+      return fillDefaults(options, await this.f.config.choices(profileId), prefs);
+    } catch {
+      // Without the list the choice cannot be checked; the CLI's defaults apply.
+      return options;
+    }
+  }
+
   async archiveSessions(sessions: readonly Session[]): Promise<void> {
     // Archiving a root takes its forks and subagents with it.
     for (const s of sessions.filter((x) => !x.parentId && !x.archivedAt)) await this.wrap(() => this.runtime.archive(s.id));
@@ -184,9 +197,8 @@ export class TasksFeature extends Feature {
   }
 
   async startSession(owner: { taskId: Id | null; topicId: Id | null }, workspace: Workspace, input: NewSessionInput): Promise<Session> {
-    const session = await this.wrap(() =>
-      this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(input.text ? { text: input.text } : {}), options: sessionOptions(input.options) }),
-    );
+    const options = await this.withDefaults(input.profileId, sessionOptions(input.options));
+    const session = await this.wrap(() => this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(input.text ? { text: input.text } : {}), options }));
     // The owner's updatedAt moves with its sessions so the board can sort by activity.
     if (owner.taskId) this.publish({ type: "task.upserted", task: this.store.updateTask(owner.taskId, {}) });
     else if (owner.topicId) this.publish({ type: "topic.upserted", topic: this.store.updateTopic(owner.topicId, {}) });

@@ -195,7 +195,13 @@ describe("ClaudeRuntime", () => {
     try {
       // With the token way and no token, the subscription cannot start.
       await expect(local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "x" })).rejects.toThrow(/claude setup-token/);
+      // The token cannot read the account's quota; Studio says so instead of showing numbers it does not have.
+      expect((await local.usage("claude-sub", true))?.note).toMatch(/查不到用量百分比/);
       writeClaudeLogin(store, "local");
+      // The local login can: 5 小时 and 每周 with their resets, as Claude Code's /usage reads them.
+      const usage = await local.usage("claude-sub", true);
+      expect(usage).toMatchObject({ note: null, windows: [{ label: "5 小时", usedPercent: 37 }, { label: "每周", usedPercent: 12 }] });
+      expect(Date.parse(usage!.windows[0]!.resetsAt!) - Date.now()).toBeGreaterThan(90 * 60_000);
       const s = await local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "from my login" });
       await until(() => agentTexts(s.id).includes("MOCK: from my login") && status(s.id) === "idle", "local reply");
       expect(existsSync(join(mine, "projects"))).toBe(true);

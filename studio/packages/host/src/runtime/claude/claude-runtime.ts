@@ -12,6 +12,7 @@ import { RuntimeBase, type NewItemBody, type SendMode, type SessionRuntimeApi } 
 import { classifyCommand, fileDiff, formatInput, shortPath, tail, textDiff } from "../items.js";
 import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
 import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLogin } from "./claude-login.js";
+import { CLAUDE_USAGE_LABELS, ClaudeUsageError, fetchClaudeUsage, localAccessToken } from "./claude-usage.js";
 import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
 
 // Drives Claude sessions through the Claude Agent SDK. Behaviour follows spikes/RESULTS.md section h:
@@ -177,6 +178,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** The subscription's quota windows, from the rate_limit_event messages of its sessions. */
   private readonly usageCache = new Map<Id, Map<string, UsageWindow>>();
   private readonly usageAt = new Map<Id, string>();
+  /** The account's own answer (local login), per profile. */
+  private readonly accountUsageCache = new Map<Id, { at: number; value: AccountUsage }>();
   private readonly modelCache = new Map<string, { at: number; models: ModelOption[] }>();
   /** Queries being closed: a new one for the same session must wait, or the CLI says the session id is in use. */
   private readonly closing = new Map<Id, Promise<void>>();
@@ -288,19 +291,46 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return child;
   }
 
-  /** Switches model, effort or permissions; a running Claude Code process takes them at once. */
-  /** The Claude subscription's quota, as the last rate_limit_event messages told it (none: no conversation yet). */
-  async usage(profileId: Id): Promise<AccountUsage | null> {
+  /**
+   * The Claude subscription's quota. With the local login: asked from the account (/api/oauth/usage, as Claude Code's
+   * /usage does), at most every 30 seconds. With the token, which may not read it: what the sessions' rate_limit_event
+   * messages said (percentages only near a limit, reset times).
+   */
+  async usage(profileId: Id, refresh = false): Promise<AccountUsage | null> {
     const profile = this.profile(profileId);
-    if (profile.provider !== "anthropic") return null;
+    if (!this.isSubscription(profile)) return null;
+    if (readClaudeLogin(this.store) === "local") return this.accountUsage(profile, refresh);
     const windows = [...(this.usageCache.get(profileId)?.values() ?? [])];
-    return { profileId, label: profile.label, windows, note: windows.length ? null : "用 Claude 对话一次后显示", updatedAt: this.usageAt.get(profileId) ?? null };
+    const note = windows.some((w) => w.usedPercent !== null)
+      ? null
+      : "用令牌登录时查不到用量百分比（setup-token 令牌没有这个权限），只显示 Claude 告诉的重置时间。在 设置 → 模型 改用本机 Claude Code 的登录后可以看到。";
+    return { profileId, label: profile.label, windows, note, updatedAt: this.usageAt.get(profileId) ?? null };
+  }
+
+  private async accountUsage(profile: ModelProfile, refresh: boolean): Promise<AccountUsage> {
+    const cached = this.accountUsageCache.get(profile.id);
+    if (cached && (!refresh || Date.now() - cached.at < 30_000)) return cached.value;
+    const base = { profileId: profile.id, label: profile.label };
+    let value: AccountUsage;
+    try {
+      const token = localAccessToken(this.local.dir);
+      if (!token) throw new ClaudeUsageError("没找到本机 Claude Code 的登录：在终端运行 claude 登录一次");
+      const url = (profile.provider && this.options.providers[profile.provider]?.baseUrl) || "https://api.anthropic.com";
+      const windows = await fetchClaudeUsage(url, token);
+      value = { ...base, windows, note: windows.length ? null : "账号没有返回用量", updatedAt: new Date().toISOString() };
+    } catch (err) {
+      // Keep the last numbers, say why they are not fresh.
+      const message = err instanceof ClaudeUsageError ? err.message : `读不到 Claude 的用量：${firstLine(err)}`;
+      value = { ...base, windows: cached?.value.windows ?? [], note: message, updatedAt: cached?.value.updatedAt ?? null };
+    }
+    this.accountUsageCache.set(profile.id, { at: Date.now(), value });
+    return value;
   }
 
   private recordRateLimit(sessionId: Id, info: { rateLimitType?: string; utilization?: number; resetsAt?: number }): void {
     const session = this.store.getSession(sessionId);
     if (!session || !info.rateLimitType) return;
-    const labels: Record<string, string> = { five_hour: "5 小时", seven_day: "每周", seven_day_opus: "Opus 每周", seven_day_sonnet: "Sonnet 每周", overage: "超额" };
+    const labels: Record<string, string> = { ...CLAUDE_USAGE_LABELS, overage: "超额" };
     const used = typeof info.utilization === "number" ? (info.utilization <= 1 ? info.utilization * 100 : info.utilization) : null;
     const windows = this.usageCache.get(session.profileId) ?? new Map<string, UsageWindow>();
     windows.set(info.rateLimitType, {
@@ -327,6 +357,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return this.updateSession(sessionId, { title });
   }
 
+  /** Switches model, effort or permissions; a running Claude Code process takes them at once. */
   async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
     this.requireSession(sessionId);
     const session = this.updateSession(sessionId, { options });

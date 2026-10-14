@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { buildSessionTree, type ModelProfile, type Session, type SessionNode, type SessionOptions, type Task, type Workspace } from "@amo-studio/protocol";
 import { defaultProfile, rememberProfile, shortModel } from "../lib/profiles.js";
+import { sessionModelName, storedChoices } from "../lib/choices.js";
 import type { HostLink } from "../host/client.js";
 import { activeModel, useProfileChoices } from "../lib/choices.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
@@ -114,7 +115,9 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
           const look = SESSION_LOOK[s.status];
           const letters = unread?.get(s.id) ?? 0;
           const p = profile(s.profileId);
-          const meta = [s.kind === "main" ? "" : KIND[s.kind], shortModel(p), look.label, s.writer === "terminal-shared" ? "终端已接入" : ""].filter(Boolean).join(" · ");
+          // The model by name when known ("Opus 5.5"), from the last list this install saw.
+          const modelText = (p && sessionModelName(storedChoices(p.id), s.options)) || shortModel(p);
+          const meta = [s.kind === "main" ? "" : KIND[s.kind], modelText, look.label, s.writer === "terminal-shared" ? "终端已接入" : ""].filter(Boolean).join(" · ");
           return (
             <button
               key={s.id}

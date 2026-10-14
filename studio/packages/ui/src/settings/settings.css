@@ -54,3 +54,18 @@
 .btn-danger { height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: 1px solid var(--error); background: var(--error); color: #fff; font-weight: 600; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
 .btn-danger.small { height: var(--ctl-s); font-size: var(--fs-cap); padding: 0 9px; }
 .btn-danger:hover { filter: brightness(1.08); }
+
+/* 设置 → 模型 → 型号顺序和默认: rows to drag, the default marked. */
+.model-order { display: flex; flex-direction: column; gap: 4px; }
+.model-order-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 8px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel); cursor: grab; }
+.model-order-row:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+.model-order-row[data-dragging] { opacity: 0.45; }
+.model-order-row[data-over="before"]::before, .model-order-row[data-over="after"]::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; background: var(--primary); }
+.model-order-row[data-over="before"]::before { top: -4px; }
+.model-order-row[data-over="after"]::after { bottom: -4px; }
+.model-grip { flex: none; color: var(--text-faint); letter-spacing: -2px; }
+.model-order-name { flex: none; font-size: var(--fs-sm); font-weight: 600; }
+.model-order-desc { flex: 1; min-width: 0; font-size: var(--fs-cap); color: var(--text-dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.model-default { flex: none; margin-left: auto; height: var(--ctl-s); padding: 0 8px; border: 1px solid var(--border-strong); border-radius: var(--r-btn); background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-cap); cursor: pointer; }
+.model-default:hover { color: var(--text); }
+.model-default[aria-pressed="true"] { border-color: var(--primary); background: var(--tint); color: var(--primary); font-weight: 600; cursor: default; }

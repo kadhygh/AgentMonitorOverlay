@@ -2,6 +2,7 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { OPTIONAL_FEATURES, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn, readClaudeLogin, writeClaudeLogin } from "../../runtime/claude/claude-login.js";
+import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
 import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY } from "../../core/shared.js";
@@ -18,6 +19,7 @@ export class ConfigFeature extends Feature {
       scratchpadShortcut: this.f.scratchpad.shortcut(),
       claudeLogin: readClaudeLogin(this.store),
       claudeLocal: { dir, signedIn: localClaudeSignedIn(dir) },
+      modelPrefs: readModelPrefs(this.store),
     };
   }
 
@@ -51,7 +53,8 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown }): StudioSettings {
+    if (input.modelPrefs !== undefined) writeModelPrefs(this.store, this.profiles.map((p) => p.id), input.modelPrefs);
     if (input.claudeLogin !== undefined) {
       if (input.claudeLogin !== "token" && input.claudeLogin !== "local") throw new HostError("bad_request", "claudeLogin must be token or local");
       writeClaudeLogin(this.store, input.claudeLogin);
@@ -93,9 +96,11 @@ export class ConfigFeature extends Feature {
     return settings;
   }
 
-  choices(profileId: Id): Promise<ProfileChoices> {
+  /** The profile's models, efforts and permissions as its CLI offers them, in the person's order and with their defaults. */
+  async choices(profileId: Id): Promise<ProfileChoices> {
     if (!this.profiles.some((p) => p.id === profileId)) throw new HostError("not_found", `profile ${profileId} not found`);
-    return this.wrap(() => this.runtime.choices(profileId));
+    const choices = await this.wrap(() => this.runtime.choices(profileId));
+    return applyModelPrefs(choices, readModelPrefs(this.store)[profileId]);
   }
 
   /** Quota use of the subscription profiles (GPT login, Claude token), in profile order. */

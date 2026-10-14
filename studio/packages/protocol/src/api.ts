@@ -55,6 +55,17 @@ export interface ProfileChoices {
   source: "cli" | "builtin";
 }
 
+/**
+ * 设置 → 模型: the person's order of a profile's models (every picker lists them so) and what a new session gets when
+ * nothing is chosen. Ids the CLI no longer offers are ignored.
+ */
+export interface ModelPrefs {
+  order?: string[];
+  model?: string;
+  effort?: string;
+  permission?: string;
+}
+
 /** A saved combination for one-click switching: a profile plus its model, effort and permissions. */
 export interface SessionPreset {
   id: Id;
@@ -151,6 +162,8 @@ export interface StudioSettings {
   claudeLogin: ClaudeLogin;
   /** The person's own Claude Code config dir and whether it holds a login (null: cannot tell on this system). */
   claudeLocal: { dir: string; signedIn: boolean | null };
+  /** Per profile id: model order and defaults (设置 → 模型). */
+  modelPrefs: Record<string, ModelPrefs>;
 }
 
 /** "token": the token from `claude setup-token`, Studio's own config dir. "local": the person's Claude Code login and ~/.claude. */
@@ -182,7 +195,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null> }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };
