@@ -6,7 +6,8 @@
 > - S14-A：A5 草稿存在窗口级 `gitreview/drafts.ts`、切换后按锚点滚回（`gitreview/anchor.ts`）；有总览条时隐藏竖向滚动条；Ctrl+F（查看器两种模式 + Review）、Ctrl+G；查看器文件模式按行批注（`GitCommentRange = GitRange | "file"`，查看器地址带 `session=` 作默认发送对象）。
 > - S14-B：设置 → 便签：页数、复制时的换行（常规 / 安全换行，默认常规，kv `scratchpadSafeNewlines`）；便签窗口去掉页数、标题加图标；任务页右栏不再显示便签。
 > - S14-C：搜索框（Ctrl+K）；置顶开关（存在外壳 `shell-prefs.json`）；任务页 / 新建任务记住来源（`shell/views.ts` 的 `withOrigin`）；归档任务弹框 + 横幅；已归档会话重新设计。
-> - 验收清单同一个链接已换成阶段 14（16 条），结果在 db 集合 `s14`。工作树 s13-*、s14-* 都还在，等用户同意再删。开发版还没重启（要问用户时间）。
+> - S14-D（用户追加，主会话做，`7443458`）：归档项目（迁移 10：`workspaces.archived_at`）和归档专题（左栏右键）；设置 → 数据管理：恢复、彻底删除（只删已归档的，先预览再确认，一个事务删干净；项目文件和 CLI 自己的记录不动）。Host `features/datamgmt/`，事件 `data.purged`。
+> - 开发版已在 10-14 22:44 重启（阶段 14 + S14-D），重启前数据库备份在 `.data/backup-before-archive-20261014`；迁移 10 已在用户数据上跑过。验收清单同一个链接已换成阶段 14（20 条，含 D 组），结果在 db 集合 `s14`。工作树 s13-*、s14-* 都还在，等用户同意再删。
 >
 > **2026-10-14 晚更新：阶段 13 全部做完并合进 `studio/main`（`79ceaaa`），等用户验收。** 合并后单测 522/522、e2e 78/78 通过。每条线的做法、查明的原因和取舍都在 `plans/stage-13.md` 进度表；截图 `screenshots/stage-13/`。
 > - S13-A 查看器：新窗口 `#viewer?…`（`app/src/viewer-window.ts`、`viewer-rules.ts`、`ui/src/viewer/`），文件模式和嵌入的改动模式；对话里单击文件链接打开它，右键菜单含右栏快速查看、用 git diff 看、标记。固定不能撤销；文件改动后不自动刷新。
