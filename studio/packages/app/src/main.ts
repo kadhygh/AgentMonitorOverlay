@@ -1,7 +1,7 @@
 import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, screen, shell } from "electron";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { connectHost, stopHost, type HostConnection } from "./host-link.js";
+import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
 import { createFocusWindow, mainBounds, refitFocusWindow, ShellPrefs } from "./focus-window.js";
 import { readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
@@ -37,6 +37,7 @@ const dataDir = dataChoice.dataDir;
 app.setPath("userData", dataChoice.firstRun ? SETUP_TEMP_PROFILE(tmpdir()) : join(dataDir, "electron"));
 
 let host: HostConnection | null = null;
+let stopKeepAlive: (() => void) | null = null;
 let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;
 const prefs = new ShellPrefs(dataDir);
@@ -138,12 +139,24 @@ if (!app.requestSingleInstanceLock()) {
       }
       // Throwaway profiles of earlier first-run setups (they cannot be removed while their process runs).
       for (const name of safeList(tmpdir())) if (/^amo-studio-setup-\d+$/.test(name)) rmSync(join(tmpdir(), name), { recursive: true, force: true });
-      host = await connectHost({
+      const link: HostLinkOptions = {
         dataDir,
         hostBin: join(studioRoot, "packages", "host", "dist", "bin.js"),
         uiDir: join(studioRoot, "packages", "ui", "dist"),
         ...(process.env.AMO_STUDIO_PORT !== undefined ? { port: Number(process.env.AMO_STUDIO_PORT) } : {}),
         attached: testMode,
+      };
+      host = await connectHost(link);
+      // The Host crashed or was killed: start it again; the windows reconnect and say what happened.
+      stopKeepAlive = keepHostAlive({
+        link,
+        current: () => host!,
+        onRestarted: (conn) => {
+          host = conn;
+          for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("amo:host-restarted");
+        },
+        log: (line) => console.error(`[${new Date().toISOString()}] ${line}`),
+        ...(process.env.AMO_STUDIO_KEEPALIVE_MS ? { intervalMs: Number(process.env.AMO_STUDIO_KEEPALIVE_MS) } : {}),
       });
       mainWindow = createMainWindow(host);
       mainWindow.on("closed", () => {
@@ -181,11 +194,26 @@ if (!app.requestSingleInstanceLock()) {
 
   let quitting = false;
   app.on("before-quit", (event) => {
+    // Quitting stops (in tests) or leaves the Host; it is not to be restarted.
+    stopKeepAlive?.();
     // The Host is resident; only a Host this shell attached (tests) stops with the app.
     if (quitting || !host?.child || !testMode) return;
     event.preventDefault();
     quitting = true;
     void stopHost(host).finally(() => app.quit());
+  });
+
+  // A window's page process crashed (or ran out of memory): load it again; the Host and the sessions never stopped.
+  // A page that keeps crashing is left alone after three tries in a minute.
+  const crashes = new WeakMap<Electron.WebContents, number[]>();
+  app.on("render-process-gone", (_event, contents, details) => {
+    if (details.reason === "clean-exit" || contents.isDestroyed()) return;
+    const now = Date.now();
+    const recent = (crashes.get(contents) ?? []).filter((t) => now - t < 60_000);
+    recent.push(now);
+    crashes.set(contents, recent);
+    console.error(`[${new Date().toISOString()}] a window's page process stopped (${details.reason}, exit ${details.exitCode})${recent.length > 3 ? "; not reloading it again" : "; reloading"}`);
+    if (recent.length <= 3) contents.reload();
   });
 }
 

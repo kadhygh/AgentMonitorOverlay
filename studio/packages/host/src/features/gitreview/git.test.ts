@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { diffHunks, type GitDiffLine } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
+import { rangeBase } from "@amo-studio/protocol";
 import { insidePath, parseNameStatus, parseNumstat, parseUnifiedDiff, readChanges, readFileDiff, readStatus, textLines } from "./git.js";
 
 // Git Review against real (temporary) repositories: ranges, statuses, line numbers, CRLF, binary files.
@@ -191,6 +192,18 @@ describe("a repository with a branch and working changes", { timeout: 30_000 }, 
     ]);
     expect(await readFileDiff(repo, "working", status, "logo.bin")).toMatchObject({ binary: true, lines: [] });
     await expect(readFileDiff(repo, "working", status, "../outside.txt")).rejects.toThrow(/outside/);
+  });
+
+  it("takes the list's base commit and untracked flag instead of asking git again", async () => {
+    const status = await readStatus(repo);
+    const base = rangeBase("branch", status);
+    expect(base).toBe(status.mergeBase);
+    const branch = await readFileDiff(repo, "branch", base, "src/app.ts", undefined, false);
+    expect(branch.lines).toEqual((await readFileDiff(repo, "branch", status, "src/app.ts")).lines);
+    const untracked = await readFileDiff(repo, "working", rangeBase("working", status), "notes 中文.txt", undefined, true);
+    expect(untracked.lines.map((l) => l.kind)).toEqual(["add", "add"]);
+    // Changes still being read alongside a pending status come out the same.
+    expect((await readChanges(repo, "working", readStatus(repo))).files.map((f) => f.path)).toEqual((await readChanges(repo, "working", status)).files.map((f) => f.path));
   });
 
   it("scopes a project inside the repository to its own folder", async () => {

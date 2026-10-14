@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { GitChangedFile } from "@amo-studio/protocol";
-import { ancestors, buildTree, clampWidth, fileOrder, parsePrefs, splitFolder, splitName, treeRows, type TreeRow } from "./filetree.js";
+import { ancestors, buildTree, clampWidth, fileOrder, parsePrefs, splitFolder, splitName, splitPath, treeRows, type TreeRow } from "./filetree.js";
 
 const file = (path: string): GitChangedFile => ({ path, status: "modified", additions: 1, deletions: 0, binary: false });
 
@@ -53,8 +53,15 @@ describe("review file tree", () => {
       "b.txt",
       "README.md",
     ]);
-    // 平铺 keeps the folder grouping of stage 11: the project's own files first.
-    expect(fileOrder(files, "flat").map((f) => f.path)[0]).toBe("README.md");
+    // 平铺 lists full paths as Fork does: by path, case aside.
+    expect(fileOrder(files, "flat").map((f) => f.path)).toEqual([
+      "Assets/Scripts/Player/PlayerController.cs",
+      "b.txt",
+      "README.md",
+      "src/game/drop/rate.lua",
+      "src/game/drop/table.lua",
+      "src/ui/Main.tsx",
+    ]);
     expect(ancestors("src/game/drop/rate.lua")).toEqual(["src", "src/game", "src/game/drop"]);
     expect(ancestors("b.txt")).toEqual([]);
   });
@@ -76,15 +83,20 @@ describe("review file tree", () => {
     }
     expect(splitFolder("src/game/drop")).toEqual({ head: "src/game/", tail: "drop" });
     expect(splitFolder("src")).toEqual({ head: "", tail: "src" });
+    expect(splitPath("Assets/Scripts/Player.cs")).toEqual({ head: "Assets/Scripts/", tail: "Player.cs" });
+    expect(splitPath("README.md")).toEqual({ head: "", tail: "README.md" });
   });
 
   it("clamps the list width and reads remembered choices defensively", () => {
     expect(clampWidth(100)).toBe(180);
     expect(clampWidth(900)).toBe(600);
-    expect(clampWidth(Number.NaN)).toBe(280);
-    expect(parsePrefs(null)).toEqual({ listWidth: 280, layout: "tree", split: false, mode: "changes" });
-    expect(parsePrefs("{bad json")).toEqual({ listWidth: 280, layout: "tree", split: false, mode: "changes" });
+    expect(clampWidth(Number.NaN)).toBe(340);
+    expect(parsePrefs(null)).toEqual({ listWidth: 340, layout: "flat", split: false, mode: "changes" });
+    expect(parsePrefs("{bad json")).toEqual({ listWidth: 340, layout: "flat", split: false, mode: "changes" });
     expect(parsePrefs(JSON.stringify({ listWidth: 420, layout: "flat", split: true, mode: "full" }))).toEqual({ listWidth: 420, layout: "flat", split: true, mode: "full" });
-    expect(parsePrefs(JSON.stringify({ listWidth: 5000, layout: "x", split: "yes" }))).toEqual({ listWidth: 600, layout: "tree", split: false, mode: "changes" });
+    expect(parsePrefs(JSON.stringify({ listWidth: 5000, layout: "x", split: "yes" }))).toEqual({ listWidth: 600, layout: "flat", split: false, mode: "changes" });
+    // 目录树 was the default before version 2: only a tree chosen since then stays.
+    expect(parsePrefs(JSON.stringify({ layout: "tree" })).layout).toBe("flat");
+    expect(parsePrefs(JSON.stringify({ layout: "tree", v: 2 })).layout).toBe("tree");
   });
 });

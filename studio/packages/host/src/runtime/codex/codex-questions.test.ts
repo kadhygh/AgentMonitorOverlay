@@ -121,6 +121,57 @@ describe("Codex questions", () => {
     expect(question(s.id)).toMatchObject({ state: "cancelled" });
   });
 
+  it("shows request_user_input_async as a question; the person's next message answers it", async () => {
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[ask-async]]" });
+    // The turn does not wait: it ends, and the open question leaves the person up.
+    await until(() => lastAgent(s.id) === "FAKE-ASKED" && status(s.id) === "awaiting-answer", "the turn to end waiting for an answer");
+    const q = question(s.id)!;
+    expect(q).toMatchObject({ source: "codex-async", state: "pending", questions: [{ id: "q1", question: "你最喜欢哪个季节？", options: [{ label: "春天" }, { label: "夏天" }, { label: "秋天" }], other: true }] });
+    // No plain-text copy of the question as an agent reply.
+    expect(items(s.id).filter((i) => i.type === "agent").map((i) => (i as { markdown: string }).markdown)).toEqual(["FAKE-ASKED"]);
+    // Answered on the card: the item keeps the answer (the sessions service then sends it as a message).
+    await runtime.answerQuestion(s.id, q.id, { action: "answer", answers: [{ id: "q1", selected: ["夏天"] }] });
+    expect(question(s.id)).toMatchObject({ state: "answered", answers: [{ id: "q1", selected: ["夏天"] }] });
+    await runtime.sendMessage(s.id, "「你最喜欢哪个季节？」：夏天");
+    await until(() => lastAgent(s.id) === "FAKE: 「你最喜欢哪个季节？」：夏天" && status(s.id) === "idle", "the reply to the answer");
+
+    // Asked again and answered by typing instead: the message closes the question; the next Host keeps an open one.
+    await runtime.sendMessage(s.id, "[[ask-async]]");
+    await until(() => items(s.id).filter((i) => i.type === "question").length === 2 && status(s.id) === "awaiting-answer", "the second question");
+    const again = new CodexRuntime({ store, servers: new FakeServers(PROFILES), profiles: PROFILES });
+    expect(again).toBeTruthy();
+    const second = items(s.id).filter((i): i is QuestionItem => i.type === "question")[1]!;
+    expect(second.state).toBe("pending");
+    await runtime.sendMessage(s.id, "冬天");
+    expect(store.getItem(second.id)).toMatchObject({ state: "answered" });
+    await until(() => status(s.id) === "idle", "idle");
+  });
+
+  it("dismissing an async question leaves the session idle", async () => {
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[ask-async]]" });
+    await until(() => status(s.id) === "awaiting-answer", "awaiting-answer");
+    await runtime.answerQuestion(s.id, question(s.id)!.id, { action: "dismiss" });
+    expect(question(s.id)).toMatchObject({ state: "dismissed" });
+    expect(status(s.id)).toBe("idle");
+  });
+
+  it("an item Studio cannot read becomes a notice in its session; the turn goes on", async () => {
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[bad-item]]" });
+    await until(() => lastAgent(s.id) === "FAKE-AFTER-BAD" && status(s.id) === "idle", "the reply after the bad item");
+    const notice = items(s.id).find((i): i is Extract<SessionItem, { type: "notice" }> => i.type === "notice");
+    expect(notice?.message).toMatch(/Studio 处理 Codex 的一条消息（item\/completed）时出错/);
+  });
+
+  it("a turn the last Host saw running is closed as interrupted when the thread is idle", () => {
+    const s = store.createSession({ taskId, topicId: null, parentId: null, kind: "main", profileId: "p-ds", runtime: "codex", workspaceId: workspace.id, title: "x", status: "idle", writer: "studio", runtimeRef: "t-gone" } as never);
+    const turn = store.appendItem({ id: "i-turn", sessionId: s.id, createdAt: new Date().toISOString(), type: "turn", turnId: "u1", state: "running", startedAt: new Date().toISOString() } as never);
+    const streaming = store.appendItem({ id: "i-agent", sessionId: s.id, createdAt: new Date().toISOString(), type: "agent", markdown: "半句", streaming: true } as never);
+    expect(store.getSession(s.id)!.status).not.toBe("running");
+    new CodexRuntime({ store, servers: new FakeServers(PROFILES), profiles: PROFILES });
+    expect(store.getItem(turn.id)).toMatchObject({ state: "interrupted" });
+    expect(store.getItem(streaming.id)).toMatchObject({ streaming: false });
+  });
+
   it("reads request_user_input questions defensively", () => {
     expect(inputQuestions([{ id: "a", header: "H", question: "Q?", isOther: false, isSecret: false, options: [{ label: "x", description: "d" }] }, { question: "no id" }, null])).toEqual([
       { id: "a", header: "H", question: "Q?", options: [{ label: "x", description: "d" }] },

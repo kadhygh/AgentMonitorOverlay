@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { composeGitReviewMessage, diffHunks, type GitChangedFile, type GitDiffLine, type GitReviewComment, type Session } from "@amo-studio/protocol";
-import { changeStarts, diffRows, draftCounts, groupByFolder, latestMainSession, listOrder, parseReviewHash, placeComments, reviewHash, sessionChoices, step } from "./logic.js";
+import { changeStarts, diffRows, draftCounts, latestMainSession, listOrder, parseReviewHash, placeComments, reviewHash, sessionChoices, step } from "./logic.js";
 
 const file = (path: string, extra: Partial<GitChangedFile> = {}): GitChangedFile => ({ path, status: "modified", additions: 1, deletions: 0, binary: false, ...extra });
 
@@ -41,15 +41,9 @@ describe("Git Review window logic", () => {
     expect(parseReviewHash("#review")).toBeNull();
   });
 
-  it("groups files by folder, the project's own files first, and walks them in that order", () => {
-    const files = [file("b/z.ts"), file("README.md"), file("a/y.ts"), file("a/x.ts"), file("b/c/w.ts")];
-    expect(groupByFolder(files).map((g) => [g.folder, g.files.map((f) => f.name)])).toEqual([
-      ["", ["README.md"]],
-      ["a", ["y.ts", "x.ts"]],
-      ["b", ["z.ts"]],
-      ["b/c", ["w.ts"]],
-    ]);
-    expect(listOrder(files).map((f) => f.path)).toEqual(["README.md", "a/y.ts", "a/x.ts", "b/z.ts", "b/c/w.ts"]);
+  it("lists files by full path, case aside, as Fork does", () => {
+    const files = [file("b/z.ts"), file("README.md"), file("a/y.ts"), file("A/x.ts"), file("b/c/w.ts")];
+    expect(listOrder(files).map((f) => f.path)).toEqual(["A/x.ts", "a/y.ts", "b/c/w.ts", "b/z.ts", "README.md"]);
   });
 
   it("shows every line in 完整文件 and the hunks with skipped lines in 只看改动", () => {

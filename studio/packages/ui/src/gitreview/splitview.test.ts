@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { diffHunks, type GitDiffLine } from "@amo-studio/protocol";
 import type { CodeToken } from "../lib/highlight.js";
 import { diffRows } from "./logic.js";
-import { diffTokens, editorLine, MAX_HIGHLIGHT_LINES, splitRows, tokensOf, type SplitRow } from "./splitview.js";
+import { diffTokens, diffTokensAsync, editorLine, MAX_HIGHLIGHT_LINES, splitRows, tokensOf, type SplitRow } from "./splitview.js";
 
 const ctx = (o: number, n: number, text = `c${n}`): GitDiffLine => ({ kind: "context", oldLine: o, newLine: n, text });
 const del = (o: number, text = `old${o}`): GitDiffLine => ({ kind: "del", oldLine: o, newLine: null, text });
@@ -66,13 +66,25 @@ describe("diff colours", () => {
 
   it("drops carriage returns and gives up when the highlighter is not ready or lines do not match", () => {
     calls.length = 0;
-    diffTokens([ctx(1, 1, "a\r"), add(2, "b\r")], fake);
-    expect(calls).toEqual(["a", "a\nb"]);
+    // Nothing deleted: only the new text is highlighted, the old side borrows its unchanged lines' colours.
+    const t = diffTokens([ctx(1, 1, "a\r"), add(2, "b\r")], fake)!;
+    expect(calls).toEqual(["a\nb"]);
+    expect(tokensOf(t, ctx(1, 1), "old")?.[0]?.text).toBe("a");
     expect(diffTokens(lines, () => null)).toBeNull();
     expect(diffTokens(lines, () => [[{ text: "x" }]])).toBeNull();
     expect(diffTokens([], fake)).toBeNull();
     const huge = Array.from({ length: MAX_HIGHLIGHT_LINES + 1 }, (_, i) => ctx(i + 1, i + 1));
     expect(diffTokens(huge, fake)).toBeNull();
+  });
+
+  it("highlights only the old text of a diff that only deletes, and works with a highlighter elsewhere", async () => {
+    calls.length = 0;
+    const gone = [ctx(1, 1), del(2), ctx(3, 2)];
+    const t = (await diffTokensAsync(gone, async (texts) => texts.map(fake)))!;
+    expect(calls).toEqual(["c1\nold2\nc2"]);
+    expect(tokensOf(t, ctx(3, 2))?.[0]?.text).toBe("c2");
+    expect(tokensOf(t, del(2))?.[0]?.text).toBe("old2");
+    expect(await diffTokensAsync(lines, async (texts) => texts.map(() => null))).toBeNull();
   });
 });
 

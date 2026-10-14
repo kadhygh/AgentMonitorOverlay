@@ -24,30 +24,19 @@ export function parseReviewHash(hash: string): ReviewTarget | null {
   return { workspaceId, ...(sessionId ? { sessionId } : {}) };
 }
 
-export const STATUS_LETTER: Record<GitFileStatus, string> = { added: "A", modified: "M", deleted: "D", renamed: "R" };
+/** The list's status icons, as in Fork: + added, M modified, − deleted, R renamed. */
+export const STATUS_GLYPH: Record<GitFileStatus, string> = { added: "+", modified: "M", deleted: "−", renamed: "R" };
 export const STATUS_NAME: Record<GitFileStatus, string> = { added: "新增", modified: "修改", deleted: "删除", renamed: "改名" };
 
-export interface FolderGroup {
-  /** "" for the project folder itself. */
-  folder: string;
-  files: { file: GitChangedFile; name: string }[];
-}
+/** Paths in the order Explorer and Fork list them: by full path, case aside. */
+export const comparePaths = (a: string, b: string): number => {
+  const x = a.toLowerCase();
+  const y = b.toLowerCase();
+  return x < y ? -1 : x > y ? 1 : a < b ? -1 : a > b ? 1 : 0;
+};
 
-/** Files grouped by folder: the project's own files first, then folders by path; files keep their order. */
-export function groupByFolder(files: readonly GitChangedFile[]): FolderGroup[] {
-  const groups = new Map<string, FolderGroup>();
-  for (const file of files) {
-    const cut = file.path.lastIndexOf("/");
-    const folder = cut < 0 ? "" : file.path.slice(0, cut);
-    const group = groups.get(folder) ?? { folder, files: [] };
-    group.files.push({ file, name: file.path.slice(cut + 1) });
-    groups.set(folder, group);
-  }
-  return [...groups.values()].sort((a, b) => (a.folder === "" ? -1 : b.folder === "" ? 1 : a.folder < b.folder ? -1 : a.folder > b.folder ? 1 : 0));
-}
-
-/** The files in the order the list shows them (j / k walk this order). */
-export const listOrder = (files: readonly GitChangedFile[]): GitChangedFile[] => groupByFolder(files).flatMap((g) => g.files.map((f) => f.file));
+/** The 平铺 list's order (j / k walk this order): by full path. */
+export const listOrder = (files: readonly GitChangedFile[]): GitChangedFile[] => [...files].sort((a, b) => comparePaths(a.path, b.path));
 
 export type DiffMode = "changes" | "full";
 

@@ -1,14 +1,15 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { composeGitReviewMessage, GIT_RANGES, type GitChangedFile, type GitChanges, type GitFileDiff, type GitRange, type GitReviewComment, type StateSnapshot, type Workspace } from "@amo-studio/protocol";
+import { composeGitReviewMessage, GIT_RANGES, rangeBase, type GitChangedFile, type GitChanges, type GitFileDiff, type GitRange, type GitReviewComment, type StateSnapshot, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
-import { highlightLines, languageForPath, useGrammarLoads } from "../lib/highlight.js";
 import { openInApps, openInEditor, revealInExplorer } from "../lib/openin.js";
 import { DiffView } from "./DiffView.js";
 import { FileList, FileMenu, Splitter, type FileMenuAt } from "./FileList.js";
 import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type ReviewPrefs } from "./filetree.js";
 import { changeStarts, countLabel, diffRows, draftCounts, parseReviewHash, placeComments, sessionChoices, STATUS_NAME, step, type DiffMode, type ReviewTarget } from "./logic.js";
-import { diffTokens, editorLine } from "./splitview.js";
+import { editorLine } from "./splitview.js";
+import { DiffCache, type DiffRequest } from "./diffcache.js";
+import { diffTokensFor, useDiffTokens } from "./tokens.js";
 import { MarkButton } from "../marks/MarkButton.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
@@ -74,6 +75,24 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   const [busy, setBusy] = useState(false);
   const [toast, setToast] = useState<Toast>(null);
 
+  // Diffs once read stay (刷新 forgets them); neighbours and the file under the pointer are read ahead, and their
+  // colours worked out ahead in the highlight worker.
+  const cache = useMemo(
+    () =>
+      new DiffCache(
+        ({ range: r, base, file: f }) =>
+          call(link, "GET /api/workspaces/:id/git/diff", { id: workspace.id }, undefined, {
+            range: r,
+            path: f.path,
+            ...(f.oldPath ? { oldPath: f.oldPath } : {}),
+            base,
+            untracked: f.untracked ? "1" : "0",
+          }),
+        (d) => void diffTokensFor(d),
+      ),
+    [link, workspace.id],
+  );
+
   useEffect(() => setTarget(sessionId ?? ""), [sessionId]);
   useEffect(() => {
     document.title = `Git Review · ${workspace.name}`;
@@ -128,25 +147,36 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
 
   const file = changes?.files.find((f) => f.path === selected) ?? null;
   const fileKey = file ? `${file.oldPath ?? ""}>${file.path}` : "";
+  // The commit the listing compared with: a diff then takes one git call.
+  const base = changes?.status.repo && changes.range === range ? rangeBase(range, changes.status) : null;
+  const request = useCallback((f: GitChangedFile): DiffRequest | null => (base ? { range, base, file: f } : null), [range, base]);
   // Another file or range: start over. A refresh keeps the page (and a comment being written) until the new diff arrives.
   useEffect(() => {
     setDraftAt(null);
     setActive(null);
   }, [fileKey, range]);
   useEffect(() => {
-    if (!file) {
-      setDiff(null);
+    const req = file && request(file);
+    if (!req) {
+      if (!file) setDiff(null);
+      return;
+    }
+    // Read before (or read ahead): at once, no request.
+    const hit = cache.peek(req);
+    if (hit) {
+      setDiff(hit);
       return;
     }
     let live = true;
-    call(link, "GET /api/workspaces/:id/git/diff", { id: workspace.id }, undefined, { range, path: file.path, ...(file.oldPath ? { oldPath: file.oldPath } : {}) })
+    cache
+      .load(req)
       .then((d) => live && setDiff(d))
       .catch((err: unknown) => live && fail(err));
     return () => {
       live = false;
     };
     // The file object changes on every reload; its identity is its path and old path.
-  }, [link, workspace.id, range, fileKey, reload]);
+  }, [cache, request, fileKey, reload]);
 
   const loadComments = useCallback(
     () =>
@@ -174,10 +204,22 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   const changeRows = useMemo(() => changeStarts(rows), [rows]);
   const { placed, elsewhere } = useMemo(() => placeComments(comments, selected ?? "", range, rows), [comments, selected, range, rows]);
   const order = useMemo(() => fileOrder(changes?.files ?? [], prefs.layout), [changes, prefs.layout]);
-  // Syntax colours of both versions, worked out once per file (and again when its grammar finishes loading).
-  const grammarLoads = useGrammarLoads();
-  const lang = shown ? languageForPath(shown.path) : null;
-  const tokens = useMemo(() => (shown && lang ? diffTokens(shown.lines, (code) => highlightLines(code, lang)) : null), [shown, lang, grammarLoads]);
+  // Syntax colours of both versions, from the highlight worker; plain text until they arrive.
+  const tokens = useDiffTokens(shown);
+  // Once the file in front is shown, the next files (and the one before) are read ahead.
+  useEffect(() => {
+    if (!shown) return;
+    const i = order.findIndex((f) => f.path === shown.path);
+    if (i < 0) return;
+    cache.prefetch([order[i + 1], order[i + 2], order[i - 1], order[i + 3]].flatMap((f) => (f && request(f) ? [request(f)!] : [])));
+  }, [shown, order, cache, request]);
+  const readAhead = useCallback(
+    (f: GitChangedFile) => {
+      const req = request(f);
+      if (req && !cache.peek(req)) cache.prefetch([req]);
+    },
+    [cache, request],
+  );
   const drafts = comments.filter((c) => c.state === "draft");
   const sentCount = comments.length - drafts.length;
   const perFile = draftCounts(comments);
@@ -263,7 +305,15 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
             </button>
           ))}
         </div>
-        <button type="button" className="btn-ghost small" onClick={() => setReload((n) => n + 1)} title="重新读取改动">
+        <button
+          type="button"
+          className="btn-ghost small"
+          onClick={() => {
+            cache.clear();
+            setReload((n) => n + 1);
+          }}
+          title="重新读取改动"
+        >
           刷新
         </button>
       </header>
@@ -307,6 +357,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
                 closed={closed}
                 onToggle={toggleFolder}
                 onSelect={setSelected}
+                onHover={readAhead}
                 onMenu={(f, x, y) => setMenu({ file: f, x, y })}
               />
             )}
@@ -347,7 +398,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
             )}
             <div className="gr-scroll">
               {!file && changes && <div className="gr-notice">选择左侧的文件查看改动。</div>}
-              {file && !shown && <div className="gr-notice">正在读取…</div>}
+              {file && !shown && <div className="gr-notice gr-loading">正在读取…</div>}
               {file && shown && (
                 <DiffView
                   diff={shown}

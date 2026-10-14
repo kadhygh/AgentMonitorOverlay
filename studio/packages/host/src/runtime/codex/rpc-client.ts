@@ -122,6 +122,11 @@ export class CodexRpcClient extends EventEmitter<CodexRpcClientEvents> {
     if (this.isOpen) this.ws!.send(JSON.stringify({ id, result }));
   }
 
+  /** Answers a server request with a JSON-RPC error (Studio could not handle it). */
+  respondError(id: codex.RequestId, code: number, message: string): void {
+    if (this.isOpen) this.ws!.send(JSON.stringify({ id, error: { code, message } }));
+  }
+
   close(): void {
     if (this.closed) return;
     this.ws?.close();

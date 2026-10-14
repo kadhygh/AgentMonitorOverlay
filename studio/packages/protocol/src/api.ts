@@ -331,6 +331,8 @@ export type HostEvent = { seq: number } & (
   | { type: "settings.updated"; settings: StudioSettings }
   /** File marks (S12-D) changed: one was added, edited or removed (`workspaceId` is its project, null for 其他). */
   | { type: "marks.changed"; markId: Id; workspaceId: Id | null }
+  /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
+  | { type: "host.error"; message: string }
 );
 
 export type HostEventType = HostEvent["type"];
@@ -359,7 +361,10 @@ export interface HostRoutes {
   "GET /api/workspaces/:id/git/status": { req: void; res: import("./gitreview.js").GitStatus };
   /** Changed files of a range, sorted by path. */
   "GET /api/workspaces/:id/git/changes": { req: void; res: import("./gitreview.js").GitChanges };
-  /** One file's diff in a range: `?path=` (and `?oldPath=` for renames). */
+  /**
+   * One file's diff in a range: `?path=` (and `?oldPath=` for renames). What the list already knows saves git calls:
+   * `?base=` is the commit it compared with (rangeBase), `?untracked=1|0` whether git tracks the file.
+   */
   "GET /api/workspaces/:id/git/diff": { req: void; res: import("./gitreview.js").GitFileDiff };
   /** Line comments of the project, drafts and sent, oldest first. */
   "GET /api/workspaces/:id/review-comments": { req: void; res: import("./gitreview.js").GitReviewComment[] };

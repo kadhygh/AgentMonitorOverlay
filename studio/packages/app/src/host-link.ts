@@ -85,6 +85,67 @@ export async function connectHost(options: HostLinkOptions): Promise<HostConnect
   throw new Error("Host did not start in time");
 }
 
+export interface KeepAliveOptions {
+  link: HostLinkOptions;
+  current(): HostConnection;
+  /** A new Host answers (same port and token, so the windows reconnect by themselves). */
+  onRestarted(conn: HostConnection): void;
+  log(line: string): void;
+  intervalMs?: number;
+  /** Restarts allowed within `windowMs`; past that the shell stops trying (something keeps killing it). */
+  maxRestarts?: number;
+  windowMs?: number;
+}
+
+/**
+ * Keeps the Host running: when it stops answering twice in a row (it crashed or was killed), starts it again on the
+ * same port. Codex app-servers outlive the Host and are adopted again, so their sessions keep going. Returns stop().
+ */
+export function keepHostAlive(options: KeepAliveOptions): () => void {
+  const every = options.intervalMs ?? 3000;
+  const max = options.maxRestarts ?? 5;
+  const windowMs = options.windowMs ?? 10 * 60_000;
+  const restarts: number[] = [];
+  let misses = 0;
+  let busy = false;
+  let stopped = false;
+  const tick = async () => {
+    if (busy || stopped) return;
+    busy = true;
+    try {
+      const conn = options.current();
+      if (await ping(conn.url, conn.token)) {
+        misses = 0;
+        return;
+      }
+      if (++misses < 2 || stopped) return;
+      const now = Date.now();
+      while (restarts.length && now - restarts[0]! > windowMs) restarts.shift();
+      if (restarts.length >= max) {
+        if (restarts.length === max) options.log(`Host stopped ${max} times in ${Math.round(windowMs / 60_000)} minutes; not restarting it again`);
+        restarts.push(now);
+        return;
+      }
+      restarts.push(now);
+      options.log("Host is not answering; starting it again");
+      const port = Number(new URL(conn.url).port);
+      const next = await connectHost({ ...options.link, ...(port ? { port } : {}) });
+      misses = 0;
+      if (!stopped) options.onRestarted(next);
+    } catch (err) {
+      options.log(`restarting the Host failed: ${String(err)}`);
+    } finally {
+      busy = false;
+    }
+  };
+  const timer = setInterval(() => void tick(), every);
+  timer.unref?.();
+  return () => {
+    stopped = true;
+    clearInterval(timer);
+  };
+}
+
 /** Asks a Host started by this shell to stop (tests, or an explicit "quit Studio"). */
 export function stopHost(conn: HostConnection): Promise<void> {
   const child = conn.child;

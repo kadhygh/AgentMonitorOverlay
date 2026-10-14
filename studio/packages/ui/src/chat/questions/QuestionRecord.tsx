@@ -46,7 +46,8 @@ const SETTLED_LABEL: Record<Exclude<QuestionItem["state"], "pending">, string> =
 function SettledRecord({ item }: { item: QuestionItem }) {
   const [open, setOpen] = useState(false);
   const elsewhere = item.state === "answered" && !item.answers && !item.values;
-  const label = elsewhere ? "已在别处回答" : SETTLED_LABEL[item.state as Exclude<QuestionItem["state"], "pending">];
+  // Codex's async questions are also answered by whatever the person writes next.
+  const label = elsewhere ? (item.source === "codex-async" ? "已用你的下一条消息回答" : "已在别处回答") : SETTLED_LABEL[item.state as Exclude<QuestionItem["state"], "pending">];
   const summary = item.state === "answered" ? answersSummary(item) : item.state === "dismissed" ? "你关闭了提问，agent 已接着做" : "这一轮结束时还没有回答";
   return (
     <div className="q-reply-row" data-testid="question-record" data-state={item.state}>

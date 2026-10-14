@@ -67,7 +67,8 @@ test("review a project's changes, comment a line and send it to the session", as
   await expect(files.nth(0)).toContainText("+2 −2");
   await expect(files.nth(1)).toContainText("notes.md");
   await expect(files.nth(2)).toContainText("old.txt");
-  await expect(files.nth(2)).toContainText("D");
+  await expect(files.nth(2).getByRole("img", { name: "删除" })).toHaveText("−");
+  await expect(files.nth(1).getByRole("img", { name: "未跟踪的新文件" })).toHaveText("+");
 
   // 只看改动 shows the hunk; 完整文件 the whole file with its deleted line in place.
   await expect(review.getByTestId("review-file-head")).toContainText("drop.lua");
@@ -207,16 +208,34 @@ test("S12-A: file tree, syntax colours, side by side and opening files", async (
   const review = await opened;
   await review.waitForLoadState("domcontentloaded");
 
-  // 目录树 by default: folders first, lone-folder chains in one row; the long name keeps its extension and end.
+  // 平铺 by default, as in Fork: whole paths by path, a status square and a type icon on each row.
   const files = review.getByTestId("review-file");
   const folders = review.getByTestId("review-folder");
   await expect(files).toHaveCount(4);
-  await expect(folders).toHaveText([/^▾Assets\/Scripts\/Player1$/, /^▾src\/game\/drop1$/]);
+  await expect(folders).toHaveCount(0);
   await expect(files.nth(0)).toHaveAttribute("title", cs);
+  await expect(files.nth(0).locator(".gr-name-head")).toHaveText("Assets/Scripts/Player/");
+  await expect(files.nth(0).locator(".gr-name-tail")).toHaveText("PlayerInventoryControllerWithAVeryLongName.cs");
+  await expect(files.nth(0).getByRole("img", { name: "修改" })).toHaveText("M");
+  await expect(files.nth(0).locator("svg.file-type-icon text")).toHaveText("C#");
+  await expect(files.nth(1)).toContainText("old.txt");
+  await expect(files.nth(1).getByRole("img", { name: "删除" })).toHaveText("−");
+  await expect(files.nth(2)).toContainText("README.md");
+  await expect(files.nth(2).locator("svg.file-type-icon text")).toHaveText("MD");
+  await expect(files.nth(3).locator(".gr-name-head")).toHaveText("src/game/drop/");
+  await expect(review.getByTestId("review-file-head")).toContainText(cs);
+  // The colours come from the highlight worker, not the window.
+  await expect(review.locator('[data-line="new:3"] span[style*="--shiki-token-comment"]').first()).toBeVisible();
+  expect(await review.evaluate(() => performance.getEntriesByType("resource").some((e) => /highlight\.worker/.test(e.name)))).toBe(true);
+  await review.mouse.move(0, 0);
+  await screenshot(app, "stage-12", "S12-A-fork-list", review, "review");
+
+  // 目录树: folders first, lone-folder chains in one row; the long name keeps its extension and end.
+  await review.getByRole("button", { name: "目录树" }).click();
+  await expect(folders).toHaveText([/^▾Assets\/Scripts\/Player1$/, /^▾src\/game\/drop1$/]);
   await expect(files.nth(0).locator(".gr-name-tail")).toHaveText("ngName.cs");
   await expect(files.nth(2)).toContainText("old.txt");
   await expect(files.nth(3)).toContainText("README.md");
-  await expect(review.getByTestId("review-file-head")).toContainText(cs);
 
   // C# colours, with the block comment coloured on its second line too.
   await expect(review.locator('[data-line="new:3"] span[style*="--shiki-token-comment"]').first()).toContainText("NotCode");
@@ -289,7 +308,7 @@ test("S12-A: file tree, syntax colours, side by side and opening files", async (
   await review.keyboard.press("Escape");
   await expect(review.getByTestId("review-reveal")).toBeDisabled();
 
-  // The list is as wide as dragged (180–600) and 平铺 shows the folder under each name; both stay after a reload.
+  // The list is as wide as dragged (180–600) and 平铺 shows whole paths again; both stay after a reload.
   const nav = review.locator("nav.gr-files");
   const before = (await nav.boundingBox())!.width;
   const bar = (await review.getByTestId("review-splitter").boundingBox())!;
@@ -300,7 +319,7 @@ test("S12-A: file tree, syntax colours, side by side and opening files", async (
   await expect.poll(async () => Math.round((await nav.boundingBox())!.width)).toBe(Math.round(before + 120));
   await review.getByRole("button", { name: "平铺" }).click();
   await expect(folders).toHaveCount(0);
-  await expect(files.filter({ hasText: "table.lua" }).locator(".gr-name-folder")).toHaveText("src/game/drop");
+  await expect(files.filter({ hasText: "table.lua" }).locator(".gr-name-head")).toHaveText("src/game/drop/");
   await files.filter({ hasText: "PlayerInventory" }).click();
   await expect(review.locator('[data-line="new:9"]')).toBeVisible();
   await review.mouse.move(0, 0);

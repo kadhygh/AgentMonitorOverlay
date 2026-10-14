@@ -110,18 +110,26 @@ export function splitName(name: string, keep = 6): { head: string; tail: string 
   return { head: name.slice(0, cut), tail: name.slice(cut) };
 }
 
+/** A full path split so its folders shrink first ("Assets/Scr…/Player.cs"): the file name always shows. */
+export function splitPath(path: string): { head: string; tail: string } {
+  const cut = path.lastIndexOf("/");
+  return { head: path.slice(0, cut + 1), tail: path.slice(cut + 1) };
+}
+
 /** A folder path split the same way: its last folder always shows. */
 export function splitFolder(folder: string): { head: string; tail: string } {
   const cut = folder.lastIndexOf("/");
   return cut < 0 ? { head: "", tail: folder } : { head: folder.slice(0, cut + 1), tail: folder.slice(cut + 1) };
 }
 
-export const LIST_WIDTH = { min: 180, max: 600, initial: 280 } as const;
+export const LIST_WIDTH = { min: 180, max: 600, initial: 340 } as const;
 
 export const clampWidth = (w: number) => Math.round(Math.min(LIST_WIDTH.max, Math.max(LIST_WIDTH.min, Number.isFinite(w) ? w : LIST_WIDTH.initial)));
 
 // The window's view choices, remembered on this machine (a per-viewer convenience: storage may be missing).
 const PREFS_KEY = "amo.gitreview.prefs";
+/** Version 2 made 平铺 the default: a 目录树 remembered before that was the old default, not a choice. */
+const PREFS_VERSION = 2;
 
 export interface ReviewPrefs {
   listWidth: number;
@@ -130,14 +138,14 @@ export interface ReviewPrefs {
   mode: "changes" | "full";
 }
 
-export const DEFAULT_PREFS: ReviewPrefs = { listWidth: LIST_WIDTH.initial, layout: "tree", split: false, mode: "changes" };
+export const DEFAULT_PREFS: ReviewPrefs = { listWidth: LIST_WIDTH.initial, layout: "flat", split: false, mode: "changes" };
 
 export function parsePrefs(raw: string | null): ReviewPrefs {
   try {
-    const v = raw ? (JSON.parse(raw) as Partial<ReviewPrefs>) : {};
+    const v = raw ? (JSON.parse(raw) as Partial<ReviewPrefs> & { v?: number }) : {};
     return {
       listWidth: clampWidth(typeof v.listWidth === "number" ? v.listWidth : LIST_WIDTH.initial),
-      layout: v.layout === "flat" ? "flat" : "tree",
+      layout: v.layout === "tree" && v.v === PREFS_VERSION ? "tree" : "flat",
       split: v.split === true,
       mode: v.mode === "full" ? "full" : "changes",
     };
@@ -156,7 +164,7 @@ export function readPrefs(): ReviewPrefs {
 
 export function writePrefs(p: ReviewPrefs): void {
   try {
-    localStorage.setItem(PREFS_KEY, JSON.stringify(p));
+    localStorage.setItem(PREFS_KEY, JSON.stringify({ ...p, v: PREFS_VERSION }));
   } catch {
     // per-viewer convenience only
   }

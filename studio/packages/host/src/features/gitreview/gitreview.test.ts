@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import { composeGitReviewMessage, type GitChanges, type GitFileDiff, type GitReviewComment, type GitStatus, type ModelProfile, type Session, type SessionItem, type Task, type Workspace } from "@amo-studio/protocol";
+import { composeGitReviewMessage, rangeBase, type GitChanges, type GitFileDiff, type GitReviewComment, type GitStatus, type ModelProfile, type Session, type SessionItem, type Task, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
@@ -82,6 +82,10 @@ describe("Git Review API", { timeout: 30_000 }, () => {
     expect(changes.files).toEqual([{ path: "drop.lua", status: "modified", additions: 1, deletions: 2, binary: false }]);
     const diff = await ok<GitFileDiff>("GET", `/api/workspaces/${ws.id}/git/diff?range=working&path=drop.lua`);
     expect(diff.lines.map((l) => `${l.kind}:${l.oldLine ?? "-"}:${l.newLine ?? "-"}`)).toEqual(["del:1:-", "del:2:-", "add:-:1", "context:3:2"]);
+    // With the list's base and untracked flag: the same diff; a base that is no commit id is refused.
+    const fast = await ok<GitFileDiff>("GET", `/api/workspaces/${ws.id}/git/diff?range=working&path=drop.lua&base=${rangeBase("working", changes.status)}&untracked=0`);
+    expect(fast.lines).toEqual(diff.lines);
+    expect((await api(`GET`, `/api/workspaces/${ws.id}/git/diff?path=drop.lua&base=HEAD~1`)).status).toBe(400);
     expect((await api(`GET`, `/api/workspaces/${ws.id}/git/changes?range=everything`)).status).toBe(400);
     expect((await api(`GET`, `/api/workspaces/${ws.id}/git/diff?path=..%2Fsecret.txt`)).status).toBe(400);
 

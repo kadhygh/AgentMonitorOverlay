@@ -52,6 +52,18 @@ export interface GitChangedFile {
   binary: boolean;
 }
 
+/** git's empty tree: what a repository without commits is compared with. */
+export const GIT_EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+
+/** The commit (or tree) a range compares with: HEAD, or the merge base for `branch`. */
+export function rangeBase(range: GitRange, status: GitStatus): string {
+  const head = status.head ?? GIT_EMPTY_TREE;
+  return range === "branch" ? (status.mergeBase ?? head) : head;
+}
+
+/** A full object id (SHA-1 or SHA-256), as `?base=` takes it. */
+export const isObjectId = (v: unknown): v is string => typeof v === "string" && /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(v);
+
 export interface GitChanges {
   status: GitStatus;
   range: GitRange;

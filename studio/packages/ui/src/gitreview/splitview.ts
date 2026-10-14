@@ -59,23 +59,50 @@ export interface DiffTokens {
 }
 
 /**
- * Colours for a full-file diff: the old text (unchanged + deleted lines) and the new one (unchanged + added) are
- * highlighted whole, so comments and strings spanning lines colour right. Null without a grammar (or while it loads),
- * for huge files, and when the tokens do not line up.
+ * What a diff's colours need: the old text (unchanged + deleted lines) and the new one (unchanged + added), each
+ * highlighted whole so comments and strings spanning lines colour right. A side whose only lines are unchanged ones
+ * (nothing deleted, or nothing added) borrows the other side's colours instead of being highlighted again.
  */
-export function diffTokens(lines: readonly GitDiffLine[], highlight: (code: string) => CodeToken[][] | null): DiffTokens | null {
+function tokenPlan(lines: readonly GitDiffLine[]): { texts: string[]; build(result: readonly (CodeToken[][] | null)[]): DiffTokens | null } | null {
   if (!lines.length || lines.length > MAX_HIGHLIGHT_LINES) return null;
-  const side = (pick: (l: GitDiffLine) => number | null): Map<number, readonly CodeToken[]> | null => {
-    const own = lines.filter((l) => pick(l) !== null);
-    if (!own.length) return new Map();
-    // A carriage return would split a line for the highlighter.
-    const tokens = highlight(own.map((l) => l.text.replace(/\r/g, "")).join("\n"));
-    if (!tokens || tokens.length !== own.length) return null;
-    return new Map(own.map((l, i) => [pick(l)!, tokens[i]!]));
+  const oldOwn = lines.filter((l) => l.oldLine !== null);
+  const newOwn = lines.filter((l) => l.newLine !== null);
+  const needOld = oldOwn.length > 0 && lines.some((l) => l.kind === "del");
+  const needNew = newOwn.length > 0 && (!needOld || lines.some((l) => l.kind === "add"));
+  // A carriage return would split a line for the highlighter.
+  const text = (own: readonly GitDiffLine[]) => own.map((l) => l.text.replace(/\r/g, "")).join("\n");
+  const texts = [...(needOld ? [text(oldOwn)] : []), ...(needNew ? [text(newOwn)] : [])];
+  const side = (own: readonly GitDiffLine[], pick: (l: GitDiffLine) => number | null, tokens: CodeToken[][] | null | undefined) =>
+    tokens && tokens.length === own.length ? new Map<number, readonly CodeToken[]>(own.map((l, i) => [pick(l)!, tokens[i]!])) : null;
+  /** The other side's colours for unchanged lines, by this side's numbers. */
+  const borrow = (own: readonly GitDiffLine[], pick: (l: GitDiffLine) => number | null, from: ReadonlyMap<number, readonly CodeToken[]>, other: (l: GitDiffLine) => number | null) =>
+    new Map<number, readonly CodeToken[]>(own.flatMap((l) => (from.has(other(l)!) ? [[pick(l)!, from.get(other(l)!)!] as const] : [])));
+  const oldNo = (l: GitDiffLine) => l.oldLine;
+  const newNo = (l: GitDiffLine) => l.newLine;
+  return {
+    texts,
+    build(result) {
+      let oldSide = needOld ? side(oldOwn, oldNo, result[0]) : null;
+      let newSide = needNew ? side(newOwn, newNo, result[needOld ? 1 : 0]) : null;
+      if (needOld && !oldSide) return null;
+      if (needNew && !newSide) return null;
+      oldSide ??= newSide ? borrow(oldOwn, oldNo, newSide, newNo) : new Map();
+      newSide ??= borrow(newOwn, newNo, oldSide, oldNo);
+      return { old: oldSide, new: newSide };
+    },
   };
-  const oldSide = side((l) => l.oldLine);
-  const newSide = side((l) => l.newLine);
-  return oldSide && newSide ? { old: oldSide, new: newSide } : null;
+}
+
+/** Colours for a full-file diff (see tokenPlan). Null without a grammar, for huge files, and when tokens do not line up. */
+export function diffTokens(lines: readonly GitDiffLine[], highlight: (code: string) => CodeToken[][] | null): DiffTokens | null {
+  const plan = tokenPlan(lines);
+  return plan && plan.build(plan.texts.map(highlight));
+}
+
+/** diffTokens with the highlighting done elsewhere (the highlight worker), all texts in one go. */
+export async function diffTokensAsync(lines: readonly GitDiffLine[], highlight: (texts: string[]) => Promise<readonly (CodeToken[][] | null)[]>): Promise<DiffTokens | null> {
+  const plan = tokenPlan(lines);
+  return plan && plan.build(plan.texts.length ? await highlight(plan.texts) : []);
 }
 
 /** A line's tokens: deleted lines from the old version, the rest from the new one (or the old, for the left side). */

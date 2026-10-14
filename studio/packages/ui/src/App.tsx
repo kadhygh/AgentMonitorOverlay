@@ -15,6 +15,7 @@ import type { View, ViewContext, ViewDef } from "./shell/views.js";
 import { VIEWS } from "./features.js";
 import { featureOn, FeaturesProvider } from "./lib/features.js";
 import { openMarks, useMarksShortcut } from "./marks/open.js";
+import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
 
 // The shell: the Host connection, the scope and the view in front, the top bar and the left column. Pages come from
 // the features (features.ts); the data several of them share is loaded here once.
@@ -132,9 +133,13 @@ export function App() {
         />
         <div className="main-col">
           <ViewBar views={views} view={shown} scope={scope} onView={setView} onNew={() => setView({ kind: "new" })} />
-          <main className="main">{def?.render(shown as never, ctx)}</main>
+          {/* A page that fails to render says so; the title bar, the left column and the sessions carry on. */}
+          <main className="main">
+            <PaneBoundary resetKey={JSON.stringify(shown)}>{def?.render(shown as never, ctx)}</PaneBoundary>
+          </main>
         </div>
       </div>
+      <HostErrorToast />
       {settingsOpen && <SettingsDialog link={link} settings={settings} onClose={() => setSettingsOpen(false)} />}
       {quickOpen && (
         <QuickStart

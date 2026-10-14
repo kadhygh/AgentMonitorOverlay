@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { formContent, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { asyncAnswerText, formContent, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -99,7 +99,7 @@ export class SessionsFeature extends Feature {
     const reply = questionReply(body);
     const fits =
       reply.action === "dismiss" ||
-      (reply.action === "answer" && (item.source === "claude-ask" || item.source === "codex-input")) ||
+      (reply.action === "answer" && (item.source === "claude-ask" || item.source === "codex-input" || item.source === "codex-async")) ||
       (reply.action === "submit" && item.source === "mcp-form") ||
       ((reply.action === "approve" || reply.action === "revise") && item.source === "plan-review");
     if (!fits) throw new HostError("bad_request", `a ${item.source} question cannot take "${reply.action}"`);
@@ -108,6 +108,8 @@ export class SessionsFeature extends Feature {
       if ("error" in checked) throw new HostError("bad_request", checked.error);
     }
     await this.wrap(() => this.runtime.answerQuestion(sessionId, itemId, reply), "conflict");
+    // Codex's async questions: the answer is the person's next message (the turn did not wait for it).
+    if (item.source === "codex-async" && reply.action === "answer") await this.sendMessage(sessionId, asyncAnswerText(item.questions ?? [], reply.answers));
   }
 
   /**

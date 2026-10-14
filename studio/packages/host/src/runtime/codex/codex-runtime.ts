@@ -1,5 +1,5 @@
 import { EventEmitter } from "node:events";
-import { codexAnswers, elicitationForm, formContent, storedAnswers, type ApprovalDecision, type Attachment, type HostEvent, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionPrompt, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SessionStatus, type SlashCommand, type SlashCommandList, type SlashCommandResult, type ToolFields, type ToolKind, type ToolStatus, type TurnRetry, type TurnState, type TurnUsage, type Workspace, type AccountUsage } from "@amo-studio/protocol";
+import { asyncPrompts, codexAnswers, elicitationForm, formContent, storedAnswers, type ApprovalDecision, type Attachment, type HostEvent, type Id, type ModelOption, type ModelProfile, type ProfileChoices, type QuestionPrompt, type QuestionReply, type Session, type SessionItem, type SessionOptions, type SessionStatus, type SlashCommand, type SlashCommandList, type SlashCommandResult, type ToolFields, type ToolKind, type ToolStatus, type TurnRetry, type TurnState, type TurnUsage, type Workspace, type AccountUsage } from "@amo-studio/protocol";
 import { newId, type HostEventInput, type SessionItemInput, type Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
@@ -108,6 +108,10 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     this.store = options.store;
     this.now = options.now ?? (() => new Date());
     this.cancelStaleQuestions();
+    // Sessions not running any more (the last Host stopped mid-turn): close what that turn left open.
+    for (const s of this.store.listSessions()) {
+      if (s.runtime === "codex" && s.status !== "running" && s.status !== "awaiting-approval" && s.status !== "awaiting-answer") this.settleLeftovers(s.id, false);
+    }
     options.servers.on("ready", (handle) => {
       this.attach(handle);
       void this.resubscribe(handle).catch((err: unknown) => this.emit("log", `resubscribe failed: ${String(err)}`));
@@ -151,6 +155,8 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     const st = this.sessionState(sessionId);
     const input = [...(text ? [{ type: "text", text, text_elements: [] }] : []), ...images.map((a) => ({ type: "localImage", path: a.path })), ...extra];
     if (!session.title) this.updateSession(sessionId, { title: (text || "图片").slice(0, 60) });
+    // The person's next message is the answer to request_user_input_async (the card, or typed by hand).
+    this.closeAsyncQuestions(sessionId);
     if (st.activeTurnId) {
       await handle.client.request("turn/steer", { threadId: session.runtimeRef!, expectedTurnId: st.activeTurnId, input } as never);
       return { mode: "steer" };
@@ -286,6 +292,18 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
    * values, or decline). Secret answers go to Codex only; the item keeps them masked.
    */
   async answerQuestion(sessionId: Id, itemId: Id, reply: QuestionReply): Promise<void> {
+    const asked = this.store.getItem(itemId);
+    if (asked?.type === "question" && asked.source === "codex-async" && asked.sessionId === sessionId) {
+      // Nothing waits on Codex's side: the item records the answer, the sessions service sends it as a message.
+      if (reply.action !== "answer" && reply.action !== "dismiss") throw new Error(`questions take an answer, not ${reply.action}`);
+      this.updateItem(itemId, (it) =>
+        it.type === "question" && it.state === "pending"
+          ? { ...it, state: reply.action === "answer" ? "answered" : "dismissed", ...(reply.action === "answer" ? { answers: storedAnswers(it.questions ?? [], reply.answers) } : {}) }
+          : it,
+      );
+      if (reply.action === "dismiss" && this.store.getSession(sessionId)?.status === "awaiting-answer" && !this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, "idle");
+      return;
+    }
     const pending = this.questions.get(itemId);
     if (!pending || pending.sessionId !== sessionId) throw new Error(`question ${itemId} is not pending`);
     const handle = await this.handleFor(pending.profileId);
@@ -455,9 +473,38 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     for (const s of this.store.listSessions()) {
       if (s.runtime !== "codex") continue;
       for (const item of this.store.listItems(s.id)) {
-        if (item.type === "question" && item.state === "pending") this.updateItem(item.id, (it) => (it.type === "question" ? { ...it, state: "cancelled" } : it));
+        if (item.type === "question" && item.state === "pending" && item.source !== "codex-async") this.updateItem(item.id, (it) => (it.type === "question" ? { ...it, state: "cancelled" } : it));
       }
     }
+  }
+
+  /** request_user_input_async questions still open in a session. */
+  private openAsyncQuestions(sessionId: Id): SessionItem[] {
+    return this.store.listItems(sessionId).filter((it) => it.type === "question" && it.source === "codex-async" && it.state === "pending");
+  }
+
+  /** The person wrote: open async questions count as answered by that message. */
+  private closeAsyncQuestions(sessionId: Id): void {
+    for (const q of this.openAsyncQuestions(sessionId)) this.updateItem(q.id, (it) => (it.type === "question" && it.state === "pending" ? { ...it, state: "answered" } : it));
+  }
+
+  /**
+   * The thread is not running (any more): a turn the last Host saw start, and its streaming text and running tools,
+   * are over. `notify` adds a line saying the reply was cut off.
+   */
+  private settleLeftovers(sessionId: Id, notify: boolean): void {
+    let cut = false;
+    const at = this.now().toISOString();
+    for (const item of this.store.listItems(sessionId)) {
+      if (item.type === "turn" && item.state === "running") {
+        cut = true;
+        this.updateItem(item.id, (it) => (it.type === "turn" && it.state === "running" ? { ...it, state: "interrupted", endedAt: at } : it));
+      } else if (item.type === "agent" && item.streaming) this.updateItem(item.id, (it) => (it.type === "agent" ? { ...it, streaming: false } : it));
+      else if (item.type === "reasoning" && item.streaming) this.updateItem(item.id, (it) => (it.type === "reasoning" ? { ...it, streaming: false } : it));
+      else if (item.type === "tool" && item.status === "running") this.updateItem(item.id, (it) => (it.type === "tool" ? { ...it, status: "failed" } : it));
+      else if (item.type === "compaction" && item.state === "running") this.updateItem(item.id, (it) => (it.type === "compaction" ? { ...it, state: "failed" } : it));
+    }
+    if (cut && notify) this.appendItem(sessionId, { type: "notice", level: "warning", message: "这一轮回复被中断了（Host 或 Codex 重启）。发一条消息即可接着对话。" });
   }
 
   pendingApprovals(sessionId: Id): string[] {
@@ -469,14 +516,23 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
   private attach(handle: CodexServerHandle): void {
     if (this.attached.has(handle.client)) return;
     this.attached.add(handle.client);
+    // One message Studio cannot handle stays a line in its session (and the log); the server and other sessions go on.
     handle.client.on("notification", (n) => {
       try {
         this.onNotification(handle, n);
       } catch (err) {
-        this.emit("log", `failed to handle ${n.method}: ${String(err)}`);
+        this.handlerFailed(n.method, (n.params as { threadId?: string } | undefined)?.threadId, err);
       }
     });
-    handle.client.on("request", (r) => this.onServerRequest(handle, r));
+    handle.client.on("request", (r) => {
+      try {
+        this.onServerRequest(handle, r);
+      } catch (err) {
+        this.handlerFailed(r.method, (r.params as { threadId?: string } | undefined)?.threadId, err);
+        // Unanswered, the turn would wait for ever.
+        handle.client.respondError(r.id, -32603, `AMO Studio could not handle ${r.method}`);
+      }
+    });
     handle.client.once("close", () => this.onConnectionLost(handle));
   }
 
@@ -493,6 +549,12 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     for (const q of [...this.questions.values()]) if (q.profileId === handle.profileId) this.closeQuestion(q, "cancelled");
   }
 
+  private handlerFailed(method: string, threadId: string | undefined, err: unknown): void {
+    this.emit("log", `failed to handle ${method}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+    const s = threadId ? this.findByThread(threadId) : undefined;
+    if (s) this.notice(s.id, "warning", `Studio 处理 Codex 的一条消息（${method}）时出错，这条可能没显示出来：${firstLineOf(err instanceof Error ? err.message : String(err))}。详情在 host.log。`, `handler-error:${method}`);
+  }
+
   /** After a (re)connect, subscribe again to every live thread served by this profile's server. */
   private async resubscribe(handle: CodexServerHandle): Promise<void> {
     for (const s of this.store.listSessions()) {
@@ -503,7 +565,10 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         // Turn events may have been missed while disconnected; take the status from the server's view.
         const active = (r.thread as { status?: { type?: string } }).status?.type === "active";
         const st = this.sessionState(s.id);
-        if (!active) st.activeTurnId = null;
+        if (!active) {
+          st.activeTurnId = null;
+          this.settleLeftovers(s.id, true);
+        }
         const current = this.store.getSession(s.id)!.status;
         if (active && current !== "awaiting-approval" && current !== "awaiting-answer") this.setStatus(s.id, "running");
         if (!active && (current === "running" || current === "awaiting-approval" || current === "awaiting-answer")) this.setStatus(s.id, "idle");
@@ -559,6 +624,8 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         if (turn.status === "failed") {
           this.appendItem(s.id, { type: "error", message: turn.error?.message ?? "turn failed" }, { method: n.method, turnId });
           this.setStatus(s.id, "error");
+        } else if (s.kind !== "sub" && this.openAsyncQuestions(s.id).length) {
+          this.setStatus(s.id, "awaiting-answer");
         } else {
           this.setStatus(s.id, s.kind === "sub" ? "completed" : "idle");
         }
@@ -857,6 +924,12 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
       }
       case "agentMessage": {
         if (review) return;
+        // request_user_input_async: the model asks and carries on; the questions become a card, the answer a message.
+        const asked = item.delivery === "async" ? asyncPrompts(item.questions) : [];
+        if (asked.length) {
+          if (!st.items.has(item.id)) st.items.set(item.id, this.appendItem(s.id, { type: "question", source: "codex-async", state: "pending", questions: asked }, raw).id);
+          return;
+        }
         const itemId = this.ensureAgentItem(s.id, item.id, turnId);
         if (done) {
           this.updateItem(itemId, (it) => (it.type === "agent" ? { ...it, markdown: item.text ?? st.text.get(item.id) ?? "", streaming: false } : it));
@@ -1167,6 +1240,9 @@ interface CodexItem {
   type: string;
   id: string;
   text?: string;
+  /** agentMessage from request_user_input_async: "async", with the questions asked. */
+  delivery?: string | null;
+  questions?: unknown;
   content?: unknown[];
   summary?: string[];
   command?: string;

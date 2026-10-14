@@ -7,7 +7,7 @@ export function gitReviewRoutes(service: HostService): Route[] {
     route("GET", "/api/workspaces/:id/git/status", ({ params }) => service.gitReview.status(params.id!)),
     route("GET", "/api/workspaces/:id/git/changes", ({ params, query }) => service.gitReview.changes(params.id!, query.get("range"))),
     route("GET", "/api/workspaces/:id/git/diff", ({ params, query }) =>
-      service.gitReview.diff(params.id!, query.get("range"), query.get("path"), query.get("oldPath")),
+      service.gitReview.diff(params.id!, query.get("range"), query.get("path"), query.get("oldPath"), { base: query.get("base"), untracked: query.get("untracked") }),
     ),
     route("GET", "/api/workspaces/:id/review-comments", ({ params }) => service.gitReview.comments(params.id!)),
     route("POST", "/api/workspaces/:id/review-comments/send", ({ params, body }) => service.gitReview.send(params.id!, obj(body).sessionId, obj(body).ids)),

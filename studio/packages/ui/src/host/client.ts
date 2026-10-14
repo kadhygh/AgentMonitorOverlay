@@ -31,6 +31,7 @@ declare global {
       };
       /** Workbench: Focus asked to show a task. */
       onNavigate?(cb: (target: { taskId: string; sessionId?: string }) => void): () => void;
+      onHostRestarted?(cb: () => void): () => void;
     };
   }
 }

@@ -143,4 +143,14 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     this.emit("event", persisted);
     return persisted;
   }
+
+  /** A failure outside any request (bin.ts catches it and keeps running): the windows show it once. */
+  reportError(err: unknown): void {
+    const message = (err instanceof Error ? err.message : String(err)).split(/\r?\n/)[0]!.slice(0, 300);
+    try {
+      this.publish({ type: "host.error", message });
+    } catch {
+      // The store itself failed: the log has it.
+    }
+  }
 }

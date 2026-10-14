@@ -1,7 +1,7 @@
 import { execFile } from "node:child_process";
 import { open, readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { diffHunks, type GitChangedFile, type GitChanges, type GitDiffLine, type GitFileDiff, type GitFileStatus, type GitRange, type GitStatus } from "@amo-studio/protocol";
+import { diffHunks, GIT_EMPTY_TREE, rangeBase, type GitChangedFile, type GitChanges, type GitDiffLine, type GitFileDiff, type GitFileStatus, type GitRange, type GitStatus } from "@amo-studio/protocol";
 
 // Reading a project's changes from git: `git` runs through execFile (no shell) in the project folder, with a timeout
 // and bounded output. Paths are relative to the project folder (`--relative`), so a project inside a larger
@@ -21,7 +21,9 @@ const UNTRACKED_MAX_BYTES = 2 * 1024 * 1024;
 /** Context lines that make a diff cover the whole file. */
 const WHOLE_FILE = 1_000_000;
 /** git's empty tree: what a repository without commits is compared with. */
-export const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
+export const EMPTY_TREE = GIT_EMPTY_TREE;
+/** Untracked files read at the same time while listing. */
+const UNTRACKED_READS = 8;
 
 export class GitError extends Error {
   constructor(
@@ -68,32 +70,34 @@ const DEFAULT_BRANCHES = ["main", "master", "origin/main", "origin/master"];
 
 export async function readStatus(dir: string): Promise<GitStatus> {
   const none = { branch: null, head: null, upstream: null, base: null, mergeBase: null };
-  let root: string;
-  try {
-    root = (await git(dir, ["rev-parse", "--show-toplevel"])).trim();
-  } catch (err) {
-    return { repo: false, reason: err instanceof GitError && err.kind === "missing" ? "没有找到 git" : "不是 git 仓库", ...none };
-  }
-  const [head, branch, upstream, originHead] = await Promise.all([
+  // Every question at once (each git start costs tens of milliseconds on Windows); outside a repository the others
+  // simply fail, and the top folder's error says why.
+  const top = git(dir, ["rev-parse", "--show-toplevel"]).then(
+    (out) => ({ root: out.trim() }),
+    (err: unknown) => ({ err }),
+  );
+  const [found, head, branch, upstream, originHead, refs] = await Promise.all([
+    top,
     maybe(dir, ["rev-parse", "--verify", "-q", "HEAD^{commit}"]),
     maybe(dir, ["symbolic-ref", "--short", "-q", "HEAD"]),
     maybe(dir, ["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{upstream}"]),
     maybe(dir, ["symbolic-ref", "--short", "-q", "refs/remotes/origin/HEAD"]),
-  ]);
+    maybe(dir, ["for-each-ref", "--format=%(refname:short)", ...DEFAULT_BRANCHES.map((b) => (b.startsWith("origin/") ? `refs/remotes/${b}` : `refs/heads/${b}`))]),
+  ]).catch((err: unknown) => [{ err }, null, null, null, null, null] as const);
+  if ("err" in found) return { repo: false, reason: found.err instanceof GitError && found.err.kind === "missing" ? "没有找到 git" : "不是 git 仓库", ...none };
+  const { root } = found;
   // origin/HEAD, else main or master; never the branch itself (on main, compare with origin/main if there is one).
-  const existing = (await maybe(dir, ["for-each-ref", "--format=%(refname:short)", ...DEFAULT_BRANCHES.map((b) => (b.startsWith("origin/") ? `refs/remotes/${b}` : `refs/heads/${b}`))]))?.split(/\r?\n/) ?? [];
+  const existing = refs?.split(/\r?\n/) ?? [];
   const candidates = [originHead, ...DEFAULT_BRANCHES.filter((b) => existing.includes(b))].filter((b): b is string => !!b && b !== branch);
   const base = candidates[0] ?? null;
   const mergeBase = head && base ? await maybe(dir, ["merge-base", base, "HEAD"]) : null;
   return { repo: true, root, branch, head, upstream, base, mergeBase };
 }
 
-/** The `git diff` arguments that select a range (before the options). */
-export function rangeArgs(range: GitRange, status: GitStatus): string[] {
-  const head = status.head ?? EMPTY_TREE;
-  if (range === "staged") return ["diff", "--cached", head];
-  if (range === "branch") return ["diff", status.mergeBase ?? head];
-  return ["diff", head];
+/** The `git diff` arguments that select a range (before the options): against the range's base (see rangeBase). */
+export function rangeArgs(range: GitRange, at: GitStatus | string): string[] {
+  const base = typeof at === "string" ? at : rangeBase(range, at);
+  return range === "staged" ? ["diff", "--cached", base] : ["diff", base];
 }
 
 const DIFF_OPTIONS = ["--relative", "-M", "--no-ext-diff", "--no-color"];
@@ -182,21 +186,29 @@ async function untrackedFile(dir: string, path: string): Promise<GitChangedFile>
   }
 }
 
-/** Changed files of a range, sorted by path. Untracked files count for `working` and `branch`. */
-export async function readChanges(dir: string, range: GitRange, status: GitStatus): Promise<GitChanges> {
+/**
+ * Changed files of a range, sorted by path. Untracked files count for `working` and `branch`. The status may still be
+ * on its way: the untracked scan (the slowest call in a large tree) does not need it and starts at once.
+ */
+export async function readChanges(dir: string, range: GitRange, pending: GitStatus | Promise<GitStatus>): Promise<GitChanges> {
+  const scan = range === "staged" ? Promise.resolve("") : git(dir, ["ls-files", "--others", "--exclude-standard", "-z"]);
+  // Outside a repository the scan fails; the status says so.
+  scan.catch(() => undefined);
+  const status = await pending;
   if (!status.repo) return { status, range, files: [], truncated: false };
   const base = rangeArgs(range, status);
   const [names, nums, others] = await Promise.all([
     git(dir, [...base, ...DIFF_OPTIONS, "--name-status", "-z"]),
     git(dir, [...base, ...DIFF_OPTIONS, "--numstat", "-z"]),
-    range === "staged" ? Promise.resolve("") : git(dir, ["ls-files", "--others", "--exclude-standard", "-z"]),
+    scan,
   ]);
   const stats = parseNumstat(nums);
   const files: GitChangedFile[] = parseNameStatus(names).map((f) => ({ ...f, ...(stats.get(f.path) ?? { additions: 0, deletions: 0, binary: false }) }));
   const tracked = new Set(files.map((f) => f.path));
   const untracked = split0(others).filter((p) => !tracked.has(p));
   const room = Math.max(0, MAX_FILES - files.length);
-  for (const path of untracked.slice(0, room)) files.push(await untrackedFile(dir, path));
+  const listed = untracked.slice(0, room);
+  for (let i = 0; i < listed.length; i += UNTRACKED_READS) files.push(...(await Promise.all(listed.slice(i, i + UNTRACKED_READS).map((p) => untrackedFile(dir, p)))));
   const truncated = files.length > MAX_FILES || untracked.length > room;
   files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
   return { status, range, files: files.slice(0, MAX_FILES), truncated };
@@ -263,11 +275,15 @@ async function newContent(dir: string, range: GitRange, path: string): Promise<B
   }
 }
 
-/** One file's diff in a range: the whole file with its changes, and the hunks around them. */
-export async function readFileDiff(dir: string, range: GitRange, status: GitStatus, path: string, oldPath?: string): Promise<GitFileDiff> {
+/**
+ * One file's diff in a range: the whole file with its changes, and the hunks around them. `at` is the status or the
+ * range's base commit; `untracked` (when the list already knows) saves asking git.
+ */
+export async function readFileDiff(dir: string, range: GitRange, at: GitStatus | string, path: string, oldPath?: string, untracked?: boolean): Promise<GitFileDiff> {
   insidePath(dir, path);
   if (oldPath) insidePath(dir, oldPath);
-  if (range !== "staged" && (await git(dir, ["ls-files", "--others", "--exclude-standard", "-z", "--", path])).length) {
+  const isUntracked = range !== "staged" && (untracked ?? (await git(dir, ["ls-files", "--others", "--exclude-standard", "-z", "--", path])).length > 0);
+  if (isUntracked) {
     // Untracked: the file itself, every line added.
     const full = insidePath(dir, path);
     const info = await stat(full);
@@ -278,7 +294,7 @@ export async function readFileDiff(dir: string, range: GitRange, status: GitStat
   }
   let out: string;
   try {
-    out = await git(dir, [...rangeArgs(range, status), ...DIFF_OPTIONS, `-U${WHOLE_FILE}`, "--", ...(oldPath ? [oldPath, path] : [path])], DIFF_MAX_BYTES);
+    out = await git(dir, [...rangeArgs(range, at), ...DIFF_OPTIONS, `-U${WHOLE_FILE}`, "--", ...(oldPath ? [oldPath, path] : [path])], DIFF_MAX_BYTES);
   } catch (err) {
     if (err instanceof GitError && err.kind === "too-large") return fileDiff(range, path, oldPath, [], { tooLarge: true });
     throw err;

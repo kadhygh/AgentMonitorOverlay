@@ -73,7 +73,9 @@ export class TurnInterrupted extends Error {}
  * (replies `FAKE-ANSWERS: <response JSON>`), `[[form]]` an MCP form with FAKE_FORM_SCHEMA (replies `FAKE-FORM: <response
  * JSON>`), `[[retry]]` two retried errors before the reply, `[[notices]]` the warnings Codex sends about a turn,
  * `[[items]]` the item types without a row of their own (image view and generation, hook prompt, collab call, sleep,
- * function output), `[[progress]]` an MCP call with progress and a command that is typed into, otherwise replies
+ * function output), `[[progress]]` an MCP call with progress and a command that is typed into, `[[ask-async]]`
+ * request_user_input_async as Codex 0.162 sends it (an agentMessage with `delivery: "async"` and its questions; the turn
+ * goes on and replies `FAKE-ASKED`), `[[bad-item]]` an item Studio cannot read before the reply, otherwise replies
  * `FAKE: <text>` (plus
  * ` [images: N]` when it carried images). Steered input
  * is acknowledged in the reply.
@@ -89,6 +91,16 @@ export const defaultTurnScript: TurnScript = async (ctx) => {
   if (ctx.userText.includes("[[elicit]]")) {
     const action = await ctx.mcpElicitation('Allow the amo MCP server to run tool "canvas_group_create"?');
     await ctx.agentMessage(`FAKE-ELICITED: ${action}`);
+    return;
+  }
+  if (ctx.userText.includes("[[ask-async]]")) {
+    ctx.item({ type: "agentMessage", id: `call_${randomUUID()}`, text: "你最喜欢哪个季节？\n- 春天\n- 夏天\n- 秋天", phase: "final_answer", memoryCitation: null, delivery: "async", questions: [{ title: "你最喜欢哪个季节？", options: ["春天", "夏天", "秋天"] }] });
+    await ctx.agentMessage("FAKE-ASKED");
+    return;
+  }
+  if (ctx.userText.includes("[[bad-item]]")) {
+    ctx.notify("item/completed", { item: null });
+    await ctx.agentMessage("FAKE-AFTER-BAD");
     return;
   }
   if (ctx.userText.includes("[[ask]]")) {

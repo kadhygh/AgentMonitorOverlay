@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { answerValues, claudeAnswers, codexAnswers, elicitationForm, fieldDefault, formContent, isAnswered, storedAnswers, type QuestionPrompt } from "./questions.js";
+import { answerValues, asyncAnswerText, asyncPrompts, claudeAnswers, codexAnswers, elicitationForm, fieldDefault, formContent, isAnswered, storedAnswers, type QuestionPrompt } from "./questions.js";
 
 const QUESTIONS: QuestionPrompt[] = [
   { id: "怎么重试？", question: "怎么重试？", options: [{ label: "指数退避" }, { label: "固定间隔", preview: "sleep(2)" }], other: true },
@@ -97,5 +97,18 @@ describe("MCP forms", () => {
     expect(formContent(form, { name: "张三", color: "g", age: "1.5" })).toMatchObject({ field: "age", error: "age：要填整数" });
     expect(formContent(form, { name: "张三", color: "g", age: "500" })).toMatchObject({ field: "age" });
     expect(formContent(form, { name: "张三", color: "blue" })).toMatchObject({ field: "color" });
+  });
+});
+
+describe("Codex request_user_input_async", () => {
+  it("reads the questions and writes the answers as the next message", () => {
+    const qs = asyncPrompts([{ title: "你最喜欢哪个季节？", options: ["春天", "夏天", ""] }, { title: "为什么？", options: null }, { title: "" }, "bad"]);
+    expect(qs).toEqual([
+      { id: "q1", question: "你最喜欢哪个季节？", options: [{ label: "春天" }, { label: "夏天" }], other: true },
+      { id: "q2", question: "为什么？", options: [], other: true },
+    ]);
+    expect(asyncAnswerText(qs.slice(0, 1), [{ id: "q1", selected: ["夏天"] }])).toBe("「你最喜欢哪个季节？」：夏天");
+    expect(asyncAnswerText(qs, [{ id: "q1", selected: ["春天"], other: "都行" }, { id: "q2", selected: [], skipped: true }])).toBe("- 「你最喜欢哪个季节？」：春天、都行\n- 「为什么？」：（跳过）");
+    expect(asyncPrompts(null)).toEqual([]);
   });
 });

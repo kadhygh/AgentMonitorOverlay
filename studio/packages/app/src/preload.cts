@@ -53,6 +53,12 @@ electron.contextBridge.exposeInMainWorld("amo", {
   },
   /** The real path of a dropped or picked file (File.path is gone in recent Electron); "" for in-memory files. */
   pathForFile: (file: File): string => electron.webUtils.getPathForFile(file),
+  /** The Host stopped unexpectedly and the shell started it again. */
+  onHostRestarted: (cb: () => void): (() => void) => {
+    const listener = () => cb();
+    electron.ipcRenderer.on("amo:host-restarted", listener);
+    return () => electron.ipcRenderer.removeListener("amo:host-restarted", listener);
+  },
   /** The file marks window (文件标记, one for all projects), showing a project first. */
   openMarks: (target: { workspaceId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-marks", target),
 });

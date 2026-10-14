@@ -31,7 +31,7 @@ async function reply(link: HostLink, sessionId: string, itemId: string, body: Qu
   }
 }
 
-const SOURCE_LABEL: Record<QuestionItem["source"], string> = { "claude-ask": "Claude 在问你", "codex-input": "Codex 在问你", "mcp-form": "需要填写", "plan-review": "计划待审" };
+const SOURCE_LABEL: Record<QuestionItem["source"], string> = { "claude-ask": "Claude 在问你", "codex-input": "Codex 在问你", "codex-async": "Codex 在问你 · 回答会作为你的下一条消息", "mcp-form": "需要填写", "plan-review": "计划待审" };
 
 /** Drafts survive closing the card (it opens again from the conversation) and are dropped once sent. */
 const savedFlows = new Map<string, Flow>();

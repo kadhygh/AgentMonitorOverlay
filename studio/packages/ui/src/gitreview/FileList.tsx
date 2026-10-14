@@ -1,10 +1,12 @@
 import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import type { GitChangedFile } from "@amo-studio/protocol";
-import { buildTree, clampWidth, LIST_WIDTH, splitFolder, splitName, treeRows, type ListLayout } from "./filetree.js";
-import { groupByFolder, STATUS_LETTER, STATUS_NAME } from "./logic.js";
+import { FileTypeIcon } from "../files/FileTypeIcon.js";
+import { buildTree, clampWidth, LIST_WIDTH, splitFolder, splitName, splitPath, treeRows, type ListLayout } from "./filetree.js";
+import { listOrder, STATUS_GLYPH, STATUS_NAME } from "./logic.js";
 
-// The review window's file list (S12-A): a folder tree (default) or a flat list, names that never get cut at the
-// end, the splitter that sizes the list, and the right-click menu of a file.
+// The review window's file list: a flat list of full paths (default, after Fork) or a folder tree (S12-A), each file
+// with its status icon and type icon, names that never get cut at the end, the splitter that sizes the list, and the
+// right-click menu of a file.
 
 interface FileListProps {
   files: readonly GitChangedFile[];
@@ -16,7 +18,19 @@ interface FileListProps {
   closed: ReadonlySet<string>;
   onToggle(folder: string): void;
   onSelect(path: string): void;
+  /** The pointer rests on a file (its diff is read ahead). */
+  onHover?(file: GitChangedFile): void;
   onMenu(file: GitChangedFile, x: number, y: number): void;
+}
+
+/** A file's status as a coloured square, as in Fork: + added, M modified, − deleted, R renamed. */
+export function StatusIcon({ file }: { file: Pick<GitChangedFile, "status" | "untracked"> }) {
+  const name = file.untracked ? "未跟踪的新文件" : STATUS_NAME[file.status];
+  return (
+    <span className={`gr-status ${file.status}${file.untracked ? " untracked" : ""}`} title={name} aria-label={name} role="img">
+      {STATUS_GLYPH[file.status]}
+    </span>
+  );
 }
 
 /** A name with a middle ellipsis: the head shrinks, the tail (end of the name and extension) always shows. */
@@ -32,12 +46,12 @@ export function MiddleName({ text, split = splitName, className = "gr-name" }: {
 
 const fileTitle = (f: GitChangedFile) => (f.oldPath ? `${f.oldPath} → ${f.path}` : f.path);
 
-export function FileList({ files, layout, selected, perFile, closed, onToggle, onSelect, onMenu }: FileListProps) {
+export function FileList({ files, layout, selected, perFile, closed, onToggle, onSelect, onHover, onMenu }: FileListProps) {
   const tree = useMemo(() => (layout === "tree" ? buildTree(files) : null), [files, layout]);
   const rows = useMemo(() => (tree ? treeRows(tree, closed) : []), [tree, closed]);
-  const flat = useMemo(() => (layout === "flat" ? groupByFolder(files).flatMap((g) => g.files.map((f) => ({ ...f, folder: g.folder }))) : []), [files, layout]);
+  const flat = useMemo(() => (layout === "flat" ? listOrder(files) : []), [files, layout]);
 
-  const fileRow = (f: GitChangedFile, name: string, depth: number | null, folder?: string) => (
+  const fileRow = (f: GitChangedFile, name: string, depth: number | null) => (
     <button
       key={f.path}
       type="button"
@@ -45,6 +59,7 @@ export function FileList({ files, layout, selected, perFile, closed, onToggle, o
       style={depth === null ? undefined : { paddingLeft: 6 + depth * 14 + 14 }}
       aria-current={f.path === selected}
       onClick={() => onSelect(f.path)}
+      onPointerEnter={onHover && (() => onHover(f))}
       onContextMenu={(e: MouseEvent) => {
         e.preventDefault();
         onSelect(f.path);
@@ -53,17 +68,10 @@ export function FileList({ files, layout, selected, perFile, closed, onToggle, o
       title={fileTitle(f)}
       data-testid="review-file"
     >
-      <span className={`gr-status ${f.status}${f.untracked ? " untracked" : ""}`} title={f.untracked ? "未跟踪的新文件" : STATUS_NAME[f.status]}>
-        {STATUS_LETTER[f.status]}
-      </span>
-      {depth === null ? (
-        <span className="gr-flat-names">
-          <MiddleName text={name} />
-          {folder ? <MiddleName text={folder} split={splitFolder} className="gr-name gr-name-folder" /> : null}
-        </span>
-      ) : (
-        <MiddleName text={name} />
-      )}
+      <StatusIcon file={f} />
+      <FileTypeIcon path={f.path} />
+      {/* 平铺: the whole path, its folders dimmed and shortened first; the tree: the name. */}
+      {depth === null ? <MiddleName text={name} split={splitPath} className="gr-name gr-path-name" /> : <MiddleName text={name} />}
       {perFile.get(f.path) ? <span className="gr-badge">{perFile.get(f.path)}</span> : null}
       <span className="gr-count">
         {f.binary ? (
@@ -77,7 +85,7 @@ export function FileList({ files, layout, selected, perFile, closed, onToggle, o
     </button>
   );
 
-  if (layout === "flat") return <>{flat.map((f) => fileRow(f.file, f.name, null, f.folder))}</>;
+  if (layout === "flat") return <>{flat.map((f) => fileRow(f, f.path, null))}</>;
   return (
     <>
       {rows.map((r) =>

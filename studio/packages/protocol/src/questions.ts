@@ -1,9 +1,13 @@
 // Questions the agent asks the person in the conversation (stage 12, S12-B): Claude's AskUserQuestion, Codex's
-// request_user_input, an MCP server's form (elicitation with a schema) and Claude's plan review (ExitPlanMode). Each is
-// one `question` item; the person answers it through `POST /api/sessions/:id/questions/:itemId/answer`.
+// request_user_input and request_user_input_async, an MCP server's form (elicitation with a schema) and Claude's plan
+// review (ExitPlanMode). Each is one `question` item; the person answers it through
+// `POST /api/sessions/:id/questions/:itemId/answer`.
 
-/** Where a question came from. */
-export type QuestionSource = "claude-ask" | "codex-input" | "mcp-form" | "plan-review";
+/**
+ * Where a question came from. `codex-async` is Codex's request_user_input_async: the model asks and carries on (the
+ * turn does not wait); the answer goes back as the person's next message.
+ */
+export type QuestionSource = "claude-ask" | "codex-input" | "codex-async" | "mcp-form" | "plan-review";
 
 /**
  * - pending: waiting for the person
@@ -141,6 +145,29 @@ export function codexAnswers(questions: readonly QuestionPrompt[], answers: read
     if (values.length) out[q.id] = { answers: values };
   }
   return { answers: out };
+}
+
+/** request_user_input_async's questions (a title, options or none) as prompts, numbered by position. */
+export function asyncPrompts(list: unknown): QuestionPrompt[] {
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((q): q is { title?: unknown; options?: unknown } => !!q && typeof q === "object")
+    .map((q, i) => ({
+      id: `q${i + 1}`,
+      question: typeof q.title === "string" ? q.title : "",
+      options: (Array.isArray(q.options) ? q.options.filter((o): o is string => typeof o === "string" && o.trim() !== "") : []).map((label) => ({ label })),
+      other: true,
+    }))
+    .filter((q) => q.question.trim() !== "");
+}
+
+/** Answers to async questions as the person's next message: each question and what was chosen. */
+export function asyncAnswerText(questions: readonly QuestionPrompt[], answers: readonly QuestionAnswer[]): string {
+  const lines = questions.map((q) => {
+    const values = answerValues(answers.find((x) => x.id === q.id));
+    return `「${q.question}」：${values.length ? values.join("、") : "（跳过）"}`;
+  });
+  return lines.length === 1 ? lines[0]! : lines.map((l) => `- ${l}`).join("\n");
 }
 
 /** Answers as they are kept on the item: only known questions, secrets masked. */

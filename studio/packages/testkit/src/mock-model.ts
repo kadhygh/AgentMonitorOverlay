@@ -198,6 +198,8 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  * - `[[demo]]` → a whole working turn: think, read `importer.py`, patch it, run a check, answer with a table
  * - `[[ask]]` → calls request_user_input with MOCK_ASK_QUESTIONS in Codex's shape (ids `retry`, `logging`),
  *   then replies `MOCK-ANSWERED: <the tool output>`
+ * - `[[ask-async]]` → calls request_user_input_async (Codex 0.162 offers it outside Plan mode: the question is sent
+ *   and the turn goes on), then replies `MOCK-ASKED: <the tool output>`; `MOCK-NO-ASYNC-TOOL` when it is not offered
  * - `[[retry]]` → the first two tries disconnect before completing (Codex retries), then `MOCK: …`; `[[retry:N]]` N
  * - `[[view-image: <absolute path>]]` → calls view_image on that file, then replies `MOCK-DONE`
  * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
@@ -210,7 +212,12 @@ export const defaultScript: MockScript = (req) => {
   if (req.lastUserText.includes("[[demo]]")) return demoStep(req);
   if (req.afterToolOutput && req.lastTool && /amo/.test(req.lastTool.name)) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.output.slice(0, 200)}` };
   if (req.afterToolOutput && req.lastTool?.name === "request_user_input") return { kind: "text", text: `MOCK-ANSWERED: ${req.lastTool.output}` };
+  if (req.afterToolOutput && req.lastTool?.name === "request_user_input_async") return { kind: "text", text: `MOCK-ASKED: ${req.lastTool.output}` };
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
+  if (req.lastUserText.includes("[[ask-async]]")) {
+    if (!req.tools.includes("request_user_input_async")) return { kind: "text", text: "MOCK-NO-ASYNC-TOOL" };
+    return { kind: "function_call", name: "request_user_input_async", arguments: { questions: [{ title: "你最喜欢哪个季节？", options: ["春天", "夏天", "秋天"] }] } };
+  }
   if (req.lastUserText.includes("[[ask]]") && req.tools.includes("request_user_input")) {
     const ids = ["retry", "logging"];
     const questions = MOCK_ASK_QUESTIONS.map((q, i) => ({ id: ids[i]!, header: q.header, question: q.question, options: q.options }));

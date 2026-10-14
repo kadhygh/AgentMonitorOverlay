@@ -199,3 +199,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 }
 
 .app { height: 100%; display: flex; flex-direction: column; }
+
+/* A part that failed to render (lib/ErrorBoundary.tsx): a row, a page, or the whole window. */
+.render-error { display: flex; align-items: center; gap: 10px; padding: 6px 10px; border: 1px dashed var(--attention-border); border-radius: var(--r-l); background: var(--attention-bg); color: var(--text); font-size: var(--fs-sm); }
+.render-error.pane, .render-error.window { flex-direction: column; align-items: flex-start; gap: 8px; margin: 24px; padding: 16px 18px; border-style: solid; }
+.render-error.window { margin: 48px auto; max-width: 560px; }
+.render-error-actions { display: flex; gap: 8px; }
+.render-error-note { color: var(--text-dim); font-size: var(--fs-cap); }
+.host-error-toast { position: fixed; right: 18px; bottom: 18px; z-index: 50; max-width: 520px; }

@@ -47,6 +47,16 @@ function testModelOptions(): Partial<StartHostOptions> {
   };
 }
 
+// A failure no request catches (a timer, a promise nobody awaited) would otherwise end the process, and every session
+// with it. Log it with its stack, tell the windows, and keep serving.
+let reportTo: ((err: unknown) => void) | null = null;
+const survive = (what: string) => (err: unknown) => {
+  console.error(`[${new Date().toISOString()}] ${what}; the Host keeps running:`, err);
+  reportTo?.(err);
+};
+process.on("uncaughtException", survive("uncaught exception"));
+process.on("unhandledRejection", survive("unhandled promise rejection"));
+
 try {
   const host = await startHost({
     dataDir,
@@ -58,6 +68,7 @@ try {
     ...(process.env.AMO_STUDIO_TEST === "1" ? { launcher: new RecordingTerminalLauncher() } : {}),
   });
   console.log(`AMO Studio Host listening on ${host.info.url} (data: ${dataDir})`);
+  reportTo = (err) => host.service.reportError(err);
   const stop = (keepServers: boolean) => {
     void host.shutdown({ keepServers }).then(() => process.exit(0));
   };

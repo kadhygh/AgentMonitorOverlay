@@ -11,6 +11,7 @@ import { splitFileRefItems } from "../attach/refs.js";
 import { TurnChanges } from "../files/ChangedFiles.js";
 import { QuestionRecord } from "./questions/QuestionRecord.js";
 import { CommandRecord, CompactionRow, NoticeRow } from "./cli/CliRows.js";
+import { RowBoundary } from "../lib/ErrorBoundary.js";
 
 // The conversation, one turn after another (DSH ui-chat): the person's bubble, the work (folded once the turn is
 // done), the answer, and a footer with copy, time and token usage. A running turn ends with a live status line.
@@ -55,8 +56,9 @@ export function Transcript({ session, items, annotations, model, busy, view, onA
   return (
     <>
       {segments.map((seg, i) => (
+        // One turn that cannot be drawn shows a line saying so; the turns around it stay.
+        <RowBoundary key={seg.key} what="这一轮">
         <TurnView
-          key={seg.key}
           seg={seg}
           latest={i === segments.length - 1}
           view={view}
@@ -75,6 +77,7 @@ export function Transcript({ session, items, annotations, model, busy, view, onA
           onApprove={onApprove}
           onJump={onJump}
         />
+        </RowBoundary>
       ))}
       {sessionRunning && (
         <RunningStatus
@@ -134,7 +137,9 @@ function TurnView({
       {!folded && seg.rows.length > 0 && (
         <div className="turn-work">
           {seg.rows.map((row) => (
-            <RowView key={row.key} row={row} view={view} flat={flat} busy={busy} highlights={highlights} onApprove={onApprove} onJump={onJump} />
+            <RowBoundary key={row.key}>
+              <RowView row={row} view={view} flat={flat} busy={busy} highlights={highlights} onApprove={onApprove} onJump={onJump} />
+            </RowBoundary>
           ))}
         </div>
       )}
@@ -150,7 +155,9 @@ function TurnView({
       {seg.answer && <AgentReply item={seg.answer} highlights={highlights(seg.answer.id)} />}
       {finished && <TurnChanges items={segmentMembers(seg)} />}
       {seg.tail.map((item) => (
-        <StandaloneItem key={item.id} item={item} busy={busy} highlights={highlights} onApprove={onApprove} />
+        <RowBoundary key={item.id}>
+          <StandaloneItem item={item} busy={busy} highlights={highlights} onApprove={onApprove} />
+        </RowBoundary>
       ))}
       {finished && seg.answer && !seg.answer.streaming && (
         <TurnFooter answer={seg.answer} usage={seg.turn?.usage} speed={outputSpeed(seg.turn ?? undefined, segmentMembers(seg))} endedAt={seg.turn?.endedAt} model={model} always={latest} />

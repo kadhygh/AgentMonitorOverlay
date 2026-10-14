@@ -1,4 +1,4 @@
-import { composeGitReviewMessage, isGitRange, sortComments, type GitChanges, type GitFileDiff, type GitRange, type GitReviewComment, type GitStatus, type Id, type NewGitReviewComment } from "@amo-studio/protocol";
+import { composeGitReviewMessage, isGitRange, isObjectId, rangeBase, sortComments, type GitChanges, type GitFileDiff, type GitRange, type GitReviewComment, type GitStatus, type Id, type NewGitReviewComment } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -20,17 +20,29 @@ export class GitReviewFeature extends Feature {
   async changes(workspaceId: Id, range: unknown): Promise<GitChanges> {
     const r = this.range(range);
     const dir = this.requireWorkspace(workspaceId).path;
-    return this.git(async () => readChanges(dir, r, await readStatus(dir)));
+    // The status and the listing's untracked scan run side by side (readChanges starts the scan before waiting).
+    return this.git(async () => readChanges(dir, r, readStatus(dir)));
   }
 
-  async diff(workspaceId: Id, range: unknown, path: unknown, oldPath?: unknown): Promise<GitFileDiff> {
+  /**
+   * One file's diff. With the list's `base` (and whether the file is untracked) it is a single git call; without
+   * them the status is read first (several calls).
+   */
+  async diff(workspaceId: Id, range: unknown, path: unknown, oldPath?: unknown, known: { base?: unknown; untracked?: unknown } = {}): Promise<GitFileDiff> {
     const r = this.range(range);
     if (typeof path !== "string" || !path) throw new HostError("bad_request", "path is required");
+    if (known.base != null && known.base !== "" && !isObjectId(known.base)) throw new HostError("bad_request", "base must be a full commit id");
+    const untracked = known.untracked === "1" ? true : known.untracked === "0" ? false : undefined;
     const dir = this.requireWorkspace(workspaceId).path;
     return this.git(async () => {
-      const status = await readStatus(dir);
-      if (!status.repo) throw new HostError("bad_request", status.reason ?? "不是 git 仓库");
-      return readFileDiff(dir, r, status, path, typeof oldPath === "string" && oldPath ? oldPath : undefined);
+      const given = known.base;
+      let base = isObjectId(given) ? given : null;
+      if (!base) {
+        const status = await readStatus(dir);
+        if (!status.repo) throw new HostError("bad_request", status.reason ?? "不是 git 仓库");
+        base = rangeBase(r, status);
+      }
+      return readFileDiff(dir, r, base, path, typeof oldPath === "string" && oldPath ? oldPath : undefined, untracked);
     });
   }
 

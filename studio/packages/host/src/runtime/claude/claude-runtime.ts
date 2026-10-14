@@ -73,6 +73,8 @@ interface Live {
   interrupted: boolean;
   /** Closed by Studio (idle, archive, Host shutdown) rather than ended by the CLI. */
   closedByHost: boolean;
+  /** Message types Studio failed to handle in this query (each told once in the conversation). */
+  handlerErrors: Set<string>;
   background: Set<string>;
   idleTimer: ReturnType<typeof setTimeout> | null;
   /** Tokens in the context after the latest model call of this turn (from the assistant messages' usage). */
@@ -587,6 +589,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       ready: Promise.resolve(),
       interrupted: false,
       closedByHost: false,
+      handlerErrors: new Set(),
       background: new Set(),
       idleTimer: null,
       turn: null,
@@ -651,7 +654,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         try {
           this.onMessage(sessionId, live, m);
         } catch (err) {
-          this.emit("log", `failed to handle a ${m.type} message for ${sessionId}: ${String(err)}`);
+          // One message Studio cannot handle stays a line in its conversation (and the log); the session goes on.
+          this.emit("log", `failed to handle a ${m.type} message for ${sessionId}: ${err instanceof Error ? (err.stack ?? err.message) : String(err)}`);
+          if (!live.handlerErrors.has(m.type) && this.store.getSession(sessionId)) {
+            live.handlerErrors.add(m.type);
+            this.appendItem(sessionId, { type: "notice", level: "warning", message: `Studio 处理 Claude 的一条消息（${m.type}）时出错，这条可能没显示出来：${firstLine(err)}。详情在 host.log。` });
+          }
         }
       }
       this.finish(sessionId, live, null);
