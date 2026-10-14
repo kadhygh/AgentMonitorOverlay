@@ -9,6 +9,11 @@ export function gitReviewRoutes(service: HostService): Route[] {
     route("GET", "/api/workspaces/:id/git/diff", ({ params, query }) =>
       service.gitReview.diff(params.id!, query.get("range"), query.get("path"), query.get("oldPath"), { base: query.get("base"), untracked: query.get("untracked") }),
     ),
+    route("GET", "/api/workspaces/:id/git/log", ({ params, query }) => service.gitReview.log(params.id!, query.get("limit"))),
+    route("GET", "/api/workspaces/:id/git/commit", ({ params, query }) => service.gitReview.commit(params.id!, query.get("sha"))),
+    route("GET", "/api/workspaces/:id/git/commit-diff", ({ params, query }) =>
+      service.gitReview.commitDiff(params.id!, query.get("sha"), query.get("base"), query.get("path"), query.get("oldPath")),
+    ),
     route("GET", "/api/workspaces/:id/review-comments", ({ params }) => service.gitReview.comments(params.id!)),
     route("POST", "/api/workspaces/:id/review-comments/send", ({ params, body }) => service.gitReview.send(params.id!, obj(body).sessionId, obj(body).ids)),
     route("POST", "/api/workspaces/:id/review-comments", ({ params, body }) => service.gitReview.addComment(params.id!, obj(body) as never)),

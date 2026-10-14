@@ -466,3 +466,13 @@ export interface HostRoutes {
   "GET /api/settings/chat": { req: void; res: import("./cli.js").ChatSettings };
   "PUT /api/settings/chat": { req: Partial<import("./cli.js").ChatSettings>; res: import("./cli.js").ChatSettings };
 }
+
+// ---- commit history (stage 13, S13-B): the branch's commits and one commit's changes, read-only -------------------
+export interface HostRoutes {
+  /** HEAD's history, newest first; `?limit=` (default and most GIT_LOG_MAX). */
+  "GET /api/workspaces/:id/git/log": { req: void; res: import("./gitreview.js").GitLog };
+  /** One commit's changed files against its first parent: `?sha=` (7 to 64 hex digits). */
+  "GET /api/workspaces/:id/git/commit": { req: void; res: import("./gitreview.js").GitCommitChanges };
+  /** One file of a commit: `?sha=` and `?base=` (full ids, from the commit's listing), `?path=` (and `?oldPath=`). One git call. */
+  "GET /api/workspaces/:id/git/commit-diff": { req: void; res: import("./gitreview.js").GitFileDiff };
+}

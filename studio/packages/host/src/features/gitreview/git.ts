@@ -1,7 +1,24 @@
 import { execFile } from "node:child_process";
 import { open, readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { diffHunks, GIT_EMPTY_TREE, rangeBase, type GitChangedFile, type GitChanges, type GitDiffLine, type GitFileDiff, type GitFileStatus, type GitRange, type GitStatus } from "@amo-studio/protocol";
+import {
+  diffHunks,
+  GIT_EMPTY_TREE,
+  GIT_LOG_MAX,
+  isCommitRef,
+  isObjectId,
+  rangeBase,
+  type GitChangedFile,
+  type GitChanges,
+  type GitCommit,
+  type GitCommitChanges,
+  type GitDiffLine,
+  type GitFileDiff,
+  type GitFileStatus,
+  type GitLog,
+  type GitRange,
+  type GitStatus,
+} from "@amo-studio/protocol";
 
 // Reading a project's changes from git: `git` runs through execFile (no shell) in the project folder, with a timeout
 // and bounded output. Paths are relative to the project folder (`--relative`), so a project inside a larger
@@ -309,4 +326,85 @@ export async function readFileDiff(dir: string, range: GitRange, at: GitStatus |
     return fileDiff(range, path, oldPath, data ? asLines(data.toString("utf8"), "context") : []);
   }
   return fileDiff(range, path, oldPath, parsed.lines);
+}
+
+// ---- commit history (stage 13, S13-B) ---------------------------------------------------------------------------
+
+/** Fields of one commit in `git log` output: unit separator between fields, record separator after each commit. */
+const LOG_FORMAT = "--format=%H%x1f%P%x1f%an%x1f%ae%x1f%aI%x1f%s%x1e";
+
+/** `git log` with LOG_FORMAT, as commits. */
+export function parseLog(out: string): GitCommit[] {
+  const commits: GitCommit[] = [];
+  for (const record of out.split("\x1e")) {
+    const f = record.replace(/^\r?\n/, "").split("\x1f");
+    if (f.length < 6 || !/^[0-9a-f]{40,64}$/.test(f[0]!)) continue;
+    commits.push({ sha: f[0]!, parents: f[1]!.split(" ").filter(Boolean), author: f[2]!, email: f[3]!, date: f[4]!, subject: f.slice(5).join("\x1f").trim() });
+  }
+  return commits;
+}
+
+/** The pathspec that keeps a project inside a larger repository to its own commits (none at the top folder). */
+async function ownCommits(dir: string): Promise<string[]> {
+  const prefix = (await git(dir, ["rev-parse", "--show-prefix"])).trim();
+  return prefix ? ["--", "."] : [];
+}
+
+/** HEAD's latest commits, newest first (`limit` at most GIT_LOG_MAX). */
+export async function readLog(dir: string, limit = GIT_LOG_MAX): Promise<GitLog> {
+  const n = Math.max(1, Math.min(GIT_LOG_MAX, Math.floor(limit) || GIT_LOG_MAX));
+  const [head, branch, scope] = await Promise.all([
+    maybe(dir, ["rev-parse", "--verify", "-q", "HEAD^{commit}"]),
+    maybe(dir, ["symbolic-ref", "--short", "-q", "HEAD"]),
+    ownCommits(dir),
+  ]);
+  if (!head) return { branch, head: null, commits: [], truncated: false };
+  // One more than asked: whether there are more.
+  const commits = parseLog(await git(dir, ["log", `-n${n + 1}`, "--no-color", LOG_FORMAT, head, ...scope]));
+  return { branch, head, commits: commits.slice(0, n), truncated: commits.length > n };
+}
+
+/** One commit and its changed files against its first parent (the empty tree for a root commit). */
+export async function readCommit(dir: string, ref: string): Promise<GitCommitChanges> {
+  if (!isCommitRef(ref)) throw new GitError(`bad commit ${String(ref)}`, "failed");
+  const sha = await maybe(dir, ["rev-parse", "--verify", "-q", `${ref}^{commit}`]);
+  if (!sha) throw new GitError(`commit ${ref} not found`, "failed");
+  const [commit] = parseLog(await git(dir, ["log", "-n1", "--no-color", LOG_FORMAT, sha]));
+  if (!commit) throw new GitError(`commit ${ref} not found`, "failed");
+  const base = commit.parents[0] ?? EMPTY_TREE;
+  const [names, nums] = await Promise.all([
+    git(dir, ["diff", base, sha, ...DIFF_OPTIONS, "--name-status", "-z"]),
+    git(dir, ["diff", base, sha, ...DIFF_OPTIONS, "--numstat", "-z"]),
+  ]);
+  const stats = parseNumstat(nums);
+  const files: GitChangedFile[] = parseNameStatus(names).map((f) => ({ ...f, ...(stats.get(f.path) ?? { additions: 0, deletions: 0, binary: false }) }));
+  files.sort((a, b) => (a.path < b.path ? -1 : a.path > b.path ? 1 : 0));
+  return { commit, base, files: files.slice(0, MAX_FILES), truncated: files.length > MAX_FILES };
+}
+
+/** One file of a commit against `base` (both full ids, from readCommit): the whole file with its changes, one git call. */
+export async function readCommitFileDiff(dir: string, base: string, sha: string, path: string, oldPath?: string): Promise<GitFileDiff> {
+  if (!isObjectId(base) || !isObjectId(sha)) throw new GitError("base and sha must be full commit ids", "failed");
+  insidePath(dir, path);
+  if (oldPath) insidePath(dir, oldPath);
+  const of = (d: GitFileDiff): GitFileDiff => ({ ...d, commit: sha });
+  let out: string;
+  try {
+    out = await git(dir, ["diff", base, sha, ...DIFF_OPTIONS, `-U${WHOLE_FILE}`, "--", ...(oldPath ? [oldPath, path] : [path])], DIFF_MAX_BYTES);
+  } catch (err) {
+    if (err instanceof GitError && err.kind === "too-large") return of(fileDiff("working", path, oldPath, [], { tooLarge: true }));
+    throw err;
+  }
+  const parsed = parseUnifiedDiff(out);
+  if (parsed.binary) return of(fileDiff("working", path, oldPath, [], { binary: true }));
+  if (parsed.lines.length) return of(fileDiff("working", path, oldPath, parsed.lines));
+  // No text change (a pure rename, a mode change): the file as the commit has it.
+  let text: string | null = null;
+  try {
+    text = await git(dir, ["show", `${sha}:./${path}`], DIFF_MAX_BYTES);
+  } catch (err) {
+    if (err instanceof GitError && err.kind === "too-large") return of(fileDiff("working", path, oldPath, [], { tooLarge: true }));
+  }
+  if (text !== null && text.includes("\0")) return of(fileDiff("working", path, oldPath, [], { binary: true }));
+  return of(fileDiff("working", path, oldPath, text ? asLines(text, "context") : []));
 }

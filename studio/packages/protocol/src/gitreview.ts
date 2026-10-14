@@ -93,7 +93,10 @@ export interface GitDiffHunk {
 }
 
 export interface GitFileDiff {
+  /** The range of a working-tree diff; a commit's diff (`commit` set) says `working` and means nothing by it. */
   range: GitRange;
+  /** A commit's diff (S13-B): the commit's full id. */
+  commit?: string;
   path: string;
   oldPath?: string;
   binary: boolean;
@@ -200,4 +203,44 @@ export function composeGitReviewMessage(comments: ReadonlyArray<Pick<GitReviewCo
   });
   const where = project ? `「${project}」的改动` : "改动";
   return `Git Review 批注：我看了${where}，有 ${comments.length} 条批注。\n\n${parts.join("\n\n")}`;
+}
+
+// ---- commit history (stage 13, S13-B): the branch's commits, and one commit's changes in a window of its own ------
+
+/** A commit of the branch's history. */
+export interface GitCommit {
+  /** Full id. */
+  sha: string;
+  /** Full ids; the first is what the commit's changes are shown against (none for a root commit). */
+  parents: string[];
+  author: string;
+  email: string;
+  /** Author date, ISO 8601. */
+  date: string;
+  /** First line of the message. */
+  subject: string;
+}
+
+/** Commits listed at most (newest first). */
+export const GIT_LOG_MAX = 500;
+
+/** HEAD's history, newest first; only the commits that touch the project folder when it sits inside a larger repository. */
+export interface GitLog {
+  branch: string | null;
+  head: string | null;
+  commits: GitCommit[];
+  /** More commits than listed. */
+  truncated: boolean;
+}
+
+/** A commit as a window address or a query names it: 7 to 64 hex digits (abbreviated or full). */
+export const isCommitRef = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{7,64}$/.test(v);
+
+/** One commit's changed files, against its first parent (git's empty tree for a root commit). */
+export interface GitCommitChanges {
+  commit: GitCommit;
+  /** What the files are compared with: the first parent, or the empty tree. */
+  base: string;
+  files: GitChangedFile[];
+  truncated: boolean;
 }

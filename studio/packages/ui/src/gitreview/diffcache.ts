@@ -8,12 +8,14 @@ export interface DiffRequest {
   /** The commit the range compares with (rangeBase of the listing's status). */
   base: string;
   file: GitChangedFile;
+  /** A commit's file (S13-B): the commit's full id, `base` its first parent. */
+  commit?: string;
 }
 
 /** Files this large are only read when opened. */
 export const PREFETCH_MAX_CHANGES = 3000;
 
-export const diffKey = ({ range, base, file }: DiffRequest) => `${range}\u0000${base}\u0000${file.oldPath ?? ""}\u0000${file.path}`;
+export const diffKey = ({ range, base, file, commit }: DiffRequest) => `${commit ?? range}\u0000${base}\u0000${file.oldPath ?? ""}\u0000${file.path}`;
 
 export class DiffCache {
   /** Read diffs, least recently used first. */

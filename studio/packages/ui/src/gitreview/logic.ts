@@ -1,20 +1,26 @@
-import type { GitChangedFile, GitDiffLine, GitFileDiff, GitFileStatus, GitLineSide, GitRange, GitReviewComment, Session, StateSnapshot } from "@amo-studio/protocol";
+import { isCommitRef, type GitChangedFile, type GitDiffLine, type GitFileDiff, type GitFileStatus, type GitLineSide, type GitRange, type GitReviewComment, type Session, type StateSnapshot } from "@amo-studio/protocol";
 
 // Pure logic of the Git Review window: its address, the file list, the rows of a diff, where comments sit, and the
 // session the comments go to by default.
 
-/** What a review window shows: a project, and the session comments go to unless another is picked. */
+/**
+ * What a review window shows: a project, and the session comments go to unless another is picked; or one commit of
+ * the project's history (S13-B), read-only.
+ */
 export interface ReviewTarget {
   workspaceId: string;
   sessionId?: string;
+  /** A commit's window (S13-B): read-only, no session or file. */
+  commit?: string;
   /** Stage 13 (用 git diff 看): the file to select, absolute or relative to the project. */
   file?: string;
   /** Changes on every open with a file (the shell sets it), so asking for the same file again still selects it. */
   nonce?: string;
 }
 
-/** The window's address: `#review?workspace=…&session=…&file=…&n=…`. */
+/** The window's address: `#review?workspace=…&session=…&file=…&n=…`, or `#review?workspace=…&commit=…`. */
 export function reviewHash(t: ReviewTarget): string {
+  if (t.commit) return `#review?${new URLSearchParams({ workspace: t.workspaceId, commit: t.commit }).toString()}`;
   const q = new URLSearchParams({ workspace: t.workspaceId, ...(t.sessionId ? { session: t.sessionId } : {}) });
   if (t.file) q.set("file", t.file);
   if (t.file && t.nonce) q.set("n", t.nonce);
@@ -26,6 +32,8 @@ export function parseReviewHash(hash: string): ReviewTarget | null {
   const q = new URLSearchParams(hash.slice("#review".length).replace(/^\?/, ""));
   const workspaceId = q.get("workspace");
   if (!workspaceId) return null;
+  const commit = q.get("commit");
+  if (commit !== null) return isCommitRef(commit) ? { workspaceId, commit } : null;
   const sessionId = q.get("session");
   const file = q.get("file");
   const nonce = q.get("n");
