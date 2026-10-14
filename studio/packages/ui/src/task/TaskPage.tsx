@@ -9,6 +9,7 @@ import { COLUMN_NAMES } from "../lib/status.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
+import { flashAnnotation } from "../review/highlights.js";
 import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { showToast } from "../lib/toast.js";
@@ -169,9 +170,10 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
 
   const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
 
-  /** Scrolls to the annotated block of a reply and flashes it. */
+  /** Scrolls to the annotated text of a reply and flashes it (its block, where highlights are not available). */
   function locate(a: Annotation, retry = true) {
     const reply = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(a.itemId)}"]`);
+    if (reply && flashAnnotation(a.id)) return;
     if (!reply) {
       // A reply between steps hides in a folded turn: unfold it, then look again once it has rendered.
       if (!retry) return;

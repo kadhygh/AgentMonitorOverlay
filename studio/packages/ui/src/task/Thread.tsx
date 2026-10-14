@@ -21,6 +21,7 @@ import { SessionDecisions } from "../collab/DecisionPanel.js";
 import { PlanReviewBar, sendRevision } from "../chat/questions/PlanReview.js";
 import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
 import { AnnotationBubble, contentRect, SelectionBar, type BubbleTarget, type ContentRect } from "../review/AnnotationBubble.js";
+import { annotationAt, annotationRect, highlightsSupported, useAnnotationHighlights } from "../review/highlights.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
 import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
 import { BackgroundTasks, latestSuggestion, SuggestionChips } from "../chat/cli/ComposerExtras.js";
@@ -154,6 +155,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   }, [menu]);
 
   const sources = new Map(items.filter((i) => i.type === "agent").map((i) => [i.id, (i as { markdown: string }).markdown]));
+  useAnnotationHighlights(scroller, annotations, sources);
   const quoteToDraft = (quote: string) =>
     setDraft((d) => `${d.trim() ? `${d.trimEnd()}\n\n` : ""}${quote.split("\n").map((l) => `> ${l}`).join("\n")}\n\n`);
 
@@ -330,9 +332,22 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
               setBar(anchor && at && !bubble ? { anchor, at } : null);
             });
           }}
+          onMouseMove={(e) => {
+            // The highlighted text takes clicks (stage 13: only the quoted text is highlighted, not its block).
+            if (!highlightsSupported()) return;
+            const over = !inBubble(e.target) && annotationAt(e.clientX, e.clientY) !== null;
+            e.currentTarget.style.cursor = over ? "pointer" : "";
+          }}
           onClick={(e) => {
             // A highlighted passage opens its note (when nothing is being selected).
             if (inBubble(e.target) || !window.getSelection()?.isCollapsed) return;
+            if (highlightsSupported()) {
+              const id = annotationAt(e.clientX, e.clientY);
+              const annotation = id ? annotations.find((a) => a.id === id && !a.sentAt) : undefined;
+              const rect = id ? annotationRect(id) : null;
+              if (annotation && rect && scroller.current) setBubble({ kind: "edit", annotation, at: contentRect(scroller.current, rect) });
+              return;
+            }
             const block = (e.target as Element).closest<HTMLElement>("[data-annotated]");
             const itemId = block?.closest<HTMLElement>("[data-item-id]")?.dataset.itemId;
             if (!block || !itemId || !scroller.current) return;
