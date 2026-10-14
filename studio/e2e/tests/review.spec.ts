@@ -25,6 +25,21 @@ async function annotate(page: Page, quote: string, note: string) {
   await expect(bubble).toHaveCount(0);
 }
 
+/** The texts painted by a CSS highlight (review/highlights.ts), sorted. */
+const painted = (page: Page, name = "amo-annotation") =>
+  page.evaluate((n) => [...(CSS.highlights.get(n) ?? [])].map((r) => (r as Range).toString()).sort(), name);
+
+/** Clicks the middle of the painted text that reads `text`. */
+async function clickPainted(page: Page, text: string) {
+  const at = await page.evaluate((t) => {
+    const r = [...(CSS.highlights.get("amo-annotation") ?? [])].find((x) => (x as Range).toString() === t) as Range | undefined;
+    const box = r?.getClientRects()[0];
+    return box ? { x: box.left + box.width / 2, y: box.top + box.height / 2 } : null;
+  }, text);
+  expect(at, `painted "${text}"`).not.toBeNull();
+  await page.mouse.click(at!.x, at!.y);
+}
+
 test("annotate replies, edit, locate and send the summary back", async () => {
   studio = await launchStudio();
   const { page } = studio;
@@ -53,9 +68,12 @@ test("annotate replies, edit, locate and send the summary back", async () => {
   await expect(cards).toHaveCount(3);
   await expect(page.getByTestId("annotation-count")).toHaveText("3");
   await expect(reply.locator("[data-annotated]")).toHaveCount(3);
+  // Stage 13: only the quoted text is highlighted — one line of the list, one cell of the table — not their blocks.
+  await expect.poll(() => painted(page)).toEqual(["Boss_Lv20", "先修正概率", "发现 3 张表"]);
+  await screenshot(studio.app, "stage-13", "S13-C-annotation-precise", page);
 
   // A highlighted passage opens its note in the bubble, to change it there.
-  await reply.locator("[data-annotated]").filter({ hasText: "先修正概率" }).click();
+  await clickPainted(page, "先修正概率");
   const bubble = page.getByTestId("annotation-bubble");
   await expect(bubble.getByLabel("批注内容")).toHaveValue("先确认策划的意图");
   await screenshot(studio.app, "stage-12", "S12-N-annotation-bubble-edit", page);
@@ -71,11 +89,11 @@ test("annotate replies, edit, locate and send the summary back", async () => {
   await cards.nth(2).getByRole("button", { name: "删除" }).click();
   await expect(cards).toHaveCount(2);
   await expect(reply.locator("[data-annotated]")).toHaveCount(2);
+  await expect.poll(() => painted(page)).toEqual(["先修正概率", "发现 3 张表"]);
 
-  // Clicking the quote locates and flashes the annotated block.
+  // Clicking the quote locates and flashes the annotated text.
   await cards.nth(0).getByTitle("定位到原文").click();
-  await expect(reply.locator(".md-flash")).toHaveCount(1);
-  await expect(reply.locator(".md-flash")).toContainText("发现");
+  await expect.poll(() => painted(page, "amo-annotation-flash")).toEqual(["发现 3 张表"]);
   await screenshot(studio.app, "stage-2", "S2-04-annotations", page);
 
   // Send the summary: one user message with both quotes in reply order; annotations fold into "已发送".
@@ -90,6 +108,7 @@ test("annotate replies, edit, locate and send the summary back", async () => {
   await expect(cards).toHaveCount(0);
   await expect(page.getByTestId("annotation-count")).toHaveText("0");
   await expect(reply.locator("[data-annotated]")).toHaveCount(0);
+  await expect.poll(() => painted(page)).toEqual([]);
   await page.getByRole("button", { name: /已发送 2/ }).click();
   await expect(page.getByTestId("annotation-sent")).toHaveCount(2);
   await screenshot(studio.app, "stage-2", "S2-04-sent", page);

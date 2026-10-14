@@ -43,7 +43,9 @@ export function createFocusWindow({ url, preload, testMode, saved, onMoved }: Fo
     focusable: false,
     show: false,
     paintWhenInitiallyHidden: true,
-    webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: !testMode },
+    // Never throttled (stage 13): it is never focused, and its whole job is to change the moment something needs the
+    // person. Its own work is a few small renders per Host event.
+    webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   win.setAlwaysOnTop(true, "floating");
   // Transparent areas let clicks through; the renderer turns this off while the pointer is over the panel.

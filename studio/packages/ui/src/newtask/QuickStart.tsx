@@ -3,7 +3,7 @@ import { projectWorkspaces, type ModelProfile, type Session, type Task, type Top
 import { HostApiError, type HostLink } from "../host/client.js";
 import { activeModel, useProfileChoices } from "../lib/choices.js";
 import { samePick } from "../lib/recents.js";
-import { EffortBars } from "../chat/pickers.js";
+import { EffortBars, FastToggle } from "../chat/pickers.js";
 import { submitDraft, useTaskDraft } from "./draft.js";
 import { ModelRow, tilePicks } from "./ModelRow.js";
 import { SuggestList, useMentions } from "./Suggest.js";
@@ -135,6 +135,7 @@ export function QuickStart({
           {model && model.efforts.length > 0 && (
             <EffortBars efforts={model.efforts} value={draft.options.effort ?? null} fallback={model.defaultEffort} onChange={(effort) => update({ options: { ...draft.options, effort } })} small />
           )}
+          <FastToggle fast={model?.fast} value={draft.options.fast} onChange={(fast) => update({ options: { ...draft.options, fast } })} small />
           <span className="quick-hints">
             <span>
               <kbd>↵</kbd>开始

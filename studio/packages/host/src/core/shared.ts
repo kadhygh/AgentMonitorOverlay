@@ -29,6 +29,7 @@ export function sessionOptions(v: unknown): SessionOptions {
   if (model) out.model = model;
   if (effort) out.effort = effort;
   if (permission) out.permission = permission;
+  if (typeof o.fast === "boolean") out.fast = o.fast;
   return out;
 }
 

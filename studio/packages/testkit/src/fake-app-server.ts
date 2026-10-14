@@ -93,8 +93,11 @@ export const defaultTurnScript: TurnScript = async (ctx) => {
     await ctx.agentMessage(`FAKE-ELICITED: ${action}`);
     return;
   }
-  if (ctx.userText.includes("[[ask-async]]")) {
+  const askAsync = /\[\[ask-async(?::(\d+))?\]\]/.exec(ctx.userText);
+  if (askAsync) {
     ctx.item({ type: "agentMessage", id: `call_${randomUUID()}`, text: "你最喜欢哪个季节？\n- 春天\n- 夏天\n- 秋天", phase: "final_answer", memoryCitation: null, delivery: "async", questions: [{ title: "你最喜欢哪个季节？", options: ["春天", "夏天", "秋天"] }] });
+    // `[[ask-async:N]]`: the model goes on working N ms before it replies (the turn is still running meanwhile).
+    if (askAsync[1]) await new Promise((r) => setTimeout(r, Number(askAsync[1])));
     await ctx.agentMessage("FAKE-ASKED");
     return;
   }
@@ -216,6 +219,8 @@ export interface FakeAppServerOptions {
   defaultProvider?: string;
   defaultModel?: string;
   script?: TurnScript;
+  /** Whether model/list offers a fast speed tier (stage 13). Default: only on the ChatGPT login ("openai"), as Codex does. */
+  speedTiers?: boolean;
 }
 
 export interface FakeAppServer {
@@ -234,6 +239,7 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
   const token = options.token ?? randomUUID();
   const defaultProvider = options.defaultProvider ?? "openai";
   const defaultModel = options.defaultModel ?? "fake-model";
+  const speedTiers = options.speedTiers ?? defaultProvider === "openai";
   const script = options.script ?? defaultTurnScript;
   const threads = new Map<string, FakeThread>();
   const clients = new Set<Client>();
@@ -490,6 +496,21 @@ export async function startFakeAppServer(options: FakeAppServerOptions = {}): Pr
       notify(parent.id, "thread/started", { thread: threadView(t) }, [client]);
       return threadResponse(t);
     },
+    // Two models as codex-cli 0.162 lists them: the default with a fast tier (as GPT models have), one without.
+    "model/list": () => ({
+      data: [
+        {
+          model: defaultModel, displayName: "Fake Model", description: "", hidden: false, isDefault: true,
+          supportedReasoningEfforts: [{ reasoningEffort: "low" }, { reasoningEffort: "high" }], defaultReasoningEffort: "high",
+          serviceTiers: speedTiers ? [{ id: "priority", name: "Fast", description: "2x speed, increased usage" }] : [], defaultServiceTier: null,
+        },
+        {
+          model: "fake-slow", displayName: "Fake Slow", description: "", hidden: false, isDefault: false,
+          supportedReasoningEfforts: [], defaultReasoningEffort: "medium", serviceTiers: [], defaultServiceTier: null,
+        },
+      ],
+      nextCursor: null,
+    }),
     // A ChatGPT login's quota: 5-hour and weekly windows.
     "account/rateLimits/read": () => ({
       ordinaryUsageAllowed: true,

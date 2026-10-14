@@ -7,7 +7,7 @@ import { samePick } from "../lib/recents.js";
 import { usePacks } from "../packs/usePacks.js";
 import { useFeature } from "../lib/features.js";
 import { useSettings } from "../settings/SettingsDialog.js";
-import { EffortBars, nextEffort, PermissionSegments } from "../chat/pickers.js";
+import { EffortBars, FastToggle, nextEffort, PermissionSegments } from "../chat/pickers.js";
 import { submitDraft, useTaskDraft } from "./draft.js";
 import { ModelRow, tilePicks } from "./ModelRow.js";
 import { SuggestList, useMentions } from "./Suggest.js";
@@ -247,6 +247,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
               {model && model.efforts.length > 0 && (
                 <EffortBars efforts={model.efforts} value={draft.options.effort ?? null} fallback={model.defaultEffort} onChange={(effort) => update({ options: { ...draft.options, effort } })} />
               )}
+              <FastToggle fast={model?.fast} value={draft.options.fast} onChange={(fast) => update({ options: { ...draft.options, fast } })} />
               {choices ? (
                 <PermissionSegments
                   choices={choices}

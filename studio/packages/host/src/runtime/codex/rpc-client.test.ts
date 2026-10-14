@@ -93,7 +93,7 @@ describe("CodexRpcClient", () => {
   it("answers unknown methods with -32601 and times out requests that never get an answer", async () => {
     server = await startFakeAppServer();
     const client = await connect();
-    await expect(client.request("model/list", {} as never)).rejects.toMatchObject({ code: -32601 });
+    await expect(client.request("hooks/list", {} as never)).rejects.toMatchObject({ code: -32601 });
 
     // A server that answers initialize and nothing else.
     const http = createServer();

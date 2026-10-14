@@ -295,3 +295,16 @@ S4-01 用 mock Anthropic 接口补充发现（不消耗额度）：
 **真实 GPT**（s9-04 第 2 次，Studio 实际配置 + 用户的 `~/.codex`）：在工作区里读 importer.py → 沙箱内直接运行成功；在上一级目录写文件 → 越出沙箱 → 审查 agent「已批准 · 低风险」，理由"用户明确要求……单个小型本地文件的可逆写入……"，文件写成，全程没有问人。第 1 次（当时映射成 untrusted + 不进沙箱）请求落到了人这边、无人应答而超时，即上面第一行的情况。
 
 **改动**：Studio 启动的 app-server 的 PATH 去掉 WindowsApps；"帮我审批" = on-request + workspace-write + auto_review；"工作区可写""只读"恢复可用；默认仍是"逐条询问"（用户 2026-10-13 的选择）。审查结果在对话里显示为"自动审批"行（结论 · 风险 · 命令，展开看理由）。
+
+## s13-00 · Codex 的速度档（Fast）（2026-10-14，只调 `model/list`，没有模型调用、不计额度）
+
+`node spikes/s13-00-service-tiers.mjs`，用户自己的 `~/.codex`（只读），结果在 `results/s13-00.json`。codex-cli 0.162.1：
+
+| 配置 | 型号 | `serviceTiers` | `defaultServiceTier` |
+|---|---|---|---|
+| GPT 订阅 | gpt-6.1-sol（默认）、gpt-6-astra | `[{ id: "priority", name: "Fast", description: "2x speed, increased usage" }]` | null |
+| GPT 订阅 | gpt-6-sol、gpt-6-luna | 同上，description 是 "1.5x speed" | null |
+| GPT 订阅 | gpt-5.6-sol / terra / luna | 同上，description 是 "1.5x speed, increased usage" | null |
+| DeepSeek Flash | deepseek-flash | `[]` | null |
+
+结论：Fast 档的 id 是 `priority`、名字是 `Fast`（旧字段 `additionalSpeedTiers` 是 `["fast"]`），说明文字因型号而异（是否加额度消耗）。用户的 `config.toml` 是 `service_tier = "default"`，即标准速度叫 `default`。Studio 在 `turn/start` 带 `serviceTier: "priority"` 开、`"default"` 关；mock 目录加了同样的档，e2e 里 Codex 把它作为 `service_tier: "priority"` 发给模型。

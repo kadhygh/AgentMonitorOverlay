@@ -199,7 +199,8 @@ export type MockScript = (req: MockModelRequest) => MockReply;
  * - `[[ask]]` → calls request_user_input with MOCK_ASK_QUESTIONS in Codex's shape (ids `retry`, `logging`),
  *   then replies `MOCK-ANSWERED: <the tool output>`
  * - `[[ask-async]]` → calls request_user_input_async (Codex 0.162 offers it outside Plan mode: the question is sent
- *   and the turn goes on), then replies `MOCK-ASKED: <the tool output>`; `MOCK-NO-ASYNC-TOOL` when it is not offered
+ *   and the turn goes on), then replies `MOCK-ASKED: <the tool output>` (slowly, about 3 s, with `[[slow]]` as well);
+ *   `MOCK-NO-ASYNC-TOOL` when it is not offered
  * - `[[retry]]` → the first two tries disconnect before completing (Codex retries), then `MOCK: …`; `[[retry:N]]` N
  * - `[[view-image: <absolute path>]]` → calls view_image on that file, then replies `MOCK-DONE`
  * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
@@ -212,7 +213,9 @@ export const defaultScript: MockScript = (req) => {
   if (req.lastUserText.includes("[[demo]]")) return demoStep(req);
   if (req.afterToolOutput && req.lastTool && /amo/.test(req.lastTool.name)) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.output.slice(0, 200)}` };
   if (req.afterToolOutput && req.lastTool?.name === "request_user_input") return { kind: "text", text: `MOCK-ANSWERED: ${req.lastTool.output}` };
-  if (req.afterToolOutput && req.lastTool?.name === "request_user_input_async") return { kind: "text", text: `MOCK-ASKED: ${req.lastTool.output}` };
+  if (req.afterToolOutput && req.lastTool?.name === "request_user_input_async")
+    // With [[slow]] too, the model keeps working a few seconds after asking (as a real one does).
+    return { kind: "text", text: `MOCK-ASKED: ${req.lastTool.output}`, ...(req.lastUserText.includes("[[slow]]") ? { chunks: 20, delayMs: 150 } : {}) };
   if (req.afterToolOutput) return { kind: "text", text: "MOCK-DONE" };
   if (req.lastUserText.includes("[[ask-async]]")) {
     if (!req.tools.includes("request_user_input_async")) return { kind: "text", text: "MOCK-NO-ASYNC-TOOL" };

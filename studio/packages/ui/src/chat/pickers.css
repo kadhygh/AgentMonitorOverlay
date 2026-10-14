@@ -60,6 +60,17 @@ kbd {
 .effort-bars button:hover:not(:disabled) { outline: 1px solid var(--text-faint); outline-offset: 1px; }
 .effort-bars button:disabled { cursor: default; }
 .effort-label { min-width: 2em; font-weight: 600; color: var(--primary); }
+/* 「Fast」 (stage 13): off reads as a quiet chip, on takes the accent. */
+.fast-toggle {
+  display: inline-flex; align-items: center; gap: 4px; height: var(--ctl); padding: 0 10px; border: 1px solid var(--border);
+  border-radius: var(--r-btn); background: var(--panel); color: var(--text-faint); font-size: var(--fs-sm); cursor: pointer; white-space: nowrap;
+}
+.fast-toggle.small { height: 24px; padding: 0 7px; font-size: var(--fs-cap); }
+.fast-toggle:hover:not(:disabled) { color: var(--text); border-color: var(--text-faint); }
+.fast-toggle[aria-pressed="true"] { color: var(--primary); border-color: var(--primary); background: var(--tint); font-weight: 600; }
+.fast-toggle:disabled { cursor: default; opacity: 0.6; }
+.status-line .fast-toggle { border-color: transparent; background: transparent; }
+.status-line .fast-toggle[aria-pressed="true"] { border-color: var(--primary); background: var(--tint); }
 
 .perm { display: inline-flex; height: var(--ctl); border: 1px solid var(--border); border-radius: var(--r-btn); background: var(--panel); overflow: hidden; }
 .perm button {

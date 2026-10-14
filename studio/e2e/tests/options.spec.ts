@@ -81,6 +81,39 @@ test("model, effort and permissions: new task, presets, switching inside a sessi
   expect(lastBody("after switching")?.reasoning?.effort).toBe("high");
 });
 
+test("Fast (stage 13): a Codex model with a fast tier runs at it from the next turn, off again on a click", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const mock = studio.mock!;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const lastBody = (text: string) => mock.requests.filter((r) => r.lastUserText === text).at(-1)?.body as Record<string, unknown> | undefined;
+  await studio.api("POST", "/api/tasks", { title: "Fast", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "standard speed" } });
+  await page.getByTestId("task-card").first().click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: standard speed", { timeout: 60_000 });
+  expect(lastBody("standard speed")?.service_tier).toBeUndefined();
+
+  const summary = page.getByTestId("session-options");
+  const fast = summary.getByTestId("fast-toggle");
+  await expect(fast).toHaveAttribute("aria-pressed", "false");
+  await expect(fast).toHaveAttribute("title", /2x speed, increased usage/);
+  await fast.click();
+  await expect(fast).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("options-note")).toContainText("Fast 已开，下一轮生效");
+  await screenshot(app, "stage-13", "S13-C-fast", page);
+  const composer = page.getByLabel("输入消息");
+  await composer.fill("fast please");
+  await composer.press("Enter");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: fast please", { timeout: 60_000 });
+  expect(lastBody("fast please")?.service_tier).toBe("priority");
+
+  await fast.click();
+  await expect(fast).toHaveAttribute("aria-pressed", "false");
+  await composer.fill("standard again");
+  await composer.press("Enter");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: standard again", { timeout: 60_000 });
+  expect(lastBody("standard again")?.service_tier ?? "default").toBe("default");
+});
+
 test("Claude sessions offer Claude Code's models, efforts and permission modes", async () => {
   studio = await launchStudio();
   const { page } = studio;

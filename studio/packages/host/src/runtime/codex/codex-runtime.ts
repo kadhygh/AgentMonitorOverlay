@@ -164,11 +164,13 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     this.closeAsyncQuestions(sessionId);
     if (st.activeTurnId) {
       await handle.client.request("turn/steer", { threadId: session.runtimeRef!, expectedTurnId: st.activeTurnId, input } as never);
+      // An async question answered while its turn still runs: the session runs again (unless something else waits).
+      if (this.store.getSession(sessionId)?.status === "awaiting-answer") this.afterAnswer(sessionId);
       return { mode: "steer" };
     }
     // Status and the active turn come from turn/started and turn/completed: a short turn can finish before this
     // response arrives, so setting them here would leave the session stuck in "running".
-    await handle.client.request("turn/start", { threadId: session.runtimeRef!, input, ...this.turnOptions(session.options) } as never);
+    await handle.client.request("turn/start", { threadId: session.runtimeRef!, input, ...this.turnOptions(session.options), ...(await this.serviceTier(session)) } as never);
     return { mode: "start" };
   }
 
@@ -306,7 +308,9 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
           ? { ...it, state: reply.action === "answer" ? "answered" : "dismissed", ...(reply.action === "answer" ? { answers: storedAnswers(it.questions ?? [], reply.answers) } : {}) }
           : it,
       );
-      if (reply.action === "dismiss" && this.store.getSession(sessionId)?.status === "awaiting-answer" && !this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, "idle");
+      // Asked mid-turn (stage 13: the session waits for the person at once): the turn may still be going.
+      if (this.sessionState(sessionId).activeTurnId) this.afterAnswer(sessionId);
+      else if (reply.action === "dismiss" && this.store.getSession(sessionId)?.status === "awaiting-answer" && !this.openAsyncQuestions(sessionId).length) this.setStatus(sessionId, "idle");
       return;
     }
     const pending = this.questions.get(itemId);
@@ -461,11 +465,11 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     return this.updateSession(sessionId, { writer });
   }
 
-  /** After an answer: still waiting for another question or approval, or back to running. */
+  /** After an answer: still waiting for another question or approval (an open async question too), or back to running. */
   private afterAnswer(sessionId: Id): void {
     if ([...this.questions.values()].some((q) => q.sessionId === sessionId)) this.setStatus(sessionId, "awaiting-answer");
     else if ([...this.approvals.values()].some((a) => a.sessionId === sessionId)) this.setStatus(sessionId, "awaiting-approval");
-    else if (this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, "running");
+    else if (this.sessionState(sessionId).activeTurnId) this.setStatus(sessionId, this.openAsyncQuestions(sessionId).length ? "awaiting-answer" : "running");
   }
 
   private closeQuestion(q: PendingQuestion, state: "answered" | "dismissed" | "cancelled", patch: Partial<Extract<SessionItem, { type: "question" }>> = {}): void {
@@ -731,7 +735,7 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
           if (a.profileId !== handle.profileId || String(a.requestId) !== String(n.params.requestId)) continue;
           this.approvals.delete(key);
           this.updateItem(a.itemId, (item) => (item.type === "approval" && item.state === "pending" ? { ...item, state: "resolved-elsewhere" } : item));
-          if (this.sessionState(a.sessionId).activeTurnId) this.setStatus(a.sessionId, "running");
+          if (this.sessionState(a.sessionId).activeTurnId) this.afterAnswer(a.sessionId);
         }
         for (const q of [...this.questions.values()]) {
           if (q.profileId !== handle.profileId || String(q.requestId) !== String(n.params.requestId)) continue;
@@ -950,7 +954,12 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
         // request_user_input_async: the model asks and carries on; the questions become a card, the answer a message.
         const asked = item.delivery === "async" ? asyncPrompts(item.questions) : [];
         if (asked.length) {
-          if (!st.items.has(item.id)) st.items.set(item.id, this.appendItem(s.id, { type: "question", source: "codex-async", state: "pending", questions: asked }, raw).id);
+          if (!st.items.has(item.id)) {
+            st.items.set(item.id, this.appendItem(s.id, { type: "question", source: "codex-async", state: "pending", questions: asked }, raw).id);
+            // The person is wanted now, not when the turn ends (stage 13: Focus and the board showed it seconds late).
+            // A pending approval stays first: it blocks the turn.
+            if (s.kind !== "sub" && s.status === "running") this.setStatus(s.id, "awaiting-answer");
+          }
           return;
         }
         const itemId = this.ensureAgentItem(s.id, item.id, turnId);
@@ -1113,6 +1122,25 @@ export class CodexRuntime extends EventEmitter<CodexRuntimeEvents> {
     };
   }
 
+  /**
+   * The `serviceTier` for turn/start (stage 13, 「Fast」): the model's fast tier when the session asks for it and the
+   * model has one; "default" (standard speed) when Fast was turned off, or the model has none. Nothing when Fast was
+   * never chosen (the person's own Codex config, `service_tier`, applies), and nothing on a profile with no fast tier
+   * at all (DeepSeek and other providers never hear of speed tiers).
+   */
+  private async serviceTier(session: Session): Promise<{ serviceTier?: string }> {
+    if (session.options.fast === undefined) return {};
+    let models: ModelOption[];
+    try {
+      models = (await this.choices(session.profileId)).models;
+    } catch {
+      return {};
+    }
+    if (!models.some((m) => m.fast)) return {};
+    const model = models.find((m) => m.id === session.options.model) ?? models.find((m) => m.isDefault);
+    return { serviceTier: (session.options.fast && model?.fast?.tier) || STANDARD_TIER };
+  }
+
   /** thread/start and thread/fork parameters: explicit provider and model, plus the AMO MCP identity header. */
   private threadParams(profile: ModelProfile, token: string | undefined) {
     const base = codexThreadParams(profile);
@@ -1253,9 +1281,21 @@ interface CodexModel {
   supportedReasoningEfforts: Array<{ reasoningEffort: string }>;
   defaultReasoningEffort: string;
   isDefault: boolean;
+  /** Speed tiers beyond standard (codex-cli 0.162: GPT models list `{ id: "priority", name: "Fast", … }`). */
+  serviceTiers?: Array<{ id: string; name: string; description: string }> | null;
+}
+
+/** Standard speed, as Codex names it (`service_tier = "default"`). */
+const STANDARD_TIER = "default";
+
+/** A model's fast tier: the one named or with id "fast" (Codex calls it "priority" with the name "Fast"). */
+export function fastTier(tiers: CodexModel["serviceTiers"]): ModelOption["fast"] | undefined {
+  const t = (tiers ?? []).find((x) => /^fast$/i.test(x.name) || /^fast$/i.test(x.id));
+  return t ? { tier: t.id, ...(t.description ? { description: t.description } : {}) } : undefined;
 }
 
 function toModelOption(m: CodexModel, profile: ModelProfile): ModelOption {
+  const fast = fastTier(m.serviceTiers);
   return {
     id: m.model,
     label: m.displayName || m.model,
@@ -1263,6 +1303,7 @@ function toModelOption(m: CodexModel, profile: ModelProfile): ModelOption {
     efforts: m.supportedReasoningEfforts.map((e) => e.reasoningEffort),
     defaultEffort: m.model === profile.model && profile.reasoningEffort ? profile.reasoningEffort : m.defaultReasoningEffort,
     ...((profile.model ? m.model === profile.model : m.isDefault) ? { isDefault: true } : {}),
+    ...(fast ? { fast } : {}),
   };
 }
 

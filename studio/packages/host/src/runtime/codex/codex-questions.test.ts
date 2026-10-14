@@ -147,6 +147,26 @@ describe("Codex questions", () => {
     await until(() => status(s.id) === "idle", "idle");
   });
 
+  it("an async question asked mid-turn wants the person at once, and answering it mid-turn runs the turn again (stage 13)", async () => {
+    const turnRunning = (id: string) => items(id).some((i) => i.type === "turn" && i.state === "running");
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[ask-async:600]]" });
+    await until(() => !!question(s.id), "the question");
+    // Before: 「等你回答」 only when the turn ended, seconds later with a real model.
+    expect(status(s.id)).toBe("awaiting-answer");
+    expect(turnRunning(s.id)).toBe(true);
+    await runtime.answerQuestion(s.id, question(s.id)!.id, { action: "answer", answers: [{ id: "q1", selected: ["秋天"] }] });
+    await runtime.sendMessage(s.id, "「你最喜欢哪个季节？」：秋天");
+    expect(status(s.id)).toBe("running");
+    await until(() => status(s.id) === "idle", "idle");
+
+    // Dismissed mid-turn: running again; the turn then ends idle.
+    await runtime.sendMessage(s.id, "[[ask-async:600]]");
+    await until(() => items(s.id).filter((i) => i.type === "question").length === 2 && status(s.id) === "awaiting-answer", "the second question");
+    await runtime.answerQuestion(s.id, items(s.id).filter((i): i is QuestionItem => i.type === "question")[1]!.id, { action: "dismiss" });
+    expect(status(s.id)).toBe("running");
+    await until(() => status(s.id) === "idle", "idle again");
+  });
+
   it("dismissing an async question leaves the session idle", async () => {
     const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[ask-async]]" });
     await until(() => status(s.id) === "awaiting-answer", "awaiting-answer");
