@@ -231,6 +231,7 @@ test("hands marks to a session: @ 标记的文件, a mark dragged into the compo
   const windows = app.windows().length;
   await page.locator("body").press("Control+Shift+M");
   await page.getByTestId("topbar-marks").click();
+  await page.getByTestId("session-more").click();
   await page.getByTestId("session-marks").click();
   await expect.poll(() => marks.url()).toContain(`#marks?workspace=${ws.id}`);
   expect(app.windows().length).toBe(windows);

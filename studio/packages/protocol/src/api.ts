@@ -194,6 +194,8 @@ export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
   "POST /api/workspaces": { req: { path: string; name?: string }; res: Workspace };
   "DELETE /api/workspaces/:id": { req: void; res: { ok: true } };
+  /** 编辑项目: its name in Studio (the folder keeps its own) and its note; an empty note clears it. */
+  "PATCH /api/workspaces/:id": { req: { name?: string; description?: string }; res: Workspace };
   /** Archives the project with all its tasks (and their sessions); the common space cannot be archived. */
   "POST /api/workspaces/:id/archive": { req: void; res: { workspace: Workspace; tasks: Task[] } };
   /** Restores the project and the tasks that were archived with it. */

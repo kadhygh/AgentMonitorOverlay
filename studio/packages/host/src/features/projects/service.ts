@@ -19,6 +19,26 @@ export class ProjectsFeature extends Feature {
     return ws;
   }
 
+  /** 编辑项目: the name shown in Studio (the folder is not renamed) and a note on the project, both optional. */
+  updateWorkspace(id: Id, patch: { name?: unknown; description?: unknown }): Workspace {
+    const ws = this.requireWorkspace(id);
+    if (isCommon(ws)) throw new HostError("conflict", "the common space cannot be edited here");
+    const clean: { name?: string; description?: string } = {};
+    if (patch.name !== undefined) {
+      if (typeof patch.name !== "string" || !patch.name.trim()) throw new HostError("bad_request", "name must be a non-empty string");
+      if (patch.name.trim().length > 80) throw new HostError("bad_request", "name is too long (80 at most)");
+      clean.name = patch.name.trim();
+    }
+    if (patch.description !== undefined) {
+      if (typeof patch.description !== "string") throw new HostError("bad_request", "description must be a string");
+      if (patch.description.length > 2000) throw new HostError("bad_request", "description is too long (2000 at most)");
+      clean.description = patch.description.trim();
+    }
+    const workspace = this.store.updateWorkspace(id, clean);
+    this.publish({ type: "workspace.upserted", workspace });
+    return workspace;
+  }
+
   /**
    * Archives the project: it leaves every list, its tasks are archived with their sessions, and so are topic sessions
    * that run in it. Restoring brings back what was archived with it.

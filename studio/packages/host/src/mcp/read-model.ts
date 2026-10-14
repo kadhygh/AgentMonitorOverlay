@@ -235,6 +235,7 @@ export class ReadModel {
             id: w.id,
             name: w.name,
             path: w.path,
+            ...(w.description ? { description: w.description } : {}),
             openTasks: this.store.listTasks().filter((t) => t.column !== "done" && !t.archivedAt && t.workspaceId === w.id).length,
           })),
         commonFolder: common?.path ?? null,
@@ -242,7 +243,7 @@ export class ReadModel {
     }
     const id = this.workspaceId(workspace);
     const w = all.find((x) => x.id === id)!;
-    return { workspace: { id: w.id, name: w.name, path: w.path }, openTasks: this.boardList({ workspace: id }).tasks.filter((t) => t.column !== "done") };
+    return { workspace: { id: w.id, name: w.name, path: w.path, ...(w.description ? { description: w.description } : {}) }, openTasks: this.boardList({ workspace: id }).tasks.filter((t) => t.column !== "done") };
   }
 
   /** A topic's canvas as structure: groups, tasks, notes, dependencies; no coordinates. */

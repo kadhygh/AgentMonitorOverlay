@@ -56,8 +56,9 @@ test("a topic gathers tasks from two projects on its own canvas, and a task can 
   // Transfer: the filed task leaves the topic from its task page, and leaves the canvas with it.
   await page.getByRole("button", { name: "看板", exact: true }).click();
   await page.getByTestId("task-card").filter({ hasText: "Elite 表补测试" }).click();
-  await page.getByTestId("task-topic").selectOption({ label: "不在专题里" });
-  await expect(page.getByTestId("toast")).toContainText("已移出专题");
+  await page.getByTestId("task-topic").click();
+  await page.getByTestId("topic-picker").getByTestId("topic-option").filter({ hasText: "不放进专题" }).click();
+  await expect(page.getByTestId("task-topic")).toHaveText("—");
   await page.getByRole("button", { name: "画布", exact: true }).click();
   await expect(page.getByTestId("canvas-card")).toHaveCount(1);
   const state = await studio.api<StateSnapshot>("GET", "/api/state");

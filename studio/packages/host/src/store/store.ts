@@ -49,6 +49,7 @@ function toWorkspace(r: Row): Workspace {
     ...(r.builtin === "common" ? { builtin: "common" as const } : {}),
     createdAt: str(r.created_at),
     ...(typeof r.archived_at === "string" ? { archivedAt: r.archived_at } : {}),
+    ...(typeof r.description === "string" && r.description ? { description: r.description } : {}),
   };
 }
 
@@ -216,6 +217,13 @@ export class Store {
 
   listWorkspaces(): Workspace[] {
     return (this.db.prepare("SELECT * FROM workspaces ORDER BY created_at, id").all() as Row[]).map(toWorkspace);
+  }
+
+  /** 编辑项目: its name in Studio (the folder keeps its own) and its note. */
+  updateWorkspace(id: Id, patch: { name?: string; description?: string }): Workspace {
+    if (patch.name !== undefined) this.db.prepare("UPDATE workspaces SET name = ? WHERE id = ?").run(patch.name, id);
+    if (patch.description !== undefined) this.db.prepare("UPDATE workspaces SET description = ? WHERE id = ?").run(patch.description || null, id);
+    return this.getWorkspace(id)!;
   }
 
   setWorkspaceArchived(id: Id, archivedAt: string | null): Workspace {

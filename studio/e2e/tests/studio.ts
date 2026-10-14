@@ -43,6 +43,8 @@ export async function launchStudio(
      * answered approvals directly; chat-experience.spec.ts covers the folding views.
      */
     transcriptView?: "compact" | "standard" | "detailed" | "verbose";
+    /** Whether the task page's right column (进度、批注…) starts shown; true unless a spec checks the default. */
+    taskSidebar?: boolean;
   } = {},
 ): Promise<Studio> {
   const root = options.root ?? mkdtempSync(join(tmpdir(), "amo-studio-e2e-"));
@@ -74,10 +76,15 @@ export async function launchStudio(
   });
   const page = await app.firstWindow();
   await page.waitForLoadState("domcontentloaded");
-  await page.evaluate((view) => {
-    localStorage.setItem("amo.transcriptView", view);
-    window.dispatchEvent(new CustomEvent("amo:transcript-view", { detail: view }));
-  }, options.transcriptView ?? "verbose");
+  await page.evaluate(
+    ({ view, sidebar }) => {
+      localStorage.setItem("amo.transcriptView", view);
+      window.dispatchEvent(new CustomEvent("amo:transcript-view", { detail: view }));
+      // The task page's right column is off for people by default; most specs work in it, so it starts on here.
+      localStorage.setItem("amo.taskSidebar", sidebar ? "1" : "0");
+    },
+    { view: options.transcriptView ?? "verbose", sidebar: options.taskSidebar ?? true },
+  );
 
   async function api<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
     const info = JSON.parse(readFileSync(join(dataDir, "host.json"), "utf8")) as { url: string };

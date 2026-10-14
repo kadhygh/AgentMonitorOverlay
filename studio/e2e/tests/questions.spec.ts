@@ -141,10 +141,8 @@ test("reviews a plan: changes from the composer, then approve and leave plan mod
   // Under load the answered card can still be leaving the popup: wait for the one in the thread.
   const approved = page.getByTestId("thread").getByTestId("plan-card").filter({ hasText: "已批准" }).last();
   await expect(approved).toBeVisible();
-  await approved.evaluate((el) => {
-    const thread = el.closest<HTMLElement>('[data-testid="thread"]')!;
-    thread.scrollTop += el.getBoundingClientRect().top - thread.getBoundingClientRect().top - 120;
-  });
+  // When the turn finishes the card is drawn once more, so the scroll may meet the old one: try again.
+  await expect(async () => approved.scrollIntoViewIfNeeded({ timeout: 2000 })).toPass();
   await page.waitForTimeout(100);
   await screenshot(app, "stage-12", "S12-B-plan-approved", page);
 });

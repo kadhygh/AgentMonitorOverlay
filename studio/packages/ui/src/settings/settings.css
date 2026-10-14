@@ -80,3 +80,8 @@
 .data-actions { flex: none; display: flex; gap: 4px; }
 .btn-ghost.danger { color: var(--error); }
 .btn-ghost.danger:hover:not(:disabled) { border-color: var(--error); }
+
+/* 编辑项目 (left column right-click, task page project name). */
+.edit-project textarea.field { resize: vertical; min-height: 72px; font: inherit; line-height: var(--lh); }
+.edit-project-folder { display: flex; flex-direction: column; gap: 2px; }
+.edit-project-folder code { font-family: var(--font-code); font-size: 12px; overflow-wrap: anywhere; }

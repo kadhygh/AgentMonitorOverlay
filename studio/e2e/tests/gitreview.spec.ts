@@ -133,9 +133,9 @@ test("review a project's changes, comment a line and send it to the session", as
   await expect(summary).toContainText("drop.lua（旧版第 3 行，已删除）");
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: Git Review 批注", { timeout: 30_000 });
 
-  // The session header opens the same window again (one per project), pointed at that session.
+  // The task head opens the same window again (one per project), pointed at the session in front.
   const windows = app.windows().length;
-  await page.getByTestId("session-review").click();
+  await page.getByTestId("task-review").click();
   await expect.poll(() => review.url()).toContain(`session=${session.id}`);
   expect(app.windows().length).toBe(windows);
   await review.close();
@@ -143,8 +143,9 @@ test("review a project's changes, comment a line and send it to the session", as
 
   // The left column: a project under git offers Git Review, a plain folder does not.
   await page.getByTestId("scope-ws-plain").click({ button: "right" });
-  await expect(page.getByRole("menu", { name: "项目" }).getByRole("menuitem")).toHaveText("Git Review（不是 git 仓库）");
-  await expect(page.getByRole("menu", { name: "项目" }).getByRole("menuitem")).toBeDisabled();
+  const reviewItem = page.getByRole("menu", { name: "项目" }).getByRole("menuitem").filter({ hasText: "Git Review" });
+  await expect(reviewItem).toHaveText("Git Review（不是 git 仓库）");
+  await expect(reviewItem).toBeDisabled();
   await page.keyboard.press("Escape");
   const reopened = app.waitForEvent("window");
   await page.getByTestId("scope-ws-game").click({ button: "right" });

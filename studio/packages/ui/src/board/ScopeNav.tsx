@@ -6,6 +6,7 @@ import type { Scope } from "./Board.js";
 import { UsageFooter } from "./UsageFooter.js";
 import { ProjectReviewMenu, type ProjectMenuAt } from "../gitreview/ProjectReviewMenu.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
+import { EditProjectDialog } from "./EditProjectDialog.js";
 import { showToast } from "../lib/toast.js";
 
 /** A project or topic about to be archived from its right-click menu. */
@@ -51,6 +52,8 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const [topicMenu, setTopicMenu] = useState<{ id: string; x: number; y: number } | null>(null);
   const [archiving, setArchiving] = useState<Archiving | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
+  const [editing, setEditing] = useState<string | null>(null);
+  const editingWs = editing ? workspaces.find((w) => w.id === editing) : undefined;
   const pins = usePins();
   const liveTasks = tasks.filter((t) => !t.archivedAt);
 
@@ -206,7 +209,8 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
         <section className="nav-section-box" aria-label="项目">
           {head("project", "项目", projects.length, () => setAdding(true), "添加项目")}
           {projectRows.map((w) =>
-            row("project", w.id, { kind: "workspace", id: w.id }, w.name, liveTasks.filter((t) => t.workspaceId === w.id).length, `scope-ws-${w.name}`, w.path, (e) => {
+            row("project", w.id, { kind: "workspace", id: w.id }, w.name, liveTasks.filter((t) => t.workspaceId === w.id).length, `scope-ws-${w.name}`, w.description ? `${w.path}
+${w.description}` : w.path, (e) => {
               e.preventDefault();
               setMenu({ workspaceId: w.id, x: e.clientX, y: e.clientY });
             }),
@@ -281,12 +285,14 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
           link={link}
           at={menu}
           onClose={() => setMenu(null)}
+          onEdit={() => setEditing(menu.workspaceId)}
           onArchive={() => {
             const w = workspaces.find((x) => x.id === menu.workspaceId);
             if (w) setArchiving({ kind: "workspace", id: w.id, name: w.name });
           }}
         />
       )}
+      {editingWs && <EditProjectDialog link={link} workspace={editingWs} onClose={() => setEditing(null)} />}
       {topicMenu && (
         <TopicMenu
           at={topicMenu}

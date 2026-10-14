@@ -28,10 +28,13 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   const { task } = await openTaskWithReply(studio);
   const rows = page.getByTestId("session-row");
   await expect(rows).toHaveCount(1);
-  await expect(page.getByTestId("writer")).toHaveText("仅工作台");
+  // 仅工作台 is the usual writer and is not shown.
+  await expect(page.getByTestId("writer")).toHaveCount(0);
 
-  // Task status is set by the person and moves the card.
-  await page.getByTestId("task-column").selectOption("review");
+  // Task status is set by the person and moves the card: the status under the title opens a small menu.
+  await page.getByTestId("task-status").click();
+  await page.getByTestId("status-review").click();
+  await expect(page.getByTestId("task-status")).toHaveText("待审阅");
   await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).tasks[0]!.column).toBe("review");
 
   // Fork: indented under its parent, same model, and selected afterwards.
@@ -58,7 +61,8 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   await screenshot(studio.app, "stage-1", "S1-11a-task-page", page);
 
   // Archive the main session: its fork goes with it; restore brings both back.
-  await page.getByRole("button", { name: "归档", exact: true }).click();
+  await page.getByTestId("session-more").click();
+  await page.getByTestId("session-archive").click();
   await expect(rows).toHaveCount(1);
   await page.getByRole("button", { name: /已归档 1/ }).click();
   await expect(page.getByTestId("archived-row")).toHaveCount(1);

@@ -1,11 +1,10 @@
 import { useEffect, useState } from "react";
-import { TASK_COLUMNS, taskWhere, type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
+import { type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
 import { shortModel } from "../lib/profiles.js";
 import { sessionModelName, useProfileChoices } from "../lib/choices.js";
-import { COLUMN_NAMES } from "../lib/status.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
@@ -32,6 +31,19 @@ import { FileLinks, type PreviewTarget } from "../files/FileLinks.js";
 import { FilePreview } from "../files/FilePreview.js";
 import { WorkdirActions } from "../files/WorkdirActions.js";
 import { ArchiveIcon, formatDay, TaskArchivedDialog } from "./Archived.js";
+import { PopMenu, StatusMenu, TaskMeta, TopicPicker, below, useGitBranch, type Anchor } from "./TaskHead.js";
+import { EditProjectDialog } from "../board/EditProjectDialog.js";
+import { CommitPicker } from "../gitreview/CommitPicker.js";
+
+/** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
+const SIDEBAR_KEY = "amo.taskSidebar";
+function readSidebar(): boolean {
+  try {
+    return localStorage.getItem(SIDEBAR_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 
 interface TaskPageProps {
   link: HostLink;
@@ -86,10 +98,24 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const { choices: sessionChoices } = useProfileChoices(link, session?.profileId);
   const modelText = session ? sessionModelName(sessionChoices, session.options) : null;
   const profile = (id: string) => profiles.find((p) => p.id === id);
-  const scopeLabel = taskWhere(task, workspaces);
-  const liveTopics = topics.filter((t) => !t.archivedAt || t.id === task.topicId);
-  // Git Review: only for a project under git.
+  // Git Review: only for a project under git; the branch shows in the line under the title.
   const gitRepo = useIsGitRepo(link, task.workspaceId);
+  const git = useGitBranch(link, task.workspaceId);
+  const taskWorkspace = workspaces.find((w) => w.id === task.workspaceId);
+  const taskTopic = topics.find((t) => t.id === task.topicId);
+  const [statusAt, setStatusAt] = useState<Anchor | null>(null);
+  const [picking, setPicking] = useState<"topic" | "project" | "history" | null>(null);
+  const [taskMenu, setTaskMenu] = useState<Anchor | null>(null);
+  const [sessionMenu, setSessionMenu] = useState<Anchor | null>(null);
+  const [sidebar, setSidebarState] = useState(readSidebar);
+  const setSidebar = (on: boolean) => {
+    setSidebarState(on);
+    try {
+      localStorage.setItem(SIDEBAR_KEY, on ? "1" : "0");
+    } catch {
+      // per-window convenience only
+    }
+  };
 
   /** A save from the annotation bubble: true once stored, else the error as a notice (the bubble keeps the draft). */
   async function annotationCall(fn: () => Promise<unknown>): Promise<boolean> {
@@ -117,7 +143,12 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const setColumn = (column: TaskColumn) => run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { column }));
   /** 转移: into another topic, or out of its topic (null). */
   const setTopic = (topicId: string | null) =>
-    run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { topicId }), () => setToast({ text: topicId ? "已转到这个专题。" : "已移出专题。" }));
+    topicId === task.topicId ? Promise.resolve() : run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { topicId }));
+  const newTopic = (title: string) =>
+    run(async () => {
+      const topic = await call(link, "POST /api/topics", {}, { title });
+      return call(link, "PATCH /api/tasks/:id", { id: task.id }, { topicId: topic.id });
+    });
   // Archiving the whole task says so in a box of its own (stage 14), with the way back to where the task was opened
   // from; restoring it is a plain notice.
   const [archivedBox, setArchivedBox] = useState<{ sessions: number } | null>(null);
@@ -176,6 +207,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const dismissMail = (m: { id: string }) => run(() => call(link, "PATCH /api/mail/:id", { id: m.id }, { state: "dismissed" }));
 
   const readOnly = !session || session.writer === "archived" || session.writer === "terminal-handoff";
+  // What waits in the hidden right column: shown as a count on 侧栏.
+  const sideCount =
+    decisions.filter((d) => d.taskId === task.id).length + mail.filter((m) => m.state === "unread").length + annotations.filter((a) => !a.sentAt).length;
 
   /** Scrolls to the annotated text of a reply and flashes it (its block, where highlights are not available). */
   function locate(a: Annotation, retry = true) {
@@ -216,81 +250,103 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
 
   return (
     <section className="taskpage" aria-label="任务">
-      <div className="page-head">
+      <div className="page-head task-head">
         <button type="button" className="btn-ghost" onClick={onBack}>
           ← {backLabel}
         </button>
-        <h1 className="task-title" data-testid="task-title">
-          <EditableName
-            value={task.title}
-            placeholder="未命名任务"
-            label="任务名"
-            disabled={!!task.archivedAt}
-            onSave={(title) => void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { title }))}
-          />
-        </h1>
-        <span className="page-crumb">{scopeLabel}</span>
-        <span className="spacer" />
-        <label className="inline-field">
-          专题
-          <select
-            value={task.topicId ?? ""}
-            onChange={(e) => void setTopic(e.target.value || null)}
+        <div className="task-head-main">
+          <h1 className="task-title" data-testid="task-title">
+            <EditableName
+              value={task.title}
+              placeholder="未命名任务"
+              label="任务名"
+              disabled={!!task.archivedAt}
+              onSave={(title) => void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { title }))}
+            />
+          </h1>
+          <TaskMeta
+            task={task}
+            workspace={taskWorkspace}
+            topic={taskTopic}
+            branch={git.repo ? git.branch : null}
             disabled={!!task.archivedAt || busy}
-            data-testid="task-topic"
-            title="转移：放进另一个专题，或移出专题"
-          >
-            <option value="">不在专题里</option>
-            {liveTopics.map((t) => (
-              <option key={t.id} value={t.id}>
-                {t.title}
-              </option>
-            ))}
-          </select>
-        </label>
-        {gitRepo && (
+            onStatus={setStatusAt}
+            onProject={() => setPicking("project")}
+            onBranch={() => setPicking("history")}
+            onTopic={() => setPicking("topic")}
+          />
+        </div>
+        <div className="task-head-actions">
+          {gitRepo && (
+            <button
+              type="button"
+              className="btn-ghost small"
+              title="Git Review：查看项目的改动并逐行批注，批注发回当前会话"
+              onClick={() => {
+                const target = session && !session.archivedAt ? session : latestMainSession(sessions, task.id);
+                openReview({ workspaceId: task.workspaceId, ...(target ? { sessionId: target.id } : {}) });
+              }}
+              data-testid="task-review"
+            >
+              Review
+            </button>
+          )}
+          <button type="button" className="btn-ghost small" title="文件标记：这个项目标记的文件（Ctrl+Shift+M）" onClick={() => openMarks({ workspaceId: task.workspaceId })} data-testid="task-marks">
+            标记
+          </button>
+          <button type="button" className="btn-ghost small icon-only" aria-label="任务的更多操作" title="更多" onClick={(e) => setTaskMenu(below(e.currentTarget))} data-testid="task-more">
+            ⋯
+          </button>
+          <span className="head-sep" aria-hidden="true" />
           <button
             type="button"
-            className="btn-ghost small"
-            title="Git Review：查看项目的改动并逐行批注"
-            onClick={() => {
-              const main = latestMainSession(sessions, task.id);
-              openReview({ workspaceId: task.workspaceId, ...(main ? { sessionId: main.id } : {}) });
-            }}
-            data-testid="task-review"
+            className="btn-ghost small sidebar-toggle"
+            aria-pressed={sidebar}
+            title={sidebar ? "收起侧栏" : "显示侧栏：进度、批注、留言、清单"}
+            onClick={() => setSidebar(!sidebar)}
+            data-testid="sidebar-toggle"
           >
-            Review
+            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="2" y="2.5" width="12" height="11" rx="1" />
+              <path d="M10 2.5v11" />
+            </svg>
+            侧栏
+            {!sidebar && sideCount > 0 && <span className="sidebar-count">{sideCount}</span>}
           </button>
-        )}
-        <button type="button" className="btn-ghost small" title="文件标记：这个项目标记的文件（Ctrl+Shift+M）" onClick={() => openMarks({ workspaceId: task.workspaceId })} data-testid="task-marks">
-          标记
-        </button>
-        {task.topicId && (
-          <OnCanvasToggle
-            key={task.topicId}
-            link={link}
-            taskId={task.id}
-            topicId={task.topicId}
-            disabled={!!task.archivedAt}
-            onError={(text) => setToast({ text, error: true })}
-          />
-        )}
-        {!task.archivedAt && (
-          <button type="button" className="btn-ghost small" onClick={() => void archiveTask()} disabled={busy} data-testid="task-archive">
-            归档任务
-          </button>
-        )}
-        <label className="inline-field">
-          任务状态
-          <select value={task.column} onChange={(e) => void setColumn(e.target.value as TaskColumn)} data-testid="task-column">
-            {TASK_COLUMNS.map((c) => (
-              <option key={c} value={c}>
-                {COLUMN_NAMES[c]}
-              </option>
-            ))}
-          </select>
-        </label>
+        </div>
       </div>
+      {statusAt && <StatusMenu at={statusAt} value={task.column} onPick={(c) => void setColumn(c)} onClose={() => setStatusAt(null)} />}
+      {picking === "topic" && (
+        <TopicPicker topics={topics} tasks={tasks} current={task.topicId} onPick={(id) => void setTopic(id)} onCreate={(title) => void newTopic(title)} onClose={() => setPicking(null)} />
+      )}
+      {picking === "project" && taskWorkspace && <EditProjectDialog link={link} workspace={taskWorkspace} onClose={() => setPicking(null)} />}
+      {picking === "history" && (
+        <CommitPicker link={link} workspaceId={task.workspaceId} onPick={(sha) => openReview({ workspaceId: task.workspaceId, commit: sha })} onClose={() => setPicking(null)} />
+      )}
+      {taskMenu && (
+        <PopMenu at={taskMenu} label="任务" onClose={() => setTaskMenu(null)} testId="task-menu">
+          {task.topicId && (
+            <div className="menu-check">
+              <OnCanvasToggle key={task.topicId} link={link} taskId={task.id} topicId={task.topicId} disabled={!!task.archivedAt} onError={(text) => setToast({ text, error: true })} />
+            </div>
+          )}
+          {!task.archivedAt && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={busy}
+              onClick={() => {
+                setTaskMenu(null);
+                void archiveTask();
+              }}
+              data-testid="task-archive"
+            >
+              归档任务…
+            </button>
+          )}
+          {task.archivedAt && <span className="menu-note">任务已归档</span>}
+        </PopMenu>
+      )}
 
       {task.archivedAt && (
         <div className="archived-banner task" role="status" data-testid="task-archived-banner">
@@ -345,44 +401,70 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
                   onSave={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: session.id }, { title }))}
                 />
               </span>
-              <span className="page-crumb" data-testid="thread-model">
+              <span className="thread-model" data-testid="thread-model">
                 {[shortModel(profile(session.profileId)), modelText].filter(Boolean).join(" · ")}
               </span>
-              {workdir && <WorkdirActions link={link} path={workdir} onError={showError} />}
-              <span className="spacer" />
-              {writer && !session.archivedAt && (
+              {/* 仅工作台 is the usual case and says nothing; the other writers matter. */}
+              {writer && !session.archivedAt && session.writer !== "workbench" && (
                 <span className="writer" style={{ color: writer.color }} data-testid="writer">
                   {writer.label}
                 </span>
               )}
-              {gitRepo && (
-                <button type="button" className="btn-ghost small" title="Git Review：批注发回这个会话" onClick={() => openReview({ workspaceId: session.workspaceId, sessionId: session.id })} data-testid="session-review">
-                  Review
-                </button>
-              )}
-              <button type="button" className="btn-ghost small" title="文件标记：拖进输入框或 @ 引用" onClick={() => openMarks({ workspaceId: session.workspaceId })} data-testid="session-marks">
-                标记
-              </button>
+              <span className="spacer" />
+              {workdir && <WorkdirActions link={link} path={workdir} onError={showError} compact />}
               {!session.archivedAt && session.writer !== "terminal-handoff" && !(session.runtime === "claude" && session.kind === "sub") && (
                 <button
                   type="button"
-                  className="btn-ghost small"
+                  className="btn-ghost small icon-only"
+                  aria-label="在终端打开"
+                  title={session.runtime === "claude" ? "在终端打开：交给终端里的 Claude 继续，工作台暂时只读" : "在终端打开：终端接入同一会话，两边都能输入"}
                   disabled={busy || !session.runtimeRef || (session.runtime === "claude" && session.status === "running")}
                   onClick={() => void openTerminal(session)}
                 >
-                  在终端打开
+                  <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                    <rect x="1.5" y="3" width="13" height="10" rx="1" />
+                    <path d="m4 6.5 2 1.5-2 1.5M8 10h3" />
+                  </svg>
                 </button>
               )}
               {!session.archivedAt && !(session.runtime === "claude" && session.kind === "sub") && (
-                <button type="button" className="btn-ghost small dim" disabled={busy || !session.runtimeRef} onClick={() => void fork(session.id)}>
+                <button type="button" className="btn-ghost small" title="从这里分出一个新会话" disabled={busy || !session.runtimeRef} onClick={() => void fork(session.id)}>
                   分支
                 </button>
               )}
-              {/* An archived session is restored from its banner below. */}
-              {!session.archivedAt && (
-                <button type="button" className="btn-ghost small dim" disabled={busy} onClick={() => void archive(session.id)}>
-                  归档
-                </button>
+              <button type="button" className="btn-ghost small icon-only" aria-label="会话的更多操作" title="更多" onClick={(e) => setSessionMenu(below(e.currentTarget))} data-testid="session-more">
+                ⋯
+              </button>
+              {sessionMenu && (
+                <PopMenu at={sessionMenu} label="会话" onClose={() => setSessionMenu(null)} testId="session-menu">
+                  <button
+                    type="button"
+                    role="menuitem"
+                    title="文件标记：拖进输入框或 @ 引用"
+                    onClick={() => {
+                      setSessionMenu(null);
+                      openMarks({ workspaceId: session.workspaceId });
+                    }}
+                    data-testid="session-marks"
+                  >
+                    文件标记
+                  </button>
+                  {/* An archived session is restored from its banner below. */}
+                  {!session.archivedAt && (
+                    <button
+                      type="button"
+                      role="menuitem"
+                      disabled={busy}
+                      onClick={() => {
+                        setSessionMenu(null);
+                        void archive(session.id);
+                      }}
+                      data-testid="session-archive"
+                    >
+                      归档会话
+                    </button>
+                  )}
+                </PopMenu>
               )}
             </div>
           )}
@@ -445,6 +527,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             extraActions={<MarkButton link={link} file={preview.file} line={preview.line} className="btn-ghost small" />}
           />
         )}
+        {sidebar && (
         <AnnotationPanel
           header={
             <>
@@ -476,6 +559,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             );
           }}
         />
+        )}
       </div>
       {archivedBox && (
         <TaskArchivedDialog

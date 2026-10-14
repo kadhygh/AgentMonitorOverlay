@@ -11,9 +11,9 @@ export interface ProjectMenuAt {
 
 /**
  * Right-click menu of a project in the left column: Git Review (only when the folder is a git repository), and
- * 归档项目 when the caller offers it.
+ * 编辑项目 and 归档项目 when the caller offers them.
  */
-export function ProjectReviewMenu({ link, at, onClose, onArchive }: { link: HostLink; at: ProjectMenuAt; onClose(): void; onArchive?: () => void }) {
+export function ProjectReviewMenu({ link, at, onClose, onArchive, onEdit }: { link: HostLink; at: ProjectMenuAt; onClose(): void; onArchive?: () => void; onEdit?: () => void }) {
   const [status, setStatus] = useState<GitStatus | null>(null);
   useEffect(() => {
     let live = true;
@@ -52,6 +52,20 @@ export function ProjectReviewMenu({ link, at, onClose, onArchive }: { link: Host
       >
         Git Review{notGit ? `（${status.reason ?? "不是 git 仓库"}）` : ""}
       </button>
+      {onEdit && (
+        <button
+          type="button"
+          role="menuitem"
+          title="改项目在 AMO 里的名字，写一段说明（agent 也能读到）"
+          onClick={() => {
+            onEdit();
+            onClose();
+          }}
+          data-testid="edit-project-item"
+        >
+          编辑项目…
+        </button>
+      )}
       {onArchive && (
         <button
           type="button"

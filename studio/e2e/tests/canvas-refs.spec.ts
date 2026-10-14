@@ -121,6 +121,7 @@ test("canvas: tasks from the canvas are always on it, others only when asked; th
   // The task page puts the other one on the canvas, and takes it off again.
   await page.getByRole("button", { name: "看板", exact: true }).click();
   await page.getByTestId("task-card").filter({ hasText: "看板上建的任务" }).click();
+  await page.getByTestId("task-more").click();
   const toggle = page.getByTestId("task-on-canvas");
   await expect(toggle).not.toBeChecked();
   await toggle.check();

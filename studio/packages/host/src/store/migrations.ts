@@ -253,4 +253,8 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE workspaces ADD COLUMN archived_at TEXT;
   `,
+  // 11: a project's own note (2026-10-14): what it is, for the person and for agents (project_context).
+  `
+  ALTER TABLE workspaces ADD COLUMN description TEXT;
+  `,
 ];

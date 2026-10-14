@@ -19,6 +19,8 @@ export interface Workspace {
   createdAt: Timestamp;
   /** Set while the project is archived: hidden from every list, its tasks archived with it. */
   archivedAt?: Timestamp;
+  /** The person's note on the project (编辑项目); agents read it through project_context. */
+  description?: string;
 }
 
 /** Board columns. Moved by the person only; agents never move cards. */
