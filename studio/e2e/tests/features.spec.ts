@@ -27,6 +27,7 @@ test("turn extension packs and planning off and on again", async () => {
   // Off: both go away; the dialog lists them.
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "功能" }).click();
   await dialog.getByTestId("feature-packs").uncheck();
   await dialog.getByTestId("feature-planning").uncheck();
   await expect(dialog.getByTestId("feature-planning")).not.toBeChecked();

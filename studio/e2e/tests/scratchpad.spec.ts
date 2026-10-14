@@ -127,6 +127,7 @@ test("the scratchpad window: pages, pasted images, page count, shortcut, and the
   // 设置 → 便签: press a new combination; a key another program holds is reported and the old one stays.
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "便签" }).click();
   const field = dialog.getByTestId("scratchpad-shortcut");
   const line = dialog.getByTestId("scratchpad-shortcut-status");
   await expect(field).toHaveValue("Ctrl + Alt + Space");

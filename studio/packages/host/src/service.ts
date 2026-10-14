@@ -59,6 +59,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       credentials?: CredentialReader | CredentialStore;
       /** Where the common space lives when it is first made; default `common/` next to the database. */
       commonDir?: string;
+      /** The person's Claude Code config dir (设置 → 模型 shows whether it holds a login); default theirs, ~/.claude. */
+      localClaudeHome?: string;
     } = {},
   ) {
     super();

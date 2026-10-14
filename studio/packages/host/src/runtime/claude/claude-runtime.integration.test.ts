@@ -7,6 +7,7 @@ import { MOCK_CLAUDE_MODEL, TINY_PNG_BASE64, removeTempDir, startMockAnthropic, 
 import { Store } from "../../store/store.js";
 import { StaticCredentialReader } from "../credentials.js";
 import { ClaudeRuntime } from "./claude-runtime.js";
+import { writeClaudeLogin } from "./claude-login.js";
 
 // Integration: Store + ClaudeRuntime + the real Claude Agent SDK against the mock Anthropic API, in a temp
 // CLAUDE_CONFIG_DIR. Covers a turn, approvals, queued messages, interrupt, resume and a Host restart. No model budget.
@@ -175,6 +176,46 @@ describe("ClaudeRuntime", () => {
     const fresh = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace });
     await expect(runtime.fork(fresh.id)).rejects.toThrow(/还没有对话内容/);
   }, 120_000);
+
+  it("runs the subscription on the person's own Claude Code login when they chose it; sessions keep the way they started", async () => {
+    // A stand-in for ~/.claude with a login in it (the CLI sends its access token to the mock as it would to Anthropic).
+    const mine = join(root, "my-claude");
+    mkdirSync(mine, { recursive: true });
+    const expiresAt = Date.now() + 365 * 24 * 3600_000;
+    writeFileSync(join(mine, ".credentials.json"), JSON.stringify({ claudeAiOauth: { accessToken: "sk-ant-oat01-local-test", refreshToken: "sk-ant-ort01-local-test", expiresAt, scopes: ["user:inference", "user:profile"], subscriptionType: "max" } }));
+    const sub: ModelProfile = { id: "claude-sub", label: "Claude", runtime: "claude", provider: "mock-oauth", model: MOCK_CLAUDE_MODEL, credentialId: "claude-subscription" };
+    const local = new ClaudeRuntime({
+      store,
+      profiles: [...PROFILES, sub],
+      providers: { mock: { baseUrl: mock.baseUrl }, "mock-oauth": { baseUrl: mock.baseUrl, auth: "oauth" } },
+      credentials: new StaticCredentialReader({ mock: "mock-key" }), // no subscription token saved
+      claudeHome,
+      localClaudeHome: mine,
+    });
+    try {
+      // With the token way and no token, the subscription cannot start.
+      await expect(local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "x" })).rejects.toThrow(/claude setup-token/);
+      writeClaudeLogin(store, "local");
+      const s = await local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "from my login" });
+      await until(() => agentTexts(s.id).includes("MOCK: from my login") && status(s.id) === "idle", "local reply");
+      expect(existsSync(join(mine, "projects"))).toBe(true);
+      // Back to the token way: the session started with the local login goes on with it (its transcript is there).
+      writeClaudeLogin(store, "token");
+      await local.sendMessage(s.id, "still mine");
+      await until(() => agentTexts(s.id).includes("MOCK: still mine") && status(s.id) === "idle", "second local reply");
+      expect(JSON.stringify(mock.requests.at(-1)!.body.messages)).toContain("MOCK: from my login");
+      // A branch stays with it too, and cannot move to another provider.
+      const branch = await local.fork(s.id);
+      await local.sendMessage(branch.id, "in my branch");
+      await until(() => agentTexts(branch.id).includes("MOCK: in my branch"), "local branch reply");
+      await expect(local.fork(s.id, "claude-mock")).rejects.toThrow(/只能继续用 Claude 订阅/);
+      // New subscription sessions follow the setting again.
+      await expect(local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "y" })).rejects.toThrow(/claude setup-token/);
+    } finally {
+      writeClaudeLogin(store, "token");
+      await local.closeAll();
+    }
+  }, 180_000);
 
   it("groups a subagent's work in a child session under the Agent call", async () => {
     const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[spawn: helper: say hi]]" });

@@ -1,6 +1,7 @@
-import type { ModelOption, ModelProfile } from "@amo-studio/protocol";
+import type { ClaudeLogin, ModelOption, ModelProfile } from "@amo-studio/protocol";
 import { GLM_MODELS } from "../choices.js";
 import type { CredentialReader } from "../credentials.js";
+import { localClaudeSignedIn } from "./claude-login.js";
 
 // Environment for a managed Claude Code process. The routing for GLM follows old AMO's glm-5.3 preset
 // (broker/lib/claude-provider.js); see spikes/RESULTS.md section h.
@@ -40,25 +41,41 @@ export const BUILTIN_CLAUDE_PROVIDERS: Record<string, ClaudeProviderDef> = {
 export class ClaudeProfileError extends Error {}
 
 /**
+ * The config dir a Claude process runs with. "token": Studio's own dir. "local" (only for a subscription provider): the
+ * person's Claude Code dir and its login; `explicit` when they set CLAUDE_CONFIG_DIR themselves (otherwise the variable
+ * stays unset, so the CLI finds ~/.claude and ~/.claude.json exactly as in a terminal).
+ */
+export interface ClaudeHome {
+  dir: string;
+  login: ClaudeLogin;
+  explicit?: boolean;
+}
+
+/**
  * Inherited variables minus anything Claude/Anthropic (the Host may itself be started from a Claude Code shell), plus
  * the provider routing, the key from the profile's credential, and Studio's own CLAUDE_CONFIG_DIR so nothing is read
- * from or written to the person's ~/.claude.
+ * from or written to the person's ~/.claude. With the local login (the person's choice) there is no key: the CLI signs
+ * in from its own config dir.
  */
 export function claudeEnv(
   profile: ModelProfile,
   providers: Record<string, ClaudeProviderDef>,
   credentials: CredentialReader,
-  claudeHome: string,
+  home: ClaudeHome,
   base: NodeJS.ProcessEnv = process.env,
 ): Record<string, string> {
   if (!profile.provider) throw new ClaudeProfileError(`Claude profile ${profile.id} needs a provider: Studio does not use the Claude subscription login`);
   const provider = providers[profile.provider];
   if (!provider) throw new ClaudeProfileError(`unknown Claude provider ${profile.provider}`);
-  const key = profile.credentialId ? credentials.read(profile.credentialId) : null;
-  if (profile.credentialId && !key) {
+  const local = home.login === "local" && provider.auth === "oauth";
+  if (local && localClaudeSignedIn(home.dir) === false) {
+    throw new ClaudeProfileError(`没找到本机 Claude Code 的登录（${home.dir}）：在终端运行 claude 登录一次，或到 设置 → 模型 改用令牌`);
+  }
+  const key = profile.credentialId && !local ? credentials.read(profile.credentialId) : null;
+  if (profile.credentialId && !local && !key) {
     throw new ClaudeProfileError(
       provider.auth === "oauth"
-        ? "还没有保存 Claude 订阅令牌：在终端运行 claude setup-token，再到 设置 → 模型凭据 里保存"
+        ? "还没有保存 Claude 订阅令牌：在终端运行 claude setup-token，再到 设置 → 模型 里保存（或在那里改用本机 Claude Code 的登录）"
         : `profile ${profile.id} needs credential ${profile.credentialId}, which is not stored`,
     );
   }
@@ -69,7 +86,7 @@ export function claudeEnv(
     ...(profile.model ? { ANTHROPIC_MODEL: profile.model } : {}),
     ...(provider.baseUrl ? { ANTHROPIC_BASE_URL: provider.baseUrl } : {}),
     ...(key ? (provider.auth === "oauth" ? { CLAUDE_CODE_OAUTH_TOKEN: key } : { ANTHROPIC_AUTH_TOKEN: key }) : {}),
-    CLAUDE_CONFIG_DIR: claudeHome,
+    ...(!local || home.explicit ? { CLAUDE_CONFIG_DIR: home.dir } : {}),
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     // Without this, commands the agent runs (Bash) inherit ANTHROPIC_AUTH_TOKEN, and `env` prints the key into the
     // transcript (verified in the S4-09 review).

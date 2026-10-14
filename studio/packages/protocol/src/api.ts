@@ -147,7 +147,14 @@ export interface StudioSettings {
   disabledFeatures: OptionalFeature[];
   /** Global shortcut that shows and hides the scratchpad window, as an Electron accelerator; "" when off. */
   scratchpadShortcut: string;
+  /** How the Claude subscription signs in (设置 → 模型); sessions keep the way they were started. */
+  claudeLogin: ClaudeLogin;
+  /** The person's own Claude Code config dir and whether it holds a login (null: cannot tell on this system). */
+  claudeLocal: { dir: string; signedIn: boolean | null };
 }
+
+/** "token": the token from `claude setup-token`, Studio's own config dir. "local": the person's Claude Code login and ~/.claude. */
+export type ClaudeLogin = "token" | "local";
 
 /** A model credential the profiles use: whether it is stored, never its value. */
 export interface CredentialStatus {
@@ -175,7 +182,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };

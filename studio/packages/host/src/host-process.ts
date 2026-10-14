@@ -6,6 +6,7 @@ import { startHostServer, type HostServer } from "./http/server.js";
 import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.js";
 import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
 import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
+import { localClaudeHome as localClaudeHomeOf } from "./runtime/claude/claude-login.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
 import { amoToolsFor } from "./mcp/tools.js";
 import { McpIdentities } from "./mcp/identity.js";
@@ -43,6 +44,8 @@ export interface StartHostOptions {
   claudeProviders?: Record<string, ClaudeProviderDef>;
   /** Variables Claude processes start from (default: process.env). */
   claudeBaseEnv?: NodeJS.ProcessEnv;
+  /** The person's Claude Code config dir for the local login (default: their CLAUDE_CONFIG_DIR or ~/.claude). */
+  localClaudeHome?: string;
 }
 
 export interface RunningHost {
@@ -148,7 +151,9 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     // Only app-servers Studio launches have the AMO MCP configured; threads then name their session to it.
     const identities = new McpIdentities(store);
     const codex = new CodexRuntime({ store, servers, profiles, ...(manager ? { identities } : {}) });
-    // Managed Claude sessions keep their transcripts in Studio's own config dir, never in the person's ~/.claude.
+    // Managed Claude sessions keep their transcripts in Studio's own config dir, unless the person chose the local login
+    // (设置 → 模型): then sessions started with it use their Claude Code login and ~/.claude.
+    const localClaudeHome = options.localClaudeHome ?? localClaudeHomeOf(options.claudeBaseEnv ?? process.env);
     claude = new ClaudeRuntime({
       store,
       profiles,
@@ -156,10 +161,12 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       credentials,
       claudeHome: paths.claudeHome,
       ...(options.claudeBaseEnv ? { baseEnv: options.claudeBaseEnv } : {}),
+      // Only an explicit dir is passed down: otherwise the CLI is left to find ~/.claude (and ~/.claude.json) itself.
+      ...(options.localClaudeHome ? { localClaudeHome: options.localClaudeHome } : {}),
       mcpTools: (sessionId) => amoToolsFor(service, { sessionId }),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude });
-    const service = new HostService(store, runtime, profiles, { launcher: options.launcher ?? new WindowsTerminalLauncher(), credentials });
+    const service = new HostService(store, runtime, profiles, { launcher: options.launcher ?? new WindowsTerminalLauncher(), credentials, localClaudeHome });
     http = await startHostServer({
       service,
       token,

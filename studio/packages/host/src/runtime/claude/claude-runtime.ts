@@ -10,7 +10,8 @@ import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
 import { RuntimeBase, type NewItemBody, type SendMode, type SessionRuntimeApi } from "../runtime.js";
 import { classifyCommand, fileDiff, formatInput, shortPath, tail, textDiff } from "../items.js";
-import { claudeEnv, type ClaudeProviderDef } from "./claude-env.js";
+import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
+import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLogin } from "./claude-login.js";
 import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
 
 // Drives Claude sessions through the Claude Agent SDK. Behaviour follows spikes/RESULTS.md section h:
@@ -32,6 +33,8 @@ export interface ClaudeRuntimeOptions {
   credentials: CredentialReader;
   /** Studio's own CLAUDE_CONFIG_DIR; transcripts live under <claudeHome>/projects. */
   claudeHome: string;
+  /** The person's Claude Code config dir, used by sessions started with the local login (default: theirs, ~/.claude). */
+  localClaudeHome?: string;
   now?: () => Date;
   /** An idle query (no turn, no background task) is closed after this long; the next message resumes it. */
   idleCloseMs?: number;
@@ -174,7 +177,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** The subscription's quota windows, from the rate_limit_event messages of its sessions. */
   private readonly usageCache = new Map<Id, Map<string, UsageWindow>>();
   private readonly usageAt = new Map<Id, string>();
-  private readonly modelCache = new Map<Id, { at: number; models: ModelOption[] }>();
+  private readonly modelCache = new Map<string, { at: number; models: ModelOption[] }>();
   /** Queries being closed: a new one for the same session must wait, or the CLI says the session id is in use. */
   private readonly closing = new Map<Id, Promise<void>>();
   /** Skill names per profile, from the CLI's init message (its command list does not tell skills apart). */
@@ -184,8 +187,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** The `/` command a session was last sent, to name the output of a command that runs without the model. */
   private readonly lastCommand = new Map<Id, string>();
 
+  /** The person's own config dir; `explicit` when they set CLAUDE_CONFIG_DIR (read once: helpers set it for a while). */
+  private readonly local: { dir: string; explicit: boolean };
+
   constructor(private readonly options: ClaudeRuntimeOptions) {
     super(options.store, "claude", options.now);
+    const env = options.baseEnv ?? process.env;
+    this.local = { dir: options.localClaudeHome ?? localClaudeHome(env), explicit: !!options.localClaudeHome || !!env.CLAUDE_CONFIG_DIR?.trim() };
     this.recoverAfterRestart();
   }
 
@@ -193,8 +201,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   async startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
     const profile = this.profile(input.profileId);
-    // Fail early (missing provider or key) rather than on the first message.
-    claudeEnv(profile, this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv);
+    // Fail early (missing provider, key or login) rather than on the first message.
+    const home = this.newHome(profile);
+    claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv);
     // Studio picks the Claude session id up front (SDK option `sessionId`), so the session is addressable at once.
     const session = this.createSession({
       taskId: input.taskId,
@@ -207,6 +216,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       runtimeRef: randomUUID(),
       options: input.options ?? {},
     });
+    rememberSessionLogin(this.store, session.id, home.login);
     if (input.text) await this.sendMessage(session.id, input.text);
     return this.store.getSession(session.id)!;
   }
@@ -257,10 +267,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const profile = this.profile(profileId ?? parent.profileId);
     const workspace = this.store.getWorkspace(parent.workspaceId);
     if (!workspace || !parent.runtimeRef) throw new Error(`session ${sessionId} cannot be forked`);
-    if (!this.hasTranscript(parent.runtimeRef)) throw Object.assign(new Error("这个会话还没有对话内容，不能分支"), { code: "conflict" });
+    const home = this.homeOf(parent.id);
+    if (!this.hasTranscript(parent.runtimeRef, home)) throw Object.assign(new Error("这个会话还没有对话内容，不能分支"), { code: "conflict" });
+    // The copy stays in the parent's config dir, so the branch runs the way the parent did.
+    if (home.login === "local" && !this.isSubscription(profile)) throw Object.assign(new Error("这个会话用本机 Claude Code 的登录，分支只能继续用 Claude 订阅"), { code: "bad_request" });
     const title = `${parent.title || "会话"} · 分支`;
-    const forked = await this.withConfigDir(() => forkSession(parent.runtimeRef!, { dir: workspace.path, title }));
-    return this.createSession({
+    const forked = await this.withConfigDir(home, () => forkSession(parent.runtimeRef!, { dir: workspace.path, title }));
+    const child = this.createSession({
       taskId: parent.taskId,
       topicId: parent.topicId,
       parentId: parent.id,
@@ -271,6 +284,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       runtimeRef: forked.sessionId,
       options: parent.options,
     });
+    rememberSessionLogin(this.store, child.id, home.login);
+    return child;
   }
 
   /** Switches model, effort or permissions; a running Claude Code process takes them at once. */
@@ -300,10 +315,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** The session's title in its transcript (what `claude --resume` lists); a session without a transcript yet keeps it here only. */
   async rename(sessionId: Id, title: string): Promise<Session> {
     const session = this.requireSession(sessionId);
-    if (session.runtimeRef && this.hasTranscript(session.runtimeRef)) {
+    const home = this.homeOf(sessionId);
+    if (session.runtimeRef && this.hasTranscript(session.runtimeRef, home)) {
       const dir = this.store.getWorkspace(session.workspaceId)?.path;
       try {
-        await this.withConfigDir(() => renameSession(session.runtimeRef!, title, dir ? { dir } : {}));
+        await this.withConfigDir(home, () => renameSession(session.runtimeRef!, title, dir ? { dir } : {}));
       } catch (err) {
         this.emit("log", `could not rename the Claude session of ${sessionId}: ${String(err)}`);
       }
@@ -333,11 +349,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const base = { profileId, permissions: CLAUDE_PERMISSIONS, defaultPermission: CLAUDE_DEFAULT_PERMISSION };
     const provider = profile.provider ? this.options.providers[profile.provider] : undefined;
     if (provider?.models) return { ...base, models: provider.models.map((m) => ({ ...m, ...(m.id === profile.model ? { isDefault: true } : {}) })), source: "builtin" };
-    const cached = this.modelCache.get(profileId);
+    const cacheKey = `${profileId}|${this.newHome(profile).login}`;
+    const cached = this.modelCache.get(cacheKey);
     if (cached && Date.now() - cached.at < 10 * 60_000) return { ...base, models: cached.models, source: "cli" };
     try {
       const models = await this.askModels(profile);
-      this.modelCache.set(profileId, { at: Date.now(), models });
+      this.modelCache.set(cacheKey, { at: Date.now(), models });
       return { ...base, models, source: "cli" };
     } catch (err) {
       this.emit("log", `could not ask Claude Code for its models (${profileId}): ${firstLine(err)}`);
@@ -347,7 +364,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   /** Starts Claude Code with no prompt just to read its model list (no model request is made), then closes it. */
   private async askModels(profile: ModelProfile): Promise<ModelOption[]> {
-    const env = claudeEnv(profile, this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv);
+    const env = claudeEnv(profile, this.options.providers, this.options.credentials, this.newHome(profile), this.options.baseEnv);
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     async function* none(): AsyncGenerator<SDKUserMessage> {
@@ -446,14 +463,15 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (this.live.get(sessionId)?.running) throw Object.assign(new Error("回复还在生成，等这一轮结束或先打断，再交给终端"), { code: "conflict" });
     const workspace = this.store.getWorkspace(session.workspaceId);
     if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
-    const env = claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv);
+    const home = this.homeOf(sessionId);
+    const env = claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, home, this.options.baseEnv);
     await this.close(sessionId);
     const ref = session.runtimeRef!;
-    const seen = this.hasTranscript(ref) ? (await this.transcript(ref, workspace.path)).length : 0;
+    const seen = this.hasTranscript(ref, home) ? (await this.transcript(ref, workspace.path, home)).length : 0;
     this.store.setKv(handoffKey(sessionId), String(seen));
     this.updateSession(sessionId, { writer: "terminal-handoff" });
     // The same Claude Code build as the SDK, so the transcript format always matches; never the "auto" permission mode.
-    const resume = this.hasTranscript(ref) ? `--resume ${ref}` : `--session-id ${ref}`;
+    const resume = this.hasTranscript(ref, home) ? `--resume ${ref}` : `--session-id ${ref}`;
     return { command: `& '${bundledClaudeExe()}' ${resume} --permission-mode default`, cwd: workspace.path, env };
   }
 
@@ -464,8 +482,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const workspace = this.store.getWorkspace(session.workspaceId);
     const seen = Number(this.store.getKv(handoffKey(sessionId))?.value ?? "0") || 0;
     let added = 0;
-    if (workspace && session.runtimeRef && this.hasTranscript(session.runtimeRef)) {
-      const messages = await this.transcript(session.runtimeRef, workspace.path);
+    const home = this.homeOf(sessionId);
+    if (workspace && session.runtimeRef && this.hasTranscript(session.runtimeRef, home)) {
+      const messages = await this.transcript(session.runtimeRef, workspace.path, home);
       added = this.importTranscript(sessionId, messages.slice(seen));
     }
     this.store.setKv(handoffKey(sessionId), "");
@@ -512,7 +531,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const key = `${session.profileId}|${workspace.path}`;
     const cached = this.commandCache.get(key);
     if (cached && Date.now() - cached.at < 10 * 60_000) return cached.list;
-    const env = claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv);
+    const env = claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, this.homeOf(session.id), this.options.baseEnv);
     let release!: () => void;
     const gate = new Promise<void>((r) => (release = r));
     async function* none(): AsyncGenerator<SDKUserMessage> {
@@ -561,6 +580,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const workspace = this.store.getWorkspace(session.workspaceId);
     if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
     const ref = session.runtimeRef!;
+    const home = this.homeOf(session.id);
 
     const queue: Array<SDKUserMessage["message"]["content"]> = [];
     let wake: (() => void) | null = null;
@@ -619,7 +639,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       prompt: input(),
       options: {
         cwd: workspace.path,
-        env: claudeEnv(profile, this.options.providers, this.options.credentials, this.options.claudeHome, this.options.baseEnv),
+        env: claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv),
         settingSources: [],
         permissionMode: claudePermissionMode(session.options.permission),
         // Lets the person switch to 全部允许 mid-session; the mode itself stays what the session chose.
@@ -632,7 +652,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         hooks: STRIP_SUBAGENT_MODE,
         ...this.mcpOptions(session.id),
         // A session that already has a transcript continues it; a new one starts under the id Studio chose.
-        ...(this.hasTranscript(ref) ? { resume: ref } : { sessionId: ref }),
+        // The local login brings the person's config dir: only Studio's MCP server, not the ones they set up there.
+        ...(home.login === "local" ? { strictMcpConfig: true } : {}),
+        ...(this.hasTranscript(ref, home) ? { resume: ref } : { sessionId: ref }),
       },
     });
     // With CLAUDE_CODE_SUBPROCESS_ENV_SCRUB the CLI starts in "default" whatever --permission-mode says (CLI 2.1.296,
@@ -1271,10 +1293,25 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return { mcpServers: { [AMO_MCP_NAME]: server }, allowedTools: tools.filter((t) => t.autoApprove).map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
   }
 
+  /** Whether the profile is the Claude subscription (the only one the local login applies to). */
+  private isSubscription(profile: ModelProfile): boolean {
+    return !!profile.provider && this.options.providers[profile.provider]?.auth === "oauth";
+  }
+
+  /** Where a session started now runs: the subscription follows 设置 → 模型, every other profile Studio's own dir. */
+  private newHome(profile: ModelProfile): ClaudeHome {
+    return this.isSubscription(profile) && readClaudeLogin(this.store) === "local" ? { ...this.local, login: "local" } : { dir: this.options.claudeHome, login: "token" };
+  }
+
+  /** Where an existing session runs: the way it was started (its transcript is in that dir). */
+  private homeOf(sessionId: Id): ClaudeHome {
+    return sessionClaudeLogin(this.store, sessionId) === "local" ? { ...this.local, login: "local" } : { dir: this.options.claudeHome, login: "token" };
+  }
+
   /** In-process SDK helpers (forkSession, getSessionMessages) read CLAUDE_CONFIG_DIR from this process. */
-  private async withConfigDir<T>(fn: () => Promise<T>): Promise<T> {
+  private async withConfigDir<T>(home: ClaudeHome, fn: () => Promise<T>): Promise<T> {
     const previous = process.env.CLAUDE_CONFIG_DIR;
-    process.env.CLAUDE_CONFIG_DIR = this.options.claudeHome;
+    process.env.CLAUDE_CONFIG_DIR = home.dir;
     try {
       return await fn();
     } finally {
@@ -1283,8 +1320,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
   }
 
-  private transcript(ref: string, dir: string) {
-    return this.withConfigDir(() => getSessionMessages(ref, { dir }));
+  private transcript(ref: string, dir: string, home: ClaudeHome) {
+    return this.withConfigDir(home, () => getSessionMessages(ref, { dir }));
   }
 
   /** Turns transcript messages (written by a terminal) into items; returns how many were added. */
@@ -1315,8 +1352,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     return added;
   }
 
-  private hasTranscript(ref: string): boolean {
-    const projects = join(this.options.claudeHome, "projects");
+  private hasTranscript(ref: string, home: ClaudeHome): boolean {
+    const projects = join(home.dir, "projects");
     if (!existsSync(projects)) return false;
     return readdirSync(projects).some((dir) => existsSync(join(projects, dir, `${ref}.jsonl`)));
   }

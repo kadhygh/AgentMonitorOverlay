@@ -24,6 +24,7 @@ test("model, effort and permissions: new task, presets, switching inside a sessi
   // A preset in 设置: full access (no more approvals) with low effort.
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "模型" }).click();
   const presets = dialog.getByRole("region", { name: "常用预设" });
   await presets.getByLabel("预设名称").fill("快速全自动");
   await presets.getByLabel("预设的模型").selectOption("codex-mock");

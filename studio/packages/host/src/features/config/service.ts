@@ -1,6 +1,7 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { OPTIONAL_FEATURES, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type StudioSettings } from "@amo-studio/protocol";
+import { localClaudeHome, localClaudeSignedIn, readClaudeLogin, writeClaudeLogin } from "../../runtime/claude/claude-login.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
 import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY } from "../../core/shared.js";
@@ -9,7 +10,15 @@ import { Feature } from "../../core/feature.js";
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
 export class ConfigFeature extends Feature {
   settings(): StudioSettings {
-    return { commonWorkspace: this.commonWorkspace(), presets: this.presets(), disabledFeatures: this.disabledFeatures(), scratchpadShortcut: this.f.scratchpad.shortcut() };
+    const dir = this.options.localClaudeHome ?? localClaudeHome();
+    return {
+      commonWorkspace: this.commonWorkspace(),
+      presets: this.presets(),
+      disabledFeatures: this.disabledFeatures(),
+      scratchpadShortcut: this.f.scratchpad.shortcut(),
+      claudeLogin: readClaudeLogin(this.store),
+      claudeLocal: { dir, signedIn: localClaudeSignedIn(dir) },
+    };
   }
 
   /** Optional features the person turned off (设置 → 功能). */
@@ -39,10 +48,14 @@ export class ConfigFeature extends Feature {
   }
 
   /**
-   * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off and/or sets
-   * the scratchpad shortcut (便签).
+   * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
+   * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown }): StudioSettings {
+    if (input.claudeLogin !== undefined) {
+      if (input.claudeLogin !== "token" && input.claudeLogin !== "local") throw new HostError("bad_request", "claudeLogin must be token or local");
+      writeClaudeLogin(this.store, input.claudeLogin);
+    }
     if (input.scratchpadShortcut !== undefined) this.f.scratchpad.setShortcut(input.scratchpadShortcut);
     if (input.disabledFeatures !== undefined) {
       const known = OPTIONAL_FEATURES.map((f) => f.id);
