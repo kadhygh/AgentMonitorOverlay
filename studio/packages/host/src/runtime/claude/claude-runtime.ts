@@ -13,6 +13,7 @@ import { classifyCommand, fileDiff, formatInput, shortPath, tail, textDiff } fro
 import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
 import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLogin } from "./claude-login.js";
 import { CLAUDE_USAGE_LABELS, ClaudeUsageError, fetchClaudeUsage, localAccessToken } from "./claude-usage.js";
+import { agentsMdInstructions } from "./project-instructions.js";
 import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
 
 // Drives Claude sessions through the Claude Agent SDK. Behaviour follows spikes/RESULTS.md section h:
@@ -147,6 +148,9 @@ const BLOCKED_COMMANDS: Record<string, string> = {
   login: "请在 设置 → 模型凭据 里保存令牌。",
   logout: "请在 设置 → 模型凭据 里删除令牌。",
 };
+
+/** The settings files Claude Code reads in a terminal (the SDK reads none unless told). */
+const CLI_SETTING_SOURCES: Array<"user" | "project" | "local"> = ["user", "project", "local"];
 
 /**
  * Defence in depth: an Agent call may ask for a permission `mode` (bypassPermissions, auto, dontAsk…) for its
@@ -570,7 +574,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     async function* none(): AsyncGenerator<SDKUserMessage> {
       await gate;
     }
-    const q = query({ prompt: none(), options: { cwd: workspace.path, env, settingSources: [], permissionMode: "default" } });
+    const q = query({ prompt: none(), options: { cwd: workspace.path, env, settingSources: CLI_SETTING_SOURCES, permissionMode: "default" } });
     try {
       const list = await withTimeout(q.supportedCommands(), 20_000);
       this.commandCache.set(key, { at: Date.now(), list });
@@ -614,6 +618,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
     const ref = session.runtimeRef!;
     const home = this.homeOf(session.id);
+    const agentsMd = agentsMdInstructions(workspace.path);
 
     const queue: Array<SDKUserMessage["message"]["content"]> = [];
     let wake: (() => void) | null = null;
@@ -673,9 +678,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       options: {
         cwd: workspace.path,
         env: claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv),
-        settingSources: [],
-        // Claude Code's own system prompt, as in a terminal (without it the SDK sends a one-line prompt).
-        systemPrompt: { type: "preset", preset: "claude_code" },
+        // As in a terminal: CLAUDE.md, settings, hooks, commands and skills of the project and of the config dir (Studio's
+        // own with the token, the person's with the local login).
+        settingSources: CLI_SETTING_SOURCES,
+        // Claude Code's own system prompt, as in a terminal (without it the SDK sends a one-line prompt), plus a project's
+        // AGENTS.md when it has no CLAUDE.md.
+        systemPrompt: { type: "preset", preset: "claude_code", ...(agentsMd ? { append: agentsMd } : {}) },
         permissionMode: claudePermissionMode(session.options.permission),
         // Lets the person switch to 全部允许 mid-session; the mode itself stays what the session chose.
         allowDangerouslySkipPermissions: true,

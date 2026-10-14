@@ -100,6 +100,23 @@ describe("ClaudeRuntime", () => {
     expect(system).not.toContain("AMO Studio");
   }, 120_000);
 
+  it("loads the project's CLAUDE.md as a terminal does, and its AGENTS.md when there is no CLAUDE.md", async () => {
+    const sent = async (name: string, files: Record<string, string>) => {
+      const dir = join(root, name);
+      mkdirSync(dir, { recursive: true });
+      for (const [file, text] of Object.entries(files)) writeFileSync(join(dir, file), text);
+      const ws = store.addWorkspace({ path: dir, name });
+      const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace: ws, text: `md ${name}` });
+      await until(() => agentTexts(s.id).includes(`MOCK: md ${name}`) && status(s.id) === "idle", `reply in ${name}`);
+      return JSON.stringify(mock.requests.filter((r) => r.lastUserText === `md ${name}` && r.tools.length).at(-1)!.body);
+    };
+    const both = await sent("ws-both", { "CLAUDE.md": "CLAUDE-MD-MARKER", "AGENTS.md": "AGENTS-MD-MARKER" });
+    expect(both).toContain("CLAUDE-MD-MARKER");
+    expect(both).not.toContain("AGENTS-MD-MARKER");
+    const agentsOnly = await sent("ws-agents", { "AGENTS.md": "AGENTS-ONLY-MARKER" });
+    expect(agentsOnly).toContain("AGENTS-ONLY-MARKER");
+  }, 120_000);
+
   it("waits for the person on a command, and runs it once approved", async () => {
     const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[shell: mkdir approved-dir]]" });
     await until(() => status(s.id) === "awaiting-approval", "approval");

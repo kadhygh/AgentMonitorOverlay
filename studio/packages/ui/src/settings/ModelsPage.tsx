@@ -133,7 +133,7 @@ function LocalLoginConfirm({ dir, signedIn, onCancel, onConfirm }: { dir: string
           <li>
             Studio 的对话记录会写进 <code>{dir}\projects</code>，和你终端的会话放在一起，<code>claude --resume</code> 的列表里也会看到。
           </li>
-          <li>Studio 仍按自己的方式启动 Claude：不加载那里的 settings.json、hooks、CLAUDE.md 和你配置的 MCP 服务器。</li>
+          <li>和终端里一样，会加载那里的 settings.json、CLAUDE.md、自定义命令和 skills；你配置的 hooks 也会在 Studio 的会话里运行。只有 MCP 服务器例外：只用 Studio 自己的，不用你配置的。</li>
           <li>只适合你自己在这台电脑上用。把 AMO 打包给别人时不要用这种方式：Anthropic 不允许第三方产品让用户用 claude.ai 账号登录。</li>
           <li>已有的 Claude 会话不受影响；之后新开的才用本机登录。随时可以改回令牌。</li>
         </ul>
