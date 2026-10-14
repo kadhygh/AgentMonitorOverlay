@@ -87,6 +87,9 @@
 .gr-loading { animation: gr-appear 0s linear 0.3s both; }
 @keyframes gr-appear { from { visibility: hidden; } to { visibility: visible; } }
 .gr-lines { min-width: max-content; padding: 4px 0 40px; font-family: var(--font-code); font-size: 12.5px; line-height: 20px; }
+/* S13-B: rows in chunks the browser skips while off screen (layout and paint), so resizing the window stays smooth.
+   The height to assume before a chunk is first drawn comes inline (contain-intrinsic-height: auto <guess>). */
+.gr-chunk { content-visibility: auto; contain-intrinsic-width: auto 0px; }
 .gr-hunk { display: flex; gap: 12px; padding: 4px 16px 4px 112px; color: var(--chat-caption); background: var(--chat-code-banner); border-block: 0.5px solid var(--chat-hairline); }
 .gr-hunk:first-child { border-top: none; }
 .gr-hidden { color: var(--text-faint); }

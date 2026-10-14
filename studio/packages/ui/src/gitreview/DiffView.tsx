@@ -1,8 +1,9 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
 import type { GitFileDiff, GitReviewComment } from "@amo-studio/protocol";
 import { commentWhere } from "@amo-studio/protocol";
 import { CodeTokens } from "../lib/CodeTokens.js";
 import type { DiffRow } from "./logic.js";
+import { chunkRanges, maxColumns } from "./overview.js";
 import { splitRows, tokensOf, type DiffTokens, type LineRow, type SideCell } from "./splitview.js";
 
 // The right side of the review window: one file's rows ("只看改动" or "完整文件"), in one column or side by side
@@ -24,6 +25,8 @@ interface DiffViewProps {
   /** Row index n / p moved to, or the line clicked. */
   active: number | null;
   busy: boolean;
+  /** A commit's diff (S13-B): no "+" to comment. */
+  readOnly?: boolean;
   onDraft(key: string | null): void;
   /** A click on a line makes it the active one (VS Code opens there). */
   onActivate(index: number): void;
@@ -95,61 +98,104 @@ function Notes({ row, props }: { row: LineRow; props: LinesProps }) {
   );
 }
 
-function UnifiedLines(props: LinesProps) {
-  const { rows, tokens, draftAt, active, onDraft, onActivate } = props;
+/** Line rows are 20px; a hunk header about 29px. A chunk's first guess at its height, before it has been drawn. */
+const ROW_PX = 20;
+const HUNK_PX = 29;
+
+/**
+ * Rows in chunks of CHUNK_ROWS (S13-B): each chunk is `content-visibility: auto`, so the browser lays out and paints
+ * only the chunks near the screen. With the whole file drawn at once (thousands of rows, ~90k elements side by side)
+ * the window could not make a frame for each new size while being resized, and flickered. `guess` is the chunk's
+ * height before it is first drawn (then the browser remembers the real one).
+ */
+function Chunks<T>({ items, file, guess, render }: { items: readonly T[]; file: string; guess(item: T): number; render(item: T, index: number): ReactNode }) {
+  const ranges = useMemo(() => chunkRanges(items.length), [items.length]);
   return (
-    <div className="gr-lines" data-testid="diff-lines">
-      {rows.map((r, i) =>
-        r.kind === "hunk" ? (
-          <Hunk key={r.key} header={r.header} hidden={r.hidden} />
-        ) : (
-          <Fragment key={r.key}>
-            <div className={`gr-line ${r.line.kind}${active === i ? " active" : ""}`} data-row={i} data-line={r.key} data-testid="diff-line" onClick={(e) => plainClick(e) && onActivate(i)}>
-              <span className="gr-no">{r.line.oldLine ?? ""}</span>
-              <span className="gr-no">{r.line.newLine ?? ""}</span>
-              <AddButton row={r} open={draftAt === r.key} onDraft={onDraft} />
-              <span className="gr-mark" aria-hidden="true">
-                {MARK[r.line.kind]}
-              </span>
-              <span className="gr-text">
-                <CodeTokens tokens={tokensOf(tokens, r.line)} text={r.line.text} />
-              </span>
-            </div>
-            <Notes row={r} props={props} />
-          </Fragment>
-        ),
-      )}
+    <>
+      {ranges.map(({ start, count }, c) => {
+        let height = 0;
+        for (let i = start; i < start + count; i++) height += guess(items[i]!);
+        return (
+          // Keyed by file: a chunk must not keep another file's remembered height.
+          <div key={`${file}#${c}`} className="gr-chunk" data-chunk-start={start} data-chunk-count={count} style={{ containIntrinsicHeight: `auto ${height}px` }}>
+            {items.slice(start, start + count).map((item, k) => render(item, start + k))}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** Columns before the text in the single-column view (numbers, +, mark) and after it, in px. */
+const UNIFIED_GUTTER_PX = 44 + 44 + 20 + 18 + 24;
+
+function UnifiedLines(props: LinesProps) {
+  const { diff, rows, tokens, draftAt, active, onDraft, onActivate } = props;
+  // The longest line sets the width, drawn or not, so the horizontal scroll range does not change while scrolling.
+  const columns = useMemo(() => maxColumns(rows), [rows]);
+  return (
+    <div className="gr-lines" data-testid="diff-lines" style={{ minWidth: `calc(${UNIFIED_GUTTER_PX}px + ${columns}ch)` }}>
+      <Chunks
+        items={rows}
+        file={diff.path}
+        guess={(r) => (r.kind === "hunk" ? HUNK_PX : ROW_PX)}
+        render={(r, i) =>
+          r.kind === "hunk" ? (
+            <Hunk key={r.key} header={r.header} hidden={r.hidden} />
+          ) : (
+            <Fragment key={r.key}>
+              <div className={`gr-line ${r.line.kind}${active === i ? " active" : ""}`} data-row={i} data-line={r.key} data-testid="diff-line" onClick={(e) => plainClick(e) && onActivate(i)}>
+                <span className="gr-no">{r.line.oldLine ?? ""}</span>
+                <span className="gr-no">{r.line.newLine ?? ""}</span>
+                {props.readOnly ? <span /> : <AddButton row={r} open={draftAt === r.key} onDraft={onDraft} />}
+                <span className="gr-mark" aria-hidden="true">
+                  {MARK[r.line.kind]}
+                </span>
+                <span className="gr-text">
+                  <CodeTokens tokens={tokensOf(tokens, r.line)} text={r.line.text} />
+                </span>
+              </div>
+              <Notes row={r} props={props} />
+            </Fragment>
+          )
+        }
+      />
     </div>
   );
 }
 
 /** "左右对照": one scroll container, two columns per row, so both sides scroll together and stay aligned. */
 function SplitLines(props: LinesProps) {
-  const { rows, active, placed, visible, draftAt } = props;
+  const { diff, rows, active, placed, visible, draftAt } = props;
   const pairs = useMemo(() => splitRows(rows), [rows]);
   // Deleted lines take their comments on the left; unchanged and added lines on the right.
   const owns = (cell: SideCell | null, side: "old" | "new"): cell is SideCell => !!cell && (side === "old" ? cell.row.line.kind === "del" : cell.row.line.kind !== "del");
   const hasNotes = (cell: SideCell | null, side: "old" | "new") => owns(cell, side) && (draftAt === cell.row.key || visible(placed.get(cell.row.key) ?? []).length > 0);
   return (
     <div className="gr-lines gr-split" data-testid="diff-split">
-      {pairs.map((p) =>
-        p.kind === "hunk" ? (
-          <Hunk key={p.key} header={p.header} hidden={p.hidden} />
-        ) : (
-          <Fragment key={p.key}>
-            <div className={`gr-pair${active !== null && (p.left?.index === active || p.right?.index === active) ? " active" : ""}`} data-testid="diff-pair">
-              <Cell cell={p.left} side="old" commentable={owns(p.left, "old")} props={props} />
-              <Cell cell={p.right} side="new" commentable={owns(p.right, "new")} props={props} />
-            </div>
-            {(hasNotes(p.left, "old") || hasNotes(p.right, "new")) && (
-              <div className="gr-pair-notes">
-                <div>{owns(p.left, "old") && <Notes row={p.left.row} props={props} />}</div>
-                <div>{owns(p.right, "new") && <Notes row={p.right.row} props={props} />}</div>
+      <Chunks
+        items={pairs}
+        file={`${diff.path}|split`}
+        guess={(p) => (p.kind === "hunk" ? HUNK_PX : ROW_PX)}
+        render={(p) =>
+          p.kind === "hunk" ? (
+            <Hunk key={p.key} header={p.header} hidden={p.hidden} />
+          ) : (
+            <Fragment key={p.key}>
+              <div className={`gr-pair${active !== null && (p.left?.index === active || p.right?.index === active) ? " active" : ""}`} data-testid="diff-pair">
+                <Cell cell={p.left} side="old" commentable={!props.readOnly && owns(p.left, "old")} props={props} />
+                <Cell cell={p.right} side="new" commentable={!props.readOnly && owns(p.right, "new")} props={props} />
               </div>
-            )}
-          </Fragment>
-        ),
-      )}
+              {(hasNotes(p.left, "old") || hasNotes(p.right, "new")) && (
+                <div className="gr-pair-notes">
+                  <div>{owns(p.left, "old") && <Notes row={p.left.row} props={props} />}</div>
+                  <div>{owns(p.right, "new") && <Notes row={p.right.row} props={props} />}</div>
+                </div>
+              )}
+            </Fragment>
+          )
+        }
+      />
     </div>
   );
 }
