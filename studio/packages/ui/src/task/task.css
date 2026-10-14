@@ -180,3 +180,10 @@
 .thread-head .btn-ghost { border-color: transparent; background: transparent; }
 .thread-head .btn-ghost:hover:not(:disabled) { border-color: var(--border); background: var(--panel-raised); }
 .file-picker.topic-picker { width: min(480px, calc(100vw - 32px)); }
+.slist-head .fold-btn { margin-left: auto; }
+.slist-head .btn-ghost + .fold-btn { margin-left: 0; }
+.session-list.collapsed { flex-basis: 40px; padding: 10px 0; align-items: center; gap: 6px; overflow: hidden; }
+.fold-count { font-size: 11px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+/* Head buttons with an icon in front. */
+.with-icon { display: inline-flex; align-items: center; gap: 5px; }
+.with-icon svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }

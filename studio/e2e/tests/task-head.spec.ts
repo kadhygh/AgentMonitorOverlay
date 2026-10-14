@@ -38,6 +38,8 @@ test("status, topic and project from the line under the title; the right column 
   await expect(page.getByTestId("task-branch")).toHaveText("feature/drops");
   await expect(page.getByTestId("task-topic")).toHaveText("—");
   await expect(meta).toContainText("·");
+  // Project and branch are only shown; status and topic are the parts that open something.
+  await expect(meta.getByRole("button")).toHaveCount(2);
   // The right column is off by default; 侧栏 brings it.
   await expect(page.getByText("进度", { exact: true })).toHaveCount(0);
   await screenshot(app, "stage-14", "S14-E-task-head", page);
@@ -60,8 +62,9 @@ test("status, topic and project from the line under the title; the right column 
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
   expect(state.topics.find((t) => t.id === state.tasks.find((x) => x.id === task.id)!.topicId)!.title).toBe("关卡");
 
-  // Project: its name in AMO and a note.
-  await page.getByTestId("task-project").click();
+  // Project: its name in AMO and a note, from the left column.
+  await page.getByTestId("scope-ws-mining").click({ button: "right" });
+  await page.getByTestId("edit-project-item").click();
   const edit = page.getByTestId("edit-project");
   await edit.getByTestId("edit-project-name").fill("挖矿主工程");
   await edit.getByTestId("edit-project-description").fill("Unity 主工程，策划表在 Docs/");
@@ -71,6 +74,19 @@ test("status, topic and project from the line under the title; the right column 
   await expect(page.getByTestId("scope-ws-挖矿主工程")).toBeVisible();
   const after = await studio.api<StateSnapshot>("GET", "/api/state");
   expect(after.workspaces.find((w) => w.id === ws.id)).toMatchObject({ name: "挖矿主工程", description: "Unity 主工程，策划表在 Docs/" });
+
+  // The left column and the session list fold to a strip; 新会话 in the head opens the list again with its form.
+  await page.getByTestId("nav-collapse").click();
+  await expect(page.getByTestId("scope-all")).toHaveCount(0);
+  await page.getByTestId("sessions-collapse").click();
+  await expect(page.getByTestId("session-row")).toHaveCount(0);
+  await screenshot(app, "stage-14", "S14-E-folded", page);
+  await page.getByTestId("new-session-toggle").click();
+  await expect(page.getByRole("button", { name: "开始新会话" })).toBeVisible();
+  await expect(page.getByTestId("session-row")).toHaveCount(1);
+  await page.getByTestId("new-session-toggle").click();
+  await page.getByTestId("nav-expand").click();
+  await expect(page.getByTestId("scope-all")).toBeVisible();
 
   // 侧栏 shows the right column, and is remembered.
   await page.getByTestId("sidebar-toggle").click();

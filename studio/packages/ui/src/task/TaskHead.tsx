@@ -227,8 +227,6 @@ export function TaskMeta({
   branch,
   disabled,
   onStatus,
-  onProject,
-  onBranch,
   onTopic,
 }: {
   task: Task;
@@ -237,8 +235,6 @@ export function TaskMeta({
   branch: string | null;
   disabled: boolean;
   onStatus(at: Anchor): void;
-  onProject(): void;
-  onBranch(): void;
   onTopic(): void;
 }) {
   const parts: ReactNode[] = [
@@ -249,10 +245,10 @@ export function TaskMeta({
   ];
   if (workspace && !isCommon(workspace))
     parts.push(
-      <button key="project" type="button" className="meta-item" aria-label={`项目：${workspace.name}`} title={`${workspace.path}${workspace.description ? `\n${workspace.description}` : ""}\n点击编辑项目名和说明`} onClick={onProject} data-testid="task-project">
+      <span key="project" className="meta-item static" title={[workspace.path, workspace.description, "左栏右键项目可以改名字和说明"].filter(Boolean).join("\n")} data-testid="task-project">
         {Icon.folder}
         {workspace.name}
-      </button>,
+      </span>,
     );
   else
     parts.push(
@@ -262,10 +258,10 @@ export function TaskMeta({
     );
   if (branch)
     parts.push(
-      <button key="branch" type="button" className="meta-item mono" aria-label={`分支：${branch}`} title="当前分支；点击看提交历史" onClick={onBranch} data-testid="task-branch">
+      <span key="branch" className="meta-item static mono" title="当前分支" data-testid="task-branch">
         {Icon.branch}
         {branch}
-      </button>,
+      </span>,
     );
   parts.push(
     <button key="topic" type="button" className="meta-item" disabled={disabled} aria-label={topic ? `专题：${topic.title}` : "专题：无"} title={topic ? `专题：${topic.title}；点击换专题` : "不在专题里；点击放进专题"} onClick={onTopic} data-testid="task-topic">

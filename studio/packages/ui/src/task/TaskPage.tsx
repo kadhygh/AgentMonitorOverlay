@@ -32,16 +32,23 @@ import { FilePreview } from "../files/FilePreview.js";
 import { WorkdirActions } from "../files/WorkdirActions.js";
 import { ArchiveIcon, formatDay, TaskArchivedDialog } from "./Archived.js";
 import { PopMenu, StatusMenu, TaskMeta, TopicPicker, below, useGitBranch, type Anchor } from "./TaskHead.js";
-import { EditProjectDialog } from "../board/EditProjectDialog.js";
-import { CommitPicker } from "../gitreview/CommitPicker.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
-function readSidebar(): boolean {
+/** Whether the session list is folded to a strip. */
+const SESSIONS_KEY = "amo.sessionsFolded";
+function readFlag(key: string): boolean {
   try {
-    return localStorage.getItem(SIDEBAR_KEY) === "1";
+    return localStorage.getItem(key) === "1";
   } catch {
     return false;
+  }
+}
+function writeFlag(key: string, on: boolean): void {
+  try {
+    localStorage.setItem(key, on ? "1" : "0");
+  } catch {
+    // per-window convenience only
   }
 }
 
@@ -104,18 +111,21 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const taskWorkspace = workspaces.find((w) => w.id === task.workspaceId);
   const taskTopic = topics.find((t) => t.id === task.topicId);
   const [statusAt, setStatusAt] = useState<Anchor | null>(null);
-  const [picking, setPicking] = useState<"topic" | "project" | "history" | null>(null);
+  const [picking, setPicking] = useState<"topic" | null>(null);
   const [taskMenu, setTaskMenu] = useState<Anchor | null>(null);
   const [sessionMenu, setSessionMenu] = useState<Anchor | null>(null);
-  const [sidebar, setSidebarState] = useState(readSidebar);
+  const [sidebar, setSidebarState] = useState(() => readFlag(SIDEBAR_KEY));
   const setSidebar = (on: boolean) => {
     setSidebarState(on);
-    try {
-      localStorage.setItem(SIDEBAR_KEY, on ? "1" : "0");
-    } catch {
-      // per-window convenience only
-    }
+    writeFlag(SIDEBAR_KEY, on);
   };
+  const [sessionsFolded, setSessionsFoldedState] = useState(() => readFlag(SESSIONS_KEY));
+  const setSessionsFolded = (on: boolean) => {
+    setSessionsFoldedState(on);
+    writeFlag(SESSIONS_KEY, on);
+  };
+  // The new-session form in the session list, opened from 新会话 in the head.
+  const [creating, setCreating] = useState(false);
 
   /** A save from the annotation bubble: true once stored, else the error as a notice (the bubble keeps the draft). */
   async function annotationCall(fn: () => Promise<unknown>): Promise<boolean> {
@@ -271,16 +281,33 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             branch={git.repo ? git.branch : null}
             disabled={!!task.archivedAt || busy}
             onStatus={setStatusAt}
-            onProject={() => setPicking("project")}
-            onBranch={() => setPicking("history")}
             onTopic={() => setPicking("topic")}
           />
         </div>
         <div className="task-head-actions">
+          {!task.archivedAt && (
+            <button
+              type="button"
+              className="btn-ghost small with-icon"
+              aria-expanded={creating}
+              title="在这个任务里开一个新会话"
+              onClick={() => {
+                setCreating(!creating);
+                if (!creating) setSessionsFolded(false);
+              }}
+              data-testid="new-session-toggle"
+            >
+              <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M2.5 3.5h11v7h-6l-3 2.5v-2.5h-2z" />
+                <path d="M8 5.2v3.6M6.2 7h3.6" />
+              </svg>
+              新会话
+            </button>
+          )}
           {gitRepo && (
             <button
               type="button"
-              className="btn-ghost small"
+              className="btn-ghost small with-icon"
               title="Git Review：查看项目的改动并逐行批注，批注发回当前会话"
               onClick={() => {
                 const target = session && !session.archivedAt ? session : latestMainSession(sessions, task.id);
@@ -288,10 +315,17 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               }}
               data-testid="task-review"
             >
+              <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+                <path d="M3 2.5h7l3 3v8H3z" />
+                <path d="M6 7.5h4M8 5.5v4M6 11.5h4" />
+              </svg>
               Review
             </button>
           )}
-          <button type="button" className="btn-ghost small" title="文件标记：这个项目标记的文件（Ctrl+Shift+M）" onClick={() => openMarks({ workspaceId: task.workspaceId })} data-testid="task-marks">
+          <button type="button" className="btn-ghost small with-icon" title="文件标记：这个项目标记的文件（Ctrl+Shift+M）" onClick={() => openMarks({ workspaceId: task.workspaceId })} data-testid="task-marks">
+            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M4.5 2.5h7v11l-3.5-2.6-3.5 2.6z" />
+            </svg>
             标记
           </button>
           <button type="button" className="btn-ghost small icon-only" aria-label="任务的更多操作" title="更多" onClick={(e) => setTaskMenu(below(e.currentTarget))} data-testid="task-more">
@@ -318,10 +352,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       {statusAt && <StatusMenu at={statusAt} value={task.column} onPick={(c) => void setColumn(c)} onClose={() => setStatusAt(null)} />}
       {picking === "topic" && (
         <TopicPicker topics={topics} tasks={tasks} current={task.topicId} onPick={(id) => void setTopic(id)} onCreate={(title) => void newTopic(title)} onClose={() => setPicking(null)} />
-      )}
-      {picking === "project" && taskWorkspace && <EditProjectDialog link={link} workspace={taskWorkspace} onClose={() => setPicking(null)} />}
-      {picking === "history" && (
-        <CommitPicker link={link} workspaceId={task.workspaceId} onPick={(sha) => openReview({ workspaceId: task.workspaceId, commit: sha })} onClose={() => setPicking(null)} />
       )}
       {taskMenu && (
         <PopMenu at={taskMenu} label="任务" onClose={() => setTaskMenu(null)} testId="task-menu">
@@ -378,6 +408,10 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           unread={unread}
           presets={presetChoices}
           onPreset={openPreset}
+          creating={creating}
+          onCreating={setCreating}
+          collapsed={sessionsFolded}
+          onCollapse={setSessionsFolded}
         />
         <div className="thread-col">
           {draft && (

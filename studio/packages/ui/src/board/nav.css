@@ -56,3 +56,12 @@
 }
 .nav-settings svg { fill: none; stroke: currentColor; stroke-width: 1.2; stroke-linejoin: round; }
 .nav-settings:hover { background: var(--chip); color: var(--text); }
+
+/* Folding (2026-10-14): the left column and the task page's session list fold to a narrow strip. */
+.nav-top { display: flex; align-items: center; gap: 4px; }
+.nav-top .nav-item { flex: 1; min-width: 0; }
+.fold-btn { flex: none; width: 26px; height: 26px; padding: 0; border: 1px solid transparent; border-radius: var(--r-btn); background: transparent; color: var(--text-dim); display: inline-flex; align-items: center; justify-content: center; cursor: pointer; }
+.fold-btn:hover { border-color: var(--border); background: var(--panel); color: var(--text); }
+.fold-btn svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.scope-nav.collapsed { flex-basis: 40px; align-items: center; gap: 6px; padding: 10px 0; }
+.scope-nav.collapsed .spacer { flex: 1; }

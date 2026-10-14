@@ -7,6 +7,17 @@ import { UsageFooter } from "./UsageFooter.js";
 import { ProjectReviewMenu, type ProjectMenuAt } from "../gitreview/ProjectReviewMenu.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 import { EditProjectDialog } from "./EditProjectDialog.js";
+import { FoldIcon } from "../task/SessionTree.js";
+
+/** The left column folded to a strip (2026-10-14), remembered per window. */
+const NAV_FOLD_KEY = "amo.navCollapsed";
+function readNavFolded(): boolean {
+  try {
+    return localStorage.getItem(NAV_FOLD_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
 import { showToast } from "../lib/toast.js";
 
 /** A project or topic about to be archived from its right-click menu. */
@@ -53,6 +64,15 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const [archiving, setArchiving] = useState<Archiving | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const [collapsed, setCollapsedState] = useState(readNavFolded);
+  const setCollapsed = (on: boolean) => {
+    setCollapsedState(on);
+    try {
+      localStorage.setItem(NAV_FOLD_KEY, on ? "1" : "0");
+    } catch {
+      // per-window convenience only
+    }
+  };
   const editingWs = editing ? workspaces.find((w) => w.id === editing) : undefined;
   const pins = usePins();
   const liveTasks = tasks.filter((t) => !t.archivedAt);
@@ -156,9 +176,32 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
     if (dir) await register(dir);
   }
 
+  if (collapsed)
+    return (
+      <nav className="scope-nav collapsed" aria-label="范围">
+        <button type="button" className="fold-btn" aria-label="展开左栏" title="展开左栏" onClick={() => setCollapsed(false)} data-testid="nav-expand">
+          <FoldIcon dir="right" />
+        </button>
+        <span className="spacer" />
+        {onSettings && (
+          <button type="button" className="fold-btn" onClick={onSettings} aria-label="设置" title="设置">
+            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6.9 1.5h2.2l.4 1.8 1.2.5 1.6-1 1.5 1.5-1 1.6.5 1.2 1.8.4v2.2l-1.8.4-.5 1.2 1 1.6-1.5 1.5-1.6-1-1.2.5-.4 1.8H6.9l-.4-1.8-1.2-.5-1.6 1-1.5-1.5 1-1.6-.5-1.2-1.8-.4V6.9l1.8-.4.5-1.2-1-1.6 1.5-1.5 1.6 1 1.2-.5Z" />
+              <circle cx="8" cy="8" r="2.2" />
+            </svg>
+          </button>
+        )}
+      </nav>
+    );
+
   return (
     <nav className="scope-nav" aria-label="范围">
-      <div className="nav-top">{row(null, null, { kind: "all" }, "全部任务", liveTasks.length, "scope-all")}</div>
+      <div className="nav-top">
+        {row(null, null, { kind: "all" }, "全部任务", liveTasks.length, "scope-all")}
+        <button type="button" className="fold-btn" aria-label="收起左栏" title="收起左栏" onClick={() => setCollapsed(true)} data-testid="nav-collapse">
+          <FoldIcon dir="left" />
+        </button>
+      </div>
 
       <div className="nav-scroll">
         <section className="nav-section-box" aria-label="专题">

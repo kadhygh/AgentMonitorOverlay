@@ -29,10 +29,16 @@ interface SessionTreeProps {
   /** Session presets from the extension packs of the task's workspaces. */
   presets?: ReadonlyArray<{ key: string; label: string }>;
   onPreset?(key: string): void;
+  /** The new-session form, opened from 新会话 in the task head (2026-10-14). */
+  creating: boolean;
+  onCreating(open: boolean): void;
+  /** Folded to a narrow strip (2026-10-14). */
+  collapsed: boolean;
+  onCollapse(collapsed: boolean): void;
 }
 
 /** Left column of the task page: session tree (forks and subagents indented), new session, archived area. */
-export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset }: SessionTreeProps) {
+export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset, creating, onCreating, collapsed, onCollapse }: SessionTreeProps) {
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
@@ -50,7 +56,7 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
     if (selectedArchived) setShowArchived(true);
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
   // The new-session form opens on demand (and when the task has no live session yet).
-  const [creating, setCreating] = useState(false);
+  const setCreating = (v: boolean) => onCreating(v);
   // An archived task takes no new sessions (stage 14): its banner restores it first.
   const closed = !!task.archivedAt;
   const formOpen = !closed && (creating || live.length === 0);
@@ -65,15 +71,30 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   };
   walk(buildSessionTree(live), 0);
 
+  if (collapsed)
+    return (
+      <aside className="session-list collapsed" aria-label="会话">
+        <button type="button" className="fold-btn" aria-label="展开会话列表" title="展开会话列表" onClick={() => onCollapse(false)} data-testid="sessions-expand">
+          <FoldIcon dir="right" />
+        </button>
+        <span className="fold-count" title={`${live.length} 个会话`}>
+          {live.length}
+        </span>
+      </aside>
+    );
+
   return (
     <aside className="session-list" aria-label="会话">
       <div className="slist-head">
         <span className="nav-label">会话 {live.length}</span>
-        {!closed && (
-          <button type="button" className="btn-ghost small" aria-expanded={formOpen} onClick={() => setCreating((v) => !v)} data-testid="new-session-toggle">
-            {formOpen && live.length > 0 ? "收起" : "+ 新会话"}
+        {formOpen && live.length > 0 && (
+          <button type="button" className="btn-ghost small" onClick={() => setCreating(false)}>
+            收起
           </button>
         )}
+        <button type="button" className="fold-btn" aria-label="收起会话列表" title="收起会话列表" onClick={() => onCollapse(true)} data-testid="sessions-collapse">
+          <FoldIcon dir="left" />
+        </button>
       </div>
 
       {formOpen && (
@@ -206,5 +227,14 @@ ${formatDay(s.archivedAt)} 归档` : ""}`}
         </div>
       )}
     </aside>
+  );
+}
+
+/** The chevron of the fold buttons (左栏, 会话列表). */
+export function FoldIcon({ dir }: { dir: "left" | "right" }) {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true" className="fold-icon">
+      <path d={dir === "left" ? "M10 3 5 8l5 5M13 3v10" : "M6 3l5 5-5 5M3 3v10"} />
+    </svg>
   );
 }
