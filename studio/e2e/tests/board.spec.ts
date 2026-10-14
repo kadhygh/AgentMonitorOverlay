@@ -94,7 +94,7 @@ test("archived tasks leave the board; the 完成 column lists them, they open re
   await expect(row).toContainText("alpha");
   await screenshot(app, "stage-12", "S12-L-archived-tasks", page);
   await row.click();
-  await expect(page.locator(".page-crumb").filter({ hasText: "已归档" })).toBeVisible();
+  await expect(page.getByTestId("task-archived-banner")).toContainText("已归档 · 只读");
   await page.getByRole("button", { name: "恢复任务" }).click();
   await page.getByRole("button", { name: "← 看板" }).click();
   await expect(page.getByTestId("task-card")).toHaveCount(2);

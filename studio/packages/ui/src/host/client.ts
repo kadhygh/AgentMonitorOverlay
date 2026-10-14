@@ -19,6 +19,12 @@ declare global {
         onChange(cb: (on: boolean) => void): () => void;
         setIgnoreMouse(ignore: boolean): void;
       };
+      /** 置顶 (stage 14): the workbench window above other windows (Electron). */
+      pin?: {
+        get(): Promise<boolean>;
+        set(on: boolean): Promise<void>;
+        onChange(cb: (on: boolean) => void): () => void;
+      };
       /** From Focus: show a task (and session) in the workbench. */
       /** A task (and session); without a task (a topic session) the workbench shows the board. */
       openInWorkbench?(target: { taskId?: string; sessionId?: string }): Promise<void>;

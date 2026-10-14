@@ -19,6 +19,16 @@ electron.contextBridge.exposeInMainWorld("amo", {
       return () => electron.ipcRenderer.removeListener("amo:window-maximized", listener);
     },
   },
+  /** 置顶 (stage 14): keep the workbench window above other windows. */
+  pin: {
+    get: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:pin-get"),
+    set: (on: boolean): Promise<void> => electron.ipcRenderer.invoke("amo:pin-set", on),
+    onChange: (cb: (on: boolean) => void): (() => void) => {
+      const listener = (_event: unknown, on: boolean) => cb(on);
+      electron.ipcRenderer.on("amo:pin-changed", listener);
+      return () => electron.ipcRenderer.removeListener("amo:pin-changed", listener);
+    },
+  },
   /** First-run setup window of the portable build only (the handlers exist only while it is open). */
   setup: {
     info: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:setup-info"),

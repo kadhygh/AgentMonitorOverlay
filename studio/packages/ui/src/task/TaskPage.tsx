@@ -31,6 +31,7 @@ import { MarkButton } from "../marks/MarkButton.js";
 import { FileLinks, type PreviewTarget } from "../files/FileLinks.js";
 import { FilePreview } from "../files/FilePreview.js";
 import { WorkdirActions } from "../files/WorkdirActions.js";
+import { ArchiveIcon, formatDay, TaskArchivedDialog } from "./Archived.js";
 
 interface TaskPageProps {
   link: HostLink;
@@ -61,7 +62,9 @@ const WRITER = {
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
 export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, backLabel = "看板", onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
-  const [selected, setSelected] = useState<string | null>(initialSessionId ?? own.find((s) => !s.archivedAt)?.id ?? null);
+  // The first live session; in an archived task (or one whose sessions are all archived), the latest archived one.
+  const firstSession = () => own.find((s) => !s.archivedAt) ?? [...own].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+  const [selected, setSelected] = useState<string | null>(initialSessionId ?? firstSession()?.id ?? null);
   // Notices float over the window (lib/toast); null clears nothing, they go away by themselves.
   const setToast = (t: Toast) => void (t && showToast(t));
   const [busy, setBusy] = useState(false);
@@ -70,7 +73,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
 
   useEffect(() => {
     if (!selected || !own.some((s) => s.id === selected)) {
-      const first = own.find((s) => !s.archivedAt);
+      const first = firstSession();
       if (first) setSelected(first.id);
     }
   }, [selected, own]);
@@ -115,10 +118,14 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   /** 转移: into another topic, or out of its topic (null). */
   const setTopic = (topicId: string | null) =>
     run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { topicId }), () => setToast({ text: topicId ? "已转到这个专题。" : "已移出专题。" }));
-  const archiveTask = () =>
-    run(() => call(link, task.archivedAt ? "POST /api/tasks/:id/unarchive" : "POST /api/tasks/:id/archive", { id: task.id }), (t) =>
-      setToast({ text: t.archivedAt ? "任务和它的会话都已归档。" : "任务已恢复。" }),
-    );
+  // Archiving the whole task says so in a box of its own (stage 14), with the way back to where the task was opened
+  // from; restoring it is a plain notice.
+  const [archivedBox, setArchivedBox] = useState<{ sessions: number } | null>(null);
+  const archiveTask = () => {
+    const liveSessions = own.filter((s) => !s.archivedAt).length;
+    return run(() => call(link, "POST /api/tasks/:id/archive", { id: task.id }), () => setArchivedBox({ sessions: liveSessions }));
+  };
+  const unarchiveTask = () => run(() => call(link, "POST /api/tasks/:id/unarchive", { id: task.id }), () => setToast({ text: "任务已恢复。" }));
   const newSession = (input: { profileId: string; options?: SessionOptions }) =>
     run(() => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input), (s) => setSelected(s.id));
   const openPreset = (key: string) => {
@@ -223,7 +230,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           />
         </h1>
         <span className="page-crumb">{scopeLabel}</span>
-        {task.archivedAt && <span className="page-crumb">已归档</span>}
         <span className="spacer" />
         <label className="inline-field">
           专题
@@ -269,9 +275,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             onError={(text) => setToast({ text, error: true })}
           />
         )}
-        <button type="button" className="btn-ghost small" onClick={() => void archiveTask()} disabled={busy} data-testid="task-archive">
-          {task.archivedAt ? "恢复任务" : "归档任务"}
-        </button>
+        {!task.archivedAt && (
+          <button type="button" className="btn-ghost small" onClick={() => void archiveTask()} disabled={busy} data-testid="task-archive">
+            归档任务
+          </button>
+        )}
         <label className="inline-field">
           任务状态
           <select value={task.column} onChange={(e) => void setColumn(e.target.value as TaskColumn)} data-testid="task-column">
@@ -283,6 +291,21 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           </select>
         </label>
       </div>
+
+      {task.archivedAt && (
+        <div className="archived-banner task" role="status" data-testid="task-archived-banner">
+          <ArchiveIcon />
+          <span className="archived-banner-text">
+            <b>已归档 · 只读</b>
+            <span>
+              {formatDay(task.archivedAt)} 归档。任务和它的会话只能查看，恢复任务后才能继续。
+            </span>
+          </span>
+          <button type="button" className="btn-primary small" disabled={busy} onClick={() => void unarchiveTask()} data-testid="task-unarchive">
+            恢复任务
+          </button>
+        </div>
+      )}
 
       <div className="task-body">
         <SessionTree
@@ -327,7 +350,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               </span>
               {workdir && <WorkdirActions link={link} path={workdir} onError={showError} />}
               <span className="spacer" />
-              {writer && (
+              {writer && !session.archivedAt && (
                 <span className="writer" style={{ color: writer.color }} data-testid="writer">
                   {writer.label}
                 </span>
@@ -355,15 +378,24 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
                   分支
                 </button>
               )}
-              {!session.archivedAt ? (
+              {/* An archived session is restored from its banner below. */}
+              {!session.archivedAt && (
                 <button type="button" className="btn-ghost small dim" disabled={busy} onClick={() => void archive(session.id)}>
                   归档
                 </button>
-              ) : (
-                <button type="button" className="btn-ghost small primary" disabled={busy} onClick={() => void restore(session.id)}>
-                  恢复
-                </button>
               )}
+            </div>
+          )}
+          {session?.archivedAt && !task.archivedAt && (
+            <div className="archived-banner" role="status" data-testid="session-archived-banner">
+              <ArchiveIcon />
+              <span className="archived-banner-text">
+                <b>已归档 · 只读</b>
+                <span>{formatDay(session.archivedAt)} 归档。这个会话只能查看，恢复后才能继续。</span>
+              </span>
+              <button type="button" className="btn-primary small" disabled={busy} onClick={() => void restore(session.id)} data-testid="session-unarchive">
+                恢复会话
+              </button>
             </div>
           )}
           {session?.writer === "terminal-handoff" && (
@@ -446,6 +478,18 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           }}
         />
       </div>
+      {archivedBox && (
+        <TaskArchivedDialog
+          title={task.title || "未命名任务"}
+          sessions={archivedBox.sessions}
+          backLabel={backLabel}
+          onBack={() => {
+            setArchivedBox(null);
+            onBack();
+          }}
+          onClose={() => setArchivedBox(null)}
+        />
+      )}
     </section>
   );
 }

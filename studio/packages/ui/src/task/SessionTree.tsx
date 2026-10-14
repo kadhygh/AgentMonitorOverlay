@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { buildSessionTree, type ModelProfile, type Session, type SessionNode, type SessionOptions, type Task, type Workspace } from "@amo-studio/protocol";
 import { defaultProfile, rememberProfile, shortModel } from "../lib/profiles.js";
 import { sessionModelName, storedChoices } from "../lib/choices.js";
@@ -9,6 +9,7 @@ import { EffortBars, FastToggle } from "../chat/pickers.js";
 import { ModelRow } from "../newtask/ModelRow.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { Mark } from "../chat/pickers.js";
+import { ArchiveIcon, formatDay } from "./Archived.js";
 
 const KIND = { main: "会话", fork: "分支", sub: "子 agent" } as const;
 
@@ -42,9 +43,17 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   const { choices } = useProfileChoices(link, pick.profileId);
   const model = choices ? activeModel(choices, pick.model ? { model: pick.model } : {}) : undefined;
   const [showArchived, setShowArchived] = useState(false);
+  // An archived session brought to the front (from search, Focus, or an archived task) shows its row. Only on a change
+  // of selection: archiving the session in front leaves the folded list alone.
+  const selectedArchived = sessions.some((s) => s.id === selected && s.archivedAt);
+  useEffect(() => {
+    if (selectedArchived) setShowArchived(true);
+  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
   // The new-session form opens on demand (and when the task has no live session yet).
   const [creating, setCreating] = useState(false);
-  const formOpen = creating || live.length === 0;
+  // An archived task takes no new sessions (stage 14): its banner restores it first.
+  const closed = !!task.archivedAt;
+  const formOpen = !closed && (creating || live.length === 0);
   const profile = (id: string) => profiles.find((p) => p.id === id);
 
   const rows: Array<{ node: SessionNode; depth: number }> = [];
@@ -60,9 +69,11 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
     <aside className="session-list" aria-label="会话">
       <div className="slist-head">
         <span className="nav-label">会话 {live.length}</span>
-        <button type="button" className="btn-ghost small" aria-expanded={formOpen} onClick={() => setCreating((v) => !v)} data-testid="new-session-toggle">
-          {formOpen && live.length > 0 ? "收起" : "+ 新会话"}
-        </button>
+        {!closed && (
+          <button type="button" className="btn-ghost small" aria-expanded={formOpen} onClick={() => setCreating((v) => !v)} data-testid="new-session-toggle">
+            {formOpen && live.length > 0 ? "收起" : "+ 新会话"}
+          </button>
+        )}
       </div>
 
       {formOpen && (
@@ -150,21 +161,48 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
 
       {archivedRoots.length > 0 && (
         <div className="archived">
-          <button type="button" className="archived-toggle" onClick={() => setShowArchived((v) => !v)} aria-expanded={showArchived}>
-            {showArchived ? "▾" : "▸"} 已归档 {archivedRoots.length}
+          <button type="button" className="archived-toggle" onClick={() => setShowArchived((v) => !v)} aria-expanded={showArchived} data-testid="archived-toggle">
+            <span className="archived-caret" aria-hidden="true">
+              {showArchived ? "▾" : "▸"}
+            </span>
+            <ArchiveIcon size={14} />
+            已归档 {archivedRoots.length}
           </button>
           {showArchived &&
-            archivedRoots.map((s) => (
-              <div key={s.id} className="archived-row" data-testid="archived-row">
-                <span className="name">{s.title || "会话"}</span>
-                <button type="button" className="link-btn" onClick={() => onSelect(s.id)}>
-                  查看
-                </button>
-                <button type="button" className="link-btn primary" onClick={() => onRestore(s.id)}>
-                  恢复
-                </button>
-              </div>
-            ))}
+            archivedRoots.map((s) => {
+              const p = profile(s.profileId);
+              const modelText = (p && sessionModelName(storedChoices(p.id), s.options)) || shortModel(p);
+              const meta = [s.kind === "main" ? "" : KIND[s.kind], modelText].filter(Boolean).join(" · ");
+              return (
+                <div key={s.id} className="srow archived-srow" aria-current={s.id === selected} data-testid="archived-row">
+                  <button
+                    type="button"
+                    className="srow-open"
+                    onClick={() => onSelect(s.id)}
+                    title={`查看这个已归档的会话（只读）${s.archivedAt ? `
+${formatDay(s.archivedAt)} 归档` : ""}`}
+                  >
+                    <span className="srow-top">
+                      <ArchiveIcon size={13} />
+                      <span className="srow-title">{s.title || "新会话"}</span>
+                      <span className="srow-time">{relativeTime(s.archivedAt ?? s.updatedAt)}</span>
+                    </span>
+                    <span className="srow-meta">
+                      <Mark profile={p} small />
+                      <span className="srow-meta-text">{[meta, "已归档"].filter(Boolean).join(" · ")}</span>
+                    </span>
+                  </button>
+                  <span className="srow-actions">
+                    <button type="button" className="link-btn" onClick={() => onSelect(s.id)}>
+                      查看
+                    </button>
+                    <button type="button" className="link-btn primary" disabled={busy} onClick={() => onRestore(s.id)}>
+                      恢复
+                    </button>
+                  </span>
+                </div>
+              );
+            })}
         </div>
       )}
     </aside>
