@@ -1,5 +1,5 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
-import type { Annotation, ApprovalDecision, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, Task } from "@amo-studio/protocol";
+import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, Task } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
@@ -17,6 +17,7 @@ import { MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
 import { markFileMessage } from "../marks/open.js";
 import { QuestionCard } from "../chat/questions/QuestionCard.js";
+import { SessionDecisions } from "../collab/DecisionPanel.js";
 import { PlanReviewBar, sendRevision } from "../chat/questions/PlanReview.js";
 import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
@@ -53,12 +54,14 @@ interface ThreadProps {
   onAnnotate(anchor: SelectionAnchor): void;
   /** A command or another action of the composer failed (stage 12, S12-E). */
   onError?(text: string): void;
+  /** Open decisions of this session (AMO decision_request), pinned above the conversation. */
+  decisions?: readonly DecisionRequest[];
 }
 
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate, onError }: ThreadProps) {
+export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onAnnotate, onError, decisions = [] }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -272,6 +275,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   return (
     <>
       <div className="thread-wrap" data-dragging={dragging || undefined} {...dropTarget}>
+        <SessionDecisions link={link} decisions={decisions} />
         <ReplyNav scroller={scroller} itemCount={items.length} />
         <div
           className="thread"

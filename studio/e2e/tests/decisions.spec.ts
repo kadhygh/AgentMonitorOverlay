@@ -23,15 +23,24 @@ test("agents ask for decisions; the person answers on the task page and in Focus
   const a = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "掉落表拆分",
     scope,
-    firstSession: { profileId: "codex-mock", text: '[[mcp: decision_request {"question":"按关卡拆还是按怪物拆？","options":["按关卡","按怪物"]}]]' },
+    firstSession: {
+      profileId: "codex-mock",
+      text: '[[mcp: decision_request {"question":"按关卡拆还是按怪物拆？","options":["按关卡","按怪物","两者都拆：先按关卡拆成 12 张表，再在每张表里按怪物分组，旧的总表保留到下个版本再删"]}]]',
+    },
   });
   await expect.poll(async () => (await open()).length, { timeout: 60_000 }).toBe(1);
   await page.getByTestId("task-card").filter({ hasText: "掉落表拆分" }).click();
-  const card = page.getByTestId("decision-card");
+  // In the session, above its conversation; a long option wraps inside its row.
+  const card = page.getByTestId("thread-decisions").getByTestId("decision-card");
   await expect(card).toContainText("按关卡拆还是按怪物拆？");
-  await expect(page.getByTestId("decision-count")).toHaveText("1");
-  await screenshot(app, "stage-5", "S5-04-decision", page);
-  await card.getByRole("button", { name: "按关卡" }).click();
+  await expect(page.getByTestId("decision-count")).toHaveCount(0);
+  const long = card.getByRole("button", { name: /两者都拆/ });
+  const box = (await long.boundingBox())!;
+  const cardBox = (await card.boundingBox())!;
+  expect(box.height).toBeGreaterThan(30);
+  expect(box.x + box.width).toBeLessThanOrEqual(cardBox.x + cardBox.width + 1);
+  await screenshot(app, "stage-12", "S12-H-decision-in-session", page);
+  await card.getByRole("button", { name: "按关卡", exact: true }).click();
   await expect(card).toHaveCount(0);
   await expect.poll(async () => (await studio!.api<MailMessage[]>("GET", `/api/mail?sessionId=${a.session.id}`)).map((m) => m.text)).toEqual([
     "针对你的问题「按关卡拆还是按怪物拆？」，我的决定：按关卡",

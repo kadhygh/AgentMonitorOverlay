@@ -390,6 +390,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               }}
               onError={showError}
               annotations={annotations}
+              decisions={session ? decisions.filter((d) => d.sessionId === session.id) : []}
             />
           </FileLinks>
         </div>
@@ -408,7 +409,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
         <AnnotationPanel
           header={
             <>
-            <DecisionPanel link={link} decisions={decisions} task={task} sessionTitle={(id) => sessions.find((s) => s.id === id)?.title || "会话"} />
+            <DecisionPanel decisions={decisions} task={task} current={session?.id ?? null} sessionTitle={(id) => sessions.find((s) => s.id === id)?.title || "会话"} onOpen={setSelected} />
             <MailPanel
               mail={mail}
               sessions={sessions}
