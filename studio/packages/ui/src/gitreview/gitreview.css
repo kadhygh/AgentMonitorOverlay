@@ -92,6 +92,12 @@
 .gr-ruler-mark.mod { background: var(--gr-st-modified); }
 .gr-ruler-view { position: absolute; left: 0; right: 0; pointer-events: none; background: color-mix(in srgb, var(--text) 9%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 30%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--text) 30%, transparent); }
 .gr-scroll-wrap .gr-lines { padding-right: 12px; }
+/* With the ruler the ruler is the vertical scrollbar (S14-A, B2): the native one goes, the horizontal one stays. */
+.gr-scroll.ruled::-webkit-scrollbar { width: 0; height: 10px; }
+.gr-scroll.ruled::-webkit-scrollbar-track { background: transparent; }
+.gr-scroll.ruled::-webkit-scrollbar-thumb { border: 2px solid transparent; border-radius: 6px; background: color-mix(in srgb, var(--text) 22%, transparent) padding-box; }
+.gr-scroll.ruled::-webkit-scrollbar-thumb:hover { background-color: color-mix(in srgb, var(--text) 38%, transparent); }
+.gr-scroll.ruled::-webkit-scrollbar-corner { background: transparent; }
 .gr-notice { padding: 24px; color: var(--text-dim); font-size: var(--fs-sm); }
 /* Most diffs arrive within a blink: the notice only shows for a slow one. */
 .gr-loading { animation: gr-appear 0s linear 0.3s both; }
@@ -115,6 +121,25 @@
 .gr-text { white-space: pre; padding-right: 24px; color: var(--chat-label); }
 .gr-add { width: 18px; height: 18px; margin-top: 1px; padding: 0; border: 1px solid var(--attention-border); border-radius: var(--r-s); background: var(--attention-bg); color: var(--attention); font-size: 13px; line-height: 14px; cursor: pointer; opacity: 0; }
 .gr-line:hover .gr-add, .gr-add:focus-visible { opacity: 1; }
+
+/* The viewer's 文件 mode (S14-A): one line number, the asked lines marked as in the quick look. */
+.gr-plain .gr-line { grid-template-columns: var(--gr-no-w, 52px) 20px 1fr; }
+.gr-plain .gr-line.context { background: none; }
+.gr-plain .gr-line:hover { background: var(--tint); }
+.gr-plain .gr-no { color: var(--text-faint); }
+.gr-line.marked, .gr-plain .gr-line.marked { background: var(--attention-bg); }
+.gr-line.marked .gr-no { color: var(--attention); box-shadow: inset 2px 0 var(--attention); }
+.gr-plain .gr-comment, .gr-plain .gr-draft { margin-left: calc(var(--gr-no-w, 52px) + 24px); }
+
+/* Ctrl+F (and Ctrl+G in the viewer), over the top right of the view. */
+.find-bar { position: absolute; top: 8px; right: 28px; z-index: 5; display: flex; align-items: center; gap: 4px; padding: 4px 6px; border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel-raised); box-shadow: 0 4px 16px var(--shadow-soft); font-size: var(--fs-sm); }
+.find-bar .field { width: 220px; height: 26px; padding: 2px 8px; }
+.find-count { min-width: 84px; padding: 0 4px; color: var(--text-dim); font-size: var(--fs-cap); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.find-bar .icon-btn[aria-pressed="true"] { color: var(--primary); background: color-mix(in srgb, var(--primary) 12%, transparent); }
+.find-bar .icon-btn { width: 24px; height: 24px; font-size: 12px; }
+.goto-bar .field { width: 160px; }
+::highlight(amo-find) { background-color: color-mix(in srgb, var(--attention) 28%, transparent); }
+::highlight(amo-find-current) { background-color: var(--attention); color: var(--bg); }
 
 /* Comments */
 .gr-comment, .gr-draft { margin: 4px 24px 6px 108px; max-width: 640px; padding: 8px 12px; border-radius: var(--r-l); border: 1px solid var(--selection); background: var(--tint); font-family: var(--font-ui); font-size: var(--fs-sm); line-height: var(--lh); color: var(--text); display: flex; flex-direction: column; gap: 6px; }

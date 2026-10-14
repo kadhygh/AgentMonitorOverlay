@@ -129,8 +129,8 @@ test("marks files in the marks window, edits their notes, looks at them and remo
   await look.waitForLoadState("domcontentloaded");
   await expect(look.getByTestId("viewer-name")).toHaveText("drop.lua");
   await expect(look.getByTestId("viewer-lines")).toHaveText("第 2–3 行");
-  await expect(look.getByTestId("file-preview-code")).toContainText("M.rate = 0.25");
-  await expect(look.locator(".fp-row.marked")).toHaveCount(2);
+  await expect(look.getByTestId("viewer-code")).toContainText("M.rate = 0.25");
+  await expect(look.locator(".gr-line.marked")).toHaveCount(2);
   await screenshot(app, "stage-13", "S13-A-mark-in-viewer", look, "viewer");
   // 在资源管理器中显示 (tests only record the launch).
   await drop.getByRole("button", { name: "在资源管理器中显示" }).click();

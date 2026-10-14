@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { StateSnapshot } from "@amo-studio/protocol";
 import { copyText, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
@@ -10,13 +10,17 @@ import { fileName, folderOf } from "../files/paths.js";
 import { ReviewPage } from "../gitreview/ReviewApp.js";
 import { useIsGitRepo } from "../gitreview/open.js";
 import { MarkButton } from "../marks/MarkButton.js";
+import { FindBar } from "../gitreview/FindBar.js";
+import { sessionChoices } from "../gitreview/logic.js";
+import { FileReview } from "./FileReview.js";
 import { linesLabel, parseViewerHash, projectOf, type ViewerMode, type ViewerTarget } from "./logic.js";
 import { pinViewer, viewerPinned } from "./open.js";
 
 // The viewer window (查看器, stage 13; #viewer?path=…): a file opened from a conversation, a mark or a Review, in one
 // of two modes. 文件: the file as it is now (code coloured, the asked line or range marked and scrolled to; Markdown
 // rendered or as source; images). 改动: the project's Git Review at that file. The window is the preview one, reused
-// for the next file, until 固定 keeps it.
+// for the next file, until 固定 keeps it. Stage 14 (S14-A): code in 文件 mode takes line comments like Review
+// (FileReview), Ctrl+G goes to a line, Ctrl+F finds; the two modes stay laid out while hidden, so each keeps its place.
 
 export function ViewerApp() {
   const host = useHostState();
@@ -76,6 +80,15 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
     if (m === "changes") setChangesShown(true);
   };
   const where = linesLabel(target.line, target.endLine);
+  // Code (not an image, not Markdown shown rendered) is drawn by FileReview: comments, Ctrl+G, Ctrl+F.
+  const code = loaded.state === "ok" && !isImage(file.path) && !loaded.file.binary && !loaded.file.tooLarge && loaded.file.text !== undefined && !(markdown && rendered);
+  // Comments go to the conversation that opened the file, else the project's most recently active session; fixed
+  // per open, so sessions updating does not move the choice.
+  const defaultSession = useMemo(
+    () => target.sessionId ?? (workspace ? (sessionChoices(state, workspace.id)[0]?.id ?? null) : null),
+    [openKey, workspace?.id], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+  const rendered_ = useRef<HTMLDivElement>(null);
 
   return (
     <div className="vw-app" data-testid="viewer" data-mode={mode}>
@@ -117,6 +130,17 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
           {mode === "file" && (
             <>
               {markdown && <RenderedToggle rendered={rendered} onChange={setRendered} />}
+              {code && (
+                <button
+                  type="button"
+                  className="btn-ghost small dim"
+                  title="跳到行（Ctrl+G）；查找（Ctrl+F）"
+                  onClick={() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "g", ctrlKey: true }))}
+                  data-testid="viewer-goto"
+                >
+                  跳到行
+                </button>
+              )}
               {vscode && (
                 <button type="button" className="btn-ghost small" onClick={() => openInEditor(link, file, target.line).catch(fail)} data-testid="viewer-vscode">
                   VS Code 打开
@@ -162,11 +186,41 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
       </header>
       <main className="vw-body">
         <div className="vw-file" hidden={mode !== "file"} data-testid="viewer-file">
-          <FileContent link={link} file={file} loaded={loaded} line={target.line} endLine={target.endLine} rendered={rendered} reload={reload} />
+          {code && loaded.state === "ok" ? (
+            <FileReview
+              key={`${loaded.file.path}#${reload}`}
+              link={link}
+              state={state}
+              workspace={workspace}
+              file={loaded.file}
+              line={target.line}
+              endLine={target.endLine}
+              openKey={openKey}
+              defaultSession={defaultSession}
+              active={mode === "file"}
+            />
+          ) : (
+            <>
+              {/* Rendered Markdown: Ctrl+F finds in the text on the page. */}
+              {markdown && rendered && <FindBar active={mode === "file"} container={rendered_} />}
+              <div className="vw-content" ref={rendered_}>
+                <FileContent link={link} file={file} loaded={loaded} line={target.line} endLine={target.endLine} rendered={rendered} reload={reload} />
+              </div>
+            </>
+          )}
         </div>
         {changesShown && workspace && (
           <div className="vw-changes" hidden={mode !== "changes"}>
-            <ReviewPage key={workspace.id} link={link} state={state} workspace={workspace} sessionId={null} select={{ path: absolute, nonce: target.nonce ?? "" }} embedded />
+            <ReviewPage
+              key={workspace.id}
+              link={link}
+              state={state}
+              workspace={workspace}
+              sessionId={defaultSession}
+              select={{ path: absolute, nonce: target.nonce ?? "" }}
+              embedded
+              inactive={mode !== "changes"}
+            />
           </div>
         )}
       </main>

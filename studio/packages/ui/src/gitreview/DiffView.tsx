@@ -1,13 +1,16 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
 import type { GitFileDiff, GitReviewComment } from "@amo-studio/protocol";
 import { commentWhere } from "@amo-studio/protocol";
 import { CodeTokens } from "../lib/CodeTokens.js";
+import { dropDraft, draftText, editDraftKey, setDraftText, useEditing } from "./drafts.js";
 import type { DiffRow } from "./logic.js";
 import { chunkRanges, maxColumns } from "./overview.js";
 import { splitRows, tokensOf, type DiffTokens, type LineRow, type SideCell } from "./splitview.js";
 
 // The right side of the review window: one file's rows ("只看改动" or "完整文件"), in one column or side by side
-// ("左右对照"), syntax-coloured, a "+" on each line to comment, and the comments under their lines.
+// ("左右对照"), syntax-coloured, a "+" on each line to comment, and the comments under their lines. Stage 14 (S14-A):
+// also the viewer's 文件 mode (`plain`: the file as it is now, one line number, the asked lines marked); text being
+// written lives in drafts.ts, so it survives the view being drawn another way.
 
 interface DiffViewProps {
   diff: GitFileDiff;
@@ -27,6 +30,12 @@ interface DiffViewProps {
   busy: boolean;
   /** A commit's diff (S13-B): no "+" to comment. */
   readOnly?: boolean;
+  /** The viewer's 文件 mode (S14-A): every line unchanged, one line number, no +/− column. */
+  plain?: boolean;
+  /** Lines to mark (the viewer's asked line or range), by new line number. */
+  marked?: { from: number; to: number } | null;
+  /** Where the text of a new comment on a row (`side:line`) is kept until saved (drafts.ts). */
+  draftKey(rowKey: string): string;
   onDraft(key: string | null): void;
   /** A click on a line makes it the active one (VS Code opens there). */
   onActivate(index: number): void;
@@ -87,13 +96,25 @@ function AddButton({ row, open, onDraft }: { row: LineRow; open: boolean; onDraf
 
 /** The comments under a line and the draft being written for it. */
 function Notes({ row, props }: { row: LineRow; props: LinesProps }) {
-  const { placed, visible, draftAt, busy, onEdit, onDelete, onAdd, onDraft } = props;
+  const { placed, visible, draftAt, busy, onEdit, onDelete, onAdd, onDraft, draftKey } = props;
+  const key = draftKey(row.key);
   return (
     <>
       {visible(placed.get(row.key) ?? []).map((c) => (
         <CommentCard key={c.id} comment={c} busy={busy} onEdit={onEdit} onDelete={onDelete} />
       ))}
-      {draftAt === row.key && <CommentDraft busy={busy} onSave={(note) => onAdd(row, note)} onCancel={() => onDraft(null)} />}
+      {draftAt === row.key && (
+        <CommentDraft
+          busy={busy}
+          store={key}
+          anchor={row.key}
+          onSave={(note) => onAdd(row, note)}
+          onCancel={() => {
+            dropDraft(key);
+            onDraft(null);
+          }}
+        />
+      )}
     </>
   );
 }
@@ -129,12 +150,25 @@ function Chunks<T>({ items, file, guess, render }: { items: readonly T[]; file: 
 /** Columns before the text in the single-column view (numbers, +, mark) and after it, in px. */
 const UNIFIED_GUTTER_PX = 44 + 44 + 20 + 18 + 24;
 
+/** The viewer's 文件 mode: the line number column, as wide as the largest number. */
+const plainNumberPx = (lines: number) => (String(lines).length + 2) * 8;
+
 function UnifiedLines(props: LinesProps) {
-  const { diff, rows, tokens, draftAt, active, onDraft, onActivate } = props;
+  const { diff, rows, tokens, draftAt, active, onDraft, onActivate, plain, marked } = props;
   // The longest line sets the width, drawn or not, so the horizontal scroll range does not change while scrolling.
   const columns = useMemo(() => maxColumns(rows), [rows]);
+  const numberPx = plainNumberPx(diff.lines.length);
+  const gutter = plain ? numberPx + 20 + 24 : UNIFIED_GUTTER_PX;
+  const mark = (n: number | null) => {
+    if (!marked || n === null || n < marked.from || n > marked.to) return "";
+    return ` marked${n === marked.from ? " first" : ""}${n === marked.to ? " last" : ""}`;
+  };
   return (
-    <div className="gr-lines" data-testid="diff-lines" style={{ minWidth: `calc(${UNIFIED_GUTTER_PX}px + ${columns}ch)` }}>
+    <div
+      className={plain ? "gr-lines gr-plain" : "gr-lines"}
+      data-testid="diff-lines"
+      style={{ minWidth: `calc(${gutter}px + ${columns}ch)`, ...(plain ? ({ "--gr-no-w": `${numberPx}px` } as CSSProperties) : {}) }}
+    >
       <Chunks
         items={rows}
         file={diff.path}
@@ -144,13 +178,21 @@ function UnifiedLines(props: LinesProps) {
             <Hunk key={r.key} header={r.header} hidden={r.hidden} />
           ) : (
             <Fragment key={r.key}>
-              <div className={`gr-line ${r.line.kind}${active === i ? " active" : ""}`} data-row={i} data-line={r.key} data-testid="diff-line" onClick={(e) => plainClick(e) && onActivate(i)}>
-                <span className="gr-no">{r.line.oldLine ?? ""}</span>
+              <div
+                className={`gr-line ${r.line.kind}${active === i ? " active" : ""}${mark(r.line.newLine)}`}
+                data-row={i}
+                data-line={r.key}
+                data-testid="diff-line"
+                onClick={(e) => plainClick(e) && onActivate(i)}
+              >
+                {!plain && <span className="gr-no">{r.line.oldLine ?? ""}</span>}
                 <span className="gr-no">{r.line.newLine ?? ""}</span>
                 {props.readOnly ? <span /> : <AddButton row={r} open={draftAt === r.key} onDraft={onDraft} />}
-                <span className="gr-mark" aria-hidden="true">
-                  {MARK[r.line.kind]}
-                </span>
+                {!plain && (
+                  <span className="gr-mark" aria-hidden="true">
+                    {MARK[r.line.kind]}
+                  </span>
+                )}
                 <span className="gr-text">
                   <CodeTokens tokens={tokensOf(tokens, r.line)} text={r.line.text} />
                 </span>
@@ -224,8 +266,30 @@ function Cell({ cell, side, commentable, props }: { cell: SideCell | null; side:
   );
 }
 
-function CommentDraft({ busy, onSave, onCancel, initial = "", label = "批注内容" }: { busy: boolean; onSave(note: string): void; onCancel(): void; initial?: string; label?: string }) {
-  const [note, setNote] = useState(initial);
+function CommentDraft({
+  busy,
+  onSave,
+  onCancel,
+  store,
+  anchor,
+  initial = "",
+  label = "批注内容",
+}: {
+  busy: boolean;
+  onSave(note: string): void;
+  onCancel(): void;
+  /** Where the text is kept until saved (drafts.ts). */
+  store: string;
+  /** The row it belongs to (`side:line`): a switch of view keeps this line in place. */
+  anchor: string;
+  initial?: string;
+  label?: string;
+}) {
+  const [note, setNoteState] = useState(() => draftText(store) ?? initial);
+  const setNote = (text: string) => {
+    setNoteState(text);
+    setDraftText(store, text);
+  };
   const input = useRef<HTMLTextAreaElement>(null);
   useEffect(() => input.current?.focus(), []);
   const save = () => note.trim() && onSave(note.trim());
@@ -233,6 +297,7 @@ function CommentDraft({ busy, onSave, onCancel, initial = "", label = "批注内
     <form
       className="gr-draft"
       data-testid="comment-draft"
+      data-anchor={anchor}
       onSubmit={(e) => {
         e.preventDefault();
         save();
@@ -265,7 +330,9 @@ function CommentDraft({ busy, onSave, onCancel, initial = "", label = "批注内
 }
 
 function CommentCard({ comment, busy, onEdit, onDelete, where, onLocate }: { comment: GitReviewComment; busy: boolean; onEdit(id: string, note: string): void; onDelete(id: string): void; where?: string; onLocate?: () => void }) {
-  const [editing, setEditing] = useState(false);
+  // Being edited is kept with the text (drafts.ts): the box opens again wherever the comment is drawn next.
+  const editing = useEditing(comment.id);
+  const editKey = editDraftKey(comment.id);
   const sent = comment.state === "sent";
   return (
     <div className={sent ? "gr-comment sent" : "gr-comment"} data-testid="review-comment">
@@ -276,16 +343,7 @@ function CommentCard({ comment, busy, onEdit, onDelete, where, onLocate }: { com
         </div>
       )}
       {editing ? (
-        <CommentDraft
-          busy={busy}
-          initial={comment.note}
-          label="修改批注"
-          onSave={(note) => {
-            onEdit(comment.id, note);
-            setEditing(false);
-          }}
-          onCancel={() => setEditing(false)}
-        />
+        <CommentDraft busy={busy} store={editKey} anchor={`${comment.side}:${comment.line}`} initial={comment.note} label="修改批注" onSave={(note) => onEdit(comment.id, note)} onCancel={() => dropDraft(editKey)} />
       ) : (
         <span className="gr-comment-note">{comment.note}</span>
       )}
@@ -298,7 +356,7 @@ function CommentCard({ comment, busy, onEdit, onDelete, where, onLocate }: { com
             </button>
           )}
           {!sent && (
-            <button type="button" className="link-btn" onClick={() => setEditing(true)}>
+            <button type="button" className="link-btn" onClick={() => setDraftText(editKey, comment.note)}>
               编辑
             </button>
           )}

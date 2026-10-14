@@ -7,7 +7,7 @@ const changed = (path: string, extra: Partial<GitChangedFile> = {}): GitChangedF
 
 describe("the viewer's address", () => {
   it("round-trips a file, its project, a range, the mode and the nonce", () => {
-    const t = { path: "G:\\game\\a b\\Drop.cs", workspaceId: "w1", line: 12, endLine: 20, mode: "changes" as const, nonce: "4" };
+    const t = { path: "G:\\game\\a b\\Drop.cs", workspaceId: "w1", line: 12, endLine: 20, mode: "changes" as const, sessionId: "s-9", nonce: "4" };
     expect(parseViewerHash(viewerHash(t))).toEqual(t);
     expect(parseViewerHash(viewerHash({ path: "README.md" }))).toEqual({ path: "README.md" });
   });

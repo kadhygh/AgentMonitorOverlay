@@ -8,11 +8,11 @@ const MAX_PATH = 1000;
 const line = (v: unknown): number | null => (typeof v === "number" && Number.isSafeInteger(v) && v > 0 ? v : null);
 
 /**
- * `#viewer?path=…&workspace=…&line=…&end=…&mode=…&n=…` for a valid request, null otherwise. `n` makes every open a hash
+ * `#viewer?path=…&workspace=…&line=…&end=…&mode=…&session=…&n=…` for a valid request, null otherwise. `n` makes every open a hash
  * change, so the same file asked for twice still scrolls the window back to its line.
  */
 export function viewerHash(target: unknown, nonce: number): string | null {
-  const t = target as { path?: unknown; workspaceId?: unknown; line?: unknown; endLine?: unknown; mode?: unknown } | null;
+  const t = target as { path?: unknown; workspaceId?: unknown; line?: unknown; endLine?: unknown; mode?: unknown; sessionId?: unknown } | null;
   if (typeof t?.path !== "string" || !t.path || t.path.length > MAX_PATH || /[\0\r\n]/.test(t.path)) return null;
   const q = new URLSearchParams({ path: t.path });
   if (typeof t.workspaceId === "string" && ID.test(t.workspaceId)) q.set("workspace", t.workspaceId);
@@ -23,6 +23,8 @@ export function viewerHash(target: unknown, nonce: number): string | null {
     if (end && end > start) q.set("end", String(end));
   }
   if (t.mode === "changes") q.set("mode", "changes");
+  // The conversation it was opened from (S14-A): comments written in the viewer go there by default.
+  if (typeof t.sessionId === "string" && ID.test(t.sessionId)) q.set("session", t.sessionId);
   q.set("n", String(nonce));
   return `#viewer?${q.toString()}`;
 }
