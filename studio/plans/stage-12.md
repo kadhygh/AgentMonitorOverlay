@@ -90,7 +90,7 @@
 | **其他条目** | `hook_started` / `hook_response` | `hook/*`、`hookPrompt`、`collabAgentToolCall`、`sleep`、`turn/diff/updated` | hook 只在失败或拦截时显示；其余条目给一个通用的工具行，不再静默丢掉 |
 | **建议的下一句** | `prompt_suggestion` | — | 回答结束后在输入框上方显示可点的建议（可在设置里关） |
 
-这次不做：撤销某一轮的文件改动（Claude `rewind_files`、Codex `thread/rollback`，涉及文件回滚，另行讨论）；实时语音（`thread/realtime/*`）；账号登录类通知。
+这次不做：撤销某一轮的文件改动（Claude `rewind_files`、Codex `thread/rollback`，用户 2026-10-14 决定不做，平时很少用）；实时语音（`thread/realtime/*`）；账号登录类通知。
 
 ## 怎么并行
 
