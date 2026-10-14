@@ -62,10 +62,12 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   await expect(rows).toHaveCount(1);
   await page.getByRole("button", { name: /已归档 1/ }).click();
   await expect(page.getByTestId("archived-row")).toHaveCount(1);
+  await page.getByTestId("archived-row").hover();
   await page.getByTestId("archived-row").getByRole("button", { name: "查看" }).click();
-  await expect(page.getByTestId("writer")).toHaveText("已归档 · 只读");
+  await expect(page.getByTestId("session-archived-banner")).toContainText("已归档 · 只读");
   await expect(page.getByTestId("msg-agent")).toContainText("MOCK: 先看看现状");
-  await page.getByTestId("archived-row").getByRole("button", { name: "恢复" }).click();
+  await page.getByTestId("archived-row").hover();
+  await page.getByTestId("archived-row").getByRole("button", { name: "恢复", exact: true }).click();
   await expect(rows).toHaveCount(3);
   const sessions = (await studio.api<StateSnapshot>("GET", "/api/state")).sessions.filter((s) => s.taskId === task.id);
   expect(sessions.every((s) => !s.archivedAt)).toBe(true);

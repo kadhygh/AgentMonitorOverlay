@@ -10,8 +10,10 @@ import { useChecklist } from "./collab/ChecklistPanel.js";
 import { usePendingProposals } from "./planning/ProposalsPanel.js";
 import { useTodos } from "./planning/TodoTab.js";
 import { SettingsDialog, useSettings } from "./settings/SettingsDialog.js";
-import { TopBar, useFocusToggle, ViewBar } from "./shell/TopBar.js";
-import type { View, ViewContext, ViewDef } from "./shell/views.js";
+import { TopBar, useFocusToggle, usePinToggle, ViewBar } from "./shell/TopBar.js";
+import { withOrigin, type View, type ViewContext, type ViewDef } from "./shell/views.js";
+import { SearchBox } from "./shell/SearchBox.js";
+import type { SearchHit } from "./shell/search.js";
 import { VIEWS } from "./features.js";
 import { featureOn, FeaturesProvider } from "./lib/features.js";
 import { openMarks, useMarksShortcut } from "./marks/open.js";
@@ -26,8 +28,11 @@ const NO_LINK = { url: "", token: "" };
 export function App() {
   const host = useHostState();
   const [scope, setScope] = useState<Scope>({ kind: "all" });
-  const [view, setView] = useState<View>({ kind: "board" });
+  const [view, setShownView] = useState<View>({ kind: "board" });
+  // A task or new-task page remembers where it was opened from (stage 14), whoever opens it: its "←" goes back there.
+  const setView = (next: View) => setShownView((current) => withOrigin(next, current));
   const focus = useFocusToggle();
+  const pin = usePinToggle();
   const unreadMail = useUnreadMail(host.kind === "ready" ? host.link : NO_LINK);
   const openDecisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
   const checklist = useChecklist(host.kind === "ready" ? host.link : NO_LINK);
@@ -70,8 +75,8 @@ export function App() {
   if (host.kind !== "ready") {
     return (
       <div className="app">
-        <TopBar onView={() => undefined} needs={0} scopeName="" focus={focus} />
-        <ViewBar views={VIEWS} view={view} scope={scope} onView={() => undefined} onNew={() => undefined} disabled />
+        <TopBar onView={() => undefined} needs={0} scopeName="" focus={focus} pin={pin} />
+        <ViewBar views={VIEWS} view={view} scope={scope} onView={() => undefined} onNew={() => undefined} search={<SearchBox state={null} onOpen={() => undefined} disabled />} disabled />
         <div className="placeholder" data-testid="host-status">
           {host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}
         </div>
@@ -103,6 +108,18 @@ export function App() {
   // A page of a feature that was just turned off falls back to the board.
   const shown: View = views.some((d) => d.kind === view.kind) ? view : { kind: "board" };
   const def = views.find((d) => d.kind === shown.kind) as ViewDef<typeof shown.kind> | undefined;
+  // "+ 新任务" over a canvas works as the canvas's own: the task goes into that topic and "←" returns to the canvas.
+  const liveTopics = state.topics.filter((t) => !t.archivedAt);
+  const canvasTopic = shown.kind === "canvas" ? ((scope.kind === "topic" ? liveTopics.find((t) => t.id === scope.id) : undefined) ?? liveTopics[0]) : undefined;
+  // 搜索: a task, a task's session, or a topic's own session (on that topic's canvas).
+  const openHit = (hit: SearchHit) => {
+    if (hit.kind === "task") setView({ kind: "task", taskId: hit.id, nav: Date.now() });
+    else if (hit.taskId) setView({ kind: "task", taskId: hit.taskId, sessionId: hit.id, nav: Date.now() });
+    else if (hit.topicId) {
+      setScope({ kind: "topic", id: hit.topicId });
+      setView({ kind: "canvas" });
+    }
+  };
 
   return (
     <FeaturesProvider disabled={disabled}>
@@ -112,6 +129,7 @@ export function App() {
         needs={needs}
         scopeName={scopeName}
         focus={focus}
+        pin={pin}
         onMarks={() => {
           const ws = marksProject();
           openMarks(ws ? { workspaceId: ws } : {});
@@ -132,7 +150,14 @@ export function App() {
           onSettings={() => setSettingsOpen(true)}
         />
         <div className="main-col">
-          <ViewBar views={views} view={shown} scope={scope} onView={setView} onNew={() => setView({ kind: "new" })} />
+          <ViewBar
+            views={views}
+            view={shown}
+            scope={scope}
+            onView={setView}
+            onNew={() => setView(canvasTopic ? { kind: "new", topicId: canvasTopic.id, back: { kind: "canvas" } } : { kind: "new" })}
+            search={<SearchBox state={state} onOpen={openHit} />}
+          />
           {/* A page that fails to render says so; the title bar, the left column and the sessions carry on. */}
           <main className="main">
             <PaneBoundary resetKey={JSON.stringify(shown)}>{def?.render(shown as never, ctx)}</PaneBoundary>
@@ -154,7 +179,8 @@ export function App() {
           }}
           onCreated={(task, session) => {
             setQuickOpen(false);
-            setView(session ? { kind: "task", taskId: task.id, sessionId: session.id } : { kind: "board" });
+            // A task only filed leaves the person where they were.
+            if (session) setView({ kind: "task", taskId: task.id, sessionId: session.id });
           }}
         />
       )}

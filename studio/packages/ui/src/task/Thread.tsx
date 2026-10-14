@@ -181,15 +181,15 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   // A Claude subagent has no conversation of its own; it is followed from its parent session.
   const claudeSub = session?.runtime === "claude" && session.kind === "sub";
   const readOnly = !session || claudeSub || session.writer === "archived" || session.writer === "terminal-handoff";
+  // An archived session has no composer (stage 14): the task page's banner says so and restores it.
+  const archived = !!session && (session.writer === "archived" || !!session.archivedAt);
   const generating = !!session && (session.status === "running" || session.status === "awaiting-approval" || session.status === "awaiting-answer");
   // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn.
   const queues = session?.runtime === "claude";
   const placeholder = readOnly
     ? claudeSub
       ? "Claude 的子 agent 不能单独接收消息，请在父会话里继续。"
-      : session?.writer === "archived"
-        ? "已归档的会话只能查看，恢复后才能继续。"
-        : "会话已交给终端，工作台暂时只读。"
+      : "会话已交给终端，工作台暂时只读。"
     : isRevising
       ? "写下要修改的地方，回车发给 Claude（计划会按你的意见重写）"
       : planReview
@@ -491,6 +491,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
               }}
             />
           )}
+          {!archived && (
           <div className={`composer-card${readOnly ? " disabled" : ""}${dragging ? " dropping" : ""}`}>
             <AttachTray attach={attach} disabled={readOnly} />
             <label className="chat-input">
@@ -569,6 +570,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
               </button>
             </div>
           </div>
+          )}
           {stats.turns > 0 && (
             <div className="composer-stats" data-testid="composer-stats">
               <span>

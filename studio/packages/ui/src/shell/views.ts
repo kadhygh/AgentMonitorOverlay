@@ -22,6 +22,16 @@ export function backTo(back: View | undefined): { view: View; label: string } {
   return back && BACK_LABEL[back.kind] ? { view: back, label: BACK_LABEL[back.kind]! } : { view: { kind: "board" }, label: "看板" };
 }
 
+/**
+ * Where a task or new-task page opened now returns (stage 14): the board or canvas in front, or the place the page in
+ * front was itself opened from. A page that says where it returns keeps that.
+ */
+export function withOrigin(next: View, current: View): View {
+  if ((next.kind !== "task" && next.kind !== "new") || next.back) return next;
+  const origin = current.kind === "board" || current.kind === "canvas" ? current : current.kind === "task" || current.kind === "new" ? current.back : undefined;
+  return origin ? { ...next, back: origin } : next;
+}
+
 /** Live data several pages share, loaded once by the shell. */
 export interface AppData {
   unreadMail: readonly MailMessage[];

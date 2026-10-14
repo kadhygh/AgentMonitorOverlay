@@ -68,3 +68,29 @@
 .win-btn svg { fill: none; stroke: currentColor; stroke-width: 1; shape-rendering: crispEdges; }
 .win-btn:hover { background: var(--chip); color: var(--text); }
 .win-btn.close:hover { background: var(--error); color: #fff; }
+
+/* 搜索 (stage 14): left of "+ 新任务"; the results drop under it. */
+.search-box { position: relative; display: flex; align-items: center; width: 260px; height: var(--ctl); border: 1px solid var(--border-strong); border-radius: var(--r-btn); background: var(--panel); }
+.search-box:focus-within { border-color: var(--primary); }
+.search-icon { flex: none; margin: 0 6px 0 9px; fill: none; stroke: var(--text-faint); stroke-width: 1.5; stroke-linecap: round; }
+.search-input { flex: 1; min-width: 0; height: 100%; border: none; outline: none; background: transparent; color: var(--text); font-size: var(--fs-sm); }
+.search-input::-webkit-search-cancel-button { display: none; }
+.search-kbd { flex: none; margin-right: 6px; padding: 0 5px; border: 1px solid var(--border); border-radius: 4px; color: var(--text-faint); font-family: var(--font-code); font-size: 10.5px; line-height: 16px; }
+.search-box:focus-within .search-kbd { display: none; }
+.search-pop {
+  position: absolute; top: calc(100% + 6px); right: 0; z-index: 40; width: 420px; max-height: min(460px, 70vh); overflow: auto; padding: 4px;
+  border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel); box-shadow: 0 12px 30px var(--shadow);
+}
+.search-heading { padding: 6px 10px 2px; font-size: var(--fs-cap); color: var(--text-faint); font-weight: 600; letter-spacing: var(--ls-label); }
+.search-row { width: 100%; display: flex; align-items: center; gap: 10px; padding: 7px 10px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text); text-align: left; font: inherit; cursor: pointer; }
+.search-row[aria-selected="true"] { background: var(--selected); }
+.search-row.is-archived { opacity: 0.6; }
+.search-row.is-archived[aria-selected="true"] { opacity: 1; }
+.search-kind { flex: none; width: 34px; padding: 1px 0; border-radius: 4px; background: var(--chip); color: var(--text-dim); font-size: 11px; text-align: center; }
+.search-row[data-kind="task"] .search-kind { color: var(--primary); }
+.search-main { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.search-title { font-size: var(--fs-sm); font-weight: 500; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-title mark { background: var(--attention-bg); color: inherit; border-radius: 2px; }
+.search-where { font-size: var(--fs-cap); color: var(--text-faint); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.search-side { flex: none; font-size: 11px; color: var(--text-faint); }
+.search-empty { padding: 12px 10px; font-size: var(--fs-sm); color: var(--text-dim); }

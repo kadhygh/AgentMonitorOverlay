@@ -83,6 +83,8 @@ interface PrefsData {
   focus?: boolean;
   focusPos?: Point;
   main?: { bounds: Rect; maximized: boolean };
+  /** 置顶 (stage 14): the workbench window stays above other windows. */
+  pinned?: boolean;
 }
 
 /** Shell preferences that belong to this machine's windows rather than to the Host: Focus on/off and window places. */
@@ -121,6 +123,14 @@ export class ShellPrefs {
 
   setMain(main: NonNullable<PrefsData["main"]>): void {
     this.save({ main });
+  }
+
+  pinned(): boolean {
+    return this.data.pinned ?? false;
+  }
+
+  setPinned(on: boolean): void {
+    this.save({ pinned: on });
   }
 
   private save(patch: PrefsData): void {

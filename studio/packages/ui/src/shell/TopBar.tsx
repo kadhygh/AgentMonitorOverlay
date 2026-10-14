@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type { Scope } from "../board/Board.js";
 import { scratchpadBridge } from "../scratchpad/bridge.js";
 import type { AnyViewDef, View } from "./views.js";
@@ -6,6 +6,18 @@ import type { AnyViewDef, View } from "./views.js";
 /** Focus window on/off, mirrored from the Electron shell (absent in a plain browser). */
 export function useFocusToggle(): { on: boolean; available: boolean; set(on: boolean): void } {
   const api = window.amo?.focus;
+  const [on, setOn] = useState(false);
+  useEffect(() => {
+    if (!api) return;
+    void api.get().then(setOn);
+    return api.onChange(setOn);
+  }, [api]);
+  return { on, available: !!api, set: (next) => void api?.set(next) };
+}
+
+/** 置顶 (stage 14): the workbench window above other windows, mirrored from the Electron shell. */
+export function usePinToggle(): { on: boolean; available: boolean; set(on: boolean): void } {
+  const api = window.amo?.pin;
   const [on, setOn] = useState(false);
   useEffect(() => {
     if (!api) return;
@@ -25,9 +37,12 @@ export function TopBar({
   needs,
   scopeName,
   focus,
+  pin,
 }: {
   onView(view: View): void;
   focus: { on: boolean; available: boolean; set(on: boolean): void };
+  /** 置顶 (stage 14). */
+  pin?: { on: boolean; available: boolean; set(on: boolean): void };
   /** 文件标记 (S12-D): the marks window. */
   onMarks?: () => void;
   needs: number;
@@ -88,18 +103,36 @@ export function TopBar({
           <span className="focus-state" aria-hidden="true" />
         </button>
       )}
+      {pin?.available && (
+        <button
+          type="button"
+          className="tb-btn focus-toggle pin-toggle"
+          aria-pressed={pin.on}
+          title={pin.on ? "置顶已开：工作台窗口一直浮在其他窗口上面。点击关闭" : "置顶：让工作台窗口一直浮在其他窗口上面"}
+          onClick={() => pin.set(!pin.on)}
+          data-testid="pin-toggle"
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
+            <path className="fill" d="M6 2.5h4l-.6 4.2 2.1 2.3H4.5l2.1-2.3Z" />
+            <path d="M6 2.5h4l-.6 4.2 2.1 2.3H4.5l2.1-2.3ZM8 9v4.5" />
+          </svg>
+          置顶
+          <span className="focus-state" aria-hidden="true" />
+        </button>
+      )}
       <WindowControls />
     </header>
   );
 }
 
-/** The row under the title bar: the views' tabs on the left, "+ 新任务" on the right. */
+/** The row under the title bar: the views' tabs on the left, the search box (stage 14) and "+ 新任务" on the right. */
 export function ViewBar({
   views,
   view,
   scope,
   onView,
   onNew,
+  search,
   disabled = false,
 }: {
   views: readonly AnyViewDef[];
@@ -107,6 +140,8 @@ export function ViewBar({
   scope: Scope;
   onView(view: View): void;
   onNew(): void;
+  /** 搜索 (stage 14), left of "+ 新任务". */
+  search?: ReactNode;
   disabled?: boolean;
 }) {
   return (
@@ -126,6 +161,7 @@ export function ViewBar({
         })}
       </nav>
       <div className="spacer" />
+      {search}
       <button type="button" className="btn-primary" onClick={onNew} disabled={disabled} title="新建任务（Ctrl N 在任何页面打开快速启动条）">
         + 新任务
       </button>
