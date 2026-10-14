@@ -14,7 +14,7 @@
 > - 之后追加 S12-F：Review 提速（diff 一次 git 调用、读过的留着、预读、高亮挪进 Web Worker）和 Fork 样式的文件列表（整条路径、彩色状态方块、文件类型图标，平铺为默认）。详见 `plans/stage-12.md` 进度表。
 > - 再追加 S12-G：Codex 的异步提问（`request_user_input_async`，模型目录 `send_user_message_async` 打开）显示成卡片，回答作为下一条消息；崩溃隔离（Host 兜底不退出、会话内错误提示、外壳自动重启 Host、窗口崩溃自动重载、界面错误边界）。**不要在用户使用时重启开发版**：`host:stop` 会停掉正在跑的会话。
 > - 又追加 S12-H（决策卡放进会话、对话上方）和 S12-I（设置分页；模型页里 Claude 订阅可选「令牌」或「本机 Claude Code 的登录」，后者要先确认风险，每个会话记住开始时的方式）。
-> - 再追加 S12-J 到 S12-N（用户 2026-10-14 的九条反馈）：Claude 额度按 /api/oauth/usage 查（只有本机登录能查，setup-token 没权限）并显示重置倒计时；型号顺序和默认；显示具体型号名；提问卡改弹窗；通用浮动提示 `lib/toast.tsx`；已归档任务入口；速率按 DSH 的方式；Claude 改用 Claude Code 的系统提示词并加 Studio 提示词（Codex 用 developerInstructions）；批注气泡。待用户决定：Claude 会话是否加载项目的 CLAUDE.md。
+> - 再追加 S12-J 到 S12-N（用户 2026-10-14 的九条反馈）：Claude 额度按 /api/oauth/usage 查（只有本机登录能查，setup-token 没权限）并显示重置倒计时；型号顺序和默认；显示具体型号名；提问卡改弹窗；通用浮动提示 `lib/toast.tsx`；已归档任务入口；速率按 DSH 的方式；Claude 改用 Claude Code 自己的系统提示词（Studio 专属提示词按用户要求撤回，两边都用各自 CLI 的常规方式）；批注气泡。待用户决定：Claude 会话是否加载项目的 CLAUDE.md。
 
 > **2026-10-13 深夜更新：阶段 11 的六项都做完并合进 `studio/main`，等用户验收。** 计划、用户的决定和每项的做法、取舍都在 `plans/stage-11.md`；截图在 `screenshots/stage-11/`。
 > - 画布：引用卡片、每个任务可选是否上画布（**行为变化**：看板里建的专题任务不再自动出现在画布上）、从画布进出返回画布、空分组删不掉的 bug（原因是画布里有已归档任务的卡片）。
