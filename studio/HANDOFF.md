@@ -2,6 +2,12 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+> **2026-10-14 深夜更新：阶段 13 验收 22/23 通过（A5 有问题），阶段 14 三条线做完并合进 `studio/main`，等用户重启开发版后验收。** 计划、用户决定和每条线的做法在 `plans/stage-14.md`；记忆 `studio-stage14-decisions`。合并后单测 538/539（失败的是已知不稳定的 server-manager 端口测试，单独跑通过），e2e 82/83（questions 计划审阅在负载下偶发，已加固测试 `4cbb346`，单独跑通过）。
+> - S14-A：A5 草稿存在窗口级 `gitreview/drafts.ts`、切换后按锚点滚回（`gitreview/anchor.ts`）；有总览条时隐藏竖向滚动条；Ctrl+F（查看器两种模式 + Review）、Ctrl+G；查看器文件模式按行批注（`GitCommentRange = GitRange | "file"`，查看器地址带 `session=` 作默认发送对象）。
+> - S14-B：设置 → 便签：页数、复制时的换行（常规 / 安全换行，默认常规，kv `scratchpadSafeNewlines`）；便签窗口去掉页数、标题加图标；任务页右栏不再显示便签。
+> - S14-C：搜索框（Ctrl+K）；置顶开关（存在外壳 `shell-prefs.json`）；任务页 / 新建任务记住来源（`shell/views.ts` 的 `withOrigin`）；归档任务弹框 + 横幅；已归档会话重新设计。
+> - 验收清单同一个链接已换成阶段 14（16 条），结果在 db 集合 `s14`。工作树 s13-*、s14-* 都还在，等用户同意再删。开发版还没重启（要问用户时间）。
+>
 > **2026-10-14 晚更新：阶段 13 全部做完并合进 `studio/main`（`79ceaaa`），等用户验收。** 合并后单测 522/522、e2e 78/78 通过。每条线的做法、查明的原因和取舍都在 `plans/stage-13.md` 进度表；截图 `screenshots/stage-13/`。
 > - S13-A 查看器：新窗口 `#viewer?…`（`app/src/viewer-window.ts`、`viewer-rules.ts`、`ui/src/viewer/`），文件模式和嵌入的改动模式；对话里单击文件链接打开它，右键菜单含右栏快速查看、用 git diff 看、标记。固定不能撤销；文件改动后不自动刷新。
 > - S13-B：闪烁原因是整份文件一次画出来，改成 64 行一块 + `content-visibility: auto`（真窗口拖动需用户确认）；总览条；「历史」选提交，另开只读的提交窗口（`#review?workspace=…&commit=…`，窗口按 项目@提交 区分）。
