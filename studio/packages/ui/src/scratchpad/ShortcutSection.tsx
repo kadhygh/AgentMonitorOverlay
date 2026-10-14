@@ -69,7 +69,7 @@ export function ShortcutSection({ link, shortcut }: { link: HostLink; shortcut: 
       : status?.error
         ? { text: status.error, alert: true }
         : status && status.wanted === shortcut
-          ? { text: status.active ? `已生效：${shortcutLabel(status.active)}` : "快捷键已关闭，可以从任务页右栏打开便签。", alert: false }
+          ? { text: status.active ? `已生效：${shortcutLabel(status.active)}` : "快捷键已关闭，可以点标题栏的「便签」打开。", alert: false }
           : null;
 
   return (

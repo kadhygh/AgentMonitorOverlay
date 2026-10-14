@@ -166,4 +166,12 @@ describe("scratchpad API", () => {
     expect((await ok<StudioSettings>("PUT", "/api/settings", { scratchpadShortcut: "" })).scratchpadShortcut).toBe("");
     expect((await ok<StudioSettings>("GET", "/api/settings")).scratchpadShortcut).toBe("");
   });
+
+  it("keeps how 复制 breaks lines (S14-B): lines kept unless 安全换行 is on", async () => {
+    expect((await ok<StudioSettings>("GET", "/api/settings")).scratchpadSafeNewlines).toBe(false);
+    expect((await ok<StudioSettings>("PUT", "/api/settings", { scratchpadSafeNewlines: true })).scratchpadSafeNewlines).toBe(true);
+    expect((await ok<StudioSettings>("GET", "/api/settings")).scratchpadSafeNewlines).toBe(true);
+    expect((await api("PUT", "/api/settings", { scratchpadSafeNewlines: "yes" })).status).toBe(400);
+    expect((await ok<StudioSettings>("PUT", "/api/settings", { scratchpadSafeNewlines: false })).scratchpadSafeNewlines).toBe(false);
+  });
 });

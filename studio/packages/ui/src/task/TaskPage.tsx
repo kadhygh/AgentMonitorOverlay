@@ -431,7 +431,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             <PackDocsPanel link={link} packs={packs} />
             </>
           }
-          link={link}
           annotations={annotations}
           busy={busy}
           canSend={!readOnly}

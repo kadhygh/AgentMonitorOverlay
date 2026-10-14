@@ -5,7 +5,9 @@ html.scratchpad-mode #root { height: 100%; }
 /* The header is the window's title bar: drag it to move the frameless window. */
 .pad-head { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border); background: var(--bg-header); -webkit-app-region: drag; user-select: none; }
 .pad-head button { -webkit-app-region: no-drag; }
-.pad-name { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-sm); letter-spacing: var(--ls-label); }
+.pad-name { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-display); font-weight: 700; font-size: var(--fs-sm); letter-spacing: var(--ls-label); }
+/* The window's mark, drawn like the title bar's 便签 button (S14-B). */
+.pad-mark { flex: none; fill: none; stroke: var(--primary); stroke-width: 1.3; stroke-linejoin: round; stroke-linecap: round; }
 .pad-pages { display: flex; gap: 2px; }
 .pad-page { position: relative; width: 22px; height: 22px; padding: 0; border: 1px solid transparent; border-radius: var(--r-m); background: transparent; color: var(--text-dim); font-family: var(--font-code); font-size: 12px; cursor: pointer; }
 .pad-page:hover { background: var(--chip); }
@@ -21,7 +23,8 @@ html.scratchpad-mode #root { height: 100%; }
 .pad-text::selection { background: var(--selection); }
 .pad-foot { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px 0 12px; border-top: 1px solid var(--border); background: var(--panel-raised); }
 .pad-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-cap); color: var(--text-dim); }
-.pad-count { display: inline-flex; align-items: center; gap: 4px; font-size: var(--fs-cap); color: var(--text-dim); white-space: nowrap; }
+.pad-count { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text); white-space: nowrap; }
+.pad-count-value { min-width: 1.5em; text-align: center; font-family: var(--font-code); }
 .pad-step { width: 20px; height: 20px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-s); background: var(--panel); color: var(--text); font-size: 12px; line-height: 1; cursor: pointer; }
 .pad-step:disabled { opacity: 0.4; cursor: default; }
 .pad-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: var(--fs-sm); color: var(--text-dim); }
@@ -37,13 +40,9 @@ html.scratchpad-mode #root { height: 100%; }
 .pad-viewer { position: fixed; inset: 0; z-index: 60; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--overlay-strong); cursor: zoom-out; }
 .pad-viewer img { max-width: 100%; max-height: 100%; object-fit: contain; border: 1px solid var(--border-strong); box-shadow: 0 14px 36px var(--shadow); background: var(--panel); }
 
-/* The entry in the task page's right column */
+/* 设置 → 便签 in a plain browser (no scratchpad window): the page edited right there */
 .scratchpad { display: flex; flex-direction: column; gap: 8px; }
-.scratchpad .anno-head { align-items: center; }
 .scratchpad textarea { padding: 8px 10px; border-radius: var(--r-m); border: 1px solid var(--border); background: var(--bg); color: var(--text); font-size: 13px; resize: vertical; }
-.pad-preview { display: block; width: 100%; min-height: 64px; max-height: 160px; overflow: hidden; padding: 8px 10px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel); color: var(--text); font-family: var(--font-ui); font-size: 13px; line-height: 1.55; text-align: left; white-space: pre-wrap; word-break: break-word; cursor: pointer; }
-.pad-preview:hover { border-color: var(--border-strong); background: var(--tint); }
-.pad-preview-empty { color: var(--text-faint); }
 .scratchpad .pad-images { padding: 0; flex-wrap: wrap; }
 .scratchpad .pad-thumb-open { width: 52px; height: 40px; }
 .pad-shortcut { font-family: var(--font-code); cursor: pointer; caret-color: transparent; }

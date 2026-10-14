@@ -2,8 +2,8 @@ import { expect, test, type Page } from "@playwright/test";
 import type { Scratchpad, Session, StudioSettings, Task, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, windowState, type Studio } from "./studio.js";
 
-// 便签 (S11-C): the scratchpad window opened from the task page, its pages, pasted images, the page count, the
-// global shortcut and its setting. Tests never register real global keys: the app records what it would register.
+// 便签 (S11-C, S14-B): the scratchpad window opened from the title bar, its pages, pasted images, 复制 and its line
+// breaks, and 设置 → 便签 (page count, line breaks, the global shortcut). The task page no longer shows it. Tests never register real global keys: the app records what it would register.
 
 let studio: Studio | undefined;
 
@@ -35,98 +35,130 @@ const registered = (s: Studio) => s.app.evaluate(() => (globalThis as { __amoScr
 const toggle = (s: Studio) => s.app.evaluate(() => (globalThis as { __amoScratchpadToggle?: () => void }).__amoScratchpadToggle?.());
 const padVisible = async (s: Studio) => (await windowState(s.app, "scratchpad")).visible;
 
-test("the scratchpad window: pages, pasted images, page count, shortcut, and the task page's entry", async () => {
+const copied = (s: Studio) => s.app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1) ?? null);
+
+test("the scratchpad window: pages, pasted images, 复制, and 设置 → 便签 (page count, line breaks, shortcut)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "掉落表", workspaceId: ws.id, firstSession: { profileId: "codex-mock" } });
   await page.getByTestId("task-card").first().click();
+  await expect(page.getByRole("complementary", { name: "批注" })).toBeVisible();
 
-  // The right column's entry: the page the window shows, and 打开便签. The default shortcut is registered at start.
-  const entry = page.getByRole("region", { name: "便签" });
-  await expect(entry.getByTestId("scratchpad-page")).toHaveText("第 1 / 3 页");
-  await expect(entry.getByTestId("scratchpad-preview")).toHaveText("这一页还是空的。");
+  // S14-B: the task page's right column has no scratchpad any more. The default shortcut is registered at start.
+  await expect(page.getByRole("region", { name: "便签" })).toHaveCount(0);
+  await expect(page.getByTestId("scratchpad-preview")).toHaveCount(0);
   await expect.poll(() => registered(studio!)).toBe("Ctrl+Alt+Space");
 
+  // The title bar's 便签 opens the window.
   const opened = app.waitForEvent("window");
-  await entry.getByRole("button", { name: "打开便签" }).click();
+  await page.getByTestId("open-scratchpad").click();
   const pad = await opened;
   await pad.waitForLoadState("domcontentloaded");
   // Red line 7 and the window's nature: off-screen in tests, never focused, on top.
   await expect.poll(() => windowState(app, "scratchpad")).toMatchObject({ visible: true, onScreen: false, anyFocused: false, focusable: false, alwaysOnTop: true });
+  // Its title has the scratchpad's mark (S14-B); the page count is no longer in the window.
+  await expect(pad.locator(".pad-head .pad-name svg.pad-mark")).toBeVisible();
+  await expect(pad.getByRole("button", { name: "增加页数" })).toHaveCount(0);
 
-  // Typing saves and the task page follows.
+  // Typing saves.
   const text = pad.getByRole("textbox", { name: "便签内容" });
-  await text.fill("回复要点：\n- 掉落表按权重\n- 周五发版");
+  await text.fill("回复要点：  \n- 掉落表按权重\n- 周五发版\n\n");
   await expect(pad.getByTestId("pad-status")).toContainText("已保存");
-  await expect(entry.getByTestId("scratchpad-preview")).toHaveText("回复要点：\n- 掉落表按权重\n- 周五发版");
 
-  // Another page, by its number; Ctrl+1 goes back. The task page shows whichever page the window shows.
+  // Another page, by its number; Ctrl+1 goes back.
   await pad.getByRole("button", { name: "第 2 页" }).click();
   await expect(text).toHaveValue("");
-  await expect(entry.getByTestId("scratchpad-page")).toHaveText("第 2 / 3 页");
   await text.fill("第二页");
   await expect(pad.getByTestId("pad-status")).toContainText("已保存");
   await pad.keyboard.press("Control+1");
-  await expect(text).toHaveValue("回复要点：\n- 掉落表按权重\n- 周五发版");
-  await expect(entry.getByTestId("scratchpad-page")).toHaveText("第 1 / 3 页");
+  await expect(text).toHaveValue("回复要点：  \n- 掉落表按权重\n- 周五发版\n\n");
   await expect(pad.getByRole("button", { name: "第 2 页" })).toHaveAttribute("data-filled", "");
+  expect((await studio.api<Scratchpad>("GET", "/api/scratchpad")).activePage).toBe(0);
 
-  // A pasted image joins the page as a thumbnail, in both windows; the text stays as it was.
+  // A pasted image joins the page as a thumbnail; the text stays as it was.
   await pasteImage(pad, "截图 1");
   await expect(pad.getByTestId("pad-image")).toHaveCount(1);
-  await expect(entry.getByTestId("pad-image")).toHaveCount(1);
-  await expect(text).toHaveValue("回复要点：\n- 掉落表按权重\n- 周五发版");
   await pasteImage(pad, "截图 2");
   await expect(pad.getByTestId("pad-image")).toHaveCount(2);
   expect((await studio.api<Scratchpad>("GET", "/api/scratchpad")).pages[0]!.attachments).toHaveLength(2);
   await expect.poll(() => pad.getByTestId("pad-image").first().locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(160);
-  await screenshot(app, "stage-11", "S11-C-scratchpad-window", pad, "scratchpad");
-  await screenshot(app, "stage-11", "S11-C-scratchpad-entry", page);
+  await screenshot(app, "stage-14", "S14-B-scratchpad-window", pad, "scratchpad");
 
   // Larger view; Esc closes the picture, not the window. × takes an image off the page.
   await pad.getByRole("button", { name: "看大图 1" }).click();
   await expect(pad.getByTestId("pad-viewer")).toBeVisible();
-  await screenshot(app, "stage-11", "S11-C-scratchpad-viewer", pad, "scratchpad");
   await pad.keyboard.press("Escape");
   await expect(pad.getByTestId("pad-viewer")).toHaveCount(0);
   expect(await padVisible(studio)).toBe(true);
   await pad.getByTestId("pad-image").nth(1).hover();
   await pad.getByRole("button", { name: "移除图片 2" }).click();
   await expect(pad.getByTestId("pad-image")).toHaveCount(1);
-  await expect(entry.getByTestId("pad-image")).toHaveCount(1);
 
-  // Page count: more pages, then fewer; a hidden page keeps its content and comes back.
-  await pad.getByRole("button", { name: "增加页数" }).click();
-  await expect(pad.getByTestId("pad-page-count")).toHaveText("4");
+  // 复制 by default keeps the lines (Windows line breaks, trailing spaces and blank lines dropped) and hides the window.
+  await pad.getByRole("button", { name: "复制", exact: true }).click();
+  await expect.poll(() => copied(studio!)).toBe("回复要点：\r\n- 掉落表按权重\r\n- 周五发版");
+  await expect.poll(() => padVisible(studio!)).toBe(false);
+
+  // 设置 → 便签: the page count, the line breaks and the shortcut.
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "便签" }).click();
+  const pages = dialog.getByRole("region", { name: "便签页数" });
+  await expect(pages.getByTestId("pad-page-count")).toHaveText("3");
+  // Not in a plain browser: the page itself is edited in the scratchpad window, not here.
+  await expect(dialog.getByRole("region", { name: "便签内容" })).toHaveCount(0);
+
+  // More pages, then fewer; a hidden page keeps its content and comes back.
+  await pages.getByRole("button", { name: "增加页数" }).click();
+  await expect(pages.getByTestId("pad-page-count")).toHaveText("4");
   await expect(pad.getByTestId("pad-page")).toHaveCount(4);
-  await expect(entry.getByTestId("scratchpad-page")).toHaveText("第 1 / 4 页");
   for (const n of ["3", "2", "1"]) {
-    await pad.getByRole("button", { name: "减少页数" }).click();
-    await expect(pad.getByTestId("pad-page-count")).toHaveText(n);
+    await pages.getByRole("button", { name: "减少页数" }).click();
+    await expect(pages.getByTestId("pad-page-count")).toHaveText(n);
   }
-  await expect(pad.getByRole("button", { name: "减少页数" })).toBeDisabled();
+  await expect(pages.getByRole("button", { name: "减少页数" })).toBeDisabled();
+  await expect(pad.getByTestId("pad-page")).toHaveCount(1);
   expect((await studio.api<Scratchpad>("GET", "/api/scratchpad")).keptPages).toEqual([2]);
-  await pad.getByRole("button", { name: "增加页数" }).click();
+  await expect(pages.getByTestId("pad-kept-pages")).toHaveText("第 2 页还有内容，现在藏着。");
+  await pages.getByRole("button", { name: "增加页数" }).click();
+  await expect(pages.getByTestId("pad-kept-pages")).toHaveCount(0);
+  await expect(pad.getByTestId("pad-page")).toHaveCount(2);
+
+  // 复制时的换行: 常规 by default; 安全换行 joins the lines into one.
+  const newlines = dialog.getByRole("radiogroup", { name: "复制时的换行" });
+  await expect(newlines.getByTestId("pad-newlines-normal")).toHaveAttribute("aria-checked", "true");
+  await newlines.getByTestId("pad-newlines-safe").click();
+  await expect(newlines.getByTestId("pad-newlines-safe")).toHaveAttribute("aria-checked", "true");
+  expect((await studio.api<StudioSettings>("GET", "/api/settings")).scratchpadSafeNewlines).toBe(true);
+  await screenshot(app, "stage-14", "S14-B-scratchpad-settings", page);
+
+  // The shortcut hides and shows the window; 复制 now gives one line; Esc hides it; the title bar's 便签 brings it back
+  // (the same window).
+  await toggle(studio);
+  await expect.poll(() => padVisible(studio!)).toBe(true);
   await pad.getByRole("button", { name: "第 2 页" }).click();
   await expect(text).toHaveValue("第二页");
   await pad.keyboard.press("Control+1");
   await expect(text).toHaveValue(/^回复要点/);
-
-  // The shortcut hides and shows it; Esc hides it; 打开便签 brings it back (the same window).
+  await pad.getByRole("button", { name: "复制", exact: true }).click();
+  await expect.poll(() => copied(studio!)).toBe("回复要点： - 掉落表按权重 - 周五发版");
+  await expect.poll(() => padVisible(studio!)).toBe(false);
+  await toggle(studio);
+  await expect.poll(() => padVisible(studio!)).toBe(true);
   await toggle(studio);
   await expect.poll(() => padVisible(studio!)).toBe(false);
   await toggle(studio);
   await expect.poll(() => padVisible(studio!)).toBe(true);
   await pad.keyboard.press("Escape");
   await expect.poll(() => padVisible(studio!)).toBe(false);
-  await entry.getByRole("button", { name: "打开便签" }).click();
+  await dialog.getByRole("button", { name: "关闭设置" }).click();
+  await page.getByTestId("open-scratchpad").click();
   await expect.poll(() => padVisible(studio!)).toBe(true);
   expect(app.windows().filter((w) => w.url().endsWith("#scratchpad"))).toHaveLength(1);
 
   // 设置 → 便签: press a new combination; a key another program holds is reported and the old one stays.
   await page.getByRole("button", { name: "设置" }).click();
-  const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "便签" }).click();
   const field = dialog.getByTestId("scratchpad-shortcut");
   const line = dialog.getByTestId("scratchpad-shortcut-status");
@@ -150,8 +182,7 @@ test("the scratchpad window: pages, pasted images, page count, shortcut, and the
   // The setting goes back to the key that works.
   await expect(field).toHaveValue("Ctrl + Alt + Z");
   await expect.poll(async () => (await studio!.api<StudioSettings>("GET", "/api/settings")).scratchpadShortcut).toBe("Ctrl+Alt+Z");
-  await screenshot(app, "stage-11", "S11-C-scratchpad-settings", page);
-
+  
   await dialog.getByRole("button", { name: "恢复默认" }).click();
   await expect(line).toHaveText("已生效：Ctrl + Alt + Space");
   expect(await registered(studio)).toBe("Ctrl+Alt+Space");

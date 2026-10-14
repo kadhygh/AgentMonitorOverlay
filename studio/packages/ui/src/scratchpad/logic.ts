@@ -1,6 +1,6 @@
 import { normalizeShortcut } from "@amo-studio/protocol";
 
-// Pure helpers of the scratchpad window, its task-page entry and its settings section (unit-tested).
+// Pure helpers of the scratchpad window and its settings page (unit-tested).
 
 interface KeyLike {
   ctrlKey: boolean;
@@ -74,15 +74,17 @@ export function shortcutLabel(shortcut: string): string {
     .join(" + ");
 }
 
-/** The first lines of a page for the task page's preview, with an ellipsis when there is more. */
-export function previewText(text: string, maxLines = 6, maxChars = 280): string {
-  const trimmed = text.replace(/\s+$/, "");
-  const lines = trimmed.split("\n");
-  let out = lines.slice(0, maxLines).join("\n");
-  let cut = lines.length > maxLines;
-  if (out.length > maxChars) {
-    out = out.slice(0, maxChars);
-    cut = true;
-  }
-  return cut ? `${out.replace(/\s+$/, "")}…` : out;
+/**
+ * What 复制 puts on the clipboard (S14-B, after old AMO's toCliPasteClipboardText): trailing spaces and blank lines at
+ * the end dropped, then either the lines kept with Windows line breaks, or (安全换行) joined into one line with spaces,
+ * so pasting into a terminal CLI cannot send it line by line.
+ */
+export function clipboardText(text: string, safeNewlines: boolean): string {
+  const normalized = text
+    .replace(/\r\n?/g, "\n")
+    .split("\n")
+    .map((line) => line.trimEnd())
+    .join("\n")
+    .replace(/\n+$/, "");
+  return safeNewlines ? normalized.replace(/[ \t]*\n+[ \t]*/g, " ") : normalized.replace(/\n/g, "\r\n");
 }

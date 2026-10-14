@@ -1,10 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import { composeAnnotationMessage, type Annotation } from "@amo-studio/protocol";
-import type { HostLink } from "../host/client.js";
-import { ScratchpadEntry } from "../scratchpad/ScratchpadEntry.js";
 
 interface AnnotationPanelProps {
-  link: HostLink;
   annotations: readonly Annotation[];
   busy: boolean;
   /** False when the session is archived or handed off: nothing can be sent. */
@@ -21,7 +18,7 @@ interface AnnotationPanelProps {
  * Right column of the task page: the unsent annotations (written in the bubble by the selection), send-all, and the
  * sent ones folded away.
  */
-export function AnnotationPanel({ link, annotations, busy, canSend, onEdit, onDelete, onLocate, onSendAll, header }: AnnotationPanelProps) {
+export function AnnotationPanel({ annotations, busy, canSend, onEdit, onDelete, onLocate, onSendAll, header }: AnnotationPanelProps) {
   const [showSent, setShowSent] = useState(false);
 
   const unsent = annotations.filter((a) => !a.sentAt);
@@ -70,7 +67,6 @@ export function AnnotationPanel({ link, annotations, busy, canSend, onEdit, onDe
         </div>
       )}
 
-      <ScratchpadEntry link={link} />
     </aside>
   );
 }

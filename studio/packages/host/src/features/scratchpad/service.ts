@@ -7,6 +7,8 @@ import { readScratchpad, visibleScratchpad, withPage, withPageCount, type Stored
 const DOC_KEY = "scratchpad:doc";
 /** The window's global shortcut; absent means the default, "" means off. */
 const SHORTCUT_KEY = "settings:scratchpad-shortcut";
+/** 复制 joins lines (安全换行) when "1"; absent or anything else: lines kept (S14-B default). */
+const SAFE_NEWLINES_KEY = "settings:scratchpad-safe-newlines";
 
 /**
  * The scratchpad (便签, stage 11; stage 2's draft area grown up): numbered pages of text and pasted images, shared by
@@ -62,6 +64,16 @@ export class ScratchpadFeature extends Feature {
     const shortcut = typeof value === "string" ? normalizeShortcut(value) : null;
     if (shortcut === null) throw new HostError("bad_request", `「${String(value)}」不能用作快捷键：需要 Ctrl、Alt 或 Win 加一个键，或者单独的 F1–F24`);
     this.store.setKv(SHORTCUT_KEY, shortcut);
+  }
+
+  /** Whether 复制 joins the page's lines into one (安全换行, 设置 → 便签). */
+  safeNewlines(): boolean {
+    return this.store.getKv(SAFE_NEWLINES_KEY)?.value === "1";
+  }
+
+  setSafeNewlines(value: unknown): void {
+    if (typeof value !== "boolean") throw new HostError("bad_request", "scratchpadSafeNewlines must be true or false");
+    this.store.setKv(SAFE_NEWLINES_KEY, value ? "1" : "0");
   }
 
   private stored(): StoredScratchpad {
