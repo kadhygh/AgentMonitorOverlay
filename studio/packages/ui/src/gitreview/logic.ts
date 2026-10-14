@@ -7,11 +7,17 @@ import type { GitChangedFile, GitDiffLine, GitFileDiff, GitFileStatus, GitLineSi
 export interface ReviewTarget {
   workspaceId: string;
   sessionId?: string;
+  /** Stage 13 (用 git diff 看): the file to select, absolute or relative to the project. */
+  file?: string;
+  /** Changes on every open with a file (the shell sets it), so asking for the same file again still selects it. */
+  nonce?: string;
 }
 
-/** The window's address: `#review?workspace=…&session=…`. */
+/** The window's address: `#review?workspace=…&session=…&file=…&n=…`. */
 export function reviewHash(t: ReviewTarget): string {
   const q = new URLSearchParams({ workspace: t.workspaceId, ...(t.sessionId ? { session: t.sessionId } : {}) });
+  if (t.file) q.set("file", t.file);
+  if (t.file && t.nonce) q.set("n", t.nonce);
   return `#review?${q.toString()}`;
 }
 
@@ -21,7 +27,9 @@ export function parseReviewHash(hash: string): ReviewTarget | null {
   const workspaceId = q.get("workspace");
   if (!workspaceId) return null;
   const sessionId = q.get("session");
-  return { workspaceId, ...(sessionId ? { sessionId } : {}) };
+  const file = q.get("file");
+  const nonce = q.get("n");
+  return { workspaceId, ...(sessionId ? { sessionId } : {}), ...(file ? { file, ...(nonce ? { nonce } : {}) } : {}) };
 }
 
 /** The list's status icons, as in Fork: + added, M modified, − deleted, R renamed. */

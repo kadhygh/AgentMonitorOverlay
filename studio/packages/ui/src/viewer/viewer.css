@@ -1,0 +1,21 @@
+/* The viewer window (查看器, stage 13): a bar with the mode, the file and its actions; below it the file (the quick
+   look's fp-* code, Markdown and image styles) or the project's Git Review. */
+.vw-app { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
+/* One row: the mode, then the title (its folder shrinks first), then the actions (they wrap among themselves). */
+.vw-head { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg-header); }
+.vw-head > .gr-seg { flex: none; }
+.vw-title { display: flex; align-items: baseline; gap: 8px; min-width: 80px; flex: 1 1 auto; overflow: hidden; }
+.vw-actions { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+.vw-name { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); white-space: nowrap; }
+.vw-lines { flex: none; padding: 0 6px; border-radius: var(--r-btn); background: var(--attention-bg); color: var(--attention); font-size: var(--fs-cap); font-variant-numeric: tabular-nums; }
+.vw-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font-family: var(--font-code); font-size: var(--fs-cap); color: var(--text-dim); }
+.vw-pin[aria-pressed="true"] { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 45%, transparent); background: color-mix(in srgb, var(--primary) 10%, transparent); opacity: 1; }
+.vw-body { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.vw-file { flex: 1; min-height: 0; display: flex; flex-direction: column; background: var(--chat-code-bg, var(--code-bg)); }
+.vw-file[hidden] { display: none; }
+.vw-file > .fp-code { font-size: 13px; }
+/* A document reads in a column, not the window's whole width. */
+.vw-file > .fp-md { padding: 22px max(28px, calc((100% - 860px) / 2)) 40px; font-size: var(--fs-body, 14px); }
+.vw-changes[hidden] { display: none; }
+.vw-changes { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+.vw-changes > .gr-app { flex: 1; min-height: 0; height: auto; }

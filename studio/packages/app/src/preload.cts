@@ -43,8 +43,14 @@ electron.contextBridge.exposeInMainWorld("amo", {
     applyShortcut: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:scratchpad-shortcut-apply"),
     shortcutStatus: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:scratchpad-shortcut-status"),
   },
-  /** The project's Git Review window (one per project). */
-  openReview: (target: { workspaceId: string; sessionId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-review", target),
+  /** The project's Git Review window (one per project), at a file when `file` is given (stage 13: 用 git diff 看). */
+  openReview: (target: { workspaceId: string; sessionId?: string; file?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-review", target),
+  /** The viewer (查看器, stage 13): a file in the preview window (reused until 固定), at a line or range. */
+  openViewer: (target: { path: string; workspaceId?: string; line?: number; endLine?: number; mode?: "file" | "changes" }): Promise<void> =>
+    electron.ipcRenderer.invoke("amo:open-viewer", target),
+  /** Viewer windows only: 固定 this window (the next file opens another), and whether it is. */
+  pinViewer: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:viewer-pin"),
+  viewerState: (): Promise<{ pinned: boolean }> => electron.ipcRenderer.invoke("amo:viewer-state"),
   openInWorkbench: (target: { taskId?: string; sessionId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-in-workbench", target),
   onNavigate: (cb: (target: { taskId: string; sessionId?: string }) => void): (() => void) => {
     const listener = (_event: unknown, target: { taskId: string; sessionId?: string }) => cb(target);

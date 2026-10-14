@@ -12,14 +12,16 @@ import { fileName, folderOf } from "./paths.js";
 
 // The quick look (stage 12, S12-C, after DSH's document preview): a file beside the conversation without leaving it.
 // Code with line numbers and colours, scrolled to and marking a line; Markdown rendered or as source; images; a
-// change first when given (本轮改动). Reusable: the page decides where it sits and adds its own actions.
+// change first when given (本轮改动). Reusable: the page decides where it sits and adds its own actions. Stage 13: the
+// file itself (FileContent, useTextFile) is shared with the viewer window.
 
 export interface FilePreviewProps {
   link: HostLink;
   /** Absolute, or relative to the project `workspaceId`. */
   file: FileRef;
-  /** 1-based line to scroll to and mark. */
+  /** 1-based line to scroll to and mark (through `endLine` when given). */
   line?: number | undefined;
+  endLine?: number | undefined;
   column?: number | undefined;
   /** A change to show first (本轮改动); "打开文件" switches to the file as it is now. */
   diff?: FileDiff | undefined;
@@ -48,34 +50,18 @@ function savedWidth(): number {
   }
 }
 
-const isImage = (path: string) => {
+export const isImage = (path: string) => {
   const dot = path.lastIndexOf(".");
   return dot >= 0 && !!PREVIEW_IMAGE_TYPES[path.slice(dot).toLowerCase()];
 };
 
-type Loaded = { state: "loading" } | { state: "ok"; file: TextFile } | { state: "error"; message: string };
+export type Loaded = { state: "loading" } | { state: "ok"; file: TextFile } | { state: "error"; message: string };
 
-export function FilePreview({ link, file, line, column, diff, onClose, extraActions }: FilePreviewProps) {
-  const vscode = useVsCode(link);
-  const [width, setWidth] = useState(savedWidth);
-  const [mode, setMode] = useState<"diff" | "file">(diff ? "diff" : "file");
-  const [at, setAt] = useState<{ line?: number | undefined; column?: number | undefined }>({ line, column });
-  const [reload, setReload] = useState(0);
-  const [copied, setCopied] = useState(false);
-  const [notice, setNotice] = useState<string | null>(null);
+/** The file's text from the Host; `enabled` false asks nothing (an image, or a change shown instead). */
+export function useTextFile(link: HostLink, file: FileRef, enabled: boolean, reload: number): Loaded {
   const [loaded, setLoaded] = useState<Loaded>({ state: "loading" });
-  const image = isImage(file.path);
-  const markdown = languageForPath(file.path) === "markdown";
-  const [rendered, setRendered] = useState(!line);
-
   useEffect(() => {
-    setMode(diff ? "diff" : "file");
-    setAt({ line, column });
-    setRendered(!line);
-  }, [file.path, file.workspaceId, line, column, diff]);
-
-  useEffect(() => {
-    if (mode !== "file" || image) return;
+    if (!enabled) return;
     let live = true;
     setLoaded({ state: "loading" });
     readTextFile(link, file)
@@ -88,7 +74,77 @@ export function FilePreview({ link, file, line, column, diff, onClose, extraActi
     return () => {
       live = false;
     };
-  }, [link, file.path, file.workspaceId, mode, image, reload]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [link, file.path, file.workspaceId, enabled, reload]); // eslint-disable-line react-hooks/exhaustive-deps
+  return loaded;
+}
+
+/** Whether the loaded file is Markdown text, which can show rendered or as source. */
+export const isMarkdownText = (path: string, loaded: Loaded) => languageForPath(path) === "markdown" && loaded.state === "ok" && loaded.file.text !== undefined;
+
+/**
+ * A file as it is now: an image, Markdown rendered (or its source), or code with line numbers and colours, scrolled to
+ * and marking `line` (through `endLine`).
+ */
+export function FileContent({
+  link,
+  file,
+  loaded,
+  line,
+  endLine,
+  rendered,
+  reload,
+}: {
+  link: HostLink;
+  file: FileRef;
+  loaded: Loaded;
+  line?: number | undefined;
+  endLine?: number | undefined;
+  rendered: boolean;
+  reload: number;
+}) {
+  if (isImage(file.path))
+    return (
+      <div className="fp-image">
+        <img src={`${rawFileUrl(link, file)}&v=${reload}`} alt={fileName(file.path)} data-testid="file-preview-image" />
+      </div>
+    );
+  if (loaded.state === "loading") return <div className="fp-empty">读取中…</div>;
+  if (loaded.state === "error")
+    return (
+      <div className="fp-empty" role="alert">
+        {loaded.message}
+      </div>
+    );
+  if (loaded.file.binary) return <div className="fp-empty">这是二进制文件（{formatBytes(loaded.file.size)}），不能预览。</div>;
+  if (loaded.file.tooLarge || loaded.file.text === undefined) return <div className="fp-empty">文件太大（{formatBytes(loaded.file.size)}），不能预览。可以用编辑器打开。</div>;
+  if (languageForPath(file.path) === "markdown" && rendered)
+    return (
+      <div className="fp-md">
+        <MarkdownFileLinks.Provider value={null}>
+          <Markdown source={loaded.file.text} />
+        </MarkdownFileLinks.Provider>
+      </div>
+    );
+  return <CodeView key={`${loaded.file.path}#${reload}`} text={loaded.file.text} path={file.path} line={line} endLine={endLine} />;
+}
+
+export function FilePreview({ link, file, line, endLine, column, diff, onClose, extraActions }: FilePreviewProps) {
+  const vscode = useVsCode(link);
+  const [width, setWidth] = useState(savedWidth);
+  const [mode, setMode] = useState<"diff" | "file">(diff ? "diff" : "file");
+  const [at, setAt] = useState<{ line?: number | undefined; endLine?: number | undefined; column?: number | undefined }>({ line, endLine, column });
+  const [reload, setReload] = useState(0);
+  const [copied, setCopied] = useState(false);
+  const [notice, setNotice] = useState<string | null>(null);
+  const image = isImage(file.path);
+  const loaded = useTextFile(link, file, mode === "file" && !image, reload);
+  const [rendered, setRendered] = useState(!line);
+
+  useEffect(() => {
+    setMode(diff ? "diff" : "file");
+    setAt({ line, endLine, column });
+    setRendered(!line);
+  }, [file.path, file.workspaceId, line, endLine, column, diff]);
 
   // Esc closes the preview, unless a menu, a dialog or a list is open (they take Esc first) or the person is typing.
   useEffect(() => {
@@ -110,6 +166,7 @@ export function FilePreview({ link, file, line, column, diff, onClose, extraActi
   }, [notice]);
 
   const absolute = loaded.state === "ok" ? loaded.file.path : file.path;
+  const markdown = isMarkdownText(file.path, loaded);
   const fail = (err: unknown) => setNotice(err instanceof HostApiError ? err.message : String(err));
 
   // Dragging the left edge resizes the panel (kept on this machine).
@@ -187,7 +244,7 @@ export function FilePreview({ link, file, line, column, diff, onClose, extraActi
           </button>
         )}
       </div>
-      {(diff || (markdown && mode === "file" && loaded.state === "ok" && loaded.file.text !== undefined)) && (
+      {(diff || (markdown && mode === "file")) && (
         <div className="fp-modes">
           {diff && (
             <div className="fp-seg" role="group" aria-label="查看">
@@ -199,16 +256,7 @@ export function FilePreview({ link, file, line, column, diff, onClose, extraActi
               </button>
             </div>
           )}
-          {markdown && mode === "file" && loaded.state === "ok" && loaded.file.text !== undefined && (
-            <div className="fp-seg" role="group" aria-label="Markdown">
-              <button type="button" aria-pressed={rendered} onClick={() => setRendered(true)}>
-                渲染
-              </button>
-              <button type="button" aria-pressed={!rendered} onClick={() => setRendered(false)}>
-                源码
-              </button>
-            </div>
-          )}
+          {markdown && mode === "file" && <RenderedToggle rendered={rendered} onChange={setRendered} />}
         </div>
       )}
       {notice && (
@@ -219,31 +267,25 @@ export function FilePreview({ link, file, line, column, diff, onClose, extraActi
       <div className="fp-body">
         {mode === "diff" && diff ? (
           <DiffBody diff={diff} path={file.path} onLine={(l) => showFile(l)} />
-        ) : image ? (
-          <div className="fp-image">
-            <img src={`${rawFileUrl(link, file)}&v=${reload}`} alt={fileName(file.path)} data-testid="file-preview-image" />
-          </div>
-        ) : loaded.state === "loading" ? (
-          <div className="fp-empty">读取中…</div>
-        ) : loaded.state === "error" ? (
-          <div className="fp-empty" role="alert">
-            {loaded.message}
-          </div>
-        ) : loaded.file.binary ? (
-          <div className="fp-empty">这是二进制文件（{formatBytes(loaded.file.size)}），不能预览。</div>
-        ) : loaded.file.tooLarge || loaded.file.text === undefined ? (
-          <div className="fp-empty">文件太大（{formatBytes(loaded.file.size)}），不能预览。可以用编辑器打开。</div>
-        ) : markdown && rendered ? (
-          <div className="fp-md">
-            <MarkdownFileLinks.Provider value={null}>
-              <Markdown source={loaded.file.text} />
-            </MarkdownFileLinks.Provider>
-          </div>
         ) : (
-          <CodeView key={`${absolute}#${reload}`} text={loaded.file.text} path={file.path} line={at.line} />
+          <FileContent link={link} file={file} loaded={loaded} line={at.line} endLine={at.endLine} rendered={rendered} reload={reload} />
         )}
       </div>
     </aside>
+  );
+}
+
+/** 渲染 / 源码 for a Markdown file. */
+export function RenderedToggle({ rendered, onChange }: { rendered: boolean; onChange(rendered: boolean): void }) {
+  return (
+    <div className="fp-seg" role="group" aria-label="Markdown">
+      <button type="button" aria-pressed={rendered} onClick={() => onChange(true)}>
+        渲染
+      </button>
+      <button type="button" aria-pressed={!rendered} onClick={() => onChange(false)}>
+        源码
+      </button>
+    </div>
   );
 }
 
@@ -262,12 +304,13 @@ function useHighlighted(texts: readonly string[], path: string): Array<readonly 
   }, [texts, path, loads]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
-/** A file's text with line numbers, rendering only the rows in sight; scrolls to and marks `line`. */
-function CodeView({ text, path, line }: { text: string; path: string; line?: number | undefined }) {
+/** A file's text with line numbers, rendering only the rows in sight; scrolls to and marks `line` (through `endLine`). */
+function CodeView({ text, path, line, endLine }: { text: string; path: string; line?: number | undefined; endLine?: number | undefined }) {
   const lines = useMemo(() => text.replace(/\r\n?/g, "\n").replace(/\n$/, "").split("\n"), [text]);
   const tokens = useHighlighted(lines, path);
   const box = useRef<HTMLDivElement>(null);
   const [view, setView] = useState({ top: 0, height: 600 });
+  const last = line ? Math.max(line, endLine ?? line) : 0;
 
   useLayoutEffect(() => {
     const el = box.current;
@@ -279,21 +322,26 @@ function CodeView({ text, path, line }: { text: string; path: string; line?: num
   useLayoutEffect(() => {
     const el = box.current;
     if (!el) return;
-    el.scrollTop = line ? Math.max(0, (line - 1) * ROW_H - el.clientHeight / 3) : 0;
+    // A range that fits shows whole, a third of the way down; a longer one starts near the top.
+    const span = (last - (line ?? 0) + 1) * ROW_H;
+    const lead = span < el.clientHeight * 0.6 ? el.clientHeight / 3 : ROW_H * 2;
+    el.scrollTop = line ? Math.max(0, (line - 1) * ROW_H - lead) : 0;
     setView({ top: el.scrollTop, height: el.clientHeight });
-  }, [line, text]);
+  }, [line, last, text]);
 
   const first = Math.max(0, Math.floor(view.top / ROW_H) - OVERSCAN);
-  const last = Math.min(lines.length, Math.ceil((view.top + view.height) / ROW_H) + OVERSCAN);
+  const end = Math.min(lines.length, Math.ceil((view.top + view.height) / ROW_H) + OVERSCAN);
   const gutter = `${String(lines.length).length + 1}ch`;
   return (
     <div className="fp-code" ref={box} data-testid="file-preview-code" data-highlighted={tokens ? "" : undefined} onScroll={(e) => setView({ top: e.currentTarget.scrollTop, height: e.currentTarget.clientHeight })}>
       <div className="fp-code-inner" style={{ height: lines.length * ROW_H }}>
         <div className="fp-rows" style={{ transform: `translateY(${first * ROW_H}px)` }}>
-          {lines.slice(first, last).map((l, k) => {
+          {lines.slice(first, end).map((l, k) => {
             const n = first + k + 1;
+            const marked = !!line && n >= line && n <= last;
+            const edge = marked ? `${n === line ? " first" : ""}${n === last ? " last" : ""}` : "";
             return (
-              <div key={n} className={`fp-row${n === line ? " marked" : ""}`} data-line={n} style={{ height: ROW_H }}>
+              <div key={n} className={`fp-row${marked ? ` marked${edge}` : ""}`} data-line={n} style={{ height: ROW_H }}>
                 <span className="fp-gutter" style={{ width: gutter }}>
                   {n}
                 </span>

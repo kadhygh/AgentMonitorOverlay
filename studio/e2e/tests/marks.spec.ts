@@ -5,7 +5,7 @@ import type { FileMark, Session, Task, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, windowState, type Studio } from "./studio.js";
 
 // S12-D acceptance: the file marks window (标记文件 from the project's file selector, a pasted path, files dropped from
-// Explorer; notes saved as typed; quick look; missing files; delete), and handing marks to a session — @ 标记的文件,
+// Explorer; notes saved as typed; 查看 in the viewer window; missing files; delete), and handing marks to a session — @ 标记的文件,
 // a mark dragged into the composer, the sent message read back as chips that show the note.
 
 let studio: Studio | undefined;
@@ -122,14 +122,16 @@ test("marks files in the marks window, edits their notes, looks at them and remo
   await marks.getByTestId("marks-search").fill("");
   await expect(rows).toHaveCount(3);
 
-  // 快速查看: the text with the marked lines.
-  await drop.getByRole("button", { name: "快速查看" }).click();
-  const look = marks.getByTestId("mark-quicklook");
-  await expect(look).toContainText("M.rate = 0.25");
-  await expect(look.locator(".mk-look-line.hit")).toHaveCount(2);
-  await screenshot(app, "stage-12", "S12-D-quicklook", marks, "marks");
-  await marks.keyboard.press("Escape");
-  await expect(look).toHaveCount(0);
+  // 查看 (stage 13): the viewer window with the marked lines marked.
+  const opened = app.waitForEvent("window");
+  await drop.getByTestId("mark-view").click();
+  const look = await opened;
+  await look.waitForLoadState("domcontentloaded");
+  await expect(look.getByTestId("viewer-name")).toHaveText("drop.lua");
+  await expect(look.getByTestId("viewer-lines")).toHaveText("第 2–3 行");
+  await expect(look.getByTestId("file-preview-code")).toContainText("M.rate = 0.25");
+  await expect(look.locator(".fp-row.marked")).toHaveCount(2);
+  await screenshot(app, "stage-13", "S13-A-mark-in-viewer", look, "viewer");
   // 在资源管理器中显示 (tests only record the launch).
   await drop.getByRole("button", { name: "在资源管理器中显示" }).click();
   await expect(marks.locator(".toast-error")).toHaveCount(0);
@@ -143,7 +145,7 @@ test("marks files in the marks window, edits their notes, looks at them and remo
   const old = rows.filter({ hasText: "old.lua" });
   await expect(old).toHaveAttribute("data-missing", "true");
   await expect(old).toContainText("文件不存在");
-  await expect(old.getByRole("button", { name: "快速查看" })).toBeDisabled();
+  await expect(old.getByTestId("mark-view")).toBeDisabled();
   await screenshot(app, "stage-12", "S12-D-marks-window", marks, "marks");
 
   // 删除 asks once more.

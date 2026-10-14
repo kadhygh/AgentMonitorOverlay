@@ -1,14 +1,15 @@
 import { execFileSync } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import type { OpenInApps, OpenInResult, Session, Task, Workspace } from "@amo-studio/protocol";
 import { DEMO_FILE, DEMO_FILE_TEXT } from "@amo-studio/testkit";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
-// S12-C: files in the conversation. Names in a reply, tool rows and file chips become links when the file exists; a
-// click opens the quick look beside the conversation, Ctrl+click VS Code, a right click the file menu; a finished turn
-// lists the files it changed and shows each one's diff. Test mode records VS Code / Explorer launches (dryRun).
+// S12-C: files in the conversation. Names in a reply, tool rows and file chips become links when the file exists. Stage
+// 13 (S13-A): a click opens the viewer window (查看器: one preview window, reused until 固定), Ctrl+click VS Code, a
+// right click the file menu (查看器打开 / 右栏快速查看 / 用 git diff 看 / … / 标记); a finished turn lists the files it
+// changed and shows each one's diff in the quick look. Test mode records VS Code / Explorer launches (dryRun).
 
 let studio: Studio | undefined;
 
@@ -28,6 +29,17 @@ async function nextOpenIn(page: Page, act: () => Promise<void>): Promise<{ asked
   return { asked: r.request().postDataJSON() as { path: string; app: string; line?: number }, result: (await r.json()) as OpenInResult };
 }
 
+/** The next window the app opens (a viewer, a review), once loaded. */
+async function nextWindow(app: ElectronApplication, act: () => Promise<void>): Promise<Page> {
+  const opened = app.waitForEvent("window");
+  await act();
+  const win = await opened;
+  await win.waitForLoadState("domcontentloaded");
+  return win;
+}
+
+const viewers = (app: ElectronApplication) => app.windows().filter((w) => w.url().includes("#viewer"));
+
 async function approveUntilAnswered(page: Page, answer: string) {
   const deadline = Date.now() + 90_000;
   while (!(await page.getByTestId("msg-agent").filter({ hasText: answer }).count())) {
@@ -38,7 +50,7 @@ async function approveUntilAnswered(page: Page, answer: string) {
   }
 }
 
-test("names of existing files in a reply open the quick look, VS Code and Explorer", async () => {
+test("names of existing files in a reply open the viewer, the quick look, VS Code and Explorer", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
   const dir = studio.workspace("alpha");
@@ -68,57 +80,79 @@ test("names of existing files in a reply open the quick look, VS Code and Explor
   const chip = page.getByTestId("msg-user").getByTestId("msg-file");
   await expect(chip).toHaveAttribute("data-file-link", "");
 
-  // Click: the quick look beside the conversation, scrolled to line 4 and marking it, with colours.
-  await links.first().click();
-  const preview = page.getByTestId("file-preview");
-  await expect(preview).toBeVisible();
-  await expect(preview.getByTestId("file-preview-name")).toHaveText("importer.py:4");
-  await expect(preview.getByTestId("file-preview-code")).toHaveAttribute("data-highlighted", "");
-  await expect(preview.locator(".fp-row.marked")).toHaveAttribute("data-line", "4");
-  await expect(preview.locator(".fp-row.marked")).toContainText("def fetch(url):");
-  await expect(page.getByRole("complementary", { name: "批注" })).toHaveCount(0);
-  await screenshot(app, "stage-12", "S12-C-quick-look", page);
+  // Click: the viewer window, scrolled to line 4 and marking it, with colours; the conversation keeps its right column.
+  const viewer = await nextWindow(app, () => links.first().click());
+  await expect(viewer.getByTestId("viewer-name")).toHaveText(DEMO_FILE);
+  await expect(viewer.getByTestId("viewer-lines")).toHaveText("第 4 行");
+  await expect(viewer.getByTestId("file-preview-code")).toHaveAttribute("data-highlighted", "");
+  await expect(viewer.locator(".fp-row.marked")).toHaveAttribute("data-line", "4");
+  await expect(viewer.locator(".fp-row.marked")).toContainText("def fetch(url):");
+  await expect(page.getByTestId("file-preview")).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "批注" })).toBeVisible();
+  await screenshot(app, "stage-13", "S13-A-viewer-code", viewer, "viewer");
 
-  // VS Code at the line (when this machine has it), Explorer with the file selected.
+  // VS Code at the line (when this machine has it), Explorer with the file selected; 标记 marks it.
   if (vscode) {
-    const open = await nextOpenIn(page, () => preview.getByTestId("fp-vscode").click());
+    const open = await nextOpenIn(viewer, () => viewer.getByTestId("viewer-vscode").click());
     expect(open.asked).toMatchObject({ path: join(dir, DEMO_FILE), app: "vscode", line: 4 });
     expect(open.result.dryRun).toBe(true);
-  } else await expect(preview.getByTestId("fp-vscode")).toHaveCount(0);
-  const reveal = await nextOpenIn(page, () => preview.getByRole("button", { name: "在资源管理器中显示" }).click());
+  } else await expect(viewer.getByTestId("viewer-vscode")).toHaveCount(0);
+  const reveal = await nextOpenIn(viewer, () => viewer.getByTestId("viewer-reveal").click());
   expect(reveal.asked).toMatchObject({ path: join(dir, DEMO_FILE), app: "explorer" });
   expect(reveal.result).toMatchObject({ app: "explorer", dryRun: true });
-  // 标记 (S12-D) from the quick look: marks the file at the line; stage 13: then it stays "已标记" (accent), and a
-  // second click opens the marks window at that mark instead of marking again.
-  await preview.getByTestId("mark-file").click();
-  await expect(preview.getByTestId("mark-file")).toHaveText("已标记");
-  await expect(preview.getByTestId("mark-file")).toHaveAttribute("data-marked", "");
-  await preview.getByTestId("mark-file").click();
-  await expect(preview.getByTestId("mark-file")).toHaveText("已标记");
+  await viewer.getByTestId("mark-file").click();
+  await expect(viewer.getByTestId("mark-file")).toHaveText("已标记");
 
-  // Esc closes it; the right column comes back.
-  await page.keyboard.press("Escape");
-  await expect(preview).toHaveCount(0);
-  await expect(page.getByRole("complementary", { name: "批注" })).toBeVisible();
+  // The README link (#L2) goes to the same window: the source with line 2 marked, then rendered.
+  await links.last().click();
+  await expect(viewer.getByTestId("viewer-name")).toHaveText("README.md");
+  await expect(viewer.locator(".fp-row.marked")).toHaveAttribute("data-line", "2");
+  await viewer.getByRole("button", { name: "渲染" }).click();
+  await expect(viewer.locator(".fp-md strong")).toHaveText("失败时重试");
+  expect(viewers(app)).toHaveLength(1);
+  await screenshot(app, "stage-13", "S13-A-viewer-markdown", viewer, "viewer");
+
+  // 固定: that window stays as it is, and the next file opens in a new preview window, which the chip then reuses.
+  await viewer.getByTestId("viewer-pin").click();
+  await expect(viewer.getByTestId("viewer-pin")).toHaveText("已固定");
+  const second = await nextWindow(app, () => links.first().click());
+  await expect(second.getByTestId("viewer-name")).toHaveText(DEMO_FILE);
+  await expect(second.getByTestId("viewer-pin")).toHaveText("固定");
+  await chip.click();
+  await expect(second.getByTestId("viewer-name")).toHaveText("README.md");
+  await expect(viewer.getByTestId("viewer-name")).toHaveText("README.md");
+  await expect(viewer.locator(".fp-md strong")).toBeVisible();
+  expect(viewers(app)).toHaveLength(2);
 
   // Ctrl+click goes straight to VS Code.
   if (vscode) {
     const open = await nextOpenIn(page, () => links.first().click({ modifiers: ["Control"] }));
     expect(open.asked).toMatchObject({ app: "vscode", line: 4 });
-    await expect(preview).toHaveCount(0);
   }
 
-  // Right click: the file menu. 快速查看 the README (linked at #L2): source first, marking line 2; then rendered.
+  // Right click: the file menu. 右栏快速查看 the README (linked at #L2): source first, marking line 2; then rendered.
   await links.last().click({ button: "right" });
   const menu = page.getByTestId("file-menu");
-  await expect(menu.getByRole("menuitem")).toHaveText(vscode ? ["快速查看", "VS Code 打开", "在资源管理器中显示", "复制路径"] : ["快速查看", "在资源管理器中显示", "复制路径"]);
-  await menu.getByRole("menuitem", { name: "快速查看" }).click();
+  const items = ["查看器打开", "右栏快速查看", "用 git diff 看", ...(vscode ? ["VS Code 打开"] : []), "在资源管理器中显示", "复制路径", "标记"];
+  await expect(menu.getByRole("menuitem")).toHaveText(items);
+  await screenshot(app, "stage-13", "S13-A-file-menu", page);
+  await menu.getByRole("menuitem", { name: "右栏快速查看" }).click();
   await expect(menu).toHaveCount(0);
+  const preview = page.getByTestId("file-preview");
   await expect(preview.getByTestId("file-preview-name")).toHaveText("README.md:2");
   await expect(preview.locator(".fp-row.marked")).toHaveAttribute("data-line", "2");
+  await expect(page.getByRole("complementary", { name: "批注" })).toHaveCount(0);
   await preview.getByRole("button", { name: "渲染" }).click();
   await expect(preview.locator(".fp-md strong")).toHaveText("失败时重试");
-  await screenshot(app, "stage-12", "S12-C-markdown", page);
+  // 标记 from the quick look: marks the file at the line; then "已标记" (accent).
+  await preview.getByTestId("mark-file").click();
+  await expect(preview.getByTestId("mark-file")).toHaveText("已标记");
+  await expect(preview.getByTestId("mark-file")).toHaveAttribute("data-marked", "");
+
+  // Esc closes it; the right column comes back.
+  await page.keyboard.press("Escape");
+  await expect(preview).toHaveCount(0);
+  await expect(page.getByRole("complementary", { name: "批注" })).toBeVisible();
 
   // The header: the working directory with Explorer (and VS Code) next to it.
   const workdir = page.getByTestId("workdir");
@@ -126,24 +160,23 @@ test("names of existing files in a reply open the quick look, VS Code and Explor
   const folder = await nextOpenIn(page, () => workdir.getByRole("button", { name: "在资源管理器中显示" }).click());
   expect(folder.asked).toMatchObject({ path: ws.path, app: "explorer" });
   if (vscode) await expect(workdir.getByRole("button", { name: "VS Code 打开文件夹" })).toBeVisible();
-
-  // The chip in the person's message opens the same quick look.
-  await chip.click();
-  await expect(preview.getByTestId("file-preview-name")).toHaveText("README.md");
-  await preview.getByRole("button", { name: "关闭预览" }).click();
-  await expect(preview).toHaveCount(0);
 });
 
-test("a finished turn lists the files it changed; each opens its diff, then the file", async () => {
+test("a finished turn lists the files it changed; each opens its diff, then the file; 用 git diff 看", async () => {
   studio = await launchStudio({ transcriptView: "standard" });
   const { page, app } = studio;
   const dir = studio.workspace("alpha");
   writeFileSync(join(dir, DEMO_FILE), DEMO_FILE_TEXT);
+  writeFileSync(join(dir, "notes.md"), "# 笔记\n\n没有改动的文件。\n");
   git(dir, "init", "-q", "-b", "main");
   git(dir, "add", ".");
   git(dir, "commit", "-q", "-m", "base");
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
-  await studio.api("POST", "/api/tasks", { title: "导入重试", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "[[demo]] 给导入器加上重试" } });
+  await studio.api("POST", "/api/tasks", {
+    title: "导入重试",
+    workspaceId: ws.id,
+    firstSession: { profileId: "codex-mock", text: `[[demo]] 给导入器加上重试\n\n引用文件：\n- ${join(dir, "notes.md")}` },
+  });
   await page.getByTestId("task-card").first().click();
   await approveUntilAnswered(page, "retries");
 
@@ -170,17 +203,38 @@ test("a finished turn lists the files it changed; each opens its diff, then the 
   await preview.getByRole("button", { name: "本轮改动" }).click();
   await expect(diff).toBeVisible();
 
-  // The work rows: the read row's file name and the diff card's header are links too.
+  // The work rows: the read row's file name opens the viewer; the diff card's header is a link too.
   await turn.getByTestId("turn-fold").click();
   await turn.getByTestId("process-group").getByRole("button").first().click();
   const read = turn.locator('[data-testid="tool"][data-kind="read"]');
-  await read.getByTestId("file-link").click();
-  await expect(preview.getByTestId("file-preview-name")).toHaveText(DEMO_FILE);
-  await expect(preview.getByTestId("file-preview-code")).toBeVisible();
+  const viewer = await nextWindow(app, () => read.getByTestId("file-link").click());
+  await expect(viewer.getByTestId("viewer-name")).toHaveText(DEMO_FILE);
+  await expect(viewer.getByTestId("file-preview-code")).toContainText("def fetch(url, retries=3, backoff=0.5):");
   const edit = turn.locator('[data-testid="tool"][data-kind="edit"]');
   await edit.locator(".pr-title").click();
   await expect(edit.locator(".pr-diff-head").getByTestId("file-link")).toHaveText(DEMO_FILE);
   await screenshot(app, "stage-12", "S12-C-tool-rows", page);
+
+  // The viewer's 改动 mode: the project's Git Review inside the window, at this file.
+  await viewer.getByTestId("viewer-mode-changes").click();
+  await expect(viewer.getByTestId("review-file-head")).toContainText(DEMO_FILE);
+  await expect(viewer.locator(".gr-line.add").filter({ hasText: "retries=3" }).first()).toBeVisible();
+  await screenshot(app, "stage-13", "S13-A-viewer-changes", viewer, "viewer");
+  await viewer.getByTestId("viewer-mode-file").click();
+  await expect(viewer.getByTestId("file-preview-code")).toBeVisible();
+
+  // 用 git diff 看 (right click): the project's Review window, at the file.
+  await read.getByTestId("file-link").click({ button: "right" });
+  const review = await nextWindow(app, () => page.getByTestId("file-menu").getByRole("menuitem", { name: "用 git diff 看" }).click());
+  await expect(review.getByTestId("review-file-head")).toContainText(DEMO_FILE);
+  // A file without uncommitted changes (the person's chip, notes.md): the same window says so.
+  await page.getByTestId("msg-user").getByTestId("msg-file").click({ button: "right" });
+  await page.getByTestId("file-menu").getByRole("menuitem", { name: "用 git diff 看" }).click();
+  await expect(review.getByTestId("toast")).toHaveText(/这个文件没有未提交的改动/);
+  await expect(review.getByTestId("review-file-head")).toContainText(DEMO_FILE);
+  // Review's 查看文件 opens the viewer at the file.
+  await review.getByTestId("review-open-viewer").click();
+  await expect(viewer.getByTestId("viewer-name")).toHaveText(DEMO_FILE);
 
   // The dark theme, with the turn's diff open again.
   await page.getByRole("button", { name: "设置" }).click();
