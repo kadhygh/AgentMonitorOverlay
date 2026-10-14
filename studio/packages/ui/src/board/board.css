@@ -32,3 +32,14 @@
 }
 .canvas-group:hover .group-remove, .canvas-group.selected .group-remove, .group-remove:focus-visible { opacity: 1; }
 .group-remove:hover { background: var(--error-bg); color: var(--error-text); }
+
+/* 已归档: the last column's foot opens a list of the scope's archived tasks. */
+.archived-tasks { position: relative; display: flex; justify-content: flex-end; }
+.archived-open { height: var(--ctl-s); padding: 0 8px; border: none; border-radius: var(--r-btn); background: transparent; color: var(--text-faint); font: inherit; font-size: var(--fs-cap); cursor: pointer; }
+.archived-open:hover, .archived-open[aria-expanded="true"] { background: var(--chip); color: var(--text-dim); }
+.archived-pop { position: absolute; top: calc(100% + 4px); right: 0; z-index: 30; width: 320px; max-height: 60vh; display: flex; flex-direction: column; gap: 8px; padding: 10px; border: 1px solid var(--border-strong); border-radius: var(--r-l); background: var(--panel); box-shadow: 0 12px 32px var(--shadow); }
+.archived-rows { min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; }
+.archived-row { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; width: 100%; padding: 6px 8px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.archived-row:hover { background: var(--panel-raised); }
+.archived-title { font-size: var(--fs-sm); overflow-wrap: anywhere; }
+.archived-meta, .archived-hint, .archived-empty { font-size: var(--fs-cap); color: var(--text-faint); }

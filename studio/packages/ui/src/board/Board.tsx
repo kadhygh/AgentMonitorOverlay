@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { TASK_COLUMNS, taskProject, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
+import { ArchivedTasks } from "./ArchivedTasks.js";
 
 /** What the board shows: everything, one topic's tasks, or one project's. Archived tasks are never on the board. */
 export type Scope = { kind: "all" } | { kind: "topic"; id: string } | { kind: "workspace"; id: string };
@@ -84,6 +85,8 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
               />
             ))}
             {cards.length === 0 && <div className="empty-col">空</div>}
+            {/* Archived tasks leave the board; the last column offers them. */}
+            {col === TASK_COLUMNS[TASK_COLUMNS.length - 1] && <ArchivedTasks tasks={tasks} workspaces={workspaces} topics={topics} scope={scope} onOpen={onOpen} />}
           </div>
         );
       })}

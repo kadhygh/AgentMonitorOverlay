@@ -76,3 +76,27 @@ test("rejects a path that is not a directory", async () => {
   await page.getByRole("button", { name: "登记", exact: true }).click();
   await expect(page.getByRole("alert")).toContainText("not a directory");
 });
+
+test("archived tasks leave the board; the 完成 column lists them, they open read-only and come back", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const { task } = await studio.api<{ task: Task }>("POST", "/api/tasks", { title: "旧的导入任务", workspaceId: ws.id });
+  await studio.api("POST", "/api/tasks", { title: "还在做的", workspaceId: ws.id });
+  await expect(page.getByTestId("archived-open")).toHaveCount(0);
+  await studio.api("POST", `/api/tasks/${task.id}/archive`);
+  await expect(page.getByTestId("task-card")).toHaveCount(1);
+
+  await page.getByTestId("archived-open").click();
+  await expect(page.getByTestId("archived-open")).toHaveText("已归档 1");
+  const row = page.getByTestId("archived-list").getByTestId("archived-task");
+  await expect(row).toContainText("旧的导入任务");
+  await expect(row).toContainText("alpha");
+  await screenshot(app, "stage-12", "S12-L-archived-tasks", page);
+  await row.click();
+  await expect(page.locator(".page-crumb").filter({ hasText: "已归档" })).toBeVisible();
+  await page.getByRole("button", { name: "恢复任务" }).click();
+  await page.getByRole("button", { name: "← 看板" }).click();
+  await expect(page.getByTestId("task-card")).toHaveCount(2);
+  await expect(page.getByTestId("archived-open")).toHaveCount(0);
+});
