@@ -39,6 +39,10 @@ describe("Git Review window logic", () => {
     expect(parseReviewHash("#review?workspace=ws-1")).toEqual({ workspaceId: "ws-1" });
     expect(parseReviewHash("#focus")).toBeNull();
     expect(parseReviewHash("#review")).toBeNull();
+    // A commit's window (S13-B): read-only, no session; a name that is not a commit id opens nothing.
+    expect(reviewHash({ workspaceId: "ws-1", commit: "abc1234" })).toBe("#review?workspace=ws-1&commit=abc1234");
+    expect(parseReviewHash("#review?workspace=ws-1&commit=abc1234")).toEqual({ workspaceId: "ws-1", commit: "abc1234" });
+    expect(parseReviewHash("#review?workspace=ws-1&commit=HEAD")).toBeNull();
   });
 
   it("lists files by full path, case aside, as Fork does", () => {

@@ -1,17 +1,21 @@
-import type { GitChangedFile, GitDiffLine, GitFileDiff, GitFileStatus, GitLineSide, GitRange, GitReviewComment, Session, StateSnapshot } from "@amo-studio/protocol";
+import { isCommitRef, type GitChangedFile, type GitDiffLine, type GitFileDiff, type GitFileStatus, type GitLineSide, type GitRange, type GitReviewComment, type Session, type StateSnapshot } from "@amo-studio/protocol";
 
 // Pure logic of the Git Review window: its address, the file list, the rows of a diff, where comments sit, and the
 // session the comments go to by default.
 
-/** What a review window shows: a project, and the session comments go to unless another is picked. */
+/**
+ * What a review window shows: a project, and the session comments go to unless another is picked; or one commit of
+ * the project's history (S13-B), read-only.
+ */
 export interface ReviewTarget {
   workspaceId: string;
   sessionId?: string;
+  commit?: string;
 }
 
-/** The window's address: `#review?workspace=…&session=…`. */
+/** The window's address: `#review?workspace=…&session=…`, or `#review?workspace=…&commit=…`. */
 export function reviewHash(t: ReviewTarget): string {
-  const q = new URLSearchParams({ workspace: t.workspaceId, ...(t.sessionId ? { session: t.sessionId } : {}) });
+  const q = new URLSearchParams({ workspace: t.workspaceId, ...(t.commit ? { commit: t.commit } : t.sessionId ? { session: t.sessionId } : {}) });
   return `#review?${q.toString()}`;
 }
 
@@ -20,6 +24,8 @@ export function parseReviewHash(hash: string): ReviewTarget | null {
   const q = new URLSearchParams(hash.slice("#review".length).replace(/^\?/, ""));
   const workspaceId = q.get("workspace");
   if (!workspaceId) return null;
+  const commit = q.get("commit");
+  if (commit !== null) return isCommitRef(commit) ? { workspaceId, commit } : null;
   const sessionId = q.get("session");
   return { workspaceId, ...(sessionId ? { sessionId } : {}) };
 }

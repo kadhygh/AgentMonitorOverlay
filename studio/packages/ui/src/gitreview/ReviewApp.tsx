@@ -1,6 +1,18 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { showToast } from "../lib/toast.js";
-import { composeGitReviewMessage, GIT_RANGES, rangeBase, type GitChangedFile, type GitChanges, type GitFileDiff, type GitRange, type GitReviewComment, type StateSnapshot, type Workspace } from "@amo-studio/protocol";
+import {
+  composeGitReviewMessage,
+  GIT_RANGES,
+  rangeBase,
+  type GitChangedFile,
+  type GitChanges,
+  type GitCommitChanges,
+  type GitFileDiff,
+  type GitRange,
+  type GitReviewComment,
+  type StateSnapshot,
+  type Workspace,
+} from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { openInApps, openInEditor, revealInExplorer } from "../lib/openin.js";
@@ -15,9 +27,13 @@ import { MarkButton } from "../marks/MarkButton.js";
 import { OverviewRuler } from "./OverviewRuler.js";
 import { pairKinds, rowKinds } from "./overview.js";
 import { splitRows } from "./splitview.js";
+import { CommitPicker } from "./CommitPicker.js";
+import { openReview } from "./open.js";
+import { formatWhen } from "../attach/refs.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
-// the right, comments on lines, and "发给会话" to send the drafts to a session as one message.
+// the right, comments on lines, and "发给会话" to send the drafts to a session as one message. With `&commit=…`
+// (S13-B, from 历史) it shows one commit's changes against its first parent instead, read-only.
 
 export function ReviewApp() {
   const host = useHostState();
@@ -32,7 +48,7 @@ export function ReviewApp() {
   if (host.kind !== "ready") return <div className="placeholder">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</div>;
   const ws = target && host.state.workspaces.find((w) => w.id === target.workspaceId);
   if (!target || !ws) return <div className="placeholder">项目不存在或已移除。</div>;
-  return <ReviewPage key={ws.id} link={host.link} state={host.state} workspace={ws} sessionId={target.sessionId ?? null} />;
+  return <ReviewPage key={`${ws.id}@${target.commit ?? ""}`} link={host.link} state={host.state} workspace={ws} sessionId={target.sessionId ?? null} commit={target.commit ?? null} />;
 }
 
 type Toast = { text: string; error?: boolean } | null;
@@ -54,7 +70,7 @@ const LIST_LAYOUTS: { id: ListLayout; label: string }[] = [
 
 const short = (sha: string | null) => (sha ? sha.slice(0, 7) : "");
 
-function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; state: StateSnapshot; workspace: Workspace; sessionId: string | null }) {
+function ReviewPage({ link, state, workspace, sessionId, commit }: { link: HostLink; state: StateSnapshot; workspace: Workspace; sessionId: string | null; commit: string | null }) {
   const [range, setRange] = useState<GitRange>("working");
   // The view choices (list width and layout, 单栏 / 左右对照, 只看改动 / 完整文件) stay on this machine.
   const [prefs, setPrefs] = useState<ReviewPrefs>(readPrefs);
@@ -68,6 +84,10 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   const [menu, setMenu] = useState<FileMenuAt | null>(null);
   const [vscode, setVscode] = useState(false);
   const [changes, setChanges] = useState<GitChanges | null>(null);
+  // A commit's window: the commit and its files (`changes` stays empty).
+  const [shownCommit, setShownCommit] = useState<GitCommitChanges | null>(null);
+  const [picking, setPicking] = useState(false);
+  const [commitError, setCommitError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<GitFileDiff | null>(null);
   const [comments, setComments] = useState<readonly GitReviewComment[]>([]);
@@ -84,14 +104,16 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   const cache = useMemo(
     () =>
       new DiffCache(
-        ({ range: r, base, file: f }) =>
-          call(link, "GET /api/workspaces/:id/git/diff", { id: workspace.id }, undefined, {
-            range: r,
-            path: f.path,
-            ...(f.oldPath ? { oldPath: f.oldPath } : {}),
-            base,
-            untracked: f.untracked ? "1" : "0",
-          }),
+        ({ range: r, base, file: f, commit: sha }) =>
+          sha
+            ? call(link, "GET /api/workspaces/:id/git/commit-diff", { id: workspace.id }, undefined, { sha, base, path: f.path, ...(f.oldPath ? { oldPath: f.oldPath } : {}) })
+            : call(link, "GET /api/workspaces/:id/git/diff", { id: workspace.id }, undefined, {
+                range: r,
+                path: f.path,
+                ...(f.oldPath ? { oldPath: f.oldPath } : {}),
+                base,
+                untracked: f.untracked ? "1" : "0",
+              }),
         (d) => void diffTokensFor(d),
       ),
     [link, workspace.id],
@@ -99,8 +121,9 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
 
   useEffect(() => setTarget(sessionId ?? ""), [sessionId]);
   useEffect(() => {
-    document.title = `Git Review · ${workspace.name}`;
-  }, [workspace.name]);
+    const c = shownCommit?.commit;
+    document.title = commit ? `提交 ${short(c?.sha ?? commit)}${c ? ` · ${c.subject}` : ""} · ${workspace.name}` : `Git Review · ${workspace.name}`;
+  }, [workspace.name, commit, shownCommit]);
 
   const fail = (err: unknown, prefix = "") => setToast({ text: prefix + (err instanceof HostApiError ? err.message : String(err)), error: true });
 
@@ -136,6 +159,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
 
   // The changed files of the range; the selection stays on its file when it is still changed.
   useEffect(() => {
+    if (commit) return;
     let live = true;
     call(link, "GET /api/workspaces/:id/git/changes", { id: workspace.id }, undefined, { range })
       .then((c) => {
@@ -147,13 +171,31 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
     return () => {
       live = false;
     };
-  }, [link, workspace.id, range, reload]);
+  }, [link, workspace.id, range, reload, commit]);
+  // A commit's files, once: a commit does not change.
+  useEffect(() => {
+    if (!commit) return;
+    let live = true;
+    call(link, "GET /api/workspaces/:id/git/commit", { id: workspace.id }, undefined, { sha: commit })
+      .then((c) => {
+        if (!live) return;
+        setShownCommit(c);
+        setSelected(fileOrder(c.files, prefsRef.current.layout)[0]?.path ?? null);
+      })
+      .catch((err: unknown) => live && setCommitError(err instanceof HostApiError ? err.message : String(err)));
+    return () => {
+      live = false;
+    };
+  }, [link, workspace.id, commit]);
 
-  const file = changes?.files.find((f) => f.path === selected) ?? null;
+  // What the list shows: the range's changes, or the commit's files.
+  const listed = commit ? shownCommit : changes;
+  const file = listed?.files.find((f) => f.path === selected) ?? null;
   const fileKey = file ? `${file.oldPath ?? ""}>${file.path}` : "";
   // The commit the listing compared with: a diff then takes one git call.
-  const base = changes?.status.repo && changes.range === range ? rangeBase(range, changes.status) : null;
-  const request = useCallback((f: GitChangedFile): DiffRequest | null => (base ? { range, base, file: f } : null), [range, base]);
+  const base = commit ? (shownCommit?.base ?? null) : changes?.status.repo && changes.range === range ? rangeBase(range, changes.status) : null;
+  const sha = shownCommit?.commit.sha ?? null;
+  const request = useCallback((f: GitChangedFile): DiffRequest | null => (base ? { range, base, file: f, ...(sha ? { commit: sha } : {}) } : null), [range, base, sha]);
   // Another file or range: start over. A refresh keeps the page (and a comment being written) until the new diff arrives.
   useEffect(() => {
     setDraftAt(null);
@@ -182,12 +224,15 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
     // The file object changes on every reload; its identity is its path and old path.
   }, [cache, request, fileKey, reload]);
 
+  // A commit's window is read-only: no comments there.
   const loadComments = useCallback(
     () =>
-      call(link, "GET /api/workspaces/:id/review-comments", { id: workspace.id })
-        .then(setComments)
-        .catch(fail),
-    [link, workspace.id],
+      commit
+        ? Promise.resolve()
+        : call(link, "GET /api/workspaces/:id/review-comments", { id: workspace.id })
+            .then(setComments)
+            .catch(fail),
+    [link, workspace.id, commit],
   );
   useEffect(() => void loadComments(), [loadComments]);
 
@@ -203,14 +248,14 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   }
 
   // The diff of the file and range in front (a refresh or a switch is on its way otherwise).
-  const shown = diff && file && diff.path === file.path && diff.range === range ? diff : null;
+  const shown = diff && file && diff.path === file.path && (sha ? diff.commit === sha : !diff.commit && diff.range === range) ? diff : null;
   const rows = useMemo(() => (shown ? diffRows(shown, mode) : []), [shown, mode]);
   const changeRows = useMemo(() => changeStarts(rows), [rows]);
   // The overview ruler's items: rows, or side-by-side pairs.
   const rulerKinds = useMemo(() => (prefs.split ? pairKinds(splitRows(rows)) : rowKinds(rows)), [rows, prefs.split]);
   const scroller = useRef<HTMLDivElement>(null);
   const { placed, elsewhere } = useMemo(() => placeComments(comments, selected ?? "", range, rows), [comments, selected, range, rows]);
-  const order = useMemo(() => fileOrder(changes?.files ?? [], prefs.layout), [changes, prefs.layout]);
+  const order = useMemo(() => fileOrder(listed?.files ?? [], prefs.layout), [listed, prefs.layout]);
   // Syntax colours of both versions, from the highlight worker; plain text until they arrive.
   const tokens = useDiffTokens(shown);
   // Once the file in front is shown, the next files (and the one before) are read ahead.
@@ -282,8 +327,22 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
   return (
     <div className="gr-app">
       <header className="gr-head">
-        <span className="gr-title">Git Review</span>
+        <span className="gr-title">{commit ? "提交" : "Git Review"}</span>
         <span className="gr-project">{workspace.name}</span>
+        {commit && (
+          <span className="gr-commit" data-testid="review-commit" title={shownCommit ? `${shownCommit.commit.sha}\n${shownCommit.commit.author} <${shownCommit.commit.email}>` : commit}>
+            <code>{short(shownCommit?.commit.sha ?? commit)}</code>
+            {shownCommit && (
+              <>
+                <span className="gr-commit-subject">{shownCommit.commit.subject}</span>
+                <span className="gr-dim">
+                  {shownCommit.commit.author} · {formatWhen(shownCommit.commit.date)}
+                  {shownCommit.commit.parents.length > 1 ? " · 合并提交，对比第一个父提交" : shownCommit.commit.parents.length === 0 ? " · 第一个提交" : ""}
+                </span>
+              </>
+            )}
+          </span>
+        )}
         {status?.repo && (
           <span className="gr-branch" data-testid="review-branch" title={status.root}>
             {status.branch ?? `分离的 HEAD ${short(status.head)}`}
@@ -291,13 +350,20 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
           </span>
         )}
         <span className="spacer" />
-        <div className="gr-seg" role="group" aria-label="对比范围">
-          {GIT_RANGES.map((r) => (
-            <button key={r.id} type="button" aria-pressed={range === r.id} title={r.hint} onClick={() => setRange(r.id)}>
-              {r.label}
-            </button>
-          ))}
-        </div>
+        {(commit || status?.repo) && (
+          <button type="button" className="btn-ghost small" onClick={() => setPicking(true)} title="这个分支的提交：搜索说明、hash 或作者，在新窗口查看" data-testid="review-history">
+            历史
+          </button>
+        )}
+        {!commit && (
+          <div className="gr-seg" role="group" aria-label="对比范围">
+            {GIT_RANGES.map((r) => (
+              <button key={r.id} type="button" aria-pressed={range === r.id} title={r.hint} onClick={() => setRange(r.id)}>
+                {r.label}
+              </button>
+            ))}
+          </div>
+        )}
         <div className="gr-seg" role="group" aria-label="显示方式">
           {MODES.map((m) => (
             <button key={m.id} type="button" aria-pressed={mode === m.id} onClick={() => setMode(m.id)}>
@@ -312,19 +378,20 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
             </button>
           ))}
         </div>
-        <button
-          type="button"
-          className="btn-ghost small"
-          onClick={() => {
-            cache.clear();
-            setReload((n) => n + 1);
-          }}
-          title="重新读取改动"
-        >
-          刷新
-        </button>
+        {!commit && (
+          <button
+            type="button"
+            className="btn-ghost small"
+            onClick={() => {
+              cache.clear();
+              setReload((n) => n + 1);
+            }}
+            title="重新读取改动"
+          >
+            刷新
+          </button>
+        )}
       </header>
-
 
       {status && !status.repo ? (
         <div className="placeholder" data-testid="review-not-git">
@@ -334,7 +401,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
         <div className="gr-body">
           <nav className="gr-files" aria-label="改动的文件" style={{ width: prefs.listWidth }}>
             <div className="gr-files-head">
-              <span>{changes ? `${changes.files.length} 个文件` : "正在读取…"}</span>
+              <span>{listed ? `${listed.files.length} 个文件` : commitError ? "" : "正在读取…"}</span>
               <span className="spacer" />
               <div className="gr-seg small" role="group" aria-label="列表方式">
                 {LIST_LAYOUTS.map((l) => (
@@ -345,11 +412,16 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
               </div>
             </div>
             <div className="gr-files-hint gr-dim">j / k 切换文件，n / p 跳到改动</div>
-            {changes && !changes.files.length && <div className="gr-empty">这个范围没有改动。</div>}
-            {changes?.truncated && <div className="gr-empty">改动的文件太多，只列出前 {changes.files.length} 个。</div>}
-            {changes && (
+            {commitError && (
+              <div className="gr-empty" data-testid="review-commit-error">
+                读不到这个提交：{commitError}
+              </div>
+            )}
+            {listed && !listed.files.length && <div className="gr-empty">{commit ? "这个提交没有改动这个项目里的文件。" : "这个范围没有改动。"}</div>}
+            {listed?.truncated && <div className="gr-empty">改动的文件太多，只列出前 {listed.files.length} 个。</div>}
+            {listed && (
               <FileList
-                files={changes.files}
+                files={listed.files}
                 layout={prefs.layout}
                 selected={selected}
                 perFile={perFile}
@@ -397,7 +469,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
             )}
             <div className="gr-scroll-wrap">
               <div className="gr-scroll" ref={scroller}>
-                {!file && changes && <div className="gr-notice">选择左侧的文件查看改动。</div>}
+                {!file && listed && <div className="gr-notice">选择左侧的文件查看改动。</div>}
                 {file && !shown && <div className="gr-notice gr-loading">正在读取…</div>}
                 {file && shown && (
                   <DiffView
@@ -411,6 +483,7 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
                     draftAt={draftAt}
                     active={active}
                     busy={busy}
+                    readOnly={!!commit}
                     onDraft={setDraftAt}
                     onActivate={setActive}
                     onAdd={(row, note) =>
@@ -437,37 +510,43 @@ function ReviewPage({ link, state, workspace, sessionId }: { link: HostLink; sta
 
       {menu && <FileMenu at={menu} vscode={vscode} onOpen={(app) => openFile(menu.file, app)} onClose={closeMenu} />}
 
-      <footer className="gr-bar">
-        <span data-testid="review-draft-count">草稿批注 {drafts.length} 条</span>
-        {sentCount > 0 && (
-          <label className="gr-check">
-            <input type="checkbox" checked={showSent} onChange={(e) => setShowSent(e.target.checked)} />
-            显示已发送（{sentCount}）
+      {commit ? (
+        <footer className="gr-bar gr-dim">只读：这个提交的改动，对比它的{shownCommit?.commit.parents.length ? "第一个父提交" : "空仓库"}。批注请在工作区改动里写。</footer>
+      ) : (
+        <footer className="gr-bar">
+          <span data-testid="review-draft-count">草稿批注 {drafts.length} 条</span>
+          {sentCount > 0 && (
+            <label className="gr-check">
+              <input type="checkbox" checked={showSent} onChange={(e) => setShowSent(e.target.checked)} />
+              显示已发送（{sentCount}）
+            </label>
+          )}
+          <span className="spacer" />
+          <label className="inline-field">
+            发给
+            <select value={chosen} onChange={(e) => setTarget(e.target.value)} data-testid="review-session" aria-label="发给哪个会话">
+              <option value="">选择会话…</option>
+              {choices.map((c) => (
+                <option key={c.id} value={c.id}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
           </label>
-        )}
-        <span className="spacer" />
-        <label className="inline-field">
-          发给
-          <select value={chosen} onChange={(e) => setTarget(e.target.value)} data-testid="review-session" aria-label="发给哪个会话">
-            <option value="">选择会话…</option>
-            {choices.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <button
-          type="button"
-          className="btn-primary"
-          disabled={busy || !drafts.length || !chosen}
-          title={drafts.length ? composeGitReviewMessage(drafts, workspace.name) : "还没有草稿批注"}
-          onClick={() => void send()}
-          data-testid="review-send"
-        >
-          发给会话{drafts.length ? `（${drafts.length}）` : ""}
-        </button>
-      </footer>
+          <button
+            type="button"
+            className="btn-primary"
+            disabled={busy || !drafts.length || !chosen}
+            title={drafts.length ? composeGitReviewMessage(drafts, workspace.name) : "还没有草稿批注"}
+            onClick={() => void send()}
+            data-testid="review-send"
+          >
+            发给会话{drafts.length ? `（${drafts.length}）` : ""}
+          </button>
+        </footer>
+      )}
+
+      {picking && <CommitPicker link={link} workspaceId={workspace.id} onPick={(c) => openReview({ workspaceId: workspace.id, commit: c })} onClose={() => setPicking(false)} />}
     </div>
   );
 }
