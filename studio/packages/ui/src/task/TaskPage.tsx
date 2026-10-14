@@ -404,6 +404,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             link={link}
             file={preview.file}
             line={preview.line}
+            endLine={preview.endLine}
             column={preview.column}
             diff={preview.diff}
             onClose={() => setPreview(null)}

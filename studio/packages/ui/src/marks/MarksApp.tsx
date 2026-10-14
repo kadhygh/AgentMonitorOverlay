@@ -9,7 +9,7 @@ import { dragHasFiles, pathOfFile } from "../attach/useAttachments.js";
 import { baseName, dirName } from "../attach/refs.js";
 import { IconFile } from "../attach/icons.js";
 import { useFileMarks } from "./useFileMarks.js";
-import { QuickLook } from "./QuickLook.js";
+import { openViewer } from "../viewer/open.js";
 import { filterGroups, groupMarks, markDragData, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo, type MarkGroup, type MarksTarget } from "./logic.js";
 
 // The marks window (文件标记, S12-D; #marks?workspace=…): marked files and folders by project, each with its note.
@@ -50,8 +50,10 @@ function MarksPage({ link, state, currentId, focus }: { link: HostLink; state: S
   const [pasted, setPasted] = useState("");
   const setToast = useCallback((t: Toast) => void (t && showToast(t)), []);
   const [picking, setPicking] = useState<Workspace | null>(null);
-  const [looking, setLooking] = useState<FileMark | null>(null);
   const [dropping, setDropping] = useState(false);
+  // 查看 (stage 13): the viewer window, the marked lines marked.
+  const look = (m: FileMark) =>
+    openViewer({ path: m.path, ...(m.workspaceId ? { workspaceId: m.workspaceId } : {}), ...(m.startLine ? { line: m.startLine, ...(m.endLine ? { endLine: m.endLine } : {}) } : {}) });
   const [vscode, setVscode] = useState(false);
 
   useEffect(() => {
@@ -181,7 +183,7 @@ function MarksPage({ link, state, currentId, focus }: { link: HostLink; state: S
             link={link}
             vscode={vscode}
             onPick={g.workspaceId ? () => setPicking(projects.find((w) => w.id === g.workspaceId) ?? null) : undefined}
-            onLook={setLooking}
+            onLook={look}
             onToast={setToast}
             focus={focus}
           />
@@ -195,15 +197,6 @@ function MarksPage({ link, state, currentId, focus }: { link: HostLink; state: S
           action="标记"
           onPick={(path) => void add([path])}
           onClose={() => setPicking(null)}
-        />
-      )}
-      {looking && (
-        <QuickLook
-          link={link}
-          mark={looking}
-          vscode={vscode}
-          onOpenInEditor={() => void openInEditor(link, { path: looking.path }, looking.startLine ?? undefined).catch((err: unknown) => setToast({ text: message(err), error: true }))}
-          onClose={() => setLooking(null)}
         />
       )}
     </div>
@@ -419,8 +412,8 @@ function MarkRow({
           </span>
           <span className="spacer" />
           {!mark.folder && (
-            <button type="button" className="mk-link" disabled={!mark.exists} onClick={onLook}>
-              快速查看
+            <button type="button" className="mk-link" disabled={!mark.exists} title="在查看器里打开，标出标记的行" onClick={onLook} data-testid="mark-view">
+              查看
             </button>
           )}
           {vscode && (

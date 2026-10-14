@@ -1,7 +1,8 @@
 import { useEffect, useRef } from "react";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { baseName } from "../attach/refs.js";
-import { marksHash, type MarksTarget } from "./logic.js";
+import type { FileRef } from "../lib/openin.js";
+import { findMark, marksHash, type MarksTarget } from "./logic.js";
 
 // Opening the marks window (文件标记, S12-D), its Ctrl+Shift+M key in the workbench, and marking a file from elsewhere.
 
@@ -38,6 +39,20 @@ export async function markFile(link: HostLink, path: string): Promise<{ ok: true
   } catch (err) {
     return { ok: false, error: err instanceof HostApiError ? err.message : String(err) };
   }
+}
+
+/**
+ * 标记 from a menu (stage 13, as the 标记 button): a file already marked opens the marks window at its mark; otherwise
+ * it is marked (at `line` when given) and the window opens with the cursor in the new mark's note.
+ */
+export async function markOrShow(link: HostLink, file: FileRef, line?: number | null): Promise<void> {
+  const known = findMark(await call(link, "GET /api/file-marks"), file, line);
+  if (known) {
+    openMarks({ ...(known.workspaceId ? { workspaceId: known.workspaceId } : {}), markId: known.id });
+    return;
+  }
+  const r = await call(link, "POST /api/file-marks", {}, { path: file.path, ...(file.workspaceId ? { workspaceId: file.workspaceId } : {}), ...(line ? { startLine: line } : {}) });
+  openMarks({ ...(r.mark.workspaceId ? { workspaceId: r.mark.workspaceId } : {}), markId: r.mark.id, edit: r.created });
 }
 
 /** markFile, said in a line ("已标记 a.ts", "a.ts 已经标记过", or the error). */
