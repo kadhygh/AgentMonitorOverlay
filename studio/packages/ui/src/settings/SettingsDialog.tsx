@@ -7,6 +7,7 @@ import { ModelsPage } from "./ModelsPage.js";
 import { FeaturesSection } from "./FeaturesSection.js";
 import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
 import { DataPage } from "./DataPage.js";
+import { QuotaPage } from "./QuotaPage.js";
 import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 
@@ -33,6 +34,7 @@ export function useSettings(link: HostLink): StudioSettings | null {
 const PAGES = [
   { id: "ui", label: "界面" },
   { id: "models", label: "模型" },
+  { id: "quota", label: "额度" },
   { id: "common", label: "公共目录" },
   { id: "features", label: "功能" },
   { id: "scratchpad", label: "便签" },
@@ -196,6 +198,7 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
             )}
 
             {page === "models" && <ModelsPage link={link} settings={settings} />}
+            {page === "quota" && <QuotaPage link={link} settings={settings} />}
 
             {page === "common" && (
               <section className="settings-section" aria-label="公共目录">

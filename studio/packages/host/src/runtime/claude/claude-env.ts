@@ -19,6 +19,8 @@ export interface ClaudeProviderDef {
   models?: ModelOption[];
   /** Extra variables (model mapping, timeouts). The key never goes here; it comes from the profile's credential. */
   env?: Record<string, string>;
+  /** Where an API key goes: ANTHROPIC_AUTH_TOKEN (Bearer, the default) or ANTHROPIC_API_KEY (x-api-key). */
+  keyEnv?: "ANTHROPIC_AUTH_TOKEN" | "ANTHROPIC_API_KEY";
 }
 
 export const BUILTIN_CLAUDE_PROVIDERS: Record<string, ClaudeProviderDef> = {
@@ -85,7 +87,7 @@ export function claudeEnv(
     ...provider.env,
     ...(profile.model ? { ANTHROPIC_MODEL: profile.model } : {}),
     ...(provider.baseUrl ? { ANTHROPIC_BASE_URL: provider.baseUrl } : {}),
-    ...(key ? (provider.auth === "oauth" ? { CLAUDE_CODE_OAUTH_TOKEN: key } : { ANTHROPIC_AUTH_TOKEN: key }) : {}),
+    ...(key ? (provider.auth === "oauth" ? { CLAUDE_CODE_OAUTH_TOKEN: key } : { [provider.keyEnv ?? "ANTHROPIC_AUTH_TOKEN"]: key }) : {}),
     ...(!local || home.explicit ? { CLAUDE_CONFIG_DIR: home.dir } : {}),
     CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
     // Without this, commands the agent runs (Bash) inherit ANTHROPIC_AUTH_TOKEN, and `env` prints the key into the

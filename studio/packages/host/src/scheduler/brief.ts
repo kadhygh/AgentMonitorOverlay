@@ -35,7 +35,7 @@ export function schedulerBrief(input: SchedulerBriefInput): string {
     lines.push(`- ${w.name}（id=${w.id}）：${a?.idle === false ? `忙碌，${a.busy} 个会话在进行` : "空闲"}`);
   }
   lines.push("", "## 可用的模型");
-  for (const p of input.profiles) lines.push(`- profileId=${p.id}：${p.label}`);
+  for (const p of input.profiles.filter((x) => !x.hidden)) lines.push(`- profileId=${p.id}：${p.label}`);
   const presets = input.packs.flatMap((p) => (p.manifest ? p.manifest.presets.map((x) => `- ${ws(p.workspaceId)} / ${p.manifest!.title} / ${x.title}`) : []));
   if (presets.length) lines.push("", "## 扩展包里的启动预设（可以用 pack_list / pack_doc 查看详情）", ...presets);
   return lines.join("\n");

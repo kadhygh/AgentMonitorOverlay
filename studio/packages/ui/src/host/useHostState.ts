@@ -32,6 +32,8 @@ export function applyEvent(state: StateSnapshot, e: HostEvent): StateSnapshot {
       return { ...next, topics: upsert(state.topics, e.topic) };
     case "session.upserted":
       return { ...next, sessions: upsert(state.sessions, e.session) };
+    case "profiles.updated":
+      return { ...next, profiles: e.profiles };
     case "data.purged": {
       const gone = new Set([...e.workspaceIds, ...e.topicIds, ...e.taskIds, ...e.sessionIds]);
       const keep = <T extends { id: string }>(list: readonly T[]) => list.filter((x) => !gone.has(x.id));

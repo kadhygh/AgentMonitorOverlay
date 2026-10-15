@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ModelProfile, ScheduleProposal, TodoItem, Workspace, WorkspaceActivity } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
-import { profileLabel } from "../lib/profiles.js";
+import { pickable, profileLabel } from "../lib/profiles.js";
 
 /** Scheduler proposals waiting for the person, kept live. */
 export function usePendingProposals(link: HostLink) {
@@ -127,7 +127,7 @@ function ProposalCard({
         <label className="inline-field">
           模型
           <select value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-label="提案模型">
-            {profiles.map((p) => (
+            {pickable(profiles, profileId).map((p) => (
               <option key={p.id} value={p.id}>
                 {profileLabel(p)}
               </option>

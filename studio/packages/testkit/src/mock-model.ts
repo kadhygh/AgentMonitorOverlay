@@ -412,6 +412,12 @@ export async function startMockModel(options: { port?: number; script?: MockScri
   let seq = 0;
   const server: Server = createServer(async (req, res) => {
     try {
+      // A relay's balance (CC Switch's 通用 template): only with the right key.
+      if (req.method === "GET" && req.url?.endsWith("/user/balance")) {
+        const ok = req.headers.authorization === "Bearer mock-channel-key";
+        res.writeHead(ok ? 200 : 401, { "content-type": "application/json" }).end(JSON.stringify(ok ? { balance: 12.5, is_active: true } : { error: "bad key" }));
+        return;
+      }
       if (req.method === "GET" && req.url?.endsWith("/models")) {
         res.writeHead(200, { "content-type": "application/json" }).end(JSON.stringify({ object: "list", data: [] }));
         return;

@@ -2,24 +2,34 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { ClaudeLogin, CredentialStatus, StudioSettings } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { CredentialMessage, CredentialRow, CredentialsSection, useCredentials, type SettingsMessage } from "./CredentialsSection.js";
+import { CredentialMessage, CredentialRow, useCredentials, type SettingsMessage } from "./CredentialsSection.js";
 import { PresetsSection } from "./PresetsSection.js";
 import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
+import { ChannelsSection } from "./ChannelsSection.js";
+import { useProfiles } from "../lib/balance.js";
 
-// 设置 → 模型: how the Claude subscription signs in (a token, or the person's own Claude Code login after a warning),
-// the order and defaults of each profile's models, the other models' keys, and the 常用预设.
+// 设置 → 模型: the channels (built-in and the person's own third-party Claude and Codex endpoints, each one hideable
+// from the pickers, with its key and balance; the Claude subscription's card holds how it signs in — a token, or the
+// person's own Claude Code login after a warning), the order and defaults of each profile's models, and the 常用预设.
 
 const CLAUDE_CREDENTIAL = "claude-subscription";
 
 export function ModelsPage({ link, settings }: { link: HostLink; settings: StudioSettings | null }) {
   const [list, setList] = useCredentials(link);
+  const profiles = useProfiles(link);
   const claude = list?.find((c) => c.id === CLAUDE_CREDENTIAL);
-  const others = list?.filter((c) => c.id !== CLAUDE_CREDENTIAL) ?? [];
+  const claudeProfile = profiles?.find((p) => p.credentialId === CLAUDE_CREDENTIAL && !p.custom);
   return (
     <>
-      {claude && settings && <ClaudeLoginSection link={link} settings={settings} credential={claude} onCredentials={setList} />}
+      {profiles && (
+        <ChannelsSection
+          link={link}
+          profiles={profiles}
+          credentials={list}
+          extra={claude && settings && claudeProfile ? { [claudeProfile.id]: <ClaudeLoginSection link={link} settings={settings} credential={claude} onCredentials={setList} /> } : undefined}
+        />
+      )}
       <ModelDefaultsSection link={link} settings={settings} />
-      <CredentialsSection link={link} list={others} onChange={setList} />
       <PresetsSection link={link} presets={settings?.presets ?? []} />
     </>
   );
@@ -61,8 +71,7 @@ function ClaudeLoginSection({ link, settings, credential, onCredentials }: { lin
 
   const local = settings.claudeLocal;
   return (
-    <section className="settings-section" aria-label="Claude 订阅">
-      <span className="settings-heading">Claude 订阅</span>
+    <div className="claude-login" aria-label="Claude 订阅">
       <div role="radiogroup" aria-label="Claude 登录方式" className="login-choices">
         {LOGINS.map((l) => (
           <button key={l.id} type="button" role="radio" aria-checked={shown === l.id} className="login-choice" aria-label={l.label} aria-describedby={`claude-login-hint-${l.id}`} disabled={busy} onClick={() => pick(l.id)} data-testid={`claude-login-${l.id}`}>
@@ -100,7 +109,7 @@ function ClaudeLoginSection({ link, settings, credential, onCredentials }: { lin
           }}
         />
       )}
-    </section>
+    </div>
   );
 }
 
@@ -134,7 +143,7 @@ function LocalLoginConfirm({ dir, signedIn, onCancel, onConfirm }: { dir: string
             Studio 的对话记录会写进 <code>{dir}\projects</code>，和你终端的会话放在一起，<code>claude --resume</code> 的列表里也会看到。
           </li>
           <li>和终端里一样，会加载那里的 settings.json、CLAUDE.md、自定义命令和 skills；你配置的 hooks 也会在 Studio 的会话里运行。只有 MCP 服务器例外：只用 Studio 自己的，不用你配置的。</li>
-          <li>只适合你自己在这台电脑上用。把 AMO 打包给别人时不要用这种方式：Anthropic 不允许第三方产品让用户用 claude.ai 账号登录。</li>
+          <li>按 Anthropic 帮助中心的说明（2026-06 起），Agent SDK 和第三方应用可以用订阅额度，Studio 的 Claude 会话会计入你的订阅用量。政策以后可能再变，以官方说明为准；把 AMO 给别人用时，让他们用自己的账号登录。</li>
           <li>已有的 Claude 会话不受影响；之后新开的才用本机登录。随时可以改回令牌。</li>
         </ul>
         {signedIn === false && (

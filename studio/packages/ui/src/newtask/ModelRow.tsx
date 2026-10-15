@@ -3,11 +3,12 @@ import type { ModelProfile } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { useChoicesFor } from "../lib/choices.js";
 import { commonPicks, samePick, type ModelPick } from "../lib/recents.js";
+import { pickable } from "../lib/profiles.js";
 import { Mark, ModelMenu, ModelTile, pickLabel } from "../chat/pickers.js";
 
 /** The 常用 tiles: recent picks first; the current pick always among them. */
 export function tilePicks(profiles: readonly ModelProfile[], current: ModelPick, count = 4): ModelPick[] {
-  const picks = commonPicks(profiles, count);
+  const picks = commonPicks(pickable(profiles, current.profileId), count);
   if (current.profileId && !picks.some((p) => samePick(p, current))) picks.splice(Math.max(picks.length - 1, 0), 1, current);
   return picks;
 }
@@ -34,7 +35,7 @@ export function ModelRow({
   const [menu, setMenu] = useState<{ x: number; y: number; profileId: string } | null>(null);
   // Model names for tiles that name a model, every model when the drawer is open, and the right-clicked account's.
   const choices = useChoicesFor(link, [
-    ...(drawer ? profiles.map((p) => p.id) : tiles.filter((t) => t.model).map((t) => t.profileId)),
+    ...(drawer ? pickable(profiles, pick.profileId).map((p) => p.id) : tiles.filter((t) => t.model).map((t) => t.profileId)),
     ...(menu ? [menu.profileId] : []),
   ]);
   const profile = (id: string) => profiles.find((p) => p.id === id);
@@ -78,7 +79,7 @@ export function ModelRow({
       )}
       {drawer && (
         <div className="model-drawer" data-testid="model-drawer">
-          {profiles.map((p) => {
+          {pickable(profiles, pick.profileId).map((p) => {
             const c = choices.get(p.id);
             return (
               <div className="drawer-row" key={p.id} role="group" aria-label={p.label}>

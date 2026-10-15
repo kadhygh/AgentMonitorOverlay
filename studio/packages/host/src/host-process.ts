@@ -12,7 +12,8 @@ import { amoToolsFor } from "./mcp/tools.js";
 import { McpIdentities } from "./mcp/identity.js";
 import { CodexServerManager } from "./runtime/codex/server-manager.js";
 import { WindowsCredentialReader, type CredentialReader } from "./runtime/credentials.js";
-import { BUILTIN_PROFILES, type CodexProviderDef } from "./runtime/profiles.js";
+import { BUILTIN_BALANCES, BUILTIN_PROFILES, CODEX_PROVIDERS, type CodexProviderDef } from "./runtime/profiles.js";
+import { ChannelRegistry } from "./runtime/channels.js";
 import { HostService } from "./service.js";
 import { Store } from "./store/store.js";
 import { WindowsTerminalLauncher, type TerminalLauncher } from "./terminal/launcher.js";
@@ -128,7 +129,6 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
   let manager: CodexServerManager | undefined;
   let claude: ClaudeRuntime | undefined;
   try {
-    const profiles = options.profiles ?? BUILTIN_PROFILES;
     const token = loadOrCreateToken(paths.token);
     // Agents get a token that opens the read-only MCP only, never the writable REST API.
     const mcpToken = loadOrCreateToken(paths.mcpToken);
@@ -136,6 +136,17 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     store = new Store(paths.db);
     // One reader for everything, so a token saved in 设置 is what the next Claude session reads.
     const credentials = options.credentials ?? new WindowsCredentialReader();
+    // The built-in profiles plus the person's own channels (设置 → 模型). The list and the provider tables are changed
+    // in place when a channel is added or edited, so every runtime below sees it at once.
+    const channels = new ChannelRegistry({
+      kv: store,
+      credentials,
+      builtins: options.profiles ?? BUILTIN_PROFILES,
+      codexProviders: { ...(options.providers ?? CODEX_PROVIDERS) },
+      claudeProviders: { ...(options.claudeProviders ?? BUILTIN_CLAUDE_PROVIDERS) },
+      ...(options.profiles ? {} : { builtinBalance: BUILTIN_BALANCES }),
+    });
+    const profiles = channels.profiles;
     manager = options.servers
       ? undefined
       : new CodexServerManager({
@@ -144,7 +155,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
           credentials,
           cwd: options.dataDir,
           ...(options.codexEnv ? { env: options.codexEnv } : {}),
-          ...(options.providers ? { providers: options.providers } : {}),
+          providers: channels.codexProviders,
           mcp: () => mcp,
         });
     const servers = options.servers ?? manager!;
@@ -157,7 +168,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     claude = new ClaudeRuntime({
       store,
       profiles,
-      providers: options.claudeProviders ?? BUILTIN_CLAUDE_PROVIDERS,
+      providers: channels.claudeProviders,
       credentials,
       claudeHome: paths.claudeHome,
       ...(options.claudeBaseEnv ? { baseEnv: options.claudeBaseEnv } : {}),
@@ -166,7 +177,21 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       mcpTools: (sessionId) => amoToolsFor(service, { sessionId }),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude });
-    const service = new HostService(store, runtime, profiles, { launcher: options.launcher ?? new WindowsTerminalLauncher(), credentials, localClaudeHome });
+    const liveStore = store;
+    const service = new HostService(store, runtime, profiles, {
+      launcher: options.launcher ?? new WindowsTerminalLauncher(),
+      credentials,
+      localClaudeHome,
+      channels,
+      // A Codex channel's address or key is fixed when its app-server starts: restart it, unless a session on it is busy.
+      restartProfileServer: async (profileId) => {
+        if (!manager?.handle(profileId)) return true;
+        const busy = liveStore.listSessions().some((s) => s.profileId === profileId && (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer"));
+        if (busy) return false;
+        await manager.stop(profileId);
+        return true;
+      },
+    });
     http = await startHostServer({
       service,
       token,

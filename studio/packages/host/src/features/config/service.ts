@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { OPTIONAL_FEATURES, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type StudioSettings } from "@amo-studio/protocol";
+import { OPTIONAL_FEATURES, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn, readClaudeLogin, writeClaudeLogin } from "../../runtime/claude/claude-login.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
-import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY } from "../../core/shared.js";
+import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, QUOTA_DISPLAY_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
@@ -21,7 +21,18 @@ export class ConfigFeature extends Feature {
       claudeLogin: readClaudeLogin(this.store),
       claudeLocal: { dir, signedIn: localClaudeSignedIn(dir) },
       modelPrefs: readModelPrefs(this.store),
+      quotaDisplay: this.quotaDisplay(),
     };
+  }
+
+  /** 设置 → 额度: per profile, whether its quota shows at the bottom of the left column and in Focus. */
+  private quotaDisplay(): Record<string, QuotaDisplay> {
+    try {
+      const v = JSON.parse(this.store.getKv(QUOTA_DISPLAY_KEY)?.value ?? "{}") as unknown;
+      return v && typeof v === "object" && !Array.isArray(v) ? (v as Record<string, QuotaDisplay>) : {};
+    } catch {
+      return {};
+    }
   }
 
   /** Optional features the person turned off (设置 → 功能). */
@@ -54,7 +65,22 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown }): StudioSettings {
+    if (input.quotaDisplay !== undefined) {
+      const patch = input.quotaDisplay;
+      if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new HostError("bad_request", "quotaDisplay must map profile ids to { footer, focus } or null");
+      const next = this.quotaDisplay();
+      for (const [id, v] of Object.entries(patch as Record<string, unknown>)) {
+        if (!this.profiles.some((p) => p.id === id)) throw new HostError("bad_request", `unknown profile ${id}`);
+        if (v === null) delete next[id];
+        else {
+          const o = v as Record<string, unknown>;
+          if (!o || typeof o.footer !== "boolean" || typeof o.focus !== "boolean") throw new HostError("bad_request", "quotaDisplay entries are { footer: boolean, focus: boolean }");
+          next[id] = { footer: o.footer, focus: o.focus };
+        }
+      }
+      this.store.setKv(QUOTA_DISPLAY_KEY, JSON.stringify(next));
+    }
     if (input.modelPrefs !== undefined) writeModelPrefs(this.store, this.profiles.map((p) => p.id), input.modelPrefs);
     if (input.claudeLogin !== undefined) {
       if (input.claudeLogin !== "token" && input.claudeLogin !== "local") throw new HostError("bad_request", "claudeLogin must be token or local");
@@ -118,10 +144,11 @@ export class ConfigFeature extends Feature {
   /** Which credentials the profiles need, and whether each is stored (the values never leave the Host). */
   credentials(): CredentialStatus[] {
     const reader = this.options.credentials;
-    const ids = [...new Set(this.profiles.flatMap((p) => (p.credentialId ? [p.credentialId] : [])))];
+    // The person's own channels keep their keys in their own cards (设置 → 模型 → 渠道).
+    const ids = [...new Set(this.profiles.flatMap((p) => (p.credentialId && !p.custom ? [p.credentialId] : [])))];
     return ids.map((id) => ({
       id,
-      usedBy: this.profiles.filter((p) => p.credentialId === id).map((p) => p.label),
+      usedBy: this.profiles.filter((p) => p.credentialId === id && !p.custom).map((p) => p.label),
       saved: !!reader?.read(id),
       writable: WRITABLE_CREDENTIALS.has(id) && !!reader && "write" in reader,
     }));

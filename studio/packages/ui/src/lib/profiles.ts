@@ -28,10 +28,16 @@ function write(key: string, value: string): void {
   }
 }
 
-/** Last used profile, else the first routed (non-default) profile, else the first one. */
-export function defaultProfile(profiles: readonly ModelProfile[]): ModelProfile | undefined {
+/** What the model pickers offer: the profiles not hidden in 设置 → 模型, plus the one already chosen. */
+export function pickable(profiles: readonly ModelProfile[], keep?: string | null): ModelProfile[] {
+  return profiles.filter((p) => !p.hidden || p.id === keep);
+}
+
+/** Last used profile, else the first routed (non-default) profile, else the first one; never a hidden one. */
+export function defaultProfile(all: readonly ModelProfile[]): ModelProfile | undefined {
+  const profiles = pickable(all);
   const last = read(LAST_PROFILE_KEY);
-  return profiles.find((p) => p.id === last) ?? profiles.find((p) => p.provider) ?? profiles[0];
+  return profiles.find((p) => p.id === last) ?? profiles.find((p) => p.provider) ?? profiles[0] ?? all[0];
 }
 export const rememberProfile = (id: string) => write(LAST_PROFILE_KEY, id);
 export const lastWorkspace = () => read(LAST_WORKSPACE_KEY);

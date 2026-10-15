@@ -113,8 +113,9 @@ test("the Claude subscription token is saved in settings, then Claude sessions r
   await row.getByRole("button", { name: "保存" }).click();
   await expect(row).toContainText("已保存");
   await expect(dialog.getByTestId("credential-message")).toHaveText("已保存 Claude 令牌");
-  // API keys stored elsewhere are shown, never editable here.
-  await expect(dialog.locator('[data-testid="credential"][data-id="mock"]').getByRole("button")).toHaveCount(0);
+  // API keys stored elsewhere are shown on their channel's card, never editable here.
+  await expect(dialog.locator('[data-testid="channel-card"][data-id="codex-mock"]')).toContainText("Key 已保存（旧 AMO 设置里的）");
+  await expect(dialog.locator('[data-testid="credential"][data-id="mock"]')).toHaveCount(0);
   await screenshot(app, "settings", "settings-credentials", page);
   await page.keyboard.press("Escape");
 

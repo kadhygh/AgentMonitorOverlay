@@ -30,7 +30,7 @@ function load(profiles: readonly ModelProfile[]): TaskDraft {
   try {
     const d = JSON.parse(localStorage.getItem(KEY) ?? "null") as Partial<TaskDraft> | null;
     if (!d || typeof d !== "object") return fresh;
-    const pick = d.pick && profiles.some((p) => p.id === d.pick!.profileId) ? d.pick : fresh.pick;
+    const pick = d.pick && profiles.some((p) => p.id === d.pick!.profileId && !p.hidden) ? d.pick : fresh.pick;
     return {
       title: typeof d.title === "string" ? d.title : "",
       text: typeof d.text === "string" ? d.text : "",

@@ -89,6 +89,12 @@ export interface ModelProfile {
   reasoningEffort?: string;
   /** Credential Manager entry `AgentMonitorOverlay/model-provider/<credentialId>`; absent for subscription logins. */
   credentialId?: string;
+  /** Left out of the model pickers (设置 → 模型); its sessions keep working. */
+  hidden?: boolean;
+  /** One of the person's own channels (设置 → 模型 → 添加渠道), not built in. */
+  custom?: boolean;
+  /** Its site can be asked for the balance (`GET /api/profiles/:id/balance`). */
+  balance?: boolean;
 }
 
 /**

@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { ModelProfile, PresetDraft } from "@amo-studio/protocol";
-import { defaultProfile, profileLabel } from "../lib/profiles.js";
+import { defaultProfile, pickable, profileLabel } from "../lib/profiles.js";
 
 /**
  * A pack's session preset, filled in, for the person to check before anything is sent: the prompt comes from project
@@ -43,7 +43,7 @@ export function PresetDraftForm({
         <label className="inline-field">
           模型
           <select value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-label="预设模型">
-            {profiles.map((p) => (
+            {pickable(profiles, profileId).map((p) => (
               <option key={p.id} value={p.id}>
                 {profileLabel(p)}
               </option>

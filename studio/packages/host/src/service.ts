@@ -5,6 +5,7 @@ import { type HostEventInput, type Store } from "./store/store.js";
 import type { SessionRuntimeApi } from "./runtime/runtime.js";
 import type { CredentialReader, CredentialStore } from "./runtime/credentials.js";
 import type { TerminalLauncher } from "./terminal/launcher.js";
+import type { ChannelRegistry } from "./runtime/channels.js";
 import { ProjectsFeature } from "./features/projects/service.js";
 import { ConfigFeature } from "./features/config/service.js";
 import { TasksFeature } from "./features/tasks/service.js";
@@ -24,6 +25,7 @@ import { MarksFeature } from "./features/marks/service.js";
 import { ChatFilesFeature } from "./features/chatfiles/service.js";
 import { CliFeature } from "./features/cli/service.js";
 import { DataFeature } from "./features/datamgmt/service.js";
+import { ChannelsFeature } from "./features/channels/service.js";
 import { HostError, type HostServiceEvents } from "./core/shared.js";
 
 // The composition root behind the Host API: the store, the runtimes and the event stream, the helpers every feature
@@ -51,6 +53,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly chatFiles = new ChatFilesFeature(this);
   readonly cli = new CliFeature(this);
   readonly data = new DataFeature(this);
+  readonly channels = new ChannelsFeature(this);
 
   constructor(
     readonly store: Store,
@@ -63,6 +66,10 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       commonDir?: string;
       /** The person's Claude Code config dir (设置 → 模型 shows whether it holds a login); default theirs, ~/.claude. */
       localClaudeHome?: string;
+      /** The person's own model channels (设置 → 模型); `profiles` is its list. */
+      channels?: ChannelRegistry;
+      /** Restarts a Codex profile's app-server so it picks up a channel's new address or key; false while it is busy. */
+      restartProfileServer?: (profileId: Id) => Promise<boolean>;
     } = {},
   ) {
     super();

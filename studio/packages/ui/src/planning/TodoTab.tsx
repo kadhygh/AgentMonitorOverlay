@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { projectWorkspaces, type ModelProfile, type TodoItem, type Workspace, type WorkspaceActivity } from "@amo-studio/protocol";
-import { defaultProfile, profileLabel, rememberProfile } from "../lib/profiles.js";
+import { defaultProfile, pickable, profileLabel, rememberProfile } from "../lib/profiles.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
 
@@ -196,7 +196,7 @@ function ConvertForm({
       <label className="inline-field">
         模型
         <select value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-label="任务的模型">
-          {profiles.map((p) => (
+          {pickable(profiles, profileId).map((p) => (
             <option key={p.id} value={p.id}>
               {profileLabel(p)}
             </option>
@@ -239,7 +239,7 @@ function SchedulerRun({ link, profiles, onStarted, disabled }: { link: HostLink;
   return (
     <div className="scheduler-run">
       <select value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-label="调度用的模型">
-        {profiles.map((p) => (
+        {pickable(profiles, profileId).map((p) => (
           <option key={p.id} value={p.id}>
             {profileLabel(p)}
           </option>

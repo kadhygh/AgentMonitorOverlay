@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { ModelProfile, SessionOptions, SessionPreset } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { optionsSummary, useProfileChoices } from "../lib/choices.js";
-import { profileLabel } from "../lib/profiles.js";
+import { pickable, profileLabel } from "../lib/profiles.js";
 import { OptionsPicker } from "../chat/OptionsPicker.js";
 
 // 设置 → 常用预设: saved combinations of model profile, 型号, 思考强度 and 权限. They show as chips next to the composer of
@@ -76,7 +76,7 @@ export function PresetsSection({ link, presets }: { link: HostLink; presets: rea
             }}
             aria-label="预设的模型"
           >
-            {profiles.map((p) => (
+            {pickable(profiles, profileId).map((p) => (
               <option key={p.id} value={p.id}>
                 {profileLabel(p)}
               </option>

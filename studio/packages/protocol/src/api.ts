@@ -174,7 +174,17 @@ export interface StudioSettings {
   claudeLocal: { dir: string; signedIn: boolean | null };
   /** Per profile id: model order and defaults (设置 → 模型). */
   modelPrefs: Record<string, ModelPrefs>;
+  /** Per profile id: where its quota (subscription use or balance) shows (设置 → 额度); absent = the defaults. */
+  quotaDisplay: Record<string, QuotaDisplay>;
 }
+
+/** Where one account's quota shows: the bottom of the left column (default on) and the Focus window (default off). */
+export interface QuotaDisplay {
+  footer: boolean;
+  focus: boolean;
+}
+
+export const DEFAULT_QUOTA_DISPLAY: QuotaDisplay = { footer: true, focus: false };
 
 /** "token": the token from `claude setup-token`, Studio's own config dir. "local": the person's Claude Code login and ~/.claude. */
 export type ClaudeLogin = "token" | "local";
@@ -211,7 +221,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null> }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };
@@ -365,6 +375,8 @@ export type HostEvent = { seq: number } & (
   | { type: "checklist.upserted"; item: ChecklistItem }
   | { type: "proposal.upserted"; proposal: ScheduleProposal }
   | { type: "settings.updated"; settings: StudioSettings }
+  /** The model profiles changed: a channel was added, edited or removed, or one was hidden or shown (设置 → 模型). */
+  | { type: "profiles.updated"; profiles: ModelProfile[] }
   /** File marks (S12-D) changed: one was added, edited or removed (`workspaceId` is its project, null for 其他). */
   | { type: "marks.changed"; markId: Id; workspaceId: Id | null }
   /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
@@ -503,4 +515,18 @@ export interface HostRoutes {
   "GET /api/data/purge": { req: void; res: import("./datamgmt.js").PurgeSummary };
   /** Deletes it for good. */
   "POST /api/data/purge": { req: { kind: import("./datamgmt.js").DataKind; id: Id }; res: import("./datamgmt.js").PurgeSummary };
+}
+
+// ---- 设置 → 模型 (2026-10-15): the person's own channels, hiding a channel from the pickers, balances (channels.ts) --
+export interface HostRoutes {
+  "GET /api/channels": { req: void; res: import("./channels.js").ModelChannel[] };
+  "POST /api/channels": { req: import("./channels.js").ChannelInput; res: import("./channels.js").ModelChannel };
+  "PATCH /api/channels/:id": { req: import("./channels.js").ChannelInput; res: import("./channels.js").ModelChannel };
+  /** Only a channel no session uses; otherwise hide it. */
+  "DELETE /api/channels/:id": { req: void; res: { ok: true } };
+  /** Asks a balance with settings not saved yet (the 添加/编辑 dialog's 测试); `id` fills in what is stored. */
+  "POST /api/channels/balance-test": { req: { id?: Id; kind?: import("./channels.js").ChannelKind; baseUrl?: string; balance: import("./channels.js").BalanceConfig; key?: string; keyFrom?: string | null; accessToken?: string }; res: import("./channels.js").ChannelBalance };
+  "PUT /api/profiles/:id/hidden": { req: { hidden: boolean }; res: ModelProfile[] };
+  /** `?refresh=1` asks the site again; otherwise the last answer within a minute. */
+  "GET /api/profiles/:id/balance": { req: void; res: import("./channels.js").ChannelBalance };
 }

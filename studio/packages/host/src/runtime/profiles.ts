@@ -1,6 +1,6 @@
 import { dirname, isAbsolute, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import type { ModelProfile } from "@amo-studio/protocol";
+import type { BalanceConfig, ModelProfile } from "@amo-studio/protocol";
 import type { CredentialReader } from "./credentials.js";
 import { AUTO_APPROVED_WRITE_TOOLS, PROMPTED_WRITE_TOOLS } from "../mcp/names.js";
 
@@ -53,6 +53,11 @@ export const BUILTIN_PROFILES: readonly ModelProfile[] = [
   // The person's Claude subscription, through a token from `claude setup-token` saved in 设置 → 模型凭据.
   { id: "claude-subscription", label: "Claude", runtime: "claude", provider: "anthropic", model: null, credentialId: CLAUDE_SUBSCRIPTION_CREDENTIAL },
 ];
+
+/** Built-in profiles whose site tells the balance (设置 → 模型, 左下角额度). */
+export const BUILTIN_BALANCES: Record<string, { baseUrl: string; config: BalanceConfig }> = {
+  "codex-deepseek-flash": { baseUrl: "https://api.deepseek.com", config: { template: "deepseek" } },
+};
 
 // src/ and dist/ sit at the same depth under packages/host.
 const ASSETS_DIR = join(dirname(fileURLToPath(import.meta.url)), "..", "..", "assets", "codex");

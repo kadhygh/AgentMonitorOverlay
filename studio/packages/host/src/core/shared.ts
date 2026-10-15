@@ -10,6 +10,8 @@ export const LEGACY_COMMON_WORKSPACE_KEY = "settings:common-workspace";
 export const COMMON_NAME = "公共";
 export const PRESETS_KEY = "settings:presets";
 export const DISABLED_FEATURES_KEY = "settings:disabled-features";
+/** 设置 → 额度: where each account's quota shows. */
+export const QUOTA_DISPLAY_KEY = "settings:quota-display";
 export const MAX_PRESETS = 30;
 
 /** Checks one option value: a short CLI id (model names like "glm-5.3[1m]" included). */

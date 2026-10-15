@@ -2,8 +2,9 @@ import { useEffect, useState } from "react";
 import type { CredentialStatus } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 
-// 设置 → 模型: which keys the models need and whether they are stored. API keys come from old AMO's settings;
-// the Claude subscription token is pasted here (from `claude setup-token`) and kept in the Windows Credential Manager.
+// 设置 → 模型: which keys the built-in models need and whether they are stored (the channel cards show them). API keys
+// come from old AMO's settings; the Claude subscription token is pasted here (from `claude setup-token`) and kept in
+// the Windows Credential Manager.
 
 export type SettingsMessage = { text: string; error?: boolean } | null;
 
@@ -16,22 +17,6 @@ export function useCredentials(link: HostLink): [CredentialStatus[] | null, (lis
       .catch(() => undefined);
   }, [link]);
   return [list, setList];
-}
-
-/** API keys of the other models: shown as stored or not, changed in old AMO's settings. */
-export function CredentialsSection({ link, list, onChange }: { link: HostLink; list: readonly CredentialStatus[]; onChange(list: CredentialStatus[]): void }) {
-  const [message, setMessage] = useState<SettingsMessage>(null);
-  if (!list.length) return null;
-  return (
-    <section className="settings-section" aria-label="模型凭据">
-      <span className="settings-heading">其他模型的 Key</span>
-      <span className="settings-hint">只显示是否已保存，不显示内容。DeepSeek、GLM 的 Key 沿用旧 AMO 设置里保存的那份。</span>
-      {list.map((c) => (
-        <CredentialRow key={c.id} link={link} credential={c} onChange={onChange} onMessage={setMessage} />
-      ))}
-      <CredentialMessage message={message} />
-    </section>
-  );
 }
 
 export function CredentialMessage({ message }: { message: SettingsMessage }) {
