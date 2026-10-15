@@ -31,6 +31,16 @@ electron.contextBridge.exposeInMainWorld("amo", {
       return () => electron.ipcRenderer.removeListener("amo:pin-changed", listener);
     },
   },
+  /** 界面大小 (2026-10-15): the zoom of every Studio page. */
+  uiScale: {
+    get: (): Promise<number> => electron.ipcRenderer.invoke("amo:ui-scale-get"),
+    set: (scale: number): Promise<void> => electron.ipcRenderer.invoke("amo:ui-scale-set", scale),
+    onChange: (cb: (scale: number) => void): (() => void) => {
+      const listener = (_event: unknown, scale: number) => cb(scale);
+      electron.ipcRenderer.on("amo:ui-scale-changed", listener);
+      return () => electron.ipcRenderer.removeListener("amo:ui-scale-changed", listener);
+    },
+  },
   /** First-run setup window of the portable build only (the handlers exist only while it is open). */
   setup: {
     info: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:setup-info"),

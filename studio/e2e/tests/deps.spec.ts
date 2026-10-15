@@ -67,6 +67,14 @@ test("dependencies from the sidebar and notes on the canvas", async () => {
   expect(doc.nodes.find((n) => n.kind === "note")!.groupId).toBe(doc.groups[0]!.id);
   await screenshot(studio.app, "stage-3", "S3-04-deps-notes", page);
 
+  // 2026-10-15: typing, then clicking a card on the canvas right away (the sidebar switches to the card) keeps the text.
+  await page.getByTestId("canvas-note").click();
+  await note.getByLabel("便签内容").pressSequentially("，再定");
+  await page.getByTestId("canvas-card").filter({ hasText: "跑校验" }).click();
+  await expect(note).toHaveCount(0);
+  await expect.poll(async () => (await canvas()).nodes.find((n) => n.kind === "note")).toMatchObject({ text: "先问策划掉落率，再定" });
+  await expect(page.getByTestId("canvas-note")).toHaveText("先问策划掉落率，再定");
+
   await page.getByTestId("canvas-note").click();
   await note.getByRole("button", { name: "删除便签" }).click();
   await expect.poll(async () => (await canvas()).nodes.filter((n) => n.kind === "note").length).toBe(0);

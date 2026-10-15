@@ -27,12 +27,19 @@ export function useDragWidth(key: string, def: number, min: number, max: number)
     const startX = e.clientX;
     const startW = width;
     let w = startW;
+    // At most one width per frame: each one lays the page out again (2026-10-15: dragging felt slow).
+    let frame = 0;
     document.body.classList.add("col-resizing");
     const move = (ev: PointerEvent) => {
       w = Math.max(min, Math.min(max, startW + ev.clientX - startX));
-      setWidth(w);
+      frame ||= requestAnimationFrame(() => {
+        frame = 0;
+        setWidth(w);
+      });
     };
     const up = () => {
+      cancelAnimationFrame(frame);
+      setWidth(w);
       window.removeEventListener("pointermove", move);
       window.removeEventListener("pointerup", up);
       document.body.classList.remove("col-resizing");

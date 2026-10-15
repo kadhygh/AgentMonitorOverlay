@@ -61,6 +61,33 @@ test("light theme from the settings dialog, remembered and shared with Focus", a
   await expect(page.locator("html")).not.toHaveAttribute("data-theme", /.+/);
 });
 
+test("界面大小 zooms every window, Focus too (its window grows with it), and is remembered", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const dpr = (p: import("@playwright/test").Page) => p.evaluate(() => window.devicePixelRatio);
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await app.waitForEvent("window");
+  const focusSize = () => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#focus"))?.getSize());
+  expect(await focusSize()).toEqual([380, 560]);
+
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("radio", { name: "较大 125%" }).click();
+  await expect.poll(() => dpr(page)).toBe(1.25);
+  await expect.poll(() => dpr(focus)).toBe(1.25);
+  expect(await focusSize()).toEqual([475, 700]);
+  await expect(dialog.getByRole("radio", { name: "较大 125%" })).toHaveAttribute("aria-checked", "true");
+  await screenshot(app, "stage-14", "S14-R-ui-scale", page);
+
+  // Remembered: a reloaded page comes back at the same size.
+  await page.reload();
+  await expect.poll(() => dpr(page)).toBe(1.25);
+  await page.getByRole("button", { name: "设置" }).click();
+  await dialog.getByRole("radio", { name: "标准 100%" }).click();
+  await expect.poll(() => dpr(page)).toBe(1);
+  expect(await focusSize()).toEqual([380, 560]);
+});
+
 test("the common folder: where work without a project runs, moved in settings", async () => {
   studio = await launchStudio();
   const { page } = studio;

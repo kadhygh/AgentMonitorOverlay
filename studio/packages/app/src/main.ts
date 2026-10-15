@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, scre
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
-import { createFocusWindow, mainBounds, refitFocusWindow, ShellPrefs } from "./focus-window.js";
+import { createFocusWindow, mainBounds, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
@@ -52,6 +52,8 @@ let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;
 /** Resize trace (logs/resize-trace.log), made once the app is ready. */
 let trace: ResizeTrace | null = null;
+/** 界面大小 one step (Ctrl + = / - / 0), set up with the IPC handlers. */
+let stepUiScaleRef: (dir: 1 | -1 | 0) => void = () => undefined;
 const prefs = new ShellPrefs(dataDir);
 const reviews = setupReviewWindows({ url: () => (host ? (process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`) : null), preload: join(here, "preload.cjs"), icon: APP_ICON, testMode });
 const viewers = setupViewerWindows({ url: () => (host ? (process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`) : null), preload: join(here, "preload.cjs"), icon: APP_ICON, testMode });
@@ -64,6 +66,7 @@ function setFocusVisible(on: boolean): void {
       url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`,
       preload: join(here, "preload.cjs"),
       testMode,
+      scale: prefs.uiScale(),
       saved: prefs.focusPos(),
       onMoved: (pos) => prefs.setFocusPos(pos),
     });
@@ -122,6 +125,28 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.setAlwaysOnTop(pinned);
     mainWindow.webContents.send("amo:pin-changed", pinned);
   });
+  // 界面大小 (2026-10-15): one zoom for every Studio page, kept for the next start. Chromium zooms by origin, so
+  // setting it on one page sets it on all of them; each page gets it again when it loads.
+  const setUiScale = (scale: number) => {
+    prefs.setUiScale(scale);
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.setZoomFactor(scale);
+    if (focusWindow) rescaleFocusWindow(focusWindow, scale);
+    for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("amo:ui-scale-changed", scale);
+  };
+  app.on("web-contents-created", (_e, contents) => {
+    contents.on("did-finish-load", () => contents.setZoomFactor(prefs.uiScale()));
+  });
+  ipcMain.handle("amo:ui-scale-get", () => prefs.uiScale());
+  ipcMain.handle("amo:ui-scale-set", (_event, scale: unknown) => {
+    if (uiScaleOk(scale)) setUiScale(scale);
+  });
+  /** Ctrl + = / - / 0 in a Studio page: one step bigger, smaller, back to 100%. */
+  const stepUiScale = (dir: 1 | -1 | 0) => {
+    const cur = UI_SCALES.findIndex((s) => Math.abs(s - prefs.uiScale()) < 0.001);
+    const next = dir === 0 ? 1 : UI_SCALES[Math.max(0, Math.min(UI_SCALES.length - 1, cur + dir))]!;
+    if (Math.abs(next - prefs.uiScale()) > 0.001) setUiScale(next);
+  };
+  stepUiScaleRef = stepUiScale;
   ipcMain.handle("amo:focus-get", () => focusWindow !== null);
   ipcMain.handle("amo:focus-set", (_event, on: unknown) => setFocusVisible(on === true));
   // Only the Focus window may set its own shape and click-through.
@@ -132,7 +157,9 @@ if (!app.requestSingleInstanceLock()) {
       .filter((r): r is { x: number; y: number; width: number; height: number } => !!r && ["x", "y", "width", "height"].every((k) => Number.isFinite((r as Record<string, unknown>)[k])))
       .map((r) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }));
     if (!ok.length) return;
-    focusWindow.setShape(ok);
+    // The page reports its own (zoomed) CSS pixels; the window's shape is in screen points.
+    const z = focusWindow.webContents.getZoomFactor() || 1;
+    focusWindow.setShape(z === 1 ? ok : ok.map((r) => ({ x: Math.round(r.x * z), y: Math.round(r.y * z), width: Math.max(1, Math.round(r.width * z)), height: Math.max(1, Math.round(r.height * z)) })));
     trace?.note("focus", "focus-shape");
     if (testMode) (globalThis as { __amoFocusShape?: unknown }).__amoFocusShape = ok;
   });
@@ -332,6 +359,9 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
     } else if (key === "f12" || (input.control && input.shift && key === "i")) {
       event.preventDefault();
       win.webContents.toggleDevTools();
+    } else if (input.control && !input.alt && (key === "=" || key === "+" || key === "-" || key === "0")) {
+      event.preventDefault();
+      stepUiScaleRef(key === "0" ? 0 : key === "-" ? -1 : 1);
     }
   });
   // The workbench never opens other windows or navigates away from the Host / dev server origin.

@@ -102,6 +102,11 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
         <button type="button" className="nav-row" aria-current={isCurrent(scope, target)} onClick={() => onScope(target)} onContextMenu={onMenu} data-testid={testId}>
           {kind && <NavKindIcon kind={kind} />}
           <span className="name">{name}</span>
+          {pinned && (
+            <svg className="nav-pinned" width="11" height="11" viewBox="0 0 12 12" role="img" aria-label="已置顶">
+              <path d="M4 1.5 H8 L7.4 5 L9.5 7 H2.5 L4.6 5 Z M6 7 V11" />
+            </svg>
+          )}
           <span className="count">{count}</span>
         </button>
         {kind && id && (

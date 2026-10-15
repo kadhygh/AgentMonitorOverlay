@@ -94,6 +94,17 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   useEffect(() => saveView(view), [view]);
 
   const persist = useCallback((next: CanvasDoc) => void save(next).catch(() => undefined), [save]);
+  const latestDoc = useRef(doc);
+  latestDoc.current = doc;
+  const edit = useCallback(
+    (apply: (d: CanvasDoc) => CanvasDoc) => {
+      const cur = latestDoc.current;
+      if (!cur) return;
+      const next = apply(cur);
+      if (next !== cur) persist(next);
+    },
+    [persist],
+  );
 
   // Delete / Backspace removes the selected group (its cards stay), note or reference card (never the task itself),
   // unless typing somewhere.
@@ -483,6 +494,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
           tab={tab}
           onTab={setTab}
           onChange={persist}
+          onEdit={edit}
           onClearSelection={() => setSelectionState(null)}
           onOpenTask={onOpenTask}
           newId={newCanvasId}

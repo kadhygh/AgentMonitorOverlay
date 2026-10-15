@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { projectWorkspaces, taskWhere, wouldCycle, type CanvasDoc, type CanvasEdge, type Id, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { deleteGroup, updateGroup } from "./geometry.js";
@@ -18,6 +18,8 @@ interface CanvasSidebarProps {
   tab: SidebarTab;
   onTab(tab: SidebarTab): void;
   onChange(next: CanvasDoc): void;
+  /** A change made on the canvas as it is when it lands (typed text saved late must not undo a move made meanwhile). */
+  onEdit(apply: (doc: CanvasDoc) => CanvasDoc): void;
   onClearSelection(): void;
   onOpenTask(taskId: Id): void;
   newId(prefix: string): string;
@@ -51,7 +53,7 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
   );
 }
 
-function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessions, workspaces, onChange, onClearSelection, onOpenTask, newId }: CanvasSidebarProps) {
+function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessions, workspaces, onChange, onEdit, onClearSelection, onOpenTask, newId }: CanvasSidebarProps) {
   if (!selection) return <span className="anno-empty">在画布上点一个任务、便签，或点分组的标题栏。</span>;
 
   if (selection.kind === "group") {
@@ -62,16 +64,14 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
         <span className="side-heading">分组</span>
         <label className="stack-field">
           名称
-          <input
+          <KeptInput
             key={group.id + group.title}
-            className="field"
-            defaultValue={group.title}
-            aria-label="分组名称"
-            onBlur={(e) => {
-              const title = e.target.value.trim();
-              if (title && title !== group.title) onChange(updateGroup(doc, group.id, { title }));
+            value={group.title}
+            label="分组名称"
+            onKeep={(text) => {
+              const title = text.trim();
+              if (title) onEdit((d) => (d.groups.find((g) => g.id === group.id)?.title === title ? d : updateGroup(d, group.id, { title })));
             }}
-            onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()}
           />
         </label>
         <label className="stack-field">
@@ -107,15 +107,14 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
     return (
       <div className="side-section" role="group" aria-label="便签">
         <span className="side-heading">便签</span>
-        <textarea
+        <KeptInput
           key={node.id}
-          className="side-textarea"
-          aria-label="便签内容"
-          defaultValue={node.text}
-          rows={6}
-          onBlur={(e) => {
-            if (e.target.value !== node.text) onChange({ ...doc, nodes: doc.nodes.map((n) => (n.id === node.id ? { ...n, text: e.target.value } : n)) });
-          }}
+          multiline
+          value={node.text}
+          label="便签内容"
+          onKeep={(text) =>
+            onEdit((d) => (d.nodes.some((n) => n.id === node.id && n.kind === "note" && n.text !== text) ? { ...d, nodes: d.nodes.map((n) => (n.id === node.id ? { ...n, text } : n)) } : d))
+          }
         />
         <button
           type="button"
@@ -241,5 +240,36 @@ function AddDependency({ candidates, onAdd }: { candidates: readonly Task[]; onA
         添加
       </button>
     </div>
+  );
+}
+
+/**
+ * A field whose text is kept as it is typed (2026-10-15: a note typed in the sidebar was lost when the next click on the
+ * canvas swapped the sidebar before the field lost focus): a note while typing pauses, and on blur or when the field
+ * goes away; a single line (a group's name) on blur, Enter, or going away.
+ */
+function KeptInput({ value, label, multiline, onKeep }: { value: string; label: string; multiline?: boolean; onKeep(text: string): void }) {
+  const pending = useRef<string | null>(null);
+  const timer = useRef(0);
+  const keep = useRef(onKeep);
+  keep.current = onKeep;
+  const flush = () => {
+    window.clearTimeout(timer.current);
+    const text = pending.current;
+    pending.current = null;
+    if (text !== null && text !== value) keep.current(text);
+  };
+  const flushRef = useRef(flush);
+  flushRef.current = flush;
+  useEffect(() => () => flushRef.current(), []);
+  const change = (text: string) => {
+    pending.current = text;
+    window.clearTimeout(timer.current);
+    if (multiline) timer.current = window.setTimeout(() => flushRef.current(), 500);
+  };
+  return multiline ? (
+    <textarea className="side-textarea" aria-label={label} defaultValue={value} rows={6} onChange={(e) => change(e.target.value)} onBlur={flush} />
+  ) : (
+    <input className="field" aria-label={label} defaultValue={value} onChange={(e) => change(e.target.value)} onBlur={flush} onKeyDown={(e) => e.key === "Enter" && (e.target as HTMLInputElement).blur()} />
   );
 }

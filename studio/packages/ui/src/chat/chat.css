@@ -92,6 +92,9 @@
   font-size: 14px; line-height: 22px; color: var(--chat-label);
 }
 .turn { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+/* Turns off screen skip layout and paint (2026-10-15: resizing the window or the session list was slow in long
+   conversations); the last two always render, so following the bottom stays exact. */
+.turn:not(:nth-last-child(-n + 2)) { content-visibility: auto; contain-intrinsic-size: auto 300px; }
 .turn-work { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
 .turn-work > .msg-agent, .turn-work > .msg-user-row, .turn-work > .approval { margin: 6px 0; }
 

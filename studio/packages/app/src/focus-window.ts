@@ -11,10 +11,18 @@ import { placeFocus, placeMain, refitFocus, type DisplayInfo, type Point, type R
 export const FOCUS_W = 380;
 export const FOCUS_H = 560;
 
+/** 界面大小 (2026-10-15): the zoom of every Studio page. Chromium zooms by origin, so Focus is zoomed too. */
+export const UI_SCALES = [0.9, 1, 1.1, 1.25, 1.4] as const;
+export function uiScaleOk(v: unknown): v is number {
+  return typeof v === "number" && UI_SCALES.some((s) => Math.abs(s - v) < 0.001);
+}
+
 export interface FocusOptions {
   url: string;
   preload: string;
   testMode: boolean;
+  /** 界面大小: the window grows with its zoomed page. */
+  scale: number;
   /** Where the person last left it, if anywhere. */
   saved: Point | null;
   onMoved(pos: Point): void;
@@ -24,12 +32,12 @@ export function displays(): DisplayInfo[] {
   return screen.getAllDisplays().map((d) => ({ id: d.id, workArea: d.workArea, scaleFactor: d.scaleFactor }));
 }
 
-export function createFocusWindow({ url, preload, testMode, saved, onMoved }: FocusOptions): BrowserWindow {
-  const pos = testMode ? { x: -32000, y: -32000 } : placeFocus(saved, { width: FOCUS_W, height: FOCUS_H }, displays(), screen.getPrimaryDisplay().id);
+export function createFocusWindow({ url, preload, testMode, scale, saved, onMoved }: FocusOptions): BrowserWindow {
+  const size = focusSize(scale);
+  const pos = testMode ? { x: -32000, y: -32000 } : placeFocus(saved, size, displays(), screen.getPrimaryDisplay().id);
   const win = new BrowserWindow({
     ...pos,
-    width: FOCUS_W,
-    height: FOCUS_H,
+    ...size,
     title: "AMO Focus",
     frame: false,
     transparent: true,
@@ -51,7 +59,7 @@ export function createFocusWindow({ url, preload, testMode, saved, onMoved }: Fo
   });
   win.setAlwaysOnTop(true, "floating");
   // Until the page reports its parts: only a strip at the bottom, where the panel's head will be.
-  win.setShape([{ x: 10, y: FOCUS_H - 60, width: FOCUS_W - 20, height: 50 }]);
+  win.setShape([{ x: 10, y: size.height - 60 * scale, width: size.width - 20 * scale, height: 50 * scale }].map(roundRect));
   const origin = new URL(url).origin;
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, target) => {
@@ -63,7 +71,8 @@ export function createFocusWindow({ url, preload, testMode, saved, onMoved }: Fo
   win.on("system-context-menu", (event, point) => {
     event.preventDefault();
     const b = win.getContentBounds();
-    win.webContents.send("amo:focus-context-menu", { x: Math.round(point.x - b.x), y: Math.round(point.y - b.y) });
+    const z = win.webContents.getZoomFactor() || 1;
+    win.webContents.send("amo:focus-context-menu", { x: Math.round((point.x - b.x) / z), y: Math.round((point.y - b.y) / z) });
   });
   if (!testMode) {
     // Dragged by its title row: remember where it was left.
@@ -74,6 +83,21 @@ export function createFocusWindow({ url, preload, testMode, saved, onMoved }: Fo
   }
   void win.loadURL(`${url}#focus`);
   return win;
+}
+
+/** The Focus window's size at a 界面大小: its page keeps the same layout, only bigger. */
+export function focusSize(scale: number): Size {
+  return { width: Math.round(FOCUS_W * scale), height: Math.round(FOCUS_H * scale) };
+}
+
+const roundRect = (r: { x: number; y: number; width: number; height: number }) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) });
+
+/** A new 界面大小 for an open Focus window: resized with its bottom edge where it was (the panel sits at the bottom). */
+export function rescaleFocusWindow(win: BrowserWindow, scale: number): void {
+  const b = win.getBounds();
+  const size = focusSize(scale);
+  win.setBounds({ x: b.x, y: b.y + b.height - size.height, ...size });
+  refitFocusWindow(win);
 }
 
 /** Keeps a Focus window on screen when displays are unplugged, rearranged or rescaled. */
@@ -94,6 +118,8 @@ interface PrefsData {
   main?: { bounds: Rect; maximized: boolean };
   /** 置顶 (stage 14): the workbench window stays above other windows. */
   pinned?: boolean;
+  /** 界面大小 (2026-10-15): the zoom of every Studio page. */
+  uiScale?: number;
 }
 
 /** Shell preferences that belong to this machine's windows rather than to the Host: Focus on/off and window places. */
@@ -140,6 +166,14 @@ export class ShellPrefs {
 
   setPinned(on: boolean): void {
     this.save({ pinned: on });
+  }
+
+  uiScale(): number {
+    return uiScaleOk(this.data.uiScale) ? this.data.uiScale : 1;
+  }
+
+  setUiScale(scale: number): void {
+    this.save({ uiScale: scale });
   }
 
   private save(patch: PrefsData): void {

@@ -23,6 +23,12 @@ declare global {
         /** Focus window: a right-click on its title row, passed on by the main process (S14-J). */
         onContextMenu?(cb: (at: { x: number; y: number }) => void): () => void;
       };
+      /** 界面大小 (2026-10-15): the zoom of every Studio page (Electron). */
+      uiScale?: {
+        get(): Promise<number>;
+        set(scale: number): Promise<void>;
+        onChange(cb: (scale: number) => void): () => void;
+      };
       /** 置顶 (stage 14): the workbench window above other windows (Electron). */
       pin?: {
         get(): Promise<boolean>;

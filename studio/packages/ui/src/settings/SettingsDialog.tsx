@@ -150,6 +150,7 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
                   </div>
                 </div>
                 <span className="settings-hint">只影响这台电脑上的 Studio；Focus 悬浮窗会一起切换。</span>
+                {window.amo?.uiScale && <UiScaleRow />}
                 <div className="settings-row">
                   <span className="settings-label">工作步骤展示</span>
                   <div role="radiogroup" aria-label="工作步骤展示" className="chips">
@@ -231,5 +232,50 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
         </div>
       </div>
     </div>
+  );
+}
+
+const UI_SCALE_LABELS: Array<[number, string]> = [
+  [0.9, "小"],
+  [1, "标准"],
+  [1.1, "大"],
+  [1.25, "较大"],
+  [1.4, "特大"],
+];
+
+/** 界面大小 (2026-10-15): text and icons of every Studio window, Focus too, together. */
+function UiScaleRow() {
+  const [scale, setScale] = useState<number | null>(null);
+  useEffect(() => {
+    const api = window.amo?.uiScale;
+    if (!api) return;
+    void api.get().then(setScale);
+    return api.onChange(setScale);
+  }, []);
+  return (
+    <>
+      <div className="settings-row">
+        <span className="settings-label">界面大小</span>
+        <div role="radiogroup" aria-label="界面大小" className="chips">
+          {UI_SCALE_LABELS.map(([s, label]) => (
+            <button
+              key={s}
+              type="button"
+              role="radio"
+              className="chip"
+              aria-checked={scale !== null && Math.abs(scale - s) < 0.001}
+              aria-pressed={scale !== null && Math.abs(scale - s) < 0.001}
+              onClick={() => {
+                setScale(s);
+                void window.amo?.uiScale?.set(s);
+              }}
+            >
+              {label} {Math.round(s * 100)}%
+            </button>
+          ))}
+        </div>
+      </div>
+      <span className="settings-hint">文字和图标一起放大缩小，所有 Studio 窗口（含 Focus）一起变。快捷键：Ctrl + = 放大，Ctrl + - 缩小，Ctrl + 0 恢复标准。</span>
+    </>
   );
 }
