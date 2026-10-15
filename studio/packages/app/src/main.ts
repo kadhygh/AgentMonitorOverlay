@@ -36,6 +36,9 @@ const dataDir = dataChoice.dataDir;
 // Chromium's blocklist says not to, and the system title bar instead of the page-drawn one.
 if (process.env.AMO_STUDIO_GPU === "ignore-blocklist") app.commandLine.appendSwitch("ignore-gpu-blocklist");
 const nativeFrame = process.env.AMO_STUDIO_NATIVE_FRAME === "1";
+/** The main window's smallest size, and whether the window itself keeps it (the old way; see createMainWindow). */
+const MAIN_MIN = { width: 960, height: 600 };
+const windowMinSize = process.env.AMO_STUDIO_WINDOW_MIN === "1";
 
 // Chromium's profile (localStorage, caches) and the single-instance lock live in userData. Without this it is the
 // generic %APPDATA%\Electron, shared by every run: tests saw each other's remembered model, and a test run could
@@ -283,8 +286,8 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
   const bounds = testMode ? { width: 1440, height: 900 } : mainBounds(saved?.bounds ?? null, { width: 1440, height: 900 });
   const win = new BrowserWindow({
     ...bounds,
-    minWidth: 960,
-    minHeight: 600,
+    // The smallest size: kept by the resize handler below, not by the window (2026-10-15 flicker; see there).
+    ...(windowMinSize ? { minWidth: MAIN_MIN.width, minHeight: MAIN_MIN.height } : {}),
     title: "AMO Studio",
     icon: APP_ICON,
     // Before the page paints: the light (editorial) theme is the default.
@@ -307,20 +310,16 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
       backgroundThrottling: !testMode,
     },
   });
-  // Resize guard (2026-10-15): dragging the corner to grow the window, Windows now and then proposes a size below the
-  // minimum in both directions, which snaps the window to 960×600 for a frame (the flicker; the system title bar shows
-  // it too). Such a proposal while the window is well above the minimum is no drag of the person's: refuse it, the next
-  // mouse move resizes as usual. AMO_STUDIO_RESIZE_GUARD=0 turns it off, to compare.
-  if (process.env.AMO_STUDIO_RESIZE_GUARD !== "0") {
+  // The smallest size (2026-10-15): growing the window by its corner, every other resize briefly set it to exactly its
+  // minimum, 960×600 (the flicker; with the system title bar too), without any will-resize asking for it — the
+  // window's own minimum constraint snapping it there. So the window has no minimum and a drag below it is refused here
+  // instead. AMO_STUDIO_WINDOW_MIN=1 puts the window's own minimum back, to compare.
+  if (!windowMinSize)
     win.on("will-resize", (event, next) => {
-      const [minW = 0, minH = 0] = win.getMinimumSize();
-      if (next.width >= minW || next.height >= minH) return;
-      const now = win.getBounds();
-      if (now.width - minW < 100 && now.height - minH < 100) return;
+      if (next.width >= MAIN_MIN.width && next.height >= MAIN_MIN.height) return;
       event.preventDefault();
-      trace?.note("main", `resize-guard ${next.width}×${next.height}`);
+      trace?.note("main", `min-refused ${next.width}×${next.height}`);
     });
-  }
   win.on("maximize", () => win.webContents.send("amo:window-maximized", true));
   win.on("unmaximize", () => win.webContents.send("amo:window-maximized", false));
   // Without a menu, the usual keys: F5 / Ctrl+R reload, F12 / Ctrl+Shift+I DevTools.

@@ -30,6 +30,8 @@ interface Burst {
   minContent: [number, number];
   drops: string[];
   prev: [number, number];
+  /** will-resize proposals smaller than the window by over 100 px (does Windows ask for the small size?). */
+  willDrops: string[];
 }
 
 export class ResizeTrace {
@@ -132,9 +134,11 @@ export class ResizeTrace {
     let b = this.bursts.get(name);
     if (!b) {
       const start = win.getBounds();
-      b = { window: name, startedAt: now, last: now, willResize: 0, resize: 0, edges: new Set(), from: start, to: bounds, slowGaps: [], maxGap: 0, other: new Map(), timer: null, minWin: [start.width, start.height], minContent: [Infinity, Infinity], drops: [], prev: [start.width, start.height] };
+      b = { window: name, startedAt: now, last: now, willResize: 0, resize: 0, edges: new Set(), from: start, to: bounds, slowGaps: [], maxGap: 0, other: new Map(), timer: null, minWin: [start.width, start.height], minContent: [Infinity, Infinity], drops: [], prev: [start.width, start.height], willDrops: [] };
       this.bursts.set(name, b);
     }
+    if (kind === "will" && (b.prev[0] - bounds.width > 100 || b.prev[1] - bounds.height > 100) && b.willDrops.length < 10)
+      b.willDrops.push(`+${Math.round(now - b.startedAt)}ms ${b.prev[0]}×${b.prev[1]}→${bounds.width}×${bounds.height}`);
     if (kind === "resize") {
       b.minWin = [Math.min(b.minWin[0], bounds.width), Math.min(b.minWin[1], bounds.height)];
       if (content) b.minContent = [Math.min(b.minContent[0], content.width), Math.min(b.minContent[1], content.height)];
@@ -170,7 +174,7 @@ export class ResizeTrace {
       // closed meanwhile
     }
     this.write(
-      `${stamp()} ${name} burst ${ms}ms edges=${[...b.edges].join("/") || "?"} will-resize=${b.willResize} resize=${b.resize} (${rate}/s) maxGap=${Math.round(b.maxGap)}ms slowGaps=[${b.slowGaps.join(",")}] ${r(b.from)} → ${r(b.to)} min=${b.minWin.join("×")} minContent=${b.minContent.join("×")} drops=[${b.drops.join(", ")}]${extra} other: ${other}`,
+      `${stamp()} ${name} burst ${ms}ms edges=${[...b.edges].join("/") || "?"} will-resize=${b.willResize} resize=${b.resize} (${rate}/s) maxGap=${Math.round(b.maxGap)}ms slowGaps=[${b.slowGaps.join(",")}] ${r(b.from)} → ${r(b.to)} min=${b.minWin.join("×")} minContent=${b.minContent.join("×")} drops=[${b.drops.join(", ")}] willDrops=[${b.willDrops.join(", ")}]${extra} other: ${other}`,
     );
   }
 
