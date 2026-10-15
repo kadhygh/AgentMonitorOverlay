@@ -48,6 +48,11 @@
   --font-code: "JetBrains Mono Variable", "Cascadia Mono", Consolas, monospace;
   --error-bg: #2a1617;
   --error-border: #5a2a2c;
+  /* Actions that are risky to take (归档, 删除): a deep red. --danger fills buttons, --danger-text marks menu items. */
+  --danger: #9b2226;
+  --danger-hover: #b0292d;
+  --on-danger: #fff;
+  --danger-text: #ff8f8f;
   --tint: #1b2633;
   --tint-strong: #22324a;
   --code-bg: #0c0e10;
@@ -104,6 +109,10 @@
   --selection: #ead9b5;
   --error-bg: #f3dfdb;
   --error-border: #e0b4ad;
+  --danger: #8b1a1a;
+  --danger-hover: #701414;
+  --on-danger: #fff;
+  --danger-text: #8b1a1a;
   --tint: #efe7d6;
   --tint-strong: #e4d6b8;
   --code-bg: #f1eee7;
@@ -158,6 +167,10 @@
     --selection: #ead9b5;
     --error-bg: #f3dfdb;
     --error-border: #e0b4ad;
+    --danger: #8b1a1a;
+    --danger-hover: #701414;
+    --on-danger: #fff;
+    --danger-text: #8b1a1a;
     --tint: #efe7d6;
     --tint-strong: #e4d6b8;
     --code-bg: #f1eee7;

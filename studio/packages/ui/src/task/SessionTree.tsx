@@ -32,13 +32,10 @@ interface SessionTreeProps {
   /** The new-session form, opened from 新会话 in the task head (2026-10-14). */
   creating: boolean;
   onCreating(open: boolean): void;
-  /** Folded to a narrow strip (2026-10-14). */
-  collapsed: boolean;
-  onCollapse(collapsed: boolean): void;
 }
 
-/** Left column of the task page: session tree (forks and subagents indented), new session, archived area. */
-export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset, creating, onCreating, collapsed, onCollapse }: SessionTreeProps) {
+/** Left column of the task page: session tree (forks and subagents indented), new session, archived area. Shown or hidden as a whole by 会话 in the task head (2026-10-15). */
+export function SessionTree({ link, task, sessions, workspaces, profiles, selected, busy, onSelect, onNewSession, onRestore, unread, presets = [], onPreset, creating, onCreating }: SessionTreeProps) {
   const live = sessions.filter((s) => !s.archivedAt);
   // An archived subtree shows once, by its top-most archived session.
   const archivedRoots = sessions.filter((s) => s.archivedAt && !sessions.some((p) => p.id === s.parentId && p.archivedAt));
@@ -71,18 +68,6 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   };
   walk(buildSessionTree(live), 0);
 
-  if (collapsed)
-    return (
-      <aside className="session-list collapsed" aria-label="会话">
-        <button type="button" className="fold-btn" aria-label="展开会话列表" title="展开会话列表" onClick={() => onCollapse(false)} data-testid="sessions-expand">
-          <FoldIcon dir="right" />
-        </button>
-        <span className="fold-count" title={`${live.length} 个会话`}>
-          {live.length}
-        </span>
-      </aside>
-    );
-
   return (
     <aside className="session-list" aria-label="会话">
       <div className="slist-head">
@@ -92,9 +77,6 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
             收起
           </button>
         )}
-        <button type="button" className="fold-btn" aria-label="收起会话列表" title="收起会话列表" onClick={() => onCollapse(true)} data-testid="sessions-collapse">
-          <FoldIcon dir="left" />
-        </button>
       </div>
 
       {formOpen && (

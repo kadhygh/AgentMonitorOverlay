@@ -36,7 +36,7 @@ import { PopMenu, StatusMenu, TaskMeta, TopicPicker, below, useGitBranch, type A
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
-/** Whether the session list is folded to a strip. */
+/** Whether the session list is hidden (会话 in the head; the key is from when it folded to a strip). */
 const SESSIONS_KEY = "amo.sessionsFolded";
 function readFlag(key: string): boolean {
   try {
@@ -122,11 +122,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     setSidebarState(on);
     writeFlag(SIDEBAR_KEY, on);
   };
-  // A task just made opens with its list folded (it has one session: nothing to choose between); otherwise the list is
+  // A task just made opens with its list hidden (it has one session: nothing to choose between); otherwise the list is
   // as the person last left it. The page is keyed by task, so this is read once per task opened.
-  const [sessionsFolded, setSessionsFoldedState] = useState(() => justCreated || readFlag(SESSIONS_KEY));
-  const setSessionsFolded = (on: boolean) => {
-    setSessionsFoldedState(on);
+  const [sessionsHidden, setSessionsHiddenState] = useState(() => justCreated || readFlag(SESSIONS_KEY));
+  const setSessionsHidden = (on: boolean) => {
+    setSessionsHiddenState(on);
     writeFlag(SESSIONS_KEY, on);
   };
   // The new-session form in the session list, opened from 新会话 in the head.
@@ -192,7 +192,12 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       const next = own.find((s) => !s.archivedAt && s.id !== id && s.parentId !== id);
       setSelected(next?.id ?? null);
     });
-  const fork = (id: string) => run(() => call(link, "POST /api/sessions/:id/fork", { id }, {}), (s) => setSelected(s.id));
+  // A branch makes something to choose between: the list shows for this task (the remembered choice stays).
+  const fork = (id: string) =>
+    run(() => call(link, "POST /api/sessions/:id/fork", { id }, {}), (s) => {
+      setSelected(s.id);
+      setSessionsHiddenState(false);
+    });
   const openTerminal = (s: Session) =>
     run(() => call(link, "POST /api/sessions/:id/terminal", { id: s.id }, { launch: true }), (r) =>
       setToast(
@@ -225,6 +230,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // What waits in the hidden right column: shown as a count on 侧栏.
   const sideCount =
     decisions.filter((d) => d.taskId === task.id).length + mail.filter((m) => m.state === "unread").length + annotations.filter((a) => !a.sentAt).length;
+  // Shown on 会话 while the list is hidden, when there is more than the one in front to choose from.
+  const liveCount = own.filter((s) => !s.archivedAt).length;
 
   /** Scrolls to the annotated text of a reply and flashes it (its block, where highlights are not available). */
   function locate(a: Annotation, retry = true) {
@@ -296,7 +303,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               title="在这个任务里开一个新会话"
               onClick={() => {
                 setCreating(!creating);
-                if (!creating) setSessionsFolded(false);
+                if (!creating) setSessionsHidden(false);
               }}
               data-testid="new-session-toggle"
             >
@@ -338,6 +345,21 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           <button
             type="button"
             className="btn-ghost small sidebar-toggle"
+            aria-pressed={!sessionsHidden}
+            title={sessionsHidden ? "显示会话列表" : "隐藏会话列表"}
+            onClick={() => setSessionsHidden(!sessionsHidden)}
+            data-testid="sessions-toggle"
+          >
+            <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
+              <rect x="2" y="2.5" width="12" height="11" rx="1" />
+              <path d="M6 2.5v11" />
+            </svg>
+            会话
+            {sessionsHidden && liveCount > 1 && <span className="sidebar-count">{liveCount}</span>}
+          </button>
+          <button
+            type="button"
+            className="btn-ghost small sidebar-toggle"
             aria-pressed={sidebar}
             title={sidebar ? "收起侧栏" : "显示侧栏：进度、批注、留言、清单"}
             onClick={() => setSidebar(!sidebar)}
@@ -367,6 +389,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             <button
               type="button"
               role="menuitem"
+              className="menu-danger"
               disabled={busy}
               onClick={() => {
                 setTaskMenu(null);
@@ -397,25 +420,25 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       )}
 
       <div className="task-body">
-        <SessionTree
-          link={link}
-          task={task}
-          sessions={own}
-          workspaces={workspaces}
-          profiles={profiles}
-          selected={selected}
-          busy={busy}
-          onSelect={setSelected}
-          onNewSession={(input) => void newSession(input)}
-          onRestore={(id) => void restore(id)}
-          unread={unread}
-          presets={presetChoices}
-          onPreset={openPreset}
-          creating={creating}
-          onCreating={setCreating}
-          collapsed={sessionsFolded}
-          onCollapse={setSessionsFolded}
-        />
+        {!sessionsHidden && (
+          <SessionTree
+            link={link}
+            task={task}
+            sessions={own}
+            workspaces={workspaces}
+            profiles={profiles}
+            selected={selected}
+            busy={busy}
+            onSelect={setSelected}
+            onNewSession={(input) => void newSession(input)}
+            onRestore={(id) => void restore(id)}
+            unread={unread}
+            presets={presetChoices}
+            onPreset={openPreset}
+            creating={creating}
+            onCreating={setCreating}
+          />
+        )}
         <div className="thread-col">
           {draft && (
             <PresetDraftForm
@@ -448,29 +471,45 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
                 </span>
               )}
               <span className="spacer" />
-              {workdir && <WorkdirActions link={link} path={workdir} onError={showError} compact />}
-              {!session.archivedAt && session.writer !== "terminal-handoff" && !(session.runtime === "claude" && session.kind === "sub") && (
-                <button
-                  type="button"
-                  className="btn-ghost small icon-only"
-                  aria-label="在终端打开"
-                  title={session.runtime === "claude" ? "在终端打开：交给终端里的 Claude 继续，工作台暂时只读" : "在终端打开：终端接入同一会话，两边都能输入"}
-                  disabled={busy || !session.runtimeRef || (session.runtime === "claude" && session.status === "running")}
-                  onClick={() => void openTerminal(session)}
-                >
-                  <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
-                    <rect x="1.5" y="3" width="13" height="10" rx="1" />
-                    <path d="m4 6.5 2 1.5-2 1.5M8 10h3" />
-                  </svg>
-                </button>
-              )}
+              {/* Where the session works, opened outside Studio: editor, folder, terminal. */}
+              <span className="bar-group" role="group" aria-label="在外部打开">
+                {workdir && <WorkdirActions link={link} path={workdir} onError={showError} compact />}
+                {!session.archivedAt && session.writer !== "terminal-handoff" && !(session.runtime === "claude" && session.kind === "sub") && (
+                  <button
+                    type="button"
+                    className="bar-btn"
+                    aria-label="在终端打开"
+                    title={session.runtime === "claude" ? "在终端打开：交给终端里的 Claude 继续，工作台暂时只读" : "在终端打开：终端接入同一会话，两边都能输入"}
+                    disabled={busy || !session.runtimeRef || (session.runtime === "claude" && session.status === "running")}
+                    onClick={() => void openTerminal(session)}
+                  >
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
+                      <path d="m4.2 6.2 2.3 1.8-2.3 1.8M8.3 10.2h3.2" />
+                    </svg>
+                  </button>
+                )}
+              </span>
               {!session.archivedAt && !(session.runtime === "claude" && session.kind === "sub") && (
-                <button type="button" className="btn-ghost small" title="从这里分出一个新会话" disabled={busy || !session.runtimeRef} onClick={() => void fork(session.id)}>
-                  分支
-                </button>
+                <>
+                  <span className="head-sep" aria-hidden="true" />
+                  <button type="button" className="bar-btn labeled" aria-label="分支" title="分支：从这里分出一个新会话，原会话不受影响" disabled={busy || !session.runtimeRef} onClick={() => void fork(session.id)} data-testid="session-fork">
+                    <svg viewBox="0 0 16 16" aria-hidden="true">
+                      <circle cx="4.5" cy="3.5" r="1.7" />
+                      <circle cx="4.5" cy="12.5" r="1.7" />
+                      <circle cx="11.5" cy="5" r="1.7" />
+                      <path d="M4.5 5.2v5.6M11.5 6.7c0 2.8-3.4 2.9-6.2 4.3" />
+                    </svg>
+                    <span className="bar-label">分支</span>
+                  </button>
+                </>
               )}
-              <button type="button" className="btn-ghost small icon-only" aria-label="会话的更多操作" title="更多" onClick={(e) => setSessionMenu(below(e.currentTarget))} data-testid="session-more">
-                ⋯
+              <button type="button" className="bar-btn" aria-label="会话的更多操作" title="更多：文件标记、归档会话" onClick={(e) => setSessionMenu(below(e.currentTarget))} data-testid="session-more">
+                <svg viewBox="0 0 16 16" aria-hidden="true" className="filled">
+                  <circle cx="3.5" cy="8" r="1.3" />
+                  <circle cx="8" cy="8" r="1.3" />
+                  <circle cx="12.5" cy="8" r="1.3" />
+                </svg>
               </button>
               {sessionMenu && (
                 <PopMenu at={sessionMenu} label="会话" onClose={() => setSessionMenu(null)} testId="session-menu">
@@ -491,6 +530,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
                     <button
                       type="button"
                       role="menuitem"
+                      className="menu-danger"
                       disabled={busy}
                       onClick={() => {
                         setSessionMenu(null);

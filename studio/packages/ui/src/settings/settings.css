@@ -51,9 +51,10 @@
 .confirm-modal { width: 520px; gap: 12px; }
 .confirm-risks { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; font-size: var(--fs-sm); line-height: var(--lh); color: var(--text); }
 .confirm-risks code { font-family: var(--font-code); font-size: 12px; padding: 0 4px; border-radius: 4px; background: var(--code-bg); overflow-wrap: anywhere; }
-.btn-danger { height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: 1px solid var(--error); background: var(--error); color: #fff; font-weight: 600; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
+.btn-danger { height: var(--ctl); padding: 0 var(--ctl-px); border-radius: var(--r-btn); border: 1px solid var(--danger); background: var(--danger); color: var(--on-danger); font-weight: 600; font-size: var(--fs-sm); cursor: pointer; white-space: nowrap; }
 .btn-danger.small { height: var(--ctl-s); font-size: var(--fs-cap); padding: 0 9px; }
-.btn-danger:hover { filter: brightness(1.08); }
+.btn-danger:hover:not(:disabled) { background: var(--danger-hover); border-color: var(--danger-hover); }
+.btn-danger:disabled { opacity: 0.6; cursor: default; }
 
 /* 设置 → 模型 → 型号顺序和默认: rows to drag, the default marked. */
 .model-order { display: flex; flex-direction: column; gap: 4px; }

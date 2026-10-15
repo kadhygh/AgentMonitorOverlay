@@ -3,6 +3,10 @@
 .ctx-menu button { text-align: left; padding: 7px 10px; border: none; border-radius: 6px; background: transparent; color: var(--text); font-size: 13px; cursor: pointer; }
 .ctx-menu button:hover { background: var(--menu-hover); }
 .ctx-menu button:disabled { color: var(--text-dim); cursor: default; background: transparent; }
+/* Risky items (归档…): deep red words, filled deep red under the pointer or keyboard focus. */
+.ctx-menu button.menu-danger { color: var(--danger-text); }
+.ctx-menu button.menu-danger:hover:not(:disabled), .ctx-menu button.menu-danger:focus-visible { background: var(--danger); color: var(--on-danger); }
+.ctx-menu button.menu-danger:disabled { color: var(--text-dim); }
 .anno-panel { flex: 0 0 300px; max-width: 320px; border-left: 1px solid var(--border); padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; background: var(--panel-raised); }
 .anno-head { display: flex; align-items: baseline; gap: 8px; }
 .anno-title { font-weight: 600; font-size: var(--fs-sm); }

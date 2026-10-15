@@ -350,6 +350,7 @@ ${w.description}` : w.path, (e) => {
         <ConfirmDialog
           title={archiving.kind === "workspace" ? `归档项目「${archiving.name}」？` : `归档专题「${archiving.name}」？`}
           action={archiving.kind === "workspace" ? "归档项目" : "归档专题"}
+          danger
           busy={archiveBusy}
           onCancel={() => setArchiving(null)}
           onConfirm={() => void archive(archiving)}
@@ -387,6 +388,7 @@ function TopicMenu({ at, onClose, onArchive }: { at: { x: number; y: number }; o
       <button
         type="button"
         role="menuitem"
+        className="menu-danger"
         title="专题、画布和它的任务、会话一起归档，从列表里隐藏；可以在 设置 → 数据管理 里恢复"
         onClick={() => {
           onArchive();
