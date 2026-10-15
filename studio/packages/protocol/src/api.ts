@@ -264,7 +264,7 @@ export interface HostRoutes {
   "POST /api/tasks/:id/archive": { req: void; res: Task };
   "POST /api/tasks/:id/unarchive": { req: void; res: Task };
   "POST /api/topics": { req: { title: string; workspaceIds?: Id[] }; res: Topic };
-  "PATCH /api/topics/:id": { req: { title?: string; workspaceIds?: Id[] }; res: Topic };
+  "PATCH /api/topics/:id": { req: { title?: string; workspaceIds?: Id[]; description?: string }; res: Topic };
   /** Archives the topic with its sessions and all its tasks (and their sessions). */
   "POST /api/topics/:id/archive": { req: void; res: { topic: Topic; tasks: Task[] } };
   /** Restores the topic and the tasks that were archived with it. */

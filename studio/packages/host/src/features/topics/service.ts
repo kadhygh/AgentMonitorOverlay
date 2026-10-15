@@ -12,11 +12,16 @@ export class TopicsFeature extends Feature {
     return topic;
   }
 
-  updateTopic(id: Id, patch: { title?: unknown; workspaceIds?: unknown }): Topic {
+  updateTopic(id: Id, patch: { title?: unknown; workspaceIds?: unknown; description?: unknown }): Topic {
     const current = this.requireTopic(id);
     if (current.archivedAt) throw new HostError("read_only", "archived topics cannot be changed");
-    const clean: Partial<Pick<Topic, "title" | "workspaceIds">> = {};
+    const clean: Partial<Pick<Topic, "title" | "workspaceIds" | "description">> = {};
     if (patch.title !== undefined) clean.title = boundedText(patch.title, "title", 100);
+    if (patch.description !== undefined) {
+      if (typeof patch.description !== "string") throw new HostError("bad_request", "description must be a string");
+      if (patch.description.length > 2000) throw new HostError("bad_request", "description is too long (2000 at most)");
+      clean.description = patch.description.trim();
+    }
     if (patch.workspaceIds !== undefined) clean.workspaceIds = this.projectIds(patch.workspaceIds);
     const topic = this.store.updateTopic(id, clean);
     this.publish({ type: "topic.upserted", topic });

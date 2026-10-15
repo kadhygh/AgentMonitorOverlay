@@ -7,6 +7,7 @@ import { UsageFooter } from "./UsageFooter.js";
 import { ProjectReviewMenu, type ProjectMenuAt } from "../gitreview/ProjectReviewMenu.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 import { EditProjectDialog } from "./EditProjectDialog.js";
+import { EditTopicDialog } from "./EditTopicDialog.js";
 import { FoldIcon } from "../task/SessionTree.js";
 
 /** The left column folded to a strip (2026-10-14), remembered per window. */
@@ -64,6 +65,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const [archiving, setArchiving] = useState<Archiving | null>(null);
   const [archiveBusy, setArchiveBusy] = useState(false);
   const [editing, setEditing] = useState<string | null>(null);
+  const [editingTopicId, setEditingTopic] = useState<string | null>(null);
   const [collapsed, setCollapsedState] = useState(readNavFolded);
   const setCollapsed = (on: boolean) => {
     setCollapsedState(on);
@@ -74,6 +76,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
     }
   };
   const editingWs = editing ? workspaces.find((w) => w.id === editing) : undefined;
+  const editingTopic = editingTopicId ? topics.find((t) => t.id === editingTopicId) : undefined;
   const pins = usePins();
   const liveTasks = tasks.filter((t) => !t.archivedAt);
 
@@ -340,12 +343,14 @@ ${w.description}` : w.path, (e) => {
         <TopicMenu
           at={topicMenu}
           onClose={() => setTopicMenu(null)}
+          onEdit={() => setEditingTopic(topicMenu.id)}
           onArchive={() => {
             const t = topics.find((x) => x.id === topicMenu.id);
             if (t) setArchiving({ kind: "topic", id: t.id, name: t.title });
           }}
         />
       )}
+      {editingTopic && <EditTopicDialog link={link} topic={editingTopic} onClose={() => setEditingTopic(null)} />}
       {archiving && (
         <ConfirmDialog
           title={archiving.kind === "workspace" ? `归档项目「${archiving.name}」？` : `归档专题「${archiving.name}」？`}
@@ -372,7 +377,7 @@ ${w.description}` : w.path, (e) => {
 }
 
 /** Right-click menu of a topic in the left column. */
-function TopicMenu({ at, onClose, onArchive }: { at: { x: number; y: number }; onClose(): void; onArchive(): void }) {
+function TopicMenu({ at, onClose, onEdit, onArchive }: { at: { x: number; y: number }; onClose(): void; onEdit(): void; onArchive(): void }) {
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     const onDown = (e: globalThis.MouseEvent) => !(e.target as Element | null)?.closest?.(".ctx-menu") && onClose();
@@ -385,6 +390,18 @@ function TopicMenu({ at, onClose, onArchive }: { at: { x: number; y: number }; o
   }, [onClose]);
   return (
     <div className="ctx-menu" role="menu" aria-label="专题" style={{ left: at.x, top: at.y }}>
+      <button
+        type="button"
+        role="menuitem"
+        title="改专题的名字，写一段说明（agent 读专题时能看到）"
+        onClick={() => {
+          onEdit();
+          onClose();
+        }}
+        data-testid="edit-topic-item"
+      >
+        编辑专题…
+      </button>
       <button
         type="button"
         role="menuitem"

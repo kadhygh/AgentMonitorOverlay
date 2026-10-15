@@ -54,6 +54,8 @@ export interface Topic {
   title: string;
   /** Projects added by hand; the topic's projects are these plus its tasks' workspaces. */
   workspaceIds: Id[];
+  /** The person's note on what the topic is about (编辑专题); agents read it with the topic. */
+  description?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   archivedAt: Timestamp | null;

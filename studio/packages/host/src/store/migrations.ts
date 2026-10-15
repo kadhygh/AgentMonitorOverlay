@@ -257,4 +257,8 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE workspaces ADD COLUMN description TEXT;
   `,
+  // 12: a topic's own note (2026-10-15), like a project's: what it is about, for the person and for agents.
+  `
+  ALTER TABLE topics ADD COLUMN description TEXT;
+  `,
 ];

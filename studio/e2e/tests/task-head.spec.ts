@@ -135,3 +135,20 @@ test("编辑项目 from the left column's right-click menu", async () => {
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
   expect(state.workspaces.find((w) => w.id === ws.id)!.name).toBe("阿尔法");
 });
+
+test("编辑专题 from the left column's right-click menu: name and a note agents read", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "数值" });
+  await page.getByTestId(`scope-topic-数值`).click({ button: "right" });
+  await page.getByTestId("edit-topic-item").click();
+  const dialog = page.getByTestId("edit-topic");
+  await dialog.getByTestId("edit-topic-name").fill("第三章数值");
+  await dialog.getByTestId("edit-topic-description").fill("中期掉落更平滑，先在测试服验证");
+  await screenshot(app, "stage-14", "S14-M-edit-topic", page);
+  await dialog.getByTestId("edit-topic-save").click();
+  await expect(dialog).toHaveCount(0);
+  await expect(page.getByTestId("scope-topic-第三章数值")).toBeVisible();
+  const state = await studio.api<StateSnapshot>("GET", "/api/state");
+  expect(state.topics.find((t) => t.id === topic.id)).toMatchObject({ title: "第三章数值", description: "中期掉落更平滑，先在测试服验证" });
+});

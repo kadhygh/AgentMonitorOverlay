@@ -109,6 +109,7 @@ export class ReadModel {
         .map((t) => ({
           id: t.id,
           title: t.title,
+          ...(t.description ? { description: t.description } : {}),
           projects: topicWorkspaceIds(t, tasks, workspaces).map(name),
           openTasks: tasks.filter((x) => x.topicId === t.id && !x.archivedAt && x.column !== "done").length,
           sessions: this.liveTopicSessions(t.id).length,
@@ -126,6 +127,7 @@ export class ReadModel {
     return {
       id: t.id,
       title: t.title,
+      ...(t.description ? { description: t.description } : {}),
       archived: !!t.archivedAt,
       projects: topicWorkspaceIds(t, this.store.listTasks(), workspaces).map(name),
       tasks: this.boardList({ topic: t.id }).tasks,

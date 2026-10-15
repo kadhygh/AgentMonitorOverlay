@@ -75,7 +75,15 @@ function toTopic(r: Row): Topic {
   } catch {
     // a damaged list reads as empty
   }
-  return { id: str(r.id), title: str(r.title), workspaceIds, createdAt: str(r.created_at), updatedAt: str(r.updated_at), archivedAt: strOrNull(r.archived_at) };
+  return {
+    id: str(r.id),
+    title: str(r.title),
+    workspaceIds,
+    ...(typeof r.description === "string" && r.description ? { description: r.description } : {}),
+    createdAt: str(r.created_at),
+    updatedAt: str(r.updated_at),
+    archivedAt: strOrNull(r.archived_at),
+  };
 }
 
 function toSession(r: Row): Session {
@@ -297,13 +305,14 @@ export class Store {
     return (this.db.prepare("SELECT * FROM topics ORDER BY created_at, id").all() as Row[]).map(toTopic);
   }
 
-  updateTopic(id: Id, patch: Partial<Pick<Topic, "title" | "workspaceIds" | "archivedAt">>): Topic {
+  updateTopic(id: Id, patch: Partial<Pick<Topic, "title" | "workspaceIds" | "archivedAt" | "description">>): Topic {
     const topic = this.getTopic(id);
     if (!topic) throw new Error(`topic ${id} not found`);
     const next: Topic = { ...topic, ...patch, updatedAt: this.timestamp() };
+    if (!next.description) delete next.description;
     this.db
-      .prepare("UPDATE topics SET title = ?, workspace_ids = ?, archived_at = ?, updated_at = ? WHERE id = ?")
-      .run(next.title, JSON.stringify(next.workspaceIds), next.archivedAt, next.updatedAt, id);
+      .prepare("UPDATE topics SET title = ?, workspace_ids = ?, archived_at = ?, description = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, JSON.stringify(next.workspaceIds), next.archivedAt, next.description ?? null, next.updatedAt, id);
     return next;
   }
 

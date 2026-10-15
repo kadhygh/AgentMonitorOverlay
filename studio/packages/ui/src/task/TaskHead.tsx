@@ -264,7 +264,7 @@ export function TaskMeta({
       </span>,
     );
   parts.push(
-    <button key="topic" type="button" className="meta-item" disabled={disabled} aria-label={topic ? `专题：${topic.title}` : "专题：无"} title={topic ? `专题：${topic.title}；点击换专题` : "不在专题里；点击放进专题"} onClick={onTopic} data-testid="task-topic">
+    <button key="topic" type="button" className="meta-item" disabled={disabled} aria-label={topic ? `专题：${topic.title}` : "专题：无"} title={topic ? [`专题：${topic.title}`, topic.description, "点击换专题；左栏右键专题可以改名字和说明"].filter(Boolean).join("\n") : "不在专题里；点击放进专题"} onClick={onTopic} data-testid="task-topic">
       {Icon.topic}
       {topic ? topic.title : "—"}
     </button>,
