@@ -3,7 +3,7 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 .focus-root { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; padding: 10px; }
 .focus-root > .focus-panel { min-height: 0; flex: 0 1 auto; }
 .focus-panel {
-  border-radius: 14px; background: var(--overlay-strong); border: 1px solid var(--focus-border); box-shadow: 0 12px 30px var(--shadow);
+  border-radius: 14px; background: var(--overlay-strong); border: 1px solid var(--focus-border); box-shadow: 0 2px 7px var(--shadow);
   overflow: hidden; display: flex; flex-direction: column; max-height: 100%; font-size: 13.5px; line-height: 1.5;
 }
 .focus-head { display: flex; align-items: center; gap: 8px; padding: 10px 12px 10px 14px; border-bottom: 1px solid var(--border); }
@@ -58,14 +58,14 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 /* S14-J: something new needs the person — the panel glows (gently) and the robot dances above it. */
 .focus-panel.alerting { border-color: var(--attention); animation: focus-glow 1.6s ease-in-out infinite; }
 @keyframes focus-glow {
-  0%, 100% { box-shadow: 0 12px 30px var(--shadow), 0 0 0 0 color-mix(in srgb, var(--attention) 0%, transparent); }
-  50% { box-shadow: 0 12px 30px var(--shadow), 0 0 0 4px color-mix(in srgb, var(--attention) 45%, transparent); }
+  0%, 100% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 0 color-mix(in srgb, var(--attention) 0%, transparent); }
+  50% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 4px color-mix(in srgb, var(--attention) 45%, transparent); }
 }
 .focus-bot-slot { flex: none; display: flex; justify-content: flex-end; padding: 0 6px 6px; }
 .pixel-bot { display: inline-flex; align-items: flex-end; gap: 6px; border: none; background: transparent; padding: 0; cursor: pointer; color: var(--text); animation: bot-pop 0.25s ease-out; }
 .pixel-bot-say {
   position: relative; margin-bottom: 34px; padding: 5px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
-  background: var(--overlay-strong); border: 1px solid var(--attention); color: var(--attention); box-shadow: 0 6px 16px var(--shadow);
+  background: var(--overlay-strong); border: 1px solid var(--attention); color: var(--attention); box-shadow: 0 2px 6px var(--shadow);
 }
 .pixel-bot-say::after { content: ""; position: absolute; right: -6px; bottom: 8px; border: 6px solid transparent; border-left-color: var(--attention); border-right: 0; }
 .pixel-bot-art { filter: drop-shadow(0 3px 4px var(--shadow)); }
@@ -86,7 +86,7 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 @keyframes bot-leg { 0% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 @keyframes bot-blink { 0% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) {
-  .focus-panel.alerting { animation: none; box-shadow: 0 12px 30px var(--shadow), 0 0 0 3px color-mix(in srgb, var(--attention) 45%, transparent); }
+  .focus-panel.alerting { animation: none; box-shadow: 0 2px 7px var(--shadow), 0 0 0 3px color-mix(in srgb, var(--attention) 45%, transparent); }
   .pixel-bot, .bot-bulb, .bot-bob, .leg-l, .leg-r { animation: none; }
   .pose-a { animation: none; opacity: 1; }
   .pose-b { animation: none; opacity: 0; }
@@ -96,3 +96,27 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 .focus-quota { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 14px; border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
 .focus-quota-item.hot { color: var(--attention-text, var(--attention)); font-weight: 600; }
 .focus-quota-item.bad { color: var(--error); }
+
+/* 2026-10-15: the window is only as big as what Focus draws (its shape follows the panel, robot and this box), so the
+   shadows stay within a few pixels. 「Focus 设置」 sits above the panel. */
+.focus-pop {
+  flex: none; align-self: flex-end; width: 260px; margin-bottom: 8px; padding: 6px; border-radius: 12px;
+  background: var(--overlay-strong); border: 1px solid var(--focus-border); box-shadow: 0 2px 7px var(--shadow);
+  display: flex; flex-direction: column; gap: 2px; font-size: 13px;
+}
+.focus-pop-head { display: flex; align-items: center; padding: 2px 2px 6px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; }
+.focus-pop-title { flex: 1; font-weight: 600; }
+.focus-pop-x { width: 26px; height: 26px; border-radius: 7px; border: none; background: transparent; color: var(--text-dim); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; padding: 0; }
+.focus-pop-x:hover { background: var(--selected); color: var(--text); }
+.focus-pop-row { display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; border: none; border-radius: 8px; background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.focus-pop-row:hover:not(:disabled) { background: var(--selected); }
+.focus-pop-row:disabled { color: var(--text-faint); cursor: default; }
+.focus-pop-row .focus-menu-label { display: flex; flex-direction: column; }
+.focus-pop-hint { font-size: 11.5px; color: var(--text-dim); }
+.focus-switch { flex: none; width: 28px; height: 16px; border-radius: 8px; background: var(--border-strong); position: relative; transition: background 0.15s; }
+.focus-switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 12px; height: 12px; border-radius: 50%; background: var(--panel); transition: transform 0.15s; }
+.focus-switch.on { background: var(--primary); }
+.focus-switch.on::after { transform: translateX(12px); }
+/* 点击穿透: nothing drags (clicks fall through anyway); the panel reads a little lighter. */
+.focus-panel.passthrough .focus-head { -webkit-app-region: no-drag; }
+.focus-panel.passthrough { background: color-mix(in srgb, var(--overlay-strong) 82%, transparent); }

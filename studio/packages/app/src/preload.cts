@@ -43,8 +43,10 @@ electron.contextBridge.exposeInMainWorld("amo", {
       electron.ipcRenderer.on("amo:focus-changed", listener);
       return () => electron.ipcRenderer.removeListener("amo:focus-changed", listener);
     },
-    /** Focus window only: let clicks through (true) or catch them (false). */
+    /** Focus window only: let clicks through (true) or catch them (false); used by 点击穿透. */
     setIgnoreMouse: (ignore: boolean): void => electron.ipcRenderer.send("amo:focus-mouse", ignore),
+    /** Focus window only: the parts of the window that are Focus (panel, robot, settings); clicks elsewhere go through. */
+    setShape: (rects: Array<{ x: number; y: number; width: number; height: number }>): void => electron.ipcRenderer.send("amo:focus-shape", rects),
     /** Focus window only: a right-click on its title row (a drag area the page never hears about), in page pixels. */
     onContextMenu: (cb: (at: { x: number; y: number }) => void): (() => void) => {
       const listener = (_event: unknown, at: { x: number; y: number }) => cb(at);

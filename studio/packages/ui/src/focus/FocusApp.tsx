@@ -8,15 +8,16 @@ import { planTitle } from "../chat/questions/flow.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useSettings } from "../settings/SettingsDialog.js";
-import { attentionKeys, pruneSeen, readFocusLocked, shouldAlert, writeFocusLocked } from "./attention.js";
+import { attentionKeys, PASSTHROUGH_INTERACTIVE, pruneSeen, readFocusLocked, readFocusPassthrough, shapeRects, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
 import { PixelBot } from "./PixelBot.js";
 import { FocusQuota } from "./FocusQuota.js";
 import "./focus.css";
 
 // The Focus window: "what needs me right now". Lists sessions waiting for approval or review, newest first; one entry
 // opens to show its latest content, approvals can be granted in place, everything else goes back to the workbench.
-// S14-J: a right-click menu (移动位置 / 锁定位置 / 收起 / 打开 Studio / 隐藏), and while something new needs the person
-// the panel glows and a pixel robot dances above it until they look.
+// S14-J: while something new needs the person the panel glows and a pixel robot dances above it until they look.
+// 2026-10-15: the window takes clicks wherever Focus draws (it tells the main process its shape); 「Focus 设置」 (the
+// gear, or a right-click) is a small box with × — 移动位置 / 锁定位置 / 点击穿透 / 收起 / 打开 Studio / 隐藏.
 
 type Approval = Extract<SessionItem, { type: "approval" }>;
 const SNIPPET_MAX = 300;
@@ -55,7 +56,8 @@ export function FocusApp() {
   const [open, setOpen] = useState<string | null>(null);
   const [locked, setLocked] = useState(readFocusLocked);
   const [moving, setMoving] = useState(false);
-  const [menu, setMenu] = useState<{ x: number; y: number } | null>(null);
+  const [pop, setPop] = useState(false);
+  const [passthrough, setPassthrough] = useState(readFocusPassthrough);
   const [seen, setSeen] = useState<ReadonlySet<string>>(() => new Set());
   const decisions = useOpenDecisions(host.kind === "ready" ? host.link : NO_LINK);
   const pending = usePendingProposals(host.kind === "ready" ? host.link : NO_LINK);
@@ -63,16 +65,26 @@ export function FocusApp() {
   // Scheduler proposals belong to the planning feature (设置 → 功能).
   const proposals = settings?.disabledFeatures.includes("planning") ? [] : pending;
 
-  // Clicks pass through the transparent window except over the panel, its menu and the robot. While moving, the
-  // whole window takes the mouse: it is never focused, so 完成 is the way out (Escape never reaches it).
-  const catchMouse = (on: boolean) => window.amo?.focus?.setIgnoreMouse(!on);
-  useEffect(() => () => window.amo?.focus?.setIgnoreMouse(true), []);
+  useWindowShape();
+  // 点击穿透: the window lets clicks through, and takes them back while the pointer is over a button (the pointer's
+  // moves still reach the page). Moving and the settings box always take clicks.
+  const through = passthrough && !moving && !pop;
   useEffect(() => {
-    if (moving) catchMouse(true);
-    else catchMouse(pointerOverUi());
-  }, [moving]);
+    const set = (ignore: boolean) => window.amo?.focus?.setIgnoreMouse(ignore);
+    if (!through) {
+      set(false);
+      return;
+    }
+    set(true);
+    const onOver = (e: PointerEvent) => set(!(e.target as Element | null)?.closest?.(PASSTHROUGH_INTERACTIVE));
+    document.addEventListener("pointerover", onOver);
+    return () => {
+      document.removeEventListener("pointerover", onOver);
+      set(false);
+    };
+  }, [through]);
   // A right-click on the title row (a window drag area) only reaches the main process, which passes it on.
-  useEffect(() => window.amo?.focus?.onContextMenu?.((at) => setMenu(at)), []);
+  useEffect(() => window.amo?.focus?.onContextMenu?.(() => setPop(true)), []);
 
   const live = host.kind === "ready" ? host.state : null;
   const list = live ? needsMe(live) : [];
@@ -85,10 +97,9 @@ export function FocusApp() {
   const alerting = shouldAlert(keys, seen);
   const acknowledge = () => setSeen(new Set(keys));
 
-  const closeMenu = () => {
-    setMenu(null);
-    // The menu may have been under the pointer; leave click-through as the pointer is now.
-    requestAnimationFrame(() => !moving && catchMouse(pointerOverUi()));
+  const togglePassthrough = () => {
+    writeFocusPassthrough(!passthrough);
+    setPassthrough(!passthrough);
   };
   const toggleLock = () => {
     writeFocusLocked(!locked);
@@ -99,7 +110,7 @@ export function FocusApp() {
   if (host.kind !== "ready") {
     return (
       <div className="focus-root">
-        <div className="focus-panel" onMouseEnter={() => catchMouse(true)} onMouseLeave={() => catchMouse(false)}>
+        <div className="focus-panel">
           <div className="focus-head">
             <span className="focus-name">Focus</span>
             <span className="focus-dim">{host.kind === "connecting" ? "正在连接 Host…" : "未连接 Host"}</span>
@@ -125,23 +136,35 @@ export function FocusApp() {
     else void window.amo?.openInWorkbench?.({ taskId: "" });
   };
 
-  const panelClass = ["focus-panel", locked ? "locked" : "", moving ? "moving" : "", alerting ? "alerting" : ""].filter(Boolean).join(" ");
+  const panelClass = ["focus-panel", locked ? "locked" : "", moving ? "moving" : "", alerting ? "alerting" : "", passthrough ? "passthrough" : ""].filter(Boolean).join(" ");
   return (
     <div className="focus-root">
       {alerting && !moving && (
-        <div className="focus-bot-slot" onMouseEnter={() => catchMouse(true)} onMouseLeave={() => catchMouse(false)}>
+        <div className="focus-bot-slot">
           <PixelBot message={`${needs} 件事等你`} onClick={openFirst} />
         </div>
+      )}
+      {pop && (
+        <FocusSettings
+          onClose={() => setPop(false)}
+          items={[
+            { label: moving ? "完成移动" : "移动位置", icon: ICON.move, disabled: locked, hint: locked ? "先取消锁定位置" : "拖动 Focus 到别处", close: true, onPick: () => setMoving(!moving), testId: "focus-menu-move" },
+            { label: "锁定位置", icon: ICON.lock, checked: locked, hint: "锁定后标题栏不能拖动", onPick: toggleLock, testId: "focus-menu-lock" },
+            { label: "点击穿透", icon: ICON.through, checked: passthrough, hint: "点在 Focus 上会落到下面的窗口，只有按钮能点", onPick: togglePassthrough, testId: "focus-menu-through" },
+            { label: compact ? "展开会话列表" : "收起成一行", icon: compact ? ICON.expand : ICON.collapse, close: true, onPick: () => setCompact(!compact), testId: "focus-menu-compact" },
+            { label: "打开 Studio 主窗口", icon: ICON.window, close: true, onPick: () => void window.amo?.openInWorkbench?.({ taskId: "" }), testId: "focus-menu-open" },
+            { label: "隐藏 Focus", icon: ICON.hide, hint: "主窗口顶栏的 Focus 按钮可以再打开", close: true, onPick: () => void window.amo?.focus?.set(false), testId: "focus-menu-hide" },
+          ]}
+        />
       )}
       <div
         className={panelClass}
         data-testid="focus-panel"
         data-locked={locked}
-        onMouseEnter={() => catchMouse(true)}
-        onMouseLeave={() => !moving && !menu && catchMouse(false)}
+        data-passthrough={passthrough}
         onContextMenu={(e) => {
           e.preventDefault();
-          setMenu({ x: e.clientX, y: e.clientY });
+          setPop(true);
         }}
       >
         <div className="focus-head">
@@ -151,11 +174,19 @@ export function FocusApp() {
           </span>
           <span className="focus-dim">· 运行中 {running}</span>
           <span className="spacer" />
+          {passthrough && (
+            <span className="focus-lock" title="点击穿透：只有按钮能点（在 Focus 设置里关掉）" aria-label="点击穿透已开" data-testid="focus-passthrough">
+              {ICON.through}
+            </span>
+          )}
           {locked && (
-            <span className="focus-lock" title="位置已锁定（右键可以解锁）" aria-label="位置已锁定" data-testid="focus-locked">
+            <span className="focus-lock" title="位置已锁定（在 Focus 设置里解锁）" aria-label="位置已锁定" data-testid="focus-locked">
               {ICON.lock}
             </span>
           )}
+          <button type="button" className="focus-icon" aria-label="Focus 设置" title="Focus 设置（右键也能打开）" aria-expanded={pop} onClick={() => setPop(!pop)} data-testid="focus-settings-toggle">
+            {ICON.gear}
+          </button>
           <button
             type="button"
             className="focus-icon"
@@ -221,71 +252,89 @@ export function FocusApp() {
           </div>
         )}
       </div>
-      {menu && (
-        <FocusMenu
-          at={menu}
-          onClose={closeMenu}
-          onMouseEnter={() => catchMouse(true)}
-          items={[
-            { label: moving ? "完成移动" : "移动位置", icon: ICON.move, disabled: locked, hint: locked ? "先取消锁定位置" : undefined, onPick: () => setMoving(!moving), testId: "focus-menu-move" },
-            { label: "锁定位置", icon: ICON.lock, checked: locked, onPick: toggleLock, testId: "focus-menu-lock" },
-            { label: compact ? "展开会话列表" : "收起成一行", icon: compact ? ICON.expand : ICON.collapse, onPick: () => setCompact(!compact), testId: "focus-menu-compact" },
-            { label: "打开 Studio 主窗口", icon: ICON.window, onPick: () => void window.amo?.openInWorkbench?.({ taskId: "" }), testId: "focus-menu-open" },
-            { label: "隐藏 Focus", icon: ICON.hide, hint: "主窗口顶栏的 Focus 按钮可以再打开", onPick: () => void window.amo?.focus?.set(false), testId: "focus-menu-hide" },
-          ]}
-        />
-      )}
     </div>
   );
 }
 
-/** Whether the pointer is over something of Focus that takes clicks. */
-const pointerOverUi = () => !!document.querySelector(".focus-panel:hover, .focus-bot-slot:hover, .focus-menu:hover");
+/**
+ * Tells the main process which parts of the window are Focus — the panel, the robot, the settings box — so clicks
+ * anywhere else go to the windows below. Sent when their boxes change.
+ */
+function useWindowShape() {
+  const last = useRef("");
+  const send = useRef(() => {});
+  send.current = () => {
+    const boxes = [...document.querySelectorAll<HTMLElement>(".focus-panel, .pixel-bot, .focus-pop")].map((el) => el.getBoundingClientRect());
+    const rects = shapeRects(boxes, { width: window.innerWidth, height: window.innerHeight });
+    const key = JSON.stringify(rects);
+    if (!rects.length || key === last.current) return;
+    last.current = key;
+    window.amo?.focus?.setShape?.(rects);
+  };
+  const observer = useRef<ResizeObserver | null>(null);
+  useEffect(() => {
+    observer.current = new ResizeObserver(() => send.current());
+    const onResize = () => send.current();
+    window.addEventListener("resize", onResize);
+    return () => {
+      observer.current?.disconnect();
+      window.removeEventListener("resize", onResize);
+    };
+  }, []);
+  // After every render: watch the parts there are now, and send their boxes if they moved.
+  useLayoutEffect(() => {
+    for (const el of document.querySelectorAll(".focus-panel, .pixel-bot, .focus-pop")) observer.current?.observe(el);
+    send.current();
+    // Once the robot's pop-in (a scale animation, which no observer sees) is over.
+    const t = setTimeout(() => send.current(), 300);
+    return () => clearTimeout(t);
+  });
+}
 
-interface MenuItem {
+interface SettingItem {
   label: string;
   icon: ReactNode;
   onPick(): void;
+  /** A switch (stays open, shows its state); otherwise an action. */
   checked?: boolean;
+  /** Close the box after the action. */
+  close?: boolean;
   disabled?: boolean;
   hint?: string | undefined;
   testId: string;
 }
 
-/** The right-click menu, kept inside the window (it cannot grow past it). */
-function FocusMenu({ at, items, onClose, onMouseEnter }: { at: { x: number; y: number }; items: MenuItem[]; onClose(): void; onMouseEnter(): void }) {
-  const box = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState(at);
-  useLayoutEffect(() => {
-    const el = box.current;
-    if (!el) return;
-    const { width, height } = el.getBoundingClientRect();
-    setPos({ x: Math.max(4, Math.min(at.x, window.innerWidth - width - 4)), y: Math.max(4, Math.min(at.y, window.innerHeight - height - 4)) });
-  }, [at]);
-  useEffect(() => {
-    const onDown = (e: MouseEvent) => !(e.target as Element | null)?.closest?.(".focus-menu") && onClose();
-    window.addEventListener("mousedown", onDown);
-    return () => window.removeEventListener("mousedown", onDown);
-  }, [onClose]);
+/** 「Focus 设置」: a small box above the panel with ×. Switches stay open; actions close it. */
+function FocusSettings({ items, onClose }: { items: SettingItem[]; onClose(): void }) {
   return (
-    <div ref={box} className="ctx-menu focus-menu" role="menu" aria-label="Focus 设置" style={{ left: pos.x, top: pos.y }} onMouseEnter={onMouseEnter} onContextMenu={(e) => e.preventDefault()} data-testid="focus-menu">
+    <div className="focus-pop" role="dialog" aria-label="Focus 设置" onContextMenu={(e) => e.preventDefault()} data-testid="focus-menu">
+      <div className="focus-pop-head">
+        <span className="focus-pop-title">Focus 设置</span>
+        <button type="button" className="focus-pop-x" aria-label="关闭" title="关闭" onClick={onClose} data-testid="focus-menu-close">
+          {ICON.x}
+        </button>
+      </div>
       {items.map((it) => (
         <button
           key={it.testId}
           type="button"
+          className="focus-pop-row"
           role={it.checked === undefined ? "menuitem" : "menuitemcheckbox"}
           aria-checked={it.checked}
           disabled={it.disabled}
           title={it.hint}
           onClick={() => {
-            onClose();
+            if (it.close) onClose();
             it.onPick();
           }}
           data-testid={it.testId}
         >
           <span className="focus-menu-icon">{it.icon}</span>
-          <span className="focus-menu-label">{it.label}</span>
-          {it.checked && <span className="focus-menu-check">✓</span>}
+          <span className="focus-menu-label">
+            {it.label}
+            {it.checked !== undefined && it.hint && <span className="focus-pop-hint">{it.hint}</span>}
+          </span>
+          {it.checked !== undefined && <span className={it.checked ? "focus-switch on" : "focus-switch"} aria-hidden="true" />}
         </button>
       ))}
     </div>
@@ -316,6 +365,20 @@ const ICON = {
       <path d="M2 6h12" />
     </>,
   ),
+  gear: svg(
+    <>
+      <circle cx="8" cy="8" r="2.2" />
+      <path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" />
+    </>,
+  ),
+  // A pointer passing through a sheet.
+  through: svg(
+    <>
+      <path d="M2.5 9.5h11" strokeDasharray="2 1.6" />
+      <path d="M8 2v10.5M5.6 10.1 8 12.5l2.4-2.4" />
+    </>,
+  ),
+  x: svg(<path d="M4 4l8 8M12 4l-8 8" />),
   hide: svg(
     <>
       <path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4z" />

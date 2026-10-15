@@ -113,7 +113,17 @@ if (!app.requestSingleInstanceLock()) {
   });
   ipcMain.handle("amo:focus-get", () => focusWindow !== null);
   ipcMain.handle("amo:focus-set", (_event, on: unknown) => setFocusVisible(on === true));
-  // Only the Focus window may switch its own click-through.
+  // Only the Focus window may set its own shape and click-through.
+  ipcMain.on("amo:focus-shape", (event, rects: unknown) => {
+    if (!focusWindow || event.sender !== focusWindow.webContents || !Array.isArray(rects)) return;
+    const ok = rects
+      .slice(0, 8)
+      .filter((r): r is { x: number; y: number; width: number; height: number } => !!r && ["x", "y", "width", "height"].every((k) => Number.isFinite((r as Record<string, unknown>)[k])))
+      .map((r) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }));
+    if (!ok.length) return;
+    focusWindow.setShape(ok);
+    if (testMode) (globalThis as { __amoFocusShape?: unknown }).__amoFocusShape = ok;
+  });
   ipcMain.on("amo:focus-mouse", (event, ignore: unknown) => {
     if (!focusWindow || event.sender !== focusWindow.webContents) return;
     focusWindow.setIgnoreMouseEvents(ignore === true, { forward: true });

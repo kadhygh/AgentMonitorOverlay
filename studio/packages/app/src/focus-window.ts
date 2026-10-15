@@ -4,7 +4,9 @@ import { dirname, join } from "node:path";
 import { placeFocus, placeMain, refitFocus, type DisplayInfo, type Point, type Rect, type Size } from "./placement.js";
 
 // The Focus window: a small frameless, transparent, always-on-top panel in a corner of the screen that answers one
-// question, "what needs me right now". It never takes focus and lets clicks through everywhere except its panel.
+// question, "what needs me right now". It never takes focus. The window's shape is only what the page draws (panel,
+// robot, settings — the page reports them); clicks anywhere else go to the windows below (2026-10-15: before, the
+// whole window ignored the mouse until the page saw the pointer enter, which the title row's drag area never let it).
 
 export const FOCUS_W = 380;
 export const FOCUS_H = 560;
@@ -48,8 +50,8 @@ export function createFocusWindow({ url, preload, testMode, saved, onMoved }: Fo
     webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true, backgroundThrottling: false },
   });
   win.setAlwaysOnTop(true, "floating");
-  // Transparent areas let clicks through; the renderer turns this off while the pointer is over the panel.
-  win.setIgnoreMouseEvents(true, { forward: true });
+  // Until the page reports its parts: only a strip at the bottom, where the panel's head will be.
+  win.setShape([{ x: 10, y: FOCUS_H - 60, width: FOCUS_W - 20, height: 50 }]);
   const origin = new URL(url).origin;
   win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   win.webContents.on("will-navigate", (event, target) => {

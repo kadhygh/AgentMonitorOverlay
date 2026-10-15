@@ -40,11 +40,10 @@ test("Focus lists what needs me, approves in place and opens the workbench", asy
   await expect(entry).toContainText("待批准");
   await expect(focus.getByTestId("focus-snippet")).toContainText("cmd /c echo focus-approved");
 
-  // Clicks pass through the window except over the panel.
+  // The whole panel takes clicks (the window's shape is the panel; the rest lets clicks through by itself).
   await focus.getByTestId("focus-panel").hover();
-  await expect.poll(() => focusIgnore(studio!)).toBe(false);
   await focus.mouse.move(5, 5);
-  await expect.poll(() => focusIgnore(studio!)).toBe(true);
+  expect(await focusIgnore(studio)).toBe(false);
   await screenshot(app, "stage-3", "S3-07-focus", focus, "focus");
 
   // "在工作台打开" shows that session in the workbench.
@@ -95,7 +94,7 @@ test("Focus shows a Codex async question at once, while the model is still worki
   await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1");
 });
 
-test("Focus: the robot dances until looked at; right-click moves, locks, folds and hides it (S14-J)", async () => {
+test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, lets clicks through and hides it (S14-J/K)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
@@ -134,35 +133,61 @@ test("Focus: the robot dances until looked at; right-click moves, locks, folds a
   await expect(focus.getByTestId("focus-entry")).toHaveCount(0);
   await fold.click();
 
-  // Right-click: the menu.
+  // The window is only what Focus draws: its shape follows the panel.
+  const shape = () => app.evaluate(() => (globalThis as { __amoFocusShape?: Array<{ x: number; y: number; width: number; height: number }> }).__amoFocusShape ?? []);
+  await expect.poll(async () => (await shape()).length).toBeGreaterThan(0);
+  const panelOnly = (await shape()).reduce((a, r) => a + r.width * r.height, 0);
+  expect(panelOnly).toBeLessThan(380 * 560);
+  expect(await focusIgnore(studio)).toBe(false);
+
+  // Right-click (or the gear): 「Focus 设置」, a box with ×; the window's shape grows to take it.
   await focus.getByTestId("focus-entry").click({ button: "right" });
   const menu = focus.getByTestId("focus-menu");
-  await expect(menu.getByRole("menuitem").or(menu.getByRole("menuitemcheckbox"))).toHaveText(["移动位置", "锁定位置", "收起成一行", "打开 Studio 主窗口", "隐藏 Focus"]);
+  await expect(menu).toBeVisible();
+  await expect(menu.locator(".focus-pop-row")).toHaveCount(6);
+  for (const label of ["移动位置", "锁定位置", "点击穿透", "收起成一行", "打开 Studio 主窗口", "隐藏 Focus"]) await expect(menu).toContainText(label);
+  await expect.poll(async () => (await shape()).reduce((a, r) => a + r.width * r.height, 0)).toBeGreaterThan(panelOnly);
   await screenshot(app, "stage-14", "S14-J-focus-menu", focus, "focus");
+  await focus.getByTestId("focus-menu-close").click();
+  await expect(menu).toHaveCount(0);
 
-  // 移动位置: a drag frame over the panel, the window takes the mouse until 完成.
+  // 移动位置: an action — the box closes and a drag frame covers the panel until 完成.
+  await focus.getByTestId("focus-settings-toggle").click();
   await focus.getByTestId("focus-menu-move").click();
+  await expect(menu).toHaveCount(0);
   await expect(focus.getByTestId("focus-move")).toBeVisible();
-  await expect.poll(() => focusIgnore(studio!)).toBe(false);
   await screenshot(app, "stage-14", "S14-J-focus-move", focus, "focus");
   await focus.getByTestId("focus-move-done").click();
   await expect(focus.getByTestId("focus-move")).toHaveCount(0);
 
-  // 锁定位置: checked, shown in the head, moving is off; remembered after a reload.
-  await focus.getByTestId("focus-entry").click({ button: "right" });
+  // 锁定位置: a switch — the box stays open; shown in the head, moving is off; remembered after a reload.
+  await focus.getByTestId("focus-settings-toggle").click();
   await focus.getByTestId("focus-menu-lock").click();
+  await expect(menu).toBeVisible();
+  await expect(focus.getByTestId("focus-menu-lock")).toHaveAttribute("aria-checked", "true");
+  await expect(focus.getByTestId("focus-menu-move")).toBeDisabled();
   await expect(focus.getByTestId("focus-panel")).toHaveAttribute("data-locked", "true");
   await expect(focus.getByTestId("focus-locked")).toBeVisible();
   await focus.reload();
   await expect(focus.getByTestId("focus-locked")).toBeVisible({ timeout: 30_000 });
-  await focus.getByTestId("focus-entry").click({ button: "right" });
+  await focus.getByTestId("focus-settings-toggle").click();
   await expect(focus.getByTestId("focus-menu-lock")).toHaveAttribute("aria-checked", "true");
-  await expect(focus.getByTestId("focus-menu-move")).toBeDisabled();
   await focus.getByTestId("focus-menu-lock").click();
   await expect(focus.getByTestId("focus-locked")).toHaveCount(0);
 
+  // 点击穿透: once the box closes, clicks fall through Focus except on its buttons.
+  await focus.getByTestId("focus-menu-through").click();
+  await expect(focus.getByTestId("focus-menu-through")).toHaveAttribute("aria-checked", "true");
+  expect(await focusIgnore(studio)).toBe(false);
+  await focus.getByTestId("focus-menu-close").click();
+  await expect(focus.getByTestId("focus-passthrough")).toBeVisible();
+  await expect.poll(() => focusIgnore(studio!)).toBe(true);
+  await screenshot(app, "stage-14", "S14-K-focus-passthrough", focus, "focus");
+  await focus.getByTestId("focus-settings-toggle").click();
+  await focus.getByTestId("focus-menu-through").click();
+  await expect(focus.getByTestId("focus-passthrough")).toHaveCount(0);
+
   // 隐藏 Focus: the window goes, the top bar button follows.
-  await focus.getByTestId("focus-entry").click({ button: "right" });
   const closed = focus.waitForEvent("close");
   await focus.getByTestId("focus-menu-hide").click();
   await closed;

@@ -36,3 +36,39 @@ export function writeFocusLocked(on: boolean): void {
     // a per-machine convenience only
   }
 }
+
+const PASSTHROUGH_KEY = "amo.focusPassthrough";
+
+/** 点击穿透 (2026-10-15): clicks on Focus go to the window below, except on its buttons. Off by default. */
+export function readFocusPassthrough(): boolean {
+  try {
+    return localStorage.getItem(PASSTHROUGH_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+export function writeFocusPassthrough(on: boolean): void {
+  try {
+    localStorage.setItem(PASSTHROUGH_KEY, on ? "1" : "0");
+  } catch {
+    // a per-machine convenience only
+  }
+}
+
+/** What still answers clicks under 点击穿透: buttons, fields and links, and the settings box. */
+export const PASSTHROUGH_INTERACTIVE = "button, a[href], input, textarea, select, summary, [role=button], .focus-pop";
+
+/** The window parts to keep, from the elements' boxes: a few pixels around each for the glow, inside the window. */
+export function shapeRects(boxes: ReadonlyArray<{ left: number; top: number; width: number; height: number }>, win: { width: number; height: number }, margin = 8): Array<{ x: number; y: number; width: number; height: number }> {
+  return boxes
+    .filter((b) => b.width > 0 && b.height > 0)
+    .map((b) => {
+      const x = Math.max(0, Math.floor(b.left - margin));
+      const y = Math.max(0, Math.floor(b.top - margin));
+      const right = Math.min(win.width, Math.ceil(b.left + b.width + margin));
+      const bottom = Math.min(win.height, Math.ceil(b.top + b.height + margin));
+      return { x, y, width: right - x, height: bottom - y };
+    })
+    .filter((r) => r.width > 0 && r.height > 0);
+}
