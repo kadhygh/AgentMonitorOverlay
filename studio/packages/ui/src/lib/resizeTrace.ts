@@ -34,6 +34,9 @@ export function startResizeTrace(): void {
     loaf: LoafEntry[];
     longtasks: number;
     timer: number;
+    /** The size at the previous resize event, and sudden shrinks (2026-10-15: the page once saw the minimum size, 960×600, mid-drag). */
+    prev: [number, number];
+    drops: string[];
   } | null = null;
 
   const size = () => `${window.innerWidth}×${window.innerHeight}`;
@@ -109,15 +112,20 @@ export function startResizeTrace(): void {
       dom: document.getElementsByTagName("*").length,
       theme: document.documentElement.dataset.theme ?? "system",
       dpr: window.devicePixelRatio,
+      drops: b.drops,
     });
   };
 
   window.addEventListener("resize", () => {
     const now = performance.now();
     if (!burst) {
-      burst = { t0: now, last: now, events: 0, frames: 0, lastFrame: 0, maxFrameGap: 0, slowFrames: 0, from: size(), loaf: [], longtasks: 0, timer: 0 };
+      burst = { t0: now, last: now, events: 0, frames: 0, lastFrame: 0, maxFrameGap: 0, slowFrames: 0, from: size(), loaf: [], longtasks: 0, timer: 0, prev: [window.innerWidth, window.innerHeight], drops: [] };
       requestAnimationFrame(frame);
     }
+    const w = window.innerWidth;
+    const h = window.innerHeight;
+    if ((burst.prev[0] - w > 100 || burst.prev[1] - h > 100) && burst.drops.length < 10) burst.drops.push(`+${Math.round(now - burst.t0)}ms ${burst.prev[0]}×${burst.prev[1]}→${w}×${h}`);
+    burst.prev = [w, h];
     burst.events++;
     burst.last = now;
     clearTimeout(burst.timer);

@@ -25,6 +25,11 @@ interface Burst {
   /** Other main-process things that happened during the burst: setBounds from Studio, display changes, Focus shape. */
   other: Map<string, number>;
   timer: NodeJS.Timeout | null;
+  /** Smallest window and content size seen at a resize event, and sudden shrinks (did the window itself hit 960×600?). */
+  minWin: [number, number];
+  minContent: [number, number];
+  drops: string[];
+  prev: [number, number];
 }
 
 export class ResizeTrace {
@@ -94,7 +99,7 @@ export class ResizeTrace {
   attach(win: BrowserWindow, name: () => string): void {
     if (!this.enabled) return;
     win.on("will-resize", (_e, bounds, details) => this.event(win, name(), "will", bounds, (details as { edge?: string } | undefined)?.edge));
-    win.on("resize", () => this.event(win, name(), "resize", win.getBounds()));
+    win.on("resize", () => this.event(win, name(), "resize", win.getBounds(), undefined, win.getContentBounds()));
     win.on("maximize", () => this.note(name(), "maximize"));
     win.on("unmaximize", () => this.note(name(), "unmaximize"));
   }
@@ -122,12 +127,19 @@ export class ResizeTrace {
     this.write(`${stamp()} ${window} page ${text}`);
   }
 
-  private event(win: BrowserWindow, name: string, kind: "will" | "resize", bounds: Electron.Rectangle, edge?: string): void {
+  private event(win: BrowserWindow, name: string, kind: "will" | "resize", bounds: Electron.Rectangle, edge?: string, content?: Electron.Rectangle): void {
     const now = performance.now();
     let b = this.bursts.get(name);
     if (!b) {
-      b = { window: name, startedAt: now, last: now, willResize: 0, resize: 0, edges: new Set(), from: win.getBounds(), to: bounds, slowGaps: [], maxGap: 0, other: new Map(), timer: null };
+      const start = win.getBounds();
+      b = { window: name, startedAt: now, last: now, willResize: 0, resize: 0, edges: new Set(), from: start, to: bounds, slowGaps: [], maxGap: 0, other: new Map(), timer: null, minWin: [start.width, start.height], minContent: [Infinity, Infinity], drops: [], prev: [start.width, start.height] };
       this.bursts.set(name, b);
+    }
+    if (kind === "resize") {
+      b.minWin = [Math.min(b.minWin[0], bounds.width), Math.min(b.minWin[1], bounds.height)];
+      if (content) b.minContent = [Math.min(b.minContent[0], content.width), Math.min(b.minContent[1], content.height)];
+      if ((b.prev[0] - bounds.width > 100 || b.prev[1] - bounds.height > 100) && b.drops.length < 10) b.drops.push(`+${Math.round(now - b.startedAt)}ms ${b.prev[0]}×${b.prev[1]}→${bounds.width}×${bounds.height}`);
+      b.prev = [bounds.width, bounds.height];
     }
     const gap = now - b.last;
     if (kind === "resize" && b.resize > 0) {
@@ -158,7 +170,7 @@ export class ResizeTrace {
       // closed meanwhile
     }
     this.write(
-      `${stamp()} ${name} burst ${ms}ms edges=${[...b.edges].join("/") || "?"} will-resize=${b.willResize} resize=${b.resize} (${rate}/s) maxGap=${Math.round(b.maxGap)}ms slowGaps=[${b.slowGaps.join(",")}] ${r(b.from)} → ${r(b.to)}${extra} other: ${other}`,
+      `${stamp()} ${name} burst ${ms}ms edges=${[...b.edges].join("/") || "?"} will-resize=${b.willResize} resize=${b.resize} (${rate}/s) maxGap=${Math.round(b.maxGap)}ms slowGaps=[${b.slowGaps.join(",")}] ${r(b.from)} → ${r(b.to)} min=${b.minWin.join("×")} minContent=${b.minContent.join("×")} drops=[${b.drops.join(", ")}]${extra} other: ${other}`,
     );
   }
 
