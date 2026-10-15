@@ -1,7 +1,15 @@
-# 交接：继续开发 AMO Studio（2026-10-14）
+# 交接：继续开发 AMO Studio（2026-10-15）
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+> **2026-10-15 更新：阶段 14 追加 S14-F 到 S14-J，都合进 `studio/main`，开发版还没重启（还是 10-14 23:41 那次的 Host）。** 详细在 `plans/stage-14.md` 进度表。
+> - S14-F/G（主会话）：标题下一行项目、分支只显示不能点；左栏、会话列表可收起；返回按钮「‹ + 图标 + 名字」；新建后会话列表默认收起。
+> - S14-H（主会话，`17c4e52` 等）：设置 → 模型 改成渠道卡片，用户可加「第三方 Claude」「第三方 Codex」渠道（网址 + Key + 模型，可沿用旧 AMO 的 DXX Key），每个渠道可「隐藏」不出现在模型选择里；余额查询照 CC Switch 的模板（通用 / New API / Sub2API / OpenAI 计费 / DeepSeek / 自定义）；设置新页「额度」选每个账号在左下角、Focus 是否显示。渠道 Key 存凭据管理器 `channel-<id>`（**Studio 现在除了 `claude-subscription` 还会写这些新条目**；旧 AMO 的条目仍只读）。Claude 本机登录的风险说明改成按 Anthropic 帮助中心 2026-06 起的说法（订阅可用于 Agent SDK 和第三方应用）。
+> - S14-I（工作树 `s14-sessbar`，`160b072`）：任务头「会话」开关完全隐藏会话列表；会话标题栏重做（更大的图标、git 分支图标）；所有归档操作深红色（`--danger` 系列颜色）。
+> - S14-J（工作树 `s14-focus`，`ee467bc`）：Focus 收起/展开改图标；右键菜单（移动位置 / 锁定位置 / 收起 / 打开主窗口 / 隐藏）；有事等人时边框闪动 + 像素机器人跳舞（`focus/PixelBot.tsx`，以后可做桌宠）。
+> - **要看到这些需要重启开发版**（S14-H 改了 Host，S14-J 改了 Electron 主进程的 focus-window）：先问用户，按 §1 的步骤，重启前备份 `.data/studio.db*`。
+> - 工作树 s13-*、s14-*（现在 8 个：viewer、pad、shell、sessbar、focus 等）都还在，等用户同意再删。
+>
 > **2026-10-14 深夜更新：阶段 13 验收 22/23 通过（A5 有问题），阶段 14 三条线做完并合进 `studio/main`，等用户重启开发版后验收。** 计划、用户决定和每条线的做法在 `plans/stage-14.md`；记忆 `studio-stage14-decisions`。合并后单测 538/539（失败的是已知不稳定的 server-manager 端口测试，单独跑通过），e2e 82/83（questions 计划审阅在负载下偶发，已加固测试 `4cbb346`，单独跑通过）。
 > - S14-A：A5 草稿存在窗口级 `gitreview/drafts.ts`、切换后按锚点滚回（`gitreview/anchor.ts`）；有总览条时隐藏竖向滚动条；Ctrl+F（查看器两种模式 + Review）、Ctrl+G；查看器文件模式按行批注（`GitCommentRange = GitRange | "file"`，查看器地址带 `session=` 作默认发送对象）。
 > - S14-B：设置 → 便签：页数、复制时的换行（常规 / 安全换行，默认常规，kv `scratchpadSafeNewlines`）；便签窗口去掉页数、标题加图标；任务页右栏不再显示便签。
@@ -63,7 +71,7 @@
 
 ## 2. 规则（摘要，全文见 `LOOP_RULES.md`）
 
-- 不碰旧 AMO 的运行时和 `broker/data/`；不改主目录文件；不改 `~/.codex/config.toml`、`~/.claude/` 设置、用户已有的凭据条目（Studio 只写一个：`claude-subscription`，由用户在设置里保存）。
+- 不碰旧 AMO 的运行时和 `broker/data/`；不改主目录文件；不改 `~/.codex/config.toml`、`~/.claude/` 设置、用户已有的凭据条目（Studio 只写自己的：`claude-subscription`，和用户在 设置 → 模型 加渠道时的 `channel-<id>` / `channel-<id>-access`）。
 - 测试只在 `%TEMP%\amo-studio-sandbox\` 和临时目录；端口只用 47900–47999；测试窗口不抢焦点、不开终端/浏览器、不碰剪贴板。
 - Git 只在 studio 分支上提交；不合并 master、不推送、不 reset --hard、不删分支。
 - 密钥不打印、不写日志/文件/命令行。

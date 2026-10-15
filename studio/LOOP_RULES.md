@@ -46,7 +46,7 @@
    - 不修改、不重启、不停止旧 AMO 的进程；
    - 不读写 `broker/data/`；
    - 不修改主目录 `G:\PROJECT\AgentMonitorOverlay` 里的文件。
-2. **不碰用户的全局配置**：不修改 `~/.codex/config.toml`、`~/.claude/` 下的设置、Windows 凭据管理器中的条目。凭据只读。
+2. **不碰用户的全局配置**：不修改 `~/.codex/config.toml`、`~/.claude/` 下的设置、Windows 凭据管理器中已有的条目。已有凭据只读；Studio 只写它自己的条目：用户在设置里保存的 `claude-subscription`，和用户在 设置 → 模型 添加渠道时的 `channel-<id>`、`channel-<id>-access`（用户 2026-10-15 要求渠道能设置 Key）。
 3. **不在用户的真实工程里测试**：测试只在 `%TEMP%\amo-studio-sandbox\` 下的沙盒工作区进行，不在用户的真实工程里启动会话或写文件。
 4. **git 规则**：
    - 只在 `studio/main` 和 `studio/stage-N` 上提交；
