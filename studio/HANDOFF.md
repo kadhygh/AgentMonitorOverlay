@@ -2,6 +2,15 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+> **2026-10-15 傍晚更新（下一个会话从这里开始）：S14-O 到 S14-V 做完，都在 `studio/main`（最新 `990fbc1`），开发版 16:11 重启过（只差 `990fbc1` 记住位置，是纯界面改动，用户按 Ctrl+R 即可）。** 每项做法见 `plans/stage-14.md` 进度表 S14-O…S14-V。
+> - 拖动闪烁已修（S14-R）：Windows 拖动中会提议离谱的小尺寸，被窗口自带最小尺寸弹到 960×600；现在最小尺寸改在 will-resize 里拦。用户试过不再闪。日志 `.data/logs/resize-trace.log` 继续记。
+> - 会话列表细线树（S14-P）、批注改成「批注N」引用（S14-Q）、左栏 A + 右侧 R1 + 额度 C（S14-S，设计画布 https://claude.ai/artifact/6XMDSpE7EtqXvUHgZjTaSo ）、会话输入框草稿（S14-T）、界面大小 / 任务页拖动提速 / 画布便签保存（S14-U）、记住位置（S14-V）。
+> - 测试：最后一次完整 e2e 98/98（`990fbc1`），单测除已知的 server-manager 端口测试（单独跑通过）外全过。
+> - 待用户反馈：任务页拖窗口和拖会话列表是否还卡（看日志里 `#main 任务` 那几行的 resizeEvents 和主进程 burst 的 `/s`）；界面大小在 125% 时看板四列放不下会出横向滚动。
+> - 今天的数据库备份都在 `.data/backup-before-*-20261015`（annorefs、nativeframe、resizeguard、navA、uiscale 等），没问题可以以后清理。
+> - 阶段 15（agent 懂 AMO、主控提案、传话）只有计划 `plans/stage-15.md`，用户说晚些一起推进。工作树 s13-*、s14-* 仍在，等用户同意再删。验收清单 https://claude.ai/artifact/CsZnNKcuGnjQxX7W1XtVr2 （db `s14`）没跟上 S14-F 之后的改动。
+> - 工具坑补充：bash heredoc 里写含引号的 Python 会断（改用 Write 写 scratchpad 的 `.py`）；`;` 串命令时 tsc 失败也会接着 commit（用 `&&`）；新 e2e 按标题找 Focus 窗口不可靠（页面加载后标题会变），用 `webContents.getURL().endsWith("#focus")`。
+>
 > **2026-10-15 午更新：S14-K 到 S14-N 做完（Focus 窗口形状和「Focus 设置」小框、快速选择、Focus 图标、编辑专题（迁移 12）、拖宽度），开发版最后一次重启在 10:51，之后的 S14-M/N 还没生效，等用户说重启。阶段 15 只出了计划 `plans/stage-15.md`（agent 懂 AMO、主控提案、传话；用户决定都在里面，记忆 `studio-stage15-orchestration`），用户说晚些一起推进，白天自己手动用。会话列表改版的 4 个方案在 https://claude.ai/artifact/4viCheJyoAsxEeFegNHhyJ 等用户挑。**
 >
 > **2026-10-15 更新：阶段 14 追加 S14-F 到 S14-J，都合进 `studio/main`，开发版还没重启（还是 10-14 23:41 那次的 Host）。** 详细在 `plans/stage-14.md` 进度表。
@@ -67,7 +76,7 @@
 | 分支 | `studio/main`（阶段 12 合并后）。**没有合并到 master，没有推送**；master 仍在 `ac93b81`（等用户决定，见 NEEDS_YOU S8-07） |
 | 主仓库 | `G:\PROJECT\AgentMonitorOverlay`，停在 `chore/next-gen-planning-2026-10`；里面的 `overlay/src-tauri/Cargo.toml` 只有换行符改动，**不要碰** |
 | 开发版 | `npm start`（先 build 再开窗口），数据在 `studio\.data`。Host 常驻在 47900 端口；改了 Host 代码要先 `npm run host:stop` 再 `npm start` |
-| 帮用户重启开发版 | `npm run build` → `npm run host:stop` → 结束 `electron.exe packages/app` 主进程 → `Start-Process node_modules\electron\dist\electron.exe packages/app`（工作目录 `studio`） |
+| 帮用户重启开发版 | **先问用户**。`npm run build` → `npm run host:stop` → 结束 `electron.exe packages/app` 主进程（命令行不含 `--type=`）→ 备份 `.data\studio.db*` 到 `.data\backup-before-<名字>-<日期>` → `Start-Process node_modules\electron\dist\electron.exe packages/app`（工作目录 `studio`）→ 用 `.data/host-token` 在 node 脚本里查 `GET /api/state` 核对任务和会话数（不打印令牌）。只改界面时让用户按 Ctrl+R 即可 |
 | 验证 | `npm run verify`（typecheck + vitest + build）；端到端 `npx playwright test -c e2e/playwright.config.ts`（约 11 分钟，先确保 build 过） |
 | Portable | **不要每次都打包**，只在用户确认的发布节点打（LOOP_RULES 第 6 节） |
 
