@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, type JSX } from "react";
 import { buildSessionTree, type ModelProfile, type Session, type SessionNode, type SessionOptions, type Task, type Workspace } from "@amo-studio/protocol";
 import { defaultProfile, rememberProfile, shortModel } from "../lib/profiles.js";
 import { sessionModelName, storedChoices } from "../lib/choices.js";
@@ -8,7 +8,7 @@ import { rememberPick, type ModelPick } from "../lib/recents.js";
 import { EffortBars, FastToggle } from "../chat/pickers.js";
 import { ModelRow } from "../newtask/ModelRow.js";
 import { useDragWidth } from "../lib/dragWidth.js";
-import { relativeTime, SESSION_LOOK } from "../lib/status.js";
+import { needsPerson, relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { Mark } from "../chat/pickers.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
 
@@ -62,14 +62,13 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   const formOpen = !closed && (creating || live.length === 0);
   const profile = (id: string) => profiles.find((p) => p.id === id);
 
-  const rows: Array<{ node: SessionNode; depth: number }> = [];
-  const walk = (nodes: SessionNode[], depth: number) => {
-    for (const node of nodes) {
-      rows.push({ node, depth });
-      walk(node.children, depth + 1);
-    }
+  const tree = buildSessionTree(live);
+  // The model by name when known ("Opus 5.5"), from the last list this install saw.
+  const modelOf = (s: Session) => {
+    const p = profile(s.profileId);
+    return (p && sessionModelName(storedChoices(p.id), s.options)) || shortModel(p);
   };
-  walk(buildSessionTree(live), 0);
+  const selectedLive = live.find((s) => s.id === selected) ?? null;
 
   return (
     <>
@@ -130,41 +129,10 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
         </div>
       )}
 
-      <div className="slist">
-        {rows.map(({ node, depth }) => {
-          const s = node.session;
-          const look = SESSION_LOOK[s.status];
-          const letters = unread?.get(s.id) ?? 0;
-          const p = profile(s.profileId);
-          // The model by name when known ("Opus 5.5"), from the last list this install saw.
-          const modelText = (p && sessionModelName(storedChoices(p.id), s.options)) || shortModel(p);
-          const meta = [s.kind === "main" ? "" : KIND[s.kind], modelText, look.label, s.writer === "terminal-shared" ? "终端已接入" : ""].filter(Boolean).join(" · ");
-          return (
-            <button
-              key={s.id}
-              type="button"
-              className={depth > 0 ? "srow child" : "srow"}
-              aria-current={s.id === selected}
-              onClick={() => onSelect(s.id)}
-              style={{ marginLeft: depth * 14 }}
-              data-testid="session-row"
-              data-kind={s.kind}
-              data-depth={depth}
-            >
-              <span className="srow-top">
-                <span className="dot" style={{ background: look.dot }} title={look.label} />
-                <span className="srow-title">{s.title || "新会话"}</span>
-                <span className="srow-time">{relativeTime(s.updatedAt)}</span>
-              </span>
-              <span className="srow-meta">
-                <Mark profile={p} small />
-                <span className="srow-meta-text">{meta}</span>
-                {letters > 0 && <span className="srow-mail">{letters} 条留言</span>}
-              </span>
-            </button>
-          );
-        })}
+      <div className="slist tree" role="tree" aria-label="会话树">
+        <TreeLevel nodes={tree} depth={0} parentProfile={null} selected={selected} unread={unread} profileOf={profile} onSelect={onSelect} modelOf={modelOf} />
       </div>
+      {selectedLive && <SessionDetail session={selectedLive} all={live} model={modelOf(selectedLive)} letters={unread?.get(selectedLive.id) ?? 0} />}
 
       {archivedRoots.length > 0 && (
         <div className="archived">
@@ -215,6 +183,137 @@ ${formatDay(s.archivedAt)} 归档` : ""}`}
     </aside>
     {listW.handle("调整会话列表宽度")}
     </>
+  );
+}
+
+/** Beyond this depth the tree stops moving right (its lines still show the nesting), so titles keep their room. */
+const MAX_INDENT = 4;
+
+const TREE_ICON: Record<Session["kind"], JSX.Element> = {
+  main: (
+    <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
+      <path d="M3 4.5A1.5 1.5 0 0 1 4.5 3h7A1.5 1.5 0 0 1 13 4.5v5A1.5 1.5 0 0 1 11.5 11H7l-3 2.5V11a1 1 0 0 1-1-1z" />
+    </svg>
+  ),
+  sub: (
+    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+      <rect x="3.5" y="5" width="9" height="7.5" rx="2" />
+      <path d="M8 5V3M6.3 8.5h.01M9.7 8.5h.01" />
+    </svg>
+  ),
+  fork: (
+    <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+      <circle cx="5" cy="4" r="1.5" />
+      <circle cx="5" cy="12" r="1.5" />
+      <circle cx="11" cy="6" r="1.5" />
+      <path d="M5 5.5v5M11 7.5c0 2-3 2-5.5 3" />
+    </svg>
+  ),
+};
+
+/**
+ * One level of the session tree (2026-10-15, design B 「细线树」): each session one line — what it is (会话 / 子 agent /
+ * 分支), its name, its model where it differs from its parent's, and its state (a dot, or a word when it needs the
+ * person). Children hang under it on their own thin line, to any depth.
+ */
+function TreeLevel({
+  nodes,
+  depth,
+  parentProfile,
+  selected,
+  unread,
+  profileOf,
+  onSelect,
+  modelOf,
+}: {
+  nodes: readonly SessionNode[];
+  depth: number;
+  parentProfile: string | null;
+  selected: string | null;
+  unread: ReadonlyMap<string, number> | undefined;
+  profileOf(id: string): ModelProfile | undefined;
+  onSelect(id: string): void;
+  modelOf(s: Session): string;
+}) {
+  return (
+    <>
+      {nodes.map((node) => {
+        const s = node.session;
+        const look = SESSION_LOOK[s.status];
+        const letters = unread?.get(s.id) ?? 0;
+        const loud = needsPerson(s.status) || s.status === "error";
+        const terminal = s.writer === "terminal-shared";
+        return (
+          <div key={s.id} className="tree-node" role="none">
+            <button
+              type="button"
+              role="treeitem"
+              className={depth > 0 ? "srow tree-row child" : "srow tree-row"}
+              aria-current={s.id === selected}
+              aria-level={depth + 1}
+              title={[s.title || "新会话", [KIND[s.kind], modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · ")].join("\n")}
+              onClick={() => onSelect(s.id)}
+              data-testid="session-row"
+              data-kind={s.kind}
+              data-depth={depth}
+            >
+              <span className="tree-icon">{TREE_ICON[s.kind]}</span>
+              <span className="srow-title">{s.title || "新会话"}</span>
+              {letters > 0 && (
+                <span className="srow-mail" aria-label={`${letters} 条留言`} title={`${letters} 条留言`} data-testid="session-mail">
+                  {letters}
+                </span>
+              )}
+              {terminal && (
+                <span className="tree-term" aria-label="终端已接入" title="终端已接入">
+                  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                    <rect x="2" y="3" width="12" height="10" rx="1.5" />
+                    <path d="M5 7l2 1.5L5 10M8.5 10.5H11" />
+                  </svg>
+                </span>
+              )}
+              {s.profileId !== parentProfile && <Mark profile={profileOf(s.profileId)} small />}
+              {loud ? (
+                <span className="tree-badge" style={{ color: look.text }}>
+                  {look.label}
+                </span>
+              ) : (
+                <span className={`tree-dot ${s.status}`} style={{ background: s.status === "completed" ? "transparent" : look.dot }} title={look.label} aria-label={look.label} />
+              )}
+            </button>
+            {node.children.length > 0 && (
+              <div className={depth + 1 >= MAX_INDENT ? "tree-children flat" : "tree-children"} role="group">
+                <TreeLevel nodes={node.children} depth={depth + 1} parentProfile={s.profileId} selected={selected} unread={unread} profileOf={profileOf} onSelect={onSelect} modelOf={modelOf} />
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </>
+  );
+}
+
+/** Under the tree: the selected session in words — what it is, model, state, when, and what hangs under it. */
+function SessionDetail({ session: s, all, model, letters }: { session: Session; all: readonly Session[]; model: string; letters: number }) {
+  const look = SESSION_LOOK[s.status];
+  const under = (id: string): Session[] => all.filter((x) => x.parentId === id).flatMap((x) => [x, ...under(x.id)]);
+  const below = under(s.id);
+  const subs = below.filter((x) => x.kind === "sub");
+  const forks = below.filter((x) => x.kind === "fork");
+  const parts = [
+    subs.length ? `${subs.length} 个子 agent${subs.some((x) => x.status === "running") ? `（${subs.filter((x) => x.status === "running").length} 个在运行）` : ""}` : "",
+    forks.length ? `${forks.length} 个分支` : "",
+    below.some((x) => needsPerson(x.status)) ? `${below.filter((x) => needsPerson(x.status)).length} 个等你处理` : "",
+  ].filter(Boolean);
+  return (
+    <div className="slist-detail" data-testid="session-detail">
+      <span className="slist-detail-title">{s.title || "新会话"}</span>
+      <span>
+        {[s.kind === "main" ? "" : KIND[s.kind], model].filter(Boolean).join(" · ")} · <span style={{ color: look.text }}>{look.label}</span> · {relativeTime(s.updatedAt)}
+      </span>
+      {parts.length > 0 && <span>{parts.join(" · ")}</span>}
+      {(letters > 0 || s.writer === "terminal-shared") && <span>{[letters > 0 ? `${letters} 条留言` : "", s.writer === "terminal-shared" ? "终端已接入" : ""].filter(Boolean).join(" · ")}</span>}
+    </div>
   );
 }
 

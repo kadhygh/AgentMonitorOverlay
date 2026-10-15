@@ -200,3 +200,30 @@
 /* Head buttons with an icon in front. */
 .with-icon { display: inline-flex; align-items: center; gap: 5px; }
 .with-icon svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
+
+/* The session tree (2026-10-15, design B 「细线树」): one line per session; children hang on a thin line under their
+   parent, to any depth (no further indent after four levels); the selected session's details sit under the tree. */
+.slist.tree { gap: 1px; }
+.tree-node { display: flex; flex-direction: column; min-width: 0; }
+.srow.tree-row { flex-direction: row; align-items: center; gap: 8px; height: 30px; padding: 0 8px; box-shadow: none; }
+.srow.tree-row.child { height: 28px; }
+.srow.tree-row[aria-current="true"] { background: var(--selected); box-shadow: none; }
+.srow.tree-row .srow-title { font-size: var(--fs-sm); }
+.srow.tree-row:not(.child) .srow-title { font-weight: 600; }
+.srow.tree-row.child .srow-title { font-weight: 400; color: var(--text); }
+.srow.tree-row.child[aria-current="true"] .srow-title { font-weight: 600; }
+.tree-icon { flex: none; display: inline-flex; color: var(--text-faint); }
+.tree-icon svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.srow.tree-row[data-kind="fork"] .tree-icon { color: var(--text-dim); }
+.tree-children { display: flex; flex-direction: column; gap: 1px; margin-left: 14px; padding-left: 7px; border-left: 1px solid var(--border); }
+.tree-children.flat { margin-left: 0; padding-left: 0; border-left: 0; }
+.tree-row .mark.small { width: 15px; height: 15px; font-size: 8.5px; flex: none; }
+.tree-dot { flex: none; width: 7px; height: 7px; border-radius: 50%; }
+.tree-dot.completed { border: 1.5px solid var(--muted-dot); box-sizing: border-box; }
+.tree-badge { flex: none; padding: 0 5px; border-radius: 4px; background: var(--attention-bg); font-size: 11px; font-weight: 600; line-height: 17px; }
+.tree-term { flex: none; display: inline-flex; color: var(--text-dim); }
+.tree-term svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; }
+.tree-row .srow-mail { padding: 0 5px; font-size: 11px; line-height: 16px; }
+.slist-detail { margin: 10px 2px 0; padding: 10px 8px 2px; border-top: 1px solid var(--border); display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-cap); color: var(--text-dim); }
+.slist-detail-title { font-size: var(--fs-sm); font-weight: 600; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.srow.tree-row.child::before { content: none; }

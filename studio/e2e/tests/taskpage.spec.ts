@@ -43,7 +43,8 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   await expect(rows.nth(1)).toHaveAttribute("data-kind", "fork");
   await expect(rows.nth(1)).toHaveAttribute("data-depth", "1");
   await expect(rows.nth(1)).toHaveAttribute("aria-current", "true");
-  await expect(rows.nth(1)).toContainText("分支 · Mock Model");
+  // One line per session (细线树); the selected one is described under the tree.
+  await expect(page.getByTestId("session-detail")).toContainText("分支 · Mock Model");
 
   // A second independent session in the same task.
   await page.getByTestId("new-session-toggle").click();
@@ -57,7 +58,8 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   await expect(page.getByTestId("toast")).toContainText("已在新终端窗口接入同一会话");
   await expect(page.getByTestId("toast").locator("code")).toHaveText(/^codex --remote ws:\/\/127\.0\.0\.1:\d+ --remote-auth-token-env AMO_STUDIO_CODEX_TOKEN resume \S+$/);
   await expect(page.getByTestId("writer")).toHaveText("终端已接入 · 共享");
-  await expect(rows.first()).toContainText("终端");
+  await expect(rows.first().getByLabel("终端已接入")).toBeVisible();
+  await expect(page.getByTestId("session-detail")).toContainText("终端已接入");
   await screenshot(studio.app, "stage-1", "S1-11a-task-page", page);
 
   // Archive the main session: its fork goes with it; restore brings both back.
@@ -75,4 +77,26 @@ test("task page: column, fork, new session, terminal and archive", async () => {
   await expect(rows).toHaveCount(3);
   const sessions = (await studio.api<StateSnapshot>("GET", "/api/state")).sessions.filter((s) => s.taskId === task.id);
   expect(sessions.every((s) => !s.archivedAt)).toBe(true);
+});
+
+test("细线树: a fork of a fork hangs one level deeper, each level on its own line", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  await openTaskWithReply(studio);
+  const rows = page.getByTestId("session-row");
+  const fork = page.getByRole("button", { name: "分支", exact: true });
+  await fork.click();
+  await expect(rows).toHaveCount(2);
+  await expect(rows.nth(1)).toHaveAttribute("aria-current", "true");
+  // Fork the fork: it is selected now, so 分支 branches it.
+  await fork.click();
+  await expect(rows).toHaveCount(3);
+  await expect(rows.nth(2)).toHaveAttribute("data-kind", "fork");
+  await expect(rows.nth(2)).toHaveAttribute("data-depth", "2");
+  await expect(rows.nth(2)).toHaveAttribute("aria-level", "3");
+  await expect(page.getByRole("tree", { name: "会话树" }).getByRole("group")).toHaveCount(2);
+  // The root names what hangs under it.
+  await rows.first().click();
+  await expect(page.getByTestId("session-detail")).toContainText("2 个分支");
+  await screenshot(app, "stage-14", "S14-P-session-tree", page);
 });
