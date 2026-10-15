@@ -32,6 +32,11 @@ const portableDir = process.env.AMO_STUDIO_PORTABLE_DIR ?? (app.isPackaged ? dir
 const dataChoice = resolveDataDir({ env: process.env, portableDir, studioRoot });
 const dataDir = dataChoice.dataDir;
 
+// Experiments for the resize flicker (2026-10-15; off unless set when starting the app): use the GPU even when
+// Chromium's blocklist says not to, and the system title bar instead of the page-drawn one.
+if (process.env.AMO_STUDIO_GPU === "ignore-blocklist") app.commandLine.appendSwitch("ignore-gpu-blocklist");
+const nativeFrame = process.env.AMO_STUDIO_NATIVE_FRAME === "1";
+
 // Chromium's profile (localStorage, caches) and the single-instance lock live in userData. Without this it is the
 // generic %APPDATA%\Electron, shared by every run: tests saw each other's remembered model, and a test run could
 // collide with a Studio the person has open. Keep it with the data dir instead (set before the lock is taken).
@@ -284,8 +289,9 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
     icon: APP_ICON,
     // Before the page paints: the light (editorial) theme is the default.
     backgroundColor: "#efede8",
-    // No system title bar: the page's top bar is the title bar and draws the window buttons in its own style.
-    titleBarStyle: "hidden",
+    // No system title bar: the page's top bar is the title bar and draws the window buttons in its own style
+    // (AMO_STUDIO_NATIVE_FRAME=1 keeps the system's, to compare the resize flicker).
+    ...(nativeFrame ? {} : { titleBarStyle: "hidden" as const }),
     // Test windows sit off-screen, out of the taskbar, and are shown without activation so they keep painting for
     // capturePage but never take focus (LOOP_RULES red line 7).
     show: false,

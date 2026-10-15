@@ -55,6 +55,28 @@ export class ResizeTrace {
     setInterval(gpu, 60_000).unref();
     app.on("child-process-gone", (_e, d) => this.write(`${stamp()} child-process-gone type=${d.type} reason=${d.reason} exitCode=${d.exitCode}${d.name ? ` name=${d.name}` : ""}`));
     app.on("gpu-info-update", () => gpu());
+    this.write(`${stamp()} switches: ignore-gpu-blocklist=${app.commandLine.hasSwitch("ignore-gpu-blocklist")} native-frame=${process.env.AMO_STUDIO_NATIVE_FRAME === "1"}`);
+    // What chrome://gpu shows: why the GPU is or is not used (blocklist entries, workarounds), once it is known.
+    setTimeout(() => {
+      void app
+        .getGPUInfo("complete")
+        .then((info) => {
+          const i = info as Record<string, unknown>;
+          const pick = (k: string) => (i[k] === undefined ? undefined : i[k]);
+          const aux = (i.auxAttributes ?? {}) as Record<string, unknown>;
+          this.write(
+            `${stamp()} gpu complete: ${JSON.stringify({
+              devices: pick("gpuDevice"),
+              aux: Object.fromEntries(Object.entries(aux).filter(([k]) => /software|inProcess|direct|overlay|vendor|device|driver|gl|d3d|dx|machine|sandbox|passthrough|skia/i.test(k))),
+              blocklist: pick("blocklistReasons") ?? pick("blacklistReasons") ?? pick("disabledFeatures"),
+              workarounds: pick("driverBugWorkarounds"),
+              problems: pick("problems") ?? pick("featureStatusProblems"),
+              keys: Object.keys(i),
+            }).slice(0, 5000)}`,
+          );
+        })
+        .catch((err: unknown) => this.write(`${stamp()} gpu complete failed: ${String(err)}`));
+    }, 8_000).unref();
     void app
       .getGPUInfo("basic")
       .then((info) => {
