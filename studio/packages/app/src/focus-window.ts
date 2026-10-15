@@ -56,6 +56,13 @@ export function createFocusWindow({ url, preload, testMode, saved, onMoved }: Fo
     if (new URL(target).origin !== origin) event.preventDefault();
   });
   win.once("ready-to-show", () => win.showInactive());
+  // A right-click on the title row (a drag area) would open the system window menu and never reach the page; the
+  // page shows its own menu instead (S14-J).
+  win.on("system-context-menu", (event, point) => {
+    event.preventDefault();
+    const b = win.getContentBounds();
+    win.webContents.send("amo:focus-context-menu", { x: Math.round(point.x - b.x), y: Math.round(point.y - b.y) });
+  });
   if (!testMode) {
     // Dragged by its title row: remember where it was left.
     win.on("moved", () => {

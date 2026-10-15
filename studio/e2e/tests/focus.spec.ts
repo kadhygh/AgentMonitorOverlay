@@ -94,3 +94,78 @@ test("Focus shows a Codex async question at once, while the model is still worki
   await expect.poll(async () => (await studio!.api<SessionItem[]>("GET", `/api/sessions/${session.id}/items`)).some((i) => i.type === "turn" && i.state === "running"), { timeout: 30_000 }).toBe(false);
   await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1");
 });
+
+test("Focus: the robot dances until looked at; right-click moves, locks, folds and hides it (S14-J)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const toggle = page.getByRole("button", { name: /^Focus/ });
+  const opened = app.waitForEvent("window");
+  await toggle.click();
+  const focus = await opened;
+  await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理", { timeout: 30_000 });
+  await expect(focus.getByTestId("focus-bot")).toHaveCount(0);
+
+  // Something needs the person: the panel glows and the robot pops up above it.
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+    title: "机器人提醒",
+    workspaceId: ws.id,
+    firstSession: { profileId: "codex-mock", text: "[[shell: cmd /c echo bot]]" },
+  });
+  await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1", { timeout: 30_000 });
+  const bot = focus.getByTestId("focus-bot");
+  await expect(bot).toBeVisible();
+  await expect(bot).toContainText("1 件事等你");
+  await expect(focus.getByTestId("focus-panel")).toHaveClass(/alerting/);
+  await screenshot(app, "stage-14", "S14-J-focus-robot", focus, "focus");
+
+  // The robot opens what needs the person, and leaves: it has been seen (it still needs them).
+  await bot.click();
+  await expect(page.getByTestId("task-title")).toHaveText("机器人提醒");
+  await expect(bot).toHaveCount(0);
+  await expect(focus.getByTestId("focus-panel")).not.toHaveClass(/alerting/);
+  await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1");
+
+  // The fold button says what it does.
+  const fold = focus.getByTestId("focus-compact");
+  await expect(fold).toHaveAttribute("title", "收起成一行");
+  await fold.click();
+  await expect(fold).toHaveAttribute("title", "展开会话列表");
+  await expect(focus.getByTestId("focus-entry")).toHaveCount(0);
+  await fold.click();
+
+  // Right-click: the menu.
+  await focus.getByTestId("focus-entry").click({ button: "right" });
+  const menu = focus.getByTestId("focus-menu");
+  await expect(menu.getByRole("menuitem").or(menu.getByRole("menuitemcheckbox"))).toHaveText(["移动位置", "锁定位置", "收起成一行", "打开 Studio 主窗口", "隐藏 Focus"]);
+  await screenshot(app, "stage-14", "S14-J-focus-menu", focus, "focus");
+
+  // 移动位置: a drag frame over the panel, the window takes the mouse until 完成.
+  await focus.getByTestId("focus-menu-move").click();
+  await expect(focus.getByTestId("focus-move")).toBeVisible();
+  await expect.poll(() => focusIgnore(studio!)).toBe(false);
+  await screenshot(app, "stage-14", "S14-J-focus-move", focus, "focus");
+  await focus.getByTestId("focus-move-done").click();
+  await expect(focus.getByTestId("focus-move")).toHaveCount(0);
+
+  // 锁定位置: checked, shown in the head, moving is off; remembered after a reload.
+  await focus.getByTestId("focus-entry").click({ button: "right" });
+  await focus.getByTestId("focus-menu-lock").click();
+  await expect(focus.getByTestId("focus-panel")).toHaveAttribute("data-locked", "true");
+  await expect(focus.getByTestId("focus-locked")).toBeVisible();
+  await focus.reload();
+  await expect(focus.getByTestId("focus-locked")).toBeVisible({ timeout: 30_000 });
+  await focus.getByTestId("focus-entry").click({ button: "right" });
+  await expect(focus.getByTestId("focus-menu-lock")).toHaveAttribute("aria-checked", "true");
+  await expect(focus.getByTestId("focus-menu-move")).toBeDisabled();
+  await focus.getByTestId("focus-menu-lock").click();
+  await expect(focus.getByTestId("focus-locked")).toHaveCount(0);
+
+  // 隐藏 Focus: the window goes, the top bar button follows.
+  await focus.getByTestId("focus-entry").click({ button: "right" });
+  const closed = focus.waitForEvent("close");
+  await focus.getByTestId("focus-menu-hide").click();
+  await closed;
+  await expect(toggle).toHaveAttribute("aria-pressed", "false");
+  expect((await windowState(app)).anyFocused).toBe(false);
+});
