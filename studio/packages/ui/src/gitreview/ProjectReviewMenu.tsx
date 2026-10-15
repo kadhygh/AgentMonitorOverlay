@@ -70,6 +70,7 @@ export function ProjectReviewMenu({ link, at, onClose, onArchive, onEdit }: { li
         <button
           type="button"
           role="menuitem"
+          className="menu-danger"
           title="项目和它的任务、会话一起归档，从列表里隐藏；可以在 设置 → 数据管理 里恢复"
           onClick={() => {
             onArchive();

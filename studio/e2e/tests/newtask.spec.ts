@@ -52,8 +52,9 @@ test("creates a task from the blank task page and streams the first reply", asyn
 
   await expect(page.getByTestId("task-title")).toHaveText("列出目录结构 [[slow]]");
   await expect(page.getByTestId("msg-user")).toHaveText(/列出目录结构/);
-  // Just made, the task opens with its session list folded (one session: nothing to choose between).
-  await expect(page.getByTestId("sessions-expand")).toBeVisible();
+  // Just made, the task opens with its session list hidden (one session: nothing to choose between); 会话 shows it.
+  await expect(page.getByTestId("sessions-toggle")).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("complementary", { name: "会话" })).toHaveCount(0);
   await expect(page.getByTestId("session-row")).toHaveCount(0);
   // While streaming, the reply grows and is marked as streaming (a pulsing dot); then it settles.
   await expect(page.getByTestId("msg-agent")).toHaveAttribute("data-streaming", "true", { timeout: 30_000 });

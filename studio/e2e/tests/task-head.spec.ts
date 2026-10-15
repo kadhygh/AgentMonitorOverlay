@@ -75,16 +75,28 @@ test("status, topic and project from the line under the title; the right column 
   const after = await studio.api<StateSnapshot>("GET", "/api/state");
   expect(after.workspaces.find((w) => w.id === ws.id)).toMatchObject({ name: "挖矿主工程", description: "Unity 主工程，策划表在 Docs/" });
 
-  // The left column and the session list fold to a strip; 新会话 in the head opens the list again with its form.
+  // The left column folds to a strip; 会话 in the head hides the session list completely (no strip), and is
+  // remembered; 新会话 brings the list back with its form.
   await page.getByTestId("nav-collapse").click();
   await expect(page.getByTestId("scope-all")).toHaveCount(0);
-  await page.getByTestId("sessions-collapse").click();
+  const sessionsToggle = page.getByTestId("sessions-toggle");
+  await expect(sessionsToggle).toHaveAttribute("aria-pressed", "true");
+  await sessionsToggle.click();
+  await expect(sessionsToggle).toHaveAttribute("aria-pressed", "false");
+  await expect(page.getByRole("complementary", { name: "会话" })).toHaveCount(0);
   await expect(page.getByTestId("session-row")).toHaveCount(0);
-  await screenshot(app, "stage-14", "S14-E-folded", page);
+  await screenshot(app, "stage-14", "S14-I-sessions-hidden", page);
   await page.getByTestId("new-session-toggle").click();
   await expect(page.getByRole("button", { name: "开始新会话" })).toBeVisible();
   await expect(page.getByTestId("session-row")).toHaveCount(1);
+  await expect(sessionsToggle).toHaveAttribute("aria-pressed", "true");
   await page.getByTestId("new-session-toggle").click();
+  await sessionsToggle.click();
+  await page.reload();
+  await page.getByTestId("task-card").filter({ hasText: "掉落表" }).click();
+  await expect(page.getByTestId("session-row")).toHaveCount(0);
+  await page.getByTestId("sessions-toggle").click();
+  await expect(page.getByTestId("session-row")).toHaveCount(1);
   await page.getByTestId("nav-expand").click();
   await expect(page.getByTestId("scope-all")).toBeVisible();
 
@@ -96,10 +108,19 @@ test("status, topic and project from the line under the title; the right column 
   await page.getByTestId("task-card").filter({ hasText: "掉落表" }).click();
   await expect(page.getByTestId("note-count")).toBeVisible();
 
-  // The session bar: icons, 分支 and ⋯ (标记, 归档会话); no 仅工作台.
+  // The session bar: the openers as one group, 分支 with the git-branch glyph, ⋯ (标记, 归档会话 in deep red); no 仅工作台.
   await expect(page.getByTestId("writer")).toHaveCount(0);
+  const bar = page.getByTestId("thread-head");
+  await expect(bar.getByRole("group", { name: "在外部打开" }).getByRole("button", { name: "在终端打开" })).toBeVisible();
+  await expect(bar.getByTestId("session-fork").locator("svg circle")).toHaveCount(3);
+  const forkBox = await bar.getByTestId("session-fork").boundingBox();
+  expect(forkBox!.height).toBeGreaterThanOrEqual(30);
+  await screenshot(app, "stage-14", "S14-I-session-bar", page);
   await page.getByTestId("session-more").click();
   await expect(page.getByTestId("session-menu").getByRole("menuitem")).toHaveText(["文件标记", "归档会话"]);
+  await expect(page.getByTestId("session-archive")).toHaveClass(/menu-danger/);
+  await page.getByTestId("session-archive").hover();
+  await screenshot(app, "stage-14", "S14-I-archive-danger", page);
 });
 
 test("编辑项目 from the left column's right-click menu", async () => {

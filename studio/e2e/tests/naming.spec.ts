@@ -35,6 +35,8 @@ test("tasks and sessions are renamed in place; a task can be @-ed in a conversat
   await page.getByTestId("thread-head").getByRole("button", { name: "先看看现状" }).click();
   await page.getByLabel("会话名").fill("摸底");
   await page.getByLabel("会话名").press("Enter");
+  // A task just made hides its session list; 会话 shows it.
+  await page.getByTestId("sessions-toggle").click();
   await expect(page.getByTestId("session-row").first()).toContainText("摸底");
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
   expect(state.tasks.find((t: Task) => t.title === "导入器失败重试")).toBeDefined();
