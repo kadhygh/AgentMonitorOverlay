@@ -307,6 +307,20 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
       backgroundThrottling: !testMode,
     },
   });
+  // Resize guard (2026-10-15): dragging the corner to grow the window, Windows now and then proposes a size below the
+  // minimum in both directions, which snaps the window to 960×600 for a frame (the flicker; the system title bar shows
+  // it too). Such a proposal while the window is well above the minimum is no drag of the person's: refuse it, the next
+  // mouse move resizes as usual. AMO_STUDIO_RESIZE_GUARD=0 turns it off, to compare.
+  if (process.env.AMO_STUDIO_RESIZE_GUARD !== "0") {
+    win.on("will-resize", (event, next) => {
+      const [minW, minH] = win.getMinimumSize();
+      if (next.width >= minW || next.height >= minH) return;
+      const now = win.getBounds();
+      if (now.width - minW < 100 && now.height - minH < 100) return;
+      event.preventDefault();
+      trace?.note("main", `resize-guard ${next.width}×${next.height}`);
+    });
+  }
   win.on("maximize", () => win.webContents.send("amo:window-maximized", true));
   win.on("unmaximize", () => win.webContents.send("amo:window-maximized", false));
   // Without a menu, the usual keys: F5 / Ctrl+R reload, F12 / Ctrl+Shift+I DevTools.
