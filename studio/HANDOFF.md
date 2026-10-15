@@ -3,6 +3,7 @@
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
 > **2026-10-15 晚更新（下一个会话从这里开始）：S14-W…S14-Z，见 `plans/stage-14.md` 进度表。**
+> - S14-AA（`33aa309`）：浅色机器人 + 深色描边；有事 5 分钟没确认，机器人生气在自己的小窗口里满屏乱飞（`app/src/bot-window.ts`），点它落地并打开那件事；「Focus 设置」→「机器人动作测试」。
 > - S14-Z（`68dffc0`）：Focus 点击被吞的原因找到了（WM_MOUSEACTIVATE → Chromium MA_NOACTIVATEANDEAT），主进程补发被吞的点击（`app/src/focus-clicks.ts`）；Focus 只分「N 件事」和「M 个完成待审核」，只有完成待审核时机器人是绿色。要重启 Electron 主进程才生效（先问）。之后若还有点不动，看 resize-trace 里有没有 `click given back`。
 > - S14-Y（`f3a50ed`，纯界面）：设置 →「项目与目录」里选默认项目，新建任务 / Ctrl+N 默认选中。
 > - S14-X（`ea832a6`，纯界面）：Focus 列出「回复完了」（主窗口没看过的已结束回复）和「出错」，看过的记在 localStorage `amo.sessionSeen`（`lib/sessionSeen.ts`）；对话里一轮结束、开头在视野外时显示「按 ↑ 回到本轮回复开始」（`task/TurnStartHint.tsx`）。
