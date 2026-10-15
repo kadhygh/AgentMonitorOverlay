@@ -313,7 +313,7 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
   // mouse move resizes as usual. AMO_STUDIO_RESIZE_GUARD=0 turns it off, to compare.
   if (process.env.AMO_STUDIO_RESIZE_GUARD !== "0") {
     win.on("will-resize", (event, next) => {
-      const [minW, minH] = win.getMinimumSize();
+      const [minW = 0, minH = 0] = win.getMinimumSize();
       if (next.width >= minW || next.height >= minH) return;
       const now = win.getBounds();
       if (now.width - minW < 100 && now.height - minH < 100) return;
