@@ -10,6 +10,7 @@ import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { attentionKeys, pruneSeen, readFocusLocked, shouldAlert, writeFocusLocked } from "./attention.js";
 import { PixelBot } from "./PixelBot.js";
+import { FocusQuota } from "./FocusQuota.js";
 import "./focus.css";
 
 // The Focus window: "what needs me right now". Lists sessions waiting for approval or review, newest first; one entry
@@ -166,7 +167,7 @@ export function FocusApp() {
             {compact ? ICON.expand : ICON.collapse}
           </button>
         </div>
-        {/* A place for one more line about the accounts (额度) between the head and the list. */}
+        <FocusQuota link={link} settings={settings} profiles={state.profiles} />
         {!compact && needs > 0 && (
           <div className="focus-list" onPointerDown={acknowledge}>
             {proposals.length > 0 && (

@@ -91,3 +91,8 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
   .pose-a { animation: none; opacity: 1; }
   .pose-b { animation: none; opacity: 0; }
 }
+
+/* 额度 (设置 → 额度 → Focus): one quiet line under the head. */
+.focus-quota { display: flex; flex-wrap: wrap; gap: 4px 12px; padding: 6px 14px; border-bottom: 1px solid var(--border); font-size: 11.5px; color: var(--text-dim); font-variant-numeric: tabular-nums; }
+.focus-quota-item.hot { color: var(--attention-text, var(--attention)); font-weight: 600; }
+.focus-quota-item.bad { color: var(--error); }
