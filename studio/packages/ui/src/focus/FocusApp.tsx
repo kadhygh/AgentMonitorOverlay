@@ -3,7 +3,8 @@ import type { Session, SessionItem, StateSnapshot } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { useSessionItems } from "../host/useSessionItems.js";
-import { needsPerson, relativeTime, SESSION_LOOK } from "../lib/status.js";
+import { needsPerson, relativeTime, SESSION_LOOK, type StatusLook } from "../lib/status.js";
+import { noteSeen, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
 import { planTitle } from "../chat/questions/flow.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
@@ -18,6 +19,8 @@ import "./focus.css";
 // S14-J: while something new needs the person the panel glows and a pixel robot dances above it until they look.
 // 2026-10-15: the window takes clicks wherever Focus draws (it tells the main process its shape); 「Focus 设置」 (the
 // gear, or a right-click) is a small box with × — 移动位置 / 锁定位置 / 点击穿透 / 收起 / 打开 Studio / 隐藏.
+// 2026-10-15 evening: also sessions whose reply ended (「回复完了」) or that failed since the person last looked at them
+// in the main window (lib/sessionSeen.ts); clicking one here counts as looking too.
 
 type Approval = Extract<SessionItem, { type: "approval" }>;
 const SNIPPET_MAX = 300;
@@ -86,10 +89,15 @@ export function FocusApp() {
   // A right-click on the title row (a window drag area) only reaches the main process, which passes it on.
   useEffect(() => window.amo?.focus?.onContextMenu?.(() => setPop(true)), []);
 
+  const seenData = useSessionSeen();
   const live = host.kind === "ready" ? host.state : null;
-  const list = live ? needsMe(live) : [];
+  const waiting = live ? needsMe(live) : [];
+  const finished = live ? unseenSessions(live.sessions, seenData).filter((s) => !waiting.includes(s)) : [];
+  // A finished session opened here stays (seen) until it is closed or another one opens.
+  const held = live && open ? live.sessions.find((s) => s.id === open && !s.archivedAt && FINISHED.has(s.status) && !waiting.includes(s) && !finished.includes(s)) : undefined;
+  const list = [...waiting, ...finished, ...(held ? [held] : [])];
   const asks = live ? decisions.filter((d) => live.sessions.some((s) => s.id === d.sessionId && !s.archivedAt)) : [];
-  const keys = attentionKeys(list, asks.map((d) => d.id), proposals.map((p) => p.id));
+  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), proposals.map((p) => p.id));
   const keysId = keys.join("|");
   // Forget what was handled, so it alerts again if it comes back.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the keys by content
@@ -121,7 +129,7 @@ export function FocusApp() {
   }
 
   const { state, link } = host;
-  const needs = list.length + asks.length + proposals.length;
+  const needs = waiting.length + finished.length + asks.length + proposals.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
   const openId = open && list.some((s) => s.id === open) ? open : (list[0]?.id ?? null);
   const title = (s: Session) => state.tasks.find((t) => t.id === s.taskId)?.title || "未命名任务";
@@ -203,7 +211,7 @@ export function FocusApp() {
           </button>
         </div>
         <FocusQuota link={link} settings={settings} profiles={state.profiles} />
-        {!compact && needs > 0 && (
+        {!compact && (needs > 0 || held) && (
           <div className="focus-list" onPointerDown={acknowledge}>
             {proposals.length > 0 && (
               // A proposal needs its prompt read (and maybe edited): only the count here, handled on the board.
@@ -238,7 +246,11 @@ export function FocusApp() {
                 session={s}
                 title={title(s)}
                 open={s.id === openId}
-                onToggle={() => setOpen(s.id === openId ? "" : s.id)}
+                finished={!waiting.includes(s)}
+                onToggle={() => {
+                  setOpen(s.id === openId ? "" : s.id);
+                  if (!waiting.includes(s)) noteSeen([s.id]);
+                }}
               />
             ))}
           </div>
@@ -391,10 +403,14 @@ const ICON = {
   ),
 };
 
-function FocusEntry({ link, session, title, open, onToggle }: { link: HostLink; session: Session; title: string; open: boolean; onToggle(): void }) {
-  const look = SESSION_LOOK[session.status];
+const FINISHED: ReadonlySet<string> = new Set(["idle", "completed", "error"]);
+/** A reply that ended and was not looked at yet. */
+const REPLIED: StatusLook = { label: "回复完了", dot: "var(--primary)", text: "var(--primary)" };
+
+function FocusEntry({ link, session, title, open, finished, onToggle }: { link: HostLink; session: Session; title: string; open: boolean; finished: boolean; onToggle(): void }) {
+  const look = finished && session.status !== "error" ? REPLIED : SESSION_LOOK[session.status];
   return (
-    <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry">
+    <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry" data-finished={finished || undefined}>
       <button type="button" className="focus-row" onClick={onToggle} aria-expanded={open}>
         <span className="dot" style={{ background: look.dot }} />
         <span className="focus-row-text">

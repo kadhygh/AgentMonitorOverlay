@@ -29,6 +29,8 @@ import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
 import { BackgroundTasks, latestSuggestion, SuggestionChips } from "../chat/cli/ComposerExtras.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { openReview } from "../gitreview/open.js";
+import { useMarkSessionSeen } from "../lib/sessionSeen.js";
+import { TurnStartHint, useTurnStartHint } from "./TurnStartHint.js";
 
 /** Studio's /compact, as the 压缩 button runs it. */
 const COMPACT: SlashCommand = { name: "compact", description: "", group: "studio" };
@@ -202,6 +204,9 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   // An archived session has no composer (stage 14): the task page's banner says so and restores it.
   const archived = !!session && (session.writer === "archived" || !!session.archivedAt);
   const generating = !!session && (session.status === "running" || session.status === "awaiting-approval" || session.status === "awaiting-answer");
+  const turnStart = useTurnStartHint(scroller, sessionId, generating);
+  // Focus lists replies that ended while the person was elsewhere; looking at the session here clears them there.
+  useMarkSessionSeen(session);
   // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn.
   const queues = session?.runtime === "claude";
   const placeholder = readOnly
@@ -433,6 +438,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             />
           )}
         </div>
+        {turnStart.shown && <TurnStartHint raised={!atBottom} onJump={turnStart.jump} />}
         {!atBottom && (
           <button
             type="button"
