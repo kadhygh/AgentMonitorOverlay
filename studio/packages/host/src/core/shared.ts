@@ -12,6 +12,8 @@ export const PRESETS_KEY = "settings:presets";
 export const DISABLED_FEATURES_KEY = "settings:disabled-features";
 /** 设置 → 额度: where each account's quota shows. */
 export const QUOTA_DISPLAY_KEY = "settings:quota-display";
+/** 设置 → 模型 → 快速选择: the model tiles, in order. */
+export const QUICK_MODELS_KEY = "settings:quick-models";
 export const MAX_PRESETS = 30;
 
 /** Checks one option value: a short CLI id (model names like "glm-5.3[1m]" included). */

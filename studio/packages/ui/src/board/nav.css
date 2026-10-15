@@ -37,6 +37,9 @@
 .usage-peaks .hot, .usage-bar .hot { color: var(--error-text); }
 .usage-list { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 4px; max-height: 50vh; overflow-y: auto; }
 .usage-acct { display: flex; flex-direction: column; gap: 6px; }
+/* A faint line between accounts (2026-10-15: they ran together). */
+.usage-acct + .usage-acct { padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.usage-acct-h b { font-weight: 600; color: var(--text); }
 .usage-acct-h { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-sm); }
 .usage-win { display: flex; flex-direction: column; gap: 3px; }
 .usage-win-line { display: flex; align-items: center; gap: 8px; font-size: var(--fs-cap); color: var(--text-dim); }

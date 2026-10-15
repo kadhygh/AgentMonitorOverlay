@@ -116,11 +116,11 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     }
   }
 
-  // Alt 1–4: the 常用 tiles; Alt E: one effort up.
+  // Alt 1–6: the 常用 tiles; Alt E: one effort up.
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (!e.altKey || e.ctrlKey) return;
-      if (/^[1-4]$/.test(e.key)) {
+      if (/^[1-6]$/.test(e.key)) {
         const t = tilePicks(profiles, draft.pick)[Number(e.key) - 1];
         if (t) {
           e.preventDefault();

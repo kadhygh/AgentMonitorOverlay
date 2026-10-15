@@ -1,11 +1,11 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { OPTIONAL_FEATURES, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
+import { MAX_QUICK_MODELS, OPTIONAL_FEATURES, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn, readClaudeLogin, writeClaudeLogin } from "../../runtime/claude/claude-login.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
-import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, QUOTA_DISPLAY_KEY } from "../../core/shared.js";
+import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, QUOTA_DISPLAY_KEY, QUICK_MODELS_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
@@ -22,7 +22,18 @@ export class ConfigFeature extends Feature {
       claudeLocal: { dir, signedIn: localClaudeSignedIn(dir) },
       modelPrefs: readModelPrefs(this.store),
       quotaDisplay: this.quotaDisplay(),
+      quickModels: this.quickModels(),
     };
+  }
+
+  /** 设置 → 模型 → 快速选择, without profiles that are gone. */
+  private quickModels(): QuickModel[] {
+    try {
+      const v = JSON.parse(this.store.getKv(QUICK_MODELS_KEY)?.value ?? "[]") as unknown;
+      return Array.isArray(v) ? (v as QuickModel[]).filter((q) => this.profiles.some((p) => p.id === q.profileId)) : [];
+    } catch {
+      return [];
+    }
   }
 
   /** 设置 → 额度: per profile, whether its quota shows at the bottom of the left column and in Focus. */
@@ -65,7 +76,21 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown }): StudioSettings {
+    if (input.quickModels !== undefined) {
+      const list = input.quickModels;
+      if (!Array.isArray(list) || list.length > MAX_QUICK_MODELS) throw new HostError("bad_request", `quickModels must be a list of at most ${MAX_QUICK_MODELS}`);
+      const out: QuickModel[] = [];
+      for (const q of list as unknown[]) {
+        const o = q && typeof q === "object" ? (q as Record<string, unknown>) : {};
+        const profileId = typeof o.profileId === "string" ? o.profileId : "";
+        if (!this.profiles.some((p) => p.id === profileId)) throw new HostError("bad_request", `unknown profile ${profileId}`);
+        const model = o.model === null || o.model === undefined || o.model === "" ? null : typeof o.model === "string" && o.model.length <= 100 ? o.model : undefined;
+        if (model === undefined) throw new HostError("bad_request", "quickModels entries are { profileId, model: string | null }");
+        if (!out.some((x) => x.profileId === profileId && x.model === model)) out.push({ profileId, model });
+      }
+      this.store.setKv(QUICK_MODELS_KEY, JSON.stringify(out));
+    }
     if (input.quotaDisplay !== undefined) {
       const patch = input.quotaDisplay;
       if (!patch || typeof patch !== "object" || Array.isArray(patch)) throw new HostError("bad_request", "quotaDisplay must map profile ids to { footer, focus } or null");

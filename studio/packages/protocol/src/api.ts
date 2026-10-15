@@ -176,7 +176,20 @@ export interface StudioSettings {
   modelPrefs: Record<string, ModelPrefs>;
   /** Per profile id: where its quota (subscription use or balance) shows (设置 → 额度); absent = the defaults. */
   quotaDisplay: Record<string, QuotaDisplay>;
+  /**
+   * 快速选择 (设置 → 模型): the model tiles of the new-task page, Quick Start and the new-session form, in order (Alt 1–6).
+   * Empty: the models used last, then each profile's default.
+   */
+  quickModels: QuickModel[];
 }
+
+/** A profile and one of its models (null: the profile's default model). */
+export interface QuickModel {
+  profileId: Id;
+  model: string | null;
+}
+
+export const MAX_QUICK_MODELS = 6;
 
 /** Where one account's quota shows: the bottom of the left column (default on) and the Focus window (default off). */
 export interface QuotaDisplay {
@@ -221,7 +234,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null> }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[] }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };

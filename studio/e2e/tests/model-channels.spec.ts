@@ -113,3 +113,34 @@ test("设置 → 额度: which accounts show at the bottom of the left column an
   await page.keyboard.press("Escape");
   await expect(footer).not.toContainText("中转 GPT");
 });
+
+test("设置 → 模型 → 快速选择: the model tiles, in the chosen order", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "模型" }).click();
+  const section = dialog.getByRole("region", { name: "快速选择" });
+  await section.getByTestId("quick-profile").selectOption({ label: "Mock Claude" });
+  await expect(section.getByTestId("quick-model").locator("option")).toHaveCount(2);
+  await section.getByTestId("quick-model").selectOption("mock-claude-b");
+  await section.getByTestId("quick-add").click();
+  await expect(section.getByTestId("quick-row")).toHaveCount(1);
+  await section.getByTestId("quick-profile").selectOption({ label: "Mock 模型" });
+  await section.getByTestId("quick-add").click();
+  await expect(section.getByTestId("quick-row")).toHaveCount(2);
+  await expect(section.getByTestId("quick-row").first()).toContainText("mock-claude-b");
+  await section.getByRole("button", { name: "上移" }).nth(1).click();
+  await expect(section.getByTestId("quick-row").first()).toContainText("Mock 模型");
+  await screenshot(app, "stage-14", "S14-L-quick-models", page);
+  const settings = await studio.api<StudioSettings>("GET", "/api/settings");
+  expect(settings.quickModels).toEqual([{ profileId: "codex-mock", model: null }, { profileId: "claude-mock", model: "mock-claude-b" }]);
+  await page.keyboard.press("Escape");
+
+  // The new-task page shows just those two, in that order; a tile without a model names the default model.
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  const tiles = page.getByRole("group", { name: "模型" }).getByRole("button").filter({ hasNotText: "全部型号" });
+  await expect(tiles).toHaveCount(2);
+  await expect(tiles.nth(0)).toContainText("Mock 模型");
+  await expect(tiles.nth(1)).toContainText("mock-claude-b");
+});

@@ -10,6 +10,7 @@ import { useChecklist } from "./collab/ChecklistPanel.js";
 import { usePendingProposals } from "./planning/ProposalsPanel.js";
 import { useTodos } from "./planning/TodoTab.js";
 import { SettingsDialog, useSettings } from "./settings/SettingsDialog.js";
+import { setQuickModels } from "./lib/recents.js";
 import { TopBar, useFocusToggle, usePinToggle, ViewBar } from "./shell/TopBar.js";
 import { withOrigin, type View, type ViewContext, type ViewDef } from "./shell/views.js";
 import { SearchBox } from "./shell/SearchBox.js";
@@ -86,6 +87,8 @@ export function App() {
 
   const { state, link, live } = host;
   const disabled = settings?.disabledFeatures ?? [];
+  // 设置 → 模型 → 快速选择, for every model row of this window.
+  setQuickModels(settings?.quickModels);
   const views = VIEWS.filter((d) => featureOn(disabled, d.feature));
   const planning = featureOn(disabled, "planning");
   const decisionsByTask = new Map<string, number>();
