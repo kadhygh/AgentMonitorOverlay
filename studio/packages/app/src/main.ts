@@ -11,6 +11,7 @@ import { installScratchpad } from "./scratchpad-window.js";
 import { setupReviewWindows } from "./review-window.js";
 import { installMarksWindow } from "./marks-window.js";
 import { setupViewerWindows } from "./viewer-window.js";
+import { ResizeTrace } from "./resize-trace.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
@@ -41,6 +42,8 @@ let host: HostConnection | null = null;
 let stopKeepAlive: (() => void) | null = null;
 let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;
+/** Resize trace (logs/resize-trace.log), made once the app is ready. */
+let trace: ResizeTrace | null = null;
 const prefs = new ShellPrefs(dataDir);
 const reviews = setupReviewWindows({ url: () => (host ? (process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`) : null), preload: join(here, "preload.cjs"), icon: APP_ICON, testMode });
 const viewers = setupViewerWindows({ url: () => (host ? (process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`) : null), preload: join(here, "preload.cjs"), icon: APP_ICON, testMode });
@@ -122,6 +125,7 @@ if (!app.requestSingleInstanceLock()) {
       .map((r) => ({ x: Math.round(r.x), y: Math.round(r.y), width: Math.max(1, Math.round(r.width)), height: Math.max(1, Math.round(r.height)) }));
     if (!ok.length) return;
     focusWindow.setShape(ok);
+    trace?.note("focus", "focus-shape");
     if (testMode) (globalThis as { __amoFocusShape?: unknown }).__amoFocusShape = ok;
   });
   ipcMain.on("amo:focus-mouse", (event, ignore: unknown) => {
@@ -165,6 +169,16 @@ if (!app.requestSingleInstanceLock()) {
         app.exit(0);
         return;
       }
+      // Every window's resizes, with what its page saw (the main window flickered when dragged, 2026-10-15).
+      trace = new ResizeTrace(dataDir, process.env.AMO_STUDIO_TRACE_RESIZE === "1" || (!testMode && process.env.AMO_STUDIO_TRACE_RESIZE !== "0"));
+      if (trace.on) {
+        const nameOf = (w: BrowserWindow) => (w === mainWindow ? "main" : w === focusWindow ? "focus" : (new URL(w.webContents.getURL() || "about:blank").hash.slice(1).split("?")[0] || "window"));
+        app.on("browser-window-created", (_e, w) => trace!.attach(w, () => nameOf(w)));
+        ipcMain.on("amo:trace", (event, summary: unknown) => {
+          const w = BrowserWindow.fromWebContents(event.sender);
+          trace!.page(w ? nameOf(w) : "?", summary);
+        });
+      }
       // Throwaway profiles of earlier first-run setups (they cannot be removed while their process runs).
       for (const name of safeList(tmpdir())) if (/^amo-studio-setup-\d+$/.test(name)) rmSync(join(tmpdir(), name), { recursive: true, force: true });
       const link: HostLinkOptions = {
@@ -206,7 +220,9 @@ if (!app.requestSingleInstanceLock()) {
           if (mainWindow && !mainWindow.isMaximized() && !mainWindow.isFullScreen()) {
             const current = mainWindow.getBounds();
             const next = mainBounds(current, current);
-            if (next.x !== current.x || next.y !== current.y || next.width !== current.width || next.height !== current.height) mainWindow.setBounds(next);
+            const moved = next.x !== current.x || next.y !== current.y || next.width !== current.width || next.height !== current.height;
+            trace?.note("main", moved ? "display-refit-setBounds" : "display-refit");
+            if (moved) mainWindow.setBounds(next);
           }
         };
         screen.on("display-added", refit);

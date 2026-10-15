@@ -6,6 +6,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
   host: (): Promise<{ url: string; token: string } | null> => electron.ipcRenderer.invoke("amo:host"),
   pickDirectory: (): Promise<string | null> => electron.ipcRenderer.invoke("amo:pick-directory"),
   openExternal: (url: string): Promise<void> => electron.ipcRenderer.invoke("amo:open-external", url),
+  /** The page's summary of one window drag (lib/resizeTrace.ts), for logs/resize-trace.log. */
+  trace: (summary: unknown): void => electron.ipcRenderer.send("amo:trace", summary),
   copyText: (text: string): Promise<void> => electron.ipcRenderer.invoke("amo:copy", text),
   /** The workbench window's own title bar buttons. */
   windowControls: {

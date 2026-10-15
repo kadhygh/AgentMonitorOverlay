@@ -32,3 +32,20 @@ test("stops an attached Host when the app quits in test mode", async () => {
   await studio.app.close();
   await expect.poll(() => existsSync(join(dataDir, "host.lock")), { timeout: 15_000 }).toBe(false);
 });
+
+test("resize trace: each drag of a window is summarised in logs/resize-trace.log, with what the page saw", async () => {
+  studio = await launchStudio({ env: { AMO_STUDIO_TRACE_RESIZE: "1" } });
+  const { app, page, dataDir } = studio;
+  await expect(page.getByTestId("host-status")).toBeVisible();
+  await app.evaluate(async ({ BrowserWindow }) => {
+    const win = BrowserWindow.getAllWindows().find((w) => w.getTitle() === "AMO Studio")!;
+    const b = win.getBounds();
+    for (let i = 1; i <= 12; i++) {
+      win.setBounds({ ...b, width: b.width + i * 8, height: b.height + i * 5 });
+      await new Promise((r) => setTimeout(r, 16));
+    }
+  });
+  const log = join(dataDir, "logs", "resize-trace.log");
+  await expect.poll(() => (existsSync(log) ? readFileSync(log, "utf8") : ""), { timeout: 10_000 }).toMatch(/ main burst \d+ms .* resize=\d+/);
+  await expect.poll(() => readFileSync(log, "utf8"), { timeout: 10_000 }).toMatch(/ main page \{"where":.*"frames":\d+/);
+});

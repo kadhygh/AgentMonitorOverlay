@@ -32,6 +32,8 @@ declare global {
       /** From Focus: show a task (and session) in the workbench. */
       /** A task (and session); without a task (a topic session) the workbench shows the board. */
       openInWorkbench?(target: { taskId?: string; sessionId?: string; show?: boolean }): Promise<void>;
+      /** One window drag's summary, for logs/resize-trace.log (Electron). */
+      trace?(summary: unknown): void;
       windowControls?: {
         minimize(): void;
         toggleMaximize(): void;
