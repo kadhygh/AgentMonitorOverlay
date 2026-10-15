@@ -3,6 +3,7 @@ import { projectWorkspaces, type ModelProfile, type Session, type Task, type Top
 import { HostApiError, type HostLink } from "../host/client.js";
 import { activeModel, useProfileChoices } from "../lib/choices.js";
 import { samePick } from "../lib/recents.js";
+import { defaultProjectFor } from "../lib/profiles.js";
 import { EffortBars, FastToggle } from "../chat/pickers.js";
 import { submitDraft, useTaskDraft } from "./draft.js";
 import { ModelRow, tilePicks } from "./ModelRow.js";
@@ -45,7 +46,13 @@ export function QuickStart({
     topics: liveTopics,
     onPick: (kind, id) => update(kind === "project" ? { projectId: id } : { topicId: id }),
   });
-  useEffect(() => input.current?.focus(), []);
+  useEffect(() => {
+    // A fresh draft starts in the default project (设置 → 项目与目录).
+    if (!draft.text.trim()) update({ projectId: defaultProjectFor(projects) });
+    input.current?.focus();
+    // Only when the bar opens.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const project = projects.find((w) => w.id === draft.projectId);
   const topic = liveTopics.find((t) => t.id === draft.topicId);

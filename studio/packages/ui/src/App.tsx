@@ -182,7 +182,7 @@ export function App() {
         </div>
       </div>
       <HostErrorToast />
-      {settingsOpen && <SettingsDialog link={link} settings={settings} onClose={() => setSettingsOpen(false)} />}
+      {settingsOpen && <SettingsDialog link={link} settings={settings} workspaces={state.workspaces} onClose={() => setSettingsOpen(false)} />}
       {quickOpen && (
         <QuickStart
           link={link}

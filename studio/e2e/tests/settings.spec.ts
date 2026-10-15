@@ -96,7 +96,7 @@ test("the common folder: where work without a project runs, moved in settings", 
 
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
-  await dialog.getByRole("tab", { name: "公共目录" }).click();
+  await dialog.getByRole("tab", { name: "项目与目录" }).click();
   // By default it sits in the data folder.
   await expect(dialog.getByRole("textbox", { name: "公共目录" })).toHaveValue(/common$/);
   await dialog.getByRole("textbox", { name: "公共目录" }).fill(elsewhere);

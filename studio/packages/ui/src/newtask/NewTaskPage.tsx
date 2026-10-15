@@ -5,6 +5,7 @@ import type { Scope } from "../board/Board.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { activeModel, sameOptions, useProfileChoices } from "../lib/choices.js";
 import { samePick } from "../lib/recents.js";
+import { defaultProjectFor } from "../lib/profiles.js";
 import { usePacks } from "../packs/usePacks.js";
 import { useFeature } from "../lib/features.js";
 import { useSettings } from "../settings/SettingsDialog.js";
@@ -57,9 +58,10 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
   const { choices } = useProfileChoices(link, draft.pick.profileId);
   const model = choices ? activeModel(choices, draft.pick.model ? { model: draft.pick.model } : {}) : undefined;
 
-  // A fresh draft starts where the page was opened from; a draft with text keeps its own choices.
+  // A fresh draft starts where the page was opened from (else in the default project, 设置 → 项目与目录); a draft with
+  // text keeps its own choices.
   useEffect(() => {
-    if (!draft.text.trim()) update({ projectId: scope.kind === "workspace" ? scope.id : null, topicId: scope.kind === "topic" ? scope.id : null });
+    if (!draft.text.trim()) update({ projectId: scope.kind === "workspace" ? scope.id : defaultProjectFor(projects), topicId: scope.kind === "topic" ? scope.id : null });
     input.current?.focus();
     // Only when the page opens.
     // eslint-disable-next-line react-hooks/exhaustive-deps

@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { StudioSettings } from "@amo-studio/protocol";
+import { projectWorkspaces, type StudioSettings, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { setThemePref, THEME_LABELS, themePref, type ThemePref } from "../lib/theme.js";
@@ -10,6 +10,7 @@ import { DataPage } from "./DataPage.js";
 import { QuotaPage } from "./QuotaPage.js";
 import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
+import { defaultProjectFor, setDefaultProject } from "../lib/profiles.js";
 
 /** Studio-wide settings from the Host, kept live. */
 export function useSettings(link: HostLink): StudioSettings | null {
@@ -35,7 +36,7 @@ const PAGES = [
   { id: "ui", label: "界面" },
   { id: "models", label: "模型" },
   { id: "quota", label: "额度" },
-  { id: "common", label: "公共目录" },
+  { id: "common", label: "项目与目录" },
   { id: "features", label: "功能" },
   { id: "scratchpad", label: "便签" },
   { id: "data", label: "数据管理" },
@@ -46,10 +47,11 @@ type SettingsPage = (typeof PAGES)[number]["id"];
 let lastPage: SettingsPage = "ui";
 
 /**
- * 设置, in pages: 界面 (the look, per install), 模型 (how Claude signs in, keys, 常用预设), 公共目录 (a folder for sessions
- * that belong to no single project: the scheduler's rounds, and the default for cross-workspace sessions), 功能 and 便签.
+ * 设置, in pages: 界面 (the look, per install), 模型 (how Claude signs in, keys, 常用预设), 项目与目录 (the default project of
+ * new tasks, and the common folder for sessions that belong to no single project: the scheduler's rounds, and the default
+ * for cross-workspace sessions), 功能 and 便签.
  */
-export function SettingsDialog({ link, settings, onClose }: { link: HostLink; settings: StudioSettings | null; onClose(): void }) {
+export function SettingsDialog({ link, settings, workspaces = [], onClose }: { link: HostLink; settings: StudioSettings | null; workspaces?: readonly Workspace[]; onClose(): void }) {
   const [page, setPage] = useState<SettingsPage>(lastPage);
   const [theme, setTheme] = useState<ThemePref>(themePref);
   const view = useTranscriptView();
@@ -201,6 +203,7 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
             {page === "models" && <ModelsPage link={link} settings={settings} />}
             {page === "quota" && <QuotaPage link={link} settings={settings} />}
 
+            {page === "common" && <DefaultProjectSection workspaces={workspaces} />}
             {page === "common" && (
               <section className="settings-section" aria-label="公共目录">
                 <span className="settings-heading">公共目录</span>
@@ -232,6 +235,30 @@ export function SettingsDialog({ link, settings, onClose }: { link: HostLink; se
         </div>
       </div>
     </div>
+  );
+}
+
+/** 默认项目 (2026-10-15): where a new task starts unless it is opened from a project; kept on this machine. */
+function DefaultProjectSection({ workspaces }: { workspaces: readonly Workspace[] }) {
+  const projects = projectWorkspaces(workspaces);
+  const [chosen, setChosen] = useState(() => defaultProjectFor(projects));
+  const choose = (id: string | null) => {
+    setDefaultProject(id);
+    setChosen(id);
+  };
+  return (
+    <section className="settings-section" aria-label="默认项目">
+      <span className="settings-heading">默认项目</span>
+      <span className="settings-hint">新建任务和快速新任务（Ctrl+N）默认选中这个项目；从某个项目的看板新建时仍用那个项目。只存在这台电脑上。</span>
+      <div role="radiogroup" aria-label="默认项目" className="chips">
+        {[{ id: null, name: "不指定（公共目录）", path: "" }, ...projects].map((w) => (
+          <button key={w.id ?? "none"} type="button" role="radio" className="chip" aria-checked={chosen === w.id} aria-pressed={chosen === w.id} title={w.path || undefined} onClick={() => choose(w.id)}>
+            {w.name}
+          </button>
+        ))}
+      </div>
+      {!projects.length && <span className="settings-hint">还没有项目：在左栏「项目」旁的 + 添加。</span>}
+    </section>
   );
 }
 

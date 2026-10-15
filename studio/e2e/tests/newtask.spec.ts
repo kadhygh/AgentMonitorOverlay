@@ -131,3 +131,42 @@ test("@ and # pick the project and topic while typing; Ctrl N opens the quick ba
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
   expect(state.tasks[0]).toMatchObject({ title: "校验掉落表", workspaceId: alpha!.id, topicId: topic.id, column: "todo" });
 });
+
+test("a default project chosen in settings is picked for new tasks and the quick bar (2026-10-15)", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const [, beta] = await registerWorkspaces(studio, ["alpha", "beta"]);
+
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "项目与目录" }).click();
+  const choice = dialog.getByRole("radiogroup", { name: "默认项目" });
+  await expect(choice.getByRole("radio", { name: "不指定（公共目录）" })).toHaveAttribute("aria-checked", "true");
+  await choice.getByRole("radio", { name: "beta" }).click();
+  await expect(choice.getByRole("radio", { name: "beta" })).toHaveAttribute("aria-checked", "true");
+  await screenshot(studio.app, "stage-14", "default-project-setting", page);
+  await page.keyboard.press("Escape");
+  await expect(dialog).toHaveCount(0);
+
+  // The new task page starts in it.
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  const projects = page.getByRole("group", { name: "项目" });
+  await expect(projects.getByRole("button", { name: "beta" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByTestId("scope-hint")).toContainText("在 beta 里运行");
+  // Opened from another project's board, that project wins.
+  await page.getByRole("button", { name: "返回看板" }).click();
+  await page.getByTestId("scope-ws-alpha").click();
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  await expect(projects.getByRole("button", { name: "alpha" })).toHaveAttribute("aria-pressed", "true");
+  await page.getByRole("button", { name: "返回看板" }).click();
+
+  // The quick bar too, and the task is made there.
+  await page.keyboard.press("Control+N");
+  const quick = page.getByRole("dialog", { name: "快速新任务" });
+  await expect(quick).toContainText("@beta");
+  await quick.getByLabel("快速新任务").fill("默认项目里的任务");
+  await quick.getByLabel("快速新任务").press("Control+Enter");
+  await expect(quick).toHaveCount(0);
+  const state = await studio.api<StateSnapshot>("GET", "/api/state");
+  expect(state.tasks.find((t) => t.title === "默认项目里的任务")).toMatchObject({ workspaceId: beta!.id });
+});

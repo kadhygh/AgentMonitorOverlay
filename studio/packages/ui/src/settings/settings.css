@@ -144,3 +144,6 @@
 .quick-row .quick-btn { width: 26px; height: 26px; border: 1px solid transparent; border-radius: 6px; background: transparent; color: var(--text-dim); cursor: pointer; }
 .quick-row .quick-btn:hover:not(:disabled) { border-color: var(--border); color: var(--text); }
 .quick-row .quick-btn:disabled { opacity: 0.35; cursor: default; }
+
+/* 默认项目 (2026-10-15): the project chips start at the left, like the other rows. */
+.settings-section > .chips { justify-content: flex-start; }
