@@ -104,9 +104,12 @@ test("status, topic and project from the line under the title; the right column 
   await page.getByTestId("sidebar-toggle").click();
   await expect(page.getByTestId("sidebar-toggle")).toHaveAttribute("aria-pressed", "true");
   await expect(page.getByTestId("note-count")).toBeVisible();
+  // What is being written in the session's box survives a reload (2026-10-15: a restart emptied it).
+  await page.getByLabel("输入消息").fill("写到一半的话");
   await page.reload();
   await page.getByTestId("task-card").filter({ hasText: "掉落表" }).click();
   await expect(page.getByTestId("note-count")).toBeVisible();
+  await expect(page.getByLabel("输入消息")).toHaveValue("写到一半的话");
 
   // The session bar: the openers as one group, 分支 with the git-branch glyph, ⋯ (标记, 归档会话 in deep red); no 仅工作台.
   await expect(page.getByTestId("writer")).toHaveCount(0);

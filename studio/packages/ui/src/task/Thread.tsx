@@ -1,4 +1,5 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type RefObject, type SetStateAction } from "react";
+import { readSessionDraft, writeSessionDraft } from "./sessionDraft.js";
 import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, Task } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
@@ -72,10 +73,21 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
-  const [draft, setDraft] = useState("");
+  // The composer's text, kept per session across switching and restarts (sessionDraft.ts).
+  const sessionId = session?.id ?? null;
+  const [held, setHeld] = useState(() => ({ id: sessionId, text: readSessionDraft(sessionId) }));
+  const draft = held.id === sessionId ? held.text : readSessionDraft(sessionId);
+  const setDraft = useCallback(
+    (v: SetStateAction<string>) =>
+      setHeld((h) => {
+        const text = typeof v === "function" ? v(h.id === sessionId ? h.text : readSessionDraft(sessionId)) : v;
+        writeSessionDraft(sessionId, text);
+        return { id: sessionId, text };
+      }),
+    [sessionId],
+  );
   const [menu, setMenu] = useState<Menu>(null);
   const view = useTranscriptView();
-  useEffect(() => setDraft(""), [session?.id]);
   const attach = useAttachments(link);
   // 找文件: the selector, opened with Ctrl+P or from the @ list (with what was typed after @).
   const [finding, setFinding] = useState<{ query: string } | null>(null);

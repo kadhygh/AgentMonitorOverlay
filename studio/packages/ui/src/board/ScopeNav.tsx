@@ -192,9 +192,6 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   if (collapsed)
     return (
       <nav className="scope-nav collapsed" aria-label="范围">
-        <button type="button" className="fold-btn" aria-label="展开左栏" title="展开左栏" onClick={() => setCollapsed(false)} data-testid="nav-expand">
-          <FoldIcon dir="right" />
-        </button>
         <span className="spacer" />
         {onSettings && (
           <button type="button" className="fold-btn" onClick={onSettings} aria-label="设置" title="设置">
@@ -204,18 +201,16 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
             </svg>
           </button>
         )}
+        <button type="button" className="fold-btn" aria-label="展开左栏" title="展开左栏" onClick={() => setCollapsed(false)} data-testid="nav-expand">
+          <FoldIcon dir="right" />
+        </button>
       </nav>
     );
 
   return (
     <>
     <nav className="scope-nav" aria-label="范围">
-      <div className="nav-top">
-        {row(null, null, { kind: "all" }, "全部任务", liveTasks.length, "scope-all")}
-        <button type="button" className="fold-btn" aria-label="收起左栏" title="收起左栏" onClick={() => setCollapsed(true)} data-testid="nav-collapse">
-          <FoldIcon dir="left" />
-        </button>
-      </div>
+      <div className="nav-top">{row(null, null, { kind: "all" }, "全部任务", liveTasks.length, "scope-all")}</div>
 
       <div className="nav-scroll">
         <section className="nav-section-box" aria-label="专题">
@@ -330,6 +325,9 @@ ${w.description}` : w.path, (e) => {
       </div>
 
       <UsageFooter link={link} live={live} />
+      {/* Settings and, at its right, folding the column (2026-10-15: beside 全部任务 it pushed that row short of the
+          lists' right edge); folded, the same corner unfolds it. */}
+      <div className="nav-bottom">
       {onSettings && (
         <button type="button" className="nav-settings" onClick={onSettings} aria-label="设置" title="设置：界面主题、公共目录、模型、便签、功能、数据管理">
           <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
@@ -339,6 +337,10 @@ ${w.description}` : w.path, (e) => {
           设置
         </button>
       )}
+        <button type="button" className="fold-btn" aria-label="收起左栏" title="收起左栏" onClick={() => setCollapsed(true)} data-testid="nav-collapse">
+          <FoldIcon dir="left" />
+        </button>
+      </div>
       {menu && (
         <ProjectReviewMenu
           link={link}
