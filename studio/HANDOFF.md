@@ -2,6 +2,8 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+> **2026-10-15 午更新：S14-K 到 S14-N 做完（Focus 窗口形状和「Focus 设置」小框、快速选择、Focus 图标、编辑专题（迁移 12）、拖宽度），开发版最后一次重启在 10:51，之后的 S14-M/N 还没生效，等用户说重启。阶段 15 只出了计划 `plans/stage-15.md`（agent 懂 AMO、主控提案、传话；用户决定都在里面，记忆 `studio-stage15-orchestration`），用户说晚些一起推进，白天自己手动用。会话列表改版的 4 个方案在 https://claude.ai/artifact/4viCheJyoAsxEeFegNHhyJ 等用户挑。**
+>
 > **2026-10-15 更新：阶段 14 追加 S14-F 到 S14-J，都合进 `studio/main`，开发版还没重启（还是 10-14 23:41 那次的 Host）。** 详细在 `plans/stage-14.md` 进度表。
 > - S14-F/G（主会话）：标题下一行项目、分支只显示不能点；左栏、会话列表可收起；返回按钮「‹ + 图标 + 名字」；新建后会话列表默认收起。
 > - S14-H（主会话，`17c4e52` 等）：设置 → 模型 改成渠道卡片，用户可加「第三方 Claude」「第三方 Codex」渠道（网址 + Key + 模型，可沿用旧 AMO 的 DXX Key），每个渠道可「隐藏」不出现在模型选择里；余额查询照 CC Switch 的模板（通用 / New API / Sub2API / OpenAI 计费 / DeepSeek / 自定义）；设置新页「额度」选每个账号在左下角、Focus 是否显示。渠道 Key 存凭据管理器 `channel-<id>`（**Studio 现在除了 `claude-subscription` 还会写这些新条目**；旧 AMO 的条目仍只读）。Claude 本机登录的风险说明改成按 Anthropic 帮助中心 2026-06 起的说法（订阅可用于 Agent SDK 和第三方应用）。
