@@ -3,7 +3,7 @@ import type { Session, Task, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 // 2026-10-15 evening: 「按 ↑ 回到本轮回复开始」 after a turn ends with its start out of sight, and Focus listing replies
-// that ended (「回复完了」) until the person looks at them.
+// that ended (「完成待审核」, a green robot) until the person looks at them.
 
 let studio: Studio | undefined;
 
@@ -85,9 +85,13 @@ test("Focus lists replies that ended while the session was not on screen, until 
   const entry = focus.getByTestId("focus-entry");
   await expect(entry).toHaveCount(1, { timeout: 60_000 });
   await expect(entry).toContainText("后台跑完");
-  await expect(entry).toContainText("回复完了");
+  await expect(entry).toContainText("完成待审核");
   await expect(entry).toHaveAttribute("data-finished", "true");
   await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1");
+  // Only finished work is new: the robot is green and says so.
+  const bot = focus.getByTestId("focus-bot");
+  await expect(bot).toHaveText(/^1 个完成待审核/);
+  await expect(bot).toHaveClass(/calm/);
   await expect(focus.getByTestId("focus-snippet")).toContainText("MOCK: 在后台回复");
   await screenshot(app, "stage-14", "focus-replied", focus, "focus");
 

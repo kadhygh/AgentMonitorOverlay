@@ -114,7 +114,9 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1", { timeout: 30_000 });
   const bot = focus.getByTestId("focus-bot");
   await expect(bot).toBeVisible();
-  await expect(bot).toContainText("1 件事等你");
+  await expect(bot).toContainText("1 件事");
+  await expect(bot).not.toContainText("完成待审核");
+  await expect(bot).toHaveClass(/alert/);
   await expect(focus.getByTestId("focus-panel")).toHaveClass(/alerting/);
   await screenshot(app, "stage-14", "S14-J-focus-robot", focus, "focus");
 
@@ -214,4 +216,34 @@ test("Focus shows the 额度 that 设置 → 额度 marks for it", async () => {
   await studio.api("PUT", "/api/settings", { quotaDisplay: { [channel.id]: { footer: true, focus: true } } });
   await expect(focus.getByTestId("focus-quota")).toHaveText("中转 GPT $12.50");
   await screenshot(app, "stage-14", "S14-H-focus-quota", focus, "focus");
+});
+
+test("Focus: a click Chromium dropped (it came with WM_MOUSEACTIVATE, the page never saw it) is given back (2026-10-15)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const opened = app.waitForEvent("window");
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await opened;
+  const created = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+    title: "丢掉的点击",
+    workspaceId: ws.id,
+    firstSession: { profileId: "codex-mock", text: "[[shell: cmd /c echo lost]]" },
+  });
+  const approve = focus.getByRole("button", { name: "批准", exact: true });
+  await expect(approve).toBeVisible({ timeout: 30_000 });
+
+  // Windows sent WM_MOUSEACTIVATE as the button went down over 批准 and Chromium dropped the press; it came up.
+  const box = (await approve.boundingBox())!;
+  const zoom = await focus.evaluate(() => window.outerWidth / window.innerWidth || 1);
+  await app.evaluate(({ BrowserWindow }, at) => {
+    const win = BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().includes("#focus"))!;
+    const b = win.getContentBounds();
+    const g = globalThis as { __amoTestCursor?: { x: number; y: number }; __amoFocusClicks?: { activated(at: unknown): void; released(): void; pointer(): unknown } };
+    g.__amoTestCursor = { x: b.x + at.x, y: b.y + at.y };
+    g.__amoFocusClicks!.activated(g.__amoFocusClicks!.pointer());
+    g.__amoFocusClicks!.released();
+  }, { x: Math.round((box.x + box.width / 2) * zoom), y: Math.round((box.y + box.height / 2) * zoom) });
+  await expect(approve).toHaveCount(0, { timeout: 15_000 });
+  await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.id === created.session.id)?.status, { timeout: 30_000 }).not.toBe("awaiting-approval");
 });

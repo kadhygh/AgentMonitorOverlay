@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, scre
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
-import { createFocusWindow, mainBounds, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
+import { createFocusWindow, mainBounds, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
@@ -12,6 +12,7 @@ import { setupReviewWindows } from "./review-window.js";
 import { installMarksWindow } from "./marks-window.js";
 import { setupViewerWindows } from "./viewer-window.js";
 import { ResizeTrace } from "./resize-trace.js";
+import type { EatenClicks } from "./focus-clicks.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
@@ -52,6 +53,8 @@ let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;
 /** Resize trace (logs/resize-trace.log), made once the app is ready. */
 let trace: ResizeTrace | null = null;
+/** Gives back the clicks Chromium drops on Focus (focus-clicks.ts). */
+let focusClicks: EatenClicks | null = null;
 /** Whether the Focus window lets clicks through right now (点击穿透), for the trace. */
 let focusIgnoring = false;
 /** 界面大小 one step (Ctrl + = / - / 0), set up with the IPC handlers. */
@@ -72,11 +75,16 @@ function setFocusVisible(on: boolean): void {
       saved: prefs.focusPos(),
       onMoved: (pos) => prefs.setFocusPos(pos),
     });
-    focusWindow.on("closed", () => (focusWindow = null));
+    focusWindow.on("closed", () => {
+      focusWindow = null;
+      focusClicks = null;
+    });
     trace?.watchInput(focusWindow, "focus");
+    focusClicks = recoverLostClicks(focusWindow, { testMode, note: (at) => trace?.note("focus", "click given back", `at ${at.x},${at.y}`) });
   } else if (!on && focusWindow) {
     focusWindow.destroy();
     focusWindow = null;
+    focusClicks = null;
   }
   mainWindow?.webContents.send("amo:focus-changed", on);
 }
@@ -165,6 +173,9 @@ if (!app.requestSingleInstanceLock()) {
     focusWindow.setShape(z === 1 ? ok : ok.map((r) => ({ x: Math.round(r.x * z), y: Math.round(r.y * z), width: Math.max(1, Math.round(r.width * z)), height: Math.max(1, Math.round(r.height * z)) })));
     trace?.note("focus", "focus-shape", ok.map((r) => `${r.width}×${r.height}@${r.x},${r.y}`).join(" ") + (z === 1 ? "" : ` zoom=${z}`));
     if (testMode) (globalThis as { __amoFocusShape?: unknown }).__amoFocusShape = ok;
+  });
+  ipcMain.on("amo:focus-pointer", (event) => {
+    if (focusWindow && event.sender === focusWindow.webContents) focusClicks?.pagePressed();
   });
   ipcMain.on("amo:focus-mouse", (event, ignore: unknown) => {
     if (!focusWindow || event.sender !== focusWindow.webContents) return;

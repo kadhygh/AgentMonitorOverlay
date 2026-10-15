@@ -21,6 +21,9 @@ import "./focus.css";
 // gear, or a right-click) is a small box with × — 移动位置 / 锁定位置 / 点击穿透 / 收起 / 打开 Studio / 隐藏.
 // 2026-10-15 evening: also sessions whose reply ended (「回复完了」) or that failed since the person last looked at them
 // in the main window (lib/sessionSeen.ts); clicking one here counts as looking too.
+// Later that evening: two kinds only — 事 (approvals, questions, decisions, proposals, failures) and 完成待审核 (a reply
+// that ended unseen, or a session waiting for review). The robot says how many of each; it is green when all that is
+// new is finished work.
 
 type Approval = Extract<SessionItem, { type: "approval" }>;
 const SNIPPET_MAX = 300;
@@ -69,6 +72,12 @@ export function FocusApp() {
   const proposals = settings?.disabledFeatures.includes("planning") ? [] : pending;
 
   useWindowShape();
+  // Each press the page sees, so the main process knows no click was dropped (app/src/focus-clicks.ts).
+  useEffect(() => {
+    const pressed = () => window.amo?.focus?.pressed?.();
+    document.addEventListener("pointerdown", pressed, true);
+    return () => document.removeEventListener("pointerdown", pressed, true);
+  }, []);
   // 点击穿透: the window lets clicks through, and takes them back while the pointer is over a button (the pointer's
   // moves still reach the page). Moving and the settings box always take clicks.
   const through = passthrough && !moving && !pop;
@@ -103,6 +112,10 @@ export function FocusApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the keys by content
   useEffect(() => setSeen((s) => pruneSeen(s, keys)), [keysId]);
   const alerting = shouldAlert(keys, seen);
+  const toReview = [...waiting, ...finished].filter((s) => isToReview(s, waiting));
+  const reviewKeys = new Set(attentionKeys(toReview, [], []));
+  // Green when everything new is finished work to look at.
+  const calm = alerting && keys.every((k) => seen.has(k) || reviewKeys.has(k));
   const acknowledge = () => setSeen(new Set(keys));
 
   const togglePassthrough = () => {
@@ -146,10 +159,10 @@ export function FocusApp() {
 
   const panelClass = ["focus-panel", locked ? "locked" : "", moving ? "moving" : "", alerting ? "alerting" : "", passthrough ? "passthrough" : ""].filter(Boolean).join(" ");
   return (
-    <div className="focus-root">
+    <div className={calm ? "focus-root calm" : "focus-root"}>
       {alerting && !moving && (
         <div className="focus-bot-slot">
-          <PixelBot message={`${needs} 件事等你`} onClick={openFirst} />
+          <PixelBot mood={calm ? "calm" : "alert"} message={summary(needs - toReview.length, toReview.length)} onClick={openFirst} />
         </div>
       )}
       {pop && (
@@ -247,6 +260,7 @@ export function FocusApp() {
                 title={title(s)}
                 open={s.id === openId}
                 finished={!waiting.includes(s)}
+                toReview={isToReview(s, waiting)}
                 onToggle={() => {
                   setOpen(s.id === openId ? "" : s.id);
                   if (!waiting.includes(s)) noteSeen([s.id]);
@@ -404,13 +418,23 @@ const ICON = {
 };
 
 const FINISHED: ReadonlySet<string> = new Set(["idle", "completed", "error"]);
-/** A reply that ended and was not looked at yet. */
-const REPLIED: StatusLook = { label: "回复完了", dot: "var(--primary)", text: "var(--primary)" };
+/** Finished work to look at: a reply that ended unseen, or a session waiting for review. */
+const TO_REVIEW: StatusLook = { label: "完成待审核", dot: "var(--running)", text: "var(--running-text)" };
 
-function FocusEntry({ link, session, title, open, finished, onToggle }: { link: HostLink; session: Session; title: string; open: boolean; finished: boolean; onToggle(): void }) {
-  const look = finished && session.status !== "error" ? REPLIED : SESSION_LOOK[session.status];
+/** 完成待审核 rather than a 事: a reply that ended (not failed) unseen, or a session waiting for review. */
+export function isToReview(s: Session, waiting: readonly Session[]): boolean {
+  return s.status === "awaiting-review" || (!waiting.includes(s) && s.status !== "error");
+}
+
+/** The robot's words: how many 事 and how many 完成待审核. */
+export function summary(things: number, toReview: number): string {
+  return [things ? `${things} 件事` : "", toReview ? `${toReview} 个完成待审核` : ""].filter(Boolean).join(" · ") || "没有待处理";
+}
+
+function FocusEntry({ link, session, title, open, finished, toReview, onToggle }: { link: HostLink; session: Session; title: string; open: boolean; finished: boolean; toReview: boolean; onToggle(): void }) {
+  const look = toReview ? TO_REVIEW : SESSION_LOOK[session.status];
   return (
-    <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry" data-finished={finished || undefined}>
+    <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry" data-finished={finished || undefined} data-review={toReview || undefined}>
       <button type="button" className="focus-row" onClick={onToggle} aria-expanded={open}>
         <span className="dot" style={{ background: look.dot }} />
         <span className="focus-row-text">

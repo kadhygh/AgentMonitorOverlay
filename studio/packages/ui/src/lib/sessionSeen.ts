@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import type { Session } from "@amo-studio/protocol";
 
 // When the person last looked at each session in the workbench (2026-10-15). Focus lists a session whose reply ended,
-// or that failed, after that: 「回复完了」/「出错」, until the person opens it in the main window (or in Focus).
+// or that failed, after that: 「完成待审核」/「出错」, until the person opens it in the main window (or in Focus).
 // Kept in localStorage, which the workbench and Focus share (same origin), so Focus follows the main window at once
 // through `storage` events; it is per machine, like the windows.
 

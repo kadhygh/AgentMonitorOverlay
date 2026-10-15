@@ -21,6 +21,7 @@ declare global {
         /** Focus window: the parts of the window that take clicks (2026-10-15); the rest lets them through. */
         setShape?(rects: Array<{ x: number; y: number; width: number; height: number }>): void;
         /** Focus window: a right-click on its title row, passed on by the main process (S14-J). */
+        pressed?(): void;
         onContextMenu?(cb: (at: { x: number; y: number }) => void): () => void;
       };
       /** 界面大小 (2026-10-15): the zoom of every Studio page (Electron). */

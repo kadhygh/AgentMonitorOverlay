@@ -1,6 +1,8 @@
 import { BrowserWindow, screen } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
+import { EatenClicks } from "./focus-clicks.js";
+import { HTCLIENT, onWindowMessage, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE } from "./window-messages.js";
 import { placeFocus, placeMain, refitFocus, type DisplayInfo, type Point, type Rect, type Size } from "./placement.js";
 
 // The Focus window: a small frameless, transparent, always-on-top panel in a corner of the screen that answers one
@@ -181,4 +183,36 @@ export class ShellPrefs {
     mkdirSync(dirname(this.file), { recursive: true });
     writeFileSync(this.file, JSON.stringify(this.data, null, 2));
   }
+}
+
+/**
+ * Gives back the clicks Chromium drops on Focus (focus-clicks.ts): a left press that came with WM_MOUSEACTIVATE and
+ * that the page did not see is clicked into the page where it was pressed. `note` hears each one given back.
+ */
+export function recoverLostClicks(win: BrowserWindow, { testMode, note }: { testMode: boolean; note(at: Point): void }): EatenClicks {
+  const clicks = new EatenClicks({
+    replay: (at) => {
+      if (win.isDestroyed()) return;
+      const wc = win.webContents;
+      wc.sendInputEvent({ type: "mouseMove", x: at.x, y: at.y });
+      wc.sendInputEvent({ type: "mouseDown", x: at.x, y: at.y, button: "left", clickCount: 1 });
+      wc.sendInputEvent({ type: "mouseUp", x: at.x, y: at.y, button: "left", clickCount: 1 });
+      note(at);
+    },
+  });
+  // Where the pointer is in the window's content, in DIP (sendInputEvent's units; the page's zoom applies after).
+  const pointer = (): Point => {
+    const cursor = (testMode && (globalThis as { __amoTestCursor?: Point }).__amoTestCursor) || screen.getCursorScreenPoint();
+    const b = win.getContentBounds();
+    return { x: Math.round(cursor.x - b.x), y: Math.round(cursor.y - b.y) };
+  };
+  onWindowMessage(win, WM_MOUSEACTIVATE, (_w, l) => {
+    const hit = l.readUInt16LE(0);
+    const message = l.readUInt16LE(2);
+    clicks.activated(hit === HTCLIENT && message === WM_LBUTTONDOWN ? pointer() : null);
+  });
+  onWindowMessage(win, WM_LBUTTONUP, () => clicks.released());
+  // Tests cannot make Windows send WM_MOUSEACTIVATE; they drive the recovery itself.
+  if (testMode) (globalThis as { __amoFocusClicks?: { activated(at: Point | null): void; released(): void; pointer(): Point } }).__amoFocusClicks = { activated: (at) => clicks.activated(at), released: () => clicks.released(), pointer };
+  return clicks;
 }

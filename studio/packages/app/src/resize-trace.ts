@@ -1,6 +1,7 @@
 import { app, type BrowserWindow } from "electron";
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
 import { join } from "node:path";
+import { onWindowMessage } from "./window-messages.js";
 
 // Resize trace (2026-10-15, the main window flickers again when dragged by its bottom-right corner): every window's
 // resize events, grouped into bursts, plus what the page saw during each burst (frames, long frames and what ran in
@@ -139,7 +140,7 @@ export class ResizeTrace {
     ];
     let lastMove = 0;
     for (const [msg, label, detail] of MESSAGES) {
-      win.hookWindowMessage(msg, (w: Buffer, l: Buffer) => {
+      onWindowMessage(win, msg, (w: Buffer, l: Buffer) => {
         if (msg === 0x0200) {
           const now = Date.now();
           if (now - lastMove < 2000) return;

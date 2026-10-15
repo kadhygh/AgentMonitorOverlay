@@ -1,9 +1,9 @@
 // A small pixel robot (2026-10-15, S14-J): it pops up above Focus and dances while something needs the person, the
 // first shape of a Focus desktop pet. Drawn on a 12×14 grid of 5px squares; the dance is CSS (steps()), two poses
 // swapped in turn, so it is cheap and stops dead under prefers-reduced-motion. `mood` is how it would grow later
-// (idle, sleeping, celebrating…); only "alert" is used now.
+// (idle, sleeping, celebrating…). "alert": something needs the person; "calm" (green): only finished work to look at.
 
-export type BotMood = "alert";
+export type BotMood = "alert" | "calm";
 
 const PX = 5;
 type Cell = [x: number, y: number, w?: number, h?: number];

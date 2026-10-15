@@ -55,25 +55,28 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 .focus-move-badge { display: inline-flex; align-items: center; gap: 6px; padding: 5px 10px; border-radius: 999px; background: var(--primary); color: var(--on-primary); font-size: 12.5px; font-weight: 600; }
 .focus-move-done { -webkit-app-region: no-drag; height: 28px; padding: 0 12px; border-radius: 7px; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); cursor: pointer; }
 
+/* 2026-10-15: the alert colour; green (calm) when all that is new is finished work to look at. */
+.focus-root { --focus-alert: var(--attention); }
+.focus-root.calm { --focus-alert: var(--running); }
 /* S14-J: something new needs the person — the panel glows (gently) and the robot dances above it. */
-.focus-panel.alerting { border-color: var(--attention); animation: focus-glow 1.6s ease-in-out infinite; }
+.focus-panel.alerting { border-color: var(--focus-alert); animation: focus-glow 1.6s ease-in-out infinite; }
 @keyframes focus-glow {
-  0%, 100% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 0 color-mix(in srgb, var(--attention) 0%, transparent); }
-  50% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 4px color-mix(in srgb, var(--attention) 45%, transparent); }
+  0%, 100% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 0 color-mix(in srgb, var(--focus-alert) 0%, transparent); }
+  50% { box-shadow: 0 2px 7px var(--shadow), 0 0 0 4px color-mix(in srgb, var(--focus-alert) 45%, transparent); }
 }
 .focus-bot-slot { flex: none; display: flex; justify-content: flex-end; padding: 0 6px 6px; }
 .pixel-bot { display: inline-flex; align-items: flex-end; gap: 6px; border: none; background: transparent; padding: 0; cursor: pointer; color: var(--text); animation: bot-pop 0.25s ease-out; }
 .pixel-bot-say {
   position: relative; margin-bottom: 34px; padding: 5px 10px; border-radius: 10px; font-size: 12.5px; font-weight: 600; white-space: nowrap;
-  background: var(--overlay-strong); border: 1px solid var(--attention); color: var(--attention); box-shadow: 0 2px 6px var(--shadow);
+  background: var(--overlay-strong); border: 1px solid var(--focus-alert); color: var(--focus-alert); box-shadow: 0 2px 6px var(--shadow);
 }
-.pixel-bot-say::after { content: ""; position: absolute; right: -6px; bottom: 8px; border: 6px solid transparent; border-left-color: var(--attention); border-right: 0; }
+.pixel-bot-say::after { content: ""; position: absolute; right: -6px; bottom: 8px; border: 6px solid transparent; border-left-color: var(--focus-alert); border-right: 0; }
 .pixel-bot-art { filter: drop-shadow(0 3px 4px var(--shadow)); }
 .pixel-bot:hover .pixel-bot-art { transform: scale(1.08); }
 .bot-shell { fill: var(--primary); }
 .bot-metal { fill: var(--text-dim); }
 .bot-eye { fill: var(--on-primary); }
-.bot-bulb { fill: var(--attention); animation: bot-blink 0.6s steps(1) infinite; }
+.bot-bulb { fill: var(--focus-alert); animation: bot-blink 0.6s steps(1) infinite; }
 .bot-bob { animation: bot-bob 0.6s steps(1) infinite; }
 .pose-a { animation: bot-pose-a 0.6s steps(1) infinite; }
 .pose-b { animation: bot-pose-b 0.6s steps(1) infinite; }
@@ -86,7 +89,7 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 @keyframes bot-leg { 0% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
 @keyframes bot-blink { 0% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) {
-  .focus-panel.alerting { animation: none; box-shadow: 0 2px 7px var(--shadow), 0 0 0 3px color-mix(in srgb, var(--attention) 45%, transparent); }
+  .focus-panel.alerting { animation: none; box-shadow: 0 2px 7px var(--shadow), 0 0 0 3px color-mix(in srgb, var(--focus-alert) 45%, transparent); }
   .pixel-bot, .bot-bulb, .bot-bob, .leg-l, .leg-r { animation: none; }
   .pose-a { animation: none; opacity: 1; }
   .pose-b { animation: none; opacity: 0; }

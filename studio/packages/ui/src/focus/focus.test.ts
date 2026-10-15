@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { exampleItems, exampleSessions, exampleTasks, exampleWorkspaces, type SessionItem, type StateSnapshot } from "@amo-studio/protocol";
-import { latestSnippet, needsMe } from "./FocusApp.js";
+import { isToReview, latestSnippet, needsMe, summary } from "./FocusApp.js";
 
 describe("Focus", () => {
   it("lists live sessions waiting for approval or review, newest first", () => {
@@ -38,5 +38,23 @@ describe("Focus", () => {
     expect(latestSnippet(asked)).toEqual({ text: "怎么重试？\n记什么？", approval: null });
     const plan: SessionItem[] = [{ ...base, id: "p", type: "question", source: "plan-review", state: "pending", plan: "# 加重试\n正文" }];
     expect(latestSnippet(plan).text).toBe("计划待审：加重试");
+  });
+
+  it("sorts what it lists into two kinds: 事, and 完成待审核", () => {
+    const at = (id: string, status: (typeof exampleSessions)[number]["status"]) => ({ ...exampleSessions[0]!, id, status });
+    const asking = at("a", "awaiting-approval");
+    const review = at("r", "awaiting-review");
+    const waiting = [asking, review];
+    expect(isToReview(asking, waiting)).toBe(false);
+    expect(isToReview(review, waiting)).toBe(true);
+    expect(isToReview(at("i", "idle"), waiting)).toBe(true);
+    expect(isToReview(at("c", "completed"), waiting)).toBe(true);
+    expect(isToReview(at("e", "error"), waiting)).toBe(false);
+  });
+
+  it("the robot says how many of each", () => {
+    expect(summary(2, 3)).toBe("2 件事 · 3 个完成待审核");
+    expect(summary(1, 0)).toBe("1 件事");
+    expect(summary(0, 1)).toBe("1 个完成待审核");
   });
 });
