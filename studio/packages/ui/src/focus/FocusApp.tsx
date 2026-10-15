@@ -12,6 +12,7 @@ import { useSettings } from "../settings/SettingsDialog.js";
 import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shapeRects, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
 import { PixelBot, type BotMood } from "./PixelBot.js";
 import { FocusQuota } from "./FocusQuota.js";
+import { usePetSkin } from "./petSkin.js";
 import "./focus.css";
 
 // The Focus window: "what needs me right now". Lists sessions waiting for approval or review, newest first; one entry
@@ -73,6 +74,7 @@ export function FocusApp() {
   const proposals = settings?.disabledFeatures.includes("planning") ? [] : pending;
 
   useWindowShape();
+  const skin = usePetSkin();
   // Each press the page sees, so the main process knows no click was dropped (app/src/focus-clicks.ts).
   useEffect(() => {
     const pressed = () => window.amo?.focus?.pressed?.();
@@ -204,7 +206,7 @@ export function FocusApp() {
     <div className={rootCalm ? "focus-root calm" : "focus-root"}>
       {(alerting || demo) && !moving && !flyMessage && (
         <div className="focus-bot-slot">
-          <PixelBot mood={slotMood} message={slotSay} onClick={demo ? () => setDemo(null) : openFirst} />
+          <PixelBot mood={slotMood} skin={skin} message={slotSay} onClick={demo ? () => setDemo(null) : openFirst} />
         </div>
       )}
       {pop && (

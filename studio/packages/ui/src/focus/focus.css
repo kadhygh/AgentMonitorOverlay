@@ -85,6 +85,12 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 .pixel-bot.angry .bot-shell { fill: #ffd8d0; }
 .pixel-bot.angry .pixel-bot-art { animation: bot-shake 0.18s steps(2) infinite; }
 .pixel-bot.angry .pixel-bot-say { background: #fff1ee; color: #c62f33; }
+/* 「看书的 Claude 娘」: a 44×54 canvas shown at twice its size, with her own outline. */
+.reader-art { width: 88px; height: 108px; image-rendering: pixelated; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.25)); }
+.pixel-bot.skin-reader .pixel-bot-say { margin-bottom: 64px; }
+.bot-root .pixel-bot.skin-reader .pixel-bot-say { margin-bottom: 58px; }
+.pixel-bot.skin-reader.alert .reader-art { animation: bot-hop 0.6s steps(2) infinite; }
+@keyframes bot-hop { 0% { transform: translateY(0); } 50% { transform: translateY(-4px); } }
 @keyframes bot-shake { 0% { transform: translate(-1.5px, 0) rotate(-4deg); } 50% { transform: translate(1.5px, 0) rotate(4deg); } }
 .bot-bob { animation: bot-bob 0.6s steps(1) infinite; }
 .pose-a { animation: bot-pose-a 0.6s steps(1) infinite; }
@@ -144,3 +150,7 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 .bot-root { height: 100%; display: flex; align-items: center; justify-content: flex-end; padding-right: 22px; }
 .bot-root .pixel-bot { animation: none; }
 .bot-root .pixel-bot-say { margin-bottom: 30px; }
+
+/* 设置 → 界面 → Focus 桌宠: a small still preview of the chosen pet. */
+.settings-pet-preview { --focus-alert: var(--running); display: inline-flex; align-items: flex-end; height: 56px; margin-left: 8px; }
+.settings-pet-preview .pixel-bot-art { height: 52px; width: auto; animation: none; }

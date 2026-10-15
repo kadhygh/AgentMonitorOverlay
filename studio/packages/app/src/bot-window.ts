@@ -8,7 +8,7 @@ import { recoverLostClicks } from "./focus-window.js";
 // Like Focus it never takes focus, and its clicks get the same lost-click recovery.
 
 const BOT_W = 420;
-const BOT_H = 120;
+const BOT_H = 160;
 const FRAME_MS = 16;
 
 export interface BotFlightOptions {

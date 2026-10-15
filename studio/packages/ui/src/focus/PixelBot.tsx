@@ -3,6 +3,11 @@
 // swapped in turn, so it is cheap and stops dead under prefers-reduced-motion. Later that evening: a light body with a
 // dark outline (the dark one was hard to see), and moods — "alert": something needs the person; "calm" (green): only
 // finished work to look at; "angry": left waiting too long, it flies about the screen (app/src/bot-window.ts).
+// A second skin, 「看书的 Claude 娘」 (readerGirl.ts), is chosen in 设置 → 界面 (petSkin.ts); the robot stays the default.
+
+import { useEffect, useRef } from "react";
+import type { PetSkin } from "./petSkin.js";
+import { READER_FRAMES, READER_H, READER_W, readerFrame } from "./readerGirl.js";
 
 export type BotMood = "alert" | "calm" | "angry";
 
@@ -80,11 +85,38 @@ export function BotArt({ mood }: { mood: BotMood }) {
   );
 }
 
-export function PixelBot({ mood = "alert", message, onClick }: { mood?: BotMood; message: string; onClick(): void }) {
+/** The mood colours the reader's 「!」 is painted in (a canvas cannot use the CSS variable). */
+const MOOD_COLOUR: Record<BotMood, string> = { alert: "#d9822b", calm: "#2f8f57", angry: "#e5484d" };
+
+/** 「看书的 Claude 娘」: her frames drawn on a canvas at one pixel per cell, scaled up by CSS. */
+export function ReaderArt({ mood }: { mood: BotMood }) {
+  const canvas = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const ctx = canvas.current?.getContext("2d");
+    if (!ctx) return;
+    const { ms, list } = READER_FRAMES[mood];
+    const paint = (frame: string) => {
+      ctx.clearRect(0, 0, READER_W, READER_H);
+      readerFrame(mood, frame).forEach((c, k) => {
+        if (!c) return;
+        ctx.fillStyle = c === "mood" ? MOOD_COLOUR[mood] : c;
+        ctx.fillRect(k % READER_W, Math.floor(k / READER_W), 1, 1);
+      });
+    };
+    paint(list[0]!);
+    if (window.matchMedia?.("(prefers-reduced-motion: reduce)").matches) return;
+    let i = 0;
+    const timer = setInterval(() => paint(list[(i = (i + 1) % list.length)]!), ms);
+    return () => clearInterval(timer);
+  }, [mood]);
+  return <canvas ref={canvas} className="pixel-bot-art reader-art" width={READER_W} height={READER_H} aria-hidden="true" data-testid="reader-art" />;
+}
+
+export function PixelBot({ mood = "alert", skin = "robot", message, onClick }: { mood?: BotMood; skin?: PetSkin; message: string; onClick(): void }) {
   return (
-    <button type="button" className={`pixel-bot ${mood}`} onClick={onClick} title={`${message}（点一下去处理）`} aria-label={`${message}，点一下去处理`} data-testid="focus-bot">
+    <button type="button" className={`pixel-bot ${mood} skin-${skin}`} onClick={onClick} title={`${message}（点一下去处理）`} aria-label={`${message}，点一下去处理`} data-testid="focus-bot">
       <span className="pixel-bot-say">{message}</span>
-      <BotArt mood={mood} />
+      {skin === "reader" ? <ReaderArt mood={mood} /> : <BotArt mood={mood} />}
     </button>
   );
 }

@@ -11,6 +11,8 @@ import { QuotaPage } from "./QuotaPage.js";
 import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { defaultProjectFor, setDefaultProject } from "../lib/profiles.js";
+import { BotArt, ReaderArt } from "../focus/PixelBot.js";
+import { PET_SKINS, usePetSkin, writePetSkin, type PetSkin } from "../focus/petSkin.js";
 
 /** Studio-wide settings from the Host, kept live. */
 export function useSettings(link: HostLink): StudioSettings | null {
@@ -152,6 +154,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
                   </div>
                 </div>
                 <span className="settings-hint">只影响这台电脑上的 Studio；Focus 悬浮窗会一起切换。</span>
+                <PetSkinRow />
                 {window.amo?.uiScale && <UiScaleRow />}
                 <div className="settings-row">
                   <span className="settings-label">工作步骤展示</span>
@@ -303,6 +306,29 @@ function UiScaleRow() {
         </div>
       </div>
       <span className="settings-hint">文字和图标一起放大缩小，所有 Studio 窗口（含 Focus）一起变。快捷键：Ctrl + = 放大，Ctrl + - 缩小，Ctrl + 0 恢复标准。</span>
+    </>
+  );
+}
+
+/** Focus 桌宠 (2026-10-15 evening): who pops up on Focus when something needs the person, and flies about when ignored. */
+function PetSkinRow() {
+  const skin = usePetSkin();
+  return (
+    <>
+      <div className="settings-row">
+        <span className="settings-label">Focus 桌宠</span>
+        <div role="radiogroup" aria-label="Focus 桌宠" className="chips">
+          {(Object.keys(PET_SKINS) as PetSkin[]).map((k) => (
+            <button key={k} type="button" role="radio" className="chip" aria-checked={skin === k} aria-pressed={skin === k} onClick={() => writePetSkin(k)} data-testid={`pet-skin-${k}`}>
+              {PET_SKINS[k]}
+            </button>
+          ))}
+        </div>
+        <span className="settings-pet-preview" data-testid="pet-skin-preview">
+          {skin === "reader" ? <ReaderArt mood="calm" /> : <BotArt mood="calm" />}
+        </span>
+      </div>
+      <span className="settings-hint">有事时在 Focus 上冒出来提醒你；放着 5 分钟不管会生气、满屏乱飞。只影响这台电脑。</span>
     </>
   );
 }

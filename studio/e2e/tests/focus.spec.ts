@@ -278,3 +278,40 @@ test("Focus: 「机器人动作测试」 plays the robot's moods; the angry one 
   await expect.poll(flight).toMatchObject({ flying: false });
   await expect(focus.getByTestId("focus-bot")).toHaveCount(0);
 });
+
+test("Focus 桌宠: the robot by default; 「看书的 Claude 娘」 picked in 设置 → 界面 shows on Focus and flies (2026-10-15)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const opened = app.waitForEvent("window");
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await opened;
+  await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理", { timeout: 30_000 });
+
+  // The robot by default.
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "界面" }).click();
+  await expect(dialog.getByTestId("pet-skin-robot")).toHaveAttribute("aria-checked", "true");
+  await expect(dialog.getByTestId("pet-skin-preview").locator("svg")).toHaveCount(1);
+  await dialog.getByTestId("pet-skin-reader").click();
+  await expect(dialog.getByTestId("pet-skin-reader")).toHaveAttribute("aria-checked", "true");
+  await expect(dialog.getByTestId("reader-art")).toBeVisible();
+  await screenshot(app, "stage-14", "pet-skin-setting", page);
+  await page.keyboard.press("Escape");
+
+  // Focus follows at once: she pops up for 「机器人动作测试」, and she is the one who flies off angry.
+  await focus.getByTestId("focus-settings-toggle").click();
+  await focus.getByTestId("focus-menu-bot").click();
+  const bot = focus.getByTestId("focus-bot");
+  await expect(bot).toHaveClass(/skin-reader/);
+  await expect(bot.getByTestId("reader-art")).toBeVisible();
+  await screenshot(app, "stage-14", "pet-reader-focus", focus, "focus");
+  const flyingOpened = app.waitForEvent("window");
+  await expect(bot).toHaveCount(0, { timeout: 8000 });
+  const flying = await flyingOpened;
+  const angry = flying.getByTestId("focus-bot");
+  await expect(angry).toHaveClass(/skin-reader/);
+  await expect(angry).toHaveClass(/angry/);
+  await screenshot(app, "stage-14", "pet-reader-angry", flying, "focus");
+  await angry.click();
+});
