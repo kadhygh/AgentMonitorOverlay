@@ -18,6 +18,8 @@ declare global {
         set(on: boolean): Promise<void>;
         onChange(cb: (on: boolean) => void): () => void;
         setIgnoreMouse(ignore: boolean): void;
+        /** Focus window: a right-click on its title row, passed on by the main process (S14-J). */
+        onContextMenu?(cb: (at: { x: number; y: number }) => void): () => void;
       };
       /** 置顶 (stage 14): the workbench window above other windows (Electron). */
       pin?: {

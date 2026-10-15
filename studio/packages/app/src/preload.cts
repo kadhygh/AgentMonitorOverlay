@@ -45,6 +45,12 @@ electron.contextBridge.exposeInMainWorld("amo", {
     },
     /** Focus window only: let clicks through (true) or catch them (false). */
     setIgnoreMouse: (ignore: boolean): void => electron.ipcRenderer.send("amo:focus-mouse", ignore),
+    /** Focus window only: a right-click on its title row (a drag area the page never hears about), in page pixels. */
+    onContextMenu: (cb: (at: { x: number; y: number }) => void): (() => void) => {
+      const listener = (_event: unknown, at: { x: number; y: number }) => cb(at);
+      electron.ipcRenderer.on("amo:focus-context-menu", listener);
+      return () => electron.ipcRenderer.removeListener("amo:focus-context-menu", listener);
+    },
   },
   /** The scratchpad window (便签): open or bring it forward, hide it (from itself), and its global shortcut. */
   scratchpad: {
