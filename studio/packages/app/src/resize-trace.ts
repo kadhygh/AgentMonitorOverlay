@@ -37,11 +37,31 @@ export class ResizeTrace {
     if (!enabled) return;
     mkdirSync(dir, { recursive: true });
     this.write(`--- start ${new Date().toISOString()} · Electron ${process.versions.electron} · Chrome ${process.versions.chrome} · ${process.platform} ${process.getSystemVersion()}`);
-    try {
-      this.write(`gpu: ${JSON.stringify(app.getGPUFeatureStatus())}`);
-    } catch {
-      // before ready on some platforms
-    }
+    // Software compositing makes resizing slow and flickery. Whether the GPU is used, again whenever that changes, and
+    // why a GPU process went away (a crash falls back to software until the app restarts).
+    let last = "";
+    const gpu = () => {
+      try {
+        const s = app.getGPUFeatureStatus();
+        const now = `gpu_compositing=${s.gpu_compositing} rasterization=${s.rasterization} 2d_canvas=${s["2d_canvas"]}`;
+        if (now !== last) this.write(`${stamp()} gpu: ${now}${last ? ` (was ${last})` : ""}`);
+        last = now;
+      } catch {
+        // not yet known
+      }
+    };
+    gpu();
+    setTimeout(gpu, 10_000).unref();
+    setInterval(gpu, 60_000).unref();
+    app.on("child-process-gone", (_e, d) => this.write(`${stamp()} child-process-gone type=${d.type} reason=${d.reason} exitCode=${d.exitCode}${d.name ? ` name=${d.name}` : ""}`));
+    app.on("gpu-info-update", () => gpu());
+    void app
+      .getGPUInfo("basic")
+      .then((info) => {
+        const devices = (info as { gpuDevice?: Array<{ vendorId: number; deviceId: number; active: boolean; driverVersion?: string }> }).gpuDevice ?? [];
+        this.write(`${stamp()} gpu devices: ${devices.map((d) => `${d.vendorId.toString(16)}:${d.deviceId.toString(16)}${d.active ? " active" : ""}${d.driverVersion ? ` driver ${d.driverVersion}` : ""}`).join("; ") || "none"}`);
+      })
+      .catch((err: unknown) => this.write(`${stamp()} gpu info failed: ${String(err)}`));
   }
 
   get on(): boolean {
