@@ -74,5 +74,11 @@ test("agents ask for decisions; the person answers on the task page and in Focus
   await studio.api("POST", `/api/sessions/${a.session.id}/messages`, { text: '[[mcp: decision_request {"question":"要不要先备份旧表？","options":["要","不要"]}]]' });
   await expect(focus.getByTestId("focus-decision")).toContainText("要不要先备份旧表？", { timeout: 60_000 });
   await focus.getByTestId("focus-decision").getByRole("button", { name: "要", exact: true }).click();
-  await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理");
+  await expect(focus.getByTestId("focus-decision")).toHaveCount(0);
+  // That session's turn then ends while the workbench shows another task: Focus lists it as 「回复完了」 (2026-10-15).
+  const replied = focus.getByTestId("focus-entry");
+  await expect(replied).toHaveCount(1, { timeout: 60_000 });
+  await expect(replied).toContainText("掉落表拆分");
+  await expect(replied).toContainText("回复完了");
+  expect(await open()).toEqual([]);
 });

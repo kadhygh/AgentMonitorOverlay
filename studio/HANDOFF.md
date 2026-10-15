@@ -2,7 +2,12 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
-> **2026-10-15 傍晚更新（下一个会话从这里开始）：S14-O 到 S14-V 做完，都在 `studio/main`（最新 `990fbc1`），开发版 16:11 重启过（只差 `990fbc1` 记住位置，是纯界面改动，用户按 Ctrl+R 即可）。** 每项做法见 `plans/stage-14.md` 进度表 S14-O…S14-V。
+> **2026-10-15 晚更新（下一个会话从这里开始）：S14-W、S14-X，见 `plans/stage-14.md` 进度表。**
+> - S14-X（`ea832a6`，纯界面）：Focus 列出「回复完了」（主窗口没看过的已结束回复）和「出错」，看过的记在 localStorage `amo.sessionSeen`（`lib/sessionSeen.ts`）；对话里一轮结束、开头在视野外时显示「按 ↑ 回到本轮回复开始」（`task/TurnStartHint.tsx`）。
+> - S14-W（`8c2786d`，只加日志）：用户说开始对话后闪了几下（像以前拖动的闪），日志里那段时间没有尺寸变化；Focus 按钮真实鼠标点不动，但 PostMessage 发的点击能用（页面正常，问题在系统层鼠标输入）。加了：页面崩溃 / 重载 / 卡住、Focus 的 Windows 鼠标消息和形状、Focus 页面的点击目标、拖动之外 ≥200ms 的长帧、host.log 时间戳；resize-trace 改本地时间。**下一步**：用户重启 Electron 主进程后让他点 Focus 按钮、再遇到闪烁时看 `.data/logs/resize-trace.log` 对应时间。只读查 Focus 窗口状态的 PowerShell 脚本思路：EnumWindows 找 WS_EX_NOACTIVATE 的可见窗口（Focus 的标题被页面改成了「AMO Studio」），GetWindowRgn 看形状，WM_NCHITTEST / WindowFromPoint 看命中。
+> - 生效：界面部分 Ctrl+R + Focus 关开；主进程日志要重启 Electron（不停 Host，会话不受影响，仍要先问）；host.log 时间戳等下次重启 Host。
+
+> **2026-10-15 傍晚更新：S14-O 到 S14-V 做完，都在 `studio/main`（最新 `990fbc1`），开发版 16:11 重启过（只差 `990fbc1` 记住位置，是纯界面改动，用户按 Ctrl+R 即可）。** 每项做法见 `plans/stage-14.md` 进度表 S14-O…S14-V。
 > - 拖动闪烁已修（S14-R）：Windows 拖动中会提议离谱的小尺寸，被窗口自带最小尺寸弹到 960×600；现在最小尺寸改在 will-resize 里拦。用户试过不再闪。日志 `.data/logs/resize-trace.log` 继续记。
 > - 会话列表细线树（S14-P）、批注改成「批注N」引用（S14-Q）、左栏 A + 右侧 R1 + 额度 C（S14-S，设计画布 https://claude.ai/artifact/6XMDSpE7EtqXvUHgZjTaSo ）、会话输入框草稿（S14-T）、界面大小 / 任务页拖动提速 / 画布便签保存（S14-U）、记住位置（S14-V）。
 > - 测试：最后一次完整 e2e 98/98（`990fbc1`），单测除已知的 server-manager 端口测试（单独跑通过）外全过。
