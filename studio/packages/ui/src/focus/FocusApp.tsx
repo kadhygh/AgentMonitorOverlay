@@ -152,7 +152,7 @@ export function FocusApp() {
             { label: "锁定位置", icon: ICON.lock, checked: locked, hint: "锁定后标题栏不能拖动", onPick: toggleLock, testId: "focus-menu-lock" },
             { label: "点击穿透", icon: ICON.through, checked: passthrough, hint: "点在 Focus 上会落到下面的窗口，只有按钮能点", onPick: togglePassthrough, testId: "focus-menu-through" },
             { label: compact ? "展开会话列表" : "收起成一行", icon: compact ? ICON.expand : ICON.collapse, close: true, onPick: () => setCompact(!compact), testId: "focus-menu-compact" },
-            { label: "打开 Studio 主窗口", icon: ICON.window, close: true, onPick: () => void window.amo?.openInWorkbench?.({ taskId: "" }), testId: "focus-menu-open" },
+            { label: "打开 Studio 主窗口", icon: ICON.window, close: true, onPick: () => void window.amo?.openInWorkbench?.({ show: true }), testId: "focus-menu-open" },
             { label: "隐藏 Focus", icon: ICON.hide, hint: "主窗口顶栏的 Focus 按钮可以再打开", close: true, onPick: () => void window.amo?.focus?.set(false), testId: "focus-menu-hide" },
           ]}
         />
@@ -168,6 +168,10 @@ export function FocusApp() {
         }}
       >
         <div className="focus-head">
+          {/* Always takes clicks (a button, even under 点击穿透): brings the main window forward, where it is. */}
+          <button type="button" className="focus-home" aria-label="打开 AMO 主窗口" title="打开 AMO 主窗口" onClick={() => void window.amo?.openInWorkbench?.({ show: true })} data-testid="focus-home">
+            <img src="./icon.svg" alt="" aria-hidden="true" />
+          </button>
           <span className="focus-name">Focus</span>
           <span className={needs ? "focus-needs" : "focus-dim"} data-testid="focus-needs">
             {needs ? `需要你 ${needs}` : "没有待处理"}

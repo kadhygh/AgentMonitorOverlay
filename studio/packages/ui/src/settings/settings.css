@@ -130,13 +130,13 @@
 
 /* 设置 → 额度 */
 .quota-list { display: flex; flex-direction: column; }
-.quota-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.quota-row { display: flex; align-items: center; gap: 10px; padding: 10px 0; border-bottom: 1px solid var(--border); }
 .quota-row:last-child { border-bottom: 0; }
 .quota-name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
 
 /* 设置 → 模型 → 快速选择 */
 .quick-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.quick-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.quick-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
 .quick-row:last-child { border-bottom: 0; }
 .quick-key { width: 40px; flex: none; font-family: var(--font-code); font-size: 11.5px; color: var(--text-dim); }
 .quick-name { display: flex; flex-direction: column; flex: 1; min-width: 0; }

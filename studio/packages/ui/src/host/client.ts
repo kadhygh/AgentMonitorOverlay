@@ -31,7 +31,7 @@ declare global {
       };
       /** From Focus: show a task (and session) in the workbench. */
       /** A task (and session); without a task (a topic session) the workbench shows the board. */
-      openInWorkbench?(target: { taskId?: string; sessionId?: string }): Promise<void>;
+      openInWorkbench?(target: { taskId?: string; sessionId?: string; show?: boolean }): Promise<void>;
       windowControls?: {
         minimize(): void;
         toggleMaximize(): void;

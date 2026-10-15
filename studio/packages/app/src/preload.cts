@@ -73,7 +73,7 @@ electron.contextBridge.exposeInMainWorld("amo", {
   /** Viewer windows only: 固定 this window (the next file opens another), and whether it is. */
   pinViewer: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:viewer-pin"),
   viewerState: (): Promise<{ pinned: boolean }> => electron.ipcRenderer.invoke("amo:viewer-state"),
-  openInWorkbench: (target: { taskId?: string; sessionId?: string }): Promise<void> => electron.ipcRenderer.invoke("amo:open-in-workbench", target),
+  openInWorkbench: (target: { taskId?: string; sessionId?: string; show?: boolean }): Promise<void> => electron.ipcRenderer.invoke("amo:open-in-workbench", target),
   onNavigate: (cb: (target: { taskId: string; sessionId?: string }) => void): (() => void) => {
     const listener = (_event: unknown, target: { taskId: string; sessionId?: string }) => cb(target);
     electron.ipcRenderer.on("amo:navigate", listener);

@@ -125,6 +125,13 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await expect(focus.getByTestId("focus-panel")).not.toHaveClass(/alerting/);
   await expect(focus.getByTestId("focus-needs")).toHaveText("需要你 1");
 
+  // The app's icon at the front brings the main window forward, where it is.
+  const shown = () => app.evaluate(() => (globalThis as { __amoMainShown?: number }).__amoMainShown ?? 0);
+  const before = await shown();
+  await focus.getByTestId("focus-home").click();
+  await expect.poll(shown).toBe(before + 1);
+  await expect(page.getByTestId("task-title")).toHaveText("机器人提醒");
+
   // The fold button says what it does.
   const fold = focus.getByTestId("focus-compact");
   await expect(fold).toHaveAttribute("title", "收起成一行");

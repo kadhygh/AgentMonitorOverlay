@@ -33,12 +33,14 @@
 .usage-toggle:hover { background: var(--chip); color: var(--text-dim); }
 .usage-toggle .dot { width: 7px; height: 7px; background: var(--muted-dot); }
 .usage-toggle .dot.live { background: var(--running); }
-.usage-peaks { margin-left: auto; display: flex; gap: 8px; font-family: var(--font-code); }
+.usage-peaks { margin-left: auto; display: flex; gap: 7px; font-family: var(--font-code); min-width: 0; overflow: hidden; white-space: nowrap; }
+/* Each account apart: a thin bar between them (2026-10-15: 「Claude — 中转 GPT $12.50」 read as one). */
+.usage-peaks > span + span { padding-left: 7px; border-left: 1px solid var(--border-strong); }
 .usage-peaks .hot, .usage-bar .hot { color: var(--error-text); }
 .usage-list { display: flex; flex-direction: column; gap: 10px; padding: 12px 14px 4px; max-height: 50vh; overflow-y: auto; }
 .usage-acct { display: flex; flex-direction: column; gap: 6px; }
 /* A faint line between accounts (2026-10-15: they ran together). */
-.usage-acct + .usage-acct { padding-top: 10px; border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); }
+.usage-acct + .usage-acct { padding-top: 10px; border-top: 1px dashed var(--border-strong); }
 .usage-acct-h b { font-weight: 600; color: var(--text); }
 .usage-acct-h { display: flex; align-items: baseline; gap: 8px; font-size: var(--fs-sm); }
 .usage-win { display: flex; flex-direction: column; gap: 3px; }

@@ -121,3 +121,9 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 .focus-panel.passthrough .focus-head { -webkit-app-region: no-drag; }
 .focus-panel.passthrough { background: color-mix(in srgb, var(--overlay-strong) 82%, transparent); }
 .focus-quota-item + .focus-quota-item { padding-left: 12px; border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
+
+/* The app's icon at the front of the head: opens the main window. */
+.focus-head { padding-left: 8px; }
+.focus-home { -webkit-app-region: no-drag; flex: none; width: 28px; height: 28px; margin-right: -2px; padding: 0; border: none; border-radius: 7px; background: transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.focus-home img { width: 20px; height: 20px; display: block; }
+.focus-home:hover { background: var(--selected); }
