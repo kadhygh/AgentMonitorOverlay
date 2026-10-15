@@ -13,6 +13,7 @@ import { SettingsDialog, useSettings } from "./settings/SettingsDialog.js";
 import { setQuickModels } from "./lib/recents.js";
 import { TopBar, useFocusToggle, usePinToggle, ViewBar } from "./shell/TopBar.js";
 import { withOrigin, type View, type ViewContext, type ViewDef } from "./shell/views.js";
+import { readPlace, savePlace } from "./shell/lastPlace.js";
 import { SearchBox } from "./shell/SearchBox.js";
 import type { SearchHit } from "./shell/search.js";
 import { VIEWS } from "./features.js";
@@ -28,8 +29,10 @@ const NO_LINK = { url: "", token: "" };
 
 export function App() {
   const host = useHostState();
-  const [scope, setScope] = useState<Scope>({ kind: "all" });
-  const [view, setShownView] = useState<View>({ kind: "board" });
+  // Where the workbench was left, again after a restart or reload (2026-10-15; shell/lastPlace).
+  const [scope, setScope] = useState<Scope>(() => readPlace().scope);
+  const [view, setShownView] = useState<View>(() => readPlace().view);
+  useEffect(() => savePlace(view, scope), [view, scope]);
   // A task or new-task page remembers where it was opened from (stage 14), whoever opens it: its "←" goes back there.
   const setView = (next: View) => setShownView((current) => withOrigin(next, current));
   const focus = useFocusToggle();
@@ -72,6 +75,17 @@ export function App() {
       ),
     [],
   );
+
+  // A place come back to that is gone (a deleted task, an archived topic or project): the board, everything in scope.
+  const ready = host.kind === "ready" ? host.state : null;
+  useEffect(() => {
+    if (!ready) return;
+    if (view.kind === "task" && !ready.tasks.some((t) => t.id === view.taskId)) setShownView({ kind: "board" });
+    const gone =
+      (scope.kind === "topic" && !ready.topics.some((t) => t.id === scope.id && !t.archivedAt)) ||
+      (scope.kind === "workspace" && !ready.workspaces.some((w) => w.id === scope.id && !w.archivedAt));
+    if (gone) setScope({ kind: "all" });
+  }, [ready, view, scope]);
 
   if (host.kind !== "ready") {
     return (

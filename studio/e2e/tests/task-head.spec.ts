@@ -93,7 +93,8 @@ test("status, topic and project from the line under the title; the right column 
   await page.getByTestId("new-session-toggle").click();
   await sessionsToggle.click();
   await page.reload();
-  await page.getByTestId("task-card").filter({ hasText: "掉落表" }).click();
+  // Back on the same task after the reload (2026-10-15: the place is remembered).
+  await expect(page.locator(".page-head")).toContainText("掉落表");
   await expect(page.getByTestId("session-row")).toHaveCount(0);
   await page.getByTestId("sessions-toggle").click();
   await expect(page.getByTestId("session-row")).toHaveCount(1);
@@ -107,7 +108,6 @@ test("status, topic and project from the line under the title; the right column 
   // What is being written in the session's box survives a reload (2026-10-15: a restart emptied it).
   await page.getByLabel("输入消息").fill("写到一半的话");
   await page.reload();
-  await page.getByTestId("task-card").filter({ hasText: "掉落表" }).click();
   await expect(page.getByTestId("note-count")).toBeVisible();
   await expect(page.getByLabel("输入消息")).toHaveValue("写到一半的话");
 

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test";
-import type { Topic, Workspace } from "@amo-studio/protocol";
+import type { Session, Task, Topic, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 // The left column: pinned topics and projects come first and stay when a section is folded; long lists scroll between
@@ -73,10 +73,39 @@ test("the left column and the task's session list are as wide as dragged, and st
   await drag(page.getByRole("separator", { name: "调整会话列表宽度" }), 60);
   await expect.poll(() => width(list)).toBe(listBefore + 60);
 
+  // A reload comes back to the same task (2026-10-15: the place is remembered).
   await page.reload();
-  await page.getByTestId("task-card").filter({ hasText: "拖宽度" }).click();
+  await expect(page.locator(".page-head")).toContainText("拖宽度");
   await expect.poll(() => width(nav)).toBe(before + 80);
   await expect.poll(() => width(list)).toBe(listBefore + 60);
   await page.getByRole("separator", { name: "调整左栏宽度" }).dblclick();
   await expect.poll(() => width(nav)).toBe(before);
+});
+
+test("a reload comes back where the workbench was left: the task and its session, or the canvas", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "回到原处" });
+  const { task } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "记住位置", workspaceId: ws.id, topicId: topic.id, firstSession: { profileId: "codex-mock", text: "第一个" } });
+  await studio.api<Session>("POST", `/api/tasks/${task.id}/sessions`, { profileId: "codex-mock", text: "第二个" });
+
+  await page.getByTestId("task-card").filter({ hasText: "记住位置" }).click();
+  const rows = page.getByTestId("session-row");
+  await expect(rows).toHaveCount(2);
+  // The second session (the first one opens by default).
+  await rows.filter({ hasText: "第二个" }).first().click();
+  await expect(page.locator('[data-testid="session-row"][aria-current="true"]')).toContainText("第二个");
+
+  await page.reload();
+  await expect(page.locator(".page-head")).toContainText("记住位置");
+  await expect(page.locator('[data-testid="session-row"][aria-current="true"]')).toContainText("第二个");
+
+  // The topic's canvas, in that topic's scope.
+  await page.getByTestId(`scope-topic-${topic.title}`).click();
+  await page.getByRole("button", { name: "画布", exact: true }).click();
+  await expect(page.getByRole("button", { name: "画布", exact: true })).toHaveAttribute("aria-current", "page");
+  await page.reload();
+  await expect(page.getByRole("button", { name: "画布", exact: true })).toHaveAttribute("aria-current", "page");
+  await expect(page.getByTestId(`scope-topic-${topic.title}`)).toHaveAttribute("aria-current", "true");
 });

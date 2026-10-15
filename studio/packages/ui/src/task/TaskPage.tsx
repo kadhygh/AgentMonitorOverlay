@@ -4,6 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
 import { useAnnotationRefs } from "../review/annotationRefs.js";
+import { rememberSession } from "../shell/lastPlace.js";
 import { shortModel } from "../lib/profiles.js";
 import { sessionModelName, useProfileChoices } from "../lib/choices.js";
 import { SessionTree } from "./SessionTree.js";
@@ -102,6 +103,10 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   }, [selected, own]);
 
   const session = own.find((s) => s.id === selected) ?? null;
+  // The session looked at here, for coming back to this task after a restart (shell/lastPlace).
+  useEffect(() => {
+    if (session) rememberSession(task.id, session.id);
+  }, [task.id, session?.id]);
   const settings = useSettings(link);
   const { items } = useSessionItems(link, session?.id ?? null);
   const annotations = useAnnotations(link, session?.id ?? null);
