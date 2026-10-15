@@ -114,9 +114,8 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
           {shown.length === 0 && balances.length === 0 && <span className="usage-note">没有要显示的额度。在 设置 → 额度 里选。</span>}
           {shown.map((u) => (
             <div key={u.profileId} className="usage-acct" data-testid="usage-account">
-              <div className="usage-acct-h">
-                <b>{u.label}</b>
-              </div>
+              <b className="usage-acct-name">{u.label}</b>
+              <div className="usage-acct-body">
               {u.windows.map((w) => {
                 const used = w.usedPercent;
                 return (
@@ -140,6 +139,7 @@ export function UsageFooter({ link, live }: { link: HostLink; live: boolean }) {
                 );
               })}
               {u.note && <span className="usage-note">{u.note}</span>}
+              </div>
             </div>
           ))}
           {balances.map((p) => (
@@ -176,12 +176,10 @@ function BalanceAccount({ link, profile }: { link: HostLink; profile: ModelProfi
   const { balance, loading, refresh } = useBalance(link, profile);
   return (
     <div className="usage-acct" data-testid="usage-balance">
-      <div className="usage-acct-h">
-        <b>{profile.label}</b>
-      </div>
+      <b className="usage-acct-name">{profile.label}</b>
       <div className="usage-win-line">
         <span className={balance && !balance.ok ? "usage-note" : undefined}>{loading && !balance ? "正在查询…" : balance ? balanceText(balance) : "—"}</span>
-        <button type="button" className="link-btn" onClick={refresh} disabled={loading}>
+        <button type="button" className="link-btn usage-query" onClick={refresh} disabled={loading}>
           查询
         </button>
       </div>

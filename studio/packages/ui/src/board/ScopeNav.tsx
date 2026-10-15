@@ -100,6 +100,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
     return (
       <div key={testId} className={pinned ? "nav-item pinned" : "nav-item"} title={title}>
         <button type="button" className="nav-row" aria-current={isCurrent(scope, target)} onClick={() => onScope(target)} onContextMenu={onMenu} data-testid={testId}>
+          {kind && <NavKindIcon kind={kind} />}
           <span className="name">{name}</span>
           <span className="count">{count}</span>
         </button>
@@ -133,15 +134,20 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const topicRows = shown("topic", liveTopics, (t) => t.id);
   const projectRows = shown("project", projects, (w) => w.id);
 
+  // Section heads are small spaced labels with a rule to the +, apart from the entries under them (2026-10-15, design A);
+  // the label folds the section, and a folded one shows ▸.
   const head = (kind: PinKind, label: string, total: number, add: () => void, addLabel: string) => (
     <div className="nav-head">
-      <button type="button" className="nav-fold" aria-expanded={!folded[kind]} onClick={() => fold(kind)} data-testid={`fold-${kind}`}>
-        <span className="nav-chev" aria-hidden="true">
-          {folded[kind] ? "▸" : "▾"}
-        </span>
+      <button type="button" className="nav-fold" aria-expanded={!folded[kind]} onClick={() => fold(kind)} title={folded[kind] ? "展开" : "折叠：只留置顶的"} data-testid={`fold-${kind}`}>
+        {folded[kind] && (
+          <span className="nav-chev" aria-hidden="true">
+            ▸
+          </span>
+        )}
         {label}
         <span className="nav-total">{total}</span>
       </button>
+      <span className="nav-rule" aria-hidden="true" />
       <button type="button" className="nav-add" onClick={add} aria-label={addLabel} title={addLabel}>
         +
       </button>
@@ -226,7 +232,8 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
             </button>
           )}
           {newTopic === null ? (
-            !folded.topic && (
+            !folded.topic &&
+            liveTopics.length === 0 && (
               <button type="button" className="add-ws-toggle" onClick={() => setNewTopic("")} data-testid="new-topic">
                 + 新专题
               </button>
@@ -273,7 +280,8 @@ ${w.description}` : w.path, (e) => {
           )}
           <div className="add-ws">
             {!adding ? (
-              !folded.project && (
+              !folded.project &&
+              projects.length === 0 && (
                 <button type="button" className="add-ws-toggle" onClick={() => setAdding(true)}>
                   + 添加项目
                 </button>
@@ -423,5 +431,14 @@ function TopicMenu({ at, onClose, onEdit, onArchive }: { at: { x: number; y: num
         归档专题…
       </button>
     </div>
+  );
+}
+
+/** A topic's bookmark or a project's folder, before its name in the left column. */
+function NavKindIcon({ kind }: { kind: PinKind }) {
+  return (
+    <svg className="nav-kind" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      {kind === "topic" ? <path d="M3 2.5h8v9l-4-2.6-4 2.6z" /> : <path d="M1.5 4V11.5h11V5H7L5.6 3H1.5z" />}
+    </svg>
   );
 }
