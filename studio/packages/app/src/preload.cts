@@ -61,12 +61,34 @@ electron.contextBridge.exposeInMainWorld("amo", {
     setShape: (rects: Array<{ x: number; y: number; width: number; height: number }>): void => electron.ipcRenderer.send("amo:focus-shape", rects),
     /** Focus window only: the page saw a press (a click Chromium dropped is given back otherwise; focus-clicks.ts). */
     pressed: (): void => electron.ipcRenderer.send("amo:focus-pointer"),
+    /** Focus window only: the robot leaves Focus and flies about the screen saying `message` (or says it, flying). */
+    fly: (message: string): void => electron.ipcRenderer.send("amo:bot-fly", message),
+    /** Focus window only: the flying robot comes back. */
+    land: (): void => electron.ipcRenderer.send("amo:bot-land"),
+    /** Focus window only: the flying robot was clicked (it has landed). */
+    onBotCaught: (cb: () => void): (() => void) => {
+      const listener = () => cb();
+      electron.ipcRenderer.on("amo:bot-caught", listener);
+      return () => electron.ipcRenderer.removeListener("amo:bot-caught", listener);
+    },
     /** Focus window only: a right-click on its title row (a drag area the page never hears about), in page pixels. */
     onContextMenu: (cb: (at: { x: number; y: number }) => void): (() => void) => {
       const listener = (_event: unknown, at: { x: number; y: number }) => cb(at);
       electron.ipcRenderer.on("amo:focus-context-menu", listener);
       return () => electron.ipcRenderer.removeListener("amo:focus-context-menu", listener);
     },
+  },
+  /** The flying robot's own window (#bot). */
+  bot: {
+    message: (): Promise<string> => electron.ipcRenderer.invoke("amo:bot-message"),
+    onSay: (cb: (message: string) => void): (() => void) => {
+      const listener = (_event: unknown, message: string) => cb(message);
+      electron.ipcRenderer.on("amo:bot-say", listener);
+      return () => electron.ipcRenderer.removeListener("amo:bot-say", listener);
+    },
+    setShape: (rects: Array<{ x: number; y: number; width: number; height: number }>): void => electron.ipcRenderer.send("amo:bot-shape", rects),
+    pressed: (): void => electron.ipcRenderer.send("amo:focus-pointer"),
+    caught: (): void => electron.ipcRenderer.send("amo:bot-caught"),
   },
   /** The scratchpad window (便签): open or bring it forward, hide it (from itself), and its global shortcut. */
   scratchpad: {

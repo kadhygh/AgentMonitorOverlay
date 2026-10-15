@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it } from "vitest";
-import { attentionKeys, pruneSeen, readFocusLocked, shapeRects, shouldAlert, writeFocusLocked } from "./attention.js";
+import { ANGRY_AFTER_MS, attentionKeys, longestWait, pruneSeen, trackFirstSeen, readFocusLocked, shapeRects, shouldAlert, writeFocusLocked } from "./attention.js";
 
 describe("Focus robot (S14-J)", () => {
   const keys = attentionKeys([{ id: "a", status: "awaiting-approval" }], ["d1"], ["p1"]);
@@ -64,5 +64,28 @@ describe("shapeRects", () => {
   it("keeps a margin around each part, inside the window, and drops empty ones", () => {
     expect(shapeRects([{ left: 10, top: 400, width: 360, height: 150.4 }, { left: 0, top: 0, width: 0, height: 10 }], { width: 380, height: 560 })).toEqual([{ x: 2, y: 392, width: 376, height: 167 }]);
     expect(shapeRects([{ left: 0, top: 0, width: 380, height: 560 }], { width: 380, height: 560 })).toEqual([{ x: 0, y: 0, width: 380, height: 560 }]);
+  });
+});
+
+describe("the robot gets angry when left waiting (2026-10-15 evening)", () => {
+  it("remembers when each thing first appeared, and forgets what went away", () => {
+    const first = trackFirstSeen(new Map(), ["a", "b"], 1000);
+    const later = trackFirstSeen(first, ["b", "c"], 5000);
+    expect([...later]).toEqual([
+      ["b", 1000],
+      ["c", 5000],
+    ]);
+  });
+
+  it("measures the longest wait among what was not acknowledged", () => {
+    const first = new Map([
+      ["old", 0],
+      ["new", ANGRY_AFTER_MS - 1000],
+    ]);
+    expect(longestWait(["old", "new"], new Set(), first, ANGRY_AFTER_MS)).toBe(ANGRY_AFTER_MS);
+    // Acknowledging the old one leaves only the new one's wait.
+    expect(longestWait(["old", "new"], new Set(["old"]), first, ANGRY_AFTER_MS)).toBe(1000);
+    expect(longestWait([], new Set(), first, ANGRY_AFTER_MS)).toBe(0);
+    expect(ANGRY_AFTER_MS).toBe(5 * 60_000);
   });
 });

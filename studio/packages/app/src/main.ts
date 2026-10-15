@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, scre
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
-import { createFocusWindow, mainBounds, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
+import { createFocusWindow, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
@@ -12,7 +12,7 @@ import { setupReviewWindows } from "./review-window.js";
 import { installMarksWindow } from "./marks-window.js";
 import { setupViewerWindows } from "./viewer-window.js";
 import { ResizeTrace } from "./resize-trace.js";
-import type { EatenClicks } from "./focus-clicks.js";
+import { setupBotFlight } from "./bot-window.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
@@ -53,14 +53,21 @@ let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;
 /** Resize trace (logs/resize-trace.log), made once the app is ready. */
 let trace: ResizeTrace | null = null;
-/** Gives back the clicks Chromium drops on Focus (focus-clicks.ts). */
-let focusClicks: EatenClicks | null = null;
 /** Whether the Focus window lets clicks through right now (点击穿透), for the trace. */
 let focusIgnoring = false;
 /** 界面大小 one step (Ctrl + = / - / 0), set up with the IPC handlers. */
 let stepUiScaleRef: (dir: 1 | -1 | 0) => void = () => undefined;
 const prefs = new ShellPrefs(dataDir);
 const reviews = setupReviewWindows({ url: () => (host ? (process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`) : null), preload: join(here, "preload.cjs"), icon: APP_ICON, testMode });
+// The angry robot that flies about the screen when something waited too long (2026-10-15 evening).
+const bot = setupBotFlight({
+  url: () => (host ? (process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`) : null),
+  preload: join(here, "preload.cjs"),
+  testMode,
+  scale: () => prefs.uiScale(),
+  onCaught: () => focusWindow?.webContents.send("amo:bot-caught"),
+  note: (what) => trace?.note("bot", what),
+});
 const viewers = setupViewerWindows({ url: () => (host ? (process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`) : null), preload: join(here, "preload.cjs"), icon: APP_ICON, testMode });
 
 /** Focus is on by default for people and off in tests unless a test turns it on. */
@@ -77,14 +84,14 @@ function setFocusVisible(on: boolean): void {
     });
     focusWindow.on("closed", () => {
       focusWindow = null;
-      focusClicks = null;
+      bot.land();
     });
     trace?.watchInput(focusWindow, "focus");
-    focusClicks = recoverLostClicks(focusWindow, { testMode, note: (at) => trace?.note("focus", "click given back", `at ${at.x},${at.y}`) });
+    recoverLostClicks(focusWindow, { testMode, note: (at) => trace?.note("focus", "click given back", `at ${at.x},${at.y}`) });
   } else if (!on && focusWindow) {
     focusWindow.destroy();
     focusWindow = null;
-    focusClicks = null;
+    bot.land();
   }
   mainWindow?.webContents.send("amo:focus-changed", on);
 }
@@ -174,9 +181,19 @@ if (!app.requestSingleInstanceLock()) {
     trace?.note("focus", "focus-shape", ok.map((r) => `${r.width}×${r.height}@${r.x},${r.y}`).join(" ") + (z === 1 ? "" : ` zoom=${z}`));
     if (testMode) (globalThis as { __amoFocusShape?: unknown }).__amoFocusShape = ok;
   });
-  ipcMain.on("amo:focus-pointer", (event) => {
-    if (focusWindow && event.sender === focusWindow.webContents) focusClicks?.pagePressed();
+  ipcMain.on("amo:focus-pointer", (event) => pagePressed(event.sender));
+  // Focus sends its robot flying, or calls it back; the robot's own page asks what to say and says it was caught.
+  ipcMain.on("amo:bot-fly", (event, message: unknown) => {
+    if (focusWindow && event.sender === focusWindow.webContents && typeof message === "string") bot.fly(message.slice(0, 120), focusWindow.getBounds());
   });
+  ipcMain.on("amo:bot-land", (event) => {
+    if (focusWindow && event.sender === focusWindow.webContents) bot.land();
+  });
+  ipcMain.handle("amo:bot-message", () => bot.message());
+  ipcMain.on("amo:bot-shape", (event, rects: unknown) => {
+    if (Array.isArray(rects)) bot.setShape(event.sender, rects as Array<{ x: number; y: number; width: number; height: number }>);
+  });
+  ipcMain.on("amo:bot-caught", (event) => bot.caught(event.sender));
   ipcMain.on("amo:focus-mouse", (event, ignore: unknown) => {
     if (!focusWindow || event.sender !== focusWindow.webContents) return;
     if (ignore === true !== focusIgnoring) trace?.note("focus", ignore === true ? "ignore-mouse on" : "ignore-mouse off");
@@ -256,6 +273,7 @@ if (!app.requestSingleInstanceLock()) {
         mainWindow = null;
         // Focus, the review and the viewer windows live with the workbench window.
         focusWindow?.destroy();
+        bot.destroy();
         reviews.closeAll();
         viewers.closeAll();
       });

@@ -1,4 +1,4 @@
-import { BrowserWindow, screen } from "electron";
+import { BrowserWindow, screen, type WebContents } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { EatenClicks } from "./focus-clicks.js";
@@ -185,11 +185,20 @@ export class ShellPrefs {
   }
 }
 
+/** Each page's lost-click recovery, by its webContents: the page's pointerdowns reach it here. */
+const lostClicks = new WeakMap<WebContents, EatenClicks>();
+
+/** The page in `sender` saw a press (IPC amo:focus-pointer). */
+export function pagePressed(sender: WebContents): void {
+  lostClicks.get(sender)?.pagePressed();
+}
+
 /**
- * Gives back the clicks Chromium drops on Focus (focus-clicks.ts): a left press that came with WM_MOUSEACTIVATE and
- * that the page did not see is clicked into the page where it was pressed. `note` hears each one given back.
+ * Gives back the clicks Chromium drops on a window that never activates (Focus, the flying robot; focus-clicks.ts):
+ * a left press that came with WM_MOUSEACTIVATE and that the page did not see is clicked into the page where it was
+ * pressed. `note` hears each one given back. Tests drive it through `globalThis[testHook]`.
  */
-export function recoverLostClicks(win: BrowserWindow, { testMode, note }: { testMode: boolean; note(at: Point): void }): EatenClicks {
+export function recoverLostClicks(win: BrowserWindow, { testMode, note, testHook = "__amoFocusClicks" }: { testMode: boolean; note(at: Point): void; testHook?: string }): EatenClicks {
   const clicks = new EatenClicks({
     replay: (at) => {
       if (win.isDestroyed()) return;
@@ -212,7 +221,8 @@ export function recoverLostClicks(win: BrowserWindow, { testMode, note }: { test
     clicks.activated(hit === HTCLIENT && message === WM_LBUTTONDOWN ? pointer() : null);
   });
   onWindowMessage(win, WM_LBUTTONUP, () => clicks.released());
+  lostClicks.set(win.webContents, clicks);
   // Tests cannot make Windows send WM_MOUSEACTIVATE; they drive the recovery itself.
-  if (testMode) (globalThis as { __amoFocusClicks?: { activated(at: Point | null): void; released(): void; pointer(): Point } }).__amoFocusClicks = { activated: (at) => clicks.activated(at), released: () => clicks.released(), pointer };
+  if (testMode) (globalThis as Record<string, unknown>)[testHook] = { activated: (at: Point | null) => clicks.activated(at), released: () => clicks.released(), pointer };
   return clicks;
 }

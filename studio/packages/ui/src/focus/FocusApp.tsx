@@ -9,8 +9,8 @@ import { planTitle } from "../chat/questions/flow.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useSettings } from "../settings/SettingsDialog.js";
-import { attentionKeys, PASSTHROUGH_INTERACTIVE, pruneSeen, readFocusLocked, readFocusPassthrough, shapeRects, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
-import { PixelBot } from "./PixelBot.js";
+import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shapeRects, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
+import { PixelBot, type BotMood } from "./PixelBot.js";
 import { FocusQuota } from "./FocusQuota.js";
 import "./focus.css";
 
@@ -23,7 +23,8 @@ import "./focus.css";
 // in the main window (lib/sessionSeen.ts); clicking one here counts as looking too.
 // Later that evening: two kinds only — 事 (approvals, questions, decisions, proposals, failures) and 完成待审核 (a reply
 // that ended unseen, or a session waiting for review). The robot says how many of each; it is green when all that is
-// new is finished work.
+// new is finished work. Left unacknowledged for 5 minutes it gets angry and flies about the screen in a window of its
+// own (app/src/bot-window.ts) until clicked or dealt with; 「Focus 设置」→「机器人动作测试」 plays every mood once.
 
 type Approval = Extract<SessionItem, { type: "approval" }>;
 const SNIPPET_MAX = 300;
@@ -116,6 +117,43 @@ export function FocusApp() {
   const reviewKeys = new Set(attentionKeys(toReview, [], []));
   // Green when everything new is finished work to look at.
   const calm = alerting && keys.every((k) => seen.has(k) || reviewKeys.has(k));
+  const things = waiting.length + finished.length + asks.length + proposals.length - toReview.length;
+
+  // How long the oldest unacknowledged thing has waited; the clock ticks while something does.
+  const firstSeen = useRef<Map<string, number>>(new Map());
+  firstSeen.current = trackFirstSeen(firstSeen.current, keys, Date.now());
+  const [now, setNow] = useState(Date.now);
+  useEffect(() => {
+    if (!alerting) return;
+    setNow(Date.now());
+    const t = setInterval(() => setNow(Date.now()), 10_000);
+    return () => clearInterval(t);
+  }, [alerting]);
+  const waited = longestWait(keys, seen, firstSeen.current, now);
+  // 「机器人动作测试」: alert, calm, then angry and flying, a few seconds each.
+  const [demo, setDemo] = useState<BotMood | null>(null);
+  useEffect(() => {
+    if (!demo) return;
+    const t = setTimeout(() => setDemo(demo === "alert" ? "calm" : demo === "calm" ? "angry" : null), demo === "angry" ? 10_000 : 2500);
+    return () => clearTimeout(t);
+  }, [demo]);
+  const flyMessage = moving
+    ? ""
+    : demo
+      ? demo === "angry"
+        ? "生气了！（测试，点我停下）"
+        : ""
+      : alerting && waited >= ANGRY_AFTER_MS
+        ? `${summary(things, toReview.length)}，等你 ${Math.floor(waited / 60_000)} 分钟了！`
+        : "";
+  useEffect(() => {
+    if (flyMessage) window.amo?.focus?.fly?.(flyMessage);
+    else window.amo?.focus?.land?.();
+  }, [flyMessage]);
+  useEffect(() => () => window.amo?.focus?.land?.(), []);
+  // The flying robot was clicked: it landed; open what needs the person (or end the test).
+  const caught = useRef(() => {});
+  useEffect(() => window.amo?.focus?.onBotCaught?.(() => caught.current()), []);
   const acknowledge = () => setSeen(new Set(keys));
 
   const togglePassthrough = () => {
@@ -156,13 +194,17 @@ export function FocusApp() {
     else if (d) void window.amo?.openInWorkbench?.({ ...(d.taskId ? { taskId: d.taskId } : {}), sessionId: d.sessionId });
     else void window.amo?.openInWorkbench?.({ taskId: "" });
   };
+  caught.current = () => (demo ? setDemo(null) : openFirst());
+  const slotMood: BotMood = demo && demo !== "angry" ? demo : calm ? "calm" : "alert";
+  const slotSay = demo === "alert" ? "1 件事（测试）" : demo === "calm" ? "1 个完成待审核（测试）" : summary(things, toReview.length);
+  const rootCalm = demo ? demo === "calm" : calm;
 
   const panelClass = ["focus-panel", locked ? "locked" : "", moving ? "moving" : "", alerting ? "alerting" : "", passthrough ? "passthrough" : ""].filter(Boolean).join(" ");
   return (
-    <div className={calm ? "focus-root calm" : "focus-root"}>
-      {alerting && !moving && (
+    <div className={rootCalm ? "focus-root calm" : "focus-root"}>
+      {(alerting || demo) && !moving && !flyMessage && (
         <div className="focus-bot-slot">
-          <PixelBot mood={calm ? "calm" : "alert"} message={summary(needs - toReview.length, toReview.length)} onClick={openFirst} />
+          <PixelBot mood={slotMood} message={slotSay} onClick={demo ? () => setDemo(null) : openFirst} />
         </div>
       )}
       {pop && (
@@ -173,6 +215,7 @@ export function FocusApp() {
             { label: "锁定位置", icon: ICON.lock, checked: locked, hint: "锁定后标题栏不能拖动", onPick: toggleLock, testId: "focus-menu-lock" },
             { label: "点击穿透", icon: ICON.through, checked: passthrough, hint: "点在 Focus 上会落到下面的窗口，只有按钮能点", onPick: togglePassthrough, testId: "focus-menu-through" },
             { label: compact ? "展开会话列表" : "收起成一行", icon: compact ? ICON.expand : ICON.collapse, close: true, onPick: () => setCompact(!compact), testId: "focus-menu-compact" },
+            { label: "机器人动作测试", icon: ICON.bot, hint: "跳舞、变绿、生气乱飞各演一遍", close: true, onPick: () => setDemo("alert"), testId: "focus-menu-bot" },
             { label: "打开 Studio 主窗口", icon: ICON.window, close: true, onPick: () => void window.amo?.openInWorkbench?.({ show: true }), testId: "focus-menu-open" },
             { label: "隐藏 Focus", icon: ICON.hide, hint: "主窗口顶栏的 Focus 按钮可以再打开", close: true, onPick: () => void window.amo?.focus?.set(false), testId: "focus-menu-hide" },
           ]}
@@ -409,6 +452,12 @@ const ICON = {
     </>,
   ),
   x: svg(<path d="M4 4l8 8M12 4l-8 8" />),
+  bot: svg(
+    <>
+      <rect x="3" y="4.5" width="10" height="7.5" rx="1.5" />
+      <path d="M8 4.5V2.2M6 8h.01M10 8h.01M6.5 10.2h3M1.8 7.5v2.5M14.2 7.5v2.5" />
+    </>,
+  ),
   hide: svg(
     <>
       <path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4z" />

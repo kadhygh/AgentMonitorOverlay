@@ -13,6 +13,19 @@ export function pruneSeen(seen: ReadonlySet<string>, keys: readonly string[]): S
   return new Set([...seen].filter((k) => now.has(k)));
 }
 
+/** Left this long without the person looking, the robot gets angry and flies about the screen (2026-10-15 evening). */
+export const ANGRY_AFTER_MS = 5 * 60_000;
+
+/** When each key on screen first appeared: kept for the ones still there, now for new ones, gone ones forgotten. */
+export function trackFirstSeen(before: ReadonlyMap<string, number>, keys: readonly string[], now: number): Map<string, number> {
+  return new Map(keys.map((k) => [k, before.get(k) ?? now]));
+}
+
+/** How long the oldest thing the person has not acknowledged has waited, in ms (0 when nothing waits). */
+export function longestWait(keys: readonly string[], seen: ReadonlySet<string>, firstSeen: ReadonlyMap<string, number>, now: number): number {
+  return Math.max(0, ...keys.filter((k) => !seen.has(k)).map((k) => now - (firstSeen.get(k) ?? now)));
+}
+
 /** Whether something on screen is new to the person. */
 export function shouldAlert(keys: readonly string[], seen: ReadonlySet<string>): boolean {
   return keys.some((k) => !seen.has(k));

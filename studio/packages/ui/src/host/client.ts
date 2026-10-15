@@ -22,7 +22,19 @@ declare global {
         setShape?(rects: Array<{ x: number; y: number; width: number; height: number }>): void;
         /** Focus window: a right-click on its title row, passed on by the main process (S14-J). */
         pressed?(): void;
+        /** Focus window: the robot flies about the screen saying `message`; `land` calls it back (2026-10-15). */
+        fly?(message: string): void;
+        land?(): void;
+        onBotCaught?(cb: () => void): () => void;
         onContextMenu?(cb: (at: { x: number; y: number }) => void): () => void;
+      };
+      /** The flying robot's own window (#bot). */
+      bot?: {
+        message(): Promise<string>;
+        onSay(cb: (message: string) => void): () => void;
+        setShape(rects: Array<{ x: number; y: number; width: number; height: number }>): void;
+        pressed(): void;
+        caught(): void;
       };
       /** 界面大小 (2026-10-15): the zoom of every Studio page (Electron). */
       uiScale?: {

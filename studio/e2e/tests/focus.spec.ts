@@ -153,8 +153,8 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await focus.getByTestId("focus-entry").click({ button: "right" });
   const menu = focus.getByTestId("focus-menu");
   await expect(menu).toBeVisible();
-  await expect(menu.locator(".focus-pop-row")).toHaveCount(6);
-  for (const label of ["移动位置", "锁定位置", "点击穿透", "收起成一行", "打开 Studio 主窗口", "隐藏 Focus"]) await expect(menu).toContainText(label);
+  await expect(menu.locator(".focus-pop-row")).toHaveCount(7);
+  for (const label of ["移动位置", "锁定位置", "点击穿透", "收起成一行", "机器人动作测试", "打开 Studio 主窗口", "隐藏 Focus"]) await expect(menu).toContainText(label);
   await expect.poll(async () => (await shape()).reduce((a, r) => a + r.width * r.height, 0)).toBeGreaterThan(panelOnly);
   await screenshot(app, "stage-14", "S14-J-focus-menu", focus, "focus");
   await focus.getByTestId("focus-menu-close").click();
@@ -246,4 +246,35 @@ test("Focus: a click Chromium dropped (it came with WM_MOUSEACTIVATE, the page n
   }, { x: Math.round((box.x + box.width / 2) * zoom), y: Math.round((box.y + box.height / 2) * zoom) });
   await expect(approve).toHaveCount(0, { timeout: 15_000 });
   await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).sessions.find((s) => s.id === created.session.id)?.status, { timeout: 30_000 }).not.toBe("awaiting-approval");
+});
+
+test("Focus: 「机器人动作测试」 plays the robot's moods; the angry one flies in its own window until clicked (2026-10-15)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const opened = app.waitForEvent("window");
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await opened;
+  await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理", { timeout: 30_000 });
+  const flight = () => app.evaluate(() => (globalThis as { __amoBotFlight?: { flying: boolean; message: string } }).__amoBotFlight ?? { flying: false, message: "" });
+
+  await focus.getByTestId("focus-settings-toggle").click();
+  await focus.getByTestId("focus-menu-bot").click();
+  const bot = focus.getByTestId("focus-bot");
+  await expect(bot).toHaveClass(/alert/);
+  await expect(bot).toContainText("1 件事（测试）");
+  await screenshot(app, "stage-14", "bot-light", focus, "focus");
+  await expect(bot).toHaveClass(/calm/, { timeout: 5000 });
+  // Angry: it leaves Focus and flies in a window of its own.
+  const botWindow = app.waitForEvent("window");
+  await expect(bot).toHaveCount(0, { timeout: 5000 });
+  const flying = await botWindow;
+  await expect.poll(flight).toEqual({ flying: true, message: "生气了！（测试，点我停下）" });
+  const angry = flying.getByTestId("focus-bot");
+  await expect(angry).toHaveClass(/angry/);
+  await expect(angry).toContainText("生气了！");
+  await screenshot(app, "stage-14", "bot-angry", flying, "focus");
+  // Caught: it lands and the test ends.
+  await angry.click();
+  await expect.poll(flight).toMatchObject({ flying: false });
+  await expect(focus.getByTestId("focus-bot")).toHaveCount(0);
 });

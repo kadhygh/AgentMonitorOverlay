@@ -1,5 +1,5 @@
 /* Focus window (S3-07), after design/prototype/Focus.dc.html. The window itself is transparent; only the panel paints. */
-html.focus-mode, html.focus-mode body { background: transparent; overflow: hidden; }
+html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { background: transparent; overflow: hidden; }
 .focus-root { height: 100%; display: flex; flex-direction: column; justify-content: flex-end; padding: 10px; }
 .focus-root > .focus-panel { min-height: 0; flex: 0 1 auto; }
 .focus-panel {
@@ -71,12 +71,21 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
   background: var(--overlay-strong); border: 1px solid var(--focus-alert); color: var(--focus-alert); box-shadow: 0 2px 6px var(--shadow);
 }
 .pixel-bot-say::after { content: ""; position: absolute; right: -6px; bottom: 8px; border: 6px solid transparent; border-left-color: var(--focus-alert); border-right: 0; }
-.pixel-bot-art { filter: drop-shadow(0 3px 4px var(--shadow)); }
+/* A light robot with a dark outline (2026-10-15 evening: the dark one was hard to see), the same in both themes. */
+.pixel-bot-art { overflow: visible; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.28)); }
+.bot-outline { filter: drop-shadow(1.5px 0 0 #1d232b) drop-shadow(-1.5px 0 0 #1d232b) drop-shadow(0 1.5px 0 #1d232b) drop-shadow(0 -1.5px 0 #1d232b); }
 .pixel-bot:hover .pixel-bot-art { transform: scale(1.08); }
-.bot-shell { fill: var(--primary); }
-.bot-metal { fill: var(--text-dim); }
-.bot-eye { fill: var(--on-primary); }
+.bot-shell { fill: #f7f4ec; }
+.bot-metal { fill: #c3cad2; }
+.bot-eye { fill: #1d232b; }
+.bot-vein { fill: #e5484d; }
 .bot-bulb { fill: var(--focus-alert); animation: bot-blink 0.6s steps(1) infinite; }
+/* Angry: pink-red, shaking, a red bubble. */
+.pixel-bot.angry { --focus-alert: #e5484d; }
+.pixel-bot.angry .bot-shell { fill: #ffd8d0; }
+.pixel-bot.angry .pixel-bot-art { animation: bot-shake 0.18s steps(2) infinite; }
+.pixel-bot.angry .pixel-bot-say { background: #fff1ee; color: #c62f33; }
+@keyframes bot-shake { 0% { transform: translate(-1.5px, 0) rotate(-4deg); } 50% { transform: translate(1.5px, 0) rotate(4deg); } }
 .bot-bob { animation: bot-bob 0.6s steps(1) infinite; }
 .pose-a { animation: bot-pose-a 0.6s steps(1) infinite; }
 .pose-b { animation: bot-pose-b 0.6s steps(1) infinite; }
@@ -90,7 +99,7 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 @keyframes bot-blink { 0% { opacity: 1; } 50% { opacity: 0.35; } }
 @media (prefers-reduced-motion: reduce) {
   .focus-panel.alerting { animation: none; box-shadow: 0 2px 7px var(--shadow), 0 0 0 3px color-mix(in srgb, var(--focus-alert) 45%, transparent); }
-  .pixel-bot, .bot-bulb, .bot-bob, .leg-l, .leg-r { animation: none; }
+  .pixel-bot, .bot-bulb, .bot-bob, .leg-l, .leg-r, .pixel-bot.angry .pixel-bot-art { animation: none; }
   .pose-a { animation: none; opacity: 1; }
   .pose-b { animation: none; opacity: 0; }
 }
@@ -130,3 +139,8 @@ html.focus-mode, html.focus-mode body { background: transparent; overflow: hidde
 .focus-home { -webkit-app-region: no-drag; flex: none; width: 28px; height: 28px; margin-right: -2px; padding: 0; border: none; border-radius: 7px; background: transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
 .focus-home img { width: 20px; height: 20px; display: block; }
 .focus-home:hover { background: var(--selected); }
+
+/* The angry robot's own window (app/src/bot-window.ts): just the robot and its bubble, flying about the screen. */
+.bot-root { height: 100%; display: flex; align-items: center; justify-content: flex-end; padding-right: 22px; }
+.bot-root .pixel-bot { animation: none; }
+.bot-root .pixel-bot-say { margin-bottom: 30px; }
