@@ -68,10 +68,7 @@ export function annotationRange(reply: HTMLElement, a: Annotation, source: strin
 export function useAnnotationHighlights(root: RefObject<HTMLElement | null>, annotations: readonly Annotation[], sources: ReadonlyMap<string, string>): void {
   const latest = useRef({ annotations, sources });
   latest.current = { annotations, sources };
-  const key = annotations
-    .filter((a) => !a.sentAt)
-    .map((a) => `${a.id}:${a.itemId}:${a.start}:${a.end}`)
-    .join("|");
+  const key = annotations.map((a) => `${a.id}:${a.itemId}:${a.start}:${a.end}`).join("|");
   useEffect(() => {
     const el = root.current;
     if (!el || !highlightsSupported()) return;
@@ -81,7 +78,6 @@ export function useAnnotationHighlights(root: RefObject<HTMLElement | null>, ann
       painted.clear();
       const { annotations: list, sources: src } = latest.current;
       for (const a of list) {
-        if (a.sentAt) continue;
         const reply = el.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(a.itemId)}"]`);
         const source = src.get(a.itemId);
         if (!reply || source === undefined) continue;
@@ -89,6 +85,7 @@ export function useAnnotationHighlights(root: RefObject<HTMLElement | null>, ann
         if (r) painted.set(a.id, r);
       }
       CSS.highlights.set(ANNOTATION_HIGHLIGHT, new Highlight(...painted.values()));
+      paintListeners.forEach((l) => l());
     };
     paint();
     const observer = new MutationObserver(() => {
@@ -102,6 +99,24 @@ export function useAnnotationHighlights(root: RefObject<HTMLElement | null>, ann
       painted.clear();
     };
   }, [root, key]);
+}
+
+const paintListeners = new Set<() => void>();
+/** Called after every repaint (the 批注N marks follow the highlights). */
+export function onAnnotationsPainted(l: () => void): () => void {
+  paintListeners.add(l);
+  return () => void paintListeners.delete(l);
+}
+
+/** Where each painted annotation ends on screen (its last line box): the 批注N mark goes there. */
+export function paintedEnds(): Array<{ id: string; rect: DOMRect }> {
+  const out: Array<{ id: string; rect: DOMRect }> = [];
+  for (const [id, r] of painted) {
+    const boxes = [...r.getClientRects()].filter((b) => b.width > 0 && b.height > 0);
+    const last = boxes[boxes.length - 1];
+    if (last) out.push({ id, rect: last });
+  }
+  return out;
 }
 
 /** The annotation painted under a point (client coordinates), if any. */

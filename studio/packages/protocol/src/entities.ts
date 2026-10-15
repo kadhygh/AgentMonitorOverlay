@@ -290,8 +290,10 @@ export interface Annotation {
   prefix: string;
   suffix: string;
   note: string;
+  /** 批注 1, 2, … within the session, in the order they were made (2026-10-15); older ones have none. */
+  n?: number;
   createdAt: Timestamp;
-  /** Set when sent back to the session as part of a summary message. */
+  /** Set when a message referenced it (last time). A sent one can be referenced again. */
   sentAt: Timestamp | null;
 }
 

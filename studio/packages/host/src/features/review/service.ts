@@ -35,6 +35,8 @@ export class ReviewFeature extends Feature {
       prefix: typeof input.prefix === "string" ? input.prefix.slice(-24) : "",
       suffix: typeof input.suffix === "string" ? input.suffix.slice(0, 24) : "",
       note,
+      // 批注 1, 2, … in the session, never reused (a sent message may name a deleted one); nothing is renumbered.
+      n: this.nextAnnotationNumber(sessionId),
       createdAt: new Date().toISOString(),
       sentAt: null,
     };
@@ -64,17 +66,55 @@ export class ReviewFeature extends Feature {
   async sendAnnotations(sessionId: Id): Promise<{ mode: SendMode; sent: Annotation[] }> {
     const pending = this.annotations(sessionId).filter((a) => !a.sentAt);
     if (!pending.length) throw new HostError("bad_request", "no annotations to send");
-    const seq = (a: Annotation) => this.store.getItem(a.itemId)?.seq ?? Number.MAX_SAFE_INTEGER;
-    pending.sort((a, b) => seq(a) - seq(b) || a.start - b.start);
-    const result = await this.f.sessions.sendMessage(sessionId, composeAnnotationMessage(pending));
-    const at = new Date().toISOString();
-    const sent = pending.map((a) => {
-      const next = { ...a, sentAt: at };
-      this.store.putAnnotation(next);
-      this.publish({ type: "annotation.upserted", annotation: next });
-      return next;
-    });
+    // The same message as referring to them from the composer (2026-10-15), without text of the person's own.
+    const result = await this.f.sessions.sendMessage(sessionId, "", [], pending.map((a) => a.id));
+    const sent = pending.map((a) => this.store.getAnnotation(a.id) ?? a);
     return { mode: result.mode, sent };
+  }
+
+  private nextAnnotationNumber(sessionId: Id): number {
+    const key = `annotation-seq:${sessionId}`;
+    const n = Math.max(Number(this.store.getKv(key)?.value ?? 0) || 0, this.annotationNumbers(sessionId).max) + 1;
+    this.store.setKv(key, String(n));
+    return n;
+  }
+
+  /** Each annotation's number; older ones made before numbers existed count in the order they were made. */
+  annotationNumbers(sessionId: Id): { of(a: Annotation): number; max: number } {
+    const list = [...this.store.listAnnotations(sessionId)].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
+    const numbers = new Map<Id, number>();
+    let max = 0;
+    for (const a of list) {
+      const n = a.n ?? max + 1;
+      numbers.set(a.id, n);
+      max = Math.max(max, n);
+    }
+    return { of: (a) => numbers.get(a.id) ?? a.n ?? 0, max };
+  }
+
+  /**
+   * The annotations a message refers to, numbered, and marks them sent once it went out. Annotations of another
+   * session are refused.
+   */
+  referencedAnnotations(sessionId: Id, ids: readonly Id[]): { refs: Array<{ n: number; quote: string; note: string }>; markSent(): void } {
+    const all = this.store.listAnnotations(sessionId);
+    const numbers = this.annotationNumbers(sessionId);
+    const chosen = [...new Set(ids)].map((id) => {
+      const a = all.find((x) => x.id === id);
+      if (!a) throw new HostError("bad_request", `annotation ${id} is not one of this session's`);
+      return a;
+    });
+    return {
+      refs: chosen.map((a) => ({ n: numbers.of(a), quote: a.quote, note: a.note })),
+      markSent: () => {
+        const at = new Date().toISOString();
+        for (const a of chosen) {
+          const next = { ...a, n: numbers.of(a), sentAt: at };
+          this.store.putAnnotation(next);
+          this.publish({ type: "annotation.upserted", annotation: next });
+        }
+      },
+    };
   }
 
   private requireAnnotation(id: Id): Annotation {

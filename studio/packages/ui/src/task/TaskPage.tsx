@@ -3,6 +3,7 @@ import { type Annotation, type ApprovalDecision, type ChecklistItem, type Preset
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
+import { useAnnotationRefs } from "../review/annotationRefs.js";
 import { shortModel } from "../lib/profiles.js";
 import { sessionModelName, useProfileChoices } from "../lib/choices.js";
 import { SessionTree } from "./SessionTree.js";
@@ -104,6 +105,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const settings = useSettings(link);
   const { items } = useSessionItems(link, session?.id ?? null);
   const annotations = useAnnotations(link, session?.id ?? null);
+  const annotationRefs = useAnnotationRefs(session?.id ?? null, annotations);
   // The model by name ("GPT-6.1 Sol", "Opus 5.5"), also when it is the profile's default.
   const { choices: sessionChoices } = useProfileChoices(link, session?.profileId);
   const modelText = session ? sessionModelName(sessionChoices, session.options) : null;
@@ -259,7 +261,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   async function send(text: string, attachments: string[]): Promise<boolean> {
     if (!session) return false;
     try {
-      await call(link, "POST /api/sessions/:id/messages", { id: session.id }, { text, ...(attachments.length ? { attachments } : {}) });
+      const referred = annotationRefs.list.map((a) => a.id);
+      await call(link, "POST /api/sessions/:id/messages", { id: session.id }, { text, ...(attachments.length ? { attachments } : {}), ...(referred.length ? { annotations: referred } : {}) });
+      annotationRefs.sent();
       return true;
     } catch (err) {
       setToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
@@ -587,6 +591,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onDeleteAnnotation={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}
               onError={showError}
               annotations={annotations}
+              annotationRefs={annotationRefs}
               decisions={session ? decisions.filter((d) => d.sessionId === session.id) : []}
             />
           </FileLinks>
@@ -629,12 +634,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           onEdit={(id, note) => void run(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
           onDelete={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}
           onLocate={locate}
-          onSendAll={() => {
-            if (!session) return;
-            void run(() => call(link, "POST /api/sessions/:id/annotations/send", { id: session.id }), (r) =>
-              setToast({ text: `已把 ${r.sent.length} 条批注汇总发回会话。` }),
-            );
-          }}
+          refs={annotationRefs}
         />
         )}
       </div>

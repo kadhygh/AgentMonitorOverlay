@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Annotation, ApprovalDecision, Session, SessionItem, TurnUsage } from "@amo-studio/protocol";
+import { splitAnnotationRefs } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
 import { copyText } from "../host/client.js";
 import { IconCheck, IconChevronDown, IconChevronRight, IconCopy, IconEdit, IconTerminal, IconSparkle } from "./icons.js";
@@ -219,13 +220,26 @@ function StandaloneItem({ item, busy, highlights, onApprove }: { item: SessionIt
   }
 }
 
-/** The person's message: images first, then the text, then the files it referenced (read back from the text). */
+/**
+ * The person's message: images first, then the annotations it referred to (批注N tags, 2026-10-15), the text, then the
+ * files it referenced (both read back from the text).
+ */
 function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) {
-  const { text, refs } = splitFileRefItems(item.text);
+  const { text: own, refs: annotations } = splitAnnotationRefs(item.text);
+  const { text, refs } = splitFileRefItems(own);
   return (
     <div className="msg-user-row">
       <div className="msg-user" data-testid="msg-user">
         {item.images?.length ? <MessageImages images={item.images} /> : null}
+        {annotations.length > 0 && (
+          <span className="msg-anno-refs">
+            {annotations.map((r) => (
+              <span key={r.n} className="anno-ref sent" title={`「${r.quote}」\n${r.note}`} data-testid="msg-annotation-ref">
+                批注{r.n}
+              </span>
+            ))}
+          </span>
+        )}
         {text && <span className="msg-text">{text}</span>}
         <MessageFiles files={refs} />
       </div>

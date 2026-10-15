@@ -40,7 +40,7 @@ async function clickPainted(page: Page, text: string) {
   await page.mouse.click(at!.x, at!.y);
 }
 
-test("annotate replies, edit, locate and send the summary back", async () => {
+test("annotate replies, edit, locate, and refer to them from the next message (批注N)", async () => {
   studio = await launchStudio();
   const { page } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
@@ -96,20 +96,42 @@ test("annotate replies, edit, locate and send the summary back", async () => {
   await expect.poll(() => painted(page, "amo-annotation-flash")).toEqual(["发现 3 张表"]);
   await screenshot(studio.app, "stage-2", "S2-04-annotations", page);
 
-  // Send the summary: one user message with both quotes in reply order; annotations fold into "已发送".
-  await page.getByRole("button", { name: "汇总发回会话（2）" }).click();
-  const summary = page.getByTestId("msg-user").filter({ hasText: "我有 2 条批注" });
-  await expect(summary).toBeVisible({ timeout: 30_000 });
-  await expect(summary).toContainText("> 发现 3 张表");
-  await expect(summary).toContainText("说明是哪三张");
-  await expect(summary).toContainText("> 先修正概率");
-  await expect(summary).toContainText("先和策划确认意图再改");
-  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 针对你上面的回复", { timeout: 30_000 });
+  // 2026-10-15: each annotation ends with a 批注N mark; the next message carries them as tags, nothing is sent alone.
+  await expect(page.getByTestId("annotation-mark")).toHaveText(["批注1", "批注2"]);
+  const tags = page.getByTestId("annotation-ref");
+  await expect(tags).toHaveText(["批注1×", "批注2×"]);
+  await expect(page.getByRole("button", { name: /汇总发回会话/ })).toHaveCount(0);
+  // Take 批注2 off the message, then back on from its card.
+  await page.getByRole("button", { name: "不引用批注2" }).click();
+  await expect(tags).toHaveText(["批注1×"]);
+  await expect(cards.nth(1).getByTestId("annotation-refer")).toHaveText("不引用");
+  await cards.nth(1).getByTestId("annotation-refer").click();
+  await expect(tags).toHaveText(["批注1×", "批注2×"]);
+  await page.getByLabel("输入消息").fill("按这两条批注改一下");
+  await screenshot(studio.app, "stage-14", "S14-Q-annotation-refs", page);
+  await page.getByLabel("输入消息").press("Enter");
+
+  // The message shows the person's text with two tags; the model gets the quotes and notes after the text.
+  const message = page.getByTestId("msg-user").filter({ hasText: "按这两条批注改一下" });
+  await expect(message).toBeVisible({ timeout: 30_000 });
+  await expect(message.getByTestId("msg-annotation-ref")).toHaveText(["批注1", "批注2"]);
+  await expect(message).not.toContainText("【引用的批注】");
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 按这两条批注改一下", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-agent").last()).toContainText("【批注1】针对你回复中的这段：");
+  await expect(tags).toHaveCount(0);
   await expect(cards).toHaveCount(0);
   await expect(page.getByTestId("annotation-count")).toHaveText("0");
   await expect(reply.locator("[data-annotated]")).toHaveCount(0);
   await expect.poll(() => painted(page)).toEqual([]);
+
+  // A sent one can be referred to again: back as a tag and a highlight, and the next message carries it.
   await page.getByRole("button", { name: /已发送 2/ }).click();
   await expect(page.getByTestId("annotation-sent")).toHaveCount(2);
+  await page.getByTestId("annotation-sent").first().getByTestId("annotation-refer-again").click();
+  await expect(tags).toHaveText(["批注1×"]);
+  await expect.poll(() => painted(page)).toEqual(["发现 3 张表"]);
   await screenshot(studio.app, "stage-2", "S2-04-sent", page);
+  await page.getByLabel("输入消息").press("Enter");
+  await expect(page.getByTestId("msg-user").last().getByTestId("msg-annotation-ref")).toHaveText(["批注1"], { timeout: 30_000 });
+  await expect(tags).toHaveCount(0);
 });

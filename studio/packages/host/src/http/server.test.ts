@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
-import { composeAnnotationMessage, type Annotation, type ProjectFiles, type CanvasDoc, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type StudioSettings, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { composeAnnotationRefs, type Annotation, type ProjectFiles, type CanvasDoc, type HostEvent, type ModelProfile, type Session, type SessionItem, type StateSnapshot, type StudioSettings, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../runtime/codex/fake-servers.test-support.js";
@@ -691,17 +691,37 @@ describe("Host API", () => {
     expect(await ok("DELETE", `/api/annotations/${scrap.id}`)).toEqual({ ok: true });
     expect((await ok<Annotation[]>("GET", `/api/sessions/${session.id}/annotations`)).map((a) => a.id).sort()).toEqual([earlier.id, later.id].sort());
 
-    const result = await ok<{ mode: string; sent: Annotation[] }>("POST", `/api/sessions/${session.id}/annotations/send`);
-    expect(result.mode).toBe("start");
-    expect(result.sent.map((a) => a.id)).toEqual([earlier.id, later.id]);
-    expect(result.sent.every((a) => a.sentAt)).toBe(true);
-    const expected = composeAnnotationMessage([{ quote: "first", note: "这里不对，换一种写法" }, { quote: "second", note: "这里要改" }]);
-    await until(async () => (await items(session.id)).some((i) => i.type === "user" && i.text === expected), "summary message");
-    expect(expected).toBe("针对你上面的回复，我有 2 条批注：\n\n> first\n这里不对，换一种写法\n\n> second\n这里要改");
+    // Numbered in the order they were made (批注1 is the one made first); deleting one renumbers nothing.
+    expect([later.n, earlier.n, scrap.n]).toEqual([1, 2, 3]);
 
-    // Sent annotations are frozen and nothing is left to send.
+    // 2026-10-15: a message refers to annotations (批注1…) after its own text instead of sending them on their own.
+    await ok("POST", `/api/sessions/${session.id}/messages`, { text: "按批注改", annotations: [earlier.id, later.id] });
+    const expected = composeAnnotationRefs("按批注改", [
+      { n: 2, quote: "first", note: "这里不对，换一种写法" },
+      { n: 1, quote: "second", note: "这里要改" },
+    ]);
+    await until(async () => (await items(session.id)).some((i) => i.type === "user" && i.text === expected), "message with references");
+    expect(expected).toBe("按批注改\n\n【引用的批注】\n【批注1】针对你回复中的这段：\n> second\n我的批注：这里要改\n\n【批注2】针对你回复中的这段：\n> first\n我的批注：这里不对，换一种写法");
+    const after = await ok<Annotation[]>("GET", `/api/sessions/${session.id}/annotations`);
+    expect(after.every((a) => a.sentAt)).toBe(true);
+
+    // Sent annotations are frozen, nothing is left to send at once, but a sent one can be referred to again.
     expect((await api("PATCH", `/api/annotations/${earlier.id}`, { note: "again" })).status).toBe(409);
     expect((await api("POST", `/api/sessions/${session.id}/annotations/send`)).status).toBe(400);
+    await until(async () => (await lastAgentText(session.id)) === `FAKE: ${expected}`, "reply to the references");
+    await ok("POST", `/api/sessions/${session.id}/messages`, { annotations: [later.id] });
+    await until(async () => (await items(session.id)).some((i) => i.type === "user" && i.text.startsWith("【引用的批注】\n【批注1】")), "referred again");
+    // Annotations of another session are refused.
+    const other = await createTask("other");
+    expect((await api("POST", `/api/sessions/${other.session.id}/messages`, { text: "x", annotations: [later.id] })).status).toBe(400);
+
+    // The one-click summary of the unsent ones still exists and writes the same block.
+    const fresh = await ok<Annotation>("POST", `/api/sessions/${session.id}/annotations`, { itemId: agents[0]!.id, quote: "reply", start: 12, end: 17, note: "再看看" });
+    expect(fresh.n).toBe(4);
+    await until(async () => ((await lastAgentText(session.id)) ?? "").startsWith("FAKE: 【引用的批注】"), "second reply to the references");
+    const result = await ok<{ mode: string; sent: Annotation[] }>("POST", `/api/sessions/${session.id}/annotations/send`);
+    expect(result.sent.map((a) => a.id)).toEqual([fresh.id]);
+    expect(result.sent[0]!.sentAt).not.toBeNull();
   });
   it("keeps attachments: raw image upload, the file back (header or ?token=), images only", async () => {
     const png = Buffer.from("89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c4890000000d4944415478da63f8ffff3f0005fe02fea7d6a4c80000000049454e44ae426082", "hex");

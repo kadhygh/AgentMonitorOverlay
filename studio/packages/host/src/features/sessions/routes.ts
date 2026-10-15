@@ -12,7 +12,9 @@ export function sessionsRoutes(service: HostService): Route[] {
       const b = obj(body);
       const attachments = b.attachments ?? [];
       if (!Array.isArray(attachments) || attachments.some((a) => typeof a !== "string")) throw new HostError("bad_request", "attachments must be a list of ids");
-      return service.sessions.sendMessage(params.id!, b.text === undefined && attachments.length ? "" : str(b.text, "text"), attachments as string[]);
+      const annotations = b.annotations ?? [];
+      if (!Array.isArray(annotations) || annotations.some((a) => typeof a !== "string")) throw new HostError("bad_request", "annotations must be a list of ids");
+      return service.sessions.sendMessage(params.id!, b.text === undefined && (attachments.length || annotations.length) ? "" : str(b.text, "text"), attachments as string[], annotations as string[]);
     }),
     route("POST", "/api/sessions/:id/interrupt", async ({ params }) => (await service.sessions.interrupt(params.id!), { ok: true })),
     route("POST", "/api/sessions/:id/fork", ({ params, body }) => {

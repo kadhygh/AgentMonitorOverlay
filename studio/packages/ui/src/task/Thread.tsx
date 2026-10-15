@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type RefObject } from "react";
 import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, Task } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
@@ -21,7 +21,8 @@ import { SessionDecisions } from "../collab/DecisionPanel.js";
 import { PlanReviewBar, sendRevision } from "../chat/questions/PlanReview.js";
 import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
 import { AnnotationBubble, contentRect, SelectionBar, type BubbleTarget, type ContentRect } from "../review/AnnotationBubble.js";
-import { annotationAt, annotationRect, highlightsSupported, useAnnotationHighlights } from "../review/highlights.js";
+import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, onAnnotationsPainted, paintedEnds, useAnnotationHighlights } from "../review/highlights.js";
+import { annotationNumber, type AnnotationRefs } from "../review/annotationRefs.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
 import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
 import { BackgroundTasks, latestSuggestion, SuggestionChips } from "../chat/cli/ComposerExtras.js";
@@ -45,6 +46,8 @@ interface ThreadProps {
   items: readonly SessionItem[];
   /** Unsent annotations are highlighted in the replies they point at. */
   annotations: readonly Annotation[];
+  /** The annotations the next message refers to (批注N tags in the composer, 2026-10-15). */
+  annotationRefs?: AnnotationRefs;
   model: string;
   busy: boolean;
   onApprove(item: ApprovalItem, decision: ApprovalDecision): void;
@@ -65,7 +68,7 @@ interface ThreadProps {
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onError, decisions = [] }: ThreadProps) {
+export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onError, decisions = [] }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -155,7 +158,10 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   }, [menu]);
 
   const sources = new Map(items.filter((i) => i.type === "agent").map((i) => [i.id, (i as { markdown: string }).markdown]));
-  useAnnotationHighlights(scroller, annotations, sources);
+  // Painted: the unsent ones, and sent ones the next message refers to again; each gets its 批注N mark.
+  const shownAnnotations = annotations.filter((a) => !a.sentAt || annotationRefs?.has(a.id));
+  useAnnotationHighlights(scroller, shownAnnotations, sources);
+  const marks = useAnnotationMarks(scroller, shownAnnotations, annotations);
   const quoteToDraft = (quote: string) =>
     setDraft((d) => `${d.trim() ? `${d.trimEnd()}\n\n` : ""}${quote.split("\n").map((l) => `> ${l}`).join("\n")}\n\n`);
 
@@ -203,7 +209,8 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // Images must finish uploading (or be removed when they failed) before the message can go.
   const attachHold = attach.uploading ? "图片上传中…" : attach.failed ? "有图片上传失败，移除后再发送" : "";
-  const canSend = !readOnly && !attachHold && (!!draft.trim() || (!attach.empty && !isRevising));
+  const referring = !isRevising && (annotationRefs?.list.length ?? 0) > 0;
+  const canSend = !readOnly && !attachHold && (!!draft.trim() || (!attach.empty && !isRevising) || referring);
 
   /** "要修改": text already typed goes at once; otherwise the composer collects it. */
   async function revise(feedback: string): Promise<boolean> {
@@ -357,6 +364,19 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             if (annotation) setBubble({ kind: "edit", annotation, at: contentRect(scroller.current, block.getBoundingClientRect()) });
           }}
         >
+          {marks.map((m) => (
+            <button
+              key={m.id}
+              type="button"
+              className={`anno-mark${annotationRefs?.has(m.id) ? " referred" : ""}`}
+              style={{ top: m.top, left: m.left }}
+              title={m.title}
+              onClick={() => flashAnnotation(m.id)}
+              data-testid="annotation-mark"
+            >
+              批注{m.n}
+            </button>
+          ))}
           <div className="thread-inner">
             {!session && <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>}
             <AttachLink.Provider value={link}>
@@ -494,6 +514,20 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           {!archived && (
           <div className={`composer-card${readOnly ? " disabled" : ""}${dragging ? " dropping" : ""}`}>
             <AttachTray attach={attach} disabled={readOnly} />
+            {annotationRefs && annotationRefs.list.length > 0 && !isRevising && (
+              <div className="anno-refs" aria-label="这条消息引用的批注" data-testid="annotation-refs">
+                {annotationRefs.list.map((a) => (
+                  <span key={a.id} className="anno-ref" title={`「${a.quote}」\n${a.note}`} data-testid="annotation-ref">
+                    <button type="button" className="anno-ref-name" onClick={() => flashAnnotation(a.id)}>
+                      批注{annotationNumber(a, annotations)}
+                    </button>
+                    <button type="button" className="anno-ref-x" aria-label={`不引用批注${annotationNumber(a, annotations)}`} title="这条消息不引用它" onClick={() => annotationRefs.remove(a.id)}>
+                      ×
+                    </button>
+                  </span>
+                ))}
+              </div>
+            )}
             <label className="chat-input">
               <span className="sr-only">输入消息</span>
               <textarea
@@ -619,4 +653,43 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
       )}
     </>
   );
+}
+
+/**
+ * Where the 批注N marks go: just after the end of each painted annotation, in the scroller's content coordinates, kept
+ * up to date as the highlights repaint and the conversation resizes.
+ */
+function useAnnotationMarks(scroller: RefObject<HTMLDivElement | null>, shown: readonly Annotation[], all: readonly Annotation[]): Array<{ id: string; n: number; top: number; left: number; title: string }> {
+  const [marks, setMarks] = useState<Array<{ id: string; n: number; top: number; left: number; title: string }>>([]);
+  const latest = useRef({ shown, all });
+  latest.current = { shown, all };
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    let frame = 0;
+    const place = () => {
+      frame = 0;
+      const box = el.getBoundingClientRect();
+      const { shown: list, all: every } = latest.current;
+      const next = paintedEnds().flatMap(({ id, rect }) => {
+        const a = list.find((x) => x.id === id);
+        if (!a) return [];
+        return [{ id, n: annotationNumber(a, every), top: rect.top - box.top + el.scrollTop - 14, left: Math.min(rect.right - box.left + el.scrollLeft + 2, el.scrollWidth - 48), title: `「${a.quote}」\n${a.note}` }];
+      });
+      setMarks((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
+    };
+    const schedule = () => {
+      frame ||= requestAnimationFrame(place);
+    };
+    const off = onAnnotationsPainted(schedule);
+    const observer = new ResizeObserver(schedule);
+    observer.observe(el);
+    schedule();
+    return () => {
+      off();
+      observer.disconnect();
+      cancelAnimationFrame(frame);
+    };
+  }, [scroller]);
+  return marks.filter((m) => shown.some((a) => a.id === m.id));
 }

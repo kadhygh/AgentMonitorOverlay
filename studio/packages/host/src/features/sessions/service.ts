@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { asyncAnswerText, formContent, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { asyncAnswerText, composeAnnotationRefs, formContent, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -49,9 +49,18 @@ export class SessionsFeature extends Feature {
     return this.store.listItems(sessionId, afterSeq);
   }
 
-  /** `attachments`: ids of uploaded images to send along; with some, the text may be empty. */
-  async sendMessage(sessionId: Id, text: string, attachments: readonly Id[] = []): Promise<{ mode: SendMode }> {
+  /**
+   * `attachments`: ids of uploaded images to send along. `annotations`: annotations of this session the message refers
+   * to (批注1…), written after the text (composeAnnotationRefs) and marked sent. With either, the text may be empty.
+   */
+  async sendMessage(sessionId: Id, text: string, attachments: readonly Id[] = [], annotations: readonly Id[] = []): Promise<{ mode: SendMode }> {
     this.requireSession(sessionId);
+    const referenced = annotations.length ? this.f.review.referencedAnnotations(sessionId, annotations) : null;
+    if (referenced) {
+      const result = await this.sendMessage(sessionId, composeAnnotationRefs(text ?? "", referenced.refs), attachments);
+      referenced.markSent();
+      return result;
+    }
     if (attachments.length > MAX_MESSAGE_IMAGES) throw new HostError("bad_request", `at most ${MAX_MESSAGE_IMAGES} images per message`);
     const images = [...new Set(attachments)].map((id) => {
       try {
