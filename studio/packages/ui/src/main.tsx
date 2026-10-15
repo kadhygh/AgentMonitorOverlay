@@ -38,7 +38,7 @@ import "./viewer/viewer.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 import { Toaster } from "./lib/toast.js";
-import { startResizeTrace } from "./lib/resizeTrace.js";
+import { startResizeTrace, traceFocusInput } from "./lib/resizeTrace.js";
 
 // One bundle, two windows: the workbench, and the Focus window (loaded with #focus).
 const focus = location.hash === "#focus";
@@ -59,6 +59,7 @@ const viewer = location.hash.startsWith("#viewer");
 
 // Each window drag, summarised into logs/resize-trace.log (2026-10-15: the main window flickered when dragged).
 startResizeTrace();
+if (focus) traceFocusInput();
 
 const root = document.getElementById("root");
 if (!root) throw new Error("missing #root");

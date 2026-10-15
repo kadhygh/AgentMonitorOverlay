@@ -47,6 +47,22 @@ function testModelOptions(): Partial<StartHostOptions> {
   };
 }
 
+// Written to host.log by the shell (not a terminal): every line starts with the local time, so it can be matched with
+// logs/resize-trace.log and the conversations (2026-10-15).
+if (!process.stdout.isTTY) {
+  for (const stream of [process.stdout, process.stderr]) {
+    const write = stream.write.bind(stream) as (chunk: unknown, ...rest: unknown[]) => boolean;
+    let lineStart = true;
+    stream.write = ((chunk: unknown, ...rest: unknown[]) => {
+      if (typeof chunk !== "string") return write(chunk, ...rest);
+      const stamp = `${new Date().toLocaleString("sv-SE")} `;
+      const text = (lineStart ? stamp : "") + chunk.replace(/\n(?=.)/g, `\n${stamp}`);
+      lineStart = chunk.endsWith("\n");
+      return write(text, ...rest);
+    }) as typeof stream.write;
+  }
+}
+
 // A failure no request catches (a timer, a promise nobody awaited) would otherwise end the process, and every session
 // with it. Log it with its stack, tell the windows, and keep serving.
 let reportTo: ((err: unknown) => void) | null = null;

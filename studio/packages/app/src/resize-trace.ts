@@ -43,7 +43,7 @@ export class ResizeTrace {
     this.file = join(dir, "resize-trace.log");
     if (!enabled) return;
     mkdirSync(dir, { recursive: true });
-    this.write(`--- start ${new Date().toISOString()} · Electron ${process.versions.electron} · Chrome ${process.versions.chrome} · ${process.platform} ${process.getSystemVersion()}`);
+    this.write(`--- start ${new Date().toLocaleString("sv-SE")} (local times from here on) · Electron ${process.versions.electron} · Chrome ${process.versions.chrome} · ${process.platform} ${process.getSystemVersion()}`);
     // Software compositing makes resizing slow and flickery. Whether the GPU is used, again whenever that changes, and
     // why a GPU process went away (a crash falls back to software until the app restarts).
     let last = "";
@@ -104,14 +104,64 @@ export class ResizeTrace {
     win.on("resize", () => this.event(win, name(), "resize", win.getBounds(), undefined, win.getContentBounds()));
     win.on("maximize", () => this.note(name(), "maximize"));
     win.on("unmaximize", () => this.note(name(), "unmaximize"));
+    // 2026-10-15 (a flicker when a conversation started, with no resize behind it): page crashes, reloads and hangs.
+    const wc = win.webContents;
+    let loads = 0;
+    wc.on("did-finish-load", () => {
+      if (loads++ > 0) this.write(`${stamp()} ${name()} page loaded again (${loads})`);
+    });
+    wc.on("did-fail-load", (_e, code, description, _url, isMainFrame) => {
+      if (isMainFrame) this.write(`${stamp()} ${name()} page failed to load: ${code} ${description}`);
+    });
+    wc.on("render-process-gone", (_e, d) => this.write(`${stamp()} ${name()} page process gone reason=${d.reason} exitCode=${d.exitCode}`));
+    win.on("unresponsive", () => this.write(`${stamp()} ${name()} unresponsive`));
+    win.on("responsive", () => this.write(`${stamp()} ${name()} responsive again`));
   }
 
-  /** Something that may move or repaint a window, counted into any running burst (or logged alone). */
-  note(window: string, what: string): void {
+  /**
+   * The window's own mouse messages from Windows (2026-10-15: Focus's buttons ignore real clicks while a posted click
+   * works). Clicks, activation and pointer messages; moves at most once every 2 seconds.
+   */
+  watchInput(win: BrowserWindow, name: string): void {
+    if (!this.enabled || process.platform !== "win32") return;
+    const xy = (l: Buffer) => `${l.readInt16LE(0)},${l.readInt16LE(2)}`;
+    const MESSAGES: Array<[number, string, (w: Buffer, l: Buffer) => string]> = [
+      [0x0021, "WM_MOUSEACTIVATE", (_w, l) => `hit=${l.readUInt16LE(0)} msg=0x${l.readUInt16LE(2).toString(16)}`],
+      [0x00a1, "WM_NCLBUTTONDOWN", (w, l) => `hit=${w.readUInt32LE(0)} at ${xy(l)}`],
+      [0x0201, "WM_LBUTTONDOWN", (_w, l) => `at ${xy(l)}`],
+      [0x0202, "WM_LBUTTONUP", (_w, l) => `at ${xy(l)}`],
+      [0x0204, "WM_RBUTTONDOWN", (_w, l) => `at ${xy(l)}`],
+      [0x0215, "WM_CAPTURECHANGED", () => ""],
+      [0x0246, "WM_POINTERDOWN", (_w, l) => `screen ${xy(l)}`],
+      [0x0247, "WM_POINTERUP", (_w, l) => `screen ${xy(l)}`],
+      [0x024b, "WM_POINTERACTIVATE", () => ""],
+      [0x0200, "WM_MOUSEMOVE", (_w, l) => `at ${xy(l)}`],
+    ];
+    let lastMove = 0;
+    for (const [msg, label, detail] of MESSAGES) {
+      win.hookWindowMessage(msg, (w: Buffer, l: Buffer) => {
+        if (msg === 0x0200) {
+          const now = Date.now();
+          if (now - lastMove < 2000) return;
+          lastMove = now;
+        }
+        let text = "";
+        try {
+          text = detail(w, l);
+        } catch {
+          // a short buffer
+        }
+        this.write(`${stamp()} ${name} ${label} ${text}`.trimEnd());
+      });
+    }
+  }
+
+  /** Something that may move or repaint a window, counted into any running burst (or logged alone, with its detail). */
+  note(window: string, what: string, detail?: string): void {
     if (!this.enabled) return;
     const running = [...this.bursts.values()];
     if (!running.length) {
-      if (!what.startsWith("focus-shape")) this.write(`${stamp()} ${window} ${what}`);
+      this.write(`${stamp()} ${window} ${what}${detail ? ` ${detail}` : ""}`);
       return;
     }
     for (const b of running) b.other.set(`${window}:${what}`, (b.other.get(`${window}:${what}`) ?? 0) + 1);
@@ -192,4 +242,8 @@ export class ResizeTrace {
   }
 }
 
-const stamp = () => new Date().toISOString().slice(11, 23);
+/** Local time of day with milliseconds (before 2026-10-15 evening the log used UTC). */
+const stamp = () => {
+  const d = new Date();
+  return `${d.toLocaleTimeString("sv-SE")}.${String(d.getMilliseconds()).padStart(3, "0")}`;
+};

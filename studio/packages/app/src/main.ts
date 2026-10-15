@@ -52,6 +52,8 @@ let mainWindow: BrowserWindow | null = null;
 let focusWindow: BrowserWindow | null = null;
 /** Resize trace (logs/resize-trace.log), made once the app is ready. */
 let trace: ResizeTrace | null = null;
+/** Whether the Focus window lets clicks through right now (点击穿透), for the trace. */
+let focusIgnoring = false;
 /** 界面大小 one step (Ctrl + = / - / 0), set up with the IPC handlers. */
 let stepUiScaleRef: (dir: 1 | -1 | 0) => void = () => undefined;
 const prefs = new ShellPrefs(dataDir);
@@ -71,6 +73,7 @@ function setFocusVisible(on: boolean): void {
       onMoved: (pos) => prefs.setFocusPos(pos),
     });
     focusWindow.on("closed", () => (focusWindow = null));
+    trace?.watchInput(focusWindow, "focus");
   } else if (!on && focusWindow) {
     focusWindow.destroy();
     focusWindow = null;
@@ -160,11 +163,13 @@ if (!app.requestSingleInstanceLock()) {
     // The page reports its own (zoomed) CSS pixels; the window's shape is in screen points.
     const z = focusWindow.webContents.getZoomFactor() || 1;
     focusWindow.setShape(z === 1 ? ok : ok.map((r) => ({ x: Math.round(r.x * z), y: Math.round(r.y * z), width: Math.max(1, Math.round(r.width * z)), height: Math.max(1, Math.round(r.height * z)) })));
-    trace?.note("focus", "focus-shape");
+    trace?.note("focus", "focus-shape", ok.map((r) => `${r.width}×${r.height}@${r.x},${r.y}`).join(" ") + (z === 1 ? "" : ` zoom=${z}`));
     if (testMode) (globalThis as { __amoFocusShape?: unknown }).__amoFocusShape = ok;
   });
   ipcMain.on("amo:focus-mouse", (event, ignore: unknown) => {
     if (!focusWindow || event.sender !== focusWindow.webContents) return;
+    if (ignore === true !== focusIgnoring) trace?.note("focus", ignore === true ? "ignore-mouse on" : "ignore-mouse off");
+    focusIgnoring = ignore === true;
     focusWindow.setIgnoreMouseEvents(ignore === true, { forward: true });
     if (testMode) (globalThis as { __amoFocusIgnore?: boolean }).__amoFocusIgnore = ignore === true;
   });

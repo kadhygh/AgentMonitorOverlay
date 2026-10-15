@@ -1,7 +1,7 @@
 // Resize trace, page side (2026-10-15): while the window is being resized, count the frames the page drew, the gaps
 // between them, and Chromium's "long animation frames" with what ran in them and how long style and layout took.
-// One summary per drag goes to the main process (logs/resize-trace.log). Nothing runs between drags but the
-// observer, which only keeps entries while a drag is on.
+// One summary per drag goes to the main process (logs/resize-trace.log). Between drags only frames of 200 ms or more
+// are logged (a few per line).
 
 interface LoafScript {
   invoker?: string;
@@ -18,6 +18,45 @@ interface LoafEntry extends PerformanceEntry {
 }
 
 const IDLE_MS = 600;
+/** A frame this long outside a drag is logged on its own. */
+const STALL_MS = 200;
+
+/** The longest frames, with what ran in them. */
+function summarise(entries: readonly LoafEntry[]) {
+  const file = (url?: string) => (url ? url.split("/").pop()!.split("?")[0] : "");
+  return [...entries]
+    .sort((x, y) => y.duration - x.duration)
+    .slice(0, 6)
+    .map((e) => ({
+      ms: Math.round(e.duration),
+      blocking: Math.round(e.blockingDuration ?? 0),
+      // From the start of style and layout to the end of the frame.
+      layout: e.styleAndLayoutStart ? Math.round(e.startTime + e.duration - e.styleAndLayoutStart) : null,
+      scripts: (e.scripts ?? [])
+        .sort((x, y) => y.duration - x.duration)
+        .slice(0, 3)
+        .map((s) => `${s.invoker ?? "?"} ${file(s.sourceURL)}${s.sourceFunctionName ? `:${s.sourceFunctionName}` : ""} ${Math.round(s.duration)}ms${s.forcedStyleAndLayoutDuration ? ` forcedLayout ${Math.round(s.forcedStyleAndLayoutDuration)}ms` : ""}`),
+    }));
+}
+
+/**
+ * The Focus window's clicks as its page sees them (2026-10-15: its buttons ignored real clicks), to match against the
+ * mouse messages the main process logs for it.
+ */
+export function traceFocusInput(): void {
+  const send = window.amo?.trace;
+  if (!send) return;
+  const describe = (t: EventTarget | null) => {
+    const el = t instanceof Element ? t : null;
+    if (!el) return "?";
+    const hit = el.closest("button, [role=button], a") ?? el;
+    const label = hit.getAttribute("aria-label") ?? hit.getAttribute("data-testid") ?? (hit.textContent ?? "").trim().slice(0, 20);
+    return `${hit.tagName.toLowerCase()}${typeof hit.className === "string" && hit.className ? `.${hit.className.split(" ")[0]}` : ""} ${label}`.trim();
+  };
+  for (const type of ["pointerdown", "click", "contextmenu"] as const) {
+    document.addEventListener(type, (e) => send({ where: "#focus input", type, x: Math.round(e.clientX), y: Math.round(e.clientY), target: describe(e.target) }), true);
+  }
+}
 
 export function startResizeTrace(): void {
   const send = window.amo?.trace;
@@ -52,12 +91,26 @@ export function startResizeTrace(): void {
     requestAnimationFrame(frame);
   };
 
+  // Between drags (2026-10-15, a flicker when a conversation started): frames that took 200 ms or more, a few at a
+  // time, at most one line every 2 seconds.
+  let stalls: LoafEntry[] = [];
+  let stallTimer = 0;
+  const flushStalls = () => {
+    stallTimer = 0;
+    const list = stalls;
+    stalls = [];
+    if (list.length) send({ where: where(), stalls: list.length, worst: summarise(list) });
+  };
   try {
     new PerformanceObserver((list) => {
-      if (!burst) return;
       for (const e of list.getEntries()) {
-        if (e.entryType === "long-animation-frame") burst.loaf.push(e as LoafEntry);
-        else if (e.entryType === "longtask") burst.longtasks++;
+        if (burst) {
+          if (e.entryType === "long-animation-frame") burst.loaf.push(e as LoafEntry);
+          else if (e.entryType === "longtask") burst.longtasks++;
+        } else if (e.duration >= STALL_MS) {
+          stalls.push(e as LoafEntry);
+          if (!stallTimer) stallTimer = window.setTimeout(flushStalls, 2000);
+        }
       }
     }).observe({ type: "long-animation-frame", buffered: false });
   } catch {
@@ -83,20 +136,7 @@ export function startResizeTrace(): void {
     const b = burst;
     burst = null;
     if (!b) return;
-    const file = (url?: string) => (url ? url.split("/").pop()!.split("?")[0] : "");
-    const loaf = [...b.loaf]
-      .sort((x, y) => y.duration - x.duration)
-      .slice(0, 6)
-      .map((e) => ({
-        ms: Math.round(e.duration),
-        blocking: Math.round(e.blockingDuration ?? 0),
-        // From the start of style and layout to the end of the frame.
-        layout: e.styleAndLayoutStart ? Math.round(e.startTime + e.duration - e.styleAndLayoutStart) : null,
-        scripts: (e.scripts ?? [])
-          .sort((x, y) => y.duration - x.duration)
-          .slice(0, 3)
-          .map((s) => `${s.invoker ?? "?"} ${file(s.sourceURL)}${s.sourceFunctionName ? `:${s.sourceFunctionName}` : ""} ${Math.round(s.duration)}ms${s.forcedStyleAndLayoutDuration ? ` forcedLayout ${Math.round(s.forcedStyleAndLayoutDuration)}ms` : ""}`),
-      }));
+    const loaf = summarise(b.loaf);
     send({
       where: where(),
       ms: Math.round(b.last - b.t0),
