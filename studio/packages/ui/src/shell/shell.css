@@ -101,3 +101,9 @@
 .back-btn svg { fill: none; stroke: currentColor; stroke-width: 1.4; stroke-linecap: round; stroke-linejoin: round; flex: none; }
 .back-btn .back-chevron { color: var(--text-dim); margin-right: -1px; }
 .back-btn:hover .back-chevron { color: var(--text); transform: translateX(-1px); }
+
+/* Column widths the person drags (lib/dragWidth.tsx): a zero-width gap holding a 6px handle over the border. */
+.col-resize-gap { position: relative; flex: 0 0 0; width: 0; z-index: 3; }
+.col-resize { position: absolute; top: 0; bottom: 0; left: -3px; width: 6px; cursor: col-resize; }
+.col-resize:hover, .col-resize:active { background: var(--resize); }
+body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none !important; }

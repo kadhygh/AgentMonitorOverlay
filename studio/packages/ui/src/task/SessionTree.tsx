@@ -7,6 +7,7 @@ import { activeModel, useProfileChoices } from "../lib/choices.js";
 import { rememberPick, type ModelPick } from "../lib/recents.js";
 import { EffortBars, FastToggle } from "../chat/pickers.js";
 import { ModelRow } from "../newtask/ModelRow.js";
+import { useDragWidth } from "../lib/dragWidth.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { Mark } from "../chat/pickers.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
@@ -46,6 +47,8 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   const { choices } = useProfileChoices(link, pick.profileId);
   const model = choices ? activeModel(choices, pick.model ? { model: pick.model } : {}) : undefined;
   const [showArchived, setShowArchived] = useState(false);
+  // The list's width, dragged at its right edge (2026-10-15).
+  const listW = useDragWidth("amo.sessionListWidth", 236, 180, 480);
   // An archived session brought to the front (from search, Focus, or an archived task) shows its row. Only on a change
   // of selection: archiving the session in front leaves the folded list alone.
   const selectedArchived = sessions.some((s) => s.id === selected && s.archivedAt);
@@ -69,7 +72,8 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   walk(buildSessionTree(live), 0);
 
   return (
-    <aside className="session-list" aria-label="会话">
+    <>
+    <aside className="session-list" aria-label="会话" style={{ flexBasis: listW.width }}>
       <div className="slist-head">
         <span className="nav-label">会话 {live.length}</span>
         {formOpen && live.length > 0 && (
@@ -209,6 +213,8 @@ ${formatDay(s.archivedAt)} 归档` : ""}`}
         </div>
       )}
     </aside>
+    {listW.handle("调整会话列表宽度")}
+    </>
   );
 }
 

@@ -8,6 +8,7 @@ import { ProjectReviewMenu, type ProjectMenuAt } from "../gitreview/ProjectRevie
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 import { EditProjectDialog } from "./EditProjectDialog.js";
 import { EditTopicDialog } from "./EditTopicDialog.js";
+import { useDragWidth, useNavWidthVar } from "../lib/dragWidth.js";
 import { FoldIcon } from "../task/SessionTree.js";
 
 /** The left column folded to a strip (2026-10-14), remembered per window. */
@@ -67,6 +68,9 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const [editing, setEditing] = useState<string | null>(null);
   const [editingTopicId, setEditingTopic] = useState<string | null>(null);
   const [collapsed, setCollapsedState] = useState(readNavFolded);
+  // The column's width, dragged at its right edge (2026-10-15); it also lines up the brand in the title bar.
+  const navW = useDragWidth("amo.navWidth", 224, 180, 420);
+  useNavWidthVar(navW.width, !collapsed);
   const setCollapsed = (on: boolean) => {
     setCollapsedState(on);
     try {
@@ -198,6 +202,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
     );
 
   return (
+    <>
     <nav className="scope-nav" aria-label="范围">
       <div className="nav-top">
         {row(null, null, { kind: "all" }, "全部任务", liveTasks.length, "scope-all")}
@@ -373,6 +378,8 @@ ${w.description}` : w.path, (e) => {
         </ConfirmDialog>
       )}
     </nav>
+    {navW.handle("调整左栏宽度")}
+    </>
   );
 }
 

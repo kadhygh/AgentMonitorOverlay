@@ -47,3 +47,36 @@ test("pin, fold and scroll the left column; open the usage footer", async () => 
   await page.getByTestId("host-status").click();
   await expect(page.getByTestId("usage-account")).toContainText("查不到用量百分比");
 });
+
+test("the left column and the task's session list are as wide as dragged, and stay so; double-click resets", async () => {
+  studio = await launchStudio({ taskSidebar: false });
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api("POST", "/api/tasks", { title: "拖宽度", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "hi" } });
+  const nav = page.locator("nav.scope-nav");
+  const width = async (l: typeof nav) => Math.round((await l.boundingBox())!.width);
+  const drag = async (handle: ReturnType<typeof page.getByRole>, dx: number) => {
+    const b = (await handle.boundingBox())!;
+    await page.mouse.move(b.x + b.width / 2, b.y + 200);
+    await page.mouse.down();
+    await page.mouse.move(b.x + b.width / 2 + dx, b.y + 200, { steps: 5 });
+    await page.mouse.up();
+  };
+
+  const before = await width(nav);
+  await drag(page.getByRole("separator", { name: "调整左栏宽度" }), 80);
+  await expect.poll(() => width(nav)).toBe(before + 80);
+
+  await page.getByTestId("task-card").filter({ hasText: "拖宽度" }).click();
+  const list = page.locator("aside.session-list");
+  const listBefore = await width(list);
+  await drag(page.getByRole("separator", { name: "调整会话列表宽度" }), 60);
+  await expect.poll(() => width(list)).toBe(listBefore + 60);
+
+  await page.reload();
+  await page.getByTestId("task-card").filter({ hasText: "拖宽度" }).click();
+  await expect.poll(() => width(nav)).toBe(before + 80);
+  await expect.poll(() => width(list)).toBe(listBefore + 60);
+  await page.getByRole("separator", { name: "调整左栏宽度" }).dblclick();
+  await expect.poll(() => width(nav)).toBe(before);
+});
