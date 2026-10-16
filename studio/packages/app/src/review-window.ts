@@ -3,6 +3,8 @@ import { BrowserWindow, ipcMain } from "electron";
 // The Git Review windows (S11-D): one ordinary window per project, loaded with #review?workspace=…&session=…. Opening
 // a project's review again brings its window forward (and points it at the new session) instead of opening another.
 // A commit from the history (S13-B) opens in a window of its own, one per commit: #review?workspace=…&commit=….
+// 2026-10-16: a commit's window can switch to another commit (picked in its 历史); it then counts as that commit's
+// window, so opening that commit again brings it forward.
 
 export interface ReviewWindowOptions {
   /** The UI's address (Host or dev server), once the Host is connected. */
@@ -43,13 +45,15 @@ export function reviewHash(target: unknown): { key: string; hash: string } | nul
 
 /** Handles `amo:open-review` from the pages; returns what the main window needs to close the reviews with it. */
 export function setupReviewWindows(options: ReviewWindowOptions): { closeAll(): void } {
-  const windows = new Map<string, BrowserWindow>();
+  /** Each window and what it shows (its key). */
+  const windows = new Map<BrowserWindow, string>();
+  const find = (key: string) => [...windows].find(([w, k]) => k === key && !w.isDestroyed())?.[0];
 
   ipcMain.handle("amo:open-review", (_event, target: unknown) => {
     const t = reviewHash(target);
     const url = options.url();
     if (!t || !url) return;
-    const open = windows.get(t.key);
+    const open = find(t.key);
     if (open && !open.isDestroyed()) {
       // Same project: the page follows the new hash (another session), and the window comes forward.
       void open.webContents.executeJavaScript(`location.hash = ${JSON.stringify(t.hash)}`);
@@ -60,13 +64,23 @@ export function setupReviewWindows(options: ReviewWindowOptions): { closeAll(): 
       return;
     }
     const win = createReviewWindow(`${url}${t.hash}`, options);
-    windows.set(t.key, win);
-    win.on("closed", () => windows.delete(t.key));
+    windows.set(win, t.key);
+    win.on("closed", () => windows.delete(win));
+  });
+
+  // A commit's window shows another commit of the same project instead.
+  ipcMain.handle("amo:switch-review", (event, target: unknown) => {
+    const t = reviewHash(target);
+    const win = BrowserWindow.fromWebContents(event.sender);
+    const was = win && windows.get(win);
+    if (!t || !win || !was || !was.includes("@") || !t.key.includes("@") || was.split("@")[0] !== t.key.split("@")[0]) return;
+    windows.set(win, t.key);
+    void win.webContents.executeJavaScript(`location.hash = ${JSON.stringify(t.hash)}`);
   });
 
   return {
     closeAll: () => {
-      for (const w of windows.values()) if (!w.isDestroyed()) w.destroy();
+      for (const w of windows.keys()) if (!w.isDestroyed()) w.destroy();
       windows.clear();
     },
   };

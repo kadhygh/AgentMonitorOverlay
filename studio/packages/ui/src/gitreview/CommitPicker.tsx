@@ -8,9 +8,24 @@ import { filterCommits, markWords, queryWords, shortSha } from "./history.js";
  * 历史 (S13-B): the branch's latest commits, found like files in 找文件 (Ctrl+P): one box that matches the subject,
  * the hash and the author. Enter (or a click) opens the commit in a window of its own.
  * 2026-10-16: opened from a commit's window, that commit is marked [CURRENT] and the list starts there, so the person
- * can go on from where they were.
+ * can go on from where they were. In a commit's window a pick switches that window; a right click opens a new one.
  */
-export function CommitPicker({ link, workspaceId, current, onPick, onClose }: { link: HostLink; workspaceId: string; current?: string | null; onPick(sha: string): void; onClose(): void }) {
+export function CommitPicker({
+  link,
+  workspaceId,
+  current,
+  onPick,
+  onPickNew,
+  onClose,
+}: {
+  link: HostLink;
+  workspaceId: string;
+  current?: string | null;
+  onPick(sha: string): void;
+  /** Right click: in a new window. */
+  onPickNew?(sha: string): void;
+  onClose(): void;
+}) {
   const [log, setLog] = useState<GitLog | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -43,10 +58,10 @@ export function CommitPicker({ link, workspaceId, current, onPick, onClose }: { 
     row.scrollIntoView({ block: centre ? "center" : "nearest" });
   }, [highlight, log]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const pick = (i: number) => {
+  const pick = (i: number, fresh = false) => {
     const c = commits[i];
     if (!c) return;
-    onPick(c.sha);
+    (fresh && onPickNew ? onPickNew : onPick)(c.sha);
     onClose();
   };
   const marked = (text: string) => markWords(text, words).map((r, k) => (r.hit ? <mark key={k}>{r.text}</mark> : <span key={k}>{r.text}</span>));
@@ -90,6 +105,10 @@ export function CommitPicker({ link, workspaceId, current, onPick, onClose }: { 
               title={`${c.sha}\n${c.author} <${c.email}>\n${new Date(c.date).toLocaleString()}\n\n${c.subject}`}
               onMouseMove={() => setHighlight(i)}
               onClick={() => pick(i)}
+              onContextMenu={(e) => {
+                e.preventDefault();
+                pick(i, true);
+              }}
             >
               <span className="commit-sha">{marked(shortSha(c.sha))}</span>
               <span className="commit-subject">{marked(c.subject || "（没有说明）")}</span>
@@ -116,7 +135,7 @@ export function CommitPicker({ link, workspaceId, current, onPick, onClose }: { 
                 : "正在读取提交…"}
           </span>
           <span className="spacer" />
-          <span>↑↓ 选择 · 回车在新窗口查看 · Esc 关闭</span>
+          <span>{onPickNew ? "↑↓ 选择 · 回车在本窗口切换 · 右键在新窗口打开 · Esc 关闭" : "↑↓ 选择 · 回车在新窗口查看 · Esc 关闭"}</span>
         </div>
       </div>
     </div>

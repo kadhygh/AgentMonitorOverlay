@@ -32,7 +32,7 @@ import { OverviewRuler } from "./OverviewRuler.js";
 import { pairKinds, rowKinds } from "./overview.js";
 import { splitRows } from "./splitview.js";
 import { CommitPicker } from "./CommitPicker.js";
-import { openReview } from "./open.js";
+import { openReview, switchReview } from "./open.js";
 import { formatWhen } from "../attach/refs.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
@@ -631,7 +631,18 @@ export function ReviewPage({
         </SendBar>
       )}
 
-      {picking && <CommitPicker link={link} workspaceId={workspace.id} current={sha ?? commit} onPick={(c) => openReview({ workspaceId: workspace.id, commit: c })} onClose={() => setPicking(false)} />}
+      {picking && (
+        // A commit's window switches to the picked commit (a right click opens a new window); the working tree's
+        // window opens each commit in a window of its own.
+        <CommitPicker
+          link={link}
+          workspaceId={workspace.id}
+          current={sha ?? commit}
+          onPick={(c) => (commit ? switchReview({ workspaceId: workspace.id, commit: c }) : openReview({ workspaceId: workspace.id, commit: c }))}
+          {...(commit ? { onPickNew: (c: string) => openReview({ workspaceId: workspace.id, commit: c }) } : {})}
+          onClose={() => setPicking(false)}
+        />
+      )}
     </div>
   );
 }

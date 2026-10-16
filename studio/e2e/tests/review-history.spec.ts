@@ -179,7 +179,7 @@ test("历史 lists the branch's commits; one opens read-only in a window of its 
   expect(await reviewWindows(studio)).toHaveLength(2);
 });
 
-test("历史 opened from a commit's window marks that commit [CURRENT] and starts the list there (2026-10-16)", async () => {
+test("历史 opened from a commit's window marks that commit [CURRENT] and starts the list there; a pick switches the window, a right click opens a new one (2026-10-16)", async () => {
   studio = await launchStudio();
   const dir = studio.workspace("game");
   git(dir, "init", "-q", "-b", "main");
@@ -230,4 +230,30 @@ test("历史 opened from a commit's window marks that commit [CURRENT] and start
   await expect(picker.getByTestId("commit-row").first()).toHaveAttribute("aria-selected", "true");
   await picker.getByRole("textbox", { name: "搜索提交" }).fill("step 16");
   await expect(current).toContainText("[CURRENT]");
+
+  // A pick in a commit's window switches that window; a right click opens a new one.
+  const step = (n: number) => git(dir, "rev-parse", `HEAD~${60 - n}`).trim();
+  await picker.getByRole("textbox", { name: "搜索提交" }).fill("");
+  await expect(picker).toContainText("回车在本窗口切换 · 右键在新窗口打开");
+  const before = (await reviewWindows(studio)).length;
+  await picker.locator(`[data-testid="commit-row"][data-sha="${step(17)}"]`).click();
+  await expect(shown.getByTestId("review-commit")).toContainText("step 17");
+  expect(shown.url()).toContain(`&commit=${step(17)}`);
+  expect(await reviewWindows(studio)).toHaveLength(before);
+  await shown.getByTestId("review-history").click();
+  await expect(picker.locator(`[data-testid="commit-row"][data-sha="${step(17)}"]`)).toContainText("[CURRENT]");
+  const another = studio.app.waitForEvent("window");
+  await picker.locator(`[data-testid="commit-row"][data-sha="${step(10)}"]`).click({ button: "right" });
+  const fresh = await another;
+  await expect(fresh.getByTestId("review-commit")).toContainText("step 10");
+  await expect(picker).toHaveCount(0);
+  await expect(shown.getByTestId("review-commit")).toContainText("step 17");
+  expect(await reviewWindows(studio)).toHaveLength(before + 1);
+  // The switched window now counts as step 17's: opening step 17 again opens nothing new.
+  await studio.page.evaluate(
+    ({ id, sha }) => (window as unknown as { amo: { openReview(t: { workspaceId: string; commit?: string }): Promise<void> } }).amo.openReview({ workspaceId: id, commit: sha }),
+    { id: ws.id, sha: step(17) },
+  );
+  await studio.page.waitForTimeout(300);
+  expect(await reviewWindows(studio)).toHaveLength(before + 1);
 });

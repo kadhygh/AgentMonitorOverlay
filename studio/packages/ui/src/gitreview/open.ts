@@ -5,13 +5,20 @@ import { reviewHash, type ReviewTarget } from "./logic.js";
 
 // Opening the Git Review window, and whether a project can be reviewed at all.
 
-type ReviewBridge = { openReview?(target: ReviewTarget): Promise<void> };
+type ReviewBridge = { openReview?(target: ReviewTarget): Promise<void>; switchReview?(target: { workspaceId: string; commit: string }): Promise<void> };
 
 /** Opens (or brings forward) the project's review window; outside Electron, the same page in a new tab. */
 export function openReview(target: ReviewTarget): void {
   const bridge = window.amo as ReviewBridge | undefined;
   if (bridge?.openReview) void bridge.openReview(target);
   else window.open(`${location.pathname}${location.search}${reviewHash(target)}`, "_blank");
+}
+
+/** A commit's window: shows another commit of the same project in this window (2026-10-16). */
+export function switchReview(target: { workspaceId: string; commit: string }): void {
+  const bridge = window.amo as ReviewBridge | undefined;
+  if (bridge?.switchReview) void bridge.switchReview(target);
+  else location.hash = reviewHash(target);
 }
 
 // Asked once per project while the window lives: a folder rarely becomes (or stops being) a repository.
