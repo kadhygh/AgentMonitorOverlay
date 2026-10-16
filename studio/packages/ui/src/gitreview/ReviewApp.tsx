@@ -631,7 +631,7 @@ export function ReviewPage({
         </SendBar>
       )}
 
-      {picking && <CommitPicker link={link} workspaceId={workspace.id} onPick={(c) => openReview({ workspaceId: workspace.id, commit: c })} onClose={() => setPicking(false)} />}
+      {picking && <CommitPicker link={link} workspaceId={workspace.id} current={sha ?? commit} onPick={(c) => openReview({ workspaceId: workspace.id, commit: c })} onClose={() => setPicking(false)} />}
     </div>
   );
 }

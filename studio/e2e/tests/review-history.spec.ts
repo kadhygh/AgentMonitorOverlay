@@ -178,3 +178,56 @@ test("历史 lists the branch's commits; one opens read-only in a window of its 
   await studio.page.waitForTimeout(300);
   expect(await reviewWindows(studio)).toHaveLength(2);
 });
+
+test("历史 opened from a commit's window marks that commit [CURRENT] and starts the list there (2026-10-16)", async () => {
+  studio = await launchStudio();
+  const dir = studio.workspace("game");
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "config", "core.autocrlf", "false");
+  for (let i = 1; i <= 60; i++) {
+    writeFileSync(join(dir, "log.txt"), `step ${i}\n`);
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", `step ${i}`);
+  }
+  const old = git(dir, "rev-parse", "HEAD~44").trim(); // "step 16", far down the list
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+
+  // The working tree's window: nothing is current.
+  const review = await openReview(studio, ws.id);
+  await review.getByTestId("review-history").click();
+  await expect(review.getByTestId("commit-row").first()).toContainText("step 60");
+  await expect(review.getByTestId("commit-current")).toHaveCount(0);
+  await review.keyboard.press("Escape");
+
+  // A commit's window: its row is marked, highlighted and scrolled into the list.
+  const opened = studio.app.waitForEvent("window");
+  await studio.page.evaluate(
+    ({ id, sha }) => (window as unknown as { amo: { openReview(t: { workspaceId: string; commit?: string }): Promise<void> } }).amo.openReview({ workspaceId: id, commit: sha }),
+    { id: ws.id, sha: old },
+  );
+  const shown = await opened;
+  await expect(shown.getByTestId("review-commit")).toContainText("step 16");
+  await shown.getByTestId("review-history").click();
+  const picker = shown.getByTestId("commit-picker");
+  const current = picker.locator(`[data-testid="commit-row"][data-sha="${old}"]`);
+  await expect(current).toContainText("[CURRENT]");
+  await expect(current).toHaveClass(/current/);
+  await expect(current).toHaveAttribute("aria-selected", "true");
+  await expect(picker.getByTestId("commit-current")).toHaveCount(1);
+  await expect
+    .poll(() =>
+      current.evaluate((row) => {
+        const list = row.closest<HTMLElement>(".file-picker-list")!.getBoundingClientRect();
+        const r = row.getBoundingClientRect();
+        // In the middle part of the list, not just peeking in at an edge.
+        return r.top >= list.top + list.height / 4 && r.bottom <= list.bottom - list.height / 4;
+      }),
+    )
+    .toBe(true);
+  await shoot(studio, shown, "&commit=", "history-current");
+  // Searching moves the highlight as before; the mark stays on its row.
+  await picker.getByRole("textbox", { name: "搜索提交" }).fill("step 1");
+  await expect(picker.getByTestId("commit-row").first()).toHaveAttribute("aria-selected", "true");
+  await picker.getByRole("textbox", { name: "搜索提交" }).fill("step 16");
+  await expect(current).toContainText("[CURRENT]");
+});

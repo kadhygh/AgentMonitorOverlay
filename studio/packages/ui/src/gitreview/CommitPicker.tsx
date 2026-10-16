@@ -7,8 +7,10 @@ import { filterCommits, markWords, queryWords, shortSha } from "./history.js";
 /**
  * 历史 (S13-B): the branch's latest commits, found like files in 找文件 (Ctrl+P): one box that matches the subject,
  * the hash and the author. Enter (or a click) opens the commit in a window of its own.
+ * 2026-10-16: opened from a commit's window, that commit is marked [CURRENT] and the list starts there, so the person
+ * can go on from where they were.
  */
-export function CommitPicker({ link, workspaceId, onPick, onClose }: { link: HostLink; workspaceId: string; onPick(sha: string): void; onClose(): void }) {
+export function CommitPicker({ link, workspaceId, current, onPick, onClose }: { link: HostLink; workspaceId: string; current?: string | null; onPick(sha: string): void; onClose(): void }) {
   const [log, setLog] = useState<GitLog | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -27,10 +29,19 @@ export function CommitPicker({ link, workspaceId, onPick, onClose }: { link: Hos
 
   const words = useMemo(() => queryWords(query), [query]);
   const commits = useMemo(() => filterCommits(log?.commits ?? [], query), [log, query]);
-  useEffect(() => setHighlight(0), [query]);
+  const isCurrent = (sha: string) => !!current && (sha.startsWith(current) || current.startsWith(sha));
+  // The commit shown now, when it is listed: where the highlight starts, scrolled to the middle of the list.
+  const startAt = query.trim() ? 0 : Math.max(0, commits.findIndex((c) => isCurrent(c.sha)));
+  useEffect(() => setHighlight(startAt), [query, log]); // eslint-disable-line react-hooks/exhaustive-deps
+  const centred = useRef(false);
   useEffect(() => {
-    list.current?.querySelector<HTMLElement>(`[data-index="${highlight}"]`)?.scrollIntoView({ block: "nearest" });
-  }, [highlight]);
+    const row = list.current?.querySelector<HTMLElement>(`[data-index="${highlight}"]`);
+    if (!row) return;
+    // Once, when the highlight first lands on the current commit: in the middle of the list.
+    const centre = !centred.current && startAt > 0 && highlight === startAt;
+    if (centre) centred.current = true;
+    row.scrollIntoView({ block: centre ? "center" : "nearest" });
+  }, [highlight, log]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const pick = (i: number) => {
     const c = commits[i];
@@ -74,13 +85,19 @@ export function CommitPicker({ link, workspaceId, onPick, onClose }: { link: Hos
               data-testid="commit-row"
               data-sha={c.sha}
               aria-selected={i === highlight}
-              className={i === highlight ? "hl" : undefined}
+              aria-current={isCurrent(c.sha) || undefined}
+              className={[i === highlight ? "hl" : "", isCurrent(c.sha) ? "current" : ""].filter(Boolean).join(" ") || undefined}
               title={`${c.sha}\n${c.author} <${c.email}>\n${new Date(c.date).toLocaleString()}\n\n${c.subject}`}
               onMouseMove={() => setHighlight(i)}
               onClick={() => pick(i)}
             >
               <span className="commit-sha">{marked(shortSha(c.sha))}</span>
               <span className="commit-subject">{marked(c.subject || "（没有说明）")}</span>
+              {isCurrent(c.sha) && (
+                <span className="commit-current" title="这个窗口正在看的提交" data-testid="commit-current">
+                  [CURRENT]
+                </span>
+              )}
               <span className="commit-author">{marked(c.author)}</span>
               <span className="file-row-meta when">{formatWhen(c.date)}</span>
             </button>
