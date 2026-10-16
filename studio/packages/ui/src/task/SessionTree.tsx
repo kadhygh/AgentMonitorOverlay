@@ -9,6 +9,7 @@ import { EffortBars, FastToggle } from "../chat/pickers.js";
 import { ModelRow } from "../newtask/ModelRow.js";
 import { useDragWidth } from "../lib/dragWidth.js";
 import { needsPerson, relativeTime, SESSION_LOOK } from "../lib/status.js";
+import { wakeLabel } from "../chat/WakeBar.js";
 import { Mark } from "../chat/pickers.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
 
@@ -273,6 +274,11 @@ function TreeLevel({
                 </span>
               )}
               {s.profileId !== parentProfile && <Mark profile={profileOf(s.profileId)} small />}
+              {s.wake && (s.wake.loop || s.wake.limit) && (
+                <span className="tree-wake" data-kind={s.wake.limit ? "limit" : "loop"} data-testid="session-wake">
+                  {wakeLabel(s.wake)}
+                </span>
+              )}
               {loud ? (
                 <span className="tree-badge" style={{ color: look.text }}>
                   {look.label}

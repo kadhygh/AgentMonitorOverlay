@@ -20,6 +20,7 @@ import { markFileMessage } from "../marks/open.js";
 import { QuestionCard } from "../chat/questions/QuestionCard.js";
 import { SessionDecisions } from "../collab/DecisionPanel.js";
 import { PlanReviewBar, sendRevision } from "../chat/questions/PlanReview.js";
+import { WakeBar } from "../chat/WakeBar.js";
 import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
 import { AnnotationBubble, contentRect, SelectionBar, type BubbleTarget, type ContentRect } from "../review/AnnotationBubble.js";
 import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, onAnnotationsPainted, paintedEnds, useAnnotationHighlights } from "../review/highlights.js";
@@ -520,6 +521,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             />
           )}
           <BackgroundTasks link={link} sessionId={session.id} items={items} readOnly={readOnly} onError={(text) => onError?.(text)} />
+          {!readOnly && <WakeBar link={link} session={session} />}
           {suggestion && chat.settings.promptSuggestions && !generating && !readOnly && !planReview && !draft.trim() && (
             <SuggestionChips
               text={suggestion}

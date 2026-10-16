@@ -138,9 +138,39 @@ export interface Session {
   runtimeRef: string | null;
   /** Model, effort and permissions chosen for this session (switchable while it lives). */
   options: SessionOptions;
+  /** What starts the session's next turn without the person (Claude: its /loop, a usage limit); absent = nothing. */
+  wake?: SessionWake | null;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   archivedAt: Timestamp | null;
+}
+
+/**
+ * A Claude session that goes on by itself (stage 15, 2026-10-16). Studio keeps its Claude Code process while this is
+ * set, so the CLI's own timers (ScheduleWakeup, its wait at a usage limit) are not lost to the idle close.
+ */
+export interface SessionWake {
+  /** The agent's /loop: its latest ScheduleWakeup. Cleared when the loop stops (or the person stops it). */
+  loop?: {
+    /** When the wakeup fires. */
+    at: Timestamp;
+    /** The reason the agent gave. */
+    reason: string;
+    /** The prompt the wakeup sends (the /loop command); Studio sends it itself when the Claude Code process is gone. */
+    prompt: string;
+  };
+  /** The last turn stopped at a claude.ai usage limit. Cleared when a turn starts again. */
+  limit?: {
+    /** When the limit resets; null when the CLI did not say. */
+    resetsAt: Timestamp | null;
+    /** The CLI's message ("You've hit your session limit · resets …"). */
+    message: string;
+    /**
+     * Studio sends a message to go on a little after the reset, unless the CLI has gone on by itself. On by default in a
+     * loop; the person switches it in the conversation.
+     */
+    autoContinue: boolean;
+  };
 }
 
 /**

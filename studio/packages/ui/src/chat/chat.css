@@ -359,3 +359,19 @@
 }
 @keyframes turn-start-hint-in { from { opacity: 0; transform: translate(-50%, 4px); } }
 @media (prefers-reduced-motion: reduce) { .turn-start-hint { animation: none; } }
+
+/* Stage 15: a session that goes on by itself (its loop, a usage limit), above the composer. */
+.wake-bar {
+  width: 100%; max-width: var(--chat-width); display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 14px;
+  border-radius: var(--r-l); border: 1px solid var(--border); background: var(--tint); font-size: 13px;
+}
+.wake-bar[data-kind="limit"] { border-color: var(--attention-border); background: var(--attention-bg); }
+.wake-bar-dot { flex: none; width: 6px; height: 6px; border-radius: 50%; background: var(--running); }
+.wake-bar[data-kind="limit"] .wake-bar-dot { background: var(--attention); }
+.wake-bar-text { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--chat-label); }
+.wake-bar-text b { font-weight: 600; color: var(--text); }
+.wake-bar-error { flex: 0 1 auto; min-width: 0; font-size: 12px; color: var(--error-text); }
+.wake-bar-check { flex: none; display: inline-flex; align-items: center; gap: 4px; color: var(--text-dim); cursor: pointer; }
+.wake-bar .btn-ghost { flex: none; }
+.tree-wake { flex: none; font-size: 11px; color: var(--running-text); white-space: nowrap; }
+.tree-wake[data-kind="limit"] { color: var(--attention); }

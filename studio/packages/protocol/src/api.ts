@@ -282,6 +282,8 @@ export interface HostRoutes {
   /** `annotations`: annotations of this session the message refers to (批注1…); they go after the text, see composeAnnotationRefs. */
   "POST /api/sessions/:id/messages": { req: { text: string; attachments?: Id[]; annotations?: Id[] }; res: { mode: "start" | "steer" | "queue" } };
   "POST /api/sessions/:id/interrupt": { req: void; res: { ok: true } };
+  /** Claude (stage 15): stop the session's loop, or switch going on by itself after a usage limit (Session.wake). */
+  "POST /api/sessions/:id/wake": { req: { stopLoop: true } | { autoContinue: boolean }; res: Session };
   "POST /api/sessions/:id/fork": { req: { profileId?: Id }; res: Session };
   /** Switches the session's model, effort or permissions (null clears back to the default). Codex: from the next turn. */
   /** Renames the session in its runtime too (Codex thread name, Claude session title). */

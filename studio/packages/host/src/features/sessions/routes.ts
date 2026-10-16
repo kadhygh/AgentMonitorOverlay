@@ -16,6 +16,7 @@ export function sessionsRoutes(service: HostService): Route[] {
       if (!Array.isArray(annotations) || annotations.some((a) => typeof a !== "string")) throw new HostError("bad_request", "annotations must be a list of ids");
       return service.sessions.sendMessage(params.id!, b.text === undefined && (attachments.length || annotations.length) ? "" : str(b.text, "text"), attachments as string[], annotations as string[]);
     }),
+    route("POST", "/api/sessions/:id/wake", ({ params, body }) => service.sessions.setWakeChoice(params.id!, body)),
     route("POST", "/api/sessions/:id/interrupt", async ({ params }) => (await service.sessions.interrupt(params.id!), { ok: true })),
     route("POST", "/api/sessions/:id/fork", ({ params, body }) => {
       const p = obj(body).profileId;

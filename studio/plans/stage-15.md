@@ -59,3 +59,31 @@
 |---|---|
 | 设计讨论 | ✅ 2026-10-15，决定见上 |
 | s15-00 预研 MCP 说明 | ✅ 见上 |
+| S15-L loop 与额度上限、恢复的子 agent | ✅ 2026-10-16，工作树 `AgentMonitorOverlay-s15-loop`（分支 `studio/s15-loop`），见下 |
+
+## S15-L：loop、额度上限、用 SendMessage 恢复的子 agent（2026-10-16）
+
+### 用户遇到的问题
+
+1. 10-15 晚主控在 loop 里推进迁移任务，22:15 碰到 Claude 订阅的 5 小时额度（00:30 重置），之后一直没再推进，界面上也看不出 loop 的状态。
+2. 10-16 早上主控说「子 agent 在跑」，Studio 的会话列表里却没有在运行的子会话。
+
+### 查到的原因（现场：主控 `s-faa97544…`，Claude 会话 `80bd8c7e…`）
+
+- **子 agent 看不到**：Studio 把子 agent 的消息按 `parent_tool_use_id` 转进子会话，用的是 Claude Code 进程级的内存表。22:25 左右 Studio 按「空闲 10 分钟」关了主控的进程；10:47 新进程里主控用 `SendMessage` 恢复了伤害统计的后台 agent（`a142af52110ef1772`），它的消息仍带原来 Agent 调用的 id（`toolu_016YZ…`），新进程的表里没有，消息被丢掉，子会话一直是「完成」。Claude 自己的记录 `subagents/agent-a142af52110ef1772.jsonl` 里有 10:47–10:52 的完整过程。另外，同一进程里用 SendMessage 恢复已结束的 agent，子会话也不会变回「运行中」；恢复后的结束通知带的是 SendMessage 的 id。
+- **10-16 中午又一次（同一进程里）**：遥控赛车 agent（`a1b712d56fee73670`，子会话 `s-0e7fdbc5…`）11:55 停在 P8，主控 11:55:38 用 SendMessage 恢复它。它的消息照常进了子会话，但状态一直是「完成」，列表里看不到在运行。主控进程（10:47 起）没换过。另一个风险：恢复的 agent 如果没有 CLI 任务登记，空闲关闭会把它连同进程一起关掉，所以现在子会话在运行时也不做空闲关闭。
+- **loop 断掉**：主控的 `ScheduleWakeup` 和 Claude Code 自己的「额度恢复后自动继续」（设置 `autoContinueAtUsageLimit`，默认开，只对 24 小时内重置的额度）都只活在进程里。Studio 的空闲关闭只看有没有回合和后台任务，碰到上限 10 分钟后就关了进程，两个计时都没了。SDK 模式下 CLI 会不会自己续，代码里看不出（昨晚进程被关，现场也说明不了）。
+
+### 做法（用户 2026-10-16 同意：先不关进程，CLI 没续上时 Studio 补一条）
+
+- 会话新增 `wake`（迁移 13，`sessions.wake` JSON）：`loop`（下次唤醒时间、原因、唤醒时发的 prompt）和 `limit`（重置时间、CLI 的提示、是否自动继续）。来源：`ScheduleWakeup` 的调用和结果（`scheduledFor`）、`rate_limit_event` 的 `rejected` + CLI 的上限提示（`USAGE_LIMIT_ERROR_PREFIXES` / `error: "rate_limit"`）。
+- 有 `wake` 时空闲关闭不关进程（额度上限：留到重置后 15 分钟）。loop 的唤醒到点后那一轮没再排唤醒，loop 结束。
+- Studio 自己的计时（`runtime/claude/wake.ts` 的 `studioWakeDue`）：额度上限且「恢复后自动继续」开着时，重置后 5 分钟 CLI 还没开新的一轮，Studio 发一条（loop 里发 loop 的 prompt，否则发「额度已恢复…从中断的地方继续」）；loop 的唤醒在进程还在时晚了 5 分钟、进程不在了（Host 重启）时按时，由 Studio 发。「恢复后自动继续」在 loop 里默认开，不在 loop 里默认关（用户在输入框上方勾选，Host 运行期间按会话记住）。Studio 两次自动继续至少隔 10 分钟（重置时间不准时不会连发）。host.log 记下是谁续上的（cli / studio / person），用来确认 SDK 下 CLI 会不会自己续。
+- 子 agent：内存表里找不到时按子会话的 runtimeRef 找回；SendMessage 的消息显示在子会话里；恢复时（结果里的 `resumedAgentId`，agent id → Agent 调用从 Claude 的 `subagents/agent-<id>.meta.json` 查）子会话变回「运行中」，带 SendMessage id 的结束通知也能对上。
+- 界面：输入框上方的条「Loop 中 · 下次 11:24（30 分钟后）· 原因」+「停止 loop」；「额度用完 · 00:30 恢复」+ 勾选「恢复后自动继续」。会话列表的行上「loop · 11:24」「等额度 · 00:30」。「停止 loop」= 清掉 wake，关掉进程（CLI 排好的唤醒随进程消失；正在跑的那一轮结束后再关）。接口 `POST /api/sessions/:id/wake`。
+- 没做：Focus 里显示等额度的会话（另一个会话在改 Focus，避免冲突）；Codex 会话的额度上限。
+
+### 测试
+
+- 单测 `wake.test.ts`、store 迁移 13；集成 `wake.integration.test.ts`（真 SDK + mock，ScheduleWakeup / 额度上限 / SendMessage 恢复按真实转录的形状注入）：保留进程、loop 结束后放掉、停止 loop、loop 里碰到上限后自动继续、非 loop 等勾选后继续、进程关掉后恢复的 agent 找回子会话。
+- e2e `wake.spec.ts`：写入 wake 后重启（Studio 接管 loop 的提示）、条和列表标记、停止 loop、勾选自动继续；截图 `screenshots/stage-15/S15-01…02`。

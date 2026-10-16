@@ -51,6 +51,8 @@ export interface SessionRuntimeApi {
   runCommand?(sessionId: Id, name: string, args: string): Promise<SlashCommandResult>;
   /** Stops a background command (Claude only). */
   stopBackground?(sessionId: Id, taskId: string): Promise<void>;
+  /** Claude only (stage 15): stop the session's loop, or switch going on by itself after a usage limit. */
+  setWakeChoice?(sessionId: Id, choice: { stopLoop?: boolean; autoContinue?: boolean }): Promise<Session>;
   /** The conversation settings changed: running sessions follow where the runtime can. */
   applyChatSettings?(settings: ChatSettings): void;
   on(event: "event", listener: (e: HostEvent) => void): unknown;
@@ -153,6 +155,11 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
     const r = this.forSession(sessionId);
     if (!r.stopBackground) throw new Error("this runtime has no background commands");
     return r.stopBackground(sessionId, taskId);
+  }
+  setWakeChoice(sessionId: Id, choice: { stopLoop?: boolean; autoContinue?: boolean }): Promise<Session> {
+    const r = this.forSession(sessionId);
+    if (!r.setWakeChoice) throw new Error("this runtime has no loop");
+    return r.setWakeChoice(sessionId, choice);
   }
   applyChatSettings(settings: ChatSettings): void {
     for (const r of Object.values(this.runtimes)) r.applyChatSettings?.(settings);

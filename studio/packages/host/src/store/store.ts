@@ -11,6 +11,7 @@ import {
   type Session,
   type SessionItem,
   type SessionOptions,
+  type SessionWake,
   type Task,
   type TaskColumn,
   type Topic,
@@ -101,10 +102,22 @@ function toSession(r: Row): Session {
     writer: str(r.writer) as Session["writer"],
     runtimeRef: strOrNull(r.runtime_ref),
     options: parseOptions(r.options),
+    ...parseWake(r.wake),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
     archivedAt: strOrNull(r.archived_at),
   };
+}
+
+/** Only a session something will wake carries the field. */
+function parseWake(v: unknown): { wake?: SessionWake } {
+  if (typeof v !== "string" || !v) return {};
+  try {
+    const o = JSON.parse(v) as SessionWake;
+    return o.loop || o.limit ? { wake: o } : {};
+  } catch {
+    return {};
+  }
 }
 
 function parseOptions(v: unknown): SessionOptions {
@@ -367,13 +380,16 @@ export class Store {
     }
   }
 
-  updateSession(id: Id, patch: Partial<Pick<Session, "title" | "status" | "writer" | "runtimeRef" | "profileId" | "options">>): Session {
+  /** `wake: null` (or one with neither part) clears it. */
+  updateSession(id: Id, patch: Partial<Pick<Session, "title" | "status" | "writer" | "runtimeRef" | "profileId" | "options" | "wake">>): Session {
     const s = this.getSession(id);
     if (!s) throw new Error(`session ${id} not found`);
-    const next: Session = { ...s, ...patch, updatedAt: this.timestamp() };
+    const { wake: _old, ...rest } = { ...s, ...patch, updatedAt: this.timestamp() };
+    const wake = patch.wake === undefined ? s.wake : patch.wake;
+    const next: Session = { ...rest, ...(wake && (wake.loop || wake.limit) ? { wake } : {}) };
     this.db
-      .prepare("UPDATE sessions SET title = ?, status = ?, writer = ?, runtime_ref = ?, profile_id = ?, options = ?, updated_at = ? WHERE id = ?")
-      .run(next.title, next.status, next.writer, next.runtimeRef, next.profileId, JSON.stringify(next.options), next.updatedAt, id);
+      .prepare("UPDATE sessions SET title = ?, status = ?, writer = ?, runtime_ref = ?, profile_id = ?, options = ?, wake = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, next.status, next.writer, next.runtimeRef, next.profileId, JSON.stringify(next.options), next.wake ? JSON.stringify(next.wake) : null, next.updatedAt, id);
     return next;
   }
 

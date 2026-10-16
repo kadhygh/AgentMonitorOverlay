@@ -78,6 +78,19 @@ export class SessionsFeature extends Feature {
     await this.wrap(() => this.runtime.interrupt(sessionId));
   }
 
+  /** Stage 15: `{ stopLoop: true }` stops the session's loop; `{ autoContinue }` switches going on after a usage limit. */
+  setWakeChoice(sessionId: Id, body: unknown): Promise<Session> {
+    const s = this.requireSession(sessionId);
+    if (s.archivedAt) throw new HostError("read_only", "archived sessions have no loop");
+    const b = body && typeof body === "object" ? (body as Record<string, unknown>) : {};
+    const choice: { stopLoop?: boolean; autoContinue?: boolean } = {};
+    if (b.stopLoop === true) choice.stopLoop = true;
+    else if (typeof b.autoContinue === "boolean") choice.autoContinue = b.autoContinue;
+    else throw new HostError("bad_request", "stopLoop: true or autoContinue: boolean is required");
+    if (!this.runtime.setWakeChoice) throw new HostError("bad_request", "this Host has no loop");
+    return this.wrap(() => this.runtime.setWakeChoice!(sessionId, choice));
+  }
+
   async fork(sessionId: Id, profileId?: Id): Promise<Session> {
     const s = this.requireSession(sessionId);
     if (s.archivedAt) throw new HostError("read_only", "archived sessions cannot be forked");

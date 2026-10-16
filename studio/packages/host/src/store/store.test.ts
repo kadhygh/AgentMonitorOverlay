@@ -41,9 +41,27 @@ function seed(store: Store) {
 describe("Store", () => {
   it("applies migrations once", () => {
     const path = tempDbPath();
-    expect(makeStore(path).schemaVersion()).toBe(12);
+    expect(makeStore(path).schemaVersion()).toBe(13);
     open.pop()!.close();
-    expect(makeStore(path).schemaVersion()).toBe(12);
+    expect(makeStore(path).schemaVersion()).toBe(13);
+  });
+
+  it("keeps a session's wake until it is cleared (stage 15)", () => {
+    const store = makeStore();
+    const { main } = seed(store);
+    expect("wake" in store.getSession(main.id)!).toBe(false);
+    const loop = { at: "2026-10-16T03:00:00.000Z", reason: "兜底", prompt: "/loop go on" };
+    store.updateSession(main.id, { wake: { loop } });
+    expect(store.getSession(main.id)!.wake).toEqual({ loop });
+    // Other changes leave it alone.
+    expect(store.updateSession(main.id, { status: "running" }).wake).toEqual({ loop });
+    expect(store.getSession(main.id)!.wake).toEqual({ loop });
+    // Cleared by null, or by one with nothing in it.
+    store.updateSession(main.id, { wake: {} });
+    expect("wake" in store.getSession(main.id)!).toBe(false);
+    store.updateSession(main.id, { wake: { loop } });
+    expect("wake" in store.updateSession(main.id, { wake: null })).toBe(false);
+    expect("wake" in store.getSession(main.id)!).toBe(false);
   });
 
   it("creates, reads and updates workspaces, tasks and sessions", () => {

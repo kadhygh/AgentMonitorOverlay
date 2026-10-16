@@ -13,6 +13,7 @@ import { classifyCommand, fileDiff, formatInput, shortPath, tail, textDiff } fro
 import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
 import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLogin } from "./claude-login.js";
 import { CLAUDE_USAGE_LABELS, ClaudeUsageError, fetchClaudeUsage, localAccessToken } from "./claude-usage.js";
+import { agentToolUseId, isUsageLimitText, keepsProcess, loopFromScheduleWakeup, studioWakeDue, WAKE_MIN_GAP_MS } from "./wake.js";
 import { agentsMdInstructions } from "./project-instructions.js";
 import { AMO_MCP_INSTRUCTIONS, AMO_MCP_NAME, type AmoTool } from "../../mcp/tools.js";
 
@@ -127,6 +128,23 @@ interface Live {
   commands: SdkSlashCommand[] | null;
   /** Tools the person declined in Studio (a permission_denied for them needs no notice). */
   declinedByPerson: Set<string>;
+  // ---- stage 15, loop and usage limit (2026-10-16) ----
+  /** Background agent id (the CLI's task id) -> its Agent call, to find the child session a SendMessage resumes. */
+  agents: Map<string, string>;
+  /** SendMessage call that resumed an agent -> its child session (the agent's next task notification names that call). */
+  resumes: Map<string, Id>;
+  /** The latest rate_limit_event that refused a request (when the limit resets). */
+  refused: { resetsAt?: number; type?: string } | null;
+  /** This turn stopped at a usage limit: the CLI's text. */
+  limitText: string | null;
+  /** This turn called ScheduleWakeup (set or stopped the loop). */
+  scheduled: boolean;
+  /** Who started this turn while a usage limit was pending (for the log: did the CLI go on by itself?). */
+  afterLimit: "cli" | "studio" | "person" | null;
+  /** The person stopped the loop during this turn: the process closes when the turn ends (taking the CLI's wakeup with it). */
+  stopLoopAtEnd: boolean;
+  /** The next message is Studio's own (wake), not the person's. */
+  sendingForStudio: boolean;
 }
 
 /**
@@ -195,6 +213,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly commandCache = new Map<string, { at: number; list: SdkSlashCommand[] }>();
   /** The `/` command a session was last sent, to name the output of a command that runs without the model. */
   private readonly lastCommand = new Map<Id, string>();
+  /** Studio's own timer per session with a wake (stage 15): it goes on when the CLI has not. */
+  private readonly wakeTimers = new Map<Id, ReturnType<typeof setTimeout>>();
+  /** The Host is closing: no new wake timers. */
+  private shuttingDown = false;
+  /** The person's 「恢复后自动继续」 per session, kept for the next usage limit too. */
+  private readonly autoContinueChoice = new Map<Id, boolean>();
+  /** When Studio last started a turn itself, per session (its next one waits WAKE_MIN_GAP_MS). */
+  private readonly lastStudioWake = new Map<Id, number>();
 
   /** The person's own config dir; `explicit` when they set CLAUDE_CONFIG_DIR (read once: helpers set it for a while). */
   private readonly local: { dir: string; explicit: boolean };
@@ -243,7 +269,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     await this.closing.get(sessionId);
     const live = this.ensureLive(session);
     const mode: SendMode = live.running ? "queue" : "start";
-    if (!live.running) this.turnStarted(sessionId, live);
+    if (!live.running) this.turnStarted(sessionId, live, "person");
     const shown = images.map((a) => ({ id: a.id, path: a.path }));
     this.appendItem(sessionId, { type: "user", text, ...(shown.length ? { images: shown } : {}) }, { method: mode === "queue" ? "user/queued" : "user" });
     this.clearIdle(live);
@@ -539,6 +565,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   /** Closes every running query and waits for the processes to end (Host shutdown). Sessions resume on the next message. */
   async closeAll(): Promise<void> {
+    this.shuttingDown = true;
+    for (const t of this.wakeTimers.values()) clearTimeout(t);
+    this.wakeTimers.clear();
     await Promise.all([...this.live.keys()].map((id) => this.close(id)));
     await Promise.all([...this.closing.values()]);
   }
@@ -672,6 +701,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       notices: new Map(),
       commands: null,
       declinedByPerson: new Set(),
+      agents: new Map(),
+      resumes: new Map(),
+      refused: null,
+      limitText: null,
+      scheduled: false,
+      afterLimit: null,
+      stopLoopAtEnd: false,
+      sendingForStudio: false,
     };
     live.q = query({
       prompt: input(),
@@ -751,6 +788,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       if (this.store.getSession(childId)?.status === "running") this.setStatus(childId, err && !live.interrupted ? "error" : "idle");
     }
     if (!this.store.getSession(sessionId)) return;
+    // Its CLI's timers went with the process: Studio's own takes over (see studioWakeDue).
+    if (this.store.getSession(sessionId)?.wake) this.armWake(sessionId);
     if (err && !live.interrupted) {
       this.appendItem(sessionId, { type: "error", message: `Claude 会话异常结束：${firstLine(err)}` }, { method: "query/error" });
       this.setStatus(sessionId, "error");
@@ -779,10 +818,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   private onMessage(sessionId: Id, live: Live, m: SDKMessage): void {
     const parentToolUse = "parent_tool_use_id" in m ? m.parent_tool_use_id : null;
-    if (parentToolUse) return this.onSubagentMessage(live, parentToolUse, m);
+    if (parentToolUse) return this.onSubagentMessage(sessionId, live, parentToolUse, m);
     switch (m.type) {
       case "rate_limit_event": {
-        this.recordRateLimit(sessionId, (m as { rate_limit_info: { rateLimitType?: string; utilization?: number; resetsAt?: number } }).rate_limit_info);
+        const info = (m as { rate_limit_info: { status?: string; rateLimitType?: string; utilization?: number; resetsAt?: number } }).rate_limit_info;
+        this.recordRateLimit(sessionId, info);
+        if (info.status === "rejected") live.refused = { ...(info.resetsAt ? { resetsAt: info.resetsAt } : {}), ...(info.rateLimitType ? { type: info.rateLimitType } : {}) };
         return;
       }
       case "stream_event": {
@@ -846,6 +887,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
               this.appendItem(sessionId, { type: "reasoning", text, streaming: false }, { method: "assistant" });
             }
           } else if (block.type === "text") {
+            // The CLI's own message when a usage limit stops the turn (a synthetic assistant message, no stream).
+            if ((m as { error?: string }).error === "rate_limit" || isUsageLimitText(block.text)) live.limitText = block.text.trim();
             // One assistant message per completed block; it settles the oldest text item still streaming.
             const itemId = live.streaming.shift();
             if (itemId) {
@@ -860,7 +903,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
             if (block.name === "Agent" || block.name === "Task") this.startSubagent(sessionId, live, block.id, input);
             // The question item stands for these calls; a row is added only if they never reach the person.
             else if (QUESTION_TOOLS.has(block.name)) live.questionTools.set(block.id, { name: block.name, input });
-            else this.addToolCard(sessionId, live, block.id, block.name, input);
+            else {
+              this.addToolCard(sessionId, live, block.id, block.name, input);
+              if (block.name === "SendMessage") this.messageToAgent(sessionId, live, input);
+            }
           }
         }
         return;
@@ -889,6 +935,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
             this.addToolCard(sessionId, live, block.tool_use_id, asked.name, asked.input);
           }
           this.settleToolCard(live, block.tool_use_id, block.content, block.is_error === true);
+          const call = live.calls.get(block.tool_use_id);
+          const toolResult = (m as { tool_use_result?: unknown }).tool_use_result;
+          if (call?.name === "ScheduleWakeup" && block.is_error !== true) this.onScheduleWakeup(sessionId, live, call.input, toolResult);
+          if (call?.name === "SendMessage" && block.is_error !== true) this.onAgentResumed(sessionId, live, block.tool_use_id, toolResult);
           // A command sent to the background: its result names the file its output goes to.
           const bg = [...live.tasks].find(([, t]) => t.toolUseId === block.tool_use_id);
           const bgItem = bg ? live.bgItems.get(bg[0]) : undefined;
@@ -931,8 +981,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         const windows = Object.values((m as { modelUsage?: Record<string, { contextWindow?: number }> }).modelUsage ?? {}).map((u) => u.contextWindow ?? 0);
         const contextWindow = windows.length ? Math.max(...windows) : 0;
         this.endTurn(live, live.interrupted ? "interrupted" : m.is_error ? "failed" : "completed", usage, contextWindow || undefined);
+        const limited = live.limitText !== null;
         if (live.interrupted) {
           live.interrupted = false;
+          this.setStatus(sessionId, "idle");
+        } else if (limited) {
+          // A usage limit: the CLI has said so in the conversation; the wake bar shows when it resets.
           this.setStatus(sessionId, "idle");
         } else if (m.is_error) {
           const errors = (m as { errors?: string[] }).errors;
@@ -942,6 +996,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
           this.setStatus(sessionId, "error");
         } else {
           this.setStatus(sessionId, "idle");
+        }
+        this.wakeAfterTurn(sessionId, live);
+        if (live.stopLoopAtEnd) {
+          void this.close(sessionId);
+          return;
         }
         this.scheduleIdle(sessionId, live);
         return;
@@ -973,7 +1032,13 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         const toolUseId = str(s.tool_use_id) || undefined;
         live.background.add(taskId);
         live.tasks.set(taskId, { ...(toolUseId ? { toolUseId } : {}), description: str(s.description), ...(str(s.task_type) ? { type: str(s.task_type) } : {}) });
-        if (toolUseId && live.subs.has(toolUseId)) live.backgroundSubs.add(toolUseId);
+        if (toolUseId && live.subs.has(toolUseId)) {
+          live.backgroundSubs.add(toolUseId);
+          live.agents.set(taskId, toolUseId);
+        }
+        // An agent resumed with SendMessage starts again under the same task id.
+        const resumed = (toolUseId ? live.resumes.get(toolUseId) : undefined) ?? this.agentChild(live, taskId);
+        if (resumed) this.setStatus(resumed, "running");
         if (s.is_backgrounded === true) this.startBackground(sessionId, live, taskId);
         return;
       }
@@ -992,7 +1057,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         if (!taskId) return;
         live.background.delete(taskId);
         const toolUseId = str(s.tool_use_id);
-        const child = toolUseId ? live.subs.get(toolUseId) : undefined;
+        // A resumed agent's notification names the SendMessage call that resumed it.
+        const child = (toolUseId ? (live.subs.get(toolUseId) ?? live.resumes.get(toolUseId)) : undefined) ?? this.agentChild(live, taskId);
         if (child) this.setStatus(child, s.status === "completed" ? "completed" : s.status === "stopped" ? "idle" : "error");
         const itemId = live.bgItems.get(taskId);
         if (itemId) {
@@ -1146,10 +1212,18 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     this.appendItem(sessionId, { type: "subagent", childSessionId: child.id, summary: name }, { method: "tool_use", itemId: toolUseId });
   }
 
-  /** Messages of a subagent (parent_tool_use_id set) go into its child session. Its partial stream is not shown. */
-  private onSubagentMessage(live: Live, parentToolUse: string, m: SDKMessage): void {
-    const child = live.subs.get(parentToolUse);
+  /**
+   * Messages of a subagent (parent_tool_use_id set) go into its child session. Its partial stream is not shown. An agent
+   * started by an earlier Claude Code process of this session (resumed with SendMessage after an idle close or a usage
+   * limit) still finds its child session, by the Agent call in the child's runtimeRef.
+   */
+  private onSubagentMessage(sessionId: Id, live: Live, parentToolUse: string, m: SDKMessage): void {
+    const child = live.subs.get(parentToolUse) ?? this.adoptChild(sessionId, live, parentToolUse);
     if (!child) return;
+    if (m.type === "assistant" || m.type === "user") {
+      const s = this.store.getSession(child);
+      if (s && s.status !== "running") this.setStatus(child, "running");
+    }
     if (m.type === "assistant") {
       for (const block of m.message.content) {
         if (block.type === "text" && block.text) this.appendItem(child, { type: "agent", markdown: block.text, streaming: false }, { method: "assistant" });
@@ -1160,6 +1234,184 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         if (block.type === "tool_result") this.settleToolCard(live, block.tool_use_id, block.content, block.is_error === true);
       }
     }
+  }
+
+  /** The child session an earlier process of this session made for this Agent call; registered with this process. */
+  private adoptChild(sessionId: Id, live: Live, toolUseId: string): Id | undefined {
+    const parent = this.store.getSession(sessionId);
+    if (!parent?.runtimeRef) return undefined;
+    const child = this.store.findSessionByRuntimeRef("claude", `${parent.runtimeRef}/agent/${toolUseId}`);
+    if (!child || child.parentId !== sessionId) return undefined;
+    live.subs.set(toolUseId, child.id);
+    live.backgroundSubs.add(toolUseId);
+    return child.id;
+  }
+
+  /** A background agent's child session, by its agent id (the CLI's task id). */
+  private agentChild(live: Live, agentId: string, sessionId?: Id): Id | undefined {
+    let toolUseId = live.agents.get(agentId);
+    if (!toolUseId && sessionId) {
+      const ref = this.store.getSession(sessionId)?.runtimeRef;
+      toolUseId = ref ? (agentToolUseId(this.homeOf(sessionId).dir, ref, agentId) ?? undefined) : undefined;
+      if (toolUseId) live.agents.set(agentId, toolUseId);
+    }
+    if (!toolUseId) return undefined;
+    return live.subs.get(toolUseId) ?? (sessionId ? this.adoptChild(sessionId, live, toolUseId) : undefined);
+  }
+
+  /** SendMessage to one of the session's agents: the message shows in the agent's child session, as its next prompt. */
+  private messageToAgent(sessionId: Id, live: Live, input: Record<string, unknown>): void {
+    const to = typeof input.to === "string" ? input.to : "";
+    const text = typeof input.message === "string" ? input.message : "";
+    if (!to || !text) return;
+    const child = this.agentChild(live, to, sessionId);
+    if (child) this.appendItem(child, { type: "user", text }, { method: "agent/message" });
+  }
+
+  /** SendMessage resumed a stopped agent: its child session runs again, and the agent's next notification ends it. */
+  private onAgentResumed(sessionId: Id, live: Live, toolUseId: string, result: unknown): void {
+    const agentId = (result as { resumedAgentId?: unknown } | null | undefined)?.resumedAgentId;
+    if (typeof agentId !== "string") return;
+    const child = this.agentChild(live, agentId, sessionId);
+    if (!child) return;
+    live.resumes.set(toolUseId, child);
+    this.setStatus(child, "running");
+  }
+
+  // ---- wake: the agent's /loop and usage limits (stage 15) -----------------------------------------------------------
+
+  private onScheduleWakeup(sessionId: Id, live: Live, input: Record<string, unknown>, result: unknown): void {
+    live.scheduled = true;
+    if (live.stopLoopAtEnd) return;
+    const next = loopFromScheduleWakeup(input, result, this.now());
+    const wake = this.store.getSession(sessionId)?.wake ?? {};
+    const { loop: _old, ...rest } = wake;
+    this.setWake(sessionId, next.stop ? rest : { ...rest, loop: next.loop });
+  }
+
+  /** At the end of a turn: a usage limit to wait for, or a loop that has ended (its wakeup fired and was not renewed). */
+  private wakeAfterTurn(sessionId: Id, live: Live): void {
+    const wake = this.store.getSession(sessionId)?.wake ?? null;
+    const now = this.now();
+    if (live.stopLoopAtEnd) {
+      this.setWake(sessionId, null);
+    } else if (live.limitText !== null) {
+      const resetsAt = this.limitResetsAt(sessionId, live);
+      // In a loop Studio goes on after the reset by default; otherwise as the person last chose for this session.
+      const autoContinue = this.autoContinueChoice.get(sessionId) ?? !!wake?.loop;
+      this.setWake(sessionId, { ...(wake?.loop ? { loop: wake.loop } : {}), limit: { resetsAt, message: live.limitText, autoContinue } });
+      this.emit("log", `usage limit in ${sessionId}: resets ${resetsAt ?? "(unknown)"}, Studio continues: ${autoContinue}`);
+    } else {
+      if (live.afterLimit) this.emit("log", `${sessionId} went on after its usage limit (turn started by ${live.afterLimit})`);
+      if (wake?.loop && !live.scheduled && Date.parse(wake.loop.at) <= now.getTime()) {
+        const { loop: _done, ...rest } = wake;
+        this.setWake(sessionId, rest);
+      }
+    }
+    live.limitText = null;
+    live.scheduled = false;
+    live.afterLimit = null;
+    live.refused = null;
+  }
+
+  /** When the usage limit that stopped this turn resets: from the refusal, else a quota window known to be used up. */
+  private limitResetsAt(sessionId: Id, live: Live): string | null {
+    if (live.refused?.resetsAt) return new Date(live.refused.resetsAt * 1000).toISOString();
+    const profileId = this.store.getSession(sessionId)?.profileId;
+    const windows = profileId ? [...(this.usageCache.get(profileId)?.values() ?? [])] : [];
+    const now = this.now().getTime();
+    const full = windows.filter((w) => (w.usedPercent ?? 0) >= 100 && w.resetsAt && Date.parse(w.resetsAt) > now).map((w) => Date.parse(w.resetsAt!));
+    return full.length ? new Date(Math.max(...full)).toISOString() : null;
+  }
+
+  /** A turn starts: a usage limit it was waiting for is over (whoever started it: the CLI, Studio or the person). */
+  private wakeOnTurnStart(sessionId: Id, live: Live, by: "cli" | "person"): void {
+    const wake = this.store.getSession(sessionId)?.wake;
+    live.afterLimit = wake?.limit ? (by === "person" && live.sendingForStudio ? "studio" : by) : null;
+    live.sendingForStudio = false;
+    if (wake?.limit) {
+      const { limit: _over, ...rest } = wake;
+      this.setWake(sessionId, rest);
+    }
+  }
+
+  private setWake(sessionId: Id, wake: Session["wake"]): void {
+    const session = this.store.getSession(sessionId);
+    if (!session) return;
+    const next = wake && (wake.loop || wake.limit) ? wake : null;
+    if (JSON.stringify(session.wake ?? null) !== JSON.stringify(next)) this.updateSession(sessionId, { wake: next });
+    this.armWake(sessionId);
+  }
+
+  /** Studio's own timer for the session's wake (see studioWakeDue): replaced on every change. */
+  private armWake(sessionId: Id): void {
+    const old = this.wakeTimers.get(sessionId);
+    if (old) clearTimeout(old);
+    this.wakeTimers.delete(sessionId);
+    const session = this.store.getSession(sessionId);
+    if (!session || session.archivedAt || this.shuttingDown) return;
+    const due = this.wakeDue(session);
+    if (!due) return;
+    // setTimeout holds at most ~24.8 days; a later time is checked again then.
+    const delay = Math.min(Math.max(0, due.at - this.now().getTime()), 2 ** 31 - 1);
+    const timer = setTimeout(() => {
+      this.wakeTimers.delete(sessionId);
+      void this.fireWake(sessionId, due.at);
+    }, delay);
+    timer.unref?.();
+    this.wakeTimers.set(sessionId, timer);
+  }
+
+  /** studioWakeDue, never sooner than WAKE_MIN_GAP_MS after Studio's last one (a reset time that is off cannot make it spin). */
+  private wakeDue(session: Session): ReturnType<typeof studioWakeDue> {
+    const due = studioWakeDue(session.wake, this.live.has(session.id), this.now());
+    const last = this.lastStudioWake.get(session.id);
+    return due && last !== undefined ? { ...due, at: Math.max(due.at, last + WAKE_MIN_GAP_MS) } : due;
+  }
+
+  /** Studio starts the session's next turn itself: the CLI did not (or its process is gone). */
+  private async fireWake(sessionId: Id, plannedAt: number): Promise<void> {
+    const session = this.store.getSession(sessionId);
+    if (!session || session.archivedAt || session.writer !== "workbench") return;
+    const due = this.wakeDue(session);
+    // Changed since (a turn ran, the person stepped in) or not yet: armed again for what holds now.
+    if (!due || due.at !== plannedAt) return this.armWake(sessionId);
+    if (due.at > this.now().getTime()) return this.armWake(sessionId);
+    // Busy: the turn's end arms the timer again.
+    if (this.live.get(sessionId)?.running) return;
+    this.emit("log", `Studio wakes ${sessionId} (${due.why})`);
+    this.lastStudioWake.set(sessionId, this.now().getTime());
+    if (due.why === "loop") {
+      // The wakeup Studio sends replaces the CLI's (gone with its process, or late): the loop's next ScheduleWakeup sets it again.
+      const { loop: _sent, ...rest } = session.wake ?? {};
+      this.updateSession(sessionId, { wake: rest.limit ? rest : null });
+    }
+    try {
+      await this.closing.get(sessionId);
+      const live = this.ensureLive(this.requireSession(sessionId));
+      live.sendingForStudio = true;
+      await this.sendMessage(sessionId, due.text);
+    } catch (err) {
+      this.emit("log", `Studio could not wake ${sessionId}: ${firstLine(err)}`);
+      this.appendItem(sessionId, { type: "notice", level: "warning", message: `Studio 没能自动继续这条会话：${firstLine(err)}` });
+    }
+  }
+
+  /** The person: stop the loop (and Studio's own continuation), or switch auto-continue after a usage limit. */
+  async setWakeChoice(sessionId: Id, choice: { stopLoop?: boolean; autoContinue?: boolean }): Promise<Session> {
+    const session = this.requireSession(sessionId);
+    if (choice.stopLoop) {
+      const live = this.live.get(sessionId);
+      this.setWake(sessionId, null);
+      // The CLI's own wakeup lives in its process: it goes with it (now, or when the running turn ends).
+      if (live?.running) live.stopLoopAtEnd = true;
+      else if (live) await this.close(sessionId);
+      this.appendItem(sessionId, { type: "notice", level: "info", message: "你在 Studio 里停止了这条会话的 loop。" });
+    } else if (typeof choice.autoContinue === "boolean") {
+      this.autoContinueChoice.set(sessionId, choice.autoContinue);
+      if (session.wake?.limit) this.setWake(sessionId, { ...session.wake, limit: { ...session.wake.limit, autoContinue: choice.autoContinue } });
+    }
+    return this.requireSession(sessionId);
   }
 
   private addToolCard(sessionId: Id, live: Live, toolUseId: string, name: string, input: Record<string, unknown>): void {
@@ -1238,12 +1490,14 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     this.updateItem(turnItemId, (it) => (it.type === "turn" ? { ...it, decode: { ms: (it.decode?.ms ?? 0) + Math.max(0, ms), tokens: (it.decode?.tokens ?? 0) + tokens } } : it));
   }
 
-  private turnStarted(sessionId: Id, live: Live): void {
+  /** `by`: a message sent from Studio started it, or the CLI did (a wakeup, a task notification, a queued message). */
+  private turnStarted(sessionId: Id, live: Live, by: "cli" | "person" = "cli"): void {
     if (!live.turn) {
       live.notices.clear();
       const turnId = randomUUID();
       const item = this.appendItem(sessionId, { type: "turn", turnId, state: "running", startedAt: this.now().toISOString() }, { method: "turn/start", turnId });
       live.turn = { id: turnId, itemId: item.id };
+      this.wakeOnTurnStart(sessionId, live, by);
     }
     live.running = true;
     this.clearIdle(live);
@@ -1329,6 +1583,11 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       if (s.status === "running" || s.status === "awaiting-approval" || s.status === "awaiting-answer") {
         if (s.kind !== "sub") this.appendItem(s.id, { type: "notice", level: "warning", message: "Host 重启时这条会话的回复被中断了。发一条消息即可接着对话。" });
         this.setStatus(s.id, "idle");
+      }
+      // The CLI's own timers went with its process: Studio sends the loop's wakeup (and goes on after a limit) itself.
+      if (s.wake && !s.archivedAt) {
+        if (s.wake.loop) this.appendItem(s.id, { type: "notice", level: "info", message: "Host 重启后，这条会话的 loop 由 Studio 按时唤醒。" });
+        this.armWake(s.id);
       }
     }
   }
@@ -1418,7 +1677,12 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     this.clearIdle(live);
     if (live.background.size || live.approvals.size || live.questions.size) return;
     live.idleTimer = setTimeout(() => {
-      if (!live.running && !live.background.size) void this.close(sessionId);
+      if (live.running || live.background.size) return;
+      // The agent's loop wakeup or the CLI's wait at a usage limit lives in this process, and so do its agents (one
+      // resumed with SendMessage may run without a task of its own): kept, looked at again later.
+      const agentRunning = [...live.subs.values()].some((id) => this.store.getSession(id)?.status === "running");
+      if (agentRunning || keepsProcess(this.store.getSession(sessionId)?.wake, this.now())) return this.scheduleIdle(sessionId, live);
+      void this.close(sessionId);
     }, this.options.idleCloseMs ?? 10 * 60_000);
     live.idleTimer.unref?.();
   }

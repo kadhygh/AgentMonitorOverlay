@@ -261,4 +261,8 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE topics ADD COLUMN description TEXT;
   `,
+  // 13: what wakes a Claude session by itself (2026-10-16, stage 15): its /loop and a usage limit. JSON, NULL = nothing.
+  `
+  ALTER TABLE sessions ADD COLUMN wake TEXT;
+  `,
 ];
