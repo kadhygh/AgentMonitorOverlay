@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type KeyboardEvent } from "react";
 import type { GitLog } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { formatWhen } from "../attach/refs.js";
@@ -9,6 +9,8 @@ import { filterCommits, markWords, queryWords, shortSha } from "./history.js";
  * the hash and the author. Enter (or a click) opens the commit in a window of its own.
  * 2026-10-16: opened from a commit's window, that commit is marked [CURRENT] and the list starts there, so the person
  * can go on from where they were. In a commit's window a pick switches that window; a right click opens a new one.
+ * Opened with h (`keys`), the list has the keys like the review: j / k (or ↓ / ↑) pick, Enter opens, h or Esc close;
+ * / or any other letter starts a search in the box.
  */
 export function CommitPicker({
   link,
@@ -16,6 +18,7 @@ export function CommitPicker({
   current,
   onPick,
   onPickNew,
+  keys = false,
   onClose,
 }: {
   link: HostLink;
@@ -24,6 +27,8 @@ export function CommitPicker({
   onPick(sha: string): void;
   /** Right click: in a new window. */
   onPickNew?(sha: string): void;
+  /** Opened with h: the list takes the keys until a search starts. */
+  keys?: boolean;
   onClose(): void;
 }) {
   const [log, setLog] = useState<GitLog | null>(null);
@@ -31,6 +36,9 @@ export function CommitPicker({
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
   const list = useRef<HTMLDivElement>(null);
+  const box = useRef<HTMLDivElement>(null);
+  const input = useRef<HTMLInputElement>(null);
+  useEffect(() => (keys ? box : input).current?.focus(), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     let live = true;
@@ -64,14 +72,30 @@ export function CommitPicker({
     (fresh && onPickNew ? onPickNew : onPick)(c.sha);
     onClose();
   };
+  const move = (by: 1 | -1) => commits.length && setHighlight((h) => (h + by + commits.length) % commits.length);
+  // The keys of the list itself (h): j / k like the review's files; a letter goes on into the search box.
+  const onListKey = (e: KeyboardEvent) => {
+    if (e.target === input.current || e.ctrlKey || e.metaKey || e.altKey || e.nativeEvent.isComposing) return;
+    const k = e.key;
+    if (k === "j" || k === "k" || k === "ArrowDown" || k === "ArrowUp") move(k === "j" || k === "ArrowDown" ? 1 : -1);
+    else if (k === "Enter") pick(highlight);
+    else if (k === "Escape" || k === "h") onClose();
+    else if (k === "/") input.current?.focus();
+    else if (k.length === 1 && k !== " ") {
+      setQuery((q) => q + k);
+      input.current?.focus();
+    } else return;
+    e.preventDefault();
+    e.stopPropagation();
+  };
   const marked = (text: string) => markWords(text, words).map((r, k) => (r.hit ? <mark key={k}>{r.text}</mark> : <span key={k}>{r.text}</span>));
 
   return (
     <div className="file-picker-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="file-picker commit-picker" role="dialog" aria-label="提交历史" data-testid="commit-picker">
+      <div className="file-picker commit-picker" role="dialog" aria-label="提交历史" data-testid="commit-picker" tabIndex={-1} ref={box} onKeyDown={onListKey}>
         <input
           className="file-picker-input"
-          autoFocus
+          ref={input}
           value={query}
           placeholder="搜索提交说明、hash 或作者，空格分开多个词"
           aria-label="搜索提交"
@@ -79,7 +103,7 @@ export function CommitPicker({
           onKeyDown={(e) => {
             if (e.key === "ArrowDown" || e.key === "ArrowUp") {
               e.preventDefault();
-              if (commits.length) setHighlight((h) => (h + (e.key === "ArrowDown" ? 1 : commits.length - 1)) % commits.length);
+              move(e.key === "ArrowDown" ? 1 : -1);
             } else if (e.key === "Enter" && !e.nativeEvent.isComposing) {
               e.preventDefault();
               pick(highlight);
@@ -135,7 +159,7 @@ export function CommitPicker({
                 : "正在读取提交…"}
           </span>
           <span className="spacer" />
-          <span>{onPickNew ? "↑↓ 选择 · 回车在本窗口切换 · 右键在新窗口打开 · Esc 关闭" : "↑↓ 选择 · 回车在新窗口查看 · Esc 关闭"}</span>
+          <span>{keys ? "j / k 选择 · / 搜索 · " : ""}{onPickNew ? "↑↓ 选择 · 回车在本窗口切换 · 右键在新窗口打开 · Esc 关闭" : "↑↓ 选择 · 回车在新窗口查看 · Esc 关闭"}</span>
         </div>
       </div>
     </div>

@@ -257,3 +257,77 @@ test("历史 opened from a commit's window marks that commit [CURRENT] and start
   await studio.page.waitForTimeout(300);
   expect(await reviewWindows(studio)).toHaveLength(before + 1);
 });
+
+test("keys of the review: l / ; step through the file's changes, h opens 历史 where j / k pick (2026-10-16)", async () => {
+  studio = await launchStudio();
+  const dir = studio.workspace("keys");
+  git(dir, "init", "-q", "-b", "main");
+  git(dir, "config", "core.autocrlf", "false");
+  writeFileSync(join(dir, "Big.cs"), base.join("\n") + "\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "base");
+  writeFileSync(join(dir, "notes.md"), "one\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "notes");
+  // Three changes far apart in the working tree.
+  const next = [...base];
+  next[500] = "    public int Field500 = -1;";
+  next.splice(580, 1);
+  next.splice(20, 0, "    public int Added = 1;");
+  writeFileSync(join(dir, "Big.cs"), next.join("\n") + "\n");
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+
+  const review = await openReview(studio, ws.id);
+  await expect(review.getByTestId("review-file-head")).toContainText("Big.cs");
+  await expect(review.locator('[data-line="new:21"]')).toContainText("Added = 1");
+  const active = review.locator(".gr-line.active");
+  const row = async () => Number(await active.getAttribute("data-row"));
+  // l on to the next change, ; back, like j / k between files.
+  await review.locator("body").press("l");
+  await expect(active).toContainText("Added = 1");
+  const first = await row();
+  await review.locator("body").press("l");
+  await expect(active).toContainText("Field500 = 500");
+  expect(await row()).toBeGreaterThan(first);
+  await review.locator("body").press(";");
+  await expect(active).toContainText("Added = 1");
+  expect(await row()).toBe(first);
+
+  // h: 历史 with the list taking the keys, not the search box.
+  await review.locator("body").press("h");
+  const picker = review.getByTestId("commit-picker");
+  const rows = picker.getByTestId("commit-row");
+  const search = picker.getByRole("textbox", { name: "搜索提交" });
+  await expect(rows).toHaveCount(2);
+  await expect(search).not.toBeFocused();
+  await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
+  await review.keyboard.press("j");
+  await expect(rows.nth(1)).toHaveAttribute("aria-selected", "true");
+  await review.keyboard.press("k");
+  await expect(rows.nth(0)).toHaveAttribute("aria-selected", "true");
+  await expect(search).toHaveValue("");
+  // The review behind does not move meanwhile.
+  await expect(review.getByTestId("review-file-head")).toContainText("Big.cs");
+  await expect(active).toContainText("Added = 1");
+  // h again closes it; any other letter starts a search, the next ones go on in the box.
+  await review.keyboard.press("h");
+  await expect(picker).toHaveCount(0);
+  await review.locator("body").press("h");
+  await review.keyboard.press("n");
+  await expect(search).toBeFocused();
+  await review.keyboard.type("o");
+  await expect(search).toHaveValue("no");
+  await expect(rows).toHaveCount(1);
+  await review.keyboard.press("Escape");
+  await expect(picker).toHaveCount(0);
+  // j / k and Enter: the picked commit opens in its own window.
+  await review.locator("body").press("h");
+  await expect(rows).toHaveCount(2);
+  await review.keyboard.press("j");
+  await expect(rows.nth(1)).toHaveAttribute("aria-selected", "true");
+  const opened = studio.app.waitForEvent("window");
+  await review.keyboard.press("Enter");
+  const shown = await opened;
+  await shown.waitForLoadState("domcontentloaded");
+  await expect(shown.getByTestId("review-commit")).toContainText("base");
+});

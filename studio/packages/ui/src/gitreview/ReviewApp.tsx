@@ -146,7 +146,8 @@ export function ReviewPage({
   const [changes, setChanges] = useState<GitChanges | null>(null);
   // A commit's window: the commit and its files (`changes` stays empty).
   const [shownCommit, setShownCommit] = useState<GitCommitChanges | null>(null);
-  const [picking, setPicking] = useState(false);
+  // 历史: from its button (typing into the search box) or from h (j / k pick, typing starts a search).
+  const [picking, setPicking] = useState<null | "search" | "keys">(null);
   const [commitError, setCommitError] = useState<string | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
   const [diff, setDiff] = useState<GitFileDiff | null>(null);
@@ -359,9 +360,9 @@ export function ReviewPage({
     setScrollTo(null);
   }, [scrollTo, rows]);
 
-  // j / k (or ↓ / ↑) between files, n / p between changes; not while typing.
+  // j / k (or ↓ / ↑) between files, n / p (or l / ;) between changes, h opens 历史; not while typing or picking.
   useEffect(() => {
-    if (inactive) return;
+    if (inactive || picking) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
@@ -372,17 +373,22 @@ export function ReviewPage({
         const i = order.findIndex((f) => f.path === selected);
         const next = k === "j" || k === "ArrowDown" ? Math.min(order.length - 1, i + 1) : Math.max(0, i - 1);
         setSelected(order[next]!.path);
-      } else if (k === "n" || k === "p") {
-        const to = step(changeRows, active ?? (k === "n" ? -1 : rows.length), k === "n" ? 1 : -1);
+      } else if (k === "n" || k === "p" || k === "l" || k === ";") {
+        // l / ; sit next to j / k: l on to the next change like j, ; back like k.
+        const on = k === "n" || k === "l";
+        const to = step(changeRows, active ?? (on ? -1 : rows.length), on ? 1 : -1);
         if (to === null) return;
         e.preventDefault();
         setActive(to);
         setScrollTo(`[data-row="${to}"]`);
+      } else if (k === "h" && (commit || changes?.status.repo)) {
+        e.preventDefault();
+        setPicking("keys");
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [order, selected, changeRows, active, rows.length, inactive]);
+  }, [order, selected, changeRows, active, rows.length, inactive, picking, commit, changes]);
 
   const status = changes?.status;
   // VS Code opens at the line n / p moved to (or that was clicked), else at the line being commented, else at the top.
@@ -419,7 +425,7 @@ export function ReviewPage({
         )}
         <span className="spacer" />
         {(commit || status?.repo) && (
-          <button type="button" className="btn-ghost small" onClick={() => setPicking(true)} title="这个分支的提交：搜索说明、hash 或作者，在新窗口查看" data-testid="review-history">
+          <button type="button" className="btn-ghost small" onClick={() => setPicking("search")} title="这个分支的提交（h）：搜索说明、hash 或作者，在新窗口查看" data-testid="review-history">
             历史
           </button>
         )}
@@ -479,7 +485,7 @@ export function ReviewPage({
                 ))}
               </div>
             </div>
-            <div className="gr-files-hint gr-dim">j / k 切换文件，n / p 跳到改动</div>
+            <div className="gr-files-hint gr-dim">j / k 切换文件，l / ;（或 n / p）跳到改动，h 历史</div>
             {commitError && (
               <div className="gr-empty" data-testid="review-commit-error">
                 读不到这个提交：{commitError}
@@ -640,7 +646,8 @@ export function ReviewPage({
           current={sha ?? commit}
           onPick={(c) => (commit ? switchReview({ workspaceId: workspace.id, commit: c }) : openReview({ workspaceId: workspace.id, commit: c }))}
           {...(commit ? { onPickNew: (c: string) => openReview({ workspaceId: workspace.id, commit: c }) } : {})}
-          onClose={() => setPicking(false)}
+          keys={picking === "keys"}
+          onClose={() => setPicking(null)}
         />
       )}
     </div>
