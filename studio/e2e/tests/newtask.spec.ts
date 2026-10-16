@@ -132,41 +132,38 @@ test("@ and # pick the project and topic while typing; Ctrl N opens the quick ba
   expect(state.tasks[0]).toMatchObject({ title: "校验掉落表", workspaceId: alpha!.id, topicId: topic.id, column: "todo" });
 });
 
-test("a default project chosen in settings is picked for new tasks and the quick bar (2026-10-15)", async () => {
+test("设置 → 默认路径: 选择文件夹 starts there when adding a project (2026-10-17, in place of 默认项目)", async () => {
   studio = await launchStudio();
-  const { page } = studio;
-  const [, beta] = await registerWorkspaces(studio, ["alpha", "beta"]);
+  const { page, app } = studio;
+  const root = studio.workspace("projects");
+  const game = studio.workspace("game");
+  type Pick = { started: Array<string | null>; answer: string | null };
+  const picks = () => app.evaluate(() => (globalThis as { __amoPickDirectory?: Pick }).__amoPickDirectory ?? { started: [], answer: null });
+  await app.evaluate((_e, answer) => {
+    (globalThis as { __amoPickDirectory?: unknown }).__amoPickDirectory = { started: [], answer };
+  }, game);
 
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "项目与目录" }).click();
-  const choice = dialog.getByRole("radiogroup", { name: "默认项目" });
-  await expect(choice.getByRole("radio", { name: "不指定（公共目录）" })).toHaveAttribute("aria-checked", "true");
-  await choice.getByRole("radio", { name: "beta" }).click();
-  await expect(choice.getByRole("radio", { name: "beta" })).toHaveAttribute("aria-checked", "true");
-  await screenshot(studio.app, "stage-14", "default-project-setting", page);
+  await expect(dialog.getByRole("radiogroup", { name: "默认项目" })).toHaveCount(0);
+  const field = dialog.getByRole("textbox", { name: "默认路径" });
+  await expect(field).toHaveValue("");
+  await field.fill(root);
+  await dialog.getByRole("region", { name: "默认路径" }).getByRole("button", { name: "保存" }).click();
+  await screenshot(studio.app, "stage-16", "S16-A-default-folder", page);
   await page.keyboard.press("Escape");
-  await expect(dialog).toHaveCount(0);
 
-  // The new task page starts in it.
-  await page.getByRole("button", { name: "+ 新任务" }).click();
-  const projects = page.getByRole("group", { name: "项目" });
-  await expect(projects.getByRole("button", { name: "beta" })).toHaveAttribute("aria-pressed", "true");
-  await expect(page.getByTestId("scope-hint")).toContainText("在 beta 里运行");
-  // Opened from another project's board, that project wins.
-  await page.getByRole("button", { name: "返回看板" }).click();
-  await page.getByTestId("scope-ws-alpha").click();
-  await page.getByRole("button", { name: "+ 新任务" }).click();
-  await expect(projects.getByRole("button", { name: "alpha" })).toHaveAttribute("aria-pressed", "true");
-  await page.getByRole("button", { name: "返回看板" }).click();
+  // Adding a project: the dialog starts at the default path; the folder picked becomes the project.
+  await page.getByRole("button", { name: "+ 添加项目" }).click();
+  await page.getByRole("button", { name: "选择文件夹…" }).click();
+  await expect.poll(async () => (await picks()).started).toEqual([root]);
+  await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).workspaces.some((w) => w.path === game)).toBe(true);
 
-  // The quick bar too, and the task is made there.
-  await page.keyboard.press("Control+N");
-  const quick = page.getByRole("dialog", { name: "快速新任务" });
-  await expect(quick).toContainText("@beta");
-  await quick.getByLabel("快速新任务").fill("默认项目里的任务");
-  await quick.getByLabel("快速新任务").press("Control+Enter");
-  await expect(quick).toHaveCount(0);
-  const state = await studio.api<StateSnapshot>("GET", "/api/state");
-  expect(state.tasks.find((t) => t.title === "默认项目里的任务")).toMatchObject({ workspaceId: beta!.id });
+  // Cleared: from the system's own place again.
+  await page.getByRole("button", { name: "设置" }).click();
+  await dialog.getByRole("tab", { name: "项目与目录" }).click();
+  await expect(field).toHaveValue(root);
+  await dialog.getByRole("region", { name: "默认路径" }).getByRole("button", { name: "清除" }).click();
+  await expect(field).toHaveValue("");
 });

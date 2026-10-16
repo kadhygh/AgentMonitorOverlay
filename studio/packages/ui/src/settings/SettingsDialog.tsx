@@ -10,7 +10,7 @@ import { DataPage } from "./DataPage.js";
 import { QuotaPage } from "./QuotaPage.js";
 import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
-import { defaultProjectFor, setDefaultProject } from "../lib/profiles.js";
+import { defaultFolder, setDefaultFolder } from "../lib/profiles.js";
 import { BotArt, ReaderArt } from "../focus/PixelBot.js";
 import { PET_SKINS, usePetSkin, writePetSkin, type PetSkin } from "../focus/petSkin.js";
 
@@ -206,7 +206,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
             {page === "models" && <ModelsPage link={link} settings={settings} />}
             {page === "quota" && <QuotaPage link={link} settings={settings} />}
 
-            {page === "common" && <DefaultProjectSection workspaces={workspaces} />}
+            {page === "common" && <DefaultFolderSection />}
             {page === "common" && (
               <section className="settings-section" aria-label="公共目录">
                 <span className="settings-heading">公共目录</span>
@@ -241,26 +241,41 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
   );
 }
 
-/** 默认项目 (2026-10-15): where a new task starts unless it is opened from a project; kept on this machine. */
-function DefaultProjectSection({ workspaces }: { workspaces: readonly Workspace[] }) {
-  const projects = projectWorkspaces(workspaces);
-  const [chosen, setChosen] = useState(() => defaultProjectFor(projects));
-  const choose = (id: string | null) => {
-    setDefaultProject(id);
-    setChosen(id);
+/** 默认路径 (2026-10-17, in place of 默认项目): where 选择文件夹 starts when adding a project; kept on this machine. */
+function DefaultFolderSection() {
+  const [path, setPath] = useState(defaultFolder);
+  const [saved, setSaved] = useState(defaultFolder);
+  const save = (next: string) => {
+    setDefaultFolder(next);
+    setPath(next.trim());
+    setSaved(next.trim());
+  };
+  const browse = async () => {
+    const chosen = await window.amo?.pickDirectory?.(path.trim() || null);
+    if (chosen) save(chosen);
   };
   return (
-    <section className="settings-section" aria-label="默认项目">
-      <span className="settings-heading">默认项目</span>
-      <span className="settings-hint">新建任务和快速新任务（Ctrl+N）默认选中这个项目；从某个项目的看板新建时仍用那个项目。只存在这台电脑上。</span>
-      <div role="radiogroup" aria-label="默认项目" className="chips">
-        {[{ id: null, name: "不指定（公共目录）", path: "" }, ...projects].map((w) => (
-          <button key={w.id ?? "none"} type="button" role="radio" className="chip" aria-checked={chosen === w.id} aria-pressed={chosen === w.id} title={w.path || undefined} onClick={() => choose(w.id)}>
-            {w.name}
+    <section className="settings-section" aria-label="默认路径">
+      <span className="settings-heading">默认路径</span>
+      <span className="settings-hint">添加项目时点「选择文件夹」，从这个文件夹开始选（比如放所有工程的目录）。不填就从系统默认的位置开始。只存在这台电脑上。</span>
+      <div className="settings-row">
+        <input className="field" value={path} onChange={(e) => setPath(e.target.value)} onKeyDown={(e) => e.key === "Enter" && save(path)} placeholder="例如 G:\PROJECT" aria-label="默认路径" />
+        {window.amo?.pickDirectory && (
+          <button type="button" className="btn-ghost small" onClick={() => void browse()}>
+            选择…
           </button>
-        ))}
+        )}
       </div>
-      {!projects.length && <span className="settings-hint">还没有项目：在左栏「项目」旁的 + 添加。</span>}
+      <div className="settings-row end">
+        {saved && (
+          <button type="button" className="btn-ghost small" onClick={() => save("")}>
+            清除
+          </button>
+        )}
+        <button type="button" className="btn-primary small" onClick={() => save(path)} disabled={path.trim() === saved}>
+          保存
+        </button>
+      </div>
     </section>
   );
 }

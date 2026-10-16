@@ -21,6 +21,7 @@ function readNavFolded(): boolean {
   }
 }
 import { showToast } from "../lib/toast.js";
+import { pickFolder } from "../lib/profiles.js";
 
 /** A project or topic about to be archived from its right-click menu. */
 type Archiving = { kind: "workspace" | "topic"; id: string; name: string };
@@ -190,7 +191,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   }
 
   async function pick() {
-    const dir = await window.amo?.pickDirectory?.();
+    const dir = await pickFolder();
     if (dir) await register(dir);
   }
 

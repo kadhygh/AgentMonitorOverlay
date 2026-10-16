@@ -473,7 +473,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     pending.resolve(decision === "accept" ? { behavior: "allow", updatedInput: pending.input } : { behavior: "deny", message: DECLINED });
     this.updateItem(pending.itemId, (item) => (item.type === "approval" ? { ...item, state: decision === "accept" ? "accepted" : "declined" } : item));
-    if (live.running) this.setStatus(sessionId, waitingStatus(live));
+    this.afterWait(sessionId, live);
   }
 
   /**
@@ -514,7 +514,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       pending.resolve({ behavior: "deny", message: PLAN_DISMISSED });
       settle({ state: "dismissed" });
     } else throw new Error(`a plan review takes approve or revise, not ${reply.action}`);
-    if (live.running) this.setStatus(sessionId, waitingStatus(live));
+    this.afterWait(sessionId, live);
   }
 
   /**
@@ -1537,6 +1537,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         if (!live.approvals.delete(approvalId)) return;
         this.updateItem(item.id, (it) => (it.type === "approval" && it.state === "pending" ? { ...it, state: "resolved-elsewhere" } : it));
         resolve({ behavior: "deny", message: "aborted" });
+        this.afterWait(sessionId, live);
       });
     });
   }
@@ -1558,8 +1559,21 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         if (!live.questions.delete(item.id)) return;
         this.cancelQuestion(item.id);
         resolve({ behavior: "deny", message: "aborted" });
+        this.afterWait(sessionId, live);
       });
     });
+  }
+
+  /**
+   * An approval or a question is settled: the session waits for the next one, or goes on. Between turns (an agent in the
+   * background asked, 2026-10-16) there is no turn to go on with: it is idle again, not left 等你批准 for Focus.
+   */
+  private afterWait(sessionId: Id, live: Live): void {
+    if (live.running || live.approvals.size || live.questions.size) this.setStatus(sessionId, waitingStatus(live));
+    else {
+      const status = this.store.getSession(sessionId)?.status;
+      if (status === "awaiting-approval" || status === "awaiting-answer") this.setStatus(sessionId, "idle");
+    }
   }
 
   private cancelQuestion(itemId: Id): void {

@@ -4,7 +4,7 @@ import electron = require("electron");
 
 electron.contextBridge.exposeInMainWorld("amo", {
   host: (): Promise<{ url: string; token: string } | null> => electron.ipcRenderer.invoke("amo:host"),
-  pickDirectory: (): Promise<string | null> => electron.ipcRenderer.invoke("amo:pick-directory"),
+  pickDirectory: (start?: string | null): Promise<string | null> => electron.ipcRenderer.invoke("amo:pick-directory", start ?? undefined),
   openExternal: (url: string): Promise<void> => electron.ipcRenderer.invoke("amo:open-external", url),
   /** The page's summary of one window drag (lib/resizeTrace.ts), for logs/resize-trace.log. */
   trace: (summary: unknown): void => electron.ipcRenderer.send("amo:trace", summary),

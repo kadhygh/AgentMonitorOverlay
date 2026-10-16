@@ -7,7 +7,8 @@ declare global {
     amo?: {
       host(): Promise<{ url: string; token: string } | null>;
       /** Native folder picker (Electron); absent in a plain browser. */
-      pickDirectory?(): Promise<string | null>;
+      /** Starts at `start` (设置 → 默认路径) when that folder exists. */
+      pickDirectory?(start?: string | null): Promise<string | null>;
       /** Opens an http(s) link in the system browser (Electron); absent in a plain browser. */
       openExternal?(url: string): Promise<void>;
       /** Writes text to the system clipboard (Electron); works without window focus. */

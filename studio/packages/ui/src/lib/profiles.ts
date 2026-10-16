@@ -43,14 +43,13 @@ export const rememberProfile = (id: string) => write(LAST_PROFILE_KEY, id);
 export const lastWorkspace = () => read(LAST_WORKSPACE_KEY);
 export const rememberWorkspace = (id: string) => write(LAST_WORKSPACE_KEY, id);
 
-const DEFAULT_PROJECT_KEY = "amo.defaultProject";
+const DEFAULT_FOLDER_KEY = "amo.defaultFolder";
 
-/** 设置 → 项目与目录 → 默认项目 (2026-10-15): the project a new task starts in unless opened from another one; per machine. */
-export const defaultProjectSetting = (): string | null => read(DEFAULT_PROJECT_KEY) || null;
-export const setDefaultProject = (id: string | null) => write(DEFAULT_PROJECT_KEY, id ?? "");
-
-/** The default project if it is still one of these (not removed or archived); else none (the common folder). */
-export function defaultProjectFor(projects: ReadonlyArray<{ id: string }>): string | null {
-  const id = defaultProjectSetting();
-  return id && projects.some((p) => p.id === id) ? id : null;
-}
+/**
+ * 设置 → 项目与目录 → 默认路径 (2026-10-17, in place of the 10-15 默认项目): where 选择文件夹 starts when adding a
+ * project; per machine.
+ */
+export const defaultFolder = (): string => read(DEFAULT_FOLDER_KEY) ?? "";
+export const setDefaultFolder = (path: string) => write(DEFAULT_FOLDER_KEY, path.trim());
+/** 选择文件夹, starting at the default path. */
+export const pickFolder = (): Promise<string | null> => window.amo?.pickDirectory?.(defaultFolder() || null) ?? Promise.resolve(null);

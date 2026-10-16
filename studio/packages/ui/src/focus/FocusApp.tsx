@@ -310,6 +310,10 @@ export function FocusApp() {
                   setOpen(s.id === openId ? "" : s.id);
                   if (!waiting.includes(s)) noteSeen([s.id]);
                 }}
+                onDone={() => {
+                  noteSeen([s.id]);
+                  setOpen("");
+                }}
               />
             ))}
           </div>
@@ -482,7 +486,26 @@ export function summary(things: number, toReview: number): string {
   return [things ? `${things} 件事` : "", toReview ? `${toReview} 个完成待审核` : ""].filter(Boolean).join(" · ") || "没有待处理";
 }
 
-function FocusEntry({ link, session, title, open, finished, toReview, onToggle }: { link: HostLink; session: Session; title: string; open: boolean; finished: boolean; toReview: boolean; onToggle(): void }) {
+function FocusEntry({
+  link,
+  session,
+  title,
+  open,
+  finished,
+  toReview,
+  onToggle,
+  onDone,
+}: {
+  link: HostLink;
+  session: Session;
+  title: string;
+  open: boolean;
+  finished: boolean;
+  toReview: boolean;
+  onToggle(): void;
+  /** 我知道了: a 完成待审核 entry counts as reviewed (seen) and leaves the list. */
+  onDone(): void;
+}) {
   const look = toReview ? TO_REVIEW : SESSION_LOOK[session.status];
   return (
     <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry" data-finished={finished || undefined} data-review={toReview || undefined}>
@@ -497,12 +520,12 @@ function FocusEntry({ link, session, title, open, finished, toReview, onToggle }
         </span>
         <span className="focus-time">{relativeTime(session.updatedAt)}</span>
       </button>
-      {open && <FocusDetail link={link} session={session} />}
+      {open && <FocusDetail link={link} session={session} {...(toReview && finished ? { onDone } : {})} />}
     </div>
   );
 }
 
-function FocusDetail({ link, session }: { link: HostLink; session: Session }) {
+function FocusDetail({ link, session, onDone }: { link: HostLink; session: Session; onDone?(): void }) {
   const { items } = useSessionItems(link, session.id);
   const { text, approval } = latestSnippet(items);
   const [busy, setBusy] = useState(false);
@@ -543,6 +566,11 @@ function FocusDetail({ link, session }: { link: HostLink; session: Session }) {
         >
           在工作台打开
         </button>
+        {onDone && (
+          <button type="button" className="focus-btn" title="不用切回来看：算作审核完成，从 Focus 里移走" data-testid="focus-done" onClick={onDone}>
+            我知道了
+          </button>
+        )}
       </div>
     </div>
   );

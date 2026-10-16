@@ -325,3 +325,26 @@ test("Focus 桌宠: the robot by default; 「看书的 Claude 娘」 picked in �
   await screenshot(app, "stage-14", "pet-reader-angry", flying, "focus");
   await angry.click();
 });
+
+test("Focus: 「我知道了」 counts a 完成待审核 entry as reviewed without going back to the workbench (2026-10-17)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const opened = app.waitForEvent("window");
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await opened;
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "看一眼就行", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "hello review" } });
+  const entry = focus.getByTestId("focus-entry");
+  await expect(entry).toHaveCount(1, { timeout: 30_000 });
+  await expect(entry).toHaveAttribute("data-review", "true");
+  await expect(entry).toContainText("完成待审核");
+  // The newest entry opens by itself.
+  await expect(focus.getByTestId("focus-snippet")).toContainText("MOCK: hello review");
+  await focus.getByTestId("focus-done").click();
+  await expect(entry).toHaveCount(0);
+  await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理");
+  // The workbench stayed where it was.
+  await expect(page.getByTestId("task-title")).toHaveCount(0);
+  await page.waitForTimeout(500);
+  await expect(entry).toHaveCount(0);
+});

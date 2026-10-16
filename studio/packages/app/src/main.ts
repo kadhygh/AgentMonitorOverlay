@@ -3,7 +3,7 @@ import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
 import { createFocusWindow, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
-import { readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
@@ -220,8 +220,16 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.show();
     mainWindow.focus();
   });
-  ipcMain.handle("amo:pick-directory", async () => {
-    const options = { title: "选择工作区文件夹", properties: ["openDirectory" as const] };
+  // From 设置 → 项目与目录 → 默认路径 (2026-10-17) when set. Tests read what it would start at and pick for it.
+  ipcMain.handle("amo:pick-directory", async (_e, start?: unknown) => {
+    const defaultPath = typeof start === "string" && start.trim() && existsSync(start.trim()) ? start.trim() : undefined;
+    if (testMode) {
+      const g = globalThis as { __amoPickDirectory?: { started: Array<string | null>; answer: string | null } };
+      g.__amoPickDirectory ??= { started: [], answer: null };
+      g.__amoPickDirectory.started.push(defaultPath ?? null);
+      return g.__amoPickDirectory.answer;
+    }
+    const options = { title: "选择工作区文件夹", properties: ["openDirectory" as const], ...(defaultPath ? { defaultPath } : {}) };
     const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
