@@ -280,4 +280,14 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX topic_docs_topic ON topic_docs(topic_id, created_at);
   `,
+  // 16: 主控's proposals to split work into tasks (stage 16); JSON like the other documents.
+  `
+  CREATE TABLE task_plans (
+    id TEXT PRIMARY KEY,
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX task_plans_state ON task_plans(state, created_at);
+  `,
 ];

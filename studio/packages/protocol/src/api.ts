@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { AccountUsage, Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, Topic, TopicDoc, Workspace } from "./entities.js";
+import type { AccountUsage, Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Topic, TopicDoc, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -270,6 +270,14 @@ export interface HostRoutes {
   "POST /api/topics/:id/docs": { req: { title: string; body?: string }; res: TopicDoc };
   "PATCH /api/topic-docs/:id": { req: { title?: string; body?: string }; res: TopicDoc };
   "DELETE /api/topic-docs/:id": { req: void; res: { ok: true } };
+  /** 主控's proposals (stage 16): the open ones, and those decided in the last day. */
+  "GET /api/task-plans": { req: void; res: TaskPlan[] };
+  /**
+   * Accepts a proposal with the person's changes: the tasks kept (each may be edited) are made, put on the topic's
+   * canvas with their dependencies; `run` starts each one's first session at once (else they wait in 待办).
+   */
+  "POST /api/task-plans/:id/accept": { req: { tasks: Array<PlannedTask & { include?: boolean }>; run: boolean }; res: TaskPlan };
+  "POST /api/task-plans/:id/dismiss": { req: { note?: string }; res: TaskPlan };
   /** Archives the topic with its sessions and all its tasks (and their sessions). */
   "POST /api/topics/:id/archive": { req: void; res: { topic: Topic; tasks: Task[] } };
   /** Restores the topic and the tasks that were archived with it. */
@@ -380,6 +388,7 @@ export type HostEvent = { seq: number } & (
   | { type: "topic.upserted"; topic: Topic }
   | { type: "topicdoc.upserted"; doc: TopicDoc }
   | { type: "topicdoc.removed"; topicId: Id; docId: Id }
+  | { type: "taskplan.upserted"; plan: TaskPlan }
   | { type: "session.upserted"; session: Session }
   | { type: "item.appended"; item: SessionItem }
   /** Full replacement, e.g. a finished agent message or an approval that changed state. */

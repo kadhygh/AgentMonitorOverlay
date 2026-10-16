@@ -63,6 +63,12 @@ export function roleCard(service: HostService, sessionId: Id): string {
     const docs = service.store.listTopicDocs(f.topic.id);
     lines.push(`- 专题文档：${docs.length ? docs.map((d) => `「${d.title}」（${d.id}）`).join("、") : "还没有"}（topic_docs 读）`);
   }
+  if (f.role === "lead" || f.role === "topic") {
+    const models = service.profiles.filter((p) => !p.hidden).map((p) => p.label);
+    lines.push(`- 拆任务时可用的模型：${models.join("、")}（task_plan_propose 的 model；不写就用你自己的）`);
+    const open = service.store.listTaskPlans().filter((p) => p.fromSessionId === sessionId && p.state === "open").length;
+    if (open) lines.push(`- 你有 ${open} 个拆任务提案在等人确认`);
+  }
   const marks = ws && !isCommon(ws) ? service.store.listFileMarks(ws.id).length : 0;
   if (marks) lines.push(`- 这个项目有 ${marks} 个文件标记（人标出的重要文件，list_file_marks 读）`);
   lines.push("", "完整用法：amo_guide。身份随看板变化，需要时再调 amo_whoami。");

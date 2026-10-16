@@ -36,6 +36,7 @@ import { BackButton } from "../shell/BackButton.js";
 import { PopMenu, StatusMenu, TaskMeta, TopicPicker, below, useGitBranch, type Anchor } from "./TaskHead.js";
 import { SessionBanners, SessionHead } from "./SessionHead.js";
 import { DescriptionDialog } from "./DescriptionDialog.js";
+import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -118,6 +119,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const [picking, setPicking] = useState<"topic" | null>(null);
   const [taskMenu, setTaskMenu] = useState<Anchor | null>(null);
   const [describing, setDescribing] = useState(false);
+  // 拆任务提案 this task (a 主控) made, while they wait for the person (also on its topic's canvas).
+  const plans = useTaskPlans(link).filter((p) => p.fromTaskId === task.id);
   const [sidebar, setSidebarState] = useState(() => readFlag(SIDEBAR_KEY));
   const setSidebar = (on: boolean) => {
     setSidebarState(on);
@@ -450,6 +453,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
         </div>
       )}
       {describing && <DescriptionDialog link={link} task={task} onClose={() => setDescribing(false)} />}
+      <PlanBanner link={link} plans={plans} tasks={tasks} workspaces={workspaces} profiles={profiles} />
 
       {task.archivedAt && (
         <div className="archived-banner task" role="status" data-testid="task-archived-banner">

@@ -34,7 +34,7 @@
 | S16-R | 重构：runtime、store、大界面文件按职责拆分，行为不变 | 做完 |
 | S16-B | 画布：任务说明（迁移 + MCP）、颜色标记（卡片 / 便签 / 引用 / 分组，MCP 也能标）、右键菜单 | 做完 |
 | S16-C | 阶段 15 第一期：服务说明、`amo_guide`、`amo_whoami`、主控标记、专题文档 | 做完 |
-| S16-D | 阶段 15 第二期：主控提案 → 确认 → 建任务上画布 | |
+| S16-D | 阶段 15 第二期：主控提案 → 确认 → 建任务上画布 | 做完 |
 | S16-E | 阶段 15 第三期：传话 | |
 
 ### 画布右键（参照 Obsidian Canvas）
@@ -75,4 +75,9 @@
   - agent 懂 AMO（`features/guide/`）：MCP 服务说明改写（AMO 的实体、主控和执行的分工、先调 amo_whoami）；`amo_whoami`（角色卡：主控 / 执行 / 专题会话 / 分支、任务和说明、项目、专题和它的主控、专题文档、文件标记数、这个角色该做和不该做的）；`amo_guide`（overview / tasks / topics / canvas / collab / lead / files）；`topic_docs`（读）和 `topic_doc_write`（只有专题的主控或专题会话能写，不用每次批准）。Claude 会话的 MCP 服务说明后面直接带上自己的角色卡（`ClaudeRuntimeOptions.mcpInstructions`，进程启动时的样子，之后的变化靠 amo_whoami）；Codex 的服务说明是通用的，靠 amo_whoami。没改任何 CLI 的系统提示词。
   - 主控的职责写在角色卡和 amo_guide 的 lead 段：拆成平级任务、排画布、写说明和专题文档，活交给各任务的会话，不把重活放进自己的子 agent（用户 10-17 的反馈）。拆任务的提案工具在 S16-D。
   - 测试：MCP（角色卡、指南、主控写文档、非主控被拒）、topicdocs 接口和主控标记、e2e `lead-docs.spec.ts`；截图 `S16-C-lead`、`S16-C-topic-docs`。
+- **S16-D**（10-17，阶段 15 第二期）
+  - MCP `task_plan_propose`（只有主控或专题会话能提，不用每次批准：提案本身什么都不建）：summary + 最多 20 个任务（key、标题、项目 id 或名字、说明、第一句话、模型名或 id、dependsOn）；校验项目、模型（不认识时列出可选的）、依赖不成环。迁移 16 `task_plans`（JSON）；事件 `taskplan.upserted`；`GET /api/task-plans`、`POST /api/task-plans/:id/accept`（改过的任务 + run）、`/dismiss`（note）。功能目录 `features/taskplans/`。
+  - 确认：专题画布顶部和主控的任务页上的提案条 →「查看」打开确认框（每个任务可以去掉、改名、换项目、换模型、改说明和第一句话，看得到依赖）→「放进待办」或「立刻开跑」（用第一句话开它的第一个会话）/「不采用…」（可写原因）。接受后建任务、写说明、放上专题画布（跨几个项目时每个项目一个分组）、连好依赖；结果作为留言回给主控（带新任务的 id），不采用也一样。Focus 把等确认的提案算作一件「事」，点它打开主控的任务页。
+  - 主控的角色卡里列出可用的模型和自己在等的提案；amo_guide 的 lead 段改为用 task_plan_propose。
+  - 测试：`taskplans.test.ts`（只认主控、校验、改过的接受、按项目分组、依赖、留言、不采用）、MCP 工具表、e2e `task-plans.spec.ts`（mock 模型真的调 MCP 提案 → Focus → 画布确认）；截图 `S16-D-plan`。
 

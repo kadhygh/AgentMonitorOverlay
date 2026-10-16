@@ -371,6 +371,44 @@ export interface TopicDoc {
   updatedAt: Timestamp;
 }
 export const TOPIC_DOC_TITLE_MAX = 120;
+
+/**
+ * A 主控's proposal to split work into tasks (stage 16, from the stage 15 design: 主控 proposes, the person confirms).
+ * Nothing is made until the person accepts it, possibly after changing the tasks; then Studio makes the tasks, puts
+ * them on the topic's canvas with their dependencies, and tells the 主控 which tasks they became.
+ */
+export interface TaskPlan {
+  id: Id;
+  /** The topic the tasks go into (the 主控's topic); null when the 主控's task is in none (its project's board). */
+  topicId: Id | null;
+  fromSessionId: Id;
+  fromTaskId: Id | null;
+  /** What the split is for, in a few lines. */
+  summary: string;
+  tasks: PlannedTask[];
+  state: "open" | "accepted" | "dismissed";
+  createdAt: Timestamp;
+  decidedAt: Timestamp | null;
+  /** The person's note when dismissing (sent to the 主控). */
+  note?: string;
+  /** What accepting made: each planned task's key and the task it became. */
+  created?: Array<{ key: string; taskId: Id }>;
+}
+
+export interface PlannedTask {
+  /** The proposal's own name for it, for dependencies ("t1"). */
+  key: string;
+  title: string;
+  workspaceId: Id;
+  description?: string;
+  /** The first message of its first session when it starts at once. */
+  firstMessage?: string;
+  /** The model profile to start it with. */
+  profileId?: Id;
+  /** Keys of the planned tasks that must finish first. */
+  dependsOn: string[];
+}
+export const TASK_PLAN_MAX_TASKS = 20;
 export const TOPIC_DOC_BODY_MAX = 50_000;
 
 /** The longest task description (characters). */

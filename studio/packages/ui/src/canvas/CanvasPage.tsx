@@ -12,6 +12,7 @@ import { CARD_H, CARD_W, cardHeight, NOTE_H, NOTE_W, NoteCard, RefCard, TaskCard
 import { CanvasMenu, item, SEP, type MenuEntry } from "./CanvasMenu.js";
 import { DescriptionDialog } from "../task/DescriptionDialog.js";
 import { DocsTab } from "./DocsTab.js";
+import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 
 export { CARD_H, CARD_W, NOTE_H, NOTE_W } from "./cards.js";
 
@@ -95,6 +96,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   const [linkFrom, setLinkFrom] = useState<Id | null>(null);
   const [describing, setDescribing] = useState<Id | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
+  const plans = useTaskPlans(link).filter((p) => p.topicId === topic.id);
   const viewport = useRef<HTMLDivElement>(null);
 
   useEffect(() => saveView(view), [view]);
@@ -556,6 +558,8 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
             + 便签
           </button>
         </div>
+
+        <PlanBanner link={link} plans={plans} tasks={allTasks} workspaces={workspaces} profiles={profiles} />
 
         {linkFrom && (
           <div className="canvas-linking" role="status" data-testid="canvas-linking" onMouseDown={(e) => e.stopPropagation()}>

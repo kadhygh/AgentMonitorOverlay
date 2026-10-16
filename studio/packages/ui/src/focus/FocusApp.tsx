@@ -5,6 +5,7 @@ import { needsPerson } from "../lib/status.js";
 import { noteSeen, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
+import { useTaskPlans } from "../taskplans/TaskPlans.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
 import { PixelBot, type BotMood } from "./PixelBot.js";
@@ -51,6 +52,8 @@ export function FocusApp() {
   const settings = useSettings(host.kind === "ready" ? host.link : NO_LINK);
   // Scheduler proposals belong to the planning feature (设置 → 功能).
   const proposals = settings?.disabledFeatures.includes("planning") ? [] : pending;
+  // 拆任务提案 (stage 16): a 主控 waits for the person to accept or dismiss them.
+  const plans = useTaskPlans(host.kind === "ready" ? host.link : NO_LINK).filter((p) => p.state === "open");
 
   useWindowShape();
   const skin = usePetSkin();
@@ -88,7 +91,7 @@ export function FocusApp() {
   const held = live && open ? live.sessions.find((s) => s.id === open && !s.archivedAt && FINISHED.has(s.status) && !waiting.includes(s) && !finished.includes(s)) : undefined;
   const list = [...waiting, ...finished, ...(held ? [held] : [])];
   const asks = live ? decisions.filter((d) => live.sessions.some((s) => s.id === d.sessionId && !s.archivedAt)) : [];
-  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), proposals.map((p) => p.id));
+  const keys = attentionKeys([...waiting, ...finished], asks.map((d) => d.id), [...proposals.map((p) => p.id), ...plans.map((p) => p.id)]);
   const keysId = keys.join("|");
   // Forget what was handled, so it alerts again if it comes back.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the keys by content
@@ -98,7 +101,7 @@ export function FocusApp() {
   const reviewKeys = new Set(attentionKeys(toReview, [], []));
   // Green when everything new is finished work to look at.
   const calm = alerting && keys.every((k) => seen.has(k) || reviewKeys.has(k));
-  const things = waiting.length + finished.length + asks.length + proposals.length - toReview.length;
+  const things = waiting.length + finished.length + asks.length + proposals.length + plans.length - toReview.length;
 
   // How long the oldest unacknowledged thing has waited; the clock ticks while something does.
   const firstSeen = useRef<Map<string, number>>(new Map());
@@ -161,7 +164,7 @@ export function FocusApp() {
   }
 
   const { state, link } = host;
-  const needs = waiting.length + finished.length + asks.length + proposals.length;
+  const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
   const openId = open && list.some((s) => s.id === open) ? open : (list[0]?.id ?? null);
   const title = (s: Session) => state.tasks.find((t) => t.id === s.taskId)?.title || "未命名任务";
@@ -262,6 +265,18 @@ export function FocusApp() {
                 </button>
               </div>
             )}
+            {plans.map((p) => (
+              // Read and changed on the 主控's task page (or its topic's canvas): here only that it waits.
+              <div key={p.id} className="focus-entry" data-testid="focus-plan">
+                <button type="button" className="focus-row" onClick={() => void window.amo?.openInWorkbench?.({ ...(p.fromTaskId ? { taskId: p.fromTaskId } : {}), sessionId: p.fromSessionId })}>
+                  <span className="dot" style={{ background: "var(--attention)" }} />
+                  <span className="focus-row-text">
+                    <span className="focus-title">拆任务提案 · {p.tasks.length} 个任务</span>
+                    <span className="focus-sub">{state.tasks.find((t) => t.id === p.fromTaskId)?.title || "主控"} · {p.summary.split("\n")[0]}</span>
+                  </span>
+                </button>
+              </div>
+            ))}
             {asks.map((d) => {
               const s = state.sessions.find((x) => x.id === d.sessionId)!;
               return (

@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Annotation, CanvasDoc, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, TaskNote, TodoItem, TopicDoc } from "@amo-studio/protocol";
+import type { Annotation, CanvasDoc, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
 import { str, type Row } from "./rows.js";
 
 /**
@@ -28,6 +28,23 @@ export abstract class DocumentStore {
 
   deleteTopicDoc(id: Id): void {
     this.db.prepare("DELETE FROM topic_docs WHERE id = ?").run(id);
+  }
+
+  // 主控's proposals (stage 16)
+
+  putTaskPlan(p: TaskPlan): void {
+    this.db
+      .prepare("INSERT INTO task_plans (id, state, created_at, body) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body")
+      .run(p.id, p.state, p.createdAt, JSON.stringify(p));
+  }
+
+  getTaskPlan(id: Id): TaskPlan | undefined {
+    const r = this.db.prepare("SELECT body FROM task_plans WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as TaskPlan);
+  }
+
+  listTaskPlans(): TaskPlan[] {
+    return (this.db.prepare("SELECT body FROM task_plans ORDER BY created_at, id").all() as Row[]).map((r) => JSON.parse(str(r.body)) as TaskPlan);
   }
 
   // Annotations, canvas and todos: structure only in stage 1, UI comes later.
