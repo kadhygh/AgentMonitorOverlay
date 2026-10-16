@@ -211,14 +211,14 @@ export async function readChanges(dir: string, range: GitRange, pending: GitStat
   const scan = range === "staged" ? Promise.resolve("") : git(dir, ["ls-files", "--others", "--exclude-standard", "-z"]);
   // Outside a repository the scan fails; the status says so.
   scan.catch(() => undefined);
+  const lists = (base: string[]) => Promise.all([git(dir, [...base, ...DIFF_OPTIONS, "--name-status", "-z"]), git(dir, [...base, ...DIFF_OPTIONS, "--numstat", "-z"])]);
+  // Against HEAD (the working tree, the index) the lists need not wait for the status (its merge base takes a second
+  // round of git); without a commit they fail and run again against the empty tree.
+  const early = range === "branch" ? null : lists(range === "staged" ? ["diff", "--cached", "HEAD"] : ["diff", "HEAD"]);
+  early?.catch(() => undefined);
   const status = await pending;
   if (!status.repo) return { status, range, files: [], truncated: false };
-  const base = rangeArgs(range, status);
-  const [names, nums, others] = await Promise.all([
-    git(dir, [...base, ...DIFF_OPTIONS, "--name-status", "-z"]),
-    git(dir, [...base, ...DIFF_OPTIONS, "--numstat", "-z"]),
-    scan,
-  ]);
+  const [[names, nums], others] = await Promise.all([(status.head && early) || lists(rangeArgs(range, status)), scan]);
   const stats = parseNumstat(nums);
   const files: GitChangedFile[] = parseNameStatus(names).map((f) => ({ ...f, ...(stats.get(f.path) ?? { additions: 0, deletions: 0, binary: false }) }));
   const tracked = new Set(files.map((f) => f.path));
@@ -344,23 +344,34 @@ export function parseLog(out: string): GitCommit[] {
   return commits;
 }
 
+/** Where a project sits in its repository (`rev-parse --show-prefix`), by folder: asked once, it does not change. */
+const prefixes = new Map<string, string>();
+
 /** The pathspec that keeps a project inside a larger repository to its own commits (none at the top folder). */
 async function ownCommits(dir: string): Promise<string[]> {
-  const prefix = (await git(dir, ["rev-parse", "--show-prefix"])).trim();
+  let prefix = prefixes.get(dir);
+  if (prefix === undefined) {
+    prefix = (await git(dir, ["rev-parse", "--show-prefix"])).trim();
+    prefixes.set(dir, prefix);
+  }
   return prefix ? ["--", "."] : [];
 }
 
-/** HEAD's latest commits, newest first (`limit` at most GIT_LOG_MAX). */
+/**
+ * HEAD's latest commits, newest first (`limit` at most GIT_LOG_MAX). Every git start costs tens of milliseconds on
+ * Windows (about 100 on the person's machine, 2026-10-16), so the log runs beside the HEAD and branch questions.
+ */
 export async function readLog(dir: string, limit = GIT_LOG_MAX): Promise<GitLog> {
   const n = Math.max(1, Math.min(GIT_LOG_MAX, Math.floor(limit) || GIT_LOG_MAX));
-  const [head, branch, scope] = await Promise.all([
-    maybe(dir, ["rev-parse", "--verify", "-q", "HEAD^{commit}"]),
-    maybe(dir, ["symbolic-ref", "--short", "-q", "HEAD"]),
-    ownCommits(dir),
-  ]);
-  if (!head) return { branch, head: null, commits: [], truncated: false };
-  // One more than asked: whether there are more.
-  const commits = parseLog(await git(dir, ["log", `-n${n + 1}`, "--no-color", LOG_FORMAT, head, ...scope]));
+  // One more than asked: whether there are more. Without a commit it fails, and HEAD says why.
+  const log = ownCommits(dir).then((scope) => git(dir, ["log", `-n${n + 1}`, "--no-color", LOG_FORMAT, "HEAD", ...scope]));
+  log.catch(() => undefined);
+  const [head, branch] = await Promise.all([maybe(dir, ["rev-parse", "--verify", "-q", "HEAD^{commit}"]), maybe(dir, ["symbolic-ref", "--short", "-q", "HEAD"])]);
+  if (!head) {
+    await ownCommits(dir); // outside a repository: that error
+    return { branch, head: null, commits: [], truncated: false };
+  }
+  const commits = parseLog(await log);
   return { branch, head, commits: commits.slice(0, n), truncated: commits.length > n };
 }
 

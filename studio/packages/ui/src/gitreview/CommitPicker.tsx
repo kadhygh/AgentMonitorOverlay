@@ -4,6 +4,33 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { formatWhen } from "../attach/refs.js";
 import { filterCommits, markWords, queryWords, shortSha } from "./history.js";
 
+// A window's last history by project (2026-10-16): 历史 opens on it at once and reads the log again behind it (a git
+// start costs about 100 ms on the person's machine). The review window reads it ahead, once its own files are in.
+const logs = new Map<string, GitLog>();
+const reading = new Map<string, Promise<GitLog>>();
+
+// One formatter for the rows' tooltips (toLocaleString makes a new one each call: slow over 500 rows).
+const fullDate = new Intl.DateTimeFormat(undefined, { dateStyle: "medium", timeStyle: "medium" });
+/** Rows drawn in the first frame (and as far as the current commit); the rest come right after. */
+const FIRST_ROWS = 100;
+
+/** The project's history, read again; the same object when nothing changed (the list keeps its place). */
+export function readHistory(link: HostLink, workspaceId: string): Promise<GitLog> {
+  const pending = reading.get(workspaceId);
+  if (pending) return pending;
+  const read = call(link, "GET /api/workspaces/:id/git/log", { id: workspaceId })
+    .then((l) => {
+      const had = logs.get(workspaceId);
+      const same = had && had.head === l.head && had.branch === l.branch && had.commits.length === l.commits.length;
+      const kept = same ? had : l;
+      logs.set(workspaceId, kept);
+      return kept;
+    })
+    .finally(() => reading.delete(workspaceId));
+  reading.set(workspaceId, read);
+  return read;
+}
+
 /**
  * 历史 (S13-B): the branch's latest commits, found like files in 找文件 (Ctrl+P): one box that matches the subject,
  * the hash and the author. Enter (or a click) opens the commit in a window of its own.
@@ -31,7 +58,7 @@ export function CommitPicker({
   keys?: boolean;
   onClose(): void;
 }) {
-  const [log, setLog] = useState<GitLog | null>(null);
+  const [log, setLog] = useState<GitLog | null>(() => logs.get(workspaceId) ?? null);
   const [error, setError] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [highlight, setHighlight] = useState(0);
@@ -42,9 +69,14 @@ export function CommitPicker({
 
   useEffect(() => {
     let live = true;
-    call(link, "GET /api/workspaces/:id/git/log", { id: workspaceId })
+    readHistory(link, workspaceId)
       .then((l) => live && setLog(l))
-      .catch((err: unknown) => live && setError(err instanceof HostApiError ? err.message : String(err)));
+      .catch((err: unknown) => {
+        if (!live) return;
+        logs.delete(workspaceId);
+        setLog(null);
+        setError(err instanceof HostApiError ? err.message : String(err));
+      });
     return () => {
       live = false;
     };
@@ -55,6 +87,13 @@ export function CommitPicker({
   const isCurrent = (sha: string) => !!current && (sha.startsWith(current) || current.startsWith(sha));
   // The commit shown now, when it is listed: where the highlight starts, scrolled to the middle of the list.
   const startAt = query.trim() ? 0 : Math.max(0, commits.findIndex((c) => isCurrent(c.sha)));
+  const [allRows, setAllRows] = useState(false);
+  useEffect(() => {
+    if (allRows || !log) return;
+    const t = setTimeout(() => setAllRows(true), 0);
+    return () => clearTimeout(t);
+  }, [allRows, log]);
+  const drawn = allRows ? commits : commits.slice(0, Math.max(FIRST_ROWS, startAt + 50));
   useEffect(() => setHighlight(startAt), [query, log]); // eslint-disable-line react-hooks/exhaustive-deps
   const centred = useRef(false);
   useEffect(() => {
@@ -115,7 +154,7 @@ export function CommitPicker({
           }}
         />
         <div className="file-picker-list" role="listbox" aria-label="提交" ref={list}>
-          {commits.map((c, i) => (
+          {drawn.map((c, i) => (
             <button
               key={c.sha}
               type="button"
@@ -126,7 +165,7 @@ export function CommitPicker({
               aria-selected={i === highlight}
               aria-current={isCurrent(c.sha) || undefined}
               className={[i === highlight ? "hl" : "", isCurrent(c.sha) ? "current" : ""].filter(Boolean).join(" ") || undefined}
-              title={`${c.sha}\n${c.author} <${c.email}>\n${new Date(c.date).toLocaleString()}\n\n${c.subject}`}
+              title={`${c.sha}\n${c.author} <${c.email}>\n${fullDate.format(new Date(c.date))}\n\n${c.subject}`}
               onMouseMove={() => setHighlight(i)}
               onClick={() => pick(i)}
               onContextMenu={(e) => {

@@ -70,9 +70,14 @@ export class GitReviewFeature extends Feature {
     if (!Number.isInteger(n) || n < 1) throw new HostError("bad_request", "limit must be a positive whole number");
     const dir = this.requireWorkspace(workspaceId).path;
     return this.git(async () => {
-      const status = await readStatus(dir);
-      if (!status.repo) throw new HostError("bad_request", status.reason ?? "不是 git 仓库");
-      return readLog(dir, n);
+      try {
+        return await readLog(dir, n);
+      } catch (err) {
+        // Only then the status: why there is no history (no git, not a repository).
+        const status = await readStatus(dir);
+        if (!status.repo) throw new HostError("bad_request", status.reason ?? "不是 git 仓库");
+        throw err;
+      }
     });
   }
 

@@ -138,4 +138,10 @@ describe("a repository's history", { timeout: 30_000 }, () => {
     run(fresh, "init", "-q", "-b", "main");
     expect(await readLog(fresh)).toEqual({ branch: "main", head: null, commits: [], truncated: false });
   });
+
+  it("fails outside a repository (the log runs beside the HEAD question, 2026-10-16)", async () => {
+    const plain = join(root, "plain");
+    mkdirSync(plain);
+    await expect(readLog(plain)).rejects.toBeInstanceOf(GitError);
+  });
 });

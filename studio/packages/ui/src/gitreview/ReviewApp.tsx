@@ -31,7 +31,7 @@ import { openViewer } from "../viewer/open.js";
 import { OverviewRuler } from "./OverviewRuler.js";
 import { pairKinds, rowKinds } from "./overview.js";
 import { splitRows } from "./splitview.js";
-import { CommitPicker } from "./CommitPicker.js";
+import { CommitPicker, readHistory } from "./CommitPicker.js";
 import { openReview, switchReview } from "./open.js";
 import { formatWhen } from "../attach/refs.js";
 
@@ -233,6 +233,13 @@ export function ReviewPage({
       live = false;
     };
   }, [link, workspace.id, range, reload, commit]);
+  // 历史 read ahead, once the window's own files are in (and again on 刷新): h opens it at once.
+  const hasHistory = !!commit || !!changes?.status.repo;
+  useEffect(() => {
+    if (!hasHistory) return;
+    const t = setTimeout(() => readHistory(link, workspace.id).catch(() => undefined), 300);
+    return () => clearTimeout(t);
+  }, [link, workspace.id, hasHistory, reload]);
   // A commit's files, once: a commit does not change.
   useEffect(() => {
     if (!commit) return;
