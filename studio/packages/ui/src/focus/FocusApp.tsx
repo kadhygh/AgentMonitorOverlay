@@ -1,19 +1,21 @@
-import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
-import type { Session, SessionItem, StateSnapshot } from "@amo-studio/protocol";
-import { call, type HostLink } from "../host/client.js";
+import { useEffect, useRef, useState } from "react";
+import type { Session, StateSnapshot } from "@amo-studio/protocol";
 import { useHostState } from "../host/useHostState.js";
-import { useSessionItems } from "../host/useSessionItems.js";
-import { needsPerson, relativeTime, SESSION_LOOK, type StatusLook } from "../lib/status.js";
+import { needsPerson } from "../lib/status.js";
 import { noteSeen, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
-import { planTitle } from "../chat/questions/flow.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useSettings } from "../settings/SettingsDialog.js";
-import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shapeRects, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
+import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pruneSeen, trackFirstSeen, readFocusLocked, readFocusPassthrough, shouldAlert, writeFocusLocked, writeFocusPassthrough } from "./attention.js";
 import { PixelBot, type BotMood } from "./PixelBot.js";
 import { FocusQuota } from "./FocusQuota.js";
 import { usePetSkin } from "./petSkin.js";
+import { FocusEntry, isToReview, summary } from "./FocusEntry.js";
+import { FocusSettings, ICON, type SettingItem } from "./FocusSettings.js";
+import { useWindowShape } from "./windowShape.js";
 import "./focus.css";
+
+export { isToReview, latestSnippet, summary } from "./FocusEntry.js";
 
 // The Focus window: "what needs me right now". Lists sessions waiting for approval or review, newest first; one entry
 // opens to show its latest content, approvals can be granted in place, everything else goes back to the workbench.
@@ -27,35 +29,12 @@ import "./focus.css";
 // new is finished work. Left unacknowledged for 5 minutes it gets angry and flies about the screen in a window of its
 // own (app/src/bot-window.ts) until clicked or dealt with; 「Focus 设置」→「机器人动作测试」 plays every mood once.
 
-type Approval = Extract<SessionItem, { type: "approval" }>;
-const SNIPPET_MAX = 300;
-
 export function needsMe(state: StateSnapshot): Session[] {
   return state.sessions
     .filter((s) => !s.archivedAt && needsPerson(s.status))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
 }
 
-/** Latest content worth showing: the pending approval, else a pending question (answered in the workbench), else the last agent reply. */
-export function latestSnippet(items: readonly SessionItem[]): { text: string; approval: Approval | null } {
-  const question = items.find((i): i is Extract<SessionItem, { type: "question" }> => i.type === "question" && i.state === "pending");
-  if (question && !items.some((i) => i.type === "approval" && i.state === "pending")) {
-    const text =
-      question.source === "plan-review"
-        ? `计划待审：${planTitle(question.plan ?? "")}`
-        : question.source === "mcp-form"
-          ? `等你填写：${question.message ?? ""}`
-          : (question.questions ?? []).map((q) => q.question).join("\n");
-    return { text: text.length > SNIPPET_MAX ? `${text.slice(0, SNIPPET_MAX)}…` : text, approval: null };
-  }
-  const approval = [...items].reverse().find((i): i is Approval => i.type === "approval" && i.state === "pending") ?? null;
-  if (approval) return { text: [approval.summary, approval.detail].filter(Boolean).join("\n"), approval };
-  const reply = [...items].reverse().find((i) => i.type === "agent");
-  const text = reply && reply.type === "agent" ? reply.markdown.trim() : "";
-  return { text: text.length > SNIPPET_MAX ? `${text.slice(0, SNIPPET_MAX)}…` : text, approval: null };
-}
-
-/** Placeholder while the Host connects (the decision hook runs before the link exists). */
 const NO_LINK = { url: "", token: "" };
 
 export function FocusApp() {
@@ -335,243 +314,4 @@ export function FocusApp() {
   );
 }
 
-/**
- * Tells the main process which parts of the window are Focus — the panel, the robot, the settings box — so clicks
- * anywhere else go to the windows below. Sent when their boxes change.
- */
-function useWindowShape() {
-  const last = useRef("");
-  const send = useRef(() => {});
-  send.current = () => {
-    const boxes = [...document.querySelectorAll<HTMLElement>(".focus-panel, .pixel-bot, .focus-pop")].map((el) => el.getBoundingClientRect());
-    const rects = shapeRects(boxes, { width: window.innerWidth, height: window.innerHeight });
-    const key = JSON.stringify(rects);
-    if (!rects.length || key === last.current) return;
-    last.current = key;
-    window.amo?.focus?.setShape?.(rects);
-  };
-  const observer = useRef<ResizeObserver | null>(null);
-  useEffect(() => {
-    observer.current = new ResizeObserver(() => send.current());
-    const onResize = () => send.current();
-    window.addEventListener("resize", onResize);
-    return () => {
-      observer.current?.disconnect();
-      window.removeEventListener("resize", onResize);
-    };
-  }, []);
-  // After every render: watch the parts there are now, and send their boxes if they moved.
-  useLayoutEffect(() => {
-    for (const el of document.querySelectorAll(".focus-panel, .pixel-bot, .focus-pop")) observer.current?.observe(el);
-    send.current();
-    // Once the robot's pop-in (a scale animation, which no observer sees) is over.
-    const t = setTimeout(() => send.current(), 300);
-    return () => clearTimeout(t);
-  });
-}
-
-interface SettingItem {
-  label: string;
-  icon: ReactNode;
-  onPick(): void;
-  /** A switch (stays open, shows its state); otherwise an action. */
-  checked?: boolean;
-  /** Close the box after the action. */
-  close?: boolean;
-  disabled?: boolean;
-  hint?: string | undefined;
-  testId: string;
-}
-
-/** 「Focus 设置」: a small box above the panel with ×. Switches stay open; actions close it. */
-function FocusSettings({ items, onClose }: { items: SettingItem[]; onClose(): void }) {
-  return (
-    <div className="focus-pop" role="dialog" aria-label="Focus 设置" onContextMenu={(e) => e.preventDefault()} data-testid="focus-menu">
-      <div className="focus-pop-head">
-        <span className="focus-pop-title">Focus 设置</span>
-        <button type="button" className="focus-pop-x" aria-label="关闭" title="关闭" onClick={onClose} data-testid="focus-menu-close">
-          {ICON.x}
-        </button>
-      </div>
-      {items.map((it) => (
-        <button
-          key={it.testId}
-          type="button"
-          className="focus-pop-row"
-          role={it.checked === undefined ? "menuitem" : "menuitemcheckbox"}
-          aria-checked={it.checked}
-          disabled={it.disabled}
-          title={it.hint}
-          onClick={() => {
-            if (it.close) onClose();
-            it.onPick();
-          }}
-          data-testid={it.testId}
-        >
-          <span className="focus-menu-icon">{it.icon}</span>
-          <span className="focus-menu-label">
-            {it.label}
-            {it.checked !== undefined && it.hint && <span className="focus-pop-hint">{it.hint}</span>}
-          </span>
-          {it.checked !== undefined && <span className={it.checked ? "focus-switch on" : "focus-switch"} aria-hidden="true" />}
-        </button>
-      ))}
-    </div>
-  );
-}
-
-const svg = (d: ReactNode) => (
-  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-    {d}
-  </svg>
-);
-
-/** 16px stroke icons, as in the rest of Studio. */
-const ICON = {
-  // The panel grows up from its bottom edge: up opens the list, down folds it to one line.
-  expand: svg(<path d="M4 10l4-4 4 4" />),
-  collapse: svg(<path d="M4 6l4 4 4-4" />),
-  move: svg(<path d="M8 1.8v12.4M1.8 8h12.4M6.3 3.5 8 1.8l1.7 1.7M6.3 12.5 8 14.2l1.7-1.7M3.5 6.3 1.8 8l1.7 1.7M12.5 6.3 14.2 8l-1.7 1.7" />),
-  lock: svg(
-    <>
-      <rect x="3.5" y="7" width="9" height="6.5" rx="1.2" />
-      <path d="M5.5 7V5a2.5 2.5 0 0 1 5 0v2" />
-    </>,
-  ),
-  window: svg(
-    <>
-      <rect x="2" y="3" width="12" height="10" rx="1.2" />
-      <path d="M2 6h12" />
-    </>,
-  ),
-  gear: svg(
-    <>
-      <circle cx="8" cy="8" r="2.2" />
-      <path d="M8 1.8v1.6M8 12.6v1.6M1.8 8h1.6M12.6 8h1.6M3.6 3.6l1.1 1.1M11.3 11.3l1.1 1.1M3.6 12.4l1.1-1.1M11.3 4.7l1.1-1.1" />
-    </>,
-  ),
-  // A pointer passing through a sheet.
-  through: svg(
-    <>
-      <path d="M2.5 9.5h11" strokeDasharray="2 1.6" />
-      <path d="M8 2v10.5M5.6 10.1 8 12.5l2.4-2.4" />
-    </>,
-  ),
-  x: svg(<path d="M4 4l8 8M12 4l-8 8" />),
-  bot: svg(
-    <>
-      <rect x="3" y="4.5" width="10" height="7.5" rx="1.5" />
-      <path d="M8 4.5V2.2M6 8h.01M10 8h.01M6.5 10.2h3M1.8 7.5v2.5M14.2 7.5v2.5" />
-    </>,
-  ),
-  hide: svg(
-    <>
-      <path d="M2 8s2.2-4 6-4 6 4 6 4-2.2 4-6 4-6-4-6-4z" />
-      <path d="M3 13 13 3" />
-    </>,
-  ),
-};
-
 const FINISHED: ReadonlySet<string> = new Set(["idle", "completed", "error"]);
-/** Finished work to look at: a reply that ended unseen, or a session waiting for review. */
-const TO_REVIEW: StatusLook = { label: "完成待审核", dot: "var(--running)", text: "var(--running-text)" };
-
-/** 完成待审核 rather than a 事: a reply that ended (not failed) unseen, or a session waiting for review. */
-export function isToReview(s: Session, waiting: readonly Session[]): boolean {
-  return s.status === "awaiting-review" || (!waiting.includes(s) && s.status !== "error");
-}
-
-/** The robot's words: how many 事 and how many 完成待审核. */
-export function summary(things: number, toReview: number): string {
-  return [things ? `${things} 件事` : "", toReview ? `${toReview} 个完成待审核` : ""].filter(Boolean).join(" · ") || "没有待处理";
-}
-
-function FocusEntry({
-  link,
-  session,
-  title,
-  open,
-  finished,
-  toReview,
-  onToggle,
-  onDone,
-}: {
-  link: HostLink;
-  session: Session;
-  title: string;
-  open: boolean;
-  finished: boolean;
-  toReview: boolean;
-  onToggle(): void;
-  /** 我知道了: a 完成待审核 entry counts as reviewed (seen) and leaves the list. */
-  onDone(): void;
-}) {
-  const look = toReview ? TO_REVIEW : SESSION_LOOK[session.status];
-  return (
-    <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry" data-finished={finished || undefined} data-review={toReview || undefined}>
-      <button type="button" className="focus-row" onClick={onToggle} aria-expanded={open}>
-        <span className="dot" style={{ background: look.dot }} />
-        <span className="focus-row-text">
-          <span className="focus-title">{title}</span>
-          <span className="focus-sub" style={{ color: look.text }}>
-            {look.label}
-            {session.title ? ` · ${session.title}` : ""}
-          </span>
-        </span>
-        <span className="focus-time">{relativeTime(session.updatedAt)}</span>
-      </button>
-      {open && <FocusDetail link={link} session={session} {...(toReview && finished ? { onDone } : {})} />}
-    </div>
-  );
-}
-
-function FocusDetail({ link, session, onDone }: { link: HostLink; session: Session; onDone?(): void }) {
-  const { items } = useSessionItems(link, session.id);
-  const { text, approval } = latestSnippet(items);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  const approve = async (a: Approval) => {
-    setBusy(true);
-    setError(null);
-    try {
-      await call(link, "POST /api/approvals/:approvalId", { approvalId: a.approvalId }, { sessionId: session.id, decision: "accept" });
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-    } finally {
-      setBusy(false);
-    }
-  };
-
-  return (
-    <div className="focus-detail">
-      <span className="focus-snippet" data-testid="focus-snippet">
-        {text || "（还没有内容）"}
-      </span>
-      {error && (
-        <span className="focus-error" role="alert">
-          {error}
-        </span>
-      )}
-      <div className="focus-actions">
-        {approval && (
-          <button type="button" className="focus-approve" disabled={busy} onClick={() => void approve(approval)}>
-            批准
-          </button>
-        )}
-        <button
-          type="button"
-          className="focus-btn"
-          onClick={() => void window.amo?.openInWorkbench?.({ ...(session.taskId ? { taskId: session.taskId } : {}), sessionId: session.id })}
-        >
-          在工作台打开
-        </button>
-        {onDone && (
-          <button type="button" className="focus-btn" title="不用切回来看：算作审核完成，从 Focus 里移走" data-testid="focus-done" onClick={onDone}>
-            我知道了
-          </button>
-        )}
-      </div>
-    </div>
-  );
-}

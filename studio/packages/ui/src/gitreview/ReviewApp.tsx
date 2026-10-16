@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { showToast } from "../lib/toast.js";
 import {
-  GIT_RANGES,
   rangeBase,
   type GitChangedFile,
   type GitChanges,
@@ -17,7 +16,7 @@ import { openInApps, openInEditor, revealInExplorer } from "../lib/openin.js";
 import { DiffView } from "./DiffView.js";
 import { FileList, FileMenu, Splitter, type FileMenuAt } from "./FileList.js";
 import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type ReviewPrefs } from "./filetree.js";
-import { changeStarts, countLabel, diffRows, draftCounts, parseReviewHash, placeComments, STATUS_NAME, step, type DiffMode, type DiffRow, type ReviewTarget } from "./logic.js";
+import { changeStarts, diffRows, draftCounts, parseReviewHash, placeComments, step, type DiffMode, type DiffRow, type ReviewTarget } from "./logic.js";
 import { captureAnchor, restoreAnchor, type ViewAnchor } from "./anchor.js";
 import { commentsChanged, SendBar, useReviewComments } from "./comments.js";
 import { dropDraft, editDraftKey, newDraftKey } from "./drafts.js";
@@ -25,15 +24,13 @@ import { FindBar } from "./FindBar.js";
 import { editorLine } from "./splitview.js";
 import { DiffCache, type DiffRequest } from "./diffcache.js";
 import { diffTokensFor, useDiffTokens } from "./tokens.js";
-import { MarkButton } from "../marks/MarkButton.js";
 import { findChangedFile } from "../viewer/logic.js";
-import { openViewer } from "../viewer/open.js";
 import { OverviewRuler } from "./OverviewRuler.js";
 import { pairKinds, rowKinds } from "./overview.js";
 import { splitRows } from "./splitview.js";
 import { CommitPicker, readHistory } from "./CommitPicker.js";
 import { openReview, switchReview } from "./open.js";
-import { formatWhen } from "../attach/refs.js";
+import { FileHead, ReviewHead } from "./ReviewHead.js";
 
 // The Git Review window (#review?workspace=…&session=…): a project's changed files on the left, one file's diff on
 // the right, comments on lines, and "发给会话" to send the drafts to a session as one message. With `&commit=…`
@@ -74,16 +71,6 @@ export interface ReviewSelect {
 }
 
 type Toast = { text: string; error?: boolean } | null;
-
-const MODES: { id: DiffMode; label: string }[] = [
-  { id: "changes", label: "只看改动" },
-  { id: "full", label: "完整文件" },
-];
-
-const LAYOUTS: { split: boolean; label: string; hint: string }[] = [
-  { split: false, label: "单栏", hint: "新旧行上下排在一栏里" },
-  { split: true, label: "左右对照", hint: "左边旧版，右边新版，两边一起滚动" },
-];
 
 const LIST_LAYOUTS: { id: ListLayout; label: string }[] = [
   { id: "tree", label: "目录树" },
@@ -407,72 +394,23 @@ export function ReviewPage({
 
   return (
     <div className="gr-app">
-      <header className="gr-head">
-        <span className="gr-title">{commit ? "提交" : "Git Review"}</span>
-        <span className="gr-project">{workspace.name}</span>
-        {commit && (
-          <span className="gr-commit" data-testid="review-commit" title={shownCommit ? `${shownCommit.commit.sha}\n${shownCommit.commit.author} <${shownCommit.commit.email}>` : commit}>
-            <code>{short(shownCommit?.commit.sha ?? commit)}</code>
-            {shownCommit && (
-              <>
-                <span className="gr-commit-subject">{shownCommit.commit.subject}</span>
-                <span className="gr-dim">
-                  {shownCommit.commit.author} · {formatWhen(shownCommit.commit.date)}
-                  {shownCommit.commit.parents.length > 1 ? " · 合并提交，对比第一个父提交" : shownCommit.commit.parents.length === 0 ? " · 第一个提交" : ""}
-                </span>
-              </>
-            )}
-          </span>
-        )}
-        {status?.repo && (
-          <span className="gr-branch" data-testid="review-branch" title={status.root}>
-            {status.branch ?? `分离的 HEAD ${short(status.head)}`}
-            {range === "branch" && (status.base ? ` · 对比 ${status.base}（基点 ${short(status.mergeBase)}）` : " · 没有找到默认分支，同工作区改动")}
-          </span>
-        )}
-        <span className="spacer" />
-        {(commit || status?.repo) && (
-          <button type="button" className="btn-ghost small" onClick={() => setPicking("search")} title="这个分支的提交（h）：搜索说明、hash 或作者，在新窗口查看" data-testid="review-history">
-            历史
-          </button>
-        )}
-        {!commit && (
-          <div className="gr-seg" role="group" aria-label="对比范围">
-            {GIT_RANGES.map((r) => (
-              <button key={r.id} type="button" aria-pressed={range === r.id} title={r.hint} onClick={() => setRange(r.id)}>
-                {r.label}
-              </button>
-            ))}
-          </div>
-        )}
-        <div className="gr-seg" role="group" aria-label="显示方式">
-          {MODES.map((m) => (
-            <button key={m.id} type="button" aria-pressed={mode === m.id} onClick={() => setMode(m.id)}>
-              {m.label}
-            </button>
-          ))}
-        </div>
-        <div className="gr-seg" role="group" aria-label="版式">
-          {LAYOUTS.map((l) => (
-            <button key={l.label} type="button" aria-pressed={prefs.split === l.split} title={l.hint} onClick={() => setSplit(l.split)}>
-              {l.label}
-            </button>
-          ))}
-        </div>
-        {!commit && (
-          <button
-            type="button"
-            className="btn-ghost small"
-            onClick={() => {
-              cache.clear();
-              setReload((n) => n + 1);
-            }}
-            title="重新读取改动"
-          >
-            刷新
-          </button>
-        )}
-      </header>
+      <ReviewHead
+        workspaceName={workspace.name}
+        commit={commit}
+        shownCommit={shownCommit}
+        status={status}
+        range={range}
+        mode={mode}
+        split={prefs.split}
+        onHistory={() => setPicking("search")}
+        onRange={setRange}
+        onMode={setMode}
+        onSplit={setSplit}
+        onRefresh={() => {
+          cache.clear();
+          setReload((n) => n + 1);
+        }}
+      />
 
       {status && !status.repo ? (
         <div className="placeholder" data-testid="review-not-git">
@@ -517,48 +455,7 @@ export function ReviewPage({
           <Splitter width={prefs.listWidth} onChange={(w) => pref("listWidth", w)} />
 
           <section className="gr-diff" aria-label="文件改动">
-            {file && (
-              <div className="gr-file-head" data-testid="review-file-head">
-                <span className="gr-path">{file.oldPath ? `${file.oldPath} → ${file.path}` : file.path}</span>
-                <span className="gr-dim">{file.untracked ? "未跟踪的新文件" : STATUS_NAME[file.status]}</span>
-                <span className="spacer" />
-                <span className="gr-dim">{countLabel(file)}</span>
-                {vscode && (
-                  <button
-                    type="button"
-                    className="btn-ghost small"
-                    disabled={file.status === "deleted"}
-                    title={file.status === "deleted" ? "文件已删除" : `在 VS Code 里打开到第 ${openLine} 行`}
-                    onClick={() => openFile(file, "vscode", openLine)}
-                    data-testid="review-open-vscode"
-                  >
-                    VS Code 打开
-                  </button>
-                )}
-                <button
-                  type="button"
-                  className="btn-ghost small"
-                  disabled={file.status === "deleted"}
-                  title={file.status === "deleted" ? "文件已删除" : "在资源管理器里选中这个文件"}
-                  onClick={() => openFile(file, "explorer")}
-                  data-testid="review-reveal"
-                >
-                  在资源管理器中显示
-                </button>
-                {file.status !== "deleted" && (
-                  <button
-                    type="button"
-                    className="btn-ghost small"
-                    title={`在查看器里看这个文件现在的样子（第 ${openLine} 行）`}
-                    onClick={() => openViewer({ path: file.path, workspaceId: workspace.id, line: openLine })}
-                    data-testid="review-open-viewer"
-                  >
-                    查看文件
-                  </button>
-                )}
-                {file.status !== "deleted" && <MarkButton link={link} file={{ path: file.path, workspaceId: workspace.id }} line={active !== null ? openLine : null} />}
-              </div>
-            )}
+            {file && <FileHead link={link} workspaceId={workspace.id} file={file} vscode={vscode} openLine={openLine} lineChosen={active !== null} onOpen={(app, line) => openFile(file, app, line)} />}
             <div className="gr-scroll-wrap">
               {file && shown && (
                 <FindBar

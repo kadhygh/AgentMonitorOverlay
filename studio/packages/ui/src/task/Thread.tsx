@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type RefObject, type SetStateAction } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type DragEvent, type SetStateAction } from "react";
 import { readSessionDraft, writeSessionDraft } from "./sessionDraft.js";
 import type { Annotation, ApprovalDecision, DecisionRequest, ModelProfile, Session, SessionItem, SessionPreset, SlashCommand, Task } from "@amo-studio/protocol";
 import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
@@ -8,7 +8,7 @@ import { ReplyNav } from "./ReplyNav.js";
 import { Transcript } from "../chat/Transcript.js";
 import { useTranscriptView } from "../chat/prefs.js";
 import { IconArrowDown, IconArrowUp, IconStop } from "../chat/icons.js";
-import { formatTokens, sessionStats, type ApprovalItem } from "../chat/turns.js";
+import { sessionStats, type ApprovalItem } from "../chat/turns.js";
 import { useAttachments } from "../attach/useAttachments.js";
 import { AttachTray } from "../attach/AttachTray.js";
 import { AttachLink } from "../attach/MessageAttachments.js";
@@ -23,8 +23,8 @@ import { PlanReviewBar, sendRevision } from "../chat/questions/PlanReview.js";
 import { WakeBar } from "../chat/WakeBar.js";
 import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
 import { AnnotationBubble, contentRect, SelectionBar, type BubbleTarget, type ContentRect } from "../review/AnnotationBubble.js";
-import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, onAnnotationsPainted, paintedEnds, useAnnotationHighlights } from "../review/highlights.js";
-import { annotationNumber, type AnnotationRefs } from "../review/annotationRefs.js";
+import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, useAnnotationHighlights } from "../review/highlights.js";
+import type { AnnotationRefs } from "../review/annotationRefs.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
 import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
 import { BackgroundTasks, latestSuggestion, SuggestionChips } from "../chat/cli/ComposerExtras.js";
@@ -32,6 +32,8 @@ import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { openReview } from "../gitreview/open.js";
 import { useMarkSessionSeen } from "../lib/sessionSeen.js";
 import { TurnStartHint, useTurnStartHint } from "./TurnStartHint.js";
+import { useAnnotationMarks } from "./annotationMarks.js";
+import { AnnotationRefChips, ComposerStats, composerPlaceholder, SelectionMenu } from "./ThreadParts.js";
 
 /** Studio's /compact, as the 压缩 button runs it. */
 const COMPACT: SlashCommand = { name: "compact", description: "", group: "studio" };
@@ -210,19 +212,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   useMarkSessionSeen(session);
   // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn.
   const queues = session?.runtime === "claude";
-  const placeholder = readOnly
-    ? claudeSub
-      ? "Claude 的子 agent 不能单独接收消息，请在父会话里继续。"
-      : "会话已交给终端，工作台暂时只读。"
-    : isRevising
-      ? "写下要修改的地方，回车发给 Claude（计划会按你的意见重写）"
-      : planReview
-      ? "计划在等你审阅：可以先在这里写下意见，再点上面的「要修改」"
-      : generating
-      ? queues
-        ? "回复生成中，发出的内容会在下一次工具调用后或本轮结束后被读到"
-        : "回复生成中，输入的内容会作为插话发出"
-      : "继续推进这个会话，回车发送，Shift+回车换行，输入 / 看命令";
+  const placeholder = composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, generating, queues });
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // Images must finish uploading (or be removed when they failed) before the message can go.
@@ -464,40 +454,23 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
         )}
       </div>
       {menu && (
-        <div className="ctx-menu" role="menu" aria-label="选中文字" style={{ left: menu.x, top: menu.y }}>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              const at = selectionRect() ?? (scroller.current ? contentRect(scroller.current, new DOMRect(menu.x, menu.y, 1, 1)) : null);
-              if (at) setBubble({ kind: "new", anchor: menu.anchor, at });
-              setMenu(null);
-            }}
-          >
-            添加批注
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            disabled={!session || session.writer === "archived" || session.writer === "terminal-handoff"}
-            onClick={() => {
-              quoteToDraft(menu.anchor.quote);
-              setMenu(null);
-            }}
-          >
-            引用到输入框
-          </button>
-          <button
-            type="button"
-            role="menuitem"
-            onClick={() => {
-              void copyText(menu.anchor.quote);
-              setMenu(null);
-            }}
-          >
-            复制
-          </button>
-        </div>
+        <SelectionMenu
+          at={menu}
+          canQuote={!!session && session.writer !== "archived" && session.writer !== "terminal-handoff"}
+          onAnnotate={() => {
+            const at = selectionRect() ?? (scroller.current ? contentRect(scroller.current, new DOMRect(menu.x, menu.y, 1, 1)) : null);
+            if (at) setBubble({ kind: "new", anchor: menu.anchor, at });
+            setMenu(null);
+          }}
+          onQuote={() => {
+            quoteToDraft(menu.anchor.quote);
+            setMenu(null);
+          }}
+          onCopy={() => {
+            void copyText(menu.anchor.quote);
+            setMenu(null);
+          }}
+        />
       )}
       {session && (
         <div className="composer-dock" {...dropTarget}>
@@ -534,20 +507,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           {!archived && (
           <div className={`composer-card${readOnly ? " disabled" : ""}${dragging ? " dropping" : ""}`}>
             <AttachTray attach={attach} disabled={readOnly} />
-            {annotationRefs && annotationRefs.list.length > 0 && !isRevising && (
-              <div className="anno-refs" aria-label="这条消息引用的批注" data-testid="annotation-refs">
-                {annotationRefs.list.map((a) => (
-                  <span key={a.id} className="anno-ref" title={`「${a.quote}」\n${a.note}`} data-testid="annotation-ref">
-                    <button type="button" className="anno-ref-name" onClick={() => flashAnnotation(a.id)}>
-                      批注{annotationNumber(a, annotations)}
-                    </button>
-                    <button type="button" className="anno-ref-x" aria-label={`不引用批注${annotationNumber(a, annotations)}`} title="这条消息不引用它" onClick={() => annotationRefs.remove(a.id)}>
-                      ×
-                    </button>
-                  </span>
-                ))}
-              </div>
-            )}
+            {annotationRefs && annotationRefs.list.length > 0 && !isRevising && <AnnotationRefChips refs={annotationRefs} annotations={annotations} />}
             <label className="chat-input">
               <span className="sr-only">输入消息</span>
               <textarea
@@ -625,37 +585,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             </div>
           </div>
           )}
-          {stats.turns > 0 && (
-            <div className="composer-stats" data-testid="composer-stats">
-              <span>
-                {stats.turns} 轮 {stats.steps} 步
-              </span>
-              {stats.tokens > 0 && <span>用量 {formatTokens(stats.tokens)}</span>}
-              {stats.cacheHit !== null && <span>缓存命中 {stats.cacheHit}%</span>}
-              {stats.context && (
-                <span
-                  className={`context-use${stats.context.percent !== null && stats.context.percent >= 80 ? " high" : ""}`}
-                  title="当前上下文 / 模型最大上下文（最近一轮结束时）"
-                  data-testid="context-use"
-                >
-                  上下文 {formatTokens(stats.context.used)}
-                  {stats.context.window ? ` / ${formatTokens(stats.context.window)} · ${stats.context.percent}%` : ""}
-                </span>
-              )}
-              {!readOnly && (
-                <button
-                  type="button"
-                  className="link-btn compact-btn"
-                  data-testid="compact-button"
-                  disabled={generating || compacting}
-                  title="压缩上下文：把之前的对话总结成摘要，腾出上下文空间（等这一轮结束后可用）"
-                  onClick={() => void runCommand(COMPACT, "")}
-                >
-                  {compacting ? "压缩中…" : "压缩"}
-                </button>
-              )}
-            </div>
-          )}
+          <ComposerStats stats={stats} canCompact={!readOnly} busy={generating || compacting} compacting={compacting} onCompact={() => void runCommand(COMPACT, "")} />
         </div>
       )}
       {finding && session && (
@@ -673,43 +603,4 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
       )}
     </>
   );
-}
-
-/**
- * Where the 批注N marks go: just after the end of each painted annotation, in the scroller's content coordinates, kept
- * up to date as the highlights repaint and the conversation resizes.
- */
-function useAnnotationMarks(scroller: RefObject<HTMLDivElement | null>, shown: readonly Annotation[], all: readonly Annotation[]): Array<{ id: string; n: number; top: number; left: number; title: string }> {
-  const [marks, setMarks] = useState<Array<{ id: string; n: number; top: number; left: number; title: string }>>([]);
-  const latest = useRef({ shown, all });
-  latest.current = { shown, all };
-  useEffect(() => {
-    const el = scroller.current;
-    if (!el) return;
-    let frame = 0;
-    const place = () => {
-      frame = 0;
-      const box = el.getBoundingClientRect();
-      const { shown: list, all: every } = latest.current;
-      const next = paintedEnds().flatMap(({ id, rect }) => {
-        const a = list.find((x) => x.id === id);
-        if (!a) return [];
-        return [{ id, n: annotationNumber(a, every), top: rect.top - box.top + el.scrollTop - 14, left: Math.min(rect.right - box.left + el.scrollLeft + 2, el.scrollWidth - 48), title: `「${a.quote}」\n${a.note}` }];
-      });
-      setMarks((cur) => (JSON.stringify(cur) === JSON.stringify(next) ? cur : next));
-    };
-    const schedule = () => {
-      frame ||= requestAnimationFrame(place);
-    };
-    const off = onAnnotationsPainted(schedule);
-    const observer = new ResizeObserver(schedule);
-    observer.observe(el);
-    schedule();
-    return () => {
-      off();
-      observer.disconnect();
-      cancelAnimationFrame(frame);
-    };
-  }, [scroller]);
-  return marks.filter((m) => shown.some((a) => a.id === m.id));
 }
