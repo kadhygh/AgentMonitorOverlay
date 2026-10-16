@@ -100,3 +100,23 @@ test("archived tasks leave the board; the 完成 column lists them, they open re
   await expect(page.getByTestId("task-card")).toHaveCount(2);
   await expect(page.getByTestId("archived-open")).toHaveCount(0);
 });
+
+test("a card title with a long unbroken word (a path) wraps inside its card (2026-10-16)", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api("POST", "/api/tasks", {
+    title: "Message: …UIWidgets/Blizzard_UIWidgetTemplateTextWithStateAndSomeMoreWordsGluedTogether",
+    workspaceId: ws.id,
+    firstSession: { profileId: "codex-mock", text: "看看这个报错" },
+  });
+  await page.getByTestId("scope-all").click();
+  const card = page.getByTestId("task-card");
+  await expect(card).toContainText("Blizzard_UIWidgetTemplate");
+  const fits = await card.evaluate((el) => {
+    const title = el.querySelector<HTMLElement>(".card-title")!;
+    return { cardRight: el.getBoundingClientRect().right, titleRight: title.getBoundingClientRect().right, overflow: title.scrollWidth - title.clientWidth };
+  });
+  expect(fits.overflow).toBeLessThanOrEqual(0);
+  expect(fits.titleRight).toBeLessThanOrEqual(fits.cardRight);
+});

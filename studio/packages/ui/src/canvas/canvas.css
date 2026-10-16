@@ -36,7 +36,7 @@
 .side-tab { flex: 1; height: 28px; border: none; border-radius: 7px; background: transparent; color: var(--text-dim); font-size: 12.5px; cursor: pointer; }
 .side-tab[aria-selected="true"] { background: var(--border); color: var(--text); }
 .side-section { display: flex; flex-direction: column; gap: 10px; }
-.side-heading { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-title); }
+.side-heading { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-title); overflow-wrap: anywhere; }
 .side-subheading { font-size: 12px; color: var(--text-dim); margin-top: 6px; }
 .side-note { font-size: 12px; color: var(--text-dim); }
 .side-textarea { padding: 8px 10px; border-radius: 8px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 13px; resize: vertical; }
