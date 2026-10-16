@@ -80,3 +80,36 @@
 .ref-row-title { font-size: var(--fs-sm); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .ref-row-meta { grid-column: 1; display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--text-dim); white-space: nowrap; overflow: hidden; }
 .ref-row-act { grid-column: 2; grid-row: 1 / span 2; align-self: center; font-size: 12px; color: var(--text-dim); }
+
+/* Stage 16 (2026-10-17): task descriptions on cards, colour marks, the right-click menu, 连依赖 */
+.canvas-page { --mark-red: #d64545; --mark-yellow: #d9a300; --mark-green: #2f9e44; --mark-blue: #3b6fd8; }
+.canvas-card-desc { font-size: 12px; line-height: 17px; color: var(--text-dim); white-space: pre-line; overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; }
+.canvas-card[data-color="red"], .canvas-note[data-color="red"] { --mark: var(--mark-red); }
+.canvas-card[data-color="yellow"], .canvas-note[data-color="yellow"] { --mark: var(--mark-yellow); }
+.canvas-card[data-color="green"], .canvas-note[data-color="green"] { --mark: var(--mark-green); }
+.canvas-card[data-color="blue"], .canvas-note[data-color="blue"] { --mark: var(--mark-blue); }
+.canvas-card[data-color], .canvas-note[data-color] { border-color: var(--mark); box-shadow: 0 0 0 2px var(--mark), 0 4px 14px var(--shadow-soft); }
+.canvas-card[data-color].selected, .canvas-note[data-color].selected { box-shadow: 0 0 0 2px var(--mark), 0 0 0 4px var(--primary); }
+.canvas-group[data-color="red"] { --mark: var(--mark-red); }
+.canvas-group[data-color="yellow"] { --mark: var(--mark-yellow); }
+.canvas-group[data-color="green"] { --mark: var(--mark-green); }
+.canvas-group[data-color="blue"] { --mark: var(--mark-blue); }
+.canvas-group[data-color] { border: 2px solid var(--mark); }
+.canvas-group[data-color] .canvas-group-bar { background: color-mix(in srgb, var(--mark) 16%, var(--group-bar)); border-bottom-color: color-mix(in srgb, var(--mark) 45%, var(--border)); }
+.canvas-edge-hit { stroke: transparent; stroke-width: 12; pointer-events: stroke; cursor: context-menu; }
+.canvas-viewport[data-linking] .canvas-card { cursor: crosshair; }
+.canvas-card.link-target:hover { border-color: var(--primary); box-shadow: 0 0 0 2px var(--primary); }
+.canvas-linking { position: absolute; left: 50%; top: 12px; transform: translateX(-50%); display: flex; align-items: center; gap: 10px; padding: 6px 12px; border-radius: var(--r-l); border: 1px solid var(--primary); background: var(--panel-float); box-shadow: 0 8px 24px var(--shadow); font-size: var(--fs-sm); }
+.canvas-menu { min-width: 190px; }
+.canvas-menu .menu-sep { height: 1px; margin: 4px 6px; background: var(--border); }
+.canvas-menu-colors { display: flex; align-items: center; gap: 8px; padding: 6px 10px 8px; }
+.ctx-menu .color-swatch { width: 18px; height: 18px; padding: 0; border-radius: 50%; border: 2px solid transparent; flex: none; }
+.ctx-menu .color-swatch[data-color="red"] { background: var(--mark-red); }
+.ctx-menu .color-swatch[data-color="yellow"] { background: var(--mark-yellow); }
+.ctx-menu .color-swatch[data-color="green"] { background: var(--mark-green); }
+.ctx-menu .color-swatch[data-color="blue"] { background: var(--mark-blue); }
+.ctx-menu .color-swatch.none { background: transparent; border: 1.5px dashed var(--text-dim); }
+.ctx-menu .color-swatch[aria-checked="true"] { outline: 2px solid var(--text); outline-offset: 2px; }
+.ctx-menu .color-swatch:hover { transform: scale(1.12); }
+.side-desc { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
+.side-desc-text { margin: 0; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; color: var(--text); }

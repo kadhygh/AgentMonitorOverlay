@@ -265,4 +265,8 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE sessions ADD COLUMN wake TEXT;
   `,
+  // 14: a task's own description (2026-10-17, stage 16): on its canvas card and task page; NULL = none.
+  `
+  ALTER TABLE tasks ADD COLUMN description TEXT;
+  `,
 ];

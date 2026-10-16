@@ -42,6 +42,15 @@ export function canvasTools({ service, caller, model, ownTopic, inOwnTopic }: To
       run: (args) => write(caller, (c) => (inOwnTopic(c, args.fromTaskId, args.toTaskId), service.canvases.canvasAddDependency(args.fromTaskId, args.toTaskId))),
     },
     {
+      name: "canvas_color",
+      title: "画布标颜色",
+      description: "Mark a task card, reference card, note or group on your topic's canvas with a colour (red, yellow, green, blue), or take the mark off (none). The colour is the card's outline; what each colour means is the person's (state, priority…). target: a task id, or a group's or note's id from canvas_read.",
+      inputSchema: { target: z.string(), color: z.enum(["red", "yellow", "green", "blue", "none"]) },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) => write(caller, (c) => service.canvases.canvasSetColor(ownTopic(c), args)),
+    },
+    {
       name: "canvas_place",
       title: "画布归组",
       description: "Put a task of your topic into a group on its canvas (groupId), or take it out of its group (omit groupId). Studio picks the position; the person approves first.",

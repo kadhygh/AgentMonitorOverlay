@@ -168,13 +168,17 @@ export class Store extends DocumentStore {
     return (this.db.prepare("SELECT * FROM tasks ORDER BY created_at, id").all() as Row[]).map(toTask);
   }
 
-  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt">>): Task {
+  /** `description`: empty removes it. */
+  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description">>): Task {
     const task = this.getTask(id);
     if (!task) throw new Error(`task ${id} not found`);
-    const next: Task = { ...task, ...patch, updatedAt: this.timestamp() };
+    const { description: _old, ...rest } = task;
+    const description = patch.description !== undefined ? patch.description.trim() : (task.description ?? "");
+    const next: Task = { ...rest, ...patch, ...(description ? { description } : {}), updatedAt: this.timestamp() };
+    if (!description) delete next.description;
     this.db
-      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, updated_at = ? WHERE id = ?")
-      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, next.updatedAt, id);
+      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, next.updatedAt, id);
     return next;
   }
 

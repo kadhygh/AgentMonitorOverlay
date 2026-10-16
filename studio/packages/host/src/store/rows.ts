@@ -29,6 +29,7 @@ export function toTask(r: Row): Task {
     workspaceId: strOrNull(r.workspace_id) ?? "",
     topicId: strOrNull(r.topic_id),
     column: str(r.column_name) as TaskColumn,
+    ...(typeof r.description === "string" && r.description ? { description: r.description } : {}),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
     archivedAt: strOrNull(r.archived_at),

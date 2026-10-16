@@ -1,4 +1,4 @@
-import type { CanvasDoc, CanvasGroup, Id, Point, Rect } from "@amo-studio/protocol";
+import type { CanvasColor, CanvasDoc, CanvasGroup, CanvasNode, Id, Point, Rect } from "@amo-studio/protocol";
 
 // Pure canvas edits used by the canvas page. Membership is structural (node.groupId); positions follow it.
 
@@ -73,4 +73,56 @@ export function arrowBetween(from: Rect, to: Rect): { a: Point; b: Point } {
   const fc = { x: from.x + from.w / 2, y: from.y + from.h / 2 };
   const tc = { x: to.x + to.w / 2, y: to.y + to.h / 2 };
   return { a: borderPoint(from, tc), b: borderPoint(to, fc) };
+}
+
+// ---- right-click menu edits (stage 16) ------------------------------------------------------------------------------
+
+/** A colour mark on a group or a node (null: none). */
+export function setColor(doc: CanvasDoc, target: { kind: "group" | "node"; id: Id }, color: CanvasColor | null): CanvasDoc {
+  const paint = <T extends { color?: CanvasColor }>(o: T): T => {
+    const { color: _old, ...rest } = o;
+    return (color ? { ...rest, color } : rest) as T;
+  };
+  return target.kind === "group"
+    ? { ...doc, groups: doc.groups.map((g) => (g.id === target.id ? paint(g) : g)) }
+    : { ...doc, nodes: doc.nodes.map((n) => (n.id === target.id ? paint(n) : n)) };
+}
+
+/** Takes a node out of its group: it goes just below the group, at its left edge. */
+export function outOfGroup(doc: CanvasDoc, nodeId: Id, size: { w: number; h: number }): CanvasDoc {
+  const node = doc.nodes.find((n) => n.id === nodeId);
+  const group = node?.groupId ? doc.groups.find((g) => g.id === node.groupId) : undefined;
+  if (!node || !group) return doc;
+  const pos = { x: group.rect.x, y: group.rect.y + group.rect.h + 16 };
+  return { ...doc, nodes: doc.nodes.map((n) => (n.id === nodeId ? { ...n, pos, groupId: null } : n)) };
+}
+
+/** Removes a group with its notes and reference cards; its tasks' cards stay, ungrouped (a task is not the canvas's to delete). */
+export function deleteGroupWithContents(doc: CanvasDoc, groupId: Id): CanvasDoc {
+  const gone = (n: CanvasNode) => n.groupId === groupId && n.kind !== "task";
+  return deleteGroup({ ...doc, nodes: doc.nodes.filter((n) => !gone(n)) }, groupId);
+}
+
+/** A copy of a note beside it (in the same group when it fits there). */
+export function duplicateNote(doc: CanvasDoc, nodeId: Id, newId: Id): CanvasDoc {
+  const node = doc.nodes.find((n) => n.id === nodeId);
+  if (!node || node.kind !== "note") return doc;
+  return { ...doc, nodes: [...doc.nodes, { ...node, id: newId, pos: { x: node.pos.x + 24, y: node.pos.y + 24 } }] };
+}
+
+export function reverseEdge(doc: CanvasDoc, edgeId: Id): CanvasDoc {
+  return { ...doc, edges: doc.edges.map((e) => (e.id === edgeId ? { ...e, from: e.to, to: e.from } : e)) };
+}
+
+export function removeEdge(doc: CanvasDoc, edgeId: Id): CanvasDoc {
+  return { ...doc, edges: doc.edges.filter((e) => e.id !== edgeId) };
+}
+
+/** The box around everything on the canvas, or null when it is empty. */
+export function contentBounds(doc: CanvasDoc, sizeOf: (n: CanvasNode) => { w: number; h: number }): Rect | null {
+  const rects: Rect[] = [...doc.groups.map((g) => g.rect), ...doc.nodes.map((n) => ({ ...n.pos, ...sizeOf(n) }))];
+  if (!rects.length) return null;
+  const x = Math.min(...rects.map((r) => r.x));
+  const y = Math.min(...rects.map((r) => r.y));
+  return { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) - x, h: Math.max(...rects.map((r) => r.y + r.h)) - y };
 }

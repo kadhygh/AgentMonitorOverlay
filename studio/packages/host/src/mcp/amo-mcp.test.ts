@@ -81,12 +81,12 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists ten read-only tools and nine that write for the caller", async () => {
+  it("lists ten read-only tools and eleven that write for the caller", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "board_list", "canvas_depend", "canvas_group_create", "canvas_place", "canvas_read", "checklist_check", "decision_request", "handoff_submit", "list_file_marks",
-      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "session_tree", "task_get", "task_note_add", "topic_get", "topic_list",
+      "board_list", "canvas_color", "canvas_depend", "canvas_group_create", "canvas_place", "canvas_read", "checklist_check", "decision_request", "handoff_submit", "list_file_marks",
+      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "session_tree", "task_describe", "task_get", "task_note_add", "topic_get", "topic_list",
     ]);
     expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual([
       "board_list", "canvas_read", "list_file_marks", "pack_doc", "pack_list", "project_context", "session_tree", "task_get", "topic_get", "topic_list",
@@ -150,7 +150,7 @@ describe("AMO MCP", () => {
 
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(19);
+    expect((await client.listTools()).tools).toHaveLength(21);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);
@@ -282,6 +282,29 @@ describe("AMO MCP", () => {
     const anonymous = await connect(MCP_TOKEN);
     expect((await call(anonymous, "canvas_group_create", { title: "y" })).isError).toBe(true);
     await anonymous.close();
+  });
+
+  it("describes tasks and marks the canvas with colours, within the caller's topic (2026-10-17)", async () => {
+    const client = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
+    // Its own task by default, another task of its topic by id.
+    expect((await call(client, "task_describe", { description: "  导入失败时重试三次  " })).data).toMatchObject({ taskId: importTask.id, description: "导入失败时重试三次" });
+    expect((await call(client, "task_describe", { taskId: configTask.id, description: "对齐配置键" })).data).toMatchObject({ taskId: configTask.id });
+    expect(service.store.getTask(configTask.id)?.description).toBe("对齐配置键");
+    expect((await call(client, "task_describe", { taskId: "nope", description: "x" })).isError).toBe(true);
+    // Colours: a task card, then off again; an unknown target is refused.
+    service.canvases.canvasPlaceTask(importTask.id, null);
+    expect((await call(client, "canvas_color", { target: importTask.id, color: "red" })).data).toMatchObject({ color: "red" });
+    expect(service.canvases.canvas(topicId).nodes.find((n) => n.kind === "task" && n.taskId === importTask.id)).toMatchObject({ color: "red" });
+    const outline = (await call(client, "canvas_read")).content[0]!.text;
+    expect(outline).toContain("【红】");
+    expect(outline).toContain("说明：导入失败时重试三次");
+    await call(client, "canvas_color", { target: importTask.id, color: "none" });
+    expect(service.canvases.canvas(topicId).nodes.find((n) => n.kind === "task" && n.taskId === importTask.id)).not.toHaveProperty("color");
+    expect((await call(client, "canvas_color", { target: "nope", color: "blue" })).isError).toBe(true);
+    // Both run without asking (their changes are marks and text on the caller's own topic).
+    const tools = (await client.listTools()).tools;
+    expect(tools.find((t) => t.name === "task_describe")?.annotations?.readOnlyHint).toBe(false);
+    await client.close();
   });
 
   it("answers an unknown id with a readable tool error", async () => {

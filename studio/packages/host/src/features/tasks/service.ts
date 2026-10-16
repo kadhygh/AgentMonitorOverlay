@@ -2,7 +2,7 @@ import { mkdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import type { CanvasDoc, Id, NewSessionInput, Session, SessionOptions, Task, TaskColumn, Workspace, ChecklistItem, TaskTemplateChoice } from "@amo-studio/protocol";
-import { isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS } from "@amo-studio/protocol";
+import { isCommon, MAIN_CANVAS_ID, removeTask, TASK_COLUMNS, TASK_DESCRIPTION_MAX } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError, sessionOptions, LEGACY_COMMON_WORKSPACE_KEY, COMMON_NAME } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -116,10 +116,16 @@ export class TasksFeature extends Feature {
    * another topic (or out of its topic): it leaves the old topic's canvas with its dependencies there, and a reference
    * card to it on the new topic's canvas becomes its own card.
    */
-  updateTask(id: Id, patch: { title?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
+  updateTask(id: Id, patch: { title?: unknown; description?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
     const current = this.requireTask(id);
-    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId">> = {};
+    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description">> = {};
     if (patch.title !== undefined) clean.title = String(patch.title).trim();
+    if (patch.description !== undefined) {
+      if (current.archivedAt) throw new HostError("read_only", "archived tasks cannot be changed");
+      const description = String(patch.description ?? "").trim();
+      if (description.length > TASK_DESCRIPTION_MAX) throw new HostError("bad_request", `a description is limited to ${TASK_DESCRIPTION_MAX} characters`);
+      clean.description = description;
+    }
     if (current.archivedAt && (patch.column !== undefined || patch.workspaceId !== undefined || patch.topicId !== undefined)) throw new HostError("read_only", "archived tasks cannot be moved");
     if (patch.column !== undefined) {
       if (!TASK_COLUMNS.includes(patch.column as TaskColumn)) throw new HostError("bad_request", `unknown column ${String(patch.column)}`);

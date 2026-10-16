@@ -259,7 +259,7 @@ export interface HostRoutes {
    * `workspaceId` (null: the common space) only while the task has no sessions. `topicId` moves the task to another
    * topic or out of its topic (null); its place, group and dependencies on the old topic's canvas are removed.
    */
-  "PATCH /api/tasks/:id": { req: { title?: string; column?: TaskColumn; workspaceId?: Id | null; topicId?: Id | null }; res: Task };
+  "PATCH /api/tasks/:id": { req: { title?: string; description?: string; column?: TaskColumn; workspaceId?: Id | null; topicId?: Id | null }; res: Task };
   /** Archives the task and all its sessions; returns the task. */
   "POST /api/tasks/:id/archive": { req: void; res: Task };
   "POST /api/tasks/:id/unarchive": { req: void; res: Task };

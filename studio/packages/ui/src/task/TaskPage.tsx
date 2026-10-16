@@ -31,10 +31,11 @@ import { openMarks } from "../marks/open.js";
 import { MarkButton } from "../marks/MarkButton.js";
 import { FileLinks, type PreviewTarget } from "../files/FileLinks.js";
 import { FilePreview } from "../files/FilePreview.js";
-import { WorkdirActions } from "../files/WorkdirActions.js";
 import { ArchiveIcon, formatDay, TaskArchivedDialog } from "./Archived.js";
 import { BackButton } from "../shell/BackButton.js";
 import { PopMenu, StatusMenu, TaskMeta, TopicPicker, below, useGitBranch, type Anchor } from "./TaskHead.js";
+import { SessionBanners, SessionHead } from "./SessionHead.js";
+import { DescriptionDialog } from "./DescriptionDialog.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -76,13 +77,6 @@ interface TaskPageProps {
 
 type Toast = { text: string; command?: string; error?: boolean } | null;
 
-const WRITER = {
-  workbench: { label: "仅工作台", color: "var(--text-dim)" },
-  "terminal-shared": { label: "终端已接入 · 共享", color: "var(--running-text)" },
-  "terminal-handoff": { label: "已交给终端 · 只读", color: "var(--attention)" },
-  archived: { label: "已归档 · 只读", color: "var(--text-dim)" },
-} as const;
-
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
 export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, justCreated = false, backLabel = "看板", onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
@@ -123,7 +117,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const [statusAt, setStatusAt] = useState<Anchor | null>(null);
   const [picking, setPicking] = useState<"topic" | null>(null);
   const [taskMenu, setTaskMenu] = useState<Anchor | null>(null);
-  const [sessionMenu, setSessionMenu] = useState<Anchor | null>(null);
+  const [describing, setDescribing] = useState(false);
   const [sidebar, setSidebarState] = useState(() => readFlag(SIDEBAR_KEY));
   const setSidebar = (on: boolean) => {
     setSidebarState(on);
@@ -275,7 +269,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       return false;
     }
   }
-  const writer = session ? WRITER[session.writer] : null;
   const workdir = session ? workspaces.find((w) => w.id === session.workspaceId)?.path : undefined;
   const showError = (text: string) => setToast({ text, error: true });
 
@@ -389,6 +382,19 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       )}
       {taskMenu && (
         <PopMenu at={taskMenu} label="任务" onClose={() => setTaskMenu(null)} testId="task-menu">
+          {!task.archivedAt && (
+            <button
+              type="button"
+              role="menuitem"
+              onClick={() => {
+                setTaskMenu(null);
+                setDescribing(true);
+              }}
+              data-testid="task-describe"
+            >
+              {task.description ? "编辑说明…" : "添加说明…"}
+            </button>
+          )}
           {task.topicId && (
             <div className="menu-check">
               <OnCanvasToggle key={task.topicId} link={link} taskId={task.id} topicId={task.topicId} disabled={!!task.archivedAt} onError={(text) => setToast({ text, error: true })} />
@@ -412,6 +418,18 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           {task.archivedAt && <span className="menu-note">任务已归档</span>}
         </PopMenu>
       )}
+
+      {task.description && (
+        <div className="task-desc" data-testid="task-description">
+          <p className="task-desc-text">{task.description}</p>
+          {!task.archivedAt && (
+            <button type="button" className="link-btn" onClick={() => setDescribing(true)}>
+              编辑
+            </button>
+          )}
+        </div>
+      )}
+      {describing && <DescriptionDialog link={link} task={task} onClose={() => setDescribing(false)} />}
 
       {task.archivedAt && (
         <div className="archived-banner task" role="status" data-testid="task-archived-banner">
@@ -460,122 +478,20 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             />
           )}
           {session && (
-            <div className="thread-head" data-testid="thread-head">
-              <span className="thread-title">
-                <EditableName
-                  value={session.title}
-                  placeholder="新会话"
-                  label="会话名"
-                  disabled={!!session.archivedAt}
-                  onSave={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: session.id }, { title }))}
-                />
-              </span>
-              <span className="thread-model" data-testid="thread-model">
-                {[shortModel(profile(session.profileId)), modelText].filter(Boolean).join(" · ")}
-              </span>
-              {/* 仅工作台 is the usual case and says nothing; the other writers matter. */}
-              {writer && !session.archivedAt && session.writer !== "workbench" && (
-                <span className="writer" style={{ color: writer.color }} data-testid="writer">
-                  {writer.label}
-                </span>
-              )}
-              <span className="spacer" />
-              {/* Where the session works, opened outside Studio: editor, folder, terminal. */}
-              <span className="bar-group" role="group" aria-label="在外部打开">
-                {workdir && <WorkdirActions link={link} path={workdir} onError={showError} compact />}
-                {!session.archivedAt && session.writer !== "terminal-handoff" && !(session.runtime === "claude" && session.kind === "sub") && (
-                  <button
-                    type="button"
-                    className="bar-btn"
-                    aria-label="在终端打开"
-                    title={session.runtime === "claude" ? "在终端打开：交给终端里的 Claude 继续，工作台暂时只读" : "在终端打开：终端接入同一会话，两边都能输入"}
-                    disabled={busy || !session.runtimeRef || (session.runtime === "claude" && session.status === "running")}
-                    onClick={() => void openTerminal(session)}
-                  >
-                    <svg viewBox="0 0 16 16" aria-hidden="true">
-                      <rect x="1.5" y="2.5" width="13" height="11" rx="1.5" />
-                      <path d="m4.2 6.2 2.3 1.8-2.3 1.8M8.3 10.2h3.2" />
-                    </svg>
-                  </button>
-                )}
-              </span>
-              {!session.archivedAt && !(session.runtime === "claude" && session.kind === "sub") && (
-                <>
-                  <span className="head-sep" aria-hidden="true" />
-                  <button type="button" className="bar-btn labeled" aria-label="分支" title="分支：从这里分出一个新会话，原会话不受影响" disabled={busy || !session.runtimeRef} onClick={() => void fork(session.id)} data-testid="session-fork">
-                    <svg viewBox="0 0 16 16" aria-hidden="true">
-                      <circle cx="4.5" cy="3.5" r="1.7" />
-                      <circle cx="4.5" cy="12.5" r="1.7" />
-                      <circle cx="11.5" cy="5" r="1.7" />
-                      <path d="M4.5 5.2v5.6M11.5 6.7c0 2.8-3.4 2.9-6.2 4.3" />
-                    </svg>
-                    <span className="bar-label">分支</span>
-                  </button>
-                </>
-              )}
-              <button type="button" className="bar-btn" aria-label="会话的更多操作" title="更多：文件标记、归档会话" onClick={(e) => setSessionMenu(below(e.currentTarget))} data-testid="session-more">
-                <svg viewBox="0 0 16 16" aria-hidden="true" className="filled">
-                  <circle cx="3.5" cy="8" r="1.3" />
-                  <circle cx="8" cy="8" r="1.3" />
-                  <circle cx="12.5" cy="8" r="1.3" />
-                </svg>
-              </button>
-              {sessionMenu && (
-                <PopMenu at={sessionMenu} label="会话" onClose={() => setSessionMenu(null)} testId="session-menu">
-                  <button
-                    type="button"
-                    role="menuitem"
-                    title="文件标记：拖进输入框或 @ 引用"
-                    onClick={() => {
-                      setSessionMenu(null);
-                      openMarks({ workspaceId: session.workspaceId });
-                    }}
-                    data-testid="session-marks"
-                  >
-                    文件标记
-                  </button>
-                  {/* An archived session is restored from its banner below. */}
-                  {!session.archivedAt && (
-                    <button
-                      type="button"
-                      role="menuitem"
-                      className="menu-danger"
-                      disabled={busy}
-                      onClick={() => {
-                        setSessionMenu(null);
-                        void archive(session.id);
-                      }}
-                      data-testid="session-archive"
-                    >
-                      归档会话
-                    </button>
-                  )}
-                </PopMenu>
-              )}
-            </div>
+            <SessionHead
+              link={link}
+              session={session}
+              model={[shortModel(profile(session.profileId)), modelText].filter(Boolean).join(" · ")}
+              workdir={workdir}
+              busy={busy}
+              onRename={(title) => void run(() => call(link, "PATCH /api/sessions/:id", { id: session.id }, { title }))}
+              onTerminal={() => void openTerminal(session)}
+              onFork={() => void fork(session.id)}
+              onArchive={() => void archive(session.id)}
+              onError={showError}
+            />
           )}
-          {session?.archivedAt && !task.archivedAt && (
-            <div className="archived-banner" role="status" data-testid="session-archived-banner">
-              <ArchiveIcon />
-              <span className="archived-banner-text">
-                <b>已归档 · 只读</b>
-                <span>{formatDay(session.archivedAt)} 归档。这个会话只能查看，恢复后才能继续。</span>
-              </span>
-              <button type="button" className="btn-primary small" disabled={busy} onClick={() => void restore(session.id)} data-testid="session-unarchive">
-                恢复会话
-              </button>
-            </div>
-          )}
-          {session?.writer === "terminal-handoff" && (
-            <div className="handoff-banner" role="status" data-testid="handoff-banner">
-              <span>
-                这个会话正在终端里的 Claude 中继续。为避免两边同时写入丢失内容，工作台暂时只读；关闭终端后会自动收回，并带回终端里的新内容。
-              </span>
-              <button type="button" className="btn-outline-attention" disabled={busy} onClick={() => void reclaim(session.id)}>
-                立即收回
-              </button>
-            </div>
-          )}
+          {session && <SessionBanners session={session} taskArchived={!!task.archivedAt} busy={busy} onRestore={() => void restore(session.id)} onReclaim={() => void reclaim(session.id)} />}
           <FileLinks link={link} workspaceId={session?.workspaceId ?? task.workspaceId} sessionId={session?.id ?? null} onPreview={setPreview} onError={showError}>
             <Thread
               link={link}

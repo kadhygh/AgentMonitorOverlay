@@ -22,6 +22,8 @@ interface CanvasSidebarProps {
   onEdit(apply: (doc: CanvasDoc) => CanvasDoc): void;
   onClearSelection(): void;
   onOpenTask(taskId: Id): void;
+  /** Write a task's description (the dialog). */
+  onDescribe?(taskId: Id): void;
   newId(prefix: string): string;
   /** Rendered for the "整体待办" and "agent 视角" tabs (S3-05). */
   todoTab?: ReactNode;
@@ -53,7 +55,7 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
   );
 }
 
-function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessions, workspaces, onChange, onEdit, onClearSelection, onOpenTask, newId }: CanvasSidebarProps) {
+function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessions, workspaces, onChange, onEdit, onClearSelection, onOpenTask, onDescribe, newId }: CanvasSidebarProps) {
   if (!selection) return <span className="anno-empty">在画布上点一个任务、便签，或点分组的标题栏。</span>;
 
   if (selection.kind === "group") {
@@ -146,6 +148,7 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
           <span className="side-note">引用的任务已经不在了。</span>
         )}
         <span className="side-note">引用卡片只是指向任务：任务的项目和专题不变，删掉卡片也不影响任务。</span>
+        {target && !target.archivedAt && <TaskDescription task={target} onDescribe={onDescribe} />}
         {target && (
           <button type="button" className="btn-ghost small" onClick={() => onOpenTask(target.id)}>
             打开任务
@@ -180,6 +183,7 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
         {COLUMN_NAMES[task.column]} · <span style={{ color: look?.text }}>{look?.label ?? "未开始"}</span> ·{" "}
         {taskWhere(task, workspaces)}
       </span>
+      <TaskDescription task={task} onDescribe={onDescribe} />
       <button type="button" className="btn-ghost small" onClick={() => onOpenTask(task.id)}>
         打开任务
       </button>
@@ -211,6 +215,20 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
           onChange({ ...doc, edges: [...doc.edges, edge] });
         }}
       />
+    </div>
+  );
+}
+
+/** The task's description, and the way to write it. */
+function TaskDescription({ task, onDescribe }: { task: Task; onDescribe?: ((taskId: Id) => void) | undefined }) {
+  return (
+    <div className="side-desc" data-testid="side-description">
+      {task.description ? <p className="side-desc-text">{task.description}</p> : <span className="side-note">还没有说明。</span>}
+      {onDescribe && (
+        <button type="button" className="link-btn" onClick={() => onDescribe(task.id)}>
+          {task.description ? "编辑说明" : "添加说明"}
+        </button>
+      )}
     </div>
   );
 }

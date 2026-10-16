@@ -1,4 +1,4 @@
-import type { CanvasDoc, Id, Session, SessionStatus, Task, Topic, Workspace } from "./entities.js";
+import { CANVAS_COLORS, isCanvasColor, type CanvasColor, type CanvasDoc, type Id, type Session, type SessionStatus, type Task, type Topic, type Workspace } from "./entities.js";
 import { taskWhere } from "./scope.js";
 
 // Canvas rules shared by Host (validation on save), UI ("agent 视角") and the read-only MCP in stage 4.
@@ -33,6 +33,7 @@ export function validateCanvas(doc: CanvasDoc, taskIds: ReadonlySet<Id>): string
     groups.add(g.id);
     if (typeof g.title !== "string") errors.push(`group ${g.id} has no title`);
     if (!g.rect || !finite(g.rect.x, g.rect.y, g.rect.w, g.rect.h) || g.rect.w <= 0 || g.rect.h <= 0) errors.push(`group ${g.id} has an invalid rect`);
+    if (g.color !== undefined && !isCanvasColor(g.color)) errors.push(`group ${g.id} has an unknown colour ${String(g.color)}`);
   }
   const placed = new Set<string>();
   const referenced = new Set<string>();
@@ -40,6 +41,7 @@ export function validateCanvas(doc: CanvasDoc, taskIds: ReadonlySet<Id>): string
     unique(n.id, "node");
     if (!n.pos || !finite(n.pos.x, n.pos.y)) errors.push(`node ${n.id} has an invalid position`);
     if (n.groupId !== null && !groups.has(n.groupId)) errors.push(`node ${n.id} points at a missing group ${n.groupId}`);
+    if (n.color !== undefined && !isCanvasColor(n.color)) errors.push(`node ${n.id} has an unknown colour ${String(n.color)}`);
     if (n.kind === "task") {
       if (!taskIds.has(n.taskId)) errors.push(`node ${n.id} points at a missing task ${n.taskId}`);
       if (placed.has(n.taskId)) errors.push(`task ${n.taskId} is placed twice`);
@@ -112,6 +114,10 @@ export interface OutlineTask {
   /** The task's project, "未指定项目" for the common space. */
   workspace: string | null;
   dependsOn: Id[];
+  /** The task's own description. */
+  description?: string;
+  /** Its card's colour mark on this canvas. */
+  color?: CanvasColor;
 }
 
 /** A reference card: a task of another topic (or of none), with where it belongs. */
@@ -126,11 +132,18 @@ export interface OutlineRef {
   column: Task["column"] | null;
   status: SessionStatus | null;
   gone: "archived" | "missing" | null;
+  color?: CanvasColor;
+}
+
+export interface OutlineNote {
+  id: Id;
+  text: string;
+  color?: CanvasColor;
 }
 
 export interface CanvasOutline {
-  groups: Array<{ id: Id; title: string; workspace: string | null; tasks: OutlineTask[]; refs: OutlineRef[]; notes: string[] }>;
-  ungrouped: { tasks: OutlineTask[]; refs: OutlineRef[]; notes: string[] };
+  groups: Array<{ id: Id; title: string; workspace: string | null; color?: CanvasColor; tasks: OutlineTask[]; refs: OutlineRef[]; notes: OutlineNote[] }>;
+  ungrouped: { tasks: OutlineTask[]; refs: OutlineRef[]; notes: OutlineNote[] };
   /** Tasks of the topic that are not placed on its canvas yet. */
   unplaced: OutlineTask[];
   dependencies: Array<{ from: Id; to: Id }>;
@@ -161,13 +174,16 @@ export function canvasOutline(
       status: URGENCY.find((u) => live.some((s) => s.status === u)) ?? null,
       workspace: taskWhere(task, workspaces),
       dependsOn: deps.filter((d) => d.to === task.id).map((d) => d.from),
+      ...(task.description ? { description: task.description } : {}),
     };
   };
+  const colorOf = new Map(doc.nodes.flatMap((n) => (n.color && n.kind !== "note" ? [[n.taskId, n.color] as const] : [])));
+  const withColor = <T extends object>(o: T, color: CanvasColor | undefined): T => (color ? { ...o, color } : o);
   const byId = new Map(tasks.map((t) => [t.id, t]));
   const tasksIn = (groupId: Id | null) =>
     doc.nodes
       .filter((n) => n.kind === "task" && n.groupId === groupId && byId.has(n.taskId))
-      .map((n) => toOutline(byId.get((n as { taskId: Id }).taskId)!));
+      .map((n) => withColor(toOutline(byId.get((n as { taskId: Id }).taskId)!), n.color));
   const anyTask = new Map(others.tasks.map((t) => [t.id, t]));
   const toRef = (taskId: Id): OutlineRef => {
     const task = anyTask.get(taskId);
@@ -178,39 +194,42 @@ export function canvasOutline(
     const topic = task.topicId ? (others.topics.find((t) => t.id === task.topicId)?.title ?? null) : null;
     return { taskId, title: task.title || "未命名任务", topic, workspace, column, status, gone: null };
   };
-  const refsIn = (groupId: Id | null) => doc.nodes.flatMap((n) => (n.kind === "ref" && n.groupId === groupId ? [toRef(n.taskId)] : []));
-  const notesIn = (groupId: Id | null) => doc.nodes.filter((n) => n.kind === "note" && n.groupId === groupId).map((n) => (n as { text: string }).text);
+  const refsIn = (groupId: Id | null) => doc.nodes.flatMap((n) => (n.kind === "ref" && n.groupId === groupId ? [withColor(toRef(n.taskId), n.color)] : []));
+  const notesIn = (groupId: Id | null): OutlineNote[] => doc.nodes.flatMap((n) => (n.kind === "note" && n.groupId === groupId ? [withColor({ id: n.id, text: n.text }, n.color)] : []));
   const placed = new Set(doc.nodes.filter((n) => n.kind === "task").map((n) => (n as { taskId: Id }).taskId));
 
   const json: CanvasOutline = {
-    groups: doc.groups.map((g) => ({ id: g.id, title: g.title, workspace: wsName(g.workspaceId), tasks: tasksIn(g.id), refs: refsIn(g.id), notes: notesIn(g.id) })),
+    groups: doc.groups.map((g) => withColor({ id: g.id, title: g.title, workspace: wsName(g.workspaceId), tasks: tasksIn(g.id), refs: refsIn(g.id), notes: notesIn(g.id) }, g.color)),
     ungrouped: { tasks: tasksIn(null), refs: refsIn(null), notes: notesIn(null) },
     unplaced: tasks.filter((t) => !placed.has(t.id)).map(toOutline),
     dependencies: deps,
   };
 
   const title = (id: Id) => byId.get(id)?.title || id;
+  const mark = (color: CanvasColor | undefined) => (color ? `【${CANVAS_COLORS.find((c) => c.id === color)?.label ?? color}】` : "");
+  const oneLine = (text: string) => text.replace(/\s+/g, " ").trim();
   const line = (t: OutlineTask) => {
     const bits = [t.column, t.status, t.workspace].filter(Boolean).join(" · ");
     const after = t.dependsOn.length ? `；依赖：${t.dependsOn.map(title).join("、")}` : "";
-    return `  - ${t.title}（${bits}）${after}`;
+    const about = t.description ? `\n    说明：${oneLine(t.description).slice(0, 300)}` : "";
+    return `  - ${mark(t.color)}${t.title}（${bits}）${after}${about}`;
   };
   // "引用：导入器重试（专题 掉落表 / 项目 alpha · doing · running）": a task that lives elsewhere.
   const refLine = (r: OutlineRef) => {
-    if (r.gone) return `  - 引用：${r.title}（${r.taskId}）`;
+    if (r.gone) return `  - ${mark(r.color)}引用：${r.title}（${r.taskId}）`;
     const where = `${r.topic ? `专题 ${r.topic}` : "不在专题里"} / 项目 ${r.workspace}`;
-    return `  - 引用：${r.title}（${[where, r.column, r.status].filter(Boolean).join(" · ")}）`;
+    return `  - ${mark(r.color)}引用：${r.title}（${[where, r.column, r.status].filter(Boolean).join(" · ")}）`;
   };
-  const section = (heading: string, list: OutlineTask[], notes: string[], refs: OutlineRef[] = []) =>
+  const section = (heading: string, list: OutlineTask[], notes: OutlineNote[], refs: OutlineRef[] = []) =>
     [
       heading,
       ...list.map(line),
       ...refs.map(refLine),
-      ...notes.map((n) => `  - 便签：${n.replace(/\s+/g, " ").trim()}`),
+      ...notes.map((n) => `  - ${mark(n.color)}便签：${oneLine(n.text)}`),
       ...(list.length || refs.length || notes.length ? [] : ["  （空）"]),
     ].join("\n");
   const parts = [
-    ...json.groups.map((g) => section(`分组「${g.title}」${g.workspace ? `（工作区 ${g.workspace}）` : ""}`, g.tasks, g.notes, g.refs)),
+    ...json.groups.map((g) => section(`${mark(g.color)}分组「${g.title}」${g.workspace ? `（工作区 ${g.workspace}）` : ""}`, g.tasks, g.notes, g.refs)),
     section("未分组", json.ungrouped.tasks, json.ungrouped.notes, json.ungrouped.refs),
     ...(json.unplaced.length ? [section("还没放到画布上的任务", json.unplaced, [])] : []),
   ];

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { emptyCanvas, type CanvasDoc } from "@amo-studio/protocol";
-import { deleteGroup, groupAt, moveGroup, moveNode, resizeGroup, updateGroup } from "./geometry.js";
+import { contentBounds, deleteGroup, deleteGroupWithContents, duplicateNote, groupAt, moveGroup, moveNode, outOfGroup, removeEdge, resizeGroup, reverseEdge, setColor, updateGroup } from "./geometry.js";
 
 const SIZE = { w: 220, h: 66 };
 
@@ -60,5 +60,36 @@ describe("arrowBetween", () => {
     expect(arrowBetween(left, right)).toEqual({ a: { x: 100, y: 25 }, b: { x: 300, y: 25 } });
     const below = { x: 0, y: 200, w: 100, h: 50 };
     expect(arrowBetween(left, below)).toEqual({ a: { x: 50, y: 50 }, b: { x: 50, y: 200 } });
+  });
+});
+
+describe("canvas menu edits (stage 16)", () => {
+  it("marks a group or a node with a colour, and takes it off", () => {
+    const red = setColor(doc(), { kind: "node", id: "n1" }, "red");
+    expect(red.nodes[0]).toMatchObject({ color: "red" });
+    expect(setColor(red, { kind: "node", id: "n1" }, null).nodes[0]).not.toHaveProperty("color");
+    expect(setColor(doc(), { kind: "group", id: "g2" }, "blue").groups[1]).toMatchObject({ color: "blue" });
+  });
+
+  it("takes a card out of its group, below it", () => {
+    expect(outOfGroup(doc(), "n1", SIZE).nodes[0]).toMatchObject({ groupId: null, pos: { x: 0, y: 316 } });
+    expect(outOfGroup(doc(), "n2", SIZE)).toEqual(doc());
+  });
+
+  it("deletes a group with its notes and references, keeping its tasks' cards", () => {
+    const d = doc();
+    d.nodes.push({ id: "n3", kind: "note", text: "in", groupId: "g1", pos: { x: 30, y: 120 } }, { id: "n4", kind: "ref", taskId: "t9", groupId: "g1", pos: { x: 30, y: 200 } });
+    const after = deleteGroupWithContents(d, "g1");
+    expect(after.groups.map((g) => g.id)).toEqual(["g2"]);
+    expect(after.nodes.map((n) => [n.id, n.groupId])).toEqual([["n1", null], ["n2", null]]);
+  });
+
+  it("copies a note beside it; reverses and removes a dependency; bounds everything", () => {
+    expect(duplicateNote(doc(), "n2", "n9").nodes.at(-1)).toMatchObject({ id: "n9", kind: "note", text: "x", pos: { x: 924, y: 924 } });
+    const d = { ...doc(), edges: [{ id: "e1", kind: "depends" as const, from: "t1", to: "t2" }] };
+    expect(reverseEdge(d, "e1").edges[0]).toMatchObject({ from: "t2", to: "t1" });
+    expect(removeEdge(d, "e1").edges).toEqual([]);
+    expect(contentBounds(doc(), () => SIZE)).toEqual({ x: 0, y: 0, w: 1120, h: 966 });
+    expect(contentBounds({ ...emptyCanvas(), groups: [], nodes: [], edges: [] }, () => SIZE)).toBeNull();
   });
 });

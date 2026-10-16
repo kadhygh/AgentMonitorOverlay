@@ -39,6 +39,8 @@ export interface Task {
   /** The topic it belongs to; null when it is in none. */
   topicId: Id | null;
   column: TaskColumn;
+  /** What the task is about (2026-10-17): on its canvas card and task page; the person and agents write it (TASK_DESCRIPTION_MAX). */
+  description?: string;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   /** Archived with its topic (or on its own); read-only while set. */
@@ -347,16 +349,30 @@ export interface CanvasGroup {
   title: string;
   workspaceId: Id | null;
   rect: Rect;
+  color?: CanvasColor;
 }
+
+/** The longest task description (characters). */
+export const TASK_DESCRIPTION_MAX = 2000;
+
+/** A mark on a canvas card, note or group (2026-10-17): its outline takes the colour; what it means is the person's. */
+export type CanvasColor = "red" | "yellow" | "green" | "blue";
+export const CANVAS_COLORS: ReadonlyArray<{ id: CanvasColor; label: string }> = [
+  { id: "red", label: "红" },
+  { id: "yellow", label: "黄" },
+  { id: "green", label: "绿" },
+  { id: "blue", label: "蓝" },
+];
+export const isCanvasColor = (v: unknown): v is CanvasColor => CANVAS_COLORS.some((c) => c.id === v);
 
 /**
  * `task`: a task of the topic (at most one card each). `ref`: a reference card (S11-A) pointing at a task of another
  * topic or of none; the task keeps its own project and topic, and deleting the card never changes it.
  */
 export type CanvasNode =
-  | { id: Id; kind: "task"; taskId: Id; groupId: Id | null; pos: Point }
-  | { id: Id; kind: "note"; text: string; groupId: Id | null; pos: Point }
-  | { id: Id; kind: "ref"; taskId: Id; groupId: Id | null; pos: Point };
+  | { id: Id; kind: "task"; taskId: Id; groupId: Id | null; pos: Point; color?: CanvasColor }
+  | { id: Id; kind: "note"; text: string; groupId: Id | null; pos: Point; color?: CanvasColor }
+  | { id: Id; kind: "ref"; taskId: Id; groupId: Id | null; pos: Point; color?: CanvasColor };
 
 /** `from` must be finished before `to` can start; both are task ids. */
 export interface CanvasEdge {

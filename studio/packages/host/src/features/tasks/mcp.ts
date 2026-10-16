@@ -1,8 +1,8 @@
 import { z } from "zod";
-import { answer, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
+import { answer, write, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
 
 /** The AMO MCP tools of this feature (gathered in mcp/tools.ts). */
-export function tasksTools({ model }: ToolContext): AmoTool[] {
+export function tasksTools({ service, caller, model, ownTask, inOwnTopic }: ToolContext): AmoTool[] {
   return [
     {
       name: "board_list",
@@ -21,6 +21,22 @@ export function tasksTools({ model }: ToolContext): AmoTool[] {
       readOnly: true,
       autoApprove: true,
       run: (args) => answer(() => model.taskGet(String(args.taskId))),
+    },
+    {
+      name: "task_describe",
+      title: "任务说明",
+      description:
+        "Write a task's description: what it is about, its goal and scope, in a few lines. It shows on the task's canvas card and task page, for the person and other agents. Your own task when taskId is left out; otherwise a task of your topic. An empty description removes it.",
+      inputSchema: { taskId: z.string().optional(), description: z.string() },
+      readOnly: false,
+      autoApprove: true,
+      run: (args) =>
+        write(caller, (c) => {
+          const taskId = args.taskId === undefined ? ownTask(c) : String(args.taskId);
+          if (args.taskId !== undefined && taskId !== service.store.getSession(c.sessionId)?.taskId) inOwnTopic(c, taskId);
+          const task = service.tasks.updateTask(taskId, { description: args.description });
+          return { taskId: task.id, description: task.description ?? "" };
+        }),
     },
   ];
 }

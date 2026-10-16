@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { CanvasDoc, Id, Task } from "@amo-studio/protocol";
-import { addDependency, addGroupAuto, CanvasLayoutError, canvasOutline, emptyCanvas, isCommon, placeTask, refsToCard, removeTask, unplaceTask, validateCanvas } from "@amo-studio/protocol";
+import { addDependency, addGroupAuto, CANVAS_COLORS, CanvasLayoutError, canvasOutline, emptyCanvas, isCanvasColor, isCommon, placeTask, refsToCard, removeTask, unplaceTask, validateCanvas } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -86,6 +86,28 @@ export class CanvasFeature extends Feature {
     if (!from.topicId || from.topicId !== to.topicId) throw new HostError("bad_request", "dependencies connect two tasks of the same topic");
     this.mutateCanvas(from.topicId, (doc) => addDependency(doc, from.id, to.id, newId("e")));
     return { from: from.id, to: to.id };
+  }
+
+  /**
+   * A colour mark on the canvas (2026-10-17): `target` is a group's or a note's id, or a task with a card (its own or a
+   * reference) there; `color` one of CANVAS_COLORS, or "none" to take the mark off.
+   */
+  canvasSetColor(topicId: Id, input: { target?: unknown; color?: unknown }): { target: Id; color: string } {
+    const target = typeof input.target === "string" ? input.target.trim() : "";
+    const color = input.color === "none" || input.color === null || input.color === "" ? null : input.color;
+    if (!target) throw new HostError("bad_request", "target is required: a group or note id, or a task id");
+    if (color !== null && !isCanvasColor(color)) throw new HostError("bad_request", `color must be one of ${CANVAS_COLORS.map((c) => c.id).join(", ")} or none`);
+    const paint = <T extends { color?: unknown }>(o: T): T => {
+      const { color: _old, ...rest } = o;
+      return (color ? { ...rest, color } : rest) as T;
+    };
+    this.mutateCanvas(topicId, (doc) => {
+      if (doc.groups.some((g) => g.id === target)) return { ...doc, groups: doc.groups.map((g) => (g.id === target ? paint(g) : g)) };
+      const node = doc.nodes.find((n) => n.id === target || (n.kind !== "note" && n.taskId === target));
+      if (!node) throw new HostError("bad_request", `nothing on this canvas is ${target}: give a group or note id, or a task with a card here`);
+      return { ...doc, nodes: doc.nodes.map((n) => (n === node ? paint(n) : n)) };
+    });
+    return { target, color: color ?? "none" };
   }
 
   canvasPlaceTask(taskId: unknown, groupId: unknown): { taskId: Id; groupId: Id | null } {

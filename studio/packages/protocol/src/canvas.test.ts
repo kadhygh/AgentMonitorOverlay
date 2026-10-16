@@ -110,10 +110,10 @@ describe("canvasOutline", () => {
         workspace: "alpha",
         tasks: [{ id: "task-1", title: "Add retry to the importer", column: "doing", status: "awaiting-approval", workspace: "alpha", dependsOn: ["task-2"] }],
         refs: [],
-        notes: ["先问策划"],
+        notes: [{ id: "n2", text: "先问策划" }],
       },
     ]);
-    expect(json.ungrouped).toEqual({ tasks: [], refs: [], notes: ["零散想法"] });
+    expect(json.ungrouped).toEqual({ tasks: [], refs: [], notes: [{ id: "n3", text: "零散想法" }] });
     expect(json.unplaced.map((t) => [t.id, t.workspace])).toEqual([["task-2", "beta"]]);
     expect(json.dependencies).toEqual([{ from: "task-2", to: "task-1" }]);
     expect(outline).toContain("分组「导入」（工作区 alpha）");
@@ -121,5 +121,25 @@ describe("canvasOutline", () => {
     expect(outline).toContain("便签：先问策划");
     expect(outline).toContain("还没放到画布上的任务");
     expect(JSON.stringify(json)).not.toMatch(/"x"|"pos"|"rect"/);
+  });
+
+  it("carries the tasks' descriptions and the colour marks (2026-10-17)", () => {
+    const marked = doc();
+    marked.groups[0]!.color = "blue";
+    marked.nodes = marked.nodes.map((n) => (n.kind === "task" ? { ...n, color: "red" } : n.id === "n3" ? { ...n, color: "green" } : n));
+    const tasks = exampleTasks.map((t) => (t.id === "task-1" ? { ...t, description: "导入失败时\n重试三次" } : t));
+    const { outline, json } = canvasOutline(marked, tasks, exampleWorkspaces, exampleSessions);
+    expect(json.groups[0]).toMatchObject({ color: "blue", tasks: [{ id: "task-1", color: "red", description: "导入失败时\n重试三次" }] });
+    expect(json.ungrouped.notes).toEqual([{ id: "n3", text: "零散想法", color: "green" }]);
+    expect(outline).toContain("【蓝】分组「导入」");
+    expect(outline).toContain("- 【红】Add retry to the importer");
+    expect(outline).toContain("说明：导入失败时 重试三次");
+    expect(outline).toContain("【绿】便签：零散想法");
+  });
+
+  it("refuses a colour it does not know", () => {
+    const bad = doc();
+    (bad.nodes[0] as { color?: string }).color = "purple";
+    expect(validateCanvas(bad, new Set(exampleTasks.map((t) => t.id)))).toEqual([expect.stringContaining("unknown colour purple")]);
   });
 });
