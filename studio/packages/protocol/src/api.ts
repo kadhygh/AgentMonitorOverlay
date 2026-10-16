@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { AccountUsage, Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Topic, TopicDoc, Workspace } from "./entities.js";
+import type { AccountUsage, Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Relay, Topic, TopicDoc, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -259,7 +259,7 @@ export interface HostRoutes {
    * `workspaceId` (null: the common space) only while the task has no sessions. `topicId` moves the task to another
    * topic or out of its topic (null); its place, group and dependencies on the old topic's canvas are removed.
    */
-  "PATCH /api/tasks/:id": { req: { title?: string; description?: string; lead?: boolean; column?: TaskColumn; workspaceId?: Id | null; topicId?: Id | null }; res: Task };
+  "PATCH /api/tasks/:id": { req: { title?: string; description?: string; lead?: boolean; relayAuto?: boolean; column?: TaskColumn; workspaceId?: Id | null; topicId?: Id | null }; res: Task };
   /** Archives the task and all its sessions; returns the task. */
   "POST /api/tasks/:id/archive": { req: void; res: Task };
   "POST /api/tasks/:id/unarchive": { req: void; res: Task };
@@ -278,6 +278,10 @@ export interface HostRoutes {
    */
   "POST /api/task-plans/:id/accept": { req: { tasks: Array<PlannedTask & { include?: boolean }>; run: boolean }; res: TaskPlan };
   "POST /api/task-plans/:id/dismiss": { req: { note?: string }; res: TaskPlan };
+  /** 传话 (stage 16): the pending ones, and those decided in the last day. */
+  "GET /api/relays": { req: void; res: Relay[] };
+  "POST /api/relays/:id/deliver": { req: void; res: Relay };
+  "POST /api/relays/:id/dismiss": { req: void; res: Relay };
   /** Archives the topic with its sessions and all its tasks (and their sessions). */
   "POST /api/topics/:id/archive": { req: void; res: { topic: Topic; tasks: Task[] } };
   /** Restores the topic and the tasks that were archived with it. */
@@ -389,6 +393,7 @@ export type HostEvent = { seq: number } & (
   | { type: "topicdoc.upserted"; doc: TopicDoc }
   | { type: "topicdoc.removed"; topicId: Id; docId: Id }
   | { type: "taskplan.upserted"; plan: TaskPlan }
+  | { type: "relay.upserted"; relay: Relay }
   | { type: "session.upserted"; session: Session }
   | { type: "item.appended"; item: SessionItem }
   /** Full replacement, e.g. a finished agent message or an approval that changed state. */

@@ -86,12 +86,12 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists thirteen read-only tools and thirteen that write for the caller", async () => {
+  it("lists thirteen read-only tools and fourteen that write for the caller", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "amo_guide", "amo_whoami", "board_list", "canvas_color", "canvas_depend", "canvas_group_create", "canvas_place", "canvas_read", "checklist_check", "decision_request", "handoff_submit", "list_file_marks",
-      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "session_tree", "task_describe", "task_get", "task_note_add", "task_plan_propose", "topic_doc_write", "topic_docs", "topic_get", "topic_list",
+      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "relay_send", "session_tree", "task_describe", "task_get", "task_note_add", "task_plan_propose", "topic_doc_write", "topic_docs", "topic_get", "topic_list",
     ]);
     expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual([
       "amo_guide", "amo_whoami", "board_list", "canvas_read", "list_file_marks", "pack_doc", "pack_list", "project_context", "session_tree", "task_get", "topic_docs", "topic_get", "topic_list",
@@ -155,7 +155,7 @@ describe("AMO MCP", () => {
 
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(26);
+    expect((await client.listTools()).tools).toHaveLength(27);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);

@@ -24,6 +24,7 @@ import { OpenInFeature } from "./features/openin/service.js";
 import { MarksFeature } from "./features/marks/service.js";
 import { TopicDocsFeature } from "./features/topicdocs/service.js";
 import { TaskPlansFeature } from "./features/taskplans/service.js";
+import { RelaysFeature } from "./features/relays/service.js";
 import { ChatFilesFeature } from "./features/chatfiles/service.js";
 import { CliFeature } from "./features/cli/service.js";
 import { DataFeature } from "./features/datamgmt/service.js";
@@ -54,6 +55,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly marks = new MarksFeature(this);
   readonly topicDocs = new TopicDocsFeature(this);
   readonly taskPlans = new TaskPlansFeature(this);
+  readonly relays = new RelaysFeature(this);
   readonly chatFiles = new ChatFilesFeature(this);
   readonly cli = new CliFeature(this);
   readonly data = new DataFeature(this);

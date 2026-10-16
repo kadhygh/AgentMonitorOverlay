@@ -37,6 +37,7 @@ import { PopMenu, StatusMenu, TaskMeta, TopicPicker, below, useGitBranch, type A
 import { SessionBanners, SessionHead } from "./SessionHead.js";
 import { DescriptionDialog } from "./DescriptionDialog.js";
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
+import { RelayBanner, useRelays } from "../relays/Relays.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -121,6 +122,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   const [describing, setDescribing] = useState(false);
   // 拆任务提案 this task (a 主控) made, while they wait for the person (also on its topic's canvas).
   const plans = useTaskPlans(link).filter((p) => p.fromTaskId === task.id);
+  // 传话 to this task, or from it (a 主控), waiting for the person.
+  const relays = useRelays(link).filter((r) => r.toTaskId === task.id || r.fromTaskId === task.id);
   const [sidebar, setSidebarState] = useState(() => readFlag(SIDEBAR_KEY));
   const setSidebar = (on: boolean) => {
     setSidebarState(on);
@@ -418,6 +421,22 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               {task.lead ? "取消主控" : "设为主控"}
             </button>
           )}
+          {!task.archivedAt && (
+            <button
+              type="button"
+              role="menuitemcheckbox"
+              aria-checked={!!task.relayAuto}
+              disabled={busy}
+              title="主控给这个任务的传话直接送进它的会话，不再等你确认（长任务里自动送话很正常）"
+              onClick={() => {
+                setTaskMenu(null);
+                void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { relayAuto: !task.relayAuto }));
+              }}
+              data-testid="task-relay-auto"
+            >
+              {task.relayAuto ? "✓ " : ""}主控传话不用确认
+            </button>
+          )}
           {task.topicId && (
             <div className="menu-check">
               <OnCanvasToggle key={task.topicId} link={link} taskId={task.id} topicId={task.topicId} disabled={!!task.archivedAt} onError={(text) => setToast({ text, error: true })} />
@@ -454,6 +473,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       )}
       {describing && <DescriptionDialog link={link} task={task} onClose={() => setDescribing(false)} />}
       <PlanBanner link={link} plans={plans} tasks={tasks} workspaces={workspaces} profiles={profiles} />
+      <RelayBanner link={link} relays={relays} tasks={tasks} />
 
       {task.archivedAt && (
         <div className="archived-banner task" role="status" data-testid="task-archived-banner">

@@ -235,3 +235,5 @@
 .description-dialog textarea { min-height: 140px; }
 .description-dialog-actions { display: flex; align-items: center; gap: 8px; }
 .description-dialog-actions .spacer { flex: 1; }
+/* Under the task head (stage 16): the description, 拆任务提案 and 传话 keep the archived banner's margins. */
+.taskpage > .task-desc, .taskpage > .plan-banner, .taskpage > .relay-banner { margin: 10px 24px 0; }

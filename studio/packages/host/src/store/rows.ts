@@ -31,6 +31,7 @@ export function toTask(r: Row): Task {
     column: str(r.column_name) as TaskColumn,
     ...(typeof r.description === "string" && r.description ? { description: r.description } : {}),
     ...(Number(r.lead) === 1 ? { lead: true } : {}),
+    ...(Number(r.relay_auto) === 1 ? { relayAuto: true } : {}),
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
     archivedAt: strOrNull(r.archived_at),

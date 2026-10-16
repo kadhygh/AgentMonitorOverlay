@@ -1,0 +1,9 @@
+/* 传话 (stage 16): a 主控's message waiting for the person, on the task pages and in Focus. */
+.relay-banner { display: flex; flex-direction: column; gap: 6px; margin: 0 0 8px; }
+.relay-card { display: flex; flex-direction: column; gap: 6px; padding: 8px 12px; border-radius: var(--r-l); border: 1px solid var(--attention); background: var(--attention-bg, var(--panel-raised)); }
+.relay-head { display: flex; align-items: center; gap: 8px; font-size: var(--fs-sm); font-weight: 600; }
+.relay-mark { padding: 0 6px; border-radius: var(--r-btn); background: var(--attention); color: var(--on-attention, #1b1b1b); font-size: 11px; line-height: 18px; }
+.relay-text { margin: 0; font-size: var(--fs-sm); line-height: 1.6; white-space: pre-wrap; max-height: 9.6em; overflow: auto; }
+.relay-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.focus-relay { padding: 8px 10px; }
+.focus-relay .relay-text { font-size: 12px; max-height: 6.4em; }

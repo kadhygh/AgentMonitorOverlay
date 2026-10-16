@@ -46,6 +46,8 @@ export interface Task {
    * project when it is in none). Its sessions get the 主控 role card and may propose tasks and relay messages.
    */
   lead?: boolean;
+  /** 主控传话不用确认 (stage 16): a 主控's relays go into this task's session without asking the person. */
+  relayAuto?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   /** Archived with its topic (or on its own); read-only while set. */
@@ -409,6 +411,27 @@ export interface PlannedTask {
   dependsOn: string[];
 }
 export const TASK_PLAN_MAX_TASKS = 20;
+
+/**
+ * 传话 (stage 16, from the stage 15 design): a 主控 asks Studio to say something in another task's session. The
+ * person confirms it first (main window or Focus), unless the task takes relays without asking (relayAuto); then it
+ * goes into that task's main session (queued while it runs; a new session when it has none).
+ */
+export interface Relay {
+  id: Id;
+  fromSessionId: Id;
+  fromTaskId: Id | null;
+  toTaskId: Id;
+  text: string;
+  state: "pending" | "delivered" | "dismissed" | "failed";
+  createdAt: Timestamp;
+  decidedAt: Timestamp | null;
+  /** The session it went into. */
+  sessionId?: Id;
+  /** Why delivering failed. */
+  error?: string;
+}
+export const RELAY_TEXT_MAX = 20_000;
 export const TOPIC_DOC_BODY_MAX = 50_000;
 
 /** The longest task description (characters). */

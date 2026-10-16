@@ -169,17 +169,18 @@ export class Store extends DocumentStore {
   }
 
   /** `description`: empty removes it. */
-  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description" | "lead">>): Task {
+  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description" | "lead" | "relayAuto">>): Task {
     const task = this.getTask(id);
     if (!task) throw new Error(`task ${id} not found`);
-    const { description: _old, lead: _wasLead, ...rest } = task;
+    const { description: _old, lead: _wasLead, relayAuto: _wasAuto, ...rest } = task;
     const description = patch.description !== undefined ? patch.description.trim() : (task.description ?? "");
     const lead = patch.lead !== undefined ? patch.lead : !!task.lead;
-    const { description: _d, lead: _l, ...plain } = patch;
-    const next: Task = { ...rest, ...plain, ...(description ? { description } : {}), ...(lead ? { lead: true } : {}), updatedAt: this.timestamp() };
+    const relayAuto = patch.relayAuto !== undefined ? patch.relayAuto : !!task.relayAuto;
+    const { description: _d, lead: _l, relayAuto: _r, ...plain } = patch;
+    const next: Task = { ...rest, ...plain, ...(description ? { description } : {}), ...(lead ? { lead: true } : {}), ...(relayAuto ? { relayAuto: true } : {}), updatedAt: this.timestamp() };
     this.db
-      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, lead = ?, updated_at = ? WHERE id = ?")
-      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, lead ? 1 : 0, next.updatedAt, id);
+      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, lead = ?, relay_auto = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, lead ? 1 : 0, relayAuto ? 1 : 0, next.updatedAt, id);
     return next;
   }
 

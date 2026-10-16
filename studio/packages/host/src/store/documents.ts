@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Annotation, CanvasDoc, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
+import type { Annotation, CanvasDoc, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, Relay, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
 import { str, type Row } from "./rows.js";
 
 /**
@@ -45,6 +45,23 @@ export abstract class DocumentStore {
 
   listTaskPlans(): TaskPlan[] {
     return (this.db.prepare("SELECT body FROM task_plans ORDER BY created_at, id").all() as Row[]).map((r) => JSON.parse(str(r.body)) as TaskPlan);
+  }
+
+  // 传话 (stage 16)
+
+  putRelay(r: Relay): void {
+    this.db
+      .prepare("INSERT INTO relays (id, state, created_at, body) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body")
+      .run(r.id, r.state, r.createdAt, JSON.stringify(r));
+  }
+
+  getRelay(id: Id): Relay | undefined {
+    const r = this.db.prepare("SELECT body FROM relays WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as Relay);
+  }
+
+  listRelays(): Relay[] {
+    return (this.db.prepare("SELECT body FROM relays ORDER BY created_at, id").all() as Row[]).map((r) => JSON.parse(str(r.body)) as Relay);
   }
 
   // Annotations, canvas and todos: structure only in stage 1, UI comes later.

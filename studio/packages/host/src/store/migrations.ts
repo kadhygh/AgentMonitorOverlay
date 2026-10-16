@@ -290,4 +290,15 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX task_plans_state ON task_plans(state, created_at);
   `,
+  // 17: 传话 (stage 16): a 主控's messages to other tasks' sessions, and the tasks that take them without asking.
+  `
+  ALTER TABLE tasks ADD COLUMN relay_auto INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE relays (
+    id TEXT PRIMARY KEY,
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX relays_state ON relays(state, created_at);
+  `,
 ];

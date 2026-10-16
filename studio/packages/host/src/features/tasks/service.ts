@@ -117,12 +117,16 @@ export class TasksFeature extends Feature {
    * another topic (or out of its topic): it leaves the old topic's canvas with its dependencies there, and a reference
    * card to it on the new topic's canvas becomes its own card.
    */
-  updateTask(id: Id, patch: { title?: unknown; description?: unknown; lead?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
+  updateTask(id: Id, patch: { title?: unknown; description?: unknown; lead?: unknown; relayAuto?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
     const current = this.requireTask(id);
-    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description" | "lead">> = {};
+    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description" | "lead" | "relayAuto">> = {};
     if (patch.lead !== undefined) {
       if (typeof patch.lead !== "boolean") throw new HostError("bad_request", "lead must be true or false");
       clean.lead = patch.lead;
+    }
+    if (patch.relayAuto !== undefined) {
+      if (typeof patch.relayAuto !== "boolean") throw new HostError("bad_request", "relayAuto must be true or false");
+      clean.relayAuto = patch.relayAuto;
     }
     if (patch.title !== undefined) clean.title = String(patch.title).trim();
     if (patch.description !== undefined) {

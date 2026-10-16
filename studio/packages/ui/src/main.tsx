@@ -37,6 +37,7 @@ import "./chat/questions/questions.css";
 import "./chat/cli/cli.css";
 import "./viewer/viewer.css";
 import "./taskplans/taskplans.css";
+import "./relays/relays.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 import { Toaster } from "./lib/toast.js";

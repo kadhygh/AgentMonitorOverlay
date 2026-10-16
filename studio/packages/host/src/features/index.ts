@@ -31,6 +31,8 @@ import { topicDocsTools } from "./topicdocs/mcp.js";
 import { guideTools } from "./guide/mcp.js";
 import { taskPlansRoutes } from "./taskplans/routes.js";
 import { taskPlansTools } from "./taskplans/mcp.js";
+import { relaysRoutes } from "./relays/routes.js";
+import { relaysTools } from "./relays/mcp.js";
 import { chatFilesRoutes } from "./chatfiles/routes.js";
 import { cliRoutes } from "./cli/routes.js";
 import { dataRoutes } from "./datamgmt/routes.js";
@@ -69,6 +71,7 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "topicdocs", routes: topicDocsRoutes, tools: topicDocsTools },
   { name: "guide", routes: () => [], tools: guideTools },
   { name: "taskplans", routes: taskPlansRoutes, tools: taskPlansTools },
+  { name: "relays", routes: relaysRoutes, tools: relaysTools },
   { name: "chatfiles", routes: chatFilesRoutes },
   { name: "cli", routes: cliRoutes },
   { name: "datamgmt", routes: dataRoutes },
