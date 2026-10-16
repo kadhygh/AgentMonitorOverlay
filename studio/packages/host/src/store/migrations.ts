@@ -269,4 +269,15 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE tasks ADD COLUMN description TEXT;
   `,
+  // 15: 主控 (stage 16): the task the person marks as coordinating its topic; and the topics' own documents.
+  `
+  ALTER TABLE tasks ADD COLUMN lead INTEGER NOT NULL DEFAULT 0;
+  CREATE TABLE topic_docs (
+    id TEXT PRIMARY KEY,
+    topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX topic_docs_topic ON topic_docs(topic_id, created_at);
+  `,
 ];

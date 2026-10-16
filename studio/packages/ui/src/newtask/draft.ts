@@ -17,6 +17,8 @@ export interface TaskDraft {
   pick: ModelPick;
   /** Effort and permissions; the model comes from `pick`. */
   options: Omit<SessionOptions, "model">;
+  /** 主控 (stage 16): the task coordinates its topic (or project). */
+  lead?: boolean;
 }
 
 const KEY = "amo.taskDraft";
@@ -38,6 +40,7 @@ function load(profiles: readonly ModelProfile[]): TaskDraft {
       topicId: typeof d.topicId === "string" ? d.topicId : null,
       pick,
       options: d.options && typeof d.options === "object" ? d.options : {},
+      ...(d.lead === true ? { lead: true } : {}),
     };
   } catch {
     return fresh;
@@ -94,6 +97,7 @@ export async function submitDraft(link: HostLink, draft: TaskDraft, file: boolea
     ...(draft.title.trim() ? { title: draft.title.trim() } : file ? { title: text.split("\n")[0]!.slice(0, 60) } : {}),
     workspaceId: draft.projectId,
     topicId: draft.topicId,
+    ...(draft.lead ? { lead: true } : {}),
     ...(file ? {} : { firstSession: { profileId: draft.pick.profileId, ...(text ? { text } : {}), ...(Object.keys(options).length ? { options } : {}) } }),
     ...(template ? { template } : {}),
   });

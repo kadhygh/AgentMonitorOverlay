@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Annotation, CanvasDoc, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, TaskNote, TodoItem } from "@amo-studio/protocol";
+import type { Annotation, CanvasDoc, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, TaskNote, TodoItem, TopicDoc } from "@amo-studio/protocol";
 import { str, type Row } from "./rows.js";
 
 /**
@@ -8,6 +8,27 @@ import { str, type Row } from "./rows.js";
  */
 export abstract class DocumentStore {
   abstract readonly db: DatabaseSync;
+
+  // Topics' documents (stage 16)
+
+  putTopicDoc(d: TopicDoc): void {
+    this.db
+      .prepare("INSERT INTO topic_docs (id, topic_id, created_at, body) VALUES (?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET body = excluded.body")
+      .run(d.id, d.topicId, d.createdAt, JSON.stringify(d));
+  }
+
+  getTopicDoc(id: Id): TopicDoc | undefined {
+    const r = this.db.prepare("SELECT body FROM topic_docs WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as TopicDoc);
+  }
+
+  listTopicDocs(topicId: Id): TopicDoc[] {
+    return (this.db.prepare("SELECT body FROM topic_docs WHERE topic_id = ? ORDER BY created_at, id").all(topicId) as Row[]).map((r) => JSON.parse(str(r.body)) as TopicDoc);
+  }
+
+  deleteTopicDoc(id: Id): void {
+    this.db.prepare("DELETE FROM topic_docs WHERE id = ?").run(id);
+  }
 
   // Annotations, canvas and todos: structure only in stage 1, UI comes later.
 

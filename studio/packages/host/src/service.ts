@@ -22,6 +22,7 @@ import { GitReviewFeature } from "./features/gitreview/service.js";
 import { FilesFeature } from "./features/files/service.js";
 import { OpenInFeature } from "./features/openin/service.js";
 import { MarksFeature } from "./features/marks/service.js";
+import { TopicDocsFeature } from "./features/topicdocs/service.js";
 import { ChatFilesFeature } from "./features/chatfiles/service.js";
 import { CliFeature } from "./features/cli/service.js";
 import { DataFeature } from "./features/datamgmt/service.js";
@@ -50,6 +51,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly files = new FilesFeature(this);
   readonly openIn = new OpenInFeature(this);
   readonly marks = new MarksFeature(this);
+  readonly topicDocs = new TopicDocsFeature(this);
   readonly chatFiles = new ChatFilesFeature(this);
   readonly cli = new CliFeature(this);
   readonly data = new DataFeature(this);

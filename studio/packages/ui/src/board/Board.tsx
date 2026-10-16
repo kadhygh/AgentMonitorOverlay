@@ -151,7 +151,14 @@ function TaskCard({
       data-testid="task-card"
       data-task-id={task.id}
     >
-      <span className="card-title">{task.title || "未命名任务"}</span>
+      <span className="card-title">
+        {task.lead && (
+          <span className="lead-badge" title="主控：协调这个专题（或项目）的任务" data-testid="lead-badge">
+            主控
+          </span>
+        )}
+        {task.title || "未命名任务"}
+      </span>
       <span className="card-status">
         {look ? (
           <>

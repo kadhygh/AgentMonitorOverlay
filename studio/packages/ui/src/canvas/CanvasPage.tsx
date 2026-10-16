@@ -11,6 +11,7 @@ import { RefPicker, type RefChoice } from "./RefPicker.js";
 import { CARD_H, CARD_W, cardHeight, NOTE_H, NOTE_W, NoteCard, RefCard, TaskCard } from "./cards.js";
 import { CanvasMenu, item, SEP, type MenuEntry } from "./CanvasMenu.js";
 import { DescriptionDialog } from "../task/DescriptionDialog.js";
+import { DocsTab } from "./DocsTab.js";
 
 export { CARD_H, CARD_W, NOTE_H, NOTE_W } from "./cards.js";
 
@@ -614,6 +615,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
           newId={newCanvasId}
           todoTab={planning ? <TodoTab link={link} workspaces={workspaces} profiles={profiles} onOpenTask={onOpenTask} activity={activity} topicId={topic.id} /> : undefined}
           agentTab={<AgentTab link={link} topicId={topic.id} />}
+          docsTab={<DocsTab link={link} topicId={topic.id} readOnly={!!topic.archivedAt} />}
         />
       )}
       </div>

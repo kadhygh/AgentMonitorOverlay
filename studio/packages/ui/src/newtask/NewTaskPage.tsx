@@ -197,6 +197,12 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
                 {fromCanvas && <span className="drawer-note">从画布新建，总在画布上</span>}
               </label>
             )}
+            <label className="pick-row draft-oncanvas" title="主控负责协调它的专题（不在专题里时是它的项目）：拆任务、排画布、写专题文档；具体的活由各任务的会话做。之后在任务页随时可以改">
+              <span className="pick-lab" />
+              <input type="checkbox" checked={!!draft.lead} onChange={(e) => update({ lead: e.target.checked })} data-testid="draft-lead" />
+              设为主控
+              <span className="drawer-note">协调{topic ? "这个专题" : "这个项目"}的任务</span>
+            </label>
             {templates.length > 0 && (
               <div className="pick-row" role="group" aria-label="流程模板">
                 <span className="pick-lab">模板</span>

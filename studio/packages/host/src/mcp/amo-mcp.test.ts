@@ -40,6 +40,11 @@ const call = async (client: Client, name: string, args: Record<string, unknown> 
   const r = (await client.callTool({ name, arguments: args })) as { content: Array<{ text: string }>; isError?: boolean };
   return { ...r, data: r.isError ? null : JSON.parse(r.content.at(-1)!.text) };
 };
+/** A tool that answers in text (the role card, the guide). */
+const text = async (client: Client, name: string, args: Record<string, unknown> = {}) => {
+  const r = (await client.callTool({ name, arguments: args })) as { content: Array<{ text: string }>; isError?: boolean };
+  return { text: r.content[0]!.text, isError: r.isError === true };
+};
 
 beforeAll(async () => {
   root = mkdtempSync(join(tmpdir(), "amo-studio-test-mcp-"));
@@ -81,15 +86,15 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists ten read-only tools and eleven that write for the caller", async () => {
+  it("lists thirteen read-only tools and twelve that write for the caller", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
-      "board_list", "canvas_color", "canvas_depend", "canvas_group_create", "canvas_place", "canvas_read", "checklist_check", "decision_request", "handoff_submit", "list_file_marks",
-      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "session_tree", "task_describe", "task_get", "task_note_add", "topic_get", "topic_list",
+      "amo_guide", "amo_whoami", "board_list", "canvas_color", "canvas_depend", "canvas_group_create", "canvas_place", "canvas_read", "checklist_check", "decision_request", "handoff_submit", "list_file_marks",
+      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "session_tree", "task_describe", "task_get", "task_note_add", "topic_doc_write", "topic_docs", "topic_get", "topic_list",
     ]);
     expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual([
-      "board_list", "canvas_read", "list_file_marks", "pack_doc", "pack_list", "project_context", "session_tree", "task_get", "topic_get", "topic_list",
+      "amo_guide", "amo_whoami", "board_list", "canvas_read", "list_file_marks", "pack_doc", "pack_list", "project_context", "session_tree", "task_get", "topic_docs", "topic_get", "topic_list",
     ]);
     await client.close();
   });
@@ -150,7 +155,7 @@ describe("AMO MCP", () => {
 
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(21);
+    expect((await client.listTools()).tools).toHaveLength(25);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);
@@ -305,6 +310,35 @@ describe("AMO MCP", () => {
     const tools = (await client.listTools()).tools;
     expect(tools.find((t) => t.name === "task_describe")?.annotations?.readOnlyHint).toBe(false);
     await client.close();
+  });
+
+  it("tells a session its role; a 主控 writes the topic's documents, which every session reads (stage 16)", async () => {
+    const client = await connect(MCP_TOKEN, identities.tokenFor(mainSessionId));
+    const card = (await text(client, "amo_whoami")).text;
+    expect(card).toContain("你在 AMO Studio 里的角色：执行");
+    expect(card).toContain("导入重试");
+    expect(card).toContain("专题：导入专题");
+    expect(card).toContain("专题的主控：还没有");
+    expect((await text(client, "amo_guide", { section: "lead" })).text).toContain("# 主控");
+    expect((await text(client, "amo_guide")).text).toContain("可选的 section");
+    // Not the 主控 yet: refused, with what to do instead.
+    const refused = await call(client, "topic_doc_write", { title: "迁移计划", body: "先导入" });
+    expect(refused.isError).toBe(true);
+    expect(refused.content[0]!.text).toContain("只有主控");
+    service.tasks.updateTask(importTask.id, { lead: true });
+    expect((await text(client, "amo_whoami")).text).toContain("角色：主控");
+    const doc = (await call(client, "topic_doc_write", { title: "迁移计划", body: "1. 先导入\n2. 再统一配置键" })).data as { id: string };
+    await call(client, "topic_doc_write", { docId: doc.id, body: "1. 先导入（已完成）" });
+    const listed = (await call(client, "topic_docs")).data as { docs: Array<{ id: string; title: string }> };
+    expect(listed.docs).toMatchObject([{ id: doc.id, title: "迁移计划" }]);
+    expect((await call(client, "topic_docs", { docId: doc.id })).data).toMatchObject({ title: "迁移计划", body: "1. 先导入（已完成）" });
+    expect((await text(client, "amo_whoami")).text).toContain("「迁移计划」");
+    service.tasks.updateTask(importTask.id, { lead: false });
+    await client.close();
+    // Without an identity: no role card.
+    const anonymous = await connect(MCP_TOKEN);
+    expect((await text(anonymous, "amo_whoami")).isError).toBe(true);
+    await anonymous.close();
   });
 
   it("answers an unknown id with a readable tool error", async () => {

@@ -41,6 +41,11 @@ export interface Task {
   column: TaskColumn;
   /** What the task is about (2026-10-17): on its canvas card and task page; the person and agents write it (TASK_DESCRIPTION_MAX). */
   description?: string;
+  /**
+   * 主控 (stage 16, from the stage 15 design): the person marks a task as the one that coordinates its topic (or its
+   * project when it is in none). Its sessions get the 主控 role card and may propose tasks and relay messages.
+   */
+  lead?: boolean;
   createdAt: Timestamp;
   updatedAt: Timestamp;
   /** Archived with its topic (or on its own); read-only while set. */
@@ -351,6 +356,22 @@ export interface CanvasGroup {
   rect: Rect;
   color?: CanvasColor;
 }
+
+/**
+ * A topic's document (stage 16): what driving its tasks needs to know — plans, decisions, how the parts fit. Kept in
+ * Studio; specialised documents stay in the projects (marked with 文件标记) and a topic document can point at them.
+ */
+export interface TopicDoc {
+  id: Id;
+  topicId: Id;
+  title: string;
+  /** Markdown. */
+  body: string;
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
+export const TOPIC_DOC_TITLE_MAX = 120;
+export const TOPIC_DOC_BODY_MAX = 50_000;
 
 /** The longest task description (characters). */
 export const TASK_DESCRIPTION_MAX = 2000;

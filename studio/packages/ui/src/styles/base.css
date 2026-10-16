@@ -219,3 +219,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .render-error.window { margin: 48px auto; max-width: 560px; }
 .render-error-actions { display: flex; gap: 8px; }
 .render-error-note { color: var(--text-dim); font-size: var(--fs-cap); }
+
+/* 主控 (stage 16): on the task's board card, canvas card and task page. */
+.lead-badge { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: var(--r-btn); background: var(--primary); color: var(--on-primary); font-family: var(--font-ui, inherit); font-weight: 600; font-size: 11px; line-height: 17px; vertical-align: 2px; letter-spacing: 0.05em; }
+h1 .lead-badge { margin: 0 0 0 10px; font-size: 12px; line-height: 20px; vertical-align: 4px; }

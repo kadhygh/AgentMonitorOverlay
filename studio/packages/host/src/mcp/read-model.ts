@@ -42,6 +42,11 @@ export class ReadModel {
     return id ? (this.store.getTopic(id)?.title ?? null) : null;
   }
 
+  /** A topic by id or title; the caller's own topic when omitted (for the features' tools). */
+  topicRef(ref?: string): Topic {
+    return this.topic(ref);
+  }
+
   /** A topic by id or title; the caller's own topic when omitted. */
   private topic(ref?: string): Topic {
     if (ref === undefined || ref === "") {

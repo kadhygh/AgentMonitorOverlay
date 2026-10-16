@@ -145,12 +145,12 @@ export class Store extends DocumentStore {
 
   // Tasks
 
-  createTask(input: { title: string; workspaceId: Id; topicId?: Id | null; column?: TaskColumn }): Task {
+  createTask(input: { title: string; workspaceId: Id; topicId?: Id | null; column?: TaskColumn; lead?: boolean }): Task {
     const at = this.timestamp();
-    const task: Task = { id: newId("task"), title: input.title, workspaceId: input.workspaceId, topicId: input.topicId ?? null, column: input.column ?? "todo", createdAt: at, updatedAt: at, archivedAt: null };
+    const task: Task = { id: newId("task"), title: input.title, workspaceId: input.workspaceId, topicId: input.topicId ?? null, column: input.column ?? "todo", ...(input.lead ? { lead: true } : {}), createdAt: at, updatedAt: at, archivedAt: null };
     this.db
-      .prepare("INSERT INTO tasks (id, title, workspace_id, topic_id, column_name, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, NULL)")
-      .run(task.id, task.title, task.workspaceId, task.topicId, task.column, at, at);
+      .prepare("INSERT INTO tasks (id, title, workspace_id, topic_id, column_name, lead, created_at, updated_at, archived_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, NULL)")
+      .run(task.id, task.title, task.workspaceId, task.topicId, task.column, input.lead ? 1 : 0, at, at);
     return task;
   }
 
@@ -169,16 +169,17 @@ export class Store extends DocumentStore {
   }
 
   /** `description`: empty removes it. */
-  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description">>): Task {
+  updateTask(id: Id, patch: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "archivedAt" | "description" | "lead">>): Task {
     const task = this.getTask(id);
     if (!task) throw new Error(`task ${id} not found`);
-    const { description: _old, ...rest } = task;
+    const { description: _old, lead: _wasLead, ...rest } = task;
     const description = patch.description !== undefined ? patch.description.trim() : (task.description ?? "");
-    const next: Task = { ...rest, ...patch, ...(description ? { description } : {}), updatedAt: this.timestamp() };
-    if (!description) delete next.description;
+    const lead = patch.lead !== undefined ? patch.lead : !!task.lead;
+    const { description: _d, lead: _l, ...plain } = patch;
+    const next: Task = { ...rest, ...plain, ...(description ? { description } : {}), ...(lead ? { lead: true } : {}), updatedAt: this.timestamp() };
     this.db
-      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, updated_at = ? WHERE id = ?")
-      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, next.updatedAt, id);
+      .prepare("UPDATE tasks SET title = ?, column_name = ?, workspace_id = ?, topic_id = ?, archived_at = ?, description = ?, lead = ?, updated_at = ? WHERE id = ?")
+      .run(next.title, next.column, next.workspaceId || null, next.topicId, next.archivedAt, description || null, lead ? 1 : 0, next.updatedAt, id);
     return next;
   }
 
@@ -361,6 +362,7 @@ export class Store extends DocumentStore {
       if (sessions.size) this.db.prepare(`DELETE FROM sessions WHERE id IN (${[...sessions].map(() => "?").join(", ")})`).run(...sessions);
       each(tasks, "DELETE FROM tasks WHERE id = ?");
       each(topics, "DELETE FROM canvas_docs WHERE id = ?");
+      each(topics, "DELETE FROM topic_docs WHERE topic_id = ?");
       // Cards and dependencies of the deleted tasks on the canvases that stay.
       for (const r of this.db.prepare("SELECT body FROM canvas_docs").all() as Row[]) {
         const doc = JSON.parse(str(r.body)) as CanvasDoc;

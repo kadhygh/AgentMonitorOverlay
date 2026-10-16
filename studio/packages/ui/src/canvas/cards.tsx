@@ -43,7 +43,14 @@ export function TaskCard({ node, task, sessions, workspaces, selected, linking, 
       onDoubleClick={onOpen}
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
     >
-      <span className="canvas-card-title">{task.title || "未命名任务"}</span>
+      <span className="canvas-card-title">
+        {task.lead && (
+          <span className="lead-badge" title="主控：协调这个专题的任务" data-testid="lead-badge">
+            主控
+          </span>
+        )}
+        {task.title || "未命名任务"}
+      </span>
       <span className="canvas-card-meta">
         <span className="dot" style={{ background: look?.dot ?? "var(--muted-dot)" }} />
         <span style={{ color: look?.text ?? "var(--text-dim)" }}>{look?.label ?? "未开始"}</span>

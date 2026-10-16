@@ -84,6 +84,7 @@ export class TasksFeature extends Feature {
     workspaceId?: Id | null;
     topicId?: Id | null;
     column?: TaskColumn;
+    lead?: boolean;
     firstSession?: NewSessionInput;
     template?: TaskTemplateChoice;
   }): Promise<{ task: Task; session: Session | null }> {
@@ -98,7 +99,7 @@ export class TasksFeature extends Feature {
     const base = input.title?.trim() || input.firstSession?.text?.trim().slice(0, 60) || template?.title || "";
     const title = template?.titlePrefix && !base.startsWith(template.titlePrefix.trim()) ? `${template.titlePrefix}${base}` : base;
     const column = input.firstSession ? "doing" : (input.column ?? "todo");
-    const task = this.store.createTask({ title, workspaceId: workspace.id, topicId: topic?.id ?? null, column });
+    const task = this.store.createTask({ title, workspaceId: workspace.id, topicId: topic?.id ?? null, column, lead: input.lead === true });
     this.publish({ type: "task.upserted", task });
     if (template && input.template) {
       template.steps.forEach((text, position) => {
@@ -116,9 +117,13 @@ export class TasksFeature extends Feature {
    * another topic (or out of its topic): it leaves the old topic's canvas with its dependencies there, and a reference
    * card to it on the new topic's canvas becomes its own card.
    */
-  updateTask(id: Id, patch: { title?: unknown; description?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
+  updateTask(id: Id, patch: { title?: unknown; description?: unknown; lead?: unknown; column?: unknown; workspaceId?: unknown; topicId?: unknown }): Task {
     const current = this.requireTask(id);
-    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description">> = {};
+    const clean: Partial<Pick<Task, "title" | "column" | "workspaceId" | "topicId" | "description" | "lead">> = {};
+    if (patch.lead !== undefined) {
+      if (typeof patch.lead !== "boolean") throw new HostError("bad_request", "lead must be true or false");
+      clean.lead = patch.lead;
+    }
     if (patch.title !== undefined) clean.title = String(patch.title).trim();
     if (patch.description !== undefined) {
       if (current.archivedAt) throw new HostError("read_only", "archived tasks cannot be changed");

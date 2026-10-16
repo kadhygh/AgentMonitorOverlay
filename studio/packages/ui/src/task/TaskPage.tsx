@@ -285,6 +285,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               disabled={!!task.archivedAt}
               onSave={(title) => void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { title }))}
             />
+            {task.lead && (
+              <span className="lead-badge" title="主控：协调这个专题（或项目）的任务。在 ⋯ 里可以取消" data-testid="task-lead">
+                主控
+              </span>
+            )}
           </h1>
           <TaskMeta
             task={task}
@@ -393,6 +398,21 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               data-testid="task-describe"
             >
               {task.description ? "编辑说明…" : "添加说明…"}
+            </button>
+          )}
+          {!task.archivedAt && (
+            <button
+              type="button"
+              role="menuitem"
+              disabled={busy}
+              title="主控负责协调它的专题（不在专题里时是它的项目）：拆任务、排画布、写专题文档"
+              onClick={() => {
+                setTaskMenu(null);
+                void run(() => call(link, "PATCH /api/tasks/:id", { id: task.id }, { lead: !task.lead }));
+              }}
+              data-testid="task-lead-toggle"
+            >
+              {task.lead ? "取消主控" : "设为主控"}
             </button>
           )}
           {task.topicId && (

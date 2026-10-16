@@ -8,7 +8,8 @@ import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/clau
 import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
 import { localClaudeHome as localClaudeHomeOf } from "./runtime/claude/claude-login.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
-import { amoToolsFor } from "./mcp/tools.js";
+import { AMO_MCP_INSTRUCTIONS, amoToolsFor } from "./mcp/tools.js";
+import { roleCard } from "./features/guide/role.js";
 import { McpIdentities } from "./mcp/identity.js";
 import { CodexServerManager } from "./runtime/codex/server-manager.js";
 import { WindowsCredentialReader, type CredentialReader } from "./runtime/credentials.js";
@@ -175,6 +176,13 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       // Only an explicit dir is passed down: otherwise the CLI is left to find ~/.claude (and ~/.claude.json) itself.
       ...(options.localClaudeHome ? { localClaudeHome: options.localClaudeHome } : {}),
       mcpTools: (sessionId) => amoToolsFor(service, { sessionId }),
+      mcpInstructions: (sessionId): string => {
+        try {
+          return `${AMO_MCP_INSTRUCTIONS}\n\n${roleCard(service, sessionId)}`;
+        } catch {
+          return AMO_MCP_INSTRUCTIONS;
+        }
+      },
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude });
     const liveStore = store;

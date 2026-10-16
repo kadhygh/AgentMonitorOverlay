@@ -33,7 +33,7 @@
 .canvas-row .canvas-viewport { margin: 12px; }
 .canvas-side { flex: 0 0 320px; border-left: 1px solid var(--border); padding: 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; background: var(--panel); }
 .side-tabs { display: flex; gap: 2px; padding: 3px; border-radius: 9px; background: var(--chip); }
-.side-tab { flex: 1; height: 28px; border: none; border-radius: 7px; background: transparent; color: var(--text-dim); font-size: 12.5px; cursor: pointer; }
+.side-tab { flex: 1 1 auto; height: 28px; padding: 0 6px; white-space: nowrap; border: none; border-radius: 7px; background: transparent; color: var(--text-dim); font-size: 12.5px; cursor: pointer; }
 .side-tab[aria-selected="true"] { background: var(--border); color: var(--text); }
 .side-section { display: flex; flex-direction: column; gap: 10px; }
 .side-heading { font-family: var(--font-display); font-weight: 700; font-size: var(--fs-title); overflow-wrap: anywhere; }
@@ -113,3 +113,12 @@
 .ctx-menu .color-swatch:hover { transform: scale(1.12); }
 .side-desc { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .side-desc-text { margin: 0; font-size: 12.5px; line-height: 1.55; white-space: pre-wrap; color: var(--text); }
+
+/* 文档 tab (stage 16): the topic's documents */
+.docs-row { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; width: 100%; padding: 8px 10px; border-radius: var(--r-l); border: 1px solid var(--border); background: var(--panel); color: var(--text); text-align: left; cursor: pointer; }
+.docs-row:hover { border-color: var(--border-strong); }
+.docs-title { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.docs-view { font-size: 13px; line-height: 1.6; max-height: 60vh; overflow: auto; }
+.docs-actions { display: flex; justify-content: flex-end; gap: 8px; }
+.docs-back { align-self: flex-start; }
+.docs-body { min-height: 260px; font-family: var(--font-code); font-size: 12.5px; }

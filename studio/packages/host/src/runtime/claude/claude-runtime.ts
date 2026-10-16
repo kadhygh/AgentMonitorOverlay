@@ -57,6 +57,8 @@ export interface ClaudeRuntimeOptions {
   baseEnv?: NodeJS.ProcessEnv;
   /** The AMO MCP tools, given to every Claude session in-process (no token reaches the CLI). */
   mcpTools?: (sessionId: Id) => AmoTool[];
+  /** The MCP server's instructions for this session (its role card after the general ones); the general ones when absent. */
+  mcpInstructions?: (sessionId: Id) => string;
 }
 
 /**
@@ -619,7 +621,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const server = createSdkMcpServer({
       name: AMO_MCP_NAME,
       version: "0.5.0",
-      instructions: AMO_MCP_INSTRUCTIONS,
+      instructions: this.options.mcpInstructions?.(sessionId) ?? AMO_MCP_INSTRUCTIONS,
       tools: tools.map((t) => tool(t.name, t.description, t.inputSchema, async (args) => t.run(args as Record<string, unknown>), { annotations: { readOnlyHint: t.readOnly } })),
     });
     return { mcpServers: { [AMO_MCP_NAME]: server }, allowedTools: tools.filter((t) => t.autoApprove).map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
