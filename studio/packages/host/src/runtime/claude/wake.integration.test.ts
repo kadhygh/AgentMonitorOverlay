@@ -25,7 +25,7 @@ let task: Task;
 type Internals = {
   live: Map<string, unknown>;
   onMessage(sessionId: string, live: unknown, m: unknown): void;
-  askPerson(sessionId: string, live: unknown, toolName: string, input: Record<string, unknown>, ctx: { signal: AbortSignal; toolUseID?: string }): Promise<unknown>;
+  asks: { askPerson(sessionId: string, live: unknown, toolName: string, input: Record<string, unknown>, ctx: { signal: AbortSignal; toolUseID?: string }): Promise<unknown> };
 };
 const internals = () => runtime as unknown as Internals;
 const alive = (sessionId: string) => internals().live.has(sessionId);
@@ -148,14 +148,14 @@ describe("ClaudeRuntime: loop and usage limits", () => {
     const s = await started("background ask");
     const live = internals().live.get(s.id);
     // Approved.
-    const asked = internals().askPerson(s.id, live, "Bash", { command: "bash shot.sh" }, { signal: new AbortController().signal, toolUseID: "toolu_bg1" });
+    const asked = internals().asks.askPerson(s.id, live, "Bash", { command: "bash shot.sh" }, { signal: new AbortController().signal, toolUseID: "toolu_bg1" });
     expect(session(s.id).status).toBe("awaiting-approval");
     await runtime.respondApproval(s.id, "toolu_bg1", "accept");
     await asked;
     expect(session(s.id).status).toBe("idle");
     // Called off by the CLI.
     const off = new AbortController();
-    void internals().askPerson(s.id, live, "Bash", { command: "bash other.sh" }, { signal: off.signal, toolUseID: "toolu_bg2" });
+    void internals().asks.askPerson(s.id, live, "Bash", { command: "bash other.sh" }, { signal: off.signal, toolUseID: "toolu_bg2" });
     expect(session(s.id).status).toBe("awaiting-approval");
     off.abort();
     expect(session(s.id).status).toBe("idle");

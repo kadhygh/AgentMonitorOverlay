@@ -169,6 +169,35 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
 type DistributiveOmit<T, K extends PropertyKey> = T extends unknown ? Omit<T, K> : never;
 export type NewItemBody = DistributiveOmit<SessionItemInput, "id" | "sessionId" | "createdAt">;
 
+export interface NewSessionInput {
+  taskId: Id | null;
+  topicId: Id | null;
+  parentId: Id | null;
+  kind: Session["kind"];
+  profileId: Id;
+  workspaceId: Id;
+  title: string;
+  runtimeRef: string;
+  options?: SessionOptions;
+}
+
+/**
+ * A runtime's persistence helpers, bound, for the parts it is split into (stage 16): they write through the runtime, so
+ * every change is still stored, published and emitted the same way.
+ */
+export interface RuntimeCore {
+  readonly store: Store;
+  now(): Date;
+  log(line: string): void;
+  requireSession(id: Id): Session;
+  createSession(input: NewSessionInput): Session;
+  updateSession(id: Id, patch: Parameters<Store["updateSession"]>[1]): Session;
+  setStatus(id: Id, status: SessionStatus): void;
+  appendItem(sessionId: Id, body: NewItemBody, raw?: { method: string; itemId?: string; turnId?: string }): SessionItem;
+  updateItem(itemId: Id, fn: (item: SessionItem) => SessionItem): void;
+  emitTransient(event: HostEventInput): void;
+}
+
 /** Shared persistence helpers: every change is stored, turned into a Host event and emitted. */
 export abstract class RuntimeBase extends EventEmitter<RuntimeEvents> {
   protected constructor(
@@ -179,13 +208,29 @@ export abstract class RuntimeBase extends EventEmitter<RuntimeEvents> {
     super();
   }
 
+  /** The helpers for the runtime's parts; overrides (an appendItem that adds the turn) apply. */
+  protected makeCore(): RuntimeCore {
+    return {
+      store: this.store,
+      now: () => this.now(),
+      log: (line) => this.emit("log", line),
+      requireSession: (id) => this.requireSession(id),
+      createSession: (input) => this.createSession(input),
+      updateSession: (id, patch) => this.updateSession(id, patch),
+      setStatus: (id, status) => this.setStatus(id, status),
+      appendItem: (sessionId, body, raw) => this.appendItem(sessionId, body, raw),
+      updateItem: (itemId, fn) => this.updateItem(itemId, fn),
+      emitTransient: (event) => this.emitTransient(event),
+    };
+  }
+
   protected requireSession(id: Id): Session {
     const s = this.store.getSession(id);
     if (!s) throw new Error(`session ${id} not found`);
     return s;
   }
 
-  protected createSession(input: { taskId: Id | null; topicId: Id | null; parentId: Id | null; kind: Session["kind"]; profileId: Id; workspaceId: Id; title: string; runtimeRef: string; options?: SessionOptions }): Session {
+  protected createSession(input: NewSessionInput): Session {
     const s = this.store.createSession({ ...input, runtime: this.runtimeName, status: "idle", writer: "workbench" });
     this.publish({ type: "session.upserted", session: s });
     return s;
