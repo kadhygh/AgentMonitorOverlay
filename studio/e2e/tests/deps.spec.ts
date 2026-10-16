@@ -31,11 +31,11 @@ test("dependencies from the sidebar and notes on the canvas", async () => {
   const details = page.getByRole("group", { name: "任务详情" });
   await page.getByTestId("canvas-card").filter({ hasText: "改导入" }).click();
   await details.getByLabel("添加前置任务").selectOption({ label: "拆表" });
-  await details.getByRole("button", { name: "添加" }).click();
+  await details.getByRole("button", { name: "添加", exact: true }).click();
   await expect(details.getByTestId("dependency")).toHaveText(/拆表/);
   await page.getByTestId("canvas-card").filter({ hasText: "跑校验" }).click();
   await details.getByLabel("添加前置任务").selectOption({ label: "改导入" });
-  await details.getByRole("button", { name: "添加" }).click();
+  await details.getByRole("button", { name: "添加", exact: true }).click();
   await expect.poll(async () => (await canvas()).edges.map((e) => [e.from, e.to])).toEqual([
     [ids["拆表"], ids["改导入"]],
     [ids["改导入"], ids["跑校验"]],

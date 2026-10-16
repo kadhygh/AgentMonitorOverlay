@@ -1,6 +1,20 @@
-# 交接：继续开发 AMO Studio（2026-10-15）
+# 交接：继续开发 AMO Studio（2026-10-17）
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
+
+> **2026-10-17 更新（下一个会话从这里开始）：阶段 16 全部做完，计划和每项做法在 `plans/stage-16.md`；阶段 15 的设计在 `plans/stage-15.md`。**
+> - S15-L（10-16）：Claude 的 /loop 和订阅额度上限——有 loop 唤醒或在等额度时不关进程，额度恢复后 CLI 没续上由 Studio 补一条；输入框上方的条和会话列表的「loop · 时间」「等额度 · 时间」；用 SendMessage 恢复的子 agent 找回子会话（迁移 13）。**待确认**：下次真碰到额度上限后看 host.log 的「went on after its usage limit (turn started by cli|studio|person)」，判断 SDK 模式下 CLI 会不会自己续。
+> - Review（10-16）：l / ; 在改动间跳，h 打开历史（j / k 选）；历史打开从 ~340ms 到 ~50ms（每次起 git 进程在这台机器上要 ~100ms：历史接口一轮 git、窗口打开后预读）。
+> - S16-A：子 agent 在主控空闲时发起的审批，批准后会话不再停在「等你批准」；Focus「我知道了」；设置里「默认项目」换成「默认路径」（选文件夹从这里开始）。
+> - S16-R 重构（行为不变，完整 e2e 109/109）：Claude / Codex runtime 拆成几个部分（`runtime/claude/*`、`runtime/codex/*`，经 `RuntimeCore` 访问 runtime），Codex 改为继承 RuntimeBase；store 拆出 `rows.ts`、`documents.ts`；Thread / TaskPage / Focus / Review / Canvas 拆出子组件。
+> - S16-B：任务说明（迁移 14，画布卡片、任务页、侧栏，MCP `task_describe`）；画布颜色标记（红黄绿蓝，MCP `canvas_color`）；画布右键菜单（空白处 / 卡片 / 便签 / 分组 / 连线）、连依赖、全部显示。
+> - S16-C：agent 懂 AMO——MCP 服务说明改写、`amo_whoami`（角色卡，Claude 会话的服务说明里也带）、`amo_guide`；任务「主控」标记（迁移 15）；专题文档（画布侧栏「文档」，MCP `topic_docs` / `topic_doc_write`）。
+> - S16-D：主控 `task_plan_propose` → 画布 / 主控任务页 / Focus 上的提案 → 人改过后「放进待办」或「立刻开跑」→ 建任务、写说明、按项目分组放上画布、连依赖、留言告诉主控（迁移 16）。
+> - S16-E：传话 `relay_send` → 人在任务页或 Focus 确认（或任务设了「主控传话不用确认」）→ 送进目标任务的会话（迁移 17）。
+> - 都在 `studio/main`。**要重启开发版才生效**（Host 改了，迁移 13–17；preload 和主进程也改了）：先问用户，按 §1 的步骤，重启前备份 `.data/studio.db*`。用户自己跑 `!` 命令时路径要写成 `/g/PROJECT/...`（bash 会吃掉反斜杠）。
+> - 工作树：`AgentMonitorOverlay-s15-loop`、`AgentMonitorOverlay-s15-keys`（S16 都在这里做的，分支 `studio/s16-*`）和更早的 s13-*、s14-* 都还在，等用户同意再删。
+> - 没做 / 以后：便签「转为任务」；画布多选和对齐；Codex 的额度上限；Focus 里显示等额度的会话；子会话收到子 agent 的条目时更新它的时间。
+> - 工具坑：Git Bash 的 heredoc 里写 Python，`\\n` 会变成真的换行——含转义的脚本先用 Write 写成文件再跑。单测 server-manager 的 3 条端口测试在开发版运行时（占着 47940 起的端口）会失败，原版代码一样。
 
 > **2026-10-15 晚更新（下一个会话从这里开始）：S14-W…S14-Z，见 `plans/stage-14.md` 进度表。**
 > - S14-AC（10-16）：乱飞桌宠看着被裁切 → 乱飞窗口的形状（setShape）留足抖动和阴影的余量（量不抖的 `.pixel-bot-slot`，宠物 16px、气泡 10px），并在窗口飞到目标屏幕后重设一次形状（窗口在屏幕外时按那里的缩放设的，换到不同缩放的屏会对不上）。要重启 Electron 主进程才生效。
