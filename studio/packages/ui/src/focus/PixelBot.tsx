@@ -5,7 +5,7 @@
 // finished work to look at; "angry": left waiting too long, it flies about the screen (app/src/bot-window.ts).
 // A second skin, 「看书的 Claude 娘」 (readerGirl.ts), is chosen in 设置 → 界面 (petSkin.ts); the robot stays the default.
 
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, type Ref } from "react";
 import type { PetSkin } from "./petSkin.js";
 import { READER_FRAMES, READER_H, READER_W, readerFrame } from "./readerGirl.js";
 
@@ -112,11 +112,14 @@ export function ReaderArt({ mood }: { mood: BotMood }) {
   return <canvas ref={canvas} className="pixel-bot-art reader-art" width={READER_W} height={READER_H} aria-hidden="true" data-testid="reader-art" />;
 }
 
-export function PixelBot({ mood = "alert", skin = "robot", message, onClick }: { mood?: BotMood; skin?: PetSkin; message: string; onClick(): void }) {
+/** `artRef`: the pet's slot, which keeps still while the pet in it shakes (the flying window measures it). */
+export function PixelBot({ mood = "alert", skin = "robot", message, onClick, artRef }: { mood?: BotMood; skin?: PetSkin; message: string; onClick(): void; artRef?: Ref<HTMLSpanElement> }) {
   return (
     <button type="button" className={`pixel-bot ${mood} skin-${skin}`} onClick={onClick} title={`${message}（点一下去处理）`} aria-label={`${message}，点一下去处理`} data-testid="focus-bot">
       <span className="pixel-bot-say">{message}</span>
-      {skin === "reader" ? <ReaderArt mood={mood} /> : <BotArt mood={mood} />}
+      <span className="pixel-bot-slot" ref={artRef}>
+        {skin === "reader" ? <ReaderArt mood={mood} /> : <BotArt mood={mood} />}
+      </span>
     </button>
   );
 }

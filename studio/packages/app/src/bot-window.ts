@@ -6,6 +6,10 @@ import { recoverLostClicks } from "./focus-window.js";
 // panel and flies about the screen in a window of its own, just big enough for it and its bubble, so the rest of the
 // screen keeps working. A click on it lands it (Focus then opens what needs the person); so does dealing with it.
 // Like Focus it never takes focus, and its clicks get the same lost-click recovery.
+// 2026-10-16: it looked cut off while flying. Its shape (the part of the window Windows draws) was set while the window
+// still sat off screen, in that place's pixels; on a screen with another scale the robot then outgrew it. The shape is
+// now kept in DIPs and set again once the window is on the screen it flies over (and again a moment later, after
+// Chromium has taken the new scale).
 
 const BOT_W = 420;
 const BOT_H = 160;
@@ -40,6 +44,15 @@ export function setupBotFlight(options: BotFlightOptions): BotFlightControl {
   let timer: ReturnType<typeof setInterval> | null = null;
   let flight: Flight | null = null;
   let said = "";
+  /** The page's shape in DIPs, set again whenever the window may have changed screens. */
+  let shape: Rectangle[] = [];
+  let reshape: ReturnType<typeof setTimeout> | null = null;
+
+  const applyShape = () => {
+    if (!win || win.isDestroyed() || !shape.length) return;
+    win.setShape(shape);
+    if (options.testMode) (globalThis as { __amoBotShape?: unknown }).__amoBotShape = shape;
+  };
 
   const record = () => {
     if (options.testMode) (globalThis as { __amoBotFlight?: unknown }).__amoBotFlight = { flying: timer !== null || (win?.isVisible() ?? false), message: said };
@@ -83,7 +96,9 @@ export function setupBotFlight(options: BotFlightOptions): BotFlightControl {
 
   const stop = () => {
     if (timer) clearInterval(timer);
+    if (reshape) clearTimeout(reshape);
     timer = null;
+    reshape = null;
     flight = null;
   };
 
@@ -101,7 +116,10 @@ export function setupBotFlight(options: BotFlightOptions): BotFlightControl {
           const area = screen.getDisplayNearestPoint({ x: start.x + size.width / 2, y: start.y + size.height / 2 }).workArea;
           flight = takeOff(start, size, area);
           w.setPosition(Math.round(flight.x), Math.round(flight.y));
+          applyShape();
           w.showInactive();
+          if (reshape) clearTimeout(reshape);
+          reshape = setTimeout(applyShape, 120);
           let last = Date.now();
           timer = setInterval(() => {
             if (!win || win.isDestroyed() || !flight) return stop();
@@ -129,7 +147,9 @@ export function setupBotFlight(options: BotFlightOptions): BotFlightControl {
       if (!win || win.isDestroyed() || sender !== win.webContents) return;
       const z = sender.getZoomFactor() || 1;
       const ok = rects.slice(0, 4).filter((r) => [r.x, r.y, r.width, r.height].every(Number.isFinite));
-      if (ok.length) win.setShape(ok.map((r) => ({ x: Math.round(r.x * z), y: Math.round(r.y * z), width: Math.max(1, Math.round(r.width * z)), height: Math.max(1, Math.round(r.height * z)) })));
+      if (!ok.length) return;
+      shape = ok.map((r) => ({ x: Math.floor(r.x * z), y: Math.floor(r.y * z), width: Math.max(1, Math.ceil(r.width * z) + 1), height: Math.max(1, Math.ceil(r.height * z) + 1) }));
+      applyShape();
     },
     message: () => said,
     caught(sender) {

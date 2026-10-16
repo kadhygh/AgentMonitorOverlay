@@ -3,6 +3,7 @@
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
 > **2026-10-15 晚更新（下一个会话从这里开始）：S14-W…S14-Z，见 `plans/stage-14.md` 进度表。**
+> - S14-AC（10-16）：乱飞桌宠看着被裁切 → 乱飞窗口的形状（setShape）留足抖动和阴影的余量（量不抖的 `.pixel-bot-slot`，宠物 16px、气泡 10px），并在窗口飞到目标屏幕后重设一次形状（窗口在屏幕外时按那里的缩放设的，换到不同缩放的屏会对不上）。要重启 Electron 主进程才生效。
 > - S14-AB：Focus 桌宠可选「看书的 Claude 娘」（像素 44×54，`focus/readerGirl.ts`），默认仍是机器人，设置 → 界面「Focus 桌宠」。用户 10-15 晚要求 commit 后 **push 了 `studio/main`**（只这一次授权；仍不合并 master、不发布）。
 > - S14-AA（`33aa309`）：浅色机器人 + 深色描边；有事 5 分钟没确认，机器人生气在自己的小窗口里满屏乱飞（`app/src/bot-window.ts`），点它落地并打开那件事；「Focus 设置」→「机器人动作测试」。
 > - S14-Z（`68dffc0`）：Focus 点击被吞的原因找到了（WM_MOUSEACTIVATE → Chromium MA_NOACTIVATEANDEAT），主进程补发被吞的点击（`app/src/focus-clicks.ts`）；Focus 只分「N 件事」和「M 个完成待审核」，只有完成待审核时机器人是绿色。要重启 Electron 主进程才生效（先问）。之后若还有点不动，看 resize-trace 里有没有 `click given back`。

@@ -72,6 +72,7 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 }
 .pixel-bot-say::after { content: ""; position: absolute; right: -6px; bottom: 8px; border: 6px solid transparent; border-left-color: var(--focus-alert); border-right: 0; }
 /* A light robot with a dark outline (2026-10-15 evening: the dark one was hard to see), the same in both themes. */
+.pixel-bot-slot { display: flex; }
 .pixel-bot-art { overflow: visible; filter: drop-shadow(0 3px 4px rgba(0, 0, 0, 0.28)); }
 .bot-outline { filter: drop-shadow(1.5px 0 0 #1d232b) drop-shadow(-1.5px 0 0 #1d232b) drop-shadow(0 1.5px 0 #1d232b) drop-shadow(0 -1.5px 0 #1d232b); }
 .pixel-bot:hover .pixel-bot-art { transform: scale(1.08); }

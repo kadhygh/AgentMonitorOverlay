@@ -312,6 +312,16 @@ test("Focus 桌宠: the robot by default; 「看书的 Claude 娘」 picked in �
   const angry = flying.getByTestId("focus-bot");
   await expect(angry).toHaveClass(/skin-reader/);
   await expect(angry).toHaveClass(/angry/);
+  // 2026-10-16: she looked cut off while flying. The window's shape leaves room round her for the shake and her shadow.
+  const slot = await angry.locator(".pixel-bot-slot").boundingBox();
+  const zoom = await flying.evaluate(() => window.outerWidth / window.innerWidth);
+  await expect
+    .poll(async () => {
+      const shape = await app.evaluate(() => (globalThis as { __amoBotShape?: Array<{ x: number; y: number; width: number; height: number }> }).__amoBotShape ?? []);
+      const s = { x: slot!.x * zoom, y: slot!.y * zoom, r: (slot!.x + slot!.width) * zoom, b: (slot!.y + slot!.height) * zoom };
+      return shape.some((r) => r.x <= s.x - 12 && r.y <= s.y - 12 && r.x + r.width >= s.r + 12 && r.y + r.height >= s.b + 12);
+    })
+    .toBe(true);
   await screenshot(app, "stage-14", "pet-reader-angry", flying, "focus");
   await angry.click();
 });
