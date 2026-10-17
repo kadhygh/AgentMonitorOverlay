@@ -277,7 +277,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
               <div className="cbar presets" role="group" aria-label="常用预设">
                 <span className="pick-lab">预设</span>
                 {presets
-                  .filter((p) => profiles.some((x) => x.id === p.profileId && !x.hidden))
+                  .filter((p) => profiles.some((x) => x.id === p.profileId && !x.hidden && !x.unavailable))
                   .map((p) => {
                     const pick = { profileId: p.profileId, model: p.options.model ?? null };
                     const { model: _model, ...rest } = p.options;

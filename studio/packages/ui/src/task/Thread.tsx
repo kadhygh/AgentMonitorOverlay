@@ -211,9 +211,10 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   const turnStart = useTurnStartHint(scroller, sessionId, generating);
   // Focus lists replies that ended while the person was elsewhere; looking at the session here clears them there.
   useMarkSessionSeen(session);
-  // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn.
-  const queues = session?.runtime === "claude";
-  const placeholder = composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, generating, queues });
+  // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn; DSH only
+  // after the turn (stage 17: one prompt at a time).
+  const queues = session?.runtime === "claude" || session?.runtime === "dsh";
+  const placeholder = composerPlaceholder({ readOnly, claudeSub, isRevising, planReview: !!planReview, generating, queues, waitsForTurn: session?.runtime === "dsh" });
   const stats = useMemo(() => sessionStats(items), [items]);
   const sendLabel = generating ? (queues ? "排队" : "插话") : "发送";
   // Images must finish uploading (or be removed when they failed) before the message can go.
@@ -567,7 +568,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
                 }}
               />
               <SessionOptionsBar link={link} session={session} profile={profile} presets={presets} disabled={readOnly} />
-              <span className="composer-hint">{attachHold || (generating && !readOnly && !planReview ? (queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
+              <span className="composer-hint">{attachHold || (generating && !readOnly && !planReview ? (session?.runtime === "dsh" ? "生成中：本轮结束后发出" : queues ? "生成中：工具调用后或本轮结束后读到" : "生成中：发送会插入到当前回合") : "")}</span>
               <span className="spacer" />
               {generating && !readOnly && (
                 <button type="button" className="round-btn stop" onClick={onInterrupt} aria-label="打断" title="停止生成">
@@ -587,7 +588,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             </div>
           </div>
           )}
-          <ComposerStats stats={stats} canCompact={!readOnly} busy={generating || compacting} compacting={compacting} onCompact={() => void runCommand(COMPACT, "")} />
+          <ComposerStats stats={stats} canCompact={!readOnly && session?.runtime !== "dsh"} busy={generating || compacting} compacting={compacting} onCompact={() => void runCommand(COMPACT, "")} />
         </div>
       )}
       {finding && session && (

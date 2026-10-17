@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { AccountUsage, Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Relay, Topic, TopicDoc, Workspace } from "./entities.js";
+import type { AccountUsage, Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Relay, Timestamp, Topic, TopicDoc, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -213,6 +213,32 @@ export const DEFAULT_QUOTA_DISPLAY: QuotaDisplay = { footer: true, focus: false 
 export type ClaudeLogin = "token" | "local";
 
 /** A model credential the profiles use: whether it is stored, never its value. */
+/**
+ * 设置 → 模型 → DeepSeek Harness (stage 17): the DSH source clone DeepSeek sessions run on. `built`: its CLI is built
+ * (`apps/cli/lib/bin.js`). `check`: the last 「检查」 (starts DSH over ACP and opens a session, no model call).
+ */
+export interface DshStatus {
+  path: string | null;
+  version: string | null;
+  /** Short hash and date of the clone's checked-out commit. */
+  commit: string | null;
+  commitDate: string | null;
+  built: boolean;
+  /** The Node that runs DSH and its version (DSH needs 22.19 or newer). */
+  node: { path: string; version: string | null } | null;
+  check: DshCheck | null;
+}
+
+export interface DshCheck {
+  ok: boolean;
+  at: Timestamp;
+  /** What failed, or e.g. "可用 · ACP 1 · 3 个型号". */
+  message: string;
+  /** The version and commit it checked. */
+  version: string | null;
+  commit: string | null;
+}
+
 export interface CredentialStatus {
   id: string;
   /** The profiles that use it, e.g. "Claude 订阅". */
@@ -234,6 +260,12 @@ export interface HostRoutes {
   /** Restores the project and the tasks that were archived with it. */
   "POST /api/workspaces/:id/unarchive": { req: void; res: { workspace: Workspace; tasks: Task[] } };
   "GET /api/settings": { req: void; res: StudioSettings };
+  /** The DSH clone DeepSeek · DSH sessions use (stage 17). */
+  "GET /api/dsh": { req: void; res: DshStatus };
+  /** Sets (or with null clears) the clone's folder; it must hold a DSH checkout (`apps/cli`). */
+  "PUT /api/dsh": { req: { path: string | null }; res: DshStatus };
+  /** Starts DSH over ACP and opens a session in a scratch folder, without a model call; the result is kept. */
+  "POST /api/dsh/check": { req: void; res: DshStatus };
   /**
    * Quota use of the subscriptions (GPT through the Codex login, Claude through its token). `?refresh=1` asks the
    * accounts now (GPT: may start its app-server); otherwise the last numbers read.

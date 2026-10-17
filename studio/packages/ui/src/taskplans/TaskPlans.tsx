@@ -66,7 +66,7 @@ export function PlanDialog({ link, plan, workspaces, profiles, onClose }: { link
     return () => window.removeEventListener("keydown", onKey);
   }, [onClose]);
   const projects = workspaces.filter((w) => !w.archivedAt);
-  const models = profiles.filter((p) => !p.hidden);
+  const models = profiles.filter((p) => !p.hidden && !p.unavailable);
   const change = (key: string, patch: Partial<Draft>) => setDrafts((cur) => cur.map((d) => (d.key === key ? { ...d, ...patch } : d)));
   const titleOf = (key: string) => drafts.find((d) => d.key === key)?.title ?? key;
   const kept = drafts.filter((d) => d.include).length;

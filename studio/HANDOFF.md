@@ -11,6 +11,7 @@
 > - S16-C：agent 懂 AMO——MCP 服务说明改写、`amo_whoami`（角色卡，Claude 会话的服务说明里也带）、`amo_guide`；任务「主控」标记（迁移 15）；专题文档（画布侧栏「文档」，MCP `topic_docs` / `topic_doc_write`）。
 > - S16-D：主控 `task_plan_propose` → 画布 / 主控任务页 / Focus 上的提案 → 人改过后「放进待办」或「立刻开跑」→ 建任务、写说明、按项目分组放上画布、连依赖、留言告诉主控（迁移 16）。
 > - S16-E：传话 `relay_send` → 人在任务页或 Focus 确认（或任务设了「主控传话不用确认」）→ 送进目标任务的会话（迁移 17）。
+> - **S17 DSH（10-17 晚，分支 `studio/s17-dsh`）**：DeepSeek 可以走 DSH 原生框架——第三种运行时 `dsh`，模型「DSH · DeepSeek」，用本机的 DSH 源码克隆（`G:\PROJECT\deepseek-harness`，设置 → 模型 → 该卡片里填位置、「检查」）经 ACP 跑；用户会定期拉最新，坏了就照 `plans/stage-17-dsh.md` 的「依赖 DSH 的地方」（都在 `runtime/dsh/install.ts`）适配，真 DeepSeek 的回归是 `AMO_STUDIO_DSH_CLONE=… npx vitest run packages/host/src/runtime/dsh/dsh-real`。试验在 `spikes/RESULTS.md` s17。另外加了 `studio/start-studio.cmd`（换设备：clone → 切 `studio/main` → 双击），已推到 GitHub 的 `studio/main`（用户授权的这一次）。
 > - S16-G（10-17 下午）：自动压缩点（设置 → 模型，默认 272k，Claude 用 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`、Codex 用 `model_auto_compact_token_limit`）；Claude 子 agent 的用量记进子会话并显示在子 agent 那一行和会话底部（输出偏少，见计划）；上下文 ≥150k 时输入框上方提醒（Claude 隔 1 小时以上提示缓存过期）。额度分析、DSH 的上下文做法和接入难点都在 `plans/stage-16.md` 的 S16-G。
 > - S16-F（10-17 下午）：Codex 会话开对话时把角色卡作为 developer instructions 带上（和 Claude 一样一开始就知道自己是谁）；任务后来进了专题、被引用到别的画布、成了主控、说明改了，下一条发给这个会话的消息末尾附一段「【AMO：你的任务有变化】」（界面上是消息里的小标签「AMO 更新」，悬停看内容）；角色卡写出被哪些画布引用；主控能给引用在自己画布上的任务传话。做法在 `plans/stage-16.md` 的 S16-F。
 > - 都在 `studio/main`，10-17 用户让我重启过开发版（重启前的库备份在 `.data/backup-before-s16-20261017`）。重启做法：备份 `.data/studio.db*` → `npm run host:stop` → 开着的窗口会把 Host 再拉起来，所以还要结束开发版的 electron 进程树 → 后台 `npm start` → 用 `/api/state` 确认。没有用户明说就先问。

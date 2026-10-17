@@ -124,6 +124,8 @@ export interface ChannelRegistryOptions {
   claudeProviders: Record<string, ClaudeProviderDef>;
   /** Balance queries of built-in profiles (DeepSeek's own endpoint). */
   builtinBalance?: Record<string, { baseUrl: string; config: BalanceConfig }>;
+  /** Why a built-in profile cannot start sessions now (a DSH profile with no clone set up), or undefined. */
+  unavailable?: (profile: ModelProfile) => string | undefined;
 }
 
 export class ChannelRegistry {
@@ -336,6 +338,11 @@ export class ChannelRegistry {
     };
   }
 
+  /** Recomputes the list after something it depends on changed outside the channels (the DSH clone). */
+  refresh(): void {
+    this.rebuild();
+  }
+
   /** Rewrites the profile list and the provider tables in place from the built-ins and the stored channels. */
   private rebuild(): void {
     const channels = this.stored();
@@ -343,7 +350,10 @@ export class ChannelRegistry {
     const { codexProviders, claudeProviders, builtins, builtinBalance } = this.options;
     for (const k of Object.keys(codexProviders)) if (/^amo-ch-/.test(k)) delete codexProviders[k];
     for (const k of Object.keys(claudeProviders)) if (/^ch-/.test(k)) delete claudeProviders[k];
-    const next: ModelProfile[] = builtins.map((p) => ({ ...p, ...(hidden.has(p.id) ? { hidden: true } : {}), ...(builtinBalance?.[p.id] ? { balance: true } : {}) }));
+    const next: ModelProfile[] = builtins.map((p) => {
+      const unavailable = this.options.unavailable?.(p);
+      return { ...p, ...(hidden.has(p.id) ? { hidden: true } : {}), ...(builtinBalance?.[p.id] ? { balance: true } : {}), ...(unavailable ? { unavailable } : {}) };
+    });
     for (const c of channels) {
       const credentialId = c.keyFrom ?? keyId(c.id);
       const flags = { custom: true, ...(hidden.has(c.id) ? { hidden: true } : {}), ...(c.balance ? { balance: true } : {}) };

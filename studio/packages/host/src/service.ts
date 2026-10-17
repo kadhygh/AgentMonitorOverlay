@@ -6,6 +6,8 @@ import type { SessionRuntimeApi } from "./runtime/runtime.js";
 import type { CredentialReader, CredentialStore } from "./runtime/credentials.js";
 import type { TerminalLauncher } from "./terminal/launcher.js";
 import type { ChannelRegistry } from "./runtime/channels.js";
+import type { DshRuntime } from "./runtime/dsh/dsh-runtime.js";
+import { DshFeature } from "./features/dsh/service.js";
 import { ProjectsFeature } from "./features/projects/service.js";
 import { ConfigFeature } from "./features/config/service.js";
 import { TasksFeature } from "./features/tasks/service.js";
@@ -60,6 +62,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly cli = new CliFeature(this);
   readonly data = new DataFeature(this);
   readonly channels = new ChannelsFeature(this);
+  readonly dsh = new DshFeature(this);
 
   constructor(
     readonly store: Store,
@@ -74,6 +77,8 @@ export class HostService extends EventEmitter<HostServiceEvents> {
       localClaudeHome?: string;
       /** The person's own model channels (设置 → 模型); `profiles` is its list. */
       channels?: ChannelRegistry;
+      /** DeepSeek on a DSH clone (stage 17): 设置 → 模型 →「检查」 runs through it. */
+      dsh?: DshRuntime;
       /** Restarts a Codex profile's app-server so it picks up a channel's new address or key; false while it is busy. */
       restartProfileServer?: (profileId: Id) => Promise<boolean>;
     } = {},

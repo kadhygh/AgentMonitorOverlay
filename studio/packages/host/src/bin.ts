@@ -2,6 +2,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { HostAlreadyRunningError, startHost, type StartHostOptions } from "./host-process.js";
 import { StaticCredentialReader } from "./runtime/credentials.js";
+import { resolveNode } from "./runtime/dsh/install.js";
 import { RecordingTerminalLauncher } from "./terminal/launcher.js";
 
 // Command-line entry: `node packages/host/dist/bin.js`. The Electron shell starts it the same way (S1-08).
@@ -9,7 +10,8 @@ import { RecordingTerminalLauncher } from "./terminal/launcher.js";
 // AMO_STUDIO_DEV_ORIGIN (allowed CORS origin for the Vite dev server).
 // Test-only: AMO_STUDIO_TEST_PROVIDER_URL (+ AMO_STUDIO_TEST_CATALOG, AMO_STUDIO_TEST_CODEX_HOME) replaces every model
 // profile with one mock profile, so end-to-end tests never reach a real model or the user's Codex home;
-// AMO_STUDIO_TEST_CLAUDE_URL adds a Claude profile routed to the mock Anthropic API.
+// AMO_STUDIO_TEST_CLAUDE_URL adds a Claude profile routed to the mock Anthropic API; AMO_STUDIO_TEST_DSH_AGENT (a
+// script) adds a DSH profile whose sessions run that scripted ACP agent instead of a DSH clone.
 
 const studioRoot = resolve(fileURLToPath(import.meta.url), "..", "..", "..", "..");
 const dataDir = process.env.AMO_STUDIO_DATA_DIR ?? join(studioRoot, ".data");
@@ -21,6 +23,9 @@ function testModelOptions(): Partial<StartHostOptions> {
   const url = process.env.AMO_STUDIO_TEST_PROVIDER_URL;
   if (!url) return {};
   const claudeUrl = process.env.AMO_STUDIO_TEST_CLAUDE_URL;
+  const dshAgent = process.env.AMO_STUDIO_TEST_DSH_AGENT;
+  // Under Electron the Host's own executable is Electron: the agent runs on the system's Node, as DSH would.
+  const node = dshAgent ? resolveNode() : null;
   return {
     profiles: [
       { id: "codex-mock", label: "Mock 模型", runtime: "codex", provider: "amo-mock", model: "mock-model", credentialId: "mock" },
@@ -31,7 +36,9 @@ function testModelOptions(): Partial<StartHostOptions> {
             { id: "claude-subscription", label: "Claude", runtime: "claude" as const, provider: "mock-oauth", model: "mock-claude", credentialId: "claude-subscription" },
           ]
         : []),
+      ...(dshAgent ? [{ id: "dsh-mock", label: "Mock DSH", runtime: "dsh" as const, provider: "deepseek-official", model: null, credentialId: "mock" }] : []),
     ],
+    ...(dshAgent && node ? { dshAgent: { command: node, args: [dshAgent] } } : {}),
     ...(claudeUrl ? { claudeProviders: { mock: { baseUrl: claudeUrl, models: MOCK_CLAUDE_MODELS }, "mock-oauth": { baseUrl: claudeUrl, auth: "oauth" as const, models: MOCK_CLAUDE_MODELS } } } : {}),
     providers: {
       "amo-mock": {

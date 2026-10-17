@@ -49,7 +49,7 @@ AMO 的下一代：由人主导、agent 也能参与的项目推进工作台。�
 | Obsidian Canvas / Task Canvas | 工作台的**画布**（无限画布，按结构化数据保存，agent 也能读） |
 | Focus Panel | **Focus 悬浮窗**：只列需要你处理的会话、待决策和调度提案 |
 | Scratchpad（三页） | 任务页右栏的**草稿区**（一份全局的） |
-| DeepSeek / GLM 路由 | 模型配置：Codex · DeepSeek Flash、Claude · GLM-5.3，以及你自己的订阅 Codex · GPT 订阅、Claude · Claude 订阅，新建任务或会话时选 |
+| DeepSeek / GLM 路由 | 模型配置：Codex · DeepSeek Flash、Claude · GLM-5.3，以及你自己的订阅 Codex · GPT 订阅、Claude · Claude 订阅，新建任务或会话时选；DSH · DeepSeek 用你本机的 DeepSeek Harness 源码跑（设置 → 模型 里填源码位置） |
 | Workspace Center 部署、Git exclude | 不需要：Studio 不往工程里写文件（扩展包是你自己放的） |
 | Grok Build、ChatGPT 桌面端 Target | 暂不支持 |
 | 鼠标侧键 / 全局快捷键 | 暂未实现 |

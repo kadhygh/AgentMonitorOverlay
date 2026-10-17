@@ -109,3 +109,22 @@ export const GLM_MODELS: ModelOption[] = [
   { id: "glm-4.7", label: "GLM-4.7", efforts: CLAUDE_EFFORTS },
 ];
 
+
+// ---- DeepSeek Harness (stage 17) --------------------------------------------------------------------------------
+
+/**
+ * DSH asks only when its sandbox stops a command (spikes s17-01): it has no "ask for every command". Studio's
+ * permission ids map to the sandbox a session's DSH process runs in (DSH_PERMISSION_MODE).
+ */
+export const DSH_PERMISSIONS: PermissionOption[] = [
+  { id: "workspace-write", label: "工作区可写", description: "在 DSH 沙箱里运行，工作区里的读写不问，要写工作区以外时先问你（DSH 默认）" },
+  { id: "read-only", label: "只读", description: "在 DSH 沙箱里只读运行，要改文件时先问你；只读的命令不问" },
+  { id: "full-access", label: "完全访问", description: "不进沙箱，也不再询问，命令直接执行（DSH：danger-full-access）" },
+];
+
+/** User decision 2026-10-17: DSH sessions default to the workspace sandbox (the tasks each run in their own workspace). */
+export const DSH_DEFAULT_PERMISSION = "workspace-write";
+
+export function dshPermissionMode(id: string | undefined): "read-only" | "workspace-write" | "danger-full-access" {
+  return id === "read-only" ? "read-only" : id === "full-access" ? "danger-full-access" : "workspace-write";
+}

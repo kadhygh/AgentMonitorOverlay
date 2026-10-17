@@ -1,0 +1,525 @@
+import { mkdirSync } from "node:fs";
+import { join } from "node:path";
+import type { AccountUsage, ApprovalDecision, Attachment, DshCheck, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, Workspace } from "@amo-studio/protocol";
+import type { Store } from "../../store/store.js";
+import { newId } from "../../store/store.js";
+import { MCP_SESSION_HEADER, type McpIdentities } from "../../mcp/identity.js";
+import { DSH_DEFAULT_PERMISSION, DSH_PERMISSIONS, dshPermissionMode } from "../choices.js";
+import type { CredentialReader } from "../credentials.js";
+import { RuntimeBase, type SendMode, type SessionRuntimeApi } from "../runtime.js";
+import { AcpConnection, AcpError } from "./acp.js";
+import {
+  ACP_VERSION,
+  DSH_ACP_ARGS,
+  DSH_ALLOW,
+  DSH_CHECK_KEY,
+  DSH_EFFORT_OPTION,
+  DSH_HOME_ENV,
+  DSH_KEY_ENV,
+  DSH_MODEL_OPTION,
+  DSH_OPTIONS_KEY,
+  DSH_PERMISSION_ENV,
+  DSH_REJECT,
+  describeDsh,
+  dshUnavailable,
+  readDshPath,
+  resolveNode,
+  type DshPermissionMode,
+} from "./install.js";
+import { DshTranscript, type AcpUpdate } from "./transcript.js";
+
+// DeepSeek sessions on a DeepSeek Harness source clone (stage 17, plans/stage-17-dsh.md). Each session runs its own
+// `node <clone>/apps/cli/lib/bin.js --profile acp` in its workspace: DSH's sandbox follows the process's working
+// directory and its permission mode is the process's environment. Studio's DSH home (`<data>/dsh/home`) keeps DSH's
+// own sessions; Studio keeps the conversation (DSH does not replay it on resume). What ACP lacks (spikes s17-00):
+// fork, question cards, images, steering a running turn (a message sent meanwhile waits for the turn to end).
+
+export interface DshRuntimeOptions {
+  store: Store;
+  profiles: readonly ModelProfile[];
+  credentials: CredentialReader;
+  /** Studio's DSH folder: `home/` (DSH_HOME), `logs/`, `probe/`. */
+  dir: string;
+  /** The AMO MCP's address and its agent token, once the Host listens. */
+  mcp?: () => { url: string; token: string } | null;
+  identities?: McpIdentities;
+  /** Tests: the agent command instead of node + the clone's CLI (a fake ACP agent). */
+  agent?: { command: string; args: readonly string[] };
+  /** Base environment for the agent processes (tests). */
+  env?: NodeJS.ProcessEnv;
+  /** A session's process is closed after this long without a turn (it is resumed on the next message). */
+  idleMs?: number;
+  now?: () => Date;
+}
+
+interface ConfigOption {
+  id: string;
+  name?: string;
+  category?: string;
+  type?: string;
+  currentValue?: string;
+  options?: Array<{ value?: string; name?: string; description?: string; group?: string; options?: Array<{ value: string; name?: string; description?: string }> }>;
+}
+
+interface Waiting {
+  approvalId: string;
+  itemId: Id;
+  options: Array<{ optionId: string; kind: string }>;
+  answer(result: unknown): void;
+}
+
+interface Live {
+  conn: AcpConnection;
+  acpId: string;
+  permission: DshPermissionMode;
+  /** Model and effort last set on the DSH session. */
+  applied: { model?: string; effort?: string };
+  inflight: boolean;
+  /** Messages sent while a turn runs, sent together when it ends. */
+  queue: string[];
+  transcript: DshTranscript;
+  waiting: Map<string, Waiting>;
+  idleTimer: NodeJS.Timeout | null;
+}
+
+const BUSY = new Set(["running", "awaiting-approval", "awaiting-answer"]);
+
+export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
+  private readonly live = new Map<Id, Live>();
+  /** Sessions whose process is being started or resumed. */
+  private readonly starting = new Map<Id, Promise<Live>>();
+  private closing = false;
+
+  constructor(private readonly options: DshRuntimeOptions) {
+    super(options.store, "dsh", options.now);
+    // The last Host stopped mid-turn: the turn is over (its process went with the Host).
+    for (const s of this.store.listSessions()) {
+      if (s.runtime !== "dsh" || !BUSY.has(s.status)) continue;
+      new DshTranscript(this.makeCore(), s.id).settleAfterRestart();
+      this.setStatus(s.id, "idle");
+    }
+  }
+
+  // ---- operations -------------------------------------------------------------------------------------------------
+
+  async startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
+    const profile = this.profile(input.profileId);
+    const options = input.options ?? {};
+    const token = this.options.identities?.issue();
+    const permission = dshPermissionMode(options.permission);
+    const conn = this.spawn(input.workspace.path, profile, permission, `new-${Date.now()}`);
+    let session: Session;
+    try {
+      await this.initialize(conn);
+      const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: input.workspace.path, mcpServers: this.mcpServers(token) });
+      this.remember(created.configOptions);
+      session = this.createSession({
+        taskId: input.taskId,
+        topicId: input.topicId,
+        parentId: null,
+        kind: "main",
+        profileId: profile.id,
+        workspaceId: input.workspace.id,
+        title: input.title ?? "",
+        runtimeRef: created.sessionId,
+        options,
+      });
+    } catch (err) {
+      conn.kill();
+      throw this.explain(err);
+    }
+    if (token) this.options.identities!.bind(token, session.id);
+    const live = this.adopt(session, conn, {}, permission);
+    await this.applyOptions(session.id, live);
+    if (input.text) await this.sendMessage(session.id, input.text);
+    return this.store.getSession(session.id)!;
+  }
+
+  async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
+    const session = this.writable(sessionId);
+    if (images.length) throw Object.assign(new Error("DSH 会话暂时不能发图片（DSH 的 ACP 不收图片）"), { code: "bad_request" });
+    if (!session.title) this.updateSession(sessionId, { title: text.slice(0, 60) });
+    const live = await this.ensureLive(session);
+    if (live.inflight) {
+      // Shown in the running turn (as Claude's queued messages are), so that turn still reads as running.
+      this.appendItem(sessionId, { type: "user", text }, { method: "user/queued", ...live.transcript.turnRef() });
+      live.queue.push(text);
+      return { mode: "queue" };
+    }
+    this.appendItem(sessionId, { type: "user", text }, { method: "user" });
+    await this.prompt(sessionId, live, text);
+    return { mode: "start" };
+  }
+
+  async choices(profileId: Id): Promise<ProfileChoices> {
+    this.profile(profileId);
+    let config = this.cachedOptions();
+    if (!config) {
+      await this.check();
+      config = this.cachedOptions();
+    }
+    return { profileId, models: config ? dshModels(config) : [], permissions: DSH_PERMISSIONS, defaultPermission: DSH_DEFAULT_PERMISSION, source: config ? "cli" : "builtin" };
+  }
+
+  /** Model and effort go to DSH before the next turn; a new permission restarts the session's process. */
+  async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
+    this.requireSession(sessionId);
+    const updated = this.updateSession(sessionId, { options });
+    const live = this.live.get(sessionId);
+    if (live && !live.inflight) {
+      if (live.permission !== dshPermissionMode(options.permission)) await this.release(sessionId);
+      else await this.applyOptions(sessionId, live).catch((err: unknown) => this.emit("log", `dsh set options failed for ${sessionId}: ${String(err)}`));
+    }
+    return updated;
+  }
+
+  async usage(): Promise<AccountUsage | null> {
+    return null;
+  }
+
+  /** ACP has no titles: only Studio's changes. */
+  async rename(sessionId: Id, title: string): Promise<Session> {
+    this.requireSession(sessionId);
+    return this.updateSession(sessionId, { title });
+  }
+
+  async interrupt(sessionId: Id): Promise<void> {
+    const live = this.live.get(sessionId);
+    if (!live?.inflight) return;
+    const dropped = live.queue.splice(0);
+    if (dropped.length) this.appendItem(sessionId, { type: "notice", level: "info", message: `停止后，排队的 ${dropped.length} 条消息没有发出` }, { method: "dsh/queue-dropped" });
+    for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
+    live.conn.notify("session/cancel", { sessionId: live.acpId });
+  }
+
+  async fork(): Promise<Session> {
+    throw Object.assign(new Error("DSH 会话不能分支（DSH 的 ACP 不支持 fork）"), { code: "bad_request" });
+  }
+
+  async archive(sessionId: Id): Promise<Session[]> {
+    const changed = this.store.archiveSubtree(sessionId);
+    for (const s of changed) this.publish({ type: "session.upserted", session: s });
+    for (const s of changed) await this.release(s.id);
+    return changed;
+  }
+
+  async unarchive(sessionId: Id): Promise<Session[]> {
+    const changed = this.store.unarchiveSubtree(sessionId);
+    for (const s of changed) this.publish({ type: "session.upserted", session: s });
+    return changed;
+  }
+
+  async respondApproval(sessionId: Id, approvalId: string, decision: ApprovalDecision): Promise<void> {
+    const live = this.live.get(sessionId);
+    const w = live?.waiting.get(approvalId);
+    if (!live || !w) throw new Error(`approval ${approvalId} is not pending`);
+    this.settleWaiting(sessionId, live, w, decision === "accept" ? "allow" : "reject");
+  }
+
+  async answerQuestion(): Promise<void> {
+    throw new Error("DSH sessions ask no questions through Studio");
+  }
+
+  async attachInfo(): Promise<{ url: string; token: string; threadId: string }> {
+    throw Object.assign(new Error("DSH 会话不能在终端打开"), { code: "bad_request" });
+  }
+
+  setWriter(sessionId: Id, writer: Session["writer"]): Session {
+    return this.updateSession(sessionId, { writer });
+  }
+
+  /**
+   * 设置 → 模型 →「检查」: starts DSH, initializes, opens a session in a scratch folder and closes it. No model call.
+   * The result (and the models DSH offers) is kept.
+   */
+  async check(): Promise<DshCheck> {
+    const path = readDshPath(this.store);
+    const install = path ? describeDsh(path) : null;
+    const at = this.now().toISOString();
+    const result = (ok: boolean, message: string): DshCheck => {
+      const c: DshCheck = { ok, at, message, version: install?.version ?? null, commit: install?.commit ?? null };
+      this.store.setKv(DSH_CHECK_KEY, JSON.stringify(c));
+      return c;
+    };
+    const unavailable = this.options.agent ? null : dshUnavailable(this.store);
+    if (unavailable) return result(false, unavailable);
+    const probe = join(this.options.dir, "probe");
+    mkdirSync(probe, { recursive: true });
+    let conn: AcpConnection | null = null;
+    try {
+      conn = this.spawn(probe, null, "workspace-write", "check");
+      const init = await this.initialize(conn);
+      const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: probe, mcpServers: [] }, 60_000);
+      this.remember(created.configOptions);
+      await conn.request("session/close", { sessionId: created.sessionId }, 30_000).catch(() => undefined);
+      const models = created.configOptions ? dshModels(created.configOptions).length : 0;
+      return result(true, `可用 · ACP ${init.protocolVersion} · ${models} 个型号`);
+    } catch (err) {
+      return result(false, `不能用：${this.explain(err).message}`);
+    } finally {
+      await conn?.close(5_000);
+    }
+  }
+
+  /** Host shutdown: every DSH process ends (its sessions resume on the next message). */
+  async closeAll(): Promise<void> {
+    this.closing = true;
+    await Promise.all([...this.live.keys()].map((id) => this.release(id)));
+  }
+
+  // ---- processes --------------------------------------------------------------------------------------------------
+
+  private spawn(cwd: string, profile: ModelProfile | null, permission: DshPermissionMode, label: string): AcpConnection {
+    const env: NodeJS.ProcessEnv = { ...(this.options.env ?? process.env), [DSH_HOME_ENV]: join(this.options.dir, "home"), [DSH_PERMISSION_ENV]: permission };
+    delete env.ELECTRON_RUN_AS_NODE;
+    const credentialId = profile?.credentialId ?? this.options.profiles.find((p) => p.runtime === "dsh" && p.credentialId)?.credentialId;
+    const key = credentialId ? this.options.credentials.read(credentialId) : null;
+    if (key) env[DSH_KEY_ENV] = key;
+    else if (profile?.credentialId) throw Object.assign(new Error(`还没有 DeepSeek 的 Key（凭据 ${profile.credentialId}）`), { code: "bad_request" });
+    let command: string;
+    let args: string[];
+    if (this.options.agent) {
+      command = this.options.agent.command;
+      args = [...this.options.agent.args];
+    } else {
+      const unavailable = dshUnavailable(this.store);
+      if (unavailable) throw Object.assign(new Error(unavailable), { code: "bad_request" });
+      const node = resolveNode(env);
+      if (!node) throw Object.assign(new Error("找不到 Node（DSH 要用系统的 node 运行）"), { code: "bad_request" });
+      command = node;
+      args = [describeDsh(readDshPath(this.store)!)!.bin, ...DSH_ACP_ARGS];
+    }
+    const logFile = join(this.options.dir, "logs", `${label}.log`);
+    return new AcpConnection({ command, args, cwd, env, logFile }, (method, params) => this.onRequest(method, params));
+  }
+
+  private async initialize(conn: AcpConnection): Promise<{ protocolVersion: number }> {
+    const init = await conn.request<{ protocolVersion: number }>("initialize", { protocolVersion: ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } }, 120_000);
+    if (init.protocolVersion !== ACP_VERSION) throw new Error(`DSH 说的是 ACP ${init.protocolVersion}，Studio 只会 ACP ${ACP_VERSION}`);
+    return init;
+  }
+
+  /** The session's process, started and resumed when there is none. */
+  private ensureLive(session: Session): Promise<Live> {
+    const existing = this.live.get(session.id);
+    if (existing?.conn.alive) return Promise.resolve(existing);
+    const pending = this.starting.get(session.id);
+    if (pending) return pending;
+    const p = (async () => {
+      if (!session.runtimeRef) throw new Error(`session ${session.id} has no DSH session`);
+      const workspace = this.store.getWorkspace(session.workspaceId);
+      if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
+      const permission = dshPermissionMode(session.options.permission);
+      const conn = this.spawn(workspace.path, this.profile(session.profileId), permission, session.id);
+      try {
+        await this.initialize(conn);
+        const token = this.options.identities?.tokenFor(session.id);
+        const resumed = await conn.request<{ configOptions?: ConfigOption[] }>("session/resume", { sessionId: session.runtimeRef, cwd: workspace.path, mcpServers: this.mcpServers(token) });
+        this.remember(resumed.configOptions);
+      } catch (err) {
+        conn.kill();
+        throw this.explain(err);
+      }
+      const live = this.adopt(session, conn, {}, permission);
+      await this.applyOptions(session.id, live);
+      return live;
+    })().finally(() => this.starting.delete(session.id));
+    this.starting.set(session.id, p);
+    return p;
+  }
+
+  private adopt(session: Session, conn: AcpConnection, applied: Live["applied"], permission: DshPermissionMode): Live {
+    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null };
+    this.live.set(session.id, live);
+    conn.on("notification", (method, params) => {
+      if (method !== "session/update") return;
+      const p = params as { sessionId?: string; update?: AcpUpdate };
+      if (p.sessionId === live.acpId && p.update) live.transcript.update(p.update);
+    });
+    conn.on("exit", (code) => {
+      if (this.live.get(session.id) === live) this.live.delete(session.id);
+      if (live.idleTimer) clearTimeout(live.idleTimer);
+      if (!this.closing && live.inflight) this.emit("log", `DSH process of ${session.id} exited mid-turn (${code})`);
+    });
+    this.armIdle(session.id, live);
+    return live;
+  }
+
+  /** Ends the session's process (when it is idle or archived, or for a new permission). */
+  private async release(sessionId: Id): Promise<void> {
+    const live = this.live.get(sessionId);
+    if (!live) return;
+    this.live.delete(sessionId);
+    if (live.idleTimer) clearTimeout(live.idleTimer);
+    for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
+    if (live.conn.alive) {
+      await live.conn.request("session/close", { sessionId: live.acpId }, 15_000).catch(() => undefined);
+      await live.conn.close();
+    }
+  }
+
+  private armIdle(sessionId: Id, live: Live): void {
+    if (live.idleTimer) clearTimeout(live.idleTimer);
+    live.idleTimer = null;
+    if (live.inflight) return;
+    live.idleTimer = setTimeout(() => {
+      if (!live.inflight && this.live.get(sessionId) === live) void this.release(sessionId);
+    }, this.options.idleMs ?? 20 * 60_000);
+    live.idleTimer.unref();
+  }
+
+  // ---- turns ------------------------------------------------------------------------------------------------------
+
+  private async prompt(sessionId: Id, live: Live, text: string): Promise<void> {
+    live.inflight = true;
+    if (live.idleTimer) clearTimeout(live.idleTimer);
+    await this.applyOptions(sessionId, live).catch((err: unknown) => this.emit("log", `dsh set options failed for ${sessionId}: ${String(err)}`));
+    live.transcript.openTurn();
+    this.setStatus(sessionId, "running");
+    live.conn
+      .request<{ stopReason?: string }>("session/prompt", { sessionId: live.acpId, prompt: [{ type: "text", text }] }, 0)
+      .then(
+        (r) => this.endTurn(sessionId, live, r.stopReason ?? "end_turn"),
+        (err: unknown) => this.endTurn(sessionId, live, "error", this.explain(err).message),
+      )
+      .catch((err: unknown) => this.emit("log", `dsh turn end failed for ${sessionId}: ${String(err)}`));
+  }
+
+  private async endTurn(sessionId: Id, live: Live, stopReason: string, error?: string): Promise<void> {
+    for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
+    live.transcript.closeTurn(stopReason, error);
+    live.inflight = false;
+    if (error) {
+      live.queue.splice(0);
+      this.appendItem(sessionId, { type: "error", message: error }, { method: "session/prompt" });
+      this.setStatus(sessionId, "error");
+      this.armIdle(sessionId, live);
+      return;
+    }
+    if (live.queue.length && live.conn.alive && this.live.get(sessionId) === live) {
+      const next = live.queue.splice(0).join("\n\n");
+      await this.prompt(sessionId, live, next);
+      return;
+    }
+    this.setStatus(sessionId, "idle");
+    this.armIdle(sessionId, live);
+  }
+
+  private async applyOptions(sessionId: Id, live: Live): Promise<void> {
+    const opts = this.store.getSession(sessionId)?.options ?? {};
+    if (opts.model && opts.model !== live.applied.model) {
+      const value = dshModelValue(opts.model, this.cachedOptions());
+      const r = await live.conn.request<{ configOptions?: ConfigOption[] }>("session/set_config_option", { sessionId: live.acpId, configId: DSH_MODEL_OPTION, value });
+      live.applied.model = opts.model;
+      this.remember(r.configOptions);
+    }
+    if (opts.effort && opts.effort !== live.applied.effort) {
+      const r = await live.conn.request<{ configOptions?: ConfigOption[] }>("session/set_config_option", { sessionId: live.acpId, configId: DSH_EFFORT_OPTION, value: opts.effort });
+      live.applied.effort = opts.effort;
+      this.remember(r.configOptions);
+    }
+  }
+
+  // ---- approvals --------------------------------------------------------------------------------------------------
+
+  private async onRequest(method: string, params: unknown): Promise<unknown> {
+    if (method !== "session/request_permission") throw new AcpError(`Studio does not handle ${method}`, -32601);
+    const p = params as { sessionId?: string; toolCall?: { toolCallId?: string; title?: string; rawInput?: unknown }; options?: Array<{ optionId: string; kind: string; name?: string }> };
+    const entry = [...this.live.entries()].find(([, l]) => l.acpId === p.sessionId);
+    if (!entry) return { outcome: { outcome: "cancelled" } };
+    const [sessionId, live] = entry;
+    const shown = live.transcript.approvalText(p.toolCall?.toolCallId, p.toolCall);
+    const approvalId = newId("ap");
+    return new Promise((resolve) => {
+      const item = this.appendItem(sessionId, { type: "approval", approvalId, kind: shown.kind, summary: shown.summary, ...(shown.detail ? { detail: shown.detail } : {}), state: "pending" }, { method, ...(p.toolCall?.toolCallId ? { itemId: p.toolCall.toolCallId } : {}), ...live.transcript.turnRef() });
+      live.waiting.set(approvalId, { approvalId, itemId: item.id, options: p.options ?? [], answer: resolve });
+      this.setStatus(sessionId, "awaiting-approval");
+    });
+  }
+
+  private settleWaiting(sessionId: Id, live: Live, w: Waiting, how: "allow" | "reject" | "cancelled"): void {
+    live.waiting.delete(w.approvalId);
+    const kind = how === "allow" ? DSH_ALLOW : DSH_REJECT;
+    const option = w.options.find((o) => o.kind === kind);
+    w.answer(how === "cancelled" || !option ? { outcome: { outcome: "cancelled" } } : { outcome: { outcome: "selected", optionId: option.optionId } });
+    this.updateItem(w.itemId, (it) => (it.type === "approval" && it.state === "pending" ? { ...it, state: how === "allow" ? "accepted" : "declined" } : it));
+    if (!live.waiting.size && live.inflight && this.store.getSession(sessionId)?.status === "awaiting-approval") this.setStatus(sessionId, "running");
+  }
+
+  // ---- helpers ----------------------------------------------------------------------------------------------------
+
+  private mcpServers(token: string | undefined): unknown[] {
+    const mcp = this.options.mcp?.();
+    if (!mcp || !token) return [];
+    return [{ type: "http", name: "amo", url: mcp.url, headers: [{ name: "Authorization", value: `Bearer ${mcp.token}` }, { name: MCP_SESSION_HEADER, value: token }] }];
+  }
+
+  private remember(config: ConfigOption[] | undefined): void {
+    if (config?.length) this.store.setKv(DSH_OPTIONS_KEY, JSON.stringify(config));
+  }
+
+  private cachedOptions(): ConfigOption[] | null {
+    try {
+      const v = JSON.parse(this.store.getKv(DSH_OPTIONS_KEY)?.value ?? "null") as unknown;
+      return Array.isArray(v) ? (v as ConfigOption[]) : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /** A readable error: DSH's own message, or what went wrong talking to it. */
+  private explain(err: unknown): Error {
+    if (err instanceof Error && (err as { code?: unknown }).code === "bad_request") return err;
+    const message = err instanceof Error ? err.message : String(err);
+    return Object.assign(new Error(message.startsWith("DSH") ? message : `DSH：${message}`), { code: "runtime_error" });
+  }
+
+  private profile(id: Id): ModelProfile {
+    const p = this.options.profiles.find((x) => x.id === id);
+    if (!p || p.runtime !== "dsh") throw new Error(`profile ${id} is not a DSH profile`);
+    return p;
+  }
+
+  private writable(id: Id): Session {
+    const s = this.requireSession(id);
+    if (s.writer === "archived" || s.archivedAt) throw Object.assign(new Error("这个会话已归档"), { code: "read_only" });
+    return s;
+  }
+}
+
+/**
+ * A DSH model value is a JSON route (`["deepseek-official","deepseek-v4-pro"]`); Studio's model id is the route
+ * joined with "/" (`deepseek-official/deepseek-v4-pro`), which session options accept.
+ */
+export function dshModelId(value: string): string {
+  try {
+    const route = JSON.parse(value) as unknown;
+    if (Array.isArray(route) && route.every((p) => typeof p === "string")) return route.join("/");
+  } catch {
+    // a plain value
+  }
+  return value;
+}
+
+/** The DSH value of a Studio model id: the offered value it stands for, else the route rebuilt from it. */
+export function dshModelValue(id: string, config: readonly ConfigOption[] | null): string {
+  const model = config?.find((c) => c.id === DSH_MODEL_OPTION);
+  const offered = (model?.options ?? []).flatMap((o) => (o.options ? o.options.map((x) => x.value) : o.value ? [o.value] : []));
+  return offered.find((v) => dshModelId(v) === id) ?? (id.includes("/") ? JSON.stringify(id.split("/")) : id);
+}
+
+/** DSH's model option as Studio's models; each gets the efforts DSH offers (it lists them for the current model). */
+export function dshModels(config: readonly ConfigOption[]): ModelOption[] {
+  const model = config.find((c) => c.id === DSH_MODEL_OPTION);
+  const effort = config.find((c) => c.id === DSH_EFFORT_OPTION);
+  const efforts = (effort?.options ?? []).map((o) => o.value).filter((v): v is string => !!v);
+  const flat = (model?.options ?? []).flatMap((o) => (o.options ? o.options : o.value ? [{ value: o.value, name: o.name, description: o.description }] : []));
+  return flat.map((o) => ({
+    id: dshModelId(o.value),
+    label: o.name ?? o.value,
+    ...(o.description ? { description: o.description } : {}),
+    efforts,
+    ...(effort?.currentValue ? { defaultEffort: effort.currentValue } : {}),
+    ...(o.value === model?.currentValue ? { isDefault: true } : {}),
+  }));
+}

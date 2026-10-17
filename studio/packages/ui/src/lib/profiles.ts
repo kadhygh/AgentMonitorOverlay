@@ -1,8 +1,8 @@
-import type { ModelProfile } from "@amo-studio/protocol";
+import { RUNTIME_LABELS, type ModelProfile } from "@amo-studio/protocol";
 
-/** "Codex · DeepSeek", "Codex · GPT", "Claude · GLM" — the account behind a model. */
+/** "Codex · DeepSeek", "Codex · GPT", "Claude · GLM", "DSH · DeepSeek" — the account behind a model. */
 export function profileLabel(p: ModelProfile): string {
-  return `${p.runtime === "codex" ? "Codex" : "Claude"} · ${p.label}`;
+  return `${RUNTIME_LABELS[p.runtime] ?? p.runtime} · ${p.label}`;
 }
 
 /** Short model name for session rows and chat headers. */
@@ -28,9 +28,12 @@ function write(key: string, value: string): void {
   }
 }
 
-/** What the model pickers offer: the profiles not hidden in 设置 → 模型, plus the one already chosen. */
+/**
+ * What the model pickers offer: the profiles not hidden in 设置 → 模型 and able to start sessions (a DSH profile needs
+ * its clone set up), plus the one already chosen.
+ */
 export function pickable(profiles: readonly ModelProfile[], keep?: string | null): ModelProfile[] {
-  return profiles.filter((p) => !p.hidden || p.id === keep);
+  return profiles.filter((p) => (!p.hidden && !p.unavailable) || p.id === keep);
 }
 
 /** Last used profile, else the first routed (non-default) profile, else the first one; never a hidden one. */

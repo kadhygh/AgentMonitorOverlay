@@ -51,7 +51,9 @@ export function ContextHint({
   const lastTurn = [...items].reverse().find((i): i is Extract<SessionItem, { type: "turn" }> => i.type === "turn" && !!i.endedAt);
   const idle = lastTurn?.endedAt ? Date.now() - Date.parse(lastTurn.endedAt) : 0;
   const cacheGone = session.runtime === "claude" && idle > CACHE_GONE_MS;
-  const auto = settings?.autoCompactTokens ?? null;
+  // DSH compacts by itself at 80% of the model's window (stage 17) and has no command for it; the setting is the CLIs'.
+  const dsh = session.runtime === "dsh";
+  const auto = dsh ? (context.window ? Math.round(context.window * 0.8) : null) : (settings?.autoCompactTokens ?? null);
   const dismiss = () => {
     try {
       localStorage.setItem(dismissKey(session.id), String(context.used));
@@ -65,16 +67,18 @@ export function ContextHint({
       <span className="wake-bar-dot" aria-hidden="true" />
       <span
         className="wake-bar-text"
-        title={`每次模型调用都要把整个上下文读一遍：上下文越大，每一步越贵。${auto ? `到 ${formatTokens(auto)} 会自动压缩（设置 → 模型）。` : ""}换阶段时开新会话最省。`}
+        title={`每次模型调用都要把整个上下文读一遍：上下文越大，每一步越贵。${auto ? (dsh ? `DSH 到 ${formatTokens(auto)}（窗口的 80%）会自动压缩。` : `到 ${formatTokens(auto)} 会自动压缩（设置 → 模型）。`) : ""}换阶段时开新会话最省。`}
       >
         <b>上下文 {formatTokens(context.used)}</b>
         {cacheGone ? ` · 距上次回复 ${since(idle)}，缓存多半已过期，下一条要全价重读` : " · 每一步都要整个重读"}
         {auto && context.used < auto ? ` · 到 ${formatTokens(auto)} 自动压缩` : ""}
         {" · 换阶段可开新会话"}
       </span>
-      <button type="button" className="btn-ghost small" disabled={busy} onClick={onCompact} data-testid="context-hint-compact">
-        现在压缩
-      </button>
+      {!dsh && (
+        <button type="button" className="btn-ghost small" disabled={busy} onClick={onCompact} data-testid="context-hint-compact">
+          现在压缩
+        </button>
+      )}
       <button type="button" className="btn-ghost small" onClick={dismiss} data-testid="context-hint-dismiss">
         知道了
       </button>

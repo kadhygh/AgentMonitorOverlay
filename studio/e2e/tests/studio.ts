@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { _electron, type ElectronApplication, type Page } from "@playwright/test";
-import { MOCK_MODEL_CATALOG, removeTempDir, startMockAnthropic, startMockModel, type ClaudeMockServer, type MockModelServer } from "@amo-studio/testkit";
+import { fakeAcpAgent, MOCK_MODEL_CATALOG, removeTempDir, startMockAnthropic, startMockModel, type ClaudeMockServer, type MockModelServer } from "@amo-studio/testkit";
 
 // Launch helper for Studio end-to-end tests: temp data dir, hidden window, attached Host on an ephemeral port, and by
 // default the mock model as the only model (no budget, no real Codex home).
@@ -45,6 +45,8 @@ export async function launchStudio(
     transcriptView?: "compact" | "standard" | "detailed" | "verbose";
     /** Whether the task page's right column (进度、批注…) starts shown; true unless a spec checks the default. */
     taskSidebar?: boolean;
+    /** Adds the 「Mock DSH」 model, whose sessions run the scripted ACP agent (stage 17). */
+    dsh?: boolean;
   } = {},
 ): Promise<Studio> {
   const root = options.root ?? mkdtempSync(join(tmpdir(), "amo-studio-e2e-"));
@@ -60,6 +62,7 @@ export async function launchStudio(
         AMO_STUDIO_TEST_CATALOG: MOCK_MODEL_CATALOG,
         AMO_STUDIO_TEST_CODEX_HOME: codexHome,
         ...(claudeMock ? { AMO_STUDIO_TEST_CLAUDE_URL: claudeMock.baseUrl } : {}),
+        ...(options.dsh ? { AMO_STUDIO_TEST_DSH_AGENT: fakeAcpAgent().args[0]! } : {}),
       }
     : {};
   const app = await _electron.launch({

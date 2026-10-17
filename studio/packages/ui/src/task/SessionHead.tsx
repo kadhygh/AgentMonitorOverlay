@@ -68,7 +68,8 @@ export function SessionHead({
       {/* Where the session works, opened outside Studio: editor, folder, terminal. */}
       <span className="bar-group" role="group" aria-label="在外部打开">
         {workdir && <WorkdirActions link={link} path={workdir} onError={onError} compact />}
-        {!session.archivedAt && session.writer !== "terminal-handoff" && !(session.runtime === "claude" && session.kind === "sub") && (
+        {/* DSH sessions (stage 17) have no terminal of their own to hand to, and no fork. */}
+        {!session.archivedAt && session.writer !== "terminal-handoff" && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub") && (
           <button
             type="button"
             className="bar-btn"
@@ -84,7 +85,7 @@ export function SessionHead({
           </button>
         )}
       </span>
-      {!session.archivedAt && !(session.runtime === "claude" && session.kind === "sub") && (
+      {!session.archivedAt && session.runtime !== "dsh" && !(session.runtime === "claude" && session.kind === "sub") && (
         <>
           <span className="head-sep" aria-hidden="true" />
           <button type="button" className="bar-btn labeled" aria-label="分支" title="分支：从这里分出一个新会话，原会话不受影响" disabled={busy || !session.runtimeRef} onClick={onFork} data-testid="session-fork">

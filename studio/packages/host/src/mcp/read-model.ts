@@ -1,4 +1,4 @@
-import { buildSessionTree, isCommon, taskWhere, topicWorkspaceIds, type Id, type ModelProfile, type Session, type SessionNode, type SessionStatus, type Task, type TaskColumn, type Topic } from "@amo-studio/protocol";
+import { buildSessionTree, isCommon, RUNTIME_LABELS, taskWhere, topicWorkspaceIds, type Id, type ModelProfile, type Session, type SessionNode, type SessionStatus, type Task, type TaskColumn, type Topic } from "@amo-studio/protocol";
 import type { HostService } from "../service.js";
 import type { McpCaller } from "./tools.js";
 
@@ -61,7 +61,7 @@ export class ReadModel {
 
   private model(profileId: Id): string {
     const p: ModelProfile | undefined = this.service.profiles.find((x) => x.id === profileId);
-    return p ? `${p.runtime === "codex" ? "Codex" : "Claude"} · ${p.label}` : profileId;
+    return p ? `${RUNTIME_LABELS[p.runtime]} · ${p.label}` : profileId;
   }
 
   private requireTask(taskId: Id): Task {

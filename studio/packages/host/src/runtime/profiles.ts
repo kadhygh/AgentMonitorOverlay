@@ -52,11 +52,14 @@ export const BUILTIN_PROFILES: readonly ModelProfile[] = [
   { id: "claude-glm", label: "GLM", runtime: "claude", provider: "glm", model: "glm-5.3[1m]", credentialId: "glm-5.2" },
   // The person's Claude subscription, through a token from `claude setup-token` saved in 设置 → 模型凭据.
   { id: "claude-subscription", label: "Claude", runtime: "claude", provider: "anthropic", model: null, credentialId: CLAUDE_SUBSCRIPTION_CREDENTIAL },
+  // DeepSeek on DSH's own harness (stage 17): a DSH source clone set in 设置 → 模型, the same DeepSeek key.
+  { id: "dsh-deepseek", label: "DeepSeek", runtime: "dsh", provider: "deepseek-official", model: null, credentialId: "deepseek-v4" },
 ];
 
 /** Built-in profiles whose site tells the balance (设置 → 模型, 左下角额度). */
 export const BUILTIN_BALANCES: Record<string, { baseUrl: string; config: BalanceConfig }> = {
   "codex-deepseek-flash": { baseUrl: "https://api.deepseek.com", config: { template: "deepseek" } },
+  "dsh-deepseek": { baseUrl: "https://api.deepseek.com", config: { template: "deepseek" } },
 };
 
 // src/ and dist/ sit at the same depth under packages/host.

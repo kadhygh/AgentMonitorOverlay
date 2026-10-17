@@ -6,6 +6,8 @@ import { startHostServer, type HostServer } from "./http/server.js";
 import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.js";
 import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
 import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
+import { DshRuntime } from "./runtime/dsh/dsh-runtime.js";
+import { dshUnavailable } from "./runtime/dsh/install.js";
 import { localClaudeHome as localClaudeHomeOf } from "./runtime/claude/claude-login.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
 import { AMO_MCP_INSTRUCTIONS, amoToolsFor } from "./mcp/tools.js";
@@ -48,6 +50,10 @@ export interface StartHostOptions {
   claudeBaseEnv?: NodeJS.ProcessEnv;
   /** The person's Claude Code config dir for the local login (default: their CLAUDE_CONFIG_DIR or ~/.claude). */
   localClaudeHome?: string;
+  /** Tests: the ACP agent DSH sessions run (a fake one) instead of the DSH clone set in 设置 → 模型. */
+  dshAgent?: { command: string; args: readonly string[] };
+  /** Variables DSH processes start from (default: process.env). */
+  dshEnv?: NodeJS.ProcessEnv;
 }
 
 export interface RunningHost {
@@ -73,6 +79,7 @@ export const hostPaths = (dataDir: string) => ({
   db: join(dataDir, "studio.db"),
   codex: join(dataDir, "codex"),
   claudeHome: join(dataDir, "claude-home"),
+  dsh: join(dataDir, "dsh"),
 });
 
 export function readHostInfo(dataDir: string): HostInfo | null {
@@ -129,12 +136,14 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
   let http: HostServer | undefined;
   let manager: CodexServerManager | undefined;
   let claude: ClaudeRuntime | undefined;
+  let dsh: DshRuntime | undefined;
   try {
     const token = loadOrCreateToken(paths.token);
     // Agents get a token that opens the read-only MCP only, never the writable REST API.
     const mcpToken = loadOrCreateToken(paths.mcpToken);
     let mcp: { url: string; token: string } | null = null;
     store = new Store(paths.db);
+    const liveKv = store;
     // One reader for everything, so a token saved in 设置 is what the next Claude session reads.
     const credentials = options.credentials ?? new WindowsCredentialReader();
     // The built-in profiles plus the person's own channels (设置 → 模型). The list and the provider tables are changed
@@ -146,6 +155,8 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       codexProviders: { ...(options.providers ?? CODEX_PROVIDERS) },
       claudeProviders: { ...(options.claudeProviders ?? BUILTIN_CLAUDE_PROVIDERS) },
       ...(options.profiles ? {} : { builtinBalance: BUILTIN_BALANCES }),
+      // DSH sessions need a built clone (设置 → 模型); until then the profile stays out of the pickers.
+      unavailable: (p) => (p.runtime === "dsh" && !options.dshAgent ? (dshUnavailable(liveKv) ?? undefined) : undefined),
     });
     const profiles = channels.profiles;
     manager = options.servers
@@ -206,13 +217,24 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         }
       },
     });
-    const runtime = new RuntimeRouter(store, profiles, { codex, claude });
+    dsh = new DshRuntime({
+      store,
+      profiles,
+      credentials,
+      dir: paths.dsh,
+      mcp: () => mcp,
+      identities,
+      ...(options.dshAgent ? { agent: options.dshAgent } : {}),
+      ...(options.dshEnv ? { env: options.dshEnv } : {}),
+    });
+    const runtime = new RuntimeRouter(store, profiles, { codex, claude, dsh });
     const liveStore = store;
     const service = new HostService(store, runtime, profiles, {
       launcher: options.launcher ?? new WindowsTerminalLauncher(),
       credentials,
       localClaudeHome,
       channels,
+      dsh,
       // A Codex channel's address or key is fixed when its app-server starts: restart it, unless a session on it is busy.
       restartProfileServer: async (profileId) => {
         if (!manager?.handle(profileId)) return true;
@@ -240,6 +262,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     const finalHttp = http;
     const finalManager = manager;
     const finalClaude = claude;
+    const finalDsh = dsh;
     return {
       info,
       token,
@@ -249,6 +272,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
         stopped = true;
         await finalHttp.close();
         await finalClaude.closeAll();
+        await finalDsh.closeAll();
         const s = finalManager ?? options.servers;
         if (keepServers) s?.detachAll?.();
         else await s?.stopAll?.();
@@ -259,6 +283,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     };
   } catch (err) {
     await http?.close();
+    await dsh?.closeAll();
     await manager?.stopAll();
     store?.close();
     release();

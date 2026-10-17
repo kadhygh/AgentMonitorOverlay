@@ -17,11 +17,12 @@ const BUILTIN_SUB: Record<string, string> = {
   "codex-deepseek-flash": "Codex · DeepSeek 官方接口",
   "claude-glm": "Claude Code · 智谱 GLM Coding Plan",
   "claude-subscription": "Claude Code · Claude 订阅",
+  "dsh-deepseek": "DSH · DeepSeek 官方接口（DeepSeek Harness 源码，见下方）",
 };
 
 function subOf(p: ModelProfile, c: ModelChannel | undefined): string {
   if (c) return `${CHANNEL_KIND_LABEL[c.kind]} · ${c.baseUrl.replace(/^https?:\/\//, "")}`;
-  return BUILTIN_SUB[p.id] ?? (p.runtime === "codex" ? "Codex" : "Claude Code");
+  return BUILTIN_SUB[p.id] ?? (p.runtime === "codex" ? "Codex" : p.runtime === "dsh" ? "DSH" : "Claude Code");
 }
 
 /** The person's own channels, following `profiles.updated`. */

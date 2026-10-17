@@ -8,6 +8,7 @@ import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
 import { ChannelsSection } from "./ChannelsSection.js";
 import { QuickModelsSection } from "./QuickModelsSection.js";
 import { AutoCompactSection } from "./AutoCompactSection.js";
+import { DshSection } from "./DshSection.js";
 import { useProfiles } from "../lib/balance.js";
 
 // 设置 → 模型: the channels (built-in and the person's own third-party Claude and Codex endpoints, each one hideable
@@ -28,7 +29,11 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
           link={link}
           profiles={profiles}
           credentials={list}
-          extra={claude && settings && claudeProfile ? { [claudeProfile.id]: <ClaudeLoginSection link={link} settings={settings} credential={claude} onCredentials={setList} /> } : undefined}
+          extra={{
+            ...(claude && settings && claudeProfile ? { [claudeProfile.id]: <ClaudeLoginSection link={link} settings={settings} credential={claude} onCredentials={setList} /> } : {}),
+            // DeepSeek on DSH's own harness (stage 17): where the clone is, and 「检查」.
+            ...Object.fromEntries(profiles.filter((p) => p.runtime === "dsh" && !p.custom).map((p) => [p.id, <DshSection key={p.id} link={link} />])),
+          }}
         />
       )}
       {profiles && <QuickModelsSection link={link} settings={settings} profiles={profiles} />}

@@ -3,7 +3,7 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 38
+      "used": 40
     },
     "glm": {
       "limit": 5000,
@@ -378,6 +378,16 @@
       "at": "2026-10-17T07:10:13.847Z",
       "provider": "deepseek",
       "note": "S17-01 DSH permissions: ww-outside-allow"
+    },
+    {
+      "at": "2026-10-17T07:54:50.948Z",
+      "provider": "deepseek",
+      "note": "S17 real DSH: command"
+    },
+    {
+      "at": "2026-10-17T07:54:57.384Z",
+      "provider": "deepseek",
+      "note": "S17 real DSH: AMO MCP"
     }
   ]
 }

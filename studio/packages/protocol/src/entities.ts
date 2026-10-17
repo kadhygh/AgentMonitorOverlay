@@ -70,7 +70,10 @@ export interface Topic {
   archivedAt: Timestamp | null;
 }
 
-export type SessionRuntime = "codex" | "claude";
+/** `dsh`: DeepSeek through a DeepSeek Harness source clone over ACP (stage 17, plans/stage-17-dsh.md). */
+export type SessionRuntime = "codex" | "claude" | "dsh";
+/** How the runtime is named next to a profile ("Codex · DeepSeek", "DSH · DeepSeek"). */
+export const RUNTIME_LABELS: Record<SessionRuntime, string> = { codex: "Codex", claude: "Claude", dsh: "DSH" };
 export type SessionKind = "main" | "fork" | "sub";
 
 /**
@@ -106,6 +109,11 @@ export interface ModelProfile {
   custom?: boolean;
   /** Its site can be asked for the balance (`GET /api/profiles/:id/balance`). */
   balance?: boolean;
+  /**
+   * Why the profile cannot start sessions now (a DSH profile while no DSH clone is set up in 设置 → 模型); left out of
+   * the model pickers meanwhile, its sessions stay readable.
+   */
+  unavailable?: string;
 }
 
 /**

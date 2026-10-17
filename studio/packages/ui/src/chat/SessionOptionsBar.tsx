@@ -32,7 +32,7 @@ export function SessionOptionsBar({
   const box = useRef<HTMLDivElement>(null);
   const mine = presets.filter((p) => p.profileId === session.profileId);
   const model = choices ? activeModel(choices, session.options) : undefined;
-  const when = session.runtime === "codex" ? "下一轮生效" : "立即生效";
+  const when = session.runtime === "claude" ? "立即生效" : "下一轮生效";
 
   useEffect(() => {
     if (!tray) return;

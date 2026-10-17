@@ -37,6 +37,7 @@ import { chatFilesRoutes } from "./chatfiles/routes.js";
 import { cliRoutes } from "./cli/routes.js";
 import { dataRoutes } from "./datamgmt/routes.js";
 import { channelsRoutes } from "./channels/routes.js";
+import { dshRoutes } from "./dsh/routes.js";
 
 /**
  * Every Host feature (features/<name>/): its service class lives on HostService, its routes and MCP tools are listed
@@ -54,6 +55,7 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "projects", routes: projectsRoutes, tools: projectsTools },
   { name: "config", routes: configRoutes },
   { name: "channels", routes: channelsRoutes },
+  { name: "dsh", routes: dshRoutes },
   { name: "tasks", routes: tasksRoutes, tools: tasksTools },
   { name: "topics", routes: topicsRoutes, tools: topicsTools },
   { name: "sessions", routes: sessionsRoutes, tools: sessionsTools },
