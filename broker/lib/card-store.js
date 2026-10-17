@@ -1,4 +1,5 @@
 const fs = require("node:fs");
+const path = require("node:path");
 const { randomUUID } = require("node:crypto");
 const { httpError } = require("./http");
 const { writeSnapshot } = require("./task-canvas-store");
@@ -9,6 +10,7 @@ const { hash, timestamp, text, observeAttention } = require("./session-framework
 const { projectSessionRuntime, projectConversationRuntime } = require("./card-components/session-runtime");
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
+const sameWorkspace = (a, b) => typeof a === "string" && typeof b === "string" && (process.platform === "win32" ? path.resolve(a).toLowerCase() === path.resolve(b).toLowerCase() : path.resolve(a) === path.resolve(b));
 const sourceKey = (ref) => hash([ref.frameworkId, ref.sessionId]);
 const processing = (card) => card.components.find((component) => schema.isType(component, "amo.processing"));
 const emptyEvidence = (key) => ({ sourceKey: key, replyKeys: [], replyThrough: null, blockingIdentity: null, eventThrough: null });
@@ -122,7 +124,7 @@ function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date
   function normalizeObservation(session, seed = false) {
     const ref = { frameworkId: canonicalFrameworkId(session.tool), sessionId: session.sessionId };
     schema.sessionRef(ref);
-    return { ref, sourceKey: sourceKey(ref), title: text(session.taskTitle || session.title || session.sessionId, 2000), attention: observeAttention(session), at: timestamp(session.updatedAt), seed, unavailable: Boolean(session.archivedAt || session.dismissedAt), reviewPending: Boolean(session.reviewRequired && session.reviewStatus !== "reviewed" && !session.reviewedAt), seedHandled: seed && session.reviewRequired !== true && session.reviewStatus !== "pending" };
+    return { ref, sourceKey: sourceKey(ref), launchId: session.launchRelation === "owner" ? session.launchId : null, workspacePath: session.workspacePath, workspaceId: session.workspaceId, title: text(session.taskTitle || session.title || session.sessionId, 2000), attention: observeAttention(session), at: timestamp(session.updatedAt), seed, unavailable: Boolean(session.archivedAt || session.dismissedAt), reviewPending: Boolean(session.reviewRequired && session.reviewStatus !== "reviewed" && !session.reviewedAt), seedHandled: seed && session.reviewRequired !== true && session.reviewStatus !== "pending" };
   }
   function applyAttention(record, component, event, seedHandled = false) {
     const data = component.data;
@@ -162,6 +164,23 @@ function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date
   }
   function applyObservation(next, event) {
     let createdId = null;
+    // Bind the launch-owned Card before normal Session import, in the same writer.
+    if (event.launchId && event.ref.frameworkId === "codex") {
+      const record = Object.values(next.records).find(({ card }) => card.components.some((c) => schema.isType(c, "amo.launch") && c.data.launchId === event.launchId && c.data.workspaceId === event.workspaceId && sameWorkspace(c.data.workspacePath, event.workspacePath)));
+      if (record) {
+        const source = record.card.components.find((c) => schema.isType(c, "amo.session"));
+        const indexed = next.defaultSessionCards[event.sourceKey];
+        const component = processing(record.card);
+        if (!source && !indexed && component?.data.sourceComponentId === null && !record.card.archivedAt && record.card.components.length <= 30) {
+          const sessionComponentId = `session-${randomUUID()}`;
+          record.card.components.push({ componentId: sessionComponentId, type: "amo.session", schemaVersion: 1, data: { sessionRef: event.ref } }, { componentId: `conversation-${randomUUID()}`, type: "amo.conversation", schemaVersion: 1, data: { sessionComponentId } });
+          component.data.sourceComponentId = sessionComponentId;
+          record.evidence[component.componentId] = emptyEvidence(event.sourceKey);
+          next.defaultSessionCards[event.sourceKey] = record.card.cardId;
+          record.card.revision += 1; record.card.updatedAt = now();
+        }
+      }
+    }
     if (!next.defaultSessionCards[event.sourceKey]) {
       const components = schema.components([
         { componentId: "session", type: "amo.session", schemaVersion: 1, data: { sessionRef: event.ref } },
@@ -321,6 +340,7 @@ function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date
       schema.object(payload, ["operationId", "title", "components"], "create request");
       schema.identifier(payload.operationId, 256); schema.string(payload.title, 2000, "title");
       const components = schema.components(payload.components === undefined ? [] : payload.components);
+      if (components.some((c) => c.type === "amo.launch")) schema.fail("Launch components are managed by the task launcher");
       request = { operationId: payload.operationId, mode: "create", title: payload.title, components };
     } catch (error) { return Promise.reject(error); }
     return serialize(async () => {
@@ -371,6 +391,7 @@ function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date
     const replacedProcessing = new Set();
     for (const command of commands) {
       const target = card.components.find((component) => component.componentId === command.componentId);
+      if (command.component?.type === "amo.launch" || target?.type === "amo.launch" || (command.type === "set-component" && card.components.some((c) => c.componentId === command.component.componentId && c.type === "amo.launch"))) schema.fail("Launch components are managed by the task launcher");
       switch (command.type) {
         case "set-title": card.title = command.title; break;
         case "archive": card.archivedAt = now(); break;
@@ -500,7 +521,43 @@ function createCardStore({ dataFile, write = writeSnapshot, now = () => new Date
     } catch (error) { return Promise.reject(error); }
   }
   async function dispose() { disposed = true; unsubscribe?.(); unsubscribe = null; await flush(); }
-  return { attach, observe, flush, list, get, create, fromSession, execute, listGroups, executeGroups, listFocus, mutateFocus, focusView, dispose, status: () => ({ pending: pending.length, error: (corruption || observationErrors.values().next().value || lastError)?.message || null }) };
+  function prepareTaskLaunch({ title, groupId, launch }) {
+    return serialize(async () => {
+      if (corruption) throw corruption;
+      await flushPending();
+      const previous = Object.values(state.records).find(({ card }) => card.components.some((c) => schema.isType(c, "amo.launch") && c.data.operationId === launch.operationId));
+      if (previous) {
+        const prior = previous.card.components.find((c) => schema.isType(c, "amo.launch"));
+        if (prior.data.fingerprint !== launch.fingerprint) throw httpError(409, "task_launch_operation_conflict", "Operation belongs to a different launch request");
+        return { card: clone(previous.card), created: false };
+      }
+      if (!state.groups.some((g) => g.groupId === groupId)) throw httpError(409, "task_launch_group_unavailable", "Choose an existing Focus group before launching");
+      const components = schema.components([
+        { componentId: "launch", type: "amo.launch", schemaVersion: 1, data: launch },
+        { componentId: "processing", type: "amo.processing", schemaVersion: 1, data: { sourceComponentId: null, state: "pending" } },
+        { componentId: "notes", type: "amo.notes", schemaVersion: 1, data: { text: "" } },
+        { componentId: "task-group", type: "amo.task-group", schemaVersion: 1, data: { groupId } },
+      ]);
+      const next = clone(state); const record = newCard(title, components);
+      next.records[record.card.cardId] = record; await persist(next);
+      return { card: clone(record.card), created: true };
+    });
+  }
+  function prepareTaskRetry({ cardId, expectedLaunchId, launchId, operationId }) {
+    return serialize(async () => {
+      if (corruption) throw corruption;
+      await flushPending(); const next = clone(state);
+      const record = next.records[cardId];
+      const component = record?.card.components.find((c) => schema.isType(c, "amo.launch"));
+      if (!component || record.card.archivedAt || component.data.launchId !== expectedLaunchId || record.card.components.some((c) => schema.isType(c, "amo.session"))) throw httpError(409, "task_launch_retry_conflict", "Card changed; retry is no longer safe");
+      if (component.data.attempts.length >= 64) throw httpError(409, "task_launch_retry_limit", "Maximum launch attempts reached");
+      component.data.launchId = launchId;
+      component.data.attempts.push({ operationId, launchId });
+      record.card.revision += 1; record.card.updatedAt = now();
+      await persist(next); return clone(record.card);
+    });
+  }
+  return { prepareTaskRetry, prepareTaskLaunch, attach, observe, flush, list, get, create, fromSession, execute, listGroups, executeGroups, listFocus, mutateFocus, focusView, dispose, status: () => ({ pending: pending.length, error: (corruption || observationErrors.values().next().value || lastError)?.message || null }) };
 }
 
 module.exports = { createCardStore, validateSnapshot };

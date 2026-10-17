@@ -14,6 +14,7 @@ async function launchCliInTerminal({
   environment = {},
   launchEnvironment = WINDOWS_POWERSHELL,
   recordDebugLog = null,
+  exactArguments = false,
 }) {
   const commandLine = buildPowerShellCommandLine({
     workspacePath,
@@ -22,8 +23,12 @@ async function launchCliInTerminal({
     args,
     cleanupPaths,
     cleanupEnvironmentKeys,
+    exactArguments,
   });
   const powershellArgs = powershellNoExitEncodedArgs(commandLine);
+  if (process.platform === "win32" && exactArguments && powershellArgs.join(" ").length + workspacePath.length + title.length + 2048 > 32700) {
+    throw Object.assign(new Error("Encoded task launch exceeds the Windows command-line limit; shorten the first prompt"), { code: "task_prompt_too_long", spawnOutcome: "not-spawned" });
+  }
   if (process.platform === "win32") {
     let selected = resolveCliLaunchEnvironment(launchEnvironment);
     if (selected.fallback && typeof recordDebugLog === "function") {
@@ -125,9 +130,10 @@ function buildPowerShellCommandLine({
   args = [],
   cleanupPaths = [],
   cleanupEnvironmentKeys = [],
+  exactArguments = false,
 }) {
   const cliArgs = args.map(powershellSingleQuoted).join(" ");
-  const invocation = `& ${powershellCommand(command)}${cliArgs ? ` ${cliArgs}` : ""}`;
+  const invocation = exactArguments ? buildExactNativeInvocation(command, args) : `& ${powershellCommand(command)}${cliArgs ? ` ${cliArgs}` : ""}`;
   const prefix = `$Host.UI.RawUI.WindowTitle = ${powershellSingleQuoted(title)}; Set-Location -LiteralPath ${powershellSingleQuoted(workspacePath)};`;
   const cleanupCommands = cleanupPaths
     .filter((filePath) => typeof filePath === "string" && filePath.trim())
@@ -141,6 +147,27 @@ function buildPowerShellCommandLine({
   return cleanupCommands.length > 0
     ? `${prefix} try { ${invocation} } finally { ${cleanupCommands.join("; ")} }`
     : `${prefix} ${invocation}`;
+}
+
+// PowerShell 5.1's native binder drops embedded quotes. Bypass that binder only
+// for task-entry launches, retaining the original argv as JSON and quoting once
+// for CreateProcess. Recognize the standard npm Codex shim without executing it.
+function buildExactNativeInvocation(command, args) {
+  const jsonArgs = powershellSingleQuoted(JSON.stringify(args));
+  return [
+    `$amoCommand = Get-Command ${powershellSingleQuoted(command)} -ErrorAction Stop`,
+    `$amoExecutable = $amoCommand.Source`,
+    `$amoArgs = ConvertFrom-Json -InputObject ${jsonArgs}`,
+    `if ([IO.Path]::GetExtension($amoExecutable) -in @('.ps1', '.cmd')) { $amoBase = Split-Path -Parent $amoExecutable; $amoScript = Join-Path $amoBase 'node_modules/@openai/codex/bin/codex.js'; if (!(Test-Path -LiteralPath $amoScript)) { throw 'Unsupported Codex shim; use the standard npm install or a native executable' }; $amoNode = Join-Path $amoBase 'node.exe'; if (!(Test-Path -LiteralPath $amoNode)) { $amoNode = (Get-Command node.exe -ErrorAction Stop).Source }; $amoExecutable = $amoNode; $amoArgs = @($amoScript) + $amoArgs }`,
+    String.raw`function ConvertTo-AmoNativeArgument([string]$value) { $escaped = [regex]::Replace($value, '(\\*)"', '$1$1\"'); $escaped = [regex]::Replace($escaped, '(\\+)$', '$1$1'); return '"' + $escaped + '"' }`,
+    `$amoStart = New-Object System.Diagnostics.ProcessStartInfo`,
+    `$amoStart.FileName = $amoExecutable`,
+    `$amoStart.UseShellExecute = $false`,
+    `$amoStart.WorkingDirectory = (Get-Location).Path`,
+    `$amoStart.Arguments = (($amoArgs | ForEach-Object { ConvertTo-AmoNativeArgument ([string]$_) }) -join ' ')`,
+    `$amoProcess = [Diagnostics.Process]::Start($amoStart)`,
+    `$amoProcess.WaitForExit()`,
+  ].join('; ');
 }
 
 function powershellCommand(value) {
@@ -175,6 +202,7 @@ function spawnDetached(command, args, cwd, options = {}) {
         env: launchProcessEnvironment(options.environment),
       });
     } catch (error) {
+      error.spawnOutcome = "not-spawned";
       reject(error);
       return;
     }
@@ -186,6 +214,7 @@ function spawnDetached(command, args, cwd, options = {}) {
     };
 
     child.once("error", (error) => {
+      if (!settled) error.spawnOutcome = "not-spawned";
       finish(reject, error);
     });
     child.once("spawn", () => {

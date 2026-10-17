@@ -43,6 +43,8 @@ const { handleFocusPanelRoutes } = require("./routes/focus-panel");
 const { handleCardRoutes } = require("./routes/cards");
 const { handleTaskCanvasRoutes } = require("./routes/task-canvas");
 const { handleWorkspaceRoutes } = require("./routes/workspaces");
+const { handleTaskLaunchRoutes } = require("./routes/task-launches");
+const { createTaskLauncher } = require("./lib/task-launch");
 
 const HOST = process.env.AGENT_MONITOR_HOST || "127.0.0.1";
 const PORT = Number.parseInt(process.env.AGENT_MONITOR_PORT || "17654", 10);
@@ -222,6 +224,7 @@ const routeContext = {
   detectCliEnvironments,
 };
 
+routeContext.taskLauncher = createTaskLauncher(routeContext);
 const server = http.createServer(async (req, res) => {
   try {
     if (req.method === "OPTIONS") {
@@ -237,6 +240,7 @@ const server = http.createServer(async (req, res) => {
       (await handleConfigRoutes(req, res, url, routeContext)) ||
       (await handleSessionRoutes(req, res, url, routeContext)) ||
       (await handleWorkspaceRoutes(req, res, url, routeContext)) ||
+      (await handleTaskLaunchRoutes(req, res, url, routeContext)) ||
       (await handleObsidianRoutes(req, res, url, routeContext));
     if (handled) return;
     return sendJson(res, 404, {

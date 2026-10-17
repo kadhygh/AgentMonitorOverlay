@@ -13,6 +13,7 @@ const TRAY_ID: &str = "amo-tray";
 const SHOW_MENU_ID: &str = "amo-tray-show";
 const HIDE_MENU_ID: &str = "amo-tray-hide";
 const QUIT_MENU_ID: &str = "amo-tray-quit";
+const TASK_LAUNCH_MENU_ID: &str = "amo-tray-task-launch";
 const MAIN_WINDOW_LABEL: &str = "main";
 const TRAY_OPEN_REQUESTED_EVENT: &str = "tray-open-requested";
 
@@ -167,7 +168,8 @@ pub(crate) fn install(app: &mut App) -> Result<(), Box<dyn Error>> {
     let show = MenuItemBuilder::with_id(SHOW_MENU_ID, "显示").build(app)?;
     let hide = MenuItemBuilder::with_id(HIDE_MENU_ID, "隐藏").build(app)?;
     let quit = MenuItemBuilder::with_id(QUIT_MENU_ID, "退出").build(app)?;
-    let menu = Menu::with_items(app, &[&show, &hide, &quit])?;
+    let task_launch = MenuItemBuilder::with_id(TASK_LAUNCH_MENU_ID, "新任务…").build(app)?;
+    let menu = Menu::with_items(app, &[&task_launch, &show, &hide, &quit])?;
 
     let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(normal_icon.clone())
@@ -185,7 +187,9 @@ pub(crate) fn install(app: &mut App) -> Result<(), Box<dyn Error>> {
     state.start_worker()?;
 
     tray.on_menu_event(|app, event| {
-        if event.id() == SHOW_MENU_ID {
+        if event.id() == TASK_LAUNCH_MENU_ID {
+            let _ = app.emit_to("main", "amo-task-launch-open", ());
+        } else if event.id() == SHOW_MENU_ID {
             show_and_focus_main_window(app, None);
         } else if event.id() == HIDE_MENU_ID {
             hide_main_window(app);

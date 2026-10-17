@@ -76,7 +76,7 @@ beforeEach(() => {
   domListeners.clear();
   nativeListeners.clear();
   windows.clear();
-  for (const label of ["main", "canvas", "focus", "deploy", "settings", "priorities", "harness", "scratchpad"]) {
+  for (const label of ["main", "canvas", "focus", "deploy", "settings", "priorities", "harness", "scratchpad", "task-launch"]) {
     windows.set(label, nativeWindow(label));
   }
   currentLabel = "main";
@@ -138,6 +138,24 @@ test("Canvas creation is lazy, coalesced, non-topmost, and available in the task
   assert.equal(creates[0][2].alwaysOnTop, false);
   assert.equal(creates[0][2].skipTaskbar, false);
   assert.equal(activeUtility, null);
+});
+
+test("new-task window is independent, retains drafts on close and does not alter legacy window layers", async () => {
+  windows.delete("task-launch");
+  await Promise.all([getOrCreateUtilityWindow("task-launch"), getOrCreateUtilityWindow("task-launch")]);
+  const created = calls.filter(call => call[0] === "task-launch" && call[1] === "create");
+  assert.equal(created.length, 1);
+  assert.equal(created[0][2].alwaysOnTop, false);
+  assert.equal(created[0][2].transparent, false);
+  assert.equal(created[0][2].skipTaskbar, false);
+  calls.length = 0;
+  await utility.bringUtilityWindowToFront("task-launch");
+  assert.ok(calls.some(call => call[1] === "emit" && call[3] === "amo-task-launch-visibility" && call[4] === true));
+  assert.equal(calls.some(call => call[0] === "main" || call[1] === "top"), false);
+  currentLabel = "task-launch";
+  calls.length = 0;
+  await utility.closeUtilityWindow("task-launch");
+  assert.deepEqual(calls, [["task-launch", "hide"], ["task-launch", "emit", "task-launch", "amo-task-launch-visibility", false]]);
 });
 
 test("Canvas close hides the draft and sends visibility without affecting main or modal peers", async () => {

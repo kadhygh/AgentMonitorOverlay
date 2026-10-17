@@ -64,6 +64,7 @@ import { bringUtilityWindowToFront } from "./utilityWindow";
 import { useTaskCardCommands } from "../hooks/useTaskCardCommands";
 import { useFocusPanelWindow } from "../hooks/useFocusPanelWindow";
 import { useFocusPanelCommands } from "../hooks/useFocusPanelCommands";
+import { useTaskLaunchWindow } from "../hooks/useTaskLaunchWindow";
 import {
   BrokerReadinessPanel,
   brokerReadinessLabels,
@@ -451,6 +452,7 @@ export function MainOverlayApp() {
     openWorkspacePanel: (session, x, y) => void openWorkspacePanel(session, x, y),
     startWindowBindDrag: (session, event) => startWindowBindDrag(session, event),
   });
+  useTaskLaunchWindow({ activate: session => activateSession(session, undefined, undefined, { clearAttentionOnSuccess: false }), feedback: setFeedback });
   useFocusPanelCommands({
     prepareMain: () => setOverlayCollapsed(false),
     activate: session => activateSession(session, undefined, undefined, { clearAttentionOnSuccess: false }),

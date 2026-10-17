@@ -3,6 +3,7 @@ import { MainOverlayApp } from "./windows/MainOverlayApp";
 import { CURRENT_WINDOW_LABEL } from "./windows/utilityWindow";
 
 const utilityApps: Record<string, React.LazyExoticComponent<ComponentType>> = {
+  "task-launch": lazy(() => import("./windows/TaskLaunchApp").then((module) => ({ default: module.TaskLaunchApp }))),
   focus: lazy(() => import("./windows/FocusPanelApp").then((module) => ({ default: module.FocusPanelApp }))),
   canvas: lazy(() => import("./windows/CanvasWorkbenchApp").then((module) => ({ default: module.CanvasWorkbenchApp }))),
   deploy: lazy(() => import("./windows/DeployWorkspaceApp").then((module) => ({ default: module.DeployWorkspaceApp }))),

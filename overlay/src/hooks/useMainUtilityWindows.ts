@@ -14,7 +14,7 @@ interface UseMainUtilityWindowsOptions {
   setFeedback: Dispatch<SetStateAction<string>>;
 }
 
-type LazyWindowKind = UtilityWindowKind | "scratchpad" | "canvas" | "focus";
+type LazyWindowKind = UtilityWindowKind | "scratchpad" | "canvas" | "focus" | "task-launch";
 
 const pendingUtilityWindowRequests = new Map<LazyWindowKind, Promise<WebviewWindow>>();
 
@@ -22,6 +22,13 @@ const utilityWindowDefinitions: Record<
   LazyWindowKind,
   { title: string; width: number; height: number; minWidth: number; minHeight: number }
 > = {
+  "task-launch": {
+    title: "AMO 新任务",
+    width: 610,
+    height: 440,
+    minWidth: 360,
+    minHeight: 360,
+  },
   focus: {
     title: "AMO Focus Panel",
     width: 680,
@@ -249,7 +256,7 @@ async function createOrFindUtilityWindow(label: LazyWindowKind) {
   if (existing) return existing;
 
   const definition = utilityWindowDefinitions[label];
-  const isOpaqueWindow = label === "harness" || label === "canvas";
+  const isOpaqueWindow = label === "harness" || label === "canvas" || label === "task-launch";
   const isLightTheme = document.documentElement.dataset.amoTheme === "light";
   const target = new WebviewWindow(label, {
     url: "/",
@@ -266,7 +273,7 @@ async function createOrFindUtilityWindow(label: LazyWindowKind) {
     dragDropEnabled: label !== "focus",
     backgroundColor: isOpaqueWindow ? (isLightTheme ? "#f1f7f5" : "#12191d") : undefined,
     shadow: label !== "focus",
-    skipTaskbar: label !== "canvas",
+    skipTaskbar: label !== "canvas" && label !== "task-launch",
     visible: label !== "scratchpad",
     center: true,
   });

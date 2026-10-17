@@ -11,7 +11,8 @@
     "priorities",
     "harness",
     "canvas",
-    "focus"
+    "focus",
+    "task-launch"
   ],
   "permissions": [
     "core:default",

@@ -444,7 +444,7 @@ fn show_scratchpad_at_cursor(app: tauri::AppHandle) -> OpenPathResult {
 pub fn run() {
     let app = tauri::Builder::default()
         .on_window_event(|window, event| {
-            if window.label() == "canvas" || window.label() == "focus" {
+            if window.label() == "canvas" || window.label() == "focus" || window.label() == "task-launch" {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
                     // Preserve the workbench draft, including while its lazy UI is loading.
                     api.prevent_close();
@@ -452,6 +452,8 @@ pub fn run() {
                         if window.label() == "focus" {
                             let _ = window.emit_to("focus", "amo-focus-visibility", false);
                             let _ = window.emit_to("main", "amo-focus-window-state", false);
+                        } else if window.label() == "task-launch" {
+                            let _ = window.emit_to("task-launch", "amo-task-launch-visibility", false);
                         } else {
                             let _ = window.emit_to("canvas", "amo-canvas-visibility", false);
                         }

@@ -2,6 +2,10 @@
 
 This document is for continuing Agent Monitor Overlay development on a new machine.
 
+## Active iteration: independent task launch entry (2026-09-17)
+
+The approved UX is a compact new-task window with optional expanded settings, preserving the existing monitoring UI. The first implementation is in `codex/task-launch-entry`, based on `a20295b`, not deployed or merged into production. Read [the approved direction](docs/tasks/managed-codex-first-prompt-focus-2026-09-14.md) and [implementation/verification](docs/tasks/task-launch-entry-implementation-2026-09-17.md). It adds a tray New task entry, safe initial-prompt transport, persistent launch/Card association and explicit retry rules. Use `scripts/performance/task-launch-preview.cjs` to review real UI with isolated data and simulated terminal/native actions. Do not infer real CLI success from these tests or overwrite main-checkout provider/model work in progress.
+
 ## Current Handoff: Focus Manual Task Groups (2026-09-11)
 
 For switching devices, read [the consolidated device handoff](docs/session-handoffs/2026-09-11-focus-panel-device-handoff.md) first. It summarizes the final approved behavior, merged implementation, verification gaps, and local data/uncommitted work that Git does not transfer. Earlier "not pushed" / "awaiting deployment" statements below or in phase records are historical; use the current branch/remote state and the latest deployment paragraphs.

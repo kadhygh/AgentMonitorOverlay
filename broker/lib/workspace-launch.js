@@ -72,7 +72,7 @@ async function launchWorkspace(payload, options = {}) {
   const startedAt = new Date().toISOString();
   const managedLaunch = cliOnly || adapterId === "codex-app"
     ? null
-    : launchStore.create({
+    : options.managedLaunch || launchStore.create({
         workspaceId: workspace.workspaceId,
         workspacePath,
         adapterId,
@@ -100,17 +100,21 @@ async function launchWorkspace(payload, options = {}) {
   let claudeLaunchSettings = null;
   let launch;
   try {
+    if (options.onPrepared) await options.onPrepared(managedLaunch);
     if (managedLaunch) launchStore.update(managedLaunch.launchId, { state: "spawning" });
     if (adapterId === "codex-cli") {
       const codexArgs = [
         ...createCodexLaunchArgs({ provider: codexProvider }),
         ...(resumeSessionId ? ["resume", resumeSessionId, "-C", workspacePath] : []),
+        ...(options.taskEntry ? ["-c", `model_reasoning_effort=${JSON.stringify(options.taskEntry.reasoningEffort)}`] : []),
+        ...(options.taskEntry?.prompt ? ["--", options.taskEntry.prompt] : []),
       ];
       launch = await runCli({
         workspacePath,
         title,
         command: "codex",
         args: codexArgs,
+        exactArguments: Boolean(options.taskEntry),
         cleanupEnvironmentKeys: Object.keys(codexProvider?.environment || {}),
         environment,
         launchEnvironment,
@@ -156,7 +160,7 @@ async function launchWorkspace(payload, options = {}) {
     }
     if (managedLaunch) {
       launchStore.update(managedLaunch.launchId, {
-        state: "waiting_hook",
+        state: launchStore.list().find((item) => item.launchId === managedLaunch.launchId)?.state === "connected" ? "connected" : "waiting_hook",
         launchedPid: launch.pid || null,
         launchEnvironment: launch.launchEnvironment || launchEnvironment,
         requestedLaunchEnvironment: launch.requestedLaunchEnvironment || launchEnvironment,
@@ -176,7 +180,7 @@ async function launchWorkspace(payload, options = {}) {
     if (claudeLaunchSettings) {
       cleanupClaudeLaunchSettings(claudeLaunchSettings.filePath, claudeLaunchSettings.rootDir);
     }
-    if (managedLaunch) launchStore.update(managedLaunch.launchId, { state: "failed", error: error.message || String(error) });
+    if (managedLaunch && launchStore.list().find((item) => item.launchId === managedLaunch.launchId)?.state !== "connected") launchStore.update(managedLaunch.launchId, { state: "failed", ...(options.taskEntry ? { spawnOutcome: error.spawnOutcome === "not-spawned" ? "not-spawned" : "unknown", errorCode: error.code === "task_prompt_too_long" ? error.code : null } : {}), error: options.taskEntry ? "Task launch outcome could not be confirmed" : error.message || String(error) });
     throw error;
   }
 

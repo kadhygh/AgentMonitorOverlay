@@ -3,7 +3,7 @@ import { getCurrentWindow, Window as TauriWindow } from "@tauri-apps/api/window"
 import { getCurrentWebviewWindow } from "@tauri-apps/api/webviewWindow";
 
 export type UtilityWindowKind = "deploy" | "settings" | "priorities" | "harness";
-export type ToolWindowKind = UtilityWindowKind | "canvas" | "focus";
+export type ToolWindowKind = UtilityWindowKind | "canvas" | "focus" | "task-launch";
 export type AmoWindowLabel = "main" | "scratchpad" | ToolWindowKind;
 
 // Canvas is an independent work surface; modal utility coordination must never own it.
@@ -14,6 +14,7 @@ export const TOOL_WINDOW_POLICY = {
   harness: { modal: true, closeOnEscape: true, alwaysOnTop: true },
   canvas: { modal: false, closeOnEscape: false, alwaysOnTop: false },
   focus: { modal: false, closeOnEscape: false, alwaysOnTop: true },
+  "task-launch": { modal: false, closeOnEscape: false, alwaysOnTop: false },
 } as const satisfies Record<ToolWindowKind, { modal: boolean; closeOnEscape: boolean; alwaysOnTop: boolean }>;
 
 export interface UtilityWindowStateEvent {
@@ -36,6 +37,11 @@ export function startUtilityWindowDrag(event: PointerEvent<HTMLElement>) {
 }
 
 export async function closeUtilityWindow(label: ToolWindowKind) {
+  if (label === "task-launch") {
+    await getCurrentWindow().hide();
+    await getCurrentWindow().emitTo("task-launch", "amo-task-launch-visibility", false).catch(() => undefined);
+    return;
+  }
   if (label === "focus") {
     await getCurrentWindow().hide();
     await publishFocusWindowVisibility(getCurrentWindow(), false);
@@ -109,6 +115,13 @@ export async function setAmoWindowsAlwaysOnTop(alwaysOnTop: boolean) {
 export async function bringUtilityWindowToFront(label: ToolWindowKind) {
   const target = await getAmoWindow(label);
   if (!target) return;
+  if (label === "task-launch") {
+    await target.unminimize().catch(() => undefined);
+    await target.show();
+    await target.emitTo("task-launch", "amo-task-launch-visibility", true).catch(() => undefined);
+    await target.setFocus();
+    return;
+  }
   if (label === "focus") {
     await target.unminimize().catch(() => undefined);
     await target.show();
