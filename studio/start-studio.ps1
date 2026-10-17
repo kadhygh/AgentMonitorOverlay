@@ -41,15 +41,16 @@ if ($Stop) {
 }
 
 # Dependencies: install when node_modules is missing or package-lock.json changed since the last install.
-$lockHash = (Get-FileHash -Algorithm SHA256 -LiteralPath "package-lock.json").Hash
+$sha = [System.Security.Cryptography.SHA256]::Create()
+$lockHash = [System.BitConverter]::ToString($sha.ComputeHash([System.IO.File]::ReadAllBytes((Join-Path $PSScriptRoot "package-lock.json")))).Replace("-", "")
 $stamp = Join-Path $PSScriptRoot "node_modules\.amo-lock.sha256"
 $installed = if (Test-Path -LiteralPath $stamp) { (Get-Content -LiteralPath $stamp -Raw).Trim() } else { "" }
 if ($Install -or $installed -ne $lockHash) {
   Note "Installing dependencies (npm ci, Node $nodeVersion)..."
   npm ci
   if ($LASTEXITCODE -ne 0) {
-    Fail ("npm ci failed. If the Electron download timed out, set a mirror and retry:`n" +
-      '    $env:ELECTRON_MIRROR = "https://npmmirror.com/mirrors/electron/"; .\start-studio.ps1 -Install')
+    Fail ("npm ci failed. If the Electron download timed out, use a mirror and retry (in cmd):`n" +
+      "    set ELECTRON_MIRROR=https://npmmirror.com/mirrors/electron/`n    start-studio.cmd -Install")
   }
   Set-Content -LiteralPath $stamp -Value $lockHash -Encoding ascii
 }
