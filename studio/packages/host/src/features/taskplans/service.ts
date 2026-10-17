@@ -53,7 +53,7 @@ export class TaskPlansFeature extends Feature {
       const workspaceId = t.project === undefined || t.project === "" ? defaultWs : this.workspaceByRef(String(t.project));
       const description = optionalText(t.description, `task ${key}: description`, TASK_DESCRIPTION_MAX);
       const firstMessage = optionalText(t.firstMessage, `task ${key}: firstMessage`, FIRST_MESSAGE_MAX);
-      const profileId = t.model === undefined || t.model === "" ? facts.session.profileId : this.profileByRef(String(t.model)).id;
+      const profileId = t.model === undefined || t.model === "" ? this.requireSession(sessionId).profileId : this.profileByRef(String(t.model)).id;
       const dependsOn = Array.isArray(t.dependsOn) ? t.dependsOn.map(String) : [];
       return { key, title, workspaceId, ...(description ? { description } : {}), ...(firstMessage ? { firstMessage } : {}), profileId, dependsOn };
     });

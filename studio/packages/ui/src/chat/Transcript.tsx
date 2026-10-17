@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { Annotation, ApprovalDecision, Session, SessionItem, TurnUsage } from "@amo-studio/protocol";
-import { splitAnnotationRefs } from "@amo-studio/protocol";
+import { splitAnnotationRefs, splitRoleUpdate } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
 import { copyText } from "../host/client.js";
 import { IconCheck, IconChevronDown, IconChevronRight, IconCopy, IconEdit, IconTerminal, IconSparkle } from "./icons.js";
@@ -222,10 +222,12 @@ function StandaloneItem({ item, busy, highlights, onApprove }: { item: SessionIt
 
 /**
  * The person's message: images first, then the annotations it referred to (批注N tags, 2026-10-15), the text, then the
- * files it referenced (both read back from the text).
+ * files it referenced (both read back from the text), and a small 「AMO 更新」 tag when the Host told the session what
+ * changed about its task (2026-10-17; the tag shows the lines on hover).
  */
 function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) {
-  const { text: own, refs: annotations } = splitAnnotationRefs(item.text);
+  const { text: sent, update } = splitRoleUpdate(item.text);
+  const { text: own, refs: annotations } = splitAnnotationRefs(sent);
   const { text, refs } = splitFileRefItems(own);
   return (
     <div className="msg-user-row">
@@ -242,6 +244,11 @@ function UserBubble({ item }: { item: Extract<SessionItem, { type: "user" }> }) 
         )}
         {text && <span className="msg-text">{text}</span>}
         <MessageFiles files={refs} />
+        {update && (
+          <span className="msg-role-update" title={update} data-testid="msg-role-update">
+            AMO 更新：已告诉它任务的变化
+          </span>
+        )}
       </div>
     </div>
   );

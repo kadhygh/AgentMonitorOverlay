@@ -86,3 +86,9 @@
   - amo_guide 的 lead 段和主控角色卡写了什么时候用 relay_send、什么时候用留言。
   - 测试：`relays.test.ts`（只认主控、范围、不发、送进新会话、不用确认时直接送进已有会话）、MCP 工具表、e2e `relays.spec.ts`（mock 模型真的调 relay_send → Focus 和任务页 → 发送 → 打开不用确认后直接送到）；截图 `S16-E-relay`。
 
+- **S16-F**（10-17 下午，用户问「除了 Claude 别的能懂 AMO 吗」「普通任务后来引用到画布上能补充信息吗」）
+  - Codex：`thread/start` 带 `developerInstructions` = 角色卡（`roleCardFor`：会话还没建，按任务 / 专题 / 项目算，会话一栏写「新会话」）。只在 Studio 自己起的 app-server（有 AMO MCP 身份）时带。MCP 服务说明那句改成「角色卡在会话开始时给你；没有或要看最新的，调 amo_whoami」。用户自己的 `~/.codex/config.toml` 没有 `developer_instructions`，不会被盖掉。
+  - 角色变化：每个会话记下它最后知道的角色（kv `role-stamp:<会话>`：角色、专题、被哪些画布引用、任务说明）。Claude 在进程起来算服务说明时记，Codex 在开对话时记。之后经 `sessions.sendMessage` 发给它的消息（人发的、传话、留言、批注、Git Review）先比一下，有变化就在消息末尾附 `composeRoleUpdate` 的一段，发送成功后才记为已告知；子 agent、归档的会话不附。没记过的会话（10-17 之前开的、分支）第一次只记下、不附。
+  - 界面：`splitRoleUpdate` 拆出来，用户消息里显示小标签「AMO 更新：已告诉它任务的变化」，悬停看全文；模型看到的是纯文本。
+  - 角色卡多一行「也被引用在专题「X」的画布上：那里的主控、专题文档几篇」；传话的范围加上「引用在主控专题画布上的任务」。
+  - 测试：单测 `features/guide/role.test.ts`（Codex 带角色卡、引用 / 进专题 / 主控 / 说明的提示只说一次、没记过的会话只记下、给引用的任务传话）、协议拆合；e2e `role-update.spec.ts`，截图 `screenshots/stage-16/S16-F-role-update.png`。

@@ -41,6 +41,13 @@ export interface CodexRuntimeOptions {
   sandbox?: "read-only" | "workspace-write" | "danger-full-access";
   /** Set when app-servers have the AMO MCP: every thread then names its session to it (spikes/RESULTS.md section j). */
   identities?: McpIdentities;
+  /**
+   * The AMO role card for a thread about to start (2026-10-17): its developer instructions, so a Codex session knows
+   * its place from the first turn, as a Claude one does from its MCP server's instructions. `roleGiven` notes that the
+   * session was told (later changes then come with its next message).
+   */
+  roleInstructions?: (draft: { taskId: Id | null; topicId: Id | null; workspaceId: Id }) => string | undefined;
+  roleGiven?: (sessionId: Id) => void;
 }
 
 /** Every change, already persisted (except `item.delta`, which carries the last persisted seq), and log lines. */
@@ -95,11 +102,13 @@ export class CodexRuntime extends RuntimeBase {
     const handle = await this.handleFor(profile.id);
     const token = this.options.identities?.issue();
     const options = input.options ?? {};
+    const developerInstructions = token ? this.options.roleInstructions?.({ taskId: input.taskId, topicId: input.topicId, workspaceId: input.workspace.id }) : undefined;
     const started = await handle.client.request("thread/start", {
       cwd: input.workspace.path,
       ...this.permissions(options),
       ...this.threadParams(profile, token),
       ...(options.model ? { model: options.model } : {}),
+      ...(developerInstructions ? { developerInstructions } : {}),
     } as never);
     const session = this.findByThread(started.thread.id) ?? this.createSession({
       taskId: input.taskId,
@@ -113,6 +122,7 @@ export class CodexRuntime extends RuntimeBase {
       options,
     });
     if (token) this.options.identities!.bind(token, session.id);
+    if (developerInstructions) this.options.roleGiven?.(session.id);
     if (input.text) await this.sendMessage(session.id, input.text);
     return this.store.getSession(session.id)!;
   }

@@ -11,8 +11,9 @@
 > - S16-C：agent 懂 AMO——MCP 服务说明改写、`amo_whoami`（角色卡，Claude 会话的服务说明里也带）、`amo_guide`；任务「主控」标记（迁移 15）；专题文档（画布侧栏「文档」，MCP `topic_docs` / `topic_doc_write`）。
 > - S16-D：主控 `task_plan_propose` → 画布 / 主控任务页 / Focus 上的提案 → 人改过后「放进待办」或「立刻开跑」→ 建任务、写说明、按项目分组放上画布、连依赖、留言告诉主控（迁移 16）。
 > - S16-E：传话 `relay_send` → 人在任务页或 Focus 确认（或任务设了「主控传话不用确认」）→ 送进目标任务的会话（迁移 17）。
-> - 都在 `studio/main`。**要重启开发版才生效**（Host 改了，迁移 13–17；preload 和主进程也改了）：先问用户，按 §1 的步骤，重启前备份 `.data/studio.db*`。用户自己跑 `!` 命令时路径要写成 `/g/PROJECT/...`（bash 会吃掉反斜杠）。
-> - 工作树：`AgentMonitorOverlay-s15-loop`、`AgentMonitorOverlay-s15-keys`（S16 都在这里做的，分支 `studio/s16-*`）和更早的 s13-*、s14-* 都还在，等用户同意再删。
+> - S16-F（10-17 下午）：Codex 会话开对话时把角色卡作为 developer instructions 带上（和 Claude 一样一开始就知道自己是谁）；任务后来进了专题、被引用到别的画布、成了主控、说明改了，下一条发给这个会话的消息末尾附一段「【AMO：你的任务有变化】」（界面上是消息里的小标签「AMO 更新」，悬停看内容）；角色卡写出被哪些画布引用；主控能给引用在自己画布上的任务传话。做法在 `plans/stage-16.md` 的 S16-F。
+> - 都在 `studio/main`，10-17 用户让我重启过开发版（重启前的库备份在 `.data/backup-before-s16-20261017`）。重启做法：备份 `.data/studio.db*` → `npm run host:stop` → 开着的窗口会把 Host 再拉起来，所以还要结束开发版的 electron 进程树 → 后台 `npm start` → 用 `/api/state` 确认。没有用户明说就先问。
+> - 工作树：10-17 用户同意后删掉了 s13-*、s14-*、s15-*（分支都留着）。`.codex/worktrees/37fe` 和仓库里 `tmp/worktrees/` 下的两个是 Codex 那边的，没动。之后的活在 `AgentMonitorOverlay-s17`（分支 `studio/s17-roles`）。
 > - 没做 / 以后：便签「转为任务」；画布多选和对齐；Codex 的额度上限；Focus 里显示等额度的会话；子会话收到子 agent 的条目时更新它的时间。
 > - 工具坑：Git Bash 的 heredoc 里写 Python，`\\n` 会变成真的换行——含转义的脚本先用 Write 写成文件再跑。单测 server-manager 的 3 条端口测试在开发版运行时（占着 47940 起的端口）会失败，原版代码一样。
 

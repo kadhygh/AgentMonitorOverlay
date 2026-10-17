@@ -464,6 +464,24 @@ export function splitAnnotationRefs(message: string): { text: string; refs: Arra
   return { text: at === 0 ? "" : message.slice(0, at), refs };
 }
 
+// What changed about a session's place in AMO since it was last told (2026-10-17): the task joined a topic, was
+// referenced on another canvas, became a 主控, got a new 说明… The Host adds one block after the next message the
+// session gets; the model reads it as plain text, the conversation shows a small 「AMO 更新」 tag.
+const ROLE_UPDATE_HEAD = "【AMO：你的任务有变化】";
+
+/** The message followed by the update block (`lines`: one change each). */
+export function composeRoleUpdate(text: string, lines: readonly string[]): string {
+  if (!lines.length) return text;
+  return `${text.trim() ? `${text.trimEnd()}\n\n` : ""}${ROLE_UPDATE_HEAD}\n${lines.map((l) => `- ${l}`).join("\n")}\n（要看完整的角色卡，调 amo_whoami。）`;
+}
+
+/** The other way: the message and the update block it ended with (null: none). */
+export function splitRoleUpdate(message: string): { text: string; update: string | null } {
+  const at = message.startsWith(`${ROLE_UPDATE_HEAD}\n`) ? 0 : message.lastIndexOf(`\n\n${ROLE_UPDATE_HEAD}\n`);
+  if (at < 0) return { text: message, update: null };
+  return { text: at === 0 ? "" : message.slice(0, at), update: message.slice(at === 0 ? 0 : at + 2) };
+}
+
 /**
  * The user message that sends annotations back to a session. Shared by Host (sending) and UI (preview).
  * Annotations must already be in reply order.

@@ -2,7 +2,7 @@ import { RELAY_TEXT_MAX, type Id, type Relay, type Session } from "@amo-studio/p
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
-import { roleFacts } from "../guide/role.js";
+import { refTopics, roleFacts } from "../guide/role.js";
 
 /** How long a decided relay stays listed. */
 const DECIDED_SHOWN_MS = 24 * 3600_000;
@@ -38,8 +38,11 @@ export class RelaysFeature extends Feature {
     const target = this.store.getTask(String(input.taskId ?? ""));
     if (!target || target.archivedAt) throw new HostError("bad_request", `task ${String(input.taskId)} not found`);
     if (target.id === facts.task?.id) throw new HostError("bad_request", "传话是给别的任务的");
-    const inScope = facts.topic ? target.topicId === facts.topic.id : target.workspaceId === facts.task?.workspaceId && !target.topicId;
-    if (!inScope) throw new HostError("bad_request", facts.topic ? `任务 ${target.id} 不在你的专题里` : `任务 ${target.id} 不在你的项目里（或在某个专题里）`);
+    // A task of the topic, or one its canvas shows as a reference card (2026-10-17).
+    const inScope = facts.topic
+      ? target.topicId === facts.topic.id || refTopics(this.host, target).some((t) => t.id === facts.topic!.id)
+      : target.workspaceId === facts.task?.workspaceId && !target.topicId;
+    if (!inScope) throw new HostError("bad_request", facts.topic ? `任务 ${target.id} 不在你的专题里（也没有引用在专题的画布上）` : `任务 ${target.id} 不在你的项目里（或在某个专题里）`);
     const text = typeof input.text === "string" ? input.text.trim() : "";
     if (!text) throw new HostError("bad_request", "text is required");
     if (text.length > RELAY_TEXT_MAX) throw new HostError("bad_request", `text is limited to ${RELAY_TEXT_MAX} characters`);

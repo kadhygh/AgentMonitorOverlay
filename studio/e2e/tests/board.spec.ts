@@ -58,8 +58,12 @@ test("registers a sandbox workspace and shows tasks on the board", async () => {
   await expect(page.getByTestId("task-card")).toHaveCount(2);
   await expect(page.getByTestId("column-review").getByTestId("task-card")).toContainText("专题 掉落表重构");
 
-  // Drag a card onto another column: the person moves cards.
-  await page.getByTestId("column-review").getByTestId("task-card").dragTo(page.getByTestId("column-done"));
+  // Drag a card onto another column: the person moves cards. The whole column takes it, down to the page's bottom
+  // (2026-10-17), not only the height of its cards.
+  const done = page.getByTestId("column-done");
+  const box = (await done.boundingBox())!;
+  expect(box.height).toBeGreaterThan(300);
+  await page.getByTestId("column-review").getByTestId("task-card").dragTo(done, { targetPosition: { x: box.width / 2, y: box.height - 20 } });
   await expect(page.getByTestId("column-done").getByTestId("task-card")).toContainText("整理一下配置项命名");
   await expect.poll(async () => (await studio!.api<{ tasks: Task[] }>("GET", "/api/state")).tasks.find((t) => t.id === quiet.task.id)?.column).toBe("done");
 

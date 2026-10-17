@@ -1,9 +1,10 @@
 import { resolve } from "node:path";
-import { asyncAnswerText, composeAnnotationRefs, formContent, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
+import { roleUpdate } from "../guide/role.js";
 
 /** Most images one message can carry. */
 const MAX_MESSAGE_IMAGES = 10;
@@ -52,6 +53,8 @@ export class SessionsFeature extends Feature {
   /**
    * `attachments`: ids of uploaded images to send along. `annotations`: annotations of this session the message refers
    * to (批注1…), written after the text (composeAnnotationRefs) and marked sent. With either, the text may be empty.
+   * When the session's place in AMO changed since it was last told (its task joined a topic, was referenced on another
+   * canvas, became a 主控…), a short note of what changed goes last (composeRoleUpdate).
    */
   async sendMessage(sessionId: Id, text: string, attachments: readonly Id[] = [], annotations: readonly Id[] = []): Promise<{ mode: SendMode }> {
     this.requireSession(sessionId);
@@ -70,7 +73,22 @@ export class SessionsFeature extends Feature {
       }
     });
     if (!text?.trim() && !images.length) throw new HostError("bad_request", "text is required");
-    return this.wrap(() => this.runtime.sendMessage(sessionId, text ?? "", images));
+    const update = this.roleUpdate(sessionId);
+    const result = await this.wrap(() => this.runtime.sendMessage(sessionId, composeRoleUpdate(text ?? "", update.lines), images));
+    update.told();
+    return result;
+  }
+
+  /** What changed about the session's role since it was last told; nothing for one that cannot hear it. */
+  private roleUpdate(sessionId: Id): { lines: string[]; told: () => void } {
+    const none = { lines: [], told: () => undefined };
+    const s = this.store.getSession(sessionId);
+    if (!s || s.kind === "sub" || s.archivedAt) return none;
+    try {
+      return roleUpdate(this.host, sessionId);
+    } catch {
+      return none;
+    }
   }
 
   async interrupt(sessionId: Id): Promise<void> {

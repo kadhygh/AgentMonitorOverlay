@@ -9,7 +9,7 @@ import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
 import { localClaudeHome as localClaudeHomeOf } from "./runtime/claude/claude-login.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
 import { AMO_MCP_INSTRUCTIONS, amoToolsFor } from "./mcp/tools.js";
-import { roleCard } from "./features/guide/role.js";
+import { recordRole, roleCard, roleCardFor } from "./features/guide/role.js";
 import { McpIdentities } from "./mcp/identity.js";
 import { CodexServerManager } from "./runtime/codex/server-manager.js";
 import { WindowsCredentialReader, type CredentialReader } from "./runtime/credentials.js";
@@ -162,7 +162,27 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     const servers = options.servers ?? manager!;
     // Only app-servers Studio launches have the AMO MCP configured; threads then name their session to it.
     const identities = new McpIdentities(store);
-    const codex = new CodexRuntime({ store, servers, profiles, ...(manager ? { identities } : {}) });
+    const codex = new CodexRuntime({
+      store,
+      servers,
+      profiles,
+      ...(manager ? { identities } : {}),
+      roleInstructions: (draft): string | undefined => {
+        try {
+          // The AMO MCP server's own instructions say the rest.
+          return roleCardFor(service, { ...draft, kind: "main", runtime: "codex" });
+        } catch {
+          return undefined;
+        }
+      },
+      roleGiven: (sessionId): void => {
+        try {
+          recordRole(service, sessionId);
+        } catch {
+          // Its card is still what amo_whoami says.
+        }
+      },
+    });
     // Managed Claude sessions keep their transcripts in Studio's own config dir, unless the person chose the local login
     // (设置 → 模型): then sessions started with it use their Claude Code login and ~/.claude.
     const localClaudeHome = options.localClaudeHome ?? localClaudeHomeOf(options.claudeBaseEnv ?? process.env);
@@ -178,7 +198,9 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       mcpTools: (sessionId) => amoToolsFor(service, { sessionId }),
       mcpInstructions: (sessionId): string => {
         try {
-          return `${AMO_MCP_INSTRUCTIONS}\n\n${roleCard(service, sessionId)}`;
+          const card = roleCard(service, sessionId);
+          recordRole(service, sessionId);
+          return `${AMO_MCP_INSTRUCTIONS}\n\n${card}`;
         } catch {
           return AMO_MCP_INSTRUCTIONS;
         }

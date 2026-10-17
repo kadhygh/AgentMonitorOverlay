@@ -1,5 +1,6 @@
-/* Board */
-.board { padding: 14px 24px 20px; display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: 16px; align-items: start; }
+/* Board. It fills the page below the panels and each column runs to its bottom, so a card dropped anywhere in a
+   column lands there (2026-10-17: only the cards' own height took a drop before). */
+.board { padding: 14px 24px 20px; display: grid; grid-template-columns: repeat(4, minmax(220px, 1fr)); gap: 16px; align-items: stretch; flex: 1 0 auto; }
 .column { display: flex; flex-direction: column; gap: 10px; }
 .column-head { display: flex; align-items: baseline; gap: 8px; padding: 0 2px 6px; border-bottom: 2px solid var(--border-strong); font-family: var(--font-display); font-size: var(--fs-title); }
 .column-name { font-weight: 700; }

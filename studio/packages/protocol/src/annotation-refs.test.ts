@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { composeAnnotationRefs, splitAnnotationRefs } from "./api.js";
+import { composeAnnotationRefs, composeRoleUpdate, splitAnnotationRefs, splitRoleUpdate } from "./api.js";
 
 describe("annotation references in a message", () => {
   it("puts the referenced annotations after the text, numbered, and reads them back", () => {
@@ -18,5 +18,17 @@ describe("annotation references in a message", () => {
     expect(splitAnnotationRefs(message)).toEqual({ text: "", refs: [{ n: 3, quote: "q", note: "第一行\n第二行" }] });
     expect(splitAnnotationRefs("普通消息\n\n【引用的批注】\n随便写的")).toEqual({ text: "普通消息\n\n【引用的批注】\n随便写的", refs: [] });
     expect(composeAnnotationRefs("只有文字", [])).toBe("只有文字");
+  });
+});
+
+describe("role updates (2026-10-17)", () => {
+  it("goes after everything else and comes back off", () => {
+    const sent = composeRoleUpdate(composeAnnotationRefs("看这里", [{ n: 1, quote: "a", note: "b" }]), ["任务说明改成了：x"]);
+    const { text, update } = splitRoleUpdate(sent);
+    expect(update).toMatch(/^【AMO：你的任务有变化】\n- 任务说明改成了：x\n/);
+    expect(splitAnnotationRefs(text)).toMatchObject({ text: "看这里", refs: [{ n: 1 }] });
+    expect(composeRoleUpdate("原样", [])).toBe("原样");
+    expect(splitRoleUpdate("没有更新")).toEqual({ text: "没有更新", update: null });
+    expect(splitRoleUpdate(composeRoleUpdate("", ["a"])).text).toBe("");
   });
 });
