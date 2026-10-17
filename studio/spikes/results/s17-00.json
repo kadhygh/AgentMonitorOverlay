@@ -1,0 +1,312 @@
+{
+  "dshRoot": "G:\\PROJECT\\deepseek-harness",
+  "entry": [
+    "<dsh>\\apps\\cli\\lib\\bin.js",
+    "--profile",
+    "acp"
+  ],
+  "steps": [
+    {
+      "step": "initialize",
+      "protocolVersion": 1,
+      "agentInfo": {
+        "name": "deepseek-harness-acp",
+        "version": "0.0.1"
+      },
+      "agentCapabilities": {
+        "mcpCapabilities": {
+          "http": true
+        },
+        "promptCapabilities": {
+          "image": false,
+          "audio": false,
+          "embeddedContext": false
+        },
+        "sessionCapabilities": {
+          "close": {},
+          "list": {},
+          "resume": {}
+        }
+      },
+      "authMethods": []
+    },
+    {
+      "step": "session/new",
+      "sessionId": "73fc6ec2-8ce0-442b-bae5-e00caa58d242",
+      "configOptions": [
+        {
+          "id": "model",
+          "name": "Model",
+          "category": "model",
+          "type": "select",
+          "currentValue": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+          "options": [
+            {
+              "group": "deepseek-official",
+              "name": "DeepSeek",
+              "options": [
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-flash\"]",
+                  "name": "deepseek-v4-flash"
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-flash\"]",
+                  "name": "DeepSeek-V4.1-Flash"
+                },
+                {
+                  "value": "[\"deepseek-official\",\"deepseek-v4-pro\"]",
+                  "name": "DeepSeek-V4-Pro",
+                  "description": "Stronger agentic coding, knowledge, and difficult reasoning; suited to complex or quality-critical tasks at higher cost."
+                }
+              ]
+            }
+          ]
+        },
+        {
+          "id": "reasoning_effort",
+          "name": "Reasoning effort",
+          "category": "thought_level",
+          "type": "select",
+          "currentValue": "high",
+          "options": [
+            {
+              "value": "off",
+              "name": "Off",
+              "description": "Use for simple tasks that do not need reasoning."
+            },
+            {
+              "value": "low",
+              "name": "Low",
+              "description": "Prefer for routine or latency-sensitive tasks."
+            },
+            {
+              "value": "high",
+              "name": "High",
+              "description": "The default balance for most tasks."
+            },
+            {
+              "value": "max",
+              "name": "Max",
+              "description": "Reserve for the hardest quality-first tasks."
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "step": "allow",
+      "stopReason": "end_turn",
+      "ms": 4520,
+      "permissions": 0,
+      "kinds": {
+        "agent_message_chunk": 2,
+        "usage_update": 2,
+        "tool_call": 2,
+        "tool_call_update": 2,
+        "agent_thought_chunk": 1
+      },
+      "text": "I'll create the file and run the exact command in parallel.Done.\n\n- Created `hello.txt` in the current directory with the single word `hi` (verified by reading it back: `hi`).\n- Ran exactly `node -e \"console.log('key visible: ' + Boolean(process.env.DEEPSEEK_API_KEY))\"`. Its output was:\n\n```\nkey visible: false\n```\n\nSo `DEEPSEEK_API_KEY` is not visible in this process environment.",
+      "tools": [
+        {
+          "title": "pwsh",
+          "kind": "other",
+          "rawInput": {
+            "description": "Create hello.txt with hi",
+            "command": "Set-Content -Path hello.txt -Value 'hi' -NoNewline; Get-Content hello.txt"
+          }
+        },
+        {
+          "title": "pwsh",
+          "kind": "other",
+          "rawInput": {
+            "description": "Run node env key check command",
+            "command": "node -e \"console.log('key visible: ' + Boolean(process.env.DEEPSEEK_API_KEY))\""
+          }
+        }
+      ],
+      "results": [
+        {
+          "status": "completed",
+          "content": "[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"hi\\r\\n\"}}]"
+        },
+        {
+          "status": "completed",
+          "content": "[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"key visible: false\\n\"}}]"
+        }
+      ],
+      "usage": {
+        "at": 1792220883992,
+        "sessionUpdate": "usage_update",
+        "used": 7006,
+        "size": 1000000
+      }
+    },
+    {
+      "step": "allow-check",
+      "fileExists": true,
+      "permissionsSeen": []
+    },
+    {
+      "step": "reject",
+      "stopReason": "end_turn",
+      "ms": 3236,
+      "permissions": 0,
+      "kinds": {
+        "agent_thought_chunk": 1,
+        "usage_update": 2,
+        "tool_call": 1,
+        "tool_call_update": 1,
+        "agent_message_chunk": 1
+      },
+      "text": "Deleted `hello.txt` with `Remove-Item` after verifying the resolved path was the intended workspace file (confirmed gone: `deleted: True`).",
+      "tools": [
+        {
+          "title": "pwsh",
+          "kind": "other",
+          "rawInput": {
+            "command": "$p = (Resolve-Path -LiteralPath hello.txt).Path; Write-Output \"target: $p\"; if ($p -eq 'C:\\Users\\Kangaroo\\AppData\\Local\\Temp\\amo-studio-sandbox\\s17-00\\workspace\\hello.txt') { Remove-Item -LiteralPath $p -Force; Write-Output \"deleted: $(-not (Test-Path -LiteralPath $p))\" } else { Write-Output 'path mismatch, aborted' }",
+            "description": "Delete hello.txt after verifying path"
+          }
+        }
+      ],
+      "results": [
+        {
+          "status": "completed",
+          "content": "[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"target: C:\\\\Users\\\\Kangaroo\\\\AppData\\\\Local\\\\Temp\\\\amo-studio-sandbox\\\\s17-00\\\\workspace\\\\hello.txt\\r\\ndeleted: True\\r\\n\"}}]"
+        }
+      ],
+      "usage": {
+        "at": 1792220887230,
+        "sessionUpdate": "usage_update",
+        "used": 7323,
+        "size": 1000000
+      }
+    },
+    {
+      "step": "reject-check",
+      "fileStillExists": false,
+      "newPermissions": 0
+    },
+    {
+      "step": "mcp",
+      "stopReason": "end_turn",
+      "ms": 1393,
+      "permissions": 0,
+      "kinds": {
+        "usage_update": 2,
+        "tool_call": 1,
+        "tool_call_update": 1,
+        "agent_message_chunk": 1
+      },
+      "text": "The tool returned exactly:\n\n```\nYou are task 42 「迁移装甲车」 in AMO Studio. Codeword: PELICAN-7.\n```",
+      "tools": [
+        {
+          "title": "mcp__amo__amo_whoami",
+          "kind": "other",
+          "rawInput": {}
+        }
+      ],
+      "results": [
+        {
+          "status": "completed",
+          "content": "[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"You are task 42 「迁移装甲车」 in AMO Studio. Codeword: PELICAN-7.\"}}]"
+        }
+      ],
+      "usage": {
+        "at": 1792220888625,
+        "sessionUpdate": "usage_update",
+        "used": 7441,
+        "size": 1000000
+      }
+    },
+    {
+      "step": "second-prompt-while-running",
+      "accepted": false,
+      "error": "Invalid params: a prompt is already in flight for this session",
+      "rpc": {
+        "code": -32602,
+        "message": "Invalid params: a prompt is already in flight for this session"
+      }
+    },
+    {
+      "step": "cancel",
+      "result": {
+        "stopReason": "cancelled"
+      },
+      "cancelToSettleMs": 3024,
+      "kinds": {
+        "agent_thought_chunk": 1,
+        "usage_update": 1,
+        "tool_call": 1,
+        "tool_call_update": 1
+      },
+      "text": "",
+      "tools": [
+        {
+          "title": "pwsh",
+          "kind": "other",
+          "rawInput": {
+            "command": "ping -n 30 127.0.0.1",
+            "description": "Ping localhost 30 times",
+            "timeoutMs": 90000
+          }
+        }
+      ],
+      "results": [
+        {
+          "status": "failed",
+          "content": "[{\"type\":\"content\",\"content\":{\"type\":\"text\",\"text\":\"Error: tool call aborted\"}}]"
+        }
+      ],
+      "usage": {
+        "at": 1792220889541,
+        "sessionUpdate": "usage_update",
+        "used": 7573,
+        "size": 1000000
+      }
+    },
+    {
+      "step": "session/close",
+      "closed": {},
+      "exit": 0
+    },
+    {
+      "step": "session/list",
+      "count": 1,
+      "first": {
+        "sessionId": "73fc6ec2-8ce0-442b-bae5-e00caa58d242",
+        "cwd": "C:\\Users\\Kangaroo\\AppData\\Local\\Temp\\amo-studio-sandbox\\s17-00\\workspace"
+      }
+    },
+    {
+      "step": "session/resume",
+      "keys": [
+        "configOptions"
+      ],
+      "replayedUpdates": 0
+    },
+    {
+      "step": "after-resume",
+      "stopReason": "end_turn",
+      "ms": 1072,
+      "permissions": 0,
+      "kinds": {
+        "agent_message_chunk": 1,
+        "usage_update": 1
+      },
+      "text": "hi",
+      "tools": [],
+      "results": [],
+      "usage": {
+        "at": 1792220898169,
+        "sessionUpdate": "usage_update",
+        "used": 7613,
+        "size": 1000000
+      }
+    },
+    {
+      "step": "exit",
+      "code": 0
+    }
+  ]
+}
