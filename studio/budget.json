@@ -3,7 +3,7 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 29
+      "used": 38
     },
     "glm": {
       "limit": 5000,
@@ -333,6 +333,51 @@
       "at": "2026-10-13T08:54:38.340Z",
       "provider": "gpt",
       "note": "S9-04 GPT auto-review (Approve for me)"
+    },
+    {
+      "at": "2026-10-17T07:07:59.471Z",
+      "provider": "deepseek",
+      "note": "S17-00 DSH ACP: allow"
+    },
+    {
+      "at": "2026-10-17T07:08:03.993Z",
+      "provider": "deepseek",
+      "note": "S17-00 DSH ACP: reject"
+    },
+    {
+      "at": "2026-10-17T07:08:07.230Z",
+      "provider": "deepseek",
+      "note": "S17-00 DSH ACP: mcp"
+    },
+    {
+      "at": "2026-10-17T07:08:08.625Z",
+      "provider": "deepseek",
+      "note": "S17-00 DSH ACP: cancel"
+    },
+    {
+      "at": "2026-10-17T07:08:17.095Z",
+      "provider": "deepseek",
+      "note": "S17-00 DSH ACP: after-resume"
+    },
+    {
+      "at": "2026-10-17T07:09:42.545Z",
+      "provider": "deepseek",
+      "note": "S17-01 DSH permissions: ro-allow"
+    },
+    {
+      "at": "2026-10-17T07:09:50.447Z",
+      "provider": "deepseek",
+      "note": "S17-01 DSH permissions: ro-reject"
+    },
+    {
+      "at": "2026-10-17T07:09:58.111Z",
+      "provider": "deepseek",
+      "note": "S17-01 DSH permissions: ro-read"
+    },
+    {
+      "at": "2026-10-17T07:10:13.847Z",
+      "provider": "deepseek",
+      "note": "S17-01 DSH permissions: ww-outside-allow"
     }
   ]
 }

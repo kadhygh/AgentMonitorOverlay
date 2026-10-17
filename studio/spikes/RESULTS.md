@@ -308,3 +308,32 @@ S4-01 用 mock Anthropic 接口补充发现（不消耗额度）：
 | DeepSeek Flash | deepseek-flash | `[]` | null |
 
 结论：Fast 档的 id 是 `priority`、名字是 `Fast`（旧字段 `additionalSpeedTiers` 是 `["fast"]`），说明文字因型号而异（是否加额度消耗）。用户的 `config.toml` 是 `service_tier = "default"`，即标准速度叫 `default`。Studio 在 `turn/start` 带 `serviceTier: "priority"` 开、`"default"` 关；mock 目录加了同样的档，e2e 里 Codex 把它作为 `service_tier: "priority"` 发给模型。
+
+## s17-00 / s17-01 · 用 DSH 源码克隆跑 DeepSeek（ACP）（2026-10-17，DeepSeek 9 次）
+
+DSH 源码克隆在 `G:\PROJECT\deepseek-harness`（0.2.1-rc.1，`1600d8a1e1`，2026-10-16）。从零装依赖 `pnpm install` 约 16 分钟，`pnpm run build:artifacts` 约 1 分 46 秒，产出 `apps/cli/lib/bin.js`。Studio 用系统 Node 跑 `<克隆>/apps/cli/lib/bin.js --profile acp`，工作目录 = 工作区；`DSH_HOME` 指向单独的文件夹（不碰 `~/.dsh`），Key 用环境变量 `DEEPSEEK_API_KEY`（DSH 自己的 Key 文件里没有时用启动环境里的）。第一次启动会在 `DSH_HOME/profiles/acp` 生成 profile。
+
+| 检查 | 结果 |
+|---|---|
+| `initialize` | ACP v1；能力：HTTP MCP、`session/close` / `list` / `resume`；不收图片（`image: false`） |
+| `session/new` | 返回配置项：`model`（deepseek-v4-flash 默认、DeepSeek-V4.1-Flash、V4-Pro……）、`reasoning_effort` |
+| HTTP MCP（代替 AMO MCP） | 工具名 `mcp__amo__amo_whoami`，调用成功，返回原样 |
+| 模型的命令能看到 Key 吗 | 看不到（`Boolean(process.env.DEEPSEEK_API_KEY)` → false） |
+| 一条消息还在跑时再发 | 拒绝：`Invalid params: a prompt is already in flight for this session`（没有「插话」，Studio 要排队到这轮结束） |
+| `session/cancel` | 约 3 秒结束，`stopReason: "cancelled"`，正在跑的命令记为 failed「tool call aborted」 |
+| 用量 | 每步一个 `usage_update`：`used`（当前上下文）和 `size`（窗口，100 万）；没有输入 / 输出 / 缓存的分项 |
+| 关会话、退出进程、重开 → `session/list` → `session/resume` | 列得到；恢复不回放历史；接着问「之前写进 hello.txt 的词」答 hi |
+| 速度 | 简单回合 1–5 秒 |
+
+**什么时候问人**（s17-01）：DSH 的审批只有 ask / never 两种，问不问由沙箱边界决定（环境变量 `DSH_PERMISSION_MODE` = `read-only` / `workspace-write`（默认）/ `danger-full-access`）。模型先在沙箱里跑，被挡住后带 `sandbox_permissions` 和理由重跑，这时 ACP 发 `session/request_permission`（选项 allow_once / reject_once，只带 toolCallId——命令内容要从前面的 `tool_call` 更新里找）。
+
+| 模式 | 动作 | 结果 |
+|---|---|---|
+| workspace-write（默认） | 在工作区里建文件、删文件 | 不问，直接做 |
+| workspace-write | 写工作区外（`..\outside.txt`） | 问；允许后写成 |
+| read-only | 在工作区里写文件 | 问；允许 → 写成，拒绝 → 没写，模型说明原因并停下 |
+| read-only | `Get-ChildItem` 这类只读命令 | 不问 |
+
+只读模式下，沙箱里的 pwsh 每次输出都带一段 GBK 乱码的 stderr（受限语言模式「无法调用方法」），模型会多花几步去查这段噪音；工作区可写模式下没看到。
+
+**ACP 没有的**：分支（fork）、提问卡片（elicitation）、计划、图片、`session/load`（回放）、多个工作目录。
