@@ -184,4 +184,25 @@ describe("ClaudeRuntime: loop and usage limits", () => {
     feed(s.id, { type: "system", subtype: "task_notification", task_id: "a142af", tool_use_id: "toolu_send", status: "completed", summary: "finished" });
     expect(session(child.id).status).toBe("completed");
   }, 120_000);
+
+  it("counts what a subagent spends, once per model call, in its child session and on the parent's row (2026-10-17)", async () => {
+    const s = await started("sub usage");
+    feed(s.id, assistant([{ type: "tool_use", id: "toolu_agent", name: "Agent", input: { description: "装甲车迁移", prompt: "迁移装甲车" } }]));
+    const row = () => items(s.id).find((i) => i.type === "subagent")! as Extract<SessionItem, { type: "subagent" }>;
+    const child = row().childSessionId;
+    const call = (id: string, usage: Record<string, number>, content: unknown[]) => feed(s.id, { type: "assistant", message: { id, role: "assistant", content, usage }, parent_tool_use_id: "toolu_agent" });
+    // One model call comes as one message per block; the usage repeats and is counted once.
+    call("msg_1", { input_tokens: 10, cache_read_input_tokens: 90_000, cache_creation_input_tokens: 5000, output_tokens: 200 }, [{ type: "text", text: "先看代码" }]);
+    call("msg_1", { input_tokens: 10, cache_read_input_tokens: 90_000, cache_creation_input_tokens: 5000, output_tokens: 300 }, [{ type: "tool_use", id: "toolu_read", name: "Read", input: { file_path: "a.cs" } }]);
+    call("msg_2", { input_tokens: 5, cache_read_input_tokens: 100_000, cache_creation_input_tokens: 0, output_tokens: 100 }, [{ type: "text", text: "做完了" }]);
+    const turn = () => items(child).find((i) => i.type === "turn")! as Extract<SessionItem, { type: "turn" }>;
+    expect(turn()).toMatchObject({ state: "running", usage: { input: 195_015, cachedInput: 190_000, output: 400, context: 100_105 } });
+    expect(row().usage).toMatchObject({ input: 195_015, output: 400 });
+    feed(s.id, toolResult("toolu_agent", "做完了", { status: "completed", content: [{ type: "text", text: "做完了" }] }));
+    expect(session(child).status).toBe("completed");
+    expect(turn().state).toBe("completed");
+    // The parent's own turns are untouched.
+    expect(items(s.id).filter((i) => i.type === "turn").every((t) => (t as Extract<SessionItem, { type: "turn" }>).usage?.input !== 195_015)).toBe(true);
+    feed(s.id, result());
+  }, 120_000);
 });

@@ -148,7 +148,10 @@ describe("titles", () => {
   });
 
   it("sums the session's statistics", () => {
-    expect(sessionStats([turn("a"), turn("b"), tool("read", "x"), tool("command", "y")])).toEqual({ turns: 2, steps: 2, tokens: 2400, cacheHit: 80, context: null });
+    expect(sessionStats([turn("a"), turn("b"), tool("read", "x"), tool("command", "y")])).toEqual({ turns: 2, steps: 2, tokens: 2400, subTokens: 0, cacheHit: 80, context: null });
+    // What subagents spent themselves, apart (2026-10-17).
+    const sub = { id: "s", sessionId: "x", createdAt: "", type: "subagent" as const, childSessionId: "c", summary: "helper", usage: { input: 900, cachedInput: 0, output: 100, reasoning: 0 } };
+    expect(sessionStats([turn("a"), sub]).subTokens).toBe(1000);
     // Context use comes from the latest turn that reported it.
     const withContext = (id: string, context: number, contextWindow?: number): SessionItem => {
       const t = turn(id) as Extract<SessionItem, { type: "turn" }>;

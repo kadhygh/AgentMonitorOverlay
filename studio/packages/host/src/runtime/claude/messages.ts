@@ -142,7 +142,7 @@ export class ClaudeMessages {
             const shown = this.core.store.listItems(child).some((i) => i.type === "agent" && i.markdown.trim() === reply);
             if (reply && !shown) this.core.appendItem(child, { type: "agent", markdown: reply, streaming: false }, { method: "agent/result", itemId: block.tool_use_id });
             // A background subagent's result only says it was launched; its task notification ends it.
-            if (!live.backgroundSubs.has(block.tool_use_id) || result?.status === "completed") this.core.setStatus(child, block.is_error ? "error" : "completed");
+            if (!live.backgroundSubs.has(block.tool_use_id) || result?.status === "completed") subagents.end(live, child, block.is_error ? "error" : "completed");
             continue;
           }
           const asked = live.questionTools.get(block.tool_use_id);
@@ -281,7 +281,7 @@ export class ClaudeMessages {
         const toolUseId = str(s.tool_use_id);
         // A resumed agent's notification names the SendMessage call that resumed it.
         const child = (toolUseId ? (live.subs.get(toolUseId) ?? live.resumes.get(toolUseId)) : undefined) ?? subagents.child(live, taskId);
-        if (child) this.core.setStatus(child, s.status === "completed" ? "completed" : s.status === "stopped" ? "idle" : "error");
+        if (child) subagents.end(live, child, s.status === "completed" ? "completed" : s.status === "stopped" ? "idle" : "error");
         const itemId = live.bgItems.get(taskId);
         if (itemId) {
           const state: BackgroundState = s.status === "completed" ? "completed" : s.status === "stopped" ? "stopped" : "failed";

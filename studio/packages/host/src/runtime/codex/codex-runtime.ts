@@ -2,6 +2,7 @@ import type { ApprovalDecision, Attachment, Id, ModelOption, ModelProfile, Profi
 import type { Store } from "../../store/store.js";
 import { codexThreadParams } from "../profiles.js";
 import { McpIdentities } from "../../mcp/identity.js";
+import { codexAutoCompactConfig } from "../compact.js";
 import { CODEX_DEFAULT_PERMISSION, codexPermission, codexPermissions } from "../choices.js";
 import { RuntimeBase, type RuntimeEvents } from "../runtime.js";
 import type { CodexServerHandle } from "./server-manager.js";
@@ -471,17 +472,20 @@ export class CodexRuntime extends RuntimeBase {
     return { serviceTier: (session.options.fast && model?.fast?.tier) || STANDARD_TIER };
   }
 
-  /** thread/start and thread/fork parameters: explicit provider and model, plus the AMO MCP identity header. */
+  /**
+   * thread/start and thread/fork parameters: explicit provider and model, the AMO MCP identity header, and the
+   * 自动压缩点 (设置 → 模型).
+   */
   private threadParams(profile: ModelProfile, token: string | undefined) {
     const base = codexThreadParams(profile);
-    if (!token) return base;
-    return { ...base, config: { ...(base.config ?? {}), ...McpIdentities.threadConfig(token) } };
+    return { ...base, config: { ...(base.config ?? {}), ...codexAutoCompactConfig(this.store), ...(token ? McpIdentities.threadConfig(token) : {}) } };
   }
 
   /** For thread/resume: the session's identity header (takes effect when the server loads the thread again). */
-  private identityConfig(sessionId: Id): { config?: Record<string, unknown> } {
+  /** thread/resume's config: the AMO MCP identity header and the 自动压缩点. */
+  private identityConfig(sessionId: Id): { config: Record<string, unknown> } {
     const ids = this.options.identities;
-    return ids ? { config: McpIdentities.threadConfig(ids.tokenFor(sessionId)) } : {};
+    return { config: { ...codexAutoCompactConfig(this.store), ...(ids ? McpIdentities.threadConfig(ids.tokenFor(sessionId)) : {}) } };
   }
 
   private async handleFor(profileId: Id): Promise<CodexServerHandle> {

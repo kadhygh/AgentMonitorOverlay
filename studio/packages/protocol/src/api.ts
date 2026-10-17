@@ -181,7 +181,17 @@ export interface StudioSettings {
    * Empty: the models used last, then each profile's default.
    */
   quickModels: QuickModel[];
+  /**
+   * 自动压缩点 (设置 → 模型, 2026-10-17): the context size, in tokens, at which Claude and Codex sessions summarise their
+   * conversation by themselves; null leaves it to each CLI (near the model's whole window).
+   */
+  autoCompactTokens: number | null;
 }
+
+/** 自动压缩点 by default: the person's choice (2026-10-17), well below the 1M windows the CLIs would otherwise wait for. */
+export const DEFAULT_AUTO_COMPACT_TOKENS = 272_000;
+export const AUTO_COMPACT_MIN = 50_000;
+export const AUTO_COMPACT_MAX = 1_000_000;
 
 /** A profile and one of its models (null: the profile's default model). */
 export interface QuickModel {
@@ -234,7 +244,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[] }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };

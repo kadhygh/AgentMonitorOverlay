@@ -167,6 +167,7 @@
 .pr-summary { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-summary.code { font-family: var(--font-code); font-size: 12px; }
 .pr-summary.failed { color: var(--chat-error); }
+.pr-meta { flex: none; color: var(--text-faint); font-size: 12px; font-family: var(--font-code); }
 .pr-note { flex: none; margin-left: 4px; font-size: 12px; }
 .pr-note.failed { color: var(--chat-error); }
 .pr-note.declined { color: var(--chat-warn); }

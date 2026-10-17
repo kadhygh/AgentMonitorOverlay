@@ -8,6 +8,7 @@ import type { Store } from "../../store/store.js";
 import type { CredentialReader } from "../credentials.js";
 import { RuntimeBase, type NewItemBody, type SendMode, type SessionRuntimeApi } from "../runtime.js";
 import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
+import { claudeAutoCompactEnv } from "../compact.js";
 import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLogin } from "./claude-login.js";
 import { keepsProcess } from "./wake.js";
 import { agentsMdInstructions } from "./project-instructions.js";
@@ -318,7 +319,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const workspace = this.store.getWorkspace(session.workspaceId);
     if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
     const home = this.homeOf(sessionId);
-    const env = claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, home, this.options.baseEnv);
+    const env = { ...claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store) };
     await this.close(sessionId);
     const ref = session.runtimeRef!;
     const seen = hasTranscript(ref, home) ? (await readTranscript(ref, workspace.path, home)).length : 0;
@@ -458,7 +459,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       prompt: input(),
       options: {
         cwd: workspace.path,
-        env: claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv),
+        // 自动压缩点 (设置 → 模型) over the provider's own window.
+        env: { ...claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store) },
         // As in a terminal: CLAUDE.md, settings, hooks, commands and skills of the project and of the config dir (Studio's
         // own with the token, the person's with the local login).
         settingSources: CLI_SETTING_SOURCES,

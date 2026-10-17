@@ -78,6 +78,11 @@ export function ComposerStats({
         {stats.turns} 轮 {stats.steps} 步
       </span>
       {stats.tokens > 0 && <span>用量 {formatTokens(stats.tokens)}</span>}
+      {stats.subTokens > 0 && (
+        <span title="子 agent 自己用掉的，不在左边的用量里" data-testid="sub-usage">
+          子 agent {formatTokens(stats.subTokens)}
+        </span>
+      )}
       {stats.cacheHit !== null && <span>缓存命中 {stats.cacheHit}%</span>}
       {stats.context && (
         <span className={`context-use${stats.context.percent !== null && stats.context.percent >= 80 ? " high" : ""}`} title="当前上下文 / 模型最大上下文（最近一轮结束时）" data-testid="context-use">

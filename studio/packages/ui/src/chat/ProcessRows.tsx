@@ -14,6 +14,7 @@ import {
   activityOf,
   closedTitle,
   formatDuration,
+  formatTokens,
   liveTitle,
   toolKind,
   type ApprovalItem,
@@ -328,6 +329,11 @@ function SubagentRow({ item, onJump }: { item: Extract<ProcessMember, { type: "s
         <span className="pr-title">子智能体</span>
         <span className="pr-dot" />
         <span className="pr-summary">{item.summary}</span>
+        {item.usage && (
+          <span className="pr-meta" title="这个子 agent 自己用掉的 token" data-testid="subagent-usage">
+            用量 {formatTokens(item.usage.input + item.usage.output)}
+          </span>
+        )}
       </RowButton>
       <button type="button" className="pr-link" onClick={() => onJump(item.childSessionId)}>
         查看

@@ -272,6 +272,10 @@ describe("ClaudeRuntime", () => {
     expect(existsSync(join(wsDir, "sub-made-dir"))).toBe(true);
     const child = (items(s.id).find((i) => i.type === "subagent") as { childSessionId: string }).childSessionId;
     expect(items(child).find((i) => i.type === "tool")).toMatchObject({ name: "shell", summary: "mkdir sub-made-dir", status: "completed" });
+    // Its model call's input (the mock reports 10) is counted in the child and on the parent's row (2026-10-17); its
+    // output only as far as the CLI tells a subagent's messages (the count at the call's start).
+    expect(items(child).find((i) => i.type === "turn")).toMatchObject({ state: "completed", usage: { input: 10 } });
+    expect(items(s.id).find((i) => i.type === "subagent")).toMatchObject({ usage: { input: 10 } });
   }, 120_000);
 
   it("keeps a background subagent running until its notification arrives", async () => {

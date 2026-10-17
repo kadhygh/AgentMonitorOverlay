@@ -274,8 +274,13 @@ export interface ContextUse {
 }
 
 /** Session statistics under the composer: turns, tool calls, tokens, cache hits and context use. */
-export function sessionStats(items: readonly SessionItem[]): { turns: number; steps: number; tokens: number; cacheHit: number | null; context: ContextUse | null } {
+/**
+ * A session's totals for the line under the composer. `subTokens`: what its subagents spent themselves (Claude,
+ * 2026-10-17), which its own turns do not count.
+ */
+export function sessionStats(items: readonly SessionItem[]): { turns: number; steps: number; tokens: number; subTokens: number; cacheHit: number | null; context: ContextUse | null } {
   let turns = 0;
+  let subTokens = 0;
   let steps = 0;
   let input = 0;
   let cached = 0;
@@ -294,8 +299,9 @@ export function sessionStats(items: readonly SessionItem[]): { turns: number; st
         }
       }
     } else if (i.type === "tool") steps++;
+    else if (i.type === "subagent" && i.usage) subTokens += totalTokens(i.usage);
   }
-  return { turns, steps, tokens, cacheHit: input ? Math.round((cached / input) * 100) : null, context };
+  return { turns, steps, tokens, subTokens, cacheHit: input ? Math.round((cached / input) * 100) : null, context };
 }
 
 /** Every item of a segment's work (inside groups too). */

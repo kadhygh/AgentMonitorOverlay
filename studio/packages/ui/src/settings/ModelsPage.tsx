@@ -7,6 +7,7 @@ import { PresetsSection } from "./PresetsSection.js";
 import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
 import { ChannelsSection } from "./ChannelsSection.js";
 import { QuickModelsSection } from "./QuickModelsSection.js";
+import { AutoCompactSection } from "./AutoCompactSection.js";
 import { useProfiles } from "../lib/balance.js";
 
 // 设置 → 模型: the channels (built-in and the person's own third-party Claude and Codex endpoints, each one hideable
@@ -32,6 +33,7 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
       )}
       {profiles && <QuickModelsSection link={link} settings={settings} profiles={profiles} />}
       <ModelDefaultsSection link={link} settings={settings} />
+      <AutoCompactSection link={link} settings={settings} />
       <PresetsSection link={link} presets={settings?.presets ?? []} />
     </>
   );

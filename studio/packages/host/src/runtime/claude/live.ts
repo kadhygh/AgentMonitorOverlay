@@ -67,6 +67,11 @@ export interface Live {
   subs: Map<string, Id>;
   /** Agent calls running in the background (their tool result arrives at once; a task notification ends them) */
   backgroundSubs: Set<string>;
+  /**
+   * child session -> the turn item counting its agent's tokens while it runs, and what each model call (message id)
+   * added so far (2026-10-17: a subagent's own use, which the parent's turn does not show)
+   */
+  subUsage: Map<Id, { itemId: Id; rowId?: Id; calls: Map<string, { input: number; cached: number; output: number }> }>;
   // ---- stage 12, S12-E ----
   /** tool_use id -> the call's name and input (kept for the turn: background commands, images read, summaries) */
   calls: Map<string, { name: string; input: Record<string, unknown>; itemId?: Id }>;
@@ -131,6 +136,7 @@ export function newLive(push: Live["push"], end: Live["end"]): Live {
     askedTools: new Set(),
     subs: new Map(),
     backgroundSubs: new Set(),
+    subUsage: new Map(),
     calls: new Map(),
     tasks: new Map(),
     bgItems: new Map(),

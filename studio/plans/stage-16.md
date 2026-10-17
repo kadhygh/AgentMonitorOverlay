@@ -92,3 +92,13 @@
   - 界面：`splitRoleUpdate` 拆出来，用户消息里显示小标签「AMO 更新：已告诉它任务的变化」，悬停看全文；模型看到的是纯文本。
   - 角色卡多一行「也被引用在专题「X」的画布上：那里的主控、专题文档几篇」；传话的范围加上「引用在主控专题画布上的任务」。
   - 测试：单测 `features/guide/role.test.ts`（Codex 带角色卡、引用 / 进专题 / 主控 / 说明的提示只说一次、没记过的会话只记下、给引用的任务传话）、协议拆合；e2e `role-update.spec.ts`，截图 `screenshots/stage-16/S16-F-role-update.png`。
+  - 看板（同一天）：列撑到页面底部（`.board` 在 `.main` 里 `flex: 1 0 auto`，列 `align-items: stretch`），卡片拖到列里任何位置都能放；`board.spec.ts` 改成拖到列底部。
+
+- **S16-G**（10-17 下午，额度讨论之后。用户：迁移任务飞快消耗额度，是因为主-子 agent 吗）
+  - 查到的（只读开发版库）：「迁移任务」主会话 66 轮跨两天，上下文从 51k 涨到 464k，一次没压缩（订阅 Opus / Sonnet 报的窗口是 100 万，CLI 接近窗口才压）；输入合计约 6000 万（缓存读约 5800 万），后期一句话的一轮约 45 万；隔了 1 小时以上再发，缓存多半过期（隔 2.5 小时那轮 28 万、隔 4 小时那轮 44 万没命中）。12 个子 agent 约 1900 次工具调用，用量 Studio 之前没记。用户的结论：以后大任务用 AMO 开多个任务，不用主-子 agent。
+  - 自动压缩点（用户定 272k）：设置 → 模型「自动压缩点」，默认 `DEFAULT_AUTO_COMPACT_TOKENS` = 272000，可改（50k–1000k）或「交给 CLI 决定」（kv `settings:auto-compact-tokens`，`runtime/compact.ts`）。Claude：进程环境 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`（CLI 说明：接近这个值和模型窗口中较小者时压缩；会覆盖 GLM 通道自带的 100 万）。Codex：thread/start、fork、resume 的 config 带 `model_auto_compact_token_limit`。会话启动或恢复时生效。
+  - 子 agent 用量（Claude）：子 agent 的每次模型调用（assistant 消息带 message id 和 usage，同一调用按 id 只算一次）累加进子会话的一个「回合」条目，并写到主会话里那一行子 agent（`subagent.usage`）；会话底部多一项「子 agent X」（`sessionStats().subTokens`，不在左边的用量里——实测主会话回合的用量不含子 agent）。输入（上下文，几乎全部开销）是准的；输出偏少：CLI 在拿到最终输出数之前就把子 agent 的消息发出来，也不转发它的流（用 Mock 核对过），所以输出只记到每次调用开头的数。只回一句话、不调工具的子 agent 没有自己的消息，记不到。Codex 的子 agent 本来就有自己的回合用量。
+  - 上下文提醒：上下文 ≥ 150k 时输入框上方一条（`chat/ContextHint.tsx`）：「上下文 180k · 每一步都要整个重读 · 到 272k 自动压缩 · 换阶段可开新会话」，「现在压缩」「知道了」（记在 localStorage，涨 50k 后再出）；Claude 会话距上次回复超过 1 小时时改说「缓存多半已过期，下一条要全价重读」。
+  - DSH（DeepSeek Harness 0.1.6-alpha.2）怎么管上下文，供以后参考：到窗口 80% 压缩、只总结较早的部分并原样保留最近 16%；压缩前先把超大工具输出裁成头尾（不调模型）；超大输出放文件只留预览；溢出后压缩重试；同参数重复调用工具时提醒。Studio 的 DeepSeek 走 Codex 通道，用不上这些。接 DSH 当第三种运行时：它的 SDK 协议现在只有 initialize / session/prompt / shutdown 和事件，没有批准、提问、打断；ACP 有取消和选模型但说明里说不含交互功能——要先做试验。
+  - 测试：单测 `runtime/compact.test.ts`（设置、Codex thread config、Claude 环境）、`wake.integration.test.ts`（子 agent 用量按调用只算一次、结束时回合收尾）、`claude-runtime.integration.test.ts`（真 SDK + Mock 的子 agent 用量）、`turns.test.ts`；e2e `context-hint.spec.ts`、`model-channels.spec.ts` 自动压缩点；Mock 加 `[[context: N]]`。截图 `S16-G-auto-compact`、`S16-G-context-hint`。
+

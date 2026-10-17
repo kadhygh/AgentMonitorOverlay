@@ -294,7 +294,8 @@ export type SessionItem =
   | (ItemBase & { type: "approval"; approvalId: string; kind: ApprovalKind; summary: string; detail?: string; state: ApprovalState })
   /** A question to the person, a form, or a plan to review (stage 12; see questions.ts). */
   | (ItemBase & { type: "question" } & QuestionFields)
-  | (ItemBase & { type: "subagent"; childSessionId: Id; summary: string })
+  /** `usage`: what the agent spent over all its runs, when the runtime tells (Claude, 2026-10-17). */
+  | (ItemBase & { type: "subagent"; childSessionId: Id; summary: string; usage?: TurnUsage })
   | (ItemBase & { type: "error"; message: string })
   /** `key`: notices with the same key (and runtime-repeated ones) update one row; `count` says how often it came. */
   | (ItemBase & { type: "notice"; level: "info" | "warning"; message: string; key?: string; count?: number })

@@ -29,7 +29,8 @@ export function mockClaudeEnv(baseUrl: string): Record<string, string> {
 export type ClaudeMockReply =
   | ((
       /** `refuse`: the reply ends with stop_reason "refusal". */
-      | { kind: "text"; text: string; chunks?: number; delayMs?: number; refuse?: boolean }
+      /** `cacheRead`: the input tokens the reply says it read from the cache (a large context, `[[context: N]]`). */
+      | { kind: "text"; text: string; chunks?: number; delayMs?: number; refuse?: boolean; cacheRead?: number }
       | { kind: "tool_use"; name: string; input: Record<string, unknown> }
     ) & { thinking?: string })
   /** The API fails the request with this HTTP status (Claude Code retries 429/5xx, reporting api_retry). */
@@ -78,6 +79,7 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
  * - `[[suggest]]` anywhere in the conversation → prompt-suggestion requests get `MOCK_SUGGESTION`; otherwise they get
  *   an empty reply, so no suggestion is made
  * - `[[refuse]]` → the model refuses (stop_reason "refusal")
+ * - `[[context: N]]` → `MOCK: <user text>`, reporting N input tokens read from the cache (a large context)
  * - anything else → `MOCK: <user text>`, plus ` [images: N]` when the message carried images
  * Tool calls are only made when the request offers that tool, so side requests always get text.
  */
@@ -87,6 +89,8 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
   const retry = /\[\[retry(?::(\d+))?\]\]/.exec(req.lastUserText);
   if (retry && !req.afterToolOutput && req.attempt < Number(retry[1] ?? 2)) return { kind: "error", status: 529, type: "overloaded_error", message: "Overloaded" };
   if (req.lastUserText.includes("[[refuse]]") && req.tools.length > 0) return { kind: "text", text: "", refuse: true };
+  const context = /\[\[context:\s*(\d+)\]\]/.exec(req.lastUserText);
+  if (context && !req.afterToolOutput) return { kind: "text", text: `MOCK: ${req.lastUserText}`, cacheRead: Number(context[1]) };
   const bg = /\[\[bg:\s*([^\]]+)\]\]/.exec(req.lastUserText);
   if (bg && !req.afterToolOutput && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: bg[1]!.trim(), description: "mock background command", run_in_background: true } };
   const image = /\[\[read-image:\s*([^\]]+)\]\]/.exec(req.lastUserText);
@@ -222,7 +226,7 @@ function messageOf(reply: ClaudeMockAnswer, seq: number, model: string) {
     content,
     stop_reason: reply.kind === "text" ? (reply.refuse ? "refusal" : "end_turn") : "tool_use",
     stop_sequence: null,
-    usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+    usage: { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: reply.kind === "text" ? (reply.cacheRead ?? 0) : 0 },
   };
 }
 

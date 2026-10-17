@@ -144,3 +144,28 @@ test("设置 → 模型 → 快速选择: the model tiles, in the chosen order",
   await expect(tiles.nth(0)).toContainText("Mock 模型");
   await expect(tiles.nth(1)).toContainText("mock-claude-b");
 });
+
+test("设置 → 模型 → 自动压缩点: 272k by default, changed, or left to the CLIs (2026-10-17)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "模型" }).click();
+  const section = dialog.getByRole("region", { name: "自动压缩点" });
+  const input = section.getByTestId("auto-compact-input");
+  await expect(input).toHaveValue("272");
+  await input.fill("200");
+  await input.press("Enter");
+  await expect(section.getByRole("status")).toContainText("200k");
+  await expect.poll(async () => (await studio!.api<StudioSettings>("GET", "/api/settings")).autoCompactTokens).toBe(200_000);
+  await input.fill("10");
+  await section.getByTestId("auto-compact-save").click();
+  await expect(section.getByRole("alert")).toContainText("50 到 1000");
+  await section.getByTestId("auto-compact-input").scrollIntoViewIfNeeded();
+  await screenshot(app, "stage-16", "S16-G-auto-compact", page);
+  await section.getByTestId("auto-compact-cli").click();
+  await expect(section.getByTestId("auto-compact-off")).toBeVisible();
+  await expect.poll(async () => (await studio!.api<StudioSettings>("GET", "/api/settings")).autoCompactTokens).toBeNull();
+  await section.getByTestId("auto-compact-default").click();
+  await expect(section.getByTestId("auto-compact-input")).toHaveValue("272");
+});
