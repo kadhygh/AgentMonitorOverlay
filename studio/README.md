@@ -18,7 +18,7 @@ AMO 的下一代：由人主导、agent 也能参与的项目推进工作台。�
 
 开发时在 `studio` 下 `npm start`（数据在 `studio/.data`）；`npm run host:stop` 停止后台的 Host。
 
-换一台机器用开发版：装好 Node（24 LTS）和 Git，`git clone` 后切到 `studio/main`，双击 `studio/start-studio.cmd`。它会在依赖缺失或 `package-lock.json` 变了时 `npm ci`，再构建并打开 Studio；`start-studio.cmd -Install` 强制重装依赖，`start-studio.cmd -Stop` 停掉 Host。Codex 模型还要 `npm i -g @openai/codex`；Claude 订阅令牌和各通道的 Key 在 设置 → 模型 里填。
+换一台机器用开发版：装好 Node（24 LTS）和 Git，`git clone`（`master`）后双击 `studio/start-studio.cmd`。它会在依赖缺失或 `package-lock.json` 变了时 `npm ci`，再构建并打开 Studio；`start-studio.cmd -Install` 强制重装依赖，`start-studio.cmd -Stop` 停掉 Host。Codex 模型还要 `npm i -g @openai/codex`；Claude 订阅令牌和各通道的 Key 在 设置 → 模型 里填。
 
 ## 日常怎么用
 

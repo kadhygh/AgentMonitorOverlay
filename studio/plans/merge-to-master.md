@@ -1,6 +1,6 @@
 # 合并到 master：检查单
 
-**状态：等你决定（NEEDS_YOU S8-07）。loop 不合并、不推送。**
+**状态：已完成（2026-10-17）。`studio/main` 快进进 master 并推送；旧版在标签 `amo-legacy-final`。下面是 10-14 时的检查单，留作记录。**
 
 截至 2026-10-14：`studio/main` 比 `master`（`ac93b81`）多 115 个提交，`master` 上没有 `studio/main` 没有的提交，所以合并不会有冲突。
 

@@ -5,7 +5,7 @@
 更新：2026-10-14
 
 - **当前阶段**：阶段 0–8 已完成；等你决定合并 master、删除旧 AMO 等（见"在等你"）
-- **分支**：`studio/main`（阶段 8 已用 `--no-ff` 合并；**没有合并到 master**）
+- **分支**：`master`（2026-10-17 起 Studio 是主线：`studio/main` 快进进 master 并推送；旧版在标签 `amo-legacy-final`）
 - **已完成**：阶段 0、阶段 1（地基）、阶段 2（审阅）、阶段 3（画布与 Focus）、阶段 4（Claude 与只读 MCP）、阶段 5（可写 MCP 与协作）、阶段 6（项目扩展接口）、阶段 7（待办与调度，定时运行等你）、阶段 8（Portable 发布，合并 master 等你）
 - **在等你**：见 `NEEDS_YOU.md`，17 项"请你过目"（都不阻塞）、5 项"必须等你"：是否合并到 master；是否切换为日常工具、何时删除旧 AMO；是否开放"派发"（不回复就保持不开放）；第一个真实扩展包的内容；调度 agent 的权限与频率（不回复就只手动触发）。等待期间继续推进
 - **试用**：Portable 版 `studio/release/AMO-Studio-0.8.0-portable.zip`（解压后双击 `AMO Studio.exe`）；开发时 `studio` 下 `npm start`，停止 Host 用 `npm run host:stop`

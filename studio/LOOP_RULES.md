@@ -4,7 +4,7 @@
 
 ## 1. 每轮流程
 
-1. **定位**：工作目录固定为 `G:\PROJECT\AgentMonitorOverlay-studio`（git worktree）。先执行 `git status` 和 `git branch --show-current`，确认当前分支是 `studio/main` 或 `studio/stage-N`。不对时，先修正再做事。
+1. **定位**：工作目录固定为 `G:\PROJECT\AgentMonitorOverlay-studio`（git worktree）。先执行 `git status` 和 `git branch --show-current`，确认当前分支是 `master` 或 `studio/stage-N`（2026-10-17 起 master 就是 Studio 的主线）。不对时，先修正再做事。
 2. **读状态**：依次读 `studio/STATUS.md`、`studio/NEEDS_YOU.md`、当前阶段的 `studio/plans/stage-N.md`、`studio/LOOP_LOG.md` 的最后 5 条、`studio/design/interaction-notes.md`。
 3. **处理用户回复**：如果 `NEEDS_YOU.md` 里有用户新写的回复，先处理：
    - 转成任务，写进当前阶段的计划；
@@ -49,8 +49,8 @@
 2. **不碰用户的全局配置**：不修改 `~/.codex/config.toml`、`~/.claude/` 下的设置、Windows 凭据管理器中已有的条目。已有凭据只读；Studio 只写它自己的条目：用户在设置里保存的 `claude-subscription`，和用户在 设置 → 模型 添加渠道时的 `channel-<id>`、`channel-<id>-access`（用户 2026-10-15 要求渠道能设置 Key）。
 3. **不在用户的真实工程里测试**：测试只在 `%TEMP%\amo-studio-sandbox\` 下的沙盒工作区进行，不在用户的真实工程里启动会话或写文件。
 4. **git 规则**：
-   - 只在 `studio/main` 和 `studio/stage-N` 上提交；
-   - 不合并到 master，不 push，不 rebase 已提交的历史，不使用 `reset --hard`；
+   - 只在 `master` 和 `studio/stage-N` 上提交；
+   - 不 push（除非用户说），不 rebase 已提交的历史，不使用 `reset --hard`；
    - 不删除别的分支或 worktree。
 5. **依赖规则**：依赖只安装在 `studio/` 下，版本写死（不用 `^`、`~`），并提交 lockfile。用户已授权的范围：
    - Electron、React、Vite、TypeScript；
@@ -96,7 +96,7 @@
 1. **代码审查**：对本阶段的全部改动运行 `/code-review`，把发现的问题修完。
 2. **防偏离自查**：对照 `docs/next-gen-vision-architecture-2026-10.md` 的"明确不做"清单，以及 `design/interaction-notes.md`，自查有没有越界、有没有和已确认的交互冲突，结论写进日志。
 3. **完整验证**：运行完整的 `npm run verify`，以及全部端到端测试。
-4. **合并**：用 `--no-ff` 把 `studio/stage-N` 合并回 `studio/main`。
+4. **合并**：用 `--no-ff` 把 `studio/stage-N` 合并回 `master`。
 5. **更新文档**：
    - 更新 `STATUS.md`；
    - 在 `NEEDS_YOU.md` 中写一条"请你过目：阶段 N 完成"，附上截图和试用方式。

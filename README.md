@@ -1,5 +1,19 @@
 # AMO
 
+AMO 的主线是 **AMO Studio**（[studio/](studio/)）：一个由人主导、agent 也能参与的项目推进工作台。看板管任务，画布看全局；每个任务下面是若干个和模型的会话（Codex、Claude，或者本机的 DeepSeek Harness），在工作台里对话、审阅、批注、批准命令，需要时一键交给原版终端。
+
+- 怎么用：[studio/README.md](studio/README.md)
+- 设计：[docs/next-gen-vision-architecture-2026-10.md](docs/next-gen-vision-architecture-2026-10.md)、[studio/design/architecture.md](studio/design/architecture.md)
+- 开发进度与交接：[studio/HANDOFF.md](studio/HANDOFF.md)
+
+## 开始使用
+
+装好 Node（24 LTS）和 Git，`git clone` 本仓库（`master`），双击 `studio/start-studio.cmd`：依赖缺失或 `package-lock.json` 变了时它会 `npm ci`，再构建并打开 Studio。Codex 模型还要 `npm i -g @openai/codex`；各模型的 Key 在 设置 → 模型 里填。Portable 版本等正式发布时提供。
+
+## 旧版 AMO
+
+下面是旧版 AMO（工程内 Hook + 桌面卡片 + Obsidian 审阅）的说明。代码在 `broker/`、`overlay/`，和 Studio 互不依赖；Studio 成为主线之前的最后一版是标签 `amo-legacy-final`。
+
 AMO（Agent Monitor Overlay）是一层面向 Windows 本地 AI CLI 工作流的轻量控制界面。
 
 它通过工程内 Hook 跟踪 Codex CLI、Claude CLI 和 Grok Build 会话，将任务呈现为桌面卡片，并把长回复的审阅流程连接到 Obsidian 笔记、批注和 Canvas。
@@ -12,29 +26,29 @@ AMO（Agent Monitor Overlay）是一层面向 Windows 本地 AI CLI 工作流的
 
 上图展示了 AMO 的主要审阅闭环：从任务卡片打开回复 Note，在 Obsidian 中选中原文并添加引用批注，整理完意见后返回对应的 Managed CLI。
 
-## 最新更新
+### 最新更新
 
-### DeepSeek 版本配置与两种路由模式
+#### DeepSeek 版本配置与两种路由模式
 
 DeepSeek 的 Codex CLI、Claude CLI 路由统一使用 `deepseek-flash`：主任务、审阅和子任务全部使用 Flash。在工作区中心或任务快速入口选择 **DeepSeek → Flash 全部 · V4.1 Flash** 即可使用已保存的 DeepSeek Key 启动。旧 Pro 和历史预设继续兼容，但同样调用 `deepseek-flash`；详见 [DeepSeek 路由 SOP](docs/deepseek-routing-sop.md)。
 
-### 任意目录启动 CLI 与独立任务画板
+#### 任意目录启动 CLI 与独立任务画板
 
 Workspace Center 的路径栏下新增 **Launch CLI**：选择现有目录即可启动 Codex CLI、Claude CLI 或 Grok Build，无需先 Check 或 Deploy。该模式不部署 AMO 文件、不创建受管启动记录；已有 hooks 仍可能报告事件。Codex CLI 支持 **GPT-Dxx** 和 **DXX · GPT-6 Astra** 路由，共用 Settings → Models 中保存的独立 DXX Key，也可在 CLI 内通过 `/model` 切换。详见[免部署启动说明](docs/cli-only-launch.md)和[DXX 配置](docs/dxx-codex-provider.md)。
 
 主浮窗的 **Open Canvas** 打开独立跨工作区任务画板，支持任务引用、便笺、拖动、连线和保存。详见[任务画板说明](docs/task-canvas-workbench.md)。
 
-### Codex / Claude Managed CLI：DeepSeek 与 GLM 路由
+#### Codex / Claude Managed CLI：DeepSeek 与 GLM 路由
 
 AMO 拉起的 **Codex CLI** 和 **Claude Code CLI** 均可选择 **DeepSeek Flash**。所有 DeepSeek 模型槽位统一使用 `deepseek-flash`。打开 **Settings → Models** 保存一次 `DeepSeek API Key`，两种 CLI 共享该凭据。
 
 该路由只影响这次 Managed CLI，不会覆盖用户现有的全局 Codex 或 Claude Code 配置。保存的 Key 位于当前 Windows 用户的 Credential Manager。Codex 使用随 AMO Broker 部署的一份共享只读模型目录，并通过单次 `-c` 参数覆盖 provider/model；启动时只把 Key 放入进程环境，退出后再清除终端中的 Key 环境变量，不会在 `~/.codex` 创建 profile 或模型文件。多个 Codex CLI 会共用同一份目录。Claude 仍使用退出后删除的临时 settings。Key 不进入命令参数、模型目录、localStorage、Broker 状态、工程文件或日志。当前 **ChatGPT desktop app** 启动入口不提供这个 AMO 路由选择；该选项针对 Managed Codex CLI。具体步骤见[入门指南中的 Codex / Claude 模型路由](docs/getting-started.md#codex-and-claude-model-routing-deepseek-and-glm)。
 
-## 为什么做 AMO
+### 为什么做 AMO
 
 AMO 最早不是一个产品规划，而是我为了处理自己的开发痛点做出来的工具。
 
-### 我需要认真读完 LLM 的长回复
+#### 我需要认真读完 LLM 的长回复
 
 我的很多任务都涉及底层框架，所以收到回复以后，不能只看结论，通常要从开头逐行检查。
 
@@ -42,19 +56,19 @@ AMO 最早不是一个产品规划，而是我为了处理自己的开发痛点�
 
 因此 AMO 会把回复保存到 Obsidian。明确的问题可以直接标在原文旁边，暂时没想清楚的内容可以先写进 Scratchpad，最后再统一返回会话。
 
-### 我经常同时打开多个工程和多个 CLI
+#### 我经常同时打开多个工程和多个 CLI
 
 我本地有两份 Unity 工程，每个工程又可能同时运行两三个 CLI。任务切换多了以后，很容易忘记每个窗口对应什么任务，以及现在究竟在等谁。
 
 AMO 用任务卡片把工程、Session、状态和窗口关联起来，让这些并行任务不再完全依赖记忆。
 
-### 长任务到了第二天，很难接回原来的思路
+#### 长任务到了第二天，很难接回原来的思路
 
 聊天记录还在，不代表当时的思路还在。
 
 AMO 使用 Note 保存回复和批注，使用 Canvas 整理复杂任务的分支，使用 Scratchpad 记录临时想法。它们共同解决的是同一件事：让我在切换任务或隔天回来以后，可以更快继续工作。
 
-## 先确认你是否真的需要 AMO
+### 先确认你是否真的需要 AMO
 
 AMO 不是使用 Codex 的必备工具，也不打算替代现有的 CLI、ChatGPT desktop app 或 Obsidian 工作流。如果你没有上面这些痛点，不建议为了使用 AMO 强行改变自己的开发习惯。
 
@@ -72,7 +86,7 @@ AMO 更适合下面这些情况：
 
 另外，Claude CLI 不是作者日常开发中的主力路径。Claude Adapter 已经接入，但实际覆盖和稳定性可能弱于 Codex CLI；遇到问题时建议保留复现步骤和 Hook 日志，并针对自己的环境调整适配逻辑。
 
-## 当前工作流
+### 当前工作流
 
 ```mermaid
 flowchart LR
@@ -98,7 +112,7 @@ AMO 当前主要面向 Windows x64，已经支持以下工作路径：
 
 AMO 不会安装或替代这些应用。每项集成都仍然是可选的外部依赖。
 
-## 五分钟上手
+### 五分钟上手
 
 1. 打开 [GitHub Releases](https://github.com/kadhygh/AgentMonitorOverlay/releases)，展开最新版本的 **Assets**，下载 `AMO-v<版本>-win-x64.zip`，不要下载页面自动生成的 Source code 压缩包。
 2. 将 ZIP 完整解压到可写目录，保持 `AMO.exe`、`app/`、`runtime/` 和 `data/` 在一起，然后双击 `AMO.exe`。
@@ -131,51 +145,51 @@ Managed CLI 产生回复后，AMO 会显示进入 Review 的任务卡片：
 
 ![Managed Codex CLI 与进入 Review 的 AMO 任务卡片](docs/assets/getting-started/managed-session-review.png)
 
-## 两种主要使用方式
+### 两种主要使用方式
 
-### 常规审阅：优先使用 Note
+#### 常规审阅：优先使用 Note
 
 多数任务不需要 Canvas。打开最新 Reply Note，选择需要回应的原句，添加引用批注，再把汇总后的反馈返回会话。这样可以让审阅紧贴原文，也不必为普通任务额外举行一次“规划仪式”。
 
 见 [使用 Note 审阅](docs/workflows/note-review.md)。
 
-### 复杂任务：使用 Canvas 组织
+#### 复杂任务：使用 Canvas 组织
 
 当任务出现分支、多个互斥方案，或者某些关系需要超越聊天时间线长期保留时，再使用 Canvas。AMO 会维护自动生成的 Base Flow；用户也可以把选中的 Note 添加到自己整理的 Work Canvas。
 
 见 [使用 Canvas 组织复杂任务](docs/workflows/canvas-work.md)。
 
-### 任务看板：Task Canvas
+#### 任务看板：Task Canvas
 
 主窗口顶部的 **Open Canvas** 打开独立任务看板，可跨工作区添加任务引用和文本笔记，拖动、缩放、连线并保存布局。看板打开时悬浮任务卡仍可操作；删除看板节点不会删除或停止会话。第一版提供单看板，使用 **Save** 保存，隐藏窗口会保留当前草稿。
 
 见 [Task Canvas 使用与底层约定](docs/task-canvas-workbench.md)。
 
-### 人工处理队列：Focus Panel
+#### 人工处理队列：Focus Panel
 
 使用 **Open Canvas 右侧的 Focus Panel 开关**打开独立悬浮队列。任务可标为待处理、处理中、稍后、未来或本轮已处理，保存自己的备注，并通过已有 AMO 操作返回 CLI。人工处理状态与会话运行状态分开保存；打开 CLI 不会清除 Focus 待办。**New card** 可先创建不关联 Session 的想法或工作卡；会话资料和 GUI/TUI 对话承载通过独立组件组织。
 
 见 [Focus Panel 使用与卡片数据规范](docs/focus-panel.md)。
 
-## 快捷键
+### 快捷键
 
 作者高频使用鼠标侧键组合，这是个人工作习惯，不是适合所有人的通用默认值。AMO 的全局 Scratchpad 快捷键和 Obsidian 插件命令均支持用户配置；个人覆盖配置会与代码内默认值分离，避免更新时被覆盖。没有鼠标侧键的用户也可以选择键盘组合或关闭对应快捷键。
 
 具体行为和兼容规则见 [快捷键配置](docs/shortcut-configuration.md)。
 
-## 本地优先的数据设计
+### 本地优先的数据设计
 
 AMO 围绕本地进程和工程内文件工作。会话笔记、Canvas、已部署 Hook 和工作区元数据位于所选工程的 `.amo` 目录中。Portable 应用自身的状态位于解压目录旁的 `data/` 中。
 
 在敏感工程中使用 AMO 前，请先阅读 [本地数据与隐私](docs/data-and-privacy.md)，确认工程内生成内容、Portable 状态和外部工具调用符合自己的安全要求。
 
-## 开发
+### 开发
 
 当前源码包含 Tauri Overlay、Node Broker、工程内 Adapter、Obsidian 插件、构建脚本和历史设计文档。参与开发前建议先阅读 [开发指南](DEVELOPMENT.md)、[逻辑模块架构](docs/amo-module-architecture.md) 和 [工程结构](docs/project-structure.md)。
 
 源码日常运行和桌面启动脚本部署见 [Source Stable 启动 SOP](docs/source-stable-startup.md)；开发与发布命令见 [Portable 发布 SOP](docs/portable-release-sop.md)。
 
-## 协议与商标
+### 协议与商标
 
 AMO 源码和原创资产使用 [MIT License](LICENSE) 发布。
 

@@ -11,6 +11,7 @@
 > - S16-C：agent 懂 AMO——MCP 服务说明改写、`amo_whoami`（角色卡，Claude 会话的服务说明里也带）、`amo_guide`；任务「主控」标记（迁移 15）；专题文档（画布侧栏「文档」，MCP `topic_docs` / `topic_doc_write`）。
 > - S16-D：主控 `task_plan_propose` → 画布 / 主控任务页 / Focus 上的提案 → 人改过后「放进待办」或「立刻开跑」→ 建任务、写说明、按项目分组放上画布、连依赖、留言告诉主控（迁移 16）。
 > - S16-E：传话 `relay_send` → 人在任务页或 Focus 确认（或任务设了「主控传话不用确认」）→ 送进目标任务的会话（迁移 17）。
+> - **主线（10-17 晚）**：用户同意，`studio/main` 快进进 **master** 并推送，旧版 master 打了标签 `amo-legacy-final`；之后在 master（或 `studio/sNN` 分支再合回 master）上开发，开发目录 `G:\PROJECT\AgentMonitorOverlay-studio` 切到 master。旧 AMO 的分支已清理（未合并的先打了 `archive/*` 标签），各工程的旧 Hook 用户自己清。
 > - **S17 DSH（10-17 晚，分支 `studio/s17-dsh`）**：DeepSeek 可以走 DSH 原生框架——第三种运行时 `dsh`，模型「DSH · DeepSeek」，用本机的 DSH 源码克隆（`G:\PROJECT\deepseek-harness`，设置 → 模型 → 该卡片里填位置、「检查」）经 ACP 跑；用户会定期拉最新，坏了就照 `plans/stage-17-dsh.md` 的「依赖 DSH 的地方」（都在 `runtime/dsh/install.ts`）适配，真 DeepSeek 的回归是 `AMO_STUDIO_DSH_CLONE=… npx vitest run packages/host/src/runtime/dsh/dsh-real`。试验在 `spikes/RESULTS.md` s17。另外加了 `studio/start-studio.cmd`（换设备：clone → 切 `studio/main` → 双击），已推到 GitHub 的 `studio/main`（用户授权的这一次）。
 > - S16-G（10-17 下午）：自动压缩点（设置 → 模型，默认 272k，Claude 用 `CLAUDE_CODE_AUTO_COMPACT_WINDOW`、Codex 用 `model_auto_compact_token_limit`）；Claude 子 agent 的用量记进子会话并显示在子 agent 那一行和会话底部（输出偏少，见计划）；上下文 ≥150k 时输入框上方提醒（Claude 隔 1 小时以上提示缓存过期）。额度分析、DSH 的上下文做法和接入难点都在 `plans/stage-16.md` 的 S16-G。
 > - S16-F（10-17 下午）：Codex 会话开对话时把角色卡作为 developer instructions 带上（和 Claude 一样一开始就知道自己是谁）；任务后来进了专题、被引用到别的画布、成了主控、说明改了，下一条发给这个会话的消息末尾附一段「【AMO：你的任务有变化】」（界面上是消息里的小标签「AMO 更新」，悬停看内容）；角色卡写出被哪些画布引用；主控能给引用在自己画布上的任务传话。做法在 `plans/stage-16.md` 的 S16-F。
@@ -100,8 +101,8 @@
 | 项目 | 内容 |
 |---|---|
 | 开发目录 | `G:\PROJECT\AgentMonitorOverlay-studio\studio`（git worktree） |
-| 分支 | `studio/main`（阶段 12 合并后）。**没有合并到 master，没有推送**；master 仍在 `ac93b81`（等用户决定，见 NEEDS_YOU S8-07） |
-| 主仓库 | `G:\PROJECT\AgentMonitorOverlay`，停在 `chore/next-gen-planning-2026-10`；里面的 `overlay/src-tauri/Cargo.toml` 只有换行符改动，**不要碰** |
+| 分支 | `master`（10-17 起是 Studio 主线，已推送）；旧版在标签 `amo-legacy-final` |
+| 主仓库 | `G:\PROJECT\AgentMonitorOverlay`，分离在 `93e437a`（原 `chore/next-gen-planning-2026-10`，分支已清理）；里面的 `overlay/src-tauri/Cargo.toml` 只有换行符改动，**不要碰** |
 | 开发版 | `npm start`（先 build 再开窗口），数据在 `studio\.data`。Host 常驻在 47900 端口；改了 Host 代码要先 `npm run host:stop` 再 `npm start` |
 | 帮用户重启开发版 | **先问用户**。`npm run build` → `npm run host:stop` → 结束 `electron.exe packages/app` 主进程（命令行不含 `--type=`）→ 备份 `.data\studio.db*` 到 `.data\backup-before-<名字>-<日期>` → `Start-Process node_modules\electron\dist\electron.exe packages/app`（工作目录 `studio`）→ 用 `.data/host-token` 在 node 脚本里查 `GET /api/state` 核对任务和会话数（不打印令牌）。只改界面时让用户按 Ctrl+R 即可 |
 | 验证 | `npm run verify`（typecheck + vitest + build）；端到端 `npx playwright test -c e2e/playwright.config.ts`（约 11 分钟，先确保 build 过） |
@@ -111,7 +112,7 @@
 
 - 不碰旧 AMO 的运行时和 `broker/data/`；不改主目录文件；不改 `~/.codex/config.toml`、`~/.claude/` 设置、用户已有的凭据条目（Studio 只写自己的：`claude-subscription`，和用户在 设置 → 模型 加渠道时的 `channel-<id>` / `channel-<id>-access`）。
 - 测试只在 `%TEMP%\amo-studio-sandbox\` 和临时目录；端口只用 47900–47999；测试窗口不抢焦点、不开终端/浏览器、不碰剪贴板。
-- Git 只在 studio 分支上提交；不合并 master、不推送、不 reset --hard、不删分支。
+- Git 在 master 或 `studio/*` 分支上提交；推送要用户说；不 reset --hard、不删分支。
 - 密钥不打印、不写日志/文件/命令行。
 - **真实模型额度**（`budget.json`，用 `spikes/lib.mjs` 的 `countTurn(note, provider)` 先计数再调用）：DeepSeek 29/1000、GLM 28/5000、**GPT 订阅 6/50、Claude 订阅 0/50**（后两项是用户 2026-10-13 批准的，只用来验证这两种模型在 Studio 里能用）。平时测试用 mock。
 - 工具坑：heredoc 里的 Python 会吃掉 `\n`、`\v` 等转义 → 有转义的改动用 Edit/Write 或 scratchpad 里的 `.py` 文件；Windows 文件名不分大小写（`Transcript.tsx` 和 `transcript.ts` 会撞）；跑完 e2e 用 `git checkout -- studio/screenshots/stage-*` 丢掉无意的截图变化；清理 `%TEMP%\amo-studio-test-*`、`amo-studio-e2e-*`。
