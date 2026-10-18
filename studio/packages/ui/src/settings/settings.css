@@ -156,7 +156,12 @@
 
 /* 设置 → 模型 → 快速选择 */
 .quick-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; }
-.quick-row { display: flex; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid var(--border); }
+.quick-row { position: relative; display: flex; align-items: center; gap: 8px; padding: 6px 4px; border-bottom: 1px solid var(--border); cursor: grab; }
+.quick-row:focus-visible { outline: 2px solid var(--primary); outline-offset: -2px; }
+.quick-row[data-dragging] { opacity: 0.45; }
+.quick-row[data-over="before"]::before, .quick-row[data-over="after"]::after { content: ""; position: absolute; left: 0; right: 0; height: 2px; background: var(--primary); }
+.quick-row[data-over="before"]::before { top: -1px; }
+.quick-row[data-over="after"]::after { bottom: -1px; }
 .quick-row:last-child { border-bottom: 0; }
 .quick-key { width: 40px; flex: none; font-family: var(--font-code); font-size: 11.5px; color: var(--text-dim); }
 .quick-name { display: flex; flex-direction: column; flex: 1; min-width: 0; }
