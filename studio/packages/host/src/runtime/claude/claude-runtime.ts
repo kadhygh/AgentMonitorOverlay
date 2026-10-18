@@ -319,7 +319,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const workspace = this.store.getWorkspace(session.workspaceId);
     if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
     const home = this.homeOf(sessionId);
-    const env = { ...claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store) };
+    const env = { ...claudeEnv(this.profile(session.profileId), this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store, session.profileId) };
     await this.close(sessionId);
     const ref = session.runtimeRef!;
     const seen = hasTranscript(ref, home) ? (await readTranscript(ref, workspace.path, home)).length : 0;
@@ -460,7 +460,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       options: {
         cwd: workspace.path,
         // 自动压缩点 (设置 → 模型) over the provider's own window.
-        env: { ...claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store) },
+        env: { ...claudeEnv(profile, this.options.providers, this.options.credentials, home, this.options.baseEnv), ...claudeAutoCompactEnv(this.store, profile.id) },
         // As in a terminal: CLAUDE.md, settings, hooks, commands and skills of the project and of the config dir (Studio's
         // own with the token, the person's with the local login).
         settingSources: CLI_SETTING_SOURCES,

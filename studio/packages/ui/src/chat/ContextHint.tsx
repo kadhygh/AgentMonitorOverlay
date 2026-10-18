@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { Session, SessionItem } from "@amo-studio/protocol";
+import { autoCompactFor, type Session, type SessionItem } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { formatTokens, type ContextUse } from "./turns.js";
@@ -53,7 +53,7 @@ export function ContextHint({
   const cacheGone = session.runtime === "claude" && idle > CACHE_GONE_MS;
   // DSH compacts by itself at 80% of the model's window (stage 17) and has no command for it; the setting is the CLIs'.
   const dsh = session.runtime === "dsh";
-  const auto = dsh ? (context.window ? Math.round(context.window * 0.8) : null) : (settings?.autoCompactTokens ?? null);
+  const auto = dsh ? (context.window ? Math.round(context.window * 0.8) : null) : settings ? autoCompactFor(settings, session.profileId) : null;
   const dismiss = () => {
     try {
       localStorage.setItem(dismissKey(session.id), String(context.used));

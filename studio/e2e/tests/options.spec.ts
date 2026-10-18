@@ -25,6 +25,7 @@ test("model, effort and permissions: new task, presets, switching inside a sessi
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "模型" }).click();
+  await dialog.getByTestId("models-nav-presets").click();
   const presets = dialog.getByRole("region", { name: "常用预设" });
   await presets.getByLabel("预设名称").fill("快速全自动");
   await presets.getByLabel("预设的模型").selectOption("codex-mock");
@@ -152,8 +153,8 @@ test("设置 → 模型: models in the person's order, their default model, effo
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "模型" }).click();
+  await dialog.locator('[data-testid="channel-nav"][data-id="claude-mock"]').click();
   const section = dialog.getByRole("region", { name: "型号顺序和默认" });
-  await section.getByLabel("要设置的模型").selectOption("claude-mock");
   const rows = section.getByTestId("model-order-row");
   await expect(rows.locator(".model-order-name")).toHaveText(["mock-claude", "mock-claude-b"]);
 

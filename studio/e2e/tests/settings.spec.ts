@@ -133,6 +133,7 @@ test("the Claude subscription token is saved in settings, then Claude sessions r
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "模型" }).click();
+  await dialog.locator('[data-testid="channel-nav"][data-id="claude-subscription"]').click();
   await expect(dialog.getByRole("radio", { name: /令牌/ })).toHaveAttribute("aria-checked", "true");
   const row = dialog.locator('[data-testid="credential"][data-id="claude-subscription"]');
   await expect(row).toContainText("未设置");
@@ -140,8 +141,9 @@ test("the Claude subscription token is saved in settings, then Claude sessions r
   await row.getByRole("button", { name: "保存" }).click();
   await expect(row).toContainText("已保存");
   await expect(dialog.getByTestId("credential-message")).toHaveText("已保存 Claude 令牌");
-  // API keys stored elsewhere are shown on their channel's card, never editable here.
-  await expect(dialog.locator('[data-testid="channel-card"][data-id="codex-mock"]')).toContainText("Key 已保存（旧 AMO 设置里的）");
+  // API keys stored elsewhere are shown on their channel's page, never editable here.
+  await dialog.locator('[data-testid="channel-nav"][data-id="codex-mock"]').click();
+  await expect(dialog.locator('[data-testid="channel-page"][data-id="codex-mock"]')).toContainText("Key 已保存（旧 AMO 设置里的）");
   await expect(dialog.locator('[data-testid="credential"][data-id="mock"]')).toHaveCount(0);
   await screenshot(app, "settings", "settings-credentials", page);
   await page.keyboard.press("Escape");
@@ -165,6 +167,7 @@ test("the Claude subscription on the local Claude Code login: a warning first, t
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "模型" }).click();
+  await dialog.locator('[data-testid="channel-nav"][data-id="claude-subscription"]').click();
   const local = dialog.getByRole("radio", { name: /本机 Claude Code 的登录/ });
   const confirm = page.getByTestId("claude-local-confirm");
 

@@ -2,7 +2,7 @@ import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_QUICK_MODELS, OPTIONAL_FEATURES, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn, readClaudeLogin, writeClaudeLogin } from "../../runtime/claude/claude-login.js";
-import { readAutoCompact, writeAutoCompact } from "../../runtime/compact.js";
+import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
@@ -21,6 +21,7 @@ export class ConfigFeature extends Feature {
       scratchpadSafeNewlines: this.f.scratchpad.safeNewlines(),
       claudeLogin: readClaudeLogin(this.store),
       autoCompactTokens: readAutoCompact(this.store),
+      autoCompactProfiles: readAutoCompactProfiles(this.store),
       claudeLocal: { dir, signedIn: localClaudeSignedIn(dir) },
       modelPrefs: readModelPrefs(this.store),
       quotaDisplay: this.quotaDisplay(),
@@ -78,7 +79,7 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown }): StudioSettings {
     if (input.quickModels !== undefined) {
       const list = input.quickModels;
       if (!Array.isArray(list) || list.length > MAX_QUICK_MODELS) throw new HostError("bad_request", `quickModels must be a list of at most ${MAX_QUICK_MODELS}`);
@@ -121,6 +122,13 @@ export class ConfigFeature extends Feature {
         throw new HostError("bad_request", `autoCompactTokens must be null or a whole number from ${AUTO_COMPACT_MIN} to ${AUTO_COMPACT_MAX}`);
       }
       writeAutoCompact(this.store, n);
+    }
+    if (input.autoCompactProfiles !== undefined) {
+      try {
+        writeAutoCompactProfiles(this.store, this.profiles.map((p) => p.id), input.autoCompactProfiles);
+      } catch (err) {
+        throw new HostError("bad_request", (err as Error).message);
+      }
     }
     if (input.disabledFeatures !== undefined) {
       const known = OPTIONAL_FEATURES.map((f) => f.id);

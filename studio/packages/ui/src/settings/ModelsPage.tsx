@@ -1,46 +1,122 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import type { ClaudeLogin, CredentialStatus, StudioSettings } from "@amo-studio/protocol";
+import type { ChannelKind, ClaudeLogin, CredentialStatus, ModelChannel, StudioSettings } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { CredentialMessage, CredentialRow, useCredentials, type SettingsMessage } from "./CredentialsSection.js";
 import { PresetsSection } from "./PresetsSection.js";
-import { ModelDefaultsSection } from "./ModelDefaultsSection.js";
-import { ChannelsSection } from "./ChannelsSection.js";
+import { ChannelNavItem, ChannelPage, SCHEME, useChannels } from "./ChannelsSection.js";
+import { ChannelDialog } from "./ChannelDialog.js";
 import { QuickModelsSection } from "./QuickModelsSection.js";
-import { AutoCompactSection } from "./AutoCompactSection.js";
 import { DshSection } from "./DshSection.js";
 import { useProfiles } from "../lib/balance.js";
 
-// 设置 → 模型: the channels (built-in and the person's own third-party Claude and Codex endpoints, each one hideable
-// from the pickers, with its key and balance; the Claude subscription's card holds how it signs in — a token, or the
-// person's own Claude Code login after a warning), the order and defaults of each profile's models, and the 常用预设.
+// 设置 → 模型. S18 (2026-10-18): a list on the left — 支持的渠道 (built in), 第三方 (the person's own endpoints, each run
+// as a Codex or a Claude one; added from the two buttons under them), then 快速选择 and 常用预设, which belong to no
+// channel — and the chosen entry on the right. A channel's page holds everything about it: key, balance, hiding, the
+// Claude subscription's sign-in or the DSH clone, the order and defaults of its models, and its 自动压缩点.
 
 const CLAUDE_CREDENTIAL = "claude-subscription";
+
+type View = { kind: "channel"; id: string } | { kind: "quick" } | { kind: "presets" };
+
+/** What was open last: 设置 opens on it again (for this window). */
+let lastView: View | null = null;
 
 export function ModelsPage({ link, settings }: { link: HostLink; settings: StudioSettings | null }) {
   const [list, setList] = useCredentials(link);
   const profiles = useProfiles(link);
+  const [channels, reloadChannels] = useChannels(link);
+  const [view, setViewState] = useState<View | null>(lastView);
+  const setView = (v: View | null) => {
+    lastView = v;
+    setViewState(v);
+  };
+  const [dialog, setDialog] = useState<{ channel: ModelChannel | null; kind: ChannelKind } | null>(null);
+  const [message, setMessage] = useState<SettingsMessage>(null);
+  if (!profiles) return <span className="settings-hint">正在读取渠道…</span>;
+
+  const builtin = profiles.filter((p) => !p.custom);
+  const custom = profiles.filter((p) => p.custom);
+  // The chosen channel, or the first one when nothing (or a channel since removed) is chosen.
+  const chosen = view?.kind === "channel" ? profiles.find((p) => p.id === view.id) : undefined;
+  const current: View = view && (view.kind !== "channel" || chosen) ? view : profiles[0] ? { kind: "channel", id: profiles[0].id } : { kind: "quick" };
+  const profile = current.kind === "channel" ? profiles.find((p) => p.id === current.id) : undefined;
+  const channel = profile ? channels.find((c) => c.id === profile.id) : undefined;
   const claude = list?.find((c) => c.id === CLAUDE_CREDENTIAL);
-  const claudeProfile = profiles?.find((p) => p.credentialId === CLAUDE_CREDENTIAL && !p.custom);
+
+  // The Claude subscription's sign-in, and DeepSeek on DSH's own harness (stage 17): where the clone is, and 「检查」.
+  const extra =
+    profile && !profile.custom && profile.credentialId === CLAUDE_CREDENTIAL && claude && settings ? (
+      <ClaudeLoginSection link={link} settings={settings} credential={claude} onCredentials={setList} />
+    ) : profile && !profile.custom && profile.runtime === "dsh" ? (
+      <DshSection link={link} />
+    ) : undefined;
+
+  const select = (v: View) => {
+    setView(v);
+    setMessage(null);
+  };
+
   return (
-    <>
-      {profiles && (
-        <ChannelsSection
+    <div className="models-layout">
+      <nav className="models-nav" aria-label="渠道">
+        <span className="models-nav-group">支持的渠道</span>
+        {builtin.map((p) => (
+          <ChannelNavItem key={p.id} profile={p} channel={undefined} selected={current.kind === "channel" && current.id === p.id} onSelect={() => select({ kind: "channel", id: p.id })} />
+        ))}
+        <span className="models-nav-group">第三方</span>
+        {custom.map((p) => (
+          <ChannelNavItem key={p.id} profile={p} channel={channels.find((c) => c.id === p.id)} selected={current.kind === "channel" && current.id === p.id} onSelect={() => select({ kind: "channel", id: p.id })} />
+        ))}
+        {(["codex", "claude"] as const).map((k) => (
+          <button key={k} type="button" className="models-nav-add" onClick={() => setDialog({ channel: null, kind: k })} title={k === "codex" ? "添加一个用 Codex 跑的第三方接口（OpenAI 兼容）" : "添加一个用 Claude Code 跑的第三方接口（Anthropic 兼容）"} data-testid={`channel-add-${k}`}>
+            + {SCHEME[k]}
+          </button>
+        ))}
+        <span className="models-nav-sep" aria-hidden="true" />
+        <button type="button" aria-current={current.kind === "quick" ? "page" : undefined} className="models-nav-item plain" onClick={() => select({ kind: "quick" })} data-testid="models-nav-quick">
+          快速选择
+        </button>
+        <button type="button" aria-current={current.kind === "presets" ? "page" : undefined} className="models-nav-item plain" onClick={() => select({ kind: "presets" })} data-testid="models-nav-presets">
+          常用预设
+        </button>
+      </nav>
+      <div className="models-detail" key={current.kind === "channel" ? current.id : current.kind}>
+        <CredentialMessage message={message} />
+        {profile && (
+          <ChannelPage
+            link={link}
+            settings={settings}
+            profile={profile}
+            channel={channel}
+            credentials={list}
+            extra={extra}
+            onEdit={(c) => setDialog({ channel: c, kind: c.kind })}
+            onRemoved={(c) => {
+              setView(null);
+              setMessage({ text: `已删除渠道「${c.label}」` });
+            }}
+          />
+        )}
+        {current.kind === "quick" && <QuickModelsSection link={link} settings={settings} profiles={profiles} />}
+        {current.kind === "presets" && <PresetsSection link={link} presets={settings?.presets ?? []} />}
+      </div>
+      {dialog && (
+        <ChannelDialog
           link={link}
-          profiles={profiles}
-          credentials={list}
-          extra={{
-            ...(claude && settings && claudeProfile ? { [claudeProfile.id]: <ClaudeLoginSection link={link} settings={settings} credential={claude} onCredentials={setList} /> } : {}),
-            // DeepSeek on DSH's own harness (stage 17): where the clone is, and 「检查」.
-            ...Object.fromEntries(profiles.filter((p) => p.runtime === "dsh" && !p.custom).map((p) => [p.id, <DshSection key={p.id} link={link} />])),
+          channel={dialog.channel}
+          kind={dialog.kind}
+          onClose={() => setDialog(null)}
+          onSaved={(c, note) => {
+            const added = !dialog.channel;
+            setDialog(null);
+            reloadChannels();
+            setView({ kind: "channel", id: c.id });
+            setMessage({ text: note ?? (added ? `已添加渠道「${c.label}」，新建任务和新会话里可以选它了` : `已保存渠道「${c.label}」`) });
           }}
         />
       )}
-      {profiles && <QuickModelsSection link={link} settings={settings} profiles={profiles} />}
-      <ModelDefaultsSection link={link} settings={settings} />
-      <AutoCompactSection link={link} settings={settings} />
-      <PresetsSection link={link} presets={settings?.presets ?? []} />
-    </>
+    </div>
   );
 }
 

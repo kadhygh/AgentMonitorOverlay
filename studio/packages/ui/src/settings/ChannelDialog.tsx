@@ -143,7 +143,7 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
     >
       <div className="modal channel-modal" role="dialog" aria-modal="true" aria-labelledby="channel-title" data-testid="channel-dialog">
         <span className="modal-title" id="channel-title">
-          {editing ? `编辑渠道「${channel.label}」` : "添加渠道"}
+          {editing ? `编辑渠道「${channel.label}」` : "添加第三方渠道"}
         </span>
         {!editing && (
           <div className="kind-choices" role="radiogroup" aria-label="渠道类型">

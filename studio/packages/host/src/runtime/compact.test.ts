@@ -72,4 +72,22 @@ describe("自动压缩点", () => {
     service.config.updateSettings({ autoCompactTokens: 300_000 });
     expect((await claude.handoff(s.id)).env.CLAUDE_CODE_AUTO_COMPACT_WINDOW).toBe("300000");
   });
+
+  it("can be set per channel (S18): its own value, the CLI's, or back to the shared one", async () => {
+    service.config.updateSettings({ autoCompactTokens: 300_000 });
+    const s = service.config.updateSettings({ autoCompactProfiles: { "p-ds": 150_000, "p-claude": "cli" } });
+    expect(s.autoCompactProfiles).toEqual({ "p-ds": 150_000, "p-claude": "cli" });
+    expect(s.autoCompactTokens).toBe(300_000);
+    expect(() => service.config.updateSettings({ autoCompactProfiles: { "p-ds": 10 } })).toThrow(/autoCompactProfiles/);
+    expect(() => service.config.updateSettings({ autoCompactProfiles: { nope: 200_000 } })).toThrow(/unknown profile/);
+
+    const task = store.createTask({ title: "t", workspaceId: alpha.id });
+    await service.tasks.startSession({ taskId: task.id, topicId: null }, alpha, { profileId: "p-ds" });
+    expect(threadConfig("thread/start")).toMatchObject({ model_auto_compact_token_limit: 150_000 });
+    const c = await claude.startSession({ taskId: task.id, topicId: null, profileId: "p-claude", workspace: alpha });
+    expect((await claude.handoff(c.id)).env).not.toHaveProperty("CLAUDE_CODE_AUTO_COMPACT_WINDOW");
+
+    expect(service.config.updateSettings({ autoCompactProfiles: { "p-claude": null } }).autoCompactProfiles).toEqual({ "p-ds": 150_000 });
+    expect(readAutoCompact(store, "p-claude")).toBe(300_000);
+  });
 });
