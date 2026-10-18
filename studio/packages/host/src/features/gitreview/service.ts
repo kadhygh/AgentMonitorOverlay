@@ -16,12 +16,17 @@ import {
   type GitStatus,
   type Id,
   type NewGitReviewComment,
+  type ReviewOpenRequest,
+  type ReviewOpenResult,
+  type ReviewOpenTarget,
+  type Workspace,
 } from "@amo-studio/protocol";
+import { resolve } from "node:path";
 import { newId } from "../../store/store.js";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
-import { GitError, readChanges, readCommit, readCommitFileDiff, readFileDiff, readLog, readStatus } from "./git.js";
+import { GitError, mergeBase, readChanges, readCommit, readCommitFileDiff, readFileDiff, readLog, readStatus, resolveCommit } from "./git.js";
 
 const NOTE_MAX = 10_000;
 const LINE_TEXT_MAX = 2_000;
@@ -35,11 +40,20 @@ export class GitReviewFeature extends Feature {
     return this.git(() => readStatus(this.requireWorkspace(workspaceId).path));
   }
 
-  async changes(workspaceId: Id, range: unknown): Promise<GitChanges> {
+  /**
+   * The changed files of a range. `base` (a full id, with the branch range; 外部打开 Review) replaces the merge base, and
+   * `label` names it where the default branch's name would show.
+   */
+  async changes(workspaceId: Id, range: unknown, base?: unknown, label?: unknown): Promise<GitChanges> {
     const r = this.range(range);
+    const own = base === undefined || base === null || base === "" ? null : base;
+    if (own !== null && !isObjectId(own)) throw new HostError("bad_request", "base must be a full commit id");
+    if (own !== null && r !== "branch") throw new HostError("bad_request", "base goes with the branch range");
     const dir = this.requireWorkspace(workspaceId).path;
+    const name = typeof label === "string" && label.trim() ? label.trim().slice(0, 80) : own?.slice(0, 7);
+    const status = own ? readStatus(dir).then((s): GitStatus => (s.repo ? { ...s, mergeBase: own, base: name ?? own } : s)) : readStatus(dir);
     // The status and the listing's untracked scan run side by side (readChanges starts the scan before waiting).
-    return this.git(async () => readChanges(dir, r, readStatus(dir)));
+    return this.git(async () => readChanges(dir, r, status));
   }
 
   /**
@@ -82,11 +96,74 @@ export class GitReviewFeature extends Feature {
   }
 
   /** One commit's changed files against its first parent (S13-B). */
-  async commit(workspaceId: Id, sha: unknown): Promise<GitCommitChanges> {
+  async commit(workspaceId: Id, sha: unknown, base?: unknown): Promise<GitCommitChanges> {
     if (!isCommitRef(sha)) throw new HostError("bad_request", "sha must be 7 to 64 hex digits");
+    if (base !== undefined && base !== null && base !== "" && !isObjectId(base)) throw new HostError("bad_request", "base must be a full commit id");
     const dir = this.requireWorkspace(workspaceId).path;
-    return this.git(() => readCommit(dir, sha));
+    return this.git(() => readCommit(dir, sha, typeof base === "string" && base ? base : undefined));
   }
+  /**
+   * 外部打开 Review (2026-10-18): another tool (a harness, a script) asks the open Studio to show a project's changes.
+   * The project is found by its folder (registered when new) or its id. What to show:
+   * - nothing: the uncommitted changes (工作区), comments allowed;
+   * - `base`: the working tree against that ref (the 本分支 view with this base), comments allowed;
+   * - `commit`: that commit, read-only; with `base`, the commit against it;
+   * - `range` `A..B` (B against A) or `A...B` (B against where it left A), read-only.
+   * Refs are branch names, tags, `HEAD~2` or ids; they are resolved here, so the window gets full ids. `sessionId` is
+   * where 发回 sends the comments. The main window opens the review window when it receives the event.
+   */
+  async openReview(input: Partial<ReviewOpenRequest>): Promise<ReviewOpenResult> {
+    if (!this.host.liveWindows) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再打开 Review");
+    const text = (v: unknown, name: string): string | undefined => {
+      if (v === undefined || v === null || v === "") return undefined;
+      if (typeof v !== "string" || !v.trim() || v.length > 500) throw new HostError("bad_request", `${name} must be a non-empty string`);
+      return v.trim();
+    };
+    let workspace: Workspace;
+    let workspaceAdded = false;
+    const id = text(input.workspaceId, "workspaceId");
+    const folder = text(input.path, "path");
+    if (id) workspace = this.requireWorkspace(id);
+    else if (folder) {
+      const known = this.store.findWorkspaceByPath(resolve(folder));
+      if (known?.archivedAt) throw new HostError("conflict", `这个文件夹是已归档的项目「${known.name}」，到 设置 → 数据管理 里恢复它`);
+      if (known) workspace = known;
+      else {
+        workspace = this.f.projects.addWorkspace({ path: folder });
+        workspaceAdded = true;
+      }
+    } else throw new HostError("bad_request", "path (the project's folder) or workspaceId is required");
+
+    let commit = text(input.commit, "commit");
+    let base = text(input.base, "base");
+    let forked = false;
+    const range = text(input.range, "range");
+    if (range) {
+      if (commit || base) throw new HostError("bad_request", "range goes alone, without commit or base");
+      const m = /^(.+?)(\.\.\.?)(.+)$/.exec(range);
+      if (!m) throw new HostError("bad_request", "range is A..B or A...B");
+      [base, commit, forked] = [m[1]!, m[3]!, m[2] === "..."];
+    }
+    const sessionId = text(input.sessionId, "sessionId");
+    if (sessionId && !this.store.getSession(sessionId)) throw new HostError("not_found", `session ${sessionId} not found`);
+    const file = text(input.file, "file");
+    const dir = workspace.path;
+    const target = await this.git(async (): Promise<ReviewOpenTarget> => {
+      const head = commit ? await resolveCommit(dir, commit) : undefined;
+      let from = base ? await resolveCommit(dir, base) : undefined;
+      if (forked && from && head) from = await mergeBase(dir, from, head);
+      return {
+        workspaceId: workspace.id,
+        ...(sessionId ? { sessionId } : {}),
+        ...(head ? { commit: head } : {}),
+        ...(from ? { base: from, baseLabel: forked ? `${base} 的分叉点` : base! } : {}),
+        ...(file && !head ? { file } : {}),
+      };
+    });
+    this.publish({ type: "review.open", target, at: new Date().toISOString() });
+    return { target, workspaceAdded };
+  }
+
 
   /** One file of a commit, against the base its listing gave (S13-B). */
   async commitDiff(workspaceId: Id, sha: unknown, base: unknown, path: unknown, oldPath?: unknown): Promise<GitFileDiff> {

@@ -19,6 +19,8 @@ import type { SearchHit } from "./shell/search.js";
 import { VIEWS } from "./features.js";
 import { featureOn, FeaturesProvider } from "./lib/features.js";
 import { openMarks, useMarksShortcut } from "./marks/open.js";
+import { openReview } from "./gitreview/open.js";
+import { onHostEvent } from "./host/events.js";
 import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
 
 // The shell: the Host connection, the scope and the view in front, the top bar and the left column. Pages come from
@@ -66,6 +68,16 @@ export function App() {
     return scope.kind === "workspace" ? scope.id : null;
   };
   useMarksShortcut(marksProject);
+  // 外部打开 Review (2026-10-18): another tool asked the Host (POST /api/review/open); this window opens the review window.
+  // An event replayed after a reconnect is not a new request.
+  useEffect(
+    () =>
+      onHostEvent((e) => {
+        if (e.type !== "review.open" || Date.now() - Date.parse(e.at) > 60_000) return;
+        openReview({ ...e.target, ...(e.target.file ? { nonce: `ext-${e.seq}` } : {}) });
+      }),
+    [],
+  );
 
   useEffect(
     () =>

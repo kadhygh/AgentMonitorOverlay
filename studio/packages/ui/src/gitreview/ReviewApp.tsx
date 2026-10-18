@@ -51,12 +51,13 @@ export function ReviewApp() {
   if (!target || !ws) return <div className="placeholder">项目不存在或已移除。</div>;
   return (
     <ReviewPage
-      key={`${ws.id}@${target.commit ?? ""}`}
+      key={`${ws.id}@${target.commit ?? ""}@${target.base ?? ""}`}
       link={host.link}
       state={host.state}
       workspace={ws}
       sessionId={target.sessionId ?? null}
       commit={target.commit ?? null}
+      base={target.base ? { sha: target.base, label: target.baseLabel ?? null } : null}
       select={target.file && !target.commit ? { path: target.file, nonce: target.nonce ?? "" } : null}
     />
   );
@@ -85,6 +86,7 @@ export function ReviewPage({
   workspace,
   sessionId,
   commit = null,
+  base: given = null,
   select = null,
   embedded = false,
   inactive = false,
@@ -95,13 +97,18 @@ export function ReviewPage({
   sessionId: string | null;
   /** A commit's window (S13-B, from 历史): that commit's changes, read-only. */
   commit?: string | null;
+  /**
+   * 外部打开 Review (2026-10-18): what to compare with instead — the working tree against it (本分支 with this base,
+   * comments as usual), or with `commit`, the commit against it.
+   */
+  base?: { sha: string; label: string | null } | null;
   select?: ReviewSelect | null;
   /** Inside the viewer window (its 改动 mode): the viewer names the window. */
   embedded?: boolean;
   /** Kept but not in front (the viewer's 文件 mode): keys are not its own. */
   inactive?: boolean;
 }) {
-  const [range, setRange] = useState<GitRange>("working");
+  const [range, setRange] = useState<GitRange>(given && !commit ? "branch" : "working");
   // The view choices (list width and layout, 单栏 / 左右对照, 只看改动 / 完整文件) stay on this machine.
   const [prefs, setPrefs] = useState<ReviewPrefs>(readPrefs);
   const prefsRef = useRef(prefs);
@@ -209,7 +216,7 @@ export function ReviewPage({
   useEffect(() => {
     if (commit) return;
     let live = true;
-    call(link, "GET /api/workspaces/:id/git/changes", { id: workspace.id }, undefined, { range })
+    call(link, "GET /api/workspaces/:id/git/changes", { id: workspace.id }, undefined, { range, ...(range === "branch" && given ? { base: given.sha, ...(given.label ? { label: given.label } : {}) } : {}) })
       .then((c) => {
         if (!live) return;
         setChanges(c);
@@ -219,7 +226,7 @@ export function ReviewPage({
     return () => {
       live = false;
     };
-  }, [link, workspace.id, range, reload, commit]);
+  }, [link, workspace.id, range, reload, commit, given?.sha, given?.label]); // eslint-disable-line react-hooks/exhaustive-deps -- the base by value
   // 历史 read ahead, once the window's own files are in (and again on 刷新): h opens it at once.
   const hasHistory = !!commit || !!changes?.status.repo;
   useEffect(() => {
@@ -231,7 +238,7 @@ export function ReviewPage({
   useEffect(() => {
     if (!commit) return;
     let live = true;
-    call(link, "GET /api/workspaces/:id/git/commit", { id: workspace.id }, undefined, { sha: commit })
+    call(link, "GET /api/workspaces/:id/git/commit", { id: workspace.id }, undefined, { sha: commit, ...(given ? { base: given.sha } : {}) })
       .then((c) => {
         if (!live) return;
         setShownCommit(c);
@@ -241,20 +248,21 @@ export function ReviewPage({
     return () => {
       live = false;
     };
-  }, [link, workspace.id, commit]);
+  }, [link, workspace.id, commit, given?.sha]); // eslint-disable-line react-hooks/exhaustive-deps -- the base by value
 
-  // Asked for a file (用 git diff 看): the uncommitted changes, read again, then that file, or a word that it has none.
+  // Asked for a file (用 git diff 看): the uncommitted changes (or, opened with a base, the working tree against it), read
+  // again, then that file, or a word that it has none.
   const wanted = useRef<ReviewSelect | null>(null);
   useEffect(() => {
     if (!select || commit) return;
     wanted.current = select;
     cache.clear();
-    setRange("working");
+    setRange(given ? "branch" : "working");
     setReload((n) => n + 1);
   }, [select?.path, select?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     const want = wanted.current;
-    if (!want || !changes || changes.range !== "working") return;
+    if (!want || !changes || changes.range !== (given ? "branch" : "working")) return;
     wanted.current = null;
     const hit = findChangedFile(changes.files, want.path, workspace.path);
     if (hit) setSelected(hit.path);
@@ -529,7 +537,9 @@ export function ReviewPage({
       {menu && <FileMenu at={menu} vscode={vscode} onOpen={(app) => openFile(menu.file, app)} onClose={closeMenu} />}
 
       {commit ? (
-        <footer className="gr-bar gr-dim">只读：这个提交的改动，对比它的{shownCommit?.commit.parents.length ? "第一个父提交" : "空仓库"}。批注请在工作区改动里写。</footer>
+        <footer className="gr-bar gr-dim" data-testid="review-commit-footer">
+          只读：{given ? `对比 ${short(given.sha)} 的改动` : `这个提交的改动，对比它的${shownCommit?.commit.parents.length ? "第一个父提交" : "空仓库"}`}。批注请在工作区改动里写。
+        </footer>
       ) : (
         <SendBar link={link} state={state} workspace={workspace} comments={comments} target={target} onTarget={setTarget} busy={busy} run={run}>
           {sentCount > 0 && (

@@ -65,7 +65,7 @@ export function SendBar({
   children?: ReactNode;
 }) {
   const drafts = comments.filter((c) => c.state === "draft");
-  const choices = sessionChoices(state, workspace.id);
+  const choices = sessionChoices(state, workspace.id, target);
   const chosen = choices.some((c) => c.id === target) ? target : "";
   const label = choices.find((c) => c.id === chosen)?.label ?? "";
   const send = () =>

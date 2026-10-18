@@ -1,4 +1,4 @@
-import { isCommitRef, type GitChangedFile, type GitCommentRange, type GitDiffLine, type GitFileDiff, type GitFileStatus, type GitLineSide, type GitReviewComment, type Session, type StateSnapshot } from "@amo-studio/protocol";
+import { isCommitRef, isObjectId, type GitChangedFile, type GitCommentRange, type GitDiffLine, type GitFileDiff, type GitFileStatus, type GitLineSide, type GitReviewComment, type Session, type StateSnapshot } from "@amo-studio/protocol";
 
 // Pure logic of the Git Review window: its address, the file list, the rows of a diff, where comments sit, and the
 // session the comments go to by default.
@@ -16,12 +16,20 @@ export interface ReviewTarget {
   file?: string;
   /** Changes on every open with a file (the shell sets it), so asking for the same file again still selects it. */
   nonce?: string;
+  /**
+   * 外部打开 Review (2026-10-18): a full commit id to compare with — the working tree against it (the 本分支 view with
+   * this base), or with `commit`, the commit against it. `baseLabel` is how the caller named it.
+   */
+  base?: string;
+  baseLabel?: string;
 }
 
 /** The window's address: `#review?workspace=…&session=…&file=…&n=…`, or `#review?workspace=…&commit=…`. */
 export function reviewHash(t: ReviewTarget): string {
-  if (t.commit) return `#review?${new URLSearchParams({ workspace: t.workspaceId, commit: t.commit }).toString()}`;
+  if (t.commit) return `#review?${new URLSearchParams({ workspace: t.workspaceId, commit: t.commit, ...(t.base ? { base: t.base } : {}) }).toString()}`;
   const q = new URLSearchParams({ workspace: t.workspaceId, ...(t.sessionId ? { session: t.sessionId } : {}) });
+  if (t.base) q.set("base", t.base);
+  if (t.base && t.baseLabel) q.set("label", t.baseLabel);
   if (t.file) q.set("file", t.file);
   if (t.file && t.nonce) q.set("n", t.nonce);
   return `#review?${q.toString()}`;
@@ -33,11 +41,14 @@ export function parseReviewHash(hash: string): ReviewTarget | null {
   const workspaceId = q.get("workspace");
   if (!workspaceId) return null;
   const commit = q.get("commit");
-  if (commit !== null) return isCommitRef(commit) ? { workspaceId, commit } : null;
+  const base = q.get("base");
+  if (base !== null && !isObjectId(base)) return null;
+  if (commit !== null) return isCommitRef(commit) ? { workspaceId, commit, ...(base ? { base } : {}) } : null;
   const sessionId = q.get("session");
   const file = q.get("file");
   const nonce = q.get("n");
-  return { workspaceId, ...(sessionId ? { sessionId } : {}), ...(file ? { file, ...(nonce ? { nonce } : {}) } : {}) };
+  const label = q.get("label");
+  return { workspaceId, ...(sessionId ? { sessionId } : {}), ...(file ? { file, ...(nonce ? { nonce } : {}) } : {}), ...(base ? { base, ...(label ? { baseLabel: label } : {}) } : {}) };
 }
 
 /** The list's status icons, as in Fork: + added, M modified, − deleted, R renamed. */
@@ -129,9 +140,13 @@ export function draftCounts(comments: readonly GitReviewComment[]): Map<string, 
 }
 
 /** Sessions comments can go to: live sessions of the project, most recently active first. */
-export function sessionChoices(state: Pick<StateSnapshot, "sessions" | "tasks" | "topics">, workspaceId: string): { id: string; label: string }[] {
+/**
+ * The sessions 发给 offers: the project's, and `also` (外部打开 Review, 2026-10-18: the session the caller named may work in
+ * another project).
+ */
+export function sessionChoices(state: Pick<StateSnapshot, "sessions" | "tasks" | "topics">, workspaceId: string, also?: string): { id: string; label: string }[] {
   return state.sessions
-    .filter((s) => s.workspaceId === workspaceId && !s.archivedAt)
+    .filter((s) => (s.workspaceId === workspaceId || s.id === also) && !s.archivedAt)
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))
     .map((s) => {
       const owner = s.taskId ? state.tasks.find((t) => t.id === s.taskId)?.title || "未命名任务" : state.topics.find((t) => t.id === s.topicId)?.title || "专题";

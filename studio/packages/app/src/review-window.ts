@@ -17,6 +17,8 @@ export interface ReviewWindowOptions {
 const ID = /^[\w-]{1,80}$/;
 /** A commit, abbreviated or full. */
 const COMMIT = /^[0-9a-f]{7,40}$/;
+/** A full commit id: the base 外部打开 Review gives (2026-10-18). */
+const FULL = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
 let opened = 0;
 
@@ -27,15 +29,25 @@ let opened = 0;
  * again still reaches the page.
  */
 export function reviewHash(target: unknown): { key: string; hash: string } | null {
-  const t = target as { workspaceId?: unknown; sessionId?: unknown; commit?: unknown; file?: unknown } | null;
+  const t = target as { workspaceId?: unknown; sessionId?: unknown; commit?: unknown; file?: unknown; base?: unknown; baseLabel?: unknown } | null;
   if (typeof t?.workspaceId !== "string" || !ID.test(t.workspaceId)) return null;
   if (t.commit !== undefined && (typeof t.commit !== "string" || !COMMIT.test(t.commit))) return null;
+  // 外部打开 Review: a base (full id) to compare with, and how the caller named it.
+  if (t.base !== undefined && (typeof t.base !== "string" || !FULL.test(t.base))) return null;
+  const base = typeof t.base === "string" ? t.base : null;
+  const label = base && typeof t.baseLabel === "string" && t.baseLabel && t.baseLabel.length <= 100 && !/[\0\r\n]/.test(t.baseLabel) ? t.baseLabel : null;
   const commit = typeof t.commit === "string" ? t.commit : null;
-  if (commit) return { key: `${t.workspaceId}@${commit}`, hash: `#review?workspace=${t.workspaceId}&commit=${commit}` };
+  if (commit) {
+    const q = new URLSearchParams({ workspace: t.workspaceId, commit });
+    if (base) q.set("base", base);
+    return { key: `${t.workspaceId}@${base ? `${base}..` : ""}${commit}`, hash: `#review?${q.toString()}` };
+  }
   const session = typeof t.sessionId === "string" && ID.test(t.sessionId) ? t.sessionId : null;
   const file = typeof t.file === "string" && t.file && t.file.length <= 1000 && !/[\0\r\n]/.test(t.file) ? t.file : null;
   const q = new URLSearchParams({ workspace: t.workspaceId });
   if (session) q.set("session", session);
+  if (base) q.set("base", base);
+  if (label) q.set("label", label);
   if (file) {
     q.set("file", file);
     q.set("n", String(++opened));

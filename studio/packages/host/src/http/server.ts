@@ -221,7 +221,11 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
     }
     wss.handleUpgrade(req, socket, head, (ws) => {
       sockets.add(ws);
-      ws.on("close", () => sockets.delete(ws));
+      service.liveWindows++;
+      ws.on("close", () => {
+        sockets.delete(ws);
+        service.liveWindows--;
+      });
       const since = Number(url.searchParams.get("since") ?? 0) || 0;
       let cursor = since;
       for (;;) {
