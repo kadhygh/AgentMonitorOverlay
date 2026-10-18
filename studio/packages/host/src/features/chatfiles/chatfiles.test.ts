@@ -1,3 +1,4 @@
+import { execFileSync } from "node:child_process";
 import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path, { join } from "node:path";
@@ -9,7 +10,7 @@ import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
 import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { startHostServer, type HostServer } from "../../http/server.js";
-import { resolveMentioned } from "./service.js";
+import { findByEnd, resolveMentioned } from "./service.js";
 
 // Which files a conversation names exist (stage 12, S12-C).
 
@@ -93,5 +94,50 @@ describe("resolveMentioned", () => {
     expect(resolveMentioned("~/a.ts", "C:\\p", w, true)).toBeNull();
     expect(resolveMentioned("a.ts", null, w, true)).toBeNull();
     expect(resolveMentioned("file:///%E0", null, w, true)).toBeNull();
+  });
+});
+
+describe("a path written from inside the project (S18)", () => {
+  it("links the one file of a git project whose path ends with it", async () => {
+    const dir = join(root, "game");
+    const sim = join(dir, "Unity", "Assets", "Simulation");
+    mkdirSync(join(sim, "System", "V2"), { recursive: true });
+    mkdirSync(join(sim, "Custom"), { recursive: true });
+    mkdirSync(join(dir, "Docs"), { recursive: true });
+    writeFileSync(join(sim, "System", "V2", "Resolver.cs"), "class A {}\n");
+    writeFileSync(join(sim, "Custom", "Cache.Parts.cs"), "class B {}\n");
+    writeFileSync(join(sim, "README.md"), "a\n");
+    writeFileSync(join(dir, "Docs", "README.md"), "b\n");
+    writeFileSync(join(dir, ".gitignore"), "ignored.cs\n");
+    writeFileSync(join(sim, "ignored.cs"), "\n");
+    execFileSync("git", ["init", "-q"], { cwd: dir });
+    execFileSync("git", ["-c", "core.autocrlf=false", "add", "-A"], { cwd: dir });
+    writeFileSync(join(sim, "Custom", "New.cs"), "\n"); // untracked, not ignored
+    const ws = (await api<Workspace>("POST", "/api/workspaces", { path: dir })).data;
+    const r = await api<FsExistsResult>("POST", "/api/fs/exists", {
+      workspaceId: ws.id,
+      paths: ["System/V2/Resolver.cs", "system\\v2\\resolver.cs", "Cache.Parts.cs", "./Custom/Cache.Parts.cs", "New.cs", "README.md", "ignored.cs", "V2/Nope.cs", "../Resolver.cs"],
+    });
+    const at = (...p: string[]) => ({ path: join(ws.path, ...p), dir: false });
+    expect(r.data.found["System/V2/Resolver.cs"]).toEqual(at("Unity", "Assets", "Simulation", "System", "V2", "Resolver.cs"));
+    expect(r.data.found["system\\v2\\resolver.cs"]).toEqual(at("Unity", "Assets", "Simulation", "System", "V2", "Resolver.cs"));
+    expect(r.data.found["Cache.Parts.cs"]).toEqual(at("Unity", "Assets", "Simulation", "Custom", "Cache.Parts.cs"));
+    expect(r.data.found["./Custom/Cache.Parts.cs"]).toEqual(at("Unity", "Assets", "Simulation", "Custom", "Cache.Parts.cs"));
+    expect(r.data.found["New.cs"]).toEqual(at("Unity", "Assets", "Simulation", "Custom", "New.cs"));
+    // Two READMEs: which one is meant is unknown, so neither.
+    expect(r.data.found["README.md"]).toBeNull();
+    expect(r.data.found["ignored.cs"]).toBeNull();
+    expect(r.data.found["V2/Nope.cs"]).toBeNull();
+    expect(r.data.found["../Resolver.cs"]).toBeNull();
+  });
+
+  it("matches whole folder names, not the end of one", () => {
+    const files = ["src/OldResolver.cs", "src/a/Resolver.cs", "lib/x/b.ts"];
+    const list = { files, lower: files.map((f) => f.toLowerCase()) };
+    expect(findByEnd("Resolver.cs", list)).toBe("src/a/Resolver.cs");
+    expect(findByEnd("a/resolver.cs", list)).toBe("src/a/Resolver.cs");
+    expect(findByEnd("/x/b.ts", list)).toBe("lib/x/b.ts");
+    expect(findByEnd("ib/x/b.ts", list)).toBeNull();
+    expect(findByEnd("x/", list)).toBeNull();
   });
 });
