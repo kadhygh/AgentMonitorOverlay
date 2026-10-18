@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { isCommon, TASK_COLUMNS, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { COLUMN_NAMES } from "../lib/status.js";
+import { CopyId } from "../lib/CopyId.js";
 
 // The task page's head (2026-10-14, 方案 A): the title, and under it one quiet line of what the task is — status,
 // project, branch, topic — each a word that opens its own small picker. No boxes until hovered.
@@ -217,7 +218,7 @@ const Icon = {
 };
 
 /**
- * The line under the title (方案 A1): `● 进行中 · 📁 项目 · ⎇ 分支 · ☰ 专题`, separated by dots. Each part is a button
+ * The line under the title (方案 A1): `● 进行中 · 📁 项目 · ⎇ 分支 · ☰ 专题 · #id`, separated by dots. Each part is a button
  * that looks like text until hovered.
  */
 export function TaskMeta({
@@ -269,6 +270,7 @@ export function TaskMeta({
       {topic ? topic.title : "—"}
     </button>,
   );
+  parts.push(<CopyId key="id" id={task.id} label="任务" className="meta-item mono" testId="task-id" />);
   return (
     <div className="task-meta" data-testid="task-meta">
       {parts.flatMap((p, i) => (i ? [<span key={`sep${i}`} className="meta-sep" aria-hidden="true">·</span>, p] : [p]))}

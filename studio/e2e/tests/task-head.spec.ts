@@ -38,8 +38,8 @@ test("status, topic and project from the line under the title; the right column 
   await expect(page.getByTestId("task-branch")).toHaveText("feature/drops");
   await expect(page.getByTestId("task-topic")).toHaveText("—");
   await expect(meta).toContainText("·");
-  // Project and branch are only shown; status and topic are the parts that open something.
-  await expect(meta.getByRole("button")).toHaveCount(2);
+  // Project and branch are only shown; status and topic open something, the id (S18) copies itself.
+  await expect(meta.getByRole("button")).toHaveCount(3);
   // The right column is off by default; 侧栏 brings it.
   await expect(page.getByText("进度", { exact: true })).toHaveCount(0);
   await screenshot(app, "stage-14", "S14-E-task-head", page);

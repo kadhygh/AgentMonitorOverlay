@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { Session } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { openMarks } from "../marks/open.js";
+import { CopyId } from "../lib/CopyId.js";
 import { WorkdirActions } from "../files/WorkdirActions.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
 import { EditableName } from "./EditableName.js";
@@ -58,6 +59,7 @@ export function SessionHead({
       <span className="thread-model" data-testid="thread-model">
         {model}
       </span>
+      <CopyId id={session.id} label="会话" className="thread-id" testId="session-id" />
       {/* 仅工作台 is the usual case and says nothing; the other writers matter. */}
       {writer && !session.archivedAt && session.writer !== "workbench" && (
         <span className="writer" style={{ color: writer.color }} data-testid="writer">
