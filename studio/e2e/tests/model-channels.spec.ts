@@ -123,36 +123,53 @@ test("设置 → 额度: which accounts show at the bottom of the left column an
   await expect(footer).not.toContainText("中转 GPT");
 });
 
-test("设置 → 模型 → 快速选择: the model tiles, in the chosen order", async () => {
+test("设置 → 模型 → 快速选择: the automatic row, dragged into the person's own order (2026-10-18)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;
+  // Recent picks naming Mock Claude's default model by id and by "default": one model, so one row.
+  await page.evaluate(() => localStorage.setItem("amo.recentModels", JSON.stringify([{ profileId: "claude-mock", model: "mock-claude" }, { profileId: "claude-mock", model: null }])));
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "模型" }).click();
   await dialog.getByTestId("models-nav-quick").click();
   const section = dialog.getByRole("region", { name: "快速选择" });
+  const rows = section.getByTestId("quick-row");
+  const names = () => rows.locator(".channel-sub");
+  await expect(section.getByTestId("quick-auto")).toBeVisible();
+  await expect(names()).toHaveText(["Mock Claude", "Mock 模型", "Claude"]);
+  const quick = async () => (await studio!.api<StudioSettings>("GET", "/api/settings")).quickModels;
+  expect(await quick()).toEqual([]);
+
+  // A drag keeps the row as the person's own.
+  await rows.nth(2).dragTo(rows.nth(0), { targetPosition: { x: 20, y: 2 } });
+  await expect(names()).toHaveText(["Claude", "Mock Claude", "Mock 模型"]);
+  await expect(section.getByTestId("quick-auto")).toHaveCount(0);
+  await expect.poll(quick).toEqual([{ profileId: "claude-subscription", model: null }, { profileId: "claude-mock", model: null }, { profileId: "codex-mock", model: null }]);
+  // The keyboard way, a removal, an addition.
+  await rows.nth(0).focus();
+  await page.keyboard.press("Alt+ArrowDown");
+  await expect(names()).toHaveText(["Mock Claude", "Claude", "Mock 模型"]);
+  await rows.nth(2).getByTestId("quick-remove").click();
+  await expect(rows).toHaveCount(2);
   await section.getByTestId("quick-profile").selectOption({ label: "Mock Claude" });
   await expect(section.getByTestId("quick-model").locator("option")).toHaveCount(2);
   await section.getByTestId("quick-model").selectOption("mock-claude-b");
   await section.getByTestId("quick-add").click();
-  await expect(section.getByTestId("quick-row")).toHaveCount(1);
-  await section.getByTestId("quick-profile").selectOption({ label: "Mock 模型" });
-  await section.getByTestId("quick-add").click();
-  await expect(section.getByTestId("quick-row")).toHaveCount(2);
-  await expect(section.getByTestId("quick-row").first()).toContainText("mock-claude-b");
-  await section.getByRole("button", { name: "上移" }).nth(1).click();
-  await expect(section.getByTestId("quick-row").first()).toContainText("Mock 模型");
-  await screenshot(app, "stage-14", "S14-L-quick-models", page);
-  const settings = await studio.api<StudioSettings>("GET", "/api/settings");
-  expect(settings.quickModels).toEqual([{ profileId: "codex-mock", model: null }, { profileId: "claude-mock", model: "mock-claude-b" }]);
+  await expect(rows).toHaveCount(3);
+  await expect.poll(quick).toEqual([{ profileId: "claude-mock", model: null }, { profileId: "claude-subscription", model: null }, { profileId: "claude-mock", model: "mock-claude-b" }]);
+  await screenshot(app, "stage-18", "S18-quick-models", page);
   await page.keyboard.press("Escape");
 
-  // The new-task page shows just those two, in that order; a tile without a model names the default model.
+  // The new-task page shows them in that order; the model the draft has now (Mock 模型) always shows, in the last place.
   await page.getByRole("button", { name: "+ 新任务" }).click();
   const tiles = page.getByRole("group", { name: "模型" }).getByRole("button").filter({ hasNotText: "全部型号" });
-  await expect(tiles).toHaveCount(2);
-  await expect(tiles.nth(0)).toContainText("Mock 模型");
-  await expect(tiles.nth(1)).toContainText("mock-claude-b");
+  await expect(tiles).toHaveCount(3);
+  await expect(tiles.nth(0)).toHaveAttribute("title", /^Mock Claude/);
+  await expect(tiles.nth(1)).toHaveAttribute("title", /^Claude/);
+  await expect(tiles.nth(2)).toHaveAttribute("title", /^Mock 模型/);
+  await tiles.nth(0).click();
+  await page.keyboard.press("Alt+3");
+  await expect(tiles.nth(2)).toHaveAttribute("title", /mock-claude-b|Mock Claude B/i);
 });
 
 test("设置 → 模型 → a channel's 自动压缩点: 272k by default, its own value, the CLI's, or back to the default (S18)", async () => {
