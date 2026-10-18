@@ -1,15 +1,12 @@
 import { useEffect, useRef, useState, type DragEvent } from "react";
-import type { ModelPrefs, ModelProfile, StudioSettings } from "@amo-studio/protocol";
+import type { ModelPrefs, StudioSettings } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { effortLabel, modelName, useProfileChoices } from "../lib/choices.js";
-import { profileLabel } from "../lib/profiles.js";
 
-// 设置 → 模型 → 型号顺序和默认: per profile, drag the models into the order every picker shows, mark the one new sessions
+// 设置 → 模型 → a channel's page → 型号顺序和默认 (S18: the channel is the page's): drag the models into the order every picker shows, mark the one new sessions
 // start on, and the default reasoning effort and permissions. Saved at once; the pickers follow.
 
-export function ModelDefaultsSection({ link, settings }: { link: HostLink; settings: StudioSettings | null }) {
-  const [profiles, setProfiles] = useState<ModelProfile[]>([]);
-  const [profileId, setProfileId] = useState("");
+export function ModelDefaultsSection({ link, settings, profileId }: { link: HostLink; settings: StudioSettings | null; profileId: string }) {
   const { choices, error: loadError } = useProfileChoices(link, profileId || null);
   const prefs: ModelPrefs = (profileId && settings?.modelPrefs?.[profileId]) || {};
   // What was last saved, ahead of the Host's settings event: saves in quick succession build on each other.
@@ -22,14 +19,6 @@ export function ModelDefaultsSection({ link, settings }: { link: HostLink; setti
   const [over, setOver] = useState<{ id: string; after: boolean } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    call(link, "GET /api/state")
-      .then((s) => {
-        setProfiles(s.profiles);
-        setProfileId((cur) => cur || s.profiles[0]?.id || "");
-      })
-      .catch(() => undefined);
-  }, [link]);
   const listed = choices?.models.map((m) => m.id).join("\n") ?? "";
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the list by content
   useEffect(() => setOrder(listed ? listed.split("\n") : []), [listed]);
@@ -81,16 +70,6 @@ export function ModelDefaultsSection({ link, settings }: { link: HostLink; setti
     <section className="settings-section" aria-label="型号顺序和默认">
       <span className="settings-heading">型号顺序和默认</span>
       <span className="settings-hint">拖动调整各处列出的顺序（也可以选中一行按 Alt ↑ / Alt ↓）；点「默认」决定新会话没选型号时用哪个。思考强度和权限的默认同样只影响之后新开的会话。</span>
-      <div className="settings-row">
-        <span className="settings-label">模型</span>
-        <select className="field" value={profileId} onChange={(e) => setProfileId(e.target.value)} aria-label="要设置的模型">
-          {profiles.map((p) => (
-            <option key={p.id} value={p.id}>
-              {profileLabel(p)}
-            </option>
-          ))}
-        </select>
-      </div>
       {loadError && <span className="form-error">{loadError}</span>}
       {!choices && !loadError && <span className="settings-hint">正在读取可选型号…</span>}
       {choices && (

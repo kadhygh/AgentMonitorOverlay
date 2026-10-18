@@ -63,7 +63,10 @@ test("设置 → 模型: the DSH clone's place, its version and 「检查」 (st
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
   await dialog.getByRole("tab", { name: "模型" }).click();
-  const section = dialog.locator('[data-testid="channel-card"]').filter({ hasText: "Mock DSH" }).getByTestId("dsh-section");
+  await dialog.locator('[data-testid="channel-nav"][data-id="dsh-mock"]').click();
+  // DSH compacts by itself; its page says so instead of a setting.
+  await expect(dialog.getByTestId("auto-compact-dsh")).toContainText("80%");
+  const section = dialog.getByTestId("dsh-section");
   await expect(section).toBeVisible();
   await section.getByTestId("dsh-path").fill(clone);
   await section.getByTestId("dsh-save").click();

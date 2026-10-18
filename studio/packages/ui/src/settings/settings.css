@@ -25,7 +25,7 @@
 .feature-text { display: flex; flex-direction: column; gap: 2px; }
 
 /* 设置 in pages: the areas on the left, one page on the right (the dialog keeps its size between pages). */
-.settings-modal { width: 760px; height: min(640px, calc(100vh - 120px)); overflow: hidden; gap: 12px; }
+.settings-modal { width: min(880px, calc(100vw - 40px)); height: min(640px, calc(100vh - 120px)); overflow: hidden; gap: 12px; }
 .settings-body { flex: 1; min-height: 0; display: flex; gap: 16px; }
 .settings-nav { flex: none; width: 128px; display: flex; flex-direction: column; gap: 2px; padding-right: 12px; border-right: 1px solid var(--border); }
 .settings-tab { height: var(--ctl); padding: 0 10px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
@@ -88,10 +88,28 @@
 .edit-project-folder code { font-family: var(--font-code); font-size: 12px; overflow-wrap: anywhere; }
 
 /* 设置 → 模型 → 渠道 (2026-10-15): one card per channel; the extra part (Claude's sign-in) under a hairline. */
-.channel-list { display: flex; flex-direction: column; gap: 8px; }
-.channel-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-l); background: var(--panel); }
-.channel-card.hidden { background: transparent; border-style: dashed; }
-.channel-card.hidden .channel-name b, .channel-card.hidden .mark { opacity: 0.55; }
+/* S18: 设置 → 模型 — the channels on the left, the chosen one's page on the right; each side scrolls on its own. */
+.settings-page:has(> .models-layout) { overflow: hidden; padding-right: 0; }
+.models-layout { flex: 1; min-height: 0; display: flex; gap: 14px; }
+.models-nav { flex: none; width: 176px; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding-right: 10px; border-right: 1px solid var(--border); }
+.models-nav-group { font-size: 11.5px; font-weight: 600; color: var(--text-dim); padding: 10px 6px 4px; letter-spacing: 0.02em; }
+.models-nav-group:first-child { padding-top: 0; }
+.models-nav-item { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 6px; border: 0; border-radius: var(--r-btn); background: transparent; color: var(--text); font: inherit; text-align: left; cursor: pointer; }
+.models-nav-item:hover { background: var(--tint); }
+.models-nav-item[aria-current="page"] { background: var(--chip); }
+.models-nav-item.plain { padding: 6px 8px; font-size: 13px; }
+.models-nav-item.hidden .models-nav-name, .models-nav-item.hidden .mark { opacity: 0.55; }
+.models-nav-text { display: flex; flex-direction: column; min-width: 0; }
+.models-nav-name { font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.models-nav-sub { font-size: 11px; color: var(--text-dim); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.models-nav-add { align-self: flex-start; margin: 1px 0 1px 4px; padding: 3px 6px; border: 0; border-radius: var(--r-btn); background: transparent; color: var(--primary); font: inherit; font-size: 12.5px; cursor: pointer; }
+.models-nav-add:hover { background: var(--tint); }
+.models-nav-sep { height: 1px; background: var(--border); margin: 10px 4px 6px; flex: none; }
+.models-detail { flex: 1; min-width: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 16px; padding-right: 4px; }
+.models-detail > .settings-section:first-of-type, .channel-page > .settings-section:first-child { border-top: none; padding-top: 0; }
+.channel-page { display: flex; flex-direction: column; gap: 16px; }
+.scheme-chip { padding: 1px 8px; border-radius: 10px; background: var(--chip); font-size: 12px; color: var(--text-dim); }
+.settings-tag { padding: 0 6px; border-radius: 8px; background: var(--chip); font-size: 11px; color: var(--text-dim); }
 .channel-head { display: flex; align-items: center; gap: 10px; min-width: 0; }
 .channel-name { display: flex; flex-direction: column; min-width: 0; flex: 1; }
 .channel-name b { font-weight: 600; }

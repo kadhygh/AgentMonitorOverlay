@@ -186,6 +186,17 @@ export interface StudioSettings {
    * conversation by themselves; null leaves it to each CLI (near the model's whole window).
    */
   autoCompactTokens: number | null;
+  /** S18: channels (profile ids) with their own 自动压缩点, set on their page in 设置 → 模型; the rest use the above. */
+  autoCompactProfiles: Record<string, AutoCompactChoice>;
+}
+
+/** A channel's own 自动压缩点: tokens, or "cli" to leave it to the CLI. */
+export type AutoCompactChoice = number | "cli";
+
+/** The 自动压缩点 a channel's sessions get: its own, else the shared one; null = the CLI decides. */
+export function autoCompactFor(s: Pick<StudioSettings, "autoCompactTokens" | "autoCompactProfiles">, profileId: string): number | null {
+  const own = s.autoCompactProfiles?.[profileId];
+  return own === "cli" ? null : (own ?? s.autoCompactTokens);
 }
 
 /** 自动压缩点 by default: the person's choice (2026-10-17), well below the 1M windows the CLIs would otherwise wait for. */
@@ -276,7 +287,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null> }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };
