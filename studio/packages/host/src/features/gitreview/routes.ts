@@ -5,12 +5,13 @@ import { route, type Route, obj } from "../../http/route.js";
 export function gitReviewRoutes(service: HostService): Route[] {
   return [
     route("GET", "/api/workspaces/:id/git/status", ({ params }) => service.gitReview.status(params.id!)),
-    route("GET", "/api/workspaces/:id/git/changes", ({ params, query }) => service.gitReview.changes(params.id!, query.get("range"))),
+    route("GET", "/api/workspaces/:id/git/changes", ({ params, query }) => service.gitReview.changes(params.id!, query.get("range"), query.get("base"), query.get("label"))),
     route("GET", "/api/workspaces/:id/git/diff", ({ params, query }) =>
       service.gitReview.diff(params.id!, query.get("range"), query.get("path"), query.get("oldPath"), { base: query.get("base"), untracked: query.get("untracked") }),
     ),
     route("GET", "/api/workspaces/:id/git/log", ({ params, query }) => service.gitReview.log(params.id!, query.get("limit"))),
-    route("GET", "/api/workspaces/:id/git/commit", ({ params, query }) => service.gitReview.commit(params.id!, query.get("sha"))),
+    route("GET", "/api/workspaces/:id/git/commit", ({ params, query }) => service.gitReview.commit(params.id!, query.get("sha"), query.get("base"))),
+    route("POST", "/api/review/open", ({ body }) => service.gitReview.openReview(obj(body) as never)),
     route("GET", "/api/workspaces/:id/git/commit-diff", ({ params, query }) =>
       service.gitReview.commitDiff(params.id!, query.get("sha"), query.get("base"), query.get("path"), query.get("oldPath")),
     ),

@@ -471,6 +471,8 @@ export type HostEvent = { seq: number } & (
   | { type: "marks.changed"; markId: Id; workspaceId: Id | null }
   /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
   | { type: "host.error"; message: string }
+  /** 外部打开 Review (2026-10-18): the main window opens a review window on this (events older than a minute are stale). */
+  | { type: "review.open"; target: import("./gitreview.js").ReviewOpenTarget; at: Timestamp }
   /** Deleted for good from 设置 → 数据管理: drop them from every list. */
   | { type: "data.purged"; workspaceIds: Id[]; topicIds: Id[]; taskIds: Id[]; sessionIds: Id[] }
 );
@@ -648,6 +650,7 @@ export interface HostRoutes {
   "GET /api/workspaces/:id/git/log": { req: void; res: import("./gitreview.js").GitLog };
   /** One commit's changed files against its first parent: `?sha=` (7 to 64 hex digits). */
   "GET /api/workspaces/:id/git/commit": { req: void; res: import("./gitreview.js").GitCommitChanges };
+  "POST /api/review/open": { req: import("./gitreview.js").ReviewOpenRequest; res: import("./gitreview.js").ReviewOpenResult };
   /** One file of a commit: `?sha=` and `?base=` (full ids, from the commit's listing), `?path=` (and `?oldPath=`). One git call. */
   "GET /api/workspaces/:id/git/commit-diff": { req: void; res: import("./gitreview.js").GitFileDiff };
 }

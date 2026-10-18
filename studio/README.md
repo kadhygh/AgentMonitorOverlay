@@ -37,6 +37,18 @@ AMO 的下一代：由人主导、agent 也能参与的项目推进工作台。�
 | agent 之间交接 | 任务页右栏：进度和交接摘要、留言（由你决定是否转进对话）、待决策 |
 | 工程自己的规范和流程 | 工程里的 `.amo/packs/<名字>/pack.json`，见 [design/pack-format.md](design/pack-format.md)；示例在 [examples/packs/demo/](examples/packs/demo/)；选中工作区后顶栏"扩展包" |
 
+**从其他工具打开 Review**：AMO Studio 开着时，别的 harness 或脚本可以让它打开某个文件夹的 Git Review（文件夹还不是项目时自动登记）。
+
+```
+studio\amo-review.cmd G:\PROJECT\game                          未提交的改动
+studio\amo-review.cmd G:\PROJECT\game --base main              工作区对比 main（含未提交的改动，可以写批注）
+studio\amo-review.cmd G:\PROJECT\game --commit HEAD~1          某个提交（只读）
+studio\amo-review.cmd G:\PROJECT\game --range main...agent     agent 分支离开 main 以来的改动（只读；A..B 是 B 对比 A）
+   可选：--file 路径（先选中这个文件）、--session 会话id（「发给会话」默认发到这里；id 在会话栏点 # 复制）、--json
+```
+
+退出码 0 已打开、1 被拒绝（会说原因）、2 Studio 没在运行。也可以直接调 Host：`POST <host.json 的 url>/api/review/open`，头 `Authorization: Bearer <数据目录里 host-token 的内容>`，正文 `{ "path", "base" | "commit" | "range", "file", "sessionId" }`。开发版的数据目录是 `studio/.data`，Portable 版用 `--data` 指给它。
+
 **agent 能做什么（AMO MCP）**：受管的会话自动带上 AMO MCP。读：看板、任务、会话树、工程、画布、扩展包。写：只能写自己任务的进度、交接、清单，给别的会话留言，向你提问；画布写入每次都要你批准；调度会话只能提案。agent 不能移动看板列，也不能自己开会话。
 
 ## 和旧 AMO 的对应关系

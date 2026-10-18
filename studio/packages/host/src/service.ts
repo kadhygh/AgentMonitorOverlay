@@ -39,6 +39,8 @@ import { HostError, type HostServiceEvents } from "./core/shared.js";
 export { HostError, PROPOSALS_PER_ROUND, TERMINAL_TOKEN_ENV, type HostServiceEvents } from "./core/shared.js";
 
 export class HostService extends EventEmitter<HostServiceEvents> {
+  /** Studio windows listening to the event socket (the HTTP server counts them): 外部打开 Review needs one. */
+  liveWindows = 0;
   readonly projects = new ProjectsFeature(this);
   readonly config = new ConfigFeature(this);
   readonly tasks = new TasksFeature(this);

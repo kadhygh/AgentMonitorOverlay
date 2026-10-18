@@ -376,13 +376,29 @@ export async function readLog(dir: string, limit = GIT_LOG_MAX): Promise<GitLog>
 }
 
 /** One commit and its changed files against its first parent (the empty tree for a root commit). */
-export async function readCommit(dir: string, ref: string): Promise<GitCommitChanges> {
+/** A ref another tool names (a branch, a tag, `HEAD~2`, an id) as a full commit id; never one that reads as an option. */
+export async function resolveCommit(dir: string, ref: string): Promise<string> {
+  if (!/^[\w./@{}^~-]{1,200}$/.test(ref) || ref.startsWith("-")) throw new GitError(`bad commit ${ref}`, "failed");
+  const sha = await maybe(dir, ["rev-parse", "--verify", "-q", `${ref}^{commit}`]);
+  if (!sha) throw new GitError(`commit ${ref} not found`, "failed");
+  return sha;
+}
+
+/** Where `b` left `a` (both full ids). */
+export async function mergeBase(dir: string, a: string, b: string): Promise<string> {
+  const sha = await maybe(dir, ["merge-base", a, b]);
+  if (!sha) throw new GitError(`commit shared by ${a.slice(0, 7)} and ${b.slice(0, 7)} not found`, "failed");
+  return sha;
+}
+
+/** A commit's changed files, against its first parent, or against `against` (a full id: 外部打开 Review's range). */
+export async function readCommit(dir: string, ref: string, against?: string): Promise<GitCommitChanges> {
   if (!isCommitRef(ref)) throw new GitError(`bad commit ${String(ref)}`, "failed");
   const sha = await maybe(dir, ["rev-parse", "--verify", "-q", `${ref}^{commit}`]);
   if (!sha) throw new GitError(`commit ${ref} not found`, "failed");
   const [commit] = parseLog(await git(dir, ["log", "-n1", "--no-color", LOG_FORMAT, sha]));
   if (!commit) throw new GitError(`commit ${ref} not found`, "failed");
-  const base = commit.parents[0] ?? EMPTY_TREE;
+  const base = against ?? commit.parents[0] ?? EMPTY_TREE;
   const [names, nums] = await Promise.all([
     git(dir, ["diff", base, sha, ...DIFF_OPTIONS, "--name-status", "-z"]),
     git(dir, ["diff", base, sha, ...DIFF_OPTIONS, "--numstat", "-z"]),

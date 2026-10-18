@@ -252,7 +252,41 @@ export interface GitLog {
 /** A commit as a window address or a query names it: 7 to 64 hex digits (abbreviated or full). */
 export const isCommitRef = (v: unknown): v is string => typeof v === "string" && /^[0-9a-f]{7,64}$/.test(v);
 
-/** One commit's changed files, against its first parent (git's empty tree for a root commit). */
+/**
+ * 外部打开 Review (2026-10-18): what another tool asks the open Studio to show. `path` (the project's folder; registered
+ * when new) or `workspaceId`; then nothing (the uncommitted changes), `base` (the working tree against it), `commit`
+ * (with or without `base`), or `range` (`A..B`, `A...B`). Refs may be branch names, tags, `HEAD~2` or ids.
+ */
+export interface ReviewOpenRequest {
+  path?: string;
+  workspaceId?: string;
+  base?: string;
+  commit?: string;
+  range?: string;
+  /** The file to select first (uncommitted changes and `base` only): absolute, or relative to the project. */
+  file?: string;
+  /** Where 发回 sends the comments. */
+  sessionId?: string;
+}
+
+/** What the review window opens on, refs resolved to full ids. */
+export interface ReviewOpenTarget {
+  workspaceId: string;
+  sessionId?: string;
+  commit?: string;
+  base?: string;
+  /** How the caller named the base ("master", "v1.2 的分叉点"). */
+  baseLabel?: string;
+  file?: string;
+}
+
+export interface ReviewOpenResult {
+  target: ReviewOpenTarget;
+  /** The folder was not a project yet and was registered. */
+  workspaceAdded: boolean;
+}
+
+/** One commit's changed files, against its first parent (git's empty tree for a root commit) or a given base. */
 export interface GitCommitChanges {
   commit: GitCommit;
   /** What the files are compared with: the first parent, or the empty tree. */
