@@ -19,6 +19,7 @@ import type { SearchHit } from "./shell/search.js";
 import { VIEWS } from "./features.js";
 import { featureOn, FeaturesProvider } from "./lib/features.js";
 import { openMarks, useMarksShortcut } from "./marks/open.js";
+import type { MarksTarget } from "./marks/logic.js";
 import { openReview } from "./gitreview/open.js";
 import { onHostEvent } from "./host/events.js";
 import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
@@ -62,12 +63,16 @@ export function App() {
     return () => window.removeEventListener("keydown", onKey);
   }, []);
 
-  // 文件标记 (S12-D): the project in front — the task's, or the one the board is scoped to.
-  const marksProject = (): string | null => {
-    if (view.kind === "task" && host.kind === "ready") return host.state.tasks.find((t) => t.id === view.taskId)?.workspaceId ?? null;
-    return scope.kind === "workspace" ? scope.id : null;
+  // 书签 (2026-10-19; 文件标记 before): the topic in front — the task's, or the one the board is scoped to — and its project.
+  const marksTarget = (): MarksTarget => {
+    if (view.kind === "task" && host.kind === "ready") {
+      const task = host.state.tasks.find((t) => t.id === view.taskId);
+      return task ? { topicId: task.topicId ?? "none", workspaceId: task.workspaceId } : {};
+    }
+    if (scope.kind === "topic") return { topicId: scope.id };
+    return scope.kind === "workspace" ? { workspaceId: scope.id } : {};
   };
-  useMarksShortcut(marksProject);
+  useMarksShortcut(marksTarget);
   // 外部打开 Review (2026-10-18): another tool asked the Host (POST /api/review/open); this window opens the review window.
   // An event replayed after a reconnect is not a new request.
   useEffect(
@@ -82,8 +87,9 @@ export function App() {
   useEffect(
     () =>
       // From Focus: a task (and session), or the board when no task is named (scheduler proposals).
-      window.amo?.onNavigate?.(({ taskId, sessionId }) =>
-        setView(taskId ? { kind: "task", taskId, ...(sessionId ? { sessionId } : {}), nav: Date.now() } : { kind: "board" }),
+      // From the bookmarks window too: a passage to scroll to and flash.
+      window.amo?.onNavigate?.(({ taskId, sessionId, passage }) =>
+        setView(taskId ? { kind: "task", taskId, ...(sessionId ? { sessionId } : {}), ...(sessionId && passage ? { passage } : {}), nav: Date.now() } : { kind: "board" }),
       ),
     [],
   );
@@ -159,10 +165,7 @@ export function App() {
         scopeName={scopeName}
         focus={focus}
         pin={pin}
-        onMarks={() => {
-          const ws = marksProject();
-          openMarks(ws ? { workspaceId: ws } : {});
-        }}
+        onMarks={() => openMarks(marksTarget())}
       />
       <div className="body">
         <ScopeNav

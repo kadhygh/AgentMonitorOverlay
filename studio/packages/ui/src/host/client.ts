@@ -2,6 +2,9 @@ import type { HostErrorBody, HostRoute, RouteRequest, RouteResponse, StateSnapsh
 
 // Typed client for the Host API. The Electron preload provides the Host URL and token (window.amo.host()).
 
+/** A bookmarked passage of a reply (书签, 2026-10-19): the workbench scrolls to it and flashes it. */
+export type Passage = { itemId: string; start: number; end: number; quote: string };
+
 declare global {
   interface Window {
     amo?: {
@@ -51,7 +54,7 @@ declare global {
       };
       /** From Focus: show a task (and session) in the workbench. */
       /** A task (and session); without a task (a topic session) the workbench shows the board. */
-      openInWorkbench?(target: { taskId?: string; sessionId?: string; show?: boolean }): Promise<void>;
+      openInWorkbench?(target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage }): Promise<void>;
       /** One window drag's summary, for logs/resize-trace.log (Electron). */
       trace?(summary: unknown): void;
       windowControls?: {
@@ -62,7 +65,7 @@ declare global {
         onMaximized(cb: (maximized: boolean) => void): () => void;
       };
       /** Workbench: Focus asked to show a task. */
-      onNavigate?(cb: (target: { taskId: string; sessionId?: string }) => void): () => void;
+      onNavigate?(cb: (target: { taskId: string; sessionId?: string; passage?: Passage }) => void): () => void;
       onHostRestarted?(cb: () => void): () => void;
     };
   }

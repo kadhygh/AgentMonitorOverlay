@@ -165,8 +165,8 @@ export function FileLinks({
           <button type="button" role="menuitem" onClick={act((t) => void copyText(t.file.path))}>
             复制路径
           </button>
-          <button type="button" role="menuitem" onClick={act((t) => void markOrShow(link, t.file, t.line).catch(fail))}>
-            标记
+          <button type="button" role="menuitem" onClick={act((t) => void markOrShow(link, t.file, t.line, sessionId ?? undefined).catch(fail))}>
+            加书签
           </button>
         </div>
       )}

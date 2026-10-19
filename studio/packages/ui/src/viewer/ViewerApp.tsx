@@ -161,7 +161,7 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
               >
                 {copied ? "已复制" : "复制路径"}
               </button>
-              <MarkButton link={link} file={file} line={target.line ?? null} />
+              <MarkButton link={link} file={file} line={target.line ?? null} sessionId={target.sessionId ?? null} />
               <button type="button" className="btn-ghost small dim" title="重新读取文件" onClick={() => setReload((n) => n + 1)}>
                 重新载入
               </button>

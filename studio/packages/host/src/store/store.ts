@@ -364,6 +364,9 @@ export class Store extends DocumentStore {
       each(tasks, "DELETE FROM tasks WHERE id = ?");
       each(topics, "DELETE FROM canvas_docs WHERE id = ?");
       each(topics, "DELETE FROM topic_docs WHERE topic_id = ?");
+      // 书签 of a deleted topic stay, under 未归专题 (the body carries the topic too).
+      for (const m of this.listFileMarks()) if (m.topicId && topics.has(m.topicId)) this.putFileMark({ ...m, topicId: null });
+      for (const m of this.listChatMarks()) if (m.topicId && topics.has(m.topicId)) this.putChatMark({ ...m, topicId: null });
       // Cards and dependencies of the deleted tasks on the canvases that stay.
       for (const r of this.db.prepare("SELECT body FROM canvas_docs").all() as Row[]) {
         const doc = JSON.parse(str(r.body)) as CanvasDoc;

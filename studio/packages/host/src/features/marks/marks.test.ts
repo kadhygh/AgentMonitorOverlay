@@ -2,7 +2,7 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { FileMark, HostEvent, ModelProfile, Workspace } from "@amo-studio/protocol";
+import type { Bookmark, ChatMark, FileMark, HostEvent, ModelProfile, Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
@@ -196,5 +196,61 @@ describe("list_file_marks (AMO MCP)", () => {
     expect(read(null).data).toHaveLength(2);
     expect(read(null, { workspace: "all" }).data).toHaveLength(2);
     expect(read(null, { workspace: "nope" })).toEqual({ error: true, data: "没有叫 nope 的项目" });
+  });
+});
+
+describe("书签 (2026-10-19)", { timeout: 30_000 }, () => {
+  it("keeps files and passages under topics, picks the topic from the session, moves and deletes them", async () => {
+    const dir = project("game", { "drop.lua": "a\nb\n" });
+    const ws = await ok<Workspace>("POST", "/api/workspaces", { path: dir });
+    const topic = store.createTopic({ title: "掉落" });
+    const other = store.createTopic({ title: "战斗" });
+    const task = store.createTask({ title: "t", workspaceId: ws.id, topicId: topic.id });
+    const session = store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", runtime: "codex", profileId: "p-ds", workspaceId: ws.id, title: "调掉落", status: "idle", writer: "workbench", runtimeRef: null });
+    const reply = store.appendItem({ id: "i-reply", sessionId: session.id, createdAt: new Date().toISOString(), type: "agent", markdown: "先改 **掉落表**，再跑校验。" } as never);
+    const passage = { sessionId: session.id, itemId: reply.id, start: 2, end: 11, quote: "掉落表", prefix: "先改 ", suffix: "，再跑" };
+
+    // A passage goes under its session's topic; the same passage again is the same bookmark.
+    const chat = await ok<{ mark: ChatMark; created: boolean }>("POST", "/api/chat-marks", { ...passage, note: " 关键 " });
+    expect(chat).toMatchObject({ created: true, mark: { kind: "chat", topicId: topic.id, note: "关键", taskId: task.id, workspaceId: ws.id, sessionTitle: "调掉落", exists: true } });
+    expect((await ok<{ created: boolean }>("POST", "/api/chat-marks", passage)).created).toBe(false);
+    expect(events.filter((e) => e.type === "marks.changed").at(-1)).toMatchObject({ markId: chat.mark.id, topicId: topic.id });
+    // A file marked from that session's viewer goes there too; with no session, under 未归专题.
+    const file = await ok<Created>("POST", "/api/file-marks", { path: join(dir, "drop.lua"), sessionId: session.id });
+    expect(file.mark).toMatchObject({ kind: "file", topicId: topic.id });
+    const loose = await ok<Created>("POST", "/api/file-marks", { path: join(dir, "drop.lua"), startLine: 2 });
+    expect(loose.mark.topicId).toBeNull();
+    // The same file under another topic is another bookmark.
+    const again = await ok<Created>("POST", "/api/file-marks", { path: join(dir, "drop.lua"), topicId: other.id });
+    expect(again).toMatchObject({ created: true, mark: { topicId: other.id } });
+
+    // By topic, newest first, files and passages together.
+    expect((await ok<Bookmark[]>("GET", `/api/bookmarks?topic=${topic.id}`)).map((m) => m.id)).toEqual([file.mark.id, chat.mark.id]);
+    expect((await ok<Bookmark[]>("GET", "/api/bookmarks?topic=none")).map((m) => m.id)).toEqual([loose.mark.id]);
+    expect(await ok<Bookmark[]>("GET", "/api/bookmarks")).toHaveLength(4);
+
+    // Moving a passage to another topic puts it on top there; a note on either kind; ranges only on files.
+    const moved = await ok<ChatMark>("PATCH", `/api/bookmarks/${chat.mark.id}`, { topicId: other.id, note: "移过来" });
+    expect(moved).toMatchObject({ topicId: other.id, note: "移过来" });
+    expect((await ok<Bookmark[]>("GET", `/api/bookmarks?topic=${other.id}`)).map((m) => m.id)).toEqual([chat.mark.id, again.mark.id]);
+    expect((await api("PATCH", `/api/bookmarks/${chat.mark.id}`, { startLine: 1 })).status).toBe(400);
+    expect((await ok<FileMark>("PATCH", `/api/bookmarks/${loose.mark.id}`, { topicId: topic.id })).topicId).toBe(topic.id);
+    // The same file and range is under that topic already.
+    expect((await api("PATCH", `/api/bookmarks/${again.mark.id}`, { topicId: topic.id })).status).toBe(409);
+
+    // Refused: an unknown session, a reply of another session, an empty range, an unknown topic.
+    expect((await api("POST", "/api/chat-marks", { ...passage, sessionId: "s-nope" })).status).toBe(404);
+    expect((await api("POST", "/api/chat-marks", { ...passage, itemId: "i-nope" })).status).toBe(404);
+    expect((await api("POST", "/api/chat-marks", { ...passage, end: 2 })).status).toBe(400);
+    expect((await api("POST", "/api/chat-marks", { ...passage, topicId: "topic-nope" })).status).toBe(404);
+
+    // A deleted topic leaves its bookmarks under 未归专题.
+    store.purge({ sessionIds: [], taskIds: [], topicIds: [other.id], workspaceIds: [] });
+    expect((await ok<Bookmark[]>("GET", "/api/bookmarks?topic=none")).map((m) => m.id).sort()).toEqual([again.mark.id, chat.mark.id].sort());
+
+    await ok("DELETE", `/api/bookmarks/${chat.mark.id}`);
+    await ok("DELETE", `/api/bookmarks/${file.mark.id}`);
+    expect(await ok<Bookmark[]>("GET", "/api/bookmarks")).toHaveLength(2);
+    expect((await api("DELETE", `/api/bookmarks/${chat.mark.id}`)).status).toBe(404);
   });
 });

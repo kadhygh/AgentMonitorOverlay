@@ -8,5 +8,9 @@ export function marksRoutes(service: HostService): Route[] {
     route("POST", "/api/file-marks", ({ body }) => service.marks.create(obj(body) as never)),
     route("PATCH", "/api/file-marks/:id", ({ params, body }) => service.marks.update(params.id!, obj(body) as never)),
     route("DELETE", "/api/file-marks/:id", ({ params }) => (service.marks.remove(params.id!), { ok: true })),
+    route("GET", "/api/bookmarks", ({ query }) => service.marks.bookmarks(query.get("topic") ?? undefined)),
+    route("POST", "/api/chat-marks", ({ body }) => service.marks.createChat(obj(body) as never)),
+    route("PATCH", "/api/bookmarks/:id", ({ params, body }) => service.marks.updateBookmark(params.id!, obj(body) as never)),
+    route("DELETE", "/api/bookmarks/:id", ({ params }) => (service.marks.removeBookmark(params.id!), { ok: true })),
   ];
 }

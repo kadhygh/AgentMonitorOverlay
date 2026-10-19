@@ -43,7 +43,7 @@ export function TopBar({
   focus: { on: boolean; available: boolean; set(on: boolean): void };
   /** 置顶 (stage 14). */
   pin?: { on: boolean; available: boolean; set(on: boolean): void };
-  /** 文件标记 (S12-D): the marks window. */
+  /** 书签 (文件标记 before 2026-10-19): the bookmarks window. */
   onMarks?: () => void;
   needs: number;
   scopeName: string;
@@ -69,11 +69,11 @@ export function TopBar({
         </button>
       )}
       {onMarks && (
-        <button type="button" className="tb-btn" onClick={onMarks} title="文件标记：标记的文件和说明，可以 @ 或拖进对话（Ctrl+Shift+M）" data-testid="topbar-marks">
+        <button type="button" className="tb-btn" onClick={onMarks} title="书签：按专题记下的文件和对话片段，可以拖进对话（Ctrl+Shift+M）" data-testid="topbar-marks">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M4.5 2.5h7a.5.5 0 0 1 .5.5v10.6a.3.3 0 0 1-.48.24L8 11.2l-3.52 2.64A.3.3 0 0 1 4 13.6V3a.5.5 0 0 1 .5-.5Z" />
           </svg>
-          标记
+          书签
         </button>
       )}
       {scratchpad && (

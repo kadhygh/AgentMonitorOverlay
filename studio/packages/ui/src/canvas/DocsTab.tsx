@@ -113,7 +113,7 @@ export function DocsTab({ link, topicId, readOnly = false }: { link: HostLink; t
 
   return (
     <div className="side-section" role="group" aria-label="专题文档">
-      <span className="side-note">只放推进这个专题的任务要用的：计划、约定、决定。agent 用 topic_docs 读，主控可以写。很专门的文档放在项目里，用文件标记标出来，这里写上路径。</span>
+      <span className="side-note">只放推进这个专题的任务要用的：计划、约定、决定。agent 用 topic_docs 读，主控可以写。很专门的文档放在项目里，加到书签里，这里写上路径。</span>
       {error && (
         <span className="form-error" role="alert">
           {error}

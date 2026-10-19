@@ -106,7 +106,7 @@ function cardOf(service: HostService, f: RoleFacts): string {
     if (open) lines.push(`- 你有 ${open} 个拆任务提案在等人确认`);
   }
   const marks = ws && !isCommon(ws) ? service.store.listFileMarks(ws.id).length : 0;
-  if (marks) lines.push(`- 这个项目有 ${marks} 个文件标记（人标出的重要文件，list_file_marks 读）`);
+  if (marks) lines.push(`- 这个项目有 ${marks} 个书签里的文件（人标出的重要文件，list_file_marks 读）`);
   lines.push("", "完整用法：amo_guide。身份随看板变化，需要时再调 amo_whoami。");
   return lines.join("\n");
 }

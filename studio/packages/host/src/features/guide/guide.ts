@@ -26,7 +26,7 @@ const GUIDE: Record<GuideSection, string> = {
 
 - topic_list / topic_get：专题、它的项目、任务和状态、它自己的会话、画布大纲。
 - topic_docs：专题文档（只和推进这个专题的任务有关：计划、决定、各部分怎么衔接）。不带 docId 列出全部，带 docId 读一篇。
-- topic_doc_write：主控（或专题会话）写专题文档：新建（不带 docId）或改写（带 docId）。很专门的文档放在项目里，用文件标记标出来，专题文档里写上它的路径。`,
+- topic_doc_write：主控（或专题会话）写专题文档：新建（不带 docId）或改写（带 docId）。很专门的文档放在项目里，人会把它加到书签，专题文档里写上它的路径。`,
   canvas: `# 画布
 
 - canvas_read：专题画布的结构（没有坐标）：分组和里面的任务、引用卡片（别的专题的任务）、便签、未分组的、还没放上去的任务、依赖。带说明和颜色。
@@ -50,7 +50,7 @@ const GUIDE: Record<GuideSection, string> = {
   files: `# 文件和项目
 
 - project_context：项目的说明、路径、git 分支等。
-- list_file_marks：人标记的重要文件（带备注和行号范围）；专门的文档在项目里时，人会用文件标记标出来。
+- list_file_marks：人加到书签里的重要文件（带说明和行号范围）；专门的文档在项目里时，人会把它加到书签。
 - pack_list / pack_doc：项目的扩展包（约定、模板）。`,
 };
 

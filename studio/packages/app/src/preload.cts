@@ -2,6 +2,9 @@
 // command-line arguments or URLs.
 import electron = require("electron");
 
+/** A bookmarked passage of a reply (书签, 2026-10-19): the workbench scrolls to it and flashes it. */
+type Passage = { itemId: string; start: number; end: number; quote: string };
+
 electron.contextBridge.exposeInMainWorld("amo", {
   host: (): Promise<{ url: string; token: string } | null> => electron.ipcRenderer.invoke("amo:host"),
   pickDirectory: (start?: string | null): Promise<string | null> => electron.ipcRenderer.invoke("amo:pick-directory", start ?? undefined),
@@ -111,9 +114,9 @@ electron.contextBridge.exposeInMainWorld("amo", {
   /** Viewer windows only: 固定 this window (the next file opens another), and whether it is. */
   pinViewer: (): Promise<boolean> => electron.ipcRenderer.invoke("amo:viewer-pin"),
   viewerState: (): Promise<{ pinned: boolean }> => electron.ipcRenderer.invoke("amo:viewer-state"),
-  openInWorkbench: (target: { taskId?: string; sessionId?: string; show?: boolean }): Promise<void> => electron.ipcRenderer.invoke("amo:open-in-workbench", target),
-  onNavigate: (cb: (target: { taskId: string; sessionId?: string }) => void): (() => void) => {
-    const listener = (_event: unknown, target: { taskId: string; sessionId?: string }) => cb(target);
+  openInWorkbench: (target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage }): Promise<void> => electron.ipcRenderer.invoke("amo:open-in-workbench", target),
+  onNavigate: (cb: (target: { taskId: string; sessionId?: string; passage?: Passage }) => void): (() => void) => {
+    const listener = (_event: unknown, target: { taskId: string; sessionId?: string; passage?: Passage }) => cb(target);
     electron.ipcRenderer.on("amo:navigate", listener);
     return () => electron.ipcRenderer.removeListener("amo:navigate", listener);
   },
@@ -126,5 +129,5 @@ electron.contextBridge.exposeInMainWorld("amo", {
     return () => electron.ipcRenderer.removeListener("amo:host-restarted", listener);
   },
   /** The file marks window (文件标记, one for all projects), showing a project first, or one mark (its note in focus). */
-  openMarks: (target: { workspaceId?: string; markId?: string; edit?: boolean }): Promise<void> => electron.ipcRenderer.invoke("amo:open-marks", target),
+  openMarks: (target: { topicId?: string; workspaceId?: string; markId?: string; edit?: boolean }): Promise<void> => electron.ipcRenderer.invoke("amo:open-marks", target),
 });

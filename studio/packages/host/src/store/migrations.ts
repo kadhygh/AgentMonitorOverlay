@@ -301,4 +301,18 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX relays_state ON relays(state, created_at);
   `,
+  // 18: 书签 (2026-10-19): file marks are kept under a topic (NULL: 未归专题), and passages of conversations are
+  // bookmarked too (the mark is the JSON body, as for files).
+  `
+  ALTER TABLE file_marks ADD COLUMN topic_id TEXT;
+  CREATE TABLE chat_marks (
+    id TEXT PRIMARY KEY,
+    topic_id TEXT,
+    session_id TEXT NOT NULL,
+    position INTEGER NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX chat_marks_topic ON chat_marks(topic_id, position);
+  `,
 ];

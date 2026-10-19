@@ -68,7 +68,7 @@ export function mentionGroups(input: {
   const groups: MentionGroup[] = [
     { kind: "task", heading: "任务", options: tasks },
     { kind: "session", heading: "会话", options: sessions },
-    { kind: "mark", heading: "标记的文件", options: marks },
+    { kind: "mark", heading: "书签里的文件", options: marks },
     { kind: "file", heading: input.query ? "文件" : "最近改动的文件", options: files },
   ];
   return [

@@ -1,6 +1,6 @@
 import { BrowserWindow, ipcMain } from "electron";
 
-// The file marks window (文件标记, S12-D): one ordinary window for all projects, loaded with #marks?workspace=….
+// The file marks window (文件标记, S12-D; 书签 since 2026-10-19): one ordinary window, loaded with #marks?topic=….
 // Opening it again brings it forward and points it at the new project instead of opening another. It closes with the
 // workbench.
 
@@ -18,12 +18,13 @@ const ID = /^[\w-]{1,80}$/;
 let opened = 0;
 
 /**
- * `#marks?workspace=…&mark=…&edit=1&n=…` for what the page asked (invalid ids are dropped). `n` changes on every open,
- * so asking for the same mark again still reaches the page as a hash change.
+ * `#marks?topic=…&workspace=…&mark=…&edit=1&n=…` for what the page asked (invalid ids are dropped; topic "none" is
+ * 未归专题). `n` changes on every open, so asking for the same mark again still reaches the page as a hash change.
  */
 export function marksHash(target: unknown): string {
-  const t = target as { workspaceId?: unknown; markId?: unknown; edit?: unknown } | null;
+  const t = target as { topicId?: unknown; workspaceId?: unknown; markId?: unknown; edit?: unknown } | null;
   const q: string[] = [];
+  if (typeof t?.topicId === "string" && ID.test(t.topicId)) q.push(`topic=${t.topicId}`);
   if (typeof t?.workspaceId === "string" && ID.test(t.workspaceId)) q.push(`workspace=${t.workspaceId}`);
   if (typeof t?.markId === "string" && ID.test(t.markId)) {
     q.push(`mark=${t.markId}`);
@@ -63,7 +64,7 @@ function createMarksWindow(url: string, { preload, icon, testMode }: MarksWindow
     height: 820,
     minWidth: 520,
     minHeight: 400,
-    title: "文件标记",
+    title: "书签",
     icon,
     backgroundColor: "#efede8",
     // Tests: off-screen, out of the taskbar, never focused (LOOP_RULES red line 7), as the workbench.

@@ -57,7 +57,7 @@ describe("@ 标记的文件 (S12-D)", () => {
 
   it("lists the project's marks after sessions, with their range and the note's first line", () => {
     const groups = mentionGroups({ ...base, query: "", marks });
-    expect(groups.map((g) => g.heading)).toEqual(["标记的文件", ""]);
+    expect(groups.map((g) => g.heading)).toEqual(["书签里的文件", ""]);
     expect(groups[0]!.options).toEqual([
       { kind: "mark", id: "m1", name: "drop.lua:12-30", hint: "掉落表" },
       { kind: "mark", id: "m2", name: "boss.md", hint: "C:\\game\\docs" },

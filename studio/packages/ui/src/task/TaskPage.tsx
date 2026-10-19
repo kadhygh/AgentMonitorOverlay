@@ -1,6 +1,6 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { type Annotation, type ApprovalDecision, type ChecklistItem, type PresetDraft, type ModelProfile, type Session, type SessionOptions, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
-import { call, HostApiError, type HostLink } from "../host/client.js";
+import { call, HostApiError, type HostLink, type Passage } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
 import { useAnnotationRefs } from "../review/annotationRefs.js";
@@ -10,7 +10,7 @@ import { sessionModelName, useProfileChoices } from "../lib/choices.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
-import { flashAnnotation } from "../review/highlights.js";
+import { annotationRange, flashAnnotation, flashRange, highlightsSupported } from "../review/highlights.js";
 import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { showToast } from "../lib/toast.js";
@@ -27,7 +27,7 @@ import { PresetDraftForm } from "../packs/PresetDraftForm.js";
 import { openReview, useIsGitRepo } from "../gitreview/open.js";
 import { latestMainSession } from "../gitreview/logic.js";
 import { OnCanvasToggle } from "../canvas/OnCanvasToggle.js";
-import { openMarks } from "../marks/open.js";
+import { bookmarkPassage, openMarks } from "../marks/open.js";
 import { MarkButton } from "../marks/MarkButton.js";
 import { FileLinks, type PreviewTarget } from "../files/FileLinks.js";
 import { FilePreview } from "../files/FilePreview.js";
@@ -70,6 +70,8 @@ interface TaskPageProps {
   /** This task's checklist (from a pack template). */
   checklist?: readonly ChecklistItem[];
   initialSessionId?: string;
+  /** Opened at a bookmarked passage of `initialSessionId` (书签): scrolled to and flashed once its reply is there. */
+  passage?: Passage;
   /** Opened right after the task was made: the session list starts folded (2026-10-15). */
   justCreated?: boolean;
   /** What "←" says: where it returns (看板 or 画布). */
@@ -80,7 +82,7 @@ interface TaskPageProps {
 type Toast = { text: string; command?: string; error?: boolean } | null;
 
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
-export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, justCreated = false, backLabel = "看板", onBack }: TaskPageProps) {
+export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, passage, justCreated = false, backLabel = "看板", onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   // The first live session; in an archived task (or one whose sessions are all archived), the latest archived one.
   const firstSession = () => own.find((s) => !s.archivedAt) ?? [...own].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
@@ -240,6 +242,43 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // Shown on 会话 while the list is hidden, when there is more than the one in front to choose from.
   const liveCount = own.filter((s) => !s.archivedAt).length;
 
+  // Opened at a bookmarked passage (书签): once, when its reply has come in.
+  const passageShown = useRef(false);
+  useEffect(() => {
+    if (!passage || passageShown.current || session?.id !== initialSessionId || !items.some((i) => i.id === passage.itemId)) return;
+    passageShown.current = true;
+    requestAnimationFrame(() => locatePassage(passage, 8));
+  }, [passage, session?.id, items]);
+
+  /** Scrolls to a bookmarked passage and flashes just its text (its block, where highlights are not available). */
+  function locatePassage(p: Passage, tries: number) {
+    const reply = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(p.itemId)}"]`);
+    if (!reply) {
+      // In a folded turn: unfold it, then look again once it has rendered.
+      if (tries <= 0) return;
+      window.dispatchEvent(new CustomEvent(REVEAL_ITEM_EVENT, { detail: p.itemId }));
+      requestAnimationFrame(() => requestAnimationFrame(() => locatePassage(p, tries - 1)));
+      return;
+    }
+    const item = items.find((i) => i.id === p.itemId);
+    const source = item?.type === "agent" ? item.markdown : null;
+    const range = source !== null && highlightsSupported() ? annotationRange(reply, p, source) : null;
+    if (range) return flashRange(range);
+    const target = [...reply.querySelectorAll<HTMLElement>("[data-src-start]")].find((b) => Number(b.dataset.srcStart) < p.end && Number(b.dataset.srcEnd) > p.start) ?? reply;
+    target.scrollIntoView({ block: "center" });
+    flash(target);
+  }
+
+  const bookmark = (anchor: Parameters<typeof bookmarkPassage>[2]) => {
+    if (!session) return;
+    bookmarkPassage(link, session.id, anchor)
+      .then((r) => {
+        const where = topics.find((t) => t.id === r.mark.topicId)?.title ?? "未归专题";
+        setToast({ text: r.created ? `已加到「${where}」的书签` : `这段已经在「${where}」的书签里` });
+      })
+      .catch((err: unknown) => setToast({ text: `加书签失败：${err instanceof HostApiError ? err.message : String(err)}`, error: true }));
+  };
+
   /** Scrolls to the annotated text of a reply and flashes it (its block, where highlights are not available). */
   function locate(a: Annotation, retry = true) {
     const reply = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(a.itemId)}"]`);
@@ -345,11 +384,11 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               Review
             </button>
           )}
-          <button type="button" className="btn-ghost small with-icon" title="文件标记：这个项目标记的文件（Ctrl+Shift+M）" onClick={() => openMarks({ workspaceId: task.workspaceId })} data-testid="task-marks">
+          <button type="button" className="btn-ghost small with-icon" title="书签：这个专题记下的文件和对话片段（Ctrl+Shift+M）" onClick={() => openMarks({ topicId: task.topicId ?? "none", workspaceId: task.workspaceId })} data-testid="task-marks">
             <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4.5 2.5h7v11l-3.5-2.6-3.5 2.6z" />
             </svg>
-            标记
+            书签
           </button>
           <button type="button" className="btn-ghost small icon-only" aria-label="任务的更多操作" title="更多" onClick={(e) => setTaskMenu(below(e.currentTarget))} data-testid="task-more">
             ⋯
@@ -525,6 +564,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             <SessionHead
               link={link}
               session={session}
+              topicId={task.topicId}
               model={[shortModel(profile(session.profileId)), modelText].filter(Boolean).join(" · ")}
               workdir={workdir}
               busy={busy}
@@ -554,6 +594,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onSaveAnnotation={(anchor, note) => annotationCall(() => call(link, "POST /api/sessions/:id/annotations", { id: session!.id }, { ...anchor, note }))}
               onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
               onDeleteAnnotation={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}
+              onBookmark={bookmark}
               onError={showError}
               annotations={annotations}
               annotationRefs={annotationRefs}
@@ -571,7 +612,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             column={preview.column}
             diff={preview.diff}
             onClose={() => setPreview(null)}
-            extraActions={<MarkButton link={link} file={preview.file} line={preview.line} className="btn-ghost small" />}
+            extraActions={<MarkButton link={link} file={preview.file} line={preview.line} sessionId={session?.id ?? null} className="btn-ghost small" />}
           />
         )}
         {sidebar && (

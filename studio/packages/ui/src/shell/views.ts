@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { ChecklistItem, DecisionRequest, MailMessage, OptionalFeature, ScheduleProposal, StateSnapshot, TodoItem } from "@amo-studio/protocol";
-import type { HostLink } from "../host/client.js";
+import type { HostLink, Passage } from "../host/client.js";
 import type { Scope } from "../board/Board.js";
 
 // What a feature hands the shell (ui/src/features.ts lists them): its pages ("views"), the top-bar tab that opens
@@ -13,8 +13,8 @@ export type View =
   | { kind: "canvas" }
   | { kind: "new"; topicId?: string; back?: View }
   | { kind: "packs"; workspaceId: string }
-  /** `created`: opened right after the task was made (its session list starts folded). */
-  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean };
+  /** `created`: opened right after the task was made (its session list starts folded). `passage`: a bookmarked passage of `sessionId` to scroll to and flash (书签). */
+  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean; passage?: Passage };
 
 const BACK_LABEL: Partial<Record<View["kind"], string>> = { board: "看板", canvas: "画布" };
 

@@ -1,9 +1,12 @@
-import { FILE_MARK_MIME, isCommon, lineSuffix, type FileMark, type FileMarkDrag, type Workspace } from "@amo-studio/protocol";
+import { FILE_MARK_MIME, lineSuffix, type Bookmark, type ChatMark, type FileMark, type FileMarkDrag, type Topic } from "@amo-studio/protocol";
 
-// Pure logic of the marks window (文件标记, S12-D): its address, grouping and search, and what a dragged mark carries.
+// Pure logic of the marks window (文件标记, S12-D; 书签 since 2026-10-19): its address, grouping by topic and search, and
+// what a dragged bookmark carries.
 
 export interface MarksTarget {
-  /** The project shown first (and the one "+ 标记文件" picks from); none opens on all projects. */
+  /** The topic shown first, where new bookmarks go ("none": 未归专题). */
+  topicId?: string;
+  /** The project "+ 文件" picks from first. */
   workspaceId?: string;
   /** The mark to scroll to and flash (stage 13: the 标记 button of a file already marked). */
   markId?: string;
@@ -13,9 +16,10 @@ export interface MarksTarget {
   nonce?: string;
 }
 
-/** The window's address: `#marks?workspace=…&mark=…&edit=1&n=…`. */
+/** The window's address: `#marks?topic=…&workspace=…&mark=…&edit=1&n=…`. */
 export function marksHash(t: MarksTarget = {}): string {
   const q = new URLSearchParams();
+  if (t.topicId) q.set("topic", t.topicId);
   if (t.workspaceId) q.set("workspace", t.workspaceId);
   if (t.markId) q.set("mark", t.markId);
   if (t.markId && t.edit) q.set("edit", "1");
@@ -27,10 +31,12 @@ export function marksHash(t: MarksTarget = {}): string {
 export function parseMarksHash(hash: string): MarksTarget | null {
   if (!hash.startsWith("#marks")) return null;
   const q = new URLSearchParams(hash.slice("#marks".length).replace(/^\?/, ""));
+  const topicId = q.get("topic");
   const workspaceId = q.get("workspace");
   const markId = q.get("mark");
   const nonce = q.get("n");
   return {
+    ...(topicId ? { topicId } : {}),
     ...(workspaceId ? { workspaceId } : {}),
     ...(markId ? { markId, ...(q.get("edit") === "1" ? { edit: true } : {}) } : {}),
     ...(nonce ? { nonce } : {}),
@@ -55,44 +61,45 @@ export function findMark(marks: readonly FileMark[], file: { path: string; works
   return same.find((m) => line && m.startLine === line) ?? same.find((m) => m.startLine === null) ?? same[0] ?? null;
 }
 
-export interface MarkGroup {
-  /** null: 其他 (outside every project). */
-  workspaceId: string | null;
+export interface BookmarkGroup {
+  /** null: 未归专题. */
+  topicId: string | null;
   name: string;
-  /** The project's folder, "" for 其他. */
-  path: string;
-  marks: FileMark[];
+  archived: boolean;
+  marks: Bookmark[];
 }
 
+export const NO_TOPIC = "未归专题";
+
 /**
- * Marks by project: the current project first (shown even when it has none, so it can be added to), then the other
- * projects with marks in the order Studio lists them, then 其他. Within a group, the Host's order.
+ * Bookmarks by topic: the current one first (shown even when it has none, so it can be added to; "none" is
+ * 未归专题), then the other topics with bookmarks in the order Studio lists them, then 未归专题. A bookmark of a topic
+ * that is gone reads as 未归专题. Within a group, the Host's order.
  */
-export function groupMarks(marks: readonly FileMark[], workspaces: readonly Workspace[], currentId: string | null): MarkGroup[] {
-  const projects = workspaces.filter((w) => !isCommon(w));
-  const groups: MarkGroup[] = [];
-  const current = projects.find((w) => w.id === currentId);
-  const ordered = current ? [current, ...projects.filter((w) => w !== current)] : projects;
-  for (const ws of ordered) {
-    const mine = marks.filter((m) => m.workspaceId === ws.id);
-    if (mine.length || ws === current) groups.push({ workspaceId: ws.id, name: ws.name, path: ws.path, marks: mine });
+export function groupBookmarks(marks: readonly Bookmark[], topics: readonly Topic[], current?: string | null): BookmarkGroup[] {
+  const known = new Set(topics.map((t) => t.id));
+  const topicOf = (m: Bookmark) => (m.topicId && known.has(m.topicId) ? m.topicId : null);
+  const loose: BookmarkGroup = { topicId: null, name: NO_TOPIC, archived: false, marks: marks.filter((m) => topicOf(m) === null) };
+  const first = current === "none" ? loose : topics.find((t) => t.id === current);
+  const groups: BookmarkGroup[] = [];
+  if (first === loose) groups.push(loose);
+  for (const t of first && first !== loose ? [first as Topic, ...topics.filter((x) => x !== first)] : topics) {
+    const mine = marks.filter((m) => topicOf(m) === t.id);
+    if (mine.length || t === first) groups.push({ topicId: t.id, name: t.title, archived: !!t.archivedAt, marks: mine });
   }
-  // Marks of a project that is gone (not listed yet) read as 其他 rather than vanish.
-  const known = new Set(projects.map((w) => w.id));
-  const other = marks.filter((m) => !m.workspaceId || !known.has(m.workspaceId));
-  if (other.length) groups.push({ workspaceId: null, name: "其他", path: "", marks: other });
+  if (first !== loose && loose.marks.length) groups.push(loose);
   return groups;
 }
 
-/** Search over path and note: every space-separated word must appear (case does not matter). */
-export function matchMark(mark: FileMark, query: string): boolean {
+/** Search over a file's path and note, or a passage's text, session and note: every word must appear (any case). */
+export function matchMark(mark: Bookmark, query: string): boolean {
   const words = query.toLowerCase().split(/\s+/).filter(Boolean);
   if (!words.length) return true;
-  const hay = `${mark.path}\n${mark.note}`.toLowerCase();
+  const hay = (mark.kind === "chat" ? `${mark.quote}\n${mark.sessionTitle}\n${mark.note}` : `${mark.path}\n${mark.note}`).toLowerCase();
   return words.every((w) => hay.includes(w));
 }
 
-export function filterGroups(groups: readonly MarkGroup[], query: string): MarkGroup[] {
+export function filterGroups(groups: readonly BookmarkGroup[], query: string): BookmarkGroup[] {
   if (!query.trim()) return [...groups];
   return groups.map((g) => ({ ...g, marks: g.marks.filter((m) => matchMark(m, query)) })).filter((g) => g.marks.length);
 }
@@ -103,6 +110,15 @@ export function relativeTo(path: string, folder: string): string {
   const f = folder.replace(/[\\/]+$/, "");
   if (path.length <= f.length || path.slice(0, f.length).toLowerCase() !== f.toLowerCase() || !"\\/".includes(path[f.length]!)) return "";
   return path.slice(f.length + 1);
+}
+
+/**
+ * What a dragged passage carries: plain text, so a composer takes it where it is dropped: the passage quoted, where
+ * it came from, and the note.
+ */
+export function chatDragText(mark: ChatMark, from: string): string {
+  const quoted = mark.quote.split("\n").map((l) => `> ${l}`).join("\n");
+  return `${quoted}\n\n（${from}）${mark.note ? `\n${mark.note}` : ""}\n`;
 }
 
 /** What a dragged mark carries: the mark as JSON under FILE_MARK_MIME, and the path (with its lines) as plain text. */

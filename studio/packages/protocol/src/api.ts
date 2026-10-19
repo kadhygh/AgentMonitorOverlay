@@ -471,7 +471,7 @@ export type HostEvent = { seq: number } & (
   /** The model profiles changed: a channel was added, edited or removed, or one was hidden or shown (设置 → 模型). */
   | { type: "profiles.updated"; profiles: ModelProfile[] }
   /** File marks (S12-D) changed: one was added, edited or removed (`workspaceId` is its project, null for 其他). */
-  | { type: "marks.changed"; markId: Id; workspaceId: Id | null }
+  | { type: "marks.changed"; markId: Id; workspaceId: Id | null; topicId?: Id | null }
   /** Something failed inside the Host outside any one request; it logged the details and keeps running. */
   | { type: "host.error"; message: string }
   /** 外部打开 Review (2026-10-18): the main window opens a review window on this (events older than a minute are stale). */
@@ -612,6 +612,14 @@ export interface HostRoutes {
   "POST /api/file-marks": { req: import("./marks.js").NewFileMark; res: { mark: import("./marks.js").FileMark; created: boolean } };
   "PATCH /api/file-marks/:id": { req: import("./marks.js").FileMarkPatch; res: import("./marks.js").FileMark };
   "DELETE /api/file-marks/:id": { req: void; res: { ok: true } };
+  // 书签 (2026-10-19): file marks and passages of conversations, under topics.
+  /** All bookmarks, or one topic's (`?topic=<id>`, or `?topic=none` for 未归专题); in their order. */
+  "GET /api/bookmarks": { req: void; res: import("./marks.js").Bookmark[] };
+  /** Bookmarks a passage of a reply; the same passage under the same topic gives the one already there. */
+  "POST /api/chat-marks": { req: import("./marks.js").NewChatMark; res: { mark: import("./marks.js").ChatMark; created: boolean } };
+  /** Note, topic or order of either kind (a line range only for files). */
+  "PATCH /api/bookmarks/:id": { req: import("./marks.js").FileMarkPatch; res: import("./marks.js").Bookmark };
+  "DELETE /api/bookmarks/:id": { req: void; res: { ok: true } };
 }
 
 // ---- files named in a conversation (stage 12, S12-C): which exist, so only those become links -------------------

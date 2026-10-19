@@ -4,7 +4,7 @@ import { COLUMN_NAMES, SESSION_LOOK, taskSessions, taskStatus } from "../lib/sta
 import { deleteGroup, updateGroup } from "./geometry.js";
 
 export type CanvasSelection = { kind: "node"; id: Id } | { kind: "group"; id: Id } | null;
-export type SidebarTab = "todo" | "detail" | "docs" | "agent";
+export type SidebarTab = "todo" | "detail" | "docs" | "marks" | "agent";
 
 interface CanvasSidebarProps {
   doc: CanvasDoc;
@@ -30,6 +30,8 @@ interface CanvasSidebarProps {
   agentTab?: ReactNode;
   /** 文档 (stage 16): the topic's documents. */
   docsTab?: ReactNode;
+  /** 书签 (2026-10-19): the topic's bookmarks. */
+  marksTab?: ReactNode;
 }
 
 /** Right column of the canvas: whole-picture todos, details of the selection, and the agent's view. */
@@ -40,6 +42,7 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
     ...(props.todoTab ? ([["todo", "整体待办"]] as Array<[SidebarTab, string]>) : []),
     ["detail", "详情"],
     ...(props.docsTab ? ([["docs", "文档"]] as Array<[SidebarTab, string]>) : []),
+    ...(props.marksTab ? ([["marks", "书签"]] as Array<[SidebarTab, string]>) : []),
     ["agent", "agent 视角"],
   ];
   return (
@@ -54,6 +57,7 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
       {tab === "detail" && <DetailTab {...props} />}
       {tab === "todo" && props.todoTab}
       {tab === "docs" && props.docsTab}
+      {tab === "marks" && props.marksTab}
       {tab === "agent" && (props.agentTab ?? <span className="anno-empty">agent 视角在 S3-05 实现。</span>)}
     </aside>
   );

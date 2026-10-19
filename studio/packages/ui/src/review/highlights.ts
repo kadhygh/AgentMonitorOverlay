@@ -34,7 +34,7 @@ function renderedText(blocks: readonly HTMLElement[]): { text: string; nodes: Ar
 const FALLBACK = "li, tr, th, td, p, blockquote, pre, .md-h";
 
 /** The range over an annotation's quote in a rendered reply, or null when none of its blocks are there. */
-export function annotationRange(reply: HTMLElement, a: Annotation, source: string): Range | null {
+export function annotationRange(reply: HTMLElement, a: Pick<Annotation, "start" | "end" | "quote">, source: string): Range | null {
   const all = [...reply.querySelectorAll<HTMLElement>("[data-src-start]")];
   const blocks = all.filter((b) => Number(b.dataset.srcStart) < a.end && Number(b.dataset.srcEnd) > a.start);
   if (!blocks.length) return null;
@@ -136,12 +136,18 @@ let flashTimer: ReturnType<typeof setTimeout> | undefined;
 export function flashAnnotation(id: string): boolean {
   const r = painted.get(id);
   if (!r || !highlightsSupported()) return false;
+  flashRange(r);
+  return true;
+}
+
+/** Scrolls a range of the conversation into view and makes it stand out for a moment (a bookmarked passage too). */
+export function flashRange(r: Range): void {
+  if (!highlightsSupported()) return;
   const el = r.startContainer.nodeType === Node.ELEMENT_NODE ? (r.startContainer as Element) : r.startContainer.parentElement;
   el?.scrollIntoView({ block: "center" });
   CSS.highlights.set(ANNOTATION_FLASH, new Highlight(r));
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => CSS.highlights.delete(ANNOTATION_FLASH), 1500);
-  return true;
 }
 
 /** The text a painted annotation covers (tests and the screen reader label read it). */

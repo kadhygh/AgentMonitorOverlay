@@ -203,13 +203,14 @@ if (!app.requestSingleInstanceLock()) {
   });
   // "在工作台打开" from Focus: the workbench shows that task and session (and comes forward, except in tests).
   ipcMain.handle("amo:open-in-workbench", (_event, target: unknown) => {
-    const t = target as { taskId?: unknown; sessionId?: unknown; show?: unknown } | null;
+    const t = target as { taskId?: unknown; sessionId?: unknown; show?: unknown; passage?: unknown } | null;
     // No (or an empty) taskId opens the board: scheduler proposals, and topic sessions from Focus. `show`: only bring
     // the window forward, where it is (Focus's icon, 2026-10-15).
     if (!mainWindow) return;
     if (t?.show !== true) {
       const taskId = typeof t?.taskId === "string" ? t.taskId : "";
-      mainWindow.webContents.send("amo:navigate", { taskId, ...(taskId && typeof t?.sessionId === "string" ? { sessionId: t.sessionId } : {}) });
+      const passage = taskId && typeof t?.sessionId === "string" ? passageOf(t.passage) : null;
+      mainWindow.webContents.send("amo:navigate", { taskId, ...(taskId && typeof t?.sessionId === "string" ? { sessionId: t.sessionId } : {}), ...(passage ? { passage } : {}) });
     }
     if (testMode) {
       const g = globalThis as { __amoMainShown?: number };
@@ -422,4 +423,11 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
   if (!testMode) win.on("close", () => prefs.setMain({ bounds: win.getNormalBounds(), maximized: win.isMaximized() }));
   void win.loadURL(process.env.AMO_STUDIO_DEV_URL ?? `${conn.url}/`);
   return win;
+}
+
+/** A bookmarked passage to flash in the workbench (书签, 2026-10-19), or null when the value is not one. */
+function passageOf(v: unknown): { itemId: string; start: number; end: number; quote: string } | null {
+  const p = v as { itemId?: unknown; start?: unknown; end?: unknown; quote?: unknown } | null;
+  if (!p || typeof p.itemId !== "string" || typeof p.quote !== "string" || !Number.isInteger(p.start) || !Number.isInteger(p.end)) return null;
+  return { itemId: p.itemId, start: p.start as number, end: p.end as number, quote: p.quote.slice(0, 8000) };
 }

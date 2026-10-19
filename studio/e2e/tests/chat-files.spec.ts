@@ -101,7 +101,7 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   expect(reveal.asked).toMatchObject({ path: join(dir, DEMO_FILE), app: "explorer" });
   expect(reveal.result).toMatchObject({ app: "explorer", dryRun: true });
   await viewer.getByTestId("mark-file").click();
-  await expect(viewer.getByTestId("mark-file")).toHaveText("已标记");
+  await expect(viewer.getByTestId("mark-file")).toHaveText("已加书签");
 
   // The README link (#L2) goes to the same window: the source with line 2 marked, then rendered.
   await links.last().click();
@@ -134,7 +134,7 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   // Right click: the file menu. 右栏快速查看 the README (linked at #L2): source first, marking line 2; then rendered.
   await links.last().click({ button: "right" });
   const menu = page.getByTestId("file-menu");
-  const items = ["查看器打开", "右栏快速查看", "用 git diff 看", ...(vscode ? ["VS Code 打开"] : []), "在资源管理器中显示", "复制路径", "标记"];
+  const items = ["查看器打开", "右栏快速查看", "用 git diff 看", ...(vscode ? ["VS Code 打开"] : []), "在资源管理器中显示", "复制路径", "加书签"];
   await expect(menu.getByRole("menuitem")).toHaveText(items);
   await screenshot(app, "stage-13", "S13-A-file-menu", page);
   await menu.getByRole("menuitem", { name: "右栏快速查看" }).click();
@@ -147,7 +147,7 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   await expect(preview.locator(".fp-md strong")).toHaveText("失败时重试");
   // 标记 from the quick look: marks the file at the line; then "已标记" (accent).
   await preview.getByTestId("mark-file").click();
-  await expect(preview.getByTestId("mark-file")).toHaveText("已标记");
+  await expect(preview.getByTestId("mark-file")).toHaveText("已加书签");
   await expect(preview.getByTestId("mark-file")).toHaveAttribute("data-marked", "");
 
   // Esc closes it; the right column comes back.

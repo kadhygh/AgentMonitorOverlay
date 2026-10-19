@@ -7,7 +7,7 @@ const LIMIT = 100;
 
 /**
  * 找文件 (Ctrl+P in a session, or "找文件…" in the @ list): fuzzy search over the project's files. Arrow keys move,
- * Enter references the file in the composer, Esc closes. With `onMark`, "标记这个文件" (Ctrl+M) marks the highlighted
+ * Enter references the file in the composer, Esc closes. With `onMark`, "加到书签" (Ctrl+M) bookmarks the highlighted
  * file (S12-D) and stays open; `action` names what Enter does ("引用" by default).
  */
 export function FileSelector({
@@ -134,7 +134,7 @@ export function FileSelector({
             <>
               {marked && <span data-testid="file-picker-marked">{marked}</span>}
               <button type="button" className="file-picker-mark" disabled={!files[highlight]} onClick={() => mark(highlight)} data-testid="file-picker-mark">
-                标记这个文件（Ctrl+M）
+                加到书签（Ctrl+M）
               </button>
             </>
           )}

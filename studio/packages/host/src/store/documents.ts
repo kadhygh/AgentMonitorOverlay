@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Annotation, CanvasDoc, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, Relay, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
+import type { Annotation, CanvasDoc, ChatMark, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, Relay, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
 import { str, type Row } from "./rows.js";
 
 /**
@@ -117,14 +117,14 @@ export abstract class DocumentStore {
   putFileMark(m: FileMark): void {
     this.db
       .prepare(
-        "INSERT INTO file_marks (id, workspace_id, path, position, created_at, body) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, path = excluded.path, position = excluded.position, body = excluded.body",
+        "INSERT INTO file_marks (id, workspace_id, topic_id, path, position, created_at, body) VALUES (?, ?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET workspace_id = excluded.workspace_id, topic_id = excluded.topic_id, path = excluded.path, position = excluded.position, body = excluded.body",
       )
-      .run(m.id, m.workspaceId, m.path, m.order, m.createdAt, JSON.stringify(m));
+      .run(m.id, m.workspaceId, m.topicId ?? null, m.path, m.order, m.createdAt, JSON.stringify(m));
   }
 
   getFileMark(id: Id): FileMark | undefined {
     const r = this.db.prepare("SELECT body FROM file_marks WHERE id = ?").get(id) as Row | undefined;
-    return r && (JSON.parse(str(r.body)) as FileMark);
+    return r && fileMark(r);
   }
 
   /** All marks (`undefined`), a project's, or those outside every project (`null`); in their order. */
@@ -135,11 +135,36 @@ export abstract class DocumentStore {
         : workspaceId === null
           ? this.db.prepare("SELECT body FROM file_marks WHERE workspace_id IS NULL ORDER BY position, created_at DESC, id").all()
           : this.db.prepare("SELECT body FROM file_marks WHERE workspace_id = ? ORDER BY position, created_at DESC, id").all(workspaceId);
-    return (rows as Row[]).map((r) => JSON.parse(str(r.body)) as FileMark);
+    return (rows as Row[]).map(fileMark);
   }
 
   deleteFileMark(id: Id): void {
     this.db.prepare("DELETE FROM file_marks WHERE id = ?").run(id);
+  }
+
+  // Bookmarked passages of conversations (2026-10-19). The body keeps what was marked; where the session is now is
+  // read when they are listed.
+
+  putChatMark(m: ChatMark): void {
+    const { taskId: _t, workspaceId: _w, sessionTitle: _s, exists: _e, ...kept } = m;
+    this.db
+      .prepare(
+        "INSERT INTO chat_marks (id, topic_id, session_id, position, created_at, body) VALUES (?, ?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET topic_id = excluded.topic_id, position = excluded.position, body = excluded.body",
+      )
+      .run(m.id, m.topicId, m.sessionId, m.order, m.createdAt, JSON.stringify(kept));
+  }
+
+  getChatMark(id: Id): ChatMark | undefined {
+    const r = this.db.prepare("SELECT body FROM chat_marks WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as ChatMark);
+  }
+
+  listChatMarks(): ChatMark[] {
+    return (this.db.prepare("SELECT body FROM chat_marks ORDER BY position, created_at DESC, id").all() as Row[]).map((r) => JSON.parse(str(r.body)) as ChatMark);
+  }
+
+  deleteChatMark(id: Id): void {
+    this.db.prepare("DELETE FROM chat_marks WHERE id = ?").run(id);
   }
 
   putCanvas(doc: CanvasDoc): void {
@@ -274,4 +299,10 @@ export abstract class DocumentStore {
       : this.db.prepare("SELECT body FROM decisions ORDER BY created_at, id").all();
     return (rows as Row[]).map((r) => JSON.parse(str(r.body)) as DecisionRequest);
   }
+}
+
+/** A file mark from before 书签 has no kind or topic. */
+function fileMark(r: Row): FileMark {
+  const m = JSON.parse(str(r.body)) as FileMark;
+  return { ...m, kind: "file", topicId: m.topicId ?? null };
 }

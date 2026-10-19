@@ -21,6 +21,7 @@ const WRITER = {
 export function SessionHead({
   link,
   session,
+  topicId,
   model,
   workdir,
   busy,
@@ -32,6 +33,8 @@ export function SessionHead({
 }: {
   link: HostLink;
   session: Session;
+  /** The task's topic: where 书签 opens. */
+  topicId?: string | null;
   /** The model as shown ("Opus 5.5 · 高"). */
   model: string;
   /** The folder the session works in. */
@@ -113,14 +116,14 @@ export function SessionHead({
           <button
             type="button"
             role="menuitem"
-            title="文件标记：拖进输入框或 @ 引用"
+            title="书签：这个专题记下的文件和对话片段，可以拖进输入框"
             onClick={() => {
               setSessionMenu(null);
-              openMarks({ workspaceId: session.workspaceId });
+              openMarks({ topicId: topicId ?? "none", workspaceId: session.workspaceId });
             }}
             data-testid="session-marks"
           >
-            文件标记
+            书签
           </button>
           {/* An archived session is restored from its banner below. */}
           {!session.archivedAt && (

@@ -65,6 +65,8 @@ interface ThreadProps {
   onInterrupt(): void;
   /** Annotating in place (the bubble by the selection): resolve true once saved. */
   onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
+  /** 书签 (2026-10-19) on the selection bar: the selected passage under the session's topic. */
+  onBookmark?(anchor: SelectionAnchor): void;
   onEditAnnotation(id: string, note: string): Promise<boolean>;
   onDeleteAnnotation(id: string): void;
   /** A command or another action of the composer failed (stage 12, S12-E). */
@@ -76,7 +78,7 @@ interface ThreadProps {
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onError, decisions = [] }: ThreadProps) {
+export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, onError, decisions = [] }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -411,6 +413,15 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
                 quoteToDraft(bar.anchor.quote);
                 setBar(null);
               }}
+              {...(onBookmark
+                ? {
+                    onBookmark: () => {
+                      onBookmark(bar.anchor);
+                      setBar(null);
+                      window.getSelection()?.removeAllRanges();
+                    },
+                  }
+                : {})}
             />
           )}
           {bubble && (
@@ -600,7 +611,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           workspaceId={session.workspaceId}
           initialQuery={finding.query}
           onPick={(path) => attach.addFiles([path])}
-          onMark={(path) => markFileMessage(link, path)}
+          onMark={(path) => markFileMessage(link, path, session?.id)}
           onClose={() => {
             setFinding(null);
             requestAnimationFrame(() => document.querySelector<HTMLTextAreaElement>(".chat-input textarea")?.focus());

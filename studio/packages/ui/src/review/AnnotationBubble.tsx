@@ -38,8 +38,23 @@ function usePlacement(scroller: RefObject<HTMLElement | null>, at: ContentRect, 
   return { style, ref };
 }
 
-export function SelectionBar({ scroller, at, canQuote, onAnnotate, onQuote }: { scroller: RefObject<HTMLElement | null>; at: ContentRect; canQuote: boolean; onAnnotate(): void; onQuote(): void }) {
-  const { style, ref } = usePlacement(scroller, at, 132);
+export function SelectionBar({
+  scroller,
+  at,
+  canQuote,
+  onAnnotate,
+  onQuote,
+  onBookmark,
+}: {
+  scroller: RefObject<HTMLElement | null>;
+  at: ContentRect;
+  canQuote: boolean;
+  onAnnotate(): void;
+  onQuote(): void;
+  /** 书签 (2026-10-19): keeps the passage under the session's topic. */
+  onBookmark?(): void;
+}) {
+  const { style, ref } = usePlacement(scroller, at, onBookmark ? 186 : 132);
   return (
     <div ref={ref} className="sel-bar" style={style} role="toolbar" aria-label="选中的文字" data-testid="selection-bar" onMouseDown={(e) => e.preventDefault()}>
       <button type="button" onClick={onAnnotate}>
@@ -48,6 +63,11 @@ export function SelectionBar({ scroller, at, canQuote, onAnnotate, onQuote }: { 
       <button type="button" disabled={!canQuote} onClick={onQuote}>
         引用
       </button>
+      {onBookmark && (
+        <button type="button" onClick={onBookmark} title="加到这个专题的书签" data-testid="selection-bookmark">
+          书签
+        </button>
+      )}
     </div>
   );
 }

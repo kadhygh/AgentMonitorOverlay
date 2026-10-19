@@ -74,7 +74,7 @@ test("marks files in the marks window, edits their notes, looks at them and remo
 
   // A window of its own (off-screen, never focused in tests), on the task's project.
   const marks = await openMarksWindow(app, page);
-  expect(marks.url()).toContain(`#marks?workspace=${ws.id}`);
+  expect(marks.url()).toContain(`#marks?topic=none&workspace=${ws.id}`);
   await expect.poll(() => windowState(app, "marks")).toMatchObject({ visible: true, onScreen: false, anyFocused: false });
   await expect(marks.getByTestId("marks-empty")).toBeVisible();
 
@@ -83,27 +83,28 @@ test("marks files in the marks window, edits their notes, looks at them and remo
   const picker = marks.getByTestId("file-picker");
   await picker.getByLabel("找文件").fill("drop");
   await expect(picker.getByTestId("file-row").first()).toContainText("drop.lua");
-  await expect(picker).toContainText("回车标记");
+  await expect(picker).toContainText("回车加书签");
   await picker.getByLabel("找文件").press("Enter");
-  await expect(marks.getByTestId("toast")).toContainText("已标记 drop.lua");
+  await expect(marks.getByTestId("toast")).toContainText("已加书签 drop.lua");
   const rows = marks.getByTestId("mark-row");
   await expect(rows).toHaveCount(1);
-  await expect(marks.getByTestId("marks-group").first()).toContainText("当前项目");
+  await expect(marks.getByTestId("marks-group").first()).toContainText("当前专题");
 
-  // A pasted path (quoted, as Explorer's 复制文件地址 gives it), and a file dropped from Explorer outside every project.
+  // A pasted path (quoted, as Explorer's 复制文件地址 gives it), and a file dropped from Explorer outside every project:
+  // both go under the topic in front (this task has none: 未归专题).
   await marks.getByTestId("marks-paste").fill(`"${join(dir, "docs", "boss.md")}"`);
   await marks.getByTestId("marks-paste").press("Enter");
   await expect(rows).toHaveCount(2);
   await dropFiles(marks, [join(loose, "todo.txt")], ".mk-app");
   await expect(rows).toHaveCount(3);
   const groups = marks.getByTestId("marks-group");
-  await expect(groups).toHaveCount(2);
-  await expect(groups.last()).toContainText("其他");
-  await expect(groups.last()).toContainText("todo.txt");
+  await expect(groups).toHaveCount(1);
+  await expect(groups.first()).toContainText("未归专题");
+  await expect(groups.first()).toContainText("todo.txt");
   // The same file again is not marked twice.
   await marks.getByTestId("marks-paste").fill(join(dir, "drop.lua"));
   await marks.getByTestId("marks-paste").press("Enter");
-  await expect(marks.getByTestId("toast")).toContainText("drop.lua 已经标记过");
+  await expect(marks.getByTestId("toast")).toContainText("drop.lua 已经在书签里");
   await expect(rows).toHaveCount(3);
 
   // The note saves as it is typed; the line range when the field is left.
@@ -166,7 +167,7 @@ test("hands marks to a session: @ 标记的文件, a mark dragged into the compo
   // @ lists the project's marks, matching the note too; picking one makes a chip that carries the note.
   const suggest = page.getByTestId("suggest");
   await composer(page).pressSequentially("看看 @掉落");
-  await expect(suggest).toContainText("标记的文件");
+  await expect(suggest).toContainText("书签里的文件");
   const option = suggest.locator('[data-kind="mark"]');
   await expect(option).toHaveCount(1);
   await expect(option).toContainText("drop.lua:2-3");
@@ -221,9 +222,9 @@ test("hands marks to a session: @ 标记的文件, a mark dragged into the compo
   await picker.getByLabel("找文件").fill("old");
   await expect(picker.getByTestId("file-row").first()).toContainText("old.lua");
   await picker.getByTestId("file-picker-mark").click();
-  await expect(picker.getByTestId("file-picker-marked")).toHaveText("已标记 old.lua");
+  await expect(picker.getByTestId("file-picker-marked")).toHaveText("已加书签 old.lua");
   await picker.getByLabel("找文件").press("Control+m");
-  await expect(picker.getByTestId("file-picker-marked")).toHaveText("old.lua 已经标记过");
+  await expect(picker.getByTestId("file-picker-marked")).toHaveText("old.lua 已经在书签里");
   await picker.getByLabel("找文件").press("Escape");
   await expect(marks.getByTestId("mark-row")).toHaveCount(3);
 
@@ -233,6 +234,6 @@ test("hands marks to a session: @ 标记的文件, a mark dragged into the compo
   await page.getByTestId("topbar-marks").click();
   await page.getByTestId("session-more").click();
   await page.getByTestId("session-marks").click();
-  await expect.poll(() => marks.url()).toContain(`#marks?workspace=${ws.id}`);
+  await expect.poll(() => marks.url()).toContain(`#marks?topic=none&workspace=${ws.id}`);
   expect(app.windows().length).toBe(windows);
 });

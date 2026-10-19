@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { FILE_MARK_MIME, parseFileMarkDrag, type FileMark, type Workspace } from "@amo-studio/protocol";
-import { filterGroups, findMark, groupMarks, markDragData, marksHash, matchMark, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo } from "./logic.js";
+import { FILE_MARK_MIME, parseFileMarkDrag, type Bookmark, type ChatMark, type FileMark, type Topic } from "@amo-studio/protocol";
+import { chatDragText, filterGroups, findMark, groupBookmarks, markDragData, marksHash, matchMark, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo } from "./logic.js";
 
-const ws = (id: string, name: string, path: string, extra: Partial<Workspace> = {}): Workspace => ({ id, name, path, createdAt: "", ...extra });
 const mark = (id: string, path: string, workspaceId: string | null, note = "", extra: Partial<FileMark> = {}): FileMark => ({
+  kind: "file",
   id,
+  topicId: null,
   path,
   workspaceId,
   startLine: null,
@@ -25,6 +26,11 @@ describe("the marks window's address", () => {
     expect(parseMarksHash("#marks?workspace=ws-1")).toEqual({ workspaceId: "ws-1" });
     expect(parseMarksHash("#marks")).toEqual({});
     expect(parseMarksHash("#review?workspace=ws-1")).toBeNull();
+  });
+
+  it("round-trips the topic (none: 未归专题)", () => {
+    expect(marksHash({ topicId: "topic-1", workspaceId: "ws-1" })).toBe("#marks?topic=topic-1&workspace=ws-1");
+    expect(parseMarksHash("#marks?topic=none")).toEqual({ topicId: "none" });
   });
 
   it("round-trips the mark to show, and whether to edit its note", () => {
@@ -56,34 +62,48 @@ describe("findMark", () => {
   });
 });
 
-describe("grouping and search", () => {
-  const workspaces = [ws("common", "公共", "C:\\common", { builtin: "common" }), ws("a", "alpha", "C:\\alpha"), ws("b", "beta", "C:\\beta"), ws("c", "gamma", "C:\\gamma")];
-  const marks = [
-    mark("m1", "C:\\alpha\\drop.lua", "a", "掉落表"),
-    mark("m2", "C:\\beta\\boss.md", "b", "Boss 数值"),
+describe("grouping by topic and search", () => {
+  const topic = (id: string, title: string, extra: Partial<Topic> = {}): Topic => ({ id, title, workspaceIds: [], createdAt: "", updatedAt: "", archivedAt: null, ...extra });
+  const topics = [topic("t1", "掉落"), topic("t2", "战斗"), topic("t3", "UI")];
+  const passage: ChatMark = {
+    kind: "chat", id: "c1", topicId: "t2", sessionId: "s1", itemId: "i1", start: 0, end: 4, quote: "先改掉落表", prefix: "", suffix: "",
+    note: "关键一步", order: 0, createdAt: "", updatedAt: "", taskId: "k1", workspaceId: "a", sessionTitle: "调数值", exists: true,
+  };
+  const marks: Bookmark[] = [
+    mark("m1", "C:\\alpha\\drop.lua", "a", "掉落表", { topicId: "t1" }),
+    mark("m2", "C:\\beta\\boss.md", "b", "Boss 数值", { topicId: "t2" }),
+    passage,
     mark("m3", "D:\\notes\\todo.txt", null, "随手记"),
-    mark("m4", "C:\\gone\\x.ts", "ws-removed"),
+    mark("m4", "C:\\gone\\x.ts", "a", "", { topicId: "t-removed" }),
   ];
 
-  it("puts the current project first (even without marks), skips empty ones and ends with 其他", () => {
-    expect(groupMarks(marks, workspaces, "c").map((g) => [g.name, g.marks.map((m) => m.id)])).toEqual([
-      ["gamma", []],
-      ["alpha", ["m1"]],
-      ["beta", ["m2"]],
-      ["其他", ["m3", "m4"]],
+  it("puts the current topic first (even without bookmarks), skips empty ones and ends with 未归专题", () => {
+    expect(groupBookmarks(marks, topics, "t3").map((g) => [g.name, g.marks.map((m) => m.id)])).toEqual([
+      ["UI", []],
+      ["掉落", ["m1"]],
+      ["战斗", ["m2", "c1"]],
+      ["未归专题", ["m3", "m4"]],
     ]);
-    expect(groupMarks(marks, workspaces, "b").map((g) => g.workspaceId)).toEqual(["b", "a", null]);
-    expect(groupMarks([], workspaces, null)).toEqual([]);
+    expect(groupBookmarks(marks, topics, "t2").map((g) => g.topicId)).toEqual(["t2", "t1", null]);
+    expect(groupBookmarks(marks, topics, "none").map((g) => g.topicId)).toEqual([null, "t1", "t2"]);
+    expect(groupBookmarks([], topics, "none")).toEqual([{ topicId: null, name: "未归专题", archived: false, marks: [] }]);
+    expect(groupBookmarks([], topics)).toEqual([]);
   });
 
-  it("matches every word against the path and the note", () => {
+  it("matches every word against a file's path and note, or a passage's text, session and note", () => {
     expect(matchMark(marks[0]!, "drop")).toBe(true);
     expect(matchMark(marks[0]!, "掉落 ALPHA")).toBe(true);
     expect(matchMark(marks[0]!, "掉落 beta")).toBe(false);
-    expect(matchMark(marks[1]!, "boss 数值")).toBe(true);
-    expect(filterGroups(groupMarks(marks, workspaces, "c"), "随手").map((g) => g.name)).toEqual(["其他"]);
-    // No query: everything, the empty current project included.
-    expect(filterGroups(groupMarks(marks, workspaces, "c"), " ")).toHaveLength(4);
+    expect(matchMark(passage, "掉落表 调数值 关键")).toBe(true);
+    expect(matchMark(passage, "drop")).toBe(false);
+    expect(filterGroups(groupBookmarks(marks, topics, "t3"), "随手").map((g) => g.name)).toEqual(["未归专题"]);
+    // No query: everything, the empty current topic included.
+    expect(filterGroups(groupBookmarks(marks, topics, "t3"), " ")).toHaveLength(4);
+  });
+
+  it("drags a passage out as a quote with where it came from and the note", () => {
+    expect(chatDragText({ ...passage, quote: "一\n二" }, "调数值")).toBe("> 一\n> 二\n\n（调数值）\n关键一步\n");
+    expect(chatDragText({ ...passage, note: "" }, "x")).toBe("> 先改掉落表\n\n（x）\n");
   });
 
   it("shows paths relative to the project folder", () => {
