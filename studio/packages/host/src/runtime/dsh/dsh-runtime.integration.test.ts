@@ -181,6 +181,27 @@ describe("DSH runtime", () => {
     await expect(call(host, "POST", `/api/sessions/${s.id}/terminal`, { launch: false })).rejects.toThrow(/不能在终端打开/);
   });
 
+  it("runs a third-party DeepSeek channel: its address, its own key and its model (2026-10-19)", async () => {
+    const host = await boot();
+    const channel = await call<{ id: string; kind: string }>(host, "POST", "/api/channels", {
+      kind: "dsh",
+      label: "中转 DeepSeek",
+      baseUrl: "https://relay.example/anthropic",
+      key: "sk-relay",
+      model: "deepseek-v4-pro",
+    });
+    expect(channel.kind).toBe("dsh");
+    const profiles = (await call<StateSnapshot>(host, "GET", "/api/state")).profiles;
+    expect(profiles.find((p) => p.id === channel.id)).toMatchObject({ runtime: "dsh", label: "中转 DeepSeek", custom: true, model: "deepseek-official/deepseek-v4-pro" });
+    // The built-in DeepSeek keeps DeepSeek's own address and key.
+    const own = await start(host, "[[endpoint]]");
+    await until(() => items(host, own.id), (l) => replies(l).length === 1);
+    expect(replies(await items(host, own.id))[0]).toMatch(/^ENDPOINT base= key=sk-test /);
+    const { session } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", { title: "中转", workspaceId: own.workspaceId, firstSession: { profileId: channel.id, text: "[[endpoint]]" } });
+    await until(() => items(host, session.id), (l) => replies(l).length === 1);
+    expect(replies(await items(host, session.id))[0]).toBe('ENDPOINT base=https://relay.example/anthropic key=sk-relay model=["deepseek-official","deepseek-v4-pro"]');
+  });
+
   it("fails a turn when DSH fails it", async () => {
     const host = await boot();
     const s = await start(host, "[[fail]]");

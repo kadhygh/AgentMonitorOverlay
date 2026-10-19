@@ -154,6 +154,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       builtins: options.profiles ?? BUILTIN_PROFILES,
       codexProviders: { ...(options.providers ?? CODEX_PROVIDERS) },
       claudeProviders: { ...(options.claudeProviders ?? BUILTIN_CLAUDE_PROVIDERS) },
+      dshProviders: {},
       ...(options.profiles ? {} : { builtinBalance: BUILTIN_BALANCES }),
       // DSH sessions need a built clone (设置 → 模型); until then the profile stays out of the pickers.
       unavailable: (p) => (p.runtime === "dsh" && !options.dshAgent ? (dshUnavailable(liveKv) ?? undefined) : undefined),
@@ -221,6 +222,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       store,
       profiles,
       credentials,
+      providers: channels.dshProviders,
       dir: paths.dsh,
       mcp: () => mcp,
       identities,

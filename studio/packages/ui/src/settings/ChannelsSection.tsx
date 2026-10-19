@@ -23,7 +23,7 @@ const BUILTIN_SUB: Record<string, string> = {
 };
 
 /** A third-party channel's scheme, as the list and the page call it. */
-export const SCHEME: Record<ChannelKind, string> = { codex: "Codex 方案", claude: "Claude 方案" };
+export const SCHEME: Record<ChannelKind, string> = { codex: "Codex 方案", claude: "Claude 方案", dsh: "DSH 方案" };
 
 function subOf(p: ModelProfile, c: ModelChannel | undefined): string {
   if (c) return `${CHANNEL_KIND_LABEL[c.kind]} · ${c.baseUrl.replace(/^https?:\/\//, "")}`;

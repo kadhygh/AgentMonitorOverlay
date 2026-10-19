@@ -6,6 +6,7 @@
 //   [[slow]]                 a long pwsh call that ends only when cancelled
 //   [[context: N]]           the usage update says N tokens in use
 //   [[env]]                  the reply tells the permission mode and whether a key and a home were given
+//   [[endpoint]]             the reply tells the DeepSeek address, key and model it was given (third-party channels)
 //   [[mcp: TOOL]]            connects to the session's first MCP server, calls TOOL, replies its instructions and result
 //   [[fail]]                 the prompt fails
 // Sessions are kept in $DSH_HOME/fake-sessions.json, so another process can resume them.
@@ -153,6 +154,7 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
       update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "failed", content: [{ type: "content", content: { type: "text", text: "Error: tool call aborted" } }] });
       return { stopReason: "cancelled" };
     }
+    if (/\[\[endpoint\]\]/.test(text)) reply = `ENDPOINT base=${process.env.DEEPSEEK_BASE_URL ?? ""} key=${process.env.DEEPSEEK_API_KEY ?? ""} model=${s.model}`;
     if (/\[\[env\]\]/.test(text)) reply = `ENV permission=${process.env.DSH_PERMISSION_MODE ?? ""} key=${process.env.DEEPSEEK_API_KEY ? "yes" : "no"} home=${process.env.DSH_HOME ? "yes" : "no"} model=${s.model} effort=${s.effort}`;
     const mcp = /\[\[mcp: ([a-z_]+)\]\]/.exec(text);
     if (mcp) {

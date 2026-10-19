@@ -4,9 +4,11 @@ import type { ClaudeProviderDef } from "./claude/claude-env.js";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_EFFORTS } from "./choices.js";
 import type { CredentialReader, CredentialStore } from "./credentials.js";
 import type { CodexProviderDef } from "./profiles.js";
+import type { DshProviderDef } from "./dsh/dsh-runtime.js";
 
 // The model profiles as the Host runs them (设置 → 模型, 2026-10-15): the built-in ones, then the person's own channels
-// — a third-party Claude endpoint run by Claude Code, or a third-party Codex endpoint (Responses API) run by Codex —
+// — a third-party Claude endpoint run by Claude Code, a third-party Codex endpoint (Responses API) run by Codex, or a
+// third-party DeepSeek endpoint (Anthropic Messages) run by DSH (2026-10-19) —
 // each with a flag that leaves it out of the pickers. `profiles` and the provider tables are the very objects every
 // runtime was given, changed in place, so a new channel is usable at once without restarting anything.
 //
@@ -122,6 +124,8 @@ export interface ChannelRegistryOptions {
   builtins: readonly ModelProfile[];
   codexProviders: Record<string, CodexProviderDef>;
   claudeProviders: Record<string, ClaudeProviderDef>;
+  /** DSH's third-party DeepSeek addresses, by channel id (2026-10-19). */
+  dshProviders?: Record<string, DshProviderDef>;
   /** Balance queries of built-in profiles (DeepSeek's own endpoint). */
   builtinBalance?: Record<string, { baseUrl: string; config: BalanceConfig }>;
   /** Why a built-in profile cannot start sessions now (a DSH profile with no clone set up), or undefined. */
@@ -142,6 +146,9 @@ export class ChannelRegistry {
   get claudeProviders(): Record<string, ClaudeProviderDef> {
     return this.options.claudeProviders;
   }
+  get dshProviders(): Record<string, DshProviderDef> {
+    return (this.options.dshProviders ??= {});
+  }
 
   list(): ModelChannel[] {
     return this.stored().map((c) => this.view(c));
@@ -157,7 +164,7 @@ export class ChannelRegistry {
 
   create(input: ChannelInput): ModelChannel {
     const kind = input.kind;
-    if (kind !== "claude" && kind !== "codex") throw new ChannelError("bad_request", "渠道类型只能是 claude 或 codex");
+    if (kind !== "claude" && kind !== "codex" && kind !== "dsh") throw new ChannelError("bad_request", "渠道类型只能是 claude、codex 或 dsh");
     let id: string;
     do id = `ch-${randomBytes(4).toString("hex")}`;
     while (this.profiles.some((p) => p.id === id));
@@ -249,7 +256,7 @@ export class ChannelRegistry {
     if (!raw) return [];
     try {
       const list = JSON.parse(raw) as unknown;
-      return Array.isArray(list) ? (list as StoredChannel[]).filter((c) => c && isChannelId(c.id) && (c.kind === "claude" || c.kind === "codex")) : [];
+      return Array.isArray(list) ? (list as StoredChannel[]).filter((c) => c && isChannelId(c.id) && (c.kind === "claude" || c.kind === "codex" || c.kind === "dsh")) : [];
     } catch {
       return [];
     }
@@ -350,6 +357,8 @@ export class ChannelRegistry {
     const { codexProviders, claudeProviders, builtins, builtinBalance } = this.options;
     for (const k of Object.keys(codexProviders)) if (/^amo-ch-/.test(k)) delete codexProviders[k];
     for (const k of Object.keys(claudeProviders)) if (/^ch-/.test(k)) delete claudeProviders[k];
+    const dshProviders = this.dshProviders;
+    for (const k of Object.keys(dshProviders)) if (/^ch-/.test(k)) delete dshProviders[k];
     const next: ModelProfile[] = builtins.map((p) => {
       const unavailable = this.options.unavailable?.(p);
       return { ...p, ...(hidden.has(p.id) ? { hidden: true } : {}), ...(builtinBalance?.[p.id] ? { balance: true } : {}), ...(unavailable ? { unavailable } : {}) };
@@ -361,6 +370,13 @@ export class ChannelRegistry {
         const provider = codexProviderId(c.id);
         codexProviders[provider] = { name: c.label, baseUrl: c.baseUrl, wireApi: "responses", envKey: `AMO_${c.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_KEY` };
         next.push({ id: c.id, label: c.label, runtime: "codex", provider, model: c.model, credentialId, ...flags });
+      } else if (c.kind === "dsh") {
+        // DSH talks to the channel's address with its key; models are DSH's (`deepseek-official/<model>`).
+        dshProviders[c.id] = { baseUrl: c.baseUrl };
+        const model = c.model ? (c.model.includes("/") ? c.model : `deepseek-official/${c.model}`) : null;
+        const profile: ModelProfile = { id: c.id, label: c.label, runtime: "dsh", provider: c.id, model, credentialId, ...flags };
+        const unavailable = this.options.unavailable?.(profile);
+        next.push({ ...profile, ...(unavailable ? { unavailable } : {}) });
       } else {
         claudeProviders[c.id] = {
           baseUrl: c.baseUrl,

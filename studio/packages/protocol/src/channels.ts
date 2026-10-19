@@ -5,9 +5,10 @@ import type { Id, Timestamp } from "./entities.js";
 // its address, key, and optionally how to ask the site for its balance (the templates CC Switch offers). Every
 // channel, built in or not, can be hidden from the model pickers.
 
-export type ChannelKind = "claude" | "codex";
+/** `dsh` (2026-10-19): a third-party DeepSeek endpoint run by DeepSeek Harness (its Anthropic-compatible address). */
+export type ChannelKind = "claude" | "codex" | "dsh";
 
-export const CHANNEL_KIND_LABEL: Record<ChannelKind, string> = { claude: "第三方 Claude", codex: "第三方 Codex" };
+export const CHANNEL_KIND_LABEL: Record<ChannelKind, string> = { claude: "第三方 Claude", codex: "第三方 Codex", dsh: "第三方 DeepSeek" };
 
 /**
  * How a balance is asked for (CC Switch's 用量查询 templates):

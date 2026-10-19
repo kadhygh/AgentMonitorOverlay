@@ -29,6 +29,8 @@ export const DSH_HOME_ENV = "DSH_HOME";
 export const DSH_PERMISSION_ENV = "DSH_PERMISSION_MODE";
 /** The DeepSeek key, read from the launch environment when DSH's own key file has none. */
 export const DSH_KEY_ENV = "DEEPSEEK_API_KEY";
+/** The DeepSeek route's address (an Anthropic Messages endpoint); a third-party DeepSeek channel sets it (2026-10-19). */
+export const DSH_BASE_URL_ENV = "DEEPSEEK_BASE_URL";
 
 /** Session config options DSH offers over ACP (`session/set_config_option`). */
 export const DSH_MODEL_OPTION = "model";

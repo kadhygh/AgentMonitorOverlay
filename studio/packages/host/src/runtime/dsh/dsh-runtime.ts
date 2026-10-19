@@ -15,6 +15,7 @@ import {
   DSH_CHECK_KEY,
   DSH_EFFORT_OPTION,
   DSH_HOME_ENV,
+  DSH_BASE_URL_ENV,
   DSH_KEY_ENV,
   DSH_MODEL_OPTION,
   DSH_OPTIONS_KEY,
@@ -34,10 +35,17 @@ import { DshTranscript, type AcpUpdate } from "./transcript.js";
 // own sessions; Studio keeps the conversation (DSH does not replay it on resume). What ACP lacks (spikes s17-00):
 // fork, question cards, images, steering a running turn (a message sent meanwhile waits for the turn to end).
 
+/** A third-party DeepSeek endpoint DSH can be pointed at (an Anthropic Messages root, like https://api.deepseek.com/anthropic). */
+export interface DshProviderDef {
+  baseUrl?: string;
+}
+
 export interface DshRuntimeOptions {
   store: Store;
   profiles: readonly ModelProfile[];
   credentials: CredentialReader;
+  /** Third-party DeepSeek channels by provider id (2026-10-19): the address their sessions' DSH talks to. */
+  providers?: Record<string, DshProviderDef>;
   /** Studio's DSH folder: `home/` (DSH_HOME), `logs/`, `probe/`. */
   dir: string;
   /** The AMO MCP's address and its agent token, once the Host listens. */
@@ -104,7 +112,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   async startSession(input: { taskId: Id | null; topicId: Id | null; profileId: Id; workspace: Workspace; title?: string; text?: string; options?: SessionOptions }): Promise<Session> {
     const profile = this.profile(input.profileId);
-    const options = input.options ?? {};
+    // A channel's own model when none was picked (DSH's catalog id, `deepseek-official/<model>`).
+    const options = { ...(profile.model && !input.options?.model ? { model: profile.model } : {}), ...(input.options ?? {}) };
     const token = this.options.identities?.issue();
     const permission = dshPermissionMode(options.permission);
     const conn = this.spawn(input.workspace.path, profile, permission, `new-${Date.now()}`);
@@ -276,6 +285,9 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     const key = credentialId ? this.options.credentials.read(credentialId) : null;
     if (key) env[DSH_KEY_ENV] = key;
     else if (profile?.credentialId) throw Object.assign(new Error(`还没有 DeepSeek 的 Key（凭据 ${profile.credentialId}）`), { code: "bad_request" });
+    // A third-party channel: its address. (DSH reads it from the launch environment, which outranks a project's .env.)
+    const baseUrl = profile?.provider ? this.options.providers?.[profile.provider]?.baseUrl : undefined;
+    if (baseUrl) env[DSH_BASE_URL_ENV] = baseUrl;
     let command: string;
     let args: string[];
     if (this.options.agent) {

@@ -10,6 +10,13 @@ import { QuickModelsSection } from "./QuickModelsSection.js";
 import { DshSection } from "./DshSection.js";
 import { useProfiles } from "../lib/balance.js";
 
+/** What each 「+ … 方案」 adds. */
+const ADD_HINT = {
+  codex: "添加一个用 Codex 跑的第三方接口（OpenAI 兼容）",
+  claude: "添加一个用 Claude Code 跑的第三方接口（Anthropic 兼容）",
+  dsh: "添加一个用 DSH 跑的第三方 DeepSeek（要 Anthropic 兼容的地址，模型名和官方一致）",
+} as const;
+
 // 设置 → 模型. S18 (2026-10-18): a list on the left — 支持的渠道 (built in), 第三方 (the person's own endpoints, each run
 // as a Codex or a Claude one; added from the two buttons under them), then 快速选择 and 常用预设, which belong to no
 // channel — and the chosen entry on the right. A channel's page holds everything about it: key, balance, hiding, the
@@ -68,8 +75,8 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
         {custom.map((p) => (
           <ChannelNavItem key={p.id} profile={p} channel={channels.find((c) => c.id === p.id)} selected={current.kind === "channel" && current.id === p.id} onSelect={() => select({ kind: "channel", id: p.id })} />
         ))}
-        {(["codex", "claude"] as const).map((k) => (
-          <button key={k} type="button" className="models-nav-add" onClick={() => setDialog({ channel: null, kind: k })} title={k === "codex" ? "添加一个用 Codex 跑的第三方接口（OpenAI 兼容）" : "添加一个用 Claude Code 跑的第三方接口（Anthropic 兼容）"} data-testid={`channel-add-${k}`}>
+        {(["codex", "claude", "dsh"] as const).map((k) => (
+          <button key={k} type="button" className="models-nav-add" onClick={() => setDialog({ channel: null, kind: k })} title={ADD_HINT[k]} data-testid={`channel-add-${k}`}>
             + {SCHEME[k]}
           </button>
         ))}

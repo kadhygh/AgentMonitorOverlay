@@ -209,3 +209,36 @@ test("设置 → 模型 → a channel's 自动压缩点: 272k by default, its ow
   await expect(section.getByTestId("auto-compact-shared-tag")).toBeVisible();
   await expect.poll(own).toBeUndefined();
 });
+
+test("a third-party DeepSeek channel run by DSH: its address and its own key reach DSH (2026-10-19)", async () => {
+  studio = await launchStudio({ dsh: true });
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "模型" }).click();
+  await dialog.getByTestId("channel-add-dsh").click();
+  const form = page.getByTestId("channel-dialog");
+  await expect(form.getByTestId("channel-kind-dsh")).toHaveAttribute("aria-checked", "true");
+  await form.getByTestId("channel-label").fill("中转 DeepSeek");
+  await form.getByTestId("channel-url").fill("https://relay.example/anthropic");
+  await form.getByTestId("channel-key").fill("sk-relay-ds");
+  await form.getByTestId("channel-model").fill("deepseek-v4-pro");
+  await screenshot(app, "stage-18", "S18-dsh-channel", page);
+  await form.getByTestId("channel-save").click();
+  await expect(form).toHaveCount(0);
+  const card = dialog.getByTestId("channel-page");
+  await expect(card.getByTestId("channel-title")).toHaveText("中转 DeepSeek");
+  await expect(card).toContainText("DSH 方案");
+  const channel = (await studio.api<ModelChannel[]>("GET", "/api/channels")).find((c) => c.kind === "dsh")!;
+  expect(channel).toMatchObject({ label: "中转 DeepSeek", baseUrl: "https://relay.example/anthropic", model: "deepseek-v4-pro", keySaved: true });
+  expect(JSON.stringify(channel)).not.toContain("sk-relay-ds");
+
+  // A session on it: DSH starts with the channel's address, key and model.
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "走中转 DeepSeek", workspaceId: ws.id, firstSession: { profileId: channel.id, text: "[[endpoint]]" } });
+  await page.keyboard.press("Escape");
+  await page.getByTestId("task-card").filter({ hasText: "走中转 DeepSeek" }).click();
+  await expect(page.getByTestId("msg-agent").last()).toHaveText('ENDPOINT base=https://relay.example/anthropic key=sk-relay-ds model=["deepseek-official","deepseek-v4-pro"]', { timeout: 60_000 });
+  await expect(page.getByTestId("thread-head")).toContainText("中转 DeepSeek");
+});

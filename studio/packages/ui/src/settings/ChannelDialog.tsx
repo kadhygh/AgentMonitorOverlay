@@ -11,6 +11,7 @@ import { balanceText } from "../lib/balance.js";
 const PLACEHOLDER: Record<ChannelKind, string> = {
   claude: "https://example.com/api/anthropic（Claude Code 的 ANTHROPIC_BASE_URL）",
   codex: "https://example.com/v1（Codex 会在后面接 /responses）",
+  dsh: "https://example.com/anthropic（Anthropic 兼容的地址，像 https://api.deepseek.com/anthropic）",
 };
 
 type Draft = {
@@ -147,10 +148,10 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
         </span>
         {!editing && (
           <div className="kind-choices" role="radiogroup" aria-label="渠道类型">
-            {(["claude", "codex"] as const).map((k) => (
+            {(["claude", "codex", "dsh"] as const).map((k) => (
               <button key={k} type="button" role="radio" aria-checked={d.kind === k} className="kind-choice" onClick={() => set({ kind: k, keyFrom: null })} data-testid={`channel-kind-${k}`}>
                 {CHANNEL_KIND_LABEL[k]}
-                <span className="kind-sub">{k === "claude" ? "用 Claude Code 跑" : "用 Codex 跑"}</span>
+                <span className="kind-sub">{k === "claude" ? "用 Claude Code 跑" : k === "codex" ? "用 Codex 跑" : "用 DSH 跑"}</span>
               </button>
             ))}
           </div>
@@ -158,7 +159,7 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
         <div className="channel-form">
           <label className="channel-field">
             <span>名字</span>
-            <input ref={first} className="field" value={d.label} maxLength={40} onChange={(e) => set({ label: e.target.value })} placeholder={d.kind === "claude" ? "例如 中转 Claude" : "例如 GPT-Dxx"} aria-label="渠道名字" data-testid="channel-label" />
+            <input ref={first} className="field" value={d.label} maxLength={40} onChange={(e) => set({ label: e.target.value })} placeholder={d.kind === "claude" ? "例如 中转 Claude" : d.kind === "dsh" ? "例如 中转 DeepSeek" : "例如 GPT-Dxx"} aria-label="渠道名字" data-testid="channel-label" />
           </label>
           <label className="channel-field">
             <span>网址</span>
@@ -194,8 +195,13 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
           </label>
           <label className="channel-field">
             <span>模型</span>
-            <input className="field mono" value={d.model} spellCheck={false} onChange={(e) => set({ model: e.target.value })} placeholder={d.kind === "claude" ? "留空用 Claude Code 自己的；例如 claude-opus-5-5" : "留空用 Codex 默认的；例如 gpt-5.6-sol"} aria-label="模型" data-testid="channel-model" />
+            <input className="field mono" value={d.model} spellCheck={false} onChange={(e) => set({ model: e.target.value })} placeholder={d.kind === "claude" ? "留空用 Claude Code 自己的；例如 claude-opus-5-5" : d.kind === "dsh" ? "留空用 DSH 默认的；例如 deepseek-v4-pro" : "留空用 Codex 默认的；例如 gpt-5.6-sol"} aria-label="模型" data-testid="channel-model" />
           </label>
+          {d.kind === "dsh" && (
+            <span className="settings-hint" data-testid="channel-dsh-hint">
+              DSH 用 Anthropic 接口连 DeepSeek：网址要填第三方的 Anthropic 兼容地址（不是 /v1 的 OpenAI 接口）；模型名要和官方一致（deepseek-v4-pro、deepseek-v4-flash），DSH 只认这些。
+            </span>
+          )}
           {d.kind === "claude" && (
             <>
               <label className="channel-field">
