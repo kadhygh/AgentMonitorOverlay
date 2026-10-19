@@ -4,6 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { pinnedFirst, togglePin, usePins, type PinKind } from "../lib/pins.js";
 import type { Scope } from "./Board.js";
 import { UsageFooter } from "./UsageFooter.js";
+import { KindIcon } from "./KindIcon.js";
 import { ProjectReviewMenu, type ProjectMenuAt } from "../gitreview/ProjectReviewMenu.js";
 import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 import { EditProjectDialog } from "./EditProjectDialog.js";
@@ -444,9 +445,5 @@ function TopicMenu({ at, onClose, onEdit, onArchive }: { at: { x: number; y: num
 
 /** A topic's bookmark or a project's folder, before its name in the left column. */
 function NavKindIcon({ kind }: { kind: PinKind }) {
-  return (
-    <svg className="nav-kind" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
-      {kind === "topic" ? <path d="M3 2.5h8v9l-4-2.6-4 2.6z" /> : <path d="M1.5 4V11.5h11V5H7L5.6 3H1.5z" />}
-    </svg>
-  );
+  return <KindIcon kind={kind === "topic" ? "topic" : "workspace"} className="nav-kind" />;
 }

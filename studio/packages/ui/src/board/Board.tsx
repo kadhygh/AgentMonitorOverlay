@@ -2,6 +2,8 @@ import { useState } from "react";
 import { TASK_COLUMNS, taskProject, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { ArchivedTasks } from "./ArchivedTasks.js";
+import { KindIcon } from "./KindIcon.js";
+import { setGroupByTopic, useGroupByTopic } from "./prefs.js";
 
 /** What the board shows: everything, one topic's tasks, or one project's. Archived tasks are never on the board. */
 export type Scope = { kind: "all" } | { kind: "topic"; id: string } | { kind: "workspace"; id: string };
@@ -11,6 +13,23 @@ export function inScope(task: Task, scope: Scope): boolean {
   if (scope.kind === "all") return true;
   if (scope.kind === "topic") return task.topicId === scope.id;
   return task.workspaceId === scope.id;
+}
+
+/** A column's cards under their topics (2026-10-19, 按专题分组): topics in the order their newest card comes, none last. */
+export function topicGroups(cards: readonly Task[], topics: readonly Topic[]): Array<{ topic: Topic | null; tasks: Task[] }> {
+  const groups = new Map<string, { topic: Topic | null; tasks: Task[] }>();
+  const none: Task[] = [];
+  for (const task of cards) {
+    const topic = task.topicId ? topics.find((t) => t.id === task.topicId) : undefined;
+    if (!topic) {
+      none.push(task);
+      continue;
+    }
+    const g = groups.get(topic.id);
+    if (g) g.tasks.push(task);
+    else groups.set(topic.id, { topic, tasks: [task] });
+  }
+  return [...groups.values(), ...(none.length ? [{ topic: null, tasks: none }] : [])];
 }
 
 interface BoardProps {
@@ -34,9 +53,43 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const [dragging, setDragging] = useState<Task | null>(null);
   const [over, setOver] = useState<TaskColumn | null>(null);
+  // 按专题分组: wherever the board holds more than one topic's tasks (not in a topic's own board).
+  const groupOn = useGroupByTopic();
+  const canGroup = scope.kind !== "topic";
+  const grouped = canGroup && groupOn;
+
+  const card = (task: Task) => (
+    <TaskCard
+      key={task.id}
+      task={task}
+      sessions={taskSessions(task, sessions)}
+      scope={scope}
+      grouped={grouped}
+      workspaces={workspaces}
+      topics={topics}
+      onOpen={onOpen}
+      draggable={!!onMove}
+      onDragStart={() => setDragging(task)}
+      onDragEnd={() => {
+        setDragging(null);
+        setOver(null);
+      }}
+      mail={mail?.get(task.id) ?? 0}
+      decisions={decisions?.get(task.id) ?? 0}
+      {...(checklist?.get(task.id) ? { checklist: checklist.get(task.id)! } : {})}
+    />
+  );
 
   return (
-    <section className="board" aria-label="看板">
+    <section className={canGroup ? "board with-tools" : "board"} aria-label="看板">
+      {canGroup && (
+        <div className="board-tools">
+          <label className="board-toggle" title="每一列里，任务按专题分组排列；没归专题的排在最后">
+            <input type="checkbox" checked={groupOn} onChange={(e) => setGroupByTopic(e.target.checked)} data-testid="board-group-topics" />
+            按专题分组
+          </label>
+        </div>
+      )}
       {TASK_COLUMNS.map((col) => {
         const cards = visible.filter((t) => t.column === col);
         return (
@@ -64,26 +117,19 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
               <span className="column-name">{COLUMN_NAMES[col]}</span>
               <span className="column-count">{cards.length}</span>
             </div>
-            {cards.map((task) => (
-              <TaskCard
-                key={task.id}
-                task={task}
-                sessions={taskSessions(task, sessions)}
-                scope={scope}
-                workspaces={workspaces}
-                topics={topics}
-                onOpen={onOpen}
-                draggable={!!onMove}
-                onDragStart={() => setDragging(task)}
-                onDragEnd={() => {
-                  setDragging(null);
-                  setOver(null);
-                }}
-                mail={mail?.get(task.id) ?? 0}
-                decisions={decisions?.get(task.id) ?? 0}
-                {...(checklist?.get(task.id) ? { checklist: checklist.get(task.id)! } : {})}
-              />
-            ))}
+            {grouped
+              ? topicGroups(cards, topics).map((g) => (
+                  <div className="topic-group" key={g.topic?.id ?? ""} data-testid="topic-group" data-topic={g.topic?.title ?? ""}>
+                    <div className={g.topic ? "topic-group-head" : "topic-group-head none"}>
+                      <KindIcon kind="topic" />
+                      <span className="topic-group-name">{g.topic?.title ?? "未归专题"}</span>
+                      <span className="topic-group-count">{g.tasks.length}</span>
+                      <span className="topic-group-rule" />
+                    </div>
+                    {g.tasks.map(card)}
+                  </div>
+                ))
+              : cards.map(card)}
             {cards.length === 0 && <div className="empty-col">空</div>}
             {/* Archived tasks leave the board; the last column offers them. */}
             {col === TASK_COLUMNS[TASK_COLUMNS.length - 1] && <ArchivedTasks tasks={tasks} workspaces={workspaces} topics={topics} scope={scope} onOpen={onOpen} />}
@@ -98,6 +144,7 @@ function TaskCard({
   task,
   sessions,
   scope,
+  grouped = false,
   workspaces,
   topics,
   onOpen,
@@ -111,6 +158,8 @@ function TaskCard({
   task: Task;
   sessions: Session[];
   scope: Scope;
+  /** Under its topic's group head: the card does not name the topic again. */
+  grouped?: boolean;
   workspaces: readonly Workspace[];
   topics: readonly Topic[];
   onOpen(t: Task): void;
@@ -127,12 +176,13 @@ function TaskCard({
   const mains = live.filter((s) => s.kind === "main");
   const branches = live.length - mains.length;
 
-  // The card names what the current scope does not already say; a task without a project shows none.
-  const project = scope.kind === "workspace" ? null : taskProject(task, workspaces)?.name;
-  const topic = scope.kind === "topic" || !task.topicId ? null : topics.find((t) => t.id === task.topicId)?.title;
-  const meta = [project ?? "", topic ? `专题 ${topic}` : "", mains.length ? `${mains.length} 个会话` : "还没有会话", branches ? `${branches} 个分支` : "", checklist ? `清单 ${checklist.done}/${checklist.total}` : ""]
-    .filter(Boolean)
-    .join(" · ");
+  // 归属行 (2026-10-19): 「专题 › 项目」 above the title, naming only what the scope (or the topic group) does not
+  // already say. In 全部任务 a task in no topic says so; a task in the common space names no project.
+  const project = scope.kind === "workspace" ? null : (taskProject(task, workspaces)?.name ?? null);
+  const showTopic = scope.kind !== "topic" && !grouped;
+  const topic = showTopic && task.topicId ? (topics.find((t) => t.id === task.topicId)?.title ?? null) : null;
+  const noTopic = showTopic && !topic && scope.kind === "all";
+  const meta = [mains.length ? `${mains.length} 个会话` : "还没有会话", branches ? `${branches} 个分支` : "", checklist ? `清单 ${checklist.done}/${checklist.total}` : ""].filter(Boolean).join(" · ");
   // Collaboration hints are counts in the meta line, not a second status: the dot keeps one status per card.
   const asks = [decisions ? `${decisions} 个待决策` : "", mail ? `${mail} 条留言` : ""].filter(Boolean).join(" · ");
 
@@ -151,6 +201,28 @@ function TaskCard({
       data-testid="task-card"
       data-task-id={task.id}
     >
+      {(topic || noTopic || project) && (
+        <span className="card-where" data-testid="card-where">
+          {topic && (
+            <span className="card-topic" title={`专题：${topic}`}>
+              <KindIcon kind="topic" />
+              {topic}
+            </span>
+          )}
+          {noTopic && <span className="card-topic none">未归专题</span>}
+          {(topic || noTopic) && project && (
+            <span className="card-where-sep" aria-hidden="true">
+              ›
+            </span>
+          )}
+          {project && (
+            <span className="card-project" title={`项目：${project}`}>
+              <KindIcon kind="workspace" />
+              <span className="card-project-name">{project}</span>
+            </span>
+          )}
+        </span>
+      )}
       <span className="card-title">
         {task.lead && (
           <span className="lead-badge" title="主控：协调这个专题（或项目）的任务" data-testid="lead-badge">

@@ -56,7 +56,26 @@ test("registers a sandbox workspace and shows tasks on the board", async () => {
   await expect(page.getByTestId("task-card")).toHaveCount(1);
   await page.getByTestId("scope-all").click();
   await expect(page.getByTestId("task-card")).toHaveCount(2);
-  await expect(page.getByTestId("column-review").getByTestId("task-card")).toContainText("专题 掉落表重构");
+  // 按专题分组 (on by default, 2026-10-19): the card sits under its topic; the one in none under 未归专题, last.
+  await expect(page.getByTestId("board-group-topics")).toBeChecked();
+  const reviewGroup = page.getByTestId("column-review").getByTestId("topic-group");
+  await expect(reviewGroup).toHaveAttribute("data-topic", "掉落表重构");
+  await expect(reviewGroup.getByTestId("task-card").getByTestId("card-where")).toHaveText("alpha");
+  await expect(page.getByTestId("column-doing").getByTestId("topic-group")).toHaveAttribute("data-topic", "");
+  await expect(page.getByTestId("column-doing").getByTestId("topic-group")).toContainText("未归专题");
+  await screenshot(studio.app, "stage-18", "S18-board-groups", page);
+  // Off: no groups; each card says 「专题 › 项目」 above its title.
+  await page.getByTestId("board-group-topics").uncheck();
+  await expect(page.getByTestId("topic-group")).toHaveCount(0);
+  await expect(page.getByTestId("column-review").getByTestId("card-where")).toHaveText("掉落表重构›alpha");
+  await expect(page.getByTestId("column-doing").getByTestId("card-where")).toHaveText("未归专题›alpha");
+  await screenshot(studio.app, "stage-18", "S18-board-where", page);
+  // A topic's own board names neither its topic nor offers the toggle.
+  await page.getByTestId("scope-topic-掉落表重构").click();
+  await expect(page.getByTestId("board-group-topics")).toHaveCount(0);
+  await expect(page.getByTestId("card-where")).toHaveText("alpha");
+  await page.getByTestId("scope-all").click();
+  await page.getByTestId("board-group-topics").check();
 
   // Drag a card onto another column: the person moves cards. The whole column takes it, down to the page's bottom
   // (2026-10-17), not only the height of its cards.
