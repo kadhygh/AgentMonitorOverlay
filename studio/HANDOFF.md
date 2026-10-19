@@ -3,7 +3,7 @@
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
 > **2026-10-17 更新（下一个会话从这里开始）：阶段 16 全部做完，计划和每项做法在 `plans/stage-16.md`；阶段 15 的设计在 `plans/stage-15.md`。**
-> - **10-19**：「执行」角色卡不再要 agent 主动记进度（人让记才用 task_note_add，交接才用 handoff_submit；`0c438d6`）；批注可以置顶（`pinnedAt`，`PATCH /api/annotations/:id` 带 `pinned`，已发送的也能置顶，置顶的排在批注栏最上面、不进「已发送」折叠；`ccbaa13`）；新任务页能粘贴 / 拖入 / 回形针加图片和文件，跟第一句话一起发（`NewSessionInput.attachments`，有图片时会话建好后按普通消息发；放进待办不带；`d4939d8`）。都改了 Host，**等用户同意后重启开发版才生效**。用户问过的「MCP 服务 unityMCP 没能启动」是用户全局 `~/.codex/config.toml` 里的 Unity MCP（127.0.0.1:8080），用户已自己关掉。
+> - **10-19**：「执行」角色卡不再要 agent 主动记进度（人让记才用 task_note_add，交接才用 handoff_submit；`0c438d6`）；批注可以置顶（`pinnedAt`，`PATCH /api/annotations/:id` 带 `pinned`，已发送的也能置顶，置顶的排在批注栏最上面、不进「已发送」折叠；`ccbaa13`）；新任务页能粘贴 / 拖入 / 回形针加图片和文件，跟第一句话一起发（`NewSessionInput.attachments`，有图片时会话建好后按普通消息发；放进待办不带；`d4939d8`）。之后：渲染的 Markdown 文件（查看器、快速查看）用源码视图的颜色（标题、链接、代码、粗斜体、列表符号、引用、表头）；会话里 Ctrl+F 查找（复用 `FindBar`，新增 `within` 只搜 `.thread-inner`，页面文字模式从视口处开始找；`f159326`）。用户让重启，10-19 已重启开发版（库备份在 `.data/backup-before-mdfind-20261019`，任务 17 / 会话 46 前后一致），以上都已生效。用户问过的「MCP 服务 unityMCP 没能启动」是用户全局 `~/.codex/config.toml` 里的 Unity MCP（127.0.0.1:8080），用户已自己关掉。
 > - S15-L（10-16）：Claude 的 /loop 和订阅额度上限——有 loop 唤醒或在等额度时不关进程，额度恢复后 CLI 没续上由 Studio 补一条；输入框上方的条和会话列表的「loop · 时间」「等额度 · 时间」；用 SendMessage 恢复的子 agent 找回子会话（迁移 13）。**待确认**：下次真碰到额度上限后看 host.log 的「went on after its usage limit (turn started by cli|studio|person)」，判断 SDK 模式下 CLI 会不会自己续。
 > - Review（10-16）：l / ; 在改动间跳，h 打开历史（j / k 选）；历史打开从 ~340ms 到 ~50ms（每次起 git 进程在这台机器上要 ~100ms：历史接口一轮 git、窗口打开后预读）。
 > - S16-A：子 agent 在主控空闲时发起的审批，批准后会话不再停在「等你批准」；Focus「我知道了」；设置里「默认项目」换成「默认路径」（选文件夹从这里开始）。
