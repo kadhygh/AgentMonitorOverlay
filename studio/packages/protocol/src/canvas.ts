@@ -1,4 +1,4 @@
-import { CANVAS_COLORS, isCanvasColor, type CanvasColor, type CanvasDoc, type Id, type Session, type SessionStatus, type Task, type Topic, type Workspace } from "./entities.js";
+import { CANVAS_COLORS, CANVAS_LINK_LABEL_MAX, CANVAS_SIDES, isCanvasColor, type CanvasColor, type CanvasDoc, type CanvasLink, type Id, type Session, type SessionStatus, type Task, type Topic, type Workspace } from "./entities.js";
 import { taskWhere } from "./scope.js";
 
 // Canvas rules shared by Host (validation on save), UI ("agent 视角") and the read-only MCP in stage 4.
@@ -9,7 +9,15 @@ export const MAIN_CANVAS_ID = "main";
 
 /** An empty canvas for a topic (its id is the topic's id). */
 export function emptyCanvas(id: Id = MAIN_CANVAS_ID, at = new Date(0).toISOString()): CanvasDoc {
-  return { id, version: 0, groups: [], nodes: [], edges: [], updatedAt: at };
+  return { id, version: 0, groups: [], nodes: [], edges: [], links: [], updatedAt: at };
+}
+
+/** The document without 连线 whose card is gone (a card taken off the canvas takes its lines with it). */
+export function pruneLinks(doc: CanvasDoc): CanvasDoc {
+  if (!doc.links?.length) return doc;
+  const nodes = new Set(doc.nodes.map((n) => n.id));
+  const links = doc.links.filter((l) => nodes.has(l.from) && nodes.has(l.to));
+  return links.length === doc.links.length ? doc : { ...doc, links };
 }
 
 const finite = (...n: number[]) => n.every((x) => typeof x === "number" && Number.isFinite(x));
@@ -66,6 +74,14 @@ export function validateCanvas(doc: CanvasDoc, taskIds: ReadonlySet<Id>): string
     const key = `${e.from}>${e.to}`;
     if (pairs.has(key)) errors.push(`duplicate dependency ${key}`);
     pairs.add(key);
+  }
+  const nodeIds = new Set((doc.nodes ?? []).map((n) => n.id));
+  for (const l of doc.links ?? []) {
+    unique(l.id, "link");
+    if (!nodeIds.has(l.from) || !nodeIds.has(l.to)) errors.push(`link ${l.id} must connect two cards on the canvas`);
+    if (l.from === l.to) errors.push(`link ${l.id} connects a card to itself`);
+    if (!CANVAS_SIDES.includes(l.fromSide) || !CANVAS_SIDES.includes(l.toSide)) errors.push(`link ${l.id} has an unknown side`);
+    if (l.label !== undefined && (typeof l.label !== "string" || l.label.length > CANVAS_LINK_LABEL_MAX)) errors.push(`link ${l.id} has an invalid label`);
   }
   const cycle = findCycle(doc.edges ?? []);
   if (cycle) errors.push(`dependencies form a cycle: ${cycle.join(" → ")}`);
@@ -147,6 +163,8 @@ export interface CanvasOutline {
   /** Tasks of the topic that are not placed on its canvas yet. */
   unplaced: OutlineTask[];
   dependencies: Array<{ from: Id; to: Id }>;
+  /** 连线 between cards: what each end is (a task's title, a note's text, a reference's task) and the label. */
+  links: Array<{ from: string; to: string; label?: string }>;
 }
 
 const URGENCY: SessionStatus[] = ["awaiting-approval", "awaiting-answer", "awaiting-review", "error", "running", "idle", "completed"];
@@ -203,7 +221,21 @@ export function canvasOutline(
     ungrouped: { tasks: tasksIn(null), refs: refsIn(null), notes: notesIn(null) },
     unplaced: tasks.filter((t) => !placed.has(t.id)).map(toOutline),
     dependencies: deps,
+    links: [],
   };
+  // What a card is, in a few words, for the 连线 lines.
+  const cardName = (nodeId: Id): string | null => {
+    const n = doc.nodes.find((x) => x.id === nodeId);
+    if (!n) return null;
+    if (n.kind === "note") return `便签「${n.text.replace(/\s+/g, " ").trim().slice(0, 40)}」`;
+    const task = byId.get(n.taskId) ?? anyTask.get(n.taskId);
+    return n.kind === "ref" ? `引用「${task?.title || n.taskId}」` : `「${task?.title || n.taskId}」`;
+  };
+  json.links = (doc.links ?? []).flatMap((l: CanvasLink) => {
+    const from = cardName(l.from);
+    const to = cardName(l.to);
+    return from && to ? [{ from, to, ...(l.label ? { label: l.label } : {}) }] : [];
+  });
 
   const title = (id: Id) => byId.get(id)?.title || id;
   const mark = (color: CanvasColor | undefined) => (color ? `【${CANVAS_COLORS.find((c) => c.id === color)?.label ?? color}】` : "");
@@ -232,6 +264,7 @@ export function canvasOutline(
     ...json.groups.map((g) => section(`${mark(g.color)}分组「${g.title}」${g.workspace ? `（工作区 ${g.workspace}）` : ""}`, g.tasks, g.notes, g.refs)),
     section("未分组", json.ungrouped.tasks, json.ungrouped.notes, json.ungrouped.refs),
     ...(json.unplaced.length ? [section("还没放到画布上的任务", json.unplaced, [])] : []),
+    ...(json.links.length ? [["连线", ...json.links.map((l) => `  - ${l.from} → ${l.to}${l.label ? `：${oneLine(l.label)}` : ""}`)].join("\n")] : []),
   ];
   return { outline: parts.join("\n\n"), json };
 }

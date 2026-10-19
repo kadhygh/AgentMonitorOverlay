@@ -122,3 +122,28 @@
 .docs-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .docs-back { align-self: flex-start; }
 .docs-body { min-height: 260px; font-family: var(--font-code); font-size: 12.5px; }
+
+/* 连线 (2026-10-19): four handles on a card's sides (on hover, on the selected card, and on every card while a line is
+   being drawn), the curved lines with an arrow, and their labels. */
+.canvas-handle {
+  position: absolute; z-index: 3; width: 10px; height: 10px; margin: -6px 0 0 -6px; border-radius: 50%; box-sizing: content-box;
+  border: 1.5px solid var(--link-line); background: var(--panel); opacity: 0; cursor: crosshair; transition: opacity 0.12s, transform 0.12s;
+}
+.canvas-handle[data-side="top"] { left: 50%; top: 0; }
+.canvas-handle[data-side="bottom"] { left: 50%; top: 100%; }
+.canvas-handle[data-side="left"] { left: 0; top: 50%; }
+.canvas-handle[data-side="right"] { left: 100%; top: 50%; }
+.canvas-card:hover .canvas-handle, .canvas-note:hover .canvas-handle, .canvas-card.selected .canvas-handle, .canvas-note.selected .canvas-handle,
+.canvas-viewport[data-connecting] .canvas-handle { opacity: 1; }
+.canvas-handle:hover { transform: scale(1.35); background: var(--primary); border-color: var(--primary); }
+.canvas-viewport[data-connecting], .canvas-viewport[data-connecting] .canvas-card, .canvas-viewport[data-connecting] .canvas-note { cursor: crosshair; }
+:root { --link-line: color-mix(in srgb, var(--text-dim) 85%, transparent); }
+.canvas-link { fill: none; stroke: var(--link-line); stroke-width: 2; }
+.canvas-link.drawing { stroke-dasharray: 6 4; }
+.canvas-link-hit { fill: none; cursor: pointer; }
+.canvas-link-label, .canvas-link-input {
+  position: absolute; z-index: 4; transform: translate(-50%, -50%); max-width: 220px; padding: 2px 8px; border-radius: 6px;
+  border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 12.5px; line-height: 1.5;
+}
+.canvas-link-label { width: max-content; white-space: pre-wrap; overflow-wrap: anywhere; text-align: center; cursor: text; box-shadow: 0 1px 0 var(--shadow-soft); }
+.canvas-link-input { width: 180px; outline: none; border-color: var(--primary); }

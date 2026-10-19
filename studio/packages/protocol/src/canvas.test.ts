@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canvasOutline, emptyCanvas, findCycle, validateCanvas, wouldCycle } from "./canvas.js";
+import { canvasOutline, emptyCanvas, findCycle, pruneLinks, validateCanvas, wouldCycle } from "./canvas.js";
 import type { CanvasDoc, Task, Topic } from "./entities.js";
 import { exampleSessions, exampleTasks, exampleWorkspaces } from "./examples.js";
 
@@ -141,5 +141,34 @@ describe("canvasOutline", () => {
     const bad = doc();
     (bad.nodes[0] as { color?: string }).color = "purple";
     expect(validateCanvas(bad, new Set(exampleTasks.map((t) => t.id)))).toEqual([expect.stringContaining("unknown colour purple")]);
+  });
+});
+
+describe("连线 (2026-10-19)", () => {
+  const line = (id: string, from: string, to: string, label?: string) => ({ id, from, fromSide: "right" as const, to, toSide: "left" as const, ...(label ? { label } : {}) });
+
+  it("connects two cards on the canvas, side to side, with a short label", () => {
+    expect(validateCanvas(doc({ links: [line("l1", "n1", "n3", "先问清楚"), line("l2", "n2", "n1")] }), TASKS)).toEqual([]);
+    expect(validateCanvas(doc({ links: [line("l1", "n1", "gone")] }), TASKS).join()).toMatch(/two cards/);
+    expect(validateCanvas(doc({ links: [line("l1", "n1", "n1")] }), TASKS).join()).toMatch(/itself/);
+    expect(validateCanvas(doc({ links: [{ ...line("l1", "n1", "n2"), toSide: "middle" as never }] }), TASKS).join()).toMatch(/side/);
+    expect(validateCanvas(doc({ links: [line("l1", "n1", "n2", "x".repeat(201))] }), TASKS).join()).toMatch(/label/);
+    expect(validateCanvas(doc({ links: [line("n1", "n2", "n3")] }), TASKS).join()).toMatch(/duplicate id/);
+    // Lines may go round (they are not dependencies).
+    expect(validateCanvas(doc({ links: [line("l1", "n1", "n2"), line("l2", "n2", "n1")] }), TASKS)).toEqual([]);
+  });
+
+  it("drops lines whose card is gone", () => {
+    const d = doc({ links: [line("l1", "n1", "n3"), line("l2", "n2", "gone")] });
+    expect(pruneLinks(d).links!.map((l) => l.id)).toEqual(["l1"]);
+    const kept = doc({ links: [line("l1", "n1", "n3")] });
+    expect(pruneLinks(kept)).toBe(kept);
+  });
+
+  it("tells agents what each line joins and what it says", () => {
+    const { outline, json } = canvasOutline(doc({ links: [line("l1", "n1", "n3", "先问清楚"), line("l2", "n2", "gone")] }), exampleTasks, exampleWorkspaces, exampleSessions);
+    const title = exampleTasks.find((t) => t.id === "task-1")!.title;
+    expect(json.links).toEqual([{ from: `「${title}」`, to: "便签「零散想法」", label: "先问清楚" }]);
+    expect(outline).toContain(`连线\n  - 「${title}」 → 便签「零散想法」：先问清楚`);
   });
 });

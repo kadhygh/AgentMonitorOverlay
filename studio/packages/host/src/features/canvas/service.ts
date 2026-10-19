@@ -1,6 +1,6 @@
 import { join } from "node:path";
 import type { CanvasDoc, Id, Task } from "@amo-studio/protocol";
-import { addDependency, addGroupAuto, CANVAS_COLORS, CanvasLayoutError, canvasOutline, emptyCanvas, isCanvasColor, isCommon, placeTask, refsToCard, removeTask, unplaceTask, validateCanvas } from "@amo-studio/protocol";
+import { addDependency, addGroupAuto, CANVAS_COLORS, CanvasLayoutError, canvasOutline, emptyCanvas, isCanvasColor, pruneLinks, isCommon, placeTask, refsToCard, removeTask, unplaceTask, validateCanvas } from "@amo-studio/protocol";
 import { newId } from "../../store/store.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -13,10 +13,11 @@ export class CanvasFeature extends Feature {
   }
 
   saveCanvas(topicId: Id, input: unknown): CanvasDoc {
-    const doc = input as CanvasDoc;
+    let doc = input as CanvasDoc;
     if (!doc || typeof doc !== "object" || !Array.isArray(doc.groups) || !Array.isArray(doc.nodes) || !Array.isArray(doc.edges)) {
       throw new HostError("bad_request", "canvas needs groups, nodes and edges arrays");
     }
+    if (doc.links !== undefined && !Array.isArray(doc.links)) throw new HostError("bad_request", "links must be an array");
     if (this.requireTopic(topicId).archivedAt) throw new HostError("read_only", "the topic is archived");
     const current = this.canvas(topicId);
     if (doc.version !== current.version) {
@@ -25,6 +26,8 @@ export class CanvasFeature extends Feature {
     // Archived tasks keep their cards and dependencies (hidden while archived, back on restore), so they count too:
     // refusing them made every later save of that canvas fail (S11-A: an empty group that would not go away).
     const known = this.store.listTasks().filter((t) => t.topicId === topicId);
+    // 连线 to a card that was just taken off go with it (the page need not remember to drop them).
+    doc = pruneLinks(doc);
     const errors = validateCanvas(doc, new Set(known.map((t) => t.id)));
     if (errors.length) throw new HostError("bad_request", errors.slice(0, 5).join("; "));
     const next: CanvasDoc = {
@@ -33,6 +36,7 @@ export class CanvasFeature extends Feature {
       groups: doc.groups,
       nodes: doc.nodes,
       edges: doc.edges,
+      links: doc.links ?? [],
       updatedAt: new Date().toISOString(),
     };
     this.store.putCanvas(next);

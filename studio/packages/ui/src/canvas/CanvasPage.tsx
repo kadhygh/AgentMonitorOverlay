@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { workspacesActivity, wouldCycle, type CanvasColor, type CanvasDoc, type CanvasGroup, type CanvasNode, type Id, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { CANVAS_LINK_LABEL_MAX, CANVAS_SIDES, workspacesActivity, wouldCycle, type CanvasColor, type CanvasDoc, type CanvasGroup, type CanvasLink, type CanvasNode, type CanvasSide, type Id, type Point, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
 import { AgentTab } from "./AgentTab.js";
 import { TodoTab } from "../planning/TodoTab.js";
 import { useFeature } from "../lib/features.js";
 import type { HostLink } from "../host/client.js";
-import { addGroup, arrowBetween, contentBounds, deleteGroup, deleteGroupWithContents, duplicateNote, GROUP_HEADER, moveGroup, moveNode, outOfGroup, removeEdge, resizeGroup, reverseEdge, setColor, updateGroup } from "./geometry.js";
+import { addGroup, addLink, arrowBetween, contentBounds, deleteGroup, deleteGroupWithContents, duplicateNote, gridStyle, GROUP_HEADER, linkCurve, moveGroup, moveNode, nearestSide, outOfGroup, removeEdge, removeLink, resizeGroup, reverseEdge, reverseLink, setColor, setLinkLabel, sidePoint, updateGroup } from "./geometry.js";
 import { useCanvas } from "./useCanvas.js";
 import { RefPicker, type RefChoice } from "./RefPicker.js";
 import { CARD_H, CARD_W, cardHeight, NOTE_H, NOTE_W, NoteCard, RefCard, TaskCard } from "./cards.js";
@@ -31,7 +31,9 @@ type Drag =
   | { kind: "pan"; sx: number; sy: number; vx: number; vy: number }
   | { kind: "node"; id: Id; sx: number; sy: number; base: CanvasDoc; moved: boolean }
   | { kind: "group-move"; id: Id; sx: number; sy: number; base: CanvasDoc; moved: boolean }
-  | { kind: "group-resize"; id: Id; sx: number; sy: number; base: CanvasDoc; moved: boolean };
+  | { kind: "group-resize"; id: Id; sx: number; sy: number; base: CanvasDoc; moved: boolean }
+  /** 连线 being drawn from a card's side handle (2026-10-19). */
+  | { kind: "connect"; from: Id; side: CanvasSide };
 
 type Menu = { x: number; y: number; label: string; entries: MenuEntry[] };
 
@@ -99,6 +101,25 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   const closeMenu = useCallback(() => setMenu(null), []);
   const plans = useTaskPlans(link).filter((p) => p.topicId === topic.id);
   const viewport = useRef<HTMLDivElement>(null);
+  const world = useRef<HTMLDivElement>(null);
+  // 连线 (2026-10-19): the line being drawn (its loose end follows the pointer), and the line whose label is edited.
+  const [drawing, setDrawing] = useState<{ from: Id; side: CanvasSide; at: Point } | null>(null);
+  const [editingLink, setEditingLink] = useState<Id | null>(null);
+  const cancelLabel = useRef(false);
+  // Cards as drawn (a note grows with its text): lines meet their real sides.
+  const [sizes, setSizes] = useState<ReadonlyMap<Id, { w: number; h: number }>>(new Map());
+  useLayoutEffect(() => {
+    const el = world.current;
+    if (!el) return;
+    let next: Map<Id, { w: number; h: number }> | null = null;
+    for (const card of el.querySelectorAll<HTMLElement>("[data-node-id]")) {
+      const id = card.dataset.nodeId!;
+      const size = { w: card.offsetWidth, h: card.offsetHeight };
+      const old = (next ?? sizes).get(id);
+      if (!old || old.w !== size.w || old.h !== size.h) (next ??= new Map(sizes)).set(id, size);
+    }
+    if (next) setSizes(next);
+  });
 
   useEffect(() => saveView(view), [view]);
 
@@ -194,6 +215,10 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
         setView((v) => ({ ...v, x: drag.vx + e.clientX - drag.sx, y: drag.vy + e.clientY - drag.sy }));
         return;
       }
+      if (drag.kind === "connect") {
+        setDrawing({ from: drag.from, side: drag.side, at: worldAt(e.clientX, e.clientY) });
+        return;
+      }
       const dx = Math.round((e.clientX - drag.sx) / view.k);
       const dy = Math.round((e.clientY - drag.sy) / view.k);
       if (!drag.moved && Math.hypot(dx, dy) < 3) return;
@@ -208,7 +233,21 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
         setPreview(resizeGroup(drag.base, drag.id, g.rect.w + dx, g.rect.h + dy));
       }
     };
-    const onUp = () => {
+    const onUp = (e: MouseEvent) => {
+      if (drag.kind === "connect") {
+        // Let go on another card: on one of its handles, that side; elsewhere on it, the side nearest the pointer.
+        const hit = document.elementFromPoint(e.clientX, e.clientY);
+        const to = hit?.closest<HTMLElement>("[data-node-id]")?.dataset.nodeId;
+        const target = to && to !== drag.from ? latestDoc.current?.nodes.find((n) => n.id === to) : undefined;
+        if (target) {
+          const side = hit?.closest<HTMLElement>(".canvas-handle")?.dataset.side as CanvasSide | undefined;
+          const toSide = side && CANVAS_SIDES.includes(side) ? side : nearestSide(rectOf(target), worldAt(e.clientX, e.clientY));
+          edit((d) => addLink(d, { id: newCanvasId("l"), from: drag.from, fromSide: drag.side, to: target.id, toSide }));
+        }
+        setDrawing(null);
+        setDrag(null);
+        return;
+      }
       if (drag.kind !== "pan" && drag.moved && previewRef.current) persist(previewRef.current);
       setPreview(null);
       setDrag(null);
@@ -223,6 +262,34 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   }, [drag, persist, view.k]);
 
   const shown = preview ?? doc;
+  const nodeById = new Map((shown?.nodes ?? []).map((n) => [n.id, n]));
+  /** A card's box as drawn. */
+  const rectOf = (n: CanvasNode) => ({ ...n.pos, ...(sizes.get(n.id) ?? nodeSize(n)) });
+
+  /** 连线: a drag from one of a card's four side handles draws a line to another card. */
+  const startConnect = (e: ReactMouseEvent, nodeId: Id, side: CanvasSide) => {
+    if (e.button !== 0 || !doc) return;
+    e.preventDefault();
+    e.stopPropagation();
+    setLinkFrom(null);
+    setDrag({ kind: "connect", from: nodeId, side });
+    setDrawing({ from: nodeId, side, at: worldAt(e.clientX, e.clientY) });
+  };
+  const handlesOf = (nodeId: Id) => (
+    <>
+      {CANVAS_SIDES.map((side) => (
+        <span key={side} className="canvas-handle" data-side={side} title="拖到另一张卡片上，连一条线" onMouseDown={(e) => startConnect(e, nodeId, side)} onDoubleClick={(e) => e.stopPropagation()} data-testid="canvas-handle" />
+      ))}
+    </>
+  );
+  const saveLabel = (linkId: Id, text: string) => {
+    setEditingLink(null);
+    if (cancelLabel.current) {
+      cancelLabel.current = false;
+      return;
+    }
+    edit((d) => setLinkLabel(d, linkId, text));
+  };
 
   // preventDefault on every drag start: a leftover text selection would otherwise turn the gesture into a native
   // drag-and-drop, which swallows the mousemove/mouseup events the canvas listens to.
@@ -377,6 +444,15 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     ]);
   };
 
+  const linkMenu = (e: ReactMouseEvent, l: CanvasLink) => {
+    openMenu(e, "连线", [
+      item(l.label ? "编辑文字" : "添加文字", () => setEditingLink(l.id), { testId: "menu-link-label" }),
+      item("反过来", () => edit((d) => reverseLink(d, l.id))),
+      SEP,
+      item("删除连线", () => edit((d) => removeLink(d, l.id)), { danger: true, testId: "menu-link-delete" }),
+    ]);
+  };
+
   const edgeMenu = (e: ReactMouseEvent, edgeId: Id, from: Id, to: Id) => {
     const others = (doc?.edges ?? []).filter((x) => x.id !== edgeId);
     openMenu(e, "依赖", [
@@ -414,8 +490,17 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
       )}
       </div>
       <div className="canvas-row">
-      <div className={drag?.kind === "pan" ? "canvas-viewport panning" : "canvas-viewport"} ref={viewport} onMouseDown={startPan} onContextMenu={canvasMenu} data-testid="canvas-viewport" data-linking={linkFrom ? "true" : undefined}>
-        <div className="canvas-world" data-testid="canvas-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
+      <div
+        className={drag?.kind === "pan" ? "canvas-viewport panning" : "canvas-viewport"}
+        ref={viewport}
+        style={gridStyle(view)}
+        onMouseDown={startPan}
+        onContextMenu={canvasMenu}
+        data-testid="canvas-viewport"
+        data-linking={linkFrom ? "true" : undefined}
+        data-connecting={drawing ? "true" : undefined}
+      >
+        <div className="canvas-world" ref={world} data-testid="canvas-world" style={{ transform: `translate(${view.x}px, ${view.y}px) scale(${view.k})` }}>
           {shown?.groups.map((g) => (
             <div
               key={g.id}
@@ -480,7 +565,35 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
               <marker id="amo-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
                 <path d="M0 0 L10 5 L0 10 Z" style={{ fill: "var(--edge)" }} />
               </marker>
+              <marker id="amo-link-arrow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                <path d="M0 0 L10 5 L0 10 Z" style={{ fill: "var(--link-line)" }} />
+              </marker>
             </defs>
+            {(shown?.links ?? []).map((l) => {
+              const from = nodeById.get(l.from);
+              const to = nodeById.get(l.to);
+              if (!from || !to) return null;
+              const { d } = linkCurve(sidePoint(rectOf(from), l.fromSide), l.fromSide, sidePoint(rectOf(to), l.toSide), l.toSide);
+              return (
+                <g key={l.id}>
+                  <path d={d} className="canvas-link" markerEnd="url(#amo-link-arrow)" data-testid="canvas-link" data-link-id={l.id} />
+                  <path
+                    d={d}
+                    className="canvas-edge-hit canvas-link-hit"
+                    onMouseDown={(ev) => ev.stopPropagation()}
+                    onDoubleClick={() => setEditingLink(l.id)}
+                    onContextMenu={(ev) => linkMenu(ev, l)}
+                    data-testid="canvas-link-hit"
+                  />
+                </g>
+              );
+            })}
+            {drawing &&
+              (() => {
+                const from = nodeById.get(drawing.from);
+                if (!from) return null;
+                return <path d={linkCurve(sidePoint(rectOf(from), drawing.side), drawing.side, drawing.at, null).d} className="canvas-link drawing" markerEnd="url(#amo-link-arrow)" data-testid="canvas-link-drawing" />;
+              })()}
             {shown?.edges.map((e) => {
               const from = cardOf.get(e.from);
               const to = cardOf.get(e.to);
@@ -498,7 +611,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
           {shown?.nodes.map((node) => {
             const selected = selection?.kind === "node" && selection.id === node.id;
             if (node.kind === "note") {
-              return <NoteCard key={node.id} node={node} selected={selected} onMouseDown={(e) => startDrag(e, "node", node.id)} onContextMenu={(e) => noteMenu(e, node)} onEdit={editNote} />;
+              return <NoteCard key={node.id} node={node} selected={selected} handles={handlesOf(node.id)} onMouseDown={(e) => startDrag(e, "node", node.id)} onContextMenu={(e) => noteMenu(e, node)} onEdit={editNote} />;
             }
             if (node.kind === "ref") {
               const target = anyTaskById.get(node.taskId);
@@ -511,6 +624,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
                   sessions={sessions}
                   workspaces={workspaces}
                   selected={selected}
+                  handles={handlesOf(node.id)}
                   onOpen={() => target && onOpenTask(target.id)}
                   onMouseDown={(e) => startDrag(e, "node", node.id)}
                   onContextMenu={(e) => refMenu(e, node, target)}
@@ -528,6 +642,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
                 workspaces={workspaces}
                 selected={selected}
                 linking={!!linkFrom && linkFrom !== task.id}
+                handles={handlesOf(node.id)}
                 onOpen={() => onOpenTask(task.id)}
                 onMouseDown={(e) => {
                   if (linkFrom && e.button === 0) {
@@ -539,6 +654,52 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
                 }}
                 onContextMenu={(e) => taskMenu(e, node, task)}
               />
+            );
+          })}
+          {/* 连线 labels over the cards; double-click a line (or its label) to write one. */}
+          {(shown?.links ?? []).map((l) => {
+            const from = nodeById.get(l.from);
+            const to = nodeById.get(l.to);
+            if (!from || !to) return null;
+            const { mid } = linkCurve(sidePoint(rectOf(from), l.fromSide), l.fromSide, sidePoint(rectOf(to), l.toSide), l.toSide);
+            if (editingLink === l.id) {
+              return (
+                <input
+                  key={l.id}
+                  className="canvas-link-input"
+                  style={{ left: mid.x, top: mid.y }}
+                  defaultValue={l.label ?? ""}
+                  maxLength={CANVAS_LINK_LABEL_MAX}
+                  placeholder="连线上的文字"
+                  aria-label="连线上的文字"
+                  autoFocus
+                  onMouseDown={(e) => e.stopPropagation()}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") e.currentTarget.blur();
+                    if (e.key === "Escape") {
+                      cancelLabel.current = true;
+                      e.currentTarget.blur();
+                    }
+                  }}
+                  onBlur={(e) => saveLabel(l.id, e.currentTarget.value)}
+                  data-testid="canvas-link-input"
+                />
+              );
+            }
+            if (!l.label) return null;
+            return (
+              <div
+                key={l.id}
+                className="canvas-link-label"
+                style={{ left: mid.x, top: mid.y }}
+                title="双击修改文字，右键看更多"
+                onMouseDown={(e) => e.stopPropagation()}
+                onDoubleClick={() => setEditingLink(l.id)}
+                onContextMenu={(e) => linkMenu(e, l)}
+                data-testid="canvas-link-label"
+              >
+                {l.label}
+              </div>
             );
           })}
         </div>
@@ -599,7 +760,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
             复位
           </button>
         </div>
-        <div className="canvas-hint">拖空白处平移 · 滚轮缩放 · 右键看更多操作 · 双击打开任务</div>
+        <div className="canvas-hint">拖空白处移动视角 · 滚轮缩放 · 从卡片边上的圆点拖出连线 · 右键看更多操作 · 双击打开任务</div>
       </div>
       {shown && (
         <CanvasSidebar

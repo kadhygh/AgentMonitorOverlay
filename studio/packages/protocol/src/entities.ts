@@ -359,6 +359,8 @@ export interface CanvasDoc {
   groups: CanvasGroup[];
   nodes: CanvasNode[];
   edges: CanvasEdge[];
+  /** 连线 (2026-10-19): lines drawn between any two cards, as on an Obsidian canvas; absent in older documents. */
+  links?: CanvasLink[];
   updatedAt: Timestamp;
 }
 
@@ -473,6 +475,25 @@ export interface CanvasEdge {
   kind: "depends";
   from: Id;
   to: Id;
+}
+
+/** Where a 连线 leaves or meets a card: the middle of one of its sides. */
+export type CanvasSide = "top" | "right" | "bottom" | "left";
+export const CANVAS_SIDES: readonly CanvasSide[] = ["top", "right", "bottom", "left"];
+export const CANVAS_LINK_LABEL_MAX = 200;
+
+/**
+ * 连线 (2026-10-19): a line the person drew from one card (task, reference or note) to another, side to side, with an
+ * arrow at `to` and an optional label. Unlike a dependency it means only what its label says.
+ */
+export interface CanvasLink {
+  id: Id;
+  /** Node ids (not task ids). */
+  from: Id;
+  fromSide: CanvasSide;
+  to: Id;
+  toSide: CanvasSide;
+  label?: string;
 }
 
 /** Global todo, independent of workspaces until converted into a task. */

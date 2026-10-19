@@ -1,4 +1,4 @@
-import type { CanvasColor, CanvasDoc, CanvasGroup, CanvasNode, Id, Point, Rect } from "@amo-studio/protocol";
+import type { CanvasColor, CanvasDoc, CanvasGroup, CanvasLink, CanvasNode, CanvasSide, Id, Point, Rect } from "@amo-studio/protocol";
 
 // Pure canvas edits used by the canvas page. Membership is structural (node.groupId); positions follow it.
 
@@ -125,4 +125,73 @@ export function contentBounds(doc: CanvasDoc, sizeOf: (n: CanvasNode) => { w: nu
   const x = Math.min(...rects.map((r) => r.x));
   const y = Math.min(...rects.map((r) => r.y));
   return { x, y, w: Math.max(...rects.map((r) => r.x + r.w)) - x, h: Math.max(...rects.map((r) => r.y + r.h)) - y };
+}
+
+// ---- 连线 (2026-10-19): lines between cards, side to side, as on an Obsidian canvas --------------------------------
+
+const NORMAL: Record<CanvasSide, Point> = { top: { x: 0, y: -1 }, right: { x: 1, y: 0 }, bottom: { x: 0, y: 1 }, left: { x: -1, y: 0 } };
+
+/** The middle of one side of a card: where its handle is and a line leaves or arrives. */
+export function sidePoint(r: Rect, side: CanvasSide): Point {
+  if (side === "top") return { x: r.x + r.w / 2, y: r.y };
+  if (side === "bottom") return { x: r.x + r.w / 2, y: r.y + r.h };
+  if (side === "left") return { x: r.x, y: r.y + r.h / 2 };
+  return { x: r.x + r.w, y: r.y + r.h / 2 };
+}
+
+/** The side of a card nearest to a point (a line dropped on the card, not on one of its handles). */
+export function nearestSide(r: Rect, p: Point): CanvasSide {
+  const sides: CanvasSide[] = ["top", "right", "bottom", "left"];
+  return sides.reduce((best, side) => (Math.hypot(sidePoint(r, side).x - p.x, sidePoint(r, side).y - p.y) < Math.hypot(sidePoint(r, best).x - p.x, sidePoint(r, best).y - p.y) ? side : best));
+}
+
+/**
+ * A line's curve: it leaves `a` straight out of its side and arrives at `b` straight into its side (or, while being
+ * drawn, at the pointer); `mid` is where its label goes.
+ */
+export function linkCurve(a: Point, aSide: CanvasSide, b: Point, bSide: CanvasSide | null): { d: string; mid: Point } {
+  const reach = Math.min(150, Math.max(30, Math.hypot(b.x - a.x, b.y - a.y) / 2));
+  const c1 = { x: a.x + NORMAL[aSide].x * reach, y: a.y + NORMAL[aSide].y * reach };
+  const c2 = bSide ? { x: b.x + NORMAL[bSide].x * reach, y: b.y + NORMAL[bSide].y * reach } : b;
+  const mid = { x: (a.x + 3 * c1.x + 3 * c2.x + b.x) / 8, y: (a.y + 3 * c1.y + 3 * c2.y + b.y) / 8 };
+  const r = (n: number) => Math.round(n * 10) / 10;
+  return { d: `M ${r(a.x)} ${r(a.y)} C ${r(c1.x)} ${r(c1.y)}, ${r(c2.x)} ${r(c2.y)}, ${r(b.x)} ${r(b.y)}`, mid };
+}
+
+/** Adds a line, unless the same one (same cards, same sides) is there already. */
+export function addLink(doc: CanvasDoc, link: CanvasLink): CanvasDoc {
+  const links = doc.links ?? [];
+  if (link.from === link.to || links.some((l) => l.from === link.from && l.to === link.to && l.fromSide === link.fromSide && l.toSide === link.toSide)) return doc;
+  return { ...doc, links: [...links, link] };
+}
+
+/** A line's label; an empty one is removed. */
+export function setLinkLabel(doc: CanvasDoc, linkId: Id, label: string): CanvasDoc {
+  const text = label.trim();
+  return {
+    ...doc,
+    links: (doc.links ?? []).map((l) => {
+      if (l.id !== linkId) return l;
+      const { label: _old, ...rest } = l;
+      return text ? { ...rest, label: text } : rest;
+    }),
+  };
+}
+
+export function reverseLink(doc: CanvasDoc, linkId: Id): CanvasDoc {
+  return { ...doc, links: (doc.links ?? []).map((l) => (l.id === linkId ? { ...l, from: l.to, fromSide: l.toSide, to: l.from, toSide: l.fromSide } : l)) };
+}
+
+export function removeLink(doc: CanvasDoc, linkId: Id): CanvasDoc {
+  return { ...doc, links: (doc.links ?? []).filter((l) => l.id !== linkId) };
+}
+
+/**
+ * The dot grid behind the canvas, moving and scaling with the view so a drag on empty space reads as moving the camera
+ * (2026-10-19). The spacing doubles when zoomed far out, so the dots never crowd.
+ */
+export function gridStyle(view: { x: number; y: number; k: number }): { backgroundPosition: string; backgroundSize: string } {
+  let step = 20 * view.k;
+  while (step < 12) step *= 2;
+  return { backgroundPosition: `${view.x}px ${view.y}px`, backgroundSize: `${step}px ${step}px` };
 }
