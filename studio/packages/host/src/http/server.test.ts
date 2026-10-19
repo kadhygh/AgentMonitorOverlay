@@ -769,6 +769,19 @@ describe("Host API", () => {
     expect((await api("POST", `/api/sessions/${session.id}/messages`, { text: " ", attachments: [] })).status).toBe(400);
   });
 
+  it("starts a task whose first message carries images (the new-task page, 2026-10-19)", async () => {
+    const up = await fetch(`${http.url}/api/attachments?type=image/png`, { method: "POST", headers: { authorization: `Bearer ${TOKEN}`, "content-type": "image/png" }, body: Buffer.from("png") });
+    const a = (await up.json()) as { id: string; path: string };
+    const { task, session } = await ok<{ task: Task; session: Session }>("POST", "/api/tasks", { firstSession: { profileId: "p-ds", text: "看看这张图", attachments: [a.id] } });
+    expect(task.title).toBe("看看这张图");
+    await until(async () => (await lastAgentText(session.id)) === "FAKE: 看看这张图 [images: 1]", "reply to the first message with its image");
+    expect((await items(session.id)).filter((i) => i.type === "user")).toMatchObject([{ text: "看看这张图", images: [{ id: a.id, path: a.path }] }]);
+    // An unknown image is refused before the task is made.
+    const before = (await ok<StateSnapshot>("GET", "/api/state")).tasks.length;
+    expect((await api("POST", "/api/tasks", { firstSession: { profileId: "p-ds", text: "x", attachments: ["att-00000000-0000-4000-8000-000000000000"] } })).status).toBe(400);
+    expect((await ok<StateSnapshot>("GET", "/api/state")).tasks.length).toBe(before);
+  });
+
   it("lists a git project's files (tracked and untracked, not ignored) with fuzzy search and recent changes", async () => {
     const dir = join(root, "alpha");
     const run = (...args: string[]) => execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", ...args], { cwd: dir, stdio: "ignore" });

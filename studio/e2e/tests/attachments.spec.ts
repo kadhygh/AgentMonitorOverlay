@@ -28,9 +28,9 @@ async function openTask(s: Studio, dir: string, text = "hello") {
 const composer = (page: Page) => page.getByLabel("输入消息");
 const lastAgent = (page: Page) => page.getByTestId("msg-agent").last();
 
-/** Pastes an in-memory PNG into the composer, the way Ctrl+V with a screenshot does. */
-async function pasteImage(page: Page, name = "截图.png") {
-  await composer(page).evaluate(
+/** Pastes an in-memory PNG into the composer (or `into`), the way Ctrl+V with a screenshot does. */
+async function pasteImage(page: Page, name = "截图.png", into = composer(page)) {
+  await into.evaluate(
     (el, { b64, name }) => {
       const bytes = Uint8Array.from(atob(b64), (c) => c.charCodeAt(0));
       const dt = new DataTransfer();
@@ -100,6 +100,31 @@ test("pastes an image, sends it with the message, and shows it in the transcript
   await page.getByRole("button", { name: "发送" }).click();
   await expect(lastAgent(page)).toContainText("[images: 1]", { timeout: 30_000 });
   await expect(page.getByTestId("msg-user").last().locator(".msg-text")).toHaveCount(0);
+});
+
+test("pastes an image into the new-task page: it goes with the first sentence (2026-10-19)", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  await page.getByRole("group", { name: "项目" }).getByRole("button", { name: "alpha" }).click();
+  await page.getByRole("group", { name: "模型" }).getByTestId("model-tile").filter({ hasText: "Mock 模型" }).click();
+  const first = page.getByLabel("第一句话");
+  await pasteImage(page, "截图.png", first);
+  const thumb = page.getByTestId("attach-thumb");
+  await expect(thumb).toHaveAttribute("data-state", "ready");
+  await first.fill("这张图里是什么");
+  // Filing in 待办 does not take images.
+  await first.press("Control+Enter");
+  await expect(page.getByRole("alert")).toContainText("放进待办不带图片");
+  await screenshot(studio.app, "stage-18", "S18-newtask-image", page);
+  await first.press("Enter");
+
+  await expect(lastAgent(page)).toContainText("MOCK: 这张图里是什么 [images: 1]", { timeout: 30_000 });
+  await expect(page.getByTestId("msg-user").first().getByTestId("msg-images").locator("img")).toHaveCount(1);
+  // The page is empty again for the next task.
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  await expect(page.getByTestId("attach-thumb")).toHaveCount(0);
 });
 
 test("drops an image and a file from disk: thumbnail, file reference, both in the transcript", async () => {

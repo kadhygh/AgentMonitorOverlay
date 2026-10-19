@@ -14,6 +14,10 @@ import { submitDraft, useTaskDraft } from "./draft.js";
 import { ModelRow, tilePicks } from "./ModelRow.js";
 import { SuggestList, useMentions } from "./Suggest.js";
 import { pinnedFirst, usePins } from "../lib/pins.js";
+import { useAttachments } from "../attach/useAttachments.js";
+import { AttachTray } from "../attach/AttachTray.js";
+import { IconPaperclip } from "../attach/icons.js";
+import { withFileRefs } from "../attach/refs.js";
 
 interface NewTaskPageProps {
   link: HostLink;
@@ -54,6 +58,10 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
   // "显示在画布上" for a task in a topic: off unless the page was opened from that topic's canvas (then always on).
   const [showOnCanvas, setShowOnCanvas] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
+  // Images and files pasted, dropped or picked go with the first sentence (2026-10-19); they are not kept in the draft.
+  const attach = useAttachments(link);
+  const picker = useRef<HTMLInputElement>(null);
+  const [dragging, setDragging] = useState(false);
   const presets = useSettings(link)?.presets ?? [];
   const { choices } = useProfileChoices(link, draft.pick.profileId);
   const model = choices ? activeModel(choices, draft.pick.model ? { model: draft.pick.model } : {}) : undefined;
@@ -93,11 +101,17 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     if (busy) return;
     if (!draft.text.trim()) return setError(file ? "写一句话再放进待办。" : "写一句话再开始。");
     if (!file && !draft.pick.profileId) return setError("先选一个模型。");
+    if (file && !attach.empty) return setError("放进待办不带图片和文件：先移除它们，或者直接开始。");
+    if (attach.uploading) return setError("图片还在上传，稍等一下。");
+    if (attach.failed) return setError("有图片上传失败，移除后再开始。");
     setBusy(true);
     setError("");
     try {
       const template = chosenTemplate && draft.projectId ? { workspaceId: draft.projectId, pack: chosenTemplate.pack, template: chosenTemplate.template.id } : undefined;
-      const created = await submitDraft(link, draft, file, template, onCanvas);
+      const text = withFileRefs(draft.text.trim(), attach.files.map(attach.refOf));
+      const images = attach.images.flatMap((i) => (i.id ? [i.id] : []));
+      const created = await submitDraft(link, { ...draft, text }, file, template, onCanvas, images);
+      attach.reset();
       reset({ projectId: draft.projectId, topicId: draft.topicId });
       onCreated(created.task, created.session);
     } catch (err) {
@@ -225,7 +239,20 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
             )}
           </div>
 
-          <div className="draft-composer">
+          <div
+            className={dragging ? "draft-composer dropping" : "draft-composer"}
+            onDragOver={(e) => {
+              if (attach.onDragOver(e)) setDragging(true);
+            }}
+            onDragLeave={(e) => {
+              if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setDragging(false);
+            }}
+            onDrop={(e) => {
+              setDragging(false);
+              attach.onDrop(e);
+            }}
+          >
+            <AttachTray attach={attach} />
             <textarea
               ref={input}
               value={draft.text}
@@ -237,6 +264,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
                 mentions.track(e.target);
               }}
               onSelect={(e) => mentions.track(e.currentTarget)}
+              onPaste={attach.onPaste}
               onKeyDown={(e) => {
                 if (mentions.onKeyDown(e)) return;
                 if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
@@ -247,6 +275,20 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
             />
             <SuggestList mentions={mentions} />
             <div className="cbar">
+              <button type="button" className="round-btn attach" aria-label="添加图片或文件" title="添加图片或文件（也可以粘贴或拖进来）" onClick={() => picker.current?.click()}>
+                <IconPaperclip />
+              </button>
+              <input
+                ref={picker}
+                type="file"
+                multiple
+                hidden
+                data-testid="draft-attach-input"
+                onChange={(e) => {
+                  attach.addDropped([...(e.currentTarget.files ?? [])]);
+                  e.currentTarget.value = "";
+                }}
+              />
               <ModelRow link={link} profiles={profiles} pick={draft.pick} onPick={(pick) => update({ pick })} drawer={drawer} onToggleDrawer={() => setDrawer((v) => !v)} />
             </div>
             <div className="cbar">

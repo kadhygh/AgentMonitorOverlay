@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
+import { asyncAnswerText, composeAnnotationRefs, composeRoleUpdate, formContent, type Attachment, type SessionOptions, type ApprovalDecision, type Id, type QuestionAnswer, type QuestionReply, type Session, type SessionItem, type TerminalAttach } from "@amo-studio/protocol";
 import type { SendMode } from "../../runtime/runtime.js";
 import type { TerminalHandle } from "../../terminal/launcher.js";
 import { HostError, optionValue, boundedText, TERMINAL_TOKEN_ENV } from "../../core/shared.js";
@@ -64,19 +64,25 @@ export class SessionsFeature extends Feature {
       referenced.markSent();
       return result;
     }
-    if (attachments.length > MAX_MESSAGE_IMAGES) throw new HostError("bad_request", `at most ${MAX_MESSAGE_IMAGES} images per message`);
-    const images = [...new Set(attachments)].map((id) => {
-      try {
-        return this.f.attachments.get(id);
-      } catch {
-        throw new HostError("bad_request", `attachment ${id} not found`);
-      }
-    });
+    const images = this.images(attachments);
     if (!text?.trim() && !images.length) throw new HostError("bad_request", "text is required");
     const update = this.roleUpdate(sessionId);
     const result = await this.wrap(() => this.runtime.sendMessage(sessionId, composeRoleUpdate(text ?? "", update.lines), images));
     update.told();
     return result;
+  }
+
+  /** The uploaded images a message carries, checked: known ids, at most MAX_MESSAGE_IMAGES. */
+  images(attachments: readonly Id[]): Attachment[] {
+    if (!Array.isArray(attachments)) throw new HostError("bad_request", "attachments must be a list of ids");
+    if (attachments.length > MAX_MESSAGE_IMAGES) throw new HostError("bad_request", `at most ${MAX_MESSAGE_IMAGES} images per message`);
+    return [...new Set(attachments)].map((id) => {
+      try {
+        return this.f.attachments.get(String(id));
+      } catch {
+        throw new HostError("bad_request", `attachment ${id} not found`);
+      }
+    });
   }
 
   /** What changed about the session's role since it was last told; nothing for one that cannot hear it. */

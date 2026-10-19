@@ -93,6 +93,7 @@ export class TasksFeature extends Feature {
     if (input.firstSession) {
       this.requireProfile(input.firstSession.profileId);
       if (input.firstSession.workspaceId && input.firstSession.workspaceId !== workspace.id) throw new HostError("bad_request", "a task's sessions run in the task's own workspace");
+      this.firstImages(input.firstSession);
     }
     if (input.column !== undefined && !TASK_COLUMNS.includes(input.column)) throw new HostError("bad_request", `unknown column ${String(input.column)}`);
     const template = input.template ? this.f.extensions.packTemplate(workspace.id, input.template) : null;
@@ -186,7 +187,16 @@ export class TasksFeature extends Feature {
     if (task.archivedAt) throw new HostError("read_only", "archived tasks cannot get new sessions");
     if (input.workspaceId && input.workspaceId !== task.workspaceId) throw new HostError("bad_request", "a task's sessions run in the task's own workspace");
     this.requireProfile(input.profileId);
+    this.firstImages(input);
     return this.startSession({ taskId: task.id, topicId: null }, this.requireWorkspace(task.workspaceId), input);
+  }
+
+  /** The images the first message carries, checked before anything is created; DSH sessions take none. */
+  private firstImages(input: NewSessionInput): Id[] {
+    if (input.attachments === undefined) return [];
+    const ids = this.f.sessions.images(input.attachments).map((a) => a.id);
+    if (ids.length && this.requireProfile(input.profileId).runtime === "dsh") throw new HostError("bad_request", "DSH 会话暂时不能发图片（DSH 的 ACP 不收图片）");
+    return ids;
   }
 
   /** What nothing was chosen for, from 设置 → 模型 (the CLI's own defaults when the person set none). */
@@ -213,7 +223,10 @@ export class TasksFeature extends Feature {
 
   async startSession(owner: { taskId: Id | null; topicId: Id | null }, workspace: Workspace, input: NewSessionInput): Promise<Session> {
     const options = await this.withDefaults(input.profileId, sessionOptions(input.options));
-    const session = await this.wrap(() => this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(input.text ? { text: input.text } : {}), options }));
+    const images = this.firstImages(input);
+    // A first message with images goes as an ordinary message once the session exists (the runtimes start with text only).
+    const session = await this.wrap(() => this.runtime.startSession({ ...owner, profileId: input.profileId, workspace, ...(input.text && !images.length ? { text: input.text } : {}), options }));
+    if (images.length) await this.f.sessions.sendMessage(session.id, input.text ?? "", images);
     // The owner's updatedAt moves with its sessions so the board can sort by activity.
     if (owner.taskId) this.publish({ type: "task.upserted", task: this.store.updateTask(owner.taskId, {}) });
     else if (owner.topicId) this.publish({ type: "topic.upserted", topic: this.store.updateTopic(owner.topicId, {}) });

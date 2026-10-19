@@ -20,6 +20,8 @@ export interface NewSessionInput {
   workspaceId?: Id;
   /** First user message; when present the session starts a turn right away. */
   text?: string;
+  /** Images uploaded with POST /api/attachments that go with the first message (2026-10-19). */
+  attachments?: Id[];
   /** Model, effort and permissions; the profile's defaults otherwise. */
   options?: SessionOptions;
 }
