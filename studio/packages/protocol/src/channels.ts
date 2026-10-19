@@ -55,6 +55,11 @@ export interface ModelChannel {
   baseUrl: string;
   /** The model new sessions start on; null = the CLI's default. */
   model: string | null;
+  /**
+   * DSH (2026-10-19): the site's own names for its DeepSeek models (`deepseek/deepseek-v4-pro`), offered instead of
+   * DSH's built-in catalog, whose names a relay may not know; the first is the default when `model` is empty.
+   */
+  models?: string[];
   /** Claude: the model for background and quick work (ANTHROPIC_DEFAULT_HAIKU_MODEL); null = the CLI's default. */
   smallModel?: string | null;
   /** Claude: how the key is sent. "bearer" (ANTHROPIC_AUTH_TOKEN, most relays) or "x-api-key" (ANTHROPIC_API_KEY). */
@@ -74,6 +79,8 @@ export interface ChannelInput {
   label?: string;
   baseUrl?: string;
   model?: string | null;
+  /** DSH: the site's model names; [] = DSH's built-in ones. */
+  models?: string[];
   smallModel?: string | null;
   claudeAuth?: "bearer" | "x-api-key";
   key?: string;
@@ -87,6 +94,9 @@ export interface ChannelInput {
 export const AMO_CHANNEL_KEYS: ReadonlyArray<{ id: string; label: string; kind: ChannelKind; baseUrl: string }> = [
   { id: "dxx", label: "旧 AMO 的 DXX Key", kind: "codex", baseUrl: "https://gorilla-api.dxxapi.com" },
 ];
+
+/** At most this many model names on a DSH channel. */
+export const CHANNEL_MODELS_MAX = 30;
 
 /** A channel's balance as last asked. Numbers are in `unit`. */
 export interface ChannelBalance {

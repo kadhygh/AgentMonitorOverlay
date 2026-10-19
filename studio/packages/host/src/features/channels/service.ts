@@ -1,6 +1,7 @@
 import type { ChannelBalance, ChannelInput, ModelChannel, ModelProfile } from "@amo-studio/protocol";
 import { askBalance } from "../../runtime/balance.js";
 import { ChannelError, balanceConfig, type ChannelRegistry } from "../../runtime/channels.js";
+import { listSiteModels } from "../../runtime/site-models.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
@@ -94,5 +95,25 @@ export class ChannelsFeature extends Feature {
       }),
     );
     return askBalance({ profileId: id ?? "draft", baseUrl, config, ...secrets });
+  }
+
+  /** A DSH channel's 从网址读取: the model names its site lists, with what is typed or what `id` has stored. */
+  async siteModels(input: Record<string, unknown>): Promise<{ models: string[] }> {
+    const id = typeof input.id === "string" && input.id ? input.id : undefined;
+    const stored = id ? this.run(() => this.registry.get(id)) : null;
+    const baseUrl = typeof input.baseUrl === "string" && input.baseUrl.trim() ? input.baseUrl.trim() : (stored?.baseUrl ?? "");
+    if (!baseUrl) throw new HostError("bad_request", "先填网址");
+    const { key } = this.run(() =>
+      this.registry.draftSecrets(id, {
+        ...(typeof input.key === "string" ? { key: input.key } : {}),
+        ...(typeof input.keyFrom === "string" ? { keyFrom: input.keyFrom } : {}),
+      }),
+    );
+    if (!key) throw new HostError("bad_request", "先填 API Key");
+    try {
+      return { models: await listSiteModels(baseUrl, key) };
+    } catch (err) {
+      throw new HostError("bad_request", err instanceof Error ? err.message : String(err));
+    }
   }
 }

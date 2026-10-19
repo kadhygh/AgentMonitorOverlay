@@ -9,6 +9,8 @@
 //   [[endpoint]]             the reply tells the DeepSeek address, key and model it was given (third-party channels)
 //   [[mcp: TOOL]]            connects to the session's first MCP server, calls TOOL, replies its instructions and result
 //   [[fail]]                 the prompt fails
+// `--patch FILE` (a DSH channel's catalog, 2026-10-19): the models it lists replace the built-in ones, its `acp` model
+// is the default; as in DSH, a model that is not offered cannot be picked.
 // Sessions are kept in $DSH_HOME/fake-sessions.json, so another process can resume them.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -35,10 +37,23 @@ interface Active {
 
 const home = process.env.DSH_HOME ?? process.cwd();
 const file = join(home, "fake-sessions.json");
-const MODELS = [
+const BUILTIN_MODELS = [
   { value: '["deepseek-official","deepseek-v4-flash"]', name: "deepseek-v4-flash" },
   { value: '["deepseek-official","deepseek-v4-pro"]', name: "DeepSeek-V4-Pro", description: "Stronger agentic coding" },
 ];
+/** The models a `--patch` file lists (`- id: "<name>"` under llm-deepseek), its `acp` default first. */
+function patchedModels(): Array<{ value: string; name: string; description?: string }> | null {
+  const at = process.argv.indexOf("--patch");
+  const path = at >= 0 ? process.argv[at + 1] : undefined;
+  if (!path || !existsSync(path)) return null;
+  const text = readFileSync(path, "utf8");
+  const ids = [...text.matchAll(/^\s*- id: (".*")\s*$/gm)].map((m) => JSON.parse(m[1]!) as string);
+  if (!ids.length) return null;
+  const def = /^\s*model: (".*")\s*$/m.exec(text);
+  const first = def ? (JSON.parse(def[1]!) as string) : ids[0]!;
+  return [first, ...ids.filter((i) => i !== first)].map((id) => ({ value: JSON.stringify(["deepseek-official", id]), name: id }));
+}
+const MODELS = patchedModels() ?? BUILTIN_MODELS;
 const EFFORTS = ["off", "low", "high", "max"];
 
 function load(): Record<string, Stored> {
@@ -201,7 +216,10 @@ async function handle(method: string, params: Record<string, unknown>): Promise<
       const all = load();
       const s = all[String(params.sessionId)];
       if (!s) throw new RpcError(-32602, "Invalid params: unknown session");
-      if (params.configId === "model") s.model = String(params.value);
+      if (params.configId === "model") {
+        if (!MODELS.some((m) => m.value === String(params.value))) throw new RpcError(-32602, `Invalid params: model ${String(params.value)} is not offered`);
+        s.model = String(params.value);
+      }
       else if (params.configId === "reasoning_effort") s.effort = String(params.value);
       else throw new RpcError(-32602, `Invalid params: unknown option ${String(params.configId)}`);
       save(all);

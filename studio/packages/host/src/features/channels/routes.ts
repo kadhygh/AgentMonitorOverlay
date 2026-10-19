@@ -8,6 +8,7 @@ export function channelsRoutes(service: HostService): Route[] {
     route("GET", "/api/channels", () => service.channels.list()),
     route("POST", "/api/channels", ({ body }) => service.channels.create(obj(body) as ChannelInput)),
     route("POST", "/api/channels/balance-test", ({ body }) => service.channels.testBalance(obj(body))),
+    route("POST", "/api/channels/models-test", ({ body }) => service.channels.siteModels(obj(body))),
     route("PATCH", "/api/channels/:id", ({ params, body }) => service.channels.update(params.id!, obj(body) as ChannelInput)),
     route("DELETE", "/api/channels/:id", ({ params }) => service.channels.remove(params.id!)),
     route("PUT", "/api/profiles/:id/hidden", ({ params, body }) => service.channels.setHidden(params.id!, obj(body).hidden)),

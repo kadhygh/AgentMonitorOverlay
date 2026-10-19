@@ -19,6 +19,8 @@ type Draft = {
   label: string;
   baseUrl: string;
   model: string;
+  /** DSH: the site's model names, one per line. */
+  models: string;
   smallModel: string;
   claudeAuth: "bearer" | "x-api-key";
   key: string;
@@ -41,6 +43,7 @@ function draftOf(c: ModelChannel | null, kind: ChannelKind): Draft {
     label: c?.label ?? "",
     baseUrl: c?.baseUrl ?? "",
     model: c?.model ?? "",
+    models: (c?.models ?? []).join("\n"),
     smallModel: c?.smallModel ?? "",
     claudeAuth: c?.claudeAuth ?? "bearer",
     key: "",
@@ -55,6 +58,11 @@ function draftOf(c: ModelChannel | null, kind: ChannelKind): Draft {
     divisor: b?.divisor ? String(b.divisor) : "",
     unit: b?.unit ?? "",
   };
+}
+
+/** The model names typed for a DSH channel: one per line (commas and spaces also split). */
+export function modelLines(text: string): string[] {
+  return [...new Set(text.split(/[\s,，]+/).map((s) => s.trim()).filter(Boolean))];
 }
 
 function balanceOf(d: Draft): BalanceConfig | null {
@@ -77,6 +85,7 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [test, setTest] = useState<ChannelBalance | null>(null);
+  const [siteModels, setSiteModels] = useState<string[] | null>(null);
   const first = useRef<HTMLInputElement>(null);
   useEffect(() => first.current?.focus(), []);
   const set = (patch: Partial<Draft>) => setD((cur) => ({ ...cur, ...patch }));
@@ -90,7 +99,9 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
     const input: ChannelInput = {
       label: d.label,
       baseUrl: d.baseUrl,
-      model: d.model.trim() || null,
+      // DSH: the list's first name is the default; empty = DSH's built-in models.
+      model: d.kind === "dsh" ? null : d.model.trim() || null,
+      ...(d.kind === "dsh" ? { models: modelLines(d.models) } : {}),
       balance: balanceOf(d),
       ...(d.kind === "claude" ? { smallModel: d.smallModel.trim() || null, claudeAuth: d.claudeAuth } : {}),
       ...(d.key.trim() ? { key: d.key.trim() } : { keyFrom: d.keyFrom }),
@@ -129,6 +140,28 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
       setBusy(false);
     }
   }
+
+  /** DSH: 从网址读取 — the names the site lists, to pick from. */
+  async function readModels() {
+    setSiteModels(null);
+    setError(null);
+    setBusy(true);
+    try {
+      const r = await call(link, "POST /api/channels/models-test", {}, {
+        ...(channel ? { id: channel.id } : {}),
+        baseUrl: d.baseUrl,
+        ...(d.key.trim() ? { key: d.key.trim() } : d.keyFrom ? { keyFrom: d.keyFrom } : {}),
+      });
+      setSiteModels(r.models);
+      if (!r.models.length) setError("网址回了一个空的模型列表");
+    } catch (err) {
+      setError(err instanceof HostApiError ? err.message : String(err));
+    } finally {
+      setBusy(false);
+    }
+  }
+  const typed = modelLines(d.models);
+  const toggleModel = (m: string) => set({ models: (typed.includes(m) ? typed.filter((x) => x !== m) : [...typed, m]).join("\n") });
 
   const tpl = BALANCE_TEMPLATES.find((t) => t.id === d.template);
   return createPortal(
@@ -193,14 +226,45 @@ export function ChannelDialog({ link, channel, kind = "claude", onClose, onSaved
               ))}
             </span>
           </label>
-          <label className="channel-field">
-            <span>模型</span>
-            <input className="field mono" value={d.model} spellCheck={false} onChange={(e) => set({ model: e.target.value })} placeholder={d.kind === "claude" ? "留空用 Claude Code 自己的；例如 claude-opus-5-5" : d.kind === "dsh" ? "留空用 DSH 默认的；例如 deepseek-v4-pro" : "留空用 Codex 默认的；例如 gpt-5.6-sol"} aria-label="模型" data-testid="channel-model" />
-          </label>
+          {d.kind !== "dsh" && (
+            <label className="channel-field">
+              <span>模型</span>
+              <input className="field mono" value={d.model} spellCheck={false} onChange={(e) => set({ model: e.target.value })} placeholder={d.kind === "claude" ? "留空用 Claude Code 自己的；例如 claude-opus-5-5" : "留空用 Codex 默认的；例如 gpt-5.6-sol"} aria-label="模型" data-testid="channel-model" />
+            </label>
+          )}
           {d.kind === "dsh" && (
-            <span className="settings-hint" data-testid="channel-dsh-hint">
-              DSH 用 Anthropic 接口连 DeepSeek：网址要填第三方的 Anthropic 兼容地址（不是 /v1 的 OpenAI 接口）；模型名要和官方一致（deepseek-v4-pro、deepseek-v4-flash），DSH 只认这些。
-            </span>
+            <>
+              <div className="channel-field">
+                <span>模型</span>
+                <span className="channel-models">
+                  <textarea
+                    className="field mono"
+                    rows={3}
+                    value={d.models}
+                    spellCheck={false}
+                    onChange={(e) => set({ models: e.target.value })}
+                    placeholder={"第三方叫这些模型的名字，一行一个，第一个是默认\n例如 deepseek/deepseek-v4-pro\n留空用 DSH 自带的（deepseek-v4-pro 等官方名字）"}
+                    aria-label="模型列表"
+                    data-testid="channel-models"
+                  />
+                  <button type="button" className="btn-ghost small" disabled={busy || !d.baseUrl.trim()} onClick={() => void readModels()} title="向网址要它的模型列表（GET 网址/v1/models），点选加进来" data-testid="channel-models-read">
+                    从网址读取
+                  </button>
+                </span>
+              </div>
+              {siteModels && siteModels.length > 0 && (
+                <div className="channel-site-models" role="group" aria-label="网址上的模型" data-testid="channel-site-models">
+                  {siteModels.map((m) => (
+                    <button key={m} type="button" className="chip small mono" aria-pressed={typed.includes(m)} onClick={() => toggleModel(m)}>
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              )}
+              <span className="settings-hint" data-testid="channel-dsh-hint">
+                DSH 用 Anthropic 接口连 DeepSeek：网址要填第三方的 Anthropic 兼容地址（不是 /v1 的 OpenAI 接口）。第三方的模型名和官方不一样时（比如 deepseek/deepseek-v4-pro），在上面列出来，DSH 就按这些名字发请求。
+              </span>
+            </>
           )}
           {d.kind === "claude" && (
             <>

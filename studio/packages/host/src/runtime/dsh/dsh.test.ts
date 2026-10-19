@@ -7,7 +7,7 @@ import { removeTempDir } from "@amo-studio/testkit";
 import { startHost, type RunningHost } from "../../host-process.js";
 import { FakeServers } from "../codex/fake-servers.test-support.js";
 import { dshPermissionMode } from "../choices.js";
-import { dshModelId, dshModels, dshModelValue } from "./dsh-runtime.js";
+import { catalogPatchYaml, channelModels, dshModelId, dshModels, dshModelValue } from "./dsh-runtime.js";
 import { describeDsh } from "./install.js";
 import { describeDshTool } from "./transcript.js";
 
@@ -30,6 +30,20 @@ describe("DSH models and permissions", () => {
     expect(dshModelValue("deepseek-official/deepseek-v4-pro", CONFIG)).toBe('["deepseek-official","deepseek-v4-pro"]');
     // Not offered (yet): the route is rebuilt.
     expect(dshModelValue("deepseek-official/deepseek-v5", null)).toBe('["deepseek-official","deepseek-v5"]');
+    // A relay's name with a "/" of its own stays one name.
+    expect(dshModelValue("deepseek-official/deepseek/deepseek-v4-pro", CONFIG)).toBe('["deepseek-official","deepseek/deepseek-v4-pro"]');
+    expect(dshModelId('["deepseek-official","deepseek/deepseek-v4-pro"]')).toBe("deepseek-official/deepseek/deepseek-v4-pro");
+  });
+
+  it("gives a channel's own model names to DSH as its catalog, and to the pickers (2026-10-19)", () => {
+    const yaml = catalogPatchYaml("中转", ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-pro"], "deepseek/deepseek-v4-pro");
+    expect(yaml).toContain('- id: llm-deepseek\n  config:\n    models:\n      - id: "deepseek/deepseek-v4.1-flash"\n      - id: "deepseek/deepseek-v4-pro"\n');
+    expect(yaml).toContain('- id: acp\n  config:\n    provider: deepseek-official\n    model: "deepseek/deepseek-v4-pro"\n');
+    expect(channelModels(["a/x", "a/y"], "deepseek-official/a/y", CONFIG)).toEqual([
+      { id: "deepseek-official/a/x", label: "a/x", efforts: ["off", "low", "high", "max"], defaultEffort: "high" },
+      { id: "deepseek-official/a/y", label: "a/y", efforts: ["off", "low", "high", "max"], defaultEffort: "high", isDefault: true },
+    ]);
+    expect(channelModels(["a/x"], null, null)[0]).toMatchObject({ isDefault: true, efforts: [] });
   });
 
   it("maps Studio's permission ids to DSH's sandbox, defaulting to the workspace", () => {

@@ -141,9 +141,16 @@
 .channel-field .field.mono { font-family: var(--font-code); font-size: 12.5px; }
 .channel-key { display: flex; gap: 6px; align-items: center; min-width: 0; }
 .channel-key .field { flex: 1; min-width: 0; }
+/* A DSH channel's model names (2026-10-19): the list, 从网址读取 beside it, and the site's names to click in. */
+.channel-models { display: flex; gap: 6px; align-items: flex-start; min-width: 0; }
+.channel-models textarea { flex: 1; min-width: 0; resize: vertical; min-height: 60px; line-height: 1.5; padding-top: 6px; }
+.channel-site-models { display: flex; flex-wrap: wrap; gap: 6px; margin-left: 104px; max-height: 120px; overflow: auto; }
+.channel-site-models .chip.mono { font-family: var(--font-code); font-size: 12px; }
+.channel-site-models .chip[aria-pressed="true"] { border-color: var(--primary); color: var(--primary); background: color-mix(in srgb, var(--primary) 10%, transparent); }
 .channel-paths { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; padding-left: 104px; }
 @media (max-width: 560px) {
   .channel-field { grid-template-columns: 1fr; }
+  .channel-site-models { margin-left: 0; }
   .channel-paths { grid-template-columns: 1fr 1fr; padding-left: 0; }
   .channel-meta { padding-left: 0; }
 }

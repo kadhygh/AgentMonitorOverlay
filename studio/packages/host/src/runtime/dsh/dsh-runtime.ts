@@ -1,4 +1,4 @@
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AccountUsage, ApprovalDecision, Attachment, DshCheck, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, Workspace } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
@@ -38,6 +38,11 @@ import { DshTranscript, type AcpUpdate } from "./transcript.js";
 /** A third-party DeepSeek endpoint DSH can be pointed at (an Anthropic Messages root, like https://api.deepseek.com/anthropic). */
 export interface DshProviderDef {
   baseUrl?: string;
+  /**
+   * The site's own model names (2026-10-19): given to DSH as its catalog (a `--patch` overlay), since DSH sends a
+   * model's catalog id as is and a relay may know DeepSeek's models by other names (`deepseek/deepseek-v4-pro`).
+   */
+  models?: string[];
 }
 
 export interface DshRuntimeOptions {
@@ -121,7 +126,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     try {
       await this.initialize(conn);
       const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: input.workspace.path, mcpServers: this.mcpServers(token) });
-      this.remember(created.configOptions);
+      this.remember(created.configOptions, profile);
       session = this.createSession({
         taskId: input.taskId,
         topicId: input.topicId,
@@ -161,13 +166,17 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   async choices(profileId: Id): Promise<ProfileChoices> {
-    this.profile(profileId);
+    const profile = this.profile(profileId);
     let config = this.cachedOptions();
     if (!config) {
       await this.check();
       config = this.cachedOptions();
     }
-    return { profileId, models: config ? dshModels(config) : [], permissions: DSH_PERMISSIONS, defaultPermission: DSH_DEFAULT_PERMISSION, source: config ? "cli" : "builtin" };
+    const base = { profileId, permissions: DSH_PERMISSIONS, defaultPermission: DSH_DEFAULT_PERMISSION };
+    // A channel with its own model names: those (the efforts are DSH's).
+    const own = this.ownModels(profile);
+    if (own) return { ...base, models: channelModels(own, profile.model, config), source: "builtin" };
+    return { ...base, models: config ? dshModels(config) : [], source: config ? "cli" : "builtin" };
   }
 
   /** Model and effort go to DSH before the next turn; a new permission restarts the session's process. */
@@ -259,7 +268,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       conn = this.spawn(probe, null, "workspace-write", "check");
       const init = await this.initialize(conn);
       const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: probe, mcpServers: [] }, 60_000);
-      this.remember(created.configOptions);
+      this.remember(created.configOptions, null);
       await conn.request("session/close", { sessionId: created.sessionId }, 30_000).catch(() => undefined);
       const models = created.configOptions ? dshModels(created.configOptions).length : 0;
       return result(true, `可用 · ACP ${init.protocolVersion} · ${models} 个型号`);
@@ -288,6 +297,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     // A third-party channel: its address. (DSH reads it from the launch environment, which outranks a project's .env.)
     const baseUrl = profile?.provider ? this.options.providers?.[profile.provider]?.baseUrl : undefined;
     if (baseUrl) env[DSH_BASE_URL_ENV] = baseUrl;
+    const patch = profile ? this.catalogPatch(profile) : null;
     let command: string;
     let args: string[];
     if (this.options.agent) {
@@ -301,6 +311,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       command = node;
       args = [describeDsh(readDshPath(this.store)!)!.bin, ...DSH_ACP_ARGS];
     }
+    if (patch) args.push("--patch", patch);
     const logFile = join(this.options.dir, "logs", `${label}.log`);
     return new AcpConnection({ command, args, cwd, env, logFile }, (method, params) => this.onRequest(method, params));
   }
@@ -327,7 +338,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
         await this.initialize(conn);
         const token = this.options.identities?.tokenFor(session.id);
         const resumed = await conn.request<{ configOptions?: ConfigOption[] }>("session/resume", { sessionId: session.runtimeRef, cwd: workspace.path, mcpServers: this.mcpServers(token) });
-        this.remember(resumed.configOptions);
+        this.remember(resumed.configOptions, this.profile(session.profileId));
       } catch (err) {
         conn.kill();
         throw this.explain(err);
@@ -418,17 +429,22 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private async applyOptions(sessionId: Id, live: Live): Promise<void> {
-    const opts = this.store.getSession(sessionId)?.options ?? {};
-    if (opts.model && opts.model !== live.applied.model) {
+    const session = this.store.getSession(sessionId);
+    const opts = session?.options ?? {};
+    const profile = (session && this.options.profiles.find((p) => p.id === session.profileId)) ?? null;
+    // A channel with its own names: a model it does not list (picked before the list was set) stays on its default.
+    const own = profile ? this.ownModels(profile) : null;
+    const listed = !own || !opts.model || own.some((m) => `deepseek-official/${m}` === opts.model);
+    if (opts.model && listed && opts.model !== live.applied.model) {
       const value = dshModelValue(opts.model, this.cachedOptions());
       const r = await live.conn.request<{ configOptions?: ConfigOption[] }>("session/set_config_option", { sessionId: live.acpId, configId: DSH_MODEL_OPTION, value });
       live.applied.model = opts.model;
-      this.remember(r.configOptions);
+      this.remember(r.configOptions, profile);
     }
     if (opts.effort && opts.effort !== live.applied.effort) {
       const r = await live.conn.request<{ configOptions?: ConfigOption[] }>("session/set_config_option", { sessionId: live.acpId, configId: DSH_EFFORT_OPTION, value: opts.effort });
       live.applied.effort = opts.effort;
-      this.remember(r.configOptions);
+      this.remember(r.configOptions, profile);
     }
   }
 
@@ -466,8 +482,28 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return [{ type: "http", name: "amo", url: mcp.url, headers: [{ name: "Authorization", value: `Bearer ${mcp.token}` }, { name: MCP_SESSION_HEADER, value: token }] }];
   }
 
-  private remember(config: ConfigOption[] | undefined): void {
-    if (config?.length) this.store.setKv(DSH_OPTIONS_KEY, JSON.stringify(config));
+  /** Keeps what DSH offers, for the pickers; not from a channel with its own catalog (that is not DSH's own list). */
+  private remember(config: ConfigOption[] | undefined, profile: ModelProfile | null): void {
+    if (config?.length && !(profile && this.ownModels(profile))) this.store.setKv(DSH_OPTIONS_KEY, JSON.stringify(config));
+  }
+
+  /** The site's own model names of a channel profile, or null (DSH's built-in catalog). */
+  private ownModels(profile: ModelProfile): string[] | null {
+    const models = profile.provider ? this.options.providers?.[profile.provider]?.models : undefined;
+    return models?.length ? models : null;
+  }
+
+  /** A channel's catalog as a DSH patch file (written fresh for each process), or null when it has none. */
+  private catalogPatch(profile: ModelProfile): string | null {
+    const models = this.ownModels(profile);
+    if (!models) return null;
+    const own = profile.model?.replace(/^deepseek-official\//, "");
+    const first = own && models.includes(own) ? own : models[0]!;
+    const dir = join(this.options.dir, "patches");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `${profile.provider}.yml`);
+    writeFileSync(file, catalogPatchYaml(profile.label, models, first));
+    return file;
   }
 
   private cachedOptions(): ConfigOption[] | null {
@@ -517,7 +553,37 @@ export function dshModelId(value: string): string {
 export function dshModelValue(id: string, config: readonly ConfigOption[] | null): string {
   const model = config?.find((c) => c.id === DSH_MODEL_OPTION);
   const offered = (model?.options ?? []).flatMap((o) => (o.options ? o.options.map((x) => x.value) : o.value ? [o.value] : []));
-  return offered.find((v) => dshModelId(v) === id) ?? (id.includes("/") ? JSON.stringify(id.split("/")) : id);
+  // The route is the provider, then the model name, which may itself hold a "/" (a relay's `deepseek/deepseek-v4-pro`).
+  const cut = id.indexOf("/");
+  return offered.find((v) => dshModelId(v) === id) ?? (cut > 0 ? JSON.stringify([id.slice(0, cut), id.slice(cut + 1)]) : id);
+}
+
+/**
+ * The DSH patch that makes a channel's model names DSH's catalog on its DeepSeek route (`llm-deepseek` has no config
+ * of its own to lose) and `first` the ACP agent's default. Names are JSON-quoted, which YAML reads as strings.
+ */
+export function catalogPatchYaml(label: string, models: readonly string[], first: string): string {
+  return [
+    `# Written by AMO Studio for the channel ${JSON.stringify(label)}: the site's own model names. Rewritten on every start.`,
+    "- id: llm-deepseek",
+    "  config:",
+    "    models:",
+    ...models.map((m) => `      - id: ${JSON.stringify(m)}`),
+    "- id: acp",
+    "  config:",
+    "    provider: deepseek-official",
+    `    model: ${JSON.stringify(first)}`,
+    "",
+  ].join("\n");
+}
+
+/** A channel's own model names as Studio's models (`deepseek-official/<name>`), with the efforts DSH offers. */
+export function channelModels(models: readonly string[], profileModel: string | null | undefined, config: readonly ConfigOption[] | null): ModelOption[] {
+  const effort = config?.find((c) => c.id === DSH_EFFORT_OPTION);
+  const efforts = (effort?.options ?? []).map((o) => o.value).filter((v): v is string => !!v);
+  const ids = models.map((m) => `deepseek-official/${m}`);
+  const def = profileModel && ids.includes(profileModel) ? profileModel : ids[0];
+  return ids.map((id, i) => ({ id, label: models[i]!, efforts, ...(effort?.currentValue ? { defaultEffort: effort.currentValue } : {}), ...(id === def ? { isDefault: true } : {}) }));
 }
 
 /** DSH's model option as Studio's models; each gets the efforts DSH offers (it lists them for the current model). */

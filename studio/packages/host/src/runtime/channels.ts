@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { AMO_CHANNEL_KEYS, type BalanceConfig, type BalanceTemplate, type ChannelInput, type ChannelKind, type ModelChannel, type ModelOption, type ModelProfile } from "@amo-studio/protocol";
+import { AMO_CHANNEL_KEYS, CHANNEL_MODELS_MAX, type BalanceConfig, type BalanceTemplate, type ChannelInput, type ChannelKind, type ModelChannel, type ModelOption, type ModelProfile } from "@amo-studio/protocol";
 import type { ClaudeProviderDef } from "./claude/claude-env.js";
 import { CLAUDE_BUILTIN_MODELS, CLAUDE_EFFORTS } from "./choices.js";
 import type { CredentialReader, CredentialStore } from "./credentials.js";
@@ -24,6 +24,8 @@ interface StoredChannel {
   label: string;
   baseUrl: string;
   model: string | null;
+  /** DSH: the site's own model names. */
+  models?: string[];
   smallModel?: string | null;
   claudeAuth?: "bearer" | "x-api-key";
   keyFrom: string | null;
@@ -77,6 +79,22 @@ function modelId(value: unknown, what: string): string | null {
   if (/\s/.test(v)) throw new ChannelError("bad_request", `${what}不能有空格`);
   return v || null;
 }
+
+/** A DSH channel's model names: one word each, no repeats; [] when none. */
+export function modelList(value: unknown): string[] {
+  if (value === null || value === undefined) return [];
+  if (!Array.isArray(value)) throw new ChannelError("bad_request", "models 要是一组模型名");
+  const out: string[] = [];
+  for (const v of value) {
+    const m = modelId(v, "模型名");
+    if (m && !out.includes(m)) out.push(m);
+  }
+  if (out.length > CHANNEL_MODELS_MAX) throw new ChannelError("bad_request", `模型最多 ${CHANNEL_MODELS_MAX} 个`);
+  return out;
+}
+
+/** DSH's id of a model on its DeepSeek route (`deepseek-official/<name>`); the name itself may hold a "/". */
+export const dshRouteModel = (name: string) => (name.startsWith("deepseek-official/") ? name : `deepseek-official/${name}`);
 
 function secret(value: unknown, what: string): string {
   const v = typeof value === "string" ? value.trim() : "";
@@ -182,6 +200,7 @@ export class ChannelRegistry {
       channel.smallModel = modelId(input.smallModel, "快速模型");
       channel.claudeAuth = input.claudeAuth === "x-api-key" ? "x-api-key" : "bearer";
     }
+    if (kind === "dsh") channel.models = modelList(input.models);
     this.checkLabel(channel.label, id);
     this.applySecrets(channel, input);
     this.save([...this.stored(), channel]);
@@ -199,12 +218,13 @@ export class ChannelRegistry {
       if (input.smallModel !== undefined) c.smallModel = modelId(input.smallModel, "快速模型");
       if (input.claudeAuth !== undefined) c.claudeAuth = input.claudeAuth === "x-api-key" ? "x-api-key" : "bearer";
     }
+    if (c.kind === "dsh" && input.models !== undefined) c.models = modelList(input.models);
     if (input.balance !== undefined) c.balance = balanceConfig(input.balance);
     this.checkLabel(c.label, id);
     const keyBefore = this.keyOf(before);
     this.applySecrets(c, input);
     this.save(this.stored().map((x) => (x.id === id ? c : x)));
-    const routingChanged = c.baseUrl !== before.baseUrl || c.model !== before.model || c.label !== before.label || c.keyFrom !== before.keyFrom || this.keyOf(c) !== keyBefore;
+    const routingChanged = c.baseUrl !== before.baseUrl || c.model !== before.model || String(c.models ?? []) !== String(before.models ?? []) || c.label !== before.label || c.keyFrom !== before.keyFrom || this.keyOf(c) !== keyBefore;
     return { channel: this.view(c), routingChanged };
   }
 
@@ -337,6 +357,7 @@ export class ChannelRegistry {
       baseUrl: c.baseUrl,
       model: c.model,
       ...(c.kind === "claude" ? { smallModel: c.smallModel ?? null, claudeAuth: c.claudeAuth ?? "bearer" } : {}),
+      ...(c.kind === "dsh" ? { models: c.models ?? [] } : {}),
       keySaved: !!this.keyOf(c),
       keyFrom: c.keyFrom,
       balance: c.balance,
@@ -371,9 +392,12 @@ export class ChannelRegistry {
         codexProviders[provider] = { name: c.label, baseUrl: c.baseUrl, wireApi: "responses", envKey: `AMO_${c.id.toUpperCase().replace(/[^A-Z0-9]/g, "_")}_KEY` };
         next.push({ id: c.id, label: c.label, runtime: "codex", provider, model: c.model, credentialId, ...flags });
       } else if (c.kind === "dsh") {
-        // DSH talks to the channel's address with its key; models are DSH's (`deepseek-official/<model>`).
-        dshProviders[c.id] = { baseUrl: c.baseUrl };
-        const model = c.model ? (c.model.includes("/") ? c.model : `deepseek-official/${c.model}`) : null;
+        // DSH talks to the channel's address with its key. Its models: the site's own names when the channel lists
+        // them (DSH gets them as its catalog), else DSH's built-in ones; both as `deepseek-official/<name>`.
+        const models = c.models ?? [];
+        dshProviders[c.id] = { baseUrl: c.baseUrl, ...(models.length ? { models } : {}) };
+        const first = c.model ?? models[0];
+        const model = first ? dshRouteModel(first) : null;
         const profile: ModelProfile = { id: c.id, label: c.label, runtime: "dsh", provider: c.id, model, credentialId, ...flags };
         const unavailable = this.options.unavailable?.(profile);
         next.push({ ...profile, ...(unavailable ? { unavailable } : {}) });

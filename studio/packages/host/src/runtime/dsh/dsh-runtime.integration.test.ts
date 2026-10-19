@@ -202,6 +202,36 @@ describe("DSH runtime", () => {
     expect(replies(await items(host, session.id))[0]).toBe('ENDPOINT base=https://relay.example/anthropic key=sk-relay model=["deepseek-official","deepseek-v4-pro"]');
   });
 
+  it("a DSH channel with the site's own model names: DSH gets them as its catalog, the pickers offer them (2026-10-19)", async () => {
+    const host = await boot();
+    await call(host, "POST", "/api/dsh/check");
+    const channel = await call<{ id: string; models: string[] }>(host, "POST", "/api/channels", {
+      kind: "dsh",
+      label: "中转 DeepSeek",
+      baseUrl: "https://relay.example",
+      key: "sk-relay",
+      models: ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-pro", "deepseek/deepseek-v4-pro"],
+    });
+    expect(channel.models).toEqual(["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-pro"]);
+    const choices = await call<ProfileChoices>(host, "GET", `/api/profiles/${channel.id}/choices`);
+    expect(choices.models.map((m) => [m.id, m.isDefault ?? false])).toEqual([
+      ["deepseek-official/deepseek/deepseek-v4.1-flash", true],
+      ["deepseek-official/deepseek/deepseek-v4-pro", false],
+    ]);
+    const ws = await call<Workspace>(host, "POST", "/api/workspaces", { path: join(root, "ws") });
+    const { session } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", { title: "中转", workspaceId: ws.id, firstSession: { profileId: channel.id, text: "[[endpoint]]" } });
+    await until(() => items(host, session.id), (l) => replies(l).length === 1);
+    expect(replies(await items(host, session.id))[0]).toBe('ENDPOINT base=https://relay.example key=sk-relay model=["deepseek-official","deepseek/deepseek-v4.1-flash"]');
+    // Another of its names (the fake, like DSH, refuses a model it does not offer).
+    await call(host, "PATCH", `/api/sessions/${session.id}/options`, { model: "deepseek-official/deepseek/deepseek-v4-pro" });
+    await call(host, "POST", `/api/sessions/${session.id}/messages`, { text: "[[endpoint]]" });
+    await until(() => items(host, session.id), (l) => replies(l).length === 2);
+    expect(replies(await items(host, session.id))[1]).toBe('ENDPOINT base=https://relay.example key=sk-relay model=["deepseek-official","deepseek/deepseek-v4-pro"]');
+    // The built-in DeepSeek still offers DSH's own models.
+    const builtin = await call<ProfileChoices>(host, "GET", "/api/profiles/dsh-deepseek/choices");
+    expect(builtin.models.map((m) => m.label)).toEqual(["deepseek-v4-flash", "DeepSeek-V4-Pro"]);
+  });
+
   it("fails a turn when DSH fails it", async () => {
     const host = await boot();
     const s = await start(host, "[[fail]]");

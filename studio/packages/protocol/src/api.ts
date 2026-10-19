@@ -684,6 +684,8 @@ export interface HostRoutes {
   /** Only a channel no session uses; otherwise hide it. */
   "DELETE /api/channels/:id": { req: void; res: { ok: true } };
   /** Asks a balance with settings not saved yet (the 添加/编辑 dialog's 测试); `id` fills in what is stored. */
+  /** DSH channel (2026-10-19): the model names the site lists (GET {baseUrl}/v1/models), for the dialog's 从网址读取. */
+  "POST /api/channels/models-test": { req: { id?: Id; baseUrl?: string; key?: string; keyFrom?: string | null }; res: { models: string[] } };
   "POST /api/channels/balance-test": { req: { id?: Id; kind?: import("./channels.js").ChannelKind; baseUrl?: string; balance: import("./channels.js").BalanceConfig; key?: string; keyFrom?: string | null; accessToken?: string }; res: import("./channels.js").ChannelBalance };
   "PUT /api/profiles/:id/hidden": { req: { hidden: boolean }; res: ModelProfile[] };
   /** `?refresh=1` asks the site again; otherwise the last answer within a minute. */

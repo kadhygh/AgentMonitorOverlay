@@ -1,3 +1,5 @@
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 import { expect, test } from "@playwright/test";
 import type { ModelChannel, ModelProfile, Session, StateSnapshot, StudioSettings, Task, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
@@ -8,9 +10,14 @@ import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 let studio: Studio | undefined;
 
+/** A test's own little HTTP server (a relay's model listing), closed after it. */
+let server: Server | undefined;
+
 test.afterEach(async () => {
   await studio?.close();
   studio = undefined;
+  server?.close();
+  server = undefined;
 });
 
 test("a third-party Codex channel: added in 设置 with its balance, runs a session, hidden from the pickers", async () => {
@@ -210,7 +217,16 @@ test("设置 → 模型 → a channel's 自动压缩点: 272k by default, its ow
   await expect.poll(own).toBeUndefined();
 });
 
-test("a third-party DeepSeek channel run by DSH: its address and its own key reach DSH (2026-10-19)", async () => {
+test("a third-party DeepSeek channel run by DSH: its address, its own key and the site's model names reach DSH (2026-10-19)", async () => {
+  // The relay's model listing (GET /v1/models), as Sub2API answers it; only this key may read it.
+  const relay = createServer((req, res) => {
+    const ok = req.url === "/v1/models" && req.headers.authorization === "Bearer sk-relay-ds";
+    res.writeHead(ok ? 200 : 401, { "content-type": "application/json" });
+    res.end(JSON.stringify(ok ? { object: "list", data: [{ id: "deepseek/deepseek-v4.1-flash" }, { id: "deepseek/deepseek-v4-pro" }, { id: "deepseek/deepseek-ocr" }] } : { error: "no" }));
+  });
+  server = relay;
+  await new Promise<void>((r) => relay.listen(0, "127.0.0.1", r));
+  const relayUrl = `http://127.0.0.1:${(relay.address() as AddressInfo).port}`;
   studio = await launchStudio({ dsh: true });
   const { page, app } = studio;
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
@@ -222,9 +238,15 @@ test("a third-party DeepSeek channel run by DSH: its address and its own key rea
   const form = page.getByTestId("channel-dialog");
   await expect(form.getByTestId("channel-kind-dsh")).toHaveAttribute("aria-checked", "true");
   await form.getByTestId("channel-label").fill("中转 DeepSeek");
-  await form.getByTestId("channel-url").fill("https://relay.example/anthropic");
+  await form.getByTestId("channel-url").fill(relayUrl);
   await form.getByTestId("channel-key").fill("sk-relay-ds");
-  await form.getByTestId("channel-model").fill("deepseek-v4-pro");
+  // 从网址读取: the site's names to click in; the first clicked is the default.
+  await form.getByTestId("channel-models-read").click();
+  const site = form.getByTestId("channel-site-models");
+  await expect(site.getByRole("button")).toHaveText(["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-v4-pro", "deepseek/deepseek-ocr"]);
+  await site.getByRole("button", { name: "deepseek/deepseek-v4-pro" }).click();
+  await site.getByRole("button", { name: "deepseek/deepseek-v4.1-flash" }).click();
+  await expect(form.getByTestId("channel-models")).toHaveValue("deepseek/deepseek-v4-pro\ndeepseek/deepseek-v4.1-flash");
   await screenshot(app, "stage-18", "S18-dsh-channel", page);
   await form.getByTestId("channel-save").click();
   await expect(form).toHaveCount(0);
@@ -232,13 +254,13 @@ test("a third-party DeepSeek channel run by DSH: its address and its own key rea
   await expect(card.getByTestId("channel-title")).toHaveText("中转 DeepSeek");
   await expect(card).toContainText("DSH 方案");
   const channel = (await studio.api<ModelChannel[]>("GET", "/api/channels")).find((c) => c.kind === "dsh")!;
-  expect(channel).toMatchObject({ label: "中转 DeepSeek", baseUrl: "https://relay.example/anthropic", model: "deepseek-v4-pro", keySaved: true });
+  expect(channel).toMatchObject({ label: "中转 DeepSeek", baseUrl: relayUrl, model: null, models: ["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4.1-flash"], keySaved: true });
   expect(JSON.stringify(channel)).not.toContain("sk-relay-ds");
 
   // A session on it: DSH starts with the channel's address, key and model.
   await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "走中转 DeepSeek", workspaceId: ws.id, firstSession: { profileId: channel.id, text: "[[endpoint]]" } });
   await page.keyboard.press("Escape");
   await page.getByTestId("task-card").filter({ hasText: "走中转 DeepSeek" }).click();
-  await expect(page.getByTestId("msg-agent").last()).toHaveText('ENDPOINT base=https://relay.example/anthropic key=sk-relay-ds model=["deepseek-official","deepseek-v4-pro"]', { timeout: 60_000 });
+  await expect(page.getByTestId("msg-agent").last()).toHaveText(`ENDPOINT base=${relayUrl} key=sk-relay-ds model=["deepseek-official","deepseek/deepseek-v4-pro"]`, { timeout: 60_000 });
   await expect(page.getByTestId("thread-head")).toContainText("中转 DeepSeek");
 });

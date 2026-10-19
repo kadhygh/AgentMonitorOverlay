@@ -159,6 +159,7 @@ export function ChannelPage({
             {channel && <span className="scheme-chip">{SCHEME[channel.kind]}</span>}
             {keyState && <span className={`credential-state${keyOk ? " saved" : ""}`}>{keyState}</span>}
             {channel?.model && <span className="channel-model mono">{channel.model}</span>}
+            {!!channel?.models?.length && <span className="channel-model mono" title={channel.models.join("\n")}>{channel.models.length > 1 ? `${channel.models[0]} 等 ${channel.models.length} 个` : channel.models[0]}</span>}
             {profile.balance && (
               <button type="button" className={`balance-chip${balance && !balance.ok ? " bad" : ""}`} disabled={loading} onClick={refresh} title={balance ? `${balanceText(balance)}\n查询于 ${new Date(balance.checkedAt).toLocaleTimeString()}；点击重新查询` : "查询余额"} data-testid="channel-balance">
                 {loading ? "查询中…" : balance ? balanceText(balance) : "查余额"}
