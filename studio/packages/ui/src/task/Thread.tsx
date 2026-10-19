@@ -26,7 +26,7 @@ import { WakeBar } from "../chat/WakeBar.js";
 import { ContextHint } from "../chat/ContextHint.js";
 import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
 import { AnnotationBubble, contentRect, SelectionBar, type BubbleTarget, type ContentRect } from "../review/AnnotationBubble.js";
-import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, useAnnotationHighlights } from "../review/highlights.js";
+import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, READ_HERE_EVENT, useAnnotationHighlights } from "../review/highlights.js";
 import type { AnnotationRefs } from "../review/annotationRefs.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
 import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
@@ -36,7 +36,7 @@ import { openReview } from "../gitreview/open.js";
 import { useMarkSessionSeen } from "../lib/sessionSeen.js";
 import { TurnStartHint, useTurnStartHint } from "./TurnStartHint.js";
 import { useAnnotationMarks } from "./annotationMarks.js";
-import { AnnotationRefChips, ComposerStats, composerPlaceholder, SelectionMenu } from "./ThreadParts.js";
+import { AnnotationRefChips, ComposerStats, composerPlaceholder } from "./ThreadParts.js";
 
 /** Studio's /compact, as the 压缩 button runs it. */
 const COMPACT: SlashCommand = { name: "compact", description: "", group: "studio" };
@@ -78,7 +78,6 @@ interface ThreadProps {
   decisions?: readonly DecisionRequest[];
 }
 
-type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
 export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, onError, decisions = [] }: ThreadProps) {
@@ -98,7 +97,6 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
       }),
     [sessionId],
   );
-  const [menu, setMenu] = useState<Menu>(null);
   const view = useTranscriptView();
   const attach = useAttachments(link);
   // 找文件: the selector, opened with Ctrl+P or from the @ list (with what was typed after @).
@@ -167,20 +165,6 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   };
   const inBubble = (t: EventTarget | null) => t instanceof Element && !!t.closest(".anno-bubble, .sel-bar");
 
-  // The selection menu closes on Escape, on any click outside it, and when the thread scrolls.
-  useEffect(() => {
-    if (!menu) return;
-    const close = () => setMenu(null);
-    const onKey = (e: KeyboardEvent) => e.key === "Escape" && close();
-    const onDown = (e: MouseEvent) => !(e.target as Element | null)?.closest?.(".ctx-menu") && close();
-    window.addEventListener("keydown", onKey);
-    window.addEventListener("mousedown", onDown);
-    return () => {
-      window.removeEventListener("keydown", onKey);
-      window.removeEventListener("mousedown", onDown);
-    };
-  }, [menu]);
-
   const sources = new Map(items.filter((i) => i.type === "agent").map((i) => [i.id, (i as { markdown: string }).markdown]));
   // Painted: the unsent ones, and sent ones the next message refers to again; each gets its 批注N mark.
   const shownAnnotations = annotations.filter((a) => !a.sentAt || annotationRefs?.has(a.id));
@@ -208,6 +192,17 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
     if (el.scrollHeight - el.clientHeight >= restoreTo.current - 2) restoreTo.current = undefined;
   }, [items]);
+  // Scrolled to a passage or an annotation (scrollToBox): stop following the end at once.
+  useEffect(() => {
+    const el = scroller.current;
+    if (!el) return;
+    const stay = () => {
+      stick.current = false;
+      setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+    };
+    el.addEventListener(READ_HERE_EVENT, stay);
+    return () => el.removeEventListener(READ_HERE_EVENT, stay);
+  }, [session?.id]);
   useEffect(() => {
     const el = scroller.current?.firstElementChild;
     if (!el) return;
@@ -367,15 +362,6 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             stick.current = bottom;
             setAtBottom(bottom);
             if (session) navHistory.noteScroll(session.id, el.scrollTop);
-            if (menu) setMenu(null);
-          }}
-          onContextMenu={(e) => {
-            if (inBubble(e.target)) return;
-            const anchor = readSelection(sources);
-            if (!anchor) return setMenu(null);
-            e.preventDefault();
-            setBar(null);
-            setMenu({ x: e.clientX, y: e.clientY, anchor });
           }}
           onMouseDown={(e) => {
             if (!inBubble(e.target)) setBar(null);
@@ -448,6 +434,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
                 quoteToDraft(bar.anchor.quote);
                 setBar(null);
               }}
+              onCopy={() => void copyText(bar.anchor.quote)}
               {...(onBookmark
                 ? {
                     onBookmark: () => {
@@ -504,25 +491,6 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           </div>
         )}
       </div>
-      {menu && (
-        <SelectionMenu
-          at={menu}
-          canQuote={!!session && session.writer !== "archived" && session.writer !== "terminal-handoff"}
-          onAnnotate={() => {
-            const at = selectionRect() ?? (scroller.current ? contentRect(scroller.current, new DOMRect(menu.x, menu.y, 1, 1)) : null);
-            if (at) setBubble({ kind: "new", anchor: menu.anchor, at });
-            setMenu(null);
-          }}
-          onQuote={() => {
-            quoteToDraft(menu.anchor.quote);
-            setMenu(null);
-          }}
-          onCopy={() => {
-            void copyText(menu.anchor.quote);
-            setMenu(null);
-          }}
-        />
-      )}
       {session && (
         <div className="composer-dock" {...dropTarget}>
           {planReview && !readOnly && (

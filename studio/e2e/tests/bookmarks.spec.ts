@@ -95,3 +95,47 @@ test("bookmarks a passage under the task's topic, drags it out as a quote, goes 
   await expect(side.getByTestId("mark-row")).toHaveCount(0);
   await expect(marks.getByTestId("marks-group").filter({ hasText: "未归专题" })).toContainText("发现 3 张表");
 });
+
+test("打开对话 on a passage far up a long conversation scrolls it into view and keeps it there (2026-10-19)", async () => {
+  studio = await launchStudio();
+  const { app, page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "掉落" });
+  const created = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+    title: "很长的对话",
+    workspaceId: ws.id,
+    topicId: topic.id,
+    firstSession: { profileId: "codex-mock", text: "[[markdown]]" },
+  });
+  await page.getByTestId("task-card").first().click();
+  const first = page.getByTestId("msg-agent").first();
+  await expect(first.locator("table.md-table")).toBeVisible({ timeout: 30_000 });
+  await selectAndRelease(first, "发现 3 张表");
+  await page.getByTestId("selection-bookmark").click();
+  await expect(page.getByTestId("toast")).toContainText("已加到「掉落」的书签");
+  // Many more turns after it, each with code and a table, so the passage ends far above the end.
+  for (let i = 0; i < 8; i++) {
+    await studio.api("POST", `/api/sessions/${created.session.id}/messages`, { text: `[[markdown]] 第 ${i} 轮` });
+    await expect(page.getByTestId("msg-agent")).toHaveCount(i + 2, { timeout: 30_000 });
+  }
+  const thread = page.getByTestId("thread");
+  await expect.poll(() => thread.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(2000);
+
+  const marks = await openMarksWindow(app, page);
+  await page.getByRole("button", { name: /返回看板|看板/ }).first().click();
+  await expect(page.getByTestId("task-card").first()).toBeVisible();
+  await marks.locator('[data-testid="mark-row"][data-kind="chat"]').getByTestId("mark-open-passage").click();
+  await expect(page.getByTestId("task-title")).toHaveText("很长的对话");
+  await expect.poll(() => painted(page, "amo-annotation-flash"), { timeout: 5_000 }).toEqual(["发现 3 张表"]);
+  // On screen, and still there once everything has settled (code highlighting, folded turns).
+  const passage = page.getByTestId("msg-agent").first().getByText("发现 3 张表");
+  const onScreen = async () => {
+    const view = (await thread.boundingBox())!;
+    const box = await passage.boundingBox();
+    if (!box) return "not rendered";
+    return box.y >= view.y && box.y + box.height <= view.y + view.height ? "visible" : `off by ${Math.round(box.y - view.y)}px`;
+  };
+  await expect.poll(onScreen, { timeout: 3_000 }).toBe("visible");
+  await page.waitForTimeout(1500);
+  expect(await onScreen()).toBe("visible");
+});

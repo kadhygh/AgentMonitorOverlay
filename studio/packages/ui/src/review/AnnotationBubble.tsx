@@ -44,6 +44,7 @@ export function SelectionBar({
   canQuote,
   onAnnotate,
   onQuote,
+  onCopy,
   onBookmark,
 }: {
   scroller: RefObject<HTMLElement | null>;
@@ -51,10 +52,18 @@ export function SelectionBar({
   canQuote: boolean;
   onAnnotate(): void;
   onQuote(): void;
+  /** 复制 (2026-10-19, in place of the right-click menu): the bar stays, saying 已复制 a moment. */
+  onCopy?(): void;
   /** 书签 (2026-10-19): keeps the passage under the session's topic. */
   onBookmark?(): void;
 }) {
-  const { style, ref } = usePlacement(scroller, at, onBookmark ? 186 : 132);
+  const [copied, setCopied] = useState(false);
+  useEffect(() => {
+    if (!copied) return;
+    const t = setTimeout(() => setCopied(false), 1200);
+    return () => clearTimeout(t);
+  }, [copied]);
+  const { style, ref } = usePlacement(scroller, at, 132 + (onBookmark ? 54 : 0) + (onCopy ? 64 : 0));
   return (
     <div ref={ref} className="sel-bar" style={style} role="toolbar" aria-label="选中的文字" data-testid="selection-bar" onMouseDown={(e) => e.preventDefault()}>
       <button type="button" onClick={onAnnotate}>
@@ -63,6 +72,19 @@ export function SelectionBar({
       <button type="button" disabled={!canQuote} onClick={onQuote}>
         引用
       </button>
+      {onCopy && (
+        <button
+          type="button"
+          onClick={() => {
+            onCopy();
+            setCopied(true);
+          }}
+          title="复制选中的文字"
+          data-testid="selection-copy"
+        >
+          {copied ? "已复制" : "复制"}
+        </button>
+      )}
       {onBookmark && (
         <button type="button" onClick={onBookmark} title="加到这个专题的书签" data-testid="selection-bookmark">
           书签

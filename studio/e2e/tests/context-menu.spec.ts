@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 import type { Annotation, Session, Task, Workspace } from "@amo-studio/protocol";
-import { selectAndRightClick } from "./selection.js";
+import { selectAndRelease, selectAndRightClick } from "./selection.js";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 let studio: Studio | undefined;
@@ -23,18 +23,20 @@ async function openMarkdownReply(s: Studio) {
   return { reply, session: created.session };
 }
 
-test("selection menu: annotate, quote into the composer, copy", async () => {
+// 2026-10-19: what was the right-click menu on selected text (添加批注 / 引用到输入框 / 复制) is the bar that comes up
+// with the selection — 批注 / 引用 / 复制 / 书签; a right-click on a selection opens nothing.
+test("selection bar: annotate, quote into the composer, copy; no right-click menu", async () => {
   studio = await launchStudio();
   const { page } = studio;
   const { reply, session } = await openMarkdownReply(studio);
-  const menu = page.getByRole("menu", { name: "选中文字" });
+  const bar = page.getByTestId("selection-bar");
 
-  // 添加批注: the bubble by the selection shows the quote; saving stores it with its source range and context.
-  await selectAndRightClick(page, reply, "发现 3 张表");
-  await expect(menu).toBeVisible();
+  // 批注: the bubble by the selection shows the quote; saving stores it with its source range and context.
+  await selectAndRelease(reply, "发现 3 张表");
+  await expect(bar.getByRole("button")).toHaveText(["批注", "引用", "复制", "书签"]);
   await screenshot(studio.app, "stage-2", "S2-03-context-menu", page);
-  await menu.getByRole("menuitem", { name: "添加批注" }).click();
-  await expect(menu).toHaveCount(0);
+  await bar.getByRole("button", { name: "批注" }).click();
+  await expect(bar).toHaveCount(0);
   const draft = page.getByTestId("annotation-bubble");
   await expect(draft).toContainText("发现 3 张表");
   await draft.getByLabel("批注内容").fill("这里应该说明是哪三张");
@@ -45,22 +47,20 @@ test("selection menu: annotate, quote into the composer, copy", async () => {
   const item = (await studio.api<Array<{ id: string; type: string; markdown?: string }>>("GET", `/api/sessions/${session.id}/items`)).find((i) => i.id === saved!.itemId)!;
   expect(item.markdown!.slice(saved!.start, saved!.end)).toBe("发现 **3** 张表");
 
-  // 引用到输入框
-  await selectAndRightClick(page, reply, "先修正概率");
-  await menu.getByRole("menuitem", { name: "引用到输入框" }).click();
+  // 引用
+  await selectAndRelease(reply, "先修正概率");
+  await bar.getByRole("button", { name: "引用" }).click();
   await expect(page.getByLabel("输入消息")).toHaveValue("> 先修正概率\n\n");
 
-  // 复制
-  await selectAndRightClick(page, reply, "Boss_Lv20");
-  await menu.getByRole("menuitem", { name: "复制" }).click();
+  // 复制: the bar stays and says so a moment.
+  await selectAndRelease(reply, "Boss_Lv20");
+  await page.getByTestId("selection-copy").click();
   // Test mode records copies instead of overwriting the user's clipboard.
   await expect.poll(() => studio!.app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1))).toBe("Boss_Lv20");
+  await expect(page.getByTestId("selection-copy")).toHaveText("已复制");
+  await expect(page.getByTestId("selection-copy")).toHaveText("复制");
 
-  // Escape closes; selections outside a reply get no menu.
+  // A right-click on a selection: no menu of its own any more.
   await selectAndRightClick(page, reply, "校验结果");
-  await expect(menu).toBeVisible();
-  await page.keyboard.press("Escape");
-  await expect(menu).toHaveCount(0);
-  await selectAndRightClick(page, page.getByTestId("msg-user").first(), "markdown");
-  await expect(menu).toHaveCount(0);
+  await expect(page.getByRole("menu", { name: "选中文字" })).toHaveCount(0);
 });

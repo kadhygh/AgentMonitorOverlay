@@ -166,7 +166,13 @@ export function scrollToBox(from: Element, box: DOMRect): void {
   const view = scroller.getBoundingClientRect();
   const want = box.height < view.height - 48 ? view.top + (view.height - box.height) / 2 : view.top + 24;
   scroller.scrollTop += box.top - want;
+  // The conversation stops following its end now, not at its scroll event a frame later: content growing in between
+  // (a turn unfolding, code highlighted) would take it back to the end (2026-10-19: 书签 → 打开对话 landed there).
+  scroller.dispatchEvent(new Event(READ_HERE_EVENT));
 }
+
+/** On a scroller that was just scrolled to something to read (a passage, an annotation): stay here. */
+export const READ_HERE_EVENT = "amo:read-here";
 
 function scrollParent(el: Element): HTMLElement | null {
   for (let p = el.parentElement; p; p = p.parentElement) {

@@ -24,23 +24,6 @@ export function composerPlaceholder(s: { readOnly: boolean; claudeSub: boolean; 
           : "继续推进这个会话，回车发送，Shift+回车换行，输入 / 看命令";
 }
 
-/** The right-click menu on selected text in a reply. */
-export function SelectionMenu({ at, canQuote, onAnnotate, onQuote, onCopy }: { at: { x: number; y: number }; canQuote: boolean; onAnnotate(): void; onQuote(): void; onCopy(): void }) {
-  return (
-    <div className="ctx-menu" role="menu" aria-label="选中文字" style={{ left: at.x, top: at.y }}>
-      <button type="button" role="menuitem" onClick={onAnnotate}>
-        添加批注
-      </button>
-      <button type="button" role="menuitem" disabled={!canQuote} onClick={onQuote}>
-        引用到输入框
-      </button>
-      <button type="button" role="menuitem" onClick={onCopy}>
-        复制
-      </button>
-    </div>
-  );
-}
-
 /** The 批注N tags of the annotations the next message refers to. */
 export function AnnotationRefChips({ refs, annotations }: { refs: AnnotationRefs; annotations: readonly Annotation[] }) {
   return (
