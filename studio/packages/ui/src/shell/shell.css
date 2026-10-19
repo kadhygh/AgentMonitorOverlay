@@ -107,3 +107,8 @@
 .col-resize { position: absolute; top: 0; bottom: 0; left: -3px; width: 6px; cursor: col-resize; }
 .col-resize:hover, .col-resize:active { background: var(--resize); }
 body.col-resizing, body.col-resizing * { cursor: col-resize !important; user-select: none !important; }
+
+/* 后退 / 前进 (2026-10-19): two arrows after the brand. */
+.tb-nav { display: flex; align-items: center; gap: 2px; margin-left: 10px; }
+.tb-nav .tb-btn.icon { width: 30px; padding: 0; justify-content: center; }
+.tb-nav .tb-btn:disabled { opacity: 0.35; cursor: default; background: none; }

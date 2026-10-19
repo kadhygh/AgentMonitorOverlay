@@ -21,6 +21,7 @@ export const taskView: ViewDef<"task"> = {
         checklist={data.checklist.filter((i) => i.taskId === task.id)}
         {...(view.sessionId ? { initialSessionId: view.sessionId } : {})}
         {...(view.passage ? { passage: view.passage } : {})}
+        {...(view.scroll !== undefined ? { restoreScroll: view.scroll } : {})}
         justCreated={!!view.created}
         backLabel={back.label}
         onBack={() => setView(back.view)}

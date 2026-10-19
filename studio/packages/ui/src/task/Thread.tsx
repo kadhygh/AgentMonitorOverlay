@@ -5,6 +5,7 @@ import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { ReplyNav } from "./ReplyNav.js";
+import { navHistory } from "../shell/navHistory.js";
 import { FindBar } from "../gitreview/FindBar.js";
 import { Transcript } from "../chat/Transcript.js";
 import { useScrollOnSend, useTranscriptView } from "../chat/prefs.js";
@@ -67,6 +68,8 @@ interface ThreadProps {
   onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
   /** 书签 (2026-10-19) on the selection bar: the selected passage under the session's topic. */
   onBookmark?(anchor: SelectionAnchor): void;
+  /** 后退 back to this session: how far it had been read (scrollTop), restored once its messages are in. */
+  initialScroll?: number;
   onEditAnnotation(id: string, note: string): Promise<boolean>;
   onDeleteAnnotation(id: string): void;
   /** A command or another action of the composer failed (stage 12, S12-E). */
@@ -78,7 +81,7 @@ interface ThreadProps {
 type Menu = { x: number; y: number; anchor: SelectionAnchor } | null;
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, onError, decisions = [] }: ThreadProps) {
+export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, onError, decisions = [] }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -193,6 +196,18 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   };
   useLayoutEffect(toBottom, [items, session?.status]);
+  // 后退 back here: where it had been read, not the end; once the messages are in and tall enough to scroll there.
+  const restoreTo = useRef(initialScroll);
+  // …and the first "a new session: follow its end" below is not for this one.
+  const keepRestored = useRef(initialScroll !== undefined);
+  useLayoutEffect(() => {
+    const el = scroller.current;
+    if (restoreTo.current === undefined || !el || !items.length) return;
+    stick.current = false;
+    el.scrollTop = restoreTo.current;
+    setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
+    if (el.scrollHeight - el.clientHeight >= restoreTo.current - 2) restoreTo.current = undefined;
+  }, [items]);
   useEffect(() => {
     const el = scroller.current?.firstElementChild;
     if (!el) return;
@@ -201,6 +216,11 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     return () => ro.disconnect();
   }, [session?.id]);
   useEffect(() => {
+    // Not for a place gone back to (its reading place was just restored).
+    if (keepRestored.current) {
+      keepRestored.current = false;
+      return;
+    }
     stick.current = true;
     setAtBottom(true);
   }, [session?.id]);
@@ -346,6 +366,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
             stick.current = bottom;
             setAtBottom(bottom);
+            if (session) navHistory.noteScroll(session.id, el.scrollTop);
             if (menu) setMenu(null);
           }}
           onContextMenu={(e) => {

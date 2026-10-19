@@ -13,8 +13,11 @@ export type View =
   | { kind: "canvas" }
   | { kind: "new"; topicId?: string; back?: View }
   | { kind: "packs"; workspaceId: string }
-  /** `created`: opened right after the task was made (its session list starts folded). `passage`: a bookmarked passage of `sessionId` to scroll to and flash (书签). */
-  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean; passage?: Passage };
+  /**
+   * `created`: opened right after the task was made (its session list starts folded). `passage`: a bookmarked passage
+   * of `sessionId` to scroll to and flash (书签). `scroll`: how far its conversation was read (后退 back to it).
+   */
+  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean; passage?: Passage; scroll?: number };
 
 const BACK_LABEL: Partial<Record<View["kind"], string>> = { board: "看板", canvas: "画布" };
 

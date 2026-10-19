@@ -5,6 +5,7 @@ import { useSessionItems } from "../host/useSessionItems.js";
 import { useAnnotations } from "../review/useAnnotations.js";
 import { useAnnotationRefs } from "../review/annotationRefs.js";
 import { rememberSession } from "../shell/lastPlace.js";
+import { navHistory } from "../shell/navHistory.js";
 import { shortModel } from "../lib/profiles.js";
 import { sessionModelName, useProfileChoices } from "../lib/choices.js";
 import { SessionTree } from "./SessionTree.js";
@@ -72,6 +73,8 @@ interface TaskPageProps {
   initialSessionId?: string;
   /** Opened at a bookmarked passage of `initialSessionId` (书签): scrolled to and flashed once its reply is there. */
   passage?: Passage;
+  /** 后退 back to this page: how far `initialSessionId`'s conversation had been read. */
+  restoreScroll?: number;
   /** Opened right after the task was made: the session list starts folded (2026-10-15). */
   justCreated?: boolean;
   /** What "←" says: where it returns (看板 or 画布). */
@@ -82,7 +85,7 @@ interface TaskPageProps {
 type Toast = { text: string; command?: string; error?: boolean } | null;
 
 /** Task page: session tree | conversation with composer. Annotations and the scratchpad join in stage 2. */
-export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, passage, justCreated = false, backLabel = "看板", onBack }: TaskPageProps) {
+export function TaskPage({ link, task, sessions, tasks = [task], workspaces, topics = [], profiles, checklist = [], initialSessionId, passage, restoreScroll, justCreated = false, backLabel = "看板", onBack }: TaskPageProps) {
   const own = sessions.filter((s) => s.taskId === task.id);
   // The first live session; in an archived task (or one whose sessions are all archived), the latest archived one.
   const firstSession = () => own.find((s) => !s.archivedAt) ?? [...own].sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
@@ -104,6 +107,8 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
   // The session looked at here, for coming back to this task after a restart (shell/lastPlace).
   useEffect(() => {
     if (session) rememberSession(task.id, session.id);
+    // 后退 / 前进: another session of this task is another place.
+    if (session) navHistory.pickSession(task.id, session.id);
   }, [task.id, session?.id]);
   const settings = useSettings(link);
   const { items } = useSessionItems(link, session?.id ?? null);
@@ -595,6 +600,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onEditAnnotation={(id, note) => annotationCall(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
               onDeleteAnnotation={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}
               onBookmark={bookmark}
+              {...(restoreScroll !== undefined && session?.id === initialSessionId ? { initialScroll: restoreScroll } : {})}
               onError={showError}
               annotations={annotations}
               annotationRefs={annotationRefs}

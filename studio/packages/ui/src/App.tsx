@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useRef } from "react";
 import type { Scope } from "./board/Board.js";
 import { ScopeNav } from "./board/ScopeNav.js";
 import { useHostState } from "./host/useHostState.js";
@@ -19,6 +19,7 @@ import type { SearchHit } from "./shell/search.js";
 import { VIEWS } from "./features.js";
 import { featureOn, FeaturesProvider } from "./lib/features.js";
 import { openMarks, useMarksShortcut } from "./marks/open.js";
+import { navHistory, useNavHistory } from "./shell/navHistory.js";
 import type { MarksTarget } from "./marks/logic.js";
 import { openReview } from "./gitreview/open.js";
 import { onHostEvent } from "./host/events.js";
@@ -36,6 +37,46 @@ export function App() {
   const [scope, setScope] = useState<Scope>(() => readPlace().scope);
   const [view, setShownView] = useState<View>(() => readPlace().view);
   useEffect(() => savePlace(view, scope), [view, scope]);
+  // 后退 / 前进 (2026-10-19): every place shown is a step, except the one a step back or forward just restored.
+  const restoring = useRef(false);
+  useEffect(() => {
+    if (restoring.current) {
+      restoring.current = false;
+      return;
+    }
+    navHistory.visit({ view, scope });
+  }, [view, scope]);
+  const nav = useNavHistory();
+  const go = (dir: -1 | 1) => {
+    const tasks = host.kind === "ready" ? host.state.tasks : [];
+    const place = navHistory.step(dir, (p) => p.view.kind !== "task" || tasks.some((t) => t.id === (p.view as { taskId: string }).taskId));
+    if (!place) return;
+    restoring.current = true;
+    setScope(place.scope);
+    // A task page opens again (nav), on that session, read to where it was.
+    setShownView(place.view.kind === "task" ? { ...place.view, nav: Date.now(), ...(place.scroll !== undefined ? { scroll: place.scroll } : {}) } : { ...place.view });
+  };
+  const goRef = useRef(go);
+  goRef.current = go;
+  // Alt+← / Alt+→, and the mouse's back and forward buttons, as in VS Code and a browser.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.altKey || e.ctrlKey || e.metaKey || e.shiftKey || (e.key !== "ArrowLeft" && e.key !== "ArrowRight")) return;
+      e.preventDefault();
+      goRef.current(e.key === "ArrowLeft" ? -1 : 1);
+    };
+    const onMouse = (e: MouseEvent) => {
+      if (e.button !== 3 && e.button !== 4) return;
+      e.preventDefault();
+      goRef.current(e.button === 3 ? -1 : 1);
+    };
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mouseup", onMouse);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mouseup", onMouse);
+    };
+  }, []);
   // A task or new-task page remembers where it was opened from (stage 14), whoever opens it: its "←" goes back there.
   const setView = (next: View) => setShownView((current) => withOrigin(next, current));
   const focus = useFocusToggle();
@@ -166,6 +207,7 @@ export function App() {
         focus={focus}
         pin={pin}
         onMarks={() => openMarks(marksTarget())}
+        nav={{ ...nav, go }}
       />
       <div className="body">
         <ScopeNav
