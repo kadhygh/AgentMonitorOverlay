@@ -2,7 +2,8 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, scre
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
-import { createFocusWindow, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
+import { createFocusWindow, displays, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
+import { centreIn, displayFor } from "./placement.js";
 import { existsSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
@@ -238,6 +239,25 @@ if (!app.requestSingleInstanceLock()) {
     }
     bringForward(mainWindow);
   });
+  // 主窗口回到屏幕中央 (Focus's menu, 2026-10-19): the workbench, at its size, in the middle of the display Focus is on
+  // (where the person is looking), and in front — for a window dragged off every screen. Tests only record where.
+  ipcMain.handle("amo:main-center", () => {
+    if (!mainWindow) return;
+    const all = displays();
+    const display = focusWindow ? displayFor(focusWindow.getBounds(), all) : (all.find((d) => d.id === screen.getPrimaryDisplay().id) ?? all[0]);
+    if (!display) return;
+    const next = centreIn(mainWindow.isMaximized() || mainWindow.isMinimized() ? mainWindow.getNormalBounds() : mainWindow.getBounds(), display.workArea);
+    trace?.note("main", "center", `${next.width}×${next.height}@${next.x},${next.y}`);
+    if (testMode) {
+      (globalThis as { __amoMainCentered?: unknown }).__amoMainCentered = { ...next, display: display.workArea };
+      return;
+    }
+    if (mainWindow.isFullScreen()) mainWindow.setFullScreen(false);
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    if (mainWindow.isMaximized()) mainWindow.unmaximize();
+    mainWindow.setBounds(next);
+    bringForward(mainWindow);
+  });
   // From 设置 → 项目与目录 → 默认路径 (2026-10-17) when set. Tests read what it would start at and pick for it.
   ipcMain.handle("amo:pick-directory", async (_e, start?: unknown) => {
     const defaultPath = typeof start === "string" && start.trim() && existsSync(start.trim()) ? start.trim() : undefined;
@@ -437,7 +457,26 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
       win.show();
     }
   });
-  if (!testMode) win.on("close", () => prefs.setMain({ bounds: win.getNormalBounds(), maximized: win.isMaximized() }));
+  if (!testMode) {
+    // Where the window is, kept as it changes (2026-10-19): a Studio that is killed (a restart, the task manager) never
+    // gets its close, so remembering only then lost every resize. Written once the window has been still a moment.
+    let soon: NodeJS.Timeout | null = null;
+    const remember = () => {
+      if (soon) clearTimeout(soon);
+      soon = null;
+      if (win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return;
+      prefs.setMain({ bounds: win.getNormalBounds(), maximized: win.isMaximized() });
+    };
+    const later = () => {
+      if (soon) clearTimeout(soon);
+      soon = setTimeout(remember, 500);
+    };
+    win.on("resize", later);
+    win.on("move", later);
+    win.on("maximize", later);
+    win.on("unmaximize", later);
+    win.on("close", remember);
+  }
   void win.loadURL(process.env.AMO_STUDIO_DEV_URL ?? `${conn.url}/`);
   return win;
 }

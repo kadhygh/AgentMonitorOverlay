@@ -96,6 +96,13 @@ export function refitFocus(current: Rect, displays: readonly DisplayInfo[], prim
   return placeFocus({ x: current.x, y: current.y }, current, displays, primaryId);
 }
 
+/** 主窗口回到屏幕中央 (2026-10-19): the window's size, shrunk to the work area if larger, centred on it. */
+export function centreIn(size: Size, a: Rect): Rect {
+  const width = Math.min(size.width, a.width);
+  const height = Math.min(size.height, a.height);
+  return { x: Math.round(a.x + (a.width - width) / 2), y: Math.round(a.y + (a.height - height) / 2), width: Math.round(width), height: Math.round(height) };
+}
+
 /**
  * Bounds for the workbench window: the remembered bounds if enough of the title strip lies on some display (shrunk
  * to that display if it no longer fits), otherwise the default size centred on the primary display.

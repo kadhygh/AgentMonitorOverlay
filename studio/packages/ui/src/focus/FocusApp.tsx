@@ -204,6 +204,7 @@ export function FocusApp() {
             { label: compact ? "展开会话列表" : "收起成一行", icon: compact ? ICON.expand : ICON.collapse, close: true, onPick: () => setCompact(!compact), testId: "focus-menu-compact" },
             { label: "机器人动作测试", icon: ICON.bot, hint: "跳舞、变绿、生气乱飞各演一遍", close: true, onPick: () => setDemo("alert"), testId: "focus-menu-bot" },
             { label: "打开 Studio 主窗口", icon: ICON.window, close: true, onPick: () => void window.amo?.openInWorkbench?.({ show: true }), testId: "focus-menu-open" },
+            { label: "主窗口回到屏幕中央", icon: ICON.center, hint: "主窗口拖到屏幕外找不到时：放回 Focus 所在屏幕的正中", close: true, onPick: () => void window.amo?.focus?.centerMain?.(), testId: "focus-menu-center" },
             { label: "隐藏 Focus", icon: ICON.hide, hint: "主窗口顶栏的 Focus 按钮可以再打开", close: true, onPick: () => void window.amo?.focus?.set(false), testId: "focus-menu-hide" },
           ]}
         />

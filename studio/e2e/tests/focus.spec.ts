@@ -158,7 +158,7 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await focus.getByTestId("focus-entry").click({ button: "right" });
   const menu = focus.getByTestId("focus-menu");
   await expect(menu).toBeVisible();
-  await expect(menu.locator(".focus-pop-row")).toHaveCount(7);
+  await expect(menu.locator(".focus-pop-row")).toHaveCount(8);
   for (const label of ["移动位置", "锁定位置", "点击穿透", "收起成一行", "机器人动作测试", "打开 Studio 主窗口", "隐藏 Focus"]) await expect(menu).toContainText(label);
   await expect.poll(async () => (await shape()).reduce((a, r) => a + r.width * r.height, 0)).toBeGreaterThan(panelOnly);
   await screenshot(app, "stage-14", "S14-J-focus-menu", focus, "focus");
@@ -200,6 +200,18 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await focus.getByTestId("focus-settings-toggle").click();
   await focus.getByTestId("focus-menu-through").click();
   await expect(focus.getByTestId("focus-passthrough")).toHaveCount(0);
+
+  // 主窗口回到屏幕中央 (2026-10-19): the main window, at its size, in the middle of the display Focus is on (tests only
+  // record where: their windows stay off-screen).
+  await focus.getByTestId("focus-menu-center").click();
+  const centred = await expect
+    .poll(() => app.evaluate(() => (globalThis as { __amoMainCentered?: { x: number; y: number; width: number; height: number; display: { x: number; y: number; width: number; height: number } } }).__amoMainCentered ?? null))
+    .not.toBeNull()
+    .then(() => app.evaluate(() => (globalThis as { __amoMainCentered?: { x: number; y: number; width: number; height: number; display: { x: number; y: number; width: number; height: number } } }).__amoMainCentered!));
+  expect(Math.abs(centred.x + centred.width / 2 - (centred.display.x + centred.display.width / 2))).toBeLessThanOrEqual(1);
+  expect(Math.abs(centred.y + centred.height / 2 - (centred.display.y + centred.display.height / 2))).toBeLessThanOrEqual(1);
+  expect(centred.width).toBeLessThanOrEqual(centred.display.width);
+  await focus.getByTestId("focus-settings-toggle").click();
 
   // 隐藏 Focus: the window goes, the top bar button follows.
   const closed = focus.waitForEvent("close");

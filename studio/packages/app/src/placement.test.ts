@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { clampInto, displayFor, placeFocus, placeMain, refitFocus, type DisplayInfo } from "./placement.js";
+import { centreIn, clampInto, displayFor, placeFocus, placeMain, refitFocus, type DisplayInfo } from "./placement.js";
 
 // Primary 1920x1080 at 100% (taskbar 40 high); a 4K monitor at 150% on its left (2560x1440 DIP, above the origin);
 // a 1280x1024 at 125% on its right.
@@ -47,6 +47,11 @@ describe("placement", () => {
   });
 
   describe("main window", () => {
+    it("comes back to the middle of a display at its size, shrunk only when it is larger (主窗口回到屏幕中央)", () => {
+      expect(centreIn({ width: 1440, height: 900 }, { x: 2560, y: 0, width: 1920, height: 1040 })).toEqual({ x: 2800, y: 70, width: 1440, height: 900 });
+      expect(centreIn({ width: 3000, height: 900 }, { x: 0, y: 0, width: 1920, height: 1040 })).toEqual({ x: 0, y: 70, width: 1920, height: 900 });
+    });
+
     const size = { width: 1440, height: 900 };
 
     it("centres the default size on the primary display, shrinking to fit", () => {

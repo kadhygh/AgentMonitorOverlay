@@ -29,6 +29,8 @@ declare global {
         /** Focus window: the robot flies about the screen saying `message`; `land` calls it back (2026-10-15). */
         fly?(message: string): void;
         land?(): void;
+        /** 主窗口回到屏幕中央 (2026-10-19): the main window in the middle of the display Focus is on, in front. */
+        centerMain?(): Promise<void>;
         onBotCaught?(cb: () => void): () => void;
         onContextMenu?(cb: (at: { x: number; y: number }) => void): () => void;
       };

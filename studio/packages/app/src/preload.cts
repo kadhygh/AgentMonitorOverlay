@@ -68,6 +68,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
     fly: (message: string): void => electron.ipcRenderer.send("amo:bot-fly", message),
     /** Focus window only: the flying robot comes back. */
     land: (): void => electron.ipcRenderer.send("amo:bot-land"),
+    /** 主窗口回到屏幕中央 (2026-10-19): the main window in the middle of the display Focus is on, in front. */
+    centerMain: (): Promise<void> => electron.ipcRenderer.invoke("amo:main-center"),
     /** Focus window only: the flying robot was clicked (it has landed). */
     onBotCaught: (cb: () => void): (() => void) => {
       const listener = () => cb();

@@ -76,6 +76,13 @@ export const ICON = {
       <path d="M2 6h12" />
     </>,
   ),
+  // A window with arrows pulling it to the middle.
+  center: svg(
+    <>
+      <rect x="5" y="5.5" width="6" height="5" rx="0.8" />
+      <path d="M1.5 8h2M12.5 8h2M8 1.5v2M8 12.5v2" />
+    </>,
+  ),
   gear: svg(
     <>
       <circle cx="8" cy="8" r="2.2" />
