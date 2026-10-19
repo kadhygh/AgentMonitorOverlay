@@ -69,7 +69,7 @@ export function applyModelPrefs(choices: ProfileChoices, prefs: ModelPrefs | und
       const effort = prefs.effort && m.efforts.includes(prefs.effort) ? prefs.effort : m.defaultEffort;
       return { ...rest, ...(effort ? { defaultEffort: effort } : {}), ...(isDefault ? { isDefault: true } : {}) };
     }),
-    defaultPermission: prefs.permission && choices.permissions.some((p) => p.id === prefs.permission) ? prefs.permission : choices.defaultPermission,
+    defaultPermission: prefs.permission && choices.permissions.some((p) => p.id === prefs.permission && !p.unavailable) ? prefs.permission : choices.defaultPermission,
   };
 }
 
@@ -82,6 +82,6 @@ export function fillDefaults(options: SessionOptions, choices: ProfileChoices, p
   const model = options.model ?? (prefs.model && choices.models.some((m) => m.id === prefs.model) ? prefs.model : undefined);
   const runs = choices.models.find((m) => m.id === model) ?? choices.models.find((m) => m.isDefault);
   const effort = options.effort ?? (prefs.effort && runs?.efforts.includes(prefs.effort) ? prefs.effort : undefined);
-  const permission = options.permission ?? (prefs.permission && choices.permissions.some((p) => p.id === prefs.permission) ? prefs.permission : undefined);
+  const permission = options.permission ?? (prefs.permission && choices.permissions.some((p) => p.id === prefs.permission && !p.unavailable) ? prefs.permission : undefined);
   return { ...options, ...(model ? { model } : {}), ...(effort ? { effort } : {}), ...(permission ? { permission } : {}) };
 }

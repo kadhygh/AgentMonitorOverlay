@@ -138,7 +138,7 @@ test("Claude sessions offer Claude Code's models, efforts and permission modes",
   // Permissions: Claude Code's modes as tiles.
   await page.getByTestId("switch-permission").click();
   const tray = page.getByRole("dialog", { name: "权限" });
-  await expect(tray.locator("b")).toHaveText(["每次询问", "自动接受编辑", "只做计划", "全部允许"]);
+  await expect(tray.locator("b")).toHaveText(["每次询问", "帮我审批", "自动接受编辑", "只做计划", "全部允许"]);
   await tray.getByRole("button", { name: /自动接受编辑/ }).click();
   await expect(summary).toContainText("自动接受编辑");
   expect(studio.claudeMock!.requests.filter((r) => r.lastUserText === "hello" && r.tools.length).at(-1)?.body).toMatchObject({ output_config: { effort: "high" } });

@@ -80,6 +80,7 @@
 
 S4-01 用 mock Anthropic 接口补充发现（不消耗额度）：
 - **不传 `permissionMode` 时 CLI 默认是 `auto`**：由一个模型分类器代替人决定批不批，`canUseTool` 不会被调用（mock 收到了分类器的请求）。预研脚本显式传了 `"default"` 所以没暴露。**Host 必须始终显式传 `permissionMode: "default"`**，否则就是自动审批。
+  - 10-19 补：用户要了「帮我审批」，Studio 才在人选了它时 `setPermissionMode("auto")`。实测（订阅令牌、SDK 0.3.296、sonnet）：切换成功（system/status 里 `permissionMode: "auto"`），`git status`、用户明说要跑的 `git push --force`、`curl … | bash` 都由分类器放行，没有走 `canUseTool`；分类器看的是用户意图，明说要跑的不拦。拒绝的会进 result 的 `permission_denials`，工具结果是错误；拿不准时按 SDK 文档走 `canUseTool`（没能稳定触发）。第三方端点（GLM 等）没有分类器，界面上标成不可用。
 - `Agent` 工具默认在**后台**运行子 agent（工具结果是 "Async agent launched successfully"）；子 agent 结束后 CLI 通知父会话，父会话**自动再跑一轮**，同一个 `query()` 里会出现两个 `result`。Runtime 不能假设"一次发送对应一个 result"。
 - `Agent` 工具的参数里有 `mode`（可取 `bypassPermissions`、`auto`、`dontAsk` 等）和 `run_in_background`。
   - S4-03 实测更正：`Agent` 调用本身**不经过** `canUseTool`；父会话为 "default" 时，子 agent 带 `bypassPermissions`/`auto`/`acceptEdits`/`dontAsk` 去执行 `mkdir`，**仍然**走 `canUseTool` 要人批准，没有绕过。

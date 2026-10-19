@@ -73,13 +73,15 @@ export function codexPermissions(windowsSandbox: string | null = process.platfor
 
 // ---- Claude Code ------------------------------------------------------------------------------------------------
 
-export type ClaudePermissionMode = "default" | "acceptEdits" | "plan" | "bypassPermissions";
+export type ClaudePermissionMode = "default" | "auto" | "acceptEdits" | "plan" | "bypassPermissions";
 
 export const CLAUDE_DEFAULT_PERMISSION: ClaudePermissionMode = "default";
 
 /** Claude Code's permission modes (Shift+Tab in the CLI). */
 export const CLAUDE_PERMISSIONS: PermissionOption[] = [
   { id: "default", label: "每次询问", description: "改文件、运行命令前都先问你（Claude Code：default）" },
+  // 10-19: Claude Code's classifier answers in place of the person (like Codex's 帮我审批); unsure ones still come here.
+  { id: "auto", label: "帮我审批", description: "由 Claude Code 的分类器按风险批准或拒绝，拿不准时再问你（Claude Code：auto，只有 Anthropic 的模型能用）" },
   { id: "acceptEdits", label: "自动接受编辑", description: "改文件不再问，运行命令仍然问（Claude Code：acceptEdits）" },
   { id: "plan", label: "只做计划", description: "只读代码、给出计划，不改文件也不运行命令（Claude Code：plan）" },
   { id: "bypassPermissions", label: "全部允许", description: "所有操作都不再询问（Claude Code：bypassPermissions）" },

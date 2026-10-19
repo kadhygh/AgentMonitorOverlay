@@ -34,10 +34,12 @@ describe("Codex permissions", () => {
 
 describe("Claude permissions", () => {
   it("offers Claude Code's modes and falls back to default", () => {
-    expect(CLAUDE_PERMISSIONS.map((p) => p.id)).toEqual(["default", "acceptEdits", "plan", "bypassPermissions"]);
+    expect(CLAUDE_PERMISSIONS.map((p) => p.id)).toEqual(["default", "auto", "acceptEdits", "plan", "bypassPermissions"]);
     expect(claudePermissionMode("plan")).toBe("plan");
     expect(claudePermissionMode(undefined)).toBe("default");
-    expect(claudePermissionMode("auto")).toBe("default");
+    expect(claudePermissionMode("auto")).toBe("auto");
+    // Modes Studio does not offer fall back (dontAsk would deny what is not pre-approved, without a card).
+    expect(claudePermissionMode("dontAsk")).toBe("default");
   });
 });
 

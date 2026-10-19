@@ -193,7 +193,7 @@ export function nextEffort(efforts: readonly string[], current: string | null | 
 export const RISKY_PERMISSIONS = new Set(["full-auto", "bypassPermissions"]);
 
 /** The four most used first, the rest behind "更多" (Codex has six). */
-const PERMISSION_ORDER = ["ask", "default", "auto-review", "acceptEdits", "workspace-write", "plan", "full-auto", "bypassPermissions"];
+const PERMISSION_ORDER = ["ask", "default", "auto-review", "auto", "acceptEdits", "workspace-write", "plan", "full-auto", "bypassPermissions"];
 
 function orderedPermissions(permissions: readonly PermissionOption[]): PermissionOption[] {
   const rank = (p: PermissionOption) => {
@@ -256,6 +256,7 @@ const SHORT: Record<string, string> = {
   "workspace-write": "沙箱里只能改这个项目",
   "read-only": "沙箱里只读，要改时询问",
   default: "改文件、运行命令前都先问",
+  auto: "分类器按风险审批，拿不准再问你",
   acceptEdits: "改文件不问，运行命令仍问",
   plan: "只读代码、给出计划",
   bypassPermissions: "所有操作都不再询问",

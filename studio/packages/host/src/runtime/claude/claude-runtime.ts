@@ -30,7 +30,8 @@ export { claudeCommands, localCommandText } from "./commands.js";
 export { askedQuestions, describeToolUse, retryReason } from "./tool-use.js";
 
 // Drives Claude sessions through the Claude Agent SDK. Behaviour follows spikes/RESULTS.md section h:
-// - permissionMode is always "default" (the CLI otherwise picks "auto", where a classifier approves instead of a person);
+// - permissionMode is passed as "default" (the CLI otherwise picks "auto", where a classifier approves instead of a
+//   person) and switched to the session's mode once running; "auto" only when the person picks 帮我审批 (10-19);
 //   canUseTool waits for the person and becomes an approval card (asks.ts);
 // - a message sent while a turn runs is queued for the next turn (the SDK does not fold it into the running one);
 // - after interrupt() the SDK ends the query with an error, which is treated as "interrupted";
@@ -271,8 +272,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** Models: the provider's own list (GLM), or Claude Code's list for the account (asked without a model call). */
   async choices(profileId: Id): Promise<ProfileChoices> {
     const profile = this.profile(profileId);
-    const base = { profileId, permissions: CLAUDE_PERMISSIONS, defaultPermission: CLAUDE_DEFAULT_PERMISSION };
     const provider = profile.provider ? this.options.providers[profile.provider] : undefined;
+    // 帮我审批 (auto) asks Anthropic's classifier: another endpoint (GLM…) has none.
+    const permissions = provider?.baseUrl ? CLAUDE_PERMISSIONS.map((p) => (p.id === "auto" ? { ...p, unavailable: "只有 Anthropic 的 Claude 能用（第三方模型没有这个分类器）" } : p)) : CLAUDE_PERMISSIONS;
+    const base = { profileId, permissions, defaultPermission: CLAUDE_DEFAULT_PERMISSION };
     if (provider?.models) return { ...base, models: provider.models.map((m) => ({ ...m, ...(m.id === profile.model ? { isDefault: true } : {}) })), source: "builtin" };
     const cacheKey = `${profileId}|${this.newHome(profile).login}`;
     const cached = this.modelCache.get(cacheKey);
