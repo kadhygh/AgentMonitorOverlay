@@ -707,6 +707,14 @@ describe("Host API", () => {
 
     // Sent annotations are frozen, nothing is left to send at once, but a sent one can be referred to again.
     expect((await api("PATCH", `/api/annotations/${earlier.id}`, { note: "again" })).status).toBe(409);
+    // 2026-10-19: a sent one can still be pinned to the top of the panel, and unpinned.
+    const pinned = await ok<Annotation>("PATCH", `/api/annotations/${earlier.id}`, { pinned: true });
+    expect(pinned.pinnedAt).toBeTruthy();
+    expect(pinned.note).toBe("这里不对，换一种写法");
+    expect((await ok<Annotation>("PATCH", `/api/annotations/${earlier.id}`, { pinned: true })).pinnedAt).toBe(pinned.pinnedAt);
+    expect((await ok<Annotation>("PATCH", `/api/annotations/${earlier.id}`, { pinned: false })).pinnedAt).toBeNull();
+    expect((await api("PATCH", `/api/annotations/${earlier.id}`, { pinned: "yes" })).status).toBe(400);
+    expect((await api("PATCH", `/api/annotations/${earlier.id}`, {})).status).toBe(400);
     expect((await api("POST", `/api/sessions/${session.id}/annotations/send`)).status).toBe(400);
     await until(async () => (await lastAgentText(session.id)) === `FAKE: ${expected}`, "reply to the references");
     await ok("POST", `/api/sessions/${session.id}/messages`, { annotations: [later.id] });

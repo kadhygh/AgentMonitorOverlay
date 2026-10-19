@@ -45,12 +45,21 @@ export class ReviewFeature extends Feature {
     return annotation;
   }
 
-  updateAnnotation(id: Id, note: string): Annotation {
+  /** Changes the note (unsent only) and/or pins it to the top of the panel (sent or not). */
+  updateAnnotation(id: Id, patch: { note?: unknown; pinned?: unknown }): Annotation {
     const current = this.requireAnnotation(id);
-    if (current.sentAt) throw new HostError("conflict", "sent annotations cannot be edited");
-    const trimmed = typeof note === "string" ? note.trim() : "";
-    if (!trimmed) throw new HostError("bad_request", "note is required");
-    const next = { ...current, note: trimmed };
+    let next: Annotation = current;
+    if (patch.note !== undefined) {
+      if (current.sentAt) throw new HostError("conflict", "sent annotations cannot be edited");
+      const trimmed = typeof patch.note === "string" ? patch.note.trim() : "";
+      if (!trimmed) throw new HostError("bad_request", "note is required");
+      next = { ...next, note: trimmed };
+    }
+    if (patch.pinned !== undefined) {
+      if (typeof patch.pinned !== "boolean") throw new HostError("bad_request", "pinned must be true or false");
+      next = { ...next, pinnedAt: patch.pinned ? (current.pinnedAt ?? new Date().toISOString()) : null };
+    }
+    if (next === current) throw new HostError("bad_request", "give note or pinned");
     this.store.putAnnotation(next);
     this.publish({ type: "annotation.upserted", annotation: next });
     return next;

@@ -7,7 +7,7 @@ export function reviewRoutes(service: HostService): Route[] {
     route("GET", "/api/sessions/:id/annotations", ({ params }) => service.review.annotations(params.id!)),
     route("POST", "/api/sessions/:id/annotations/send", ({ params }) => service.review.sendAnnotations(params.id!)),
     route("POST", "/api/sessions/:id/annotations", ({ params, body }) => service.review.addAnnotation(params.id!, obj(body) as never)),
-    route("PATCH", "/api/annotations/:id", ({ params, body }) => service.review.updateAnnotation(params.id!, obj(body).note as string)),
+    route("PATCH", "/api/annotations/:id", ({ params, body }) => service.review.updateAnnotation(params.id!, obj(body))),
     route("DELETE", "/api/annotations/:id", ({ params }) => (service.review.deleteAnnotation(params.id!), { ok: true })),
   ];
 }

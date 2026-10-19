@@ -343,6 +343,8 @@ export interface Annotation {
   createdAt: Timestamp;
   /** Set when a message referenced it (last time). A sent one can be referenced again. */
   sentAt: Timestamp | null;
+  /** Set while the person keeps it at the top of the panel (2026-10-19), sent or not. */
+  pinnedAt?: Timestamp | null;
 }
 
 export interface Rect { x: number; y: number; w: number; h: number }

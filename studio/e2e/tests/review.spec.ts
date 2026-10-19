@@ -134,4 +134,22 @@ test("annotate replies, edit, locate, and refer to them from the next message (�
   await page.getByLabel("输入消息").press("Enter");
   await expect(page.getByTestId("msg-user").last().getByTestId("msg-annotation-ref")).toHaveText(["批注1"], { timeout: 30_000 });
   await expect(tags).toHaveCount(0);
+
+  // 2026-10-19: a pinned annotation stays at the top of the panel, outside the folded 已发送, sent or not.
+  const sentCards = page.getByTestId("annotation-sent");
+  await sentCards.filter({ hasText: "批注2" }).getByTestId("annotation-pin").click();
+  await page.getByRole("button", { name: /已发送 1/ }).click();
+  await expect(sentCards).toHaveCount(1);
+  await expect(sentCards.first()).toContainText("批注2");
+  await expect(sentCards.first().getByTestId("annotation-pin")).toHaveAttribute("aria-pressed", "true");
+  await annotate(page, "Boss_Lv20", "再看看这条");
+  await cards.first().getByTestId("annotation-pin").click();
+  await expect(cards.first()).toHaveClass(/pinned/);
+  await page.getByLabel("输入消息").press("Enter");
+  await expect(page.getByTestId("msg-user").last().getByTestId("msg-annotation-ref")).toHaveText(["批注4"], { timeout: 30_000 });
+  await expect(cards).toHaveCount(0);
+  await expect(sentCards).toHaveCount(2);
+  await expect(sentCards.nth(1)).toContainText("批注4");
+  await expect(page.getByRole("button", { name: /已发送 1/ })).toBeVisible();
+  await screenshot(studio.app, "stage-18", "S18-annotation-pins", page);
 });

@@ -367,7 +367,8 @@ export interface HostRoutes {
   "POST /api/approvals/:approvalId": { req: { sessionId: Id; decision: ApprovalDecision }; res: { ok: true } };
   "GET /api/sessions/:id/annotations": { req: void; res: Annotation[] };
   "POST /api/sessions/:id/annotations": { req: NewAnnotationInput; res: Annotation };
-  "PATCH /api/annotations/:id": { req: { note: string }; res: Annotation };
+  /** `note` only while unsent; `pinned` keeps it at the top of the panel, sent or not. */
+  "PATCH /api/annotations/:id": { req: { note?: string; pinned?: boolean }; res: Annotation };
   "DELETE /api/annotations/:id": { req: void; res: { ok: true } };
   /** Sends every unsent annotation of the session as one user message, in reply order, then marks them sent. */
   "POST /api/sessions/:id/annotations/send": { req: void; res: { mode: "start" | "steer" | "queue"; sent: Annotation[] } };

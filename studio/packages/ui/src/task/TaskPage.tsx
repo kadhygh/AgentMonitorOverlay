@@ -598,6 +598,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           canSend={!readOnly}
           onEdit={(id, note) => void run(() => call(link, "PATCH /api/annotations/:id", { id }, { note }))}
           onDelete={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}
+          onPin={(id, pinned) => void run(() => call(link, "PATCH /api/annotations/:id", { id }, { pinned }))}
           onLocate={locate}
           refs={annotationRefs}
         />
