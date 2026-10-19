@@ -232,6 +232,22 @@ describe("DSH runtime", () => {
     expect(builtin.models.map((m) => m.label)).toEqual(["deepseek-v4-flash", "DeepSeek-V4-Pro"]);
   });
 
+  it("a permission changed mid-turn applies once the turn ends: its process restarts and the session goes on (2026-10-19)", async () => {
+    const host = await boot();
+    const s = await start(host, "[[ask: New-Item a.txt]]");
+    await until(() => status(host, s.id), (v) => v === "awaiting-approval");
+    await call(host, "PATCH", `/api/sessions/${s.id}/options`, { permission: "full-access" });
+    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "notice" && i.message.includes("这一轮结束后生效")));
+    const approval = (await items(host, s.id)).find((i) => i.type === "approval");
+    await call(host, "POST", `/api/approvals/${approval?.type === "approval" ? approval.approvalId : ""}`, { sessionId: s.id, decision: "accept" });
+    await idle(host, s.id);
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[env]]" });
+    await until(() => items(host, s.id), (l) => replies(l).length === 2);
+    expect(replies(await items(host, s.id))[1]).toMatch(/^ENV permission=danger-full-access key=yes /);
+    // The same DSH session, resumed.
+    expect(replies(await items(host, s.id))[0]).toBe("DONE New-Item a.txt");
+  });
+
   it("fails a turn when DSH fails it", async () => {
     const host = await boot();
     const s = await start(host, "[[fail]]");

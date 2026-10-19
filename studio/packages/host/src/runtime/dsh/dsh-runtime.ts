@@ -179,14 +179,22 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return { ...base, models: config ? dshModels(config) : [], source: config ? "cli" : "builtin" };
   }
 
-  /** Model and effort go to DSH before the next turn; a new permission restarts the session's process. */
+  /**
+   * Model and effort go to DSH before the next turn; a new permission restarts the session's process — at once when it
+   * is idle, else once the running turn ends (2026-10-19: a change made mid-turn was lost, and the process went on
+   * asking under its old sandbox for as long as it lived).
+   */
   async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
     this.requireSession(sessionId);
     const updated = this.updateSession(sessionId, { options });
     const live = this.live.get(sessionId);
-    if (live && !live.inflight) {
-      if (live.permission !== dshPermissionMode(options.permission)) await this.release(sessionId);
+    if (!live) return updated;
+    const permissionChanged = live.permission !== dshPermissionMode(options.permission);
+    if (!live.inflight) {
+      if (permissionChanged) await this.release(sessionId);
       else await this.applyOptions(sessionId, live).catch((err: unknown) => this.emit("log", `dsh set options failed for ${sessionId}: ${String(err)}`));
+    } else if (permissionChanged) {
+      this.appendItem(sessionId, { type: "notice", level: "info", message: "新的权限在这一轮结束后生效（DSH 换权限要重启它的进程，会话接着之前的继续）" }, { method: "dsh/permission-pending", ...live.transcript.turnRef() });
     }
     return updated;
   }
@@ -417,6 +425,16 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       this.appendItem(sessionId, { type: "error", message: error }, { method: "session/prompt" });
       this.setStatus(sessionId, "error");
       this.armIdle(sessionId, live);
+      return;
+    }
+    // A permission changed during the turn: its process ends now; the next message (or the queue) resumes it anew.
+    const session = this.store.getSession(sessionId);
+    if (session && live.permission !== dshPermissionMode(session.options.permission) && this.live.get(sessionId) === live) {
+      const next = live.queue.splice(0).join("\n\n");
+      await this.release(sessionId);
+      if (!next) return this.setStatus(sessionId, "idle");
+      const fresh = await this.ensureLive(session);
+      await this.prompt(sessionId, fresh, next);
       return;
     }
     if (live.queue.length && live.conn.alive && this.live.get(sessionId) === live) {
