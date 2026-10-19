@@ -1,7 +1,7 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { findMatches, firstFrom, matchLabel, stepMatch, type FindMatch } from "./find.js";
 
-// Ctrl+F (S14-A) in the viewer and the Review window: a bar over the view; Enter / Shift+Enter for the next and the
+// Ctrl+F (S14-A) in the viewer, the Review window and a session's conversation (10-19): a bar over the view; Enter / Shift+Enter for the next and the
 // previous match, Esc closes. Matches come from the rows' text (`texts`), so lines in chunks not drawn yet are found
 // too; or, without `texts` (rendered Markdown), from the text on the page. They are painted with the CSS Custom
 // Highlight API (`::highlight(amo-find)`), so the page itself is not changed.
@@ -16,6 +16,8 @@ export interface FindBarProps {
   container: RefObject<HTMLElement | null>;
   /** Each row's text; without it the text on the page is searched. */
   texts?: readonly string[];
+  /** Without `texts`: only the page text under this element of the view (not buttons laid over it). */
+  within?: string;
   /** The elements holding a row's text (both sides of an unchanged line, side by side). */
   rowSelector?(row: number): string;
   /** The row the view is at, where the search starts. */
@@ -55,7 +57,7 @@ function rangeIn(nodes: readonly { node: Text; at: number }[], start: number, en
   return r;
 }
 
-export function FindBar({ active, container, texts, rowSelector, fromRow, onCurrent }: FindBarProps) {
+export function FindBar({ active, container, texts, within, rowSelector, fromRow, onCurrent }: FindBarProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -89,9 +91,9 @@ export function FindBar({ active, container, texts, rowSelector, fromRow, onCurr
 
   useEffect(() => {
     if (!open || texts) return;
-    const el = container.current;
+    const el = within ? container.current?.querySelector(within) : container.current;
     setPageNodes(el ? textNodes(el).map((n) => n.node) : []);
-  }, [open, texts, query, container, redraws]);
+  }, [open, texts, within, query, container, redraws]);
 
   const searched = useMemo(() => texts ?? pageNodes.map((n) => n.data), [texts, pageNodes]);
   const matches = useMemo(() => (open ? findMatches(searched, query, caseSensitive) : []), [open, searched, query, caseSensitive]);
@@ -102,7 +104,7 @@ export function FindBar({ active, container, texts, rowSelector, fromRow, onCurr
     const key = `${query}\u0000${caseSensitive}`;
     if (key !== lastSearch.current) {
       lastSearch.current = key;
-      setCurrent(firstFrom(matches, fromRow?.() ?? 0));
+      setCurrent(firstFrom(matches, fromRow?.() ?? (texts ? 0 : firstInView())));
     } else setCurrent((c) => (matches.length ? Math.min(Math.max(c, 0), matches.length - 1) : -1));
   }, [matches]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -119,6 +121,13 @@ export function FindBar({ active, container, texts, rowSelector, fromRow, onCurr
       if (frame) cancelAnimationFrame(frame);
     };
   }, [open, container]);
+
+  // Page text: the first text node not above the top of the view.
+  const firstInView = () => {
+    const top = container.current?.getBoundingClientRect().top ?? 0;
+    const i = pageNodes.findIndex((n) => (n.parentElement?.getBoundingClientRect().bottom ?? 0) >= top);
+    return i >= 0 ? i : 0;
+  };
 
   const rangesOf = (m: FindMatch): Range[] => {
     const el = container.current;

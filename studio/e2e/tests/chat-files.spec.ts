@@ -55,7 +55,7 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   const { page, app } = studio;
   const dir = studio.workspace("alpha");
   writeFileSync(join(dir, DEMO_FILE), DEMO_FILE_TEXT);
-  writeFileSync(join(dir, "README.md"), "# 导入器\n\n从接口拉数据，**失败时重试**。\n\n- `importer.py`：入口\n");
+  writeFileSync(join(dir, "README.md"), "# 导入器\n\n从接口拉数据，**失败时重试**。\n\n- `importer.py`：入口\n- 接口文档见 [API 说明](https://example.com/api)\n\n> 重试间隔用 *指数退避*。\n");
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
   const { vscode } = await studio.api<OpenInApps>("GET", "/api/open-in/apps");
   await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
@@ -109,6 +109,7 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   await expect(viewer.locator(".gr-line.marked")).toHaveAttribute("data-line", "new:2");
   await viewer.getByRole("button", { name: "渲染" }).click();
   await expect(viewer.locator(".fp-md strong")).toHaveText("失败时重试");
+  await expect(viewer.locator(".fp-md .md-link")).toHaveText("API 说明");
   expect(viewers(app)).toHaveLength(1);
   await screenshot(app, "stage-13", "S13-A-viewer-markdown", viewer, "viewer");
 

@@ -5,6 +5,7 @@ import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { SessionOptionsBar } from "../chat/SessionOptionsBar.js";
 import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { ReplyNav } from "./ReplyNav.js";
+import { FindBar } from "../gitreview/FindBar.js";
 import { Transcript } from "../chat/Transcript.js";
 import { useTranscriptView } from "../chat/prefs.js";
 import { IconArrowDown, IconArrowUp, IconStop } from "../chat/icons.js";
@@ -317,6 +318,8 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
       <div className="thread-wrap" data-dragging={dragging || undefined} {...dropTarget}>
         <SessionDecisions link={link} decisions={decisions} />
         <ReplyNav scroller={scroller} itemCount={items.length} />
+        {/* Ctrl+F finds in the conversation on the page (folded steps are not searched). */}
+        <FindBar active={!!session} container={scroller} within=".thread-inner" />
         <div
           className="thread"
           data-testid="thread"

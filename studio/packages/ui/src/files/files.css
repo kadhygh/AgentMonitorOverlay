@@ -53,6 +53,16 @@ a.file-link.file-chip:hover .file-chip-name { text-decoration: underline; text-u
 .fp-image { flex: 1; min-height: 0; overflow: auto; display: flex; align-items: flex-start; justify-content: center; padding: 16px; }
 .fp-image img { max-width: 100%; height: auto; border: 1px solid var(--border); background: var(--panel); }
 .fp-md { flex: 1; min-height: 0; overflow: auto; padding: 14px 18px 24px; background: var(--panel); font-size: var(--fs-sm); line-height: var(--lh); }
+/* 2026-10-19: a rendered file keeps the source view's colours (code.css), so links, code and headings stand out. */
+.fp-md .md-h { color: var(--shiki-token-keyword); }
+.fp-md .md-link { color: var(--shiki-token-link); text-decoration: underline; text-decoration-style: solid; text-underline-offset: 3px; text-decoration-color: color-mix(in srgb, currentColor 45%, transparent); }
+.fp-md .md-link:hover { text-decoration-color: currentColor; }
+.fp-md .md-code { color: var(--shiki-token-string); }
+.fp-md strong { color: var(--shiki-token-constant); }
+.fp-md em { color: var(--shiki-token-parameter); }
+.fp-md .md-list li::marker { color: var(--shiki-token-string); }
+.fp-md .md-quote { color: var(--shiki-token-comment); border-left-color: color-mix(in srgb, var(--shiki-token-comment) 55%, transparent); }
+.fp-md .md-table th { color: var(--shiki-token-function); }
 
 .fp-diff { flex: 1; min-height: 0; overflow: auto; padding-bottom: 8px; font-family: var(--font-code); font-size: 12.5px; }
 .fp-diff-stat { position: sticky; top: 0; left: 0; z-index: 1; padding: 6px 12px; font-family: var(--font-ui); font-size: 12px; color: var(--text-dim); background: var(--chat-code-banner, var(--panel-raised)); border-bottom: 0.5px solid var(--chat-hairline, var(--border)); }

@@ -43,3 +43,32 @@ test("renders tables, nested lists, code with copy, and opens links outside the 
   await expect.poll(() => app.evaluate(() => (globalThis as { __amoOpenedUrls?: string[] }).__amoOpenedUrls ?? [])).toEqual(["https://example.com/drop-tables"]);
   await screenshot(app, "stage-2", "S2-01-markdown", page);
 });
+
+test("Ctrl+F finds text in the conversation", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+    title: "查找检查",
+    workspaceId: ws.id,
+    firstSession: { profileId: "codex-mock", text: "[[markdown]]" },
+  });
+  await page.getByTestId("task-card").first().click();
+  await expect(page.getByTestId("msg-agent").last().locator("table.md-table")).toBeVisible({ timeout: 30_000 });
+
+  await page.keyboard.press("Control+f");
+  const bar = page.getByTestId("find-bar");
+  await expect(bar).toBeVisible();
+  await expect(page.getByTestId("find-input")).toBeFocused();
+  await page.getByTestId("find-input").fill("droptable");
+  await expect(page.getByTestId("find-count")).toHaveText(/^第 1 \/ 共 \d+ 个$/);
+  const total = Number((await page.getByTestId("find-count").textContent())!.match(/共 (\d+)/)![1]);
+  expect(total).toBeGreaterThanOrEqual(1);
+  await page.getByTestId("find-case").click();
+  await expect(page.getByTestId("find-count")).toHaveText("无结果");
+  await page.getByTestId("find-input").fill("DropTable");
+  await expect(page.getByTestId("find-count")).toHaveText(`第 1 / 共 ${total} 个`);
+  await screenshot(app, "stage-18", "S18-session-find", page);
+  await page.getByTestId("find-input").press("Escape");
+  await expect(bar).toHaveCount(0);
+});

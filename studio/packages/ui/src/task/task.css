@@ -96,6 +96,8 @@
 .msg-agent.md-flash { border-radius: 8px; }
 .thread-wrap { overflow: hidden; }
 .thread-wrap > .thread { flex: 1; min-height: 0; }
+/* Ctrl+F in a session (10-19): under the reply jumps. */
+.thread-wrap > .find-bar { top: 44px; right: 14px; }
 
 /* Claude handed to a terminal (S4-05) */
 .handoff-banner { display: flex; align-items: center; gap: 12px; margin: 0 16px; padding: 10px 14px; border-radius: 10px; border: 1px solid var(--attention-border); background: var(--attention-bg); color: var(--attention); font-size: 13px; }
