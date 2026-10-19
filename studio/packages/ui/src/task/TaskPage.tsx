@@ -10,7 +10,7 @@ import { sessionModelName, useProfileChoices } from "../lib/choices.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
 import { flash } from "./ReplyNav.js";
-import { annotationRange, flashAnnotation, flashRange, highlightsSupported } from "../review/highlights.js";
+import { annotationRange, flashAnnotation, flashRange, highlightsSupported, scrollToBox } from "../review/highlights.js";
 import { REVEAL_ITEM_EVENT } from "../chat/Transcript.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { showToast } from "../lib/toast.js";
@@ -265,7 +265,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     const range = source !== null && highlightsSupported() ? annotationRange(reply, p, source) : null;
     if (range) return flashRange(range);
     const target = [...reply.querySelectorAll<HTMLElement>("[data-src-start]")].find((b) => Number(b.dataset.srcStart) < p.end && Number(b.dataset.srcEnd) > p.start) ?? reply;
-    target.scrollIntoView({ block: "center" });
+    scrollToBox(target, target.getBoundingClientRect());
     flash(target);
   }
 
@@ -295,7 +295,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       blocks.find((b) => Number(b.dataset.srcStart) < a.end && Number(b.dataset.srcEnd) > a.start) ??
       blocks.find((b) => b.textContent?.includes(a.quote)) ??
       reply;
-    target.scrollIntoView({ block: "center" });
+    scrollToBox(target, target.getBoundingClientRect());
     flash(target);
   }
 

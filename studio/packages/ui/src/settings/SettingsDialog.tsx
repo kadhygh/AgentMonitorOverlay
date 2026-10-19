@@ -8,7 +8,7 @@ import { FeaturesSection } from "./FeaturesSection.js";
 import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
 import { DataPage } from "./DataPage.js";
 import { QuotaPage } from "./QuotaPage.js";
-import { setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
+import { setScrollOnSend, setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useScrollOnSend, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { defaultFolder, setDefaultFolder } from "../lib/profiles.js";
 import { BotArt, ReaderArt } from "../focus/PixelBot.js";
@@ -57,6 +57,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
   const [page, setPage] = useState<SettingsPage>(lastPage);
   const [theme, setTheme] = useState<ThemePref>(themePref);
   const view = useTranscriptView();
+  const jumpOnSend = useScrollOnSend();
   const chat = useChatSettings(link);
   const [dir, setDir] = useState(settings?.commonWorkspace?.path ?? "");
   const [busy, setBusy] = useState(false);
@@ -176,6 +177,26 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
                   </div>
                 </div>
                 <span className="settings-hint">{TRANSCRIPT_VIEW_HINTS[view]}。</span>
+                <div className="settings-row">
+                  <span className="settings-label">发送后跳到最新</span>
+                  <div role="radiogroup" aria-label="发送后跳到最新" className="chips">
+                    {([true, false] as const).map((on) => (
+                      <button
+                        key={String(on)}
+                        type="button"
+                        role="radio"
+                        className="chip"
+                        aria-checked={jumpOnSend === on}
+                        aria-pressed={jumpOnSend === on}
+                        onClick={() => setScrollOnSend(on)}
+                        data-testid={`scroll-on-send-${on ? "on" : "off"}`}
+                      >
+                        {on ? "开启" : "关闭"}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+                <span className="settings-hint">在输入框发出消息后，对话直接跳到最末尾并跟着回复往下走，不管之前看到哪里。关闭后停在原来看的位置。</span>
                 <div className="settings-row">
                   <span className="settings-label">建议的下一句</span>
                   <div role="radiogroup" aria-label="建议的下一句" className="chips">

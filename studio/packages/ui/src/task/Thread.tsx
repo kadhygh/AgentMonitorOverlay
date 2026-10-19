@@ -7,7 +7,7 @@ import { readSelection, type SelectionAnchor } from "../lib/selection.js";
 import { ReplyNav } from "./ReplyNav.js";
 import { FindBar } from "../gitreview/FindBar.js";
 import { Transcript } from "../chat/Transcript.js";
-import { useTranscriptView } from "../chat/prefs.js";
+import { useScrollOnSend, useTranscriptView } from "../chat/prefs.js";
 import { IconArrowDown, IconArrowUp, IconStop } from "../chat/icons.js";
 import { sessionStats, type ApprovalItem } from "../chat/turns.js";
 import { useAttachments } from "../attach/useAttachments.js";
@@ -204,6 +204,22 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     stick.current = true;
     setAtBottom(true);
   }, [session?.id]);
+  // 发送后跳到最新 (设置 → 界面): a message sent goes straight to the end, wherever the conversation was being read,
+  // and the reply is followed. Right away, and once more after the cleared composer and the new message have laid
+  // out (a scroll event in between would otherwise turn following off). Off: the reading place stays.
+  const jumpOnSend = useScrollOnSend();
+  const jumpToEnd = () => {
+    if (!jumpOnSend) return;
+    const el = scroller.current;
+    stick.current = true;
+    setAtBottom(true);
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+    requestAnimationFrame(() => {
+      stick.current = true;
+      el.scrollTop = el.scrollHeight;
+    });
+  };
 
   // A Claude subagent has no conversation of its own; it is followed from its parent session.
   const claudeSub = session?.runtime === "claude" && session.kind === "sub";
@@ -241,8 +257,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
       openReview({ workspaceId: session.workspaceId, sessionId: session.id });
       return true;
     }
-    stick.current = true;
-    setAtBottom(true);
+    jumpToEnd();
     try {
       await call(link, "POST /api/sessions/:id/commands", { id: session.id }, { name: command.name, ...(args ? { args } : {}) });
       return true;
@@ -275,8 +290,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     // (and nothing new was typed meanwhile). Clearing after the request would wipe what was typed in between.
     setDraft("");
     const sent = attach.take();
-    stick.current = true;
-    setAtBottom(true);
+    jumpToEnd();
     const message = withFileRefs(text ? mentions.expand(text) : "", sent.refs);
     const ids = sent.images.flatMap((i) => (i.id ? [i.id] : []));
     if (await onSend(message, ids)) attach.release(sent);

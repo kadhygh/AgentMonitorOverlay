@@ -144,7 +144,7 @@ export function flashAnnotation(id: string): boolean {
 export function flashRange(r: Range): void {
   if (!highlightsSupported()) return;
   const el = r.startContainer.nodeType === Node.ELEMENT_NODE ? (r.startContainer as Element) : r.startContainer.parentElement;
-  el?.scrollIntoView({ block: "center" });
+  if (el) scrollToBox(el, r.getBoundingClientRect());
   CSS.highlights.set(ANNOTATION_FLASH, new Highlight(r));
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => CSS.highlights.delete(ANNOTATION_FLASH), 1500);
@@ -153,4 +153,25 @@ export function flashRange(r: Range): void {
 /** The text a painted annotation covers (tests and the screen reader label read it). */
 export function paintedText(id: string): string | null {
   return painted.get(id)?.toString() ?? null;
+}
+
+/**
+ * Brings `box` (client coordinates, of something inside `from`) into the middle of the scrolling view around `from`;
+ * one taller than the view starts near its top. 2026-10-19: scrollIntoView on the text's element centred the whole
+ * element, so a quote late in a long paragraph stayed out of sight; and it scrolls every ancestor, the page too.
+ */
+export function scrollToBox(from: Element, box: DOMRect): void {
+  const scroller = scrollParent(from);
+  if (!scroller) return;
+  const view = scroller.getBoundingClientRect();
+  const want = box.height < view.height - 48 ? view.top + (view.height - box.height) / 2 : view.top + 24;
+  scroller.scrollTop += box.top - want;
+}
+
+function scrollParent(el: Element): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if ((y === "auto" || y === "scroll") && p.scrollHeight > p.clientHeight) return p;
+  }
+  return null;
 }

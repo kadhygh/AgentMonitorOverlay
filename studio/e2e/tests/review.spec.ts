@@ -153,3 +153,32 @@ test("annotate replies, edit, locate, and refer to them from the next message (�
   await expect(page.getByRole("button", { name: /已发送 1/ })).toBeVisible();
   await screenshot(studio.app, "stage-18", "S18-annotation-pins", page);
 });
+
+test("定位到原文 brings a quote late in a long paragraph into the middle of the view (2026-10-19)", async () => {
+  studio = await launchStudio({ taskSidebar: true });
+  const { page } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const filler = (n: number) => Array.from({ length: n }, (_, i) => `第${i}句话用来把这一段撑得很长，看看定位会不会偏。`).join("");
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "定位", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: `${filler(70)}目标短语就在这里${filler(30)}` } });
+  await page.getByTestId("task-card").first().click();
+  const reply = page.getByTestId("msg-agent").first();
+  await expect(reply).toContainText("目标短语", { timeout: 30_000 });
+  for (const t of ["第二条", "第三条"]) {
+    await page.getByLabel("输入消息").fill(`${t} ${filler(25)}`);
+    await page.getByLabel("输入消息").press("Enter");
+    await expect(page.getByTestId("msg-agent").last()).toContainText(t, { timeout: 30_000 });
+  }
+  await annotate(page, "目标短语就在这里", "看这里");
+  await page.getByTestId("thread").evaluate((el) => (el.scrollTop = el.scrollHeight));
+
+  // The paragraph is taller than the view: the quote itself, not the paragraph, goes to the middle.
+  await page.getByTitle("定位到原文").first().click();
+  await expect.poll(() => painted(page, "amo-annotation-flash")).toEqual(["目标短语就在这里"]);
+  const at = await page.evaluate(() => {
+    const view = document.querySelector<HTMLElement>(".thread")!.getBoundingClientRect();
+    const box = ([...CSS.highlights.get("amo-annotation-flash")!][0] as Range).getBoundingClientRect();
+    return { off: box.top + box.height / 2 - (view.top + view.height / 2), inside: box.top >= view.top && box.bottom <= view.bottom };
+  });
+  expect(at.inside).toBe(true);
+  expect(Math.abs(at.off)).toBeLessThan(40);
+});
