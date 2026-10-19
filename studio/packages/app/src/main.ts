@@ -96,16 +96,35 @@ function setFocusVisible(on: boolean): void {
   mainWindow?.webContents.send("amo:focus-changed", on);
 }
 
+/**
+ * Brings the workbench window to the front (Focus's 打开主窗口, 在工作台打开, the robot). Focus never activates, and when
+ * Windows dropped the press on it (MA_NOACTIVATEANDEAT; focus-clicks.ts gives the click back) Studio has no right to
+ * take the foreground: focus() alone then only flashes the taskbar button and the window stays behind (2026-10-19:
+ * in the trace every 打开主窗口 that did nothing was a click given back). Topmost for a moment raises it anyway; if it
+ * still did not get the keyboard, the taskbar button stops flashing (the window is already in front).
+ */
+function bringForward(win: BrowserWindow): void {
+  if (win.isMinimized()) win.restore();
+  win.show();
+  if (!win.isAlwaysOnTop()) {
+    win.setAlwaysOnTop(true);
+    win.setAlwaysOnTop(false);
+  }
+  win.focus();
+  setTimeout(() => {
+    if (win.isDestroyed()) return;
+    const focused = win.isFocused();
+    if (!focused) win.flashFrame(false);
+    trace?.note("main", "bring forward", focused ? "focused" : "raised, not focused");
+  }, 300);
+}
+
 if (!app.requestSingleInstanceLock()) {
   app.quit();
 } else {
   app.on("second-instance", () => {
     // A user launched Studio again: bring the existing window forward (never happens in tests).
-    if (mainWindow && !testMode) {
-      if (mainWindow.isMinimized()) mainWindow.restore();
-      mainWindow.show();
-      mainWindow.focus();
-    }
+    if (mainWindow && !testMode) bringForward(mainWindow);
   });
 
   ipcMain.handle("amo:host", () => (host ? { url: host.url, token: host.token } : null));
@@ -217,9 +236,7 @@ if (!app.requestSingleInstanceLock()) {
       g.__amoMainShown = (g.__amoMainShown ?? 0) + 1;
       return;
     }
-    if (mainWindow.isMinimized()) mainWindow.restore();
-    mainWindow.show();
-    mainWindow.focus();
+    bringForward(mainWindow);
   });
   // From 设置 → 项目与目录 → 默认路径 (2026-10-17) when set. Tests read what it would start at and pick for it.
   ipcMain.handle("amo:pick-directory", async (_e, start?: unknown) => {

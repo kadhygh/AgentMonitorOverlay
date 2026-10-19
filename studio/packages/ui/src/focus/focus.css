@@ -141,11 +141,26 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 .focus-panel.passthrough { background: color-mix(in srgb, var(--overlay-strong) 82%, transparent); }
 .focus-quota-item + .focus-quota-item { padding-left: 12px; border-left: 1px solid color-mix(in srgb, var(--border) 70%, transparent); }
 
-/* The app's icon at the front of the head: opens the main window. */
-.focus-head { padding-left: 8px; }
-.focus-home { -webkit-app-region: no-drag; flex: none; width: 28px; height: 28px; margin-right: -2px; padding: 0; border: none; border-radius: 7px; background: transparent; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
-.focus-home img { width: 20px; height: 20px; display: block; }
-.focus-home:hover { background: var(--selected); }
+/* The app's icon and "Focus" at the front of the head: one see-through button that opens the main window (2026-10-19:
+   the name joined the icon); hovering lights it and nudges the icon. */
+.focus-head { padding-left: 6px; }
+.focus-home {
+  -webkit-app-region: no-drag; flex: none; height: 28px; padding: 0 9px 0 4px; gap: 6px;
+  border: 1px solid transparent; border-radius: 8px; background: transparent; color: var(--text); font: inherit; cursor: pointer;
+  display: inline-flex; align-items: center;
+  transition: background 0.15s ease, border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+}
+.focus-home img { width: 20px; height: 20px; display: block; transition: transform 0.25s cubic-bezier(0.34, 1.56, 0.64, 1); }
+.focus-home .focus-name { transition: color 0.15s ease; }
+.focus-home:hover { background: var(--selected); border-color: var(--border); box-shadow: 0 1px 6px color-mix(in srgb, var(--primary) 18%, transparent); }
+.focus-home:hover img { transform: scale(1.12) rotate(-8deg); }
+.focus-home:hover .focus-name { color: var(--primary); }
+.focus-home:active { transform: scale(0.96); }
+.focus-home:focus-visible { outline: 2px solid var(--primary); outline-offset: 1px; }
+@media (prefers-reduced-motion: reduce) {
+  .focus-home, .focus-home img { transition: none; }
+  .focus-home:hover img { transform: none; }
+}
 
 /* The angry robot's own window (app/src/bot-window.ts): just the robot and its bubble, flying about the screen. */
 .bot-root { height: 100%; display: flex; align-items: center; justify-content: flex-end; padding-right: 22px; }

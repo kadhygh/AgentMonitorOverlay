@@ -133,6 +133,11 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await focus.getByTestId("focus-home").click();
   await expect.poll(shown).toBe(before + 1);
   await expect(page.getByTestId("task-title")).toHaveText("机器人提醒");
+  // So does the name next to it: the two are one button (2026-10-19).
+  await focus.getByTestId("focus-home").getByText("Focus", { exact: true }).click();
+  await expect.poll(shown).toBe(before + 2);
+  await focus.getByTestId("focus-home").hover();
+  await screenshot(app, "stage-18", "S18-focus-home", focus, "focus");
 
   // The fold button says what it does.
   const fold = focus.getByTestId("focus-compact");

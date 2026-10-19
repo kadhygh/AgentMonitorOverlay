@@ -219,11 +219,12 @@ export function FocusApp() {
         }}
       >
         <div className="focus-head">
-          {/* Always takes clicks (a button, even under 点击穿透): brings the main window forward, where it is. */}
+          {/* Always takes clicks (a button, even under 点击穿透): brings the main window forward, where it is. The icon
+              and the name are one button (2026-10-19). */}
           <button type="button" className="focus-home" aria-label="打开 AMO 主窗口" title="打开 AMO 主窗口" onClick={() => void window.amo?.openInWorkbench?.({ show: true })} data-testid="focus-home">
             <img src="./icon.svg" alt="" aria-hidden="true" />
+            <span className="focus-name">Focus</span>
           </button>
-          <span className="focus-name">Focus</span>
           <span className={needs ? "focus-needs" : "focus-dim"} data-testid="focus-needs">
             {needs ? `需要你 ${needs}` : "没有待处理"}
           </span>
