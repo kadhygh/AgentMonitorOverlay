@@ -107,6 +107,7 @@ export class ResizeTrace {
     app.on("accessibility-support-changed", (_e, on) => this.write(`${stamp()} accessibility: ${on ? "on" : "off"} (changed)`));
     const profiler = new StallProfiler(dirname(this.file), (line) => this.write(line));
     profiler.start();
+    profiler.startChromiumTrace();
     const TICK = 100;
     let last = performance.now();
     setInterval(() => {
