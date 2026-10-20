@@ -37,6 +37,9 @@ const dataDir = dataChoice.dataDir;
 // Experiments for the resize flicker (2026-10-15; off unless set when starting the app): use the GPU even when
 // Chromium's blocklist says not to, and the system title bar instead of the page-drawn one.
 if (process.env.AMO_STUDIO_GPU === "ignore-blocklist") app.commandLine.appendSwitch("ignore-gpu-blocklist");
+// Experiment for the disk and system stall on opening a big file (2026-10-20; off unless set): pages build no
+// accessibility tree, which they send to this process whenever a program reads windows through UI Automation.
+if (process.env.AMO_STUDIO_NO_A11Y === "1") app.commandLine.appendSwitch("disable-renderer-accessibility");
 const nativeFrame = process.env.AMO_STUDIO_NATIVE_FRAME === "1";
 /** The main window's smallest size, and whether the window itself keeps it (the old way; see createMainWindow). */
 const MAIN_MIN = { width: 960, height: 600 };
@@ -285,6 +288,7 @@ if (!app.requestSingleInstanceLock()) {
       }
       // Every window's resizes, with what its page saw (the main window flickered when dragged, 2026-10-15).
       trace = new ResizeTrace(dataDir, process.env.AMO_STUDIO_TRACE_RESIZE === "1" || (!testMode && process.env.AMO_STUDIO_TRACE_RESIZE !== "0"));
+      trace.watchStalls();
       if (trace.on) {
         const nameOf = (w: BrowserWindow) => (w === mainWindow ? "main" : w === focusWindow ? "focus" : (new URL(w.webContents.getURL() || "about:blank").hash.slice(1).split("?")[0] || "window"));
         app.on("browser-window-created", (_e, w) => trace!.attach(w, () => nameOf(w)));

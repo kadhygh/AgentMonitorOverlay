@@ -94,6 +94,26 @@ export class ResizeTrace {
       .catch((err: unknown) => this.write(`${stamp()} gpu info failed: ${String(err)}`));
   }
 
+  /**
+   * 2026-10-20 (opening a big file stalled the disk, and Windows with it): whether pages send their accessibility tree
+   * to this process (a program reading windows through UI Automation turns it on), and stalls of this process's event
+   * loop, which freeze every window.
+   */
+  watchStalls(): void {
+    if (!this.enabled) return;
+    const a11y = () => (app.isAccessibilitySupportEnabled() ? "on" : "off");
+    this.write(`${stamp()} accessibility: ${a11y()}${process.env.AMO_STUDIO_NO_A11Y === "1" ? " (pages: disabled by AMO_STUDIO_NO_A11Y)" : ""}`);
+    app.on("accessibility-support-changed", (_e, on) => this.write(`${stamp()} accessibility: ${on ? "on" : "off"} (changed)`));
+    const TICK = 100;
+    let last = performance.now();
+    setInterval(() => {
+      const now = performance.now();
+      const late = now - last - TICK;
+      if (late >= 300) this.write(`${stamp()} main process stalled ${Math.round(late)}ms (event loop)`);
+      last = now;
+    }, TICK).unref();
+  }
+
   get on(): boolean {
     return this.enabled;
   }

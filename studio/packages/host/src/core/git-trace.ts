@@ -5,7 +5,7 @@ import { basename, join } from "node:path";
 // Git trace (2026-10-20, opening a prefab of the big Unity project in the viewer made the disk, and Windows with it,
 // stall): every git command the Host runs, how long it took, how many ran at once, how much it printed and which
 // request asked for it; and requests that took a second or more. Written to <data>/logs/git-trace.log, started by
-// bin.ts outside tests; AMO_STUDIO_TRACE_GIT=0 turns it off.
+// bin.ts outside tests; AMO_STUDIO_TRACE_GIT=0 turns it off. Stalls of the Host's event loop go there too.
 
 const MAX_BYTES = 4 * 1024 * 1024;
 const SLOW_REQUEST_MS = 1000;
@@ -32,6 +32,15 @@ export function startGitTrace(dataDir: string): void {
   mkdirSync(dir, { recursive: true });
   file = join(dir, "git-trace.log");
   write(`--- start ${new Date().toLocaleString("sv-SE")} (local times; "running" counts this command)`);
+  // The Host's event loop held up (every request waits): when, and how long.
+  const TICK = 100;
+  let last = performance.now();
+  setInterval(() => {
+    const now = performance.now();
+    const late = now - last - TICK;
+    if (late >= 300) write(`${stamp()} host stalled ${Math.round(late)}ms (event loop) · ${running} git running`);
+    last = now;
+  }, TICK).unref();
 }
 
 /** Runs `fn` as the request `tag` ("GET /api/…"): git commands under it name it, and it is logged when slow. */
