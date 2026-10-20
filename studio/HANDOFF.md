@@ -108,7 +108,7 @@
 |---|---|
 | 开发目录 | `G:\PROJECT\AgentMonitorOverlay\studio`（主仓库，10-20 起；桌面快捷方式「AMO Source」指这里的 `start-studio.cmd`） |
 | 分支 | `master`（10-17 起是 Studio 主线，已推送）；旧版在标签 `amo-legacy-final` |
-| 旧 worktree | `G:\PROJECT\AgentMonitorOverlay-studio`：10-20 搬家前的开发目录，已分离（detached），留着当退路，里面的 `studio\.data` 是搬家前的数据。确认新目录没问题后可删（`git worktree remove`）。另有 `G:\PROJECT\AgentMonitorOverlay-s17`（`studio/s18-models-page`，已合并） |
+| 旧 worktree | `G:\PROJECT\AgentMonitorOverlay-studio`：10-20 搬家前的开发目录，已分离（detached），留着当退路，里面的 `studio\.data` 是搬家前的数据。确认新目录没问题后可删（`git worktree remove`）。`-s17` worktree 10-20 也删了（`studio/s18-models-page` 已合并，分支保留） |
 | 开发版 | `npm start`（先 build 再开窗口），数据在 `studio\.data`。Host 常驻在 47900 端口；改了 Host 代码要先 `npm run host:stop` 再 `npm start` |
 | 帮用户重启开发版 | **先问用户**。`npm run build` → `npm run host:stop` → 结束 `electron.exe packages/app` 主进程（命令行不含 `--type=`）→ 备份 `.data\studio.db*` 到 `.data\backup-before-<名字>-<日期>` → `Start-Process node_modules\electron\dist\electron.exe packages/app`（工作目录 `studio`）→ 用 `.data/host-token` 在 node 脚本里查 `GET /api/state` 核对任务和会话数（不打印令牌）。只改界面时让用户按 Ctrl+R 即可 |
 | 验证 | `npm run verify`（typecheck + vitest + build）；端到端 `npx playwright test -c e2e/playwright.config.ts`（约 11 分钟，先确保 build 过） |
