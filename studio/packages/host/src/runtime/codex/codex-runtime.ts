@@ -140,10 +140,16 @@ export class CodexRuntime extends RuntimeBase {
     // The person's next message is the answer to request_user_input_async (the card, or typed by hand).
     this.asks.closeAsync(sessionId);
     if (st.activeTurnId) {
-      await handle.client.request("turn/steer", { threadId: session.runtimeRef!, expectedTurnId: st.activeTurnId, input } as never);
-      // An async question answered while its turn still runs: the session runs again (unless something else waits).
-      if (this.store.getSession(sessionId)?.status === "awaiting-answer") this.asks.afterAnswer(sessionId);
-      return { mode: "steer" };
+      try {
+        await handle.client.request("turn/steer", { threadId: session.runtimeRef!, expectedTurnId: st.activeTurnId, input } as never);
+        // An async question answered while its turn still runs: the session runs again (unless something else waits).
+        if (this.store.getSession(sessionId)?.status === "awaiting-answer") this.asks.afterAnswer(sessionId);
+        return { mode: "steer" };
+      } catch (err) {
+        // The turn ended as the message went out (its turn/completed not handled yet): it starts the next turn instead
+        // of failing (2026-10-21: "turn/steer: no active turn to steer").
+        if (!/no active turn/i.test(err instanceof Error ? err.message : String(err))) throw err;
+      }
     }
     // Status and the active turn come from turn/started and turn/completed: a short turn can finish before this
     // response arrives, so setting them here would leave the session stuck in "running".

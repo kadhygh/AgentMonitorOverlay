@@ -67,6 +67,11 @@ test("Alt+← returns to the same words of a long conversation whose turns are n
     await studio.api("POST", `/api/sessions/${a.session.id}/messages`, { text: longTurn(n) });
     await expect(replies).toHaveCount(n, { timeout: 30_000 });
   }
+  // The last turn over (its end can still scroll a conversation that follows the bottom).
+  await expect
+    .poll(async () => (await studio!.api<{ sessions: Session[] }>("GET", "/api/state")).sessions.find((s) => s.id === a.session.id)?.status, { timeout: 30_000 })
+    .toBe("idle");
+  await page.waitForTimeout(300);
 
   // Reading the 4th reply's 10th paragraph, 100px below the top of the view.
   const words = replies.nth(3).getByText("第 4 轮第 10 段");
