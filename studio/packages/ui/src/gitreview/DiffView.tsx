@@ -1,10 +1,11 @@
-import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent, type ReactNode } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties, type MouseEvent } from "react";
 import type { GitFileDiff, GitReviewComment } from "@amo-studio/protocol";
 import { commentWhere } from "@amo-studio/protocol";
 import { CodeTokens } from "../lib/CodeTokens.js";
 import { dropDraft, draftText, editDraftKey, setDraftText, useEditing } from "./drafts.js";
 import type { DiffRow } from "./logic.js";
-import { chunkRanges, maxColumns } from "./overview.js";
+import { LazyChunks } from "./LazyChunks.js";
+import { CHUNK_ROWS, maxColumns } from "./overview.js";
 import { splitRows, tokensOf, type DiffTokens, type LineRow, type SideCell } from "./splitview.js";
 
 // The right side of the review window: one file's rows ("只看改动" or "完整文件"), in one column or side by side
@@ -124,27 +125,18 @@ const ROW_PX = 20;
 const HUNK_PX = 29;
 
 /**
- * Rows in chunks of CHUNK_ROWS (S13-B): each chunk is `content-visibility: auto`, so the browser lays out and paints
- * only the chunks near the screen. With the whole file drawn at once (thousands of rows, ~90k elements side by side)
- * the window could not make a frame for each new size while being resized, and flickered. `guess` is the chunk's
- * height before it is first drawn (then the browser remembers the real one).
+ * Rows whose chunks stay drawn: the active one, the one a comment is being written for, those with comments shown
+ * (few, and what one looks for in a diff), the viewer's marked lines.
  */
-function Chunks<T>({ items, file, guess, render }: { items: readonly T[]; file: string; guess(item: T): number; render(item: T, index: number): ReactNode }) {
-  const ranges = useMemo(() => chunkRanges(items.length), [items.length]);
-  return (
-    <>
-      {ranges.map(({ start, count }, c) => {
-        let height = 0;
-        for (let i = start; i < start + count; i++) height += guess(items[i]!);
-        return (
-          // Keyed by file: a chunk must not keep another file's remembered height.
-          <div key={`${file}#${c}`} className="gr-chunk" data-chunk-start={start} data-chunk-count={count} style={{ containIntrinsicHeight: `auto ${height}px` }}>
-            {items.slice(start, start + count).map((item, k) => render(item, start + k))}
-          </div>
-        );
-      })}
-    </>
-  );
+function keepRows({ rows, active, draftAt, marked, plain, placed, visible }: LinesProps): number[] {
+  const out: number[] = [];
+  if (active !== null) out.push(active);
+  rows.forEach((r, i) => {
+    if (r.kind === "line" && (r.key === draftAt || visible(placed.get(r.key) ?? []).length > 0)) out.push(i);
+  });
+  // The viewer's 文件 mode has one row a line, in order.
+  if (plain && marked) out.push(marked.from - 1, marked.to - 1);
+  return out;
 }
 
 /** Columns before the text in the single-column view (numbers, +, mark) and after it, in px. */
@@ -169,10 +161,14 @@ function UnifiedLines(props: LinesProps) {
       data-testid="diff-lines"
       style={{ minWidth: `calc(${gutter}px + ${columns}ch)`, ...(plain ? ({ "--gr-no-w": `${numberPx}px` } as CSSProperties) : {}) }}
     >
-      <Chunks
+      <LazyChunks
         items={rows}
+        size={CHUNK_ROWS}
+        chunkClass="gr-chunk"
         file={diff.path}
         guess={(r) => (r.kind === "hunk" ? HUNK_PX : ROW_PX)}
+        keep={keepRows(props)}
+        itemOfRow={(row) => (row >= 0 && row < rows.length ? row : null)}
         render={(r, i) =>
           r.kind === "hunk" ? (
             <Hunk key={r.key} header={r.header} hidden={r.hidden} />
@@ -210,15 +206,29 @@ function UnifiedLines(props: LinesProps) {
 function SplitLines(props: LinesProps) {
   const { diff, rows, active, placed, visible, draftAt } = props;
   const pairs = useMemo(() => splitRows(rows), [rows]);
+  // Which pair shows each row (by its index among the unified rows).
+  const pairOf = useMemo(() => {
+    const map = new Map<number, number>();
+    pairs.forEach((p, i) => {
+      if (p.kind === "hunk") return;
+      if (p.left) map.set(p.left.index, i);
+      if (p.right) map.set(p.right.index, i);
+    });
+    return map;
+  }, [pairs]);
   // Deleted lines take their comments on the left; unchanged and added lines on the right.
   const owns = (cell: SideCell | null, side: "old" | "new"): cell is SideCell => !!cell && (side === "old" ? cell.row.line.kind === "del" : cell.row.line.kind !== "del");
   const hasNotes = (cell: SideCell | null, side: "old" | "new") => owns(cell, side) && (draftAt === cell.row.key || visible(placed.get(cell.row.key) ?? []).length > 0);
   return (
     <div className="gr-lines gr-split" data-testid="diff-split">
-      <Chunks
+      <LazyChunks
         items={pairs}
+        size={CHUNK_ROWS}
+        chunkClass="gr-chunk"
         file={`${diff.path}|split`}
         guess={(p) => (p.kind === "hunk" ? HUNK_PX : ROW_PX)}
+        keep={keepRows(props).flatMap((r) => pairOf.get(r) ?? [])}
+        itemOfRow={(row) => pairOf.get(row) ?? null}
         render={(p) =>
           p.kind === "hunk" ? (
             <Hunk key={p.key} header={p.header} hidden={p.hidden} />

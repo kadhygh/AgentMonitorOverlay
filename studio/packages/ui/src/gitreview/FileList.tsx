@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, type MouseEvent } from "react";
 import type { GitChangedFile } from "@amo-studio/protocol";
 import { FileTypeIcon } from "../files/FileTypeIcon.js";
 import { buildTree, clampWidth, LIST_WIDTH, splitFolder, splitName, splitPath, treeRows, type ListLayout } from "./filetree.js";
+import { LazyChunks } from "./LazyChunks.js";
 import { listOrder, STATUS_GLYPH, STATUS_NAME } from "./logic.js";
 
 // The review window's file list: a flat list of full paths (default, after Fork) or a folder tree (S12-A), each file
@@ -44,6 +45,11 @@ export function MiddleName({ text, split = splitName, className = "gr-name" }: {
   );
 }
 
+/** Rows a chunk of the list, and their heights (.gr-file, .gr-dir). */
+const LIST_CHUNK = 100;
+const FILE_PX = 24;
+const DIR_PX = 26;
+
 const fileTitle = (f: GitChangedFile) => (f.oldPath ? `${f.oldPath} → ${f.path}` : f.path);
 
 export function FileList({ files, layout, selected, perFile, closed, onToggle, onSelect, onHover, onMenu }: FileListProps) {
@@ -85,10 +91,29 @@ export function FileList({ files, layout, selected, perFile, closed, onToggle, o
     </button>
   );
 
-  if (layout === "flat") return <>{flat.map((f) => fileRow(f, f.path, null))}</>;
+  // Drawn near the view only (LazyChunks, 2026-10-20): a Unity import can change thousands of files; the selected one
+  // is always there.
+  if (layout === "flat")
+    return (
+      <LazyChunks
+        items={flat}
+        size={LIST_CHUNK}
+        file="flat"
+        chunkClass="gr-file-chunk"
+        guess={() => FILE_PX}
+        keep={selected ? [flat.findIndex((f) => f.path === selected)].filter((i) => i >= 0) : []}
+        render={(f) => fileRow(f, f.path, null)}
+      />
+    );
   return (
-    <>
-      {rows.map((r) =>
+    <LazyChunks
+      items={rows}
+      size={LIST_CHUNK}
+      file="tree"
+      chunkClass="gr-file-chunk"
+      guess={(r) => (r.kind === "file" ? FILE_PX : DIR_PX)}
+      keep={selected ? [rows.findIndex((r) => r.kind === "file" && r.file.path === selected)].filter((i) => i >= 0) : []}
+      render={(r) =>
         r.kind === "file" ? (
           fileRow(r.file, r.name, r.depth)
         ) : (
@@ -108,9 +133,9 @@ export function FileList({ files, layout, selected, perFile, closed, onToggle, o
             <MiddleName text={r.folder.name} split={splitFolder} />
             <span className="gr-dir-count">{r.folder.count}</span>
           </button>
-        ),
-      )}
-    </>
+        )
+      }
+    />
   );
 }
 

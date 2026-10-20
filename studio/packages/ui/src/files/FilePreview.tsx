@@ -362,14 +362,17 @@ function DiffBody({ diff, path, onLine }: { diff: FileDiff; path: string; onLine
   const rows = useMemo(() => diffRows(diff), [diff]);
   const texts = useMemo(() => rows.map((r) => (r.kind === "hunk" ? "" : r.text)), [rows]);
   const tokens = useHighlighted(texts, path);
+  // A long change shows its start; the rest on request (2026-10-20: every row was drawn).
+  const [all, setAll] = useState(false);
   if (!rows.length) return <div className="fp-empty">这一轮的记录里没有这个文件的改动内容。</div>;
+  const shown = all ? rows : rows.slice(0, DIFF_SHOWN);
   return (
     <div className="fp-diff" data-testid="file-preview-diff">
       <div className="fp-diff-stat">
         {diff.change === "add" ? "新文件 · " : diff.change === "delete" ? "已删除 · " : ""}
         <span className="add">+{diff.added}</span> <span className="del">−{diff.removed}</span>
       </div>
-      {rows.map((r: DiffRow, i) => (
+      {shown.map((r: DiffRow, i) => (
         <div
           key={i}
           className={`fp-diff-row ${r.kind}${r.newLine ? " jump" : ""}`}
@@ -383,6 +386,14 @@ function DiffBody({ diff, path, onLine }: { diff: FileDiff; path: string; onLine
           <span className="fp-text">{r.kind === "hunk" ? r.text : <CodeTokens tokens={tokens?.[i]} text={r.text || " "} />}</span>
         </div>
       ))}
+      {shown.length < rows.length && (
+        <button type="button" className="show-all" onClick={() => setAll(true)} data-testid="show-all">
+          还有 {rows.length - shown.length} 行 · 显示全部
+        </button>
+      )}
     </div>
   );
 }
+
+/** Rows of a change shown before 显示全部. */
+const DIFF_SHOWN = 400;

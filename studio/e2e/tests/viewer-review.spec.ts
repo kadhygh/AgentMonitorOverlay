@@ -103,7 +103,9 @@ test("comments in the viewer's 文件 mode survive switching views, keep their p
   await changes.locator('[data-anchor="new:335"] textarea').press("Control+Enter");
   await expect(changes.getByTestId("review-comment").filter({ hasText: "改成 335 合理吗" })).toBeVisible();
 
-  // No comment open: the line at the top of the view stays at the top across 只看改动 / 完整文件.
+  // No comment open: the line at the top of the view stays at the top across 只看改动 / 完整文件. (Up there first:
+  // rows far from the view are not drawn, 2026-10-20.)
+  await viewer.evaluate(() => (document.querySelector(".vw-changes .gr-scroll")!.scrollTop = 0));
   await changes.locator('[data-line="new:40"]').scrollIntoViewIfNeeded();
   await viewer.evaluate(() => {
     const scroller = document.querySelector(".vw-changes .gr-scroll")!;

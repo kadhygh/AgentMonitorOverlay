@@ -1,4 +1,5 @@
 import { anchorRow, parseRowKey, type DiffRow, type RowAnchor } from "./logic.js";
+import { revealRow } from "./reveal.js";
 
 // Keeping the place across 只看改动 / 完整文件 and 单栏 / 左右对照 (S14-A): the rows change (and their count, so the
 // scroll offset means another line), so the view remembers a line and puts it back where it was on screen.
@@ -37,17 +38,20 @@ export function captureAnchor(scroller: HTMLElement, rows: readonly DiffRow[]): 
   return null;
 }
 
-/** Puts the anchor back at its offset: the comment box when it is drawn again, else its line or the nearest one. */
-export function restoreAnchor(scroller: HTMLElement, rows: readonly DiffRow[], anchor: ViewAnchor): void {
+/**
+ * Puts the anchor back at its offset: the comment box when it is drawn again, else its line or the nearest one (its
+ * chunk drawn first if it was not, reveal.ts).
+ */
+export async function restoreAnchor(scroller: HTMLElement, rows: readonly DiffRow[], anchor: ViewAnchor): Promise<void> {
   const key = `${anchor.side}:${anchor.number}`;
   let el = scroller.querySelector<HTMLElement>(`[data-anchor="${key}"]`);
   if (!el) {
     const i = anchorRow(rows, anchor);
     if (i === null) return;
-    el = scroller.querySelector<HTMLElement>(`[data-row="${i}"]`);
+    el = await revealRow(scroller, i);
   }
   if (!el) return;
-  // Into view first (its chunk may not be drawn yet, its height only guessed), then to the same offset.
+  // Into view first (its chunk's height may only be guessed), then to the same offset.
   el.scrollIntoView({ block: "start" });
   scroller.scrollTop += el.getBoundingClientRect().top - scroller.getBoundingClientRect().top - anchor.offset;
 }

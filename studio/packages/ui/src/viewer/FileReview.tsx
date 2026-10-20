@@ -7,6 +7,7 @@ import { commentsChanged, SendBar, useReviewComments } from "../gitreview/commen
 import { dropDraft, editDraftKey, newDraftKey } from "../gitreview/drafts.js";
 import { FindBar } from "../gitreview/FindBar.js";
 import { diffRows, placeComments } from "../gitreview/logic.js";
+import { revealRow } from "../gitreview/reveal.js";
 import { useDiffTokens } from "../gitreview/tokens.js";
 import { relativeIn } from "./logic.js";
 
@@ -191,12 +192,13 @@ export function FileReview({
   );
 }
 
-/** Puts line `n` (1-based) `lead` px below the top of the view; its chunk may not be drawn yet. */
+/** Puts line `n` (1-based) `lead` px below the top of the view; its chunk is drawn first if it was not. */
 function scrollToLine(scroller: HTMLElement, n: number, lead: number) {
-  const row = scroller.querySelector<HTMLElement>(`[data-row="${n - 1}"]`);
-  if (!row) return;
-  row.scrollIntoView({ block: "start" });
-  scroller.scrollTop += row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - lead;
+  void revealRow(scroller, n - 1).then((row) => {
+    if (!row) return;
+    row.scrollIntoView({ block: "start" });
+    scroller.scrollTop += row.getBoundingClientRect().top - scroller.getBoundingClientRect().top - lead;
+  });
 }
 
 /** Ctrl+G's box: a line number, Enter to go there, Esc to close. */

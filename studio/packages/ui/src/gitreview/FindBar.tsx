@@ -1,5 +1,6 @@
 import { useEffect, useLayoutEffect, useMemo, useRef, useState, type RefObject } from "react";
 import { findMatches, firstFrom, matchLabel, stepMatch, type FindMatch } from "./find.js";
+import { revealRow } from "./reveal.js";
 
 // Ctrl+F (S14-A) in the viewer, the Review window and a session's conversation (10-19): a bar over the view; Enter / Shift+Enter for the next and the
 // previous match, Esc closes. Matches come from the rows' text (`texts`), so lines in chunks not drawn yet are found
@@ -184,15 +185,27 @@ export function FindBar({ active, container, texts, within, rowSelector, cellSel
     const m = matches[current];
     if (!open || !el || !m) return;
     onCurrent?.(m.row);
-    const target = texts ? (rowSelector ? el.querySelector<HTMLElement>(rowSelector(m.row)) : null) : pageNodes[m.row]?.parentElement;
-    if (!target) return;
-    target.scrollIntoView({ block: "nearest" });
-    const r = rangesOf(m)[0];
-    if (!r) return;
-    const box = r.getBoundingClientRect();
-    const view = el.getBoundingClientRect();
-    if (box.top < view.top + 24 || box.bottom > view.bottom - 24) el.scrollTop += box.top - (view.top + view.height / 3);
-    if (box.left < view.left + 60 || box.right > view.right - 24) el.scrollLeft += box.left - (view.left + view.width / 3);
+    let live = true;
+    const go = (target: HTMLElement | null | undefined) => {
+      if (!live || !target) return;
+      target.scrollIntoView({ block: "nearest" });
+      const r = rangesOf(m)[0];
+      if (!r) return;
+      const box = r.getBoundingClientRect();
+      const view = el.getBoundingClientRect();
+      if (box.top < view.top + 24 || box.bottom > view.bottom - 24) el.scrollTop += box.top - (view.top + view.height / 3);
+      if (box.left < view.left + 60 || box.right > view.right - 24) el.scrollLeft += box.left - (view.left + view.width / 3);
+    };
+    if (!texts) go(pageNodes[m.row]?.parentElement);
+    else if (rowSelector) {
+      const drawn = el.querySelector<HTMLElement>(rowSelector(m.row));
+      // A row in a chunk not drawn: drawn first (reveal.ts), then its text.
+      if (drawn) go(drawn);
+      else void revealRow(el, m.row).then(() => go(el.querySelector<HTMLElement>(rowSelector(m.row))));
+    }
+    return () => {
+      live = false;
+    };
     // Not on redraws (the matches are worked out again then): only when the search or the current match changes.
   }, [current, query, caseSensitive, open]); // eslint-disable-line react-hooks/exhaustive-deps
 

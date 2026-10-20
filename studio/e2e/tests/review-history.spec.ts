@@ -47,10 +47,13 @@ test("long diffs come in chunks, with an overview ruler that jumps to the change
 
   const review = await openReview(studio, ws.id);
   await review.getByRole("button", { name: "完整文件" }).click();
-  await expect(review.getByTestId("diff-line")).toHaveCount(LINES + 2);
-  // Drawn in chunks the browser may skip while off screen.
+  // Drawn in chunks the browser may skip while off screen; since 2026-10-20 only the chunks near the view have their
+  // rows at all, the others are empty boxes as tall as they would be.
   const chunks = review.locator(".gr-chunk");
-  expect(await chunks.count()).toBe(Math.ceil((LINES + 2) / 64));
+  await expect(chunks).toHaveCount(Math.ceil((LINES + 2) / 64));
+  await expect(review.getByTestId("diff-line").first()).toBeVisible();
+  expect(await review.getByTestId("diff-line").count()).toBeLessThan(LINES + 2);
+  expect(await review.locator(".gr-chunk.far").count()).toBeGreaterThan(0);
   expect(await chunks.first().evaluate((c) => getComputedStyle(c).contentVisibility)).toBe("auto");
 
   // One mark a change: added (green) near the top, modified (yellow) and deleted (red) further down.

@@ -82,6 +82,9 @@
 .btn-attention { height: 32px; padding: 0 14px; border-radius: 8px; border: none; background: var(--attention); color: var(--on-attention); font-weight: 600; cursor: pointer; }
 .btn-outline-attention { height: 32px; padding: 0 14px; border-radius: 8px; border: 1px solid var(--attention-border); background: transparent; color: var(--text); cursor: pointer; }
 .dim { color: var(--text-dim); }
+/* 显示全部 under a long diff or output shown in part (2026-10-20). */
+.show-all { display: block; width: 100%; margin: 4px 0; padding: 4px 8px; border: 1px dashed var(--border); border-radius: 6px; background: transparent; color: var(--text-dim); font-size: 12px; cursor: pointer; text-align: center; }
+.show-all:hover { color: var(--text); background: var(--chip); }
 .link-btn.boxed { height: 26px; padding: 0 10px; border: 1px solid var(--border); border-radius: 6px; }
 
 /* Reply jumps (S2-06) */

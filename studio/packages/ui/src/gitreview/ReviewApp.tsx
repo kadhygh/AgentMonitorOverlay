@@ -18,6 +18,7 @@ import { FileList, FileMenu, Splitter, type FileMenuAt } from "./FileList.js";
 import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type ReviewPrefs } from "./filetree.js";
 import { changeStarts, diffRows, draftCounts, parseReviewHash, placeComments, step, type DiffMode, type DiffRow, type ReviewTarget } from "./logic.js";
 import { captureAnchor, restoreAnchor, type ViewAnchor } from "./anchor.js";
+import { revealRow } from "./reveal.js";
 import { commentsChanged, SendBar, useReviewComments } from "./comments.js";
 import { dropDraft, editDraftKey, newDraftKey } from "./drafts.js";
 import { FindBar } from "./FindBar.js";
@@ -344,7 +345,7 @@ export function ReviewPage({
   useLayoutEffect(() => {
     const anchor = pendingAnchor.current;
     pendingAnchor.current = null;
-    if (anchor && scroller.current) restoreAnchor(scroller.current, rows, anchor);
+    if (anchor && scroller.current) void restoreAnchor(scroller.current, rows, anchor);
   }, [rows, prefs.split]);
   const { placed, elsewhere } = useMemo(() => placeComments(comments, selected ?? "", range, rows), [comments, selected, range, rows]);
   const order = useMemo(() => fileOrder(listed?.files ?? [], prefs.layout), [listed, prefs.layout]);
@@ -368,12 +369,14 @@ export function ReviewPage({
   const sentCount = comments.length - drafts.length;
   const perFile = draftCounts(comments);
 
-  // A row n / p moved to, or a located comment, scrolls into view once drawn.
-  const [scrollTo, setScrollTo] = useState<string | null>(null);
+  // A row n / p moved to, or a located comment's line (by its key), scrolls into view; its chunk is drawn first.
+  const [scrollTo, setScrollTo] = useState<{ row: number } | { key: string } | null>(null);
   useEffect(() => {
     if (!scrollTo) return;
-    document.querySelector(scrollTo)?.scrollIntoView({ block: "center" });
     setScrollTo(null);
+    const row = "row" in scrollTo ? scrollTo.row : rows.findIndex((r) => r.key === scrollTo.key);
+    if (row < 0 || !scroller.current) return;
+    void revealRow(scroller.current, row).then((el) => el?.scrollIntoView({ block: "center" }));
   }, [scrollTo, rows]);
 
   // j / k (or ↓ / ↑) between files, n / p (or l / ;) between changes, h opens 历史; not while typing or picking.
@@ -396,7 +399,7 @@ export function ReviewPage({
         if (to === null) return;
         e.preventDefault();
         setActive(to);
-        setScrollTo(`[data-row="${to}"]`);
+        setScrollTo({ row: to });
       } else if (k === "h" && (commit || changes?.status.repo)) {
         e.preventDefault();
         setPicking("keys");
@@ -537,7 +540,7 @@ export function ReviewPage({
                     }
                     onLocate={(c) => {
                       pref("mode", "full");
-                      setScrollTo(`[data-line="${c.side}:${c.line}"]`);
+                      setScrollTo({ key: `${c.side}:${c.line}` });
                     }}
                   />
                 )}

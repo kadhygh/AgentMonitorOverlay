@@ -214,6 +214,12 @@ function TerminalCard({ item }: { item: ToolItem }) {
     if (el && follow.current) el.scrollTop = el.scrollHeight;
   }, [item.detail]);
   const failed = item.status === "failed" || (item.exitCode != null && item.exitCode !== 0);
+  // A long output shows its end (where a running command is); the rest on request (2026-10-20: all of it was set
+  // again on every new chunk).
+  const [full, setFull] = useState(false);
+  const text = (item.detail ?? "").replace(/\r\n/g, "\n").replace(/\n$/, "");
+  const lines = full ? null : text.split("\n");
+  const hidden = lines && lines.length > OUTPUT_LINES_SHOWN ? lines.length - OUTPUT_LINES_SHOWN : 0;
   return (
     <div className="pr-term">
       <div className="pr-term-cmd">
@@ -223,16 +229,23 @@ function TerminalCard({ item }: { item: ToolItem }) {
         <code>{item.input || item.summary}</code>
       </div>
       {item.detail ? (
-        <pre
-          className="pr-term-out"
-          ref={out}
-          onScroll={(e) => {
-            const el = e.currentTarget;
-            follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
-          }}
-        >
-          {item.detail.replace(/\r\n/g, "\n").replace(/\n$/, "")}
-        </pre>
+        <>
+          {hidden > 0 && (
+            <button type="button" className="show-all" onClick={() => setFull(true)} data-testid="show-all">
+              前面还有 {hidden} 行 · 显示全部
+            </button>
+          )}
+          <pre
+            className="pr-term-out"
+            ref={out}
+            onScroll={(e) => {
+              const el = e.currentTarget;
+              follow.current = el.scrollHeight - el.scrollTop - el.clientHeight < 24;
+            }}
+          >
+            {hidden > 0 ? lines!.slice(hidden).join("\n") : text}
+          </pre>
+        </>
       ) : (
         <div className="pr-term-empty">{item.status === "running" ? "运行中…" : "（没有输出）"}</div>
       )}
@@ -248,7 +261,10 @@ function TerminalCard({ item }: { item: ToolItem }) {
 
 /** One file's change, coloured by line (DSH DiffBlock). */
 function DiffCard({ file, cwd }: { file: FileDiff; cwd?: string | undefined }) {
-  const lines = (file.diff ?? "").replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
+  const all = (file.diff ?? "").replace(/\r\n/g, "\n").replace(/\n$/, "").split("\n");
+  // A long patch (a new 5000-line file) shows its start; the rest on request (2026-10-20: every line was drawn).
+  const [full, setFull] = useState(false);
+  const lines = full ? all : all.slice(0, DIFF_LINES_SHOWN);
   return (
     <div className="pr-diff">
       <div className="pr-diff-head">
@@ -273,11 +289,20 @@ function DiffCard({ file, cwd }: { file: FileDiff; cwd?: string | undefined }) {
               </div>
             );
           })}
+          {lines.length < all.length && (
+            <button type="button" className="show-all" onClick={() => setFull(true)} data-testid="show-all">
+              还有 {all.length - lines.length} 行 · 显示全部
+            </button>
+          )}
         </div>
       )}
     </div>
   );
 }
+
+/** Lines of a patch shown before 显示全部, and of a command's output (its end). */
+const DIFF_LINES_SHOWN = 400;
+const OUTPUT_LINES_SHOWN = 1500;
 
 /** Input and output of a generic tool call (DSH's IN/OUT card). */
 function IoCard({ input, output }: { input?: string; output?: string }) {
