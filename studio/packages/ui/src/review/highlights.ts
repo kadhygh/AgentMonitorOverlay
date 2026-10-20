@@ -145,7 +145,7 @@ export function flashAnnotation(id: string): boolean {
 export function flashRange(r: Range): void {
   if (!highlightsSupported()) return;
   const el = r.startContainer.nodeType === Node.ELEMENT_NODE ? (r.startContainer as Element) : r.startContainer.parentElement;
-  if (el) scrollToBox(el, r.getBoundingClientRect());
+  if (el) scrollToBox(el, () => r.getBoundingClientRect());
   CSS.highlights.set(ANNOTATION_FLASH, new Highlight(r));
   clearTimeout(flashTimer);
   flashTimer = setTimeout(() => CSS.highlights.delete(ANNOTATION_FLASH), 1500);
@@ -156,22 +156,56 @@ export function paintedText(id: string): string | null {
   return painted.get(id)?.toString() ?? null;
 }
 
+/** Frames a scroll to a box goes on correcting itself (about half a second), and how many still ones end it. */
+const SETTLE_FRAMES = 30;
+const STILL_FRAMES = 3;
+/** The scroll still settling, stopped when another starts. */
+let settling = 0;
+
 /**
- * Brings `box` (client coordinates, of something inside `from`) into the middle of the scrolling view around `from`;
- * one taller than the view starts near its top. 2026-10-19: scrollIntoView on the text's element centred the whole
- * element, so a quote late in a long paragraph stayed out of sight; and it scrolls every ancestor, the page too.
+ * Brings the box `measure` gives (client coordinates, of something inside `from`) into the middle of the scrolling view
+ * around `from`; one taller than the view starts near its top. 2026-10-19: scrollIntoView on the text's element centred
+ * the whole element, so a quote late in a long paragraph stayed out of sight; and it scrolls every ancestor, the page too.
+ * 2026-10-20: turns not drawn yet stand in at 300px (chat.css, content-visibility); the ones the scroll brings into view
+ * then take their real height and push the box away (12,000px for the person's bookmark), so the box is measured
+ * again each frame and the scroll corrected, until it stays put, or the person scrolls themselves.
  */
-export function scrollToBox(from: Element, box: DOMRect): void {
+export function scrollToBox(from: Element, measure: () => DOMRect): void {
   const scroller = scrollParent(from);
   if (!scroller) return passageTrace("scrollToBox: no scroller");
-  const view = scroller.getBoundingClientRect();
-  const want = box.height < view.height - 48 ? view.top + (view.height - box.height) / 2 : view.top + 24;
+  const run = ++settling;
+  const place = () => {
+    const box = measure();
+    const view = scroller.getBoundingClientRect();
+    const want = box.height < view.height - 48 ? view.top + (view.height - box.height) / 2 : view.top + 24;
+    const by = Math.round(box.top - want);
+    if (Math.abs(by) > 1) scroller.scrollTop += by;
+    return by;
+  };
   const was = scroller.scrollTop;
-  scroller.scrollTop += box.top - want;
-  passageTrace("scrollToBox", { from: Math.round(was), by: Math.round(box.top - want), to: Math.round(scroller.scrollTop), view: Math.round(view.height), box: Math.round(box.height) });
+  let by = place();
+  passageTrace("scrollToBox", { from: Math.round(was), by, to: Math.round(scroller.scrollTop), view: scroller.clientHeight, height: scroller.scrollHeight });
   // The conversation stops following its end now, not at its scroll event a frame later: content growing in between
   // (a turn unfolding, code highlighted) would take it back to the end (2026-10-19: 书签 → 打开对话 landed there).
   scroller.dispatchEvent(new Event(READ_HERE_EVENT));
+  // The person scrolling (wheel, keys, the scrollbar) says where to read from then on. Not a change of scrollTop: the
+  // browser's scroll anchoring moves it too, as the turns above take their height.
+  let theirs = false;
+  const mine = () => (theirs = true);
+  const inputs = ["wheel", "pointerdown", "keydown", "touchstart"] as const;
+  for (const e of inputs) scroller.addEventListener(e, mine, { passive: true });
+  let frames = 0;
+  let still = 0;
+  const settle = () => {
+    if (run === settling && !theirs && scroller.isConnected) {
+      by = place();
+      if (Math.abs(by) > 1) passageTrace("scrollToBox: again", { frame: frames, by, to: Math.round(scroller.scrollTop), height: scroller.scrollHeight });
+      still = Math.abs(by) > 1 ? 0 : still + 1;
+      if (++frames < SETTLE_FRAMES && still < STILL_FRAMES) return void requestAnimationFrame(settle);
+    }
+    for (const e of inputs) scroller.removeEventListener(e, mine);
+  };
+  requestAnimationFrame(settle);
 }
 
 /** On a scroller that was just scrolled to something to read (a passage, an annotation): stay here. */

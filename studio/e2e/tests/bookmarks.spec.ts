@@ -139,3 +139,57 @@ test("打开对话 on a passage far up a long conversation scrolls it into view 
   await page.waitForTimeout(1500);
   expect(await onScreen()).toBe("visible");
 });
+
+test("打开对话 on a passage with long turns above it, none drawn yet, still lands on it (2026-10-20)", async () => {
+  // As people see it: shown, and turns folded as by default. Turns off screen are drawn only once in view (chat.css,
+  // content-visibility), standing in at 300px before; the jump has to follow them as they take their real height
+  // (the person's bookmark ended 12,000px below the view).
+  studio = await launchStudio({ transcriptView: "standard" });
+  const { app, page } = studio;
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes("#"))?.showInactive());
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "掉落" });
+  // A long message, echoed back by the mock model: a turn far taller than 300px.
+  const long = (n: number) => [`第 ${n} 轮`, ...Array.from({ length: 40 }, (_, i) => `第 ${i + 1} 段，一段占一行的说明文字。`)].join("\n\n");
+  const created = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+    title: "很长的对话",
+    workspaceId: ws.id,
+    topicId: topic.id,
+    firstSession: { profileId: "codex-mock", text: long(1) },
+  });
+  await page.getByTestId("task-card").first().click();
+  const replies = page.getByTestId("msg-agent");
+  const say = async (text: string) => {
+    const n = await replies.count();
+    await studio!.api("POST", `/api/sessions/${created.session.id}/messages`, { text });
+    await expect(replies).toHaveCount(n + 1, { timeout: 30_000 });
+  };
+  await expect(replies).toHaveCount(1, { timeout: 30_000 });
+  for (let i = 2; i <= 6; i++) await say(long(i));
+  // The passage in the 7th reply of 11: six long turns above it, four below.
+  await say("[[markdown]]");
+  const reply = replies.nth(6);
+  await expect(reply.locator("table.md-table")).toBeVisible();
+  await selectAndRelease(reply, "发现 3 张表");
+  await page.getByTestId("selection-bookmark").click();
+  await expect(page.getByTestId("toast")).toContainText("已加到「掉落」的书签");
+  for (let i = 8; i <= 11; i++) await say(long(i));
+
+  const marks = await openMarksWindow(app, page);
+  // From the board: the task page comes anew, none of its turns drawn yet.
+  await page.getByRole("button", { name: /返回看板|看板/ }).first().click();
+  await expect(page.getByTestId("task-card").first()).toBeVisible();
+  await marks.locator('[data-testid="mark-row"][data-kind="chat"]').getByTestId("mark-open-passage").click();
+  await expect(page.getByTestId("task-title")).toHaveText("很长的对话");
+  const thread = page.getByTestId("thread");
+  const passage = reply.getByText("发现 3 张表");
+  const onScreen = async () => {
+    const view = (await thread.boundingBox())!;
+    const box = await passage.boundingBox();
+    if (!box) return "not rendered";
+    return box.y >= view.y && box.y + box.height <= view.y + view.height ? "visible" : `off by ${Math.round(box.y - view.y)}px`;
+  };
+  await expect.poll(onScreen, { timeout: 3_000 }).toBe("visible");
+  await page.waitForTimeout(1500);
+  expect(await onScreen()).toBe("visible");
+});

@@ -285,7 +285,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     for (const ms of [0, 300, 1000, 3000]) setTimeout(() => passageTrace(`task: +${ms}ms`, placeOf(document.querySelector(`[data-item-id="${CSS.escape(p.itemId)}"]`))), ms);
     if (range) return flashRange(range);
     const target = [...reply.querySelectorAll<HTMLElement>("[data-src-start]")].find((b) => Number(b.dataset.srcStart) < p.end && Number(b.dataset.srcEnd) > p.start) ?? reply;
-    scrollToBox(target, target.getBoundingClientRect());
+    scrollToBox(target, () => target.getBoundingClientRect());
     flash(target);
   }
 
@@ -315,7 +315,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
       blocks.find((b) => Number(b.dataset.srcStart) < a.end && Number(b.dataset.srcEnd) > a.start) ??
       blocks.find((b) => b.textContent?.includes(a.quote)) ??
       reply;
-    scrollToBox(target, target.getBoundingClientRect());
+    scrollToBox(target, () => target.getBoundingClientRect());
     flash(target);
   }
 
