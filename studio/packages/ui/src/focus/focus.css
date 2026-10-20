@@ -24,8 +24,8 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 .focus-sub { font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .focus-time { font-size: 11px; color: var(--text-dim); flex: none; }
 /* 进行中 and 历史 (2026-10-20): what works now, and what needed the person lately. */
-.focus-group { display: flex; flex-direction: column; gap: 2px; margin-top: 2px; padding-top: 6px; border-top: 1px solid var(--border); }
-.focus-list > .focus-group:first-child { margin-top: 0; padding-top: 0; border-top: none; }
+.focus-group { display: flex; flex-direction: column; gap: 2px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.focus-list > .focus-group:last-child { padding-bottom: 0; border-bottom: none; }
 .focus-group-head { padding: 0 10px; font-size: 12px; color: var(--text-dim); }
 .focus-group .focus-sub, .focus-history .focus-sub { color: var(--text-dim); }
 .focus-history { flex: 0 1 auto; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 2px; padding: 4px 6px 6px; border-top: 1px solid var(--border); }

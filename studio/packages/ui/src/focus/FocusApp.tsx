@@ -291,7 +291,28 @@ export function FocusApp() {
         </div>
         <FocusQuota link={link} settings={settings} profiles={state.profiles} />
         {!compact && (needs > 0 || held || working.length > 0) && (
-          <div className="focus-list" onPointerDown={acknowledge}>
+          <div className="focus-list" onClickCapture={acknowledge}>
+            {/* A click here acknowledges the alert, on click rather than on press: the robot going away lets the panel
+                grow, which moved the buttons between press and release and lost the click (2026-10-20). */}
+            {/* On top: Focus grows upwards from the bottom of the screen, so what starts and stops working here does not
+                move the buttons below it (2026-10-20: a decision's buttons jumped as a session finished). */}
+            {working.length > 0 && (
+              <div className="focus-group" data-testid="focus-working">
+                <div className="focus-group-head">进行中 {working.length}</div>
+                {working.map((s) => (
+                  <div key={s.id} className="focus-entry" data-testid="focus-working-entry">
+                    <button type="button" className="focus-row" onClick={() => goTo(s.id, s.taskId)} title="在工作台打开">
+                      <span className="dot" style={{ background: SESSION_LOOK.running.dot }} />
+                      <span className="focus-row-text">
+                        <span className="focus-title">{title(s)}</span>
+                        <span className="focus-sub">{brief(s)}</span>
+                      </span>
+                      <span className="focus-time">{relativeTime(s.updatedAt)}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
             {proposals.length > 0 && (
               // A proposal needs its prompt read (and maybe edited): only the count here, handled on the board.
               <div className="focus-entry" data-testid="focus-proposals">
@@ -354,23 +375,6 @@ export function FocusApp() {
                 }}
               />
             ))}
-            {working.length > 0 && (
-              <div className="focus-group" data-testid="focus-working">
-                <div className="focus-group-head">进行中 {working.length}</div>
-                {working.map((s) => (
-                  <div key={s.id} className="focus-entry" data-testid="focus-working-entry">
-                    <button type="button" className="focus-row" onClick={() => goTo(s.id, s.taskId)} title="在工作台打开">
-                      <span className="dot" style={{ background: SESSION_LOOK.running.dot }} />
-                      <span className="focus-row-text">
-                        <span className="focus-title">{title(s)}</span>
-                        <span className="focus-sub">{brief(s)}</span>
-                      </span>
-                      <span className="focus-time">{relativeTime(s.updatedAt)}</span>
-                    </button>
-                  </div>
-                ))}
-              </div>
-            )}
           </div>
         )}
         {!compact && history.length > 0 && (
