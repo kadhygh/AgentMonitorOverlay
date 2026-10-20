@@ -6,7 +6,6 @@ import { timingSafeEqual } from "node:crypto";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { HostErrorBody, HostEvent } from "@amo-studio/protocol";
 import { HostError, type HostService } from "../service.js";
-import { tracedRequest } from "../core/git-trace.js";
 import { handleMcpRequest } from "../mcp/amo-mcp.js";
 import { listenInStudioRange } from "../net.js";
 import { FEATURES } from "../features/index.js";
@@ -194,9 +193,7 @@ export async function startHostServer(options: HostServerOptions): Promise<HostS
       const body =
         req.method === "GET" || req.method === "DELETE" ? undefined : matched?.route.rawBody ? await readRaw(req, matched.route.rawBody) : await readBody(req);
       if (matched) {
-        const out = await tracedRequest(`${req.method} ${url.pathname}${url.search.length > 1 ? decodeURIComponent(url.search).slice(0, 160) : ""}`, () =>
-          matched.route.handle({ method: req.method!, path: url.pathname, params: matched.params, query: url.searchParams, body }),
-        );
+        const out = await matched.route.handle({ method: req.method!, path: url.pathname, params: matched.params, query: url.searchParams, body });
         return out instanceof FileReply ? sendFile(res, out) : send(res, 200, out);
       }
       for (const extra of options.extraRoutes ?? []) {

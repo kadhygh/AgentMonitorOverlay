@@ -3,7 +3,6 @@ import { readdir, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { fuzzyMatch, type Id, type ProjectFile, type ProjectFiles } from "@amo-studio/protocol";
 import { Feature } from "../../core/feature.js";
-import { traceGit } from "../../core/git-trace.js";
 
 /** Folders a walk never enters (only used when the project is not a git repository). */
 const SKIP_DIRS = new Set([
@@ -31,12 +30,9 @@ interface Listing {
 /** Runs git read-only in the folder (no optional locks, so it never competes with the person's own git). */
 function git(cwd: string, args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const traced = traceGit(cwd, args);
-    execFile("git", args, { cwd, windowsHide: true, timeout: 15_000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }, (err, stdout) => {
-      traced(err ? { error: err.message } : { bytes: stdout.length });
-      if (err) reject(err);
-      else resolve(stdout);
-    });
+    execFile("git", args, { cwd, windowsHide: true, timeout: 15_000, maxBuffer: 64 * 1024 * 1024, env: { ...process.env, GIT_OPTIONAL_LOCKS: "0" } }, (err, stdout) =>
+      err ? reject(err) : resolve(stdout),
+    );
   });
 }
 

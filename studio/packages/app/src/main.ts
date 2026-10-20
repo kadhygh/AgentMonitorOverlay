@@ -291,7 +291,6 @@ if (!app.requestSingleInstanceLock()) {
       }
       // Every window's resizes, with what its page saw (the main window flickered when dragged, 2026-10-15).
       trace = new ResizeTrace(dataDir, process.env.AMO_STUDIO_TRACE_RESIZE === "1" || (!testMode && process.env.AMO_STUDIO_TRACE_RESIZE !== "0"));
-      trace.watchStalls();
       if (trace.on) {
         const nameOf = (w: BrowserWindow) => (w === mainWindow ? "main" : w === focusWindow ? "focus" : (new URL(w.webContents.getURL() || "about:blank").hash.slice(1).split("?")[0] || "window"));
         app.on("browser-window-created", (_e, w) => trace!.attach(w, () => nameOf(w)));

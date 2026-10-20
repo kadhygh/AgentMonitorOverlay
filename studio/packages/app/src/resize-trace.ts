@@ -1,7 +1,6 @@
 import { app, type BrowserWindow } from "electron";
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
-import { dirname, join } from "node:path";
-import { StallProfiler } from "./stall-profiler.js";
+import { join } from "node:path";
 import { onWindowMessage } from "./window-messages.js";
 
 // Resize trace (2026-10-15, the main window flickers again when dragged by its bottom-right corner): every window's
@@ -93,33 +92,6 @@ export class ResizeTrace {
         this.write(`${stamp()} gpu devices: ${devices.map((d) => `${d.vendorId.toString(16)}:${d.deviceId.toString(16)}${d.active ? " active" : ""}${d.driverVersion ? ` driver ${d.driverVersion}` : ""}`).join("; ") || "none"}`);
       })
       .catch((err: unknown) => this.write(`${stamp()} gpu info failed: ${String(err)}`));
-  }
-
-  /**
-   * 2026-10-20 (opening a big file froze every window for 18 s: the main thread handled a page's accessibility events):
-   * whether accessibility is on (and when it changes), and stalls of this process's event loop, which freeze every
-   * window. With AMO_STUDIO_TRACE_STALLS=1 a stall of 2 s or more also says what ran (JS profile, Chromium trace).
-   */
-  watchStalls(): void {
-    if (!this.enabled) return;
-    const a11y = () => (app.isAccessibilitySupportEnabled() ? "on" : "off");
-    this.write(`${stamp()} accessibility: ${a11y()} (pages: ${process.env.AMO_STUDIO_A11Y === "1" ? "on, AMO_STUDIO_A11Y=1" : "off"})`);
-    app.on("accessibility-support-changed", (_e, on) => this.write(`${stamp()} accessibility: ${on ? "on" : "off"} (changed)`));
-    const profiler = process.env.AMO_STUDIO_TRACE_STALLS === "1" ? new StallProfiler(dirname(this.file), (line) => this.write(line)) : null;
-    profiler?.start();
-    profiler?.startChromiumTrace();
-    const TICK = 100;
-    let last = performance.now();
-    setInterval(() => {
-      const now = performance.now();
-      const late = now - last - TICK;
-      if (late >= 300) {
-        const at = stamp();
-        this.write(`${at} main process stalled ${Math.round(late)}ms (event loop)`);
-        if (late >= 2000) profiler?.stalled(late, at);
-      }
-      last = now;
-    }, TICK).unref();
   }
 
   get on(): boolean {

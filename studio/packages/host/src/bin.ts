@@ -1,6 +1,5 @@
 import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { startGitTrace } from "./core/git-trace.js";
 import { HostAlreadyRunningError, startHost, type StartHostOptions } from "./host-process.js";
 import { StaticCredentialReader } from "./runtime/credentials.js";
 import { resolveNode } from "./runtime/dsh/install.js";
@@ -80,9 +79,6 @@ const survive = (what: string) => (err: unknown) => {
 };
 process.on("uncaughtException", survive("uncaught exception"));
 process.on("unhandledRejection", survive("unhandled promise rejection"));
-
-// Git commands and slow requests, to logs/git-trace.log (2026-10-20, a disk stall while viewing a big Unity project).
-if (process.env.AMO_STUDIO_TEST !== "1" && process.env.AMO_STUDIO_TRACE_GIT !== "0") startGitTrace(dataDir);
 
 try {
   const host = await startHost({

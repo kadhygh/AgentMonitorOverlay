@@ -1,7 +1,6 @@
 import { execFile } from "node:child_process";
 import { open, readFile, stat } from "node:fs/promises";
 import { isAbsolute, relative, resolve } from "node:path";
-import { traceGit } from "../../core/git-trace.js";
 import {
   diffHunks,
   GIT_EMPTY_TREE,
@@ -55,14 +54,12 @@ export class GitError extends Error {
 /** Runs git in `cwd` and returns its stdout. Pathspecs are literal; paths are printed unquoted. */
 export function git(cwd: string, args: readonly string[], maxBytes = LIST_MAX_BYTES): Promise<string> {
   return new Promise((done, fail) => {
-    const traced = traceGit(cwd, args);
     execFile(
       "git",
       ["--literal-pathspecs", "-c", "core.quotepath=off", "-c", "color.ui=never", ...args],
       // Optional locks off: reading must never block (or be blocked by) the agent's own git commands.
       { cwd, maxBuffer: maxBytes, timeout: TIMEOUT_MS, windowsHide: true, encoding: "utf8", env: { ...process.env, GIT_OPTIONAL_LOCKS: "0", GIT_TERMINAL_PROMPT: "0" } },
       (err, stdout, stderr) => {
-        traced(err ? { error: String(stderr || err.message).trim() } : { bytes: stdout.length });
         if (!err) return done(stdout);
         const e = err as NodeJS.ErrnoException & { killed?: boolean };
         if (e.code === "ENOENT") fail(new GitError("没有找到 git", "missing"));
