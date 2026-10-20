@@ -112,16 +112,25 @@ export class WindowsCredentialReader implements CredentialStore {
   /** `prefix` is for tests, which use their own entries. */
   constructor(private readonly prefix = CREDENTIAL_TARGET_PREFIX) {}
 
-  /** Reads all entries under the prefix at once. A failure leaves reads to PowerShell one by one, as before. */
-  async preload(): Promise<void> {
+  /**
+   * Reads all entries under the prefix at once. Resolves when they are in, or after `waitMs` (a slow machine): the
+   * run then finishes in the background, and reads meanwhile go to PowerShell one by one, as before; a failure too.
+   */
+  async preload(waitMs = 3000): Promise<void> {
     if (process.platform !== "win32") return;
     const encoded = Buffer.from(enumerateScript(this.prefix), "utf16le").toString("base64");
-    const out = await new Promise<string | null>((resolve) =>
-      execFile("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], { encoding: "utf8", windowsHide: true, timeout: 20_000 }, (err, stdout) =>
-        resolve(err ? null : stdout),
-      ),
+    const loaded = new Promise<void>((resolve) =>
+      execFile("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], { encoding: "utf8", windowsHide: true, timeout: 20_000 }, (err, stdout) => {
+        if (!err) this.fill(stdout);
+        resolve();
+      }),
     );
-    if (out === null) return;
+    let timer: NodeJS.Timeout | undefined;
+    await Promise.race([loaded, new Promise<void>((resolve) => (timer = setTimeout(resolve, waitMs)))]);
+    clearTimeout(timer);
+  }
+
+  private fill(out: string): void {
     for (const line of out.split("\n")) {
       const tab = line.indexOf("\t");
       if (tab <= 0) continue;
