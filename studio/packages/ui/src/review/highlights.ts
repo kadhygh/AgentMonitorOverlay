@@ -89,8 +89,19 @@ export function useAnnotationHighlights(root: RefObject<HTMLElement | null>, ann
       paintListeners.forEach((l) => l());
     };
     paint();
-    const observer = new MutationObserver(() => {
-      frame ||= requestAnimationFrame(paint);
+    // Only changes that can move an annotated passage (2026-10-20): inside an annotated reply, or above the replies (a
+    // turn folded, replies loaded). A reply streaming that has no annotation leaves them where they are; each of its
+    // tokens repainted them all.
+    const observer = new MutationObserver((records) => {
+      if (frame) return;
+      const annotated = new Set(latest.current.annotations.map((a) => a.itemId));
+      if (!annotated.size) return;
+      const touches = records.some((r) => {
+        const target = r.target instanceof Element ? r.target : r.target.parentElement;
+        const item = target?.closest<HTMLElement>("[data-item-id]")?.dataset.itemId;
+        return item === undefined || annotated.has(item);
+      });
+      if (touches) frame = requestAnimationFrame(paint);
     });
     observer.observe(el, { childList: true, subtree: true, characterData: true });
     return () => {

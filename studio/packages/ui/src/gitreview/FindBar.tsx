@@ -9,6 +9,8 @@ import { revealRow } from "./reveal.js";
 
 const ALL = "amo-find";
 const CURRENT = "amo-find-current";
+/** Page text found again at most this often while it changes. */
+const PAGE_REDRAW_MS = 300;
 
 export interface FindBarProps {
   /** Only the view in front listens to Ctrl+F (a hidden one keeps its bar closed). */
@@ -114,19 +116,26 @@ export function FindBar({ active, container, texts, within, rowSelector, cellSel
     } else setCurrent((c) => (matches.length ? Math.min(Math.max(c, 0), matches.length - 1) : -1));
   }, [matches]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Rows redraw (colours arrive, another layout): the painted ranges point at text that is gone, so paint again.
+  // Rows redraw (colours arrive, another layout): the painted ranges point at text that is gone, so paint again. Code
+  // views at the next frame (rows come as they scroll into reach); page text — a conversation, which changes with every
+  // streamed token and is read again whole each time — at most every PAGE_REDRAW_MS (2026-10-20).
   useEffect(() => {
     const el = container.current;
     if (!open || !el) return;
     let frame = 0;
-    const later = () => (frame ||= requestAnimationFrame(() => ((frame = 0), setRedraws((n) => n + 1))));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const redraw = () => setRedraws((n) => n + 1);
+    const later = texts
+      ? () => (frame ||= requestAnimationFrame(() => ((frame = 0), redraw())))
+      : () => (timer ??= setTimeout(() => ((timer = undefined), redraw()), PAGE_REDRAW_MS));
     const watch = new MutationObserver(later);
     watch.observe(el, { childList: true, subtree: true, characterData: true });
     return () => {
       watch.disconnect();
       if (frame) cancelAnimationFrame(frame);
+      clearTimeout(timer);
     };
-  }, [open, container]);
+  }, [open, container, !texts]); // eslint-disable-line react-hooks/exhaustive-deps -- page text or rows
 
   // Page text: the first text node not above the top of the view.
   const firstInView = () => {

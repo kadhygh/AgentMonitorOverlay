@@ -1,7 +1,8 @@
-import { createContext, Fragment, useContext, useMemo, useState, type ComponentType, type ReactNode } from "react";
+import { createContext, Fragment, memo, useContext, useMemo, useState, type ComponentType, type ReactNode } from "react";
 import { copyText } from "../host/client.js";
-import { highlightLines, languageForFence, useGrammarLoads } from "./highlight.js";
+import { languageForFence } from "./highlight.js";
 import { CodeTokens } from "./CodeTokens.js";
+import { useWorkerHighlight } from "./useWorkerHighlight.js";
 
 // Safe markdown for agent replies: fenced code, headings, nested lists, tables, quotes, paragraphs, and inline
 // code / bold / italic / links. Everything is rendered as React text, never as HTML. Every block carries its
@@ -230,11 +231,11 @@ function ListView({ list }: { list: ListNode }) {
   );
 }
 
-function CodeBlock({ lang, text }: { lang: string; text: string }) {
+const CodeBlock = memo(function CodeBlock({ lang, text }: { lang: string; text: string }) {
   const [copied, setCopied] = useState(false);
-  // Syntax colours (stage 12); plain until the grammar has loaded.
-  const loads = useGrammarLoads();
-  const lines = useMemo(() => highlightLines(text, languageForFence(lang)), [text, lang, loads]); // eslint-disable-line react-hooks/exhaustive-deps
+  // Syntax colours (stage 12), from the highlight worker once the text rests (2026-10-20: on the window's thread, and
+  // again on every streamed token); plain until then, or when too long.
+  const lines = useWorkerHighlight(text, languageForFence(lang));
   return (
     <div className="md-codeblock">
       <div className="md-code-head">
@@ -264,15 +265,30 @@ function CodeBlock({ lang, text }: { lang: string; text: string }) {
       </pre>
     </div>
   );
-}
+});
 
 /** Ranges in the source to mark as annotated (blocks overlapping any of them get `md-annotated`). */
 export type Highlight = { start: number; end: number };
 
-export function Markdown({ source, highlights = [] }: { source: string; highlights?: readonly Highlight[] }) {
+const NO_HIGHLIGHTS: readonly Highlight[] = [];
+const sameHighlights = (a: readonly Highlight[], b: readonly Highlight[]) => a.length === b.length && a.every((h, i) => h.start === b[i]!.start && h.end === b[i]!.end);
+
+/**
+ * A reply as Markdown. Drawn again only when its source or its marked ranges change, and parsed once a source
+ * (2026-10-20: every reply was parsed again on every key typed in the composer and every streamed token).
+ */
+export const Markdown = memo(
+  function Markdown({ source, highlights = NO_HIGHLIGHTS }: { source: string; highlights?: readonly Highlight[] }) {
+    const blocks = useMemo(() => parseBlocks(source), [source]);
+    return <MarkdownBlocks blocks={blocks} highlights={highlights} />;
+  },
+  (a, b) => a.source === b.source && sameHighlights(a.highlights ?? NO_HIGHLIGHTS, b.highlights ?? NO_HIGHLIGHTS),
+);
+
+function MarkdownBlocks({ blocks, highlights }: { blocks: readonly Block[]; highlights: readonly Highlight[] }) {
   return (
     <div className="md">
-      {parseBlocks(source).map((b) => {
+      {blocks.map((b) => {
         const marked = highlights.some((h) => h.start < b.end && h.end > b.start);
         const range = { "data-src-start": b.start, "data-src-end": b.end, ...(marked ? { "data-annotated": "" } : {}) };
         const key = `${b.start}-${b.kind}`;

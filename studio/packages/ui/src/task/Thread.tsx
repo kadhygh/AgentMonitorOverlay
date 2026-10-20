@@ -42,6 +42,8 @@ import { AnnotationRefChips, ComposerStats, composerPlaceholder } from "./Thread
 
 /** Studio's /compact, as the 压缩 button runs it. */
 const COMPACT: SlashCommand = { name: "compact", description: "", group: "studio" };
+/** A draft is kept this long after typing stops. */
+const DRAFT_SAVE_MS = 400;
 
 interface ThreadProps {
   link: HostLink;
@@ -90,14 +92,33 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   const sessionId = session?.id ?? null;
   const [held, setHeld] = useState(() => ({ id: sessionId, text: readSessionDraft(sessionId) }));
   const draft = held.id === sessionId ? held.text : readSessionDraft(sessionId);
+  // Kept a moment after typing stops, not on every key (2026-10-20: each key read, sorted and wrote every session's
+  // draft); written at once when the session changes or the page goes.
+  const pendingDraft = useRef<{ id: string | null; text: string } | null>(null);
+  const draftTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const flushDraft = useCallback(() => {
+    clearTimeout(draftTimer.current);
+    const p = pendingDraft.current;
+    pendingDraft.current = null;
+    if (p) writeSessionDraft(p.id, p.text);
+  }, []);
+  useEffect(() => {
+    window.addEventListener("pagehide", flushDraft);
+    return () => {
+      window.removeEventListener("pagehide", flushDraft);
+      flushDraft();
+    };
+  }, [sessionId, flushDraft]);
   const setDraft = useCallback(
     (v: SetStateAction<string>) =>
       setHeld((h) => {
         const text = typeof v === "function" ? v(h.id === sessionId ? h.text : readSessionDraft(sessionId)) : v;
-        writeSessionDraft(sessionId, text);
+        pendingDraft.current = { id: sessionId, text };
+        clearTimeout(draftTimer.current);
+        draftTimer.current = setTimeout(flushDraft, DRAFT_SAVE_MS);
         return { id: sessionId, text };
       }),
-    [sessionId],
+    [sessionId, flushDraft],
   );
   const view = useTranscriptView();
   const attach = useAttachments(link);

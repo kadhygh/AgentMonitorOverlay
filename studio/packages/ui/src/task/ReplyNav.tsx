@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState, type RefObject } from "react";
+import { useCallback, useEffect, useRef, useState, type RefObject } from "react";
 import { pinScroll } from "../lib/scrollPin.js";
 
 // Jumps between agent replies of the open session: "上一条 / 下一条" buttons and Alt+↑ / Alt+↓.
@@ -13,10 +13,18 @@ function replies(scroller: HTMLElement): HTMLElement[] {
 function currentIndex(scroller: HTMLElement, list: HTMLElement[]): number {
   const box = scroller.getBoundingClientRect();
   const top = box.top + EDGE + 1;
+  // Replies are in order down the page: the last one at or above the edge by halving (2026-10-20: every reply was
+  // measured on every scroll event, laying out the turns the browser could skip).
+  let lo = 0;
+  let hi = list.length - 1;
   let index = -1;
-  list.forEach((el, i) => {
-    if (el.getBoundingClientRect().top <= top) index = i;
-  });
+  while (lo <= hi) {
+    const mid = (lo + hi) >> 1;
+    if (list[mid]!.getBoundingClientRect().top <= top) {
+      index = mid;
+      lo = mid + 1;
+    } else hi = mid - 1;
+  }
   // Above the first reply (e.g. its question is showing): the first reply counts as current once it is visible.
   if (index < 0 && list[0] && list[0].getBoundingClientRect().top < box.bottom) index = 0;
   // At the bottom the last reply may never reach the top edge; once it is visible it is the current one.
@@ -40,8 +48,18 @@ export function ReplyNav({ scroller, itemCount }: { scroller: RefObject<HTMLDivE
     const el = scroller.current;
     if (!el) return;
     const list = replies(el);
-    setPosition({ index: currentIndex(el, list), total: list.length });
+    const index = currentIndex(el, list);
+    setPosition((p) => (p.index === index && p.total === list.length ? p : { index, total: list.length }));
   }, [scroller]);
+  // Scrolling: at most once a frame.
+  const frame = useRef(0);
+  const onScroll = useCallback(() => {
+    frame.current ||= requestAnimationFrame(() => {
+      frame.current = 0;
+      refresh();
+    });
+  }, [refresh]);
+  useEffect(() => () => cancelAnimationFrame(frame.current), []);
 
   const jump = useCallback(
     (delta: 1 | -1) => {
@@ -68,7 +86,7 @@ export function ReplyNav({ scroller, itemCount }: { scroller: RefObject<HTMLDivE
     const el = scroller.current;
     if (!el) return;
     refresh();
-    el.addEventListener("scroll", refresh, { passive: true });
+    el.addEventListener("scroll", onScroll, { passive: true });
     const onKey = (e: KeyboardEvent) => {
       if (!e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
       e.preventDefault();
@@ -76,10 +94,10 @@ export function ReplyNav({ scroller, itemCount }: { scroller: RefObject<HTMLDivE
     };
     window.addEventListener("keydown", onKey);
     return () => {
-      el.removeEventListener("scroll", refresh);
+      el.removeEventListener("scroll", onScroll);
       window.removeEventListener("keydown", onKey);
     };
-  }, [scroller, refresh, jump]);
+  }, [scroller, refresh, onScroll, jump]);
 
   useEffect(refresh, [itemCount, refresh]);
 

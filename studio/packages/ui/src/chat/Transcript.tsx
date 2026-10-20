@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useMemo, useRef, useState } from "react";
 import type { Annotation, ApprovalDecision, Session, SessionItem, TurnUsage } from "@amo-studio/protocol";
 import { splitAnnotationRefs, splitRoleUpdate } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
@@ -31,7 +31,10 @@ interface TranscriptProps {
   onJump(sessionId: string): void;
 }
 
-export function Transcript({ session, items, annotations, model, busy, view, onApprove, onJump }: TranscriptProps) {
+/** Drawn again only when what it shows changes (2026-10-20: every key typed in the composer drew the whole conversation). */
+export const Transcript = memo(TranscriptBody);
+
+function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump }: TranscriptProps) {
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
   // Turns the person unfolded (or folded again); finished turns start folded.

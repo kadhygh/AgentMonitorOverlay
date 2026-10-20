@@ -2,7 +2,8 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState, type PointerEven
 import { PREVIEW_IMAGE_TYPES, type FileDiff, type TextFile } from "@amo-studio/protocol";
 import { copyText, HostApiError, type HostLink } from "../host/client.js";
 import { CodeTokens } from "../lib/CodeTokens.js";
-import { highlightLines, languageForPath, useGrammarLoads, type CodeToken } from "../lib/highlight.js";
+import { languageForPath, type CodeToken } from "../lib/highlight.js";
+import { useWorkerHighlight } from "../lib/useWorkerHighlight.js";
 import { Markdown, MarkdownFileLinks } from "../lib/markdown.js";
 import { openInEditor, rawFileUrl, readTextFile, revealInExplorer, type FileRef } from "../lib/openin.js";
 import { formatBytes } from "../attach/refs.js";
@@ -36,9 +37,6 @@ const DEFAULT_WIDTH = 520;
 /** Fixed row height of the code view (it only renders the rows in sight). */
 const ROW_H = 20;
 const OVERSCAN = 30;
-/** Larger files show without colours (highlighting them would stall the window). */
-const MAX_HIGHLIGHT_LINES = 5000;
-const MAX_HIGHLIGHT_CHARS = 400_000;
 
 const maxWidth = () => Math.max(MIN_WIDTH, Math.min(1100, window.innerWidth - 420));
 function savedWidth(): number {
@@ -294,14 +292,13 @@ function firstChangedLine(diff: FileDiff): number | undefined {
   return diffRows(diff).find((r) => r.kind === "add" && r.newLine)?.newLine;
 }
 
-/** Highlights `texts` as one piece of code (so strings and comments spanning lines colour right); null while loading. */
-function useHighlighted(texts: readonly string[], path: string): Array<readonly CodeToken[]> | null {
-  const loads = useGrammarLoads();
-  return useMemo(() => {
-    const code = texts.join("\n");
-    if (texts.length > MAX_HIGHLIGHT_LINES || code.length > MAX_HIGHLIGHT_CHARS) return null;
-    return highlightLines(code, languageForPath(path));
-  }, [texts, path, loads]); // eslint-disable-line react-hooks/exhaustive-deps
+/**
+ * Highlights `texts` as one piece of code (so strings and comments spanning lines colour right), in the highlight
+ * worker (2026-10-20: on the window's thread, up to 5000 lines); null while it works, or when too long.
+ */
+function useHighlighted(texts: readonly string[], path: string): ReadonlyArray<readonly CodeToken[] | null> | null {
+  const code = useMemo(() => texts.join("\n"), [texts]);
+  return useWorkerHighlight(code, languageForPath(path), 0);
 }
 
 /** A file's text with line numbers, rendering only the rows in sight; scrolls to and marks `line` (through `endLine`). */

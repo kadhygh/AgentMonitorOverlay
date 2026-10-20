@@ -51,9 +51,10 @@ test("a loop and a usage limit above the composer: stop the loop, switch going o
   const bar = page.getByTestId("wake-bar");
   await expect(bar).toHaveAttribute("data-kind", "loop");
   const hm = `${String(at.getHours()).padStart(2, "0")}:${String(at.getMinutes()).padStart(2, "0")}`;
-  await expect(bar).toContainText(`Loop 中 · 下次 ${hm}`);
+  // Past midnight the bar names the day too (下次 10月21日 00:07).
+  await expect(bar).toContainText(new RegExp(`Loop 中 · 下次 (\\d+月\\d+日 )?${hm}`));
   await expect(bar).toContainText("遥控赛车在后台执行");
-  await expect(page.getByTestId("session-wake")).toHaveText(`loop · ${hm}`);
+  await expect(page.getByTestId("session-wake")).toHaveText(new RegExp(`^loop · (\\d+月\\d+日 )?${hm}$`));
   await expect(page.getByTestId("thread")).toContainText("Host 重启后，这条会话的 loop 由 Studio 按时唤醒。");
   await screenshot(studio.app, "stage-15", "S15-01-loop-bar", page);
 
