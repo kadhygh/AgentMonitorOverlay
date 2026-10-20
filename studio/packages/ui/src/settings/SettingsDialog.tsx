@@ -8,6 +8,7 @@ import { FeaturesSection } from "./FeaturesSection.js";
 import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
 import { DataPage } from "./DataPage.js";
 import { QuotaPage } from "./QuotaPage.js";
+import { MaintenancePage } from "./MaintenancePage.js";
 import { setScrollOnSend, setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useScrollOnSend, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { defaultFolder, setDefaultFolder } from "../lib/profiles.js";
@@ -42,6 +43,7 @@ const PAGES = [
   { id: "features", label: "功能" },
   { id: "scratchpad", label: "便签" },
   { id: "data", label: "数据管理" },
+  { id: "maintenance", label: "维护" },
 ] as const;
 type SettingsPage = (typeof PAGES)[number]["id"];
 
@@ -255,6 +257,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
             {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} />}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
             {page === "data" && <DataPage link={link} />}
+            {page === "maintenance" && <MaintenancePage link={link} />}
           </div>
         </div>
       </div>

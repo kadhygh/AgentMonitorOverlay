@@ -197,6 +197,21 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
     }
   }
 
+  /**
+   * The Codex TUI on its own (设置 → 维护): the profile's provider, model and key as its server has them, without the AMO
+   * MCP. PowerShell runs it, and Windows PowerShell 5 breaks double quotes inside a program's arguments, so the TOML
+   * values become literal strings in single quotes where they can.
+   */
+  terminal(profileId: string): { command: string; env: Record<string, string> } {
+    const profile = this.options.profiles.find((p) => p.id === profileId);
+    if (!profile || profile.runtime !== "codex") throw new Error(`unknown Codex profile ${profileId}`);
+    const spec = codexServerSpec(profile, this.options.profiles, this.options.credentials, { providers: this.options.providers, mcp: null });
+    const cmd = this.options.codexCommand ?? resolveCodexCommand();
+    const args = spec.configArgs.map((a) => (a.includes('"') && !/['\\]/.test(a) ? a.replaceAll('"', "'") : a));
+    const quote = (s: string) => `'${s.replaceAll("'", "''")}'`;
+    return { command: `& ${[cmd.command, ...cmd.prefixArgs, ...args].map(quote).join(" ")}`, env: { ...cmd.env, ...this.options.env, ...spec.env } };
+  }
+
   private spawnServer(entry: Entry): void {
     const profile = this.options.profiles.find((p) => p.id === entry.profileId)!;
     const spec = codexServerSpec(profile, this.options.profiles, this.options.credentials, { providers: this.options.providers, mcp: this.options.mcp?.() ?? null });

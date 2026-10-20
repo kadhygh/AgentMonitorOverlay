@@ -31,6 +31,7 @@ import { ChatFilesFeature } from "./features/chatfiles/service.js";
 import { CliFeature } from "./features/cli/service.js";
 import { DataFeature } from "./features/datamgmt/service.js";
 import { ChannelsFeature } from "./features/channels/service.js";
+import { MaintenanceFeature } from "./features/maintenance/service.js";
 import { HostError, type HostServiceEvents } from "./core/shared.js";
 
 // The composition root behind the Host API: the store, the runtimes and the event stream, the helpers every feature
@@ -65,6 +66,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly data = new DataFeature(this);
   readonly channels = new ChannelsFeature(this);
   readonly dsh = new DshFeature(this);
+  readonly maintenance = new MaintenanceFeature(this);
 
   constructor(
     readonly store: Store,

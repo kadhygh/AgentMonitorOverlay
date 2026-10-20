@@ -45,6 +45,8 @@ export interface SessionRuntimeApi {
   handoff?(sessionId: Id): Promise<{ command: string; cwd: string; env: Record<string, string> }>;
   /** Claude only: take a handed-off session back, importing what the terminal added. */
   reclaim?(sessionId: Id): Promise<Session>;
+  /** A new conversation of the profile's own CLI in a terminal, outside Studio (设置 → 维护); the key is only in `env`. */
+  freshTerminal?(profileId: Id): Promise<{ command: string; env: Record<string, string> }>;
   /** The runtime's own `/` commands and skills for the session (stage 12, S12-E); Studio's are added by the Host. */
   listCommands?(sessionId: Id): Promise<SlashCommandList>;
   /** Runs one (`compact` included); see `POST /api/sessions/:id/commands`. */
@@ -141,6 +143,13 @@ export class RuntimeRouter extends EventEmitter<RuntimeEvents> implements Sessio
   async reclaim(sessionId: Id): Promise<Session> {
     const r = this.forSession(sessionId);
     return r.reclaim ? r.reclaim(sessionId) : r.setWriter(sessionId, "workbench");
+  }
+  freshTerminal(profileId: Id) {
+    const profile = this.profiles.find((p) => p.id === profileId);
+    if (!profile) throw new Error(`unknown profile ${profileId}`);
+    const r = this.byRuntime(profile.runtime);
+    if (!r.freshTerminal) throw new Error(`${profile.runtime} has no terminal of its own`);
+    return r.freshTerminal(profileId);
   }
   async listCommands(sessionId: Id): Promise<SlashCommandList> {
     const r = this.forSession(sessionId);
