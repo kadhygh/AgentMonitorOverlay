@@ -56,6 +56,12 @@ describe("applyEvent", () => {
     expect(next.sessions[0]!.status).toBe("idle");
     expect(next.eventSeq).toBe(9);
   });
+
+  it("leaves the state as it is for events that are not board state (a streamed token re-renders no window)", () => {
+    const state = { workspaces: [], topics: [], tasks: [], sessions: [exampleSessions[0]!], profiles: [], eventSeq: 3 };
+    const delta = { seq: 10, type: "item.delta", sessionId: exampleSessions[0]!.id, itemId: "i-1", delta: "x" } as unknown as HostEvent;
+    expect(applyEvent(state, delta)).toBe(state);
+  });
 });
 
 describe("mergeFirstLoad", () => {

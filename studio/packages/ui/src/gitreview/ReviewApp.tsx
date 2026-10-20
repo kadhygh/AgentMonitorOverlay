@@ -253,20 +253,34 @@ export function ReviewPage({
   // Asked for a file (用 git diff 看): the uncommitted changes (or, opened with a base, the working tree against it), read
   // again, then that file, or a word that it has none.
   const wanted = useRef<ReviewSelect | null>(null);
+  // The open that last read the changes: on mounting they are being read anyway, and the same open again (the viewer
+  // resolving a relative path once the file is read) needs no second read (2026-10-20: git ran twice or three times).
+  const readFor = useRef<string | null>(null);
+  const pickWanted = (c: GitChanges) => {
+    const want = wanted.current;
+    if (!want || c.range !== (given ? "branch" : "working")) return;
+    wanted.current = null;
+    const hit = findChangedFile(c.files, want.path, workspace.path);
+    if (hit) setSelected(hit.path);
+    else if (c.status.repo) setToast({ text: "这个文件没有未提交的改动" });
+  };
   useEffect(() => {
     if (!select || commit) return;
     wanted.current = select;
-    cache.clear();
+    const mounting = readFor.current === null;
+    const sameOpen = !!select.nonce && readFor.current === select.nonce;
+    readFor.current = select.nonce;
     setRange(given ? "branch" : "working");
+    if (mounting) return;
+    if (sameOpen) {
+      if (changes) pickWanted(changes);
+      return;
+    }
+    cache.clear();
     setReload((n) => n + 1);
   }, [select?.path, select?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
-    const want = wanted.current;
-    if (!want || !changes || changes.range !== (given ? "branch" : "working")) return;
-    wanted.current = null;
-    const hit = findChangedFile(changes.files, want.path, workspace.path);
-    if (hit) setSelected(hit.path);
-    else if (changes.status.repo) setToast({ text: "这个文件没有未提交的改动" });
+    if (changes) pickWanted(changes);
   }, [changes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What the list shows: the range's changes, or the commit's files.
@@ -470,7 +484,7 @@ export function ReviewPage({
                   active={!inactive}
                   container={scroller}
                   texts={findTexts}
-                  rowSelector={(row) => `[data-row="${row}"] .gr-text`}
+                  rowSelector={(row) => `[data-row="${row}"] .gr-text`} cellSelector=".gr-text"
                   fromRow={() => {
                     const el = scroller.current;
                     const a = el && captureAnchor(el, rows);

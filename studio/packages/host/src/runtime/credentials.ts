@@ -1,9 +1,10 @@
-import { execFileSync } from "node:child_process";
+import { execFile, execFileSync } from "node:child_process";
 
 // Access to API keys that old AMO stored in the Windows Credential Manager under
 // `AgentMonitorOverlay/model-provider/<id>` (UTF-8 blob). Keys never leave memory except as child-process env vars.
 // Studio only reads them; the one entry it writes is the Claude subscription token the person saves in 设置 → 模型凭据
-// (HostService keeps that list). The secret reaches PowerShell on stdin, never on its command line.
+// (HostService keeps that list). The secret reaches PowerShell on stdin, never on its command line; stdin and stdout are
+// UTF-8 (they were the console code page, which garbled anything but ASCII on its way in and back, 2026-10-20).
 
 export interface CredentialReader {
   /** The secret, or null when the entry does not exist. */
@@ -23,6 +24,7 @@ const ID_PATTERN = /^[A-Za-z0-9._-]{1,64}$/;
 function readScript(target: string): string {
   return `
 $ErrorActionPreference='Stop'
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Add-Type -TypeDefinition @"
 using System; using System.Runtime.InteropServices;
 public static class AmoCred {
@@ -42,10 +44,39 @@ public static class AmoCred {
 `;
 }
 
+// Every entry under the prefix at once (one C# compile instead of one per key): "<id>\t<base64 of the blob>" lines.
+function enumerateScript(prefix: string): string {
+  return `
+$ErrorActionPreference='Stop'
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
+Add-Type -TypeDefinition @"
+using System; using System.Runtime.InteropServices; using System.Text;
+public static class AmoCredE {
+  [StructLayout(LayoutKind.Sequential, CharSet=CharSet.Unicode)]
+  public struct CRED { public int Flags; public int Type; public string TargetName; public string Comment;
+    public long LastWritten; public int CredentialBlobSize; public IntPtr CredentialBlob; public int Persist;
+    public int AttributeCount; public IntPtr Attributes; public string TargetAlias; public string UserName; }
+  [DllImport("advapi32.dll", CharSet=CharSet.Unicode, SetLastError=true)] public static extern bool CredEnumerateW(string filter, int flags, out int count, out IntPtr creds);
+  [DllImport("advapi32.dll")] public static extern void CredFree(IntPtr c);
+  public static string List(string prefix) { int n; IntPtr list; var sb = new StringBuilder();
+    if (!CredEnumerateW(prefix + "*", 0, out n, out list)) return "";
+    for (int i = 0; i < n; i++) {
+      var c = (CRED)Marshal.PtrToStructure(Marshal.ReadIntPtr(list, i * IntPtr.Size), typeof(CRED));
+      if (c.Type != 1 || c.TargetName == null || !c.TargetName.StartsWith(prefix)) continue;
+      var b = new byte[c.CredentialBlobSize]; if (b.Length > 0) Marshal.Copy(c.CredentialBlob, b, 0, b.Length);
+      sb.Append(c.TargetName.Substring(prefix.Length)).Append('\\t').Append(Convert.ToBase64String(b)).Append('\\n'); }
+    CredFree(list); return sb.ToString(); }
+}
+"@
+[Console]::Out.Write([AmoCredE]::List('${prefix}'))
+`;
+}
+
 // Saves the secret read from stdin as a generic credential (UTF-8 blob, like old AMO's entries), or deletes the entry.
 function writeScript(target: string, remove: boolean): string {
   return `
 $ErrorActionPreference='Stop'
+[Console]::InputEncoding = [Text.UTF8Encoding]::new($false); [Console]::OutputEncoding = [Text.UTF8Encoding]::new($false)
 Add-Type -TypeDefinition @"
 using System; using System.Runtime.InteropServices;
 public static class AmoCredW {
@@ -68,17 +99,44 @@ ${remove ? `[AmoCredW]::Delete('${target}')` : `[AmoCredW]::Write('${target}', [
 `;
 }
 
-/** Windows Credential Manager. Reads are cached for the life of the process; a write or removal refreshes the cache. */
+/**
+ * Windows Credential Manager. Reads are cached for the life of the process; a write or removal refreshes the cache.
+ * `preload()` (the Host awaits it before it serves) reads every entry in one PowerShell run that does not hold up the
+ * event loop; after it, reads never start PowerShell (2026-10-20: each read took 0.7–2 s, blocking the Host).
+ */
 export class WindowsCredentialReader implements CredentialStore {
   private readonly cache = new Map<string, string | null>();
+  /** Every entry is in the cache: one that is not there does not exist. */
+  private complete = false;
 
   /** `prefix` is for tests, which use their own entries. */
   constructor(private readonly prefix = CREDENTIAL_TARGET_PREFIX) {}
 
+  /** Reads all entries under the prefix at once. A failure leaves reads to PowerShell one by one, as before. */
+  async preload(): Promise<void> {
+    if (process.platform !== "win32") return;
+    const encoded = Buffer.from(enumerateScript(this.prefix), "utf16le").toString("base64");
+    const out = await new Promise<string | null>((resolve) =>
+      execFile("powershell", ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], { encoding: "utf8", windowsHide: true, timeout: 20_000 }, (err, stdout) =>
+        resolve(err ? null : stdout),
+      ),
+    );
+    if (out === null) return;
+    for (const line of out.split("\n")) {
+      const tab = line.indexOf("\t");
+      if (tab <= 0) continue;
+      const id = line.slice(0, tab);
+      if (this.cache.has(id) || !ID_PATTERN.test(id)) continue;
+      const secret = Buffer.from(line.slice(tab + 1).trim(), "base64").toString("utf8").trim();
+      this.cache.set(id, secret.length ? secret : null);
+    }
+    this.complete = true;
+  }
+
   read(credentialId: string): string | null {
     if (!ID_PATTERN.test(credentialId)) throw new Error(`invalid credential id: ${credentialId}`);
     if (this.cache.has(credentialId)) return this.cache.get(credentialId)!;
-    if (process.platform !== "win32") return null;
+    if (process.platform !== "win32" || this.complete) return null;
     // -EncodedCommand keeps the multi-line here-string intact (stdin mode runs line by line and breaks it).
     // The script holds only the target name; the secret comes back on stdout.
     const out = this.powershell(readScript(this.prefix + credentialId)).trim();

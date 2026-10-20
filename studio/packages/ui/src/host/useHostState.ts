@@ -40,7 +40,9 @@ export function applyEvent(state: StateSnapshot, e: HostEvent): StateSnapshot {
       return { ...next, workspaces: keep(state.workspaces), topics: keep(state.topics), tasks: keep(state.tasks), sessions: keep(state.sessions) };
     }
     default:
-      return next;
+      // Not board state (items, deltas, marks…): the same object, so the windows do not re-render on every streamed
+      // token (2026-10-20). eventSeq is only read when connecting, and a reconnect loads a fresh snapshot.
+      return state;
   }
 }
 
@@ -65,7 +67,11 @@ export function useHostState() {
       };
       ws.onmessage = (msg) => {
         const event = JSON.parse(String(msg.data)) as HostEvent;
-        setHost((h) => (h.kind === "ready" ? { ...h, state: applyEvent(h.state, event) } : h));
+        setHost((h) => {
+          if (h.kind !== "ready") return h;
+          const state = applyEvent(h.state, event);
+          return state === h.state ? h : { ...h, state };
+        });
         emitHostEvent(event);
       };
       ws.onclose = () => {

@@ -20,6 +20,11 @@ export interface FindBarProps {
   within?: string;
   /** The elements holding a row's text (both sides of an unchanged line, side by side). */
   rowSelector?(row: number): string;
+  /**
+   * The same elements for every row, each under an element with `data-row`: painting then reads the view once instead
+   * of once per match (2026-10-20: thousands of matches in a 33k-element file took seconds per key).
+   */
+  cellSelector?: string;
   /** The row the view is at, where the search starts. */
   fromRow?(): number;
   /** A match was made current (the view may mark its line). */
@@ -57,7 +62,7 @@ function rangeIn(nodes: readonly { node: Text; at: number }[], start: number, en
   return r;
 }
 
-export function FindBar({ active, container, texts, within, rowSelector, fromRow, onCurrent }: FindBarProps) {
+export function FindBar({ active, container, texts, within, rowSelector, cellSelector, fromRow, onCurrent }: FindBarProps) {
   const [open, setOpen] = useState(false);
   const [query, setQuery] = useState("");
   const [caseSensitive, setCaseSensitive] = useState(false);
@@ -129,7 +134,23 @@ export function FindBar({ active, container, texts, within, rowSelector, fromRow
     return i >= 0 ? i : 0;
   };
 
-  const rangesOf = (m: FindMatch): Range[] => {
+  /** Each row's text cells and their text nodes, read in one pass over the view (for one paint). */
+  type Cells = Map<number, { node: Text; at: number }[][]>;
+  const readCells = (): Cells | null => {
+    const el = container.current;
+    if (!el || !texts || !cellSelector) return null;
+    const rows: Cells = new Map();
+    for (const cell of el.querySelectorAll(`[data-row] ${cellSelector}`)) {
+      const row = Number(cell.closest<HTMLElement>("[data-row]")?.dataset.row);
+      if (!Number.isInteger(row)) continue;
+      const list = rows.get(row) ?? [];
+      list.push(textNodes(cell));
+      rows.set(row, list);
+    }
+    return rows;
+  };
+
+  const rangesOf = (m: FindMatch, cells: Cells | null = null): Range[] => {
     const el = container.current;
     if (!el) return [];
     if (!texts) {
@@ -140,6 +161,7 @@ export function FindBar({ active, container, texts, within, rowSelector, fromRow
       r.setEnd(node, m.end);
       return [r];
     }
+    if (cells) return (cells.get(m.row) ?? []).flatMap((nodes) => rangeIn(nodes, m.start, m.end) ?? []);
     if (!rowSelector) return [];
     return [...el.querySelectorAll(rowSelector(m.row))].flatMap((cell) => rangeIn(textNodes(cell), m.start, m.end) ?? []);
   };
@@ -147,10 +169,11 @@ export function FindBar({ active, container, texts, within, rowSelector, fromRow
   // Paint every match, and the current one on top.
   useLayoutEffect(() => {
     if (!open || !supported()) return;
-    const all = matches.flatMap(rangesOf);
+    const cells = matches.length ? readCells() : null;
+    const all = matches.flatMap((m) => rangesOf(m, cells));
     CSS.highlights.set(ALL, new Highlight(...all));
     const cur = matches[current];
-    if (cur) CSS.highlights.set(CURRENT, new Highlight(...rangesOf(cur)));
+    if (cur) CSS.highlights.set(CURRENT, new Highlight(...rangesOf(cur, cells)));
     else CSS.highlights.delete(CURRENT);
     return clearHighlights;
   }, [open, matches, current, redraws]); // eslint-disable-line react-hooks/exhaustive-deps

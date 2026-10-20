@@ -25,4 +25,20 @@ describe("credentials", () => {
     // Removing what is not there is fine.
     writer.remove(id);
   }, 60_000);
+
+  it.runIf(process.platform === "win32")("preloads every entry at once; afterwards a missing one is null without PowerShell", async () => {
+    const id = `probe-pre-${process.pid}`;
+    const writer = new WindowsCredentialReader("AmoStudioTest/");
+    try {
+      writer.write(id, "sk-pre 中文\n");
+      const reader = new WindowsCredentialReader("AmoStudioTest/");
+      await reader.preload();
+      const started = Date.now();
+      expect(reader.read(id)).toBe("sk-pre 中文");
+      expect(reader.read(`missing-${process.pid}`)).toBeNull();
+      expect(Date.now() - started).toBeLessThan(100);
+    } finally {
+      writer.remove(id);
+    }
+  }, 60_000);
 });

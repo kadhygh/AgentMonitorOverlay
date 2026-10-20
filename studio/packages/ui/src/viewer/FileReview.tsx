@@ -122,7 +122,7 @@ export function FileReview({
   return (
     <div className="vw-review" data-testid="viewer-code" data-highlighted={tokens ? "" : undefined}>
       <div className="gr-scroll-wrap">
-        <FindBar active={active && !goto} container={scroller} texts={findTexts} rowSelector={(row) => `[data-row="${row}"] .gr-text`} fromRow={topRow} onCurrent={setActive} />
+        <FindBar active={active && !goto} container={scroller} texts={findTexts} rowSelector={(row) => `[data-row="${row}"] .gr-text`} cellSelector=".gr-text" fromRow={topRow} onCurrent={setActive} />
         {goto && (
           <GoToLine
             lines={rows.length}

@@ -62,6 +62,8 @@ let focusWindow: BrowserWindow | null = null;
 let trace: ResizeTrace | null = null;
 /** Whether the Focus window lets clicks through right now (点击穿透), for the trace. */
 let focusIgnoring = false;
+/** What each Focus page last asked for (a new Focus window starts over). */
+const focusMouseSet = new WeakMap<Electron.WebContents, boolean>();
 /** 界面大小 one step (Ctrl + = / - / 0), set up with the IPC handlers. */
 let stepUiScaleRef: (dir: 1 | -1 | 0) => void = () => undefined;
 const prefs = new ShellPrefs(dataDir);
@@ -222,6 +224,10 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.on("amo:bot-caught", (event) => bot.caught(event.sender));
   ipcMain.on("amo:focus-mouse", (event, ignore: unknown) => {
     if (!focusWindow || event.sender !== focusWindow.webContents) return;
+    // Only changes reach Windows (2026-10-20): ignoring with `forward` installs a system-wide mouse hook that runs on
+    // this thread, so every desktop mouse event waits on it; re-setting it on each pointerover churned it needlessly.
+    if (focusMouseSet.get(event.sender) === (ignore === true)) return;
+    focusMouseSet.set(event.sender, ignore === true);
     if (ignore === true !== focusIgnoring) trace?.note("focus", ignore === true ? "ignore-mouse on" : "ignore-mouse off");
     focusIgnoring = ignore === true;
     focusWindow.setIgnoreMouseEvents(ignore === true, { forward: true });

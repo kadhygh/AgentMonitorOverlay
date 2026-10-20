@@ -146,6 +146,8 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     const liveKv = store;
     // One reader for everything, so a token saved in 设置 is what the next Claude session reads.
     const credentials = options.credentials ?? new WindowsCredentialReader();
+    // All saved keys in one run that does not hold up the event loop, before anything reads one.
+    if (credentials instanceof WindowsCredentialReader) await credentials.preload();
     // The built-in profiles plus the person's own channels (设置 → 模型). The list and the provider tables are changed
     // in place when a channel is added or edited, so every runtime below sees it at once.
     const channels = new ChannelRegistry({
