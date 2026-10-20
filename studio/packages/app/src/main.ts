@@ -4,7 +4,8 @@ import { fileURLToPath } from "node:url";
 import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
 import { createFocusWindow, displays, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { centreIn, displayFor } from "./placement.js";
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
@@ -95,7 +96,8 @@ function setFocusVisible(on: boolean): void {
       focusWindow = null;
       bot.land();
     });
-    trace?.watchInput(focusWindow, "focus");
+    // Every mouse message of Focus, written on the main thread: only when asked for (2026-10-15 click investigation).
+    if (process.env.AMO_STUDIO_TRACE_INPUT === "1") trace?.watchInput(focusWindow, "focus");
     recoverLostClicks(focusWindow, { testMode, note: (at) => trace?.note("focus", "click given back", `at ${at.x},${at.y}`) });
   } else if (!on && focusWindow) {
     focusWindow.destroy();
@@ -305,8 +307,9 @@ if (!app.requestSingleInstanceLock()) {
           trace!.page(w ? nameOf(w) : "?", summary);
         });
       }
-      // Throwaway profiles of earlier first-run setups (they cannot be removed while their process runs).
-      for (const name of safeList(tmpdir())) if (/^amo-studio-setup-\d+$/.test(name)) rmSync(join(tmpdir(), name), { recursive: true, force: true });
+      // Throwaway profiles of earlier first-run setups (they cannot be removed while their process runs). Off the main
+      // thread, and a file still held (EBUSY) no longer ends the start (2026-10-20).
+      for (const name of safeList(tmpdir())) if (/^amo-studio-setup-\d+$/.test(name)) void rm(join(tmpdir(), name), { recursive: true, force: true }).catch(() => undefined);
       const link: HostLinkOptions = {
         dataDir,
         hostBin: join(studioRoot, "packages", "host", "dist", "bin.js"),
@@ -352,9 +355,15 @@ if (!app.requestSingleInstanceLock()) {
             if (moved) mainWindow.setBounds(next);
           }
         };
-        screen.on("display-added", refit);
-        screen.on("display-removed", refit);
-        screen.on("display-metrics-changed", refit);
+        // Once a burst of display changes settles (docking, DPI, the taskbar moving send several at once).
+        let refitTimer: ReturnType<typeof setTimeout> | undefined;
+        const refitSoon = () => {
+          clearTimeout(refitTimer);
+          refitTimer = setTimeout(refit, 200);
+        };
+        screen.on("display-added", refitSoon);
+        screen.on("display-removed", refitSoon);
+        screen.on("display-metrics-changed", refitSoon);
       }
     })
     .catch((err: unknown) => {

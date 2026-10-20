@@ -1,5 +1,6 @@
 import { app, type BrowserWindow } from "electron";
-import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
+import { appendFileSync, mkdirSync } from "node:fs";
+import { appendFile, rename, stat } from "node:fs/promises";
 import { join } from "node:path";
 import { onWindowMessage } from "./window-messages.js";
 
@@ -44,6 +45,14 @@ export class ResizeTrace {
     this.file = join(dir, "resize-trace.log");
     if (!enabled) return;
     mkdirSync(dir, { recursive: true });
+    // What still waits when the process ends.
+    process.once("exit", () => {
+      try {
+        if (this.queue.length) appendFileSync(this.file, this.queue.splice(0).join(""));
+      } catch {
+        // tracing never breaks the app
+      }
+    });
     this.write(`--- start ${new Date().toLocaleString("sv-SE")} (local times from here on) · Electron ${process.versions.electron} · Chrome ${process.versions.chrome} · ${process.platform} ${process.getSystemVersion()}`);
     // Software compositing makes resizing slow and flickery. Whether the GPU is used, again whenever that changes, and
     // why a GPU process went away (a crash falls back to software until the app restarts).
@@ -229,16 +238,37 @@ export class ResizeTrace {
     );
   }
 
+  /**
+   * Lines wait in memory and go to the file together, off the main thread (2026-10-20: each line was a stat and an
+   * append that held the main thread, and every window with it, as long as the disk took); what is left when the
+   * process ends is written then.
+   */
+  private readonly queue: string[] = [];
+  private flushing = false;
+
   private write(line: string): void {
+    this.queue.push(`${line}\n`);
+    if (!this.flushing) {
+      this.flushing = true;
+      setImmediate(() => void this.drain());
+    }
+  }
+
+  private async drain(): Promise<void> {
     try {
-      try {
-        if (statSync(this.file).size > MAX_BYTES) renameSync(this.file, `${this.file}.1`);
-      } catch {
-        // no file yet
+      while (this.queue.length) {
+        const chunk = this.queue.splice(0).join("");
+        try {
+          if ((await stat(this.file)).size > MAX_BYTES) await rename(this.file, `${this.file}.1`);
+        } catch {
+          // no file yet
+        }
+        await appendFile(this.file, chunk);
       }
-      appendFileSync(this.file, `${line}\n`);
     } catch {
       // tracing never breaks the app
+    } finally {
+      this.flushing = false;
     }
   }
 }

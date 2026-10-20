@@ -13,7 +13,8 @@ import { recoverLostClicks } from "./focus-window.js";
 
 const BOT_W = 420;
 const BOT_H = 160;
-const FRAME_MS = 16;
+/** A move every 33 ms (it was 16): each one is a window move on the main thread, as long as the robot flies. */
+const FRAME_MS = 33;
 
 export interface BotFlightOptions {
   url(): string | null;
@@ -127,8 +128,11 @@ export function setupBotFlight(options: BotFlightOptions): BotFlightControl {
             // A stalled frame (the machine was busy, or asleep) does not become one long jump.
             const dt = Math.min(0.1, (now - last) / 1000);
             last = now;
+            const before = [Math.round(flight.x), Math.round(flight.y)];
             flight = fly(flight, dt, size, area);
-            win.setPosition(Math.round(flight.x), Math.round(flight.y));
+            const x = Math.round(flight.x);
+            const y = Math.round(flight.y);
+            if (x !== before[0] || y !== before[1]) win.setPosition(x, y);
           }, FRAME_MS);
         }
         options.note(`bot flies: ${message}`);
