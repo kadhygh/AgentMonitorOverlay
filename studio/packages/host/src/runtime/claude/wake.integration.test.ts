@@ -123,16 +123,13 @@ describe("ClaudeRuntime: loop and usage limits", () => {
     expect(session(s.id).wake?.loop?.prompt).toBe("loop tick");
   }, 120_000);
 
-  it("outside a loop, waits at a usage limit until the person turns on going on by itself", async () => {
+  it("outside a loop, goes on after a usage limit by default (2026-10-21); the person can turn it off", async () => {
     const s = await started("limit plain");
     const resetsAt = Math.floor(Date.now() / 1000) - 600;
     feed(s.id, { type: "rate_limit_event", rate_limit_info: { status: "rejected", rateLimitType: "five_hour", resetsAt } });
     feed(s.id, assistant([{ type: "text", text: "You've hit your session limit · resets 12:30am (Asia/Hong_Kong)" }], { error: "rate_limit" }));
     feed(s.id, result(true));
-    expect(session(s.id)).toMatchObject({ status: "idle", wake: { limit: { resetsAt: new Date(resetsAt * 1000).toISOString(), autoContinue: false } } });
-    await sleep(500);
-    expect(agentTexts(s.id).some((t) => t.startsWith("MOCK: 额度已恢复"))).toBe(false);
-    await runtime.setWakeChoice(s.id, { autoContinue: true });
+    expect(session(s.id).wake?.limit).toMatchObject({ resetsAt: new Date(resetsAt * 1000).toISOString(), autoContinue: true });
     await until(() => agentTexts(s.id).includes(`MOCK: ${LIMIT_CONTINUE_TEXT}`) && session(s.id).status === "idle", "continuation");
     expect(session(s.id).wake).toBeUndefined();
     // The limit again (its reset time was off): the person's choice holds, but Studio does not go on again right away.
@@ -142,6 +139,9 @@ describe("ClaudeRuntime: loop and usage limits", () => {
     expect(session(s.id).wake?.limit?.autoContinue).toBe(true);
     await sleep(500);
     expect(agentTexts(s.id).filter((t) => t === `MOCK: ${LIMIT_CONTINUE_TEXT}`)).toHaveLength(1);
+    // Turned off, it stays off for this session.
+    await runtime.setWakeChoice(s.id, { autoContinue: false });
+    expect(session(s.id).wake?.limit?.autoContinue).toBe(false);
   }, 120_000);
 
   it("an agent in the background asks between turns: once settled, the session is idle again, not left waiting (2026-10-16)", async () => {

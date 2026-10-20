@@ -40,8 +40,9 @@ export class ClaudeWake {
       this.set(sessionId, null);
     } else if (live.limitText !== null) {
       const resetsAt = this.limitResetsAt(sessionId, live);
-      // In a loop Studio goes on after the reset by default; otherwise as the person last chose for this session.
-      const autoContinue = this.autoContinueChoice.get(sessionId) ?? !!wake?.loop;
+      // Studio goes on after the reset unless the person turned it off for this session (on by default since 2026-10-21;
+      // before, only in a loop).
+      const autoContinue = this.autoContinueChoice.get(sessionId) ?? true;
       this.set(sessionId, { ...(wake?.loop ? { loop: wake.loop } : {}), limit: { resetsAt, message: live.limitText, autoContinue } });
       this.core.log(`usage limit in ${sessionId}: resets ${resetsAt ?? "(unknown)"}, Studio continues: ${autoContinue}`);
     } else {
