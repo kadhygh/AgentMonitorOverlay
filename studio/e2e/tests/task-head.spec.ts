@@ -120,7 +120,7 @@ test("status, topic and project from the line under the title; the right column 
   expect(forkBox!.height).toBeGreaterThanOrEqual(30);
   await screenshot(app, "stage-14", "S14-I-session-bar", page);
   await page.getByTestId("session-more").click();
-  await expect(page.getByTestId("session-menu").getByRole("menuitem")).toHaveText(["文件标记", "归档会话"]);
+  await expect(page.getByTestId("session-menu").getByRole("menuitem")).toHaveText(["书签", "归档会话"]);
   await expect(page.getByTestId("session-archive")).toHaveClass(/menu-danger/);
   await page.getByTestId("session-archive").hover();
   await screenshot(app, "stage-14", "S14-I-archive-danger", page);

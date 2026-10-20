@@ -26,7 +26,9 @@ import { WakeBar } from "../chat/WakeBar.js";
 import { ContextHint } from "../chat/ContextHint.js";
 import { QuestionSeatContext } from "../chat/questions/QuestionRecord.js";
 import { AnnotationBubble, contentRect, SelectionBar, type BubbleTarget, type ContentRect } from "../review/AnnotationBubble.js";
-import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, READ_HERE_EVENT, useAnnotationHighlights } from "../review/highlights.js";
+import { annotationAt, annotationRect, flashAnnotation, highlightsSupported, useAnnotationHighlights } from "../review/highlights.js";
+import { READ_HERE_EVENT } from "../lib/scrollPin.js";
+import { readPlaceOf, restoreReadPlace, type ReadPlace } from "./readPlace.js";
 import type { AnnotationRefs } from "../review/annotationRefs.js";
 import { pendingQuestion } from "../chat/questions/flow.js";
 import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
@@ -68,8 +70,8 @@ interface ThreadProps {
   onSaveAnnotation(anchor: SelectionAnchor, note: string): Promise<boolean>;
   /** 书签 (2026-10-19) on the selection bar: the selected passage under the session's topic. */
   onBookmark?(anchor: SelectionAnchor): void;
-  /** 后退 back to this session: how far it had been read (scrollTop), restored once its messages are in. */
-  initialScroll?: number;
+  /** 后退 back to this session: where it had been read (readPlace), restored once its messages are in. */
+  initialScroll?: ReadPlace;
   onEditAnnotation(id: string, note: string): Promise<boolean>;
   onDeleteAnnotation(id: string): void;
   /** A command or another action of the composer failed (stage 12, S12-E). */
@@ -180,7 +182,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     if (el && stick.current) el.scrollTop = el.scrollHeight;
   };
   useLayoutEffect(toBottom, [items, session?.status]);
-  // 后退 back here: where it had been read, not the end; once the messages are in and tall enough to scroll there.
+  // 后退 back here: where it had been read, not the end; once the messages are in.
   const restoreTo = useRef(initialScroll);
   // …and the first "a new session: follow its end" below is not for this one.
   const keepRestored = useRef(initialScroll !== undefined);
@@ -188,10 +190,13 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     const el = scroller.current;
     if (restoreTo.current === undefined || !el || !items.length) return;
     stick.current = false;
-    el.scrollTop = restoreTo.current;
+    restoreReadPlace(el, restoreTo.current);
+    restoreTo.current = undefined;
     setAtBottom(el.scrollHeight - el.scrollTop - el.clientHeight < 40);
-    if (el.scrollHeight - el.clientHeight >= restoreTo.current - 2) restoreTo.current = undefined;
   }, [items]);
+  // Where it is read, noted for 后退 once a frame while it scrolls.
+  const noting = useRef(0);
+  useEffect(() => () => cancelAnimationFrame(noting.current), []);
   // Scrolled to a passage or an annotation (scrollToBox): stop following the end at once.
   useEffect(() => {
     const el = scroller.current;
@@ -361,7 +366,13 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             const bottom = el.scrollHeight - el.scrollTop - el.clientHeight < 40;
             stick.current = bottom;
             setAtBottom(bottom);
-            if (session) navHistory.noteScroll(session.id, el.scrollTop);
+            if (session && !noting.current) {
+              const id = session.id;
+              noting.current = requestAnimationFrame(() => {
+                noting.current = 0;
+                navHistory.noteScroll(id, readPlaceOf(el));
+              });
+            }
           }}
           onMouseDown={(e) => {
             if (!inBubble(e.target)) setBar(null);

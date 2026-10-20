@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { flash } from "./ReplyNav.js";
+import { pinScroll } from "../lib/scrollPin.js";
 
 // 「按 ↑ 回到本轮回复开始」 (2026-10-15): when a turn of the open session ends with its start scrolled out of sight, a
 // hint at the bottom of the conversation offers to go back there. The next thing the person does decides: ↑ (or a
@@ -43,7 +44,7 @@ export function useTurnStartHint(scroller: RefObject<HTMLDivElement | null>, ses
     const el = scroller.current;
     const start = el && replyStart(el);
     if (!el || !start) return;
-    el.scrollTop += start.getBoundingClientRect().top - el.getBoundingClientRect().top - EDGE;
+    pinScroll(el, () => start.getBoundingClientRect().top - el.getBoundingClientRect().top - EDGE);
     flash(start);
   };
   const jumpRef = useRef(jump);

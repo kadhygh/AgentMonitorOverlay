@@ -1,6 +1,7 @@
 import { useSyncExternalStore } from "react";
 import type { Scope } from "../board/Board.js";
 import type { View } from "./views.js";
+import { samePlace as sameReadPlace, type ReadPlace } from "../task/readPlace.js";
 
 // 后退 / 前进 (2026-10-19, after VS Code's Go Back): the places the workbench has been, so Alt+← returns to the session
 // that was being read — at the place it was read to — after Focus or a bookmark took the person elsewhere. A place is
@@ -10,8 +11,8 @@ import type { View } from "./views.js";
 export interface Place {
   view: View;
   scope: Scope;
-  /** A task page's conversation: how far down it was read (scrollTop), noted as it scrolls. */
-  scroll?: number;
+  /** A task page's conversation: where it was read (task/readPlace), noted as it scrolls. */
+  scroll?: ReadPlace;
 }
 
 export const MAX = 50;
@@ -64,9 +65,9 @@ export function pickSession(s: NavState, taskId: string, sessionId: string): Nav
 }
 
 /** How far the current place's conversation is read (only while it is that session's). */
-export function noteScroll(s: NavState, sessionId: string, scroll: number): NavState {
+export function noteScroll(s: NavState, sessionId: string, scroll: ReadPlace): NavState {
   const cur = s.current;
-  if (!cur || cur.view.kind !== "task" || cur.view.sessionId !== sessionId || cur.scroll === scroll) return s;
+  if (!cur || cur.view.kind !== "task" || cur.view.sessionId !== sessionId || sameReadPlace(cur.scroll, scroll)) return s;
   return { ...s, current: { ...cur, scroll } };
 }
 
@@ -100,7 +101,7 @@ export const navHistory = {
   get: () => state,
   visit: (place: Place) => set(visit(state, place)),
   pickSession: (taskId: string, sessionId: string) => set(pickSession(state, taskId, sessionId)),
-  noteScroll: (sessionId: string, scroll: number) => set(noteScroll(state, sessionId, scroll)),
+  noteScroll: (sessionId: string, scroll: ReadPlace) => set(noteScroll(state, sessionId, scroll)),
   /** Moves and returns the place to show, or null. */
   step(dir: -1 | 1, alive: (p: Place) => boolean): Place | null {
     const r = step(state, dir, alive);

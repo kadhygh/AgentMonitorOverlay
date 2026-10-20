@@ -191,3 +191,14 @@ export function windowState(app: ElectronApplication, which: WindowKind = "main"
 export async function settlePaint(page: Page): Promise<void> {
   await page.evaluate(() => new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r()))));
 }
+
+/**
+ * Shows the main window, without taking focus. Tests keep it hidden, where every turn is drawn; shown, as for a person,
+ * turns off screen are drawn only once in view and stand in at 300px before (chat.css), which jumps must follow.
+ */
+export async function showMainWindow(app: ElectronApplication): Promise<void> {
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes("#"))?.showInactive());
+}
+
+/** A long message (the mock model echoes it back): a turn far taller than the 300px of a turn not drawn yet. */
+export const longTurn = (n: number) => [`第 ${n} 轮`, ...Array.from({ length: 40 }, (_, i) => `第 ${n} 轮第 ${i + 1} 段，一段占一行的说明文字。`)].join("\n\n");

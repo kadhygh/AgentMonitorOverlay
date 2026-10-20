@@ -34,13 +34,15 @@ describe("后退 / 前进 history", () => {
     expect(s.picked).toBeUndefined();
   });
 
-  it("notes how far the current session was read, and keeps it when the place is left and come back to", () => {
+  it("notes where the current session was read, and keeps it when the place is left and come back to", () => {
+    const read = { block: 3, offset: 120, top: 2400 };
     let s = visit(EMPTY, task("t1", "s1"));
-    s = noteScroll(s, "s1", 420);
-    expect(noteScroll(s, "s2", 10)).toBe(s);
+    s = noteScroll(s, "s1", read);
+    expect(noteScroll(s, "s2", { block: 0, offset: 10, top: 10 })).toBe(s);
+    expect(noteScroll(s, "s1", { ...read })).toBe(s);
     s = visit(s, task("t2", "s5"));
     const back = step(s, -1, alive)!;
-    expect(back.place).toEqual({ ...task("t1", "s1"), scroll: 420 });
+    expect(back.place).toEqual({ ...task("t1", "s1"), scroll: read });
   });
 
   it("goes back and forward; going somewhere new drops the forward list", () => {

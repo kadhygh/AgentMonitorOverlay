@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState, type RefObject } from "react";
+import { pinScroll } from "../lib/scrollPin.js";
 
 // Jumps between agent replies of the open session: "上一条 / 下一条" buttons and Alt+↑ / Alt+↓.
 // The current reply is the last one whose top edge has scrolled to (or above) the top of the thread.
@@ -54,7 +55,9 @@ export function ReplyNav({ scroller, itemCount }: { scroller: RefObject<HTMLDivE
       let target = delta > 0 ? now + 1 : nowTop < -EDGE ? now : now - 1;
       target = Math.max(0, Math.min(list.length - 1, target));
       const node = list[target]!;
-      el.scrollTop += node.getBoundingClientRect().top - el.getBoundingClientRect().top - EDGE;
+      // Kept there while the turns it brings into view take their height (lib/scrollPin; 2026-10-20 a jump up four
+      // replies ended 2,900px off and the next one went nowhere).
+      pinScroll(el, () => node.getBoundingClientRect().top - el.getBoundingClientRect().top - EDGE);
       flash(node);
       refresh();
     },

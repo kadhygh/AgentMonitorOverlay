@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { ChecklistItem, DecisionRequest, MailMessage, OptionalFeature, ScheduleProposal, StateSnapshot, TodoItem } from "@amo-studio/protocol";
 import type { HostLink, Passage } from "../host/client.js";
 import type { Scope } from "../board/Board.js";
+import type { ReadPlace } from "../task/readPlace.js";
 
 // What a feature hands the shell (ui/src/features.ts lists them): its pages ("views"), the top-bar tab that opens
 // one, and panels it adds to other pages. The shell keeps the view in state and renders the one in front.
@@ -15,9 +16,9 @@ export type View =
   | { kind: "packs"; workspaceId: string }
   /**
    * `created`: opened right after the task was made (its session list starts folded). `passage`: a bookmarked passage
-   * of `sessionId` to scroll to and flash (书签). `scroll`: how far its conversation was read (后退 back to it).
+   * of `sessionId` to scroll to and flash (书签). `scroll`: where its conversation was read (后退 back to it).
    */
-  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean; passage?: Passage; scroll?: number };
+  | { kind: "task"; taskId: string; sessionId?: string; nav?: number; back?: View; created?: boolean; passage?: Passage; scroll?: ReadPlace };
 
 const BACK_LABEL: Partial<Record<View["kind"], string>> = { board: "看板", canvas: "画布" };
 

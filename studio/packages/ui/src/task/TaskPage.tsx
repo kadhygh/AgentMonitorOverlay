@@ -40,6 +40,7 @@ import { DescriptionDialog } from "./DescriptionDialog.js";
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
 import { passageTrace, placeOf } from "../lib/passageTrace.js";
+import type { ReadPlace } from "./readPlace.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
 const SIDEBAR_KEY = "amo.taskSidebar";
@@ -74,8 +75,8 @@ interface TaskPageProps {
   initialSessionId?: string;
   /** Opened at a bookmarked passage of `initialSessionId` (书签): scrolled to and flashed once its reply is there. */
   passage?: Passage;
-  /** 后退 back to this page: how far `initialSessionId`'s conversation had been read. */
-  restoreScroll?: number;
+  /** 后退 back to this page: where `initialSessionId`'s conversation had been read. */
+  restoreScroll?: ReadPlace;
   /** Opened right after the task was made: the session list starts folded (2026-10-15). */
   justCreated?: boolean;
   /** What "←" says: where it returns (看板 or 画布). */

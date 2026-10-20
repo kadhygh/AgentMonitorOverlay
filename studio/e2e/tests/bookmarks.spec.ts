@@ -1,7 +1,7 @@
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import type { Bookmark, Session, Task, Topic, Workspace } from "@amo-studio/protocol";
 import { selectAndRelease } from "./selection.js";
-import { launchStudio, screenshot, type Studio } from "./studio.js";
+import { launchStudio, longTurn, screenshot, showMainWindow, type Studio } from "./studio.js";
 
 // 书签 (2026-10-19): a passage of a reply bookmarked from the selection bar goes under the task's topic; the bookmarks
 // window groups by topic, a passage row drags out as a quote and 打开对话 brings the workbench back to it, flashing
@@ -146,16 +146,14 @@ test("打开对话 on a passage with long turns above it, none drawn yet, still 
   // (the person's bookmark ended 12,000px below the view).
   studio = await launchStudio({ transcriptView: "standard" });
   const { app, page } = studio;
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => !w.webContents.getURL().includes("#"))?.showInactive());
+  await showMainWindow(app);
   const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
   const topic = await studio.api<Topic>("POST", "/api/topics", { title: "掉落" });
-  // A long message, echoed back by the mock model: a turn far taller than 300px.
-  const long = (n: number) => [`第 ${n} 轮`, ...Array.from({ length: 40 }, (_, i) => `第 ${i + 1} 段，一段占一行的说明文字。`)].join("\n\n");
   const created = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
     title: "很长的对话",
     workspaceId: ws.id,
     topicId: topic.id,
-    firstSession: { profileId: "codex-mock", text: long(1) },
+    firstSession: { profileId: "codex-mock", text: longTurn(1) },
   });
   await page.getByTestId("task-card").first().click();
   const replies = page.getByTestId("msg-agent");
@@ -165,7 +163,7 @@ test("打开对话 on a passage with long turns above it, none drawn yet, still 
     await expect(replies).toHaveCount(n + 1, { timeout: 30_000 });
   };
   await expect(replies).toHaveCount(1, { timeout: 30_000 });
-  for (let i = 2; i <= 6; i++) await say(long(i));
+  for (let i = 2; i <= 6; i++) await say(longTurn(i));
   // The passage in the 7th reply of 11: six long turns above it, four below.
   await say("[[markdown]]");
   const reply = replies.nth(6);
@@ -173,7 +171,7 @@ test("打开对话 on a passage with long turns above it, none drawn yet, still 
   await selectAndRelease(reply, "发现 3 张表");
   await page.getByTestId("selection-bookmark").click();
   await expect(page.getByTestId("toast")).toContainText("已加到「掉落」的书签");
-  for (let i = 8; i <= 11; i++) await say(long(i));
+  for (let i = 8; i <= 11; i++) await say(longTurn(i));
 
   const marks = await openMarksWindow(app, page);
   // From the board: the task page comes anew, none of its turns drawn yet.
