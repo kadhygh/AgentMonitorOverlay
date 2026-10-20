@@ -1,6 +1,7 @@
 import { app, type BrowserWindow } from "electron";
 import { appendFileSync, mkdirSync, renameSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { StallProfiler } from "./stall-profiler.js";
 import { onWindowMessage } from "./window-messages.js";
 
 // Resize trace (2026-10-15, the main window flickers again when dragged by its bottom-right corner): every window's
@@ -104,12 +105,18 @@ export class ResizeTrace {
     const a11y = () => (app.isAccessibilitySupportEnabled() ? "on" : "off");
     this.write(`${stamp()} accessibility: ${a11y()}${process.env.AMO_STUDIO_NO_A11Y === "1" ? " (pages: disabled by AMO_STUDIO_NO_A11Y)" : ""}`);
     app.on("accessibility-support-changed", (_e, on) => this.write(`${stamp()} accessibility: ${on ? "on" : "off"} (changed)`));
+    const profiler = new StallProfiler(dirname(this.file), (line) => this.write(line));
+    profiler.start();
     const TICK = 100;
     let last = performance.now();
     setInterval(() => {
       const now = performance.now();
       const late = now - last - TICK;
-      if (late >= 300) this.write(`${stamp()} main process stalled ${Math.round(late)}ms (event loop)`);
+      if (late >= 300) {
+        const at = stamp();
+        this.write(`${at} main process stalled ${Math.round(late)}ms (event loop)`);
+        if (late >= 2000) profiler.stalled(late, at);
+      }
       last = now;
     }, TICK).unref();
   }
