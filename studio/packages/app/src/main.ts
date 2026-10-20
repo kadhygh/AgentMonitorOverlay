@@ -4,7 +4,7 @@ import { fileURLToPath } from "node:url";
 import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
 import { createFocusWindow, displays, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { centreIn, displayFor } from "./placement.js";
-import { existsSync, readdirSync, rmSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
@@ -221,9 +221,20 @@ if (!app.requestSingleInstanceLock()) {
     focusWindow.setIgnoreMouseEvents(ignore === true, { forward: true });
     if (testMode) (globalThis as { __amoFocusIgnore?: boolean }).__amoFocusIgnore = ignore === true;
   });
+  // Passage trace (2026-10-20): 书签 → 打开对话 did not reach the passage for the person; each step, from every window.
+  ipcMain.on("amo:passage-trace", (event, line: unknown) => {
+    const w = BrowserWindow.fromWebContents(event.sender);
+    const name = w === mainWindow ? "main" : new URL(event.sender.getURL() || "about:blank").hash.slice(1).split("?")[0] || "window";
+    passageTrace(`${name}: ${String(line).slice(0, 2000)}`);
+  });
   // "在工作台打开" from Focus: the workbench shows that task and session (and comes forward, except in tests).
   ipcMain.handle("amo:open-in-workbench", (_event, target: unknown) => {
     const t = target as { taskId?: unknown; sessionId?: unknown; show?: unknown; passage?: unknown } | null;
+    if (t?.passage !== undefined) {
+      const w = mainWindow;
+      const state = w ? { minimized: w.isMinimized(), visible: w.isVisible(), focused: w.isFocused(), url: w.webContents.getURL().slice(0, 120) } : null;
+      passageTrace(`shell: open-in-workbench ${JSON.stringify({ taskId: t.taskId, sessionId: t.sessionId, passage: passageOf(t.passage) ? "ok" : "rejected", main: state })}`);
+    }
     // No (or an empty) taskId opens the board: scheduler proposals, and topic sessions from Focus. `show`: only bring
     // the window forward, where it is (Focus's icon, 2026-10-15).
     if (!mainWindow) return;
@@ -238,6 +249,10 @@ if (!app.requestSingleInstanceLock()) {
       return;
     }
     bringForward(mainWindow);
+    if (t?.passage !== undefined) {
+      const w = mainWindow;
+      setTimeout(() => !w.isDestroyed() && passageTrace(`shell: brought forward ${JSON.stringify({ minimized: w.isMinimized(), visible: w.isVisible(), focused: w.isFocused() })}`), 400);
+    }
   });
   // 主窗口回到屏幕中央 (Focus's menu, 2026-10-19): the workbench, at its size, in the middle of the display Focus is on
   // (where the person is looking), and in front — for a window dragged off every screen. Tests only record where.
@@ -479,6 +494,18 @@ function createMainWindow(conn: HostConnection): BrowserWindow {
   }
   void win.loadURL(process.env.AMO_STUDIO_DEV_URL ?? `${conn.url}/`);
   return win;
+}
+
+/** One line of logs/passage-trace.log, stamped with local time; never in the way of what it traces. */
+function passageTrace(line: string): void {
+  try {
+    const dir = join(dataDir, "logs");
+    mkdirSync(dir, { recursive: true });
+    appendFileSync(join(dir, "passage-trace.log"), `${new Date().toLocaleString("sv-SE")}.${String(Date.now() % 1000).padStart(3, "0")} ${line}
+`);
+  } catch {
+    // the trace is not worth an error
+  }
 }
 
 /** A bookmarked passage to flash in the workbench (书签, 2026-10-19), or null when the value is not one. */

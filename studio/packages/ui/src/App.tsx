@@ -24,6 +24,7 @@ import type { MarksTarget } from "./marks/logic.js";
 import { openReview } from "./gitreview/open.js";
 import { onHostEvent } from "./host/events.js";
 import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
+import { passageTrace } from "./lib/passageTrace.js";
 
 // The shell: the Host connection, the scope and the view in front, the top bar and the left column. Pages come from
 // the features (features.ts); the data several of them share is loaded here once.
@@ -129,9 +130,10 @@ export function App() {
     () =>
       // From Focus: a task (and session), or the board when no task is named (scheduler proposals).
       // From the bookmarks window too: a passage to scroll to and flash.
-      window.amo?.onNavigate?.(({ taskId, sessionId, passage }) =>
-        setView(taskId ? { kind: "task", taskId, ...(sessionId ? { sessionId } : {}), ...(sessionId && passage ? { passage } : {}), nav: Date.now() } : { kind: "board" }),
-      ),
+      window.amo?.onNavigate?.(({ taskId, sessionId, passage }) => {
+        if (passage) passageTrace("workbench: navigate", { taskId, sessionId: sessionId ?? null, itemId: passage.itemId, hidden: document.hidden });
+        setView(taskId ? { kind: "task", taskId, ...(sessionId ? { sessionId } : {}), ...(sessionId && passage ? { passage } : {}), nav: Date.now() } : { kind: "board" });
+      }),
     [],
   );
 

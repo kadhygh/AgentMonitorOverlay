@@ -1,6 +1,7 @@
 import { useEffect, useRef, type RefObject } from "react";
 import type { Annotation } from "@amo-studio/protocol";
 import { findInRendered, occurrenceInSource } from "./anchor.js";
+import { passageTrace } from "../lib/passageTrace.js";
 
 // Annotated passages, highlighted exactly (stage 13, acceptance G2) with the CSS Custom Highlight API: one Range per
 // unsent annotation over the quoted text in the rendered reply, painted through `::highlight(amo-annotation)` without
@@ -162,10 +163,12 @@ export function paintedText(id: string): string | null {
  */
 export function scrollToBox(from: Element, box: DOMRect): void {
   const scroller = scrollParent(from);
-  if (!scroller) return;
+  if (!scroller) return passageTrace("scrollToBox: no scroller");
   const view = scroller.getBoundingClientRect();
   const want = box.height < view.height - 48 ? view.top + (view.height - box.height) / 2 : view.top + 24;
+  const was = scroller.scrollTop;
   scroller.scrollTop += box.top - want;
+  passageTrace("scrollToBox", { from: Math.round(was), by: Math.round(box.top - want), to: Math.round(scroller.scrollTop), view: Math.round(view.height), box: Math.round(box.height) });
   // The conversation stops following its end now, not at its scroll event a frame later: content growing in between
   // (a turn unfolding, code highlighted) would take it back to the end (2026-10-19: 书签 → 打开对话 landed there).
   scroller.dispatchEvent(new Event(READ_HERE_EVENT));

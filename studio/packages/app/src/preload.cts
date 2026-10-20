@@ -11,6 +11,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
   openExternal: (url: string): Promise<void> => electron.ipcRenderer.invoke("amo:open-external", url),
   /** The page's summary of one window drag (lib/resizeTrace.ts), for logs/resize-trace.log. */
   trace: (summary: unknown): void => electron.ipcRenderer.send("amo:trace", summary),
+  /** One line of logs/passage-trace.log (书签 → 打开对话, 2026-10-20). */
+  passageTrace: (line: string): void => electron.ipcRenderer.send("amo:passage-trace", line),
   copyText: (text: string): Promise<void> => electron.ipcRenderer.invoke("amo:copy", text),
   /** The workbench window's own title bar buttons. */
   windowControls: {
