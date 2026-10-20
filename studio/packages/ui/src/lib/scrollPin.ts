@@ -15,9 +15,9 @@ export const READ_HERE_EVENT = "amo:read-here";
 /**
  * Scrolls `scroller` by `delta()` (how far the target is from where it should be, in px; positive scrolls down), then
  * again each frame while the layout moves, until it stays put, or until the person scrolls themselves (wheel, keys,
- * the scrollbar): from then on, where to read is theirs. `onMove` hears each correction after the first.
+ * the scrollbar): from then on, where to read is theirs.
  */
-export function pinScroll(scroller: HTMLElement, delta: () => number, onMove?: (by: number, frame: number) => void): number {
+export function pinScroll(scroller: HTMLElement, delta: () => number): void {
   const run = (settling.get(scroller) ?? 0) + 1;
   settling.set(scroller, run);
   const place = () => {
@@ -25,7 +25,7 @@ export function pinScroll(scroller: HTMLElement, delta: () => number, onMove?: (
     if (Math.abs(by) > 1) scroller.scrollTop += by;
     return by;
   };
-  const first = place();
+  place();
   // The conversation stops following its end now, not at its scroll event a frame later: content growing in between
   // (a turn unfolding, code highlighted) would take it back to the end (2026-10-19: 书签 → 打开对话 landed there).
   scroller.dispatchEvent(new Event(READ_HERE_EVENT));
@@ -39,12 +39,10 @@ export function pinScroll(scroller: HTMLElement, delta: () => number, onMove?: (
   const settle = () => {
     if (settling.get(scroller) === run && !theirs && scroller.isConnected) {
       const by = place();
-      if (Math.abs(by) > 1) onMove?.(by, frames);
       still = Math.abs(by) > 1 ? 0 : still + 1;
       if (++frames < SETTLE_FRAMES && still < STILL_FRAMES) return void requestAnimationFrame(settle);
     }
     for (const e of inputs) scroller.removeEventListener(e, mine);
   };
   requestAnimationFrame(settle);
-  return first;
 }

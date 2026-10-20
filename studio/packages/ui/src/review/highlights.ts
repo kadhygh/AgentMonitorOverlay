@@ -1,7 +1,6 @@
 import { useEffect, useRef, type RefObject } from "react";
 import type { Annotation } from "@amo-studio/protocol";
 import { findInRendered, occurrenceInSource } from "./anchor.js";
-import { passageTrace } from "../lib/passageTrace.js";
 import { pinScroll } from "../lib/scrollPin.js";
 
 // Annotated passages, highlighted exactly (stage 13, acceptance G2) with the CSS Custom Highlight API: one Range per
@@ -165,18 +164,12 @@ export function paintedText(id: string): string | null {
  */
 export function scrollToBox(from: Element, measure: () => DOMRect): void {
   const scroller = scrollParent(from);
-  if (!scroller) return passageTrace("scrollToBox: no scroller");
-  const was = scroller.scrollTop;
-  const by = pinScroll(
-    scroller,
-    () => {
-      const box = measure();
-      const view = scroller.getBoundingClientRect();
-      return box.top - (box.height < view.height - 48 ? view.top + (view.height - box.height) / 2 : view.top + 24);
-    },
-    (again, frame) => passageTrace("scrollToBox: again", { frame, by: again, to: Math.round(scroller.scrollTop), height: scroller.scrollHeight }),
-  );
-  passageTrace("scrollToBox", { from: Math.round(was), by, to: Math.round(scroller.scrollTop), view: scroller.clientHeight, height: scroller.scrollHeight });
+  if (!scroller) return;
+  pinScroll(scroller, () => {
+    const box = measure();
+    const view = scroller.getBoundingClientRect();
+    return box.top - (box.height < view.height - 48 ? view.top + (view.height - box.height) / 2 : view.top + 24);
+  });
 }
 
 function scrollParent(el: Element): HTMLElement | null {

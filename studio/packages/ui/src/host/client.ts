@@ -59,8 +59,6 @@ declare global {
       openInWorkbench?(target: { taskId?: string; sessionId?: string; show?: boolean; passage?: Passage }): Promise<void>;
       /** One window drag's summary, for logs/resize-trace.log (Electron). */
       trace?(summary: unknown): void;
-      /** One line of logs/passage-trace.log (Electron; lib/passageTrace.ts). */
-      passageTrace?(line: string): void;
       windowControls?: {
         minimize(): void;
         toggleMaximize(): void;

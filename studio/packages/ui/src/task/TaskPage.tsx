@@ -39,7 +39,6 @@ import { SessionBanners, SessionHead } from "./SessionHead.js";
 import { DescriptionDialog } from "./DescriptionDialog.js";
 import { PlanBanner, useTaskPlans } from "../taskplans/TaskPlans.js";
 import { RelayBanner, useRelays } from "../relays/Relays.js";
-import { passageTrace, placeOf } from "../lib/passageTrace.js";
 import type { ReadPlace } from "./readPlace.js";
 
 /** Whether the right column (进度、批注、留言…) shows; off by default, remembered per window. */
@@ -251,19 +250,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
 
   // Opened at a bookmarked passage (书签): once, when its reply has come in.
   const passageShown = useRef(false);
-  const passageWait = useRef("");
   useEffect(() => {
-    if (!passage || passageShown.current) return;
-    const has = items.some((i) => i.id === passage.itemId);
-    if (session?.id !== initialSessionId || !has) {
-      // Why it waits, once per reason (the trace, 2026-10-20).
-      const why = session?.id !== initialSessionId ? `session ${session?.id ?? "none"} ≠ ${initialSessionId ?? "none"}` : `reply not among ${items.length} items`;
-      if (why !== passageWait.current) passageTrace("task: waiting", { why, taskId: task.id });
-      passageWait.current = why;
-      return;
-    }
+    if (!passage || passageShown.current || session?.id !== initialSessionId || !items.some((i) => i.id === passage.itemId)) return;
     passageShown.current = true;
-    passageTrace("task: reply is in", { items: items.length, hidden: document.hidden });
     requestAnimationFrame(() => locatePassage(passage, 8));
   }, [passage, session?.id, items]);
 
@@ -272,7 +261,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     const reply = document.querySelector<HTMLElement>(`[data-item-id="${CSS.escape(p.itemId)}"]`);
     if (!reply) {
       // In a folded turn: unfold it, then look again once it has rendered.
-      passageTrace("task: reply not rendered", { tries });
       if (tries <= 0) return;
       window.dispatchEvent(new CustomEvent(REVEAL_ITEM_EVENT, { detail: p.itemId }));
       requestAnimationFrame(() => requestAnimationFrame(() => locatePassage(p, tries - 1)));
@@ -281,9 +269,6 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     const item = items.find((i) => i.id === p.itemId);
     const source = item?.type === "agent" ? item.markdown : null;
     const range = source !== null && highlightsSupported() ? annotationRange(reply, p, source) : null;
-    passageTrace("task: locate", { range: !!range, before: placeOf(reply) });
-    // Where the reply is a moment later: did something take the conversation elsewhere after the jump?
-    for (const ms of [0, 300, 1000, 3000]) setTimeout(() => passageTrace(`task: +${ms}ms`, placeOf(document.querySelector(`[data-item-id="${CSS.escape(p.itemId)}"]`))), ms);
     if (range) return flashRange(range);
     const target = [...reply.querySelectorAll<HTMLElement>("[data-src-start]")].find((b) => Number(b.dataset.srcStart) < p.end && Number(b.dataset.srcEnd) > p.start) ?? reply;
     scrollToBox(target, () => target.getBoundingClientRect());

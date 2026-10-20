@@ -5,7 +5,6 @@ import type { SelectionAnchor } from "../lib/selection.js";
 import { baseName } from "../attach/refs.js";
 import type { FileRef } from "../lib/openin.js";
 import { findMark, marksHash, type MarksTarget } from "./logic.js";
-import { passageTrace } from "../lib/passageTrace.js";
 
 // Opening the marks window (文件标记, S12-D; 书签 since 2026-10-19), its Ctrl+Shift+M key in the workbench, and
 // bookmarking a file or a passage from elsewhere.
@@ -69,7 +68,6 @@ export async function bookmarkPassage(link: HostLink, sessionId: string, anchor:
 
 /** Opens the conversation a passage is in, in the workbench, scrolled to the passage and flashing it. */
 export function openPassage(m: ChatMark): void {
-  passageTrace("打开对话", { mark: m.id, taskId: m.taskId ?? null, sessionId: m.sessionId, itemId: m.itemId, start: m.start, end: m.end, exists: m.exists, bridge: !!window.amo?.openInWorkbench });
   if (!m.taskId) return;
   void window.amo?.openInWorkbench?.({ taskId: m.taskId, sessionId: m.sessionId, passage: { itemId: m.itemId, start: m.start, end: m.end, quote: m.quote } });
 }
