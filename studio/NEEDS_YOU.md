@@ -10,14 +10,14 @@
 回复：
 
 ### [请你过目] 用真实 TUI 验证 /fork、side chat 和重连（2026-10-12，阶段 1，S1-00e）
-需要你在终端里操作一次，大约 5 分钟，DeepSeek 大约用 5～8 次。在 `G:\PROJECT\AgentMonitorOverlay-studio` 下执行 `node studio/spikes/s1-00e-tui.mjs`，按它打印的步骤做：在另一个窗口粘贴接入命令，TUI 里说一句话、执行 `/fork`（有 side chat 也开一次），再发一句含 AMO-RESTART 的话让脚本重启 server，等 TUI 重连后再说一句，最后 Ctrl+C。server 用沙盒的 CODEX_HOME，默认 provider 是 DeepSeek，不会用到 GPT。做完回复"已做"即可，结果在 `studio/spikes/results/s1-00e.log`，下一轮我来分析。不做也不挡后续开发。
+需要你在终端里操作一次，大约 5 分钟，DeepSeek 大约用 5～8 次。在 `G:\PROJECT\AgentMonitorOverlay` 下执行 `node studio/spikes/s1-00e-tui.mjs`，按它打印的步骤做：在另一个窗口粘贴接入命令，TUI 里说一句话、执行 `/fork`（有 side chat 也开一次），再发一句含 AMO-RESTART 的话让脚本重启 server，等 TUI 重连后再说一句，最后 Ctrl+C。server 用沙盒的 CODEX_HOME，默认 provider 是 DeepSeek，不会用到 GPT。做完回复"已做"即可，结果在 `studio/spikes/results/s1-00e.log`，下一轮我来分析。不做也不挡后续开发。
 附件：`studio/spikes/RESULTS.md`（a～d 的结论）
 回复：
 
 ### [请你过目] 阶段 1 完成：可以试用 Studio 了（2026-10-13，阶段 1，S1-12）
 Studio 现在能在工作台里用 Codex（含 DeepSeek 路由）推进任务：看板、DSH 式新建任务、任务页（会话树、分支、子 agent、归档）、对话（流式、工具卡片、审批、插话、打断）、一键在终端用原版 Codex TUI 接入同一会话。真实 DeepSeek 冒烟、终端接入和 Host 重启都已验证。你有空时可以按下面的方式用一用，有不顺手的地方写在"回复"或 `design/interaction-notes.md` 的"待补充"里，会变成返工任务。不用回复也不挡后续阶段。
 试用：
-1. 在 `G:\PROJECT\AgentMonitorOverlay-studio\studio` 下执行 `npm start`（会先构建，再打开窗口；Host 默认端口 47900，与旧 AMO 的 17654、1420 不冲突）。
+1. 在 `G:\PROJECT\AgentMonitorOverlay\studio` 下执行 `npm start`（会先构建，再打开窗口；Host 默认端口 47900，与旧 AMO 的 17654、1420 不冲突）。
 2. 左栏"+ 登记工作区"，选一个真实工程（建议先选一个不怕改动的）。
 3. "+ 新任务"，模型选"Codex · DeepSeek Flash"或"Codex · 默认"，说第一句话。需要原版 TUI 时点"在终端打开"。
 4. 关掉窗口后 Host 仍在运行（会话不中断）；要彻底停掉执行 `npm run host:stop`。数据在 `studio/.data/`。

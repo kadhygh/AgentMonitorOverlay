@@ -4,7 +4,7 @@
 
 ## 1. 每轮流程
 
-1. **定位**：工作目录固定为 `G:\PROJECT\AgentMonitorOverlay-studio`（git worktree）。先执行 `git status` 和 `git branch --show-current`，确认当前分支是 `master` 或 `studio/stage-N`（2026-10-17 起 master 就是 Studio 的主线）。不对时，先修正再做事。
+1. **定位**：工作目录固定为 `G:\PROJECT\AgentMonitorOverlay`。先执行 `git status` 和 `git branch --show-current`，确认当前分支是 `master` 或 `studio/stage-N`（2026-10-17 起 master 就是 Studio 的主线）。不对时，先修正再做事。
 2. **读状态**：依次读 `studio/STATUS.md`、`studio/NEEDS_YOU.md`、当前阶段的 `studio/plans/stage-N.md`、`studio/LOOP_LOG.md` 的最后 5 条、`studio/design/interaction-notes.md`。
 3. **处理用户回复**：如果 `NEEDS_YOU.md` 里有用户新写的回复，先处理：
    - 转成任务，写进当前阶段的计划；
