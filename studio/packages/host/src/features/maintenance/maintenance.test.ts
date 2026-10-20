@@ -1,10 +1,11 @@
-import { existsSync, mkdtempSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { delimiter, join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { MaintenanceInfo, MaintenanceTerminalResult, ModelProfile } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
+import { installedClaudeExe } from "../../runtime/claude/transcripts.js";
 import { CodexServerManager } from "../../runtime/codex/server-manager.js";
 import { StaticCredentialReader } from "../../runtime/credentials.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
@@ -114,5 +115,19 @@ describe("Codex TUI command", () => {
     expect(command).not.toContain("ds-key");
     expect(command).not.toContain("mcp_servers");
     expect(env).toMatchObject({ DS_API_KEY: "ds-key", CODEX_MANAGED_BY_NPM: "1" });
+  });
+});
+
+describe("Claude CLI for the terminal", () => {
+  it("takes the person's own claude from PATH, in PATH order, and nothing when there is none", () => {
+    const empty = join(root, "empty");
+    const npm = join(root, "npm");
+    const native = join(root, "native");
+    for (const d of [empty, npm, native]) mkdirSync(d);
+    writeFileSync(join(npm, "claude.cmd"), "");
+    writeFileSync(join(native, "claude.exe"), "");
+    expect(installedClaudeExe({ PATH: [empty, native, npm].join(delimiter) })).toBe(join(native, "claude.exe"));
+    expect(installedClaudeExe({ Path: [empty, npm, native].join(delimiter) })).toBe(join(npm, "claude.cmd"));
+    expect(installedClaudeExe({ PATH: empty })).toBeNull();
   });
 });

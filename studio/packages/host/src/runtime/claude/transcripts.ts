@@ -1,6 +1,6 @@
 import { createRequire } from "node:module";
 import { existsSync, readdirSync } from "node:fs";
-import { dirname, join } from "node:path";
+import { delimiter, dirname, join } from "node:path";
 import { getSessionMessages } from "@anthropic-ai/claude-agent-sdk";
 import type { Id } from "@amo-studio/protocol";
 import type { RuntimeCore } from "../runtime.js";
@@ -68,4 +68,19 @@ export const handoffKey = (sessionId: Id) => `claude-handoff-seen:${sessionId}`;
 export function bundledClaudeExe(): string {
   const require = createRequire(import.meta.url);
   return join(dirname(require.resolve("@anthropic-ai/claude-agent-sdk-win32-x64/package.json")), "claude.exe");
+}
+
+/**
+ * The person's own Claude Code, the first `claude` on PATH (native install `claude.exe`, or npm's `claude.cmd`), for
+ * 设置 → 维护: it updates itself and may be newer than the SDK's. Null when there is none.
+ */
+export function installedClaudeExe(env: NodeJS.ProcessEnv = process.env): string | null {
+  const path = env.PATH ?? env.Path ?? "";
+  for (const dir of path.split(delimiter).filter(Boolean)) {
+    for (const name of ["claude.exe", "claude.cmd"]) {
+      const exe = join(dir, name);
+      if (existsSync(exe)) return exe;
+    }
+  }
+  return null;
 }
