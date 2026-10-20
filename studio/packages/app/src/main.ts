@@ -37,9 +37,12 @@ const dataDir = dataChoice.dataDir;
 // Experiments for the resize flicker (2026-10-15; off unless set when starting the app): use the GPU even when
 // Chromium's blocklist says not to, and the system title bar instead of the page-drawn one.
 if (process.env.AMO_STUDIO_GPU === "ignore-blocklist") app.commandLine.appendSwitch("ignore-gpu-blocklist");
-// Experiment for the disk and system stall on opening a big file (2026-10-20; off unless set): pages build no
-// accessibility tree, which they send to this process whenever a program reads windows through UI Automation.
-if (process.env.AMO_STUDIO_NO_A11Y === "1") app.commandLine.appendSwitch("disable-renderer-accessibility");
+// Pages build no accessibility tree (2026-10-20). When a program reads a window through UI Automation (word pickers,
+// translators, some input methods), its page sends this process its whole tree and every change to it, and this
+// process handles them on its main thread: opening a 2879-line prefab in the viewer (33k elements) held it up for 18 s,
+// freezing every window, Focus on top of all others included. Screen readers and such tools then see no text in
+// Studio; AMO_STUDIO_A11Y=1 turns it back on.
+if (process.env.AMO_STUDIO_A11Y !== "1") app.commandLine.appendSwitch("disable-renderer-accessibility");
 const nativeFrame = process.env.AMO_STUDIO_NATIVE_FRAME === "1";
 /** The main window's smallest size, and whether the window itself keeps it (the old way; see createMainWindow). */
 const MAIN_MIN = { width: 960, height: 600 };

@@ -4,9 +4,10 @@ import { Session } from "node:inspector";
 import { join } from "node:path";
 
 // Stall profiler (2026-10-20: opening a big file in the viewer held the main process up for 22 s, and every window
-// with it; it did not happen under tests). A sampling CPU profile of this process runs all the time, restarted every
-// two minutes; when the event loop was held up, what ran during the hold-up is summed into the trace and the profile
-// is kept as <data>/logs/main-stall-<time>.cpuprofile (open it in Chrome DevTools → Performance).
+// with it; it did not happen under tests). With AMO_STUDIO_TRACE_STALLS=1, a sampling CPU profile of this process
+// runs, restarted every two minutes, and a Chromium trace in a ring buffer; when the event loop was held up, what ran
+// is summed into the trace, the profile kept as <data>/logs/main-stall-<time>.cpuprofile (Chrome DevTools →
+// Performance) and the Chromium trace as main-stall-<time>.trace.json (Perfetto).
 
 interface CallFrame {
   functionName: string;

@@ -96,18 +96,18 @@ export class ResizeTrace {
   }
 
   /**
-   * 2026-10-20 (opening a big file stalled the disk, and Windows with it): whether pages send their accessibility tree
-   * to this process (a program reading windows through UI Automation turns it on), and stalls of this process's event
-   * loop, which freeze every window.
+   * 2026-10-20 (opening a big file froze every window for 18 s: the main thread handled a page's accessibility events):
+   * whether accessibility is on (and when it changes), and stalls of this process's event loop, which freeze every
+   * window. With AMO_STUDIO_TRACE_STALLS=1 a stall of 2 s or more also says what ran (JS profile, Chromium trace).
    */
   watchStalls(): void {
     if (!this.enabled) return;
     const a11y = () => (app.isAccessibilitySupportEnabled() ? "on" : "off");
-    this.write(`${stamp()} accessibility: ${a11y()}${process.env.AMO_STUDIO_NO_A11Y === "1" ? " (pages: disabled by AMO_STUDIO_NO_A11Y)" : ""}`);
+    this.write(`${stamp()} accessibility: ${a11y()} (pages: ${process.env.AMO_STUDIO_A11Y === "1" ? "on, AMO_STUDIO_A11Y=1" : "off"})`);
     app.on("accessibility-support-changed", (_e, on) => this.write(`${stamp()} accessibility: ${on ? "on" : "off"} (changed)`));
-    const profiler = new StallProfiler(dirname(this.file), (line) => this.write(line));
-    profiler.start();
-    profiler.startChromiumTrace();
+    const profiler = process.env.AMO_STUDIO_TRACE_STALLS === "1" ? new StallProfiler(dirname(this.file), (line) => this.write(line)) : null;
+    profiler?.start();
+    profiler?.startChromiumTrace();
     const TICK = 100;
     let last = performance.now();
     setInterval(() => {
@@ -116,7 +116,7 @@ export class ResizeTrace {
       if (late >= 300) {
         const at = stamp();
         this.write(`${at} main process stalled ${Math.round(late)}ms (event loop)`);
-        if (late >= 2000) profiler.stalled(late, at);
+        if (late >= 2000) profiler?.stalled(late, at);
       }
       last = now;
     }, TICK).unref();
