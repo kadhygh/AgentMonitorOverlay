@@ -280,7 +280,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     bookmarkPassage(link, session.id, anchor)
       .then((r) => {
         const where = topics.find((t) => t.id === r.mark.topicId)?.title ?? "未归专题";
-        setToast({ text: r.created ? `已加到「${where}」的书签` : `这段已经在「${where}」的书签里` });
+        setToast({ text: r.created ? `书签添加成功：已加到「${where}」` : `这段已经在「${where}」的书签里` });
       })
       .catch((err: unknown) => setToast({ text: `加书签失败：${err instanceof HostApiError ? err.message : String(err)}`, error: true }));
   };

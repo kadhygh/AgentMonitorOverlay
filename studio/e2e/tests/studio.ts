@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
-import { _electron, type ElectronApplication, type Page } from "@playwright/test";
+import { _electron, expect, type ElectronApplication, type Page } from "@playwright/test";
 import { fakeAcpAgent, MOCK_MODEL_CATALOG, removeTempDir, startMockAnthropic, startMockModel, type ClaudeMockServer, type MockModelServer } from "@amo-studio/testkit";
 
 // Launch helper for Studio end-to-end tests: temp data dir, hidden window, attached Host on an ephemeral port, and by
@@ -202,3 +202,12 @@ export async function showMainWindow(app: ElectronApplication): Promise<void> {
 
 /** A long message (the mock model echoes it back): a turn far taller than the 300px of a turn not drawn yet. */
 export const longTurn = (n: number) => [`第 ${n} 轮`, ...Array.from({ length: 40 }, (_, i) => `第 ${n} 轮第 ${i + 1} 段，一段占一行的说明文字。`)].join("\n\n");
+
+/** 书签说明 (2026-10-20): the note asked for when a bookmark is added, filled (or left empty) and confirmed. */
+export async function confirmBookmarkNote(page: Page, note = ""): Promise<void> {
+  const dialog = page.getByTestId("bookmark-note");
+  await expect(dialog).toBeVisible();
+  if (note) await dialog.getByTestId("bookmark-note-text").fill(note);
+  await dialog.getByTestId("bookmark-note-ok").click();
+  await expect(dialog).toHaveCount(0);
+}

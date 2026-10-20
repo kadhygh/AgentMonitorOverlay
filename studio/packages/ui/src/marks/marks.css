@@ -96,3 +96,9 @@ button[data-marked]:hover { background: color-mix(in srgb, var(--primary) 16%, t
 .mk-side .mk-row + .mk-row { margin-top: 0; }
 .mk-side .mk-row-body { padding-left: 10px; }
 .mk-side .mk-actions { flex-wrap: wrap; gap: 4px 10px; }
+
+/* 书签说明 (2026-10-20): the note asked for when a bookmark is added, over everything in its window. */
+.bookmark-note-backdrop { z-index: 210; }
+.bookmark-note { width: 440px; }
+.bookmark-note-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-sm); color: var(--text-dim); }
+.bookmark-note textarea.field { resize: vertical; min-height: 72px; font: inherit; line-height: var(--lh); }

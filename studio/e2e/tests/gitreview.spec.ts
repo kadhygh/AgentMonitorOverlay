@@ -3,7 +3,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { Session, Task, Workspace } from "@amo-studio/protocol";
-import { launchStudio, screenshot, windowState, type Studio } from "./studio.js";
+import { launchStudio, screenshot, windowState, type Studio, confirmBookmarkNote } from "./studio.js";
 
 // S11-D acceptance: a project under git → Review from the task page → file list and both diff views → a comment on
 // a line → "发给会话" → the session receives the summary. The window is reused per project; folders without git
@@ -293,6 +293,7 @@ test("S12-A: file tree, syntax colours, side by side and opening files", async (
   await review.getByTestId("review-reveal").click();
   expect(await (await res).json()).toMatchObject({ app: "explorer", dryRun: true });
   await review.getByTestId("mark-file").click();
+  await confirmBookmarkNote(review);
   await expect(review.getByTestId("mark-file")).toHaveText("已加书签");
   // The file list's right-click menu does the same; a deleted file has nothing to open.
   await files.filter({ hasText: "table.lua" }).click({ button: "right" });

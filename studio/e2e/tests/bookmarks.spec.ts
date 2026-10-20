@@ -1,7 +1,7 @@
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import type { Bookmark, Session, Task, Topic, Workspace } from "@amo-studio/protocol";
 import { selectAndRelease } from "./selection.js";
-import { launchStudio, longTurn, screenshot, showMainWindow, type Studio } from "./studio.js";
+import { launchStudio, longTurn, screenshot, showMainWindow, type Studio, confirmBookmarkNote } from "./studio.js";
 
 // 书签 (2026-10-19): a passage of a reply bookmarked from the selection bar goes under the task's topic; the bookmarks
 // window groups by topic, a passage row drags out as a quote and 打开对话 brings the workbench back to it, flashing
@@ -42,15 +42,21 @@ test("bookmarks a passage under the task's topic, drags it out as a quote, goes 
 
   // The selection bar's 书签: under the task's topic; the same passage again is not added twice.
   await selectAndRelease(reply, "发现 3 张表");
+  // 书签说明 first (only 确认; the note may stay empty), then the notice.
   await page.getByTestId("selection-bookmark").click();
-  await expect(page.getByTestId("toast")).toContainText("已加到「掉落」的书签");
+  await page.getByTestId("bookmark-note-text").fill("三张表都从这里来");
+  await screenshot(app, "stage-18", "S18-bookmark-note", page);
+  await confirmBookmarkNote(page);
+  await expect(page.getByTestId("toast")).toContainText("书签添加成功：已加到「掉落」");
   await expect(page.getByTestId("selection-bar")).toHaveCount(0);
+  // The same passage again: no note asked, nothing added.
   await selectAndRelease(reply, "发现 3 张表");
   await page.getByTestId("selection-bookmark").click();
   await expect(page.getByTestId("toast")).toContainText("这段已经在「掉落」的书签里");
+  await expect(page.getByTestId("bookmark-note")).toHaveCount(0);
   const saved = await studio.api<Bookmark[]>("GET", `/api/bookmarks?topic=${topic.id}`);
   expect(saved).toHaveLength(1);
-  expect(saved[0]).toMatchObject({ kind: "chat", sessionId: created.session.id, quote: "发现 3 张表", taskId: created.task.id });
+  expect(saved[0]).toMatchObject({ kind: "chat", sessionId: created.session.id, quote: "发现 3 张表", taskId: created.task.id, note: "三张表都从这里来" });
 
   // The bookmarks window opens on the task's topic; the passage reads with where it came from.
   const marks = await openMarksWindow(app, page);
@@ -112,7 +118,8 @@ test("打开对话 on a passage far up a long conversation scrolls it into view 
   await expect(first.locator("table.md-table")).toBeVisible({ timeout: 30_000 });
   await selectAndRelease(first, "发现 3 张表");
   await page.getByTestId("selection-bookmark").click();
-  await expect(page.getByTestId("toast")).toContainText("已加到「掉落」的书签");
+  await confirmBookmarkNote(page);
+  await expect(page.getByTestId("toast")).toContainText("书签添加成功：已加到「掉落」");
   // Many more turns after it, each with code and a table, so the passage ends far above the end.
   for (let i = 0; i < 8; i++) {
     await studio.api("POST", `/api/sessions/${created.session.id}/messages`, { text: `[[markdown]] 第 ${i} 轮` });
@@ -170,7 +177,8 @@ test("打开对话 on a passage with long turns above it, none drawn yet, still 
   await expect(reply.locator("table.md-table")).toBeVisible();
   await selectAndRelease(reply, "发现 3 张表");
   await page.getByTestId("selection-bookmark").click();
-  await expect(page.getByTestId("toast")).toContainText("已加到「掉落」的书签");
+  await confirmBookmarkNote(page);
+  await expect(page.getByTestId("toast")).toContainText("书签添加成功：已加到「掉落」");
   for (let i = 8; i <= 11; i++) await say(longTurn(i));
 
   const marks = await openMarksWindow(app, page);

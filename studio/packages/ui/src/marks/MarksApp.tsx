@@ -9,9 +9,10 @@ import { dragHasFiles, pathOfFile } from "../attach/useAttachments.js";
 import { baseName, dirName } from "../attach/refs.js";
 import { IconFile } from "../attach/icons.js";
 import { useBookmarks } from "./useFileMarks.js";
+import { askBookmarkNote } from "./NotePrompt.js";
 import { openMarks, openPassage } from "./open.js";
 import { openViewer } from "../viewer/open.js";
-import { chatDragText, filterGroups, groupBookmarks, markDragData, NO_TOPIC, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo, type BookmarkGroup, type MarksTarget } from "./logic.js";
+import { chatDragText, filterGroups, findMark, groupBookmarks, markDragData, NO_TOPIC, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo, type BookmarkGroup, type MarksTarget } from "./logic.js";
 
 // The bookmarks window (书签, 2026-10-19; it was 文件标记, S12-D; #marks?topic=…): bookmarks by topic, each a file (or
 // folder) or a passage of a conversation, with a note. Files come in by dropping them from Explorer, "+ 文件" (a
@@ -94,9 +95,15 @@ function MarksPage({ link, state, target, focus }: { link: HostLink; state: Stat
       let added = 0;
       let known = 0;
       const failed: string[] = [];
+      // One new file: its note first (书签说明, 2026-10-20). Several at once are noted here in the list afterwards.
+      let note = "";
+      if (clean.length === 1) {
+        const marks = await call(link, "GET /api/file-marks").catch(() => []);
+        if (!findMark(marks, { path: clean[0]! }, null)) note = await askBookmarkNote(baseName(clean[0]!));
+      }
       for (const path of clean) {
         try {
-          const r = await call(link, "POST /api/file-marks", {}, { path, topicId });
+          const r = await call(link, "POST /api/file-marks", {}, { path, topicId, ...(note ? { note } : {}) });
           if (r.created) added++;
           else known++;
         } catch (err) {
@@ -104,7 +111,7 @@ function MarksPage({ link, state, target, focus }: { link: HostLink; state: Stat
         }
       }
       if (failed.length) toast({ text: failed.length === 1 ? failed[0]! : `有 ${failed.length} 个没有加上：${failed[0]}`, error: true });
-      else if (added) toast({ text: clean.length === 1 ? `已加书签 ${baseName(clean[0]!)}` : `已加 ${added} 个书签${known ? `，${known} 个之前加过` : ""}` });
+      else if (added) toast({ text: clean.length === 1 ? `书签添加成功：${baseName(clean[0]!)}` : `已加 ${added} 个书签${known ? `，${known} 个之前加过` : ""}` });
       else toast({ text: clean.length === 1 ? `${baseName(clean[0]!)} 已经在书签里` : "这些都已经在书签里" });
     },
     [link],

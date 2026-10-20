@@ -2,7 +2,7 @@ import { mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import type { FileMark, Session, Task, Workspace } from "@amo-studio/protocol";
-import { launchStudio, screenshot, windowState, type Studio } from "./studio.js";
+import { launchStudio, screenshot, windowState, type Studio, confirmBookmarkNote } from "./studio.js";
 
 // S12-D acceptance: the file marks window (标记文件 from the project's file selector, a pasted path, files dropped from
 // Explorer; notes saved as typed; 查看 in the viewer window; missing files; delete), and handing marks to a session — @ 标记的文件,
@@ -85,7 +85,8 @@ test("marks files in the marks window, edits their notes, looks at them and remo
   await expect(picker.getByTestId("file-row").first()).toContainText("drop.lua");
   await expect(picker).toContainText("回车加书签");
   await picker.getByLabel("找文件").press("Enter");
-  await expect(marks.getByTestId("toast")).toContainText("已加书签 drop.lua");
+  await confirmBookmarkNote(marks);
+  await expect(marks.getByTestId("toast")).toContainText("书签添加成功：drop.lua");
   const rows = marks.getByTestId("mark-row");
   await expect(rows).toHaveCount(1);
   await expect(marks.getByTestId("marks-group").first()).toContainText("当前专题");
@@ -94,8 +95,10 @@ test("marks files in the marks window, edits their notes, looks at them and remo
   // both go under the topic in front (this task has none: 未归专题).
   await marks.getByTestId("marks-paste").fill(`"${join(dir, "docs", "boss.md")}"`);
   await marks.getByTestId("marks-paste").press("Enter");
+  await confirmBookmarkNote(marks);
   await expect(rows).toHaveCount(2);
   await dropFiles(marks, [join(loose, "todo.txt")], ".mk-app");
+  await confirmBookmarkNote(marks, "待办");
   await expect(rows).toHaveCount(3);
   const groups = marks.getByTestId("marks-group");
   await expect(groups).toHaveCount(1);
@@ -105,6 +108,7 @@ test("marks files in the marks window, edits their notes, looks at them and remo
   await marks.getByTestId("marks-paste").fill(join(dir, "drop.lua"));
   await marks.getByTestId("marks-paste").press("Enter");
   await expect(marks.getByTestId("toast")).toContainText("drop.lua 已经在书签里");
+  await expect(marks.getByTestId("bookmark-note")).toHaveCount(0);
   await expect(rows).toHaveCount(3);
 
   // The note saves as it is typed; the line range when the field is left.
@@ -140,6 +144,7 @@ test("marks files in the marks window, edits their notes, looks at them and remo
   // A file that is gone stays, greyed, once the list is read again.
   await marks.getByTestId("marks-paste").fill(join(dir, "old.lua"));
   await marks.getByTestId("marks-paste").press("Enter");
+  await confirmBookmarkNote(marks);
   await expect(rows).toHaveCount(4);
   rmSync(join(dir, "old.lua"));
   await rows.filter({ hasText: "boss.md" }).getByTestId("mark-note").fill("Boss 数值说明");
@@ -222,7 +227,8 @@ test("hands marks to a session: @ 标记的文件, a mark dragged into the compo
   await picker.getByLabel("找文件").fill("old");
   await expect(picker.getByTestId("file-row").first()).toContainText("old.lua");
   await picker.getByTestId("file-picker-mark").click();
-  await expect(picker.getByTestId("file-picker-marked")).toHaveText("已加书签 old.lua");
+  await confirmBookmarkNote(page);
+  await expect(picker.getByTestId("file-picker-marked")).toHaveText("书签添加成功：old.lua");
   await picker.getByLabel("找文件").press("Control+m");
   await expect(picker.getByTestId("file-picker-marked")).toHaveText("old.lua 已经在书签里");
   await picker.getByLabel("找文件").press("Escape");

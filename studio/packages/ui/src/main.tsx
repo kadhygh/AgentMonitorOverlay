@@ -41,6 +41,7 @@ import "./relays/relays.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 import { Toaster } from "./lib/toast.js";
+import { BookmarkNotePrompt } from "./marks/NotePrompt.js";
 import { startResizeTrace, traceFocusInput } from "./lib/resizeTrace.js";
 
 // One bundle, two windows: the workbench, and the Focus window (loaded with #focus).
@@ -74,6 +75,7 @@ createRoot(root).render(
     <WindowBoundary>
       {focus ? <FocusApp /> : bot ? <BotApp /> : scratchpad ? <ScratchpadApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : <App />}
       <Toaster />
+      <BookmarkNotePrompt />
     </WindowBoundary>
   </StrictMode>,
 );

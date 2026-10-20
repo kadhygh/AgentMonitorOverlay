@@ -1,10 +1,12 @@
 import { useEffect, useRef } from "react";
-import type { ChatMark } from "@amo-studio/protocol";
+import type { ChatMark, FileMark } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import type { SelectionAnchor } from "../lib/selection.js";
 import { baseName } from "../attach/refs.js";
 import type { FileRef } from "../lib/openin.js";
+import { showToast } from "../lib/toast.js";
 import { findMark, marksHash, type MarksTarget } from "./logic.js";
+import { askBookmarkNote } from "./NotePrompt.js";
 
 // Opening the marks window (文件标记, S12-D; 书签 since 2026-10-19), its Ctrl+Shift+M key in the workbench, and
 // bookmarking a file or a passage from elsewhere.
@@ -33,10 +35,24 @@ export function useMarksShortcut(current: () => MarksTarget): void {
   }, []);
 }
 
+/**
+ * Bookmarks a file (at `line` when given; under the topic of `sessionId`'s task) once the person has written its note
+ * (书签说明, 2026-10-20); one already bookmarked comes back as it is, without asking.
+ */
+export async function addFileMark(link: HostLink, file: FileRef, line?: number | null, sessionId?: string | null): Promise<{ mark: FileMark; created: boolean }> {
+  const known = findMark(await call(link, "GET /api/file-marks"), file, line);
+  if (known) return { mark: known, created: false };
+  const note = await askBookmarkNote(`${baseName(file.path)}${line ? `（第 ${line} 行）` : ""}`);
+  return call(link, "POST /api/file-marks", {}, { path: file.path, ...(file.workspaceId ? { workspaceId: file.workspaceId } : {}), ...(line ? { startLine: line } : {}), ...(sessionId ? { sessionId } : {}), ...(note ? { note } : {}) });
+}
+
+/** The notice after a bookmark was added. */
+export const bookmarkAdded = (what: string) => showToast(`书签添加成功：${what}`);
+
 /** Marks a file (from the file selector and the like); says whether it was new, or why it failed. */
 export async function markFile(link: HostLink, path: string, sessionId?: string): Promise<{ ok: true; created: boolean } | { ok: false; error: string }> {
   try {
-    const r = await call(link, "POST /api/file-marks", {}, { path, ...(sessionId ? { sessionId } : {}) });
+    const r = await addFileMark(link, { path }, null, sessionId);
     return { ok: true, created: r.created };
   } catch (err) {
     return { ok: false, error: err instanceof HostApiError ? err.message : String(err) };
@@ -48,22 +64,24 @@ export const markTarget = (m: { id: string; topicId: string | null }, edit = fal
 
 /**
  * 书签 from a menu (stage 13, as the 书签 button): a file already bookmarked opens the window at it; otherwise it is
- * bookmarked (at `line` when given; under the topic of `sessionId`'s task) and the window opens with the cursor in
- * the new one's note.
+ * bookmarked with the note the person writes (at `line` when given; under the topic of `sessionId`'s task).
  */
-export async function markOrShow(link: HostLink, file: FileRef, line?: number | null, sessionId?: string): Promise<void> {
-  const known = findMark(await call(link, "GET /api/file-marks"), file, line);
-  if (known) {
-    openMarks(markTarget(known));
-    return;
-  }
-  const r = await call(link, "POST /api/file-marks", {}, { path: file.path, ...(file.workspaceId ? { workspaceId: file.workspaceId } : {}), ...(line ? { startLine: line } : {}), ...(sessionId ? { sessionId } : {}) });
-  openMarks(markTarget(r.mark, r.created));
+export async function markOrShow(link: HostLink, file: FileRef, line?: number | null, sessionId?: string | null): Promise<void> {
+  const r = await addFileMark(link, file, line, sessionId);
+  if (r.created) bookmarkAdded(baseName(file.path));
+  else openMarks(markTarget(r.mark));
 }
 
-/** Bookmarks a selected passage of a reply under the session's topic (2026-10-19). */
+/**
+ * Bookmarks a selected passage of a reply under the session's topic (2026-10-19), with the note the person writes; a
+ * passage already bookmarked comes back as it is, without asking.
+ */
 export async function bookmarkPassage(link: HostLink, sessionId: string, anchor: SelectionAnchor): Promise<{ mark: ChatMark; created: boolean }> {
-  return call(link, "POST /api/chat-marks", {}, { sessionId, itemId: anchor.itemId, start: anchor.start, end: anchor.end, quote: anchor.quote, prefix: anchor.prefix, suffix: anchor.suffix });
+  const known = (await call(link, "GET /api/bookmarks")).find((m): m is ChatMark => m.kind === "chat" && m.itemId === anchor.itemId && m.start === anchor.start && m.end === anchor.end);
+  if (known) return { mark: known, created: false };
+  const quote = anchor.quote.replace(/\s+/g, " ").trim();
+  const note = await askBookmarkNote(`「${quote.length > 60 ? `${quote.slice(0, 60)}…` : quote}」`);
+  return call(link, "POST /api/chat-marks", {}, { sessionId, itemId: anchor.itemId, start: anchor.start, end: anchor.end, quote: anchor.quote, prefix: anchor.prefix, suffix: anchor.suffix, ...(note ? { note } : {}) });
 }
 
 /** Opens the conversation a passage is in, in the workbench, scrolled to the passage and flashing it. */
@@ -76,5 +94,5 @@ export function openPassage(m: ChatMark): void {
 export async function markFileMessage(link: HostLink, path: string, sessionId?: string): Promise<string> {
   const r = await markFile(link, path, sessionId);
   const name = baseName(path);
-  return r.ok ? (r.created ? `已加书签 ${name}` : `${name} 已经在书签里`) : `加书签失败：${r.error}`;
+  return r.ok ? (r.created ? `书签添加成功：${name}` : `${name} 已经在书签里`) : `加书签失败：${r.error}`;
 }

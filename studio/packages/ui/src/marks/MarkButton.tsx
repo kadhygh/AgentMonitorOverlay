@@ -1,8 +1,9 @@
 import { useState } from "react";
-import { call, HostApiError, type HostLink } from "../host/client.js";
+import { baseName } from "../attach/refs.js";
+import { HostApiError, type HostLink } from "../host/client.js";
 import type { FileRef } from "../lib/openin.js";
 import { findMark } from "./logic.js";
-import { markTarget, openMarks } from "./open.js";
+import { addFileMark, bookmarkAdded, markTarget, openMarks } from "./open.js";
 import { useFileMarks } from "./useFileMarks.js";
 
 /**
@@ -25,8 +26,9 @@ export function MarkButton({ link, file, line, sessionId, className = "btn-ghost
     }
     setBusy(true);
     try {
-      const r = await call(link, "POST /api/file-marks", {}, { path: file.path, ...(file.workspaceId ? { workspaceId: file.workspaceId } : {}), ...(line ? { startLine: line } : {}), ...(sessionId ? { sessionId } : {}) });
-      openMarks(markTarget(r.mark, r.created));
+      const r = await addFileMark(link, file, line, sessionId);
+      if (r.created) bookmarkAdded(baseName(file.path));
+      else openMarks(markTarget(r.mark));
     } catch (err) {
       setError(err instanceof HostApiError ? err.message : String(err));
     } finally {
@@ -46,7 +48,7 @@ export function MarkButton({ link, file, line, sessionId, className = "btn-ghost
         error ??
         (mark
           ? `已加书签${where}${mark.note ? `：${mark.note.split("\n")[0]}` : ""}\n点击打开书签窗口查看`
-          : `把这个文件${line ? `（第 ${line} 行）` : ""}加到书签，然后写说明；之后可以 @ 或拖进对话`)
+          : `把这个文件${line ? `（第 ${line} 行）` : ""}加到书签（先写说明）；之后可以 @ 或拖进对话`)
       }
       data-testid="mark-file"
     >

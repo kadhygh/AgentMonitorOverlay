@@ -4,7 +4,7 @@ import { join } from "node:path";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
 import type { OpenInApps, OpenInResult, Session, Task, Workspace } from "@amo-studio/protocol";
 import { DEMO_FILE, DEMO_FILE_TEXT } from "@amo-studio/testkit";
-import { launchStudio, screenshot, type Studio } from "./studio.js";
+import { launchStudio, screenshot, type Studio, confirmBookmarkNote } from "./studio.js";
 
 // S12-C: files in the conversation. Names in a reply, tool rows and file chips become links when the file exists. Stage
 // 13 (S13-A): a click opens the viewer window (查看器: one preview window, reused until 固定), Ctrl+click VS Code, a
@@ -101,6 +101,8 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   expect(reveal.asked).toMatchObject({ path: join(dir, DEMO_FILE), app: "explorer" });
   expect(reveal.result).toMatchObject({ app: "explorer", dryRun: true });
   await viewer.getByTestId("mark-file").click();
+  await confirmBookmarkNote(viewer, "demo 的入口");
+  await expect(viewer.getByTestId("toast")).toContainText("书签添加成功");
   await expect(viewer.getByTestId("mark-file")).toHaveText("已加书签");
 
   // The README link (#L2) goes to the same window: the source with line 2 marked, then rendered.
@@ -147,6 +149,7 @@ test("names of existing files in a reply open the viewer, the quick look, VS Cod
   await expect(preview.locator(".fp-md strong")).toHaveText("失败时重试");
   // 标记 from the quick look: marks the file at the line; then "已标记" (accent).
   await preview.getByTestId("mark-file").click();
+  await confirmBookmarkNote(page);
   await expect(preview.getByTestId("mark-file")).toHaveText("已加书签");
   await expect(preview.getByTestId("mark-file")).toHaveAttribute("data-marked", "");
 
