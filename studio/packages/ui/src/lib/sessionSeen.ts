@@ -90,24 +90,35 @@ export function noteSeen(ids: readonly string[]): void {
 }
 
 /**
- * The workbench shows this session: it counts as seen while the window is visible (not minimised or fully covered) —
- * again whenever the session changes, and when the window shows again.
+ * The workbench shows this session. Opening it counts as seeing it (while the window is visible). A change while it
+ * stays open — the reply ending, a failure — counts as seen only at the person's next sign of being there: the window
+ * coming forward, or a click, key or wheel in it. Before 2026-10-20 the window merely being visible was enough, so a
+ * reply that ended while the person was away, with Studio left on that session, never showed in Focus.
  */
 export function useMarkSessionSeen(session: Pick<Session, "id" | "updatedAt" | "status"> | null): void {
   const id = session?.id ?? null;
   const version = session ? `${session.updatedAt}|${session.status}` : "";
   useEffect(() => {
+    if (id && document.visibilityState === "visible") noteSeen([id]);
+  }, [id]);
+  useEffect(() => {
     if (!id) return;
-    const mark = () => {
-      if (document.visibilityState === "visible") noteSeen([id]);
-    };
-    mark();
-    window.addEventListener("focus", mark);
-    document.addEventListener("visibilitychange", mark);
-    return () => {
+    const ACTS = ["pointerdown", "keydown", "wheel"] as const;
+    const stop = () => {
       window.removeEventListener("focus", mark);
       document.removeEventListener("visibilitychange", mark);
+      for (const a of ACTS) window.removeEventListener(a, mark, true);
     };
+    function mark() {
+      if (document.visibilityState !== "visible" || !document.hasFocus()) return;
+      noteSeen([id!]);
+      // Once per change: typing on afterwards does not write the record again.
+      stop();
+    }
+    window.addEventListener("focus", mark);
+    document.addEventListener("visibilitychange", mark);
+    for (const a of ACTS) window.addEventListener(a, mark, true);
+    return stop;
   }, [id, version]);
 }
 

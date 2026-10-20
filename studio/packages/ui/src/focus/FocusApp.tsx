@@ -13,6 +13,8 @@ import { PixelBot, type BotMood } from "./PixelBot.js";
 import { FocusQuota } from "./FocusQuota.js";
 import { usePetSkin } from "./petSkin.js";
 import { FocusEntry, isToReview, summary } from "./FocusEntry.js";
+import { readHistory, updateHistory, writeHistory, type Attention, type FocusRecord } from "./history.js";
+import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { FocusSettings, ICON, type SettingItem } from "./FocusSettings.js";
 import { useWindowShape } from "./windowShape.js";
 import "./focus.css";
@@ -70,7 +72,13 @@ export function FocusApp() {
   // moves still reach the page). Moving and the settings box always take clicks.
   const through = passthrough && !moving && !pop;
   useEffect(() => {
-    const set = (ignore: boolean) => window.amo?.focus?.setIgnoreMouse(ignore);
+    // Only changes go out: pointerover fires on every element the pointer crosses.
+    let last: boolean | null = null;
+    const set = (ignore: boolean) => {
+      if (ignore === last) return;
+      last = ignore;
+      window.amo?.focus?.setIgnoreMouse(ignore);
+    };
     if (!through) {
       set(false);
       return;
@@ -99,6 +107,27 @@ export function FocusApp() {
   // Forget what was handled, so it alerts again if it comes back.
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the keys by content
   useEffect(() => setSeen((s) => pruneSeen(s, keys)), [keysId]);
+  // 历史 (2026-10-20): what needed the person lately, dealt with or not. Only with the Host's state (while it connects
+  // nothing is listed, which would mark everything handled).
+  const [history, setHistory] = useState<FocusRecord[]>(readHistory);
+  const [showHistory, setShowHistory] = useState(false);
+  useEffect(() => {
+    if (!live) return;
+    const now: Attention[] = [
+      ...[...waiting, ...finished].map((s) => ({
+        key: `s:${s.id}`,
+        sessionId: s.id,
+        taskId: s.taskId ?? null,
+        label: isToReview(s, waiting) ? "完成待审核" : SESSION_LOOK[s.status].label,
+      })),
+      ...asks.map((d) => ({ key: `d:${d.id}`, sessionId: d.sessionId, taskId: d.taskId ?? null, label: "等你决定" })),
+    ];
+    setHistory((h) => {
+      const next = updateHistory(h, now, undefined, (r) => live.sessions.some((s) => s.id === r.sessionId && s.status === "running"));
+      writeHistory(next);
+      return next;
+    });
+  }, [keysId, !!live]); // eslint-disable-line react-hooks/exhaustive-deps -- follows the keys by content
   const alerting = shouldAlert(keys, seen);
   const toReview = [...waiting, ...finished].filter((s) => isToReview(s, waiting));
   const reviewKeys = new Set(attentionKeys(toReview, [], []));
@@ -169,8 +198,13 @@ export function FocusApp() {
   const { state, link } = host;
   const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
+  // 进行中 (2026-10-20): what is working now, so the open panel tells what goes on, not only what waits.
+  const working = state.sessions.filter((s) => !s.archivedAt && s.kind !== "sub" && s.status === "running").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const openId = open && list.some((s) => s.id === open) ? open : (list[0]?.id ?? null);
   const title = (s: Session) => state.tasks.find((t) => t.id === s.taskId)?.title || "未命名任务";
+  /** A line on what the task is about: its 说明, else the session's name. */
+  const brief = (s: Session) => state.tasks.find((t) => t.id === s.taskId)?.description?.split("\n").find((l) => l.trim())?.trim() || s.title || "会话";
+  const goTo = (sessionId: string, taskId: string | null | undefined) => void window.amo?.openInWorkbench?.({ ...(taskId ? { taskId } : {}), sessionId });
 
   /** The robot's click: the first thing that needs the person, in the workbench. */
   const openFirst = () => {
@@ -256,7 +290,7 @@ export function FocusApp() {
           </button>
         </div>
         <FocusQuota link={link} settings={settings} profiles={state.profiles} />
-        {!compact && (needs > 0 || held) && (
+        {!compact && (needs > 0 || held || working.length > 0) && (
           <div className="focus-list" onPointerDown={acknowledge}>
             {proposals.length > 0 && (
               // A proposal needs its prompt read (and maybe edited): only the count here, handled on the board.
@@ -320,6 +354,50 @@ export function FocusApp() {
                 }}
               />
             ))}
+            {working.length > 0 && (
+              <div className="focus-group" data-testid="focus-working">
+                <div className="focus-group-head">进行中 {working.length}</div>
+                {working.map((s) => (
+                  <div key={s.id} className="focus-entry" data-testid="focus-working-entry">
+                    <button type="button" className="focus-row" onClick={() => goTo(s.id, s.taskId)} title="在工作台打开">
+                      <span className="dot" style={{ background: SESSION_LOOK.running.dot }} />
+                      <span className="focus-row-text">
+                        <span className="focus-title">{title(s)}</span>
+                        <span className="focus-sub">{brief(s)}</span>
+                      </span>
+                      <span className="focus-time">{relativeTime(s.updatedAt)}</span>
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
+        {!compact && history.length > 0 && (
+          <div className="focus-history" data-testid="focus-history">
+            <button type="button" className="focus-history-toggle" aria-expanded={showHistory} onClick={() => setShowHistory(!showHistory)} data-testid="focus-history-toggle">
+              历史 {history.length} {showHistory ? "▴" : "▾"}
+            </button>
+            {showHistory &&
+              history.map((r) => {
+                const s = state.sessions.find((x) => x.id === r.sessionId);
+                const name = s ? title(s) : "（会话已不在）";
+                return (
+                  <div key={`${r.key}@${r.at}`} className="focus-entry" data-testid="focus-history-entry" data-handled={r.handledAt ? "" : undefined}>
+                    <button type="button" className="focus-row" disabled={!s} onClick={() => goTo(r.sessionId, r.taskId)} title={s ? "在工作台打开" : undefined}>
+                      <span className="dot" style={{ background: r.handledAt ? "var(--text-faint)" : "var(--attention)" }} />
+                      <span className="focus-row-text">
+                        <span className="focus-title">{name}</span>
+                        <span className="focus-sub">
+                          {r.label} · {r.handledAt ? "已处理" : "未处理"}
+                          {s?.title ? ` · ${s.title}` : ""}
+                        </span>
+                      </span>
+                      <span className="focus-time">{relativeTime(r.at)}</span>
+                    </button>
+                  </div>
+                );
+              })}
           </div>
         )}
         {moving && (

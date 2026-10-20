@@ -116,6 +116,13 @@ export function AnnotationBubble({
   const [busy, setBusy] = useState(false);
   const input = useRef<HTMLTextAreaElement>(null);
   const { style, ref } = usePlacement(scroller, target.at, 340);
+  // Moved by its head (2026-10-20), to see the text it covers while writing; it still scrolls with the conversation.
+  const [offset, setOffset] = useState({ x: 0, y: 0 });
+  const drag = useRef<{ x: number; y: number; ox: number; oy: number } | null>(null);
+  useEffect(() => setOffset({ x: 0, y: 0 }), [target]);
+  const left = typeof style.left === "number" ? style.left : 0;
+  const inner = scroller.current?.clientWidth ?? 800;
+  const placed: CSSProperties = { ...style, transform: `${style.transform ?? ""} translate(${offset.x}px, ${offset.y}px)`.trim() };
   useEffect(() => {
     input.current?.focus();
     input.current?.setSelectionRange(initial.length, initial.length);
@@ -144,7 +151,7 @@ export function AnnotationBubble({
     <div
       ref={ref}
       className="anno-bubble"
-      style={style}
+      style={placed}
       role="dialog"
       aria-label={target.kind === "edit" ? "修改批注" : "添加批注"}
       data-testid="annotation-bubble"
@@ -158,6 +165,31 @@ export function AnnotationBubble({
         }
       }}
     >
+      <div
+        className="anno-bubble-head"
+        title="按住拖动，挪开看下面的文字"
+        data-testid="annotation-bubble-drag"
+        onPointerDown={(e) => {
+          if (e.button !== 0) return;
+          e.preventDefault();
+          e.currentTarget.setPointerCapture(e.pointerId);
+          drag.current = { x: e.clientX, y: e.clientY, ox: offset.x, oy: offset.y };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          // Sideways it stays inside the conversation; up and down it goes where it is put.
+          const x = Math.max(8 - left, Math.min(d.ox + e.clientX - d.x, inner - 340 - 8 - left));
+          setOffset({ x, y: d.oy + e.clientY - d.y });
+        }}
+        onPointerUp={() => (drag.current = null)}
+        onPointerCancel={() => (drag.current = null)}
+      >
+        <span className="anno-bubble-grip" aria-hidden="true">
+          ⠿
+        </span>
+        {target.kind === "edit" ? "修改批注" : "添加批注"}
+      </div>
       <blockquote className="anno-bubble-quote" title={quote}>
         {quote}
       </blockquote>
