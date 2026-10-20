@@ -642,6 +642,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
       version: "0.5.0",
       instructions: this.options.mcpInstructions?.(sessionId) ?? AMO_MCP_INSTRUCTIONS,
       tools: tools.map((t) => tool(t.name, t.description, t.inputSchema, async (args) => t.run(args as Record<string, unknown>), { annotations: { readOnlyHint: t.readOnly } })),
+      // Claude Code 2.1.304 (SDK 0.3.304) defers MCP tools behind ToolSearch by default: the agent would have to look
+      // AMO's few, always-used tools up before every first use. They stay in the prompt (2026-10-20).
+      alwaysLoad: true,
     });
     return { mcpServers: { [AMO_MCP_NAME]: server }, allowedTools: tools.filter((t) => t.autoApprove).map((t) => `mcp__${AMO_MCP_NAME}__${t.name}`) };
   }
