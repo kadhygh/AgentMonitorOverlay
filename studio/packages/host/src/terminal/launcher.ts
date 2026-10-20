@@ -28,17 +28,20 @@ export interface TerminalLauncher {
 /**
  * Windows: `start` opens a new console running PowerShell; it inherits the env we pass to cmd. With `track`, cmd runs
  * `start /WAIT` without a window of its own, so its exit tells when the terminal window was closed.
+ *
+ * cmd's line is written out verbatim: Node's own quoting escapes inner quotes as `\"`, which cmd does not know, so a
+ * title with spaces split into a title and a program (`AMO Studio 维护` → "Windows 找不到文件 'Studio'"). The PowerShell
+ * command goes base64-encoded, out of reach of cmd's `&`, `%` and quotes.
  */
 export class WindowsTerminalLauncher implements TerminalLauncher {
   launch({ command, cwd, env, title, envMode = "merge", track = false }: TerminalLaunch): TerminalHandle | undefined {
     if (process.platform !== "win32") throw new Error("terminal launch is only implemented on Windows");
-    const shellArgs = track ? ["-NoLogo", "-Command", command] : ["-NoExit", "-NoLogo", "-Command", command];
-    const child = spawn("cmd.exe", ["/d", "/c", "start", JSON.stringify(title), ...(track ? ["/WAIT"] : []), "/D", cwd, "powershell.exe", ...shellArgs], {
+    const child = spawn("cmd.exe", [windowsStartLine({ command, cwd, title, track })], {
       env: envMode === "replace" ? env : { ...process.env, ...env },
       detached: true,
       stdio: "ignore",
       windowsHide: track,
-      windowsVerbatimArguments: false,
+      windowsVerbatimArguments: true,
     });
     child.unref();
     if (!track) return undefined;
@@ -63,6 +66,15 @@ export class WindowsTerminalLauncher implements TerminalLauncher {
       },
     };
   }
+}
+
+/** cmd.exe's arguments for {@link WindowsTerminalLauncher}, as one verbatim line. */
+export function windowsStartLine({ command, cwd, title, track }: Pick<TerminalLaunch, "command" | "cwd" | "title"> & { track: boolean }): string {
+  // Inside quotes cmd still ends the string at `"` and expands `%VAR%`.
+  const safeTitle = title.replace(/["%\r\n]/g, "").trim() || "AMO Studio";
+  const encoded = Buffer.from(command, "utf16le").toString("base64");
+  const shellArgs = [...(track ? [] : ["-NoExit"]), "-NoLogo", "-EncodedCommand", encoded];
+  return ["/d", "/c", "start", `"${safeTitle}"`, ...(track ? ["/WAIT"] : []), "/D", `"${cwd}"`, "powershell.exe", ...shellArgs].join(" ");
 }
 
 /** Test double for a tracked terminal: tests end it with `exit()`. */
