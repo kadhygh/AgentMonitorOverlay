@@ -100,7 +100,11 @@ describe("Claude Code CLI features", () => {
     await approve(s.id);
     await until(() => ofType(s.id, "background").length === 1, "background item");
     expect(ofType(s.id, "background")[0]).toMatchObject({ command: "ping -n 3 127.0.0.1", state: "running" });
-    await until(() => ofType(s.id, "background")[0]!.state !== "running", "background end", 30_000);
+    // task_updated ends it first; the task_notification after it brings the summary and the output file.
+    await until(() => {
+      const b = ofType(s.id, "background")[0]!;
+      return b.state !== "running" && !!b.summary;
+    }, "background end", 30_000);
     const done = ofType(s.id, "background")[0]!;
     expect(done.state).toBe("completed");
     expect(done.outputFile).toMatch(/\.output$/);

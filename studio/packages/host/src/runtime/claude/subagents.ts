@@ -79,7 +79,7 @@ export class ClaudeSubagents {
       const item = this.core.appendItem(child, { type: "turn", turnId: randomUUID(), state: "running", startedAt: this.core.now().toISOString() }, { method: "agent/usage" });
       // The parent's row for the agent shows its total too.
       const parentId = this.core.store.getSession(child)?.parentId;
-      const row = parentId ? this.core.store.listItems(parentId).find((i) => i.type === "subagent" && i.childSessionId === child) : undefined;
+      const row = parentId ? this.core.store.findItems(parentId, "subagent", { childSessionId: child }, { limit: 1 })[0] : undefined;
       run = { itemId: item.id, ...(row ? { rowId: row.id } : {}), calls: new Map() };
       live.subUsage.set(child, run);
     }

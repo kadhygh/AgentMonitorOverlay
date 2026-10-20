@@ -142,7 +142,7 @@ export class ReadModel {
   }
 
   private lastReply(sessionId: Id): string {
-    const last = [...this.store.listItems(sessionId)].reverse().find((i) => i.type === "agent");
+    const [last] = this.store.findItems(sessionId, "agent", {}, { newest: true, limit: 1 });
     const reply = last && last.type === "agent" ? last.markdown.trim() : "";
     return reply.length > EXCERPT ? `${reply.slice(0, EXCERPT)}…` : reply;
   }

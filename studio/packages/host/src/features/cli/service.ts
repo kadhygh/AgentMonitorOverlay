@@ -49,7 +49,7 @@ export class CliFeature extends Feature {
   /** The tail of what a background command wrote (the CLI keeps it in a file of its own). */
   async backgroundOutput(sessionId: Id, taskId: string): Promise<BackgroundOutput> {
     this.requireSession(sessionId);
-    const item = this.store.listItems(sessionId).find((i) => i.type === "background" && i.taskId === taskId);
+    const [item] = this.store.findItems(sessionId, "background", { taskId }, { limit: 1 });
     if (!item || item.type !== "background") throw new HostError("not_found", `background command ${taskId} not found`);
     if (!item.outputFile) return { text: "", truncated: false, missing: true };
     const info = await stat(item.outputFile).catch(() => null);

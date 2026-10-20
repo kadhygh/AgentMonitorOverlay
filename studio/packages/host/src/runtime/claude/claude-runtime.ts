@@ -423,7 +423,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   async stopBackground(sessionId: Id, taskId: string): Promise<void> {
     const live = this.live.get(sessionId);
-    const item = this.store.listItems(sessionId).find((i) => i.type === "background" && i.taskId === taskId);
+    const [item] = this.store.findItems(sessionId, "background", { taskId }, { limit: 1 });
     if (!item || item.type !== "background") throw Object.assign(new Error(`background command ${taskId} not found`), { code: "not_found" });
     if (item.state !== "running") return;
     // Without its process the command is gone already.
@@ -610,7 +610,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private recoverAfterRestart(): void {
     for (const s of this.store.listSessions()) {
       if (s.runtime !== "claude") continue;
-      for (const item of this.store.listItems(s.id)) {
+      // Only what was under way, picked out by SQLite (2026-10-20: every item of every session was read and parsed).
+      for (const item of this.store.listUnfinishedItems(s.id)) {
         if (item.type === "approval" && item.state === "pending") this.updateItem(item.id, (it) => (it.type === "approval" ? { ...it, state: "resolved-elsewhere" } : it));
         if (item.type === "question" && item.state === "pending") this.asks.cancelQuestion(item.id);
         if (item.type === "agent" && item.streaming) this.updateItem(item.id, (it) => (it.type === "agent" ? { ...it, streaming: false } : it));

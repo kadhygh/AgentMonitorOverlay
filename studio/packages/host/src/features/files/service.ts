@@ -15,6 +15,10 @@ const WALK_FILES = 10_000;
 const WALK_DEPTH = 16;
 /** How long a listing is reused (typing in the selector asks again on every key). */
 const CACHE_MS = 15_000;
+/** Up to this old, a listing is still answered with at once while a fresh one is read behind it (2026-10-20). */
+const STALE_MS = 5 * 60_000;
+/** By character code: localeCompare over 50 000 paths took a good part of a second (2026-10-20). */
+const byCode = (a: string, b: string) => (a < b ? -1 : a > b ? 1 : 0);
 const DEFAULT_LIMIT = 50;
 const MAX_LIMIT = 200;
 
@@ -44,7 +48,9 @@ const zsplit = (out: string) => out.split("\0").filter(Boolean);
  * references them by absolute path; nothing here reads file contents.
  */
 export class FilesFeature extends Feature {
-  private readonly cache = new Map<Id, { at: number; listing: Promise<Listing> }>();
+  private readonly cache = new Map<Id, { at: number; listing: Promise<Listing>; refreshing?: boolean }>();
+  /** The last search of each project and what matched it: a longer query only looks among those (2026-10-20). */
+  private readonly lastSearch = new Map<Id, { listing: Listing; query: string; paths: string[] }>();
 
   async list(workspaceId: Id, query: string, limitIn: unknown): Promise<ProjectFiles> {
     const ws = this.requireWorkspace(workspaceId);
@@ -53,11 +59,15 @@ export class FilesFeature extends Feature {
     let rows: Array<{ path: string; match?: number[] }>;
     let total: number;
     if (query.trim()) {
-      const scored = listing.paths.flatMap((path) => {
+      // Typing on (the query only grows) can only narrow what matched: look among those, not the whole project.
+      const last = this.lastSearch.get(workspaceId);
+      const pool = last && last.listing === listing && query.toLowerCase().startsWith(last.query) ? last.paths : listing.paths;
+      const scored = pool.flatMap((path) => {
         const m = fuzzyMatch(query, path);
         return m ? [{ path, score: m.score, match: m.indices }] : [];
       });
-      scored.sort((a, b) => b.score - a.score || a.path.localeCompare(b.path));
+      this.lastSearch.set(workspaceId, { listing, query: query.toLowerCase(), paths: scored.map((r) => r.path) });
+      scored.sort((a, b) => b.score - a.score || byCode(a.path, b.path));
       total = scored.length;
       rows = scored.slice(0, limit).map(({ path, match }) => ({ path, match }));
     } else {
@@ -86,8 +96,21 @@ export class FilesFeature extends Feature {
 
   private listing(workspaceId: Id, root: string, fresh = false): Promise<Listing> {
     const cached = this.cache.get(workspaceId);
-    if (cached && !fresh && Date.now() - cached.at < CACHE_MS) return cached.listing;
-    const listing = this.gitFiles(root).then((paths) => (paths ? { source: "git" as const, paths, stats: new Map(), partial: false } : walk(root)));
+    const age = cached ? Date.now() - cached.at : Infinity;
+    if (cached && !fresh && age < CACHE_MS) return cached.listing;
+    const read = () => this.gitFiles(root).then((paths) => (paths ? { source: "git" as const, paths, stats: new Map(), partial: false } : walk(root)));
+    // A while old: answered at once from it, a fresh one read behind (a key typed in the selector waited for git).
+    if (cached && !fresh && age < STALE_MS) {
+      if (!cached.refreshing) {
+        cached.refreshing = true;
+        read().then(
+          (listing) => this.cache.set(workspaceId, { at: Date.now(), listing: Promise.resolve(listing) }),
+          () => (cached.refreshing = false),
+        );
+      }
+      return cached.listing;
+    }
+    const listing = read();
     this.cache.set(workspaceId, { at: Date.now(), listing });
     listing.catch(() => this.cache.delete(workspaceId));
     return listing;
@@ -97,7 +120,7 @@ export class FilesFeature extends Feature {
   private async gitFiles(root: string): Promise<string[] | null> {
     try {
       const out = await git(root, ["-c", "core.quotepath=off", "ls-files", "-z", "--cached", "--others", "--exclude-standard"]);
-      return [...new Set(zsplit(out))].sort((a, b) => a.localeCompare(b));
+      return [...new Set(zsplit(out))].sort(byCode);
     } catch {
       return null;
     }

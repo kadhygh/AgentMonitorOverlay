@@ -356,7 +356,7 @@ export class CodexRuntime extends RuntimeBase {
   private settleLeftovers(sessionId: Id, notify: boolean): void {
     let cut = false;
     const at = this.now().toISOString();
-    for (const item of this.store.listItems(sessionId)) {
+    for (const item of this.store.listUnfinishedItems(sessionId)) {
       if (item.type === "turn" && item.state === "running") {
         cut = true;
         this.updateItem(item.id, (it) => (it.type === "turn" && it.state === "running" ? { ...it, state: "interrupted", endedAt: at } : it));

@@ -432,6 +432,30 @@ export class Store extends DocumentStore {
     return (this.db.prepare("SELECT * FROM items WHERE session_id = ? AND seq > ? ORDER BY seq").all(sessionId, afterSeq) as Row[]).map(toItem);
   }
 
+  /**
+   * A session's items of a type whose body fields (dotted paths, e.g. `raw.turnId`) have these values, picked out by
+   * SQLite rather than reading and parsing the whole session (2026-10-20: several callers did that per event or poll);
+   * oldest first, or the newest first with `newest`.
+   */
+  findItems(sessionId: Id, type: SessionItem["type"], where: Record<string, string | number | boolean> = {}, opts: { newest?: boolean; limit?: number } = {}): SessionItem[] {
+    const keys = Object.keys(where);
+    for (const k of keys) if (!/^[A-Za-z][A-Za-z0-9]*(\.[A-Za-z][A-Za-z0-9]*)*$/.test(k)) throw new Error(`bad item field ${k}`);
+    const sql = `SELECT * FROM items WHERE session_id = ? AND type = ?${keys.map((k) => ` AND json_extract(body, '$.${k}') = ?`).join("")} ORDER BY seq${opts.newest ? " DESC" : ""}${opts.limit ? ` LIMIT ${Math.floor(opts.limit)}` : ""}`;
+    const values = keys.map((k) => (typeof where[k] === "boolean" ? (where[k] ? 1 : 0) : where[k]!));
+    return (this.db.prepare(sql).all(sessionId, type, ...values) as Row[]).map(toItem);
+  }
+
+  /** Items still under way: a pending approval or question, a reply streaming, a tool, command, turn or compaction running. */
+  listUnfinishedItems(sessionId: Id): SessionItem[] {
+    return (
+      this.db
+        .prepare(
+          `SELECT * FROM items WHERE session_id = ? AND (json_extract(body, '$.state') IN ('pending', 'running') OR json_extract(body, '$.streaming') = 1 OR json_extract(body, '$.status') = 'running') ORDER BY seq`,
+        )
+        .all(sessionId) as Row[]
+    ).map(toItem);
+  }
+
   // Events
 
   appendEvent(event: HostEventInput): HostEvent {
@@ -449,6 +473,15 @@ export class Store extends DocumentStore {
   lastEventSeq(): number {
     const row = this.db.prepare("SELECT COALESCE(MAX(seq), 0) AS m FROM events").get() as Row;
     return Number(row.m);
+  }
+
+  /**
+   * Keeps the newest `keep` events (2026-10-20: the log was never trimmed, 38 MB after a week, and deleting a project
+   * scanned all of it). It only serves a window catching up after it connects, from the snapshot it just read; seq
+   * keeps counting up (AUTOINCREMENT).
+   */
+  pruneEvents(keep: number): number {
+    return Number(this.db.prepare("DELETE FROM events WHERE seq <= (SELECT COALESCE(MAX(seq), 0) FROM events) - ?").run(keep).changes);
   }
 
   // Key/value settings

@@ -11,7 +11,21 @@ type PathApi = Pick<typeof path, "isAbsolute" | "join" | "normalize">;
 const FILE_LIST_TTL_MS = 30_000;
 
 /** A project's files (relative, `/`-separated) and the same in lower case, or null when it is not a git project. */
-type FileList = { files: string[]; lower: string[] } | null;
+/** The project's files, lower-cased, and by lower-cased name (a match ends with the name written, 2026-10-20). */
+type FileList = { files: string[]; lower: string[]; byName?: Map<string, number[]> } | null;
+
+/** A file list with its name index. */
+export function indexFiles(files: string[]): NonNullable<FileList> {
+  const lower = files.map((f) => f.toLowerCase());
+  const byName = new Map<string, number[]>();
+  lower.forEach((f, i) => {
+    const name = f.slice(f.lastIndexOf("/") + 1);
+    const at = byName.get(name);
+    if (at) at.push(i);
+    else byName.set(name, [i]);
+  });
+  return { files, lower, byName };
+}
 
 /**
  * Files named in a conversation (stage 12, S12-C): tells which of the paths a reply, a tool row or a file chip names
@@ -64,7 +78,7 @@ export class ChatFilesFeature extends Feature {
     const list = git(root, ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], 64 * 1024 * 1024)
       .then((out): FileList => {
         const files = out.split("\0").filter(Boolean);
-        return { files, lower: files.map((f) => f.toLowerCase()) };
+        return indexFiles(files);
       })
       .catch((): FileList => null);
     for (const [k, v] of this.lists) if (now - v.at >= FILE_LIST_TTL_MS) this.lists.delete(k);
@@ -88,7 +102,9 @@ export function findByEnd(written: string, list: NonNullable<FileList>): string 
   if (!w || w.endsWith("/")) return null;
   const tail = `/${w}`;
   let hit: string | null = null;
-  for (let i = 0; i < list.lower.length; i++) {
+  // Only files of that name can end with it: a few, not every file of the project for every name looked up.
+  const candidates = list.byName ? (list.byName.get(w.slice(w.lastIndexOf("/") + 1)) ?? []) : list.lower.keys();
+  for (const i of candidates) {
     const f = list.lower[i]!;
     if (f !== w && !f.endsWith(tail)) continue;
     if (hit !== null) return null;

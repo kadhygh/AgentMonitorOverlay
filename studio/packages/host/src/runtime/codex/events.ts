@@ -63,8 +63,7 @@ export class CodexEvents {
 
   /** The context the session had before compacting: what its latest turn left. */
   private lastContext(sessionId: Id): number | undefined {
-    const turns = this.core.store.listItems(sessionId).filter((i) => i.type === "turn" && i.usage?.context);
-    const last = turns.at(-1);
+    const last = this.core.store.findItems(sessionId, "turn", {}, { newest: true }).find((i) => i.type === "turn" && i.usage?.context);
     return last?.type === "turn" ? last.usage?.context : undefined;
   }
 
@@ -228,7 +227,7 @@ export class CodexEvents {
         // Deprecated in favour of the contextCompaction item (Codex 0.162 sends only the item); kept for older servers.
         const s = this.core.findByThread(n.params.threadId);
         if (!s) return;
-        if (this.core.store.listItems(s.id).some((i) => i.type === "compaction" && i.raw?.turnId === n.params.turnId)) return;
+        if (this.core.store.findItems(s.id, "compaction", { "raw.turnId": n.params.turnId }, { limit: 1 }).length) return;
         const before = this.lastContext(s.id);
         this.core.appendItem(s.id, { type: "compaction", state: "completed", ...(before ? { beforeTokens: before } : {}) }, { method: n.method, turnId: n.params.turnId });
         return;
@@ -479,7 +478,7 @@ export class CodexEvents {
     const st = this.core.sessionState(sessionId);
     const known = st.turns.get(turnId);
     if (known) return known;
-    const found = this.core.store.listItems(sessionId).find((i) => i.type === "turn" && i.turnId === turnId);
+    const [found] = this.core.store.findItems(sessionId, "turn", { turnId }, { limit: 1 });
     if (found) st.turns.set(turnId, found.id);
     return found?.id;
   }

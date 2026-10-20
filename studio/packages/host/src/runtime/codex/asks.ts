@@ -140,7 +140,7 @@ export class CodexAsks {
   cancelStale(): void {
     for (const s of this.core.store.listSessions()) {
       if (s.runtime !== "codex") continue;
-      for (const item of this.core.store.listItems(s.id)) {
+      for (const item of this.core.store.findItems(s.id, "question", { state: "pending" })) {
         if (item.type === "question" && item.state === "pending" && item.source !== "codex-async") this.core.updateItem(item.id, (it) => (it.type === "question" ? { ...it, state: "cancelled" } : it));
       }
     }
@@ -148,7 +148,7 @@ export class CodexAsks {
 
   /** request_user_input_async questions still open in a session. */
   openAsync(sessionId: Id): SessionItem[] {
-    return this.core.store.listItems(sessionId).filter((it) => it.type === "question" && it.source === "codex-async" && it.state === "pending");
+    return this.core.store.findItems(sessionId, "question", { source: "codex-async", state: "pending" });
   }
 
   /** The person wrote: open async questions count as answered by that message. */

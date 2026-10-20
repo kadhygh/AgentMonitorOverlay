@@ -71,6 +71,9 @@ export class HostAlreadyRunningError extends Error {
   }
 }
 
+/** Host events kept in the log (a window catching up needs only the newest). */
+const EVENTS_KEPT = 5000;
+
 export const hostPaths = (dataDir: string) => ({
   lock: join(dataDir, "host.lock"),
   info: join(dataDir, "host.json"),
@@ -144,6 +147,11 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
     let mcp: { url: string; token: string } | null = null;
     store = new Store(paths.db);
     const liveKv = store;
+    // The event log only serves windows catching up: its newest part is kept, now and every hour (2026-10-20).
+    store.pruneEvents(EVENTS_KEPT);
+    const pruneStore = store;
+    const pruning = setInterval(() => pruneStore.pruneEvents(EVENTS_KEPT), 60 * 60_000);
+    pruning.unref();
     // One reader for everything, so a token saved in 设置 is what the next Claude session reads.
     const credentials = options.credentials ?? new WindowsCredentialReader();
     // All saved keys in one run that does not hold up the event loop, before anything reads one.
@@ -274,6 +282,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       async shutdown({ keepServers = false } = {}) {
         if (stopped) return;
         stopped = true;
+        clearInterval(pruning);
         await finalHttp.close();
         await finalClaude.closeAll();
         await finalDsh.closeAll();

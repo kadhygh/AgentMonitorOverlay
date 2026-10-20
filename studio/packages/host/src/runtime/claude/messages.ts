@@ -139,7 +139,7 @@ export class ClaudeMessages {
             // A foreground subagent's final reply is not streamed: it only comes back in the Agent call's result.
             const result = (m as { tool_use_result?: { status?: string; content?: unknown } }).tool_use_result;
             const reply = result?.status === "completed" ? toolResultText(result.content).trim() : "";
-            const shown = this.core.store.listItems(child).some((i) => i.type === "agent" && i.markdown.trim() === reply);
+            const shown = this.core.store.findItems(child, "agent").some((i) => i.type === "agent" && i.markdown.trim() === reply);
             if (reply && !shown) this.core.appendItem(child, { type: "agent", markdown: reply, streaming: false }, { method: "agent/result", itemId: block.tool_use_id });
             // A background subagent's result only says it was launched; its task notification ends it.
             if (!live.backgroundSubs.has(block.tool_use_id) || result?.status === "completed") subagents.end(live, child, block.is_error ? "error" : "completed");

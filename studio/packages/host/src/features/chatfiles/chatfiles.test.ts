@@ -10,7 +10,7 @@ import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
 import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
 import { startHostServer, type HostServer } from "../../http/server.js";
-import { findByEnd, resolveMentioned } from "./service.js";
+import { findByEnd, indexFiles, resolveMentioned } from "./service.js";
 
 // Which files a conversation names exist (stage 12, S12-C).
 
@@ -139,5 +139,11 @@ describe("a path written from inside the project (S18)", () => {
     expect(findByEnd("/x/b.ts", list)).toBe("lib/x/b.ts");
     expect(findByEnd("ib/x/b.ts", list)).toBeNull();
     expect(findByEnd("x/", list)).toBeNull();
+    // The same through the name index.
+    const indexed = indexFiles([...files, "src/b/Resolver.cs"]);
+    expect(findByEnd("a/Resolver.cs", indexed)).toBe("src/a/Resolver.cs");
+    expect(findByEnd("Resolver.cs", indexed)).toBeNull();
+    expect(findByEnd("/x/b.ts", indexed)).toBe("lib/x/b.ts");
+    expect(findByEnd("ib/x/b.ts", indexed)).toBeNull();
   });
 });

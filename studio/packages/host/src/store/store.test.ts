@@ -131,6 +131,38 @@ describe("Store", () => {
     expect(store.lastEventSeq()).toBe(e2.seq);
   });
 
+  it("keeps only the newest events when pruned, and goes on counting (2026-10-20)", () => {
+    const store = makeStore();
+    const { task } = seed(store);
+    const seqs = Array.from({ length: 10 }, () => store.appendEvent({ type: "task.upserted", task }).seq);
+    expect(store.pruneEvents(3)).toBe(7);
+    expect(store.listEvents(0).map((e) => e.seq)).toEqual(seqs.slice(-3));
+    expect(store.appendEvent({ type: "task.upserted", task }).seq).toBe(seqs.at(-1)! + 1);
+    expect(store.pruneEvents(100)).toBe(0);
+  });
+
+  it("finds items by type and body fields, and the ones still under way, without reading the session (2026-10-20)", () => {
+    const store = makeStore();
+    const { main, other } = seed(store);
+    const at = "2026-10-12T10:00:00.000Z";
+    const add = (id: string, body: Record<string, unknown>, sessionId = main.id) => store.appendItem({ id, sessionId, createdAt: at, ...body } as never);
+    add("t1", { type: "turn", turnId: "a", state: "completed", raw: { turnId: "a" } });
+    add("t2", { type: "turn", turnId: "b", state: "running", raw: { turnId: "b" } });
+    add("g1", { type: "agent", markdown: "one", streaming: false });
+    add("g2", { type: "agent", markdown: "two", streaming: true });
+    add("q1", { type: "question", state: "pending", source: "codex-async", questions: [] });
+    add("b1", { type: "background", taskId: "bg-1", state: "running", command: "x" });
+    add("x1", { type: "turn", turnId: "a", state: "running" }, other.id);
+    expect(store.findItems(main.id, "turn", { turnId: "a" }).map((i) => i.id)).toEqual(["t1"]);
+    expect(store.findItems(main.id, "turn", { "raw.turnId": "b" }).map((i) => i.id)).toEqual(["t2"]);
+    expect(store.findItems(main.id, "agent", {}, { newest: true, limit: 1 }).map((i) => i.id)).toEqual(["g2"]);
+    expect(store.findItems(main.id, "agent", { streaming: false }).map((i) => i.id)).toEqual(["g1"]);
+    expect(store.findItems(main.id, "question", { source: "codex-async", state: "pending" }).map((i) => i.id)).toEqual(["q1"]);
+    expect(store.findItems(main.id, "background", { taskId: "bg-1" }).map((i) => i.id)).toEqual(["b1"]);
+    expect(() => store.findItems(main.id, "turn", { "a') OR 1=1 --": "x" })).toThrow(/bad item field/);
+    expect(store.listUnfinishedItems(main.id).map((i) => i.id)).toEqual(["t2", "g2", "q1", "b1"]);
+  });
+
   it("stores annotations, canvas and todos", () => {
     const store = makeStore();
     const { main } = seed(store);

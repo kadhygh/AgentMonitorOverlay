@@ -283,6 +283,9 @@ function unquote(v: unknown): unknown {
 }
 
 function withDisk(mark: FileMark): FileMark {
+  // A network share is not looked at (2026-10-20): a stat of an unreachable one holds the Host up until it times out,
+  // tens of seconds, on every list. It counts as there.
+  if (/^[\\/]{2}/.test(mark.path)) return { ...mark, exists: true, folder: !!mark.folder };
   try {
     const info = statSync(mark.path);
     return { ...mark, exists: true, folder: info.isDirectory() };
