@@ -1,10 +1,11 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createReadStream, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { ModelProfile } from "@amo-studio/protocol";
 import { StaticCredentialReader } from "../credentials.js";
 import { BUILTIN_CLAUDE_PROVIDERS, ClaudeProfileError, claudeEnv, type ClaudeHome } from "./claude-env.js";
+import { bundledClaudeExe } from "./transcripts.js";
 
 const studio = (dir: string): ClaudeHome => ({ dir, login: "token" });
 
@@ -29,6 +30,23 @@ describe("claudeEnv", () => {
     expect(env.CLAUDECODE).toBeUndefined();
     expect(env.CLAUDE_CODE_ENTRYPOINT).toBeUndefined();
     expect(env.claude_config_dir).toBeUndefined();
+  });
+
+  // 2026-10-21: the switch that stops auto mode's whole-checkout git snapshots lives in the CLI. A new SDK that drops or
+  // renames it would bring the desktop-wide lag back without a word, so the bundled CLI must still know the name.
+  it("the bundled CLI still knows CLAUDE_CODE_BASH_EDIT_DIFF", async () => {
+    const want = Buffer.from("CLAUDE_CODE_BASH_EDIT_DIFF");
+    let found = false;
+    let tail = Buffer.alloc(0);
+    for await (const chunk of createReadStream(bundledClaudeExe()) as AsyncIterable<Buffer>) {
+      const both = Buffer.concat([tail, chunk]);
+      if (both.includes(want)) {
+        found = true;
+        break;
+      }
+      tail = both.subarray(both.length - want.length);
+    }
+    expect(found).toBe(true);
   });
 
   it("lets the profile pick the model", () => {
