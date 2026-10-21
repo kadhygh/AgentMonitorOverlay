@@ -93,5 +93,10 @@ export function claudeEnv(
     // Without this, commands the agent runs (Bash) inherit ANTHROPIC_AUTH_TOKEN, and `env` prints the key into the
     // transcript (verified in the S4-09 review).
     CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+    // In auto mode the CLI (2.1.304) snapshots the whole checkout with git before and after every Bash command, with the
+    // repo's fsmonitor turned off, to show what the command changed. In a 52k-file Unity repo that is a ~1 s scan at
+    // 70% of every core, mostly kernel time, every few seconds: the whole desktop lagged, Studio's windows, the mouse
+    // and the IME with it (2026-10-21). Studio does not show that diff.
+    CLAUDE_CODE_BASH_EDIT_DIFF: "0",
   };
 }

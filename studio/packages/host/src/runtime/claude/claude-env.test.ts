@@ -23,6 +23,7 @@ describe("claudeEnv", () => {
       CLAUDE_CONFIG_DIR: "D:/studio/.data/claude-home",
       CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC: "1",
       CLAUDE_CODE_SUBPROCESS_ENV_SCRUB: "1",
+      CLAUDE_CODE_BASH_EDIT_DIFF: "0",
     });
     expect(env.ANTHROPIC_API_KEY).toBeUndefined();
     expect(env.CLAUDECODE).toBeUndefined();
