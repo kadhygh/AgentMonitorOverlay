@@ -6,6 +6,7 @@ import { connect as tcpConnect, createServer } from "node:net";
 import { join } from "node:path";
 import type { ModelProfile } from "@amo-studio/protocol";
 import type { CredentialReader } from "../credentials.js";
+import { lowerAgentPriority } from "../priority.js";
 import { codexServerSpec, type CodexProviderDef } from "../profiles.js";
 import { resolveCodexCommand, type CodexCommand } from "./command.js";
 import { CodexRpcClient } from "./rpc-client.js";
@@ -209,6 +210,7 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
       stdio: ["ignore", "ignore", "pipe"],
       windowsHide: true,
     });
+    lowerAgentPriority(child.pid);
     entry.stderr = "";
     child.stderr?.on("data", (d: Buffer) => {
       entry.stderr = (entry.stderr + d.toString()).slice(-4000);

@@ -2,6 +2,7 @@ import { execFile, spawn, type ChildProcessWithoutNullStreams } from "node:child
 import { EventEmitter } from "node:events";
 import { createWriteStream, mkdirSync, type WriteStream } from "node:fs";
 import { dirname } from "node:path";
+import { lowerAgentPriority } from "../priority.js";
 
 // One ACP agent process (a DSH `--profile acp`): newline-delimited JSON-RPC 2.0 over stdio. Stdout carries only
 // protocol frames; stderr goes to a log file. Requests from the agent (permission prompts) go to `onRequest`, whose
@@ -56,6 +57,7 @@ export class AcpConnection extends EventEmitter<AcpEvents> {
   ) {
     super();
     this.child = spawn(spec.command, [...spec.args], { cwd: spec.cwd, env: spec.env, stdio: ["pipe", "pipe", "pipe"], windowsHide: true });
+    lowerAgentPriority(this.child.pid);
     if (spec.logFile) {
       mkdirSync(dirname(spec.logFile), { recursive: true });
       this.log = createWriteStream(spec.logFile, { flags: "a" });

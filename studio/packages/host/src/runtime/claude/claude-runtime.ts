@@ -9,6 +9,7 @@ import type { CredentialReader } from "../credentials.js";
 import { RuntimeBase, type NewItemBody, type SendMode, type SessionRuntimeApi } from "../runtime.js";
 import { claudeEnv, type ClaudeHome, type ClaudeProviderDef } from "./claude-env.js";
 import { claudeAutoCompactEnv } from "../compact.js";
+import { spawnClaudeProcess } from "../priority.js";
 import { localClaudeHome, readClaudeLogin, rememberSessionLogin, sessionClaudeLogin } from "./claude-login.js";
 import { keepsProcess } from "./wake.js";
 import { agentsMdInstructions } from "./project-instructions.js";
@@ -484,6 +485,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         // The local login brings the person's config dir: only Studio's MCP server, not the ones they set up there.
         ...(home.login === "local" ? { strictMcpConfig: true } : {}),
         ...(hasTranscript(ref, home) ? { resume: ref } : { sessionId: ref }),
+        spawnClaudeCodeProcess: spawnClaudeProcess((line) => this.emit("log", `${session.id}: ${line}`)),
       },
     });
     // With CLAUDE_CODE_SUBPROCESS_ENV_SCRUB the CLI starts in "default" whatever --permission-mode says (CLI 2.1.296,
