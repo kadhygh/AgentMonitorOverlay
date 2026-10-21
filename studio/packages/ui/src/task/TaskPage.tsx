@@ -602,6 +602,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               onDeleteAnnotation={(id) => void run(() => call(link, "DELETE /api/annotations/:id", { id }))}
               onBookmark={bookmark}
               {...(restoreScroll !== undefined && session?.id === initialSessionId ? { initialScroll: restoreScroll } : {})}
+              atPassage={!!passage && session?.id === initialSessionId}
               onError={showError}
               annotations={annotations}
               annotationRefs={annotationRefs}

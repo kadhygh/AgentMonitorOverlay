@@ -18,6 +18,12 @@
 >     - `AMO_STUDIO_TRACE_STALLS=1` 时，卡顿 ≥1 s 会抓 JS profile 和 Chromium trace：最多 5 分钟一次，保留最近 4 份（`3262f86` / `7dc8ce1`）。现在没有开。
 >   - **以后再卡的查法**：每秒记录各进程 CPU（脚本在 project_mining 的 `AIWork/active/long-term/cli-tools-iteration/artifacts/2026-10-21-studio-lag/cpu-watch.ps1`），找峰值进程，再看它的父进程。很可能是 claude.exe 或 codex 起的子进程。
 >   - **当前运行状态**：Studio 14:57 起按默认设置运行（不带环境变量）。
+>   - **Focus 一轮（傍晚，纯界面，用户让先别重启，Ctrl+R 或下次重启生效）**：
+>     - 用户说「要了几次权限、切过去没事」：查库发现没有审批，是 Claude 主会话派出后台子 agent 后自己先空闲，Focus 每次都算「完成待审核」叫一次（子 agent 回报时主会话还会起一两秒的短回合）。现在主会话下还有子 agent 在跑就不算回复完；最后一个子 agent 结束算作会话有变化（`lib/sessionSeen.ts` 的 `unseenSessions` / `subsByParent`）。
+>     - 进行中按用户选的**方案 D**（Docs 效果图 https://claude.ai/artifact/147s1TWVcwzG97XFKAyGZW ）：主会话空闲在等子 agent 时空心圆点 +「等子 agent」，「▸ N」展开每个在跑的子 agent（名字、已跑多久，点开子会话），展开记在 localStorage `amo.focusSubsOpen`（`focus/FocusWorking.tsx`、`focus/pins.ts`）。
+>     - **置顶**：Focus 条目悬停出现图钉，按任务置顶（localStorage `amo.focusPinned`），置顶的显示任务最新的非子 agent 会话，排最上、详情一直展开、带「取消置顶」，别处不再重复列。「排在上面」按 Focus 自己的列表理解、「永久展示」只对置顶的，用户没反对。
+>     - **确认类跳转都给「按 ↑ 回到本轮回复开始」**：打开会话时它在等人或回复完没看过（`awaitsPerson`），或 Focus 刚为它跳过来（Focus 里点开就算看过了，所以 Focus 跳之前写 localStorage `amo.focusJump`，工作台打开后清掉，`lib/focusJump.ts`）；后退还原位置、书签段落不给。`useTurnStartHint` 多了 `arrived` / `loaded`。
+>     - e2e `focus-subagents.spec.ts`（`[[spawn-bg: …[[shell: ping …]]]]` + 全部允许，让子 agent 跑一会儿）。顺带发现：新会话开始前会空闲一瞬，Focus 会短暂多一条「完成待审核」（旧行为，没改；测试要等到回复出来）。
 > - S15-L（10-16）：Claude 的 /loop 和订阅额度上限——有 loop 唤醒或在等额度时不关进程，额度恢复后 CLI 没续上由 Studio 补一条；输入框上方的条和会话列表的「loop · 时间」「等额度 · 时间」；用 SendMessage 恢复的子 agent 找回子会话（迁移 13）。**待确认**：下次真碰到额度上限后看 host.log 的「went on after its usage limit (turn started by cli|studio|person)」，判断 SDK 模式下 CLI 会不会自己续。
 > - Review（10-16）：l / ; 在改动间跳，h 打开历史（j / k 选）；历史打开从 ~340ms 到 ~50ms（每次起 git 进程在这台机器上要 ~100ms：历史接口一轮 git、窗口打开后预读）。
 > - S16-A：子 agent 在主控空闲时发起的审批，批准后会话不再停在「等你批准」；Focus「我知道了」；设置里「默认项目」换成「默认路径」（选文件夹从这里开始）。

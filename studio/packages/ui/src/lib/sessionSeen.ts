@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import type { Session } from "@amo-studio/protocol";
+import { needsPerson } from "./status.js";
 
 // When the person last looked at each session in the workbench (2026-10-15). Focus lists a session whose reply ended,
 // or that failed, after that: 「完成待审核」/「出错」, until the person opens it in the main window (or in Focus).
@@ -53,12 +54,44 @@ export function markSeen(ids: readonly string[], at = new Date().toISOString(), 
 /**
  * Sessions whose last reply ended (idle / completed) or failed since the person last looked: live main and fork
  * sessions only (a subagent ending is part of its parent's turn). Newest first.
+ * 2026-10-21: not while a subagent of theirs still runs — a Claude session ends its turn right after starting
+ * background agents and takes a moment's turn as each one reports, which made Focus call it finished again and again.
+ * When the last one ends counts as the session changing, so the person hears of it once, at the end.
  */
 export function unseenSessions(sessions: readonly Session[], data: SeenData): Session[] {
+  const subs = subsByParent(sessions);
   return sessions
     .filter((s) => !s.archivedAt && s.kind !== "sub" && (s.status === "idle" || s.status === "completed" || s.status === "error"))
-    .filter((s) => s.updatedAt > maxIso(data.since, data.seen[s.id]))
+    .filter((s) => !subs.get(s.id)?.some((x) => x.status === "running"))
+    .filter((s) => lastChange(s, subs) > maxIso(data.since, data.seen[s.id]))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+}
+
+/** Whether the workbench opening this session is the person coming to deal with it: it waits, or ended unseen. */
+export function awaitsPerson(session: Session, sessions: readonly Session[], data: SeenData): boolean {
+  return needsPerson(session.status) || unseenSessions([session, ...sessions.filter((s) => s.parentId === session.id)], data).length > 0;
+}
+
+/** Live subagent sessions by their parent's id. */
+export function subsByParent(sessions: readonly Session[]): Map<string, Session[]> {
+  const by = new Map<string, Session[]>();
+  for (const s of sessions) {
+    if (s.kind !== "sub" || !s.parentId || s.archivedAt) continue;
+    const list = by.get(s.parentId);
+    if (list) list.push(s);
+    else by.set(s.parentId, [s]);
+  }
+  return by;
+}
+
+/** A session's subagents still running. */
+export function runningSubs(id: string, subs: ReadonlyMap<string, readonly Session[]>): Session[] {
+  return (subs.get(id) ?? []).filter((s) => s.status === "running");
+}
+
+/** When the session or one of its subagents last changed. */
+function lastChange(s: Session, subs: ReadonlyMap<string, readonly Session[]>): string {
+  return (subs.get(s.id) ?? []).reduce((at, x) => (x.updatedAt > at ? x.updatedAt : at), s.updatedAt);
 }
 
 /** The seen record, following changes made by the other windows. */

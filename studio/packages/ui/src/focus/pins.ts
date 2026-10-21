@@ -1,0 +1,70 @@
+import { useCallback, useEffect, useState } from "react";
+import type { Session, Task } from "@amo-studio/protocol";
+
+// Focus 置顶 (2026-10-21): tasks the person keeps at the top of Focus, their latest session's detail always open,
+// whether or not anything waits. And which sessions show their running subagents (方案 D: folded to「▸ N」 until
+// opened). Both per machine in localStorage, like where Focus sits.
+
+export const PINNED_KEY = "amo.focusPinned";
+export const SUBS_OPEN_KEY = "amo.focusSubsOpen";
+
+export function readIds(key: string): string[] {
+  try {
+    const list = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
+    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writeIds(key: string, ids: readonly string[]): void {
+  try {
+    localStorage.setItem(key, JSON.stringify(ids));
+  } catch {
+    // no storage: kept as long as the window
+  }
+}
+
+/** A list of ids kept under `key`: whether one is in it, and putting it in or taking it out (pinned first-come). */
+export function useStoredIds(key: string): { ids: readonly string[]; has(id: string): boolean; toggle(id: string): void; keepOnly(live: ReadonlySet<string>): void } {
+  const [ids, setIds] = useState<string[]>(() => readIds(key));
+  useEffect(() => {
+    const onStorage = (e: StorageEvent) => {
+      if (e.key === key || e.key === null) setIds(readIds(key));
+    };
+    window.addEventListener("storage", onStorage);
+    return () => window.removeEventListener("storage", onStorage);
+  }, [key]);
+  const update = useCallback(
+    (f: (cur: string[]) => string[]) =>
+      setIds((cur) => {
+        const next = f(cur);
+        if (next.length === cur.length && next.every((x, i) => x === cur[i])) return cur;
+        writeIds(key, next);
+        return next;
+      }),
+    [key],
+  );
+  return {
+    ids,
+    has: (id) => ids.includes(id),
+    toggle: (id) => update((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])),
+    keepOnly: (live) => update((cur) => cur.filter((x) => live.has(x))),
+  };
+}
+
+/** The session a pinned task shows: its latest live one that is not a subagent. */
+export function pinnedSession(task: Pick<Task, "id">, sessions: readonly Session[]): Session | undefined {
+  return sessions
+    .filter((s) => s.taskId === task.id && s.kind !== "sub" && !s.archivedAt)
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
+}
+
+/** 「已跑 5 分钟」: how long a subagent has been running, from when it started. */
+export function ranFor(since: string, now: number): string {
+  const s = Math.max(0, Math.floor((now - Date.parse(since)) / 1000));
+  if (s < 60) return `已跑 ${s} 秒`;
+  const m = Math.floor(s / 60);
+  if (m < 60) return `已跑 ${m} 分钟`;
+  return `已跑 ${Math.floor(m / 60)} 小时 ${m % 60} 分`;
+}

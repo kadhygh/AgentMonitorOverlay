@@ -35,7 +35,8 @@ import { SlashMenu, useSlashCommands } from "../chat/cli/SlashMenu.js";
 import { BackgroundTasks, latestSuggestion, SuggestionChips } from "../chat/cli/ComposerExtras.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { openReview } from "../gitreview/open.js";
-import { useMarkSessionSeen } from "../lib/sessionSeen.js";
+import { awaitsPerson, useMarkSessionSeen, useSessionSeen } from "../lib/sessionSeen.js";
+import { cameFromFocus, forgetFocusJump } from "../lib/focusJump.js";
 import { TurnStartHint, useTurnStartHint } from "./TurnStartHint.js";
 import { useAnnotationMarks } from "./annotationMarks.js";
 import { AnnotationRefChips, ComposerStats, composerPlaceholder } from "./ThreadParts.js";
@@ -74,6 +75,8 @@ interface ThreadProps {
   onBookmark?(anchor: SelectionAnchor): void;
   /** 后退 back to this session: where it had been read (readPlace), restored once its messages are in. */
   initialScroll?: ReadPlace;
+  /** Opened at a bookmarked passage (书签): it scrolls there, so no hint about where the turn starts. */
+  atPassage?: boolean;
   onEditAnnotation(id: string, note: string): Promise<boolean>;
   onDeleteAnnotation(id: string): void;
   /** A command or another action of the composer failed (stage 12, S12-E). */
@@ -84,7 +87,7 @@ interface ThreadProps {
 
 
 /** Conversation of one session plus its composer. */
-export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, onError, decisions = [] }: ThreadProps) {
+export function Thread({ link, presets, session, profile, tasks = [], sessions = [], items, annotations, annotationRefs, model, busy, onApprove, onJump, onSend, onInterrupt, onSaveAnnotation, onEditAnnotation, onDeleteAnnotation, onBookmark, initialScroll, atPassage = false, onError, decisions = [] }: ThreadProps) {
   const scroller = useRef<HTMLDivElement>(null);
   const stick = useRef(true);
   const [atBottom, setAtBottom] = useState(true);
@@ -268,7 +271,17 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   // An archived session has no composer (stage 14): the task page's banner says so and restores it.
   const archived = !!session && (session.writer === "archived" || !!session.archivedAt);
   const generating = !!session && (session.status === "running" || session.status === "awaiting-approval" || session.status === "awaiting-answer");
-  const turnStart = useTurnStartHint(scroller, sessionId, generating);
+  // Opened to deal with it (2026-10-21): it waited for the person or had ended unseen, judged as it opens, before
+  // opening it counts as seeing it; or Focus just sent the person here for it. Not when it opens at a place of its own
+  // (后退, a bookmarked passage).
+  const seenData = useSessionSeen();
+  const arrival = useRef<{ id: string | null; awaits: boolean }>({ id: null, awaits: false });
+  if (session && arrival.current.id !== session.id) arrival.current = { id: session.id, awaits: initialScroll === undefined && !atPassage && (awaitsPerson(session, sessions, seenData) || (cameFromFocus(session.id) && session.status !== "running")) };
+  useEffect(() => {
+    if (sessionId) forgetFocusJump(sessionId);
+  }, [sessionId]);
+  const loaded = !!session && items.length > 0 && items[items.length - 1]!.sessionId === session.id;
+  const turnStart = useTurnStartHint(scroller, sessionId, generating, arrival.current.id === sessionId && arrival.current.awaits, loaded);
   // Focus lists replies that ended while the person was elsewhere; looking at the session here clears them there.
   useMarkSessionSeen(session);
   // Codex steers the running turn at once; Claude reads it after the next tool call, or as the next turn; DSH only

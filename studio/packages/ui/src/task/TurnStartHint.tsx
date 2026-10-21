@@ -18,26 +18,55 @@ export function replyStart(scroller: HTMLElement): HTMLElement | null {
   return [...last.children].find((c): c is HTMLElement => c instanceof HTMLElement && !c.classList.contains("msg-user-row")) ?? null;
 }
 
-export function useTurnStartHint(scroller: RefObject<HTMLDivElement | null>, sessionId: string | null, generating: boolean) {
+/**
+ * `arrived`: the session was opened to deal with it — it waited for the person (an approval, a question, a review) or
+ * its reply had ended unseen (2026-10-21: from Focus, the board, the session list). Then the hint is offered too, once
+ * its items are in (`loaded`), whatever the turn is doing.
+ */
+export function useTurnStartHint(scroller: RefObject<HTMLDivElement | null>, sessionId: string | null, generating: boolean, arrived = false, loaded = true) {
   const [shown, setShown] = useState(false);
   const previous = useRef({ sessionId, generating });
+  // Set when a session is opened to deal with it, until the hint has been offered (or not) once.
+  const arrival = useRef<string | null>(arrived ? sessionId : null);
+
+  const offerIfOutOfSight = () => {
+    const el = scroller.current;
+    const start = el && replyStart(el);
+    if (el && start && start.getBoundingClientRect().top < el.getBoundingClientRect().top) setShown(true);
+  };
 
   useEffect(() => {
     const before = previous.current;
     previous.current = { sessionId, generating };
-    if (before.sessionId !== sessionId || generating) {
+    if (before.sessionId !== sessionId) {
+      setShown(false);
+      arrival.current = arrived ? sessionId : null;
+      return;
+    }
+    if (generating) {
       setShown(false);
       return;
     }
     if (!before.generating) return;
     // The turn just ended here: offer the way back once the finished turn is laid out, if its start is out of sight.
-    const frame = requestAnimationFrame(() => {
-      const el = scroller.current;
-      const start = el && replyStart(el);
-      if (el && start && start.getBoundingClientRect().top < el.getBoundingClientRect().top) setShown(true);
-    });
+    const frame = requestAnimationFrame(offerIfOutOfSight);
     return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- `arrived` is read when the session changes
   }, [scroller, sessionId, generating]);
+
+  // Opened to deal with it: once its conversation is laid out (and followed to the end), if the turn's start is above.
+  useEffect(() => {
+    if (!loaded || !sessionId || arrival.current !== sessionId) return;
+    let frame = requestAnimationFrame(
+      () =>
+        (frame = requestAnimationFrame(() => {
+          arrival.current = null;
+          offerIfOutOfSight();
+        })),
+    );
+    return () => cancelAnimationFrame(frame);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- runs when the items arrive
+  }, [sessionId, loaded]);
 
   const jump = () => {
     setShown(false);

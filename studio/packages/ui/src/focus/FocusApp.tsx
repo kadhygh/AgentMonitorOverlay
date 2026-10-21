@@ -2,7 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import type { Session, StateSnapshot } from "@amo-studio/protocol";
 import { useHostState } from "../host/useHostState.js";
 import { needsPerson } from "../lib/status.js";
-import { noteSeen, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
+import { noteFocusJump } from "../lib/focusJump.js";
+import { noteSeen, runningSubs, subsByParent, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useTaskPlans } from "../taskplans/TaskPlans.js";
@@ -12,7 +13,9 @@ import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pr
 import { PixelBot, type BotMood } from "./PixelBot.js";
 import { FocusQuota } from "./FocusQuota.js";
 import { usePetSkin } from "./petSkin.js";
-import { FocusEntry, isToReview, summary } from "./FocusEntry.js";
+import { FocusEntry, isToReview, summary, TO_REVIEW } from "./FocusEntry.js";
+import { PinButton, PinnedEntry, WAITING_SUBS, WorkingEntry } from "./FocusWorking.js";
+import { PINNED_KEY, pinnedSession, SUBS_OPEN_KEY, useStoredIds } from "./pins.js";
 import { readHistory, updateHistory, writeHistory, type Attention, type FocusRecord } from "./history.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { FocusSettings, ICON, type SettingItem } from "./FocusSettings.js";
@@ -96,6 +99,16 @@ export function FocusApp() {
 
   const seenData = useSessionSeen();
   const live = host.kind === "ready" ? host.state : null;
+  // 置顶 and which sessions show their subagents (2026-10-21); forgotten once their task or session is gone.
+  const pins = useStoredIds(PINNED_KEY);
+  const subsOpen = useStoredIds(SUBS_OPEN_KEY);
+  const liveTasksId = live ? live.tasks.filter((t) => !t.archivedAt).map((t) => t.id).join("|") : null;
+  const liveSessionsId = live ? live.sessions.filter((s) => !s.archivedAt).map((s) => s.id).join("|") : null;
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the ids by content
+  useEffect(() => void (liveTasksId !== null && pins.keepOnly(new Set(liveTasksId.split("|")))), [liveTasksId]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the ids by content
+  useEffect(() => void (liveSessionsId !== null && subsOpen.keepOnly(new Set(liveSessionsId.split("|")))), [liveSessionsId]);
+  const subs = live ? subsByParent(live.sessions) : new Map<string, Session[]>();
   const waiting = live ? needsMe(live) : [];
   const finished = live ? unseenSessions(live.sessions, seenData).filter((s) => !waiting.includes(s)) : [];
   // A finished session opened here stays (seen) until it is closed or another one opens.
@@ -123,7 +136,7 @@ export function FocusApp() {
       ...asks.map((d) => ({ key: `d:${d.id}`, sessionId: d.sessionId, taskId: d.taskId ?? null, label: "等你决定" })),
     ];
     setHistory((h) => {
-      const next = updateHistory(h, now, undefined, (r) => live.sessions.some((s) => s.id === r.sessionId && s.status === "running"));
+      const next = updateHistory(h, now, undefined, (r) => live.sessions.some((s) => s.id === r.sessionId && (s.status === "running" || runningSubs(s.id, subs).length > 0)));
       writeHistory(next);
       return next;
     });
@@ -198,21 +211,39 @@ export function FocusApp() {
   const { state, link } = host;
   const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
-  // 进行中 (2026-10-20): what is working now, so the open panel tells what goes on, not only what waits.
-  const working = state.sessions.filter((s) => !s.archivedAt && s.kind !== "sub" && s.status === "running").sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
-  const openId = open && list.some((s) => s.id === open) ? open : (list[0]?.id ?? null);
+  // 置顶 (2026-10-21): each pinned task's latest session, on top with its detail open; listed nowhere else.
+  const pinned = pins.ids.flatMap((id) => {
+    const task = state.tasks.find((t) => t.id === id && !t.archivedAt);
+    const session = task && pinnedSession(task, state.sessions);
+    return session ? [session] : [];
+  });
+  const isPinned = (s: Session) => pinned.includes(s);
+  // 进行中 (2026-10-20): what is working now, so the open panel tells what goes on, not only what waits. Also a session
+  // waiting for subagents of its own (2026-10-21).
+  const working = state.sessions
+    .filter((s) => !s.archivedAt && s.kind !== "sub" && (s.status === "running" || runningSubs(s.id, subs).length > 0) && !needsPerson(s.status) && !isPinned(s))
+    .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
+  const shown = list.filter((s) => !isPinned(s));
+  const openId = open && shown.some((s) => s.id === open) ? open : (shown[0]?.id ?? null);
+  const pinOf = (s: Session) => (s.taskId ? () => pins.toggle(s.taskId!) : undefined);
+  const toggleSubs = (s: Session) => () => subsOpen.toggle(s.id);
   const title = (s: Session) => state.tasks.find((t) => t.id === s.taskId)?.title || "未命名任务";
   /** A line on what the task is about: its 说明, else the session's name. */
   const brief = (s: Session) => state.tasks.find((t) => t.id === s.taskId)?.description?.split("\n").find((l) => l.trim())?.trim() || s.title || "会话";
   const goTo = (sessionId: string, taskId: string | null | undefined) => void window.amo?.openInWorkbench?.({ ...(taskId ? { taskId } : {}), sessionId });
+  /** To deal with it there: the workbench offers 「按 ↑ 回到本轮回复开始」 (lib/focusJump.ts). */
+  const goToDeal = (sessionId: string, taskId: string | null | undefined) => {
+    noteFocusJump(sessionId);
+    goTo(sessionId, taskId);
+  };
 
   /** The robot's click: the first thing that needs the person, in the workbench. */
   const openFirst = () => {
     acknowledge();
     const s = list[0];
     const d = asks[0];
-    if (s) void window.amo?.openInWorkbench?.({ ...(s.taskId ? { taskId: s.taskId } : {}), sessionId: s.id });
-    else if (d) void window.amo?.openInWorkbench?.({ ...(d.taskId ? { taskId: d.taskId } : {}), sessionId: d.sessionId });
+    if (s) goToDeal(s.id, s.taskId);
+    else if (d) goToDeal(d.sessionId, d.taskId);
     else void window.amo?.openInWorkbench?.({ taskId: "" });
   };
   caught.current = () => (demo ? setDemo(null) : openFirst());
@@ -290,26 +321,55 @@ export function FocusApp() {
           </button>
         </div>
         <FocusQuota link={link} settings={settings} profiles={state.profiles} />
-        {!compact && (needs > 0 || held || working.length > 0) && (
+        {!compact && (needs > 0 || held || working.length > 0 || pinned.length > 0) && (
           <div className="focus-list" onClickCapture={acknowledge}>
             {/* A click here acknowledges the alert, on click rather than on press: the robot going away lets the panel
                 grow, which moved the buttons between press and release and lost the click (2026-10-20). */}
             {/* On top: Focus grows upwards from the bottom of the screen, so what starts and stops working here does not
                 move the buttons below it (2026-10-20: a decision's buttons jumped as a session finished). */}
+            {pinned.length > 0 && (
+              <div className="focus-group" data-testid="focus-pinned-group">
+                <div className="focus-group-head">置顶 {pinned.length}</div>
+                {pinned.map((s) => {
+                  const running = runningSubs(s.id, subs);
+                  const review = !waiting.includes(s) && finished.includes(s);
+                  const waitsSubs = s.status !== "running" && running.length > 0 && !needsPerson(s.status);
+                  const look = review && isToReview(s, waiting) ? TO_REVIEW : waitsSubs ? WAITING_SUBS : SESSION_LOOK[s.status];
+                  return (
+                    <PinnedEntry
+                      key={s.id}
+                      link={link}
+                      session={s}
+                      title={title(s)}
+                      brief={brief(s)}
+                      look={look}
+                      ring={waitsSubs}
+                      subs={running}
+                      subsOpen={subsOpen.has(s.id)}
+                      onToggleSubs={toggleSubs(s)}
+                      onUnpin={() => s.taskId && pins.toggle(s.taskId)}
+                      onDone={review && isToReview(s, waiting) ? () => noteSeen([s.id]) : undefined}
+                      goTo={review || waiting.includes(s) ? goToDeal : goTo}
+                    />
+                  );
+                })}
+              </div>
+            )}
             {working.length > 0 && (
               <div className="focus-group" data-testid="focus-working">
                 <div className="focus-group-head">进行中 {working.length}</div>
                 {working.map((s) => (
-                  <div key={s.id} className="focus-entry" data-testid="focus-working-entry">
-                    <button type="button" className="focus-row" onClick={() => goTo(s.id, s.taskId)} title="在工作台打开">
-                      <span className="dot" style={{ background: SESSION_LOOK.running.dot }} />
-                      <span className="focus-row-text">
-                        <span className="focus-title">{title(s)}</span>
-                        <span className="focus-sub">{brief(s)}</span>
-                      </span>
-                      <span className="focus-time">{relativeTime(s.updatedAt)}</span>
-                    </button>
-                  </div>
+                  <WorkingEntry
+                    key={s.id}
+                    session={s}
+                    title={title(s)}
+                    brief={brief(s)}
+                    subs={runningSubs(s.id, subs)}
+                    subsOpen={subsOpen.has(s.id)}
+                    onToggleSubs={toggleSubs(s)}
+                    onPin={pinOf(s)}
+                    goTo={goTo}
+                  />
                 ))}
               </div>
             )}
@@ -351,12 +411,12 @@ export function FocusApp() {
                     decision={d}
                     sessionTitle={`${title(s)} · ${s.title || "会话"}`}
                     className="focus-detail focus-decision"
-                    onWriteElsewhere={() => void window.amo?.openInWorkbench?.({ ...(d.taskId ? { taskId: d.taskId } : {}), sessionId: d.sessionId })}
+                    onWriteElsewhere={() => goToDeal(d.sessionId, d.taskId)}
                   />
                 </div>
               );
             })}
-            {list.map((s) => (
+            {shown.map((s) => (
               <FocusEntry
                 key={s.id}
                 link={link}
@@ -373,6 +433,7 @@ export function FocusApp() {
                   noteSeen([s.id]);
                   setOpen("");
                 }}
+                pin={s.taskId ? <PinButton pinned={false} onToggle={() => pins.toggle(s.taskId!)} /> : undefined}
               />
             ))}
           </div>
@@ -388,7 +449,7 @@ export function FocusApp() {
                 const name = s ? title(s) : "（会话已不在）";
                 return (
                   <div key={`${r.key}@${r.at}`} className="focus-entry" data-testid="focus-history-entry" data-handled={r.handledAt ? "" : undefined}>
-                    <button type="button" className="focus-row" disabled={!s} onClick={() => goTo(r.sessionId, r.taskId)} title={s ? "在工作台打开" : undefined}>
+                    <button type="button" className="focus-row" disabled={!s} onClick={() => goToDeal(r.sessionId, r.taskId)} title={s ? "在工作台打开" : undefined}>
                       <span className="dot" style={{ background: r.handledAt ? "var(--text-faint)" : "var(--attention)" }} />
                       <span className="focus-row-text">
                         <span className="focus-title">{name}</span>

@@ -1,9 +1,10 @@
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import type { Session, SessionItem } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { useSessionItems } from "../host/useSessionItems.js";
 import { relativeTime, SESSION_LOOK, type StatusLook } from "../lib/status.js";
 import { planTitle } from "../chat/questions/flow.js";
+import { noteFocusJump } from "../lib/focusJump.js";
 
 // One session in the Focus list, opened to show its latest content (stage 16 split out of FocusApp.tsx).
 
@@ -32,7 +33,7 @@ export function latestSnippet(items: readonly SessionItem[]): { text: string; ap
 /** Placeholder while the Host connects (the decision hook runs before the link exists). */
 
 /** Finished work to look at: a reply that ended unseen, or a session waiting for review. */
-const TO_REVIEW: StatusLook = { label: "完成待审核", dot: "var(--running)", text: "var(--running-text)" };
+export const TO_REVIEW: StatusLook = { label: "完成待审核", dot: "var(--running)", text: "var(--running-text)" };
 
 /** 完成待审核 rather than a 事: a reply that ended (not failed) unseen, or a session waiting for review. */
 export function isToReview(s: Session, waiting: readonly Session[]): boolean {
@@ -53,6 +54,7 @@ export function FocusEntry({
   toReview,
   onToggle,
   onDone,
+  pin,
 }: {
   link: HostLink;
   session: Session;
@@ -63,27 +65,33 @@ export function FocusEntry({
   onToggle(): void;
   /** 我知道了: a 完成待审核 entry counts as reviewed (seen) and leaves the list. */
   onDone(): void;
+  /** 置顶 (2026-10-21): the task's pin, shown on hover. */
+  pin?: ReactNode;
 }) {
   const look = toReview ? TO_REVIEW : SESSION_LOOK[session.status];
   return (
     <div className={open ? "focus-entry open" : "focus-entry"} data-testid="focus-entry" data-finished={finished || undefined} data-review={toReview || undefined}>
-      <button type="button" className="focus-row" onClick={onToggle} aria-expanded={open}>
-        <span className="dot" style={{ background: look.dot }} />
-        <span className="focus-row-text">
-          <span className="focus-title">{title}</span>
-          <span className="focus-sub" style={{ color: look.text }}>
-            {look.label}
-            {session.title ? ` · ${session.title}` : ""}
+      <div className="focus-row-line">
+        <button type="button" className="focus-row" onClick={onToggle} aria-expanded={open}>
+          <span className="dot" style={{ background: look.dot }} />
+          <span className="focus-row-text">
+            <span className="focus-title">{title}</span>
+            <span className="focus-sub" style={{ color: look.text }}>
+              {look.label}
+              {session.title ? ` · ${session.title}` : ""}
+            </span>
           </span>
-        </span>
-        <span className="focus-time">{relativeTime(session.updatedAt)}</span>
-      </button>
+          <span className="focus-time">{relativeTime(session.updatedAt)}</span>
+        </button>
+        {pin}
+      </div>
       {open && <FocusDetail link={link} session={session} {...(toReview && finished ? { onDone } : {})} />}
     </div>
   );
 }
 
-function FocusDetail({ link, session, onDone }: { link: HostLink; session: Session; onDone?(): void }) {
+/** The session's latest content and what can be done about it; `children` adds actions (取消置顶). */
+export function FocusDetail({ link, session, onDone, children }: { link: HostLink; session: Session; onDone?(): void; children?: ReactNode }) {
   const { items } = useSessionItems(link, session.id);
   const { text, approval } = latestSnippet(items);
   const [busy, setBusy] = useState(false);
@@ -120,7 +128,10 @@ function FocusDetail({ link, session, onDone }: { link: HostLink; session: Sessi
         <button
           type="button"
           className="focus-btn"
-          onClick={() => void window.amo?.openInWorkbench?.({ ...(session.taskId ? { taskId: session.taskId } : {}), sessionId: session.id })}
+          onClick={() => {
+            noteFocusJump(session.id);
+            void window.amo?.openInWorkbench?.({ ...(session.taskId ? { taskId: session.taskId } : {}), sessionId: session.id });
+          }}
         >
           在工作台打开
         </button>
@@ -129,6 +140,7 @@ function FocusDetail({ link, session, onDone }: { link: HostLink; session: Sessi
             我知道了
           </button>
         )}
+        {children}
       </div>
     </div>
   );
