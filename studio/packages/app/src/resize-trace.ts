@@ -103,6 +103,19 @@ export class ResizeTrace {
       .catch((err: unknown) => this.write(`${stamp()} gpu info failed: ${String(err)}`));
   }
 
+  /** Stalls of this process's event loop, which freeze every window (2026-10-21, "it has felt slow these ten minutes"). */
+  watchStalls(): void {
+    if (!this.enabled) return;
+    const TICK = 100;
+    let last = performance.now();
+    setInterval(() => {
+      const now = performance.now();
+      const late = now - last - TICK;
+      if (late >= 500) this.write(`${stamp()} main process stalled ${Math.round(late)}ms (event loop)`);
+      last = now;
+    }, TICK).unref();
+  }
+
   get on(): boolean {
     return this.enabled;
   }

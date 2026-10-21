@@ -80,6 +80,18 @@ const survive = (what: string) => (err: unknown) => {
 process.on("uncaughtException", survive("uncaught exception"));
 process.on("unhandledRejection", survive("unhandled promise rejection"));
 
+// Stalls of the Host's event loop: every window waits on it meanwhile (2026-10-21, "it has felt slow these ten minutes").
+if (process.env.AMO_STUDIO_TEST !== "1") {
+  const TICK = 100;
+  let last = performance.now();
+  setInterval(() => {
+    const now = performance.now();
+    const late = now - last - TICK;
+    if (late >= 500) console.log(`Host stalled ${Math.round(late)}ms (event loop)`);
+    last = now;
+  }, TICK).unref();
+}
+
 try {
   const host = await startHost({
     dataDir,
