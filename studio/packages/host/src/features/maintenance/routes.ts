@@ -5,6 +5,6 @@ import { route, type Route } from "../../http/route.js";
 export function maintenanceRoutes(service: HostService): Route[] {
   return [
     route("GET", "/api/maintenance", () => service.maintenance.info()),
-    route("POST", "/api/maintenance/terminal", ({ body }) => service.maintenance.openTerminal(body)),
+    route("POST", "/api/maintenance/terminal", () => service.maintenance.openTerminal()),
   ];
 }

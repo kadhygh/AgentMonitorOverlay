@@ -2,24 +2,11 @@ import { useEffect, useState } from "react";
 import type { MaintenanceInfo } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 
-// 设置 → 维护 (2026-10-20): whether this Studio runs from its git checkout, and a terminal in that repo with a model's
-// own CLI (Claude Code or Codex, signed in as 设置 → 模型 has it), to work on Studio itself.
-
-const PROFILE_KEY = "amo.maintenanceProfile";
-
-function savedProfile(): string | null {
-  try {
-    return localStorage.getItem(PROFILE_KEY);
-  } catch {
-    return null;
-  }
-}
-
-const CLI_LABEL: Record<string, string> = { claude: "Claude Code", codex: "Codex" };
+// 设置 → 维护 (2026-10-20): whether this Studio runs from its git checkout, and a terminal in that repo running the
+// person's own Claude Code, to work on Studio itself (2026-10-21: as they would open it themselves, no model of Studio's).
 
 export function MaintenancePage({ link }: { link: HostLink }) {
   const [info, setInfo] = useState<MaintenanceInfo | null>(null);
-  const [profileId, setProfileId] = useState<string | null>(savedProfile);
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; error?: boolean } | null>(null);
   const fail = (err: unknown) => setMessage({ text: err instanceof HostApiError ? err.message : String(err), error: true });
@@ -28,25 +15,12 @@ export function MaintenancePage({ link }: { link: HostLink }) {
     call(link, "GET /api/maintenance").then(setInfo, fail);
   }, [link]);
 
-  const profiles = info?.profiles ?? [];
-  const chosen = profiles.find((p) => p.profileId === profileId) ?? profiles[0] ?? null;
-
-  function choose(id: string) {
-    setProfileId(id);
-    try {
-      localStorage.setItem(PROFILE_KEY, id);
-    } catch {
-      // Remembering the choice is a convenience only.
-    }
-  }
-
   async function open() {
-    if (!chosen) return;
     setBusy(true);
     setMessage(null);
     try {
-      const r = await call(link, "POST /api/maintenance/terminal", {}, { profileId: chosen.profileId });
-      setMessage({ text: `已在 ${r.cwd} 打开 ${CLI_LABEL[chosen.runtime] ?? chosen.runtime}（${chosen.label}）` });
+      const r = await call(link, "POST /api/maintenance/terminal");
+      setMessage({ text: `已在 ${r.cwd} 打开 Claude Code` });
     } catch (err) {
       fail(err);
     } finally {
@@ -93,30 +67,16 @@ export function MaintenancePage({ link }: { link: HostLink }) {
         <section className="settings-section" aria-label="维护终端">
           <span className="settings-heading">维护终端</span>
           <span className="settings-hint">
-            在工程目录开一个 PowerShell 窗口，用选中的模型直接运行它的命令行（Claude Code 或 Codex），登录和密钥按 设置 → 模型 里配好的来。Claude Code
-            用你自己的 ~/.claude，记忆和设置和平时在终端里一样。
+            在工程目录开一个 PowerShell 窗口，运行你自己的 Claude Code，和你平时在终端里开的一样：用你的登录、~/.claude 里的记忆和设置，不带 Studio 的模型配置。
           </span>
-          {profiles.length ? (
-            <div role="radiogroup" aria-label="维护用的模型" className="chips">
-              {profiles.map((p) => (
-                <button
-                  key={p.profileId}
-                  type="button"
-                  role="radio"
-                  className="chip"
-                  aria-checked={chosen?.profileId === p.profileId}
-                  aria-pressed={chosen?.profileId === p.profileId}
-                  onClick={() => choose(p.profileId)}
-                >
-                  {p.label} · {CLI_LABEL[p.runtime] ?? p.runtime}
-                </button>
-              ))}
-            </div>
-          ) : (
-            <span className="settings-hint">没有可用的 Claude 或 Codex 模型：先到 设置 → 模型 配一个。</span>
-          )}
+          <div className="settings-row">
+            <span className="settings-label">运行</span>
+            <code className="settings-hint" data-testid="maintenance-claude">
+              {info?.claude}
+            </code>
+          </div>
           <div className="settings-row end">
-            <button type="button" className="btn-primary small" onClick={() => void open()} disabled={busy || !chosen} data-testid="maintenance-open">
+            <button type="button" className="btn-primary small" onClick={() => void open()} disabled={busy} data-testid="maintenance-open">
               打开维护终端
             </button>
           </div>

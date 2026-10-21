@@ -21,7 +21,7 @@ import { ClaudeMessages } from "./messages.js";
 import { askCommands, askModels, CLI_SETTING_SOURCES, withTimeout } from "./probe.js";
 import { ClaudeSubagents } from "./subagents.js";
 import { firstLine } from "./tool-use.js";
-import { bundledClaudeExe, handoffKey, hasTranscript, importTranscript, installedClaudeExe, readTranscript, withConfigDir } from "./transcripts.js";
+import { bundledClaudeExe, handoffKey, hasTranscript, importTranscript, readTranscript, withConfigDir } from "./transcripts.js";
 import { ClaudeTurns } from "./turns.js";
 import { ClaudeUsageTracker } from "./usage-tracker.js";
 import { ClaudeWake } from "./wake-control.js";
@@ -331,20 +331,6 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     // The same Claude Code build as the SDK, so the transcript format always matches; never the "auto" permission mode.
     const resume = hasTranscript(ref, home) ? `--resume ${ref}` : `--session-id ${ref}`;
     return { command: `& '${bundledClaudeExe()}' ${resume} --permission-mode default`, cwd: workspace.path, env };
-  }
-
-  /**
-   * A new `claude` in a terminal (设置 → 维护). It runs in the person's own Claude Code folder, so their memory, settings
-   * and history apply as in any terminal; the profile only brings its endpoint, model and key. Their own installed
-   * `claude` comes first (it updates itself), the SDK's copy when there is none.
-   */
-  async freshTerminal(profileId: Id): Promise<{ command: string; env: Record<string, string> }> {
-    const profile = this.profile(profileId);
-    const env = { ...claudeEnv(profile, this.options.providers, this.options.credentials, this.newHome(profile), this.options.baseEnv), ...claudeAutoCompactEnv(this.store, profile.id) };
-    if (this.local.explicit) env.CLAUDE_CONFIG_DIR = this.local.dir;
-    else delete env.CLAUDE_CONFIG_DIR;
-    const exe = (installedClaudeExe() ?? bundledClaudeExe()).replace(/'/g, "''");
-    return { command: `& '${exe}' --permission-mode default`, env };
   }
 
   /** Takes a handed-off session back and imports what the terminal added to the transcript. */

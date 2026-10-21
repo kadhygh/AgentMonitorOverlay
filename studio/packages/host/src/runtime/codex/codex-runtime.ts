@@ -25,8 +25,6 @@ export { describePlan, describeReview, describeTool, inputQuestions } from "./de
 export interface CodexServers {
   ensure(profileId: string): Promise<CodexServerHandle>;
   on(event: "ready", listener: (handle: CodexServerHandle) => void): unknown;
-  /** The Codex TUI with the profile's provider, model and key (设置 → 维护). */
-  terminal?(profileId: string): { command: string; env: Record<string, string> };
 }
 
 export interface CodexRuntimeOptions {
@@ -494,12 +492,6 @@ export class CodexRuntime extends RuntimeBase {
   private identityConfig(sessionId: Id): { config: Record<string, unknown> } {
     const ids = this.options.identities;
     return { config: { ...codexAutoCompactConfig(this.store, this.store.getSession(sessionId)?.profileId), ...(ids ? McpIdentities.threadConfig(ids.tokenFor(sessionId)) : {}) } };
-  }
-
-  async freshTerminal(profileId: Id): Promise<{ command: string; env: Record<string, string> }> {
-    this.profile(profileId);
-    if (!this.options.servers.terminal) throw new Error("this Host cannot open Codex in a terminal");
-    return this.options.servers.terminal(profileId);
   }
 
   private async handleFor(profileId: Id): Promise<CodexServerHandle> {
