@@ -1,4 +1,4 @@
-import { app, type BrowserWindow } from "electron";
+import { app, BrowserWindow } from "electron";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { appendFile, rename, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
@@ -119,17 +119,37 @@ export class ResizeTrace {
     profiler?.startChromiumTrace();
     const TICK = 100;
     let last = performance.now();
+    // Hold-ups too short for a line of their own (typing and dragging lag at 0.1-0.5 s too): summed once a minute.
+    const minute = { n: 0, over250: 0, max: 0 };
     setInterval(() => {
       const now = performance.now();
       const late = now - last - TICK;
+      if (late >= 100) {
+        minute.n++;
+        if (late >= 250) minute.over250++;
+        minute.max = Math.max(minute.max, late);
+      }
       if (late >= 500) {
         const at = stamp();
-        this.write(`${at} main process stalled ${Math.round(late)}ms (event loop)`);
+        this.write(`${at} main process stalled ${Math.round(late)}ms (event loop) · accessibility ${a11y()} · focused ${this.focusedName()}`);
         if (late >= 1000) profiler?.stalled(late, at);
       }
       last = now;
     }, TICK).unref();
+    setInterval(() => {
+      if (minute.n) this.write(`${stamp()} main loop last minute: ${minute.n} hold-ups of 100ms+ (${minute.over250} of 250ms+), longest ${Math.round(minute.max)}ms · accessibility ${a11y()} · focused ${this.focusedName()}`);
+      Object.assign(minute, { n: 0, over250: 0, max: 0 });
+    }, 60_000).unref();
   }
+
+  /** Which Studio window has the keyboard, or "another program" when none does (2026-10-21: stalls while typing elsewhere?). */
+  private focusedName(): string {
+    const win = BrowserWindow.getFocusedWindow();
+    if (!win) return "another program";
+    return this.names.get(win)?.() ?? "a Studio window";
+  }
+
+  private readonly names = new Map<BrowserWindow, () => string>();
 
   get on(): boolean {
     return this.enabled;
@@ -138,6 +158,8 @@ export class ResizeTrace {
   /** Watches one window's resizes under its name ("main", "focus", "review"…, asked when it happens). */
   attach(win: BrowserWindow, name: () => string): void {
     if (!this.enabled) return;
+    this.names.set(win, name);
+    win.once("closed", () => this.names.delete(win));
     win.on("will-resize", (_e, bounds, details) => this.event(win, name(), "will", bounds, (details as { edge?: string } | undefined)?.edge));
     win.on("resize", () => this.event(win, name(), "resize", win.getBounds(), undefined, win.getContentBounds()));
     win.on("maximize", () => this.note(name(), "maximize"));

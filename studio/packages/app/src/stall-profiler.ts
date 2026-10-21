@@ -96,7 +96,9 @@ export class StallProfiler {
   startChromiumTrace(): void {
     void contentTracing
       .startRecording({
-        included_categories: ["toplevel", "ui", "views", "gpu", "viz", "ipc", "mojom", "browser", "navigation", "loading", "disabled-by-default-toplevel.flow"],
+        // 2026-10-21: ipc, mojom and toplevel.flow made a 5-minute buffer a 311 MB file whose writing stalled the app
+        // itself; accessibility shows whether pages' accessibility events are what the main thread handles.
+        included_categories: ["toplevel", "ui", "views", "gpu", "viz", "browser", "navigation", "loading", "accessibility"],
         recording_mode: "record-continuously",
         trace_buffer_size_in_kb: 64 * 1024,
       } as Electron.TraceConfig)
@@ -196,7 +198,8 @@ export function longestTasks(json: string, lateMs: number): string {
   }
   const min = Math.max(300, lateMs * 0.25) * 1000;
   const long = events.filter((e) => e.ph === "X" && (e.dur ?? 0) >= min).sort((a, b) => (b.dur ?? 0) - (a.dur ?? 0));
-  if (!long.length) return `no task of ${Math.round(min / 1000)}ms or more in the trace (${events.length} events)`;
+  const ax = accessibilityWork(events, procs, threads, lateMs);
+  if (!long.length) return `no task of ${Math.round(min / 1000)}ms or more in the trace (${events.length} events)${ax}`;
   const args = (a: Record<string, unknown> | undefined) => {
     if (!a) return "";
     const s = JSON.stringify(a);
@@ -205,5 +208,28 @@ export function longestTasks(json: string, lateMs: number): string {
   return long
     .slice(0, 8)
     .map((e) => `[${procs.get(e.pid) ?? e.pid}/${threads.get(`${e.pid}:${e.tid}`) ?? e.tid}] ${e.name} ${Math.round((e.dur ?? 0) / 1000)}ms${args(e.args)}`)
-    .join(" | ");
+    .join(" | ") + ax;
+}
+
+/**
+ * 2026-10-21 (typing and dragging lag during ordinary tasks, not only with a big file open): how much accessibility
+ * work the processes did in the stall and a few seconds before it, busiest thread first. Empty when there was none.
+ */
+function accessibilityWork(events: TraceEvent[], procs: Map<number, string>, threads: Map<string, string>, lateMs: number): string {
+  let end = 0;
+  for (const e of events) if (e.ts > end) end = e.ts;
+  const from = end - (lateMs + 5000) * 1000;
+  const by = new Map<string, { n: number; us: number; top: string; topUs: number }>();
+  for (const e of events) {
+    if (e.ph !== "X" || e.ts < from || !(e as { cat?: string }).cat?.includes("accessibility")) continue;
+    const k = `${procs.get(e.pid) ?? e.pid}/${threads.get(`${e.pid}:${e.tid}`) ?? e.tid}`;
+    const v = by.get(k) ?? { n: 0, us: 0, top: "", topUs: 0 };
+    v.n++;
+    v.us += e.dur ?? 0;
+    if ((e.dur ?? 0) > v.topUs) [v.top, v.topUs] = [e.name, e.dur ?? 0];
+    by.set(k, v);
+  }
+  if (!by.size) return "";
+  const list = [...by].sort((a, b) => b[1].us - a[1].us).slice(0, 4);
+  return ` · accessibility: ${list.map(([k, v]) => `[${k}] ${v.n}× ${Math.round(v.us / 1000)}ms, longest ${v.top} ${Math.round(v.topUs / 1000)}ms`).join(" | ")}`;
 }
