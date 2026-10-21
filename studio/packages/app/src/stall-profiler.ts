@@ -1,5 +1,5 @@
 import { contentTracing } from "electron";
-import { readFileSync, writeFileSync } from "node:fs";
+import { readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { Session } from "node:inspector";
 import { join } from "node:path";
 
@@ -29,6 +29,10 @@ interface Profile {
 
 const SAMPLE_US = 5000;
 const ROUND_MS = 120_000;
+/** Left running for days (2026-10-21): one capture every few minutes at most, and only the latest few kept (a Chromium
+ * trace is some 40 MB). Every stall still gets its line. */
+const CAPTURE_GAP_MS = 5 * 60_000;
+const KEEP_CAPTURES = 4;
 
 export class StallProfiler {
   private readonly session = new Session();
@@ -63,8 +67,11 @@ export class StallProfiler {
 
   /** The event loop was just held up for `lateMs`: what ran meanwhile, into the trace, and the profile kept. */
   stalled(lateMs: number, label: string): void {
-    if (this.busy) return;
+    if (this.busy || Date.now() - this.lastCapture < CAPTURE_GAP_MS) return;
     this.busy = true;
+    this.lastCapture = Date.now();
+    label = `${new Date().toLocaleDateString("sv-SE")}-${label}`;
+    this.prune();
     void this.chromiumTrace(lateMs, label);
     void this.post<{ profile: Profile }>("Profiler.stop")
       .then(({ profile }) => {
@@ -98,6 +105,21 @@ export class StallProfiler {
   }
 
   private tracing = false;
+  private lastCapture = 0;
+
+  /** Older captures go, so that with this one KEEP_CAPTURES remain. */
+  private prune(): void {
+    try {
+      const old = readdirSync(this.dir)
+        .filter((f) => f.startsWith("main-stall-"))
+        .sort()
+        .reverse();
+      const labels = [...new Set(old.map((f) => f.replace(/\.(cpuprofile|trace\.json)$/, "")))];
+      for (const label of labels.slice(KEEP_CAPTURES - 1)) for (const f of old.filter((f) => f.startsWith(label))) rmSync(join(this.dir, f), { force: true });
+    } catch {
+      // nothing to prune
+    }
+  }
 
   private async chromiumTrace(lateMs: number, label: string): Promise<void> {
     if (!this.tracing) return;
