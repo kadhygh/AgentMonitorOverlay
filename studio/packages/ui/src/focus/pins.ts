@@ -1,58 +1,13 @@
-import { useCallback, useEffect, useState } from "react";
 import type { Session, Task } from "@amo-studio/protocol";
 import { needsPerson } from "../lib/status.js";
 
 // Focus 置顶 (2026-10-21): tasks the person keeps at the top of Focus, one line on what their session does; its detail
-// opens only while it waits for the person (10-22: always open said too much). And which sessions show their running subagents (方案 D: folded to「▸ N」 until
-// opened). Both per machine in localStorage, like where Focus sits.
+// opens only while it waits for the person (10-22: always open said too much). And which sessions show their running
+// subagents (方案 D: folded to「▸ N」 until opened). Both per machine in localStorage (lib/storedIds.ts), like where
+// Focus sits.
 
 export const PINNED_KEY = "amo.focusPinned";
 export const SUBS_OPEN_KEY = "amo.focusSubsOpen";
-
-export function readIds(key: string): string[] {
-  try {
-    const list = JSON.parse(localStorage.getItem(key) ?? "[]") as unknown;
-    return Array.isArray(list) ? list.filter((x): x is string => typeof x === "string") : [];
-  } catch {
-    return [];
-  }
-}
-
-function writeIds(key: string, ids: readonly string[]): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(ids));
-  } catch {
-    // no storage: kept as long as the window
-  }
-}
-
-/** A list of ids kept under `key`: whether one is in it, and putting it in or taking it out (pinned first-come). */
-export function useStoredIds(key: string): { ids: readonly string[]; has(id: string): boolean; toggle(id: string): void; keepOnly(live: ReadonlySet<string>): void } {
-  const [ids, setIds] = useState<string[]>(() => readIds(key));
-  useEffect(() => {
-    const onStorage = (e: StorageEvent) => {
-      if (e.key === key || e.key === null) setIds(readIds(key));
-    };
-    window.addEventListener("storage", onStorage);
-    return () => window.removeEventListener("storage", onStorage);
-  }, [key]);
-  const update = useCallback(
-    (f: (cur: string[]) => string[]) =>
-      setIds((cur) => {
-        const next = f(cur);
-        if (next.length === cur.length && next.every((x, i) => x === cur[i])) return cur;
-        writeIds(key, next);
-        return next;
-      }),
-    [key],
-  );
-  return {
-    ids,
-    has: (id) => ids.includes(id),
-    toggle: (id) => update((cur) => (cur.includes(id) ? cur.filter((x) => x !== id) : [...cur, id])),
-    keepOnly: (live) => update((cur) => cur.filter((x) => live.has(x))),
-  };
-}
 
 /**
  * The session a pinned task shows, of its live ones that are not subagents: one waiting for the person (an approval, a

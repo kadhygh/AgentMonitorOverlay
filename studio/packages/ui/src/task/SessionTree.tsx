@@ -12,6 +12,7 @@ import { needsPerson, relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { wakeLabel } from "../chat/WakeBar.js";
 import { Mark } from "../chat/pickers.js";
 import { ArchiveIcon, formatDay } from "./Archived.js";
+import { useStoredIds } from "../lib/storedIds.js";
 
 const KIND = { main: "会话", fork: "分支", sub: "子 agent" } as const;
 
@@ -62,6 +63,15 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   const closed = !!task.archivedAt;
   const formOpen = !closed && (creating || live.length === 0);
   const profile = (id: string) => profiles.find((p) => p.id === id);
+
+  // Folded sessions (10-22): their subagents and forks hide under「▸ N」, remembered per machine. A session selected
+  // inside a folded one (from Focus, search, a link) opens the way to it.
+  const folded = useStoredIds(TREE_FOLDED_KEY);
+  useEffect(() => {
+    for (let s = live.find((x) => x.id === selected); s?.parentId; s = live.find((x) => x.id === s!.parentId)) {
+      if (folded.has(s.parentId)) folded.toggle(s.parentId);
+    }
+  }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const tree = buildSessionTree(live);
   // The model by name when known ("Opus 5.5"), from the last list this install saw.
@@ -131,7 +141,7 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
       )}
 
       <div className="slist tree" role="tree" aria-label="会话树">
-        <TreeLevel nodes={tree} depth={0} parentProfile={null} selected={selected} unread={unread} profileOf={profile} onSelect={onSelect} modelOf={modelOf} />
+        <TreeLevel nodes={tree} depth={0} parentProfile={null} selected={selected} unread={unread} profileOf={profile} onSelect={onSelect} modelOf={modelOf} folded={folded} />
       </div>
       {selectedLive && <SessionDetail session={selectedLive} all={live} model={modelOf(selectedLive)} letters={unread?.get(selectedLive.id) ?? 0} />}
 
@@ -190,6 +200,11 @@ ${formatDay(s.archivedAt)} 归档` : ""}`}
 /** Beyond this depth the tree stops moving right (its lines still show the nesting), so titles keep their room. */
 const MAX_INDENT = 4;
 
+export const TREE_FOLDED_KEY = "amo.sessionTreeFolded";
+
+/** Everything that hangs under a session, at any depth. */
+const below = (node: SessionNode): Session[] => node.children.flatMap((c) => [c.session, ...below(c)]);
+
 const TREE_ICON: Record<Session["kind"], JSX.Element> = {
   main: (
     <svg width="14" height="14" viewBox="0 0 16 16" aria-hidden="true">
@@ -226,6 +241,7 @@ function TreeLevel({
   profileOf,
   onSelect,
   modelOf,
+  folded,
 }: {
   nodes: readonly SessionNode[];
   depth: number;
@@ -235,6 +251,7 @@ function TreeLevel({
   profileOf(id: string): ModelProfile | undefined;
   onSelect(id: string): void;
   modelOf(s: Session): string;
+  folded: { has(id: string): boolean; toggle(id: string): void };
 }) {
   return (
     <>
@@ -244,52 +261,72 @@ function TreeLevel({
         const letters = unread?.get(s.id) ?? 0;
         const loud = needsPerson(s.status) || s.status === "error";
         const terminal = s.writer === "terminal-shared";
+        const hidden = below(node);
+        const open = !folded.has(s.id);
+        // Folded, it still says when something under it needs the person.
+        const alert = !open && hidden.some((x) => needsPerson(x.status) || x.status === "error");
         return (
           <div key={s.id} className="tree-node" role="none">
-            <button
-              type="button"
-              role="treeitem"
-              className={depth > 0 ? "srow tree-row child" : "srow tree-row"}
-              aria-current={s.id === selected}
-              aria-level={depth + 1}
-              title={[s.title || "新会话", [KIND[s.kind], modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · ")].join("\n")}
-              onClick={() => onSelect(s.id)}
-              data-testid="session-row"
-              data-kind={s.kind}
-              data-depth={depth}
-            >
-              <span className="tree-icon">{TREE_ICON[s.kind]}</span>
-              <span className="srow-title">{s.title || "新会话"}</span>
-              {letters > 0 && (
-                <span className="srow-mail" aria-label={`${letters} 条留言`} title={`${letters} 条留言`} data-testid="session-mail">
-                  {letters}
-                </span>
+            <div className="tree-line">
+              <button
+                type="button"
+                role="treeitem"
+                className={depth > 0 ? "srow tree-row child" : "srow tree-row"}
+                aria-current={s.id === selected}
+                aria-level={depth + 1}
+                title={[s.title || "新会话", [KIND[s.kind], modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · ")].join("\n")}
+                onClick={() => onSelect(s.id)}
+                data-testid="session-row"
+                data-kind={s.kind}
+                data-depth={depth}
+              >
+                <span className="tree-icon">{TREE_ICON[s.kind]}</span>
+                <span className="srow-title">{s.title || "新会话"}</span>
+                {letters > 0 && (
+                  <span className="srow-mail" aria-label={`${letters} 条留言`} title={`${letters} 条留言`} data-testid="session-mail">
+                    {letters}
+                  </span>
+                )}
+                {terminal && (
+                  <span className="tree-term" aria-label="终端已接入" title="终端已接入">
+                    <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
+                      <rect x="2" y="3" width="12" height="10" rx="1.5" />
+                      <path d="M5 7l2 1.5L5 10M8.5 10.5H11" />
+                    </svg>
+                  </span>
+                )}
+                {s.profileId !== parentProfile && <Mark profile={profileOf(s.profileId)} small />}
+                {s.wake && (s.wake.loop || s.wake.limit) && (
+                  <span className="tree-wake" data-kind={s.wake.limit ? "limit" : "loop"} data-testid="session-wake">
+                    {wakeLabel(s.wake)}
+                  </span>
+                )}
+                {loud ? (
+                  <span className="tree-badge" style={{ color: look.text }}>
+                    {look.label}
+                  </span>
+                ) : (
+                  <span className={`tree-dot ${s.status}`} style={{ background: s.status === "completed" ? "transparent" : look.dot }} title={look.label} aria-label={look.label} />
+                )}
+              </button>
+              {hidden.length > 0 && (
+                <button
+                  type="button"
+                  className="tree-fold"
+                  aria-expanded={open}
+                  aria-label={open ? `收起下面的 ${hidden.length} 个会话` : `展开下面的 ${hidden.length} 个会话`}
+                  title={open ? "收起子 agent 和分支" : alert ? "下面有会话等你处理，展开看" : "展开子 agent 和分支"}
+                  data-alert={alert || undefined}
+                  onClick={() => folded.toggle(s.id)}
+                  data-testid="session-fold"
+                >
+                  {open ? "▾" : "▸"} {hidden.length}
+                </button>
               )}
-              {terminal && (
-                <span className="tree-term" aria-label="终端已接入" title="终端已接入">
-                  <svg width="12" height="12" viewBox="0 0 16 16" aria-hidden="true">
-                    <rect x="2" y="3" width="12" height="10" rx="1.5" />
-                    <path d="M5 7l2 1.5L5 10M8.5 10.5H11" />
-                  </svg>
-                </span>
-              )}
-              {s.profileId !== parentProfile && <Mark profile={profileOf(s.profileId)} small />}
-              {s.wake && (s.wake.loop || s.wake.limit) && (
-                <span className="tree-wake" data-kind={s.wake.limit ? "limit" : "loop"} data-testid="session-wake">
-                  {wakeLabel(s.wake)}
-                </span>
-              )}
-              {loud ? (
-                <span className="tree-badge" style={{ color: look.text }}>
-                  {look.label}
-                </span>
-              ) : (
-                <span className={`tree-dot ${s.status}`} style={{ background: s.status === "completed" ? "transparent" : look.dot }} title={look.label} aria-label={look.label} />
-              )}
-            </button>
-            {node.children.length > 0 && (
+            </div>
+            {open && node.children.length > 0 && (
               <div className={depth + 1 >= MAX_INDENT ? "tree-children flat" : "tree-children"} role="group">
-                <TreeLevel nodes={node.children} depth={depth + 1} parentProfile={s.profileId} selected={selected} unread={unread} profileOf={profileOf} onSelect={onSelect} modelOf={modelOf} />
+                <TreeLevel nodes={node.children} depth={depth + 1} parentProfile={s.profileId} selected={selected} unread={unread} profileOf={profileOf} onSelect={onSelect} modelOf={modelOf} folded={folded} />
               </div>
             )}
           </div>

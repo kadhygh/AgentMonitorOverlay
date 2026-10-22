@@ -100,3 +100,44 @@ test("细线树: a fork of a fork hangs one level deeper, each level on its own 
   await expect(page.getByTestId("session-detail")).toContainText("2 个分支");
   await screenshot(app, "stage-14", "S14-P-session-tree", page);
 });
+
+test("细线树: a session folds what hangs under it to ▸ N, kept after a reload; selecting a session inside opens it (10-22)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api("POST", "/api/tasks", {
+    title: "折叠子 agent",
+    workspaceId: ws.id,
+    firstSession: { profileId: "claude-mock", text: "[[spawn: helper: say hi]]", options: { permission: "bypassPermissions" } },
+  });
+  await page.getByTestId("task-card").filter({ hasText: "折叠子 agent" }).click();
+  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-DONE", { timeout: 60_000 });
+  const rows = page.getByTestId("session-row");
+  await expect(rows).toHaveCount(2);
+  // A fork too: the main session has a subagent and a fork under it.
+  await page.getByRole("button", { name: "分支", exact: true }).click();
+  await expect(rows).toHaveCount(3);
+  await rows.first().click();
+
+  const fold = page.getByTestId("session-fold");
+  await expect(fold).toHaveCount(1);
+  await expect(fold).toHaveText("▾ 2");
+  await fold.click();
+  await expect(fold).toHaveText("▸ 2");
+  await expect(fold).toHaveAttribute("aria-expanded", "false");
+  await expect(rows).toHaveCount(1);
+  await screenshot(app, "stage-18", "S18-session-tree-folded", page);
+
+  // Kept per machine.
+  await page.reload();
+  await expect(page.getByTestId("task-title")).toHaveText("折叠子 agent", { timeout: 30_000 });
+  await expect(rows).toHaveCount(1);
+  await expect(fold).toHaveText("▸ 2");
+
+  // The subagent opened from the conversation: the way to it opens.
+  await page.getByTestId("msg-subagent").getByRole("button", { name: "查看" }).click();
+  await expect(page.getByTestId("thread-head")).toContainText("helper");
+  await expect(rows).toHaveCount(3);
+  await expect(fold).toHaveText("▾ 2");
+  await expect(page.locator('[data-testid="session-row"][data-kind="sub"]')).toHaveAttribute("aria-current", "true");
+});

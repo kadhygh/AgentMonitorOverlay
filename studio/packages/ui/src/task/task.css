@@ -215,6 +215,13 @@
    parent, to any depth (no further indent after four levels); the selected session's details sit under the tree. */
 .slist.tree { gap: 1px; }
 .tree-node { display: flex; flex-direction: column; min-width: 0; }
+.tree-line { display: flex; align-items: center; gap: 2px; min-width: 0; }
+.tree-line > .srow.tree-row { flex: 1; }
+.tree-line:has(> .tree-row[aria-current="true"]) { border-radius: var(--r-m); background: var(--selected); }
+/* 「▾ N」: folds a session's subagents and forks (10-22); in the attention colour when something folded waits. */
+.tree-fold { flex: none; height: 20px; padding: 0 6px; border: 1px solid var(--border); border-radius: 6px; background: transparent; color: var(--text-dim); font-size: 11px; cursor: pointer; }
+.tree-fold:hover { background: var(--selected); color: var(--text); }
+.tree-fold[data-alert] { border-color: var(--attention); color: var(--attention); }
 .srow.tree-row { flex-direction: row; align-items: center; gap: 8px; height: 30px; padding: 0 8px; box-shadow: none; }
 .srow.tree-row.child { height: 28px; }
 .srow.tree-row[aria-current="true"] { background: var(--selected); box-shadow: none; }
