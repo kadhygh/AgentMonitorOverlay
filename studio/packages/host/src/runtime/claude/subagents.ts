@@ -153,6 +153,30 @@ export class ClaudeSubagents {
     this.core.setStatus(child, "running");
   }
 
+  /** A background agent's task ended (task_updated): its child session settles, unless already settled. */
+  settled(sessionId: Id, live: Live, agentId: string, status: "completed" | "error" | "idle"): void {
+    const child = this.child(live, agentId, sessionId);
+    if (child && this.core.store.getSession(child)?.status === "running") this.end(live, child, status);
+  }
+
+  /**
+   * TaskStop on one of the session's agents (2026-10-22): the CLI may send no task_notification for a stopped agent,
+   * so its child session would show running until Studio restarted. The call's own success ends it.
+   */
+  onStopped(sessionId: Id, live: Live, input: Record<string, unknown>, result: unknown): void {
+    let r = result;
+    if (typeof r === "string") {
+      try {
+        r = JSON.parse(r);
+      } catch {
+        r = null;
+      }
+    }
+    const fromResult = (r as { task_id?: unknown } | null | undefined)?.task_id;
+    const agentId = typeof fromResult === "string" ? fromResult : typeof input.task_id === "string" ? input.task_id : typeof input.shell_id === "string" ? input.shell_id : "";
+    if (agentId) this.settled(sessionId, live, agentId, "idle");
+  }
+
   /** The process ended: its agents stopped with it. */
   endAll(live: Live, failed: boolean): void {
     for (const childId of live.subs.values()) {

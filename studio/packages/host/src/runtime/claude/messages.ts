@@ -157,6 +157,7 @@ export class ClaudeMessages {
           const toolResult = (m as { tool_use_result?: unknown }).tool_use_result;
           if (call?.name === "ScheduleWakeup" && block.is_error !== true) wake.onScheduleWakeup(sessionId, live, call.input, toolResult);
           if (call?.name === "SendMessage" && block.is_error !== true) subagents.onResumed(sessionId, live, block.tool_use_id, toolResult);
+          if (call?.name === "TaskStop" && block.is_error !== true) subagents.onStopped(sessionId, live, call.input, toolResult);
           // A command sent to the background: its result names the file its output goes to.
           const bg = [...live.tasks].find(([, t]) => t.toolUseId === block.tool_use_id);
           const bgItem = bg ? live.bgItems.get(bg[0]) : undefined;
@@ -272,6 +273,8 @@ export class ClaudeMessages {
         const itemId = live.bgItems.get(taskId);
         const state: BackgroundState | null = patch.status === "completed" ? "completed" : patch.status === "failed" ? "failed" : patch.status === "killed" ? "stopped" : null;
         if (itemId && state) turns.settleBackground(itemId, state, patch.error);
+        // A background agent that ended (10-22: one stopped with TaskStop got no task_notification and stayed running).
+        if (state) subagents.settled(sessionId, live, taskId, state === "completed" ? "completed" : state === "failed" ? "error" : "idle");
         return;
       }
       case "task_notification": {

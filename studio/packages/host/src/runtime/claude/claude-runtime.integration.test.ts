@@ -287,6 +287,18 @@ describe("ClaudeRuntime", () => {
     expect(agentTexts(child)).toEqual(["MOCK-SUB: watcher"]);
   }, 120_000);
 
+  it("settles a background subagent the parent stops with TaskStop (2026-10-22: it showed running until a restart)", async () => {
+    const s = await runtime.startSession({ taskId: task.id, topicId: null, profileId: "claude-mock", workspace, text: "[[spawn-bg-stop: reviewer: [[slow]] read everything]]" });
+    await until(() => items(s.id).some((i) => i.type === "subagent"), "background subagent");
+    const child = (items(s.id).find((i) => i.type === "subagent") as { childSessionId: string }).childSessionId;
+    // TaskStop is deferred: the mock loads it with ToolSearch, then stops the agent by the id its Agent call returned.
+    await until(() => items(s.id).some((i) => i.type === "tool" && (i as { name?: string }).name === "TaskStop"), "the parent's TaskStop");
+    await until(() => status(child) !== "running", "stopped subagent settled");
+    expect(status(child)).toBe("idle");
+    await until(() => status(s.id) === "idle", "parent idle");
+    expect(status(child)).toBe("idle");
+  }, 120_000);
+
   it("after a crash, marks turns that were in flight as over", async () => {
     // As a crashed Host leaves it: no process, the session still awaiting approval, a card still pending.
     const s = store.createSession({ taskId: task.id, topicId: null, parentId: null, kind: "main", runtime: "claude", profileId: "claude-mock", workspaceId: workspace.id, title: "crashed", status: "awaiting-approval", writer: "workbench", runtimeRef: "00000000-0000-4000-8000-000000000000" });

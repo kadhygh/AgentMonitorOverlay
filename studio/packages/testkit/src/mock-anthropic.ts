@@ -64,6 +64,8 @@ export type ClaudeMockScript = (req: ClaudeMockRequest) => ClaudeMockReply;
  *   parent then `MOCK-DONE`
  * - `[[spawn-bg: name: message]]` → the same in the background: the CLI returns at once, and when the subagent ends it
  *   notifies the parent, which runs another turn (a second `result` in the same query)
+ * - `[[spawn-bg-stop: name: message]]` → a background subagent the parent then stops with TaskStop (by the agent id the
+ *   CLI returned); with `[[slow]]` in its message the subagent is still answering when that happens
  * - `[[spawn-mode-<mode>: name: message]]` → a foreground subagent that asks for that permission `mode`
  *   (e.g. `spawn-mode-bypassPermissions`, `spawn-mode-auto`): the Host must not let it skip the person
  * A subagent's message may itself carry `[[shell: …]]`: the subagent then runs that command before replying.
@@ -98,7 +100,17 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
   const shell = /\[\[shell:\s*([^\]]+)\]\]/.exec(req.lastUserText);
   if (req.subagent) {
     if (shell && !req.afterToolOutput && req.tools.includes("Bash")) return { kind: "tool_use", name: "Bash", input: { command: shell[1]!.trim(), description: "mock command" } };
+    if (req.lastUserText.includes("[[slow]]")) return { kind: "text", text: `MOCK-SUB: ${req.subagent} ${"slow ".repeat(60).trim()}`, chunks: 60, delayMs: 200 };
     return { kind: "text", text: `MOCK-SUB: ${req.subagent}` };
+  }
+  // TaskStop is a deferred tool in CLI 2.1.x: loaded with ToolSearch first (the CLI then says "Tool loaded."), then called
+  // with the id the Agent call returned.
+  const convo = JSON.stringify(req.body.messages ?? "");
+  if (convo.includes("[[spawn-bg-stop:")) {
+    const agentId = /agentId:\s*([A-Za-z0-9_-]+)/.exec(convo)?.[1];
+    const stopped = convo.includes("Successfully stopped task") || /"name":"TaskStop"/.test(convo);
+    if (agentId && !stopped && req.tools.includes("TaskStop")) return { kind: "tool_use", name: "TaskStop", input: { task_id: agentId } };
+    if (agentId && !stopped && req.tools.includes("ToolSearch") && !/"name":"ToolSearch"/.test(convo)) return { kind: "tool_use", name: "ToolSearch", input: { query: "select:TaskStop", max_results: 1 } };
   }
   if (req.afterToolOutput && req.lastTool?.name.startsWith("mcp__")) return { kind: "text", text: `MOCK-MCP: ${req.lastTool.result.slice(0, 200)}` };
   if (req.afterToolOutput && req.lastTool?.name === "AskUserQuestion") return { kind: "text", text: `MOCK-ANSWERED: ${req.lastTool.result}` };
@@ -108,7 +120,7 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
   const mcp = /\[\[mcp:\s*([a-z_]+)\s*(\{.*?\})?\s*\]\]/.exec(req.lastUserText);
   if (mcp && req.tools.includes(`mcp__amo__${mcp[1]}`)) return { kind: "tool_use", name: `mcp__amo__${mcp[1]}`, input: mcp[2] ? (JSON.parse(mcp[2]) as Record<string, unknown>) : {} };
   // Spawn is checked before shell: the message may contain a nested [[shell: …]] for the subagent, so it runs up to the last "]]".
-  const spawn = /\[\[spawn(-bg|-mode-[A-Za-z]+)?:\s*([a-z0-9_-]+)\s*:\s*(.+)\]\]\s*$/.exec(req.lastUserText);
+  const spawn = /\[\[spawn(-bg-stop|-bg|-mode-[A-Za-z]+)?:\s*([a-z0-9_-]+)\s*:\s*(.+)\]\]\s*$/.exec(req.lastUserText);
   if (spawn) {
     const tool = req.tools.includes("Agent") ? "Agent" : req.tools.includes("Task") ? "Task" : null;
     if (tool) {
@@ -119,7 +131,7 @@ export const defaultClaudeScript: ClaudeMockScript = (req) => {
           description: spawn[2]!,
           prompt: `[[subagent: ${spawn[2]!}]] ${spawn[3]!.trim()}`,
           subagent_type: "general-purpose",
-          run_in_background: spawn[1] === "-bg",
+          run_in_background: spawn[1] === "-bg" || spawn[1] === "-bg-stop",
           ...(spawn[1]?.startsWith("-mode-") ? { mode: spawn[1].slice("-mode-".length) } : {}),
         },
       };
