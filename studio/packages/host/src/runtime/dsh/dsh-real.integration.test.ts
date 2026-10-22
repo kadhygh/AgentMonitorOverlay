@@ -83,7 +83,9 @@ describe.skipIf(!clone)("DSH runtime against a real DSH clone and DeepSeek", () 
   }, 400_000);
 
   it("DSH keeps a session's starting permission; switched to 完全访问, Studio grants what it asks (2026-10-22)", async () => {
-    const ws = await call<Workspace>("POST", "/api/workspaces", { path: join(root, "ws") });
+    await call("PUT", "/api/dsh", { path: clone });
+    mkdirSync(join(root, "ws-permission"));
+    const ws = await call<Workspace>("POST", "/api/workspaces", { path: join(root, "ws-permission") });
     const outside = join(root, "outside.txt");
     const ask = `Create the file ${outside} containing the word ok, with a shell command. It is outside your workspace: if the sandbox refuses, retry with escalated permissions.`;
     reserveModelTurn("deepseek", "S22 real DSH: escalation asked");

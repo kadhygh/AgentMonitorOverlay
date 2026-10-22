@@ -3,7 +3,7 @@
   "providers": {
     "deepseek": {
       "limit": 1000,
-      "used": 40
+      "used": 45
     },
     "glm": {
       "limit": 5000,
@@ -388,6 +388,31 @@
       "at": "2026-10-17T07:54:57.384Z",
       "provider": "deepseek",
       "note": "S17 real DSH: AMO MCP"
+    },
+    {
+      "at": "2026-10-22T17:01:07.909Z",
+      "provider": "deepseek",
+      "note": "S17 real DSH: command"
+    },
+    {
+      "at": "2026-10-22T17:01:14.479Z",
+      "provider": "deepseek",
+      "note": "S17 real DSH: AMO MCP"
+    },
+    {
+      "at": "2026-10-22T17:01:33.097Z",
+      "provider": "deepseek",
+      "note": "S22 real DSH: escalation asked"
+    },
+    {
+      "at": "2026-10-22T17:01:46.798Z",
+      "provider": "deepseek",
+      "note": "S22 real DSH: escalation asked"
+    },
+    {
+      "at": "2026-10-22T17:01:55.510Z",
+      "provider": "deepseek",
+      "note": "S22 real DSH: escalation granted"
     }
   ]
 }
