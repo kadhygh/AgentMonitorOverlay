@@ -193,7 +193,9 @@ export class CodexRuntime extends RuntimeBase {
   /** Models (from the profile's app-server, `model/list`) and permission settings. */
   async choices(profileId: Id): Promise<ProfileChoices> {
     const profile = this.profile(profileId);
-    const cached = this.modelCache.get(profileId);
+    // Keyed by the profile's own model too: a channel's model changed in 设置 → 模型 is the default at once.
+    const cacheKey = `${profileId}|${profile.model ?? ""}`;
+    const cached = this.modelCache.get(cacheKey);
     let models = cached && Date.now() - cached.at < 10 * 60_000 ? cached.models : null;
     if (!models) {
       const handle = await this.handleFor(profileId);
@@ -201,7 +203,7 @@ export class CodexRuntime extends RuntimeBase {
       models = r.data.map((m) => toModelOption(m, profile));
       // A profile pinned to a model the list does not show (hidden, or a custom catalog) still offers it.
       if (profile.model && !models.some((m) => m.id === profile.model)) models.unshift({ id: profile.model, label: profile.model, efforts: [], isDefault: true });
-      this.modelCache.set(profileId, { at: Date.now(), models });
+      this.modelCache.set(cacheKey, { at: Date.now(), models });
     }
     return { profileId, models, permissions: codexPermissions(), defaultPermission: CODEX_DEFAULT_PERMISSION, source: "cli" };
   }

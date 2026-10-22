@@ -263,4 +263,21 @@ test("a third-party DeepSeek channel run by DSH: its address, its own key and th
   await page.getByTestId("task-card").filter({ hasText: "走中转 DeepSeek" }).click();
   await expect(page.getByTestId("msg-agent").last()).toHaveText(`ENDPOINT base=${relayUrl} key=sk-relay-ds model=["deepseek-official","deepseek/deepseek-v4-pro"]`, { timeout: 60_000 });
   await expect(page.getByTestId("thread-head")).toContainText("中转 DeepSeek");
+
+  // The channel's model list changes (10-22): the conversation's models and 型号顺序和默认 follow without a reload.
+  const tray = page.getByTestId("options-tray").getByRole("group", { name: "型号" }).locator(".mtile-main");
+  await page.getByTestId("switch-model").click();
+  await expect(tray).toHaveText(["deepseek/deepseek-v4-pro", "deepseek/deepseek-v4.1-flash"]);
+  await page.getByTestId("switch-model").click();
+  await studio.api("PATCH", `/api/channels/${channel.id}`, { models: ["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-ocr"] });
+  await page.getByTestId("switch-model").click();
+  await expect(tray).toHaveText(["deepseek/deepseek-v4.1-flash", "deepseek/deepseek-ocr"]);
+  await page.getByTestId("switch-model").click();
+  await page.getByRole("button", { name: "设置" }).click();
+  await dialog.getByRole("tab", { name: "模型" }).click();
+  await dialog.locator(`[data-testid="channel-nav"][data-id="${channel.id}"]`).click();
+  const rows = dialog.getByRole("region", { name: "型号顺序和默认" }).getByTestId("model-order-row");
+  await expect(rows).toHaveCount(2);
+  await expect(rows.first()).toHaveAccessibleName("deepseek/deepseek-v4.1-flash，第 1 个，默认");
+  await expect(rows.last()).toHaveAccessibleName("deepseek/deepseek-ocr，第 2 个");
 });

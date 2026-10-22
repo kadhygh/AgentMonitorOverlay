@@ -10,17 +10,22 @@ export const EFFORT_LABELS: Record<string, string> = { none: "不思考", minima
 export const effortLabel = (e: string) => EFFORT_LABELS[e] ?? e;
 
 // One request per profile for the page's life; a failed one is asked again next time. 设置 → 模型 (order, defaults)
-// changes what the Host answers, so a change there drops the cache and the pickers ask again.
+// and the channels themselves (a channel's model list, 10-22) change what the Host answers, so a change to either drops
+// the cache and the pickers ask again. `profiles.updated` does not say which channel changed: every profile is asked.
 const cache = new Map<string, Promise<ProfileChoices>>();
 const CHANGED = "amo:choices-changed";
 let prefsSeen: string | null = null;
+const dropChoices = () => {
+  cache.clear();
+  window.dispatchEvent(new Event(CHANGED));
+};
 onHostEvent((e) => {
+  if (e.type === "profiles.updated") return dropChoices();
   if (e.type !== "settings.updated") return;
   const prefs = JSON.stringify(e.settings.modelPrefs ?? {});
   if (prefs === prefsSeen) return;
   prefsSeen = prefs;
-  cache.clear();
-  window.dispatchEvent(new Event(CHANGED));
+  dropChoices();
 });
 
 // The last answer is also kept per install: asking a CLI can mean starting its app-server (seconds for a cold GPT
