@@ -71,7 +71,7 @@ try {
   };
   await api("POST", "/api/workspaces", { path: join(root, "workspace"), name: "smoke" });
   await page.getByRole("button", { name: "+ 新任务" }).click();
-  await page.getByLabel("模型").selectOption({ label: "Claude · Mock Claude" });
+  await page.getByRole("group", { name: "模型" }).getByTestId("model-tile").filter({ hasText: "Mock Claude" }).click();
   await page.getByLabel("第一句话").fill("你好，便携版");
   await page.getByRole("button", { name: "开始" }).click();
   await page.getByTestId("msg-agent").last().filter({ hasText: "MOCK: 你好，便携版" }).waitFor({ timeout: 60_000 });
