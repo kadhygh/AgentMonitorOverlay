@@ -36,7 +36,7 @@ export function readHistory(link: HostLink, workspaceId: string): Promise<GitLog
  * the hash and the author. Enter (or a click) opens the commit in a window of its own.
  * 2026-10-16: opened from a commit's window, that commit is marked [CURRENT] and the list starts there, so the person
  * can go on from where they were. In a commit's window a pick switches that window; a right click opens a new one.
- * Opened with h (`keys`), the list has the keys like the review: j / k (or ↓ / ↑) pick, Enter opens, h or Esc close;
+ * Opened with h (`keys`), the list has the keys like the review: j / k (or ↓ / ↑) pick, Enter or Space opens, h or Esc close;
  * / or any other letter starts a search in the box.
  */
 export function CommitPicker({
@@ -117,7 +117,7 @@ export function CommitPicker({
     if (e.target === input.current || e.ctrlKey || e.metaKey || e.altKey || e.nativeEvent.isComposing) return;
     const k = e.key;
     if (k === "j" || k === "k" || k === "ArrowDown" || k === "ArrowUp") move(k === "j" || k === "ArrowDown" ? 1 : -1);
-    else if (k === "Enter") pick(highlight);
+    else if (k === "Enter" || k === " ") pick(highlight);
     else if (k === "Escape" || k === "h") onClose();
     else if (k === "/") input.current?.focus();
     else if (k.length === 1 && k !== " ") {
@@ -198,7 +198,7 @@ export function CommitPicker({
                 : "正在读取提交…"}
           </span>
           <span className="spacer" />
-          <span>{keys ? "j / k 选择 · / 搜索 · " : ""}{onPickNew ? "↑↓ 选择 · 回车在本窗口切换 · 右键在新窗口打开 · Esc 关闭" : "↑↓ 选择 · 回车在新窗口查看 · Esc 关闭"}</span>
+          <span>{keys ? "j / k 选择 · 空格同回车 · / 搜索 · " : ""}{onPickNew ? "↑↓ 选择 · 回车在本窗口切换 · 右键在新窗口打开 · Esc 关闭" : "↑↓ 选择 · 回车在新窗口查看 · Esc 关闭"}</span>
         </div>
       </div>
     </div>

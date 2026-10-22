@@ -8,9 +8,9 @@ import { countLabel, STATUS_NAME, type DiffMode } from "./logic.js";
 // The Review window's bars (stage 16 split out of ReviewApp.tsx): the head (what is compared, and how it shows) and
 // the head of the file in front.
 
-const MODES: { id: DiffMode; label: string }[] = [
-  { id: "changes", label: "只看改动" },
-  { id: "full", label: "完整文件" },
+const MODES: { id: DiffMode; label: string; key: string }[] = [
+  { id: "changes", label: "只看改动", key: "a" },
+  { id: "full", label: "完整文件", key: "d" },
 ];
 
 const LAYOUTS: { split: boolean; label: string; hint: string }[] = [
@@ -77,6 +77,7 @@ export function ReviewHead({
       {(commit || status?.repo) && (
         <button type="button" className="btn-ghost small" onClick={onHistory} title="这个分支的提交（h）：搜索说明、hash 或作者，在新窗口查看" data-testid="review-history">
           历史
+          <kbd className="gr-key">h</kbd>
         </button>
       )}
       {!commit && (
@@ -90,8 +91,9 @@ export function ReviewHead({
       )}
       <div className="gr-seg" role="group" aria-label="显示方式">
         {MODES.map((m) => (
-          <button key={m.id} type="button" aria-pressed={mode === m.id} onClick={() => onMode(m.id)}>
+          <button key={m.id} type="button" aria-pressed={mode === m.id} title={`${m.label}（${m.key}）`} onClick={() => onMode(m.id)}>
             {m.label}
+            <kbd className="gr-key">{m.key}</kbd>
           </button>
         ))}
       </div>

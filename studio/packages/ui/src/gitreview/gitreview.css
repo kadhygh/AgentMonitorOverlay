@@ -30,6 +30,9 @@
 .gr-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r-btn); overflow: hidden; }
 .gr-seg button { height: var(--ctl-s); padding: 0 10px; border: none; background: var(--panel); color: var(--text-dim); font-size: var(--fs-cap); cursor: pointer; }
 .gr-seg button + button { border-left: 1px solid var(--border); }
+/* A button's key (2026-10-22): a / d on 只看改动 / 完整文件, h on 历史. */
+.gr-key { margin-left: 6px; padding: 0 4px; border: 1px solid var(--border); border-radius: 3px; background: transparent; color: var(--text-faint); font-family: var(--font-code); font-size: 10.5px; line-height: 14px; }
+button[aria-pressed="true"] .gr-key { color: var(--text-dim); border-color: var(--border-strong); }
 .gr-seg button:hover { color: var(--text); background: var(--panel-raised); }
 .gr-seg button[aria-pressed="true"] { background: var(--selected); color: var(--text); font-weight: 600; }
 .gr-body { flex: 1; min-height: 0; display: flex; }

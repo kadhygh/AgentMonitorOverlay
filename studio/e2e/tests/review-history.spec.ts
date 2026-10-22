@@ -296,6 +296,30 @@ test("keys of the review: l / ; step through the file's changes, h opens 历史 
   await expect(active).toContainText("Added = 1");
   expect(await row()).toBe(first);
 
+  // w / s: the file a page up / down; a / d: 只看改动 / 完整文件, the keys shown on the buttons and under the files (2026-10-22).
+  await expect(review.getByTestId("review-keys")).toContainText("w / s 上下翻页，a 只看改动，d 完整文件，h 历史");
+  await expect(review.getByRole("button", { name: "只看改动" }).locator("kbd")).toHaveText("a");
+  await expect(review.getByRole("button", { name: "完整文件" }).locator("kbd")).toHaveText("d");
+  await expect(review.getByTestId("review-history").locator("kbd")).toHaveText("h");
+  await review.locator("body").press("d");
+  await expect(review.getByRole("button", { name: "完整文件" })).toHaveAttribute("aria-pressed", "true");
+  await expect(review.getByTestId("diff-hunk")).toHaveCount(0);
+  const scroll = review.locator(".gr-scroll");
+  const top = () => scroll.evaluate((el) => el.scrollTop);
+  await scroll.evaluate((el) => (el.scrollTop = 0));
+  await review.locator("body").press("s");
+  await expect.poll(top).toBeGreaterThan(100);
+  const paged = await top();
+  await review.locator("body").press("s");
+  await expect.poll(top).toBeGreaterThan(paged);
+  await review.locator("body").press("w");
+  await review.locator("body").press("w");
+  await expect.poll(top).toBe(0);
+  await review.locator("body").press("a");
+  await expect(review.getByRole("button", { name: "只看改动" })).toHaveAttribute("aria-pressed", "true");
+  await expect(review.getByTestId("diff-hunk")).not.toHaveCount(0);
+  await screenshot(studio.app, "stage-18", "S18-review-keys", review, "review");
+
   // h: 历史 with the list taking the keys, not the search box.
   await review.locator("body").press("h");
   const picker = review.getByTestId("commit-picker");
@@ -323,13 +347,14 @@ test("keys of the review: l / ; step through the file's changes, h opens 历史 
   await expect(rows).toHaveCount(1);
   await review.keyboard.press("Escape");
   await expect(picker).toHaveCount(0);
-  // j / k and Enter: the picked commit opens in its own window.
+  // j / k and Space (like Enter, 2026-10-22): the picked commit opens in its own window.
   await review.locator("body").press("h");
   await expect(rows).toHaveCount(2);
+  await expect(picker).toContainText("空格同回车");
   await review.keyboard.press("j");
   await expect(rows.nth(1)).toHaveAttribute("aria-selected", "true");
   const opened = studio.app.waitForEvent("window");
-  await review.keyboard.press("Enter");
+  await review.keyboard.press(" ");
   const shown = await opened;
   await shown.waitForLoadState("domcontentloaded");
   await expect(shown.getByTestId("review-commit")).toContainText("base");

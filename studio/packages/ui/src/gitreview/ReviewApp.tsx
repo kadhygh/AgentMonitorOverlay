@@ -130,6 +130,8 @@ export function ReviewPage({
     keepPlace();
     pref("mode", m);
   };
+  const setModeRef = useRef(setMode);
+  setModeRef.current = setMode;
   const setSplit = (split: boolean) => {
     if (split === prefs.split) return;
     keepPlace();
@@ -379,7 +381,8 @@ export function ReviewPage({
     void revealRow(scroller.current, row).then((el) => el?.scrollIntoView({ block: "center" }));
   }, [scrollTo, rows]);
 
-  // j / k (or ↓ / ↑) between files, n / p (or l / ;) between changes, h opens 历史; not while typing or picking.
+  // j / k (or ↓ / ↑) between files, n / p (or l / ;) between changes, h opens 历史, w / s page the file up / down,
+  // a / d 只看改动 / 完整文件 (2026-10-22); not while typing or picking.
   useEffect(() => {
     if (inactive || picking) return;
     const onKey = (e: KeyboardEvent) => {
@@ -403,6 +406,15 @@ export function ReviewPage({
       } else if (k === "h" && (commit || changes?.status.repo)) {
         e.preventDefault();
         setPicking("keys");
+      } else if (k === "w" || k === "s") {
+        const el = scroller.current;
+        if (!el) return;
+        e.preventDefault();
+        // A page, less a few lines kept on screen to read on from.
+        el.scrollBy({ top: (k === "s" ? 1 : -1) * Math.max(40, el.clientHeight - 60) });
+      } else if (k === "a" || k === "d") {
+        e.preventDefault();
+        setModeRef.current(k === "a" ? "changes" : "full");
       }
     };
     window.addEventListener("keydown", onKey);
@@ -455,7 +467,7 @@ export function ReviewPage({
                 ))}
               </div>
             </div>
-            <div className="gr-files-hint gr-dim">j / k 切换文件，l / ;（或 n / p）跳到改动，h 历史</div>
+            <div className="gr-files-hint gr-dim" data-testid="review-keys">j / k 切换文件，l / ;（或 n / p）跳到改动，w / s 上下翻页，a 只看改动，d 完整文件，h 历史</div>
             {commitError && (
               <div className="gr-empty" data-testid="review-commit-error">
                 读不到这个提交：{commitError}
