@@ -190,7 +190,23 @@ export interface StudioSettings {
   autoCompactTokens: number | null;
   /** S18: channels (profile ids) with their own 自动压缩点, set on their page in 设置 → 模型; the rest use the above. */
   autoCompactProfiles: Record<string, AutoCompactChoice>;
+  /** 项目分组 (2026-10-22): the left column's project groups, in order. */
+  projectGroups: ProjectGroup[];
 }
+
+/**
+ * 项目分组 (2026-10-22): projects gathered under a name in the left column, only for the person to keep them in order
+ * (unlike a topic, nothing else hangs on it and agents do not read it). A project is in at most one group.
+ */
+export interface ProjectGroup {
+  id: Id;
+  name: string;
+  /** The person's own note; "" for none. */
+  description: string;
+  workspaceIds: Id[];
+}
+
+export const MAX_PROJECT_GROUPS = 50;
 
 /** A channel's own 自动压缩点: tokens, or "cli" to leave it to the CLI. */
 export type AutoCompactChoice = number | "cli";
@@ -289,7 +305,7 @@ export interface HostRoutes {
   "POST /api/attachments": { req: void; res: Attachment };
   /** The file itself; also accepts `?token=` so an <img> can load it. */
   "GET /api/attachments/:id": { req: void; res: Blob };
-  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null> }; res: StudioSettings };
+  "PUT /api/settings": { req: { commonDir?: string; presets?: SessionPreset[]; disabledFeatures?: OptionalFeature[]; scratchpadShortcut?: string; claudeLogin?: ClaudeLogin; modelPrefs?: Record<string, ModelPrefs | null>; scratchpadSafeNewlines?: boolean; quotaDisplay?: Record<string, QuotaDisplay | null>; quickModels?: QuickModel[]; autoCompactTokens?: number | null; autoCompactProfiles?: Record<string, AutoCompactChoice | null>; projectGroups?: Array<Omit<ProjectGroup, "id"> & { id?: Id }> }; res: StudioSettings };
   /** Models (with reasoning efforts) and permission settings of a profile, asked from its CLI. */
   "GET /api/profiles/:id/choices": { req: void; res: ProfileChoices };
   "GET /api/credentials": { req: void; res: CredentialStatus[] };

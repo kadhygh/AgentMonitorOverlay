@@ -7,6 +7,12 @@
 .ctx-menu button.menu-danger { color: var(--danger-text); }
 .ctx-menu button.menu-danger:hover:not(:disabled), .ctx-menu button.menu-danger:focus-visible { background: var(--danger); color: var(--on-danger); }
 .ctx-menu button.menu-danger:disabled { color: var(--text-dim); }
+/* A submenu opened in place (加入分组 ▸): its items indented under the item that opened it. */
+.ctx-menu .menu-sub-arrow { float: right; margin-left: 12px; color: var(--text-faint); font-size: 11px; }
+.ctx-menu .menu-sub { display: flex; flex-direction: column; padding-left: 8px; }
+.ctx-menu .menu-check { display: inline-block; width: 14px; color: var(--primary); }
+.ctx-menu .menu-rule { border: none; border-top: 1px solid var(--divider); margin: 4px 6px; }
+.ctx-menu button.menu-new { color: var(--primary); }
 .anno-panel { flex: 0 0 300px; max-width: 320px; border-left: 1px solid var(--border); padding: 14px 16px; display: flex; flex-direction: column; gap: 14px; overflow-y: auto; background: var(--panel-raised); }
 .anno-head { display: flex; align-items: baseline; gap: 8px; }
 .anno-title { font-weight: 600; font-size: var(--fs-sm); }

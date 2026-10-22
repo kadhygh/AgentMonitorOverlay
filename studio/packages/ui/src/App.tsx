@@ -220,6 +220,7 @@ export function App() {
           workspaces={state.workspaces}
           topics={state.topics}
           tasks={state.tasks}
+          sessions={state.sessions}
           scope={scope}
           live={live}
           onScope={(s) => {

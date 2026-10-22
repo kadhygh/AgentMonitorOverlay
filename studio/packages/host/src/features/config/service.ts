@@ -1,12 +1,12 @@
 import { existsSync, mkdirSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_QUICK_MODELS, OPTIONAL_FEATURES, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
+import { AUTO_COMPACT_MAX, AUTO_COMPACT_MIN, MAX_PROJECT_GROUPS, MAX_QUICK_MODELS, OPTIONAL_FEATURES, type ProjectGroup, type QuickModel, type AccountUsage, type CredentialStatus, type OptionalFeature, type ProfileChoices, type SessionPreset, type Id, type QuotaDisplay, type StudioSettings } from "@amo-studio/protocol";
 import { localClaudeHome, localClaudeSignedIn, readClaudeLogin, writeClaudeLogin } from "../../runtime/claude/claude-login.js";
 import { readAutoCompact, readAutoCompactProfiles, writeAutoCompact, writeAutoCompactProfiles } from "../../runtime/compact.js";
 import { applyModelPrefs, readModelPrefs, writeModelPrefs } from "../../core/model-prefs.js";
 import { newId } from "../../store/store.js";
 import type { CredentialStore } from "../../runtime/credentials.js";
-import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, QUOTA_DISPLAY_KEY, QUICK_MODELS_KEY } from "../../core/shared.js";
+import { HostError, sessionOptions, boundedText, PRESETS_KEY, MAX_PRESETS, WRITABLE_CREDENTIALS, DISABLED_FEATURES_KEY, QUOTA_DISPLAY_KEY, QUICK_MODELS_KEY, PROJECT_GROUPS_KEY } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /** Studio settings, 常用预设, model credentials, model choices and subscription usage. */
@@ -26,7 +26,39 @@ export class ConfigFeature extends Feature {
       modelPrefs: readModelPrefs(this.store),
       quotaDisplay: this.quotaDisplay(),
       quickModels: this.quickModels(),
+      projectGroups: this.projectGroups(),
     };
+  }
+
+  /** 项目分组, as saved (the UI leaves out projects that are gone or archived). */
+  private projectGroups(): ProjectGroup[] {
+    try {
+      const v = JSON.parse(this.store.getKv(PROJECT_GROUPS_KEY)?.value ?? "[]") as unknown;
+      return Array.isArray(v) ? (v as ProjectGroup[]) : [];
+    } catch {
+      return [];
+    }
+  }
+
+  /** Checks a new list of 项目分组: known projects only, each in one group (the first that names it). */
+  private checkProjectGroups(list: unknown): ProjectGroup[] {
+    if (!Array.isArray(list) || list.length > MAX_PROJECT_GROUPS) throw new HostError("bad_request", `projectGroups must be a list of at most ${MAX_PROJECT_GROUPS}`);
+    const taken = new Set<Id>();
+    const ids = new Set<Id>();
+    return list.map((g: unknown) => {
+      const o = g && typeof g === "object" ? (g as Record<string, unknown>) : {};
+      let id = typeof o.id === "string" && o.id ? o.id.slice(0, 64) : newId("pg");
+      if (ids.has(id)) id = newId("pg");
+      ids.add(id);
+      const description = o.description === undefined || o.description === null || o.description === "" ? "" : boundedText(o.description, "description", 2000);
+      if (o.workspaceIds !== undefined && !Array.isArray(o.workspaceIds)) throw new HostError("bad_request", "workspaceIds must be a list of project ids");
+      const workspaceIds = ((o.workspaceIds as unknown[] | undefined) ?? []).filter((w): w is Id => {
+        if (typeof w !== "string" || taken.has(w) || !this.store.getWorkspace(w)) return false;
+        taken.add(w);
+        return true;
+      });
+      return { id, name: boundedText(o.name, "name", 40), description, workspaceIds };
+    });
   }
 
   /** 设置 → 模型 → 快速选择, without profiles that are gone. */
@@ -79,7 +111,8 @@ export class ConfigFeature extends Feature {
    * Moves the common space to another folder, replaces the 常用预设 list, turns optional features on or off, sets the
    * scratchpad shortcut (便签) and/or how the Claude subscription signs in (sessions started from then on).
    */
-  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown }): StudioSettings {
+  updateSettings(input: { commonDir?: unknown; presets?: unknown; disabledFeatures?: unknown; scratchpadShortcut?: unknown; claudeLogin?: unknown; modelPrefs?: unknown; scratchpadSafeNewlines?: unknown; quotaDisplay?: unknown; quickModels?: unknown; autoCompactTokens?: unknown; autoCompactProfiles?: unknown; projectGroups?: unknown }): StudioSettings {
+    if (input.projectGroups !== undefined) this.store.setKv(PROJECT_GROUPS_KEY, JSON.stringify(this.checkProjectGroups(input.projectGroups)));
     if (input.quickModels !== undefined) {
       const list = input.quickModels;
       if (!Array.isArray(list) || list.length > MAX_QUICK_MODELS) throw new HostError("bad_request", `quickModels must be a list of at most ${MAX_QUICK_MODELS}`);

@@ -1,5 +1,5 @@
 import { useEffect, useState, type DragEvent, type MouseEvent } from "react";
-import { projectWorkspaces, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, type ProjectGroup, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { togglePin, usePins, type PinKind } from "../lib/pins.js";
 import { moveNav, navOrder, useNavOrder } from "./navOrder.js";
@@ -12,6 +12,11 @@ import { EditProjectDialog } from "./EditProjectDialog.js";
 import { EditTopicDialog } from "./EditTopicDialog.js";
 import { useDragWidth, useNavWidthVar } from "../lib/dragWidth.js";
 import { FoldIcon } from "../task/SessionTree.js";
+import { useSettings } from "../settings/SettingsDialog.js";
+import { useStoredIds } from "../lib/storedIds.js";
+import { needsPerson } from "../lib/status.js";
+import { groupOwners, groupProjects, joinGroup, moveGroup } from "./projectGroups.js";
+import { EditGroupDialog } from "./EditGroupDialog.js";
 
 /** The left column folded to a strip (2026-10-14), remembered per window. */
 const NAV_FOLD_KEY = "amo.navCollapsed";
@@ -27,14 +32,23 @@ import { pickFolder } from "../lib/profiles.js";
 
 /** A project or topic about to be archived from its right-click menu. */
 type Archiving = { kind: "workspace" | "topic"; id: string; name: string };
-type NavDrag = { type: "item"; kind: PinKind; id: string } | { type: "section"; kind: PinKind };
+type NavDrag = { type: "item"; kind: PinKind; id: string } | { type: "section"; kind: PinKind } | { type: "group"; id: string };
 type NavDrop = NavDrag & { after: boolean };
+/** A project dragged onto a group's heading goes into that group. */
+type GroupDrop = { type: "into"; groupId: string };
+/** 新建分组 (with the project it was asked from) or 编辑分组. */
+type EditingGroup = { creating: true; projectId: string } | { creating: false; id: string };
+
+/** Groups folded in the left column (项目分组), per machine. */
+const GROUP_FOLD_KEY = "amo.navGroupsFolded";
 
 interface ScopeNavProps {
   link: HostLink;
   workspaces: readonly Workspace[];
   topics: readonly Topic[];
   tasks: readonly Task[];
+  /** For the dot on a folded group that has something waiting for the person. */
+  sessions?: readonly Session[];
   scope: Scope;
   live: boolean;
   /** Opens the settings (the button under the Host status). */
@@ -59,7 +73,7 @@ function readFolded(): Record<PinKind, boolean> {
  * pinned (they come first, here and wherever they are picked) and each section folds down to its pinned entries. The
  * lists scroll between the fixed top and the Host / usage footer.
  */
-export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope, onSettings }: ScopeNavProps) {
+export function ScopeNav({ link, workspaces, topics, tasks, sessions = [], scope, live, onScope, onSettings }: ScopeNavProps) {
   const [adding, setAdding] = useState(false);
   const [newTopic, setNewTopic] = useState<string | null>(null);
   const [path, setPath] = useState("");
@@ -93,7 +107,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const sectionRows = navOrder<PinKind>(["topic", "project"], sectionOrder.ids, [], (kind) => kind);
   const orders = { topic: topicOrder, project: projectOrder };
   const [dragging, setDragging] = useState<NavDrag | null>(null);
-  const [over, setOver] = useState<NavDrop | null>(null);
+  const [over, setOver] = useState<NavDrop | GroupDrop | null>(null);
   const endDrag = () => { setDragging(null); setOver(null); };
   const afterMiddle = (e: DragEvent<HTMLElement>) => {
     const box = e.currentTarget.getBoundingClientRect();
@@ -106,6 +120,19 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
     setDragging(item);
   };
   const liveTasks = tasks.filter((t) => !t.archivedAt);
+
+  // 项目分组 (2026-10-22, design B 树形): kept by the Host with the settings; folding is per machine.
+  const groups: readonly ProjectGroup[] = useSettings(link)?.projectGroups ?? [];
+  const owner = groupOwners(groups);
+  const groupFolded = useStoredIds(GROUP_FOLD_KEY);
+  const [groupMenu, setGroupMenu] = useState<{ id: string; x: number; y: number } | null>(null);
+  const [editingGroup, setEditingGroup] = useState<EditingGroup | null>(null);
+  const saveGroups = async (next: readonly ProjectGroup[]) => {
+    await call(link, "PUT /api/settings", {}, { projectGroups: [...next] });
+  };
+  const changeGroups = (next: readonly ProjectGroup[]) => void saveGroups(next).catch((err) => showToast({ text: err instanceof HostApiError ? err.message : String(err), error: true }));
+  // Projects with a session waiting for the person (approval, answer, review).
+  const waiting = new Set(liveTasks.filter((t) => sessions.some((s) => s.taskId === t.id && !s.archivedAt && needsPerson(s.status))).map((t) => t.workspaceId));
 
   const fold = (kind: PinKind) =>
     setFolded((f) => {
@@ -125,7 +152,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
         data-dragging={dragging?.type === "item" && dragging.kind === kind && dragging.id === id || undefined}
         data-drop={over?.type === "item" && over.kind === kind && over.id === id ? over.after ? "after" : "before" : undefined}
         onDragOver={(e) => {
-          if (!kind || !id || dragging?.type !== "item" || dragging.kind !== kind || dragging.id === id || pins.has(kind, dragging.id) !== pinned) return;
+          if (!kind || !id || dragging?.type !== "item" || dragging.kind !== kind || dragging.id === id || !dropsOn(kind, dragging.id, id)) return;
           e.preventDefault();
           e.stopPropagation();
           e.dataTransfer.dropEffect = "move";
@@ -135,9 +162,11 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
           if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((cur) => cur?.type === "item" && cur.kind === kind && cur.id === id ? null : cur);
         }}
         onDrop={(e) => {
-          if (!kind || !id || dragging?.type !== "item" || dragging.kind !== kind || pins.has(kind, dragging.id) !== pinned) return;
+          if (!kind || !id || dragging?.type !== "item" || dragging.kind !== kind || !dropsOn(kind, dragging.id, id)) return;
           e.preventDefault();
           e.stopPropagation();
+          // Onto a project of another group (or of none): it changes group there.
+          if (kind === "project" && owner.get(dragging.id) !== owner.get(id)) changeGroups(joinGroup(groups, dragging.id, owner.get(id) ?? null));
           moveItem(kind, dragging.id, id, afterMiddle(e));
           endDrag();
         }}
@@ -150,7 +179,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
           onKeyDown={(e) => {
             if (!kind || !id || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
             e.preventDefault();
-            const list = lists[kind].filter((item) => pins.has(kind, item.id) === pinned);
+            const list = lists[kind].filter((item) => pins.has(kind, item.id) === pinned && (kind !== "project" || owner.get(item.id) === owner.get(id)));
             const target = list[list.findIndex((item) => item.id === id) + (e.key === "ArrowDown" ? 1 : -1)];
             if (target) moveItem(kind, id, target.id, e.key === "ArrowDown");
           }}
@@ -193,6 +222,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const projects = projectWorkspaces(workspaces);
   const topicRows = shown("topic", liveTopics, (t) => t.id);
   const projectRows = shown("project", projects, (w) => w.id);
+  const grouped = groupProjects(projectRows, groups);
   const lists = {
     topic: navOrder(liveTopics, topicOrder.ids, pins.topic, (t) => t.id),
     project: navOrder(projects, projectOrder.ids, pins.project, (w) => w.id),
@@ -200,6 +230,68 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   function moveItem(kind: PinKind, from: string, to: string, after: boolean) {
     orders[kind].save(moveNav(lists[kind].map((item) => item.id), from, to, after));
   }
+  /** Within a list pinned and unpinned entries keep apart; a project may also go to another group. */
+  function dropsOn(kind: PinKind, from: string, to: string): boolean {
+    if (kind === "project" && owner.get(from) !== owner.get(to)) return true;
+    return pins.has(kind, from) === pins.has(kind, to);
+  }
+  const projectRow = (w: Workspace) =>
+    row("project", w.id, { kind: "workspace", id: w.id }, w.name, liveTasks.filter((t) => t.workspaceId === w.id).length, `scope-ws-${w.name}`, w.description ? `${w.path}\n${w.description}` : w.path, (e) => {
+      e.preventDefault();
+      setMenu({ workspaceId: w.id, x: e.clientX, y: e.clientY });
+    });
+
+  // A group's heading: folds it, takes projects dragged onto it, drags to reorder the groups, right-click to edit.
+  const groupHead = (g: ProjectGroup, members: readonly Workspace[]) => {
+    const open = !groupFolded.has(g.id);
+    const alert = !open && members.some((w) => waiting.has(w.id));
+    const drop = over?.type === "into" && over.groupId === g.id ? "into" : over?.type === "group" && over.id === g.id ? (over.after ? "after" : "before") : undefined;
+    return (
+      <div className="nav-item" data-drop={drop} data-dragging={(dragging?.type === "group" && dragging.id === g.id) || undefined}
+        onDragOver={(e) => {
+          if (dragging?.type === "item" && dragging.kind === "project" && owner.get(dragging.id) !== g.id) {
+            e.preventDefault();
+            e.stopPropagation();
+            setOver({ type: "into", groupId: g.id });
+          } else if (dragging?.type === "group" && dragging.id !== g.id) {
+            e.preventDefault();
+            e.stopPropagation();
+            setOver({ type: "group", id: g.id, after: afterMiddle(e) });
+          }
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((cur) => (cur?.type === "into" && cur.groupId === g.id) || (cur?.type === "group" && cur.id === g.id) ? null : cur);
+        }}
+        onDrop={(e) => {
+          if (dragging?.type === "item" && dragging.kind === "project") changeGroups(joinGroup(groups, dragging.id, g.id));
+          else if (dragging?.type === "group") changeGroups(moveGroup(groups, dragging.id, g.id, afterMiddle(e)));
+          else return;
+          e.preventDefault();
+          e.stopPropagation();
+          endDrag();
+        }}
+      >
+        <button type="button" className="nav-row nav-group-head" aria-expanded={open} draggable data-testid={`group-${g.name}`}
+          title={[g.name, g.description, open ? "点一下折叠；右键编辑或解散；拖动调整分组顺序；把项目拖到这里放进分组" : "点一下展开"].filter(Boolean).join("\n")}
+          onClick={() => groupFolded.toggle(g.id)}
+          onContextMenu={(e) => {
+            e.preventDefault();
+            setGroupMenu({ id: g.id, x: e.clientX, y: e.clientY });
+          }}
+          onDragStart={(e) => startDrag(e, { type: "group", id: g.id })}
+          onDragEnd={endDrag}
+        >
+          <span className="nav-group-chev" aria-hidden="true">
+            {open ? "▾" : "▸"}
+          </span>
+          <GroupIcon />
+          <span className="name">{g.name}</span>
+          {alert && <span className="nav-group-alert" title="组里有会话等你处理" aria-label="组里有会话等你处理" data-testid="group-alert" />}
+          <span className="count">{members.length}</span>
+        </button>
+      </div>
+    );
+  };
   const sectionDrop = (kind: PinKind) => ({
     "data-drop": over?.type === "section" && over.kind === kind ? over.after ? "after" : "before" : undefined,
     onDragOver: (e: DragEvent<HTMLElement>) => {
@@ -347,12 +439,22 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
         ) : (
         <section key="project" className="nav-section-box" aria-label="项目" {...sectionDrop("project")}>
           {head("project", "项目", projects.length, () => setAdding(true), "添加项目")}
-          {projectRows.map((w) =>
-            row("project", w.id, { kind: "workspace", id: w.id }, w.name, liveTasks.filter((t) => t.workspaceId === w.id).length, `scope-ws-${w.name}`, w.description ? `${w.path}
-${w.description}` : w.path, (e) => {
-              e.preventDefault();
-              setMenu({ workspaceId: w.id, x: e.clientX, y: e.clientY });
-            }),
+          {folded.project || groups.length === 0 ? (
+            projectRows.map(projectRow)
+          ) : (
+            <>
+              {grouped.groups.map(({ group: g, projects: members }) => {
+                // Folded, a group still shows the project in scope.
+                const inside = groupFolded.has(g.id) ? members.filter((w) => scope.kind === "workspace" && scope.id === w.id) : members;
+                return (
+                  <div key={g.id} className="nav-group" role="group" aria-label={g.name}>
+                    {groupHead(g, members)}
+                    {inside.length > 0 && <div className="nav-group-body">{inside.map(projectRow)}</div>}
+                  </div>
+                );
+              })}
+              {grouped.loose.map(projectRow)}
+            </>
           )}
           {folded.project && projectRows.length < projects.length && (
             <button type="button" className="nav-more" onClick={() => fold("project")}>
@@ -434,6 +536,13 @@ ${w.description}` : w.path, (e) => {
           at={menu}
           onClose={() => setMenu(null)}
           onEdit={() => setEditing(menu.workspaceId)}
+          groups={{
+            groups,
+            current: owner.get(menu.workspaceId) ?? null,
+            onJoin: (id) => changeGroups(joinGroup(groups, menu.workspaceId, id)),
+            onNew: () => setEditingGroup({ creating: true, projectId: menu.workspaceId }),
+            onLeave: () => changeGroups(joinGroup(groups, menu.workspaceId, null)),
+          }}
           onArchive={() => {
             const w = workspaces.find((x) => x.id === menu.workspaceId);
             if (w) setArchiving({ kind: "workspace", id: w.id, name: w.name });
@@ -453,6 +562,28 @@ ${w.description}` : w.path, (e) => {
         />
       )}
       {editingTopic && <EditTopicDialog link={link} topic={editingTopic} onClose={() => setEditingTopic(null)} />}
+      {groupMenu && (
+        <GroupMenu
+          at={groupMenu}
+          onClose={() => setGroupMenu(null)}
+          onEdit={() => setEditingGroup({ creating: false, id: groupMenu.id })}
+          onDissolve={() => changeGroups(groups.filter((g) => g.id !== groupMenu.id))}
+        />
+      )}
+      {editingGroup && (
+        <EditGroupDialog
+          creating={editingGroup.creating}
+          {...(editingGroup.creating ? {} : { name: groups.find((g) => g.id === editingGroup.id)?.name ?? "", description: groups.find((g) => g.id === editingGroup.id)?.description ?? "" })}
+          onSave={(name, description) =>
+            saveGroups(
+              editingGroup.creating
+                ? [...joinGroup(groups, editingGroup.projectId, null), { id: "", name, description, workspaceIds: [editingGroup.projectId] }]
+                : groups.map((g) => (g.id === editingGroup.id ? { ...g, name, description } : g)),
+            )
+          }
+          onClose={() => setEditingGroup(null)}
+        />
+      )}
       {archiving && (
         <ConfirmDialog
           title={archiving.kind === "workspace" ? `归档项目「${archiving.name}」？` : `归档专题「${archiving.name}」？`}
@@ -520,6 +651,44 @@ function TopicMenu({ at, onClose, onEdit, onArchive }: { at: { x: number; y: num
         归档专题…
       </button>
     </div>
+  );
+}
+
+/** Right-click menu of a project group's heading: 编辑分组 and 解散分组 (its projects stay, out of any group). */
+function GroupMenu({ at, onClose, onEdit, onDissolve }: { at: { x: number; y: number }; onClose(): void; onEdit(): void; onDissolve(): void }) {
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => e.key === "Escape" && onClose();
+    const onDown = (e: globalThis.MouseEvent) => !(e.target as Element | null)?.closest?.(".ctx-menu") && onClose();
+    window.addEventListener("keydown", onKey);
+    window.addEventListener("mousedown", onDown);
+    return () => {
+      window.removeEventListener("keydown", onKey);
+      window.removeEventListener("mousedown", onDown);
+    };
+  }, [onClose]);
+  const pick = (run: () => void) => () => {
+    run();
+    onClose();
+  };
+  return (
+    <div className="ctx-menu" role="menu" aria-label="分组" style={{ left: at.x, top: at.y }}>
+      <button type="button" role="menuitem" title="改分组的名字，写一段说明" onClick={pick(onEdit)} data-testid="edit-group-item">
+        编辑分组…
+      </button>
+      <button type="button" role="menuitem" title="去掉这个分组；里面的项目都留着，回到没分组的那一段" onClick={pick(onDissolve)} data-testid="dissolve-group">
+        解散分组
+      </button>
+    </div>
+  );
+}
+
+/** A project group: two folders stacked. */
+function GroupIcon() {
+  return (
+    <svg className="nav-kind" width="14" height="14" viewBox="0 0 14 14" aria-hidden="true">
+      <path d="M3 3.6V3h2.4l1 1.1H11v.6" />
+      <path d="M1.5 5.6V11.5h11V6.3H7L5.8 5.1H1.5z" />
+    </svg>
   );
 }
 
