@@ -19,6 +19,7 @@
   --chat-elevation: 0 6px 24px rgba(0, 0, 0, 0.35);
   --chat-brand: #7aaaff;
   --chat-brand-dim: #5686fe;
+  --chat-mention: #8db8ff;
   --chat-success: #4ed17e;
   --chat-error: #f25a5a;
   --chat-warn: #dd8629;
@@ -45,6 +46,7 @@
   --chat-elevation: 0 1px 0 rgba(34, 32, 28, 0.07);
   --chat-brand: #23436f;
   --chat-brand-dim: #182f50;
+  --chat-mention: #2a64b0;
   --chat-success: #3b7a4f;
   --chat-error: #a3302b;
   --chat-warn: #93570a;
@@ -72,6 +74,7 @@
     --chat-elevation: 0 1px 0 rgba(34, 32, 28, 0.07);
     --chat-brand: #23436f;
     --chat-brand-dim: #182f50;
+    --chat-mention: #2a64b0;
     --chat-success: #3b7a4f;
     --chat-error: #a3302b;
     --chat-warn: #93570a;
@@ -325,6 +328,15 @@
   background: transparent; color: var(--chat-label); font: inherit; font-size: 14px; line-height: 22px; field-sizing: content;
 }
 .chat-input textarea::placeholder { color: var(--chat-caption); }
+/* @ picks coloured (10-22): a layer behind the textarea draws the text; the textarea keeps only its caret and selection. */
+.chat-input { position: relative; }
+.chat-input textarea { position: relative; scrollbar-gutter: stable; overflow-wrap: break-word; }
+.chat-input.marked textarea { color: transparent; caret-color: var(--chat-label); }
+.mention-backdrop {
+  position: absolute; inset: 0; padding: 4px 16px; overflow: hidden; scrollbar-gutter: stable; pointer-events: none;
+  color: var(--chat-label); font: inherit; font-size: 14px; line-height: 22px; white-space: pre-wrap; overflow-wrap: break-word;
+}
+.mention-token { color: var(--chat-mention); background: color-mix(in srgb, var(--chat-mention) 14%, transparent); border-radius: 3px; }
 .chat-bar { display: flex; align-items: center; gap: 8px; padding: 2px 8px 8px 12px; min-width: 0; }
 .composer-model { flex: none; height: 24px; padding: 0 9px; display: inline-flex; align-items: center; border-radius: 999px; background: var(--chip); color: var(--text-dim); font-size: var(--fs-cap); }
 .composer-hint { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 12px; color: var(--chat-dim); }

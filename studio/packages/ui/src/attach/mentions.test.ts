@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { FileMark, Session, Task } from "@amo-studio/protocol";
-import { mentionGroups, nearbySessions, withMentionRefs } from "./mentions.js";
+import { mentionGroups, mentionSpans, nearbySessions, withMentionRefs } from "./mentions.js";
 
 const task = (id: string, title: string, extra: Partial<Task> = {}) => ({ id, title, column: "doing", archivedAt: null, workspaceId: "w1", topicId: null, ...extra }) as unknown as Task;
 const session = (id: string, title: string, extra: Partial<Session> = {}) =>
@@ -82,5 +82,18 @@ describe("the message as sent", () => {
       "看 @掉落表 和 @摸底\n\n提到的任务：\n- @掉落表：AMO 任务 t1（可以用 AMO 的 task_get 查看）\n\n提到的会话：\n- @摸底：AMO 会话 s1，属于任务 t1（可以用 AMO 的 session_tree 查看）",
     );
     expect(withMentionRefs("没有提到", picked)).toBe("没有提到");
+  });
+});
+
+describe("mentionSpans", () => {
+  it("cuts out the picked names, longest first, and leaves other @ alone", () => {
+    expect(mentionSpans("看 @掉落表 和 @掉落表二 再问 @别人", ["掉落表", "掉落表二"])).toEqual([
+      { text: "看 ", mention: false },
+      { text: "@掉落表", mention: true },
+      { text: " 和 ", mention: false },
+      { text: "@掉落表二", mention: true },
+      { text: " 再问 @别人", mention: false },
+    ]);
+    expect(mentionSpans("没有提及", [])).toEqual([{ text: "没有提及", mention: false }]);
   });
 });

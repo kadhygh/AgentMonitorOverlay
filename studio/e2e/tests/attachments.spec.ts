@@ -194,6 +194,13 @@ test("@ offers tasks, sessions and recent files; 找文件… and Ctrl+P open th
   await suggest.getByRole("option", { name: /README\.md/ }).click();
   await expect(page.getByTestId("file-chip")).toHaveAttribute("title", join(dir, "README.md"));
   await expect(composer(page)).toHaveValue("@摸底 看 ");
+  // The picked name is coloured (10-22): a layer behind the textarea draws it, lined up with the textarea's text.
+  const token = page.getByTestId("mention-backdrop").locator(".mention-token");
+  await expect(token).toHaveText("@摸底");
+  expect(await token.evaluate((el) => getComputedStyle(el).color)).not.toBe(await composer(page).evaluate((el) => getComputedStyle(el.parentElement!.querySelector(".mention-backdrop")!).color));
+  const [box, area] = [await page.getByTestId("mention-backdrop").boundingBox(), await composer(page).boundingBox()];
+  expect(box).toEqual(area);
+  await screenshot(studio.app, "stage-18", "S18-mention-colour", page);
 
   // 找文件… opens the selector with what was typed after @.
   await composer(page).pressSequentially("@imp");

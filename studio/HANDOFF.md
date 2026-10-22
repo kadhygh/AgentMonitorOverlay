@@ -2,6 +2,12 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+**2026-10-22 · 委派会话（会话开会话，挂在父会话下）**：`session_start` 本来就能带 `model` 换模型；现在开出来的会话记下 `startedBy`（迁移 19，`sessions.started_by`），会话列表用 `buildSessionTree(live, { delegated: true })` 把它挂到开它的会话下面，图标是拐弯箭头，悬停和详情写「委派会话 · 由「X」开的」，「▸ N」折叠计数也算它。它仍然是 `kind: "main"`、`parentId: null` 的主会话：用户定了**父会话归档时它不跟着归档**（`collectSubtreeIds` 只看 parentId），主控转发、看板计数、Review 列表照旧。`session_tree`（MCP）的节点多一个 `startedBy`。`guide.ts` 和 `session_start` 说明加了一句：强模型额度紧时，把调查和照计划改代码交给便宜模型，计划写到不用再问。验证：typecheck/build 通过；vitest 全量 700/705（`server-manager.test.ts` 3 个在满负载下超时，单独跑 4/4 通过）；`session-start.spec.ts` 两个方向（Claude→Codex、Codex→Claude）通过。截图 `screenshots/stage-18/S18-session-start.png`。改了 Host（有迁移），重启后生效；本轮未重启日常实例。
+
+**2026-10-22 · 输入框里 @ 的任务/会话名变色**：用户反馈 @ 选中的名字和普通文字一样。textarea 不能给部分文字上色，所以 `MentionBackdrop`（`attach/useMentions.tsx`）在 textarea 后面画同样排版的文字，`@名字` 用 `--chat-mention`（浅色 #2a64b0、深色 #8db8ff）加 14% 底色；有提及时 textarea 文字透明、光标和选区保留，滚动同步。只在 `.chat-input` 生效（`.marked` 类），文件 @ 仍然变成上方的附件卡片。`mentionSpans` 有单测；`attachments.spec.ts` 检查颜色不同、背景层和 textarea 位置完全重合。截图 `screenshots/stage-18/S18-mention-colour.png`。纯界面改动，Ctrl+R 即可。
+
+**2026-10-22 · 项目分组（等用户选样式）**：用户要给项目加分组（和专题无关，只为管理）：右键项目 → 加入分组（已有分组 + 新建分组），分组可改名、写说明、能折叠。四种样式预览 https://claude.ai/artifact/P2cxLfTaTrbCXgsRSJ6qwr（A 小标题 / B 树形 / C 分组框 / D 色标），等用户选定再做。
+
 **2026-10-22 · Review 快捷键选文件时列表自动跟随**：用户报大量改动时 j/k 或上下键选中文件，左侧滚动条不跟随。原因是 `FileList` 的 LazyChunks 只 keep 选中行所在块，没滚动定位。现在给选中行挂 ref，layout effect 在选中/列表布局/树展开后用 nearest + instant 滚入视口；选中项留 2px scroll margin 避免像素取整裁边。查看器的隐藏改动页用 active 标记避免在后台滚动，显示后再定位。`ReviewApp` 文件切换改为函数式更新，快速连续按键不再依赖旧 selected 闭包。`review-file-scroll.spec.ts` 用固定 600 文件 Git 响应避免按键时大量启动 git：修复前在第 45 个文件稳定复现 viewport ratio 0；修复后平铺/目录树双向切换、可见项不乱滚、跨懒加载块跳到第 350 个、批量连按、自动展开折叠目录都通过，且仍保持分块渲染。typecheck/build 通过，相关 e2e 6/6（含历史、快捷键、查看器批注）。截图 `screenshots/stage-18/S18-review-file-scroll.png`。纯界面修复，使用本轮构建重新加载 Review 窗口即可；本轮未重启日常实例或打包。
 
 **2026-10-22 · 左栏项目/专题拖拽排序**：`board/ScopeNav.tsx` 的项目、专题条目支持拖到目标行前/后（落点线、拖动透明度），也支持 Alt ↑/↓；保留置顶优先，置顶组/普通组各自排序，不跨项目/专题改变归属。模块标题可拖拽交换两个模块的上下位置，实际 DOM 顺序跟随。`board/navOrder.ts` 把条目 id 和模块顺序分别保存在 `amo.navOrder.project/topic/sections`，跟随 storage 事件；默认沿用原来的列表和置顶顺序，改名不影响位置，新条目追加，折叠时调整不会丢失隐藏条目的顺序。与其他 localStorage 界面偏好一样按实例地址保存（端到端重启使用相同 Host 地址）。验证：typecheck/build 通过；`nav-order.spec.ts`、`board.spec.ts`、`topics.spec.ts`、`task-head.spec.ts` 共 11/11 通过，含真实 HTML 拖拽、跨类别拒绝、置顶边界、折叠、改名、刷新和关闭后重开。截图 `screenshots/stage-18/S18-nav-order.png`。纯界面改动，使用本轮构建重新载入即可；本轮未重启日常实例或打包。

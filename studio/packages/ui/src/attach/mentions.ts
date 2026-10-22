@@ -87,3 +87,26 @@ export function withMentionRefs(message: string, picked: ReadonlyMap<string, Men
   const blocks = [tasks.length ? `提到的任务：\n${tasks.join("\n")}` : "", sessions.length ? `提到的会话：\n${sessions.join("\n")}` : ""].filter(Boolean);
   return blocks.length ? `${message}\n\n${blocks.join("\n\n")}` : message;
 }
+
+/**
+ * The text cut where it names a picked task or session ("@名字"), so the composer can colour those parts (10-22).
+ * Longer names win where one name starts another's.
+ */
+export function mentionSpans(text: string, names: readonly string[]): Array<{ text: string; mention: boolean }> {
+  const tokens = [...new Set(names)].filter(Boolean).map((n) => `@${n}`).sort((a, b) => b.length - a.length);
+  const out: Array<{ text: string; mention: boolean }> = [];
+  let plain = "";
+  for (let i = 0; i < text.length; ) {
+    const hit = text[i] === "@" ? tokens.find((t) => text.startsWith(t, i)) : undefined;
+    if (!hit) {
+      plain += text[i++];
+      continue;
+    }
+    if (plain) out.push({ text: plain, mention: false });
+    plain = "";
+    out.push({ text: hit, mention: true });
+    i += hit.length;
+  }
+  if (plain) out.push({ text: plain, mention: false });
+  return out;
+}

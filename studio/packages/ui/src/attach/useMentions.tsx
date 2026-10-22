@@ -5,7 +5,7 @@ import { mentionAt, withoutMention } from "../newtask/draft.js";
 import { usePins } from "../lib/pins.js";
 import { useFileMarks } from "../marks/useFileMarks.js";
 import type { FileRefItem } from "./refs.js";
-import { mentionGroups, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick } from "./mentions.js";
+import { mentionGroups, mentionSpans, withMentionRefs, type MentionGroup, type MentionOption, type MentionPick } from "./mentions.js";
 
 /**
  * @ in a session's composer: tasks, sessions of the same project or topic, recently changed files (or, once something
@@ -96,6 +96,8 @@ export function useComposerMentions(input: {
   return {
     open: flat.length > 0,
     groups,
+    /** The picked tasks' and sessions' names still in the text (coloured in the composer). */
+    names: [...picked.keys()].filter((name) => text.includes(`@${name}`)),
     highlight: hl,
     choose,
     /** Keep the caret known (typing, clicking, arrow keys). */
@@ -130,6 +132,23 @@ export function useComposerMentions(input: {
 }
 
 export type ComposerMentions = ReturnType<typeof useComposerMentions>;
+
+/**
+ * Behind the composer's textarea (10-22): the same text, laid out the same way, with the picked「@名字」coloured. The
+ * textarea's own text turns transparent while there is one (its caret and selection stay), so only this layer shows.
+ */
+export function MentionBackdrop({ text, names, scrollTop }: { text: string; names: readonly string[]; scrollTop: number }) {
+  if (!names.length) return null;
+  return (
+    <div className="mention-backdrop" aria-hidden="true" data-testid="mention-backdrop">
+      <div style={{ transform: `translateY(${-scrollTop}px)` }}>
+        {mentionSpans(text, names).map((part, i) => (part.mention ? <span key={i} className="mention-token">{part.text}</span> : <Fragment key={i}>{part.text}</Fragment>))}
+        {/* A trailing newline needs a character after it to take its line. */}
+        {text.endsWith("\n") ? " " : null}
+      </div>
+    </div>
+  );
+}
 
 /** The grouped list above the composer. */
 export function MentionList({ mentions }: { mentions: ComposerMentions }) {

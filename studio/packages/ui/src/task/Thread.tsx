@@ -16,7 +16,7 @@ import { AttachTray } from "../attach/AttachTray.js";
 import { AttachLink } from "../attach/MessageAttachments.js";
 import { IconPaperclip } from "../attach/icons.js";
 import { withFileRefs } from "../attach/refs.js";
-import { MentionList, useComposerMentions } from "../attach/useMentions.js";
+import { MentionBackdrop, MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
 import { markFileMessage } from "../marks/open.js";
 import { QuestionCard } from "../chat/questions/QuestionCard.js";
@@ -127,6 +127,8 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   const attach = useAttachments(link);
   // 找文件: the selector, opened with Ctrl+P or from the @ list (with what was typed after @).
   const [finding, setFinding] = useState<{ query: string } | null>(null);
+  // How far the composer's text is scrolled, for the @ colour layer behind it.
+  const [inputScroll, setInputScroll] = useState(0);
   const mentions = useComposerMentions({
     link,
     text: draft,
@@ -587,10 +589,12 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
           <div className={`composer-card${readOnly ? " disabled" : ""}${dragging ? " dropping" : ""}`}>
             <AttachTray attach={attach} disabled={readOnly} />
             {annotationRefs && annotationRefs.list.length > 0 && !isRevising && <AnnotationRefChips refs={annotationRefs} annotations={annotations} />}
-            <label className="chat-input">
+            <label className={mentions.names.length ? "chat-input marked" : "chat-input"}>
               <span className="sr-only">输入消息</span>
+              <MentionBackdrop text={draft} names={mentions.names} scrollTop={inputScroll} />
               <textarea
                 value={draft}
+                onScroll={(e) => setInputScroll(e.currentTarget.scrollTop)}
                 onChange={(e) => {
                   setDraft(e.target.value);
                   mentions.track(e.target);
