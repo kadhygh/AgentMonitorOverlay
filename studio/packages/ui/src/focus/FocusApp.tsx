@@ -447,19 +447,24 @@ export function FocusApp() {
               history.map((r) => {
                 const s = state.sessions.find((x) => x.id === r.sessionId);
                 const name = s ? title(s) : "（会话已不在）";
+                // 置顶 from here too (10-22), while the task is there.
+                const task = s?.taskId ? state.tasks.find((t) => t.id === s.taskId && !t.archivedAt) : undefined;
                 return (
                   <div key={`${r.key}@${r.at}`} className="focus-entry" data-testid="focus-history-entry" data-handled={r.handledAt ? "" : undefined}>
-                    <button type="button" className="focus-row" disabled={!s} onClick={() => goToDeal(r.sessionId, r.taskId)} title={s ? "在工作台打开" : undefined}>
-                      <span className="dot" style={{ background: r.handledAt ? "var(--text-faint)" : "var(--attention)" }} />
-                      <span className="focus-row-text">
-                        <span className="focus-title">{name}</span>
-                        <span className="focus-sub">
-                          {r.label} · {r.handledAt ? "已处理" : "未处理"}
-                          {s?.title ? ` · ${s.title}` : ""}
+                    <div className="focus-row-line">
+                      <button type="button" className="focus-row" disabled={!s} onClick={() => goToDeal(r.sessionId, r.taskId)} title={s ? "在工作台打开" : undefined}>
+                        <span className="dot" style={{ background: r.handledAt ? "var(--text-faint)" : "var(--attention)" }} />
+                        <span className="focus-row-text">
+                          <span className="focus-title">{name}</span>
+                          <span className="focus-sub">
+                            {r.label} · {r.handledAt ? "已处理" : "未处理"}
+                            {s?.title ? ` · ${s.title}` : ""}
+                          </span>
                         </span>
-                      </span>
-                      <span className="focus-time">{relativeTime(r.at)}</span>
-                    </button>
+                        <span className="focus-time">{relativeTime(r.at)}</span>
+                      </button>
+                      {task && <PinButton pinned={pins.has(task.id)} onToggle={() => pins.toggle(task.id)} />}
+                    </div>
                   </div>
                 );
               })}

@@ -51,8 +51,18 @@ test("Focus shows what works now and what needed the person lately; a reply endi
   await expect(records.first()).toContainText("完成待审核 · 已处理");
   await screenshot(app, "stage-18", "S18-focus-history", focus, "focus");
 
+  // A record pins its task, as 进行中 does (10-22): on top in 置顶, the record's pin lit; a second click lets it go.
+  const pin = records.first().getByTestId("focus-pin");
+  await records.first().hover();
+  await pin.click();
+  await expect(focus.getByTestId("focus-pinned")).toContainText("调掉落");
+  await expect(pin).toHaveAttribute("aria-pressed", "true");
+  await pin.click();
+  await expect(focus.getByTestId("focus-pinned")).toHaveCount(0);
+  await expect(pin).toHaveAttribute("aria-pressed", "false");
+
   // A record goes to its session in the workbench.
-  await records.first().getByRole("button").click();
+  await records.first().locator(".focus-row").click();
   await expect(page.getByTestId("task-title")).toHaveText("调掉落");
 
   // The workbench now shows that session. Another reply ends there while the person does nothing in the window (test
