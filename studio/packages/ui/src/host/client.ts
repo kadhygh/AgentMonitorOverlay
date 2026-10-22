@@ -22,6 +22,8 @@ declare global {
         set(on: boolean): Promise<void>;
         onChange(cb: (on: boolean) => void): () => void;
         setIgnoreMouse(ignore: boolean): void;
+        /** Focus window: 移动位置 starts or ends (10-22); while it lasts a drag moves the window. */
+        setMoving?(on: boolean): void;
         /** Focus window: the parts of the window that take clicks (2026-10-15); the rest lets them through. */
         setShape?(rects: Array<{ x: number; y: number; width: number; height: number }>): void;
         /** Focus window: a right-click on its title row, passed on by the main process (S14-J). */

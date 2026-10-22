@@ -170,9 +170,13 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await focus.getByTestId("focus-menu-move").click();
   await expect(menu).toHaveCount(0);
   await expect(focus.getByTestId("focus-move")).toBeVisible();
+  // While moving the window may activate, so a press on the frame starts Windows' own move (10-22: Chromium dropped
+  // the press on a window that cannot activate, and Focus would not move).
+  await expect.poll(() => windowState(app, "focus")).toMatchObject({ focusable: true });
   await screenshot(app, "stage-14", "S14-J-focus-move", focus, "focus");
   await focus.getByTestId("focus-move-done").click();
   await expect(focus.getByTestId("focus-move")).toHaveCount(0);
+  await expect.poll(() => windowState(app, "focus")).toMatchObject({ focusable: false, anyFocused: false });
 
   // 锁定位置: a switch — the box stays open; shown in the head, moving is off; remembered after a reload.
   await focus.getByTestId("focus-settings-toggle").click();

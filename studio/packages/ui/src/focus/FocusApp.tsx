@@ -95,6 +95,12 @@ export function FocusApp() {
       set(false);
     };
   }, [through]);
+  // 移动位置: the window may activate while it lasts, so a drag of the frame moves it (app/src/main.ts, 10-22).
+  useEffect(() => {
+    if (!moving) return;
+    window.amo?.focus?.setMoving?.(true);
+    return () => window.amo?.focus?.setMoving?.(false);
+  }, [moving]);
   // A right-click on the title row (a window drag area) only reaches the main process, which passes it on.
   useEffect(() => window.amo?.focus?.onContextMenu?.(() => setPop(true)), []);
 

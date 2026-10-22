@@ -60,6 +60,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
     },
     /** Focus window only: let clicks through (true) or catch them (false); used by 点击穿透. */
     setIgnoreMouse: (ignore: boolean): void => electron.ipcRenderer.send("amo:focus-mouse", ignore),
+    /** Focus window only: 移动位置 starts (true) or ends; while it lasts the window may activate, so a drag moves it. */
+    setMoving: (on: boolean): void => electron.ipcRenderer.send("amo:focus-moving", on),
     /** Focus window only: the parts of the window that are Focus (panel, robot, settings); clicks elsewhere go through. */
     setShape: (rects: Array<{ x: number; y: number; width: number; height: number }>): void => electron.ipcRenderer.send("amo:focus-shape", rects),
     /** Focus window only: the page saw a press (a click Chromium dropped is given back otherwise; focus-clicks.ts). */

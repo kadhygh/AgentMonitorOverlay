@@ -235,6 +235,18 @@ if (!app.requestSingleInstanceLock()) {
     focusWindow.setIgnoreMouseEvents(ignore === true, { forward: true });
     if (testMode) (globalThis as { __amoFocusIgnore?: boolean }).__amoFocusIgnore = ignore === true;
   });
+  // 移动位置 (10-22): while it lasts, Focus may activate. A press on a window that cannot activate may come with
+  // WM_MOUSEACTIVATE, which Chromium answers by dropping the press (focus-clicks.ts); a click is given back, a drag is
+  // not, and in some runs that was every press, so Focus could not be moved at all. Activatable, the press starts
+  // Windows' own move. Done: it never takes focus again, hands it on to the window below, and stays off the taskbar.
+  ipcMain.on("amo:focus-moving", (event, on: unknown) => {
+    if (!focusWindow || event.sender !== focusWindow.webContents) return;
+    focusWindow.setFocusable(on === true);
+    focusWindow.setSkipTaskbar(true);
+    if (on !== true && focusWindow.isFocused()) focusWindow.blur();
+    trace?.note("focus", on === true ? "moving on" : "moving off");
+    if (testMode) (globalThis as { __amoFocusMoving?: boolean }).__amoFocusMoving = on === true;
+  });
   // "在工作台打开" from Focus: the workbench shows that task and session (and comes forward, except in tests).
   ipcMain.handle("amo:open-in-workbench", (_event, target: unknown) => {
     const t = target as { taskId?: unknown; sessionId?: unknown; show?: unknown; passage?: unknown } | null;
