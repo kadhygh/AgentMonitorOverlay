@@ -73,3 +73,38 @@ test("canvas: tasks appear, cards move and persist, pan and zoom", async () => {
   await cards.filter({ hasText: "新来的任务" }).dblclick();
   await expect(page.getByTestId("task-title")).toHaveText("新来的任务");
 });
+
+test("an archived task keeps its card on the canvas, greyed and marked 已归档, with its dependency (2026-10-22)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "画布" });
+  const ids: string[] = [];
+  for (const title of ["拆掉旧的掉落表", "改导入流程"]) {
+    const { task } = await studio.api<{ task: Task }>("POST", "/api/tasks", { title, workspaceId: ws.id, topicId: topic.id });
+    await studio.api("PUT", `/api/tasks/${task.id}/canvas`, { onCanvas: true });
+    ids.push(task.id);
+  }
+  const doc = await studio.api<CanvasDoc>("GET", `/api/topics/${topic.id}/canvas`);
+  await studio.api("PUT", `/api/topics/${topic.id}/canvas`, { ...doc, edges: [{ id: "e-dep", kind: "depends", from: ids[0], to: ids[1] }] });
+  await studio.api("POST", `/api/tasks/${ids[0]}/archive`);
+
+  await page.getByRole("button", { name: "画布", exact: true }).click();
+  const cards = page.getByTestId("canvas-card");
+  await expect(cards).toHaveCount(2);
+  await expect(page.getByTestId("canvas-edge")).toHaveCount(1);
+  const gone = cards.filter({ hasText: "拆掉旧的掉落表" });
+  await expect(gone).toHaveClass(/is-archived/);
+  await expect(gone.getByTestId("canvas-card-archived")).toHaveText("已归档");
+  await expect(cards.filter({ hasText: "改导入流程" })).not.toHaveClass(/is-archived/);
+
+  // Its menu: read-only, so no description and no new dependency.
+  await gone.click({ button: "right" });
+  const menu = page.getByTestId("canvas-menu");
+  await expect(menu.getByRole("menuitem", { name: "打开任务（只读）" })).toBeVisible();
+  await expect(menu.getByRole("menuitem", { name: /添加说明|连依赖/ })).toHaveCount(0);
+  await page.keyboard.press("Escape");
+  await screenshot(app, "stage-18", "S18-canvas-archived-card", page);
+  await gone.dblclick();
+  await expect(page.getByTestId("task-archived-banner")).toContainText("已归档 · 只读");
+});

@@ -45,13 +45,14 @@ test("canvas: the last empty group can be deleted, also after its topic's only c
   await page.getByRole("button", { name: "+ 分组" }).click();
   await expect.poll(async () => (await canvas()).groups.length).toBe(1);
   await studio.api("POST", `/api/tasks/${task.id}/archive`);
-  await expect(page.getByTestId("canvas-card")).toHaveCount(0);
+  // Since 2026-10-22 the archived task's card stays, greyed and marked 已归档.
+  await expect(page.getByTestId("canvas-card")).toHaveClass(/is-archived/);
   await page.getByTestId("group-remove").click();
   await expect(groups).toHaveCount(0);
   await expect.poll(async () => (await canvas()).groups.length).toBe(0);
-  // The archived task's card is kept, so restoring the task brings it back.
+  // Restoring the task makes it an ordinary card again.
   await studio.api("POST", `/api/tasks/${task.id}/unarchive`);
-  await expect(page.getByTestId("canvas-card")).toHaveCount(1);
+  await expect(page.getByTestId("canvas-card")).not.toHaveClass(/is-archived/);
 });
 
 test("canvas: the new-task page and the new task's page return to the canvas they came from", async () => {

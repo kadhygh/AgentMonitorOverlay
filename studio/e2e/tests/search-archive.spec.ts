@@ -118,7 +118,8 @@ test("归档任务: a box says what was archived and returns to the canvas or bo
   await expect(page.getByTestId("toast")).toHaveCount(0);
   await screenshot(studio.app, "stage-14", "S14-C-archive-dialog", page);
   await box.getByRole("button", { name: "返回画布" }).click();
-  await expect(page.getByTestId("canvas-card")).toHaveCount(1);
+  // The archived task keeps its card, greyed and marked 已归档 (2026-10-22).
+  await expect(page.getByTestId("canvas-card").filter({ hasText: "掉落表调整" })).toHaveClass(/is-archived/);
 
   // Found again (archived): the page says so, and 恢复任务 brings it back.
   await page.keyboard.press("Control+K");

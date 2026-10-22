@@ -1,6 +1,6 @@
 import type { MouseEvent as ReactMouseEvent, ReactNode } from "react";
 import { taskWhere, type CanvasNode, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
-import { SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
+import { relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 
 // The canvas's cards (stage 16 split out of CanvasPage.tsx): a task of the topic, a reference to another topic's task,
 // and a note. A task's description shows on its card (two lines); a colour mark is its outline (data-color).
@@ -29,9 +29,11 @@ export function TaskCard({ node, task, sessions, workspaces, selected, linking, 
   const look = status ? SESSION_LOOK[status] : null;
   const live = own.filter((s) => !s.archivedAt).length;
   const where = taskWhere(task, workspaces);
+  // An archived task keeps its card (2026-10-22): greyed, marked 已归档, so its links and dependencies still make sense.
+  const archived = !!task.archivedAt;
   return (
     <div
-      className={`canvas-card${selected ? " selected" : ""}${linking ? " link-target" : ""}`}
+      className={`canvas-card${archived ? " is-archived" : ""}${selected ? " selected" : ""}${linking ? " link-target" : ""}`}
       style={{ left: node.pos.x, top: node.pos.y, width: CARD_W, height: cardHeight(task) }}
       role="button"
       tabIndex={0}
@@ -46,7 +48,12 @@ export function TaskCard({ node, task, sessions, workspaces, selected, linking, 
       onKeyDown={(e) => e.key === "Enter" && onOpen()}
     >
       <span className="canvas-card-title">
-        {task.lead && (
+        {archived && (
+          <span className="archived-mark" title="任务已归档：打开只能查看，在任务页「恢复任务」可放回看板" data-testid="canvas-card-archived">
+            已归档
+          </span>
+        )}
+        {task.lead && !archived && (
           <span className="lead-badge" title="主控：协调这个专题的任务" data-testid="lead-badge">
             主控
           </span>
@@ -54,9 +61,15 @@ export function TaskCard({ node, task, sessions, workspaces, selected, linking, 
         {task.title || "未命名任务"}
       </span>
       <span className="canvas-card-meta">
-        <span className="dot" style={{ background: look?.dot ?? "var(--muted-dot)" }} />
-        <span style={{ color: look?.text ?? "var(--text-dim)" }}>{look?.label ?? "未开始"}</span>
-        <span>· {[where, live ? `${live} 个会话` : ""].filter(Boolean).join(" · ")}</span>
+        {archived ? (
+          <span>{[where, task.archivedAt ? `${relativeTime(task.archivedAt)}归档` : ""].filter(Boolean).join(" · ")}</span>
+        ) : (
+          <>
+            <span className="dot" style={{ background: look?.dot ?? "var(--muted-dot)" }} />
+            <span style={{ color: look?.text ?? "var(--text-dim)" }}>{look?.label ?? "未开始"}</span>
+            <span>· {[where, live ? `${live} 个会话` : ""].filter(Boolean).join(" · ")}</span>
+          </>
+        )}
       </span>
       {task.description && (
         <span className="canvas-card-desc" title={task.description} data-testid="canvas-card-desc">

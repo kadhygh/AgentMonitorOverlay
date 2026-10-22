@@ -177,10 +177,34 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
   }
 
   const task = tasks.find((t) => t.id === node.taskId);
+  const archived = task ? undefined : allTasks.find((t) => t.id === node.taskId && t.archivedAt);
+  if (archived) {
+    return (
+      <div className="side-section" role="group" aria-label="任务详情">
+        <span className="side-heading">{archived.title || "未命名任务"}</span>
+        <span className="side-note">已归档 · 只读 · {taskWhere(archived, workspaces)}</span>
+        {archived.description && <p className="side-desc-text">{archived.description}</p>}
+        <button type="button" className="btn-ghost small" onClick={() => onOpenTask(archived.id)}>
+          打开任务（只读）
+        </button>
+        <button
+          type="button"
+          className="btn-ghost small dim"
+          title="只拿掉卡片：任务仍是归档状态"
+          onClick={() => {
+            onChange({ ...doc, nodes: doc.nodes.filter((n) => n.id !== node.id) });
+            onClearSelection();
+          }}
+        >
+          从画布上拿掉
+        </button>
+      </div>
+    );
+  }
   if (!task) return null;
   const status = taskStatus(taskSessions(task, sessions));
   const look = status ? SESSION_LOOK[status] : null;
-  const title = (id: Id) => tasks.find((t) => t.id === id)?.title || "未命名任务";
+  const title = (id: Id) => allTasks.find((t) => t.id === id)?.title || "未命名任务";
   const before = doc.edges.filter((e) => e.to === task.id);
   const candidates = tasks.filter((t) => t.id !== task.id && !before.some((e) => e.from === t.id) && !wouldCycle(doc.edges, t.id, task.id));
 

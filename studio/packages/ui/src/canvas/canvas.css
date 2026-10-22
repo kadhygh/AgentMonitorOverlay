@@ -68,6 +68,11 @@
 
 /* Reference cards and the "引用任务" picker (S11-A) */
 .canvas-ref { border-style: dashed; border-color: var(--border-strong); box-shadow: none; }
+/* An archived task's card: greyed and dashed, marked 已归档 (2026-10-22). */
+.canvas-card.is-archived { background: var(--chip); border-style: dashed; border-color: var(--border-strong); box-shadow: none; }
+.canvas-card.is-archived .canvas-card-title { color: var(--text-dim); }
+.canvas-card.is-archived .canvas-card-desc { opacity: 0.8; }
+.archived-mark { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: var(--r-btn); background: var(--text-faint); color: var(--panel); font-family: var(--font-ui); font-weight: 600; font-size: 11px; line-height: 17px; vertical-align: 2px; }
 .canvas-ref.gone { opacity: 0.6; }
 .canvas-ref.gone .canvas-card-title { color: var(--text-dim); }
 .ref-mark { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: var(--r-btn); border: 1px solid var(--border-strong); font-family: var(--font-ui); font-weight: 500; font-size: 11px; line-height: 16px; color: var(--text-dim); vertical-align: 1px; }

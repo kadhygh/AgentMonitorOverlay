@@ -137,6 +137,8 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   );
 
   const taskById = new Map(tasks.map((t) => [t.id, t]));
+  // The topic's archived tasks keep their cards, greyed (2026-10-22); a task that left the topic does not.
+  const cardTaskById = new Map([...allTasks.filter((t) => t.archivedAt && t.topicId === topic.id), ...tasks].map((t) => [t.id, t]));
   const anyTaskById = new Map(allTasks.map((t) => [t.id, t]));
   const nodeSize = (n: CanvasNode) => (n.kind === "note" ? { w: NOTE_W, h: NOTE_H } : { w: CARD_W, h: cardHeight(anyTaskById.get(n.taskId)) });
 
@@ -395,6 +397,17 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
 
   const taskMenu = (e: ReactMouseEvent, node: CanvasNode, task: Task) => {
     setSelection({ kind: "node", id: node.id });
+    if (task.archivedAt) {
+      // Archived: read-only, so no description or new dependencies; the card can still be moved, grouped or taken off.
+      return openMenu(e, "已归档的任务卡片", [
+        colorOf({ kind: "node", id: node.id }, node.color),
+        item("打开任务（只读）", () => onOpenTask(task.id)),
+        ...groupItems(node),
+        centreItem(node),
+        SEP,
+        item("从画布上拿掉", () => edit((d) => ({ ...d, nodes: d.nodes.filter((n) => n.id !== node.id) })), { danger: true, hint: "只拿掉卡片：任务仍是归档状态" }),
+      ]);
+    }
     openMenu(e, "任务卡片", [
       colorOf({ kind: "node", id: node.id }, node.color),
       item(task.description ? "编辑说明…" : "添加说明…", () => setDescribing(task.id), { testId: "menu-describe" }),
@@ -465,7 +478,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   // Whether each bound project is free (design/scheduler.md): the scheduler only proposes work for free ones.
   const activity = workspacesActivity(workspaces, sessions);
   const cardOf = new Map(
-    (shown?.nodes ?? []).filter((n) => n.kind === "task").map((n) => [(n as { taskId: Id }).taskId, { x: n.pos.x, y: n.pos.y, w: CARD_W, h: cardHeight(taskById.get((n as { taskId: Id }).taskId)) }]),
+    (shown?.nodes ?? []).filter((n) => n.kind === "task").map((n) => [(n as { taskId: Id }).taskId, { x: n.pos.x, y: n.pos.y, w: CARD_W, h: cardHeight(cardTaskById.get((n as { taskId: Id }).taskId)) }]),
   );
   const describedTask = describing ? anyTaskById.get(describing) : undefined;
 
@@ -631,7 +644,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
                 />
               );
             }
-            const task = taskById.get(node.taskId);
+            const task = cardTaskById.get(node.taskId);
             if (!task) return null;
             return (
               <TaskCard
@@ -641,11 +654,11 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
                 sessions={sessions}
                 workspaces={workspaces}
                 selected={selected}
-                linking={!!linkFrom && linkFrom !== task.id}
+                linking={!!linkFrom && linkFrom !== task.id && !task.archivedAt}
                 handles={handlesOf(node.id)}
                 onOpen={() => onOpenTask(task.id)}
                 onMouseDown={(e) => {
-                  if (linkFrom && e.button === 0) {
+                  if (linkFrom && e.button === 0 && !task.archivedAt) {
                     e.preventDefault();
                     e.stopPropagation();
                     return link2(task.id);
