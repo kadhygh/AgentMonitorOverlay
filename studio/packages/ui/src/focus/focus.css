@@ -196,3 +196,6 @@ html.focus-mode, html.focus-mode body, html.bot-mode, html.bot-mode body { backg
 /* 设置 → 界面 → Focus 桌宠: a small still preview of the chosen pet. */
 .settings-pet-preview { --focus-alert: var(--running); display: inline-flex; align-items: flex-end; height: 56px; margin-left: 8px; }
 .settings-pet-preview .pixel-bot-art { height: 52px; width: auto; animation: none; }
+
+/* A 委派 session under the one that started it (2026-10-22): the turn arrow of the session list. */
+.focus-sub-kind { flex: none; fill: none; stroke: var(--text-faint); stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }

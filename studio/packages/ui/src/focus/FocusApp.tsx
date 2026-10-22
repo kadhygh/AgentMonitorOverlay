@@ -3,7 +3,7 @@ import type { Session, StateSnapshot } from "@amo-studio/protocol";
 import { useHostState } from "../host/useHostState.js";
 import { needsPerson } from "../lib/status.js";
 import { noteFocusJump } from "../lib/focusJump.js";
-import { noteSeen, runningSubs, subsByParent, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
+import { hangsUnderOf, noteSeen, runningSubs, subsByParent, unseenSessions, useSessionSeen } from "../lib/sessionSeen.js";
 import { DecisionCard, useOpenDecisions } from "../collab/DecisionPanel.js";
 import { usePendingProposals } from "../planning/ProposalsPanel.js";
 import { useTaskPlans } from "../taskplans/TaskPlans.js";
@@ -229,8 +229,9 @@ export function FocusApp() {
   const pinnedTask = (s: Session) => !!s.taskId && pinned.some((p) => p.taskId === s.taskId);
   // 进行中 (2026-10-20): what is working now, so the open panel tells what goes on, not only what waits. Also a session
   // waiting for subagents of its own (2026-10-21).
+  const under = hangsUnderOf(state.sessions);
   const working = state.sessions
-    .filter((s) => !s.archivedAt && s.kind !== "sub" && (s.status === "running" || runningSubs(s.id, subs).length > 0) && !needsPerson(s.status) && !pinnedTask(s))
+    .filter((s) => !s.archivedAt && s.kind !== "sub" && !under(s) && (s.status === "running" || runningSubs(s.id, subs).length > 0) && !needsPerson(s.status) && !pinnedTask(s))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const shown = list.filter((s) => !isPinned(s));
   const openId = open && shown.some((s) => s.id === open) ? open : (shown[0]?.id ?? null);

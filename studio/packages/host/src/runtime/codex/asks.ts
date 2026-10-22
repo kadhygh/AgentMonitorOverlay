@@ -4,6 +4,9 @@ import type { CodexServerHandle } from "./server-manager.js";
 import { inputQuestions } from "./describe.js";
 import { approvalKey, ELICITATION, isApprovalMethod, USER_INPUT, type CodexCore, type PendingApproval, type PendingQuestion } from "./state.js";
 
+/** Codex's 完全访问 (never + danger-full-access), as the session's permission option. */
+const FULL_ACCESS = "full-auto";
+
 // What waits for the person in a Codex session (stage 16 split out of codex-runtime.ts): approvals (broadcast, first
 // answer wins), request_user_input and MCP forms (question items), request_user_input_async (a card; the answer is the
 // next message), and the session's status while they wait.
@@ -39,6 +42,15 @@ export class CodexAsks {
     }, { method: r.method, ...(params.itemId ? { itemId: params.itemId } : {}), ...(params.turnId ? { turnId: params.turnId } : {}) });
     this.approvals.set(key, { kind: elicitation ? "elicitation" : "approval", sessionId: s.id, itemId: item.id, profileId: handle.profileId, requestId: r.id });
     this.core.setStatus(s.id, "awaiting-approval");
+    // Switched to 完全访问 during the turn (which still runs under the policy it started with): granted at once.
+    if (!elicitation && this.core.store.getSession(s.id)?.options.permission === FULL_ACCESS) void this.acceptAll(s.id);
+  }
+
+  /** 完全访问 chosen mid-turn (2026-10-22): the session's waiting approvals (not MCP forms) are accepted at once. */
+  async acceptAll(sessionId: Id): Promise<void> {
+    for (const a of [...this.approvals.values()].filter((x) => x.sessionId === sessionId && x.kind === "approval")) {
+      await this.respondApproval(sessionId, String(a.requestId), "accept").catch(() => undefined);
+    }
   }
 
   /** request_user_input, or an MCP form with fields to fill in: a question item instead of an approval. */

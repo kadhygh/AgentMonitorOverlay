@@ -182,7 +182,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   /**
    * Model and effort go to DSH before the next turn; a new permission restarts the session's process — at once when it
    * is idle, else once the running turn ends (2026-10-19: a change made mid-turn was lost, and the process went on
-   * asking under its old sandbox for as long as it lived).
+   * asking under its old sandbox for as long as it lived). 完全访问 also counts at once (2026-10-22, as in DSH's own
+   * CLI): until the restart, Studio says yes to what the process asks, the requests already waiting included.
    */
   async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
     this.requireSession(sessionId);
@@ -193,6 +194,9 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (!live.inflight) {
       if (permissionChanged) await this.release(sessionId);
       else await this.applyOptions(sessionId, live).catch((err: unknown) => this.emit("log", `dsh set options failed for ${sessionId}: ${String(err)}`));
+    } else if (permissionChanged && dshPermissionMode(options.permission) === "danger-full-access") {
+      for (const w of [...live.waiting.values()]) this.settleWaiting(sessionId, live, w, "allow");
+      this.appendItem(sessionId, { type: "notice", level: "info", message: "已切到完全访问：这一轮剩下的请求 Studio 直接同意；这一轮结束后 DSH 换成新权限（会话接着之前的继续）" }, { method: "dsh/permission-pending", ...live.transcript.turnRef() });
     } else if (permissionChanged) {
       this.appendItem(sessionId, { type: "notice", level: "info", message: "新的权限在这一轮结束后生效（DSH 换权限要重启它的进程，会话接着之前的继续）" }, { method: "dsh/permission-pending", ...live.transcript.turnRef() });
     }
@@ -476,6 +480,12 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     const [sessionId, live] = entry;
     const shown = live.transcript.approvalText(p.toolCall?.toolCallId, p.toolCall);
     const approvalId = newId("ap");
+    // Switched to 完全访问 while this process still runs under its old sandbox: what it asks is granted at once.
+    const allow = (p.options ?? []).find((o) => o.kind === DSH_ALLOW);
+    if (allow && dshPermissionMode(this.store.getSession(sessionId)?.options.permission) === "danger-full-access") {
+      this.appendItem(sessionId, { type: "approval", approvalId, kind: shown.kind, summary: shown.summary, detail: [shown.detail, "完全访问：Studio 已直接同意"].filter(Boolean).join(" · "), state: "accepted" }, { method, ...(p.toolCall?.toolCallId ? { itemId: p.toolCall.toolCallId } : {}), ...live.transcript.turnRef() });
+      return { outcome: { outcome: "selected", optionId: allow.optionId } };
+    }
     return new Promise((resolve) => {
       const item = this.appendItem(sessionId, { type: "approval", approvalId, kind: shown.kind, summary: shown.summary, ...(shown.detail ? { detail: shown.detail } : {}), state: "pending" }, { method, ...(p.toolCall?.toolCallId ? { itemId: p.toolCall.toolCallId } : {}), ...live.transcript.turnRef() });
       live.waiting.set(approvalId, { approvalId, itemId: item.id, options: p.options ?? [], answer: resolve });

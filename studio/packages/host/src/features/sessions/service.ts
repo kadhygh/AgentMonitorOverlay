@@ -253,8 +253,10 @@ export class SessionsFeature extends Feature {
    * 开会话 (session_start, 2026-10-22): a session of a task starts another main session in the same task, at once (the
    * person chose not to be asked: they watch the task, and can stop it). The model is the caller's unless named. With
    * `report`, the new session's first finished turn goes back into the caller's conversation (queued while it works).
+   * `fullAccess` (2026-10-22, the person's wish): it starts with its runtime's 完全访问 — no sandbox, no asking — for
+   * work outside the task's folder (a task in the common space whose code is in a project) or many commands in a row.
    */
-  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown }): Promise<Session> {
+  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; fullAccess?: unknown }): Promise<Session> {
     const from = this.requireSession(fromSessionId);
     if (from.kind === "sub") throw new HostError("bad_request", "子 agent 不能开 AMO 会话：交给你的主会话来开。");
     if (!from.taskId) throw new HostError("bad_request", "你是专题会话，没有自己的任务：开任务要用 task_plan_propose 提案。");
@@ -264,6 +266,7 @@ export class SessionsFeature extends Feature {
     const title = input.title === undefined || input.title === null || input.title === "" ? null : boundedText(input.title, "title", 100);
     const profileId = typeof input.model === "string" && input.model.trim() ? this.f.profileByRef(input.model.trim()).id : from.profileId;
     const report = input.report === true;
+    const options = input.fullAccess === true ? { permission: FULL_ACCESS[this.f.requireProfile(profileId).runtime] } : undefined;
     const message = [
       `【由本任务的会话「${from.title || "未命名会话"}」开启】`,
       text,
@@ -272,7 +275,7 @@ export class SessionsFeature extends Feature {
         ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。这一轮做完后，你最后的回复会自动转给它；之后还要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`
         : `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`,
     ].join("\n");
-    const started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, this.requireLiveWorkspace(task.workspaceId), { profileId, text: message });
+    const started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, this.requireLiveWorkspace(task.workspaceId), { profileId, text: message, ...(options ? { options } : {}) });
     // 委派 (10-22): the session list shows it under the caller; otherwise it is a main session like any other.
     const session = this.store.setSessionStartedBy(started.id, from.id);
     this.publish({ type: "session.upserted", session });
@@ -318,6 +321,9 @@ export class SessionsFeature extends Feature {
     });
   }
 }
+
+/** Each runtime's 完全访问, for session_start's fullAccess. */
+const FULL_ACCESS: Record<Session["runtime"], string> = { codex: "full-auto", claude: "bypassPermissions", dsh: "full-access" };
 
 /** How much of the new session's reply a report carries. */
 const REPORT_MAX = 4000;

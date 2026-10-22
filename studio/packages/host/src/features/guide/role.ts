@@ -138,6 +138,21 @@ export function recordRole(service: HostService, sessionId: Id): void {
 }
 
 /**
+ * The session wrote its own task's 说明 (task_describe): it knows the new one, so its next message does not tell it
+ * again (2026-10-22: it read as a change made by someone else). Other changes it was not told yet stay to tell.
+ */
+export function noteOwnDescription(service: HostService, sessionId: Id): void {
+  const raw = service.store.getKv(stampKey(sessionId))?.value;
+  if (!raw) return;
+  try {
+    const stamp = JSON.parse(raw) as RoleStamp;
+    service.store.setKv(stampKey(sessionId), JSON.stringify({ ...stamp, description: stampOf(roleFacts(service, sessionId)).description }));
+  } catch {
+    // A stamp it cannot read is replaced when the session is next told.
+  }
+}
+
+/**
  * What changed since the session was last told, one line each; `told()` once the message carrying them went out. A
  * session never told (one from before 2026-10-17, or a fork) is only noted: its card is what amo_whoami says.
  */

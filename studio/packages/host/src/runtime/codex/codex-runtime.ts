@@ -156,9 +156,12 @@ export class CodexRuntime extends RuntimeBase {
   }
 
   /** Switches model, effort or permissions; Codex applies them from the next turn (a running turn keeps its own). */
+  /** Options go with the next turn; 完全访问 also accepts what the running turn is waiting for (asks.ts). */
   async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
     this.requireSession(sessionId);
-    return this.updateSession(sessionId, { options });
+    const updated = this.updateSession(sessionId, { options });
+    if (options.permission === "full-auto") await this.asks.acceptAll(sessionId);
+    return updated;
   }
 
   /**

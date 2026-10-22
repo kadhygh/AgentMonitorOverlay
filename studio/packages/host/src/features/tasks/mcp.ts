@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { answer, write, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
+import { noteOwnDescription } from "../guide/role.js";
 
 /** The AMO MCP tools of this feature (gathered in mcp/tools.ts). */
 export function tasksTools({ service, caller, model, ownTask, inOwnTopic }: ToolContext): AmoTool[] {
@@ -35,6 +36,7 @@ export function tasksTools({ service, caller, model, ownTask, inOwnTopic }: Tool
           const taskId = args.taskId === undefined ? ownTask(c) : String(args.taskId);
           if (args.taskId !== undefined && taskId !== service.store.getSession(c.sessionId)?.taskId) inOwnTopic(c, taskId);
           const task = service.tasks.updateTask(taskId, { description: args.description });
+          if (taskId === service.store.getSession(c.sessionId)?.taskId) noteOwnDescription(service, c.sessionId);
           return { taskId: task.id, description: task.description ?? "" };
         }),
     },

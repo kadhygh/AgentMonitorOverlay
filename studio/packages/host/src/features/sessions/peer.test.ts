@@ -59,6 +59,9 @@ describe("session_start (开会话)", () => {
     expect(first).toContain("只改数值表，别动界面");
     expect(first).toContain(`mailbox_send 给会话 ${caller.id}`);
     expect((await service.sessions.startPeer(caller.id, { text: "看看界面", model: "gpt" })).profileId).toBe("p-gpt");
+    // fullAccess: the runtime's 完全访问 (Codex: full-auto); otherwise the model's default.
+    expect((await service.sessions.startPeer(caller.id, { text: "查另一个仓库", fullAccess: true })).options.permission).toBe("full-auto");
+    expect(s.options.permission).not.toBe("full-auto");
     // Archiving the caller leaves the sessions it started alone.
     await service.sessions.archive(caller.id);
     expect(store.getSession(s.id)?.archivedAt).toBeNull();

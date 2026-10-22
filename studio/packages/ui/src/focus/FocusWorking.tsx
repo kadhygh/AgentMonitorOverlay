@@ -45,7 +45,7 @@ function SubsToggle({ count, open, onToggle }: { count: number; open: boolean; o
       type="button"
       className="focus-subs-toggle"
       aria-expanded={open}
-      title={open ? "收起子 agent" : `${count} 个子 agent 在跑，展开看`}
+      title={open ? "收起" : `${count} 个子 agent 或委派会话在跑，展开看`}
       onClick={onToggle}
       data-testid="focus-subs-toggle"
     >
@@ -71,9 +71,15 @@ function SubRows({ subs, goTo }: { subs: readonly Session[]; goTo: GoTo }) {
   return (
     <div className="focus-subs" data-testid="focus-subs">
       {subs.map((sub) => (
-        <button key={sub.id} type="button" className="focus-sub-row" onClick={() => goTo(sub.id, sub.taskId)} title="在工作台打开这个子 agent" data-testid="focus-sub-row">
+        <button key={sub.id} type="button" className="focus-sub-row" onClick={() => goTo(sub.id, sub.taskId)} title={sub.kind === "sub" ? "在工作台打开这个子 agent" : "在工作台打开这个委派会话（它开的会话）"} data-testid="focus-sub-row" data-delegated={sub.kind !== "sub" || undefined}>
           <span className="dot" style={{ background: SESSION_LOOK.running.dot }} />
-          <span className="focus-sub-name">{sub.title || "子 agent"}</span>
+          {sub.kind !== "sub" && (
+            <svg className="focus-sub-kind" width="11" height="11" viewBox="0 0 16 16" aria-label="委派会话">
+              <path d="M3.5 3v3.5A2.5 2.5 0 0 0 6 9h7" />
+              <path d="M10.5 6.5 13 9l-2.5 2.5" />
+            </svg>
+          )}
+          <span className="focus-sub-name">{sub.title || (sub.kind === "sub" ? "子 agent" : "委派会话")}</span>
           {/* A running subagent's session last changed when it started (or was resumed). */}
           <span className="focus-time">{ranFor(sub.updatedAt, now)}</span>
         </button>

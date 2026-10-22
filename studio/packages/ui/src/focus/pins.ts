@@ -1,5 +1,6 @@
 import type { Session, Task } from "@amo-studio/protocol";
 import { needsPerson } from "../lib/status.js";
+import { hangsUnderOf } from "../lib/sessionSeen.js";
 
 // Focus 置顶 (2026-10-21): tasks the person keeps at the top of Focus, one line on what their session does; its detail
 // opens only while it waits for the person (10-22: always open said too much). And which sessions show their running
@@ -15,8 +16,9 @@ export const SUBS_OPEN_KEY = "amo.focusSubsOpen";
  */
 export function pinnedSession(task: Pick<Task, "id">, sessions: readonly Session[]): Session | undefined {
   const rank = (s: Session) => (needsPerson(s.status) ? 0 : s.status === "running" ? 1 : 2);
+  const under = hangsUnderOf(sessions);
   return sessions
-    .filter((s) => s.taskId === task.id && s.kind !== "sub" && !s.archivedAt)
+    .filter((s) => s.taskId === task.id && s.kind !== "sub" && !under(s) && !s.archivedAt)
     .sort((a, b) => rank(a) - rank(b) || b.updatedAt.localeCompare(a.updatedAt))[0];
 }
 

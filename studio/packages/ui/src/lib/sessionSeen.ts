@@ -60,8 +60,9 @@ export function markSeen(ids: readonly string[], at = new Date().toISOString(), 
  */
 export function unseenSessions(sessions: readonly Session[], data: SeenData): Session[] {
   const subs = subsByParent(sessions);
+  const under = hangsUnderOf(sessions);
   return sessions
-    .filter((s) => !s.archivedAt && s.kind !== "sub" && (s.status === "idle" || s.status === "completed" || s.status === "error"))
+    .filter((s) => !s.archivedAt && s.kind !== "sub" && !under(s) && (s.status === "idle" || s.status === "completed" || s.status === "error"))
     .filter((s) => !subs.get(s.id)?.some((x) => x.status === "running"))
     .filter((s) => lastChange(s, subs) > maxIso(data.since, data.seen[s.id]))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
@@ -69,17 +70,33 @@ export function unseenSessions(sessions: readonly Session[], data: SeenData): Se
 
 /** Whether the workbench opening this session is the person coming to deal with it: it waits, or ended unseen. */
 export function awaitsPerson(session: Session, sessions: readonly Session[], data: SeenData): boolean {
-  return needsPerson(session.status) || unseenSessions([session, ...sessions.filter((s) => s.parentId === session.id)], data).length > 0;
+  return needsPerson(session.status) || unseenSessions([session, ...sessions.filter((s) => s.parentId === session.id || s.startedBy === session.id)], data).length > 0;
 }
 
-/** Live subagent sessions by their parent's id. */
+/**
+ * The session a row hangs under rather than standing on its own: a subagent's parent, and (委派, 2026-10-22) the
+ * session that started a session with session_start, while that one is live. Null for a session of its own.
+ */
+export function hangsUnderOf(sessions: readonly Session[]): (s: Session) => string | null {
+  const byId = new Map(sessions.map((s) => [s.id, s]));
+  return (s) => {
+    if (s.kind === "sub") return s.parentId;
+    if (s.parentId || !s.startedBy) return null;
+    const starter = byId.get(s.startedBy);
+    return starter && !starter.archivedAt ? starter.id : null;
+  };
+}
+
+/** Live subagent sessions (and 委派 ones) by the id of the session they hang under. */
 export function subsByParent(sessions: readonly Session[]): Map<string, Session[]> {
+  const under = hangsUnderOf(sessions);
   const by = new Map<string, Session[]>();
   for (const s of sessions) {
-    if (s.kind !== "sub" || !s.parentId || s.archivedAt) continue;
-    const list = by.get(s.parentId);
+    const up = s.archivedAt ? null : under(s);
+    if (!up) continue;
+    const list = by.get(up);
     if (list) list.push(s);
-    else by.set(s.parentId, [s]);
+    else by.set(up, [s]);
   }
   return by;
 }

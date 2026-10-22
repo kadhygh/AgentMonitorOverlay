@@ -9,7 +9,7 @@ import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
 import { McpIdentities } from "../../mcp/identity.js";
 import { HostService } from "../../service.js";
 import { Store } from "../../store/store.js";
-import { recordRole, roleCard, roleCardFor } from "./role.js";
+import { noteOwnDescription, recordRole, roleCard, roleCardFor } from "./role.js";
 
 // 2026-10-17: Codex threads start with the role card as developer instructions; a task's later changes (topic, canvas
 // references, 主控, 说明) come with the session's next message; a 主控 relays to tasks referenced on its canvas.
@@ -96,6 +96,18 @@ describe("role card (2026-10-17)", () => {
     expect(update).toContain("任务说明改成了：迁移装甲车的数据表");
     expect(update).not.toContain("不再在");
     expect(update).toContain("amo_whoami");
+  });
+
+  it("does not tell a session the 说明 it wrote itself, but still tells its other changes and the task's other sessions", async () => {
+    const writer = await start(task.id);
+    const other = await start(task.id, "另一个");
+    reference(topic.id, task.id);
+    service.tasks.updateTask(task.id, { description: "合入策划分支" });
+    noteOwnDescription(service, writer.id);
+    const own = splitRoleUpdate(await send(writer, "提交吧")).update!;
+    expect(own).toContain("任务被引用到了专题「迁移」");
+    expect(own).not.toContain("任务说明");
+    expect(splitRoleUpdate(await send(other, "继续")).update).toContain("任务说明改成了：合入策划分支");
   });
 
   it("only notes a session it never told (one from before), without a note", async () => {

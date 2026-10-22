@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { exampleSessions, type Session } from "@amo-studio/protocol";
-import { awaitsPerson, markSeen, readSeen, unseenSessions } from "./sessionSeen.js";
+import { awaitsPerson, hangsUnderOf, markSeen, readSeen, subsByParent, unseenSessions } from "./sessionSeen.js";
 
 function memory(): Pick<Storage, "getItem" | "setItem"> & { data: Map<string, string> } {
   const data = new Map<string, string>();
@@ -53,6 +53,20 @@ describe("sessions the person has not looked at", () => {
     expect(unseenSessions([lead, one, { ...two, status: "completed", updatedAt: "2026-10-21T09:07:29.000Z" }], data).map((s) => s.id)).toEqual(["lead"]);
     // An archived subagent counts for nothing.
     expect(unseenSessions([lead, { ...two, archivedAt: "2026-10-21T09:01:00.000Z" }], { ...data, seen: {} }).map((s) => s.id)).toEqual(["lead"]);
+  });
+
+  it("a session started with session_start hangs under its live starter, like a subagent; on its own once the starter is archived (委派, 10-22)", () => {
+    const data = { since: "2026-10-22T08:00:00.000Z", seen: { lead: "2026-10-22T09:03:00.000Z" } };
+    const lead = at("lead", "idle", "2026-10-22T09:00:55.000Z");
+    const kid = at("kid", "running", "2026-10-22T09:01:00.000Z", { startedBy: "lead" });
+    expect(subsByParent([lead, kid]).get("lead")?.map((s) => s.id)).toEqual(["kid"]);
+    // While it runs, its starter has not finished; once it ends, the starter has (and the kid is not listed apart).
+    expect(unseenSessions([lead, kid], { ...data, seen: {} })).toEqual([]);
+    expect(unseenSessions([lead, { ...kid, status: "idle", updatedAt: "2026-10-22T09:08:00.000Z" }], data).map((s) => s.id)).toEqual(["lead"]);
+    // Starter archived: a session of its own again.
+    const gone = { ...lead, archivedAt: "2026-10-22T09:05:00.000Z" };
+    expect(hangsUnderOf([gone, kid])(kid)).toBeNull();
+    expect(unseenSessions([gone, { ...kid, status: "idle", updatedAt: "2026-10-22T09:08:00.000Z" }], data).map((s) => s.id)).toEqual(["kid"]);
   });
 
   it("opening a session is coming to deal with it when it waits for the person or ended unseen", () => {

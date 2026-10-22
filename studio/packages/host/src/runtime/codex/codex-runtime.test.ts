@@ -101,6 +101,19 @@ describe("CodexRuntime", () => {
     await expect(runtime.respondApproval(s.id, "0", "decline")).rejects.toThrow(/not pending/);
   });
 
+  it("完全访问 chosen mid-turn accepts what the turn waits for, and what it asks next (2026-10-22)", async () => {
+    const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[shell: cmd /c echo x]]" });
+    await until(() => session(s.id).status === "awaiting-approval", "awaiting-approval");
+    await runtime.setOptions(s.id, { permission: "full-auto" });
+    await until(idle(s.id), "idle");
+    expect(items(s.id).find((i) => i.type === "approval")).toMatchObject({ state: "accepted" });
+    expect(lastAgent(s.id)!.markdown).toBe("FAKE-RAN");
+    // A request that comes while the option is on is accepted as it comes.
+    await runtime.sendMessage(s.id, "[[shell: cmd /c echo y]]");
+    await until(() => items(s.id).filter((i) => i.type === "approval").length === 2 && idle(s.id)(), "second accepted");
+    expect(items(s.id).filter((i) => i.type === "approval").at(-1)).toMatchObject({ state: "accepted" });
+  });
+
   it("turns an MCP tool elicitation into an approval card and answers with an action", async () => {
     const s = await runtime.startSession({ taskId, topicId: null, profileId: "p-ds", workspace, text: "[[elicit]]" });
     await until(() => session(s.id).status === "awaiting-approval", "awaiting-approval");
