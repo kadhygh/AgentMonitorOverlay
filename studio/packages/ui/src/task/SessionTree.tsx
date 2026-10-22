@@ -95,6 +95,12 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
     return (p && sessionModelName(storedChoices(p.id), s.options)) || shortModel(p);
   };
   const selectedLive = live.find((s) => s.id === selected) ?? null;
+  // A session working in another project than its task's (session_start's workspace, 2026-10-22) says which.
+  const elsewhere = (s: Session): string | null => {
+    if (s.workspaceId === task.workspaceId) return null;
+    const w = workspaces.find((x) => x.id === s.workspaceId);
+    return w ? (w.builtin === "common" ? "公共目录" : w.name) : null;
+  };
 
   return (
     <>
@@ -156,9 +162,9 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
       )}
 
       <div className="slist tree" role="tree" aria-label="会话树">
-        <TreeLevel nodes={tree} all={live} depth={0} parentProfile={null} selected={selected} unread={unread} profileOf={profile} onSelect={onSelect} modelOf={modelOf} folded={folded} />
+        <TreeLevel nodes={tree} all={live} elsewhere={elsewhere} depth={0} parentProfile={null} selected={selected} unread={unread} profileOf={profile} onSelect={onSelect} modelOf={modelOf} folded={folded} />
       </div>
-      {selectedLive && <SessionDetail session={selectedLive} all={live} model={modelOf(selectedLive)} letters={unread?.get(selectedLive.id) ?? 0} />}
+      {selectedLive && <SessionDetail session={selectedLive} all={live} project={elsewhere(selectedLive)} model={modelOf(selectedLive)} letters={unread?.get(selectedLive.id) ?? 0} />}
 
       {archivedRoots.length > 0 && (
         <div className="archived">
@@ -258,6 +264,7 @@ const DELEGATED_ICON = (
 function TreeLevel({
   nodes,
   all,
+  elsewhere,
   depth,
   parentProfile,
   selected,
@@ -269,6 +276,7 @@ function TreeLevel({
 }: {
   nodes: readonly SessionNode[];
   all: readonly Session[];
+  elsewhere(s: Session): string | null;
   depth: number;
   parentProfile: string | null;
   selected: string | null;
@@ -292,6 +300,7 @@ function TreeLevel({
         const alert = !open && hidden.some((x) => needsPerson(x.status) || x.status === "error");
         const starter = delegatedBy(s, all);
         const kind = starter ? "委派会话" : KIND[s.kind];
+        const project = elsewhere(s);
         return (
           <div key={s.id} className="tree-node" role="none">
             <div className="tree-line">
@@ -301,7 +310,7 @@ function TreeLevel({
                 className={depth > 0 ? "srow tree-row child" : "srow tree-row"}
                 aria-current={s.id === selected}
                 aria-level={depth + 1}
-                title={[s.title || "新会话", [kind, modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · "), starter ? `由「${starter.title || "新会话"}」开的，单独归档` : ""].filter(Boolean).join("\n")}
+                title={[s.title || "新会话", [kind, modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · "), starter ? `由「${starter.title || "新会话"}」开的，单独归档` : "", project ? `在项目「${project}」里工作（和任务的项目不同）` : ""].filter(Boolean).join("\n")}
                 onClick={() => onSelect(s.id)}
                 data-testid="session-row"
                 data-kind={s.kind}
@@ -310,6 +319,11 @@ function TreeLevel({
               >
                 <span className="tree-icon">{starter ? DELEGATED_ICON : TREE_ICON[s.kind]}</span>
                 <span className="srow-title">{s.title || "新会话"}</span>
+                {project && (
+                  <span className="tree-ws" data-testid="session-project">
+                    {project}
+                  </span>
+                )}
                 {letters > 0 && (
                   <span className="srow-mail" aria-label={`${letters} 条留言`} title={`${letters} 条留言`} data-testid="session-mail">
                     {letters}
@@ -354,7 +368,7 @@ function TreeLevel({
             </div>
             {open && node.children.length > 0 && (
               <div className={depth + 1 >= MAX_INDENT ? "tree-children flat" : "tree-children"} role="group">
-                <TreeLevel nodes={node.children} all={all} depth={depth + 1} parentProfile={s.profileId} selected={selected} unread={unread} profileOf={profileOf} onSelect={onSelect} modelOf={modelOf} folded={folded} />
+                <TreeLevel nodes={node.children} all={all} elsewhere={elsewhere} depth={depth + 1} parentProfile={s.profileId} selected={selected} unread={unread} profileOf={profileOf} onSelect={onSelect} modelOf={modelOf} folded={folded} />
               </div>
             )}
           </div>
@@ -365,7 +379,7 @@ function TreeLevel({
 }
 
 /** Under the tree: the selected session in words — what it is, model, state, when, and what hangs under it. */
-function SessionDetail({ session: s, all, model, letters }: { session: Session; all: readonly Session[]; model: string; letters: number }) {
+function SessionDetail({ session: s, all, project, model, letters }: { session: Session; all: readonly Session[]; project: string | null; model: string; letters: number }) {
   const look = SESSION_LOOK[s.status];
   const under = (id: string): Session[] => all.filter((x) => listParent(x) === id).flatMap((x) => [x, ...under(x.id)]);
   const below = under(s.id);
@@ -386,6 +400,7 @@ function SessionDetail({ session: s, all, model, letters }: { session: Session; 
         {[kindText(s, all), model].filter(Boolean).join(" · ")} · <span style={{ color: look.text }}>{look.label}</span> · {relativeTime(s.updatedAt)}
       </span>
       {starter && <span>由「{starter.title || "新会话"}」开的</span>}
+      {project && <span>在项目「{project}」里工作</span>}
       {parts.length > 0 && <span>{parts.join(" · ")}</span>}
       {(letters > 0 || s.writer === "terminal-shared") && <span>{[letters > 0 ? `${letters} 条留言` : "", s.writer === "terminal-shared" ? "终端已接入" : ""].filter(Boolean).join(" · ")}</span>}
     </div>

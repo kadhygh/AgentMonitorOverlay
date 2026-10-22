@@ -230,6 +230,8 @@
 .srow.tree-row.child .srow-title { font-weight: 400; color: var(--text); }
 .srow.tree-row.child[aria-current="true"] .srow-title { font-weight: 600; }
 .tree-icon { flex: none; display: inline-flex; color: var(--text-faint); }
+/* A session working in another project than its task's (2026-10-22): that project's name, small and faint. */
+.tree-ws { flex: none; max-width: 40%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 0 5px; border-radius: var(--r-s); background: var(--chip); color: var(--text-dim); font-size: 11px; line-height: 16px; }
 .tree-icon svg { fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
 .srow.tree-row[data-kind="fork"] .tree-icon { color: var(--text-dim); }
 .tree-children { display: flex; flex-direction: column; gap: 1px; margin-left: 14px; padding-left: 7px; border-left: 1px solid var(--border); }

@@ -18,7 +18,8 @@ for (const [profileId, other] of [["claude-mock", "codex-mock"], ["codex-mock", 
     studio = await launchStudio();
     const { page } = studio;
     const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
-    const start = `[[mcp: session_start ${JSON.stringify({ text: "数一下掉落表有几张", title: "数表", model: other, report: true })}]]`;
+    const beta = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("beta") });
+    const start = `[[mcp: session_start ${JSON.stringify({ text: "数一下掉落表有几张", title: "数表", model: other, report: true, workspace: "beta" })}]]`;
     const { task, session: caller } = await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
       title: "掉落表",
       workspaceId: ws.id,
@@ -28,7 +29,7 @@ for (const [profileId, other] of [["claude-mock", "codex-mock"], ["codex-mock", 
     // No approval asked: the second main session is there, named, on the model asked for, marked as the caller's.
     await expect.poll(async () => (await sessions()).find((s) => s.id !== caller.id)?.title, { timeout: 60_000 }).toBe("数表");
     const started = (await sessions()).find((s) => s.id !== caller.id)!;
-    expect(started).toMatchObject({ kind: "main", parentId: null, title: "数表", profileId: other, startedBy: caller.id });
+    expect(started).toMatchObject({ kind: "main", parentId: null, title: "数表", profileId: other, startedBy: caller.id, workspaceId: beta.id, taskId: task.id });
 
     await page.getByTestId("task-card").first().click();
     const thread = page.getByTestId("thread");
@@ -41,6 +42,8 @@ for (const [profileId, other] of [["claude-mock", "codex-mock"], ["codex-mock", 
     await expect(row).toHaveAttribute("data-delegated", "true");
     await expect(row).toHaveAttribute("title", /委派会话/);
     await expect(page.getByTestId("session-fold")).toHaveText(/1/);
+    // It works in another project than the task's: the row says which.
+    await expect(row.getByTestId("session-project")).toHaveText("beta");
     // The new session says who started it.
     await row.click();
     await expect(page.getByTestId("session-detail")).toContainText("由「");

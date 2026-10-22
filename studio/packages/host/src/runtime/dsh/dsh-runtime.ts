@@ -180,25 +180,31 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   /**
-   * Model and effort go to DSH before the next turn; a new permission restarts the session's process — at once when it
-   * is idle, else once the running turn ends (2026-10-19: a change made mid-turn was lost, and the process went on
-   * asking under its old sandbox for as long as it lived). 完全访问 also counts at once (2026-10-22, as in DSH's own
-   * CLI): until the restart, Studio says yes to what the process asks, the requests already waiting included.
+   * Model and effort go to DSH before the next turn. A new permission restarts the session's process (at once when it
+   * is idle, else once the running turn ends), which is all an older DSH needed. DSH 0.2 writes the permission a session
+   * starts with into the session itself and keeps it across restarts (2026-10-22: a session switched to 完全访问 went on
+   * asking after a stop and 继续), so: 完全访问 is Studio saying yes to whatever DSH asks, the requests already waiting
+   * included, from the moment it is chosen (as in DSH's own CLI); a stricter permission cannot reach a session that
+   * has started, and the session says so.
    */
   async setOptions(sessionId: Id, options: SessionOptions): Promise<Session> {
-    this.requireSession(sessionId);
+    const before = this.requireSession(sessionId);
     const updated = this.updateSession(sessionId, { options });
+    const from = dshPermissionMode(before.options.permission);
+    const to = dshPermissionMode(options.permission);
     const live = this.live.get(sessionId);
+    if (from !== to && before.runtimeRef) {
+      const message =
+        to === "danger-full-access"
+          ? "已切到完全访问：DSH 再要权限时 Studio 直接同意（正在等的也一并同意）"
+          : "DSH 把会话开始时的权限记在会话里，已经开始的会话收紧权限不会生效（放宽到完全访问可以）；要更严的权限，请新开一个会话";
+      this.appendItem(sessionId, { type: "notice", level: "info", message }, { method: "dsh/permission", ...(live?.inflight ? live.transcript.turnRef() : {}) });
+    }
     if (!live) return updated;
-    const permissionChanged = live.permission !== dshPermissionMode(options.permission);
+    if (to === "danger-full-access") for (const w of [...live.waiting.values()]) this.settleWaiting(sessionId, live, w, "allow");
     if (!live.inflight) {
-      if (permissionChanged) await this.release(sessionId);
+      if (live.permission !== to) await this.release(sessionId);
       else await this.applyOptions(sessionId, live).catch((err: unknown) => this.emit("log", `dsh set options failed for ${sessionId}: ${String(err)}`));
-    } else if (permissionChanged && dshPermissionMode(options.permission) === "danger-full-access") {
-      for (const w of [...live.waiting.values()]) this.settleWaiting(sessionId, live, w, "allow");
-      this.appendItem(sessionId, { type: "notice", level: "info", message: "已切到完全访问：这一轮剩下的请求 Studio 直接同意；这一轮结束后 DSH 换成新权限（会话接着之前的继续）" }, { method: "dsh/permission-pending", ...live.transcript.turnRef() });
-    } else if (permissionChanged) {
-      this.appendItem(sessionId, { type: "notice", level: "info", message: "新的权限在这一轮结束后生效（DSH 换权限要重启它的进程，会话接着之前的继续）" }, { method: "dsh/permission-pending", ...live.transcript.turnRef() });
     }
     return updated;
   }

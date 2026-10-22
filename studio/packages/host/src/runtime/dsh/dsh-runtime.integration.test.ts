@@ -232,7 +232,7 @@ describe("DSH runtime", () => {
     expect(builtin.models.map((m) => m.label)).toEqual(["deepseek-v4-flash", "DeepSeek-V4-Pro"]);
   });
 
-  it("完全访问 chosen mid-turn counts at once (what waits is granted), and the process restarts with it once the turn ends (2026-10-19, 10-22)", async () => {
+  it("完全访问 chosen mid-turn counts at once (what waits is granted, and what DSH asks after), and the process restarts with it once the turn ends (2026-10-19, 10-22)", async () => {
     const host = await boot();
     const s = await start(host, "[[ask: New-Item a.txt]]");
     await until(() => status(host, s.id), (v) => v === "awaiting-approval");
@@ -246,14 +246,19 @@ describe("DSH runtime", () => {
     expect(replies(await items(host, s.id))[1]).toMatch(/^ENV permission=danger-full-access key=yes /);
     // The same DSH session, resumed.
     expect(replies(await items(host, s.id))[0]).toBe("DONE New-Item a.txt");
+    // DSH 0.2 keeps the permission a session started with, so it may still ask: Studio says yes.
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[ask: New-Item c.txt]]" });
+    await until(() => items(host, s.id), (l) => replies(l).length === 3);
+    expect(replies(await items(host, s.id))[2]).toBe("DONE New-Item c.txt");
+    expect((await items(host, s.id)).filter((i) => i.type === "approval").every((i) => i.type === "approval" && i.state === "accepted")).toBe(true);
   });
 
-  it("a stricter permission chosen mid-turn waits for the turn to end; the request still asks the person", async () => {
+  it("a stricter permission on a session that has started: it says DSH keeps the old one; the request still asks the person", async () => {
     const host = await boot();
     const s = await start(host, "[[ask: New-Item b.txt]]");
     await until(() => status(host, s.id), (v) => v === "awaiting-approval");
     await call(host, "PATCH", `/api/sessions/${s.id}/options`, { permission: "read-only" });
-    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "notice" && i.message.includes("这一轮结束后生效")));
+    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "notice" && i.message.includes("收紧权限不会生效")));
     const approval = (await items(host, s.id)).find((i) => i.type === "approval");
     expect(approval).toMatchObject({ state: "pending" });
     await call(host, "POST", `/api/approvals/${approval?.type === "approval" ? approval.approvalId : ""}`, { sessionId: s.id, decision: "decline" });

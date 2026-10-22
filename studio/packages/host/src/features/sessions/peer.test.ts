@@ -59,15 +59,29 @@ describe("session_start (开会话)", () => {
     expect(first).toContain("只改数值表，别动界面");
     expect(first).toContain(`mailbox_send 给会话 ${caller.id}`);
     expect((await service.sessions.startPeer(caller.id, { text: "看看界面", model: "gpt" })).profileId).toBe("p-gpt");
-    // fullAccess: the runtime's 完全访问 (Codex: full-auto); otherwise the model's default.
-    expect((await service.sessions.startPeer(caller.id, { text: "查另一个仓库", fullAccess: true })).options.permission).toBe("full-auto");
+    // permission: the runtime's own option for the level (Codex: full-auto, read-only); otherwise the model's default.
+    expect((await service.sessions.startPeer(caller.id, { text: "跑一串命令", permission: "full" })).options.permission).toBe("full-auto");
+    expect((await service.sessions.startPeer(caller.id, { text: "只读看看", permission: "read-only" })).options.permission).toBe("read-only");
     expect(s.options.permission).not.toBe("full-auto");
+    await expect(service.sessions.startPeer(caller.id, { text: "x", permission: "root" })).rejects.toThrow(/permission must be/);
     // Archiving the caller leaves the sessions it started alone.
     await service.sessions.archive(caller.id);
     expect(store.getSession(s.id)?.archivedAt).toBeNull();
     // No report asked: nothing comes back into the caller.
     await new Promise((r) => setTimeout(r, 300));
     expect(userTexts(caller.id).some((t) => t.includes("这一轮做完了"))).toBe(false);
+  });
+
+  it("runs in another project when asked (by name or path), still a session of the task, and says where it works", async () => {
+    mkdirSync(join(root, "beta"));
+    const beta = store.addWorkspace({ path: join(root, "beta"), name: "beta" });
+    const byName = await service.sessions.startPeer(caller.id, { text: "看 beta 的提交", workspace: "beta" });
+    expect(byName).toMatchObject({ taskId: task.id, workspaceId: beta.id, startedBy: caller.id });
+    expect(userTexts(byName.id)[0]).toContain(`你在项目「beta」的文件夹 ${beta.path} 里工作`);
+    expect((await service.sessions.startPeer(caller.id, { text: "再看", workspace: `${beta.path}\\` })).workspaceId).toBe(beta.id);
+    // Its own project: no note.
+    expect(userTexts((await service.sessions.startPeer(caller.id, { text: "本项目", workspace: "alpha" })).id)[0]).not.toContain("里工作，和任务本身的项目不同");
+    await expect(service.sessions.startPeer(caller.id, { text: "x", workspace: "nope" })).rejects.toThrow(/project nope not found/);
   });
 
   it("with report, the new session's first finished turn comes back into the caller's conversation", async () => {
