@@ -75,6 +75,11 @@ describe("maintenance", () => {
     vi.stubEnv("CLAUDE_CODE_DISABLE_NONESSENTIAL_TRAFFIC", "1");
     vi.stubEnv("ANTHROPIC_BASE_URL", "https://elsewhere.example/");
     vi.stubEnv("AMO_TEST_KEPT", "kept");
+    // And what its tool shell sets: the person's own terminal has none of them (2026-10-22).
+    vi.stubEnv("NO_COLOR", "1");
+    vi.stubEnv("COLOR", "0");
+    vi.stubEnv("FORCE_COLOR", "0");
+    vi.stubEnv("TERM", "xterm-256color");
     const { status, data } = await api<MaintenanceTerminalResult>("POST", "/api/maintenance/terminal");
     expect(status).toBe(200);
     expect(launcher.launches).toHaveLength(1);
@@ -83,6 +88,7 @@ describe("maintenance", () => {
     expect(data.command).toMatch(/^& '.*claude\.(exe|cmd)'$/);
     expect(existsSync(join(launch.cwd, ".git"))).toBe(true);
     expect(Object.keys(launch.env).filter((k) => /^(CLAUDE|ANTHROPIC_|ELECTRON_RUN_AS_NODE|AMO_STUDIO_)/i.test(k))).toEqual([]);
+    expect(Object.keys(launch.env).filter((k) => /^(NO_COLOR|COLOR|FORCE_COLOR|TERM)$/i.test(k))).toEqual([]);
     expect(launch.env.AMO_TEST_KEPT).toBe("kept");
   });
 });

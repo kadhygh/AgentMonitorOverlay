@@ -14,9 +14,11 @@ const STUDIO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..",
  * What the Host's own environment must not pass on: it runs as Electron's Node, Studio's settings are its own, and
  * Claude's variables come from whatever started Studio. Restarted from a Claude Code session, Studio inherits that
  * session's markers (CLAUDECODE, CLAUDE_CODE_CHILD_SESSION…): a claude started with them took itself for a child
- * session and did not save its transcript (2026-10-21). The person sets none of these themselves.
+ * session and did not save its transcript (2026-10-21). The same Studio also carries the tool shell's NO_COLOR=1,
+ * COLOR=0 and TERM: the maintenance claude drew without colours, unlike one the person starts (2026-10-22). The person
+ * sets none of these themselves.
  */
-const NOT_PASSED_ON = /^(ELECTRON_RUN_AS_NODE|AMO_STUDIO_.*|CLAUDE.*|ANTHROPIC_.*)$/i;
+const NOT_PASSED_ON = /^(ELECTRON_RUN_AS_NODE|AMO_STUDIO_.*|CLAUDE.*|ANTHROPIC_.*|NO_COLOR|FORCE_COLOR|COLOR|CLICOLOR|CLICOLOR_FORCE|TERM)$/i;
 
 /**
  * 设置 → 维护 (2026-10-20): whether this Studio runs from a git checkout (start-studio.cmd), and a terminal in that repo
