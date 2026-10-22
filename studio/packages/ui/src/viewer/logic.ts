@@ -5,9 +5,15 @@ import { isCommon, type GitChangedFile, type Workspace } from "@amo-studio/proto
 
 export type ViewerMode = "file" | "changes";
 
-/** What a viewer window shows: a file (absolute, or relative to `workspaceId`), at a line or a range. */
+/**
+ * What a viewer window shows: a file (absolute, or relative to `workspaceId`), at a line or a range; or a 查看包
+ * (`pack`, 2026-10-23: `path` is then "").
+ */
 export interface ViewerTarget {
   path: string;
+  pack?: string;
+  /** With `pack`: the item to show first (what the agent just added). */
+  item?: string;
   workspaceId?: string;
   line?: number;
   endLine?: number;
@@ -25,6 +31,7 @@ const int = (s: string | null): number | undefined => {
 
 /** The window's address: `#viewer?path=…&workspace=…&line=…&end=…&mode=…&session=…&n=…` (as the shell builds it). */
 export function viewerHash(t: ViewerTarget): string {
+  if (t.pack) return `#viewer?${new URLSearchParams({ pack: t.pack, ...(t.item ? { item: t.item } : {}), ...(t.nonce ? { n: t.nonce } : {}) }).toString()}`;
   const q = new URLSearchParams({ path: t.path });
   if (t.workspaceId) q.set("workspace", t.workspaceId);
   if (t.line) {
@@ -40,6 +47,8 @@ export function viewerHash(t: ViewerTarget): string {
 export function parseViewerHash(hash: string): ViewerTarget | null {
   if (!hash.startsWith("#viewer")) return null;
   const q = new URLSearchParams(hash.slice("#viewer".length).replace(/^\?/, ""));
+  const pack = q.get("pack");
+  if (pack) return { path: "", pack, ...(q.get("item") ? { item: q.get("item")! } : {}), ...(q.get("n") ? { nonce: q.get("n")! } : {}) };
   const path = q.get("path");
   if (!path) return null;
   const workspaceId = q.get("workspace");

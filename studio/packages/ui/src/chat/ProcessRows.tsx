@@ -1,4 +1,6 @@
 import { useEffect, useLayoutEffect, useRef, useState, type ReactNode } from "react";
+import { packIdOf } from "../viewpacks/logic.js";
+import { openViewer } from "../viewer/open.js";
 import type { FileDiff } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
 import {
@@ -161,6 +163,8 @@ export function ToolRow({ item }: { item: ToolItem }) {
   const note = noteFor(item);
   // A read or an edit of one file: its name opens the quick look (stage 12).
   const mention = kind === "read" || kind === "edit" ? parseInlinePath(summary) : null;
+  // 查看包 (2026-10-23): a view_open (or review_open) call can open its pack again from here.
+  const pack = kind === "mcp" && item.status === "completed" ? packIdOf(item.name, item.detail) : null;
   return (
     <div className="pr pr-tool" data-testid="tool" data-status={item.status} data-kind={kind}>
       <RowButton icon={<Icon />} open={open} expandable={expandable} onToggle={() => setOpen((v) => !v)}>
@@ -191,6 +195,11 @@ export function ToolRow({ item }: { item: ToolItem }) {
         {note && <span className={`pr-note ${item.status}`}>{note}</span>}
       </RowButton>
       {item.images?.length ? <ToolImages images={item.images} /> : null}
+      {pack && (
+        <button type="button" className="btn-ghost small pr-pack" onClick={() => openViewer({ path: "", pack })} title="再打开这个查看包" data-testid="tool-open-pack">
+          打开查看包
+        </button>
+      )}
       {open && <div className="pr-body">{toolBody(item)}</div>}
     </div>
   );

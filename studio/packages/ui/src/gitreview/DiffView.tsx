@@ -35,6 +35,11 @@ interface DiffViewProps {
   plain?: boolean;
   /** Lines to mark (the viewer's asked line or range), by new line number. */
   marked?: { from: number; to: number } | null;
+  /**
+   * 查看包 (2026-10-23): the agent's 重点 in the file view (`plain`) — their lines tinted, each note under its last
+   * line. By new line number.
+   */
+  highlights?: readonly ViewMark[];
   /** Where the text of a new comment on a row (`side:line`) is kept until saved (drafts.ts). */
   draftKey(rowKey: string): string;
   onDraft(key: string | null): void;
@@ -45,6 +50,13 @@ interface DiffViewProps {
   onDelete(id: string): void;
   /** Shows a comment's line in "完整文件". */
   onLocate(comment: GitReviewComment): void;
+}
+
+/** A 重点 of a 查看包 file: lines (new numbering) and the agent's note ("" for none). */
+export interface ViewMark {
+  from: number;
+  to: number;
+  note: string;
 }
 
 const MARK = { add: "+", del: "−", context: " " } as const;
@@ -128,7 +140,7 @@ const HUNK_PX = 29;
  * Rows whose chunks stay drawn: the active one, the one a comment is being written for, those with comments shown
  * (few, and what one looks for in a diff), the viewer's marked lines.
  */
-function keepRows({ rows, active, draftAt, marked, plain, placed, visible }: LinesProps): number[] {
+function keepRows({ rows, active, draftAt, marked, plain, placed, visible, highlights }: LinesProps): number[] {
   const out: number[] = [];
   if (active !== null) out.push(active);
   rows.forEach((r, i) => {
@@ -136,6 +148,7 @@ function keepRows({ rows, active, draftAt, marked, plain, placed, visible }: Lin
   });
   // The viewer's 文件 mode has one row a line, in order.
   if (plain && marked) out.push(marked.from - 1, marked.to - 1);
+  if (plain) for (const h of highlights ?? []) out.push(h.from - 1, h.to - 1);
   return out;
 }
 
@@ -146,15 +159,23 @@ const UNIFIED_GUTTER_PX = 44 + 44 + 20 + 18 + 24;
 const plainNumberPx = (lines: number) => (String(lines).length + 2) * 8;
 
 function UnifiedLines(props: LinesProps) {
-  const { diff, rows, tokens, draftAt, active, onDraft, onActivate, plain, marked } = props;
+  const { diff, rows, tokens, draftAt, active, onDraft, onActivate, plain, marked, highlights = [] } = props;
   // The longest line sets the width, drawn or not, so the horizontal scroll range does not change while scrolling.
   const columns = useMemo(() => maxColumns(rows), [rows]);
   const numberPx = plainNumberPx(diff.lines.length);
   const gutter = plain ? numberPx + 20 + 24 : UNIFIED_GUTTER_PX;
   const mark = (n: number | null) => {
-    if (!marked || n === null || n < marked.from || n > marked.to) return "";
-    return ` marked${n === marked.from ? " first" : ""}${n === marked.to ? " last" : ""}`;
+    if (n === null) return "";
+    const hl = highlights.some((h) => n >= h.from && n <= h.to) ? " hl" : "";
+    if (!marked || n < marked.from || n > marked.to) return hl;
+    return ` marked${n === marked.from ? " first" : ""}${n === marked.to ? " last" : ""}${hl}`;
   };
+  // The notes of the 重点 that end on each line.
+  const notesAt = useMemo(() => {
+    const by = new Map<number, ViewMark[]>();
+    for (const h of highlights) if (h.note) by.set(h.to, [...(by.get(h.to) ?? []), h]);
+    return by;
+  }, [highlights]);
   return (
     <div
       className={plain ? "gr-lines gr-plain" : "gr-lines"}
@@ -193,6 +214,13 @@ function UnifiedLines(props: LinesProps) {
                   <CodeTokens tokens={tokensOf(tokens, r.line)} text={r.line.text} />
                 </span>
               </div>
+              {r.line.newLine !== null &&
+                notesAt.get(r.line.newLine)?.map((h) => (
+                  <div key={`${h.from}-${h.to}`} className="gr-hl-note" data-testid="highlight-note">
+                    <span className="gr-hl-where">{h.from === h.to ? `第 ${h.from} 行` : `第 ${h.from}–${h.to} 行`}</span>
+                    {h.note}
+                  </div>
+                ))}
               <Notes row={r} props={props} />
             </Fragment>
           )

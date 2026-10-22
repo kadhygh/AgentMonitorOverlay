@@ -105,8 +105,9 @@ for (const profileId of ["claude-mock", "codex-mock"]) {
       });
       sessionId = started.session.id;
     });
+    // One file to look at is a 查看包 of one item (2026-10-23): the line range is its first mark.
     const code = viewer.getByTestId("viewer-code");
-    await expect(viewer.getByTestId("viewer-name")).toHaveText(file);
+    await expect(viewer.getByTestId("viewpack-title")).toHaveText(file);
     await expect(code.locator(".gr-line.marked")).toHaveCount(2);
     await expect(code.locator('[data-line="new:2"]')).toContainText("second = 2");
     await code.locator('[data-line="new:2"] [data-testid="add-comment"]').click();
@@ -127,11 +128,14 @@ for (const profileId of ["claude-mock", "codex-mock"]) {
     await code.getByTestId("review-send").click();
     await expect.poll(async () => (await studio!.api<SessionItem[]>("GET", `/api/sessions/${sessionId}/items`)).some((i) => i.type === "user" && i.text.includes("请再检查第二行") && i.text.includes(`${file}:2`))).toBe(true);
     await expect.poll(async () => (await studio!.api<{ sessions: Session[] }>("GET", "/api/state")).sessions.find((s) => s.id === sessionId)?.status).toBe("idle");
-    // The model can also open the saved edits as a diff, with the same receiving conversation.
-    const changes = await nextWindow(app, () => studio!.api("POST", `/api/sessions/${sessionId}/messages`, { text: `[[mcp: review_open ${JSON.stringify({ file })}]]` }));
+    // The model can also open the saved edits of that file as a diff (a 查看包's git item, in the same window), with
+    // the same receiving conversation.
+    await studio.api("POST", `/api/sessions/${sessionId}/messages`, { text: `[[mcp: review_open ${JSON.stringify({ file })}]]` });
+    const changes = viewer.getByTestId("viewpack-git");
     await expect(changes.getByTestId("review-file-head")).toContainText(file);
     await expect(changes.locator(".gr-line.add")).toContainText("second = 200");
     await expect(changes.getByTestId("review-session")).toHaveValue(sessionId);
+    expect(app.windows()).toHaveLength(before);
   });
 }
 

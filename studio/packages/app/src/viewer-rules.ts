@@ -12,7 +12,16 @@ const line = (v: unknown): number | null => (typeof v === "number" && Number.isS
  * change, so the same file asked for twice still scrolls the window back to its line.
  */
 export function viewerHash(target: unknown, nonce: number): string | null {
-  const t = target as { path?: unknown; workspaceId?: unknown; line?: unknown; endLine?: unknown; mode?: unknown; sessionId?: unknown } | null;
+  const t = target as { path?: unknown; pack?: unknown; item?: unknown; workspaceId?: unknown; line?: unknown; endLine?: unknown; mode?: unknown; sessionId?: unknown } | null;
+  // 查看包 (2026-10-23): the window shows a pack by its id; it reads the pack itself.
+  if (t && typeof t.pack === "string") {
+    if (!ID.test(t.pack)) return null;
+    // The item to show first (what the agent just added).
+    const q = new URLSearchParams({ pack: t.pack });
+    if (typeof t.item === "string" && ID.test(t.item)) q.set("item", t.item);
+    q.set("n", String(nonce));
+    return `#viewer?${q.toString()}`;
+  }
   if (typeof t?.path !== "string" || !t.path || t.path.length > MAX_PATH || /[\0\r\n]/.test(t.path)) return null;
   const q = new URLSearchParams({ path: t.path });
   if (typeof t.workspaceId === "string" && ID.test(t.workspaceId)) q.set("workspace", t.workspaceId);

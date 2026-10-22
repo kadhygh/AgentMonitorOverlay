@@ -86,12 +86,12 @@ afterAll(async () => {
 });
 
 describe("AMO MCP", () => {
-  it("lists thirteen read-only tools and sixteen that write for the caller", async () => {
+  it("lists thirteen read-only tools and seventeen that write for the caller", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
       "amo_guide", "amo_whoami", "board_list", "canvas_color", "canvas_depend", "canvas_group_create", "canvas_place", "canvas_read", "checklist_check", "decision_request", "handoff_submit", "list_file_marks",
-      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "relay_send", "review_open", "session_start", "session_tree", "task_describe", "task_get", "task_note_add", "task_plan_propose", "topic_doc_write", "topic_docs", "topic_get", "topic_list",
+      "mailbox_read", "mailbox_send", "pack_doc", "pack_list", "project_context", "relay_send", "review_open", "session_start", "session_tree", "task_describe", "task_get", "task_note_add", "task_plan_propose", "topic_doc_write", "topic_docs", "topic_get", "topic_list", "view_open",
     ]);
     expect(tools.filter((t) => t.annotations?.readOnlyHint === true).map((t) => t.name).sort()).toEqual([
       "amo_guide", "amo_whoami", "board_list", "canvas_read", "list_file_marks", "pack_doc", "pack_list", "project_context", "session_tree", "task_get", "topic_docs", "topic_get", "topic_list",
@@ -124,10 +124,11 @@ describe("AMO MCP", () => {
       expect((await call(anonymous, "review_open", { mode: "file", file })).isError).toBe(true);
       const r = await call(client, "review_open", { mode: "file", file, line: 2 });
       expect(r.isError).not.toBe(true);
-      expect(r.data.target).toMatchObject({ workspaceId: importTask.workspaceId, sessionId: mainSessionId, mode: "file", file, line: 2 });
+      // One file to look at becomes a 查看包 (2026-10-23): the line is its first mark.
+      expect(service.viewPacks.get(r.data.packId)).toMatchObject({ workspaceId: importTask.workspaceId, sessionId: mainSessionId, items: [{ kind: "file", path: file, highlights: [{ line: 2, note: "" }] }] });
       writeFileSync(join(root, "beta", file), "other project\n");
       const other = await call(client, "review_open", { workspaceId: configTask.workspaceId, mode: "file", file });
-      expect(other.data.target).toMatchObject({ workspaceId: configTask.workspaceId, sessionId: mainSessionId });
+      expect(service.viewPacks.get(other.data.packId)).toMatchObject({ workspaceId: configTask.workspaceId, sessionId: mainSessionId });
       const missing = await call(client, "review_open", { mode: "file", file: "missing.txt" });
       expect(missing.isError).toBe(true);
       expect(missing.content[0]!.text).toContain("not found");
@@ -181,7 +182,7 @@ describe("AMO MCP", () => {
 
   it("opens /mcp, and only /mcp, with the MCP token", async () => {
     const client = await connect(MCP_TOKEN);
-    expect((await client.listTools()).tools).toHaveLength(29);
+    expect((await client.listTools()).tools).toHaveLength(30);
     await client.close();
     const res = await fetch(`${http.url}/api/state`, { headers: { authorization: `Bearer ${MCP_TOKEN}`, connection: "close" } });
     expect(res.status).toBe(401);

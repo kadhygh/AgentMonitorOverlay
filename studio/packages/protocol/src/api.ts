@@ -492,6 +492,9 @@ export type HostEvent = { seq: number } & (
   | { type: "host.error"; message: string }
   /** 外部打开 Review (2026-10-18): the main window opens a review window on this (events older than a minute are stale). */
   | { type: "review.open"; target: import("./gitreview.js").ReviewOpenTarget; at: Timestamp }
+  /** 查看包 (2026-10-23): a pack was made or grew; `open` asks the workbench to show it (new, or sent to again). */
+  | { type: "viewpack.upserted"; pack: import("./viewpacks.js").ViewPack }
+  | { type: "viewpack.open"; packId: Id; at: Timestamp; /** The item this open added (or joined): shown first. */ itemId?: Id }
   /** Deleted for good from 设置 → 数据管理: drop them from every list. */
   | { type: "data.purged"; workspaceIds: Id[]; topicIds: Id[]; taskIds: Id[]; sessionIds: Id[] }
 );
@@ -678,6 +681,13 @@ export interface HostRoutes {
   /** One commit's changed files against its first parent: `?sha=` (7 to 64 hex digits). */
   "GET /api/workspaces/:id/git/commit": { req: void; res: import("./gitreview.js").GitCommitChanges };
   "POST /api/review/open": { req: import("./gitreview.js").ReviewOpenRequest; res: import("./gitreview.js").ReviewOpenResult };
+  /** 查看包 (2026-10-23): make one (or add to the one the same session sent a moment ago) and show it. */
+  "POST /api/viewpacks": { req: import("./viewpacks.js").ViewOpenRequest; res: import("./viewpacks.js").ViewOpenResult };
+  "GET /api/viewpacks/:id": { req: void; res: import("./viewpacks.js").ViewPack };
+  /** The packs a session sent, newest first (`?sessionId=`). */
+  "GET /api/viewpacks": { req: void; res: import("./viewpacks.js").ViewPack[] };
+  /** A proposal item as a diff of its original and its proposed content. */
+  "GET /api/viewpacks/:id/items/:itemId/diff": { req: void; res: import("./gitreview.js").GitFileDiff };
   /** One file of a commit: `?sha=` and `?base=` (full ids, from the commit's listing), `?path=` (and `?oldPath=`). One git call. */
   "GET /api/workspaces/:id/git/commit-diff": { req: void; res: import("./gitreview.js").GitFileDiff };
 }

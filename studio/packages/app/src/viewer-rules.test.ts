@@ -2,6 +2,13 @@ import { describe, expect, it } from "vitest";
 import { viewerHash, ViewerSet } from "./viewer-rules.js";
 
 describe("viewerHash", () => {
+  it("opens a 查看包 by its id only", () => {
+    expect(viewerHash({ pack: "vp-1", path: "ignored" }, 4)).toBe("#viewer?pack=vp-1&n=4");
+    expect(viewerHash({ pack: "bad id!" }, 4)).toBeNull();
+    expect(viewerHash({ pack: "vp-1", item: "vi-2" }, 5)).toBe("#viewer?pack=vp-1&item=vi-2&n=5");
+    expect(viewerHash({ pack: "vp-1", item: "bad id!" }, 5)).toBe("#viewer?pack=vp-1&n=5");
+  });
+
   it("carries the file, its project, the lines, the mode and a nonce", () => {
     const h = viewerHash({ path: "G:\\game\\src\\Drop.cs", workspaceId: "ws-1", line: 12, endLine: 20, mode: "changes", sessionId: "s-2" }, 3)!;
     const q = new URLSearchParams(h.slice("#viewer?".length));

@@ -129,6 +129,14 @@ export function App() {
       }),
     [],
   );
+  // 查看包 (2026-10-23): an agent handed the person something to look at (view_open); the viewer window shows it.
+  useEffect(
+    () =>
+      onHostEvent((e) => {
+        if (e.type === "viewpack.open" && Date.now() - Date.parse(e.at) <= 60_000) openViewer({ path: "", pack: e.packId, ...(e.itemId ? { item: e.itemId } : {}) });
+      }),
+    [],
+  );
 
   useEffect(
     () =>

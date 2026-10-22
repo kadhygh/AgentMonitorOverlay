@@ -23,6 +23,8 @@ import { attachmentsRoutes } from "./attachments/routes.js";
 import { scratchpadRoutes } from "./scratchpad/routes.js";
 import { gitReviewRoutes } from "./gitreview/routes.js";
 import { gitReviewTools } from "./gitreview/mcp.js";
+import { viewPacksRoutes } from "./viewpacks/routes.js";
+import { viewPacksTools } from "./viewpacks/mcp.js";
 import { filesRoutes } from "./files/routes.js";
 import { openInRoutes } from "./openin/routes.js";
 import { marksRoutes } from "./marks/routes.js";
@@ -69,6 +71,7 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "attachments", routes: attachmentsRoutes },
   { name: "scratchpad", routes: scratchpadRoutes },
   { name: "gitreview", routes: gitReviewRoutes, tools: gitReviewTools },
+  { name: "viewpacks", routes: viewPacksRoutes, tools: viewPacksTools },
   { name: "files", routes: filesRoutes },
   { name: "openin", routes: openInRoutes },
   { name: "marks", routes: marksRoutes, tools: marksTools },

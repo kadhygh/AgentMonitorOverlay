@@ -21,6 +21,7 @@ import { PacksFeature } from "./features/packs/service.js";
 import { AttachmentsFeature } from "./features/attachments/service.js";
 import { ScratchpadFeature } from "./features/scratchpad/service.js";
 import { GitReviewFeature } from "./features/gitreview/service.js";
+import { ViewPacksFeature } from "./features/viewpacks/service.js";
 import { FilesFeature } from "./features/files/service.js";
 import { OpenInFeature } from "./features/openin/service.js";
 import { MarksFeature } from "./features/marks/service.js";
@@ -55,6 +56,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly attachments = new AttachmentsFeature(this);
   readonly scratchpad = new ScratchpadFeature(this);
   readonly gitReview = new GitReviewFeature(this);
+  readonly viewPacks = new ViewPacksFeature(this);
   readonly files = new FilesFeature(this);
   readonly openIn = new OpenInFeature(this);
   readonly marks = new MarksFeature(this);

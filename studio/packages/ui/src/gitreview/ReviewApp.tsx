@@ -93,6 +93,7 @@ export function ReviewPage({
   refresh,
   embedded = false,
   inactive = false,
+  only = null,
 }: {
   link: HostLink;
   state: StateSnapshot;
@@ -112,7 +113,12 @@ export function ReviewPage({
   embedded?: boolean;
   /** Kept but not in front (the viewer's 文件 mode): keys are not its own. */
   inactive?: boolean;
+  /** 查看包 (2026-10-23): only these files (relative to the project) are listed; those without changes are named. */
+  only?: readonly string[] | null;
 }) {
+  // The files a 查看包 asked for, by lower-cased path (a rename counts by either name).
+  const onlyKeys = useMemo(() => (only?.length ? new Set(only.map((p) => p.toLowerCase())) : null), [only]);
+  const keep = useCallback(<F extends GitChangedFile>(files: readonly F[]): F[] => (onlyKeys ? files.filter((f) => onlyKeys.has(f.path.toLowerCase()) || (!!f.oldPath && onlyKeys.has(f.oldPath.toLowerCase()))) : [...files]), [onlyKeys]);
   const [range, setRange] = useState<GitRange>(given && !commit ? "branch" : "working");
   // The view choices (list width and layout, 单栏 / 左右对照, 只看改动 / 完整文件) stay on this machine.
   const [prefs, setPrefs] = useState<ReviewPrefs>(readPrefs);
@@ -227,7 +233,7 @@ export function ReviewPage({
       .then((c) => {
         if (!live) return;
         setChanges(c);
-        setSelected((cur) => (cur && c.files.some((f) => f.path === cur) ? cur : (fileOrder(c.files, prefsRef.current.layout)[0]?.path ?? null)));
+        setSelected((cur) => (cur && keep(c.files).some((f) => f.path === cur) ? cur : (fileOrder(keep(c.files), prefsRef.current.layout)[0]?.path ?? null)));
       })
       .catch((err: unknown) => live && fail(err));
     return () => {
@@ -249,7 +255,7 @@ export function ReviewPage({
       .then((c) => {
         if (!live) return;
         setShownCommit(c);
-        setSelected(fileOrder(c.files, prefsRef.current.layout)[0]?.path ?? null);
+        setSelected(fileOrder(keep(c.files), prefsRef.current.layout)[0]?.path ?? null);
       })
       .catch((err: unknown) => live && setCommitError(err instanceof HostApiError ? err.message : String(err)));
     return () => {
@@ -307,7 +313,10 @@ export function ReviewPage({
   }, [changes]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // What the list shows: the range's changes, or the commit's files.
-  const listed = commit ? shownCommit : changes;
+  const all = commit ? shownCommit : changes;
+  const listed = useMemo(() => (all && onlyKeys ? { ...all, files: keep(all.files) } : all), [all, onlyKeys, keep]);
+  // Asked-for files that have no changes in this range.
+  const unchanged = useMemo(() => (all && only?.length ? only.filter((p) => !all.files.some((f) => f.path.toLowerCase() === p.toLowerCase() || f.oldPath?.toLowerCase() === p.toLowerCase())) : []), [all, only]);
   const file = listed?.files.find((f) => f.path === selected) ?? null;
   const fileKey = file ? `${file.oldPath ?? ""}>${file.path}` : "";
   // The commit the listing compared with: a diff then takes one git call.
@@ -495,7 +504,12 @@ export function ReviewPage({
                 读不到这个提交：{commitError}
               </div>
             )}
-            {listed && !listed.files.length && <div className="gr-empty">{commit ? "这个提交没有改动这个项目里的文件。" : "这个范围没有改动。"}</div>}
+            {unchanged.length > 0 && (
+              <div className="gr-empty" data-testid="review-unchanged" title={unchanged.join("\n")}>
+                {unchanged.length === only?.length ? "这几个文件" : unchanged.map((p) => p.split("/").pop()).join("、")}在这个范围里没有改动
+              </div>
+            )}
+            {listed && !listed.files.length && !unchanged.length && <div className="gr-empty">{commit ? "这个提交没有改动这个项目里的文件。" : "这个范围没有改动。"}</div>}
             {listed?.truncated && <div className="gr-empty">改动的文件太多，只列出前 {listed.files.length} 个。</div>}
             {listed && (
               <FileList

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { GitFileDiff, StateSnapshot, TextFile, Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { showToast } from "../lib/toast.js";
-import { DiffView } from "../gitreview/DiffView.js";
+import { DiffView, type ViewMark } from "../gitreview/DiffView.js";
 import { commentsChanged, SendBar, useReviewComments } from "../gitreview/comments.js";
 import { dropDraft, editDraftKey, newDraftKey } from "../gitreview/drafts.js";
 import { FindBar } from "../gitreview/FindBar.js";
@@ -40,6 +40,7 @@ export function FileReview({
   openKey,
   defaultSession,
   active,
+  highlights,
 }: {
   link: HostLink;
   state: StateSnapshot;
@@ -54,6 +55,8 @@ export function FileReview({
   defaultSession: string | null;
   /** In front (the viewer's 文件 mode): keys are its own. */
   active: boolean;
+  /** 查看包 (2026-10-23): the agent's 重点, drawn on the lines with their notes. */
+  highlights?: readonly ViewMark[];
 }) {
   // Comments name the file relative to its project, as Review does.
   const rel = workspace ? relativeIn(file.path, workspace.path) : null;
@@ -142,6 +145,7 @@ export function FileReview({
             split={false}
             plain
             marked={line ? { from: line, to: last } : null}
+            {...(highlights ? { highlights } : {})}
             tokens={tokens}
             placed={placed}
             elsewhere={elsewhere}

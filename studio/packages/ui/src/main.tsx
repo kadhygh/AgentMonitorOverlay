@@ -36,6 +36,7 @@ import "./files/files.css";
 import "./chat/questions/questions.css";
 import "./chat/cli/cli.css";
 import "./viewer/viewer.css";
+import "./viewpacks/viewpacks.css";
 import "./taskplans/taskplans.css";
 import "./relays/relays.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";

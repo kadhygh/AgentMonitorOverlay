@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { Annotation, CanvasDoc, ChatMark, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, Relay, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
+import type { ViewPack, Annotation, CanvasDoc, ChatMark, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, Relay, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
 import { str, type Row } from "./rows.js";
 
 /**
@@ -8,6 +8,24 @@ import { str, type Row } from "./rows.js";
  */
 export abstract class DocumentStore {
   abstract readonly db: DatabaseSync;
+
+  // 查看包 (2026-10-23)
+
+  putViewPack(p: ViewPack): void {
+    this.db
+      .prepare("INSERT INTO view_packs (id, session_id, workspace_id, updated_at, body) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET updated_at = excluded.updated_at, body = excluded.body")
+      .run(p.id, p.sessionId, p.workspaceId, p.updatedAt, JSON.stringify(p));
+  }
+
+  getViewPack(id: Id): ViewPack | undefined {
+    const r = this.db.prepare("SELECT body FROM view_packs WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as ViewPack);
+  }
+
+  /** A session's packs, newest first. */
+  listViewPacks(sessionId: Id, limit = 50): ViewPack[] {
+    return (this.db.prepare("SELECT body FROM view_packs WHERE session_id = ? ORDER BY updated_at DESC, id DESC LIMIT ?").all(sessionId, limit) as Row[]).map((r) => JSON.parse(str(r.body)) as ViewPack);
+  }
 
   // Topics' documents (stage 16)
 

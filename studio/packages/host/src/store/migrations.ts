@@ -323,4 +323,15 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE sessions ADD COLUMN report_to TEXT;
   `,
+  // 21: 查看包 (2026-10-23): what agents hand the person to look at (view_open); JSON like the other documents.
+  `
+  CREATE TABLE view_packs (
+    id TEXT PRIMARY KEY,
+    session_id TEXT,
+    workspace_id TEXT NOT NULL,
+    updated_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX view_packs_session ON view_packs(session_id, updated_at);
+  `,
 ];

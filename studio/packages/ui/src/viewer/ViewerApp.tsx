@@ -15,6 +15,7 @@ import { sessionChoices } from "../gitreview/logic.js";
 import { FileReview } from "./FileReview.js";
 import { linesLabel, parseViewerHash, projectOf, type ViewerMode, type ViewerTarget } from "./logic.js";
 import { pinViewer, viewerPinned } from "./open.js";
+import { PackViewer } from "../viewpacks/PackViewer.js";
 
 // The viewer window (查看器, stage 13; #viewer?path=…): a file opened from a conversation, a mark or a Review, in one
 // of two modes. 文件: the file as it is now (code coloured, the asked line or range marked and scrolled to; Markdown
@@ -34,6 +35,8 @@ export function ViewerApp() {
 
   if (host.kind !== "ready") return <div className="placeholder">{host.kind === "connecting" ? "正在连接 Host…" : `未连接：${host.reason}`}</div>;
   if (!target) return <div className="placeholder">没有要查看的文件。</div>;
+  // 查看包 (2026-10-23): the same window, showing a pack.
+  if (target.pack) return <PackViewer link={host.link} state={host.state} packId={target.pack} focus={target.item ?? null} nonce={target.nonce ?? ""} />;
   return <ViewerPage link={host.link} state={host.state} target={target} />;
 }
 
