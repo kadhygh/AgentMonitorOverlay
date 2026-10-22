@@ -11,7 +11,7 @@ import { Store } from "../../store/store.js";
 import { startHostServer, type HostServer } from "../../http/server.js";
 import { isInside, pathKey, projectOf } from "./service.js";
 import { marksTools } from "./mcp.js";
-import { toolContext } from "../../mcp/tool-kit.js";
+import { toolContext, type ToolResult } from "../../mcp/tool-kit.js";
 
 // File marks (stage 12, S12-D) through the Host API: marking, dedupe, which project a path belongs to, edits, deleting
 // with the project, and the events that keep open windows current.
@@ -187,7 +187,7 @@ describe("list_file_marks (AMO MCP)", () => {
 
     const tool = (caller: { sessionId: string } | null) => marksTools(toolContext(service, caller)).find((t) => t.name === "list_file_marks")!;
     const read = (caller: { sessionId: string } | null, args: Record<string, unknown> = {}) => {
-      const r = tool(caller).run(args);
+      const r = tool(caller).run(args) as ToolResult; // a read answers at once
       return r.isError ? { error: true, data: r.content[0]!.text } : { error: false, data: JSON.parse(r.content[0]!.text) as unknown };
     };
     expect(read({ sessionId: session.id }).data).toEqual([{ path: join(dir, "drop.lua"), lines: "2-5", note: "掉落表", project: "game" }]);

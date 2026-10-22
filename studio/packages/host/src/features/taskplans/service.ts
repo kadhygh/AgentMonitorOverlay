@@ -148,10 +148,7 @@ export class TaskPlansFeature extends Feature {
   }
 
   private profileByRef(ref: string): ModelProfile {
-    const low = ref.toLowerCase();
-    const p = this.profiles.find((x) => !x.hidden && (x.id === ref || x.label.toLowerCase() === low || x.model?.toLowerCase() === low));
-    if (!p) throw new HostError("bad_request", `model ${ref} not found; choose one of: ${this.profiles.filter((x) => !x.hidden).map((x) => x.label).join(", ")}`);
-    return p;
+    return this.f.profileByRef(ref);
   }
 }
 

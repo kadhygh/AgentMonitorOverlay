@@ -30,7 +30,8 @@ export interface AmoTool {
    * `tools.<name>.approval_mode = "approve"` for these; Claude lists them in allowedTools.
    */
   autoApprove: boolean;
-  run(args: Record<string, unknown>): ToolResult;
+  /** A write that waits for the runtime (session_start) answers with a promise. */
+  run(args: Record<string, unknown>): ToolResult | Promise<ToolResult>;
 }
 
 export const json = (value: unknown): ToolResult => ({ content: [{ type: "text", text: JSON.stringify(value, null, 2) }] });
@@ -52,6 +53,17 @@ export function write(caller: McpCaller | null, run: (caller: McpCaller) => unkn
   if (!caller) return fail("这次调用没有 AMO 会话身份（例如由 Codex 自己派生的子 agent），只能使用只读工具。");
   try {
     return json(run(caller));
+  } catch (err) {
+    if (err instanceof HostError) return fail(err.message);
+    throw err;
+  }
+}
+
+/** {@link write} for a write that waits (starting a session). */
+export async function writeAsync(caller: McpCaller | null, run: (caller: McpCaller) => Promise<unknown>): Promise<ToolResult> {
+  if (!caller) return fail("这次调用没有 AMO 会话身份（例如由 Codex 自己派生的子 agent），只能使用只读工具。");
+  try {
+    return json(await run(caller));
   } catch (err) {
     if (err instanceof HostError) return fail(err.message);
     throw err;

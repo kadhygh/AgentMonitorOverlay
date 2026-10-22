@@ -244,7 +244,80 @@ export class SessionsFeature extends Feature {
       this.reclaiming.delete(sessionId);
     }
   }
+
+  /** Sessions started by session_start that report back: the new session → the one that started it. */
+  private readonly reporting = new Map<Id, { to: Id; ran: boolean }>();
+  private watchingReports = false;
+
+  /**
+   * 开会话 (session_start, 2026-10-22): a session of a task starts another main session in the same task, at once (the
+   * person chose not to be asked: they watch the task, and can stop it). The model is the caller's unless named. With
+   * `report`, the new session's first finished turn goes back into the caller's conversation (queued while it works).
+   */
+  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown }): Promise<Session> {
+    const from = this.requireSession(fromSessionId);
+    if (from.kind === "sub") throw new HostError("bad_request", "子 agent 不能开 AMO 会话：交给你的主会话来开。");
+    if (!from.taskId) throw new HostError("bad_request", "你是专题会话，没有自己的任务：开任务要用 task_plan_propose 提案。");
+    const task = this.requireTask(from.taskId);
+    if (task.archivedAt) throw new HostError("read_only", "这个任务已归档，不能再开会话");
+    const text = boundedText(input.text, "text", 20_000);
+    const title = input.title === undefined || input.title === null || input.title === "" ? null : boundedText(input.title, "title", 100);
+    const profileId = typeof input.model === "string" && input.model.trim() ? this.f.profileByRef(input.model.trim()).id : from.profileId;
+    const report = input.report === true;
+    const message = [
+      `【由本任务的会话「${from.title || "未命名会话"}」开启】`,
+      text,
+      "",
+      report
+        ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。这一轮做完后，你最后的回复会自动转给它；之后还要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`
+        : `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`,
+    ].join("\n");
+    const session = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, this.requireLiveWorkspace(task.workspaceId), { profileId, text: message });
+    const named = title ? await this.renameSession(session.id, title).catch(() => session) : session;
+    if (report) this.reportBack(named.id, from.id);
+    return named;
+  }
+
+  /** Watches the new session; its first turn's end (idle, done or failed, not waiting for the person) is reported once. */
+  private reportBack(sessionId: Id, to: Id): void {
+    if (!this.watchingReports) {
+      this.watchingReports = true;
+      this.f.on("event", (e) => {
+        if (e.type === "session.upserted" && this.reporting.has(e.session.id)) this.checkReport(e.session);
+      });
+    }
+    this.reporting.set(sessionId, { to, ran: false });
+    // A quick turn may have ended before the watch began.
+    const now = this.store.getSession(sessionId);
+    if (now) this.checkReport(now);
+  }
+
+  private checkReport(s: Session): void {
+    const watch = this.reporting.get(s.id);
+    if (!watch) return;
+    if (s.status === "running") watch.ran = true;
+    const ended = s.status === "idle" || s.status === "completed" || s.status === "error";
+    const [last] = this.store.findItems(s.id, "agent", {}, { newest: true, limit: 1 });
+    // Ended after running, or ended with a reply (a turn too quick to be seen running).
+    if (!ended || (!watch.ran && !last)) return;
+    this.reporting.delete(s.id);
+    const reply = last && last.type === "agent" ? last.markdown.trim() : "";
+    const excerpt = reply.length > REPORT_MAX ? `${reply.slice(0, REPORT_MAX)}…（后面省略；完整的用 session_tree 或打开会话看）` : reply;
+    const head = s.status === "error" ? `【你开的会话「${s.title || "未命名会话"}」（${s.id}）出错停下了】` : `【你开的会话「${s.title || "未命名会话"}」（${s.id}）这一轮做完了】`;
+    const text = [head, excerpt || "（它没有回复文字）"].join("\n");
+    void this.sendMessage(watch.to, text).catch(() => {
+      // The caller is gone or archived: it can still read it as mail.
+      try {
+        this.f.collab.sendMail(s.id, { kind: "session", sessionId: watch.to }, text);
+      } catch {
+        // Nowhere to report to.
+      }
+    });
+  }
 }
+
+/** How much of the new session's reply a report carries. */
+const REPORT_MAX = 4000;
 
 /** Checks the shape of a question reply (the answers' sizes are bounded: they go to the model as they are). */
 function questionReply(body: unknown): QuestionReply {

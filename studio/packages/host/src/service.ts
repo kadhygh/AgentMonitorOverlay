@@ -116,6 +116,14 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     return value;
   }
 
+  /** A model the person can pick, by its id, name or model id (what an agent may say: amo_whoami lists them). */
+  profileByRef(ref: string): ModelProfile {
+    const low = ref.toLowerCase();
+    const p = this.profiles.find((x) => !x.hidden && (x.id === ref || x.label.toLowerCase() === low || x.model?.toLowerCase() === low));
+    if (!p) throw new HostError("bad_request", `model ${ref} not found; choose one of: ${this.profiles.filter((x) => !x.hidden).map((x) => x.label).join(", ")}`);
+    return p;
+  }
+
   requireProfile(id: Id): ModelProfile {
     const p = this.profiles.find((x) => x.id === id);
     if (!p) throw new HostError("bad_request", `unknown model profile ${id}`);
