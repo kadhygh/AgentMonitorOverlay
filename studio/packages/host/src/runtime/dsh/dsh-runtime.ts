@@ -8,6 +8,7 @@ import { DSH_DEFAULT_PERMISSION, DSH_PERMISSIONS, dshPermissionMode } from "../c
 import type { CredentialReader } from "../credentials.js";
 import { RuntimeBase, type SendMode, type SessionRuntimeApi } from "../runtime.js";
 import { AcpConnection, AcpError } from "./acp.js";
+import { dshTurnStats } from "./session-log.js";
 import {
   ACP_VERSION,
   DSH_ACP_ARGS,
@@ -93,7 +94,12 @@ interface Live {
   transcript: DshTranscript;
   waiting: Map<string, Waiting>;
   idleTimer: NodeJS.Timeout | null;
+  /** When the running turn's speed was last read from DSH's log. */
+  measuredAt: number;
 }
+
+/** How often a running turn's speed is read again from DSH's log (on a model call's usage report). */
+const MEASURE_EVERY_MS = 30_000;
 
 const BUSY = new Set(["running", "awaiting-approval", "awaiting-answer"]);
 
@@ -370,12 +376,15 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   private adopt(session: Session, conn: AcpConnection, applied: Live["applied"], permission: DshPermissionMode): Live {
-    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null };
+    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0 };
     this.live.set(session.id, live);
     conn.on("notification", (method, params) => {
       if (method !== "session/update") return;
       const p = params as { sessionId?: string; update?: AcpUpdate };
-      if (p.sessionId === live.acpId && p.update) live.transcript.update(p.update);
+      if (p.sessionId !== live.acpId || !p.update) return;
+      live.transcript.update(p.update);
+      // A model call ended: now and then, the running turn's speed so far.
+      if (p.update.sessionUpdate === "usage_update" && Date.now() - live.measuredAt >= MEASURE_EVERY_MS) this.measure(live, live.transcript.turnItemId());
     });
     conn.on("exit", (code) => {
       if (this.live.get(session.id) === live) this.live.delete(session.id);
@@ -428,7 +437,11 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   private async endTurn(sessionId: Id, live: Live, stopReason: string, error?: string): Promise<void> {
     for (const w of live.waiting.values()) this.settleWaiting(sessionId, live, w, "cancelled");
+    const turnItem = live.transcript.turnItemId();
     live.transcript.closeTurn(stopReason, error);
+    // The turn's tokens and speed, from DSH's log; read again shortly in case its last lines were still being written.
+    this.measure(live, turnItem);
+    setTimeout(() => this.measure(live, turnItem), 2000).unref?.();
     live.inflight = false;
     if (error) {
       live.queue.splice(0);
@@ -473,6 +486,18 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       const r = await live.conn.request<{ configOptions?: ConfigOption[] }>("session/set_config_option", { sessionId: live.acpId, configId: DSH_EFFORT_OPTION, value: opts.effort });
       live.applied.effort = opts.effort;
       this.remember(r.configOptions, profile);
+    }
+  }
+
+  /** A turn's tokens and speed from DSH's own session log (ACP tells only the context size). */
+  private measure(live: Live, turnItem: Id | null): void {
+    if (!turnItem) return;
+    live.measuredAt = Date.now();
+    try {
+      const stats = dshTurnStats(join(this.options.dir, "home"), live.acpId);
+      if (stats) live.transcript.applyStats(turnItem, stats);
+    } catch (err) {
+      this.emit("log", `dsh turn stats failed for ${live.acpId}: ${String(err)}`);
     }
   }
 

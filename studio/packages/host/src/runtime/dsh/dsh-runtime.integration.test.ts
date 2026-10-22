@@ -88,6 +88,9 @@ describe("DSH runtime", () => {
     expect(list.map((i) => i.type)).toEqual(["user", "turn", "reasoning", "agent"]);
     expect(replies(list)).toEqual(["MOCK-DSH: 你好 [[context: 4321]]"]);
     expect(list.find((i) => i.type === "turn")).toMatchObject({ state: "completed", usage: { context: 4321, contextWindow: 1_000_000 } });
+    // Tokens and speed from DSH's own log (ACP has only the context size): 400 output tokens over 2 s.
+    await until(() => items(host, s.id), (l) => l.some((i) => i.type === "turn" && !!i.decode));
+    expect((await items(host, s.id)).find((i) => i.type === "turn")).toMatchObject({ decode: { ms: 2000, tokens: 400 }, usage: { input: 1300, cachedInput: 1000, output: 400, context: 4321 } });
 
     await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "[[env]]" });
     await until(() => items(host, s.id), (l) => replies(l).length === 2);

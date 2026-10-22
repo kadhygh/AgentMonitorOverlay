@@ -1,4 +1,5 @@
 import type { ApprovalKind, FileDiff, Id, SessionItem, ToolFields, ToolKind, ToolStatus } from "@amo-studio/protocol";
+import type { DshTurnStats } from "./session-log.js";
 import { newId } from "../../store/store.js";
 import type { RuntimeCore } from "../runtime.js";
 import { classifyCommand, fileDiff, formatInput, head, shortPath, tail, textDiff } from "../items.js";
@@ -23,6 +24,9 @@ export interface AcpUpdate {
   size?: number;
 }
 
+/** How much earlier than Studio's turn DSH's may start and still be the same one (clock steps, process start). */
+const STATS_SLACK_MS = 5000;
+
 export class DshTranscript {
   private turn: { turnId: string; itemId: Id } | null = null;
   /** The message being written: later blocks of the same message (or plain text right after it) join it. */
@@ -38,6 +42,25 @@ export class DshTranscript {
   /** `raw.turnId` for items of the running turn. */
   turnRef(): { turnId?: string } {
     return this.turn ? { turnId: this.turn.turnId } : {};
+  }
+
+  /** The running turn's item, if a turn runs. */
+  turnItemId(): Id | null {
+    return this.turn?.itemId ?? null;
+  }
+
+  /** Tokens and generation time of a turn, read from DSH's log (session-log.ts); the context size stays ACP's. */
+  applyStats(turnItemId: Id, stats: DshTurnStats): void {
+    this.core.updateItem(turnItemId, (it) =>
+      // DSH's latest turn may still be the one before (this one not written yet): only a turn that began with this one.
+      it.type === "turn" && stats.startedAt >= Date.parse(it.startedAt) - STATS_SLACK_MS
+        ? {
+            ...it,
+            usage: { ...(it.usage ?? { reasoning: 0 }), input: stats.input, cachedInput: stats.cachedInput, output: stats.output, reasoning: it.usage?.reasoning ?? 0 },
+            ...(stats.decode ? { decode: stats.decode } : {}),
+          }
+        : it,
+    );
   }
 
   openTurn(): void {
@@ -125,7 +148,7 @@ export class DshTranscript {
         const context = u.used;
         const window = typeof u.size === "number" ? u.size : undefined;
         this.core.updateItem(this.turn.itemId, (it) =>
-          it.type === "turn" ? { ...it, usage: { input: 0, cachedInput: 0, output: 0, reasoning: 0, context, ...(window ? { contextWindow: window } : {}) } } : it,
+          it.type === "turn" ? { ...it, usage: { input: it.usage?.input ?? 0, cachedInput: it.usage?.cachedInput ?? 0, output: it.usage?.output ?? 0, reasoning: 0, context, ...(window ? { contextWindow: window } : {}) } } : it,
         );
         return;
       }

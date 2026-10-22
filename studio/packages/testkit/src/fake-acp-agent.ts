@@ -15,6 +15,7 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { zstdCompressSync, zstdDecompressSync } from "node:zlib";
 
 interface McpServer {
   type?: string;
@@ -115,6 +116,25 @@ async function mcpCall(server: McpServer, tool: string, args: Record<string, unk
   return { instructions, result: content.map((c) => c.text ?? "").join("\n") || (called.error?.message ?? "") };
 }
 
+/**
+ * DSH's own session log, as DSH 0.2 keeps it ($DSH_HOME/sessions/<cwd>/<id>/session.v4.jsonl.zstd): each turn one
+ * model call of 400 output tokens generated over 2 s (200 tok/s), for Studio's speed reading (2026-10-22).
+ */
+function writeLog(id: string, turn: number, startedAt: number): void {
+  const dir = join(home, "sessions", "--fake-cwd--", id);
+  mkdirSync(dir, { recursive: true });
+  const file = join(dir, "session.v4.jsonl.zstd");
+  const before = existsSync(file) ? zstdDecompressSync(readFileSync(file)).toString("utf8") : "";
+  const line = (type: string, time: number, data: Record<string, unknown>) => JSON.stringify({ type, seq: 0, time, data });
+  const lines = [
+    line("turn/start", startedAt, { turn }),
+    line("step/start", startedAt, { turn, step: 0 }),
+    line("assistant/message", startedAt + 2100, { turn, step: 0, usage: { inputTokens: 300, outputTokens: 400, cacheReadTokens: 1000, cacheWriteTokens: 0 }, stream: [{ type: "reasoning-chunks", time0: startedAt + 100, index: 0, dt: [], texts: ["想"] }] }),
+    line("turn/end", startedAt + 2100, { turn }),
+  ];
+  writeFileSync(file, zstdCompressSync(Buffer.from(`${before}${lines.join("\n")}\n`)));
+}
+
 async function prompt(params: { sessionId: string; prompt: Array<{ type: string; text?: string }> }): Promise<unknown> {
   const a = active.get(params.sessionId);
   if (!a) throw new RpcError(-32602, `Invalid params: unknown session ${params.sessionId}`);
@@ -124,6 +144,7 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
   const text = params.prompt.map((b) => b.text ?? "").join("");
   a.prompting = true;
   let cancelled = false;
+  const startedAt = Date.now();
   try {
     s.turns++;
     save(all);
@@ -181,6 +202,7 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
       reply = `MCP RESULT ${out.result}\nINSTRUCTIONS ${out.instructions}`;
     }
     update(a.id, { sessionUpdate: "agent_message_chunk", messageId: randomUUID(), content: { type: "text", text: reply } });
+    writeLog(a.id, s.turns, startedAt);
     return { stopReason: "end_turn" };
   } finally {
     if (!cancelled) a.cancel = null;
