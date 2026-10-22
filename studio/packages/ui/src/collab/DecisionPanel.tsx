@@ -1,7 +1,8 @@
-import { useEffect, useState } from "react";
-import type { DecisionRequest, Task } from "@amo-studio/protocol";
+import { useEffect, useMemo, useState } from "react";
+import { answerValues, type DecisionRequest, type QuestionReply, type Task } from "@amo-studio/protocol";
 import { call, type HostLink } from "../host/client.js";
 import { mergeFirstLoad, onHostEvent, onHostReconnect } from "../host/events.js";
+import { PromptCard } from "../chat/questions/QuestionCard.js";
 
 /** Open decision requests across all tasks, kept live. */
 export function useOpenDecisions(link: HostLink) {
@@ -32,8 +33,8 @@ export function useOpenDecisions(link: HostLink) {
 
 /**
  * One question from an agent: pick an option or write an answer. The answer goes back to the asking session as mail.
- * Options are whole rows that wrap (agents write long ones). Without `sessionTitle` the card sits in that session's
- * own conversation. `onWriteElsewhere`: the Focus window cannot take keyboard focus, so instead of a text field it
+ * Options are whole rows that wrap (agents write long ones). The workbench uses DecisionPrompt below instead.
+ * `onWriteElsewhere`: the Focus window cannot take keyboard focus, so instead of a text field it
  * offers to answer in the workbench.
  */
 export function DecisionCard({
@@ -67,6 +68,7 @@ export function DecisionCard({
     <div className={className} data-testid="decision-card">
       <div className="decision-head">
         <span className="decision-from">{sessionTitle ? `${sessionTitle} 在等你决定` : "等你决定"}</span>
+        <span className="decision-kind">AMO MCP · 非阻断</span>
         <span className="decision-hint">回答会作为留言发回</span>
       </div>
       <div className="decision-question">{decision.question}</div>
@@ -109,13 +111,37 @@ export function DecisionCard({
   );
 }
 
-/** The open decisions of one session, above its conversation (pinned: they stay in sight while it scrolls). */
-export function SessionDecisions({ link, decisions }: { link: HostLink; decisions: readonly DecisionRequest[] }) {
+/** AMO's nonblocking decision uses the same popup as runtime questions, sending its answer as mail. */
+export function DecisionPrompt({ link, decision, onClose }: { link: HostLink; decision: DecisionRequest; onClose(): void }) {
+  const item = useMemo(() => ({
+    id: decision.id,
+    questions: [{ id: decision.id, question: decision.question, options: decision.options.map((label) => ({ label })), other: true }],
+  }), [decision]);
+  const answer = async (body: QuestionReply): Promise<string | null> => {
+    if (body.action !== "answer") return "请选择选项或填写你的决定";
+    const value = answerValues(body.answers[0]).join("、").trim();
+    if (!value) return "请选择选项或填写你的决定";
+    try {
+      await call(link, "POST /api/decisions/:id/answer", { id: decision.id }, { answer: value });
+      return null;
+    } catch (err) {
+      return err instanceof Error ? err.message : String(err);
+    }
+  };
+  return <PromptCard key={decision.id} link={link} sessionId={decision.sessionId} item={item} eyebrow="等你决定" origin="跨工具请求 · AMO MCP" interaction="mail" onClose={onClose} onReply={answer} allowSkip={false} />;
+}
+
+/** Compact rows reopen a decision's popup; options no longer take space from the conversation. */
+export function SessionDecisions({ decisions, openId, onOpen }: { decisions: readonly DecisionRequest[]; openId: string | null; onOpen?: (id: string) => void }) {
   if (!decisions.length) return null;
   return (
     <section className="thread-decisions" aria-label="待决策" data-testid="thread-decisions">
       {decisions.map((d) => (
-        <DecisionCard key={d.id} link={link} decision={d} />
+        <div className="q-pending" key={d.id} data-testid="decision-record">
+          <span className="decision-kind">AMO MCP · 非阻断</span>
+          <span className="q-pending-text" title={d.question}>等你决定：{d.question}</span>
+          {openId === d.id ? <span className="q-pending-hint">在弹出的卡片里回答</span> : <button type="button" className="btn-ghost small" disabled={!onOpen} onClick={() => onOpen?.(d.id)}>回答</button>}
+        </div>
       ))}
     </section>
   );

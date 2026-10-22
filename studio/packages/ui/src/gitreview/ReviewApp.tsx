@@ -59,7 +59,8 @@ export function ReviewApp() {
       sessionId={target.sessionId ?? null}
       commit={target.commit ?? null}
       base={target.base ? { sha: target.base, label: target.baseLabel ?? null } : null}
-      select={target.file && !target.commit ? { path: target.file, nonce: target.nonce ?? "" } : null}
+      select={target.file ? { path: target.file, nonce: target.nonce ?? "" } : null}
+      refresh={target.nonce}
     />
   );
 }
@@ -89,6 +90,7 @@ export function ReviewPage({
   commit = null,
   base: given = null,
   select = null,
+  refresh,
   embedded = false,
   inactive = false,
 }: {
@@ -104,6 +106,8 @@ export function ReviewPage({
    */
   base?: { sha: string; label: string | null } | null;
   select?: ReviewSelect | null;
+  /** Reopening the whole project's working-tree review also reloads its listing and cached diffs. */
+  refresh?: string;
   /** Inside the viewer window (its 改动 mode): the viewer names the window. */
   embedded?: boolean;
   /** Kept but not in front (the viewer's 文件 mode): keys are not its own. */
@@ -256,6 +260,15 @@ export function ReviewPage({
   // Asked for a file (用 git diff 看): the uncommitted changes (or, opened with a base, the working tree against it), read
   // again, then that file, or a word that it has none.
   const wanted = useRef<ReviewSelect | null>(null);
+  const lastOpen = useRef(refresh);
+  useEffect(() => {
+    if (lastOpen.current === refresh) return;
+    lastOpen.current = refresh;
+    if (select || commit) return;
+    setRange(given ? "branch" : "working");
+    cache.clear();
+    setReload((n) => n + 1);
+  }, [refresh]); // eslint-disable-line react-hooks/exhaustive-deps
   // The open that last read the changes: on mounting they are being read anyway, and the same open again (the viewer
   // resolving a relative path once the file is read) needs no second read (2026-10-20: git ran twice or three times).
   const readFor = useRef<string | null>(null);
@@ -267,6 +280,13 @@ export function ReviewPage({
     if (hit) setSelected(hit.path);
     else if (c.status.repo) setToast({ text: "这个文件没有未提交的改动" });
   };
+  // A commit is immutable, but reopening it may select a different file in its existing window.
+  useEffect(() => {
+    if (!commit || !select || !shownCommit) return;
+    const hit = findChangedFile(shownCommit.files, select.path, workspace.path);
+    if (hit) setSelected(hit.path);
+    else setToast({ text: "这个文件在所选提交范围内没有改动" });
+  }, [commit, shownCommit, select?.path, select?.nonce]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => {
     if (!select || commit) return;
     wanted.current = select;
@@ -392,9 +412,11 @@ export function ReviewPage({
       if (k === "j" || k === "k" || k === "ArrowDown" || k === "ArrowUp") {
         if (!order.length) return;
         e.preventDefault();
-        const i = order.findIndex((f) => f.path === selected);
-        const next = k === "j" || k === "ArrowDown" ? Math.min(order.length - 1, i + 1) : Math.max(0, i - 1);
-        setSelected(order[next]!.path);
+        setSelected((cur) => {
+          const i = order.findIndex((f) => f.path === cur);
+          const next = k === "j" || k === "ArrowDown" ? Math.min(order.length - 1, i + 1) : Math.max(0, i - 1);
+          return order[next]!.path;
+        });
       } else if (k === "n" || k === "p" || k === "l" || k === ";") {
         // l / ; sit next to j / k: l on to the next change like j, ; back like k.
         const on = k === "n" || k === "l";
@@ -419,7 +441,7 @@ export function ReviewPage({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [order, selected, changeRows, active, rows.length, inactive, picking, commit, changes]);
+  }, [order, changeRows, active, rows.length, inactive, picking, commit, changes]);
 
   const status = changes?.status;
   // VS Code opens at the line n / p moved to (or that was clicked), else at the line being commented, else at the top.
@@ -480,6 +502,7 @@ export function ReviewPage({
                 files={listed.files}
                 layout={prefs.layout}
                 selected={selected}
+                active={!inactive}
                 perFile={perFile}
                 closed={closed}
                 onToggle={toggleFolder}

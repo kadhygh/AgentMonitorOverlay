@@ -25,6 +25,9 @@
 .qc-head { flex: none; display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; padding: 14px 10px 0 18px; }
 .qc-heading { min-width: 0; }
 .qc-eyebrow { margin-bottom: 4px; font-size: 11.5px; line-height: 16px; color: var(--chat-caption); }
+.qc-tags { display: flex; flex-wrap: wrap; gap: 4px 6px; margin: 0 0 6px; }
+.qc-kind { display: inline-flex; align-items: center; padding: 1px 6px; border: 1px solid var(--chat-hairline); border-radius: var(--r-s); color: var(--chat-caption); background: var(--chat-hover); font-size: 11px; line-height: 16px; }
+.qc-kind[data-kind="blocking"] { color: var(--attention); border-color: var(--attention-border); background: var(--attention-bg); }
 .qc-title { margin: 0; font-size: 15px; line-height: 22px; font-weight: 600; color: var(--chat-label); overflow-wrap: anywhere; }
 .qc-head-actions { flex: none; display: flex; gap: 2px; }
 

@@ -1,7 +1,8 @@
-import { useEffect, useState, type MouseEvent } from "react";
+import { useEffect, useState, type DragEvent, type MouseEvent } from "react";
 import { projectWorkspaces, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
-import { pinnedFirst, togglePin, usePins, type PinKind } from "../lib/pins.js";
+import { togglePin, usePins, type PinKind } from "../lib/pins.js";
+import { moveNav, navOrder, useNavOrder } from "./navOrder.js";
 import type { Scope } from "./Board.js";
 import { UsageFooter } from "./UsageFooter.js";
 import { KindIcon } from "./KindIcon.js";
@@ -26,6 +27,8 @@ import { pickFolder } from "../lib/profiles.js";
 
 /** A project or topic about to be archived from its right-click menu. */
 type Archiving = { kind: "workspace" | "topic"; id: string; name: string };
+type NavDrag = { type: "item"; kind: PinKind; id: string } | { type: "section"; kind: PinKind };
+type NavDrop = NavDrag & { after: boolean };
 
 interface ScopeNavProps {
   link: HostLink;
@@ -84,6 +87,24 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const editingWs = editing ? workspaces.find((w) => w.id === editing) : undefined;
   const editingTopic = editingTopicId ? topics.find((t) => t.id === editingTopicId) : undefined;
   const pins = usePins();
+  const topicOrder = useNavOrder("topic");
+  const projectOrder = useNavOrder("project");
+  const sectionOrder = useNavOrder("sections");
+  const sectionRows = navOrder<PinKind>(["topic", "project"], sectionOrder.ids, [], (kind) => kind);
+  const orders = { topic: topicOrder, project: projectOrder };
+  const [dragging, setDragging] = useState<NavDrag | null>(null);
+  const [over, setOver] = useState<NavDrop | null>(null);
+  const endDrag = () => { setDragging(null); setOver(null); };
+  const afterMiddle = (e: DragEvent<HTMLElement>) => {
+    const box = e.currentTarget.getBoundingClientRect();
+    return e.clientY > box.top + box.height / 2;
+  };
+  const startDrag = (e: DragEvent, item: NavDrag) => {
+    e.stopPropagation();
+    e.dataTransfer.effectAllowed = "move";
+    e.dataTransfer.setData("application/x-amo-nav", JSON.stringify(item));
+    setDragging(item);
+  };
   const liveTasks = tasks.filter((t) => !t.archivedAt);
 
   const fold = (kind: PinKind) =>
@@ -100,8 +121,40 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const row = (kind: PinKind | null, id: string | null, target: Scope, name: string, count: number, testId: string, title?: string, onMenu?: (e: MouseEvent) => void) => {
     const pinned = !!(kind && id && pins.has(kind, id));
     return (
-      <div key={testId} className={pinned ? "nav-item pinned" : "nav-item"} title={title}>
-        <button type="button" className="nav-row" aria-current={isCurrent(scope, target)} onClick={() => onScope(target)} onContextMenu={onMenu} data-testid={testId}>
+      <div key={testId} className={pinned ? "nav-item pinned" : "nav-item"} title={title}
+        data-dragging={dragging?.type === "item" && dragging.kind === kind && dragging.id === id || undefined}
+        data-drop={over?.type === "item" && over.kind === kind && over.id === id ? over.after ? "after" : "before" : undefined}
+        onDragOver={(e) => {
+          if (!kind || !id || dragging?.type !== "item" || dragging.kind !== kind || dragging.id === id || pins.has(kind, dragging.id) !== pinned) return;
+          e.preventDefault();
+          e.stopPropagation();
+          e.dataTransfer.dropEffect = "move";
+          setOver({ type: "item", kind, id, after: afterMiddle(e) });
+        }}
+        onDragLeave={(e) => {
+          if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((cur) => cur?.type === "item" && cur.kind === kind && cur.id === id ? null : cur);
+        }}
+        onDrop={(e) => {
+          if (!kind || !id || dragging?.type !== "item" || dragging.kind !== kind || pins.has(kind, dragging.id) !== pinned) return;
+          e.preventDefault();
+          e.stopPropagation();
+          moveItem(kind, dragging.id, id, afterMiddle(e));
+          endDrag();
+        }}
+      >
+        <button type="button" className="nav-row" aria-current={isCurrent(scope, target)} onClick={() => onScope(target)} onContextMenu={onMenu} data-testid={testId}
+          draggable={!!kind && !!id}
+          title={kind ? [title, "拖动排序；Alt ↑ / ↓ 调整顺序（置顶项在前）"].filter(Boolean).join("\n") : title}
+          onDragStart={(e) => { if (kind && id) startDrag(e, { type: "item", kind, id }); }}
+          onDragEnd={endDrag}
+          onKeyDown={(e) => {
+            if (!kind || !id || !e.altKey || (e.key !== "ArrowUp" && e.key !== "ArrowDown")) return;
+            e.preventDefault();
+            const list = lists[kind].filter((item) => pins.has(kind, item.id) === pinned);
+            const target = list[list.findIndex((item) => item.id === id) + (e.key === "ArrowDown" ? 1 : -1)];
+            if (target) moveItem(kind, id, target.id, e.key === "ArrowDown");
+          }}
+        >
           {kind && <NavKindIcon kind={kind} />}
           <span className="name">{name}</span>
           {pinned && (
@@ -132,7 +185,7 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
 
   // Folded sections keep their pinned entries, and the one in scope.
   const shown = <T,>(kind: PinKind, items: readonly T[], id: (x: T) => string): T[] => {
-    const ordered = pinnedFirst(items, pins[kind], id);
+    const ordered = navOrder(items, orders[kind].ids, pins[kind], id);
     if (!folded[kind]) return ordered;
     return ordered.filter((x) => pins.has(kind, id(x)) || (scope.kind === (kind === "topic" ? "topic" : "workspace") && scope.id === id(x)));
   };
@@ -140,11 +193,36 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
   const projects = projectWorkspaces(workspaces);
   const topicRows = shown("topic", liveTopics, (t) => t.id);
   const projectRows = shown("project", projects, (w) => w.id);
+  const lists = {
+    topic: navOrder(liveTopics, topicOrder.ids, pins.topic, (t) => t.id),
+    project: navOrder(projects, projectOrder.ids, pins.project, (w) => w.id),
+  };
+  function moveItem(kind: PinKind, from: string, to: string, after: boolean) {
+    orders[kind].save(moveNav(lists[kind].map((item) => item.id), from, to, after));
+  }
+  const sectionDrop = (kind: PinKind) => ({
+    "data-drop": over?.type === "section" && over.kind === kind ? over.after ? "after" : "before" : undefined,
+    onDragOver: (e: DragEvent<HTMLElement>) => {
+      if (dragging?.type !== "section" || dragging.kind === kind) return;
+      e.preventDefault();
+      e.dataTransfer.dropEffect = "move";
+      setOver({ type: "section", kind, after: sectionRows.indexOf(dragging.kind) < sectionRows.indexOf(kind) });
+    },
+    onDragLeave: (e: DragEvent<HTMLElement>) => {
+      if (!e.currentTarget.contains(e.relatedTarget as Node | null)) setOver((cur) => cur?.type === "section" && cur.kind === kind ? null : cur);
+    },
+    onDrop: (e: DragEvent<HTMLElement>) => {
+      if (dragging?.type !== "section" || dragging.kind === kind) return;
+      e.preventDefault();
+      sectionOrder.save(moveNav(sectionRows, dragging.kind, kind, sectionRows.indexOf(dragging.kind) < sectionRows.indexOf(kind)));
+      endDrag();
+    },
+  });
 
   // Section heads are small spaced labels with a rule to the +, apart from the entries under them (2026-10-15, design A);
   // the label folds the section, and a folded one shows ▸.
   const head = (kind: PinKind, label: string, total: number, add: () => void, addLabel: string) => (
-    <div className="nav-head">
+    <div className="nav-head" draggable title="拖动标题调整项目和专题模块的上下顺序" onDragStart={(e) => startDrag(e, { type: "section", kind })} onDragEnd={endDrag}>
       <button type="button" className="nav-fold" aria-expanded={!folded[kind]} onClick={() => fold(kind)} title={folded[kind] ? "展开" : "折叠：只留置顶的"} data-testid={`fold-${kind}`}>
         {folded[kind] && (
           <span className="nav-chev" aria-hidden="true">
@@ -220,7 +298,8 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
       <div className="nav-top">{row(null, null, { kind: "all" }, "全部任务", liveTasks.length, "scope-all")}</div>
 
       <div className="nav-scroll">
-        <section className="nav-section-box" aria-label="专题">
+        {sectionRows.map((kind) => kind === "topic" ? (
+        <section key="topic" className="nav-section-box" aria-label="专题" {...sectionDrop("topic")}>
           {head("topic", "专题", liveTopics.length, () => setNewTopic(""), "新专题")}
           {topicRows.map((t) =>
             row("topic", t.id, { kind: "topic", id: t.id }, t.title, liveTasks.filter((x) => x.topicId === t.id).length, `scope-topic-${t.title}`, undefined, (e) => {
@@ -265,8 +344,8 @@ export function ScopeNav({ link, workspaces, topics, tasks, scope, live, onScope
             </form>
           )}
         </section>
-
-        <section className="nav-section-box" aria-label="项目">
+        ) : (
+        <section key="project" className="nav-section-box" aria-label="项目" {...sectionDrop("project")}>
           {head("project", "项目", projects.length, () => setAdding(true), "添加项目")}
           {projectRows.map((w) =>
             row("project", w.id, { kind: "workspace", id: w.id }, w.name, liveTasks.filter((t) => t.workspaceId === w.id).length, `scope-ws-${w.name}`, w.description ? `${w.path}
@@ -329,6 +408,7 @@ ${w.description}` : w.path, (e) => {
             )}
           </div>
         </section>
+        ))}
       </div>
 
       <UsageFooter link={link} live={live} />

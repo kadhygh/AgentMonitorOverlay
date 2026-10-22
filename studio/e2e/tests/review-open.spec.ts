@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import { expect, test, type ElectronApplication, type Page } from "@playwright/test";
-import type { Session, Task, Workspace } from "@amo-studio/protocol";
+import type { Session, SessionItem, Task, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 // 外部打开 Review (2026-10-18): another tool runs amo-review (scripts/amo-review.mjs) while Studio is open; the main
@@ -42,6 +42,7 @@ test("another tool opens Review on a folder: the working tree against a base, an
   git(dir, "commit", "-q", "-m", "base");
   git(dir, "checkout", "-q", "-b", "agent");
   writeFileSync(join(dir, "boss.lua"), "return 'Lv20'\n");
+  writeFileSync(join(dir, "alpha.lua"), "return 'first in list'\n");
   git(dir, "add", ".");
   git(dir, "commit", "-q", "-m", "agent: boss");
   writeFileSync(join(dir, "drop.lua"), "return 0.25\n");
@@ -56,21 +57,83 @@ test("another tool opens Review on a folder: the working tree against a base, an
   expect(out).toContain("工作区对比 main");
   expect(out).toContain("新登记了这个项目");
   await expect(review.getByTestId("review-branch")).toContainText("对比 main");
-  await expect(review.getByTestId("review-file")).toHaveCount(2);
+  await expect(review.getByTestId("review-file")).toHaveCount(3);
   await expect(review.getByTestId("review-file").filter({ hasText: "drop.lua" })).toHaveAttribute("aria-current", /true|page/);
   await expect(review.getByTestId("review-session")).toHaveValue(session.id);
   await screenshot(app, "stage-18", "S18-review-open-base", review, "review");
 
   // A range: read-only, against the first ref.
   const ranged = await nextWindow(app, () => amoReview(dataDir, dir, "--range", "main..agent"));
-  await expect(ranged.getByTestId("review-file")).toHaveText([/boss\.lua/]);
+  await expect(ranged.getByTestId("review-file")).toHaveText([/alpha\.lua/, /boss\.lua/]);
   await expect(ranged.getByTestId("review-commit-footer")).toContainText(`对比 ${git(dir, "rev-parse", "--short=7", "main")}`);
+
+  // A committed file is selected too, even if it is not first in the range's list. Reuse that commit's window.
+  await amoReview(dataDir, dir, "--range", "main..agent", "--file", "boss.lua");
+  await expect(ranged.getByTestId("review-file").filter({ hasText: "boss.lua" })).toHaveAttribute("aria-current", /true|page/);
+
+  // The already open working-tree review rereads a file saved again by the agent.
+  writeFileSync(join(dir, "drop.lua"), "return 0.75 -- updated after review opened\n");
+  await amoReview(dataDir, dir, "--base", "main", "--session", session.id, "--file", "drop.lua");
+  await expect(review.getByTestId("review-file-head")).toContainText("drop.lua");
+  await expect(review.locator(".gr-line.add")).toContainText("updated after review opened");
+  writeFileSync(join(dir, "drop.lua"), "return 0.9 -- reopened whole project\n");
+  await amoReview(dataDir, dir, "--base", "main");
+  await expect(review.locator(".gr-line.add")).toContainText("reopened whole project");
 
   // A ref that is not there: refused, exit 1, nothing opened.
   const bad = await amoReview(dataDir, dir, "--commit", "nope").catch((e: { code: number; stderr: string }) => e);
   expect(bad).toMatchObject({ code: 1 });
   expect((bad as { stderr: string }).stderr).toContain("没有打开");
 });
+
+for (const profileId of ["claude-mock", "codex-mock"]) {
+  test(`review_open from ${profileId}: file, lines, latest content and comments back to the caller`, async () => {
+    studio = await launchStudio();
+    const { app } = studio;
+    const dir = studio.workspace("plain project");
+    const file = "中文 file.ts";
+    writeFileSync(join(dir, file), "const first = 1;\nconst second = 2;\nconst third = 3;\n");
+    git(dir, "init", "-q", "-b", "main");
+    git(dir, "add", ".");
+    git(dir, "commit", "-q", "-m", "base");
+    const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+    const prompt = `[[mcp: review_open ${JSON.stringify({ mode: "file", file, line: 2, endLine: 3 })}]]`;
+    let sessionId = "";
+    const viewer = await nextWindow(app, async () => {
+      const started = await studio!.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+        title: "请打开文件审阅", workspaceId: ws.id, firstSession: { profileId, text: prompt },
+      });
+      sessionId = started.session.id;
+    });
+    const code = viewer.getByTestId("viewer-code");
+    await expect(viewer.getByTestId("viewer-name")).toHaveText(file);
+    await expect(code.locator(".gr-line.marked")).toHaveCount(2);
+    await expect(code.locator('[data-line="new:2"]')).toContainText("second = 2");
+    await code.locator('[data-line="new:2"] [data-testid="add-comment"]').click();
+    await code.getByTestId("comment-draft").locator("textarea").fill("请再检查第二行");
+    await code.getByTestId("comment-draft").locator("textarea").press("Control+Enter");
+    await expect(code.getByTestId("review-session")).toHaveValue(sessionId);
+
+    // Reopen via CLI after an edit: one reused window, freshly read content, drafts still available.
+    const before = app.windows().length;
+    writeFileSync(join(dir, file), "const first = 1;\nconst second = 200;\nconst third = 3;\n");
+    const result = await amoReview(studio.dataDir, dir, "--mode", "file", "--file", file, "--line", "2", "--end-line", "3", "--session", sessionId, "--json");
+    expect(JSON.parse(result.stdout).target).toMatchObject({ mode: "file", line: 2, endLine: 3, sessionId });
+    await expect(code.locator('[data-line="new:2"]')).toContainText("second = 200");
+    await expect(code.getByTestId("review-comment")).toContainText("请再检查第二行");
+    expect(app.windows()).toHaveLength(before);
+    if (profileId === "claude-mock") await screenshot(app, "stage-18", "S18-review-mcp-file", viewer, "viewer");
+
+    await code.getByTestId("review-send").click();
+    await expect.poll(async () => (await studio!.api<SessionItem[]>("GET", `/api/sessions/${sessionId}/items`)).some((i) => i.type === "user" && i.text.includes("请再检查第二行") && i.text.includes(`${file}:2`))).toBe(true);
+    await expect.poll(async () => (await studio!.api<{ sessions: Session[] }>("GET", "/api/state")).sessions.find((s) => s.id === sessionId)?.status).toBe("idle");
+    // The model can also open the saved edits as a diff, with the same receiving conversation.
+    const changes = await nextWindow(app, () => studio!.api("POST", `/api/sessions/${sessionId}/messages`, { text: `[[mcp: review_open ${JSON.stringify({ file })}]]` }));
+    await expect(changes.getByTestId("review-file-head")).toContainText(file);
+    await expect(changes.locator(".gr-line.add")).toContainText("second = 200");
+    await expect(changes.getByTestId("review-session")).toHaveValue(sessionId);
+  });
+}
 
 test("amo-review says when AMO Studio is not running", async () => {
   const r = await promisify(execFile)(process.execPath, [SCRIPT, ".", "--data", join(HERE, "no-such-data")], { encoding: "utf8", windowsHide: true }).catch((e: { code: number; stderr: string }) => e);

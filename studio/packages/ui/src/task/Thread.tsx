@@ -20,7 +20,7 @@ import { MentionList, useComposerMentions } from "../attach/useMentions.js";
 import { FileSelector } from "../attach/FileSelector.js";
 import { markFileMessage } from "../marks/open.js";
 import { QuestionCard } from "../chat/questions/QuestionCard.js";
-import { SessionDecisions } from "../collab/DecisionPanel.js";
+import { DecisionPrompt, SessionDecisions } from "../collab/DecisionPanel.js";
 import { PlanReviewBar, sendRevision } from "../chat/questions/PlanReview.js";
 import { WakeBar } from "../chat/WakeBar.js";
 import { ContextHint } from "../chat/ContextHint.js";
@@ -81,7 +81,7 @@ interface ThreadProps {
   onDeleteAnnotation(id: string): void;
   /** A command or another action of the composer failed (stage 12, S12-E). */
   onError?(text: string): void;
-  /** Open decisions of this session (AMO decision_request), pinned above the conversation. */
+  /** Open decisions of this session (AMO decision_request), answered in the question popup. */
   decisions?: readonly DecisionRequest[];
 }
 
@@ -154,9 +154,11 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   // closed and opened again from its row in the conversation; "要修改" turns the composer into the feedback box.
   const asked = useMemo(() => pendingQuestion(items), [items]);
   const [hiddenCards, setHiddenCards] = useState<ReadonlySet<string>>(new Set());
+  const [decisionId, setDecisionId] = useState<string | null>(null);
   const [revising, setRevising] = useState<string | null>(null);
   useEffect(() => {
     setHiddenCards(new Set());
+    setDecisionId(null);
     setRevising(null);
   }, [session?.id]);
   const planReview = asked?.source === "plan-review" ? asked : null;
@@ -173,6 +175,18 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
     }),
     [asked, hiddenCards],
   );
+  const nativeQuestionOpen = !!asked && seat.isOpen(asked.id);
+  const decision = decisions.find((d) => d.id === decisionId && !hiddenCards.has(d.id)) ?? decisions.find((d) => !hiddenCards.has(d.id));
+  const hideCard = (id: string) => setHiddenCards((cur) => new Set(cur).add(id));
+  const openDecision = (id: string) => {
+    setDecisionId(id);
+    setHiddenCards((cur) => {
+      const next = new Set(cur);
+      next.delete(id);
+      if (asked) next.add(asked.id);
+      return next;
+    });
+  };
 
   // Annotating in place: a bar by a fresh selection in a reply, then the bubble to write in (or to change a note, from
   // its highlighted passage).
@@ -386,7 +400,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
   return (
     <>
       <div className="thread-wrap" data-dragging={dragging || undefined} {...dropTarget}>
-        <SessionDecisions link={link} decisions={decisions} />
+        <SessionDecisions decisions={decisions} openId={!readOnly && !nativeQuestionOpen ? decision?.id ?? null : null} onOpen={readOnly ? undefined : openDecision} />
         <ReplyNav scroller={scroller} itemCount={items.length} />
         {/* Ctrl+F finds in the conversation on the page (folded steps are not searched). */}
         <FindBar active={!!session} container={scroller} within=".thread-inner" />
@@ -530,9 +544,9 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             <IconArrowDown />
           </button>
         )}
-        {session && asked && !readOnly && seat.isOpen(asked.id) && (
+        {session && !readOnly && (nativeQuestionOpen || decision) && (
           <div className="q-popup" data-testid="question-popup">
-            <QuestionCard link={link} sessionId={session.id} item={asked} onClose={() => setHiddenCards((cur) => new Set(cur).add(asked.id))} />
+            {nativeQuestionOpen && asked ? <QuestionCard link={link} sessionId={session.id} item={asked} onClose={() => hideCard(asked.id)} /> : decision && <DecisionPrompt link={link} decision={decision} onClose={() => hideCard(decision.id)} />}
           </div>
         )}
       </div>

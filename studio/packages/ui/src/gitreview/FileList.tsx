@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, type MouseEvent } from "react";
+import { useEffect, useLayoutEffect, useMemo, useRef, type MouseEvent } from "react";
 import type { GitChangedFile } from "@amo-studio/protocol";
 import { FileTypeIcon } from "../files/FileTypeIcon.js";
 import { buildTree, clampWidth, LIST_WIDTH, splitFolder, splitName, splitPath, treeRows, type ListLayout } from "./filetree.js";
@@ -13,6 +13,8 @@ interface FileListProps {
   files: readonly GitChangedFile[];
   layout: ListLayout;
   selected: string | null;
+  /** A viewer can keep its changes view mounted while showing the file; reveal only when in front. */
+  active?: boolean;
   /** Draft comments per path. */
   perFile: ReadonlyMap<string, number>;
   /** Folded folders (tree paths). */
@@ -52,14 +54,21 @@ const DIR_PX = 26;
 
 const fileTitle = (f: GitChangedFile) => (f.oldPath ? `${f.oldPath} → ${f.path}` : f.path);
 
-export function FileList({ files, layout, selected, perFile, closed, onToggle, onSelect, onHover, onMenu }: FileListProps) {
+export function FileList({ files, layout, selected, active = true, perFile, closed, onToggle, onSelect, onHover, onMenu }: FileListProps) {
   const tree = useMemo(() => (layout === "tree" ? buildTree(files) : null), [files, layout]);
   const rows = useMemo(() => (tree ? treeRows(tree, closed) : []), [tree, closed]);
   const flat = useMemo(() => (layout === "flat" ? listOrder(files) : []), [files, layout]);
+  const currentFile = useRef<HTMLButtonElement>(null);
+  // `keep` below mounts even a distant selected chunk; after it (or its folded ancestors) is drawn, reveal the row.
+  // Nearest/instant keeps nearby selections still and follows repeated keys without a queued smooth animation.
+  useLayoutEffect(() => {
+    if (active) currentFile.current?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "instant" });
+  }, [selected, layout, rows, flat, active]);
 
   const fileRow = (f: GitChangedFile, name: string, depth: number | null) => (
     <button
       key={f.path}
+      ref={f.path === selected ? currentFile : undefined}
       type="button"
       className={depth === null ? "gr-file flat" : "gr-file"}
       style={depth === null ? undefined : { paddingLeft: 6 + depth * 14 + 14 }}

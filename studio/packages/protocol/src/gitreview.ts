@@ -263,8 +263,13 @@ export interface ReviewOpenRequest {
   base?: string;
   commit?: string;
   range?: string;
-  /** The file to select first (uncommitted changes and `base` only): absolute, or relative to the project. */
+  /** `changes` (default): Git Review; `file`: the current file in the viewer, including files without changes. */
+  mode?: "changes" | "file";
+  /** The file to select: absolute, or relative to the project. Required in `file` mode. */
   file?: string;
+  /** 1-based line or range to reveal in `file` mode. */
+  line?: number;
+  endLine?: number;
   /** Where 发回 sends the comments. */
   sessionId?: string;
 }
@@ -278,8 +283,12 @@ export interface ReviewOpenTarget {
   /** How the caller named the base ("master", "v1.2 的分叉点"). */
   baseLabel?: string;
   file?: string;
+  mode?: "changes" | "file";
+  line?: number;
+  endLine?: number;
 }
 
+/** The open request was validated and sent to the workbench; this is not a human review/approval or window acknowledgement. */
 export interface ReviewOpenResult {
   target: ReviewOpenTarget;
   /** The folder was not a project yet and was registered. */

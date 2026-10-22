@@ -26,6 +26,8 @@ test("answers Claude's questions in a popup over the conversation", async () => 
 
   const card = page.getByTestId("question-card");
   await expect(card).toBeVisible({ timeout: 60_000 });
+  await expect(card.getByTestId("question-kind")).toHaveAttribute("data-kind", "blocking");
+  await expect(card.getByTestId("question-kind")).toHaveText("阻断式 · 等待回答");
   // A popup: over the conversation, which keeps its size; the composer stays in place.
   const popup = page.getByTestId("question-popup");
   const thread = page.getByTestId("thread");

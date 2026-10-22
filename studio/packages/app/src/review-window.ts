@@ -16,7 +16,7 @@ export interface ReviewWindowOptions {
 
 const ID = /^[\w-]{1,80}$/;
 /** A commit, abbreviated or full. */
-const COMMIT = /^[0-9a-f]{7,40}$/;
+const COMMIT = /^[0-9a-f]{7,64}$/;
 /** A full commit id: the base 外部打开 Review gives (2026-10-18). */
 const FULL = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 
@@ -24,7 +24,7 @@ let opened = 0;
 
 /**
  * `#review?workspace=…&session=…` (or `&commit=…`) for a valid target, null otherwise; `key` names the window: the
- * project's, or the project's commit's. A commit that is not 7–40 hex digits makes the target invalid. Stage 13:
+ * project's, or the project's commit's. A commit that is not 7–64 hex digits makes the target invalid. Stage 13:
  * `file` (absolute, or relative to the project) selects that file (用 git diff 看), with a nonce `n` so asking for it
  * again still reaches the page.
  */
@@ -37,20 +37,24 @@ export function reviewHash(target: unknown): { key: string; hash: string } | nul
   const base = typeof t.base === "string" ? t.base : null;
   const label = base && typeof t.baseLabel === "string" && t.baseLabel && t.baseLabel.length <= 100 && !/[\0\r\n]/.test(t.baseLabel) ? t.baseLabel : null;
   const commit = typeof t.commit === "string" ? t.commit : null;
+  const file = typeof t.file === "string" && t.file && t.file.length <= 1000 && !/[\0\r\n]/.test(t.file) ? t.file : null;
   if (commit) {
     const q = new URLSearchParams({ workspace: t.workspaceId, commit });
     if (base) q.set("base", base);
+    if (file) {
+      q.set("file", file);
+      q.set("n", String(++opened));
+    }
     return { key: `${t.workspaceId}@${base ? `${base}..` : ""}${commit}`, hash: `#review?${q.toString()}` };
   }
   const session = typeof t.sessionId === "string" && ID.test(t.sessionId) ? t.sessionId : null;
-  const file = typeof t.file === "string" && t.file && t.file.length <= 1000 && !/[\0\r\n]/.test(t.file) ? t.file : null;
   const q = new URLSearchParams({ workspace: t.workspaceId });
   if (session) q.set("session", session);
   if (base) q.set("base", base);
   if (label) q.set("label", label);
+  q.set("n", String(++opened));
   if (file) {
     q.set("file", file);
-    q.set("n", String(++opened));
   }
   return { key: t.workspaceId, hash: `#review?${q.toString()}` };
 }

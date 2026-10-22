@@ -20,6 +20,11 @@
 /* One right edge (R1): every count lines up with 全部任务's; a pinned entry shows a small pin before its count, and
    hovering an entry puts the pin button where its count was. */
 .nav-item { position: relative; }
+.nav-row[draggable="true"], .nav-head[draggable="true"] { cursor: grab; }
+.nav-row[draggable="true"]:active, .nav-head[draggable="true"]:active { cursor: grabbing; }
+.nav-item[data-dragging] { opacity: 0.45; }
+.nav-item[data-drop="before"], .nav-section-box[data-drop="before"] { box-shadow: 0 -2px 0 var(--primary); }
+.nav-item[data-drop="after"], .nav-section-box[data-drop="after"] { box-shadow: 0 2px 0 var(--primary); }
 .nav-row .count { min-width: 18px; text-align: right; }
 .nav-pinned { flex: none; fill: var(--attention); stroke: var(--attention); stroke-width: 1.1; stroke-linejoin: round; }
 .pin-btn {

@@ -64,7 +64,7 @@ export function collabTools({ service, caller, ownTask }: ToolContext): AmoTool[
       name: "decision_request",
       title: "请求决策",
       description:
-        "Ask the person to decide something you should not decide alone (offer short options when you can). It is shown in the AMO workbench and the Focus window; it does not block your turn. The answer comes back to you as mail (mailbox_read).",
+        "Ask the person to decide something you should not decide alone (offer short options when you can). It is shown in the workbench's question popup and the Focus window; it does not block your turn. The answer comes back to you as mail (mailbox_read).",
       inputSchema: { question: z.string(), options: z.array(z.string()).optional() },
       readOnly: false,
       autoApprove: true,

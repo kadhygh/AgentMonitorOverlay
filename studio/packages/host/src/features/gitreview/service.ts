@@ -21,7 +21,8 @@ import {
   type ReviewOpenTarget,
   type Workspace,
 } from "@amo-studio/protocol";
-import { resolve } from "node:path";
+import { isAbsolute, relative, resolve } from "node:path";
+import { stat } from "node:fs/promises";
 import { newId } from "../../store/store.js";
 import type { SendMode } from "../../runtime/runtime.js";
 import { HostError } from "../../core/shared.js";
@@ -116,23 +117,28 @@ export class GitReviewFeature extends Feature {
     if (!this.host.liveWindows) throw new HostError("conflict", "AMO Studio 的窗口没有打开：先启动 AMO Studio，再打开 Review");
     const text = (v: unknown, name: string): string | undefined => {
       if (v === undefined || v === null || v === "") return undefined;
-      if (typeof v !== "string" || !v.trim() || v.length > 500) throw new HostError("bad_request", `${name} must be a non-empty string`);
+      if (typeof v !== "string" || !v.trim() || v.length > 1000 || /[\0\r\n]/.test(v)) throw new HostError("bad_request", `${name} must be a non-empty string without control characters`);
       return v.trim();
     };
-    let workspace: Workspace;
-    let workspaceAdded = false;
+    const mode = input.mode ?? "changes";
+    if (mode !== "file" && mode !== "changes") throw new HostError("bad_request", "mode must be file or changes");
+    const file = text(input.file, "file");
+    if (mode === "file" && !file) throw new HostError("bad_request", "file mode requires file");
+    if (mode === "file" && (input.base || input.commit || input.range)) throw new HostError("bad_request", "file mode shows the current file, without base, commit or range");
+    for (const name of ["line", "endLine"] as const) {
+      const n = input[name];
+      if (n !== undefined && (!Number.isSafeInteger(n) || n < 1)) throw new HostError("bad_request", `${name} must be a positive whole number`);
+    }
+    if ((input.line !== undefined || input.endLine !== undefined) && mode !== "file") throw new HostError("bad_request", "line and endLine go with file mode");
+    if (input.endLine !== undefined && (input.line === undefined || input.endLine < input.line)) throw new HostError("bad_request", "endLine requires line and must be at least line");
     const id = text(input.workspaceId, "workspaceId");
     const folder = text(input.path, "path");
-    if (id) workspace = this.requireWorkspace(id);
-    else if (folder) {
-      const known = this.store.findWorkspaceByPath(resolve(folder));
-      if (known?.archivedAt) throw new HostError("conflict", `这个文件夹是已归档的项目「${known.name}」，到 设置 → 数据管理 里恢复它`);
-      if (known) workspace = known;
-      else {
-        workspace = this.f.projects.addWorkspace({ path: folder });
-        workspaceAdded = true;
-      }
-    } else throw new HostError("bad_request", "path (the project's folder) or workspaceId is required");
+    if (id && folder) throw new HostError("bad_request", "use path or workspaceId, not both");
+    if (!id && !folder) throw new HostError("bad_request", "path (the project's folder) or workspaceId is required");
+    let workspace = id ? this.requireWorkspace(id) : this.store.findWorkspaceByPath(resolve(folder!));
+    if (workspace?.archivedAt) throw new HostError("conflict", `这个文件夹是已归档的项目「${workspace.name}」，到 设置 → 数据管理 里恢复它`);
+    const dir = workspace?.path ?? resolve(folder!);
+    if (!workspace && !(await stat(dir).catch(() => null))?.isDirectory()) throw new HostError("bad_request", `not a directory: ${dir}`);
 
     let commit = text(input.commit, "commit");
     let base = text(input.base, "base");
@@ -146,20 +152,44 @@ export class GitReviewFeature extends Feature {
     }
     const sessionId = text(input.sessionId, "sessionId");
     if (sessionId && !this.store.getSession(sessionId)) throw new HostError("not_found", `session ${sessionId} not found`);
-    const file = text(input.file, "file");
-    const dir = workspace.path;
-    const target = await this.git(async (): Promise<ReviewOpenTarget> => {
+    let relativeFile = file ? relative(dir, resolve(dir, file)).replace(/\\/g, "/") : undefined;
+    if (relativeFile !== undefined && (!relativeFile || relativeFile === ".." || relativeFile.startsWith("../") || isAbsolute(relativeFile))) {
+      throw new HostError("bad_request", "file must be inside the project folder");
+    }
+    if (mode === "file") {
+      const info = await stat(resolve(dir, relativeFile!)).catch(() => null);
+      if (!info) throw new HostError("not_found", `file ${file} not found`);
+      if (!info.isFile()) throw new HostError("bad_request", "file must be a file, not a folder");
+    }
+    const resolved = await this.git(async (): Promise<Omit<ReviewOpenTarget, "workspaceId">> => {
       const head = commit ? await resolveCommit(dir, commit) : undefined;
       let from = base ? await resolveCommit(dir, base) : undefined;
       if (forked && from && head) from = await mergeBase(dir, from, head);
+      if (mode === "changes" && relativeFile) {
+        const status = head ? null : await readStatus(dir);
+        if (status && !status.repo) throw new HostError("bad_request", status.reason ?? "不是 git 仓库");
+        const changes = head ? await readCommit(dir, head, from) : await readChanges(dir, from ? "branch" : "working", from ? { ...status!, mergeBase: from } : status!);
+        const key = relativeFile.toLowerCase();
+        const hit = changes.files.find((f) => f.path.toLowerCase() === key) ?? changes.files.find((f) => f.oldPath?.toLowerCase() === key);
+        if (!hit) throw new HostError("not_found", changes.truncated ? "指定文件不在已列出的改动中（改动列表已截断）" : "指定文件在这个范围内没有改动；查看当前文件请用 mode=file");
+        relativeFile = hit.path;
+      }
       return {
-        workspaceId: workspace.id,
         ...(sessionId ? { sessionId } : {}),
         ...(head ? { commit: head } : {}),
         ...(from ? { base: from, baseLabel: forked ? `${base} 的分叉点` : base! } : {}),
-        ...(file && !head ? { file } : {}),
+        ...(relativeFile ? { file: relativeFile } : {}),
+        ...(input.mode ? { mode } : {}),
+        ...(input.line !== undefined ? { line: input.line } : {}),
+        ...(input.endLine !== undefined ? { endLine: input.endLine } : {}),
       };
     });
+    // A refused request must not leave a newly registered project behind.
+    workspace ??= this.store.findWorkspaceByPath(dir);
+    if (workspace?.archivedAt) throw new HostError("conflict", "这个项目已归档，请先恢复它");
+    const workspaceAdded = !workspace;
+    workspace ??= this.f.projects.addWorkspace({ path: dir });
+    const target: ReviewOpenTarget = { workspaceId: workspace.id, ...resolved };
     this.publish({ type: "review.open", target, at: new Date().toISOString() });
     return { target, workspaceAdded };
   }

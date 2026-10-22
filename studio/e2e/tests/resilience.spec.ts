@@ -26,6 +26,8 @@ test("Codex's async question: a card in the composer seat, answered as the next 
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK-ASKED", { timeout: 60_000 });
   const card = page.getByTestId("question-card");
   await expect(card).toBeVisible();
+  await expect(card.getByTestId("question-kind")).toHaveAttribute("data-kind", "message");
+  await expect(card.getByTestId("question-kind")).toHaveText("非阻断 · 下一条消息返回");
   await expect(card.locator(".qc-eyebrow")).toHaveText("Codex 在问你 · 回答会作为你的下一条消息");
   await expect(card.getByRole("heading")).toHaveText("你最喜欢哪个季节？");
   await expect(card.getByRole("radio")).toHaveCount(3);

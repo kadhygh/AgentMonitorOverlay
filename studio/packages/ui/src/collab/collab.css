@@ -8,9 +8,10 @@
 
 /* Decision requests (S5-04) */
 .decision-card { display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; border-radius: var(--r-l); border: 1px solid var(--attention-border); background: var(--attention-bg); min-width: 0; }
-.decision-head { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+.decision-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 8px; min-width: 0; }
 .decision-from { min-width: 0; font-size: var(--fs-cap); font-weight: 600; color: var(--attention); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .decision-hint { flex: none; margin-left: auto; font-size: var(--fs-cap); color: var(--text-faint); }
+.decision-kind { flex: none; color: var(--text-dim); font-size: 11px; line-height: 18px; white-space: nowrap; }
 .decision-question { font-size: var(--fs-body); line-height: var(--lh); font-weight: 600; color: var(--text); white-space: pre-wrap; overflow-wrap: anywhere; }
 /* Options: whole rows with a number, long text wraps (agents write sentences, not words). */
 .decision-options { display: flex; flex-direction: column; gap: 4px; }
@@ -21,9 +22,9 @@
 .decision-option-text { min-width: 0; white-space: pre-wrap; overflow-wrap: anywhere; }
 .decision-answer { display: flex; gap: 6px; }
 .decision-answer .field { flex: 1; min-width: 0; }
-/* In the session: pinned above the conversation, in the conversation's column; long lists scroll inside. */
-.thread-decisions { flex: none; display: flex; flex-direction: column; gap: 8px; max-height: 45%; overflow-y: auto; padding: 12px 24px 4px; border-bottom: 1px solid var(--border); }
-.thread-decisions > .decision-card { width: 100%; max-width: var(--chat-width); margin: 0 auto; }
+/* Compact pending rows; the question/options are in the shared popup over the conversation. */
+.thread-decisions { flex: none; display: flex; flex-direction: column; gap: 4px; max-height: 100px; overflow-y: auto; padding: 8px 24px; border-bottom: 1px solid var(--border); }
+.thread-decisions > .q-pending { width: 100%; max-width: var(--chat-width); margin: 0 auto; }
 /* Right column: decisions of the task's other sessions, one line each. */
 .decision-elsewhere { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; padding: 8px 10px; border-radius: var(--r-l); border: 1px solid var(--attention-border); background: var(--attention-bg); }
 .decision-elsewhere-q { font-size: var(--fs-sm); white-space: pre-wrap; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }

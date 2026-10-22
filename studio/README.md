@@ -37,6 +37,8 @@ AMO 的下一代：由人主导、agent 也能参与的项目推进工作台。�
 | agent 之间交接 | 任务页右栏：进度和交接摘要、留言（由你决定是否转进对话）、待决策 |
 | 工程自己的规范和流程 | 工程里的 `.amo/packs/<名字>/pack.json`，见 [design/pack-format.md](design/pack-format.md)；示例在 [examples/packs/demo/](examples/packs/demo/)；选中工作区后顶栏"扩展包" |
 
+**左栏排序**：项目和专题的条目可以拖到目标行上方或下方；选中一行后也可用 `Alt + ↑/↓` 调整。置顶项仍在前面，置顶组和普通组分别排序。拖动「项目」「专题」的标题还可以交换两个模块的上下位置。顺序保存在本机，刷新或重新打开同一 Studio 实例后沿用，改名后位置不变。
+
 **从其他工具打开 Review**：AMO Studio 开着时，别的 harness 或脚本可以让它打开某个文件夹的 Git Review（文件夹还不是项目时自动登记）。
 
 ```
@@ -44,12 +46,30 @@ studio\amo-review.cmd G:\PROJECT\game                          未提交的改�
 studio\amo-review.cmd G:\PROJECT\game --base main              工作区对比 main（含未提交的改动，可以写批注）
 studio\amo-review.cmd G:\PROJECT\game --commit HEAD~1          某个提交（只读）
 studio\amo-review.cmd G:\PROJECT\game --range main...agent     agent 分支离开 main 以来的改动（只读；A..B 是 B 对比 A）
-   可选：--file 路径（先选中这个文件）、--session 会话id（「发给会话」默认发到这里；id 在会话栏点 # 复制）、--json
+studio\amo-review.cmd G:\PROJECT\game --mode file --file src\Drop.cs --line 24 --end-line 36
+                                                            当前文件全文，定位第 24–36 行（不要求 Git 或文件有改动）
+   可选：--file 路径（先选中这个文件，提交和范围也支持）、--session 会话id（「发给会话」默认发到这里；id 在会话栏点 # 复制）、--json
 ```
 
-退出码 0 已打开、1 被拒绝（会说原因）、2 Studio 没在运行。也可以直接调 Host：`POST <host.json 的 url>/api/review/open`，头 `Authorization: Bearer <数据目录里 host-token 的内容>`，正文 `{ "path", "base" | "commit" | "range", "file", "sessionId" }`。开发版的数据目录是 `studio/.data`，Portable 版用 `--data` 指给它。
+退出码 0 请求已接收、1 被拒绝（会说原因）、2 Studio 没在运行。也可以直接调 Host：`POST <host.json 的 url>/api/review/open`，头 `Authorization: Bearer <数据目录里 host-token 的内容>`。正文用 `path`（项目目录）或 `workspaceId` 选项目，其他字段见下表。开发版的数据目录是 `studio/.data`，Portable 版用 `--data` 指给它。
+
+| 字段 | 含义 |
+|---|---|
+| `mode` | `changes`（默认）看 Git 改动；`file` 看当前文件全文 |
+| `file` | 项目内的绝对路径或相对路径；全文模式必填，改动模式省略时看整个项目 |
+| `line`, `endLine` | 全文模式的起止行（从 1 开始），结束行不能早于起始行 |
+| `base` | 工作区对比这个 ref；也可与 `commit` 一起比较两个提交 |
+| `commit` | 指定提交的改动，只读 |
+| `range` | `A..B` 或 `A...B`，只读；不能与 `base` / `commit` 混用 |
+| `sessionId` | 批注的默认接收会话 |
+
+全文模式不带 `base` / `commit` / `range`。指定文件在比较范围内没有改动时返回 404，查看当前内容可改用全文模式。文件删除后的差异仍能在改动模式查看。重复打开会重新读取已保存的内容；成功响应表示已向窗口发送打开请求，不代表人已审阅。
+
+**在 AMO 对话中让模型打开**：受管会话自带 MCP 工具 `review_open`。例如“打开 src/Drop.cs 的 reviewer，定位到 24–36 行”对应 `{ "mode": "file", "file": "src/Drop.cs", "line": 24, "endLine": 36 }`；“改完后让我看这个文件的差异”对应 `{ "file": "src/Drop.cs" }`。默认使用发起会话的项目，批注默认发回该会话；跨项目可传 `workspaceId`，无需模型提供会话 id 或读取 Host token。随项目保存的 skill 在 [skills/amo-review/SKILL.md](skills/amo-review/SKILL.md)，供后续接入 skill 加载器或外部 harness 使用。
 
 **agent 能做什么（AMO MCP）**：受管的会话自动带上 AMO MCP。读：看板、任务、会话树、工程、画布、扩展包。写：只能写自己任务的进度、交接、清单，给别的会话留言，向你提问；画布写入每次都要你批准；调度会话只能提案。agent 不能移动看板列，也不能自己开会话。
+
+**回答 agent 的问题**：Claude、GPT/Codex、DSH 通过 AMO `decision_request` 提问时，共用对话上的问题弹窗，可以收起或关闭，之后从上方的待决策提示重新打开；选项和未提交的文字会保留。来源标记为「跨工具请求 · AMO MCP」，并标「非阻断 · 留言返回」：当前回合可以继续做其他事，答案作为留言返回。Claude/Codex 的原生同步提问标「阻断式 · 等待回答」；Codex 原生异步提问标「非阻断 · 下一条消息返回」。MCP 表单标来源为跨工具请求，但其本身仍是阻断式，两者分别标识。DSH 当前接入的 ACP 没有原生问答通道，需要提问时使用 AMO MCP；Focus 保留选项快捷回答和「在工作台回答」。
 
 ## 和旧 AMO 的对应关系
 

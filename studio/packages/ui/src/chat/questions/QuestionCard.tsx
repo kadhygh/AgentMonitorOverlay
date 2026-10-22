@@ -18,7 +18,7 @@ interface CardProps {
 }
 
 export function QuestionCard(props: CardProps) {
-  return props.item.source === "mcp-form" ? <FormCard key={props.item.id} {...props} /> : <AskCard key={props.item.id} {...props} />;
+  return props.item.source === "mcp-form" ? <FormCard key={props.item.id} {...props} /> : <PromptCard key={props.item.id} {...props} eyebrow={SOURCE_LABEL[props.item.source]} interaction={props.item.source === "codex-async" ? "message" : "blocking"} />;
 }
 
 /** Sends a reply; resolves to an error message, or null when it went through. */
@@ -37,13 +37,13 @@ const SOURCE_LABEL: Record<QuestionItem["source"], string> = { "claude-ask": "Cl
 const savedFlows = new Map<string, Flow>();
 const savedValues = new Map<string, Record<string, unknown>>();
 
-function useSender(link: HostLink, sessionId: string, itemId: string) {
+function useSender(link: HostLink, sessionId: string, itemId: string, onReply?: (body: QuestionReply) => Promise<string | null>) {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const send = async (body: QuestionReply) => {
     setBusy(true);
     setError(null);
-    const failed = await reply(link, sessionId, itemId, body);
+    const failed = onReply ? await onReply(body) : await reply(link, sessionId, itemId, body);
     // On success the item stops being pending and the card goes away; keep it disabled until then.
     if (failed) {
       setBusy(false);
@@ -56,11 +56,23 @@ function useSender(link: HostLink, sessionId: string, itemId: string) {
   return { busy, error, setError, send };
 }
 
-function CardHead({ eyebrow, title, minimized, onMinimize, onClose, busy }: { eyebrow: string; title: string; minimized: boolean; onMinimize(): void; onClose(): void; busy: boolean }) {
+/** Source and waiting semantics are independent: an MCP form can block while an AMO decision does not. */
+type Interaction = "blocking" | "mail" | "message";
+const INTERACTION = {
+  blocking: { label: "阻断式 · 等待回答", hint: "本次提问等待你回答后才会继续；关闭弹窗只隐藏问题。" },
+  mail: { label: "非阻断 · 留言返回", hint: "提问不会阻断当前回合；答案作为 AMO 留言返回给发起会话。" },
+  message: { label: "非阻断 · 下一条消息返回", hint: "提问不会阻断当前回合；答案作为你的下一条消息发回会话。" },
+} as const;
+
+function CardHead({ eyebrow, title, minimized, onMinimize, onClose, busy, interaction = "blocking", origin }: { eyebrow: string; title: string; minimized: boolean; onMinimize(): void; onClose(): void; busy: boolean; interaction?: Interaction; origin?: string }) {
   return (
     <header className="qc-head">
       <div className="qc-heading">
         <div className="qc-eyebrow">{eyebrow}</div>
+        <div className="qc-tags" aria-label="提问类型">
+          {origin && <span className="qc-kind" data-testid="question-origin">{origin}</span>}
+          <span className="qc-kind" data-testid="question-kind" data-kind={interaction} title={INTERACTION[interaction].hint}>{INTERACTION[interaction].label}</span>
+        </div>
         <h2 className="qc-title">{title}</h2>
       </div>
       <div className="qc-head-actions">
@@ -77,14 +89,22 @@ function CardHead({ eyebrow, title, minimized, onMinimize, onClose, busy }: { ey
 
 // ---- questions --------------------------------------------------------------------------------------------------
 
-function AskCard({ link, sessionId, item, onClose }: CardProps) {
+/** Shared question UI: runtime questions and AMO decisions keep their own answer transport. */
+export function PromptCard({ link, sessionId, item, onClose, eyebrow, onReply, allowSkip = true, interaction = "blocking", origin }: Omit<CardProps, "item"> & {
+  item: Pick<QuestionItem, "id" | "questions">;
+  eyebrow: string;
+  onReply?: (body: QuestionReply) => Promise<string | null>;
+  allowSkip?: boolean;
+  interaction?: Interaction;
+  origin?: string;
+}) {
   const questions = item.questions ?? [];
   const [flow, setFlow] = useState<Flow>(() => savedFlows.get(item.id) ?? startFlow(questions));
   useEffect(() => {
     savedFlows.set(item.id, flow);
   }, [item.id, flow]);
   const [minimized, setMinimized] = useState(false);
-  const { busy, error, setError, send } = useSender(link, sessionId, item.id);
+  const { busy, error, setError, send } = useSender(link, sessionId, item.id, onReply);
   const card = useRef<HTMLElement>(null);
   const q = questions[flow.index];
   const draft = flow.drafts[flow.index];
@@ -127,7 +147,9 @@ function AskCard({ link, sessionId, item, onClose }: CardProps) {
   return (
     <section className="qc" ref={card} data-testid="question-card" data-minimized={minimized || undefined} aria-label="回答问题" onKeyDown={onKey}>
       <CardHead
-        eyebrow={[SOURCE_LABEL[item.source], q.header].filter(Boolean).join(" · ")}
+        interaction={interaction}
+        origin={origin}
+        eyebrow={[eyebrow, q.header].filter(Boolean).join(" · ")}
         title={q.question}
         minimized={minimized}
         onMinimize={() => setMinimized((v) => !v)}
@@ -214,12 +236,12 @@ function AskCard({ link, sessionId, item, onClose }: CardProps) {
             <span className="qc-error" role="status">
               {error}
             </span>
-            <button type="button" className="btn-ghost small dim" disabled={busy} title="告诉 agent 你不回答，它会接着做" onClick={() => void send({ action: "dismiss" })}>
+            {allowSkip && <button type="button" className="btn-ghost small dim" disabled={busy} title="告诉 agent 你不回答，它会接着做" onClick={() => void send({ action: "dismiss" })}>
               不回答
-            </button>
-            <button type="button" className="btn-ghost small" disabled={busy} onClick={() => run(skipAndMaybeSubmit(flow, questions))}>
+            </button>}
+            {allowSkip && <button type="button" className="btn-ghost small" disabled={busy} onClick={() => run(skipAndMaybeSubmit(flow, questions))}>
               跳过
-            </button>
+            </button>}
             <button type="button" className="btn-primary small" disabled={busy || !isDraftAnswered(draft)} onClick={() => run(advance(flow, questions))}>
               {busy ? "提交中…" : last ? "提交" : "下一题"}
             </button>
@@ -269,7 +291,7 @@ function FormCard({ link, sessionId, item, onClose }: CardProps) {
         }
       }}
     >
-      <CardHead eyebrow={[SOURCE_LABEL[item.source], item.serverName ? `MCP：${item.serverName}` : ""].filter(Boolean).join(" · ")} title={item.message || "请填写"} minimized={minimized} onMinimize={() => setMinimized((v) => !v)} onClose={onClose} busy={busy} />
+      <CardHead eyebrow={[SOURCE_LABEL[item.source], item.serverName ? `MCP：${item.serverName}` : ""].filter(Boolean).join(" · ")} title={item.message || "请填写"} interaction="blocking" origin="跨工具请求 · MCP" minimized={minimized} onMinimize={() => setMinimized((v) => !v)} onClose={onClose} busy={busy} />
       {!minimized && (
         <>
           <div className="qc-body qc-form">

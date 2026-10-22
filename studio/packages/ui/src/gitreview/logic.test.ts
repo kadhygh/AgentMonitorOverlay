@@ -42,10 +42,11 @@ describe("Git Review window logic", () => {
     // Stage 13: 用 git diff 看 opens the review at a file.
     const t = { workspaceId: "ws-1", file: "G:\\game\\src\\a b.cs", nonce: "3" };
     expect(parseReviewHash(reviewHash(t))).toEqual(t);
-    expect(parseReviewHash("#review?workspace=ws-1&n=3")).toEqual({ workspaceId: "ws-1" });
-    // A commit's window (S13-B): read-only, no session; a name that is not a commit id opens nothing.
+    expect(parseReviewHash("#review?workspace=ws-1&n=3")).toEqual({ workspaceId: "ws-1", nonce: "3" });
+    // A commit's window: read-only, can select a file; a name that is not a commit id opens nothing.
     expect(reviewHash({ workspaceId: "ws-1", commit: "abc1234" })).toBe("#review?workspace=ws-1&commit=abc1234");
-    expect(reviewHash({ workspaceId: "ws-1", commit: "abc1234", file: "a.cs", sessionId: "s" })).toBe("#review?workspace=ws-1&commit=abc1234");
+    const atCommitFile = { workspaceId: "ws-1", commit: "abc1234", file: "a.cs", nonce: "5" };
+    expect(parseReviewHash(reviewHash({ ...atCommitFile, sessionId: "s" }))).toEqual(atCommitFile);
     expect(parseReviewHash("#review?workspace=ws-1&commit=abc1234")).toEqual({ workspaceId: "ws-1", commit: "abc1234" });
     expect(parseReviewHash("#review?workspace=ws-1&commit=HEAD")).toBeNull();
   });

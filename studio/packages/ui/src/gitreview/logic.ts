@@ -10,7 +10,7 @@ import { isCommitRef, isObjectId, type GitChangedFile, type GitCommentRange, typ
 export interface ReviewTarget {
   workspaceId: string;
   sessionId?: string;
-  /** A commit's window (S13-B): read-only, no session or file. */
+  /** A commit's window: read-only. */
   commit?: string;
   /** Stage 13 (用 git diff 看): the file to select, absolute or relative to the project. */
   file?: string;
@@ -26,12 +26,12 @@ export interface ReviewTarget {
 
 /** The window's address: `#review?workspace=…&session=…&file=…&n=…`, or `#review?workspace=…&commit=…`. */
 export function reviewHash(t: ReviewTarget): string {
-  if (t.commit) return `#review?${new URLSearchParams({ workspace: t.workspaceId, commit: t.commit, ...(t.base ? { base: t.base } : {}) }).toString()}`;
+  if (t.commit) return `#review?${new URLSearchParams({ workspace: t.workspaceId, commit: t.commit, ...(t.base ? { base: t.base } : {}), ...(t.file ? { file: t.file, ...(t.nonce ? { n: t.nonce } : {}) } : {}) }).toString()}`;
   const q = new URLSearchParams({ workspace: t.workspaceId, ...(t.sessionId ? { session: t.sessionId } : {}) });
   if (t.base) q.set("base", t.base);
   if (t.base && t.baseLabel) q.set("label", t.baseLabel);
   if (t.file) q.set("file", t.file);
-  if (t.file && t.nonce) q.set("n", t.nonce);
+  if (t.nonce) q.set("n", t.nonce);
   return `#review?${q.toString()}`;
 }
 
@@ -43,12 +43,12 @@ export function parseReviewHash(hash: string): ReviewTarget | null {
   const commit = q.get("commit");
   const base = q.get("base");
   if (base !== null && !isObjectId(base)) return null;
-  if (commit !== null) return isCommitRef(commit) ? { workspaceId, commit, ...(base ? { base } : {}) } : null;
   const sessionId = q.get("session");
   const file = q.get("file");
   const nonce = q.get("n");
+  if (commit !== null) return isCommitRef(commit) ? { workspaceId, commit, ...(base ? { base } : {}), ...(file ? { file, ...(nonce ? { nonce } : {}) } : {}) } : null;
   const label = q.get("label");
-  return { workspaceId, ...(sessionId ? { sessionId } : {}), ...(file ? { file, ...(nonce ? { nonce } : {}) } : {}), ...(base ? { base, ...(label ? { baseLabel: label } : {}) } : {}) };
+  return { workspaceId, ...(sessionId ? { sessionId } : {}), ...(file ? { file } : {}), ...(nonce ? { nonce } : {}), ...(base ? { base, ...(label ? { baseLabel: label } : {}) } : {}) };
 }
 
 /** The list's status icons, as in Fork: + added, M modified, − deleted, R renamed. */

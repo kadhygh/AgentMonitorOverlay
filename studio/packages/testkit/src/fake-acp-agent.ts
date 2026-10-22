@@ -7,7 +7,7 @@
 //   [[context: N]]           the usage update says N tokens in use
 //   [[env]]                  the reply tells the permission mode and whether a key and a home were given
 //   [[endpoint]]             the reply tells the DeepSeek address, key and model it was given (third-party channels)
-//   [[mcp: TOOL]]            connects to the session's first MCP server, calls TOOL, replies its instructions and result
+//   [[mcp: TOOL {ARGS}]]     connects to the session's first MCP server, calls TOOL (optional JSON args), replies its instructions and result
 //   [[fail]]                 the prompt fails
 // `--patch FILE` (a DSH channel's catalog, 2026-10-19): the models it lists replace the built-in ones, its `acp` model
 // is the default; as in DSH, a model that is not offered cannot be picked.
@@ -98,7 +98,7 @@ class RpcError extends Error {
   }
 }
 
-async function mcpCall(server: McpServer, tool: string): Promise<{ instructions: string; result: string }> {
+async function mcpCall(server: McpServer, tool: string, args: Record<string, unknown> = {}): Promise<{ instructions: string; result: string }> {
   const headers: Record<string, string> = { "content-type": "application/json", accept: "application/json, text/event-stream" };
   for (const h of server.headers ?? []) headers[h.name] = h.value;
   const post = async (body: unknown) => {
@@ -110,7 +110,7 @@ async function mcpCall(server: McpServer, tool: string): Promise<{ instructions:
   const listed = await post({ jsonrpc: "2.0", id: 2, method: "tools/list", params: {} });
   const names = ((listed.result?.tools as Array<{ name: string }>) ?? []).map((t) => t.name);
   if (!names.includes(tool)) return { instructions, result: `NO TOOL ${tool} (tools: ${names.join(",")})` };
-  const called = await post({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: tool, arguments: {} } });
+  const called = await post({ jsonrpc: "2.0", id: 3, method: "tools/call", params: { name: tool, arguments: args } });
   const content = (called.result?.content as Array<{ text?: string }>) ?? [];
   return { instructions, result: content.map((c) => c.text ?? "").join("\n") || (called.error?.message ?? "") };
 }
@@ -171,11 +171,12 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
     }
     if (/\[\[endpoint\]\]/.test(text)) reply = `ENDPOINT base=${process.env.DEEPSEEK_BASE_URL ?? ""} key=${process.env.DEEPSEEK_API_KEY ?? ""} model=${s.model}`;
     if (/\[\[env\]\]/.test(text)) reply = `ENV permission=${process.env.DSH_PERMISSION_MODE ?? ""} key=${process.env.DEEPSEEK_API_KEY ? "yes" : "no"} home=${process.env.DSH_HOME ? "yes" : "no"} model=${s.model} effort=${s.effort}`;
-    const mcp = /\[\[mcp: ([a-z_]+)\]\]/.exec(text);
+    const mcp = /\[\[mcp: ([a-z_]+)(?: (.*?))?\]\]/s.exec(text);
     if (mcp) {
+      const args = mcp[2] ? JSON.parse(mcp[2]) as Record<string, unknown> : {};
       const server = a.mcp.find((m) => m.url);
-      const out = server ? await mcpCall(server, mcp[1]!) : { instructions: "", result: "NO MCP" };
-      update(a.id, { sessionUpdate: "tool_call", toolCallId: "mcp-1", title: `mcp__amo__${mcp[1]}`, kind: "other", status: "in_progress", rawInput: {} });
+      const out = server ? await mcpCall(server, mcp[1]!, args) : { instructions: "", result: "NO MCP" };
+      update(a.id, { sessionUpdate: "tool_call", toolCallId: "mcp-1", title: `mcp__amo__${mcp[1]}`, kind: "other", status: "in_progress", rawInput: args });
       update(a.id, { sessionUpdate: "tool_call_update", toolCallId: "mcp-1", status: "completed", content: [{ type: "content", content: { type: "text", text: out.result } }] });
       reply = `MCP RESULT ${out.result}\nINSTRUCTIONS ${out.instructions}`;
     }

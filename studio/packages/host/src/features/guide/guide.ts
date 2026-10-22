@@ -52,6 +52,7 @@ const GUIDE: Record<GuideSection, string> = {
 
 - project_context：项目的说明、路径、git 分支等。
 - list_file_marks：人加到书签里的重要文件（带说明和行号范围）；专门的文档在项目里时，人会把它加到书签。
+- review_open：让人审阅文件。mode: file 加 file 打开磁盘上的当前文件，可带 line / endLine 定位行号；mode: changes（默认）看 Git 改动，可带 file 选中文件，base 对比指定 ref，commit / range 看提交范围（只读）。默认当前项目，批注默认发回你的会话。保存修改后再调一次就会重新读取；不代表人已审阅或批准。
 - pack_list / pack_doc：项目的扩展包（约定、模板）。`,
 };
 

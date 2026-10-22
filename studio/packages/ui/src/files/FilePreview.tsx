@@ -56,7 +56,7 @@ export const isImage = (path: string) => {
 export type Loaded = { state: "loading" } | { state: "ok"; file: TextFile } | { state: "error"; message: string };
 
 /** The file's text from the Host; `enabled` false asks nothing (an image, or a change shown instead). */
-export function useTextFile(link: HostLink, file: FileRef, enabled: boolean, reload: number): Loaded {
+export function useTextFile(link: HostLink, file: FileRef, enabled: boolean, reload: number | string): Loaded {
   const [loaded, setLoaded] = useState<Loaded>({ state: "loading" });
   useEffect(() => {
     if (!enabled) return;
@@ -98,7 +98,7 @@ export function FileContent({
   line?: number | undefined;
   endLine?: number | undefined;
   rendered: boolean;
-  reload: number;
+  reload: number | string;
 }) {
   if (isImage(file.path))
     return (

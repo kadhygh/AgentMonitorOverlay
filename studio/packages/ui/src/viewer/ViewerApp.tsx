@@ -54,7 +54,9 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
   const [reload, setReload] = useState(0);
   const [copied, setCopied] = useState(false);
   const [pinned, setPinned] = useState(false);
-  const loaded = useTextFile(link, file, !isImage(file.path), reload);
+  // Every open is a fresh read, including the same path after the agent saved another edit.
+  const readVersion = `${reload}:${target.nonce ?? ""}`;
+  const loaded = useTextFile(link, file, !isImage(file.path), readVersion);
   const absolute = loaded.state === "ok" ? loaded.file.path : file.path;
   const markdown = isMarkdownText(file.path, loaded);
 
@@ -204,7 +206,7 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
               {/* Rendered Markdown: Ctrl+F finds in the text on the page. */}
               {markdown && rendered && <FindBar active={mode === "file"} container={rendered_} />}
               <div className="vw-content" ref={rendered_}>
-                <FileContent link={link} file={file} loaded={loaded} line={target.line} endLine={target.endLine} rendered={rendered} reload={reload} />
+                <FileContent link={link} file={file} loaded={loaded} line={target.line} endLine={target.endLine} rendered={rendered} reload={readVersion} />
               </div>
             </>
           )}

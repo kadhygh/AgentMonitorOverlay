@@ -22,6 +22,7 @@ import { openMarks, useMarksShortcut } from "./marks/open.js";
 import { navHistory, useNavHistory } from "./shell/navHistory.js";
 import type { MarksTarget } from "./marks/logic.js";
 import { openReview } from "./gitreview/open.js";
+import { openViewer } from "./viewer/open.js";
 import { onHostEvent } from "./host/events.js";
 import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
 
@@ -120,7 +121,11 @@ export function App() {
     () =>
       onHostEvent((e) => {
         if (e.type !== "review.open" || Date.now() - Date.parse(e.at) > 60_000) return;
-        openReview({ ...e.target, ...(e.target.file ? { nonce: `ext-${e.seq}` } : {}) });
+        if (e.target.mode === "file" && e.target.file) {
+          openViewer({ path: e.target.file, workspaceId: e.target.workspaceId, sessionId: e.target.sessionId, line: e.target.line, endLine: e.target.endLine });
+          return;
+        }
+        openReview({ ...e.target, nonce: `ext-${e.seq}` });
       }),
     [],
   );

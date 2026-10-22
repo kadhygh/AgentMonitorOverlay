@@ -28,14 +28,15 @@ export function createAmoMcpServer(service: HostService, caller: McpCaller | nul
 
 /** The role card goes into the instructions; the session counts as told only when it connects. */
 function dshInstructions(service: HostService, sessionId: string, connecting: boolean): string {
+  const instructions = `${AMO_MCP_INSTRUCTIONS}\n\nThis ACP session has no native user-question channel. When you need the person's decision, use decision_request: AMO shows its shared question popup, and the answer returns as mail (mailbox_read).`;
   try {
     const card = roleCard(service, sessionId);
     if (connecting) recordRole(service, sessionId);
-    return `${AMO_MCP_INSTRUCTIONS}
+    return `${instructions}
 
 ${card}`;
   } catch {
-    return AMO_MCP_INSTRUCTIONS;
+    return instructions;
   }
 }
 

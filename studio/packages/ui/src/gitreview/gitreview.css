@@ -53,7 +53,7 @@ button[aria-pressed="true"] .gr-key { color: var(--text-dim); border-color: var(
 .gr-folder { padding: 4px 6px 2px; font-family: var(--font-code); font-size: 11.5px; color: var(--text-faint); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; }
 .gr-file { width: 100%; height: 24px; display: flex; align-items: center; gap: 6px; padding: 0 6px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text); font-size: var(--fs-sm); text-align: left; cursor: pointer; }
 .gr-file:hover { background: var(--chip); }
-.gr-file[aria-current="true"] { background: var(--selected); }
+.gr-file[aria-current="true"] { background: var(--selected); scroll-margin-block: 2px; }
 /* Status: a filled square with a glyph (Fork); an untracked new file is the outline of the added one. */
 .gr-status { flex: none; width: 14px; height: 14px; border-radius: 3px; display: inline-flex; align-items: center; justify-content: center; font-family: var(--font-code); font-size: 10.5px; font-weight: 700; line-height: 1; color: #fff; }
 .gr-status.added { background: var(--gr-st-added); }

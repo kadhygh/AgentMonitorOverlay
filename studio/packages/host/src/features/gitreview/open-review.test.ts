@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
@@ -109,6 +109,46 @@ describe("POST /api/review/open", { timeout: 30_000 }, () => {
     expect((await open({ path: dir, range: "main..feature", commit: "HEAD" })).status).toBe(400);
     expect((await open({ path: dir, commit: "nope" })).status).toBe(404);
     expect((await open({})).status).toBe(400);
+  });
+
+  it("opens a current file and line range without requiring Git", async () => {
+    service.liveWindows = 1;
+    const dir = join(root, "plain folder");
+    mkdirSync(dir);
+    writeFileSync(join(dir, "中文 file.ts"), "one\ntwo\nthree\n");
+    const r = await open({ path: dir, mode: "file", file: join(dir, "中文 file.ts"), line: 2, endLine: 3 });
+    expect(r.status).toBe(200);
+    expect(r.data.target).toMatchObject({ mode: "file", file: "中文 file.ts", line: 2, endLine: 3 });
+    expect(events.filter((e) => e.type === "review.open")).toHaveLength(1);
+  });
+
+  it("refuses invalid file requests without emitting an open or registering the project", async () => {
+    service.liveWindows = 1;
+    const { dir } = makeRepo();
+    const count = store.listWorkspaces().length;
+    for (const extra of [
+      { mode: "nope" }, { mode: "file" }, { mode: "file", file: "a.txt", base: "HEAD" },
+      { mode: "file", file: "a.txt", line: 0 }, { mode: "file", file: "a.txt", line: "2" },
+      { mode: "file", file: "a.txt", line: 3, endLine: 2 }, { mode: "file", file: "a.txt", endLine: 2 },
+      { file: "a.txt", line: 2 }, { mode: "file", file: "../outside.txt" }, { mode: "file", file: "." },
+      { mode: "file", file: "a.txt\n" }, { path: dir, workspaceId: "ws-nope" },
+    ]) expect((await open({ path: dir, ...extra })).status, JSON.stringify(extra)).toBe(400);
+    expect((await open({ path: dir, mode: "file", file: "missing.txt" })).status).toBe(404);
+    expect((await open({ path: dir, commit: "nope" })).status).toBe(404);
+    expect(store.listWorkspaces()).toHaveLength(count);
+    expect(events.filter((e) => e.type === "review.open")).toHaveLength(0);
+  });
+
+  it("selects committed files, normalises paths, and keeps deleted files reviewable", async () => {
+    service.liveWindows = 1;
+    const { dir, three } = makeRepo();
+    expect((await open({ path: dir, commit: "HEAD", file: "./c.txt" })).data.target).toMatchObject({ commit: three, file: "c.txt" });
+    expect((await open({ path: dir, range: "main..feature", file: join(dir, "b.txt") })).data.target).toMatchObject({ file: "b.txt" });
+    expect((await open({ path: dir, file: "c.txt" })).status).toBe(404);
+    expect((await open({ path: dir, commit: "HEAD", file: "a.txt" })).status).toBe(404);
+    unlinkSync(join(dir, "c.txt"));
+    expect((await open({ path: dir, file: "c.txt" })).data.target.file).toBe("c.txt");
+    expect((await open({ path: dir, mode: "file", file: "c.txt" })).status).toBe(404);
   });
 
   it("lists the working tree against a given base, and a commit against one", async () => {
