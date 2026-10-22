@@ -1,6 +1,7 @@
 import { useState } from "react";
 import { TASK_COLUMNS, taskProject, type Session, type Task, type TaskColumn, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, relativeTime, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
+import { PopMenu, type Anchor } from "../task/TaskHead.js";
 import { ArchivedTasks } from "./ArchivedTasks.js";
 import { KindIcon } from "./KindIcon.js";
 import { setGroupByTopic, useGroupByTopic } from "./prefs.js";
@@ -46,13 +47,23 @@ interface BoardProps {
   decisions?: ReadonlyMap<string, number>;
   /** Checklist progress per task id (tasks made from a pack template). */
   checklist?: ReadonlyMap<string, { done: number; total: number }>;
+  /** 归档已完成 (2026-10-22): the 完成 column's right-click menu archives its cards, or one topic group's. */
+  onArchive?(tasks: readonly Task[]): void;
 }
 
+/** The 完成 column's right-click menu: the whole column, and the topic group it was opened on. */
+type DoneMenu = { at: Anchor; all: Task[]; group?: { name: string; tasks: Task[] } };
+
 /** Four columns; the person moves cards (drag a card onto another column), agents never do. Cards carry no buttons. */
-export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMove, mail, decisions, checklist }: BoardProps) {
+export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMove, mail, decisions, checklist, onArchive }: BoardProps) {
   const visible = tasks.filter((t) => inScope(t, scope)).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const [dragging, setDragging] = useState<Task | null>(null);
   const [over, setOver] = useState<TaskColumn | null>(null);
+  const [menu, setMenu] = useState<DoneMenu | null>(null);
+  const archive = (list: readonly Task[]) => {
+    setMenu(null);
+    if (list.length) onArchive?.(list);
+  };
   // 按专题分组: wherever the board holds more than one topic's tasks (not in a topic's own board).
   const groupOn = useGroupByTopic();
   const canGroup = scope.kind !== "topic";
@@ -92,6 +103,7 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
       )}
       {TASK_COLUMNS.map((col) => {
         const cards = visible.filter((t) => t.column === col);
+        const archivable = col === "done" && !!onArchive;
         return (
           <div
             className={over === col && dragging && dragging.column !== col ? "column drop" : "column"}
@@ -112,14 +124,26 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
               setDragging(null);
               setOver(null);
             }}
+            onContextMenu={
+              archivable
+                ? (e) => {
+                    if ((e.target as Element).closest(".archived-tasks")) return;
+                    e.preventDefault();
+                    // Inside a topic group (its head or its cards) the menu also offers that group alone.
+                    const el = (e.target as Element).closest<HTMLElement>("[data-group-index]");
+                    const g = el ? topicGroups(cards, topics)[Number(el.dataset.groupIndex)] : undefined;
+                    setMenu({ at: { x: e.clientX, y: e.clientY }, all: cards, ...(g ? { group: { name: g.topic?.title ?? "未归专题", tasks: g.tasks } } : {}) });
+                  }
+                : undefined
+            }
           >
             <div className="column-head">
               <span className="column-name">{COLUMN_NAMES[col]}</span>
               <span className="column-count">{cards.length}</span>
             </div>
             {grouped
-              ? topicGroups(cards, topics).map((g) => (
-                  <div className="topic-group" key={g.topic?.id ?? ""} data-testid="topic-group" data-topic={g.topic?.title ?? ""}>
+              ? topicGroups(cards, topics).map((g, i) => (
+                  <div className="topic-group" key={g.topic?.id ?? ""} data-testid="topic-group" data-topic={g.topic?.title ?? ""} data-group-index={i}>
                     <div className={g.topic ? "topic-group-head" : "topic-group-head none"}>
                       <KindIcon kind="topic" />
                       <span className="topic-group-name">{g.topic?.title ?? "未归专题"}</span>
@@ -136,6 +160,18 @@ export function Board({ tasks, sessions, workspaces, topics, scope, onOpen, onMo
           </div>
         );
       })}
+      {menu && (
+        <PopMenu at={menu.at} label="归档已完成" onClose={() => setMenu(null)} testId="done-menu">
+          {menu.group && (
+            <button type="button" role="menuitem" title="这一组的任务和它们的会话一起归档；在「已归档」里能打开、恢复" onClick={() => archive(menu.group!.tasks)} data-testid="archive-done-group">
+              归档「{menu.group.name}」这一组（{menu.group.tasks.length}）
+            </button>
+          )}
+          <button type="button" role="menuitem" disabled={!menu.all.length} title="「完成」里的任务和它们的会话一起归档；在「已归档」里能打开、恢复" onClick={() => archive(menu.all)} data-testid="archive-done-all">
+            归档全部已完成（{menu.all.length}）
+          </button>
+        </PopMenu>
+      )}
     </section>
   );
 }

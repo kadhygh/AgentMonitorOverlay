@@ -124,6 +124,47 @@ test("archived tasks leave the board; the 完成 column lists them, they open re
   await expect(page.getByTestId("archived-open")).toHaveCount(0);
 });
 
+test("the 完成 column's right-click menu archives one topic group or every finished task (2026-10-22)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const topic = await studio.api<Topic>("POST", "/api/topics", { title: "掉落表重构" });
+  const make = async (title: string, column: string, topicId?: string) => {
+    const { task } = await studio!.api<{ task: Task }>("POST", "/api/tasks", { title, workspaceId: ws.id });
+    await studio!.api("PATCH", `/api/tasks/${task.id}`, { column, ...(topicId ? { topicId } : {}) });
+    return task;
+  };
+  await make("拆掉旧的掉落表", "done", topic.id);
+  await make("补掉落表测试", "done", topic.id);
+  await make("改日志格式", "done");
+  await make("还在做的", "doing", topic.id);
+  await page.getByTestId("scope-all").click();
+  const done = page.getByTestId("column-done");
+  await expect(done.getByTestId("task-card")).toHaveCount(3);
+
+  // On a topic group (its head or its cards): that group alone, or the whole column.
+  await done.locator('[data-testid="topic-group"][data-topic="掉落表重构"]').locator(".topic-group-head").click({ button: "right" });
+  await expect(page.getByTestId("archive-done-group")).toHaveText("归档「掉落表重构」这一组（2）");
+  await expect(page.getByTestId("archive-done-all")).toHaveText("归档全部已完成（3）");
+  await screenshot(app, "stage-18", "S18-board-archive-done", page);
+  await page.getByTestId("archive-done-group").click();
+  await expect(page.getByTestId("done-menu")).toHaveCount(0);
+  await expect(done.getByTestId("task-card")).toHaveCount(1);
+  await expect(done.getByTestId("task-card")).toContainText("改日志格式");
+  await expect(page.getByTestId("column-doing").getByTestId("task-card")).toContainText("还在做的");
+
+  // On the column itself (no group there): only the whole column. Other columns have no such menu.
+  await page.getByTestId("column-doing").click({ button: "right" });
+  await expect(page.getByTestId("done-menu")).toHaveCount(0);
+  await done.locator(".column-head").click({ button: "right" });
+  await expect(page.getByTestId("archive-done-group")).toHaveCount(0);
+  await page.getByTestId("archive-done-all").click();
+  await expect(done.getByTestId("task-card")).toHaveCount(0);
+  await expect(page.getByTestId("archived-open")).toHaveText("已归档 3");
+  const state = await studio.api<{ tasks: Task[] }>("GET", "/api/state");
+  expect(state.tasks.filter((t) => t.archivedAt).map((t) => t.title).sort()).toEqual(["拆掉旧的掉落表", "改日志格式", "补掉落表测试"].sort());
+});
+
 test("a card title with a long unbroken word (a path) wraps inside its card (2026-10-16)", async () => {
   studio = await launchStudio();
   const { page } = studio;
