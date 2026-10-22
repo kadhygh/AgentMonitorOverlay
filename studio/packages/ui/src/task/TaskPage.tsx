@@ -390,7 +390,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               Review
             </button>
           )}
-          <button type="button" className="btn-ghost small with-icon" title="书签：这个专题记下的文件和对话片段（Ctrl+Shift+M）" onClick={() => openMarks({ topicId: task.topicId ?? "none", workspaceId: task.workspaceId })} data-testid="task-marks">
+          <button type="button" className="btn-ghost small with-icon" title="书签：这个专题记下的文件和对话片段（Ctrl+Shift+M）" onClick={() => openMarks({ topicId: task.topicId ?? "none", workspaceId: task.workspaceId, taskId: task.id })} data-testid="task-marks">
             <svg width="15" height="15" viewBox="0 0 16 16" aria-hidden="true">
               <path d="M4.5 2.5h7v11l-3.5-2.6-3.5 2.6z" />
             </svg>

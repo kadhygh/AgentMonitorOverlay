@@ -18,14 +18,15 @@ const ID = /^[\w-]{1,80}$/;
 let opened = 0;
 
 /**
- * `#marks?topic=…&workspace=…&mark=…&edit=1&n=…` for what the page asked (invalid ids are dropped; topic "none" is
+ * `#marks?topic=…&workspace=…&task=…&mark=…&edit=1&n=…` for what the page asked (invalid ids are dropped; topic "none" is
  * 未归专题). `n` changes on every open, so asking for the same mark again still reaches the page as a hash change.
  */
 export function marksHash(target: unknown): string {
-  const t = target as { topicId?: unknown; workspaceId?: unknown; markId?: unknown; edit?: unknown } | null;
+  const t = target as { topicId?: unknown; workspaceId?: unknown; taskId?: unknown; markId?: unknown; edit?: unknown } | null;
   const q: string[] = [];
   if (typeof t?.topicId === "string" && ID.test(t.topicId)) q.push(`topic=${t.topicId}`);
   if (typeof t?.workspaceId === "string" && ID.test(t.workspaceId)) q.push(`workspace=${t.workspaceId}`);
+  if (typeof t?.taskId === "string" && ID.test(t.taskId)) q.push(`task=${t.taskId}`);
   if (typeof t?.markId === "string" && ID.test(t.markId)) {
     q.push(`mark=${t.markId}`);
     if (t.edit === true) q.push("edit=1");

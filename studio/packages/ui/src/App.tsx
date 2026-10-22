@@ -108,7 +108,7 @@ export function App() {
   const marksTarget = (): MarksTarget => {
     if (view.kind === "task" && host.kind === "ready") {
       const task = host.state.tasks.find((t) => t.id === view.taskId);
-      return task ? { topicId: task.topicId ?? "none", workspaceId: task.workspaceId } : {};
+      return task ? { topicId: task.topicId ?? "none", workspaceId: task.workspaceId, taskId: task.id } : {};
     }
     if (scope.kind === "topic") return { topicId: scope.id };
     return scope.kind === "workspace" ? { workspaceId: scope.id } : {};

@@ -119,7 +119,7 @@ export function SessionHead({
             title="书签：这个专题记下的文件和对话片段，可以拖进输入框"
             onClick={() => {
               setSessionMenu(null);
-              openMarks({ topicId: topicId ?? "none", workspaceId: session.workspaceId });
+              openMarks({ topicId: topicId ?? "none", workspaceId: session.workspaceId, ...(session.taskId ? { taskId: session.taskId } : {}) });
             }}
             data-testid="session-marks"
           >

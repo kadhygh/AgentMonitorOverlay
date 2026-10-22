@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { FILE_MARK_MIME, parseFileMarkDrag, type Bookmark, type ChatMark, type FileMark, type Topic } from "@amo-studio/protocol";
-import { chatDragText, filterGroups, findMark, groupBookmarks, markDragData, marksHash, matchMark, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo } from "./logic.js";
+import { chatDragText, filterGroups, findMark, groupBookmarks, markDragData, marksHash, matchMark, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo, scopedGroups, scopeKey, scopesFor } from "./logic.js";
 
 const mark = (id: string, path: string, workspaceId: string | null, note = "", extra: Partial<FileMark> = {}): FileMark => ({
   kind: "file",
@@ -38,6 +38,12 @@ describe("the marks window's address", () => {
     expect(parseMarksHash(marksHash(t))).toEqual(t);
     expect(parseMarksHash(marksHash({ markId: "m-1" }))).toEqual({ markId: "m-1" });
     expect(marksHash({ edit: true })).toBe("#marks");
+  });
+
+  it("round-trips the task it was opened from", () => {
+    const t = { topicId: "none", workspaceId: "ws-1", taskId: "task-1" };
+    expect(marksHash(t)).toBe("#marks?topic=none&workspace=ws-1&task=task-1");
+    expect(parseMarksHash(marksHash(t))).toEqual(t);
   });
 });
 
@@ -88,6 +94,31 @@ describe("grouping by topic and search", () => {
     expect(groupBookmarks(marks, topics, "none").map((g) => g.topicId)).toEqual([null, "t1", "t2"]);
     expect(groupBookmarks([], topics, "none")).toEqual([{ topicId: null, name: "未归专题", archived: false, marks: [] }]);
     expect(groupBookmarks([], topics)).toEqual([]);
+  });
+
+  it("显示范围: the topic in front alone, the project in front by topic, or everything (2026-10-22)", () => {
+    const names = (gs: ReturnType<typeof scopedGroups>) => gs.map((g) => [g.name, g.marks.map((m) => m.id)]);
+    const fromTask = { topicId: "t2", workspaceId: "a", taskId: "k1" };
+    expect(names(scopedGroups(marks, topics, fromTask, "t2", "topic"))).toEqual([["战斗", ["m2", "c1"]]]);
+    // In project a: m1 (掉落), the passage (战斗, first as the topic in front) and m4 (its topic is gone: 未归专题).
+    expect(names(scopedGroups(marks, topics, fromTask, "t2", "project"))).toEqual([
+      ["战斗", ["c1"]],
+      ["掉落", ["m1"]],
+      ["未归专题", ["m4"]],
+    ]);
+    expect(scopedGroups(marks, topics, fromTask, "t2", "all")).toEqual(groupBookmarks(marks, topics, "t2"));
+    // A task in no topic: 当前专题 is 未归专题, shown even when empty.
+    expect(names(scopedGroups(marks, topics, { topicId: "none" }, null, "topic"))).toEqual([["未归专题", ["m3", "m4"]]]);
+    expect(names(scopedGroups([], topics, { topicId: "none" }, null, "topic"))).toEqual([["未归专题", []]]);
+  });
+
+  it("offers 当前专题 and 当前项目 only with a topic or project in front, and remembers per task first", () => {
+    expect(scopesFor({})).toEqual({ topic: false, project: false, all: true });
+    expect(scopesFor({ topicId: "none", workspaceId: "a" })).toEqual({ topic: true, project: true, all: true });
+    expect(scopeKey({ topicId: "t1", workspaceId: "a", taskId: "k1" })).toBe("task:k1");
+    expect(scopeKey({ topicId: "t1" })).toBe("topic:t1");
+    expect(scopeKey({ workspaceId: "a" })).toBe("workspace:a");
+    expect(scopeKey({})).toBe("all");
   });
 
   it("matches every word against a file's path and note, or a passage's text, session and note", () => {

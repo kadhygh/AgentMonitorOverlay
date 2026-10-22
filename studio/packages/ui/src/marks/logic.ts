@@ -6,8 +6,10 @@ import { FILE_MARK_MIME, lineSuffix, type Bookmark, type ChatMark, type FileMark
 export interface MarksTarget {
   /** The topic shown first, where new bookmarks go ("none": 未归专题). */
   topicId?: string;
-  /** The project "+ 文件" picks from first. */
+  /** The project "+ 文件" picks from first, and the one 「当前项目」 shows. */
   workspaceId?: string;
+  /** The task it was opened from: its 显示范围 is remembered for it (2026-10-22). */
+  taskId?: string;
   /** The mark to scroll to and flash (stage 13: the 标记 button of a file already marked). */
   markId?: string;
   /** With `markId`: put the cursor in its note (a mark just made from the 标记 button). */
@@ -21,6 +23,7 @@ export function marksHash(t: MarksTarget = {}): string {
   const q = new URLSearchParams();
   if (t.topicId) q.set("topic", t.topicId);
   if (t.workspaceId) q.set("workspace", t.workspaceId);
+  if (t.taskId) q.set("task", t.taskId);
   if (t.markId) q.set("mark", t.markId);
   if (t.markId && t.edit) q.set("edit", "1");
   if (t.nonce) q.set("n", t.nonce);
@@ -33,11 +36,13 @@ export function parseMarksHash(hash: string): MarksTarget | null {
   const q = new URLSearchParams(hash.slice("#marks".length).replace(/^\?/, ""));
   const topicId = q.get("topic");
   const workspaceId = q.get("workspace");
+  const taskId = q.get("task");
   const markId = q.get("mark");
   const nonce = q.get("n");
   return {
     ...(topicId ? { topicId } : {}),
     ...(workspaceId ? { workspaceId } : {}),
+    ...(taskId ? { taskId } : {}),
     ...(markId ? { markId, ...(q.get("edit") === "1" ? { edit: true } : {}) } : {}),
     ...(nonce ? { nonce } : {}),
   };
@@ -97,6 +102,39 @@ export function matchMark(mark: Bookmark, query: string): boolean {
   if (!words.length) return true;
   const hay = (mark.kind === "chat" ? `${mark.quote}\n${mark.sessionTitle}\n${mark.note}` : `${mark.path}\n${mark.note}`).toLowerCase();
   return words.every((w) => hay.includes(w));
+}
+
+/** 显示范围 (2026-10-22): the topic in front, the project in front, or everything. */
+export type MarksScope = "topic" | "project" | "all";
+
+/** Which scopes the window can offer: 当前专题 needs a topic in front ("none" counts), 当前项目 a project. */
+export function scopesFor(target: MarksTarget): Record<MarksScope, boolean> {
+  return { topic: !!target.topicId, project: !!target.workspaceId, all: true };
+}
+
+/** Where a scope choice is remembered: per task, else per topic or project it was opened at, else one for the rest. */
+export function scopeKey(target: MarksTarget): string {
+  if (target.taskId) return `task:${target.taskId}`;
+  if (target.topicId) return `topic:${target.topicId}`;
+  if (target.workspaceId) return `workspace:${target.workspaceId}`;
+  return "all";
+}
+
+/**
+ * The groups a scope shows: 当前专题 only the topic in front (`current`, null for 未归专题); 当前项目 the bookmarks in
+ * the project in front, by topic, without empty groups; 全部 everything, the topic in front first.
+ */
+export function scopedGroups(marks: readonly Bookmark[], topics: readonly Topic[], target: MarksTarget, current: string | null, scope: MarksScope): BookmarkGroup[] {
+  const first = target.topicId ? (current ?? "none") : undefined;
+  if (scope === "project" && target.workspaceId) {
+    return groupBookmarks(
+      marks.filter((m) => m.workspaceId === target.workspaceId),
+      topics,
+      first,
+    ).filter((g) => g.marks.length);
+  }
+  const groups = groupBookmarks(marks, topics, first);
+  return scope === "topic" && target.topicId ? groups.filter((g) => g.topicId === current) : groups;
 }
 
 export function filterGroups(groups: readonly BookmarkGroup[], query: string): BookmarkGroup[] {

@@ -243,3 +243,60 @@ test("hands marks to a session: @ 标记的文件, a mark dragged into the compo
   await expect.poll(() => marks.url()).toContain(`#marks?topic=none&workspace=${ws.id}`);
   expect(app.windows().length).toBe(windows);
 });
+
+test("显示范围: 当前专题 / 当前项目 / 全部, remembered per task (2026-10-22)", async () => {
+  studio = await launchStudio();
+  const { app, page } = studio;
+  const dir = project(studio);
+  const other = studio.workspace("other");
+  writeFileSync(join(other, "readme.md"), "# other\n");
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+  await studio.api<Workspace>("POST", "/api/workspaces", { path: other });
+  const drops = await studio.api<{ id: string }>("POST", "/api/topics", { title: "掉落" });
+  const fights = await studio.api<{ id: string }>("POST", "/api/topics", { title: "战斗" });
+  await studio.api("POST", "/api/tasks", { title: "任务甲", workspaceId: ws.id, topicId: drops.id });
+  await studio.api("POST", "/api/tasks", { title: "任务乙", workspaceId: ws.id, topicId: fights.id });
+  await studio.api("POST", "/api/file-marks", { path: join(dir, "drop.lua"), topicId: drops.id });
+  await studio.api("POST", "/api/file-marks", { path: join(dir, "docs", "boss.md"), topicId: fights.id });
+  await studio.api("POST", "/api/file-marks", { path: join(other, "readme.md"), topicId: drops.id });
+  const names = (w: Page) => w.getByTestId("mark-row").evaluateAll((rows) => rows.map((r) => r.getAttribute("data-path")!.split(/[\\/]/).pop()).sort());
+
+  const openFrom = async (title: string) => {
+    await page.getByTestId("scope-all").click();
+    await page.getByTestId("task-card").filter({ hasText: title }).click();
+    await page.getByTestId("task-marks").click();
+  };
+
+  // From 任务甲: 全部 at first (nothing chosen yet), everything, 掉落 first.
+  const opened = app.waitForEvent("window");
+  await openFrom("任务甲");
+  const marks = await opened;
+  await marks.waitForLoadState("domcontentloaded");
+  await expect(marks.getByTestId("marks-scope-all")).toHaveAttribute("aria-checked", "true");
+  await expect.poll(() => names(marks)).toEqual(["boss.md", "drop.lua", "readme.md"]);
+  await expect(marks.getByTestId("marks-scope-topic")).toContainText("当前专题掉落");
+  await expect(marks.getByTestId("marks-scope-project")).toContainText("当前项目game");
+  // 当前项目: game's bookmarks only, by topic.
+  await marks.getByTestId("marks-scope-project").click();
+  await expect.poll(() => names(marks)).toEqual(["boss.md", "drop.lua"]);
+  // 当前专题: 掉落 only (both projects).
+  await marks.getByTestId("marks-scope-topic").click();
+  await expect.poll(() => names(marks)).toEqual(["drop.lua", "readme.md"]);
+  await expect(marks.getByTestId("marks-group")).toHaveCount(1);
+  await screenshot(app, "stage-18", "S18-marks-scope", marks, "marks");
+
+  // From 任务乙: its own choice (none yet: 全部).
+  await openFrom("任务乙");
+  await expect(marks.getByTestId("marks-scope-all")).toHaveAttribute("aria-checked", "true");
+  await expect.poll(() => names(marks)).toEqual(["boss.md", "drop.lua", "readme.md"]);
+  // Back to 任务甲: 当前专题 again, without choosing.
+  await openFrom("任务甲");
+  await expect(marks.getByTestId("marks-scope-topic")).toHaveAttribute("aria-checked", "true");
+  await expect.poll(() => names(marks)).toEqual(["drop.lua", "readme.md"]);
+  // From the top bar on the board (no task, no topic): only 全部 can be chosen.
+  await page.getByTestId("scope-all").click();
+  await page.keyboard.press("Control+Shift+M");
+  await expect(marks.getByTestId("marks-scope-topic")).toBeDisabled();
+  await expect(marks.getByTestId("marks-scope-project")).toBeDisabled();
+  await expect(marks.getByTestId("marks-scope-all")).toHaveAttribute("aria-checked", "true");
+});

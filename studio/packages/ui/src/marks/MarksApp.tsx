@@ -12,7 +12,24 @@ import { useBookmarks } from "./useFileMarks.js";
 import { askBookmarkNote } from "./NotePrompt.js";
 import { openMarks, openPassage } from "./open.js";
 import { openViewer } from "../viewer/open.js";
-import { chatDragText, filterGroups, findMark, groupBookmarks, markDragData, NO_TOPIC, parseMarksHash, parseRange, pastedPaths, rangeText, relativeTo, type BookmarkGroup, type MarksTarget } from "./logic.js";
+import {
+  chatDragText,
+  filterGroups,
+  findMark,
+  markDragData,
+  NO_TOPIC,
+  parseMarksHash,
+  parseRange,
+  pastedPaths,
+  rangeText,
+  relativeTo,
+  scopedGroups,
+  scopeKey,
+  scopesFor,
+  type BookmarkGroup,
+  type MarksScope,
+  type MarksTarget,
+} from "./logic.js";
 
 // The bookmarks window (书签, 2026-10-19; it was 文件标记, S12-D; #marks?topic=…): bookmarks by topic, each a file (or
 // folder) or a passage of a conversation, with a note. Files come in by dropping them from Explorer, "+ 文件" (a
@@ -54,6 +71,39 @@ function topicProjects(state: StateSnapshot, topicId: string | null): Workspace[
   return mine.length ? mine : projects;
 }
 
+const SCOPE_KEY = "amo.marksScope";
+const SCOPE_KEEP = 300;
+
+/** 显示范围 as last chosen where the window was opened from (a task, else a topic or project; 2026-10-22). */
+function readScopes(): Record<string, MarksScope> {
+  try {
+    const all = JSON.parse(localStorage.getItem(SCOPE_KEY) ?? "{}") as unknown;
+    return all && typeof all === "object" ? (all as Record<string, MarksScope>) : {};
+  } catch {
+    return {};
+  }
+}
+
+function useScope(target: MarksTarget): [MarksScope, (scope: MarksScope) => void] {
+  const key = scopeKey(target);
+  const [chosen, setChosen] = useState<MarksScope | undefined>(() => readScopes()[key]);
+  useEffect(() => setChosen(readScopes()[key]), [key]);
+  const choose = (scope: MarksScope) => {
+    setChosen(scope);
+    try {
+      // The newest choices last; the oldest go once there are too many.
+      const { [key]: _, ...rest } = readScopes();
+      const entries = [...Object.entries(rest), [key, scope] as const].slice(-SCOPE_KEEP);
+      localStorage.setItem(SCOPE_KEY, JSON.stringify(Object.fromEntries(entries)));
+    } catch {
+      // no storage: kept as long as the window
+    }
+  };
+  // A remembered scope the window cannot offer now (no topic or project in front) shows everything.
+  const scope = chosen && scopesFor(target)[chosen] ? chosen : "all";
+  return [scope, choose];
+}
+
 /** Whether VS Code can open files here (the 「VS Code 打开」 link). */
 function useVsCode(link: HostLink): boolean {
   const [vscode, setVscode] = useState(false);
@@ -79,9 +129,17 @@ function MarksPage({ link, state, target, focus }: { link: HostLink; state: Stat
 
   // The topic in front: where pasted and dropped files go.
   const current = target.topicId && target.topicId !== "none" && state.topics.some((t) => t.id === target.topicId) ? target.topicId : null;
-  const groups = filterGroups(groupBookmarks(marks ?? [], state.topics, target.topicId ? (current ?? "none") : undefined), query);
+  const [scope, setScope] = useScope(target);
+  const groups = filterGroups(scopedGroups(marks ?? [], state.topics, target, current, scope), query);
   const total = marks?.length ?? 0;
   const currentName = current ? (state.topics.find((t) => t.id === current)?.title ?? NO_TOPIC) : NO_TOPIC;
+  const projectName = target.workspaceId ? (state.workspaces.find((w) => w.id === target.workspaceId)?.name ?? "") : "";
+  const offered = scopesFor(target);
+  const scopes: Array<{ scope: MarksScope; label: string; name: string; off: string }> = [
+    { scope: "topic", label: "当前专题", name: target.topicId ? currentName : "", off: "从任务或专题打开书签时可用" },
+    { scope: "project", label: "当前项目", name: projectName, off: "从任务或项目打开书签时可用" },
+    { scope: "all", label: "全部", name: "", off: "" },
+  ];
   // "+ 文件" in the toolbar picks from the project asked for, else the topic's first.
   const pickFor = (topicId: string | null): Workspace | null => {
     const projects = topicProjects(state, topicId);
@@ -191,6 +249,25 @@ function MarksPage({ link, state, target, focus }: { link: HostLink; state: Stat
           + 文件
         </button>
       </header>
+      <div className="mk-filter" role="radiogroup" aria-label="显示范围" data-testid="marks-scope">
+        {scopes.map((s) => (
+          <button
+            key={s.scope}
+            type="button"
+            role="radio"
+            aria-checked={scope === s.scope}
+            className="mk-scope"
+            disabled={!offered[s.scope]}
+            title={offered[s.scope] ? (s.name ? `${s.label}：${s.name}` : "所有专题的书签") : s.off}
+            onClick={() => setScope(s.scope)}
+            data-testid={`marks-scope-${s.scope}`}
+          >
+            {s.label}
+            {s.name && <span className="mk-scope-name">{s.name}</span>}
+          </button>
+        ))}
+        {target.taskId && <span className="mk-dim">这个任务会记住你的选择</span>}
+      </div>
       <div className="mk-body">
         {marks === null && <div className="mk-empty">正在读取…</div>}
         {marks !== null && !total && (
@@ -200,7 +277,9 @@ function MarksPage({ link, state, target, focus }: { link: HostLink; state: Stat
             书签按专题放；拖一条到会话的输入框，就能交给 AI。
           </div>
         )}
-        {marks !== null && total > 0 && !groups.length && <div className="mk-empty">没有匹配「{query.trim()}」的书签</div>}
+        {marks !== null && total > 0 && !groups.length && (
+          <div className="mk-empty">{query.trim() ? `没有匹配「${query.trim()}」的书签` : `当前项目「${projectName}」还没有书签`}</div>
+        )}
         {groups.map((g) => (
           <Group
             key={g.topicId ?? "none"}
