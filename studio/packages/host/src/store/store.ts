@@ -287,6 +287,14 @@ export class Store extends DocumentStore {
     return s;
   }
 
+  /** session_start with report: the session this one's turns are reported to. Only this column is written. */
+  setSessionReportTo(id: Id, to: Id): Session {
+    this.db.prepare("UPDATE sessions SET report_to = ? WHERE id = ?").run(to, id);
+    const s = this.getSession(id);
+    if (!s) throw new Error(`session ${id} not found`);
+    return s;
+  }
+
   /** Archives the session with all its forks and subagents. Returns the sessions that changed. */
   archiveSubtree(rootId: Id): Session[] {
     return this.transaction(() => {

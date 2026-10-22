@@ -149,6 +149,11 @@ export interface Session {
    * session in every way (archived on its own, takes relays); only the session list shows it under that one. Absent: none.
    */
   startedBy?: Id;
+  /**
+   * session_start with report (2026-10-22): the session each of its turns is reported to when it ends — its last reply,
+   * that it was stopped, or its error. Absent: none.
+   */
+  reportTo?: Id;
   runtime: SessionRuntime;
   profileId: Id;
   /** A task session runs in its task's workspace; a topic session in any of the topic's projects or the common space. */

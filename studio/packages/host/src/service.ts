@@ -90,6 +90,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
     super();
     runtime.on("event", (e) => this.emit("event", e));
     this.tasks.ensureStructure();
+    this.sessions.watchReports();
   }
 
   /** The common space: where tasks without a project, the scheduler and topic sessions without a project run. */

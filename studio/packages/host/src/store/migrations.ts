@@ -319,4 +319,8 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE sessions ADD COLUMN started_by TEXT;
   `,
+  // 20: session_start's report (2026-10-22): the session its turns are reported to, kept across restarts.
+  `
+  ALTER TABLE sessions ADD COLUMN report_to TEXT;
+  `,
 ];

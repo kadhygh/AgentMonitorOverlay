@@ -97,6 +97,34 @@ describe("session_start (开会话)", () => {
     expect(userTexts(caller.id).filter((t) => t.includes("这一轮做完了"))).toHaveLength(1);
   });
 
+  it("reports every turn that ends: stopped by the person is not done; the turn that finishes reports its reply; mail already left gets one line", async () => {
+    const reports = (s: Session) => userTexts(caller.id).filter((t) => t.includes(`（${s.id}）`));
+    const s = await service.sessions.startPeer(caller.id, { text: "[[slow]]", report: true });
+    expect(store.getSession(s.id)?.reportTo).toBe(caller.id);
+    await until(() => store.getSession(s.id)?.status === "running");
+    await service.sessions.interrupt(s.id);
+    await until(() => reports(s).length === 1);
+    expect(reports(s)[0]).toContain("被人停下了，还没有结论");
+    expect(reports(s)[0]).not.toContain("做完了");
+
+    await service.sessions.sendMessage(s.id, "接着做完");
+    await until(() => reports(s).length === 2);
+    expect(reports(s)[1]).toContain("这一轮做完了");
+    expect(reports(s)[1]).toContain("FAKE: 接着做完");
+
+    // A turn in which it left the caller mail: the report is one line, not the reply again.
+    await service.sessions.sendMessage(s.id, "[[slow]]");
+    await until(() => store.getSession(s.id)?.status === "running");
+    service.collab.sendMail(s.id, { kind: "session", sessionId: caller.id }, "结论：3 张表");
+    await until(() => reports(s).length === 3);
+    expect(reports(s)[2]).toContain("它已经用留言把结果发给你");
+    expect(reports(s)[2]).not.toContain("slow slow");
+    // No turn is told twice, whatever else changes on the session.
+    await service.sessions.renameSession(s.id, "改个名");
+    await new Promise((r) => setTimeout(r, 300));
+    expect(reports(s)).toHaveLength(3);
+  });
+
   it("refuses subagents, topic sessions, archived tasks, an unknown model and an empty message", async () => {
     const sub = store.createSession({ taskId: task.id, topicId: null, parentId: caller.id, kind: "sub", runtime: "codex", profileId: "p-ds", workspaceId: alpha.id, title: "", status: "idle", writer: "workbench", runtimeRef: "thr-sub" });
     await expect(service.sessions.startPeer(sub.id, { text: "x" })).rejects.toThrow(/子 agent/);

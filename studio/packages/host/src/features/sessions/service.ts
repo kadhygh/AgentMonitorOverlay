@@ -245,14 +245,10 @@ export class SessionsFeature extends Feature {
     }
   }
 
-  /** Sessions started by session_start that report back: the new session → the one that started it. */
-  private readonly reporting = new Map<Id, { to: Id; ran: boolean }>();
-  private watchingReports = false;
-
   /**
    * 开会话 (session_start, 2026-10-22): a session of a task starts another main session in the same task, at once (the
    * person chose not to be asked: they watch the task, and can stop it). The model is the caller's unless named. With
-   * `report`, the new session's first finished turn goes back into the caller's conversation (queued while it works).
+   * `report`, each of the new session's turns that ends goes back into the caller's conversation (watchReports).
    * 2026-10-22 (the person's wish, after a task in the common space sent its sessions into the wrong folder):
    * `workspace` runs it in another project (by name, id or path) while it stays the task's; `permission` (read-only /
    * write / full) picks its runtime's matching permission instead of the model's default.
@@ -281,15 +277,17 @@ export class SessionsFeature extends Feature {
       text,
       "",
       report
-        ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。这一轮做完后，你最后的回复会自动转给它；之后还要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`
+        ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。每一轮做完后，你最后的回复会自动转给它（被人停下或出错时也会告诉它）；中途要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`
         : `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`,
     ].join("\n");
     const started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, workspace, { profileId, text: message, ...(options ? { options } : {}) });
     // 委派 (10-22): the session list shows it under the caller; otherwise it is a main session like any other.
-    const session = this.store.setSessionStartedBy(started.id, from.id);
+    this.store.setSessionStartedBy(started.id, from.id);
+    const session = report ? this.store.setSessionReportTo(started.id, from.id) : this.store.getSession(started.id)!;
     this.publish({ type: "session.upserted", session });
     const named = title ? await this.renameSession(session.id, title).catch(() => session) : session;
-    if (report) this.reportBack(named.id, from.id);
+    // A quick turn may have ended before the session was marked.
+    if (report) this.checkReport(this.requireSession(named.id));
     return named;
   }
 
@@ -304,37 +302,42 @@ export class SessionsFeature extends Feature {
     return found;
   }
 
-  /** Watches the new session; its first turn's end (idle, done or failed, not waiting for the person) is reported once. */
-  private reportBack(sessionId: Id, to: Id): void {
-    if (!this.watchingReports) {
-      this.watchingReports = true;
-      this.f.on("event", (e) => {
-        if (e.type === "session.upserted" && this.reporting.has(e.session.id)) this.checkReport(e.session);
-      });
-    }
-    this.reporting.set(sessionId, { to, ran: false });
-    // A quick turn may have ended before the watch began.
-    const now = this.store.getSession(sessionId);
-    if (now) this.checkReport(now);
+  /**
+   * session_start's report (2026-10-22, after a session stopped by the person reported a half answer as done and its
+   * real end went unreported): each turn of the session that ends is told to the one that started it, once — done
+   * (its last reply, or only a line when it already left that session mail during the turn), stopped by the person
+   * (no answer yet; the turn that finishes the work reports it), or failed (its error). A turn waiting for the person
+   * has not ended. Which turn was told last is kept, so a restart neither repeats nor loses one.
+   */
+  watchReports(): void {
+    this.f.on("event", (e) => {
+      if (e.type === "session.upserted" && e.session.reportTo) this.checkReport(e.session);
+    });
   }
 
   private checkReport(s: Session): void {
-    const watch = this.reporting.get(s.id);
-    if (!watch) return;
-    if (s.status === "running") watch.ran = true;
-    const ended = s.status === "idle" || s.status === "completed" || s.status === "error";
-    const [last] = this.store.findItems(s.id, "agent", {}, { newest: true, limit: 1 });
-    // Ended after running, or ended with a reply (a turn too quick to be seen running).
-    if (!ended || (!watch.ran && !last)) return;
-    this.reporting.delete(s.id);
-    const reply = last && last.type === "agent" ? last.markdown.trim() : "";
-    const excerpt = reply.length > REPORT_MAX ? `${reply.slice(0, REPORT_MAX)}…（后面省略；完整的用 session_tree 或打开会话看）` : reply;
-    const head = s.status === "error" ? `【你开的会话「${s.title || "未命名会话"}」（${s.id}）出错停下了】` : `【你开的会话「${s.title || "未命名会话"}」（${s.id}）这一轮做完了】`;
-    const text = [head, excerpt || "（它没有回复文字）"].join("\n");
-    void this.sendMessage(watch.to, text).catch(() => {
+    if (!s.reportTo || s.archivedAt || !(s.status === "idle" || s.status === "completed" || s.status === "error")) return;
+    const [turn] = this.store.findItems(s.id, "turn", {}, { newest: true, limit: 1 });
+    if (!turn || turn.type !== "turn" || turn.state === "running") return;
+    const key = `report-turn:${s.id}`;
+    if (this.store.getKv(key)?.value === turn.id) return;
+    this.store.setKv(key, turn.id);
+    const to = s.reportTo;
+    const name = `「${s.title || "未命名会话"}」（${s.id}）`;
+    let text: string;
+    if (turn.state === "interrupted") text = `【你开的会话${name}被人停下了，还没有结论】它接着做完后，结果会再转给你。`;
+    else if (turn.state === "failed") text = `【你开的会话${name}出错停下了】\n${turn.error ?? "（没有错误信息）"}`;
+    else {
+      const mailed = this.store.listMail({ sessionId: to }).some((m) => m.fromSessionId === s.id && m.createdAt >= turn.startedAt);
+      const [last] = this.store.findItems(s.id, "agent", {}, { newest: true, limit: 1 });
+      const reply = last && last.type === "agent" && last.createdAt >= turn.startedAt ? last.markdown.trim() : "";
+      const excerpt = reply.length > REPORT_MAX ? `${reply.slice(0, REPORT_MAX)}…（后面省略；完整的用 session_tree 或打开会话看）` : reply;
+      text = mailed ? `【你开的会话${name}这一轮做完了，它已经用留言把结果发给你】` : `【你开的会话${name}这一轮做完了】\n${excerpt || "（它没有回复文字）"}`;
+    }
+    void this.sendMessage(to, text).catch(() => {
       // The caller is gone or archived: it can still read it as mail.
       try {
-        this.f.collab.sendMail(s.id, { kind: "session", sessionId: watch.to }, text);
+        this.f.collab.sendMail(s.id, { kind: "session", sessionId: to }, text);
       } catch {
         // Nowhere to report to.
       }
