@@ -35,6 +35,19 @@ describe("buildSessionTree", () => {
     const orphan = { ...exampleSessions[1]!, id: "s-orphan", parentId: "gone" };
     expect(buildSessionTree([orphan]).map((n) => n.session.id)).toEqual(["s-orphan"]);
   });
+
+  it("hangs a session started by another under it only when asked (the session list)", () => {
+    const delegated = { ...exampleSessions.find((s) => s.id === "s-second")!, startedBy: "s-main" };
+    const sessions = exampleSessions.map((s) => (s.id === "s-second" ? delegated : s));
+    expect(buildSessionTree(sessions).map((n) => n.session.id)).toEqual(["s-main", "s-second"]);
+    const tree = buildSessionTree(sessions, { delegated: true });
+    expect(tree.map((n) => n.session.id)).toEqual(["s-main"]);
+    expect(tree[0]!.children.map((n) => n.session.id)).toEqual(["s-fork", "s-second"]);
+    // Its starter gone (purged): a root again.
+    expect(buildSessionTree([delegated], { delegated: true }).map((n) => n.session.id)).toEqual(["s-second"]);
+    // Archiving the starter does not take it along.
+    expect(collectSubtreeIds(sessions, "s-main")).not.toContain("s-second");
+  });
 });
 
 describe("collectSubtreeIds", () => {

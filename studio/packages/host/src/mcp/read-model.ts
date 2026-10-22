@@ -218,6 +218,7 @@ export class ReadModel {
       return {
         id: s.id,
         kind: s.kind,
+        ...(s.startedBy ? { startedBy: s.startedBy } : {}),
         title: s.title,
         status: s.status,
         model: this.model(s.profileId),

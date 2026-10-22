@@ -64,6 +64,7 @@ export function toSession(r: Row): Session {
     topicId: strOrNull(r.topic_id),
     parentId: strOrNull(r.parent_id),
     kind: str(r.kind) as Session["kind"],
+    ...(r.started_by ? { startedBy: str(r.started_by) } : {}),
     runtime: str(r.runtime) as Session["runtime"],
     profileId: str(r.profile_id),
     workspaceId: str(r.workspace_id),

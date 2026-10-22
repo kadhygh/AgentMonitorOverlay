@@ -144,6 +144,11 @@ export interface Session {
   /** Parent session for forks and subagents; null for main sessions. */
   parentId: Id | null;
   kind: SessionKind;
+  /**
+   * 委派 (2026-10-22): the session of the same task that started this main session with session_start. It stays a main
+   * session in every way (archived on its own, takes relays); only the session list shows it under that one. Absent: none.
+   */
+  startedBy?: Id;
   runtime: SessionRuntime;
   profileId: Id;
   /** A task session runs in its task's workspace; a topic session in any of the topic's projects or the common space. */

@@ -52,12 +52,16 @@ const userTexts = (sessionId: string) => store.listItems(sessionId).flatMap((i) 
 describe("session_start (开会话)", () => {
   it("starts a main session in the caller's task, marked as from it, on the caller's model unless named", async () => {
     const s = await service.sessions.startPeer(caller.id, { text: "只改数值表，别动界面", title: "改数值" });
-    expect(s).toMatchObject({ taskId: task.id, kind: "main", parentId: null, profileId: "p-ds", title: "改数值" });
+    expect(s).toMatchObject({ taskId: task.id, kind: "main", parentId: null, startedBy: caller.id, profileId: "p-ds", title: "改数值" });
+    expect(store.getSession(s.id)?.startedBy).toBe(caller.id);
     const first = userTexts(s.id)[0]!;
     expect(first).toContain("【由本任务的会话「主会话」开启】");
     expect(first).toContain("只改数值表，别动界面");
     expect(first).toContain(`mailbox_send 给会话 ${caller.id}`);
     expect((await service.sessions.startPeer(caller.id, { text: "看看界面", model: "gpt" })).profileId).toBe("p-gpt");
+    // Archiving the caller leaves the sessions it started alone.
+    await service.sessions.archive(caller.id);
+    expect(store.getSession(s.id)?.archivedAt).toBeNull();
     // No report asked: nothing comes back into the caller.
     await new Promise((r) => setTimeout(r, 300));
     expect(userTexts(caller.id).some((t) => t.includes("这一轮做完了"))).toBe(false);

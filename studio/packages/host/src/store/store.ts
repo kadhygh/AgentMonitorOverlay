@@ -279,6 +279,14 @@ export class Store extends DocumentStore {
     return next;
   }
 
+  /** 委派: marks a main session as started by another (session_start). Only this column is written. */
+  setSessionStartedBy(id: Id, by: Id): Session {
+    this.db.prepare("UPDATE sessions SET started_by = ? WHERE id = ?").run(by, id);
+    const s = this.getSession(id);
+    if (!s) throw new Error(`session ${id} not found`);
+    return s;
+  }
+
   /** Archives the session with all its forks and subagents. Returns the sessions that changed. */
   archiveSubtree(rootId: Id): Session[] {
     return this.transaction(() => {

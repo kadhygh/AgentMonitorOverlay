@@ -272,7 +272,10 @@ export class SessionsFeature extends Feature {
         ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。这一轮做完后，你最后的回复会自动转给它；之后还要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`
         : `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`,
     ].join("\n");
-    const session = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, this.requireLiveWorkspace(task.workspaceId), { profileId, text: message });
+    const started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, this.requireLiveWorkspace(task.workspaceId), { profileId, text: message });
+    // 委派 (10-22): the session list shows it under the caller; otherwise it is a main session like any other.
+    const session = this.store.setSessionStartedBy(started.id, from.id);
+    this.publish({ type: "session.upserted", session });
     const named = title ? await this.renameSession(session.id, title).catch(() => session) : session;
     if (report) this.reportBack(named.id, from.id);
     return named;

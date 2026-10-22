@@ -5,14 +5,20 @@ export interface SessionNode {
   children: SessionNode[];
 }
 
-/** Builds the per-task session forest. Sessions whose parent is missing become roots. Order follows createdAt. */
-export function buildSessionTree(sessions: readonly Session[]): SessionNode[] {
+/**
+ * Builds the per-task session forest. Sessions whose parent is missing become roots. Order follows createdAt. With
+ * `delegated`, a main session started by another (session_start) hangs under it too, for the session list only (it
+ * names an earlier session, so it cannot loop).
+ */
+export function buildSessionTree(sessions: readonly Session[], opts: { delegated?: boolean } = {}): SessionNode[] {
   const sorted = [...sessions].sort((a, b) => a.createdAt.localeCompare(b.createdAt) || a.id.localeCompare(b.id));
   const nodes = new Map<Id, SessionNode>(sorted.map((s) => [s.id, { session: s, children: [] }]));
+  const parentOf = (s: Session): Id | null => s.parentId ?? (opts.delegated ? (s.startedBy ?? null) : null);
   const roots: SessionNode[] = [];
   for (const s of sorted) {
     const node = nodes.get(s.id)!;
-    const parent = s.parentId ? nodes.get(s.parentId) : undefined;
+    const id = parentOf(s);
+    const parent = id ? nodes.get(id) : undefined;
     if (parent && parent !== node) parent.children.push(node);
     else roots.push(node);
   }

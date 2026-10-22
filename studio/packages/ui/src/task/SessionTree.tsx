@@ -16,6 +16,18 @@ import { useStoredIds } from "../lib/storedIds.js";
 
 const KIND = { main: "会话", fork: "分支", sub: "子 agent" } as const;
 
+/**
+ * 委派 (2026-10-22): a main session another session of the task started (session_start). The list shows it under that
+ * one, like a subagent, with its own icon; it is archived on its own.
+ */
+const delegatedBy = (s: Session, all: readonly Session[]): Session | undefined =>
+  s.parentId || !s.startedBy ? undefined : all.find((x) => x.id === s.startedBy);
+
+/** The session a row hangs under in the list: its parent, or the one that started it. */
+const listParent = (s: Session): string | null => s.parentId ?? s.startedBy ?? null;
+
+const kindText = (s: Session, all: readonly Session[]): string => (delegatedBy(s, all) ? "委派会话" : s.kind === "main" ? "" : KIND[s.kind]);
+
 interface SessionTreeProps {
   task: Task;
   sessions: readonly Session[];
@@ -64,16 +76,19 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
   const formOpen = !closed && (creating || live.length === 0);
   const profile = (id: string) => profiles.find((p) => p.id === id);
 
-  // Folded sessions (10-22): their subagents and forks hide under「▸ N」, remembered per machine. A session selected
-  // inside a folded one (from Focus, search, a link) opens the way to it.
+  // Folded sessions (10-22): their subagents, forks and 委派 sessions hide under「▸ N」, remembered per machine. A
+  // session selected inside a folded one (from Focus, search, a link) opens the way to it.
   const folded = useStoredIds(TREE_FOLDED_KEY);
   useEffect(() => {
-    for (let s = live.find((x) => x.id === selected); s?.parentId; s = live.find((x) => x.id === s!.parentId)) {
-      if (folded.has(s.parentId)) folded.toggle(s.parentId);
+    const seen = new Set<string>();
+    for (let s = live.find((x) => x.id === selected); s && !seen.has(s.id); s = live.find((x) => x.id === listParent(s!))) {
+      seen.add(s.id);
+      const up = listParent(s);
+      if (up && folded.has(up)) folded.toggle(up);
     }
   }, [selected]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  const tree = buildSessionTree(live);
+  const tree = buildSessionTree(live, { delegated: true });
   // The model by name when known ("Opus 5.5"), from the last list this install saw.
   const modelOf = (s: Session) => {
     const p = profile(s.profileId);
@@ -141,7 +156,7 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
       )}
 
       <div className="slist tree" role="tree" aria-label="会话树">
-        <TreeLevel nodes={tree} depth={0} parentProfile={null} selected={selected} unread={unread} profileOf={profile} onSelect={onSelect} modelOf={modelOf} folded={folded} />
+        <TreeLevel nodes={tree} all={live} depth={0} parentProfile={null} selected={selected} unread={unread} profileOf={profile} onSelect={onSelect} modelOf={modelOf} folded={folded} />
       </div>
       {selectedLive && <SessionDetail session={selectedLive} all={live} model={modelOf(selectedLive)} letters={unread?.get(selectedLive.id) ?? 0} />}
 
@@ -158,7 +173,7 @@ export function SessionTree({ link, task, sessions, workspaces, profiles, select
             archivedRoots.map((s) => {
               const p = profile(s.profileId);
               const modelText = (p && sessionModelName(storedChoices(p.id), s.options)) || shortModel(p);
-              const meta = [s.kind === "main" ? "" : KIND[s.kind], modelText].filter(Boolean).join(" · ");
+              const meta = [kindText(s, sessions), modelText].filter(Boolean).join(" · ");
               return (
                 <div key={s.id} className="srow archived-srow" aria-current={s.id === selected} data-testid="archived-row">
                   <button
@@ -227,13 +242,22 @@ const TREE_ICON: Record<Session["kind"], JSX.Element> = {
   ),
 };
 
+/** 委派会话: an arrow turning down and on, handed over from the session above. */
+const DELEGATED_ICON = (
+  <svg width="13" height="13" viewBox="0 0 16 16" aria-hidden="true">
+    <path d="M3.5 3v3.5A2.5 2.5 0 0 0 6 9h7" />
+    <path d="M10.5 6.5 13 9l-2.5 2.5" />
+  </svg>
+);
+
 /**
  * One level of the session tree (2026-10-15, design B 「细线树」): each session one line — what it is (会话 / 子 agent /
- * 分支), its name, its model where it differs from its parent's, and its state (a dot, or a word when it needs the
+ * 分支 / 委派会话), its name, its model where it differs from its parent's, and its state (a dot, or a word when it needs the
  * person). Children hang under it on their own thin line, to any depth.
  */
 function TreeLevel({
   nodes,
+  all,
   depth,
   parentProfile,
   selected,
@@ -244,6 +268,7 @@ function TreeLevel({
   folded,
 }: {
   nodes: readonly SessionNode[];
+  all: readonly Session[];
   depth: number;
   parentProfile: string | null;
   selected: string | null;
@@ -265,6 +290,8 @@ function TreeLevel({
         const open = !folded.has(s.id);
         // Folded, it still says when something under it needs the person.
         const alert = !open && hidden.some((x) => needsPerson(x.status) || x.status === "error");
+        const starter = delegatedBy(s, all);
+        const kind = starter ? "委派会话" : KIND[s.kind];
         return (
           <div key={s.id} className="tree-node" role="none">
             <div className="tree-line">
@@ -274,13 +301,14 @@ function TreeLevel({
                 className={depth > 0 ? "srow tree-row child" : "srow tree-row"}
                 aria-current={s.id === selected}
                 aria-level={depth + 1}
-                title={[s.title || "新会话", [KIND[s.kind], modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · ")].join("\n")}
+                title={[s.title || "新会话", [kind, modelOf(s), look.label, relativeTime(s.updatedAt)].join(" · "), starter ? `由「${starter.title || "新会话"}」开的，单独归档` : ""].filter(Boolean).join("\n")}
                 onClick={() => onSelect(s.id)}
                 data-testid="session-row"
                 data-kind={s.kind}
+                data-delegated={starter ? true : undefined}
                 data-depth={depth}
               >
-                <span className="tree-icon">{TREE_ICON[s.kind]}</span>
+                <span className="tree-icon">{starter ? DELEGATED_ICON : TREE_ICON[s.kind]}</span>
                 <span className="srow-title">{s.title || "新会话"}</span>
                 {letters > 0 && (
                   <span className="srow-mail" aria-label={`${letters} 条留言`} title={`${letters} 条留言`} data-testid="session-mail">
@@ -315,7 +343,7 @@ function TreeLevel({
                   className="tree-fold"
                   aria-expanded={open}
                   aria-label={open ? `收起下面的 ${hidden.length} 个会话` : `展开下面的 ${hidden.length} 个会话`}
-                  title={open ? "收起子 agent 和分支" : alert ? "下面有会话等你处理，展开看" : "展开子 agent 和分支"}
+                  title={open ? "收起下面的子 agent、分支和委派会话" : alert ? "下面有会话等你处理，展开看" : "展开下面的子 agent、分支和委派会话"}
                   data-alert={alert || undefined}
                   onClick={() => folded.toggle(s.id)}
                   data-testid="session-fold"
@@ -326,7 +354,7 @@ function TreeLevel({
             </div>
             {open && node.children.length > 0 && (
               <div className={depth + 1 >= MAX_INDENT ? "tree-children flat" : "tree-children"} role="group">
-                <TreeLevel nodes={node.children} depth={depth + 1} parentProfile={s.profileId} selected={selected} unread={unread} profileOf={profileOf} onSelect={onSelect} modelOf={modelOf} folded={folded} />
+                <TreeLevel nodes={node.children} all={all} depth={depth + 1} parentProfile={s.profileId} selected={selected} unread={unread} profileOf={profileOf} onSelect={onSelect} modelOf={modelOf} folded={folded} />
               </div>
             )}
           </div>
@@ -339,21 +367,25 @@ function TreeLevel({
 /** Under the tree: the selected session in words — what it is, model, state, when, and what hangs under it. */
 function SessionDetail({ session: s, all, model, letters }: { session: Session; all: readonly Session[]; model: string; letters: number }) {
   const look = SESSION_LOOK[s.status];
-  const under = (id: string): Session[] => all.filter((x) => x.parentId === id).flatMap((x) => [x, ...under(x.id)]);
+  const under = (id: string): Session[] => all.filter((x) => listParent(x) === id).flatMap((x) => [x, ...under(x.id)]);
   const below = under(s.id);
   const subs = below.filter((x) => x.kind === "sub");
   const forks = below.filter((x) => x.kind === "fork");
+  const delegated = below.filter((x) => delegatedBy(x, all));
+  const starter = delegatedBy(s, all);
   const parts = [
     subs.length ? `${subs.length} 个子 agent${subs.some((x) => x.status === "running") ? `（${subs.filter((x) => x.status === "running").length} 个在运行）` : ""}` : "",
     forks.length ? `${forks.length} 个分支` : "",
+    delegated.length ? `${delegated.length} 个委派会话` : "",
     below.some((x) => needsPerson(x.status)) ? `${below.filter((x) => needsPerson(x.status)).length} 个等你处理` : "",
   ].filter(Boolean);
   return (
     <div className="slist-detail" data-testid="session-detail">
       <span className="slist-detail-title">{s.title || "新会话"}</span>
       <span>
-        {[s.kind === "main" ? "" : KIND[s.kind], model].filter(Boolean).join(" · ")} · <span style={{ color: look.text }}>{look.label}</span> · {relativeTime(s.updatedAt)}
+        {[kindText(s, all), model].filter(Boolean).join(" · ")} · <span style={{ color: look.text }}>{look.label}</span> · {relativeTime(s.updatedAt)}
       </span>
+      {starter && <span>由「{starter.title || "新会话"}」开的</span>}
       {parts.length > 0 && <span>{parts.join(" · ")}</span>}
       {(letters > 0 || s.writer === "terminal-shared") && <span>{[letters > 0 ? `${letters} 条留言` : "", s.writer === "terminal-shared" ? "终端已接入" : ""].filter(Boolean).join(" · ")}</span>}
     </div>

@@ -315,4 +315,8 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX chat_marks_topic ON chat_marks(topic_id, position);
   `,
+  // 19: 委派 (2026-10-22): the session that started this one with session_start; the session list shows it under that one.
+  `
+  ALTER TABLE sessions ADD COLUMN started_by TEXT;
+  `,
 ];

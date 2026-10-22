@@ -17,7 +17,7 @@ export function sessionsTools({ service, caller, model }: ToolContext): AmoTool[
       name: "session_start",
       title: "开会话",
       description:
-        "Start another main session in your own task, at once (no approval), to work on a part in parallel or with a fresh context. text: its first message — enough to work on its own. model: a model's name or id from amo_whoami (default yours). title: its name in the session list (optional). report: true when you need its result — when its first turn ends, its last reply comes back into your conversation as a message; leave it out when you do not. It shows in the task's session list, where the person can watch or stop it. For another task use relay_send (主控) or mailbox_send.",
+        "Start another main session in your own task, at once (no approval), to work on a part in parallel or with a fresh context. text: its first message — enough to work on its own. model: a model's name or id from amo_whoami (default yours) — e.g. a cheaper one to carry out a detailed plan of yours. title: its name in the session list (optional). report: true when you need its result — when its first turn ends, its last reply comes back into your conversation as a message; leave it out when you do not. It shows under you in the task's session list, where the person can watch or stop it; it is archived on its own. For another task use relay_send (主控) or mailbox_send.",
       inputSchema: { text: z.string(), model: z.string().optional(), title: z.string().optional(), report: z.boolean().optional() },
       readOnly: false,
       autoApprove: true,
