@@ -159,7 +159,7 @@ export function WorkingEntry({
   );
 }
 
-/** A pinned task's session: on top, whatever it is doing, with its detail open. */
+/** A pinned task's session: on top, one line on what it does; its detail opens while it waits for the person. */
 export function PinnedEntry({
   link,
   session,
@@ -171,7 +171,7 @@ export function PinnedEntry({
   subsOpen,
   onToggleSubs,
   onUnpin,
-  onDone,
+  detail,
   goTo,
 }: {
   link: HostLink;
@@ -184,18 +184,14 @@ export function PinnedEntry({
   subsOpen: boolean;
   onToggleSubs(): void;
   onUnpin(): void;
-  /** 我知道了, when it is finished work to look at. */
-  onDone?: (() => void) | undefined;
+  /** It waits for an approval, an answer or a plan: dealt with right here. */
+  detail: boolean;
   goTo: GoTo;
 }) {
   return (
-    <div className="focus-entry open pinned" data-testid="focus-pinned">
+    <div className={detail ? "focus-entry open pinned" : "focus-entry pinned"} data-testid="focus-pinned">
       <Row session={session} title={title} line={`${look.label} · ${brief}`} look={look} ring={ring} subs={subs} subsOpen={subsOpen} onToggleSubs={onToggleSubs} pinned onPin={onUnpin} goTo={goTo} />
-      <FocusDetail link={link} session={session} {...(onDone ? { onDone } : {})}>
-        <button type="button" className="focus-btn" onClick={onUnpin} data-testid="focus-unpin">
-          取消置顶
-        </button>
-      </FocusDetail>
+      {detail && <FocusDetail link={link} session={session} />}
     </div>
   );
 }

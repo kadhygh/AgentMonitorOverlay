@@ -211,17 +211,19 @@ export function FocusApp() {
   const { state, link } = host;
   const needs = waiting.length + finished.length + asks.length + proposals.length + plans.length + relays.length;
   const running = state.sessions.filter((s) => !s.archivedAt && s.status === "running").length;
-  // 置顶 (2026-10-21): each pinned task's latest session, on top with its detail open; listed nowhere else.
+  // 置顶 (2026-10-21): one session of each pinned task, on top; listed nowhere else. Its task's other sessions do not
+  // show under 进行中 either (10-22).
   const pinned = pins.ids.flatMap((id) => {
     const task = state.tasks.find((t) => t.id === id && !t.archivedAt);
     const session = task && pinnedSession(task, state.sessions);
     return session ? [session] : [];
   });
   const isPinned = (s: Session) => pinned.includes(s);
+  const pinnedTask = (s: Session) => !!s.taskId && pinned.some((p) => p.taskId === s.taskId);
   // 进行中 (2026-10-20): what is working now, so the open panel tells what goes on, not only what waits. Also a session
   // waiting for subagents of its own (2026-10-21).
   const working = state.sessions
-    .filter((s) => !s.archivedAt && s.kind !== "sub" && (s.status === "running" || runningSubs(s.id, subs).length > 0) && !needsPerson(s.status) && !isPinned(s))
+    .filter((s) => !s.archivedAt && s.kind !== "sub" && (s.status === "running" || runningSubs(s.id, subs).length > 0) && !needsPerson(s.status) && !pinnedTask(s))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const shown = list.filter((s) => !isPinned(s));
   const openId = open && shown.some((s) => s.id === open) ? open : (shown[0]?.id ?? null);
@@ -348,7 +350,7 @@ export function FocusApp() {
                       subsOpen={subsOpen.has(s.id)}
                       onToggleSubs={toggleSubs(s)}
                       onUnpin={() => s.taskId && pins.toggle(s.taskId)}
-                      onDone={review && isToReview(s, waiting) ? () => noteSeen([s.id]) : undefined}
+                      detail={waiting.includes(s)}
                       goTo={review || waiting.includes(s) ? goToDeal : goTo}
                     />
                   );

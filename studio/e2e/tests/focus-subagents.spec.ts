@@ -4,7 +4,8 @@ import { launchStudio, screenshot, type Studio } from "./studio.js";
 
 // 2026-10-21: a Claude session that ended its turn while its background subagents still run is 进行中, not 完成待审核
 // (Focus had called it finished — and the robot come out — each time the session took a moment's turn); its running
-// subagents fold to「▸ N」 (方案 D). A task pinned in Focus stays on top with its detail open. Opened to deal with it
+// subagents fold to「▸ N」 (方案 D). A task pinned in Focus stays on top in one line, its detail open only while it
+// waits for the person (10-22). Opened to deal with it
 // (from Focus, or from the board), a long reply offers 「按 ↑ 回到本轮回复开始」.
 
 let studio: Studio | undefined;
@@ -53,31 +54,56 @@ test("Focus: waiting for its subagents is 进行中 with ▸ N, finished once th
   await expect(sub).toContainText("已跑");
   await screenshot(app, "stage-18", "S18-focus-subagents", focus, "focus");
 
-  // The subagent ends and the session reports: now it is finished work to look at.
-  await expect(working).toHaveCount(0, { timeout: 90_000 });
-  const entry = focus.getByTestId("focus-entry");
-  await expect(entry).toHaveCount(1);
-  await expect(entry).toContainText("完成待审核");
-
-  // 置顶: on top, its detail open, listed once.
-  await entry.hover();
-  await entry.getByTestId("focus-pin").click();
+  // 置顶 while it works: on top in one line, no longer under 进行中 (10-22).
+  await working.hover();
+  await working.getByTestId("focus-pin").click();
   const pinned = focus.getByTestId("focus-pinned");
   await expect(pinned).toContainText("调查方案");
-  await expect(pinned).toContainText("完成待审核");
-  await expect(pinned.getByTestId("focus-snippet")).toBeVisible();
-  await expect(entry).toHaveCount(0);
-  // 我知道了: reviewed, still pinned, still open.
-  await pinned.getByTestId("focus-done").click();
-  await expect(pinned).toContainText("空闲");
-  await expect(pinned.getByTestId("focus-snippet")).toBeVisible();
-  await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理");
-  await screenshot(app, "stage-18", "S18-focus-pinned", focus, "focus");
+  await expect(pinned).toContainText("等子 agent");
+  await expect(focus.getByTestId("focus-working")).toHaveCount(0);
+  await expect(pinned.getByTestId("focus-snippet")).toHaveCount(0);
   // Kept per machine.
   await expect.poll(() => focus.evaluate(() => JSON.parse(localStorage.getItem("amo.focusPinned") ?? "[]").length)).toBe(1);
 
-  await pinned.getByTestId("focus-unpin").click();
+  // The subagent ends and the session reports: finished work, still one line (only an approval or a question opens it).
+  await expect(pinned).toContainText("完成待审核", { timeout: 90_000 });
+  await expect(pinned.getByTestId("focus-snippet")).toHaveCount(0);
+  const entry = focus.getByTestId("focus-entry");
+  await expect(entry).toHaveCount(0);
+  await screenshot(app, "stage-18", "S18-focus-pinned", focus, "focus");
+
+  // Unpinned, it is finished work in the list again.
+  await pinned.getByTestId("focus-pin").click();
   await expect(pinned).toHaveCount(0);
+  await expect(entry).toHaveCount(1);
+  await expect(entry).toContainText("完成待审核");
+});
+
+test("Focus: a pinned task opens its detail only while it waits for an approval (10-22)", async () => {
+  studio = await launchStudio();
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const focus = await openFocus(studio);
+  const { task } = await studio.api<{ task: Task }>("POST", "/api/tasks", {
+    title: "掉落表校验",
+    workspaceId: ws.id,
+    firstSession: { profileId: "codex-mock", text: "[[shell: cmd /c echo pinned-approval]]" },
+  });
+  const entry = focus.getByTestId("focus-entry");
+  await expect(entry).toContainText("待批准", { timeout: 30_000 });
+  await entry.hover();
+  await entry.getByTestId("focus-pin").click();
+
+  // Pinned, the approval is dealt with on top, its command shown.
+  const pinned = focus.getByTestId("focus-pinned");
+  await expect(pinned).toContainText("待批准");
+  await expect(pinned.getByTestId("focus-snippet")).toContainText("cmd /c echo pinned-approval");
+  await expect(entry).toHaveCount(0);
+  await pinned.getByRole("button", { name: "批准", exact: true }).click();
+
+  // Approved: back to one line.
+  await expect(pinned.getByTestId("focus-snippet")).toHaveCount(0, { timeout: 30_000 });
+  await expect(pinned).not.toContainText("待批准");
+  expect(await focus.evaluate(() => JSON.parse(localStorage.getItem("amo.focusPinned") ?? "[]"))).toEqual([task.id]);
 });
 
 /** A message the mock model echoes back, long enough that its reply starts far above the bottom. */

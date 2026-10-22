@@ -17,6 +17,16 @@ describe("Focus 置顶", () => {
     expect(pinnedSession({ id: "none" }, sessions)).toBeUndefined();
   });
 
+  it("shows the session that waits for the person first, then one that runs (10-22)", () => {
+    const sessions = [
+      at("latest", "2026-10-21T12:00:00.000Z", { status: "idle" }),
+      at("runs", "2026-10-21T10:00:00.000Z", { status: "running" }),
+      at("asks", "2026-10-21T09:00:00.000Z", { status: "awaiting-approval" }),
+    ];
+    expect(pinnedSession({ id: "t" }, sessions)?.id).toBe("asks");
+    expect(pinnedSession({ id: "t" }, sessions.slice(0, 2))?.id).toBe("runs");
+  });
+
   it("says how long a subagent has run", () => {
     const now = Date.parse("2026-10-21T09:10:00.000Z");
     expect(ranFor("2026-10-21T09:09:20.000Z", now)).toBe("已跑 40 秒");
