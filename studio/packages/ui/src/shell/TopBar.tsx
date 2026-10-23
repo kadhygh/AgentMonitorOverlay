@@ -1,6 +1,7 @@
 import { useEffect, useState, type ReactNode } from "react";
 import type { Scope } from "../board/Board.js";
 import { scratchpadBridge } from "../scratchpad/bridge.js";
+import { showToast } from "../lib/toast.js";
 import type { AnyViewDef, View } from "./views.js";
 
 /** Focus window on/off, mirrored from the Electron shell (absent in a plain browser). */
@@ -94,7 +95,7 @@ export function TopBar({
         </button>
       )}
       {scratchpad && (
-        <button type="button" className="tb-btn" title="打开便签小窗（也可以用设置 → 便签里的全局快捷键）" onClick={() => void scratchpad.open()} data-testid="open-scratchpad">
+        <button type="button" className="tb-btn" title="打开便签（它是单独的小程序，也可以用它的全局快捷键）" onClick={() => void scratchpad.open().catch((err: unknown) => showToast({ text: err instanceof Error ? err.message : String(err), error: true }))} data-testid="open-scratchpad">
           <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true">
             <path d="M3 2.5h10a.5.5 0 0 1 .5.5v6.3L9.3 13.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z" />
             <path d="M13.5 9.3H10a.7.7 0 0 0-.7.7v3.5M5 5.5h6M5 8h3.5" />

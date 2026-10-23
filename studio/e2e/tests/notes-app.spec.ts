@@ -40,6 +40,27 @@ async function launch(): Promise<{ app: ElectronApplication; pad: Page }> {
 }
 
 const running = () => JSON.parse(readFileSync(join(home, "running.json"), "utf8")) as { url: string; token: string; pid: number };
+const copied = (a: ElectronApplication) => a.evaluate(() => (globalThis as { __notesCopied?: string[] }).__notesCopied?.at(-1) ?? null);
+const padVisible = (a: ElectronApplication) => a.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#scratchpad"))!.isVisible());
+
+/** Pastes a small drawn PNG into the page, the way a screenshot from the clipboard arrives. */
+async function pasteImage(pad: Page, label: string) {
+  await pad.getByRole("textbox", { name: "便签内容" }).evaluate(async (el, text) => {
+    const canvas = document.createElement("canvas");
+    canvas.width = 160;
+    canvas.height = 100;
+    const g = canvas.getContext("2d")!;
+    g.fillStyle = "#e4d6b8";
+    g.fillRect(0, 0, 160, 100);
+    g.fillStyle = "#22201c";
+    g.font = "20px sans-serif";
+    g.fillText(text, 16, 56);
+    const blob = await new Promise<Blob>((r) => canvas.toBlob((b) => r(b!), "image/png"));
+    const data = new DataTransfer();
+    data.items.add(new File([blob], "shot.png", { type: "image/png" }));
+    el.dispatchEvent(new ClipboardEvent("paste", { clipboardData: data, bubbles: true, cancelable: true }));
+  }, label);
+}
 async function api<T>(method: string, path: string, body?: unknown): Promise<T> {
   const { url, token } = running();
   const res = await fetch(`${url}${path}`, { method, headers: { authorization: `Bearer ${token}`, "content-type": "application/json" }, ...(body === undefined ? {} : { body: JSON.stringify(body) }) });
@@ -64,9 +85,9 @@ test("the window: an empty page lists its keys, typing saves to the work folder,
   await expect(pad.getByRole("button", { name: "复制" }).locator("kbd")).toHaveText("Ctrl ↵");
   await screenshot(app, "notes", "N2-page", pad, "scratchpad");
 
-  // Ctrl+Enter: the page on the clipboard, the window hidden.
+  // Ctrl+Enter: the page on the clipboard (recorded in tests), the window hidden.
   await pad.getByLabel("便签内容").press("Control+Enter");
-  await expect.poll(() => app.evaluate(({ clipboard }) => clipboard.readText())).toContain("- 掉落表按权重");
+  await expect.poll(() => copied(app)).toBe("回复要点：\r\n- 掉落表按权重\r\n- 周五发版");
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible())).toBe(false);
   // The shortcut brings it back (tests press it through the program).
   await app.evaluate(() => (globalThis as { __notesToggle?: () => void }).__notesToggle?.());
@@ -146,4 +167,64 @@ test("pages from Studio come over once, with a notice in the window until it is 
   await pad.reload();
   await expect(pad.getByLabel("便签内容")).toHaveValue("Studio 的第一页");
   await expect(pad.getByTestId("pad-imported")).toHaveCount(0);
+});
+
+// Moved from Studio's own 便签 window (S11-C, S14-B; scratchpad.spec.ts) with the window itself.
+test("pages, pasted images, 复制's line breaks, and the page count in the settings", async () => {
+  const { app, pad } = await launch();
+  const text = pad.getByRole("textbox", { name: "便签内容" });
+  await text.fill("回复要点：  \n- 掉落表按权重\n- 周五发版\n\n");
+  await expect(pad.getByTestId("pad-status")).toContainText("已保存");
+
+  // Another page, by its number; Ctrl+1 goes back.
+  await pad.getByRole("button", { name: "第 2 页" }).click();
+  await expect(text).toHaveValue("");
+  await text.fill("第二页");
+  await expect(pad.getByTestId("pad-status")).toContainText("已保存");
+  await pad.keyboard.press("Control+1");
+  await expect(text).toHaveValue("回复要点：  \n- 掉落表按权重\n- 周五发版\n\n");
+  await expect(pad.getByRole("button", { name: "第 2 页" })).toHaveAttribute("data-filled", "");
+  expect((await api<{ activePage: number }>("GET", "/api/scratchpad")).activePage).toBe(0);
+
+  // Pasted images join the page as thumbnails; the large view closes on Esc, not the window; × takes one off.
+  await pasteImage(pad, "截图 1");
+  await expect(pad.getByTestId("pad-image")).toHaveCount(1);
+  await pasteImage(pad, "截图 2");
+  await expect(pad.getByTestId("pad-image")).toHaveCount(2);
+  await expect.poll(() => pad.getByTestId("pad-image").first().locator("img").evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(160);
+  await screenshot(app, "notes", "N4-images", pad, "scratchpad");
+  await pad.getByRole("button", { name: "看大图 1" }).click();
+  await expect(pad.getByTestId("pad-viewer")).toBeVisible();
+  await pad.keyboard.press("Escape");
+  await expect(pad.getByTestId("pad-viewer")).toHaveCount(0);
+  expect(await padVisible(app)).toBe(true);
+  await pad.getByTestId("pad-image").nth(1).hover();
+  await pad.getByRole("button", { name: "移除图片 2" }).click();
+  await expect(pad.getByTestId("pad-image")).toHaveCount(1);
+
+  // 复制 keeps the lines by default (Windows line breaks, trailing spaces and blank lines dropped) and hides.
+  await pad.getByRole("button", { name: "复制" }).click();
+  await expect.poll(() => copied(app)).toBe("回复要点：\r\n- 掉落表按权重\r\n- 周五发版");
+  await expect.poll(() => padVisible(app)).toBe(false);
+
+  // The settings: fewer pages hide the content beyond the count, more bring it back; 安全换行 copies one line.
+  const opened = app.waitForEvent("window");
+  await app.evaluate(() => (globalThis as { __notesOpenSettings?: () => void }).__notesOpenSettings?.());
+  const settings = await opened;
+  await expect(settings.getByTestId("ns-page-count")).toHaveText("3");
+  for (const n of ["2", "1"]) {
+    await settings.getByRole("button", { name: "减少一页" }).click();
+    await expect(settings.getByTestId("ns-page-count")).toHaveText(n);
+  }
+  await expect(settings.getByText("第 2 页还有内容，现在藏着。")).toBeVisible();
+  await expect(pad.getByTestId("pad-page")).toHaveCount(1);
+  await settings.getByRole("button", { name: "增加一页" }).click();
+  await expect(pad.getByTestId("pad-page")).toHaveCount(2);
+  await settings.getByTestId("ns-newlines-safe").click();
+  await expect(settings.getByTestId("ns-newlines-safe")).toHaveAttribute("aria-checked", "true");
+  await app.evaluate(() => (globalThis as { __notesToggle?: () => void }).__notesToggle?.());
+  await expect.poll(() => padVisible(app)).toBe(true);
+  await pad.keyboard.press("Control+1");
+  await pad.getByRole("button", { name: "复制" }).click();
+  await expect.poll(() => copied(app)).toBe("回复要点： - 掉落表按权重 - 周五发版");
 });

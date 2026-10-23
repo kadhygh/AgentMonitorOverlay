@@ -95,7 +95,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
       if (e.isComposing) return;
       if (e.key === "Escape") {
         e.preventDefault();
-        scratchpadBridge()?.hide();
+        scratchpadBridge()?.hide?.();
         return;
       }
       if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
@@ -146,7 +146,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
       .catch(() => false);
     await copyText(clipboardText(text, safe));
     setNote(safe ? "已复制（安全换行）" : "已复制");
-    bridge?.hide();
+    bridge?.hide?.();
   }
   copyRef.current = copy;
 
@@ -203,7 +203,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
         <span className="pad-hint">Ctrl 1–{doc.pages.length}</span>
         <span className="spacer" />
         {bridge && (
-          <button type="button" className="pad-icon pad-hide" aria-label="隐藏便签" title="隐藏（Esc）" onClick={() => bridge.hide()}>
+          <button type="button" className="pad-icon pad-hide" aria-label="隐藏便签" title="隐藏（Esc）" onClick={() => bridge.hide?.()}>
             <kbd className="pad-key">Esc</kbd>×
           </button>
         )}

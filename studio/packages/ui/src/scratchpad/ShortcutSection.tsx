@@ -17,7 +17,7 @@ export function ShortcutSection({ link, shortcut }: { link: HostLink; shortcut: 
   useEffect(() => {
     let cancelled = false;
     bridge
-      ?.shortcutStatus()
+      ?.shortcutStatus?.()
       .then((s) => !cancelled && setStatus(s))
       .catch(() => undefined);
     return () => {
@@ -31,7 +31,7 @@ export function ShortcutSection({ link, shortcut }: { link: HostLink; shortcut: 
     setError(null);
     try {
       await call(link, "PUT /api/settings", {}, { scratchpadShortcut: next });
-      if (!bridge) return;
+      if (!bridge?.applyShortcut) return;
       const result = await bridge.applyShortcut();
       setStatus(result);
       // The key is held elsewhere and the previous one still works: keep the setting on what works (the message stays).

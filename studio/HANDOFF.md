@@ -2,6 +2,31 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+**2026-10-23 · 便签独立成程序（AMO 便签，`packages/notes`）**：用户每天在用的便签以前是 Studio 进程里的窗口，Studio 一重启就跟着关掉。现在拆成单独的程序，计划和需求在 `plans/notes-standalone.md`，界面定稿在 Design 画布 https://claude.ai/artifact/BXngZSwVW1TwTWYkcGcnVr ，用户的决定记在 memory `studio-notes-standalone`。
+
+**程序本身**：
+- `main.ts`：只允许一个实例，第二次启动会把正在跑的那个呼出来；托盘菜单是 显示便签 / 设置… / 退出便签；全局快捷键归它自己管；开机启动用 `--hidden`，只进托盘。
+- `server.ts`：本机小服务（127.0.0.1，随机端口加 token），提供 Host 里便签窗口用到的那几个接口，所以 `ScratchpadApp` 原样能用；同时直接托管 UI 构建产物。另有 `/api/notes/*` 接口：设置、工作文件夹、清缓存、打开文件夹、show、Studio 导入。启动后在 home 里写 `running.json`。
+- `store.ts`：`settings.json` 固定在 `%APPDATA%\AMO Notes`（测试用 `AMO_NOTES_HOME` 改位置）；工作文件夹里放 `pages.json`、`images\`、`cache\`。迁移是先复制再切换，旧文件夹原样留着。缓存指已经不被任何一页引用的图片，加上 `cache\`。
+- 文档的纯函数从 host 挪到了 protocol（`scratchpad-doc.ts`），host 那边留了重新导出。
+
+**界面**：
+- `ScratchpadApp` 按定稿「甲」重做：整块一个色调、两条缩进 16px 的细线、按键提示，新增 Ctrl+Enter 复制并隐藏；空白页列出按键，其中呼出快捷键按实际绑定的显示；导入后提示一次。
+- 新增 `notes/NotesSettingsApp.tsx`（窗口 `#notes-settings`）和迁移对话框。
+
+**接入 Studio**（`app/src/notes-link.ts`，替换掉了 `scratchpad-window.ts`）：
+- Studio 启动时把便签带起来，只进托盘；测试模式不自动启动。
+- 顶栏「便签」：便签在跑就呼出，没跑就先启动。
+- 第一次会把 Host 里的便签页和图片交给便签程序，只在便签那边还是空的时候导入，Studio 的旧数据不动。
+- 启动用 `cmd start`，所以便签不算 Studio 的子进程，`taskkill /T` 关 Studio 也带不走它。
+- 设置 → 便签换成 `NotesLinkSection`：显示运行状态，按钮是「显示便签 / 启动便签」和「打开便签设置」。普通浏览器里没有 Electron，那里仍保留旧的页内编辑。
+
+**测试**：
+- 单元测试：`notes/src/store.test.ts`，还有从 app 挪过来的 `placement.test.ts`。
+- e2e：`notes-app.spec.ts` 5 条，直接启动便签程序，原来 Studio 便签窗口的分页、图片、复制换行、页数这些测试都搬到了这里；`scratchpad.spec.ts` 改成测「Studio 启动便签 → 导入一次 → 设置节」。截图在 `screenshots/notes/`。
+
+**还没做**：Portable 打包时把便签带上（到发布时再做）。在打包版里，`notes-link` 用 `process.execPath` 加 `resources/app/packages/notes` 启动，需要确认打包后的目录里有它。
+
 **2026-10-23 · 开始 / 新会话的「正在启动」**：用户反馈点「开始」或任务里「开始新会话」后要卡一下界面才变。原因是请求要等模型进程：Claude 在非默认权限模式下要等 `setPermissionMode`（`live.ready`），Codex 要等 `thread/start`（首次还要起 app-server），另外 `withDefaults` 的型号列表缓存超过 10 分钟会重新起一个 CLI 去问。**界面**：`lib/StartingCover.tsx` 盖住会话启动所在的区域，挂载后立即拦截点击和按键；200ms 后才显示变暗、转圈和「正在启动 <模型>…」，15 秒后再加一句「启动得比平时慢…」。新建任务页盖整个 `.draft-page`；任务页只盖 `.thread-col`（`TaskPage` 的 `starts()` 包住 `newSession`、`startPreset`），左边会话列表和窗口其他部分照常可用。失败时遮罩撤掉，错误照常显示。**Host**：Claude 的 `sendMessage` 不再 `await live.ready`，改成 `live.ready.then(push)`，按顺序排队，调用方不用等进程起来。Claude 和 Codex 的 `choices` 改成先返回旧缓存、后台再刷新（`askModelsFor` / `listModels`，同一 key 同时只问一次），只有完全没有缓存时才等。Codex 的 `thread/start` 和 DSH 起进程还是要等，靠遮罩提示（用户说用过再看要不要改）。e2e `starting.spec.ts`：用 `context().route` 拖慢请求，检查遮罩的出现、位置、消失和失败路径；截图 `screenshots/stage-18/S24-starting-cover.png`。顺带修了 e2e 并行跑时的端口冲突：Codex 的 app-server 以前总是从 47910 开始挑空闲端口，几个 Host 同时启动会挑中同一个，结果报 os error 10048 退出。现在 `pickPort` 从范围里随机一处开始找。
 
 **2026-10-23 · Reviewer 第三批（用户试用后的反馈）**：(1) 查看包里的文件：Tab 现在会带动上面的重点栏，效果和点了上面的按钮一样。`FileReview` 新增 `onActiveRow` 参数，`FileItemView` 把当前行对应到某个重点，记为 `pressed`，按钮可能在栏外就滚动过去；点栏上按钮时用 `clicks` 计数放进 `openKey`，所以 Tab 走开后再点同一个也会跳回去。按某一行打开时，那一行直接就是当前行（`setActive(line - 1)`），Tab 从它往下走。按键都写出来了：文件下面一行 `vw-keys`（Tab/Shift Tab、w/s、Ctrl G、Ctrl F），「重新载入」按钮上标 r（查看包里的文件现在也响应 r），查看包列表底部写 j/k，git 条目再加 Ctrl J/K。(2) 「打开 Review / 打开查看包」以前在 agent 回复之后会跟着那组工具一起折叠起来，所以找不到。现在折叠的那组下面照样显示这些按钮（`ProcessRows.tsx` 的 `ReopenButton` 和 `reopenTarget`）。

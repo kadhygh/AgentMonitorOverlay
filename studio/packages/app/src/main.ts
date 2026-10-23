@@ -9,7 +9,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
-import { installScratchpad } from "./scratchpad-window.js";
+import { installNotesLink } from "./notes-link.js";
 import { setupReviewWindows } from "./review-window.js";
 import { installMarksWindow } from "./marks-window.js";
 import { setupViewerWindows } from "./viewer-window.js";
@@ -366,8 +366,8 @@ if (!app.requestSingleInstanceLock()) {
         viewers.closeAll();
       });
       if (prefs.focus(!testMode)) setFocusVisible(true);
-      // The scratchpad window (便签) and its global shortcut.
-      installScratchpad({ host, url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, dataDir, mainWindow });
+      // 便签 is a program of its own (packages/notes, 2026-10-23): started with Studio, brought up from the title bar.
+      installNotesLink({ studioRoot, dataDir, host, testMode, log: (line) => console.error(`[${new Date().toISOString()}] ${line}`) });
       // The file marks window (文件标记).
       installMarksWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
       if (!testMode) {

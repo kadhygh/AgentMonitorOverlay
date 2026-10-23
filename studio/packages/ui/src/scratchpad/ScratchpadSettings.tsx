@@ -4,10 +4,12 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { scratchpadBridge } from "./bridge.js";
 import { ScratchpadEntry } from "./ScratchpadEntry.js";
 import { ShortcutSection } from "./ShortcutSection.js";
+import { NotesLinkSection } from "./NotesLinkSection.js";
 import { useScratchpad } from "./useScratchpad.js";
 
 // 设置 → 便签 (S14-B): the global shortcut, the page count (moved here from the window) and how 复制 breaks lines. In a
-// plain browser, where there is no scratchpad window, the page itself is edited here too.
+// plain browser, where there is no scratchpad window, the page itself is edited here too. In the Studio app (2026-10-23)
+// the 便签 is its own program and this page only says whether it runs and opens it or its settings.
 
 const NEWLINE_CHOICES = [
   { safe: false, label: "常规换行", hint: "保留原来的分行（去掉行尾空格和末尾空行）。粘贴到 Studio 的输入框、文档、聊天软件都按原样分行。" },
@@ -15,6 +17,9 @@ const NEWLINE_CHOICES = [
 ] as const;
 
 export function ScratchpadSettings({ link, settings }: { link: HostLink; settings: StudioSettings | null }) {
+  // In the Studio app the 便签 is a program of its own (2026-10-23): its settings live there.
+  const bridge = scratchpadBridge();
+  if (bridge?.notesStatus) return <NotesLinkSection bridge={bridge} />;
   return (
     <>
       <ShortcutSection link={link} shortcut={settings?.scratchpadShortcut ?? ""} />

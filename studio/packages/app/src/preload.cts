@@ -99,12 +99,12 @@ electron.contextBridge.exposeInMainWorld("amo", {
     pressed: (): void => electron.ipcRenderer.send("amo:focus-pointer"),
     caught: (): void => electron.ipcRenderer.send("amo:bot-caught"),
   },
-  /** The scratchpad window (便签): open or bring it forward, hide it (from itself), and its global shortcut. */
+  /** 便签, a program of its own since 2026-10-23 (packages/notes): bring it up (starting it), its state, its settings. */
   scratchpad: {
     open: (): Promise<void> => electron.ipcRenderer.invoke("amo:scratchpad-open"),
-    hide: (): void => electron.ipcRenderer.send("amo:scratchpad-hide"),
-    applyShortcut: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:scratchpad-shortcut-apply"),
-    shortcutStatus: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:scratchpad-shortcut-status"),
+    notesStatus: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:notes-status"),
+    startNotes: (): Promise<unknown> => electron.ipcRenderer.invoke("amo:notes-start"),
+    openNotesSettings: (): Promise<void> => electron.ipcRenderer.invoke("amo:notes-settings"),
   },
   /**
    * The project's Git Review window (one per project), at a file when `file` is given (stage 13: 用 git diff 看), or a

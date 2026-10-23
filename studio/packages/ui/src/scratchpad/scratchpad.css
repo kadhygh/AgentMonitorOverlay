@@ -64,3 +64,7 @@ html.scratchpad-mode #root { height: 100%; }
 .scratchpad .pad-thumb-open { width: 52px; height: 40px; }
 .pad-shortcut { font-family: var(--font-code); cursor: pointer; caret-color: transparent; }
 .pad-shortcut:focus { border-color: var(--primary); background: var(--tint); }
+
+/* 设置 → 便签 in Studio (2026-10-23): whether the 便签 program runs. */
+.notes-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--text-faint); }
+.notes-dot.on { background: var(--running); }

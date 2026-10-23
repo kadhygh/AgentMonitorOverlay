@@ -262,7 +262,11 @@ async function start(): Promise<void> {
   writeFileSync(runningFile(), JSON.stringify({ url: server.url, token: server.token, pid: process.pid, startedAt: new Date().toISOString() }, null, 2));
 
   ipcMain.handle("amo:host", () => ({ url: server!.url, token: server!.token }));
-  ipcMain.handle("amo:copy", (_event, text: string) => clipboard.writeText(String(text)));
+  ipcMain.handle("amo:copy", (_event, text: string) => {
+    // Tests run side by side: they record what would be copied instead of taking the person's clipboard.
+    if (testMode) (globalThis as { __notesCopied?: string[] }).__notesCopied = [...((globalThis as { __notesCopied?: string[] }).__notesCopied ?? []), String(text)];
+    else clipboard.writeText(String(text));
+  });
   ipcMain.handle("amo:scratchpad-open", () => showPad());
   ipcMain.on("amo:scratchpad-hide", (event) => {
     if (pad && event.sender === pad.webContents) pad.hide();
