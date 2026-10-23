@@ -21,9 +21,9 @@
 .vp-note-dim { color: var(--text-dim); }
 /* The 重点 on top: one chip each, the one looked at pressed. */
 .vp-marks { display: flex; gap: 6px; padding: 6px 16px; overflow-x: auto; border-bottom: 1px solid var(--divider); background: var(--panel); }
-.vp-mark { flex: none; max-width: 320px; display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 8px; border: 1px solid var(--attention-border); border-radius: var(--r-btn); background: transparent; color: var(--text); font-size: var(--fs-cap); cursor: pointer; }
-.vp-mark[aria-pressed="true"] { background: var(--attention-bg); }
-.vp-mark-where { flex: none; color: var(--attention); font-weight: 600; font-variant-numeric: tabular-nums; }
+.vp-mark { flex: none; max-width: 320px; display: inline-flex; align-items: baseline; gap: 6px; padding: 3px 8px; border: 1px solid color-mix(in srgb, var(--gr-hl) 55%, transparent); border-radius: var(--r-btn); background: transparent; color: var(--text); font-size: var(--fs-cap); cursor: pointer; }
+.vp-mark[aria-pressed="true"] { background: var(--gr-hl-bg); }
+.vp-mark-where { flex: none; color: var(--gr-hl); font-weight: 600; font-variant-numeric: tabular-nums; }
 .vp-mark-note { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .vp-item > .vw-file { flex: 1; }
 .vp-item > .vw-changes > .gr-app { flex: 1; min-height: 0; height: auto; }

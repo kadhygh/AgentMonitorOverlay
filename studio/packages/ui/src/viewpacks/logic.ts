@@ -1,4 +1,4 @@
-import type { ViewPack, ViewItem } from "@amo-studio/protocol";
+import type { ReviewOpenTarget, ViewPack, ViewItem } from "@amo-studio/protocol";
 
 // Pure logic of the 查看包 window (2026-10-23): which pack a tool call opened, which item to show when the pack
 // grows, and the message temporary comments on a proposal go back as.
@@ -7,6 +7,22 @@ import type { ViewPack, ViewItem } from "@amo-studio/protocol";
 export function packIdOf(toolName: string, output: string | undefined): string | null {
   if (!/(^|[_.])(view_open|review_open)$/.test(toolName) || !output) return null;
   return /"packId"\s*:\s*"(vp-[\w-]{1,80})"/.exec(output)?.[1] ?? null;
+}
+
+/**
+ * The Review a review_open call opened on a whole project (no pack): its target, from the call's output, so the
+ * conversation's row can open it again (2026-10-23); null for anything else.
+ */
+export function reviewTargetOf(toolName: string, output: string | undefined): ReviewOpenTarget | null {
+  if (!/(^|[_.])review_open$/.test(toolName) || !output) return null;
+  try {
+    const parsed = JSON.parse(output) as { target?: Partial<ReviewOpenTarget> } | null;
+    const t = parsed?.target;
+    if (!t || typeof t.workspaceId !== "string" || !t.workspaceId) return null;
+    return t as ReviewOpenTarget;
+  } catch {
+    return null;
+  }
 }
 
 /**

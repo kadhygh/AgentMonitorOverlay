@@ -1,11 +1,13 @@
-import type { GitViewSource } from "@amo-studio/protocol";
+import { MAX_VIEW_HIGHLIGHTS, type GitViewHighlight, type GitViewSource } from "@amo-studio/protocol";
 import { HostError } from "../../../core/shared.js";
-import { GitError, mergeBase, readStatus, resolveCommit } from "../../gitreview/git.js";
+import { GitError, mergeBase, readCommit, readStatus, resolveCommit } from "../../gitreview/git.js";
 import { common, optionalText, type ViewKindModule } from "./kind.js";
+import { highlight } from "./file.js";
 
 // Changes in git: the uncommitted ones, the working tree against a base, a commit (against its parent or a base), or
 // a range (A..B; A...B from where B forked off A) — refs resolved to full ids when the pack is made, so it keeps
-// showing the same thing. `files` keeps it to those files; the window shows them as Git Review does.
+// showing the same thing. `files` are the ones the agent points at: listed first, above the rest (2026-10-23);
+// `highlights` mark lines of them (new version), as a file item's 重点. The window shows it as Git Review does.
 
 export const gitKind: ViewKindModule<"git"> = {
   kind: "git",
@@ -44,13 +46,32 @@ export const gitKind: ViewKindModule<"git"> = {
     const raw = input.files ?? [];
     if (!Array.isArray(raw) || raw.length > 200) throw new HostError("bad_request", "files must be a list of at most 200 paths");
     const files = [...new Set(raw.map((f, i) => ctx.relative(f, `files[${i}]`)))];
-    return { kind: "git", source, files, ...common(input) };
+    const rawMarks = input.highlights ?? [];
+    if (!Array.isArray(rawMarks)) throw new HostError("bad_request", "highlights must be a list");
+    if (rawMarks.length > MAX_VIEW_HIGHLIGHTS) throw new HostError("bad_request", `at most ${MAX_VIEW_HIGHLIGHTS} highlights`);
+    const highlights: GitViewHighlight[] = rawMarks.map((h, i) => {
+      const name = `highlights[${i}]`;
+      const path = ctx.relative((h as { path?: unknown } | null)?.path, `${name}.path`);
+      return { path, ...highlight(h, name) };
+    });
+    // A file with 重点 is one the agent points at.
+    for (const h of highlights) if (!files.includes(h.path)) files.push(h.path);
+    if (source.kind === "commit") {
+      const subject = await readCommit(dir, source.commit)
+        .then((c) => c.commit.subject)
+        .catch(() => "");
+      if (subject) source = { ...source, subject };
+    }
+    return { kind: "git", source, files, highlights, ...common(input) };
   },
 
   merge(prev, next) {
     if (JSON.stringify(prev.source) !== JSON.stringify(next.source)) return null;
     // Either covering every file covers them all.
     const files = !prev.files.length || !next.files.length ? [] : [...new Set([...prev.files, ...next.files])];
-    return { ...prev, ...(next.title ? { title: next.title } : {}), ...(next.note ? { note: next.note } : {}), files };
+    const key = (h: GitViewHighlight) => `${h.path}:${h.line}-${h.endLine ?? h.line}-${h.note}`;
+    const seen = new Set((prev.highlights ?? []).map(key));
+    const highlights = [...(prev.highlights ?? []), ...(next.highlights ?? []).filter((h) => !seen.has(key(h)))].slice(0, MAX_VIEW_HIGHLIGHTS);
+    return { ...prev, ...(next.title ? { title: next.title } : {}), ...(next.note ? { note: next.note } : {}), files, highlights };
   },
 };

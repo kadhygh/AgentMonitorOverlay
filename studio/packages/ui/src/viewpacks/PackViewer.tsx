@@ -49,6 +49,25 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
   useEffect(() => {
     void viewerPinned().then(setPinned).catch(() => undefined);
   }, []);
+
+  // j / k through the list, as through Git Review's files (2026-10-23): the leftmost list takes them; a git item's
+  // own files go by Ctrl+J / Ctrl+K then.
+  useEffect(() => {
+    if (!pack || pack.items.length < 2) return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.ctrlKey || e.metaKey || e.altKey || (e.key !== "j" && e.key !== "k") || el?.closest?.("input, textarea, select, [contenteditable]")) return;
+      if (document.querySelector("[role=dialog]")) return;
+      e.preventDefault();
+      setSelected((cur) => {
+        const i = Math.max(0, pack.items.findIndex((x) => x.id === cur));
+        const next = pack.items[e.key === "j" ? Math.min(pack.items.length - 1, i + 1) : Math.max(0, i - 1)];
+        return next?.id ?? cur;
+      });
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [pack]);
   useEffect(() => {
     if (pack) document.title = `${pack.title} · 查看包`;
   }, [pack?.title]); // eslint-disable-line react-hooks/exhaustive-deps

@@ -39,7 +39,7 @@ export const fileKind: ViewKindModule<"file"> = {
   },
 };
 
-function highlight(raw: unknown, name: string): ViewHighlight {
+export function highlight(raw: unknown, name: string): ViewHighlight {
   const h = raw && typeof raw === "object" ? (raw as Record<string, unknown>) : {};
   const line = lineNumber(h.line, `${name}.line`);
   if (!line) throw new HostError("bad_request", `${name}.line is required`);

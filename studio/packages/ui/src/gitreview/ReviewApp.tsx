@@ -14,7 +14,7 @@ import {
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { openInApps, openInEditor, revealInExplorer } from "../lib/openin.js";
-import { DiffView } from "./DiffView.js";
+import { DiffView, type ViewMark } from "./DiffView.js";
 import { FileList, FileMenu, Splitter, type FileMenuAt } from "./FileList.js";
 import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type ReviewPrefs } from "./filetree.js";
 import { changeStarts, cycle, diffRows, draftCounts, nextOf, parseReviewHash, placeComments, step, type DiffMode, type DiffRow, type ReviewTarget } from "./logic.js";
@@ -28,7 +28,7 @@ import { DiffCache, type DiffRequest } from "./diffcache.js";
 import { diffTokensFor, useDiffTokens } from "./tokens.js";
 import { findChangedFile } from "../viewer/logic.js";
 import { OverviewRuler } from "./OverviewRuler.js";
-import { pairKinds, rowKinds } from "./overview.js";
+import { markRuns, pairKinds, rowKinds } from "./overview.js";
 import { splitRows } from "./splitview.js";
 import { CommitPicker, readHistory } from "./CommitPicker.js";
 import { openReview, switchReview } from "./open.js";
@@ -95,6 +95,8 @@ export function ReviewPage({
   embedded = false,
   inactive = false,
   only = null,
+  highlights = null,
+  fileKeys = "plain",
 }: {
   link: HostLink;
   state: StateSnapshot;
@@ -114,12 +116,27 @@ export function ReviewPage({
   embedded?: boolean;
   /** Kept but not in front (the viewer's 文件 mode): keys are not its own. */
   inactive?: boolean;
-  /** 查看包 (2026-10-23): only these files (relative to the project) are listed; those without changes are named. */
+  /**
+   * 查看包 (2026-10-23): the files (relative to the project) the agent points at — a group of their own above the rest
+   * of the changes; those without changes in it are named.
+   */
   only?: readonly string[] | null;
+  /** 查看包: the agent's 重点 on lines of the changed files, by path. */
+  highlights?: ReadonlyMap<string, readonly ViewMark[]> | null;
+  /**
+   * Which keys switch files: `plain` j / k (and ↓ / ↑), or only Ctrl+J / Ctrl+K where j / k drive a list outside
+   * (a 查看包 of several items). Ctrl+J / Ctrl+K always do.
+   */
+  fileKeys?: "plain" | "ctrl";
 }) {
   // The files a 查看包 asked for, by lower-cased path (a rename counts by either name).
   const onlyKeys = useMemo(() => (only?.length ? new Set(only.map((p) => p.toLowerCase())) : null), [only]);
-  const keep = useCallback(<F extends GitChangedFile>(files: readonly F[]): F[] => (onlyKeys ? files.filter((f) => onlyKeys.has(f.path.toLowerCase()) || (!!f.oldPath && onlyKeys.has(f.oldPath.toLowerCase()))) : [...files]), [onlyKeys]);
+  const isFocus = useCallback((f: GitChangedFile) => !!onlyKeys && (onlyKeys.has(f.path.toLowerCase()) || (!!f.oldPath && onlyKeys.has(f.oldPath.toLowerCase()))), [onlyKeys]);
+  // The order j / k go through: the files pointed at first, then the rest.
+  const orderOf = useCallback(
+    (files: readonly GitChangedFile[], layout: ListLayout) => (onlyKeys ? [...fileOrder(files.filter(isFocus), layout), ...fileOrder(files.filter((f) => !isFocus(f)), layout)] : fileOrder(files, layout)),
+    [onlyKeys, isFocus],
+  );
   const [range, setRange] = useState<GitRange>(given && !commit ? "branch" : "working");
   // The view choices (list width and layout, 单栏 / 左右对照, 只看改动 / 完整文件) stay on this machine.
   const [prefs, setPrefs] = useState<ReviewPrefs>(readPrefs);
@@ -237,7 +254,7 @@ export function ReviewPage({
       .then((c) => {
         if (!live) return;
         setChanges(c);
-        setSelected((cur) => (cur && keep(c.files).some((f) => f.path === cur) ? cur : (fileOrder(keep(c.files), prefsRef.current.layout)[0]?.path ?? null)));
+        setSelected((cur) => (cur && c.files.some((f) => f.path === cur) ? cur : (orderOf(c.files, prefsRef.current.layout)[0]?.path ?? null)));
       })
       .catch((err: unknown) => live && fail(err));
     return () => {
@@ -259,7 +276,7 @@ export function ReviewPage({
       .then((c) => {
         if (!live) return;
         setShownCommit(c);
-        setSelected(fileOrder(keep(c.files), prefsRef.current.layout)[0]?.path ?? null);
+        setSelected(orderOf(c.files, prefsRef.current.layout)[0]?.path ?? null);
       })
       .catch((err: unknown) => live && setCommitError(err instanceof HostApiError ? err.message : String(err)));
     return () => {
@@ -318,7 +335,8 @@ export function ReviewPage({
 
   // What the list shows: the range's changes, or the commit's files.
   const all = commit ? shownCommit : changes;
-  const listed = useMemo(() => (all && onlyKeys ? { ...all, files: keep(all.files) } : all), [all, onlyKeys, keep]);
+  const listed = all;
+  const groups = useMemo(() => (listed && onlyKeys ? { focus: listed.files.filter(isFocus), rest: listed.files.filter((f) => !isFocus(f)) } : null), [listed, onlyKeys, isFocus]);
   // Asked-for files that have no changes in this range.
   const unchanged = useMemo(() => (all && only?.length ? only.filter((p) => !all.files.some((f) => f.path.toLowerCase() === p.toLowerCase() || f.oldPath?.toLowerCase() === p.toLowerCase())) : []), [all, only]);
   const file = listed?.files.find((f) => f.path === selected) ?? null;
@@ -383,7 +401,7 @@ export function ReviewPage({
     if (anchor && scroller.current) void restoreAnchor(scroller.current, rows, anchor);
   }, [rows, prefs.split]);
   const { placed, elsewhere } = useMemo(() => placeComments(comments, selected ?? "", range, rows), [comments, selected, range, rows]);
-  const order = useMemo(() => fileOrder(listed?.files ?? [], prefs.layout), [listed, prefs.layout]);
+  const order = useMemo(() => orderOf(listed?.files ?? [], prefs.layout), [listed, prefs.layout, orderOf]);
   // Syntax colours of both versions, from the highlight worker; plain text until they arrive.
   const tokens = useDiffTokens(shown);
   // Once the file in front is shown, the next files (and the one before) are read ahead.
@@ -430,9 +448,12 @@ export function ReviewPage({
     if (inactive || picking) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
-      const k = e.key;
-      if (k === "j" || k === "k" || k === "ArrowDown" || k === "ArrowUp") {
+      if (e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
+      // Ctrl+J / Ctrl+K switch files always; plain j / k (↓ / ↑) unless a list outside takes them (2026-10-23).
+      const ctrlFile = e.ctrlKey && (k === "j" || k === "k");
+      if (e.ctrlKey && !ctrlFile) return;
+      if (ctrlFile || (fileKeys === "plain" && (k === "j" || k === "k" || k === "ArrowDown" || k === "ArrowUp"))) {
         if (!order.length) return;
         e.preventDefault();
         setSelected((cur) => {
@@ -440,6 +461,9 @@ export function ReviewPage({
           const next = k === "j" || k === "ArrowDown" ? Math.min(order.length - 1, i + 1) : Math.max(0, i - 1);
           return order[next]!.path;
         });
+      } else if (fileKeys === "ctrl" && (k === "j" || k === "k")) {
+        // The list outside's.
+        return;
       } else if (k === "n" || k === "p" || k === "l" || k === ";") {
         // l / ; sit next to j / k: l on to the next change like j, ; back like k.
         const on = k === "n" || k === "l";
@@ -480,9 +504,37 @@ export function ReviewPage({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [order, changeRows, markRows, active, rows.length, inactive, picking, commit, changes]);
+  }, [order, changeRows, markRows, active, rows.length, inactive, picking, commit, changes, fileKeys]);
 
   const status = changes?.status;
+  const listProps = {
+    layout: prefs.layout,
+    selected,
+    active: !inactive,
+    perFile,
+    closed,
+    onToggle: toggleFolder,
+    onSelect: setSelected,
+    onHover: readAhead,
+    onMenu: (f: GitChangedFile, x: number, y: number) => setMenu({ file: f, x, y }),
+  };
+  // The 重点 of the file in front, and where they and the comments are on the ruler.
+  const fileMarks = file ? (highlights?.get(file.path.toLowerCase()) ?? null) : null;
+  const rulerMarks = useMemo(() => {
+    const hl = new Set<string>();
+    for (const h of fileMarks ?? []) for (let n = h.from; n <= h.to; n++) hl.add(`new:${n}`);
+    const notes = new Set(placed.keys());
+    if (prefs.split) {
+      const pairs = splitRows(rows);
+      const keysOf = (i: number) => {
+        const p = pairs[i]!;
+        return p.kind === "hunk" ? [] : [p.left?.row.key, p.right?.row.key].filter((k): k is string => !!k);
+      };
+      return [...markRuns(pairs.length, keysOf, hl, "hl"), ...markRuns(pairs.length, keysOf, notes, "note")];
+    }
+    const keysOf = (i: number) => [rows[i]!.key];
+    return [...markRuns(rows.length, keysOf, hl, "hl"), ...markRuns(rows.length, keysOf, notes, "note")];
+  }, [rows, prefs.split, fileMarks, placed]);
   // VS Code opens at the line n / p moved to (or that was clicked), else at the line being commented, else at the top.
   const draftRow = draftAt ? rows.findIndex((r) => r.key === draftAt) : -1;
   const openLine = editorLine(rows, active ?? (draftRow >= 0 ? draftRow : null));
@@ -525,7 +577,7 @@ export function ReviewPage({
                 ))}
               </div>
             </div>
-            <div className="gr-files-hint gr-dim" data-testid="review-keys">j / k 切换文件，l / ;（或 n / p）跳到改动，Tab 跳到批注，w / s 上下翻页，a 只看改动，d 完整文件，e 单栏 / 左右对照，q 切换范围，r 刷新，h 历史</div>
+            <div className="gr-files-hint gr-dim" data-testid="review-keys">{fileKeys === "ctrl" ? "Ctrl+J / K" : "j / k"} 切换文件，l / ;（或 n / p）跳到改动，Tab 跳到批注，w / s 上下翻页，a 只看改动，d 完整文件，e 单栏 / 左右对照，q 切换范围，r 刷新，h 历史</div>
             {commitError && (
               <div className="gr-empty" data-testid="review-commit-error">
                 读不到这个提交：{commitError}
@@ -538,20 +590,29 @@ export function ReviewPage({
             )}
             {listed && !listed.files.length && !unchanged.length && <div className="gr-empty">{commit ? "这个提交没有改动这个项目里的文件。" : "这个范围没有改动。"}</div>}
             {listed?.truncated && <div className="gr-empty">改动的文件太多，只列出前 {listed.files.length} 个。</div>}
-            {listed && (
-              <FileList
-                files={listed.files}
-                layout={prefs.layout}
-                selected={selected}
-                active={!inactive}
-                perFile={perFile}
-                closed={closed}
-                onToggle={toggleFolder}
-                onSelect={setSelected}
-                onHover={readAhead}
-                onMenu={(f, x, y) => setMenu({ file: f, x, y })}
-              />
-            )}
+            {listed &&
+              (groups ? (
+                <>
+                  {groups.focus.length > 0 && (
+                    <>
+                      <div className="gr-group-head focus" data-testid="review-group" data-group="focus">
+                        重点文件 <span className="gr-dim">{groups.focus.length}</span>
+                      </div>
+                      <FileList group="focus" files={groups.focus} {...listProps} />
+                    </>
+                  )}
+                  {groups.rest.length > 0 && (
+                    <>
+                      <div className="gr-group-head" data-testid="review-group" data-group="rest">
+                        其他改动 <span className="gr-dim">{groups.rest.length}</span>
+                      </div>
+                      <FileList group="rest" files={groups.rest} {...listProps} />
+                    </>
+                  )}
+                </>
+              ) : (
+                <FileList files={listed.files} {...listProps} />
+              ))}
           </nav>
           <Splitter width={prefs.listWidth} onChange={(w) => pref("listWidth", w)} />
 
@@ -589,6 +650,7 @@ export function ReviewPage({
                     active={active}
                     busy={busy}
                     readOnly={!!commit}
+                    {...(fileMarks ? { highlights: fileMarks } : {})}
                     draftKey={(rowKey) => newDraftKey(workspace.id, file.path, rowKey)}
                     onDraft={setDraftAt}
                     onActivate={setActive}
@@ -621,7 +683,7 @@ export function ReviewPage({
                   />
                 )}
               </div>
-              {file && shown && rows.length > 0 && <OverviewRuler scroller={scroller} kinds={rulerKinds} />}
+              {file && shown && rows.length > 0 && <OverviewRuler scroller={scroller} kinds={rulerKinds} marks={rulerMarks} />}
             </div>
           </section>
         </div>

@@ -139,6 +139,29 @@ for (const profileId of ["claude-mock", "codex-mock"]) {
   });
 }
 
+test("review_open on a whole project opens Review; the conversation's row opens it again (2026-10-23)", async () => {
+  studio = await launchStudio();
+  const { app, page } = studio;
+  const dir = studio.workspace("proj");
+  git(dir, "init", "-q", "-b", "main");
+  writeFileSync(join(dir, "a.txt"), "1\n");
+  git(dir, "add", ".");
+  git(dir, "commit", "-q", "-m", "one");
+  writeFileSync(join(dir, "a.txt"), "2\n");
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+  const review = await nextWindow(app, () => studio!.api<{ task: Task }>("POST", "/api/tasks", { title: "看改动", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "[[mcp: review_open {}]]" } }));
+  await expect(review.getByTestId("review-file")).toHaveCount(1);
+
+  await review.close();
+
+  await page.getByTestId("task-card").first().click();
+  const again = page.getByTestId("tool-open-review");
+  await expect(again).toBeVisible({ timeout: 30_000 });
+  const reopened = await nextWindow(app, () => again.click());
+  expect(reopened.url()).toContain(`#review?workspace=${ws.id}`);
+  await expect(reopened.getByTestId("review-file")).toHaveCount(1);
+});
+
 test("amo-review says when AMO Studio is not running", async () => {
   const r = await promisify(execFile)(process.execPath, [SCRIPT, ".", "--data", join(HERE, "no-such-data")], { encoding: "utf8", windowsHide: true }).catch((e: { code: number; stderr: string }) => e);
   expect(r).toMatchObject({ code: 2 });

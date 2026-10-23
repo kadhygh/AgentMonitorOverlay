@@ -53,11 +53,33 @@ export const pairKinds = (pairs: readonly SplitRow[]): RulerKind[] =>
     return del && add ? "mod" : add ? "add" : del ? "del" : "context";
   });
 
-/** A run of changed items, `[from, to)`: added only, deleted only, or both (modified). */
+/**
+ * A run of items, `[from, to)`: changed — added only, deleted only, or both (modified) — or marked (2026-10-23):
+ * `hl` an agent's 重点, `note` a comment.
+ */
 export interface ChangeRun {
-  kind: "add" | "del" | "mod";
+  kind: "add" | "del" | "mod" | "hl" | "note";
   from: number;
   to: number;
+}
+
+/**
+ * Runs of the items holding a marked line, for the ruler: `keysOf(i)` are the row keys item `i` shows (a row, or a
+ * side-by-side pair's two), `marked` the keys that carry the mark.
+ */
+export function markRuns(count: number, keysOf: (i: number) => readonly string[], marked: ReadonlySet<string>, kind: "hl" | "note"): ChangeRun[] {
+  const runs: ChangeRun[] = [];
+  if (!marked.size) return runs;
+  let from = -1;
+  for (let i = 0; i <= count; i++) {
+    const on = i < count && keysOf(i).some((k) => marked.has(k));
+    if (on && from < 0) from = i;
+    if (!on && from >= 0) {
+      runs.push({ kind, from, to: i });
+      from = -1;
+    }
+  }
+  return runs;
 }
 
 export function changeRuns(kinds: readonly RulerKind[]): ChangeRun[] {

@@ -15,10 +15,15 @@ function report(): void {
   window.amo?.setMinWidth?.(px);
 }
 
-/** The width `bar` needs to show every item that does not shrink; 0 while it is hidden. */
+/**
+ * The window width `bar` needs to show every item that does not shrink: its items, plus what lies beside it (a 查看包's
+ * list on its left); 0 while it is hidden.
+ */
 export function neededWidth(bar: HTMLElement): number {
   if (!bar.offsetParent && getComputedStyle(bar).position !== "fixed") return 0;
   const cs = getComputedStyle(bar);
+  const box = bar.getBoundingClientRect();
+  const beside = Math.max(0, box.left) + Math.max(0, document.documentElement.clientWidth - box.right);
   const kids = [...bar.children].filter((k): k is HTMLElement => k instanceof HTMLElement && getComputedStyle(k).display !== "none");
   let w = (parseFloat(cs.paddingLeft) || 0) + (parseFloat(cs.paddingRight) || 0) + (parseFloat(cs.borderLeftWidth) || 0) + (parseFloat(cs.borderRightWidth) || 0);
   w += (parseFloat(cs.columnGap) || 0) * Math.max(0, kids.length - 1);
@@ -26,7 +31,7 @@ export function neededWidth(bar: HTMLElement): number {
     const ks = getComputedStyle(k);
     w += ks.flexShrink === "0" ? k.getBoundingClientRect().width : parseFloat(ks.minWidth) || 0;
   }
-  return Math.ceil(w);
+  return Math.ceil(w + beside);
 }
 
 /** Keeps the window at least as wide as `bar` needs, while it is shown. */

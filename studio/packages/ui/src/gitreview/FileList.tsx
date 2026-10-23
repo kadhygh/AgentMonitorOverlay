@@ -24,6 +24,8 @@ interface FileListProps {
   /** The pointer rests on a file (its diff is read ahead). */
   onHover?(file: GitChangedFile): void;
   onMenu(file: GitChangedFile, x: number, y: number): void;
+  /** Two lists on one page (查看包: the files pointed at, then the rest) keep apart. */
+  group?: string;
 }
 
 /** A file's status as a coloured square, as in Fork: + added, M modified, − deleted, R renamed. */
@@ -54,7 +56,7 @@ const DIR_PX = 26;
 
 const fileTitle = (f: GitChangedFile) => (f.oldPath ? `${f.oldPath} → ${f.path}` : f.path);
 
-export function FileList({ files, layout, selected, active = true, perFile, closed, onToggle, onSelect, onHover, onMenu }: FileListProps) {
+export function FileList({ files, layout, selected, active = true, perFile, closed, onToggle, onSelect, onHover, onMenu, group = "" }: FileListProps) {
   const tree = useMemo(() => (layout === "tree" ? buildTree(files) : null), [files, layout]);
   const rows = useMemo(() => (tree ? treeRows(tree, closed) : []), [tree, closed]);
   const flat = useMemo(() => (layout === "flat" ? listOrder(files) : []), [files, layout]);
@@ -107,7 +109,7 @@ export function FileList({ files, layout, selected, active = true, perFile, clos
       <LazyChunks
         items={flat}
         size={LIST_CHUNK}
-        file="flat"
+        file={`${group}flat`}
         chunkClass="gr-file-chunk"
         guess={() => FILE_PX}
         keep={selected ? [flat.findIndex((f) => f.path === selected)].filter((i) => i >= 0) : []}
@@ -118,7 +120,7 @@ export function FileList({ files, layout, selected, active = true, perFile, clos
     <LazyChunks
       items={rows}
       size={LIST_CHUNK}
-      file="tree"
+      file={`${group}tree`}
       chunkClass="gr-file-chunk"
       guess={(r) => (r.kind === "file" ? FILE_PX : DIR_PX)}
       keep={selected ? [rows.findIndex((r) => r.kind === "file" && r.file.path === selected)].filter((i) => i >= 0) : []}

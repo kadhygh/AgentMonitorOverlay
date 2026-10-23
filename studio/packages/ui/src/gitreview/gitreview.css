@@ -6,12 +6,19 @@
   --gr-st-modified: #e0a83a;
   --gr-st-deleted: #d6504a;
   --gr-st-renamed: #4b84c4;
+  /* 重点 (2026-10-23): violet, a hue no git status uses, laid over the add / delete colours. */
+  --gr-hl: #a98bf0;
+  --gr-hl-bg: rgba(169, 139, 240, 0.16);
+  --gr-note-mark: #6fa8dc;
 }
 :root[data-theme="light"] {
   --gr-st-added: #3b8a55;
   --gr-st-modified: #dc9d22;
   --gr-st-deleted: #c0443e;
   --gr-st-renamed: #3a6fb0;
+  --gr-hl: #7a4fd6;
+  --gr-hl-bg: rgba(122, 79, 214, 0.11);
+  --gr-note-mark: #3a78b5;
 }
 @media (prefers-color-scheme: light) {
   :root:not([data-theme="dark"]):not([data-theme="light"]) {
@@ -19,6 +26,9 @@
     --gr-st-modified: #dc9d22;
     --gr-st-deleted: #c0443e;
     --gr-st-renamed: #3a6fb0;
+    --gr-hl: #7a4fd6;
+    --gr-hl-bg: rgba(122, 79, 214, 0.11);
+    --gr-note-mark: #3a78b5;
   }
 }
 
@@ -98,6 +108,10 @@ button[aria-pressed="true"] .gr-key { color: var(--text-dim); border-color: var(
 .gr-ruler-mark.add { background: var(--gr-st-added); }
 .gr-ruler-mark.del { background: var(--gr-st-deleted); }
 .gr-ruler-mark.mod { background: var(--gr-st-modified); }
+/* 重点 and comments: the right half, over the changes. */
+.gr-ruler-mark.hl, .gr-ruler-mark.note { left: 6px; right: 1px; }
+.gr-ruler-mark.hl { background: var(--gr-hl); }
+.gr-ruler-mark.note { background: var(--gr-note-mark); }
 .gr-ruler-view { position: absolute; left: 0; right: 0; pointer-events: none; background: color-mix(in srgb, var(--text) 9%, transparent); box-shadow: inset 0 1px 0 color-mix(in srgb, var(--text) 30%, transparent), inset 0 -1px 0 color-mix(in srgb, var(--text) 30%, transparent); }
 .gr-scroll-wrap .gr-lines { padding-right: 12px; }
 /* With the ruler the ruler is the vertical scrollbar (S14-A, B2): the native one goes, the horizontal one stays. */
@@ -138,10 +152,25 @@ button[aria-pressed="true"] .gr-key { color: var(--text-dim); border-color: var(
 .gr-line.marked, .gr-plain .gr-line.marked { background: var(--attention-bg); }
 .gr-line.marked .gr-no { color: var(--attention); box-shadow: inset 2px 0 var(--attention); }
 /* 查看包 (2026-10-23): the agent's 重点 — lines tinted lighter than the asked line, each note under its last line. */
-.gr-line.hl:not(.marked) { background: color-mix(in srgb, var(--attention-bg) 55%, transparent); }
-.gr-line.hl .gr-no { color: var(--attention); box-shadow: inset 2px 0 var(--attention); }
-.gr-hl-note { margin: 2px 16px 6px calc(var(--gr-no-w, 44px) + 44px); padding: 6px 10px; border-left: 2px solid var(--attention); border-radius: 0 var(--r-btn) var(--r-btn) 0; background: var(--attention-bg); color: var(--text); font-family: var(--font-ui); font-size: var(--fs-sm); line-height: 1.55; white-space: pre-wrap; }
-.gr-hl-where { margin-right: 8px; color: var(--attention); font-size: var(--fs-cap); font-weight: 600; }
+/* 重点 (2026-10-23): a violet bar at the line's start and a highlighter icon on its first line, whatever the line
+   is; an added or deleted line keeps its green or red (a thin violet outline, no tint over it), an unchanged one
+   takes a violet tint. */
+.gr-line.hl, .gr-cell.hl { box-shadow: inset 3px 0 0 var(--gr-hl), inset 0 0 0 1px color-mix(in srgb, var(--gr-hl) 45%, transparent); }
+.gr-line.hl.context, .gr-cell.hl.context { background-image: linear-gradient(var(--gr-hl-bg), var(--gr-hl-bg)); box-shadow: inset 3px 0 0 var(--gr-hl); }
+.gr-line.hl .gr-no, .gr-cell.hl .gr-no { color: var(--gr-hl); }
+.gr-line.hl-start, .gr-cell.hl-start { position: relative; }
+.gr-line.hl-start::before, .gr-cell.hl-start::before {
+  content: ""; position: absolute; left: 5px; top: 50%; width: 11px; height: 11px; margin-top: -6px; background: var(--gr-hl); pointer-events: none;
+  -webkit-mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M10.6 1.4l4 4-7.2 7.2-4-4zM2.6 9.4l4 4-1.4 1.4H1.2v-4z'/%3E%3C/svg%3E") center / contain no-repeat;
+  mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath d='M10.6 1.4l4 4-7.2 7.2-4-4zM2.6 9.4l4 4-1.4 1.4H1.2v-4z'/%3E%3C/svg%3E") center / contain no-repeat;
+}
+.gr-hl-note { margin: 2px 16px 6px calc(var(--gr-no-w, 44px) + 44px); padding: 6px 10px; border-left: 3px solid var(--gr-hl); border-radius: 0 var(--r-btn) var(--r-btn) 0; background: var(--gr-hl-bg); color: var(--text); font-family: var(--font-ui); font-size: var(--fs-sm); line-height: 1.55; white-space: pre-wrap; }
+.gr-split .gr-hl-note { margin-left: calc(50% + 44px); }
+.gr-hl-where { margin-right: 8px; color: var(--gr-hl); font-size: var(--fs-cap); font-weight: 600; }
+/* 查看包: the files the item names, a group of their own above the rest of the changes. */
+.gr-group-head { display: flex; align-items: center; gap: 6px; padding: 8px 10px 4px; font-size: var(--fs-cap); font-weight: 600; color: var(--text-dim); }
+.gr-group-head.focus { color: var(--gr-hl); }
+.gr-group-head .gr-dim { font-weight: 400; }
 .gr-plain .gr-comment, .gr-plain .gr-draft { margin-left: calc(var(--gr-no-w, 52px) + 24px); }
 
 /* Ctrl+F (and Ctrl+G in the viewer), over the top right of the view. */

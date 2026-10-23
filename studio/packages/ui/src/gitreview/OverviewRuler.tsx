@@ -1,5 +1,13 @@
 import { useEffect, useMemo, useRef, useState, type PointerEvent, type RefObject } from "react";
-import { changeRuns, rulerMarks, scrollForRuler, viewBox, type ChunkBox, type RulerKind, type RulerMark } from "./overview.js";
+import { changeRuns, rulerMarks, scrollForRuler, viewBox, type ChangeRun, type ChunkBox, type RulerKind, type RulerMark } from "./overview.js";
+
+/** "3 处改动 · 2 处重点 · 1 条批注：点击或拖动跳过去". */
+function rulerTitle(changes: number, marks: readonly ChangeRun[]): string {
+  const hl = marks.filter((m) => m.kind === "hl").length;
+  const notes = marks.filter((m) => m.kind === "note").length;
+  const parts = [changes ? `${changes} 处改动` : "", hl ? `${hl} 处重点` : "", notes ? `${notes} 处批注` : ""].filter(Boolean);
+  return parts.length ? `${parts.join(" · ")}：点击或拖动跳过去` : "点击或拖动跳到文件里的位置";
+}
 
 // The overview ruler (S13-B): a thin strip beside the diff's scrollbar with a mark for every run of changes (added
 // green, deleted red, both yellow) where it sits in the file, and a box for the part on screen. A click or a drag
@@ -13,11 +21,16 @@ interface Geometry {
   hbar: number;
 }
 
-const KIND_NAME = { add: "新增", del: "删除", mod: "修改" } as const;
+const KIND_NAME = { add: "新增", del: "删除", mod: "修改", hl: "重点", note: "批注" } as const;
 
-export function OverviewRuler({ scroller, kinds }: { scroller: RefObject<HTMLDivElement | null>; kinds: readonly RulerKind[] }) {
+/**
+ * `marks` (2026-10-23): the 重点 and comments, drawn on the ruler's right half over the changes, so both show; the
+ * viewer's 文件 mode has only these (no changes).
+ */
+export function OverviewRuler({ scroller, kinds, marks = [] }: { scroller: RefObject<HTMLDivElement | null>; kinds: readonly RulerKind[]; marks?: readonly ChangeRun[] }) {
   const ruler = useRef<HTMLDivElement>(null);
-  const runs = useMemo(() => changeRuns(kinds), [kinds]);
+  const changes = useMemo(() => changeRuns(kinds), [kinds]);
+  const runs = useMemo(() => [...changes, ...marks], [changes, marks]);
   const [geo, setGeo] = useState<Geometry | null>(null);
   const dragging = useRef(false);
 
@@ -86,7 +99,7 @@ export function OverviewRuler({ scroller, kinds }: { scroller: RefObject<HTMLDiv
       ref={ruler}
       className="gr-ruler"
       style={geo ? { right: geo.vbar, bottom: geo.hbar } : undefined}
-      title={runs.length ? `${runs.length} 处改动：点击或拖动跳过去` : "没有改动"}
+      title={rulerTitle(changes.length, marks)}
       data-testid="overview-ruler"
       onPointerDown={(e) => {
         if (e.button !== 0) return;

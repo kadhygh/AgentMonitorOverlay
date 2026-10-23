@@ -8,6 +8,8 @@ import { dropDraft, editDraftKey, newDraftKey } from "../gitreview/drafts.js";
 import { FindBar } from "../gitreview/FindBar.js";
 import { cycle, diffRows, placeComments } from "../gitreview/logic.js";
 import { revealRow } from "../gitreview/reveal.js";
+import { OverviewRuler } from "../gitreview/OverviewRuler.js";
+import { markRuns, type RulerKind } from "../gitreview/overview.js";
 import { useDiffTokens } from "../gitreview/tokens.js";
 import { relativeIn } from "./logic.js";
 
@@ -95,6 +97,14 @@ export function FileReview({
     for (const h of highlights ?? []) at.add(h.from - 1);
     return [...at].filter((i) => i >= 0 && i < rows.length).sort((a, b) => a - b);
   }, [rows, placed, highlights]);
+  // The overview ruler as the scrollbar, as in Git Review (2026-10-23): no changes here, the 重点 and the comments.
+  const plainKinds = useMemo<RulerKind[]>(() => rows.map(() => "context"), [rows]);
+  const rulerMarks = useMemo(() => {
+    const hl = new Set<string>();
+    for (const h of highlights ?? []) for (let n = h.from; n <= h.to; n++) hl.add(`new:${n}`);
+    const keyOf = (i: number) => [rows[i]!.key];
+    return [...markRuns(rows.length, keyOf, hl, "hl"), ...markRuns(rows.length, keyOf, new Set(placed.keys()), "note")];
+  }, [rows, highlights, placed]);
   const toRow = (row: number) => {
     setActive(row);
     const el = scroller.current;
@@ -165,7 +175,7 @@ export function FileReview({
             onClose={() => setGoto(false)}
           />
         )}
-        <div className="gr-scroll" ref={scroller}>
+        <div className="gr-scroll ruled" ref={scroller}>
           <DiffView
             diff={diff}
             rows={rows}
@@ -216,6 +226,7 @@ export function FileReview({
             }}
           />
         </div>
+        {rows.length > 0 && <OverviewRuler scroller={scroller} kinds={plainKinds} marks={rulerMarks} />}
       </div>
       {/* The project's drafts (written here or in Review) go out from here too; shown once there are some. */}
       {ws && (drafts.length > 0 || draftAt) && <SendBar link={link} state={state} workspace={ws} comments={comments} target={target} onTarget={setTarget} busy={busy} run={run} />}

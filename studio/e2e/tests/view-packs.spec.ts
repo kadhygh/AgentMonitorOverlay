@@ -71,6 +71,8 @@ test("files with 重点; the same session sending again a moment later adds to t
   await expect(at(1)).toHaveCount(1);
   await win.locator("body").press("Shift+Tab");
   await expect(at(2)).toHaveCount(1);
+  // The overview ruler is the scrollbar here too (2026-10-23): the 重点 on it (lines 1–3, one run).
+  await expect(win.locator('[data-testid="ruler-mark"][data-kind="hl"]')).toHaveCount(1);
 
   // A second call a moment later: the same window, now with a list; what was added is shown.
   await studio.api("POST", "/api/viewpacks", { sessionId: session.id, items: [{ kind: "file", path: "notes.md" }] });
@@ -82,7 +84,7 @@ test("files with 重点; the same session sending again a moment later adds to t
   await screenshot(app, "stage-18", "S23-viewpack-files", win, "viewer");
 });
 
-test("git items show only the files asked for; a 改动预览 is a diff whose comments go back to the conversation", async () => {
+test("git items list the files pointed at first, above the rest, with their 重点; a 改动预览 is a diff whose comments go back to the conversation", async () => {
   studio = await launchStudio();
   const { app } = studio;
   const { dir, session } = await project(studio);
@@ -91,21 +93,42 @@ test("git items show only the files asked for; a 改动预览 is a diff whose co
     studio!.api<ViewOpenResult>("POST", "/api/viewpacks", {
       sessionId: session.id,
       items: [
-        { kind: "git", files: ["drop.lua"] },
+        { kind: "git", files: ["drop.lua"], highlights: [{ path: "drop.lua", line: 1, note: "概率从 0.1 改到 0.25" }] },
         { kind: "git", source: "commit", commit: "HEAD", files: ["drop.lua", "nope.lua"] },
         { kind: "proposal", path: "drop.lua", note: "建议把 boss 也调一下", proposed: "local rate = 0.25\nlocal boss = 'Lv20'\nreturn { rate = rate, boss = boss }\n" },
       ],
     }),
   );
-  await expect(win.getByTestId("viewpack-entry")).toHaveText([/drop\.lua · 未提交的改动/, /提交 [0-9a-f]{7}/, /drop\.lua（改动预览）/]);
+  // The list names what each compares (a commit with its first line) and the files it points at.
+  await expect(win.getByTestId("viewpack-entry")).toHaveText([/未提交的改动.*drop\.lua · 1 处重点/, /提交 [0-9a-f]{7} · base.*drop\.lua、nope\.lua/, /drop\.lua（改动预览）/]);
 
-  // Uncommitted changes, only drop.lua (shop.lua is changed too).
-  await expect(win.getByTestId("review-file")).toHaveCount(1);
-  await expect(win.getByTestId("review-file")).toContainText("drop.lua");
+  // Uncommitted changes: drop.lua pointed at, on top; shop.lua (changed too) below it, still there (2026-10-23).
+  await expect(win.getByTestId("review-group")).toHaveText([/重点文件\s*1/, /其他改动\s*1/]);
+  await expect(win.getByTestId("review-file")).toHaveCount(2);
+  await expect(win.getByTestId("review-file").nth(0)).toContainText("drop.lua");
+  await expect(win.getByTestId("review-file").nth(1)).toContainText("shop.lua");
+  // Its 重点 on the line (violet, with the icon on its first line), the note under it, and on the ruler.
+  await expect(win.getByTestId("review-file-head")).toContainText("drop.lua");
+  await expect(win.locator('.gr-line.hl.hl-start[data-line="new:1"]')).toHaveCount(1);
+  await expect(win.getByTestId("highlight-note")).toContainText("概率从 0.1 改到 0.25");
+  await expect(win.locator('[data-testid="ruler-mark"][data-kind="hl"]')).toHaveCount(1);
+  // The embedded Review head fits: the window is kept wide enough for it beside the list (no page scrolling sideways).
+  await expect.poll(() => win.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth)).toBeLessThanOrEqual(0);
+  await screenshot(app, "stage-18", "S23-viewpack-git-focus", win, "viewer");
+  // Ctrl+J / Ctrl+K: the files here; j / k: the pack's list.
+  await win.locator("body").press("Control+j");
+  await expect(win.getByTestId("review-file-head")).toContainText("shop.lua");
+  await win.locator("body").press("Control+k");
+  await expect(win.getByTestId("review-file-head")).toContainText("drop.lua");
+  await win.locator("body").press("j");
+  await expect(win.getByTestId("viewpack-entry").nth(1)).toHaveAttribute("aria-current", "true");
 
-  // The commit: the asked files have no changes in it, and it says so.
+  // The commit: drop.lua pointed at (added there), nope.lua said to have no changes in it, the rest below.
+  await expect(win.getByTestId("review-unchanged")).toContainText("nope.lua在这个范围里没有改动");
+  await expect(win.getByTestId("review-group")).toHaveText([/重点文件\s*1/, /其他改动\s*2/]);
+  await win.locator("body").press("k");
+  await expect(win.getByTestId("viewpack-entry").nth(0)).toHaveAttribute("aria-current", "true");
   await win.getByTestId("viewpack-entry").nth(1).click();
-  await expect(win.getByTestId("review-unchanged")).toContainText("在这个范围里没有改动");
 
   // The proposal: the change as a diff; nothing on disk changed.
   await win.getByTestId("viewpack-entry").nth(2).click();

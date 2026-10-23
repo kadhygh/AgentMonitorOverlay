@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { ViewItem, ViewPack } from "@amo-studio/protocol";
-import { itemToShow, packIdOf, proposalMessage } from "./logic.js";
+import { itemToShow, packIdOf, proposalMessage, reviewTargetOf } from "./logic.js";
 
 const file = (id: string): ViewItem => ({ id, kind: "file", path: `${id}.ts`, highlights: [] });
 const pack = (...ids: string[]): ViewPack => ({ id: "vp-1", workspaceId: "w", sessionId: null, title: "t", items: ids.map(file), createdAt: "", updatedAt: "" });
@@ -30,5 +30,15 @@ describe("查看包 window", () => {
         { id: "1", side: "old", line: 2, lineText: "b = 20", note: "原来是对的" },
       ]),
     ).toBe("【对改动预览的批注】src/drop.ts（查看包「掉落」）\n- 原文件第 2 行 `b = 20`：原来是对的\n- 改后第 4 行 `d = 4`：不要");
+  });
+});
+
+describe("the Review a review_open call opened (2026-10-23)", () => {
+  it("reads its target back, for the row's button", () => {
+    const out = JSON.stringify({ target: { workspaceId: "ws-1", sessionId: "s-1", base: "main" }, workspaceAdded: false });
+    expect(reviewTargetOf("mcp__amo__review_open", out)).toEqual({ workspaceId: "ws-1", sessionId: "s-1", base: "main" });
+    expect(reviewTargetOf("mcp__amo__view_open", out)).toBeNull();
+    expect(reviewTargetOf("mcp__amo__review_open", '{"packId":"vp-1"}')).toBeNull();
+    expect(reviewTargetOf("mcp__amo__review_open", "not json")).toBeNull();
   });
 });

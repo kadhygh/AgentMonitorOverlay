@@ -61,6 +61,35 @@ export interface ViewMark {
 
 const MARK = { add: "+", del: "−", context: " " } as const;
 
+/** " hl" on a line inside a 重点, " hl hl-start" on its first line (the icon); "" otherwise. */
+function hlClass(highlights: readonly ViewMark[] | undefined, n: number | null): string {
+  if (n === null || !highlights?.length) return "";
+  if (!highlights.some((h) => n >= h.from && n <= h.to)) return "";
+  return highlights.some((h) => h.from === n) ? " hl hl-start" : " hl";
+}
+
+/** The notes of the 重点 that end on each (new) line. */
+function useNotesAt(highlights: readonly ViewMark[] | undefined): Map<number, ViewMark[]> {
+  return useMemo(() => {
+    const by = new Map<number, ViewMark[]>();
+    for (const h of highlights ?? []) if (h.note) by.set(h.to, [...(by.get(h.to) ?? []), h]);
+    return by;
+  }, [highlights]);
+}
+
+function HighlightNotes({ notes }: { notes: readonly ViewMark[] | undefined }) {
+  return (
+    <>
+      {notes?.map((h) => (
+        <div key={`${h.from}-${h.to}`} className="gr-hl-note" data-testid="highlight-note">
+          <span className="gr-hl-where">{h.from === h.to ? `第 ${h.from} 行` : `第 ${h.from}–${h.to} 行`}</span>
+          {h.note}
+        </div>
+      ))}
+    </>
+  );
+}
+
 /** Clicks on a line's buttons (or inside a comment) do not move the active line. */
 const plainClick = (e: MouseEvent) => !(e.target as Element).closest("button, textarea, a");
 
@@ -166,16 +195,11 @@ function UnifiedLines(props: LinesProps) {
   const gutter = plain ? numberPx + 20 + 24 : UNIFIED_GUTTER_PX;
   const mark = (n: number | null) => {
     if (n === null) return "";
-    const hl = highlights.some((h) => n >= h.from && n <= h.to) ? " hl" : "";
+    const hl = hlClass(highlights, n);
     if (!marked || n < marked.from || n > marked.to) return hl;
     return ` marked${n === marked.from ? " first" : ""}${n === marked.to ? " last" : ""}${hl}`;
   };
-  // The notes of the 重点 that end on each line.
-  const notesAt = useMemo(() => {
-    const by = new Map<number, ViewMark[]>();
-    for (const h of highlights) if (h.note) by.set(h.to, [...(by.get(h.to) ?? []), h]);
-    return by;
-  }, [highlights]);
+  const notesAt = useNotesAt(highlights);
   return (
     <div
       className={plain ? "gr-lines gr-plain" : "gr-lines"}
@@ -214,13 +238,7 @@ function UnifiedLines(props: LinesProps) {
                   <CodeTokens tokens={tokensOf(tokens, r.line)} text={r.line.text} />
                 </span>
               </div>
-              {r.line.newLine !== null &&
-                notesAt.get(r.line.newLine)?.map((h) => (
-                  <div key={`${h.from}-${h.to}`} className="gr-hl-note" data-testid="highlight-note">
-                    <span className="gr-hl-where">{h.from === h.to ? `第 ${h.from} 行` : `第 ${h.from}–${h.to} 行`}</span>
-                    {h.note}
-                  </div>
-                ))}
+              {r.line.newLine !== null && <HighlightNotes notes={notesAt.get(r.line.newLine)} />}
               <Notes row={r} props={props} />
             </Fragment>
           )
@@ -247,6 +265,7 @@ function SplitLines(props: LinesProps) {
   // Deleted lines take their comments on the left; unchanged and added lines on the right.
   const owns = (cell: SideCell | null, side: "old" | "new"): cell is SideCell => !!cell && (side === "old" ? cell.row.line.kind === "del" : cell.row.line.kind !== "del");
   const hasNotes = (cell: SideCell | null, side: "old" | "new") => owns(cell, side) && (draftAt === cell.row.key || visible(placed.get(cell.row.key) ?? []).length > 0);
+  const notesAt = useNotesAt(props.highlights);
   return (
     <div className="gr-lines gr-split" data-testid="diff-split">
       <LazyChunks
@@ -266,6 +285,7 @@ function SplitLines(props: LinesProps) {
                 <Cell cell={p.left} side="old" commentable={!props.readOnly && owns(p.left, "old")} props={props} />
                 <Cell cell={p.right} side="new" commentable={!props.readOnly && owns(p.right, "new")} props={props} />
               </div>
+              {p.right?.row.line.newLine != null && <HighlightNotes notes={notesAt.get(p.right.row.line.newLine)} />}
               {(hasNotes(p.left, "old") || hasNotes(p.right, "new")) && (
                 <div className="gr-pair-notes">
                   <div>{owns(p.left, "old") && <Notes row={p.left.row} props={props} />}</div>
@@ -286,7 +306,7 @@ function Cell({ cell, side, commentable, props }: { cell: SideCell | null; side:
   const kind = row.line.kind === "context" ? "context" : row.line.kind;
   return (
     <div
-      className={`gr-cell ${side} ${kind}`}
+      className={`gr-cell ${side} ${kind}${side === "new" ? hlClass(props.highlights, row.line.newLine) : ""}`}
       data-row={index}
       {...(commentable ? { "data-line": row.key } : {})}
       data-testid={`diff-cell-${side}`}

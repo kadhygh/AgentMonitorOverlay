@@ -34,17 +34,27 @@ export interface FileViewItem extends ViewItemBase {
   highlights: ViewHighlight[];
 }
 
-/** What a git item compares (refs resolved to full ids). */
+/** What a git item compares (refs resolved to full ids). `subject`: the commit's first line, read when it was sent. */
 export type GitViewSource =
   | { kind: "working" }
   | { kind: "base"; base: string; label: string }
-  | { kind: "commit"; commit: string; base?: string; label?: string };
+  | { kind: "commit"; commit: string; base?: string; label?: string; subject?: string };
+
+/** A 重点 in a git item (2026-10-23): lines of one file, numbered as in its new version. */
+export interface GitViewHighlight extends ViewHighlight {
+  path: string;
+}
 
 export interface GitViewItem extends ViewItemBase {
   kind: "git";
   source: GitViewSource;
-  /** Only these files (relative to the project); empty: every changed file. */
+  /**
+   * The files the agent points at (relative to the project): listed first, in a group of their own, above the rest of
+   * the changes (2026-10-23; they were the only ones listed before). Empty: every changed file, no group.
+   */
   files: string[];
+  /** 重点 on lines of the changed files; their files are among `files`. */
+  highlights: GitViewHighlight[];
 }
 
 export interface ProposalViewItem extends ViewItemBase {
@@ -78,8 +88,8 @@ export interface ViewItemInput {
   note?: string;
   /** file, proposal: the file (relative to the project, or absolute inside it). */
   path?: string;
-  /** file: 重点. */
-  highlights?: Array<{ line: number; endLine?: number; note?: string }>;
+  /** file, git: 重点 (git: each with the `path` of its file; lines of the new version). */
+  highlights?: Array<{ path?: string; line: number; endLine?: number; note?: string }>;
   /** file: a line (or range) to show, without a note. */
   line?: number;
   endLine?: number;
@@ -89,7 +99,7 @@ export interface ViewItemInput {
   commit?: string;
   /** git: `A..B` or `A...B` (from where B forked off A). */
   range?: string;
-  /** git: only these files. */
+  /** git: the files to point at, listed first above the rest of the changes. */
   files?: string[];
   /** proposal: the whole new content of the file. */
   proposed?: string;
@@ -126,7 +136,8 @@ export function viewItemLabel(item: ViewItem): string {
   if (item.kind === "proposal") return `${base(item.path)}（改动预览）`;
   const s = item.source;
   const what = s.kind === "working" ? "未提交的改动" : s.kind === "base" ? `和 ${s.label} 比` : s.base ? `${s.label ?? short(s.base)}..${short(s.commit)}` : `提交 ${short(s.commit)}`;
-  return item.files.length === 1 ? `${base(item.files[0]!)} · ${what}` : what;
+  // A commit: its first line too, so the list says which change it is.
+  return s.kind === "commit" && s.subject ? `${what} · ${s.subject}` : what;
 }
 
 /** The line under the name: where it is and what it carries. */
@@ -134,5 +145,8 @@ export function viewItemDetail(item: ViewItem): string {
   const dir = (path: string) => (path.includes("/") ? path.slice(0, path.lastIndexOf("/")) : "");
   if (item.kind === "file") return [dir(item.path), item.highlights.length ? `${item.highlights.length} 处重点` : ""].filter(Boolean).join(" · ");
   if (item.kind === "proposal") return [dir(item.path), item.isNew ? "新文件" : ""].filter(Boolean).join(" · ");
-  return item.files.length ? `${item.files.length} 个文件` : "全部改动";
+  // The files it points at, by name, and its 重点.
+  const files = item.files.length ? item.files.map(base).join("、") : "全部改动";
+  const marks = item.highlights?.length ? `${item.highlights.length} 处重点` : "";
+  return [files, marks].filter(Boolean).join(" · ");
 }

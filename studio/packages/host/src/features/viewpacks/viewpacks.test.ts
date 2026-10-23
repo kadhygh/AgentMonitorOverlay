@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
-import type { HostEvent, ModelProfile, Session, Task, ViewPack, Workspace } from "@amo-studio/protocol";
+import { viewItemDetail, viewItemLabel, type HostEvent, type ModelProfile, type Session, type Task, type ViewPack, type Workspace } from "@amo-studio/protocol";
 import { removeTempDir } from "@amo-studio/testkit";
 import { CodexRuntime } from "../../runtime/codex/codex-runtime.js";
 import { FakeServers } from "../../runtime/codex/fake-servers.test-support.js";
@@ -107,6 +107,43 @@ describe("查看包", () => {
       { kind: "git", source: { kind: "base", base: head, label: "main" } },
     ]);
     await expect(service.viewPacks.open({ items: [{ kind: "git", commit: "no-such-ref" }] }, { sessionId: session.id })).rejects.toThrow(/找不到 no-such-ref/);
+  });
+
+  it("git items carry 重点 by path; their files join the ones pointed at; a commit keeps its first line (2026-10-23)", async () => {
+    const { pack } = await service.viewPacks.open(
+      {
+        items: [
+          {
+            kind: "git",
+            source: "commit",
+            commit: "HEAD",
+            files: ["README.md"],
+            highlights: [
+              { path: "src/drop.ts", line: 2, note: "改了概率" },
+              { path: "README.md", line: 1, endLine: 2 },
+            ],
+          },
+        ],
+      },
+      { sessionId: session.id },
+    );
+    expect(pack.items[0]).toMatchObject({
+      kind: "git",
+      source: { kind: "commit", subject: "second" },
+      files: ["README.md", "src/drop.ts"],
+      highlights: [
+        { path: "src/drop.ts", line: 2, note: "改了概率" },
+        { path: "README.md", line: 1, endLine: 2, note: "" },
+      ],
+    });
+    expect(viewItemLabel(pack.items[0]!)).toMatch(/^提交 [0-9a-f]{7} · second$/);
+    expect(viewItemDetail(pack.items[0]!)).toBe("README.md、drop.ts · 2 处重点");
+    // The same commit again a moment later: one item, the 重点 together.
+    const again = await service.viewPacks.open({ items: [{ kind: "git", source: "commit", commit: "HEAD", highlights: [{ path: "src/drop.ts", line: 3 }] }] }, { sessionId: session.id });
+    expect(again.merged).toBe(true);
+    expect(again.pack.items).toHaveLength(1);
+    expect((again.pack.items[0] as { highlights: unknown[] }).highlights).toHaveLength(3);
+    await expect(service.viewPacks.open({ items: [{ kind: "git", highlights: [{ line: 1 }] }] }, { sessionId: session.id })).rejects.toThrow(/highlights\[0\]\.path/);
   });
 
   it("a proposal keeps the file as it was and shows the change as a diff; nothing on disk changes", async () => {
