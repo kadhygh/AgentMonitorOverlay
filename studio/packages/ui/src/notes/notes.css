@@ -1,0 +1,42 @@
+/* 便签设置 (2026-10-23): the 便签 program's settings window, in the 便签's own look (one tone, short rules). */
+html.notes-settings-mode, html.notes-settings-mode body { height: 100%; overflow: hidden; background: var(--panel); }
+html.notes-settings-mode #root { height: 100%; }
+.ns-root { height: 100%; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border-strong); color: var(--text); }
+.ns-root > .pad-head { padding-left: 22px; }
+.ns-root > .pad-rule { margin: 0 22px; }
+.ns-body { flex: 1; min-height: 0; overflow-y: auto; padding: 4px 22px 18px; display: flex; flex-direction: column; font-size: var(--fs-sm); line-height: var(--lh); }
+.ns-section { display: flex; flex-direction: column; gap: 8px; padding: 14px 0; border-bottom: 1px solid var(--divider); }
+.ns-section.last { border-bottom: none; }
+.ns-heading { margin: 0; font-size: var(--fs-body); font-weight: 600; }
+.ns-hint { margin: 0; font-size: var(--fs-cap); color: var(--text-dim); }
+.ns-row { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.ns-label { color: var(--text-dim); white-space: nowrap; }
+.ns-grow { flex: 1; min-width: 0; }
+.ns-seg { display: flex; }
+.ns-seg button { height: 28px; padding: 0 12px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-cap); cursor: pointer; }
+.ns-seg button:first-child { border-radius: var(--r-m) 0 0 var(--r-m); }
+.ns-seg button:last-child { border-radius: 0 var(--r-m) var(--r-m) 0; margin-left: -1px; }
+.ns-seg button[aria-checked="true"] { position: relative; border-color: var(--border-strong); background: var(--selected); color: var(--text); font-weight: 600; }
+.ns-check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+.ns-check input { width: 15px; height: 15px; margin: 0; accent-color: var(--primary); }
+.ns-path { flex: 1; min-width: 0; height: 28px; box-sizing: border-box; display: flex; align-items: center; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel-raised); font-family: var(--font-code); font-size: 12px; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+.ns-path.plain { height: auto; padding: 0; border: none; background: none; color: var(--text-dim); display: block; }
+.ns-usage { display: flex; align-items: center; gap: 8px; margin-top: 4px; padding: 10px 12px; border: 1px solid var(--divider); border-radius: var(--r-m); background: var(--panel-raised); }
+.ns-usage-text { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ns-usage strong { font-family: var(--font-code); font-weight: 600; }
+.ns-error { margin-top: 10px; }
+
+/* 更换工作文件夹 */
+.ns-scrim { position: fixed; inset: 0; z-index: 50; display: flex; align-items: center; justify-content: center; padding: 16px; background: var(--overlay, rgba(34, 32, 28, 0.25)); }
+.ns-dialog { width: min(480px, 100%); display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border-strong); box-shadow: 0 14px 36px var(--shadow); }
+.ns-dialog > .pad-head { padding-left: 18px; }
+.ns-dialog > .pad-rule { margin: 0 18px; }
+.ns-dialog-body { display: flex; flex-direction: column; gap: 12px; padding: 16px 18px; font-size: var(--fs-sm); line-height: var(--lh); }
+.ns-fromto { display: grid; grid-template-columns: 32px minmax(0, 1fr); gap: 6px 8px; align-items: baseline; }
+.ns-fromto .ns-path { font-size: 12px; overflow-wrap: anywhere; white-space: normal; }
+.ns-choices { margin: 0; padding: 0; border: none; display: flex; flex-direction: column; gap: 8px; }
+.ns-choices legend { padding: 0; margin-bottom: 4px; font-weight: 600; }
+.ns-choices label { display: flex; align-items: flex-start; gap: 8px; cursor: pointer; }
+.ns-choices input { margin: 4px 0 0; accent-color: var(--primary); }
+.ns-choices label > span { display: flex; flex-direction: column; }
+.ns-dialog-foot { padding-right: 14px; }

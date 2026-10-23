@@ -72,6 +72,12 @@ declare global {
       /** Workbench: Focus asked to show a task. */
       onNavigate?(cb: (target: { taskId: string; sessionId?: string; passage?: Passage }) => void): () => void;
       onHostRestarted?(cb: () => void): () => void;
+      /** The 便签 program's windows (packages/notes, 2026-10-23); absent inside Studio. */
+      notes?: {
+        openSettings(): Promise<void>;
+        closeSettings(): void;
+        pickFolder(start?: string | null): Promise<string | null>;
+      };
     };
   }
 }

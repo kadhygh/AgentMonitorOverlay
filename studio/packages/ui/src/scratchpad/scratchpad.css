@@ -2,8 +2,10 @@
 html.scratchpad-mode, html.scratchpad-mode body { height: 100%; overflow: hidden; background: var(--panel); }
 html.scratchpad-mode #root { height: 100%; }
 .pad-root { height: 100%; display: flex; flex-direction: column; background: var(--panel); border: 1px solid var(--border-strong); color: var(--text); }
-/* The header is the window's title bar: drag it to move the frameless window. */
-.pad-head { display: flex; align-items: center; gap: 10px; height: 34px; padding: 0 6px 0 12px; border-bottom: 1px solid var(--border); background: var(--bg-header); -webkit-app-region: drag; user-select: none; }
+/* The header is the window's title bar: drag it to move the frameless window. One tone with the page (2026-10-23):
+   no background of its own, a short rule under it (and over the foot) that stops 16px short of both sides. */
+.pad-head { display: flex; align-items: center; gap: 10px; height: 36px; padding: 0 8px 0 16px; -webkit-app-region: drag; user-select: none; }
+.pad-rule { flex: none; height: 1px; margin: 0 16px; background: var(--border); }
 .pad-head button { -webkit-app-region: no-drag; }
 .pad-name { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-display); font-weight: 700; font-size: var(--fs-sm); letter-spacing: var(--ls-label); }
 /* The window's mark, drawn like the title bar's 便签 button (S14-B). */
@@ -14,14 +16,29 @@ html.scratchpad-mode #root { height: 100%; }
 .pad-page[aria-pressed="true"] { background: var(--selected); border-color: var(--border-strong); color: var(--text); font-weight: 600; }
 /* A page that holds something gets a small mark under its number. */
 .pad-page[data-filled]::after { content: ""; position: absolute; left: 50%; bottom: 2px; width: 3px; height: 3px; margin-left: -1.5px; border-radius: 50%; background: var(--attention); }
-.pad-icon { width: 26px; height: 26px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text-dim); font-size: 17px; line-height: 1; cursor: pointer; }
+.pad-icon { display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 26px; height: 26px; padding: 0 4px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text-dim); font-size: 17px; line-height: 1; cursor: pointer; }
+/* The keys, written where they act (2026-10-23). */
+.pad-key { padding: 0 4px; border: 1px solid var(--border); border-radius: var(--r-m); font-family: var(--font-code); font-size: 10.5px; line-height: 14px; color: var(--text-faint); font-weight: 400; }
+.pad-hint { font-family: var(--font-code); font-size: 10.5px; color: var(--text-faint); }
+.pad-copy { display: inline-flex; align-items: center; gap: 6px; }
+.pad-copy .pad-key { border-color: color-mix(in srgb, var(--on-primary) 45%, transparent); color: inherit; }
 .pad-icon:hover { background: var(--chip); color: var(--text); }
-.pad-text { flex: 1; min-height: 0; padding: 10px 12px; border: none; outline: none; resize: none; background: transparent; color: var(--text); font-family: var(--font-ui); font-size: var(--fs-body); line-height: var(--lh); }
+/* The text is written on the page itself, not in a box. */
+.pad-body { position: relative; flex: 1; min-height: 0; display: flex; }
+.pad-text { flex: 1; min-height: 0; padding: 12px 16px 8px; border: none; outline: none; resize: none; background: transparent; color: var(--text); font-family: var(--font-ui); font-size: var(--fs-body); line-height: 1.7; }
 /* The page is the whole window: no focus ring around it. */
 .pad-text:focus-visible { outline: none; }
 .pad-text::placeholder { color: var(--text-faint); }
 .pad-text::selection { background: var(--selection); }
-.pad-foot { display: flex; align-items: center; gap: 6px; height: 36px; padding: 0 8px 0 12px; border-top: 1px solid var(--border); background: var(--panel-raised); }
+.pad-foot { display: flex; align-items: center; gap: 6px; height: 40px; padding: 0 10px 0 16px; }
+/* An empty page lists the keys under its first line (the placeholder); clicks go through to the page. */
+.pad-keys { position: absolute; left: 16px; right: 16px; top: 46px; margin: 0; padding: 0; list-style: none; display: flex; flex-direction: column; gap: 5px; font-size: var(--fs-cap); color: var(--text-faint); pointer-events: none; }
+.pad-keys li { display: flex; align-items: center; gap: 10px; }
+.pad-keys .pad-key { min-width: 54px; text-align: center; line-height: 16px; }
+/* Said once, after the pages came over from Studio. */
+.pad-notice { flex: none; display: flex; align-items: center; gap: 8px; margin: 10px 16px 0; padding: 4px 4px 4px 10px; border-radius: var(--r-m); background: var(--tint); font-size: var(--fs-cap); color: var(--text); }
+.pad-notice span { flex: 1; }
+.pad-notice .pad-icon { font-size: 14px; }
 .pad-status { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: var(--fs-cap); color: var(--text-dim); }
 .pad-count { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-sm); color: var(--text); white-space: nowrap; }
 .pad-count-value { min-width: 1.5em; text-align: center; font-family: var(--font-code); }
@@ -30,7 +47,7 @@ html.scratchpad-mode #root { height: 100%; }
 .pad-empty { flex: 1; display: flex; align-items: center; justify-content: center; font-size: var(--fs-sm); color: var(--text-dim); }
 
 /* Images on a page: a strip of thumbnails under the text, and the large view */
-.pad-images { display: flex; gap: 6px; padding: 6px 12px 8px; overflow-x: auto; flex-wrap: nowrap; }
+.pad-images { display: flex; gap: 6px; padding: 4px 16px 10px; overflow-x: auto; flex-wrap: nowrap; }
 .pad-thumb { position: relative; flex: 0 0 auto; }
 .pad-thumb-open { display: block; width: 64px; height: 48px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-m); background: var(--chip); overflow: hidden; cursor: zoom-in; }
 .pad-thumb-open:hover { border-color: var(--border-strong); }

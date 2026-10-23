@@ -3,13 +3,16 @@ import { call, copyText, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { imagesOf } from "../lib/attachments.js";
 import { scratchpadBridge } from "./bridge.js";
-import { clipboardText, pageFromKey } from "./logic.js";
+import { clipboardText, pageFromKey, shortcutLabel } from "./logic.js";
+import { inNotesProgram, notesCall } from "../notes/api.js";
 import { PadImages, PadImageViewer } from "./PadImages.js";
 import { SAVE_LABELS, useScratchpad } from "./useScratchpad.js";
 
 // The scratchpad window (loaded with #scratchpad; after old AMO's ScratchpadApp): numbered pages, Ctrl+1…9 to switch,
-// text that saves as you type, pasted or dropped images under it. Esc or × hides the window; 复制 copies the page (line
-// breaks as 设置 → 便签 says) and hides it, as old AMO did. The page count is set in 设置 → 便签 (S14-B).
+// text that saves as you type, pasted or dropped images under it. Esc or × hides the window; 复制 (or Ctrl+Enter)
+// copies the page (line breaks as the settings say) and hides it, as old AMO did. The page count is in the settings.
+// 2026-10-23 (the 便签 program): one tone, short rules under the head and over the foot, the keys written by what they
+// do, an empty page listing them, and a one-time notice after the pages came over from Studio.
 
 /** The scratchpad's mark, as on the title bar's 便签 button. */
 export function ScratchpadIcon({ size = 16 }: { size?: number }) {
@@ -52,6 +55,11 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
   const area = useRef<HTMLTextAreaElement | null>(null);
   const [viewing, setViewing] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
+  // The show / hide shortcut as bound now, for the empty page's list (it follows the settings).
+  const [shortcut, setShortcut] = useState<string | null>(null);
+  // The 便签 program after the pages came over from Studio: said once, until closed.
+  const [imported, setImported] = useState(false);
+  const notes = inNotesProgram();
   const { doc } = pad;
   const active = doc?.activePage ?? 0;
 
@@ -61,14 +69,38 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
     return () => clearTimeout(t);
   }, [active]);
 
+  useEffect(() => {
+    const read = () =>
+      void call(link, "GET /api/settings")
+        .then((s) => setShortcut(s.scratchpadShortcut))
+        .catch(() => undefined);
+    read();
+    // Changed in the settings while this window stays open: read again when it comes back.
+    window.addEventListener("focus", read);
+    return () => window.removeEventListener("focus", read);
+  }, [link]);
+
+  useEffect(() => {
+    if (!notes) return;
+    void notesCall(link, "GET", "")
+      .then((info) => setImported(!!info.settings.importedAt && !info.settings.importNoticeSeen))
+      .catch(() => undefined);
+  }, [link, notes]);
+
   const padRef = useRef(pad);
   padRef.current = pad;
+  const copyRef = useRef<() => Promise<void>>(async () => undefined);
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.isComposing) return;
       if (e.key === "Escape") {
         e.preventDefault();
         scratchpadBridge()?.hide();
+        return;
+      }
+      if (e.key === "Enter" && (e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey) {
+        e.preventDefault();
+        void copyRef.current();
         return;
       }
       const page = pageFromKey(e, padRef.current.doc?.pages.length ?? 0);
@@ -116,6 +148,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
     setNote(safe ? "已复制（安全换行）" : "已复制");
     bridge?.hide();
   }
+  copyRef.current = copy;
 
   function clear() {
     const el = area.current;
@@ -127,8 +160,14 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
     setNote("已清空，Ctrl+Z 可以撤销");
   }
 
+  const empty = !text && !images.length;
   const status = pad.state === "error" ? (pad.error ?? SAVE_LABELS.error) : (note ?? SAVE_LABELS[pad.state]);
-  const kept = doc.keptPages.length ? `第 ${doc.keptPages.join("、")} 页还有内容，在设置 → 便签里增加页数就能看到` : "";
+  const kept = doc.keptPages.length ? `第 ${doc.keptPages.join("、")} 页还有内容，在${notes ? "便签设置" : "设置 → 便签"}里增加页数就能看到` : "";
+  const hotkey = shortcut ? shortcutLabel(shortcut).split(" + ").join(" ") : "";
+  const closeImported = () => {
+    setImported(false);
+    void notesCall(link, "PATCH", "/settings", { importNoticeSeen: true }).catch(() => undefined);
+  };
 
   return (
     <div
@@ -161,37 +200,67 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
             </button>
           ))}
         </nav>
+        <span className="pad-hint">Ctrl 1–{doc.pages.length}</span>
         <span className="spacer" />
         {bridge && (
-          <button type="button" className="pad-icon" aria-label="隐藏便签" title="隐藏（Esc）" onClick={() => bridge.hide()}>
-            ×
+          <button type="button" className="pad-icon pad-hide" aria-label="隐藏便签" title="隐藏（Esc）" onClick={() => bridge.hide()}>
+            <kbd className="pad-key">Esc</kbd>×
           </button>
         )}
       </header>
-      <textarea
-        ref={area}
-        className="pad-text"
-        aria-label="便签内容"
-        spellCheck={false}
-        placeholder="随手记下要回复的要点。可以直接粘贴或拖入图片。"
-        value={text}
-        onChange={(e) => {
-          setNote(null);
-          pad.setText(active, e.target.value);
-        }}
-        onPaste={(e) => paste(e.clipboardData, e)}
-      />
+      <div className="pad-rule" aria-hidden="true" />
+      {imported && (
+        <div className="pad-notice" role="status" data-testid="pad-imported">
+          <span>已从 AMO Studio 搬过来原来的便签内容和图片，Studio 里的旧数据还留着。</span>
+          <button type="button" className="pad-icon" aria-label="知道了" title="知道了" onClick={closeImported}>
+            ×
+          </button>
+        </div>
+      )}
+      <div className="pad-body">
+        <textarea
+          ref={area}
+          className="pad-text"
+          aria-label="便签内容"
+          spellCheck={false}
+          placeholder="随手记下要回复的要点。"
+          value={text}
+          onChange={(e) => {
+            setNote(null);
+            pad.setText(active, e.target.value);
+          }}
+          onPaste={(e) => paste(e.clipboardData, e)}
+        />
+        {empty && (
+          <ul className="pad-keys" aria-label="按键" data-testid="pad-keys">
+            <li>
+              <kbd className="pad-key">Ctrl V</kbd>粘贴或拖入图片，跟这一页放在一起
+            </li>
+            <li>
+              <kbd className="pad-key">Ctrl ↵</kbd>复制这一页并隐藏
+            </li>
+            <li>
+              <kbd className="pad-key">Ctrl 1–{doc.pages.length}</kbd>换页
+            </li>
+            <li>
+              <kbd className="pad-key">Esc</kbd>隐藏{hotkey ? `；${hotkey} 随时叫回来` : ""}
+            </li>
+          </ul>
+        )}
+      </div>
       <PadImages link={link} ids={images} onOpen={setViewing} onRemove={(id) => pad.removeImage(active, id)} />
+      <div className="pad-rule" aria-hidden="true" />
       <footer className="pad-foot">
         <span className="pad-status" data-testid="pad-status" title={kept || status}>
-          {text.length} 字{status ? ` · ${status}` : ""}
+          {empty ? "空白页" : `${text.length} 字`}
+          {status ? ` · ${status}` : ""}
         </span>
         <span className="spacer" />
-        <button type="button" className="btn-ghost small" onClick={clear}>
+        <button type="button" className="btn-ghost small" onClick={clear} disabled={empty}>
           清空
         </button>
-        <button type="button" className="btn-primary small" onClick={() => void copy()}>
-          复制
+        <button type="button" className="btn-primary small pad-copy" aria-label="复制" onClick={() => void copy()} disabled={empty} title="复制这一页并隐藏（Ctrl+Enter）">
+          复制<kbd className="pad-key">Ctrl ↵</kbd>
         </button>
       </footer>
       {viewing && <PadImageViewer link={link} id={viewing} onClose={() => setViewing(null)} />}

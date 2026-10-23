@@ -7,6 +7,7 @@ import { ScratchpadApp } from "./scratchpad/ScratchpadApp.js";
 import { ReviewApp } from "./gitreview/ReviewApp.js";
 import { MarksApp } from "./marks/MarksApp.js";
 import { ViewerApp } from "./viewer/ViewerApp.js";
+import { NotesSettingsApp } from "./notes/NotesSettingsApp.js";
 import "@fontsource-variable/noto-sans-sc";
 import "@fontsource-variable/noto-serif-sc";
 import "@fontsource-variable/jetbrains-mono";
@@ -39,6 +40,7 @@ import "./viewer/viewer.css";
 import "./viewpacks/viewpacks.css";
 import "./taskplans/taskplans.css";
 import "./relays/relays.css";
+import "./notes/notes.css";
 import { applyTheme, followThemeChanges } from "./lib/theme.js";
 import { WindowBoundary } from "./lib/ErrorBoundary.js";
 import { Toaster } from "./lib/toast.js";
@@ -64,6 +66,9 @@ const viewer = location.hash.startsWith("#viewer");
 // The angry robot flying about the screen (2026-10-15 evening), loaded with #bot.
 const bot = location.hash === "#bot";
 if (bot) document.documentElement.classList.add("bot-mode");
+// The 便签 program's settings window (packages/notes, 2026-10-23), loaded with #notes-settings.
+const notesSettings = location.hash === "#notes-settings";
+if (notesSettings) document.documentElement.classList.add("notes-settings-mode");
 
 // Each window drag, summarised into logs/resize-trace.log (2026-10-15: the main window flickered when dragged).
 startResizeTrace();
@@ -74,7 +79,7 @@ if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
     <WindowBoundary>
-      {focus ? <FocusApp /> : bot ? <BotApp /> : scratchpad ? <ScratchpadApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : <App />}
+      {focus ? <FocusApp /> : bot ? <BotApp /> : scratchpad ? <ScratchpadApp /> : notesSettings ? <NotesSettingsApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : <App />}
       <Toaster />
       <BookmarkNotePrompt />
     </WindowBoundary>

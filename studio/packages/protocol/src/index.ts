@@ -8,6 +8,7 @@ export * from "./canvas-layout.js";
 export * from "./packs.js";
 export * from "./scheduler.js";
 export * from "./scratchpad.js";
+export * from "./scratchpad-doc.js";
 export * from "./gitreview.js";
 export * as codex from "./codex/index.js";
 export { CODEX_PROTOCOL_SOURCE } from "./codex/VERSION.js";
