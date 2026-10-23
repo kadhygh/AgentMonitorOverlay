@@ -20,8 +20,10 @@ html.scratchpad-mode #root { height: 100%; }
 /* The keys, written where they act (2026-10-23). */
 .pad-key { padding: 0 4px; border: 1px solid var(--border); border-radius: var(--r-m); font-family: var(--font-code); font-size: 10.5px; line-height: 14px; color: var(--text-faint); font-weight: 400; }
 .pad-hint { font-family: var(--font-code); font-size: 10.5px; color: var(--text-faint); }
-.pad-copy { display: inline-flex; align-items: center; gap: 6px; }
-.pad-copy .pad-key { border-color: color-mix(in srgb, var(--on-primary) 45%, transparent); color: inherit; }
+/* 复制 in AMO's selected beige with an ink border (2026-10-23: the navy one stood out against the one-tone page). */
+.pad-copy { display: inline-flex; align-items: center; gap: 6px; border-color: var(--border-strong); background: var(--selected); color: var(--text); font-weight: 600; }
+.pad-copy:hover:not(:disabled) { background: color-mix(in srgb, var(--selected) 80%, var(--text) 8%); }
+.pad-copy .pad-key { border-color: color-mix(in srgb, var(--text) 30%, transparent); color: var(--text-dim); }
 .pad-icon:hover { background: var(--chip); color: var(--text); }
 /* The text is written on the page itself, not in a box. */
 .pad-body { position: relative; flex: 1; min-height: 0; display: flex; }

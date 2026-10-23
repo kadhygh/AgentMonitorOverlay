@@ -45,7 +45,7 @@ export interface NotesSettings {
   importedAt: string | null;
   /** The notice about that import was closed. */
   importNoticeSeen: boolean;
-  /** The windows' zoom (界面大小), as AMO Studio's: Studio keeps it in step. */
+  /** The windows' zoom (界面大小), set in its own settings (not Studio's). */
   uiScale: number;
 }
 
@@ -59,7 +59,7 @@ export interface FolderUsage {
 }
 
 const DEFAULTS: NotesSettings = { workFolder: null, shortcut: DEFAULT_SCRATCHPAD_SHORTCUT, safeNewlines: false, openAtLogin: false, importedAt: null, importNoticeSeen: false, uiScale: 1 };
-/** The zooms Studio offers (app/src/focus-window.ts UI_SCALES spans these). */
+/** The zooms offered (NOTES_SCALES in the settings window). */
 const scaleOk = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0.75 && n <= 1.6;
 const EXT: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp" };
 const IMAGE_ID = /^att-[0-9a-f-]{36}$/;

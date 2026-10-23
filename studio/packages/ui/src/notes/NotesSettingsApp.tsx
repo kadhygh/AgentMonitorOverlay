@@ -16,6 +16,15 @@ const NEWLINE_CHOICES = [
   { safe: true, label: "安全换行", hint: "把多行合成一行、用空格连接，粘贴进终端里的 CLI 时不会一换行就发出去。" },
 ] as const;
 
+/** 界面大小: the same steps as Studio's, set here for the 便签 alone (2026-10-23). */
+const SCALES: Array<[number, string]> = [
+  [0.9, "小"],
+  [1, "标准"],
+  [1.1, "大"],
+  [1.25, "较大"],
+  [1.4, "特大"],
+];
+
 const message = (err: unknown) => (err instanceof HostApiError ? err.message : String(err));
 
 export function NotesSettingsApp() {
@@ -79,6 +88,18 @@ function Settings({ link }: { link: HostLink }) {
     <div className="ns-body">
       <ShortcutSection info={info} busy={busy} onSave={(shortcut) => void patch({ shortcut })} />
       <PagesSection link={link} />
+
+      <section className="ns-section" aria-label="界面大小">
+        <h2 className="ns-heading">界面大小</h2>
+        <div role="radiogroup" aria-label="界面大小" className="ns-seg">
+          {SCALES.map(([scale, label]) => (
+            <button key={scale} type="button" role="radio" aria-checked={Math.abs(s.uiScale - scale) < 0.001} disabled={busy} onClick={() => Math.abs(s.uiScale - scale) >= 0.001 && void patch({ uiScale: scale })} data-testid={`ns-scale-${scale}`}>
+              {label}
+            </button>
+          ))}
+        </div>
+        <p className="ns-hint">便签自己的文字和按钮大小，和 AMO Studio 的界面大小分开设。</p>
+      </section>
 
       <section className="ns-section" aria-label="复制时的换行">
         <h2 className="ns-heading">复制时的换行</h2>

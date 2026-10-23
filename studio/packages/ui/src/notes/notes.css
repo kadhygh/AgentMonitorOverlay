@@ -15,7 +15,8 @@ html.notes-settings-mode #root { height: 100%; }
 .ns-seg { display: flex; }
 .ns-seg button { height: 28px; padding: 0 12px; border: 1px solid var(--border); background: transparent; color: var(--text-dim); font: inherit; font-size: var(--fs-cap); cursor: pointer; }
 .ns-seg button:first-child { border-radius: var(--r-m) 0 0 var(--r-m); }
-.ns-seg button:last-child { border-radius: 0 var(--r-m) var(--r-m) 0; margin-left: -1px; }
+.ns-seg button:last-child { border-radius: 0 var(--r-m) var(--r-m) 0; }
+.ns-seg button + button { margin-left: -1px; }
 .ns-seg button[aria-checked="true"] { position: relative; border-color: var(--border-strong); background: var(--selected); color: var(--text); font-weight: 600; }
 .ns-check { display: flex; align-items: center; gap: 8px; cursor: pointer; }
 .ns-check input { width: 15px; height: 15px; margin: 0; accent-color: var(--primary); }

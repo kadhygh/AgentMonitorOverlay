@@ -9,6 +9,8 @@ export interface NotesSettings {
   openAtLogin: boolean;
   importedAt: string | null;
   importNoticeSeen: boolean;
+  /** 界面大小 of its windows (its own, not Studio's). */
+  uiScale: number;
 }
 
 export interface NotesInfo {

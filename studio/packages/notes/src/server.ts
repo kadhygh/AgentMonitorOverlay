@@ -152,10 +152,12 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
         ...(body.safeNewlines !== undefined ? { safeNewlines: body.safeNewlines } : {}),
         ...(body.openAtLogin !== undefined ? { openAtLogin: body.openAtLogin } : {}),
         ...(body.importNoticeSeen !== undefined ? { importNoticeSeen: body.importNoticeSeen } : {}),
+        ...(body.uiScale !== undefined ? { uiScale: body.uiScale } : {}),
       });
       const after = store.settings();
       if (after.shortcut !== before.shortcut) shell.applyShortcut();
       if (after.openAtLogin !== before.openAtLogin) shell.setOpenAtLogin(after.openAtLogin);
+      if (after.uiScale !== before.uiScale) shell.applyLook();
       announce();
       return send(res, 200, notesInfo());
     }
@@ -174,15 +176,6 @@ export function startNotesServer(o: { store: NotesStore; shell: NotesShell; uiDi
       const where = body.what === "folder" ? store.folder : body.what === "cache" ? store.cacheDir : body.what === "home" ? store.home : null;
       if (!where) throw new NotesError("bad_request", "what must be folder, cache or home");
       await shell.openPath(where);
-      return send(res, 200, {});
-    }
-    // AMO Studio keeps the 便签's 界面大小 in step with its own.
-    if (m === "POST" && p === "/api/notes/look") {
-      const body = await json(req);
-      if (body.uiScale !== undefined && body.uiScale !== store.settings().uiScale) {
-        store.updateSettings({ uiScale: body.uiScale });
-        shell.applyLook();
-      }
       return send(res, 200, {});
     }
     if (m === "POST" && p === "/api/notes/show") {

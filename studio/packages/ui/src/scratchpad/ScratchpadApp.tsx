@@ -259,7 +259,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
         <button type="button" className="btn-ghost small" onClick={clear} disabled={empty}>
           清空
         </button>
-        <button type="button" className="btn-primary small pad-copy" aria-label="复制" onClick={() => void copy()} disabled={empty} title="复制这一页并隐藏（Ctrl+Enter）">
+        <button type="button" className="btn-ghost small pad-copy" aria-label="复制" onClick={() => void copy()} disabled={empty} title="复制这一页并隐藏（Ctrl+Enter）">
           复制<kbd className="pad-key">Ctrl ↵</kbd>
         </button>
       </footer>

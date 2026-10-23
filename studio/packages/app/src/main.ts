@@ -9,7 +9,7 @@ import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
-import { installNotesLink, type NotesLink } from "./notes-link.js";
+import { installNotesLink } from "./notes-link.js";
 import { setupReviewWindows } from "./review-window.js";
 import { installMarksWindow } from "./marks-window.js";
 import { setupViewerWindows } from "./viewer-window.js";
@@ -58,7 +58,6 @@ app.setPath("userData", dataChoice.firstRun ? SETUP_TEMP_PROFILE(tmpdir()) : joi
 let host: HostConnection | null = null;
 let stopKeepAlive: (() => void) | null = null;
 let mainWindow: BrowserWindow | null = null;
-let notesLink: NotesLink | null = null;
 let focusWindow: BrowserWindow | null = null;
 /** Resize trace (logs/resize-trace.log), made once the app is ready. */
 let trace: ResizeTrace | null = null;
@@ -195,8 +194,6 @@ if (!app.requestSingleInstanceLock()) {
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.setZoomFactor(scale);
     if (focusWindow) rescaleFocusWindow(focusWindow, scale);
     for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.send("amo:ui-scale-changed", scale);
-    // The 便签 program takes the same 界面大小 (2026-10-23).
-    notesLink?.syncLook();
   };
   app.on("web-contents-created", (_e, contents) => {
     contents.on("did-finish-load", () => contents.setZoomFactor(prefs.uiScale()));
@@ -370,7 +367,7 @@ if (!app.requestSingleInstanceLock()) {
       });
       if (prefs.focus(!testMode)) setFocusVisible(true);
       // 便签 is a program of its own (packages/notes, 2026-10-23): started with Studio, brought up from the title bar.
-      notesLink = installNotesLink({ studioRoot, dataDir, host, testMode, uiScale: () => prefs.uiScale(), log: (line) => console.error(`[${new Date().toISOString()}] ${line}`) });
+      installNotesLink({ studioRoot, dataDir, host, testMode, log: (line) => console.error(`[${new Date().toISOString()}] ${line}`) });
       // The file marks window (文件标记).
       installMarksWindow({ url: process.env.AMO_STUDIO_DEV_URL ?? `${host.url}/`, preload: join(here, "preload.cjs"), icon: APP_ICON, testMode, mainWindow });
       if (!testMode) {

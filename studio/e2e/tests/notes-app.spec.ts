@@ -105,8 +105,8 @@ test("the window: an empty page lists its keys, typing saves to the work folder,
   await expect.poll(() => padVisible(app)).toBe(true);
   expect(await app.evaluate(() => (globalThis as { __notesShortcut?: string }).__notesShortcut)).toBe("Ctrl+Alt+Space");
 
-  // Studio's 界面大小, sent to it: its windows zoom the same.
-  await api("POST", "/api/notes/look", { uiScale: 1.1 });
+  // Its own 界面大小 (not Studio's): its windows zoom to it.
+  await api("PATCH", "/api/notes/settings", { uiScale: 1.1 });
   await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#scratchpad"))!.webContents.getZoomFactor())).toBeCloseTo(1.1);
 });
 
@@ -170,6 +170,13 @@ test("the settings window: shortcut, start with Windows, the work folder, its si
   await pad.getByLabel("便签内容").fill("");
   await pad.evaluate(() => window.dispatchEvent(new Event("focus")));
   await expect(pad.getByTestId("pad-keys")).toContainText("Ctrl Alt N 随时叫回来");
+
+  // 界面大小 is set here, for the 便签 alone.
+  await settings.getByTestId("ns-scale-1.25").click();
+  await expect(settings.getByTestId("ns-scale-1.25")).toHaveAttribute("aria-checked", "true");
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#scratchpad"))!.webContents.getZoomFactor())).toBeCloseTo(1.25);
+  await settings.getByTestId("ns-scale-1").click();
+  await expect(settings.getByTestId("ns-scale-1")).toHaveAttribute("aria-checked", "true");
 
   await settings.getByTestId("ns-login").check();
   await expect.poll(() => app.evaluate(() => (globalThis as { __notesOpenAtLogin?: boolean }).__notesOpenAtLogin)).toBe(true);
