@@ -163,14 +163,14 @@ test("历史 lists the branch's commits; one opens read-only in a window of its 
   await expect(shown.locator('[data-line="new:1"]')).toContainText("local rate = 0.25");
   await expect(shown.locator('[data-line="old:1"]')).toContainText("local rate = 0.1");
   await expect(shown.getByTestId("add-comment")).toHaveCount(0);
-  await expect(shown.getByTestId("review-send")).toHaveCount(0);
+  await expect(shown.getByTestId("review-copy")).toHaveCount(0);
   await expect(shown.getByRole("group", { name: "对比范围" })).toHaveCount(0);
   await expect(shown.getByTestId("ruler-mark")).toHaveCount(1);
   await files.nth(1).click();
   await expect(shown.locator('[data-line="new:1"]')).toContainText("return { on = true }");
   await shoot(studio, shown, "&commit=", "S13-B-commit");
   expect(await reviewWindows(studio)).toHaveLength(2);
-  await expect(review.getByTestId("review-send")).toBeVisible();
+  await expect(review.getByTestId("review-copy")).toBeVisible();
 
   // The same commit again: that window, not another; a name that is not a commit opens nothing.
   await studio.page.evaluate(

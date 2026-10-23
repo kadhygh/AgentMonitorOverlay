@@ -7,7 +7,7 @@ export function gitReviewTools({ service, caller }: ToolContext): AmoTool[] {
   return [{
     name: "review_open",
     title: "打开文件审阅",
-    description: "Open AMO's reviewer for the person. To show several files (or files with highlighted lines, or proposed changes) use view_open instead. mode=file shows the current file (even unchanged/non-git), with optional 1-based line/endLine; mode=changes (default) shows Git changes, optionally selecting file. base compares the working tree with a ref; commit or range A..B/A...B shows read-only committed changes. Reopening reads the latest saved content. Defaults to your session's project; workspaceId selects another registered project. Comments default back to your conversation. Opening the UI does not mean the person has reviewed or approved the work.",
+    description: "Open AMO's reviewer for the person. To show several files (or files with highlighted lines, or proposed changes) use view_open instead. mode=file shows the current file (even unchanged/non-git), with optional 1-based line/endLine; mode=changes (default) shows Git changes, optionally selecting file. base compares the working tree with a ref; commit or range A..B/A...B shows read-only committed changes. Reopening reads the latest saved content. Defaults to your session's project; workspaceId selects another registered project. The person copies their comments and pastes them where the work goes on (often back to you); nothing comes back by itself. Opening the UI does not mean the person has reviewed or approved the work.",
     inputSchema: {
       workspaceId: z.string().optional(),
       mode: z.enum(["file", "changes"]).optional(),

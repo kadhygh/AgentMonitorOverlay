@@ -158,6 +158,16 @@ describe("Git Review API", { timeout: 30_000 }, () => {
     const fileMessage = "文件批注：我看了「game」的文件，有 1 条批注。\n\n### drop.lua\n\ndrop.lua:1\n> local rate = 0.25\n这一行的来历？";
     expect(composeGitReviewMessage([onFile], "game")).toBe(fileMessage);
     await until(async () => (await items()).some((i) => i.type === "user" && i.text === fileMessage), "file comments message");
+
+    // 复制注释 (2026-10-23, in place of 发给会话): the same text, for the person to paste; the drafts are marked sent to
+    // no session, and nothing reaches a conversation.
+    expect((await api("POST", `${base}/copy`, {})).status).toBe(400);
+    const again = await ok<GitReviewComment>("POST", base, { range: "file", path: "drop.lua", side: "new", line: 1, lineText: "local rate = 0.25", note: "复制给别处" });
+    const before = (await items()).length;
+    const copied = await ok<{ text: string; sent: GitReviewComment[] }>("POST", `${base}/copy`, {});
+    expect(copied.text).toBe(composeGitReviewMessage([again], "game"));
+    expect(copied.sent.map((c) => [c.id, c.state, c.sessionId])).toEqual([[again.id, "sent", null]]);
+    expect((await items()).length).toBe(before);
   });
 });
 

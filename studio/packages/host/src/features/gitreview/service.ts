@@ -253,6 +253,26 @@ export class GitReviewFeature extends Feature {
   }
 
   /** Sends the drafts (all, or the ones named) to a session as one message grouped by file, and marks them sent. */
+  /**
+   * 复制注释 (2026-10-23): the drafts as the text a session got before, for the person to copy; they leave the drafts
+   * (marked sent, to no session). Picking a session to send them to added nothing.
+   */
+  copy(workspaceId: Id, ids?: unknown): { text: string; sent: GitReviewComment[] } {
+    const ws = this.requireWorkspace(workspaceId);
+    if (ids !== undefined && !(Array.isArray(ids) && ids.every((x) => typeof x === "string"))) throw new HostError("bad_request", "ids must be a list of comment ids");
+    const wanted = ids ? new Set(ids as string[]) : null;
+    const drafts = sortComments(this.store.listReviewComments(workspaceId).filter((c) => c.state === "draft" && (!wanted || wanted.has(c.id))));
+    if (!drafts.length) throw new HostError("bad_request", "no comments to copy");
+    const text = composeGitReviewMessage(drafts, ws.name);
+    const at = new Date().toISOString();
+    const sent = drafts.map((c) => {
+      const next: GitReviewComment = { ...c, state: "sent", sessionId: null, sentAt: at, updatedAt: at };
+      this.store.putReviewComment(next);
+      return next;
+    });
+    return { text, sent };
+  }
+
   async send(workspaceId: Id, sessionId: unknown, ids?: unknown): Promise<{ mode: SendMode; sent: GitReviewComment[] }> {
     const ws = this.requireWorkspace(workspaceId);
     if (typeof sessionId !== "string" || !sessionId) throw new HostError("bad_request", "sessionId is required");

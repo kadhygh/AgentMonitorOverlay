@@ -1,10 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { GitFileDiff, GitReviewComment, ProposalViewItem, StateSnapshot, ViewPack, Workspace } from "@amo-studio/protocol";
-import { call, HostApiError, type HostLink } from "../host/client.js";
+import { call, copyText, HostApiError, type HostLink } from "../host/client.js";
 import { showToast } from "../lib/toast.js";
 import { DiffView } from "../gitreview/DiffView.js";
 import { dropDraft, newDraftKey } from "../gitreview/drafts.js";
-import { changeStarts, cycle, diffRows, sessionChoices, step, type DiffMode } from "../gitreview/logic.js";
+import { changeStarts, cycle, diffRows, step, type DiffMode } from "../gitreview/logic.js";
 import { revealRow } from "../gitreview/reveal.js";
 import { useDiffTokens } from "../gitreview/tokens.js";
 import { proposalMessage, type ProposalComment } from "./logic.js";
@@ -22,8 +22,6 @@ export function ProposalItemView({ link, state, pack, workspace, item, active }:
   const [draftAt, setDraftAt] = useState<string | null>(null);
   const [activeRow, setActiveRow] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const choices = useMemo(() => sessionChoices(state, workspace.id, pack.sessionId ?? undefined), [state, workspace.id, pack.sessionId]);
-  const [target, setTarget] = useState(pack.sessionId ?? choices[0]?.id ?? "");
 
   useEffect(() => {
     let live = true;
@@ -109,15 +107,15 @@ export function ProposalItemView({ link, state, pack, workspace, item, active }:
     return () => window.removeEventListener("keydown", onKey);
   }, [active, changeRows, markRows, activeRow, rows.length]);
 
-  async function send() {
-    if (!target || !comments.length) return;
+  /** 复制注释 / 复制并关闭 (2026-10-23, in place of 发回会话): the comments as one text, for the person to paste. */
+  async function copy(close: boolean) {
+    if (!comments.length) return;
     setBusy(true);
     try {
-      await call(link, "POST /api/sessions/:id/messages", { id: target }, { text: proposalMessage(pack, item, comments) });
+      await copyText(proposalMessage(pack, item, comments));
+      showToast({ text: `已复制 ${comments.length} 条批注，可以粘贴给需要的对话或工具。` });
       setComments([]);
-      showToast({ text: "批注已发回会话" });
-    } catch (err) {
-      showToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
+      if (close) window.close();
     } finally {
       setBusy(false);
     }
@@ -187,15 +185,12 @@ export function ProposalItemView({ link, state, pack, workspace, item, active }:
       {comments.length > 0 && (
         <div className="vp-send" data-testid="viewpack-send">
           <span>{comments.length} 条批注</span>
-          <select className="field" value={target} onChange={(e) => setTarget(e.target.value)} aria-label="发给哪个会话">
-            {choices.map((c) => (
-              <option key={c.id} value={c.id}>
-                {c.label}
-              </option>
-            ))}
-          </select>
-          <button type="button" className="btn-primary small" disabled={busy || !target} onClick={() => void send()} data-testid="viewpack-send-button">
-            发回会话
+          <span className="spacer" />
+          <button type="button" className="btn-ghost small" disabled={busy} title={proposalMessage(pack, item, comments)} onClick={() => void copy(false)} data-testid="viewpack-copy">
+            复制注释
+          </button>
+          <button type="button" className="btn-primary small" disabled={busy} onClick={() => void copy(true)} data-testid="viewpack-copy-close">
+            复制并关闭
           </button>
         </div>
       )}

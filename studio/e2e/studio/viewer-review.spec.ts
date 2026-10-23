@@ -79,7 +79,6 @@ test("comments in the viewer's 文件 mode survive switching views, keep their p
   await code.getByTestId("comment-draft").locator("textarea").press("Control+Enter");
   await expect(code.getByTestId("review-comment")).toContainText("这个值从哪来");
   // The send bar shows with the drafts, at the conversation that opened the file.
-  await expect(code.getByTestId("review-session")).toHaveValue(session.id);
   await screenshot(app, "stage-14", "S14-A-viewer-comment", viewer, "viewer");
 
   // In 改动 (the project's Review) the same comment sits on line 335 of the new file.
@@ -148,10 +147,8 @@ test("comments in the viewer's 文件 mode survive switching views, keep their p
   await expect(code.locator(".gr-line.active")).toHaveAttribute("data-line", "new:250");
   expect(await inView(viewer, '.vw-review [data-line="new:250"]')).toBe(true);
 
-  // 发给会话: both comments (written in 文件 and edited in 改动) go to the conversation as one message.
-  await viewer.locator(".vw-review").getByTestId("review-send").click();
-  await expect
-    .poll(async () => (await studio!.api<SessionItem[]>("GET", `/api/sessions/${session.id}/items`)).some((i) => i.type === "user" && i.text.startsWith("文件批注：") && i.text.includes("big.lua:335")))
-    .toBe(true);
-  await expect(viewer.locator(".vw-review").getByTestId("review-send")).toHaveCount(0);
+  // 复制注释 (2026-10-23, in place of 发给会话): both comments (written in 文件 and edited in 改动) as one text.
+  await viewer.locator(".vw-review").getByTestId("review-copy").click();
+  await expect.poll(() => studio!.app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1) ?? "")).toMatch(/^文件批注：[\s\S]*big\.lua:335/);
+  await expect(viewer.locator(".vw-review").getByTestId("review-copy")).toHaveCount(0);
 });

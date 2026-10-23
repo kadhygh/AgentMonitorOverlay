@@ -16,6 +16,7 @@ export function gitReviewRoutes(service: HostService): Route[] {
       service.gitReview.commitDiff(params.id!, query.get("sha"), query.get("base"), query.get("path"), query.get("oldPath")),
     ),
     route("GET", "/api/workspaces/:id/review-comments", ({ params }) => service.gitReview.comments(params.id!)),
+    route("POST", "/api/workspaces/:id/review-comments/copy", ({ params, body }) => service.gitReview.copy(params.id!, obj(body).ids)),
     route("POST", "/api/workspaces/:id/review-comments/send", ({ params, body }) => service.gitReview.send(params.id!, obj(body).sessionId, obj(body).ids)),
     route("POST", "/api/workspaces/:id/review-comments", ({ params, body }) => service.gitReview.addComment(params.id!, obj(body) as never)),
     route("PATCH", "/api/review-comments/:id", ({ params, body }) => service.gitReview.updateComment(params.id!, obj(body).note)),

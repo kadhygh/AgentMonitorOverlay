@@ -59,7 +59,6 @@ test("another tool opens Review on a folder: the working tree against a base, an
   await expect(review.getByTestId("review-branch")).toContainText("对比 main");
   await expect(review.getByTestId("review-file")).toHaveCount(3);
   await expect(review.getByTestId("review-file").filter({ hasText: "drop.lua" })).toHaveAttribute("aria-current", /true|page/);
-  await expect(review.getByTestId("review-session")).toHaveValue(session.id);
   await screenshot(app, "stage-18", "S18-review-open-base", review, "review");
 
   // A range: read-only, against the first ref.
@@ -113,7 +112,6 @@ for (const profileId of ["claude-mock", "codex-mock"]) {
     await code.locator('[data-line="new:2"] [data-testid="add-comment"]').click();
     await code.getByTestId("comment-draft").locator("textarea").fill("请再检查第二行");
     await code.getByTestId("comment-draft").locator("textarea").press("Control+Enter");
-    await expect(code.getByTestId("review-session")).toHaveValue(sessionId);
 
     // Reopen via CLI after an edit: one reused window, freshly read content, drafts still available.
     const before = app.windows().length;
@@ -125,8 +123,10 @@ for (const profileId of ["claude-mock", "codex-mock"]) {
     expect(app.windows()).toHaveLength(before);
     if (profileId === "claude-mock") await screenshot(app, "stage-18", "S18-review-mcp-file", viewer, "viewer");
 
-    await code.getByTestId("review-send").click();
-    await expect.poll(async () => (await studio!.api<SessionItem[]>("GET", `/api/sessions/${sessionId}/items`)).some((i) => i.type === "user" && i.text.includes("请再检查第二行") && i.text.includes(`${file}:2`))).toBe(true);
+    // 复制注释 (2026-10-23): the person pastes them back; nothing goes to the conversation by itself.
+    await code.getByTestId("review-copy").click();
+    await expect.poll(() => studio!.app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1) ?? "")).toContain("请再检查第二行");
+    expect(await studio!.app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1) ?? "")).toContain(`${file}:2`);
     await expect.poll(async () => (await studio!.api<{ sessions: Session[] }>("GET", "/api/state")).sessions.find((s) => s.id === sessionId)?.status).toBe("idle");
     // The model can also open the saved edits of that file as a diff (a 查看包's git item, in the same window), with
     // the same receiving conversation.
@@ -134,7 +134,6 @@ for (const profileId of ["claude-mock", "codex-mock"]) {
     const changes = viewer.getByTestId("viewpack-git");
     await expect(changes.getByTestId("review-file-head")).toContainText(file);
     await expect(changes.locator(".gr-line.add")).toContainText("second = 200");
-    await expect(changes.getByTestId("review-session")).toHaveValue(sessionId);
     expect(app.windows()).toHaveLength(before);
   });
 }

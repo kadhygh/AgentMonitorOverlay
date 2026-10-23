@@ -156,11 +156,13 @@ test("git items list the files pointed at first, above the rest, with their 重�
   await proposal.getByTestId("comment-draft").getByRole("button", { name: "保存" }).click();
   await expect(win.getByTestId("viewpack-send")).toContainText("1 条批注");
   await screenshot(app, "stage-18", "S23-viewpack-proposal", win, "viewer");
-  await win.getByTestId("viewpack-send-button").click();
+  // 复制注释 (2026-10-23, in place of 发回会话).
+  await win.getByTestId("viewpack-copy").click();
   await expect(win.getByTestId("viewpack-send")).toHaveCount(0);
-  await expect
-    .poll(async () => (await studio!.api<SessionItem[]>("GET", `/api/sessions/${session.id}/items`)).some((i) => i.type === "user" && i.text.includes("【对改动预览的批注】drop.lua") && i.text.includes("改后第 2 行") && i.text.includes("Lv20 太高，先 Lv15")))
-    .toBe(true);
+  await expect.poll(() => studio!.app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1) ?? "")).toContain("【对改动预览的批注】drop.lua");
+  const text = await studio!.app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1) ?? "");
+  expect(text).toContain("改后第 2 行");
+  expect(text).toContain("Lv20 太高，先 Lv15");
 });
 
 test("an agent's view_open opens the pack; its tool row opens it again", async () => {

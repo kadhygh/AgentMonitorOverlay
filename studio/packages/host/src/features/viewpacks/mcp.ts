@@ -13,7 +13,7 @@ export function viewPacksTools({ service, caller }: ToolContext): AmoTool[] {
         "kind=file: a file as it is now (path); highlights mark lines for them, each {line, endLine?, note} — point at what matters and say why. " +
         "kind=git: changes — source working (uncommitted, the default), base (the working tree against a ref), commit, or range (A..B, or A...B from where B forked). files: the ones to point at — listed first, above the rest of the changes, which stay visible. highlights: lines of changed files for them, each {path, line, endLine?, note} (line numbers of the new version). " +
         "kind=proposal: a change you suggest but have not made — path and the whole proposed content; shown as a diff against the file, nothing on disk changes. " +
-        "Paths are relative to the project (default: your session's). Comments the person writes come back to your conversation. Opening it does not mean they have read or approved anything.",
+        "Paths are relative to the project (default: your session's). The person copies the comments they write and pastes them where the work goes on (often back to you); nothing comes back by itself. Opening it does not mean they have read or approved anything.",
       inputSchema: {
         title: z.string().optional(),
         workspaceId: z.string().optional(),

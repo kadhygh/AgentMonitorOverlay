@@ -6,10 +6,11 @@ import type { Session, Task, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, windowState, type Studio, confirmBookmarkNote } from "../support/studio.js";
 
 // S11-D acceptance: a project under git → Review from the task page → file list and both diff views → a comment on
-// a line → "发给会话" → the session receives the summary. The window is reused per project; folders without git
-// cannot be reviewed.
+// a line → 复制注释 (2026-10-23, in place of 发给会话: the person pastes them where the work goes on). The window is
+// reused per project; folders without git cannot be reviewed.
 
 let studio: Studio | undefined;
+const copied = () => studio!.app.evaluate(() => (globalThis as { __amoCopied?: string[] }).__amoCopied?.at(-1) ?? "");
 
 test.afterEach(async () => {
   await studio?.close();
@@ -162,22 +163,20 @@ test("review a project's changes, comment a line and send it to the session", as
   await review.getByRole("button", { name: "只看改动" }).click();
   await screenshot(app, "stage-11", "S11-D-review-branch", review, "review");
 
-  // Send: the task's session is picked already.
-  await expect(review.getByTestId("review-session")).toHaveValue(session.id);
-  await review.getByTestId("review-send").click();
-  await expect(review.getByTestId("toast")).toContainText("已把 2 条批注发给");
+  // 复制注释: no session to pick any more; the drafts as one text on the clipboard, then they leave the drafts.
+  await expect(review.getByTestId("review-session")).toHaveCount(0);
+  await review.getByTestId("review-copy").click();
+  await expect(review.getByTestId("toast")).toContainText("已复制 2 条批注");
   await expect(review.getByTestId("review-draft-count")).toHaveText("草稿批注 0 条");
   await expect(comments).toHaveCount(0);
   await review.getByText("显示已发送（2）").click();
   await expect(comments).toHaveCount(2);
-
-  const summary = page.getByTestId("msg-user").filter({ hasText: "Git Review 批注" });
-  await expect(summary).toBeVisible({ timeout: 30_000 });
-  await expect(summary).toContainText("drop.lua:2");
-  await expect(summary).toContainText("M.rate = 0.25");
-  await expect(summary).toContainText("再看留存");
-  await expect(summary).toContainText("drop.lua（旧版第 3 行，已删除）");
-  await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: Git Review 批注", { timeout: 30_000 });
+  await expect.poll(copied).toContain("Git Review 批注");
+  const summary = await copied();
+  expect(summary).toContain("drop.lua:2");
+  expect(summary).toContain("M.rate = 0.25");
+  expect(summary).toContain("再看留存");
+  expect(summary).toContain("drop.lua（旧版第 3 行，已删除）");
 
   // The task head opens the same window again (one per project), pointed at the session in front.
   const windows = app.windows().length;
@@ -199,7 +198,6 @@ test("review a project's changes, comment a line and send it to the session", as
   const fromProject = await reopened;
   expect(fromProject.url()).toContain(`#review?workspace=${ws.id}`);
   expect(fromProject.url()).not.toContain("session=");
-  await expect(fromProject.getByTestId("review-session")).toHaveValue("");
   await expect(fromProject.getByTestId("review-file")).toHaveCount(3);
 
   // A plain folder: the Host says why.

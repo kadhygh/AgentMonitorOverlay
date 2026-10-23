@@ -73,13 +73,9 @@ export function FileReview({
   const [draftAt, setDraftAt] = useState<string | null>(null);
   const [active_, setActive] = useState<number | null>(null);
   const [busy, setBusy] = useState(false);
-  const [target, setTarget] = useState(defaultSession ?? "");
   const [goto, setGoto] = useState(false);
   const scroller = useRef<HTMLDivElement>(null);
   const last = line ? Math.max(line, endLine ?? line) : 0;
-
-  // Opened again (maybe from another conversation): the send bar follows it.
-  useEffect(() => setTarget(defaultSession ?? ""), [defaultSession, openKey]);
 
   // To the asked line or range on every open: a range that fits shows whole a third of the way down; a longer one
   // starts near the top.
@@ -254,7 +250,7 @@ export function FileReview({
         </span>
       </div>
       {/* The project's drafts (written here or in Review) go out from here too; shown once there are some. */}
-      {ws && (drafts.length > 0 || draftAt) && <SendBar link={link} state={state} workspace={ws} comments={comments} target={target} onTarget={setTarget} busy={busy} run={run} />}
+      {ws && (drafts.length > 0 || draftAt) && <SendBar link={link} workspace={ws} comments={comments} busy={busy} run={run} />}
     </div>
   );
 }

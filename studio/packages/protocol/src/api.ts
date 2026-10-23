@@ -608,6 +608,14 @@ export interface HostRoutes {
   /** Drafts only (409 once sent). */
   "PATCH /api/review-comments/:id": { req: { note: string }; res: import("./gitreview.js").GitReviewComment };
   "DELETE /api/review-comments/:id": { req: void; res: { ok: true } };
+  /**
+   * 复制注释 (2026-10-23, in place of 发给会话): the drafts (all, or `ids`) as one text grouped by file — what was sent to
+   * a session before — for the person to paste; they are marked sent (no session).
+   */
+  "POST /api/workspaces/:id/review-comments/copy": {
+    req: { ids?: Id[] };
+    res: { text: string; sent: import("./gitreview.js").GitReviewComment[] };
+  };
   /** Sends the drafts (all, or `ids`) to a session as one message grouped by file, then marks them sent. */
   "POST /api/workspaces/:id/review-comments/send": {
     req: { sessionId: Id; ids?: Id[] };
