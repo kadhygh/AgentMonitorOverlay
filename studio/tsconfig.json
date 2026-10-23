@@ -4,6 +4,7 @@
     { "path": "packages/protocol" },
     { "path": "packages/testkit" },
     { "path": "packages/host" },
+    { "path": "packages/reviewer" },
     { "path": "packages/app" },
     { "path": "packages/notes" }
   ]

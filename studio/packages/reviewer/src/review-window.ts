@@ -60,29 +60,31 @@ export function reviewHash(target: unknown): { key: string; hash: string } | nul
 }
 
 /** Handles `amo:open-review` from the pages; returns what the main window needs to close the reviews with it. */
-export function setupReviewWindows(options: ReviewWindowOptions): { closeAll(): void } {
+export function setupReviewWindows(options: ReviewWindowOptions): { closeAll(): void; open(target: unknown): void } {
   /** Each window and what it shows (its key). */
   const windows = new Map<BrowserWindow, string>();
   const find = (key: string) => [...windows].find(([w, k]) => k === key && !w.isDestroyed())?.[0];
 
-  ipcMain.handle("amo:open-review", (_event, target: unknown) => {
+  // Opened from a page (amo:open-review) or, in the AMO Reviewer program, by the main process itself (2026-10-23).
+  const open = (target: unknown): void => {
     const t = reviewHash(target);
     const url = options.url();
     if (!t || !url) return;
-    const open = find(t.key);
-    if (open && !open.isDestroyed()) {
+    const existing = find(t.key);
+    if (existing && !existing.isDestroyed()) {
       // Same project: the page follows the new hash (another session), and the window comes forward.
-      void open.webContents.executeJavaScript(`location.hash = ${JSON.stringify(t.hash)}`);
+      void existing.webContents.executeJavaScript(`location.hash = ${JSON.stringify(t.hash)}`);
       if (options.testMode) return;
-      if (open.isMinimized()) open.restore();
-      open.show();
-      open.focus();
+      if (existing.isMinimized()) existing.restore();
+      existing.show();
+      existing.focus();
       return;
     }
     const win = createReviewWindow(`${url}${t.hash}`, options);
     windows.set(win, t.key);
     win.on("closed", () => windows.delete(win));
-  });
+  };
+  ipcMain.handle("amo:open-review", (_event, target: unknown) => open(target));
 
   // A commit's window shows another commit of the same project instead.
   ipcMain.handle("amo:switch-review", (event, target: unknown) => {
@@ -95,6 +97,7 @@ export function setupReviewWindows(options: ReviewWindowOptions): { closeAll(): 
   });
 
   return {
+    open,
     closeAll: () => {
       for (const w of windows.keys()) if (!w.isDestroyed()) w.destroy();
       windows.clear();

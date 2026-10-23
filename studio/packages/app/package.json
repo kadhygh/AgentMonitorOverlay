@@ -9,7 +9,8 @@
   },
   "dependencies": {
     "@amo-studio/host": "0.0.0",
-    "@amo-studio/protocol": "0.0.0"
+    "@amo-studio/protocol": "0.0.0",
+    "@amo-studio/reviewer": "0.0.0"
   },
   "devDependencies": {
     "electron": "44.7.0"

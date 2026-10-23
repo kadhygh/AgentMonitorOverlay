@@ -7,6 +7,7 @@
     "packages/protocol",
     "packages/testkit",
     "packages/host",
+    "packages/reviewer",
     "packages/app",
     "packages/notes",
     "packages/ui"
@@ -27,6 +28,7 @@
     "smoke:stage7": "npm run build && node scripts/smoke-stage7.mjs",
     "start": "npm run build && electron packages/app",
     "notes": "npm run build && electron packages/notes",
+    "reviewer": "npm run build && electron packages/reviewer/dist/main.js",
     "host:stop": "node scripts/host-stop.mjs",
     "package:portable": "npm run build && node scripts/package-portable.mjs release --zip",
     "smoke:portable": "node scripts/smoke-portable.mjs release"

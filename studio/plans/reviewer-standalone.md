@@ -23,4 +23,6 @@
 
 ## 进度
 
-（随做随记）
+- R1 完成（`5e13b10`）：复制注释 / 复制并关闭 代替发回会话（Git Review、查看器文件模式、改动预览）；`POST /api/workspaces/:id/review-comments/copy`；agent 说明改成「人复制后贴回来」。
+- R2 / R3 完成：`packages/reviewer` = Reviewer 的窗口模块（`review-window.ts`、`viewer-window.ts`、`viewer-rules.ts`，从 app 挪来，Studio 从这个包引入）+ 独立程序 `main.ts`（自带一个不接模型的 Host、自己的数据目录 `%APPDATA%\AMO Reviewer\data`、单实例、最后一个窗口关掉就退出）；页面入口 `reviewer.html`（只有 Git Review 和查看器）；`window.amo.app === "reviewer"` 时不显示书签（`lib/where.ts`、`MarkButton`）；`amo-review --reviewer` 用它（没在跑就带着文件夹启动它）；`npm run reviewer -- <文件夹>`。e2e `e2e/reviewer/`。
+- 还没做：独立 Reviewer 的 MCP（外部模型目前用 `amo-review --reviewer` 命令行）；Studio 里的 review_open / view_open 仍开 Studio 自己的窗口；Portable 打包带上它（发布时）；独立 Reviewer 的批注历史（「显示已发送」）在它自己的数据库里，和 Studio 的分开。

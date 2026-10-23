@@ -6,6 +6,7 @@ import { findMark } from "./logic.js";
 import { addFileMark, bookmarkAdded, markTarget, openMarks } from "./open.js";
 import { BookmarkCancelled } from "./NotePrompt.js";
 import { useFileMarks } from "./useFileMarks.js";
+import { inAmo } from "../lib/where.js";
 
 /**
  * "书签" (标记 before 2026-10-19) for a file shown elsewhere (the conversation's quick look, the viewer, the Review
@@ -13,7 +14,14 @@ import { useFileMarks } from "./useFileMarks.js";
  * bookmarks window at it. Not yet: a click bookmarks it (at `line` when given; under the topic of `sessionId`'s task)
  * and opens the window with the cursor in the new bookmark's note.
  */
-export function MarkButton({ link, file, line, sessionId, className = "btn-ghost small" }: { link: HostLink; file: FileRef; line?: number | null; sessionId?: string | null; className?: string }) {
+type MarkButtonProps = { link: HostLink; file: FileRef; line?: number | null; sessionId?: string | null; className?: string };
+
+/** Bookmarks are AMO Studio's: the AMO Reviewer program on its own shows none (2026-10-23). */
+export function MarkButton(props: MarkButtonProps) {
+  return inAmo() ? <AmoMarkButton {...props} /> : null;
+}
+
+function AmoMarkButton({ link, file, line, sessionId, className = "btn-ghost small" }: MarkButtonProps) {
   const { marks } = useFileMarks(link);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);

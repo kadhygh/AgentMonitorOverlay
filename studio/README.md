@@ -20,6 +20,11 @@ AMO 的下一代：由人主导、agent 也能参与的项目推进工作台。�
 
 换一台机器用开发版：装好 Node（24 LTS）和 Git，`git clone`（`master`）后双击 `studio/start-studio.cmd`。它会在依赖缺失或 `package-lock.json` 变了时 `npm ci`，再构建并打开 Studio；`start-studio.cmd -Install` 强制重装依赖，`start-studio.cmd -Stop` 停掉 Host。Codex 模型还要 `npm i -g @openai/codex`；Claude 订阅令牌和各通道的 Key 在 设置 → 模型 里填。
 
+## 随 Studio 一起的两个小程序
+
+- **AMO 便签**（`packages/notes`）：独立进程，托盘图标，全局快捷键（默认 Ctrl+Alt+Space）。Studio 启动时会把它带起来；单独启动 `npm run notes`。设置在它自己的托盘菜单里。
+- **AMO Reviewer**（`packages/reviewer`）：Git Review 和查看器，不需要 Studio，任何工具或模型都能用：`amo-review <文件夹> --reviewer [--mode file --file 路径 --line 行号]`，或 `npm run reviewer -- <文件夹>`。批注用「复制注释 / 复制并关闭」，贴到需要的地方。
+
 ## 日常怎么用
 
 | 想做的事 | 在哪里 |

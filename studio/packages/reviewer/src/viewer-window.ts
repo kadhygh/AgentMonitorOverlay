@@ -13,11 +13,12 @@ export interface ViewerWindowOptions {
 }
 
 /** Handles `amo:open-viewer`, `amo:viewer-pin` and `amo:viewer-state`; returns what closes the viewers with the workbench. */
-export function setupViewerWindows(options: ViewerWindowOptions): { closeAll(): void } {
+export function setupViewerWindows(options: ViewerWindowOptions): { closeAll(): void; open(target: unknown): void } {
   const set = new ViewerSet<BrowserWindow>();
   let opened = 0;
 
-  ipcMain.handle("amo:open-viewer", (_event, target: unknown) => {
+  // Opened from a page (amo:open-viewer) or, in the AMO Reviewer program, by the main process itself (2026-10-23).
+  const open = (target: unknown): void => {
     const hash = viewerHash(target, ++opened);
     const url = options.url();
     if (!hash || !url) return;
@@ -33,7 +34,8 @@ export function setupViewerWindows(options: ViewerWindowOptions): { closeAll(): 
     const win = createViewerWindow(`${url}${hash}`, options);
     set.created(win);
     win.on("closed", () => set.closed(win));
-  });
+  };
+  ipcMain.handle("amo:open-viewer", (_event, target: unknown) => open(target));
 
   // 固定 from the page: this window is kept. Answers whether it is (now) pinned.
   ipcMain.handle("amo:viewer-pin", (event) => {
@@ -46,6 +48,7 @@ export function setupViewerWindows(options: ViewerWindowOptions): { closeAll(): 
   });
 
   return {
+    open,
     closeAll: () => {
       for (const w of set.all()) if (!w.isDestroyed()) w.destroy();
     },

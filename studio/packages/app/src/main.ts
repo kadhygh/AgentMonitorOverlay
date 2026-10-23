@@ -10,9 +10,8 @@ import { tmpdir } from "node:os";
 import { resolveDataDir } from "./paths.js";
 import { runSetup, SETUP_TEMP_PROFILE } from "./setup.js";
 import { installNotesLink } from "./notes-link.js";
-import { setupReviewWindows } from "./review-window.js";
+import { setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
 import { installMarksWindow } from "./marks-window.js";
-import { setupViewerWindows } from "./viewer-window.js";
 import { ResizeTrace } from "./resize-trace.js";
 import { setupBotFlight } from "./bot-window.js";
 

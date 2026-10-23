@@ -9,6 +9,7 @@ export default defineConfig({
       "@amo-studio/protocol": src("protocol"),
       "@amo-studio/testkit": src("testkit"),
       "@amo-studio/host": src("host"),
+      "@amo-studio/reviewer": src("reviewer"),
     },
   },
   test: {

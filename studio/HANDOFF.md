@@ -2,6 +2,17 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+**2026-10-23 晚 · 用户出门期间整体推进（回来一起审）**：决定记在 memory `studio-reviewer-standalone`，计划和进度见 `plans/reviewer-standalone.md`。
+
+- **e2e 按程序分开**：`e2e/studio`、`e2e/notes`、`e2e/reviewer` 是三个 Playwright project，共用的启动工具放在 `e2e/support`。
+- **`studio/` 根目录清理**：过程文档（STATUS、NEEDS_YOU、ROADMAP、LOOP_RULES、LOOP_LOG）挪进了 `docs/`。
+- **便签单独的页面入口**：`notes.html`，约 250 KB；原来要加载 Studio 整个 1.3 MB 的界面包。
+- **删除旧 AMO**（`ea939ab`）：标签 `amo-legacy-final` 里还能找回；旧文档挪到了仓库根目录的 `docs/archive-old-amo/`。本机没被 git 跟踪的残留没动，包括 `overlay` 的 25 GB 构建产物、`broker/data`、`dist`、`tmp`，等用户决定。
+- **Reviewer**：
+  - 选会话发回改成「复制注释 / 复制并关闭」。
+  - 窗口模块挪进了 `packages/reviewer`，Studio 从这个包引入。
+  - 独立程序 AMO Reviewer：自带一个不接模型的 Host，页面入口是 `reviewer.html`，不显示书签；用 `amo-review --reviewer` 或 `npm run reviewer -- <文件夹>` 打开。
+
 **2026-10-23 · 便签独立成程序（AMO 便签，`packages/notes`）**：用户每天在用的便签以前是 Studio 进程里的窗口，Studio 一重启就跟着关掉。现在拆成单独的程序，计划和需求在 `plans/notes-standalone.md`，界面定稿在 Design 画布 https://claude.ai/artifact/BXngZSwVW1TwTWYkcGcnVr ，用户的决定记在 memory `studio-notes-standalone`。
 
 **程序本身**：
