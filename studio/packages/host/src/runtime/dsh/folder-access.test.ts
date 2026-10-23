@@ -47,22 +47,28 @@ describe("folder access for DSH's write sandbox", () => {
     expect(readIcacls("D:\\w KANGAROO-COM\\Kangaroo:(OI)(CI)(IO)(F)\n", "D:\\w", "Kangaroo").ok).toBe(false);
   });
 
-  it("finds the folders holding .exe and .dll files, past .git and never through a link", async () => {
+  it("finds the folders holding programs and libraries (.exe .com .dll .node), past .git and never through a link", async () => {
     const root = mkdtempSync(join(tmpdir(), "amo-studio-test-exes-"));
     try {
-      for (const d of ["tools/bin", ".git/hooks", "src", "outside"]) mkdirSync(join(root, d), { recursive: true });
+      for (const d of ["tools/bin", ".git/hooks", "src", "outside", "addon"]) mkdirSync(join(root, d), { recursive: true });
       writeFileSync(join(root, "tools", "bin", "a.exe"), "");
       writeFileSync(join(root, "tools", "bin", "B.EXE"), "");
       writeFileSync(join(root, "tools", "bin", "c.dll"), "");
+      writeFileSync(join(root, "tools", "bin", "old.com"), "");
+      writeFileSync(join(root, "addon", "sqlite.node"), "");
+      // Not programs: a name ending in the letters only, and scripts.
+      writeFileSync(join(root, "addon", "barnode"), "");
+      writeFileSync(join(root, "addon", "run.cmd"), "");
       writeFileSync(join(root, "run.exe"), "");
       writeFileSync(join(root, ".git", "hooks", "x.exe"), "");
       writeFileSync(join(root, "outside", "o.exe"), "");
       symlinkSync(join(root, "outside"), join(root, "src", "linked"), "junction");
       const found = await findExes(root);
       expect(Object.fromEntries([...found].map(([d, n]) => [d.slice(root.length) || "\\", n]))).toEqual({
-        "\\": { exe: 1, dll: 0 },
-        [join("\\tools", "bin")]: { exe: 2, dll: 1 },
-        "\\outside": { exe: 1, dll: 0 },
+        "\\": { exe: 1 },
+        [join("\\tools", "bin")]: { exe: 2, dll: 1, com: 1 },
+        "\\addon": { node: 1 },
+        "\\outside": { exe: 1 },
       });
     } finally {
       removeTempDir(root);

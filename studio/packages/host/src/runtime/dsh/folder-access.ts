@@ -61,9 +61,8 @@ export interface FolderAccess {
   /** Labels the folder Low, passed on to all it holds, as DSH's grant will (a set-up folder is ready before DSH). */
   label(folder: string): Promise<void>;
   /**
-   * Sets every .exe and .dll in the folder back to Medium (an explicit label, which DSH's later grants leave alone) and
-   * returns how many there are. Never follows links or junctions; skips .git. The .dll too (2026-10-23): Chromium's
-   * sandboxed processes refuse to load a library labelled Low, so Electron in the project crashed its windows.
+   * Sets every program and library in the folder (IMAGE_KINDS) back to Medium (an explicit label, which DSH's later
+   * grants leave alone) and returns how many there are. Never follows links or junctions; skips .git.
    */
   exes(folder: string): Promise<number>;
 }
@@ -83,9 +82,19 @@ function icacls(args: string[]): Promise<string> {
   });
 }
 
-/** The folders under `root` holding .exe or .dll files, with how many of each. */
-export async function findExes(root: string): Promise<Map<string, { exe: number; dll: number }>> {
-  const found = new Map<string, { exe: number; dll: number }>();
+/**
+ * What a Low label breaks when it is on the file: a program (.exe, .com) runs at Low, so cannot write outside the
+ * project; a library (.dll, and .node, a Node / Electron native addon, which is one) is refused by Chromium's sandboxed
+ * processes, so Electron in the project crashed its windows (2026-10-23). Scripts and data run or open through programs
+ * elsewhere and are left as they are.
+ */
+export const IMAGE_KINDS = ["exe", "com", "dll", "node"] as const;
+export type ImageKind = (typeof IMAGE_KINDS)[number];
+const IMAGE_RE = new RegExp(`\\.(${IMAGE_KINDS.join("|")})$`, "i");
+
+/** The folders under `root` holding programs or libraries (IMAGE_KINDS), with how many of each kind. */
+export async function findExes(root: string): Promise<Map<string, Partial<Record<ImageKind, number>>>> {
+  const found = new Map<string, Partial<Record<ImageKind, number>>>();
   const stack = [root];
   let visited = 0;
   while (stack.length) {
@@ -101,10 +110,10 @@ export async function findExes(root: string): Promise<Map<string, { exe: number;
       if (e.isDirectory()) {
         if (e.name !== ".git") stack.push(join(dir, e.name));
       } else if (e.isFile()) {
-        const kind = /\.(exe|dll)$/i.exec(e.name)?.[1]?.toLowerCase() as "exe" | "dll" | undefined;
+        const kind = IMAGE_RE.exec(e.name)?.[1]?.toLowerCase() as ImageKind | undefined;
         if (!kind) continue;
-        const n = found.get(dir) ?? { exe: 0, dll: 0 };
-        n[kind]++;
+        const n = found.get(dir) ?? {};
+        n[kind] = (n[kind] ?? 0) + 1;
         found.set(dir, n);
       }
     }
@@ -140,9 +149,11 @@ export function windowsFolderAccess(backupDir: string): FolderAccess {
     async exes(folder) {
       let count = 0;
       for (const [dir, n] of await findExes(folder)) {
-        if (n.exe) await icacls([join(dir, "*.exe"), "/setintegritylevel", "medium"]);
-        if (n.dll) await icacls([join(dir, "*.dll"), "/setintegritylevel", "medium"]);
-        count += n.exe + n.dll;
+        for (const kind of IMAGE_KINDS) {
+          if (!n[kind]) continue;
+          await icacls([join(dir, `*.${kind}`), "/setintegritylevel", "medium"]);
+          count += n[kind];
+        }
       }
       return count;
     },
