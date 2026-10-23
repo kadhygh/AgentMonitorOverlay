@@ -5,7 +5,7 @@ AMO 的下一代：由人主导、agent 也能参与的项目推进工作台。�
 - 愿景与架构：[../docs/next-gen-vision-architecture-2026-10.md](../docs/next-gen-vision-architecture-2026-10.md)；实际实现：[design/architecture.md](design/architecture.md)
 - 已确认的交互：[design/interaction-notes.md](design/interaction-notes.md)
 
-本目录独立于旧 AMO（`broker/`、`overlay/`），不 import 旧代码。
+旧 AMO（`broker/`、`overlay/`）已于 2026-10-23 删除，代码在标签 `amo-legacy-final` 里。
 
 ## 安装与首次启动（Portable）
 

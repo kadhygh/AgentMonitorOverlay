@@ -1,8 +1,8 @@
 {
   "name": "agent-monitor-overlay",
-  "version": "0.1.7",
+  "version": "0.9.0",
   "private": true,
-  "description": "Local Agent Monitor Overlay workspace.",
+  "description": "AMO Studio — the project workbench (in studio/).",
   "license": "MIT",
   "author": "kadhygh",
   "repository": {
@@ -10,26 +10,10 @@
     "url": "git+https://github.com/kadhygh/AgentMonitorOverlay.git"
   },
   "scripts": {
-    "deepseek:routing": "node scripts/models/deepseek-routing.cjs",
-    "deepseek:check": "node scripts/models/deepseek-routing.cjs --check",
-    "amo": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable",
-    "amo:stable": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable",
-    "amo:health": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable -HealthOnly",
-    "amo:restart": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Stable -RestartOnly",
-    "amo:source": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source",
-    "amo:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Source -DebugMode",
-    "amo:portable": "powershell -NoProfile -ExecutionPolicy Bypass -File amo.ps1 -Mode Portable -SkipDependencyInstall",
-    "broker": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1",
-    "broker:debug": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/broker/start.ps1 -DebugMode",
-    "broker:test": "node --test broker/lib/*.test.js",
-    "broker:verify": "powershell -ExecutionPolicy Bypass -File scripts/broker/verify.ps1",
-    "adapters:verify": "powershell -ExecutionPolicy Bypass -File scripts/adapters/verify.ps1",
-    "adapters:live-codex": "powershell -ExecutionPolicy Bypass -File scripts/adapters/live-codex-smoke.ps1",
-    "adapters:live-claude": "powershell -ExecutionPolicy Bypass -File scripts/adapters/live-claude-smoke.ps1",
-    "demo:claude-routing": "powershell -ExecutionPolicy Bypass -File scripts/demo/start-claude-routing-demo.ps1",
-    "routing:verify": "powershell -ExecutionPolicy Bypass -File scripts/window-routing/verify-amo-routing.ps1"
+    "studio": "npm --prefix studio start",
+    "notes": "npm --prefix studio run notes"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=24"
   }
 }
