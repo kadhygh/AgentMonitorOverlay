@@ -53,10 +53,19 @@ export function OnCanvasToggle({ link, taskId, topicId, disabled, onError }: OnC
     }
   }
 
+  // An item of the task's ⋯ menu, ticked like 主控传话不用确认 (2026-10-23: a checkbox label there wrapped one
+  // character a line). The menu stays open, so the tick shows the change.
   return (
-    <label className="inline-field check" title="在专题的画布上显示这个任务的卡片；不显示时任务仍在专题里">
-      <input type="checkbox" checked={!!placed} disabled={disabled || busy || placed === null} onChange={(e) => void toggle(e.target.checked)} data-testid="task-on-canvas" />
-      显示在画布上
-    </label>
+    <button
+      type="button"
+      role="menuitemcheckbox"
+      aria-checked={!!placed}
+      disabled={disabled || busy || placed === null}
+      title="在专题的画布上显示这个任务的卡片；不显示时任务仍在专题里"
+      onClick={() => void toggle(!placed)}
+      data-testid="task-on-canvas"
+    >
+      {placed ? "✓ " : ""}显示在画布上
+    </button>
   );
 }

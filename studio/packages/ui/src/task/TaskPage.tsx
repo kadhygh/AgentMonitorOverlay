@@ -396,6 +396,13 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
             </svg>
             书签
           </button>
+          {/* 归档 on its own, left of ⋯ (2026-10-23). */}
+          {!task.archivedAt && (
+            <button type="button" className="btn-ghost small with-icon" title="归档任务：任务和它的会话变成只读，之后可以恢复" disabled={busy} onClick={() => void archiveTask()} data-testid="task-archive">
+              <ArchiveIcon size={15} />
+              归档
+            </button>
+          )}
           <button type="button" className="btn-ghost small icon-only" aria-label="任务的更多操作" title="更多" onClick={(e) => setTaskMenu(below(e.currentTarget))} data-testid="task-more">
             ⋯
           </button>
@@ -482,26 +489,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               {task.relayAuto ? "✓ " : ""}主控传话不用确认
             </button>
           )}
-          {task.topicId && (
-            <div className="menu-check">
-              <OnCanvasToggle key={task.topicId} link={link} taskId={task.id} topicId={task.topicId} disabled={!!task.archivedAt} onError={(text) => setToast({ text, error: true })} />
-            </div>
-          )}
-          {!task.archivedAt && (
-            <button
-              type="button"
-              role="menuitem"
-              className="menu-danger"
-              disabled={busy}
-              onClick={() => {
-                setTaskMenu(null);
-                void archiveTask();
-              }}
-              data-testid="task-archive"
-            >
-              归档任务…
-            </button>
-          )}
+          {task.topicId && <OnCanvasToggle key={task.topicId} link={link} taskId={task.id} topicId={task.topicId} disabled={!!task.archivedAt} onError={(text) => setToast({ text, error: true })} />}
           {task.archivedAt && <span className="menu-note">任务已归档</span>}
         </PopMenu>
       )}

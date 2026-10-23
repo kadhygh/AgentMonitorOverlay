@@ -111,7 +111,6 @@ test("归档任务: a box says what was archived and returns to the canvas or bo
   // Opened from the canvas: 返回画布.
   await page.getByRole("button", { name: "画布", exact: true }).click();
   await page.getByTestId("canvas-card").filter({ hasText: "掉落表调整" }).dblclick();
-  await page.getByTestId("task-more").click();
   await page.getByTestId("task-archive").click();
   const box = page.getByTestId("task-archived-dialog");
   await expect(box).toContainText("已归档任务「掉落表调整」和它的 1 个会话");
@@ -139,7 +138,6 @@ test("归档任务: a box says what was archived and returns to the canvas or bo
   await page.getByRole("button", { name: "返回画布" }).click();
   await page.getByRole("button", { name: "看板", exact: true }).click();
   await page.getByTestId("task-card").filter({ hasText: "掉落表调整" }).click();
-  await page.getByTestId("task-more").click();
   await page.getByTestId("task-archive").click();
   await expect(box.getByRole("button", { name: "返回看板" })).toBeVisible();
   await box.getByRole("button", { name: "关闭" }).click();
