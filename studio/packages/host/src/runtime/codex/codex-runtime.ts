@@ -59,6 +59,7 @@ export class CodexRuntime extends RuntimeBase {
   private readonly attached = new WeakSet<CodexServerHandle["client"]>();
   private readonly usageCache = new Map<Id, AccountUsage>();
   private readonly modelCache = new Map<Id, { at: number; models: ModelOption[] }>();
+  private readonly listingModels = new Map<string, Promise<ModelOption[]>>();
   /** skills/list per profile and folder. */
   private readonly skillCache = new Map<string, { at: number; skills: CodexSkill[] }>();
   private readonly asks: CodexAsks;
@@ -199,16 +200,28 @@ export class CodexRuntime extends RuntimeBase {
     // Keyed by the profile's own model too: a channel's model changed in 设置 → 模型 is the default at once.
     const cacheKey = `${profileId}|${profile.model ?? ""}`;
     const cached = this.modelCache.get(cacheKey);
-    let models = cached && Date.now() - cached.at < 10 * 60_000 ? cached.models : null;
-    if (!models) {
-      const handle = await this.handleFor(profileId);
-      const r = (await handle.client.request("model/list", { includeHidden: false } as never)) as unknown as { data: CodexModel[] };
-      models = r.data.map((m) => toModelOption(m, profile));
-      // A profile pinned to a model the list does not show (hidden, or a custom catalog) still offers it.
-      if (profile.model && !models.some((m) => m.id === profile.model)) models.unshift({ id: profile.model, label: profile.model, efforts: [], isDefault: true });
-      this.modelCache.set(cacheKey, { at: Date.now(), models });
-    }
+    // An older list is answered at once and asked again behind it (2026-10-23: 开始 and 新会话 waited for it).
+    if (cached && Date.now() - cached.at >= 10 * 60_000) this.listModels(profile, cacheKey).catch((err: unknown) => this.emit("log", `could not list the models of ${profileId}: ${String(err)}`));
+    const models = cached ? cached.models : await this.listModels(profile, cacheKey);
     return { profileId, models, permissions: codexPermissions(), defaultPermission: CODEX_DEFAULT_PERMISSION, source: "cli" };
+  }
+
+  /** The profile's models from its app-server (`model/list`) into the cache; one ask at a time per key. */
+  private listModels(profile: ModelProfile, cacheKey: string): Promise<ModelOption[]> {
+    let asking = this.listingModels.get(cacheKey);
+    if (!asking) {
+      asking = (async () => {
+        const handle = await this.handleFor(profile.id);
+        const r = (await handle.client.request("model/list", { includeHidden: false } as never)) as unknown as { data: CodexModel[] };
+        const models = r.data.map((m) => toModelOption(m, profile));
+        // A profile pinned to a model the list does not show (hidden, or a custom catalog) still offers it.
+        if (profile.model && !models.some((m) => m.id === profile.model)) models.unshift({ id: profile.model, label: profile.model, efforts: [], isDefault: true });
+        this.modelCache.set(cacheKey, { at: Date.now(), models });
+        return models;
+      })().finally(() => this.listingModels.delete(cacheKey));
+      this.listingModels.set(cacheKey, asking);
+    }
+    return asking;
   }
 
   async interrupt(sessionId: Id): Promise<void> {

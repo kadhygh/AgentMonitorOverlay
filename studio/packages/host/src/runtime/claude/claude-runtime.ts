@@ -88,6 +88,7 @@ const STRIP_SUBAGENT_MODE: Partial<Record<HookEvent, HookCallbackMatcher[]>> = {
 export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly live = new Map<Id, Live>();
   private readonly modelCache = new Map<string, { at: number; models: ModelOption[] }>();
+  private readonly askingModels = new Map<string, Promise<ModelOption[]>>();
   /** Queries being closed: a new one for the same session must wait, or the CLI says the session id is in use. */
   private readonly closing = new Map<Id, Promise<void>>();
   /** Skill names per profile, from the CLI's init message (its command list does not tell skills apart). */
@@ -190,8 +191,10 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const shown = images.map((a) => ({ id: a.id, path: a.path }));
     this.appendItem(sessionId, { type: "user", text, ...(shown.length ? { images: shown } : {}) }, { method: mode === "queue" ? "user/queued" : "user" });
     this.clearIdle(live);
-    await live.ready;
-    live.push(blocks.length ? [...blocks, ...(text ? [{ type: "text" as const, text }] : [])] : text);
+    // Goes in once the permission mode is in force, without waiting for it here: a new session's process takes a few
+    // seconds to come up, and the caller (开始, 新会话) is not held for it (2026-10-23). Sends queue up in order on it.
+    const content = blocks.length ? [...blocks, ...(text ? [{ type: "text" as const, text }] : [])] : text;
+    void live.ready.then(() => live.push(content));
     return { mode };
   }
 
@@ -280,16 +283,31 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     if (provider?.models) return { ...base, models: provider.models.map((m) => ({ ...m, ...(m.id === profile.model ? { isDefault: true } : {}) })), source: "builtin" };
     const cacheKey = `${profileId}|${this.newHome(profile).login}`;
     const cached = this.modelCache.get(cacheKey);
-    if (cached && Date.now() - cached.at < 10 * 60_000) return { ...base, models: cached.models, source: "cli" };
+    // An older list is answered at once and asked again behind it: asking starts a CLI, seconds that 开始 and 新会话
+    // waited for (2026-10-23).
+    if (cached) {
+      if (Date.now() - cached.at >= 10 * 60_000) this.askModelsFor(profile, cacheKey).catch((err: unknown) => this.emit("log", `could not ask Claude Code for its models (${profileId}): ${firstLine(err)}`));
+      return { ...base, models: cached.models, source: "cli" };
+    }
     try {
-      const env = claudeEnv(profile, this.options.providers, this.options.credentials, this.newHome(profile), this.options.baseEnv);
-      const models = await askModels(profile, env, this.options.claudeHome);
-      this.modelCache.set(cacheKey, { at: Date.now(), models });
-      return { ...base, models, source: "cli" };
+      return { ...base, models: await this.askModelsFor(profile, cacheKey), source: "cli" };
     } catch (err) {
       this.emit("log", `could not ask Claude Code for its models (${profileId}): ${firstLine(err)}`);
       return { ...base, models: CLAUDE_BUILTIN_MODELS, source: "builtin" };
     }
+  }
+
+  /** Asks the CLI for the profile's models into the cache; one ask at a time per profile and login. */
+  private async askModelsFor(profile: ModelProfile, cacheKey: string): Promise<ModelOption[]> {
+    let asking = this.askingModels.get(cacheKey);
+    if (!asking) {
+      const env = claudeEnv(profile, this.options.providers, this.options.credentials, this.newHome(profile), this.options.baseEnv);
+      asking = askModels(profile, env, this.options.claudeHome).finally(() => this.askingModels.delete(cacheKey));
+      this.askingModels.set(cacheKey, asking);
+    }
+    const models = await asking;
+    this.modelCache.set(cacheKey, { at: Date.now(), models });
+    return models;
   }
 
   async archive(sessionId: Id): Promise<Session[]> {

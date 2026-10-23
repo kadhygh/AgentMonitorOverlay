@@ -292,7 +292,14 @@ export class CodexServerManager extends EventEmitter<CodexServerManagerEvents> {
   private async pickPort(profileId: string): Promise<number> {
     const [lo, hi] = this.options.portRange ?? CODEX_PORT_RANGE;
     const taken = new Set([...this.entries.values()].filter((e) => e.profileId !== profileId).map((e) => e.port));
-    for (let port = lo; port <= hi; port++) if (!taken.has(port) && (await portFree(port))) return port;
+    // From a random place in the range: Hosts starting together (parallel e2e runs) all took the lowest free port, and
+    // all but one of their servers exited with "address in use" (os error 10048).
+    const size = hi - lo + 1;
+    const from = Math.floor(Math.random() * size);
+    for (let i = 0; i < size; i++) {
+      const port = lo + ((from + i) % size);
+      if (!taken.has(port) && (await portFree(port))) return port;
+    }
     throw new Error(`no free port in ${lo}-${hi}`);
   }
 

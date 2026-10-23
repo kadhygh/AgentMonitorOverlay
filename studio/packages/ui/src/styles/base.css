@@ -223,3 +223,15 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 /* 主控 (stage 16): on the task's board card, canvas card and task page. */
 .lead-badge { display: inline-block; margin-right: 6px; padding: 0 5px; border-radius: var(--r-btn); background: var(--primary); color: var(--on-primary); font-family: var(--font-ui, inherit); font-weight: 600; font-size: 11px; line-height: 17px; vertical-align: 2px; letter-spacing: 0.05em; }
 h1 .lead-badge { margin: 0 0 0 10px; font-size: 12px; line-height: 20px; vertical-align: 4px; }
+
+/* 正在启动 (lib/StartingCover.tsx): over the part of the page a session starts in; clear at first, dimmed with a spinner
+   after a moment. */
+.starting-cover { position: absolute; inset: 0; z-index: 30; display: flex; align-items: center; justify-content: center; outline: none; cursor: progress; }
+.starting-cover.shown { background: color-mix(in srgb, var(--panel) 72%, transparent); animation: starting-in 0.15s ease-out; }
+.starting-box { display: flex; flex-direction: column; align-items: center; gap: 10px; max-width: 320px; padding: 18px 24px; border-radius: var(--r-l); background: var(--panel-raised); border: 1px solid var(--border-strong); box-shadow: 0 8px 24px var(--shadow); text-align: center; }
+.starting-spin { width: 22px; height: 22px; border-radius: 50%; border: 2.5px solid color-mix(in srgb, var(--primary) 25%, transparent); border-top-color: var(--primary); animation: starting-spin 0.8s linear infinite; }
+.starting-label { font-size: var(--fs-body); color: var(--text); }
+.starting-slow { font-size: var(--fs-cap); color: var(--text-dim); line-height: var(--lh); }
+@keyframes starting-in { from { opacity: 0; } }
+@keyframes starting-spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .starting-spin { animation-duration: 2.4s; } }

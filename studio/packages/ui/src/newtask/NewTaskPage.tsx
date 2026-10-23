@@ -5,7 +5,8 @@ import type { Scope } from "../board/Board.js";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { activeModel, sameOptions, useProfileChoices } from "../lib/choices.js";
 import { samePick } from "../lib/recents.js";
-import { pickFolder } from "../lib/profiles.js";
+import { pickFolder, shortModel } from "../lib/profiles.js";
+import { StartingCover } from "../lib/StartingCover.js";
 import { usePacks } from "../packs/usePacks.js";
 import { useFeature } from "../lib/features.js";
 import { useSettings } from "../settings/SettingsDialog.js";
@@ -54,6 +55,8 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
   const [drawer, setDrawer] = useState(false);
   const [morePerms, setMorePerms] = useState(false);
   const [busy, setBusy] = useState(false);
+  // 正在启动: the page is covered while the first session starts (filing in 待办 is quick).
+  const [starting, setStarting] = useState<string | null>(null);
   const [error, setError] = useState("");
   const [templateKey, setTemplateKey] = useState("");
   // "显示在画布上" for a task in a topic: off unless the page was opened from that topic's canvas (then always on).
@@ -106,6 +109,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     if (attach.uploading) return setError("图片还在上传，稍等一下。");
     if (attach.failed) return setError("有图片上传失败，移除后再开始。");
     setBusy(true);
+    if (!file) setStarting(`正在启动 ${shortModel(profiles.find((p) => p.id === draft.pick.profileId))}…`);
     setError("");
     try {
       const template = chosenTemplate && draft.projectId ? { workspaceId: draft.projectId, pack: chosenTemplate.pack, template: chosenTemplate.template.id } : undefined;
@@ -118,6 +122,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
     } catch (err) {
       setError(err instanceof HostApiError ? err.message : String(err));
       setBusy(false);
+      setStarting(null);
     }
   }
 
@@ -366,6 +371,7 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
           )}
         </div>
       </div>
+      {starting && <StartingCover label={starting} />}
     </section>
   );
 }

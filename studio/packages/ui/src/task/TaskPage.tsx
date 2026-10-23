@@ -7,6 +7,7 @@ import { useAnnotationRefs } from "../review/annotationRefs.js";
 import { rememberSession } from "../shell/lastPlace.js";
 import { navHistory } from "../shell/navHistory.js";
 import { shortModel } from "../lib/profiles.js";
+import { StartingCover } from "../lib/StartingCover.js";
 import { sessionModelName, useProfileChoices } from "../lib/choices.js";
 import { SessionTree } from "./SessionTree.js";
 import { Thread } from "./Thread.js";
@@ -188,15 +189,25 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
     return run(() => call(link, "POST /api/tasks/:id/archive", { id: task.id }), () => setArchivedBox({ sessions: liveSessions }));
   };
   const unarchiveTask = () => run(() => call(link, "POST /api/tasks/:id/unarchive", { id: task.id }), () => setToast({ text: "任务已恢复。" }));
+  // 正在启动: the conversation column is covered while a new session starts (its process takes a few seconds).
+  const [starting, setStarting] = useState<string | null>(null);
+  const starts = <T,>(profileId: string, fn: () => Promise<T>) => async () => {
+    setStarting(`正在启动 ${shortModel(profile(profileId))}…`);
+    try {
+      return await fn();
+    } finally {
+      setStarting(null);
+    }
+  };
   const newSession = (input: { profileId: string; options?: SessionOptions }) =>
-    run(() => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input), (s) => setSelected(s.id));
+    run(starts(input.profileId, () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, input)), (s) => setSelected(s.id));
   const openPreset = (key: string) => {
     const [workspaceId, pack, preset] = key.split("/") as [string, string, string];
     void run(() => call(link, "POST /api/workspaces/:id/packs/:pack/presets/:preset/draft", { id: workspaceId, pack, preset }, { taskId: task.id }), setDraft);
   };
   const startPreset = (d: PresetDraft, input: { profileId: string; text: string }) =>
     run(
-      () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, { profileId: input.profileId, text: input.text }),
+      starts(input.profileId, () => call(link, "POST /api/tasks/:id/sessions", { id: task.id }, { profileId: input.profileId, text: input.text })),
       (s) => {
         setDraft(null);
         setSelected(s.id);
@@ -600,6 +611,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
               decisions={session ? decisions.filter((d) => d.sessionId === session.id) : []}
             />
           </FileLinks>
+          {starting && <StartingCover label={starting} />}
         </div>
         {/* While open, the quick look takes the right column (files.css hides the annotation panel beside it). */}
         {preview && (
