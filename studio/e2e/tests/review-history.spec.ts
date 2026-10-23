@@ -297,7 +297,7 @@ test("keys of the review: l / ; step through the file's changes, h opens 历史 
   expect(await row()).toBe(first);
 
   // w / s: the file a page up / down; a / d: 只看改动 / 完整文件, the keys shown on the buttons and under the files (2026-10-22).
-  await expect(review.getByTestId("review-keys")).toContainText("w / s 上下翻页，a 只看改动，d 完整文件，h 历史");
+  await expect(review.getByTestId("review-keys")).toContainText("w / s 上下翻页，a 只看改动，d 完整文件，e 单栏 / 左右对照，q 切换范围，r 刷新，h 历史");
   await expect(review.getByRole("button", { name: "只看改动" }).locator("kbd")).toHaveText("a");
   await expect(review.getByRole("button", { name: "完整文件" }).locator("kbd")).toHaveText("d");
   await expect(review.getByTestId("review-history").locator("kbd")).toHaveText("h");

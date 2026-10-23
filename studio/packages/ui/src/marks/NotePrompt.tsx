@@ -1,14 +1,21 @@
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 
-// 书签说明 (2026-10-20): adding a bookmark first asks for its note, in a small dialog with only 确认 (no close; the note
-// may stay empty). For every window, like the toasts: askBookmarkNote() from anywhere, one <BookmarkNotePrompt /> per
-// window shows it. A second ask while one is open waits its turn.
+// 书签说明 (2026-10-20): adding a bookmark first asks for its note, in a small dialog (the note may stay empty). × or
+// Esc closes it without adding the bookmark (2026-10-23). For every window, like the toasts: askBookmarkNote() from
+// anywhere, one <BookmarkNotePrompt /> per window shows it. A second ask while one is open waits its turn.
 
 interface Ask {
   id: number;
   subject: string;
-  resolve(note: string): void;
+  resolve(note: string | null): void;
+}
+
+/** The person closed 书签说明 (× or Esc): no bookmark. */
+export class BookmarkCancelled extends Error {
+  constructor() {
+    super("没有加书签");
+  }
 }
 
 let queue: Ask[] = [];
@@ -16,8 +23,8 @@ let seq = 0;
 const listeners = new Set<(ask: Ask | null) => void>();
 const emit = () => listeners.forEach((l) => l(queue[0] ?? null));
 
-/** The note for a new bookmark of `subject` (a file name, a quoted passage); "" when left empty. */
-export function askBookmarkNote(subject: string): Promise<string> {
+/** The note for a new bookmark of `subject` (a file name, a quoted passage); "" when left empty, null when closed. */
+export function askBookmarkNote(subject: string): Promise<string | null> {
   return new Promise((resolve) => {
     queue = [...queue, { id: ++seq, subject, resolve }];
     emit();
@@ -38,14 +45,23 @@ function NoteDialog({ ask }: { ask: Ask }) {
   const [note, setNote] = useState("");
   const box = useRef<HTMLTextAreaElement>(null);
   useEffect(() => box.current?.focus(), []);
-  const confirm = () => {
+  const close = (value: string | null) => {
     queue = queue.filter((a) => a !== ask);
-    ask.resolve(note.trim());
+    ask.resolve(value);
     emit();
   };
+  const confirm = () => close(note.trim());
   return createPortal(
-    // No way out but 确认: clicks outside and Esc do nothing (and Esc stays here, not closing what is underneath).
-    <div className="modal-backdrop confirm-backdrop bookmark-note-backdrop" onKeyDown={(e) => e.key === "Escape" && e.stopPropagation()}>
+    // Esc closes it without a bookmark (and stays here, not closing what is underneath); a click outside does nothing.
+    <div
+      className="modal-backdrop confirm-backdrop bookmark-note-backdrop"
+      onKeyDown={(e) => {
+        if (e.key !== "Escape") return;
+        e.stopPropagation();
+        e.preventDefault();
+        close(null);
+      }}
+    >
       <form
         className="modal confirm-modal bookmark-note"
         role="dialog"
@@ -57,9 +73,15 @@ function NoteDialog({ ask }: { ask: Ask }) {
           confirm();
         }}
       >
-        <span className="modal-title" id="bookmark-note-title">
-          书签说明
-        </span>
+        <div className="modal-head">
+          <span className="modal-title" id="bookmark-note-title">
+            书签说明
+          </span>
+          <span className="spacer" />
+          <button type="button" className="icon-btn" aria-label="不加书签" title="不加书签（Esc）" onClick={() => close(null)} data-testid="bookmark-note-cancel">
+            ×
+          </button>
+        </div>
         <span className="bookmark-note-subject" title={ask.subject}>
           {ask.subject}
         </span>

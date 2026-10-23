@@ -23,10 +23,15 @@
 }
 
 .gr-app { height: 100%; display: flex; flex-direction: column; background: var(--bg); }
-.gr-head { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--bg-header); flex-wrap: wrap; }
-.gr-title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); }
-.gr-project { font-weight: 600; }
-.gr-branch { font-family: var(--font-code); font-size: var(--fs-cap); color: var(--text-dim); }
+/* One line (2026-10-23): the buttons never shrink or wrap (lib/fitWidth.ts keeps the window wide enough); the
+   project, branch and commit give way, cut short. */
+.gr-head { display: flex; align-items: center; gap: 12px; padding: 10px 18px; border-bottom: 1px solid var(--border); background: var(--bg-header); flex-wrap: nowrap; }
+.gr-head > button, .gr-head > .gr-seg, .gr-head > .gr-title { flex: none; }
+.gr-head > .spacer { min-width: 0; }
+.gr-title { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); white-space: nowrap; }
+.gr-project { font-weight: 600; min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gr-branch { font-family: var(--font-code); font-size: var(--fs-cap); color: var(--text-dim); min-width: 40px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.gr-seg-key { align-self: center; margin: 0 6px; }
 .gr-seg { display: inline-flex; border: 1px solid var(--border-strong); border-radius: var(--r-btn); overflow: hidden; }
 .gr-seg button { height: var(--ctl-s); padding: 0 10px; border: none; background: var(--panel); color: var(--text-dim); font-size: var(--fs-cap); cursor: pointer; }
 .gr-seg button + button { border-left: 1px solid var(--border); }
@@ -187,7 +192,7 @@ button[aria-pressed="true"] .gr-key { color: var(--text-dim); border-color: var(
 .gr-pair-notes .gr-comment, .gr-pair-notes .gr-draft { margin: 4px 16px 6px 64px; }
 
 /* A commit's window and the history picker (S13-B). */
-.gr-commit { min-width: 0; display: inline-flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap; }
+.gr-commit { min-width: 60px; display: inline-flex; align-items: baseline; gap: 8px; overflow: hidden; white-space: nowrap; }
 .gr-commit code { font-family: var(--font-code); font-size: var(--fs-cap); color: var(--text-dim); }
 .gr-commit-subject { min-width: 0; overflow: hidden; text-overflow: ellipsis; font-weight: 600; }
 .commit-picker .file-picker-list button { gap: 10px; }

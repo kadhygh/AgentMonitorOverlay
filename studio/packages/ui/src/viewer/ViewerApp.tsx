@@ -4,6 +4,7 @@ import { copyText, HostApiError, type HostLink } from "../host/client.js";
 import { useHostState } from "../host/useHostState.js";
 import { openInEditor, revealInExplorer, type FileRef } from "../lib/openin.js";
 import { showToast } from "../lib/toast.js";
+import { useFitWidth } from "../lib/fitWidth.js";
 import { FileContent, isImage, isMarkdownText, RenderedToggle, useTextFile } from "../files/FilePreview.js";
 import { useVsCode } from "../files/FileLinks.js";
 import { fileName, folderOf } from "../files/paths.js";
@@ -56,6 +57,21 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
   const [rendered, setRendered] = useState(!target.line);
   const [reload, setReload] = useState(0);
   const [copied, setCopied] = useState(false);
+  const head = useRef<HTMLElement>(null);
+  useFitWidth(head);
+
+  // r 重新载入 in 文件 mode, as 刷新 in Git Review (2026-10-23; 改动 has Git Review's own keys).
+  useEffect(() => {
+    if (mode !== "file") return;
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.key !== "r" || e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
+      e.preventDefault();
+      setReload((n) => n + 1);
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [mode]);
   const [pinned, setPinned] = useState(false);
   // Every open is a fresh read, including the same path after the agent saved another edit.
   const readVersion = `${reload}:${target.nonce ?? ""}`;
@@ -97,7 +113,7 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
 
   return (
     <div className="vw-app" data-testid="viewer" data-mode={mode}>
-      <header className="vw-head">
+      <header className="vw-head" ref={head}>
         <div className="gr-seg" role="group" aria-label="查看方式">
           {MODES.map((m) => {
             const off = m.id === "changes" && (!workspace || !repo);
@@ -167,8 +183,9 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
                 {copied ? "已复制" : "复制路径"}
               </button>
               <MarkButton link={link} file={file} line={target.line ?? null} sessionId={target.sessionId ?? null} />
-              <button type="button" className="btn-ghost small dim" title="重新读取文件" onClick={() => setReload((n) => n + 1)}>
+              <button type="button" className="btn-ghost small dim" title="重新读取文件（r）" onClick={() => setReload((n) => n + 1)}>
                 重新载入
+                <kbd className="gr-key">r</kbd>
               </button>
             </>
           )}

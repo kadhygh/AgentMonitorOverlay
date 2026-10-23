@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { composeGitReviewMessage, diffHunks, type GitChangedFile, type GitDiffLine, type GitReviewComment, type Session } from "@amo-studio/protocol";
-import { anchorRow, changeStarts, diffRows, draftCounts, latestMainSession, listOrder, parseReviewHash, parseRowKey, placeComments, reviewHash, sessionChoices, step } from "./logic.js";
+import { anchorRow, changeStarts, cycle, nextOf, diffRows, draftCounts, latestMainSession, listOrder, parseReviewHash, parseRowKey, placeComments, reviewHash, sessionChoices, step } from "./logic.js";
 
 const file = (path: string, extra: Partial<GitChangedFile> = {}): GitChangedFile => ({ path, status: "modified", additions: 1, deletions: 0, binary: false, ...extra });
 
@@ -160,5 +160,19 @@ describe("keeping the place across views (S14-A)", () => {
     const text = composeGitReviewMessage([{ ...comment({ range: "file", path: "a.ts", line: 4, lineText: "x()", note: "为什么" }) }], "game");
     expect(text).toBe("文件批注：我看了「game」的文件，有 1 条批注。\n\n### a.ts\n\na.ts:4\n> x()\n为什么");
     expect(composeGitReviewMessage([comment({ range: "file" }), comment({ id: "b" })], "game").startsWith("Git Review 批注")).toBe(true);
+  });
+});
+
+describe("keys shared by Review and the viewer (2026-10-23)", () => {
+  it("Tab goes round the marked rows; q goes round the ranges", () => {
+    expect(cycle([], null, 1)).toBeNull();
+    expect(cycle([4, 9, 20], null, 1)).toBe(4);
+    expect(cycle([4, 9, 20], null, -1)).toBe(20);
+    expect(cycle([4, 9, 20], 4, 1)).toBe(9);
+    expect(cycle([4, 9, 20], 20, 1)).toBe(4);
+    expect(cycle([4, 9, 20], 4, -1)).toBe(20);
+    expect(cycle([4, 9, 20], 12, -1)).toBe(9);
+    expect(nextOf(["working", "branch", "staged"], "working")).toBe("branch");
+    expect(nextOf(["working", "branch", "staged"], "staged")).toBe("working");
   });
 });

@@ -60,6 +60,20 @@ test("review a project's changes, comment a line and send it to the session", as
   await expect.poll(() => windowState(app, "review")).toMatchObject({ visible: true, onScreen: false, anyFocused: false });
   await expect(review.getByTestId("review-branch")).toHaveText("feature");
 
+  // The window cannot be made narrower than the head's buttons need (2026-10-23): 历史 … 刷新 on one line, whole.
+  const narrowed = await app.evaluate(({ BrowserWindow }) => {
+    const w = BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes("#review"))!;
+    w.setSize(400, 700);
+    return { size: w.getSize()[0], min: w.getMinimumSize()[0] };
+  });
+  expect(narrowed.min).toBeGreaterThan(400);
+  expect(narrowed.size).toBe(narrowed.min);
+  const refresh = await review.getByRole("button", { name: /刷新/ }).boundingBox();
+  const history = await review.getByTestId("review-history").boundingBox();
+  expect(refresh!.x + refresh!.width).toBeLessThanOrEqual(await review.evaluate(() => document.documentElement.clientWidth));
+  expect(Math.abs(refresh!.y - history!.y)).toBeLessThan(4);
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((x) => x.webContents.getURL().includes("#review"))!.setSize(1280, 860));
+
   // 工作区改动: modified, deleted and untracked files with their counts.
   const files = review.getByTestId("review-file");
   await expect(files).toHaveCount(3);
@@ -108,8 +122,40 @@ test("review a project's changes, comment a line and send it to the session", as
   await expect(review.getByTestId("review-file-head")).toContainText("drop.lua");
   await expect(review.getByTestId("diff-line")).toHaveCount(11);
 
-  // 本分支全部 adds the branch's commit.
-  await review.getByRole("button", { name: "本分支全部" }).click();
+  // Tab / Shift+Tab between the commented lines, round at the ends (2026-10-23).
+  const activeLine = review.locator(".gr-line.active");
+  await review.locator("body").press("Tab");
+  await expect(activeLine).toHaveCount(1);
+  const first = await activeLine.getAttribute("data-line");
+  expect(["new:2", "old:3"]).toContain(first);
+  const second = first === "new:2" ? "old:3" : "new:2";
+  await review.locator("body").press("Tab");
+  await expect(activeLine).toHaveAttribute("data-line", second);
+  await review.locator("body").press("Tab");
+  await expect(activeLine).toHaveAttribute("data-line", first!);
+  await review.locator("body").press("Shift+Tab");
+  await expect(activeLine).toHaveAttribute("data-line", second);
+  // e: 单栏 ⇄ 左右对照.
+  const layout = (name: string) => review.getByRole("group", { name: "版式" }).getByRole("button", { name });
+  await review.locator("body").press("e");
+  await expect(layout("左右对照")).toHaveAttribute("aria-pressed", "true");
+  await review.locator("body").press("e");
+  await expect(layout("单栏")).toHaveAttribute("aria-pressed", "true");
+
+  // q to 本分支全部: it adds the branch's commit.
+  const range = (name: string) => review.getByRole("group", { name: "对比范围" }).getByRole("button", { name });
+  await review.locator("body").press("q");
+  await expect(range("本分支全部")).toHaveAttribute("aria-pressed", "true");
+  await expect(files).toHaveCount(4);
+  // r reads it again; q goes on to 已暂存 and round to 工作区改动.
+  await review.locator("body").press("r");
+  await expect(files).toHaveCount(4);
+  await review.locator("body").press("q");
+  await expect(range("已暂存")).toHaveAttribute("aria-pressed", "true");
+  await review.locator("body").press("q");
+  await expect(range("工作区改动")).toHaveAttribute("aria-pressed", "true");
+  await review.locator("body").press("q");
+  await expect(range("本分支全部")).toHaveAttribute("aria-pressed", "true");
   await expect(files).toHaveCount(4);
   await expect(files.filter({ hasText: "feature.lua" })).toHaveCount(1);
   await expect(review.getByTestId("review-branch")).toContainText("对比 main");

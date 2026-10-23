@@ -61,6 +61,16 @@ test("files with 重点; the same session sending again a moment later adds to t
   await expect(win.getByTestId("viewpack-mark")).toHaveCount(2);
   await expect(win.getByTestId("highlight-note")).toHaveText([/第 1 行\s*0\.1 → 0\.25/, /第 2–3 行\s*这两行没变/]);
   await expect(win.locator(".gr-line.hl")).toHaveCount(3);
+  // Tab / Shift+Tab between the 重点, round at the ends, as between comments in Git Review (2026-10-23).
+  const at = (line: number) => win.locator(`.gr-line.active[data-line="new:${line}"]`);
+  await win.locator("body").press("Tab");
+  await expect(at(1)).toHaveCount(1);
+  await win.locator("body").press("Tab");
+  await expect(at(2)).toHaveCount(1);
+  await win.locator("body").press("Tab");
+  await expect(at(1)).toHaveCount(1);
+  await win.locator("body").press("Shift+Tab");
+  await expect(at(2)).toHaveCount(1);
 
   // A second call a moment later: the same window, now with a list; what was added is shown.
   await studio.api("POST", "/api/viewpacks", { sessionId: session.id, items: [{ kind: "file", path: "notes.md" }] });

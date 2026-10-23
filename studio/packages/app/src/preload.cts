@@ -12,6 +12,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
   /** The page's summary of one window drag (lib/resizeTrace.ts), for logs/resize-trace.log. */
   trace: (summary: unknown): void => electron.ipcRenderer.send("amo:trace", summary),
   copyText: (text: string): Promise<void> => electron.ipcRenderer.invoke("amo:copy", text),
+  /** The width (CSS px) the page's top bar needs: the window is not made narrower (2026-10-23). */
+  setMinWidth: (px: number): void => electron.ipcRenderer.send("amo:min-width", px),
   /** The workbench window's own title bar buttons. */
   windowControls: {
     minimize: (): void => electron.ipcRenderer.send("amo:window", "minimize"),

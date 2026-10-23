@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { GitFileDiff, GitReviewComment, ProposalViewItem, StateSnapshot, ViewPack, Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { showToast } from "../lib/toast.js";
 import { DiffView } from "../gitreview/DiffView.js";
 import { dropDraft, newDraftKey } from "../gitreview/drafts.js";
-import { diffRows, sessionChoices, type DiffMode } from "../gitreview/logic.js";
+import { changeStarts, cycle, diffRows, sessionChoices, step, type DiffMode } from "../gitreview/logic.js";
+import { revealRow } from "../gitreview/reveal.js";
 import { useDiffTokens } from "../gitreview/tokens.js";
 import { proposalMessage, type ProposalComment } from "./logic.js";
 
@@ -64,6 +65,49 @@ export function ProposalItemView({ link, state, pack, workspace, item, active }:
   const elsewhere = useMemo(() => comments.filter((c) => !placed.has(`${c.side}:${c.line}`)).map(asComment), [comments, placed]); // eslint-disable-line react-hooks/exhaustive-deps
   const draftKey = (rowKey: string) => newDraftKey(`viewpack:${pack.id}`, item.id, rowKey);
 
+  // Git Review's keys (2026-10-23): e 单栏 ⇄ 左右对照, a / d 只看改动 / 完整文件, n / p (l / ;) between changes,
+  // Tab / Shift+Tab between the commented lines, w / s a page; not while typing.
+  const scroller = useRef<HTMLDivElement>(null);
+  const changeRows = useMemo(() => changeStarts(rows), [rows]);
+  const markRows = useMemo(() => rows.flatMap((r, i) => (r.kind === "line" && placed.has(r.key) ? [i] : [])), [rows, placed]);
+  useEffect(() => {
+    if (!active) return;
+    const toRow = (row: number) => {
+      setActiveRow(row);
+      if (scroller.current) void revealRow(scroller.current, row).then((r) => r?.scrollIntoView({ block: "center" }));
+    };
+    const onKey = (e: KeyboardEvent) => {
+      const el = e.target as HTMLElement | null;
+      if (e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
+      const k = e.key;
+      if (k === "e") {
+        e.preventDefault();
+        setSplit((v) => !v);
+      } else if (k === "a" || k === "d") {
+        e.preventDefault();
+        setMode(k === "a" ? "changes" : "full");
+      } else if (k === "n" || k === "p" || k === "l" || k === ";") {
+        const on = k === "n" || k === "l";
+        const to = step(changeRows, activeRow ?? (on ? -1 : rows.length), on ? 1 : -1);
+        if (to === null) return;
+        e.preventDefault();
+        toRow(to);
+      } else if (k === "Tab") {
+        const to = cycle(markRows, activeRow, e.shiftKey ? -1 : 1);
+        if (to === null) return;
+        e.preventDefault();
+        toRow(to);
+      } else if (k === "w" || k === "s") {
+        const box = scroller.current;
+        if (!box) return;
+        e.preventDefault();
+        box.scrollBy({ top: (k === "s" ? 1 : -1) * Math.max(40, box.clientHeight - 60) });
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [active, changeRows, markRows, activeRow, rows.length]);
+
   async function send() {
     if (!target || !comments.length) return;
     setBusy(true);
@@ -86,27 +130,30 @@ export function ProposalItemView({ link, state, pack, workspace, item, active }:
           <span className="vp-tag">{item.isNew ? "新文件 · 改动预览" : "改动预览"}</span>
         </span>
         <div className="vw-actions">
-          <div className="gr-seg" role="group" aria-label="显示方式">
+          <div className="gr-seg" role="group" aria-label="范围">
+            <button type="button" aria-pressed={mode === "changes"} title="只看改动（a）" onClick={() => setMode("changes")}>
+              只看改动
+              <kbd className="gr-key">a</kbd>
+            </button>
+            <button type="button" aria-pressed={mode === "full"} title="完整文件（d）" onClick={() => setMode("full")}>
+              完整文件
+              <kbd className="gr-key">d</kbd>
+            </button>
+          </div>
+          <div className="gr-seg" role="group" aria-label="显示方式" title="e：单栏和左右对照来回切换">
             <button type="button" aria-pressed={!split} onClick={() => setSplit(false)}>
               单栏
             </button>
             <button type="button" aria-pressed={split} onClick={() => setSplit(true)}>
               左右对照
             </button>
-          </div>
-          <div className="gr-seg" role="group" aria-label="范围">
-            <button type="button" aria-pressed={mode === "changes"} onClick={() => setMode("changes")}>
-              只看改动
-            </button>
-            <button type="button" aria-pressed={mode === "full"} onClick={() => setMode("full")}>
-              完整文件
-            </button>
+            <kbd className="gr-key gr-seg-key">e</kbd>
           </div>
         </div>
       </div>
       <div className="vp-note vp-note-dim">{item.note ? `${item.note}\n` : ""}这只是预览：磁盘上的文件没有改。批注只在这个窗口里，发回会话后清空。</div>
       <div className="gr-scroll-wrap">
-        <div className="gr-scroll vp-proposal-scroll">
+        <div className="gr-scroll vp-proposal-scroll" ref={scroller}>
           {error && <div className="gr-notice">读不到改动：{error}</div>}
           {!diff && !error && <div className="gr-notice">正在比较…</div>}
           {diff && (

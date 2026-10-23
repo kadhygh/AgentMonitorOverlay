@@ -6,7 +6,7 @@ import { DiffView, type ViewMark } from "../gitreview/DiffView.js";
 import { commentsChanged, SendBar, useReviewComments } from "../gitreview/comments.js";
 import { dropDraft, editDraftKey, newDraftKey } from "../gitreview/drafts.js";
 import { FindBar } from "../gitreview/FindBar.js";
-import { diffRows, placeComments } from "../gitreview/logic.js";
+import { cycle, diffRows, placeComments } from "../gitreview/logic.js";
 import { revealRow } from "../gitreview/reveal.js";
 import { useDiffTokens } from "../gitreview/tokens.js";
 import { relativeIn } from "./logic.js";
@@ -89,17 +89,44 @@ export function FileReview({
     scrollToLine(el, line, (last - line + 1) * 20 < el.clientHeight * 0.6 ? el.clientHeight / 3 : 40);
   }, [openKey, file]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Ctrl+G: go to a line.
+  // The marked lines, for Tab: the commented ones and the 重点 (a line's row is its number less one).
+  const markRows = useMemo(() => {
+    const at = new Set(rows.flatMap((r, i) => (r.kind === "line" && placed.has(r.key) ? [i] : [])));
+    for (const h of highlights ?? []) at.add(h.from - 1);
+    return [...at].filter((i) => i >= 0 && i < rows.length).sort((a, b) => a - b);
+  }, [rows, placed, highlights]);
+  const toRow = (row: number) => {
+    setActive(row);
+    const el = scroller.current;
+    if (el) void revealRow(el, row).then((r) => r?.scrollIntoView({ block: "center" }));
+  };
+
+  // Ctrl+G goes to a line; as in Git Review (2026-10-23): Tab / Shift+Tab between the marked lines, w / s a page.
   useEffect(() => {
     if (!active) return;
     const onKey = (e: KeyboardEvent) => {
-      if (!(e.ctrlKey || e.metaKey) || e.altKey || e.shiftKey || e.key.toLowerCase() !== "g") return;
-      e.preventDefault();
-      setGoto(true);
+      if ((e.ctrlKey || e.metaKey) && !e.altKey && !e.shiftKey && e.key.toLowerCase() === "g") {
+        e.preventDefault();
+        setGoto(true);
+        return;
+      }
+      const el = e.target as HTMLElement | null;
+      if (e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
+      if (e.key === "Tab") {
+        const to = cycle(markRows, active_, e.shiftKey ? -1 : 1);
+        if (to === null) return;
+        e.preventDefault();
+        toRow(to);
+      } else if (e.key === "w" || e.key === "s") {
+        const box = scroller.current;
+        if (!box) return;
+        e.preventDefault();
+        box.scrollBy({ top: (e.key === "s" ? 1 : -1) * Math.max(40, box.clientHeight - 60) });
+      }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [active]);
+  }, [active, markRows, active_]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function run(fn: () => Promise<unknown>) {
     setBusy(true);

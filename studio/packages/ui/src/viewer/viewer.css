@@ -5,7 +5,9 @@
 .vw-head { display: flex; align-items: center; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border); background: var(--bg-header); }
 .vw-head > .gr-seg { flex: none; }
 .vw-title { display: flex; align-items: baseline; gap: 8px; min-width: 80px; flex: 1 1 auto; overflow: hidden; }
-.vw-actions { flex: 0 1 auto; display: flex; flex-wrap: wrap; justify-content: flex-end; align-items: center; gap: 6px; }
+/* One line (2026-10-23): the actions never wrap; the window is kept wide enough for them (lib/fitWidth.ts). */
+.vw-actions { flex: none; display: flex; flex-wrap: nowrap; justify-content: flex-end; align-items: center; gap: 6px; }
+.vw-actions > button { white-space: nowrap; }
 .vw-name { font-family: var(--font-display); font-weight: 600; font-size: var(--fs-title); white-space: nowrap; }
 .vw-lines { flex: none; padding: 0 6px; border-radius: var(--r-btn); background: var(--attention-bg); color: var(--attention); font-size: var(--fs-cap); font-variant-numeric: tabular-nums; }
 .vw-dir { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; direction: rtl; text-align: left; font-family: var(--font-code); font-size: var(--fs-cap); color: var(--text-dim); }

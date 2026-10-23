@@ -4,6 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent } from "../host/events.js";
 import { showToast } from "../lib/toast.js";
 import { pinViewer, viewerPinned } from "../viewer/open.js";
+import { useFitWidth } from "../lib/fitWidth.js";
 import { itemToShow } from "./logic.js";
 import { VIEW_KIND_VIEWS, type ItemViewProps } from "./kinds.js";
 
@@ -17,6 +18,8 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
   const [selected, setSelected] = useState<string | null>(null);
   const [pinned, setPinned] = useState(false);
   const shown = useRef<ViewPack | null>(null);
+  const head = useRef<HTMLElement>(null);
+  useFitWidth(head);
 
   const take = (next: ViewPack) => {
     setSelected((cur) => itemToShow(shown.current?.id === next.id ? shown.current : null, next, cur));
@@ -66,7 +69,7 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
 
   return (
     <div className="vw-app vp-app" data-testid="viewpack">
-      <header className="vw-head">
+      <header className="vw-head" ref={head}>
         <div className="vw-title">
           <span className="vw-name" data-testid="viewpack-title">
             {pack.title}

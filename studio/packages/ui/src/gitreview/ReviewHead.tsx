@@ -3,6 +3,8 @@ import type { HostLink } from "../host/client.js";
 import { formatWhen } from "../attach/refs.js";
 import { MarkButton } from "../marks/MarkButton.js";
 import { openViewer } from "../viewer/open.js";
+import { useRef } from "react";
+import { useFitWidth } from "../lib/fitWidth.js";
 import { countLabel, STATUS_NAME, type DiffMode } from "./logic.js";
 
 // The Review window's bars (stage 16 split out of ReviewApp.tsx): the head (what is compared, and how it shows) and
@@ -49,8 +51,11 @@ export function ReviewHead({
   onSplit(split: boolean): void;
   onRefresh(): void;
 }) {
+  // 历史 … 刷新 always on one line: the window is not made narrower than they need (2026-10-23).
+  const bar = useRef<HTMLElement>(null);
+  useFitWidth(bar);
   return (
-    <header className="gr-head">
+    <header className="gr-head" ref={bar}>
       <span className="gr-title">{commit ? "提交" : "Git Review"}</span>
       <span className="gr-project">{workspaceName}</span>
       {commit && (
@@ -81,12 +86,13 @@ export function ReviewHead({
         </button>
       )}
       {!commit && (
-        <div className="gr-seg" role="group" aria-label="对比范围">
+        <div className="gr-seg" role="group" aria-label="对比范围" title="q：在这三种范围之间切换">
           {GIT_RANGES.map((r) => (
-            <button key={r.id} type="button" aria-pressed={range === r.id} title={r.hint} onClick={() => onRange(r.id)}>
+            <button key={r.id} type="button" aria-pressed={range === r.id} title={`${r.hint}（q 切换）`} onClick={() => onRange(r.id)}>
               {r.label}
             </button>
           ))}
+          <kbd className="gr-key gr-seg-key">q</kbd>
         </div>
       )}
       <div className="gr-seg" role="group" aria-label="显示方式">
@@ -97,21 +103,23 @@ export function ReviewHead({
           </button>
         ))}
       </div>
-      <div className="gr-seg" role="group" aria-label="版式">
+      <div className="gr-seg" role="group" aria-label="版式" title="e：单栏和左右对照来回切换">
         {LAYOUTS.map((l) => (
-          <button key={l.label} type="button" aria-pressed={split === l.split} title={l.hint} onClick={() => onSplit(l.split)}>
+          <button key={l.label} type="button" aria-pressed={split === l.split} title={`${l.hint}（e 切换）`} onClick={() => onSplit(l.split)}>
             {l.label}
           </button>
         ))}
+        <kbd className="gr-key gr-seg-key">e</kbd>
       </div>
       {!commit && (
         <button
           type="button"
           className="btn-ghost small"
           onClick={onRefresh}
-          title="重新读取改动"
+          title="重新读取改动（r）"
         >
           刷新
+          <kbd className="gr-key">r</kbd>
         </button>
       )}
     </header>

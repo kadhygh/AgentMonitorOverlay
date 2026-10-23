@@ -4,6 +4,7 @@ import { HostApiError, type HostLink } from "../host/client.js";
 import type { FileRef } from "../lib/openin.js";
 import { findMark } from "./logic.js";
 import { addFileMark, bookmarkAdded, markTarget, openMarks } from "./open.js";
+import { BookmarkCancelled } from "./NotePrompt.js";
 import { useFileMarks } from "./useFileMarks.js";
 
 /**
@@ -30,7 +31,7 @@ export function MarkButton({ link, file, line, sessionId, className = "btn-ghost
       if (r.created) bookmarkAdded(baseName(file.path));
       else openMarks(markTarget(r.mark));
     } catch (err) {
-      setError(err instanceof HostApiError ? err.message : String(err));
+      if (!(err instanceof BookmarkCancelled)) setError(err instanceof HostApiError ? err.message : String(err));
     } finally {
       setBusy(false);
     }

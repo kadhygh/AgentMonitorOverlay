@@ -40,9 +40,21 @@ test("bookmarks a passage under the task's topic, drags it out as a quote, goes 
   const reply = page.getByTestId("msg-agent").first();
   await expect(reply.locator("table.md-table")).toBeVisible({ timeout: 30_000 });
 
+  // 书签说明 can be closed without a bookmark (2026-10-23): Esc, or ×.
+  await selectAndRelease(reply, "发现 3 张表");
+  await page.getByTestId("selection-bookmark").click();
+  await page.getByTestId("bookmark-note-text").press("Escape");
+  await expect(page.getByTestId("bookmark-note")).toHaveCount(0);
+  await selectAndRelease(reply, "发现 3 张表");
+  await page.getByTestId("selection-bookmark").click();
+  await page.getByTestId("bookmark-note-cancel").click();
+  await expect(page.getByTestId("bookmark-note")).toHaveCount(0);
+  await expect(page.getByTestId("toast")).toHaveCount(0);
+  expect(await studio.api<Bookmark[]>("GET", `/api/bookmarks?topic=${topic.id}`)).toHaveLength(0);
+
   // The selection bar's 书签: under the task's topic; the same passage again is not added twice.
   await selectAndRelease(reply, "发现 3 张表");
-  // 书签说明 first (only 确认; the note may stay empty), then the notice.
+  // 书签说明 first (the note may stay empty), then the notice.
   await page.getByTestId("selection-bookmark").click();
   await page.getByTestId("bookmark-note-text").fill("三张表都从这里来");
   await screenshot(app, "stage-18", "S18-bookmark-note", page);

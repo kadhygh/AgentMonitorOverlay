@@ -157,7 +157,12 @@ function MarksPage({ link, state, target, focus }: { link: HostLink; state: Stat
       let note = "";
       if (clean.length === 1) {
         const marks = await call(link, "GET /api/file-marks").catch(() => []);
-        if (!findMark(marks, { path: clean[0]! }, null)) note = await askBookmarkNote(baseName(clean[0]!));
+        if (!findMark(marks, { path: clean[0]! }, null)) {
+          const asked = await askBookmarkNote(baseName(clean[0]!));
+          // Closed (× or Esc): no bookmark.
+          if (asked === null) return;
+          note = asked;
+        }
       }
       for (const path of clean) {
         try {

@@ -116,6 +116,20 @@ export function step(list: readonly number[], current: number, dir: 1 | -1): num
 }
 
 /**
+ * Tab between marked rows (2026-10-23: the commented lines; 重点 in a 查看包): the next one after `current` (before it
+ * with `dir` -1), round to the first (the last) at the end; from nowhere, the first (the last).
+ */
+export function cycle(list: readonly number[], current: number | null, dir: 1 | -1): number | null {
+  if (!list.length) return null;
+  if (current === null) return dir > 0 ? list[0]! : list.at(-1)!;
+  if (dir > 0) return list.find((x) => x > current) ?? list[0]!;
+  return [...list].reverse().find((x) => x < current) ?? list.at(-1)!;
+}
+
+/** The next of `list` after `current`, round to the first: q through 工作区改动 / 本分支全部 / 已暂存. */
+export const nextOf = <T,>(list: readonly T[], current: T): T => list[(list.indexOf(current) + 1) % list.length]!;
+
+/**
  * Comments of one file split into the ones that sit under a shown row and the rest (lines outside the shown hunks, or
  * deleted lines commented in another range: their numbers belong to another old version).
  */

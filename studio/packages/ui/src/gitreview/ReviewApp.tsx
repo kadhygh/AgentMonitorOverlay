@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { showToast } from "../lib/toast.js";
 import {
+  GIT_RANGES,
   rangeBase,
   type GitChangedFile,
   type GitChanges,
@@ -16,7 +17,7 @@ import { openInApps, openInEditor, revealInExplorer } from "../lib/openin.js";
 import { DiffView } from "./DiffView.js";
 import { FileList, FileMenu, Splitter, type FileMenuAt } from "./FileList.js";
 import { ancestors, fileOrder, readPrefs, writePrefs, type ListLayout, type ReviewPrefs } from "./filetree.js";
-import { changeStarts, diffRows, draftCounts, parseReviewHash, placeComments, step, type DiffMode, type DiffRow, type ReviewTarget } from "./logic.js";
+import { changeStarts, cycle, diffRows, draftCounts, nextOf, parseReviewHash, placeComments, step, type DiffMode, type DiffRow, type ReviewTarget } from "./logic.js";
 import { captureAnchor, restoreAnchor, type ViewAnchor } from "./anchor.js";
 import { revealRow } from "./reveal.js";
 import { commentsChanged, SendBar, useReviewComments } from "./comments.js";
@@ -147,6 +148,9 @@ export function ReviewPage({
     keepPlace();
     pref("split", split);
   };
+  // e: 单栏 ⇄ 左右对照 (2026-10-23), from the key handler that does not follow every render.
+  const toggleSplitRef = useRef(() => setSplit(!prefs.split));
+  toggleSplitRef.current = () => setSplit(!prefs.split);
   const [closed, setClosed] = useState<ReadonlySet<string>>(() => new Set());
   const [menu, setMenu] = useState<FileMenuAt | null>(null);
   const [vscode, setVscode] = useState(false);
@@ -410,8 +414,18 @@ export function ReviewPage({
     void revealRow(scroller.current, row).then((el) => el?.scrollIntoView({ block: "center" }));
   }, [scrollTo, rows]);
 
+  // The commented lines of the file in front, for Tab.
+  const markRows = useMemo(() => rows.flatMap((r, i) => (r.kind === "line" && placed.has(r.key) ? [i] : [])), [rows, placed]);
+  const reread = () => {
+    cache.clear();
+    setReload((n) => n + 1);
+  };
+  const rereadRef = useRef(reread);
+  rereadRef.current = reread;
+
   // j / k (or ↓ / ↑) between files, n / p (or l / ;) between changes, h opens 历史, w / s page the file up / down,
-  // a / d 只看改动 / 完整文件 (2026-10-22); not while typing or picking.
+  // a / d 只看改动 / 完整文件 (2026-10-22); q through the ranges, e 单栏 ⇄ 左右对照, r 刷新, Tab / Shift+Tab between
+  // the commented lines (2026-10-23); not while typing or picking.
   useEffect(() => {
     if (inactive || picking) return;
     const onKey = (e: KeyboardEvent) => {
@@ -446,11 +460,27 @@ export function ReviewPage({
       } else if (k === "a" || k === "d") {
         e.preventDefault();
         setModeRef.current(k === "a" ? "changes" : "full");
+      } else if (k === "q" && !commit) {
+        e.preventDefault();
+        setRange((cur) => nextOf(GIT_RANGES.map((r) => r.id), cur));
+      } else if (k === "e") {
+        e.preventDefault();
+        toggleSplitRef.current();
+      } else if (k === "r" && !commit) {
+        e.preventDefault();
+        rereadRef.current();
+      } else if (k === "Tab") {
+        const to = cycle(markRows, active, e.shiftKey ? -1 : 1);
+        // No comment here: Tab moves the focus as usual.
+        if (to === null) return;
+        e.preventDefault();
+        setActive(to);
+        setScrollTo({ row: to });
       }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [order, changeRows, active, rows.length, inactive, picking, commit, changes]);
+  }, [order, changeRows, markRows, active, rows.length, inactive, picking, commit, changes]);
 
   const status = changes?.status;
   // VS Code opens at the line n / p moved to (or that was clicked), else at the line being commented, else at the top.
@@ -474,10 +504,7 @@ export function ReviewPage({
         onRange={setRange}
         onMode={setMode}
         onSplit={setSplit}
-        onRefresh={() => {
-          cache.clear();
-          setReload((n) => n + 1);
-        }}
+        onRefresh={reread}
       />
 
       {status && !status.repo ? (
@@ -498,7 +525,7 @@ export function ReviewPage({
                 ))}
               </div>
             </div>
-            <div className="gr-files-hint gr-dim" data-testid="review-keys">j / k 切换文件，l / ;（或 n / p）跳到改动，w / s 上下翻页，a 只看改动，d 完整文件，h 历史</div>
+            <div className="gr-files-hint gr-dim" data-testid="review-keys">j / k 切换文件，l / ;（或 n / p）跳到改动，Tab 跳到批注，w / s 上下翻页，a 只看改动，d 完整文件，e 单栏 / 左右对照，q 切换范围，r 刷新，h 历史</div>
             {commitError && (
               <div className="gr-empty" data-testid="review-commit-error">
                 读不到这个提交：{commitError}

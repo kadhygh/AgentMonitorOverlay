@@ -149,6 +149,20 @@ if (!app.requestSingleInstanceLock()) {
   ipcMain.handle("amo:window-maximized", (event) => (mainWindow && event.sender === mainWindow.webContents ? mainWindow.isMaximized() : false));
   // Copy through the main process: navigator.clipboard needs a focused document, which is not always the case.
   // Tests never touch the user's clipboard; they read the recorded text instead.
+  // A page's top bar needs this much width (CSS px, lib/fitWidth.ts): the window keeps at least that, never less than
+  // the minimum it was made with (2026-10-23: Review's buttons from 历史 to 刷新 always on one line).
+  const madeMin = new WeakMap<BrowserWindow, number[]>();
+  ipcMain.on("amo:min-width", (event, px: unknown) => {
+    const win = BrowserWindow.fromWebContents(event.sender);
+    if (!win || win.isDestroyed() || typeof px !== "number" || !Number.isFinite(px) || px < 0 || px > 10_000) return;
+    if (!madeMin.has(win)) madeMin.set(win, win.getMinimumSize());
+    const [floorW, floorH] = madeMin.get(win)!;
+    const frame = win.getSize()[0]! - win.getContentSize()[0]!;
+    const want = Math.max(floorW!, Math.ceil(px * event.sender.getZoomFactor()) + frame);
+    win.setMinimumSize(want, floorH!);
+    const [w, h] = win.getSize();
+    if (w! < want && !win.isMaximized() && !win.isFullScreen()) win.setSize(want, h!);
+  });
   ipcMain.handle("amo:copy", (_event, text: unknown) => {
     if (typeof text !== "string") return;
     if (testMode) ((globalThis as { __amoCopied?: string[] }).__amoCopied ??= []).push(text);

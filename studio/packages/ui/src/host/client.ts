@@ -16,6 +16,7 @@ declare global {
       openExternal?(url: string): Promise<void>;
       /** Writes text to the system clipboard (Electron); works without window focus. */
       copyText?(text: string): Promise<void>;
+      setMinWidth?(px: number): void;
       /** The Focus window (Electron). */
       focus?: {
         get(): Promise<boolean>;

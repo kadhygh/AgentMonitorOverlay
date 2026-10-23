@@ -29,6 +29,7 @@ import { openReview, useIsGitRepo } from "../gitreview/open.js";
 import { latestMainSession } from "../gitreview/logic.js";
 import { OnCanvasToggle } from "../canvas/OnCanvasToggle.js";
 import { bookmarkPassage, openMarks } from "../marks/open.js";
+import { BookmarkCancelled } from "../marks/NotePrompt.js";
 import { MarkButton } from "../marks/MarkButton.js";
 import { FileLinks, type PreviewTarget } from "../files/FileLinks.js";
 import { FilePreview } from "../files/FilePreview.js";
@@ -282,7 +283,9 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
         const where = topics.find((t) => t.id === r.mark.topicId)?.title ?? "未归专题";
         setToast({ text: r.created ? `书签添加成功：已加到「${where}」` : `这段已经在「${where}」的书签里` });
       })
-      .catch((err: unknown) => setToast({ text: `加书签失败：${err instanceof HostApiError ? err.message : String(err)}`, error: true }));
+      .catch((err: unknown) => {
+        if (!(err instanceof BookmarkCancelled)) setToast({ text: `加书签失败：${err instanceof HostApiError ? err.message : String(err)}`, error: true });
+      });
   };
 
   /** Scrolls to the annotated text of a reply and flashes it (its block, where highlights are not available). */
