@@ -7,7 +7,7 @@
 - **e2e 按程序分开**：`e2e/studio`、`e2e/notes`、`e2e/reviewer` 是三个 Playwright project，共用的启动工具放在 `e2e/support`。
 - **`studio/` 根目录清理**：过程文档（STATUS、NEEDS_YOU、ROADMAP、LOOP_RULES、LOOP_LOG）挪进了 `docs/`。
 - **便签单独的页面入口**：`notes.html`，约 250 KB；原来要加载 Studio 整个 1.3 MB 的界面包。
-- **删除旧 AMO**（`ea939ab`）：标签 `amo-legacy-final` 里还能找回；旧文档挪到了仓库根目录的 `docs/archive-old-amo/`。本机没被 git 跟踪的残留没动，包括 `overlay` 的 25 GB 构建产物、`broker/data`、`dist`、`tmp`，等用户决定。
+- **删除旧 AMO**（`ea939ab`）：标签 `amo-legacy-final` 里还能找回；旧文档挪到了仓库根目录的 `docs/archive-old-amo/`。用户回来后让全部清掉：本机没被 git 跟踪的残留（`overlay`、`broker`、`dist`、`tmp`、`tools`、`amo.local.json`）、旧的 `AgentMonitorOverlay-studio` worktree 和 `-scratch` 文件夹，以及 G:\PROJECT 下各工程里旧 AMO 的部署：`.amo/`，`.claude/settings.local.json`、`.codex/hooks.json`、`.grok/hooks/amo.json` 里的 hook，`.git/info/exclude` 里的那几行，还有 AMOTest* 这几个测试工程。注意工程里的 `.amo/packs` 是新 Studio 的扩展包，以后清理时要保留。
 - **Reviewer**：
   - 选会话发回改成「复制注释 / 复制并关闭」。
   - 窗口模块挪进了 `packages/reviewer`，Studio 从这个包引入。

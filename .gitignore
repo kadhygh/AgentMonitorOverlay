@@ -32,4 +32,3 @@ Desktop.ini
 *.sqlite3
 *.db
 local-state/
-amo.local.json
