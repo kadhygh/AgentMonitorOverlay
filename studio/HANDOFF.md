@@ -224,7 +224,7 @@ pm`，用户说本机没装就不管，不走 npx），padding 0，改前备份 
 | 验证 | `npm run verify`（typecheck + vitest + build）；端到端 `npx playwright test -c e2e/playwright.config.ts`（约 11 分钟，先确保 build 过） |
 | Portable | **不要每次都打包**，只在用户确认的发布节点打（LOOP_RULES 第 6 节） |
 
-## 2. 规则（摘要，全文见 `LOOP_RULES.md`）
+## 2. 规则（摘要，全文见 `docs/LOOP_RULES.md`）
 
 - 不碰旧 AMO 的运行时和 `broker/data/`；不改主目录文件；不改 `~/.codex/config.toml`、`~/.claude/` 设置、用户已有的凭据条目（Studio 只写自己的：`claude-subscription`，和用户在 设置 → 模型 加渠道时的 `channel-<id>` / `channel-<id>-access`）。
 - 测试只在 `%TEMP%\amo-studio-sandbox\` 和临时目录；端口只用 47900–47999；测试窗口不抢焦点、不开终端/浏览器、不碰剪贴板。
@@ -269,8 +269,8 @@ pm`，用户说本机没装就不管，不走 npx），padding 0，改前备份 
 
 | 文件 | 内容 |
 |---|---|
-| `LOOP_RULES.md` | 红线、额度、关卡 |
-| `STATUS.md` / `NEEDS_YOU.md` | 状态、等用户的事项 |
+| `docs/LOOP_RULES.md` | 红线、额度、关卡 |
+| `docs/STATUS.md` / `docs/NEEDS_YOU.md` | 状态、等用户的事项 |
 | `plans/stage-9-chat.md` | 本次会话的计划与追加记录 |
 | `spikes/RESULTS.md` | 所有实测结论（s9-00…s9-06 是本次的） |
 | `plans/maintenance.md` | 遗留小问题与暂缓事项 |

@@ -100,12 +100,12 @@ studio\amo-review.cmd G:\PROJECT\game --mode file --file src\Drop.cs --line 24 -
 
 | 文件 | 用途 |
 |---|---|
-| [STATUS.md](STATUS.md) | 当前进度。两分钟读完 |
-| [NEEDS_YOU.md](NEEDS_YOU.md) | 需要用户处理的事项，用户直接在文件里回复 |
-| [ROADMAP.md](ROADMAP.md) | 全部阶段的目标、验收标准与关卡 |
-| [LOOP_RULES.md](LOOP_RULES.md) | 自动迭代（`/loop`）的规则与红线 |
+| [STATUS.md](docs/STATUS.md) | 当前进度。两分钟读完 |
+| [NEEDS_YOU.md](docs/NEEDS_YOU.md) | 需要用户处理的事项，用户直接在文件里回复 |
+| [ROADMAP.md](docs/ROADMAP.md) | 全部阶段的目标、验收标准与关卡 |
+| [LOOP_RULES.md](docs/LOOP_RULES.md) | 自动迭代（`/loop`）的规则与红线 |
 | [plans/](plans/) | 每个阶段的详细任务清单 |
-| [LOOP_LOG.md](LOOP_LOG.md) | 每轮迭代的记录 |
+| [LOOP_LOG.md](docs/LOOP_LOG.md) | 每轮迭代的记录 |
 | [spikes/RESULTS.md](spikes/RESULTS.md) | 预研结论（协议行为、打包等） |
 | [budget.json](budget.json) | 真实模型调用预算与已用量 |
 
