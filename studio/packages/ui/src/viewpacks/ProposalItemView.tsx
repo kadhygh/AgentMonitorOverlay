@@ -79,7 +79,8 @@ export function ProposalItemView({ link, state, pack, workspace, item, active }:
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
       if (e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
-      const k = e.key;
+      // Either case: Caps Lock or Shift does not change what a key does (2026-10-23).
+      const k = e.key.length === 1 ? e.key.toLowerCase() : e.key;
       if (k === "e") {
         e.preventDefault();
         setSplit((v) => !v);
@@ -131,23 +132,23 @@ export function ProposalItemView({ link, state, pack, workspace, item, active }:
         </span>
         <div className="vw-actions">
           <div className="gr-seg" role="group" aria-label="范围">
-            <button type="button" aria-pressed={mode === "changes"} title="只看改动（a）" onClick={() => setMode("changes")}>
+            <button type="button" aria-pressed={mode === "changes"} title="只看改动（A）" onClick={() => setMode("changes")}>
               只看改动
-              <kbd className="gr-key">a</kbd>
+              <kbd className="gr-key">A</kbd>
             </button>
-            <button type="button" aria-pressed={mode === "full"} title="完整文件（d）" onClick={() => setMode("full")}>
+            <button type="button" aria-pressed={mode === "full"} title="完整文件（D）" onClick={() => setMode("full")}>
               完整文件
-              <kbd className="gr-key">d</kbd>
+              <kbd className="gr-key">D</kbd>
             </button>
           </div>
-          <div className="gr-seg" role="group" aria-label="显示方式" title="e：单栏和左右对照来回切换">
+          <div className="gr-seg" role="group" aria-label="显示方式" title="E：单栏和左右对照来回切换">
             <button type="button" aria-pressed={!split} onClick={() => setSplit(false)}>
               单栏
             </button>
             <button type="button" aria-pressed={split} onClick={() => setSplit(true)}>
               左右对照
             </button>
-            <kbd className="gr-key gr-seg-key">e</kbd>
+            <kbd className="gr-key gr-seg-key">E</kbd>
           </div>
         </div>
       </div>

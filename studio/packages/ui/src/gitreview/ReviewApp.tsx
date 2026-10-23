@@ -577,7 +577,7 @@ export function ReviewPage({
                 ))}
               </div>
             </div>
-            <div className="gr-files-hint gr-dim" data-testid="review-keys">{fileKeys === "ctrl" ? "Ctrl+J / K" : "j / k"} 切换文件，l / ;（或 n / p）跳到改动，Tab 跳到批注，w / s 上下翻页，a 只看改动，d 完整文件，e 单栏 / 左右对照，q 切换范围，r 刷新，h 历史</div>
+            <div className="gr-files-hint gr-dim" data-testid="review-keys">{fileKeys === "ctrl" ? "Ctrl+J / K" : "J / K"} 切换文件，L / ;（或 N / P）跳到改动，Tab 跳到批注，W / S 上下翻页，A 只看改动，D 完整文件，E 单栏 / 左右对照，Q 切换范围，R 刷新，H 历史</div>
             {commitError && (
               <div className="gr-empty" data-testid="review-commit-error">
                 读不到这个提交：{commitError}

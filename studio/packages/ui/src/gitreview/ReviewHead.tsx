@@ -11,8 +11,8 @@ import { countLabel, STATUS_NAME, type DiffMode } from "./logic.js";
 // the head of the file in front.
 
 const MODES: { id: DiffMode; label: string; key: string }[] = [
-  { id: "changes", label: "只看改动", key: "a" },
-  { id: "full", label: "完整文件", key: "d" },
+  { id: "changes", label: "只看改动", key: "A" },
+  { id: "full", label: "完整文件", key: "D" },
 ];
 
 const LAYOUTS: { split: boolean; label: string; hint: string }[] = [
@@ -80,19 +80,19 @@ export function ReviewHead({
       )}
       <span className="spacer" />
       {(commit || status?.repo) && (
-        <button type="button" className="btn-ghost small" onClick={onHistory} title="这个分支的提交（h）：搜索说明、hash 或作者，在新窗口查看" data-testid="review-history">
+        <button type="button" className="btn-ghost small" onClick={onHistory} title="这个分支的提交（H）：搜索说明、hash 或作者，在新窗口查看" data-testid="review-history">
           历史
-          <kbd className="gr-key">h</kbd>
+          <kbd className="gr-key">H</kbd>
         </button>
       )}
       {!commit && (
-        <div className="gr-seg" role="group" aria-label="对比范围" title="q：在这三种范围之间切换">
+        <div className="gr-seg" role="group" aria-label="对比范围" title="Q：在这三种范围之间切换">
           {GIT_RANGES.map((r) => (
-            <button key={r.id} type="button" aria-pressed={range === r.id} title={`${r.hint}（q 切换）`} onClick={() => onRange(r.id)}>
+            <button key={r.id} type="button" aria-pressed={range === r.id} title={`${r.hint}（Q 切换）`} onClick={() => onRange(r.id)}>
               {r.label}
             </button>
           ))}
-          <kbd className="gr-key gr-seg-key">q</kbd>
+          <kbd className="gr-key gr-seg-key">Q</kbd>
         </div>
       )}
       <div className="gr-seg" role="group" aria-label="显示方式">
@@ -103,23 +103,23 @@ export function ReviewHead({
           </button>
         ))}
       </div>
-      <div className="gr-seg" role="group" aria-label="版式" title="e：单栏和左右对照来回切换">
+      <div className="gr-seg" role="group" aria-label="版式" title="E：单栏和左右对照来回切换">
         {LAYOUTS.map((l) => (
-          <button key={l.label} type="button" aria-pressed={split === l.split} title={`${l.hint}（e 切换）`} onClick={() => onSplit(l.split)}>
+          <button key={l.label} type="button" aria-pressed={split === l.split} title={`${l.hint}（E 切换）`} onClick={() => onSplit(l.split)}>
             {l.label}
           </button>
         ))}
-        <kbd className="gr-key gr-seg-key">e</kbd>
+        <kbd className="gr-key gr-seg-key">E</kbd>
       </div>
       {!commit && (
         <button
           type="button"
           className="btn-ghost small"
           onClick={onRefresh}
-          title="重新读取改动（r）"
+          title="重新读取改动（R）"
         >
           刷新
-          <kbd className="gr-key">r</kbd>
+          <kbd className="gr-key">R</kbd>
         </button>
       )}
     </header>

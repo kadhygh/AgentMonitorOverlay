@@ -56,12 +56,13 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
     if (!pack || pack.items.length < 2) return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (e.ctrlKey || e.metaKey || e.altKey || (e.key !== "j" && e.key !== "k") || el?.closest?.("input, textarea, select, [contenteditable]")) return;
+      const k = e.key.toLowerCase();
+      if (e.ctrlKey || e.metaKey || e.altKey || (k !== "j" && k !== "k") || el?.closest?.("input, textarea, select, [contenteditable]")) return;
       if (document.querySelector("[role=dialog]")) return;
       e.preventDefault();
       setSelected((cur) => {
         const i = Math.max(0, pack.items.findIndex((x) => x.id === cur));
-        const next = pack.items[e.key === "j" ? Math.min(pack.items.length - 1, i + 1) : Math.max(0, i - 1)];
+        const next = pack.items[k === "j" ? Math.min(pack.items.length - 1, i + 1) : Math.max(0, i - 1)];
         return next?.id ?? cur;
       });
     };
@@ -150,8 +151,8 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
               );
             })}
             <div className="vp-list-keys" data-testid="viewpack-keys">
-              <kbd className="gr-key">j</kbd>
-              <kbd className="gr-key">k</kbd> 切换条目
+              <kbd className="gr-key">J</kbd>
+              <kbd className="gr-key">K</kbd> 切换条目
               {item.kind === "git" && (
                 <>
                   <br />

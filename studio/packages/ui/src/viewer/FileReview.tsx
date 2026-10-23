@@ -133,11 +133,11 @@ export function FileReview({
         if (to === null) return;
         e.preventDefault();
         toRow(to);
-      } else if (e.key === "w" || e.key === "s") {
+      } else if (e.key.toLowerCase() === "w" || e.key.toLowerCase() === "s") {
         const box = scroller.current;
         if (!box) return;
         e.preventDefault();
-        box.scrollBy({ top: (e.key === "s" ? 1 : -1) * Math.max(40, box.clientHeight - 60) });
+        box.scrollBy({ top: (e.key.toLowerCase() === "s" ? 1 : -1) * Math.max(40, box.clientHeight - 60) });
       }
     };
     window.addEventListener("keydown", onKey);
@@ -243,8 +243,8 @@ export function FileReview({
           </span>
         )}
         <span>
-          <kbd className="gr-key">w</kbd>
-          <kbd className="gr-key">s</kbd> 翻页
+          <kbd className="gr-key">W</kbd>
+          <kbd className="gr-key">S</kbd> 翻页
         </span>
         <span>
           <kbd className="gr-key">Ctrl G</kbd> 跳到行

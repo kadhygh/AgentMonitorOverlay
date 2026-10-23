@@ -65,7 +65,7 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
     if (mode !== "file") return;
     const onKey = (e: KeyboardEvent) => {
       const el = e.target as HTMLElement | null;
-      if (e.key !== "r" || e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
+      if (e.key.toLowerCase() !== "r" || e.ctrlKey || e.metaKey || e.altKey || el?.closest?.("input, textarea, select, [contenteditable]")) return;
       e.preventDefault();
       setReload((n) => n + 1);
     };
@@ -183,9 +183,9 @@ function ViewerPage({ link, state, target }: { link: HostLink; state: StateSnaps
                 {copied ? "已复制" : "复制路径"}
               </button>
               <MarkButton link={link} file={file} line={target.line ?? null} sessionId={target.sessionId ?? null} />
-              <button type="button" className="btn-ghost small dim" title="重新读取文件（r）" onClick={() => setReload((n) => n + 1)}>
+              <button type="button" className="btn-ghost small dim" title="重新读取文件（R）" onClick={() => setReload((n) => n + 1)}>
                 重新载入
-                <kbd className="gr-key">r</kbd>
+                <kbd className="gr-key">R</kbd>
               </button>
             </>
           )}

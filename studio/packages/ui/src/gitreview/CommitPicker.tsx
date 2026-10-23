@@ -116,9 +116,11 @@ export function CommitPicker({
   const onListKey = (e: KeyboardEvent) => {
     if (e.target === input.current || e.ctrlKey || e.metaKey || e.altKey || e.nativeEvent.isComposing) return;
     const k = e.key;
-    if (k === "j" || k === "k" || k === "ArrowDown" || k === "ArrowUp") move(k === "j" || k === "ArrowDown" ? 1 : -1);
+    // j / k / h in either case (2026-10-23); other letters go into the search as typed.
+    const lk = k.length === 1 ? k.toLowerCase() : k;
+    if (lk === "j" || lk === "k" || k === "ArrowDown" || k === "ArrowUp") move(lk === "j" || k === "ArrowDown" ? 1 : -1);
     else if (k === "Enter" || k === " ") pick(highlight);
-    else if (k === "Escape" || k === "h") onClose();
+    else if (k === "Escape" || lk === "h") onClose();
     else if (k === "/") input.current?.focus();
     else if (k.length === 1 && k !== " ") {
       setQuery((q) => q + k);

@@ -83,7 +83,7 @@ test("files with 重点; the same session sending again a moment later adds to t
   // The keys are written down: under the file, and r on 重新载入.
   await expect(win.getByTestId("viewer-keys")).toContainText("下一处 / 上一处重点或批注");
   await expect(win.getByTestId("viewer-keys")).toContainText("翻页");
-  await expect(win.getByRole("button", { name: /重新载入/ }).locator("kbd")).toHaveText("r");
+  await expect(win.getByRole("button", { name: /重新载入/ }).locator("kbd")).toHaveText("R");
   // The overview ruler is the scrollbar here too (2026-10-23): the 重点 on it (lines 1–3, one run).
   await expect(win.locator('[data-testid="ruler-mark"][data-kind="hl"]')).toHaveCount(1);
 
@@ -135,7 +135,7 @@ test("git items list the files pointed at first, above the rest, with their 重�
   await expect(win.getByTestId("review-file-head")).toContainText("shop.lua");
   await win.locator("body").press("Control+k");
   await expect(win.getByTestId("review-file-head")).toContainText("drop.lua");
-  await win.locator("body").press("j");
+  await win.locator("body").press("Shift+J");
   await expect(win.getByTestId("viewpack-entry").nth(1)).toHaveAttribute("aria-current", "true");
 
   // The commit: drop.lua pointed at (added there), nope.lua said to have no changes in it, the rest below.
