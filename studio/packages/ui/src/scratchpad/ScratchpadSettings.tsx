@@ -49,7 +49,7 @@ function PagesSection({ link }: { link: HostLink }) {
             +
           </button>
         </span>
-        <span className="settings-hint">最多 {SCRATCHPAD_MAX_PAGES} 页，便签窗口里用 Ctrl+1…9 切换。</span>
+        <span className="settings-hint">最多 {SCRATCHPAD_MAX_PAGES} 页，便签窗口里用 Alt+1…9 切换。</span>
       </div>
       <span className="settings-hint">减少页数不会删掉内容：藏起来的页还留着，再增加页数就能看到。</span>
       {kept.length > 0 && (

@@ -15,7 +15,14 @@ export interface NotesLinkOptions {
   dataDir: string;
   host: { url: string; token: string };
   testMode: boolean;
+  /** Studio's 界面大小: the 便签 takes the same. */
+  uiScale(): number;
   log(line: string): void;
+}
+
+export interface NotesLink {
+  /** Tells a running 便签 Studio's 界面大小 (after it changed). */
+  syncLook(): void;
 }
 
 interface Link {
@@ -33,7 +40,7 @@ export interface NotesStatus {
 
 const START_WAIT_MS = 20_000;
 
-export function installNotesLink(o: NotesLinkOptions): void {
+export function installNotesLink(o: NotesLinkOptions): NotesLink {
   // Tests keep the program's home in the test's data dir (and stop the program with Studio).
   const home = process.env.AMO_NOTES_HOME ?? (o.testMode ? join(o.dataDir, "notes-home") : join(app.getPath("appData"), "AMO Notes"));
   const appDir = join(o.studioRoot, "packages", "notes");
@@ -122,9 +129,15 @@ export function installNotesLink(o: NotesLinkOptions): void {
     }
   }
 
+  /** Studio's 界面大小 to the program (it applies it when it differs). */
+  async function look(link: Link): Promise<void> {
+    await request(link, "POST", "/api/notes/look", { uiScale: o.uiScale() }).catch((err: unknown) => o.log(`AMO 便签: look not sent: ${String(err)}`));
+  }
+
   async function show(): Promise<void> {
     const link = await ensure(false);
     if (!link) throw new Error("便签没有启动起来");
+    await look(link);
     await handOver(link);
     await request(link, "POST", "/api/notes/show");
   }
@@ -132,6 +145,7 @@ export function installNotesLink(o: NotesLinkOptions): void {
   async function openSettings(): Promise<void> {
     const link = await ensure(true);
     if (!link) throw new Error("便签没有启动起来");
+    await look(link);
     await request(link, "POST", "/api/notes/settings-window");
   }
 
@@ -147,13 +161,17 @@ export function installNotesLink(o: NotesLinkOptions): void {
   ipcMain.handle("amo:notes-settings", () => openSettings());
   ipcMain.handle("amo:notes-start", async () => {
     const link = await ensure(true);
-    if (link) await handOver(link);
+    if (link) await Promise.all([look(link), handOver(link)]);
     return status();
   });
 
   // Studio opening starts it too (in the tray), and hands the pages over the first time. Not in tests: each would
   // start a program; the ones about it press 便签.
-  if (!o.testMode) void ensure(true).then((link) => link && handOver(link));
+  if (!o.testMode) void ensure(true).then((link) => link && Promise.all([look(link), handOver(link)]));
   // Tests stop the program they started; for the person it keeps running when Studio ends.
   if (o.testMode) app.on("will-quit", () => child?.kill());
+
+  return {
+    syncLook: () => void running().then((link) => link && look(link)),
+  };
 }

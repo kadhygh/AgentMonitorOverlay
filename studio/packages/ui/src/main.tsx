@@ -8,6 +8,7 @@ import { ReviewApp } from "./gitreview/ReviewApp.js";
 import { MarksApp } from "./marks/MarksApp.js";
 import { ViewerApp } from "./viewer/ViewerApp.js";
 import { NotesSettingsApp } from "./notes/NotesSettingsApp.js";
+import { TrayMenu } from "./notes/TrayMenu.js";
 import "@fontsource-variable/noto-sans-sc";
 import "@fontsource-variable/noto-serif-sc";
 import "@fontsource-variable/jetbrains-mono";
@@ -69,6 +70,9 @@ if (bot) document.documentElement.classList.add("bot-mode");
 // The 便签 program's settings window (packages/notes, 2026-10-23), loaded with #notes-settings.
 const notesSettings = location.hash === "#notes-settings";
 if (notesSettings) document.documentElement.classList.add("notes-settings-mode");
+// Its tray menu (#notes-tray-menu).
+const trayMenu = location.hash === "#notes-tray-menu";
+if (trayMenu) document.documentElement.classList.add("notes-tray-mode");
 
 // Each window drag, summarised into logs/resize-trace.log (2026-10-15: the main window flickered when dragged).
 startResizeTrace();
@@ -79,7 +83,7 @@ if (!root) throw new Error("missing #root");
 createRoot(root).render(
   <StrictMode>
     <WindowBoundary>
-      {focus ? <FocusApp /> : bot ? <BotApp /> : scratchpad ? <ScratchpadApp /> : notesSettings ? <NotesSettingsApp /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : <App />}
+      {focus ? <FocusApp /> : bot ? <BotApp /> : scratchpad ? <ScratchpadApp /> : notesSettings ? <NotesSettingsApp /> : trayMenu ? <TrayMenu /> : review ? <ReviewApp /> : marks ? <MarksApp /> : viewer ? <ViewerApp /> : <App />}
       <Toaster />
       <BookmarkNotePrompt />
     </WindowBoundary>

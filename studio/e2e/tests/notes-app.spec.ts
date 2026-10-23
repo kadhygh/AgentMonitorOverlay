@@ -34,11 +34,22 @@ test.afterEach(async () => {
 async function launch(): Promise<{ app: ElectronApplication; pad: Page }> {
   home = mkdtempSync(join(tmpdir(), "amo-notes-e2e-"));
   app = await _electron.launch({ executablePath: electronPath, args: [MAIN], env: cleanEnv(home) });
-  const pad = await app.firstWindow();
+  // The 便签启动中 bar comes first; the 便签 window is the one at #scratchpad.
+  const pad = await windowAt(app, "#scratchpad");
   await expect(pad.locator(".pad-root")).toBeVisible();
   return { app, pad };
 }
 
+/** The program's window whose address ends with `hash`, once it exists. */
+async function windowAt(a: ElectronApplication, hash: string): Promise<Page> {
+  const deadline = Date.now() + 30_000;
+  for (;;) {
+    const w = a.windows().find((p) => p.url().endsWith(hash));
+    if (w) return w;
+    if (Date.now() > deadline) throw new Error(`no window at ${hash}`);
+    await a.waitForEvent("window", { timeout: 2000 }).catch(() => undefined);
+  }
+}
 const running = () => JSON.parse(readFileSync(join(home, "running.json"), "utf8")) as { url: string; token: string; pid: number };
 const copied = (a: ElectronApplication) => a.evaluate(() => (globalThis as { __notesCopied?: string[] }).__notesCopied?.at(-1) ?? null);
 const padVisible = (a: ElectronApplication) => a.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#scratchpad"))!.isVisible());
@@ -81,27 +92,54 @@ test("the window: an empty page lists its keys, typing saves to the work folder,
   await expect(keys).toHaveCount(0);
   await expect(pad.getByTestId("pad-status")).toContainText("已保存");
   expect(JSON.parse(readFileSync(join(home, "data", "pages.json"), "utf8")).pages[0].text).toContain("周五发版");
-  await expect(pad.locator(".pad-hint")).toHaveText("Ctrl 1–3");
+  await expect(pad.locator(".pad-hint")).toHaveText("Alt 1–3");
   await expect(pad.getByRole("button", { name: "复制" }).locator("kbd")).toHaveText("Ctrl ↵");
   await screenshot(app, "notes", "N2-page", pad, "scratchpad");
 
   // Ctrl+Enter: the page on the clipboard (recorded in tests), the window hidden.
   await pad.getByLabel("便签内容").press("Control+Enter");
   await expect.poll(() => copied(app)).toBe("回复要点：\r\n- 掉落表按权重\r\n- 周五发版");
-  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible())).toBe(false);
+  await expect.poll(() => padVisible(app)).toBe(false);
   // The shortcut brings it back (tests press it through the program).
   await app.evaluate(() => (globalThis as { __notesToggle?: () => void }).__notesToggle?.());
-  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible())).toBe(true);
+  await expect.poll(() => padVisible(app)).toBe(true);
   expect(await app.evaluate(() => (globalThis as { __notesShortcut?: string }).__notesShortcut)).toBe("Ctrl+Alt+Space");
+
+  // Studio's 界面大小, sent to it: its windows zoom the same.
+  await api("POST", "/api/notes/look", { uiScale: 1.1 });
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#scratchpad"))!.webContents.getZoomFactor())).toBeCloseTo(1.1);
+});
+
+test("starting shows 便签启动中 until the window is ready; the tray menu is AMO's, and opens the settings", async () => {
+  const { app } = await launch();
+  // The bar was shown while it started, and is gone now the window is there.
+  expect(await app.evaluate(() => (globalThis as { __notesSplashes?: number }).__notesSplashes)).toBe(1);
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().filter((w) => w.webContents.getURL().startsWith("data:")).length)).toBe(0);
+  // Shown again: at once, no bar.
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#scratchpad"))!.hide());
+  await app.evaluate(() => (globalThis as { __notesToggle?: () => void }).__notesToggle?.());
+  await expect.poll(() => padVisible(app)).toBe(true);
+  expect(await app.evaluate(() => (globalThis as { __notesSplashes?: number }).__notesSplashes)).toBe(1);
+
+  // The tray menu: its own small window in AMO's look, with the shortcut beside 显示便签.
+  await app.evaluate(() => (globalThis as { __notesTrayMenu?: () => void }).__notesTrayMenu?.());
+  const menu = await windowAt(app, "#notes-tray-menu");
+  await expect(menu.getByRole("menuitem", { name: /显示便签/ })).toContainText("Ctrl+Alt+Space");
+  await screenshot(app, "notes", "N5-tray-menu", menu, "main");
+  const opened = app.waitForEvent("window");
+  await menu.getByRole("menuitem", { name: "设置…" }).click();
+  const settings = await opened;
+  expect(settings.url()).toContain("#notes-settings");
+  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#notes-tray-menu"))!.isVisible())).toBe(false);
 });
 
 test("one at a time: starting it again shows the running one and the second ends", async () => {
   const { app } = await launch();
-  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.hide());
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().find((w) => w.webContents.getURL().endsWith("#scratchpad"))!.hide());
   const second = spawn(electronPath, [MAIN], { env: cleanEnv(home), stdio: "ignore", windowsHide: true });
   const code = await new Promise<number | null>((done) => second.on("exit", done));
   expect(code).toBe(0);
-  await expect.poll(() => app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]!.isVisible())).toBe(true);
+  await expect.poll(() => padVisible(app)).toBe(true);
   // Still the first one's server.
   expect(running().pid).toBe(await app.evaluate(() => process.pid));
 });
@@ -176,12 +214,12 @@ test("pages, pasted images, 复制's line breaks, and the page count in the sett
   await text.fill("回复要点：  \n- 掉落表按权重\n- 周五发版\n\n");
   await expect(pad.getByTestId("pad-status")).toContainText("已保存");
 
-  // Another page, by its number; Ctrl+1 goes back.
+  // Another page, by its number; Alt+1 goes back.
   await pad.getByRole("button", { name: "第 2 页" }).click();
   await expect(text).toHaveValue("");
   await text.fill("第二页");
   await expect(pad.getByTestId("pad-status")).toContainText("已保存");
-  await pad.keyboard.press("Control+1");
+  await pad.keyboard.press("Alt+1");
   await expect(text).toHaveValue("回复要点：  \n- 掉落表按权重\n- 周五发版\n\n");
   await expect(pad.getByRole("button", { name: "第 2 页" })).toHaveAttribute("data-filled", "");
   expect((await api<{ activePage: number }>("GET", "/api/scratchpad")).activePage).toBe(0);
@@ -224,7 +262,7 @@ test("pages, pasted images, 复制's line breaks, and the page count in the sett
   await expect(settings.getByTestId("ns-newlines-safe")).toHaveAttribute("aria-checked", "true");
   await app.evaluate(() => (globalThis as { __notesToggle?: () => void }).__notesToggle?.());
   await expect.poll(() => padVisible(app)).toBe(true);
-  await pad.keyboard.press("Control+1");
+  await pad.keyboard.press("Alt+1");
   await pad.getByRole("button", { name: "复制" }).click();
   await expect.poll(() => copied(app)).toBe("回复要点： - 掉落表按权重 - 周五发版");
 });

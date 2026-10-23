@@ -16,5 +16,7 @@ electron.contextBridge.exposeInMainWorld("amo", {
     openSettings: (): Promise<void> => electron.ipcRenderer.invoke("amo:notes-open-settings"),
     closeSettings: (): void => electron.ipcRenderer.send("amo:notes-close-settings"),
     pickFolder: (start?: string | null): Promise<string | null> => electron.ipcRenderer.invoke("amo:notes-pick-folder", start ?? undefined),
+    /** The tray menu's choice: show the window, its settings, or quit. */
+    trayAction: (action: "show" | "settings" | "quit" | "close"): void => electron.ipcRenderer.send("amo:notes-tray", action),
   },
 });

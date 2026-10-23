@@ -8,7 +8,7 @@ import { inNotesProgram, notesCall } from "../notes/api.js";
 import { PadImages, PadImageViewer } from "./PadImages.js";
 import { SAVE_LABELS, useScratchpad } from "./useScratchpad.js";
 
-// The scratchpad window (loaded with #scratchpad; after old AMO's ScratchpadApp): numbered pages, Ctrl+1…9 to switch,
+// The scratchpad window (loaded with #scratchpad; after old AMO's ScratchpadApp): numbered pages, Alt+1…9 to switch,
 // text that saves as you type, pasted or dropped images under it. Esc or × hides the window; 复制 (or Ctrl+Enter)
 // copies the page (line breaks as the settings say) and hides it, as old AMO did. The page count is in the settings.
 // 2026-10-23 (the 便签 program): one tone, short rules under the head and over the foot, the keys written by what they
@@ -191,7 +191,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
               className="pad-page"
               aria-pressed={i === active}
               aria-label={`第 ${i + 1} 页`}
-              title={`第 ${i + 1} 页（Ctrl+${i + 1}）`}
+              title={`第 ${i + 1} 页（Alt+${i + 1}）`}
               data-filled={p.text.trim() || p.attachments.length ? "" : undefined}
               data-testid="pad-page"
               onClick={() => (i === active ? area.current?.focus() : pad.setActive(i))}
@@ -200,7 +200,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
             </button>
           ))}
         </nav>
-        <span className="pad-hint">Ctrl 1–{doc.pages.length}</span>
+        <span className="pad-hint">Alt 1–{doc.pages.length}</span>
         <span className="spacer" />
         {bridge && (
           <button type="button" className="pad-icon pad-hide" aria-label="隐藏便签" title="隐藏（Esc）" onClick={() => bridge.hide?.()}>
@@ -240,7 +240,7 @@ function ScratchpadWindow({ link }: { link: HostLink }) {
               <kbd className="pad-key">Ctrl ↵</kbd>复制这一页并隐藏
             </li>
             <li>
-              <kbd className="pad-key">Ctrl 1–{doc.pages.length}</kbd>换页
+              <kbd className="pad-key">Alt 1–{doc.pages.length}</kbd>换页
             </li>
             <li>
               <kbd className="pad-key">Esc</kbd>隐藏{hotkey ? `；${hotkey} 随时叫回来` : ""}

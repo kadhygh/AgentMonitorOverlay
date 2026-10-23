@@ -279,7 +279,7 @@ function PagesSection({ link }: { link: HostLink }) {
             +
           </button>
         </span>
-        <span className="ns-hint">最多 {SCRATCHPAD_MAX_PAGES} 页，便签里用 Ctrl+1…9 切换。减少页数不会删掉内容。</span>
+        <span className="ns-hint">最多 {SCRATCHPAD_MAX_PAGES} 页，便签里用 Alt+1…9 切换。减少页数不会删掉内容。</span>
       </div>
       {kept.length > 0 && <p className="ns-hint">第 {kept.join("、")} 页还有内容，现在藏着。</p>}
     </section>

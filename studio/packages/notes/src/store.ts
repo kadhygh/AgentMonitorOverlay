@@ -45,6 +45,8 @@ export interface NotesSettings {
   importedAt: string | null;
   /** The notice about that import was closed. */
   importNoticeSeen: boolean;
+  /** The windows' zoom (界面大小), as AMO Studio's: Studio keeps it in step. */
+  uiScale: number;
 }
 
 export interface FolderUsage {
@@ -56,7 +58,9 @@ export interface FolderUsage {
   cache: number;
 }
 
-const DEFAULTS: NotesSettings = { workFolder: null, shortcut: DEFAULT_SCRATCHPAD_SHORTCUT, safeNewlines: false, openAtLogin: false, importedAt: null, importNoticeSeen: false };
+const DEFAULTS: NotesSettings = { workFolder: null, shortcut: DEFAULT_SCRATCHPAD_SHORTCUT, safeNewlines: false, openAtLogin: false, importedAt: null, importNoticeSeen: false, uiScale: 1 };
+/** The zooms Studio offers (app/src/focus-window.ts UI_SCALES spans these). */
+const scaleOk = (n: unknown): n is number => typeof n === "number" && Number.isFinite(n) && n >= 0.75 && n <= 1.6;
 const EXT: Record<string, string> = { "image/png": ".png", "image/jpeg": ".jpg", "image/gif": ".gif", "image/webp": ".webp" };
 const IMAGE_ID = /^att-[0-9a-f-]{36}$/;
 
@@ -108,6 +112,7 @@ export class NotesStore {
       openAtLogin: o.openAtLogin === true,
       importedAt: typeof o.importedAt === "string" ? o.importedAt : null,
       importNoticeSeen: o.importNoticeSeen === true,
+      uiScale: scaleOk(o.uiScale) ? o.uiScale : DEFAULTS.uiScale,
     };
     return this.settingsCache;
   }
@@ -122,6 +127,10 @@ export class NotesStore {
     if (patch.safeNewlines !== undefined) next.safeNewlines = patch.safeNewlines === true;
     if (patch.openAtLogin !== undefined) next.openAtLogin = patch.openAtLogin === true;
     if (patch.importNoticeSeen !== undefined) next.importNoticeSeen = patch.importNoticeSeen === true;
+    if (patch.uiScale !== undefined) {
+      if (!scaleOk(patch.uiScale)) throw new NotesError("bad_request", "uiScale must be a number from 0.75 to 1.6");
+      next.uiScale = patch.uiScale;
+    }
     if (patch.importedAt !== undefined) next.importedAt = typeof patch.importedAt === "string" ? patch.importedAt : null;
     if (patch.workFolder !== undefined) next.workFolder = typeof patch.workFolder === "string" && patch.workFolder ? resolve(patch.workFolder) : null;
     writeAtomic(this.settingsFile, JSON.stringify(next, null, 2));

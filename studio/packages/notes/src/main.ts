@@ -19,7 +19,9 @@ const here = dirname(fileURLToPath(import.meta.url));
 const testMode = process.env.AMO_NOTES_TEST === "1";
 const home = resolve(process.env.AMO_NOTES_HOME ?? join(app.getPath("appData"), "AMO Notes"));
 const uiDir = resolve(process.env.AMO_NOTES_UI_DIR ?? join(here, "..", "..", "ui", "dist"));
-const ICON = [join(here, "..", "assets", "icon.png"), join(here, "..", "..", "app", "assets", "icon.png")].find((p) => existsSync(p));
+const ASSETS = join(here, "..", "assets");
+/** The 便签's own mark (assets/, drawn from the window title's icon). */
+const ICON = [join(ASSETS, "icon.png"), join(here, "..", "..", "app", "assets", "icon.png")].find((p) => existsSync(p));
 const startHidden = process.argv.includes("--hidden");
 
 // Chromium's profile and the single-instance lock live with its home, never in the shared %APPDATA%\Electron.
@@ -52,7 +54,14 @@ let store: NotesStore;
 let server: NotesServer | null = null;
 let pad: BrowserWindow | null = null;
 let settingsWin: BrowserWindow | null = null;
+/** The 便签 window has drawn its page: showing it is instant from then on. */
+let padReady = false;
+/** 便签启动中 (2026-10-23): a small bar where the window will appear, only while it is not ready yet. */
+let splash: BrowserWindow | null = null;
 let tray: Tray | null = null;
+/** The tray's menu (2026-10-23): a small window in AMO's look, not Windows' rounded one. Made once, then shown. */
+let trayMenu: BrowserWindow | null = null;
+const TRAY_MENU = { width: 184, height: 124 };
 let quitting = false;
 let status: ShortcutStatus = { wanted: "", active: "", error: null };
 const preload = join(here, "preload.cjs");
@@ -80,8 +89,14 @@ function rememberBounds(): void {
   }, 300);
 }
 
+/** The zoom in the settings (Studio's 界面大小), on every window of the program. */
+function applyLook(): void {
+  for (const w of BrowserWindow.getAllWindows()) if (!w.isDestroyed()) w.webContents.setZoomFactor(store.settings().uiScale);
+}
+
 /** Keeps a window on its own pages: links never navigate it away, F12 opens the developer tools. */
 function guard(w: BrowserWindow): void {
+  w.webContents.on("did-finish-load", () => w.webContents.setZoomFactor(store.settings().uiScale));
   const origin = new URL(server!.url).origin;
   w.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   w.webContents.on("will-navigate", (event, target) => {
@@ -127,25 +142,83 @@ function createPad(): BrowserWindow {
     w.on("moved", rememberBounds);
     w.on("resized", rememberBounds);
   }
-  w.on("closed", () => (pad = null));
+  w.once("ready-to-show", () => (padReady = true));
+  w.on("closed", () => {
+    pad = null;
+    padReady = false;
+  });
   void w.loadURL(`${server!.url}/#scratchpad`);
   return w;
 }
 
+const SPLASH = { width: 240, height: 60 };
+const SPLASH_HTML = `<!doctype html><html><head><meta charset="utf-8"><style>
+html,body{margin:0;height:100%;overflow:hidden;user-select:none;cursor:progress}
+body{box-sizing:border-box;border:1px solid #2a2723;background:#fbfaf7;color:#22201c;font:13px "Microsoft YaHei UI","Noto Sans SC",sans-serif;display:flex;flex-direction:column;justify-content:center;gap:9px;padding:0 16px}
+.t{display:flex;align-items:center;gap:6px}
+.track{height:3px;border-radius:2px;background:#e7e3db;overflow:hidden}
+.bar{height:100%;width:40%;border-radius:2px;background:#93570a;animation:m 1.1s ease-in-out infinite}
+@keyframes m{from{transform:translateX(-100%)}to{transform:translateX(260%)}}
+</style></head><body><div class="t"><svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="#23436f" stroke-width="1.3" stroke-linejoin="round" stroke-linecap="round"><path d="M3 2.5h10a.5.5 0 0 1 .5.5v6.3L9.3 13.5H3a.5.5 0 0 1-.5-.5V3a.5.5 0 0 1 .5-.5Z"/><path d="M13.5 9.3H10a.7.7 0 0 0-.7.7v3.5M5 5.5h6M5 8h3.5"/></svg>便签启动中…</div><div class="track"><div class="bar"></div></div></body></html>`;
+
+/** The bar in the middle of where the 便签 window will appear; never takes focus. */
+function openSplash(): void {
+  if (splash) return;
+  const at = placePad(savedBounds(), screen.getCursorScreenPoint(), displays());
+  const bounds = testMode ? { x: -32000, y: -32000, ...SPLASH } : { x: Math.round(at.x + (at.width - SPLASH.width) / 2), y: Math.round(at.y + (at.height - SPLASH.height) / 2), ...SPLASH };
+  const w = new BrowserWindow({
+    ...bounds,
+    title: "便签启动中",
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    focusable: false,
+    show: false,
+    backgroundColor: "#fbfaf7",
+    webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false },
+  });
+  w.setAlwaysOnTop(true, "floating");
+  w.once("ready-to-show", () => {
+    if (!w.isDestroyed()) w.showInactive();
+  });
+  w.on("closed", () => {
+    if (splash === w) splash = null;
+  });
+  void w.loadURL(`data:text/html;charset=utf-8,${encodeURIComponent(SPLASH_HTML)}`);
+  splash = w;
+  if (testMode) (globalThis as { __notesSplashes?: number }).__notesSplashes = ((globalThis as { __notesSplashes?: number }).__notesSplashes ?? 0) + 1;
+  // It never outstays a start that went wrong.
+  setTimeout(closeSplash, 20_000);
+}
+
+function closeSplash(): void {
+  if (splash && !splash.isDestroyed()) splash.destroy();
+  splash = null;
+}
+
 function showPad(): void {
-  const fresh = !pad;
   pad ??= createPad();
   const w = pad;
-  if (!fresh && !testMode && !w.isVisible()) w.setBounds(placePad(w.getNormalBounds(), screen.getCursorScreenPoint(), displays()));
+  if (padReady && !testMode && !w.isVisible()) w.setBounds(placePad(w.getNormalBounds(), screen.getCursorScreenPoint(), displays()));
   const reveal = () => {
+    closeSplash();
     if (testMode) w.showInactive();
     else {
       w.show();
       w.focus();
     }
   };
-  if (fresh) w.once("ready-to-show", reveal);
-  else reveal();
+  // Instant once its page is drawn; until then (the first moments after starting) the bar says it is coming.
+  if (padReady) reveal();
+  else {
+    openSplash();
+    w.once("ready-to-show", reveal);
+  }
 }
 
 /** The shortcut and a click on the tray icon: shows it, or hides it when it is in front already. */
@@ -225,23 +298,82 @@ function quit(): void {
   app.quit();
 }
 
+/** The tray icon at each scale Windows may ask for. */
+function trayImage(): Electron.NativeImage {
+  const image = nativeImage.createEmpty();
+  for (const [size, scaleFactor] of [
+    [16, 1],
+    [20, 1.25],
+    [24, 1.5],
+    [32, 2],
+  ] as const) {
+    const file = join(ASSETS, `icon-${size}.png`);
+    if (existsSync(file)) image.addRepresentation({ scaleFactor, buffer: readFileSync(file) });
+  }
+  return image.isEmpty() && ICON ? nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }) : image;
+}
+
+function createTrayMenu(): BrowserWindow {
+  const w = new BrowserWindow({
+    ...TRAY_MENU,
+    x: -32000,
+    y: -32000,
+    title: "便签菜单",
+    frame: false,
+    resizable: false,
+    movable: false,
+    minimizable: false,
+    maximizable: false,
+    fullscreenable: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    show: false,
+    backgroundColor: "#fbfaf7",
+    webPreferences: { preload, contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  w.setAlwaysOnTop(true, "pop-up-menu");
+  guard(w);
+  // Like a menu: gone as soon as something else is clicked.
+  w.on("blur", () => w.hide());
+  w.on("closed", () => (trayMenu = null));
+  void w.loadURL(`${server!.url}/#notes-tray-menu`);
+  return w;
+}
+
+/** Opens the menu above the pointer (the tray is at the screen's edge), kept on the display. */
+function openTrayMenu(): void {
+  trayMenu ??= createTrayMenu();
+  const w = trayMenu;
+  const zoom = store.settings().uiScale;
+  const size = { width: Math.round(TRAY_MENU.width * zoom), height: Math.round(TRAY_MENU.height * zoom) };
+  const at = screen.getCursorScreenPoint();
+  const area = screen.getDisplayNearestPoint(at).workArea;
+  const x = Math.min(Math.max(at.x - size.width, area.x), area.x + area.width - size.width);
+  const y = at.y - size.height >= area.y ? at.y - size.height : Math.min(at.y, area.y + area.height - size.height);
+  // Tests: off-screen and never focused, like every test window.
+  if (testMode) {
+    w.setBounds({ x: -32000, y: -32000, ...size });
+    w.showInactive();
+    return;
+  }
+  w.setBounds({ x, y, ...size });
+  w.show();
+  w.focus();
+}
+
 function createTray(): void {
-  const image = ICON ? nativeImage.createFromPath(ICON).resize({ width: 16, height: 16 }) : nativeImage.createEmpty();
-  tray = new Tray(image);
+  tray = new Tray(trayImage());
   tray.setToolTip("AMO 便签");
-  tray.setContextMenu(
-    Menu.buildFromTemplate([
-      { label: "显示便签", click: showPad },
-      { label: "设置…", click: openSettings },
-      { type: "separator" },
-      { label: "退出便签", click: quit },
-    ]),
-  );
   tray.on("click", togglePad);
+  tray.on("right-click", openTrayMenu);
 }
 
 async function start(): Promise<void> {
   mkdirSync(home, { recursive: true });
+  // No application menu: Alt+1…9 switch pages, and Alt must not wake a hidden menu.
+  Menu.setApplicationMenu(null);
+  // Started to be shown (not in the tray only): the bar right away, before anything else loads.
+  if (!startHidden) openSplash();
   store = new NotesStore(home);
   const notesShell: NotesShell = {
     show: showPad,
@@ -249,6 +381,7 @@ async function start(): Promise<void> {
     applyShortcut,
     shortcutStatus: () => status,
     setOpenAtLogin,
+    applyLook,
     openPath: async (p) => {
       mkdirSync(p, { recursive: true });
       if (testMode) {
@@ -274,6 +407,12 @@ async function start(): Promise<void> {
   ipcMain.handle("amo:scratchpad-shortcut-apply", () => applyShortcut());
   ipcMain.handle("amo:scratchpad-shortcut-status", () => status);
   ipcMain.handle("amo:notes-open-settings", () => openSettings());
+  ipcMain.on("amo:notes-tray", (_event, action: unknown) => {
+    trayMenu?.hide();
+    if (action === "show") showPad();
+    else if (action === "settings") openSettings();
+    else if (action === "quit") quit();
+  });
   ipcMain.on("amo:notes-close-settings", (event) => {
     if (settingsWin && event.sender === settingsWin.webContents) settingsWin.close();
   });
@@ -284,11 +423,18 @@ async function start(): Promise<void> {
     return r.canceled ? null : (r.filePaths[0] ?? null);
   });
 
-  if (!testMode) createTray();
+  if (!testMode) {
+    createTray();
+    // Made now, out of sight, so the first right-click shows it at once.
+    trayMenu = createTrayMenu();
+  }
   applyShortcut();
   if (store.settings().openAtLogin) setOpenAtLogin(true);
-  if (testMode) Object.assign(globalThis, { __notesToggle: togglePad, __notesOpenSettings: openSettings });
+  if (testMode) Object.assign(globalThis, { __notesToggle: togglePad, __notesOpenSettings: openSettings, __notesTrayMenu: openTrayMenu });
   if (!startHidden) showPad();
+  // Started in the tray (with Windows, or by Studio): the window is made now, out of sight, so the first time it is
+  // asked for it appears at once.
+  else pad = createPad();
 }
 
 if (!app.requestSingleInstanceLock()) {

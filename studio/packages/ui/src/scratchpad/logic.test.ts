@@ -12,14 +12,15 @@ const key = (code: string, mods: Partial<{ ctrlKey: boolean; altKey: boolean; sh
 });
 
 describe("pageFromKey", () => {
-  it("switches pages with Ctrl+1…9 within the page count", () => {
-    expect(pageFromKey(key("Digit1", { ctrlKey: true }, "1"), 3)).toBe(0);
-    expect(pageFromKey(key("Digit3", { ctrlKey: true }, "3"), 3)).toBe(2);
-    expect(pageFromKey(key("Numpad2", { ctrlKey: true }, "2"), 3)).toBe(1);
-    expect(pageFromKey(key("Digit4", { ctrlKey: true }, "4"), 3)).toBeNull();
+  it("switches pages with Alt+1…9 within the page count (Ctrl+1…9 no more)", () => {
+    expect(pageFromKey(key("Digit1", { altKey: true }, "1"), 3)).toBe(0);
+    expect(pageFromKey(key("Digit3", { altKey: true }, "3"), 3)).toBe(2);
+    expect(pageFromKey(key("Numpad2", { altKey: true }, "2"), 3)).toBe(1);
+    expect(pageFromKey(key("Digit4", { altKey: true }, "4"), 3)).toBeNull();
     expect(pageFromKey(key("Digit1", {}, "1"), 3)).toBeNull();
-    expect(pageFromKey(key("Digit1", { ctrlKey: true, shiftKey: true }, "!"), 3)).toBeNull();
-    expect(pageFromKey(key("Digit0", { ctrlKey: true }, "0"), 9)).toBeNull();
+    expect(pageFromKey(key("Digit1", { ctrlKey: true }, "1"), 3)).toBeNull();
+    expect(pageFromKey(key("Digit1", { altKey: true, shiftKey: true }, "!"), 3)).toBeNull();
+    expect(pageFromKey(key("Digit0", { altKey: true }, "0"), 9)).toBeNull();
   });
 });
 

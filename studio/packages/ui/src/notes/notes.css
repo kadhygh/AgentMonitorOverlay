@@ -40,3 +40,14 @@ html.notes-settings-mode #root { height: 100%; }
 .ns-choices input { margin: 4px 0 0; accent-color: var(--primary); }
 .ns-choices label > span { display: flex; flex-direction: column; }
 .ns-dialog-foot { padding-right: 14px; }
+
+/* The tray menu (#notes-tray-menu): AMO's square menu look, the whole window. */
+html.notes-tray-mode, html.notes-tray-mode body { height: 100%; overflow: hidden; background: var(--panel); }
+html.notes-tray-mode #root { height: 100%; }
+.tm-root { height: 100%; box-sizing: border-box; display: flex; flex-direction: column; padding: 4px; border: 1px solid var(--border-strong); background: var(--panel); color: var(--text); user-select: none; }
+.tm-title { display: flex; align-items: center; gap: 6px; padding: 5px 8px 4px; font-family: var(--font-display); font-weight: 700; font-size: var(--fs-cap); letter-spacing: var(--ls-label); color: var(--text-dim); }
+.tm-item { display: flex; align-items: center; gap: 8px; height: 26px; padding: 0 8px; border: none; border-radius: var(--r-m); background: transparent; color: var(--text); font: inherit; font-size: var(--fs-sm); text-align: left; cursor: pointer; }
+.tm-item:hover, .tm-item:focus-visible { background: var(--selected); outline: none; }
+.tm-item.strong { font-weight: 600; }
+.tm-key { margin-left: auto; font-family: var(--font-code); font-size: 10.5px; font-weight: 400; color: var(--text-faint); }
+.tm-rule { height: 1px; margin: 3px 8px; background: var(--border); }

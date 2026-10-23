@@ -61,6 +61,10 @@ test("the title bar's 便签 starts the 便签 program, which takes Studio's pag
   expect(running(studio).pid).toBe(pid);
   expect((await notesApi<{ pages: Array<{ text: string }> }>(studio, "/api/scratchpad")).pages[0]?.text).toBe("Studio 里记的要点");
 
+  // Studio's 界面大小 goes to the 便签 too (2026-10-23: it looked smaller than Studio).
+  await page.evaluate(() => (window as unknown as { amo: { uiScale: { set(s: number): Promise<void> } } }).amo.uiScale.set(1.25));
+  await expect.poll(async () => (await notesApi<{ settings: { uiScale: number } }>(studio!, "/api/notes")).settings.uiScale).toBe(1.25);
+
   // 设置 → 便签 now: running, with its shortcut, and the buttons to it.
   await page.getByRole("button", { name: "设置" }).click();
   await dialog.getByRole("tab", { name: "便签" }).click();

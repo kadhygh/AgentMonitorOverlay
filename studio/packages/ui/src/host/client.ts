@@ -77,6 +77,7 @@ declare global {
         openSettings(): Promise<void>;
         closeSettings(): void;
         pickFolder(start?: string | null): Promise<string | null>;
+        trayAction?(action: "show" | "settings" | "quit" | "close"): void;
       };
     };
   }

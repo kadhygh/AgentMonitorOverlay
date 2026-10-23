@@ -11,9 +11,9 @@ interface KeyLike {
   code: string;
 }
 
-/** Ctrl+1…9 in the window: the page index it switches to, or null (not that key, or past the page count). */
+/** Alt+1…9 in the window (Ctrl+1…9 until 2026-10-23): the page index it switches to, or null (not that key, or past the page count). */
 export function pageFromKey(e: KeyLike, pageCount: number): number | null {
-  if (!e.ctrlKey || e.altKey || e.shiftKey || e.metaKey) return null;
+  if (!e.altKey || e.ctrlKey || e.shiftKey || e.metaKey) return null;
   const m = /^Digit([1-9])$/.exec(e.code) ?? /^([1-9])$/.exec(e.key);
   if (!m) return null;
   const index = Number(m[1]) - 1;
