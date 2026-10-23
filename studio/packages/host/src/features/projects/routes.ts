@@ -12,5 +12,7 @@ export function projectsRoutes(service: HostService): Route[] {
     route("PATCH", "/api/workspaces/:id", ({ params, body }) => service.projects.updateWorkspace(params.id!, obj(body))),
     route("POST", "/api/workspaces/:id/archive", ({ params }) => service.projects.archiveWorkspace(params.id!)),
     route("POST", "/api/workspaces/:id/unarchive", ({ params }) => service.projects.unarchiveWorkspace(params.id!)),
+    route("GET", "/api/workspaces/:id/git-exclude", ({ params }) => service.projects.gitExclude(params.id!)),
+    route("POST", "/api/workspaces/:id/git-exclude", ({ params }) => service.projects.addGitExclude(params.id!)),
   ];
 }

@@ -277,6 +277,20 @@ export interface CredentialStatus {
   writable: boolean;
 }
 
+/** Whether git leaves a project's `.amo/` (its extension packs) out: by `.git/info/exclude`, a .gitignore or the global one. */
+export interface GitExcludeState {
+  /** The folder is in a git repository. */
+  git: boolean;
+  /** git ignores `.amo/` already. */
+  excluded: boolean;
+  /** The rule that does, as git names it (`.git/info/exclude:12`, `.gitignore:3`). */
+  source: string | null;
+  /** The line 一键忽略 adds to `.git/info/exclude`: `/.amo/`, or `/<sub>/.amo/` for a project inside a larger repository. */
+  entry: string;
+  /** Files under `.amo/` git tracks already; ignoring does not apply to them. */
+  tracked: number;
+}
+
 /** Every REST route as `"METHOD /path"` with its request body and response. `:id` segments are path params. */
 export interface HostRoutes {
   "GET /api/state": { req: void; res: StateSnapshot };
@@ -288,6 +302,10 @@ export interface HostRoutes {
   "POST /api/workspaces/:id/archive": { req: void; res: { workspace: Workspace; tasks: Task[] } };
   /** Restores the project and the tasks that were archived with it. */
   "POST /api/workspaces/:id/unarchive": { req: void; res: { workspace: Workspace; tasks: Task[] } };
+  /** Whether git leaves the project's `.amo/` out. */
+  "GET /api/workspaces/:id/git-exclude": { req: void; res: GitExcludeState };
+  /** Adds `.amo/` to the repository's `.git/info/exclude` (this machine only; the project's .gitignore is not touched). */
+  "POST /api/workspaces/:id/git-exclude": { req: void; res: GitExcludeState };
   "GET /api/settings": { req: void; res: StudioSettings };
   /** The DSH clone DeepSeek · DSH sessions use (stage 17). */
   "GET /api/dsh": { req: void; res: DshStatus };

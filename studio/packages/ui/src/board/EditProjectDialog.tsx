@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import type { Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
+import { GitExcludeRow } from "../packs/GitExcludeRow.js";
 
 /**
  * 编辑项目 (2026-10-14): the name a project has in Studio (two folders with the same name can be told apart; the folder
@@ -81,6 +82,7 @@ export function EditProjectDialog({ link, workspace, onClose }: { link: HostLink
           <code>{workspace.path}</code>
           <span className="settings-hint">只改 AMO 里的名字，文件夹本身不会改名。</span>
         </div>
+        <GitExcludeRow link={link} workspace={workspace} />
         {error && (
           <span className="form-error" role="alert">
             {error}

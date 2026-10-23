@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process";
-import { writeFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { StateSnapshot, Task, Topic, Workspace } from "@amo-studio/protocol";
@@ -68,7 +68,12 @@ test("status, topic and project from the line under the title; the right column 
   const edit = page.getByTestId("edit-project");
   await edit.getByTestId("edit-project-name").fill("挖矿主工程");
   await edit.getByTestId("edit-project-description").fill("Unity 主工程，策划表在 Docs/");
+  // 一键忽略 .amo/ (2026-10-23): one line in the repository's own .git/info/exclude.
+  await expect(edit.getByTestId("git-exclude-add")).toBeVisible();
   await screenshot(app, "stage-14", "S14-E-edit-project", page);
+  await edit.getByTestId("git-exclude-add").click();
+  await expect(edit.getByTestId("git-exclude-done")).toContainText(/info[\\/]exclude:\d+/);
+  expect(readFileSync(join(dir, ".git", "info", "exclude"), "utf8")).toMatch(/\n\/\.amo\/\n$/);
   await edit.getByTestId("edit-project-save").click();
   await expect(page.getByTestId("task-project")).toHaveText("挖矿主工程");
   await expect(page.getByTestId("scope-ws-挖矿主工程")).toBeVisible();

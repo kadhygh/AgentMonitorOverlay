@@ -1,9 +1,10 @@
 import { existsSync, statSync } from "node:fs";
 import { basename, resolve } from "node:path";
-import type { CanvasDoc, Id, Task, Workspace } from "@amo-studio/protocol";
+import type { CanvasDoc, GitExcludeState, Id, Task, Workspace } from "@amo-studio/protocol";
 import { isCommon } from "@amo-studio/protocol";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
+import { addGitExclude, readGitExclude } from "./git-exclude.js";
 
 /** Projects (workspaces): registering, archiving and removing them. */
 export class ProjectsFeature extends Feature {
@@ -70,6 +71,20 @@ export class ProjectsFeature extends Feature {
     const topicSessions = this.store.listSessions().filter((s) => s.topicId && s.workspaceId === id && !this.store.getTopic(s.topicId)?.archivedAt);
     await this.f.tasks.unarchiveSessions(topicSessions, since);
     return { workspace: this.store.getWorkspace(id)!, tasks };
+  }
+
+  /** Whether git leaves the project's `.amo/` (extension packs) out. */
+  gitExclude(id: Id): Promise<GitExcludeState> {
+    return readGitExclude(this.requireWorkspace(id).path);
+  }
+
+  /** 一键忽略 .amo/: one line in the repository's `.git/info/exclude`, unless git leaves it out already. */
+  async addGitExclude(id: Id): Promise<GitExcludeState> {
+    const ws = this.requireWorkspace(id);
+    if (isCommon(ws)) throw new HostError("conflict", "the common space has no git settings here");
+    const state = await addGitExclude(ws.path);
+    if (!state.git) throw new HostError("bad_request", "这个文件夹不在 git 仓库里");
+    return state;
   }
 
   removeWorkspace(id: Id): void {

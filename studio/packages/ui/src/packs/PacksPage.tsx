@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ModelProfile, WorkspacePack, Workspace } from "@amo-studio/protocol";
 import type { HostLink } from "../host/client.js";
 import { Markdown } from "../lib/markdown.js";
+import { GitExcludeRow } from "./GitExcludeRow.js";
 import { usePackDoc, usePacks } from "./usePacks.js";
 
 /**
@@ -24,6 +25,7 @@ export function PacksPage({ link, workspace, profiles }: { link: HostLink; works
           重新加载
         </button>
       </div>
+      <GitExcludeRow link={link} workspace={workspace} quietWhenDone />
       {error && <div className="banner">{error}</div>}
       {!loading && !packs.length && !error && (
         <div className="placeholder" data-testid="packs-empty">
