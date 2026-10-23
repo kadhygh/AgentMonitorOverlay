@@ -74,7 +74,8 @@ export function installNotesLink(o: NotesLinkOptions): void {
     env.AMO_NOTES_HOME = home;
     env.AMO_NOTES_UI_DIR = join(o.studioRoot, "packages", "ui", "dist");
     if (o.testMode) env.AMO_NOTES_TEST = "1";
-    const args = [appDir, ...(hidden ? ["--hidden"] : [])];
+    // The portable exe runs the program it is asked for (its launcher); in development Electron runs packages/notes.
+    const args = [app.isPackaged ? "--amo-app=notes" : appDir, ...(hidden ? ["--hidden"] : [])];
     if (o.testMode) {
       child = spawn(process.execPath, args, { env, stdio: "ignore", windowsHide: true });
     } else {

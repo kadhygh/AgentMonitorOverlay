@@ -1,22 +1,25 @@
 {
-  "startedAt": "2026-10-22T06:58:27.480Z",
-  "archive": "studio\\release\\AMO-Studio-0.9.0-portable.zip",
-  "zipMB": 292,
+  "startedAt": "2026-10-23T17:10:41.303Z",
+  "zipMB": {
+    "Studio": 290,
+    "Reviewer": 164,
+    "Notes": 152
+  },
   "steps": [
     {
-      "name": "unzipped",
-      "seconds": 15,
+      "name": "studio unzipped",
+      "seconds": 9,
       "exe": true
     },
     {
-      "name": "setup",
+      "name": "studio setup",
       "defaultIsNextToExe": true,
       "saved": {
         "dataDir": "data"
       }
     },
     {
-      "name": "chat",
+      "name": "studio chat",
       "reply": "MOCK: 你好，便携版",
       "dataEntries": [
         "claude-home",
@@ -34,11 +37,26 @@
       ]
     },
     {
-      "name": "nothing outside the folder",
+      "name": "studio 便签",
+      "answers": true,
+      "exe": true
+    },
+    {
+      "name": "studio: nothing outside the folder",
       "appdataElectronUnchanged": true,
       "devDataUnchanged": true,
       "appdataStudio": false
+    },
+    {
+      "name": "reviewer",
+      "reviews": "drop.lua",
+      "data": true
+    },
+    {
+      "name": "notes",
+      "answers": true,
+      "shortcut": "Ctrl+Alt+Space"
     }
   ],
-  "finishedAt": "2026-10-22T06:58:48.755Z"
+  "finishedAt": "2026-10-23T17:11:15.535Z"
 }

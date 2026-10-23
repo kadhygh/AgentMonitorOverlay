@@ -27,6 +27,8 @@ const ICON = [join(here, "..", "assets", "icon.png"), join(here, "..", "..", "ap
 const preload = join(here, "preload.cjs");
 
 app.setPath("userData", join(home, "electron"));
+// Its own taskbar group, also when it runs from AMO Studio.exe.
+if (process.platform === "win32") app.setAppUserModelId("AMO.Reviewer");
 
 let host: RunningHost | null = null;
 const pageUrl = () => (host ? `${host.info.url}/reviewer.html` : null);
@@ -35,7 +37,9 @@ const viewers = setupViewerWindows({ url: pageUrl, preload, icon: ICON, testMode
 
 /** What the command line asks to open: a folder (its changes, or a file of it), as `amo-review` takes it. */
 export function parseArgs(argv: readonly string[]): Record<string, unknown> | null {
-  const args = argv.slice(argv.findIndex((a) => /main\.js$|[\\/]reviewer$/i.test(a)) + 1).filter((a) => !a.startsWith("--inspect"));
+  // `electron …/main.js <folder>` in development; the portable exe has no script argument: `AMO Reviewer.exe <folder>`.
+  const script = argv.findIndex((a) => /main\.js$|[\\/]reviewer$/i.test(a));
+  const args = argv.slice(script >= 0 ? script + 1 : 1).filter((a) => !a.startsWith("--inspect"));
   const out: Record<string, unknown> = {};
   let folder: string | null = null;
   for (let i = 0; i < args.length; i++) {
