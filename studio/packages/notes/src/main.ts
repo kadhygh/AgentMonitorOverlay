@@ -147,7 +147,7 @@ function createPad(): BrowserWindow {
     pad = null;
     padReady = false;
   });
-  void w.loadURL(`${server!.url}/#scratchpad`);
+  void w.loadURL(`${server!.url}/notes.html#scratchpad`);
   return w;
 }
 
@@ -256,7 +256,7 @@ function openSettings(): void {
   guard(w);
   w.on("closed", () => (settingsWin = null));
   w.once("ready-to-show", () => (testMode ? w.showInactive() : w.show()));
-  void w.loadURL(`${server!.url}/#notes-settings`);
+  void w.loadURL(`${server!.url}/notes.html#notes-settings`);
   settingsWin = w;
 }
 
@@ -336,7 +336,7 @@ function createTrayMenu(): BrowserWindow {
   // Like a menu: gone as soon as something else is clicked.
   w.on("blur", () => w.hide());
   w.on("closed", () => (trayMenu = null));
-  void w.loadURL(`${server!.url}/#notes-tray-menu`);
+  void w.loadURL(`${server!.url}/notes.html#notes-tray-menu`);
   return w;
 }
 
