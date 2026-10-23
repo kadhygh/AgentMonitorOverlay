@@ -149,6 +149,17 @@ export function PackViewer({ link, state, packId, focus, nonce }: { link: HostLi
                 </button>
               );
             })}
+            <div className="vp-list-keys" data-testid="viewpack-keys">
+              <kbd className="gr-key">j</kbd>
+              <kbd className="gr-key">k</kbd> 切换条目
+              {item.kind === "git" && (
+                <>
+                  <br />
+                  <kbd className="gr-key">Ctrl J</kbd>
+                  <kbd className="gr-key">Ctrl K</kbd> 切换里面的文件
+                </>
+              )}
+            </div>
           </nav>
         )}
         <section className="vp-main" aria-label={viewItemLabel(item)}>

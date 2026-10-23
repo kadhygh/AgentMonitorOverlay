@@ -2,6 +2,10 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+**2026-10-23 · 开始 / 新会话的「正在启动」**：用户反馈点「开始」或任务里「开始新会话」后要卡一下界面才变。原因是请求要等模型进程：Claude 在非默认权限模式下要等 `setPermissionMode`（`live.ready`），Codex 要等 `thread/start`（首次还要起 app-server），另外 `withDefaults` 的型号列表缓存超过 10 分钟会重新起一个 CLI 去问。**界面**：`lib/StartingCover.tsx` 盖住会话启动所在的区域，挂载后立即拦截点击和按键；200ms 后才显示变暗、转圈和「正在启动 <模型>…」，15 秒后再加一句「启动得比平时慢…」。新建任务页盖整个 `.draft-page`；任务页只盖 `.thread-col`（`TaskPage` 的 `starts()` 包住 `newSession`、`startPreset`），左边会话列表和窗口其他部分照常可用。失败时遮罩撤掉，错误照常显示。**Host**：Claude 的 `sendMessage` 不再 `await live.ready`，改成 `live.ready.then(push)`，按顺序排队，调用方不用等进程起来。Claude 和 Codex 的 `choices` 改成先返回旧缓存、后台再刷新（`askModelsFor` / `listModels`，同一 key 同时只问一次），只有完全没有缓存时才等。Codex 的 `thread/start` 和 DSH 起进程还是要等，靠遮罩提示（用户说用过再看要不要改）。e2e `starting.spec.ts`：用 `context().route` 拖慢请求，检查遮罩的出现、位置、消失和失败路径；截图 `screenshots/stage-18/S24-starting-cover.png`。顺带修了 e2e 并行跑时的端口冲突：Codex 的 app-server 以前总是从 47910 开始挑空闲端口，几个 Host 同时启动会挑中同一个，结果报 os error 10048 退出。现在 `pickPort` 从范围里随机一处开始找。
+
+**2026-10-23 · Reviewer 第三批（用户试用后的反馈）**：(1) 查看包里的文件：Tab 现在会带动上面的重点栏，效果和点了上面的按钮一样。`FileReview` 新增 `onActiveRow` 参数，`FileItemView` 把当前行对应到某个重点，记为 `pressed`，按钮可能在栏外就滚动过去；点栏上按钮时用 `clicks` 计数放进 `openKey`，所以 Tab 走开后再点同一个也会跳回去。按某一行打开时，那一行直接就是当前行（`setActive(line - 1)`），Tab 从它往下走。按键都写出来了：文件下面一行 `vw-keys`（Tab/Shift Tab、w/s、Ctrl G、Ctrl F），「重新载入」按钮上标 r（查看包里的文件现在也响应 r），查看包列表底部写 j/k，git 条目再加 Ctrl J/K。(2) 「打开 Review / 打开查看包」以前在 agent 回复之后会跟着那组工具一起折叠起来，所以找不到。现在折叠的那组下面照样显示这些按钮（`ProcessRows.tsx` 的 `ReopenButton` 和 `reopenTarget`）。
+
 **2026-10-23 · Reviewer 优化（两批，`bcc26a8` 和其后一次）**：
 - **快捷键统一**：同一功能用同一个键（记忆 studio-view-packs）。
   - Git Review：q 循环切换范围，e 切换单栏 / 左右对照，r 刷新，Tab / Shift+Tab 在当前文件的批注行之间跳（到头绕回，`logic.ts` 的 `cycle` / `nextOf`）。

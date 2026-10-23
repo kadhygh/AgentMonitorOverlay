@@ -164,10 +164,6 @@ export function ToolRow({ item }: { item: ToolItem }) {
   const note = noteFor(item);
   // A read or an edit of one file: its name opens the quick look (stage 12).
   const mention = kind === "read" || kind === "edit" ? parseInlinePath(summary) : null;
-  // 查看包 (2026-10-23): a view_open (or review_open) call can open its pack again from here.
-  const pack = kind === "mcp" && item.status === "completed" ? packIdOf(item.name, item.detail) : null;
-  // review_open on a whole project opened the Review window, not a pack: the same button opens it again.
-  const reviewAgain = kind === "mcp" && item.status === "completed" && !pack ? reviewTargetOf(item.name, item.detail) : null;
   return (
     <div className="pr pr-tool" data-testid="tool" data-status={item.status} data-kind={kind}>
       <RowButton icon={<Icon />} open={open} expandable={expandable} onToggle={() => setOpen((v) => !v)}>
@@ -198,18 +194,33 @@ export function ToolRow({ item }: { item: ToolItem }) {
         {note && <span className={`pr-note ${item.status}`}>{note}</span>}
       </RowButton>
       {item.images?.length ? <ToolImages images={item.images} /> : null}
-      {pack && (
-        <button type="button" className="btn-ghost small pr-pack" onClick={() => openViewer({ path: "", pack })} title="再打开这个查看包" data-testid="tool-open-pack">
-          打开查看包
-        </button>
-      )}
-      {reviewAgain && (
-        <button type="button" className="btn-ghost small pr-pack" onClick={() => openReview({ ...reviewAgain, nonce: `again-${Date.now()}` })} title="再打开 agent 打开过的这个 Review" data-testid="tool-open-review">
-          打开 Review
-        </button>
-      )}
+      <ReopenButton item={item} />
       {open && <div className="pr-body">{toolBody(item)}</div>}
     </div>
+  );
+}
+
+/** What a finished view_open / review_open call opened (2026-10-23): its 查看包, or the Review window on a project. */
+function reopenTarget(item: ToolItem): { pack: string } | { review: NonNullable<ReturnType<typeof reviewTargetOf>> } | null {
+  if (toolKind(item) !== "mcp" || item.status !== "completed") return null;
+  const pack = packIdOf(item.name, item.detail);
+  if (pack) return { pack };
+  const review = reviewTargetOf(item.name, item.detail);
+  return review ? { review } : null;
+}
+
+/** Opens again what the agent opened for the person; shown on the call's row, and beside its folded group. */
+function ReopenButton({ item }: { item: ToolItem }) {
+  const target = reopenTarget(item);
+  if (!target) return null;
+  return "pack" in target ? (
+    <button type="button" className="btn-ghost small pr-pack" onClick={() => openViewer({ path: "", pack: target.pack })} title="再打开这个查看包" data-testid="tool-open-pack">
+      打开查看包
+    </button>
+  ) : (
+    <button type="button" className="btn-ghost small pr-pack" onClick={() => openReview({ ...target.review, nonce: `again-${Date.now()}` })} title="再打开 agent 打开过的这个 Review" data-testid="tool-open-review">
+      打开 Review
+    </button>
   );
 }
 
@@ -468,6 +479,9 @@ export function ProcessGroup({
           {title}
         </Shimmer>
       </button>
+      {/* Folded, the work still offers what the agent opened for the person (查看包, Review): not hidden inside. */}
+      {!open &&
+        members.map((m) => (m.type === "tool" && reopenTarget(m) ? <ReopenButton key={m.id} item={m} /> : null))}
       {open && (
         <div
           ref={body}

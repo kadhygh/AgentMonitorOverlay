@@ -32,3 +32,6 @@
 .vp-send .field { max-width: 280px; }
 /* A tool row that made a 查看包: reopen it. */
 .pr-pack { margin: 2px 0 4px 26px; }
+/* j / k under the list (2026-10-23). */
+.vp-list-keys { margin-top: auto; padding: 8px 6px 2px; color: var(--text-faint); font-size: 11.5px; }
+.vp-list-keys .gr-key { margin: 0 3px 0 0; }

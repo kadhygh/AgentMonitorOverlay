@@ -43,6 +43,7 @@ export function FileReview({
   defaultSession,
   active,
   highlights,
+  onActiveRow,
 }: {
   link: HostLink;
   state: StateSnapshot;
@@ -59,6 +60,8 @@ export function FileReview({
   active: boolean;
   /** 查看包 (2026-10-23): the agent's 重点, drawn on the lines with their notes. */
   highlights?: readonly ViewMark[];
+  /** The line being looked at changed (Tab, a click, find, an open): its row, null for none. */
+  onActiveRow?: (row: number | null) => void;
 }) {
   // Comments name the file relative to its project, as Review does.
   const rel = workspace ? relativeIn(file.path, workspace.path) : null;
@@ -83,13 +86,16 @@ export function FileReview({
   useLayoutEffect(() => {
     const el = scroller.current;
     if (!el) return;
-    setActive(null);
+    // Opened at a line: that line is the current one, so Tab goes on from it (as after clicking a 重点 on top).
+    setActive(line ? line - 1 : null);
     if (!line) {
       el.scrollTop = 0;
       return;
     }
     scrollToLine(el, line, (last - line + 1) * 20 < el.clientHeight * 0.6 ? el.clientHeight / 3 : 40);
   }, [openKey, file]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => onActiveRow?.(active_), [active_]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // The marked lines, for Tab: the commented ones and the 重点 (a line's row is its number less one).
   const markRows = useMemo(() => {
@@ -227,6 +233,25 @@ export function FileReview({
           />
         </div>
         {rows.length > 0 && <OverviewRuler scroller={scroller} kinds={plainKinds} marks={rulerMarks} />}
+      </div>
+      {/* The keys of this view, so they can be found (2026-10-23); r 重新载入 is on its button. */}
+      <div className="vw-keys" data-testid="viewer-keys">
+        {markRows.length > 0 && (
+          <span>
+            <kbd className="gr-key">Tab</kbd>
+            <kbd className="gr-key">Shift Tab</kbd> 下一处 / 上一处{highlights?.length ? "重点或批注" : "批注"}
+          </span>
+        )}
+        <span>
+          <kbd className="gr-key">w</kbd>
+          <kbd className="gr-key">s</kbd> 翻页
+        </span>
+        <span>
+          <kbd className="gr-key">Ctrl G</kbd> 跳到行
+        </span>
+        <span>
+          <kbd className="gr-key">Ctrl F</kbd> 查找
+        </span>
       </div>
       {/* The project's drafts (written here or in Review) go out from here too; shown once there are some. */}
       {ws && (drafts.length > 0 || draftAt) && <SendBar link={link} state={state} workspace={ws} comments={comments} target={target} onTarget={setTarget} busy={busy} run={run} />}

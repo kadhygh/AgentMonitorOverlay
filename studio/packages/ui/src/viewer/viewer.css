@@ -25,4 +25,7 @@
 /* 文件 mode for code (FileReview): the file drawn as Review draws it, the send bar under it once there are drafts. */
 .vw-review { flex: 1; min-height: 0; display: flex; flex-direction: column; }
 .vw-review .gr-lines { font-size: 13px; }
+/* Its keys, in a quiet line under the file (2026-10-23). */
+.vw-keys { flex: none; display: flex; flex-wrap: wrap; gap: 4px 16px; padding: 4px 16px; border-top: 1px solid var(--divider); background: var(--panel); color: var(--text-faint); font-size: 11.5px; line-height: 18px; }
+.vw-keys .gr-key { margin: 0 3px 0 0; }
 .vw-changes > .gr-app { flex: 1; min-height: 0; height: auto; }

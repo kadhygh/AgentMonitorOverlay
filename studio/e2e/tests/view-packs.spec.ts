@@ -61,16 +61,29 @@ test("files with 重点; the same session sending again a moment later adds to t
   await expect(win.getByTestId("viewpack-mark")).toHaveCount(2);
   await expect(win.getByTestId("highlight-note")).toHaveText([/第 1 行\s*0\.1 → 0\.25/, /第 2–3 行\s*这两行没变/]);
   await expect(win.locator(".gr-line.hl")).toHaveCount(3);
-  // Tab / Shift+Tab between the 重点, round at the ends, as between comments in Git Review (2026-10-23).
+  // Tab / Shift+Tab between the 重点, round at the ends, as between comments in Git Review (2026-10-23); the row on top
+  // follows, as if its button had been clicked. Opened at the first, Tab goes on from there.
   const at = (line: number) => win.locator(`.gr-line.active[data-line="new:${line}"]`);
-  await win.locator("body").press("Tab");
+  const chips = win.getByTestId("viewpack-mark");
   await expect(at(1)).toHaveCount(1);
+  await expect(chips.nth(0)).toHaveAttribute("aria-pressed", "true");
   await win.locator("body").press("Tab");
   await expect(at(2)).toHaveCount(1);
+  await expect(chips.nth(1)).toHaveAttribute("aria-pressed", "true");
+  await expect(chips.nth(0)).toHaveAttribute("aria-pressed", "false");
   await win.locator("body").press("Tab");
   await expect(at(1)).toHaveCount(1);
+  await expect(chips.nth(0)).toHaveAttribute("aria-pressed", "true");
   await win.locator("body").press("Shift+Tab");
   await expect(at(2)).toHaveCount(1);
+  // A click on the button of the 重点 Tab left goes back to it.
+  await chips.nth(0).click();
+  await expect(at(1)).toHaveCount(1);
+  await expect(chips.nth(0)).toHaveAttribute("aria-pressed", "true");
+  // The keys are written down: under the file, and r on 重新载入.
+  await expect(win.getByTestId("viewer-keys")).toContainText("下一处 / 上一处重点或批注");
+  await expect(win.getByTestId("viewer-keys")).toContainText("翻页");
+  await expect(win.getByRole("button", { name: /重新载入/ }).locator("kbd")).toHaveText("r");
   // The overview ruler is the scrollbar here too (2026-10-23): the 重点 on it (lines 1–3, one run).
   await expect(win.locator('[data-testid="ruler-mark"][data-kind="hl"]')).toHaveCount(1);
 
@@ -101,6 +114,8 @@ test("git items list the files pointed at first, above the rest, with their 重�
   );
   // The list names what each compares (a commit with its first line) and the files it points at.
   await expect(win.getByTestId("viewpack-entry")).toHaveText([/未提交的改动.*drop\.lua · 1 处重点/, /提交 [0-9a-f]{7} · base.*drop\.lua、nope\.lua/, /drop\.lua（改动预览）/]);
+  await expect(win.getByTestId("viewpack-keys")).toContainText("切换条目");
+  await expect(win.getByTestId("viewpack-keys")).toContainText("切换里面的文件");
 
   // Uncommitted changes: drop.lua pointed at, on top; shop.lua (changed too) below it, still there (2026-10-23).
   await expect(win.getByTestId("review-group")).toHaveText([/重点文件\s*1/, /其他改动\s*1/]);
