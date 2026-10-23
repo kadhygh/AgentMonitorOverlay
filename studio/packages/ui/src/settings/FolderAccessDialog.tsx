@@ -21,7 +21,7 @@ export function folderDetail(f: FolderAccessStatus, now = new Date()): string {
   if (f.state === "running") return f.job === "scan" ? "正在扫描 exe…" : "正在设置…文件多的项目要几分钟";
   if (f.state === "failed") return f.error ?? "上次没成功";
   if (f.state === "unknown") return "读不到这个文件夹的权限";
-  const scan = f.scannedAt ? `${f.exes ?? 0} 个 exe 已设回正常 · ${relativeTime(f.scannedAt, now)}扫描` : "";
+  const scan = f.scannedAt ? `${f.exes ?? 0} 个 exe / dll 已设回正常 · ${relativeTime(f.scannedAt, now)}扫描` : "";
   if (f.state === "ready") return scan;
   return f.fullControl === false ? "缺可继承的完全控制：沙箱设不起来，命令会一条条要你批准" : "还没处理项目里的 exe";
 }
@@ -89,10 +89,10 @@ export function FolderAccessDialog({ link, focus, onClose }: { link: HostLink; f
         <div className="folder-access-intro">
           <p>只有想让 DeepSeek（DSH）在「工作区可写」沙箱里跑时才需要设置；用「完全访问」就不用管这里。</p>
           <p>
-            「设置权限」做三件事：给你自己加上项目文件夹（含子文件夹）的 Windows 完全控制，原来的权限先备份；把项目标成低完整性，沙箱靠它把写入限制在项目里；把项目里的 exe 设回正常。不用管理员。
+            「设置权限」做三件事：给你自己加上项目文件夹（含子文件夹）的 Windows 完全控制，原来的权限先备份；把项目标成低完整性，沙箱靠它把写入限制在项目里；把项目里的 exe 和 dll 设回正常（低完整性的 dll 会让 Electron、Chromium 一类程序的窗口崩溃）。不用管理员。
           </p>
           <p>
-            之后在项目里新生成的文件都会继承低完整性，新生成的 exe 会降级运行、写不了项目外。构建之后点「重新扫描」，或者把构建输出放到项目外的文件夹。「工作区可写」的会话每轮结束时也会自动补扫（同一项目最多 10 分钟一次）。
+            之后在项目里新生成的文件都会继承低完整性，新生成的 exe 会降级运行、写不了项目外，新生成的 dll 可能加载不了。构建之后点「重新扫描」，或者把构建输出放到项目外的文件夹。「工作区可写」的会话每轮结束时也会自动补扫（同一项目最多 10 分钟一次）。
           </p>
         </div>
         {list && !list.available && <p className="settings-hint">这台机器上 Studio 不处理文件夹权限（只在 Windows 上）。</p>}

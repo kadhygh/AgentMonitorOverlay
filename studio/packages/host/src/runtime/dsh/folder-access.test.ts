@@ -47,7 +47,7 @@ describe("folder access for DSH's write sandbox", () => {
     expect(readIcacls("D:\\w KANGAROO-COM\\Kangaroo:(OI)(CI)(IO)(F)\n", "D:\\w", "Kangaroo").ok).toBe(false);
   });
 
-  it("finds the folders holding .exe files, past .git and never through a link", async () => {
+  it("finds the folders holding .exe and .dll files, past .git and never through a link", async () => {
     const root = mkdtempSync(join(tmpdir(), "amo-studio-test-exes-"));
     try {
       for (const d of ["tools/bin", ".git/hooks", "src", "outside"]) mkdirSync(join(root, d), { recursive: true });
@@ -59,7 +59,11 @@ describe("folder access for DSH's write sandbox", () => {
       writeFileSync(join(root, "outside", "o.exe"), "");
       symlinkSync(join(root, "outside"), join(root, "src", "linked"), "junction");
       const found = await findExes(root);
-      expect(Object.fromEntries([...found].map(([d, n]) => [d.slice(root.length) || "\\", n]))).toEqual({ "\\": 1, [join("\\tools", "bin")]: 2, "\\outside": 1 });
+      expect(Object.fromEntries([...found].map(([d, n]) => [d.slice(root.length) || "\\", n]))).toEqual({
+        "\\": { exe: 1, dll: 0 },
+        [join("\\tools", "bin")]: { exe: 2, dll: 1 },
+        "\\outside": { exe: 1, dll: 0 },
+      });
     } finally {
       removeTempDir(root);
     }

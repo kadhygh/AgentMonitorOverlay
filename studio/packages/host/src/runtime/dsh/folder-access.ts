@@ -61,8 +61,9 @@ export interface FolderAccess {
   /** Labels the folder Low, passed on to all it holds, as DSH's grant will (a set-up folder is ready before DSH). */
   label(folder: string): Promise<void>;
   /**
-   * Sets every .exe in the folder back to Medium (an explicit label, which DSH's later grants leave alone) and returns
-   * how many there are. Never follows links or junctions; skips .git.
+   * Sets every .exe and .dll in the folder back to Medium (an explicit label, which DSH's later grants leave alone) and
+   * returns how many there are. Never follows links or junctions; skips .git. The .dll too (2026-10-23): Chromium's
+   * sandboxed processes refuse to load a library labelled Low, so Electron in the project crashed its windows.
    */
   exes(folder: string): Promise<number>;
 }
@@ -82,9 +83,9 @@ function icacls(args: string[]): Promise<string> {
   });
 }
 
-/** The folders under `root` holding .exe files, with how many each holds. */
-export async function findExes(root: string): Promise<Map<string, number>> {
-  const found = new Map<string, number>();
+/** The folders under `root` holding .exe or .dll files, with how many of each. */
+export async function findExes(root: string): Promise<Map<string, { exe: number; dll: number }>> {
+  const found = new Map<string, { exe: number; dll: number }>();
   const stack = [root];
   let visited = 0;
   while (stack.length) {
@@ -99,8 +100,12 @@ export async function findExes(root: string): Promise<Map<string, number>> {
       if (e.isSymbolicLink()) continue;
       if (e.isDirectory()) {
         if (e.name !== ".git") stack.push(join(dir, e.name));
-      } else if (e.isFile() && /\.exe$/i.test(e.name)) {
-        found.set(dir, (found.get(dir) ?? 0) + 1);
+      } else if (e.isFile()) {
+        const kind = /\.(exe|dll)$/i.exec(e.name)?.[1]?.toLowerCase() as "exe" | "dll" | undefined;
+        if (!kind) continue;
+        const n = found.get(dir) ?? { exe: 0, dll: 0 };
+        n[kind]++;
+        found.set(dir, n);
       }
     }
     // A big project has tens of thousands of folders: let the Host answer meanwhile.
@@ -135,8 +140,9 @@ export function windowsFolderAccess(backupDir: string): FolderAccess {
     async exes(folder) {
       let count = 0;
       for (const [dir, n] of await findExes(folder)) {
-        await icacls([join(dir, "*.exe"), "/setintegritylevel", "medium"]);
-        count += n;
+        if (n.exe) await icacls([join(dir, "*.exe"), "/setintegritylevel", "medium"]);
+        if (n.dll) await icacls([join(dir, "*.dll"), "/setintegritylevel", "medium"]);
+        count += n.exe + n.dll;
       }
       return count;
     },
