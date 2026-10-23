@@ -25,6 +25,8 @@
 - 单元测试：`notes/src/store.test.ts`，还有从 app 挪过来的 `placement.test.ts`。
 - e2e：`notes-app.spec.ts` 5 条，直接启动便签程序，原来 Studio 便签窗口的分页、图片、复制换行、页数这些测试都搬到了这里；`scratchpad.spec.ts` 改成测「Studio 启动便签 → 导入一次 → 设置节」。截图在 `screenshots/notes/`。
 
+**同日后续（`a2ced1e`）**：冷启动时先弹「便签启动中」小读条，等窗口准备好才出现；从托盘启动时会在后台预先建好窗口，所以之后每次都是瞬间出现。Studio 会把自己的界面大小同步给便签（`/api/notes/look`）。翻页改成 Alt+1…9，并去掉了应用菜单。托盘图标换成便签自己的图标（`packages/notes/assets`），右键菜单改成 AMO 风格的小窗（`#notes-tray-menu`）。复制按钮的颜色还在等用户在画布上挑。
+
 **还没做**：Portable 打包时把便签带上（到发布时再做）。在打包版里，`notes-link` 用 `process.execPath` 加 `resources/app/packages/notes` 启动，需要确认打包后的目录里有它。
 
 **2026-10-23 · 开始 / 新会话的「正在启动」**：用户反馈点「开始」或任务里「开始新会话」后要卡一下界面才变。原因是请求要等模型进程：Claude 在非默认权限模式下要等 `setPermissionMode`（`live.ready`），Codex 要等 `thread/start`（首次还要起 app-server），另外 `withDefaults` 的型号列表缓存超过 10 分钟会重新起一个 CLI 去问。**界面**：`lib/StartingCover.tsx` 盖住会话启动所在的区域，挂载后立即拦截点击和按键；200ms 后才显示变暗、转圈和「正在启动 <模型>…」，15 秒后再加一句「启动得比平时慢…」。新建任务页盖整个 `.draft-page`；任务页只盖 `.thread-col`（`TaskPage` 的 `starts()` 包住 `newSession`、`startPreset`），左边会话列表和窗口其他部分照常可用。失败时遮罩撤掉，错误照常显示。**Host**：Claude 的 `sendMessage` 不再 `await live.ready`，改成 `live.ready.then(push)`，按顺序排队，调用方不用等进程起来。Claude 和 Codex 的 `choices` 改成先返回旧缓存、后台再刷新（`askModelsFor` / `listModels`，同一 key 同时只问一次），只有完全没有缓存时才等。Codex 的 `thread/start` 和 DSH 起进程还是要等，靠遮罩提示（用户说用过再看要不要改）。e2e `starting.spec.ts`：用 `context().route` 拖慢请求，检查遮罩的出现、位置、消失和失败路径；截图 `screenshots/stage-18/S24-starting-cover.png`。顺带修了 e2e 并行跑时的端口冲突：Codex 的 app-server 以前总是从 47910 开始挑空闲端口，几个 Host 同时启动会挑中同一个，结果报 os error 10048 退出。现在 `pickPort` 从范围里随机一处开始找。
