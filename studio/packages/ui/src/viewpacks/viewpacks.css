@@ -30,8 +30,9 @@
 .vp-proposal-scroll .gr-lines { font-size: 13px; }
 .vp-send { display: flex; align-items: center; gap: 8px; padding: 8px 16px; border-top: 1px solid var(--border); background: var(--bg-header); font-size: var(--fs-sm); }
 .vp-send .field { max-width: 280px; }
-/* A tool row that made a 查看包: reopen it. */
-.pr-pack { margin: 2px 0 4px 26px; }
+/* A tool row that made a 查看包 (or opened Review): reopen it. A small chip like 子智能体's 查看, under the row's text
+   (or the folded group's), as wide as its words. */
+.pr-pack { align-self: flex-start; display: inline-flex; align-items: center; gap: 5px; margin: 3px 0 4px 26px; }
 /* j / k under the list (2026-10-23). */
 .vp-list-keys { margin-top: auto; padding: 8px 6px 2px; color: var(--text-faint); font-size: 11.5px; }
 .vp-list-keys .gr-key { margin: 0 3px 0 0; }

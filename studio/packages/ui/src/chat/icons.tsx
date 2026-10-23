@@ -17,6 +17,13 @@ export const IconThink = () => (
     <path d="M6.4 14h3.2" />
   </Svg>
 );
+/** Opens in a window of its own (查看包, Review). */
+export const IconOpenWindow = () => (
+  <Svg size={12}>
+    <path d="M9.5 2.5h4v4M13.5 2.5 8 8" />
+    <path d="M12 9.5v3.2a.8.8 0 0 1-.8.8H3.3a.8.8 0 0 1-.8-.8V4.8a.8.8 0 0 1 .8-.8h3.2" />
+  </Svg>
+);
 export const IconRead = () => (
   <Svg>
     <path d="M4 1.8h5l3 3v9.4H4z" />

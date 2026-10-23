@@ -10,6 +10,7 @@ import {
   IconCheck,
   IconChevronDown,
   IconChevronUp,
+  IconOpenWindow,
   IconThink,
   IconX,
 } from "./icons.js";
@@ -214,11 +215,13 @@ function ReopenButton({ item }: { item: ToolItem }) {
   const target = reopenTarget(item);
   if (!target) return null;
   return "pack" in target ? (
-    <button type="button" className="btn-ghost small pr-pack" onClick={() => openViewer({ path: "", pack: target.pack })} title="再打开这个查看包" data-testid="tool-open-pack">
+    <button type="button" className="pr-link pr-pack" onClick={() => openViewer({ path: "", pack: target.pack })} title="再打开这个查看包" data-testid="tool-open-pack">
+      <IconOpenWindow />
       打开查看包
     </button>
   ) : (
-    <button type="button" className="btn-ghost small pr-pack" onClick={() => openReview({ ...target.review, nonce: `again-${Date.now()}` })} title="再打开 agent 打开过的这个 Review" data-testid="tool-open-review">
+    <button type="button" className="pr-link pr-pack" onClick={() => openReview({ ...target.review, nonce: `again-${Date.now()}` })} title="再打开 agent 打开过的这个 Review" data-testid="tool-open-review">
+      <IconOpenWindow />
       打开 Review
     </button>
   );

@@ -177,6 +177,7 @@ test("an agent's view_open opens the pack; its tool row opens it again", async (
   await page.getByTestId("task-card").filter({ hasText: "看文件" }).click();
   const reopen = page.getByTestId("tool-open-pack");
   await expect(reopen).toBeVisible({ timeout: 30_000 });
+  await screenshot(app, "stage-18", "S23-viewpack-reopen", page);
   // The preview window shows another pack meanwhile; the tool row brings this one back into it.
   await studio.api("POST", "/api/viewpacks", { workspaceId: ws.id, title: "别的", items: [{ kind: "file", path: "notes.md" }] });
   await expect(win.getByTestId("viewpack-title")).toHaveText("别的");
