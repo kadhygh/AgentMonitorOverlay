@@ -57,6 +57,8 @@ export interface StartHostOptions {
   dshEnv?: NodeJS.ProcessEnv;
   /** Tests: what reads and fixes a DSH session's folder permissions (folder-access.ts); null for none. */
   dshFolderAccess?: FolderAccess | null;
+  /** Tests: the wait between a set-up folder's scans after write turns. */
+  dshFolderScanMs?: number;
 }
 
 export interface RunningHost {
@@ -242,6 +244,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       ...(options.dshAgent ? { agent: options.dshAgent } : {}),
       ...(options.dshEnv ? { env: options.dshEnv } : {}),
       ...(options.dshFolderAccess !== undefined ? { folderAccess: options.dshFolderAccess } : {}),
+      ...(options.dshFolderScanMs !== undefined ? { folderScanEveryMs: options.dshFolderScanMs } : {}),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude, dsh });
     const liveStore = store;

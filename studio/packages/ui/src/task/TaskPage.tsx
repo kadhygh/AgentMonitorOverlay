@@ -398,7 +398,7 @@ export function TaskPage({ link, task, sessions, tasks = [task], workspaces, top
           </button>
           {/* 归档 on its own, left of ⋯ (2026-10-23). */}
           {!task.archivedAt && (
-            <button type="button" className="btn-ghost small with-icon" title="归档任务：任务和它的会话变成只读，之后可以恢复" disabled={busy} onClick={() => void archiveTask()} data-testid="task-archive">
+            <button type="button" className="btn-ghost small with-icon danger" title="归档任务：任务和它的会话变成只读，之后可以恢复" disabled={busy} onClick={() => void archiveTask()} data-testid="task-archive">
               <ArchiveIcon size={15} />
               归档
             </button>

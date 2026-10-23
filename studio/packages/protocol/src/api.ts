@@ -306,8 +306,12 @@ export interface HostRoutes {
    * false where Studio cannot read or fix them (not Windows).
    */
   "GET /api/dsh/folders": { req: void; res: { available: boolean; folders: FolderAccessStatus[] } };
-  /** Fixes one project's folder (as the session notice does); answers at once with `running`, GET follows it. */
+  /** One project's folder (the hint under 工程内写 asks before a DSH session starts there); 404 where not available. */
+  "GET /api/dsh/folders/:workspaceId": { req: void; res: FolderAccessStatus };
+  /** Sets one project's folder up (as the session notice does); answers at once with `running`, GET follows it. */
   "POST /api/dsh/folders/:workspaceId/fix": { req: void; res: FolderAccessStatus };
+  /** Scans a set-up folder for .exe files again (after a build made new ones) and sets them back to Medium. */
+  "POST /api/dsh/folders/:workspaceId/scan": { req: void; res: FolderAccessStatus };
   /**
    * Quota use of the subscriptions (GPT through the Codex login, Claude through its token). `?refresh=1` asks the
    * accounts now (GPT: may start its app-server); otherwise the last numbers read.

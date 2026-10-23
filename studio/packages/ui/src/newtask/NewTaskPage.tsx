@@ -10,6 +10,7 @@ import { usePacks } from "../packs/usePacks.js";
 import { useFeature } from "../lib/features.js";
 import { useSettings } from "../settings/SettingsDialog.js";
 import { EffortBars, FastToggle, nextEffort, PermissionSegments } from "../chat/pickers.js";
+import { DSH_FULL_ACCESS, SandboxHint } from "../settings/SandboxHint.js";
 import { submitDraft, useTaskDraft } from "./draft.js";
 import { ModelRow, tilePicks } from "./ModelRow.js";
 import { SuggestList, useMentions } from "./Suggest.js";
@@ -315,6 +316,13 @@ export function NewTaskPage({ link, workspaces, topics, tasks, profiles, scope, 
                 {busy ? "正在开始…" : "开始"} <kbd>↵</kbd>
               </button>
             </div>
+            {/* DeepSeek · DSH with 工作区可写 in a project not set up for its sandbox (2026-10-23). */}
+            <SandboxHint
+              link={link}
+              workspaceId={draft.projectId ?? workspaces.find((w) => w.builtin === "common")?.id}
+              active={profiles.find((p) => p.id === draft.pick.profileId)?.runtime === "dsh" && !!choices && (draft.options.permission ?? choices.defaultPermission) === "workspace-write"}
+              onUseFull={() => update({ options: { ...draft.options, permission: DSH_FULL_ACCESS } })}
+            />
             {presets.length > 0 && (
               <div className="cbar presets" role="group" aria-label="常用预设">
                 <span className="pick-lab">预设</span>

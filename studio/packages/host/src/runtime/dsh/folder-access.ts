@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, type Dirent } from "node:fs";
+import { readdir } from "node:fs/promises";
 import { constants, setPriority, userInfo } from "node:os";
 import { join } from "node:path";
 
@@ -55,8 +56,15 @@ export function readIcacls(output: string, folder: string, user: string): Folder
 export interface FolderAccess {
   /** The folder's state; null when it cannot be read (or this is not Windows). */
   check(folder: string): Promise<FolderAccessState | null>;
-  /** Gives the person inherited full control (the old permissions saved first) and passes DSH's label on; returns where they were saved. */
-  fix(folder: string): Promise<{ state: FolderAccessState; backup: string }>;
+  /** Gives the person inherited full control, the old permissions saved first; returns where they were saved. */
+  grant(folder: string): Promise<string>;
+  /** Labels the folder Low, passed on to all it holds, as DSH's grant will (a set-up folder is ready before DSH). */
+  label(folder: string): Promise<void>;
+  /**
+   * Sets every .exe in the folder back to Medium (an explicit label, which DSH's later grants leave alone) and returns
+   * how many there are. Never follows links or junctions; skips .git.
+   */
+  exes(folder: string): Promise<number>;
 }
 
 function icacls(args: string[]): Promise<string> {
@@ -74,32 +82,63 @@ function icacls(args: string[]): Promise<string> {
   });
 }
 
+/** The folders under `root` holding .exe files, with how many each holds. */
+export async function findExes(root: string): Promise<Map<string, number>> {
+  const found = new Map<string, number>();
+  const stack = [root];
+  let visited = 0;
+  while (stack.length) {
+    const dir = stack.pop()!;
+    let entries: Dirent[];
+    try {
+      entries = await readdir(dir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+    for (const e of entries) {
+      if (e.isSymbolicLink()) continue;
+      if (e.isDirectory()) {
+        if (e.name !== ".git") stack.push(join(dir, e.name));
+      } else if (e.isFile() && /\.exe$/i.test(e.name)) {
+        found.set(dir, (found.get(dir) ?? 0) + 1);
+      }
+    }
+    // A big project has tens of thousands of folders: let the Host answer meanwhile.
+    if (++visited % 500 === 0) await new Promise((r) => setImmediate(r));
+  }
+  return found;
+}
+
 /** The real one, through `icacls`; old permissions go to `backupDir`. */
 export function windowsFolderAccess(backupDir: string): FolderAccess {
   const user = userInfo().username;
   const account = process.env.USERDOMAIN ? `${process.env.USERDOMAIN}\\${user}` : user;
-  const check = async (folder: string) => {
-    try {
-      return readIcacls(await icacls([folder]), folder, user);
-    } catch {
-      return null;
-    }
-  };
   return {
-    check,
-    async fix(folder) {
+    async check(folder) {
+      try {
+        return readIcacls(await icacls([folder]), folder, user);
+      } catch {
+        return null;
+      }
+    },
+    async grant(folder) {
       mkdirSync(backupDir, { recursive: true });
       const backup = join(backupDir, `${folder.replace(/[:\\/]+/g, "_").replace(/^_+|_+$/g, "")}-${new Date().toISOString().replace(/[:.]/g, "-")}.acl`);
       // `icacls <parent> /restore <file>` puts them back.
       await icacls([folder, "/save", backup]);
       await icacls([folder, "/grant", `${account}:(OI)(CI)F`]);
-      const before = await check(folder);
-      // DSH set its label up on the folder alone before (its entry is passed on with the grant above; the label, in
-      // another part of the permissions, is not): set again, it reaches the subfolders.
-      if (before?.labelled) await icacls([folder, "/setintegritylevel", "(OI)(CI)low"]);
-      const state = await check(folder);
-      if (!state) throw new Error(`读不到 ${folder} 的权限`);
-      return { state, backup };
+      return backup;
+    },
+    async label(folder) {
+      await icacls([folder, "/setintegritylevel", "(OI)(CI)low"]);
+    },
+    async exes(folder) {
+      let count = 0;
+      for (const [dir, n] of await findExes(folder)) {
+        await icacls([join(dir, "*.exe"), "/setintegritylevel", "medium"]);
+        count += n;
+      }
+      return count;
     },
   };
 }

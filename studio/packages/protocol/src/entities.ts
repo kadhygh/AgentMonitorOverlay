@@ -308,15 +308,26 @@ export interface MessageImage {
 export type NoticeAction = { kind: "folder-access"; path: string; state: "offered" | "running" | "done" | "failed" };
 
 /**
- * A project folder as DSH's write sandbox finds it (设置 → 项目与目录). `ok`: the person has inherited full control,
- * the sandbox can be set up; `needs-fix`: they do not; `unknown`: it could not be read; `running` / `failed`: a fix.
- * `backup`: where the last fix saved the old permissions.
+ * A project folder as DSH's write sandbox needs it (设置 → 项目与目录 → DSH 沙箱权限, 2026-10-23). Setting it up
+ * gives the person inherited full control (so DSH can label the folder and pass its grant on), labels it Low ahead of
+ * DSH, and sets every .exe in it back to Medium (a program started from a Low file runs at Low integrity; new files
+ * inherit Low wherever they come from, so builds need a new scan).
+ *
+ * `state`: `ready` — set up by Studio and the person still has inherited full control; `unprepared` — not (yet);
+ * `unknown` — its permissions could not be read; `running` — a setup or scan runs (`job`); `failed` — the last one
+ * failed (`error`). `fullControl`/`labelled` are what was read; `exes`/`scannedAt` the last scan; `backup` where the
+ * last setup saved the old permissions.
  */
 export interface FolderAccessStatus {
   workspaceId: Id;
   name: string;
   path: string;
-  state: "ok" | "needs-fix" | "unknown" | "running" | "failed";
+  state: "ready" | "unprepared" | "unknown" | "running" | "failed";
+  job?: "setup" | "scan";
+  fullControl?: boolean;
+  labelled?: boolean;
+  exes?: number;
+  scannedAt?: string;
   error?: string;
   backup?: string;
 }

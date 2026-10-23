@@ -1,5 +1,9 @@
+import { mkdirSync, mkdtempSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { grantFailurePath, readIcacls } from "./folder-access.js";
+import { removeTempDir } from "@amo-studio/testkit";
+import { findExes, grantFailurePath, readIcacls } from "./folder-access.js";
 
 // What `icacls <folder>` printed on the person's machine (2026-10-23), trimmed.
 const MODIFY_ONLY = `G:\\PROJECT\\project_mining_dev S-1-5-21-1798683511-2594250425-3452088577-3985546160:(OI)(CI)(M)
@@ -41,5 +45,23 @@ describe("folder access for DSH's write sandbox", () => {
     expect(readIcacls("D:\\w Everyone:(OI)(CI)(F)\n", "D:\\w", "Kangaroo").ok).toBe(true);
     expect(readIcacls("D:\\w KANGAROO-COM\\Kangaroo:(OI)(CI)(DENY)(F)\n", "D:\\w", "Kangaroo").ok).toBe(false);
     expect(readIcacls("D:\\w KANGAROO-COM\\Kangaroo:(OI)(CI)(IO)(F)\n", "D:\\w", "Kangaroo").ok).toBe(false);
+  });
+
+  it("finds the folders holding .exe files, past .git and never through a link", async () => {
+    const root = mkdtempSync(join(tmpdir(), "amo-studio-test-exes-"));
+    try {
+      for (const d of ["tools/bin", ".git/hooks", "src", "outside"]) mkdirSync(join(root, d), { recursive: true });
+      writeFileSync(join(root, "tools", "bin", "a.exe"), "");
+      writeFileSync(join(root, "tools", "bin", "B.EXE"), "");
+      writeFileSync(join(root, "tools", "bin", "c.dll"), "");
+      writeFileSync(join(root, "run.exe"), "");
+      writeFileSync(join(root, ".git", "hooks", "x.exe"), "");
+      writeFileSync(join(root, "outside", "o.exe"), "");
+      symlinkSync(join(root, "outside"), join(root, "src", "linked"), "junction");
+      const found = await findExes(root);
+      expect(Object.fromEntries([...found].map(([d, n]) => [d.slice(root.length) || "\\", n]))).toEqual({ "\\": 1, [join("\\tools", "bin")]: 2, "\\outside": 1 });
+    } finally {
+      removeTempDir(root);
+    }
   });
 });

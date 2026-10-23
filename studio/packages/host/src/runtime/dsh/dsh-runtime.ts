@@ -1,6 +1,6 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import type { AccountUsage, ApprovalDecision, Attachment, DshCheck, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, Workspace } from "@amo-studio/protocol";
+import type { AccountUsage, ApprovalDecision, Attachment, DshCheck, FolderAccessStatus, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, Workspace } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
 import { newId } from "../../store/store.js";
 import { MCP_SESSION_HEADER, type McpIdentities } from "../../mcp/identity.js";
@@ -69,22 +69,37 @@ export interface DshRuntimeOptions {
    * turns it off. `icacls` on Windows unless `agent` is given (tests), none elsewhere.
    */
   folderAccess?: FolderAccess | null;
+  /** How long a set-up folder waits between scans after write turns (default AUTO_SCAN_MS; tests: 0). */
+  folderScanEveryMs?: number;
   now?: () => Date;
 }
 
-/** The folder-access notice's words for each step of the fix. */
+/** The folder-access notice's words for each step of setting a folder up (`extra`: what the step adds). */
 function folderAccessMessage(state: "offered" | "running" | "done" | "failed", path: string, extra = ""): string {
   switch (state) {
     case "offered":
-      return `DSH 的「写入」沙箱在「${path}」上设不起来：Windows 里你对这个文件夹没有可继承的「完全控制」权限（一般只有「修改」），沙箱要给它设的权限设不上，于是命令会一条条来要你批准，或者写不进里面已有的文件夹。修复会给你自己加上这个文件夹及其子文件夹的完全控制（原来的权限先备份），沙箱的防护不变。`;
+      return extra === "full-control"
+        ? `DSH 的「工作区可写」沙箱在「${path}」上设不起来：Windows 里你对这个文件夹没有可继承的「完全控制」权限（一般只有「修改」），沙箱要给它设的权限设不上，于是命令会一条条来要你批准，或者写不进里面已有的文件夹。「设置权限」会给你自己加上这个文件夹及其子文件夹的完全控制（原来的权限先备份），并处理好里面的 exe；沙箱的防护不变。不想管这些，把权限换成「完全访问」即可。`
+        : `「${path}」还没为 DSH 的「工作区可写」沙箱设置过：沙箱会把整个项目标成低完整性，之后从项目里启动的 exe（工具、编译出来的程序）都会降级运行，写不了项目外。「设置权限」会把项目里的 exe 设回正常，之后构建出新的 exe 再扫一次即可。不想管这些，把权限换成「完全访问」即可。`;
     case "running":
-      return `正在修复「${path}」的文件夹权限…文件多的项目要几分钟。`;
+      return `正在设置「${path}」的权限…文件多的项目要几分钟。`;
     case "done":
-      return `「${path}」的文件夹权限已修好，DSH 的写入沙箱可以用了；刚才没跑成的命令让它再跑一次即可。原来的权限备份在 ${extra}（在上一级文件夹里用 icacls /restore 可以放回去）。`;
+      return `「${path}」的权限已设置好，DSH 的「工作区可写」沙箱可以用了${extra}；刚才没跑成的命令让它再跑一次即可。`;
     case "failed":
-      return `修复「${path}」的文件夹权限没成功：${extra}`;
+      return `设置「${path}」的权限没成功：${extra}`;
   }
 }
+
+/** Studio's record of a folder it set up for DSH's write sandbox (kv `dsh-folder:<path, lower case>`). */
+interface FolderRecord {
+  setupAt: string;
+  scannedAt: string;
+  exes: number;
+  backup?: string;
+}
+
+/** A set-up folder is scanned for new .exe files after a write session's turn, at most this often. */
+const AUTO_SCAN_MS = 10 * 60_000;
 
 interface ConfigOption {
   id: string;
@@ -132,8 +147,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** Each session's folder-access notice in this run, and each folder's permissions as last read. */
   private readonly folderNotices = new Map<Id, Id>();
   private readonly folderChecks = new Map<string, Promise<FolderAccessState | null>>();
-  /** The fix on each folder (by lower-cased path) in this run: running, or how the last one went. */
-  private readonly folderJobs = new Map<string, { state: "running" | "done" | "failed"; error?: string; backup?: string }>();
+  /** The setup or scan on each folder (by lower-cased path) in this run: running, or how the last one went. */
+  private readonly folderJobs = new Map<string, { job: "setup" | "scan"; state: "running" | "done" | "failed"; error?: string }>();
 
   constructor(private readonly options: DshRuntimeOptions) {
     super(options.store, "dsh", options.now);
@@ -443,23 +458,23 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     let check = this.folderChecks.get(path);
     if (!check) this.folderChecks.set(path, (check = this.folderAccess.check(path)));
     const state = await check;
-    if (state && !state.ok) this.offerFolderFix(sessionId, path);
+    if (state && (!state.ok || !this.folderRecord(path))) this.offerFolderFix(sessionId, path, state.ok ? "label" : "full-control");
   }
 
   /** The notice with 「修复文件夹权限」, once per session (DSH's error repeats on every command). */
-  private offerFolderFix(sessionId: Id, failed: string): void {
+  private offerFolderFix(sessionId: Id, failed: string, why: "full-control" | "label" = "full-control"): void {
     const path = this.folderOf(sessionId);
     // Only the session's own folder is fixed from here.
     if (!this.folderAccess || !path || path.toLowerCase() !== failed.toLowerCase()) return;
     const known = this.folderNotices.get(sessionId);
     const current = known ? this.store.getItem(known) : undefined;
     if (current?.type === "notice" && (current.action?.state === "offered" || current.action?.state === "running")) return;
-    const body = { type: "notice" as const, level: "warning" as const, key: "folder-access", message: folderAccessMessage("offered", path), action: { kind: "folder-access" as const, path, state: "offered" as const } };
+    const body = { type: "notice" as const, level: "warning" as const, key: "folder-access", message: folderAccessMessage("offered", path, why), action: { kind: "folder-access" as const, path, state: "offered" as const } };
     if (current?.type === "notice") this.updateItem(current.id, (it) => (it.type === "notice" ? { ...it, ...body } : it));
     else this.folderNotices.set(sessionId, this.appendItem(sessionId, body, { method: "dsh/folder-access", ...(this.live.get(sessionId)?.transcript.turnRef() ?? {}) }).id);
   }
 
-  /** 「修复文件夹权限」 on a session's notice: fixes the session's folder (fixFolder). */
+  /** 「设置权限」 on a session's notice: sets the session's folder up (setupFolder). */
   async fixFolderAccess(sessionId: Id): Promise<void> {
     const path = this.folderOf(sessionId);
     const notice = [...this.store.listItems(sessionId)].reverse().find((i) => i.type === "notice" && i.action?.kind === "folder-access");
@@ -468,36 +483,47 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     }
     if (notice.action.state === "running" || notice.action.state === "done") return;
     if (!this.folderNotices.has(sessionId)) this.folderNotices.set(sessionId, notice.id);
-    this.fixFolder(path);
+    this.setupFolder(path);
   }
 
-  /** Whether folders can be read and fixed here (Windows). */
+  /** Whether folders can be read and set up here (Windows). */
   get foldersAvailable(): boolean {
     return this.folderAccess !== null;
   }
 
-  /** A folder as DSH's write sandbox finds it, or the fix running or failed on it (设置 → 项目与目录). */
-  async folderStatus(path: string): Promise<{ state: "ok" | "needs-fix" | "unknown" | "running" | "failed"; error?: string; backup?: string }> {
+  private folderRecord(path: string): FolderRecord | null {
+    const kv = this.store.getKv(`dsh-folder:${path.toLowerCase()}`);
+    if (!kv) return null;
+    try {
+      return JSON.parse(kv.value) as FolderRecord;
+    } catch {
+      return null;
+    }
+  }
+
+  /** A folder as DSH's write sandbox needs it, or the setup or scan running or failed on it (FolderAccessStatus). */
+  async folderStatus(path: string): Promise<Omit<FolderAccessStatus, "workspaceId" | "name" | "path">> {
     const job = this.folderJobs.get(path.toLowerCase());
-    if (job && job.state !== "done") return { state: job.state, ...(job.error ? { error: job.error } : {}), ...(job.backup ? { backup: job.backup } : {}) };
-    if (!this.folderAccess) return { state: "unknown" };
-    // Read anew each time the page asks: the person may have changed them by hand.
+    const record = this.folderRecord(path);
+    const last = record ? { exes: record.exes, scannedAt: record.scannedAt, ...(record.backup ? { backup: record.backup } : {}) } : {};
+    if (job?.state === "running") return { state: "running", job: job.job, ...last };
+    if (!this.folderAccess) return { state: "unknown", ...last };
+    // Read anew each time it is asked: the person may have changed them by hand.
     const check = this.folderAccess.check(path);
     this.folderChecks.set(path, check);
     const state = await check;
-    return { state: !state ? "unknown" : state.ok ? "ok" : "needs-fix", ...(job?.backup ? { backup: job.backup } : {}) };
+    const read = state ? { fullControl: state.ok, labelled: state.labelled } : {};
+    if (job?.state === "failed") return { state: "failed", job: job.job, ...(job.error ? { error: job.error } : {}), ...read, ...last };
+    return { state: !state ? "unknown" : state.ok && record ? "ready" : "unprepared", ...read, ...last };
   }
 
-  /**
-   * Gives the person inherited full control of `path` (folder-access.ts), once at a time per folder. The sessions on
-   * that folder whose notice offers the fix follow it.
-   */
-  fixFolder(path: string): void {
+  /** Runs a setup or a scan on a folder, once at a time; the sessions on it whose notice offers the setup follow it. */
+  private folderJob(path: string, job: "setup" | "scan", work: (fa: FolderAccess) => Promise<string>): void {
     const fa = this.folderAccess;
     if (!fa) throw Object.assign(new Error("这台机器上 Studio 不处理文件夹权限（只在 Windows 上）"), { code: "bad_request" });
     const key = path.toLowerCase();
     if (this.folderJobs.get(key)?.state === "running") return;
-    this.folderJobs.set(key, { state: "running" });
+    this.folderJobs.set(key, { job, state: "running" });
     const show = (state: "running" | "done" | "failed", extra = "") => {
       for (const id of this.folderNotices.values()) {
         const it = this.store.getItem(id);
@@ -505,26 +531,66 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
         this.updateItem(id, (x) => (x.type === "notice" && x.action ? { ...x, level: state === "done" ? "info" : "warning", message: folderAccessMessage(state, path, extra), action: { ...x.action, state } } : x));
       }
     };
-    show("running");
-    void fa
-      .fix(path)
-      .then(({ state, backup }) => {
-        this.folderChecks.set(path, Promise.resolve(state));
-        if (state.ok) {
-          this.folderJobs.set(key, { state: "done", backup });
-          show("done", backup);
-        } else {
-          const error = `改过之后读回来，你对这个文件夹仍然没有可继承的完全控制（原来的权限备份在 ${backup}）`;
-          this.folderJobs.set(key, { state: "failed", error, backup });
-          show("failed", error);
-        }
+    if (job === "setup") show("running");
+    void work(fa)
+      .then((done) => {
+        this.folderJobs.set(key, { job, state: "done" });
+        if (job === "setup") show("done", done);
       })
       .catch((err: unknown) => {
         this.folderChecks.delete(path);
         const error = err instanceof Error ? err.message : String(err);
-        this.folderJobs.set(key, { state: "failed", error });
-        show("failed", error);
+        this.folderJobs.set(key, { job, state: "failed", error });
+        if (job === "setup") show("failed", error);
+        else this.emit("log", `dsh folder scan failed for ${path}: ${error}`);
       });
+  }
+
+  /**
+   * Sets a folder up for DSH's write sandbox (folder-access.ts): the person's inherited full control (old permissions
+   * saved first) when missing, DSH's Low label passed on, and every .exe back to Medium.
+   */
+  setupFolder(path: string): void {
+    this.folderJob(path, "setup", async (fa) => {
+      const before = await fa.check(path);
+      if (!before) throw new Error(`读不到「${path}」的权限`);
+      const backup = before.ok ? undefined : await fa.grant(path);
+      // Just granted, the label DSH may have set on the folder alone can now reach what is in it.
+      if (backup || !before.labelled) await fa.label(path);
+      const exes = await fa.exes(path);
+      const after = await fa.check(path);
+      this.folderChecks.set(path, Promise.resolve(after));
+      if (!after?.ok) throw new Error(`改过之后读回来，你对这个文件夹仍然没有可继承的完全控制${backup ? `（原来的权限备份在 ${backup}）` : ""}`);
+      const at = new Date().toISOString();
+      const old = this.folderRecord(path);
+      const keep = backup ?? old?.backup;
+      this.store.setKv(`dsh-folder:${path.toLowerCase()}`, JSON.stringify({ setupAt: at, scannedAt: at, exes, ...(keep ? { backup: keep } : {}) } satisfies FolderRecord));
+      return `${exes ? `，项目里的 ${exes} 个 exe 已设回正常` : ""}${backup ? `。原来的权限备份在 ${backup}（在上一级文件夹里用 icacls /restore 可以放回去）` : ""}`;
+    });
+  }
+
+  /** Scans a set-up folder for .exe files again (new ones from a build or a pull) and sets them back to Medium. */
+  scanFolder(path: string): void {
+    const record = this.folderRecord(path);
+    if (!record) throw Object.assign(new Error("这个项目还没设置过权限，先「设置权限」"), { code: "bad_request" });
+    this.folderJob(path, "scan", async (fa) => {
+      const exes = await fa.exes(path);
+      this.store.setKv(`dsh-folder:${path.toLowerCase()}`, JSON.stringify({ ...(this.folderRecord(path) ?? record), scannedAt: new Date().toISOString(), exes } satisfies FolderRecord));
+      return "";
+    });
+  }
+
+  /** After a write session's turn: a set-up folder not scanned for a while is scanned again (new .exe files). */
+  private autoScan(sessionId: Id, live: Live): void {
+    const path = this.folderOf(sessionId);
+    if (!this.folderAccess || !path || live.permission !== "workspace-write") return;
+    const record = this.folderRecord(path);
+    if (!record || Date.now() - Date.parse(record.scannedAt) < (this.options.folderScanEveryMs ?? AUTO_SCAN_MS)) return;
+    try {
+      this.scanFolder(path);
+    } catch {
+      // Not set up after all: nothing to scan.
+    }
   }
 
   /** Ends the session's process (when it is idle or archived, or for a new permission). */
@@ -575,6 +641,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     this.measure(live, turnItem);
     setTimeout(() => this.measure(live, turnItem), 2000).unref?.();
     live.inflight = false;
+    this.autoScan(sessionId, live);
     if (error) {
       live.queue.splice(0);
       this.appendItem(sessionId, { type: "error", message: error }, { method: "session/prompt" });

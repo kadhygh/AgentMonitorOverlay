@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { answer, writeAsync, type AmoTool, type ToolContext } from "../../mcp/tool-kit.js";
+import { dshPermissionMode } from "../../runtime/choices.js";
 
 /** The AMO MCP tools of this feature (gathered in mcp/tools.ts). */
 export function sessionsTools({ service, caller, model }: ToolContext): AmoTool[] {
@@ -24,7 +25,13 @@ export function sessionsTools({ service, caller, model }: ToolContext): AmoTool[
       run: (args) =>
         writeAsync(caller, async (c) => {
           const s = await service.sessions.startPeer(c.sessionId, args);
-          return { sessionId: s.id, title: s.title, model: service.requireProfile(s.profileId).label, project: service.store.getWorkspace(s.workspaceId)?.name, permission: s.options.permission ?? "default", report: args.report === true, note: args.report === true ? "已开会话；它每一轮做完后，回复会作为消息回到你这里（被人停下或出错也会告诉你）。" : "已开会话；它在任务的会话列表里。" };
+          // A DeepSeek · DSH session sandboxed to its folder, where the folder is not set up for it (2026-10-23).
+          const folder = s.runtime === "dsh" && dshPermissionMode(s.options.permission) === "workspace-write" ? await service.dsh.folder(s.workspaceId).catch(() => null) : null;
+          const sandbox =
+            folder && folder.state !== "ready"
+              ? "这个项目还没为 DSH 的「工作区可写」沙箱设置过权限：它的命令可能一条条要人批准，项目里的 exe 也会降级运行。要跑很多命令就用 permission: full 重开；要沙箱就请人在 设置 → 项目与目录 → DSH 沙箱权限 里设置。"
+              : null;
+          return { sessionId: s.id, title: s.title, model: service.requireProfile(s.profileId).label, project: service.store.getWorkspace(s.workspaceId)?.name, permission: s.options.permission ?? "default", report: args.report === true, note: args.report === true ? "已开会话；它每一轮做完后，回复会作为消息回到你这里（被人停下或出错也会告诉你）。" : "已开会话；它在任务的会话列表里。", ...(sandbox ? { sandbox } : {}) };
         }),
     },
   ];

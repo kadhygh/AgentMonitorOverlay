@@ -1,7 +1,8 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { isCommon, projectWorkspaces, type DshStatus, type FolderAccessStatus, type Id, type ModelProfile } from "@amo-studio/protocol";
+import { isCommon, projectWorkspaces, type DshStatus, type FolderAccessStatus, type Id, type ModelProfile, type Workspace } from "@amo-studio/protocol";
 import { DSH_OPTIONS_KEY, DSH_PATH_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
+import type { DshRuntime } from "../../runtime/dsh/dsh-runtime.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
@@ -64,14 +65,36 @@ export class DshFeature extends Feature {
     return { available: true, folders };
   }
 
-  /** The fix for one project's folder; GET /api/dsh/folders follows it. */
-  async fixFolder(workspaceId: Id): Promise<FolderAccessStatus> {
+  /** One project's folder (the hint under 工程内写 asks before a DSH session starts there). */
+  async folder(workspaceId: Id): Promise<FolderAccessStatus> {
+    const { runtime, w } = this.folderTarget(workspaceId);
+    return { workspaceId: w.id, name: isCommon(w) ? "公共目录" : w.name, path: w.path, ...(await runtime.folderStatus(w.path)) };
+  }
+
+  /** Sets one project's folder up; GET follows it. */
+  async setupFolder(workspaceId: Id): Promise<FolderAccessStatus> {
+    const { runtime, w } = this.folderTarget(workspaceId);
+    runtime.setupFolder(w.path);
+    return this.folder(workspaceId);
+  }
+
+  /** Scans a set-up folder for new .exe files; GET follows it. */
+  async scanFolder(workspaceId: Id): Promise<FolderAccessStatus> {
+    const { runtime, w } = this.folderTarget(workspaceId);
+    try {
+      runtime.scanFolder(w.path);
+    } catch (err) {
+      throw new HostError("bad_request", err instanceof Error ? err.message : String(err));
+    }
+    return this.folder(workspaceId);
+  }
+
+  private folderTarget(workspaceId: Id): { runtime: DshRuntime; w: Workspace } {
     const runtime = this.options.dsh;
     const w = this.store.getWorkspace(workspaceId);
     if (!w || w.archivedAt) throw new HostError("not_found", `project ${workspaceId} not found`);
-    if (!runtime?.foldersAvailable) throw new HostError("bad_request", "这台机器上 Studio 不处理文件夹权限（只在 Windows 上）");
-    runtime.fixFolder(w.path);
-    return { workspaceId: w.id, name: w.name, path: w.path, ...(await runtime.folderStatus(w.path)) };
+    if (!runtime?.foldersAvailable) throw new HostError("not_found", "这台机器上 Studio 不处理文件夹权限（只在 Windows 上）");
+    return { runtime, w };
   }
 
   private profilesChanged(): void {

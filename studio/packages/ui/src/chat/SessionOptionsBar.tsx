@@ -4,6 +4,7 @@ import { call, HostApiError, type HostLink } from "../host/client.js";
 import { activeModel, optionsSummary, sameOptions, useProfileChoices } from "../lib/choices.js";
 import { rememberPick } from "../lib/recents.js";
 import { EffortBars, FastToggle, Mark, nextEffort, PermissionTiles, pickLabel } from "./pickers.js";
+import { DSH_FULL_ACCESS, SandboxHint } from "../settings/SandboxHint.js";
 
 // Under the composer: what the session runs with — model, effort, permissions — each one click away
 // (design/ui-directions/new-task.html, "会话中切换"). Clicking the model or the permissions opens that group above the
@@ -130,7 +131,15 @@ export function SessionOptionsBar({
               <span className="tray-note">要换到别家的模型，新开一个会话。</span>
             </>
           ) : (
-            <PermissionTiles choices={choices} value={session.options.permission ?? null} onChange={setPermission} disabled={busy} />
+            <>
+              <PermissionTiles choices={choices} value={session.options.permission ?? null} onChange={setPermission} disabled={busy} />
+              <SandboxHint
+                link={link}
+                workspaceId={session.workspaceId}
+                active={session.runtime === "dsh" && (session.options.permission ?? choices.defaultPermission) === "workspace-write"}
+                onUseFull={() => setPermission(DSH_FULL_ACCESS)}
+              />
+            </>
           )}
         </div>
       )}

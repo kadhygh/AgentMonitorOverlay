@@ -271,73 +271,120 @@ describe("DSH runtime", () => {
     expect(replies(await items(host, s.id))[0]).toBe("REJECTED New-Item b.txt");
   });
 
-  it("DSH cannot set its write sandbox up on the folder: one notice offers to fix its permissions, and follows the fix (2026-10-23)", async () => {
-    const fixed: string[] = [];
-    let ok = false;
+  /** A stand-in for icacls: what was done, in order, and a folder state to read. */
+  function fakeFolders(start: { ok: boolean; labelled: boolean } | null, exes = 3) {
+    const done: string[] = [];
+    let state = start;
+    let hold: Promise<void> | null = null;
+    let release: () => void = () => undefined;
     const folderAccess: FolderAccess = {
-      // Unreadable before the fix: the notice comes from DSH's error alone.
-      check: async () => (ok ? { ok, labelled: false } : null),
-      fix: async (folder) => {
-        fixed.push(folder);
-        ok = true;
-        return { state: { ok: true, labelled: false }, backup: "B.acl" };
+      check: async () => state,
+      grant: async (folder) => {
+        if (hold) await hold;
+        done.push(`grant ${folder}`);
+        state = { ok: true, labelled: state?.labelled ?? false };
+        return "B.acl";
+      },
+      label: async (folder) => {
+        done.push(`label ${folder}`);
+        state = { ok: state?.ok ?? false, labelled: true };
+      },
+      exes: async (folder) => {
+        if (hold) await hold;
+        done.push(`exes ${folder}`);
+        return exes;
       },
     };
-    const host = await boot({ dshFolderAccess: folderAccess });
+    return {
+      folderAccess,
+      done,
+      /** The next grant or scan waits for `go()`. */
+      pause: () => {
+        hold = new Promise((r) => (release = r));
+      },
+      go: () => {
+        hold = null;
+        release();
+      },
+    };
+  }
+
+  it("DSH cannot set its write sandbox up on the folder: one notice offers to set it up, and follows the setup (2026-10-23)", async () => {
+    const fake = fakeFolders(null);
+    const host = await boot({ dshFolderAccess: fake.folderAccess });
     const session = await start(host, "[[nosandbox]]");
     await idle(host, session.id);
     const folder = (await call<StateSnapshot>(host, "GET", "/api/state")).workspaces.find((w) => w.id === session.workspaceId)!.path;
     const notices = (list: SessionItem[]) => list.filter((i) => i.type === "notice" && i.action?.kind === "folder-access") as Array<Extract<SessionItem, { type: "notice" }>>;
-    // DSH's error repeats on every command: one row.
+    // Unreadable at the start, so the notice comes from DSH's error alone; it repeats on every command: one row.
     let list = await until(() => items(host, session.id), (l) => notices(l).length > 0);
     expect(notices(list)).toHaveLength(1);
     expect(notices(list)[0]!.action).toEqual({ kind: "folder-access", path: folder, state: "offered" });
     await call(host, "POST", `/api/sessions/${session.id}/folder-access`);
-    list = await until(() => items(host, session.id), (l) => notices(l)[0]?.action?.state === "done");
-    expect(fixed).toEqual([folder]);
-    expect(notices(list)[0]!.message).toContain("B.acl");
-    expect(notices(list)).toHaveLength(1);
-    // Fixed: nothing more to do there.
-    await expect(call(host, "POST", `/api/sessions/${session.id}/folder-access`)).resolves.toEqual({ ok: true });
-    expect(fixed).toHaveLength(1);
+    list = await until(() => items(host, session.id), (l) => notices(l)[0]?.action?.state === "failed");
+    // It could not be read: nothing was changed.
+    expect(fake.done).toEqual([]);
   });
 
-  it("设置 lists each project's folder and fixes the one picked; that folder's session notices follow (2026-10-23)", async () => {
-    let ok = false;
-    let release: () => void = () => undefined;
-    const folderAccess: FolderAccess = {
-      check: async () => ({ ok, labelled: false }),
-      fix: () =>
-        new Promise((resolve) => {
-          release = () => {
-            ok = true;
-            resolve({ state: { ok: true, labelled: false }, backup: "B.acl" });
-          };
-        }),
-    };
-    const host = await boot({ dshFolderAccess: folderAccess });
+  it("设置 lists every folder; 设置权限 grants, labels and sets the exes back; the session notice follows; 重新扫描 and the scan after a turn (2026-10-23)", async () => {
+    const fake = fakeFolders({ ok: false, labelled: false });
+    const host = await boot({ dshFolderAccess: fake.folderAccess, dshFolderScanMs: 0 });
     const session = await start(host, "你好");
     await idle(host, session.id);
-    type Folders = { available: boolean; folders: Array<{ workspaceId: string; name: string; path: string; state: string; backup?: string }> };
+    type Folders = { available: boolean; folders: Array<{ workspaceId: string; name: string; path: string; state: string; job?: string; fullControl?: boolean; exes?: number; backup?: string }> };
     const folders = () => call<Folders>(host, "GET", "/api/dsh/folders");
     const first = await folders();
     expect(first.available).toBe(true);
     // The common space is listed first, then the projects.
     expect(first.folders.map((f) => f.name)).toEqual(["公共目录", "ws"]);
     const mine = (f: Folders) => f.folders.find((x) => x.workspaceId === session.workspaceId)!;
-    expect(mine(first)).toEqual(expect.objectContaining({ state: "needs-fix" }));
-    // The session's own check offered the fix too.
+    expect(mine(first)).toEqual(expect.objectContaining({ state: "unprepared", fullControl: false }));
+    const path = mine(first).path;
+    // The session's own check offered the setup too.
     const notice = async () => (await items(host, session.id)).find((i) => i.type === "notice" && i.action?.kind === "folder-access");
     await until(notice, (n) => n?.type === "notice" && n.action?.state === "offered");
+    // A scan before the setup is refused.
+    await expect(call(host, "POST", `/api/dsh/folders/${session.workspaceId}/scan`)).rejects.toThrow(/先「设置权限」/);
 
-    const started = await call<{ state: string }>(host, "POST", `/api/dsh/folders/${session.workspaceId}/fix`);
-    expect(started.state).toBe("running");
-    expect(mine(await folders()).state).toBe("running");
+    fake.pause();
+    const started = await call<{ state: string; job?: string }>(host, "POST", `/api/dsh/folders/${session.workspaceId}/fix`);
+    expect(started).toEqual(expect.objectContaining({ state: "running", job: "setup" }));
     await until(notice, (n) => n?.type === "notice" && n.action?.state === "running");
-    release();
-    const done = await until(folders, (f) => mine(f).state === "ok");
-    expect(mine(done).backup).toBe("B.acl");
-    await until(notice, (n) => n?.type === "notice" && n.action?.state === "done");
+    fake.go();
+    const done = await until(folders, (f) => mine(f).state === "ready");
+    expect(mine(done)).toEqual(expect.objectContaining({ exes: 3, backup: "B.acl", fullControl: true }));
+    expect(fake.done).toEqual([`grant ${path}`, `label ${path}`, `exes ${path}`]);
+    const fixed = await until(notice, (n) => n?.type === "notice" && n.action?.state === "done");
+    expect(fixed?.type === "notice" && fixed.message).toContain("3 个 exe");
+    expect((await call<{ state: string }>(host, "GET", `/api/dsh/folders/${session.workspaceId}`)).state).toBe("ready");
+
+    // 重新扫描: the exes again, nothing else.
+    await call(host, "POST", `/api/dsh/folders/${session.workspaceId}/scan`);
+    await until(() => fake.done.length, (n) => n === 4);
+    expect(fake.done[3]).toBe(`exes ${path}`);
+    // A 工作区可写 session's turn ends: the set-up folder is scanned again (here at once: no wait between scans).
+    await until(folders, (f) => mine(f).state === "ready");
+    await call(host, "POST", `/api/sessions/${session.id}/messages`, { text: "再来" });
+    await idle(host, session.id);
+    await until(() => fake.done.length, (n) => n === 5);
+    expect(fake.done[4]).toBe(`exes ${path}`);
+  });
+
+  it("session_start with write in a folder not set up says so to the agent; set up, it does not (2026-10-23)", async () => {
+    const fake = fakeFolders({ ok: true, labelled: false });
+    const host = await boot({ dshFolderAccess: fake.folderAccess });
+    const session = await start(host, `[[mcp: session_start {"text":"你好","permission":"write"}]]`);
+    await idle(host, session.id);
+    expect(replies(await items(host, session.id)).join("\n")).toMatch(/"sandbox":\s*"这个项目还没为 DSH/);
+    await call(host, "POST", `/api/dsh/folders/${session.workspaceId}/fix`);
+    await until(() => call<{ state: string }>(host, "GET", `/api/dsh/folders/${session.workspaceId}`), (f) => f.state === "ready");
+    // Full control was there already: only the label and the exes.
+    expect(fake.done.map((d) => d.split(" ")[0])).toEqual(["label", "exes"]);
+    await call(host, "POST", `/api/sessions/${session.id}/messages`, { text: `[[mcp: session_start {"text":"再开一个","permission":"write"}]]` });
+    await idle(host, session.id);
+    const last = replies(await items(host, session.id)).at(-1)!;
+    expect(last).toMatch(/sessionId/);
+    expect(last).not.toMatch(/"sandbox"/);
   });
 
   it("fails a turn when DSH fails it", async () => {

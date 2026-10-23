@@ -8,7 +8,9 @@ export function dshRoutes(service: HostService): Route[] {
     route("PUT", "/api/dsh", ({ body }) => service.dsh.setPath(obj(body).path)),
     route("POST", "/api/dsh/check", () => service.dsh.check()),
     route("GET", "/api/dsh/folders", () => service.dsh.folders()),
-    route("POST", "/api/dsh/folders/:workspaceId/fix", ({ params }) => service.dsh.fixFolder(params.workspaceId!)),
+    route("GET", "/api/dsh/folders/:workspaceId", ({ params }) => service.dsh.folder(params.workspaceId!)),
+    route("POST", "/api/dsh/folders/:workspaceId/fix", ({ params }) => service.dsh.setupFolder(params.workspaceId!)),
+    route("POST", "/api/dsh/folders/:workspaceId/scan", ({ params }) => service.dsh.scanFolder(params.workspaceId!)),
     route("POST", "/api/sessions/:id/folder-access", ({ params }) => service.dsh.fixFolderAccess(params.id!)),
   ];
 }
