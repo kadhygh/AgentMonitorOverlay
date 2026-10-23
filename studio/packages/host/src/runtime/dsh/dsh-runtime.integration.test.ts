@@ -302,6 +302,41 @@ describe("DSH runtime", () => {
     expect(fixed).toHaveLength(1);
   });
 
+  it("设置 lists each project's folder and fixes the one picked; that folder's session notices follow (2026-10-23)", async () => {
+    let ok = false;
+    let release: () => void = () => undefined;
+    const folderAccess: FolderAccess = {
+      check: async () => ({ ok, labelled: false }),
+      fix: () =>
+        new Promise((resolve) => {
+          release = () => {
+            ok = true;
+            resolve({ state: { ok: true, labelled: false }, backup: "B.acl" });
+          };
+        }),
+    };
+    const host = await boot({ dshFolderAccess: folderAccess });
+    const session = await start(host, "你好");
+    await idle(host, session.id);
+    type Folders = { available: boolean; folders: Array<{ workspaceId: string; name: string; path: string; state: string; backup?: string }> };
+    const folders = () => call<Folders>(host, "GET", "/api/dsh/folders");
+    const first = await folders();
+    expect(first.available).toBe(true);
+    expect(first.folders).toEqual([expect.objectContaining({ workspaceId: session.workspaceId, name: "ws", state: "needs-fix" })]);
+    // The session's own check offered the fix too.
+    const notice = async () => (await items(host, session.id)).find((i) => i.type === "notice" && i.action?.kind === "folder-access");
+    await until(notice, (n) => n?.type === "notice" && n.action?.state === "offered");
+
+    const started = await call<{ state: string }>(host, "POST", `/api/dsh/folders/${session.workspaceId}/fix`);
+    expect(started.state).toBe("running");
+    expect((await folders()).folders[0]!.state).toBe("running");
+    await until(notice, (n) => n?.type === "notice" && n.action?.state === "running");
+    release();
+    const done = await until(folders, (f) => f.folders[0]!.state === "ok");
+    expect(done.folders[0]!.backup).toBe("B.acl");
+    await until(notice, (n) => n?.type === "notice" && n.action?.state === "done");
+  });
+
   it("fails a turn when DSH fails it", async () => {
     const host = await boot();
     const s = await start(host, "[[fail]]");

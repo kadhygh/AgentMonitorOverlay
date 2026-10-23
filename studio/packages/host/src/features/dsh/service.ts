@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import type { DshStatus, Id, ModelProfile } from "@amo-studio/protocol";
+import { projectWorkspaces, type DshStatus, type FolderAccessStatus, type Id, type ModelProfile } from "@amo-studio/protocol";
 import { DSH_OPTIONS_KEY, DSH_PATH_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -51,6 +51,25 @@ export class DshFeature extends Feature {
       throw new HostError("bad_request", err instanceof Error ? err.message : String(err));
     }
     return { ok: true };
+  }
+
+  /** 设置 → 项目与目录: each project's folder as DSH's write sandbox finds it. */
+  async folders(): Promise<{ available: boolean; folders: FolderAccessStatus[] }> {
+    const runtime = this.options.dsh;
+    if (!runtime?.foldersAvailable) return { available: false, folders: [] };
+    const list = projectWorkspaces(this.store.listWorkspaces());
+    const folders = await Promise.all(list.map(async (w) => ({ workspaceId: w.id, name: w.name, path: w.path, ...(await runtime.folderStatus(w.path)) })));
+    return { available: true, folders };
+  }
+
+  /** The fix for one project's folder; GET /api/dsh/folders follows it. */
+  async fixFolder(workspaceId: Id): Promise<FolderAccessStatus> {
+    const runtime = this.options.dsh;
+    const w = this.store.getWorkspace(workspaceId);
+    if (!w || w.archivedAt) throw new HostError("not_found", `project ${workspaceId} not found`);
+    if (!runtime?.foldersAvailable) throw new HostError("bad_request", "这台机器上 Studio 不处理文件夹权限（只在 Windows 上）");
+    runtime.fixFolder(w.path);
+    return { workspaceId: w.id, name: w.name, path: w.path, ...(await runtime.folderStatus(w.path)) };
   }
 
   private profilesChanged(): void {

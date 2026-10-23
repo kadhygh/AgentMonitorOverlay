@@ -9,6 +9,7 @@ import { ScratchpadSettings } from "../scratchpad/ScratchpadSettings.js";
 import { DataPage } from "./DataPage.js";
 import { QuotaPage } from "./QuotaPage.js";
 import { MaintenancePage } from "./MaintenancePage.js";
+import { FolderAccessSection } from "./FolderAccessSection.js";
 import { setScrollOnSend, setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useScrollOnSend, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { defaultFolder, setDefaultFolder } from "../lib/profiles.js";
@@ -254,6 +255,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
                 )}
               </section>
             )}
+            {page === "common" && <FolderAccessSection link={link} />}
             {page === "features" && <FeaturesSection link={link} disabled={settings?.disabledFeatures ?? []} />}
             {page === "scratchpad" && <ScratchpadSettings link={link} settings={settings} />}
             {page === "data" && <DataPage link={link} />}

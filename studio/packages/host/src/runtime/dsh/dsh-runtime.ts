@@ -132,6 +132,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** Each session's folder-access notice in this run, and each folder's permissions as last read. */
   private readonly folderNotices = new Map<Id, Id>();
   private readonly folderChecks = new Map<string, Promise<FolderAccessState | null>>();
+  /** The fix on each folder (by lower-cased path) in this run: running, or how the last one went. */
+  private readonly folderJobs = new Map<string, { state: "running" | "done" | "failed"; error?: string; backup?: string }>();
 
   constructor(private readonly options: DshRuntimeOptions) {
     super(options.store, "dsh", options.now);
@@ -457,7 +459,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     else this.folderNotices.set(sessionId, this.appendItem(sessionId, body, { method: "dsh/folder-access", ...(this.live.get(sessionId)?.transcript.turnRef() ?? {}) }).id);
   }
 
-  /** 「修复文件夹权限」: gives the person inherited full control of the session's folder; the notice follows it. */
+  /** 「修复文件夹权限」 on a session's notice: fixes the session's folder (fixFolder). */
   async fixFolderAccess(sessionId: Id): Promise<void> {
     const path = this.folderOf(sessionId);
     const notice = [...this.store.listItems(sessionId)].reverse().find((i) => i.type === "notice" && i.action?.kind === "folder-access");
@@ -465,26 +467,63 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       throw Object.assign(new Error("这个会话没有要修的文件夹权限"), { code: "bad_request" });
     }
     if (notice.action.state === "running" || notice.action.state === "done") return;
-    // Every session on this folder whose notice offers the fix follows the one fix.
-    const notices = [notice.id, ...[...this.folderNotices.values()].filter((id) => id !== notice.id)].filter((id) => {
-      const it = this.store.getItem(id);
-      return it?.type === "notice" && it.action?.path.toLowerCase() === path.toLowerCase() && it.action.state !== "done";
-    });
+    if (!this.folderNotices.has(sessionId)) this.folderNotices.set(sessionId, notice.id);
+    this.fixFolder(path);
+  }
+
+  /** Whether folders can be read and fixed here (Windows). */
+  get foldersAvailable(): boolean {
+    return this.folderAccess !== null;
+  }
+
+  /** A folder as DSH's write sandbox finds it, or the fix running or failed on it (设置 → 项目与目录). */
+  async folderStatus(path: string): Promise<{ state: "ok" | "needs-fix" | "unknown" | "running" | "failed"; error?: string; backup?: string }> {
+    const job = this.folderJobs.get(path.toLowerCase());
+    if (job && job.state !== "done") return { state: job.state, ...(job.error ? { error: job.error } : {}), ...(job.backup ? { backup: job.backup } : {}) };
+    if (!this.folderAccess) return { state: "unknown" };
+    // Read anew each time the page asks: the person may have changed them by hand.
+    const check = this.folderAccess.check(path);
+    this.folderChecks.set(path, check);
+    const state = await check;
+    return { state: !state ? "unknown" : state.ok ? "ok" : "needs-fix", ...(job?.backup ? { backup: job.backup } : {}) };
+  }
+
+  /**
+   * Gives the person inherited full control of `path` (folder-access.ts), once at a time per folder. The sessions on
+   * that folder whose notice offers the fix follow it.
+   */
+  fixFolder(path: string): void {
+    const fa = this.folderAccess;
+    if (!fa) throw Object.assign(new Error("这台机器上 Studio 不处理文件夹权限（只在 Windows 上）"), { code: "bad_request" });
+    const key = path.toLowerCase();
+    if (this.folderJobs.get(key)?.state === "running") return;
+    this.folderJobs.set(key, { state: "running" });
     const show = (state: "running" | "done" | "failed", extra = "") => {
-      for (const id of notices)
-        this.updateItem(id, (it) => (it.type === "notice" && it.action ? { ...it, level: state === "done" ? "info" : "warning", message: folderAccessMessage(state, path, extra), action: { ...it.action, state } } : it));
+      for (const id of this.folderNotices.values()) {
+        const it = this.store.getItem(id);
+        if (it?.type !== "notice" || it.action?.path.toLowerCase() !== key || it.action.state === "done") continue;
+        this.updateItem(id, (x) => (x.type === "notice" && x.action ? { ...x, level: state === "done" ? "info" : "warning", message: folderAccessMessage(state, path, extra), action: { ...x.action, state } } : x));
+      }
     };
     show("running");
-    void this.folderAccess
+    void fa
       .fix(path)
       .then(({ state, backup }) => {
         this.folderChecks.set(path, Promise.resolve(state));
-        if (state.ok) show("done", backup);
-        else show("failed", `改过之后读回来，你对这个文件夹仍然没有可继承的完全控制（原来的权限备份在 ${backup}）`);
+        if (state.ok) {
+          this.folderJobs.set(key, { state: "done", backup });
+          show("done", backup);
+        } else {
+          const error = `改过之后读回来，你对这个文件夹仍然没有可继承的完全控制（原来的权限备份在 ${backup}）`;
+          this.folderJobs.set(key, { state: "failed", error, backup });
+          show("failed", error);
+        }
       })
       .catch((err: unknown) => {
         this.folderChecks.delete(path);
-        show("failed", err instanceof Error ? err.message : String(err));
+        const error = err instanceof Error ? err.message : String(err);
+        this.folderJobs.set(key, { state: "failed", error });
+        show("failed", error);
       });
   }
 

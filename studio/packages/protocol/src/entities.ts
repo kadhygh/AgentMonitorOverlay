@@ -307,6 +307,20 @@ export interface MessageImage {
  */
 export type NoticeAction = { kind: "folder-access"; path: string; state: "offered" | "running" | "done" | "failed" };
 
+/**
+ * A project folder as DSH's write sandbox finds it (设置 → 项目与目录). `ok`: the person has inherited full control,
+ * the sandbox can be set up; `needs-fix`: they do not; `unknown`: it could not be read; `running` / `failed`: a fix.
+ * `backup`: where the last fix saved the old permissions.
+ */
+export interface FolderAccessStatus {
+  workspaceId: Id;
+  name: string;
+  path: string;
+  state: "ok" | "needs-fix" | "unknown" | "running" | "failed";
+  error?: string;
+  backup?: string;
+}
+
 export type SessionItem =
   /** `images`: pictures sent with the message (stage 11). */
   | (ItemBase & { type: "user"; text: string; images?: MessageImage[] })

@@ -1,5 +1,5 @@
 // Host API: REST requests/responses and the WS event stream. Host listens on 127.0.0.1 only.
-import type { AccountUsage, Annotation, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Relay, Timestamp, Topic, TopicDoc, Workspace } from "./entities.js";
+import type { AccountUsage, Annotation, FolderAccessStatus, CanvasDoc, ChecklistItem, ScheduleProposal, DecisionRequest, Id, MailMessage, MailRecipient, ModelProfile, TaskNote, TodoItem, Session, SessionItem, SessionOptions, Task, TaskColumn, TaskPlan, PlannedTask, Relay, Timestamp, Topic, TopicDoc, Workspace } from "./entities.js";
 
 export const HOST_DEFAULT_PORT = 47900;
 
@@ -301,6 +301,13 @@ export interface HostRoutes {
    * shows how it went.
    */
   "POST /api/sessions/:id/folder-access": { req: void; res: { ok: true } };
+  /**
+   * 设置 → 项目与目录 (2026-10-23): each project's folder, read for what DSH's write sandbox needs. `available` is
+   * false where Studio cannot read or fix them (not Windows).
+   */
+  "GET /api/dsh/folders": { req: void; res: { available: boolean; folders: FolderAccessStatus[] } };
+  /** Fixes one project's folder (as the session notice does); answers at once with `running`, GET follows it. */
+  "POST /api/dsh/folders/:workspaceId/fix": { req: void; res: FolderAccessStatus };
   /**
    * Quota use of the subscriptions (GPT through the Codex login, Claude through its token). `?refresh=1` asks the
    * accounts now (GPT: may start its app-server); otherwise the last numbers read.
