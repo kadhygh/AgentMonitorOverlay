@@ -7,6 +7,7 @@ import { fakeAcpAgent, removeTempDir } from "@amo-studio/testkit";
 import { startHost, type RunningHost } from "../../host-process.js";
 import { FakeServers } from "../codex/fake-servers.test-support.js";
 import { StaticCredentialReader } from "../credentials.js";
+import type { FolderAccess } from "./folder-access.js";
 
 // DSH sessions (stage 17) through a whole Host, with the scripted ACP agent standing in for `dsh --profile acp`.
 
@@ -21,7 +22,7 @@ let root: string;
 let dataDir: string;
 const running: RunningHost[] = [];
 
-async function boot(): Promise<RunningHost> {
+async function boot(extra: Partial<Parameters<typeof startHost>[0]> = {}): Promise<RunningHost> {
   const servers = new FakeServers(PROFILES.filter((p) => p.runtime === "codex"));
   const host = await startHost({
     dataDir,
@@ -30,6 +31,7 @@ async function boot(): Promise<RunningHost> {
     servers: Object.assign(servers, { stopAll: () => servers.close() }),
     credentials: new StaticCredentialReader({ "deepseek-v4": "sk-test" }),
     dshAgent: fakeAcpAgent(),
+    ...extra,
   });
   running.push(host);
   return host;
@@ -267,6 +269,37 @@ describe("DSH runtime", () => {
     await call(host, "POST", `/api/approvals/${approval?.type === "approval" ? approval.approvalId : ""}`, { sessionId: s.id, decision: "decline" });
     await idle(host, s.id);
     expect(replies(await items(host, s.id))[0]).toBe("REJECTED New-Item b.txt");
+  });
+
+  it("DSH cannot set its write sandbox up on the folder: one notice offers to fix its permissions, and follows the fix (2026-10-23)", async () => {
+    const fixed: string[] = [];
+    let ok = false;
+    const folderAccess: FolderAccess = {
+      // Unreadable before the fix: the notice comes from DSH's error alone.
+      check: async () => (ok ? { ok, labelled: false } : null),
+      fix: async (folder) => {
+        fixed.push(folder);
+        ok = true;
+        return { state: { ok: true, labelled: false }, backup: "B.acl" };
+      },
+    };
+    const host = await boot({ dshFolderAccess: folderAccess });
+    const session = await start(host, "[[nosandbox]]");
+    await idle(host, session.id);
+    const folder = (await call<StateSnapshot>(host, "GET", "/api/state")).workspaces.find((w) => w.id === session.workspaceId)!.path;
+    const notices = (list: SessionItem[]) => list.filter((i) => i.type === "notice" && i.action?.kind === "folder-access") as Array<Extract<SessionItem, { type: "notice" }>>;
+    // DSH's error repeats on every command: one row.
+    let list = await until(() => items(host, session.id), (l) => notices(l).length > 0);
+    expect(notices(list)).toHaveLength(1);
+    expect(notices(list)[0]!.action).toEqual({ kind: "folder-access", path: folder, state: "offered" });
+    await call(host, "POST", `/api/sessions/${session.id}/folder-access`);
+    list = await until(() => items(host, session.id), (l) => notices(l)[0]?.action?.state === "done");
+    expect(fixed).toEqual([folder]);
+    expect(notices(list)[0]!.message).toContain("B.acl");
+    expect(notices(list)).toHaveLength(1);
+    // Fixed: nothing more to do there.
+    await expect(call(host, "POST", `/api/sessions/${session.id}/folder-access`)).resolves.toEqual({ ok: true });
+    expect(fixed).toHaveLength(1);
   });
 
   it("fails a turn when DSH fails it", async () => {

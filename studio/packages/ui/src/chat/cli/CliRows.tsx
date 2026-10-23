@@ -1,6 +1,8 @@
 import { useContext, useEffect, useState } from "react";
 import type { MessageImage, SessionItem } from "@amo-studio/protocol";
+import { call, HostApiError } from "../../host/client.js";
 import { Markdown } from "../../lib/markdown.js";
+import { showToast } from "../../lib/toast.js";
 import { rawFileUrl } from "../../lib/openin.js";
 import { AttachLink, Lightbox } from "../../attach/MessageAttachments.js";
 import { IconChevronDown, IconChevronUp, IconTerminal } from "../icons.js";
@@ -72,7 +74,36 @@ export function NoticeRow({ item }: { item: NoticeItem }) {
           ×{item.count}
         </span>
       ) : null}
+      {item.action?.kind === "folder-access" && <FolderAccessButton item={item} />}
     </div>
+  );
+}
+
+/** 「修复文件夹权限」 (2026-10-23): DSH's write sandbox needs the person's full control of the session's folder. */
+function FolderAccessButton({ item }: { item: NoticeItem }) {
+  const link = useContext(AttachLink);
+  const [sent, setSent] = useState(false);
+  const state = item.action?.state;
+  useEffect(() => setSent(false), [state]);
+  if (!link || (state !== "offered" && state !== "failed" && state !== "running")) return null;
+  const running = state === "running" || sent;
+  return (
+    <button
+      type="button"
+      className="btn-ghost small msg-notice-action"
+      disabled={running}
+      title="给你自己加上这个文件夹（含子文件夹）的 Windows 完全控制权限，原来的权限先备份；DSH 沙箱的防护不变"
+      onClick={() => {
+        setSent(true);
+        call(link, "POST /api/sessions/:id/folder-access", { id: item.sessionId }).catch((err: unknown) => {
+          setSent(false);
+          showToast({ text: err instanceof HostApiError ? err.message : String(err), error: true });
+        });
+      }}
+      data-testid="notice-folder-access"
+    >
+      {running ? "正在修复…" : state === "failed" ? "再试一次" : "修复文件夹权限"}
+    </button>
   );
 }
 

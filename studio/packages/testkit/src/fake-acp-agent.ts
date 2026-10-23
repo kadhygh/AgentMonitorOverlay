@@ -9,6 +9,7 @@
 //   [[endpoint]]             the reply tells the DeepSeek address, key and model it was given (third-party channels)
 //   [[mcp: TOOL {ARGS}]]     connects to the session's first MCP server, calls TOOL (optional JSON args), replies its instructions and result
 //   [[fail]]                 the prompt fails
+//   [[nosandbox]]            a pwsh call that fails as DSH's does when it cannot set its sandbox up on the session's folder
 // `--patch FILE` (a DSH channel's catalog, 2026-10-19): the models it lists replace the built-in ones, its `acp` model
 // is the default; as in DSH, a model that is not offered cannot be picked.
 // Sessions are kept in $DSH_HOME/fake-sessions.json, so another process can resume them.
@@ -180,6 +181,11 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
         update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "completed", content: [{ type: "content", content: { type: "text", text: `ran ${command}` } }] });
       }
       reply = allowed ? `DONE ${command}` : `REJECTED ${command}`;
+    }
+    if (/\[\[nosandbox\]\]/.test(text)) {
+      const callId = `call-${randomUUID()}`;
+      update(a.id, { sessionUpdate: "tool_call", toolCallId: callId, title: "pwsh", kind: "other", status: "in_progress", rawInput: { command: "git status" } });
+      update(a.id, { sessionUpdate: "tool_call_update", toolCallId: callId, status: "failed", content: [{ type: "content", content: { type: "text", text: `Error: SetNamedSecurityInfoW failed (Win32 5): grantWrite(${s.cwd})` } }] });
     }
     if (/\[\[slow\]\]/.test(text)) {
       const callId = `call-${randomUUID()}`;

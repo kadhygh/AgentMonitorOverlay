@@ -28,7 +28,8 @@ import {
   resolveNode,
   type DshPermissionMode,
 } from "./install.js";
-import { DshTranscript, type AcpUpdate } from "./transcript.js";
+import { DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
+import { grantFailurePath, windowsFolderAccess, type FolderAccess, type FolderAccessState } from "./folder-access.js";
 
 // DeepSeek sessions on a DeepSeek Harness source clone (stage 17, plans/stage-17-dsh.md). Each session runs its own
 // `node <clone>/apps/cli/lib/bin.js --profile acp` in its workspace: DSH's sandbox follows the process's working
@@ -63,7 +64,26 @@ export interface DshRuntimeOptions {
   env?: NodeJS.ProcessEnv;
   /** A session's process is closed after this long without a turn (it is resumed on the next message). */
   idleMs?: number;
+  /**
+   * Reads and fixes the Windows permissions DSH's write sandbox needs on a session's folder (folder-access.ts); null
+   * turns it off. `icacls` on Windows unless `agent` is given (tests), none elsewhere.
+   */
+  folderAccess?: FolderAccess | null;
   now?: () => Date;
+}
+
+/** The folder-access notice's words for each step of the fix. */
+function folderAccessMessage(state: "offered" | "running" | "done" | "failed", path: string, extra = ""): string {
+  switch (state) {
+    case "offered":
+      return `DSH 的「写入」沙箱在「${path}」上设不起来：Windows 里你对这个文件夹没有可继承的「完全控制」权限（一般只有「修改」），沙箱要给它设的权限设不上，于是命令会一条条来要你批准，或者写不进里面已有的文件夹。修复会给你自己加上这个文件夹及其子文件夹的完全控制（原来的权限先备份），沙箱的防护不变。`;
+    case "running":
+      return `正在修复「${path}」的文件夹权限…文件多的项目要几分钟。`;
+    case "done":
+      return `「${path}」的文件夹权限已修好，DSH 的写入沙箱可以用了；刚才没跑成的命令让它再跑一次即可。原来的权限备份在 ${extra}（在上一级文件夹里用 icacls /restore 可以放回去）。`;
+    case "failed":
+      return `修复「${path}」的文件夹权限没成功：${extra}`;
+  }
 }
 
 interface ConfigOption {
@@ -108,9 +128,15 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   /** Sessions whose process is being started or resumed. */
   private readonly starting = new Map<Id, Promise<Live>>();
   private closing = false;
+  private readonly folderAccess: FolderAccess | null;
+  /** Each session's folder-access notice in this run, and each folder's permissions as last read. */
+  private readonly folderNotices = new Map<Id, Id>();
+  private readonly folderChecks = new Map<string, Promise<FolderAccessState | null>>();
 
   constructor(private readonly options: DshRuntimeOptions) {
     super(options.store, "dsh", options.now);
+    this.folderAccess =
+      options.folderAccess !== undefined ? options.folderAccess : options.agent || process.platform !== "win32" ? null : windowsFolderAccess(join(options.dir, "acl-backup"));
     // The last Host stopped mid-turn: the turn is over (its process went with the Host).
     for (const s of this.store.listSessions()) {
       if (s.runtime !== "dsh" || !BUSY.has(s.status)) continue;
@@ -383,6 +409,11 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       const p = params as { sessionId?: string; update?: AcpUpdate };
       if (p.sessionId !== live.acpId || !p.update) return;
       live.transcript.update(p.update);
+      // DSH could not set its sandbox up on the folder: the fix is offered.
+      if (p.update.sessionUpdate === "tool_call_update" && p.update.status === "failed") {
+        const failed = grantFailurePath(`${toolOutput(p.update.content)}\n${typeof p.update.rawOutput === "string" ? p.update.rawOutput : JSON.stringify(p.update.rawOutput ?? "")}`);
+        if (failed) this.offerFolderFix(session.id, failed);
+      }
       // A model call ended: now and then, the running turn's speed so far.
       if (p.update.sessionUpdate === "usage_update" && Date.now() - live.measuredAt >= MEASURE_EVERY_MS) this.measure(live, live.transcript.turnItemId());
     });
@@ -392,7 +423,69 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       if (!this.closing && live.inflight) this.emit("log", `DSH process of ${session.id} exited mid-turn (${code})`);
     });
     this.armIdle(session.id, live);
+    // Before its first command: the folder's permissions let DSH set its write sandbox up.
+    if (permission === "workspace-write") void this.checkFolder(session.id);
     return live;
+  }
+
+  // ---- the folder's permissions for DSH's write sandbox (folder-access.ts, 2026-10-23) ----------------------------
+
+  private folderOf(sessionId: Id): string | undefined {
+    const session = this.store.getSession(sessionId);
+    return session ? this.store.getWorkspace(session.workspaceId)?.path : undefined;
+  }
+
+  private async checkFolder(sessionId: Id): Promise<void> {
+    const path = this.folderOf(sessionId);
+    if (!this.folderAccess || !path || this.folderNotices.has(sessionId)) return;
+    let check = this.folderChecks.get(path);
+    if (!check) this.folderChecks.set(path, (check = this.folderAccess.check(path)));
+    const state = await check;
+    if (state && !state.ok) this.offerFolderFix(sessionId, path);
+  }
+
+  /** The notice with 「修复文件夹权限」, once per session (DSH's error repeats on every command). */
+  private offerFolderFix(sessionId: Id, failed: string): void {
+    const path = this.folderOf(sessionId);
+    // Only the session's own folder is fixed from here.
+    if (!this.folderAccess || !path || path.toLowerCase() !== failed.toLowerCase()) return;
+    const known = this.folderNotices.get(sessionId);
+    const current = known ? this.store.getItem(known) : undefined;
+    if (current?.type === "notice" && (current.action?.state === "offered" || current.action?.state === "running")) return;
+    const body = { type: "notice" as const, level: "warning" as const, key: "folder-access", message: folderAccessMessage("offered", path), action: { kind: "folder-access" as const, path, state: "offered" as const } };
+    if (current?.type === "notice") this.updateItem(current.id, (it) => (it.type === "notice" ? { ...it, ...body } : it));
+    else this.folderNotices.set(sessionId, this.appendItem(sessionId, body, { method: "dsh/folder-access", ...(this.live.get(sessionId)?.transcript.turnRef() ?? {}) }).id);
+  }
+
+  /** 「修复文件夹权限」: gives the person inherited full control of the session's folder; the notice follows it. */
+  async fixFolderAccess(sessionId: Id): Promise<void> {
+    const path = this.folderOf(sessionId);
+    const notice = [...this.store.listItems(sessionId)].reverse().find((i) => i.type === "notice" && i.action?.kind === "folder-access");
+    if (!this.folderAccess || !path || notice?.type !== "notice" || notice.action?.path.toLowerCase() !== path.toLowerCase()) {
+      throw Object.assign(new Error("这个会话没有要修的文件夹权限"), { code: "bad_request" });
+    }
+    if (notice.action.state === "running" || notice.action.state === "done") return;
+    // Every session on this folder whose notice offers the fix follows the one fix.
+    const notices = [notice.id, ...[...this.folderNotices.values()].filter((id) => id !== notice.id)].filter((id) => {
+      const it = this.store.getItem(id);
+      return it?.type === "notice" && it.action?.path.toLowerCase() === path.toLowerCase() && it.action.state !== "done";
+    });
+    const show = (state: "running" | "done" | "failed", extra = "") => {
+      for (const id of notices)
+        this.updateItem(id, (it) => (it.type === "notice" && it.action ? { ...it, level: state === "done" ? "info" : "warning", message: folderAccessMessage(state, path, extra), action: { ...it.action, state } } : it));
+    };
+    show("running");
+    void this.folderAccess
+      .fix(path)
+      .then(({ state, backup }) => {
+        this.folderChecks.set(path, Promise.resolve(state));
+        if (state.ok) show("done", backup);
+        else show("failed", `改过之后读回来，你对这个文件夹仍然没有可继承的完全控制（原来的权限备份在 ${backup}）`);
+      })
+      .catch((err: unknown) => {
+        this.folderChecks.delete(path);
+        show("failed", err instanceof Error ? err.message : String(err));
+      });
   }
 
   /** Ends the session's process (when it is idle or archived, or for a new permission). */

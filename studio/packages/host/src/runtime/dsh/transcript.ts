@@ -195,7 +195,7 @@ function toolStatus(status: string | undefined): ToolStatus | undefined {
 }
 
 /** Text of ACP tool-call content (`{ type: "content", content: { type: "text" } }`). */
-function toolOutput(content: unknown): string {
+export function toolOutput(content: unknown): string {
   if (!Array.isArray(content)) return "";
   return content
     .map((c) => (c && typeof c === "object" && (c as { type?: string }).type === "content" ? blockText((c as { content?: unknown }).content) : ""))

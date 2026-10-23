@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import type { DshStatus, ModelProfile } from "@amo-studio/protocol";
+import type { DshStatus, Id, ModelProfile } from "@amo-studio/protocol";
 import { DSH_OPTIONS_KEY, DSH_PATH_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -37,6 +37,20 @@ export class DshFeature extends Feature {
     await runtime.check();
     this.profilesChanged();
     return this.status();
+  }
+
+  /** 「修复文件夹权限」 on a DSH session's notice (2026-10-23): the fix runs on; the notice shows how it went. */
+  async fixFolderAccess(sessionId: Id): Promise<{ ok: true }> {
+    const runtime = this.options.dsh;
+    const session = this.store.getSession(sessionId);
+    if (!session) throw new HostError("not_found", `session ${sessionId} not found`);
+    if (!runtime || session.runtime !== "dsh") throw new HostError("bad_request", "只有 DSH 会话有这个修复");
+    try {
+      await runtime.fixFolderAccess(sessionId);
+    } catch (err) {
+      throw new HostError("bad_request", err instanceof Error ? err.message : String(err));
+    }
+    return { ok: true };
   }
 
   private profilesChanged(): void {

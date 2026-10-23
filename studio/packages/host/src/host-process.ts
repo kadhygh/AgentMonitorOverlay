@@ -7,6 +7,7 @@ import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.j
 import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
 import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
 import { DshRuntime } from "./runtime/dsh/dsh-runtime.js";
+import type { FolderAccess } from "./runtime/dsh/folder-access.js";
 import { dshUnavailable } from "./runtime/dsh/install.js";
 import { localClaudeHome as localClaudeHomeOf } from "./runtime/claude/claude-login.js";
 import { RuntimeRouter } from "./runtime/runtime.js";
@@ -54,6 +55,8 @@ export interface StartHostOptions {
   dshAgent?: { command: string; args: readonly string[] };
   /** Variables DSH processes start from (default: process.env). */
   dshEnv?: NodeJS.ProcessEnv;
+  /** Tests: what reads and fixes a DSH session's folder permissions (folder-access.ts); null for none. */
+  dshFolderAccess?: FolderAccess | null;
 }
 
 export interface RunningHost {
@@ -238,6 +241,7 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       identities,
       ...(options.dshAgent ? { agent: options.dshAgent } : {}),
       ...(options.dshEnv ? { env: options.dshEnv } : {}),
+      ...(options.dshFolderAccess !== undefined ? { folderAccess: options.dshFolderAccess } : {}),
     });
     const runtime = new RuntimeRouter(store, profiles, { codex, claude, dsh });
     const liveStore = store;

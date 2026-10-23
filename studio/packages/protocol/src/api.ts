@@ -296,6 +296,12 @@ export interface HostRoutes {
   /** Starts DSH over ACP and opens a session in a scratch folder, without a model call; the result is kept. */
   "POST /api/dsh/check": { req: void; res: DshStatus };
   /**
+   * A DSH session's folder-access notice (NoticeAction): gives the person inherited full control of the session's
+   * folder (the old permissions saved first), so DSH's write sandbox can be set up there. Answers at once; the notice
+   * shows how it went.
+   */
+  "POST /api/sessions/:id/folder-access": { req: void; res: { ok: true } };
+  /**
    * Quota use of the subscriptions (GPT through the Codex login, Claude through its token). `?refresh=1` asks the
    * accounts now (GPT: may start its app-server); otherwise the last numbers read.
    */

@@ -35,6 +35,7 @@
 .msg-command-body.md-body { font-family: inherit; font-size: 13px; line-height: 21px; white-space: normal; }
 .msg-command-body.empty { font-family: inherit; color: var(--chat-dim); }
 
+.msg-notice-action { flex: none; margin-top: -1px; }
 .msg-notice-count { flex: none; padding: 0 6px; border-radius: 999px; background: var(--chat-hover); font-size: 11px; line-height: 18px; margin-top: 2px; font-variant-numeric: tabular-nums; }
 
 /* ---- tool rows: progress, elapsed time, images ------------------------------------------------------------------ */

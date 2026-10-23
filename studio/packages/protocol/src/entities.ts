@@ -300,6 +300,13 @@ export interface MessageImage {
   path: string;
 }
 
+/**
+ * What a notice offers to do (2026-10-23). `folder-access`: DSH's write sandbox cannot be set up on the session's
+ * folder for want of the person's full control of it; POST /api/sessions/:id/folder-access gives it. `state` follows
+ * the fix (the row is updated in place).
+ */
+export type NoticeAction = { kind: "folder-access"; path: string; state: "offered" | "running" | "done" | "failed" };
+
 export type SessionItem =
   /** `images`: pictures sent with the message (stage 11). */
   | (ItemBase & { type: "user"; text: string; images?: MessageImage[] })
@@ -316,7 +323,7 @@ export type SessionItem =
   | (ItemBase & { type: "subagent"; childSessionId: Id; summary: string; usage?: TurnUsage })
   | (ItemBase & { type: "error"; message: string })
   /** `key`: notices with the same key (and runtime-repeated ones) update one row; `count` says how often it came. */
-  | (ItemBase & { type: "notice"; level: "info" | "warning"; message: string; key?: string; count?: number })
+  | (ItemBase & { type: "notice"; level: "info" | "warning"; message: string; key?: string; count?: number; action?: NoticeAction })
   /**
    * The conversation's context was summarised to free room (stage 12, S12-E): Claude's compact_boundary, Codex's
    * contextCompaction. `beforeTokens`: the context before it, when known.
