@@ -1,6 +1,6 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
-import { projectWorkspaces, type DshStatus, type FolderAccessStatus, type Id, type ModelProfile } from "@amo-studio/protocol";
+import { isCommon, projectWorkspaces, type DshStatus, type FolderAccessStatus, type Id, type ModelProfile } from "@amo-studio/protocol";
 import { DSH_OPTIONS_KEY, DSH_PATH_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
@@ -57,8 +57,10 @@ export class DshFeature extends Feature {
   async folders(): Promise<{ available: boolean; folders: FolderAccessStatus[] }> {
     const runtime = this.options.dsh;
     if (!runtime?.foldersAvailable) return { available: false, folders: [] };
-    const list = projectWorkspaces(this.store.listWorkspaces());
-    const folders = await Promise.all(list.map(async (w) => ({ workspaceId: w.id, name: w.name, path: w.path, ...(await runtime.folderStatus(w.path)) })));
+    // The common space too: tasks without a project run their sessions there.
+    const all = this.store.listWorkspaces();
+    const list = [...all.filter((w) => isCommon(w)), ...projectWorkspaces(all)];
+    const folders = await Promise.all(list.map(async (w) => ({ workspaceId: w.id, name: isCommon(w) ? "公共目录" : w.name, path: w.path, ...(await runtime.folderStatus(w.path)) })));
     return { available: true, folders };
   }
 

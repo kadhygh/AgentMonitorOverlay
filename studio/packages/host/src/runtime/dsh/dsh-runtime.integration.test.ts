@@ -322,18 +322,21 @@ describe("DSH runtime", () => {
     const folders = () => call<Folders>(host, "GET", "/api/dsh/folders");
     const first = await folders();
     expect(first.available).toBe(true);
-    expect(first.folders).toEqual([expect.objectContaining({ workspaceId: session.workspaceId, name: "ws", state: "needs-fix" })]);
+    // The common space is listed first, then the projects.
+    expect(first.folders.map((f) => f.name)).toEqual(["公共目录", "ws"]);
+    const mine = (f: Folders) => f.folders.find((x) => x.workspaceId === session.workspaceId)!;
+    expect(mine(first)).toEqual(expect.objectContaining({ state: "needs-fix" }));
     // The session's own check offered the fix too.
     const notice = async () => (await items(host, session.id)).find((i) => i.type === "notice" && i.action?.kind === "folder-access");
     await until(notice, (n) => n?.type === "notice" && n.action?.state === "offered");
 
     const started = await call<{ state: string }>(host, "POST", `/api/dsh/folders/${session.workspaceId}/fix`);
     expect(started.state).toBe("running");
-    expect((await folders()).folders[0]!.state).toBe("running");
+    expect(mine(await folders()).state).toBe("running");
     await until(notice, (n) => n?.type === "notice" && n.action?.state === "running");
     release();
-    const done = await until(folders, (f) => f.folders[0]!.state === "ok");
-    expect(done.folders[0]!.backup).toBe("B.acl");
+    const done = await until(folders, (f) => mine(f).state === "ok");
+    expect(mine(done).backup).toBe("B.acl");
     await until(notice, (n) => n?.type === "notice" && n.action?.state === "done");
   });
 
