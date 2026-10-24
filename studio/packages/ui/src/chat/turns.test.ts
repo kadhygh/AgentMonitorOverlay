@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { SessionItem } from "@amo-studio/protocol";
-import { buildTranscript, closedTitle, foldable, formatDuration, formatTokens, liveTitle, outputSpeed, sessionStats, turnLabel, type ProcessMember } from "./turns.js";
+import { buildTranscript, closedTitle, foldable, formatDuration, formatTokens, liveTitle, outputSpeed, segmentWeight, sessionStats, turnLabel, windowStart, type ProcessMember } from "./turns.js";
 
 let seq = 0;
 const base = (turnId?: string) => ({ id: `i${++seq}`, sessionId: "s", seq, createdAt: "2026-10-13T00:00:00.000Z", ...(turnId ? { raw: { runtime: "codex" as const, method: "x", turnId } } : {}) });
@@ -170,5 +170,33 @@ describe("titles", () => {
     // Turns recorded before the measure: no number rather than a wrong one.
     expect(outputSpeed(turn("t") as never)).toBeNull();
     expect(outputSpeed(undefined)).toBeNull();
+  });
+});
+
+describe("the window drawn of a long session (2026-10-24)", () => {
+  // 30 finished turns, each: the message, ten steps of work, the answer.
+  const items = Array.from({ length: 30 }, (_, n) => {
+    const t = `w${n}`;
+    return [turn(t), user(`q${n}`, t), ...Array.from({ length: 10 }, (_, k) => tool("read", `f${k}.ts`, t)), agent(`a${n}`, t)];
+  }).flat();
+  const segs = buildTranscript(items, false);
+
+  it("counts a turn's work only where it is drawn", () => {
+    expect(segmentWeight(segs[0]!, false)).toBe(3);
+    expect(segmentWeight(segs[0]!, true)).toBe(12);
+  });
+
+  it("starts back from the end while the turns fit, at least two, and never after the place kept", () => {
+    // Folded work: all 30 turns (90) fit.
+    expect(windowStart(segs, false)).toBe(0);
+    // Unfolded: 12 each, 400 holds 33 → all; 100 holds 8.
+    expect(windowStart(segs, true, segs.length, 100)).toBe(22);
+    // Earlier ones, back from where the window starts.
+    expect(windowStart(segs, true, 22, 100)).toBe(14);
+    // Two turns even over the budget.
+    expect(windowStart(segs, true, segs.length, 5)).toBe(28);
+    // A place to go back to is kept in.
+    expect(windowStart(segs, true, segs.length, 100, segs[3]!.key)).toBe(3);
+    expect(windowStart([], true)).toBe(0);
   });
 });

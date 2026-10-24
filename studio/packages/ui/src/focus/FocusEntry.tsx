@@ -11,6 +11,9 @@ import { noteFocusJump } from "../lib/focusJump.js";
 type Approval = Extract<SessionItem, { type: "approval" }>;
 const SNIPPET_MAX = 300;
 
+/** Items a Focus entry reads: its latest (the Host adds pending questions and approvals from further back). */
+const FOCUS_TAIL = 60;
+
 /** Latest content worth showing: the pending approval, else a pending question (answered in the workbench), else the last agent reply. */
 export function latestSnippet(items: readonly SessionItem[]): { text: string; approval: Approval | null } {
   const question = items.find((i): i is Extract<SessionItem, { type: "question" }> => i.type === "question" && i.state === "pending");
@@ -92,7 +95,8 @@ export function FocusEntry({
 
 /** The session's latest content and what can be done about it; `children` adds actions (取消置顶). */
 export function FocusDetail({ link, session, onDone, children }: { link: HostLink; session: Session; onDone?(): void; children?: ReactNode }) {
-  const { items } = useSessionItems(link, session.id);
+  // Its latest only: what is pending sits at the end (a long session's whole log was 10 MB, 2026-10-24).
+  const { items } = useSessionItems(link, session.id, FOCUS_TAIL);
   const { text, approval } = latestSnippet(items);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);

@@ -317,3 +317,33 @@ export function outputSpeed(turn: TurnItem | undefined): number | null {
   if (!d || !d.tokens || !(d.ms >= 300)) return null;
   return Math.round((d.tokens / d.ms) * 1000);
 }
+
+// ---- the window drawn ---------------------------------------------------------------------------------------------
+// A long session is drawn from its last turns (2026-10-24, after dsh-TUI): its earlier turns wait behind 「显示更早的」.
+// Measured on a 4,842-item session in 完全展开: 43,000 elements and 1.3 s of a blocked window on each opening.
+
+/** About how many items the turns drawn at first may hold. */
+export const TRANSCRIPT_BUDGET = 400;
+
+/** Roughly what a turn costs to draw: its work counts only when it shows (完全展开 shows every turn's). */
+export function segmentWeight(seg: Segment, unfoldedWork: boolean): number {
+  const work = unfoldedWork || !foldable(seg) ? segmentMembers(seg).length : 1;
+  return seg.inputs.length + work + (seg.answer ? 1 : 0) + seg.tail.length;
+}
+
+/**
+ * Where the drawn turns start, among `segments` before `end`: back from there while they fit `budget`, at least two
+ * turns, and never after the turn keyed `keep` (a place to go back to).
+ */
+export function windowStart(segments: readonly Segment[], unfoldedWork: boolean, end = segments.length, budget = TRANSCRIPT_BUDGET, keep?: string): number {
+  const kept = keep ? segments.findIndex((s) => s.key === keep) : -1;
+  let start = end;
+  let weight = 0;
+  while (start > 0) {
+    const next = weight + segmentWeight(segments[start - 1]!, unfoldedWork);
+    if (next > budget && end - start >= 2) break;
+    weight = next;
+    start--;
+  }
+  return kept >= 0 ? Math.min(start, kept) : start;
+}

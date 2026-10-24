@@ -1,11 +1,11 @@
-import { memo, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import type { Annotation, ApprovalDecision, Session, SessionItem, TurnUsage } from "@amo-studio/protocol";
 import { splitAnnotationRefs, splitRoleUpdate } from "@amo-studio/protocol";
 import { Markdown } from "../lib/markdown.js";
 import { copyText } from "../host/client.js";
 import { IconCheck, IconChevronDown, IconChevronRight, IconCopy, IconEdit, IconTerminal, IconSparkle } from "./icons.js";
 import { ProcessGroup, Shimmer, MemberRow } from "./ProcessRows.js";
-import { buildTranscript, foldable, formatDuration, formatTokens, outputSpeed, segmentMembers, turnLabel, type AgentItem, type ApprovalItem, type Row, type Segment, type TurnItem } from "./turns.js";
+import { buildTranscript, foldable, formatDuration, formatTokens, outputSpeed, segmentMembers, turnLabel, windowStart, type AgentItem, type ApprovalItem, type Row, type Segment, type TurnItem } from "./turns.js";
 import type { TranscriptView } from "./prefs.js";
 import { MessageFiles, MessageImages } from "../attach/MessageAttachments.js";
 import { splitFileRefItems } from "../attach/refs.js";
@@ -13,6 +13,7 @@ import { TurnChanges } from "../files/ChangedFiles.js";
 import { QuestionRecord } from "./questions/QuestionRecord.js";
 import { CommandRecord, CompactionRow, NoticeRow } from "./cli/CliRows.js";
 import { RowBoundary } from "../lib/ErrorBoundary.js";
+import { pinScroll } from "../lib/scrollPin.js";
 
 // The conversation, one turn after another (DSH ui-chat): the person's bubble, the work (folded once the turn is
 // done), the answer, and a footer with copy, time and token usage. A running turn ends with a live status line.
@@ -29,25 +30,60 @@ interface TranscriptProps {
   view: TranscriptView;
   onApprove(item: ApprovalItem, decision: ApprovalDecision): void;
   onJump(sessionId: string): void;
+  /** A turn the drawn window must include (the place 后退 goes back to). */
+  keepTurn?: string;
 }
 
 /** Drawn again only when what it shows changes (2026-10-20: every key typed in the composer drew the whole conversation). */
 export const Transcript = memo(TranscriptBody);
 
-function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump }: TranscriptProps) {
+function TranscriptBody({ session, items, annotations, model, busy, view, onApprove, onJump, keepTurn }: TranscriptProps) {
   const sessionRunning = session?.status === "running" || session?.status === "awaiting-approval" || session?.status === "awaiting-answer";
   const segments = useMemo(() => buildTranscript(items, sessionRunning), [items, sessionRunning]);
   // Turns the person unfolded (or folded again); finished turns start folded.
   const [unfolded, setUnfolded] = useState<ReadonlySet<string>>(new Set());
   useEffect(() => setUnfolded(new Set()), [session?.id]);
 
+  // The drawn window: from the turn keyed `key` on (null: all of them), worked out once per session and view; new
+  // turns come after it. 完全展开 draws every turn's work, so it holds fewer turns.
+  const unfoldedWork = view === "verbose";
+  const [from, setFrom] = useState<{ session: string | undefined; view: TranscriptView; key: string | null } | null>(null);
+  const settled = !!from && from.session === session?.id && from.view === view;
+  const startAt = (index: number) => segments[index]?.key ?? null;
+  const fromKey = settled ? from.key : startAt(windowStart(segments, unfoldedWork, segments.length, undefined, keepTurn));
+  const start = fromKey === null ? 0 : Math.max(0, segments.findIndex((s) => s.key === fromKey));
+  useEffect(() => {
+    if (!settled && segments.length) setFrom({ session: session?.id, view, key: fromKey });
+  }, [settled, segments.length, session?.id, view, fromKey]);
+
+  // 显示更早的: the turn that was first stays where it was on screen (the browser does not anchor at the very top).
+  const earlierRef = useRef<HTMLButtonElement>(null);
+  const keepInPlace = useRef<{ el: HTMLElement; top: number } | null>(null);
+  useLayoutEffect(() => {
+    const kept = keepInPlace.current;
+    keepInPlace.current = null;
+    const scroller = kept && scrollerOf(kept.el);
+    if (kept && scroller) pinScroll(scroller, () => kept.el.getBoundingClientRect().top - kept.top);
+  }, [start]);
+  const showEarlier = () => {
+    const first = earlierRef.current?.nextElementSibling;
+    if (first instanceof HTMLElement) keepInPlace.current = { el: first, top: first.getBoundingClientRect().top };
+    setFrom({ session: session?.id, view, key: startAt(windowStart(segments, unfoldedWork, start)) });
+  };
+
   const segmentsRef = useRef(segments);
   segmentsRef.current = segments;
+  const startRef = useRef(start);
+  startRef.current = start;
   useEffect(() => {
     const reveal = (e: Event) => {
       const id = (e as CustomEvent<string>).detail;
-      const seg = segmentsRef.current.find((s) => s.rows.some((r) => (r.kind === "item" ? r.item.id === id : r.members.some((m) => m.id === id))));
-      if (seg) setUnfolded((cur) => new Set(cur).add(seg.key));
+      const index = segmentsRef.current.findIndex((s) => s.rows.some((r) => (r.kind === "item" ? r.item.id === id : r.members.some((m) => m.id === id))) || s.answer?.id === id || s.inputs.some((i) => i.id === id) || s.tail.some((i) => i.id === id));
+      const seg = segmentsRef.current[index];
+      if (!seg) return;
+      setUnfolded((cur) => new Set(cur).add(seg.key));
+      // Earlier than the window: drawn from there on.
+      if (index < startRef.current) setFrom((cur) => (cur ? { ...cur, key: seg.key } : cur));
     };
     window.addEventListener(REVEAL_ITEM_EVENT, reveal);
     return () => window.removeEventListener(REVEAL_ITEM_EVENT, reveal);
@@ -59,12 +95,17 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
 
   return (
     <>
-      {segments.map((seg, i) => (
+      {start > 0 && (
+        <button ref={earlierRef} type="button" className="turn-earlier" data-testid="turn-earlier" onClick={showEarlier}>
+          显示更早的对话（还有 {start} 轮）
+        </button>
+      )}
+      {segments.slice(start).map((seg, i) => (
         // One turn that cannot be drawn shows a line saying so; the turns around it stay.
         <RowBoundary key={seg.key} what="这一轮">
         <TurnView
           seg={seg}
-          latest={i === segments.length - 1}
+          latest={start + i === segments.length - 1}
           view={view}
           model={model}
           busy={busy}
@@ -92,6 +133,15 @@ function TranscriptBody({ session, items, annotations, model, busy, view, onAppr
       )}
     </>
   );
+}
+
+/** The element that scrolls `el`. */
+function scrollerOf(el: HTMLElement): HTMLElement | null {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    const y = getComputedStyle(p).overflowY;
+    if (y === "auto" || y === "scroll") return p;
+  }
+  return null;
 }
 
 function TurnView({
@@ -122,7 +172,7 @@ function TurnView({
   const finished = !seg.running;
   const flat = view === "verbose" || (view === "detailed" && seg.running);
   return (
-    <section className="turn" data-testid="turn" data-running={seg.running || undefined} data-folded={folded || undefined}>
+    <section className="turn" data-testid="turn" data-key={seg.key} data-running={seg.running || undefined} data-folded={folded || undefined}>
       {seg.inputs.map((item) => (item.type === "user" ? <UserBubble key={item.id} item={item} /> : null))}
       {finished && seg.rows.length > 0 && (
         <button

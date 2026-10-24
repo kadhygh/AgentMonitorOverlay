@@ -478,7 +478,7 @@ export function Thread({ link, presets, session, profile, tasks = [], sessions =
             {!session && <div className="thread-empty">这个任务还没有会话。在左侧新建一个会话即可开始。</div>}
             <AttachLink.Provider value={link}>
               <QuestionSeatContext.Provider value={seat}>
-                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy} view={view} onApprove={onApprove} onJump={onJump} />
+                <Transcript session={session} items={items} annotations={annotations} model={model} busy={busy} view={view} onApprove={onApprove} onJump={onJump} keepTurn={initialScroll?.key} />
               </QuestionSeatContext.Provider>
             </AttachLink.Provider>
           </div>

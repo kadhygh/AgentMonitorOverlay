@@ -414,6 +414,7 @@ export interface HostRoutes {
   /** A topic session (专题会话): coordinates the topic's tasks; runs in one of its projects or the common space. */
   "POST /api/topics/:id/sessions": { req: NewSessionInput; res: Session };
   "POST /api/tasks/:id/sessions": { req: NewSessionInput; res: Session };
+  /** `?after=<seq>`: only later ones. `?tail=<n>`: only the last n, and pending questions and approvals from before them (Focus shows a session's latest; 2026-10-24). */
   "GET /api/sessions/:id/items": { req: void; res: SessionItem[] };
   /** Starts a turn when idle, steers the running turn otherwise. */
   /** `queue`: a Claude session was mid-turn; the message runs as the next turn. Codex steers the running turn instead. */

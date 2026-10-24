@@ -45,9 +45,14 @@ export class SessionsFeature extends Feature {
     return this.wrap(() => this.runtime.setOptions(sessionId, next));
   }
 
-  items(sessionId: Id, afterSeq = 0): SessionItem[] {
+  /** `tail`: only the last that many (0: all), and the questions and approvals still waiting from before them. */
+  items(sessionId: Id, afterSeq = 0, tail = 0): SessionItem[] {
     this.requireSession(sessionId);
-    return this.store.listItems(sessionId, afterSeq);
+    if (tail <= 0) return this.store.listItems(sessionId, afterSeq);
+    const last = this.store.listLastItems(sessionId, tail);
+    const from = last[0]?.seq ?? Infinity;
+    const waiting = (["question", "approval"] as const).flatMap((type) => this.store.findItems(sessionId, type, { state: "pending" })).filter((i) => i.seq < from);
+    return [...waiting, ...last].sort((a, b) => a.seq - b.seq);
   }
 
   /**

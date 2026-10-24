@@ -139,6 +139,12 @@
   transition: color 100ms ease;
 }
 .turn-fold:hover { color: var(--chat-dim-hover); }
+/* A long session's earlier turns (drawn on request). Not the scroll anchor: what was being read stays in place. */
+.turn-earlier {
+  align-self: center; overflow-anchor: none; height: 28px; padding: 0 12px; border: 1px solid var(--border); border-radius: 14px;
+  background: none; color: var(--chat-dim); font: inherit; font-size: 13px; cursor: pointer;
+}
+.turn-earlier:hover { color: var(--chat-dim-hover); border-color: var(--chat-dim); }
 .turn-fold.static { cursor: default; }
 .turn-fold.static:hover { color: var(--chat-dim); }
 .turn-fold.failed .turn-fold-label { color: var(--chat-error); }

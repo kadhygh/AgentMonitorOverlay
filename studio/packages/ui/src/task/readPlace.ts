@@ -7,6 +7,8 @@ import { pinScroll } from "../lib/scrollPin.js";
 
 export interface ReadPlace {
   block: number;
+  /** The turn's key: a long session draws only its last turns, so its place among the drawn blocks can change. */
+  key?: string;
   /** px from the block's top to the top of the view. */
   offset: number;
   top: number;
@@ -28,14 +30,16 @@ export function readPlaceOf(scroller: HTMLElement): ReadPlace {
     if (blocks[mid]!.getBoundingClientRect().bottom > viewTop) hi = mid;
     else lo = mid + 1;
   }
-  return { block: lo, offset: Math.round(viewTop - blocks[lo]!.getBoundingClientRect().top), top };
+  const key = (blocks[lo] as HTMLElement).dataset.key;
+  return { block: lo, ...(key ? { key } : {}), offset: Math.round(viewTop - blocks[lo]!.getBoundingClientRect().top), top };
 }
 
 export const samePlace = (a: ReadPlace | undefined, b: ReadPlace) => !!a && a.block === b.block && a.offset === b.offset && a.top === b.top;
 
 /** Back to `place`, once the conversation's messages are in. */
 export function restoreReadPlace(scroller: HTMLElement, place: ReadPlace): void {
-  const block = place.block >= 0 ? blocksOf(scroller)?.[place.block] : undefined;
+  const byKey = place.key ? scroller.querySelector(`:scope > .thread-inner > [data-key="${CSS.escape(place.key)}"]`) : null;
+  const block = byKey ?? (place.block >= 0 ? blocksOf(scroller)?.[place.block] : undefined);
   // Fewer blocks than then (the session compacted, say): the old way.
   if (!block) scroller.scrollTop = place.top;
   else pinScroll(scroller, () => block.getBoundingClientRect().top - scroller.getBoundingClientRect().top + place.offset);

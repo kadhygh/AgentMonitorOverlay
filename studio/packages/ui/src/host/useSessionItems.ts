@@ -29,7 +29,8 @@ export function applyItemEvent(items: readonly SessionItem[], e: HostEvent, sess
   }
 }
 
-export function useSessionItems(link: HostLink, sessionId: string | null) {
+/** `tail`: only the last that many items, and those that come after (Focus: a session's latest, 2026-10-24). */
+export function useSessionItems(link: HostLink, sessionId: string | null, tail?: number) {
   const [items, setItems] = useState<readonly SessionItem[]>([]);
   const [error, setError] = useState<string | null>(null);
 
@@ -46,7 +47,7 @@ export function useSessionItems(link: HostLink, sessionId: string | null) {
       else setItems((cur) => applyItemEvent(cur, e, sessionId));
     });
     const load = () =>
-      call(link, "GET /api/sessions/:id/items", { id: sessionId })
+      call(link, "GET /api/sessions/:id/items", { id: sessionId }, undefined, tail ? { tail: String(tail) } : undefined)
         .then((fetched) => {
           if (cancelled) return;
           let next: readonly SessionItem[] = fetched;
@@ -65,7 +66,7 @@ export function useSessionItems(link: HostLink, sessionId: string | null) {
       offEvent();
       offReconnect();
     };
-  }, [link, sessionId]);
+  }, [link, sessionId, tail]);
 
   return { items, error };
 }

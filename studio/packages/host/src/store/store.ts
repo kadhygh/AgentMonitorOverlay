@@ -448,6 +448,11 @@ export class Store extends DocumentStore {
     return (this.db.prepare("SELECT * FROM items WHERE session_id = ? AND seq > ? ORDER BY seq").all(sessionId, afterSeq) as Row[]).map(toItem);
   }
 
+  /** The last `count` items of a session, oldest first. */
+  listLastItems(sessionId: Id, count: number): SessionItem[] {
+    return (this.db.prepare("SELECT * FROM (SELECT * FROM items WHERE session_id = ? ORDER BY seq DESC LIMIT ?) ORDER BY seq").all(sessionId, Math.floor(count)) as Row[]).map(toItem);
+  }
+
   /**
    * A session's items of a type whose body fields (dotted paths, e.g. `raw.turnId`) have these values, picked out by
    * SQLite rather than reading and parsing the whole session (2026-10-20: several callers did that per event or poll);

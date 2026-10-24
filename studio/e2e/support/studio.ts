@@ -147,10 +147,14 @@ export type WindowKind = "main" | "focus" | "scratchpad" | "review" | "marks" | 
 /** Saves a PNG of the (hidden) main window, or another window, to studio/screenshots/<stage>/<name>.png. */
 export async function screenshot(app: ElectronApplication, stage: string, name: string, page?: Page, which: WindowKind = "main"): Promise<string> {
   if (page) await settlePaint(page);
-  // Entrance animations (popups, notices) finish first; endless ones (spinners) are left alone.
+  // Entrance animations (popups, notices) finish first; endless ones (spinners) are left alone. At most 2 s: one in a
+  // turn just scrolled out of view is paused there (content-visibility) and would never finish (2026-10-24).
   if (page)
     await page.evaluate(() =>
-      Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))),
+      Promise.race([
+        Promise.all(document.getAnimations().filter((a) => a.effect?.getTiming().iterations !== Infinity).map((a) => a.finished.catch(() => undefined))),
+        new Promise((r) => setTimeout(r, 2000)),
+      ]),
     );
   // Several windows of a kind (viewers): the one showing `page`.
   const exact = page && which !== "main" ? page.url() : null;

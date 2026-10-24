@@ -7,7 +7,7 @@ export function sessionsRoutes(service: HostService): Route[] {
   return [
     route("PATCH", "/api/sessions/:id/options", ({ params, body }) => service.sessions.updateSessionOptions(params.id!, body)),
     route("PATCH", "/api/sessions/:id", ({ params, body }) => service.sessions.renameSession(params.id!, obj(body).title)),
-    route("GET", "/api/sessions/:id/items", ({ params, query }) => service.sessions.items(params.id!, Number(query.get("after") ?? 0) || 0)),
+    route("GET", "/api/sessions/:id/items", ({ params, query }) => service.sessions.items(params.id!, Number(query.get("after") ?? 0) || 0, Number(query.get("tail") ?? 0) || 0)),
     route("POST", "/api/sessions/:id/messages", ({ params, body }) => {
       const b = obj(body);
       const attachments = b.attachments ?? [];
