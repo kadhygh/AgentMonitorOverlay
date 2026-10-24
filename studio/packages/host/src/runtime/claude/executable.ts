@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, statSync } from "node:fs";
 import { createRequire } from "node:module";
 import { homedir } from "node:os";
@@ -29,33 +29,57 @@ function bundled(): string | null {
   }
 }
 
+const versions = new Map<string, { mtimeMs: number; version: string | null }>();
+
+/** `claude --version` of the exe as it is now ("2.1.309"), null when it does not start; remembered until it changes. */
+function versionNow(path: string): string | null {
+  let mtimeMs = 0;
+  try {
+    mtimeMs = statSync(path).mtimeMs;
+  } catch {
+    return null;
+  }
+  const known = versions.get(path);
+  if (known && known.mtimeMs === mtimeMs) return known.version;
+  let version: string | null = null;
+  try {
+    version = /\d+\.\d+\.\d+/.exec(execFileSync(path, ["--version"], { encoding: "utf8", timeout: 15_000, windowsHide: true }))?.[0] ?? null;
+  } catch {
+    version = null;
+  }
+  versions.set(path, { mtimeMs, version });
+  return version;
+}
+
+/** Whether the exe starts and says its version (after dsh-TUI: a broken install on PATH must not hide a good one). */
+const starts = (path: string) => versionNow(path) !== null;
+
 /**
  * The person's install: `claude` on PATH, else where its installers put it (Studio's PATH is the one it started with,
- * so a Claude Code installed since is found there too). npm's `claude.cmd` cannot be started without a shell; the
- * native exe it wraps is used instead.
+ * so a Claude Code installed since is found there too); the first that starts. npm's `claude.cmd` cannot be started
+ * without a shell; the native exe it wraps is used instead.
  */
-function installed(env: NodeJS.ProcessEnv): string | null {
+function installed(env: NodeJS.ProcessEnv, works: (path: string) => boolean): string | null {
   const home = env.USERPROFILE ?? homedir();
   const npm = env.APPDATA ? join(env.APPDATA, "npm") : null;
   const candidates = [installedClaudeExe(env), join(home, ".local", "bin", "claude.exe"), npm && join(npm, "claude.cmd")];
   for (const exe of candidates) {
     if (!exe || !existsSync(exe)) continue;
-    if (!exe.toLowerCase().endsWith(".cmd")) return exe;
-    const native = join(dirname(exe), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
-    if (existsSync(native)) return native;
+    const native = exe.toLowerCase().endsWith(".cmd") ? join(dirname(exe), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe") : exe;
+    if (existsSync(native) && works(native)) return native;
   }
   return null;
 }
 
 /**
- * AMO_STUDIO_CLAUDE (an exe; one that does not exist means none, as tests use it), the SDK's copy, then the person's
- * install; null when there is none.
+ * AMO_STUDIO_CLAUDE (an exe, taken as it is; one that does not exist means none, as tests use it), the SDK's copy, then
+ * the person's install that starts; null when there is none. `works` is for tests.
  */
-export function findClaudeCode(env: NodeJS.ProcessEnv = process.env, sdk: string | null = bundled()): ClaudeCode | null {
+export function findClaudeCode(env: NodeJS.ProcessEnv = process.env, sdk: string | null = bundled(), works: (path: string) => boolean = starts): ClaudeCode | null {
   const explicit = env.AMO_STUDIO_CLAUDE;
   if (explicit) return existsSync(explicit) ? { path: explicit, source: "env" } : null;
   if (sdk) return { path: sdk, source: "bundled" };
-  const own = installed(env);
+  const own = installed(env, works);
   return own ? { path: own, source: "installed" } : null;
 }
 
@@ -77,28 +101,9 @@ export function sdkClaudeCodeVersion(): string | null {
   }
 }
 
-const versions = new Map<string, { mtimeMs: number; version: string | null }>();
-
 /** `claude --version` ("2.1.309"), remembered until the exe changes (it updates itself). */
 export async function claudeCodeVersion(path: string): Promise<string | null> {
-  let mtimeMs = 0;
-  try {
-    mtimeMs = statSync(path).mtimeMs;
-  } catch {
-    return null;
-  }
-  const known = versions.get(path);
-  if (known && known.mtimeMs === mtimeMs) return known.version;
-  const version = await new Promise<string | null>((resolve) => {
-    try {
-      execFile(path, ["--version"], { timeout: 15_000, windowsHide: true }, (err, stdout) => resolve(err ? null : (/\d+\.\d+\.\d+/.exec(stdout)?.[0] ?? null)));
-    } catch {
-      // Not a program at all (EFTYPE comes synchronously).
-      resolve(null);
-    }
-  });
-  versions.set(path, { mtimeMs, version });
-  return version;
+  return versionNow(path);
 }
 
 /** Whether `a` is an older version than `b` (dotted numbers). */

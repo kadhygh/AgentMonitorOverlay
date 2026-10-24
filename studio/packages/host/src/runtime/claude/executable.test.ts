@@ -21,6 +21,8 @@ const tempRoot = () => {
   roots.push(r);
   return r;
 };
+/** The files here are empty: taken as starting, except the ones named broken. */
+const ok = (path: string) => !path.includes("broken");
 const touch = (path: string) => {
   mkdirSync(join(path, ".."), { recursive: true });
   writeFileSync(path, "");
@@ -34,16 +36,26 @@ describe("which Claude Code the Claude sessions run on (2026-10-24)", () => {
     const sdk = touch(join(root, "sdk", "claude.exe"));
     const own = touch(join(root, "bin", "claude.exe"));
     const env = { PATH: join(root, "bin"), USERPROFILE: home };
-    expect(findClaudeCode({ ...env, AMO_STUDIO_CLAUDE: sdk }, null)).toEqual({ path: sdk, source: "env" });
+    expect(findClaudeCode({ ...env, AMO_STUDIO_CLAUDE: sdk }, null, ok)).toEqual({ path: sdk, source: "env" });
     // One that does not exist is none at all, whatever else there is.
-    expect(findClaudeCode({ ...env, AMO_STUDIO_CLAUDE: join(root, "gone.exe") }, sdk)).toBeNull();
-    expect(findClaudeCode(env, sdk)).toEqual({ path: sdk, source: "bundled" });
+    expect(findClaudeCode({ ...env, AMO_STUDIO_CLAUDE: join(root, "gone.exe") }, sdk, ok)).toBeNull();
+    expect(findClaudeCode(env, sdk, ok)).toEqual({ path: sdk, source: "bundled" });
     // The portable build: no SDK copy.
-    expect(findClaudeCode(env, null)).toEqual({ path: own, source: "installed" });
-    expect(findClaudeCode({ PATH: "", USERPROFILE: home }, null)).toBeNull();
+    expect(findClaudeCode(env, null, ok)).toEqual({ path: own, source: "installed" });
+    expect(findClaudeCode({ PATH: "", USERPROFILE: home }, null, ok)).toBeNull();
     // The native installer's place, though Studio's PATH predates it.
     const native = touch(join(home, ".local", "bin", "claude.exe"));
-    expect(findClaudeCode({ PATH: "", USERPROFILE: home }, null)).toEqual({ path: native, source: "installed" });
+    expect(findClaudeCode({ PATH: "", USERPROFILE: home }, null, ok)).toEqual({ path: native, source: "installed" });
+  });
+
+  it("passes over an install that does not start (after dsh-TUI)", () => {
+    const root = tempRoot();
+    const home = join(root, "home");
+    touch(join(root, "broken", "claude.exe"));
+    const native = touch(join(home, ".local", "bin", "claude.exe"));
+    expect(findClaudeCode({ PATH: join(root, "broken"), USERPROFILE: home }, null, ok)).toEqual({ path: native, source: "installed" });
+    // The real check: an empty file is not a program.
+    expect(findClaudeCode({ PATH: join(root, "broken"), USERPROFILE: join(root, "nobody") }, null)).toBeNull();
   });
 
   it("starts npm's install through the exe its claude.cmd wraps", () => {
@@ -52,10 +64,10 @@ describe("which Claude Code the Claude sessions run on (2026-10-24)", () => {
     touch(join(npm, "claude.cmd"));
     const env = { PATH: npm, USERPROFILE: join(root, "home") };
     // Only the .cmd, no exe behind it: not something Studio can start.
-    expect(findClaudeCode(env, null)).toBeNull();
+    expect(findClaudeCode(env, null, ok)).toBeNull();
     const exe = touch(join(npm, "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe"));
-    expect(findClaudeCode(env, null)).toEqual({ path: exe, source: "installed" });
-    expect(findClaudeCode({ PATH: "", APPDATA: root, USERPROFILE: join(root, "home") }, null)).toEqual({ path: exe, source: "installed" });
+    expect(findClaudeCode(env, null, ok)).toEqual({ path: exe, source: "installed" });
+    expect(findClaudeCode({ PATH: "", APPDATA: root, USERPROFILE: join(root, "home") }, null, ok)).toEqual({ path: exe, source: "installed" });
   });
 
   it("compares versions with the SDK's", () => {
