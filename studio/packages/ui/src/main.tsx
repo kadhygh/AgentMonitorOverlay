@@ -30,6 +30,7 @@ import "./settings/settings.css";
 import "./scratchpad/scratchpad.css";
 import "./gitreview/gitreview.css";
 import "./attach/attach.css";
+import "./folders/folders.css";
 import "./marks/marks.css";
 import "./files/files.css";
 import "./chat/questions/questions.css";

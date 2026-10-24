@@ -5,6 +5,11 @@ import type { HostErrorBody, HostRoute, RouteRequest, RouteResponse, StateSnapsh
 /** A bookmarked passage of a reply (书签, 2026-10-19): the workbench scrolls to it and flashes it. */
 export type Passage = { itemId: string; start: number; end: number; quote: string };
 
+/** What a folder picker call answers (packages/app/src/folders.ts). */
+export type FolderResult<T> = { ok: true; value: T } | { ok: false; error: string };
+/** A folder and its folders; `parent` null at a drive's root. */
+export type FolderListing = { path: string; parent: string | null; folders: string[] };
+
 declare global {
   interface Window {
     amo?: {
@@ -12,6 +17,13 @@ declare global {
       /** Native folder picker (Electron); absent in a plain browser. */
       /** Starts at `start` (设置 → 默认路径) when that folder exists. */
       pickDirectory?(start?: string | null): Promise<string | null>;
+      /** Studio's own folder picker's calls (Electron, 2026-10-25): this machine's disks only. */
+      folders?: {
+        drives(refresh?: boolean): Promise<FolderResult<string[]>>;
+        list(path: string): Promise<FolderResult<FolderListing>>;
+        create(parent: string, name: string): Promise<FolderResult<string>>;
+        rename(path: string, name: string): Promise<FolderResult<string>>;
+      };
       /** Opens an http(s) link in the system browser (Electron); absent in a plain browser. */
       openExternal?(url: string): Promise<void>;
       /** Writes text to the system clipboard (Electron); works without window focus. */

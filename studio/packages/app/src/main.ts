@@ -14,6 +14,7 @@ import { setupReviewWindows, setupViewerWindows } from "@amo-studio/reviewer";
 import { installMarksWindow } from "./marks-window.js";
 import { ResizeTrace } from "./resize-trace.js";
 import { setupBotFlight } from "./bot-window.js";
+import { installFolderIpc } from "./folders.js";
 
 // Electron main process: single instance, connects to (or starts) the resident Host, and opens the workbench window.
 // Env:
@@ -297,7 +298,10 @@ if (!app.requestSingleInstanceLock()) {
     mainWindow.setBounds(next);
     bringForward(mainWindow);
   });
-  // From 设置 → 项目与目录 → 默认路径 (2026-10-17) when set. Tests read what it would start at and pick for it.
+  // Studio's own folder picker lists, makes and renames folders through these (folders.ts, 2026-10-25).
+  installFolderIpc();
+  // The system dialog, the picker's 用系统对话框… (and every picker before 2026-10-25). From 设置 → 项目与目录 → 默认路径
+  // (2026-10-17) when set. Tests read what it would start at and pick for it.
   ipcMain.handle("amo:pick-directory", async (_e, start?: unknown) => {
     const defaultPath = typeof start === "string" && start.trim() && existsSync(start.trim()) ? start.trim() : undefined;
     if (testMode) {
@@ -307,7 +311,8 @@ if (!app.requestSingleInstanceLock()) {
       return g.__amoPickDirectory.answer;
     }
     const options = { title: "选择工作区文件夹", properties: ["openDirectory" as const], ...(defaultPath ? { defaultPath } : {}) };
-    const result = mainWindow ? await dialog.showOpenDialog(mainWindow, options) : await dialog.showOpenDialog(options);
+    // Not modal to the main window: when an Explorer extension hangs the dialog, Studio stays usable (2026-10-25).
+    const result = await dialog.showOpenDialog(options);
     return result.canceled ? null : (result.filePaths[0] ?? null);
   });
 

@@ -1,4 +1,5 @@
 import { RUNTIME_LABELS, type ModelProfile } from "@amo-studio/protocol";
+import { pickDirectory } from "../folders/FolderPicker.js";
 
 /** "Codex · DeepSeek", "Codex · GPT", "Claude · GLM", "DSH · DeepSeek" — the account behind a model. */
 export function profileLabel(p: ModelProfile): string {
@@ -54,5 +55,5 @@ const DEFAULT_FOLDER_KEY = "amo.defaultFolder";
  */
 export const defaultFolder = (): string => read(DEFAULT_FOLDER_KEY) ?? "";
 export const setDefaultFolder = (path: string) => write(DEFAULT_FOLDER_KEY, path.trim());
-/** 选择文件夹, starting at the default path. */
-export const pickFolder = (): Promise<string | null> => window.amo?.pickDirectory?.(defaultFolder() || null) ?? Promise.resolve(null);
+/** 选择文件夹 (Studio's own picker since 2026-10-25), starting at the default path. */
+export const pickFolder = (): Promise<string | null> => pickDirectory(defaultFolder() || null);

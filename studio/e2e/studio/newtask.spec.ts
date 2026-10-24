@@ -1,3 +1,5 @@
+import { existsSync, mkdirSync } from "node:fs";
+import { join } from "node:path";
 import { expect, test } from "@playwright/test";
 import type { StateSnapshot, StudioSettings, Topic, Workspace } from "@amo-studio/protocol";
 import { launchStudio, screenshot, type Studio } from "../support/studio.js";
@@ -154,13 +156,43 @@ test("设置 → 默认路径: 选择文件夹 starts there when adding a projec
   await screenshot(studio.app, "stage-16", "S16-A-default-folder", page);
   await page.keyboard.press("Escape");
 
-  // Adding a project: the dialog starts at the default path; the folder picked becomes the project.
+  // Adding a project: Studio's own picker (2026-10-25) starts at the default path; a folder made and one renamed
+  // there; the folder picked becomes the project.
+  mkdirSync(join(root, "old"));
   await page.getByRole("button", { name: "+ 添加项目" }).click();
   await page.getByRole("button", { name: "选择文件夹…" }).click();
+  const picker = page.getByRole("dialog", { name: "选择文件夹" });
+  await expect(picker.getByRole("textbox", { name: "路径" })).toHaveValue(root);
+  await expect(picker.getByRole("group", { name: "磁盘" }).getByRole("button", { name: root.slice(0, 2).toUpperCase() })).toHaveAttribute("aria-pressed", "true");
+  await picker.getByRole("button", { name: "+ 新建文件夹" }).click();
+  await picker.getByRole("textbox", { name: "新文件夹的名字" }).fill("游戏");
+  await picker.getByRole("textbox", { name: "新文件夹的名字" }).press("Enter");
+  await expect(picker.getByRole("option", { name: "游戏" })).toHaveAttribute("aria-selected", "true");
+  expect(existsSync(join(root, "游戏"))).toBe(true);
+  await picker.getByRole("option", { name: "old" }).click();
+  await picker.getByRole("listbox", { name: "文件夹" }).press("F2");
+  await picker.getByRole("textbox", { name: "新名字" }).fill("client");
+  await picker.getByRole("textbox", { name: "新名字" }).press("Enter");
+  await expect(picker.getByRole("option", { name: "client" })).toHaveAttribute("aria-selected", "true");
+  expect(existsSync(join(root, "client")) && !existsSync(join(root, "old"))).toBe(true);
+  // A network path is never opened.
+  await picker.getByRole("textbox", { name: "路径" }).fill("\\\\nas.example\\share");
+  await picker.getByRole("textbox", { name: "路径" }).press("Enter");
+  await expect(picker.getByRole("alert")).toContainText("网络路径");
+  await picker.getByRole("option", { name: "游戏" }).click();
+  await screenshot(studio.app, "stage-16", "S16-A-folder-picker", page);
+  await picker.getByRole("button", { name: "选择「游戏」" }).click();
+  await expect(picker).toHaveCount(0);
+  await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).workspaces.some((w) => w.path === join(root, "游戏"))).toBe(true);
+
+  // 用系统对话框… is still there, starting where the picker was.
+  await page.getByRole("button", { name: "添加项目", exact: true }).click();
+  await page.getByRole("button", { name: "选择文件夹…" }).click();
+  await picker.getByRole("button", { name: "用系统对话框…" }).click();
   await expect.poll(async () => (await picks()).started).toEqual([root]);
   await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).workspaces.some((w) => w.path === game)).toBe(true);
 
-  // Cleared: from the system's own place again.
+  // Cleared: from beside the folder picked last.
   await page.getByRole("button", { name: "设置" }).click();
   await dialog.getByRole("tab", { name: "项目与目录" }).click();
   await expect(field).toHaveValue(root);

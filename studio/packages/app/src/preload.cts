@@ -8,6 +8,13 @@ type Passage = { itemId: string; start: number; end: number; quote: string };
 electron.contextBridge.exposeInMainWorld("amo", {
   host: (): Promise<{ url: string; token: string } | null> => electron.ipcRenderer.invoke("amo:host"),
   pickDirectory: (start?: string | null): Promise<string | null> => electron.ipcRenderer.invoke("amo:pick-directory", start ?? undefined),
+  /** Studio's own folder picker (2026-10-25): this machine's disks only; each call answers { ok, value } or { ok, error }. */
+  folders: {
+    drives: (refresh?: boolean): Promise<unknown> => electron.ipcRenderer.invoke("amo:folders-drives", refresh === true),
+    list: (path: string): Promise<unknown> => electron.ipcRenderer.invoke("amo:folders-list", path),
+    create: (parent: string, name: string): Promise<unknown> => electron.ipcRenderer.invoke("amo:folders-create", parent, name),
+    rename: (path: string, name: string): Promise<unknown> => electron.ipcRenderer.invoke("amo:folders-rename", path, name),
+  },
   openExternal: (url: string): Promise<void> => electron.ipcRenderer.invoke("amo:open-external", url),
   /** The page's summary of one window drag (lib/resizeTrace.ts), for logs/resize-trace.log. */
   trace: (summary: unknown): void => electron.ipcRenderer.send("amo:trace", summary),

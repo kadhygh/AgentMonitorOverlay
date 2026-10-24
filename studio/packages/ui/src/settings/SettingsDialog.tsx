@@ -15,6 +15,7 @@ import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { defaultFolder, setDefaultFolder } from "../lib/profiles.js";
 import { BotArt, ReaderArt } from "../focus/PixelBot.js";
 import { PET_SKINS, usePetSkin, writePetSkin, type PetSkin } from "../focus/petSkin.js";
+import { pickDirectory } from "../folders/FolderPicker.js";
 
 /** Studio-wide settings from the Host, kept live. */
 export function useSettings(link: HostLink): StudioSettings | null {
@@ -87,7 +88,7 @@ export function SettingsDialog({ link, settings, workspaces = [], onClose }: { l
   }
 
   async function pick() {
-    const chosen = await window.amo?.pickDirectory?.();
+    const chosen = await pickDirectory();
     if (chosen) setDir(chosen);
   }
 
@@ -277,7 +278,7 @@ function DefaultFolderSection() {
     setSaved(next.trim());
   };
   const browse = async () => {
-    const chosen = await window.amo?.pickDirectory?.(path.trim() || null);
+    const chosen = await pickDirectory(path.trim() || null);
     if (chosen) save(chosen);
   };
   return (
