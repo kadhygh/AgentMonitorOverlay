@@ -4,7 +4,8 @@ import type { FolderListing, FolderResult } from "../host/client.js";
 
 // 选择文件夹 (2026-10-25): Studio's own folder picker, in place of the system dialog, which loads every Explorer
 // extension and once hung for good on a disconnected NAS drive — with Studio's window, which it was modal to. Only
-// this machine's own disks; a folder can be made or renamed here. 用系统对话框… is still there.
+// this machine's own disks; a folder can be made or renamed here. No way back to the system dialog: it hung again
+// after the overlay was excluded (2026-10-25), so its button was taken out.
 
 const LAST_KEY = "amo.folderPicker.last";
 const readLast = () => {
@@ -45,15 +46,7 @@ export function pickDirectory(start?: string | null): Promise<string | null> {
       if (path) writeLast(parentOf(path));
       resolve(path);
     };
-    const system = (from: string | null) => {
-      root.unmount();
-      host.remove();
-      void (amo.pickDirectory?.(from) ?? Promise.resolve(null)).then((path) => {
-        if (path) writeLast(parentOf(path));
-        resolve(path);
-      });
-    };
-    root.render(<FolderPicker start={start?.trim() || readLast()} onDone={done} onSystem={amo.pickDirectory ? system : undefined} />);
+    root.render(<FolderPicker start={start?.trim() || readLast()} onDone={done} />);
   });
 }
 
@@ -64,7 +57,7 @@ function unwrap<T>(r: FolderResult<T>): T {
   return r.value;
 }
 
-export function FolderPicker({ start, onDone, onSystem }: { start: string | null; onDone(path: string | null): void; onSystem?: (from: string | null) => void }) {
+export function FolderPicker({ start, onDone }: { start: string | null; onDone(path: string | null): void }) {
   const api = window.amo!.folders!;
   const [drives, setDrives] = useState<string[]>([]);
   const [listing, setListing] = useState<FolderListing | null>(null);
@@ -314,11 +307,6 @@ export function FolderPicker({ start, onDone, onSystem }: { start: string | null
           </button>
           <span className="folder-hint">双击打开 · F2 改名 · Backspace 上一级</span>
           <span className="spacer" />
-          {onSystem && (
-            <button type="button" className="btn-ghost small" onClick={() => onSystem(listing?.path ?? start)}>
-              用系统对话框…
-            </button>
-          )}
           <button type="button" className="btn-ghost small" onClick={() => onDone(null)}>
             取消
           </button>

@@ -136,14 +136,9 @@ test("@ and # pick the project and topic while typing; Ctrl N opens the quick ba
 
 test("设置 → 默认路径: 选择文件夹 starts there when adding a project (2026-10-17, in place of 默认项目)", async () => {
   studio = await launchStudio();
-  const { page, app } = studio;
+  const { page } = studio;
   const root = studio.workspace("projects");
   const game = studio.workspace("game");
-  type Pick = { started: Array<string | null>; answer: string | null };
-  const picks = () => app.evaluate(() => (globalThis as { __amoPickDirectory?: Pick }).__amoPickDirectory ?? { started: [], answer: null });
-  await app.evaluate((_e, answer) => {
-    (globalThis as { __amoPickDirectory?: unknown }).__amoPickDirectory = { started: [], answer };
-  }, game);
 
   await page.getByRole("button", { name: "设置" }).click();
   const dialog = page.getByRole("dialog", { name: "设置" });
@@ -185,11 +180,14 @@ test("设置 → 默认路径: 选择文件夹 starts there when adding a projec
   await expect(picker).toHaveCount(0);
   await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).workspaces.some((w) => w.path === join(root, "游戏"))).toBe(true);
 
-  // 用系统对话框… is still there, starting where the picker was.
+  // A path typed in; no way to the system dialog (it hung again, 2026-10-25).
   await page.getByRole("button", { name: "添加项目", exact: true }).click();
   await page.getByRole("button", { name: "选择文件夹…" }).click();
-  await picker.getByRole("button", { name: "用系统对话框…" }).click();
-  await expect.poll(async () => (await picks()).started).toEqual([root]);
+  await expect(picker.getByRole("button", { name: "用系统对话框…" })).toHaveCount(0);
+  await picker.getByRole("textbox", { name: "路径" }).fill(game);
+  await picker.getByRole("textbox", { name: "路径" }).press("Enter");
+  await expect(picker.getByRole("textbox", { name: "路径" })).toHaveValue(game);
+  await picker.getByRole("button", { name: "选择这个文件夹" }).click();
   await expect.poll(async () => (await studio!.api<StateSnapshot>("GET", "/api/state")).workspaces.some((w) => w.path === game)).toBe(true);
 
   // Cleared: from beside the folder picked last.

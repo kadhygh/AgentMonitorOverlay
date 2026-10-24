@@ -300,7 +300,7 @@ if (!app.requestSingleInstanceLock()) {
   });
   // Studio's own folder picker lists, makes and renames folders through these (folders.ts, 2026-10-25).
   installFolderIpc();
-  // The system dialog, the picker's 用系统对话框… (and every picker before 2026-10-25). From 设置 → 项目与目录 → 默认路径
+  // The system dialog: only where Studio's own picker is not (every picker before 2026-10-25). From 设置 → 项目与目录 → 默认路径
   // (2026-10-17) when set. Tests read what it would start at and pick for it.
   ipcMain.handle("amo:pick-directory", async (_e, start?: unknown) => {
     const defaultPath = typeof start === "string" && start.trim() && existsSync(start.trim()) ? start.trim() : undefined;
