@@ -6,6 +6,7 @@ export * from "./runtime/credentials.js";
 export * from "./runtime/profiles.js";
 export * from "./runtime/codex/command.js";
 export { claudeCodeVersion, findClaudeCode } from "./runtime/claude/executable.js";
+export { localClaudeHome, localClaudeSignedIn } from "./runtime/claude/claude-login.js";
 export * from "./runtime/codex/rpc-client.js";
 export * from "./runtime/codex/server-manager.js";
 export * from "./runtime/codex/codex-runtime.js";

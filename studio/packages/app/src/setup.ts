@@ -9,7 +9,7 @@ export interface SetupChecks {
   codex: { ok: boolean; detail: string };
   /** The Claude Code the Claude channels run on: the person's own install (the portable build ships none). */
   claude: { ok: boolean; detail: string };
-  credentials: Array<{ label: string; present: boolean }>;
+  credentials: Array<{ label: string; present: boolean; missing?: string }>;
   /** Tests do not look at this machine's tools and credentials. */
   skipped: boolean;
 }
@@ -32,8 +32,11 @@ export async function setupChecks(testMode: boolean): Promise<SetupChecks> {
   const reader = new host.WindowsCredentialReader();
   const seen = new Set<string>();
   const credentials: SetupChecks["credentials"] = [];
+  // The Claude subscription signs in with the person's own Claude Code by default (设置 → 模型), not a saved token.
+  const signedIn = host.localClaudeSignedIn(host.localClaudeHome());
+  if (signedIn !== null) credentials.push({ label: "Claude 订阅（本机 Claude Code 的登录）", present: signedIn, missing: "没有找到：在终端运行 claude 登录一次" });
   for (const p of host.BUILTIN_PROFILES) {
-    if (!p.credentialId || seen.has(p.credentialId)) continue;
+    if (!p.credentialId || seen.has(p.credentialId) || p.credentialId === host.CLAUDE_SUBSCRIPTION_CREDENTIAL) continue;
     seen.add(p.credentialId);
     let present = false;
     try {
@@ -74,7 +77,7 @@ window.amo.setup.info().then((info) => {
   else {
     items.push('<li class="' + (info.checks.codex.ok ? 'ok' : 'bad') + '">Codex：' + info.checks.codex.detail + '</li>');
     items.push('<li class="' + (info.checks.claude.ok ? 'ok' : 'bad') + '">Claude Code：' + info.checks.claude.detail + '</li>');
-    for (const c of info.checks.credentials) items.push('<li class="' + (c.present ? 'ok' : 'bad') + '">' + c.label + '：' + (c.present ? '已找到' : '没有找到') + '</li>');
+    for (const c of info.checks.credentials) items.push('<li class="' + (c.present ? 'ok' : 'bad') + '">' + c.label + '：' + (c.present ? '已找到' : (c.missing || '没有找到')) + '</li>');
   }
   $("checks").innerHTML = items.join("");
 });

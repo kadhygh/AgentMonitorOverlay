@@ -133,8 +133,8 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
 }
 
 const LOGINS: Array<{ id: ClaudeLogin; label: string; hint: string }> = [
-  { id: "token", label: "令牌（推荐）", hint: "用 claude setup-token 生成的长期令牌。Studio 用自己的配置目录，和你终端里的 Claude Code 互不影响。" },
-  { id: "local", label: "本机 Claude Code 的登录", hint: "和终端里的 claude 用同一个登录，不用另外弄令牌；左下角能看到 Claude 的用量百分比。" },
+  { id: "local", label: "本机 Claude Code 的登录（默认）", hint: "和终端里的 claude 用同一个登录，不用另外弄令牌；左下角能看到 Claude 的用量百分比。" },
+  { id: "token", label: "令牌", hint: "用 claude setup-token 生成的长期令牌。Studio 用自己的配置目录，和你终端里的 Claude Code 互不影响。" },
 ];
 
 function ClaudeLoginSection({ link, settings, credential, onCredentials }: { link: HostLink; settings: StudioSettings; credential: CredentialStatus; onCredentials(list: CredentialStatus[]): void }) {

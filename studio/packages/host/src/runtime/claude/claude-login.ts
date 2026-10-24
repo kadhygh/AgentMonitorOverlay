@@ -4,16 +4,19 @@ import { join } from "node:path";
 import type { ClaudeLogin } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
 
-// How the Claude subscription profile signs in (设置 → 模型). "token": the long-lived token from `claude setup-token`,
-// with Studio's own config dir (the default, nothing of ~/.claude is read). "local": the person's own Claude Code login
-// and config dir, like the CLI in a terminal; chosen by the person after a warning. Each session keeps the way it was
-// started (its transcript lives in that config dir), so switching only affects sessions started afterwards.
+// How the Claude subscription profile signs in (设置 → 模型). "local" (the default since 2026-10-24): the person's own
+// Claude Code login and config dir, like the CLI in a terminal. "token": the long-lived token from `claude setup-token`,
+// with Studio's own config dir (nothing of ~/.claude is read). Test runs (AMO_STUDIO_TEST=1) default to "token", so
+// they never touch the real ~/.claude. Each session keeps the way it was started (its transcript lives in that config
+// dir), so switching only affects sessions started afterwards.
 
 const KEY = "settings:claude-login";
 const sessionKey = (sessionId: string) => `claude.login:${sessionId}`;
 
-export function readClaudeLogin(store: Store): ClaudeLogin {
-  return store.getKv(KEY)?.value === "local" ? "local" : "token";
+export function readClaudeLogin(store: Store, env: NodeJS.ProcessEnv = process.env): ClaudeLogin {
+  const saved = store.getKv(KEY)?.value;
+  if (saved === "local" || saved === "token") return saved;
+  return env.AMO_STUDIO_TEST === "1" ? "token" : "local";
 }
 
 export function writeClaudeLogin(store: Store, login: ClaudeLogin): void {

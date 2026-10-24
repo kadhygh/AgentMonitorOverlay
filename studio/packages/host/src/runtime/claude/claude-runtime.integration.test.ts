@@ -219,6 +219,7 @@ describe("ClaudeRuntime", () => {
     });
     try {
       // With the token way and no token, the subscription cannot start.
+      writeClaudeLogin(store, "token");
       await expect(local.startSession({ taskId: task.id, topicId: null, profileId: "claude-sub", workspace, text: "x" })).rejects.toThrow(/claude setup-token/);
       // The token cannot read the account's quota; Studio says so instead of showing numbers it does not have.
       expect((await local.usage("claude-sub", true))?.note).toMatch(/查不到用量百分比/);

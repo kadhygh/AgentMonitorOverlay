@@ -30,7 +30,7 @@ Studio 的首次启动：
 
 开发时在 `studio` 下 `npm start`（数据在 `studio/.data`）；`npm run host:stop` 停止后台的 Host。
 
-换一台机器用开发版：装好 Node（24 LTS）和 Git，`git clone`（`master`）后双击 `studio/start-studio.cmd`。它会在依赖缺失或 `package-lock.json` 变了时 `npm ci`，再构建并打开 Studio；`start-studio.cmd -Install` 强制重装依赖，`start-studio.cmd -Stop` 停掉 Host。Codex 模型还要 `npm i -g @openai/codex`；Claude 订阅令牌和各通道的 Key 在 设置 → 模型 里填。
+换一台机器用开发版：装好 Node（24 LTS）和 Git，`git clone`（`master`）后双击 `studio/start-studio.cmd`。它会在依赖缺失或 `package-lock.json` 变了时 `npm ci`，再构建并打开 Studio；`start-studio.cmd -Install` 强制重装依赖，`start-studio.cmd -Stop` 停掉 Host。Codex 模型还要 `npm i -g @openai/codex`；Claude 订阅默认用本机 Claude Code 的登录（先在终端运行 `claude` 登录一次）；各通道的 Key 在 设置 → 模型 里填。
 
 ## 随 Studio 一起的两个小程序
 
@@ -94,7 +94,7 @@ studio\amo-review.cmd G:\PROJECT\game --mode file --file src\Drop.cs --line 24 -
 - **换电脑**：把整个 `AMO Studio` 文件夹拷过去即可；新机器上要有 codex 和对应的凭据。
 - **Host 是什么？** 后台常驻的服务，管会话和数据；关掉窗口它还在，会话不会断。开发时用 `npm run host:stop` 停掉。
 - **密钥放哪？** Windows 凭据管理器。Studio 只读取，并且只传给模型进程，不写日志、不出现在命令行；agent 运行的命令读不到这些密钥。
-- **GPT 订阅** 用你本机 Codex 的登录和默认模型，不用另外设置。**Claude 订阅** 要一个长期令牌：在终端运行 `claude setup-token`，登录后把打印出的令牌粘贴到 设置 → 模型凭据。这是 Studio 唯一会写入凭据管理器的一项，你可以随时在那里删除。
+- **GPT 订阅** 用你本机 Codex 的登录和默认模型，不用另外设置。**Claude 订阅** 默认用你本机 Claude Code 的登录：在终端运行 `claude` 登录一次即可，Studio 的 Claude 会话和终端共用账号与额度。也可以在 设置 → 模型 改用长期令牌（`claude setup-token` 生成，粘贴后存进凭据管理器，是 Studio 唯一会写入那里的一项，可以随时删除）。
 - **型号、思考强度、权限**：新建任务或会话时选；会话里点输入框左下角的「型号 · 强度 · 权限」随时切换（Claude 立即生效，Codex 下一轮生效）。常用组合在 设置 → 常用预设 里保存，之后一键切换。
 - **命令权限**：Codex 会话里，agent 要运行的命令（除了少数已知安全的只读命令）都会先弹批准卡片；命令不在 Windows 沙箱里运行（你的 Codex 配置用的 unelevated 沙箱会让命令全部失败）。
 
