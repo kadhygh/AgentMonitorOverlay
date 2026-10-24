@@ -241,6 +241,21 @@ export const DEFAULT_QUOTA_DISPLAY: QuotaDisplay = { footer: true, focus: false 
 /** "token": the token from `claude setup-token`, Studio's own config dir. "local": the person's Claude Code login and ~/.claude. */
 export type ClaudeLogin = "token" | "local";
 
+/**
+ * 设置 → 模型 (2026-10-24): the Claude Code that Claude sessions run on. The portable build ships none: the person's own
+ * install is used, and without one the channels on Claude Code are `unavailable`. `source`: "bundled" = the copy that
+ * comes with the SDK (a source checkout), "installed" = the person's, "env" = AMO_STUDIO_CLAUDE.
+ */
+export interface ClaudeCodeStatus {
+  path: string | null;
+  source: "bundled" | "installed" | "env" | null;
+  version: string | null;
+  /** The Claude Code version Studio's Agent SDK was built with. */
+  sdkVersion: string | null;
+  /** `version` is older than `sdkVersion`: some of what Studio asks of it may be missing. */
+  outdated: boolean;
+}
+
 /** A model credential the profiles use: whether it is stored, never its value. */
 /**
  * 设置 → 模型 → DeepSeek Harness (stage 17): the DSH source clone DeepSeek sessions run on. `built`: its CLI is built
@@ -307,6 +322,10 @@ export interface HostRoutes {
   /** Adds `.amo/` to the repository's `.git/info/exclude` (this machine only; the project's .gitignore is not touched). */
   "POST /api/workspaces/:id/git-exclude": { req: void; res: GitExcludeState };
   "GET /api/settings": { req: void; res: StudioSettings };
+  /** The Claude Code that Claude sessions run on (2026-10-24). */
+  "GET /api/claude-code": { req: void; res: ClaudeCodeStatus };
+  /** Looks for it again (e.g. just installed); the channels on Claude Code follow (`profiles.updated`). */
+  "POST /api/claude-code/check": { req: void; res: ClaudeCodeStatus };
   /** The DSH clone DeepSeek · DSH sessions use (stage 17). */
   "GET /api/dsh": { req: void; res: DshStatus };
   /** Sets (or with null clears) the clone's folder; it must hold a DSH checkout (`apps/cli`). */

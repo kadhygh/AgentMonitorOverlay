@@ -36,6 +36,8 @@ const PROGRAMS = {
     description: "AMO Studio",
     packages: ["app", "host", "protocol", "ui", "reviewer", "notes"],
     programs: ["studio", "notes", "reviewer"],
+    // Claude Code (about 280 MB) is Anthropic's, not ours to hand out: Claude sessions use the person's own install.
+    skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,
     icon: () => join(studio, "packages", "app", "assets", "icon.ico"),
     readme: [
       "AMO Studio（完整版：工作台 + AMO 便签 + Git Review / 查看器）",
@@ -44,7 +46,9 @@ const PROGRAMS = {
       "AMO 便签会随 Studio 启动，在托盘里；全局快捷键默认 Ctrl+Alt+Space。便签的设置和页面在 %APPDATA%\\AMO Notes，",
       "和独立版 AMO Notes 共用同一份。Git Review 和查看器在 Studio 里打开（任务页的 Review、文件链接）。",
       "",
-      "模型：Codex 需要本机装好 codex（npm i -g @openai/codex）；Claude 订阅令牌和各通道的 Key 在 设置 → 模型 里填。",
+      "模型：Codex 需要本机装好 codex（npm i -g @openai/codex）。Claude 订阅、智谱 GLM 和「Claude 方案」的第三方渠道",
+      "需要本机装好 Claude Code（PowerShell 里运行 irm https://claude.ai/install.ps1 | iex），Studio 不自带。",
+      "Claude 订阅令牌和各渠道的 Key 在 设置 → 模型 里填。",
     ],
   },
   reviewer: {
@@ -53,7 +57,7 @@ const PROGRAMS = {
     description: "AMO Reviewer",
     packages: ["reviewer", "host", "protocol", "ui"],
     programs: ["reviewer"],
-    // Its Host runs no models: the Claude Code binary (about 280 MB) stays out; the SDK's JavaScript is still loaded.
+    // Its Host runs no models; the SDK's JavaScript is still loaded.
     skipDeps: /^@anthropic-ai\/claude-agent-sdk-/,
     icon: () => join(studio, "packages", "app", "assets", "icon.ico"),
     readme: [

@@ -72,7 +72,7 @@ export function MaintenancePage({ link }: { link: HostLink }) {
           <div className="settings-row">
             <span className="settings-label">运行</span>
             <code className="settings-hint" data-testid="maintenance-claude">
-              {info?.claude}
+              {info ? (info.claude ?? "没有找到 Claude Code") : null}
             </code>
           </div>
           <div className="settings-row end">

@@ -8,6 +8,7 @@ import { ChannelNavItem, ChannelPage, SCHEME, useChannels } from "./ChannelsSect
 import { ChannelDialog } from "./ChannelDialog.js";
 import { QuickModelsSection } from "./QuickModelsSection.js";
 import { DshSection } from "./DshSection.js";
+import { ClaudeCodeSection } from "./ClaudeCodeSection.js";
 import { useProfiles } from "../lib/balance.js";
 
 /** What each 「+ … 方案」 adds. */
@@ -51,10 +52,14 @@ export function ModelsPage({ link, settings }: { link: HostLink; settings: Studi
   const channel = profile ? channels.find((c) => c.id === profile.id) : undefined;
   const claude = list?.find((c) => c.id === CLAUDE_CREDENTIAL);
 
-  // The Claude subscription's sign-in, and DeepSeek on DSH's own harness (stage 17): where the clone is, and 「检查」.
+  // A channel on Claude Code: which one it runs on (none in the portable build until installed), and the Claude
+  // subscription's sign-in; DeepSeek on DSH's own harness (stage 17): where the clone is, and 「检查」.
   const extra =
-    profile && !profile.custom && profile.credentialId === CLAUDE_CREDENTIAL && claude && settings ? (
-      <ClaudeLoginSection link={link} settings={settings} credential={claude} onCredentials={setList} />
+    profile?.runtime === "claude" ? (
+      <>
+        <ClaudeCodeSection link={link} />
+        {!profile.custom && profile.credentialId === CLAUDE_CREDENTIAL && claude && settings && <ClaudeLoginSection link={link} settings={settings} credential={claude} onCredentials={setList} />}
+      </>
     ) : profile && !profile.custom && profile.runtime === "dsh" ? (
       <DshSection link={link} />
     ) : undefined;

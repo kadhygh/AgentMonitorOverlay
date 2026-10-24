@@ -6,6 +6,7 @@ import { startHostServer, type HostServer } from "./http/server.js";
 import { CodexRuntime, type CodexServers } from "./runtime/codex/codex-runtime.js";
 import { BUILTIN_CLAUDE_PROVIDERS, type ClaudeProviderDef } from "./runtime/claude/claude-env.js";
 import { ClaudeRuntime } from "./runtime/claude/claude-runtime.js";
+import { CLAUDE_CODE_MISSING, findClaudeCode } from "./runtime/claude/executable.js";
 import { DshRuntime } from "./runtime/dsh/dsh-runtime.js";
 import type { FolderAccess } from "./runtime/dsh/folder-access.js";
 import { dshUnavailable } from "./runtime/dsh/install.js";
@@ -171,8 +172,10 @@ export async function startHost(options: StartHostOptions): Promise<RunningHost>
       claudeProviders: { ...(options.claudeProviders ?? BUILTIN_CLAUDE_PROVIDERS) },
       dshProviders: {},
       ...(options.profiles ? {} : { builtinBalance: BUILTIN_BALANCES }),
-      // DSH sessions need a built clone (设置 → 模型); until then the profile stays out of the pickers.
-      unavailable: (p) => (p.runtime === "dsh" && !options.dshAgent ? (dshUnavailable(liveKv) ?? undefined) : undefined),
+      // DSH sessions need a built clone (设置 → 模型), Claude sessions a Claude Code (the portable build ships none); until
+      // then the profile stays out of the pickers.
+      unavailable: (p) =>
+        p.runtime === "dsh" && !options.dshAgent ? (dshUnavailable(liveKv) ?? undefined) : p.runtime === "claude" && !findClaudeCode() ? CLAUDE_CODE_MISSING : undefined,
     });
     const profiles = channels.profiles;
     manager = options.servers

@@ -15,6 +15,8 @@
 | `AMO-Reviewer-<版本>-portable.zip` | 独立的 AMO Reviewer：`"AMO Reviewer.exe" <文件夹> [--mode file --file 路径 --line 行号]`，不带模型，其他工具和模型都能用 |
 | `AMO-Notes-<版本>-portable.zip` | 独立的 AMO 便签：托盘程序，全局快捷键 |
 
+Studio 包不带 Claude Code（它是 Anthropic 的程序，也占了一半体积）：Claude 订阅、智谱 GLM 和「Claude 方案」的第三方渠道用你本机装的 Claude Code（`irm https://claude.ai/install.ps1 | iex` 或 `npm i -g @anthropic-ai/claude-code`）。Studio 依次找 `AMO_STUDIO_CLAUDE`、SDK 附带的那份（只有源码运行才有）、PATH 上的 `claude`、`~\.localin\claude.exe`、npm 全局安装的那份；都没有时这些渠道在 设置 → 模型 里标「不可用」，渠道页写着怎么安装，装好后点「重新检测」，不用重启。
+
 每个 zip 里都有 `使用说明.txt`。便签的设置和页面在 `%APPDATA%\AMO Notes`，Studio 带的和独立版共用一份；独立 Reviewer 的批注记录在 `%APPDATA%\AMO Reviewer`。
 
 Studio 的首次启动：
@@ -23,7 +25,7 @@ Studio 的首次启动：
 2. 解压到一个可写的文件夹，双击 `AMO Studio.exe`。不需要安装，也不写注册表。
 3. 第一次打开会出现**首次设置**：
    - **数据目录**：默认是 exe 旁边的 `data` 文件夹（整个文件夹拷走，数据就带走了）；也可以选别处。选择记在 exe 旁边的 `amo-studio.json`。
-   - **环境检查**：本机的 `codex`（`npm i -g @openai/codex`），以及 Windows 凭据管理器里 DeepSeek / GLM 的凭据（只检查有没有，不显示密钥）。缺的不影响打开，对应的模型暂时不能用。
+   - **环境检查**：本机的 `codex`（`npm i -g @openai/codex`）和 Claude Code，以及 Windows 凭据管理器里 DeepSeek / GLM 的凭据（只检查有没有，不显示密钥）。缺的不影响打开，对应的模型暂时不能用。
 4. 点"开始使用"，Studio 会重启一次，之后直接进入工作台。
 
 开发时在 `studio` 下 `npm start`（数据在 `studio/.data`）；`npm run host:stop` 停止后台的 Host。

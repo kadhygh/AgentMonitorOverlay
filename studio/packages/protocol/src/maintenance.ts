@@ -17,8 +17,8 @@ export interface MaintenanceInfo {
   /** The studio/ folder (or the portable build's app folder). */
   studioRoot: string;
   source: StudioSource | null;
-  /** The `claude` the terminal runs: the first on PATH, else the copy that ships with Studio's SDK. */
-  claude: string;
+  /** The `claude` the terminal runs: the first on PATH, else the copy that ships with Studio's SDK; null when none. */
+  claude: string | null;
 }
 
 export interface MaintenanceTerminalResult {

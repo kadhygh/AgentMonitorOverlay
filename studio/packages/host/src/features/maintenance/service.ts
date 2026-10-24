@@ -5,7 +5,8 @@ import type { MaintenanceInfo, MaintenanceTerminalResult, StudioSource } from "@
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 import { git } from "../gitreview/git.js";
-import { bundledClaudeExe, installedClaudeExe } from "../../runtime/claude/transcripts.js";
+import { installedClaudeExe } from "../../runtime/claude/transcripts.js";
+import { findClaudeCode } from "../../runtime/claude/executable.js";
 
 // src/ and dist/ sit at the same depth: studio/packages/host/{src,dist}/features/maintenance.
 const STUDIO_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..", "..", "..", "..");
@@ -47,7 +48,9 @@ export class MaintenanceFeature extends Feature {
     if (!cwd) throw new HostError("bad_request", "这个 Studio 不是从源码启动的，没有可维护的工程");
     const launcher = this.options.launcher;
     if (!launcher) throw new HostError("bad_request", "no terminal launcher configured");
-    const command = `& '${claudeExe().replace(/'/g, "''")}'`;
+    const exe = claudeExe();
+    if (!exe) throw new HostError("bad_request", "没有找到 Claude Code（claude）");
+    const command = `& '${exe.replace(/'/g, "''")}'`;
     const env = Object.fromEntries(Object.entries(process.env).filter(([k, v]) => v !== undefined && !NOT_PASSED_ON.test(k))) as Record<string, string>;
     launcher.launch({ command, cwd, env, envMode: "replace", title: "AMO Studio 维护 · Claude Code" });
     return { command, cwd };
@@ -60,7 +63,7 @@ export class MaintenanceFeature extends Feature {
   }
 }
 
-/** The person's own `claude` (it updates itself), else the copy that ships with the SDK. */
-function claudeExe(): string {
-  return installedClaudeExe() ?? bundledClaudeExe();
+/** The person's own `claude` (it updates itself), else the one the sessions run on (the SDK's copy in a checkout). */
+function claudeExe(): string | null {
+  return installedClaudeExe() ?? findClaudeCode()?.path ?? null;
 }

@@ -1,5 +1,6 @@
 import { query, type SDKUserMessage, type SlashCommand as SdkSlashCommand } from "@anthropic-ai/claude-agent-sdk";
 import type { ModelOption, ModelProfile } from "@amo-studio/protocol";
+import { requireClaudeCode } from "./executable.js";
 
 // Starting Claude Code with no prompt just to ask it something (stage 16 split out of claude-runtime.ts): no model
 // request is made, and the process is closed right after.
@@ -17,7 +18,7 @@ async function asking<T>(options: Parameters<typeof query>[0]["options"], ask: (
   async function* none(): AsyncGenerator<SDKUserMessage> {
     await gate;
   }
-  const q = query({ prompt: none(), options });
+  const q = query({ prompt: none(), options: { ...options, pathToClaudeCodeExecutable: requireClaudeCode() } });
   try {
     return await ask(q);
   } finally {

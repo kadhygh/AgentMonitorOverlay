@@ -1,5 +1,6 @@
-import type { ChannelBalance, ChannelInput, ModelChannel, ModelProfile } from "@amo-studio/protocol";
+import type { ChannelBalance, ChannelInput, ClaudeCodeStatus, ModelChannel, ModelProfile } from "@amo-studio/protocol";
 import { askBalance } from "../../runtime/balance.js";
+import { claudeCodeStatus } from "../../runtime/claude/executable.js";
 import { ChannelError, balanceConfig, type ChannelRegistry } from "../../runtime/channels.js";
 import { listSiteModels } from "../../runtime/site-models.js";
 import { HostError } from "../../core/shared.js";
@@ -33,6 +34,18 @@ export class ChannelsFeature extends Feature {
 
   list(): ModelChannel[] {
     return this.registry.list();
+  }
+
+  /** The Claude Code the Claude channels run on (none in the portable build until the person installs it). */
+  claudeCode(): Promise<ClaudeCodeStatus> {
+    return claudeCodeStatus();
+  }
+
+  /** Looks for Claude Code again: the channels on it become available, or unavailable, at once. */
+  async checkClaudeCode(): Promise<ClaudeCodeStatus> {
+    this.options.channels?.refresh();
+    this.changed();
+    return claudeCodeStatus();
   }
 
   create(input: ChannelInput): ModelChannel {

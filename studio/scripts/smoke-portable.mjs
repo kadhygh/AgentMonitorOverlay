@@ -1,5 +1,6 @@
 // S8-03 smoke of the portable zips, the way a person would meet them: unzip each into a sandbox folder and run it.
-//   AMO Studio: first run (setup, keep the default data dir), start again, create a task, chat with the mock model,
+//   AMO Studio: first run (setup, keep the default data dir), start again; it ships no Claude Code and finds the
+//     person's own (with none here, the SDK's copy of the source checkout stands in); create a task, chat with the mock model,
 //     bring up its 便签 (AMO Studio.exe --amo-app=notes), quit; nothing written outside the sandbox folder (no Electron
 //     profile in %APPDATA%, no studio/.data).
 //   AMO Reviewer: started with a git folder it reviews its changes.
@@ -77,7 +78,12 @@ try {
   step("studio setup", { defaultIsNextToExe: defaultDir === join(root, "AMO Studio", "data"), saved: config });
 
   // Second run: the workbench, a task with the mock model, one reply.
-  const mockEnv = { AMO_STUDIO_PORT: "0", AMO_STUDIO_TEST_PROVIDER_URL: mock.baseUrl, AMO_STUDIO_TEST_CATALOG: MOCK_MODEL_CATALOG, AMO_STUDIO_TEST_CODEX_HOME: join(root, "codex-home"), AMO_STUDIO_TEST_CLAUDE_URL: claudeMock.baseUrl };
+  const shipped = existsSync(join(root, "AMO Studio", "resources", "app", "node_modules", "@anthropic-ai", "claude-agent-sdk-win32-x64"));
+  const home = process.env.USERPROFILE ?? "";
+  const ownClaude = [...(process.env.PATH ?? "").split(";").filter(Boolean).map((d) => join(d, "claude.exe")), join(home, ".local", "bin", "claude.exe")].some((p) => existsSync(p));
+  const sdkClaude = join(studio, "node_modules", "@anthropic-ai", "claude-agent-sdk-win32-x64", "claude.exe");
+  const mockEnv = {
+    ...(ownClaude ? {} : { AMO_STUDIO_CLAUDE: sdkClaude }), AMO_STUDIO_PORT: "0", AMO_STUDIO_TEST_PROVIDER_URL: mock.baseUrl, AMO_STUDIO_TEST_CATALOG: MOCK_MODEL_CATALOG, AMO_STUDIO_TEST_CODEX_HOME: join(root, "codex-home"), AMO_STUDIO_TEST_CLAUDE_URL: claudeMock.baseUrl };
   mkdirSync(join(root, "codex-home"), { recursive: true });
   mkdirSync(join(root, "workspace"), { recursive: true });
   app = await _electron.launch({ executablePath: exe, args: [], env: env(mockEnv) });
@@ -91,6 +97,9 @@ try {
     return res.json();
   };
   await api("POST", "/api/workspaces", { path: join(root, "workspace"), name: "smoke" });
+  const claudeCode = await api("GET", "/api/claude-code");
+  step("studio Claude Code", { shipsClaudeCode: shipped, runsOn: claudeCode.source, version: claudeCode.version });
+  if (shipped || !claudeCode.path) throw new Error("the Studio zip must not ship Claude Code, and must find the person's");
   await page.getByRole("button", { name: "+ 新任务" }).click();
   await page.getByRole("group", { name: "模型" }).getByTestId("model-tile").filter({ hasText: "Mock Claude" }).click();
   await page.getByLabel("第一句话").fill("你好，便携版");

@@ -281,3 +281,50 @@ test("a third-party DeepSeek channel run by DSH: its address, its own key and th
   await expect(rows.first()).toHaveAccessibleName("deepseek/deepseek-v4.1-flash，第 1 个，默认");
   await expect(rows.last()).toHaveAccessibleName("deepseek/deepseek-ocr，第 2 个");
 });
+
+test("without a Claude Code client the Claude channels are unavailable, and 设置 says why (2026-10-24)", async () => {
+  // The portable build ships no Claude Code; a path that does not exist stands for a machine without one.
+  studio = await launchStudio({ env: { AMO_STUDIO_CLAUDE: "C:/amo-e2e/no-claude-code/claude.exe" } });
+  const { page, app } = studio;
+  await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  const state = await studio.api<StateSnapshot>("GET", "/api/state");
+  expect(state.profiles.find((p) => p.id === "claude-mock")!.unavailable).toMatch(/没有找到 Claude Code/);
+  expect(state.profiles.find((p) => p.id === "codex-mock")!.unavailable).toBeUndefined();
+
+  // 设置 → 模型: the channel is marked, its page says what is missing and how to install it.
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "模型" }).click();
+  const nav = dialog.locator('[data-testid="channel-nav"][data-id="claude-mock"]');
+  await expect(nav).toContainText("不可用");
+  await nav.click();
+  const card = dialog.getByTestId("channel-page");
+  const section = card.getByTestId("claude-code-section");
+  await expect(section).toHaveAttribute("data-found", "0");
+  await expect(section.getByTestId("claude-code-state")).toHaveText("没有找到");
+  await expect(section).toContainText("irm https://claude.ai/install.ps1 | iex");
+  await section.getByTestId("claude-code-check").click();
+  await expect(section).toContainText("还是没有找到");
+  await screenshot(app, "stage-18", "S18-claude-code-missing", page);
+  await page.keyboard.press("Escape");
+
+  // Not offered for a new task.
+  await page.getByRole("button", { name: "+ 新任务" }).click();
+  const tiles = page.getByRole("group", { name: "模型" }).getByTestId("model-tile");
+  await expect(tiles.filter({ hasText: "Mock 模型" })).not.toHaveCount(0);
+  await expect(tiles.filter({ hasText: "Mock Claude" })).toHaveCount(0);
+});
+
+test("a Claude channel's page names the Claude Code its sessions run on", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "模型" }).click();
+  await dialog.locator('[data-testid="channel-nav"][data-id="claude-mock"]').click();
+  const section = dialog.getByTestId("channel-page").getByTestId("claude-code-section");
+  await expect(section).toHaveAttribute("data-found", "1");
+  // A source checkout: the SDK's own copy.
+  await expect(section.getByTestId("claude-code-state")).toContainText(/SDK 附带的（源码运行） · 版本 \d+\.\d+\.\d+/);
+  await expect(dialog.getByTestId("channel-unavailable")).toHaveCount(0);
+});

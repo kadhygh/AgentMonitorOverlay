@@ -54,9 +54,9 @@ export function ChannelNavItem({ profile, channel, selected, onSelect }: { profi
     <button
       type="button"
       aria-current={selected ? "page" : undefined}
-      className={`models-nav-item${profile.hidden ? " hidden" : ""}`}
+      className={`models-nav-item${profile.hidden || profile.unavailable ? " hidden" : ""}`}
       onClick={onSelect}
-      title={profile.hidden ? `${profile.label}（已隐藏）` : profile.label}
+      title={profile.unavailable ? `${profile.label}（${profile.unavailable}）` : profile.hidden ? `${profile.label}（已隐藏）` : profile.label}
       data-testid="channel-nav"
       data-id={profile.id}
     >
@@ -65,7 +65,7 @@ export function ChannelNavItem({ profile, channel, selected, onSelect }: { profi
         <span className="models-nav-name">{profile.label}</span>
         <span className="models-nav-sub">
           {note}
-          {profile.hidden ? " · 已隐藏" : ""}
+          {profile.unavailable ? " · 不可用" : profile.hidden ? " · 已隐藏" : ""}
         </span>
       </span>
     </button>
@@ -187,6 +187,12 @@ export function ChannelPage({
                 </button>
               ))}
           </div>
+        )}
+        {/* A page with its own section (Claude Code, the DSH clone) says there what is missing. */}
+        {profile.unavailable && !extra && (
+          <span className="form-error channel-unavailable" data-testid="channel-unavailable">
+            现在不能用：{profile.unavailable}
+          </span>
         )}
         <CredentialMessage message={message} />
         {extra && <div className="channel-extra">{extra}</div>}

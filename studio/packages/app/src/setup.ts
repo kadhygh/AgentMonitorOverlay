@@ -7,13 +7,15 @@ import { acceptDataDir, writePortableConfig } from "./paths.js";
 
 export interface SetupChecks {
   codex: { ok: boolean; detail: string };
+  /** The Claude Code the Claude channels run on: the person's own install (the portable build ships none). */
+  claude: { ok: boolean; detail: string };
   credentials: Array<{ label: string; present: boolean }>;
   /** Tests do not look at this machine's tools and credentials. */
   skipped: boolean;
 }
 
 export async function setupChecks(testMode: boolean): Promise<SetupChecks> {
-  if (testMode) return { codex: { ok: true, detail: "测试模式不检查" }, credentials: [], skipped: true };
+  if (testMode) return { codex: { ok: true, detail: "测试模式不检查" }, claude: { ok: true, detail: "" }, credentials: [], skipped: true };
   // Loaded only here: the Host package is large and the normal start never needs it in the shell.
   const host = await import("@amo-studio/host");
   let codex: SetupChecks["codex"];
@@ -22,6 +24,11 @@ export async function setupChecks(testMode: boolean): Promise<SetupChecks> {
   } catch {
     codex = { ok: false, detail: "没有找到 codex（npm i -g @openai/codex 安装后重开 Studio）" };
   }
+  const found = host.findClaudeCode();
+  const version = found ? await host.claudeCodeVersion(found.path) : null;
+  const claude = found
+    ? { ok: true, detail: version ? `版本 ${version}` : found.path }
+    : { ok: false, detail: "没有找到（PowerShell 里运行 irm https://claude.ai/install.ps1 | iex 安装）：Claude 订阅、GLM 和 Claude 方案的渠道要用它" };
   const reader = new host.WindowsCredentialReader();
   const seen = new Set<string>();
   const credentials: SetupChecks["credentials"] = [];
@@ -36,7 +43,7 @@ export async function setupChecks(testMode: boolean): Promise<SetupChecks> {
     }
     credentials.push({ label: `${p.label}（凭据 ${p.credentialId}）`, present });
   }
-  return { codex, credentials, skipped: false };
+  return { codex, claude, credentials, skipped: false };
 }
 
 const PAGE = `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><title>AMO Studio · 首次设置</title>
@@ -66,6 +73,7 @@ window.amo.setup.info().then((info) => {
   if (info.checks.skipped) items.push('<li class="dim">' + info.checks.codex.detail + '</li>');
   else {
     items.push('<li class="' + (info.checks.codex.ok ? 'ok' : 'bad') + '">Codex：' + info.checks.codex.detail + '</li>');
+    items.push('<li class="' + (info.checks.claude.ok ? 'ok' : 'bad') + '">Claude Code：' + info.checks.claude.detail + '</li>');
     for (const c of info.checks.credentials) items.push('<li class="' + (c.present ? 'ok' : 'bad') + '">' + c.label + '：' + (c.present ? '已找到' : '没有找到') + '</li>');
   }
   $("checks").innerHTML = items.join("");

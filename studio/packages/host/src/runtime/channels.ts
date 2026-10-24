@@ -146,7 +146,7 @@ export interface ChannelRegistryOptions {
   dshProviders?: Record<string, DshProviderDef>;
   /** Balance queries of built-in profiles (DeepSeek's own endpoint). */
   builtinBalance?: Record<string, { baseUrl: string; config: BalanceConfig }>;
-  /** Why a built-in profile cannot start sessions now (a DSH profile with no clone set up), or undefined. */
+  /** Why a profile cannot start sessions now (DSH with no clone set up, Claude with no Claude Code), or undefined. */
   unavailable?: (profile: ModelProfile) => string | undefined;
 }
 
@@ -380,10 +380,7 @@ export class ChannelRegistry {
     for (const k of Object.keys(claudeProviders)) if (/^ch-/.test(k)) delete claudeProviders[k];
     const dshProviders = this.dshProviders;
     for (const k of Object.keys(dshProviders)) if (/^ch-/.test(k)) delete dshProviders[k];
-    const next: ModelProfile[] = builtins.map((p) => {
-      const unavailable = this.options.unavailable?.(p);
-      return { ...p, ...(hidden.has(p.id) ? { hidden: true } : {}), ...(builtinBalance?.[p.id] ? { balance: true } : {}), ...(unavailable ? { unavailable } : {}) };
-    });
+    const next: ModelProfile[] = builtins.map((p) => ({ ...p, ...(hidden.has(p.id) ? { hidden: true } : {}), ...(builtinBalance?.[p.id] ? { balance: true } : {}) }));
     for (const c of channels) {
       const credentialId = c.keyFrom ?? keyId(c.id);
       const flags = { custom: true, ...(hidden.has(c.id) ? { hidden: true } : {}), ...(c.balance ? { balance: true } : {}) };
@@ -398,9 +395,7 @@ export class ChannelRegistry {
         dshProviders[c.id] = { baseUrl: c.baseUrl, ...(models.length ? { models } : {}) };
         const first = c.model ?? models[0];
         const model = first ? dshRouteModel(first) : null;
-        const profile: ModelProfile = { id: c.id, label: c.label, runtime: "dsh", provider: c.id, model, credentialId, ...flags };
-        const unavailable = this.options.unavailable?.(profile);
-        next.push({ ...profile, ...(unavailable ? { unavailable } : {}) });
+        next.push({ id: c.id, label: c.label, runtime: "dsh", provider: c.id, model, credentialId, ...flags });
       } else {
         claudeProviders[c.id] = {
           baseUrl: c.baseUrl,
@@ -411,7 +406,11 @@ export class ChannelRegistry {
         next.push({ id: c.id, label: c.label, runtime: "claude", provider: c.id, model: c.model, credentialId, ...flags });
       }
     }
-    this.profiles.splice(0, this.profiles.length, ...next);
+    const marked = next.map((p) => {
+      const unavailable = this.options.unavailable?.(p);
+      return unavailable ? { ...p, unavailable } : p;
+    });
+    this.profiles.splice(0, this.profiles.length, ...marked);
   }
 }
 

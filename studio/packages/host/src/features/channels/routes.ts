@@ -6,6 +6,8 @@ import { route, type Route, obj } from "../../http/route.js";
 export function channelsRoutes(service: HostService): Route[] {
   return [
     route("GET", "/api/channels", () => service.channels.list()),
+    route("GET", "/api/claude-code", () => service.channels.claudeCode()),
+    route("POST", "/api/claude-code/check", () => service.channels.checkClaudeCode()),
     route("POST", "/api/channels", ({ body }) => service.channels.create(obj(body) as ChannelInput)),
     route("POST", "/api/channels/balance-test", ({ body }) => service.channels.testBalance(obj(body))),
     route("POST", "/api/channels/models-test", ({ body }) => service.channels.siteModels(obj(body))),

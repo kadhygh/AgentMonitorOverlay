@@ -22,7 +22,8 @@ import { ClaudeMessages } from "./messages.js";
 import { askCommands, askModels, CLI_SETTING_SOURCES, withTimeout } from "./probe.js";
 import { ClaudeSubagents } from "./subagents.js";
 import { firstLine } from "./tool-use.js";
-import { bundledClaudeExe, handoffKey, hasTranscript, importTranscript, readTranscript, withConfigDir } from "./transcripts.js";
+import { requireClaudeCode } from "./executable.js";
+import { handoffKey, hasTranscript, importTranscript, readTranscript, withConfigDir } from "./transcripts.js";
 import { ClaudeTurns } from "./turns.js";
 import { ClaudeUsageTracker } from "./usage-tracker.js";
 import { ClaudeWake } from "./wake-control.js";
@@ -338,6 +339,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
   async handoff(sessionId: Id): Promise<{ command: string; cwd: string; env: Record<string, string> }> {
     const session = this.writable(sessionId);
     if (this.live.get(sessionId)?.running) throw Object.assign(new Error("回复还在生成，等这一轮结束或先打断，再交给终端"), { code: "conflict" });
+    const exe = requireClaudeCode();
     const workspace = this.store.getWorkspace(session.workspaceId);
     if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
     const home = this.homeOf(sessionId);
@@ -347,9 +349,9 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const seen = hasTranscript(ref, home) ? (await readTranscript(ref, workspace.path, home)).length : 0;
     this.store.setKv(handoffKey(sessionId), String(seen));
     this.updateSession(sessionId, { writer: "terminal-handoff" });
-    // The same Claude Code build as the SDK, so the transcript format always matches; never the "auto" permission mode.
+    // The Claude Code the sessions run on, so the transcript format matches; never the "auto" permission mode.
     const resume = hasTranscript(ref, home) ? `--resume ${ref}` : `--session-id ${ref}`;
-    return { command: `& '${bundledClaudeExe()}' ${resume} --permission-mode default`, cwd: workspace.path, env };
+    return { command: `& '${exe.replace(/'/g, "''")}' ${resume} --permission-mode default`, cwd: workspace.path, env };
   }
 
   /** Takes a handed-off session back and imports what the terminal added to the transcript. */
@@ -454,6 +456,8 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
     const ref = session.runtimeRef!;
     const home = this.homeOf(session.id);
     const agentsMd = agentsMdInstructions(workspace.path);
+    // Before anything is set up: without a Claude Code the person is told so, not a spawn error.
+    const exe = requireClaudeCode();
 
     const queue: Array<SDKUserMessage["message"]["content"]> = [];
     let wake: (() => void) | null = null;
@@ -503,6 +507,7 @@ export class ClaudeRuntime extends RuntimeBase implements SessionRuntimeApi {
         // The local login brings the person's config dir: only Studio's MCP server, not the ones they set up there.
         ...(home.login === "local" ? { strictMcpConfig: true } : {}),
         ...(hasTranscript(ref, home) ? { resume: ref } : { sessionId: ref }),
+        pathToClaudeCodeExecutable: exe,
         spawnClaudeCodeProcess: spawnClaudeProcess((line) => this.emit("log", `${session.id}: ${line}`)),
       },
     });
