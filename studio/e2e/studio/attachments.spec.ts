@@ -77,6 +77,13 @@ test("pastes an image, sends it with the message, and shows it in the transcript
   await expect(thumb).toHaveCount(2);
   await page.getByRole("button", { name: "移除 多余.png" }).click();
   await expect(thumb).toHaveCount(1);
+  // Before sending, a click on the thumbnail shows it large (2026-10-25); Esc closes only that.
+  await thumb.getByRole("button", { name: /^查看大图/ }).click();
+  await expect(page.getByTestId("lightbox")).toBeVisible();
+  await expect.poll(() => page.getByTestId("lightbox").locator("img").evaluate((img: HTMLImageElement) => img.complete && img.naturalWidth)).toBe(1);
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("lightbox")).toHaveCount(0);
+  await expect(thumb).toHaveCount(1);
   await composer(page).fill("这张图里是什么");
   await screenshot(studio.app, "stage-11", "S11-B-01-composer-image", page);
   await composer(page).press("Enter");
@@ -113,6 +120,10 @@ test("pastes an image into the new-task page: it goes with the first sentence (2
   await pasteImage(page, "截图.png", first);
   const thumb = page.getByTestId("attach-thumb");
   await expect(thumb).toHaveAttribute("data-state", "ready");
+  await thumb.getByRole("button", { name: "查看大图 截图.png" }).click();
+  await expect(page.getByTestId("lightbox")).toBeVisible();
+  await page.getByTestId("lightbox").click();
+  await expect(page.getByTestId("lightbox")).toHaveCount(0);
   await first.fill("这张图里是什么");
   // Filing in 待办 does not take images.
   await first.press("Control+Enter");

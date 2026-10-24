@@ -1,10 +1,16 @@
+import { useState } from "react";
 import type { AttachmentsState } from "./useAttachments.js";
 import { baseName } from "./refs.js";
 import { IconClose, IconFile } from "./icons.js";
 import { FileLink } from "../files/FileLinks.js";
+import { Lightbox } from "./MessageAttachments.js";
 
-/** Above the composer's text: thumbnails of the images and chips of the referenced files, each with a remove ×. */
+/**
+ * Above the composer's text: thumbnails of the images (a click shows one large, 2026-10-25) and chips of the referenced
+ * files, each with a remove ×.
+ */
 export function AttachTray({ attach, disabled }: { attach: AttachmentsState; disabled?: boolean }) {
+  const [open, setOpen] = useState<string | null>(null);
   if (attach.empty && !attach.notice) return null;
   return (
     <div className="attach-tray" data-testid="attach-tray">
@@ -16,7 +22,9 @@ export function AttachTray({ attach, disabled }: { attach: AttachmentsState; dis
           data-testid="attach-thumb"
           title={img.state === "failed" ? `上传失败：${img.error ?? ""}` : img.state === "uploading" ? "上传中…" : img.name}
         >
-          <img src={img.preview} alt={img.name} />
+          <button type="button" className="attach-thumb-open" aria-label={`查看大图 ${img.name}`} onClick={() => setOpen(img.preview)}>
+            <img src={img.preview} alt={img.name} />
+          </button>
           {img.state === "uploading" && <span className="attach-thumb-state">上传中</span>}
           {img.state === "failed" && <span className="attach-thumb-state">失败</span>}
           <button type="button" className="attach-x" aria-label={`移除 ${img.name}`} disabled={disabled} onClick={() => attach.removeImage(img.key)}>
@@ -41,6 +49,7 @@ export function AttachTray({ attach, disabled }: { attach: AttachmentsState; dis
         );
       })}
       {attach.notice && <span className="attach-notice">{attach.notice}</span>}
+      {open && <Lightbox src={open} onClose={() => setOpen(null)} />}
     </div>
   );
 }

@@ -8,6 +8,7 @@
   position: relative; width: 56px; height: 56px; flex: none; overflow: hidden;
   border: 1px solid var(--border); border-radius: var(--r-m); background: var(--panel-raised);
 }
+.attach-thumb-open { display: block; width: 100%; height: 100%; padding: 0; border: none; background: none; cursor: zoom-in; }
 .attach-thumb img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .attach-thumb[data-state="uploading"] img { opacity: 0.45; }
 .attach-thumb[data-state="failed"] { border-color: var(--error); }
