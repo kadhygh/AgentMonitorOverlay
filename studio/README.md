@@ -34,7 +34,7 @@ Studio 的首次启动：
 
 ## 随 Studio 一起的两个小程序
 
-- **AMO 便签**（`packages/notes`）：独立进程，托盘图标，全局快捷键（默认 Ctrl+Alt+Space）。Studio 启动时会把它带起来（Portable 里是 `AMO Studio.exe --amo-app=notes`）；单独启动 `npm run notes`。设置在它自己的托盘菜单里。
+- **AMO 便签**（`packages/notes`）：独立进程，托盘图标，全局快捷键（默认 Ctrl+Shift+F12）。Studio 启动时会把它带起来（Portable 里是 `AMO Studio.exe --amo-app=notes`）；单独启动 `npm run notes`。设置在它自己的托盘菜单里。
 - **AMO Reviewer**（`packages/reviewer`）：Git Review 和查看器，不需要 Studio，任何工具或模型都能用：`amo-review <文件夹> --reviewer [--mode file --file 路径 --line 行号]`，或 `npm run reviewer -- <文件夹>`。批注用「复制注释 / 复制并关闭」，贴到需要的地方。
 
 ## 日常怎么用

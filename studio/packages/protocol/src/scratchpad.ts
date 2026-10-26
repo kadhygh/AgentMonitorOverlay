@@ -7,10 +7,11 @@ export const SCRATCHPAD_MAX_TEXT = 200_000;
 export const SCRATCHPAD_MAX_IMAGES = 20;
 
 /**
- * Old AMO's default keyboard shortcut. Its mouse side-button choices (Ctrl + Mouse4…) needed a native mouse hook;
- * Electron's global shortcuts take keys only.
+ * The default keyboard shortcut. It was old AMO's Ctrl+Alt+Space until 2026-10-26, when 豆包输入法 (whose voice key
+ * is the right Alt) was found swallowing that Space; a combo without Alt stays clear of input methods. Old AMO's mouse
+ * side-button choices (Ctrl + Mouse4…) needed a native mouse hook; Electron's global shortcuts take keys only.
  */
-export const DEFAULT_SCRATCHPAD_SHORTCUT = "Ctrl+Alt+Space";
+export const DEFAULT_SCRATCHPAD_SHORTCUT = "Ctrl+Shift+F12";
 
 const MODIFIERS = ["Ctrl", "Alt", "Shift", "Super"] as const;
 const MODIFIER_ALIASES: Record<string, (typeof MODIFIERS)[number]> = {

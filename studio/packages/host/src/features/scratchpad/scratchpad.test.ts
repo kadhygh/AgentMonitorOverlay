@@ -49,7 +49,7 @@ describe("scratchpad document", () => {
 
 describe("scratchpad shortcut", () => {
   it("keeps keys Studio can register, in canonical form", () => {
-    expect(normalizeShortcut(DEFAULT_SCRATCHPAD_SHORTCUT)).toBe("Ctrl+Alt+Space");
+    expect(normalizeShortcut(DEFAULT_SCRATCHPAD_SHORTCUT)).toBe("Ctrl+Shift+F12");
     expect(normalizeShortcut(" alt + control + z ")).toBe("Ctrl+Alt+Z");
     expect(normalizeShortcut("Shift+Super+1")).toBe("Shift+Super+1");
     expect(normalizeShortcut("F9")).toBe("F9");

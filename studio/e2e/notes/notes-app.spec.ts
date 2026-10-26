@@ -103,7 +103,7 @@ test("the window: an empty page lists its keys, typing saves to the work folder,
   // The shortcut brings it back (tests press it through the program).
   await app.evaluate(() => (globalThis as { __notesToggle?: () => void }).__notesToggle?.());
   await expect.poll(() => padVisible(app)).toBe(true);
-  expect(await app.evaluate(() => (globalThis as { __notesShortcut?: string }).__notesShortcut)).toBe("Ctrl+Alt+Space");
+  expect(await app.evaluate(() => (globalThis as { __notesShortcut?: string }).__notesShortcut)).toBe("Ctrl+Shift+F12");
 
   // Its own 界面大小 (not Studio's): its windows zoom to it.
   await api("PATCH", "/api/notes/settings", { uiScale: 1.1 });
@@ -124,7 +124,7 @@ test("starting shows 便签启动中 until the window is ready; the tray menu is
   // The tray menu: its own small window in AMO's look, with the shortcut beside 显示便签.
   await app.evaluate(() => (globalThis as { __notesTrayMenu?: () => void }).__notesTrayMenu?.());
   const menu = await windowAt(app, "#notes-tray-menu");
-  await expect(menu.getByRole("menuitem", { name: /显示便签/ })).toContainText("Ctrl+Alt+Space");
+  await expect(menu.getByRole("menuitem", { name: /显示便签/ })).toContainText("Ctrl+Shift+F12");
   await screenshot(app, "notes", "N5-tray-menu", menu, "main");
   const opened = app.waitForEvent("window");
   await menu.getByRole("menuitem", { name: "设置…" }).click();
@@ -158,7 +158,7 @@ test("the settings window: shortcut, start with Windows, the work folder, its si
   const settings = await opened;
   await expect(settings.getByTestId("ns-folder")).toHaveText(join(home, "data"));
   await expect(settings.getByTestId("ns-cache")).not.toHaveText("0 B");
-  await expect(settings.getByTestId("ns-shortcut-status")).toContainText("已生效：Ctrl + Alt + Space");
+  await expect(settings.getByTestId("ns-shortcut-status")).toContainText("已生效：Ctrl + Shift + F12");
   await screenshot(app, "notes", "N3-settings", settings, "main");
 
   // A new shortcut, pressed in the field.
