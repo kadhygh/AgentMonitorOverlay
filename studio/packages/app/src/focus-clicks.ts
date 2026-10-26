@@ -61,3 +61,62 @@ export class EatenClicks {
     }, this.graceMs);
   }
 }
+
+// A drag of the title row (2026-10-26). A dropped press cannot be given back as a drag, and since the 10-22 fix only
+// 移动位置 let Focus move: dragging the title row did nothing in runs where every press came with WM_MOUSEACTIVATE
+// (10-25 from the morning on, after a night away; it starts mid-run, not per launch). WM_MOUSEACTIVATE reaches the
+// main process before Chromium answers it, so a press on the title row makes the window activatable right there:
+// Chromium then lets the press through and Windows' own move starts. When the move ends (WM_EXITSIZEMOVE) the window
+// stops being activatable again; if no move started at all, after a while.
+
+export interface CaptionDragOptions {
+  /** Makes the window activatable (true) or not, handing focus on when it ends. */
+  allow(on: boolean): void;
+  /** Whether it is activatable already (移动位置 is on): then nothing needs doing. */
+  allowed(): boolean;
+  later?: (fn: () => void, ms: number) => void;
+  /** How long after the press a move must have started before the window goes back to unactivatable. */
+  startMs?: number;
+}
+
+export class CaptionDrag {
+  private press: object | null = null;
+  private moving = false;
+  private readonly later: (fn: () => void, ms: number) => void;
+  private readonly startMs: number;
+
+  constructor(private readonly options: CaptionDragOptions) {
+    this.later = options.later ?? ((fn, ms) => void setTimeout(fn, ms));
+    this.startMs = options.startMs ?? 3000;
+  }
+
+  /** WM_MOUSEACTIVATE for a left press on the title row. Returns whether the window was made activatable. */
+  pressed(): boolean {
+    if (this.press) return false;
+    if (this.options.allowed()) return false;
+    const press = {};
+    this.press = press;
+    this.moving = false;
+    this.options.allow(true);
+    this.later(() => {
+      if (this.press === press && !this.moving) this.end();
+    }, this.startMs);
+    return true;
+  }
+
+  /** WM_ENTERSIZEMOVE: Windows' move started. */
+  entered(): void {
+    if (this.press) this.moving = true;
+  }
+
+  /** WM_EXITSIZEMOVE: the move is over. */
+  exited(): void {
+    if (this.press) this.end();
+  }
+
+  private end(): void {
+    this.press = null;
+    this.moving = false;
+    this.options.allow(false);
+  }
+}

@@ -178,6 +178,16 @@ test("Focus: the robot dances until looked at; 「Focus 设置」 moves, locks, 
   await expect(focus.getByTestId("focus-move")).toHaveCount(0);
   await expect.poll(() => windowState(app, "focus")).toMatchObject({ focusable: false, anyFocused: false });
 
+  // A drag of the title row (10-26): the press that would be dropped makes the window activatable, so Windows' own move
+  // starts; when the move ends it is unactivatable again. Tests drive the window messages themselves.
+  const caption = (step: "pressed" | "entered" | "exited") =>
+    app.evaluate((_e, s) => (globalThis as unknown as { __amoFocusCaption: Record<string, () => unknown> }).__amoFocusCaption[s]!(), step);
+  await caption("pressed");
+  await expect.poll(() => windowState(app, "focus")).toMatchObject({ focusable: true });
+  await caption("entered");
+  await caption("exited");
+  await expect.poll(() => windowState(app, "focus")).toMatchObject({ focusable: false, anyFocused: false });
+
   // 锁定位置: a switch — the box stays open; shown in the head, moving is off; remembered after a reload.
   await focus.getByTestId("focus-settings-toggle").click();
   await focus.getByTestId("focus-menu-lock").click();

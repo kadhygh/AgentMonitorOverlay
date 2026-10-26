@@ -1,8 +1,8 @@
 import { BrowserWindow, screen, type WebContents } from "electron";
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { EatenClicks } from "./focus-clicks.js";
-import { HTCLIENT, onWindowMessage, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE } from "./window-messages.js";
+import { CaptionDrag, EatenClicks } from "./focus-clicks.js";
+import { HTCAPTION, HTCLIENT, onWindowMessage, WM_ENTERSIZEMOVE, WM_EXITSIZEMOVE, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE } from "./window-messages.js";
 import { placeFocus, placeMain, refitFocus, type DisplayInfo, type Point, type Rect, type Size } from "./placement.js";
 
 // The Focus window: a small frameless, transparent, always-on-top panel in a corner of the screen that answers one
@@ -225,4 +225,37 @@ export function recoverLostClicks(win: BrowserWindow, { testMode, note, testHook
   // Tests cannot make Windows send WM_MOUSEACTIVATE; they drive the recovery itself.
   if (testMode) (globalThis as Record<string, unknown>)[testHook] = { activated: (at: Point | null) => clicks.activated(at), released: () => clicks.released(), pointer };
   return clicks;
+}
+
+/**
+ * Lets Focus activate (true) or never again (false): 移动位置 and a drag of the title row. Ending, focus goes on to the
+ * window below and Focus stays off the taskbar (setFocusable shows it there).
+ */
+export function setFocusActivatable(win: BrowserWindow, on: boolean): void {
+  if (win.isDestroyed()) return;
+  win.setFocusable(on);
+  win.setSkipTaskbar(true);
+  if (!on && win.isFocused()) win.blur();
+}
+
+/**
+ * Makes a drag of Focus's title row move it even when Chromium would drop the press (focus-clicks.ts, CaptionDrag).
+ * `note` hears each drag let through and its end. Tests drive it through `globalThis.__amoFocusCaption`.
+ */
+export function letTitleDragsMove(win: BrowserWindow, { testMode, note }: { testMode: boolean; note(what: string): void }): CaptionDrag {
+  const drag = new CaptionDrag({
+    allow: (on) => {
+      setFocusActivatable(win, on);
+      note(on ? "title drag: may activate" : "title drag: done");
+    },
+    allowed: () => !win.isDestroyed() && win.isFocusable(),
+  });
+  onWindowMessage(win, WM_MOUSEACTIVATE, (_w, l) => {
+    if (l.readUInt16LE(0) === HTCAPTION && l.readUInt16LE(2) === WM_LBUTTONDOWN) drag.pressed();
+  });
+  onWindowMessage(win, WM_ENTERSIZEMOVE, () => drag.entered());
+  onWindowMessage(win, WM_EXITSIZEMOVE, () => drag.exited());
+  // Tests cannot make Windows send these messages; they drive the drag itself.
+  if (testMode) (globalThis as Record<string, unknown>).__amoFocusCaption = { pressed: () => drag.pressed(), entered: () => drag.entered(), exited: () => drag.exited() };
+  return drag;
 }

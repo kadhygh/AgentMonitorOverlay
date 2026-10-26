@@ -2,7 +2,7 @@ import { app, BrowserWindow, clipboard, dialog, ipcMain, Menu, nativeTheme, scre
 import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { connectHost, keepHostAlive, stopHost, type HostConnection, type HostLinkOptions } from "./host-link.js";
-import { createFocusWindow, displays, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
+import { createFocusWindow, displays, letTitleDragsMove, mainBounds, pagePressed, recoverLostClicks, refitFocusWindow, rescaleFocusWindow, setFocusActivatable, ShellPrefs, UI_SCALES, uiScaleOk } from "./focus-window.js";
 import { centreIn, displayFor } from "./placement.js";
 import { existsSync, readdirSync } from "node:fs";
 import { rm } from "node:fs/promises";
@@ -99,6 +99,7 @@ function setFocusVisible(on: boolean): void {
     // Every mouse message of Focus, written on the main thread: only when asked for (2026-10-15 click investigation).
     if (process.env.AMO_STUDIO_TRACE_INPUT === "1") trace?.watchInput(focusWindow, "focus");
     recoverLostClicks(focusWindow, { testMode, note: (at) => trace?.note("focus", "click given back", `at ${at.x},${at.y}`) });
+    letTitleDragsMove(focusWindow, { testMode, note: (what) => trace?.note("focus", what) });
   } else if (!on && focusWindow) {
     focusWindow.destroy();
     focusWindow = null;
@@ -253,11 +254,10 @@ if (!app.requestSingleInstanceLock()) {
   // WM_MOUSEACTIVATE, which Chromium answers by dropping the press (focus-clicks.ts); a click is given back, a drag is
   // not, and in some runs that was every press, so Focus could not be moved at all. Activatable, the press starts
   // Windows' own move. Done: it never takes focus again, hands it on to the window below, and stays off the taskbar.
+  // (The title row does the same for each drag, 10-26: letTitleDragsMove.)
   ipcMain.on("amo:focus-moving", (event, on: unknown) => {
     if (!focusWindow || event.sender !== focusWindow.webContents) return;
-    focusWindow.setFocusable(on === true);
-    focusWindow.setSkipTaskbar(true);
-    if (on !== true && focusWindow.isFocused()) focusWindow.blur();
+    setFocusActivatable(focusWindow, on === true);
     trace?.note("focus", on === true ? "moving on" : "moving off");
     if (testMode) (globalThis as { __amoFocusMoving?: boolean }).__amoFocusMoving = on === true;
   });

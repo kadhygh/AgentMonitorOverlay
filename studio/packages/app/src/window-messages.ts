@@ -34,3 +34,6 @@ export const WM_MOUSEACTIVATE = 0x0021;
 export const WM_LBUTTONDOWN = 0x0201;
 export const WM_LBUTTONUP = 0x0202;
 export const HTCLIENT = 1;
+export const WM_ENTERSIZEMOVE = 0x0231;
+export const WM_EXITSIZEMOVE = 0x0232;
+export const HTCAPTION = 2;

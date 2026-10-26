@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { EatenClicks, type Point } from "./focus-clicks.js";
+import { CaptionDrag, EatenClicks, type Point } from "./focus-clicks.js";
 
 function setup() {
   let time = 0;
@@ -58,5 +58,60 @@ describe("Focus clicks dropped by Chromium", () => {
     t.flush();
     t.flush();
     expect(t.replayed).toEqual([{ x: 4, y: 4 }]);
+  });
+});
+
+describe("Focus title-row drags", () => {
+  function drag(alreadyAllowed = false) {
+    const calls: boolean[] = [];
+    const timers: Array<() => void> = [];
+    let allowed = alreadyAllowed;
+    const d = new CaptionDrag({
+      allow: (on) => {
+        calls.push(on);
+        allowed = on;
+      },
+      allowed: () => allowed,
+      later: (fn) => void timers.push(fn),
+    });
+    return { d, calls, flush: () => timers.splice(0).forEach((fn) => fn()) };
+  }
+
+  it("lets the window activate for the press and stops when the move ends", () => {
+    const t = drag();
+    expect(t.d.pressed()).toBe(true);
+    t.d.entered();
+    t.flush();
+    expect(t.calls).toEqual([true]);
+    t.d.exited();
+    expect(t.calls).toEqual([true, false]);
+    t.d.exited();
+    expect(t.calls).toEqual([true, false]);
+  });
+
+  it("stops after a while when no move started", () => {
+    const t = drag();
+    t.d.pressed();
+    t.flush();
+    expect(t.calls).toEqual([true, false]);
+    t.d.exited();
+    expect(t.calls).toEqual([true, false]);
+  });
+
+  it("does nothing while 移动位置 already lets the window activate", () => {
+    const t = drag(true);
+    expect(t.d.pressed()).toBe(false);
+    t.d.entered();
+    t.d.exited();
+    t.flush();
+    expect(t.calls).toEqual([]);
+  });
+
+  it("a second press during a drag does not start another", () => {
+    const t = drag();
+    t.d.pressed();
+    expect(t.d.pressed()).toBe(false);
+    t.d.exited();
+    expect(t.calls).toEqual([true, false]);
   });
 });
