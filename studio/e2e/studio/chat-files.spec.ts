@@ -40,6 +40,29 @@ async function nextWindow(app: ElectronApplication, act: () => Promise<void>): P
 
 const viewers = (app: ElectronApplication) => app.windows().filter((w) => w.url().includes("#viewer"));
 
+test("a web page named in the conversation opens in the browser on a click; the viewer stays on the menu (2026-10-26)", async () => {
+  studio = await launchStudio();
+  const { page } = studio;
+  const dir = studio.workspace("alpha");
+  writeFileSync(join(dir, "report.html"), "<!doctype html><title>报告</title><p>进度</p>\n");
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: dir });
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", {
+    title: "看报告",
+    workspaceId: ws.id,
+    firstSession: { profileId: "codex-mock", text: `看一下这份\n\n引用文件：\n- ${join(dir, "report.html")}` },
+  });
+  await page.getByTestId("task-card").first().click();
+  const chip = page.getByTestId("msg-user").getByTestId("msg-file");
+  await expect(chip).toHaveAttribute("data-file-link", "", { timeout: 30_000 });
+  const open = await nextOpenIn(page, () => chip.click());
+  expect(open.asked).toMatchObject({ path: join(dir, "report.html"), app: "default" });
+  expect(open.result).toMatchObject({ app: "default", dryRun: true });
+  await chip.click({ button: "right" });
+  const menu = page.getByTestId("file-menu");
+  await expect(menu.getByRole("menuitem").first()).toHaveText("浏览器打开");
+  await expect(menu.getByRole("menuitem", { name: "查看器打开" })).toBeVisible();
+});
+
 async function approveUntilAnswered(page: Page, answer: string) {
   const deadline = Date.now() + 90_000;
   while (!(await page.getByTestId("msg-agent").filter({ hasText: answer }).count())) {

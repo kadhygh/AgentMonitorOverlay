@@ -28,6 +28,11 @@ export function openIn(link: HostLink, file: FileRef, app: OpenInApp, line?: num
 export const openInEditor = (link: HostLink, file: FileRef, line?: number, column?: number) => openIn(link, file, "vscode", line, column);
 /** Explorer with the file selected (a folder opens). */
 export const revealInExplorer = (link: HostLink, file: FileRef) => openIn(link, file, "explorer");
+/** The file's own program (a web page: the browser). */
+export const openInDefault = (link: HostLink, file: FileRef) => openIn(link, file, "default");
+
+/** A web page (.html / .htm): a click opens it in the browser rather than the viewer (2026-10-26). */
+export const isWebPage = (path: string) => /\.html?$/i.test(path);
 
 export function readTextFile(link: HostLink, file: FileRef): Promise<TextFile> {
   return call(link, "GET /api/fs/text", {}, undefined, { path: file.path, ...(file.workspaceId ? { workspaceId: file.workspaceId } : {}) });

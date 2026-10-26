@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState, t
 import type { FileDiff } from "@amo-studio/protocol";
 import { copyText, HostApiError, type HostLink } from "../host/client.js";
 import { MarkdownFileLinks } from "../lib/markdown.js";
-import { openInApps, openInEditor, revealInExplorer, type FileRef } from "../lib/openin.js";
+import { isWebPage, openInApps, openInDefault, openInEditor, revealInExplorer, type FileRef } from "../lib/openin.js";
 import { openReview } from "../gitreview/open.js";
 import { markOrShow } from "../marks/open.js";
 import { openViewer } from "../viewer/open.js";
@@ -12,7 +12,8 @@ import { parseInlinePath, parseLinkTarget } from "./paths.js";
 // Files named in the conversation become links (stage 12, S12-C). Stage 13: a click opens the file in the viewer
 // window (查看器; a change of this turn still opens in the quick look beside the conversation), Ctrl+click opens VS
 // Code, and a right click offers 查看器打开 / 右栏快速查看 / 用 git diff 看 / VS Code 打开 / 在资源管理器中显示 /
-// 复制路径 / 标记. The page wraps its conversation in <FileLinks>; outside one, everything stays plain text.
+// 复制路径 / 标记. A web page (.html, 2026-10-26) opens in the browser on a click instead, the viewer staying on the
+// menu. The page wraps its conversation in <FileLinks>; outside one, everything stays plain text.
 
 /** What the quick look shows: a file (at a line or range), or a change to it first (本轮改动). */
 export interface PreviewTarget {
@@ -28,7 +29,7 @@ interface FileLinksValue {
   workspaceId: string | null;
   sessionId: string | null;
   vscode: boolean;
-  /** A click: the viewer window, or the quick look for a change of this turn. */
+  /** A click: the viewer window (the browser for a web page), or the quick look for a change of this turn. */
   open(target: PreviewTarget): void;
   preview(target: PreviewTarget): void;
   editor(target: PreviewTarget): void;
@@ -100,7 +101,17 @@ export function FileLinks({
     },
     [vscode, link, workspaceId, sessionId, fail],
   );
-  const open = useCallback((t: PreviewTarget) => (t.diff ? onPreview(t) : viewFile(t, workspaceId, sessionId)), [onPreview, workspaceId, sessionId]);
+  const browse = useCallback(
+    (t: PreviewTarget) => {
+      const ws = t.file.workspaceId ?? workspaceId;
+      openInDefault(link, ws ? { path: t.file.path, workspaceId: ws } : { path: t.file.path }).catch(fail);
+    },
+    [link, workspaceId, fail],
+  );
+  const open = useCallback(
+    (t: PreviewTarget) => (t.diff ? onPreview(t) : isWebPage(t.file.path) ? browse(t) : viewFile(t, workspaceId, sessionId)),
+    [onPreview, browse, workspaceId, sessionId],
+  );
   const value = useMemo<FileLinksValue>(
     () => ({ link, workspaceId, sessionId, vscode, open, preview: onPreview, editor, menu: (e, target) => setMenu({ x: e.clientX, y: e.clientY, target }) }),
     [link, workspaceId, sessionId, vscode, open, onPreview, editor],
@@ -139,6 +150,11 @@ export function FileLinks({
       <MarkdownFileLinks.Provider value={MentionLink}>{children}</MarkdownFileLinks.Provider>
       {menu && (
         <div className="ctx-menu file-menu" role="menu" aria-label="文件" style={{ left: menu.x, top: menu.y }} data-testid="file-menu">
+          {isWebPage(menu.target.file.path) && (
+            <button type="button" role="menuitem" onClick={act(browse)}>
+              浏览器打开
+            </button>
+          )}
           <button type="button" role="menuitem" onClick={act((t) => viewFile(t, workspaceId, sessionId))}>
             查看器打开
           </button>
