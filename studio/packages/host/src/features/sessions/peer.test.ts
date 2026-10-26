@@ -84,6 +84,17 @@ describe("session_start (开会话)", () => {
     expect(userTexts(caller.id).some((t) => t.includes("这一轮做完了"))).toBe(false);
   });
 
+  it("forPerson: a session the person works in, beside the caller rather than under it, not reporting back (2026-10-26)", async () => {
+    const s = await service.sessions.startPeer(caller.id, { text: "拳套的问题人来处理，背景如下……", title: "拳套", forPerson: true });
+    expect(s).toMatchObject({ taskId: task.id, kind: "main", parentId: null, title: "拳套" });
+    expect(store.getSession(s.id)?.startedBy ?? null).toBeNull();
+    expect(store.getSession(s.id)?.reportTo ?? null).toBeNull();
+    const first = userTexts(s.id)[0]!;
+    expect(first).toContain("应人的要求开启：人会在这里和你一起推进");
+    expect(first).toContain(`mailbox_send 给会话 ${caller.id}`);
+    await expect(service.sessions.startPeer(caller.id, { text: "x", forPerson: true, report: true })).rejects.toThrow(/去掉 report/);
+  });
+
   it("runs in another project when asked (by name or path), still a session of the task, and says where it works", async () => {
     mkdirSync(join(root, "beta"));
     const beta = store.addWorkspace({ path: join(root, "beta"), name: "beta" });

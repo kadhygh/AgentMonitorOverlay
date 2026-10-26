@@ -259,7 +259,7 @@ export class SessionsFeature extends Feature {
    * `workspace` runs it in another project (by name, id or path) while it stays the task's; `permission` (read-only /
    * write / full) picks its runtime's matching permission instead of the model's default.
    */
-  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown; effort?: unknown }): Promise<Session> {
+  async startPeer(fromSessionId: Id, input: { text?: unknown; model?: unknown; title?: unknown; report?: unknown; workspace?: unknown; permission?: unknown; effort?: unknown; forPerson?: unknown }): Promise<Session> {
     const from = this.requireSession(fromSessionId);
     if (from.kind === "sub") throw new HostError("bad_request", "子 agent 不能开 AMO 会话：交给你的主会话来开。");
     if (!from.taskId) throw new HostError("bad_request", "你是专题会话，没有自己的任务：开任务要用 task_plan_propose 提案。");
@@ -269,6 +269,10 @@ export class SessionsFeature extends Feature {
     const title = input.title === undefined || input.title === null || input.title === "" ? null : boundedText(input.title, "title", 100);
     const picked = typeof input.model === "string" && input.model.trim() ? await this.modelByRef(input.model.trim()) : { profileId: from.profileId };
     const profileId = picked.profileId;
+    // For the person (2026-10-26: 「本 task 里另起一个 session，我来处理」 came out as one hung under its starter, which
+    // Focus leaves to the starter): a session of the task like one they opened, not reporting back.
+    const forPerson = input.forPerson === true;
+    if (forPerson && input.report === true) throw new HostError("bad_request", "forPerson 的会话是给人自己推进的，结果不回到你这里：去掉 report");
     const report = input.report === true;
     const workspace = input.workspace === undefined || input.workspace === null || input.workspace === "" ? this.requireLiveWorkspace(task.workspaceId) : this.workspaceByRef(input.workspace);
     let options: SessionOptions | undefined = picked.model ? { model: picked.model } : undefined;
@@ -283,17 +287,20 @@ export class SessionsFeature extends Feature {
     }
     const elsewhere = workspace.id !== task.workspaceId;
     const message = [
-      `【由本任务的会话「${from.title || "未命名会话"}」开启】`,
+      forPerson ? `【本任务的会话「${from.title || "未命名会话"}」应人的要求开启：人会在这里和你一起推进】` : `【由本任务的会话「${from.title || "未命名会话"}」开启】`,
       ...(elsewhere ? [`（你在项目「${isCommon(workspace) ? "公共目录" : workspace.name}」的文件夹 ${workspace.path} 里工作，和任务本身的项目不同。）`] : []),
       text,
       "",
-      report
-        ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。每一轮做完后，你最后的回复会自动转给它（被人停下或出错时也会告诉它）；中途要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`
-        : `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`,
+      forPerson
+        ? `（这个会话是同一任务里的另一个会话（${from.id}）替人通过 AMO Studio 开的，之后听人的。要告诉那个会话什么，用 mailbox_send 给会话 ${from.id}。）`
+        : report
+          ? `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。每一轮做完后，你最后的回复会自动转给它（被人停下或出错时也会告诉它）；中途要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`
+          : `（这个会话是同一任务里的另一个会话（${from.id}）通过 AMO Studio 开的。要告诉它什么，用 mailbox_send 给会话 ${from.id}。）`,
     ].join("\n");
     const started = await this.f.tasks.startSession({ taskId: task.id, topicId: null }, workspace, { profileId, text: message, ...(options ? { options } : {}) });
-    // 委派 (10-22): the session list shows it under the caller; otherwise it is a main session like any other.
-    this.store.setSessionStartedBy(started.id, from.id);
+    // 委派 (10-22): the session list shows it under the caller; otherwise it is a main session like any other. One for
+    // the person stands on its own, beside the caller.
+    if (!forPerson) this.store.setSessionStartedBy(started.id, from.id);
     const session = report ? this.store.setSessionReportTo(started.id, from.id) : this.store.getSession(started.id)!;
     this.publish({ type: "session.upserted", session });
     const named = title ? await this.renameSession(session.id, title).catch(() => session) : session;
