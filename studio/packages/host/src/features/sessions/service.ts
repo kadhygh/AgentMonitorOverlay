@@ -267,7 +267,7 @@ export class SessionsFeature extends Feature {
     if (task.archivedAt) throw new HostError("read_only", "这个任务已归档，不能再开会话");
     const text = boundedText(input.text, "text", 20_000);
     const title = input.title === undefined || input.title === null || input.title === "" ? null : boundedText(input.title, "title", 100);
-    const picked = typeof input.model === "string" && input.model.trim() ? await this.peerModel(input.model.trim()) : { profileId: from.profileId };
+    const picked = typeof input.model === "string" && input.model.trim() ? await this.modelByRef(input.model.trim()) : { profileId: from.profileId };
     const profileId = picked.profileId;
     const report = input.report === true;
     const workspace = input.workspace === undefined || input.workspace === null || input.workspace === "" ? this.requireLiveWorkspace(task.workspaceId) : this.workspaceByRef(input.workspace);
@@ -279,7 +279,7 @@ export class SessionsFeature extends Feature {
     }
     if (input.effort !== undefined && input.effort !== null && input.effort !== "") {
       if (typeof input.effort !== "string") throw new HostError("bad_request", "effort must be text, e.g. high");
-      options = { ...options, effort: await this.peerEffort(profileId, picked.model, input.effort.trim()) };
+      options = { ...options, effort: await this.effortFor(profileId, picked.model, input.effort.trim()) };
     }
     const elsewhere = workspace.id !== task.workspaceId;
     const message = [
@@ -303,10 +303,11 @@ export class SessionsFeature extends Feature {
   }
 
   /**
-   * session_start's effort (2026-10-26, an agent could not set it): checked against the model the new session will run
-   * (the person's default in 设置 → 模型, else the CLI's), as its CLI names them; unchecked when the list cannot be had.
+   * An agent's effort (session_start, task_plan_propose; 2026-10-26): checked against the model the new session will
+   * run (`chosen`, else the person's default in 设置 → 模型, else the CLI's), as its CLI names them; unchecked when the
+   * list cannot be had.
    */
-  private async peerEffort(profileId: Id, chosen: string | undefined, want: string): Promise<string> {
+  async effortFor(profileId: Id, chosen: string | undefined, want: string): Promise<string> {
     const choices = await this.f.config.choices(profileId).catch(() => null);
     if (!choices?.models.length) return want;
     const model = chosen ?? fillDefaults({}, choices, readModelPrefs(this.store)[profileId]).model;
@@ -319,11 +320,11 @@ export class SessionsFeature extends Feature {
   }
 
   /**
-   * session_start's model (2026-10-26: 「@ 开子会话」 picks a model of an account, not only the account): a model
-   * profile as amo_whoami names it; or "<profile>/<model>", one of that profile's models by id or name; or a model's id
-   * or name in any profile's list (the first profile that has it).
+   * An agent's model (session_start, task_plan_propose; 2026-10-26: 「@ 开子会话」 picks a model of an account, not only
+   * the account): a model profile as amo_whoami names it; or "<profile>/<model>", one of that profile's models by id or
+   * name; or a model's id or name in any profile's list (the first profile that has it).
    */
-  private async peerModel(ref: string): Promise<{ profileId: Id; model?: string }> {
+  async modelByRef(ref: string): Promise<{ profileId: Id; model?: string }> {
     try {
       return { profileId: this.f.profileByRef(ref).id };
     } catch (err) {

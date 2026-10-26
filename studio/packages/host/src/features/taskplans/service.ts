@@ -34,7 +34,7 @@ export class TaskPlansFeature extends Feature {
   }
 
   /** A 主控's proposal (MCP task_plan_propose). */
-  propose(sessionId: Id, input: { summary?: unknown; tasks?: unknown }): TaskPlan {
+  async propose(sessionId: Id, input: { summary?: unknown; tasks?: unknown }): Promise<TaskPlan> {
     const facts = roleFacts(this.host, sessionId);
     if (facts.role !== "lead" && facts.role !== "topic") {
       throw new HostError("bad_request", "只有主控（或专题会话）能提拆任务的提案：把想法用 mailbox_send 发给主控，或请人把你的任务标成主控。");
@@ -45,7 +45,8 @@ export class TaskPlansFeature extends Feature {
     if (!Array.isArray(input.tasks) || !input.tasks.length) throw new HostError("bad_request", "tasks must list at least one task");
     if (input.tasks.length > TASK_PLAN_MAX_TASKS) throw new HostError("bad_request", `at most ${TASK_PLAN_MAX_TASKS} tasks in one proposal`);
     const defaultWs = facts.task?.workspaceId ?? facts.topic?.workspaceIds[0] ?? this.commonWorkspace().id;
-    const tasks = (input.tasks as Array<Record<string, unknown>>).map((t, i): PlannedTask => {
+    const tasks: PlannedTask[] = [];
+    for (const [i, t] of (input.tasks as Array<Record<string, unknown>>).entries()) {
       if (!t || typeof t !== "object") throw new HostError("bad_request", `task ${i + 1} is not an object`);
       const key = typeof t.key === "string" && t.key.trim() ? t.key.trim() : `t${i + 1}`;
       const title = typeof t.title === "string" ? t.title.trim() : "";
@@ -53,10 +54,13 @@ export class TaskPlansFeature extends Feature {
       const workspaceId = t.project === undefined || t.project === "" ? defaultWs : this.workspaceByRef(String(t.project));
       const description = optionalText(t.description, `task ${key}: description`, TASK_DESCRIPTION_MAX);
       const firstMessage = optionalText(t.firstMessage, `task ${key}: firstMessage`, FIRST_MESSAGE_MAX);
-      const profileId = t.model === undefined || t.model === "" ? this.requireSession(sessionId).profileId : this.profileByRef(String(t.model)).id;
+      // model: an account, or "<account>/<model>"; effort: checked against the model it will run (as session_start).
+      const picked = t.model === undefined || t.model === "" ? { profileId: this.requireSession(sessionId).profileId } : await this.f.sessions.modelByRef(String(t.model));
+      const effort = typeof t.effort === "string" && t.effort.trim() ? await this.f.sessions.effortFor(picked.profileId, picked.model, t.effort.trim()) : undefined;
+      const options = picked.model || effort ? { ...(picked.model ? { model: picked.model } : {}), ...(effort ? { effort } : {}) } : undefined;
       const dependsOn = Array.isArray(t.dependsOn) ? t.dependsOn.map(String) : [];
-      return { key, title, workspaceId, ...(description ? { description } : {}), ...(firstMessage ? { firstMessage } : {}), profileId, dependsOn };
-    });
+      tasks.push({ key, title, workspaceId, ...(description ? { description } : {}), ...(firstMessage ? { firstMessage } : {}), profileId: picked.profileId, ...(options ? { options } : {}), dependsOn });
+    }
     checkKeys(tasks);
     const at = new Date().toISOString();
     return this.save({ id: newId("plan"), topicId: facts.topic?.id ?? null, fromSessionId: sessionId, fromTaskId: facts.task?.id ?? null, summary, tasks, state: "open", createdAt: at, decidedAt: null });
@@ -78,7 +82,9 @@ export class TaskPlansFeature extends Feature {
       const description = t.description === undefined ? original.description : optionalText(t.description, "description", TASK_DESCRIPTION_MAX);
       const firstMessage = t.firstMessage === undefined ? original.firstMessage : optionalText(t.firstMessage, "firstMessage", FIRST_MESSAGE_MAX);
       const profileId = typeof t.profileId === "string" && t.profileId ? this.requireProfile(t.profileId).id : original.profileId;
-      kept.push({ key: original.key, title, workspaceId, ...(description ? { description } : {}), ...(firstMessage ? { firstMessage } : {}), ...(profileId ? { profileId } : {}), dependsOn: original.dependsOn });
+      // Another account picked: the proposed model and effort were that account's; the new one's defaults apply.
+      const options = profileId === original.profileId ? original.options : undefined;
+      kept.push({ key: original.key, title, workspaceId, ...(description ? { description } : {}), ...(firstMessage ? { firstMessage } : {}), ...(profileId ? { profileId } : {}), ...(options ? { options } : {}), dependsOn: original.dependsOn });
     }
     if (!kept.length) throw new HostError("bad_request", "keep at least one task, or dismiss the proposal");
     const topic = plan.topicId ? this.store.getTopic(plan.topicId) : undefined;
@@ -98,7 +104,7 @@ export class TaskPlansFeature extends Feature {
         title: t.title,
         workspaceId: t.workspaceId,
         topicId,
-        ...(run && t.profileId ? { firstSession: { profileId: t.profileId, ...(t.firstMessage ? { text: t.firstMessage } : {}) } } : { column: "todo" as const }),
+        ...(run && t.profileId ? { firstSession: { profileId: t.profileId, ...(t.firstMessage ? { text: t.firstMessage } : {}), ...(t.options ? { options: t.options } : {}) } } : { column: "todo" as const }),
       });
       const described = t.description ? this.f.tasks.updateTask(task.id, { description: t.description }) : task;
       if (topicId) this.f.canvases.canvasPlaceTask(task.id, groups.get(t.workspaceId) ?? null);

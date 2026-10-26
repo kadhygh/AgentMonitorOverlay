@@ -323,6 +323,11 @@ describe("DSH runtime", () => {
         done.push(`exes ${folder}`);
         return exes;
       },
+      revert: async (folder, granted) => {
+        done.push(`revert ${folder}${granted ? " granted" : ""}`);
+        state = { ok: !granted && (state?.ok ?? false), labelled: false };
+        return "R.acl";
+      },
     };
     return {
       folderAccess,
@@ -397,6 +402,14 @@ describe("DSH runtime", () => {
     await idle(host, session.id);
     await until(() => fake.done.length, (n) => n === 5);
     expect(fake.done[4]).toBe(`exes ${path}`);
+
+    // 恢复原来的权限 (2026-10-26): the full control Studio granted goes too (it has the backup); no longer set up.
+    await until(folders, (f) => mine(f).state === "ready");
+    await call(host, "POST", `/api/dsh/folders/${session.workspaceId}/revert`);
+    const reverted = await until(folders, (f) => mine(f).state === "unprepared");
+    expect(mine(reverted)).toEqual(expect.objectContaining({ fullControl: false }));
+    expect(fake.done[5]).toBe(`revert ${path} granted`);
+    await expect(call(host, "POST", `/api/dsh/folders/${session.workspaceId}/scan`)).rejects.toThrow(/先「设置权限」/);
   });
 
   it("session_start with write in a folder not set up says so to the agent; set up, it does not (2026-10-23)", async () => {

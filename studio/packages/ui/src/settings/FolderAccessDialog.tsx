@@ -3,6 +3,7 @@ import { createPortal } from "react-dom";
 import type { FolderAccessStatus } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { relativeTime } from "../lib/status.js";
+import { ConfirmDialog } from "../lib/ConfirmDialog.js";
 
 // DSH 沙箱权限 (2026-10-23): every project's folder as DeepSeek · DSH's 工作区可写 sandbox needs it, one row each, with
 // 设置权限 and 重新扫描. Opened from 设置 → 项目与目录 and from the hint under 工作区可写 (`focus`: that project's row).
@@ -18,11 +19,12 @@ const STATE: Record<FolderAccessStatus["state"], string> = {
 
 /** The row's second line: what was found, the last scan, or what went wrong. */
 export function folderDetail(f: FolderAccessStatus, now = new Date()): string {
-  if (f.state === "running") return f.job === "scan" ? "正在扫描 exe…" : "正在设置…文件多的项目要几分钟";
+  if (f.state === "running") return f.job === "scan" ? "正在扫描 exe…" : f.job === "revert" ? "正在恢复…文件多的项目要几分钟" : "正在设置…文件多的项目要几分钟";
   if (f.state === "failed") return f.error ?? "上次没成功";
   if (f.state === "unknown") return "读不到这个文件夹的权限";
   const scan = f.scannedAt ? `${f.exes ?? 0} 个程序和库已设回正常 · ${relativeTime(f.scannedAt, now)}扫描` : "";
   if (f.state === "ready") return scan;
+  if (f.labelled) return "带着 DSH 的低完整性标签（项目里新生成的 exe 会降级运行），但 Studio 没记录设置过";
   return f.fullControl === false ? "缺可继承的完全控制：沙箱设不起来，命令会一条条要你批准" : "还没处理项目里的 exe";
 }
 
@@ -30,6 +32,8 @@ export function FolderAccessDialog({ link, focus, onClose }: { link: HostLink; f
   const [list, setList] = useState<{ available: boolean; folders: FolderAccessStatus[] } | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 设置权限 and 恢复原来的权限 ask first (2026-10-26): both change Windows permissions of the whole project.
+  const [asking, setAsking] = useState<{ folder: FolderAccessStatus; what: "fix" | "revert" } | null>(null);
   const focused = useRef<HTMLLIElement>(null);
 
   const load = () =>
@@ -49,11 +53,12 @@ export function FolderAccessDialog({ link, focus, onClose }: { link: HostLink; f
     return () => clearInterval(t);
   }, [running]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  async function act(f: FolderAccessStatus, what: "fix" | "scan") {
+  async function act(f: FolderAccessStatus, what: "fix" | "scan" | "revert") {
     setBusy(f.workspaceId);
     setError(null);
     try {
-      const next = await call(link, what === "fix" ? "POST /api/dsh/folders/:workspaceId/fix" : "POST /api/dsh/folders/:workspaceId/scan", { workspaceId: f.workspaceId });
+      const route = what === "fix" ? "POST /api/dsh/folders/:workspaceId/fix" : what === "revert" ? "POST /api/dsh/folders/:workspaceId/revert" : "POST /api/dsh/folders/:workspaceId/scan";
+      const next = await call(link, route, { workspaceId: f.workspaceId });
       setList((cur) => cur && { ...cur, folders: cur.folders.map((x) => (x.workspaceId === next.workspaceId ? next : x)) });
     } catch (err) {
       setError(err instanceof HostApiError ? err.message : String(err));
@@ -126,16 +131,46 @@ export function FolderAccessDialog({ link, focus, onClose }: { link: HostLink; f
                       type="button"
                       className="btn-primary small"
                       disabled={busy === f.workspaceId || f.state === "running" || f.state === "unknown"}
-                      onClick={() => void act(f, "fix")}
+                      onClick={() => setAsking({ folder: f, what: "fix" })}
                       data-testid="folder-access-fix"
                     >
                       {f.state === "running" ? "设置中…" : f.state === "failed" ? "再试一次" : "设置权限"}
+                    </button>
+                  )}
+                  {(f.state === "ready" || f.labelled || (f.state === "running" && f.job === "revert")) && (
+                    <button type="button" className="btn-ghost small" disabled={busy === f.workspaceId || f.state === "running"} onClick={() => setAsking({ folder: f, what: "revert" })} data-testid="folder-access-revert">
+                      {f.state === "running" && f.job === "revert" ? "恢复中…" : "恢复原来的权限"}
                     </button>
                   )}
                 </div>
               </li>
             ))}
           </ul>
+        )}
+        {asking && (
+          <ConfirmDialog
+            title={asking.what === "fix" ? `给「${asking.folder.name}」设置 DSH 沙箱权限？` : `恢复「${asking.folder.name}」原来的权限？`}
+            action={asking.what === "fix" ? "设置权限" : "恢复"}
+            danger={asking.what === "fix"}
+            testId="folder-access-confirm"
+            onCancel={() => setAsking(null)}
+            onConfirm={() => {
+              const { folder, what } = asking;
+              setAsking(null);
+              void act(folder, what);
+            }}
+          >
+            {asking.what === "fix" ? (
+              <p className="settings-hint">
+                整个文件夹（{asking.folder.path}）会被标成低完整性。之后在里面<strong>新生成的程序会以低权限运行</strong>：重新构建出来的工具、重装的依赖（例如
+                node_modules 里的 electron）可能起不来，或者写不了项目外的文件，要再点「重新扫描」才恢复。项目里有自己构建、自己运行的程序时，DSH 用「完全访问」更省事。之后可以「恢复原来的权限」。
+              </p>
+            ) : (
+              <p className="settings-hint">
+                去掉 DSH 沙箱的权限和低完整性标签{asking.folder.backup ? "，以及 Studio 当初加的「完全控制」" : ""}，现在的权限先另存一份。之后这个项目里的 DeepSeek 用「工作区可写」时，DSH 会再把它的标签加回来；只用「完全访问」或「只读」就不会。
+              </p>
+            )}
+          </ConfirmDialog>
         )}
         {!list && !error && <p className="settings-hint">正在读取各项目的权限…</p>}
         {error && (

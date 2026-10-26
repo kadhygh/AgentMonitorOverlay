@@ -323,7 +323,7 @@ export interface FolderAccessStatus {
   name: string;
   path: string;
   state: "ready" | "unprepared" | "unknown" | "running" | "failed";
-  job?: "setup" | "scan";
+  job?: "setup" | "scan" | "revert";
   fullControl?: boolean;
   labelled?: boolean;
   exes?: number;
@@ -462,6 +462,8 @@ export interface PlannedTask {
   firstMessage?: string;
   /** The model profile to start it with. */
   profileId?: Id;
+  /** A particular model of that profile and its effort (2026-10-26); dropped when the person picks another profile. */
+  options?: { model?: string; effort?: string };
   /** Keys of the planned tasks that must finish first. */
   dependsOn: string[];
 }

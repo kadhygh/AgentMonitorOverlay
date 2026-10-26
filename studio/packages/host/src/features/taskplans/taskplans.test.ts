@@ -14,6 +14,7 @@ import { Store } from "../../store/store.js";
 const PROFILES: ModelProfile[] = [
   { id: "p-ds", label: "DS", runtime: "codex", provider: "amo-ds", model: "ds-model" },
   { id: "p-gpt", label: "GPT Sol", runtime: "codex", provider: "amo-ds", model: "gpt-sol" },
+  { id: "p-plain", label: "Plain", runtime: "codex", provider: "amo-plain", model: null },
 ];
 
 let root: string;
@@ -62,13 +63,13 @@ const proposal = {
 };
 
 describe("task plans (拆任务提案)", () => {
-  it("takes a proposal only from a 主控, and checks it", () => {
-    expect(() => service.taskPlans.propose(worker.id, proposal)).toThrow(/只有主控/);
-    expect(() => service.taskPlans.propose(leadSession.id, { ...proposal, summary: " " })).toThrow(/summary/);
-    expect(() => service.taskPlans.propose(leadSession.id, { summary: "x", tasks: [{ title: "a", project: "nope" }] })).toThrow(/project nope/);
-    expect(() => service.taskPlans.propose(leadSession.id, { summary: "x", tasks: [{ title: "a", model: "nope" }] })).toThrow(/DS, GPT Sol/);
-    expect(() => service.taskPlans.propose(leadSession.id, { summary: "x", tasks: [{ key: "a", title: "a", dependsOn: ["b"] }, { key: "b", title: "b", dependsOn: ["a"] }] })).toThrow(/cycle/);
-    const plan = service.taskPlans.propose(leadSession.id, proposal);
+  it("takes a proposal only from a 主控, and checks it", async () => {
+    await expect(service.taskPlans.propose(worker.id, proposal)).rejects.toThrow(/只有主控/);
+    await expect(service.taskPlans.propose(leadSession.id, { ...proposal, summary: " " })).rejects.toThrow(/summary/);
+    await expect(service.taskPlans.propose(leadSession.id, { summary: "x", tasks: [{ title: "a", project: "nope" }] })).rejects.toThrow(/project nope/);
+    await expect(service.taskPlans.propose(leadSession.id, { summary: "x", tasks: [{ title: "a", model: "nope" }] })).rejects.toThrow(/DS, GPT Sol/);
+    await expect(service.taskPlans.propose(leadSession.id, { summary: "x", tasks: [{ key: "a", title: "a", dependsOn: ["b"] }, { key: "b", title: "b", dependsOn: ["a"] }] })).rejects.toThrow(/cycle/);
+    const plan = await service.taskPlans.propose(leadSession.id, proposal);
     expect(plan).toMatchObject({ topicId: topic.id, fromSessionId: leadSession.id, fromTaskId: leadTask.id, state: "open" });
     expect(plan.tasks.map((t) => [t.key, t.workspaceId, t.profileId, t.dependsOn])).toEqual([
       ["a", alpha.id, "p-gpt", []],
@@ -80,7 +81,7 @@ describe("task plans (拆任务提案)", () => {
   });
 
   it("accepts it as changed: tasks with descriptions, on the canvas in a group per project, dependencies, and mail to the 主控", async () => {
-    const plan = service.taskPlans.propose(leadSession.id, proposal);
+    const plan = await service.taskPlans.propose(leadSession.id, proposal);
     const accepted = await service.taskPlans.accept(plan.id, {
       run: false,
       tasks: [{ ...plan.tasks[0]!, title: "装甲车数据表" }, { ...plan.tasks[1]! }, { ...plan.tasks[2]!, include: false }],
@@ -104,8 +105,36 @@ describe("task plans (拆任务提案)", () => {
     await expect(service.taskPlans.accept(plan.id, { run: false })).rejects.toThrow(/decided already/);
   });
 
-  it("dismisses it with a note the 主控 reads", () => {
-    const plan = service.taskPlans.propose(leadSession.id, proposal);
+  it("takes a particular model and an effort per task, checked as session_start's; the session starts with them; another account picked drops them (2026-10-26)", async () => {
+    await expect(service.taskPlans.propose(leadSession.id, { summary: "x", tasks: [{ title: "a", model: "Plain", effort: "max" }] })).rejects.toThrow(/effort 只能是：low, high/);
+    await expect(service.taskPlans.propose(leadSession.id, { summary: "x", tasks: [{ title: "a", effort: "high" }] })).rejects.toThrow(/没有思考强度可选/);
+    const plan = await service.taskPlans.propose(leadSession.id, {
+      summary: "用便宜的型号先做",
+      tasks: [
+        { key: "a", title: "慢慢查", model: "Plain/Fake Slow", firstMessage: "查一下" },
+        { key: "b", title: "认真改", model: "Plain", effort: "LOW", firstMessage: "改一下" },
+        { key: "c", title: "换个账号", model: "Plain", effort: "high", firstMessage: "看一下" },
+      ],
+    });
+    expect(plan.tasks.map((t) => [t.profileId, t.options])).toEqual([
+      ["p-plain", { model: "fake-slow" }],
+      ["p-plain", { effort: "low" }],
+      ["p-plain", { effort: "high" }],
+    ]);
+    const done = await service.taskPlans.accept(plan.id, { run: true, tasks: plan.tasks.map((t) => (t.key === "c" ? { ...t, profileId: "p-gpt" } : t)) });
+    expect(done.state).toBe("accepted");
+    const started = (title: string) => {
+      const task = store.listTasks().find((t) => t.title === title)!;
+      return store.listSessions({ taskId: task.id })[0]!;
+    };
+    expect(started("慢慢查")).toMatchObject({ profileId: "p-plain", options: { model: "fake-slow" } });
+    expect(started("认真改")).toMatchObject({ profileId: "p-plain", options: { effort: "low" } });
+    expect(started("换个账号").profileId).toBe("p-gpt");
+    expect(started("换个账号").options.effort).toBeUndefined();
+  });
+
+  it("dismisses it with a note the 主控 reads", async () => {
+    const plan = await service.taskPlans.propose(leadSession.id, proposal);
     expect(service.taskPlans.dismiss(plan.id, { note: "先只做装甲车" })).toMatchObject({ state: "dismissed", note: "先只做装甲车" });
     expect(service.collab.readMailFromSession(leadSession.id).at(-1)!.text).toBe("人没有采用你的拆任务提案「把装甲车迁到两个项目」：先只做装甲车");
     expect(store.listTasks().length).toBe(2);

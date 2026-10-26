@@ -92,6 +92,13 @@ export class DshFeature extends Feature {
     return this.folder(workspaceId);
   }
 
+  /** 恢复原来的权限: undoes the setup on a project's folder; GET follows it. */
+  async revertFolder(workspaceId: Id): Promise<FolderAccessStatus> {
+    const { runtime, w } = this.folderTarget(workspaceId);
+    runtime.revertFolder(w.path);
+    return this.folder(workspaceId);
+  }
+
   /** Scans a set-up folder for new .exe files; GET follows it. */
   async scanFolder(workspaceId: Id): Promise<FolderAccessStatus> {
     const { runtime, w } = this.folderTarget(workspaceId);

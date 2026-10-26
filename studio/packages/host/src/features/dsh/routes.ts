@@ -11,6 +11,7 @@ export function dshRoutes(service: HostService): Route[] {
     route("GET", "/api/dsh/folders/:workspaceId", ({ params }) => service.dsh.folder(params.workspaceId!)),
     route("POST", "/api/dsh/folders/:workspaceId/fix", ({ params }) => service.dsh.setupFolder(params.workspaceId!)),
     route("POST", "/api/dsh/folders/:workspaceId/scan", ({ params }) => service.dsh.scanFolder(params.workspaceId!)),
+    route("POST", "/api/dsh/folders/:workspaceId/revert", ({ params }) => service.dsh.revertFolder(params.workspaceId!)),
     route("POST", "/api/sessions/:id/folder-access", ({ params }) => service.dsh.fixFolderAccess(params.id!)),
   ];
 }

@@ -361,6 +361,8 @@ export interface HostRoutes {
   "POST /api/dsh/folders/:workspaceId/fix": { req: void; res: FolderAccessStatus };
   /** Scans a set-up folder for .exe files again (after a build made new ones) and sets them back to Medium. */
   "POST /api/dsh/folders/:workspaceId/scan": { req: void; res: FolderAccessStatus };
+  /** 恢复原来的权限 (2026-10-26): DSH's sandbox entries, the Low label and the full control Studio granted go. */
+  "POST /api/dsh/folders/:workspaceId/revert": { req: void; res: FolderAccessStatus };
   /**
    * Quota use of the subscriptions (GPT through the Codex login, Claude through its token). `?refresh=1` asks the
    * accounts now (GPT: may start its app-server); otherwise the last numbers read.

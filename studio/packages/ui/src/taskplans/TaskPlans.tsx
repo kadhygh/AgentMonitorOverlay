@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { isCommon, type ModelProfile, type PlannedTask, type Task, type TaskPlan, type Workspace } from "@amo-studio/protocol";
 import { call, HostApiError, type HostLink } from "../host/client.js";
 import { onHostEvent, onHostReconnect } from "../host/events.js";
+import { effortLabel } from "../lib/choices.js";
 
 // 拆任务提案 (stage 16, from the stage 15 design): a 主控 proposes tasks; the person looks at them here, changes what
 // they want, and accepts (立刻开跑 or 放进待办) or dismisses. Shown on the topic's canvas and on the 主控's task page.
@@ -113,6 +114,12 @@ export function PlanDialog({ link, plan, workspaces, profiles, onClose }: { link
                   ))}
                 </select>
               </div>
+              {/* The proposed model and effort, while the proposed account stays (another account: its defaults). */}
+              {d.options && d.profileId === plan.tasks.find((t) => t.key === d.key)?.profileId && (
+                <span className="plan-deps" data-testid="plan-options">
+                  {[d.options.model ? `型号 ${d.options.model}` : "", d.options.effort ? `思考强度 ${effortLabel(d.options.effort)}` : ""].filter(Boolean).join(" · ")}
+                </span>
+              )}
               {d.dependsOn.length > 0 && <span className="plan-deps">依赖：{d.dependsOn.map(titleOf).join("、")}</span>}
               {d.include && (
                 <>

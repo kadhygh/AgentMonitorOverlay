@@ -101,7 +101,7 @@ function cardOf(service: HostService, f: RoleFacts): string {
   }
   if (f.role === "lead" || f.role === "topic") {
     const models = service.profiles.filter((p) => !p.hidden).map((p) => p.label);
-    lines.push(`- 拆任务时可用的模型：${models.join("、")}（task_plan_propose 的 model；不写就用你自己的）`);
+    lines.push(`- 拆任务时可用的模型：${models.join("、")}（task_plan_propose 的 model，「名字/型号」可以指定具体型号；effort 设思考强度；不写就用你自己的模型和人设的默认强度）`);
     const open = f.sessionId ? service.store.listTaskPlans().filter((p) => p.fromSessionId === f.sessionId && p.state === "open").length : 0;
     if (open) lines.push(`- 你有 ${open} 个拆任务提案在等人确认`);
   }

@@ -65,6 +65,34 @@ export interface FolderAccess {
    * grants leave alone) and returns how many there are. Never follows links or junctions; skips .git.
    */
   exes(folder: string): Promise<number>;
+  /**
+   * 恢复原来的权限 (2026-10-26): the permissions as they are saved first; DSH's sandbox entries (S-1-4-…) and the Low
+   * label go (the label back to Medium, passed on), and the person's full control when Studio granted it (`granted`).
+   * Returns where the permissions before were saved.
+   */
+  revert(folder: string, granted: boolean): Promise<string>;
+}
+
+/**
+ * Removes the folder's own entries for DSH's sandbox identities (S-1-4-…, which icacls cannot name) with Windows
+ * PowerShell's .NET, the access list only; returns how many identities went. The folder comes in the environment.
+ */
+const PURGE_SANDBOX_ACES = [
+  "$di = New-Object System.IO.DirectoryInfo $env:AMO_FOLDER",
+  "$acl = $di.GetAccessControl([System.Security.AccessControl.AccessControlSections]::Access)",
+  "$sids = @($acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier]) | Where-Object { $_.IdentityReference.Value -like 'S-1-4-*' } | ForEach-Object { $_.IdentityReference.Value } | Sort-Object -Unique)",
+  "foreach ($s in $sids) { [void]$acl.PurgeAccessRules((New-Object System.Security.Principal.SecurityIdentifier $s)) }",
+  "if ($sids.Count) { $di.SetAccessControl($acl) }",
+  "$sids.Count",
+].join("; ");
+
+function purgeSandboxAces(folder: string): Promise<number> {
+  return new Promise((resolve, reject) => {
+    execFile("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", PURGE_SANDBOX_ACES], { windowsHide: true, encoding: "utf8", env: { ...process.env, AMO_FOLDER: folder } }, (err, stdout, stderr) => {
+      if (err) reject(new Error((stderr || err.message).trim()));
+      else resolve(Number(stdout.trim()) || 0);
+    });
+  });
 }
 
 function icacls(args: string[]): Promise<string> {
@@ -145,6 +173,15 @@ export function windowsFolderAccess(backupDir: string): FolderAccess {
     },
     async label(folder) {
       await icacls([folder, "/setintegritylevel", "(OI)(CI)low"]);
+    },
+    async revert(folder, granted) {
+      mkdirSync(backupDir, { recursive: true });
+      const backup = join(backupDir, `${folder.replace(/[:\\/]+/g, "_").replace(/^_+|_+$/g, "")}-before-revert-${new Date().toISOString().replace(/[:.]/g, "-")}.acl`);
+      await icacls([folder, "/save", backup]);
+      await purgeSandboxAces(folder);
+      if (granted) await icacls([folder, "/remove:g", account]);
+      await icacls([folder, "/setintegritylevel", "(OI)(CI)medium"]);
+      return backup;
     },
     async exes(folder) {
       let count = 0;

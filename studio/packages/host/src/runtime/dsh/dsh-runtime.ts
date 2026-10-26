@@ -157,7 +157,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   private readonly folderNotices = new Map<Id, Id>();
   private readonly folderChecks = new Map<string, Promise<FolderAccessState | null>>();
   /** The setup or scan on each folder (by lower-cased path) in this run: running, or how the last one went. */
-  private readonly folderJobs = new Map<string, { job: "setup" | "scan"; state: "running" | "done" | "failed"; error?: string }>();
+  private readonly folderJobs = new Map<string, { job: "setup" | "scan" | "revert"; state: "running" | "done" | "failed"; error?: string }>();
 
   constructor(private readonly options: DshRuntimeOptions) {
     super(options.store, "dsh", options.now);
@@ -550,7 +550,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
   }
 
   /** Runs a setup or a scan on a folder, once at a time; the sessions on it whose notice offers the setup follow it. */
-  private folderJob(path: string, job: "setup" | "scan", work: (fa: FolderAccess) => Promise<string>): void {
+  private folderJob(path: string, job: "setup" | "scan" | "revert", work: (fa: FolderAccess) => Promise<string>): void {
     const fa = this.folderAccess;
     if (!fa) throw Object.assign(new Error("这台机器上 Studio 不处理文件夹权限（只在 Windows 上）"), { code: "bad_request" });
     const key = path.toLowerCase();
@@ -598,6 +598,20 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       const keep = backup ?? old?.backup;
       this.store.setKv(`dsh-folder:${path.toLowerCase()}`, JSON.stringify({ setupAt: at, scannedAt: at, exes, ...(keep ? { backup: keep } : {}) } satisfies FolderRecord));
       return `${exes ? `，项目里的 ${exes} 个 exe 已设回正常` : ""}${backup ? `。原来的权限备份在 ${backup}（在上一级文件夹里用 icacls /restore 可以放回去）` : ""}`;
+    });
+  }
+
+  /**
+   * 恢复原来的权限 (2026-10-26): undoes the setup (FolderAccess.revert) — DSH's sandbox entries and the Low label go,
+   * and the full control Studio granted (when its backup says it did). The folder is no longer set up. A 工作区可写
+   * session in it later sets DSH's own entry and label again.
+   */
+  revertFolder(path: string): void {
+    const record = this.folderRecord(path);
+    this.folderJob(path, "revert", async (fa) => {
+      const backup = await fa.revert(path, !!record?.backup);
+      this.store.setKv(`dsh-folder:${path.toLowerCase()}`, "");
+      return backup;
     });
   }
 
