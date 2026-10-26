@@ -11,7 +11,9 @@
 //   [[fail]]                 the prompt fails
 //   [[nosandbox]]            a pwsh call that fails as DSH's does when it cannot set its sandbox up on the session's folder
 // `--patch FILE` (a DSH channel's catalog, 2026-10-19): the models it lists replace the built-in ones, its `acp` model
-// is the default; as in DSH, a model that is not offered cannot be picked.
+// is the default; as in DSH, a model that is not offered cannot be picked. Images (2026-10-26): as DSH does, initialize
+// offers them only when the agent's default model takes them (deepseek-flash here); a prompt's images are counted in
+// the reply, and a prompt with images is refused when they were not offered.
 // Sessions are kept in $DSH_HOME/fake-sessions.json, so another process can resume them.
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -41,8 +43,19 @@ const home = process.env.DSH_HOME ?? process.cwd();
 const file = join(home, "fake-sessions.json");
 const BUILTIN_MODELS = [
   { value: '["deepseek-official","deepseek-v4-flash"]', name: "deepseek-v4-flash" },
+  { value: '["deepseek-official","deepseek-flash"]', name: "DeepSeek-V4.1-Flash" },
   { value: '["deepseek-official","deepseek-v4-pro"]', name: "DeepSeek-V4-Pro", description: "Stronger agentic coding" },
 ];
+/** The models that take images, as DSH's catalog declares them. */
+const IMAGE_MODELS = new Set(["deepseek-flash"]);
+/** The `acp` model a `--patch` file names: the agent's default. */
+function patchedDefault(): string | null {
+  const at = process.argv.indexOf("--patch");
+  const path = at >= 0 ? process.argv[at + 1] : undefined;
+  if (!path || !existsSync(path)) return null;
+  const def = /^\s*model: (".*")\s*$/m.exec(readFileSync(path, "utf8"));
+  return def ? (JSON.parse(def[1]!) as string) : null;
+}
 /** The models a `--patch` file lists (`- id: "<name>"` under llm-deepseek), its `acp` default first. */
 function patchedModels(): Array<{ value: string; name: string; description?: string }> | null {
   const at = process.argv.indexOf("--patch");
@@ -56,6 +69,9 @@ function patchedModels(): Array<{ value: string; name: string; description?: str
   return [first, ...ids.filter((i) => i !== first)].map((id) => ({ value: JSON.stringify(["deepseek-official", id]), name: id }));
 }
 const MODELS = patchedModels() ?? BUILTIN_MODELS;
+const DEFAULT_NAME = patchedDefault();
+const DEFAULT_MODEL = MODELS.find((m) => (JSON.parse(m.value) as string[])[1] === DEFAULT_NAME) ?? MODELS[0]!;
+const TAKES_IMAGES = IMAGE_MODELS.has((JSON.parse(DEFAULT_MODEL.value) as string[])[1]!);
 const EFFORTS = ["off", "low", "high", "max"];
 
 function load(): Record<string, Stored> {
@@ -136,13 +152,15 @@ function writeLog(id: string, turn: number, startedAt: number): void {
   writeFileSync(file, zstdCompressSync(Buffer.from(`${before}${lines.join("\n")}\n`)));
 }
 
-async function prompt(params: { sessionId: string; prompt: Array<{ type: string; text?: string }> }): Promise<unknown> {
+async function prompt(params: { sessionId: string; prompt: Array<{ type: string; text?: string; mimeType?: string }> }): Promise<unknown> {
   const a = active.get(params.sessionId);
   if (!a) throw new RpcError(-32602, `Invalid params: unknown session ${params.sessionId}`);
   if (a.prompting) throw new RpcError(-32602, "Invalid params: a prompt is already in flight for this session");
   const all = load();
   const s = all[a.id]!;
   const text = params.prompt.map((b) => b.text ?? "").join("");
+  const images = params.prompt.filter((b) => b.type === "image");
+  if (images.length && !TAKES_IMAGES) throw new RpcError(-32602, "Invalid params: inline image prompts were not advertised by this connection");
   a.prompting = true;
   let cancelled = false;
   const startedAt = Date.now();
@@ -154,7 +172,7 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
     update(a.id, { sessionUpdate: "agent_thought_chunk", messageId, content: { type: "text", text: "想一想" } });
     const context = /\[\[context: (\d+)\]\]/.exec(text);
     update(a.id, { sessionUpdate: "usage_update", used: context ? Number(context[1]) : 1000 * s.turns, size: 1_000_000 });
-    let reply = `MOCK-DSH: ${text}`;
+    let reply = `MOCK-DSH: ${text}${images.length ? ` [${images.length} 张图 ${images.map((i) => i.mimeType).join(",")}]` : ""}`;
     const ran = /\[\[(ask|run): ([^\]]+)\]\]/.exec(text);
     if (ran) {
       const callId = `call-${randomUUID()}`;
@@ -219,11 +237,11 @@ async function prompt(params: { sessionId: string; prompt: Array<{ type: string;
 async function handle(method: string, params: Record<string, unknown>): Promise<unknown> {
   switch (method) {
     case "initialize":
-      return { protocolVersion: 1, agentInfo: { name: "fake-dsh-acp", version: "0.0.1" }, agentCapabilities: { mcpCapabilities: { http: true }, promptCapabilities: { image: false }, sessionCapabilities: { close: {}, list: {}, resume: {} } }, authMethods: [] };
+      return { protocolVersion: 1, agentInfo: { name: "fake-dsh-acp", version: "0.0.1" }, agentCapabilities: { mcpCapabilities: { http: true }, promptCapabilities: { image: TAKES_IMAGES }, sessionCapabilities: { close: {}, list: {}, resume: {} } }, authMethods: [] };
     case "session/new": {
       const id = randomUUID();
       const all = load();
-      all[id] = { cwd: String(params.cwd), model: MODELS[0]!.value, effort: "high", turns: 0 };
+      all[id] = { cwd: String(params.cwd), model: DEFAULT_MODEL.value, effort: "high", turns: 0 };
       save(all);
       active.set(id, { id, mcp: (params.mcpServers as McpServer[]) ?? [], prompting: false, cancel: null });
       return { sessionId: id, configOptions: configOptions(all[id]!) };

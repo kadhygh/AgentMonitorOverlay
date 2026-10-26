@@ -76,12 +76,12 @@ test("设置 → 模型: the DSH clone's place, its version and 「检查」 (st
   await expect(section.getByTestId("dsh-facts")).toContainText("版本 0.2.1-rc.1");
   await expect(section.getByTestId("dsh-facts")).toContainText("已构建");
   await section.getByTestId("dsh-check").click();
-  await expect(section.getByTestId("dsh-check-result")).toContainText("可用 · ACP 1 · 2 个型号", { timeout: 30_000 });
+  await expect(section.getByTestId("dsh-check-result")).toContainText("可用 · ACP 1 · 3 个型号", { timeout: 30_000 });
   await screenshot(studio.app, "stage-17", "S17-dsh-settings", page);
 
   // The models DSH offered are the session's choices.
   const state = await studio.api<StateSnapshot>("GET", "/api/state");
   expect(state.profiles.find((p) => p.id === "dsh-mock")?.runtime).toBe("dsh");
   const choices = await studio.api<{ models: Array<{ id: string }> }>("GET", "/api/profiles/dsh-mock/choices");
-  expect(choices.models.map((m) => m.id)).toEqual(["deepseek-official/deepseek-v4-flash", "deepseek-official/deepseek-v4-pro"]);
+  expect(choices.models.map((m) => m.id)).toEqual(["deepseek-official/deepseek-v4-flash", "deepseek-official/deepseek-flash", "deepseek-official/deepseek-v4-pro"]);
 });

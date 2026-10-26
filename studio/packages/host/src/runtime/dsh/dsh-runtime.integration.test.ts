@@ -3,7 +3,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import type { DshStatus, ModelProfile, ProfileChoices, Session, SessionItem, StateSnapshot, Task, Workspace } from "@amo-studio/protocol";
-import { fakeAcpAgent, removeTempDir } from "@amo-studio/testkit";
+import { fakeAcpAgent, removeTempDir, TINY_PNG_BASE64 } from "@amo-studio/testkit";
 import { startHost, type RunningHost } from "../../host-process.js";
 import { FakeServers } from "../codex/fake-servers.test-support.js";
 import { StaticCredentialReader } from "../credentials.js";
@@ -170,12 +170,12 @@ describe("DSH runtime", () => {
     await idle(host, s.id);
   });
 
-  it("offers DSH's models and efforts and its permission settings; refuses images, fork and the terminal; 检查 works", async () => {
+  it("offers DSH's models and efforts and its permission settings; refuses fork and the terminal; 检查 works", async () => {
     const host = await boot();
     const checked = await call<DshStatus>(host, "POST", "/api/dsh/check");
-    expect(checked.check).toMatchObject({ ok: true, message: "可用 · ACP 1 · 2 个型号" });
+    expect(checked.check).toMatchObject({ ok: true, message: "可用 · ACP 1 · 3 个型号" });
     const choices = await call<ProfileChoices>(host, "GET", "/api/profiles/dsh-deepseek/choices");
-    expect(choices.models.map((m) => m.label)).toEqual(["deepseek-v4-flash", "DeepSeek-V4-Pro"]);
+    expect(choices.models.map((m) => m.label)).toEqual(["deepseek-v4-flash", "DeepSeek-V4.1-Flash", "DeepSeek-V4-Pro"]);
     expect(choices.models[0]).toMatchObject({ isDefault: true, efforts: ["off", "low", "high", "max"], defaultEffort: "high" });
     expect(choices.permissions.map((p) => p.id)).toEqual(["workspace-write", "read-only", "full-access"]);
     expect(choices.defaultPermission).toBe("workspace-write");
@@ -184,6 +184,35 @@ describe("DSH runtime", () => {
     await idle(host, s.id);
     await expect(call(host, "POST", `/api/sessions/${s.id}/fork`, {})).rejects.toThrow(/不能分支/);
     await expect(call(host, "POST", `/api/sessions/${s.id}/terminal`, { launch: false })).rejects.toThrow(/不能在终端打开/);
+  });
+
+  it("sends images when the session's model takes them; another model is refused by name; switching models restarts the process on the new one (2026-10-26)", async () => {
+    const host = await boot();
+    const upload = async () => {
+      const res = await fetch(`${host.info.url}/api/attachments?name=shot.png&type=image/png`, { method: "POST", headers: { authorization: `Bearer ${host.token}`, "content-type": "image/png" }, body: Buffer.from(TINY_PNG_BASE64, "base64") });
+      return ((await res.json()) as { id: string }).id;
+    };
+    // DSH's default model here takes no images: refused with its name, nothing shown or sent.
+    const s = await start(host, "hi");
+    await idle(host, s.id);
+    const before = (await items(host, s.id)).length;
+    await expect(call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "看图", attachments: [await upload()] })).rejects.toThrow(/deepseek-v4-flash 不收图片.*DeepSeek-V4.1-Flash/);
+    expect((await items(host, s.id)).length).toBe(before);
+
+    // Switched to V4.1-Flash: the process starts again on it, DSH offers images, the picture goes with the text.
+    await call(host, "PATCH", `/api/sessions/${s.id}/options`, { model: "deepseek-official/deepseek-flash" });
+    await call(host, "POST", `/api/sessions/${s.id}/messages`, { text: "看图", attachments: [await upload()] });
+    await until(() => items(host, s.id), (l) => replies(l).some((r) => r.includes("看图 [1 张图 image/png]")));
+    const shown = (await items(host, s.id)).filter((i) => i.type === "user").at(-1);
+    expect(shown?.type === "user" && shown.images?.length).toBe(1);
+
+    // A new session on V4.1-Flash takes images from its first message on.
+    const { session: f } = await call<{ task: Task; session: Session }>(host, "POST", "/api/tasks", {
+      title: "看图任务",
+      workspaceId: s.workspaceId,
+      firstSession: { profileId: "dsh-deepseek", text: "第一句带图", options: { model: "deepseek-official/deepseek-flash" }, attachments: [await upload()] },
+    });
+    await until(() => items(host, f.id), (l) => replies(l).some((r) => r.includes("第一句带图 [1 张图 image/png]")));
   });
 
   it("runs a third-party DeepSeek channel: its address, its own key and its model (2026-10-19)", async () => {
@@ -234,7 +263,7 @@ describe("DSH runtime", () => {
     expect(replies(await items(host, session.id))[1]).toBe('ENDPOINT base=https://relay.example key=sk-relay model=["deepseek-official","deepseek/deepseek-v4-pro"]');
     // The built-in DeepSeek still offers DSH's own models.
     const builtin = await call<ProfileChoices>(host, "GET", "/api/profiles/dsh-deepseek/choices");
-    expect(builtin.models.map((m) => m.label)).toEqual(["deepseek-v4-flash", "DeepSeek-V4-Pro"]);
+    expect(builtin.models.map((m) => m.label)).toEqual(["deepseek-v4-flash", "DeepSeek-V4.1-Flash", "DeepSeek-V4-Pro"]);
   });
 
   it("完全访问 chosen mid-turn counts at once (what waits is granted, and what DSH asks after), and the process restarts with it once the turn ends (2026-10-19, 10-22)", async () => {

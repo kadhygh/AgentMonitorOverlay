@@ -73,7 +73,7 @@ export function DshSection({ link }: { link: HostLink }) {
   return (
     <div className="dsh-section" data-testid="dsh-section">
       <span className="settings-hint">
-        用 DeepSeek Harness 自己的框架跑 DeepSeek（上下文管理、工具都是 DSH 原生的）；Key 用上面的 DeepSeek 凭据。运行中发的消息会排队，这一轮做完自动接着发（和 DSH 默认的「排队」一样）；还不能发图片、不能分支、不能在终端打开。
+        用 DeepSeek Harness 自己的框架跑 DeepSeek（上下文管理、工具都是 DSH 原生的）；Key 用上面的 DeepSeek 凭据。运行中发的消息会排队，这一轮做完自动接着发（和 DSH 默认的「排队」一样）；图片看型号，DeepSeek-V4.1-Flash 能看图；还不能分支、不能在终端打开。
       </span>
       <div className="settings-row" role="group" aria-label="DSH 来源">
         <span className="settings-label">来源</span>

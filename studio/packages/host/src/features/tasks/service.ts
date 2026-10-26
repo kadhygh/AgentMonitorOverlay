@@ -249,7 +249,6 @@ export class TasksFeature extends Feature {
   private firstImages(input: NewSessionInput): Id[] {
     if (input.attachments === undefined) return [];
     const ids = this.f.sessions.images(input.attachments).map((a) => a.id);
-    if (ids.length && this.requireProfile(input.profileId).runtime === "dsh") throw new HostError("bad_request", "DSH 会话还不能发图片（AMO 还没接上 DSH 的图片输入）");
     return ids;
   }
 

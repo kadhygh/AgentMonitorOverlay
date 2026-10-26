@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from "node:fs";
+import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import type { AccountUsage, ApprovalDecision, Attachment, DshCheck, FolderAccessStatus, Id, ModelOption, ModelProfile, ProfileChoices, QuestionReply, Session, SessionOptions, Workspace } from "@amo-studio/protocol";
 import type { Store } from "../../store/store.js";
@@ -32,7 +32,8 @@ import { grantFailurePath, windowsFolderAccess, type FolderAccess, type FolderAc
 // `node <clone>/apps/cli/lib/bin.js --profile acp` in its workspace: DSH's sandbox follows the process's working
 // directory and its permission mode is the process's environment. Studio's DSH home (`<data>/dsh/home`) keeps DSH's
 // own sessions; Studio keeps the conversation (DSH does not replay it on resume). What ACP lacks (spikes s17-00):
-// fork, question cards, images, steering a running turn (a message sent meanwhile waits for the turn to end).
+// fork, question cards, steering a running turn (a message sent meanwhile waits for the turn to end). Images go when
+// the session's model takes them (2026-10-26: DSH tells at initialize, for the model its ACP agent starts on).
 
 /** A third-party DeepSeek endpoint DSH can be pointed at (an Anthropic Messages root, like https://api.deepseek.com/anthropic). */
 export interface DshProviderDef {
@@ -122,12 +123,23 @@ interface Live {
   applied: { model?: string; effort?: string };
   inflight: boolean;
   /** Messages sent while a turn runs, sent together when it ends. */
-  queue: string[];
+  queue: Array<{ text: string; images: ImageBlock[] }>;
+  /** DSH said at initialize that this process takes images (for `model`, its ACP agent's default). */
+  images: boolean;
+  /** The session's model when the process started (its ACP agent's default); undefined = DSH's own default. */
+  model: string | undefined;
   transcript: DshTranscript;
   waiting: Map<string, Waiting>;
   idleTimer: NodeJS.Timeout | null;
   /** When the running turn's speed was last read from DSH's log. */
   measuredAt: number;
+}
+
+/** An ACP inline image (prompt content). */
+interface ImageBlock {
+  type: "image";
+  mimeType: string;
+  data: string;
 }
 
 /** How often a running turn's speed is read again from DSH's log (on a model call's usage report). */
@@ -167,10 +179,11 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     const options = { ...(profile.model && !input.options?.model ? { model: profile.model } : {}), ...(input.options ?? {}) };
     const token = this.options.identities?.issue();
     const permission = dshPermissionMode(options.permission);
-    const conn = this.spawn(input.workspace.path, profile, permission, `new-${Date.now()}`);
+    const conn = this.spawn(input.workspace.path, profile, permission, `new-${Date.now()}`, options.model);
     let session: Session;
+    let image = false;
     try {
-      await this.initialize(conn);
+      image = (await this.initialize(conn)).image;
       const created = await conn.request<{ sessionId: string; configOptions?: ConfigOption[] }>("session/new", { cwd: input.workspace.path, mcpServers: this.mcpServers(token) });
       this.remember(created.configOptions, profile);
       session = this.createSession({
@@ -189,7 +202,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       throw this.explain(err);
     }
     if (token) this.options.identities!.bind(token, session.id);
-    const live = this.adopt(session, conn, {}, permission);
+    const live = this.adopt(session, conn, {}, permission, image, options.model);
     await this.applyOptions(session.id, live);
     if (input.text) await this.sendMessage(session.id, input.text);
     return this.store.getSession(session.id)!;
@@ -197,18 +210,40 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   async sendMessage(sessionId: Id, text: string, images: readonly Attachment[] = []): Promise<{ mode: SendMode }> {
     const session = this.writable(sessionId);
-    if (images.length) throw Object.assign(new Error("DSH 会话还不能发图片（AMO 还没接上 DSH 的图片输入）"), { code: "bad_request" });
-    if (!session.title) this.updateSession(sessionId, { title: text.slice(0, 60) });
-    const live = await this.ensureLive(session);
+    // Read the images first: a missing file fails the send before anything is shown or queued.
+    const blocks: ImageBlock[] = images.map((a) => ({ type: "image", mimeType: a.mime, data: readFileSync(a.path).toString("base64") }));
+    if (!session.title) this.updateSession(sessionId, { title: (text || "图片").slice(0, 60) });
+    let live = await this.ensureLive(session);
+    if (blocks.length) live = await this.takesImages(session, live);
+    const shown = images.map((a) => ({ id: a.id, path: a.path }));
+    const item = { type: "user" as const, text, ...(shown.length ? { images: shown } : {}) };
     if (live.inflight) {
       // Shown in the running turn (as Claude's queued messages are), so that turn still reads as running.
-      this.appendItem(sessionId, { type: "user", text }, { method: "user/queued", ...live.transcript.turnRef() });
-      live.queue.push(text);
+      this.appendItem(sessionId, item, { method: "user/queued", ...live.transcript.turnRef() });
+      live.queue.push({ text, images: blocks });
       return { mode: "queue" };
     }
-    this.appendItem(sessionId, { type: "user", text }, { method: "user" });
-    await this.prompt(sessionId, live, text);
+    this.appendItem(sessionId, item, { method: "user" });
+    await this.prompt(sessionId, live, text, blocks);
     return { mode: "start" };
+  }
+
+  /**
+   * A message with pictures: DSH tells at initialize whether its ACP agent takes images, for the model the agent
+   * starts on. When the session switched models since its process started, the process starts again on the new one
+   * (between turns); a model that takes none is refused with its name.
+   */
+  private async takesImages(session: Session, live: Live): Promise<Live> {
+    const model = session.options.model;
+    if ((model ?? "") !== (live.model ?? "") && !live.inflight) {
+      await this.release(session.id);
+      live = await this.ensureLive(this.requireSession(session.id));
+    }
+    if (live.images) return live;
+    const models = this.cachedOptions() ? dshModels(this.cachedOptions()!) : [];
+    const name = (model ? models.find((m) => m.id === model) : models.find((m) => m.isDefault))?.label ?? model ?? "这个型号";
+    const switched = (model ?? "") !== (live.model ?? "") ? "（刚换了型号的话，等这一轮做完再发）" : "";
+    throw Object.assign(new Error(`${name} 不收图片（DSH 说这个型号不支持图片输入）${switched}；换成能看图的型号，例如 DeepSeek-V4.1-Flash，再发`), { code: "bad_request" });
   }
 
   async choices(profileId: Id): Promise<ProfileChoices> {
@@ -350,7 +385,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   // ---- processes --------------------------------------------------------------------------------------------------
 
-  private spawn(cwd: string, profile: ModelProfile | null, permission: DshPermissionMode, label: string): AcpConnection {
+  private spawn(cwd: string, profile: ModelProfile | null, permission: DshPermissionMode, label: string, model?: string): AcpConnection {
     const env: NodeJS.ProcessEnv = { ...(this.options.env ?? process.env), [DSH_HOME_ENV]: join(this.options.dir, "home"), [DSH_PERMISSION_ENV]: permission };
     delete env.ELECTRON_RUN_AS_NODE;
     const credentialId = profile?.credentialId ?? this.options.profiles.find((p) => p.runtime === "dsh" && p.credentialId)?.credentialId;
@@ -360,7 +395,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     // A third-party channel: its address. (DSH reads it from the launch environment, which outranks a project's .env.)
     const baseUrl = profile?.provider ? this.options.providers?.[profile.provider]?.baseUrl : undefined;
     if (baseUrl) env[DSH_BASE_URL_ENV] = baseUrl;
-    const patch = profile ? this.catalogPatch(profile) : null;
+    const patch = profile ? (this.catalogPatch(profile) ?? (model ? this.modelPatch(model) : null)) : null;
     let command: string;
     let args: string[];
     if (this.options.agent) {
@@ -378,10 +413,11 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return new AcpConnection({ command, args, cwd, env, logFile }, (method, params) => this.onRequest(method, params));
   }
 
-  private async initialize(conn: AcpConnection): Promise<{ protocolVersion: number }> {
-    const init = await conn.request<{ protocolVersion: number }>("initialize", { protocolVersion: ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } }, 120_000);
+  /** ACP's handshake; `image`: whether the agent takes inline images (for the model it starts on). */
+  private async initialize(conn: AcpConnection): Promise<{ protocolVersion: number; image: boolean }> {
+    const init = await conn.request<{ protocolVersion: number; agentCapabilities?: { promptCapabilities?: { image?: boolean } } }>("initialize", { protocolVersion: ACP_VERSION, clientCapabilities: { fs: { readTextFile: false, writeTextFile: false }, terminal: false } }, 120_000);
     if (init.protocolVersion !== ACP_VERSION) throw new Error(`DSH 说的是 ACP ${init.protocolVersion}，Studio 只会 ACP ${ACP_VERSION}`);
-    return init;
+    return { protocolVersion: init.protocolVersion, image: init.agentCapabilities?.promptCapabilities?.image === true };
   }
 
   /** The session's process, started and resumed when there is none. */
@@ -395,9 +431,10 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       const workspace = this.store.getWorkspace(session.workspaceId);
       if (!workspace) throw new Error(`workspace ${session.workspaceId} not found`);
       const permission = dshPermissionMode(session.options.permission);
-      const conn = this.spawn(workspace.path, this.profile(session.profileId), permission, session.id);
+      const conn = this.spawn(workspace.path, this.profile(session.profileId), permission, session.id, session.options.model);
+      let image = false;
       try {
-        await this.initialize(conn);
+        image = (await this.initialize(conn)).image;
         const token = this.options.identities?.tokenFor(session.id);
         const resumed = await conn.request<{ configOptions?: ConfigOption[] }>("session/resume", { sessionId: session.runtimeRef, cwd: workspace.path, mcpServers: this.mcpServers(token) });
         this.remember(resumed.configOptions, this.profile(session.profileId));
@@ -405,7 +442,7 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
         conn.kill();
         throw this.explain(err);
       }
-      const live = this.adopt(session, conn, {}, permission);
+      const live = this.adopt(session, conn, {}, permission, image, session.options.model);
       await this.applyOptions(session.id, live);
       return live;
     })().finally(() => this.starting.delete(session.id));
@@ -413,8 +450,8 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return p;
   }
 
-  private adopt(session: Session, conn: AcpConnection, applied: Live["applied"], permission: DshPermissionMode): Live {
-    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0 };
+  private adopt(session: Session, conn: AcpConnection, applied: Live["applied"], permission: DshPermissionMode, images: boolean, model: string | undefined): Live {
+    const live: Live = { conn, acpId: session.runtimeRef!, permission, applied, inflight: false, queue: [], images, model, transcript: new DshTranscript(this.makeCore(), session.id, this.store.getWorkspace(session.workspaceId)?.path), waiting: new Map(), idleTimer: null, measuredAt: 0 };
     this.live.set(session.id, live);
     conn.on("notification", (method, params) => {
       if (method !== "session/update") return;
@@ -613,14 +650,14 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
 
   // ---- turns ------------------------------------------------------------------------------------------------------
 
-  private async prompt(sessionId: Id, live: Live, text: string): Promise<void> {
+  private async prompt(sessionId: Id, live: Live, text: string, images: readonly ImageBlock[] = []): Promise<void> {
     live.inflight = true;
     if (live.idleTimer) clearTimeout(live.idleTimer);
     await this.applyOptions(sessionId, live).catch((err: unknown) => this.emit("log", `dsh set options failed for ${sessionId}: ${String(err)}`));
     live.transcript.openTurn();
     this.setStatus(sessionId, "running");
     live.conn
-      .request<{ stopReason?: string }>("session/prompt", { sessionId: live.acpId, prompt: [{ type: "text", text }] }, 0)
+      .request<{ stopReason?: string }>("session/prompt", { sessionId: live.acpId, prompt: [...(text ? [{ type: "text", text }] : []), ...images] }, 0)
       .then(
         (r) => this.endTurn(sessionId, live, r.stopReason ?? "end_turn"),
         (err: unknown) => this.endTurn(sessionId, live, "error", this.explain(err).message),
@@ -647,16 +684,16 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     // A permission changed during the turn: its process ends now; the next message (or the queue) resumes it anew.
     const session = this.store.getSession(sessionId);
     if (session && live.permission !== dshPermissionMode(session.options.permission) && this.live.get(sessionId) === live) {
-      const next = live.queue.splice(0).join("\n\n");
+      const next = takeQueue(live);
       await this.release(sessionId);
       if (!next) return this.setStatus(sessionId, "idle");
       const fresh = await this.ensureLive(session);
-      await this.prompt(sessionId, fresh, next);
+      await this.prompt(sessionId, fresh, next.text, next.images);
       return;
     }
     if (live.queue.length && live.conn.alive && this.live.get(sessionId) === live) {
-      const next = live.queue.splice(0).join("\n\n");
-      await this.prompt(sessionId, live, next);
+      const next = takeQueue(live)!;
+      await this.prompt(sessionId, live, next.text, next.images);
       return;
     }
     this.setStatus(sessionId, "idle");
@@ -759,6 +796,17 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
     return file;
   }
 
+  /** The session's model as the ACP agent's default (DSH then says whether it takes images), as a DSH patch file. */
+  private modelPatch(model: string): string | null {
+    const cut = model.indexOf("/");
+    if (cut <= 0) return null;
+    const dir = join(this.options.dir, "patches");
+    mkdirSync(dir, { recursive: true });
+    const file = join(dir, `model-${model.replace(/[^A-Za-z0-9._-]+/g, "_")}.yml`);
+    writeFileSync(file, modelPatchYaml(model.slice(0, cut), model.slice(cut + 1)));
+    return file;
+  }
+
   private cachedOptions(): ConfigOption[] | null {
     try {
       const v = JSON.parse(this.store.getKv(DSH_OPTIONS_KEY)?.value ?? "null") as unknown;
@@ -809,6 +857,25 @@ export function dshModelValue(id: string, config: readonly ConfigOption[] | null
   // The route is the provider, then the model name, which may itself hold a "/" (a relay's `deepseek/deepseek-v4-pro`).
   const cut = id.indexOf("/");
   return offered.find((v) => dshModelId(v) === id) ?? (cut > 0 ? JSON.stringify([id.slice(0, cut), id.slice(cut + 1)]) : id);
+}
+
+/** Messages queued during a turn, as one: their texts one after another, and all their images. */
+function takeQueue(live: Live): { text: string; images: ImageBlock[] } | null {
+  const queued = live.queue.splice(0);
+  if (!queued.length) return null;
+  return { text: queued.map((q) => q.text).filter(Boolean).join("\n\n"), images: queued.flatMap((q) => q.images) };
+}
+
+/** The DSH patch that starts its ACP agent on `provider`/`model` (names JSON-quoted, which YAML reads as strings). */
+export function modelPatchYaml(provider: string, model: string): string {
+  return [
+    "# Written by AMO Studio: the session's model as the ACP agent's default, so DSH says whether it takes images.",
+    "- id: acp",
+    "  config:",
+    `    provider: ${JSON.stringify(provider)}`,
+    `    model: ${JSON.stringify(model)}`,
+    "",
+  ].join("\n");
 }
 
 /**
