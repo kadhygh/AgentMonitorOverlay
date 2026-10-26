@@ -6,19 +6,33 @@ afterEach(() => store?.close());
 
 function team() {
   store = new RelayStore(":memory:");
-  const a = store.join("策划小王", "策划");
-  const b = store.join("程序老李", "程序 · 战斗");
+  const a = store.register("策划小王", "pw-wang", "策划");
+  const b = store.register("程序老李", "pw-li", "程序 · 战斗");
   return { a, b };
 }
 
 describe("RelayStore", () => {
-  it("joins with unique names and finds members by key", () => {
+  it("registers unique names, logs in with the password, one key per device", () => {
     const { a } = team();
     expect(store.memberByKey(a.key)).toBe("策划小王");
     expect(store.memberByKey("nope")).toBeNull();
-    expect(() => store.join("策划小王")).toThrow(RelayError);
-    expect(() => store.join("a\nb")).toThrow(/控制字符/);
+    expect(() => store.register("策划小王", "whatever")).toThrow(RelayError);
+    expect(() => store.register("a\nb", "whatever")).toThrow(/控制字符/);
+    expect(() => store.register("新人", "123")).toThrow(/至少 4 位/);
     expect(store.members().map((m) => m.name)).toEqual(["策划小王", "程序老李"]);
+
+    expect(() => store.login("策划小王", "wrong")).toThrow(/名字或密码不对/);
+    expect(() => store.login("没这人", "pw-wang")).toThrow(/名字或密码不对/);
+    const second = store.login("策划小王", "pw-wang");
+    expect(second.key).not.toBe(a.key);
+    expect(store.memberByKey(second.key)).toBe("策划小王");
+    store.logout(second.key);
+    expect(store.memberByKey(second.key)).toBeNull();
+    expect(store.memberByKey(a.key)).toBe("策划小王");
+
+    store.setPassword("策划小王", "new-pass");
+    expect(store.memberByKey(a.key)).toBeNull();
+    expect(store.login("策划小王", "new-pass").name).toBe("策划小王");
   });
 
   it("keeps one direct chat per pair and counts unread", () => {
@@ -71,7 +85,7 @@ describe("RelayStore", () => {
 
   it("keeps people out of threads they are not in", () => {
     team();
-    store.join("美术小张");
+    store.register("美术小张", "pw-zhang");
     const { thread } = store.createRequest("策划小王", { to: "程序老李", title: "t", body: "b" });
     expect(() => store.messages(thread.id, "美术小张")).toThrow(/不在这个对话/);
     expect(() => store.addMessage(thread.id, "美术小张", { body: "hi" })).toThrow(/不在这个对话/);

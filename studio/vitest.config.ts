@@ -10,6 +10,7 @@ export default defineConfig({
       "@amo-studio/testkit": src("testkit"),
       "@amo-studio/host": src("host"),
       "@amo-studio/reviewer": src("reviewer"),
+      "@amo-studio/relay": src("relay"),
     },
   },
   test: {

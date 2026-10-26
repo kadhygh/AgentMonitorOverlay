@@ -111,4 +111,17 @@ export interface Health {
   app: typeof RELAY_APP;
   version: string;
   name: string;
+  /** Registering takes the invite passphrase. */
+  invite: boolean;
+  /** The client content's version the service hands out; null = none. */
+  client: string | null;
+}
+
+/** client/manifest.json: the client content the desktop client downloads and keeps (its hot update). */
+export interface ClientManifest {
+  version: string;
+  builtAt: number;
+  /** The oldest desktop shell this content runs in; an older shell has to be downloaded again. */
+  minShell: number;
+  files: Array<{ path: string; size: number; sha256: string }>;
 }

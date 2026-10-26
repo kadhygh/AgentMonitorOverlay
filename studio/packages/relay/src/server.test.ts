@@ -1,5 +1,8 @@
 import { Client } from "@modelcontextprotocol/sdk/client/index.js";
 import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import WebSocket from "ws";
 import { RelayClient, RelayClientError, type RelaySettings } from "./client.js";
@@ -20,12 +23,12 @@ afterEach(async () => {
   store = null;
 });
 
-async function service() {
+async function service(publicDir?: string) {
   store = new RelayStore(":memory:");
-  server = await startRelayServer({ store, passphrase: "芝麻开门", host: "127.0.0.1", port: 0, name: "测试组" });
+  server = await startRelayServer({ store, passphrase: "芝麻开门", publicDir, host: "127.0.0.1", port: 0, name: "测试组" });
   const anon = new RelayClient(server.url);
-  const a = await anon.join("策划小王", "芝麻开门", "策划");
-  const b = await anon.join("程序老李", "芝麻开门", "程序 · 战斗");
+  const a = await anon.register("策划小王", "pw-wang", { role: "策划", passphrase: "芝麻开门" });
+  const b = await anon.register("程序老李", "pw-li", { role: "程序 · 战斗", passphrase: "芝麻开门" });
   return {
     url: server.url,
     planner: new RelayClient(server.url, a.key),
@@ -52,13 +55,41 @@ function events(url: string, key: string): Promise<{ next: () => Promise<RelayEv
 }
 
 describe("relay service", () => {
-  it("asks for the passphrase and a key", async () => {
+  it("registers with the invite passphrase, logs in and out", async () => {
     const { url } = await service();
     const anon = new RelayClient(url);
-    expect((await anon.health()).name).toBe("测试组");
-    await expect(anon.join("路人", "错的")).rejects.toMatchObject({ status: 401 });
+    expect(await anon.health()).toMatchObject({ name: "测试组", invite: true, client: null });
+    await expect(anon.register("路人", "pw-lu", { passphrase: "错的" })).rejects.toMatchObject({ status: 401 });
     await expect(anon.members()).rejects.toBeInstanceOf(RelayClientError);
     await expect(new RelayClient(url, "bad").me()).rejects.toMatchObject({ status: 401 });
+    await expect(anon.login("策划小王", "wrong")).rejects.toMatchObject({ status: 401 });
+    const again = new RelayClient(url, (await anon.login("策划小王", "pw-wang")).key);
+    expect((await again.me()).name).toBe("策划小王");
+    await again.logout();
+    await expect(again.me()).rejects.toMatchObject({ status: 401 });
+  });
+
+  it("hands out the client: landing page, content, downloads, never outside its folder", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "relay-public-"));
+    closers.push(() => rmSync(dir, { recursive: true, force: true }));
+    mkdirSync(join(dir, "client", "assets"), { recursive: true });
+    mkdirSync(join(dir, "downloads"));
+    writeFileSync(join(dir, "client", "index.html"), "<p>client</p>");
+    writeFileSync(join(dir, "client", "assets", "a.js"), "1");
+    writeFileSync(join(dir, "client", "manifest.json"), JSON.stringify({ version: "0.1.0+1", builtAt: 1, minShell: 1, files: [] }));
+    writeFileSync(join(dir, "downloads", "AMO-Relay.zip"), "zip");
+    writeFileSync(join(dir, "secret.txt"), "no");
+    const { url } = await service(dir);
+    const get = (p: string) => fetch(`${url}${p}`);
+    expect((await (await get("/api/health")).json()).client).toBe("0.1.0+1");
+    const landing = await (await get("/")).text();
+    expect(landing).toContain("/downloads/AMO-Relay.zip");
+    expect(landing).toContain("/app/");
+    expect(await (await get("/app/")).text()).toBe("<p>client</p>");
+    expect(await (await get("/client/assets/a.js")).text()).toBe("1");
+    expect((await get("/downloads/AMO-Relay.zip")).headers.get("content-disposition")).toContain("attachment");
+    expect((await get("/client/..%2Fsecret.txt")).status).toBe(404);
+    expect((await get("/client/nope.js")).status).toBe(404);
   });
 
   it("carries a request and its reply, pushes it, and wakes a wait", async () => {

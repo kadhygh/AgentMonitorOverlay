@@ -52,6 +52,17 @@ AI 客户端 ──stdio──▶ relay MCP ──HTTP──▶ 中转服务 ◀
 - **一键复制用法 prompt**：推进中随时粘给任何 agent，让它知道怎么用。文字只在 `usage.ts` 一处生成，托盘的「复制用法」、`amo-relay prompt` 和 MCP 的 instructions 都用它。
 - **中转服务跑在 Mac 上**：服务只用 Node 自带的模块加 ws，打包成单个 `amo-relay.mjs`（`npm run relay:bundle`），要求 Node 22.13 或更新；Mac 上的部署和 launchd 写在 `packages/relay/README.md`。托盘程序跑在每个人自己的机器上，目前是 Windows。
 
+## 补充（用户 2026-10-26 下午）：先在本机部署，出一个能直接跑的客户端，发链接给同事一起测
+
+- **账号密码**：注册时填名字、密码，以及负责什么；服务带邀请口令时还要填口令。登录后每台设备拿一个 key。客户端会**记住账号和密码**：密码用系统加密保存（Windows 上是 DPAPI，Mac 上是钥匙串），登录页可以选已存的账号。
+- **热更新整个客户端**：界面放在服务器上，由 `relay-ui` 构建；桌面外壳固定不变。启动顺序：
+  1. 读条；
+  2. 连接服务器并检查版本；
+  3. 第一次打开时下载界面；
+  4. 进入登录页。服务器上有新版本时，就停在登录页上提示「立即更新」。点一下会下载、校验、切换，然后重新载入窗口，**不用重启**。
+  运行中每 10 分钟也会检查一次，有新版本时在左上角提示。外壳本身变了的话，登录页会提示重新下载。
+- 下载页 `/`：发给同事的链接。上面有 Windows 客户端的 zip，也可以直接在浏览器里用（`/app/`）。
+
 ## 待定（做到时再问）
 
 - 托盘程序的界面：先在 Design 画布上出方案，再动手做（同便签）。
@@ -60,4 +71,11 @@ AI 客户端 ──stdio──▶ relay MCP ──HTTP──▶ 中转服务 ◀
 ## 进度
 
 - 1a 完成：`packages/relay` 有中转服务（`server.ts` + `store.ts`）、Node 客户端和本机身份（`client.ts`）、用法和对话文本（`usage.ts`）、MCP（`mcp.ts`，5 个工具），以及命令行 `bin.ts`（serve / join / whoami / people / prompt / mcp / ask / replies / wait / send）。单测 9 个通过（规则、HTTP、WS 推送、wait 被唤醒、MCP 走内存传输）；手动冒烟跑过命令行全流程、stdio MCP，以及打包后单文件在空目录里跑 serve 和 WS。
-- 下一步：Design 画布上画托盘程序的界面（收到的 / 我发出的 / 私聊 / 回复表单 / 复制用法 / 设置与加入），用户挑完再做。
+- 1b 完成（用户要求先出能跑的客户端，没有先上画布）：
+  - 账号密码：`register` / `login` / `logout` / `passwd`，key 按设备发。
+  - 服务同时下发客户端：`public.ts` 提供 `/`、`/app/`、`/client/`、`/downloads/`，下载是流式的，HEAD 请求也能回。
+  - `relay-ui` 界面，以及 `relay-app` 外壳：读条、热更新（`content.ts`）、账号（`accounts.ts`）、托盘、通知、在本机装 CLI 和 MCP（`amo-relay.cmd`，用外壳自己的 exe 当 Node 跑）。
+  - `scripts/relay-release.mjs` 负责发布，`scripts/relay-service.ps1` 负责启停服务。
+  - 验证：单测 12 个通过；e2e 1 条通过（`e2e/relay`），内容是两个客户端注册、命令行代 AI 发请求、对方逐条回复、私聊、登录页热更新；还冒烟了打包后的 exe（第一次填地址、地址错了提示、连上后进登录页）。
+- 已在本机部署（2026-10-26）：服务在 `http://172.16.1.62:47120/`，不设邀请口令，数据在 `%APPDATA%\AMO Relay\server`。
+- 下一步：和同事一起试用，按反馈改界面（之后再上 Design 画布细化）。之后接第 2 阶段，用 Reviewer 做快照和行批注。

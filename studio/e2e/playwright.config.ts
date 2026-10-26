@@ -7,6 +7,7 @@ export default defineConfig({
     { name: "studio", testDir: "./studio" },
     { name: "notes", testDir: "./notes" },
     { name: "reviewer", testDir: "./reviewer" },
+    { name: "relay", testDir: "./relay" },
   ],
   timeout: 90_000,
   workers: 1,

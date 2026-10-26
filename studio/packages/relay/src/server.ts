@@ -2,17 +2,22 @@ import { createHash, timingSafeEqual } from "node:crypto";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import type { AddressInfo } from "node:net";
 import { WebSocketServer, type WebSocket } from "ws";
+import { PublicFiles, landingPage, sendFile, sendHtml } from "./public.js";
 import { RELAY_APP, RELAY_VERSION, type Health, type Member, type Message, type RelayEvent, type Thread } from "./protocol.js";
 import { RelayError, type RelayStore } from "./store.js";
 
-// The relay service (plans/relay.md): HTTP for everything, /ws to push new messages and who is online. Joining takes
-// the team passphrase and returns a personal key; every other call carries that key (Authorization: Bearer, or ?key=
-// for the WebSocket). Any origin may call it — the key, not a cookie, is the credential — so a tray program's page
-// served from 127.0.0.1 can reach a service on another machine.
+// The relay service (plans/relay.md): HTTP for everything, /ws to push new messages and who is online. People register
+// with a name and password (plus the invite passphrase, when the service has one); a login hands the device a key that
+// every other call carries (Authorization: Bearer, or ?key= for the WebSocket). Any origin may call it — the key, not a
+// cookie, is the credential — so the desktop client's pages, loaded from disk, reach it. It also hands out the client
+// (public.ts): / is the page to send people, /client/ and /app/ the client's content, /downloads/ its zip.
 
 export interface RelayServerOptions {
   store: RelayStore;
-  passphrase: string;
+  /** The invite passphrase registering takes; none = anyone who reaches the service may register. */
+  passphrase?: string;
+  /** Holds client/ (content + manifest.json) and downloads/; none = no client handed out. */
+  publicDir?: string;
   /** Shown to clients, e.g. 「策划组」. */
   name?: string;
   host?: string;
@@ -80,7 +85,7 @@ interface Waiter {
 export async function startRelayServer(opts: RelayServerOptions): Promise<RelayServer> {
   const { store } = opts;
   const serviceName = opts.name?.trim() || "AMO 中转";
-  if (!opts.passphrase) throw new Error("relay: a team passphrase is required");
+  const files = new PublicFiles(opts.publicDir);
   const sockets = new Map<string, Set<WebSocket>>();
   const lastSeen = new Map<string, number>();
   const waiters = new Set<Waiter>();
@@ -113,27 +118,49 @@ export async function startRelayServer(opts: RelayServerOptions): Promise<RelayS
   const auth = (req: IncomingMessage, url: URL): string => {
     const key = keyOf(req, url);
     const name = key ? store.memberByKey(key) : null;
-    if (!name) throw new RelayError("unauthorized", "身份钥匙无效，请重新加入");
+    if (!name) throw new RelayError("unauthorized", "登录已失效，请重新登录");
     lastSeen.set(name, Date.now());
     return name;
   };
 
   async function route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
-    const method = req.method ?? "GET";
+    // HEAD is answered as GET; Node leaves the body out.
+    const method = req.method === "HEAD" ? "GET" : (req.method ?? "GET");
     const path = url.pathname;
     if (method === "GET" && path === "/api/health") {
-      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName };
+      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName, invite: !!opts.passphrase, client: files.manifest()?.version ?? null };
       return send(res, 200, health);
     }
-    if (method === "POST" && path === "/api/join") {
+    if (method === "POST" && path === "/api/register") {
       const body = await readJson(req);
-      if (typeof body.passphrase !== "string" || !samePassphrase(body.passphrase, opts.passphrase)) throw new RelayError("unauthorized", "团队口令不对");
-      const joined = store.join(body.name, body.role);
+      if (opts.passphrase && (typeof body.passphrase !== "string" || !samePassphrase(body.passphrase, opts.passphrase))) throw new RelayError("unauthorized", "邀请口令不对");
+      const joined = store.register(body.name, body.password, body.role);
       pushMembers();
       return send(res, 200, joined);
     }
+    if (method === "POST" && path === "/api/login") {
+      const body = await readJson(req);
+      return send(res, 200, store.login(body.name, body.password));
+    }
+    if (method === "GET" && !path.startsWith("/api/")) {
+      if (path === "/" || path === "/index.html") return sendHtml(res, landingPage(serviceName, files.manifest(), files.downloads()));
+      if (path === "/app" || path === "/client") {
+        res.writeHead(302, { location: `${path}/` });
+        res.end();
+        return;
+      }
+      const area = path.startsWith("/client/") || path.startsWith("/app/") ? "client" : path.startsWith("/downloads/") ? "downloads" : null;
+      const rel = path.slice(path.indexOf("/", 1) + 1) || "index.html";
+      const file = area ? files.file(area, rel) : null;
+      if (file) return sendFile(res, file, area === "downloads");
+      throw new RelayError("not_found", `没有这个文件：${path}`);
+    }
 
     const me = auth(req, url);
+    if (method === "POST" && path === "/api/logout") {
+      store.logout(keyOf(req, url)!);
+      return send(res, 200, { ok: true });
+    }
     if (method === "GET" && path === "/api/me") return send(res, 200, { name: me, service: serviceName, role: store.members().find((m) => m.name === me)?.role ?? "" });
     if (method === "PATCH" && path === "/api/me") {
       const body = await readJson(req);

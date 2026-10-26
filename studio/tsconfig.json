@@ -7,6 +7,7 @@
     { "path": "packages/reviewer" },
     { "path": "packages/app" },
     { "path": "packages/notes" },
-    { "path": "packages/relay" }
+    { "path": "packages/relay" },
+    { "path": "packages/relay-app" }
   ]
 }

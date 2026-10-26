@@ -1,6 +1,6 @@
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { z } from "zod";
-import { RelayClient, RelayClientError, readSettings, type RelaySettings } from "./client.js";
+import { RelayClient, RelayClientError, clientFromSettings, readSettings, type RelaySettings } from "./client.js";
 import { VERDICT_LABEL, type Message, type Thread } from "./protocol.js";
 import { threadAsText, usagePrompt } from "./usage.js";
 
@@ -18,7 +18,7 @@ interface ToolResult {
 
 const ok = (text: string): ToolResult => ({ content: [{ type: "text", text }] });
 const fail = (text: string): ToolResult => ({ content: [{ type: "text", text }], isError: true });
-const NOT_JOINED = "这台机器还没加入 AMO 中转。请让使用者先在 AMO 中转程序里设置服务地址和名字（或运行 amo-relay join）。";
+const NOT_JOINED = "这台机器还没加入 AMO 中转。请让使用者先在 AMO Relay 客户端里登录（或运行 amo-relay login）。";
 
 export interface RelayMcpOptions {
   /** This machine's identity; default: the settings file. */
@@ -34,7 +34,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
   let instructions = usagePrompt({ me: s?.name ?? "（未加入）" });
   if (s) {
     try {
-      const client = RelayClient.fromSettings(s);
+      const client = clientFromSettings(s);
       const [me, members] = await Promise.all([client.me(), client.members()]);
       instructions = usagePrompt({ me: me.name, role: me.role, members });
     } catch {
@@ -51,7 +51,7 @@ export async function createRelayMcp(opts: RelayMcpOptions = {}): Promise<McpSer
     const current = settings();
     if (!current) return fail(NOT_JOINED);
     try {
-      return ok(await run(RelayClient.fromSettings(current), current.name));
+      return ok(await run(clientFromSettings(current), current.name));
     } catch (err) {
       if (err instanceof RelayClientError) return fail(err.message);
       throw err;

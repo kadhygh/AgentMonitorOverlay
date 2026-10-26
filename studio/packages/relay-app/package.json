@@ -1,0 +1,13 @@
+{
+  "name": "@amo-studio/relay-app",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "main": "dist/main.js",
+  "dependencies": {
+    "@amo-studio/relay": "0.0.0"
+  },
+  "devDependencies": {
+    "electron": "44.7.0"
+  }
+}

@@ -27,7 +27,7 @@ const version = JSON.parse(readFileSync(join(studio, "package.json"), "utf8")).v
 const readJson = (p) => JSON.parse(readFileSync(p, "utf8"));
 
 /** The program each package runs as (launch.js), when it is one. */
-const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewer/dist/main.js", notes: "packages/notes/dist/main.js" };
+const MAINS = { studio: "packages/app/dist/main.js", reviewer: "packages/reviewer/dist/main.js", notes: "packages/notes/dist/main.js", relay: "packages/relay-app/dist/main.js" };
 
 const PROGRAMS = {
   studio: {
@@ -92,6 +92,24 @@ const PROGRAMS = {
       "设置和页面在 %APPDATA%\\AMO Notes（工作文件夹可以在设置里换）；和 AMO Studio 带的便签共用同一份。",
     ],
   },
+  // AMO 中转's desktop client (2026-10-26): a fixed shell; its content comes from the service (scripts/relay-release.mjs
+  // builds this into the service's downloads/).
+  relay: {
+    name: "AMO Relay",
+    zip: "AMO-Relay",
+    description: "AMO 中转",
+    packages: ["relay-app", "relay"],
+    programs: ["relay"],
+    icon: () => join(studio, "packages", "relay-app", "assets", "icon.ico"),
+    readme: [
+      "AMO 中转（桌面客户端）",
+      "",
+      "双击 AMO Relay.exe。第一次打开填服务器地址（同事发给你的下载页上有），然后注册一个名字和密码。",
+      "关掉窗口会留在托盘里，新消息会弹提醒；托盘右键可以退出。",
+      "客户端界面由服务器下发：有新版本时，登录页会提示「立即更新」，点一下就换好，不用重新下载。",
+      "账号和密码（系统加密）、本机 AI 的接入信息都在 %APPDATA%\\AMO Relay。",
+    ],
+  },
 };
 
 /** An .ico of PNG images (Windows Vista and later read PNG entries). */
@@ -153,7 +171,7 @@ function build(id) {
     // Window and tray icons (app, notes); the Codex model catalogue (host).
     if (existsSync(join(from, "assets"))) cpSync(join(from, "assets"), join(app, dir, "assets"), { recursive: true });
     // Workspace links become plain copies, so `@amo-studio/<name>` resolves from resources/app/node_modules.
-    if (["protocol", "host", "reviewer"].includes(name)) {
+    if (["protocol", "host", "reviewer", "relay"].includes(name)) {
       cpSync(join(from, "dist"), join(app, "node_modules", "@amo-studio", name, "dist"), { recursive: true, filter: (p) => !/\.(tsbuildinfo|map)$|\.test\.js$/.test(p) });
       cpSync(join(from, "package.json"), join(app, "node_modules", "@amo-studio", name, "package.json"));
     }
@@ -234,7 +252,8 @@ function build(id) {
   console.log(JSON.stringify(result, null, 2));
 }
 
-for (const id of only ?? Object.keys(PROGRAMS)) {
-  if (!PROGRAMS[id]) throw new Error(`unknown program ${id}: studio, reviewer or notes`);
+// The relay client ships from its service (scripts/relay-release.mjs), not with the other three.
+for (const id of only ?? Object.keys(PROGRAMS).filter((p) => p !== "relay")) {
+  if (!PROGRAMS[id]) throw new Error(`unknown program ${id}: studio, reviewer, notes or relay`);
   build(id);
 }
