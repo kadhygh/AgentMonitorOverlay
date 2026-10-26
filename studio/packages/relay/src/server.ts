@@ -1,0 +1,276 @@
+import { createHash, timingSafeEqual } from "node:crypto";
+import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type { AddressInfo } from "node:net";
+import { WebSocketServer, type WebSocket } from "ws";
+import { RELAY_APP, RELAY_VERSION, type Health, type Member, type Message, type RelayEvent, type Thread } from "./protocol.js";
+import { RelayError, type RelayStore } from "./store.js";
+
+// The relay service (plans/relay.md): HTTP for everything, /ws to push new messages and who is online. Joining takes
+// the team passphrase and returns a personal key; every other call carries that key (Authorization: Bearer, or ?key=
+// for the WebSocket). Any origin may call it — the key, not a cookie, is the credential — so a tray program's page
+// served from 127.0.0.1 can reach a service on another machine.
+
+export interface RelayServerOptions {
+  store: RelayStore;
+  passphrase: string;
+  /** Shown to clients, e.g. 「策划组」. */
+  name?: string;
+  host?: string;
+  port?: number;
+}
+
+export interface RelayServer {
+  url: string;
+  port: number;
+  close(): Promise<void>;
+}
+
+const STATUS: Record<RelayError["code"], number> = { bad_request: 400, unauthorized: 401, forbidden: 403, not_found: 404, conflict: 409 };
+const MAX_BODY = 4 * 1024 * 1024;
+const MAX_WAIT = 10 * 60_000;
+
+const digest = (s: string) => createHash("sha256").update(s).digest();
+const samePassphrase = (a: string, b: string) => timingSafeEqual(digest(a), digest(b));
+
+function send(res: ServerResponse, status: number, body: unknown): void {
+  res.writeHead(status, { "content-type": "application/json; charset=utf-8", "cache-control": "no-store" });
+  res.end(JSON.stringify(body));
+}
+
+function readJson(req: IncomingMessage): Promise<Record<string, unknown>> {
+  return new Promise((ok, fail) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    req.on("data", (c: Buffer) => {
+      size += c.length;
+      if (size > MAX_BODY) {
+        fail(new RelayError("bad_request", "内容太大"));
+        req.destroy();
+        return;
+      }
+      chunks.push(c);
+    });
+    req.on("end", () => {
+      const raw = Buffer.concat(chunks).toString("utf8");
+      if (!raw) return ok({});
+      try {
+        const o = JSON.parse(raw) as unknown;
+        ok(o && typeof o === "object" && !Array.isArray(o) ? (o as Record<string, unknown>) : {});
+      } catch {
+        fail(new RelayError("bad_request", "不是有效的 JSON"));
+      }
+    });
+    req.on("error", fail);
+  });
+}
+
+function keyOf(req: IncomingMessage, url: URL): string | null {
+  const auth = req.headers.authorization;
+  if (auth?.startsWith("Bearer ")) return auth.slice(7).trim() || null;
+  return url.searchParams.get("key");
+}
+
+interface Waiter {
+  name: string;
+  threadId: string | null;
+  after: number;
+  done(messages: Message[]): void;
+}
+
+export async function startRelayServer(opts: RelayServerOptions): Promise<RelayServer> {
+  const { store } = opts;
+  const serviceName = opts.name?.trim() || "AMO 中转";
+  if (!opts.passphrase) throw new Error("relay: a team passphrase is required");
+  const sockets = new Map<string, Set<WebSocket>>();
+  const lastSeen = new Map<string, number>();
+  const waiters = new Set<Waiter>();
+  let closing = false;
+
+  const members = (): Member[] =>
+    store.members().map((m) => ({ ...m, online: (sockets.get(m.name)?.size ?? 0) > 0, lastSeen: lastSeen.get(m.name) ?? 0 }));
+
+  const push = (names: Iterable<string>, event: RelayEvent) => {
+    const data = JSON.stringify(event);
+    for (const n of names) for (const ws of sockets.get(n) ?? []) if (ws.readyState === ws.OPEN) ws.send(data);
+  };
+  const pushAll = (event: RelayEvent) => push(sockets.keys(), event);
+  /** Who is online changed; not while closing, when the store may already be shut. */
+  const pushMembers = () => {
+    if (!closing) pushAll({ type: "members", members: members() });
+  };
+
+  /** A new message: to the thread's members, and to the waits it answers (not the author's own). */
+  const announce = (thread: Thread, message: Message) => {
+    push(thread.members, { type: "message", thread, message });
+    for (const w of [...waiters]) {
+      if (w.name === message.author || !thread.members.includes(w.name)) continue;
+      if (w.threadId && w.threadId !== thread.id) continue;
+      if (message.seq <= w.after) continue;
+      w.done([message]);
+    }
+  };
+
+  const auth = (req: IncomingMessage, url: URL): string => {
+    const key = keyOf(req, url);
+    const name = key ? store.memberByKey(key) : null;
+    if (!name) throw new RelayError("unauthorized", "身份钥匙无效，请重新加入");
+    lastSeen.set(name, Date.now());
+    return name;
+  };
+
+  async function route(req: IncomingMessage, res: ServerResponse, url: URL): Promise<void> {
+    const method = req.method ?? "GET";
+    const path = url.pathname;
+    if (method === "GET" && path === "/api/health") {
+      const health: Health = { app: RELAY_APP, version: RELAY_VERSION, name: serviceName };
+      return send(res, 200, health);
+    }
+    if (method === "POST" && path === "/api/join") {
+      const body = await readJson(req);
+      if (typeof body.passphrase !== "string" || !samePassphrase(body.passphrase, opts.passphrase)) throw new RelayError("unauthorized", "团队口令不对");
+      const joined = store.join(body.name, body.role);
+      pushMembers();
+      return send(res, 200, joined);
+    }
+
+    const me = auth(req, url);
+    if (method === "GET" && path === "/api/me") return send(res, 200, { name: me, service: serviceName, role: store.members().find((m) => m.name === me)?.role ?? "" });
+    if (method === "PATCH" && path === "/api/me") {
+      const body = await readJson(req);
+      store.setRole(me, body.role);
+      pushMembers();
+      return send(res, 200, { ok: true });
+    }
+    if (method === "GET" && path === "/api/members") return send(res, 200, { members: members() });
+    if (method === "GET" && path === "/api/threads") return send(res, 200, { threads: store.threadsFor(me) });
+    if (method === "POST" && path === "/api/threads/direct") {
+      const body = await readJson(req);
+      return send(res, 200, { thread: store.direct(me, body.with) });
+    }
+    if (method === "POST" && path === "/api/requests") {
+      const body = await readJson(req);
+      const out = store.createRequest(me, body as never);
+      announce(out.thread, out.message);
+      return send(res, 200, out);
+    }
+    if (method === "GET" && path === "/api/wait") {
+      const threadId = url.searchParams.get("thread") || null;
+      const after = Number(url.searchParams.get("after") ?? 0) || 0;
+      const timeout = Math.max(0, Math.min(Number(url.searchParams.get("timeout") ?? 60_000) || 0, MAX_WAIT));
+      // What already came while the caller was away answers at once.
+      const pending = threadId
+        ? store.messages(threadId, me, after).filter((m) => m.author !== me)
+        : store.threadsFor(me).flatMap((t) => (t.lastSeq > after ? store.messages(t.id, me, after).filter((m) => m.author !== me) : []));
+      if (pending.length || timeout === 0) return send(res, 200, { messages: pending.sort((a, b) => a.seq - b.seq) });
+      await new Promise<void>((resolve) => {
+        const w: Waiter = {
+          name: me,
+          threadId,
+          after,
+          done: (messages) => {
+            clearTimeout(timer);
+            waiters.delete(w);
+            if (!res.writableEnded) send(res, 200, { messages });
+            resolve();
+          },
+        };
+        const timer = setTimeout(() => w.done([]), timeout);
+        waiters.add(w);
+        req.on("close", () => {
+          if (!res.writableEnded) w.done([]);
+        });
+      });
+      return;
+    }
+
+    const m = /^\/api\/threads\/([^/]+)(\/messages|\/read)?$/.exec(path);
+    if (m) {
+      const id = decodeURIComponent(m[1]!);
+      if (method === "GET" && !m[2]) return send(res, 200, { thread: store.thread(id, me) });
+      if (method === "GET" && m[2] === "/messages") {
+        const after = Number(url.searchParams.get("after") ?? 0) || 0;
+        const limit = Number(url.searchParams.get("limit") ?? 200) || 200;
+        return send(res, 200, { thread: store.thread(id, me), messages: store.messages(id, me, after, limit) });
+      }
+      if (method === "POST" && m[2] === "/messages") {
+        const body = await readJson(req);
+        const out = store.addMessage(id, me, body as never);
+        announce(out.thread, out.message);
+        return send(res, 200, out);
+      }
+      if (method === "POST" && m[2] === "/read") {
+        const body = await readJson(req);
+        const readSeq = store.markRead(id, me, typeof body.seq === "number" ? body.seq : undefined);
+        push([me], { type: "read", threadId: id, readSeq });
+        return send(res, 200, { readSeq });
+      }
+    }
+    throw new RelayError("not_found", `没有这个接口：${method} ${path}`);
+  }
+
+  const server = createServer((req, res) => {
+    res.setHeader("access-control-allow-origin", "*");
+    res.setHeader("access-control-allow-headers", "authorization, content-type");
+    res.setHeader("access-control-allow-methods", "GET, POST, PATCH, OPTIONS");
+    if (req.method === "OPTIONS") {
+      res.writeHead(204);
+      res.end();
+      return;
+    }
+    const url = new URL(req.url ?? "/", "http://relay");
+    route(req, res, url).catch((err: unknown) => {
+      if (res.headersSent) return;
+      if (err instanceof RelayError) send(res, STATUS[err.code], { error: err.code, message: err.message });
+      else send(res, 500, { error: "internal", message: err instanceof Error ? err.message : String(err) });
+    });
+  });
+
+  const wss = new WebSocketServer({ noServer: true });
+  server.on("upgrade", (req, socket, head) => {
+    const url = new URL(req.url ?? "/", "http://relay");
+    let name: string;
+    try {
+      if (url.pathname !== "/ws") throw new RelayError("not_found", "");
+      name = auth(req, url);
+    } catch {
+      socket.write("HTTP/1.1 401 Unauthorized\r\n\r\n");
+      socket.destroy();
+      return;
+    }
+    wss.handleUpgrade(req, socket, head, (ws) => {
+      const set = sockets.get(name) ?? new Set();
+      const wasOnline = set.size > 0;
+      set.add(ws);
+      sockets.set(name, set);
+      ws.send(JSON.stringify({ type: "hello", me: name } satisfies RelayEvent));
+      if (!wasOnline) pushMembers();
+      ws.on("close", () => {
+        set.delete(ws);
+        lastSeen.set(name, Date.now());
+        if (!set.size) {
+          sockets.delete(name);
+          pushMembers();
+        }
+      });
+    });
+  });
+
+  await new Promise<void>((resolve, reject) => {
+    server.once("error", reject);
+    server.listen(opts.port ?? 0, opts.host ?? "0.0.0.0", () => resolve());
+  });
+  const port = (server.address() as AddressInfo).port;
+  const shownHost = !opts.host || opts.host === "0.0.0.0" ? "127.0.0.1" : opts.host;
+  return {
+    url: `http://${shownHost}:${port}`,
+    port,
+    close: async () => {
+      closing = true;
+      for (const w of [...waiters]) w.done([]);
+      for (const set of sockets.values()) for (const ws of set) ws.terminate();
+      wss.close();
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => server.close(() => resolve()));
+    },
+  };
+}

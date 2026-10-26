@@ -6,6 +6,7 @@
     { "path": "packages/host" },
     { "path": "packages/reviewer" },
     { "path": "packages/app" },
-    { "path": "packages/notes" }
+    { "path": "packages/notes" },
+    { "path": "packages/relay" }
   ]
 }

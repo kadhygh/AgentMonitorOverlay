@@ -1,0 +1,28 @@
+{
+  "name": "@amo-studio/relay",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "engines": {
+    "node": ">=22.13"
+  },
+  "bin": {
+    "amo-relay": "dist/bin.js"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.32.1",
+    "ws": "8.21.3",
+    "zod": "4.6.6"
+  },
+  "devDependencies": {
+    "@types/ws": "8.18.2"
+  }
+}

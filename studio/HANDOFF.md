@@ -2,6 +2,8 @@
 
 给下一个会话看的起点。先读这份，再按需读下面列出的文件。
 
+**2026-10-26 · AMO 中转（`packages/relay`）开工**：让 AI 会话把请求发给团队里的人（比如策划的 AI 去问程序），人和人之间也能直接聊，记录存在服务上。中转服务跑在 Mac 上。计划和进度见 `plans/relay.md`，用户的决定记在 memory `relay-decisions`，用法见 `packages/relay/README.md`。现在已经有服务、命令行和 MCP，托盘程序还没做（先在画布上出界面）。
+
 **2026-10-23 晚 · 用户出门期间整体推进（回来一起审）**：决定记在 memory `studio-reviewer-standalone`，计划和进度见 `plans/reviewer-standalone.md`。
 
 - **e2e 按程序分开**：`e2e/studio`、`e2e/notes`、`e2e/reviewer` 是三个 Playwright project，共用的启动工具放在 `e2e/support`。
