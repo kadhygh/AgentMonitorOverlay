@@ -371,6 +371,13 @@ test("Focus: 「我知道了」 counts a 完成待审核 entry as reviewed witho
   await expect(entry).toContainText("完成待审核");
   // The newest entry opens by itself.
   await expect(focus.getByTestId("focus-snippet")).toContainText("MOCK: hello review");
+  // Its title only folds and opens it (2026-10-26): it is not reviewed by that, and stays.
+  await entry.locator(".focus-row").click();
+  await expect(focus.getByTestId("focus-snippet")).toHaveCount(0);
+  await page.waitForTimeout(300);
+  await expect(entry).toHaveCount(1);
+  await entry.locator(".focus-row").click();
+  await expect(focus.getByTestId("focus-snippet")).toContainText("MOCK: hello review");
   await focus.getByTestId("focus-done").click();
   await expect(entry).toHaveCount(0);
   await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理");

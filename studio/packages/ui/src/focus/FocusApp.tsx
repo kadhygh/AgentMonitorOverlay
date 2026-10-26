@@ -49,6 +49,8 @@ export function FocusApp() {
   const host = useHostState();
   const [compact, setCompact] = useState(false);
   const [open, setOpen] = useState<string | null>(null);
+  // The entry folded by a click on its title: it stays folded (the newest otherwise opens by itself, 2026-10-26).
+  const [folded, setFolded] = useState<string | null>(null);
   const [locked, setLocked] = useState(readFocusLocked);
   const [moving, setMoving] = useState(false);
   const [pop, setPop] = useState(false);
@@ -234,7 +236,7 @@ export function FocusApp() {
     .filter((s) => !s.archivedAt && s.kind !== "sub" && !under(s) && (s.status === "running" || runningSubs(s.id, subs).length > 0) && !needsPerson(s.status) && !pinnedTask(s))
     .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt));
   const shown = list.filter((s) => !isPinned(s));
-  const openId = open && shown.some((s) => s.id === open) ? open : (shown[0]?.id ?? null);
+  const openId = open && shown.some((s) => s.id === open) ? open : shown[0] && shown[0].id !== folded ? shown[0].id : null;
   const pinOf = (s: Session) => (s.taskId ? () => pins.toggle(s.taskId!) : undefined);
   const toggleSubs = (s: Session) => () => subsOpen.toggle(s.id);
   const title = (s: Session) => state.tasks.find((t) => t.id === s.taskId)?.title || "未命名任务";
@@ -435,13 +437,15 @@ export function FocusApp() {
                 open={s.id === openId}
                 finished={!waiting.includes(s)}
                 toReview={isToReview(s, waiting)}
+                // The row only opens and folds (2026-10-26: a click on a 完成待审核 title took it off the list, as if
+                // reviewed). Only 我知道了 and 在工作台打开 count as reviewed.
                 onToggle={() => {
-                  setOpen(s.id === openId ? "" : s.id);
-                  if (!waiting.includes(s)) noteSeen([s.id]);
+                  setOpen(s.id === openId ? null : s.id);
+                  setFolded(s.id === openId ? s.id : null);
                 }}
                 onDone={() => {
                   noteSeen([s.id]);
-                  setOpen("");
+                  setOpen(null);
                 }}
                 pin={s.taskId ? <PinButton pinned={false} onToggle={() => pins.toggle(s.taskId!)} /> : undefined}
               />

@@ -45,8 +45,8 @@ test("Focus shows what works now and what needed the person lately; a reply endi
   await expect(records.first()).toContainText("调掉落");
   await expect(records.first()).toContainText("完成待审核 · 未处理");
 
-  // Looked at in Focus: it leaves the list; its record stays, handled.
-  await entry.getByRole("button").first().click();
+  // 我知道了 in Focus: it leaves the list; its record stays, handled. (Its title alone only folds it, 2026-10-26.)
+  await entry.getByTestId("focus-done").click();
   await expect(entry).toHaveCount(0, { timeout: 15_000 });
   await expect(records.first()).toContainText("完成待审核 · 已处理");
   await screenshot(app, "stage-18", "S18-focus-history", focus, "focus");
