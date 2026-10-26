@@ -242,7 +242,7 @@ pm`，用户说本机没装就不管，不走 npx），padding 0，改前备份 
 > - 阶段 10：组织结构 v2、编辑部风格界面、草稿任务页、改名、@ 任务、左栏置顶和折叠、订阅用量都已提交到 `studio/main`（最后是 `a847158`，新图标"取景框"）。剩下的见 `plans/stage-10.md`（S10-06 专题页、S10-08 留言实测、S10-09 草稿区）。
 > - 重构：用户同意 `design/architecture-review-2026-10.md` 的 R1–R4，文末"实际做法"写了结果。**代码现在按功能分目录**：Host 在 `packages/host/src/features/<名字>/`（`service.ts`、`routes.ts`、`mcp.ts`），清单 `features/index.ts`；界面在 `packages/ui/src/<名字>/`（页面、`view.tsx`、样式），清单 `ui/src/features.ts`，样式顺序在 `main.tsx`。设置 → 功能 可以关掉扩展包、整体待办与调度。
 > - 重构由用户同意直接合回（2026-10-13），用户之后自己验证，有问题再改。分支 `studio/stage-11-modules` 保留未删。
-> - 图标源文件 `design/icon/mascot-purple/02-happy.png`（10-26 起：用户给的素材包 `out/assets/set-01-purple-a-v1.zip`，第一套紫色短发的「开心」；6 个表情的 512px 原图都在这个目录，`preview.png` 是对照；原来的取景框 `viewfinder.svg` 留着没用了，便签的 `notes.html` 还用 `icon.svg`）。改完运行 `node scripts/make-icons.mjs` 生成 `app/assets/icon.png`（窗口）、`icon.ico`（exe）和 `ui/public/icon.png`（左上角、Focus、运行中的小人、网页图标）。
+> - 图标（10-26 起）：用户给的素材包 `out/assets/` 第三套钴蓝侧分（`set-03-blue`）自带的「开心」图标，放在 `design/icon/mascot-blue/icon/`（`amo-studio.ico` 多尺寸 + 各尺寸 PNG）；6 个表情的 512px 原图在 `design/icon/mascot-blue/`，`preview.png` 是对照。改了运行 `node scripts/make-icons.mjs`，它把图标复制到 `app/assets/icon.png`（窗口）、`icon.ico`（exe）和 `ui/public/icon.png`（左上角、Focus、运行中的小人、网页图标）。原来的取景框 `viewfinder.svg` 留着没用了，便签的 `notes.html` 还用 `icon.svg`。
 
 ## 1. 在哪、怎么跑
 
