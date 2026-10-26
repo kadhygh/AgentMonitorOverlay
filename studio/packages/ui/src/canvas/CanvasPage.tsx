@@ -422,8 +422,10 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     else setNotice({ text: "这个会话不在任何任务里，任务页打不开它", error: true });
   };
   const setItemStatus = (id: Id, status: ReviewStatus) => edit((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === id && n.kind === "item" ? { ...n, status } : n)) }));
+  /** An item goes with the bubbles still out on it. */
   const deleteItem = (id: Id) => {
     edit((d) => ({ ...d, nodes: d.nodes.filter((n) => n.id !== id) }));
+    for (const c of callouts) if (c.target === id && c.state !== "closed") closeCallout(c);
     if (selection?.kind === "node" && selection.id === id) setSelectionState(null);
   };
   /** 就这条展开聊: a new session on this item, opened at once. */
