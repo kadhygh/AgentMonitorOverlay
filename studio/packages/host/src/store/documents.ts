@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import type { ViewPack, Annotation, CanvasDoc, ChatMark, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, Relay, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
+import type { ViewPack, Annotation, CanvasCallout, CanvasDoc, ChatMark, ChecklistItem, DecisionRequest, FileMark, GitReviewComment, Id, MailMessage, ScheduleProposal, Relay, TaskNote, TaskPlan, TodoItem, TopicDoc } from "@amo-studio/protocol";
 import { str, type Row } from "./rows.js";
 
 /**
@@ -183,6 +183,26 @@ export abstract class DocumentStore {
 
   deleteChatMark(id: Id): void {
     this.db.prepare("DELETE FROM chat_marks WHERE id = ?").run(id);
+  }
+
+  // 画布审阅 (2026-10-27)
+
+  putCallout(c: CanvasCallout): void {
+    this.db
+      .prepare("INSERT INTO canvas_callouts (id, topic_id, state, created_at, body) VALUES (?, ?, ?, ?, ?) ON CONFLICT(id) DO UPDATE SET state = excluded.state, body = excluded.body")
+      .run(c.id, c.topicId, c.state, c.createdAt, JSON.stringify(c));
+  }
+
+  getCallout(id: Id): CanvasCallout | undefined {
+    const r = this.db.prepare("SELECT body FROM canvas_callouts WHERE id = ?").get(id) as Row | undefined;
+    return r && (JSON.parse(str(r.body)) as CanvasCallout);
+  }
+
+  /** A topic's bubbles still out (open or answered), oldest first, then the `closed` most recently made closed ones. */
+  listCallouts(topicId: Id, closed = 0): CanvasCallout[] {
+    const out = this.db.prepare("SELECT body FROM canvas_callouts WHERE topic_id = ? AND state != 'closed' ORDER BY created_at, id").all(topicId) as Row[];
+    const done = closed ? (this.db.prepare("SELECT body FROM canvas_callouts WHERE topic_id = ? AND state = 'closed' ORDER BY created_at DESC, id DESC LIMIT ?").all(topicId, closed) as Row[]) : [];
+    return [...out, ...done].map((r) => JSON.parse(str(r.body)) as CanvasCallout);
   }
 
   putCanvas(doc: CanvasDoc): void {

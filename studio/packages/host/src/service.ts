@@ -26,6 +26,7 @@ import { FilesFeature } from "./features/files/service.js";
 import { OpenInFeature } from "./features/openin/service.js";
 import { MarksFeature } from "./features/marks/service.js";
 import { TopicDocsFeature } from "./features/topicdocs/service.js";
+import { CanvasReviewFeature } from "./features/canvasreview/service.js";
 import { TaskPlansFeature } from "./features/taskplans/service.js";
 import { RelaysFeature } from "./features/relays/service.js";
 import { ChatFilesFeature } from "./features/chatfiles/service.js";
@@ -51,6 +52,7 @@ export class HostService extends EventEmitter<HostServiceEvents> {
   readonly planning = new PlanningFeature(this);
   readonly collab = new CollabFeature(this);
   readonly canvases = new CanvasFeature(this);
+  readonly canvasReview = new CanvasReviewFeature(this);
   readonly review = new ReviewFeature(this);
   readonly extensions = new PacksFeature(this);
   readonly attachments = new AttachmentsFeature(this);

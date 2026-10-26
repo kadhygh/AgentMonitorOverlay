@@ -334,4 +334,15 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX view_packs_session ON view_packs(session_id, updated_at);
   `,
+  // 22: 画布审阅 (2026-10-27): agents' remarks and questions on a topic's canvas cards, beside the canvas document.
+  `
+  CREATE TABLE canvas_callouts (
+    id TEXT PRIMARY KEY,
+    topic_id TEXT NOT NULL,
+    state TEXT NOT NULL,
+    created_at TEXT NOT NULL,
+    body TEXT NOT NULL
+  );
+  CREATE INDEX canvas_callouts_topic ON canvas_callouts(topic_id, state, created_at);
+  `,
 ];

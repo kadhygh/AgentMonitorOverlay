@@ -16,6 +16,8 @@ import { collabRoutes } from "./collab/routes.js";
 import { collabTools } from "./collab/mcp.js";
 import { canvasRoutes } from "./canvas/routes.js";
 import { canvasTools } from "./canvas/mcp.js";
+import { canvasReviewRoutes } from "./canvasreview/routes.js";
+import { canvasReviewTools } from "./canvasreview/mcp.js";
 import { reviewRoutes } from "./review/routes.js";
 import { packsRoutes } from "./packs/routes.js";
 import { packsTools } from "./packs/mcp.js";
@@ -66,6 +68,7 @@ export const FEATURES: readonly HostFeature[] = [
   { name: "planning", routes: planningRoutes, tools: planningTools },
   { name: "collab", routes: collabRoutes, tools: collabTools },
   { name: "canvas", routes: canvasRoutes, tools: canvasTools },
+  { name: "canvasreview", routes: canvasReviewRoutes, tools: canvasReviewTools },
   { name: "review", routes: reviewRoutes },
   { name: "packs", routes: packsRoutes, tools: packsTools },
   { name: "attachments", routes: attachmentsRoutes },

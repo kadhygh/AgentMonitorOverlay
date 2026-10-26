@@ -256,6 +256,6 @@ export class ReadModel {
 
   /** A topic's canvas as structure: groups, tasks, notes, dependencies; no coordinates. */
   canvasRead(topic?: string) {
-    return this.service.canvases.canvasOutline(this.topic(topic).id);
+    return this.service.canvases.canvasOutline(this.topic(topic).id, this.caller?.sessionId ?? null);
   }
 }

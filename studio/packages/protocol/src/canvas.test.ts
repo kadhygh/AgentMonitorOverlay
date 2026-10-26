@@ -111,9 +111,10 @@ describe("canvasOutline", () => {
         tasks: [{ id: "task-1", title: "Add retry to the importer", column: "doing", status: "awaiting-approval", workspace: "alpha", dependsOn: ["task-2"] }],
         refs: [],
         notes: [{ id: "n2", text: "先问策划" }],
+        items: [],
       },
     ]);
-    expect(json.ungrouped).toEqual({ tasks: [], refs: [], notes: [{ id: "n3", text: "零散想法" }] });
+    expect(json.ungrouped).toEqual({ tasks: [], refs: [], notes: [{ id: "n3", text: "零散想法" }], items: [] });
     expect(json.unplaced.map((t) => [t.id, t.workspace])).toEqual([["task-2", "beta"]]);
     expect(json.dependencies).toEqual([{ from: "task-2", to: "task-1" }]);
     expect(outline).toContain("分组「导入」（工作区 alpha）");

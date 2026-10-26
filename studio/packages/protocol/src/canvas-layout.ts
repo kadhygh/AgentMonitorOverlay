@@ -1,5 +1,5 @@
 import { wouldCycle } from "./canvas.js";
-import type { CanvasDoc, CanvasGroup, Rect, Id } from "./entities.js";
+import type { CanvasDoc, CanvasGroup, CanvasItem, Rect, Id } from "./entities.js";
 
 // Where things go when an agent (through the AMO MCP) changes the canvas: agents never write coordinates, Studio lays
 // out. Sizes match the workbench canvas (task card 220×66, group header 30).
@@ -85,4 +85,77 @@ export function removeTask(doc: CanvasDoc, taskId: Id): CanvasDoc {
     nodes: doc.nodes.filter((n) => !(n.kind === "task" && n.taskId === taskId)),
     edges: doc.edges.filter((e) => e.from !== taskId && e.to !== taskId),
   };
+}
+
+// 画布审阅 (2026-10-27): review items laid out in a grid of ITEM_COLS, in their own group or one that exists.
+
+/** A review item's card (the workbench draws it this size). */
+export const ITEM_CARD = { w: 240, h: 124 } as const;
+const ITEM_COLS = 4;
+
+export type NewItem = Pick<CanvasItem, "title" | "status"> & Partial<Pick<CanvasItem, "body" | "refs" | "sessionId" | "conclusion">>;
+
+/** The next free #n on the canvas. */
+export const nextItemNum = (doc: CanvasDoc) => doc.nodes.reduce((n, x) => (x.kind === "item" ? Math.max(n, x.num) : n), 0) + 1;
+
+function itemSlot(origin: { x: number; y: number }, index: number) {
+  const col = index % ITEM_COLS;
+  const row = Math.floor(index / ITEM_COLS);
+  return { x: origin.x + col * (ITEM_CARD.w + LAYOUT.gap), y: origin.y + row * (ITEM_CARD.h + LAYOUT.gap) };
+}
+
+/**
+ * Lays review items out: in a new group titled `group.title` (to the right of everything), at the end of an existing
+ * group `group.id` (it grows to fit), or below everything ungrouped. Numbers continue after the canvas's highest.
+ */
+export function addItems(doc: CanvasDoc, group: { id: Id; title?: string } | null, items: readonly NewItem[], newNodeId: () => Id): { doc: CanvasDoc; items: CanvasItem[] } {
+  if (!items.length) throw new CanvasLayoutError("no items to place");
+  let num = nextItemNum(doc);
+  const make = (item: NewItem, groupId: Id | null, pos: { x: number; y: number }): CanvasItem => ({
+    id: newNodeId(),
+    kind: "item",
+    num: num++,
+    title: item.title,
+    status: item.status,
+    ...(item.body ? { body: item.body } : {}),
+    ...(item.conclusion ? { conclusion: item.conclusion } : {}),
+    ...(item.refs?.length ? { refs: [...item.refs] } : {}),
+    sessionId: item.sessionId ?? null,
+    groupId,
+    pos,
+  });
+  const span = (count: number) => ({
+    w: Math.min(count, ITEM_COLS) * (ITEM_CARD.w + LAYOUT.gap) - LAYOUT.gap,
+    h: Math.ceil(count / ITEM_COLS) * (ITEM_CARD.h + LAYOUT.gap) - LAYOUT.gap,
+  });
+  if (!group) {
+    const bottoms = [...doc.groups.map((g) => bottom(g.rect)), ...doc.nodes.map((n) => n.pos.y + (n.kind === "item" ? ITEM_CARD.h : LAYOUT.card.h))];
+    const origin = { x: LAYOUT.margin, y: (bottoms.length ? Math.max(...bottoms) : 0) + LAYOUT.margin };
+    const placed = items.map((it, i) => make(it, null, itemSlot(origin, i)));
+    return { doc: { ...doc, nodes: [...doc.nodes, ...placed] }, items: placed };
+  }
+  const existing = doc.groups.find((g) => g.id === group.id);
+  if (!existing) {
+    if (!group.title) throw new CanvasLayoutError(`group ${group.id} not found`);
+    const at = placeNewGroup(doc);
+    const size = span(items.length);
+    const rect = { x: at.x, y: at.y, w: size.w + LAYOUT.pad * 2, h: LAYOUT.header + LAYOUT.pad * 2 + size.h };
+    const origin = { x: rect.x + LAYOUT.pad, y: rect.y + LAYOUT.header + LAYOUT.pad };
+    const placed = items.map((it, i) => make(it, group.id, itemSlot(origin, i)));
+    return { doc: { ...doc, groups: [...doc.groups, { id: group.id, title: group.title, workspaceId: null, rect }], nodes: [...doc.nodes, ...placed] }, items: placed };
+  }
+  // After what the group holds: a new row under its lowest card.
+  const members = doc.nodes.filter((n) => n.groupId === existing.id);
+  const lowest = members.length ? Math.max(...members.map((n) => n.pos.y + (n.kind === "item" ? ITEM_CARD.h : LAYOUT.card.h))) + LAYOUT.gap : existing.rect.y + LAYOUT.header + LAYOUT.pad;
+  const origin = { x: existing.rect.x + LAYOUT.pad, y: lowest };
+  const placed = items.map((it, i) => make(it, existing.id, itemSlot(origin, i)));
+  const size = span(items.length);
+  const rect = { ...existing.rect, w: Math.max(existing.rect.w, size.w + LAYOUT.pad * 2), h: Math.max(existing.rect.h, origin.y + size.h + LAYOUT.pad - existing.rect.y) };
+  return { doc: { ...doc, groups: doc.groups.map((g) => (g.id === existing.id ? { ...g, rect } : g)), nodes: [...doc.nodes, ...placed] }, items: placed };
+}
+
+/** An item by its id, "#3" or "3". */
+export function findItem(doc: CanvasDoc, ref: string): CanvasItem | undefined {
+  const m = /^#?(\d+)$/.exec(ref.trim());
+  return doc.nodes.find((n): n is CanvasItem => n.kind === "item" && (m ? n.num === Number(m[1]) : n.id === ref.trim()));
 }

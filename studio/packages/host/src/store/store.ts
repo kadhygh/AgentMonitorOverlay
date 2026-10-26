@@ -379,6 +379,7 @@ export class Store extends DocumentStore {
       if (sessions.size) this.db.prepare(`DELETE FROM sessions WHERE id IN (${[...sessions].map(() => "?").join(", ")})`).run(...sessions);
       each(tasks, "DELETE FROM tasks WHERE id = ?");
       each(topics, "DELETE FROM canvas_docs WHERE id = ?");
+      each(topics, "DELETE FROM canvas_callouts WHERE topic_id = ?");
       each(topics, "DELETE FROM topic_docs WHERE topic_id = ?");
       // 书签 of a deleted topic stay, under 未归专题 (the body carries the topic too).
       for (const m of this.listFileMarks()) if (m.topicId && topics.has(m.topicId)) this.putFileMark({ ...m, topicId: null });
@@ -386,11 +387,11 @@ export class Store extends DocumentStore {
       // Cards and dependencies of the deleted tasks on the canvases that stay.
       for (const r of this.db.prepare("SELECT body FROM canvas_docs").all() as Row[]) {
         const doc = JSON.parse(str(r.body)) as CanvasDoc;
-        if (!doc.nodes.some((n) => n.kind !== "note" && tasks.has(n.taskId))) continue;
+        if (!doc.nodes.some((n) => (n.kind === "task" || n.kind === "ref") && tasks.has(n.taskId))) continue;
         this.putCanvas({
           ...doc,
           version: doc.version + 1,
-          nodes: doc.nodes.filter((n) => n.kind === "note" || !tasks.has(n.taskId)),
+          nodes: doc.nodes.filter((n) => (n.kind !== "task" && n.kind !== "ref") || !tasks.has(n.taskId)),
           edges: doc.edges.filter((e) => !tasks.has(e.from) && !tasks.has(e.to)),
           updatedAt: this.timestamp(),
         });

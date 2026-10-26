@@ -511,7 +511,80 @@ export const isCanvasColor = (v: unknown): v is CanvasColor => CANVAS_COLORS.som
 export type CanvasNode =
   | { id: Id; kind: "task"; taskId: Id; groupId: Id | null; pos: Point; color?: CanvasColor }
   | { id: Id; kind: "note"; text: string; groupId: Id | null; pos: Point; color?: CanvasColor }
-  | { id: Id; kind: "ref"; taskId: Id; groupId: Id | null; pos: Point; color?: CanvasColor };
+  | { id: Id; kind: "ref"; taskId: Id; groupId: Id | null; pos: Point; color?: CanvasColor }
+  | CanvasItem;
+
+/** 审阅条目的状态 (画布审阅, 2026-10-27). */
+export type ReviewStatus = "todo" | "confirmed" | "discuss" | "parked" | "done";
+export const REVIEW_STATUSES: ReadonlyArray<{ id: ReviewStatus; label: string }> = [
+  { id: "todo", label: "待看" },
+  { id: "confirmed", label: "已确认" },
+  { id: "discuss", label: "要讨论" },
+  { id: "parked", label: "搁置" },
+  { id: "done", label: "完成" },
+];
+export const isReviewStatus = (v: unknown): v is ReviewStatus => REVIEW_STATUSES.some((s) => s.id === v);
+export const REVIEW_TITLE_MAX = 200;
+export const REVIEW_BODY_MAX = 20_000;
+
+/**
+ * 审阅条目 (画布审阅, 2026-10-27): one point of a review an agent laid out on its topic's canvas (canvas_items_post),
+ * numbered within the canvas. The person and agents change its status; an agent writes the conclusion. `threads`:
+ * sessions started to talk this one point over (就这条展开聊).
+ */
+export interface CanvasItem {
+  id: Id;
+  kind: "item";
+  /** #n on the canvas, never reused. */
+  num: number;
+  title: string;
+  /** Markdown. */
+  body?: string;
+  status: ReviewStatus;
+  conclusion?: string;
+  /** Files, commits or links the point is about. */
+  refs?: string[];
+  /** The session that laid it out; null when the person made it. */
+  sessionId: Id | null;
+  threads?: Id[];
+  groupId: Id | null;
+  pos: Point;
+  color?: CanvasColor;
+}
+
+/** 说明 (a remark the card is highlighted with) or 问题 (waits for the person's answer). */
+export type CalloutKind = "note" | "question";
+export const CALLOUT_TEXT_MAX = 2_000;
+export const CALLOUT_DETAIL_MAX = 20_000;
+export const CALLOUT_OPTIONS_MAX = 6;
+
+/**
+ * 画布气泡 (画布审阅, 2026-10-27): an agent's remark or question pinned to a card of its topic's canvas — the W3C Web
+ * Annotation idea of a target, a body and a purpose. Kept beside the canvas document (not in it), so an agent's
+ * bubbles never race the person's dragging for the canvas version.
+ *
+ * `target`: a task id (its card), or the id of an item, note, reference card or group. An answer goes to `sessionId` as
+ * a message; the bubble then shows small (answered) until the agent or the person closes it.
+ */
+export interface CanvasCallout {
+  id: Id;
+  topicId: Id;
+  target: Id;
+  kind: CalloutKind;
+  text: string;
+  /** Markdown shown when it is opened. */
+  detail?: string;
+  /** Answers to pick from (a question only). */
+  options?: string[];
+  /** The agent finds it too involved for a short answer: the conversation is offered first. */
+  deep?: boolean;
+  /** Who wrote it; null when the person did. */
+  sessionId: Id | null;
+  state: "open" | "answered" | "closed";
+  answer?: { text: string; at: Timestamp; /** How it reached the session; "none" when the session is gone. */ sent: "start" | "steer" | "queue" | "none" };
+  createdAt: Timestamp;
+  updatedAt: Timestamp;
+}
 
 /** `from` must be finished before `to` can start; both are task ids. */
 export interface CanvasEdge {

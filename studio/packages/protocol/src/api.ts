@@ -529,6 +529,17 @@ export interface HostRoutes {
    * canvas are always shown; ones created elsewhere only when the person asks. Hiding keeps the task and its dependencies.
    */
   "PUT /api/tasks/:id/canvas": { req: { onCanvas: boolean }; res: CanvasDoc };
+  /** 画布审阅 (2026-10-27): the bubbles on a topic's canvas — every open or answered one, and the last closed ones. */
+  "GET /api/topics/:id/callouts": { req: void; res: import("./entities.js").CanvasCallout[] };
+  /** The person answers a question (sent to its session as a message) or writes on a remark. */
+  "POST /api/callouts/:id/answer": { req: { text: string }; res: import("./entities.js").CanvasCallout };
+  /** Puts a bubble away. */
+  "POST /api/callouts/:id/close": { req: void; res: import("./entities.js").CanvasCallout };
+  /**
+   * 就这条展开聊: a new session to talk one item over, in the task of the session that laid it out (else the topic's
+   * 主控), beside that session; returns it. `profileId`: its model (the laying session's otherwise).
+   */
+  "POST /api/topics/:id/canvas/items/:itemId/discuss": { req: { profileId?: Id }; res: Session };
 }
 
 export type HostRoute = keyof HostRoutes;
@@ -560,6 +571,7 @@ export type HostEvent = { seq: number } & (
   | { type: "annotation.removed"; sessionId: Id; annotationId: Id }
   | { type: "scratchpad.updated"; scratchpad: Scratchpad }
   | { type: "canvas.updated"; canvas: CanvasDoc }
+  | { type: "callout.upserted"; callout: import("./entities.js").CanvasCallout }
   | { type: "todo.upserted"; todo: TodoItem }
   | { type: "todo.removed"; todoId: Id }
   | { type: "task.note.added"; note: TaskNote }

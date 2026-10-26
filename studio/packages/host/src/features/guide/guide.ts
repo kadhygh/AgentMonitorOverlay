@@ -31,7 +31,19 @@ const GUIDE: Record<GuideSection, string> = {
 
 - canvas_read：专题画布的结构（没有坐标）：分组和里面的任务、引用卡片（别的专题的任务）、便签、未分组的、还没放上去的任务、依赖。带说明和颜色。
 - canvas_group_create：建一个分组（可绑定项目）。canvas_place：把任务放进分组或拿出来。canvas_depend：连依赖（from 做完 to 才开始，不能成环）。这三个每次要人批准。
-- canvas_color：给任务卡、引用卡、便签或分组标颜色（red / yellow / green / blue，none 取消）。颜色是什么意思由人定（状态、优先级……），不要随意改人标的颜色。`,
+- canvas_color：给任务卡、引用卡、便签或分组标颜色（red / yellow / green / blue，none 取消）。颜色是什么意思由人定（状态、优先级……），不要随意改人标的颜色。
+
+## 画布审阅（要点多的审阅、调查报告）
+
+一份有很多要点的报告（一批提交的审阅、一个复杂方案的梳理）不要只写在一条长回复里：人会在长对话里丢掉焦点。放到专题画布上，人一条条确认，你们围绕卡片交流。
+
+1. canvas_items_post：一次铺多条**审阅条目**（#1、#2…），一份审阅一个分组（group 写分组标题）。每条：title 一行，body 写发现了什么、为什么重要、建议怎么做（Markdown），refs 写涉及的文件、提交。回复里只说一句「N 条已放到画布」和最要紧的一两点。
+2. canvas_callout：在卡片上**说明**（kind note：高亮这张卡，写要注意什么）或**提问**（kind question：等人回答；有几个现成答案时给 options，背景放 detail，问题复杂、要在对话里讲清楚时带 deep: true）。target 写 #n、任务 id（它的卡片）或 canvas_read 里的 id。文字一两句。
+3. 人在画布上回答后，回答会以「【画布回答】」开头的消息进你的对话。处理完用 canvas_callout_close 收起那个问题，再用 canvas_item_update 改条目状态（todo 待看 / confirmed 已确认 / discuss 要讨论 / parked 搁置 / done 完成）、写结论（conclusion，显示在卡片上）。
+4. 人也会自己改状态，或者「就这条展开聊」：为一条单独开一个会话。在那个会话里聊出结论后，用 canvas_item_update 写回这一条。
+5. canvas_read 会列出条目（状态、结论）和还没收起的说明、问题、人的回答。
+
+执行任务的会话也可以用 canvas_callout 在**自己的任务卡片**上提问，人回答后同样回到你的对话。这些都不用人批准。`,
   collab: `# 协作
 
 - mailbox_send：给一个会话、任务或专题留言；mailbox_read：读给你的留言。留言什么时候进对话由人决定。

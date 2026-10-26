@@ -9,7 +9,7 @@ export function canvasTools({ service, caller, model, ownTopic, inOwnTopic }: To
     {
       name: "canvas_read",
       title: "画布",
-      description: "A topic's canvas as structure, without coordinates (your own topic's when no topic id or title is given): groups with their tasks, reference cards (引用: tasks of other topics, with their own topic and project) and notes, ungrouped items, the topic's tasks not placed yet, and dependencies. Returns a readable outline and the same data as JSON.",
+      description: "A topic's canvas as structure, without coordinates (your own topic's when no topic id or title is given): groups with their tasks, reference cards (引用: tasks of other topics, with their own topic and project) and notes, ungrouped items, the topic's tasks not placed yet, dependencies, review items (#n, status, conclusion) and the remarks and questions on cards not put away yet, with the person's answers. Returns a readable outline and the same data as JSON.",
       inputSchema: { topic: z.string().optional() },
       readOnly: true,
       autoApprove: true,

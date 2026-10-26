@@ -107,7 +107,7 @@ export class CanvasFeature extends Feature {
     };
     this.mutateCanvas(topicId, (doc) => {
       if (doc.groups.some((g) => g.id === target)) return { ...doc, groups: doc.groups.map((g) => (g.id === target ? paint(g) : g)) };
-      const node = doc.nodes.find((n) => n.id === target || (n.kind !== "note" && n.taskId === target));
+      const node = doc.nodes.find((n) => n.id === target || ((n.kind === "task" || n.kind === "ref") && n.taskId === target));
       if (!node) throw new HostError("bad_request", `nothing on this canvas is ${target}: give a group or note id, or a task with a card here`);
       return { ...doc, nodes: doc.nodes.map((n) => (n === node ? paint(n) : n)) };
     });
@@ -136,7 +136,7 @@ export class CanvasFeature extends Feature {
   }
 
   /** Applies a change to the latest canvas and saves it (one synchronous read-modify-write, so no version race here). */
-  private mutateCanvas(topicId: Id, change: (doc: CanvasDoc) => CanvasDoc): CanvasDoc {
+  mutateCanvas(topicId: Id, change: (doc: CanvasDoc) => CanvasDoc): CanvasDoc {
     const current = this.canvas(topicId);
     let next: CanvasDoc;
     try {
@@ -148,10 +148,16 @@ export class CanvasFeature extends Feature {
     return this.saveCanvas(topicId, { ...next, version: current.version });
   }
 
-  canvasOutline(topicId: Id) {
-    return canvasOutline(this.canvas(topicId), this.topicTasks(topicId), this.store.listWorkspaces(), this.store.listSessions(), {
-      tasks: this.store.listTasks(),
-      topics: this.store.listTopics(),
-    });
+  /** `reader`: the session asking (its own bubbles are marked). */
+  canvasOutline(topicId: Id, reader: Id | null = null) {
+    return canvasOutline(
+      this.canvas(topicId),
+      this.topicTasks(topicId),
+      this.store.listWorkspaces(),
+      this.store.listSessions(),
+      { tasks: this.store.listTasks(), topics: this.store.listTopics() },
+      this.store.listCallouts(topicId),
+      reader,
+    );
   }
 }
