@@ -21,14 +21,15 @@ interface AnnotationPanelProps {
 /**
  * Right column of the task page: the pinned annotations first (sent or not), then the unsent ones (written in the
  * bubble by the selection), each referred to by the next message unless taken off, and the other sent ones folded
- * away, each of which can be referred to again.
+ * away, each of which can be referred to again. Newest first in each (2026-10-26).
  */
 export function AnnotationPanel({ annotations, busy, canSend, onEdit, onDelete, onLocate, onPin, refs, header }: AnnotationPanelProps) {
   const [showSent, setShowSent] = useState(false);
 
-  const unsent = annotations.filter((a) => !a.sentAt);
-  const pinned = annotations.filter((a) => a.pinnedAt);
-  const sent = annotations.filter((a) => a.sentAt && !a.pinnedAt);
+  const newest = [...annotations].reverse();
+  const unsent = newest.filter((a) => !a.sentAt);
+  const pinned = newest.filter((a) => a.pinnedAt);
+  const sent = newest.filter((a) => a.sentAt && !a.pinnedAt);
 
   const card = (a: Annotation) =>
     a.sentAt ? (
