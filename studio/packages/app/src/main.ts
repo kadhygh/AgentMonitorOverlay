@@ -164,6 +164,15 @@ if (!app.requestSingleInstanceLock()) {
     const [w, h] = win.getSize();
     if (w! < want && !win.isMaximized() && !win.isFullScreen()) win.setSize(want, h!);
   });
+  // 「AMO 娘」 (2026-10-26): the workbench's taskbar button shows her face for the work (ui/src/focus/mascot.ts), the
+  // app's icon otherwise. Pinned to the taskbar, Windows shows the shortcut's icon instead (not tried).
+  ipcMain.on("amo:app-icon", (event, face: unknown) => {
+    if (!mainWindow || event.sender !== mainWindow.webContents) return;
+    const file = typeof face === "string" && /^0\d-[a-z]+$/.test(face) ? join(here, "..", "assets", "mascot", `${face}.png`) : APP_ICON;
+    const icon = existsSync(file) ? file : APP_ICON;
+    if (testMode) (globalThis as { __amoAppIcon?: string }).__amoAppIcon = icon;
+    mainWindow.setIcon(icon);
+  });
   ipcMain.handle("amo:copy", (_event, text: unknown) => {
     if (typeof text !== "string") return;
     if (testMode) ((globalThis as { __amoCopied?: string[] }).__amoCopied ??= []).push(text);

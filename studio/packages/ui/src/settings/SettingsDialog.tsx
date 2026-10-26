@@ -14,7 +14,7 @@ import { FolderAccessSection } from "./FolderAccessSection.js";
 import { setScrollOnSend, setTranscriptView, TRANSCRIPT_VIEW_HINTS, TRANSCRIPT_VIEW_LABELS, useScrollOnSend, useTranscriptView, type TranscriptView } from "../chat/prefs.js";
 import { useChatSettings } from "../chat/cli/chatSettings.js";
 import { defaultFolder, setDefaultFolder } from "../lib/profiles.js";
-import { BotArt, ReaderArt } from "../focus/PixelBot.js";
+import { BotArt, MascotArt, ReaderArt } from "../focus/PixelBot.js";
 import { PET_SKINS, usePetSkin, writePetSkin, type PetSkin } from "../focus/petSkin.js";
 import { pickDirectory } from "../folders/FolderPicker.js";
 
@@ -370,10 +370,15 @@ function PetSkinRow() {
           ))}
         </div>
         <span className="settings-pet-preview" data-testid="pet-skin-preview">
-          {skin === "reader" ? <ReaderArt mood="calm" /> : <BotArt mood="calm" />}
+          {skin === "reader" ? <ReaderArt mood="calm" /> : skin === "mascot" ? <MascotArt mood="calm" /> : <BotArt mood="calm" />}
         </span>
       </div>
       <span className="settings-hint">有事时在 Focus 上冒出来提醒你；放着 5 分钟不管会生气、满屏乱飞。只影响这台电脑。</span>
+      {skin === "mascot" && (
+        <span className="settings-hint" data-testid="pet-skin-mascot-hint">
+          选了 AMO 娘，左上角、Focus 和任务栏的图标也跟着换表情：出错或等你审批是「待命」，没额度是「睿智」，有会话在跑是「认真」，只剩等你审核是「开心」，什么都没有就是原来的图标。
+        </span>
+      )}
     </>
   );
 }

@@ -1,18 +1,19 @@
 import { useEffect, useState } from "react";
 
-// Focus 桌宠的皮肤 (2026-10-15 evening): the pixel robot (default) or 「看书的 Claude 娘」. Chosen in 设置 → 界面, kept per
-// machine in localStorage, which the workbench, Focus and the flying robot's window share (same origin), so a change
-// shows everywhere at once through `storage` events.
+// Focus 桌宠的皮肤 (2026-10-15 evening): the pixel robot (default), 「看书的 Claude 娘」, or 「AMO 娘」 (10-26, mascot.ts),
+// whose faces also take over the icons. Chosen in 设置 → 界面, kept per machine in localStorage, which the workbench,
+// Focus and the flying robot's window share (same origin), so a change shows everywhere at once through `storage` events.
 
-export type PetSkin = "robot" | "reader";
-export const PET_SKINS: Record<PetSkin, string> = { robot: "像素机器人", reader: "看书的 Claude 娘" };
+export type PetSkin = "robot" | "reader" | "mascot";
+export const PET_SKINS: Record<PetSkin, string> = { robot: "像素机器人", reader: "看书的 Claude 娘", mascot: "AMO 娘（图标跟着变）" };
 
 const KEY = "amo.focusPet";
 const LOCAL_EVENT = "amo:focus-pet";
 
 export function readPetSkin(): PetSkin {
   try {
-    return localStorage.getItem(KEY) === "reader" ? "reader" : "robot";
+    const v = localStorage.getItem(KEY);
+    return v === "reader" || v === "mascot" ? v : "robot";
   } catch {
     return "robot";
   }

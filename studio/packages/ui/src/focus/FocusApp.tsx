@@ -13,6 +13,7 @@ import { ANGRY_AFTER_MS, attentionKeys, longestWait, PASSTHROUGH_INTERACTIVE, pr
 import { PixelBot, type BotMood } from "./PixelBot.js";
 import { FocusQuota } from "./FocusQuota.js";
 import { usePetSkin } from "./petSkin.js";
+import { mascotSrc, useMascotFace } from "./mascot.js";
 import { FocusEntry, isToReview, summary, TO_REVIEW } from "./FocusEntry.js";
 import { PinButton, PinnedEntry, WAITING_SUBS, WorkingEntry } from "./FocusWorking.js";
 import { PINNED_KEY, pinnedSession, SUBS_OPEN_KEY } from "./pins.js";
@@ -118,6 +119,8 @@ export function FocusApp() {
   // eslint-disable-next-line react-hooks/exhaustive-deps -- follows the ids by content
   useEffect(() => void (liveSessionsId !== null && subsOpen.keepOnly(new Set(liveSessionsId.split("|")))), [liveSessionsId]);
   const subs = live ? subsByParent(live.sessions) : new Map<string, Session[]>();
+  // 「AMO 娘」 (2026-10-26): Focus's own icon shows her face for the work, as the workbench's does.
+  const face = useMascotFace(live?.sessions ?? null, seenData);
   const waiting = live ? needsMe(live) : [];
   const finished = live ? unseenSessions(live.sessions, seenData).filter((s) => !waiting.includes(s)) : [];
   // Seen means reviewed (我知道了, 在工作台打开, or looked at in the workbench) and it leaves at once, open or not
@@ -301,7 +304,7 @@ export function FocusApp() {
           {/* Always takes clicks (a button, even under 点击穿透): brings the main window forward, where it is. The icon
               and the name are one button (2026-10-19). */}
           <button type="button" className="focus-home" aria-label="打开 AMO 主窗口" title="打开 AMO 主窗口" onClick={() => void window.amo?.openInWorkbench?.({ show: true })} data-testid="focus-home">
-            <img src="./icon.png" alt="" aria-hidden="true" />
+            <img src={face ? mascotSrc(face) : "./icon.png"} alt="" aria-hidden="true" data-testid="focus-home-icon" />
             <span className="focus-name">Focus</span>
           </button>
           <span className={needs ? "focus-needs" : "focus-dim"} data-testid="focus-needs">

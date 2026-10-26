@@ -8,6 +8,7 @@
 import { useEffect, useRef, type Ref } from "react";
 import type { PetSkin } from "./petSkin.js";
 import { READER_FRAMES, READER_H, READER_W, readerFrame } from "./readerGirl.js";
+import { mascotSrc, PET_FACE } from "./mascot.js";
 
 export type BotMood = "alert" | "calm" | "angry";
 
@@ -112,13 +113,18 @@ export function ReaderArt({ mood }: { mood: BotMood }) {
   return <canvas ref={canvas} className="pixel-bot-art reader-art" width={READER_W} height={READER_H} aria-hidden="true" data-testid="reader-art" />;
 }
 
+/** 「AMO 娘」 (2026-10-26): her face for the mood (mascot.ts). */
+export function MascotArt({ mood }: { mood: BotMood }) {
+  return <img className="pixel-bot-art mascot-art" src={mascotSrc(PET_FACE[mood])} alt="" aria-hidden="true" draggable={false} data-testid="mascot-art" />;
+}
+
 /** `artRef`: the pet's slot, which keeps still while the pet in it shakes (the flying window measures it). */
 export function PixelBot({ mood = "alert", skin = "robot", message, onClick, artRef }: { mood?: BotMood; skin?: PetSkin; message: string; onClick(): void; artRef?: Ref<HTMLSpanElement> }) {
   return (
     <button type="button" className={`pixel-bot ${mood} skin-${skin}`} onClick={onClick} title={`${message}（点一下去处理）`} aria-label={`${message}，点一下去处理`} data-testid="focus-bot">
       <span className="pixel-bot-say">{message}</span>
       <span className="pixel-bot-slot" ref={artRef}>
-        {skin === "reader" ? <ReaderArt mood={mood} /> : <BotArt mood={mood} />}
+        {skin === "reader" ? <ReaderArt mood={mood} /> : skin === "mascot" ? <MascotArt mood={mood} /> : <BotArt mood={mood} />}
       </span>
     </button>
   );

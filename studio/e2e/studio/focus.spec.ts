@@ -357,6 +357,48 @@ test("Focus 桌宠: the robot by default; 「看书的 Claude 娘」 picked in �
   await angry.click();
 });
 
+test("Focus 桌宠 「AMO 娘」: her faces on Focus, and the top-left, Focus and taskbar icons follow the work; another pet puts them back (2026-10-26)", async () => {
+  studio = await launchStudio();
+  const { page, app } = studio;
+  const appIcon = () => app.evaluate(() => (globalThis as { __amoAppIcon?: string }).__amoAppIcon ?? "");
+  const opened = app.waitForEvent("window");
+  await page.getByRole("button", { name: /^Focus/ }).click();
+  const focus = await opened;
+  await expect(focus.getByTestId("focus-needs")).toHaveText("没有待处理", { timeout: 30_000 });
+  await page.getByRole("button", { name: "设置" }).click();
+  const dialog = page.getByRole("dialog", { name: "设置" });
+  await dialog.getByRole("tab", { name: "界面" }).click();
+  await dialog.getByTestId("pet-skin-mascot").click();
+  await expect(dialog.getByTestId("mascot-art")).toBeVisible();
+  await expect(dialog.getByTestId("pet-skin-mascot-hint")).toContainText("任务栏");
+  await screenshot(app, "stage-18", "S18-pet-mascot-setting", page);
+  await page.keyboard.press("Escape");
+  // Nothing going on: the plain icon.
+  await expect(page.getByTestId("brand-mark")).toHaveAttribute("src", "./icon.png");
+
+  // Waiting for approval: 待命, everywhere; the pet pops up on Focus with that face.
+  const ws = await studio.api<Workspace>("POST", "/api/workspaces", { path: studio.workspace("alpha") });
+  await studio.api<{ task: Task; session: Session }>("POST", "/api/tasks", { title: "表情", workspaceId: ws.id, firstSession: { profileId: "codex-mock", text: "[[shell: cmd /c echo mascot]]" } });
+  await expect(page.getByTestId("brand-mark")).toHaveAttribute("src", "./mascot/01-idle.png", { timeout: 30_000 });
+  await expect.poll(appIcon).toMatch(/mascot[\\/]01-idle\.png$/);
+  await expect(focus.getByTestId("focus-home-icon")).toHaveAttribute("src", "./mascot/01-idle.png");
+  await expect(focus.getByTestId("focus-bot").getByTestId("mascot-art")).toHaveAttribute("src", "./mascot/01-idle.png");
+  await screenshot(app, "stage-18", "S18-pet-mascot-focus", focus, "focus");
+
+  // Approved, it finishes: only finished work to look at — 开心.
+  await focus.getByTestId("focus-entry").getByRole("button", { name: "批准", exact: true }).click();
+  await expect(page.getByTestId("brand-mark")).toHaveAttribute("src", "./mascot/02-happy.png", { timeout: 30_000 });
+  await expect.poll(appIcon).toMatch(/mascot[\\/]02-happy\.png$/);
+
+  // Another pet: the icons are the app's again.
+  await page.getByRole("button", { name: "设置" }).click();
+  await dialog.getByRole("tab", { name: "界面" }).click();
+  await dialog.getByTestId("pet-skin-robot").click();
+  await page.keyboard.press("Escape");
+  await expect(page.getByTestId("brand-mark")).toHaveAttribute("src", "./icon.png");
+  await expect.poll(appIcon).toMatch(/assets[\\/]icon\.png$/);
+});
+
 test("Focus: 「我知道了」 counts a 完成待审核 entry as reviewed without going back to the workbench (2026-10-17)", async () => {
   studio = await launchStudio();
   const { page, app } = studio;

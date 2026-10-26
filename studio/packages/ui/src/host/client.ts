@@ -26,6 +26,8 @@ declare global {
       };
       /** Opens an http(s) link in the system browser (Electron); absent in a plain browser. */
       openExternal?(url: string): Promise<void>;
+      /** The workbench window's icon (taskbar): one of 「AMO 娘」's faces by file name (focus/mascot.ts), or null for the app's. */
+      setAppIcon?(face: string | null): void;
       /** Writes text to the system clipboard (Electron); works without window focus. */
       copyText?(text: string): Promise<void>;
       setMinWidth?(px: number): void;

@@ -16,6 +16,8 @@ electron.contextBridge.exposeInMainWorld("amo", {
     rename: (path: string, name: string): Promise<unknown> => electron.ipcRenderer.invoke("amo:folders-rename", path, name),
   },
   openExternal: (url: string): Promise<void> => electron.ipcRenderer.invoke("amo:open-external", url),
+  /** 「AMO 娘」 (2026-10-26): the workbench window's icon shows one of her faces (its file name), or the app's (null). */
+  setAppIcon: (face: string | null): void => electron.ipcRenderer.send("amo:app-icon", face),
   /** The page's summary of one window drag (lib/resizeTrace.ts), for logs/resize-trace.log. */
   trace: (summary: unknown): void => electron.ipcRenderer.send("amo:trace", summary),
   copyText: (text: string): Promise<void> => electron.ipcRenderer.invoke("amo:copy", text),

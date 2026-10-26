@@ -40,7 +40,10 @@ export function TopBar({
   scopeName,
   focus,
   pin,
+  mark = "./icon.png",
 }: {
+  /** The top-left icon: 「AMO 娘」's face for the work (focus/mascot.ts), else the app's icon. */
+  mark?: string | undefined;
   /** 后退 / 前进 (2026-10-19). */
   nav?: { canBack: boolean; canForward: boolean; go(dir: -1 | 1): void };
   onView(view: View): void;
@@ -56,7 +59,7 @@ export function TopBar({
   return (
     <header className="topbar">
       <div className="brand">
-        <img className="brand-mark" src="./icon.png" alt="" aria-hidden="true" />
+        <img className="brand-mark" src={mark} alt="" aria-hidden="true" data-testid="brand-mark" />
         <span className="brand-name">AMO Studio</span>
         {scopeName && (
           <>
