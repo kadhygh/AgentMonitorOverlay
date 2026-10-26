@@ -68,6 +68,9 @@ test("设置 → 模型: the DSH clone's place, its version and 「检查」 (st
   await expect(dialog.getByTestId("auto-compact-dsh")).toContainText("80%");
   const section = dialog.getByTestId("dsh-section");
   await expect(section).toBeVisible();
+  // No desktop app here (2026-10-26): it says so, and the clone is used instead.
+  await expect(section.getByTestId("dsh-source-auto")).toHaveAttribute("aria-pressed", "true");
+  await expect(section.getByTestId("dsh-desktop")).toContainText("没找到 DeepSeek Harness 桌面版");
   await section.getByTestId("dsh-path").fill(clone);
   await section.getByTestId("dsh-save").click();
   await expect(section.getByTestId("dsh-facts")).toContainText("版本 0.2.1-rc.1");

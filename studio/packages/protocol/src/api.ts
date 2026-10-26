@@ -262,6 +262,16 @@ export interface ClaudeCodeStatus {
  * (`apps/cli/lib/bin.js`). `check`: the last 「检查」 (starts DSH over ACP and opens a session, no model call).
  */
 export interface DshStatus {
+  /** Where DSH comes from (2026-10-26): "auto" = the desktop app when installed, else the clone; "clone" = the clone. */
+  source: "auto" | "clone";
+  /** The installed desktop app, if any. */
+  desktop: { path: string; version: string | null } | null;
+  /** Where the desktop app is looked for. */
+  desktopDir: string | null;
+  /** What sessions run on now; null when nothing usable (`unavailable` says why). */
+  active: { kind: "desktop" | "clone"; version: string | null } | null;
+  unavailable: string | null;
+  /** The source clone's folder (used when source is "clone", or when no desktop app is installed). */
   path: string | null;
   version: string | null;
   /** Short hash and date of the clone's checked-out commit. */
@@ -281,6 +291,8 @@ export interface DshCheck {
   /** The version and commit it checked. */
   version: string | null;
   commit: string | null;
+  /** Which DSH it checked (absent on checks from before 2026-10-26: the clone). */
+  kind?: "desktop" | "clone";
 }
 
 export interface CredentialStatus {
@@ -329,7 +341,7 @@ export interface HostRoutes {
   /** The DSH clone DeepSeek · DSH sessions use (stage 17). */
   "GET /api/dsh": { req: void; res: DshStatus };
   /** Sets (or with null clears) the clone's folder; it must hold a DSH checkout (`apps/cli`). */
-  "PUT /api/dsh": { req: { path: string | null }; res: DshStatus };
+  "PUT /api/dsh": { req: { path?: string | null; source?: "auto" | "clone" }; res: DshStatus };
   /** Starts DSH over ACP and opens a session in a scratch folder, without a model call; the result is kept. */
   "POST /api/dsh/check": { req: void; res: DshStatus };
   /**

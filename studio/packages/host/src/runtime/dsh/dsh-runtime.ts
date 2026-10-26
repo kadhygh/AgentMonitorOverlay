@@ -22,10 +22,7 @@ import {
   DSH_OPTIONS_KEY,
   DSH_PERMISSION_ENV,
   DSH_REJECT,
-  describeDsh,
-  dshUnavailable,
-  readDshPath,
-  resolveNode,
+  resolveDsh,
   type DshPermissionMode,
 } from "./install.js";
 import { DshTranscript, toolOutput, type AcpUpdate } from "./transcript.js";
@@ -318,16 +315,15 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
    * The result (and the models DSH offers) is kept.
    */
   async check(): Promise<DshCheck> {
-    const path = readDshPath(this.store);
-    const install = path ? describeDsh(path) : null;
+    const resolved = this.options.agent ? null : resolveDsh(this.store);
+    const launch = resolved && !("error" in resolved) ? resolved : null;
     const at = this.now().toISOString();
     const result = (ok: boolean, message: string): DshCheck => {
-      const c: DshCheck = { ok, at, message, version: install?.version ?? null, commit: install?.commit ?? null };
+      const c: DshCheck = { ok, at, message, version: launch?.version ?? null, commit: launch?.commit ?? null, ...(launch ? { kind: launch.kind } : {}) };
       this.store.setKv(DSH_CHECK_KEY, JSON.stringify(c));
       return c;
     };
-    const unavailable = this.options.agent ? null : dshUnavailable(this.store);
-    if (unavailable) return result(false, unavailable);
+    if (resolved && "error" in resolved) return result(false, resolved.error);
     const probe = join(this.options.dir, "probe");
     mkdirSync(probe, { recursive: true });
     let conn: AcpConnection | null = null;
@@ -371,12 +367,11 @@ export class DshRuntime extends RuntimeBase implements SessionRuntimeApi {
       command = this.options.agent.command;
       args = [...this.options.agent.args];
     } else {
-      const unavailable = dshUnavailable(this.store);
-      if (unavailable) throw Object.assign(new Error(unavailable), { code: "bad_request" });
-      const node = resolveNode(env);
-      if (!node) throw Object.assign(new Error("找不到 Node（DSH 要用系统的 node 运行）"), { code: "bad_request" });
-      command = node;
-      args = [describeDsh(readDshPath(this.store)!)!.bin, ...DSH_ACP_ARGS];
+      const launch = resolveDsh(this.store, env);
+      if ("error" in launch) throw Object.assign(new Error(launch.error), { code: "bad_request" });
+      command = launch.command;
+      args = [...launch.args, ...DSH_ACP_ARGS];
+      Object.assign(env, launch.env);
     }
     if (patch) args.push("--patch", patch);
     const logFile = join(this.options.dir, "logs", `${label}.log`);

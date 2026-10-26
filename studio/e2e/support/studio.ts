@@ -71,6 +71,8 @@ export async function launchStudio(
     env: {
       ...withoutDataDir(process.env),
       AMO_STUDIO_TEST: "1",
+      // This machine may have the DeepSeek Harness desktop app; tests set up their own DSH.
+      AMO_STUDIO_DSH_DESKTOP: "",
       ...(options.portable ? { AMO_STUDIO_PORTABLE_DIR: options.portable.dir } : { AMO_STUDIO_DATA_DIR: dataDir }),
       AMO_STUDIO_PORT: "0",
       ...mockEnv,

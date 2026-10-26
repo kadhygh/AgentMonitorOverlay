@@ -8,7 +8,7 @@ import { startHost, type RunningHost } from "../../host-process.js";
 import { FakeServers } from "../codex/fake-servers.test-support.js";
 import { dshPermissionMode } from "../choices.js";
 import { catalogPatchYaml, channelModels, dshModelId, dshModels, dshModelValue } from "./dsh-runtime.js";
-import { describeDsh } from "./install.js";
+import { DSH_PATH_KEY, DSH_SOURCE_KEY, describeDsh, resolveDsh, type KvStore } from "./install.js";
 import { describeDshTool } from "./transcript.js";
 
 const CONFIG = [
@@ -72,12 +72,17 @@ describe("DSH tool rows", () => {
 describe("DSH clone setting", () => {
   let root: string;
   const running: RunningHost[] = [];
+  const desktopBefore = process.env.AMO_STUDIO_DSH_DESKTOP;
   beforeEach(() => {
     root = mkdtempSync(join(tmpdir(), "amo-studio-test-dshset-"));
+    // This machine may have the desktop app; these tests are about the clone.
+    process.env.AMO_STUDIO_DSH_DESKTOP = "";
   });
   afterEach(async () => {
     for (const h of running.splice(0)) await h.shutdown();
     removeTempDir(root);
+    if (desktopBefore === undefined) delete process.env.AMO_STUDIO_DSH_DESKTOP;
+    else process.env.AMO_STUDIO_DSH_DESKTOP = desktopBefore;
   });
 
   it("keeps the DSH profile out of the pickers until a built clone is set; reads its version", async () => {
@@ -91,7 +96,7 @@ describe("DSH clone setting", () => {
       return data;
     };
     const profile = async () => (await call<StateSnapshot>("GET", "/api/state")).profiles[0]!;
-    expect((await profile()).unavailable).toMatch(/还没有设置 DSH 源码位置/);
+    expect((await profile()).unavailable).toMatch(/没找到 DeepSeek Harness 桌面版/);
 
     const clone = join(root, "deepseek-harness");
     mkdirSync(join(clone, "apps", "cli", "lib"), { recursive: true });
@@ -108,6 +113,43 @@ describe("DSH clone setting", () => {
     expect((await profile()).unavailable).toBeUndefined();
 
     await call("PUT", "/api/dsh", { path: null });
-    expect((await profile()).unavailable).toMatch(/还没有设置/);
+    expect((await profile()).unavailable).toMatch(/没找到 DeepSeek Harness 桌面版/);
+    status = await call<DshStatus>("PUT", "/api/dsh", { source: "clone" });
+    expect(status).toMatchObject({ source: "clone", desktop: null, active: null });
+    expect((await profile()).unavailable).toMatch(/还没有设置 DSH 源码位置/);
+    await expect(call("PUT", "/api/dsh", { source: "npm" })).rejects.toThrow(/source must be/);
+  });
+});
+
+describe("DSH source (2026-10-26)", () => {
+  let root: string;
+  beforeEach(() => {
+    root = mkdtempSync(join(tmpdir(), "amo-studio-test-dshsrc-"));
+  });
+  afterEach(() => removeTempDir(root));
+  const kv = (values: Record<string, string>): KvStore => ({ getKv: (k) => (k in values ? { value: values[k]! } : undefined), setKv: () => undefined });
+
+  it("runs the desktop app when it is installed, the clone when it is chosen or there is no desktop app", () => {
+    // A stand-in desktop app: its exe and app.asar (the exe cannot tell its version, so that stays unknown).
+    const desktop = join(root, "DeepSeek Harness");
+    mkdirSync(join(desktop, "resources"), { recursive: true });
+    writeFileSync(join(desktop, "DeepSeek Harness.exe"), "");
+    writeFileSync(join(desktop, "resources", "app.asar"), "");
+    const clone = join(root, "deepseek-harness");
+    mkdirSync(join(clone, "apps", "cli", "lib"), { recursive: true });
+    writeFileSync(join(clone, "apps", "cli", "package.json"), JSON.stringify({ version: "0.2.1-rc.2" }));
+    writeFileSync(join(clone, "apps", "cli", "lib", "bin.js"), "");
+    const env = { AMO_STUDIO_DSH_DESKTOP: desktop, AMO_STUDIO_NODE: process.execPath };
+
+    expect(resolveDsh(kv({ [DSH_PATH_KEY]: clone }), env)).toMatchObject({
+      kind: "desktop",
+      command: join(desktop, "DeepSeek Harness.exe"),
+      args: ["--expose-internals", join(desktop, "resources", "app.asar", "dsh", "node_modules", "@deepseek-ai", "dsh-desktop-host", "lib", "cli.js")],
+      env: { ELECTRON_RUN_AS_NODE: "1" },
+    });
+    expect(resolveDsh(kv({ [DSH_PATH_KEY]: clone, [DSH_SOURCE_KEY]: "clone" }), env)).toMatchObject({ kind: "clone", command: process.execPath, args: [join(clone, "apps", "cli", "lib", "bin.js")], version: "0.2.1-rc.2" });
+    const none = { AMO_STUDIO_DSH_DESKTOP: join(root, "nowhere"), AMO_STUDIO_NODE: process.execPath };
+    expect(resolveDsh(kv({ [DSH_PATH_KEY]: clone }), none)).toMatchObject({ kind: "clone" });
+    expect(resolveDsh(kv({}), none)).toEqual({ error: expect.stringMatching(/没找到 DeepSeek Harness 桌面版/) });
   });
 });

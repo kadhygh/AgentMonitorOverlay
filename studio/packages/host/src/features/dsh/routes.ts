@@ -5,7 +5,7 @@ import { route, type Route, obj } from "../../http/route.js";
 export function dshRoutes(service: HostService): Route[] {
   return [
     route("GET", "/api/dsh", () => service.dsh.status()),
-    route("PUT", "/api/dsh", ({ body }) => service.dsh.setPath(obj(body).path)),
+    route("PUT", "/api/dsh", ({ body }) => service.dsh.update(obj(body))),
     route("POST", "/api/dsh/check", () => service.dsh.check()),
     route("GET", "/api/dsh/folders", () => service.dsh.folders()),
     route("GET", "/api/dsh/folders/:workspaceId", ({ params }) => service.dsh.folder(params.workspaceId!)),

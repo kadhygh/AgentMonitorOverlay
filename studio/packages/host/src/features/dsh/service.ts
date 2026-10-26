@@ -1,18 +1,32 @@
 import { existsSync, statSync } from "node:fs";
 import { resolve } from "node:path";
 import { isCommon, projectWorkspaces, type DshStatus, type FolderAccessStatus, type Id, type ModelProfile, type Workspace } from "@amo-studio/protocol";
-import { DSH_OPTIONS_KEY, DSH_PATH_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
+import { DSH_OPTIONS_KEY, DSH_PATH_KEY, DSH_SOURCE_KEY, describeDsh, dshStatus } from "../../runtime/dsh/install.js";
 import type { DshRuntime } from "../../runtime/dsh/dsh-runtime.js";
 import { HostError } from "../../core/shared.js";
 import { Feature } from "../../core/feature.js";
 
 /**
- * 设置 → 模型 → DeepSeek Harness (stage 17): the DSH source clone DeepSeek · DSH sessions run on — where it is, what
- * version and commit it has, whether it is built, and 「检查」 after the person pulls a new version.
+ * 设置 → 模型 → DeepSeek Harness (stage 17): what DeepSeek · DSH sessions run on — the desktop app when it is installed
+ * (2026-10-26), or a source clone (where it is, what version and commit it has, whether it is built) — and 「检查」.
  */
 export class DshFeature extends Feature {
   status(): DshStatus {
     return dshStatus(this.store);
+  }
+
+  /** 设置's changes: `source` ("auto": the desktop app when installed; "clone") and/or `path` (the clone's folder). */
+  update(body: { source?: unknown; path?: unknown }): DshStatus {
+    if (body.source !== undefined) {
+      if (body.source !== "auto" && body.source !== "clone") throw new HostError("bad_request", 'source must be "auto" or "clone"');
+      this.store.setKv(DSH_SOURCE_KEY, body.source);
+      if (body.path === undefined) {
+        this.store.setKv(DSH_OPTIONS_KEY, "null");
+        this.profilesChanged();
+        return this.status();
+      }
+    }
+    return this.setPath(body.path);
   }
 
   /** Sets the clone's folder (null clears it). The DSH profile shows in the pickers once the clone is built. */

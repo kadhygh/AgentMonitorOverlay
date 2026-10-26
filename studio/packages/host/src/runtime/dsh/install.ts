@@ -3,12 +3,16 @@ import { existsSync, readFileSync, statSync } from "node:fs";
 import { delimiter, join } from "node:path";
 import type { DshCheck, DshStatus } from "@amo-studio/protocol";
 
-// Everything Studio relies on in a DeepSeek Harness source clone (stage 17, plans/stage-17-dsh.md; spikes s17-00/01).
-// The person pulls the clone now and then; when a new DSH stops working with Studio, these are the places to look.
+// Everything Studio relies on in DeepSeek Harness (stage 17, plans/stage-17-dsh.md; spikes s17-00/01): the desktop app
+// (2026-10-26: the default when it is installed; it updates itself) or a source clone the person builds and pulls.
+// When a new DSH stops working with Studio, these are the places to look.
 // 设置 → 模型 →「检查」 runs `checkDsh` (dsh-runtime.ts): start, initialize, open a session — no model call.
 
 /** kv: the clone's folder (设置 → 模型 → DeepSeek Harness). */
 export const DSH_PATH_KEY = "settings:dsh-path";
+/** kv: where DSH comes from — "auto" (the desktop app when installed, else the clone) or "clone" (always the clone). */
+export const DSH_SOURCE_KEY = "settings:dsh-source";
+export type DshSource = "auto" | "clone";
 /** kv: the last 「检查」. */
 export const DSH_CHECK_KEY = "dsh:check";
 /** kv: the session config options (models, efforts) DSH last offered, for the pickers. */
@@ -89,14 +93,102 @@ export function readDshPath(kv: KvStore): string | null {
   return kv.getKv(DSH_PATH_KEY)?.value || null;
 }
 
-/** Why sessions cannot run on DSH right now, or null when they can. */
-export function dshUnavailable(kv: KvStore): string | null {
+export function readDshSource(kv: KvStore): DshSource {
+  return kv.getKv(DSH_SOURCE_KEY)?.value === "clone" ? "clone" : "auto";
+}
+
+// ---- the desktop app --------------------------------------------------------------------------------------------
+
+/** Where the desktop app installs (per user); AMO_STUDIO_DSH_DESKTOP points elsewhere ("" = none). */
+export function desktopDir(env: NodeJS.ProcessEnv = process.env): string | null {
+  if (env.AMO_STUDIO_DSH_DESKTOP !== undefined) return env.AMO_STUDIO_DSH_DESKTOP || null;
+  return env.LOCALAPPDATA ? join(env.LOCALAPPDATA, "Programs", "DeepSeek Harness") : null;
+}
+/** The app's own command line, as its resources/runtime/cli/bin/dsh.cmd runs it: the app's Electron as Node. */
+const DESKTOP_EXE = "DeepSeek Harness.exe";
+const DESKTOP_CLI = ["resources", "app.asar", "dsh", "node_modules", "@deepseek-ai", "dsh-desktop-host", "lib", "cli.js"] as const;
+const DESKTOP_ARGS = ["--expose-internals"] as const;
+
+export interface DshDesktop {
+  dir: string;
+  exe: string;
+  cli: string;
+  version: string | null;
+}
+
+/** The version the app last said, by its exe's time (an update replaces the exe). */
+const desktopVersions = new Map<string, { mtime: number; version: string | null }>();
+
+/** The installed desktop app, or null. Its version is asked once per installed build (a second or two). */
+export function findDesktopDsh(env: NodeJS.ProcessEnv = process.env): DshDesktop | null {
+  const dir = desktopDir(env);
+  if (!dir) return null;
+  const exe = join(dir, DESKTOP_EXE);
+  let mtime: number;
+  try {
+    mtime = statSync(exe).mtimeMs;
+  } catch {
+    return null;
+  }
+  // The CLI sits inside app.asar, which only Electron can read: the exe and the archive are what can be checked.
+  if (!existsSync(join(dir, "resources", "app.asar"))) return null;
+  const cli = join(dir, ...DESKTOP_CLI);
+  const known = desktopVersions.get(exe);
+  let version = known?.mtime === mtime ? known.version : null;
+  if (known?.mtime !== mtime) {
+    try {
+      version = execFileSync(exe, [...DESKTOP_ARGS, cli, "--version"], { encoding: "utf8", windowsHide: true, timeout: 30_000, env: { ...env, ELECTRON_RUN_AS_NODE: "1" }, stdio: ["ignore", "pipe", "ignore"] }).trim() || null;
+    } catch {
+      version = null;
+    }
+    desktopVersions.set(exe, { mtime, version });
+  }
+  return { dir, exe, cli, version };
+}
+
+// ---- which one runs -----------------------------------------------------------------------------------------------
+
+export interface DshLaunch {
+  kind: "desktop" | "clone";
+  /** The desktop app's folder or the clone's. */
+  path: string;
+  command: string;
+  /** Before DSH's own arguments (`--profile acp`). */
+  args: string[];
+  /** Added to the launch environment. */
+  env: Record<string, string>;
+  version: string | null;
+  commit: string | null;
+}
+
+/** What DeepSeek · DSH sessions run on, or why they cannot. */
+export function resolveDsh(kv: KvStore, env: NodeJS.ProcessEnv = process.env): DshLaunch | { error: string } {
+  const source = readDshSource(kv);
+  if (source === "auto") {
+    const desktop = findDesktopDsh(env);
+    if (desktop) return { kind: "desktop", path: desktop.dir, command: desktop.exe, args: [...DESKTOP_ARGS, desktop.cli], env: { ELECTRON_RUN_AS_NODE: "1" }, version: desktop.version, commit: null };
+  }
   const path = readDshPath(kv);
-  if (!path) return "还没有设置 DSH 源码位置（设置 → 模型 → DeepSeek Harness）";
+  if (!path) {
+    return {
+      error:
+        source === "auto"
+          ? "没找到 DeepSeek Harness 桌面版：装好桌面版，或者在 设置 → 模型 → DeepSeek Harness 里改用 DSH 源码克隆"
+          : "还没有设置 DSH 源码位置（设置 → 模型 → DeepSeek Harness）",
+    };
+  }
   const install = describeDsh(path);
-  if (!install) return `${path} 不是 DSH 源码克隆（没有 apps/cli）`;
-  if (!install.built) return `DSH 还没有构建：在 ${path} 运行 pnpm install 和 pnpm run build:artifacts`;
-  return null;
+  if (!install) return { error: `${path} 不是 DSH 源码克隆（没有 apps/cli）` };
+  if (!install.built) return { error: `DSH 还没有构建：在 ${path} 运行 pnpm install 和 pnpm run build:artifacts` };
+  const node = resolveNode(env);
+  if (!node) return { error: "找不到 Node（DSH 源码克隆要用系统的 node 运行）" };
+  return { kind: "clone", path, command: node, args: [install.bin], env: {}, version: install.version, commit: install.commit };
+}
+
+/** Why sessions cannot run on DSH right now, or null when they can. */
+export function dshUnavailable(kv: KvStore, env: NodeJS.ProcessEnv = process.env): string | null {
+  const launch = resolveDsh(kv, env);
+  return "error" in launch ? launch.error : null;
 }
 
 // ---- Node -------------------------------------------------------------------------------------------------------
@@ -146,7 +238,14 @@ export function dshStatus(kv: KvStore, env: NodeJS.ProcessEnv = process.env): Ds
   const path = readDshPath(kv);
   const install = path ? describeDsh(path) : null;
   const node = resolveNode(env);
+  const desktop = findDesktopDsh(env);
+  const launch = resolveDsh(kv, env);
   return {
+    source: readDshSource(kv),
+    desktop: desktop ? { path: desktop.dir, version: desktop.version } : null,
+    desktopDir: desktopDir(env),
+    active: "error" in launch ? null : { kind: launch.kind, version: launch.version },
+    unavailable: "error" in launch ? launch.error : null,
     path,
     version: install?.version ?? null,
     commit: install?.commit ?? null,
