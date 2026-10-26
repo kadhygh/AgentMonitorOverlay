@@ -71,7 +71,9 @@ test("Focus shows what works now and what needed the person lately; a reply endi
   await expect(page.getByTestId("msg-agent").last()).toContainText("MOCK: 再回复一次", { timeout: 60_000 });
   await expect(entry).toHaveCount(1, { timeout: 15_000 });
   await expect(entry).toContainText("完成待审核");
-  await expect(records).toHaveCount(2);
+  // The same task again is one row of 历史 (2026-10-26): waiting now, twice.
+  await expect(records).toHaveCount(1);
+  await expect(records.first()).toContainText("完成待审核 · 未处理 · 2 次");
 });
 
 test("the annotation bubble moves by its head and keeps what is written", async () => {

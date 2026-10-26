@@ -21,7 +21,37 @@ export interface Attention {
   label: string;
 }
 
-export const HISTORY_MAX = 10;
+/** Records kept (2026-10-26: more than the rows shown, which merge a task's records into one). */
+export const HISTORY_MAX = 40;
+/** Rows shown: one per task (or per session, outside tasks). */
+export const HISTORY_ROWS = 10;
+
+/** One row of 历史: a task's records together (2026-10-26: the same task again and again filled the list). */
+export interface HistoryRow {
+  /** The record a click opens: the newest still waiting, else the newest. */
+  record: FocusRecord;
+  /** How many times it needed the person in the kept records. */
+  count: number;
+  /** All dealt with. */
+  handled: boolean;
+  /** When it last needed the person. */
+  at: string;
+}
+
+/** The records as rows, one per task (or per session outside tasks), newest first. */
+export function historyRows(list: readonly FocusRecord[], max = HISTORY_ROWS): HistoryRow[] {
+  const groups = new Map<string, FocusRecord[]>();
+  for (const r of [...list].sort((x, y) => y.at.localeCompare(x.at))) {
+    const key = r.taskId ? `t:${r.taskId}` : `s:${r.sessionId}`;
+    const g = groups.get(key);
+    if (g) g.push(r);
+    else groups.set(key, [r]);
+  }
+  return [...groups.values()].slice(0, max).map((g) => {
+    const waiting = g.find((r) => r.handledAt === null);
+    return { record: waiting ?? g[0]!, count: g.length, handled: !waiting, at: g[0]!.at };
+  });
+}
 const KEY = "amo.focusHistory";
 
 /**

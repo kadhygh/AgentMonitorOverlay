@@ -17,7 +17,7 @@ import { FocusEntry, isToReview, summary, TO_REVIEW } from "./FocusEntry.js";
 import { PinButton, PinnedEntry, WAITING_SUBS, WorkingEntry } from "./FocusWorking.js";
 import { PINNED_KEY, pinnedSession, SUBS_OPEN_KEY } from "./pins.js";
 import { useStoredIds } from "../lib/storedIds.js";
-import { readHistory, updateHistory, writeHistory, type Attention, type FocusRecord } from "./history.js";
+import { historyRows, readHistory, updateHistory, writeHistory, type Attention, type FocusRecord } from "./history.js";
 import { relativeTime, SESSION_LOOK } from "../lib/status.js";
 import { FocusSettings, ICON, type SettingItem } from "./FocusSettings.js";
 import { useWindowShape } from "./windowShape.js";
@@ -456,27 +456,28 @@ export function FocusApp() {
         {!compact && history.length > 0 && (
           <div className="focus-history" data-testid="focus-history">
             <button type="button" className="focus-history-toggle" aria-expanded={showHistory} onClick={() => setShowHistory(!showHistory)} data-testid="focus-history-toggle">
-              历史 {history.length} {showHistory ? "▴" : "▾"}
+              历史 {historyRows(history).length} {showHistory ? "▴" : "▾"}
             </button>
             {showHistory &&
-              history.map((r) => {
+              historyRows(history).map(({ record: r, count, handled, at }) => {
                 const s = state.sessions.find((x) => x.id === r.sessionId);
                 const name = s ? title(s) : "（会话已不在）";
                 // 置顶 from here too (10-22), while the task is there.
                 const task = s?.taskId ? state.tasks.find((t) => t.id === s.taskId && !t.archivedAt) : undefined;
                 return (
-                  <div key={`${r.key}@${r.at}`} className="focus-entry" data-testid="focus-history-entry" data-handled={r.handledAt ? "" : undefined}>
+                  <div key={`${r.key}@${r.at}`} className="focus-entry" data-testid="focus-history-entry" data-handled={handled ? "" : undefined}>
                     <div className="focus-row-line">
                       <button type="button" className="focus-row" disabled={!s} onClick={() => goToDeal(r.sessionId, r.taskId)} title={s ? "在工作台打开" : undefined}>
-                        <span className="dot" style={{ background: r.handledAt ? "var(--text-faint)" : "var(--attention)" }} />
+                        <span className="dot" style={{ background: handled ? "var(--text-faint)" : "var(--attention)" }} />
                         <span className="focus-row-text">
                           <span className="focus-title">{name}</span>
                           <span className="focus-sub">
-                            {r.label} · {r.handledAt ? "已处理" : "未处理"}
+                            {r.label} · {handled ? "已处理" : "未处理"}
+                            {count > 1 ? ` · ${count} 次` : ""}
                             {s?.title ? ` · ${s.title}` : ""}
                           </span>
                         </span>
-                        <span className="focus-time">{relativeTime(r.at)}</span>
+                        <span className="focus-time">{relativeTime(at)}</span>
                       </button>
                       {task && <PinButton pinned={pins.has(task.id)} onToggle={() => pins.toggle(task.id)} />}
                     </div>

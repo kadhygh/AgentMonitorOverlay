@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HISTORY_MAX, updateHistory, type Attention } from "./history.js";
+import { HISTORY_MAX, HISTORY_ROWS, historyRows, updateHistory, type Attention, type FocusRecord } from "./history.js";
 
 const a = (key: string, label = "完成待审核"): Attention => ({ key, sessionId: key.split(":")[1] ?? key, taskId: "t", label });
 
@@ -29,6 +29,23 @@ describe("Focus history", () => {
     expect(updateHistory(h, [], "2026-10-20T10:00:01.000Z", () => true)).toEqual([]);
     h = updateHistory(h, [], "2026-10-20T10:00:01.000Z", () => false);
     expect(h).toMatchObject([{ key: "s:1", handledAt: "2026-10-20T10:00:01.000Z" }]);
+  });
+
+  it("shows one row per task (per session outside tasks): newest first, how many times, waiting if any record still waits (2026-10-26)", () => {
+    const r = (key: string, taskId: string | null, at: string, handledAt: string | null, label = "完成待审核"): FocusRecord => ({ key, sessionId: key.slice(2), taskId, label, at, handledAt });
+    const rows = historyRows([
+      r("s:a", "t1", "2026-10-26T10:05:00Z", "2026-10-26T10:06:00Z"),
+      r("s:b", "t1", "2026-10-26T10:03:00Z", null, "等待审批"),
+      r("s:c", null, "2026-10-26T10:04:00Z", "2026-10-26T10:04:30Z"),
+      r("s:a", "t1", "2026-10-26T10:01:00Z", "2026-10-26T10:02:00Z"),
+      r("s:c", null, "2026-10-26T10:00:00Z", "2026-10-26T10:00:30Z"),
+    ]);
+    expect(rows.map((x) => [x.record.key, x.count, x.handled, x.at])).toEqual([
+      ["s:b", 3, false, "2026-10-26T10:05:00Z"],
+      ["s:c", 2, true, "2026-10-26T10:04:00Z"],
+    ]);
+    const many = Array.from({ length: HISTORY_ROWS + 3 }, (_, i) => r(`s:${i}`, `t${i}`, `2026-10-26T10:${String(i).padStart(2, "0")}:00Z`, null));
+    expect(historyRows(many)).toHaveLength(HISTORY_ROWS);
   });
 
   it("keeps the newest few", () => {
