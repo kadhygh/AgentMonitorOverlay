@@ -4,9 +4,10 @@ import { unseenSessions, type SeenData } from "../lib/sessionSeen.js";
 import type { BotMood } from "./PixelBot.js";
 import { usePetSkin } from "./petSkin.js";
 
-// 「AMO 娘」 (2026-10-26): the 桌宠 skin drawn with the blue mascot's faces (design/icon/mascot-blue). Chosen, the icons
-// follow the work too — top left of the workbench, Focus's title, the taskbar button — as the person laid out:
-// 出错 / 等审批 → 待命 (01), 没额度 → 睿智 (06), 在跑 → 认真 (03), 只剩等审核 → 开心 (02), nothing → the plain icon.
+// 「AMO 娘」 (2026-10-26): the 桌宠 skin drawn with the blue mascot's faces (design/icon/mascot-blue). Chosen, the
+// workbench's top-left icon and its window icon (title bar, taskbar) are hers and follow the work, as the person laid
+// out: 出错 / 等审批 → 待命 (01), 没额度 → 睿智 (06), 在跑 → 认真 (03), 只剩等审核 → 开心 (02), nothing → her icon.
+// Otherwise they are the app's viewfinder; Focus's icon and the running one in the conversation always are (10-26).
 
 export type MascotFace = "idle" | "happy" | "focused" | "wink" | "angry" | "goofy";
 
@@ -41,12 +42,14 @@ export function mascotFace(sessions: readonly Session[], seen: SeenData): Mascot
 export const MASCOT_SETTLE_MS = 1500;
 
 /**
- * The face the icons show for these sessions: null for the plain icon, or while another pet is chosen. It changes once
- * it has held for MASCOT_SETTLE_MS.
+ * Her icons for these sessions while she is the 桌宠: `src` for the page, `file` for the window (a name in
+ * app/assets/mascot); null while another pet is chosen. The face changes once it has held for MASCOT_SETTLE_MS.
  */
-export function useMascotFace(sessions: readonly Session[] | null, seen: SeenData): MascotFace | null {
-  const skin = usePetSkin();
-  return useSettledFace(skin === "mascot" && sessions ? mascotFace(sessions, seen) : null);
+export function useMascotIcon(sessions: readonly Session[] | null, seen: SeenData): { src: string; file: string } | null {
+  const on = usePetSkin() === "mascot";
+  const face = useSettledFace(on && sessions ? mascotFace(sessions, seen) : null);
+  if (!on) return null;
+  return face ? { src: mascotSrc(face), file: MASCOT_FILES[face] } : { src: "./mascot/icon.png", file: "icon" };
 }
 
 /** `face` once it has held for MASCOT_SETTLE_MS (at once the first time). */

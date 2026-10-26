@@ -1,29 +1,66 @@
-// Puts the AMO icon (design/icon/mascot-blue/icon, 2026-10-26: 第三套 · 钴蓝侧分, its ready-made 开心 icon; it replaced
-// the viewfinder, design/icon/viewfinder.svg) where the app ships it: the window icon (PNG), the exe icon (the
-// multi-size ICO) and the UI's icon.png. Also the six faces of the 「AMO 娘」 pet (design/icon/mascot-blue/0N-*.png),
-// cropped square to what is drawn, for the UI (ui/public/mascot) and the taskbar (app/assets/mascot); cropping and
-// scaling run in the installed Edge through Playwright. Run after changing those files:
+// The icons the app ships. Uses the installed Edge through Playwright; run after changing a source:
 //   node scripts/make-icons.mjs
+// - The app's own: design/icon/viewfinder.svg rendered into the UI's icon.svg, the window icon (PNG) and the exe icon
+//   (ICO with PNG images, 16–256 px).
+// - 「AMO 娘」 (2026-10-26, used while she is the 桌宠): the blue mascot's ready-made icon (design/icon/mascot-blue/icon)
+//   and her six faces (design/icon/mascot-blue/0N-*.png) cropped square to what is drawn, for the UI (ui/public/mascot)
+//   and the window icon (app/assets/mascot).
 import { copyFileSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
 
 const studio = join(dirname(fileURLToPath(import.meta.url)), "..");
-const mascot = join(studio, "design", "icon", "mascot-blue");
-const icon = join(mascot, "icon");
+const svgPath = join(studio, "design", "icon", "viewfinder.svg");
+const svg = readFileSync(svgPath, "utf8");
+const ICO_SIZES = [16, 20, 24, 32, 40, 48, 64, 128, 256];
 
-copyFileSync(join(icon, "amo-studio-256.png"), join(studio, "packages", "app", "assets", "icon.png"));
-copyFileSync(join(icon, "amo-studio.ico"), join(studio, "packages", "app", "assets", "icon.ico"));
-copyFileSync(join(icon, "amo-studio-128.png"), join(studio, "packages", "ui", "public", "icon.png"));
-
-const FACE_SIZE = 128;
-const faces = readdirSync(mascot).filter((f) => /^0\d-[a-z]+\.png$/.test(f));
 const browser = await chromium.launch({ channel: "msedge" });
 const page = await browser.newPage();
+async function png(size) {
+  await page.setViewportSize({ width: size, height: size });
+  await page.setContent(`<html><body style="margin:0;background:transparent">${svg.replace(/width="512" height="512"/, `width="${size}" height="${size}"`)}</body></html>`);
+  return page.screenshot({ omitBackground: true, clip: { x: 0, y: 0, width: size, height: size } });
+}
+
+const big = await png(512);
+writeFileSync(join(studio, "design", "icon", "viewfinder-512.png"), big);
+writeFileSync(join(studio, "packages", "app", "assets", "icon.png"), await png(256));
+
+// ICO: a header, one directory entry per image, then the PNG data (Windows Vista and later read PNG entries).
+const images = [];
+for (const size of ICO_SIZES) images.push({ size, data: await png(size) });
+const header = Buffer.alloc(6);
+header.writeUInt16LE(0, 0);
+header.writeUInt16LE(1, 2);
+header.writeUInt16LE(images.length, 4);
+let offset = 6 + 16 * images.length;
+const entries = images.map(({ size, data }) => {
+  const e = Buffer.alloc(16);
+  e.writeUInt8(size >= 256 ? 0 : size, 0);
+  e.writeUInt8(size >= 256 ? 0 : size, 1);
+  e.writeUInt8(0, 2);
+  e.writeUInt8(0, 3);
+  e.writeUInt16LE(1, 4);
+  e.writeUInt16LE(32, 6);
+  e.writeUInt32LE(data.length, 8);
+  e.writeUInt32LE(offset, 12);
+  offset += data.length;
+  return e;
+});
+writeFileSync(join(studio, "packages", "app", "assets", "icon.ico"), Buffer.concat([header, ...entries, ...images.map((i) => i.data)]));
+copyFileSync(svgPath, join(studio, "packages", "ui", "public", "icon.svg"));
+
+// 「AMO 娘」.
+const mascot = join(studio, "design", "icon", "mascot-blue");
+const uiMascot = join(studio, "packages", "ui", "public", "mascot");
+const appMascot = join(studio, "packages", "app", "assets", "mascot");
+for (const dir of [uiMascot, appMascot]) mkdirSync(dir, { recursive: true });
+copyFileSync(join(mascot, "icon", "amo-studio-128.png"), join(uiMascot, "icon.png"));
+copyFileSync(join(mascot, "icon", "amo-studio-256.png"), join(appMascot, "icon.png"));
+const FACE_SIZE = 128;
+const faces = readdirSync(mascot).filter((f) => /^0\d-[a-z]+\.png$/.test(f));
 await page.setContent("<html><body style='margin:0'></body></html>");
-const outs = [join(studio, "packages", "ui", "public", "mascot"), join(studio, "packages", "app", "assets", "mascot")];
-for (const dir of outs) mkdirSync(dir, { recursive: true });
 for (const file of faces) {
   const dataUrl = `data:image/png;base64,${readFileSync(join(mascot, file)).toString("base64")}`;
   const b64 = await page.evaluate(
@@ -64,7 +101,7 @@ for (const file of faces) {
     },
     { dataUrl, size: FACE_SIZE },
   );
-  for (const dir of outs) writeFileSync(join(dir, file), Buffer.from(b64, "base64"));
+  for (const dir of [uiMascot, appMascot]) writeFileSync(join(dir, file), Buffer.from(b64, "base64"));
 }
 await browser.close();
-console.log(`icons written: app/assets/icon.png, icon.ico, ui/public/icon.png; ${faces.length} faces at ${FACE_SIZE} px`);
+console.log(`icons written: ${ICO_SIZES.join(", ")} px; 「AMO 娘」 icon and ${faces.length} faces`);

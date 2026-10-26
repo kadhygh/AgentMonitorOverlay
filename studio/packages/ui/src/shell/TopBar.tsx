@@ -40,9 +40,9 @@ export function TopBar({
   scopeName,
   focus,
   pin,
-  mark = "./icon.png",
+  mark = "./icon.svg",
 }: {
-  /** The top-left icon: 「AMO 娘」's face for the work (focus/mascot.ts), else the app's icon. */
+  /** The top-left icon: 「AMO 娘」's while she is the 桌宠 (focus/mascot.ts), else the app's viewfinder. */
   mark?: string | undefined;
   /** 后退 / 前进 (2026-10-19). */
   nav?: { canBack: boolean; canForward: boolean; go(dir: -1 | 1): void };

@@ -25,7 +25,7 @@ import { openReview } from "./gitreview/open.js";
 import { openViewer } from "./viewer/open.js";
 import { onHostEvent } from "./host/events.js";
 import { HostErrorToast, PaneBoundary } from "./lib/ErrorBoundary.js";
-import { MASCOT_FILES, mascotSrc, useMascotFace } from "./focus/mascot.js";
+import { useMascotIcon } from "./focus/mascot.js";
 import { useSessionSeen } from "./lib/sessionSeen.js";
 
 // The shell: the Host connection, the scope and the view in front, the top bar and the left column. Pages come from
@@ -164,10 +164,10 @@ export function App() {
 
   // A place come back to that is gone (a deleted task, an archived topic or project): the board, everything in scope.
   const ready = host.kind === "ready" ? host.state : null;
-  // 「AMO 娘」 (2026-10-26): the top-left icon and the taskbar button show her face for the work (focus/mascot.ts).
+  // 「AMO 娘」 (2026-10-26): while she is the 桌宠, the top-left icon and the window's are hers (focus/mascot.ts).
   const seen = useSessionSeen();
-  const face = useMascotFace(ready?.sessions ?? null, seen);
-  useEffect(() => window.amo?.setAppIcon?.(face ? MASCOT_FILES[face] : null), [face]);
+  const mascot = useMascotIcon(ready?.sessions ?? null, seen);
+  useEffect(() => window.amo?.setAppIcon?.(mascot?.file ?? null), [mascot?.file]);
   useEffect(() => {
     if (!ready) return;
     if (view.kind === "task" && !ready.tasks.some((t) => t.id === view.taskId)) setShownView({ kind: "board" });
@@ -232,7 +232,7 @@ export function App() {
     <FeaturesProvider disabled={disabled}>
     <div className="app">
       <TopBar
-        mark={face ? mascotSrc(face) : undefined}
+        mark={mascot?.src}
         onView={setView}
         needs={needs}
         scopeName={scopeName}
