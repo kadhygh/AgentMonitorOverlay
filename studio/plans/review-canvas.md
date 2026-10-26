@@ -65,3 +65,21 @@
 ## 进度
 
 见文末，做完一步记一步。
+
+### 2026-10-27 夜（用户不在，在 worktree 里做）
+
+- ✓ 阶段 1、2：Host（`2370568`）和界面（`9a3ac0b`），都在分支 `studio/review-canvas`。
+  - Host：`features/canvasreview/`、`canvas_callouts` 表（迁移 22）、4 个 MCP 工具，`canvas_read` 和 `amo_guide canvas` 都已更新。
+  - 界面：`canvas/review.tsx`、`canvas/useCallouts.ts`，以及 `CanvasPage`、`CanvasSidebar`、`cards.tsx` 的改动。
+- 验证：
+  - 自动：Host 单元测试 `canvasreview.test.ts`（6 条）、协议测试（布局、校验）、MCP 工具列表；`npm run typecheck` 通过；vitest 全部跑过（有 2 个文件在负载下超时，单独跑能过：`open-review`、`cli-features`）。
+  - e2e：新增 `review-canvas.spec.ts`，另有 10 个画布相关 spec 都过（共 16 条）。截图在 `screenshots/review-canvas/RC-1…4`。
+  - 未验证：真实模型（只用了 mock），以及真实使用中「◐ 进行中」的样子（mock 回复太快，看不到）。
+- 顺带修的：画布视口改成 `overflow: clip`。之前聚焦卡片或测试工具会把它滚偏，工具条和提示会被切掉一截。
+- 合并前要注意：
+  - 迁移 22 是只加新表，回到 master 也能打开数据库。但画布上一旦有了条目卡片，旧代码保存这张画布时会报 unknown kind。
+  - master 如果先有了别的迁移 22，要改编号。
+- 还没做（阶段 3、4，以及想到的）：
+  - 不在画布页时，看不到有问题在等：Focus 或专题左栏可以显示「? N」。
+  - 缩略悬浮窗、专题分组、条目转任务。
+  - 删掉条目时，它上面的气泡没有跟着收起（侧栏里显示「卡片已不在画布上」）。
