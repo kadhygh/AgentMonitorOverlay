@@ -41,9 +41,9 @@ function seed(store: Store) {
 describe("Store", () => {
   it("applies migrations once", () => {
     const path = tempDbPath();
-    expect(makeStore(path).schemaVersion()).toBe(21);
+    expect(makeStore(path).schemaVersion()).toBe(22);
     open.pop()!.close();
-    expect(makeStore(path).schemaVersion()).toBe(21);
+    expect(makeStore(path).schemaVersion()).toBe(22);
   });
 
   it("keeps a session's wake until it is cleared (stage 15)", () => {

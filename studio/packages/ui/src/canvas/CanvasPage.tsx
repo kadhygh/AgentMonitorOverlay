@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
-import { CANVAS_LINK_LABEL_MAX, CANVAS_SIDES, workspacesActivity, wouldCycle, type CanvasColor, type CanvasDoc, type CanvasGroup, type CanvasLink, type CanvasNode, type CanvasSide, type Id, type Point, type ModelProfile, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { CANVAS_LINK_LABEL_MAX, CANVAS_SIDES, ITEM_CARD, REVIEW_STATUSES, workspacesActivity, wouldCycle, type CanvasCallout, type CanvasColor, type CanvasDoc, type CanvasGroup, type CanvasItem, type CanvasLink, type CanvasNode, type CanvasSide, type Id, type Point, type ModelProfile, type ReviewStatus, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { call, HostApiError } from "../host/client.js";
+import { useCallouts } from "./useCallouts.js";
+import { CalloutDialog, CalloutLayer, calloutFlags, ItemCard, ItemDetail, itemActivity, TalkTab } from "./review.js";
 import { CanvasSidebar, type CanvasSelection, type SidebarTab } from "./CanvasSidebar.js";
 import { AgentTab } from "./AgentTab.js";
 import { TodoTab } from "../planning/TodoTab.js";
@@ -100,6 +103,10 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   const [describing, setDescribing] = useState<Id | null>(null);
   const closeMenu = useCallback(() => setMenu(null), []);
   const plans = useTaskPlans(link).filter((p) => p.topicId === topic.id);
+  // 画布审阅 (2026-10-27): the bubbles on the cards, the one open in its window, and a short notice (opening a session…).
+  const callouts = useCallouts(link, topic.id);
+  const [openCallout, setOpenCallout] = useState<Id | null>(null);
+  const [notice, setNotice] = useState<{ text: string; error?: boolean } | null>(null);
   const viewport = useRef<HTMLDivElement>(null);
   const world = useRef<HTMLDivElement>(null);
   // 连线 (2026-10-19): the line being drawn (its loose end follows the pointer), and the line whose label is edited.
@@ -140,7 +147,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   // The topic's archived tasks keep their cards, greyed (2026-10-22); a task that left the topic does not.
   const cardTaskById = new Map([...allTasks.filter((t) => t.archivedAt && t.topicId === topic.id), ...tasks].map((t) => [t.id, t]));
   const anyTaskById = new Map(allTasks.map((t) => [t.id, t]));
-  const nodeSize = (n: CanvasNode) => (n.kind === "note" ? { w: NOTE_W, h: NOTE_H } : { w: CARD_W, h: cardHeight(anyTaskById.get(n.taskId)) });
+  const nodeSize = (n: CanvasNode) => (n.kind === "note" ? { w: NOTE_W, h: NOTE_H } : n.kind === "item" ? ITEM_CARD : { w: CARD_W, h: cardHeight(anyTaskById.get(n.taskId)) });
 
   // Delete / Backspace removes the selected group (its cards stay), note or reference card (never the task itself),
   // unless typing somewhere. Escape leaves 连依赖.
@@ -157,7 +164,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
         e.preventDefault();
         persist(deleteGroup(doc, selection.id));
         setSelectionState(null);
-      } else if (doc.nodes.some((n) => n.id === selection.id && (n.kind === "note" || n.kind === "ref"))) {
+      } else if (doc.nodes.some((n) => n.id === selection.id && (n.kind === "note" || n.kind === "ref" || n.kind === "item"))) {
         e.preventDefault();
         persist({ ...doc, nodes: doc.nodes.filter((n) => n.id !== selection.id) });
         setSelectionState(null);
@@ -379,6 +386,58 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
   const groupItems = (node: CanvasNode): MenuEntry[] => (node.groupId ? [item("移出分组", () => edit((d) => outOfGroup(d, node.id, nodeSize(node))))] : []);
   const centreItem = (node: CanvasNode) => item("居中显示", () => centreOf({ ...node.pos, ...nodeSize(node) }));
 
+  // ---- 画布审阅 ---------------------------------------------------------------------------------------------------
+
+  const sessionById = new Map(sessions.map((s) => [s.id, s]));
+  const items = (shown?.nodes ?? []).filter((n): n is CanvasItem => n.kind === "item");
+  const flags = calloutFlags(callouts);
+  const openQuestions = callouts.filter((c) => c.kind === "question" && c.state === "open");
+  const nodeOfTarget = (target: Id) => shown?.nodes.find((n) => n.id === target || (n.kind === "task" && n.taskId === target));
+  /** A bubble's card (or its group's title bar). */
+  const anchorOf = (target: Id) => {
+    const n = nodeOfTarget(target);
+    if (n) return rectOf(n);
+    const g = shown?.groups.find((x) => x.id === target);
+    return g ? { ...g.rect, h: GROUP_HEADER } : null;
+  };
+  const targetName = (target: Id) => {
+    const n = nodeOfTarget(target);
+    if (n?.kind === "item") return `#${n.num} ${n.title}`;
+    if (n?.kind === "note") return `便签「${n.text.replace(/\s+/g, " ").trim().slice(0, 24)}」`;
+    if (n?.kind === "task" || n?.kind === "ref") return `任务「${anyTaskById.get(n.taskId)?.title || "未命名任务"}」`;
+    const g = shown?.groups.find((x) => x.id === target);
+    return g ? `分组「${g.title}」` : "卡片已不在画布上";
+  };
+  const failed = (what: string) => (err: unknown) => setNotice({ text: `${what}：${err instanceof HostApiError ? err.message : String(err)}`, error: true });
+  /** Centres a bubble's card; one still out opens in its window. */
+  const focusCallout = (c: CanvasCallout) => {
+    const r = anchorOf(c.target);
+    if (r) centreOf(r);
+    if (c.state !== "closed") setOpenCallout(c.id);
+  };
+  const closeCallout = (c: CanvasCallout) => void call(link, "POST /api/callouts/:id/close", { id: c.id }).catch(failed("没能收起"));
+  const openSession = (sessionId: Id) => {
+    const s = sessionById.get(sessionId);
+    if (s?.taskId) onOpenTask(s.taskId, s.id);
+    else setNotice({ text: "这个会话不在任何任务里，任务页打不开它", error: true });
+  };
+  const setItemStatus = (id: Id, status: ReviewStatus) => edit((d) => ({ ...d, nodes: d.nodes.map((n) => (n.id === id && n.kind === "item" ? { ...n, status } : n)) }));
+  const deleteItem = (id: Id) => {
+    edit((d) => ({ ...d, nodes: d.nodes.filter((n) => n.id !== id) }));
+    if (selection?.kind === "node" && selection.id === id) setSelectionState(null);
+  };
+  /** 就这条展开聊: a new session on this item, opened at once. */
+  const discuss = (it: CanvasItem) => {
+    setNotice({ text: `正在为 #${it.num} 开会话…` });
+    call(link, "POST /api/topics/:id/canvas/items/:itemId/discuss", { id: topic.id, itemId: it.id }, {})
+      .then((s) => {
+        setNotice(null);
+        if (s.taskId) onOpenTask(s.taskId, s.id);
+      })
+      .catch(failed("没能开会话"));
+  };
+  const shownCallout = openCallout ? callouts.find((c) => c.id === openCallout && c.state !== "closed") : undefined;
+
   // ---- the menus --------------------------------------------------------------------------------------------------
 
   const canvasMenu = (e: ReactMouseEvent) => {
@@ -445,6 +504,22 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
     ]);
   };
 
+  const itemMenu = (e: ReactMouseEvent, node: CanvasItem) => {
+    setSelection({ kind: "node", id: node.id });
+    const poster = node.sessionId ? sessionById.get(node.sessionId) : undefined;
+    openMenu(e, `审阅条目 #${node.num}`, [
+      ...REVIEW_STATUSES.map((s) => item(`${node.status === s.id ? "✓ " : ""}标为${s.label}`, () => setItemStatus(node.id, s.id), { disabled: node.status === s.id, testId: `menu-item-${s.id}` })),
+      SEP,
+      item("就这条展开聊（新会话）", () => discuss(node), { hint: "在铺这份审阅的任务里开一个会话，先读这一条", testId: "menu-item-thread" }),
+      ...(poster?.taskId ? [item("打开铺它的会话", () => openSession(poster.id))] : []),
+      colorOf({ kind: "node", id: node.id }, node.color),
+      ...groupItems(node),
+      centreItem(node),
+      SEP,
+      item("删除条目", () => deleteItem(node.id), { danger: true }),
+    ]);
+  };
+
   const groupMenu = (e: ReactMouseEvent, g: CanvasGroup) => {
     setSelection({ kind: "group", id: g.id });
     openMenu(e, "分组", [
@@ -497,6 +572,14 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
         <div role="alert" className="toast toast-error" data-testid="canvas-error">
           <span>画布没有保存，已载入最新内容：{error}</span>
           <button type="button" className="toast-close" aria-label="关闭提示" onClick={dismissError}>
+            ×
+          </button>
+        </div>
+      )}
+      {notice && (
+        <div role={notice.error ? "alert" : "status"} className={notice.error ? "toast toast-error" : "toast"} data-testid="canvas-notice">
+          <span>{notice.text}</span>
+          <button type="button" className="toast-close" aria-label="关闭提示" onClick={() => setNotice(null)}>
             ×
           </button>
         </div>
@@ -624,7 +707,22 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
           {shown?.nodes.map((node) => {
             const selected = selection?.kind === "node" && selection.id === node.id;
             if (node.kind === "note") {
-              return <NoteCard key={node.id} node={node} selected={selected} handles={handlesOf(node.id)} onMouseDown={(e) => startDrag(e, "node", node.id)} onContextMenu={(e) => noteMenu(e, node)} onEdit={editNote} />;
+              return <NoteCard key={node.id} node={node} selected={selected} flag={flags.get(node.id)} handles={handlesOf(node.id)} onMouseDown={(e) => startDrag(e, "node", node.id)} onContextMenu={(e) => noteMenu(e, node)} onEdit={editNote} />;
+            }
+            if (node.kind === "item") {
+              return (
+                <ItemCard
+                  key={node.id}
+                  node={node}
+                  activity={itemActivity(node, callouts, sessions)}
+                  flag={flags.get(node.id)}
+                  selected={selected}
+                  handles={handlesOf(node.id)}
+                  onOpen={() => setSelection({ kind: "node", id: node.id })}
+                  onMouseDown={(e) => startDrag(e, "node", node.id)}
+                  onContextMenu={(e) => itemMenu(e, node)}
+                />
+              );
             }
             if (node.kind === "ref") {
               const target = anyTaskById.get(node.taskId);
@@ -637,6 +735,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
                   sessions={sessions}
                   workspaces={workspaces}
                   selected={selected}
+                  flag={flags.get(node.id)}
                   handles={handlesOf(node.id)}
                   onOpen={() => target && onOpenTask(target.id)}
                   onMouseDown={(e) => startDrag(e, "node", node.id)}
@@ -654,6 +753,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
                 sessions={sessions}
                 workspaces={workspaces}
                 selected={selected}
+                flag={flags.get(task.id) ?? flags.get(node.id)}
                 linking={!!linkFrom && linkFrom !== task.id && !task.archivedAt}
                 handles={handlesOf(node.id)}
                 onOpen={() => onOpenTask(task.id)}
@@ -715,6 +815,7 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
               </div>
             );
           })}
+          <CalloutLayer callouts={callouts} sessions={sessions} anchor={anchorOf} onOpen={focusCallout} onClose={closeCallout} onMore={() => setTab("talk")} />
         </div>
 
         <div className="canvas-tools" onMouseDown={(e) => e.stopPropagation()} onContextMenu={(e) => e.stopPropagation()}>
@@ -732,6 +833,11 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
           <button type="button" className="btn-ghost small" onClick={() => newNote()} disabled={!doc}>
             + 便签
           </button>
+          {openQuestions.length > 0 && (
+            <button type="button" className="btn-ghost small canvas-asking" onClick={() => focusCallout(openQuestions[0]!)} title="跳到最早的一个问题并打开它" data-testid="canvas-asking">
+              ? {openQuestions.length} 个问题待你确认
+            </button>
+          )}
         </div>
 
         <PlanBanner link={link} plans={plans} tasks={allTasks} workspaces={workspaces} profiles={profiles} />
@@ -796,11 +902,38 @@ export function CanvasPage({ link, topic, tasks, allTasks = tasks, topics = [top
           agentTab={<AgentTab link={link} topicId={topic.id} />}
           docsTab={<DocsTab link={link} topicId={topic.id} readOnly={!!topic.archivedAt} />}
           marksTab={<TopicBookmarks link={link} state={{ tasks: allTasks, sessions, topics, workspaces }} topicId={topic.id} />}
+          talkTab={<TalkTab items={items} callouts={callouts} nameOf={targetName} onFocus={focusCallout} />}
+          talkCount={openQuestions.length}
+          renderItem={(it) => (
+            <ItemDetail
+              key={it.id}
+              item={it}
+              sessions={sessions}
+              callouts={callouts}
+              activity={itemActivity(it, callouts, sessions)}
+              onStatus={(status) => setItemStatus(it.id, status)}
+              onDiscuss={() => discuss(it)}
+              onOpenSession={openSession}
+              onFocus={focusCallout}
+              onDelete={() => deleteItem(it.id)}
+            />
+          )}
         />
       )}
       </div>
       {menu && <CanvasMenu x={menu.x} y={menu.y} label={menu.label} entries={menu.entries} onClose={closeMenu} />}
       {describedTask && <DescriptionDialog link={link} task={describedTask} onClose={() => setDescribing(null)} />}
+      {shownCallout && (
+        <CalloutDialog
+          key={shownCallout.id}
+          link={link}
+          callout={shownCallout}
+          where={targetName(shownCallout.target)}
+          author={shownCallout.sessionId ? sessionById.get(shownCallout.sessionId) : undefined}
+          onOpenSession={shownCallout.sessionId && sessionById.get(shownCallout.sessionId)?.taskId ? () => openSession(shownCallout.sessionId!) : undefined}
+          onClose={() => setOpenCallout(null)}
+        />
+      )}
     </section>
   );
 }

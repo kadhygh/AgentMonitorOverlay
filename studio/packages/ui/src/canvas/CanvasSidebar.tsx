@@ -1,10 +1,10 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { projectWorkspaces, taskWhere, wouldCycle, type CanvasDoc, type CanvasEdge, type Id, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
+import { projectWorkspaces, taskWhere, wouldCycle, type CanvasDoc, type CanvasEdge, type CanvasItem, type Id, type Session, type Task, type Topic, type Workspace } from "@amo-studio/protocol";
 import { COLUMN_NAMES, SESSION_LOOK, taskSessions, taskStatus } from "../lib/status.js";
 import { deleteGroup, updateGroup } from "./geometry.js";
 
 export type CanvasSelection = { kind: "node"; id: Id } | { kind: "group"; id: Id } | null;
-export type SidebarTab = "todo" | "detail" | "docs" | "marks" | "agent";
+export type SidebarTab = "todo" | "detail" | "talk" | "docs" | "marks" | "agent";
 
 interface CanvasSidebarProps {
   doc: CanvasDoc;
@@ -32,6 +32,11 @@ interface CanvasSidebarProps {
   docsTab?: ReactNode;
   /** 书签 (2026-10-19): the topic's bookmarks. */
   marksTab?: ReactNode;
+  /** 沟通 (画布审阅): the bubbles on the canvas; `talkCount` questions wait for the person. */
+  talkTab?: ReactNode;
+  talkCount?: number;
+  /** 详情 of a review item. */
+  renderItem?(item: CanvasItem): ReactNode;
 }
 
 /** Right column of the canvas: whole-picture todos, details of the selection, and the agent's view. */
@@ -41,6 +46,7 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
   const tabs: Array<[SidebarTab, string]> = [
     ...(props.todoTab ? ([["todo", "整体待办"]] as Array<[SidebarTab, string]>) : []),
     ["detail", "详情"],
+    ...(props.talkTab ? ([["talk", props.talkCount ? `沟通 ${props.talkCount}` : "沟通"]] as Array<[SidebarTab, string]>) : []),
     ...(props.docsTab ? ([["docs", "文档"]] as Array<[SidebarTab, string]>) : []),
     ...(props.marksTab ? ([["marks", "书签"]] as Array<[SidebarTab, string]>) : []),
     ["agent", "agent 视角"],
@@ -49,13 +55,14 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
     <aside className="canvas-side" aria-label="画布侧栏">
       <div role="tablist" aria-label="侧栏" className="side-tabs">
         {tabs.map(([id, label]) => (
-          <button key={id} type="button" role="tab" aria-selected={tab === id} className="side-tab" onClick={() => onTab(id)}>
+          <button key={id} type="button" role="tab" aria-selected={tab === id} className="side-tab" onClick={() => onTab(id)} data-testid={`side-tab-${id}`}>
             {label}
           </button>
         ))}
       </div>
       {tab === "detail" && <DetailTab {...props} />}
       {tab === "todo" && props.todoTab}
+      {tab === "talk" && props.talkTab}
       {tab === "docs" && props.docsTab}
       {tab === "marks" && props.marksTab}
       {tab === "agent" && (props.agentTab ?? <span className="anno-empty">agent 视角在 S3-05 实现。</span>)}
@@ -63,7 +70,7 @@ export function CanvasSidebar(props: CanvasSidebarProps) {
   );
 }
 
-function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessions, workspaces, onChange, onEdit, onClearSelection, onOpenTask, onDescribe, newId }: CanvasSidebarProps) {
+function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessions, workspaces, onChange, onEdit, onClearSelection, onOpenTask, onDescribe, newId, renderItem }: CanvasSidebarProps) {
   if (!selection) return <span className="anno-empty">在画布上点一个任务、便签，或点分组的标题栏。</span>;
 
   if (selection.kind === "group") {
@@ -175,6 +182,8 @@ function DetailTab({ doc, selection, tasks, allTasks = tasks, topics = [], sessi
       </div>
     );
   }
+
+  if (node.kind === "item") return <>{renderItem?.(node)}</>;
 
   const task = tasks.find((t) => t.id === node.taskId);
   const archived = task ? undefined : allTasks.find((t) => t.id === node.taskId && t.archivedAt);

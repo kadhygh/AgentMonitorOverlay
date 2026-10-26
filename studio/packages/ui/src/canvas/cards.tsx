@@ -17,13 +17,15 @@ export const cardHeight = (task: Task | undefined) => (task?.description ? CARD_
 
 interface CardEvents {
   selected: boolean;
+  /** 画布审阅: the card has an open question or remark on it (highlighted). */
+  flag?: "question" | "note";
   /** 连线's four side handles (2026-10-19). */
   handles?: ReactNode;
   onMouseDown(e: ReactMouseEvent): void;
   onContextMenu(e: ReactMouseEvent): void;
 }
 
-export function TaskCard({ node, task, sessions, workspaces, selected, linking, handles, onOpen, onMouseDown, onContextMenu }: CardEvents & { node: CanvasNode; task: Task; sessions: readonly Session[]; workspaces: readonly Workspace[]; linking: boolean; onOpen(): void }) {
+export function TaskCard({ node, task, sessions, workspaces, selected, flag, linking, handles, onOpen, onMouseDown, onContextMenu }: CardEvents & { node: CanvasNode; task: Task; sessions: readonly Session[]; workspaces: readonly Workspace[]; linking: boolean; onOpen(): void }) {
   const own = taskSessions(task, sessions);
   const status = taskStatus(own);
   const look = status ? SESSION_LOOK[status] : null;
@@ -42,6 +44,7 @@ export function TaskCard({ node, task, sessions, workspaces, selected, linking, 
       data-node-id={node.id}
       data-group-id={node.groupId ?? ""}
       data-color={node.color}
+      data-callout={flag}
       onMouseDown={onMouseDown}
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
@@ -81,7 +84,7 @@ export function TaskCard({ node, task, sessions, workspaces, selected, linking, 
   );
 }
 
-export function RefCard({ node, target, topics, sessions, workspaces, selected, handles, onOpen, onMouseDown, onContextMenu }: CardEvents & { node: CanvasNode; target: Task | undefined; topics: readonly Topic[]; sessions: readonly Session[]; workspaces: readonly Workspace[]; onOpen(): void }) {
+export function RefCard({ node, target, topics, sessions, workspaces, selected, flag, handles, onOpen, onMouseDown, onContextMenu }: CardEvents & { node: CanvasNode; target: Task | undefined; topics: readonly Topic[]; sessions: readonly Session[]; workspaces: readonly Workspace[]; onOpen(): void }) {
   const gone = !target ? "任务不存在" : target.archivedAt ? "任务已归档" : "";
   const refStatus = target && !gone ? taskStatus(taskSessions(target, sessions)) : null;
   const refLook = refStatus ? SESSION_LOOK[refStatus] : null;
@@ -99,6 +102,7 @@ export function RefCard({ node, target, topics, sessions, workspaces, selected, 
       data-node-id={node.id}
       data-group-id={node.groupId ?? ""}
       data-color={node.color}
+      data-callout={flag}
       onMouseDown={onMouseDown}
       onContextMenu={onContextMenu}
       onDoubleClick={onOpen}
@@ -123,7 +127,7 @@ export function RefCard({ node, target, topics, sessions, workspaces, selected, 
   );
 }
 
-export function NoteCard({ node, selected, handles, onMouseDown, onContextMenu, onEdit }: CardEvents & { node: Extract<CanvasNode, { kind: "note" }>; onEdit(): void }) {
+export function NoteCard({ node, selected, flag, handles, onMouseDown, onContextMenu, onEdit }: CardEvents & { node: Extract<CanvasNode, { kind: "note" }>; onEdit(): void }) {
   return (
     <div
       className={selected ? "canvas-note selected" : "canvas-note"}
@@ -132,6 +136,7 @@ export function NoteCard({ node, selected, handles, onMouseDown, onContextMenu, 
       data-node-id={node.id}
       data-group-id={node.groupId ?? ""}
       data-color={node.color}
+      data-callout={flag}
       onMouseDown={onMouseDown}
       onContextMenu={onContextMenu}
       onDoubleClick={onEdit}
